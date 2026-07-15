@@ -1,0 +1,473 @@
+const elements = Object.fromEntries([
+  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "audioAnalyticsNav", "pageTitle", "pageDescription",
+  "refreshBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
+  "pageStatus", "accountCountBadge", "accountRows", "quotaList", "nextRunText", "videoCountBadge", "videoRows",
+  "audioCountBadge", "audioRows", "audioDetailEmpty", "audioDetailPanel", "audioDetailTitle", "audioDetailMeta", "audioPlayer", "audioVideoRows",
+  "audioOverview", "audioOverviewTotal", "audioOverviewVideos", "audioOverviewStrong", "audioOverviewWatch", "audioOverviewWeak",
+  "audioStrongBar", "audioWatchBar", "audioWeakBar", "audioBestList", "audioRiskList",
+  "todayVideos", "todayViews", "todayAverage", "todayEngagement", "yesterdayVideos", "yesterdayViews", "yesterdayAverage", "yesterdayEngagement",
+  "sevenDaysVideos", "sevenDaysViews", "sevenDaysAverage", "sevenDaysEngagement",
+  "reuseModal", "reuseDialogTitle", "reuseDialogMeta", "reuseDialogBody", "closeReuseBtn"
+].map((id) => [id, document.querySelector(`#${id}`)]));
+
+let pollTimer = 0;
+let currentAudioName = "";
+const isAudioView = new URLSearchParams(window.location.search).get("view") === "audio";
+
+document.body.classList.toggle("audio-only-view", isAudioView);
+elements.analyticsNav.classList.toggle("is-active", !isAudioView);
+elements.audioAnalyticsNav.classList.toggle("is-active", isAudioView);
+if (isAudioView) {
+  elements.pageTitle.textContent = "音频表现";
+  elements.pageDescription.textContent = "按音频汇总跨账号视频表现，查看发布详情，并直接试听本地原音频。";
+}
+
+elements.refreshBtn.addEventListener("click", loadDashboard);
+elements.periodFilter.addEventListener("change", loadDashboard);
+elements.groupFilter.addEventListener("change", loadDashboard);
+elements.sortFilter.addEventListener("change", loadDashboard);
+elements.accountFilter.addEventListener("input", debounce(loadDashboard, 250));
+elements.videoRows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-reuse-video]");
+  if (button) openReuseDetail(button.dataset.reuseVideo);
+});
+elements.audioRows.addEventListener("click", handleAudioAction);
+elements.audioOverview.addEventListener("click", handleAudioAction);
+
+function handleAudioAction(event) {
+  const detailButton = event.target.closest("[data-audio-detail]");
+  const playButton = event.target.closest("[data-audio-play]");
+  const audioName = detailButton?.dataset.audioDetail || playButton?.dataset.audioPlay || "";
+  if (audioName) openAudioDetail(audioName, { autoPlay: Boolean(playButton) });
+}
+elements.closeReuseBtn.addEventListener("click", closeReuseDetail);
+elements.reuseModal.addEventListener("click", (event) => {
+  if (event.target === elements.reuseModal) closeReuseDetail();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !elements.reuseModal.hidden) closeReuseDetail();
+});
+
+await loadDashboard();
+
+async function loadDashboard() {
+  const params = new URLSearchParams({
+    period: elements.periodFilter.value,
+    group: elements.groupFilter.value,
+    account: elements.accountFilter.value.trim(),
+    sort: elements.sortFilter.value,
+    t: Date.now()
+  });
+  try {
+    const data = await requestJson(`/api/tiktok-analytics?${params}`);
+    renderDashboard(data);
+    if (data.status?.running) startPolling();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+function renderDashboard(data) {
+  const summary = data.summary || {};
+  const status = data.status || {};
+  elements.videoCount.textContent = formatNumber(summary.videoCount);
+  elements.matchedCount.textContent = `${formatNumber(summary.matchedCount)} 条已匹配本地记录`;
+  elements.totalViews.textContent = formatNumber(summary.views);
+  elements.totalLikes.textContent = formatNumber(summary.likes);
+  elements.commentShareCount.textContent = formatNumber(Number(summary.comments || 0) + Number(summary.shares || 0));
+  elements.engagementRate.textContent = `${Number(summary.engagement || 0).toFixed(2)}%`;
+  renderPeriods(data.periods || {});
+  updateGroupOptions(data.filters?.groups || []);
+  renderAccounts(data.accounts || []);
+  renderAudioRankings(data.audioRankings || []);
+  renderVideos(data.videos || []);
+  renderQuota(status);
+
+  const run = status.lastRun;
+  if (status.running) {
+    const completed = run?.completed || 0;
+    const total = run?.total || 0;
+    elements.syncState.textContent = `抓取中 ${completed}/${total}`;
+    setStatus(`正在抓取账号数据：${completed}/${total}，失败 ${run?.failed || 0} 个。`);
+  } else {
+    elements.syncState.textContent = run?.finishedAt ? `上次 ${formatDateTime(run.finishedAt)}` : "尚未抓取";
+    if (run?.finishedAt) setStatus(`上次抓取完成：${run.completed || 0}/${run.total || 0} 个账号，失败 ${run.failed || 0} 个。`, run.failed ? "warning" : "success");
+    else setStatus(`已读取 ${summary.videoCount || 0} 条本地视频数据。`, "success");
+    stopPolling();
+  }
+}
+
+function renderPeriods(periods) {
+  const values = [
+    ["today", periods.today || {}],
+    ["yesterday", periods.yesterday || {}],
+    ["sevenDays", periods.sevenDays || {}]
+  ];
+  for (const [prefix, summary] of values) {
+    elements[`${prefix}Videos`].textContent = `${formatNumber(summary.videoCount)} 条`;
+    elements[`${prefix}Views`].textContent = formatNumber(summary.views);
+    elements[`${prefix}Average`].textContent = formatNumber(summary.averageViews);
+    elements[`${prefix}Engagement`].textContent = `${Number(summary.engagement || 0).toFixed(2)}%`;
+  }
+  document.querySelectorAll("[data-period-card]").forEach((card) => {
+    card.classList.toggle("is-selected", card.dataset.periodCard === elements.periodFilter.value);
+    card.onclick = () => {
+      elements.periodFilter.value = card.dataset.periodCard;
+      loadDashboard();
+    };
+  });
+}
+
+function renderAccounts(accounts) {
+  elements.accountCountBadge.textContent = `${accounts.length} 个`;
+  elements.accountRows.innerHTML = accounts.length ? accounts.map((item) => `
+    <tr>
+      <td><strong>@${escapeHtml(item.username)}</strong></td>
+      <td>${formatNumber(item.videos)}</td>
+      <td>${formatNumber(item.views)}</td>
+      <td>${formatNumber(item.averageViews)}</td>
+      <td>${Number(item.engagement || 0).toFixed(2)}%</td>
+      <td>${escapeHtml(formatDateTime(item.lastFetchedAt))}</td>
+    </tr>
+  `).join("") : emptyRow(6, "暂无账号数据，请先抓取 Demo。");
+}
+
+function renderAudioRankings(rows) {
+  elements.audioCountBadge.textContent = `${rows.length} 条`;
+  renderAudioOverview(rows);
+  if (!rows.length) {
+    elements.audioRows.innerHTML = `<div class="audio-empty small">当前筛选范围暂无已匹配音频数据。</div>`;
+    resetAudioDetail();
+    return;
+  }
+  elements.audioRows.innerHTML = rows.map((item, index) => {
+    const tone = audioTone(item);
+    const active = currentAudioName === item.audioName ? " is-active" : "";
+    return `<article class="audio-rank-item${active}">
+      <div class="audio-rank-main">
+        <span>#${index + 1}</span>
+        <strong title="${escapeHtml(item.audioName)}">${escapeHtml(shortAudioName(item.audioName))}</strong>
+        <small>${formatNumber(item.videos)} 条视频 · ${formatNumber(item.accounts)} 个账号 · 均播 ${formatNumber(item.averageViews)} · 中位 ${formatNumber(item.medianViews)}</small>
+      </div>
+      <div class="audio-rank-stats">
+        <span class="${tone}">${audioToneLabel(tone)}</span>
+        <small>低播 ${rateBadge(item.low100Rate, true)}</small>
+        <small>破500 ${rateBadge(item.over500Rate)}</small>
+      </div>
+      <div class="audio-rank-actions">
+        <button type="button" data-audio-detail="${escapeHtml(item.audioName)}">发布视频详情</button>
+        <button type="button" data-audio-play="${escapeHtml(item.audioName)}">播放音频</button>
+      </div>
+    </article>`;
+  }).join("");
+  if (isAudioView && (!currentAudioName || !rows.some((item) => item.audioName === currentAudioName))) {
+    openAudioDetail(rows[0].audioName, { autoPlay: false });
+  }
+}
+
+function renderAudioOverview(rows) {
+  const groups = { "audio-strong": [], "audio-watch": [], "audio-weak": [] };
+  for (const item of rows) groups[audioTone(item)].push(item);
+  const total = rows.length;
+  const totalVideos = rows.reduce((sum, item) => sum + Number(item.videos || 0), 0);
+
+  elements.audioOverviewTotal.textContent = formatNumber(total);
+  elements.audioOverviewVideos.textContent = `${formatNumber(totalVideos)} 条发布视频`;
+  elements.audioOverviewStrong.textContent = formatNumber(groups["audio-strong"].length);
+  elements.audioOverviewWatch.textContent = formatNumber(groups["audio-watch"].length);
+  elements.audioOverviewWeak.textContent = formatNumber(groups["audio-weak"].length);
+  setDistributionWidth(elements.audioStrongBar, groups["audio-strong"].length, total);
+  setDistributionWidth(elements.audioWatchBar, groups["audio-watch"].length, total);
+  setDistributionWidth(elements.audioWeakBar, groups["audio-weak"].length, total);
+
+  const sampled = rows.filter((item) => Number(item.videos) >= 2);
+  const best = sampled.filter((item) => audioTone(item) !== "audio-weak").sort((a, b) => audioPerformanceScore(b) - audioPerformanceScore(a)).slice(0, 3);
+  const risk = sampled.filter((item) => audioTone(item) !== "audio-strong").sort((a, b) => audioPerformanceScore(a) - audioPerformanceScore(b)).slice(0, 3);
+  elements.audioBestList.innerHTML = renderAudioOverviewList(best, "暂无足够样本");
+  elements.audioRiskList.innerHTML = renderAudioOverviewList(risk, "暂无高风险样本");
+}
+
+function renderAudioOverviewList(items, emptyText) {
+  if (!items.length) return `<div class="overview-list-empty">${escapeHtml(emptyText)}</div>`;
+  return items.map((item, index) => {
+    const tone = audioTone(item);
+    return `<button type="button" data-audio-detail="${escapeHtml(item.audioName)}">
+      <span class="overview-rank">${index + 1}</span>
+      <span class="overview-audio-name"><strong title="${escapeHtml(item.audioName)}">${escapeHtml(shortAudioName(item.audioName))}</strong><small>${formatNumber(item.videos)} 条 · 均播 ${formatNumber(item.averageViews)} · 低播 ${Number(item.low100Rate || 0).toFixed(0)}%</small></span>
+      <b class="${tone}">${audioToneLabel(tone)}</b>
+    </button>`;
+  }).join("");
+}
+
+function audioPerformanceScore(item) {
+  const sampleWeight = Math.min(1, Number(item.videos || 0) / 5);
+  const playback = Number(item.averageViews || 0) * 0.6 + Number(item.medianViews || 0) * 0.4;
+  const rateSignal = Number(item.over500Rate || 0) * 8 - Number(item.low100Rate || 0) * 10;
+  return (playback + rateSignal) * (0.55 + sampleWeight * 0.45);
+}
+
+function setDistributionWidth(element, count, total) {
+  element.style.width = total ? `${(count / total) * 100}%` : "0%";
+  element.title = `${count} 条，占 ${total ? ((count / total) * 100).toFixed(0) : 0}%`;
+}
+
+async function openAudioDetail(audioName, { autoPlay = false } = {}) {
+  currentAudioName = audioName;
+  elements.audioRows.querySelectorAll(".audio-rank-item").forEach((item) => {
+    const button = item.querySelector("[data-audio-detail]");
+    item.classList.toggle("is-active", button?.dataset.audioDetail === audioName);
+  });
+  elements.audioDetailEmpty.hidden = true;
+  elements.audioDetailPanel.hidden = false;
+  elements.audioDetailTitle.textContent = shortAudioName(audioName);
+  elements.audioDetailMeta.textContent = "正在读取发布视频详情...";
+  elements.audioVideoRows.innerHTML = emptyRow(6, "正在读取...");
+  elements.audioPlayer.pause();
+  elements.audioPlayer.removeAttribute("src");
+  elements.audioPlayer.hidden = true;
+
+  try {
+    const params = new URLSearchParams({
+      audioName,
+      period: elements.periodFilter.value,
+      group: elements.groupFilter.value,
+      account: elements.accountFilter.value.trim(),
+      sort: "newest",
+      t: Date.now()
+    });
+    const data = await requestJson(`/api/tiktok-analytics/audio-details?${params}`);
+    renderAudioDetail(data);
+    if (data.audioAvailable) {
+      elements.audioPlayer.src = `/api/tiktok-analytics/audio-file?audioName=${encodeURIComponent(audioName)}&t=${Date.now()}`;
+      elements.audioPlayer.hidden = false;
+      if (autoPlay) {
+        try { await elements.audioPlayer.play(); } catch {}
+      }
+    }
+  } catch (error) {
+    elements.audioDetailMeta.textContent = error.message;
+    elements.audioVideoRows.innerHTML = emptyRow(6, "读取失败。");
+  }
+}
+
+function renderAudioDetail(data) {
+  const summary = data.summary || {};
+  const videos = data.videos || [];
+  elements.audioDetailTitle.textContent = shortAudioName(data.audioName || "");
+  elements.audioDetailMeta.textContent = `${formatNumber(summary.videos || videos.length)} 条视频 · 均播 ${formatNumber(summary.averageViews)} · 中位 ${formatNumber(summary.medianViews)} · 最高 ${formatNumber(summary.maxViews)} · 低播 ${Number(summary.low100Rate || 0).toFixed(0)}%`;
+  elements.audioVideoRows.innerHTML = videos.length ? videos.map((video) => {
+    const engagement = video.views ? ((video.likes + video.comments + video.shares + video.bookmarks) / video.views) * 100 : 0;
+    return `<tr>
+      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
+      <td><strong>@${escapeHtml(video.username)}</strong><small>${escapeHtml(video.local?.groupName || "-")}</small></td>
+      <td class="number-cell">${formatNumber(video.views)}</td>
+      <td>${engagement.toFixed(2)}%</td>
+      <td class="source-cell"><strong>${escapeHtml(video.local?.fileName || "-")}</strong><small>${escapeHtml(video.local?.matchConfidence || "")}</small></td>
+      <td>${video.shareUrl ? `<a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a>` : "-"}</td>
+    </tr>`;
+  }).join("") : emptyRow(6, "这条音频在当前筛选范围没有视频。");
+}
+
+function resetAudioDetail() {
+  currentAudioName = "";
+  elements.audioDetailPanel.hidden = true;
+  elements.audioDetailEmpty.hidden = false;
+  elements.audioVideoRows.innerHTML = "";
+  elements.audioPlayer.pause();
+  elements.audioPlayer.removeAttribute("src");
+}
+
+function audioTone(item) {
+  if (Number(item.videos) >= 5 && Number(item.low100Rate) <= 10 && Number(item.averageViews) >= 800) return "audio-strong";
+  if (Number(item.videos) >= 4 && Number(item.low100Rate) >= 50) return "audio-weak";
+  return "audio-watch";
+}
+
+function audioToneLabel(tone) {
+  return ({ "audio-strong": "可放量", "audio-weak": "先停用", "audio-watch": "观察" })[tone] || "观察";
+}
+
+function rateBadge(value, reverse = false) {
+  const rate = Math.max(0, Number(value) || 0);
+  const level = reverse
+    ? (rate >= 50 ? "bad" : rate >= 25 ? "mid" : "good")
+    : (rate >= 50 ? "good" : rate >= 20 ? "mid" : "muted");
+  return `<span class="rate-badge ${level}">${rate.toFixed(0)}%</span>`;
+}
+
+function shortAudioName(value) {
+  const text = String(value || "");
+  return text.replace(/\.[a-z0-9]+$/i, "").replace(/^\[music\]/i, "").slice(0, 72) || "未命名音频";
+}
+
+function renderVideos(videos) {
+  elements.videoCountBadge.textContent = `${videos.length} 条`;
+  elements.videoRows.innerHTML = videos.length ? videos.map((video) => {
+    const engagement = video.views ? ((video.likes + video.comments + video.shares + video.bookmarks) / video.views) * 100 : 0;
+    const source = video.local
+      ? `<strong>${escapeHtml(video.local.groupName || "未分组")}</strong><small title="${escapeHtml(video.local.audioName)}">${escapeHtml(video.local.fileName || video.local.audioName || "已匹配")}</small><em class="match-${escapeHtml(video.local.matchConfidence || "medium")}">${matchLabel(video.local)}</em>`
+      : `<span class="unmatched">没有本地发布记录</span>`;
+    return `<tr>
+      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
+      <td class="video-copy"><strong>@${escapeHtml(video.username)}</strong><small title="${escapeHtml(video.description)}">${escapeHtml(video.description || "无文案")}</small></td>
+      <td class="number-cell">${formatNumber(video.views)}</td>
+      <td class="delta-cell">${video.viewsDelta ? `+${formatNumber(video.viewsDelta)}` : "-"}</td>
+      <td>${formatNumber(video.likes)}</td><td>${formatNumber(video.comments)}</td><td>${formatNumber(video.shares)}</td><td>${formatNumber(video.bookmarks)}</td>
+      <td>${engagement.toFixed(2)}%</td>
+      <td class="source-cell">${source}</td>
+      <td><a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a></td>
+      <td>${video.local ? `<button class="reuse-detail-btn" type="button" data-reuse-video="${escapeHtml(video.id)}">查看</button>` : `<span class="muted-action">无记录</span>`}</td>
+    </tr>`;
+  }).join("") : emptyRow(12, "当前筛选条件下暂无视频数据。");
+}
+
+async function openReuseDetail(videoId) {
+  elements.reuseModal.hidden = false;
+  document.body.classList.add("modal-open");
+  elements.reuseDialogTitle.textContent = "素材抽取复用详情";
+  elements.reuseDialogMeta.textContent = "正在读取本地素材记录...";
+  elements.reuseDialogBody.innerHTML = `<div class="reuse-loading">正在计算素材时间段重叠情况...</div>`;
+  try {
+    const data = await requestJson(`/api/tiktok-analytics/videos/${encodeURIComponent(videoId)}/reuse?t=${Date.now()}`);
+    renderReuseDetail(data);
+  } catch (error) {
+    elements.reuseDialogMeta.textContent = "无法读取";
+    elements.reuseDialogBody.innerHTML = `<div class="reuse-error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function closeReuseDetail() {
+  elements.reuseModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function renderReuseDetail(data) {
+  const video = data.video || {};
+  const reuse = data.reuse || {};
+  const summary = reuse.summary || {};
+  const clips = reuse.clips || [];
+  const related = reuse.relatedVideos || [];
+  elements.reuseDialogTitle.textContent = video.local?.fileName || "素材抽取复用详情";
+  elements.reuseDialogMeta.textContent = `TikTok @${video.username || "-"} · ${formatNumber(video.views)} 播放 · ${matchLabel(video.local)} · ${reuse.groupId || "未记录素材组"}`;
+  elements.reuseDialogBody.innerHTML = `
+    <div class="match-explainer"><strong>对应关系说明</strong><span>这里展示的是系统判定与当前TikTok视频对应的本地成片。匹配依据为账号、发布时间和发布标签；超过30分钟的记录不会强行匹配。</span></div>
+    <section class="reuse-summary-grid">
+      <article><span>本视频抽取了</span><strong>${formatNumber(summary.clipCount)} 段</strong><small>素材总时长 ${formatSeconds(summary.totalSeconds)}</small></article>
+      <article><span>其中重复了</span><strong>${formatSeconds(summary.reusedSeconds)}</strong><small>与其他成片抽到同一时间段</small></article>
+      <article><span>时间段重复度</span><strong class="${reuseTone(summary.reusePercent)}">${Number(summary.reusePercent || 0).toFixed(1)}%</strong><small>重复秒数 ÷ 本视频素材总秒数</small></article>
+      <article><span>用过的源素材</span><strong>${Number(summary.sharedAssetPercent || 0).toFixed(1)}%</strong><small>${summary.sharedAssetClips || 0} 段的源文件也被其他成片使用</small></article>
+      <article><span>涉及其他成片</span><strong>${formatNumber(summary.relatedVideoCount)} 条</strong><small>仅表示素材有关联，不代表画面完全相同</small></article>
+    </section>
+    <section class="reuse-section">
+      <div class="reuse-section-head"><div><strong>本片素材明细</strong><span>红色越深表示同一时间段在其他成片中出现越多</span></div></div>
+      <div class="reuse-table-wrap"><table class="reuse-table"><thead><tr><th>#</th><th>素材文件</th><th>抽取区间</th><th>时长</th><th>素材累计使用</th><th>重叠成片</th><th>重复秒数</th><th>片段复用率</th></tr></thead><tbody>
+        ${clips.map((clip) => `<tr>
+          <td>${clip.index}</td><td class="reuse-file" title="${escapeHtml(clip.fileName)}">${escapeHtml(clip.fileName || clip.assetId)}</td>
+          <td>${formatSeconds(clip.start)} – ${formatSeconds(clip.end)}</td><td>${formatSeconds(clip.duration)}</td>
+          <td>${clip.assetUseCount} 次 <small>峰值 ${clip.maxBucketReuse} 次</small></td><td>${clip.relatedVideoCount}</td><td>${formatSeconds(clip.reusedSeconds)}</td>
+          <td>${reuseBar(clip.reusePercent)}</td>
+        </tr>`).join("") || emptyRow(8, "没有保存素材片段记录。")}
+      </tbody></table></div>
+    </section>
+    <section class="reuse-section">
+      <div class="reuse-section-head"><div><strong>哪些其他视频用了相同素材</strong><span>“共同素材”只代表来自同一个源视频；只有“重叠秒数”才代表抽到了同一段画面</span></div></div>
+      <div class="reuse-table-wrap"><table class="reuse-table related-table"><thead><tr><th>本地成片</th><th>TikTok对应</th><th>共同源素材</th><th>同画面秒数</th><th>播放</th><th>点赞</th><th>打开</th></tr></thead><tbody>
+        ${related.map((item) => `<tr>
+          <td class="reuse-file" title="${escapeHtml(item.outputId)}">${escapeHtml(item.outputId)}</td><td>${item.username ? `<strong>@${escapeHtml(item.username)}</strong><small>${escapeHtml(formatUnixTime(item.createTime))} · ${escapeHtml(matchLabel(item))}</small>` : "没有对应记录"}</td>
+          <td>${item.sharedAssetCount}</td><td>${formatSeconds(item.sharedSeconds)}</td><td class="number-cell">${item.hasMetrics ? formatNumber(item.views) : "-"}</td><td>${item.hasMetrics ? formatNumber(item.likes) : "-"}</td>
+          <td>${item.shareUrl ? `<a class="open-link" href="${escapeHtml(item.shareUrl)}" target="_blank" rel="noreferrer">↗</a>` : "-"}</td>
+        </tr>`).join("") || emptyRow(7, "这条视频暂未发现与其他成片重叠的素材区间。")}
+      </tbody></table></div>
+    </section>`;
+}
+
+function reuseBar(percent) {
+  const value = Math.max(0, Math.min(100, Number(percent) || 0));
+  return `<div class="reuse-bar"><i class="${reuseTone(value)}" style="width:${value}%"></i><span>${value.toFixed(1)}%</span></div>`;
+}
+
+function reuseTone(value) {
+  if (Number(value) >= 60) return "reuse-high";
+  if (Number(value) >= 25) return "reuse-medium";
+  return "reuse-low";
+}
+
+function formatSeconds(value) {
+  const seconds = Math.max(0, Number(value) || 0);
+  if (seconds < 60) return `${seconds.toFixed(seconds % 1 ? 1 : 0)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+}
+
+function matchLabel(local) {
+  if (!local) return "未匹配本地成片";
+  const minutes = Math.max(0, Number(local.matchDistanceSeconds) || 0) / 60;
+  const confidence = local.matchConfidence === "high" ? "高可信" : "需留意";
+  return `${confidence} · 时间偏差${minutes < 1 ? "不足1" : Math.round(minutes)}分钟`;
+}
+
+function renderQuota(status) {
+  const settings = status.settings || {};
+  const usageEntry = Object.entries(status.dailyUsage || {}).at(-1);
+  const usage = usageEntry?.[1] || [];
+  const limit = settings.dailyRequestLimit || 100;
+  const totalUsed = usage.reduce((sum, item) => sum + Number(item || 0), 0);
+  elements.quotaList.innerHTML = settings.configured
+    ? (settings.maskedApiKeys || []).map((masked, index) => { const used = Number(usage[index] || 0); const percent = Math.min(100, used / limit * 100); return `<div class="quota-item"><div><strong>Key ${index + 1}</strong><span>${used} / ${limit}</span></div><div class="quota-track"><i style="width:${percent}%"></i></div></div>`; }).join("") + `<div class="provider-note">今日合计 ${totalUsed} / ${settings.totalDailyLimit || settings.keyCount * limit} · 双Key自动轮询</div>`
+    : `<div class="quota-empty">尚未配置 TikTokAPI.store API Key，请进入抓取配置页面。</div>`;
+  elements.nextRunText.textContent = settings.enabled
+    ? `${formatDateTime(settings.nextRunAt)} · ${(settings.groups || []).join("、")}`
+    : "未启用";
+}
+
+function updateGroupOptions(groups) {
+  const current = elements.groupFilter.value;
+  elements.groupFilter.innerHTML = `<option value="">全部账号组</option>${groups.map((group) => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("")}`;
+  if (groups.includes(current)) elements.groupFilter.value = current;
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = window.setInterval(loadDashboard, 2000);
+}
+
+function stopPolling() {
+  window.clearInterval(pollTimer);
+  pollTimer = 0;
+}
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);
+  return data;
+}
+
+function setStatus(message, tone = "") {
+  elements.pageStatus.textContent = message;
+  elements.pageStatus.dataset.tone = tone;
+}
+
+function setButtonBusy(button, busy, label = "") {
+  if (!button) return;
+  if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent;
+  button.disabled = busy;
+  button.textContent = busy ? label : button.dataset.originalLabel;
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat("zh-CN", { notation: Number(value) >= 10000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(Number(value) || 0);
+}
+
+function formatUnixTime(seconds) { return formatDateTime(Number(seconds) * 1000); }
+function formatDateTime(milliseconds) {
+  const value = Number(milliseconds);
+  if (!value) return "-";
+  const date = new Date(value);
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function pad(value) { return String(Number(value) || 0).padStart(2, "0"); }
+function emptyRow(columns, text) { return `<tr><td colspan="${columns}" class="empty-cell">${escapeHtml(text)}</td></tr>`; }
+function debounce(fn, wait) { let timer = 0; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
+function escapeHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}

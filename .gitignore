@@ -1,0 +1,41 @@
+# Local credentials and machine-specific settings
+config.json
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Generated media, caches, jobs and runtime data
+input/
+outputs/
+work/
+public/remotion-assets/*
+!public/remotion-assets/.gitkeep
+*.log
+*.pid
+*.tmp
+
+# Audio/video and subtitle artifacts
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.ass
+*.srt
+
+# Local Codex metadata
+.agents/
+.codex/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

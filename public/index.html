@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>播客视频生成器</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <nav class="side-tabs">
+      <a class="is-active" href="/">播客生成器</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/tasks">自动任务</a>
+    </nav>
+    <main class="shell">
+      <section class="editor">
+        <div class="topbar">
+          <div>
+            <h1>播客视频生成器</h1>
+            <p>批量选择本地音频，勾选模板，一次生成多条视频。</p>
+          </div>
+          <div class="topbar-actions">
+            <a class="topbar-link-btn" href="/tasks">自动任务</a>
+            <a class="topbar-link-btn" href="/stats">发布记录与统计</a>
+            <button id="generateBtn" type="button">生成视频</button>
+            <button id="stopBtn" class="secondary-btn" type="button" hidden>停止生成</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span>生成方式</span>
+          <div class="mode-switch">
+            <label>
+              <input name="sourceMode" type="radio" value="audio" checked />
+              <span>音频生成视频</span>
+            </label>
+            <label>
+              <input name="sourceMode" type="radio" value="text" />
+              <span>文案生成视频</span>
+            </label>
+          </div>
+        </div>
+
+        <label id="titleField" class="field">
+          <span>视频标题</span>
+          <input id="titleText" type="text" value="真正折磨你的是什么？" />
+        </label>
+
+        <label id="scriptField" class="field">
+          <span>配音文案</span>
+          <textarea id="scriptText" spellcheck="false">你以为你在解决问题，
+其实你只是在反复体验痛苦。</textarea>
+        </label>
+
+        <label class="field">
+          <span>画幅</span>
+          <select id="aspect">
+            <option value="portrait" selected>竖版 9:16</option>
+            <option value="landscape">横版 16:9</option>
+          </select>
+        </label>
+
+        <div class="field">
+          <span>生成模板</span>
+          <div class="template-grid">
+            <label class="template-option">
+              <input name="templateChoice" type="checkbox" value="player" checked />
+              <span>模板 1</span>
+              <small>黑底播放器 + 波形</small>
+            </label>
+            <label class="template-option">
+              <input name="templateChoice" type="checkbox" value="center-wave" checked />
+              <span>模板 2</span>
+              <small>背景图 + 中间波形</small>
+            </label>
+            <label class="template-option">
+              <input name="templateChoice" type="checkbox" value="minimal-wave" checked />
+              <span>模板 3</span>
+              <small>日记播放器</small>
+            </label>
+            <label class="template-option">
+              <input name="templateChoice" type="checkbox" value="journal-wave" checked />
+              <span>模板 4</span>
+              <small>日记播放器 + 波形</small>
+            </label>
+          </div>
+        </div>
+
+        <label class="check">
+          <input id="autoCaptions" type="checkbox" checked />
+          <span>自动识别字幕（模板 1-4 烧录字幕）</span>
+        </label>
+
+        <div class="caption-position-panel">
+          <button id="captionPositionToggle" class="caption-position-toggle" type="button" aria-expanded="false">
+            <span>字幕位置设置（模板 1-4）</span>
+            <em>⌄</em>
+          </button>
+          <div id="captionPositionContent" class="caption-position-content" hidden>
+            <div class="caption-preview">
+              <div id="captionPreviewStage" class="caption-preview-stage">
+                <div class="preview-title-line"></div>
+                <div class="preview-time preview-time-left">00:12</div>
+                <div class="preview-time preview-time-right">01:08</div>
+                <div class="preview-wave"></div>
+                <div class="preview-controls">
+                  <span></span>
+                  <span></span>
+                  <strong></strong>
+                  <span></span>
+                  <span></span>
+                </div>
+                <div id="captionPreviewText" class="caption-preview-text">这是字幕预览位置</div>
+              </div>
+            </div>
+            <label class="range-field">
+              <span>模板 1</span>
+              <input class="caption-position" data-template="player" type="range" min="20" max="82" value="50" />
+              <em>50%</em>
+            </label>
+            <label class="range-field">
+              <span>模板 2</span>
+              <input class="caption-position" data-template="center-wave" type="range" min="20" max="82" value="68" />
+              <em>68%</em>
+            </label>
+            <label class="range-field">
+              <span>模板 3</span>
+              <input class="caption-position" data-template="minimal-wave" type="range" min="20" max="82" value="46" />
+              <em>46%</em>
+            </label>
+            <label class="range-field">
+              <span>模板 4</span>
+              <input class="caption-position" data-template="journal-wave" type="range" min="20" max="82" value="50" />
+              <em>50%</em>
+            </label>
+            <button id="saveCaptionPositionsBtn" class="save-caption-btn" type="button">保存字幕位置</button>
+          </div>
+        </div>
+
+        <label id="audioField" class="field">
+          <span>本地音频（可多选）</span>
+          <input id="audioFile" type="file" accept="audio/*" multiple />
+        </label>
+
+        <label class="field">
+          <span>背景图片库（可多选，批量时随机抽取）</span>
+          <input id="backgroundFile" type="file" accept="image/*" multiple />
+        </label>
+
+        <div class="tool-panel">
+          <div class="batch-results-head">
+            <strong>Unsplash 批量图片库</strong>
+            <button id="startUnsplashBtn" class="secondary-btn" type="button">开始拉图</button>
+          </div>
+          <label class="field">
+            <span>Unsplash Access Key</span>
+            <input id="unsplashAccessKey" type="password" placeholder="输入 Unsplash API Access Key" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>关键词（一行一个，或用逗号分隔）</span>
+            <textarea id="unsplashKeywords" rows="4" spellcheck="false">lonely night
+rain window
+ocean sunset
+city night
+dark bedroom
+walking alone
+mental health
+overthinking</textarea>
+          </label>
+          <div class="grid">
+            <label class="field">
+              <span>目标图片数量</span>
+              <input id="unsplashCount" type="number" min="1" max="5000" step="1" value="1000" />
+            </label>
+            <label class="field">
+              <span>图片方向</span>
+              <select id="unsplashOrientation">
+                <option value="portrait" selected>竖图</option>
+                <option value="landscape">横图</option>
+                <option value="squarish">方图</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid">
+            <label class="field">
+              <span>图片尺寸</span>
+              <select id="unsplashImageSize">
+                <option value="regular" selected>regular</option>
+                <option value="full">full</option>
+                <option value="small">small</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>单张间隔（毫秒）</span>
+              <input id="unsplashDelayMs" type="number" min="0" max="10000" step="50" value="350" />
+            </label>
+          </div>
+          <label class="field">
+            <span>保存目录</span>
+            <input id="unsplashOutputDir" type="text" placeholder="例如 H:\Podcast\backgrounds\unsplash-week-01" />
+          </label>
+          <div id="unsplashStatus" class="status">准备下载播客背景图片。</div>
+        </div>
+
+        <label class="field color-field">
+          <span>纯色背景板（未上传背景图时使用）</span>
+          <input id="backgroundColor" type="color" value="#1f4656" />
+        </label>
+
+        <label class="field">
+          <span>每条音频每个模板生成版本数</span>
+          <select id="variantCount">
+            <option value="1" selected>1 个版本</option>
+            <option value="2">2 个版本</option>
+            <option value="3">3 个版本</option>
+            <option value="4">4 个版本</option>
+            <option value="5">5 个版本</option>
+          </select>
+        </label>
+
+        <label id="autoTtsCheck" class="check">
+          <input id="autoTts" type="checkbox" checked />
+          <span>文案模式下自动生成配音</span>
+        </label>
+
+        <div id="ttsPanel" class="tts-panel">
+          <div class="section-title">自动配音</div>
+          <label class="field">
+            <span>配音平台</span>
+            <select id="ttsProvider">
+              <option value="elevenlabs" selected>ElevenLabs</option>
+              <option value="local">Windows 本地语音</option>
+            </select>
+          </label>
+
+          <label class="field elevenlabs-field">
+            <span>Voice ID</span>
+            <input id="elevenLabsVoiceId" type="text" placeholder="只需要填写声音 ID" />
+          </label>
+
+          <label class="field elevenlabs-field">
+            <span>模型</span>
+            <input id="elevenLabsModelId" type="text" value="eleven_multilingual_v2" />
+          </label>
+        </div>
+
+        <div id="status" class="status">准备好了。</div>
+        <div id="progressBox" class="progress-box" hidden>
+          <div class="progress-meta">
+            <span id="progressText">0%</span>
+            <span id="progressStage">准备中</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="preview">
+        <div class="phone">
+          <video id="resultVideo" controls playsinline></video>
+        </div>
+        <a id="downloadLink" class="download" href="#" download>下载当前预览视频</a>
+        <div id="batchResults" class="batch-results" hidden>
+          <div class="batch-results-head">
+            <strong>生成结果</strong>
+            <button id="downloadSelectedBtn" type="button">下载选中视频</button>
+          </div>
+          <div id="resultList" class="result-list"></div>
+        </div>
+        <div id="publishPanel" class="publish-panel" hidden>
+          <div class="batch-results-head">
+            <strong>GeeLark 发布</strong>
+            <button id="refreshGeeLarkPhonesBtn" type="button">刷新账号</button>
+          </div>
+          <div id="geelarkStatus" class="publish-status">正在读取 GeeLark 云手机...</div>
+          <div class="publish-status publish-mode-note">当前发布模式：矩阵轮转分配。按音频序号 + 模板序号轮流分配账号，同一音频的一轮模板使用同一个发布时间。</div>
+          <div class="geelark-filter-row">
+            <label class="field">
+              <span>分组筛选</span>
+              <select id="geelarkGroupFilter">
+                <option value="">全部分组</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>账号名称</span>
+              <input id="geelarkNameFilter" type="search" placeholder="输入账号名称/编号/备注" />
+            </label>
+          </div>
+          <div id="geelarkPhoneList" class="geelark-phone-list"></div>
+          <label class="field">
+            <span>TikTok 文案</span>
+            <textarea id="publishDesc" rows="4" spellcheck="false" placeholder="发布到 TikTok 的视频文案，支持 #tag"></textarea>
+          </label>
+          <label class="field">
+            <span>发布时间</span>
+            <input id="publishTime" type="datetime-local" />
+          </label>
+          <label class="field">
+            <span>间隔时间（分钟）</span>
+            <input id="publishIntervalMinutes" type="number" min="0" step="1" value="15" />
+          </label>
+          <button id="publishSelectedBtn" type="button">发布选中视频</button>
+          <div id="publishResult" class="publish-status"></div>
+          <a class="stats-link" href="/stats">查看发布记录与数据统计</a>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

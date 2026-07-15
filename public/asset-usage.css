@@ -1,0 +1,42 @@
+body.usage-page { min-height: 100vh; background: #0d0f12; color: #eef0f2; }
+.usage-shell { width: min(1420px, calc(100% - 250px)); margin: 0 36px 60px 214px; padding-top: 30px; }
+.usage-header { min-height: 96px; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding-bottom: 22px; border-bottom: 1px solid #282d33; }
+.usage-kicker { margin: 0 0 5px; color: #d9f26a; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
+.usage-header h1 { margin: 0; font-size: 25px; }
+.usage-header p:not(.usage-kicker) { margin: 6px 0 0; color: #9098a2; font-size: 12px; }
+.usage-actions { display: flex; align-items: end; gap: 8px; }
+.usage-group-picker { display: grid; gap: 5px; color: #9ea6ae; font-size: 10px; }
+.usage-group-picker select { width: 260px; height: 36px; padding: 0 10px; border: 1px solid #30363e; border-radius: 5px; color: #eef0f2; background: #161a1f; font-size: 12px; }
+.usage-actions button { height: 36px; padding: 0 12px; border: 1px solid #3b434d; border-radius: 5px; color: #e8eaed; background: #1c2127; font-size: 12px; font-weight: 700; cursor: pointer; }
+.usage-status { margin: 14px 0; color: #98a1aa; font-size: 12px; }
+.usage-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+.usage-summary-grid article { min-height: 92px; padding: 15px; border: 1px solid #292f36; border-radius: 6px; background: #14171b; }
+.usage-summary-grid span, .usage-summary-grid strong, .usage-summary-grid small { display: block; }
+.usage-summary-grid span { color: #939ca5; font-size: 11px; }
+.usage-summary-grid strong { margin-top: 9px; font-size: 22px; }
+.usage-summary-grid small { margin-top: 3px; color: #737c85; font-size: 10px; }
+.usage-panel { margin-top: 16px; border: 1px solid #292f36; border-radius: 6px; background: #14171b; overflow: hidden; }
+.usage-panel-head { min-height: 70px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid #292f36; }
+.usage-panel-head h2 { margin: 0; font-size: 15px; }
+.usage-panel-head p { margin: 4px 0 0; color: #8d969f; font-size: 11px; }
+.usage-legend { display: flex; gap: 8px; font-size: 10px; }
+.usage-legend span { padding: 4px 7px; border-radius: 4px; }
+.risk-low { color: #87d6a5; background: #15251b; }.risk-medium { color: #f0c36b; background: #2a2112; }.risk-high { color: #f28c86; background: #2a1717; }
+.usage-table-wrap { overflow-x: auto; }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.usage-table th { height: 42px; padding: 0 14px; color: #87919b; font-size: 10px; text-align: left; font-weight: 700; white-space: nowrap; }
+.usage-table td { min-height: 48px; padding: 10px 14px; border-top: 1px solid #22272e; color: #c7ccd1; }
+.usage-table td strong { color: #eef0f2; }.usage-table small { color: #77808a; font-size: 10px; }
+.reuse-cell { display: grid; gap: 3px; min-width: 104px; }
+.reuse-cell strong { color: #d7dbde; font-size: 11px; font-weight: 650; }
+.reuse-cell small { color: #77808a; font-size: 10px; }
+.usage-file { max-width: 390px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-progress { min-width: 115px; display: grid; grid-template-columns: 72px auto; gap: 8px; align-items: center; }
+.usage-progress > span { height: 5px; overflow: hidden; background: #252b31; }
+.usage-progress > span i { display: block; height: 100%; background: #ecb95f; }
+.usage-progress.actual > span i { background: #74b7ff; }
+.usage-progress.fresh > span i { background: #7fd49d; }
+.usage-progress b { color: #d5d9dd; font-size: 11px; font-weight: 600; }
+.usage-risk { display: inline-flex; min-height: 22px; align-items: center; padding: 0 7px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+.usage-risk.low { color: #87d6a5; background: #15251b; }.usage-risk.medium { color: #f0c36b; background: #2a2112; }.usage-risk.high { color: #f28c86; background: #2a1717; }
+@media (max-width: 1180px) { .usage-shell { width: calc(100% - 220px); margin-left: 190px; }.usage-summary-grid { grid-template-columns: repeat(3, minmax(0,1fr)); } }

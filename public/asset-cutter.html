@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>视频素材切割</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="work-page cutter-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory">
+        <span>LF</span><b>Local Factory<small>内容自动化</small></b>
+      </a>
+      <a href="/reddit">Reddit 视频生成</a>
+      <a class="is-active" href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a href="/stats">发布记录</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/analytics?view=audio">音频表现</a>
+      <a href="/analytics-settings">抓取配置</a>
+    </nav>
+    <main class="shell single-shell">
+      <section class="editor cutter-editor">
+        <div class="topbar">
+          <div>
+            <h1>视频素材切割</h1>
+            <p>把长视频素材批量切成 60-90 秒左右的短素材组，后续 Reddit 混剪可直接调用。</p>
+          </div>
+          <div class="topbar-actions">
+            <button id="startCutBtn" type="button">开始切割</button>
+            <button id="stopCutBtn" class="secondary-btn" type="button" hidden>停止</button>
+          </div>
+        </div>
+
+        <section class="tool-panel cutter-cut-panel">
+          <div class="section-title">切割参数</div>
+        <label class="field">
+          <span>素材组名称</span>
+          <input id="groupName" type="text" placeholder="例如 minecraft-week-01" />
+        </label>
+        <label class="field">
+          <span>长视频输入目录</span>
+          <div class="path-picker">
+            <input id="inputDir" type="text" placeholder="例如 H:\Reddit\long-videos\minecraft" />
+            <button type="button" data-pick-directory="inputDir">选择目录</button>
+          </div>
+        </label>
+        <label class="check">
+          <input id="includeSubfolders" type="checkbox" checked />
+          <span>读取输入目录下的子文件夹</span>
+        </label>
+        <label class="field">
+          <span>切割后保存目录</span>
+          <div class="path-picker">
+            <input id="outputDir" type="text" placeholder="例如 H:\Reddit\assets\minecraft-week-01" />
+            <button type="button" data-pick-directory="outputDir">选择目录</button>
+          </div>
+        </label>
+
+        <div class="grid">
+          <label class="field">
+            <span>每段最短秒数</span>
+            <input id="minSeconds" type="number" min="15" max="180" step="1" value="60" />
+          </label>
+          <label class="field">
+            <span>每段最长秒数</span>
+            <input id="maxSeconds" type="number" min="15" max="240" step="1" value="90" />
+          </label>
+        </div>
+
+        <div class="grid">
+          <label class="field">
+            <span>每个长视频最多读取秒数</span>
+            <input id="sourceLimitSeconds" type="number" min="0" step="1" value="0" />
+          </label>
+          <label class="field">
+            <span>编码模式</span>
+            <select id="quality">
+              <option value="fast" selected>快速切割（不重新编码）</option>
+              <option value="quality">转码为竖版视频</option>
+            </select>
+          </label>
+        </div>
+
+
+        </section>
+
+        <div class="tool-panel cutter-classify-panel">
+          <div class="section-title">文件夹分类与分配</div>
+          <label class="field">
+            <span>来源文件夹</span>
+            <div class="path-picker">
+              <input id="classifySourceDir" type="text" placeholder="例如 H:\素材\待分类" />
+              <button type="button" data-pick-directory="classifySourceDir">选择目录</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>保存文件夹</span>
+            <div class="path-picker">
+              <input id="classifySaveDir" type="text" placeholder="例如 H:\素材\已分类" />
+              <button type="button" data-pick-directory="classifySaveDir">选择目录</button>
+            </div>
+          </label>
+          <label class="check">
+            <input id="classifyOneLevel" type="checkbox" checked />
+            <span>将一级子文件夹作为整体分类或移动</span>
+          </label>
+          <div class="grid">
+            <label class="check"><input id="classifyVideo" type="checkbox" checked /><span>视频</span></label>
+            <label class="check"><input id="classifyAudio" type="checkbox" /><span>音频</span></label>
+          </div>
+          <label class="check"><input id="classifyOther" type="checkbox" /><span>其他文件或文件夹</span></label>
+          <div class="mode-switch">
+            <label><input name="classifyAction" type="radio" value="copy" checked /><span>复制到目标文件夹</span></label>
+            <label><input name="classifyAction" type="radio" value="move" /><span>移动到目标文件夹</span></label>
+          </div>
+          <div class="topbar-actions">
+            <button id="startClassifyBtn" type="button">开始分类</button>
+            <button id="stopClassifyBtn" class="secondary-btn" type="button" hidden>停止分类</button>
+          </div>
+        </div>
+
+        <div id="status" class="status">准备好了。</div>
+        <div id="progressBox" class="progress-box" hidden>
+          <div class="progress-meta">
+            <span id="progressText">0%</span>
+            <span id="progressStage">准备中</span>
+          </div>
+          <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+        </div>
+      </section>
+    </main>
+    <script src="/asset-cutter.js"></script>
+  </body>
+</html>

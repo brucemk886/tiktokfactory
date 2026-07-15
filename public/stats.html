@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>发布记录与数据统计</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="work-page stats-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory">
+        <span>LF</span><b>Local Factory<small>内容自动化</small></b>
+      </a>
+      <a href="/reddit">Reddit 视频生成</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a class="is-active" href="/stats">发布记录</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/analytics?view=audio">音频表现</a>
+      <a href="/analytics-settings">抓取配置</a>
+    </nav>
+    <main class="stats-shell">
+      <section class="stats-panel">
+        <div class="stats-topbar">
+          <div>
+            <h1>发布记录与数据统计</h1>
+            <p>先保存 GeeLark 发布记录，后续可继续接入 TikTok 播放、点赞、评论等数据。</p>
+          </div>
+          <a class="stats-back-link" href="/tasks">返回自动任务</a>
+        </div>
+
+        <div class="stats-filters">
+          <label class="field">
+            <span>时间范围</span>
+            <select id="statsRange">
+              <option value="1d">最近 1 天</option>
+              <option value="7d" selected>最近 7 天</option>
+              <option value="30d">最近 30 天</option>
+              <option value="all">全部记录</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>分组</span>
+            <select id="statsGroup">
+              <option value="">全部分组</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>搜索</span>
+            <input id="statsAccount" type="search" placeholder="账号、视频、文案、任务 ID" />
+          </label>
+          <button id="refreshStatsBtn" type="button">刷新记录</button>
+        </div>
+
+        <div class="stats-cards">
+          <div class="stats-card">
+            <span>发布视频</span>
+            <strong id="statRecordCount">0</strong>
+          </div>
+          <div class="stats-card">
+            <span>发布任务</span>
+            <strong id="statTaskCount">0</strong>
+          </div>
+          <div class="stats-card">
+            <span>账号数</span>
+            <strong id="statAccountCount">0</strong>
+          </div>
+          <div class="stats-card">
+            <span>分组数</span>
+            <strong id="statGroupCount">0</strong>
+          </div>
+        </div>
+
+        <div id="statsStatus" class="publish-status">正在读取发布记录...</div>
+        <section id="retryPanel" class="stats-retry-panel" hidden>
+          <div class="stats-retry-head">
+            <div><strong>待重新执行</strong><span>仅展示发布失败或状态待核实的视频</span></div>
+            <span id="retryCount" class="retry-count">0 条</span>
+          </div>
+          <div id="retryList" class="stats-retry-list"></div>
+        </section>
+        <div class="stats-table-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>排期时间</th>
+                <th>账号</th>
+                <th>分组</th>
+                <th>音频</th>
+                <th>模板</th>
+                <th>视频</th>
+                <th>任务 ID</th>
+                <th>状态</th>
+                <th>链接</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="statsRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/stats.js"></script>
+  </body>
+</html>

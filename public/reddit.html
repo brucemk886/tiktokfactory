@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reddit 内容工厂</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="work-page reddit-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory">
+        <span>LF</span><b>Local Factory<small>内容自动化</small></b>
+      </a>
+      <a class="is-active" href="/reddit">Reddit 视频生成</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a href="/stats">发布记录</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/analytics?view=audio">音频表现</a>
+      <a href="/analytics-settings">抓取配置</a>
+    </nav>
+    <main class="shell">
+      <section class="editor reddit-editor">
+        <div class="topbar">
+          <div>
+            <h1>Reddit 内容工厂</h1>
+            <p>选择素材目录和音频目录，批量混剪、字幕识别、去重增强、GeeLark 发布。</p>
+          </div>
+          <div class="topbar-actions">
+            <a class="topbar-link-btn" href="/tasks">自动任务</a>
+            <a class="topbar-link-btn" href="/">播客生成器</a>
+            <button id="startBtn" type="button">开始混剪</button>
+            <button id="stopBtn" class="secondary-btn" type="button" hidden>停止</button>
+          </div>
+        </div>
+
+        <div class="tool-panel">
+          <div class="section-title">目录设置</div>
+          <label class="field">
+            <span>视频素材目录</span>
+            <div class="path-picker">
+              <input id="videoDir" type="text" placeholder="例如 H:\Reddit\素材库\minecraft-week-01" />
+              <button type="button" data-pick-directory="videoDir">Browse</button>
+            </div>
+          </label>
+          <label class="check">
+            <input id="includeVideoSubfolders" type="checkbox" checked />
+            <span>加载视频素材目录下的子文件夹</span>
+          </label>
+          <label class="field">
+            <span>音频目录</span>
+            <div class="path-picker">
+              <input id="audioDir" type="text" placeholder="例如 H:\Reddit\audio" />
+              <button type="button" data-pick-directory="audioDir">Browse</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>背景音乐目录（可选）</span>
+            <div class="path-picker">
+              <input id="backgroundMusicDir" type="text" placeholder="例如 H:\Reddit\bgm，不填则不加背景音乐" />
+              <button type="button" data-pick-directory="backgroundMusicDir">Browse</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>保存目录（可选）</span>
+            <div class="path-picker">
+              <input id="saveDir" type="text" placeholder="例如 H:\Reddit\outputs，默认保存在项目 outputs" />
+              <button type="button" data-pick-directory="saveDir">Browse</button>
+            </div>
+          </label>
+        </div>
+
+        <div class="tool-panel">
+          <div class="section-title">素材组选择</div>
+          <label class="field">
+            <span>账号组素材库</span>
+            <select id="assetGroupSelect"><option value="">读取素材组中...</option></select>
+            <small id="assetGroupStats">选择素材组后，只从该二级文件夹及其子文件夹抽取。</small>
+          </label>
+        </div>
+
+        <div class="grid">
+          <label class="field">
+            <span>生成视频总条数</span>
+            <input id="totalVideos" type="number" min="1" max="300" step="1" value="40" />
+          </label>
+          <label class="field">
+            <span>编码模式</span>
+            <select id="quality">
+              <option value="fast" selected>更快</option>
+              <option value="quality">更清晰</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="tool-panel">
+          <div class="section-title">素材抽取规则</div>
+          <div class="mode-switch">
+            <label>
+              <input name="segmentMode" type="radio" value="fixed" checked />
+              <span>固定秒数</span>
+            </label>
+            <label>
+              <input name="segmentMode" type="radio" value="ratio" />
+              <span>按音频时长比例</span>
+            </label>
+          </div>
+          <label id="fixedSecondsField" class="field">
+            <span>每段素材时长（秒）</span>
+            <input id="segmentSeconds" type="number" min="2" max="18" step="1" value="5" />
+          </label>
+          <label id="ratioField" class="field" hidden>
+            <span>每段素材占音频时长比例（%）</span>
+            <input id="segmentRatio" type="number" min="1" max="50" step="1" value="10" />
+          </label>
+        </div>
+
+        <div class="grid">
+          <label class="field">
+            <span>字幕位置（%）</span>
+            <input id="subtitleYPercent" type="number" min="38" max="82" step="1" value="66" />
+          </label>
+          <label class="field">
+            <span>字幕字号</span>
+            <input id="subtitleFontSize" type="number" min="42" max="92" step="2" value="62" />
+          </label>
+        </div>
+        <label class="field">
+          <span>字幕动画模式</span>
+          <select id="subtitleAnimationMode">
+            <option value="sentence" selected>普通整句字幕</option>
+            <option value="word-highlight">逐词高亮</option>
+          </select>
+        </label>
+        <button id="saveSubtitleSettingsBtn" class="secondary-btn" type="button">保存字幕设置</button>
+        <label class="check">
+          <input id="autoCaptions" type="checkbox" checked />
+          <span>使用 ElevenLabs 识别字幕，并按音频内容缓存</span>
+        </label>
+
+        <details class="tool-panel collapse-panel">
+          <summary>素材去重增强</summary>
+          <div class="batch-results-head">
+            <strong>每个素材片段随机微调</strong>
+            <button id="saveDedupSettingsBtn" class="secondary-btn" type="button">保存设置</button>
+          </div>
+          <label class="check">
+            <input id="dedupEnabled" type="checkbox" checked />
+            <span>启用素材去重增强</span>
+          </label>
+          <div class="grid">
+            <label class="field"><span>随机缩放最小值</span><input id="dedupScaleMin" type="number" min="1" max="1.3" step="0.01" value="1.03" /></label>
+            <label class="field"><span>随机缩放最大值</span><input id="dedupScaleMax" type="number" min="1" max="1.3" step="0.01" value="1.08" /></label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>旋转最小角度</span><input id="dedupRotateMin" type="number" min="-5" max="0" step="0.1" value="-0.8" /></label>
+            <label class="field"><span>旋转最大角度</span><input id="dedupRotateMax" type="number" min="0" max="5" step="0.1" value="0.8" /></label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>亮度最小值</span><input id="dedupBrightnessMin" type="number" min="-0.2" max="0.2" step="0.01" value="-0.03" /></label>
+            <label class="field"><span>亮度最大值</span><input id="dedupBrightnessMax" type="number" min="-0.2" max="0.2" step="0.01" value="0.04" /></label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>对比度最小值</span><input id="dedupContrastMin" type="number" min="0.7" max="1.5" step="0.01" value="0.96" /></label>
+            <label class="field"><span>对比度最大值</span><input id="dedupContrastMax" type="number" min="0.7" max="1.5" step="0.01" value="1.06" /></label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>饱和度最小值</span><input id="dedupSaturationMin" type="number" min="0.5" max="1.8" step="0.01" value="0.95" /></label>
+            <label class="field"><span>饱和度最大值</span><input id="dedupSaturationMax" type="number" min="0.5" max="1.8" step="0.01" value="1.12" /></label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>镜像概率（%）</span><input id="dedupMirrorChance" type="number" min="0" max="100" step="1" value="30" /></label>
+            <label class="field"><span>锐化强度</span><input id="dedupSharpen" type="number" min="0" max="1" step="0.05" value="0.2" /></label>
+          </div>
+          <div class="grid">
+            <label class="field"><span>画面变速最小值</span><input id="dedupSpeedMin" type="number" min="0.85" max="1.15" step="0.01" value="0.96" /></label>
+            <label class="field"><span>画面变速最大值</span><input id="dedupSpeedMax" type="number" min="0.85" max="1.15" step="0.01" value="1.04" /></label>
+          </div>
+          <label class="field"><span>蒙层素材目录（可选）</span><div class="path-picker">
+              <input id="dedupOverlayDir" type="text" placeholder="支持 png/jpg/gif/mp4/mov" />
+              <button type="button" data-pick-directory="dedupOverlayDir">选择目录</button>
+            </div></label>
+          <div class="grid">
+            <label class="field"><span>蒙层透明度</span><input id="dedupOverlayOpacity" type="number" min="0" max="1" step="0.01" value="0.01" /></label>
+            <label class="field"><span>每条视频叠加数量</span><input id="dedupOverlayCount" type="number" min="0" max="50" step="1" value="0" /></label>
+          </div>
+          <div id="dedupStatus" class="status">默认去重参数已准备好，调整后点击保存设置即可长期使用。</div>
+        </details>
+
+<div id="status" class="status">准备好了。</div>
+        <div id="progressBox" class="progress-box" hidden>
+          <div class="progress-meta">
+            <span id="progressText">0%</span>
+            <span id="progressStage">准备中</span>
+          </div>
+          <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+        </div>
+      </section>
+
+      <section class="preview">
+        <div class="phone"><video id="resultVideo" controls playsinline></video></div>
+        <a id="downloadLink" class="download" href="#" download>下载当前预览视频</a>
+        <div id="batchResults" class="batch-results" hidden>
+          <div class="batch-results-head">
+            <strong>混剪结果</strong>
+            <button id="downloadSelectedBtn" type="button">下载选中视频</button>
+          </div>
+          <div id="resultList" class="result-list"></div>
+        </div>
+        <div id="publishPanel" class="publish-panel" hidden>
+          <div class="batch-results-head">
+            <strong>GeeLark 发布</strong>
+            <button id="refreshGeeLarkPhonesBtn" type="button">刷新账号</button>
+          </div>
+          <div id="geelarkStatus" class="publish-status">正在读取 GeeLark 云手机...</div>
+          <div class="geelark-filter-row">
+            <label class="field"><span>分组筛选</span><select id="geelarkGroupFilter"><option value="">全部分组</option></select></label>
+            <label class="field"><span>账号名称</span><input id="geelarkNameFilter" type="search" placeholder="输入账号名称/编号/备注" /></label>
+          </div>
+          <button id="selectVisibleGeeLarkBtn" class="secondary-btn" type="button">筛选后全选</button>
+          <div id="geelarkPhoneList" class="geelark-phone-list"></div>
+          <label class="field"><span>TikTok 文案</span><textarea id="publishDesc" rows="4" spellcheck="false" placeholder="发布到 TikTok 的视频文案，支持 #tag"></textarea></label>
+          <label class="field"><span>发布时间</span><input id="publishTime" type="datetime-local" /></label>
+          <label class="field"><span>间隔时间（分钟）</span><input id="publishIntervalMinutes" type="number" min="0" step="1" value="15" /></label>
+          <button id="publishSelectedBtn" type="button">发布选中视频</button>
+          <div id="publishResult" class="publish-status"></div>
+          <a class="stats-link" href="/stats">查看发布记录与数据统计</a>
+        </div>
+      </section>
+    </main>
+
+    <aside id="redditHelp" class="floating-help" data-open="false">
+      <button id="redditHelpToggle" class="floating-help-toggle" type="button" aria-expanded="false">使用提示</button>
+      <div class="floating-help-panel">
+        <div class="floating-help-head">
+          <strong>Reddit 混剪流程</strong>
+          <button id="redditHelpClose" type="button" aria-label="关闭">×</button>
+        </div>
+        <ol>
+          <li>填写视频素材目录、音频目录；需要读子文件夹就勾选加载子文件夹。</li>
+          <li>背景音乐目录可选，会随机抽一首低音量铺在原音频下面。</li>
+          <li>设置生成视频总条数，音频会按顺序循环使用直到达到目标数量。</li>
+          <li>素材去重增强默认折叠，展开后可调放大、旋转、镜像、调色等参数。</li>
+          <li>生成后勾选视频和 GeeLark 账号，设置文案、时间和间隔后发布。</li>
+        </ol>
+        <p>素材复用统计按 5 秒区间记录，重复用过的片段会降低下一次被抽中的概率。</p>
+      </div>
+    </aside>
+
+    <script src="/reddit.js"></script>
+  </body>
+</html>

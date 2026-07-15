@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TikTok 抓取配置</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/analytics.css" />
+  </head>
+  <body class="work-page analytics-page settings-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+      <a href="/reddit">Reddit 视频生成</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a href="/stats">发布记录</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/analytics?view=audio">音频表现</a>
+      <a class="is-active" href="/analytics-settings">抓取配置</a>
+    </nav>
+
+    <main class="settings-shell">
+      <header class="analytics-header">
+        <div><p class="analytics-kicker">AUTOMATED COLLECTION</p><h1>数据抓取配置</h1><p>每天按设定时间读取 GeeLark 当前账号，再抓取所选分组的公开视频数据。</p></div>
+        <a class="secondary-btn action-link" href="/analytics">返回数据分析</a>
+      </header>
+
+      <section class="config-layout">
+        <article class="config-card source-card">
+          <div class="config-card-head"><span>01</span><div><strong>数据源</strong><small>TikTokAPI.store 免费账户每天100次请求</small></div><b id="sourceState">读取中</b></div>
+          <label class="config-field"><span>API Key（每行一个）</span><textarea id="apiKeyInput" rows="3" autocomplete="off" placeholder="每行填写一个Key；留空保存不会删除现有Key"></textarea><small id="apiKeyHint">正在读取配置...</small></label>
+        </article>
+
+        <article class="config-card schedule-config-card">
+          <div class="config-card-head"><span>02</span><div><strong>执行时间</strong><small>电脑和本地服务需要在执行时间保持开启</small></div></div>
+          <div class="schedule-fields">
+            <label class="config-field"><span>每日抓取时间</span><input id="runTimeInput" type="time" value="02:00" /></label>
+            <label class="switch-control"><input id="autoFetchInput" type="checkbox" /><i></i><span>启用每日自动抓取</span></label>
+          </div>
+          <div class="next-run-preview"><span>下一次执行</span><strong id="nextRunPreview">保存后计算</strong></div>
+        </article>
+
+        <article class="config-card groups-card">
+          <div class="config-card-head"><span>03</span><div><strong>GeeLark 账号组</strong><small>执行时会重新读取账号，分组中的账号增删会自动同步</small></div><b id="selectionCount">已选 0 组 / 0 账号</b></div>
+          <div class="group-tools"><input id="groupSearch" type="search" placeholder="搜索账号组" /><button id="selectVisibleBtn" class="secondary-btn" type="button">全选筛选结果</button><button id="clearGroupsBtn" class="secondary-btn" type="button">清空</button></div>
+          <div id="groupOptions" class="config-group-grid"><div class="config-loading">正在从 GeeLark 读取账号组...</div></div>
+          <div id="quotaWarning" class="quota-warning" hidden></div>
+        </article>
+      </section>
+
+      <footer class="config-footer"><div id="saveStatus">配置尚未修改。</div><button id="saveSettingsBtn" class="primary-btn" type="button">保存抓取配置</button></footer>
+    </main>
+    <script type="module" src="/analytics-settings.js"></script>
+  </body>
+</html>

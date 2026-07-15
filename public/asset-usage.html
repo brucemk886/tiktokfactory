@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>素材使用率</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/asset-usage.css" />
+  </head>
+  <body class="usage-page work-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory">
+        <span>LF</span><b>Local Factory<small>内容自动化</small></b>
+      </a>
+      <a href="/reddit">Reddit 视频生成</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a class="is-active" href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a href="/stats">发布记录</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/analytics?view=audio">音频表现</a>
+      <a href="/analytics-settings">抓取配置</a>
+    </nav>
+    <main class="usage-shell">
+      <header class="usage-header">
+        <div>
+          <p class="usage-kicker">ASSET INTELLIGENCE</p>
+          <h1>素材使用率</h1>
+          <p>同时查看真实使用时长和5秒片段触达情况，避免把素材库误判为已经用完。</p>
+        </div>
+        <div class="usage-actions">
+          <label class="usage-group-picker"><span>素材组</span><select id="groupSelect"></select></label>
+          <button id="reindexUsageBtn" type="button">更新当前账号组</button>
+          <button id="refreshUsageBtn" type="button">刷新素材组</button>
+        </div>
+      </header>
+
+      <div id="usageStatus" class="usage-status">正在读取素材使用记录...</div>
+      <section class="usage-summary-grid" aria-label="素材组概览">
+        <article><span>视频素材</span><strong id="totalAssets">0</strong><small>条</small></article>
+        <article><span>素材总时长</span><strong id="totalDuration">0m</strong><small>可用库存</small></article>
+        <article><span>实际使用率</span><strong id="actualUsePercent">0%</strong><small>已使用时长 / 总时长</small></article>
+        <article><span>5秒片段触达率</span><strong id="coveragePercent">0%</strong><small>触达过的5秒区间</small></article>
+        <article><span>已生成视频</span><strong id="generatedVideos">0</strong><small>当前素材组</small></article>
+      </section>
+
+      <section class="usage-panel">
+        <div class="usage-panel-head">
+          <div><h2>子文件夹使用情况</h2><p>实际使用率看消耗了多少时长；5秒片段触达率看随机抽取覆盖到了多少区间。</p></div>
+          <div class="usage-legend"><span class="risk-low">低复用</span><span class="risk-medium">需关注</span><span class="risk-high">高复用</span></div>
+        </div>
+        <div class="usage-table-wrap">
+          <table class="usage-table">
+            <thead>
+              <tr>
+                <th>子文件夹</th>
+                <th>素材数</th>
+                <th>总时长</th>
+                <th>已使用片段</th>
+                <th>实际使用率</th>
+                <th>5秒片段触达率</th>
+                <th>重复5秒区间</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="folderRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="usage-panel">
+        <div class="usage-panel-head"><div><h2>高复用素材</h2><p>这些源视频的5秒片段出现次数较高，后续抽取会自动降权。</p></div></div>
+        <div class="usage-table-wrap">
+          <table class="usage-table compact-table">
+            <thead>
+              <tr><th>视频文件</th><th>子文件夹</th><th>时长</th><th>抽取次数</th><th>实际使用率</th><th>5秒片段触达率</th><th>重复5秒区间</th><th>状态</th></tr>
+            </thead>
+            <tbody id="assetRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="/asset-usage.js"></script>
+  </body>
+</html>

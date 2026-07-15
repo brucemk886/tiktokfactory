@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TikTok 数据分析</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/analytics.css" />
+  </head>
+  <body class="work-page analytics-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory">
+        <span>LF</span><b>Local Factory<small>内容自动化</small></b>
+      </a>
+      <a href="/reddit">Reddit 视频生成</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a href="/stats">发布记录</a>
+      <a id="analyticsNav" class="is-active" href="/analytics">数据分析</a>
+      <a id="audioAnalyticsNav" href="/analytics?view=audio">音频表现</a>
+      <a href="/analytics-settings">抓取配置</a>
+    </nav>
+
+    <main class="analytics-shell">
+      <header class="analytics-header">
+        <div>
+          <p class="analytics-kicker">PERFORMANCE INTELLIGENCE</p>
+          <h1 id="pageTitle">TikTok 数据分析</h1>
+          <p id="pageDescription">每天抓取一次公开视频表现，并与本地发布记录、音频和素材组自动关联。</p>
+        </div>
+        <div class="header-actions">
+          <span id="syncState" class="sync-state">尚未抓取</span>
+          <a class="secondary-btn action-link" href="/analytics-settings">抓取配置</a>
+        </div>
+      </header>
+
+      <section class="period-overview dashboard-only" aria-label="周期数据概览">
+        <article data-period-card="today"><div><span>今天发布</span><strong id="todayVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="todayViews">0</dd></div><div><dt>均播</dt><dd id="todayAverage">0</dd></div><div><dt>互动率</dt><dd id="todayEngagement">0%</dd></div></dl></article>
+        <article data-period-card="yesterday"><div><span>昨天发布</span><strong id="yesterdayVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="yesterdayViews">0</dd></div><div><dt>均播</dt><dd id="yesterdayAverage">0</dd></div><div><dt>互动率</dt><dd id="yesterdayEngagement">0%</dd></div></dl></article>
+        <article class="is-selected" data-period-card="7d"><div><span>最近7天发布</span><strong id="sevenDaysVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="sevenDaysViews">0</dd></div><div><dt>均播</dt><dd id="sevenDaysAverage">0</dd></div><div><dt>互动率</dt><dd id="sevenDaysEngagement">0%</dd></div></dl></article>
+      </section>
+
+      <section class="filter-bar">
+        <label><span>明细周期</span><select id="periodFilter"><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d" selected>最近7天</option><option value="30d">最近30天</option><option value="all">全部</option></select></label>
+        <label><span>账号组</span><select id="groupFilter"><option value="">全部账号组</option></select></label>
+        <label class="search-field"><span>搜索账号</span><input id="accountFilter" type="search" placeholder="输入 TikTok 用户名" /></label>
+        <label><span>视频排序</span><select id="sortFilter"><option value="views">播放量</option><option value="likes">点赞量</option><option value="engagement">互动率</option><option value="newest">发布时间</option></select></label>
+        <button id="refreshBtn" class="secondary-btn" type="button">刷新页面</button>
+      </section>
+
+      <section class="metric-grid dashboard-only" aria-label="数据概览">
+        <article><span>已抓取视频</span><strong id="videoCount">0</strong><small id="matchedCount">0 条已匹配本地记录</small></article>
+        <article><span>总播放量</span><strong id="totalViews">0</strong><small>当前筛选范围</small></article>
+        <article><span>总点赞</span><strong id="totalLikes">0</strong><small>公开互动数据</small></article>
+        <article><span>评论 / 分享</span><strong id="commentShareCount">0</strong><small>评论与分享合计</small></article>
+        <article><span>综合互动率</span><strong id="engagementRate">0%</strong><small>赞评转藏 ÷ 播放</small></article>
+      </section>
+
+      <div id="pageStatus" class="page-status">正在读取本地数据...</div>
+
+      <section class="analytics-grid dashboard-only">
+        <article class="data-panel account-panel">
+          <div class="panel-head"><div><strong>账号表现</strong><span>用于识别持续高表现和需要停更的账号</span></div><span id="accountCountBadge" class="count-badge">0 个</span></div>
+          <div class="table-wrap"><table><thead><tr><th>账号</th><th>视频</th><th>播放</th><th>均播</th><th>互动率</th><th>最后抓取</th></tr></thead><tbody id="accountRows"></tbody></table></div>
+        </article>
+
+        <article class="data-panel quota-panel">
+          <div class="panel-head"><div><strong>自动抓取</strong><span>TikTokAPI.store · 每日100次</span></div></div>
+          <div id="quotaList" class="quota-list"></div>
+          <div class="schedule-card"><span>下次自动抓取</span><strong id="nextRunText">未启用</strong><small>失败数据不会覆盖上一次成功结果</small></div>
+        </article>
+      </section>
+
+      <section class="data-panel audio-panel">
+        <div class="panel-head"><div><strong>音频表现排行</strong><span>同一音频跨账号发布后的结果，用于决定继续放量或停用</span></div><span id="audioCountBadge" class="count-badge">0 条</span></div>
+        <div id="audioOverview" class="audio-overview">
+          <div class="audio-overview-metrics">
+            <article><span>音频总数</span><strong id="audioOverviewTotal">0</strong><small id="audioOverviewVideos">0 条发布视频</small></article>
+            <article class="overview-good"><span>可放量</span><strong id="audioOverviewStrong">0</strong><small>样本与播放均达标</small></article>
+            <article class="overview-watch"><span>待观察</span><strong id="audioOverviewWatch">0</strong><small>继续积累样本</small></article>
+            <article class="overview-weak"><span>建议停用</span><strong id="audioOverviewWeak">0</strong><small>低播占比较高</small></article>
+          </div>
+          <div class="audio-distribution" aria-label="音频表现分布">
+            <i id="audioStrongBar" class="distribution-good"></i>
+            <i id="audioWatchBar" class="distribution-watch"></i>
+            <i id="audioWeakBar" class="distribution-weak"></i>
+          </div>
+          <div class="audio-overview-lists">
+            <section><div class="overview-list-head"><strong>当前最佳</strong><span>综合均播与低播率</span></div><div id="audioBestList" class="overview-audio-list"></div></section>
+            <section><div class="overview-list-head"><strong>高风险音频</strong><span>优先检查或暂停</span></div><div id="audioRiskList" class="overview-audio-list"></div></section>
+          </div>
+        </div>
+        <div class="audio-workbench">
+          <aside id="audioRows" class="audio-rank-list"></aside>
+          <section class="audio-detail">
+            <div id="audioDetailEmpty" class="audio-empty">选择左侧音频，查看发布视频和播放原音频。</div>
+            <div id="audioDetailPanel" hidden>
+              <div class="audio-detail-head">
+                <div>
+                  <strong id="audioDetailTitle">-</strong>
+                  <span id="audioDetailMeta">-</span>
+                </div>
+                <audio id="audioPlayer" controls preload="none"></audio>
+              </div>
+              <div class="table-wrap audio-video-wrap">
+                <table class="audio-video-table">
+                  <thead><tr><th>发布时间</th><th>账号</th><th>播放</th><th>互动</th><th>本地成片</th><th>TikTok</th></tr></thead>
+                  <tbody id="audioVideoRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="data-panel video-panel dashboard-only">
+        <div class="panel-head"><div><strong>视频表现明细</strong><span>匹配发布记录后可追溯到账号组、音频与成片</span></div><span id="videoCountBadge" class="count-badge">0 条</span></div>
+        <div class="table-wrap video-table-wrap">
+          <table class="video-table">
+            <thead><tr><th>发布时间</th><th>账号 / 文案</th><th>播放</th><th>较上次</th><th>点赞</th><th>评论</th><th>分享</th><th>收藏</th><th>互动率</th><th>本地来源</th><th>链接</th><th>素材复用</th></tr></thead>
+            <tbody id="videoRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div id="reuseModal" class="reuse-modal" hidden>
+      <div class="reuse-dialog" role="dialog" aria-modal="true" aria-labelledby="reuseDialogTitle">
+        <header class="reuse-dialog-head">
+          <div><p>ASSET REUSE TRACE</p><h2 id="reuseDialogTitle">素材抽取复用详情</h2><span id="reuseDialogMeta">正在读取...</span></div>
+          <button id="closeReuseBtn" type="button" title="关闭">×</button>
+        </header>
+        <div id="reuseDialogBody" class="reuse-dialog-body"></div>
+      </div>
+    </div>
+    <script type="module" src="/analytics.js"></script>
+  </body>
+</html>

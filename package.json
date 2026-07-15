@@ -1,0 +1,20 @@
+{
+  "name": "podcast-batch-video-maker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node scripts/generate.js",
+    "start": "node scripts/server.js",
+    "remotion:studio": "remotion studio remotion/index.jsx"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.484",
+    "@remotion/media": "^4.0.484",
+    "@remotion/media-utils": "^4.0.484",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.484",
+    "zod": "4.3.6"
+  }
+}

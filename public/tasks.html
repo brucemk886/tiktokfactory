@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>自动任务中心</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+  </head>
+  <body class="tasks-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/tasks" aria-label="自动任务中心">
+        <span class="brand-mark">LF</span>
+        <span><strong>Local Factory</strong><small>内容自动化</small></span>
+      </a>
+      <nav class="tasks-nav" aria-label="主导航">
+        <a href="/reddit">Reddit 视频生成</a>
+        <a href="/asset-cutter">视频素材切割</a>
+        <a href="/asset-usage">素材使用率</a>
+        <a class="is-active" href="/tasks">自动任务</a>
+        <a href="/stats">发布记录</a>
+        <a href="/analytics">数据分析</a>
+        <a href="/analytics?view=audio">音频表现</a>
+        <a href="/analytics-settings">抓取配置</a>
+      </nav>
+      <div class="sidebar-safety">
+        <span class="live-dot"></span>
+        <div><strong>安全发布已开启</strong><small>查重、熔断、单次重试</small></div>
+      </div>
+    </aside>
+
+    <div class="tasks-workspace">
+      <header class="tasks-toolbar">
+        <div>
+          <p class="toolbar-kicker">WORKFLOW</p>
+          <h1>自动任务</h1>
+          <p>配置一次，后台完成生成、分配和发布。</p>
+        </div>
+        <div class="toolbar-actions">
+          <span id="createStatus" class="toolbar-status">准备创建任务</span>
+          <button id="createTaskBtn" class="primary-action" type="button">加入任务队列</button>
+        </div>
+      </header>
+
+      <main class="task-layout">
+        <section class="task-create-panel" aria-label="任务配置">
+          <div class="config-section">
+            <div class="section-heading">
+              <span class="section-index">01</span>
+              <div><h2>任务与素材</h2><p>依次选择视频素材来源、音频和可选的背景音乐。</p></div>
+            </div>
+            <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
+            <div class="source-directory-stack">
+              <label class="field"><span>素材来源</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
+              <div id="manualVideoSource" class="manual-video-source" hidden>
+                <label class="field"><span>临时视频素材目录</span><div class="path-picker"><input id="videoDir" type="text" placeholder="选择临时素材主目录" /><button type="button" data-pick-directory="videoDir">选择</button></div></label>
+                <label class="compact-check"><input id="includeSubfolders" type="checkbox" checked /><span>读取临时目录下的子文件夹</span></label>
+              </div>
+              <label class="field"><span>音频目录</span><div class="path-picker"><input id="audioDir" type="text" placeholder="选择待生成音频目录" /><button type="button" data-pick-directory="audioDir">选择</button></div></label>
+              <label class="field"><span>背景音乐目录 <em>可选</em></span><div class="path-picker"><input id="musicDir" type="text" placeholder="不使用可留空" /><button type="button" data-pick-directory="musicDir">选择</button></div></label>
+            </div>
+            <p class="retention-note">有成功发布记录的成片从计划发布时间起保留 48 小时；系统每 6 小时清理一次。待处理和未发布视频不会删除。</p>
+          </div>
+
+          <div class="config-section">
+            <div class="section-heading">
+              <span class="section-index">02</span>
+              <div><h2>生成规则</h2><p>设置总产量，音频会按顺序循环使用直到达到目标数量。</p></div>
+            </div>
+            <div class="grid controls-grid">
+              <label class="field"><span>生成视频总条数</span><div class="input-suffix"><input id="totalVideos" type="number" min="1" max="300" value="40" /><b>条</b></div></label>
+              <label class="field"><span>每段素材时长</span><div class="input-suffix"><input id="segmentSeconds" type="number" min="2" max="18" value="5" /><b>秒</b></div></label>
+              <label class="field"><span>字幕位置</span><div class="input-suffix"><input id="subtitleY" type="number" min="38" max="82" value="66" /><b>%</b></div></label>
+              <label class="field"><span>字幕字号</span><input id="subtitleSize" type="number" min="42" max="92" value="62" /></label>
+              <label class="field"><span>字幕效果</span><select id="subtitleMode"><option value="sentence">整句字幕</option><option value="word-highlight">逐词高亮</option></select></label>
+              <label class="field"><span>编码模式</span><select id="quality"><option value="fast">更快</option><option value="quality">更清晰</option></select></label>
+            </div>
+            <label class="compact-check"><input id="autoCaptions" type="checkbox" checked /><span>使用 ElevenLabs 识别字幕并复用缓存</span></label>
+            <details class="advanced-panel">
+              <summary><span>素材去重设置</span><small>默认读取上次保存的参数</small></summary>
+              <div class="grid controls-grid advanced-grid">
+                <label class="field"><span>缩放最小</span><input id="scaleMin" type="number" step="0.01" value="1.03" /></label>
+                <label class="field"><span>缩放最大</span><input id="scaleMax" type="number" step="0.01" value="1.08" /></label>
+                <label class="field"><span>旋转最小</span><input id="rotateMin" type="number" step="0.1" value="-0.8" /></label>
+                <label class="field"><span>旋转最大</span><input id="rotateMax" type="number" step="0.1" value="0.8" /></label>
+                <label class="field"><span>镜像概率</span><div class="input-suffix"><input id="mirrorChance" type="number" value="30" /><b>%</b></div></label>
+                <label class="field"><span>锐化强度</span><input id="sharpen" type="number" step="0.05" value="0.2" /></label>
+                <label class="field"><span>变速最小</span><input id="speedMin" type="number" step="0.01" value="0.96" /></label>
+                <label class="field"><span>变速最大</span><input id="speedMax" type="number" step="0.01" value="1.04" /></label>
+              </div>
+              <div class="advanced-actions">
+                <span id="dedupSaveStatus">修改后点击保存，后续任务会默认使用这组参数。</span>
+                <button id="saveDedupBtn" class="quiet-button" type="button">保存设置</button>
+              </div>
+            </details>
+          </div>
+
+          <div class="config-section publish-config">
+            <div class="section-heading section-heading-actions">
+              <span class="section-index">03</span>
+              <div><h2>GeeLark 发布</h2><p>筛选目标账号，设置文案和同账号发布时间间隔。</p></div>
+              <button id="refreshPhonesBtn" class="quiet-button" type="button">刷新账号</button>
+            </div>
+            <div class="publish-switch-row">
+              <label class="switch-control"><input id="autoPublish" type="checkbox" checked /><span class="switch-track"></span><span>生成完成后自动发布</span></label>
+              <span id="phoneStatus" class="account-status">正在读取账号...</span>
+            </div>
+            <div class="account-toolbar">
+              <label class="field"><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
+              <label class="field account-search"><span>搜索账号</span><input id="nameFilter" type="search" placeholder="名称、编号或备注" /></label>
+              <button id="selectVisibleBtn" class="quiet-button" type="button">全选筛选结果</button>
+              <span id="selectedAccountCount" class="selected-count">已选 0 个</span>
+            </div>
+            <div id="phoneList" class="geelark-phone-list compact-phone-list"></div>
+            <div class="caption-editor">
+              <div class="caption-editor-toolbar">
+                <strong>TikTok 文案</strong>
+                <select id="captionPresetSelect" aria-label="选择已保存文案"><option value="">临时文案</option></select>
+                <button id="addCaptionPresetBtn" class="quiet-button" type="button">新增当前</button>
+                <button id="updateCaptionPresetBtn" class="quiet-button" type="button">更新</button>
+                <button id="deleteCaptionPresetBtn" class="quiet-button danger-quiet" type="button">删除</button>
+              </div>
+              <textarea id="videoDesc" rows="2" placeholder="输入发布文案，支持 #tag"></textarea>
+              <span id="captionPresetStatus">可直接使用临时文案，或将常用标签保存到文案库。</span>
+            </div>
+            <div class="grid publish-grid">
+              <label class="field"><span>起始发布时间</span><input id="scheduleAt" type="datetime-local" /></label>
+              <label class="field"><span>同账号间隔</span><div class="input-suffix"><input id="intervalMinutes" type="number" min="0" value="15" /><b>分钟</b></div></label>
+              <label class="field"><span>单批调用上限</span><input id="batchLimit" type="number" min="1" value="300" /></label>
+              <label class="field"><span>每日计划发布上限</span><input id="dailyLimit" type="number" value="300" readonly /></label>
+            </div>
+            <p class="field-help">每日 300 条按 TikTok 计划发布日期分别计算，可以提前创建多天任务。</p>
+          </div>
+        </section>
+
+        <aside class="task-list-panel" aria-label="任务队列">
+          <div class="queue-header">
+            <div><p class="toolbar-kicker">QUEUE</p><h2>执行队列</h2><p id="safetySummary"></p></div>
+            <button id="refreshTasksBtn" class="quiet-button" type="button">刷新</button>
+          </div>
+          <div class="queue-metrics">
+            <div><span id="queuedCount">0</span><small>排队</small></div>
+            <div><span id="runningCount">0</span><small>执行中</small></div>
+            <div><span id="attentionCount">0</span><small>待处理</small></div>
+            <div><span id="doneCount">0</span><small>已完成</small></div>
+          </div>
+          <div id="taskList" class="auto-task-list"><div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div></div>
+        </aside>
+      </main>
+    </div>
+    <script src="/tasks.js"></script>
+  </body>
+</html>
