@@ -67,8 +67,9 @@ async function createTask() {
     const response = await fetch("/api/auto-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "创建任务失败。");
-    setCreateStatus(`任务已创建：${data.task.name}`);
-    await loadTasks();
+    setCreateStatus(`已加入队列：${data.task.name}`);
+    createTaskBtn.disabled = false;
+    void loadTasks();
   } catch (error) {
     setCreateStatus(error.message || "创建任务失败。");
   } finally {
@@ -97,6 +98,12 @@ function renderTasks(tasks) {
     taskList.innerHTML = '<div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div>';
     return;
   }
+  const queuedTasks = tasks.filter((task) => task.status === "queued").sort((a, b) => {
+    const scheduleDifference = Number(a.publish?.scheduleAt || 0) - Number(b.publish?.scheduleAt || 0);
+    return scheduleDifference || Number(a.createdAt) - Number(b.createdAt);
+  });
+  const queuedPositions = new Map(queuedTasks.map((task, index) => [task.id, index]));
+  const activeCount = tasks.some((task) => task.status === "running") ? 1 : 0;
   taskList.innerHTML = tasks.map((task) => {
     const progress = task.phase === "publishing" || task.phase === "retrying" ? task.publishProgress : task.progress;
     const current = Number(progress?.current) || 0;
@@ -112,10 +119,16 @@ function renderTasks(tasks) {
       : ["failed", "paused", "awaiting_review"].includes(task.status)
         ? `<button class="secondary-btn" data-action="resume" data-id="${escapeAttr(task.id)}">继续执行</button>` : "";
     const failureHtml = failures.length ? `<div class="manual-items"><strong>待人工处理</strong>${failures.map((item) => `<div class="manual-item"><span>${escapeHtml(item.fileName)}<small>${escapeHtml(item.message || item.status)}</small></span><button data-action="retry" data-task-id="${escapeAttr(task.id)}" data-record-id="${escapeAttr(item.recordId)}">重新发布</button></div>`).join("")}</div>` : "";
+    const queueAhead = task.status === "queued" ? activeCount + (queuedPositions.get(task.id) || 0) : 0;
+    const taskMessage = task.status === "queued"
+      ? queueAhead > 0
+        ? `排队等待中，前方 ${queueAhead} 个任务；完成后会自动开始。`
+        : "即将开始生成。"
+      : task.message || "等待执行";
     return `<article class="auto-task-item" data-status="${escapeAttr(task.status)}">
       <div class="task-item-head"><div><strong>${escapeHtml(task.name)}</strong><small>${formatTime(task.createdAt)}</small></div><div class="task-head-actions"><span class="task-status-badge">${escapeHtml(statusLabel(task.status))}</span>${actions}</div></div>
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
-      <p>${escapeHtml(task.message || "等待执行")}</p>
+      <p>${escapeHtml(taskMessage)}</p>
       <div class="task-counts"><span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>发布成功 ${task.publishSummary?.submitted || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
       ${scheduleHtml}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;

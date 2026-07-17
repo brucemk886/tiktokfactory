@@ -18,6 +18,7 @@
       <a href="/tasks">自动任务</a>
       <a href="/stats">发布记录</a>
       <a id="analyticsNav" class="is-active" href="/analytics">数据分析</a>
+      <a id="accountAnalyticsNav" href="/analytics?view=account">账号表现</a>
       <a id="audioAnalyticsNav" href="/analytics?view=audio">音频表现</a>
       <a href="/analytics-settings">抓取配置</a>
     </nav>
@@ -38,11 +39,11 @@
       <section class="period-overview dashboard-only" aria-label="周期数据概览">
         <article data-period-card="today"><div><span>今天发布</span><strong id="todayVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="todayViews">0</dd></div><div><dt>均播</dt><dd id="todayAverage">0</dd></div><div><dt>互动率</dt><dd id="todayEngagement">0%</dd></div></dl></article>
         <article data-period-card="yesterday"><div><span>昨天发布</span><strong id="yesterdayVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="yesterdayViews">0</dd></div><div><dt>均播</dt><dd id="yesterdayAverage">0</dd></div><div><dt>互动率</dt><dd id="yesterdayEngagement">0%</dd></div></dl></article>
-        <article class="is-selected" data-period-card="7d"><div><span>最近7天发布</span><strong id="sevenDaysVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="sevenDaysViews">0</dd></div><div><dt>均播</dt><dd id="sevenDaysAverage">0</dd></div><div><dt>互动率</dt><dd id="sevenDaysEngagement">0%</dd></div></dl></article>
+        <article data-period-card="7d"><div><span>最近7天发布</span><strong id="sevenDaysVideos">0 条</strong></div><dl><div><dt>播放</dt><dd id="sevenDaysViews">0</dd></div><div><dt>均播</dt><dd id="sevenDaysAverage">0</dd></div><div><dt>互动率</dt><dd id="sevenDaysEngagement">0%</dd></div></dl></article>
       </section>
 
       <section class="filter-bar">
-        <label><span>明细周期</span><select id="periodFilter"><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d" selected>最近7天</option><option value="30d">最近30天</option><option value="all">全部</option></select></label>
+        <label><span>明细周期</span><select id="periodFilter"><option value="today" selected>今天</option><option value="yesterday">昨天</option><option value="7d">最近7天</option><option value="30d">最近30天</option><option value="all">全部</option></select></label>
         <label><span>账号组</span><select id="groupFilter"><option value="">全部账号组</option></select></label>
         <label class="search-field"><span>搜索账号</span><input id="accountFilter" type="search" placeholder="输入 TikTok 用户名" /></label>
         <label><span>视频排序</span><select id="sortFilter"><option value="views">播放量</option><option value="likes">点赞量</option><option value="engagement">互动率</option><option value="newest">发布时间</option></select></label>
@@ -59,10 +60,33 @@
 
       <div id="pageStatus" class="page-status">正在读取本地数据...</div>
 
+      <section class="data-panel rank-panel dashboard-only">
+        <div class="panel-head"><div><strong>今日播放排行</strong><span>今天发布的视频按当前播放量从高到低排列</span></div><span id="todayRankCountBadge" class="count-badge">0 条</span></div>
+        <div class="table-wrap">
+          <table class="today-rank-table">
+            <thead><tr><th>排名</th><th>账号</th><th>播放</th><th>较上次</th><th>点赞</th><th>发布时间</th><th>链接</th><th>素材复用</th></tr></thead>
+            <tbody id="todayRankRows"></tbody>
+          </table>
+        </div>
+        <div id="todayRankPagination" class="table-pagination" hidden></div>
+      </section>
+
+      <section class="data-panel rank-panel dashboard-only">
+        <div class="panel-head"><div><strong>近 7 日播放排行</strong><span>近 7 日发布视频中播放量最高的前 30 条</span></div><span id="sevenDayRankCountBadge" class="count-badge">0 条</span></div>
+        <div class="table-wrap">
+          <table class="today-rank-table">
+            <thead><tr><th>排名</th><th>账号</th><th>播放</th><th>较上次</th><th>点赞</th><th>发布时间</th><th>链接</th><th>素材复用</th></tr></thead>
+            <tbody id="sevenDayRankRows"></tbody>
+          </table>
+        </div>
+        <div id="sevenDayRankPagination" class="table-pagination" hidden></div>
+      </section>
+
       <section class="analytics-grid dashboard-only">
         <article class="data-panel account-panel">
           <div class="panel-head"><div><strong>账号表现</strong><span>用于识别持续高表现和需要停更的账号</span></div><span id="accountCountBadge" class="count-badge">0 个</span></div>
           <div class="table-wrap"><table><thead><tr><th>账号</th><th>视频</th><th>播放</th><th>均播</th><th>互动率</th><th>最后抓取</th></tr></thead><tbody id="accountRows"></tbody></table></div>
+          <div id="accountPagination" class="table-pagination" hidden></div>
         </article>
 
         <article class="data-panel quota-panel">
@@ -70,6 +94,52 @@
           <div id="quotaList" class="quota-list"></div>
           <div class="schedule-card"><span>下次自动抓取</span><strong id="nextRunText">未启用</strong><small>失败数据不会覆盖上一次成功结果</small></div>
         </article>
+      </section>
+
+      <section class="data-panel account-analysis-panel">
+        <div class="panel-head">
+          <div><strong>账号表现分析</strong><span>按账号汇总播放稳定性、爆款率和低播风险</span></div>
+          <div class="account-panel-tools">
+            <label for="accountToneFilter">表现筛选</label>
+            <select id="accountToneFilter" aria-label="筛选账号表现">
+              <option value="all">全部账号</option>
+              <option value="audio-strong">表现好</option>
+              <option value="audio-watch">需观察</option>
+              <option value="audio-weak">表现差</option>
+            </select>
+            <span id="accountAnalysisCountBadge" class="count-badge">0 个</span>
+          </div>
+        </div>
+        <div id="accountOverview" class="account-overview">
+          <div class="account-overview-metrics">
+            <article><span>账号总数</span><strong id="accountOverviewTotal">0</strong><small id="accountOverviewVideos">0 条发布视频</small></article>
+            <article class="overview-good"><span>高表现</span><strong id="accountOverviewStrong">0</strong><small>均播与稳定性较好</small></article>
+            <article class="overview-watch"><span>待观察</span><strong id="accountOverviewWatch">0</strong><small>继续积累样本</small></article>
+            <article class="overview-weak"><span>低表现</span><strong id="accountOverviewWeak">0</strong><small>低播占比较高</small></article>
+          </div>
+          <div class="account-distribution" aria-label="账号表现分布">
+            <i id="accountStrongBar" class="distribution-good"></i>
+            <i id="accountWatchBar" class="distribution-watch"></i>
+            <i id="accountWeakBar" class="distribution-weak"></i>
+          </div>
+        </div>
+        <div class="account-workbench">
+          <aside id="accountRankRows" class="account-rank-list"></aside>
+          <section class="account-detail">
+            <div id="accountDetailEmpty" class="audio-empty">选择左侧账号，查看该账号发布的视频和表现分布。</div>
+            <div id="accountDetailPanel" hidden>
+              <div class="account-detail-head">
+                <div><strong id="accountDetailTitle">-</strong><span id="accountDetailMeta">-</span></div>
+              </div>
+              <div class="table-wrap account-video-wrap">
+                <table class="account-video-table">
+                  <thead><tr><th>发布时间</th><th>播放</th><th>点赞</th><th>互动率</th><th>音频</th><th>本地成片</th><th>TikTok</th></tr></thead>
+                  <tbody id="accountVideoRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section class="data-panel audio-panel">
@@ -118,10 +188,11 @@
         <div class="panel-head"><div><strong>视频表现明细</strong><span>匹配发布记录后可追溯到账号组、音频与成片</span></div><span id="videoCountBadge" class="count-badge">0 条</span></div>
         <div class="table-wrap video-table-wrap">
           <table class="video-table">
-            <thead><tr><th>发布时间</th><th>账号 / 文案</th><th>播放</th><th>较上次</th><th>点赞</th><th>评论</th><th>分享</th><th>收藏</th><th>互动率</th><th>本地来源</th><th>链接</th><th>素材复用</th></tr></thead>
+            <thead><tr><th>发布时间</th><th>账号</th><th>播放</th><th>较上次</th><th>点赞</th><th>评论</th><th>分享</th><th>收藏</th><th>互动率</th><th>本地来源</th><th>链接</th><th>素材复用</th></tr></thead>
             <tbody id="videoRows"></tbody>
           </table>
         </div>
+        <div id="videoPagination" class="table-pagination" hidden></div>
       </section>
     </main>
 

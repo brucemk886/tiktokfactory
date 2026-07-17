@@ -1,10 +1,13 @@
 const elements = Object.fromEntries([
-  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "audioAnalyticsNav", "pageTitle", "pageDescription",
+  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "accountAnalyticsNav", "audioAnalyticsNav", "pageTitle", "pageDescription",
   "refreshBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
-  "pageStatus", "accountCountBadge", "accountRows", "quotaList", "nextRunText", "videoCountBadge", "videoRows",
+  "pageStatus", "todayRankCountBadge", "todayRankRows", "todayRankPagination", "sevenDayRankCountBadge", "sevenDayRankRows", "sevenDayRankPagination",
+  "accountCountBadge", "accountRows", "accountPagination", "quotaList", "nextRunText", "videoCountBadge", "videoRows", "videoPagination",
   "audioCountBadge", "audioRows", "audioDetailEmpty", "audioDetailPanel", "audioDetailTitle", "audioDetailMeta", "audioPlayer", "audioVideoRows",
   "audioOverview", "audioOverviewTotal", "audioOverviewVideos", "audioOverviewStrong", "audioOverviewWatch", "audioOverviewWeak",
   "audioStrongBar", "audioWatchBar", "audioWeakBar", "audioBestList", "audioRiskList",
+  "accountAnalysisCountBadge", "accountOverview", "accountOverviewTotal", "accountOverviewVideos", "accountOverviewStrong", "accountOverviewWatch", "accountOverviewWeak",
+  "accountStrongBar", "accountWatchBar", "accountWeakBar", "accountToneFilter", "accountRankRows", "accountDetailEmpty", "accountDetailPanel", "accountDetailTitle", "accountDetailMeta", "accountVideoRows",
   "todayVideos", "todayViews", "todayAverage", "todayEngagement", "yesterdayVideos", "yesterdayViews", "yesterdayAverage", "yesterdayEngagement",
   "sevenDaysVideos", "sevenDaysViews", "sevenDaysAverage", "sevenDaysEngagement",
   "reuseModal", "reuseDialogTitle", "reuseDialogMeta", "reuseDialogBody", "closeReuseBtn"
@@ -12,27 +15,51 @@ const elements = Object.fromEntries([
 
 let pollTimer = 0;
 let currentAudioName = "";
-const isAudioView = new URLSearchParams(window.location.search).get("view") === "audio";
+let currentAccountName = "";
+let accountAnalyticsItems = [];
+const PAGE_SIZE = 10;
+let todayRankPage = 1;
+let sevenDayRankPage = 1;
+let accountPage = 1;
+let videoPage = 1;
+const activeView = new URLSearchParams(window.location.search).get("view") || "dashboard";
+const isAudioView = activeView === "audio";
+const isAccountView = activeView === "account";
 
 document.body.classList.toggle("audio-only-view", isAudioView);
-elements.analyticsNav.classList.toggle("is-active", !isAudioView);
+document.body.classList.toggle("account-only-view", isAccountView);
+elements.analyticsNav.classList.toggle("is-active", !isAudioView && !isAccountView);
+elements.accountAnalyticsNav.classList.toggle("is-active", isAccountView);
 elements.audioAnalyticsNav.classList.toggle("is-active", isAudioView);
 if (isAudioView) {
   elements.pageTitle.textContent = "音频表现";
   elements.pageDescription.textContent = "按音频汇总跨账号视频表现，查看发布详情，并直接试听本地原音频。";
+} else if (isAccountView) {
+  elements.pageTitle.textContent = "账号表现";
+  elements.pageDescription.textContent = "按账号汇总播放稳定性、爆款率与低播风险，快速识别值得放量和需要淘汰的账号。";
+  elements.periodFilter.value = "7d";
 }
 
 elements.refreshBtn.addEventListener("click", loadDashboard);
-elements.periodFilter.addEventListener("change", loadDashboard);
-elements.groupFilter.addEventListener("change", loadDashboard);
-elements.sortFilter.addEventListener("change", loadDashboard);
-elements.accountFilter.addEventListener("input", debounce(loadDashboard, 250));
-elements.videoRows.addEventListener("click", (event) => {
+elements.periodFilter.addEventListener("change", reloadFromFirstPage);
+elements.groupFilter.addEventListener("change", reloadFromFirstPage);
+elements.sortFilter.addEventListener("change", reloadFromFirstPage);
+elements.accountFilter.addEventListener("input", debounce(reloadFromFirstPage, 250));
+elements.videoRows.addEventListener("click", handleReuseAction);
+elements.todayRankRows.addEventListener("click", handleReuseAction);
+elements.sevenDayRankRows.addEventListener("click", handleReuseAction);
+
+function handleReuseAction(event) {
   const button = event.target.closest("[data-reuse-video]");
   if (button) openReuseDetail(button.dataset.reuseVideo);
-});
+}
 elements.audioRows.addEventListener("click", handleAudioAction);
 elements.audioOverview.addEventListener("click", handleAudioAction);
+elements.accountRankRows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-account-detail]");
+  if (button) openAccountDetail(button.dataset.accountDetail);
+});
+elements.accountToneFilter.addEventListener("change", () => renderAccountAnalytics(accountAnalyticsItems));
 
 function handleAudioAction(event) {
   const detailButton = event.target.closest("[data-audio-detail]");
@@ -60,11 +87,30 @@ async function loadDashboard() {
   });
   try {
     const data = await requestJson(`/api/tiktok-analytics?${params}`);
+    const loadRankPeriod = async (period) => {
+      if (elements.periodFilter.value === period && elements.sortFilter.value === "views") return data.videos || [];
+      const rankParams = new URLSearchParams(params);
+      rankParams.set("period", period);
+      rankParams.set("sort", "views");
+      const rankData = await requestJson(`/api/tiktok-analytics?${rankParams}`);
+      return rankData.videos || [];
+    };
+    const [todayVideos, sevenDayVideos] = await Promise.all([loadRankPeriod("today"), loadRankPeriod("7d")]);
+    data.todayVideos = todayVideos;
+    data.sevenDayVideos = sevenDayVideos.slice(0, 30);
     renderDashboard(data);
     if (data.status?.running) startPolling();
   } catch (error) {
     setStatus(error.message, "error");
   }
+}
+
+function reloadFromFirstPage() {
+  todayRankPage = 1;
+  sevenDayRankPage = 1;
+  accountPage = 1;
+  videoPage = 1;
+  loadDashboard();
 }
 
 function renderDashboard(data) {
@@ -78,7 +124,10 @@ function renderDashboard(data) {
   elements.engagementRate.textContent = `${Number(summary.engagement || 0).toFixed(2)}%`;
   renderPeriods(data.periods || {});
   updateGroupOptions(data.filters?.groups || []);
+  renderTodayRankings(data.todayVideos || []);
+  renderSevenDayRankings(data.sevenDayVideos || []);
   renderAccounts(data.accounts || []);
+  renderAccountAnalytics(data.accounts || []);
   renderAudioRankings(data.audioRankings || []);
   renderVideos(data.videos || []);
   renderQuota(status);
@@ -113,14 +162,62 @@ function renderPeriods(periods) {
     card.classList.toggle("is-selected", card.dataset.periodCard === elements.periodFilter.value);
     card.onclick = () => {
       elements.periodFilter.value = card.dataset.periodCard;
-      loadDashboard();
+      reloadFromFirstPage();
     };
   });
 }
 
+function renderTodayRankings(videos) {
+  const ranked = [...videos].sort((a, b) => Number(b.views || 0) - Number(a.views || 0));
+  elements.todayRankCountBadge.textContent = `${ranked.length} 条`;
+  const page = getPage(ranked, todayRankPage);
+  todayRankPage = page.current;
+  elements.todayRankRows.innerHTML = page.items.length ? page.items.map((video, index) => `
+    <tr>
+      <td><span class="rank-number">${page.start + index + 1}</span></td>
+      <td><strong>@${escapeHtml(video.username)}</strong></td>
+      <td class="number-cell">${formatNumber(video.views)}</td>
+      <td class="delta-cell">${video.viewsDelta ? `+${formatNumber(video.viewsDelta)}` : "-"}</td>
+      <td>${formatNumber(video.likes)}</td>
+      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
+      <td><a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a></td>
+      <td>${video.local ? `<button class="reuse-detail-btn" type="button" data-reuse-video="${escapeHtml(video.id)}">查看</button>` : `<span class="muted-action">无记录</span>`}</td>
+    </tr>
+  `).join("") : emptyRow(8, "今天暂无已抓取的视频数据。");
+  renderPagination(elements.todayRankPagination, page, (nextPage) => {
+    todayRankPage = nextPage;
+    renderTodayRankings(ranked);
+  }, "视频");
+}
+
+function renderSevenDayRankings(videos) {
+  const ranked = [...videos].sort((a, b) => Number(b.views || 0) - Number(a.views || 0)).slice(0, 30);
+  elements.sevenDayRankCountBadge.textContent = `${ranked.length} 条`;
+  const page = getPage(ranked, sevenDayRankPage);
+  sevenDayRankPage = page.current;
+  elements.sevenDayRankRows.innerHTML = page.items.length ? page.items.map((video, index) => `
+    <tr>
+      <td><span class="rank-number">${page.start + index + 1}</span></td>
+      <td><strong>@${escapeHtml(video.username)}</strong></td>
+      <td class="number-cell">${formatNumber(video.views)}</td>
+      <td class="delta-cell">${video.viewsDelta ? `+${formatNumber(video.viewsDelta)}` : "-"}</td>
+      <td>${formatNumber(video.likes)}</td>
+      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
+      <td><a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a></td>
+      <td>${video.local ? `<button class="reuse-detail-btn" type="button" data-reuse-video="${escapeHtml(video.id)}">查看</button>` : `<span class="muted-action">无记录</span>`}</td>
+    </tr>
+  `).join("") : emptyRow(8, "近 7 日暂无已抓取的视频数据。");
+  renderPagination(elements.sevenDayRankPagination, page, (nextPage) => {
+    sevenDayRankPage = nextPage;
+    renderSevenDayRankings(ranked);
+  }, "视频");
+}
+
 function renderAccounts(accounts) {
   elements.accountCountBadge.textContent = `${accounts.length} 个`;
-  elements.accountRows.innerHTML = accounts.length ? accounts.map((item) => `
+  const page = getPage(accounts, accountPage);
+  accountPage = page.current;
+  elements.accountRows.innerHTML = page.items.length ? page.items.map((item) => `
     <tr>
       <td><strong>@${escapeHtml(item.username)}</strong></td>
       <td>${formatNumber(item.videos)}</td>
@@ -130,6 +227,139 @@ function renderAccounts(accounts) {
       <td>${escapeHtml(formatDateTime(item.lastFetchedAt))}</td>
     </tr>
   `).join("") : emptyRow(6, "暂无账号数据，请先抓取 Demo。");
+  renderPagination(elements.accountPagination, page, (nextPage) => {
+    accountPage = nextPage;
+    renderAccounts(accounts);
+  }, "账号");
+}
+
+function renderAccountAnalytics(accounts) {
+  accountAnalyticsItems = [...accounts];
+  const ranked = [...accounts].sort((a, b) => accountPerformanceScore(b) - accountPerformanceScore(a));
+  const groups = { "audio-strong": [], "audio-watch": [], "audio-weak": [] };
+  for (const item of ranked) groups[accountTone(item)].push(item);
+  const selectedTone = elements.accountToneFilter.value;
+  const visibleAccounts = selectedTone === "all" ? ranked : groups[selectedTone] || [];
+  const totalVideos = ranked.reduce((sum, item) => sum + Number(item.videos || 0), 0);
+
+  elements.accountAnalysisCountBadge.textContent = selectedTone === "all"
+    ? `${ranked.length} 个`
+    : `${visibleAccounts.length} / ${ranked.length} 个`;
+  elements.accountOverviewTotal.textContent = formatNumber(ranked.length);
+  elements.accountOverviewVideos.textContent = `${formatNumber(totalVideos)} 条发布视频`;
+  elements.accountOverviewStrong.textContent = formatNumber(groups["audio-strong"].length);
+  elements.accountOverviewWatch.textContent = formatNumber(groups["audio-watch"].length);
+  elements.accountOverviewWeak.textContent = formatNumber(groups["audio-weak"].length);
+  setDistributionWidth(elements.accountStrongBar, groups["audio-strong"].length, ranked.length);
+  setDistributionWidth(elements.accountWatchBar, groups["audio-watch"].length, ranked.length);
+  setDistributionWidth(elements.accountWeakBar, groups["audio-weak"].length, ranked.length);
+
+  if (!visibleAccounts.length) {
+    elements.accountRankRows.innerHTML = `<div class="audio-empty small">当前表现筛选下暂无账号。</div>`;
+    resetAccountDetail();
+    return;
+  }
+
+  elements.accountRankRows.innerHTML = visibleAccounts.map((item, index) => {
+    const tone = accountTone(item);
+    const active = currentAccountName === item.username ? " is-active" : "";
+    const groupName = item.groups?.join("、") || "未匹配账号组";
+    return `<article class="account-rank-item${active}">
+      <div class="account-rank-main">
+        <span>#${index + 1}</span>
+        <strong>@${escapeHtml(item.username)}</strong>
+        <small>${escapeHtml(groupName)} · ${formatNumber(item.videos)} 条视频</small>
+      </div>
+      <div class="account-rank-metrics">
+        <div><span>均播</span><strong>${formatNumber(item.averageViews)}</strong></div>
+        <div><span>中位</span><strong>${formatNumber(item.medianViews)}</strong></div>
+        <div><span>最高</span><strong>${formatNumber(item.maxViews)}</strong></div>
+      </div>
+      <div class="account-rank-foot">
+        <span class="${tone}">${accountToneLabel(tone)}</span>
+        <small>低于100 ${Number(item.low100Rate || 0).toFixed(0)}%</small>
+        <small>破500 ${Number(item.over500Rate || 0).toFixed(0)}%</small>
+        <button type="button" data-account-detail="${escapeHtml(item.username)}">查看视频</button>
+      </div>
+    </article>`;
+  }).join("");
+
+  if (isAccountView && (!currentAccountName || !visibleAccounts.some((item) => item.username === currentAccountName))) {
+    openAccountDetail(visibleAccounts[0].username);
+  }
+}
+
+function accountPerformanceScore(item) {
+  const sampleWeight = Math.min(1, Number(item.videos || 0) / 8);
+  const playback = Number(item.averageViews || 0) * 0.45 + Number(item.medianViews || 0) * 0.4 + Number(item.maxViews || 0) * 0.15;
+  const stability = Number(item.over500Rate || 0) * 8 - Number(item.low100Rate || 0) * 10;
+  return (playback + stability) * (0.55 + sampleWeight * 0.45);
+}
+
+function accountTone(item) {
+  if (Number(item.videos) >= 4 && Number(item.averageViews) >= 800 && Number(item.low100Rate) <= 20) return "audio-strong";
+  if (Number(item.videos) >= 4 && (Number(item.averageViews) < 200 || Number(item.low100Rate) >= 50)) return "audio-weak";
+  return "audio-watch";
+}
+
+function accountToneLabel(tone) {
+  return tone === "audio-strong" ? "高表现" : tone === "audio-weak" ? "低表现" : "待观察";
+}
+
+async function openAccountDetail(username) {
+  currentAccountName = username;
+  elements.accountRankRows.querySelectorAll(".account-rank-item").forEach((item) => {
+    const button = item.querySelector("[data-account-detail]");
+    item.classList.toggle("is-active", button?.dataset.accountDetail === username);
+  });
+  elements.accountDetailEmpty.hidden = true;
+  elements.accountDetailPanel.hidden = false;
+  elements.accountDetailTitle.textContent = `@${username}`;
+  elements.accountDetailMeta.textContent = "正在读取账号视频详情...";
+  elements.accountVideoRows.innerHTML = emptyRow(7, "正在读取...");
+
+  try {
+    const params = new URLSearchParams({
+      username,
+      period: elements.periodFilter.value,
+      group: elements.groupFilter.value,
+      sort: "newest",
+      t: Date.now()
+    });
+    const data = await requestJson(`/api/tiktok-analytics/account-details?${params}`);
+    renderAccountDetail(data);
+  } catch (error) {
+    elements.accountDetailMeta.textContent = error.message;
+    elements.accountVideoRows.innerHTML = emptyRow(7, "读取失败。");
+  }
+}
+
+function renderAccountDetail(data) {
+  const summary = data.summary || {};
+  const videos = data.videos || [];
+  elements.accountDetailTitle.textContent = `@${data.username || "-"}`;
+  elements.accountDetailMeta.textContent = `${formatNumber(summary.videos || videos.length)} 条视频 · 总播放 ${formatNumber(summary.views)} · 均播 ${formatNumber(summary.averageViews)} · 中位 ${formatNumber(summary.medianViews)} · 最高 ${formatNumber(summary.maxViews)} · 低于100 ${Number(summary.low100Rate || 0).toFixed(0)}% · 破500 ${Number(summary.over500Rate || 0).toFixed(0)}%`;
+  elements.accountVideoRows.innerHTML = videos.length ? videos.map((video) => {
+    const engagement = video.views ? ((video.likes + video.comments + video.shares + video.bookmarks) / video.views) * 100 : 0;
+    return `<tr>
+      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
+      <td class="number-cell">${formatNumber(video.views)}</td>
+      <td>${formatNumber(video.likes)}</td>
+      <td>${engagement.toFixed(2)}%</td>
+      <td class="account-audio-cell" title="${escapeHtml(video.local?.audioName || "")}">${escapeHtml(shortAudioName(video.local?.audioName || "未匹配音频"))}</td>
+      <td class="source-cell"><strong title="${escapeHtml(video.local?.fileName || "")}">${escapeHtml(video.local?.fileName || "未匹配")}</strong><small>${escapeHtml(video.local?.groupName || "")}</small></td>
+      <td>${video.shareUrl ? `<a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a>` : "-"}</td>
+    </tr>`;
+  }).join("") : emptyRow(7, "当前周期没有这个账号的视频。");
+}
+
+function resetAccountDetail() {
+  currentAccountName = "";
+  elements.accountDetailEmpty.hidden = false;
+  elements.accountDetailPanel.hidden = true;
+  elements.accountDetailTitle.textContent = "-";
+  elements.accountDetailMeta.textContent = "-";
+  elements.accountVideoRows.innerHTML = "";
 }
 
 function renderAudioRankings(rows) {
@@ -302,14 +532,16 @@ function shortAudioName(value) {
 
 function renderVideos(videos) {
   elements.videoCountBadge.textContent = `${videos.length} 条`;
-  elements.videoRows.innerHTML = videos.length ? videos.map((video) => {
+  const page = getPage(videos, videoPage);
+  videoPage = page.current;
+  elements.videoRows.innerHTML = page.items.length ? page.items.map((video) => {
     const engagement = video.views ? ((video.likes + video.comments + video.shares + video.bookmarks) / video.views) * 100 : 0;
     const source = video.local
       ? `<strong>${escapeHtml(video.local.groupName || "未分组")}</strong><small title="${escapeHtml(video.local.audioName)}">${escapeHtml(video.local.fileName || video.local.audioName || "已匹配")}</small><em class="match-${escapeHtml(video.local.matchConfidence || "medium")}">${matchLabel(video.local)}</em>`
       : `<span class="unmatched">没有本地发布记录</span>`;
     return `<tr>
       <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
-      <td class="video-copy"><strong>@${escapeHtml(video.username)}</strong><small title="${escapeHtml(video.description)}">${escapeHtml(video.description || "无文案")}</small></td>
+      <td class="video-copy"><strong>@${escapeHtml(video.username)}</strong></td>
       <td class="number-cell">${formatNumber(video.views)}</td>
       <td class="delta-cell">${video.viewsDelta ? `+${formatNumber(video.viewsDelta)}` : "-"}</td>
       <td>${formatNumber(video.likes)}</td><td>${formatNumber(video.comments)}</td><td>${formatNumber(video.shares)}</td><td>${formatNumber(video.bookmarks)}</td>
@@ -319,6 +551,35 @@ function renderVideos(videos) {
       <td>${video.local ? `<button class="reuse-detail-btn" type="button" data-reuse-video="${escapeHtml(video.id)}">查看</button>` : `<span class="muted-action">无记录</span>`}</td>
     </tr>`;
   }).join("") : emptyRow(12, "当前筛选条件下暂无视频数据。");
+  renderPagination(elements.videoPagination, page, (nextPage) => {
+    videoPage = nextPage;
+    renderVideos(videos);
+  }, "视频");
+}
+
+function getPage(items, requestedPage) {
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const current = Math.min(Math.max(1, Number(requestedPage) || 1), totalPages);
+  const start = (current - 1) * PAGE_SIZE;
+  return { items: items.slice(start, start + PAGE_SIZE), total, totalPages, current, start };
+}
+
+function renderPagination(container, page, onChange, itemLabel) {
+  container.hidden = page.total <= PAGE_SIZE;
+  if (container.hidden) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = `
+    <span>共 ${formatNumber(page.total)} 个${itemLabel}，第 ${page.current}/${page.totalPages} 页</span>
+    <div>
+      <button type="button" data-page="${page.current - 1}" ${page.current === 1 ? "disabled" : ""}>上一页</button>
+      <button type="button" data-page="${page.current + 1}" ${page.current === page.totalPages ? "disabled" : ""}>下一页</button>
+    </div>`;
+  container.querySelectorAll("button[data-page]").forEach((button) => {
+    button.addEventListener("click", () => onChange(Number(button.dataset.page)));
+  });
 }
 
 async function openReuseDetail(videoId) {

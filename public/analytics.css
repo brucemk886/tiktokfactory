@@ -56,6 +56,18 @@
 .page-status[data-tone="warning"] { color: #d8b36a; }
 .page-status[data-tone="error"] { color: #e78080; }
 
+.rank-panel { margin-bottom: 12px; }
+.today-rank-table th:nth-child(1) { width: 64px; }
+.today-rank-table th:nth-child(2) { width: 190px; }
+.today-rank-table th:nth-child(3),
+.today-rank-table th:nth-child(4),
+.today-rank-table th:nth-child(5) { width: 94px; }
+.today-rank-table th:nth-child(6) { width: 150px; }
+.today-rank-table th:nth-child(7) { width: 64px; }
+.today-rank-table th:nth-child(8) { width: 90px; }
+.today-rank-table td { height: 50px; }
+.rank-number { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #465126; border-radius: 4px; color: #d9f26a; background: #171d12; font-size: 10px; font-weight: 800; }
+
 .analytics-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .45fr); gap: 12px; }
 .data-panel { overflow: hidden; }
 .panel-head { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 16px; border-bottom: 1px solid #252b32; }
@@ -63,12 +75,23 @@
 .panel-head strong { font-size: 13px; }
 .panel-head div span { margin-top: 4px; color: #7f8992; font-size: 10px; }
 .count-badge { padding: 4px 7px; border-radius: 4px; color: #c5d77e; background: #202714; font-size: 10px; }
+.account-panel-tools { display: flex; align-items: center; gap: 8px; }
+.account-panel-tools label { color: #7f8992; font-size: 9px; }
+.account-panel-tools select { width: 108px; height: 32px; padding: 0 8px; border: 1px solid #30363e; border-radius: 4px; color: #e4e7e9; background: #0f1216; font-size: 10px; }
+.account-panel-tools .count-badge { margin: 0; white-space: nowrap; }
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 th { height: 38px; padding: 0 12px; color: #7f8992; background: #14181d; font-size: 9px; text-align: left; }
 td { height: 48px; padding: 8px 12px; border-top: 1px solid #23282e; color: #d7dbde; font-size: 10px; }
 tbody tr:hover { background: #15191e; }
 .account-panel th:first-child { width: 170px; }
+.table-pagination { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 14px; border-top: 1px solid #252b32; background: #101317; }
+.table-pagination[hidden] { display: none; }
+.table-pagination > span { color: #7f8992; font-size: 10px; }
+.table-pagination > div { display: flex; gap: 7px; }
+.table-pagination button { min-width: 68px; min-height: 30px; padding: 0 10px; border: 1px solid #343b43; border-radius: 4px; color: #e5e9eb; background: #171b20; font-size: 10px; font-weight: 700; }
+.table-pagination button:hover:not(:disabled) { border-color: #5d6c35; color: #d9f26a; }
+.table-pagination button:disabled { opacity: .35; cursor: default; }
 .quota-panel { padding-bottom: 14px; }
 .quota-list { display: grid; gap: 14px; padding: 16px; }
 .quota-item > div:first-child { display: flex; justify-content: space-between; margin-bottom: 7px; font-size: 10px; }
@@ -85,6 +108,9 @@ tbody tr:hover { background: #15191e; }
 .audio-panel { display: none; margin-top: 12px; }
 .audio-only-view .audio-panel { display: block; }
 .audio-only-view .dashboard-only { display: none; }
+.account-analysis-panel { display: none; margin-top: 12px; }
+.account-only-view .account-analysis-panel { display: block; }
+.account-only-view .dashboard-only { display: none; }
 .audio-table { min-width: 1260px; }
 .audio-table th:nth-child(1) { width: 360px; }
 .audio-table th:nth-child(2),
@@ -171,14 +197,62 @@ tbody tr:hover { background: #15191e; }
 .audio-empty { min-height: 260px; display: grid; place-items: center; color: #7f8992; font-size: 11px; text-align: center; }
 .audio-empty.small { min-height: 120px; padding: 18px; }
 
+.account-overview { padding: 16px; border-bottom: 1px solid #252b32; background: #101317; }
+.account-overview-metrics { display: grid; grid-template-columns: repeat(4, 1fr); }
+.account-overview-metrics article { min-width: 0; padding: 4px 16px 13px; border-left: 2px solid #3b434b; }
+.account-overview-metrics article:first-child { padding-left: 10px; border-left-color: #71808c; }
+.account-overview-metrics span, .account-overview-metrics small, .account-overview-metrics strong { display: block; }
+.account-overview-metrics span { color: #8b959e; font-size: 10px; }
+.account-overview-metrics strong { margin: 9px 0 4px; color: #f2f4f5; font-size: 25px; }
+.account-overview-metrics small { color: #68737d; font-size: 9px; }
+.account-overview-metrics .overview-good { border-left-color: #739744; }
+.account-overview-metrics .overview-good strong { color: #cce97b; }
+.account-overview-metrics .overview-watch { border-left-color: #9c7938; }
+.account-overview-metrics .overview-watch strong { color: #e0b766; }
+.account-overview-metrics .overview-weak { border-left-color: #914448; }
+.account-overview-metrics .overview-weak strong { color: #ef8585; }
+.account-distribution { height: 7px; overflow: hidden; display: flex; margin-top: 3px; border-radius: 3px; background: #252b31; }
+.account-distribution i { height: 100%; display: block; transition: width .2s ease; }
+.account-workbench { min-height: 520px; display: grid; grid-template-columns: 420px minmax(0, 1fr); }
+.account-rank-list { max-height: 650px; overflow: auto; border-right: 1px solid #252b32; background: #0f1216; }
+.account-rank-item { padding: 13px 14px; border-bottom: 1px solid #23282e; background: #111418; }
+.account-rank-item:hover, .account-rank-item.is-active { background: #151b18; }
+.account-rank-item.is-active { box-shadow: inset 3px 0 #d9f26a; }
+.account-rank-main span, .account-rank-main strong, .account-rank-main small { display: block; }
+.account-rank-main span { color: #d9f26a; font-size: 9px; font-weight: 800; }
+.account-rank-main strong { margin-top: 4px; overflow: hidden; color: #f0f3f4; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.account-rank-main small { margin-top: 4px; overflow: hidden; color: #78828b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.account-rank-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 11px; }
+.account-rank-metrics div { padding: 7px 8px; border: 1px solid #252c32; border-radius: 4px; background: #0f1317; }
+.account-rank-metrics span, .account-rank-metrics strong { display: block; }
+.account-rank-metrics span { color: #737e87; font-size: 8px; }
+.account-rank-metrics strong { margin-top: 4px; color: #e9edef; font-size: 12px; }
+.account-rank-foot { display: flex; align-items: center; gap: 7px; margin-top: 10px; }
+.account-rank-foot > span { padding: 3px 7px; border-radius: 3px; font-size: 9px; font-weight: 750; }
+.account-rank-foot small { color: #7d8790; font-size: 8px; }
+.account-rank-foot button { min-height: 28px; margin-left: auto; padding: 0 9px; border: 1px solid #30363e; border-radius: 4px; color: #e7ecef; background: #171b20; font-size: 9px; font-weight: 700; }
+.account-rank-foot button:hover { border-color: #5e6e34; color: #d9f26a; }
+.account-detail { min-width: 0; padding: 14px; }
+.account-detail-head { min-height: 54px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.account-detail-head strong, .account-detail-head span { display: block; }
+.account-detail-head strong { color: #f1f4f5; font-size: 16px; }
+.account-detail-head span { margin-top: 6px; color: #7f8992; font-size: 10px; line-height: 1.6; }
+.account-video-table { min-width: 980px; }
+.account-video-table th:nth-child(1) { width: 100px; }
+.account-video-table th:nth-child(2), .account-video-table th:nth-child(3), .account-video-table th:nth-child(4) { width: 72px; }
+.account-video-table th:nth-child(5) { width: 220px; }
+.account-video-table th:nth-child(6) { width: 280px; }
+.account-video-table th:nth-child(7) { width: 58px; }
+.account-audio-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .video-panel { margin-top: 12px; }
-.video-table { min-width: 1400px; }
-.video-table th:nth-child(1) { width: 92px; }.video-table th:nth-child(2) { width: 250px; }.video-table th:nth-child(3) { width: 82px; }.video-table th:nth-child(4) { width: 72px; }
-.video-table th:nth-child(5), .video-table th:nth-child(6), .video-table th:nth-child(7), .video-table th:nth-child(8) { width: 64px; }
-.video-table th:nth-child(9) { width: 76px; }.video-table th:nth-child(10) { width: 260px; }.video-table th:nth-child(11) { width: 48px; }.video-table th:nth-child(12) { width: 72px; }
+.video-table { min-width: 1000px; }
+.video-table th:nth-child(1) { width: 92px; }.video-table th:nth-child(2) { width: 145px; }.video-table th:nth-child(3) { width: 78px; }.video-table th:nth-child(4) { width: 68px; }
+.video-table th:nth-child(5), .video-table th:nth-child(6), .video-table th:nth-child(7), .video-table th:nth-child(8) { width: 54px; }
+.video-table th:nth-child(9) { width: 70px; }.video-table th:nth-child(10) { width: 220px; }.video-table th:nth-child(11) { width: 48px; }.video-table th:nth-child(12) { width: 72px; }
 .video-table td { height: 58px; }
-.video-copy strong, .video-copy small, .source-cell strong, .source-cell small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.video-copy small, .source-cell small { margin-top: 5px; color: #7e8891; }
+.video-copy strong, .source-cell strong, .source-cell small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-cell small { margin-top: 5px; color: #7e8891; }
 .source-cell em { display: inline-block; margin-top: 5px; padding: 2px 5px; border-radius: 3px; font-size: 8px; font-style: normal; }
 .match-high { color: #c9df78; background: #1e2816; }.match-medium { color: #e0b766; background: #2b2214; }
 .number-cell { color: #eef3d8; font-size: 12px; font-weight: 800; }
@@ -261,5 +335,8 @@ body.modal-open { overflow: hidden; }
   .audio-rank-list { max-height: 360px; border-right: 0; border-bottom: 1px solid #252b32; }
   .audio-detail-head { display: block; }
   .audio-detail-head audio { width: 100%; max-width: none; margin-top: 10px; }
+  .account-overview-metrics { grid-template-columns: repeat(2, 1fr); gap: 14px 0; }
+  .account-workbench { grid-template-columns: 1fr; }
+  .account-rank-list { max-height: 420px; border-right: 0; border-bottom: 1px solid #252b32; }
   .config-layout { grid-template-columns: 1fr; }.groups-card { grid-column: auto; }.config-group-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

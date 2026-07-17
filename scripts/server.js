@@ -9,6 +9,7 @@ import { resolveStorageDirs } from "./storage-paths.js";
 import { createPublishService } from "./publish-service.js";
 import { createAutoTaskManager } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
+import { createCodexBrainService } from "./codex-brain.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -27,6 +28,8 @@ const tiktokAnalytics = createTikTokAnalyticsService({
   defaultApiKeys: bootConfig.tiktokApiStoreApiKeys,
   defaultApiKey: bootConfig.tiktokApiStoreApiKey
 });
+const codexBrain = createCodexBrainService({ root });
+let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
 
 const server = http.createServer(async (req, res) => {
@@ -118,16 +121,32 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(outputDir, fileName), "video/mp4");
     }
 
+    if (req.method === "GET" && url.pathname === "/api/codex/status") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex 接口仅允许在本机访问。" });
+      return sendJson(res, 200, codexBrain.getStatus());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/codex/test") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex 接口仅允许在本机访问。" });
+      try {
+        return sendJson(res, 200, await codexBrain.testConnection());
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "Codex 连接测试失败。" });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/publish-records") {
       return sendJson(res, 200, getPublishRecordsSummary(url.searchParams));
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {
+      const allowedAccounts = await getScheduledTikTokAccountsCached();
       return sendJson(res, 200, tiktokAnalytics.getDashboard({
         period: String(url.searchParams.get("period") || "7d"),
         group: String(url.searchParams.get("group") || ""),
         account: String(url.searchParams.get("account") || ""),
-        sort: String(url.searchParams.get("sort") || "views")
+        sort: String(url.searchParams.get("sort") || "views"),
+        allowedAccounts
       }, readPublishRecords()));
     }
 
@@ -189,6 +208,19 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/account-details") {
+      const username = String(url.searchParams.get("username") || "");
+      const allowedAccounts = await getScheduledTikTokAccountsCached();
+      const detail = tiktokAnalytics.getAccountDetail(username, {
+        period: String(url.searchParams.get("period") || "7d"),
+        group: String(url.searchParams.get("group") || ""),
+        sort: String(url.searchParams.get("sort") || "newest"),
+        allowedAccounts
+      }, readPublishRecords());
+      if (!detail) return sendJson(res, 404, { error: "没有找到这个账号的发布数据。" });
+      return sendJson(res, 200, detail);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/audio-file") {
       const audioName = String(url.searchParams.get("audioName") || "");
       const audioPath = findKnownAudioPath(audioName);
@@ -199,6 +231,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/tiktok-analytics/settings") {
       const payload = await readJsonBody(req);
       const settings = tiktokAnalytics.saveSettings(payload);
+      scheduledAccountsCache = { expiresAt: 0, accounts: null };
       const nextRunAt = tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
       return sendJson(res, 200, { settings, nextRunAt });
     }
@@ -734,6 +767,20 @@ async function getScheduledTikTokAccounts() {
     .filter(Boolean)));
 }
 
+async function getScheduledTikTokAccountsCached() {
+  if (scheduledAccountsCache.accounts && scheduledAccountsCache.expiresAt > Date.now()) {
+    return scheduledAccountsCache.accounts;
+  }
+  try {
+    const accounts = await getScheduledTikTokAccounts();
+    scheduledAccountsCache = { expiresAt: Date.now() + 5 * 60 * 1000, accounts };
+    return accounts;
+  } catch (error) {
+    console.warn("Unable to refresh configured TikTok accounts:", error.message || error);
+    return scheduledAccountsCache.accounts;
+  }
+}
+
 function normalizeOutputId(value) {
   const fileName = path.basename(String(value || ""));
   return path.basename(fileName, path.extname(fileName)).toLowerCase();
@@ -900,6 +947,11 @@ function sendFile(res, filePath, contentType) {
 function sendJson(res, status, value) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(value));
+}
+
+function isLoopbackRequest(req) {
+  const address = String(req.socket?.remoteAddress || "").toLowerCase();
+  return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
 function normalizeGeeLarkList(data) {

@@ -9,6 +9,7 @@
     "remotion:studio": "remotion studio remotion/index.jsx"
   },
   "dependencies": {
+    "@openai/codex-sdk": "^0.144.5",
     "@remotion/cli": "^4.0.484",
     "@remotion/media": "^4.0.484",
     "@remotion/media-utils": "^4.0.484",

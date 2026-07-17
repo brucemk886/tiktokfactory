@@ -98,14 +98,18 @@ test("does not guess a local video when publish time differs by more than 30 min
 test("stores snapshots and never exposes the raw API key", async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "tiktok-analytics-"));
   let views = 100;
-  const fetchImpl = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      code: 0,
-      data: { videos: [{ video_id: "post-1", create_time: 1783800000, author: { unique_id: "demo" }, play_count: views }] }
-    })
-  });
+  let requestedUrl = "";
+  const fetchImpl = async (url) => {
+    requestedUrl = String(url);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        code: 0,
+        data: { videos: [{ video_id: "post-1", create_time: 1783800000, author: { unique_id: "demo" }, play_count: views }] }
+      })
+    };
+  };
   let currentTime = 1783800100000;
   const service = createTikTokAnalyticsService({ workDir, fetchImpl, now: () => currentTime });
   service.saveSettings({ apiKeys: ["abcdefghijklmnop"], dailyRequestLimit: 100 });
@@ -113,6 +117,7 @@ test("stores snapshots and never exposes the raw API key", async () => {
   assert.equal(service.getSettings().maskedApiKey, "abcd...mnop");
 
   await service.fetchAccount("demo");
+  assert.equal(new URL(requestedUrl).searchParams.get("count"), "20");
   views = 180;
   currentTime += 24 * 60 * 60 * 1000;
   await service.fetchAccount("demo");
@@ -121,6 +126,65 @@ test("stores snapshots and never exposes the raw API key", async () => {
   assert.equal(dashboard.summary.videoCount, 1);
   assert.equal(dashboard.videos[0].history.length, 2);
   assert.equal(dashboard.videos[0].viewsDelta, 80);
+});
+
+test("summarizes account stability and returns account video details", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "tiktok-account-summary-"));
+  const views = [50, 150, 600, 1200];
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      code: 0,
+      data: {
+        videos: views.map((playCount, index) => ({
+          video_id: `post-${index + 1}`,
+          create_time: 1783800000 - index * 60,
+          author: { unique_id: "demo" },
+          play_count: playCount
+        }))
+      }
+    })
+  });
+  const service = createTikTokAnalyticsService({ workDir, fetchImpl, now: () => 1783800100000 });
+  service.saveSettings({ apiKeys: ["test-api-key"], dailyRequestLimit: 100 });
+  await service.fetchAccount("demo");
+
+  const dashboard = service.getDashboard({ period: "all" }, []);
+  assert.equal(dashboard.accounts[0].videos, 4);
+  assert.equal(dashboard.accounts[0].averageViews, 500);
+  assert.equal(dashboard.accounts[0].medianViews, 375);
+  assert.equal(dashboard.accounts[0].low100Rate, 25);
+  assert.equal(dashboard.accounts[0].over500Rate, 50);
+  assert.equal(dashboard.accounts[0].over1000Rate, 25);
+
+  const detail = service.getAccountDetail("demo", { period: "all" }, []);
+  assert.equal(detail.videos.length, 4);
+  assert.equal(detail.summary.maxViews, 1200);
+});
+
+test("limits dashboard accounts to the currently configured account list", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "tiktok-current-accounts-"));
+  const fetchImpl = async (url) => {
+    const username = new URL(url).searchParams.get("unique_id");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        code: 0,
+        data: { videos: [{ video_id: `post-${username}`, create_time: 1783800000, author: { unique_id: username }, play_count: 100 }] }
+      })
+    };
+  };
+  const service = createTikTokAnalyticsService({ workDir, fetchImpl, now: () => 1783800100000 });
+  service.saveSettings({ apiKeys: ["test-api-key"], dailyRequestLimit: 100 });
+  await service.fetchAccount("current-account");
+  await service.fetchAccount("retired-account");
+
+  const dashboard = service.getDashboard({ period: "all", allowedAccounts: ["current-account"] }, []);
+  assert.deepEqual(dashboard.accounts.map((item) => item.username), ["current-account"]);
+  assert.equal(dashboard.summary.videoCount, 1);
+  assert.equal(service.getAccountDetail("retired-account", { period: "all", allowedAccounts: ["current-account"] }, []).videos.length, 0);
 });
 
 test("calculates exact overlap between generated video clips", () => {

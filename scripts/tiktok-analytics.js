@@ -136,7 +136,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     try {
       const requestUrl = new URL(API_URL);
       requestUrl.searchParams.set("unique_id", username);
-      requestUrl.searchParams.set("count", "10");
+      requestUrl.searchParams.set("count", "20");
       response = await fetchWithTimeout(fetchImpl, requestUrl, 30000, {
         headers: { Authorization: `Bearer ${settings.apiKeys[keyIndex]}` }
       });
@@ -178,9 +178,12 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     };
   }
 
-  function getDashboard({ period = "7d", group = "", account = "", sort = "views" } = {}, publishRecords = []) {
+  function getDashboard({ period = "7d", group = "", account = "", sort = "views", allowedAccounts = null } = {}, publishRecords = []) {
     const store = readStore(storePath);
     const recordMatches = matchPublishRecords(store.videos, publishRecords);
+    const allowedAccountSet = Array.isArray(allowedAccounts)
+      ? new Set(allowedAccounts.map(normalizeUsername).filter(Boolean))
+      : null;
     const baseVideos = Object.values(store.videos)
       .map((entry) => {
         const history = entry.history || [];
@@ -192,6 +195,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
           local: recordMatches.get(entry.latest.id) || null
         };
       })
+      .filter((video) => !allowedAccountSet || allowedAccountSet.has(normalizeUsername(video.username)))
       .filter((video) => !group || video.local?.groupName === group)
       .filter((video) => !account || video.username.toLowerCase().includes(String(account).toLowerCase()));
     let videos = filterByPeriod(baseVideos, period, now());
@@ -267,6 +271,19 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     };
   }
 
+  function getAccountDetail(username, { period = "7d", group = "", sort = "newest", allowedAccounts = null } = {}, publishRecords = []) {
+    const targetUsername = normalizeUsername(username);
+    if (!targetUsername) return null;
+    const dashboard = getDashboard({ period, group, account: targetUsername, sort, allowedAccounts }, publishRecords);
+    const videos = (dashboard.videos || [])
+      .filter((video) => normalizeUsername(video.username) === targetUsername)
+      .sort(videoSorter(sort));
+    const summary = (dashboard.accounts || []).find((item) => normalizeUsername(item.username) === targetUsername)
+      || buildAccountSummary(videos, {})[0]
+      || null;
+    return { username: targetUsername, summary, videos };
+  }
+
   function repairStore() {
     const raw = readJson(storePath, {});
     const before = Object.keys(raw.videos || {}).length;
@@ -304,7 +321,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     return target;
   }
 
-  return { getSettings, saveSettings, fetchAccount, fetchAccounts, getDashboard, getVideo, getMatchedVideos, getAudioDetail, repairStore, scheduleNextRun, isRunning: () => running };
+  return { getSettings, saveSettings, fetchAccount, fetchAccounts, getDashboard, getVideo, getMatchedVideos, getAudioDetail, getAccountDetail, repairStore, scheduleNextRun, isRunning: () => running };
 }
 
 export function normalizeTikTokPost(post, fallbackUsername = "", fetchedAt = Date.now()) {
@@ -570,19 +587,59 @@ function isTokenUnavailable(body, status) {
 function buildAccountSummary(videos, accountState) {
   const map = new Map();
   for (const video of videos) {
-    const item = map.get(video.username) || { username: video.username, videos: 0, views: 0, likes: 0, comments: 0, shares: 0, bookmarks: 0 };
+    const item = map.get(video.username) || {
+      username: video.username,
+      videos: 0,
+      views: 0,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      bookmarks: 0,
+      maxViews: 0,
+      minViews: Infinity,
+      low100: 0,
+      low200: 0,
+      over500: 0,
+      over1000: 0,
+      viewList: [],
+      groups: new Set()
+    };
+    const views = Number(video.views) || 0;
     item.videos += 1;
-    item.views += video.views;
+    item.views += views;
     item.likes += video.likes;
     item.comments += video.comments;
     item.shares += video.shares;
     item.bookmarks += video.bookmarks;
+    item.maxViews = Math.max(item.maxViews, views);
+    item.minViews = Math.min(item.minViews, views);
+    if (views < 100) item.low100 += 1;
+    if (views < 200) item.low200 += 1;
+    if (views >= 500) item.over500 += 1;
+    if (views >= 1000) item.over1000 += 1;
+    item.viewList.push(views);
+    if (video.local?.groupName) item.groups.add(video.local.groupName);
     item.lastFetchedAt = accountState?.[video.username]?.lastFetchedAt || 0;
     map.set(video.username, item);
   }
   return Array.from(map.values()).map((item) => ({
-    ...item,
+    username: item.username,
+    videos: item.videos,
+    views: item.views,
+    likes: item.likes,
+    comments: item.comments,
+    shares: item.shares,
+    bookmarks: item.bookmarks,
+    groups: Array.from(item.groups).sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
+    lastFetchedAt: item.lastFetchedAt,
     averageViews: item.videos ? Math.round(item.views / item.videos) : 0,
+    medianViews: percentile(item.viewList, 0.5),
+    maxViews: item.maxViews,
+    minViews: item.minViews === Infinity ? 0 : item.minViews,
+    low100Rate: item.videos ? item.low100 / item.videos * 100 : 0,
+    low200Rate: item.videos ? item.low200 / item.videos * 100 : 0,
+    over500Rate: item.videos ? item.over500 / item.videos * 100 : 0,
+    over1000Rate: item.videos ? item.over1000 / item.videos * 100 : 0,
     engagement: item.views ? ((item.likes + item.comments + item.shares + item.bookmarks) / item.views) * 100 : 0
   })).sort((a, b) => b.views - a.views);
 }
@@ -658,8 +715,11 @@ function buildAudioRankings(videos) {
 function percentile(values, ratio) {
   const list = (values || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
   if (!list.length) return 0;
-  const index = Math.min(list.length - 1, Math.max(0, Math.floor((list.length - 1) * ratio)));
-  return Math.round(list[index]);
+  const position = Math.min(list.length - 1, Math.max(0, (list.length - 1) * ratio));
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const fraction = position - lower;
+  return Math.round(list[lower] + (list[upper] - list[lower]) * fraction);
 }
 
 function summarizeVideos(videos, accounts = null) {
