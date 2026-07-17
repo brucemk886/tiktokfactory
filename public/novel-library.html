@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小说爆款书单</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/novel-library.css" />
+  </head>
+  <body class="work-page novel-library-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+      <a href="/reddit">Reddit 视频生成</a>
+      <a href="/asset-cutter">视频素材切割</a>
+      <a href="/asset-usage">素材使用率</a>
+      <a href="/tasks">自动任务</a>
+      <a href="/stats">发布记录</a>
+      <a href="/analytics">数据分析</a>
+      <a href="/analytics?view=account">账号表现</a>
+      <a href="/analytics?view=audio">音频表现</a>
+      <a class="is-active" href="/novel-library">小说爆款书单</a>
+      <a href="/analytics-settings">抓取配置</a>
+    </nav>
+
+    <main class="library-shell">
+      <header class="library-header">
+        <div>
+          <p class="library-kicker">NOVEL INTELLIGENCE</p>
+          <h1>小说爆款书单</h1>
+          <p id="sourceTitle">正在连接飞书书单...</p>
+        </div>
+        <div class="header-actions">
+          <span id="syncState" class="sync-state">尚未同步</span>
+          <a id="openFeishuLink" class="quiet-action" href="#" target="_blank" rel="noreferrer" hidden>打开飞书</a>
+          <button id="syncBtn" class="primary-action" type="button">同步当前书单</button>
+        </div>
+      </header>
+
+      <section class="library-metrics" aria-label="书单概览">
+        <article><span>当前书单</span><strong id="sheetMetric">--</strong><small id="sheetRowsMetric">0 行数据</small></article>
+        <article><span>收录小说</span><strong id="bookMetric">0</strong><small>已解析有效书目</small></article>
+        <article><span>女频 / 男频</span><strong id="channelMetric">0 / 0</strong><small>当前工作表</small></article>
+        <article><span>筛选结果</span><strong id="filteredMetric">0</strong><small id="pageMetric">第 1 页</small></article>
+      </section>
+
+      <section class="library-toolbar">
+        <label><span>飞书工作表</span><select id="sheetSelect"><option value="">正在读取...</option></select></label>
+        <label class="search-control"><span>搜索</span><input id="searchInput" type="search" placeholder="书名、ID、标签、卖点" /></label>
+        <label><span>频道</span><select id="channelSelect"><option value="">全部频道</option></select></label>
+        <label><span>热门标签</span><select id="tagSelect"><option value="">全部标签</option></select></label>
+        <button id="resetBtn" class="quiet-action" type="button">重置筛选</button>
+      </section>
+
+      <div id="pageStatus" class="library-status">正在读取本地书单缓存...</div>
+
+      <section class="library-table-panel">
+        <div class="table-headline">
+          <div><strong id="tableTitle">书单明细</strong><span id="tableCaption">按飞书原始顺序展示</span></div>
+          <span id="resultBadge" class="result-badge">0 条</span>
+        </div>
+        <div class="library-table-wrap">
+          <table>
+            <thead><tr><th>日期</th><th>小说</th><th>频道</th><th>标签 / 卖点</th><th>推荐理由</th><th>内容</th></tr></thead>
+            <tbody id="bookRows"></tbody>
+          </table>
+        </div>
+        <div id="pagination" class="library-pagination"></div>
+      </section>
+    </main>
+
+    <dialog id="bookDialog" class="book-dialog">
+      <div class="dialog-head"><div><span id="dialogChannel" class="channel-chip"></span><h2 id="dialogTitle"></h2><p id="dialogBookId"></p></div><button id="closeDialogBtn" class="icon-close" type="button" aria-label="关闭">×</button></div>
+      <dl class="book-detail-list">
+        <div><dt>标签</dt><dd id="dialogTags"></dd></div>
+        <div><dt>小说卖点</dt><dd id="dialogSellingPoint"></dd></div>
+        <div><dt>推荐理由</dt><dd id="dialogReason"></dd></div>
+        <div><dt>简介 / 开头</dt><dd id="dialogIntro"></dd></div>
+        <div><dt>飞书位置</dt><dd id="dialogSource"></dd></div>
+      </dl>
+    </dialog>
+
+    <script src="/novel-library.js" type="module"></script>
+  </body>
+</html>

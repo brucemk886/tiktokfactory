@@ -10,6 +10,7 @@ import { createPublishService } from "./publish-service.js";
 import { createAutoTaskManager } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
+import { createFeishuBookService } from "./feishu-books.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -29,6 +30,7 @@ const tiktokAnalytics = createTikTokAnalyticsService({
   defaultApiKey: bootConfig.tiktokApiStoreApiKey
 });
 const codexBrain = createCodexBrainService({ root });
+const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
 
@@ -116,6 +118,18 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "asset-usage.css"), "text/css; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/novel-library") {
+      return sendFile(res, path.join(publicDir, "novel-library.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-library.js") {
+      return sendFile(res, path.join(publicDir, "novel-library.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-library.css") {
+      return sendFile(res, path.join(publicDir, "novel-library.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname.startsWith("/outputs/")) {
       const fileName = path.basename(decodeURIComponent(url.pathname.slice("/outputs/".length)));
       return sendFile(res, path.join(outputDir, fileName), "video/mp4");
@@ -124,6 +138,34 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/codex/status") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex 接口仅允许在本机访问。" });
       return sendJson(res, 200, codexBrain.getStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/novel-library/status") {
+      return sendJson(res, 200, feishuBooks.getStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/novel-library") {
+      const data = await feishuBooks.getLibrary({
+        sheetId: String(url.searchParams.get("sheetId") || ""),
+        query: String(url.searchParams.get("query") || ""),
+        channel: String(url.searchParams.get("channel") || ""),
+        tag: String(url.searchParams.get("tag") || ""),
+        page: Number(url.searchParams.get("page")) || 1,
+        pageSize: Number(url.searchParams.get("pageSize")) || 20
+      });
+      return sendJson(res, 200, data);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/novel-library/sync") {
+      const payload = await readJsonBody(req);
+      const library = await feishuBooks.syncSheet(String(payload.sheetId || ""));
+      return sendJson(res, 200, {
+        ok: true,
+        sheet: library.sheet,
+        syncedAt: library.syncedAt,
+        totalRowsRead: library.totalRowsRead,
+        totalBooks: library.books.length
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/codex/test") {

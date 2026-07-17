@@ -27,6 +27,12 @@
     "appId": "",
     "apiKey": ""
   },
+  "feishu": {
+    "appId": "",
+    "appSecret": "",
+    "wikiUrl": "",
+    "wikiToken": ""
+  },
   "captionPositions": {
     "player": 0.5,
     "center-wave": 0.68,
