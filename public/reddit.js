@@ -110,6 +110,7 @@ updateAssetMode();
 updateSegmentMode();
 loadSubtitleSettings();
 loadDedupSettings();
+loadSharedRedditSettings();
 setHelpOpen(localStorage.getItem("reddit-help-open") === "true");
 loadGeeLarkPhones();
 loadAssetGroups();
@@ -343,9 +344,15 @@ function loadSubtitleSettings() {
   }
 }
 
-function saveSubtitleSettings() {
-  localStorage.setItem(subtitleStorageKey, JSON.stringify(collectSubtitleSettings()));
-  setStatus("字幕位置和样式已保存。");
+async function saveSubtitleSettings() {
+  const subtitle = collectSubtitleSettings();
+  localStorage.setItem(subtitleStorageKey, JSON.stringify(subtitle));
+  try {
+    await saveSharedRedditSettings({ subtitle });
+    setStatus("字幕位置和样式已统一保存，自动任务页面会同步使用。");
+  } catch (error) {
+    setStatus(`本机已保存，但同步自动任务失败：${error.message || "请求失败"}`);
+  }
 }
 
 function applySubtitleSettings(settings) {
@@ -387,10 +394,40 @@ function loadDedupSettings() {
   }
 }
 
-function saveDedupSettings() {
+async function saveDedupSettings() {
   const settings = collectDedupSettings();
   localStorage.setItem(dedupStorageKey, JSON.stringify(settings));
-  if (dedupStatus) dedupStatus.textContent = "素材去重参数已保存，后续生成会默认使用这组值。";
+  try {
+    await saveSharedRedditSettings({ dedup: settings });
+    if (dedupStatus) dedupStatus.textContent = "素材去重参数已统一保存，手动生成和自动任务都会使用这组值。";
+  } catch (error) {
+    if (dedupStatus) dedupStatus.textContent = `本机已保存，但同步自动任务失败：${error.message || "请求失败"}`;
+  }
+}
+
+async function loadSharedRedditSettings() {
+  try {
+    const response = await fetch("/api/reddit-mix/settings", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取统一配置失败。");
+    if (data.exists) {
+      applySubtitleSettings(data.settings?.subtitle);
+      applyDedupSettings(data.settings?.dedup);
+      localStorage.setItem(subtitleStorageKey, JSON.stringify(data.settings?.subtitle || {}));
+      localStorage.setItem(dedupStorageKey, JSON.stringify(data.settings?.dedup || {}));
+      return;
+    }
+    await saveSharedRedditSettings({ subtitle: collectSubtitleSettings(), dedup: collectDedupSettings() });
+  } catch (error) {
+    setStatus(`统一配置读取失败，当前继续使用本机配置：${error.message || "请求失败"}`);
+  }
+}
+
+async function saveSharedRedditSettings(payload) {
+  const response = await fetch("/api/reddit-mix/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "保存统一配置失败。");
+  return data.settings;
 }
 
 function applyDedupSettings(settings) {

@@ -339,10 +339,16 @@ function collectDedup() {
   return { enabled: true, ...saved, scaleMin: number("#scaleMin", 1.03), scaleMax: number("#scaleMax", 1.08), rotateMin: number("#rotateMin", -0.8), rotateMax: number("#rotateMax", 0.8), mirrorChance: number("#mirrorChance", 30), sharpen: number("#sharpen", 0.2), speedMin: number("#speedMin", 0.96), speedMax: number("#speedMax", 1.04) };
 }
 
-function saveDedupSettings() {
-  localStorage.setItem("reddit-mix-dedup-settings", JSON.stringify(collectDedup()));
+async function saveDedupSettings() {
+  const dedup = collectDedup();
+  localStorage.setItem("reddit-mix-dedup-settings", JSON.stringify(dedup));
   const status = $("#dedupSaveStatus");
-  if (status) status.textContent = `已保存 · ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+  try {
+    await saveSharedRedditSettings({ dedup });
+    if (status) status.textContent = `已统一保存 · ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+  } catch (error) {
+    if (status) status.textContent = `本机已保存，同步失败：${error.message || "请求失败"}`;
+  }
 }
 
 function loadCaptionPresets() {
@@ -436,11 +442,32 @@ function setCaptionPresetStatus(message, isWarning = false) {
   status.style.color = isWarning ? "var(--task-amber)" : "var(--task-muted)";
 }
 
-function loadSavedSettings() {
+async function loadSavedSettings() {
   const subtitle = readStored("reddit-mix-subtitle-settings");
   setValue("#subtitleY", subtitle.yPercent); setValue("#subtitleSize", subtitle.fontSize); setValue("#subtitleMode", subtitle.animationMode);
   const dedup = readStored("reddit-mix-dedup-settings");
   setValue("#scaleMin", dedup.scaleMin); setValue("#scaleMax", dedup.scaleMax); setValue("#rotateMin", dedup.rotateMin); setValue("#rotateMax", dedup.rotateMax); setValue("#mirrorChance", dedup.mirrorChance); setValue("#sharpen", dedup.sharpen); setValue("#speedMin", dedup.speedMin); setValue("#speedMax", dedup.speedMax);
+  try {
+    const response = await fetch("/api/reddit-mix/settings", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取统一配置失败。");
+    if (!data.exists) return;
+    const sharedSubtitle = data.settings?.subtitle || {};
+    const sharedDedup = data.settings?.dedup || {};
+    setValue("#subtitleY", sharedSubtitle.yPercent); setValue("#subtitleSize", sharedSubtitle.fontSize); setValue("#subtitleMode", sharedSubtitle.animationMode);
+    setValue("#scaleMin", sharedDedup.scaleMin); setValue("#scaleMax", sharedDedup.scaleMax); setValue("#rotateMin", sharedDedup.rotateMin); setValue("#rotateMax", sharedDedup.rotateMax); setValue("#mirrorChance", sharedDedup.mirrorChance); setValue("#sharpen", sharedDedup.sharpen); setValue("#speedMin", sharedDedup.speedMin); setValue("#speedMax", sharedDedup.speedMax);
+    localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(sharedSubtitle));
+    localStorage.setItem("reddit-mix-dedup-settings", JSON.stringify(sharedDedup));
+  } catch (error) {
+    setCreateStatus(`统一配置读取失败，当前使用本机配置：${error.message || "请求失败"}`);
+  }
+}
+
+async function saveSharedRedditSettings(payload) {
+  const response = await fetch("/api/reddit-mix/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "保存统一配置失败。");
+  return data.settings;
 }
 
 function setDefaultSchedule() { const date = new Date(Date.now() + 30 * 60 * 1000); date.setSeconds(0, 0); $("#scheduleAt").value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }

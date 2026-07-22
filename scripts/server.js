@@ -21,6 +21,7 @@ const bootConfig = readConfig(root);
 const { outputDir, workDir } = resolveStorageDirs(root, bootConfig);
 const jobsDir = path.join(workDir, "jobs");
 const publishRecordsPath = path.join(workDir, "publish-records.json");
+const redditMixSettingsPath = path.join(workDir, "reddit-mix-settings.json");
 
 ensureProject(root, bootConfig);
 fs.mkdirSync(jobsDir, { recursive: true });
@@ -291,6 +292,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/audio-library") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频素材库仅允许在本机访问。" });
       return sendJson(res, 200, { items: audioLibrary.list() });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/reddit-mix/settings") {
+      return sendJson(res, 200, readRedditMixSettings());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/reddit-mix/settings") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "只有管理员可以修改统一混剪配置。" });
+      const payload = await readJsonBody(req);
+      const settings = saveRedditMixSettings(payload);
+      return sendJson(res, 200, { ok: true, settings });
     }
 
     if (req.method === "POST" && url.pathname === "/api/audio-library/generate") {
@@ -1260,7 +1272,66 @@ function canAccessPage(user, pathname) {
 function canAccessApi(user, pathname) {
   if (pathname.startsWith("/api/auth/")) return true;
   if (user.role === "admin") return true;
-  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname);
+  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/reddit-mix/settings" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname);
+}
+
+function readRedditMixSettings() {
+  if (!fs.existsSync(redditMixSettingsPath)) return { exists: false, settings: {} };
+  try {
+    const value = JSON.parse(fs.readFileSync(redditMixSettingsPath, "utf8"));
+    return { exists: true, settings: normalizeRedditMixSettings(value) };
+  } catch {
+    return { exists: false, settings: {} };
+  }
+}
+
+function saveRedditMixSettings(payload) {
+  const current = readRedditMixSettings().settings;
+  const next = normalizeRedditMixSettings({
+    ...current,
+    ...(payload?.subtitle ? { subtitle: payload.subtitle } : {}),
+    ...(payload?.dedup ? { dedup: payload.dedup } : {})
+  });
+  fs.mkdirSync(path.dirname(redditMixSettingsPath), { recursive: true });
+  fs.writeFileSync(redditMixSettingsPath, JSON.stringify({ ...next, updatedAt: Date.now() }, null, 2), "utf8");
+  return next;
+}
+
+function normalizeRedditMixSettings(value) {
+  const subtitle = value?.subtitle && typeof value.subtitle === "object" ? value.subtitle : {};
+  const dedup = value?.dedup && typeof value.dedup === "object" ? value.dedup : {};
+  return {
+    subtitle: {
+      yPercent: clampNumber(subtitle.yPercent, 38, 82, 66),
+      fontSize: clampNumber(subtitle.fontSize, 42, 92, 62),
+      animationMode: subtitle.animationMode === "word-highlight" ? "word-highlight" : "sentence"
+    },
+    dedup: {
+      enabled: dedup.enabled !== false,
+      scaleMin: clampNumber(dedup.scaleMin, 1, 1.3, 1.03),
+      scaleMax: clampNumber(dedup.scaleMax, 1, 1.3, 1.08),
+      rotateMin: clampNumber(dedup.rotateMin, -15, 15, -0.8),
+      rotateMax: clampNumber(dedup.rotateMax, -15, 15, 0.8),
+      brightnessMin: clampNumber(dedup.brightnessMin, -0.5, 0.5, -0.03),
+      brightnessMax: clampNumber(dedup.brightnessMax, -0.5, 0.5, 0.04),
+      contrastMin: clampNumber(dedup.contrastMin, 0.5, 2, 0.96),
+      contrastMax: clampNumber(dedup.contrastMax, 0.5, 2, 1.06),
+      saturationMin: clampNumber(dedup.saturationMin, 0, 2, 0.95),
+      saturationMax: clampNumber(dedup.saturationMax, 0, 2, 1.12),
+      mirrorChance: clampNumber(dedup.mirrorChance, 0, 100, 30),
+      sharpen: clampNumber(dedup.sharpen, 0, 2, 0.2),
+      speedMin: clampNumber(dedup.speedMin, 0.5, 2, 0.96),
+      speedMax: clampNumber(dedup.speedMax, 0.5, 2, 1.04),
+      overlayDir: String(dedup.overlayDir || "").trim(),
+      overlayOpacity: clampNumber(dedup.overlayOpacity, 0, 1, 0.01),
+      overlayCount: Math.round(clampNumber(dedup.overlayCount, 0, 20, 0))
+    }
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
 }
 
 function canAccessTask(user, task) {
