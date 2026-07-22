@@ -23,15 +23,33 @@ $("#addCaptionPresetBtn").addEventListener("click", addCaptionPreset);
 $("#updateCaptionPresetBtn").addEventListener("click", updateCaptionPreset);
 $("#deleteCaptionPresetBtn").addEventListener("click", deleteCaptionPreset);
 $("#assetGroupSelect").addEventListener("change", updateVideoSourceVisibility);
+$("#refreshSharedLibrariesBtn")?.addEventListener("click", loadSharedLibraries);
+$("#sharedVideoLibrary")?.addEventListener("change", applySharedLibrarySelection);
+$("#sharedAudioLibrary")?.addEventListener("change", applySharedLibrarySelection);
+$("#sharedMusicLibrary")?.addEventListener("change", applySharedLibrarySelection);
 groupFilter.addEventListener("change", filterPhones);
 nameFilter.addEventListener("input", filterPhones);
 attachDirectoryPickers();
 loadSavedSettings();
+applyIncomingAudioBatch();
 loadCaptionPresets();
 setDefaultSchedule();
 loadAssetGroups();
+loadSharedLibraries();
 loadPhones();
 loadTasks();
+
+function applyIncomingAudioBatch() {
+  const params = new URLSearchParams(location.search);
+  const audioDir = params.get("audioDir");
+  if (!audioDir || params.get("source") !== "audio-library") return;
+  const count = Math.max(1, Number(params.get("count")) || 1);
+  $("#audioDir").value = audioDir;
+  $("#taskName").value = `音频库 Reddit 任务 ${new Date().toLocaleDateString("zh-CN")}`;
+  $("#totalVideos").value = String(count);
+  setCreateStatus(`已从音频素材库载入 ${count} 条音频，请继续选择素材组和发布账号。`);
+  history.replaceState({}, "", "/tasks");
+}
 
 async function createTask() {
   const selected = Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
@@ -50,7 +68,7 @@ async function createTask() {
     name: $("#taskName").value.trim(),
     generation: {
       assetGroupId,
-      videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: $("#includeSubfolders").checked,
+      videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: true,
       audioDir: $("#audioDir").value.trim(), backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
       segmentMode: "fixed", segmentSeconds: number("#segmentSeconds", 5), totalVideos: number("#totalVideos", 40),
       subtitleYPercent: number("#subtitleY", 66), subtitleFontSize: number("#subtitleSize", 62), subtitleAnimationMode: $("#subtitleMode").value,
@@ -185,23 +203,70 @@ async function loadAssetGroups() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取素材组失败。");
     assetGroups = Array.isArray(data.groups) ? data.groups : [];
-    select.innerHTML = `<option value="">请选择一个素材组</option>${assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets ?? group.assets?.length) || 0} 条）</option>`).join("")}<option value="__manual__">临时本地目录（不计入素材组）</option>`;
-    if (!assetGroups.length) select.value = "__manual__";
-    if (hint) hint.textContent = assetGroups.length ? `已读取 ${assetGroups.length} 个素材组。临时目录仅用于一次性素材。` : "暂无素材组，已切换到临时本地目录。";
+    select.innerHTML = `<option value="">请选择一个素材组</option>${assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets ?? group.assets?.length) || 0} 条）</option>`).join("")}`;
+    if (hint) hint.textContent = assetGroups.length ? `已读取 ${assetGroups.length} 个素材组。` : "暂无已建立索引的素材组，请使用共享素材库。";
     updateVideoSourceVisibility();
   } catch (error) {
-    select.innerHTML = '<option value="__manual__">临时本地目录</option>';
-    select.value = "__manual__";
-    if (hint) hint.textContent = error.message || "读取素材组失败，已切换到临时本地目录。";
+    select.innerHTML = '<option value="">素材组读取失败</option>';
+    if (hint) hint.textContent = error.message || "读取素材组失败，请使用共享素材库。";
     updateVideoSourceVisibility();
   }
 }
 
-function updateVideoSourceVisibility() {
-  const manual = $("#assetGroupSelect")?.value === "__manual__";
-  const panel = $("#manualVideoSource");
-  if (panel) panel.hidden = !manual;
+async function loadSharedLibraries() {
+  const panel = $("#sharedLibraryPanel");
+  const hint = $("#sharedLibraryHint");
+  const refresh = $("#refreshSharedLibrariesBtn");
+  if (!panel) return;
+  if (refresh) refresh.disabled = true;
+  if (hint) hint.textContent = "正在读取共享目录下的素材库...";
+  try {
+    const response = await fetch(`/api/shared-libraries?t=${Date.now()}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取共享素材库失败。");
+    if (!data.configured) {
+      panel.hidden = true;
+      $("#directAudioSource").hidden = false;
+      $("#directMusicSource").hidden = false;
+      return;
+    }
+    const libraries = data.libraries || [];
+    panel.hidden = false;
+    $("#directAudioSource").hidden = true;
+    $("#directMusicSource").hidden = true;
+    const options = libraries.map((library) => `<option value="${escapeAttr(library.path)}">${escapeHtml(library.name)}</option>`).join("");
+    ["#sharedVideoLibrary", "#sharedAudioLibrary", "#sharedMusicLibrary"].forEach((selector, index) => {
+      const select = $(selector);
+      if (!select) return;
+      const current = select.value;
+      select.innerHTML = `${index === 2 ? '<option value="">不使用背景音乐</option>' : '<option value="">请选择素材库</option>'}${options}`;
+      if (Array.from(select.options).some((option) => option.value === current)) select.value = current;
+    });
+    if (hint) hint.textContent = `共享目录：${data.root}，已读取 ${libraries.length} 个一级素材库。`;
+  } catch (error) {
+    panel.hidden = true;
+    if (hint) hint.textContent = error.message || "共享素材库读取失败。";
+  } finally {
+    if (refresh) refresh.disabled = false;
+  }
 }
+
+function applySharedLibrarySelection(event) {
+  const targetId = event?.currentTarget?.id || "";
+  const videoDir = $("#sharedVideoLibrary")?.value || "";
+  if (targetId === "sharedVideoLibrary" && videoDir) {
+    $("#videoDir").value = videoDir;
+    const source = $("#assetGroupSelect");
+    if (source) {
+      source.value = "";
+      updateVideoSourceVisibility();
+    }
+  }
+  if (targetId === "sharedAudioLibrary") $("#audioDir").value = $("#sharedAudioLibrary")?.value || "";
+  if (targetId === "sharedMusicLibrary") $("#musicDir").value = $("#sharedMusicLibrary")?.value || "";
+}
+
+function updateVideoSourceVisibility() {}
 
 function filterPhones() {
   const group = groupFilter.value;

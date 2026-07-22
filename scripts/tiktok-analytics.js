@@ -35,6 +35,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
       runMinute: clampInt(settings.runMinute, 0, 59, 0),
       dailyRequestLimit: clampInt(settings.dailyRequestLimit, 1, 10000, DEFAULT_DAILY_REQUEST_LIMIT),
       groups: normalizeGroups(settings.groups),
+      profileIds: normalizeGroups(settings.profileIds?.length ? settings.profileIds : ["default"]),
       provider: "TikTokAPI.store",
       apiKeys: includeApiKeys ? apiKeys : [],
       maskedApiKeys: apiKeys.map(maskToken),
@@ -58,6 +59,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
       runMinute: clampInt(input.runMinute, 0, 59, current.runMinute),
       dailyRequestLimit: clampInt(input.dailyRequestLimit, 1, 10000, current.dailyRequestLimit),
       groups: input.groups === undefined ? current.groups : normalizeGroups(input.groups),
+      profileIds: input.profileIds === undefined ? current.profileIds : normalizeGroups(input.profileIds),
       apiKeys
     };
     atomicWriteJson(settingsPath, next);
@@ -508,7 +510,7 @@ function normalizeTikTokShareUrl(value, username, id) {
 }
 
 function defaultSettings() {
-  return { enabled: false, runHour: 2, runMinute: 0, dailyRequestLimit: DEFAULT_DAILY_REQUEST_LIMIT, groups: [], apiKeys: [] };
+  return { enabled: false, runHour: 2, runMinute: 0, dailyRequestLimit: DEFAULT_DAILY_REQUEST_LIMIT, groups: [], profileIds: ["default"], apiKeys: [] };
 }
 
 function readStore(filePath) {

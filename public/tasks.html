@@ -14,20 +14,25 @@
         <span><strong>Local Factory</strong><small>内容自动化</small></span>
       </a>
       <nav class="tasks-nav" aria-label="主导航">
-        <a href="/reddit">Reddit 视频生成</a>
-        <a href="/asset-cutter">视频素材切割</a>
-        <a href="/asset-usage">素材使用率</a>
+        <a data-admin-only href="/reddit">Reddit 视频生成</a>
+        <a data-admin-only href="/asset-cutter">视频素材切割</a>
+        <a data-admin-only href="/asset-usage">素材使用率</a>
         <a class="is-active" href="/tasks">自动任务</a>
         <a href="/stats">发布记录</a>
-        <a href="/analytics">数据分析</a>
-        <a href="/analytics?view=audio">音频表现</a>
-        <a href="/novel-library">小说爆款书单</a>
-        <a href="/analytics-settings">抓取配置</a>
+        <a href="/analytics">数据总览</a>
+        <a href="/analytics?view=video">视频表现</a>
+        <a href="/analytics?view=account">账号表现</a>
+        <a data-admin-only href="/analytics?view=audio">音频表现</a>
+        <a data-admin-only href="/novel-library">小说爆款书单</a>
+        <a data-admin-only href="/audio-library">音频素材库</a>
+        <a data-admin-only href="/analytics-settings">抓取配置</a>
+        <a data-admin-only href="/accounts">账户管理</a>
       </nav>
       <div class="sidebar-safety">
         <span class="live-dot"></span>
         <div><strong>安全发布已开启</strong><small>查重、熔断、单次重试</small></div>
       </div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
     </aside>
 
     <div class="tasks-workspace">
@@ -52,13 +57,18 @@
             </div>
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
             <div class="source-directory-stack">
-              <label class="field"><span>素材来源</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
-              <div id="manualVideoSource" class="manual-video-source" hidden>
-                <label class="field"><span>临时视频素材目录</span><div class="path-picker"><input id="videoDir" type="text" placeholder="选择临时素材主目录" /><button type="button" data-pick-directory="videoDir">选择</button></div></label>
-                <label class="compact-check"><input id="includeSubfolders" type="checkbox" checked /><span>读取临时目录下的子文件夹</span></label>
-              </div>
-              <label class="field"><span>音频目录</span><div class="path-picker"><input id="audioDir" type="text" placeholder="选择待生成音频目录" /><button type="button" data-pick-directory="audioDir">选择</button></div></label>
-              <label class="field"><span>背景音乐目录 <em>可选</em></span><div class="path-picker"><input id="musicDir" type="text" placeholder="不使用可留空" /><button type="button" data-pick-directory="musicDir">选择</button></div></label>
+              <section id="sharedLibraryPanel" class="shared-library-panel" hidden>
+                <div class="shared-library-head"><div><strong>共享素材库</strong><small id="sharedLibraryHint">读取管理员分配的共享目录</small></div><button id="refreshSharedLibrariesBtn" class="quiet-button" type="button">更新素材库和音频库</button></div>
+                <div class="grid controls-grid">
+                  <label class="field"><span>视频素材库</span><select id="sharedVideoLibrary"><option value="">请选择视频素材库</option></select></label>
+                  <label class="field"><span>音频库</span><select id="sharedAudioLibrary"><option value="">请选择音频库</option></select></label>
+                  <label class="field"><span>背景音乐库 <em>可选</em></span><select id="sharedMusicLibrary"><option value="">不使用背景音乐</option></select></label>
+                </div>
+              </section>
+              <label data-admin-only class="field"><span>素材来源</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
+              <input id="videoDir" type="hidden" />
+              <label id="directAudioSource" class="field"><span>音频目录</span><div class="path-picker"><input id="audioDir" type="text" placeholder="选择待生成音频目录" /><button type="button" data-pick-directory="audioDir">选择</button></div></label>
+              <label id="directMusicSource" class="field"><span>背景音乐目录 <em>可选</em></span><div class="path-picker"><input id="musicDir" type="text" placeholder="不使用可留空" /><button type="button" data-pick-directory="musicDir">选择</button></div></label>
             </div>
             <p class="retention-note">有成功发布记录的成片从计划发布时间起保留 48 小时；系统每 6 小时清理一次。待处理和未发布视频不会删除。</p>
           </div>
@@ -149,6 +159,7 @@
         </aside>
       </main>
     </div>
+    <script src="/access.js"></script>
     <script src="/tasks.js"></script>
   </body>
 </html>

@@ -13,6 +13,8 @@ outputs/
 work/
 public/remotion-assets/*
 !public/remotion-assets/.gitkeep
+tmp/
+*.tar.gz
 *.log
 *.pid
 *.tmp
@@ -37,6 +39,7 @@ public/remotion-assets/*
 .DS_Store
 Thumbs.db
 desktop.ini
+signal-desk-logo-512.png
 .vscode/
 .idea/
 

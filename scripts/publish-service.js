@@ -7,7 +7,7 @@ import { createGeeLarkClient } from "./geelark-client.js";
 const DEFAULT_DAILY_LIMIT = 300;
 const DEFAULT_RETRY_DELAY_MS = 2 * 60 * 1000;
 
-export function createPublishService({ root, workDir, outputDir, readConfig, clientFactory = createGeeLarkClient, outputValidator = resolveOutputPath }) {
+export function createPublishService({ root, workDir, outputDir, readConfig, resolveConfig, clientFactory = createGeeLarkClient, outputValidator = resolveOutputPath, historyRetryDelays = [3000, 10000] }) {
   const safetyPath = path.join(workDir, "geelark-publish-safety.json");
   const recordsPath = path.join(workDir, "publish-records.json");
   const auditPath = path.join(workDir, "geelark-api-log.jsonl");
@@ -25,7 +25,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, cli
     const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? payload.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS));
     const autoRetry = options.autoRetry !== false && payload.autoRetry !== false;
     const manual = options.manual === true;
-    const config = readConfig(root);
+    const config = resolveConfig ? resolveConfig(payload.geelarkProfileId) : readConfig(root);
     const dailyLimit = clampInt(payload.dailyPublishLimit ?? config.geelarkSafety?.dailyPublishLimit, 1, DEFAULT_DAILY_LIMIT, DEFAULT_DAILY_LIMIT);
     const batchLimit = clampInt(payload.batchPublishLimit, 1, 10000, Math.max(videos.length, videos.length * 2));
     const client = clientFactory(config);
@@ -40,7 +40,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, cli
 
     try {
       options.onProgress?.({ phase: "checking", current: 0, total: items.length, message: "正在核对 GeeLark 历史任务..." });
-      let remoteTasks = await readRecentTasks(client);
+      let remoteTasks = await readRecentTasks(client, historyRetryDelays);
 
       for (let index = 0; index < items.length; index++) {
         if (options.shouldStop?.()) break;
@@ -83,7 +83,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, cli
           const summary = summarize(results, batchAttempts);
           return { ok: true, batchId, stopped: true, results, summary };
         }
-        remoteTasks = await readRecentTasks(client);
+        remoteTasks = await readRecentTasks(client, historyRetryDelays);
 
         for (let retryIndex = 0; retryIndex < retryQueue.length; retryIndex++) {
           if (options.shouldStop?.()) break;
@@ -154,7 +154,9 @@ export function createPublishService({ root, workDir, outputDir, readConfig, cli
       intervalMinutes: 0,
       dailyPublishLimit: options.dailyPublishLimit,
       batchPublishLimit: 1,
-      autoRetry: false
+      autoRetry: false,
+      geelarkProfileId: record.geelarkProfileId || "default",
+      ownerUserId: record.ownerUserId || ""
     };
     const result = await publishBatch(payload, { batchId: `manual-retry-${recordId}-${Date.now()}`, autoRetry: false, manual: true });
     if (result.results?.some((entry) => entry.status === "submitted" || entry.status === "skipped")) {
@@ -310,11 +312,11 @@ function buildPublishItems(payload, videos, envIds) {
   });
 }
 
-async function readRecentTasks(client) {
+async function readRecentTasks(client, retryDelays = [3000, 10000]) {
   const all = [];
   let lastId = "";
   for (let page = 0; page < 5; page++) {
-    const data = await client.historyRecords({ size: 100, lastId: lastId || undefined });
+    const data = await readHistoryPageWithRetry(client, { size: 100, lastId: lastId || undefined }, retryDelays);
     const items = Array.isArray(data?.items) ? data.items : [];
     all.push(...items);
     if (items.length < 100) break;
@@ -323,6 +325,28 @@ async function readRecentTasks(client) {
     lastId = nextId;
   }
   return all;
+}
+
+async function readHistoryPageWithRetry(client, payload, retryDelays) {
+  const delays = Array.isArray(retryDelays) ? retryDelays : [3000, 10000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await client.historyRecords(payload);
+    } catch (error) {
+      const canRetry = attempt < delays.length && isTransientHistoryError(error);
+      if (!canRetry) {
+        if (attempt > 0) error.message = `${error.message}（已自动重试 ${attempt} 次）`;
+        throw error;
+      }
+      await delayInterruptible(Math.max(0, Number(delays[attempt]) || 0));
+    }
+  }
+}
+
+function isTransientHistoryError(error) {
+  if (!error?.geelarkResponseReceived) return true;
+  const status = Number(error.httpStatus) || 0;
+  return status === 429 || status >= 500;
 }
 
 function findRemoteTask(tasks, item) {
@@ -346,6 +370,8 @@ function makeRecord({ item, index, payload, account, batchId, resourceUrl = "", 
     createdAt: Date.now(),
     updatedAt: Date.now(),
     source: "geelark",
+    geelarkProfileId: String(payload.geelarkProfileId || "default"),
+    ownerUserId: String(payload.ownerUserId || ""),
     platform: "tiktok",
     status,
     attempts,

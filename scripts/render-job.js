@@ -36,6 +36,7 @@ async function runJob() {
   const renderConfig = applyAspect(config, payload.aspect);
   const hasUploadedAudio = Boolean(payload.audioBase64 && payload.audioName);
   const hasAudioUrl = Boolean(String(payload.audioUrl || "").trim());
+  const hasLibraryAudio = Boolean(String(payload.audioLibraryPath || "").trim());
   let audioPath = null;
   let backgroundPath = null;
   let captions = null;
@@ -53,7 +54,12 @@ async function runJob() {
     fs.writeFileSync(backgroundPath, Buffer.from(payload.backgroundBase64, "base64"));
   }
 
-  if (hasUploadedAudio) {
+  if (hasLibraryAudio) {
+    const candidate = path.resolve(String(payload.audioLibraryPath));
+    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) throw new Error("音频素材库文件不存在。");
+    audioPath = candidate;
+    updateJob({ status: "running", percent: 12, message: "Loaded audio library file.", updatedAt: Date.now() });
+  } else if (hasUploadedAudio) {
     updateJob({
       status: "running",
       percent: 12,

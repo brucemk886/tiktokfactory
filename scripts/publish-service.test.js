@@ -18,9 +18,18 @@ fs.writeFileSync(path.join(outputDir, "next-day.mp4"), Buffer.alloc(2048, 1));
 const uploadAttempts = new Map();
 const taskAttempts = new Map();
 let taskAddCalls = 0;
+let historyCalls = 0;
+let historyFailuresRemaining = 2;
 const mockClient = {
   isConfigured: () => true,
-  historyRecords: async () => ({ items: [] }),
+  historyRecords: async () => {
+    historyCalls += 1;
+    if (historyFailuresRemaining > 0) {
+      historyFailuresRemaining -= 1;
+      throw new Error("temporary history timeout");
+    }
+    return { items: [] };
+  },
   uploadTemporaryFile: async (filePath) => {
     const name = path.basename(filePath);
     const attempt = (uploadAttempts.get(name) || 0) + 1;
@@ -48,7 +57,8 @@ const service = createPublishService({
   outputDir,
   readConfig: () => ({}),
   clientFactory: () => mockClient,
-  outputValidator: (dir, fileName) => path.join(dir, fileName)
+  outputValidator: (dir, fileName) => path.join(dir, fileName),
+  historyRetryDelays: [0, 0]
 });
 
 const payload = {
@@ -67,6 +77,7 @@ assert.equal(first.summary.failed, 0);
 assert.equal(first.summary.needsCheck, 0);
 assert.equal(first.summary.apiTaskAddAttempts, 5);
 assert.equal(taskAddCalls, 4);
+assert.ok(historyCalls >= 3, "history lookup should retry two transient failures before publishing");
 
 const stateAfterRetry = JSON.parse(fs.readFileSync(path.join(workDir, "geelark-publish-safety.json"), "utf8"));
 assert.equal(Object.values(stateAfterRetry.daily).reduce((sum, count) => sum + Number(count || 0), 0), 3, "automatic retries must not consume another planned-video slot");

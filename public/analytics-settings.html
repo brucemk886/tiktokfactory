@@ -18,7 +18,10 @@
       <a href="/analytics">数据分析</a>
       <a href="/analytics?view=audio">音频表现</a>
       <a href="/novel-library">小说爆款书单</a>
+      <a href="/audio-library">音频素材库</a>
       <a class="is-active" href="/analytics-settings">抓取配置</a>
+      <a data-admin-only href="/accounts">账户管理</a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
     </nav>
 
     <main class="settings-shell">
@@ -36,14 +39,32 @@
         <article class="config-card schedule-config-card">
           <div class="config-card-head"><span>02</span><div><strong>执行时间</strong><small>电脑和本地服务需要在执行时间保持开启</small></div></div>
           <div class="schedule-fields">
-            <label class="config-field"><span>每日抓取时间</span><input id="runTimeInput" type="time" value="02:00" /></label>
+            <div class="config-field">
+              <span>每日抓取时间</span>
+              <div class="schedule-time-selects">
+                <div class="time-picker">
+                  <button id="runHourButton" class="time-picker-trigger" type="button" aria-label="抓取小时" aria-haspopup="listbox" aria-expanded="false"><span>08</span><i></i></button>
+                  <div id="runHourMenu" class="time-picker-menu hour-menu" role="listbox" aria-label="小时选项" hidden></div>
+                </div>
+                <b>:</b>
+                <div class="time-picker">
+                  <button id="runMinuteButton" class="time-picker-trigger" type="button" aria-label="抓取分钟" aria-haspopup="listbox" aria-expanded="false"><span>00</span><i></i></button>
+                  <div id="runMinuteMenu" class="time-picker-menu minute-menu" role="listbox" aria-label="分钟选项" hidden></div>
+                </div>
+              </div>
+            </div>
             <label class="switch-control"><input id="autoFetchInput" type="checkbox" /><i></i><span>启用每日自动抓取</span></label>
           </div>
           <div class="next-run-preview"><span>下一次执行</span><strong id="nextRunPreview">保存后计算</strong></div>
         </article>
 
+        <article class="config-card profile-card">
+          <div class="config-card-head"><span>03</span><div><strong>GeeLark 数据源</strong><small>勾选需要参与 TikTok 数据抓取的 GeeLark 账号，可同时选择多个</small></div></div>
+          <div id="profileOptions" class="config-profile-grid"><div class="config-loading">正在读取 GeeLark 配置...</div></div>
+        </article>
+
         <article class="config-card groups-card">
-          <div class="config-card-head"><span>03</span><div><strong>GeeLark 账号组</strong><small>执行时会重新读取账号，分组中的账号增删会自动同步</small></div><b id="selectionCount">已选 0 组 / 0 账号</b></div>
+          <div class="config-card-head"><span>04</span><div><strong>GeeLark 账号组</strong><small>执行时会重新读取账号，分组中的账号增删会自动同步</small></div><div class="group-head-actions"><button id="refreshGroupsBtn" class="secondary-btn" type="button">刷新 GeeLark 账号组</button><b id="selectionCount">已选 0 组 / 0 账号</b></div></div>
           <div class="group-tools"><input id="groupSearch" type="search" placeholder="搜索账号组" /><button id="selectVisibleBtn" class="secondary-btn" type="button">全选筛选结果</button><button id="clearGroupsBtn" class="secondary-btn" type="button">清空</button></div>
           <div id="groupOptions" class="config-group-grid"><div class="config-loading">正在从 GeeLark 读取账号组...</div></div>
           <div id="quotaWarning" class="quota-warning" hidden></div>
@@ -52,6 +73,7 @@
 
       <footer class="config-footer"><div id="saveStatus">配置尚未修改。</div><button id="saveSettingsBtn" class="primary-btn" type="button">保存抓取配置</button></footer>
     </main>
+    <script src="/access.js"></script>
     <script type="module" src="/analytics-settings.js"></script>
   </body>
 </html>

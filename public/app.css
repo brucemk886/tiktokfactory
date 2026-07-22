@@ -1107,6 +1107,8 @@ body.work-page {
   background: #0d0f12;
 }
 
+html:not([data-role="admin"]) [data-admin-only] { display: none !important; }
+
 .work-page .side-tabs {
   position: fixed;
   inset: 0 auto 0 0;
@@ -1118,6 +1120,7 @@ body.work-page {
   gap: 4px;
   border-right: 1px solid #20252b;
   background: #101216;
+  overflow-y: auto;
 }
 
 .work-page .side-tabs .app-brand {
@@ -1165,6 +1168,8 @@ body.work-page {
 
 .work-page .side-tabs > a:not(.app-brand):hover { color: #f2f4f5; background: #171a1f; }
 .work-page .side-tabs > a.is-active { color: #f2f4f5; border-left-color: #d9f26a; background: #1a1e22; }
+.work-page .side-tabs .nav-logout { width: calc(100% - 16px); min-height: 38px; margin: 14px 8px 0; padding: 0 12px; border: 1px solid #2b3138; border-radius: 5px; color: #aeb4bc; background: #161a1f; font: inherit; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
+.work-page .side-tabs .nav-logout:hover { color: #f2f4f5; border-color: #3b444e; background: #1b2026; }
 .work-page .side-tabs > a[href="/"] { display: none; }
 .work-page .topbar-actions a[href="/"] { display: none; }
 .tasks-nav a[href="/"] { display: none; }

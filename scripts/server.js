@@ -11,6 +11,8 @@ import { createAutoTaskManager } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
+import { createAudioLibraryService } from "./audio-library.js";
+import { createLocalAuthService } from "./local-auth.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -22,21 +24,108 @@ const publishRecordsPath = path.join(workDir, "publish-records.json");
 
 ensureProject(root, bootConfig);
 fs.mkdirSync(jobsDir, { recursive: true });
-const publishService = createPublishService({ root, workDir, outputDir, readConfig });
+const localAuth = createLocalAuthService({ workDir, initialGeeLark: bootConfig.geelark || {} });
+const publishService = createPublishService({
+  root,
+  workDir,
+  outputDir,
+  readConfig,
+  resolveConfig: (profileId) => ({ ...readConfig(root), geelark: resolveGeeLarkConfig(profileId) })
+});
 const autoTaskManager = createAutoTaskManager({ root, workDir, outputDir, publishService, outputRetentionHours: 48 });
 const tiktokAnalytics = createTikTokAnalyticsService({
   workDir,
   defaultApiKeys: bootConfig.tiktokApiStoreApiKeys,
   defaultApiKey: bootConfig.tiktokApiStoreApiKey
 });
-const codexBrain = createCodexBrainService({ root });
+const codexBrain = createCodexBrainService({ root, workDir });
 const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
+const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
 
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+    if (req.method === "GET" && url.pathname === "/login") {
+      if (localAuth.getSession(req)) return redirect(res, "/tasks");
+      return sendFile(res, path.join(publicDir, "login.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/login.js") return sendFile(res, path.join(publicDir, "login.js"), "text/javascript; charset=utf-8");
+    if (req.method === "GET" && url.pathname === "/access.css") return sendFile(res, path.join(publicDir, "access.css"), "text/css; charset=utf-8");
+    if (req.method === "GET" && url.pathname === "/access.js") return sendFile(res, path.join(publicDir, "access.js"), "text/javascript; charset=utf-8");
+    if (req.method === "GET" && url.pathname === "/setup") {
+      if (localAuth.hasUsers()) return redirect(res, "/login");
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "首次管理员初始化只能在本机完成。" });
+      return sendFile(res, path.join(publicDir, "setup.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/setup.js") return sendFile(res, path.join(publicDir, "setup.js"), "text/javascript; charset=utf-8");
+
+    if (req.method === "POST" && url.pathname === "/api/auth/setup") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "首次管理员初始化只能在本机完成。" });
+      const payload = await readJsonBody(req);
+      const user = localAuth.setupAdmin(payload);
+      const session = localAuth.login({ username: user.username, password: payload.password });
+      return sendJson(res, 201, { ok: true, user: session.user }, { "Set-Cookie": sessionCookie(session.token) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      const session = localAuth.login(await readJsonBody(req));
+      return sendJson(res, 200, { ok: true, user: session.user }, { "Set-Cookie": sessionCookie(session.token) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+      localAuth.logout(localAuth.getSession(req)?.token);
+      return sendJson(res, 200, { ok: true }, { "Set-Cookie": "lf_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
+    }
+
+    const session = localAuth.getSession(req);
+    if (url.pathname.startsWith("/api/")) {
+      if (!session) return sendJson(res, 401, { error: "请先登录。" });
+      if (!canAccessApi(session.user, url.pathname)) return sendJson(res, 403, { error: "当前账号没有此功能权限。" });
+    } else if (requiresLogin(url.pathname)) {
+      if (!localAuth.hasUsers()) return redirect(res, isLoopbackRequest(req) ? "/setup" : "/login");
+      if (!session) return redirect(res, "/login");
+      if (!canAccessPage(session.user, url.pathname)) return redirect(res, "/tasks");
+    }
+
+    if (req.method === "GET" && url.pathname === "/accounts") {
+      return sendFile(res, path.join(publicDir, "accounts.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/accounts.js") {
+      return sendFile(res, path.join(publicDir, "accounts.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/api/auth/me") {
+      return sendJson(res, 200, { user: session.user, profiles: session.user.role === "admin" ? localAuth.listProfiles() : [] });
+    }
+    if (req.method === "GET" && url.pathname === "/api/admin/accounts") {
+      return sendJson(res, 200, { users: localAuth.listUsers(), profiles: localAuth.listProfiles() });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/accounts") {
+      return sendJson(res, 201, { user: localAuth.createUser(await readJsonBody(req)) });
+    }
+    if (req.method === "PATCH" && url.pathname.match(/^\/api\/admin\/accounts\/[^/]+$/)) {
+      return sendJson(res, 200, { user: localAuth.updateUser(decodeURIComponent(url.pathname.split("/").pop()), await readJsonBody(req)) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/admin/geelark-profiles") {
+      return sendJson(res, 200, { profile: localAuth.saveProfile(await readJsonBody(req)) });
+    }
+    if (req.method === "GET" && url.pathname.match(/^\/api\/admin\/geelark-profiles\/[^/]+\/groups$/)) {
+      const profileId = decodeURIComponent(url.pathname.split("/")[4]);
+      if (!localAuth.getProfile(profileId)) return sendJson(res, 404, { error: "GeeLark 配置不存在。" });
+      const phones = await listGeeLarkPhonesForProfile(profileId);
+      const counts = new Map();
+      for (const phone of phones) {
+        const groupName = String(phone.groupName || "").trim();
+        if (groupName) counts.set(groupName, (counts.get(groupName) || 0) + 1);
+      }
+      const groups = Array.from(counts, ([name, accountCount]) => ({ name, accountCount }))
+        .sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
+      return sendJson(res, 200, { groups, accountCount: phones.length });
+    }
+    if (req.method === "DELETE" && url.pathname.match(/^\/api\/admin\/geelark-profiles\/[^/]+$/)) {
+      localAuth.deleteProfile(decodeURIComponent(url.pathname.split("/").pop()));
+      return sendJson(res, 200, { ok: true });
+    }
 
     if (req.method === "GET" && url.pathname === "/") {
       return sendFile(res, path.join(publicDir, "index.html"), "text/html; charset=utf-8");
@@ -130,6 +219,18 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "novel-library.css"), "text/css; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/audio-library") {
+      return sendFile(res, path.join(publicDir, "audio-library.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/audio-library.js") {
+      return sendFile(res, path.join(publicDir, "audio-library.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/audio-library.css") {
+      return sendFile(res, path.join(publicDir, "audio-library.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname.startsWith("/outputs/")) {
       const fileName = path.basename(decodeURIComponent(url.pathname.slice("/outputs/".length)));
       return sendFile(res, path.join(outputDir, fileName), "video/mp4");
@@ -177,12 +278,56 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "POST" && url.pathname === "/api/novel-marketing/generate") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说营销生成接口仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        return sendJson(res, 200, await codexBrain.generateNovelMarketing(payload));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "小说营销素材生成失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/audio-library") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频素材库仅允许在本机访问。" });
+      return sendJson(res, 200, { items: audioLibrary.list() });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/audio-library/generate") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频生成功能仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        const item = await audioLibrary.generateFromMarketing(payload);
+        return sendJson(res, 200, { item });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "音频生成失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/audio-library/prepare-task") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频任务准备接口仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        return sendJson(res, 200, audioLibrary.prepareTaskBatch(payload.ids));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "准备音频任务失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname.match(/^\/api\/audio-library\/[^/]+\/file$/)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频素材库仅允许在本机访问。" });
+      const audioId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+      const audioPath = audioLibrary.resolveAudioPath(audioId);
+      if (!audioPath) return sendJson(res, 404, { error: "音频文件不存在。" });
+      return sendFile(res, audioPath, mediaContentType(audioPath));
+    }
+
     if (req.method === "GET" && url.pathname === "/api/publish-records") {
-      return sendJson(res, 200, getPublishRecordsSummary(url.searchParams));
+      return sendJson(res, 200, getPublishRecordsSummary(url.searchParams, session.user));
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {
-      const allowedAccounts = await getScheduledTikTokAccountsCached();
+      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user);
       return sendJson(res, 200, tiktokAnalytics.getDashboard({
         period: String(url.searchParams.get("period") || "7d"),
         group: String(url.searchParams.get("group") || ""),
@@ -193,9 +338,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/settings") {
-      const currentPhones = await getCurrentGeeLarkPhones();
+      const settings = tiktokAnalytics.getSettings();
+      const profiles = localAuth.listProfiles().map((profile) => ({ id: profile.id, name: profile.name }));
+      const requestedProfileIds = url.searchParams.getAll("profileId").map((item) => String(item).trim()).filter(Boolean);
+      const profileIds = (requestedProfileIds.length ? requestedProfileIds : settings.profileIds)
+        .filter((profileId) => profiles.some((profile) => profile.id === profileId));
+      const currentPhones = profileIds.length ? await getCurrentGeeLarkPhones(profileIds) : [];
       return sendJson(res, 200, {
-        settings: tiktokAnalytics.getSettings(),
+        settings,
+        profiles,
+        activeProfileIds: profileIds,
         accountCount: currentPhones.length,
         availableGroups: Array.from(new Set(currentPhones.map((phone) => phone.groupName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
         groupCounts: Object.fromEntries(Array.from(new Set(currentPhones.map((phone) => phone.groupName).filter(Boolean))).map((groupName) => [
@@ -210,6 +362,11 @@ const server = http.createServer(async (req, res) => {
       const publishRecords = readPublishRecords();
       const video = tiktokAnalytics.getVideo(videoId, publishRecords);
       if (!video) return sendJson(res, 404, { error: "没有找到这条 TikTok 视频的数据。" });
+      if (session.user.role !== "admin") {
+        const allowedAccounts = new Set(await getAnalyticsAllowedAccounts(session.user));
+        const username = String(video.username || "").trim().replace(/^@/, "").toLowerCase();
+        if (!allowedAccounts.has(username)) return sendJson(res, 403, { error: "你没有查看这条视频素材明细的权限。" });
+      }
       if (!video.local?.fileName) return sendJson(res, 404, { error: "这条视频尚未匹配到本地发布记录。" });
       const reuse = getGeneratedVideoReuseDetail(root, video.local.fileName);
       if (!reuse) return sendJson(res, 404, { error: "没有找到这条成片的素材抽取记录。" });
@@ -252,7 +409,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/account-details") {
       const username = String(url.searchParams.get("username") || "");
-      const allowedAccounts = await getScheduledTikTokAccountsCached();
+      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user);
       const detail = tiktokAnalytics.getAccountDetail(username, {
         period: String(url.searchParams.get("period") || "7d"),
         group: String(url.searchParams.get("group") || ""),
@@ -287,12 +444,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/tiktok-analytics/fetch-group") {
       if (tiktokAnalytics.isRunning()) return sendJson(res, 409, { error: "TikTok 数据抓取任务正在执行。" });
       const payload = await readJsonBody(req);
-      const groupName = String(payload.groupName || "").trim();
-      if (!groupName) return sendJson(res, 400, { error: "请先选择需要抓取的账号组。" });
-      const accounts = await getCurrentGeeLarkAccounts(groupName);
+      const profileId = String(payload.profileId || "").trim();
+      const groupNames = Array.isArray(payload.groupNames)
+        ? payload.groupNames.map((item) => String(item).trim()).filter(Boolean)
+        : [String(payload.groupName || "").trim()].filter(Boolean);
+      if (!profileId) return sendJson(res, 400, { error: "请先选择 GeeLark 账号。" });
+      if (!groupNames.length) return sendJson(res, 400, { error: "请至少选择一个需要抓取的账号组。" });
+      const accounts = await getCurrentGeeLarkAccounts(groupNames, profileId);
       if (!accounts.length) return sendJson(res, 400, { error: "当前账号组没有可抓取的账号。" });
       void tiktokAnalytics.fetchAccounts(accounts).catch((error) => console.error("TikTok analytics fetch failed:", error));
-      return sendJson(res, 202, { ok: true, groupName, accountCount: accounts.length });
+      return sendJson(res, 202, { ok: true, profileId, groupNames, accountCount: accounts.length });
     }
 
     if (req.method === "POST" && url.pathname === "/api/tiktok-analytics/fetch-all") {
@@ -302,6 +463,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname.match(/^\/api\/publish-records\/[^/]+\/retry$/)) {
       const recordId = decodeURIComponent(url.pathname.split("/")[3]);
       const payload = await readJsonBody(req);
+      const record = readPublishRecords().find((entry) => String(entry.id) === String(recordId));
+      if (!canAccessPublishRecord(session.user, record)) return sendJson(res, 403, { error: "无权重新执行此发布记录。" });
+      if (session.user.role !== "admin") {
+        delete payload.envId;
+        delete payload.accountName;
+      }
       const result = await publishService.retryRecord(recordId, payload);
       return sendJson(res, 200, result);
     }
@@ -382,25 +549,38 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/select-directory") {
       const payload = await readJsonBody(req);
       const selectedPath = await openDirectoryDialog({
-        initialPath: payload.initialPath,
+        initialPath: session.user.role === "admin" ? payload.initialPath : (session.user.allowedDirectory || payload.initialPath),
         title: payload.title
       });
+      if (selectedPath && session.user.role !== "admin" && !isPathInside(selectedPath, session.user.allowedDirectory)) {
+        return sendJson(res, 403, { error: "当前账号只能选择管理员分配的共享目录及其子文件夹。" });
+      }
       return sendJson(res, 200, { canceled: !selectedPath, path: selectedPath || "" });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/shared-libraries") {
+      const libraryRoot = String(session.user.allowedDirectory || "").trim();
+      if (!libraryRoot) return sendJson(res, 200, { configured: false, root: "", libraries: [] });
+      if (!fs.existsSync(libraryRoot)) return sendJson(res, 200, { configured: false, root: libraryRoot, libraries: [], error: "共享素材目录当前无法访问。" });
+      const libraries = [{ name: "共享目录根目录", path: libraryRoot }, ...fs.readdirSync(libraryRoot, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+        .map((entry) => ({ name: entry.name, path: path.join(libraryRoot, entry.name) }))
+        .sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"))];
+      return sendJson(res, 200, { configured: true, root: libraryRoot, libraries });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/geelark/phones") {
-      const config = readConfig(root);
-      const client = createGeeLarkClient(config);
+      const config = resolveGeeLarkConfig(session.user.geelarkProfileId);
+      const client = createGeeLarkClient({ geelark: config });
       if (!client.isConfigured()) return sendJson(res, 200, { configured: false, phones: [] });
-      const data = await client.listPhones({
-        page: Number(url.searchParams.get("page")) || 1,
-        pageSize: Number(url.searchParams.get("pageSize")) || 100
-      });
-      return sendJson(res, 200, { configured: true, phones: normalizeGeeLarkList(data) });
+      const phones = await getAuthorizedGeeLarkPhones(session.user);
+      return sendJson(res, 200, { configured: true, phones });
     }
 
     if (req.method === "POST" && url.pathname === "/api/geelark/publish") {
       const payload = await readJsonBody(req);
+      payload.geelarkProfileId = session.user.geelarkProfileId;
+      payload.ownerUserId = session.user.id;
       const result = await publishService.publishBatch(payload, {
         batchId: payload.batchId || `manual-${Date.now()}`,
         retryDelayMs: 2 * 60 * 1000,
@@ -414,31 +594,59 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/auto-tasks") {
-      return sendJson(res, 200, { tasks: autoTaskManager.listTasks(), worker: autoTaskManager.getStatus() });
+      return sendJson(res, 200, { tasks: filterTasksForUser(autoTaskManager.listTasks(), session.user), worker: autoTaskManager.getStatus() });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auto-tasks") {
       const payload = await readJsonBody(req);
+      if (session.user.role !== "admin") {
+        const generation = payload.generation || {};
+        if (String(generation.assetGroupId || "").trim()) return sendJson(res, 403, { error: "成员账号只能使用分配的共享素材库，不能使用管理员素材组。" });
+        for (const directory of [generation.videoDir, generation.audioDir, generation.backgroundMusicDir].filter(Boolean)) {
+          if (!isPathInside(directory, session.user.allowedDirectory)) return sendJson(res, 403, { error: "任务目录必须位于管理员分配的共享素材目录内。" });
+        }
+        if (payload.publish?.autoPublish !== false) {
+          const authorizedPhones = await getAuthorizedGeeLarkPhones(session.user);
+          const authorizedById = new Map(authorizedPhones.map((phone) => [String(phone.id), phone]));
+          const envIds = Array.from(new Set((payload.publish?.envIds || []).map(String).filter(Boolean)));
+          const unauthorizedIds = envIds.filter((envId) => !authorizedById.has(envId));
+          if (unauthorizedIds.length) {
+            return sendJson(res, 403, { error: "任务中包含未授权的 GeeLark 账号，请刷新账号列表后重新选择。" });
+          }
+          payload.publish.accounts = envIds.map((envId) => {
+            const phone = authorizedById.get(envId);
+            return { id: envId, name: phone.serialName || "", serialNo: phone.serialNo || "", groupName: phone.groupName || "", remark: phone.remark || "" };
+          });
+        }
+      }
+      payload.ownerUserId = session.user.id;
+      payload.geelarkProfileId = session.user.geelarkProfileId;
+      payload.publish = { ...(payload.publish || {}), ownerUserId: session.user.id, geelarkProfileId: session.user.geelarkProfileId };
       return sendJson(res, 201, { task: autoTaskManager.createTask(payload) });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/api/auto-tasks/")) {
       const taskId = safeId(decodeURIComponent(url.pathname.slice("/api/auto-tasks/".length)));
-      return sendJson(res, 200, { task: autoTaskManager.getTask(taskId) });
+      const task = autoTaskManager.getTask(taskId);
+      if (!canAccessTask(session.user, task)) return sendJson(res, 403, { error: "无权查看此任务。" });
+      return sendJson(res, 200, { task });
     }
 
     if (req.method === "POST" && url.pathname.match(/^\/api\/auto-tasks\/[^/]+\/cancel$/)) {
       const taskId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+      if (!canAccessTask(session.user, autoTaskManager.getTask(taskId))) return sendJson(res, 403, { error: "无权操作此任务。" });
       return sendJson(res, 200, { task: autoTaskManager.cancelTask(taskId) });
     }
 
     if (req.method === "POST" && url.pathname.match(/^\/api\/auto-tasks\/[^/]+\/resume$/)) {
       const taskId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+      if (!canAccessTask(session.user, autoTaskManager.getTask(taskId))) return sendJson(res, 403, { error: "无权操作此任务。" });
       return sendJson(res, 200, { task: autoTaskManager.resumeTask(taskId) });
     }
 
     if (req.method === "POST" && url.pathname.match(/^\/api\/auto-tasks\/[^/]+\/retry-publish$/)) {
       const taskId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+      if (!canAccessTask(session.user, autoTaskManager.getTask(taskId))) return sendJson(res, 403, { error: "无权操作此任务。" });
       const payload = await readJsonBody(req);
       const result = await autoTaskManager.retryPublishRecord(taskId, String(payload.recordId || ""), payload);
       return sendJson(res, 200, result);
@@ -449,7 +657,9 @@ const server = http.createServer(async (req, res) => {
       const text = String(payload.text || "").trim();
       const hasUploadedAudio = Boolean(payload.audioBase64 && payload.audioName);
       const hasAudioUrl = Boolean(String(payload.audioUrl || "").trim());
-      if (!hasUploadedAudio && !hasAudioUrl && !text) {
+      const audioLibraryPath = payload.audioLibraryId ? audioLibrary.resolveAudioPath(payload.audioLibraryId) : "";
+      if (payload.audioLibraryId && !audioLibraryPath) return sendJson(res, 404, { error: "音频素材库中的文件不存在。" });
+      if (!hasUploadedAudio && !hasAudioUrl && !audioLibraryPath && !text) {
         return sendJson(res, 400, { error: "请输入配音文案、上传音频，或填写音频链接。" });
       }
 
@@ -457,7 +667,15 @@ const server = http.createServer(async (req, res) => {
       const payloadPath = path.join(jobsDir, `${jobId}.payload.json`);
       const jobPath = path.join(jobsDir, `${jobId}.json`);
 
-      fs.writeFileSync(payloadPath, JSON.stringify({ ...payload, jobId }, null, 2), "utf8");
+      const jobPayload = { ...payload, jobId };
+      if (audioLibraryPath) {
+        jobPayload.audioLibraryPath = audioLibraryPath;
+        jobPayload.audioName = audioLibrary.get(payload.audioLibraryId)?.fileName || path.basename(audioLibraryPath);
+        jobPayload.autoTts = false;
+      } else {
+        delete jobPayload.audioLibraryPath;
+      }
+      fs.writeFileSync(payloadPath, JSON.stringify(jobPayload, null, 2), "utf8");
       writeJob(jobPath, {
         jobId,
         status: "queued",
@@ -767,7 +985,24 @@ function getConfiguredAssetGroups() {
   return listAssetGroups(root).filter((group) => allowedIds.has(group.id));
 }
 
-async function getCurrentGeeLarkPhones() {
+async function getCurrentGeeLarkPhones(profileIds = tiktokAnalytics.getSettings().profileIds) {
+  const selectedProfileIds = Array.from(new Set((profileIds || []).map((item) => String(item).trim()).filter(Boolean)));
+  const phonesByProfile = await Promise.all(selectedProfileIds.map(async (profileId) => {
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const phones = await listGeeLarkPhonesForProfile(profileId);
+        return phones.map((phone) => ({ ...phone, profileId }));
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+    throw lastError;
+  }));
+  const selectedPhones = phonesByProfile.flat();
+  return Array.from(new Map(selectedPhones.filter((phone) => phone.id).map((phone) => [`${phone.profileId}:${phone.id}`, phone])).values());
+
   const config = readConfig(root);
   const client = createGeeLarkClient(config);
   if (!client.isConfigured()) throw new Error("GeeLark API 未配置，无法读取当前账号组。");
@@ -790,10 +1025,11 @@ async function getCurrentGeeLarkPhones() {
   throw lastError || new Error("读取 GeeLark 当前账号组失败。");
 }
 
-async function getCurrentGeeLarkAccounts(groupName = "") {
-  const phones = await getCurrentGeeLarkPhones();
+async function getCurrentGeeLarkAccounts(groupNames = [], profileId = "") {
+  const selectedGroups = new Set((Array.isArray(groupNames) ? groupNames : [groupNames]).map((item) => String(item).trim()).filter(Boolean));
+  const phones = await getCurrentGeeLarkPhones(profileId ? [profileId] : undefined);
   return Array.from(new Set(phones
-    .filter((phone) => !groupName || String(phone.groupName || "").trim() === groupName)
+    .filter((phone) => !selectedGroups.size || selectedGroups.has(String(phone.groupName || "").trim()))
     .map((phone) => String(phone.serialName || "").trim().replace(/^@/, "").toLowerCase())
     .filter(Boolean)))
     .sort((a, b) => a.localeCompare(b));
@@ -821,6 +1057,18 @@ async function getScheduledTikTokAccountsCached() {
     console.warn("Unable to refresh configured TikTok accounts:", error.message || error);
     return scheduledAccountsCache.accounts;
   }
+}
+
+async function getAnalyticsAllowedAccounts(user) {
+  const scheduledAccounts = await getScheduledTikTokAccountsCached();
+  if (user.role === "admin") return scheduledAccounts;
+  const scheduledSet = new Set((scheduledAccounts || [])
+    .map((item) => String(item).trim().replace(/^@/, "").toLowerCase())
+    .filter(Boolean));
+  const phones = await getAuthorizedGeeLarkPhones(user);
+  return Array.from(new Set(phones
+    .map((phone) => String(phone.serialName || "").trim().replace(/^@/, "").toLowerCase())
+    .filter((username) => username && scheduledSet.has(username))));
 }
 
 function normalizeOutputId(value) {
@@ -986,9 +1234,84 @@ function sendFile(res, filePath, contentType) {
   fs.createReadStream(filePath).pipe(res);
 }
 
-function sendJson(res, status, value) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+function sendJson(res, status, value, headers = {}) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", ...headers });
   res.end(JSON.stringify(value));
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { Location: location, "Cache-Control": "no-store" });
+  res.end();
+}
+
+function sessionCookie(token) {
+  return `lf_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`;
+}
+
+function requiresLogin(pathname) {
+  return !["/login", "/login.js", "/setup", "/setup.js", "/app.css", "/access.css"].includes(pathname);
+}
+
+function canAccessPage(user, pathname) {
+  if (user.role === "admin") return true;
+  return new Set(["/tasks", "/tasks.js", "/tasks.css", "/stats", "/stats.js", "/analytics", "/analytics.js", "/analytics.css", "/app.css", "/access.css", "/access.js"]).has(pathname) || pathname.startsWith("/outputs/");
+}
+
+function canAccessApi(user, pathname) {
+  if (pathname.startsWith("/api/auth/")) return true;
+  if (user.role === "admin") return true;
+  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname);
+}
+
+function canAccessTask(user, task) {
+  return user.role === "admin" || String(task?.ownerUserId || "") === String(user.id);
+}
+
+function filterTasksForUser(tasks, user) {
+  return user.role === "admin" ? tasks : tasks.filter((task) => canAccessTask(user, task));
+}
+
+function canAccessPublishRecord(user, record) {
+  if (!user || !record) return false;
+  if (user.role === "admin") return true;
+  if (String(record.ownerUserId || "") !== String(user.id)) return false;
+  const allowedGroups = new Set((user.allowedGeeLarkGroups || []).map((group) => String(group).trim()).filter(Boolean));
+  return allowedGroups.has(String(record.groupName || "").trim());
+}
+
+function resolveGeeLarkConfig(profileId) {
+  const profile = localAuth.getProfile(profileId || "default");
+  if (!profile) return readConfig(root).geelark || {};
+  return { apiBaseUrl: profile.apiBaseUrl, appId: profile.appId, apiKey: profile.apiKey };
+}
+
+async function listGeeLarkPhonesForProfile(profileId) {
+  const client = createGeeLarkClient({ geelark: resolveGeeLarkConfig(profileId) });
+  if (!client.isConfigured()) throw new Error("GeeLark API 未配置，无法读取账号分组。");
+  const phones = [];
+  for (let page = 1; page <= 20; page++) {
+    const data = await client.listPhones({ page, pageSize: 100 });
+    const batch = normalizeGeeLarkList(data);
+    phones.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return Array.from(new Map(phones.filter((phone) => phone.id).map((phone) => [String(phone.id), phone])).values());
+}
+
+async function getAuthorizedGeeLarkPhones(user) {
+  const allowedGroups = new Set((user.allowedGeeLarkGroups || []).map((group) => String(group).trim()).filter(Boolean));
+  if (user.role !== "admin" && !allowedGroups.size) return [];
+  const phones = await listGeeLarkPhonesForProfile(user.geelarkProfileId || "default");
+  if (user.role === "admin") return phones;
+  return phones.filter((phone) => allowedGroups.has(String(phone.groupName || "").trim()));
+}
+
+function isPathInside(selectedPath, allowedRoot) {
+  const rootPath = String(allowedRoot || "").trim();
+  if (!rootPath) return false;
+  const selected = path.resolve(String(selectedPath));
+  const allowed = path.resolve(rootPath);
+  return selected === allowed || selected.startsWith(`${allowed}${path.sep}`);
 }
 
 function isLoopbackRequest(req) {
@@ -1135,12 +1458,13 @@ function appendPublishRecords(records) {
   writePublishRecords([...records, ...current]);
 }
 
-function getPublishRecordsSummary(searchParams) {
+function getPublishRecordsSummary(searchParams, user = null) {
   const range = String(searchParams.get("range") || "7d");
   const group = String(searchParams.get("group") || "").trim();
   const account = String(searchParams.get("account") || "").trim().toLowerCase();
   const from = resolveStatsFrom(range);
-  const records = readPublishRecords()
+  const allRecords = readPublishRecords().filter((record) => canAccessPublishRecord(user, record));
+  const records = allRecords
     .filter((record) => !from || Number(record.scheduleAt) * 1000 >= from)
     .filter((record) => !group || record.groupName === group)
     .filter((record) => {
@@ -1160,8 +1484,8 @@ function getPublishRecordsSummary(searchParams) {
     })
     .sort((a, b) => Number(b.scheduleAt || 0) - Number(a.scheduleAt || 0));
 
-  const groups = uniqueSorted(readPublishRecords().map((record) => record.groupName).filter(Boolean));
-  const accounts = uniqueSorted(readPublishRecords().map((record) => record.accountName || record.assignedEnvId).filter(Boolean));
+  const groups = uniqueSorted(allRecords.map((record) => record.groupName).filter(Boolean));
+  const accounts = uniqueSorted(allRecords.map((record) => record.accountName || record.assignedEnvId).filter(Boolean));
   const taskCount = records.reduce((sum, record) => sum + (Array.isArray(record.taskIds) ? record.taskIds.length : 0), 0);
   return {
     records,

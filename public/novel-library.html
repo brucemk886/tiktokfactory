@@ -19,6 +19,7 @@
       <a href="/analytics?view=account">账号表现</a>
       <a href="/analytics?view=audio">音频表现</a>
       <a class="is-active" href="/novel-library">小说爆款书单</a>
+      <a href="/audio-library">音频素材库</a>
       <a href="/analytics-settings">抓取配置</a>
     </nav>
 
@@ -53,6 +54,35 @@
 
       <div id="pageStatus" class="library-status">正在读取本地书单缓存...</div>
 
+      <section id="marketingPanel" class="marketing-panel">
+        <div class="marketing-head">
+          <div><span>MARKETING STUDIO</span><h2>小说配音文案工作台</h2></div>
+          <div class="model-status"><i></i><strong id="marketingModelState">GPT-5.6 Sol</strong></div>
+        </div>
+        <div class="marketing-form">
+          <label><span>故事标题</span><input id="marketingTitle" type="text" maxlength="180" placeholder="输入故事标题" /></label>
+          <label><span>内容方向</span><select id="marketingCategory"><option>情感反转故事</option><option>婚姻背叛</option><option>复仇与因果</option><option>恐怖悬疑</option><option>浪漫小说</option><option>匿名真实故事</option></select></label>
+          <label><span>输出语言</span><select id="marketingLanguage"><option value="English" selected>英文</option><option value="Simplified Chinese">中文</option></select></label>
+          <label class="marketing-audience"><span>目标受众</span><input id="marketingAudience" type="text" maxlength="500" value="US women on TikTok who enjoy emotional conflict, secrets, betrayal, and strong plot twists" /></label>
+          <label class="marketing-selling-point"><span>核心卖点</span><input id="marketingSellingPoint" type="text" maxlength="2000" placeholder="秘密、背叛、身份反转、复仇等" /></label>
+          <label class="marketing-source"><span>故事内容</span><textarea id="marketingSource" maxlength="120000" placeholder="粘贴完整故事、故事梗概，或从下方书单选择一本小说"></textarea><small id="marketingCharCount">0 / 120,000</small></label>
+        </div>
+        <div class="marketing-actions">
+          <button id="generateMarketingBtn" class="primary-action" type="button">生成营销素材</button>
+          <button id="clearMarketingBtn" class="quiet-action" type="button">清空</button>
+          <button id="copyMarketingBtn" class="quiet-action" type="button" hidden>复制整包</button>
+          <span id="marketingStatus">等待输入故事内容</span>
+        </div>
+        <div id="marketingResults" class="marketing-results" hidden>
+          <div id="marketingSummary" class="marketing-summary"></div>
+          <div id="selectedMarketingList" class="selected-marketing-list"></div>
+          <details class="hook-library">
+            <summary>查看完整20个钩子</summary>
+            <div id="hookLibraryList" class="hook-library-list"></div>
+          </details>
+        </div>
+      </section>
+
       <section class="library-table-panel">
         <div class="table-headline">
           <div><strong id="tableTitle">书单明细</strong><span id="tableCaption">按飞书原始顺序展示</span></div>
@@ -60,7 +90,7 @@
         </div>
         <div class="library-table-wrap">
           <table>
-            <thead><tr><th>日期</th><th>小说</th><th>频道</th><th>标签 / 卖点</th><th>推荐理由</th><th>内容</th></tr></thead>
+            <thead><tr><th>日期</th><th>小说</th><th>频道</th><th>标签 / 卖点</th><th>推荐理由</th><th>操作</th></tr></thead>
             <tbody id="bookRows"></tbody>
           </table>
         </div>

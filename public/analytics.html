@@ -12,16 +12,20 @@
       <a class="app-brand" href="/tasks" aria-label="Local Factory">
         <span>LF</span><b>Local Factory<small>内容自动化</small></b>
       </a>
-      <a href="/reddit">Reddit 视频生成</a>
-      <a href="/asset-cutter">视频素材切割</a>
-      <a href="/asset-usage">素材使用率</a>
+      <a data-admin-only href="/reddit">Reddit 视频生成</a>
+      <a data-admin-only href="/asset-cutter">视频素材切割</a>
+      <a data-admin-only href="/asset-usage">素材使用率</a>
       <a href="/tasks">自动任务</a>
       <a href="/stats">发布记录</a>
-      <a id="analyticsNav" class="is-active" href="/analytics">数据分析</a>
+      <a id="analyticsNav" class="is-active" href="/analytics">数据总览</a>
+      <a id="videoAnalyticsNav" href="/analytics?view=video">视频表现</a>
       <a id="accountAnalyticsNav" href="/analytics?view=account">账号表现</a>
-      <a id="audioAnalyticsNav" href="/analytics?view=audio">音频表现</a>
-      <a href="/novel-library">小说爆款书单</a>
-      <a href="/analytics-settings">抓取配置</a>
+      <a data-admin-only id="audioAnalyticsNav" href="/analytics?view=audio">音频表现</a>
+      <a data-admin-only href="/novel-library">小说爆款书单</a>
+      <a data-admin-only href="/audio-library">音频素材库</a>
+      <a data-admin-only href="/analytics-settings">抓取配置</a>
+      <a data-admin-only href="/accounts">账户管理</a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
     </nav>
 
     <main class="analytics-shell">
@@ -33,7 +37,15 @@
         </div>
         <div class="header-actions">
           <span id="syncState" class="sync-state">尚未抓取</span>
-          <a class="secondary-btn action-link" href="/analytics-settings">抓取配置</a>
+          <div data-admin-only class="manual-fetch-control">
+            <select id="manualFetchProfile" aria-label="选择 GeeLark 账号"><option value="">选择 GeeLark 账号</option></select>
+            <details class="manual-fetch-groups">
+              <summary id="manualFetchGroupSummary">勾选账号组</summary>
+              <div id="manualFetchGroupOptions" class="manual-fetch-group-options"></div>
+            </details>
+            <button id="manualFetchBtn" class="secondary-btn" type="button">手动抓取</button>
+          </div>
+          <a data-admin-only class="secondary-btn action-link" href="/analytics-settings">抓取配置</a>
         </div>
       </header>
 
@@ -206,6 +218,7 @@
         <div id="reuseDialogBody" class="reuse-dialog-body"></div>
       </div>
     </div>
+    <script src="/access.js"></script>
     <script type="module" src="/analytics.js"></script>
   </body>
 </html>

@@ -24,6 +24,8 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     ensureDiskSpace(workDir);
     const generation = normalizeGenerationPayload(payload.generation);
     const publish = normalizePublishPayload(payload.publish);
+    publish.geelarkProfileId = String(payload.geelarkProfileId || publish.geelarkProfileId || "default");
+    publish.ownerUserId = String(payload.ownerUserId || publish.ownerUserId || "");
     const expectedVideoCount = generation.totalVideos || countAudioFiles(generation.audioDir) * generation.variants;
     if (!expectedVideoCount) throw new Error("音频目录中没有找到可用音频文件。");
     const schedulePlan = publish.autoPublish
@@ -41,6 +43,8 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       progress: { current: 0, total: 0, percent: 0 },
       generation,
       publish,
+      ownerUserId: String(payload.ownerUserId || ""),
+      geelarkProfileId: String(payload.geelarkProfileId || publish.geelarkProfileId || "default"),
       expectedVideoCount,
       schedulePlan,
       generatedVideos: [],
@@ -453,7 +457,9 @@ function normalizePublishPayload(value = {}) {
     scheduleAt: Number(value.scheduleAt) || Math.floor(Date.now() / 1000),
     intervalMinutes: Math.max(0, Number(value.intervalMinutes) || 0),
     dailyPublishLimit: MAX_DAILY_PLANNED_VIDEOS,
-    batchPublishLimit: Math.max(1, Number(value.batchPublishLimit) || 300)
+    batchPublishLimit: Math.max(1, Number(value.batchPublishLimit) || 300),
+    geelarkProfileId: String(value.geelarkProfileId || "default"),
+    ownerUserId: String(value.ownerUserId || "")
   };
 }
 

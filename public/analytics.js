@@ -1,6 +1,6 @@
 const elements = Object.fromEntries([
-  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "accountAnalyticsNav", "audioAnalyticsNav", "pageTitle", "pageDescription",
-  "refreshBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
+  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "videoAnalyticsNav", "accountAnalyticsNav", "audioAnalyticsNav", "pageTitle", "pageDescription",
+  "refreshBtn", "manualFetchProfile", "manualFetchGroupOptions", "manualFetchGroupSummary", "manualFetchBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
   "pageStatus", "todayRankCountBadge", "todayRankRows", "todayRankPagination", "sevenDayRankCountBadge", "sevenDayRankRows", "sevenDayRankPagination",
   "accountCountBadge", "accountRows", "accountPagination", "quotaList", "nextRunText", "videoCountBadge", "videoRows", "videoPagination",
   "audioCountBadge", "audioRows", "audioDetailEmpty", "audioDetailPanel", "audioDetailTitle", "audioDetailMeta", "audioPlayer", "audioVideoRows",
@@ -25,10 +25,13 @@ let videoPage = 1;
 const activeView = new URLSearchParams(window.location.search).get("view") || "dashboard";
 const isAudioView = activeView === "audio";
 const isAccountView = activeView === "account";
+const isVideoView = activeView === "video";
 
 document.body.classList.toggle("audio-only-view", isAudioView);
 document.body.classList.toggle("account-only-view", isAccountView);
-elements.analyticsNav.classList.toggle("is-active", !isAudioView && !isAccountView);
+document.body.classList.toggle("video-only-view", isVideoView);
+elements.analyticsNav.classList.toggle("is-active", !isAudioView && !isAccountView && !isVideoView);
+elements.videoAnalyticsNav.classList.toggle("is-active", isVideoView);
 elements.accountAnalyticsNav.classList.toggle("is-active", isAccountView);
 elements.audioAnalyticsNav.classList.toggle("is-active", isAudioView);
 if (isAudioView) {
@@ -38,9 +41,15 @@ if (isAudioView) {
   elements.pageTitle.textContent = "账号表现";
   elements.pageDescription.textContent = "按账号汇总播放稳定性、爆款率与低播风险，快速识别值得放量和需要淘汰的账号。";
   elements.periodFilter.value = "7d";
+} else if (isVideoView) {
+  elements.pageTitle.textContent = "视频表现";
+  elements.pageDescription.textContent = "只展示你被授权账号组内的视频数据，按播放、互动和发布时间筛选。";
 }
 
 elements.refreshBtn.addEventListener("click", loadDashboard);
+elements.manualFetchBtn.addEventListener("click", fetchSelectedGroup);
+elements.manualFetchProfile.addEventListener("change", () => loadManualFetchGroups(elements.manualFetchProfile.value));
+elements.manualFetchGroupOptions.addEventListener("change", updateManualFetchSummary);
 elements.periodFilter.addEventListener("change", reloadFromFirstPage);
 elements.groupFilter.addEventListener("change", reloadFromFirstPage);
 elements.sortFilter.addEventListener("change", reloadFromFirstPage);
@@ -75,7 +84,63 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.reuseModal.hidden) closeReuseDetail();
 });
 
-await loadDashboard();
+await Promise.all([loadDashboard(), loadManualFetchProfiles()]);
+
+async function loadManualFetchProfiles() {
+  try {
+    const data = await requestJson("/api/tiktok-analytics/settings");
+    const profiles = data.profiles || [];
+    elements.manualFetchProfile.innerHTML = `<option value="">选择 GeeLark 账号</option>${profiles.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`).join("")}`;
+    const defaultProfileId = data.activeProfileIds?.[0] || profiles[0]?.id || "";
+    elements.manualFetchProfile.value = defaultProfileId;
+    await loadManualFetchGroups(defaultProfileId);
+  } catch {
+    elements.manualFetchGroupOptions.innerHTML = `<span>暂时无法读取 GeeLark 账号。</span>`;
+  }
+}
+
+async function loadManualFetchGroups(profileId) {
+  elements.manualFetchGroupOptions.innerHTML = profileId ? `<span>正在读取账号组...</span>` : `<span>请先选择 GeeLark 账号。</span>`;
+  elements.manualFetchGroupSummary.textContent = "勾选账号组";
+  if (!profileId) return;
+  try {
+    const data = await requestJson(`/api/admin/geelark-profiles/${encodeURIComponent(profileId)}/groups?t=${Date.now()}`);
+    const groups = data.groups || [];
+    elements.manualFetchGroupOptions.innerHTML = groups.length ? groups.map((group) => `
+      <label><input type="checkbox" value="${escapeHtml(group.name)}" /><span>${escapeHtml(group.name)}</span><small>${Number(group.accountCount || 0)} 个账号</small></label>
+    `).join("") : `<span>该 GeeLark 账号没有可抓取分组。</span>`;
+  } catch (error) {
+    elements.manualFetchGroupOptions.innerHTML = `<span>${escapeHtml(error.message || "读取账号组失败。")} </span>`;
+  }
+}
+
+function selectedManualFetchGroups() {
+  return Array.from(elements.manualFetchGroupOptions.querySelectorAll("input:checked")).map((input) => input.value);
+}
+
+function updateManualFetchSummary() {
+  const count = selectedManualFetchGroups().length;
+  elements.manualFetchGroupSummary.textContent = count ? `已选 ${count} 个账号组` : "勾选账号组";
+}
+
+async function fetchSelectedGroup() {
+  const profileId = elements.manualFetchProfile.value;
+  const groupNames = selectedManualFetchGroups();
+  if (!profileId) return setStatus("请先选择 GeeLark 账号。", "error");
+  if (!groupNames.length) return setStatus("请至少勾选一个要手动抓取的账号组。", "error");
+  elements.manualFetchBtn.disabled = true;
+  elements.manualFetchBtn.textContent = "提交中...";
+  try {
+    const result = await requestJson("/api/tiktok-analytics/fetch-group", { method: "POST", body: JSON.stringify({ profileId, groupNames }) });
+    setStatus(`已开始抓取 ${groupNames.length} 个账号组的 ${Number(result.accountCount || 0)} 个账号，页面会自动更新。`, "success");
+    await loadDashboard();
+  } catch (error) {
+    setStatus(error.message || "手动抓取提交失败。", "error");
+  } finally {
+    elements.manualFetchBtn.disabled = false;
+    elements.manualFetchBtn.textContent = "手动抓取";
+  }
+}
 
 async function loadDashboard() {
   const params = new URLSearchParams({
