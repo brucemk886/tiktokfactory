@@ -22,12 +22,17 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
   function createTask(payload) {
     validateTaskPayload(payload);
     ensureDiskSpace(workDir);
-    const generation = normalizeGenerationPayload(payload.generation);
+    const taskType = payload.taskType === "psychology" ? "psychology" : "reddit";
+    const generation = taskType === "psychology"
+      ? normalizePsychologyGenerationPayload(payload.generation)
+      : normalizeGenerationPayload(payload.generation);
     const publish = normalizePublishPayload(payload.publish);
     publish.geelarkProfileId = String(payload.geelarkProfileId || publish.geelarkProfileId || "default");
     publish.ownerUserId = String(payload.ownerUserId || publish.ownerUserId || "");
-    const expectedVideoCount = generation.totalVideos || countAudioFiles(generation.audioDir) * generation.variants;
-    if (!expectedVideoCount) throw new Error("音频目录中没有找到可用音频文件。");
+    const expectedVideoCount = taskType === "psychology"
+      ? generation.totalVideos
+      : generation.totalVideos || countAudioFiles(generation.audioDir) * generation.variants;
+    if (!expectedVideoCount) throw new Error(taskType === "psychology" ? "请设置心理学视频生成数量。" : "音频目录中没有找到可用音频文件。");
     const schedulePlan = publish.autoPublish
       ? buildSchedulePlan({ videoCount: expectedVideoCount, envIds: publish.envIds, scheduleAt: publish.scheduleAt, intervalMinutes: publish.intervalMinutes })
       : [];
@@ -36,6 +41,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     const now = Date.now();
     const task = {
       id,
+      taskType,
       name: String(payload.name || `自动任务 ${new Date(now).toLocaleString("zh-CN")}`).slice(0, 120),
       status: "queued",
       phase: "queued",
@@ -220,12 +226,14 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
 
   function runGeneration(task) {
     return new Promise((resolve, reject) => {
-      const jobId = safeId(`auto-reddit-${task.id}-${Date.now()}`);
+      const taskType = task.taskType === "psychology" ? "psychology" : "reddit";
+      const jobId = safeId(`auto-${taskType}-${task.id}-${Date.now()}`);
       const payloadPath = path.join(generationJobsDir, `${jobId}.payload.json`);
       const jobPath = path.join(generationJobsDir, `${jobId}.json`);
       fs.writeFileSync(payloadPath, JSON.stringify({ ...task.generation, jobId }, null, 2), "utf8");
       fs.writeFileSync(jobPath, JSON.stringify({ jobId, status: "queued", percent: 1, message: "自动任务开始生成。", createdAt: Date.now() }, null, 2), "utf8");
-      const child = spawn(process.execPath, [path.join(root, "scripts", "reddit-mix-job.js"), payloadPath, jobPath], {
+      const generatorScript = taskType === "psychology" ? "psychology-video-job.js" : "reddit-mix-job.js";
+      const child = spawn(process.execPath, [path.join(root, "scripts", generatorScript), payloadPath, jobPath], {
         cwd: root,
         detached: false,
         stdio: "ignore",
@@ -250,6 +258,9 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
             message: job.message || "正在生成视频...",
             progress: { current: Number(job.progressCurrent) || 0, total: Number(job.progressTotal) || 0, percent: Number(job.percent) || 0 },
             generatedVideos: Array.isArray(job.results) ? job.results : currentTask.generatedVideos,
+            generationWarnings: Array.isArray(job.warnings) ? job.warnings : (currentTask.generationWarnings || []),
+            failedVideoCount: Number(job.failedVideoCount) || 0,
+            generationAttempts: Number(job.attempts) || 0,
             updatedAt: Date.now()
           });
           if (["done", "failed", "canceled"].includes(job.status)) {
@@ -315,7 +326,14 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     for (const item of results) {
       const fileName = path.basename(String(item.fileName || decodeURIComponent(String(item.videoUrl || "").split("/").pop() || "")));
       if (!fileName) continue;
-      valid.push({ ...item, fileName, videoUrl: item.videoUrl || `/outputs/${encodeURIComponent(fileName)}`, template: item.template || "reddit-mix", templateLabel: item.templateLabel || "Reddit 混剪" });
+      const psychology = item.template === "psychology-static";
+      valid.push({
+        ...item,
+        fileName,
+        videoUrl: item.videoUrl || `/outputs/${encodeURIComponent(fileName)}`,
+        template: item.template || "reddit-mix",
+        templateLabel: item.templateLabel || (psychology ? "心理学测试" : "Reddit 混剪")
+      });
     }
     if (!valid.length) throw new Error("生成任务没有产生可发布的视频。");
     return valid;
@@ -409,11 +427,48 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
 function validateTaskPayload(payload) {
   const generation = payload?.generation || {};
   const publish = payload?.publish || {};
+  if (payload?.taskType === "psychology") {
+    if (!String(generation.question || "").trim()) throw new Error("请输入心理学测试题目。");
+    if (!String(generation.elevenLabsVoiceId || "").trim()) throw new Error("请配置 ElevenLabs Voice ID。");
+    if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
+    const scheduleAt = Number(publish.scheduleAt);
+    if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
+    return;
+  }
   if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) throw new Error("请选择素材组或视频素材目录。");
   if (!String(generation.audioDir || "").trim()) throw new Error("请选择音频目录。");
   if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
   const scheduleAt = Number(publish.scheduleAt);
   if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
+}
+
+function normalizePsychologyGenerationPayload(value = {}) {
+  const imageModels = Array.isArray(value.imageModels)
+    ? value.imageModels.filter((model) => model === "grok" || model === "nano-banana")
+    : [];
+  return {
+    question: String(value.question || "").trim(),
+    hookTitle: String(value.hookTitle || value.question || "").trim().slice(0, 160),
+    sourceImageUrl: String(value.sourceImageUrl || "").trim(),
+    fallbackImageUrl: String(value.fallbackImageUrl || value.sourceImageUrl || "").trim(),
+    answerGuide: String(value.answerGuide || "").trim(),
+    narration: String(value.narration || "").trim(),
+    imagePrompt: String(value.imagePrompt || "").trim(),
+    imageModels: imageModels.length ? imageModels : ["nano-banana"],
+    variantsPerModel: Math.max(1, Math.min(10, Math.floor(Number(value.variantsPerModel) || 1))),
+    totalVideos: Math.max(1, Math.min(300, Math.floor(Number(value.totalVideos) || imageModels.length || 1))),
+    aspectRatio: value.aspectRatio === "9:16" ? "9:16" : "16:9",
+    durationSeconds: Math.max(8, Math.min(30, Number(value.durationSeconds) || 12)),
+    titlePosition: Math.max(8, Math.min(55, Number(value.titlePosition) || 14)),
+    titleFontSize: Math.max(42, Math.min(100, Number(value.titleFontSize) || 68)),
+    motion: ["none", "slow-zoom", "test-motion"].includes(value.motion) ? value.motion : "test-motion",
+    backgroundMusicDir: String(value.backgroundMusicDir || "").trim(),
+    backgroundMusicVolume: Math.max(0, Math.min(0.5, Number(value.backgroundMusicVolume) || 0.10)),
+    autoGenerateNarration: value.autoGenerateNarration !== false,
+    elevenLabsVoiceId: String(value.elevenLabsVoiceId || "").trim(),
+    elevenLabsModelId: String(value.elevenLabsModelId || "eleven_multilingual_v2").trim(),
+    elevenLabsOutputFormat: String(value.elevenLabsOutputFormat || "mp3_44100_128").trim()
+  };
 }
 
 function normalizeGenerationPayload(value = {}) {

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>心理学视频自动化 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+    <link rel="stylesheet" href="/psychology.css" />
+  </head>
+  <body class="psychology-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/tasks" aria-label="Local Factory">
+        <span class="brand-mark">LF</span>
+        <span><strong>Local Factory</strong><small>内容自动化</small></span>
+      </a>
+      <nav class="tasks-nav" aria-label="主导航">
+        <a data-admin-only href="/psychology-topics">心理学题目</a>
+        <a data-admin-only class="is-active" href="/psychology">心理学视频自动化</a>
+        <a data-admin-only href="/ai">AI 创作</a>
+        <a data-admin-only href="/asset-usage">素材使用率</a>
+        <a href="/tasks">Reddit 自动发布</a>
+        <a href="/stats">发布记录</a>
+        <a href="/analytics">数据总览</a>
+        <a data-admin-only href="/analytics-settings">抓取配置</a>
+        <a data-admin-only href="/accounts">账户管理</a>
+      </nav>
+      <div class="sidebar-safety">
+        <span class="live-dot"></span>
+        <div><strong>安全发布已开启</strong><small>查重、熔断、单次重试</small></div>
+      </div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </aside>
+
+    <main class="psy-main">
+      <header class="psy-header">
+        <div><p class="eyebrow">PSYCHOLOGY AUTOMATION</p><h1>心理学视频自动化</h1><p>从题库选择或输入题目，自动完成生图、配音、合成与 GeeLark 发布。</p></div>
+        <div class="header-actions"><a class="quiet-link" href="/psychology-topics">从题库选择</a><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
+      </header>
+
+      <div class="psy-grid">
+        <section class="psy-form">
+          <article class="psy-section">
+            <div class="section-head"><span>01</span><div><h2>测试内容</h2><p>输入一个选题；解说和生图描述可以交给 AI 自动完成。</p></div></div>
+            <label class="field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：压力应对方式测试 A" /></label>
+            <label class="field"><span>心理测试题目</span><textarea id="question" rows="3" placeholder="例如：你在压力大的时候，会下意识选择哪种方式缓解？"></textarea></label>
+            <label class="field"><span>选项含义或结果提示 <em>可选</em></span><textarea id="answerGuide" rows="3" placeholder="可以填写四个选项及含义；留空时由 AI 设计"></textarea></label>
+            <label class="field"><span>视频顶部钩子标题</span><input id="hookTitle" type="text" placeholder="一句简短钩子，默认使用测试题目" /></label>
+            <label class="field"><span>题库参考图地址 <em>默认由 Nano Banana 重新生图，仅在生图失败时备用</em></span><input id="sourceImageUrl" type="url" placeholder="https://example.com/psychology-test.png" /></label>
+<div class="aspect-prompt-row">
+              <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="16:9" selected>横版 16:9（四图横排）</option><option value="9:16">竖版 9:16</option></select></label>
+              <div class="aspect-prompt-note"><strong id="aspectPromptTitle">当前：横版 16:9</strong><span id="aspectPromptHint">AI 将生成 A/B/C/D 四图横排描述，视频使用 Remotion 横版模板。</span></div>
+            </div>
+            <div class="two-column">
+              <label class="field"><span>钩子配音文案 <em>留空自动生成钩子 + 互动引导</em></span><textarea id="narration" rows="3" placeholder="建议 16–30 个英文单词：先引导选择，再加入链接、主页或评论区 CTA"></textarea></label>
+              <label class="field"><span>生图描述 <em>留空自动生成</em></span><textarea id="imagePrompt" rows="6" placeholder="AI 会生成无文字、四宫格心理测试图片描述"></textarea></label>
+            </div>
+          </article>
+
+          <article class="psy-section">
+            <div class="section-head"><span>02</span><div><h2>生成设置</h2><p>每个模型会生成独立图片；配音只生成一次并在同一任务内复用。</p></div></div>
+            <div class="model-row">
+              <label class="model-option"><input type="checkbox" name="imageModel" value="nano-banana" checked /><span><strong>Nano Banana</strong><small>指令遵循稳定，适合正式成片</small></span></label>
+              <label class="model-option"><input type="checkbox" name="imageModel" value="grok" /><span><strong>Grok Imagine</strong><small>成本较低，适合批量测试</small></span></label>
+            </div>
+            <div class="four-column">
+              <label class="field"><span>生成视频总数</span><input id="totalVideos" type="number" min="1" max="300" value="1" /></label>
+              <label class="field"><span>标题位置</span><div class="input-suffix"><input id="titlePosition" type="number" min="8" max="55" value="14" /><b>%</b></div></label>
+              <label class="field"><span>标题字号</span><input id="titleFontSize" type="number" min="42" max="100" value="68" /></label>
+              <label class="field"><span>画面运动</span><select id="motion"><option value="test-motion">测试图呼吸动效</option><option value="slow-zoom">轻微推进</option><option value="none">静态画面</option></select></label>
+            </div>
+            <div class="music-settings">
+              <label class="field"><span>背景音乐目录 <em>可选</em></span><div class="directory-field"><input id="backgroundMusicDir" type="text" placeholder="选择包含 MP3、WAV、M4A 的文件夹" /><button type="button" class="quiet" data-pick-directory="backgroundMusicDir">选择目录</button></div></label>
+              <label class="field"><span>背景音乐音量</span><div class="input-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10" /><b>0–0.5</b></div></label>
+            </div>
+            <div class="settings-actions generation-settings-actions"><span id="settingsStatus">生成配置会保存在本机，刷新页面后自动恢复。</span><button id="saveSettingsBtn" class="quiet" type="button">保存生成配置</button></div>
+            <details class="api-panel">
+              <summary>接口配置</summary>
+<div class="two-column">
+                <label class="field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时无需重复填写" /></label>
+                <label class="field"><span>ElevenLabs API Key</span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="复用本地配置时无需填写" /></label>
+                <label class="field"><span>ElevenLabs Voice ID</span><input id="voiceId" type="text" placeholder="首次使用必须填写" /></label>
+                <label class="field"><span>配音模型</span><select id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2</option><option value="eleven_flash_v2_5">Flash v2.5</option></select></label>
+              </div>
+
+            </details>
+          </article>
+
+          <article class="psy-section">
+            <div class="section-head section-with-action"><span>03</span><div><h2>GeeLark 发布</h2><p>先筛选分组，再勾选账号；不自动发布时只生成本地视频。</p></div><button id="refreshPhonesBtn" class="quiet" type="button">刷新账号</button></div>
+            <label class="publish-toggle"><input id="autoPublish" type="checkbox" checked /><i></i><span>生成完成后自动发布</span></label>
+            <div class="account-tools">
+              <label class="field"><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
+              <label class="field search"><span>搜索账号</span><input id="nameFilter" type="search" placeholder="账号名称、编号或备注" /></label>
+              <button id="selectVisibleBtn" class="quiet" type="button">全选筛选结果</button>
+              <b id="selectedCount">已选 0 个</b>
+            </div>
+            <div id="phoneList" class="phone-list"><div class="empty">正在读取 GeeLark 账号...</div></div>
+            <label class="field"><span>TikTok 发布文案</span><textarea id="videoDesc" rows="2" placeholder="#psychology #personalitytest #selfdiscovery"></textarea></label>
+            <div class="three-column">
+              <label class="field"><span>起始发布时间</span><input id="scheduleAt" type="datetime-local" /></label>
+              <label class="field"><span>同账号发布间隔</span><div class="input-suffix"><input id="intervalMinutes" type="number" min="0" value="15" /><b>分钟</b></div></label>
+              <label class="field"><span>单批调用上限</span><input id="batchLimit" type="number" min="1" max="300" value="300" /></label>
+            </div>
+          </article>
+        </section>
+
+        <aside class="psy-queue">
+          <div class="queue-head"><div><p class="eyebrow">LIVE QUEUE</p><h2>心理学任务</h2></div><button id="refreshTasksBtn" class="icon-button" type="button" title="刷新">↻</button></div>
+          <div id="taskList" class="task-list"><div class="empty">暂时没有心理学任务。</div></div>
+        </aside>
+      </div>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/psychology.js"></script>
+  </body>
+</html>

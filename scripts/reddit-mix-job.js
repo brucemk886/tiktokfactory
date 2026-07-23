@@ -76,12 +76,22 @@ async function main() {
   const total = clampInt(payload.totalVideos, 1, 300, audios.length * legacyVariants);
   const results = [];
   const audioContexts = new Map();
+  const skippedAudios = new Set();
+  const warnings = [];
   let done = 0;
+  let candidateIndex = 0;
+  let failedVideos = 0;
+  let attempts = 0;
+  const maxAttempts = total + Math.max(20, Math.ceil(total * 0.5));
 
-  for (let outputIndex = 0; outputIndex < total; outputIndex++) {
-    const audioIndex = outputIndex % audios.length;
+  while (done < total && attempts < maxAttempts) {
+    attempts += 1;
+    try {
+    const audioIndex = candidateIndex % audios.length;
     const audioPath = audios[audioIndex];
-    const variant = Math.floor(outputIndex / audios.length) + 1;
+    const variant = Math.floor(candidateIndex / audios.length) + 1;
+    candidateIndex += 1;
+    if (skippedAudios.has(audioPath)) continue;
     let audioContext = audioContexts.get(audioPath);
     if (!audioContext) {
       const audioDuration = probeDuration(audioPath, 0);
@@ -96,12 +106,29 @@ async function main() {
           progressTotal: total,
           updatedAt: Date.now()
         });
-        captions = (await getCachedOrTranscribeCaptions({
-          audioPath,
-          apiKey: process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey,
-          modelId: config.elevenLabsSttModelId || "scribe_v2",
-          requireWords: subtitleAnimationMode === "word-highlight"
-        })).captions;
+        try {
+          captions = (await getCachedOrTranscribeCaptions({
+            audioPath,
+            apiKey: process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey,
+            modelId: config.elevenLabsSttModelId || "scribe_v2",
+            requireWords: subtitleAnimationMode === "word-highlight"
+          })).captions;
+        } catch (error) {
+          if (error?.code !== "EMPTY_TRANSCRIPT") throw error;
+          const warning = `跳过无可用字幕的音频：${path.basename(audioPath)}`;
+          skippedAudios.add(audioPath);
+          warnings.push(warning);
+          patchJob({
+            status: "running",
+            message: warning,
+            warnings,
+            progressCurrent: done,
+            progressTotal: total,
+            updatedAt: Date.now()
+          });
+          if (skippedAudios.size >= audios.length) throw new Error("所有音频都没有返回可用字幕，任务无法继续。");
+          continue;
+        }
       }
       audioContext = { audioDuration, captions };
       audioContexts.set(audioPath, audioContext);
@@ -128,7 +155,7 @@ async function main() {
     const concatVideo = path.join(runDir, "mixed-video.mp4");
     const outputPath = path.join(defaultOutputDir, `${id}.mp4`);
 
-    renderClips({ clips, runDir, concatVideo, width, height, fps, quality: payload.quality || "fast", dedup, overlayFiles });
+    renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality: payload.quality || "fast", dedup, overlayFiles, warnings });
 
     patchJob({
       status: "running",
@@ -197,9 +224,35 @@ async function main() {
       progressCurrent: done,
       progressTotal: total,
       results,
+      warnings,
       updatedAt: Date.now()
     });
     cleanupRunDir(runDir);
+    } catch (error) {
+      failedVideos += 1;
+      const reason = String(error?.message || error || "????").replace(/\s+/g, " ").slice(0, 1200);
+      const warning = `???? ${attempts} ?????????${reason}`;
+      warnings.push(warning);
+      patchJob({
+        status: "running",
+        percent: progress(done, total, 0),
+        message: `${warning}???????????`,
+        progressCurrent: done,
+        progressTotal: total,
+        failedVideoCount: failedVideos,
+        attempts,
+        results,
+        warnings,
+        updatedAt: Date.now()
+      });
+    }
+  }
+
+  if (!results.length && failedVideos > 0) {
+    throw new Error(`????????????? ${failedVideos} ???????${warnings.at(-1) || "????"}`);
+  }
+  if (done < total) {
+    warnings.push(`???????? ${maxAttempts} ?????? ${done}/${total} ?????? ${failedVideos} ??`);
   }
 
   patchJob({
@@ -209,6 +262,9 @@ async function main() {
     progressCurrent: results.length,
     progressTotal: total,
     results,
+    warnings,
+    failedVideoCount: failedVideos,
+    attempts,
     updatedAt: Date.now()
   });
 }
@@ -296,64 +352,124 @@ function pickClips({ videoMeta, audioDuration, segmentSeconds, usage }) {
   return clips;
 }
 
-function renderClips({ clips, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles }) {
+function renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings = [] }) {
   const preset = quality === "quality" ? "medium" : "veryfast";
   const crf = quality === "quality" ? "20" : "24";
   const listPath = path.join(runDir, "concat.txt");
+  const planPath = path.join(runDir, "clip-plan.json");
   const clipPaths = [];
   const overlayIndexes = pickOverlayIndexes(clips.length, dedup.overlayCount, overlayFiles.length);
+  const failedAssetIds = new Set();
 
-  for (let index = 0; index < clips.length; index++) {
-    const clip = clips[index];
+  writeClipPlan(planPath, clips);
+  for (let index = 0; index < clips.length; index += 1) {
     const clipPath = path.join(runDir, `clip-${String(index).padStart(4, "0")}.mp4`);
-    clipPaths.push(clipPath);
-    const speed = dedup.enabled ? randomBetween(dedup.speedMin, dedup.speedMax) : 1;
-    const inputDuration = Math.max(0.1, clip.duration * speed);
-    const filter = buildClipFilter({ width, height, fps, dedup, speed });
-    const overlayPath = overlayIndexes.has(index) ? overlayFiles[Math.floor(Math.random() * overlayFiles.length)] : "";
-    if (overlayPath) {
-      const args = [
-        "-y",
-        "-hide_banner",
-        "-ss", String(Math.max(0, clip.start)),
-        "-t", String(inputDuration),
-        "-i", clip.file
-      ];
-      const overlayExt = path.extname(overlayPath).toLowerCase();
-      if ([".png", ".jpg", ".jpeg", ".webp"].includes(overlayExt)) args.push("-loop", "1", "-t", String(clip.duration), "-i", overlayPath);
-      else args.push("-stream_loop", "-1", "-t", String(clip.duration), "-i", overlayPath);
-      args.push(
-        "-filter_complex",
-        `[0:v]${filter}[base];[1:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=rgba,colorchannelmixer=aa=${dedup.overlayOpacity.toFixed(3)}[ol];[base][ol]overlay=0:0:shortest=1,format=yuv420p[out]`,
-        "-map", "[out]",
-        "-an",
-        "-c:v", "libx264",
-        "-preset", preset,
-        "-crf", crf,
-        clipPath
-      );
-      run("ffmpeg", args);
-      continue;
+    let lastError = null;
+    let rendered = false;
+
+    for (let attempt = 0; attempt < 4 && !rendered; attempt += 1) {
+      const clip = clips[index];
+      try {
+        try { fs.rmSync(clipPath, { force: true }); } catch { /* best effort */ }
+        renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles, width, height, fps, preset, crf, dedup });
+        rendered = true;
+      } catch (error) {
+        lastError = error;
+        failedAssetIds.add(String(clip.assetId || clip.file));
+        if (attempt >= 3) break;
+        const replacement = pickReplacementClip({
+          videoMeta,
+          duration: clip.duration,
+          usage,
+          excludedIds: failedAssetIds
+        });
+        if (!replacement) break;
+        const warning = `素材片段读取失败，已自动替换：${path.basename(clip.file)} -> ${path.basename(replacement.file)}`;
+        warnings.push(warning);
+        clips[index] = replacement;
+        writeClipPlan(planPath, clips, { index, attempt: attempt + 1, warning, error: error.message });
+      }
     }
-    run("ffmpeg", [
-      "-y",
-      "-hide_banner",
-      "-ss", String(Math.max(0, clip.start)),
-      "-t", String(inputDuration),
-      "-i", clip.file,
-      "-vf", filter,
-      "-an",
-      "-c:v", "libx264",
-      "-preset", preset,
-      "-crf", crf,
-      clipPath
-    ]);
+
+    if (!rendered) {
+      const clip = clips[index];
+      throw new Error(`无法渲染素材片段 ${index + 1}/${clips.length}：${path.basename(clip.file)}，起点 ${round2(clip.start)} 秒。${lastError?.message || "FFmpeg 未返回详细错误"}`);
+    }
+    clipPaths.push(clipPath);
   }
 
   fs.writeFileSync(listPath, clipPaths.map((file) => `file '${file.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n"), "utf8");
   run("ffmpeg", ["-y", "-hide_banner", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatVideo]);
 }
 
+function renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles, width, height, fps, preset, crf, dedup }) {
+  const speed = dedup.enabled ? randomBetween(dedup.speedMin, dedup.speedMax) : 1;
+  const inputDuration = Math.max(0.1, clip.duration * speed);
+  const filter = buildClipFilter({ width, height, fps, dedup, speed });
+  const overlayPath = overlayIndexes.has(index) ? overlayFiles[Math.floor(Math.random() * overlayFiles.length)] : "";
+  if (overlayPath) {
+    const args = [
+      "-y", "-hide_banner",
+      "-ss", String(Math.max(0, clip.start)),
+      "-t", String(inputDuration),
+      "-i", clip.file
+    ];
+    const overlayExt = path.extname(overlayPath).toLowerCase();
+    if ([".png", ".jpg", ".jpeg", ".webp"].includes(overlayExt)) args.push("-loop", "1", "-t", String(clip.duration), "-i", overlayPath);
+    else args.push("-stream_loop", "-1", "-t", String(clip.duration), "-i", overlayPath);
+    args.push(
+      "-filter_complex",
+      `[0:v]${filter}[base];[1:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=rgba,colorchannelmixer=aa=${dedup.overlayOpacity.toFixed(3)}[ol];[base][ol]overlay=0:0:shortest=1,format=yuv420p[out]`,
+      "-map", "[out]", "-an", "-c:v", "libx264", "-preset", preset, "-crf", crf, clipPath
+    );
+    run("ffmpeg", args);
+    return;
+  }
+  run("ffmpeg", [
+    "-y", "-hide_banner",
+    "-ss", String(Math.max(0, clip.start)),
+    "-t", String(inputDuration),
+    "-i", clip.file,
+    "-vf", filter,
+    "-an", "-c:v", "libx264", "-preset", preset, "-crf", crf, clipPath
+  ]);
+}
+
+function pickReplacementClip({ videoMeta, duration, usage, excludedIds }) {
+  const candidates = [];
+  for (let index = 0; index < 80; index += 1) {
+    const source = videoMeta[Math.floor(Math.random() * videoMeta.length)];
+    if (!source || excludedIds.has(String(source.id || source.file)) || source.duration < duration + 0.15) continue;
+    const maxStart = Math.max(0, source.duration - duration - 0.15);
+    const start = maxStart > 0 ? Math.random() * maxStart : 0;
+    candidates.push({
+      assetId: source.id,
+      file: source.file,
+      fileName: source.fileName || path.basename(source.file),
+      start,
+      duration,
+      score: scoreClipReuse(usage, source.id, start, duration)
+    });
+  }
+  const best = candidates.sort((a, b) => a.score - b.score)[0];
+  if (!best) return null;
+  delete best.score;
+  return best;
+}
+
+function writeClipPlan(planPath, clips, diagnostic = null) {
+  fs.writeFileSync(planPath, JSON.stringify({
+    updatedAt: new Date().toISOString(),
+    diagnostic,
+    clips: clips.map((clip, index) => ({
+      index,
+      assetId: clip.assetId,
+      file: clip.file,
+      start: round2(clip.start),
+      duration: round2(clip.duration)
+    }))
+  }, null, 2), "utf8");
+}
 function prepareAudioWithBackgroundMusic({ audioPath, backgroundMusicFiles, runDir, duration, volume }) {
   if (!Array.isArray(backgroundMusicFiles) || !backgroundMusicFiles.length) return audioPath;
   const bgmPath = backgroundMusicFiles[Math.floor(Math.random() * backgroundMusicFiles.length)];
@@ -505,7 +621,11 @@ async function transcribeCaptionsWithElevenLabs({ audioPath, apiKey, modelId, au
   if (!response.ok) throw new Error(`ElevenLabs 字幕识别失败：${raw.slice(0, 800) || response.status}`);
   const data = JSON.parse(raw);
   const cues = makeCaptionCues(data.words, data.text);
-  if (!cues.length) throw new Error("ElevenLabs 没有返回可用字幕时间戳。");
+  if (!cues.length) {
+    const error = new Error(`ElevenLabs 没有返回可用字幕时间戳：${path.basename(audioPath)}`);
+    error.code = "EMPTY_TRANSCRIPT";
+    throw error;
+  }
   return { provider: "elevenlabs", model: modelId || "scribe_v2", text: data.text || "", cues, words: makeWordCues(data.words) };
 }
 
@@ -625,7 +745,12 @@ function readCaptionCache(cachePath) {
 
 function run(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, maxBuffer: 20 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error(`${command} failed with exit code ${result.status}: ${(result.stderr || result.stdout || "").slice(0, 1800)}`);
+  if (result.status !== 0) {
+    const output = String(result.stderr || result.stdout || result.error?.message || "").trim();
+    const tail = output ? output.slice(-2400) : `signal=${result.signal || "none"}; spawnError=${result.error?.message || "none"}`;
+    const commandLine = [command, ...args].map((value) => /\s/.test(String(value)) ? JSON.stringify(String(value)) : String(value)).join(" ");
+    throw new Error(`${command} failed with exit code ${result.status}: ${tail}\nCommand: ${commandLine}`);
+  }
 }
 
 function patchJob(patch) {

@@ -11,16 +11,16 @@
       <a class="app-brand" href="/tasks" aria-label="Local Factory">
         <span>LF</span><b>Local Factory<small>内容自动化</small></b>
       </a>
-      <a class="is-active" href="/reddit">Reddit 视频生成</a>
-      <a href="/asset-cutter">视频素材切割</a>
-      <a href="/asset-usage">素材使用率</a>
-      <a href="/tasks">自动任务</a>
+      <a data-admin-only href="/psychology-topics">心理学题目</a>
+      <a data-admin-only href="/psychology">心理学视频自动化</a>
+      <a data-admin-only href="/ai">AI 创作</a>
+      <a data-admin-only href="/asset-usage">素材使用率</a>
+      <a href="/tasks">Reddit 自动发布</a>
       <a href="/stats">发布记录</a>
-      <a href="/analytics">数据分析</a>
-      <a href="/analytics?view=audio">音频表现</a>
-      <a href="/novel-library">小说爆款书单</a>
-      <a href="/audio-library">音频素材库</a>
-      <a href="/analytics-settings">抓取配置</a>
+      <a href="/analytics">数据总览</a>
+      <a data-admin-only href="/analytics-settings">抓取配置</a>
+      <a data-admin-only href="/accounts">账户管理</a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
     </nav>
     <main class="shell">
       <section class="editor reddit-editor">
@@ -30,8 +30,7 @@
             <p>选择素材目录和音频目录，批量混剪、字幕识别、去重增强、GeeLark 发布。</p>
           </div>
           <div class="topbar-actions">
-            <a class="topbar-link-btn" href="/tasks">自动任务</a>
-            <a class="topbar-link-btn" href="/">播客生成器</a>
+            <a class="topbar-link-btn" href="/tasks">Reddit 自动发布</a>
             <button id="startBtn" type="button">开始混剪</button>
             <button id="stopBtn" class="secondary-btn" type="button" hidden>停止</button>
           </div>
@@ -250,6 +249,7 @@
       </div>
     </aside>
 
+    <script src="/access.js"></script>
     <script src="/reddit.js"></script>
   </body>
 </html>

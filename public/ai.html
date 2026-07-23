@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI 创作 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+    <link rel="stylesheet" href="/module-pages.css" />
+  </head>
+  <body class="module-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/tasks"><span class="brand-mark">LF</span><span><strong>Local Factory</strong><small>内容自动化</small></span></a>
+      <nav class="tasks-nav" aria-label="主导航">
+        <a data-admin-only href="/psychology-topics">心理学题目</a>
+        <a data-admin-only href="/psychology">心理学视频自动化</a>
+        <a data-admin-only class="is-active" href="/ai">AI 创作</a>
+        <a data-admin-only href="/asset-usage">素材使用率</a>
+        <a href="/tasks">Reddit 自动发布</a>
+        <a href="/stats">发布记录</a>
+        <a href="/analytics">数据总览</a>
+        <a data-admin-only href="/analytics-settings">抓取配置</a>
+        <a data-admin-only href="/accounts">账户管理</a>
+      </nav>
+      <div class="sidebar-safety"><span class="live-dot"></span><div><strong>安全发布已开启</strong><small>查重、熔断、单次重试</small></div></div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </aside>
+
+    <main class="module-main">
+      <header class="module-header ai-page-header">
+        <div><p class="module-kicker">CONTENT INTELLIGENCE</p><h1>AI 创作</h1><p>调用 Kie.ai 完成生图、生视频和 AI 对话，结果自动保存到本地。</p></div>
+        <button id="refreshBtn" class="module-button" type="button">刷新记录</button>
+      </header>
+
+      <div class="module-shell ai-studio">
+        <section class="ai-command-panel">
+          <div class="ai-mode-grid" role="tablist" aria-label="AI 创作类型">
+            <button class="ai-mode active" type="button" data-kind="image"><span class="ai-mode-icon">▧</span><span><strong>AI 生图</strong><small>Grok / Nano Banana</small></span></button>
+            <button class="ai-mode" type="button" data-kind="video"><span class="ai-mode-icon">▶</span><span><strong>AI 生视频</strong><small>Grok Imagine Video</small></span></button>
+            <button class="ai-mode" type="button" data-kind="chat"><span class="ai-mode-icon">□</span><span><strong>AI 对话</strong><small>Gemini 3.5 Flash</small></span></button>
+          </div>
+
+          <form id="aiForm" class="ai-compose">
+            <div class="ai-compose-heading">
+              <div><p class="module-kicker">CREATE WITH KIE.AI</p><h2 id="modeTitle">AI 生图</h2></div>
+              <div class="ai-credit"><span>可用积分</span><strong id="credits">--</strong></div>
+            </div>
+
+            <label class="ai-prompt"><span id="promptLabel">画面描述</span><textarea id="prompt" maxlength="8000" placeholder="例如：竖版电影海报，一名女性坐在复古唱片机旁，暖色灯光，细腻胶片颗粒，画面上方留出标题空间……"></textarea></label>
+
+            <fieldset id="imageModelPanel" class="ai-model-picker">
+              <legend>生图模型（可多选）</legend>
+              <div>
+                <label><input name="imageModel" type="checkbox" value="grok" /><span><strong>Grok Imagine</strong><small>多张候选，适合低成本批量测试</small></span></label>
+                <label class="selected"><input name="imageModel" type="checkbox" value="nano-banana" checked /><span><strong>Nano Banana 标准版</strong><small>单张输出，指令遵循更稳定</small></span></label>
+              </div>
+            </fieldset>
+
+            <label id="noTextPanel" class="ai-image-rule"><input id="noImageText" type="checkbox" checked /><span><strong>禁止图片中出现文字</strong><small>自动追加无标题、无标签、无字母数字、无水印约束</small></span></label>
+
+            <div id="mediaOptions" class="ai-options">
+              <label><span>画幅</span><select id="aspectRatio"><option value="9:16">竖版 9:16</option><option value="16:9">横版 16:9</option><option value="1:1">方形 1:1</option><option value="3:2">横图 3:2</option><option value="2:3">竖图 2:3</option></select></label>
+              <label id="durationField" hidden><span>时长</span><select id="duration"><option value="6">6 秒</option><option value="10">10 秒</option></select></label>
+              <label id="resolutionField" hidden><span>清晰度</span><select id="resolution"><option value="480p">480p · 更快</option><option value="720p">720p · 更清晰</option></select></label>
+            </div>
+
+            <div id="aiMessage" class="module-status"></div>
+            <div class="ai-submit-row"><p>提交会消耗 Kie.ai 积分；多选模型会分别创建任务。</p><button id="submitBtn" class="module-button primary" type="submit">开始生成</button></div>
+          </form>
+        </section>
+
+        <section class="ai-history">
+          <div class="module-panel-head"><div><p class="module-kicker">GENERATION HISTORY</p><h2>我的创作记录</h2></div><span id="historyState">正在读取</span></div>
+          <div id="taskList" class="ai-result-grid"></div>
+        </section>
+      </div>
+    </main>
+
+    <script src="/access.js"></script>
+    <script src="/ai.js"></script>
+  </body>
+</html>

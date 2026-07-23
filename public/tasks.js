@@ -103,7 +103,7 @@ async function loadTasks() {
     const safety = await safetyResponse.json();
     if (!tasksResponse.ok) throw new Error(data.error || "读取任务失败。");
     $("#safetySummary").textContent = `今日已提交排期 ${safety.scheduledToday || 0}/${safety.defaultDailyLimit || 300}，待核实 ${safety.uncertainCount || 0}，成片保留 ${data.worker?.retentionHours || 48} 小时`;
-    renderTasks(data.tasks || []);
+    renderTasks((data.tasks || []).filter((task) => task.taskType !== "psychology"));
   } catch (error) {
     taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "读取任务失败。")}</div>`;
   }
@@ -147,7 +147,7 @@ function renderTasks(tasks) {
       <div class="task-item-head"><div><strong>${escapeHtml(task.name)}</strong><small>${formatTime(task.createdAt)}</small></div><div class="task-head-actions"><span class="task-status-badge">${escapeHtml(statusLabel(task.status))}</span>${actions}</div></div>
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
-      <div class="task-counts"><span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>发布成功 ${task.publishSummary?.submitted || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
+      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>???? ${Number(task.failedVideoCount)} ?</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>发布成功 ${task.publishSummary?.submitted || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
       ${scheduleHtml}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;
   }).join("");

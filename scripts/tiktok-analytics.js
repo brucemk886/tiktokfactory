@@ -207,6 +207,8 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     const audioRankings = buildAudioRankings(videos);
     const summary = summarizeVideos(videos, accounts);
     const groups = Array.from(new Set(publishRecords.map((item) => item.groupName).filter(Boolean))).sort();
+    const todayVideos = filterByPeriod(baseVideos, "today", now()).sort(videoSorter("views"));
+    const sevenDayVideos = filterByPeriod(baseVideos, "7d", now()).sort(videoSorter("views"));
 
     return {
       status: {
@@ -224,6 +226,8 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
       accounts,
       audioRankings,
       videos: videos.slice(0, 500),
+      todayVideos: todayVideos.slice(0, 500),
+      sevenDayVideos: sevenDayVideos.slice(0, 30),
       filters: { groups }
     };
   }

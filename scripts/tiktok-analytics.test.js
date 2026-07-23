@@ -126,6 +126,8 @@ test("stores snapshots and never exposes the raw API key", async () => {
   assert.equal(dashboard.summary.videoCount, 1);
   assert.equal(dashboard.videos[0].history.length, 2);
   assert.equal(dashboard.videos[0].viewsDelta, 80);
+  assert.equal(dashboard.todayVideos.length, 0);
+  assert.equal(dashboard.sevenDayVideos.length, 1);
 });
 
 test("summarizes account stability and returns account video details", async () => {

@@ -13,6 +13,8 @@ import { createCodexBrainService } from "./codex-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { createLocalAuthService } from "./local-auth.js";
+import { createPsychologyTopicsService } from "./psychology-topics.js";
+import { createKieAiService } from "./kie-ai.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -22,6 +24,7 @@ const { outputDir, workDir } = resolveStorageDirs(root, bootConfig);
 const jobsDir = path.join(workDir, "jobs");
 const publishRecordsPath = path.join(workDir, "publish-records.json");
 const redditMixSettingsPath = path.join(workDir, "reddit-mix-settings.json");
+const psychologySettingsPath = path.join(workDir, "psychology-video-settings.json");
 
 ensureProject(root, bootConfig);
 fs.mkdirSync(jobsDir, { recursive: true });
@@ -42,6 +45,8 @@ const tiktokAnalytics = createTikTokAnalyticsService({
 const codexBrain = createCodexBrainService({ root, workDir });
 const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
 const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
+const psychologyTopics = createPsychologyTopicsService({ workDir });
+const kieAi = createKieAiService({ workDir, readApiKey: () => readPsychologySettings().kieApiKey });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
 
@@ -176,6 +181,38 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "reddit.js"), "text/javascript; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/psychology") {
+      return sendFile(res, path.join(publicDir, "psychology.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/psychology.js") {
+      return sendFile(res, path.join(publicDir, "psychology.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/psychology.css") {
+      return sendFile(res, path.join(publicDir, "psychology.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/psychology-topics") {
+      return sendFile(res, path.join(publicDir, "psychology-topics.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/psychology-topics.js") {
+      return sendFile(res, path.join(publicDir, "psychology-topics.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/ai") {
+      return sendFile(res, path.join(publicDir, "ai.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/ai.js") {
+      return sendFile(res, path.join(publicDir, "ai.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/module-pages.css") {
+      return sendFile(res, path.join(publicDir, "module-pages.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/tasks") {
       return sendFile(res, path.join(publicDir, "tasks.html"), "text/html; charset=utf-8");
     }
@@ -188,12 +225,8 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "tasks.css"), "text/css; charset=utf-8");
     }
 
-    if (req.method === "GET" && url.pathname === "/asset-cutter") {
-      return sendFile(res, path.join(publicDir, "asset-cutter.html"), "text/html; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/asset-cutter.js") {
-      return sendFile(res, path.join(publicDir, "asset-cutter.js"), "text/javascript; charset=utf-8");
+    if (req.method === "GET" && ["/asset-cutter", "/novel-library", "/audio-library"].includes(url.pathname)) {
+      return redirect(res, "/tasks");
     }
 
     if (req.method === "GET" && url.pathname === "/asset-usage") {
@@ -208,30 +241,6 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "asset-usage.css"), "text/css; charset=utf-8");
     }
 
-    if (req.method === "GET" && url.pathname === "/novel-library") {
-      return sendFile(res, path.join(publicDir, "novel-library.html"), "text/html; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/novel-library.js") {
-      return sendFile(res, path.join(publicDir, "novel-library.js"), "text/javascript; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/novel-library.css") {
-      return sendFile(res, path.join(publicDir, "novel-library.css"), "text/css; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/audio-library") {
-      return sendFile(res, path.join(publicDir, "audio-library.html"), "text/html; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/audio-library.js") {
-      return sendFile(res, path.join(publicDir, "audio-library.js"), "text/javascript; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/audio-library.css") {
-      return sendFile(res, path.join(publicDir, "audio-library.css"), "text/css; charset=utf-8");
-    }
-
     if (req.method === "GET" && url.pathname.startsWith("/outputs/")) {
       const fileName = path.basename(decodeURIComponent(url.pathname.slice("/outputs/".length)));
       return sendFile(res, path.join(outputDir, fileName), "video/mp4");
@@ -240,6 +249,68 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/codex/status") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex 接口仅允许在本机访问。" });
       return sendJson(res, 200, codexBrain.getStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/psychology-topics/settings") {
+      return sendJson(res, 200, psychologyTopics.getPublicSettings());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/psychology-topics/settings") {
+      try {
+        return sendJson(res, 200, { settings: psychologyTopics.saveSettings(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "保存题库配置失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/psychology-topics/sync") {
+      try {
+        return sendJson(res, 200, await psychologyTopics.sync());
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "同步心理学题库失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/psychology-topics") {
+      return sendJson(res, 200, psychologyTopics.list({
+        query: url.searchParams.get("query") || "",
+        page: url.searchParams.get("page") || 1,
+        pageSize: url.searchParams.get("pageSize") || 20
+      }));
+    }
+
+    if (req.method === "GET" && /^\/api\/psychology-topics\/[^/]+$/.test(url.pathname)) {
+      const topic = psychologyTopics.get(decodeURIComponent(url.pathname.split("/").pop()));
+      return topic ? sendJson(res, 200, { topic }) : sendJson(res, 404, { error: "心理学题目不存在。" });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/ai/generate") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "AI 创作仅允许在本机使用。" });
+      try {
+        return sendJson(res, 200, await codexBrain.generateCreation(await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "AI 创作失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/kie-ai") {
+      return sendJson(res, 200, await kieAi.getOverview());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/kie-ai") {
+      try {
+        return sendJson(res, 201, { task: await kieAi.createTask(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "Kie.ai 生成任务提交失败。" });
+      }
+    }
+
+    if (req.method === "GET" && /^\/api\/kie-ai\/[^/]+$/.test(url.pathname)) {
+      try {
+        return sendJson(res, 200, { task: await kieAi.refreshTask(decodeURIComponent(url.pathname.split("/").pop())) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "Kie.ai 任务状态读取失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/novel-library/status") {
@@ -339,14 +410,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {
-      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user);
+      const publishRecords = readPublishRecords();
+      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
       return sendJson(res, 200, tiktokAnalytics.getDashboard({
         period: String(url.searchParams.get("period") || "7d"),
         group: String(url.searchParams.get("group") || ""),
         account: String(url.searchParams.get("account") || ""),
         sort: String(url.searchParams.get("sort") || "views"),
         allowedAccounts
-      }, readPublishRecords()));
+      }, publishRecords));
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/settings") {
@@ -375,7 +447,7 @@ const server = http.createServer(async (req, res) => {
       const video = tiktokAnalytics.getVideo(videoId, publishRecords);
       if (!video) return sendJson(res, 404, { error: "没有找到这条 TikTok 视频的数据。" });
       if (session.user.role !== "admin") {
-        const allowedAccounts = new Set(await getAnalyticsAllowedAccounts(session.user));
+        const allowedAccounts = new Set(await getAnalyticsAllowedAccounts(session.user, publishRecords));
         const username = String(video.username || "").trim().replace(/^@/, "").toLowerCase();
         if (!allowedAccounts.has(username)) return sendJson(res, 403, { error: "你没有查看这条视频素材明细的权限。" });
       }
@@ -421,13 +493,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/account-details") {
       const username = String(url.searchParams.get("username") || "");
-      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user);
+      const publishRecords = readPublishRecords();
+      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
       const detail = tiktokAnalytics.getAccountDetail(username, {
         period: String(url.searchParams.get("period") || "7d"),
         group: String(url.searchParams.get("group") || ""),
         sort: String(url.searchParams.get("sort") || "newest"),
         allowedAccounts
-      }, readPublishRecords());
+      }, publishRecords);
       if (!detail) return sendJson(res, 404, { error: "没有找到这个账号的发布数据。" });
       return sendJson(res, 200, detail);
     }
@@ -605,12 +678,46 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, publishService.getSafetySummary());
     }
 
+    if (req.method === "GET" && url.pathname === "/api/psychology/settings") {
+      const settings = readPsychologySettings();
+      return sendJson(res, 200, {
+        configured: Boolean(settings.kieApiKey && settings.elevenLabsApiKey && settings.elevenLabsVoiceId),
+        kieConfigured: Boolean(settings.kieApiKey),
+        elevenLabsConfigured: Boolean(settings.elevenLabsApiKey),
+        elevenLabsVoiceId: settings.elevenLabsVoiceId,
+        elevenLabsModelId: settings.elevenLabsModelId,
+        imageModels: settings.imageModels,
+        totalVideos: settings.totalVideos,
+        aspectRatio: settings.aspectRatio || "16:9",
+        titlePosition: settings.titlePosition,
+        titleFontSize: settings.titleFontSize,
+        motion: settings.motion,
+    backgroundMusicDir: settings.backgroundMusicDir || "",
+    backgroundMusicVolume: Number(settings.backgroundMusicVolume ?? 0.10)
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/psychology/settings") {
+      return sendJson(res, 200, { ok: true, settings: publicPsychologySettings(savePsychologySettings(await readJsonBody(req))) });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/auto-tasks") {
       return sendJson(res, 200, { tasks: filterTasksForUser(autoTaskManager.listTasks(), session.user), worker: autoTaskManager.getStatus() });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auto-tasks") {
       const payload = await readJsonBody(req);
+      if (payload.taskType === "psychology") {
+        const settings = readPsychologySettings();
+        if (!settings.kieApiKey || !settings.elevenLabsApiKey || !settings.elevenLabsVoiceId) {
+          return sendJson(res, 400, { error: "请先在心理学视频页面完成 Kie、ElevenLabs 和 Voice ID 配置。" });
+        }
+        payload.generation = {
+          ...publicPsychologySettings(settings),
+          ...(payload.generation || {}),
+          elevenLabsVoiceId: String(payload.generation?.elevenLabsVoiceId || settings.elevenLabsVoiceId || "")
+        };
+      }
       if (session.user.role !== "admin") {
         const generation = payload.generation || {};
         if (String(generation.assetGroupId || "").trim()) return sendJson(res, 403, { error: "成员账号只能使用分配的共享素材库，不能使用管理员素材组。" });
@@ -1071,16 +1178,17 @@ async function getScheduledTikTokAccountsCached() {
   }
 }
 
-async function getAnalyticsAllowedAccounts(user) {
-  const scheduledAccounts = await getScheduledTikTokAccountsCached();
-  if (user.role === "admin") return scheduledAccounts;
-  const scheduledSet = new Set((scheduledAccounts || [])
-    .map((item) => String(item).trim().replace(/^@/, "").toLowerCase())
-    .filter(Boolean));
-  const phones = await getAuthorizedGeeLarkPhones(user);
-  return Array.from(new Set(phones
-    .map((phone) => String(phone.serialName || "").trim().replace(/^@/, "").toLowerCase())
-    .filter((username) => username && scheduledSet.has(username))));
+async function getAnalyticsAllowedAccounts(user, publishRecords = null) {
+  const configuredGroups = user.role === "admin"
+    ? new Set((tiktokAnalytics.getSettings().groups || []).map((group) => String(group).trim()).filter(Boolean))
+    : new Set((user.allowedGeeLarkGroups || []).map((group) => String(group).trim()).filter(Boolean));
+  const records = (publishRecords || readPublishRecords()).filter((record) => {
+    if (!configuredGroups.has(String(record.groupName || "").trim())) return false;
+    return user.role === "admin" || canAccessPublishRecord(user, record);
+  });
+  return Array.from(new Set(records
+    .map((record) => String(record.accountName || "").trim().replace(/^@/, "").toLowerCase())
+    .filter(Boolean)));
 }
 
 function normalizeOutputId(value) {
@@ -1273,6 +1381,74 @@ function canAccessApi(user, pathname) {
   if (pathname.startsWith("/api/auth/")) return true;
   if (user.role === "admin") return true;
   return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/reddit-mix/settings" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname);
+}
+
+function readPsychologySettings() {
+  const base = {
+    kieApiKey: String(process.env.KIE_API_KEY || bootConfig.kieApiKey || "").trim(),
+    elevenLabsApiKey: String(process.env.ELEVENLABS_API_KEY || bootConfig.elevenLabsApiKey || "").trim(),
+    elevenLabsVoiceId: String(bootConfig.elevenLabsVoiceId || "").trim(),
+    elevenLabsModelId: String(bootConfig.elevenLabsModelId || "eleven_multilingual_v2"),
+    imageModels: ["nano-banana"],
+    totalVideos: 1,
+    aspectRatio: "16:9",
+    titlePosition: 14,
+    titleFontSize: 68,
+    motion: "test-motion",
+    backgroundMusicDir: "",
+    backgroundMusicVolume: 0.10
+  };
+  if (!fs.existsSync(psychologySettingsPath)) return base;
+  try {
+    const saved = JSON.parse(fs.readFileSync(psychologySettingsPath, "utf8"));
+    return { ...base, ...saved };
+  } catch {
+    return base;
+  }
+}
+
+function savePsychologySettings(payload = {}) {
+  const current = readPsychologySettings();
+  const imageModels = Array.isArray(payload.imageModels)
+    ? payload.imageModels.filter((model) => model === "grok" || model === "nano-banana")
+    : current.imageModels;
+  const next = {
+    ...current,
+    ...(String(payload.kieApiKey || "").trim() ? { kieApiKey: String(payload.kieApiKey).trim() } : {}),
+    ...(String(payload.elevenLabsApiKey || "").trim() ? { elevenLabsApiKey: String(payload.elevenLabsApiKey).trim() } : {}),
+    elevenLabsVoiceId: String(payload.elevenLabsVoiceId ?? current.elevenLabsVoiceId).trim(),
+    elevenLabsModelId: String(payload.elevenLabsModelId || current.elevenLabsModelId || "eleven_multilingual_v2"),
+    imageModels: imageModels.length ? imageModels : ["nano-banana"],
+    totalVideos: Math.max(1, Math.min(300, Math.floor(Number(payload.totalVideos) || current.totalVideos || 1))),
+    aspectRatio: payload.aspectRatio === "16:9" ? "16:9" : (payload.aspectRatio === "9:16" ? "9:16" : (current.aspectRatio || "16:9")),
+    titlePosition: clampNumber(payload.titlePosition, 8, 55, current.titlePosition || 14),
+    titleFontSize: clampNumber(payload.titleFontSize, 42, 100, current.titleFontSize || 68),
+    motion: ["none", "slow-zoom", "test-motion"].includes(payload.motion) ? payload.motion : (current.motion || "test-motion"),
+    backgroundMusicDir: String(payload.backgroundMusicDir ?? current.backgroundMusicDir ?? "").trim(),
+    backgroundMusicVolume: clampNumber(payload.backgroundMusicVolume, 0, 0.5, current.backgroundMusicVolume ?? 0.10),
+    updatedAt: Date.now()
+  };
+  fs.mkdirSync(path.dirname(psychologySettingsPath), { recursive: true });
+  fs.writeFileSync(psychologySettingsPath, JSON.stringify(next, null, 2), "utf8");
+  return next;
+}
+
+function publicPsychologySettings(settings) {
+  return {
+    configured: Boolean(settings.kieApiKey && settings.elevenLabsApiKey && settings.elevenLabsVoiceId),
+    kieConfigured: Boolean(settings.kieApiKey),
+    elevenLabsConfigured: Boolean(settings.elevenLabsApiKey),
+    elevenLabsVoiceId: settings.elevenLabsVoiceId,
+    elevenLabsModelId: settings.elevenLabsModelId,
+    imageModels: settings.imageModels,
+    totalVideos: settings.totalVideos,
+        aspectRatio: settings.aspectRatio || "16:9",
+    titlePosition: settings.titlePosition,
+    titleFontSize: settings.titleFontSize,
+    motion: settings.motion,
+    backgroundMusicDir: settings.backgroundMusicDir || "",
+    backgroundMusicVolume: Number(settings.backgroundMusicVolume ?? 0.10)
+  };
 }
 
 function readRedditMixSettings() {

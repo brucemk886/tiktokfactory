@@ -16,6 +16,7 @@
   "ttsRate": -1,
   "ttsVolume": 100,
   "elevenLabsApiKey": "",
+  "kieApiKey": "",
   "elevenLabsVoiceId": "",
   "elevenLabsModelId": "eleven_multilingual_v2",
   "elevenLabsSttModelId": "scribe_v2",
@@ -46,6 +47,7 @@
     ".aac"
   ],
   "videoCodec": "libx264",
+  "psychologyVideoCodec": "libx264",
   "audioCodec": "aac",
   "workDir": "D:/localcodex/work",
   "outputDir": "D:/localcodex/outputs",

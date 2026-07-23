@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>心理学题目 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+    <link rel="stylesheet" href="/module-pages.css" />
+  </head>
+  <body class="module-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/tasks"><span class="brand-mark">LF</span><span><strong>Local Factory</strong><small>内容自动化</small></span></a>
+      <nav class="tasks-nav" aria-label="主导航">
+        <a data-admin-only class="is-active" href="/psychology-topics">心理学题目</a>
+        <a data-admin-only href="/psychology">心理学视频自动化</a>
+        <a data-admin-only href="/ai">AI 创作</a>
+        <a data-admin-only href="/asset-usage">素材使用率</a>
+        <a href="/tasks">Reddit 自动发布</a>
+        <a href="/stats">发布记录</a>
+        <a href="/analytics">数据总览</a>
+        <a data-admin-only href="/analytics-settings">抓取配置</a>
+        <a data-admin-only href="/accounts">账户管理</a>
+      </nav>
+      <div class="sidebar-safety"><span class="live-dot"></span><div><strong>安全发布已开启</strong><small>查重、熔断、单次重试</small></div></div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </aside>
+    <main class="module-main">
+      <header class="module-header">
+        <div><p class="module-kicker">PSYCHOLOGY LIBRARY</p><h1>心理学题目</h1><p>从外部心理学网站同步题库，筛选后直接进入视频自动化。</p></div>
+        <button id="syncBtn" class="module-button primary" type="button">更新题库</button>
+      </header>
+      <div class="module-shell">
+        <section class="module-metrics">
+          <div class="module-metric"><span>已同步题目</span><strong id="topicTotal">0</strong><small>本地缓存</small></div>
+          <div class="module-metric"><span>最近同步</span><strong id="syncedAt">--</strong><small>同步失败不会清空旧数据</small></div>
+          <div class="module-metric"><span>数据源</span><strong id="sourceState">未配置</strong><small id="sourceUrl">请配置 API</small></div>
+        </section>
+        <details class="module-panel" open>
+          <summary>外部题库连接配置</summary>
+          <div class="module-grid" style="margin-top:16px">
+            <label class="module-field"><span>题库 API 地址</span><input id="apiUrl" type="url" placeholder="https://example.com/api/psychology/questions" /></label>
+            <label class="module-field"><span>鉴权方式</span><select id="authType"><option value="none">无鉴权</option><option value="bearer">Bearer Token</option><option value="x-api-key">X-API-Key</option></select></label>
+            <label class="module-field"><span>Token / API Key</span><input id="apiToken" type="password" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="留空保留已保存密钥" /></label>
+            <button id="saveSettingsBtn" class="module-button" type="button">保存连接</button>
+          </div>
+          <div id="settingsStatus" class="module-status"></div>
+        </details>
+        <section class="module-panel">
+          <div class="module-panel-head"><div><h2>题目列表</h2><p>支持题目、钩子和结果解释搜索。</p></div><span id="resultCount">0 条</span></div>
+          <div class="topic-toolbar"><label class="module-field"><input id="query" type="search" placeholder="搜索心理学题目" /></label><button id="searchBtn" class="module-button" type="button">搜索</button></div>
+          <div id="topicList" class="topic-list" style="margin-top:14px"><div class="module-empty">尚未同步题库。</div></div>
+          <div class="module-pagination" style="margin-top:14px"><button id="prevBtn" class="module-button" type="button">上一页</button><span id="pageText">1 / 1</span><button id="nextBtn" class="module-button" type="button">下一页</button></div>
+        </section>
+      </div>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/psychology-topics.js"></script>
+  </body>
+</html>

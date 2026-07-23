@@ -88,6 +88,22 @@ body.tasks-page {
 .sidebar-safety strong, .sidebar-safety small { display: block; }
 .sidebar-safety strong { font-size: 12px; }
 .sidebar-safety small { margin-top: 4px; color: var(--task-muted); font-size: 10px; }
+.tasks-sidebar .nav-logout {
+  width: calc(100% - 16px);
+  min-height: 38px;
+  margin: 8px 8px 0;
+  padding: 0 12px;
+  border: 1px solid #2b3138;
+  border-radius: 5px;
+  color: #aeb4bc;
+  background: #161a1f;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.tasks-sidebar .nav-logout:hover { color: var(--task-text); border-color: #3b444e; background: #1b2026; }
 
 .tasks-workspace { margin-left: 190px; min-height: 100vh; }
 .tasks-toolbar {

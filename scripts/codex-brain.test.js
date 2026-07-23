@@ -115,6 +115,22 @@ test("novel marketing turns a disconnected stream into a safe retry error", asyn
   assert.equal(service.getStatus().lastMarketingRun.ok, false);
 });
 
+test("AI creation uses medium reasoning and returns directly usable content", async () => {
+  const calls = [];
+  class FakeCodex {
+    startThread(options) {
+      calls.push(options);
+      return { run: async (prompt) => { calls.push(prompt); return { finalResponse: "A ready-to-use narration.", usage: { output_tokens: 8 } }; } };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", CodexClass: FakeCodex });
+  const result = await service.generateCreation({ mode: "narration", language: "English", prompt: "Rewrite this psychology test as a voiceover." });
+  assert.equal(calls[0].modelReasoningEffort, "medium");
+  assert.equal(calls[0].sandboxMode, "read-only");
+  assert.match(calls[1], /ElevenLabs/);
+  assert.equal(result.content, "A ready-to-use narration.");
+});
+
 function makeMarketingFixture() {
   return {
     packageTitle: "The Second Family Launch Pack",

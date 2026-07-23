@@ -1,5 +1,5 @@
 const elements = Object.fromEntries([
-  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "videoAnalyticsNav", "accountAnalyticsNav", "audioAnalyticsNav", "pageTitle", "pageDescription",
+  "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "pageTitle", "pageDescription",
   "refreshBtn", "manualFetchProfile", "manualFetchGroupOptions", "manualFetchGroupSummary", "manualFetchBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
   "pageStatus", "todayRankCountBadge", "todayRankRows", "todayRankPagination", "sevenDayRankCountBadge", "sevenDayRankRows", "sevenDayRankPagination",
   "accountCountBadge", "accountRows", "accountPagination", "quotaList", "nextRunText", "videoCountBadge", "videoRows", "videoPagination",
@@ -22,22 +22,17 @@ let todayRankPage = 1;
 let sevenDayRankPage = 1;
 let accountPage = 1;
 let videoPage = 1;
-const activeView = new URLSearchParams(window.location.search).get("view") || "dashboard";
-const isAudioView = activeView === "audio";
+const requestedView = new URLSearchParams(window.location.search).get("view") || "dashboard";
+const activeView = ["dashboard", "account", "video"].includes(requestedView) ? requestedView : "dashboard";
+const isAudioView = false;
 const isAccountView = activeView === "account";
 const isVideoView = activeView === "video";
 
 document.body.classList.toggle("audio-only-view", isAudioView);
 document.body.classList.toggle("account-only-view", isAccountView);
 document.body.classList.toggle("video-only-view", isVideoView);
-elements.analyticsNav.classList.toggle("is-active", !isAudioView && !isAccountView && !isVideoView);
-elements.videoAnalyticsNav.classList.toggle("is-active", isVideoView);
-elements.accountAnalyticsNav.classList.toggle("is-active", isAccountView);
-elements.audioAnalyticsNav.classList.toggle("is-active", isAudioView);
-if (isAudioView) {
-  elements.pageTitle.textContent = "音频表现";
-  elements.pageDescription.textContent = "按音频汇总跨账号视频表现，查看发布详情，并直接试听本地原音频。";
-} else if (isAccountView) {
+elements.analyticsNav?.classList.toggle("is-active", !isAudioView && !isAccountView && !isVideoView);
+if (isAccountView) {
   elements.pageTitle.textContent = "账号表现";
   elements.pageDescription.textContent = "按账号汇总播放稳定性、爆款率与低播风险，快速识别值得放量和需要淘汰的账号。";
   elements.periodFilter.value = "7d";
@@ -152,17 +147,8 @@ async function loadDashboard() {
   });
   try {
     const data = await requestJson(`/api/tiktok-analytics?${params}`);
-    const loadRankPeriod = async (period) => {
-      if (elements.periodFilter.value === period && elements.sortFilter.value === "views") return data.videos || [];
-      const rankParams = new URLSearchParams(params);
-      rankParams.set("period", period);
-      rankParams.set("sort", "views");
-      const rankData = await requestJson(`/api/tiktok-analytics?${rankParams}`);
-      return rankData.videos || [];
-    };
-    const [todayVideos, sevenDayVideos] = await Promise.all([loadRankPeriod("today"), loadRankPeriod("7d")]);
-    data.todayVideos = todayVideos;
-    data.sevenDayVideos = sevenDayVideos.slice(0, 30);
+    data.todayVideos = data.todayVideos || [];
+    data.sevenDayVideos = (data.sevenDayVideos || []).slice(0, 30);
     renderDashboard(data);
     if (data.status?.running) startPolling();
   } catch (error) {
