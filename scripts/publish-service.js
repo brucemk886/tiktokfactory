@@ -39,7 +39,14 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
     activeBatchId = batchId;
 
     try {
-      options.onProgress?.({ phase: "checking", current: 0, total: items.length, message: "正在核对 GeeLark 历史任务..." });
+      options.onProgress?.({
+        phase: "checking",
+        current: 0,
+        total: items.length,
+        results: results.slice(),
+        summary: summarize(results, batchAttempts),
+        message: "正在核对 GeeLark 历史任务..."
+      });
       let remoteTasks = await readRecentTasks(client, historyRetryDelays);
 
       for (let index = 0; index < items.length; index++) {
@@ -66,6 +73,8 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
           current: index + 1,
           total: items.length,
           failed: results.filter((entry) => entry.status === "failed" || entry.status === "needs_check").length,
+          results: results.slice(),
+          summary: summarize(results, batchAttempts),
           message: result.message
         });
       }
@@ -76,6 +85,8 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
           current: 0,
           total: retryQueue.length,
           retryAt: Date.now() + retryDelayMs,
+          results: results.slice(),
+          summary: summarize(results, batchAttempts),
           message: `${retryQueue.length} 条明确失败任务将在 2 分钟后重试一次。`
         });
         const stopped = await delayInterruptible(retryDelayMs, options.shouldStop);
@@ -109,6 +120,8 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
             phase: "retrying",
             current: retryIndex + 1,
             total: retryQueue.length,
+            results: results.slice(),
+            summary: summarize(results, batchAttempts),
             message: result.message
           });
         }
@@ -116,7 +129,14 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
 
       const summary = summarize(results, batchAttempts);
       appendAudit(auditPath, { event: "batch_complete", batchId, summary });
-      options.onProgress?.({ phase: "done", current: items.length, total: items.length, summary, message: "发布批次处理完成。" });
+      options.onProgress?.({
+        phase: "done",
+        current: items.length,
+        total: items.length,
+        results: results.slice(),
+        summary,
+        message: "发布批次处理完成。"
+      });
       return { ok: true, batchId, results, summary };
     } finally {
       activeBatchId = "";

@@ -128,6 +128,14 @@ function renderTasks(tasks) {
     const total = Number(progress?.total) || 0;
     const percent = total > 0 ? Math.round(current / total * 100) : Number(progress?.percent) || 0;
     const failures = (task.publishResults || []).filter((item) => item.status === "failed" || item.status === "needs_check");
+    const groupNames = Array.from(new Set(
+      (task.publish?.accounts || [])
+        .map((account) => String(account?.groupName || "").trim())
+        .filter(Boolean)
+    ));
+    const groupHtml = groupNames.length
+      ? `<div class="task-groups"><span>\u8d26\u53f7\u5206\u7ec4</span>${groupNames.map((name) => `<b>${escapeHtml(name)}</b>`).join("")}</div>`
+      : "";
     const scheduleLines = buildTaskScheduleLines(task);
     const scheduleHtml = scheduleLines.length
       ? `<div class="task-schedule"><strong>具体排期</strong>${scheduleLines.map((item) => `<span><b>${escapeHtml(formatScheduleAt(item.scheduleAt))}</b><em>${item.count} 条</em></span>`).join("")}</div>`
@@ -145,9 +153,10 @@ function renderTasks(tasks) {
       : task.message || "等待执行";
     return `<article class="auto-task-item" data-status="${escapeAttr(task.status)}">
       <div class="task-item-head"><div><strong>${escapeHtml(task.name)}</strong><small>${formatTime(task.createdAt)}</small></div><div class="task-head-actions"><span class="task-status-badge">${escapeHtml(statusLabel(task.status))}</span>${actions}</div></div>
+      ${groupHtml}
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
-      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>???? ${Number(task.failedVideoCount)} ?</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>发布成功 ${task.publishSummary?.submitted || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
+      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>发布成功 ${task.publishSummary?.submitted || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
       ${scheduleHtml}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;
   }).join("");

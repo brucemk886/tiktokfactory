@@ -190,10 +190,17 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
         retryDelayMs: 2 * 60 * 1000,
         autoRetry: true,
         onProgress: (progress) => {
+          const {
+            results: progressResults,
+            summary: progressSummary,
+            ...publishProgress
+          } = progress;
           patchTask(id, {
             phase: progress.phase,
             message: progress.message,
-            publishProgress: progress,
+            publishProgress,
+            ...(Array.isArray(progressResults) ? { publishResults: progressResults } : {}),
+            ...(progressSummary ? { publishSummary: progressSummary } : {}),
             updatedAt: Date.now()
           });
         },
