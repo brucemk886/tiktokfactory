@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>运营大脑 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+    <link rel="stylesheet" href="/operator.css" />
+  </head>
+  <body class="tasks-page operator-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/operator">
+        <span class="brand-mark">LF</span>
+        <span><strong>Local Factory</strong><small>内容自动化</small></span>
+      </a>
+      <nav class="tasks-nav" aria-label="主导航">
+        <a data-admin-only href="/psychology-topics">心理学题目</a>
+        <a data-admin-only href="/psychology">心理学视频自动化</a>
+        <a data-admin-only href="/schulte">舒尔特训练</a>
+        <a data-admin-only href="/ai">AI 创作</a>
+        <a data-admin-only href="/asset-usage">素材使用率</a>
+        <a href="/tasks">Reddit 自动发布</a>
+        <a href="/stats">发布记录</a>
+        <a href="/analytics">数据总览</a>
+        <a class="is-active" data-admin-only href="/operator">运营大脑</a>
+        <a data-admin-only href="/analytics-settings">抓取配置</a>
+        <a data-admin-only href="/accounts">账户管理</a>
+      </nav>
+      <div class="sidebar-safety">
+        <span class="live-dot"></span>
+        <div><strong>安全决策已开启</strong><small>先生成方案，再创建任务</small></div>
+      </div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </aside>
+
+    <div class="operator-workspace">
+      <header class="operator-header">
+        <div>
+          <p class="toolbar-kicker">AUTONOMOUS OPERATIONS</p>
+          <h1>运营大脑</h1>
+          <p>只根据自然播放量识别账号阶段，按不同模板职责生成并安全创建发布任务。</p>
+        </div>
+        <div class="operator-header-actions">
+          <label class="switch-control header-switch"><input id="operatorEnabled" type="checkbox" /><span class="switch-track"></span><span>启用运营大脑</span></label>
+          <span id="operatorState" class="state-pill">自动运行关闭</span>
+          <button id="refreshOverviewBtn" class="quiet-button" type="button">刷新分析</button>
+          <button id="createPlanBtn" class="primary-action" type="button">生成今日方案</button>
+        </div>
+      </header>
+
+      <main class="operator-main">
+        <section class="operator-panel strategy-panel">
+          <div class="panel-heading">
+            <div><span class="section-index">01</span><div><h2>运营边界</h2><p>先确定账号范围、目标与每日硬上限。</p></div></div>
+            <button id="saveSettingsBtn" class="quiet-button" type="button">保存策略</button>
+          </div>
+
+          <div class="operator-grid operator-grid-2">
+            <label class="field"><span>GeeLark 配置</span><select id="profileSelect"></select></label>
+            <label class="field"><span>每账号每日发布</span><select id="postsPerAccount">
+              <option value="1">1 条</option>
+              <option value="2">2 条</option>
+              <option value="3">3 条</option>
+            </select></label>
+          </div>
+
+          <div class="group-section">
+            <div class="group-section-head"><strong>参与运营的账号组</strong><span id="groupSelectionText">未选择账号组</span></div>
+            <div id="groupList" class="operator-group-list"><span class="loading-line">正在读取 GeeLark 账号组...</span></div>
+          </div>
+
+          <div class="operator-grid operator-grid-3 compact-config">
+            <label class="field"><span>每日策略时间</span><input id="runTime" type="time" value="19:00" /></label>
+            <label class="field"><span>首周起发时间</span><input id="publishTime" type="time" value="22:00" /></label>
+            <label class="field"><span>首周随机窗口</span><div class="input-suffix"><input id="publishWindow" type="number" min="0" max="60" value="30" /><b>分钟</b></div></label>
+            <label class="field"><span>同账号内容间隔</span><div class="input-suffix"><input id="slotInterval" type="number" min="15" max="720" value="180" /><b>分钟</b></div></label>
+            <label class="field"><span>最多运营账号</span><input id="maxAccounts" type="number" min="1" max="100" value="100" /></label>
+            <label class="field"><span>每日视频硬上限</span><input id="maxDailyVideos" type="number" min="1" max="300" value="300" /></label>
+          </div>
+
+          <div class="model-config-panel">
+            <div class="model-config-heading">
+              <div><strong>运营策略模型</strong><span>每次只按账号组汇总调用一次，不会逐条视频消耗模型额度。</span></div>
+              <span id="deepseekConnectionState" class="model-state">尚未配置 DeepSeek</span>
+            </div>
+            <div class="operator-grid operator-grid-3 model-config-grid">
+              <label class="field"><span>策略来源</span><select id="strategyProvider">
+                <option value="hybrid">DeepSeek 全量数据分析 + SOL 最终决策</option>
+                <option value="deepseek">DeepSeek V4 Flash</option>
+                <option value="codex">本地 Codex</option>
+                <option value="rules">规则引擎</option>
+              </select></label>
+              <label class="field"><span>DeepSeek 思考模式</span><select id="strategyReasoning">
+                <option value="enabled">开启（策略质量优先）</option>
+                <option value="disabled">关闭（速度与成本优先）</option>
+              </select></label>
+              <label id="deepseekKeyField" class="field"><span>DeepSeek API Key</span><input id="deepseekApiKey" type="password" autocomplete="new-password" placeholder="粘贴 API Key，留空保留原密钥" /></label>
+            </div>
+            <div class="model-config-actions">
+              <button id="saveDeepseekBtn" class="quiet-button" type="button">保存 API</button>
+              <button id="testDeepseekBtn" class="quiet-button" type="button">测试连接</button>
+              <span id="deepseekStatus" class="inline-status">使用规则引擎兜底，模型失败不会阻断方案生成。</span>
+            </div>
+          </div>
+
+          <div class="automation-row">
+            <label class="switch-control"><input id="autoAnalyze" type="checkbox" /><span class="switch-track"></span><span>每天自动生成运营方案</span></label>
+            <label class="switch-control danger-switch"><input id="autoCreate" type="checkbox" /><span class="switch-track"></span><span>方案生成后自动创建发布任务</span></label>
+            <span class="safety-copy">关闭自动建任务时，只生成草案，不调用 GeeLark 发布接口。</span>
+          </div>
+          <div id="settingsStatus" class="inline-status">尚未修改策略。</div>
+        </section>
+
+        <section class="stage-strip" aria-label="账号阶段">
+          <div data-stage="cold_start"><span>冷启动</span><strong>0</strong><small>扩大样本</small></div>
+          <div data-stage="testing"><span>测试期</span><strong>0</strong><small>验证结构</small></div>
+          <div data-stage="breakout"><span>爆发期</span><strong>0</strong><small>复制胜出</small></div>
+          <div data-stage="scaling"><span>放量期</span><strong>0</strong><small>扩大分发</small></div>
+          <div data-stage="qualified"><span>十万达标</span><strong>0</strong><small>自然播放里程碑</small></div>
+          <div data-stage="recovery"><span>修复期</span><strong>0</strong><small>重做开场</small></div>
+        </section>
+
+        <section class="operator-panel">
+          <div class="panel-heading">
+            <div><span class="section-index">02</span><div><h2>账号判断</h2><p id="accountMeta">等待数据分析。</p></div></div>
+            <span id="dataFreshness" class="state-pill neutral">尚未读取</span>
+          </div>
+          <div class="table-scroll account-table-wrap">
+            <table class="operator-table">
+              <thead><tr><th>账号</th><th>分组</th><th>阶段</th><th>10日样本</th><th>均播 / 中位</th><th>低播率</th><th>破千率</th><th>30日播放</th><th>下一步</th></tr></thead>
+              <tbody id="accountRows"><tr><td colspan="9" class="empty-cell">选择账号组后刷新分析。</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="operator-panel plan-panel">
+          <div class="panel-heading">
+            <div><span class="section-index">03</span><div><h2>今日内容计划</h2><p id="planMeta">生成方案后会展示每个模板、账号范围和发布时间。</p></div></div>
+            <div class="plan-actions">
+              <button id="reloadPlansBtn" class="quiet-button" type="button">历史方案</button>
+              <button id="approvePlanBtn" class="primary-action" type="button" disabled>审核并创建任务</button>
+            </div>
+          </div>
+          <div class="north-star-note">
+            <strong>唯一目标：自然播放</strong>
+            <span id="northStarNote">互动、涨粉、投流和收益不参与账号分层；不同模板只承担不同阶段的播放测试职责。</span>
+          </div>
+          <div id="aiDecision" class="ai-decision" hidden>
+            <div class="ai-decision-head">
+              <div><span>CODEX DECISION</span><strong id="aiDecisionTitle">运营策略</strong></div>
+              <span id="aiDecisionState" class="state-pill neutral">未调用</span>
+            </div>
+            <p id="aiExecutiveSummary"></p>
+            <div class="ai-insights">
+              <div><span>账号判断</span><p id="aiAccountDiagnosis"></p></div>
+              <div><span>内容方向</span><p id="aiContentDirection"></p></div>
+            </div>
+            <div class="ai-evidence">
+              <div>
+                <span>近 7 日内容反馈</span>
+                <div id="aiContentFeedback" class="evidence-list"></div>
+              </div>
+              <div>
+                <span>实际执行配比</span>
+                <div id="aiAllocationPlan" class="evidence-list"></div>
+              </div>
+            </div>
+            <ul id="aiRiskNotes"></ul>
+          </div>
+          <div id="planSummary" class="plan-summary"></div>
+          <div class="table-scroll">
+            <table class="operator-table">
+              <thead><tr><th>时段</th><th>内容层</th><th>模板</th><th>账号数</th><th>发布时间</th><th>决策原因</th><th>状态</th></tr></thead>
+              <tbody id="planRows"><tr><td colspan="7" class="empty-cell">尚未生成今日方案。</td></tr></tbody>
+            </table>
+          </div>
+          <div id="planStatus" class="inline-status">运营大脑不会在草案阶段调用发布接口。</div>
+        </section>
+      </main>
+    </div>
+    <script src="/access.js"></script>
+    <script src="/operator.js"></script>
+  </body>
+</html>

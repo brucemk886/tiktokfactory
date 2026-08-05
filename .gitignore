@@ -34,6 +34,12 @@ tmp/
 # Local Codex metadata
 .agents/
 .codex/
+!.codex/
+.codex/*
+!.codex/skills/
+.codex/skills/*
+!.codex/skills/hallmark/
+!.codex/skills/hallmark/**
 
 # OS/editor files
 .DS_Store

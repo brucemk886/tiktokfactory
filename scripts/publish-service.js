@@ -176,7 +176,8 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
       batchPublishLimit: 1,
       autoRetry: false,
       geelarkProfileId: record.geelarkProfileId || "default",
-      ownerUserId: record.ownerUserId || ""
+      ownerUserId: record.ownerUserId || "",
+      operationMeta: record.operationMeta || null
     };
     const result = await publishBatch(payload, { batchId: `manual-retry-${recordId}-${Date.now()}`, autoRetry: false, manual: true });
     if (result.results?.some((entry) => entry.status === "submitted" || entry.status === "skipped")) {
@@ -195,11 +196,12 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
   function getSafetySummary() {
     const state = readState(safetyPath);
     const day = dayKey();
+    const completedToday = countCompletedPublishes(recordsPath, day);
     return {
       activeBatchId,
       day,
-      attemptsToday: Number(state.daily?.[day]) || 0,
-      scheduledToday: Number(state.daily?.[day]) || 0,
+      attemptsToday: completedToday,
+      scheduledToday: completedToday,
       defaultDailyLimit: DEFAULT_DAILY_LIMIT,
       uncertainCount: Object.values(state.entries || {}).filter((entry) => entry.status === "needs_check").length
     };
@@ -247,7 +249,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
     }
 
     const isFirstScheduledAttempt = attempts === 0;
-    const limitError = getLimitError({ state, dailyLimit, batchLimit, batchAttempts: getBatchAttempts(), scheduleAt: item.scheduleAt, checkDailyLimit: isFirstScheduledAttempt });
+    const limitError = getLimitError({ state, recordsPath, dailyLimit, batchLimit, batchAttempts: getBatchAttempts(), scheduleAt: item.scheduleAt, checkDailyLimit: isFirstScheduledAttempt });
     if (limitError) {
       const record = makeRecord({ item, index, payload, account, batchId, status: "failed", note: `safety-limit: ${limitError}`, attempts });
       upsertRecord(recordsPath, record);
@@ -255,7 +257,6 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
       return resultFor(item, record, "failed", limitError, false);
     }
     incrementBatchAttempts();
-    if (isFirstScheduledAttempt) incrementDailyAttempt(safetyPath, item.scheduleAt);
     const nextAttempt = attempts + 1;
     writeEntry(safetyPath, item.dedupeKey, {
       status: "submitting",
@@ -411,12 +412,28 @@ function makeRecord({ item, index, payload, account, batchId, resourceUrl = "", 
     accountSerialNo: account.serialNo || "",
     groupName: account.groupName || "",
     videoDesc: payload.videoDesc || "",
+    operationMeta: normalizeOperationMeta(payload.operationMeta || video.operationMeta),
     scheduleAt: item.scheduleAt,
     intervalMinutes: Number(payload.intervalMinutes) || 0,
     shareLink: "",
     metrics: null,
     lastCheckedAt: null,
     note
+  };
+}
+
+function normalizeOperationMeta(value = {}) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    createdBy: String(value.createdBy || ""),
+    createdAt: Number(value.createdAt) || 0,
+    planDate: String(value.planDate || ""),
+    objective: String(value.objective || ""),
+    recipeId: String(value.recipeId || ""),
+    contentVariantId: String(value.contentVariantId || ""),
+    targetStages: Array.isArray(value.targetStages)
+      ? Array.from(new Set(value.targetStages.map(String).filter(Boolean)))
+      : []
   };
 }
 
@@ -480,21 +497,20 @@ function resolveOutputPath(outputDir, fileName, expectedDuration = 0) {
   return resolved;
 }
 
-function getLimitError({ state, dailyLimit, batchLimit, batchAttempts, scheduleAt, checkDailyLimit = true }) {
+function getLimitError({ recordsPath, dailyLimit, batchLimit, batchAttempts, scheduleAt, checkDailyLimit = true }) {
   const scheduleDay = scheduleDateKey(scheduleAt);
-  const scheduledCount = Number(state.daily?.[scheduleDay]) || 0;
-  if (checkDailyLimit && scheduledCount >= dailyLimit) return `${scheduleDay} 已触发计划发布上限（${dailyLimit} 条），本条未调用接口。`;
+  const completedCount = countCompletedPublishes(recordsPath, scheduleDay);
+  if (checkDailyLimit && completedCount >= dailyLimit) return `${scheduleDay} 已完成发布 ${completedCount} 条，达到每日 ${dailyLimit} 条上限，本条未调用接口。`;
   if (batchAttempts >= batchLimit) return `已触发本批 GeeLark 发布上限（${batchLimit} 次），本条未调用接口。`;
   return "";
 }
 
-function incrementDailyAttempt(filePath, scheduleAt) {
-  const state = readState(filePath);
-  const day = scheduleDateKey(scheduleAt);
-  state.daily[day] = (Number(state.daily[day]) || 0) + 1;
-  writeJson(filePath, state);
+function countCompletedPublishes(recordsPath, date) {
+  return readJson(recordsPath, []).filter((record) => {
+    if (record?.status !== "submitted") return false;
+    return scheduleDateKey(Number(record.scheduleAt) || 0) === date;
+  }).length;
 }
-
 function writeEntry(filePath, key, patch) {
   const state = readState(filePath);
   state.entries[key] = { ...(state.entries[key] || {}), ...patch };

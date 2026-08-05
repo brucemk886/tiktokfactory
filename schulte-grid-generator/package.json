@@ -1,0 +1,17 @@
+{
+  "name": "schulte-grid-video-generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.jsx",
+    "render": "remotion render src/index.jsx SchulteFocus output/schulte-focus-sample.mp4 --codec=h264 --crf=20 --concurrency=4 --public-dir=public --browser-executable=C:\\PROGRA~1\\Google\\Chrome\\Application\\chrome.exe",
+    "still": "remotion still src/index.jsx SchulteFocus output/preview.png --frame=240 --public-dir=public --browser-executable=C:\\PROGRA~1\\Google\\Chrome\\Application\\chrome.exe"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.484",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.484"
+  }
+}

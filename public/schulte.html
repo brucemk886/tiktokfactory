@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>舒尔特训练 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+    <link rel="stylesheet" href="/module-pages.css" />
+    <link rel="stylesheet" href="/schulte.css" />
+  </head>
+  <body class="module-page schulte-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/tasks" aria-label="Local Factory">
+        <span class="brand-mark">LF</span>
+        <span><strong>Local Factory</strong><small>内容自动化</small></span>
+      </a>
+      <nav class="tasks-nav" aria-label="主导航">
+        <a data-admin-only href="/psychology-topics">心理学题目</a>
+        <a data-admin-only href="/psychology">心理学视频自动化</a>
+        <a data-admin-only class="is-active" href="/schulte">舒尔特训练</a>
+        <a data-admin-only href="/ai">AI 创作</a>
+        <a data-admin-only href="/asset-usage">素材使用率</a>
+        <a href="/tasks">Reddit 自动发布</a>
+        <a href="/stats">发布记录</a>
+        <a href="/analytics">数据总览</a>
+        <a data-admin-only href="/analytics-settings">抓取配置</a>
+        <a data-admin-only href="/accounts">账户管理</a>
+      </nav>
+      <div class="sidebar-safety">
+        <span class="live-dot"></span>
+        <div><strong>本地渲染已启用</strong><small>Remotion 动态训练视频</small></div>
+      </div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </aside>
+
+    <main class="module-main">
+      <header class="module-header">
+        <div>
+          <p class="module-kicker">FOCUS TRAINING</p>
+          <h1>舒尔特训练视频</h1>
+          <p>选择数字圆盘或小球视觉追踪模板，生成训练提示、计时器和背景音乐。</p>
+        </div>
+        <span class="schulte-render-note">720 × 1280 · 30 FPS · 本地 Remotion</span>
+      </header>
+
+      <div class="module-shell schulte-shell">
+        <section class="module-panel schulte-config">
+          <div class="module-panel-head">
+            <div><h2>生成设置</h2><p id="configHelp">修改天数和随机种子即可批量得到不同排列。</p></div>
+            <div class="schulte-head-actions">
+              <button id="saveSettingsBtn" class="module-button" type="button">保存设置</button>
+              <button id="randomSeedBtn" class="module-button" type="button">随机排列</button>
+            </div>
+          </div>
+
+          <div class="schulte-template-picker" role="tablist" aria-label="视频模板">
+            <button class="schulte-template-option is-active" type="button" data-template="wheel" role="tab" aria-selected="true">
+              <span>模板 1</span><strong>旋转数字圆盘</strong><small>三层数字独立旋转</small>
+            </button>
+            <button class="schulte-template-option" type="button" data-template="tracking" role="tab" aria-selected="false">
+              <span>模板 2</span><strong>小球视觉追踪</strong><small>锁定目标并追踪编号</small>
+            </button>
+            <button class="schulte-template-option" type="button" data-template="memory" role="tab" aria-selected="false">
+              <span>模板 4</span><strong>网格位置记忆</strong><small>记住方块依次亮起的位置</small>
+            </button>
+            <button class="schulte-template-option" type="button" data-template="peripheral" role="tab" aria-selected="false">
+              <span>模板 5</span><strong>周边闪视捕捉</strong><small>注视中心并用余光统计目标</small>
+            </button>
+          </div>
+          <div class="schulte-fields">
+            <label class="module-field"><span>训练天数</span><input id="day" type="number" min="1" max="999" value="24" /></label>
+            <label class="module-field"><span>随机种子</span><input id="seed" type="number" min="1" max="999999" value="2407" /></label>
+            <label class="module-field"><span>样片生成条数</span><div class="schulte-suffix"><input id="sampleCount" type="number" min="1" max="30" value="1" /><b>条</b></div></label>
+            <label class="module-field" data-template-fields="wheel"><span>视频时长</span><div class="schulte-suffix"><input id="durationSeconds" type="number" min="12" max="180" value="32" /><b>秒</b></div></label>
+            <label class="module-field" data-template-fields="wheel"><span>提示出现</span><div class="schulte-suffix"><input id="instructionStartsAt" type="number" min="1" max="10" step="0.1" value="2" /><b>秒</b></div></label>
+            <label class="module-field" data-template-fields="wheel"><span>计时与转动开始</span><div class="schulte-suffix"><input id="trainingStartsAt" type="number" min="3" max="20" step="0.1" value="4" /><b>秒</b></div></label>
+            <label class="module-field" data-template-fields="wheel"><span>转速倍率</span><div class="schulte-suffix"><input id="rotationSpeed" type="number" min="0.25" max="3" step="0.1" value="2.5" /><b>×</b></div></label>
+            <label class="module-field" data-template-fields="wheel"><span>训练玩法</span><select id="trainingMode"><option value="auto">批量自动轮换</option><option value="sequence">顺序寻找 1–36</option><option value="reverse">倒序寻找 36–1</option><option value="missing">寻找缺失数字</option><option value="duplicate">寻找重复数字</option></select></label>
+            <label class="module-field" data-template-fields="wheel"><span>圆盘布局</span><select id="layoutStyle"><option value="auto">批量自动轮换</option><option value="classic">经典 6 / 12 / 18</option><option value="balanced">均衡 8 / 12 / 16</option><option value="focus">聚焦 6 / 10 / 20</option></select></label>
+            <label class="module-field" data-template-fields="wheel"><span>画面背景</span><select id="backgroundStyle"><option value="auto">批量自动轮换</option><option value="mint">薄荷青绿</option><option value="sky">清透天蓝</option><option value="lavender">柔和紫灰</option><option value="peach">暖杏珊瑚</option><option value="paper">明亮纸白</option></select></label>
+            <label class="module-field" data-template-fields="wheel"><span>训练提示语言</span><select id="instructionLanguage"><option value="zh">中文</option><option value="en">English</option></select></label>
+            <label class="module-field is-hidden" data-template-fields="tracking"><span>追踪时长</span><div class="schulte-suffix"><input id="trackingSeconds" type="number" min="10" max="90" value="30" /><b>秒</b></div></label>
+            <label class="module-field is-hidden" data-template-fields="tracking"><span>小球速度</span><div class="schulte-suffix"><input id="ballSpeed" type="number" min="0.5" max="3" step="0.1" value="1" /><b>×</b></div></label>
+            <label class="module-field is-hidden" data-template-fields="tracking"><span>追踪玩法</span><select id="trackingMode"><option value="auto">批量自动轮换</option><option value="single">单目标追踪</option><option value="dual">双目标追踪</option><option value="triple">三目标追踪</option></select></label>
+            <label class="module-field is-hidden" data-template-fields="tracking"><span>追踪背景</span><select id="trackingBackground"><option value="auto">批量自动轮换</option><option value="forest">深林绿</option><option value="navy">深海蓝</option><option value="violet">暗夜紫</option><option value="graphite">石墨灰</option><option value="amber">琥珀棕</option></select></label>
+            <label class="module-field is-hidden" data-template-fields="memory"><span>记忆步骤</span><div class="schulte-suffix"><input id="memorySteps" type="number" min="4" max="8" value="6" /><b>步</b></div></label>
+            <label class="module-field is-hidden" data-template-fields="memory"><span>记忆背景</span><select id="memoryBackground"><option value="auto">批量自动轮换（7套）</option><option value="aqua">冰川青</option><option value="navy">深海蓝</option><option value="violet">暮光紫</option><option value="forest">森林绿</option><option value="sunset">日落橙</option><option value="rose">玫瑰粉</option><option value="graphite">石墨黑</option></select></label>
+            <label class="module-field is-hidden" data-template-fields="peripheral"><span>目标图形数量</span><div class="schulte-suffix"><input id="peripheralTargets" type="number" min="2" max="5" value="3" /><b>个</b></div></label>
+            <label class="module-field"><span>左上角标题</span><input id="headline" type="text" value="专注力改造计划" maxlength="24" /></label>
+            <label class="module-field" data-template-fields="wheel memory peripheral"><span>画面主标题</span><input id="mainTitle" type="text" value="每日前额叶训练" maxlength="24" placeholder="输入视频展示的主标题" /></label>
+            <label class="module-field"><span>背景音乐来源</span><select id="backgroundMusicMode"><option value="local">本地音乐文件夹</option><option value="built-in">内置专注音乐</option><option value="off">关闭音乐</option></select></label>
+            <label class="module-field"><span>背景音乐音量</span><div class="schulte-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="1" step="0.05" value="0.35" /><b>0–1</b></div></label>
+            <label class="module-field schulte-wide"><span>本地背景音乐文件夹</span><div class="schulte-path-picker"><input id="backgroundMusicDir" type="text" placeholder="选择包含 MP3、WAV、M4A、AAC 或 OGG 的本地文件夹" /><button type="button" data-pick-directory="backgroundMusicDir">选择文件夹</button></div></label>
+          </div>
+
+          <div class="schulte-feature-strip">
+            <span><b id="featureValue1">1–36</b><i id="featureLabel1">数字范围</i></span>
+            <span><b id="featureValue2">3</b><i id="featureLabel2">层独立转盘</i></span>
+            <span><b id="featureValue3">正向</b><i id="featureLabel3">数字保持可读</i></span>
+          </div>
+
+          <div class="schulte-actions">
+            <div id="statusText" class="module-status">准备生成样片。</div>
+            <button id="generateBtn" class="module-button primary" type="button">生成一条样片</button>
+          </div>
+          <div class="schulte-progress" aria-hidden="true"><span id="progressBar"></span></div>
+        </section>
+
+        <section class="module-panel schulte-preview-panel">
+          <div class="module-panel-head">
+            <div><h2>视频预览</h2><p id="previewMeta">当前展示已生成的参考样片。</p></div>
+            <a id="downloadLink" class="module-button schulte-download is-hidden" download>下载视频</a>
+          </div>
+          <div class="schulte-player-frame">
+            <video id="previewVideo" controls playsinline preload="metadata" src="/schulte-sample.mp4"></video>
+          </div>
+        </section>
+      </div>
+
+      <section class="module-panel schulte-batch-section">
+        <div class="module-panel-head schulte-batch-title">
+          <div>
+            <p class="module-kicker">BATCH WORKFLOW</p>
+            <h2>批量生成与发布</h2>
+            <p>勾选一个或多个模板；每个模板沿用上方对应参数，并为每条视频生成唯一随机种子。</p>
+          </div>
+          <button id="refreshBatchPhonesBtn" class="module-button" type="button">刷新 GeeLark 账号</button>
+        </div>
+
+        <div class="schulte-batch-shell">
+          <div class="schulte-batch-form">
+            <div class="schulte-batch-block">
+              <div class="schulte-batch-block-head">
+                <span>01</span>
+                <div><h3>批量规则</h3><p id="batchTemplateSummary">当前使用模板 1：旋转数字圆盘</p></div>
+              </div>
+              <div class="schulte-batch-template-caption">
+                <strong>批量生成模板（可多选）</strong>
+                <span>每轮将已选模板随机打乱，并尽量平均分配生成数量。</span>
+              </div>
+              <div class="schulte-batch-template-picker" role="group" aria-label="批量生成模板">
+                <label class="schulte-batch-template-option">
+                  <input type="checkbox" data-batch-template="wheel" checked />
+                  <span><b>模板 1</b><small>旋转数字圆盘</small></span>
+                </label>
+                <label class="schulte-batch-template-option">
+                  <input type="checkbox" data-batch-template="tracking" />
+                  <span><b>模板 2</b><small>小球视觉追踪</small></span>
+                </label>
+                <label class="schulte-batch-template-option">
+                  <input type="checkbox" data-batch-template="memory" />
+                  <span><b>模板 4</b><small>网格位置记忆</small></span>
+                </label>
+                <label class="schulte-batch-template-option">
+                  <input type="checkbox" data-batch-template="peripheral" />
+                  <span><b>模板 5</b><small>周边闪视捕捉</small></span>
+                </label>
+              </div>
+              <div class="schulte-batch-fields">
+                <label class="module-field schulte-batch-name"><span>任务名称</span><input id="batchTaskName" type="text" maxlength="80" placeholder="例如：7月28日舒尔特训练" /></label>
+                <label class="module-field"><span>生成视频总条数</span><div class="schulte-suffix"><input id="batchTotalVideos" type="number" min="1" max="300" value="30" /><b>条</b></div></label>
+              </div>
+              <div class="schulte-batch-note">
+                <b id="batchSequencePreview">DAY 24–53</b>
+                <span id="batchVariationPreview">天数递增；玩法、布局、背景均匀轮换；随机种子不重复。</span>
+              </div>
+            </div>
+
+            <div class="schulte-batch-block">
+              <div class="schulte-batch-block-head">
+                <span>02</span>
+                <div><h3>GeeLark 发布</h3><p>按分组筛选并勾选账号；关闭自动发布时只生成本地视频。</p></div>
+              </div>
+              <label class="schulte-publish-toggle">
+                <input id="batchAutoPublish" type="checkbox" checked />
+                <i></i>
+                <span>生成完成后自动发布</span>
+              </label>
+              <div class="schulte-account-tools">
+                <label class="module-field"><span>分组</span><select id="batchGroupFilter"><option value="">全部分组</option></select></label>
+                <label class="module-field schulte-account-search"><span>搜索账号</span><input id="batchNameFilter" type="search" placeholder="账号名称、编号或备注" /></label>
+                <button id="batchSelectVisibleBtn" class="module-button" type="button">全选筛选结果</button>
+                <b id="batchSelectedCount">已选 0 个</b>
+              </div>
+              <div id="batchPhoneList" class="schulte-phone-list"><div class="schulte-empty">正在读取 GeeLark 账号...</div></div>
+              <label class="module-field schulte-batch-desc"><span>TikTok 发布文案</span><textarea id="batchVideoDesc" rows="2" placeholder="#focus #braintraining #attentiontraining"></textarea></label>
+              <div class="schulte-publish-fields">
+                <label class="module-field"><span>起始发布时间</span><input id="batchScheduleAt" type="datetime-local" /></label>
+                <label class="module-field"><span>同账号发布间隔</span><div class="schulte-suffix"><input id="batchIntervalMinutes" type="number" min="0" max="1440" value="15" /><b>分钟</b></div></label>
+                <label class="module-field"><span>单批调用上限</span><input id="batchPublishLimit" type="number" min="1" max="300" value="300" /></label>
+              </div>
+            </div>
+
+            <div class="schulte-batch-submit">
+              <p id="batchStatusText" class="module-status">准备创建舒尔特批量任务。</p>
+              <button id="createBatchBtn" class="module-button primary" type="button">加入批量任务队列</button>
+            </div>
+          </div>
+
+          <aside class="schulte-batch-queue">
+            <div class="schulte-queue-head">
+              <div><p class="module-kicker">LIVE QUEUE</p><h3>舒尔特任务</h3></div>
+              <button id="refreshBatchTasksBtn" class="module-button" type="button" title="刷新任务">刷新</button>
+            </div>
+            <div id="batchTaskList" class="schulte-task-list"><div class="schulte-empty">暂时没有舒尔特批量任务。</div></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script src="/access.js"></script>
+    <script src="/schulte.js"></script>
+  </body>
+</html>

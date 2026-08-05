@@ -7,6 +7,8 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MARKETING_TIMEOUT_MS = 8 * 60 * 1000;
 const MARKETING_MODEL = "gpt-5.6-sol";
 const CREATION_MODEL = "gpt-5.6-sol";
+const OPERATION_MODEL = "gpt-5.6-sol";
+const OPERATION_REASONING_EFFORT = "xhigh";
 const MAX_SOURCE_CHARS = 120_000;
 const MAX_CREATION_CHARS = 20_000;
 
@@ -58,6 +60,137 @@ const marketingOutputSchema = {
   additionalProperties: false
 };
 
+export const operationOutputSchema = {
+  type: "object",
+  properties: {
+    executiveSummary: { type: "string" },
+    accountDiagnosis: { type: "string" },
+    contentDirection: { type: "string" },
+    riskNotes: {
+      type: "array",
+      minItems: 2,
+      maxItems: 6,
+      items: { type: "string" }
+    },
+    allocationPlan: {
+      type: "array",
+      minItems: 6,
+      maxItems: 6,
+      items: {
+        type: "object",
+        properties: {
+          stage: {
+            type: "string",
+            enum: ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"]
+          },
+          mix: {
+            type: "object",
+            properties: {
+              peripheral_hook: { type: "number" },
+              tracking_hook: { type: "number" },
+              position_memory: { type: "number" },
+              schulte_complete: { type: "number" }
+            },
+            required: ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"],
+            additionalProperties: false
+          },
+          rationale: { type: "string" }
+        },
+        required: ["stage", "mix", "rationale"],
+        additionalProperties: false
+      }
+    },
+    publishingPlan: {
+      type: "array",
+      minItems: 6,
+      maxItems: 6,
+      items: {
+        type: "object",
+        properties: {
+          stage: {
+            type: "string",
+            enum: ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"]
+          },
+          startHour: { type: "integer" },
+          startMinute: { type: "integer" },
+          windowMinutes: { type: "integer" },
+          slotIntervalMinutes: { type: "integer" },
+          rationale: { type: "string" }
+        },
+        required: ["stage", "startHour", "startMinute", "windowMinutes", "slotIntervalMinutes", "rationale"],
+        additionalProperties: false
+      }
+    },
+    recipeTuning: {
+      type: "array",
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: "object",
+        properties: {
+          recipeId: {
+            type: "string",
+            enum: ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]
+          },
+          durationSeconds: { type: "number" },
+          rotationSpeed: { type: "number" },
+          trackingSeconds: { type: "number" },
+          ballSpeed: { type: "number" },
+          memorySteps: { type: "number" },
+          peripheralTargets: { type: "number" },
+          rationale: { type: "string" }
+        },
+        required: [
+          "recipeId",
+          "durationSeconds",
+          "rotationSpeed",
+          "trackingSeconds",
+          "ballSpeed",
+          "memorySteps",
+          "peripheralTargets",
+          "rationale"
+        ],
+        additionalProperties: false
+      }
+    },
+    scripts: {
+      type: "array",
+      minItems: 4,
+      maxItems: 12,
+      items: {
+        type: "object",
+        properties: {
+          recipeId: {
+            type: "string",
+            enum: ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]
+          },
+          targetStage: {
+            type: "string",
+            enum: ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery", "all"]
+          },
+          headline: { type: "string" },
+          mainTitle: { type: "string" },
+          videoDesc: { type: "string" },
+          rationale: { type: "string" }
+        },
+        required: ["recipeId", "targetStage", "headline", "mainTitle", "videoDesc", "rationale"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: [
+    "executiveSummary",
+    "accountDiagnosis",
+    "contentDirection",
+    "riskNotes",
+    "allocationPlan",
+    "publishingPlan",
+    "recipeTuning",
+    "scripts"
+  ],
+  additionalProperties: false
+};
+
 export function createCodexBrainService({
   root,
   workDir = path.join(root, "work"),
@@ -71,6 +204,7 @@ export function createCodexBrainService({
   let lastTest = null;
   let lastMarketingRun = null;
   let lastCreationRun = null;
+  let lastOperationRun = null;
 
   function getStatus() {
     return {
@@ -79,12 +213,15 @@ export function createCodexBrainService({
       executable: codexPath ? "codex-desktop" : "sdk-bundled",
       marketingModel: MARKETING_MODEL,
       creationModel: CREATION_MODEL,
+      operationModel: OPERATION_MODEL,
+      operationReasoningEffort: OPERATION_REASONING_EFFORT,
       connected,
       running: Boolean(runningOperation),
       runningOperation,
       lastTest,
       lastMarketingRun,
-      lastCreationRun
+      lastCreationRun,
+      lastOperationRun
     };
   }
 
@@ -265,15 +402,349 @@ export function createCodexBrainService({
     }
   }
 
+  async function generateOperationStrategy(payload = {}) {
+    assertIdle("运营策略生成");
+    const input = normalizeOperationInput(payload);
+    runningOperation = "operation-strategy";
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), marketingTimeoutMs);
+
+    try {
+      const codex = new CodexClass(codexPath ? { codexPathOverride: codexPath } : undefined);
+      const thread = codex.startThread({
+        model: OPERATION_MODEL,
+        modelReasoningEffort: OPERATION_REASONING_EFFORT,
+        workingDirectory: root,
+        sandboxMode: "read-only",
+        approvalPolicy: "never",
+        networkAccessEnabled: false,
+        webSearchMode: "disabled"
+      });
+      const result = await thread.run(buildOperationPromptV2(input), {
+        outputSchema: operationOutputSchema,
+        signal: controller.signal
+      });
+      const strategy = parseOperationResponseV2(result.finalResponse);
+      connected = true;
+      lastOperationRun = {
+        ok: true,
+        generatedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        model: OPERATION_MODEL,
+        usage: result.usage || null
+      };
+      return { strategy, ...lastOperationRun };
+    } catch (error) {
+      const rawMessage = String(error?.message || error);
+      const interrupted = /stream disconnected|fetch failed|ECONNRESET|socket hang up|network connection was lost/i.test(rawMessage);
+      const message = error?.name === "AbortError"
+        ? `运营策略生成超过 ${Math.round(marketingTimeoutMs / 60_000)} 分钟，已停止。`
+        : interrupted
+          ? "Codex 运营策略连接临时中断，已保留规则引擎草案。"
+          : rawMessage;
+      lastOperationRun = {
+        ok: false,
+        generatedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        model: OPERATION_MODEL,
+        error: message
+      };
+      const wrapped = new Error(message);
+      wrapped.statusCode = interrupted ? 503 : (error?.statusCode || 502);
+      throw wrapped;
+    } finally {
+      clearTimeout(timer);
+      runningOperation = "";
+    }
+  }
+
   function assertIdle(label) {
     if (!runningOperation) return;
-    const runningLabel = runningOperation === "novel-marketing" ? "小说营销素材生成" : runningOperation === "ai-creation" ? "AI 创作" : "连接测试";
+    const runningLabel = runningOperation === "novel-marketing"
+      ? "小说营销素材生成"
+      : runningOperation === "ai-creation"
+        ? "AI 创作"
+        : runningOperation === "operation-strategy"
+          ? "运营策略生成"
+          : "连接测试";
     const error = new Error(`${label}暂时无法开始，Codex 当前正在执行${runningLabel}。`);
     error.statusCode = 409;
     throw error;
   }
 
-  return { getStatus, testConnection, generateNovelMarketing, generateCreation };
+  return { getStatus, testConnection, generateNovelMarketing, generateCreation, generateOperationStrategy };
+}
+
+export function buildOperationPromptV2(input) {
+  return `You are the chief TikTok operations strategist for Local Factory.
+Use recent account and content performance to run a closed-loop organic-view experiment for four focus-training formats.
+
+Display language:
+- Write every strategy explanation that the operator will read in Simplified Chinese: executiveSummary, accountDiagnosis, contentDirection, every riskNotes item, and every rationale field.
+- Keep recipeId, targetStage, stage, model names, metric keys, and other machine-facing enum values exactly as required by the schema.
+- headline, mainTitle, and videoDesc are publishing copy and must remain natural English as required below. Do not mix English sentences into the Chinese operator-facing explanations.
+
+Hard boundaries:
+1. You cannot change accounts, account counts, total video counts, GeeLark settings, available template IDs, or safety limits.
+2. Optimize only for organic video views. Do not discuss monetization, followers, paid promotion, conversion, or revenue.
+3. You may choose each stage's template allocation and tune safe generation parameters. Every allocation mix must total 100.
+4. Keep cold_start and recovery short-video heavy. schulte_complete should be at most 10% in cold_start/recovery, at most 20% in testing, at most 30% in breakout, and at most 45% in scaling/qualified.
+5. These accounts are a dedicated experiment pool. Use your own allocation decision even when matched samples are limited, while preserving exploration and never reducing any recipe below 3%.
+6. scripts and recipeTuning must cover every recipeId:
+   - peripheral_hook: short peripheral-vision hook for fast cold-start distribution testing
+   - tracking_hook: short ball-tracking challenge for completion and replay
+   - position_memory: medium position-memory challenge for deeper retention
+   - schulte_complete: complete 60+ second Schulte session used gradually after an account proves stable reach
+7. Tune only within these useful ranges:
+   - peripheral_hook: durationSeconds 12-28, peripheralTargets 2-5
+   - tracking_hook: trackingSeconds 12-35, ballSpeed 0.8-2.4
+   - position_memory: durationSeconds 20-48, memorySteps 4-8
+   - schulte_complete: durationSeconds 60-90, rotationSpeed 0.5-3
+   Non-applicable numeric fields must still be returned and will be ignored.
+8. Keep headline to roughly 2-7 English words and mainTitle to roughly 4-10 English words. These are the only operator-visible copy fields that should be English.
+9. videoDesc must be natural English with 3-5 relevant hashtags and make no medical promises.
+10. Variations within a recipe must use meaningfully different psychological triggers, not synonym swaps.
+11. Judge accounts and content only from organic view metrics. Engagement is not a scoring input.
+12. First-week accounts are always published from 22:00 through 22:30 and this rule cannot be changed. For accounts after experiment day 7, provide one publishingPlan per account stage using the supplied time-slot performance. Use startHour 20-23, startMinute 0-59, windowMinutes 0-60, and slotIntervalMinutes 30-360. Prefer evidence over conventional posting-time assumptions.
+13. Use private retention and traffic-source metrics to diagnose hooks, pacing, completion quality, and distribution quality. A high-view video with weak retention and a low-view video with strong retention are different problems. Do not overfit one video.
+14. DeepSeek has already processed every recent video and every available second-by-second retention/like point in bounded batches. Use its evidence report as the complete private-data review, then independently make the final operating decision. Keep sound findings and correct unsupported conclusions.
+15. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
+
+Plan date: ${input.planDate || "today"}
+Objective: ${input.objective}
+Account count: ${input.accountCount}
+
+Aggregated account stages:
+${JSON.stringify(input.stageSummary)}
+
+Baseline stage allocations:
+${JSON.stringify(input.baselineMixes)}
+
+Matched performance from previously published operation-brain videos:
+${JSON.stringify(input.contentPerformance)}
+
+Matched performance by local 30-minute publishing window:
+${JSON.stringify(input.publishTimePerformance)}
+
+Owner-authorized private video performance from Fivetran (ratios are 0-1):
+${JSON.stringify(input.privatePerformance || {})}
+
+Model-routing context:
+${JSON.stringify(input.routeContext || {})}
+
+Preliminary DeepSeek strategy for independent review, when present:
+${JSON.stringify(input.preliminaryStrategy || {})}
+
+DeepSeek full-dataset evidence report (batch coverage plus account and cross-video findings):
+${JSON.stringify(input.deepseekEvidenceReport || {})}
+
+Rule-engine task drafts:
+${JSON.stringify(input.drafts)}`;
+}
+
+function parseOperationResponseV2(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(value || ""));
+  } catch {
+    throw new Error("Codex 返回的运营策略不是有效 JSON，请重试。");
+  }
+  if (!parsed || !Array.isArray(parsed.scripts) || parsed.scripts.length < 4) {
+    throw new Error("Codex 返回的运营脚本不完整，已保留规则引擎草案。");
+  }
+  const requiredRecipes = new Set(["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]);
+  for (const script of parsed.scripts) requiredRecipes.delete(script.recipeId);
+  if (requiredRecipes.size) {
+    throw new Error(`Codex 缺少 ${Array.from(requiredRecipes).join("、")} 的运营脚本，已保留规则引擎草案。`);
+  }
+  const allocationStages = new Set((parsed.allocationPlan || []).map((item) => item.stage));
+  const requiredStages = ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"];
+  if (requiredStages.some((stage) => !allocationStages.has(stage))) {
+    throw new Error("Codex 返回的阶段模板分配不完整，已保留规则引擎草案。");
+  }
+  const tuningRecipes = new Set((parsed.recipeTuning || []).map((item) => item.recipeId));
+  if ([...operationRecipeIds()].some((recipeId) => !tuningRecipes.has(recipeId))) {
+    throw new Error("Codex 返回的模板参数调整不完整，已保留规则引擎草案。");
+  }
+  const publishingStages = new Set((parsed.publishingPlan || []).map((item) => item.stage));
+  if (requiredStages.some((stage) => !publishingStages.has(stage))) {
+    throw new Error("Codex returned an incomplete stage publishing plan; the rule-engine schedule has been preserved.");
+  }
+  return parsed;
+}
+
+function normalizeOperationInput(payload = {}) {
+  const recipes = operationRecipeIds();
+  return {
+    planDate: cleanText(payload.planDate, 20),
+    objective: cleanText(payload.objective, 40) || "traffic",
+    accountCount: Math.max(0, Math.min(300, Number(payload.accountCount) || 0)),
+    baselineMixes: normalizeOperationMixes(payload.baselineMixes),
+    contentPerformance: Array.isArray(payload.contentPerformance)
+      ? payload.contentPerformance.slice(0, 12).map((item) => ({
+          recipeId: recipes.has(item.recipeId) ? item.recipeId : "",
+          sampleCount: Math.max(0, Number(item.sampleCount) || 0),
+          averageViews: Math.max(0, Number(item.averageViews) || 0),
+          medianViews: Math.max(0, Number(item.medianViews) || 0),
+          maxViews: Math.max(0, Number(item.maxViews) || 0),
+          low200Rate: Math.max(0, Number(item.low200Rate) || 0),
+          over1000Rate: Math.max(0, Number(item.over1000Rate) || 0),
+          trend: Number.isFinite(Number(item.trend)) ? Number(item.trend) : 1
+        })).filter((item) => item.recipeId)
+      : [],
+    publishTimePerformance: Array.isArray(payload.publishTimePerformance)
+      ? payload.publishTimePerformance.slice(0, 48).map((item) => ({
+          time: cleanText(item.time, 10),
+          sampleCount: Math.max(0, Number(item.sampleCount) || 0),
+          averageViews: Math.max(0, Number(item.averageViews) || 0),
+          medianViews: Math.max(0, Number(item.medianViews) || 0),
+          maxViews: Math.max(0, Number(item.maxViews) || 0)
+        })).filter((item) => /^\d{2}:\d{2}$/.test(item.time))
+      : [],
+    privatePerformance: normalizePrivatePerformance(payload.privatePerformance),
+    routeContext: {
+      mode: cleanText(payload.routeContext?.mode, 30),
+      reasons: Array.isArray(payload.routeContext?.reasons)
+        ? payload.routeContext.reasons.slice(0, 10).map((item) => cleanText(item, 80))
+        : []
+    },
+    preliminaryStrategy: normalizePreliminaryStrategy(payload.preliminaryStrategy),
+    deepseekEvidenceReport: normalizeDeepseekEvidenceReport(payload.deepseekEvidenceReport),
+    stageSummary: Array.isArray(payload.stageSummary)
+      ? payload.stageSummary.slice(0, 6).map((item) => ({
+          stage: cleanText(item.stage || item.id, 40),
+          count: Math.max(0, Number(item.count) || 0),
+          averageViews: Math.max(0, Number(item.averageViews) || 0),
+          medianViews: Math.max(0, Number(item.medianViews) || 0),
+          low200Rate: Math.max(0, Number(item.low200Rate) || 0),
+          over1000Rate: Math.max(0, Number(item.over1000Rate) || 0),
+          views30d: Math.max(0, Number(item.views30d) || 0)
+        }))
+      : [],
+    drafts: Array.isArray(payload.drafts)
+      ? payload.drafts.slice(0, 40)
+          .filter((item) => recipes.has(item.recipeId))
+          .map((item) => ({
+            recipeId: item.recipeId,
+            layer: cleanText(item.layer, 30),
+            accountCount: Math.max(0, Number(item.accountCount) || 0),
+            targetStages: Array.isArray(item.targetStages)
+              ? item.targetStages.slice(0, 6).map((stage) => cleanText(stage, 30))
+              : []
+          }))
+      : []
+  };
+}
+
+function normalizePrivatePerformance(value = {}) {
+  const normalizeMetric = (metric) => metric === null || metric === undefined
+    ? null
+    : Math.max(0, Number(metric) || 0);
+  const normalizeSummary = (summary = {}) => ({
+    detailedVideoCount: Math.max(0, Number(summary.detailedVideoCount) || 0),
+    maxViews: Math.max(0, Number(summary.maxViews) || 0),
+    averageViews: normalizeMetric(summary.averageViews),
+    averageWatchRatio: normalizeMetric(summary.averageWatchRatio),
+    averageFullWatchRate: normalizeMetric(summary.averageFullWatchRate),
+    averageRetention3: normalizeMetric(summary.averageRetention3),
+    averageRetention5: normalizeMetric(summary.averageRetention5),
+    averageRetention10: normalizeMetric(summary.averageRetention10),
+    averageRetention25: normalizeMetric(summary.averageRetention25),
+    averageRetention50: normalizeMetric(summary.averageRetention50),
+    averageRetention75: normalizeMetric(summary.averageRetention75),
+    averageRetentionEnd: normalizeMetric(summary.averageRetentionEnd),
+    averageForYouRate: normalizeMetric(summary.averageForYouRate),
+    averageSearchRate: normalizeMetric(summary.averageSearchRate),
+    conflictCount: Math.max(0, Number(summary.conflictCount) || 0),
+    highDistributionWeakRetentionCount: Math.max(0, Number(summary.highDistributionWeakRetentionCount) || 0),
+    lowDistributionStrongRetentionCount: Math.max(0, Number(summary.lowDistributionStrongRetentionCount) || 0)
+  });
+  return {
+    status: cleanText(value.status, 30),
+    windowDays: Math.max(0, Number(value.windowDays) || 0),
+    matchedAccountCount: Math.max(0, Number(value.matchedAccountCount) || 0),
+    summary: normalizeSummary(value.summary),
+    accounts: Array.isArray(value.accounts)
+      ? value.accounts.slice(0, 100).map((account) => ({
+          username: cleanText(account.username, 80),
+          ...normalizeSummary(account),
+          videos: []
+        }))
+      : []
+  };
+}
+
+function normalizePreliminaryStrategy(value = {}) {
+  if (!value || typeof value !== "object") return {};
+  return {
+    executiveSummary: cleanText(value.executiveSummary, 500),
+    accountDiagnosis: cleanText(value.accountDiagnosis, 500),
+    contentDirection: cleanText(value.contentDirection, 500),
+    riskNotes: Array.isArray(value.riskNotes) ? value.riskNotes.slice(0, 6).map((item) => cleanText(item, 240)) : [],
+    allocationPlan: Array.isArray(value.allocationPlan) ? value.allocationPlan.slice(0, 6) : [],
+    publishingPlan: Array.isArray(value.publishingPlan) ? value.publishingPlan.slice(0, 6) : [],
+    recipeTuning: Array.isArray(value.recipeTuning) ? value.recipeTuning.slice(0, 4) : [],
+    scripts: Array.isArray(value.scripts) ? value.scripts.slice(0, 12) : []
+  };
+}
+
+function normalizeDeepseekEvidenceReport(value = {}) {
+  if (!value || typeof value !== "object") return {};
+  const cleanList = (items, limit = 12, maxLength = 400) => Array.isArray(items)
+    ? items.slice(0, limit).map((item) => cleanText(item, maxLength)).filter(Boolean)
+    : [];
+  return {
+    windowDays: Math.max(0, Number(value.windowDays) || 0),
+    accountCount: Math.max(0, Number(value.accountCount) || 0),
+    videoCount: Math.max(0, Number(value.videoCount) || 0),
+    retentionPointCount: Math.max(0, Number(value.retentionPointCount) || 0),
+    likePointCount: Math.max(0, Number(value.likePointCount) || 0),
+    batchCount: Math.max(0, Number(value.batchCount) || 0),
+    batches: Array.isArray(value.batches) ? value.batches.slice(0, 200).map((batch) => ({
+      batch: Math.max(0, Number(batch?.batch) || 0),
+      coverage: {
+        accounts: Array.isArray(batch?.coverage?.accounts)
+          ? batch.coverage.accounts.slice(0, 100).map((item) => cleanText(item, 80)).filter(Boolean)
+          : [],
+        videoCount: Math.max(0, Number(batch?.coverage?.videoCount) || 0),
+        retentionPointCount: Math.max(0, Number(batch?.coverage?.retentionPointCount) || 0),
+        likePointCount: Math.max(0, Number(batch?.coverage?.likePointCount) || 0)
+      },
+      analysis: {
+        accountFindings: Array.isArray(batch?.analysis?.accountFindings)
+          ? batch.analysis.accountFindings.slice(0, 100).map((finding) => ({
+              username: cleanText(finding?.username, 80),
+              diagnosis: cleanText(finding?.diagnosis, 800),
+              retentionPatterns: cleanList(finding?.retentionPatterns),
+              distributionPatterns: cleanList(finding?.distributionPatterns),
+              strongestVideoIds: cleanList(finding?.strongestVideoIds, 12, 40),
+              weakestVideoIds: cleanList(finding?.weakestVideoIds, 12, 40),
+              recommendedTests: cleanList(finding?.recommendedTests)
+            }))
+          : [],
+        crossVideoPatterns: cleanList(batch?.analysis?.crossVideoPatterns, 16),
+        risks: cleanList(batch?.analysis?.risks, 12)
+      }
+    })) : []
+  };
+}
+
+function operationRecipeIds() {
+  return new Set(["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]);
+}
+
+function normalizeOperationMixes(value = {}) {
+  const recipeIds = operationRecipeIds();
+  const result = {};
+  for (const [stage, mix] of Object.entries(value || {})) {
+    result[cleanText(stage, 30)] = Object.fromEntries(
+      Object.entries(mix || {})
+        .filter(([recipeId]) => recipeIds.has(recipeId))
+        .map(([recipeId, weight]) => [recipeId, Math.max(0, Number(weight) || 0)])
+    );
+  }
+  return result;
 }
 
 function normalizeCreationInput(payload) {

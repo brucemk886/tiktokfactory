@@ -1,14 +1,35 @@
 const state = { users: [], profiles: [], groups: [], groupHint: "选择 GeeLark 配置后自动读取分组" };
 const $ = (selector) => document.querySelector(selector);
+const SIDEBAR_MODULES = Object.freeze([
+  { id: "psychology-topics", label: "心理学题目", adminOnly: true },
+  { id: "psychology", label: "心理学视频自动化", adminOnly: true },
+  { id: "schulte", label: "舒尔特训练", adminOnly: true },
+  { id: "ai", label: "AI 创作", adminOnly: true },
+  { id: "asset-usage", label: "素材使用率", adminOnly: true },
+  { id: "tasks", label: "Reddit 自动发布" },
+  { id: "stats", label: "发布记录" },
+  { id: "analytics", label: "数据总览" },
+  { id: "operator", label: "运营大脑", adminOnly: true },
+  { id: "project-hub", label: "项目中台", adminOnly: true },
+  { id: "tiktok-connections", label: "TikTok 账号授权", adminOnly: true },
+  { id: "analytics-settings", label: "抓取配置", adminOnly: true },
+  { id: "accounts", label: "账户管理", adminOnly: true }
+]);
 
 $("#profileForm").addEventListener("submit", saveProfile);
 $("#userForm").addEventListener("submit", saveUser);
 $("#clearUserBtn").addEventListener("click", clearUserForm);
 $("#userProfile").addEventListener("change", () => loadProfileGroups([]));
-$("#userRole").addEventListener("change", updateGroupPermissionHint);
+$("#userRole").addEventListener("change", () => {
+  updateGroupPermissionHint();
+  renderSidebarOptions(selectedSidebarModules());
+});
 $("#refreshUserGroupsBtn").addEventListener("click", () => loadProfileGroups(selectedGroups()));
 $("#selectAllUserGroupsBtn").addEventListener("click", () => setAllGroups(true));
 $("#clearUserGroupsBtn").addEventListener("click", () => setAllGroups(false));
+$("#selectAllSidebarBtn").addEventListener("click", () => setAllSidebarModules(true));
+$("#clearSidebarBtn").addEventListener("click", () => setAllSidebarModules(false));
+$("#saveSidebarBtn").addEventListener("click", saveSidebarSettings);
 
 load();
 
@@ -19,6 +40,7 @@ async function load() {
   state.users = data.users || [];
   state.profiles = data.profiles || [];
   render();
+  renderSidebarOptions(defaultSidebarModules($("#userRole").value));
   await loadProfileGroups([]);
 }
 
@@ -41,12 +63,14 @@ function render() {
       ? "全部 GeeLark 分组"
       : (user.allowedGeeLarkGroups?.length ? `分组：${user.allowedGeeLarkGroups.join("、")}` : "未分配 GeeLark 分组");
     const directoryText = user.allowedDirectory ? user.allowedDirectory : "未分配共享目录";
+    const sidebarText = sidebarModuleSummary(user.sidebarModules, user.role);
     return `
       <article>
         <div>
-          <strong>${esc(user.displayName)}</strong>
-          <small>${esc(user.username)} · ${user.role === "admin" ? "管理员" : "成员"} · ${esc(profileName(user.geelarkProfileId))}</small>
+          <strong>${esc(user.username)}</strong>
+          <small>${user.role === "admin" ? "管理员" : "成员"} · ${esc(profileName(user.geelarkProfileId))}</small>
           <small>${esc(groupText)} · ${esc(directoryText)}</small>
+          <small>侧边栏：${esc(sidebarText)}</small>
         </div>
         <div><span class="status-dot ${user.active ? "" : "off"}">${user.active ? "启用" : "停用"}</span><button data-edit-user="${esc(user.id)}">编辑</button></div>
       </article>
@@ -113,13 +137,13 @@ async function editUser(id) {
   $("#userId").value = user.id;
   $("#userName").value = user.username;
   $("#userName").disabled = true;
-  $("#userDisplayName").value = user.displayName;
   $("#userRole").value = user.role;
   $("#userProfile").value = user.geelarkProfileId;
   $("#userAllowedDirectory").value = user.allowedDirectory || "";
   $("#userPassword").value = "";
   $("#userActive").checked = user.active;
-  $("#userStatus").textContent = `正在编辑：${user.displayName}`;
+  $("#userStatus").textContent = `正在编辑：${user.username}`;
+  renderSidebarOptions(user.sidebarModules || defaultSidebarModules(user.role));
   updateGroupPermissionHint();
   await loadProfileGroups(user.allowedGeeLarkGroups || []);
 }
@@ -130,6 +154,7 @@ async function clearUserForm() {
   $("#userName").disabled = false;
   $("#userActive").checked = true;
   $("#userStatus").textContent = "";
+  renderSidebarOptions(defaultSidebarModules($("#userRole").value));
   updateGroupPermissionHint();
   await loadProfileGroups([]);
 }
@@ -139,10 +164,11 @@ async function saveUser(event) {
   const id = $("#userId").value;
   const payload = {
     username: $("#userName").value,
-    displayName: $("#userDisplayName").value,
+    displayName: $("#userName").value,
     role: $("#userRole").value,
     geelarkProfileId: $("#userProfile").value,
     allowedGeeLarkGroups: selectedGroups(),
+    sidebarModules: selectedSidebarModules(),
     allowedDirectory: $("#userAllowedDirectory").value,
     password: $("#userPassword").value,
     active: $("#userActive").checked
@@ -157,6 +183,37 @@ async function saveUser(event) {
   if (response.ok) {
     await clearUserForm();
     await load();
+  }
+}
+
+async function saveSidebarSettings() {
+  const id = $("#userId").value;
+  const status = $("#sidebarSaveStatus");
+  if (!id) {
+    status.textContent = "请先从下方账号列表点击“编辑”；新账号请使用“保存登录账号”。";
+    return;
+  }
+
+  const button = $("#saveSidebarBtn");
+  button.disabled = true;
+  status.textContent = "正在保存...";
+  try {
+    const response = await fetch(`/api/admin/accounts/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: $("#userRole").value,
+        sidebarModules: selectedSidebarModules()
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "保存失败。");
+    status.textContent = "角色与侧边栏设置已保存，刷新或重新登录后生效。";
+    await load();
+  } catch (error) {
+    status.textContent = error.message || "保存失败。";
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -226,6 +283,43 @@ function updateGroupPermissionHint() {
   $("#selectAllUserGroupsBtn").disabled = isAdmin;
   $("#clearUserGroupsBtn").disabled = isAdmin;
   $("#userGroupsHint").textContent = isAdmin ? "管理员默认可以查看全部 GeeLark 分组" : state.groupHint;
+}
+
+function availableSidebarModules(role = $("#userRole").value) {
+  return SIDEBAR_MODULES.filter((item) => role === "admin" || !item.adminOnly);
+}
+
+function defaultSidebarModules(role) {
+  return availableSidebarModules(role).map((item) => item.id);
+}
+
+function renderSidebarOptions(selected) {
+  const selectedSet = new Set(Array.isArray(selected) ? selected : defaultSidebarModules($("#userRole").value));
+  const modules = availableSidebarModules();
+  $("#userSidebarModules").innerHTML = modules.map((item) => (
+    `<label class="sidebar-checkbox-item"><input type="checkbox" value="${esc(item.id)}"${selectedSet.has(item.id) ? " checked" : ""}><span>${esc(item.label)}</span></label>`
+  )).join("");
+  $("#userSidebarHint").textContent = $("#userRole").value === "admin"
+    ? "勾选后，该管理员登录时才显示对应模块。"
+    : "成员仅可选择任务、发布记录和数据总览。";
+}
+
+function selectedSidebarModules() {
+  return Array.from($("#userSidebarModules").querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+}
+
+function setAllSidebarModules(checked) {
+  $("#userSidebarModules").querySelectorAll('input[type="checkbox"]').forEach((input) => {
+    input.checked = checked;
+  });
+}
+
+function sidebarModuleSummary(selected, role) {
+  const selectedSet = new Set(Array.isArray(selected) ? selected : defaultSidebarModules(role));
+  const labels = SIDEBAR_MODULES.filter((item) => selectedSet.has(item.id)).map((item) => item.label);
+  if (!labels.length) return "全部隐藏";
+  if (labels.length === availableSidebarModules(role).length) return "全部显示";
+  return labels.join("、");
 }
 
 function esc(value) {

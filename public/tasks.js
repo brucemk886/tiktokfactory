@@ -9,6 +9,7 @@ const nameFilter = $("#nameFilter");
 let phones = [];
 let assetGroups = [];
 let pollTimer = null;
+let lastTaskRenderKey = "";
 let captionPresets = [];
 const captionPresetStorageKey = "reddit-publish-caption-presets";
 const selectedCaptionPresetKey = "reddit-publish-caption-selected";
@@ -38,6 +39,11 @@ loadAssetGroups();
 loadSharedLibraries();
 loadPhones();
 loadTasks();
+window.addEventListener("pagehide", stopTaskPolling);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopTaskPolling();
+  else void loadTasks();
+});
 
 function applyIncomingAudioBatch() {
   const params = new URLSearchParams(location.search);
@@ -85,6 +91,7 @@ async function createTask() {
     const response = await fetch("/api/auto-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "创建任务失败。");
+    clearAccountSelection();
     setCreateStatus(`已加入队列：${data.task.name}`);
     createTaskBtn.disabled = false;
     void loadTasks();
@@ -103,15 +110,20 @@ async function loadTasks() {
     const safety = await safetyResponse.json();
     if (!tasksResponse.ok) throw new Error(data.error || "读取任务失败。");
     $("#safetySummary").textContent = `今日已提交排期 ${safety.scheduledToday || 0}/${safety.defaultDailyLimit || 300}，待核实 ${safety.uncertainCount || 0}，成片保留 ${data.worker?.retentionHours || 48} 小时`;
-    renderTasks((data.tasks || []).filter((task) => task.taskType !== "psychology"));
+    const visibleTasks = (data.tasks || []).filter((task) => task.taskType !== "psychology");
+    updateQueueMetrics(visibleTasks);
+    const renderKey = createTaskRenderKey(visibleTasks);
+    if (renderKey !== lastTaskRenderKey) {
+      renderTasks(visibleTasks);
+      lastTaskRenderKey = renderKey;
+    }
   } catch (error) {
     taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "读取任务失败。")}</div>`;
   }
-  pollTimer = setTimeout(loadTasks, 2500);
+  if (!document.hidden) pollTimer = setTimeout(loadTasks, 3000);
 }
 
 function renderTasks(tasks) {
-  updateQueueMetrics(tasks);
   if (!tasks.length) {
     taskList.innerHTML = '<div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div>';
     return;
@@ -140,10 +152,14 @@ function renderTasks(tasks) {
     const scheduleHtml = scheduleLines.length
       ? `<div class="task-schedule"><strong>具体排期</strong>${scheduleLines.map((item) => `<span><b>${escapeHtml(formatScheduleAt(item.scheduleAt))}</b><em>${item.count} 条</em></span>`).join("")}</div>`
       : "";
-    const actions = ["running", "queued"].includes(task.status)
+    const taskIsActive = ["running", "queued"].includes(task.status) || ["generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.phase);
+    const actions = taskIsActive
       ? `<button class="secondary-btn" data-action="cancel" data-id="${escapeAttr(task.id)}">停止</button>`
       : ["failed", "paused", "awaiting_review"].includes(task.status)
-        ? `<button class="secondary-btn" data-action="resume" data-id="${escapeAttr(task.id)}">继续执行</button>` : "";
+        ? `<button class="secondary-btn" data-action="resume" data-id="${escapeAttr(task.id)}">继续执行</button>`
+        : "";
+    const renameAction = `<button class="secondary-btn" data-action="rename" data-id="${escapeAttr(task.id)}">改名</button>`;
+    const archiveAction = !taskIsActive ? `<button class="secondary-btn task-delete-btn" data-admin-action data-action="archive" data-id="${escapeAttr(task.id)}">删除</button>` : "";
     const failureHtml = failures.length ? `<div class="manual-items"><strong>待人工处理</strong>${failures.map((item) => `<div class="manual-item"><span>${escapeHtml(item.fileName)}<small>${escapeHtml(item.message || item.status)}</small></span><button data-action="retry" data-task-id="${escapeAttr(task.id)}" data-record-id="${escapeAttr(item.recordId)}">重新发布</button></div>`).join("")}</div>` : "";
     const queueAhead = task.status === "queued" ? activeCount + (queuedPositions.get(task.id) || 0) : 0;
     const taskMessage = task.status === "queued"
@@ -152,7 +168,7 @@ function renderTasks(tasks) {
         : "即将开始生成。"
       : task.message || "等待执行";
     return `<article class="auto-task-item" data-status="${escapeAttr(task.status)}">
-      <div class="task-item-head"><div><strong>${escapeHtml(task.name)}</strong><small>${formatTime(task.createdAt)}</small></div><div class="task-head-actions"><span class="task-status-badge">${escapeHtml(statusLabel(task.status))}</span>${actions}</div></div>
+      <div class="task-item-head"><div><strong>${escapeHtml(task.name)}</strong><small>${formatTime(task.createdAt)}</small></div><div class="task-head-actions"><span class="task-status-badge">${escapeHtml(statusLabel(task.status))}</span>${renameAction}${actions}${archiveAction}</div></div>
       ${groupHtml}
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
@@ -163,12 +179,52 @@ function renderTasks(tasks) {
   taskList.querySelectorAll("button[data-action]").forEach((button) => button.addEventListener("click", handleTaskAction));
 }
 
+function createTaskRenderKey(tasks) {
+  return JSON.stringify(tasks.map((task) => ({
+    id: task.id,
+    name: task.name,
+    status: task.status,
+    phase: task.phase,
+    message: task.message,
+    error: task.error,
+    progress: task.progress,
+    publishProgress: task.publishProgress,
+    expectedVideoCount: task.expectedVideoCount,
+    failedVideoCount: task.failedVideoCount,
+    generatedVideoCount: task.generatedVideos?.length || 0,
+    publishSummary: task.publishSummary,
+    publishResultCount: task.publishResults?.length || 0,
+    unresolvedResults: (task.publishResults || [])
+      .filter((item) => item.status === "failed" || item.status === "needs_check")
+      .map((item) => [item.recordId, item.fileName, item.status, item.message]),
+    scheduleAt: task.publish?.scheduleAt,
+    intervalMinutes: task.publish?.intervalMinutes,
+    accounts: (task.publish?.accounts || []).map((account) => [account.id, account.groupName])
+  })));
+}
+
+function stopTaskPolling() {
+  clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
 async function handleTaskAction(event) {
   const button = event.currentTarget;
   const action = button.dataset.action;
   button.disabled = true;
   try {
-    if (action === "retry") {
+    if (action === "rename") {
+      const name = prompt("修改任务名称", button.closest(".auto-task-item")?.querySelector(".task-item-head strong")?.textContent || "");
+      if (name === null) return;
+      const response = await fetch(`/api/auto-tasks/${encodeURIComponent(button.dataset.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "修改任务名称失败。");
+    } else if (action === "archive") {
+      if (!confirm("删除后仅从当前执行队列隐藏，历史记录仍会保留。确定删除吗？")) return;
+      const response = await fetch(`/api/auto-tasks/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "删除任务失败。");
+    } else if (action === "retry") {
       const response = await fetch(`/api/auto-tasks/${encodeURIComponent(button.dataset.taskId)}/retry-publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordId: button.dataset.recordId }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "重新发布失败。");
@@ -276,6 +332,14 @@ function applySharedLibrarySelection(event) {
 }
 
 function updateVideoSourceVisibility() {}
+
+function clearAccountSelection() {
+  groupFilter.value = "";
+  nameFilter.value = "";
+  phoneList.querySelectorAll(".geelark-phone-check:checked").forEach((input) => { input.checked = false; });
+  filterPhones();
+  updateSelectedAccountCount();
+}
 
 function filterPhones() {
   const group = groupFilter.value;

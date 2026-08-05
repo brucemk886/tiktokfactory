@@ -22,17 +22,27 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
   function createTask(payload) {
     validateTaskPayload(payload);
     ensureDiskSpace(workDir);
-    const taskType = payload.taskType === "psychology" ? "psychology" : "reddit";
+    const taskType = normalizeTaskType(payload.taskType);
     const generation = taskType === "psychology"
       ? normalizePsychologyGenerationPayload(payload.generation)
-      : normalizeGenerationPayload(payload.generation);
+      : taskType === "schulte"
+        ? normalizeSchulteGenerationPayload(payload.generation)
+        : normalizeGenerationPayload(payload.generation);
     const publish = normalizePublishPayload(payload.publish);
     publish.geelarkProfileId = String(payload.geelarkProfileId || publish.geelarkProfileId || "default");
     publish.ownerUserId = String(payload.ownerUserId || publish.ownerUserId || "");
-    const expectedVideoCount = taskType === "psychology"
+    const expectedVideoCount = taskType === "psychology" || taskType === "schulte"
       ? generation.totalVideos
       : generation.totalVideos || countAudioFiles(generation.audioDir) * generation.variants;
-    if (!expectedVideoCount) throw new Error(taskType === "psychology" ? "请设置心理学视频生成数量。" : "音频目录中没有找到可用音频文件。");
+    if (!expectedVideoCount) {
+      throw new Error(
+        taskType === "psychology"
+          ? "请设置心理学视频生成数量。"
+          : taskType === "schulte"
+            ? "请设置舒尔特视频生成数量。"
+            : "音频目录中没有找到可用音频文件。"
+      );
+    }
     const schedulePlan = publish.autoPublish
       ? buildSchedulePlan({ videoCount: expectedVideoCount, envIds: publish.envIds, scheduleAt: publish.scheduleAt, intervalMinutes: publish.intervalMinutes })
       : [];
@@ -67,11 +77,12 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     return task;
   }
 
-  function listTasks() {
+  function listTasks({ includeDeleted = false } = {}) {
     return fs.readdirSync(tasksDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
       .map((entry) => readTask(path.basename(entry.name, ".json")))
       .filter(Boolean)
+      .filter((task) => includeDeleted || Number(task.deleted) !== 1)
       .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
   }
 
@@ -91,6 +102,25 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       workerPid: null,
       updatedAt: Date.now()
     });
+    return getTask(task.id);
+  }
+
+  function archiveTask(id, deletedBy = "") {
+    const task = getTask(id);
+    const activePhases = new Set(["generating", "publishing", "checking", "retry_wait", "retrying"]);
+    if (["queued", "running"].includes(task.status) || activePhases.has(task.phase)) {
+      throw new Error("任务正在执行中，请先停止或等待完成后再隐藏。");
+    }
+    if (Number(task.deleted) === 1) return task;
+    patchTask(task.id, { deleted: 1, deletedAt: Date.now(), deletedBy: String(deletedBy || ""), updatedAt: Date.now() });
+    return getTask(task.id);
+  }
+
+  function renameTask(id, name) {
+    const task = getTask(id);
+    const nextName = String(name || "").trim().replace(/\s+/g, " ").slice(0, 120);
+    if (!nextName) throw new Error("任务名称不能为空。");
+    patchTask(task.id, { name: nextName, updatedAt: Date.now() });
     return getTask(task.id);
   }
 
@@ -233,13 +263,17 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
 
   function runGeneration(task) {
     return new Promise((resolve, reject) => {
-      const taskType = task.taskType === "psychology" ? "psychology" : "reddit";
+      const taskType = normalizeTaskType(task.taskType);
       const jobId = safeId(`auto-${taskType}-${task.id}-${Date.now()}`);
       const payloadPath = path.join(generationJobsDir, `${jobId}.payload.json`);
       const jobPath = path.join(generationJobsDir, `${jobId}.json`);
       fs.writeFileSync(payloadPath, JSON.stringify({ ...task.generation, jobId }, null, 2), "utf8");
       fs.writeFileSync(jobPath, JSON.stringify({ jobId, status: "queued", percent: 1, message: "自动任务开始生成。", createdAt: Date.now() }, null, 2), "utf8");
-      const generatorScript = taskType === "psychology" ? "psychology-video-job.js" : "reddit-mix-job.js";
+      const generatorScript = taskType === "psychology"
+        ? "psychology-video-job.js"
+        : taskType === "schulte"
+          ? "schulte-batch-job.js"
+          : "reddit-mix-job.js";
       const child = spawn(process.execPath, [path.join(root, "scripts", generatorScript), payloadPath, jobPath], {
         cwd: root,
         detached: false,
@@ -334,12 +368,29 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       const fileName = path.basename(String(item.fileName || decodeURIComponent(String(item.videoUrl || "").split("/").pop() || "")));
       if (!fileName) continue;
       const psychology = item.template === "psychology-static";
+      const schulte = [
+        "schulte-wheel",
+        "schulte-tracking",
+        "schulte-memory",
+        "schulte-peripheral"
+      ].includes(item.template);
       valid.push({
         ...item,
         fileName,
         videoUrl: item.videoUrl || `/outputs/${encodeURIComponent(fileName)}`,
         template: item.template || "reddit-mix",
-        templateLabel: item.templateLabel || (psychology ? "心理学测试" : "Reddit 混剪")
+        templateLabel: item.templateLabel || (
+          psychology
+            ? "心理学测试"
+            : schulte
+              ? ({
+                  "schulte-wheel": "舒尔特模板 1",
+                  "schulte-tracking": "舒尔特模板 2",
+                  "schulte-memory": "舒尔特模板 4",
+                  "schulte-peripheral": "舒尔特模板 5"
+                })[item.template] || "舒尔特训练"
+              : "Reddit 混剪"
+        )
       });
     }
     if (!valid.length) throw new Error("生成任务没有产生可发布的视频。");
@@ -428,7 +479,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     return cleanupStatus;
   }
 
-  return { createTask, listTasks, getTask, cancelTask, resumeTask, retryPublishRecord, runOutputCleanup, getStatus: () => ({ workerRunning, activeTaskId, retentionHours, cleanup: cleanupStatus }) };
+  return { createTask, listTasks, getTask, cancelTask, archiveTask, renameTask, resumeTask, retryPublishRecord, runOutputCleanup, getStatus: () => ({ workerRunning, activeTaskId, retentionHours, cleanup: cleanupStatus }) };
 }
 
 function validateTaskPayload(payload) {
@@ -442,11 +493,25 @@ function validateTaskPayload(payload) {
     if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
     return;
   }
+  if (payload?.taskType === "schulte") {
+    if (!["wheel", "tracking", "memory", "peripheral"].includes(generation.template)) throw new Error("请选择舒尔特训练模板。");
+    if (!(Number(generation.totalVideos) >= 1)) throw new Error("舒尔特视频生成数量至少为 1 条。");
+    if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
+    const scheduleAt = Number(publish.scheduleAt);
+    if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
+    return;
+  }
   if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) throw new Error("请选择素材组或视频素材目录。");
   if (!String(generation.audioDir || "").trim()) throw new Error("请选择音频目录。");
   if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
   const scheduleAt = Number(publish.scheduleAt);
   if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
+}
+
+function normalizeTaskType(value) {
+  if (value === "psychology") return "psychology";
+  if (value === "schulte") return "schulte";
+  return "reddit";
 }
 
 function normalizePsychologyGenerationPayload(value = {}) {
@@ -461,6 +526,7 @@ function normalizePsychologyGenerationPayload(value = {}) {
     answerGuide: String(value.answerGuide || "").trim(),
     narration: String(value.narration || "").trim(),
     imagePrompt: String(value.imagePrompt || "").trim(),
+    creativeVariant: Math.max(1, Math.min(100000, Math.floor(Number(value.creativeVariant) || 1))),
     imageModels: imageModels.length ? imageModels : ["nano-banana"],
     variantsPerModel: Math.max(1, Math.min(10, Math.floor(Number(value.variantsPerModel) || 1))),
     totalVideos: Math.max(1, Math.min(300, Math.floor(Number(value.totalVideos) || imageModels.length || 1))),
@@ -475,6 +541,75 @@ function normalizePsychologyGenerationPayload(value = {}) {
     elevenLabsVoiceId: String(value.elevenLabsVoiceId || "").trim(),
     elevenLabsModelId: String(value.elevenLabsModelId || "eleven_multilingual_v2").trim(),
     elevenLabsOutputFormat: String(value.elevenLabsOutputFormat || "mp3_44100_128").trim()
+  };
+}
+
+function normalizeSchulteGenerationPayload(value = {}) {
+  const allowedTemplates = ["wheel", "tracking", "memory", "peripheral"];
+  const templates = Array.from(new Set(
+    (Array.isArray(value.templates) ? value.templates : [value.template])
+      .filter((template) => allowedTemplates.includes(template))
+  ));
+  const template = templates[0] || "wheel";
+  const trackingSeconds = Math.max(10, Math.min(90, Math.round(Number(value.trackingSeconds) || 30)));
+  const durationSeconds = template === "tracking"
+    ? trackingSeconds + 7
+    : ["memory", "peripheral"].includes(template)
+      ? Math.max(12, Math.min(90, Math.round(Number(value.durationSeconds) || (template === "memory" ? 32 : 18))))
+    : Math.max(12, Math.min(180, Math.round(Number(value.durationSeconds) || 32)));
+  const trainingStartsAt = Math.max(3, Math.min(
+    Math.max(3, durationSeconds - 2),
+    Number(value.trainingStartsAt) || 4
+  ));
+  const instructionStartsAt = Math.max(1, Math.min(
+    Math.max(1, trainingStartsAt - 0.5),
+    Number(value.instructionStartsAt) || 2
+  ));
+  return {
+    template,
+    templates: templates.length ? templates : [template],
+    totalVideos: Math.max(1, Math.min(300, Math.floor(Number(value.totalVideos) || 1))),
+    startDay: Math.max(1, Math.min(999, Math.floor(Number(value.startDay ?? value.day) || (template === "tracking" ? 46 : 24)))),
+    seed: Math.max(1, Math.min(999999, Math.floor(Number(value.seed) || (template === "tracking" ? 4602 : 2407)))),
+    wheelDurationSeconds: Math.max(12, Math.min(180, Math.round(Number(value.wheelDurationSeconds ?? value.durationSeconds) || 32))),
+    durationSeconds,
+    trainingStartsAt,
+    instructionStartsAt,
+    rotationSpeed: Math.max(0.25, Math.min(3, Number(value.rotationSpeed) || 2.5)),
+    trainingMode: ["auto", "sequence", "reverse", "missing", "duplicate"].includes(value.trainingMode)
+      ? value.trainingMode
+      : "auto",
+    layoutStyle: ["auto", "classic", "balanced", "focus"].includes(value.layoutStyle)
+      ? value.layoutStyle
+      : "auto",
+    backgroundStyle: ["auto", "mint", "sky", "lavender", "peach", "paper"].includes(value.backgroundStyle)
+      ? value.backgroundStyle
+      : "auto",
+    instructionLanguage: value.instructionLanguage === "en" ? "en" : "zh",
+    trackingSeconds,
+    ballSpeed: Math.max(0.5, Math.min(3, Number(value.ballSpeed) || 1)),
+    trackingMode: ["auto", "single", "dual", "triple"].includes(value.trackingMode)
+      ? value.trackingMode
+      : "auto",
+    trackingBackground: ["auto", "forest", "navy", "violet", "graphite", "amber"].includes(value.trackingBackground)
+      ? value.trackingBackground
+      : "auto",
+    memorySteps: Math.max(4, Math.min(8, Math.round(Number(value.memorySteps) || 6))),
+    memoryBackground: ["auto", "aqua", "navy", "violet", "forest", "sunset", "rose", "graphite"].includes(value.memoryBackground)
+      ? value.memoryBackground
+      : "auto",
+    peripheralTargets: Math.max(2, Math.min(5, Math.round(Number(value.peripheralTargets) || 3))),
+    headline: String(value.headline || (template === "tracking" ? "每日前额叶训练" : "专注力改造计划")).trim().slice(0, 24),
+    mainTitle: String(value.mainTitle || "每日前额叶训练").trim().slice(0, 24),
+    backgroundMusicMode: ["local", "built-in", "off"].includes(value.backgroundMusicMode)
+      ? value.backgroundMusicMode
+      : (String(value.backgroundMusicDir || "").trim() ? "local" : (value.backgroundMusicEnabled === false ? "off" : "built-in")),
+    backgroundMusicEnabled: value.backgroundMusicEnabled !== false,
+    backgroundMusicDir: String(value.backgroundMusicDir || "").trim(),
+    backgroundMusicVolume: Math.max(
+      0,
+      Math.min(1, Number.isFinite(Number(value.backgroundMusicVolume)) ? Number(value.backgroundMusicVolume) : 0.35)
+    )
   };
 }
 
@@ -521,7 +656,23 @@ function normalizePublishPayload(value = {}) {
     dailyPublishLimit: MAX_DAILY_PLANNED_VIDEOS,
     batchPublishLimit: Math.max(1, Number(value.batchPublishLimit) || 300),
     geelarkProfileId: String(value.geelarkProfileId || "default"),
-    ownerUserId: String(value.ownerUserId || "")
+    ownerUserId: String(value.ownerUserId || ""),
+    operationMeta: normalizeOperationMeta(value.operationMeta)
+  };
+}
+
+function normalizeOperationMeta(value = {}) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    createdBy: String(value.createdBy || ""),
+    createdAt: Number(value.createdAt) || 0,
+    planDate: String(value.planDate || ""),
+    objective: String(value.objective || ""),
+    recipeId: String(value.recipeId || ""),
+    contentVariantId: String(value.contentVariantId || ""),
+    targetStages: Array.isArray(value.targetStages)
+      ? Array.from(new Set(value.targetStages.map(String).filter(Boolean)))
+      : []
   };
 }
 
@@ -552,20 +703,25 @@ export function buildSchedulePlan({ videoCount, envIds, scheduleAt, intervalMinu
 }
 
 export function validateScheduleCapacity({ plan, tasks = [], dailyLimit = MAX_DAILY_PLANNED_VIDEOS, excludeTaskId = "" }) {
-  const reserved = new Map();
+  const completed = new Map();
   for (const task of tasks) {
-    if (!task || task.id === excludeTaskId || ["canceled", "failed"].includes(task.status)) continue;
-    for (const item of getTaskSchedulePlan(task)) reserved.set(item.date, (reserved.get(item.date) || 0) + Number(item.count || 0));
+    if (!task || task.id === excludeTaskId || task.status !== "done") continue;
+    for (const result of task.publishResults || []) {
+      if (result?.status !== "submitted") continue;
+      const scheduleAt = Number(result.scheduleAt) || 0;
+      if (!scheduleAt) continue;
+      const date = scheduleDateKey(scheduleAt);
+      completed.set(date, (completed.get(date) || 0) + 1);
+    }
   }
   for (const item of plan || []) {
-    const existing = reserved.get(item.date) || 0;
+    const existing = completed.get(item.date) || 0;
     const incoming = Number(item.count) || 0;
     if (existing + incoming > dailyLimit) {
-      throw new Error(`${item.date} 已安排 ${existing} 条，本任务再安排 ${incoming} 条，将超过每天 ${dailyLimit} 条上限。请减少视频数量或改到其他日期。`);
+      throw new Error(`${item.date} 已完成发布 ${existing} 条，本任务再安排 ${incoming} 条，将超过每天 ${dailyLimit} 条上限。请减少视频数量或改到其他日期。`);
     }
   }
 }
-
 function getTaskSchedulePlan(task) {
   if (!task?.publish?.autoPublish) return [];
   if (Array.isArray(task.schedulePlan) && task.schedulePlan.length) return task.schedulePlan;

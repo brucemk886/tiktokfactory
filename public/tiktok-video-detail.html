@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TikTok 单条视频核对</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tiktok-video-detail.css" />
+  </head>
+  <body class="work-page video-detail-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+      <a data-admin-only href="/psychology-topics">心理学题目</a>
+      <a data-admin-only href="/psychology">心理学视频自动化</a>
+      <a data-admin-only href="/schulte">舒尔特训练</a>
+      <a data-admin-only href="/ai">AI 创作</a>
+      <a data-admin-only href="/asset-usage">素材使用率</a>
+      <a href="/tasks">Reddit 自动发布</a>
+      <a href="/stats">发布记录</a>
+      <a href="/analytics">数据总览</a>
+      <a data-admin-only data-sidebar-module="analytics" class="is-active" href="/tiktok-video-detail">单条视频数据</a>
+      <a data-admin-only href="/analytics-settings">抓取配置</a>
+      <a data-admin-only href="/accounts">账户管理</a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </nav>
+
+    <main class="detail-shell">
+      <header class="detail-header">
+        <div>
+          <p class="detail-kicker">PRIVATE VIDEO METRICS</p>
+          <h1>单条视频数据核对</h1>
+          <p>按授权账号和 TikTok 视频 ID 查询 Fivetran 同步结果，并与 TikTok Studio 后台逐项对照。</p>
+        </div>
+        <a class="back-link" href="/tiktok-connections">返回账号授权</a>
+      </header>
+
+      <section class="query-panel" aria-label="视频筛选">
+        <label>
+          <span>授权账号</span>
+          <select id="accountSelect"><option value="">正在读取账号...</option></select>
+        </label>
+        <label class="video-id-field">
+          <span>视频 ID 或标题关键词</span>
+          <input id="videoSearch" autocomplete="off" placeholder="输入 TikTok 视频 ID，可精确核对" />
+        </label>
+        <button id="searchButton" class="primary-button" type="button">查询视频</button>
+        <button id="refreshButton" class="secondary-button" type="button">刷新同步数据</button>
+        <div id="queryStatus" class="query-status">准备读取同步账号。</div>
+      </section>
+
+      <div class="detail-workspace">
+        <aside class="video-browser">
+          <div class="browser-head">
+            <div><strong>同步视频</strong><span id="videoCount">0 条</span></div>
+            <small>点击一条查看完整指标</small>
+          </div>
+          <div id="videoList" class="video-list"><div class="empty-list">尚未读取视频。</div></div>
+        </aside>
+
+        <section class="video-inspector">
+          <div id="detailEmpty" class="detail-empty">
+            <strong>选择一条视频开始核对</strong>
+            <span>可查看播放、覆盖、观看时长、完播、留存、流量来源、受众和评论。</span>
+          </div>
+
+          <div id="detailContent" hidden>
+            <section class="video-overview">
+              <img id="videoThumbnail" alt="视频封面" />
+              <div class="video-copy">
+                <div class="video-owner"><span id="profileName">-</span><a id="videoLink" target="_blank" rel="noopener">打开 TikTok</a></div>
+                <h2 id="videoCaption">-</h2>
+                <dl class="identity-list">
+                  <div><dt>视频 ID</dt><dd id="videoId">-</dd></div>
+                  <div><dt>发布时间</dt><dd id="createdAt">-</dd></div>
+                  <div><dt>同步时间</dt><dd id="syncedAt">-</dd></div>
+                  <div><dt>账号 Schema</dt><dd id="schemaName">-</dd></div>
+                </dl>
+              </div>
+            </section>
+
+            <section class="metric-grid" aria-label="核心数据">
+              <div><span>播放</span><strong id="metricViews">0</strong></div>
+              <div><span>覆盖人数</span><strong id="metricReach">0</strong></div>
+              <div><span>平均观看</span><strong id="metricAverageWatch">0s</strong></div>
+              <div><span>视频时长</span><strong id="metricDuration">0s</strong></div>
+              <div><span>完整观看率</span><strong id="metricFullWatch">0%</strong></div>
+              <div><span>点赞</span><strong id="metricLikes">0</strong></div>
+              <div><span>评论</span><strong id="metricComments">0</strong></div>
+              <div><span>分享</span><strong id="metricShares">0</strong></div>
+              <div><span>收藏</span><strong id="metricFavorites">0</strong></div>
+              <div><span>新增粉丝</span><strong id="metricFollowers">0</strong></div>
+            </section>
+
+            <section class="chart-section">
+              <div class="section-title"><div><p>WATCH RETENTION</p><h3>观看留存曲线</h3></div><span id="retentionRows">0 个时间点</span></div>
+              <div class="chart-wrap is-interactive">
+                <canvas id="retentionChart" width="1100" height="300"></canvas>
+                <div id="retentionHover" class="chart-hover" hidden>
+                  <i class="chart-hover-guide"></i>
+                  <i class="chart-hover-dot"></i>
+                  <div class="chart-tooltip">
+                    <span id="retentionHoverSecond">-</span>
+                    <strong id="retentionHoverValue">-</strong>
+                  </div>
+                </div>
+              </div>
+              <div id="retentionCheckpoints" class="checkpoint-row"></div>
+            </section>
+
+            <section class="chart-section">
+              <div class="section-title"><div><p>LIKE MOMENTS</p><h3>点赞发生趋势</h3></div><span id="likeRows">0 个时间点</span></div>
+              <div class="chart-wrap compact-chart"><canvas id="likeChart" width="1100" height="220"></canvas></div>
+            </section>
+
+            <section class="breakdown-section">
+              <div class="section-title"><div><p>AUDIENCE BREAKDOWN</p><h3>流量与受众构成</h3></div><span>同步结果原值</span></div>
+              <div class="breakdown-grid">
+                <div><h4>流量来源</h4><div id="sourceBreakdown" class="bar-list"></div></div>
+                <div><h4>性别</h4><div id="genderBreakdown" class="bar-list"></div></div>
+                <div><h4>受众类型</h4><div id="typeBreakdown" class="bar-list"></div></div>
+                <div><h4>热门国家/地区</h4><div id="countryBreakdown" class="bar-list"></div></div>
+                <div><h4>热门城市</h4><div id="cityBreakdown" class="bar-list"></div></div>
+              </div>
+            </section>
+
+            <section class="comment-section">
+              <div class="section-title"><div><p>COMMENTS</p><h3>已同步评论</h3></div><span id="commentCount">0 条</span></div>
+              <div class="comment-table-wrap">
+                <table>
+                  <thead><tr><th>用户</th><th>评论</th><th>点赞</th><th>回复</th><th>时间</th></tr></thead>
+                  <tbody id="commentRows"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="/access.js"></script>
+    <script type="module" src="/tiktok-video-detail.js"></script>
+  </body>
+</html>

@@ -16,6 +16,7 @@
       <nav class="tasks-nav" aria-label="主导航">
         <a data-admin-only href="/psychology-topics">心理学题目</a>
         <a data-admin-only href="/psychology">心理学视频自动化</a>
+        <a data-admin-only href="/schulte">舒尔特训练</a>
         <a data-admin-only href="/ai">AI 创作</a>
         <a data-admin-only href="/asset-usage">素材使用率</a>
         <a class="is-active" href="/tasks">Reddit 自动发布</a>
@@ -46,7 +47,7 @@
 
       <main class="task-layout">
         <section class="task-create-panel" aria-label="任务配置">
-          <div class="config-section">
+          <div id="task-assets" class="config-section">
             <div class="section-heading">
               <span class="section-index">01</span>
               <div><h2>任务与素材</h2><p>依次选择视频素材来源、音频和可选的背景音乐。</p></div>
@@ -69,7 +70,7 @@
             <p class="retention-note">有成功发布记录的成片从计划发布时间起保留 48 小时；系统每 6 小时清理一次。待处理和未发布视频不会删除。</p>
           </div>
 
-          <div class="config-section">
+          <div id="task-rules" class="config-section">
             <div class="section-heading">
               <span class="section-index">02</span>
               <div><h2>生成规则</h2><p>设置总产量，音频会按顺序循环使用直到达到目标数量。</p></div>
@@ -102,7 +103,7 @@
             </details>
           </div>
 
-          <div class="config-section publish-config">
+          <div id="task-publish" class="config-section publish-config">
             <div class="section-heading section-heading-actions">
               <span class="section-index">03</span>
               <div><h2>GeeLark 发布</h2><p>筛选目标账号，设置文案和同账号发布时间间隔。</p></div>

@@ -117,7 +117,7 @@ test("stores snapshots and never exposes the raw API key", async () => {
   assert.equal(service.getSettings().maskedApiKey, "abcd...mnop");
 
   await service.fetchAccount("demo");
-  assert.equal(new URL(requestedUrl).searchParams.get("count"), "20");
+  assert.equal(new URL(requestedUrl).searchParams.get("count"), "30");
   views = 180;
   currentTime += 24 * 60 * 60 * 1000;
   await service.fetchAccount("demo");
@@ -127,6 +127,7 @@ test("stores snapshots and never exposes the raw API key", async () => {
   assert.equal(dashboard.videos[0].history.length, 2);
   assert.equal(dashboard.videos[0].viewsDelta, 80);
   assert.equal(dashboard.todayVideos.length, 0);
+  assert.equal(dashboard.tenDayVideos.length, 1);
   assert.equal(dashboard.sevenDayVideos.length, 1);
 });
 
@@ -187,6 +188,64 @@ test("limits dashboard accounts to the currently configured account list", async
   assert.deepEqual(dashboard.accounts.map((item) => item.username), ["current-account"]);
   assert.equal(dashboard.summary.videoCount, 1);
   assert.equal(service.getAccountDetail("retired-account", { period: "all", allowedAccounts: ["current-account"] }, []).videos.length, 0);
+});
+
+test("scopes dashboard group options and rankings to the selected GeeLark profile", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "tiktok-profile-scope-"));
+  const now = 1783800100000;
+  const fetchImpl = async (url) => {
+    const username = new URL(url).searchParams.get("unique_id");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        code: 0,
+        data: { videos: [{ video_id: `post-${username}`, create_time: Math.floor(now / 1000), author: { unique_id: username }, play_count: username === "alpha" ? 100 : 200 }] }
+      })
+    };
+  };
+  const service = createTikTokAnalyticsService({ workDir, fetchImpl, now: () => now });
+  service.saveSettings({ apiKeys: ["test-api-key"], dailyRequestLimit: 100 });
+  await service.fetchAccount("alpha");
+  await service.fetchAccount("beta");
+
+  const records = [
+    { id: "alpha-record", accountName: "alpha", scheduleAt: now, groupName: "组 A" },
+    { id: "beta-record", accountName: "beta", scheduleAt: now, groupName: "组 B" }
+  ];
+  const dashboard = service.getDashboard({ period: "all", allowedAccounts: ["alpha"], availableGroups: ["组 A", "空组"] }, records);
+
+  assert.deepEqual(dashboard.filters.groups, ["空组", "组 A"]);
+  assert.equal(dashboard.summary.videoCount, 1);
+  assert.equal(dashboard.todayVideos.length, 1);
+  assert.equal(dashboard.todayVideos[0].username, "alpha");
+});
+
+test("returns the selected 30-day period separately from the fixed 10-day overview", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "tiktok-selected-period-"));
+  const currentTime = Date.UTC(2026, 7, 5, 12, 0, 0);
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      code: 0,
+      data: {
+        videos: [
+          { video_id: "in-30-days", create_time: Math.floor(Date.UTC(2026, 6, 16, 12, 0, 0) / 1000), author: { unique_id: "demo" }, play_count: 900 },
+          { video_id: "outside-30-days", create_time: Math.floor(Date.UTC(2026, 5, 30, 12, 0, 0) / 1000), author: { unique_id: "demo" }, play_count: 2000 }
+        ]
+      }
+    })
+  });
+  const service = createTikTokAnalyticsService({ workDir, fetchImpl, now: () => currentTime });
+  service.saveSettings({ apiKeys: ["test-api-key"], dailyRequestLimit: 100 });
+  await service.fetchAccount("demo");
+
+  const dashboard = service.getDashboard({ period: "30d" }, []);
+  assert.equal(dashboard.periods.tenDays.videoCount, 0);
+  assert.equal(dashboard.periods.selected.videoCount, 1);
+  assert.equal(dashboard.selectedPeriodVideos.length, 1);
+  assert.equal(dashboard.selectedPeriodVideos[0].id, "in-30-days");
 });
 
 test("calculates exact overlap between generated video clips", () => {

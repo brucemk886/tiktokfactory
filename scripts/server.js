@@ -10,11 +10,16 @@ import { createPublishService } from "./publish-service.js";
 import { createAutoTaskManager } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
+import { createDeepSeekBrainService } from "./deepseek-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
+import { createOperationBrainService } from "./operation-brain.js";
+import { createProjectHubService } from "./project-hub.js";
+import { createFivetranTikTokService } from "./fivetran-tiktok.js";
+import { createFivetranDestinationService } from "./fivetran-destination.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -43,10 +48,25 @@ const tiktokAnalytics = createTikTokAnalyticsService({
   defaultApiKey: bootConfig.tiktokApiStoreApiKey
 });
 const codexBrain = createCodexBrainService({ root, workDir });
+const deepseekBrain = createDeepSeekBrainService({ workDir });
 const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
 const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
 const psychologyTopics = createPsychologyTopicsService({ workDir });
 const kieAi = createKieAiService({ workDir, readApiKey: () => readPsychologySettings().kieApiKey });
+const fivetranDestination = createFivetranDestinationService({ workDir });
+const operationBrain = createOperationBrainService({
+  workDir,
+  analyticsService: tiktokAnalytics,
+  privateAnalyticsService: fivetranDestination,
+  autoTaskManager,
+  codexBrain,
+  deepseekBrain,
+  listPhones: listGeeLarkPhonesForProfile,
+  readPublishRecords,
+  listProfiles: () => localAuth.listProfiles()
+});
+const projectHub = createProjectHubService({ root, workDir });
+const fivetranTikTok = createFivetranTikTokService({ workDir });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
 
@@ -173,6 +193,35 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "analytics-settings.js"), "text/javascript; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/tiktok-connections") {
+      return sendFile(res, path.join(publicDir, "tiktok-connections.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/tiktok-connections.js") {
+      return sendFile(res, path.join(publicDir, "tiktok-connections.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/tiktok-connections.css") {
+      return sendFile(res, path.join(publicDir, "tiktok-connections.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/tiktok-video-detail") {
+      return sendFile(res, path.join(publicDir, "tiktok-video-detail.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/tiktok-video-detail.js") {
+      return sendFile(res, path.join(publicDir, "tiktok-video-detail.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/tiktok-video-detail.css") {
+      return sendFile(res, path.join(publicDir, "tiktok-video-detail.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/tiktok-connections/callback") {
+      const integrationId = String(url.searchParams.get("integrationId") || "");
+      return redirect(res, `/tiktok-connections?callback=1&integrationId=${encodeURIComponent(integrationId)}`);
+    }
+
     if (req.method === "GET" && url.pathname === "/reddit") {
       return sendFile(res, path.join(publicDir, "reddit.html"), "text/html; charset=utf-8");
     }
@@ -191,6 +240,25 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/psychology.css") {
       return sendFile(res, path.join(publicDir, "psychology.css"), "text/css; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/schulte") {
+      return sendFile(res, path.join(publicDir, "schulte.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/schulte.js") {
+      return sendFile(res, path.join(publicDir, "schulte.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/schulte.css") {
+      return sendFile(res, path.join(publicDir, "schulte.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/schulte-sample.mp4") {
+      return sendFile(
+        res,
+        path.join(root, "schulte-grid-generator", "output", "schulte-focus-sample.mp4"),
+        "video/mp4"
+      );
     }
 
     if (req.method === "GET" && url.pathname === "/psychology-topics") {
@@ -225,6 +293,30 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "tasks.css"), "text/css; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/operator") {
+      return sendFile(res, path.join(publicDir, "operator.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/operator.js") {
+      return sendFile(res, path.join(publicDir, "operator.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/operator.css") {
+      return sendFile(res, path.join(publicDir, "operator.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/project-hub") {
+      return sendFile(res, path.join(publicDir, "project-hub.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/project-hub.js") {
+      return sendFile(res, path.join(publicDir, "project-hub.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/project-hub.css") {
+      return sendFile(res, path.join(publicDir, "project-hub.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && ["/asset-cutter", "/novel-library", "/audio-library"].includes(url.pathname)) {
       return redirect(res, "/tasks");
     }
@@ -246,9 +338,309 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(outputDir, fileName), "video/mp4");
     }
 
+    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok") {
+      return sendJson(res, 200, {
+        settings: fivetranTikTok.getPublicSettings(),
+        destination: fivetranDestination.getPublicSettings(),
+        integrations: fivetranTikTok.listIntegrations(),
+        events: fivetranTikTok.listEvents({ limit: 30 })
+      }, { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/destination/settings") {
+      try {
+        return sendJson(res, 200, { settings: fivetranDestination.saveSettings(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存目标数据库配置失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/destination/test") {
+      try {
+        return sendJson(res, 200, await fivetranDestination.testConnection(), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "目标数据库连接失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/discover") {
+      try {
+        return sendJson(res, 200, await fivetranDestination.discover(), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取同步 Schema 失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/snapshot") {
+      try {
+        return sendJson(res, 200, await fivetranDestination.getSnapshot({
+          schema: url.searchParams.get("schema"),
+          limit: url.searchParams.get("limit")
+        }), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 TikTok 同步数据失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/accounts") {
+      try {
+        return sendJson(res, 200, await fivetranDestination.listAccounts(), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取同步账号失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/videos") {
+      try {
+        return sendJson(res, 200, await fivetranDestination.listVideos({
+          schema: url.searchParams.get("schema"),
+          query: url.searchParams.get("query"),
+          limit: url.searchParams.get("limit")
+        }), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取同步视频列表失败。" });
+      }
+    }
+
+    if (req.method === "GET" && /^\/api\/fivetran-tiktok\/destination\/videos\/[^/]+$/.test(url.pathname)) {
+      try {
+        return sendJson(res, 200, await fivetranDestination.getVideoDetail({
+          schema: url.searchParams.get("schema"),
+          videoId: decodeURIComponent(url.pathname.split("/").pop())
+        }), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取单条视频数据失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/settings") {
+      try {
+        return sendJson(res, 200, { settings: fivetranTikTok.saveSettings(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存 Fivetran 配置失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/discover") {
+      try {
+        return sendJson(res, 200, await fivetranTikTok.discover(), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 Fivetran 资源失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/select") {
+      try {
+        return sendJson(res, 200, { settings: await fivetranTikTok.selectDiscoverySettings(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存 Fivetran 资源选择失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/integrations") {
+      try {
+        const payload = await readJsonBody(req);
+        const integration = await fivetranTikTok.createIntegration({
+          ...payload,
+          ownerUserId: session.user.id,
+          ownerUsername: session.user.username
+        });
+        return sendJson(res, 201, { integration });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "创建 TikTok 授权连接失败。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/connect-card$/.test(url.pathname)) {
+      try {
+        const integrationId = decodeURIComponent(url.pathname.split("/")[4]);
+        const result = await fivetranTikTok.createConnectCard(integrationId);
+        return sendJson(res, 200, result, { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "生成 TikTok 授权链接失败。" });
+      }
+    }
+
+    if (req.method === "GET" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/status$/.test(url.pathname)) {
+      try {
+        const integrationId = decodeURIComponent(url.pathname.split("/")[4]);
+        return sendJson(res, 200, { integration: await fivetranTikTok.refreshStatus(integrationId) }, { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 TikTok 授权状态失败。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/(sync|pause|resume)$/.test(url.pathname)) {
+      try {
+        const parts = url.pathname.split("/");
+        const integrationId = decodeURIComponent(parts[4]);
+        const action = parts[5];
+        const integration = action === "sync"
+          ? await fivetranTikTok.syncNow(integrationId)
+          : action === "pause"
+            ? await fivetranTikTok.pauseIntegration(integrationId)
+            : await fivetranTikTok.resumeIntegration(integrationId);
+        return sendJson(res, 200, { integration });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "更新 TikTok 连接失败。" });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/codex/status") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex 接口仅允许在本机访问。" });
       return sendJson(res, 200, codexBrain.getStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/deepseek/settings") {
+      return sendJson(res, 200, deepseekBrain.getPublicSettings());
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/deepseek/settings") {
+      try {
+        return sendJson(res, 200, deepseekBrain.saveSettings(await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存 DeepSeek 设置失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/deepseek/test") {
+      try {
+        return sendJson(res, 200, await deepseekBrain.testConnection(await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "DeepSeek 连接测试失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/project-hub") {
+      return sendJson(res, 200, projectHub.getOverview());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/project-hub/context") {
+      try {
+        return sendJson(res, 200, projectHub.getContext(url.searchParams.get("projectId") || ""));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "读取项目上下文失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/project-hub/projects") {
+      try {
+        return sendJson(res, 201, { project: projectHub.createProject(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建项目失败。" });
+      }
+    }
+
+    if (req.method === "PATCH" && /^\/api\/project-hub\/projects\/[^/]+$/.test(url.pathname)) {
+      try {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, { project: projectHub.updateProject(id, await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新项目失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/project-hub/agents") {
+      try {
+        return sendJson(res, 201, { agent: projectHub.createAgent(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建 Agent 失败。" });
+      }
+    }
+
+    if (req.method === "PATCH" && /^\/api\/project-hub\/agents\/[^/]+$/.test(url.pathname)) {
+      try {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, { agent: projectHub.updateAgent(id, await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新 Agent 失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/project-hub/runs") {
+      try {
+        return sendJson(res, 202, { run: projectHub.startRun(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "启动 Agent 失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/project-hub/runs/batch") {
+      try {
+        return sendJson(res, 202, { runs: projectHub.startAll(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "批量启动 Agent 失败。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/project-hub\/runs\/[^/]+\/cancel$/.test(url.pathname)) {
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        return sendJson(res, 200, { run: projectHub.cancelRun(id) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "停止 Agent 失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/project-hub/handoffs") {
+      try {
+        return sendJson(res, 201, { handoff: projectHub.addHandoff(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "写入交接记录失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/operator/status") {
+      return sendJson(res, 200, operationBrain.getStatus());
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/operator/overview") {
+      try {
+        return sendJson(res, 200, await operationBrain.getOverview({
+          profileId: url.searchParams.get("profileId") || undefined,
+          groupNames: url.searchParams.getAll("group"),
+          objective: url.searchParams.get("objective") || undefined
+        }));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取运营数据失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/operator/settings") {
+      try {
+        return sendJson(res, 200, { settings: operationBrain.saveSettings(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存运营设置失败。" });
+      }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/operator/plans") {
+      return sendJson(res, 200, { plans: operationBrain.listPlans() });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/operator/plans") {
+      try {
+        return sendJson(res, 201, { plan: await operationBrain.createPlan(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "生成运营方案失败。" });
+      }
+    }
+
+    if (req.method === "GET" && /^\/api\/operator\/plans\/[^/]+$/.test(url.pathname)) {
+      try {
+        return sendJson(res, 200, { plan: operationBrain.getPlan(decodeURIComponent(url.pathname.split("/").pop())) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 404, { error: error.message || "运营方案不存在。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/operator\/plans\/[^/]+\/approve$/.test(url.pathname)) {
+      try {
+        const planId = decodeURIComponent(url.pathname.split("/")[4]);
+        return sendJson(res, 200, { plan: operationBrain.approvePlan(planId) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "创建运营任务失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/psychology-topics/settings") {
@@ -411,13 +803,33 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {
       const publishRecords = readPublishRecords();
-      const allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
+      const requestedProfileId = String(url.searchParams.get("profileId") || "").trim();
+      let allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
+      let availableGroups = null;
+      if (requestedProfileId) {
+        if (!localAuth.getProfile(requestedProfileId)) return sendJson(res, 404, { error: "GeeLark 配置不存在。" });
+        const profilePhones = await getCurrentGeeLarkPhones([requestedProfileId]);
+        const profileAccounts = new Set(profilePhones
+          .map((phone) => String(phone.serialName || "").trim().replace(/^@/, "").toLowerCase())
+          .filter(Boolean));
+        const profileGroups = Array.from(new Set(profilePhones
+          .map((phone) => String(phone.groupName || "").trim())
+          .filter(Boolean)))
+          .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+        availableGroups = profileGroups;
+        if (session.user.role === "admin") {
+          allowedAccounts = Array.from(profileAccounts);
+        } else {
+          allowedAccounts = allowedAccounts.filter((account) => profileAccounts.has(String(account).toLowerCase()));
+        }
+      }
       return sendJson(res, 200, tiktokAnalytics.getDashboard({
-        period: String(url.searchParams.get("period") || "7d"),
+        period: String(url.searchParams.get("period") || "10d"),
         group: String(url.searchParams.get("group") || ""),
         account: String(url.searchParams.get("account") || ""),
         sort: String(url.searchParams.get("sort") || "views"),
-        allowedAccounts
+        allowedAccounts,
+        availableGroups
       }, publishRecords));
     }
 
@@ -425,14 +837,28 @@ const server = http.createServer(async (req, res) => {
       const settings = tiktokAnalytics.getSettings();
       const profiles = localAuth.listProfiles().map((profile) => ({ id: profile.id, name: profile.name }));
       const requestedProfileIds = url.searchParams.getAll("profileId").map((item) => String(item).trim()).filter(Boolean);
-      const profileIds = (requestedProfileIds.length ? requestedProfileIds : settings.profileIds)
+      const configuredProfileIds = (requestedProfileIds.length ? requestedProfileIds : settings.profileIds)
         .filter((profileId) => profiles.some((profile) => profile.id === profileId));
-      const currentPhones = profileIds.length ? await getCurrentGeeLarkPhones(profileIds) : [];
+      const defaultProfileId = configuredProfileIds[0]
+        || profiles.find((profile) => profile.id === "default")?.id
+        || profiles[0]?.id
+        || "";
+      const profileIds = configuredProfileIds.length ? configuredProfileIds : (defaultProfileId ? [defaultProfileId] : []);
+      let currentPhones = [];
+      let groupReadError = "";
+      try {
+        currentPhones = profileIds.length ? await getCurrentGeeLarkPhones(profileIds) : [];
+      } catch (error) {
+        // A temporary GeeLark failure must not hide locally saved account profiles.
+        groupReadError = error.message || "GeeLark 账号组读取失败。";
+      }
       return sendJson(res, 200, {
         settings,
         profiles,
         activeProfileIds: profileIds,
+        defaultProfileId,
         accountCount: currentPhones.length,
+        groupReadError,
         availableGroups: Array.from(new Set(currentPhones.map((phone) => phone.groupName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
         groupCounts: Object.fromEntries(Array.from(new Set(currentPhones.map((phone) => phone.groupName).filter(Boolean))).map((groupName) => [
           groupName,
@@ -479,7 +905,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/audio-details") {
       const audioName = String(url.searchParams.get("audioName") || "");
       const detail = tiktokAnalytics.getAudioDetail(audioName, {
-        period: String(url.searchParams.get("period") || "7d"),
+        period: String(url.searchParams.get("period") || "10d"),
         group: String(url.searchParams.get("group") || ""),
         account: String(url.searchParams.get("account") || ""),
         sort: String(url.searchParams.get("sort") || "newest")
@@ -496,7 +922,7 @@ const server = http.createServer(async (req, res) => {
       const publishRecords = readPublishRecords();
       const allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
       const detail = tiktokAnalytics.getAccountDetail(username, {
-        period: String(url.searchParams.get("period") || "7d"),
+        period: String(url.searchParams.get("period") || "10d"),
         group: String(url.searchParams.get("group") || ""),
         sort: String(url.searchParams.get("sort") || "newest"),
         allowedAccounts
@@ -700,9 +1126,103 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/psychology/settings") {
       return sendJson(res, 200, { ok: true, settings: publicPsychologySettings(savePsychologySettings(await readJsonBody(req))) });
     }
+    if (req.method === "POST" && url.pathname === "/api/schulte/start") {
+      const payload = await readJsonBody(req);
+      payload.template = ["wheel", "tracking", "memory", "peripheral"].includes(payload.template)
+        ? payload.template
+        : "wheel";
+      payload.backgroundMusicMode = ["local", "built-in", "off"].includes(payload.backgroundMusicMode)
+        ? payload.backgroundMusicMode
+        : (String(payload.backgroundMusicDir || "").trim() ? "local" : "built-in");
+      payload.backgroundMusicEnabled = payload.backgroundMusicEnabled !== false;
+      payload.backgroundMusicDir = String(payload.backgroundMusicDir || "").trim();
+      payload.backgroundMusicVolume = Math.max(
+        0,
+        Math.min(1, Number.isFinite(Number(payload.backgroundMusicVolume)) ? Number(payload.backgroundMusicVolume) : 0.35)
+      );
+      payload.trainingMode = ["auto", "sequence", "reverse", "missing", "duplicate"].includes(payload.trainingMode)
+        ? payload.trainingMode
+        : "auto";
+      payload.layoutStyle = ["auto", "classic", "balanced", "focus"].includes(payload.layoutStyle)
+        ? payload.layoutStyle
+        : "auto";
+      payload.backgroundStyle = ["auto", "mint", "sky", "lavender", "peach", "paper"].includes(payload.backgroundStyle)
+        ? payload.backgroundStyle
+        : "auto";
+      payload.trackingMode = ["auto", "single", "dual", "triple"].includes(payload.trackingMode)
+        ? payload.trackingMode
+        : "auto";
+      payload.trackingBackground = ["auto", "forest", "navy", "violet", "graphite", "amber"].includes(payload.trackingBackground)
+        ? payload.trackingBackground
+        : "auto";
+      if (payload.backgroundMusicMode === "local" && !payload.backgroundMusicDir) {
+        return sendJson(res, 400, { error: "请选择本地背景音乐文件夹，或改用内置音乐。" });
+      }
+      if (payload.template === "tracking") {
+        payload.trackingSeconds = Math.max(10, Math.min(90, Number(payload.trackingSeconds) || 30));
+        payload.ballSpeed = Math.max(0.5, Math.min(3, Number(payload.ballSpeed) || 1));
+        payload.durationSeconds = payload.trackingSeconds + 7;
+        payload.trainingStartsAt = 3;
+      } else if (payload.template === "memory") {
+        payload.memorySteps = Math.max(4, Math.min(8, Math.round(Number(payload.memorySteps) || 6)));
+        payload.durationSeconds = 16;
+      } else if (payload.template === "peripheral") {
+        payload.peripheralTargets = Math.max(2, Math.min(5, Math.round(Number(payload.peripheralTargets) || 3)));
+        payload.durationSeconds = 16;
+      } else {
+        const durationSeconds = Math.max(12, Math.min(180, Number(payload.durationSeconds) || 32));
+        const trainingStartsAt = Math.max(3, Math.min(20, Number(payload.trainingStartsAt) || 4));
+        const instructionStartsAt = Math.max(1, Math.min(10, Number(payload.instructionStartsAt) || 2));
+        payload.rotationSpeed = Math.max(0.25, Math.min(3, Number(payload.rotationSpeed) || 2.5));
+        payload.trainingStartsAt = trainingStartsAt;
+        payload.instructionStartsAt = instructionStartsAt;
+        if (instructionStartsAt >= trainingStartsAt - 0.5) {
+          return sendJson(res, 400, { error: "提示出现时间至少要比计时开始早 0.5 秒。" });
+        }
+        if (trainingStartsAt >= durationSeconds - 2) {
+          return sendJson(res, 400, { error: "计时开始时间必须早于视频结束时间。" });
+        }
+      }
+
+      const jobId = safeId(`schulte-${Date.now()}`);
+      const payloadPath = path.join(jobsDir, `${jobId}.payload.json`);
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      fs.writeFileSync(payloadPath, JSON.stringify({ ...payload, jobId }, null, 2), "utf8");
+      writeJob(jobPath, {
+        jobId,
+        type: "schulte",
+        status: "queued",
+        percent: 2,
+        message: "舒尔特训练任务已加入生成队列。",
+        createdAt: Date.now()
+      });
+
+      const child = spawn(process.execPath, [path.join(root, "scripts", "schulte-render-job.js"), payloadPath, jobPath], {
+        cwd: root,
+        detached: false,
+        stdio: "ignore",
+        windowsHide: true
+      });
+      patchJob(jobPath, {
+        workerPid: child.pid,
+        message: "舒尔特训练任务已启动。",
+        updatedAt: Date.now()
+      });
+      child.unref();
+
+      return sendJson(res, 200, { jobId });
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/schulte/progress/")) {
+      const jobId = safeId(decodeURIComponent(url.pathname.slice("/api/schulte/progress/".length)));
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      if (!fs.existsSync(jobPath)) return sendJson(res, 404, { error: "舒尔特训练任务不存在。" });
+      return sendJson(res, 200, readJobWithEstimate(jobPath));
+    }
 
     if (req.method === "GET" && url.pathname === "/api/auto-tasks") {
-      return sendJson(res, 200, { tasks: filterTasksForUser(autoTaskManager.listTasks(), session.user), worker: autoTaskManager.getStatus() });
+      const includeDeleted = session.user.role === "admin" && url.searchParams.get("includeDeleted") === "1";
+      return sendJson(res, 200, { tasks: filterTasksForUser(autoTaskManager.listTasks({ includeDeleted }), session.user), worker: autoTaskManager.getStatus() });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auto-tasks") {
@@ -742,6 +1262,19 @@ const server = http.createServer(async (req, res) => {
       payload.geelarkProfileId = session.user.geelarkProfileId;
       payload.publish = { ...(payload.publish || {}), ownerUserId: session.user.id, geelarkProfileId: session.user.geelarkProfileId };
       return sendJson(res, 201, { task: autoTaskManager.createTask(payload) });
+    }
+
+    if (req.method === "PATCH" && url.pathname.match(/^\/api\/auto-tasks\/[^/]+$/)) {
+      const taskId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+      const task = autoTaskManager.getTask(taskId);
+      if (!canAccessTask(session.user, task)) return sendJson(res, 403, { error: "无权修改此任务。" });
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, { task: autoTaskManager.renameTask(taskId, payload.name) });
+    }
+    if (req.method === "DELETE" && url.pathname.match(/^\/api\/auto-tasks\/[^/]+$/)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可隐藏任务。" });
+      const taskId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+      return sendJson(res, 200, { task: autoTaskManager.archiveTask(taskId, session.user.id) });
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/api/auto-tasks/")) {

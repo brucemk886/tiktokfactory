@@ -25,6 +25,7 @@ body.psychology-page { margin:0; min-width:0; background:#090d0f; color:var(--te
 input,textarea,select { width:100%; border:1px solid #344049; background:#0b1013; color:#fff; border-radius:5px; padding:11px 12px; font:inherit; font-size:13px; outline:none; }
 input:focus,textarea:focus,select:focus { border-color:#9ebd3e; box-shadow:0 0 0 2px #d8ff4f18; }
 textarea { resize:vertical; line-height:1.55; }
+#videoDesc { min-height:72px; height:72px; }
 .psy-section>.field+.field { margin-top:15px; }
 .two-column { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:15px; }
 .three-column { display:grid; grid-template-columns:1.25fr 1fr 1fr; gap:12px; margin-top:14px; }
@@ -104,3 +105,36 @@ button.quiet,.icon-button { border:1px solid #39444c; background:#151b1f; color:
 @media(max-width:900px){.aspect-prompt-row{grid-template-columns:1fr}}
 .generation-settings-actions { padding-top:15px; border-top:1px solid var(--line); }
 .generation-settings-actions button { min-width:140px; }
+
+.psy-mode-tabs { max-width:1500px; margin:18px auto 0; display:flex; gap:8px; }
+.psy-mode-tabs button { min-height:40px; padding:0 18px; border:1px solid #334049; border-radius:5px; background:#11161a; color:#b8c2c9; font-weight:800; cursor:pointer; }
+.psy-mode-tabs button.is-active { border-color:#8ba63a; background:#192112; color:var(--lime); }
+.batch-content-section { display:grid; grid-template-columns:1fr; gap:14px; }
+.batch-content-section[hidden] { display:none; }
+.batch-topic-toolbar { display:flex; gap:8px; margin-top:-8px; }
+.batch-topic-toolbar input { flex:1; }
+.batch-topic-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid #354238; background:#111810; color:#9ca7ad; font-size:11px; }
+.batch-topic-summary strong { color:var(--lime); }
+.batch-topic-list { max-height:520px; overflow:auto; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.batch-topic-card { min-width:0; display:flex; gap:10px; padding:12px; border:1px solid #2b353b; background:#0d1215; cursor:pointer; }
+.batch-topic-card:has(input:checked) { border-color:#809b37; background:#172012; }
+.batch-topic-card input { width:16px; height:16px; margin-top:2px; accent-color:var(--lime); }
+.batch-topic-card span { min-width:0; display:grid; gap:5px; }
+.batch-topic-card strong { font-size:12px; line-height:1.45; }
+.batch-topic-card small { color:#86939a; font-size:10px; line-height:1.45; }
+@media(max-width:900px){.batch-topic-list{grid-template-columns:1fr}.batch-topic-toolbar,.batch-topic-summary{flex-direction:column;align-items:stretch}}
+
+.batch-topic-toolbar #createBtn { border:0; border-radius:5px; background:var(--lime); color:#101407; font-size:11px; font-weight:900; white-space:nowrap; padding:0 15px; }
+.batch-topic-summary #statusText { margin-left:auto; color:#b8c3c8; font-size:10px; text-align:right; }
+@media(max-width:900px){.batch-topic-toolbar #createBtn{min-height:40px}.batch-topic-summary #statusText{margin-left:0;text-align:left}}
+
+.allocation-hint { display:block; margin-top:6px; color:#9aa7ae; font-size:10px; line-height:1.4; }
+
+#question,#answerGuide { min-height:104px; height:104px; }
+#narration { min-height:142px; height:142px; }
+#imagePrompt { min-height:142px; height:142px; }
+.batch-topic-list { max-height:360px; }.batch-ai-auto { display:flex; align-items:flex-start; gap:10px; margin:12px 0 2px; padding:10px 12px; border:1px solid #52631d; background:#17200f; border-radius:5px; cursor:pointer; }
+.batch-ai-auto input { width:17px; height:17px; accent-color:#d8ff4f; margin:2px 0 0; }
+.batch-ai-auto span { display:grid; gap:3px; }
+.batch-ai-auto strong { font-size:12px; color:#efffc0; }
+.batch-ai-auto small { color:#a9b898; font-size:11px; line-height:1.4; }

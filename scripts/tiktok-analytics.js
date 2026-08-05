@@ -4,6 +4,8 @@ import path from "node:path";
 const API_URL = "https://tiktokapi.store/api/v1/user/posts";
 const DEFAULT_DAILY_REQUEST_LIMIT = 100;
 const MAX_HISTORY_PER_VIDEO = 45;
+const POSTS_PER_ACCOUNT = 30;
+const DEFAULT_ANALYSIS_PERIOD = "10d";
 
 export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now = () => Date.now(), defaultApiKeys = [], defaultApiKey = "" }) {
   const settingsPath = path.join(workDir, "tiktok-analytics-settings.json");
@@ -138,7 +140,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     try {
       const requestUrl = new URL(API_URL);
       requestUrl.searchParams.set("unique_id", username);
-      requestUrl.searchParams.set("count", "20");
+      requestUrl.searchParams.set("count", String(POSTS_PER_ACCOUNT));
       response = await fetchWithTimeout(fetchImpl, requestUrl, 30000, {
         headers: { Authorization: `Bearer ${settings.apiKeys[keyIndex]}` }
       });
@@ -180,7 +182,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     };
   }
 
-  function getDashboard({ period = "7d", group = "", account = "", sort = "views", allowedAccounts = null } = {}, publishRecords = []) {
+  function getDashboard({ period = DEFAULT_ANALYSIS_PERIOD, group = "", account = "", sort = "views", allowedAccounts = null, availableGroups = null } = {}, publishRecords = []) {
     const store = readStore(storePath);
     const recordMatches = matchPublishRecords(store.videos, publishRecords);
     const allowedAccountSet = Array.isArray(allowedAccounts)
@@ -198,17 +200,22 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
         };
       })
       .filter((video) => !allowedAccountSet || allowedAccountSet.has(normalizeUsername(video.username)))
-      .filter((video) => !group || video.local?.groupName === group)
       .filter((video) => !account || video.username.toLowerCase().includes(String(account).toLowerCase()));
-    let videos = filterByPeriod(baseVideos, period, now());
+    const scopedVideos = baseVideos.filter((video) => !group || video.local?.groupName === group);
+    let videos = filterByPeriod(scopedVideos, period, now());
 
     videos.sort(videoSorter(sort));
     const accounts = buildAccountSummary(videos, store.accounts);
     const audioRankings = buildAudioRankings(videos);
     const summary = summarizeVideos(videos, accounts);
-    const groups = Array.from(new Set(publishRecords.map((item) => item.groupName).filter(Boolean))).sort();
-    const todayVideos = filterByPeriod(baseVideos, "today", now()).sort(videoSorter("views"));
-    const sevenDayVideos = filterByPeriod(baseVideos, "7d", now()).sort(videoSorter("views"));
+    const groups = Array.isArray(availableGroups)
+      ? Array.from(new Set(availableGroups.map((item) => String(item).trim()).filter(Boolean))).sort()
+      : Array.from(new Set(baseVideos.map((video) => video.local?.groupName).filter(Boolean))).sort();
+    const todayVideos = filterByPeriod(scopedVideos, "today", now()).sort(videoSorter("views"));
+    const tenDayVideos = filterByPeriod(scopedVideos, DEFAULT_ANALYSIS_PERIOD, now()).sort(videoSorter("views"));
+    const selectedPeriodVideos = filterByPeriod(scopedVideos, period, now()).sort(videoSorter("views"));
+    const tenDaySummary = summarizeVideos(tenDayVideos);
+    const selectedPeriodSummary = summarizeVideos(selectedPeriodVideos);
 
     return {
       status: {
@@ -221,13 +228,18 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
       periods: {
         today: summarizeVideos(filterByPeriod(baseVideos, "today", now())),
         yesterday: summarizeVideos(filterByPeriod(baseVideos, "yesterday", now())),
-        sevenDays: summarizeVideos(filterByPeriod(baseVideos, "7d", now()))
+        tenDays: tenDaySummary,
+        selected: selectedPeriodSummary,
+        // Keep the old key while previously loaded pages finish refreshing.
+        sevenDays: tenDaySummary
       },
       accounts,
       audioRankings,
       videos: videos.slice(0, 500),
       todayVideos: todayVideos.slice(0, 500),
-      sevenDayVideos: sevenDayVideos.slice(0, 30),
+      tenDayVideos: tenDayVideos.slice(0, 30),
+      selectedPeriodVideos: selectedPeriodVideos.slice(0, 30),
+      sevenDayVideos: tenDayVideos.slice(0, 30),
       filters: { groups }
     };
   }
@@ -249,7 +261,22 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     }));
   }
 
-  function getAudioDetail(audioName, { period = "7d", group = "", account = "", sort = "newest" } = {}, publishRecords = []) {
+  function getAccountFreshness(usernames, maxAgeMs = 12 * 60 * 60 * 1000) {
+    const store = readStore(storePath);
+    const checkedAt = now();
+    const maxAge = Math.max(60_000, Number(maxAgeMs) || 12 * 60 * 60 * 1000);
+    const accounts = Array.from(new Set((usernames || []).map(normalizeUsername).filter(Boolean)));
+    const staleAccounts = [];
+    const freshAccounts = [];
+    for (const username of accounts) {
+      const lastSuccessAt = Number(store.accounts?.[username]?.lastSuccessAt) || 0;
+      if (!lastSuccessAt || checkedAt - lastSuccessAt > maxAge) staleAccounts.push(username);
+      else freshAccounts.push(username);
+    }
+    return { checkedAt, maxAgeMs: maxAge, staleAccounts, freshAccounts };
+  }
+
+  function getAudioDetail(audioName, { period = DEFAULT_ANALYSIS_PERIOD, group = "", account = "", sort = "newest" } = {}, publishRecords = []) {
     const targetAudioName = String(audioName || "").trim();
     if (!targetAudioName) return null;
     const store = readStore(storePath);
@@ -277,7 +304,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     };
   }
 
-  function getAccountDetail(username, { period = "7d", group = "", sort = "newest", allowedAccounts = null } = {}, publishRecords = []) {
+  function getAccountDetail(username, { period = DEFAULT_ANALYSIS_PERIOD, group = "", sort = "newest", allowedAccounts = null } = {}, publishRecords = []) {
     const targetUsername = normalizeUsername(username);
     if (!targetUsername) return null;
     const dashboard = getDashboard({ period, group, account: targetUsername, sort, allowedAccounts }, publishRecords);
@@ -327,7 +354,21 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     return target;
   }
 
-  return { getSettings, saveSettings, fetchAccount, fetchAccounts, getDashboard, getVideo, getMatchedVideos, getAudioDetail, getAccountDetail, repairStore, scheduleNextRun, isRunning: () => running };
+  return {
+    getSettings,
+    saveSettings,
+    fetchAccount,
+    fetchAccounts,
+    getDashboard,
+    getVideo,
+    getMatchedVideos,
+    getAccountFreshness,
+    getAudioDetail,
+    getAccountDetail,
+    repairStore,
+    scheduleNextRun,
+    isRunning: () => running
+  };
 }
 
 export function normalizeTikTokPost(post, fallbackUsername = "", fetchedAt = Date.now()) {
@@ -397,6 +438,8 @@ export function matchPublishRecords(videos, publishRecords) {
         audioName: best.audioName || "",
         groupName: best.groupName || "",
         template: best.templateLabel || best.template || "",
+        templateId: best.template || "",
+        operationMeta: best.operationMeta || null,
         scheduleAt: Number(best.scheduleAt) || 0,
         matchDistanceSeconds: bestDistance,
         captionSimilarity: bestCaptionScore,
@@ -779,14 +822,15 @@ function filterByPeriod(videos, period, currentTime) {
   const todayStart = new Date(currentTime);
   todayStart.setHours(0, 0, 0, 0);
   const today = todayStart.getTime();
-  let start = today - 6 * 24 * 60 * 60 * 1000;
+  const dayMatch = /^(\d+)d$/.exec(String(period || ""));
+  const periodDays = dayMatch ? Math.max(1, Number(dayMatch[1]) || 1) : 10;
+  let start = today - (periodDays - 1) * 24 * 60 * 60 * 1000;
   let end = currentTime + 1;
   if (period === "today") start = today;
   if (period === "yesterday") {
     start = today - 24 * 60 * 60 * 1000;
     end = today;
   }
-  if (period === "30d") start = today - 29 * 24 * 60 * 60 * 1000;
   return videos.filter((video) => {
     const createdAt = Number(video.createTime) * 1000;
     return createdAt >= start && createdAt < end;

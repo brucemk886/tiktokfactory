@@ -3,14 +3,48 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_SIDEBAR_MODULES = Object.freeze([
+  "psychology-topics",
+  "psychology",
+  "schulte",
+  "ai",
+  "asset-usage",
+  "tasks",
+  "stats",
+  "analytics",
+  "operator",
+  "project-hub",
+  "tiktok-connections",
+  "analytics-settings",
+  "accounts"
+]);
+const OPERATOR_SIDEBAR_MODULES = Object.freeze(["tasks", "stats", "analytics"]);
 
 export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
   const storePath = path.join(workDir, "local-accounts.json");
   const sessions = new Map();
   fs.mkdirSync(workDir, { recursive: true });
+  migrateStore();
 
   function hasUsers() {
     return readStore().users.some((user) => user.active !== false);
+  }
+
+  function migrateStore() {
+    if (!fs.existsSync(storePath)) return;
+    try {
+      const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
+      if (Number(store.version || 1) >= 3) return;
+      for (const user of Array.isArray(store.users) ? store.users : []) {
+        if (user.role !== "admin" || !Array.isArray(user.sidebarModules)) continue;
+        if (!user.sidebarModules.includes("project-hub")) user.sidebarModules.push("project-hub");
+        if (!user.sidebarModules.includes("tiktok-connections")) user.sidebarModules.push("tiktok-connections");
+      }
+      store.version = 3;
+      fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
+    } catch {
+      // Leave malformed legacy data untouched; normal store recovery handles it.
+    }
   }
 
   function getSession(req) {
@@ -37,6 +71,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
       geelarkProfileId: "default",
       allowedDirectory: "",
       allowedGeeLarkGroups: [],
+      sidebarModules: [...ADMIN_SIDEBAR_MODULES],
       password: hashPassword(password),
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -88,6 +123,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
       role, active: payload.active !== false, geelarkProfileId: profileId,
       allowedDirectory: normalizeDirectory(payload.allowedDirectory),
       allowedGeeLarkGroups: normalizeGroups(payload.allowedGeeLarkGroups),
+      sidebarModules: normalizeSidebarModules(payload.sidebarModules, role),
       password: hashPassword(payload.password), createdAt: Date.now(), updatedAt: Date.now()
     };
     store.users.push(user);
@@ -99,8 +135,10 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     const store = readStore();
     const user = store.users.find((entry) => entry.id === String(id));
     if (!user) throw new Error("账号不存在。");
-    const nextRole = payload.role === "admin" ? "admin" : "operator";
-    const nextActive = payload.active !== false;
+    const nextRole = payload.role === undefined
+      ? user.role
+      : (payload.role === "admin" ? "admin" : "operator");
+    const nextActive = payload.active === undefined ? user.active !== false : payload.active !== false;
     if (user.role === "admin" && user.active !== false && (!nextActive || nextRole !== "admin") && activeAdminCount(store) <= 1) {
       throw new Error("至少需要保留一个启用中的管理员账号。");
     }
@@ -110,6 +148,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     user.geelarkProfileId = validateProfileId(store, payload.geelarkProfileId || user.geelarkProfileId);
     user.allowedDirectory = normalizeDirectory(payload.allowedDirectory ?? user.allowedDirectory);
     user.allowedGeeLarkGroups = normalizeGroups(payload.allowedGeeLarkGroups ?? user.allowedGeeLarkGroups);
+    user.sidebarModules = normalizeSidebarModules(payload.sidebarModules ?? user.sidebarModules, nextRole);
     if (String(payload.password || "")) {
       validatePassword(payload.password);
       user.password = hashPassword(payload.password);
@@ -179,7 +218,17 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.username, displayName: user.displayName, role: user.role, active: user.active !== false, geelarkProfileId: user.geelarkProfileId || "default", allowedDirectory: user.allowedDirectory || "", allowedGeeLarkGroups: normalizeGroups(user.allowedGeeLarkGroups) };
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    role: user.role,
+    active: user.active !== false,
+    geelarkProfileId: user.geelarkProfileId || "default",
+    allowedDirectory: user.allowedDirectory || "",
+    allowedGeeLarkGroups: normalizeGroups(user.allowedGeeLarkGroups),
+    sidebarModules: normalizeSidebarModules(user.sidebarModules, user.role)
+  };
 }
 
 function publicProfile(profile) {
@@ -225,6 +274,13 @@ function normalizeDirectory(value) {
 function normalizeGroups(value) {
   const groups = Array.isArray(value) ? value : String(value || "").split(/[,，\n]/);
   return Array.from(new Set(groups.map((group) => String(group || "").trim()).filter(Boolean))).slice(0, 100);
+}
+
+function normalizeSidebarModules(value, role) {
+  const allowed = role === "admin" ? ADMIN_SIDEBAR_MODULES : OPERATOR_SIDEBAR_MODULES;
+  if (!Array.isArray(value)) return [...allowed];
+  const selected = new Set(value.map((item) => String(item || "").trim()).filter(Boolean));
+  return allowed.filter((moduleId) => selected.has(moduleId));
 }
 
 function parseCookies(value) {

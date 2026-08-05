@@ -12,6 +12,7 @@ if (!payloadPath || !jobPath) throw new Error("Missing psychology task payload o
 
 const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
 const aspectRatio = payload.aspectRatio === "9:16" ? "9:16" : "16:9";
+const creativeVariant = Math.max(1, Number(payload.creativeVariant) || 1);
 const config = readConfig(root);
 const { outputDir, workDir } = resolveStorageDirs(root, config);
 const savedSettings = readOptionalJson(path.join(workDir, "psychology-video-settings.json"));
@@ -67,7 +68,7 @@ async function main() {
     let imageUrl = sourceImageUrl;
     let imagePath = downloadedSourceImage;
     if (!sourceImageUrl) {
-      const variedPrompt = `${imagePrompt}\n\nVariant ${variant}: Change the visual art direction, character appearance, environment, camera angle, lighting, and color palette substantially while preserving the same test choices. The result must be compositionally distinct from previous variants.\n\nMANDATORY: visuals only. Do not render any visible words, letters, numbers, captions, labels, logos, watermarks, signs, UI, or typography.`;
+      const variedPrompt = `${imagePrompt}\n\nCreative variation ${creativeVariant}, render ${variant}: Change the visual art direction, character appearance, environment, camera angle, lighting, and color palette substantially while preserving the same test choices. The result must be compositionally distinct from previous variants.\n\nMANDATORY: visuals only. Do not render any visible words, letters, numbers, captions, labels, logos, watermarks, signs, UI, or typography.`;
       const taskId = await createImageTask({ apiKey: kieApiKey, model, prompt: variedPrompt });
       imageUrl = await waitForImage({ apiKey: kieApiKey, taskId });
       imagePath = path.join(jobDir, `image-${String(index + 1).padStart(3, "0")}.png`);
@@ -102,6 +103,7 @@ async function generateNarration(apiKey) {
     "Write a concise English voiceover for a TikTok visual psychology test.",
     `Question: ${payload.question}`,
     payload.answerGuide ? `Context only: ${payload.answerGuide}` : "Ask the viewer to inspect the image and choose instinctively.",
+    `Creative variation ${creativeVariant}: use a noticeably different curiosity angle, opening wording, and CTA phrasing from other versions of this topic.`,
     "Use exactly two short natural sentences and 16 to 30 words total.",
     "Sentence one must create curiosity and ask the viewer to choose what they noticed or preferred.",
     "Sentence two must use exactly one interaction CTA. Choose one naturally: tap the link in the bottom-left to take the test, take the full test on the profile, or comment A, B, C, or D.",
@@ -127,6 +129,7 @@ async function generateImagePrompt(apiKey) {
   const prompt = [
     `Create one production-ready English image-generation prompt for a TikTok visual psychology test in ${aspectRatio === "16:9" ? "landscape 16:9" : "vertical 9:16"}.`,
     `Test topic: ${payload.question}`,
+    `Creative variation ${creativeVariant}: choose a substantially different art direction, composition, lighting, color palette, and character or object treatment from other versions of this same topic.`,
     payload.answerGuide ? `Choice guidance: ${payload.answerGuide}` : "Design four visually distinct choices.",
     layoutInstruction,
     "The four choices must be instantly understandable from imagery alone, visually balanced, premium, high contrast, and suitable for a viral psychology quiz.",

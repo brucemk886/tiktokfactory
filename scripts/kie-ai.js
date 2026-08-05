@@ -138,20 +138,44 @@ export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now
   async function kieRequest(apiPath, init = {}) {
     const key = apiKey();
     if (!key) throw requestError("Kie.ai API Key 尚未配置，请先在心理学视频页面保存密钥。", 400);
-    const response = await fetchImpl(`${BASE_URL}${apiPath}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${key}`,
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
-        ...(init.headers || {})
+    const url = `${BASE_URL}${apiPath}`;
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetchImpl(url, {
+          ...init,
+          headers: {
+            Authorization: `Bearer ${key}`,
+            ...(init.body ? { "Content-Type": "application/json" } : {}),
+            ...(init.headers || {})
+          }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = requestError(kieError(data, `Kie.ai 请求失败：HTTP ${response.status}`), response.status);
+          if (response.status !== 429 && response.status < 500) throw error;
+          lastError = error;
+        } else if (typeof data.code === "number" && data.code !== 200 && String(data.msg || "").toLowerCase() !== "success") {
+          const error = new Error(kieError(data, "Kie.ai 请求失败。"));
+          const code = Number(data.code || 0);
+          if (code && code < 500 && code !== 429) throw error;
+          lastError = error;
+        } else {
+          return data;
+        }
+      } catch (error) {
+        if (Number(error?.statusCode || 0) && Number(error.statusCode) < 500 && Number(error.statusCode) !== 429) throw error;
+        lastError = error;
       }
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw requestError(kieError(data, `Kie.ai 请求失败：HTTP ${response.status}`), response.status);
-    if (typeof data.code === "number" && data.code !== 200 && String(data.msg || "").toLowerCase() !== "success") {
-      throw new Error(kieError(data, "Kie.ai 请求失败。"));
+      if (attempt < 2) await wait(900 * (attempt + 1));
     }
-    return data;
+    const status = Number(lastError?.statusCode || 0);
+    throw requestError(
+      status >= 500 || !status
+        ? "Kie.ai 文本服务暂时不可用，已自动重试 3 次，请稍后再试。"
+        : String(lastError?.message || "Kie.ai 请求失败。"),
+      status || 502
+    );
   }
 
   function apiKey() {
@@ -224,6 +248,10 @@ function kieError(data, fallback) {
 
 function isHttpUrl(value) {
   return /^https?:\/\//i.test(String(value || ""));
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function requestError(message, statusCode) {

@@ -1,7 +1,7 @@
 const elements = Object.fromEntries([
   "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "pageTitle", "pageDescription",
   "refreshBtn", "manualFetchProfile", "manualFetchGroupOptions", "manualFetchGroupSummary", "manualFetchBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
-  "pageStatus", "todayRankCountBadge", "todayRankRows", "todayRankPagination", "sevenDayRankCountBadge", "sevenDayRankRows", "sevenDayRankPagination",
+  "pageStatus",
   "accountCountBadge", "accountRows", "accountPagination", "quotaList", "nextRunText", "videoCountBadge", "videoRows", "videoPagination",
   "audioCountBadge", "audioRows", "audioDetailEmpty", "audioDetailPanel", "audioDetailTitle", "audioDetailMeta", "audioPlayer", "audioVideoRows",
   "audioOverview", "audioOverviewTotal", "audioOverviewVideos", "audioOverviewStrong", "audioOverviewWatch", "audioOverviewWeak",
@@ -9,7 +9,7 @@ const elements = Object.fromEntries([
   "accountAnalysisCountBadge", "accountOverview", "accountOverviewTotal", "accountOverviewVideos", "accountOverviewStrong", "accountOverviewWatch", "accountOverviewWeak",
   "accountStrongBar", "accountWatchBar", "accountWeakBar", "accountToneFilter", "accountRankRows", "accountDetailEmpty", "accountDetailPanel", "accountDetailTitle", "accountDetailMeta", "accountVideoRows",
   "todayVideos", "todayViews", "todayAverage", "todayEngagement", "yesterdayVideos", "yesterdayViews", "yesterdayAverage", "yesterdayEngagement",
-  "sevenDaysVideos", "sevenDaysViews", "sevenDaysAverage", "sevenDaysEngagement",
+  "sevenDaysVideos", "sevenDaysViews", "sevenDaysAverage", "sevenDaysEngagement", "selectedPeriodLabel",
   "reuseModal", "reuseDialogTitle", "reuseDialogMeta", "reuseDialogBody", "closeReuseBtn"
 ].map((id) => [id, document.querySelector(`#${id}`)]));
 
@@ -17,9 +17,9 @@ let pollTimer = 0;
 let currentAudioName = "";
 let currentAccountName = "";
 let accountAnalyticsItems = [];
+let activeProfileGroups = [];
+let profileGroupsLoaded = false;
 const PAGE_SIZE = 10;
-let todayRankPage = 1;
-let sevenDayRankPage = 1;
 let accountPage = 1;
 let videoPage = 1;
 const requestedView = new URLSearchParams(window.location.search).get("view") || "dashboard";
@@ -35,7 +35,7 @@ elements.analyticsNav?.classList.toggle("is-active", !isAudioView && !isAccountV
 if (isAccountView) {
   elements.pageTitle.textContent = "账号表现";
   elements.pageDescription.textContent = "按账号汇总播放稳定性、爆款率与低播风险，快速识别值得放量和需要淘汰的账号。";
-  elements.periodFilter.value = "7d";
+  elements.periodFilter.value = "10d";
 } else if (isVideoView) {
   elements.pageTitle.textContent = "视频表现";
   elements.pageDescription.textContent = "只展示你被授权账号组内的视频数据，按播放、互动和发布时间筛选。";
@@ -43,15 +43,17 @@ if (isAccountView) {
 
 elements.refreshBtn.addEventListener("click", loadDashboard);
 elements.manualFetchBtn.addEventListener("click", fetchSelectedGroup);
-elements.manualFetchProfile.addEventListener("change", () => loadManualFetchGroups(elements.manualFetchProfile.value));
+elements.manualFetchProfile.addEventListener("change", async () => {
+  localStorage.setItem("local-factory.analytics.geelark-profile", elements.manualFetchProfile.value || "");
+  await loadManualFetchGroups(elements.manualFetchProfile.value);
+  reloadFromFirstPage();
+});
 elements.manualFetchGroupOptions.addEventListener("change", updateManualFetchSummary);
 elements.periodFilter.addEventListener("change", reloadFromFirstPage);
 elements.groupFilter.addEventListener("change", reloadFromFirstPage);
 elements.sortFilter.addEventListener("change", reloadFromFirstPage);
 elements.accountFilter.addEventListener("input", debounce(reloadFromFirstPage, 250));
 elements.videoRows.addEventListener("click", handleReuseAction);
-elements.todayRankRows.addEventListener("click", handleReuseAction);
-elements.sevenDayRankRows.addEventListener("click", handleReuseAction);
 
 function handleReuseAction(event) {
   const button = event.target.closest("[data-reuse-video]");
@@ -79,15 +81,20 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !elements.reuseModal.hidden) closeReuseDetail();
 });
 
-await Promise.all([loadDashboard(), loadManualFetchProfiles()]);
+await loadManualFetchProfiles();
+await loadDashboard();
 
 async function loadManualFetchProfiles() {
   try {
     const data = await requestJson("/api/tiktok-analytics/settings");
     const profiles = data.profiles || [];
     elements.manualFetchProfile.innerHTML = `<option value="">选择 GeeLark 账号</option>${profiles.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`).join("")}`;
-    const defaultProfileId = data.activeProfileIds?.[0] || profiles[0]?.id || "";
+    const savedProfileId = localStorage.getItem("local-factory.analytics.geelark-profile") || "";
+    const defaultProfileId = profiles.some((profile) => profile.id === savedProfileId)
+      ? savedProfileId
+      : data.defaultProfileId || data.activeProfileIds?.[0] || profiles.find((profile) => profile.id === "default")?.id || profiles[0]?.id || "";
     elements.manualFetchProfile.value = defaultProfileId;
+    if (defaultProfileId) localStorage.setItem("local-factory.analytics.geelark-profile", defaultProfileId);
     await loadManualFetchGroups(defaultProfileId);
   } catch {
     elements.manualFetchGroupOptions.innerHTML = `<span>暂时无法读取 GeeLark 账号。</span>`;
@@ -95,16 +102,26 @@ async function loadManualFetchProfiles() {
 }
 
 async function loadManualFetchGroups(profileId) {
+  activeProfileGroups = [];
+  profileGroupsLoaded = false;
   elements.manualFetchGroupOptions.innerHTML = profileId ? `<span>正在读取账号组...</span>` : `<span>请先选择 GeeLark 账号。</span>`;
   elements.manualFetchGroupSummary.textContent = "勾选账号组";
-  if (!profileId) return;
+  if (!profileId) {
+    updateGroupOptions([]);
+    return;
+  }
   try {
     const data = await requestJson(`/api/admin/geelark-profiles/${encodeURIComponent(profileId)}/groups?t=${Date.now()}`);
     const groups = data.groups || [];
+    activeProfileGroups = groups.map((group) => String(group.name || "").trim()).filter(Boolean);
+    profileGroupsLoaded = true;
+    updateGroupOptions(activeProfileGroups);
     elements.manualFetchGroupOptions.innerHTML = groups.length ? groups.map((group) => `
       <label><input type="checkbox" value="${escapeHtml(group.name)}" /><span>${escapeHtml(group.name)}</span><small>${Number(group.accountCount || 0)} 个账号</small></label>
     `).join("") : `<span>该 GeeLark 账号没有可抓取分组。</span>`;
   } catch (error) {
+    profileGroupsLoaded = true;
+    updateGroupOptions([]);
     elements.manualFetchGroupOptions.innerHTML = `<span>${escapeHtml(error.message || "读取账号组失败。")} </span>`;
   }
 }
@@ -145,10 +162,9 @@ async function loadDashboard() {
     sort: elements.sortFilter.value,
     t: Date.now()
   });
+  if (elements.manualFetchProfile.value) params.set("profileId", elements.manualFetchProfile.value);
   try {
     const data = await requestJson(`/api/tiktok-analytics?${params}`);
-    data.todayVideos = data.todayVideos || [];
-    data.sevenDayVideos = (data.sevenDayVideos || []).slice(0, 30);
     renderDashboard(data);
     if (data.status?.running) startPolling();
   } catch (error) {
@@ -157,8 +173,6 @@ async function loadDashboard() {
 }
 
 function reloadFromFirstPage() {
-  todayRankPage = 1;
-  sevenDayRankPage = 1;
   accountPage = 1;
   videoPage = 1;
   loadDashboard();
@@ -173,10 +187,8 @@ function renderDashboard(data) {
   elements.totalLikes.textContent = formatNumber(summary.likes);
   elements.commentShareCount.textContent = formatNumber(Number(summary.comments || 0) + Number(summary.shares || 0));
   elements.engagementRate.textContent = `${Number(summary.engagement || 0).toFixed(2)}%`;
-  renderPeriods(data.periods || {});
-  updateGroupOptions(data.filters?.groups || []);
-  renderTodayRankings(data.todayVideos || []);
-  renderSevenDayRankings(data.sevenDayVideos || []);
+  renderPeriods(data.periods || {}, elements.periodFilter.value);
+  updateGroupOptions(profileGroupsLoaded ? activeProfileGroups : (data.filters?.groups || []));
   renderAccounts(data.accounts || []);
   renderAccountAnalytics(data.accounts || []);
   renderAudioRankings(data.audioRankings || []);
@@ -197,11 +209,12 @@ function renderDashboard(data) {
   }
 }
 
-function renderPeriods(periods) {
+function renderPeriods(periods, selectedPeriod) {
+  const selectedLabel = periodLabel(selectedPeriod);
   const values = [
     ["today", periods.today || {}],
     ["yesterday", periods.yesterday || {}],
-    ["sevenDays", periods.sevenDays || {}]
+    ["sevenDays", periods.selected || periods.tenDays || periods.sevenDays || {}]
   ];
   for (const [prefix, summary] of values) {
     elements[`${prefix}Videos`].textContent = `${formatNumber(summary.videoCount)} 条`;
@@ -209,6 +222,7 @@ function renderPeriods(periods) {
     elements[`${prefix}Average`].textContent = formatNumber(summary.averageViews);
     elements[`${prefix}Engagement`].textContent = `${Number(summary.engagement || 0).toFixed(2)}%`;
   }
+  elements.selectedPeriodLabel.textContent = `${selectedLabel}发布`;
   document.querySelectorAll("[data-period-card]").forEach((card) => {
     card.classList.toggle("is-selected", card.dataset.periodCard === elements.periodFilter.value);
     card.onclick = () => {
@@ -218,50 +232,12 @@ function renderPeriods(periods) {
   });
 }
 
-function renderTodayRankings(videos) {
-  const ranked = [...videos].sort((a, b) => Number(b.views || 0) - Number(a.views || 0));
-  elements.todayRankCountBadge.textContent = `${ranked.length} 条`;
-  const page = getPage(ranked, todayRankPage);
-  todayRankPage = page.current;
-  elements.todayRankRows.innerHTML = page.items.length ? page.items.map((video, index) => `
-    <tr>
-      <td><span class="rank-number">${page.start + index + 1}</span></td>
-      <td><strong>@${escapeHtml(video.username)}</strong></td>
-      <td class="number-cell">${formatNumber(video.views)}</td>
-      <td class="delta-cell">${video.viewsDelta ? `+${formatNumber(video.viewsDelta)}` : "-"}</td>
-      <td>${formatNumber(video.likes)}</td>
-      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
-      <td><a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a></td>
-      <td>${video.local ? `<button class="reuse-detail-btn" type="button" data-reuse-video="${escapeHtml(video.id)}">查看</button>` : `<span class="muted-action">无记录</span>`}</td>
-    </tr>
-  `).join("") : emptyRow(8, "今天暂无已抓取的视频数据。");
-  renderPagination(elements.todayRankPagination, page, (nextPage) => {
-    todayRankPage = nextPage;
-    renderTodayRankings(ranked);
-  }, "视频");
-}
-
-function renderSevenDayRankings(videos) {
-  const ranked = [...videos].sort((a, b) => Number(b.views || 0) - Number(a.views || 0)).slice(0, 30);
-  elements.sevenDayRankCountBadge.textContent = `${ranked.length} 条`;
-  const page = getPage(ranked, sevenDayRankPage);
-  sevenDayRankPage = page.current;
-  elements.sevenDayRankRows.innerHTML = page.items.length ? page.items.map((video, index) => `
-    <tr>
-      <td><span class="rank-number">${page.start + index + 1}</span></td>
-      <td><strong>@${escapeHtml(video.username)}</strong></td>
-      <td class="number-cell">${formatNumber(video.views)}</td>
-      <td class="delta-cell">${video.viewsDelta ? `+${formatNumber(video.viewsDelta)}` : "-"}</td>
-      <td>${formatNumber(video.likes)}</td>
-      <td>${escapeHtml(formatUnixTime(video.createTime))}</td>
-      <td><a class="open-link" href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer" title="打开 TikTok">↗</a></td>
-      <td>${video.local ? `<button class="reuse-detail-btn" type="button" data-reuse-video="${escapeHtml(video.id)}">查看</button>` : `<span class="muted-action">无记录</span>`}</td>
-    </tr>
-  `).join("") : emptyRow(8, "近 7 日暂无已抓取的视频数据。");
-  renderPagination(elements.sevenDayRankPagination, page, (nextPage) => {
-    sevenDayRankPage = nextPage;
-    renderSevenDayRankings(ranked);
-  }, "视频");
+function periodLabel(period) {
+  if (period === "today") return "今日";
+  if (period === "yesterday") return "昨日";
+  if (period === "all") return "全部历史";
+  const days = /^(\d+)d$/.exec(String(period || ""));
+  return days ? `最近 ${days[1]} 日` : "最近 10 日";
 }
 
 function renderAccounts(accounts) {

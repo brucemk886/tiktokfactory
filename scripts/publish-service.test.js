@@ -80,7 +80,9 @@ assert.equal(taskAddCalls, 4);
 assert.ok(historyCalls >= 3, "history lookup should retry two transient failures before publishing");
 
 const stateAfterRetry = JSON.parse(fs.readFileSync(path.join(workDir, "geelark-publish-safety.json"), "utf8"));
-assert.equal(Object.values(stateAfterRetry.daily).reduce((sum, count) => sum + Number(count || 0), 0), 3, "automatic retries must not consume another planned-video slot");
+assert.equal(Object.values(stateAfterRetry.daily).reduce((sum, count) => sum + Number(count || 0), 0), 0, "attempts must not occupy daily completed-publication quota");
+const completedRecords = JSON.parse(fs.readFileSync(path.join(workDir, "publish-records.json"), "utf8"));
+assert.equal(completedRecords.filter((record) => record.status === "submitted").length, 3, "only successful submissions should count toward the daily quota");
 
 const second = await service.publishBatch(payload, { retryDelayMs: 0, autoRetry: true, batchId: "test-repeat" });
 assert.equal(second.summary.skipped, 3);

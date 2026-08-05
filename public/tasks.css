@@ -264,6 +264,8 @@ body.tasks-page {
 .auto-task-item[data-status="needs_attention"] .task-status-badge,
 .auto-task-item[data-status="failed"] .task-status-badge { border-color: #6d4d32; color: var(--task-amber); background: #211911; }
 .task-item-head .secondary-btn { min-height: 30px; padding: 0 9px; border-radius: 5px; font-size: 10px; }
+.task-delete-btn { border-color: #7d3f3a !important; color: #ffb3aa !important; background: #251514 !important; }
+html:not([data-role="admin"]) [data-admin-action] { display: none !important; }
 .task-groups { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .task-groups > span { margin-right: 2px; color: var(--task-muted); font-size: 9px; }
 .task-groups b { padding: 3px 6px; border: 1px solid #344128; border-radius: 3px; color: var(--task-green); background: #151b11; font-size: 9px; font-weight: 650; }
