@@ -135,6 +135,17 @@ async function handleConnectionAction(event) {
   const { action, id } = button.dataset;
   setBusy(button, true, "处理中...");
   try {
+    if (action === "label") {
+      const input = button.closest(".connection-card")?.querySelector("[data-label-input]");
+      const data = await requestJson(`/api/fivetran-tiktok/integrations/${encodeURIComponent(id)}/label`, {
+        method: "POST",
+        body: JSON.stringify({ displayName: input?.value.trim() || "" })
+      });
+      replaceIntegration(data.integration);
+      renderConnections();
+      setStatus("账号标识已保存。", "success");
+      return;
+    }
     if (action === "authorize") await openConnectCard(id);
     if (action === "status") await refreshStatus(id);
     if (["sync", "pause", "resume"].includes(action)) {
@@ -343,21 +354,29 @@ function renderTemplateOptions() {
 }
 
 function renderConnections() {
-  elements.connectionList.innerHTML = state.integrations.length ? state.integrations.map((item) => {
+  const authorizedConnections = state.integrations.filter((item) => ["authorized", "ready", "syncing", "paused", "disconnected"].includes(item.status));
+  elements.connectionList.innerHTML = authorizedConnections.length ? authorizedConnections.map((item) => {
     const canSync = ["authorized", "ready", "syncing"].includes(item.status);
     const paused = ["paused", "disconnected"].includes(item.status);
-    return `<article class="connection-row">
-      <div class="connection-name"><strong>${escapeHtml(item.displayName)}</strong><small>${escapeHtml(item.schema)}</small></div>
-      <div class="connection-meta"><span>最近同步：${item.lastSyncAt ? formatTime(item.lastSyncAt) : "尚未同步"}</span><span>${escapeHtml(item.fivetranConnectionId || "正在创建连接")}</span></div>
-      <span class="status-pill" data-status="${escapeHtml(item.status)}">${statusLabel(item.status)}</span>
-      <div class="row-actions">
-        ${paused ? `<button class="secondary-button" data-action="resume" data-id="${item.id}">恢复</button>` : `<button class="secondary-button" data-action="authorize" data-id="${item.id}">授权</button>`}
-        <button class="secondary-button" data-action="status" data-id="${item.id}">查状态</button>
-        ${canSync ? `<button class="secondary-button" data-action="sync" data-id="${item.id}">立即同步</button>` : ""}
-        ${!paused ? `<button class="secondary-button" data-action="pause" data-id="${item.id}">暂停</button>` : ""}
+    const detail = connectionDetail(item);
+    return `<article class="connection-card" data-status="${escapeHtml(item.status)}">
+      <div class="connection-card-main">
+        <div class="connection-identity"><span class="connection-kicker">TikTok 账号标识</span><strong>${escapeHtml(item.displayName || "未命名账号")}</strong><small>数据 Schema：${escapeHtml(item.schema || "创建后生成")}</small></div>
+        <div class="connection-status-block"><span class="status-pill" data-status="${escapeHtml(item.status)}">${detail.title}</span><strong>${detail.headline}</strong><small>${detail.description}</small></div>
+        <div class="connection-sync-block"><span>最近同步</span><strong>${item.lastSyncAt ? formatTime(item.lastSyncAt) : "尚未同步"}</strong><small>${item.syncState ? `Fivetran：${escapeHtml(item.syncState)}` : "等待首次同步"}</small></div>
+      </div>
+      ${item.lastError ? `<p class="connection-error">${escapeHtml(item.lastError)}</p>` : ""}
+      <div class="connection-card-footer">
+        <label class="connection-label-editor"><span>账号标识</span><input data-label-input value="${escapeHtml(item.displayName || "")}" placeholder="例如 @focus_daily" /><button class="secondary-button" data-action="label" data-id="${item.id}">保存名称</button></label>
+        <div class="row-actions">
+          ${paused ? `<button class="secondary-button" data-action="resume" data-id="${item.id}">恢复连接</button>` : item.status === "pending_authorization" || item.status === "error" ? `<button class="primary-button" data-action="authorize" data-id="${item.id}">去授权</button>` : ""}
+          <button class="secondary-button" data-action="status" data-id="${item.id}">检查状态</button>
+          ${canSync ? `<button class="secondary-button" data-action="sync" data-id="${item.id}">立即同步</button>` : ""}
+          ${!paused ? `<button class="secondary-button subtle-danger" data-action="pause" data-id="${item.id}">暂停</button>` : ""}
+        </div>
       </div>
     </article>`;
-  }).join("") : `<div class="empty-state">尚未创建账号连接。</div>`;
+  }).join("") : `<div class="empty-state"><strong>暂时没有已授权账号</strong><span>点击“新增账号授权”后完成 TikTok 确认；只有授权成功的账号才会显示在这里。</span></div>`;
   renderSummary();
 }
 
@@ -383,12 +402,22 @@ function statusLabel(status) {
   return ({ creating: "创建中", pending_authorization: "等待授权", authorized: "已授权", syncing: "同步中", ready: "可用", error: "异常", paused: "已暂停", disconnected: "已断开" })[status] || status || "未知";
 }
 
+function connectionDetail(item) {
+  if (item.status === "ready") return { title: "已授权 · 数据可用", headline: "授权成功，数据已同步", description: "可在单条视频数据页面查看已同步指标。" };
+  if (item.status === "authorized") return { title: "已授权", headline: "授权成功，等待首次同步", description: "点击“立即同步”，或等待 Fivetran 按计划同步。" };
+  if (item.status === "syncing") return { title: "同步中", headline: "授权成功，正在同步数据", description: "同步完成后状态会自动变为数据可用。" };
+  if (item.status === "error") return { title: "需要处理", headline: "授权或同步出现异常", description: "先点击“检查状态”；若仍异常，再重新授权。" };
+  if (["paused", "disconnected"].includes(item.status)) return { title: "已暂停", headline: "该账号当前不再同步", description: "恢复连接后可重新授权或同步。" };
+  if (item.status === "creating") return { title: "创建中", headline: "正在创建 Fivetran 连接", description: "创建完成后会显示“去授权”按钮。" };
+  return { title: "待授权", headline: "尚未完成 TikTok 授权", description: "点击“去授权”，扫码并在 TikTok 页面确认。" };
+}
+
 function eventLabel(type) {
-  return ({ "settings.saved": "保存配置", "connection.create_started": "开始创建连接", "connection.created": "连接已创建", "connection.create_failed": "连接创建失败", "connect_card.created": "生成授权链接", "sync.requested": "请求手动同步", "connection.paused": "暂停连接", "connection.resumed": "恢复连接" })[type] || type || "系统事件";
+  return ({ "settings.saved": "保存配置", "connection.create_started": "开始创建连接", "connection.created": "连接已创建", "connection.create_failed": "连接创建失败", "connect_card.created": "生成授权链接", "connection.label_updated": "更新账号标识", "sync.requested": "请求手动同步", "connection.paused": "暂停连接", "connection.resumed": "恢复连接" })[type] || type || "系统事件";
 }
 
 function actionLabel(action) {
-  return ({ authorize: "授权", status: "查状态", sync: "立即同步", pause: "暂停", resume: "恢复" })[action] || "操作";
+  return ({ authorize: "授权", label: "保存名称", status: "查状态", sync: "立即同步", pause: "暂停", resume: "恢复" })[action] || "操作";
 }
 
 function setStatus(message, tone = "") {

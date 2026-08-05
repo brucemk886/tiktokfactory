@@ -113,3 +113,21 @@ test("Repeated create request with the same idempotency key does not create twic
   assert.equal(first.id, second.id);
   assert.equal(createCount, 1);
 });
+
+test("renames an authorization record without changing its Fivetran connection", async () => {
+  const workDir = createWorkDir();
+  const service = createFivetranTikTokService({
+    workDir,
+    fetchImpl: async (url) => {
+      const pathname = new URL(String(url)).pathname;
+      if (pathname === "/v1/connections/template-1") return jsonResponse({ id: "template-1", group_id: "group-1", service: "tiktok_organic_app", config: { schema: "template" } });
+      if (pathname === "/v1/connections") return jsonResponse({ id: "connection-1", status: { setup_state: "incomplete" } });
+      throw new Error(`Unexpected request: ${pathname}`);
+    }
+  });
+  service.saveSettings({ apiKey: "key", apiSecret: "secret", groupId: "group-1", templateConnectionId: "template-1" });
+  const created = await service.createIntegration({ ownerUserId: "user-1", ownerUsername: "admin", displayName: "TikTok 01" });
+  const renamed = service.renameIntegration(created.id, "@focus_daily", "user-1");
+  assert.equal(renamed.displayName, "@focus_daily");
+  assert.equal(renamed.fivetranConnectionId, "connection-1");
+});

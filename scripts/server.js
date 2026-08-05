@@ -451,6 +451,16 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/label$/.test(url.pathname)) {
+      try {
+        const integrationId = decodeURIComponent(url.pathname.split("/")[4]);
+        const payload = await readJsonBody(req);
+        return sendJson(res, 200, { integration: fivetranTikTok.renameIntegration(integrationId, payload.displayName) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存账号标识失败。" });
+      }
+    }
+
     if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/connect-card$/.test(url.pathname)) {
       try {
         const integrationId = decodeURIComponent(url.pathname.split("/")[4]);

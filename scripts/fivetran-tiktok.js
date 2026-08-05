@@ -196,6 +196,15 @@ export function createFivetranTikTokService({ workDir, fetchImpl = globalThis.fe
     return { integration: publicIntegration(getIntegration(record.id)), connectCardUrl, expiresAt: now() + CONNECT_CARD_TTL_MS };
   }
 
+  function renameIntegration(id, displayName, ownerUserId = "") {
+    getIntegration(id, ownerUserId);
+    const nextName = clean(displayName).slice(0, 80);
+    if (!nextName) throw httpError(400, "Please provide an account identifier, for example @your_tiktok_account.");
+    const updated = updateRecord(id, (item) => ({ ...item, displayName: nextName, updatedAt: now() }));
+    appendEvent({ integrationId: id, ownerUserId: updated.ownerUserId, type: "connection.label_updated", status: "success" });
+    return publicIntegration(updated);
+  }
+
   async function refreshStatus(id, ownerUserId = "") {
     const record = getIntegration(id, ownerUserId);
     if (!record.fivetranConnectionId) return publicIntegration(record);
@@ -363,6 +372,7 @@ export function createFivetranTikTokService({ workDir, fetchImpl = globalThis.fe
     listIntegrations,
     createIntegration,
     createConnectCard,
+    renameIntegration,
     refreshStatus,
     syncNow,
     pauseIntegration,

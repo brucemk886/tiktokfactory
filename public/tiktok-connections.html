@@ -29,19 +29,19 @@
         <div>
           <p class="eyebrow">OWNER AUTHORIZATION</p>
           <h1>TikTok 账号授权</h1>
-          <p>通过 Fivetran Connect Card 连接账号，查看授权、同步和异常状态。</p>
+          <p>这里只显示已经完成 TikTok 授权的账号；扫码中或未完成授权的记录不会出现在列表。</p>
         </div>
-        <div class="header-state"><span id="configuredDot"></span><b id="configuredLabel">读取配置</b></div>
+        <div class="header-state" hidden><span id="configuredDot"></span><b id="configuredLabel">读取配置</b></div>
       </header>
 
-      <section class="summary-strip">
+      <section class="summary-strip" hidden>
         <div><span>已连接</span><strong id="readyCount">0</strong></div>
         <div><span>等待授权</span><strong id="pendingCount">0</strong></div>
         <div><span>同步中</span><strong id="syncingCount">0</strong></div>
         <div><span>异常</span><strong id="errorCount">0</strong></div>
       </section>
 
-      <section class="workflow-section">
+      <section class="workflow-section" hidden>
         <div class="section-head"><span>01</span><div><h2>Fivetran 配置</h2><p>凭据保存在本机运行目录，不写入项目代码。</p></div></div>
         <div class="settings-grid">
           <label><span>API Key</span><input id="apiKey" autocomplete="off" placeholder="留空保留现有 Key" /><small id="keyHint">尚未配置</small></label>
@@ -52,7 +52,7 @@
         <div class="section-actions"><span id="settingsStatus">等待配置</span><button id="saveSettings" class="primary-button" type="button">保存配置</button></div>
       </section>
 
-      <section class="workflow-section">
+      <section class="workflow-section" hidden>
         <div class="section-head"><span>02</span><div><h2>连接模板</h2><p>从现有资源读取准确的 Group 与 TikTok Organic service 配置。</p></div><button id="discoverButton" class="secondary-button" type="button">读取 Fivetran</button></div>
         <div class="resource-grid">
           <label><span>Fivetran Group</span><select id="groupSelect"><option value="">先读取资源</option></select></label>
@@ -62,11 +62,11 @@
       </section>
 
       <section class="workflow-section connections-section">
-        <div class="section-head"><span>03</span><div><h2>账号连接</h2><p>一个 TikTok 账号对应一个独立 Fivetran 连接与目标 Schema。</p></div><div class="create-inline"><input id="displayName" placeholder="账号备注，例如 美食账号 01" /><button id="createConnection" class="primary-button" type="button">新增账号授权</button></div></div>
+        <div class="section-head"><span>01</span><div><h2>已授权 TikTok 账号</h2><p>仅展示已完成授权的账号。扫码中、创建中或未完成授权的记录会自动隐藏。</p></div><div class="create-inline"><input id="displayName" placeholder="账号备注，例如 @focus_daily" /><button id="createConnection" class="primary-button" type="button">新增账号授权</button><button id="reloadButton" class="secondary-button" type="button">刷新状态</button></div></div>
         <div id="connectionList" class="connection-list"><div class="empty-state">尚未创建账号连接。</div></div>
       </section>
 
-      <section class="workflow-section destination-section">
+      <section class="workflow-section destination-section" hidden>
         <div class="section-head">
           <span>04</span>
           <div><h2>目标数据库</h2><p>只读连接 Fivetran 的 PostgreSQL 目标库，查看已同步的账号、视频和私有指标。</p></div>
@@ -89,12 +89,12 @@
         <div id="databaseVideos" class="database-videos" hidden></div>
       </section>
 
-      <section class="workflow-section audit-section">
-        <div class="section-head"><span>05</span><div><h2>最近事件</h2><p>只记录状态与错误摘要，不记录授权链接或凭据。</p></div><button id="reloadButton" class="secondary-button" type="button">刷新状态</button></div>
+      <section class="workflow-section audit-section" hidden>
+        <div class="section-head"><span>05</span><div><h2>最近事件</h2><p>只记录状态与错误摘要，不记录授权链接或凭据。</p></div></div>
         <div id="eventList" class="event-list"><div class="empty-state">暂无事件。</div></div>
       </section>
 
-      <aside class="data-note">
+      <aside class="data-note" hidden>
         <strong>同步范围</strong>
         <span>Fivetran TikTok Organic 会把账号、视频、评论、留存、流量来源和受众指标同步到目标数据库。这里先用于校验和查看原始同步结果；确认字段稳定后，再将私有指标汇总进“数据总览”。</span>
       </aside>
