@@ -257,11 +257,14 @@ export function createFivetranDestinationService({
     });
   }
 
-  async function getOperationSignals({ accountNames = [], days = 10, videosPerAccount = 30 } = {}) {
+  async function getOperationSignals({ accountNames = [], days = 10, videosPerAccount = 30, publishedAfter = 0 } = {}) {
     const requestedAccounts = new Set((accountNames || []).map(normalizeAccountName).filter(Boolean));
     const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 10)));
     const safeLimit = Math.max(1, Math.min(50, Math.floor(Number(videosPerAccount) || 30)));
-    const cutoffAt = now() - safeDays * 24 * 60 * 60 * 1_000;
+    const cutoffAt = Math.max(
+      now() - safeDays * 24 * 60 * 60 * 1_000,
+      Number(publishedAfter) || 0
+    );
 
     return withReadOnlyClient(async (client) => {
       const schemas = await listTikTokSchemas(client);

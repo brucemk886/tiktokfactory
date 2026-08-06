@@ -182,7 +182,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
     };
   }
 
-  function getDashboard({ period = DEFAULT_ANALYSIS_PERIOD, group = "", account = "", sort = "views", allowedAccounts = null, availableGroups = null } = {}, publishRecords = []) {
+  function getDashboard({ period = DEFAULT_ANALYSIS_PERIOD, group = "", account = "", sort = "views", allowedAccounts = null, availableGroups = null, publishedAfter = 0 } = {}, publishRecords = []) {
     const store = readStore(storePath);
     const recordMatches = matchPublishRecords(store.videos, publishRecords);
     const allowedAccountSet = Array.isArray(allowedAccounts)
@@ -200,6 +200,7 @@ export function createTikTokAnalyticsService({ workDir, fetchImpl = fetch, now =
         };
       })
       .filter((video) => !allowedAccountSet || allowedAccountSet.has(normalizeUsername(video.username)))
+      .filter((video) => !publishedAfter || Number(video.createTime) * 1000 >= Number(publishedAfter))
       .filter((video) => !account || video.username.toLowerCase().includes(String(account).toLowerCase()));
     const scopedVideos = baseVideos.filter((video) => !group || video.local?.groupName === group);
     let videos = filterByPeriod(scopedVideos, period, now());

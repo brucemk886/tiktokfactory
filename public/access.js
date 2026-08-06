@@ -48,7 +48,7 @@ function addOperationBrainLinks() {
     if (nav.querySelector('a[href="/operator"]')) return;
     const link = document.createElement("a");
     link.href = "/operator";
-    link.textContent = "运营大脑";
+    link.textContent = "小说 AI 自运营";
     link.dataset.adminOnly = "";
     link.dataset.sidebarModule = "operator";
     if (location.pathname === "/operator") link.className = "is-active";

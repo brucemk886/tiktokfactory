@@ -248,6 +248,33 @@ test("returns the selected 30-day period separately from the fixed 10-day overvi
   assert.equal(dashboard.selectedPeriodVideos[0].id, "in-30-days");
 });
 
+test("filters operation dashboards from an explicit analysis baseline", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "tiktok-analysis-baseline-"));
+  const currentTime = Date.UTC(2026, 7, 6, 12, 0, 0);
+  const baseline = Date.UTC(2026, 7, 6, 8, 0, 0);
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      code: 0,
+      data: {
+        videos: [
+          { video_id: "before-reset", create_time: Math.floor(Date.UTC(2026, 7, 6, 7, 0, 0) / 1000), author: { unique_id: "demo" }, play_count: 9000 },
+          { video_id: "after-reset", create_time: Math.floor(Date.UTC(2026, 7, 6, 9, 0, 0) / 1000), author: { unique_id: "demo" }, play_count: 120 }
+        ]
+      }
+    })
+  });
+  const service = createTikTokAnalyticsService({ workDir, fetchImpl, now: () => currentTime });
+  service.saveSettings({ apiKeys: ["test-api-key"], dailyRequestLimit: 100 });
+  await service.fetchAccount("demo");
+
+  const dashboard = service.getDashboard({ period: "all", publishedAfter: baseline }, []);
+  assert.equal(dashboard.summary.videoCount, 1);
+  assert.equal(dashboard.videos[0].id, "after-reset");
+  assert.equal(dashboard.accounts[0].views, 120);
+});
+
 test("calculates exact overlap between generated video clips", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "asset-reuse-"));
   const workDir = path.join(root, "work");

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>子项目 Agent 中台 · Local Factory</title>
+    <title>项目中台 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/tasks.css" />
     <link rel="stylesheet" href="/project-hub.css" />
@@ -23,109 +23,81 @@
         <a href="/tasks">Reddit 自动发布</a>
         <a href="/stats">发布记录</a>
         <a href="/analytics">数据总览</a>
-        <a data-admin-only href="/operator">运营大脑</a>
-        <a class="is-active" data-admin-only href="/project-hub">子项目 Agent</a>
+        <a data-admin-only href="/operator">小说 AI 自运营</a>
+        <a class="is-active" data-admin-only href="/project-hub">项目中台</a>
         <a data-admin-only href="/analytics-settings">抓取配置</a>
         <a data-admin-only href="/accounts">账户管理</a>
       </nav>
       <div class="sidebar-safety">
         <span class="live-dot"></span>
-        <div><strong>只读安全模式</strong><small>Agent 不修改项目和生产数据</small></div>
+        <div><strong>共享记忆已开启</strong><small>只保存项目与交接记录</small></div>
       </div>
       <button class="nav-logout" type="button" data-logout>退出登录</button>
     </aside>
 
     <div class="hub-workspace">
       <header class="hub-header">
-        <div class="hub-title-block">
-          <p class="hub-kicker">SUBPROJECT OPERATIONS</p>
-          <h1>子项目 Agent 中台</h1>
-          <p>每个 Agent 只服务一个具体子项目。选择项目、执行检查、查看结论。</p>
+        <div>
+          <p class="hub-kicker">PROJECT MEMORY</p>
+          <h1>项目中台</h1>
+          <p>统一保存子项目边界、目标和交接记忆，不再维护独立执行队列。</p>
         </div>
         <div class="hub-header-actions">
-          <span id="safetyBadge" class="hub-badge">只读安全模式</span>
+          <span class="hub-badge">共享记忆</span>
           <button id="refreshHubBtn" class="quiet-button" type="button">刷新</button>
-          <button id="runAllBtn" class="primary-action" type="button">运行当前项目 Agent</button>
         </div>
       </header>
 
       <main class="hub-main">
-        <section id="summaryStrip" class="summary-strip" aria-label="运行概览"></section>
+        <section id="summaryStrip" class="summary-strip" aria-label="项目概览"></section>
 
-        <section class="hub-console" aria-label="子项目 Agent 工作台">
+        <section class="hub-console">
           <aside class="project-rail">
             <div class="rail-heading">
-              <div>
-                <p class="section-label">PROJECTS</p>
-                <h2>Local Factory 子项目</h2>
-              </div>
+              <div><p class="section-label">PROJECTS</p><h2>Local Factory 子项目</h2></div>
               <button id="toggleProjectFormBtn" class="icon-command" type="button" title="新增子项目" aria-label="新增子项目">+</button>
             </div>
-
-            <form id="projectForm" class="hub-form project-form" hidden>
-              <label><span>子项目名称</span><input id="projectName" required placeholder="例如：儿童专注力训练" /></label>
+            <form id="projectForm" class="hub-form" hidden>
+              <label><span>子项目名称</span><input id="projectName" required placeholder="例如：小说素材研究" /></label>
               <label><span>工作区内目录</span><input id="projectPath" required placeholder="当前仓库或仓库内目录" /></label>
-              <label><span>页面入口</span><input id="projectRoute" placeholder="例如：/schulte" /></label>
+              <label><span>页面入口</span><input id="projectRoute" placeholder="例如：/tasks" /></label>
               <label><span>目标</span><textarea id="projectObjective" rows="3" placeholder="这个子项目当前要验证什么"></textarea></label>
               <label><span>关键模块，一行一个</span><textarea id="projectModules" rows="3" placeholder="scripts/example.js&#10;public/example.js"></textarea></label>
-              <div class="form-actions"><span id="projectFormStatus"></span><button class="primary-action" type="submit">保存</button></div>
+              <div class="form-actions"><span id="projectFormStatus"></span><button class="primary-action" type="submit">保存项目</button></div>
             </form>
-
             <div id="projectList" class="project-list" role="listbox" aria-label="选择子项目"></div>
           </aside>
 
-          <div class="agent-workbench">
-            <section class="project-focus">
+          <section class="project-detail">
+            <div class="project-focus">
               <div>
                 <p id="selectedProjectKind" class="section-label">LOCAL SUBPROJECT</p>
                 <h2 id="selectedProjectName">选择一个子项目</h2>
-                <p id="selectedProjectObjective">左侧选择后，这里只展示该项目的专属 Agent。</p>
+                <p id="selectedProjectObjective">这里展示项目目标、入口和关键模块。</p>
               </div>
               <div class="focus-actions">
                 <a id="openProjectLink" class="quiet-link" href="#" hidden>打开项目页面</a>
-                <button id="toggleAgentFormBtn" class="quiet-button" type="button">新增专属 Agent</button>
+                <button id="toggleProjectStateBtn" class="quiet-button" type="button" hidden>暂停项目</button>
               </div>
-            </section>
-
-            <div id="projectScope" class="project-scope"></div>
-
-            <form id="agentForm" class="hub-form agent-form" hidden>
-              <input id="agentProject" type="hidden" />
-              <label><span>Agent 名称</span><input id="agentName" required placeholder="例如：发布安全 Agent" /></label>
-              <label><span>职责</span><select id="agentRole"><option value="quality">质量检查</option><option value="operations">运营检查</option><option value="release">发布检查</option><option value="data">数据检查</option><option value="research">项目研究</option></select></label>
-              <label class="wide"><span>长期指令</span><textarea id="agentInstructions" rows="3" placeholder="这个 Agent 每次重点检查什么"></textarea></label>
-              <div class="form-actions wide"><span id="agentFormStatus"></span><button class="primary-action" type="submit">保存 Agent</button></div>
-            </form>
-
-            <div class="agent-section-heading">
-              <div><p class="section-label">ASSIGNED AGENTS</p><h3>专属执行者</h3></div>
-              <span id="agentCount" class="count-label">0 个</span>
             </div>
-            <div id="agentList" class="agent-list"></div>
-          </div>
+            <div id="projectScope" class="project-scope"></div>
+          </section>
         </section>
 
-        <div class="hub-lower-grid">
-          <section class="hub-panel run-panel">
-            <div class="panel-heading">
-              <div><p class="section-label">EXECUTION LOG</p><h2>当前项目运行记录</h2></div>
-              <span id="queueMeta" class="hub-muted"></span>
-            </div>
-            <div id="runList" class="run-list"></div>
-          </section>
-
-          <section class="hub-panel handoff-panel">
-            <div class="panel-heading">
-              <div><p class="section-label">PROJECT MEMORY</p><h2>项目交接</h2></div>
-            </div>
+        <section class="hub-panel memory-panel">
+          <div class="panel-heading">
+            <div><p class="section-label">SHARED MEMORY</p><h2>项目交接记录</h2></div>
+            <span id="handoffMeta" class="hub-muted"></span>
+          </div>
+          <div class="memory-grid">
             <form id="handoffForm" class="handoff-form">
               <input id="handoffProject" type="hidden" />
-              <textarea id="handoffSummary" rows="3" placeholder="记录当前项目的决定、结果和下一步"></textarea>
-              <div class="handoff-actions"><span id="handoffStatus" class="inline-status"></span><button class="quiet-button" type="submit">写入交接</button></div>
+              <label><span>当前决定、结果和下一步</span><textarea id="handoffSummary" rows="6" placeholder="记录当前项目的决定、结果和下一步"></textarea></label>
+              <div class="handoff-actions"><span id="handoffStatus" class="inline-status"></span><button class="primary-action" type="submit">写入交接</button></div>
             </form>
             <div id="handoffList" class="handoff-list"></div>
-          </section>
-        </div>
+          </div>
+        </section>
       </main>
     </div>
 

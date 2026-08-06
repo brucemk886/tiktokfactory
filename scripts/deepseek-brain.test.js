@@ -5,7 +5,6 @@ import path from "node:path";
 import test from "node:test";
 import { buildAnalysisChunks, createDeepSeekBrainService } from "./deepseek-brain.js";
 
-const recipes = ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"];
 const stages = ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"];
 
 test("saves a masked key and tests the DeepSeek connection", async (context) => {
@@ -56,8 +55,7 @@ test("generates one JSON strategy request for an aggregated operation plan", asy
     objective: "traffic",
     accountCount: 20,
     stageSummary: [],
-    baselineMixes: {},
-    contentPerformance: [],
+    workflowPerformance: [],
     publishTimePerformance: [],
     drafts: []
   });
@@ -66,8 +64,8 @@ test("generates one JSON strategy request for an aggregated operation plan", asy
   assert.equal(calls[0].model, "deepseek-v4-flash");
   assert.deepEqual(calls[0].thinking, { type: "enabled" });
   assert.deepEqual(calls[0].response_format, { type: "json_object" });
-  assert.equal(result.strategy.allocationPlan.length, 6);
-  assert.equal(result.strategy.scripts.length, 4);
+  assert.equal(result.strategy.publishingPlan.length, 6);
+  assert.equal(Object.hasOwn(result.strategy, "allocationPlan"), false);
 });
 
 test("full dataset chunks preserve every video and every retention point", () => {
@@ -124,7 +122,7 @@ test("analyzes all full-data batches before synthesizing one operation strategy"
   assert.equal(result.analysisStats.videos, 6);
   assert.equal(result.analysisStats.retentionPoints, 180);
   assert.equal(result.evidenceReport.batches.length, result.analysisStats.batches);
-  assert.equal(result.strategy.scripts.length, 4);
+  assert.equal(result.strategy.publishingPlan.length, 6);
   assert.equal(result.usage.total_tokens, calls.length * 120);
 });
 
@@ -155,11 +153,6 @@ function makeStrategy() {
     accountDiagnosis: "Mixed account stages.",
     contentDirection: "Keep controlled template tests.",
     riskNotes: ["Do not overfit.", "Keep volume limits."],
-    allocationPlan: stages.map((stage) => ({
-      stage,
-      mix: { peripheral_hook: 25, tracking_hook: 25, position_memory: 25, schulte_complete: 25 },
-      rationale: "Balanced test."
-    })),
     publishingPlan: stages.map((stage) => ({
       stage,
       startHour: 22,
@@ -167,24 +160,6 @@ function makeStrategy() {
       windowMinutes: 30,
       slotIntervalMinutes: 180,
       rationale: "Stable window."
-    })),
-    recipeTuning: recipes.map((recipeId) => ({
-      recipeId,
-      durationSeconds: 24,
-      rotationSpeed: 2,
-      trackingSeconds: 16,
-      ballSpeed: 1.3,
-      memorySteps: 6,
-      peripheralTargets: 3,
-      rationale: "Controlled variant."
-    })),
-    scripts: recipes.map((recipeId) => ({
-      recipeId,
-      targetStage: "all",
-      headline: "Focus Test",
-      mainTitle: "Can you finish it?",
-      videoDesc: "Try this focus challenge.",
-      rationale: "Short hook."
     }))
   };
 }

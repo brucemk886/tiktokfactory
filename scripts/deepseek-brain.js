@@ -9,7 +9,6 @@ const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const DEFAULT_TIMEOUT_MS = 4 * 60 * 1000;
 const DEFAULT_ANALYSIS_CHUNK_CHARS = 70_000;
-const REQUIRED_RECIPES = ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"];
 const REQUIRED_STAGES = ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"];
 const EVIDENCE_OUTPUT_SCHEMA = Object.freeze({
   accountFindings: [{
@@ -481,14 +480,8 @@ function parseAndValidateStrategy(value) {
     throw statusError(502, "DeepSeek strategy response was not valid JSON.");
   }
   if (!parsed || typeof parsed !== "object") throw statusError(502, "DeepSeek returned an empty strategy.");
-  const scriptRecipes = new Set((parsed.scripts || []).map((item) => item?.recipeId));
-  const tuningRecipes = new Set((parsed.recipeTuning || []).map((item) => item?.recipeId));
-  const allocationStages = new Set((parsed.allocationPlan || []).map((item) => item?.stage));
   const publishingStages = new Set((parsed.publishingPlan || []).map((item) => item?.stage));
-  if (REQUIRED_RECIPES.some((id) => !scriptRecipes.has(id) || !tuningRecipes.has(id))) {
-    throw statusError(502, "DeepSeek returned incomplete template strategy data.");
-  }
-  if (REQUIRED_STAGES.some((id) => !allocationStages.has(id) || !publishingStages.has(id))) {
+  if (REQUIRED_STAGES.some((id) => !publishingStages.has(id))) {
     throw statusError(502, "DeepSeek returned incomplete account-stage strategy data.");
   }
   return parsed;

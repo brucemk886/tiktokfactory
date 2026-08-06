@@ -63,6 +63,7 @@ const operationBrain = createOperationBrainService({
   deepseekBrain,
   listPhones: listGeeLarkPhonesForProfile,
   readPublishRecords,
+  readRedditSettings: () => readRedditMixSettings().settings,
   listProfiles: () => localAuth.listProfiles()
 });
 const projectHub = createProjectHubService({ root, workDir });
@@ -550,48 +551,6 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (req.method === "POST" && url.pathname === "/api/project-hub/agents") {
-      try {
-        return sendJson(res, 201, { agent: projectHub.createAgent(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建 Agent 失败。" });
-      }
-    }
-
-    if (req.method === "PATCH" && /^\/api\/project-hub\/agents\/[^/]+$/.test(url.pathname)) {
-      try {
-        const id = decodeURIComponent(url.pathname.split("/").pop());
-        return sendJson(res, 200, { agent: projectHub.updateAgent(id, await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新 Agent 失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/project-hub/runs") {
-      try {
-        return sendJson(res, 202, { run: projectHub.startRun(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "启动 Agent 失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/project-hub/runs/batch") {
-      try {
-        return sendJson(res, 202, { runs: projectHub.startAll(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "批量启动 Agent 失败。" });
-      }
-    }
-
-    if (req.method === "POST" && /^\/api\/project-hub\/runs\/[^/]+\/cancel$/.test(url.pathname)) {
-      try {
-        const id = decodeURIComponent(url.pathname.split("/")[4]);
-        return sendJson(res, 200, { run: projectHub.cancelRun(id) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "停止 Agent 失败。" });
-      }
-    }
-
     if (req.method === "POST" && url.pathname === "/api/project-hub/handoffs") {
       try {
         return sendJson(res, 201, { handoff: projectHub.addHandoff(await readJsonBody(req)) });
@@ -621,6 +580,14 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { settings: operationBrain.saveSettings(await readJsonBody(req)) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存运营设置失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/operator/reset-judgments") {
+      try {
+        return sendJson(res, 200, { settings: operationBrain.resetJudgments() });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "清空账号判断失败。" });
       }
     }
 

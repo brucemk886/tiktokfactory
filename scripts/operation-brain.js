@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ANALYSIS_WINDOW_DAYS = 10;
+const DAY_MS = 86_400_000;
 
 const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
@@ -14,16 +15,23 @@ const DEFAULT_SETTINGS = Object.freeze({
   objective: "traffic",
   postsPerAccount: 2,
   maxDailyVideos: 300,
-  maxAccounts: 100,
+  cycleDays: 7,
+  cycleStartedAt: 0,
+  cycleEndsAt: 0,
+  cycleStoppedAt: 0,
+  cycleStopReason: "",
+  analysisResetAt: 0,
   runHour: 19,
   runMinute: 0,
   publishHour: 22,
   publishMinute: 0,
   publishWindowMinutes: 30,
   slotIntervalMinutes: 180,
-  instructionLanguage: "en",
-  backgroundMusicMode: "built-in",
-  backgroundMusicVolume: 0.35
+  assetGroupId: "",
+  videoDir: "",
+  audioDir: "",
+  backgroundMusicDir: "",
+  videoDesc: "#reddit #redditstories #storytime"
 });
 
 const STAGE_META = Object.freeze({
@@ -35,154 +43,10 @@ const STAGE_META = Object.freeze({
   recovery: { label: "修复期", tone: "red" }
 });
 
-const CONTENT_RECIPES = Object.freeze({
-  peripheral_hook: {
-    id: "peripheral_hook",
-    layer: "traffic",
-    layerLabel: "流量层",
-    label: "模板 5 · 周边闪视",
-    template: "peripheral",
-    durationSeconds: 18,
-    headline: "Peripheral Vision Test",
-    mainTitle: "How fast can you spot it?",
-    videoDesc: "How fast did you spot every target? Comment your score. #focustest #braintraining #attentiontest",
-    generation: { peripheralTargets: 3 }
-  },
-  tracking_hook: {
-    id: "tracking_hook",
-    layer: "traffic",
-    layerLabel: "流量层",
-    label: "模板 2 · 小球追踪",
-    template: "tracking",
-    durationSeconds: 27,
-    headline: "Visual Tracking Test",
-    mainTitle: "Keep your eyes on the target",
-    videoDesc: "Did you keep track until the end? Comment your answer. #visualtest #focuschallenge #braintraining",
-    generation: { trackingSeconds: 16, ballSpeed: 1.35, trackingMode: "auto" }
-  },
-  position_memory: {
-    id: "position_memory",
-    layer: "retention",
-    layerLabel: "留存层",
-    label: "模板 4 · 位置记忆",
-    template: "memory",
-    durationSeconds: 32,
-    headline: "Position Memory",
-    mainTitle: "Remember the full sequence",
-    videoDesc: "How many positions did you remember? Share your score. #memorytest #brainexercise #focus",
-    generation: { memorySteps: 6 }
-  },
-  schulte_complete: {
-    id: "schulte_complete",
-    layer: "long_view",
-    layerLabel: "中视频验证",
-    label: "模板 1 · 完整训练",
-    template: "wheel",
-    durationSeconds: 65,
-    headline: "Daily Focus Training",
-    mainTitle: "Complete the full challenge",
-    videoDesc: "Complete the full focus challenge and comment your time. #schultetable #focus #braintraining",
-    generation: {
-      trainingStartsAt: 7,
-      instructionStartsAt: 4,
-      rotationSpeed: 2.5,
-      trainingMode: "auto",
-      layoutStyle: "auto",
-      backgroundStyle: "auto"
-    }
-  }
-});
-
-const CONTENT_VARIANTS = Object.freeze({
-  peripheral_hook: [
-    {
-      id: "sharp-eyes",
-      headline: "Peripheral Vision Test",
-      mainTitle: "Only sharp eyes spot all three",
-      videoDesc: "How many targets did you spot? Comment your score. #focustest #attentiontest #braintraining"
-    },
-    {
-      id: "wide-focus",
-      headline: "Wide Focus Challenge",
-      mainTitle: "Do not move your eyes",
-      videoDesc: "Keep looking at the center and tell me what you saw. #peripheralvision #focuschallenge #attention"
-    },
-    {
-      id: "fast-reaction",
-      headline: "Fast Reaction Test",
-      mainTitle: "Your first answer counts",
-      videoDesc: "Did you catch every flash on the first try? #reactiontest #brainexercise #focus"
-    }
-  ],
-  tracking_hook: [
-    {
-      id: "lock-target",
-      headline: "Visual Tracking Test",
-      mainTitle: "Lock onto the target",
-      videoDesc: "Did you keep track until the end? Comment your answer. #visualtest #focuschallenge #braintraining"
-    },
-    {
-      id: "no-blinking",
-      headline: "No Blinking Challenge",
-      mainTitle: "Follow the marked ball",
-      videoDesc: "Which ball was it at the end? Drop your answer below. #trackingtest #attention #focustraining"
-    },
-    {
-      id: "attention-check",
-      headline: "Attention Check",
-      mainTitle: "Most people lose it halfway",
-      videoDesc: "Be honest: when did you lose the target? #attentiontest #visualtracking #brainchallenge"
-    }
-  ],
-  position_memory: [
-    {
-      id: "full-sequence",
-      headline: "Position Memory",
-      mainTitle: "Remember the full sequence",
-      videoDesc: "How many positions did you remember? Share your score. #memorytest #brainexercise #focus"
-    },
-    {
-      id: "one-look",
-      headline: "One Look Memory Test",
-      mainTitle: "Do not replay it",
-      videoDesc: "Comment the sequence before checking the answer. #visualmemory #memorychallenge #braintraining"
-    },
-    {
-      id: "working-memory",
-      headline: "Working Memory Check",
-      mainTitle: "Can you hold every position?",
-      videoDesc: "How far did your working memory take you? #workingmemory #focus #mindtraining"
-    }
-  ],
-  schulte_complete: [
-    {
-      id: "daily-reset",
-      headline: "Daily Focus Training",
-      mainTitle: "Complete the full challenge",
-      videoDesc: "Complete the full focus challenge and comment your time. #schultetable #focus #braintraining"
-    },
-    {
-      id: "beat-yesterday",
-      headline: "60-Second Focus Workout",
-      mainTitle: "Can you beat yesterday's time?",
-      videoDesc: "Save this and compare your time tomorrow. #dailyfocus #schultegrid #attentiontraining"
-    },
-    {
-      id: "finish-line",
-      headline: "Attention Endurance Test",
-      mainTitle: "Finish without losing your place",
-      videoDesc: "If you finished cleanly, comment your final time. #focusworkout #attentiontest #brainfitness"
-    }
-  ]
-});
-
-const BASE_MIXES = Object.freeze({
-  cold_start: { peripheral_hook: 45, tracking_hook: 35, position_memory: 15, schulte_complete: 5 },
-  testing: { peripheral_hook: 35, tracking_hook: 30, position_memory: 25, schulte_complete: 10 },
-  breakout: { peripheral_hook: 25, tracking_hook: 25, position_memory: 30, schulte_complete: 20 },
-  scaling: { peripheral_hook: 20, tracking_hook: 20, position_memory: 25, schulte_complete: 35 },
-  qualified: { peripheral_hook: 20, tracking_hook: 20, position_memory: 25, schulte_complete: 35 },
-  recovery: { peripheral_hook: 50, tracking_hook: 35, position_memory: 12, schulte_complete: 3 }
+const REDDIT_WORKFLOW = Object.freeze({
+  id: "reddit_auto",
+  label: "Reddit 自动发布",
+  videoDesc: "#reddit #redditstories #storytime"
 });
 
 export function createOperationBrainService({
@@ -194,6 +58,7 @@ export function createOperationBrainService({
   deepseekBrain = null,
   listPhones,
   readPublishRecords,
+  readRedditSettings = () => ({}),
   listProfiles = () => [],
   now = () => Date.now()
 }) {
@@ -210,10 +75,37 @@ export function createOperationBrainService({
   }
 
   function saveSettings(payload = {}) {
-    const next = normalizeSettings({ ...getSettings(), ...payload });
+    const current = getSettings();
+    let next = normalizeSettings({ ...current, ...payload });
+    const timestamp = now();
+    const currentCycle = getCycleState(current, timestamp);
+    const cycleDaysChanged = Object.hasOwn(payload, "cycleDays") && next.cycleDays !== current.cycleDays;
+    const shouldStartCycle = next.enabled && next.groupNames.length > 0 && (
+      !current.enabled ||
+      !currentCycle.startedAt ||
+      currentCycle.status === "expired"
+    );
+    if (shouldStartCycle) {
+      next = startCycle(next, timestamp);
+    } else if (next.enabled && cycleDaysChanged) {
+      const startedAt = Number(current.cycleStartedAt) || timestamp;
+      next = normalizeSettings({
+        ...next,
+        cycleStartedAt: startedAt,
+        cycleEndsAt: startedAt + next.cycleDays * DAY_MS,
+        cycleStoppedAt: 0,
+        cycleStopReason: ""
+      });
+    } else if (current.enabled && !next.enabled) {
+      next = normalizeSettings({
+        ...next,
+        cycleStoppedAt: timestamp,
+        cycleStopReason: "manual"
+      });
+    }
     atomicWriteJson(settingsPath, { ...next, updatedAt: now() });
     schedule();
-    return next;
+    return getSettings();
   }
 
   function getStatus() {
@@ -224,6 +116,7 @@ export function createOperationBrainService({
       autoCreateTasks: settings.autoCreateTasks,
       running,
       nextRunAt,
+      cycle: getCycleState(settings, now()),
       lastPlan: plans[0] || null,
       codex: codexBrain?.getStatus?.() || null,
       deepseek: deepseekBrain?.getStatus?.() || null,
@@ -231,17 +124,29 @@ export function createOperationBrainService({
     };
   }
 
+  function resetJudgments() {
+    const resetAt = now();
+    const next = normalizeSettings({ ...getSettings(), analysisResetAt: resetAt });
+    atomicWriteJson(settingsPath, { ...next, updatedAt: resetAt });
+    return getSettings();
+  }
+
   async function getOverview(payload = {}) {
     const settings = normalizeSettings({ ...getSettings(), ...payload });
     const phones = await getPhones(settings.profileId);
-    const selected = filterPhones(phones, settings.groupNames).slice(0, settings.maxAccounts);
+    const selected = filterPhones(phones, settings.groupNames).slice(0, settings.maxDailyVideos);
     const accountNames = selected.map((phone) => phone.serialName || phone.name).filter(Boolean);
     const records = readPublishRecords();
-    const dashboard10 = analyticsService.getDashboard({ period: "10d", allowedAccounts: accountNames }, records);
-    const dashboard30 = analyticsService.getDashboard({ period: "30d", allowedAccounts: accountNames }, records);
-    const matchedVideos = analyticsService.getMatchedVideos?.(records) || [];
+    const analysisStartedAt = Math.max(
+      Number(settings.analysisResetAt) || 0,
+      Number(settings.cycleStartedAt) || 0
+    );
+    const dashboard10 = analyticsService.getDashboard({ period: "10d", allowedAccounts: accountNames, publishedAfter: analysisStartedAt }, records);
+    const dashboard30 = analyticsService.getDashboard({ period: "30d", allowedAccounts: accountNames, publishedAfter: analysisStartedAt }, records);
+    const matchedVideos = filterVideosAfter(analyticsService.getMatchedVideos?.(records) || [], analysisStartedAt);
     const accounts = classifyAccounts(selected, dashboard10.accounts || [], dashboard30.accounts || [], {
-      objective: settings.objective
+      objective: settings.objective,
+      analysisStartedAt
     });
     let privateAnalytics = {
       status: "unavailable",
@@ -254,7 +159,8 @@ export function createOperationBrainService({
         privateAnalytics = await privateAnalyticsService.getOperationSignals({
           accountNames,
           days: ANALYSIS_WINDOW_DAYS,
-          videosPerAccount: 30
+          videosPerAccount: 30,
+          publishedAfter: analysisStartedAt
         });
       } catch (error) {
         privateAnalytics = {
@@ -269,7 +175,10 @@ export function createOperationBrainService({
     for (const account of accounts) {
       account.privateMetrics = privateByUsername.get(normalizeUsername(account.username)) || null;
     }
-    applyExperimentAges(accounts, matchedVideos, listPlans({ includeArchived: true }), now());
+    const currentPlans = listPlans({ includeArchived: true }).filter((plan) =>
+      !analysisStartedAt || Number(plan?.createdAt) >= analysisStartedAt
+    );
+    applyOperationAges(accounts, matchedVideos, currentPlans, now());
     const contentFeedback = summarizeContentFeedback(
       matchedVideos,
       accountNames,
@@ -285,6 +194,7 @@ export function createOperationBrainService({
       contentFeedback,
       privateAnalytics,
       dataStatus: {
+        analysisStartedAt,
         lastRun: dashboard10.status?.lastRun || null,
         videoCount: dashboard10.summary?.videoCount || 0,
         matchedCount: dashboard10.summary?.matchedCount || 0,
@@ -295,22 +205,29 @@ export function createOperationBrainService({
           error: privateAnalytics.error || ""
         },
         northStar: "natural_views",
-        northStarNote: "运营大脑只优化自然播放量；互动数据仅用于诊断，不参与账号分层。"
+        northStarNote: "小说 AI 自运营只优化自然播放量；互动数据仅用于诊断，不参与账号分层。"
       }
     };
   }
 
   async function createPlan(payload = {}) {
-    if (running) throw statusError(409, "运营大脑正在生成另一份方案。");
+    if (running) throw statusError(409, "小说 AI 自运营正在生成另一份方案。");
     running = true;
     try {
       const requestedSettings = normalizeSettings({ ...getSettings(), ...payload });
+      const cycle = getCycleState(requestedSettings, now());
+      if (cycle.status === "expired") {
+        throw statusError(409, "本轮小说 AI 自运营周期已经结束。请重新启用自运营，开始一个新的周期。");
+      }
       const analyticsRefresh = await refreshAnalytics(requestedSettings, { force: true });
       const overview = await getOverview(payload);
       overview.dataStatus.analyticsRefresh = analyticsRefresh;
       const settings = overview.settings;
       if (!settings.groupNames.length) throw statusError(400, "请至少选择一个 GeeLark 账号组。");
       if (!overview.accounts.length) throw statusError(400, "选中的账号组里没有可运营账号。");
+      if (!settings.assetGroupId && !settings.videoDir) throw statusError(400, "请先选择小说视频素材组或视频素材目录。");
+      if (!settings.audioDir) throw statusError(400, "请先选择小说音频目录。");
+      const redditDefaults = readRedditSettings() || {};
       const planDate = localDateKey(Number(payload.planDate) || now());
       const duplicate = listPlans().find((plan) =>
         plan.planDate === planDate &&
@@ -330,6 +247,7 @@ export function createOperationBrainService({
       let taskDrafts = buildTaskDrafts({
         assignments,
         settings,
+        redditDefaults,
         planDate,
         createdAt: now()
       });
@@ -406,7 +324,6 @@ export function createOperationBrainService({
             }
           }
           route.finalProvider = finalProvider;
-          const appliedAllocationPlan = applyCodexAllocations(overview.accounts, aiResult.strategy);
           const appliedPublishingPlan = applyCodexPublishingPlan(overview.accounts, aiResult.strategy);
           assignments = buildAssignments({
             accounts: overview.accounts,
@@ -416,10 +333,10 @@ export function createOperationBrainService({
           taskDrafts = buildTaskDrafts({
             assignments,
             settings,
+            redditDefaults,
             planDate,
             createdAt: now()
           });
-          applyCodexStrategy(taskDrafts, aiResult.strategy, overview.accounts, finalProvider);
           aiStrategy = {
             status: "completed",
             provider: strategyProvider,
@@ -431,7 +348,6 @@ export function createOperationBrainService({
             usage: aiResult.usage || null,
             route,
             ...aiResult.strategy,
-            appliedAllocationPlan,
             appliedPublishingPlan
           };
         } catch (error) {
@@ -495,6 +411,10 @@ export function createOperationBrainService({
   }
 
   function approvePlan(id) {
+    const cycle = getCycleState(getSettings(), now());
+    if (cycle.status === "expired") {
+      throw statusError(409, "本轮小说 AI 自运营周期已经结束，不能再创建新的发布任务。");
+    }
     const plan = getPlan(id);
     if (plan.status === "approved") return plan;
     if (!["draft", "partial"].includes(plan.status)) throw statusError(409, "当前方案状态不能创建任务。");
@@ -546,12 +466,26 @@ export function createOperationBrainService({
     if (timer) clearTimeout(timer);
     timer = null;
     nextRunAt = 0;
-    const settings = getSettings();
+    let settings = getSettings();
     if (!settings.enabled || !settings.groupNames.length) return;
-    const target = nextLocalRun(now(), settings.runHour, settings.runMinute);
+    if (!settings.cycleStartedAt || !settings.cycleEndsAt) {
+      settings = startCycle(settings, now());
+      atomicWriteJson(settingsPath, { ...settings, updatedAt: now() });
+    }
+    const cycle = getCycleState(settings, now());
+    if (cycle.status === "expired") {
+      stopExpiredCycle(settings);
+      return;
+    }
+    const scheduledRun = nextLocalRun(now(), settings.runHour, settings.runMinute);
+    const target = Math.min(scheduledRun, cycle.endsAt);
     nextRunAt = target;
     timer = setTimeout(async () => {
       try {
+        if (target >= cycle.endsAt) {
+          stopExpiredCycle(settings);
+          return;
+        }
         await createPlan({ ...settings, autoCreateTasks: settings.autoCreateTasks });
       } catch (error) {
         const logPath = path.join(plansDir, `scheduled-error-${Date.now()}.json`);
@@ -563,13 +497,25 @@ export function createOperationBrainService({
     timer.unref?.();
   }
 
+  function stopExpiredCycle(settings) {
+    const stopped = normalizeSettings({
+      ...settings,
+      enabled: false,
+      autoCreateTasks: false,
+      cycleStoppedAt: now(),
+      cycleStopReason: "expired"
+    });
+    atomicWriteJson(settingsPath, { ...stopped, updatedAt: now() });
+    nextRunAt = 0;
+  }
+
   async function refreshAnalytics(settings, { force = false } = {}) {
     if (!analyticsService?.fetchAccounts || !analyticsService?.getAccountFreshness) {
       return { status: "unavailable", refreshed: 0, stale: 0 };
     }
     try {
       const phones = await getPhones(settings.profileId);
-      const selected = filterPhones(phones, settings.groupNames).slice(0, settings.maxAccounts);
+      const selected = filterPhones(phones, settings.groupNames).slice(0, settings.maxDailyVideos);
       const accountNames = selected.map((phone) => phone.serialName || phone.name).filter(Boolean);
       const freshness = analyticsService.getAccountFreshness(accountNames, 12 * 60 * 60 * 1000);
       const staleAccounts = force
@@ -618,7 +564,7 @@ export function createOperationBrainService({
   }
 
   schedule();
-  return { getSettings, saveSettings, getStatus, getOverview, createPlan, listPlans, getPlan, approvePlan, schedule };
+  return { getSettings, saveSettings, resetJudgments, getStatus, getOverview, createPlan, listPlans, getPlan, approvePlan, schedule };
 }
 
 export function classifyAccounts(phones, recentAccounts, thirtyDayAccounts, options = {}) {
@@ -630,13 +576,15 @@ export function classifyAccounts(phones, recentAccounts, thirtyDayAccounts, opti
 
   return (phones || []).map((phone) => {
     const username = String(phone.serialName || phone.name || "").trim();
-    const recent = recentByName.get(normalizeName(username)) || emptyMetrics();
-    const thirty = thirtyByName.get(normalizeName(username)) || emptyMetrics();
+    const normalizedUsername = normalizeName(username);
+    const hasCurrentMetrics = recentByName.has(normalizedUsername) || thirtyByName.has(normalizedUsername);
+    const judgmentPending = Boolean(Number(options.analysisStartedAt) > 0 && !hasCurrentMetrics);
+    const recent = recentByName.get(normalizedUsername) || emptyMetrics();
+    const thirty = thirtyByName.get(normalizedUsername) || emptyMetrics();
     const stage = detectStage(recent, thirty, {
       benchmarkMedian,
       benchmarkAverage
     });
-    const mix = adjustMix(BASE_MIXES[stage] || BASE_MIXES.testing);
     const confidence = Number(recent.videos) >= 9 ? "high" : Number(recent.videos) >= 3 ? "medium" : "low";
     return {
       envId: String(phone.id || ""),
@@ -648,6 +596,7 @@ export function classifyAccounts(phones, recentAccounts, thirtyDayAccounts, opti
       stageLabel: STAGE_META[stage]?.label || stage,
       stageTone: STAGE_META[stage]?.tone || "gray",
       confidence,
+      judgmentPending,
       metrics: {
         videos10d: Number(recent.videos) || 0,
         views10d: Number(recent.views) || 0,
@@ -667,8 +616,9 @@ export function classifyAccounts(phones, recentAccounts, thirtyDayAccounts, opti
         averageViews30d: Number(thirty.averageViews) || 0,
         trend: thirty.averageViews ? round(Number(recent.averageViews || 0) / Number(thirty.averageViews), 2) : 0
       },
-      contentMix: mix,
-      reason: stageReason(stage, recent, thirty, { benchmarkMedian, benchmarkAverage })
+      reason: judgmentPending
+        ? "账号判断已清空，等待重置后的新视频数据。"
+        : stageReason(stage, recent, thirty, { benchmarkMedian, benchmarkAverage })
     };
   }).sort((left, right) =>
     String(left.groupName).localeCompare(String(right.groupName), "zh-Hans-CN") ||
@@ -679,24 +629,10 @@ export function classifyAccounts(phones, recentAccounts, thirtyDayAccounts, opti
 export function buildAssignments({ accounts, settings, planDate }) {
   const assignments = [];
   for (const account of accounts || []) {
-    let previousRecipe = "";
     for (let slot = 0; slot < settings.postsPerAccount; slot++) {
-      const salt = `${planDate}:${account.envId}:${slot}:${settings.objective}`;
-      const recipeId = chooseWeighted(account.contentMix, hashText(salt), previousRecipe);
-      previousRecipe = recipeId;
-      const recipe = CONTENT_RECIPES[recipeId] || CONTENT_RECIPES.position_memory;
-      const variants = CONTENT_VARIANTS[recipe.id] || [];
-      const contentVariant = variants[hashText(`${salt}:copy`) % Math.max(1, variants.length)] || {
-        id: "default",
-        headline: recipe.headline,
-        mainTitle: recipe.mainTitle,
-        videoDesc: recipe.videoDesc
-      };
       assignments.push({
         slot,
         account,
-        recipe,
-        contentVariant,
         publishingPlan: resolvePublishingPlan(account, settings)
       });
     }
@@ -709,11 +645,8 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
   const currentSeconds = Math.floor(Number(currentTime) / 1000);
   const currentStart = currentSeconds - ANALYSIS_WINDOW_DAYS * 24 * 60 * 60;
   const previousStart = currentStart - ANALYSIS_WINDOW_DAYS * 24 * 60 * 60;
-  const buckets = new Map(Object.keys(CONTENT_RECIPES).map((recipeId) => [recipeId, {
-    current: [],
-    previous: [],
-    variants: new Map()
-  }]));
+  const currentViews = [];
+  const previousViews = [];
   let matchedVideos = 0;
   let unclassifiedVideos = 0;
   const publishTimeBuckets = new Map();
@@ -723,13 +656,11 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
     if (allowed.size && !allowed.has(normalizeName(video.username))) continue;
     const createTime = Number(video.createTime) || 0;
     if (!createTime || createTime < previousStart || createTime > currentSeconds + 60) continue;
-    const recipeId = resolveRecipeId(video.local);
-    if (!recipeId || !buckets.has(recipeId)) {
+    if (!isRedditOperationVideo(video.local)) {
       unclassifiedVideos += 1;
       continue;
     }
-    const bucket = buckets.get(recipeId);
-    const target = createTime >= currentStart ? bucket.current : bucket.previous;
+    const target = createTime >= currentStart ? currentViews : previousViews;
     target.push(Number(video.views) || 0);
     if (createTime >= currentStart) {
       matchedVideos += 1;
@@ -739,41 +670,28 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
       const publishTimeViews = publishTimeBuckets.get(bucketId) || [];
       publishTimeViews.push(Number(video.views) || 0);
       publishTimeBuckets.set(bucketId, publishTimeViews);
-      const variantId = String(video.local?.operationMeta?.contentVariantId || "legacy");
-      const variant = bucket.variants.get(variantId) || [];
-      variant.push(Number(video.views) || 0);
-      bucket.variants.set(variantId, variant);
     }
   }
 
-  const recipes = Array.from(buckets, ([recipeId, bucket]) => {
-    const averageViews = mean(bucket.current);
-    const previousAverageViews = mean(bucket.previous);
-    const variants = Array.from(bucket.variants, ([variantId, views]) => ({
-      variantId,
-      sampleCount: views.length,
-      averageViews: round(mean(views), 0),
-      maxViews: views.length ? Math.max(...views) : 0
-    })).sort((left, right) => right.averageViews - left.averageViews);
-    return {
-      recipeId,
-      label: CONTENT_RECIPES[recipeId].label,
-      sampleCount: bucket.current.length,
-      previousSampleCount: bucket.previous.length,
+  const averageViews = mean(currentViews);
+  const previousAverageViews = mean(previousViews);
+  const workflows = [{
+      workflowId: REDDIT_WORKFLOW.id,
+      label: REDDIT_WORKFLOW.label,
+      sampleCount: currentViews.length,
+      previousSampleCount: previousViews.length,
       averageViews: round(averageViews, 0),
       previousAverageViews: round(previousAverageViews, 0),
-      medianViews: round(percentile(bucket.current, 0.5), 0),
-      maxViews: bucket.current.length ? Math.max(...bucket.current) : 0,
-      low200Rate: bucket.current.length
-        ? round(bucket.current.filter((views) => views < 200).length / bucket.current.length * 100, 1)
+      medianViews: round(percentile(currentViews, 0.5), 0),
+      maxViews: currentViews.length ? Math.max(...currentViews) : 0,
+      low200Rate: currentViews.length
+        ? round(currentViews.filter((views) => views < 200).length / currentViews.length * 100, 1)
         : 0,
-      over1000Rate: bucket.current.length
-        ? round(bucket.current.filter((views) => views >= 1000).length / bucket.current.length * 100, 1)
+      over1000Rate: currentViews.length
+        ? round(currentViews.filter((views) => views >= 1000).length / currentViews.length * 100, 1)
         : 0,
       trend: previousAverageViews > 0 ? round(averageViews / previousAverageViews, 2) : 0,
-      topVariant: variants[0] || null
-    };
-  });
+    }];
 
   const publishTimePerformance = Array.from(publishTimeBuckets, ([time, views]) => ({
     time,
@@ -788,23 +706,18 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
     comparedWithPreviousDays: ANALYSIS_WINDOW_DAYS,
     matchedVideos,
     unclassifiedVideos,
-    recipes,
+    workflows,
     publishTimePerformance
   };
 }
 
-function resolveRecipeId(local = {}) {
-  const explicit = String(local?.operationMeta?.recipeId || "");
-  if (CONTENT_RECIPES[explicit]) return explicit;
+function isRedditOperationVideo(local = {}) {
+  if (String(local?.operationMeta?.createdBy || "") === "operation-brain") return true;
   const template = `${local.templateId || ""} ${local.template || ""}`.toLowerCase();
-  if (/(peripheral|周边闪视|模板\s*5)/i.test(template)) return "peripheral_hook";
-  if (/(tracking|小球追踪|模板\s*2)/i.test(template)) return "tracking_hook";
-  if (/(memory|位置记忆|模板\s*4)/i.test(template)) return "position_memory";
-  if (/(wheel|完整训练|旋转数字|模板\s*1)/i.test(template)) return "schulte_complete";
-  return "";
+  return /(reddit|混剪|novel|story)/i.test(template);
 }
 
-function buildTaskDrafts({ assignments, settings, planDate, createdAt }) {
+function buildTaskDrafts({ assignments, settings, redditDefaults = {}, planDate, createdAt }) {
   const grouped = new Map();
   for (const item of assignments) {
     const publishingPlan = item.publishingPlan || resolvePublishingPlan(item.account, settings);
@@ -815,11 +728,9 @@ function buildTaskDrafts({ assignments, settings, planDate, createdAt }) {
       publishingPlan.windowMinutes,
       publishingPlan.slotIntervalMinutes
     ].join(":");
-    const key = `${item.slot}:${item.recipe.id}:${item.contentVariant.id}:${publishingKey}`;
+    const key = `${item.slot}:${publishingKey}`;
     const group = grouped.get(key) || {
       slot: item.slot,
-      recipe: item.recipe,
-      contentVariant: item.contentVariant,
       publishingPlan,
       accounts: []
     };
@@ -827,8 +738,8 @@ function buildTaskDrafts({ assignments, settings, planDate, createdAt }) {
     grouped.set(key, group);
   }
   return Array.from(grouped.values())
-    .sort((left, right) => left.slot - right.slot || left.recipe.id.localeCompare(right.recipe.id))
-    .map((group, index) => {
+    .sort((left, right) => left.slot - right.slot)
+    .map((group) => {
       const scheduleAt = scheduleForGroup(group, planDate);
       const accounts = group.accounts.map((account) => ({
         id: account.envId,
@@ -837,43 +748,49 @@ function buildTaskDrafts({ assignments, settings, planDate, createdAt }) {
         groupName: account.groupName,
         remark: account.remark
       }));
-      const seed = 1 + (hashText(`${planDate}:${group.recipe.id}:${group.slot}:${group.accounts.map((item) => item.envId).join(",")}`) % 999998);
-      const day = 1 + ((dayOfYear(planDate) + group.slot + index) % 999);
+      const savedSubtitle = redditDefaults.subtitle || {};
+      const savedDedup = redditDefaults.dedup || {};
+      const subtitleFontSize = Math.max(42, Math.min(92, Number(savedSubtitle.fontSize) || 62));
+      const dedup = {
+        enabled: true,
+        ...savedDedup
+      };
       return {
-        id: `draft-${group.slot}-${group.recipe.id}-${group.contentVariant.id}-${scheduleAt}`,
+        id: `draft-${group.slot}-${REDDIT_WORKFLOW.id}-${scheduleAt}`,
         status: "draft",
         slot: group.slot + 1,
         scheduleAt,
-        recipeId: group.recipe.id,
-        template: group.recipe.template,
-        templateLabel: group.recipe.label,
-        layer: group.recipe.layer,
-        layerLabel: group.recipe.layerLabel,
+        workflowId: REDDIT_WORKFLOW.id,
+        template: "reddit",
+        templateLabel: REDDIT_WORKFLOW.label,
         accountCount: accounts.length,
         accounts: accounts.map(({ id, name, groupName }) => ({ id, name, groupName })),
-        reason: summarizeDraftReason(group.accounts, group.recipe),
+        reason: summarizeDraftReason(group.accounts),
         payload: {
-          taskType: "schulte",
-          name: `运营大脑 ${planDate} ${group.recipe.layerLabel} ${group.recipe.label} ${accounts.length}条`,
+          taskType: "reddit",
+          name: `小说 AI 自运营 ${planDate} 第${group.slot + 1}时段 ${accounts.length}条`,
           generation: {
-            template: group.recipe.template,
+            assetGroupId: settings.assetGroupId,
+            videoDir: settings.videoDir,
+            includeVideoSubfolders: true,
+            audioDir: settings.audioDir,
+            backgroundMusicDir: settings.backgroundMusicDir,
+            saveDir: "",
+            segmentMode: "fixed",
+            segmentSeconds: 5,
             totalVideos: accounts.length,
-            startDay: day,
-            seed,
-            durationSeconds: group.recipe.durationSeconds,
-            instructionLanguage: settings.instructionLanguage,
-            headline: group.contentVariant.headline,
-            mainTitle: group.contentVariant.mainTitle,
-            backgroundMusicMode: settings.backgroundMusicMode,
-            backgroundMusicEnabled: settings.backgroundMusicMode !== "off",
-            backgroundMusicVolume: settings.backgroundMusicVolume,
-            ...group.recipe.generation
+            subtitleYPercent: Number(savedSubtitle.yPercent) || 66,
+            subtitleFontSize,
+            subtitleAnimationMode: savedSubtitle.animationMode || "word-highlight",
+            quality: "fast",
+            autoCaptions: true,
+            dedup
           },
           publish: {
             autoPublish: true,
             envIds: accounts.map((account) => account.id),
             accounts,
-            videoDesc: group.contentVariant.videoDesc,
+            videoDesc: settings.videoDesc || REDDIT_WORKFLOW.videoDesc,
             scheduleAt,
             intervalMinutes: 0,
             batchPublishLimit: settings.maxDailyVideos,
@@ -884,9 +801,8 @@ function buildTaskDrafts({ assignments, settings, planDate, createdAt }) {
               createdAt,
               planDate,
               objective: settings.objective,
-              recipeId: group.recipe.id,
-              contentVariantId: group.contentVariant.id,
-              experimentMode: group.publishingPlan.mode,
+              workflowId: REDDIT_WORKFLOW.id,
+              schedulingMode: group.publishingPlan.mode,
               publishingPlan: group.publishingPlan,
               targetStages: Array.from(new Set(group.accounts.map((account) => account.stage).filter(Boolean)))
             }
@@ -897,8 +813,7 @@ function buildTaskDrafts({ assignments, settings, planDate, createdAt }) {
             createdAt,
             planDate,
             objective: settings.objective,
-            recipeId: group.recipe.id,
-            contentVariantId: group.contentVariant.id
+            workflowId: REDDIT_WORKFLOW.id
           }
         }
       };
@@ -924,45 +839,28 @@ function detectStage(seven, thirty, benchmark) {
   return "testing";
 }
 
-function adjustMix(base) {
-  const result = { ...base };
-  for (const key of Object.keys(result)) result[key] = Math.max(0, result[key]);
-  const total = Object.values(result).reduce((sum, value) => sum + value, 0) || 1;
-  return Object.fromEntries(Object.entries(result).map(([key, value]) => [key, round(value / total * 100, 1)]));
-}
-
-function chooseWeighted(mix, seed, avoid = "") {
-  const entries = Object.entries(mix || {}).filter(([, weight]) => Number(weight) > 0);
-  const preferred = entries.filter(([id]) => id !== avoid);
-  const source = preferred.length ? preferred : entries;
-  const total = source.reduce((sum, [, weight]) => sum + Number(weight), 0);
-  let cursor = (seed % 1_000_000) / 1_000_000 * total;
-  for (const [id, weight] of source) {
-    cursor -= Number(weight);
-    if (cursor <= 0) return id;
-  }
-  return source.at(-1)?.[0] || "position_memory";
-}
-
 function stageReason(stage, seven, thirty, benchmark) {
   const videos = Number(seven.videos) || 0;
-  if (stage === "cold_start") return `最近 ${ANALYSIS_WINDOW_DAYS} 天仅 ${videos} 条有效样本，先扩大题型测试，不提前下结论。`;
-  if (stage === "testing") return `仍在样本积累期，均播 ${Number(seven.averageViews) || 0}，继续用短模板测试自然分发。`;
-  if (stage === "recovery") return `低于 200 播放占比 ${round(Number(seven.low200Rate) || 0, 0)}%，需要提高强钩子短模板占比。`;
-  if (stage === "breakout") return `最高播放 ${Number(seven.maxViews) || 0}，破 1000 比例 ${round(Number(seven.over1000Rate) || 0, 0)}%，复制胜出结构并扩大样本。`;
+  if (stage === "cold_start") return `最近 ${ANALYSIS_WINDOW_DAYS} 天仅 ${videos} 条有效样本，先用标准 Reddit 任务扩大样本，不提前下结论。`;
+  if (stage === "testing") return `仍在样本积累期，均播 ${Number(seven.averageViews) || 0}，继续按当前 Reddit 配置发布并观察分发。`;
+  if (stage === "recovery") return `低于 200 播放占比 ${round(Number(seven.low200Rate) || 0, 0)}%，保持生成配置不变，优先调整发布节奏与样本量。`;
+  if (stage === "breakout") return `最高播放 ${Number(seven.maxViews) || 0}，破 1000 比例 ${round(Number(seven.over1000Rate) || 0, 0)}%，扩大标准 Reddit 任务样本。`;
   if (stage === "qualified") return `最近 30 天自然播放达到 ${Number(thirty.views || thirty.totalViews) || 0}，已跨过 10 万播放里程碑。`;
   return `均播 ${Number(seven.averageViews) || 0}、中位 ${Number(seven.medianViews) || 0}，已达到组内放量标准。`;
 }
 
-function summarizeDraftReason(accounts, recipe) {
+function summarizeDraftReason(accounts) {
   const stages = summarizeStages(accounts);
   const dominant = stages.sort((left, right) => right.count - left.count)[0];
-  return `${dominant?.label || "混合阶段"}账号为主，按${recipe.layerLabel}分配 ${recipe.label}。`;
+  return `${dominant?.label || "混合阶段"}账号为主，统一使用已保存的 Reddit 混剪、字幕和去重配置。`;
 }
 
 function summarizeStages(accounts) {
   const counts = new Map();
-  for (const account of accounts || []) counts.set(account.stage, (counts.get(account.stage) || 0) + 1);
+  for (const account of accounts || []) {
+    if (account.judgmentPending) continue;
+    counts.set(account.stage, (counts.get(account.stage) || 0) + 1);
+  }
   return Object.entries(STAGE_META).map(([id, meta]) => ({
     id,
     label: meta.label,
@@ -988,7 +886,6 @@ function filterPhones(phones, groupNames) {
 
 function buildCodexOperationInput({ overview, taskDrafts, settings, planDate }) {
   const accounts = Array.isArray(overview.accounts) ? overview.accounts : [];
-  const accountById = new Map(accounts.map((account) => [String(account.envId), account]));
   const stageSummary = Object.keys(STAGE_META).map((stage) => {
     const items = accounts.filter((account) => account.stage === stage);
     const averages = items.map((account) => Number(account.metrics?.averageViews10d ?? account.metrics?.averageViews7d) || 0);
@@ -1003,27 +900,19 @@ function buildCodexOperationInput({ overview, taskDrafts, settings, planDate }) 
     };
   }).filter((item) => item.count > 0);
 
-  const drafts = (taskDrafts || []).map((draft) => ({
-    recipeId: draft.recipeId,
-    layer: draft.layer,
-    accountCount: Number(draft.accountCount) || 0,
-    targetStages: Array.from(new Set(
-      (draft.accounts || [])
-        .map((account) => accountById.get(String(account.id))?.stage)
-        .filter(Boolean)
-    ))
-  }));
-
   return {
     planDate,
     objective: settings.objective,
     accountCount: accounts.length,
     stageSummary,
-    baselineMixes: BASE_MIXES,
-    contentPerformance: overview.contentFeedback?.recipes || [],
+    workflowPerformance: overview.contentFeedback?.workflows || [],
     publishTimePerformance: overview.contentFeedback?.publishTimePerformance || [],
     privatePerformance: compactPrivateAnalytics(overview.privateAnalytics),
-    drafts
+    drafts: (taskDrafts || []).map((draft) => ({
+      workflowId: draft.workflowId,
+      accountCount: Number(draft.accountCount) || 0,
+      scheduleAt: Number(draft.scheduleAt) || 0
+    }))
   };
 }
 
@@ -1126,94 +1015,8 @@ function summarizePreliminaryStrategy(strategy = {}) {
     accountDiagnosis: sanitizeAiText(strategy.accountDiagnosis, 500),
     contentDirection: sanitizeAiText(strategy.contentDirection, 500),
     riskNotes: (strategy.riskNotes || []).slice(0, 6).map((item) => sanitizeAiText(item, 240)),
-    allocationPlan: (strategy.allocationPlan || []).slice(0, 6),
-    publishingPlan: (strategy.publishingPlan || []).slice(0, 6),
-    recipeTuning: (strategy.recipeTuning || []).slice(0, 4),
-    scripts: (strategy.scripts || []).slice(0, 12)
+    publishingPlan: (strategy.publishingPlan || []).slice(0, 6)
   };
-}
-
-function applyCodexStrategy(taskDrafts, strategy, accounts = [], modelSource = "codex") {
-  const scripts = Array.isArray(strategy?.scripts) ? strategy.scripts : [];
-  const tunings = new Map(
-    (Array.isArray(strategy?.recipeTuning) ? strategy.recipeTuning : [])
-      .map((item) => [String(item?.recipeId || ""), item])
-      .filter(([recipeId]) => CONTENT_RECIPES[recipeId])
-  );
-  const accountById = new Map((accounts || []).map((account) => [String(account.envId), account]));
-  for (const draft of taskDrafts || []) {
-    const tuning = tunings.get(draft.recipeId);
-    if (tuning) applyRecipeTuning(draft, tuning, modelSource);
-    const stages = new Set((draft.accounts || [])
-      .map((account) => accountById.get(String(account.id))?.stage)
-      .filter(Boolean));
-    const candidates = scripts.filter((script) =>
-      script.recipeId === draft.recipeId &&
-      (script.targetStage === "all" || !stages.size || stages.has(script.targetStage))
-    );
-    const fallback = scripts.filter((script) => script.recipeId === draft.recipeId);
-    const source = candidates.length ? candidates : fallback;
-    if (!source.length) {
-      if (draft.aiTuning?.rationale) draft.reason = `${draft.reason} AI 参数：${draft.aiTuning.rationale}`;
-      continue;
-    }
-    const script = source[hashText(`${draft.id}:${draft.scheduleAt}`) % source.length];
-    const headline = sanitizeAiText(script.headline, 80);
-    const mainTitle = sanitizeAiText(script.mainTitle, 140);
-    const videoDesc = sanitizeAiText(script.videoDesc, 500);
-    const rationale = sanitizeAiText(script.rationale, 300);
-    if (headline) draft.payload.generation.headline = headline;
-    if (mainTitle) draft.payload.generation.mainTitle = mainTitle;
-    if (videoDesc) draft.payload.publish.videoDesc = videoDesc;
-    draft.aiScript = {
-      modelSource,
-      targetStage: script.targetStage || "all",
-      headline,
-      mainTitle,
-      videoDesc,
-      rationale
-    };
-    const notes = [
-      rationale ? `AI 文案：${rationale}` : "",
-      draft.aiTuning?.rationale ? `AI 参数：${draft.aiTuning.rationale}` : ""
-    ].filter(Boolean);
-    if (notes.length) draft.reason = `${draft.reason} ${notes.join("；")}`;
-  }
-}
-
-function applyCodexAllocations(accounts, strategy) {
-  const plans = new Map(
-    (Array.isArray(strategy?.allocationPlan) ? strategy.allocationPlan : [])
-      .map((item) => [String(item?.stage || ""), item])
-      .filter(([stage]) => STAGE_META[stage])
-  );
-  const aiWeight = 1;
-  const appliedByStage = new Map();
-
-  for (const account of accounts || []) {
-    const stage = account.stage;
-    const base = adjustMix(BASE_MIXES[stage] || BASE_MIXES.testing);
-    const requested = plans.get(stage);
-    if (!requested) {
-      account.contentMix = base;
-      continue;
-    }
-    const blended = Object.fromEntries(Object.keys(base).map((recipeId) => [
-      recipeId,
-      Number(base[recipeId]) * (1 - aiWeight) + Number(requested.mix?.[recipeId] || 0) * aiWeight
-    ]));
-    const mix = constrainStageMix(stage, blended);
-    account.contentMix = mix;
-    account.aiAllocationRationale = sanitizeAiText(requested.rationale, 300);
-    appliedByStage.set(stage, {
-      stage,
-      mix,
-      aiWeight: round(aiWeight, 2),
-      rationale: account.aiAllocationRationale
-    });
-  }
-
-  return Array.from(appliedByStage.values());
 }
 
 function applyCodexPublishingPlan(accounts, strategy) {
@@ -1243,7 +1046,7 @@ function applyCodexPublishingPlan(accounts, strategy) {
 }
 
 function resolvePublishingPlan(account, settings) {
-  if ((Number(account?.experimentDay) || 1) <= 7) {
+  if ((Number(account?.operationDay) || 1) <= 7) {
     return {
       mode: "first_week",
       startHour: Number(settings.publishHour),
@@ -1269,13 +1072,13 @@ function scheduleForGroup(group, planDate) {
   const fiveMinuteSlots = Math.max(1, Math.floor(windowMinutes / 5) + 1);
   const jitterMinutes = Math.min(
     windowMinutes,
-    (hashText(`${planDate}:${group.slot}:${group.recipe.id}:${group.accounts.map((item) => item.envId).join(",")}:time`) % fiveMinuteSlots) * 5
+    (hashText(`${planDate}:${group.slot}:${REDDIT_WORKFLOW.id}:${group.accounts.map((item) => item.envId).join(",")}:time`) % fiveMinuteSlots) * 5
   );
   const startAt = localTimestamp(planDate, plan.startHour, plan.startMinute);
   return startAt + jitterMinutes * 60 + group.slot * plan.slotIntervalMinutes * 60;
 }
 
-function applyExperimentAges(accounts, videos, plans, currentTime) {
+function applyOperationAges(accounts, videos, plans, currentTime) {
   const earliestByAccount = new Map();
   const remember = (username, timestampSeconds) => {
     const key = normalizeName(username);
@@ -1286,7 +1089,7 @@ function applyExperimentAges(accounts, videos, plans, currentTime) {
   };
 
   for (const video of videos || []) {
-    if (!video?.local || !resolveRecipeId(video.local)) continue;
+    if (!video?.local || !isRedditOperationVideo(video.local)) continue;
     remember(video.username, video.createTime);
   }
   for (const plan of plans || []) {
@@ -1303,76 +1106,19 @@ function applyExperimentAges(accounts, videos, plans, currentTime) {
     const startedAt = earliestByAccount.get(normalizeName(account.username)) || 0;
     const started = startedAt ? new Date(startedAt * 1000) : null;
     started?.setHours(0, 0, 0, 0);
-    account.experimentStartedAt = startedAt || null;
-    account.experimentDay = started
+    account.operationStartedAt = startedAt || null;
+    account.operationDay = started
       ? Math.max(1, Math.floor((today.getTime() - started.getTime()) / 86_400_000) + 1)
       : 1;
   }
 }
 
-function constrainStageMix(stage, requested) {
-  const recipeIds = Object.keys(CONTENT_RECIPES);
-  const schulteCaps = {
-    cold_start: 10,
-    testing: 20,
-    breakout: 30,
-    scaling: 45,
-    qualified: 45,
-    recovery: 10
-  };
-  const values = Object.fromEntries(recipeIds.map((recipeId) => [
-    recipeId,
-    Math.max(3, Number(requested?.[recipeId]) || 0)
-  ]));
-  values.schulte_complete = Math.max(3, Math.min(values.schulte_complete, schulteCaps[stage] || 20));
-  const remaining = 100 - values.schulte_complete;
-  const shortIds = recipeIds.filter((recipeId) => recipeId !== "schulte_complete");
-  const distributable = Math.max(0, remaining - shortIds.length * 3);
-  const shortWeights = Object.fromEntries(shortIds.map((recipeId) => [
-    recipeId,
-    Math.max(0, values[recipeId] - 3)
-  ]));
-  const weightTotal = shortIds.reduce((sum, recipeId) => sum + shortWeights[recipeId], 0);
-  for (const recipeId of shortIds) {
-    const ratio = weightTotal > 0 ? shortWeights[recipeId] / weightTotal : 1 / shortIds.length;
-    values[recipeId] = 3 + distributable * ratio;
-  }
-  return adjustMix(values);
+function filterVideosAfter(videos, timestampMs) {
+  const cutoff = Number(timestampMs) || 0;
+  if (!cutoff) return videos || [];
+  return (videos || []).filter((video) => Number(video?.createTime) * 1000 >= cutoff);
 }
 
-function applyRecipeTuning(draft, tuning, modelSource = "codex") {
-  const generation = draft?.payload?.generation;
-  if (!generation) return;
-  const rationale = sanitizeAiText(tuning.rationale, 300);
-  if (draft.recipeId === "peripheral_hook") {
-    generation.durationSeconds = decimal(tuning.durationSeconds, 12, 28, generation.durationSeconds);
-    generation.peripheralTargets = integer(tuning.peripheralTargets, 2, 5, generation.peripheralTargets || 3);
-  } else if (draft.recipeId === "tracking_hook") {
-    generation.trackingSeconds = decimal(tuning.trackingSeconds, 12, 35, generation.trackingSeconds || 16);
-    generation.durationSeconds = Math.max(
-      generation.trackingSeconds + 8,
-      decimal(tuning.durationSeconds, 20, 46, generation.durationSeconds)
-    );
-    generation.ballSpeed = decimal(tuning.ballSpeed, 0.8, 2.4, generation.ballSpeed || 1.35);
-  } else if (draft.recipeId === "position_memory") {
-    generation.durationSeconds = decimal(tuning.durationSeconds, 20, 48, generation.durationSeconds);
-    generation.memorySteps = integer(tuning.memorySteps, 4, 8, generation.memorySteps || 6);
-  } else if (draft.recipeId === "schulte_complete") {
-    generation.durationSeconds = decimal(tuning.durationSeconds, 60, 90, generation.durationSeconds);
-    generation.rotationSpeed = decimal(tuning.rotationSpeed, 0.5, 3, generation.rotationSpeed || 2.5);
-  }
-  draft.aiTuning = {
-    modelSource,
-    recipeId: draft.recipeId,
-    durationSeconds: Number(generation.durationSeconds) || 0,
-    rotationSpeed: Number(generation.rotationSpeed) || 0,
-    trackingSeconds: Number(generation.trackingSeconds) || 0,
-    ballSpeed: Number(generation.ballSpeed) || 0,
-    memorySteps: Number(generation.memorySteps) || 0,
-    peripheralTargets: Number(generation.peripheralTargets) || 0,
-    rationale
-  };
-}
 
 function normalizeSettings(value = {}) {
   const strategyProvider = ["hybrid", "deepseek", "codex", "rules"].includes(value.strategyProvider)
@@ -1390,18 +1136,62 @@ function normalizeSettings(value = {}) {
     groupNames: Array.from(new Set((Array.isArray(value.groupNames) ? value.groupNames : []).map(String).map((item) => item.trim()).filter(Boolean))),
     objective: "traffic",
     postsPerAccount: integer(value.postsPerAccount, 1, 3, DEFAULT_SETTINGS.postsPerAccount),
-    maxDailyVideos: integer(value.maxDailyVideos, 1, 300, DEFAULT_SETTINGS.maxDailyVideos),
-    maxAccounts: integer(value.maxAccounts, 1, 100, DEFAULT_SETTINGS.maxAccounts),
+    maxDailyVideos: DEFAULT_SETTINGS.maxDailyVideos,
+    cycleDays: integer(value.cycleDays, 1, 30, DEFAULT_SETTINGS.cycleDays),
+    cycleStartedAt: positiveTimestamp(value.cycleStartedAt),
+    cycleEndsAt: positiveTimestamp(value.cycleEndsAt),
+    cycleStoppedAt: positiveTimestamp(value.cycleStoppedAt),
+    cycleStopReason: ["manual", "expired"].includes(value.cycleStopReason) ? value.cycleStopReason : "",
+    analysisResetAt: positiveTimestamp(value.analysisResetAt),
     runHour: integer(value.runHour, 0, 23, DEFAULT_SETTINGS.runHour),
     runMinute: integer(value.runMinute, 0, 59, DEFAULT_SETTINGS.runMinute),
     publishHour: integer(value.publishHour, 0, 23, DEFAULT_SETTINGS.publishHour),
     publishMinute: integer(value.publishMinute, 0, 59, DEFAULT_SETTINGS.publishMinute),
     publishWindowMinutes: integer(value.publishWindowMinutes, 0, 60, DEFAULT_SETTINGS.publishWindowMinutes),
     slotIntervalMinutes: integer(value.slotIntervalMinutes, 15, 720, DEFAULT_SETTINGS.slotIntervalMinutes),
-    instructionLanguage: value.instructionLanguage === "zh" ? "zh" : "en",
-    backgroundMusicMode: ["built-in", "off"].includes(value.backgroundMusicMode) ? value.backgroundMusicMode : DEFAULT_SETTINGS.backgroundMusicMode,
-    backgroundMusicVolume: decimal(value.backgroundMusicVolume, 0, 1, DEFAULT_SETTINGS.backgroundMusicVolume)
+    assetGroupId: String(value.assetGroupId || "").trim(),
+    videoDir: String(value.videoDir || "").trim(),
+    audioDir: String(value.audioDir || "").trim(),
+    backgroundMusicDir: String(value.backgroundMusicDir || "").trim(),
+    videoDesc: sanitizeAiText(value.videoDesc || DEFAULT_SETTINGS.videoDesc, 500)
   };
+}
+
+function startCycle(settings, timestamp) {
+  const startedAt = Number(timestamp) || Date.now();
+  return normalizeSettings({
+    ...settings,
+    cycleStartedAt: startedAt,
+    cycleEndsAt: startedAt + settings.cycleDays * DAY_MS,
+    cycleStoppedAt: 0,
+    cycleStopReason: ""
+  });
+}
+
+function getCycleState(settings, timestamp = Date.now()) {
+  const startedAt = positiveTimestamp(settings?.cycleStartedAt);
+  const endsAt = positiveTimestamp(settings?.cycleEndsAt);
+  const current = Number(timestamp) || Date.now();
+  const remainingMs = endsAt ? Math.max(0, endsAt - current) : 0;
+  let status = "not_started";
+  if (startedAt && endsAt && current >= endsAt) status = "expired";
+  else if (settings?.enabled && startedAt && endsAt) status = "active";
+  else if (startedAt && endsAt) status = "stopped";
+  return {
+    status,
+    days: integer(settings?.cycleDays, 1, 30, DEFAULT_SETTINGS.cycleDays),
+    startedAt,
+    endsAt,
+    stoppedAt: positiveTimestamp(settings?.cycleStoppedAt),
+    stopReason: String(settings?.cycleStopReason || ""),
+    remainingDays: remainingMs ? Math.ceil(remainingMs / DAY_MS) : 0,
+    remainingMs
+  };
+}
+
+function positiveTimestamp(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
 function sanitizeAiText(value, maxLength) {

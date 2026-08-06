@@ -72,34 +72,6 @@ export const operationOutputSchema = {
       maxItems: 6,
       items: { type: "string" }
     },
-    allocationPlan: {
-      type: "array",
-      minItems: 6,
-      maxItems: 6,
-      items: {
-        type: "object",
-        properties: {
-          stage: {
-            type: "string",
-            enum: ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"]
-          },
-          mix: {
-            type: "object",
-            properties: {
-              peripheral_hook: { type: "number" },
-              tracking_hook: { type: "number" },
-              position_memory: { type: "number" },
-              schulte_complete: { type: "number" }
-            },
-            required: ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"],
-            additionalProperties: false
-          },
-          rationale: { type: "string" }
-        },
-        required: ["stage", "mix", "rationale"],
-        additionalProperties: false
-      }
-    },
     publishingPlan: {
       type: "array",
       minItems: 6,
@@ -120,62 +92,6 @@ export const operationOutputSchema = {
         required: ["stage", "startHour", "startMinute", "windowMinutes", "slotIntervalMinutes", "rationale"],
         additionalProperties: false
       }
-    },
-    recipeTuning: {
-      type: "array",
-      minItems: 4,
-      maxItems: 4,
-      items: {
-        type: "object",
-        properties: {
-          recipeId: {
-            type: "string",
-            enum: ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]
-          },
-          durationSeconds: { type: "number" },
-          rotationSpeed: { type: "number" },
-          trackingSeconds: { type: "number" },
-          ballSpeed: { type: "number" },
-          memorySteps: { type: "number" },
-          peripheralTargets: { type: "number" },
-          rationale: { type: "string" }
-        },
-        required: [
-          "recipeId",
-          "durationSeconds",
-          "rotationSpeed",
-          "trackingSeconds",
-          "ballSpeed",
-          "memorySteps",
-          "peripheralTargets",
-          "rationale"
-        ],
-        additionalProperties: false
-      }
-    },
-    scripts: {
-      type: "array",
-      minItems: 4,
-      maxItems: 12,
-      items: {
-        type: "object",
-        properties: {
-          recipeId: {
-            type: "string",
-            enum: ["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]
-          },
-          targetStage: {
-            type: "string",
-            enum: ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery", "all"]
-          },
-          headline: { type: "string" },
-          mainTitle: { type: "string" },
-          videoDesc: { type: "string" },
-          rationale: { type: "string" }
-        },
-        required: ["recipeId", "targetStage", "headline", "mainTitle", "videoDesc", "rationale"],
-        additionalProperties: false
-      }
     }
   },
   required: [
@@ -183,10 +99,7 @@ export const operationOutputSchema = {
     "accountDiagnosis",
     "contentDirection",
     "riskNotes",
-    "allocationPlan",
-    "publishingPlan",
-    "recipeTuning",
-    "scripts"
+    "publishingPlan"
   ],
   additionalProperties: false
 };
@@ -478,38 +391,23 @@ export function createCodexBrainService({
 
 export function buildOperationPromptV2(input) {
   return `You are the chief TikTok operations strategist for Local Factory.
-Use recent account and content performance to run a closed-loop organic-view experiment for four focus-training formats.
+Use recent account and content performance to operate a one-week Reddit novel publishing cycle.
 
 Display language:
 - Write every strategy explanation that the operator will read in Simplified Chinese: executiveSummary, accountDiagnosis, contentDirection, every riskNotes item, and every rationale field.
-- Keep recipeId, targetStage, stage, model names, metric keys, and other machine-facing enum values exactly as required by the schema.
-- headline, mainTitle, and videoDesc are publishing copy and must remain natural English as required below. Do not mix English sentences into the Chinese operator-facing explanations.
+- Keep stage, model names, metric keys, and other machine-facing enum values exactly as required by the schema.
+- Do not mix English sentences into the Chinese operator-facing explanations.
 
 Hard boundaries:
 1. You cannot change accounts, account counts, total video counts, GeeLark settings, available template IDs, or safety limits.
 2. Optimize only for organic video views. Do not discuss monetization, followers, paid promotion, conversion, or revenue.
-3. You may choose each stage's template allocation and tune safe generation parameters. Every allocation mix must total 100.
-4. Keep cold_start and recovery short-video heavy. schulte_complete should be at most 10% in cold_start/recovery, at most 20% in testing, at most 30% in breakout, and at most 45% in scaling/qualified.
-5. These accounts are a dedicated experiment pool. Use your own allocation decision even when matched samples are limited, while preserving exploration and never reducing any recipe below 3%.
-6. scripts and recipeTuning must cover every recipeId:
-   - peripheral_hook: short peripheral-vision hook for fast cold-start distribution testing
-   - tracking_hook: short ball-tracking challenge for completion and replay
-   - position_memory: medium position-memory challenge for deeper retention
-   - schulte_complete: complete 60+ second Schulte session used gradually after an account proves stable reach
-7. Tune only within these useful ranges:
-   - peripheral_hook: durationSeconds 12-28, peripheralTargets 2-5
-   - tracking_hook: trackingSeconds 12-35, ballSpeed 0.8-2.4
-   - position_memory: durationSeconds 20-48, memorySteps 4-8
-   - schulte_complete: durationSeconds 60-90, rotationSpeed 0.5-3
-   Non-applicable numeric fields must still be returned and will be ignored.
-8. Keep headline to roughly 2-7 English words and mainTitle to roughly 4-10 English words. These are the only operator-visible copy fields that should be English.
-9. videoDesc must be natural English with 3-5 relevant hashtags and make no medical promises.
-10. Variations within a recipe must use meaningfully different psychological triggers, not synonym swaps.
-11. Judge accounts and content only from organic view metrics. Engagement is not a scoring input.
-12. First-week accounts are always published from 22:00 through 22:30 and this rule cannot be changed. For accounts after experiment day 7, provide one publishingPlan per account stage using the supplied time-slot performance. Use startHour 20-23, startMinute 0-59, windowMinutes 0-60, and slotIntervalMinutes 30-360. Prefer evidence over conventional posting-time assumptions.
-13. Use private retention and traffic-source metrics to diagnose hooks, pacing, completion quality, and distribution quality. A high-view video with weak retention and a low-view video with strong retention are different problems. Do not overfit one video.
-14. DeepSeek has already processed every recent video and every available second-by-second retention/like point in bounded batches. Use its evidence report as the complete private-data review, then independently make the final operating decision. Keep sound findings and correct unsupported conclusions.
-15. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
+3. Video generation is fixed to the user's existing Reddit auto-publish workflow. Do not create recipes, experiments, variants, scripts, copy alternatives, or generation-parameter tuning.
+4. Do not change saved mixing, subtitle, deduplication, audio, material, or publishing-copy settings.
+5. Judge accounts and content only from organic view metrics. Engagement is not a scoring input.
+6. First-week accounts are always published from 22:00 through 22:30 and this rule cannot be changed. For accounts after operation day 7, provide one publishingPlan per account stage using the supplied time-slot performance. Use startHour 20-23, startMinute 0-59, windowMinutes 0-60, and slotIntervalMinutes 30-360. Prefer evidence over conventional posting-time assumptions.
+7. Use private retention and traffic-source metrics to diagnose hooks, pacing, completion quality, and distribution quality. A high-view video with weak retention and a low-view video with strong retention are different problems. Do not overfit one video.
+8. DeepSeek has already processed every recent video and every available second-by-second retention/like point in bounded batches. Use its evidence report as the complete private-data review, then independently make the final operating decision. Keep sound findings and correct unsupported conclusions.
+9. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
 
 Plan date: ${input.planDate || "today"}
 Objective: ${input.objective}
@@ -518,11 +416,8 @@ Account count: ${input.accountCount}
 Aggregated account stages:
 ${JSON.stringify(input.stageSummary)}
 
-Baseline stage allocations:
-${JSON.stringify(input.baselineMixes)}
-
-Matched performance from previously published operation-brain videos:
-${JSON.stringify(input.contentPerformance)}
+Matched performance from previously published Reddit auto-publish videos:
+${JSON.stringify(input.workflowPerformance)}
 
 Matched performance by local 30-minute publishing window:
 ${JSON.stringify(input.publishTimePerformance)}
@@ -550,40 +445,25 @@ function parseOperationResponseV2(value) {
   } catch {
     throw new Error("Codex 返回的运营策略不是有效 JSON，请重试。");
   }
-  if (!parsed || !Array.isArray(parsed.scripts) || parsed.scripts.length < 4) {
-    throw new Error("Codex 返回的运营脚本不完整，已保留规则引擎草案。");
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Codex 返回的运营策略为空，已保留规则引擎草案。");
   }
-  const requiredRecipes = new Set(["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]);
-  for (const script of parsed.scripts) requiredRecipes.delete(script.recipeId);
-  if (requiredRecipes.size) {
-    throw new Error(`Codex 缺少 ${Array.from(requiredRecipes).join("、")} 的运营脚本，已保留规则引擎草案。`);
-  }
-  const allocationStages = new Set((parsed.allocationPlan || []).map((item) => item.stage));
   const requiredStages = ["cold_start", "testing", "breakout", "scaling", "qualified", "recovery"];
-  if (requiredStages.some((stage) => !allocationStages.has(stage))) {
-    throw new Error("Codex 返回的阶段模板分配不完整，已保留规则引擎草案。");
-  }
-  const tuningRecipes = new Set((parsed.recipeTuning || []).map((item) => item.recipeId));
-  if ([...operationRecipeIds()].some((recipeId) => !tuningRecipes.has(recipeId))) {
-    throw new Error("Codex 返回的模板参数调整不完整，已保留规则引擎草案。");
-  }
   const publishingStages = new Set((parsed.publishingPlan || []).map((item) => item.stage));
   if (requiredStages.some((stage) => !publishingStages.has(stage))) {
-    throw new Error("Codex returned an incomplete stage publishing plan; the rule-engine schedule has been preserved.");
+    throw new Error("Codex 返回的阶段发布时间计划不完整，已保留规则引擎排期。");
   }
   return parsed;
 }
 
 function normalizeOperationInput(payload = {}) {
-  const recipes = operationRecipeIds();
   return {
     planDate: cleanText(payload.planDate, 20),
     objective: cleanText(payload.objective, 40) || "traffic",
     accountCount: Math.max(0, Math.min(300, Number(payload.accountCount) || 0)),
-    baselineMixes: normalizeOperationMixes(payload.baselineMixes),
-    contentPerformance: Array.isArray(payload.contentPerformance)
-      ? payload.contentPerformance.slice(0, 12).map((item) => ({
-          recipeId: recipes.has(item.recipeId) ? item.recipeId : "",
+    workflowPerformance: Array.isArray(payload.workflowPerformance)
+      ? payload.workflowPerformance.slice(0, 4).map((item) => ({
+          workflowId: cleanText(item.workflowId, 40),
           sampleCount: Math.max(0, Number(item.sampleCount) || 0),
           averageViews: Math.max(0, Number(item.averageViews) || 0),
           medianViews: Math.max(0, Number(item.medianViews) || 0),
@@ -591,7 +471,7 @@ function normalizeOperationInput(payload = {}) {
           low200Rate: Math.max(0, Number(item.low200Rate) || 0),
           over1000Rate: Math.max(0, Number(item.over1000Rate) || 0),
           trend: Number.isFinite(Number(item.trend)) ? Number(item.trend) : 1
-        })).filter((item) => item.recipeId)
+        })).filter((item) => item.workflowId)
       : [],
     publishTimePerformance: Array.isArray(payload.publishTimePerformance)
       ? payload.publishTimePerformance.slice(0, 48).map((item) => ({
@@ -624,14 +504,10 @@ function normalizeOperationInput(payload = {}) {
       : [],
     drafts: Array.isArray(payload.drafts)
       ? payload.drafts.slice(0, 40)
-          .filter((item) => recipes.has(item.recipeId))
           .map((item) => ({
-            recipeId: item.recipeId,
-            layer: cleanText(item.layer, 30),
+            workflowId: cleanText(item.workflowId, 40),
             accountCount: Math.max(0, Number(item.accountCount) || 0),
-            targetStages: Array.isArray(item.targetStages)
-              ? item.targetStages.slice(0, 6).map((stage) => cleanText(stage, 30))
-              : []
+            scheduleAt: Math.max(0, Number(item.scheduleAt) || 0)
           }))
       : []
   };
@@ -682,10 +558,7 @@ function normalizePreliminaryStrategy(value = {}) {
     accountDiagnosis: cleanText(value.accountDiagnosis, 500),
     contentDirection: cleanText(value.contentDirection, 500),
     riskNotes: Array.isArray(value.riskNotes) ? value.riskNotes.slice(0, 6).map((item) => cleanText(item, 240)) : [],
-    allocationPlan: Array.isArray(value.allocationPlan) ? value.allocationPlan.slice(0, 6) : [],
-    publishingPlan: Array.isArray(value.publishingPlan) ? value.publishingPlan.slice(0, 6) : [],
-    recipeTuning: Array.isArray(value.recipeTuning) ? value.recipeTuning.slice(0, 4) : [],
-    scripts: Array.isArray(value.scripts) ? value.scripts.slice(0, 12) : []
+    publishingPlan: Array.isArray(value.publishingPlan) ? value.publishingPlan.slice(0, 6) : []
   };
 }
 
@@ -728,23 +601,6 @@ function normalizeDeepseekEvidenceReport(value = {}) {
       }
     })) : []
   };
-}
-
-function operationRecipeIds() {
-  return new Set(["peripheral_hook", "tracking_hook", "position_memory", "schulte_complete"]);
-}
-
-function normalizeOperationMixes(value = {}) {
-  const recipeIds = operationRecipeIds();
-  const result = {};
-  for (const [stage, mix] of Object.entries(value || {})) {
-    result[cleanText(stage, 30)] = Object.fromEntries(
-      Object.entries(mix || {})
-        .filter(([recipeId]) => recipeIds.has(recipeId))
-        .map(([recipeId, weight]) => [recipeId, Math.max(0, Number(weight) || 0)])
-    );
-  }
-  return result;
 }
 
 function normalizeCreationInput(payload) {

@@ -95,10 +95,10 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
         usage: { inputTokens: 20, outputTokens: 30 },
         strategy: {
           executiveSummary: "Keep testing the strongest retention hook.",
-          allocationPlan: [],
-          publishingPlan: [],
-          recipeTuning: [],
-          scripts: []
+          accountDiagnosis: "The account is still collecting samples.",
+          contentDirection: "Use the saved Reddit workflow.",
+          riskNotes: ["Do not overfit one post.", "Keep volume limits."],
+          publishingPlan: []
         }
       });
       }
@@ -117,7 +117,9 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
     autoCreateTasks: false,
     strategyProvider: "hybrid",
     groupNames: ["test-group"],
-    postsPerAccount: 1
+    postsPerAccount: 1,
+    assetGroupId: "test-assets",
+    audioDir: "C:\\test-audio"
   });
 
   const plan = await service.createPlan();
@@ -173,7 +175,7 @@ test("classifies accounts into actionable traffic stages", () => {
   assert.equal(result.find((item) => item.envId === "new").stage, "cold_start");
   assert.ok(["breakout", "scaling"].includes(result.find((item) => item.envId === "breakout").stage));
   assert.equal(result.find((item) => item.envId === "recovery").stage, "recovery");
-  assert.equal(result.find((item) => item.envId === "new").contentMix.schulte_complete, 5);
+  assert.match(result.find((item) => item.envId === "new").reason, /样本/);
 });
 
 test("marks the 30-day natural view milestone without using engagement", () => {
@@ -188,7 +190,7 @@ test("marks the 30-day natural view milestone without using engagement", () => {
   assert.equal(result[0].metrics.views30d, 100000);
 });
 
-test("builds the requested number of varied assignments per account", () => {
+test("builds the requested number of standard Reddit assignments per account", () => {
   const accounts = classifyAccounts(
     [phone("one"), phone("two")],
     [metrics("user-one"), metrics("user-two")],
@@ -205,13 +207,13 @@ test("builds the requested number of varied assignments per account", () => {
   for (const account of accounts) {
     const accountAssignments = assignments.filter((item) => item.account.envId === account.envId);
     assert.equal(accountAssignments.length, 3);
-    assert.notEqual(accountAssignments[0].recipe.id, accountAssignments[1].recipe.id);
-    assert.notEqual(accountAssignments[1].recipe.id, accountAssignments[2].recipe.id);
-    assert.ok(accountAssignments.every((item) => item.contentVariant?.id));
+    assert.deepEqual(accountAssignments.map((item) => item.slot), [0, 1, 2]);
+    assert.ok(accountAssignments.every((item) => !Object.hasOwn(item, "recipe")));
+    assert.ok(accountAssignments.every((item) => !Object.hasOwn(item, "contentVariant")));
   }
 });
 
-test("attributes recent views to operation recipes for the next planning cycle", () => {
+test("attributes recent views to the standard Reddit workflow", () => {
   const now = new Date("2026-07-29T10:00:00+08:00").getTime();
   const seconds = Math.floor(now / 1000);
   const feedback = summarizeContentFeedback([
@@ -220,32 +222,76 @@ test("attributes recent views to operation recipes for the next planning cycle",
       createTime: seconds - 3600,
       views: 1800,
       local: {
-        operationMeta: { recipeId: "tracking_hook", contentVariantId: "lock-target" }
+        operationMeta: { createdBy: "operation-brain", workflowId: "reddit_auto" }
       }
     },
     {
       username: "user-one",
       createTime: seconds - 7200,
       views: 100,
-      local: { templateId: "tracking" }
+      local: { operationMeta: { createdBy: "operation-brain", workflowId: "reddit_auto" } }
     },
     {
       username: "user-one",
       createTime: seconds - 12 * 24 * 3600,
       views: 500,
-      local: { template: "模板 2 · 小球追踪" }
+      local: { operationMeta: { createdBy: "operation-brain", workflowId: "reddit_auto" } }
     }
   ], ["user-one"], now);
 
-  const tracking = feedback.recipes.find((item) => item.recipeId === "tracking_hook");
+  const workflow = feedback.workflows.find((item) => item.workflowId === "reddit_auto");
   assert.equal(feedback.matchedVideos, 2);
   assert.equal(feedback.windowDays, 10);
   assert.equal(feedback.comparedWithPreviousDays, 10);
-  assert.equal(tracking.sampleCount, 2);
-  assert.equal(tracking.previousSampleCount, 1);
-  assert.equal(tracking.averageViews, 950);
-  assert.equal(tracking.over1000Rate, 50);
-  assert.equal(tracking.topVariant.variantId, "lock-target");
+  assert.equal(workflow.sampleCount, 2);
+  assert.equal(workflow.previousSampleCount, 1);
+  assert.equal(workflow.averageViews, 950);
+  assert.equal(workflow.over1000Rate, 50);
+});
+
+test("starts a bounded operating cycle and stops automatic work when it expires", async (t) => {
+  const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-cycle-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  let current = new Date("2026-08-06T10:00:00+08:00").getTime();
+  const service = createOperationBrainService({
+    workDir,
+    now: () => current,
+    listPhones: async () => [phone("one")],
+    readPublishRecords: () => [],
+    analyticsService: {
+      getDashboard: () => ({ accounts: [], summary: {}, status: {} })
+    },
+    autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) }
+  });
+
+  const active = service.saveSettings({
+    enabled: true,
+    autoCreateTasks: true,
+    cycleDays: 7,
+    groupNames: ["test-group"],
+    assetGroupId: "test-assets",
+    audioDir: "C:\\test-audio"
+  });
+  assert.equal(active.cycleStartedAt, current);
+  assert.equal(active.cycleEndsAt, current + 7 * 86_400_000);
+  assert.equal(service.getStatus().cycle.status, "active");
+  assert.equal(service.getStatus().cycle.remainingDays, 7);
+
+  current = active.cycleEndsAt + 1;
+  service.schedule();
+  const expired = service.getStatus();
+  assert.equal(expired.enabled, false);
+  assert.equal(expired.autoCreateTasks, false);
+  assert.equal(expired.settings.cycleStopReason, "expired");
+  assert.equal(expired.cycle.status, "expired");
+  await assert.rejects(() => service.createPlan(), /周期已经结束/);
+
+  current += 60_000;
+  const restarted = service.saveSettings({ enabled: true, autoCreateTasks: false });
+  assert.equal(restarted.cycleStartedAt, current);
+  assert.equal(restarted.cycleEndsAt, current + 7 * 86_400_000);
+  assert.equal(service.getStatus().cycle.status, "active");
+  service.saveSettings({ enabled: false });
 });
 
 test("creates a reviewable plan before creating any publish task", async (t) => {
@@ -277,7 +323,9 @@ test("creates a reviewable plan before creating any publish task", async (t) => 
     enabled: false,
     autoCreateTasks: false,
     groupNames: ["test-group"],
-    postsPerAccount: 2
+    postsPerAccount: 2,
+    assetGroupId: "test-assets",
+    audioDir: "C:\\test-audio"
   });
 
   const plan = await service.createPlan();
@@ -293,10 +341,11 @@ test("creates a reviewable plan before creating any publish task", async (t) => 
   const approved = service.approvePlan(plan.id);
   assert.equal(approved.status, "approved");
   assert.ok(created.length > 0);
+  assert.ok(created.every((task) => task.payload.taskType === "reddit"));
   assert.ok(created.every((task) => task.payload.publish.autoPublish === true));
 });
 
-test("uses Codex once per plan and only applies copy to safe task fields", async (t) => {
+test("uses Codex once per plan and only applies the publishing schedule", async (t) => {
   const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-codex-"));
   t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
   let codexCalls = 0;
@@ -320,7 +369,7 @@ test("uses Codex once per plan and only applies copy to safe task fields", async
         username: "user-one",
         createTime: Math.floor(new Date("2026-07-20T20:00:00+08:00").getTime() / 1000),
         views: 900,
-        local: { operationMeta: { recipeId: "tracking_hook", createdBy: "operation-brain" } }
+        local: { operationMeta: { workflowId: "reddit_auto", createdBy: "operation-brain" } }
       }]
     },
     autoTaskManager: {
@@ -342,16 +391,8 @@ test("uses Codex once per plan and only applies copy to safe task fields", async
           strategy: {
             executiveSummary: "Test one hook and one retention format.",
             accountDiagnosis: "The account is still collecting samples.",
-            contentDirection: "Use clear interaction prompts.",
+            contentDirection: "Keep the saved Reddit generation settings.",
             riskNotes: ["Do not overread one post.", "Keep the safety cap."],
-            allocationPlan: [
-              { stage: "cold_start", mix: { peripheral_hook: 55, tracking_hook: 30, position_memory: 10, schulte_complete: 5 }, rationale: "Short tests first." },
-              { stage: "testing", mix: { peripheral_hook: 40, tracking_hook: 30, position_memory: 20, schulte_complete: 10 }, rationale: "Broaden the sample." },
-              { stage: "breakout", mix: { peripheral_hook: 25, tracking_hook: 30, position_memory: 30, schulte_complete: 15 }, rationale: "Expand proven formats." },
-              { stage: "scaling", mix: { peripheral_hook: 10, tracking_hook: 20, position_memory: 25, schulte_complete: 45 }, rationale: "Use longer proven sessions." },
-              { stage: "qualified", mix: { peripheral_hook: 10, tracking_hook: 20, position_memory: 25, schulte_complete: 45 }, rationale: "Maintain the winning mix." },
-              { stage: "recovery", mix: { peripheral_hook: 55, tracking_hook: 30, position_memory: 10, schulte_complete: 5 }, rationale: "Return to short hooks." }
-            ],
             publishingPlan: [
               { stage: "cold_start", startHour: 20, startMinute: 15, windowMinutes: 30, slotIntervalMinutes: 120, rationale: "Test the strongest observed evening window." },
               { stage: "testing", startHour: 20, startMinute: 15, windowMinutes: 30, slotIntervalMinutes: 120, rationale: "Test the strongest observed evening window." },
@@ -359,18 +400,6 @@ test("uses Codex once per plan and only applies copy to safe task fields", async
               { stage: "scaling", startHour: 20, startMinute: 15, windowMinutes: 30, slotIntervalMinutes: 120, rationale: "Scale the strongest observed evening window." },
               { stage: "qualified", startHour: 20, startMinute: 15, windowMinutes: 30, slotIntervalMinutes: 120, rationale: "Maintain the strongest observed evening window." },
               { stage: "recovery", startHour: 20, startMinute: 15, windowMinutes: 30, slotIntervalMinutes: 120, rationale: "Retest the strongest observed evening window." }
-            ],
-            recipeTuning: [
-              { recipeId: "peripheral_hook", durationSeconds: 16, rotationSpeed: 0, trackingSeconds: 0, ballSpeed: 0, memorySteps: 0, peripheralTargets: 4, rationale: "Faster hook." },
-              { recipeId: "tracking_hook", durationSeconds: 30, rotationSpeed: 0, trackingSeconds: 20, ballSpeed: 1.7, memorySteps: 0, peripheralTargets: 0, rationale: "Raise tracking difficulty." },
-              { recipeId: "position_memory", durationSeconds: 38, rotationSpeed: 0, trackingSeconds: 0, ballSpeed: 0, memorySteps: 7, peripheralTargets: 0, rationale: "Test deeper memory." },
-              { recipeId: "schulte_complete", durationSeconds: 72, rotationSpeed: 2.2, trackingSeconds: 0, ballSpeed: 0, memorySteps: 0, peripheralTargets: 0, rationale: "Keep the long session readable." }
-            ],
-            scripts: [
-              { recipeId: "peripheral_hook", targetStage: "all", headline: "AI Peripheral", mainTitle: "Spot It Before Time Runs Out", videoDesc: "Comment your score. #focus #attention #test", rationale: "Fast feedback loop." },
-              { recipeId: "tracking_hook", targetStage: "all", headline: "AI Tracking", mainTitle: "Keep Your Eyes On It", videoDesc: "Name the final ball. #tracking #focus #challenge", rationale: "Direct answer prompt." },
-              { recipeId: "position_memory", targetStage: "all", headline: "AI Memory", mainTitle: "Remember Every Position", videoDesc: "Post your sequence. #memory #braintraining #focus", rationale: "Retention-oriented task." },
-              { recipeId: "schulte_complete", targetStage: "all", headline: "AI Schulte", mainTitle: "Finish The Full Grid", videoDesc: "Comment your time. #schulte #focus #braintraining", rationale: "Longer watch-time proxy." }
             ]
           }
         };
@@ -382,25 +411,29 @@ test("uses Codex once per plan and only applies copy to safe task fields", async
     autoCreateTasks: false,
     useCodex: true,
     groupNames: ["test-group"],
-    postsPerAccount: 2
+    postsPerAccount: 2,
+    assetGroupId: "test-assets",
+    audioDir: "C:\\test-audio"
   });
 
   const plan = await service.createPlan();
   assert.equal(codexCalls, 1);
   assert.equal(plan.aiStrategy.status, "completed");
   assert.equal(plan.aiStrategy.model, "gpt-5.6-sol");
-  assert.ok(plan.aiStrategy.appliedAllocationPlan.length > 0);
-  assert.ok(plan.aiStrategy.appliedAllocationPlan.every((item) => item.aiWeight === 1));
   assert.ok(plan.aiStrategy.appliedPublishingPlan.length > 0);
-  assert.ok(plan.accounts.every((account) => account.experimentDay > 7));
-  assert.ok(plan.taskDrafts.every((draft) => draft.aiScript?.modelSource === "codex"));
-  assert.ok(plan.taskDrafts.every((draft) => draft.aiTuning?.modelSource === "codex"));
-  assert.ok(plan.taskDrafts.every((draft) => draft.payload.generation.headline.startsWith("AI ")));
+  assert.ok(plan.accounts.every((account) => account.operationDay > 7));
+  assert.ok(plan.taskDrafts.every((draft) => draft.workflowId === "reddit_auto"));
+  assert.ok(plan.taskDrafts.every((draft) => !Object.hasOwn(draft, "aiScript")));
+  assert.ok(plan.taskDrafts.every((draft) => !Object.hasOwn(draft, "aiTuning")));
+  assert.ok(plan.taskDrafts.every((draft) => draft.payload.taskType === "reddit"));
+  assert.ok(plan.taskDrafts.every((draft) => draft.payload.generation.assetGroupId === "test-assets"));
+  assert.ok(plan.taskDrafts.every((draft) => draft.payload.generation.audioDir === "C:\\test-audio"));
+  assert.ok(plan.taskDrafts.every((draft) => draft.payload.generation.segmentSeconds === 5));
   assert.ok(plan.taskDrafts.every((draft) => draft.payload.publish.envIds.length === 1));
   assert.ok(plan.taskDrafts.every((draft) => draft.payload.publish.scheduleAt === draft.scheduleAt));
   const optimizedFirstSlot = plan.taskDrafts.find((draft) => draft.slot === 1);
   const optimizedSchedule = new Date(optimizedFirstSlot.scheduleAt * 1000);
-  assert.equal(optimizedFirstSlot.payload.publish.operationMeta.experimentMode, "ai_optimized");
+  assert.equal(optimizedFirstSlot.payload.publish.operationMeta.schedulingMode, "ai_optimized");
   assert.equal(optimizedSchedule.getHours(), 20);
   assert.ok(optimizedSchedule.getMinutes() >= 15 && optimizedSchedule.getMinutes() <= 45);
 });
@@ -428,7 +461,13 @@ test("keeps the rule draft when Codex generation fails", async (t) => {
       }
     }
   });
-  service.saveSettings({ groupNames: ["test-group"], postsPerAccount: 1, useCodex: true });
+  service.saveSettings({
+    groupNames: ["test-group"],
+    postsPerAccount: 1,
+    useCodex: true,
+    assetGroupId: "test-assets",
+    audioDir: "C:\\test-audio"
+  });
 
   const plan = await service.createPlan();
   assert.equal(plan.status, "draft");
@@ -436,4 +475,76 @@ test("keeps the rule draft when Codex generation fails", async (t) => {
   assert.match(plan.aiStrategy.error, /connection interrupted/);
   assert.equal(plan.taskDrafts.length, 1);
   assert.equal(plan.taskDrafts[0].aiScript, undefined);
+});
+
+test("uses the fixed 300-video daily limit without a configurable account ceiling", (t) => {
+  const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-fixed-limit-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const service = createOperationBrainService({
+    workDir,
+    listPhones: async () => [],
+    readPublishRecords: () => [],
+    analyticsService: { getDashboard: () => ({ accounts: [], summary: {}, status: {} }) },
+    autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) }
+  });
+
+  const saved = service.saveSettings({ maxDailyVideos: 25, maxAccounts: 1 });
+  assert.equal(saved.maxDailyVideos, 300);
+  assert.equal(Object.hasOwn(saved, "maxAccounts"), false);
+});
+
+test("resetting judgments establishes a durable analysis baseline", async (t) => {
+  const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-reset-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const resetAt = new Date("2026-08-06T11:30:00+08:00").getTime();
+  const dashboardCalls = [];
+  let privateArgs = null;
+  const service = createOperationBrainService({
+    workDir,
+    now: () => resetAt,
+    listPhones: async () => [phone("one")],
+    readPublishRecords: () => [],
+    analyticsService: {
+      getDashboard: (options) => {
+        dashboardCalls.push(options);
+        return {
+          accounts: options.publishedAfter ? [] : [metrics("user-one")],
+          summary: { videoCount: options.publishedAfter ? 0 : 12, matchedCount: 0 },
+          status: {}
+        };
+      },
+      getMatchedVideos: () => [{
+        username: "user-one",
+        createTime: Math.floor((resetAt - 60_000) / 1000),
+        views: 9000,
+        local: { operationMeta: { workflowId: "reddit_auto", createdBy: "operation-brain" } }
+      }]
+    },
+    privateAnalyticsService: {
+      getPublicSettings: () => ({ configured: true }),
+      getOperationSignals: async (options) => {
+        privateArgs = options;
+        return { status: "ready", summary: { detailedVideoCount: 0 }, accounts: [] };
+      }
+    },
+    autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) }
+  });
+  service.saveSettings({ groupNames: ["test-group"] });
+
+  const reset = service.resetJudgments();
+  assert.equal(reset.analysisResetAt, resetAt);
+  assert.equal(service.getSettings().analysisResetAt, resetAt);
+
+  const overview = await service.getOverview();
+  assert.equal(dashboardCalls.length, 2);
+  assert.ok(dashboardCalls.every((options) => options.publishedAfter === resetAt));
+  assert.equal(privateArgs.publishedAfter, resetAt);
+  assert.equal(overview.accounts[0].stage, "cold_start");
+  assert.equal(overview.accounts[0].judgmentPending, true);
+  assert.equal(overview.accounts[0].reason, "账号判断已清空，等待重置后的新视频数据。");
+  assert.equal(overview.accounts[0].metrics.videos10d, 0);
+  assert.equal(overview.accounts[0].operationDay, 1);
+  assert.equal(overview.stages.reduce((sum, item) => sum + item.count, 0), 0);
+  assert.equal(overview.contentFeedback.matchedVideos, 0);
+  assert.equal(overview.dataStatus.analysisStartedAt, resetAt);
 });
