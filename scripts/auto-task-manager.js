@@ -618,6 +618,11 @@ function normalizeGenerationPayload(value = {}) {
     videoDir: String(value.videoDir || ""),
     includeVideoSubfolders: value.includeVideoSubfolders !== false,
     audioDir: String(value.audioDir || ""),
+    audioPriority: Array.isArray(value.audioPriority)
+      ? value.audioPriority.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 300)
+      : [],
+    audioPriorityMode: String(value.audioPriorityMode || ""),
+    audioOffset: Math.max(0, Math.floor(Number(value.audioOffset) || 0)),
     backgroundMusicDir: String(value.backgroundMusicDir || ""),
     backgroundMusicVolume: Number(value.backgroundMusicVolume) || 0.12,
     saveDir: String(value.saveDir || ""),

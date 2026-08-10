@@ -7,8 +7,15 @@ import {
   classifyAccounts,
   createOperationBrainService,
   decideStrategyRoute,
+  isAutoPlanSkipped,
   summarizeContentFeedback
 } from "./operation-brain.js";
+
+test("scheduled skip only suppresses the matching local calendar date", () => {
+  const settings = { skipAutoPlanDates: ["2026-08-07"] };
+  assert.equal(isAutoPlanSkipped(settings, new Date("2026-08-07T19:00:00+08:00").getTime()), true);
+  assert.equal(isAutoPlanSkipped(settings, new Date("2026-08-08T19:00:00+08:00").getTime()), false);
+});
 
 test("hybrid routing always runs full DeepSeek analysis before SOL final review", () => {
   const lowSample = decideStrategyRoute({
@@ -249,6 +256,38 @@ test("attributes recent views to the standard Reddit workflow", () => {
   assert.equal(workflow.over1000Rate, 50);
 });
 
+test("summarizes audio performance for novel task selection", () => {
+  const now = new Date("2026-07-29T10:00:00+08:00").getTime();
+  const seconds = Math.floor(now / 1000);
+  const video = (audioName, views, hoursAgo, likes = 0) => ({
+    username: "user-one",
+    createTime: seconds - hoursAgo * 3600,
+    views,
+    likes,
+    local: {
+      audioName,
+      operationMeta: { createdBy: "operation-brain", workflowId: "reddit_auto" }
+    }
+  });
+  const feedback = summarizeContentFeedback([
+    video("winner.mp3", 1_300, 1, 130),
+    video("winner.mp3", 1_000, 2, 100),
+    video("weak.mp3", 0, 1),
+    video("weak.mp3", 20, 2),
+    video("weak.mp3", 40, 3),
+    video("winner.mp3", 400, 11 * 24)
+  ], ["user-one"], now);
+
+  const winner = feedback.audioPerformance.find((item) => item.audioName === "winner.mp3");
+  const weak = feedback.audioPerformance.find((item) => item.audioName === "weak.mp3");
+  assert.equal(winner.recommendation, "prioritize");
+  assert.equal(winner.sampleCount, 2);
+  assert.equal(winner.engagementRate, 10);
+  assert.equal(winner.previousAverageViews, 400);
+  assert.equal(weak.recommendation, "deprioritize");
+  assert.equal(weak.low200Rate, 100);
+});
+
 test("starts a bounded operating cycle and stops automatic work when it expires", async (t) => {
   const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-cycle-"));
   t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
@@ -292,6 +331,22 @@ test("starts a bounded operating cycle and stops automatic work when it expires"
   assert.equal(restarted.cycleEndsAt, current + 7 * 86_400_000);
   assert.equal(service.getStatus().cycle.status, "active");
   service.saveSettings({ enabled: false });
+});
+
+test("turning off novel operations also disables automatic task creation", (t) => {
+  const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-master-switch-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const service = createOperationBrainService({
+    workDir,
+    listPhones: async () => [],
+    readPublishRecords: () => [],
+    analyticsService: { getDashboard: () => ({ accounts: [], summary: {}, status: {} }) },
+    autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) }
+  });
+
+  const settings = service.saveSettings({ enabled: false, autoCreateTasks: true });
+  assert.equal(settings.enabled, false);
+  assert.equal(settings.autoCreateTasks, false);
 });
 
 test("creates a reviewable plan before creating any publish task", async (t) => {

@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { listMediaFiles } from "./asset-library.js";
 
 const ANALYSIS_WINDOW_DAYS = 10;
 const DAY_MS = 86_400_000;
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm", ".ogg"]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
@@ -20,6 +22,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   cycleEndsAt: 0,
   cycleStoppedAt: 0,
   cycleStopReason: "",
+  skipAutoPlanDates: [],
   analysisResetAt: 0,
   runHour: 19,
   runMinute: 0,
@@ -152,7 +155,7 @@ export function createOperationBrainService({
       status: "unavailable",
       summary: { detailedVideoCount: 0 },
       accounts: [],
-      error: "Fivetran destination is not configured."
+      error: "TikTok official data bridge is not configured."
     };
     if (privateAnalyticsService?.getPublicSettings?.().configured && privateAnalyticsService?.getOperationSignals) {
       try {
@@ -248,6 +251,7 @@ export function createOperationBrainService({
         assignments,
         settings,
         redditDefaults,
+        contentFeedback: overview.contentFeedback,
         planDate,
         createdAt: now()
       });
@@ -334,6 +338,7 @@ export function createOperationBrainService({
             assignments,
             settings,
             redditDefaults,
+            contentFeedback: overview.contentFeedback,
             planDate,
             createdAt: now()
           });
@@ -484,6 +489,15 @@ export function createOperationBrainService({
       try {
         if (target >= cycle.endsAt) {
           stopExpiredCycle(settings);
+          return;
+        }
+        if (isAutoPlanSkipped(settings, target)) {
+          const skipPath = path.join(plansDir, `scheduled-skip-${localDateKey(target)}.json`);
+          atomicWriteJson(skipPath, {
+            at: now(),
+            planDate: localDateKey(target),
+            reason: "manual_skip"
+          });
           return;
         }
         await createPlan({ ...settings, autoCreateTasks: settings.autoCreateTasks });
@@ -650,6 +664,8 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
   let matchedVideos = 0;
   let unclassifiedVideos = 0;
   const publishTimeBuckets = new Map();
+  const currentAudioSamples = new Map();
+  const previousAudioSamples = new Map();
 
   for (const video of videos || []) {
     if (!video?.local) continue;
@@ -664,12 +680,15 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
     target.push(Number(video.views) || 0);
     if (createTime >= currentStart) {
       matchedVideos += 1;
+      addAudioSample(currentAudioSamples, video);
       const created = new Date(createTime * 1000);
       const minute = created.getMinutes() < 30 ? 0 : 30;
       const bucketId = `${String(created.getHours()).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
       const publishTimeViews = publishTimeBuckets.get(bucketId) || [];
       publishTimeViews.push(Number(video.views) || 0);
       publishTimeBuckets.set(bucketId, publishTimeViews);
+    } else {
+      addAudioSample(previousAudioSamples, video);
     }
   }
 
@@ -700,6 +719,7 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
     medianViews: round(percentile(views, 0.5), 0),
     maxViews: views.length ? Math.max(...views) : 0
   })).sort((left, right) => right.averageViews - left.averageViews || right.sampleCount - left.sampleCount);
+  const audioPerformance = buildAudioPerformance(currentAudioSamples, previousAudioSamples);
 
   return {
     windowDays: ANALYSIS_WINDOW_DAYS,
@@ -707,8 +727,90 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
     matchedVideos,
     unclassifiedVideos,
     workflows,
-    publishTimePerformance
+    publishTimePerformance,
+    audioPerformance
   };
+}
+
+function addAudioSample(samples, video) {
+  const audioName = String(video?.local?.audioName || "").trim();
+  if (!audioName) return;
+  const key = audioName.toLowerCase();
+  const entry = samples.get(key) || { audioName, views: [], interactions: [], accounts: new Set() };
+  const views = Number(video.views) || 0;
+  const interactionFields = [video.likes, video.comments, video.shares, video.bookmarks];
+  const hasPublicInteractionMetrics = interactionFields.some((value) => value !== undefined && value !== null && value !== "");
+  const totalInteractions = (Number(video.likes) || 0)
+    + (Number(video.comments) || 0)
+    + (Number(video.shares) || 0)
+    + (Number(video.bookmarks) || 0);
+  entry.views.push(views);
+  if (hasPublicInteractionMetrics && views > 0) {
+    entry.interactions.push(totalInteractions / views * 100);
+  }
+  const account = normalizeName(video.username);
+  if (account) entry.accounts.add(account);
+  samples.set(key, entry);
+}
+
+function buildAudioPerformance(currentSamples, previousSamples) {
+  const current = Array.from(currentSamples.values());
+  const comparableMedians = current
+    .filter((entry) => entry.views.length >= 2)
+    .map((entry) => percentile(entry.views, 0.5));
+  const baselineMedian = mean(comparableMedians);
+  const baselineAverage = mean(current.flatMap((entry) => entry.views));
+  const baselineEngagement = mean(current
+    .filter((entry) => entry.views.length >= 2)
+    .flatMap((entry) => entry.interactions || []));
+
+  return current.map((entry) => {
+    const views = entry.views;
+    const previous = previousSamples.get(String(entry.audioName).toLowerCase())?.views || [];
+    const averageViews = mean(views);
+    const medianViews = percentile(views, 0.5);
+    const engagementRate = mean(entry.interactions || []);
+    const low200Rate = views.length ? views.filter((value) => value < 200).length / views.length * 100 : 0;
+    const over1000Rate = views.length ? views.filter((value) => value >= 1000).length / views.length * 100 : 0;
+    const sampleCount = views.length;
+    let recommendation = "explore";
+    const hasEngagementSignal = (entry.interactions || []).length > 0;
+    const supportsPriority = !hasEngagementSignal
+      || baselineEngagement <= 0
+      || engagementRate >= baselineEngagement * 0.75
+      || medianViews >= Math.max(250, baselineMedian * 1.45);
+    // Reach remains the hard safety gate. Public interaction only breaks ties and validates promotion.
+    if (sampleCount >= 3 && low200Rate >= 85 && medianViews < Math.max(100, baselineMedian * 0.5)) {
+      recommendation = "deprioritize";
+    } else if (sampleCount >= 2 && medianViews >= Math.max(250, baselineMedian * 1.15) && averageViews >= Math.max(300, baselineAverage * 1.1) && supportsPriority) {
+      recommendation = "prioritize";
+    } else if (sampleCount >= 2) {
+      recommendation = "rotate";
+    }
+    return {
+      audioName: entry.audioName,
+      sampleCount,
+      accountCount: entry.accounts.size,
+      totalViews: views.reduce((sum, value) => sum + value, 0),
+      averageViews: round(averageViews, 0),
+      medianViews: round(medianViews, 0),
+      maxViews: views.length ? Math.max(...views) : 0,
+      low200Rate: round(low200Rate, 1),
+      over1000Rate: round(over1000Rate, 1),
+      engagementRate: round(engagementRate, 2),
+      engagementSampleCount: (entry.interactions || []).length,
+      previousAverageViews: round(mean(previous), 0),
+      trend: previous.length && mean(previous) > 0 ? round(averageViews / mean(previous), 2) : 0,
+      recommendation
+    };
+  }).sort((left, right) => {
+    const tier = { prioritize: 0, rotate: 1, explore: 2, deprioritize: 3 };
+    return tier[left.recommendation] - tier[right.recommendation]
+      || right.medianViews - left.medianViews
+      || right.averageViews - left.averageViews
+      || right.engagementRate - left.engagementRate
+      || right.sampleCount - left.sampleCount;
+  });
 }
 
 function isRedditOperationVideo(local = {}) {
@@ -717,7 +819,7 @@ function isRedditOperationVideo(local = {}) {
   return /(reddit|混剪|novel|story)/i.test(template);
 }
 
-function buildTaskDrafts({ assignments, settings, redditDefaults = {}, planDate, createdAt }) {
+function buildTaskDrafts({ assignments, settings, redditDefaults = {}, contentFeedback = {}, planDate, createdAt }) {
   const grouped = new Map();
   for (const item of assignments) {
     const publishingPlan = item.publishingPlan || resolvePublishingPlan(item.account, settings);
@@ -739,7 +841,7 @@ function buildTaskDrafts({ assignments, settings, redditDefaults = {}, planDate,
   }
   return Array.from(grouped.values())
     .sort((left, right) => left.slot - right.slot)
-    .map((group) => {
+    .map((group, taskIndex) => {
       const scheduleAt = scheduleForGroup(group, planDate);
       const accounts = group.accounts.map((account) => ({
         id: account.envId,
@@ -755,6 +857,12 @@ function buildTaskDrafts({ assignments, settings, redditDefaults = {}, planDate,
         enabled: true,
         ...savedDedup
       };
+      const audioSelection = buildAudioSelection({
+        audioDir: settings.audioDir,
+        audioPerformance: contentFeedback.audioPerformance,
+        totalVideos: accounts.length,
+        offset: taskIndex * Math.max(1, accounts.length)
+      });
       return {
         id: `draft-${group.slot}-${REDDIT_WORKFLOW.id}-${scheduleAt}`,
         status: "draft",
@@ -774,6 +882,9 @@ function buildTaskDrafts({ assignments, settings, redditDefaults = {}, planDate,
             videoDir: settings.videoDir,
             includeVideoSubfolders: true,
             audioDir: settings.audioDir,
+            audioPriority: audioSelection.names,
+            audioPriorityMode: audioSelection.mode,
+            audioOffset: audioSelection.offset,
             backgroundMusicDir: settings.backgroundMusicDir,
             saveDir: "",
             segmentMode: "fixed",
@@ -818,6 +929,69 @@ function buildTaskDrafts({ assignments, settings, redditDefaults = {}, planDate,
         }
       };
     });
+}
+
+function buildAudioSelection({ audioDir, audioPerformance = [], totalVideos = 1, offset = 0 }) {
+  let available = [];
+  try {
+    available = listMediaFiles(audioDir, Array.from(AUDIO_EXTENSIONS));
+  } catch {
+    return { names: [], mode: "directory-rotation", offset: 0 };
+  }
+  if (!available.length) return { names: [], mode: "directory-rotation", offset: 0 };
+
+  const namesByKey = new Map();
+  for (const file of available) {
+    const name = path.basename(file);
+    if (!namesByKey.has(name.toLowerCase())) namesByKey.set(name.toLowerCase(), name);
+  }
+  const ranked = (audioPerformance || [])
+    .map((item) => ({ ...item, fileName: namesByKey.get(String(item.audioName || "").toLowerCase()) }))
+    .filter((item) => item.fileName);
+  const deprioritized = new Set(
+    ranked.filter((item) => item.recommendation === "deprioritize").map((item) => item.fileName)
+  );
+  const preferred = ranked
+    .filter((item) => item.recommendation === "prioritize" || item.recommendation === "rotate")
+    .map((item) => item.fileName);
+  const exploration = [
+    ...ranked.filter((item) => item.recommendation === "explore").map((item) => item.fileName),
+    ...available.map((file) => path.basename(file)).filter((name) => !ranked.some((item) => item.fileName === name))
+  ];
+  const fallback = available.map((file) => path.basename(file)).filter((name) => !deprioritized.has(name));
+  const primaryPool = uniqueStrings(preferred.length ? preferred : fallback);
+  const explorationPool = uniqueStrings(exploration.filter((name) => !deprioritized.has(name)));
+  const primary = rotateList(primaryPool, offset);
+  const exploratory = rotateList(explorationPool, offset);
+  const selected = [];
+  const count = Math.max(1, Math.floor(Number(totalVideos) || 1));
+  let primaryIndex = 0;
+  let explorationIndex = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    const shouldExplore = exploratory.length > 0 && (index + 1) % 3 === 0;
+    const pool = shouldExplore ? exploratory : primary.length ? primary : exploratory;
+    if (!pool.length) break;
+    const poolIndex = shouldExplore || !primary.length ? explorationIndex++ : primaryIndex++;
+    selected.push(pool[poolIndex % pool.length]);
+  }
+
+  return {
+    names: selected.length ? selected : rotateList(fallback, offset),
+    mode: ranked.length ? "performance-guided" : "directory-rotation",
+    offset: 0
+  };
+}
+
+function uniqueStrings(values) {
+  return Array.from(new Set((values || []).map(String).filter(Boolean)));
+}
+
+function rotateList(values, offset = 0) {
+  const list = uniqueStrings(values);
+  if (!list.length) return [];
+  const index = Math.abs(Math.floor(Number(offset) || 0)) % list.length;
+  return [...list.slice(index), ...list.slice(0, index)];
 }
 
 function detectStage(seven, thirty, benchmark) {
@@ -906,6 +1080,7 @@ function buildCodexOperationInput({ overview, taskDrafts, settings, planDate }) 
     accountCount: accounts.length,
     stageSummary,
     workflowPerformance: overview.contentFeedback?.workflows || [],
+    audioPerformance: (overview.contentFeedback?.audioPerformance || []).slice(0, 100),
     publishTimePerformance: overview.contentFeedback?.publishTimePerformance || [],
     privatePerformance: compactPrivateAnalytics(overview.privateAnalytics),
     drafts: (taskDrafts || []).map((draft) => ({
@@ -1121,14 +1296,15 @@ function filterVideosAfter(videos, timestampMs) {
 
 
 function normalizeSettings(value = {}) {
+  const enabled = value.enabled === true;
   const strategyProvider = ["hybrid", "deepseek", "codex", "rules"].includes(value.strategyProvider)
     ? value.strategyProvider
     : value.useCodex === false
       ? "rules"
       : DEFAULT_SETTINGS.strategyProvider;
   return {
-    enabled: value.enabled === true,
-    autoCreateTasks: value.autoCreateTasks === true,
+    enabled,
+    autoCreateTasks: enabled && value.autoCreateTasks === true,
     useCodex: ["hybrid", "codex"].includes(strategyProvider),
     strategyProvider,
     strategyReasoning: value.strategyReasoning === "disabled" ? "disabled" : "enabled",
@@ -1142,6 +1318,11 @@ function normalizeSettings(value = {}) {
     cycleEndsAt: positiveTimestamp(value.cycleEndsAt),
     cycleStoppedAt: positiveTimestamp(value.cycleStoppedAt),
     cycleStopReason: ["manual", "expired"].includes(value.cycleStopReason) ? value.cycleStopReason : "",
+    skipAutoPlanDates: Array.from(new Set((Array.isArray(value.skipAutoPlanDates) ? value.skipAutoPlanDates : [])
+      .map((item) => String(item || "").trim())
+      .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item))))
+      .sort()
+      .slice(-31),
     analysisResetAt: positiveTimestamp(value.analysisResetAt),
     runHour: integer(value.runHour, 0, 23, DEFAULT_SETTINGS.runHour),
     runMinute: integer(value.runMinute, 0, 59, DEFAULT_SETTINGS.runMinute),
@@ -1235,6 +1416,11 @@ function nextLocalRun(currentTime, hour, minute) {
 function localDateKey(value) {
   const date = new Date(value);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function isAutoPlanSkipped(settings, timestamp = Date.now()) {
+  const planDate = localDateKey(timestamp);
+  return Array.isArray(settings?.skipAutoPlanDates) && settings.skipAutoPlanDates.includes(planDate);
 }
 
 function localTimestamp(dateKey, hour, minute) {

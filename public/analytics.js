@@ -19,6 +19,9 @@ let currentAccountName = "";
 let accountAnalyticsItems = [];
 let activeProfileGroups = [];
 let profileGroupsLoaded = false;
+// Never send the HTML placeholder or a stale localStorage profile to the API.
+// This is especially important for members restricted to one GeeLark profile.
+let verifiedAnalyticsProfileId = "";
 const PAGE_SIZE = 10;
 let accountPage = 1;
 let videoPage = 1;
@@ -44,6 +47,7 @@ if (isAccountView) {
 elements.refreshBtn.addEventListener("click", loadDashboard);
 elements.manualFetchBtn.addEventListener("click", fetchSelectedGroup);
 elements.manualFetchProfile.addEventListener("change", async () => {
+  verifiedAnalyticsProfileId = elements.manualFetchProfile.value || "";
   localStorage.setItem("local-factory.analytics.geelark-profile", elements.manualFetchProfile.value || "");
   await loadManualFetchGroups(elements.manualFetchProfile.value);
   reloadFromFirstPage();
@@ -94,6 +98,7 @@ async function loadManualFetchProfiles() {
       ? savedProfileId
       : data.defaultProfileId || data.activeProfileIds?.[0] || profiles.find((profile) => profile.id === "default")?.id || profiles[0]?.id || "";
     elements.manualFetchProfile.value = defaultProfileId;
+    verifiedAnalyticsProfileId = defaultProfileId;
     if (defaultProfileId) localStorage.setItem("local-factory.analytics.geelark-profile", defaultProfileId);
     await loadManualFetchGroups(defaultProfileId);
   } catch {
@@ -111,8 +116,9 @@ async function loadManualFetchGroups(profileId) {
     return;
   }
   try {
-    const data = await requestJson(`/api/admin/geelark-profiles/${encodeURIComponent(profileId)}/groups?t=${Date.now()}`);
-    const groups = data.groups || [];
+    const data = await requestJson(`/api/tiktok-analytics/settings?profileId=${encodeURIComponent(profileId)}&t=${Date.now()}`);
+    const groupCounts = data.groupCounts || {};
+    const groups = (data.availableGroups || []).map((name) => ({ name, accountCount: Number(groupCounts[name] || 0) }));
     activeProfileGroups = groups.map((group) => String(group.name || "").trim()).filter(Boolean);
     profileGroupsLoaded = true;
     updateGroupOptions(activeProfileGroups);
@@ -162,7 +168,7 @@ async function loadDashboard() {
     sort: elements.sortFilter.value,
     t: Date.now()
   });
-  if (elements.manualFetchProfile.value) params.set("profileId", elements.manualFetchProfile.value);
+  if (verifiedAnalyticsProfileId) params.set("profileId", verifiedAnalyticsProfileId);
   try {
     const data = await requestJson(`/api/tiktok-analytics?${params}`);
     renderDashboard(data);

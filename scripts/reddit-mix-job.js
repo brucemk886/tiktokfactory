@@ -24,7 +24,7 @@ const storageDirs = resolveStorageDirs(root, bootConfig);
 const defaultOutputDir = storageDirs.outputDir;
 const workDir = path.join(storageDirs.workDir, "reddit-mix");
 const captionCacheDir = path.join(storageDirs.workDir, "caption-cache");
-const AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm"];
+const AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm", ".ogg"];
 const OVERLAY_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mov", ".mp4", ".webm"];
 
 main().catch((error) => {
@@ -41,7 +41,10 @@ async function main() {
   const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
   const config = readJson(path.join(root, "config.json"));
   const audioDir = mustBeDirectory(payload.audioDir, "音频文件夹");
-  const audios = listMediaFiles(audioDir, AUDIO_EXTENSIONS);
+  const audios = resolvePrioritizedAudios(
+    listMediaFiles(audioDir, AUDIO_EXTENSIONS),
+    payload.audioPriority
+  );
   const saveDir = resolveSaveDir(payload.saveDir);
   const backgroundMusicFiles = resolveBackgroundMusicFiles(payload.backgroundMusicDir);
   const legacyVariants = clampInt(payload.variants, 1, 20, 1);
@@ -87,7 +90,7 @@ async function main() {
   while (done < total && attempts < maxAttempts) {
     attempts += 1;
     try {
-    const audioIndex = candidateIndex % audios.length;
+    const audioIndex = (candidateIndex + Math.max(0, Number(payload.audioOffset) || 0)) % audios.length;
     const audioPath = audios[audioIndex];
     const variant = Math.floor(candidateIndex / audios.length) + 1;
     candidateIndex += 1;
@@ -294,6 +297,22 @@ function cleanupRunDir(runDir) {
 function resolveSaveDir(value) {
   const text = String(value || "").trim();
   return text ? path.resolve(text) : "";
+}
+
+function resolvePrioritizedAudios(files, priorityNames) {
+  const priorities = Array.isArray(priorityNames)
+    ? priorityNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+  if (!priorities.length) return files;
+  const fileByName = new Map();
+  for (const file of files || []) {
+    const key = path.basename(file).toLowerCase();
+    if (!fileByName.has(key)) fileByName.set(key, file);
+  }
+  const selected = priorities
+    .map((name) => fileByName.get(name.toLowerCase()))
+    .filter(Boolean);
+  return selected.length ? selected : files;
 }
 
 function resolveBackgroundMusicFiles(value) {

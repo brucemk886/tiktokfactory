@@ -15,7 +15,7 @@ Prevent autonomous novel operations from running indefinitely by adding a bounde
 - Model/provider/API configuration is no longer exposed on the operations page; the page presents only the generated strategy and business controls.
 - The separate configurable account ceiling was removed. Selected groups supply the account pool, while a fixed 300-video daily hard limit is enforced by the service.
 - Scheduling labels now explicitly distinguish the first-post random range from the interval between posts on the same account.
-- Account judgments now have an independent reset baseline. A reset hides prior account classifications immediately and prevents historical public analytics, private Fivetran signals, and old plans from repopulating them.
+- Account judgments now have an independent reset baseline. A reset hides prior account classifications immediately and prevents historical public analytics, private official-bridge signals, and old plans from repopulating them.
 - Resetting judgments does not delete analytics snapshots, publish records, generated videos, or queued publishing tasks.
 
 ## Files Changed
@@ -27,7 +27,7 @@ Prevent autonomous novel operations from running indefinitely by adding a bounde
 - `public/operator.css`
 - `scripts/tiktok-analytics.js`
 - `scripts/tiktok-analytics.test.js`
-- `scripts/fivetran-destination.js`
+- `scripts/official-tiktok-analytics.js`
 - `scripts/server.js`
 - `docs/CURRENT_STATE.md`
 

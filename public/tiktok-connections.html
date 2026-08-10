@@ -3,23 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TikTok 账号授权</title>
+    <title>TikTok 官方账号</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/tiktok-connections.css" />
   </head>
   <body class="work-page connection-page">
     <nav class="side-tabs">
-      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
-      <a data-admin-only href="/psychology-topics">心理学题目</a>
-      <a data-admin-only href="/psychology">心理学视频自动化</a>
-      <a data-admin-only href="/schulte">舒尔特训练</a>
-      <a data-admin-only href="/ai">AI 创作</a>
-      <a data-admin-only href="/asset-usage">素材使用率</a>
+      <a class="app-brand" href="/tasks" aria-label="Local Factory">
+        <span>LF</span><b>Local Factory<small>内容自动化</small></b>
+      </a>
       <a href="/tasks">Reddit 自动发布</a>
       <a href="/stats">发布记录</a>
       <a href="/analytics">数据总览</a>
-      <a data-admin-only class="is-active" href="/tiktok-connections">TikTok 账号授权</a>
-      <a data-admin-only href="/analytics-settings">抓取配置</a>
+      <a data-admin-only class="is-active" href="/tiktok-connections">TikTok 官方账号</a>
       <a data-admin-only href="/accounts">账户管理</a>
       <button class="nav-logout" type="button" data-logout>退出登录</button>
     </nav>
@@ -27,79 +23,41 @@
     <main class="connection-shell">
       <header class="page-header">
         <div>
-          <p class="eyebrow">OWNER AUTHORIZATION</p>
-          <h1>TikTok 账号授权</h1>
-          <p>这里只显示已经完成 TikTok 授权的账号；扫码中或未完成授权的记录不会出现在列表。</p>
+          <p class="eyebrow">OFFICIAL TIKTOK DATA</p>
+          <h1>TikTok 官方账号</h1>
+          <p>在 TikTok AI Tool 完成官方授权，本地工厂只读取已授权账号及其视频数据。</p>
         </div>
-        <div class="header-state" hidden><span id="configuredDot"></span><b id="configuredLabel">读取配置</b></div>
+        <a id="authorizeLink" class="primary-button link-button" href="https://tiktokaitool.com/dashboard?view=connect" target="_blank" rel="noreferrer">前往网站授权账号</a>
       </header>
 
-      <section class="summary-strip" hidden>
-        <div><span>已连接</span><strong id="readyCount">0</strong></div>
-        <div><span>等待授权</span><strong id="pendingCount">0</strong></div>
-        <div><span>同步中</span><strong id="syncingCount">0</strong></div>
-        <div><span>异常</span><strong id="errorCount">0</strong></div>
-      </section>
-
-      <section class="workflow-section" hidden>
-        <div class="section-head"><span>01</span><div><h2>Fivetran 配置</h2><p>凭据保存在本机运行目录，不写入项目代码。</p></div></div>
-        <div class="settings-grid">
-          <label><span>API Key</span><input id="apiKey" autocomplete="off" placeholder="留空保留现有 Key" /><small id="keyHint">尚未配置</small></label>
-          <label><span>API Secret</span><input id="apiSecret" type="password" autocomplete="new-password" placeholder="留空保留现有 Secret" /><small id="secretHint">尚未配置</small></label>
-          <label><span>授权回调地址</span><input id="appPublicUrl" placeholder="http://192.168.1.10:3010" /><small>手机扫码时需填写手机可访问的局域网或公网地址。</small></label>
-          <label><span>同步频率</span><select id="syncFrequency"><option value="60">每小时</option><option value="180">每 3 小时</option><option value="360">每 6 小时</option><option value="720">每 12 小时</option><option value="1440">每天</option></select><small>受当前 Fivetran 套餐限制。</small></label>
-        </div>
-        <div class="section-actions"><span id="settingsStatus">等待配置</span><button id="saveSettings" class="primary-button" type="button">保存配置</button></div>
-      </section>
-
-      <section class="workflow-section" hidden>
-        <div class="section-head"><span>02</span><div><h2>连接模板</h2><p>从现有资源读取准确的 Group 与 TikTok Organic service 配置。</p></div><button id="discoverButton" class="secondary-button" type="button">读取 Fivetran</button></div>
-        <div class="resource-grid">
-          <label><span>Fivetran Group</span><select id="groupSelect"><option value="">先读取资源</option></select></label>
-          <label><span>现有 TikTok Organic 连接</span><select id="templateSelect"><option value="">先读取资源</option></select></label>
-        </div>
-        <div class="resource-meta"><span id="discoverySummary">尚未读取 Fivetran 资源。</span><button id="saveSelection" class="secondary-button" type="button">保存选择</button></div>
-      </section>
-
-      <section class="workflow-section connections-section">
-        <div class="section-head"><span>01</span><div><h2>已授权 TikTok 账号</h2><p>仅展示已完成授权的账号。扫码中、创建中或未完成授权的记录会自动隐藏。</p></div><div class="create-inline"><input id="displayName" placeholder="账号备注，例如 @focus_daily" /><button id="createConnection" class="primary-button" type="button">新增账号授权</button><button id="reloadButton" class="secondary-button" type="button">刷新状态</button></div></div>
-        <div id="connectionList" class="connection-list"><div class="empty-state">尚未创建账号连接。</div></div>
-      </section>
-
-      <section class="workflow-section destination-section" hidden>
+      <section class="workflow-section" data-admin-only>
         <div class="section-head">
-          <span>04</span>
-          <div><h2>目标数据库</h2><p>只读连接 Fivetran 的 PostgreSQL 目标库，查看已同步的账号、视频和私有指标。</p></div>
-          <div class="button-pair"><a class="secondary-button database-detail-link" href="/tiktok-video-detail">单条视频核对</a><button id="testDatabase" class="secondary-button" type="button">测试连接</button><button id="saveDatabase" class="primary-button" type="button">保存数据库</button></div>
+          <span>01</span>
+          <div><h2>数据桥接</h2><p>配置 TikTok AI Tool 地址和本地工厂专用 API Key。</p></div>
         </div>
-        <div class="database-grid">
-          <label class="database-host"><span>主机</span><input id="databaseHost" autocomplete="off" placeholder="PostgreSQL host" /></label>
-          <label><span>端口</span><input id="databasePort" type="number" min="1" max="65535" value="5432" /></label>
-          <label><span>数据库</span><input id="databaseName" autocomplete="off" placeholder="postgres" /></label>
-          <label><span>用户</span><input id="databaseUser" autocomplete="off" placeholder="只读数据库用户" /></label>
-          <label class="database-password"><span>密码</span><input id="databasePassword" type="password" autocomplete="new-password" placeholder="留空保留现有密码" /><small id="databasePasswordHint">尚未保存密码</small></label>
-          <label class="database-ssl"><input id="databaseSsl" type="checkbox" checked /><span>启用 SSL 加密连接</span></label>
+        <div class="settings-grid">
+          <label>网站地址<input id="bridgeUrl" type="url" value="https://tiktokaitool.com" /></label>
+          <label>API Key<input id="bridgeApiKey" type="password" placeholder="留空保持原密钥" autocomplete="off" /></label>
         </div>
-        <div class="database-toolbar">
-          <span id="databaseStatus">等待配置目标数据库。</span>
-          <div><select id="databaseSchema"><option value="">先测试并读取 Schema</option></select><button id="loadDatabaseData" class="secondary-button" type="button">读取同步数据</button></div>
+        <div class="section-actions">
+          <span id="settingsSummary">正在读取配置...</span>
+          <div class="button-row">
+            <button id="testButton" class="secondary-button" type="button">测试连接</button>
+            <button id="saveButton" class="primary-button" type="button">保存配置</button>
+          </div>
         </div>
-        <div id="databaseSummary" class="database-summary" hidden></div>
-        <div id="databaseTables" class="database-table-list" hidden></div>
-        <div id="databaseVideos" class="database-videos" hidden></div>
       </section>
 
-      <section class="workflow-section audit-section" hidden>
-        <div class="section-head"><span>05</span><div><h2>最近事件</h2><p>只记录状态与错误摘要，不记录授权链接或凭据。</p></div></div>
-        <div id="eventList" class="event-list"><div class="empty-state">暂无事件。</div></div>
+      <section class="workflow-section">
+        <div class="section-head">
+          <span>02</span>
+          <div><h2>已授权账号</h2><p>这里只展示已经完成 TikTok 官方授权并可读取数据的账号。</p></div>
+          <button id="refreshButton" class="secondary-button" type="button">刷新账号</button>
+        </div>
+        <div id="statusMessage" class="status-message" hidden></div>
+        <div id="accountList" class="account-list"><div class="empty-state">正在读取已授权账号...</div></div>
       </section>
-
-      <aside class="data-note" hidden>
-        <strong>同步范围</strong>
-        <span>Fivetran TikTok Organic 会把账号、视频、评论、留存、流量来源和受众指标同步到目标数据库。这里先用于校验和查看原始同步结果；确认字段稳定后，再将私有指标汇总进“数据总览”。</span>
-      </aside>
     </main>
-
     <script src="/access.js"></script>
     <script type="module" src="/tiktok-connections.js"></script>
   </body>

@@ -44,7 +44,7 @@ function bindEvents() {
 async function loadAccounts() {
   setLoading(true, "正在读取授权账号与同步 Schema...");
   try {
-    const result = await fetchJson("/api/fivetran-tiktok/destination/accounts");
+    const result = await fetchJson("/api/private-tiktok/accounts");
     state.accounts = Array.isArray(result.accounts) ? result.accounts : [];
     if (!state.accounts.length) {
       elements.accountSelect.innerHTML = '<option value="">没有可用同步账号</option>';
@@ -74,7 +74,7 @@ async function loadVideos({ openExact = false } = {}) {
   try {
     const query = elements.videoSearch.value.trim();
     const params = new URLSearchParams({ schema: state.selectedSchema, query, limit: "60" });
-    const result = await fetchJson(`/api/fivetran-tiktok/destination/videos?${params}`);
+    const result = await fetchJson(`/api/private-tiktok/videos?${params}`);
     state.videos = Array.isArray(result.videos) ? result.videos : [];
     renderVideoList();
     setStatus(`已读取 ${state.videos.length} 条视频${query ? `，筛选条件：${query}` : ""}。`);
@@ -120,7 +120,7 @@ async function loadVideoDetail(videoId) {
   setLoading(true, `正在读取视频 ${videoId} 的完整指标...`);
   try {
     const params = new URLSearchParams({ schema: state.selectedSchema });
-    const result = await fetchJson(`/api/fivetran-tiktok/destination/videos/${encodeURIComponent(videoId)}?${params}`);
+    const result = await fetchJson(`/api/private-tiktok/videos/${encodeURIComponent(videoId)}?${params}`);
     state.selectedVideoId = videoId;
     renderVideoList();
     renderVideoDetail(result);

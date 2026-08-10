@@ -15,7 +15,7 @@ test("stores sidebar visibility per account and filters modules by role", () => 
       displayName: "Admin"
     });
     assert.ok(admin.sidebarModules.includes("operator"));
-    assert.ok(admin.sidebarModules.includes("project-hub"));
+    assert.ok(!admin.sidebarModules.includes("project-hub"));
     assert.ok(admin.sidebarModules.includes("accounts"));
 
     const operator = auth.createUser({
@@ -98,7 +98,7 @@ test("adds new admin modules to existing sidebars once", () => {
     }), "utf8");
 
     const auth = createLocalAuthService({ workDir });
-    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["tasks", "project-hub", "tiktok-connections", "accounts"]);
+    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["tasks", "tiktok-connections", "accounts"]);
 
     auth.updateUser("admin-1", { sidebarModules: ["tasks", "accounts"] });
     const reloaded = createLocalAuthService({ workDir });

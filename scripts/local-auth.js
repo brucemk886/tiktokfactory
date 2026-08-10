@@ -13,7 +13,6 @@ const ADMIN_SIDEBAR_MODULES = Object.freeze([
   "stats",
   "analytics",
   "operator",
-  "project-hub",
   "tiktok-connections",
   "analytics-settings",
   "accounts"
@@ -34,13 +33,16 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     if (!fs.existsSync(storePath)) return;
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
-      if (Number(store.version || 1) >= 3) return;
+      const version = Number(store.version || 1);
+      if (version >= 4) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
-        if (user.role !== "admin" || !Array.isArray(user.sidebarModules)) continue;
-        if (!user.sidebarModules.includes("project-hub")) user.sidebarModules.push("project-hub");
-        if (!user.sidebarModules.includes("tiktok-connections")) user.sidebarModules.push("tiktok-connections");
+        if (!Array.isArray(user.sidebarModules)) continue;
+        user.sidebarModules = user.sidebarModules.filter((moduleId) => moduleId !== "project-hub");
+        if (version < 3 && user.role === "admin" && !user.sidebarModules.includes("tiktok-connections")) {
+          user.sidebarModules.push("tiktok-connections");
+        }
       }
-      store.version = 3;
+      store.version = 4;
       fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
     } catch {
       // Leave malformed legacy data untouched; normal store recovery handles it.

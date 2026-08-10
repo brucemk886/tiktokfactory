@@ -1213,7 +1213,7 @@ html:not([data-role="admin"]) [data-admin-only] { display: none !important; }
 .stats-page .stats-back-link { display: none; }
 
 .stats-page .stats-filters {
-  grid-template-columns: 150px 180px minmax(280px, 1fr) 108px;
+  grid-template-columns: 140px 180px 180px minmax(220px, 1fr) 108px;
   align-items: end;
   padding: 14px;
   border: 1px solid #252b32;

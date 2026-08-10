@@ -9,7 +9,6 @@ const SIDEBAR_MODULE_BY_PATH = Object.freeze({
   "/analytics": "analytics",
   "/tiktok-video-detail": "analytics",
   "/operator": "operator",
-  "/project-hub": "project-hub",
   "/tiktok-connections": "tiktok-connections",
   "/analytics-settings": "analytics-settings",
   "/accounts": "accounts"
@@ -24,7 +23,6 @@ const SIDEBAR_MODULE_BY_PATH = Object.freeze({
 
     if (user.role === "admin") {
       addOperationBrainLinks();
-      addProjectHubLinks();
       addTikTokConnectionLinks();
       addTikTokVideoDetailLinks();
     }
@@ -57,26 +55,12 @@ function addOperationBrainLinks() {
   });
 }
 
-function addProjectHubLinks() {
-  document.querySelectorAll(".tasks-nav, .side-tabs").forEach((nav) => {
-    if (nav.querySelector('a[href="/project-hub"]')) return;
-    const link = document.createElement("a");
-    link.href = "/project-hub";
-    link.textContent = "项目中台";
-    link.dataset.adminOnly = "";
-    link.dataset.sidebarModule = "project-hub";
-    if (location.pathname === "/project-hub") link.className = "is-active";
-    const settingsLink = nav.querySelector('a[href="/analytics-settings"]');
-    nav.insertBefore(link, settingsLink || null);
-  });
-}
-
 function addTikTokConnectionLinks() {
   document.querySelectorAll(".tasks-nav, .side-tabs").forEach((nav) => {
     if (nav.querySelector('a[href="/tiktok-connections"]')) return;
     const link = document.createElement("a");
     link.href = "/tiktok-connections";
-    link.textContent = "TikTok 账号授权";
+    link.textContent = "TikTok 官方账号";
     link.dataset.adminOnly = "";
     link.dataset.sidebarModule = "tiktok-connections";
     if (location.pathname === "/tiktok-connections") link.className = "is-active";

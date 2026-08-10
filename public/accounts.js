@@ -10,8 +10,7 @@ const SIDEBAR_MODULES = Object.freeze([
   { id: "stats", label: "发布记录" },
   { id: "analytics", label: "数据总览" },
   { id: "operator", label: "小说 AI 自运营", adminOnly: true },
-  { id: "project-hub", label: "项目中台", adminOnly: true },
-  { id: "tiktok-connections", label: "TikTok 账号授权", adminOnly: true },
+  { id: "tiktok-connections", label: "TikTok 官方账号", adminOnly: true },
   { id: "analytics-settings", label: "抓取配置", adminOnly: true },
   { id: "accounts", label: "账户管理", adminOnly: true }
 ]);

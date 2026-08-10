@@ -17,9 +17,7 @@ import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
 import { createOperationBrainService } from "./operation-brain.js";
-import { createProjectHubService } from "./project-hub.js";
-import { createFivetranTikTokService } from "./fivetran-tiktok.js";
-import { createFivetranDestinationService } from "./fivetran-destination.js";
+import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -53,11 +51,11 @@ const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
 const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
 const psychologyTopics = createPsychologyTopicsService({ workDir });
 const kieAi = createKieAiService({ workDir, readApiKey: () => readPsychologySettings().kieApiKey });
-const fivetranDestination = createFivetranDestinationService({ workDir });
+const privateTikTokAnalytics = createOfficialTikTokAnalyticsService({ workDir });
 const operationBrain = createOperationBrainService({
   workDir,
   analyticsService: tiktokAnalytics,
-  privateAnalyticsService: fivetranDestination,
+  privateAnalyticsService: privateTikTokAnalytics,
   autoTaskManager,
   codexBrain,
   deepseekBrain,
@@ -66,8 +64,6 @@ const operationBrain = createOperationBrainService({
   readRedditSettings: () => readRedditMixSettings().settings,
   listProfiles: () => localAuth.listProfiles()
 });
-const projectHub = createProjectHubService({ root, workDir });
-const fivetranTikTok = createFivetranTikTokService({ workDir });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
 
@@ -137,6 +133,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { profile: localAuth.saveProfile(await readJsonBody(req)) });
     }
     if (req.method === "GET" && url.pathname.match(/^\/api\/admin\/geelark-profiles\/[^/]+\/groups$/)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "?????????? GeeLark ???" });
       const profileId = decodeURIComponent(url.pathname.split("/")[4]);
       if (!localAuth.getProfile(profileId)) return sendJson(res, 404, { error: "GeeLark 配置不存在。" });
       const phones = await listGeeLarkPhonesForProfile(profileId);
@@ -216,11 +213,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/tiktok-video-detail.css") {
       return sendFile(res, path.join(publicDir, "tiktok-video-detail.css"), "text/css; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/tiktok-connections/callback") {
-      const integrationId = String(url.searchParams.get("integrationId") || "");
-      return redirect(res, `/tiktok-connections?callback=1&integrationId=${encodeURIComponent(integrationId)}`);
     }
 
     if (req.method === "GET" && url.pathname === "/reddit") {
@@ -306,18 +298,6 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "operator.css"), "text/css; charset=utf-8");
     }
 
-    if (req.method === "GET" && url.pathname === "/project-hub") {
-      return sendFile(res, path.join(publicDir, "project-hub.html"), "text/html; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/project-hub.js") {
-      return sendFile(res, path.join(publicDir, "project-hub.js"), "text/javascript; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/project-hub.css") {
-      return sendFile(res, path.join(publicDir, "project-hub.css"), "text/css; charset=utf-8");
-    }
-
     if (req.method === "GET" && ["/asset-cutter", "/novel-library", "/audio-library"].includes(url.pathname)) {
       return redirect(res, "/tasks");
     }
@@ -339,166 +319,42 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(outputDir, fileName), "video/mp4");
     }
 
-    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok") {
-      return sendJson(res, 200, {
-        settings: fivetranTikTok.getPublicSettings(),
-        destination: fivetranDestination.getPublicSettings(),
-        integrations: fivetranTikTok.listIntegrations(),
-        events: fivetranTikTok.listEvents({ limit: 30 })
-      }, { "Cache-Control": "no-store" });
+    if (req.method === "GET" && url.pathname === "/api/private-tiktok/settings") {
+      return sendJson(res, 200, { settings: privateTikTokAnalytics.getPublicSettings() }, { "Cache-Control": "no-store" });
     }
 
-    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/destination/settings") {
-      try {
-        return sendJson(res, 200, { settings: fivetranDestination.saveSettings(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存目标数据库配置失败。" });
-      }
+    if (req.method === "POST" && url.pathname === "/api/private-tiktok/settings") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以修改 TikTok 数据桥接配置。" });
+      return sendJson(res, 200, { settings: privateTikTokAnalytics.saveSettings(await readJsonBody(req)) });
     }
 
-    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/destination/test") {
-      try {
-        return sendJson(res, 200, await fivetranDestination.testConnection(), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "目标数据库连接失败。" });
-      }
+    if (req.method === "POST" && url.pathname === "/api/private-tiktok/test") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以测试 TikTok 数据桥接。" });
+      return sendJson(res, 200, await privateTikTokAnalytics.testConnection(), { "Cache-Control": "no-store" });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/discover") {
-      try {
-        return sendJson(res, 200, await fivetranDestination.discover(), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取同步 Schema 失败。" });
-      }
+    if (req.method === "GET" && url.pathname === "/api/private-tiktok/accounts") {
+      return sendJson(res, 200, await privateTikTokAnalytics.listAccounts(), { "Cache-Control": "no-store" });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/snapshot") {
-      try {
-        return sendJson(res, 200, await fivetranDestination.getSnapshot({
-          schema: url.searchParams.get("schema"),
-          limit: url.searchParams.get("limit")
-        }), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 TikTok 同步数据失败。" });
-      }
+    if (req.method === "GET" && url.pathname === "/api/private-tiktok/videos") {
+      return sendJson(res, 200, await privateTikTokAnalytics.listVideos({
+        schema: url.searchParams.get("schema"),
+        query: url.searchParams.get("query"),
+        limit: url.searchParams.get("limit"),
+        includePrivate: url.searchParams.get("includePrivate") === "1"
+      }), { "Cache-Control": "no-store" });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/accounts") {
-      try {
-        return sendJson(res, 200, await fivetranDestination.listAccounts(), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取同步账号失败。" });
-      }
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/fivetran-tiktok/destination/videos") {
-      try {
-        return sendJson(res, 200, await fivetranDestination.listVideos({
-          schema: url.searchParams.get("schema"),
-          query: url.searchParams.get("query"),
-          limit: url.searchParams.get("limit")
-        }), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取同步视频列表失败。" });
-      }
-    }
-
-    if (req.method === "GET" && /^\/api\/fivetran-tiktok\/destination\/videos\/[^/]+$/.test(url.pathname)) {
-      try {
-        return sendJson(res, 200, await fivetranDestination.getVideoDetail({
-          schema: url.searchParams.get("schema"),
-          videoId: decodeURIComponent(url.pathname.split("/").pop())
-        }), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取单条视频数据失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/settings") {
-      try {
-        return sendJson(res, 200, { settings: fivetranTikTok.saveSettings(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存 Fivetran 配置失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/discover") {
-      try {
-        return sendJson(res, 200, await fivetranTikTok.discover(), { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 Fivetran 资源失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/select") {
-      try {
-        return sendJson(res, 200, { settings: await fivetranTikTok.selectDiscoverySettings(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存 Fivetran 资源选择失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/fivetran-tiktok/integrations") {
-      try {
-        const payload = await readJsonBody(req);
-        const integration = await fivetranTikTok.createIntegration({
-          ...payload,
-          ownerUserId: session.user.id,
-          ownerUsername: session.user.username
-        });
-        return sendJson(res, 201, { integration });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "创建 TikTok 授权连接失败。" });
-      }
-    }
-
-    if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/label$/.test(url.pathname)) {
-      try {
-        const integrationId = decodeURIComponent(url.pathname.split("/")[4]);
-        const payload = await readJsonBody(req);
-        return sendJson(res, 200, { integration: fivetranTikTok.renameIntegration(integrationId, payload.displayName) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存账号标识失败。" });
-      }
-    }
-
-    if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/connect-card$/.test(url.pathname)) {
-      try {
-        const integrationId = decodeURIComponent(url.pathname.split("/")[4]);
-        const result = await fivetranTikTok.createConnectCard(integrationId);
-        return sendJson(res, 200, result, { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "生成 TikTok 授权链接失败。" });
-      }
-    }
-
-    if (req.method === "GET" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/status$/.test(url.pathname)) {
-      try {
-        const integrationId = decodeURIComponent(url.pathname.split("/")[4]);
-        return sendJson(res, 200, { integration: await fivetranTikTok.refreshStatus(integrationId) }, { "Cache-Control": "no-store" });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 TikTok 授权状态失败。" });
-      }
-    }
-
-    if (req.method === "POST" && /^\/api\/fivetran-tiktok\/integrations\/[^/]+\/(sync|pause|resume)$/.test(url.pathname)) {
-      try {
-        const parts = url.pathname.split("/");
-        const integrationId = decodeURIComponent(parts[4]);
-        const action = parts[5];
-        const integration = action === "sync"
-          ? await fivetranTikTok.syncNow(integrationId)
-          : action === "pause"
-            ? await fivetranTikTok.pauseIntegration(integrationId)
-            : await fivetranTikTok.resumeIntegration(integrationId);
-        return sendJson(res, 200, { integration });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "更新 TikTok 连接失败。" });
-      }
+    if (req.method === "GET" && /^\/api\/private-tiktok\/videos\/[^/]+$/.test(url.pathname)) {
+      return sendJson(res, 200, await privateTikTokAnalytics.getVideoDetail({
+        schema: url.searchParams.get("schema"),
+        videoId: decodeURIComponent(url.pathname.split("/").pop())
+      }), { "Cache-Control": "no-store" });
     }
 
     if (req.method === "GET" && url.pathname === "/api/codex/status") {
-      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex 接口仅允许在本机访问。" });
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "Codex ???????????" });
       return sendJson(res, 200, codexBrain.getStatus());
     }
 
@@ -518,44 +374,7 @@ const server = http.createServer(async (req, res) => {
       try {
         return sendJson(res, 200, await deepseekBrain.testConnection(await readJsonBody(req)));
       } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "DeepSeek 连接测试失败。" });
-      }
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/project-hub") {
-      return sendJson(res, 200, projectHub.getOverview());
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/project-hub/context") {
-      try {
-        return sendJson(res, 200, projectHub.getContext(url.searchParams.get("projectId") || ""));
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "读取项目上下文失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/project-hub/projects") {
-      try {
-        return sendJson(res, 201, { project: projectHub.createProject(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建项目失败。" });
-      }
-    }
-
-    if (req.method === "PATCH" && /^\/api\/project-hub\/projects\/[^/]+$/.test(url.pathname)) {
-      try {
-        const id = decodeURIComponent(url.pathname.split("/").pop());
-        return sendJson(res, 200, { project: projectHub.updateProject(id, await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新项目失败。" });
-      }
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/project-hub/handoffs") {
-      try {
-        return sendJson(res, 201, { handoff: projectHub.addHandoff(await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "写入交接记录失败。" });
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "DeepSeek ???????" });
       }
     }
 
@@ -781,11 +600,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {
       const publishRecords = readPublishRecords();
       const requestedProfileId = String(url.searchParams.get("profileId") || "").trim();
-      let allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
+      if (session.user.role !== "admin" && requestedProfileId && requestedProfileId !== session.user.geelarkProfileId) {
+        return sendJson(res, 403, { error: "????????????? GeeLark ???" });
+      }
+      const analyticsProfileId = resolveAnalyticsProfileId(session.user, requestedProfileId);
+      let allowedAccounts = [];
       let availableGroups = null;
-      if (requestedProfileId) {
-        if (!localAuth.getProfile(requestedProfileId)) return sendJson(res, 404, { error: "GeeLark 配置不存在。" });
-        const profilePhones = await getCurrentGeeLarkPhones([requestedProfileId]);
+      if (analyticsProfileId) {
+        if (!localAuth.getProfile(analyticsProfileId)) return sendJson(res, 404, { error: "GeeLark ??????" });
+        const profilePhones = session.user.role === "admin"
+          ? await getCurrentGeeLarkPhones([analyticsProfileId])
+          : await getAuthorizedGeeLarkPhones(session.user);
         const profileAccounts = new Set(profilePhones
           .map((phone) => String(phone.serialName || "").trim().replace(/^@/, "").toLowerCase())
           .filter(Boolean));
@@ -794,11 +619,9 @@ const server = http.createServer(async (req, res) => {
           .filter(Boolean)))
           .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
         availableGroups = profileGroups;
-        if (session.user.role === "admin") {
-          allowedAccounts = Array.from(profileAccounts);
-        } else {
-          allowedAccounts = allowedAccounts.filter((account) => profileAccounts.has(String(account).toLowerCase()));
-        }
+        allowedAccounts = Array.from(profileAccounts);
+      } else {
+        allowedAccounts = await getAnalyticsAllowedAccounts(session.user, publishRecords);
       }
       return sendJson(res, 200, tiktokAnalytics.getDashboard({
         period: String(url.searchParams.get("period") || "10d"),
@@ -812,9 +635,12 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics/settings") {
       const settings = tiktokAnalytics.getSettings();
-      const profiles = localAuth.listProfiles().map((profile) => ({ id: profile.id, name: profile.name }));
+      const profiles = getAccessiblePublishProfiles(session.user).map((profile) => ({ id: profile.id, name: profile.name }));
       const requestedProfileIds = url.searchParams.getAll("profileId").map((item) => String(item).trim()).filter(Boolean);
-      const configuredProfileIds = (requestedProfileIds.length ? requestedProfileIds : settings.profileIds)
+      const sourceProfileIds = session.user.role === "admin"
+        ? (requestedProfileIds.length ? requestedProfileIds : settings.profileIds)
+        : [session.user.geelarkProfileId || "default"];
+      const configuredProfileIds = sourceProfileIds
         .filter((profileId) => profiles.some((profile) => profile.id === profileId));
       const defaultProfileId = configuredProfileIds[0]
         || profiles.find((profile) => profile.id === "default")?.id
@@ -824,7 +650,11 @@ const server = http.createServer(async (req, res) => {
       let currentPhones = [];
       let groupReadError = "";
       try {
-        currentPhones = profileIds.length ? await getCurrentGeeLarkPhones(profileIds) : [];
+        currentPhones = !profileIds.length
+          ? []
+          : session.user.role === "admin"
+            ? await getCurrentGeeLarkPhones(profileIds)
+            : await getAuthorizedGeeLarkPhones(session.user);
       } catch (error) {
         // A temporary GeeLark failure must not hide locally saved account profiles.
         groupReadError = error.message || "GeeLark 账号组读取失败。";
@@ -936,10 +766,24 @@ const server = http.createServer(async (req, res) => {
       const groupNames = Array.isArray(payload.groupNames)
         ? payload.groupNames.map((item) => String(item).trim()).filter(Boolean)
         : [String(payload.groupName || "").trim()].filter(Boolean);
-      if (!profileId) return sendJson(res, 400, { error: "请先选择 GeeLark 账号。" });
-      if (!groupNames.length) return sendJson(res, 400, { error: "请至少选择一个需要抓取的账号组。" });
-      const accounts = await getCurrentGeeLarkAccounts(groupNames, profileId);
-      if (!accounts.length) return sendJson(res, 400, { error: "当前账号组没有可抓取的账号。" });
+      if (!profileId) return sendJson(res, 400, { error: "???? GeeLark ???" });
+      if (!groupNames.length) return sendJson(res, 400, { error: "????????????????" });
+      if (session.user.role !== "admin" && profileId !== session.user.geelarkProfileId) {
+        return sendJson(res, 403, { error: "????????????? GeeLark ???" });
+      }
+      let accounts = [];
+      if (session.user.role === "admin") {
+        accounts = await getCurrentGeeLarkAccounts(groupNames, profileId);
+      } else {
+        const allowedGroups = new Set((session.user.allowedGeeLarkGroups || []).map((item) => String(item).trim()).filter(Boolean));
+        const unauthorizedGroup = groupNames.find((groupName) => !allowedGroups.has(groupName));
+        if (unauthorizedGroup) return sendJson(res, 403, { error: "??????? GeeLark ????????" });
+        accounts = (await getAuthorizedGeeLarkPhones(session.user))
+          .filter((phone) => groupNames.includes(String(phone.groupName || "").trim()))
+          .map((phone) => String(phone.name || phone.remark || "").trim())
+          .filter(Boolean);
+      }
+      if (!accounts.length) return sendJson(res, 400, { error: "??????????????" });
       void tiktokAnalytics.fetchAccounts(accounts).catch((error) => console.error("TikTok analytics fetch failed:", error));
       return sendJson(res, 202, { ok: true, profileId, groupNames, accountCount: accounts.length });
     }
@@ -1309,7 +1153,7 @@ const server = http.createServer(async (req, res) => {
         jobId,
         status: "queued",
         percent: 1,
-        message: "已加入生成队列...",
+        message: "宸插姞鍏ョ敓鎴愰槦鍒?..",
         template: payload.template || "player",
         createdAt: Date.now()
       });
@@ -1689,6 +1533,12 @@ async function getScheduledTikTokAccountsCached() {
 }
 
 async function getAnalyticsAllowedAccounts(user, publishRecords = null) {
+  if (user?.role !== "admin") {
+    const phones = await getAuthorizedGeeLarkPhones(user);
+    return Array.from(new Set(phones
+      .map((phone) => String(phone.serialName || "").trim().replace(/^@/, "").toLowerCase())
+      .filter(Boolean)));
+  }
   const configuredGroups = user.role === "admin"
     ? new Set((tiktokAnalytics.getSettings().groups || []).map((group) => String(group).trim()).filter(Boolean))
     : new Set((user.allowedGeeLarkGroups || []).map((group) => String(group).trim()).filter(Boolean));
@@ -1699,6 +1549,13 @@ async function getAnalyticsAllowedAccounts(user, publishRecords = null) {
   return Array.from(new Set(records
     .map((record) => String(record.accountName || "").trim().replace(/^@/, "").toLowerCase())
     .filter(Boolean)));
+}
+
+function resolveAnalyticsProfileId(user, requestedProfileId = "") {
+  const requested = String(requestedProfileId || "").trim();
+  if (user?.role === "admin") return requested;
+  const assigned = String(user?.geelarkProfileId || "default").trim() || "default";
+  return assigned;
 }
 
 function normalizeOutputId(value) {
@@ -2217,10 +2074,19 @@ function appendPublishRecords(records) {
 
 function getPublishRecordsSummary(searchParams, user = null) {
   const range = String(searchParams.get("range") || "7d");
+  const requestedProfileId = String(searchParams.get("profileId") || "").trim();
   const group = String(searchParams.get("group") || "").trim();
   const account = String(searchParams.get("account") || "").trim().toLowerCase();
   const from = resolveStatsFrom(range);
-  const allRecords = readPublishRecords().filter((record) => canAccessPublishRecord(user, record));
+  const profiles = getAccessiblePublishProfiles(user);
+  const defaultProfileId = String(user?.geelarkProfileId || profiles[0]?.id || "default");
+  const profileId = profiles.some((profile) => profile.id === requestedProfileId)
+    ? requestedProfileId
+    : defaultProfileId;
+  const allRecords = readPublishRecords()
+    .filter((record) => canAccessPublishRecord(user, record))
+    // Records created before multiple GeeLark profiles were introduced belong to the default profile.
+    .filter((record) => String(record.geelarkProfileId || "default") === profileId);
   const records = allRecords
     .filter((record) => !from || Number(record.scheduleAt) * 1000 >= from)
     .filter((record) => !group || record.groupName === group)
@@ -2252,8 +2118,15 @@ function getPublishRecordsSummary(searchParams, user = null) {
       accountCount: new Set(records.map((record) => record.assignedEnvId).filter(Boolean)).size,
       groupCount: new Set(records.map((record) => record.groupName).filter(Boolean)).size
     },
-    filters: { groups, accounts }
+    filters: { profiles, selectedProfileId: profileId, groups, accounts }
   };
+}
+
+function getAccessiblePublishProfiles(user) {
+  if (!user) return [];
+  if (user.role === "admin") return localAuth.listProfiles();
+  const profile = localAuth.getProfile(user.geelarkProfileId || "default");
+  return profile ? [{ id: profile.id, name: profile.name }] : [];
 }
 
 function resolveStatsFrom(range) {
@@ -2366,7 +2239,7 @@ function downloadMediaAudioWithYtDlp(mediaUrl, targetDir, id) {
   const before = new Set(fs.readdirSync(targetDir));
   const ytDlp = resolveYtDlpCommand();
   const attempts = [
-    ["直接提取", []],
+    ["鐩存帴鎻愬彇", []],
     ["读取 Chrome Cookie 后提取", ["--cookies-from-browser", "chrome"]]
   ];
   const errors = [];

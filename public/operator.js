@@ -113,10 +113,19 @@ async function resetJudgments() {
 }
 
 async function toggleOperator(event) {
+  if (!event.target.checked) {
+    $("#autoCreate").checked = false;
+  }
+  syncAutoCreateControl();
   await saveSettings();
 }
 
 async function toggleAutoCreate(event) {
+  if (!$("#operatorEnabled").checked) {
+    event.target.checked = false;
+    syncAutoCreateControl();
+    return;
+  }
   if (!confirmAutoCreate(event)) return;
   await saveSettings();
 }
@@ -194,7 +203,8 @@ function applySettings(value) {
   $("#backgroundMusicDir").value = value.backgroundMusicDir || "";
   $("#videoDesc").value = value.videoDesc || "#reddit #redditstories #storytime";
   $("#operatorEnabled").checked = value.enabled === true;
-  $("#autoCreate").checked = value.autoCreateTasks === true;
+  $("#autoCreate").checked = value.enabled === true && value.autoCreateTasks === true;
+  syncAutoCreateControl();
   updateSourceState();
   updateCycleState({ settings: value });
 }
@@ -333,6 +343,7 @@ function renderDataStatus(data) {
 function renderPlan(plan) {
   const drafts = plan.taskDrafts || [];
   renderAiDecision(plan.aiStrategy);
+  renderAudioPerformance(plan.contentFeedback?.audioPerformance || []);
   $("#planMeta").textContent = `${plan.planDate} · ${plan.accountCount} 个账号 · ${plan.plannedVideos} 条 · ${statusText(plan.status)}`;
   $("#planSummary").innerHTML = [
     ["账号", plan.accountCount],
@@ -351,6 +362,38 @@ function renderPlan(plan) {
       </tr>`).join("")
     : '<tr><td colspan="6" class="empty-cell">方案中没有任务。</td></tr>';
   $("#approvePlanBtn").disabled = !["draft", "partial"].includes(plan.status);
+}
+
+function renderAudioPerformance(items = []) {
+  const panel = $("#audioPerformance");
+  const rows = $("#audioPerformanceRows");
+  if (!Array.isArray(items) || !items.length) {
+    panel.hidden = true;
+    rows.innerHTML = "";
+    return;
+  }
+  const actionMeta = {
+    prioritize: ["优先使用", "priority"],
+    rotate: ["正常轮换", "rotate"],
+    explore: ["保留探索", "explore"],
+    deprioritize: ["降低使用", "deprioritize"]
+  };
+  panel.hidden = false;
+  rows.innerHTML = items.slice(0, 8).map((item) => {
+    const [label, className] = actionMeta[item.recommendation] || actionMeta.explore;
+    const trend = Number(item.previousAverageViews) > 0
+      ? `${Number(item.trendPercent) > 0 ? "+" : ""}${formatNumber(Number(item.trendPercent) || 0)}%`
+      : "新样本";
+    return `<tr>
+      <td><strong title="${escapeHtml(item.audioName || "")}">${escapeHtml(item.audioName || "未命名音频")}</strong></td>
+      <td>${formatNumber(item.sampleCount || 0)} 条 / ${formatNumber(item.accountCount || 0)} 号</td>
+      <td>${formatNumber(item.averageViews || 0)} / ${formatNumber(item.medianViews || 0)}</td>
+      <td>${Number(item.engagementSampleCount || 0) > 0 ? `${formatNumber(item.engagementRate || 0)}%` : "-"}</td>
+      <td>${formatNumber(item.low200Rate || 0)}%</td>
+      <td>${trend}</td>
+      <td><span class="audio-action ${className}">${label}</span></td>
+    </tr>`;
+  }).join("");
 }
 
 function renderAiDecision(strategy = {}) {
@@ -381,7 +424,23 @@ function updateState(status) {
   const enabled = status.enabled ?? status.settings?.enabled;
   const autoCreate = status.autoCreateTasks ?? status.settings?.autoCreateTasks;
   $("#operatorEnabled").checked = Boolean(enabled);
+  $("#autoCreate").checked = Boolean(enabled && autoCreate);
+  syncAutoCreateControl();
   $("#operatorState").textContent = !enabled ? "自动运行关闭" : autoCreate ? "全自动运行" : "每日自动生成草案";
+}
+
+function syncAutoCreateControl() {
+  const autoCreate = $("#autoCreate");
+  const enabled = $("#operatorEnabled").checked;
+  const control = autoCreate.closest(".switch-control");
+  autoCreate.disabled = !enabled;
+  control?.classList.toggle("is-disabled", !enabled);
+  control?.setAttribute(
+    "title",
+    enabled
+      ? "开启后，每日方案生成完成会自动创建视频生成与发布任务"
+      : "请先开启小说自运营，才能启用自动创建发布任务"
+  );
 }
 
 function updateCycleState(status = {}) {

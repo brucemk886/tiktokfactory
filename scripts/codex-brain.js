@@ -422,7 +422,7 @@ ${JSON.stringify(input.workflowPerformance)}
 Matched performance by local 30-minute publishing window:
 ${JSON.stringify(input.publishTimePerformance)}
 
-Owner-authorized private video performance from Fivetran (ratios are 0-1):
+Owner-authorized private video performance from the official TikTok data bridge (ratios are 0-1):
 ${JSON.stringify(input.privatePerformance || {})}
 
 Model-routing context:

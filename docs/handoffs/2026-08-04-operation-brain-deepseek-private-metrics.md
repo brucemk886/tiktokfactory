@@ -12,14 +12,14 @@ Use DeepSeek V4 Flash to process the complete recent owner-authorized video data
 - SOL receives the complete DeepSeek evidence report and preliminary strategy; there is no eight-video representative sample or conditional escalation threshold.
 - If DeepSeek fails, SOL is the fallback. If SOL review fails after a successful DeepSeek result, the DeepSeek strategy is retained.
 - Private analytics include full retention/like curves, completion, average and total watch time, reach, engagement counts, traffic sources, and audience gender/country/city/type. Captions are included for context; raw comment bodies are excluded.
-- Fivetran read failures do not block plan creation or publishing safeguards.
+- Official bridge read failures do not block plan creation or publishing safeguards.
 
 ## Files Changed
 
 - `scripts/deepseek-brain.js`
 - `scripts/deepseek-brain.test.js`
-- `scripts/fivetran-destination.js`
-- `scripts/fivetran-destination.test.js`
+- `scripts/official-tiktok-analytics.js`
+- `scripts/private-tiktok-signals.js`
 - `scripts/operation-brain.js`
 - `scripts/operation-brain.test.js`
 - `scripts/codex-brain.js`
@@ -30,13 +30,13 @@ Use DeepSeek V4 Flash to process the complete recent owner-authorized video data
 
 ## Tests Performed
 
-- Focused Node tests for DeepSeek configuration, lossless full-data chunking, Fivetran private metrics, hybrid routing, and SOL-review fallback: 20 passed.
+- Focused Node tests for DeepSeek configuration, lossless full-data chunking, private metrics, hybrid routing, and SOL-review fallback: 20 passed.
 - JavaScript syntax checks passed for all affected server and browser files.
 - Local Factory restarted successfully and `/login` returned HTTP 200 on port 3010.
 
 ## Unfinished Work
 
-- The currently synchronized Fivetran account has no videos inside the recent 10-day strategy window, so live private-metric routing remains empty until an active account is authorized and synchronized.
+- Live private-metric routing remains empty until an actively posting account is authorized and synchronized through the official hosted bridge.
 
 ## Recommended Next Step
 

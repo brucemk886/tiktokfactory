@@ -1,478 +1,133 @@
-const $ = (selector) => document.querySelector(selector);
 const elements = {
-  configuredDot: $("#configuredDot"), configuredLabel: $("#configuredLabel"),
-  readyCount: $("#readyCount"), pendingCount: $("#pendingCount"), syncingCount: $("#syncingCount"), errorCount: $("#errorCount"),
-  apiKey: $("#apiKey"), apiSecret: $("#apiSecret"), keyHint: $("#keyHint"), secretHint: $("#secretHint"),
-  appPublicUrl: $("#appPublicUrl"), syncFrequency: $("#syncFrequency"), settingsStatus: $("#settingsStatus"), saveSettings: $("#saveSettings"),
-  discoverButton: $("#discoverButton"), groupSelect: $("#groupSelect"), templateSelect: $("#templateSelect"), discoverySummary: $("#discoverySummary"), saveSelection: $("#saveSelection"),
-  displayName: $("#displayName"), createConnection: $("#createConnection"), connectionList: $("#connectionList"),
-  databaseHost: $("#databaseHost"), databasePort: $("#databasePort"), databaseName: $("#databaseName"), databaseUser: $("#databaseUser"),
-  databasePassword: $("#databasePassword"), databasePasswordHint: $("#databasePasswordHint"), databaseSsl: $("#databaseSsl"),
-  saveDatabase: $("#saveDatabase"), testDatabase: $("#testDatabase"), databaseStatus: $("#databaseStatus"), databaseSchema: $("#databaseSchema"),
-  loadDatabaseData: $("#loadDatabaseData"), databaseSummary: $("#databaseSummary"), databaseTables: $("#databaseTables"), databaseVideos: $("#databaseVideos"),
-  reloadButton: $("#reloadButton"), eventList: $("#eventList")
+  bridgeUrl: document.querySelector("#bridgeUrl"),
+  bridgeApiKey: document.querySelector("#bridgeApiKey"),
+  authorizeLink: document.querySelector("#authorizeLink"),
+  settingsSummary: document.querySelector("#settingsSummary"),
+  statusMessage: document.querySelector("#statusMessage"),
+  accountList: document.querySelector("#accountList"),
+  saveButton: document.querySelector("#saveButton"),
+  testButton: document.querySelector("#testButton"),
+  refreshButton: document.querySelector("#refreshButton"),
 };
 
-let state = { settings: {}, destination: {}, destinationDiscovery: null, destinationSnapshot: null, integrations: [], events: [], groups: [], connections: [] };
+elements.saveButton?.addEventListener("click", saveSettings);
+elements.testButton?.addEventListener("click", testConnection);
+elements.refreshButton?.addEventListener("click", loadAccounts);
+elements.bridgeUrl?.addEventListener("input", updateAuthorizeLink);
 
-elements.saveSettings.addEventListener("click", saveSettings);
-elements.discoverButton.addEventListener("click", discoverResources);
-elements.saveSelection.addEventListener("click", saveSelection);
-elements.createConnection.addEventListener("click", createConnection);
-elements.saveDatabase.addEventListener("click", () => saveDatabaseSettings());
-elements.testDatabase.addEventListener("click", testDatabaseConnection);
-elements.loadDatabaseData.addEventListener("click", loadDatabaseData);
-elements.reloadButton.addEventListener("click", refreshAllStatuses);
-elements.connectionList.addEventListener("click", handleConnectionAction);
+await loadSettings();
+await loadAccounts();
 
-await loadOverview();
-const callbackId = new URLSearchParams(location.search).get("integrationId");
-if (callbackId) {
-  const integration = await refreshStatus(callbackId, false);
-  history.replaceState({}, "", "/tiktok-connections");
-  await loadOverview();
-  const completed = ["authorized", "ready", "syncing"].includes(integration.status);
-  setStatus(
-    completed
-      ? "TikTok 授权已完成，Fivetran 正在同步数据。"
-      : "已返回本地工厂，但授权尚未完成。请重新点击授权，并在 Fivetran 页面完成 Save & Test。",
-    completed ? "success" : "error"
-  );
-}
-
-async function loadOverview() {
+async function loadSettings() {
   try {
-    const data = await requestJson("/api/fivetran-tiktok");
-    state = { ...state, ...data };
-    render();
+    const result = await requestJson("/api/private-tiktok/settings");
+    const settings = result.settings || {};
+    elements.bridgeUrl.value = settings.baseUrl || "https://tiktokaitool.com";
+    elements.settingsSummary.textContent = settings.configured ? `已连接 · ${settings.baseUrl}` : "尚未配置桥接 API Key。";
+    updateAuthorizeLink();
   } catch (error) {
-    setStatus(error.message, "error");
+    elements.settingsSummary.textContent = error.message || "读取配置失败。";
   }
 }
 
 async function saveSettings() {
-  setBusy(elements.saveSettings, true, "保存中...");
+  setBusy(elements.saveButton, true, "保存中...");
   try {
-    const payload = {
-      apiKey: elements.apiKey.value.trim(),
-      apiSecret: elements.apiSecret.value.trim(),
-      appPublicUrl: elements.appPublicUrl.value.trim() || location.origin,
-      syncFrequency: Number(elements.syncFrequency.value)
-    };
-    const data = await requestJson("/api/fivetran-tiktok/settings", { method: "POST", body: JSON.stringify(payload) });
-    state.settings = data.settings;
-    elements.apiKey.value = "";
-    elements.apiSecret.value = "";
-    setStatus("Fivetran 配置已保存。", "success");
-    renderSettings();
-  } catch (error) {
-    setStatus(error.message, "error");
-  } finally {
-    setBusy(elements.saveSettings, false, "保存配置");
-  }
-}
-
-async function discoverResources() {
-  setBusy(elements.discoverButton, true, "读取中...");
-  elements.discoverySummary.textContent = "正在读取 Fivetran Group 与连接...";
-  try {
-    const data = await requestJson("/api/fivetran-tiktok/discover", { method: "POST", body: "{}" });
-    state.groups = data.groups || [];
-    state.connections = data.connections || [];
-    renderDiscovery();
-    elements.discoverySummary.textContent = `读取到 ${state.groups.length} 个 Group、${state.connections.length} 个连接，其中 ${data.likelyTikTokConnections?.length || 0} 个可能是 TikTok Organic。`;
-  } catch (error) {
-    elements.discoverySummary.textContent = error.message;
-  } finally {
-    setBusy(elements.discoverButton, false, "读取 Fivetran");
-  }
-}
-
-async function saveSelection() {
-  const groupId = elements.groupSelect.value;
-  const templateConnectionId = elements.templateSelect.value;
-  if (!groupId || !templateConnectionId) return setStatus("请选择 Group 和 TikTok Organic 模板连接。", "error");
-  setBusy(elements.saveSelection, true, "保存中...");
-  try {
-    const data = await requestJson("/api/fivetran-tiktok/select", {
+    const result = await requestJson("/api/private-tiktok/settings", {
       method: "POST",
-      body: JSON.stringify({ groupId, templateConnectionId, appPublicUrl: elements.appPublicUrl.value, syncFrequency: Number(elements.syncFrequency.value) })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseUrl: elements.bridgeUrl.value.trim(), apiKey: elements.bridgeApiKey.value.trim() }),
     });
-    state.settings = data.settings;
-    setStatus("连接模板已保存，可以新增账号授权。", "success");
-    renderSettings();
+    elements.bridgeApiKey.value = "";
+    elements.settingsSummary.textContent = result.settings?.configured ? `已连接 · ${result.settings.baseUrl}` : "配置已保存，但尚未填写 API Key。";
+    updateAuthorizeLink();
+    await loadAccounts();
   } catch (error) {
-    setStatus(error.message, "error");
+    showStatus(error.message || "保存配置失败。", true);
   } finally {
-    setBusy(elements.saveSelection, false, "保存选择");
+    setBusy(elements.saveButton, false, "保存配置");
   }
 }
 
-async function createConnection() {
-  if (!state.settings.groupId || !state.settings.templateConnectionId) return setStatus("请先读取并保存 Fivetran 连接模板。", "error");
-  setBusy(elements.createConnection, true, "创建中...");
+async function testConnection() {
+  setBusy(elements.testButton, true, "测试中...");
   try {
-    const idempotencyKey = crypto.randomUUID();
-    const data = await requestJson("/api/fivetran-tiktok/integrations", {
-      method: "POST",
-      body: JSON.stringify({ displayName: elements.displayName.value.trim(), idempotencyKey })
-    });
-    state.integrations.unshift(data.integration);
-    elements.displayName.value = "";
-    renderConnections();
-    await openConnectCard(data.integration.id);
-    await loadOverview();
+    const result = await requestJson("/api/private-tiktok/test", { method: "POST", body: "{}" });
+    showStatus(`连接成功，读取到 ${Number(result.accountCount || 0)} 个已授权账号。`);
   } catch (error) {
-    setStatus(error.message, "error");
+    showStatus(error.message || "连接测试失败。", true);
   } finally {
-    setBusy(elements.createConnection, false, "新增账号授权");
+    setBusy(elements.testButton, false, "测试连接");
   }
 }
 
-async function handleConnectionAction(event) {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  const { action, id } = button.dataset;
-  setBusy(button, true, "处理中...");
+async function loadAccounts() {
+  setBusy(elements.refreshButton, true, "刷新中...");
+  elements.accountList.innerHTML = '<div class="empty-state">正在读取已授权账号...</div>';
   try {
-    if (action === "label") {
-      const input = button.closest(".connection-card")?.querySelector("[data-label-input]");
-      const data = await requestJson(`/api/fivetran-tiktok/integrations/${encodeURIComponent(id)}/label`, {
-        method: "POST",
-        body: JSON.stringify({ displayName: input?.value.trim() || "" })
-      });
-      replaceIntegration(data.integration);
-      renderConnections();
-      setStatus("账号标识已保存。", "success");
-      return;
-    }
-    if (action === "authorize") await openConnectCard(id);
-    if (action === "status") await refreshStatus(id);
-    if (["sync", "pause", "resume"].includes(action)) {
-      const data = await requestJson(`/api/fivetran-tiktok/integrations/${encodeURIComponent(id)}/${action}`, { method: "POST", body: "{}" });
-      replaceIntegration(data.integration);
-      renderConnections();
-    }
+    const result = await requestJson("/api/private-tiktok/accounts");
+    const accounts = Array.isArray(result.accounts) ? result.accounts : [];
+    renderAccounts(accounts);
+    showStatus(`已读取 ${accounts.length} 个已授权账号。`);
   } catch (error) {
-    setStatus(error.message, "error");
+    elements.accountList.innerHTML = '<div class="empty-state">暂时无法读取账号。</div>';
+    showStatus(error.message || "读取已授权账号失败。", true);
   } finally {
-    setBusy(button, false, actionLabel(action));
+    setBusy(elements.refreshButton, false, "刷新账号");
   }
 }
 
-async function openConnectCard(id) {
-  const data = await requestJson(`/api/fivetran-tiktok/integrations/${encodeURIComponent(id)}/connect-card`, { method: "POST", body: "{}" });
-  replaceIntegration(data.integration);
-  window.location.assign(data.connectCardUrl);
-}
-
-async function refreshAllStatuses() {
-  setBusy(elements.reloadButton, true, "刷新中...");
-  try {
-    for (const integration of state.integrations.filter((item) => item.fivetranConnectionId && item.status !== "disconnected")) {
-      await refreshStatus(integration.id, false);
-    }
-    await loadOverview();
-  } finally {
-    setBusy(elements.reloadButton, false, "刷新状态");
+function renderAccounts(accounts) {
+  if (!accounts.length) {
+    elements.accountList.innerHTML = '<div class="empty-state">暂无已授权账号。请先前往 TikTok AI Tool 完成授权。</div>';
+    return;
   }
-}
-
-async function refreshStatus(id, renderAfter = true) {
-  const data = await requestJson(`/api/fivetran-tiktok/integrations/${encodeURIComponent(id)}/status`, { cache: "no-store" });
-  replaceIntegration(data.integration);
-  if (renderAfter) renderConnections();
-  return data.integration;
-}
-
-function replaceIntegration(integration) {
-  const index = state.integrations.findIndex((item) => item.id === integration.id);
-  if (index < 0) state.integrations.unshift(integration); else state.integrations[index] = integration;
-  renderSummary();
-}
-
-function render() {
-  renderSettings();
-  renderDiscovery();
-  renderConnections();
-  renderDestinationSettings();
-  renderEvents();
-  renderSummary();
-}
-
-async function saveDatabaseSettings({ silent = false } = {}) {
-  setBusy(elements.saveDatabase, true, "保存中...");
-  try {
-    const data = await requestJson("/api/fivetran-tiktok/destination/settings", {
-      method: "POST",
-      body: JSON.stringify({
-        host: elements.databaseHost.value.trim(),
-        port: Number(elements.databasePort.value),
-        database: elements.databaseName.value.trim(),
-        user: elements.databaseUser.value.trim(),
-        password: elements.databasePassword.value,
-        ssl: elements.databaseSsl.checked
-      })
-    });
-    state.destination = data.settings;
-    elements.databasePassword.value = "";
-    renderDestinationSettings();
-    if (!silent) setDatabaseStatus("目标数据库配置已保存。", "success");
-    return data.settings;
-  } catch (error) {
-    setDatabaseStatus(error.message, "error");
-    if (silent) throw error;
-    return null;
-  } finally {
-    setBusy(elements.saveDatabase, false, "保存数据库");
-  }
-}
-
-async function testDatabaseConnection() {
-  setBusy(elements.testDatabase, true, "连接中...");
-  try {
-    await saveDatabaseSettings({ silent: true });
-    const result = await requestJson("/api/fivetran-tiktok/destination/test", { method: "POST", body: "{}" });
-    setDatabaseStatus(`连接成功：${result.database} · ${result.role}`, "success");
-    await discoverDatabaseSchemas();
-  } catch (error) {
-    setDatabaseStatus(error.message, "error");
-  } finally {
-    setBusy(elements.testDatabase, false, "测试连接");
-  }
-}
-
-async function discoverDatabaseSchemas() {
-  const data = await requestJson("/api/fivetran-tiktok/destination/discover", { cache: "no-store" });
-  state.destinationDiscovery = data;
-  renderDatabaseSchemas();
-  const schema = elements.databaseSchema.value;
-  const totalVideos = (data.schemas || []).reduce((sum, item) => sum + Number(item.videoCount || 0), 0);
-  setDatabaseStatus(`已读取 ${data.schemas?.length || 0} 个 TikTok Schema、${totalVideos} 条视频。`, "success");
-  return schema;
-}
-
-async function loadDatabaseData() {
-  setBusy(elements.loadDatabaseData, true, "读取中...");
-  try {
-    if (!state.destinationDiscovery) await discoverDatabaseSchemas();
-    const schema = elements.databaseSchema.value;
-    if (!schema) throw new Error("未找到已同步的 TikTok Organic Schema。");
-    state.destinationSnapshot = await requestJson(`/api/fivetran-tiktok/destination/snapshot?schema=${encodeURIComponent(schema)}&limit=30`, { cache: "no-store" });
-    renderDatabaseSnapshot();
-    setDatabaseStatus(`已读取 ${state.destinationSnapshot.profiles.length} 个账号、${state.destinationSnapshot.videos.length} 条最近视频。`, "success");
-  } catch (error) {
-    setDatabaseStatus(error.message, "error");
-  } finally {
-    setBusy(elements.loadDatabaseData, false, "读取同步数据");
-  }
-}
-
-function renderDestinationSettings() {
-  const settings = state.destination || {};
-  elements.databaseHost.value = settings.host || "";
-  elements.databasePort.value = String(settings.port || 5432);
-  elements.databaseName.value = settings.database || "";
-  elements.databaseUser.value = settings.user || "";
-  elements.databaseSsl.checked = settings.ssl !== false;
-  elements.databasePasswordHint.textContent = settings.hasPassword ? "已保存密码，留空不会覆盖" : "尚未保存密码";
-  if (state.destinationDiscovery) renderDatabaseSchemas();
-}
-
-function renderDatabaseSchemas() {
-  const current = elements.databaseSchema.value;
-  const schemas = state.destinationDiscovery?.schemas || [];
-  elements.databaseSchema.innerHTML = schemas.length
-    ? schemas.map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)} · ${formatNumber(item.videoCount)} 条视频</option>`).join("")
-    : `<option value="">未找到 TikTok Schema</option>`;
-  if (schemas.some((item) => item.name === current)) elements.databaseSchema.value = current;
-}
-
-function renderDatabaseSnapshot() {
-  const snapshot = state.destinationSnapshot;
-  if (!snapshot) return;
-  const profile = snapshot.profiles[0] || {};
-  elements.databaseSummary.hidden = false;
-  elements.databaseSummary.innerHTML = `
-    <div><span>同步 Schema</span><strong>${escapeHtml(snapshot.schema)}</strong></div>
-    <div><span>账号</span><strong>${formatNumber(snapshot.profiles.length)}</strong></div>
-    <div><span>视频</span><strong>${formatNumber(snapshot.counts.video || 0)}</strong></div>
-    <div><span>账号粉丝</span><strong>${formatNumber(profile.followers || 0)}</strong></div>`;
-
-  elements.databaseTables.hidden = false;
-  elements.databaseTables.innerHTML = Object.entries(snapshot.counts || {})
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => `<span>${escapeHtml(name)} · ${formatNumber(count)}</span>`)
-    .join("");
-
-  elements.databaseVideos.hidden = false;
-  elements.databaseVideos.innerHTML = snapshot.videos.length ? `
-    <table>
-      <thead><tr><th>视频</th><th>播放</th><th>平均观看</th><th>完播率</th><th>流量来源</th><th>性别</th><th>同步时间</th><th>链接</th></tr></thead>
-      <tbody>${snapshot.videos.map((video) => `
-        <tr>
-          <td title="${escapeHtml(video.caption)}">${escapeHtml(video.caption || video.id)}</td>
-          <td>${formatNumber(video.views)}</td>
-          <td class="metric-private">${formatSeconds(video.averageTimeWatched)}</td>
-          <td class="metric-private">${formatPercent(video.fullWatchRate)}</td>
-          <td class="source-list" title="${escapeHtml(formatBreakdown(video.impressionSources, "impressionSource"))}">${escapeHtml(formatBreakdown(video.impressionSources, "impressionSource"))}</td>
-          <td class="source-list" title="${escapeHtml(formatBreakdown(video.audienceGender, "gender"))}">${escapeHtml(formatBreakdown(video.audienceGender, "gender"))}</td>
-          <td>${video.syncedAt ? formatTime(video.syncedAt) : "-"}</td>
-          <td>${video.shareUrl ? `<a href="${escapeHtml(video.shareUrl)}" target="_blank" rel="noreferrer">打开</a>` : "-"}</td>
-        </tr>`).join("")}</tbody>
-    </table>` : `<div class="empty-state">当前 Schema 尚无视频数据。</div>`;
-}
-
-function renderSettings() {
-  const settings = state.settings || {};
-  elements.keyHint.textContent = settings.configured ? `已保存 ${settings.maskedApiKey}` : "尚未配置";
-  elements.secretHint.textContent = settings.hasApiSecret ? "已保存 Secret" : "尚未配置";
-  elements.appPublicUrl.value = settings.appPublicUrl || location.origin;
-  elements.syncFrequency.value = String(settings.syncFrequency || 360);
-  elements.groupSelect.value = settings.groupId || elements.groupSelect.value;
-  elements.templateSelect.value = settings.templateConnectionId || elements.templateSelect.value;
-  elements.configuredLabel.textContent = settings.configured ? "Fivetran 已配置" : "Fivetran 未配置";
-  elements.configuredDot.parentElement.classList.toggle("is-ready", settings.configured === true);
-}
-
-function renderDiscovery() {
-  const groupId = state.settings.groupId || "";
-  const groups = state.groups.length ? state.groups : (groupId ? [{ id: groupId, name: `已保存 · ${groupId}` }] : []);
-  elements.groupSelect.innerHTML = `<option value="">选择 Group</option>${groups.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}`;
-  elements.groupSelect.value = groups.some((item) => item.id === groupId) ? groupId : "";
-  renderTemplateOptions();
-  elements.groupSelect.onchange = renderTemplateOptions;
-}
-
-function renderTemplateOptions() {
-  const groupId = elements.groupSelect.value;
-  let available = state.connections.filter((item) => !groupId || item.groupId === groupId);
-  const selected = state.settings.templateConnectionId || "";
-  if (!available.length && selected) available = [{ id: selected, name: `已保存 · ${selected}`, service: "tiktok_organic_app" }];
-  elements.templateSelect.innerHTML = `<option value="">选择现有 TikTok Organic 连接</option>${available.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${escapeHtml(item.service || "unknown")}</option>`).join("")}`;
-  elements.templateSelect.value = available.some((item) => item.id === selected) ? selected : "";
-}
-
-function renderConnections() {
-  const authorizedConnections = state.integrations.filter((item) => ["authorized", "ready", "syncing", "paused", "disconnected"].includes(item.status));
-  elements.connectionList.innerHTML = authorizedConnections.length ? authorizedConnections.map((item) => {
-    const canSync = ["authorized", "ready", "syncing"].includes(item.status);
-    const paused = ["paused", "disconnected"].includes(item.status);
-    const detail = connectionDetail(item);
-    return `<article class="connection-card" data-status="${escapeHtml(item.status)}">
-      <div class="connection-card-main">
-        <div class="connection-identity"><span class="connection-kicker">TikTok 账号标识</span><strong>${escapeHtml(item.displayName || "未命名账号")}</strong><small>数据 Schema：${escapeHtml(item.schema || "创建后生成")}</small></div>
-        <div class="connection-status-block"><span class="status-pill" data-status="${escapeHtml(item.status)}">${detail.title}</span><strong>${detail.headline}</strong><small>${detail.description}</small></div>
-        <div class="connection-sync-block"><span>最近同步</span><strong>${item.lastSyncAt ? formatTime(item.lastSyncAt) : "尚未同步"}</strong><small>${item.syncState ? `Fivetran：${escapeHtml(item.syncState)}` : "等待首次同步"}</small></div>
-      </div>
-      ${item.lastError ? `<p class="connection-error">${escapeHtml(item.lastError)}</p>` : ""}
-      <div class="connection-card-footer">
-        <label class="connection-label-editor"><span>账号标识</span><input data-label-input value="${escapeHtml(item.displayName || "")}" placeholder="例如 @focus_daily" /><button class="secondary-button" data-action="label" data-id="${item.id}">保存名称</button></label>
-        <div class="row-actions">
-          ${paused ? `<button class="secondary-button" data-action="resume" data-id="${item.id}">恢复连接</button>` : item.status === "pending_authorization" || item.status === "error" ? `<button class="primary-button" data-action="authorize" data-id="${item.id}">去授权</button>` : ""}
-          <button class="secondary-button" data-action="status" data-id="${item.id}">检查状态</button>
-          ${canSync ? `<button class="secondary-button" data-action="sync" data-id="${item.id}">立即同步</button>` : ""}
-          ${!paused ? `<button class="secondary-button subtle-danger" data-action="pause" data-id="${item.id}">暂停</button>` : ""}
-        </div>
-      </div>
+  elements.accountList.innerHTML = accounts.map((account) => {
+    const profile = account.profile || {};
+    const username = profile.username ? `@${profile.username}` : profile.displayName || account.label || "TikTok 账号";
+    const displayName = profile.displayName && profile.displayName !== profile.username ? profile.displayName : "官方授权账号";
+    const videoCount = Number(account.syncedVideoCount ?? account.videoCount ?? 0);
+    const syncedAt = formatTime(account.syncedAt || account.updatedAt);
+    const schema = account.schema || account.id || "";
+    return `<article class="account-row">
+      <div><strong>${escapeHtml(username)}</strong><span>${escapeHtml(displayName)}</span></div>
+      <div><small>视频</small><b>${formatNumber(videoCount)}</b></div>
+      <div><small>最近同步</small><b>${escapeHtml(syncedAt)}</b></div>
+      <div><small>状态</small><b class="ready-pill">已授权</b></div>
+      <a class="secondary-button link-button" href="/tiktok-video-detail?schema=${encodeURIComponent(schema)}">查看数据</a>
     </article>`;
-  }).join("") : `<div class="empty-state"><strong>暂时没有已授权账号</strong><span>点击“新增账号授权”后完成 TikTok 确认；只有授权成功的账号才会显示在这里。</span></div>`;
-  renderSummary();
+  }).join("");
 }
 
-function renderEvents() {
-  elements.eventList.innerHTML = state.events.length ? state.events.map((item) => `<div class="event-row"><time>${formatTime(item.at)}</time><strong>${escapeHtml(eventLabel(item.type))}</strong><span>${escapeHtml(item.status || "")}</span></div>`).join("") : `<div class="empty-state">暂无事件。</div>`;
+function updateAuthorizeLink() {
+  const baseUrl = String(elements.bridgeUrl?.value || "https://tiktokaitool.com").trim().replace(/\/+$/, "");
+  elements.authorizeLink.href = `${baseUrl || "https://tiktokaitool.com"}/dashboard?view=connect`;
 }
 
-function renderSummary() {
-  const counts = { ready: 0, pending: 0, syncing: 0, error: 0 };
-  for (const item of state.integrations) {
-    if (["ready", "authorized"].includes(item.status)) counts.ready += 1;
-    else if (item.status === "syncing") counts.syncing += 1;
-    else if (item.status === "error") counts.error += 1;
-    else if (!["disconnected", "paused"].includes(item.status)) counts.pending += 1;
-  }
-  elements.readyCount.textContent = counts.ready;
-  elements.pendingCount.textContent = counts.pending;
-  elements.syncingCount.textContent = counts.syncing;
-  elements.errorCount.textContent = counts.error;
-}
-
-function statusLabel(status) {
-  return ({ creating: "创建中", pending_authorization: "等待授权", authorized: "已授权", syncing: "同步中", ready: "可用", error: "异常", paused: "已暂停", disconnected: "已断开" })[status] || status || "未知";
-}
-
-function connectionDetail(item) {
-  if (item.status === "ready") return { title: "已授权 · 数据可用", headline: "授权成功，数据已同步", description: "可在单条视频数据页面查看已同步指标。" };
-  if (item.status === "authorized") return { title: "已授权", headline: "授权成功，等待首次同步", description: "点击“立即同步”，或等待 Fivetran 按计划同步。" };
-  if (item.status === "syncing") return { title: "同步中", headline: "授权成功，正在同步数据", description: "同步完成后状态会自动变为数据可用。" };
-  if (item.status === "error") return { title: "需要处理", headline: "授权或同步出现异常", description: "先点击“检查状态”；若仍异常，再重新授权。" };
-  if (["paused", "disconnected"].includes(item.status)) return { title: "已暂停", headline: "该账号当前不再同步", description: "恢复连接后可重新授权或同步。" };
-  if (item.status === "creating") return { title: "创建中", headline: "正在创建 Fivetran 连接", description: "创建完成后会显示“去授权”按钮。" };
-  return { title: "待授权", headline: "尚未完成 TikTok 授权", description: "点击“去授权”，扫码并在 TikTok 页面确认。" };
-}
-
-function eventLabel(type) {
-  return ({ "settings.saved": "保存配置", "connection.create_started": "开始创建连接", "connection.created": "连接已创建", "connection.create_failed": "连接创建失败", "connect_card.created": "生成授权链接", "connection.label_updated": "更新账号标识", "sync.requested": "请求手动同步", "connection.paused": "暂停连接", "connection.resumed": "恢复连接" })[type] || type || "系统事件";
-}
-
-function actionLabel(action) {
-  return ({ authorize: "授权", label: "保存名称", status: "查状态", sync: "立即同步", pause: "暂停", resume: "恢复" })[action] || "操作";
-}
-
-function setStatus(message, tone = "") {
-  elements.settingsStatus.textContent = message;
-  elements.settingsStatus.dataset.tone = tone;
-}
-
-function setDatabaseStatus(message, tone = "") {
-  elements.databaseStatus.textContent = message;
-  elements.databaseStatus.dataset.tone = tone;
+function showStatus(message, isError = false) {
+  elements.statusMessage.hidden = false;
+  elements.statusMessage.textContent = message;
+  elements.statusMessage.classList.toggle("is-error", isError);
 }
 
 function setBusy(button, busy, label) {
+  if (!button) return;
   button.disabled = busy;
   button.textContent = label;
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);
-  return data;
+  const response = await fetch(url, { cache: "no-store", ...options });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `请求失败（${response.status}）`);
+  return payload;
 }
 
+function formatNumber(value) { return Number(value || 0).toLocaleString("zh-CN"); }
 function formatTime(value) {
-  const date = new Date(Number(value));
-  return Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { hour12: false }) : "-";
+  const timestamp = Number(value || 0);
+  return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";
 }
-
-function formatNumber(value) {
-  return new Intl.NumberFormat("zh-CN").format(Number(value) || 0);
-}
-
-function formatSeconds(value) {
-  const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds > 0 ? `${seconds.toFixed(1)}s` : "-";
-}
-
-function formatPercent(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "-";
-  const percent = numeric <= 1 ? numeric * 100 : numeric;
-  return `${percent.toFixed(1)}%`;
-}
-
-function formatBreakdown(items, labelKey) {
-  if (!Array.isArray(items) || !items.length) return "-";
-  return items
-    .slice()
-    .sort((a, b) => Number(b.percentage || 0) - Number(a.percentage || 0))
-    .slice(0, 3)
-    .map((item) => `${item[labelKey] || "-"} ${formatPercent(item.percentage)}`)
-    .join(" / ");
-}
-
 function escapeHtml(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
