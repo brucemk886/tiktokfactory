@@ -3,111 +3,64 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>小说爆款书单</title>
+    <title>小说书单 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css" />
   </head>
   <body class="work-page novel-library-page">
     <nav class="side-tabs">
       <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
-      <a href="/reddit">Reddit 视频生成</a>
-      <a href="/asset-cutter">视频素材切割</a>
-      <a href="/asset-usage">素材使用率</a>
-      <a href="/tasks">自动任务</a>
-      <a href="/stats">发布记录</a>
-      <a href="/analytics">数据分析</a>
-      <a href="/analytics?view=audio">音频表现</a>
-      <a class="is-active" href="/novel-library">小说爆款书单</a>
-      <a href="/audio-library">音频素材库</a>
-      <a href="/analytics-settings">抓取配置</a>
     </nav>
 
     <main class="library-shell">
       <header class="library-header">
         <div>
-          <p class="library-kicker">NOVEL INTELLIGENCE</p>
-          <h1>小说爆款书单</h1>
-          <p id="sourceTitle">正在连接飞书书单...</p>
+          <p class="library-kicker">NOVEL CATALOG</p>
+          <h1>小说书单</h1>
+          <p>管理小说名称、平台、免费章节和推广码，供后续文案、配音与视频任务统一使用。</p>
         </div>
-        <div class="header-actions">
-          <span id="syncState" class="sync-state">尚未同步</span>
-          <a id="openFeishuLink" class="quiet-action" href="#" target="_blank" rel="noreferrer" hidden>打开飞书</a>
-          <button id="syncBtn" class="primary-action" type="button">同步当前书单</button>
-        </div>
+        <a class="quiet-action" href="/novel-content?tab=scripts">进入小说文案与音频库</a>
       </header>
 
-      <section class="library-metrics" aria-label="书单概览">
-        <article><span>当前书单</span><strong id="sheetMetric">--</strong><small id="sheetRowsMetric">0 行数据</small></article>
-        <article><span>收录小说</span><strong id="bookMetric">0</strong><small>已解析有效书目</small></article>
-        <article><span>女频 / 男频</span><strong id="channelMetric">0 / 0</strong><small>当前工作表</small></article>
-        <article><span>筛选结果</span><strong id="filteredMetric">0</strong><small id="pageMetric">第 1 页</small></article>
-      </section>
+      <section class="library-layout">
+        <form id="bookForm" class="book-editor">
+          <div class="section-heading">
+            <div><span>BOOK DETAILS</span><h2 id="editorTitle">新增小说</h2></div>
+            <button id="cancelEditBtn" class="text-action" type="button" hidden>取消编辑</button>
+          </div>
+          <input id="bookId" type="hidden" />
+          <label><span>小说名称</span><input id="bookTitle" type="text" maxlength="180" placeholder="例如：The Housemaid" required /></label>
+          <div class="field-row">
+            <label>
+              <span>小说平台</span>
+              <select id="bookPlatform" required>
+                <option value="">请选择小说平台</option>
+                <option value="GoodNovel">GoodNovel</option>
+                <option value="MotoNovel">MotoNovel</option>
+                <option value="MasterNovel">MasterNovel</option>
+              </select>
+            </label>
+            <label><span>小说对应推广码</span><input id="bookPromotionCode" type="text" maxlength="240" placeholder="填写平台推广码或推广标识" /></label>
+          </div>
+          <label><span>小说免费章节</span><textarea id="bookChapters" maxlength="200000" placeholder="粘贴可用于改写和生成配音文案的免费章节正文，至少 20 个字符" required></textarea><small id="chapterCount">0 / 200,000</small></label>
+          <div class="form-actions">
+            <button id="saveBookBtn" class="primary-action" type="submit">保存小说</button>
+            <span id="formStatus" role="status"></span>
+          </div>
+        </form>
 
-      <section class="library-toolbar">
-        <label><span>飞书工作表</span><select id="sheetSelect"><option value="">正在读取...</option></select></label>
-        <label class="search-control"><span>搜索</span><input id="searchInput" type="search" placeholder="书名、ID、标签、卖点" /></label>
-        <label><span>频道</span><select id="channelSelect"><option value="">全部频道</option></select></label>
-        <label><span>热门标签</span><select id="tagSelect"><option value="">全部标签</option></select></label>
-        <button id="resetBtn" class="quiet-action" type="button">重置筛选</button>
-      </section>
-
-      <div id="pageStatus" class="library-status">正在读取本地书单缓存...</div>
-
-      <section id="marketingPanel" class="marketing-panel">
-        <div class="marketing-head">
-          <div><span>MARKETING STUDIO</span><h2>小说配音文案工作台</h2></div>
-          <div class="model-status"><i></i><strong id="marketingModelState">GPT-5.6 Sol</strong></div>
-        </div>
-        <div class="marketing-form">
-          <label><span>故事标题</span><input id="marketingTitle" type="text" maxlength="180" placeholder="输入故事标题" /></label>
-          <label><span>内容方向</span><select id="marketingCategory"><option>情感反转故事</option><option>婚姻背叛</option><option>复仇与因果</option><option>恐怖悬疑</option><option>浪漫小说</option><option>匿名真实故事</option></select></label>
-          <label><span>输出语言</span><select id="marketingLanguage"><option value="English" selected>英文</option><option value="Simplified Chinese">中文</option></select></label>
-          <label class="marketing-audience"><span>目标受众</span><input id="marketingAudience" type="text" maxlength="500" value="US women on TikTok who enjoy emotional conflict, secrets, betrayal, and strong plot twists" /></label>
-          <label class="marketing-selling-point"><span>核心卖点</span><input id="marketingSellingPoint" type="text" maxlength="2000" placeholder="秘密、背叛、身份反转、复仇等" /></label>
-          <label class="marketing-source"><span>故事内容</span><textarea id="marketingSource" maxlength="120000" placeholder="粘贴完整故事、故事梗概，或从下方书单选择一本小说"></textarea><small id="marketingCharCount">0 / 120,000</small></label>
-        </div>
-        <div class="marketing-actions">
-          <button id="generateMarketingBtn" class="primary-action" type="button">生成营销素材</button>
-          <button id="clearMarketingBtn" class="quiet-action" type="button">清空</button>
-          <button id="copyMarketingBtn" class="quiet-action" type="button" hidden>复制整包</button>
-          <span id="marketingStatus">等待输入故事内容</span>
-        </div>
-        <div id="marketingResults" class="marketing-results" hidden>
-          <div id="marketingSummary" class="marketing-summary"></div>
-          <div id="selectedMarketingList" class="selected-marketing-list"></div>
-          <details class="hook-library">
-            <summary>查看完整20个钩子</summary>
-            <div id="hookLibraryList" class="hook-library-list"></div>
-          </details>
-        </div>
-      </section>
-
-      <section class="library-table-panel">
-        <div class="table-headline">
-          <div><strong id="tableTitle">书单明细</strong><span id="tableCaption">按飞书原始顺序展示</span></div>
-          <span id="resultBadge" class="result-badge">0 条</span>
-        </div>
-        <div class="library-table-wrap">
-          <table>
-            <thead><tr><th>日期</th><th>小说</th><th>频道</th><th>标签 / 卖点</th><th>推荐理由</th><th>操作</th></tr></thead>
-            <tbody id="bookRows"></tbody>
-          </table>
-        </div>
-        <div id="pagination" class="library-pagination"></div>
+        <section class="book-list-panel">
+          <div class="list-toolbar">
+            <div><span>BOOK LIST</span><h2>已保存小说</h2></div>
+            <label><span class="sr-only">搜索小说</span><input id="searchInput" type="search" placeholder="搜索名称、平台或推广码" /></label>
+          </div>
+          <div id="listStatus" class="list-status">正在读取小说书单...</div>
+          <div id="bookList" class="book-list"></div>
+        </section>
       </section>
     </main>
 
-    <dialog id="bookDialog" class="book-dialog">
-      <div class="dialog-head"><div><span id="dialogChannel" class="channel-chip"></span><h2 id="dialogTitle"></h2><p id="dialogBookId"></p></div><button id="closeDialogBtn" class="icon-close" type="button" aria-label="关闭">×</button></div>
-      <dl class="book-detail-list">
-        <div><dt>标签</dt><dd id="dialogTags"></dd></div>
-        <div><dt>小说卖点</dt><dd id="dialogSellingPoint"></dd></div>
-        <div><dt>推荐理由</dt><dd id="dialogReason"></dd></div>
-        <div><dt>简介 / 开头</dt><dd id="dialogIntro"></dd></div>
-        <div><dt>飞书位置</dt><dd id="dialogSource"></dd></div>
-      </dl>
-    </dialog>
-
+    <script src="/access.js"></script>
     <script src="/novel-library.js" type="module"></script>
   </body>
 </html>

@@ -13,7 +13,23 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
   function list() {
     return readIndex(indexPath)
       .filter((item) => fs.existsSync(path.join(filesDir, item.fileName)))
+      .map(enrichRecord)
       .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+  }
+
+  function enrichRecord(item) {
+    if (String(item?.script || "").trim()) return item;
+    const marketingId = safeStem(item?.source?.marketingId);
+    const rank = Number(item?.source?.rank) || 0;
+    if (!marketingId || !rank) return item;
+    try {
+      const marketingPath = path.join(workDir, "novel-marketing", `${marketingId}.json`);
+      const source = JSON.parse(fs.readFileSync(marketingPath, "utf8"));
+      const selected = source?.marketing?.selected?.find((entry) => Number(entry.rank) === rank);
+      return { ...item, script: String(selected?.script || "").trim() };
+    } catch {
+      return item;
+    }
   }
 
   function get(id) {
@@ -92,7 +108,70 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     }
   }
 
-  async function synthesizeAndSave({ id, source, selected, script, apiKey, voiceId, modelId, outputFormat }) {
+  async function generateFromOptimizedScript({
+    sourceAudioId,
+    sourceVideoId = "",
+    title,
+    script,
+    diagnosis = "",
+    evidenceSummary = "",
+    planId = "",
+    voiceId: requestedVoiceId,
+    targetAudioDir = ""
+  } = {}) {
+    const cleanScript = String(script || "").trim();
+    if (cleanScript.length < 40) throw httpError(400, "AI 重写文案过短，未调用 ElevenLabs。 ");
+    const sourceItem = sourceAudioId ? get(sourceAudioId) : null;
+    const config = readConfig(root);
+    const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
+    const voiceId = String(requestedVoiceId || config.elevenLabsVoiceId || findRecentVoiceId(workDir) || "").trim();
+    const modelId = String(config.elevenLabsModelId || "eleven_multilingual_v2").trim();
+    const outputFormat = String(config.elevenLabsOutputFormat || "mp3_44100_128").trim();
+    if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
+    if (!voiceId) throw httpError(400, "ElevenLabs Voice ID 未配置。");
+
+    const fingerprint = crypto.createHash("sha256")
+      .update([sourceAudioId, sourceVideoId, cleanScript, voiceId, modelId, outputFormat].join("\0"))
+      .digest("hex").slice(0, 16);
+    const id = safeStem(`rewrite-${sourceAudioId || sourceVideoId || "novel"}-${fingerprint}`);
+    const existing = get(id);
+    if (existing && resolveAudioPath(id)) return { ...existing, cacheHit: true };
+    if (inFlight.has(id)) return inFlight.get(id);
+
+    const selected = { title: String(title || sourceItem?.title || "AI 优化小说文案").trim(), rank: 0 };
+    const operation = synthesizeAndSave({
+      id,
+      source: null,
+      selected,
+      script: cleanScript,
+      apiKey,
+      voiceId,
+      modelId,
+      outputFormat,
+      targetAudioDir,
+      recordSource: {
+        type: "ai-operation-rewrite",
+        sourceAudioId: safeStem(sourceAudioId),
+        sourceVideoId: String(sourceVideoId || "").trim(),
+        planId: safeStem(planId)
+      },
+      metadata: {
+        diagnosis: String(diagnosis || "").trim().slice(0, 1200),
+        evidenceSummary: String(evidenceSummary || "").trim().slice(0, 1200)
+      }
+    });
+    inFlight.set(id, operation);
+    try {
+      return await operation;
+    } finally {
+      inFlight.delete(id);
+    }
+  }
+
+  async function synthesizeAndSave({
+    id, source, selected, script, apiKey, voiceId, modelId, outputFormat,
+    targetAudioDir = "", recordSource = null, metadata = null
+  }) {
     const response = await fetchImpl(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
@@ -110,6 +189,13 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     const tempPath = `${outputPath}.tmp`;
     fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, outputPath);
+    let targetAudioPath = "";
+    if (String(targetAudioDir || "").trim()) {
+      const resolvedTargetDir = path.resolve(String(targetAudioDir).trim());
+      fs.mkdirSync(resolvedTargetDir, { recursive: true });
+      targetAudioPath = path.join(resolvedTargetDir, `${safeDisplayName(selected.title || "AI优化文案")}-${id.slice(-12)}.mp3`);
+      if (path.resolve(targetAudioPath) !== path.resolve(outputPath)) fs.copyFileSync(outputPath, targetAudioPath);
+    }
     const record = {
       id,
       title: String(selected.title || source?.source?.title || "未命名音频").trim(),
@@ -118,8 +204,11 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       duration: probeDuration(outputPath, configFfprobe(readConfig(root))),
       size: buffer.length,
       scriptChars: script.length,
+      script,
       modelId,
-      source: { marketingId: source.id, rank: Number(selected.rank) || 0 }
+      source: recordSource || { marketingId: source?.id || "", rank: Number(selected.rank) || 0 },
+      targetAudioPath,
+      metadata: metadata || undefined
     };
     const records = readIndex(indexPath).filter((item) => item.id !== id);
     records.push(record);
@@ -127,7 +216,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     return { ...record, cacheHit: false };
   }
 
-  return { list, get, resolveAudioPath, generateFromMarketing, prepareTaskBatch };
+  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, prepareTaskBatch };
 }
 
 function readIndex(indexPath) {

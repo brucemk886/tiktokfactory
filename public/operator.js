@@ -343,6 +343,7 @@ function renderDataStatus(data) {
 function renderPlan(plan) {
   const drafts = plan.taskDrafts || [];
   renderAiDecision(plan.aiStrategy);
+  renderOptimizedContent(plan.optimizedContent || []);
   renderAudioPerformance(plan.contentFeedback?.audioPerformance || []);
   $("#planMeta").textContent = `${plan.planDate} · ${plan.accountCount} 个账号 · ${plan.plannedVideos} 条 · ${statusText(plan.status)}`;
   $("#planSummary").innerHTML = [
@@ -362,6 +363,32 @@ function renderPlan(plan) {
       </tr>`).join("")
     : '<tr><td colspan="6" class="empty-cell">方案中没有任务。</td></tr>';
   $("#approvePlanBtn").disabled = !["draft", "partial"].includes(plan.status);
+}
+
+function renderOptimizedContent(items = []) {
+  const panel = $("#optimizedContent");
+  const list = $("#optimizedContentList");
+  if (!Array.isArray(items) || !items.length) {
+    panel.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  panel.hidden = false;
+  list.innerHTML = items.map((item, index) => {
+    const audio = item.audio || {};
+    const completed = item.status === "completed" && audio.id;
+    return `<article class="optimized-script-card ${completed ? "is-complete" : "is-error"}">
+      <div class="optimized-script-head">
+        <div><span>优化 ${index + 1}</span><strong>${escapeHtml(item.title || "小说文案优化")}</strong></div>
+        <em>${completed ? (audio.cacheHit ? "已复用音频" : "音频已生成") : escapeHtml(item.status === "skipped" ? "未生成" : "生成失败")}</em>
+      </div>
+      <div class="optimization-evidence"><b>数据证据</b><p>${escapeHtml(item.evidenceSummary || "未提供可用指标。")}</p></div>
+      <div class="optimization-evidence"><b>开头与流失诊断</b><p>${escapeHtml(item.openingAnalysis || item.diagnosis || "未生成诊断。")}</p></div>
+      <details open><summary>查看重写后的完整文案</summary><pre>${escapeHtml(item.rewrittenScript || "")}</pre></details>
+      ${completed ? `<audio controls preload="none" src="/api/audio-library/${encodeURIComponent(audio.id)}/file"></audio>
+        <small>已保存：${escapeHtml(audio.targetAudioPath || "本地小说文案与音频库")}</small>` : `<p class="optimization-error">${escapeHtml(item.error || "ElevenLabs 未返回音频。")}</p>`}
+    </article>`;
+  }).join("");
 }
 
 function renderAudioPerformance(items = []) {

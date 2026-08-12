@@ -528,6 +528,30 @@
   color: #ff8e91;
 }
 
+.optimized-content { margin: 18px 0; border: 1px solid #344423; background: #0d1210; }
+.optimized-content[hidden] { display: none; }
+.optimized-content-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 18px 20px; border-bottom: 1px solid #28332a; }
+.optimized-content-head span { color: #c4ff45; font: 700 10px/1.2 ui-monospace, monospace; letter-spacing: .08em; }
+.optimized-content-head h3 { margin: 5px 0 0; font-size: 18px; }
+.optimized-content-head p { max-width: 680px; margin: 0; color: #8ea09a; font-size: 11px; text-align: right; }
+.optimized-content-list { display: grid; gap: 12px; padding: 16px; }
+.optimized-script-card { padding: 16px; border: 1px solid #28332f; background: #111719; }
+.optimized-script-card.is-complete { border-left: 3px solid #c4ff45; }
+.optimized-script-card.is-error { border-left: 3px solid #ff6f79; }
+.optimized-script-head { display: flex; justify-content: space-between; gap: 16px; }
+.optimized-script-head div { display: flex; align-items: center; gap: 10px; }
+.optimized-script-head span { color: #c4ff45; font-size: 10px; text-transform: uppercase; }
+.optimized-script-head em { color: #92a199; font-size: 11px; font-style: normal; }
+.optimization-evidence { display: grid; grid-template-columns: 110px 1fr; gap: 12px; margin-top: 14px; }
+.optimization-evidence b { color: #7f9188; font-size: 11px; }
+.optimization-evidence p { margin: 0; color: #d5ddd8; font-size: 12px; line-height: 1.65; }
+.optimized-script-card details { margin-top: 14px; border-top: 1px solid #28332f; padding-top: 12px; }
+.optimized-script-card summary { cursor: pointer; color: #c4ff45; font-size: 11px; }
+.optimized-script-card pre { max-height: 280px; overflow: auto; white-space: pre-wrap; color: #dbe2dd; font: 12px/1.75 system-ui, sans-serif; }
+.optimized-script-card audio { width: min(680px, 100%); height: 36px; margin-top: 12px; }
+.optimized-script-card small { display: block; margin-top: 7px; color: #74837c; overflow-wrap: anywhere; }
+.optimization-error { color: #ff8e91; font-size: 11px; }
+
 .plan-summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

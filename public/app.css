@@ -561,6 +561,17 @@ video {
   padding-top: 16px;
 }
 
+#geelarkPublishAccounts,
+#officialPublishAccounts {
+  display: grid;
+  gap: 10px;
+}
+
+#geelarkPublishAccounts[hidden],
+#officialPublishAccounts[hidden] {
+  display: none;
+}
+
 .publish-status {
   color: #a9a9ad;
   font-size: 13px;
@@ -1358,3 +1369,9 @@ html:not([data-role="admin"]) [data-admin-only] { display: none !important; }
 .cutter-page .cutter-classify-panel .topbar-actions { margin-top: 14px; }
 .cutter-page .cutter-classify-panel .topbar-actions button { min-height: 40px; padding: 0 14px; font-size: 12px; }
 .cutter-page .status { margin: 14px 0 0; color: #b9c986; font-size: 12px; }
+
+/* The authenticated sidebar is server-driven. Hide stale HTML links until it is ready. */
+html:not([data-sidebar-ready]) .tasks-nav > a:not(.tasks-brand),
+html:not([data-sidebar-ready]) .side-tabs > a:not(.app-brand) {
+  visibility: hidden;
+}

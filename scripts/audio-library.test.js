@@ -33,6 +33,7 @@ test("audio library generates once and reuses the same ElevenLabs result", async
   assert.equal(first.cacheHit, false);
   assert.equal(second.cacheHit, true);
   assert.equal(service.list().length, 1);
+  assert.match(service.list()[0].script, /direct narration script/);
   assert.ok(fs.existsSync(service.resolveAudioPath(first.id)));
   assert.equal(JSON.stringify(service.list()).includes("secret-key"), false);
   assert.equal(JSON.stringify(service.list()).includes("voice-1"), false);
@@ -40,4 +41,20 @@ test("audio library generates once and reuses the same ElevenLabs result", async
   assert.equal(batch.count, 1);
   assert.ok(fs.existsSync(batch.audioDir));
   assert.equal(fs.readdirSync(batch.audioDir).filter((name) => name.endsWith(".mp3")).length, 1);
+
+  const targetAudioDir = path.join(workDir, "operator-audio");
+  const optimized = await service.generateFromOptimizedScript({
+    sourceAudioId: first.id,
+    sourceVideoId: "video-001",
+    title: "The Hidden Family optimized",
+    script: "The letter on my kitchen table proved my entire childhood was a lie. I opened it before sunrise, and the first sentence named the person who had been watching me for twenty years.",
+    diagnosis: "Most viewers left during the setup before the conflict became clear.",
+    evidenceSummary: "3-second retention 41%; largest loss at second 2.",
+    planId: "plan-001",
+    targetAudioDir
+  });
+  assert.equal(requestCount, 2);
+  assert.equal(optimized.source.type, "ai-operation-rewrite");
+  assert.ok(fs.existsSync(optimized.targetAudioPath));
+  assert.match(service.get(optimized.id).script, /kitchen table/);
 });

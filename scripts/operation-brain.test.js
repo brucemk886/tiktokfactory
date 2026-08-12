@@ -58,6 +58,8 @@ test("hybrid routing falls back to SOL when DeepSeek is unavailable", () => {
 test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (t) => {
   const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-hybrid-fallback-"));
   t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  let officialOptions = null;
+  let generatedRewrite = null;
   const service = createOperationBrainService({
     workDir,
     now: () => new Date("2026-08-04T10:00:00+08:00").getTime(),
@@ -72,7 +74,9 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
     },
     privateAnalyticsService: {
       getPublicSettings: () => ({ configured: true }),
-      getOperationSignals: async () => ({
+      getOperationSignals: async (options) => {
+        officialOptions = options;
+        return ({
         status: "ready",
         summary: {
           detailedVideoCount: 12,
@@ -82,7 +86,15 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
           averageRetention5: 0.2
         },
         accounts: []
-      })
+      });
+      }
+    },
+    audioLibrary: {
+      list: () => [{ id: "audio-original", title: "Opening A", script: "The original narration is long enough to be rewritten from real retention evidence and paired with its existing audio." }],
+      generateFromOptimizedScript: async (payload) => {
+        generatedRewrite = payload;
+        return { id: "audio-rewritten", targetAudioPath: "C:\\test-audio\\optimized.mp3", cacheHit: false };
+      }
     },
     autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) },
     deepseekBrain: {
@@ -105,7 +117,16 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
           accountDiagnosis: "The account is still collecting samples.",
           contentDirection: "Use the saved Reddit workflow.",
           riskNotes: ["Do not overfit one post.", "Keep volume limits."],
-          publishingPlan: []
+          publishingPlan: [],
+          scriptOptimizations: [{
+            sourceAudioId: "audio-original",
+            sourceVideoId: "video-001",
+            title: "Opening A optimized",
+            evidenceSummary: "3-second retention was weak and the largest loss happened at second 2.",
+            diagnosis: "The setup delays the conflict.",
+            openingAnalysis: "The first sentence lacks an immediate consequence.",
+            rewrittenScript: "The police called before sunrise: my missing sister had used my name to buy a house. I had three minutes to decide whether to expose her or inherit her debt."
+          }]
         }
       });
       }
@@ -137,6 +158,10 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
   assert.equal(plan.aiStrategy.route.analysisStats.retentionPoints, 240);
   assert.ok(plan.aiStrategy.route.reasons.includes("sol_review_failed"));
   assert.match(plan.aiStrategy.route.solError, /temporarily unavailable/);
+  assert.equal(officialOptions.days, 30);
+  assert.equal(officialOptions.videosPerAccount, 100);
+  assert.equal(generatedRewrite.sourceAudioId, "audio-original");
+  assert.equal(plan.optimizedContent[0].audio.id, "audio-rewritten");
 });
 
 function phone(id, groupName = "test-group") {

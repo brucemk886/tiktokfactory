@@ -378,6 +378,16 @@ function normalizeFullPrivateDataset(value = {}) {
     windowDays: Math.max(1, Number(value.windowDays) || 10),
     accounts: (value.accounts || []).slice(0, 100).map((account) => ({
       username: String(account.username || "").replace(/^@/, "").slice(0, 100),
+      profile: {
+        displayName: String(account.profile?.displayName || "").slice(0, 160),
+        followers: Math.max(0, Number(account.profile?.followers) || 0),
+        following: Math.max(0, Number(account.profile?.following) || 0),
+        videos: Math.max(0, Number(account.profile?.videos) || 0),
+        totalLikes: Math.max(0, Number(account.profile?.totalLikes) || 0),
+        verified: account.profile?.verified === true,
+        businessAccount: account.profile?.businessAccount === true,
+        groupName: String(account.profile?.groupName || "").slice(0, 120)
+      },
       videoCount: Math.max(0, Number(account.videoCount) || 0),
       averageViews: number(account.averageViews),
       maxViews: Math.max(0, Number(account.maxViews) || 0),
@@ -389,7 +399,7 @@ function normalizeFullPrivateDataset(value = {}) {
       averageRetentionEnd: number(account.averageRetentionEnd),
       averageForYouRate: number(account.averageForYouRate),
       conflictCount: Math.max(0, Number(account.conflictCount) || 0),
-      videos: (account.videos || []).slice(0, 30).map((video) => ({
+      videos: (account.videos || []).slice(0, 100).map((video) => ({
         videoId: String(video.videoId || "").slice(0, 40),
         caption: String(video.caption || "").slice(0, 500),
         createdAt: Math.max(0, Number(video.createdAt) || 0),

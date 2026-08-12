@@ -4,8 +4,17 @@ import { summarizeOperationSignals } from "./private-tiktok-signals.js";
 
 const DEFAULT_BASE_URL = "https://tiktokaitool.com";
 const REQUEST_TIMEOUT_MS = 20_000;
+const UPLOAD_TIMEOUT_MS = 120_000;
+const MAX_PUBLISH_FILE_BYTES = 95 * 1024 * 1024;
+const NETWORK_RETRY_DELAYS_MS = [2_000, 5_000];
 
-export function createOfficialTikTokAnalyticsService({ workDir, fetchImpl = fetch, now = () => Date.now() } = {}) {
+export function createOfficialTikTokAnalyticsService({
+  workDir,
+  fetchImpl = fetch,
+  now = () => Date.now(),
+  sleep = delay,
+  networkRetryDelays = NETWORK_RETRY_DELAYS_MS,
+} = {}) {
   if (!workDir) throw new Error("Official TikTok analytics service requires a work directory.");
   const settingsPath = path.join(workDir, "official-tiktok-analytics-settings.json");
   fs.mkdirSync(workDir, { recursive: true });
@@ -35,27 +44,105 @@ export function createOfficialTikTokAnalyticsService({ workDir, fetchImpl = fetc
   }
 
   async function testConnection() {
-    const result = await requestJson("/api/integrations/local-factory/accounts");
+    const result = await listAccountPage({ limit: 1 });
     return { connected: true, source: "official", accountCount: result.accounts?.length || 0 };
   }
 
-  async function listAccounts() {
-    return requestJson("/api/integrations/local-factory/accounts");
+  async function listAccountPage({ cursor = "", limit = 100 } = {}) {
+    const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(100, Math.floor(Number(limit) || 100)))) });
+    if (clean(cursor)) params.set("cursor", clean(cursor));
+    return requestJson(`/api/integrations/local-factory/accounts?${params}`);
   }
 
-  async function listVideos({ schema, query = "", limit = 20, includePrivate = false } = {}) {
+  async function listAccounts({ maxAccounts = 10_000 } = {}) {
+    const accounts = [];
+    let cursor = "";
+    const maximum = Math.max(1, Math.min(10_000, Math.floor(Number(maxAccounts) || 10_000)));
+    while (accounts.length < maximum) {
+      const page = await listAccountPage({ cursor, limit: Math.min(100, maximum - accounts.length) });
+      accounts.push(...(page.accounts || []));
+      if (!page.hasMore || !page.nextCursor || page.nextCursor === cursor) break;
+      cursor = page.nextCursor;
+    }
+    return { connected: true, accounts, hasMore: accounts.length >= maximum, nextCursor: cursor };
+  }
+
+  async function listArchivePage({ cursor = "", limit = 20, videosPerAccount = 100 } = {}) {
+    const params = new URLSearchParams({
+      limit: String(Math.max(1, Math.min(20, Math.floor(Number(limit) || 20)))),
+      videosPerAccount: String(Math.max(1, Math.min(100, Math.floor(Number(videosPerAccount) || 100)))),
+    });
+    if (clean(cursor)) params.set("cursor", clean(cursor));
+    return requestJson(`/api/integrations/local-factory/archive?${params}`, {
+      retryNetworkErrors: true,
+      operationLabel: "同步 TikTok 官方数据归档",
+      timeoutMs: 60_000,
+    });
+  }
+
+  async function listPublishAccounts() {
+    return requestJson("/api/v1/accounts");
+  }
+
+  async function uploadPublishAsset({ filePath, fileName = "video.mp4", contentType = "video/mp4" } = {}) {
+    const resolvedPath = path.resolve(clean(filePath));
+    const stat = fs.statSync(resolvedPath);
+    if (!stat.isFile() || stat.size < 1 || stat.size > MAX_PUBLISH_FILE_BYTES) {
+      throw statusError(413, "The official TikTok publishing file must be between 1 byte and 95 MB.");
+    }
+    const response = await requestJson("/api/v1/publish/assets", {
+      method: "POST",
+      headers: {
+        "Content-Type": clean(contentType) || "video/mp4",
+        "Content-Length": String(stat.size),
+        "X-File-Name": encodeURIComponent(clean(fileName) || path.basename(resolvedPath)),
+      },
+      bodyFactory: () => fs.createReadStream(resolvedPath),
+      duplex: "half",
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+      operationLabel: "上传 TikTok 发布素材",
+      retryNetworkErrors: true,
+    });
+    return response;
+  }
+
+  async function createPublishBatch(payload = {}) {
+    return requestJson("/api/v1/publish/batches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+      operationLabel: "创建 TikTok 发布批次",
+      retryNetworkErrors: true,
+    });
+  }
+
+  async function getPublishBatch(batchId) {
+    const id = clean(batchId);
+    if (!id) throw statusError(400, "TikTok publish batch ID is required.");
+    return requestJson(`/api/v1/publish/batches/${encodeURIComponent(id)}`);
+  }
+
+  async function listVideos({ schema, query = "", limit = 20, includePrivate = false, includeHistory = false, snapshotDays = 30 } = {}) {
     const params = new URLSearchParams({
       accountId: clean(schema),
       query: clean(query),
       limit: String(Math.max(1, Math.min(100, Math.floor(Number(limit) || 20)))),
     });
     if (includePrivate) params.set("includePrivate", "1");
+    if (includeHistory) {
+      params.set("includeHistory", "1");
+      params.set("snapshotDays", String(Math.max(1, Math.min(400, Math.floor(Number(snapshotDays) || 30)))));
+    }
     return requestJson(`/api/integrations/local-factory/videos?${params}`);
   }
 
-  async function getVideoDetail({ schema, videoId } = {}) {
-    const params = new URLSearchParams({ accountId: clean(schema) });
-    return requestJson(`/api/integrations/local-factory/videos/${encodeURIComponent(clean(videoId))}?${params}`);
+  async function getVideo({ accountId, videoId } = {}) {
+    const schema = clean(accountId);
+    const id = clean(videoId);
+    if (!schema || !id) throw statusError(400, "TikTok account ID and video ID are required.");
+    const params = new URLSearchParams({ accountId: schema });
+    return requestJson(`/api/integrations/local-factory/videos/${encodeURIComponent(id)}?${params}`);
   }
 
   async function getOperationSignals({ accountNames = [], days = 10, videosPerAccount = 30, publishedAfter = 0 } = {}) {
@@ -65,7 +152,7 @@ export function createOfficialTikTokAnalyticsService({ workDir, fetchImpl = fetc
 
     try {
       const requested = new Set((accountNames || []).map(normalizeAccountName).filter(Boolean));
-      const accountResult = await requestJson("/api/integrations/local-factory/accounts");
+      const accountResult = await listAccounts();
       const matchedAccounts = (accountResult.accounts || []).filter((account) => {
         const username = normalizeAccountName(account.profile?.username);
         return !requested.size || requested.has(username);
@@ -94,30 +181,42 @@ export function createOfficialTikTokAnalyticsService({ workDir, fetchImpl = fetc
     }
   }
 
-  async function requestJson(endpoint) {
+  async function requestJson(endpoint, options = {}) {
     const settings = readSettings();
     if (!settings.baseUrl || !settings.apiKey) {
       throw statusError(400, "The official TikTok analytics bridge is not configured.");
     }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      const response = await fetchImpl(`${settings.baseUrl}${endpoint}`, {
-        headers: { Authorization: `Bearer ${settings.apiKey}`, Accept: "application/json" },
-        signal: controller.signal,
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw statusError(response.status, payload.error || `TikTok official bridge returned HTTP ${response.status}.`);
+    const retryDelays = options.retryNetworkErrors ? networkRetryDelays : [];
+    const operationLabel = clean(options.operationLabel) || "请求 TikTok 官方桥接服务";
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Number(options.timeoutMs || REQUEST_TIMEOUT_MS));
+      const bodyFactory = options.bodyFactory;
+      const fetchOptions = { ...options };
+      delete fetchOptions.bodyFactory;
+      delete fetchOptions.retryNetworkErrors;
+      delete fetchOptions.operationLabel;
+      delete fetchOptions.timeoutMs;
+      try {
+        const response = await fetchImpl(`${settings.baseUrl}${endpoint}`, {
+          ...fetchOptions,
+          ...(typeof bodyFactory === "function" ? { body: bodyFactory() } : {}),
+          headers: { Authorization: `Bearer ${settings.apiKey}`, Accept: "application/json", ...(options.headers || {}) },
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw statusError(response.status, payload.error || `TikTok official bridge returned HTTP ${response.status}.`);
+        }
+        return payload;
+      } catch (error) {
+        if (!isRetryableNetworkError(error) || attempt >= retryDelays.length) {
+          throw describeBridgeError(error, operationLabel, attempt + 1);
+        }
+        await sleep(retryDelays[attempt]);
+      } finally {
+        clearTimeout(timer);
       }
-      return payload;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        throw statusError(504, "The official TikTok analytics bridge timed out.");
-      }
-      throw error;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -130,7 +229,7 @@ export function createOfficialTikTokAnalyticsService({ workDir, fetchImpl = fetc
     };
   }
 
-  return { getPublicSettings, saveSettings, testConnection, listAccounts, listVideos, getVideoDetail, getOperationSignals };
+  return { getPublicSettings, saveSettings, testConnection, listAccountPage, listAccounts, listArchivePage, listPublishAccounts, uploadPublishAsset, createPublishBatch, getPublishBatch, listVideos, getVideo, getOperationSignals };
 }
 
 function normalizeBaseUrl(value) {
@@ -169,4 +268,36 @@ function writeJson(filePath, value) {
 
 function statusError(status, message) {
   return Object.assign(new Error(message), { status, statusCode: status });
+}
+
+function isRetryableNetworkError(error) {
+  if (!error || Number(error.status || error.statusCode)) return false;
+  if (error.name === "AbortError" || error.name === "TimeoutError") return true;
+  const code = clean(error.cause?.code || error.code).toUpperCase();
+  return error instanceof TypeError || [
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ETIMEDOUT",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_SOCKET",
+  ].includes(code);
+}
+
+function describeBridgeError(error, operationLabel, attempts) {
+  if (Number(error?.status || error?.statusCode)) return error;
+  const timedOut = error?.name === "AbortError" || error?.name === "TimeoutError";
+  const code = clean(error?.cause?.code || error?.code);
+  const detail = clean(error?.cause?.message || error?.message) || "未知网络错误";
+  const suffix = code ? `${code}: ${detail}` : detail;
+  const message = timedOut
+    ? `${operationLabel}超时，已尝试 ${attempts} 次。`
+    : `${operationLabel}网络失败，已尝试 ${attempts} 次：${suffix}`;
+  return statusError(timedOut ? 504 : 502, message);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -23,7 +23,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .status-message { margin-top: 18px; padding: 11px 13px; color: #a9c1cc; background: #0b1013; border-left: 3px solid #55c8cd; }
 .status-message.is-error { color: #ff9b9b; border-left-color: #ff7474; }
 .account-list { display: grid; gap: 9px; margin-top: 12px; }
-.account-row { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(120px, .6fr)) auto; gap: 20px; align-items: center; padding: 17px 18px; background: #0d1215; border: 1px solid var(--line); }
+.account-row { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(120px, .6fr)); gap: 20px; align-items: center; padding: 17px 18px; background: #0d1215; border: 1px solid var(--line); }
 .account-row > div { display: grid; gap: 4px; min-width: 0; }
 .account-row strong, .account-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-row span, .account-row small { color: var(--muted); font-size: 11px; }

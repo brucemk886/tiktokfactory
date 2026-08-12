@@ -212,16 +212,27 @@
         </div>
         <div id="publishPanel" class="publish-panel" hidden>
           <div class="batch-results-head">
-            <strong>GeeLark 发布</strong>
-            <button id="refreshGeeLarkPhonesBtn" type="button">刷新账号</button>
+            <strong>视频发布</strong>
+            <button id="refreshPublishAccountsBtn" type="button">刷新账号</button>
           </div>
-          <div id="geelarkStatus" class="publish-status">正在读取 GeeLark 云手机...</div>
-          <div class="geelark-filter-row">
-            <label class="field"><span>分组筛选</span><select id="geelarkGroupFilter"><option value="">全部分组</option></select></label>
-            <label class="field"><span>账号名称</span><input id="geelarkNameFilter" type="search" placeholder="输入账号名称/编号/备注" /></label>
+          <label class="field"><span>发布通道</span><select id="publishProvider">
+            <option value="geelark">GeeLark 云手机</option>
+            <option value="official">TikTok 官方 API（小范围测试）</option>
+          </select></label>
+          <div id="geelarkPublishAccounts">
+            <div id="geelarkStatus" class="publish-status">正在读取 GeeLark 云手机...</div>
+            <div class="geelark-filter-row">
+              <label class="field"><span>分组筛选</span><select id="geelarkGroupFilter"><option value="">全部分组</option></select></label>
+              <label class="field"><span>账号名称</span><input id="geelarkNameFilter" type="search" placeholder="输入账号名称/编号/备注" /></label>
+            </div>
+            <button id="selectVisibleGeeLarkBtn" class="secondary-btn" type="button">筛选后全选</button>
+            <div id="geelarkPhoneList" class="geelark-phone-list"></div>
           </div>
-          <button id="selectVisibleGeeLarkBtn" class="secondary-btn" type="button">筛选后全选</button>
-          <div id="geelarkPhoneList" class="geelark-phone-list"></div>
+          <div id="officialPublishAccounts" hidden>
+            <div id="officialTikTokStatus" class="publish-status">切换后读取线上已授权账号。</div>
+            <button id="selectAllOfficialTikTokBtn" class="secondary-btn" type="button">全选官方账号</button>
+            <div id="officialTikTokAccountList" class="geelark-phone-list"></div>
+          </div>
           <label class="field"><span>TikTok 文案</span><textarea id="publishDesc" rows="4" spellcheck="false" placeholder="发布到 TikTok 的视频文案，支持 #tag"></textarea></label>
           <label class="field"><span>发布时间</span><input id="publishTime" type="datetime-local" /></label>
           <label class="field"><span>间隔时间（分钟）</span><input id="publishIntervalMinutes" type="number" min="0" step="1" value="15" /></label>
@@ -244,7 +255,7 @@
           <li>背景音乐目录可选，会随机抽一首低音量铺在原音频下面。</li>
           <li>设置生成视频总条数，音频会按顺序循环使用直到达到目标数量。</li>
           <li>素材去重增强默认折叠，展开后可调放大、旋转、镜像、调色等参数。</li>
-          <li>生成后勾选视频和 GeeLark 账号，设置文案、时间和间隔后发布。</li>
+          <li>生成后可选择 GeeLark 云手机或 TikTok 官方 API，勾选账号并设置文案、时间和间隔后发布。</li>
         </ol>
         <p>素材复用统计按 5 秒区间记录，重复用过的片段会降低下一次被抽中的概率。</p>
       </div>

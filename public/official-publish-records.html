@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>官方 API 发布记录</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="work-page stats-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </nav>
+    <main class="stats-shell">
+      <section class="stats-panel">
+        <div class="stats-topbar">
+          <div><p class="toolbar-kicker">OFFICIAL TIKTOK HANDOFFS</p><h1>官方 API 发布记录</h1><p>独立记录已由 Local Factory 成功交接给 Signal Desk 的官方发布任务；不与 GeeLark 发布记录混合。</p></div>
+          <a class="stats-back-link" href="/tasks">返回自动发布</a>
+        </div>
+        <div class="stats-filters">
+          <label class="field"><span>时间范围</span><select id="officialRange"><option value="1d">最近 1 天</option><option value="7d" selected>最近 7 天</option><option value="30d">最近 30 天</option><option value="all">全部记录</option></select></label>
+          <label class="field"><span>搜索</span><input id="officialQuery" type="search" placeholder="账号、视频、任务 ID、线上批次 ID" /></label>
+          <button id="refreshOfficialRecordsBtn" type="button">刷新记录</button>
+        </div>
+        <div class="stats-cards">
+          <div class="stats-card"><span>本地记录</span><strong id="officialRecordCount">0</strong></div>
+          <div class="stats-card"><span>线上批次</span><strong id="officialBatchCount">0</strong></div>
+          <div class="stats-card"><span>目标账号</span><strong id="officialAccountCount">0</strong></div>
+          <div class="stats-card"><span>已交接中台</span><strong id="officialSubmittedCount">0</strong></div>
+        </div>
+        <div id="officialRecordsStatus" class="publish-status">正在读取官方 API 发布记录...</div>
+        <div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>交接时间</th><th>计划发布时间</th><th>TikTok 账号</th><th>视频文件</th><th>本地任务</th><th>Signal Desk 批次</th><th>本地状态</th><th>说明</th></tr></thead><tbody id="officialRecordRows"></tbody></table></div>
+        <p class="field-help">这里显示本地交接结果。最终发布成功、TikTok 视频 ID 和失败重试仍由线上 Signal Desk 负责。</p>
+      </section>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/official-publish-records.js"></script>
+  </body>
+</html>

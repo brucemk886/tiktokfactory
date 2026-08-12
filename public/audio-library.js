@@ -68,7 +68,10 @@ function renderItems() {
   elements.audioList.innerHTML = items.length ? items.map((item) => `
     <article class="audio-row">
       <input class="audio-check" type="checkbox" value="${escapeHtml(item.id)}" />
-      <div><h3 title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</h3><p>${formatDuration(item.duration)} · ${formatSize(item.size)} · ${escapeHtml(item.modelId)}</p></div>
+      <div class="audio-copy"><h3 title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</h3><p>${formatDuration(item.duration)} · ${formatSize(item.size)} · ${escapeHtml(item.modelId)} · ${formatNumber(item.scriptChars)} 字</p>
+        ${item.script ? `<details><summary>查看对应小说文案</summary><pre>${escapeHtml(item.script)}</pre></details>` : '<small>旧音频未找到对应文案</small>'}
+        ${item.metadata?.evidenceSummary ? `<small class="audio-evidence">数据依据：${escapeHtml(item.metadata.evidenceSummary)}</small>` : ""}
+      </div>
       <audio controls preload="none" src="/api/audio-library/${encodeURIComponent(item.id)}/file"></audio>
       <time>${formatTime(item.createdAt)}</time>
     </article>`).join("") : '<div class="empty-audio">还没有音频。从小说营销工作台生成第一条配音。</div>';
@@ -104,4 +107,5 @@ async function api(url, options = {}) { const response = await fetch(url, { head
 function formatDuration(value) { const seconds = Math.max(0, Math.round(Number(value) || 0)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 function formatSize(value) { const size = Number(value) || 0; return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(size / 1024)} KB`; }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) : "--"; }
+function formatNumber(value) { return new Intl.NumberFormat("zh-CN").format(Number(value) || 0); }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char])); }

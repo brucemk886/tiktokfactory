@@ -88,13 +88,11 @@ function renderAccounts(accounts) {
     const displayName = profile.displayName && profile.displayName !== profile.username ? profile.displayName : "官方授权账号";
     const videoCount = Number(account.syncedVideoCount ?? account.videoCount ?? 0);
     const syncedAt = formatTime(account.syncedAt || account.updatedAt);
-    const schema = account.schema || account.id || "";
     return `<article class="account-row">
       <div><strong>${escapeHtml(username)}</strong><span>${escapeHtml(displayName)}</span></div>
       <div><small>视频</small><b>${formatNumber(videoCount)}</b></div>
       <div><small>最近同步</small><b>${escapeHtml(syncedAt)}</b></div>
       <div><small>状态</small><b class="ready-pill">已授权</b></div>
-      <a class="secondary-button link-button" href="/tiktok-video-detail?schema=${encodeURIComponent(schema)}">查看数据</a>
     </article>`;
   }).join("");
 }

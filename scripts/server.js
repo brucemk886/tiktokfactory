@@ -13,11 +13,17 @@ import { createCodexBrainService } from "./codex-brain.js";
 import { createDeepSeekBrainService } from "./deepseek-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
+import { createNovelContentLibraryService } from "./novel-content-library.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
 import { createOperationBrainService } from "./operation-brain.js";
 import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
+import { publicSidebarModules } from "./sidebar-modules.js";
+import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
+import { collectOfficialBatchIdsFromRecords, filterPublishRecordsBySource } from "./publish-record-sources.js";
+import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
+import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -39,7 +45,14 @@ const publishService = createPublishService({
   readConfig,
   resolveConfig: (profileId) => ({ ...readConfig(root), geelark: resolveGeeLarkConfig(profileId) })
 });
-const autoTaskManager = createAutoTaskManager({ root, workDir, outputDir, publishService, outputRetentionHours: 48 });
+const autoTaskManager = createAutoTaskManager({
+  root,
+  workDir,
+  outputDir,
+  publishService,
+  officialPublishService: publishThroughOfficialTikTok,
+  outputRetentionHours: 48
+});
 const tiktokAnalytics = createTikTokAnalyticsService({
   workDir,
   defaultApiKeys: bootConfig.tiktokApiStoreApiKeys,
@@ -52,10 +65,34 @@ const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
 const psychologyTopics = createPsychologyTopicsService({ workDir });
 const kieAi = createKieAiService({ workDir, readApiKey: () => readPsychologySettings().kieApiKey });
 const privateTikTokAnalytics = createOfficialTikTokAnalyticsService({ workDir });
+const officialPublishResultSync = createOfficialPublishResultSync({
+  workDir,
+  service: privateTikTokAnalytics,
+  readRecords: readPublishRecords,
+  writeRecords: writePublishRecords,
+  syncHour: Number(process.env.OFFICIAL_PUBLISH_RESULT_SYNC_HOUR || 8),
+  syncMinute: Number(process.env.OFFICIAL_PUBLISH_RESULT_SYNC_MINUTE || 30),
+  requestIntervalMs: Number(process.env.OFFICIAL_PUBLISH_RESULT_REQUEST_INTERVAL_MS || 650),
+});
+const officialAnalyticsArchive = createOfficialAnalyticsArchive({
+  workDir,
+  service: privateTikTokAnalytics,
+  syncHour: Number(process.env.OFFICIAL_ANALYTICS_ARCHIVE_HOUR || 8),
+  syncMinute: Number(process.env.OFFICIAL_ANALYTICS_ARCHIVE_MINUTE || 30),
+  requestIntervalMs: Number(process.env.OFFICIAL_ANALYTICS_ARCHIVE_REQUEST_INTERVAL_MS || 650),
+});
+const novelContentLibrary = createNovelContentLibraryService({
+  workDir,
+  audioLibrary,
+  analyticsService: tiktokAnalytics,
+  readPublishRecords
+});
 const operationBrain = createOperationBrainService({
   workDir,
   analyticsService: tiktokAnalytics,
   privateAnalyticsService: privateTikTokAnalytics,
+  audioLibrary,
+  novelContentLibrary,
   autoTaskManager,
   codexBrain,
   deepseekBrain,
@@ -118,10 +155,18 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "accounts.js"), "text/javascript; charset=utf-8");
     }
     if (req.method === "GET" && url.pathname === "/api/auth/me") {
-      return sendJson(res, 200, { user: session.user, profiles: session.user.role === "admin" ? localAuth.listProfiles() : [] });
+      return sendJson(res, 200, {
+        user: session.user,
+        profiles: session.user.role === "admin" ? localAuth.listProfiles() : [],
+        sidebarModules: publicSidebarModules()
+      });
     }
     if (req.method === "GET" && url.pathname === "/api/admin/accounts") {
-      return sendJson(res, 200, { users: localAuth.listUsers(), profiles: localAuth.listProfiles() });
+      return sendJson(res, 200, {
+        users: localAuth.listUsers(),
+        profiles: localAuth.listProfiles(),
+        sidebarModules: publicSidebarModules()
+      });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/accounts") {
       return sendJson(res, 201, { user: localAuth.createUser(await readJsonBody(req)) });
@@ -171,6 +216,26 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "stats.js"), "text/javascript; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/official-publish-records") {
+      return sendFile(res, path.join(publicDir, "official-publish-records.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-publish-records.js") {
+      return sendFile(res, path.join(publicDir, "official-publish-records.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-analytics") {
+      return sendFile(res, path.join(publicDir, "official-analytics.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-analytics.js") {
+      return sendFile(res, path.join(publicDir, "official-analytics.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-analytics.css") {
+      return sendFile(res, path.join(publicDir, "official-analytics.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/analytics") {
       return sendFile(res, path.join(publicDir, "analytics.html"), "text/html; charset=utf-8");
     }
@@ -201,18 +266,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/tiktok-connections.css") {
       return sendFile(res, path.join(publicDir, "tiktok-connections.css"), "text/css; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/tiktok-video-detail") {
-      return sendFile(res, path.join(publicDir, "tiktok-video-detail.html"), "text/html; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/tiktok-video-detail.js") {
-      return sendFile(res, path.join(publicDir, "tiktok-video-detail.js"), "text/javascript; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/tiktok-video-detail.css") {
-      return sendFile(res, path.join(publicDir, "tiktok-video-detail.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/reddit") {
@@ -298,8 +351,46 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "operator.css"), "text/css; charset=utf-8");
     }
 
-    if (req.method === "GET" && ["/asset-cutter", "/novel-library", "/audio-library"].includes(url.pathname)) {
+    if (req.method === "GET" && url.pathname === "/asset-cutter") {
       return redirect(res, "/tasks");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-library") {
+      return sendFile(res, path.join(publicDir, "novel-library.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-library.js") {
+      return sendFile(res, path.join(publicDir, "novel-library.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-library.css") {
+      return sendFile(res, path.join(publicDir, "novel-library.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/audio-library") {
+      const params = new URLSearchParams(url.searchParams);
+      params.set("tab", "scripts");
+      return redirect(res, `/novel-content?${params.toString()}`);
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-content") {
+      return sendFile(res, path.join(publicDir, "novel-content.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-content.js") {
+      return sendFile(res, path.join(publicDir, "novel-content.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-content.css") {
+      return sendFile(res, path.join(publicDir, "novel-content.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/audio-library.js") {
+      return sendFile(res, path.join(publicDir, "audio-library.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/audio-library.css") {
+      return sendFile(res, path.join(publicDir, "audio-library.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/asset-usage") {
@@ -337,20 +428,23 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, await privateTikTokAnalytics.listAccounts(), { "Cache-Control": "no-store" });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/private-tiktok/videos") {
-      return sendJson(res, 200, await privateTikTokAnalytics.listVideos({
-        schema: url.searchParams.get("schema"),
-        query: url.searchParams.get("query"),
-        limit: url.searchParams.get("limit"),
-        includePrivate: url.searchParams.get("includePrivate") === "1"
-      }), { "Cache-Control": "no-store" });
+    if (req.method === "GET" && url.pathname === "/api/official-tiktok/publish-accounts") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以读取 TikTok 官方发布账号。" });
+      try {
+        const data = await privateTikTokAnalytics.listPublishAccounts();
+        return sendJson(res, 200, { ...data, accounts: filterOfficialPublishAccounts(data.accounts) }, { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取官方发布账号失败。" });
+      }
     }
 
-    if (req.method === "GET" && /^\/api\/private-tiktok\/videos\/[^/]+$/.test(url.pathname)) {
-      return sendJson(res, 200, await privateTikTokAnalytics.getVideoDetail({
-        schema: url.searchParams.get("schema"),
-        videoId: decodeURIComponent(url.pathname.split("/").pop())
-      }), { "Cache-Control": "no-store" });
+    if (req.method === "POST" && url.pathname === "/api/official-tiktok/publish") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以使用 TikTok 官方 API 发布。" });
+      try {
+        return sendJson(res, 202, await publishThroughOfficialTikTok(await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "官方 API 发布任务创建失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/codex/status") {
@@ -542,7 +636,9 @@ const server = http.createServer(async (req, res) => {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说营销生成接口仅允许在本机访问。" });
       try {
         const payload = await readJsonBody(req);
-        return sendJson(res, 200, await codexBrain.generateNovelMarketing(payload));
+        const result = await codexBrain.generateNovelMarketing(payload);
+        const contentLibrary = novelContentLibrary.importMarketingResult(result, payload);
+        return sendJson(res, 200, { ...result, contentLibrary });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "小说营销素材生成失败。" });
       }
@@ -551,6 +647,40 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/audio-library") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频素材库仅允许在本机访问。" });
       return sendJson(res, 200, { items: audioLibrary.list() });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/novel-content") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      return sendJson(res, 200, novelContentLibrary.getOverview({ query: url.searchParams.get("query") || "" }));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/novel-content/novels") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        return sendJson(res, 201, { novel: novelContentLibrary.createNovel(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建小说失败。" });
+      }
+    }
+
+    if (req.method === "PATCH" && /^\/api\/novel-content\/novels\/[^/]+$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, { novel: novelContentLibrary.updateNovel(id, await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新小说失败。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/novel-content\/scripts\/[^/]+\/assign$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        return sendJson(res, 200, { script: novelContentLibrary.assignScript(id, await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "归类文案失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/reddit-mix/settings") {
@@ -595,6 +725,31 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/publish-records") {
       return sendJson(res, 200, getPublishRecordsSummary(url.searchParams, session.user));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/official-publish-records") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看官方 API 发布记录。" });
+      return sendJson(res, 200, getOfficialPublishRecordsSummary(url.searchParams));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/official-publish-records/sync") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以同步官方发布结果。" });
+      return sendJson(res, 200, await officialPublishResultSync.run({ ignoreDailyGuard: true }));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/official-analytics") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看 TikTok 官方历史数据。" });
+      return sendJson(res, 200, officialAnalyticsArchive.getDashboard({
+        days: String(url.searchParams.get("days") || "30"),
+        account: String(url.searchParams.get("account") || ""),
+        video: String(url.searchParams.get("video") || ""),
+        search: String(url.searchParams.get("search") || ""),
+      }));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/official-analytics/sync") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以同步 TikTok 官方历史数据。" });
+      return sendJson(res, 200, await officialAnalyticsArchive.run({ ignoreDailyGuard: true }));
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {
@@ -1048,6 +1203,13 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/auto-tasks") {
       const payload = await readJsonBody(req);
+      let publishProvider;
+      try {
+        publishProvider = assertPublishProviderAccess(session.user, payload.publish?.provider);
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 403, { error: error.message });
+      }
+      payload.publish = { ...(payload.publish || {}), provider: publishProvider };
       if (payload.taskType === "psychology") {
         const settings = readPsychologySettings();
         if (!settings.kieApiKey || !settings.elevenLabsApiKey || !settings.elevenLabsVoiceId) {
@@ -1078,10 +1240,30 @@ const server = http.createServer(async (req, res) => {
             return { id: envId, name: phone.serialName || "", serialNo: phone.serialNo || "", groupName: phone.groupName || "", remark: phone.remark || "" };
           });
         }
+      } else if (publishProvider === PUBLISH_PROVIDER_OFFICIAL && payload.publish?.autoPublish !== false) {
+        const officialData = await privateTikTokAnalytics.listPublishAccounts();
+        const authorizedAccounts = filterOfficialPublishAccounts(officialData.accounts);
+        const authorizedById = new Map(authorizedAccounts.map((account) => [String(account.connectionId || account.id || ""), account]));
+        const connectionIds = Array.from(new Set((payload.publish?.connectionIds || []).map(String).filter(Boolean)));
+        if (!connectionIds.length) return sendJson(res, 400, { error: "请选择至少一个具有 video.publish 权限的 TikTok 官方账号。" });
+        const unauthorizedIds = connectionIds.filter((connectionId) => !authorizedById.has(connectionId));
+        if (unauthorizedIds.length) return sendJson(res, 403, { error: "任务包含未授权或缺少 video.publish 权限的 TikTok 官方账号。" });
+        payload.publish.connectionIds = connectionIds;
+        payload.publish.officialAccounts = connectionIds.map((connectionId) => {
+          const account = authorizedById.get(connectionId);
+          return {
+            connectionId,
+            name: account.displayName || account.username || connectionId,
+            username: account.username || "",
+            ownerEmail: account.ownerEmail || ""
+          };
+        });
+        payload.publish.envIds = [];
+        payload.publish.accounts = [];
       }
       payload.ownerUserId = session.user.id;
       payload.geelarkProfileId = session.user.geelarkProfileId;
-      payload.publish = { ...(payload.publish || {}), ownerUserId: session.user.id, geelarkProfileId: session.user.geelarkProfileId };
+      payload.publish = { ...(payload.publish || {}), provider: session.user.role === "admin" ? publishProvider : PUBLISH_PROVIDER_GEELARK, ownerUserId: session.user.id, geelarkProfileId: session.user.geelarkProfileId };
       return sendJson(res, 201, { task: autoTaskManager.createTask(payload) });
     }
 
@@ -1448,7 +1630,81 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`Podcast video maker is running: http://localhost:${port}`);
+  officialPublishResultSync.start();
+  officialAnalyticsArchive.start();
 });
+
+async function publishThroughOfficialTikTok(payload = {}) {
+  const videos = Array.isArray(payload.videos) ? payload.videos : [];
+  const rawConnectionIds = Array.isArray(payload.connectionIds) ? payload.connectionIds : [];
+  const connectionIds = Array.from(new Set(rawConnectionIds.map((value) => String(value || "").trim()).filter(Boolean)));
+  if (!videos.length) throw Object.assign(new Error("请先选择要发布的视频。"), { statusCode: 400 });
+  if (!connectionIds.length) throw Object.assign(new Error("请先选择官方授权账号。"), { statusCode: 400 });
+  const baseScheduleMs = Math.max(Date.now(), Number(payload.scheduleAt || 0) * 1000 || Date.now());
+  const intervalMs = Math.max(0, Number(payload.intervalMinutes || 0) || 0) * 60_000;
+  const caption = String(payload.videoDesc || "").slice(0, 2200);
+  const jobs = [];
+
+  for (const [videoIndex, video] of videos.entries()) {
+    const fileName = path.basename(String(video.fileName || "video.mp4"));
+    const filePath = path.resolve(outputDir, fileName);
+    if (!isPathInside(filePath, outputDir) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      throw Object.assign(new Error(`找不到待发布视频：${fileName}`), { statusCode: 404 });
+    }
+    for (const connectionId of connectionIds) {
+      jobs.push({ videoIndex, connectionId, fileName, filePath, video });
+    }
+  }
+
+  const batches = [];
+  for (let offset = 0; offset < jobs.length; offset += 100) {
+    const chunk = jobs.slice(offset, offset + 100);
+    const assets = new Map();
+    for (const job of chunk) {
+      if (assets.has(job.filePath)) continue;
+      assets.set(job.filePath, await privateTikTokAnalytics.uploadPublishAsset({
+        filePath: job.filePath,
+        fileName: job.fileName,
+        contentType: publishContentType(job.fileName),
+      }));
+    }
+    const externalId = `local-factory-${Date.now()}-${Math.floor(offset / 100) + 1}`;
+    const result = await privateTikTokAnalytics.createPublishBatch({
+      externalId,
+      name: String(payload.name || "Local Factory 手动发布").slice(0, 160),
+      items: chunk.map((job, index) => {
+        const asset = assets.get(job.filePath);
+        return {
+          externalRef: `${job.fileName}:${job.connectionId}:${offset + index}`.slice(0, 160),
+          connectionId: job.connectionId,
+          assetKey: asset.assetKey,
+          fileName: job.fileName,
+          contentType: asset.contentType || publishContentType(job.fileName),
+          fileSize: Number(asset.fileSize || fs.statSync(job.filePath).size),
+          scheduleAt: baseScheduleMs + job.videoIndex * intervalMs,
+          postInfo: {
+            caption,
+            privacy_level: "PUBLIC_TO_EVERYONE",
+            disable_comment: false,
+            disable_duet: false,
+            disable_stitch: false,
+            video_cover_timestamp_ms: 1000,
+          },
+        };
+      }),
+    });
+    batches.push(result.batch);
+  }
+
+  return { ok: true, provider: "official", taskCount: jobs.length, batchCount: batches.length, batches };
+}
+
+function publishContentType(fileName) {
+  const extension = path.extname(String(fileName || "")).toLowerCase();
+  if (extension === ".mov") return "video/quicktime";
+  if (extension === ".webm") return "video/webm";
+  return "video/mp4";
+}
 
 function getConfiguredAssetGroups() {
   const libraryRoot = String(readConfig(root).assetLibraryRoot || "").trim();
@@ -2083,7 +2339,7 @@ function getPublishRecordsSummary(searchParams, user = null) {
   const profileId = profiles.some((profile) => profile.id === requestedProfileId)
     ? requestedProfileId
     : defaultProfileId;
-  const allRecords = readPublishRecords()
+  const allRecords = filterPublishRecordsBySource(readPublishRecords(), "geelark")
     .filter((record) => canAccessPublishRecord(user, record))
     // Records created before multiple GeeLark profiles were introduced belong to the default profile.
     .filter((record) => String(record.geelarkProfileId || "default") === profileId);
@@ -2119,6 +2375,41 @@ function getPublishRecordsSummary(searchParams, user = null) {
       groupCount: new Set(records.map((record) => record.groupName).filter(Boolean)).size
     },
     filters: { profiles, selectedProfileId: profileId, groups, accounts }
+  };
+}
+
+function getOfficialPublishRecordsSummary(searchParams) {
+  const range = String(searchParams.get("range") || "7d");
+  const query = String(searchParams.get("query") || "").trim().toLowerCase();
+  const from = resolveStatsFrom(range);
+  const allRecords = filterPublishRecordsBySource(readPublishRecords(), "official");
+  const records = allRecords
+    .filter((record) => !from || Math.max(Number(record.createdAt) || 0, Number(record.scheduleAt) * 1000 || 0) >= from)
+    .filter((record) => {
+      if (!query) return true;
+      return [
+        record.autoTaskId,
+        record.accountName,
+        record.accountUsername,
+        record.connectionId,
+        record.assignedEnvId,
+        record.fileName,
+        record.title,
+        record.externalRef,
+        ...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []),
+        ...(Array.isArray(record.taskIds) ? record.taskIds : [])
+      ].filter(Boolean).join(" ").toLowerCase().includes(query);
+    })
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  const batchIds = collectOfficialBatchIdsFromRecords(records);
+  return {
+    records,
+    summary: {
+      recordCount: records.length,
+      batchCount: batchIds.length,
+      accountCount: new Set(records.map((record) => record.connectionId || record.assignedEnvId).filter(Boolean)).size,
+      submittedCount: records.filter((record) => ["submitted", "done"].includes(String(record.status || ""))).length
+    }
   };
 }
 

@@ -7,6 +7,8 @@ const phoneStatus = $("#phoneStatus");
 const groupFilter = $("#groupFilter");
 const nameFilter = $("#nameFilter");
 let phones = [];
+let officialTikTokAccounts = [];
+let currentUserRole = "member";
 let assetGroups = [];
 let pollTimer = null;
 let lastTaskRenderKey = "";
@@ -16,8 +18,10 @@ const selectedCaptionPresetKey = "reddit-publish-caption-selected";
 
 $("#createTaskBtn").addEventListener("click", createTask);
 $("#refreshTasksBtn").addEventListener("click", loadTasks);
-$("#refreshPhonesBtn").addEventListener("click", loadPhones);
+$("#refreshPhonesBtn").addEventListener("click", refreshPublishAccounts);
 $("#selectVisibleBtn").addEventListener("click", selectVisible);
+$("#selectOfficialAccountsBtn")?.addEventListener("click", selectOfficialAccounts);
+$("#publishProvider")?.addEventListener("change", updatePublishProviderView);
 $("#saveDedupBtn").addEventListener("click", saveDedupSettings);
 $("#captionPresetSelect").addEventListener("change", selectCaptionPreset);
 $("#addCaptionPresetBtn").addEventListener("click", addCaptionPreset);
@@ -37,7 +41,7 @@ loadCaptionPresets();
 setDefaultSchedule();
 loadAssetGroups();
 loadSharedLibraries();
-loadPhones();
+initializePublishProvider();
 loadTasks();
 window.addEventListener("pagehide", stopTaskPolling);
 document.addEventListener("visibilitychange", () => {
@@ -58,16 +62,23 @@ function applyIncomingAudioBatch() {
 }
 
 async function createTask() {
-  const selected = Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
+  const provider = getPublishProvider();
+  const selected = provider === "official"
+    ? Array.from($("#officialAccountList").querySelectorAll(".official-tiktok-account-check:checked"))
+    : Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
   const autoPublish = $("#autoPublish").checked;
   const materialSource = $("#assetGroupSelect")?.value || "";
   const assetGroupId = materialSource === "__manual__" ? "" : materialSource;
   if ((!assetGroupId && !$("#videoDir").value.trim()) || !$("#audioDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录，并选择音频目录。");
-  if (autoPublish && !selected.length) return setCreateStatus("自动发布任务至少需要选择一个 GeeLark 账号。");
-  const accounts = selected.map((input) => {
+  if (autoPublish && !selected.length) return setCreateStatus(provider === "official" ? "自动发布任务至少需要选择一个官方授权账号。" : "自动发布任务至少需要选择一个 GeeLark 账号。");
+  const accounts = provider === "geelark" ? selected.map((input) => {
     const phone = phones.find((item) => String(item.id) === input.value) || {};
     return { id: input.value, name: phone.serialName || "", serialNo: phone.serialNo || "", groupName: phone.groupName || "", remark: phone.remark || "" };
-  });
+  }) : [];
+  const officialAccounts = provider === "official" ? selected.map((input) => {
+    const account = officialTikTokAccounts.find((item) => String(item.connectionId || item.id) === input.value) || {};
+    return { connectionId: input.value, name: account.displayName || account.username || input.value, username: account.username || "", ownerEmail: account.ownerEmail || "" };
+  }) : [];
   const schedule = $("#scheduleAt").value ? Math.floor(new Date($("#scheduleAt").value).getTime() / 1000) : Math.floor(Date.now() / 1000) + 600;
   if (autoPublish && schedule < Math.floor(Date.now() / 1000) + 300) return setCreateStatus("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
   const payload = {
@@ -81,7 +92,10 @@ async function createTask() {
       quality: $("#quality").value, autoCaptions: $("#autoCaptions").checked, dedup: collectDedup()
     },
     publish: {
-      autoPublish, envIds: selected.map((input) => input.value), accounts, videoDesc: $("#videoDesc").value,
+      provider, autoPublish,
+      envIds: provider === "geelark" ? selected.map((input) => input.value) : [], accounts,
+      connectionIds: provider === "official" ? selected.map((input) => input.value) : [], officialAccounts,
+      videoDesc: $("#videoDesc").value,
       scheduleAt: schedule, intervalMinutes: number("#intervalMinutes", 15), batchPublishLimit: number("#batchLimit", 300), dailyPublishLimit: number("#dailyLimit", 300)
     }
   };
@@ -140,13 +154,16 @@ function renderTasks(tasks) {
     const total = Number(progress?.total) || 0;
     const percent = total > 0 ? Math.round(current / total * 100) : Number(progress?.percent) || 0;
     const failures = (task.publishResults || []).filter((item) => item.status === "failed" || item.status === "needs_check");
-    const groupNames = Array.from(new Set(
-      (task.publish?.accounts || [])
-        .map((account) => String(account?.groupName || "").trim())
+    const isOfficial = task.publish?.provider === "official";
+    const accountLabels = Array.from(new Set(
+      (isOfficial ? task.publish?.officialAccounts : task.publish?.accounts || [])
+        .map((account) => String(isOfficial
+          ? account?.name || account?.username || account?.connectionId || ""
+          : account?.groupName || "").trim())
         .filter(Boolean)
     ));
-    const groupHtml = groupNames.length
-      ? `<div class="task-groups"><span>\u8d26\u53f7\u5206\u7ec4</span>${groupNames.map((name) => `<b>${escapeHtml(name)}</b>`).join("")}</div>`
+    const groupHtml = accountLabels.length
+      ? `<div class="task-groups"><span>${isOfficial ? "TikTok \u5b98\u65b9\u8d26\u53f7" : "\u8d26\u53f7\u5206\u7ec4"}</span>${accountLabels.map((name) => `<b>${escapeHtml(name)}</b>`).join("")}</div>`
       : "";
     const scheduleLines = buildTaskScheduleLines(task);
     const scheduleHtml = scheduleLines.length
@@ -172,7 +189,7 @@ function renderTasks(tasks) {
       ${groupHtml}
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
-      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>发布成功 ${task.publishSummary?.submitted || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
+      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>${task.publish?.provider === "official" ? "已提交中台" : "发布成功"} ${task.publishSummary?.submitted || 0}</span><span>处理中 ${task.publishSummary?.pending || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
       ${scheduleHtml}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;
   }).join("");
@@ -199,7 +216,9 @@ function createTaskRenderKey(tasks) {
       .map((item) => [item.recordId, item.fileName, item.status, item.message]),
     scheduleAt: task.publish?.scheduleAt,
     intervalMinutes: task.publish?.intervalMinutes,
-    accounts: (task.publish?.accounts || []).map((account) => [account.id, account.groupName])
+    provider: task.publish?.provider || "geelark",
+    accounts: (task.publish?.accounts || []).map((account) => [account.id, account.groupName]),
+    officialAccounts: (task.publish?.officialAccounts || []).map((account) => [account.connectionId, account.name, account.username])
   })));
 }
 
@@ -257,6 +276,83 @@ async function loadPhones() {
   } catch (error) {
     phoneStatus.textContent = error.message || "读取账号失败。";
   }
+}
+
+async function initializePublishProvider() {
+  try {
+    const response = await fetch(`/api/auth/me?t=${Date.now()}`, { cache: "no-store" });
+    const data = await response.json();
+    if (response.ok) currentUserRole = data.user?.role === "admin" ? "admin" : "member";
+  } catch {
+    currentUserRole = "member";
+  }
+  const providerField = $("#publishProviderField");
+  const providerSelect = $("#publishProvider");
+  if (providerField) providerField.hidden = currentUserRole !== "admin";
+  if (providerSelect && currentUserRole !== "admin") providerSelect.value = "geelark";
+  await updatePublishProviderView();
+}
+
+function getPublishProvider() {
+  return currentUserRole === "admin" && $("#publishProvider")?.value === "official" ? "official" : "geelark";
+}
+
+async function updatePublishProviderView() {
+  const provider = getPublishProvider();
+  const geelarkPanel = $("#geelarkPublishAccounts");
+  const officialPanel = $("#officialPublishAccounts");
+  if (geelarkPanel) geelarkPanel.hidden = provider !== "geelark";
+  if (officialPanel) officialPanel.hidden = provider !== "official";
+  $("#refreshPhonesBtn").textContent = provider === "official" ? "刷新授权账号" : "刷新账号";
+  if (provider === "official") await loadOfficialTikTokAccounts();
+  else await loadPhones();
+}
+
+async function refreshPublishAccounts() {
+  if (getPublishProvider() === "official") return loadOfficialTikTokAccounts();
+  return loadPhones();
+}
+
+async function loadOfficialTikTokAccounts() {
+  const list = $("#officialAccountList");
+  if (!list || currentUserRole !== "admin") return;
+  phoneStatus.textContent = "正在读取官方授权账号...";
+  list.innerHTML = "";
+  try {
+    const response = await fetch(`/api/official-tiktok/publish-accounts?t=${Date.now()}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取官方授权账号失败。");
+    const allAccounts = Array.isArray(data.accounts) ? data.accounts : [];
+    officialTikTokAccounts = allAccounts.filter((account) => Array.isArray(account.scopes) && account.scopes.includes("video.publish"));
+    list.innerHTML = officialTikTokAccounts.map((account, index) => {
+      const connectionId = account.connectionId || account.id || "";
+      const displayName = account.displayName || account.username || `TikTok 账号 ${index + 1}`;
+      const username = account.username ? `@${account.username}` : connectionId;
+      const owner = account.ownerEmail || "未标记归属邮箱";
+      return `<label class="geelark-phone-item"><input class="official-tiktok-account-check" type="checkbox" value="${escapeAttr(connectionId)}" /><span><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(username)} · ${escapeHtml(owner)}</small></span></label>`;
+    }).join("");
+    list.querySelectorAll(".official-tiktok-account-check").forEach((input) => input.addEventListener("change", updateSelectedOfficialAccountCount));
+    const hiddenCount = allAccounts.length - officialTikTokAccounts.length;
+    phoneStatus.textContent = officialTikTokAccounts.length
+      ? `已读取 ${officialTikTokAccounts.length} 个可发布账号${hiddenCount ? `，隐藏 ${hiddenCount} 个无 video.publish 权限账号` : ""}。`
+      : allAccounts.length ? "没有具有 video.publish 权限的账号。" : "暂无官方授权账号。";
+    updateSelectedOfficialAccountCount();
+  } catch (error) {
+    officialTikTokAccounts = [];
+    phoneStatus.textContent = error.message || "读取官方授权账号失败。";
+  }
+}
+
+function selectOfficialAccounts() {
+  const inputs = Array.from($("#officialAccountList")?.querySelectorAll(".official-tiktok-account-check") || []);
+  const shouldCheck = inputs.some((input) => !input.checked);
+  inputs.forEach((input) => { input.checked = shouldCheck; });
+  updateSelectedOfficialAccountCount();
+}
+
+function updateSelectedOfficialAccountCount() {
+  const count = $("#officialAccountList")?.querySelectorAll(".official-tiktok-account-check:checked").length || 0;
+  if ($("#selectedOfficialAccountCount")) $("#selectedOfficialAccountCount").textContent = `已选 ${count} 个`;
 }
 
 async function loadAssetGroups() {
@@ -339,6 +435,8 @@ function clearAccountSelection() {
   phoneList.querySelectorAll(".geelark-phone-check:checked").forEach((input) => { input.checked = false; });
   filterPhones();
   updateSelectedAccountCount();
+  $("#officialAccountList")?.querySelectorAll(".official-tiktok-account-check:checked").forEach((input) => { input.checked = false; });
+  updateSelectedOfficialAccountCount();
 }
 
 function filterPhones() {
@@ -379,7 +477,9 @@ function buildTaskScheduleLines(task) {
   if (stored.length) return stored.sort((a, b) => Number(a.scheduleAt) - Number(b.scheduleAt));
   if (!task.publish?.autoPublish) return [];
   const total = Number(task.expectedVideoCount) || Number(task.generatedVideos?.length) || 0;
-  const accountCount = Array.isArray(task.publish.envIds) ? task.publish.envIds.length : 0;
+  const accountCount = task.publish?.provider === "official"
+    ? (Array.isArray(task.publish.connectionIds) ? task.publish.connectionIds.length : 0)
+    : (Array.isArray(task.publish.envIds) ? task.publish.envIds.length : 0);
   if (!total || !accountCount) return [];
   const startAt = Number(task.publish.scheduleAt) || 0;
   const intervalSeconds = Math.max(0, Number(task.publish.intervalMinutes) || 0) * 60;

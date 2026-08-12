@@ -1,19 +1,5 @@
-const state = { users: [], profiles: [], groups: [], groupHint: "选择 GeeLark 配置后自动读取分组" };
+const state = { users: [], profiles: [], groups: [], sidebarModules: [], groupHint: "选择 GeeLark 配置后自动读取分组" };
 const $ = (selector) => document.querySelector(selector);
-const SIDEBAR_MODULES = Object.freeze([
-  { id: "psychology-topics", label: "心理学题目", adminOnly: true },
-  { id: "psychology", label: "心理学视频自动化", adminOnly: true },
-  { id: "schulte", label: "舒尔特训练", adminOnly: true },
-  { id: "ai", label: "AI 创作", adminOnly: true },
-  { id: "asset-usage", label: "素材使用率", adminOnly: true },
-  { id: "tasks", label: "Reddit 自动发布" },
-  { id: "stats", label: "发布记录" },
-  { id: "analytics", label: "数据总览" },
-  { id: "operator", label: "小说 AI 自运营", adminOnly: true },
-  { id: "tiktok-connections", label: "TikTok 官方账号", adminOnly: true },
-  { id: "analytics-settings", label: "抓取配置", adminOnly: true },
-  { id: "accounts", label: "账户管理", adminOnly: true }
-]);
 
 $("#profileForm").addEventListener("submit", saveProfile);
 $("#userForm").addEventListener("submit", saveUser);
@@ -38,6 +24,7 @@ async function load() {
   if (!response.ok) return alert(data.error || "读取账户配置失败。");
   state.users = data.users || [];
   state.profiles = data.profiles || [];
+  state.sidebarModules = data.sidebarModules || [];
   render();
   renderSidebarOptions(defaultSidebarModules($("#userRole").value));
   await loadProfileGroups([]);
@@ -285,7 +272,7 @@ function updateGroupPermissionHint() {
 }
 
 function availableSidebarModules(role = $("#userRole").value) {
-  return SIDEBAR_MODULES.filter((item) => role === "admin" || !item.adminOnly);
+  return state.sidebarModules.filter((item) => Array.isArray(item.roles) && item.roles.includes(role));
 }
 
 function defaultSidebarModules(role) {
@@ -315,7 +302,7 @@ function setAllSidebarModules(checked) {
 
 function sidebarModuleSummary(selected, role) {
   const selectedSet = new Set(Array.isArray(selected) ? selected : defaultSidebarModules(role));
-  const labels = SIDEBAR_MODULES.filter((item) => selectedSet.has(item.id)).map((item) => item.label);
+  const labels = state.sidebarModules.filter((item) => selectedSet.has(item.id)).map((item) => item.label);
   if (!labels.length) return "全部隐藏";
   if (labels.length === availableSidebarModules(role).length) return "全部显示";
   return labels.join("、");

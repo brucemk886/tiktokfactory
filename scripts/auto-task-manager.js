@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { getPublishAccountIds, normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm"]);
 const MAX_DAILY_PLANNED_VIDEOS = 300;
 
-export function createAutoTaskManager({ root, workDir, outputDir, publishService, outputRetentionHours = 48 }) {
+export function createAutoTaskManager({ root, workDir, outputDir, publishService, officialPublishService, outputRetentionHours = 48 }) {
   const tasksDir = path.join(workDir, "scheduled-tasks");
   const generationJobsDir = path.join(workDir, "jobs");
   const retentionHours = Math.max(1, Math.min(720, Number(outputRetentionHours) || 48));
@@ -43,8 +44,12 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
             : "音频目录中没有找到可用音频文件。"
       );
     }
+    const publishAccountIds = getPublishAccountIds(publish);
+    const scheduledPublishCount = publish.provider === PUBLISH_PROVIDER_OFFICIAL
+      ? expectedVideoCount * publishAccountIds.length
+      : expectedVideoCount;
     const schedulePlan = publish.autoPublish
-      ? buildSchedulePlan({ videoCount: expectedVideoCount, envIds: publish.envIds, scheduleAt: publish.scheduleAt, intervalMinutes: publish.intervalMinutes })
+      ? buildSchedulePlan({ videoCount: scheduledPublishCount, envIds: publishAccountIds, scheduleAt: publish.scheduleAt, intervalMinutes: publish.intervalMinutes })
       : [];
     validateScheduleCapacity({ plan: schedulePlan, tasks: listTasks(), dailyLimit: MAX_DAILY_PLANNED_VIDEOS });
     const id = safeId(`auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
@@ -137,6 +142,9 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
 
   async function retryPublishRecord(taskId, recordId, options = {}) {
     const task = getTask(taskId);
+    if (task.publish?.provider === PUBLISH_PROVIDER_OFFICIAL) {
+      throw Object.assign(new Error("TikTok 官方 API 任务暂不支持单条人工重试，请重新创建发布任务。"), { statusCode: 400 });
+    }
     patchTask(task.id, { message: "正在人工重试发布...", updatedAt: Date.now() });
     try {
       const result = await publishService.retryRecord(recordId, options);
@@ -208,42 +216,85 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
         return;
       }
 
-      patchTask(id, { phase: "publishing", message: "正在安全提交到 GeeLark...", updatedAt: Date.now() });
-      const result = await publishService.publishBatch({
-        ...task.publish,
-        videos: task.generatedVideos,
-        batchId: task.id,
-        autoRetry: true,
-        retryDelayMs: 2 * 60 * 1000
-      }, {
-        batchId: task.id,
-        retryDelayMs: 2 * 60 * 1000,
-        autoRetry: true,
-        onProgress: (progress) => {
-          const {
-            results: progressResults,
-            summary: progressSummary,
-            ...publishProgress
-          } = progress;
+      const isOfficial = task.publish.provider === PUBLISH_PROVIDER_OFFICIAL;
+      patchTask(id, { phase: "publishing", message: isOfficial ? "正在提交到 TikTok 官方 API..." : "正在安全提交到 GeeLark...", updatedAt: Date.now() });
+      let result;
+      if (isOfficial) {
+        if (typeof officialPublishService !== "function") throw new Error("TikTok 官方 API 发布服务未配置。");
+        const officialResult = await officialPublishService({ ...task.publish, videos: task.generatedVideos, name: task.name });
+        result = normalizeOfficialAutoPublishResult(task, officialResult);
+        try {
+          persistOfficialPublishRecords(workDir, task, result.results);
+        } catch (error) {
+          result.recordPersistenceError = String(error?.message || error);
+        }
+        if (result.recordPersistenceError) {
           patchTask(id, {
-            phase: progress.phase,
-            message: progress.message,
-            publishProgress,
-            ...(Array.isArray(progressResults) ? { publishResults: progressResults } : {}),
-            ...(progressSummary ? { publishSummary: progressSummary } : {}),
+            status: "needs_attention",
+            phase: "needs_attention",
+            publishResults: result.results,
+            publishSummary: result.summary,
+            publishRecordError: result.recordPersistenceError,
+            message: `TikTok 官方任务已提交，但本地记录保存失败，请人工核实：${result.recordPersistenceError}`,
+            completedAt: Date.now(),
             updatedAt: Date.now()
           });
-        },
-        shouldStop: () => readTask(id)?.status === "canceled"
-      });
+          return;
+        }
+        patchTask(id, {
+          status: "done",
+          phase: "done",
+          publishResults: result.results,
+          publishSummary: result.summary,
+          officialBatchIds: collectOfficialBatchIds(result.results),
+          officialSubmittedAt: Date.now(),
+          officialStatusFinalizedAt: Date.now(),
+          message: "已提交发布中台。后续排期、TikTok 发布确认和失败处理请在线上 Signal Desk 查看。",
+          completedAt: Date.now(),
+          updatedAt: Date.now()
+        });
+        return;
+      } else {
+        result = await publishService.publishBatch({
+          ...task.publish,
+          videos: task.generatedVideos,
+          batchId: task.id,
+          autoRetry: true,
+          retryDelayMs: 2 * 60 * 1000
+        }, {
+          batchId: task.id,
+          retryDelayMs: 2 * 60 * 1000,
+          autoRetry: true,
+          onProgress: (progress) => {
+            const {
+              results: progressResults,
+              summary: progressSummary,
+              ...publishProgress
+            } = progress;
+            patchTask(id, {
+              phase: progress.phase,
+              message: progress.message,
+              publishProgress,
+              ...(Array.isArray(progressResults) ? { publishResults: progressResults } : {}),
+              ...(progressSummary ? { publishSummary: progressSummary } : {}),
+              updatedAt: Date.now()
+            });
+          },
+          shouldStop: () => readTask(id)?.status === "canceled"
+        });
+      }
       if (getTask(id).status === "canceled") return;
-      const hasManual = result.results.some((item) => item.status === "failed" || item.status === "needs_check");
+      const hasManual = Boolean(result.recordPersistenceError)
+        || result.results.some((item) => item.status === "failed" || item.status === "needs_check");
       patchTask(id, {
         status: hasManual ? "needs_attention" : "done",
         phase: hasManual ? "needs_attention" : "done",
         publishResults: result.results,
         publishSummary: result.summary,
-        message: hasManual ? "主任务已完成，部分发布需要人工处理。" : "生成和发布任务全部完成。",
+        publishRecordError: result.recordPersistenceError || "",
+        message: result.recordPersistenceError
+          ? `TikTok 官方 API 已提交，但发布记录保存失败，请人工核实：${result.recordPersistenceError}`
+          : hasManual ? "主任务已完成，部分发布需要人工处理。" : "生成和发布任务全部完成。",
         completedAt: Date.now(),
         updatedAt: Date.now()
       });
@@ -345,6 +396,21 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     let recovered = false;
     for (const task of listTasks()) {
       if (!["running", "generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.status) && !["generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.phase)) continue;
+      if (task?.publish?.provider === PUBLISH_PROVIDER_OFFICIAL && collectOfficialBatchIds(task.publishResults, task.officialBatchIds).length) {
+        const results = markOfficialResultsHandedOff(task.publishResults);
+        patchTask(task.id, {
+          status: "done",
+          phase: "done",
+          workerPid: null,
+          publishResults: results,
+          publishSummary: summarizeOfficialResults(results),
+          officialStatusFinalizedAt: Date.now(),
+          message: "已提交发布中台。后续状态请在线上 Signal Desk 查看。",
+          completedAt: task.completedAt || Date.now(),
+          updatedAt: Date.now()
+        });
+        continue;
+      }
       recovered = true;
       const generationJobPath = task.generationJobId ? path.join(generationJobsDir, `${safeId(task.generationJobId)}.json`) : "";
       const generationJob = generationJobPath ? readJson(generationJobPath, null) : null;
@@ -488,7 +554,7 @@ function validateTaskPayload(payload) {
   if (payload?.taskType === "psychology") {
     if (!String(generation.question || "").trim()) throw new Error("请输入心理学测试题目。");
     if (!String(generation.elevenLabsVoiceId || "").trim()) throw new Error("请配置 ElevenLabs Voice ID。");
-    if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
+    if (publish.autoPublish !== false && !getPublishAccountIds(publish).length) throw new Error("请选择至少一个发布账号。");
     const scheduleAt = Number(publish.scheduleAt);
     if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
     return;
@@ -496,14 +562,14 @@ function validateTaskPayload(payload) {
   if (payload?.taskType === "schulte") {
     if (!["wheel", "tracking", "memory", "peripheral"].includes(generation.template)) throw new Error("请选择舒尔特训练模板。");
     if (!(Number(generation.totalVideos) >= 1)) throw new Error("舒尔特视频生成数量至少为 1 条。");
-    if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
+    if (publish.autoPublish !== false && !getPublishAccountIds(publish).length) throw new Error("请选择至少一个发布账号。");
     const scheduleAt = Number(publish.scheduleAt);
     if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
     return;
   }
   if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) throw new Error("请选择素材组或视频素材目录。");
   if (!String(generation.audioDir || "").trim()) throw new Error("请选择音频目录。");
-  if (publish.autoPublish !== false && !(Array.isArray(publish.envIds) && publish.envIds.length)) throw new Error("请选择至少一个 GeeLark 账号。");
+  if (publish.autoPublish !== false && !getPublishAccountIds(publish).length) throw new Error("请选择至少一个发布账号。");
   const scheduleAt = Number(publish.scheduleAt);
   if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
 }
@@ -652,9 +718,12 @@ function ensureDiskSpace(directory, minimumFreeBytes = 20 * 1024 ** 3) {
 
 function normalizePublishPayload(value = {}) {
   return {
+    provider: normalizePublishProvider(value.provider),
     autoPublish: value.autoPublish !== false,
     envIds: Array.isArray(value.envIds) ? value.envIds.map(String).filter(Boolean) : [],
     accounts: Array.isArray(value.accounts) ? value.accounts : [],
+    connectionIds: Array.isArray(value.connectionIds) ? value.connectionIds.map(String).filter(Boolean) : [],
+    officialAccounts: Array.isArray(value.officialAccounts) ? value.officialAccounts : [],
     videoDesc: String(value.videoDesc || ""),
     scheduleAt: Number(value.scheduleAt) || Math.floor(Date.now() / 1000),
     intervalMinutes: Math.max(0, Number(value.intervalMinutes) || 0),
@@ -734,7 +803,194 @@ function getTaskSchedulePlan(task) {
   if (!videoCount && task.generation?.audioDir) {
     try { videoCount = Number(task.generation.totalVideos) || countAudioFiles(task.generation.audioDir) * (Number(task.generation.variants) || 1); } catch { videoCount = 0; }
   }
-  return buildSchedulePlan({ videoCount, envIds: task.publish.envIds, scheduleAt: task.publish.scheduleAt, intervalMinutes: task.publish.intervalMinutes });
+  const accountIds = getPublishAccountIds(task.publish);
+  const scheduledPublishCount = normalizePublishProvider(task.publish.provider) === PUBLISH_PROVIDER_OFFICIAL
+    ? videoCount * accountIds.length
+    : videoCount;
+  return buildSchedulePlan({ videoCount: scheduledPublishCount, envIds: accountIds, scheduleAt: task.publish.scheduleAt, intervalMinutes: task.publish.intervalMinutes });
+}
+
+export function normalizeOfficialAutoPublishResult(task, officialResult = {}) {
+  const connectionIds = Array.isArray(task?.publish?.connectionIds) ? task.publish.connectionIds.map(String).filter(Boolean) : [];
+  const videos = Array.isArray(task?.generatedVideos) ? task.generatedVideos : [];
+  const baseScheduleAt = Number(task?.publish?.scheduleAt) || Math.floor(Date.now() / 1000);
+  const intervalSeconds = Math.max(0, Number(task?.publish?.intervalMinutes) || 0) * 60;
+  const batches = Array.isArray(officialResult?.batches) ? officialResult.batches : [];
+  const batchIds = batches.map((batch) => batch?.id || batch?.batchId).filter(Boolean);
+  const remoteTasks = batches.flatMap((batch) => (Array.isArray(batch?.tasks) ? batch.tasks : []).map((remoteTask) => ({
+    ...remoteTask,
+    batchId: remoteTask?.batchId || batch?.id || batch?.batchId || ""
+  })));
+  const results = [];
+  let jobIndex = 0;
+  videos.forEach((video, videoIndex) => {
+    connectionIds.forEach((connectionId) => {
+      const expectedExternalRef = `${String(video?.fileName || "")}:${connectionId}:${jobIndex}`.slice(0, 160);
+      const remoteTask = remoteTasks.find((item) => item?.externalRef === expectedExternalRef)
+        || remoteTasks.find((item) => item?.connectionId === connectionId && item?.fileName === String(video?.fileName || ""));
+      const batchId = remoteTask?.batchId || batchIds[Math.floor(jobIndex / 100)] || batchIds[0] || "";
+      results.push({
+        recordId: `${task.id}:official:${videoIndex}:${connectionId}`,
+        dedupeKey: `${task.id}:official:${videoIndex}:${connectionId}`,
+        provider: PUBLISH_PROVIDER_OFFICIAL,
+        videoIndex,
+        connectionId,
+        fileName: String(video?.fileName || ""),
+        scheduleAt: baseScheduleAt + videoIndex * intervalSeconds,
+        externalRef: remoteTask?.externalRef || expectedExternalRef,
+        remoteTaskId: remoteTask?.id || "",
+        status: "submitted",
+        message: "已提交发布中台",
+        batchIds: batchId ? [batchId] : []
+      });
+      jobIndex += 1;
+    });
+  });
+  return {
+    results,
+    summary: { total: results.length, submitted: results.length, pending: 0, failed: 0, needsCheck: 0, skipped: 0 },
+    raw: officialResult
+  };
+}
+
+export function collectOfficialBatchIds(results = [], extraBatchIds = []) {
+  return Array.from(new Set([
+    ...(Array.isArray(extraBatchIds) ? extraBatchIds : []),
+    ...(Array.isArray(results) ? results.flatMap((item) => Array.isArray(item?.batchIds) ? item.batchIds : [item?.batchId]) : [])
+  ].map(String).filter(Boolean)));
+}
+
+function markOfficialResultsHandedOff(results = []) {
+  return (Array.isArray(results) ? results : []).map((result) => ({
+    ...result,
+    status: result?.status === "failed" ? "failed" : "submitted",
+    message: result?.status === "failed" ? result?.message : "已提交发布中台",
+  }));
+}
+
+export function mergeOfficialRemoteResults(localResults = [], batches = []) {
+  const remoteTasks = (Array.isArray(batches) ? batches : []).flatMap((batch) =>
+    (Array.isArray(batch?.tasks) ? batch.tasks : []).map((task) => ({
+      ...task,
+      batchId: task?.batchId || batch?.id || batch?.batchId || ""
+    }))
+  );
+  const byExternalRef = new Map(remoteTasks.map((task) => [String(task?.externalRef || ""), task]).filter(([key]) => key));
+  const unmatched = remoteTasks.slice();
+  return (Array.isArray(localResults) ? localResults : []).map((result) => {
+    let remote = byExternalRef.get(String(result?.externalRef || ""));
+    if (!remote) {
+      const index = unmatched.findIndex((task) =>
+        String(task?.connectionId || "") === String(result?.connectionId || "")
+        && String(task?.fileName || "") === String(result?.fileName || "")
+      );
+      if (index >= 0) remote = unmatched.splice(index, 1)[0];
+    }
+    if (!remote) return { ...result, status: "pending", message: result?.message || "等待 TikTok 最终结果" };
+    const remoteStatus = String(remote.status || "").toLowerCase();
+    const published = remoteStatus === "published";
+    const failed = ["failed", "rejected", "status_timeout", "needs_review", "enqueue_failed", "canceled"].includes(remoteStatus);
+    return {
+      ...result,
+      externalRef: remote.externalRef || result.externalRef,
+      remoteTaskId: remote.id || result.remoteTaskId || "",
+      batchIds: [remote.batchId || result.batchIds?.[0]].filter(Boolean),
+      status: published ? "submitted" : failed ? "failed" : "pending",
+      message: published
+        ? "TikTok 已确认发布成功"
+        : failed
+          ? String(remote.error || `TikTok 发布失败（${remoteStatus || "unknown"}）`)
+          : `TikTok 正在处理（${remoteStatus || "queued"}）`,
+      publishId: remote.publishId || "",
+      videoId: remote.videoId || "",
+      videoUrl: remote.videoUrl || "",
+      remoteStatus,
+      remoteUpdatedAt: Number(remote.updatedAt) || Date.now()
+    };
+  });
+}
+
+export function summarizeOfficialResults(results = []) {
+  const list = Array.isArray(results) ? results : [];
+  return {
+    total: list.length,
+    submitted: list.filter((item) => item.status === "submitted").length,
+    pending: list.filter((item) => item.status === "pending").length,
+    failed: list.filter((item) => item.status === "failed").length,
+    needsCheck: list.filter((item) => item.status === "needs_check").length,
+    skipped: list.filter((item) => item.status === "skipped").length
+  };
+}
+
+export function buildOfficialPublishRecords(task, results, now = Date.now()) {
+  const videos = Array.isArray(task?.generatedVideos) ? task.generatedVideos : [];
+  const accounts = new Map((Array.isArray(task?.publish?.officialAccounts) ? task.publish.officialAccounts : [])
+    .map((account) => [String(account?.connectionId || account?.id || ""), account]));
+  return (Array.isArray(results) ? results : []).map((result) => {
+    const video = videos[Number(result?.videoIndex) || 0] || {};
+    const connectionId = String(result?.connectionId || "");
+    const account = accounts.get(connectionId) || {};
+    const batchIds = Array.isArray(result?.batchIds) ? result.batchIds.map(String).filter(Boolean) : [];
+    const id = String(result?.recordId || result?.dedupeKey || `${task?.id || "task"}:official:${connectionId}`);
+    return {
+      id,
+      dedupeKey: String(result?.dedupeKey || id),
+      batchId: batchIds[0] || "",
+      createdAt: now,
+      updatedAt: now,
+      source: "official-tiktok",
+      provider: PUBLISH_PROVIDER_OFFICIAL,
+      geelarkProfileId: String(task?.geelarkProfileId || task?.publish?.geelarkProfileId || "default"),
+      ownerUserId: String(task?.ownerUserId || task?.publish?.ownerUserId || ""),
+      platform: "tiktok",
+      status: String(result?.status || "submitted"),
+      attempts: 1,
+      fileName: String(result?.fileName || video?.fileName || ""),
+      title: String(video?.title || task?.name || ""),
+      audioName: String(video?.audioName || ""),
+      audioIndex: Number(video?.audioIndex) || 0,
+      template: String(video?.template || "reddit-mix"),
+      templateIndex: Number(video?.templateIndex) || 0,
+      templateLabel: String(video?.templateLabel || "Reddit 混剪"),
+      variant: Number(video?.variant) || 1,
+      localVideoUrl: String(video?.videoUrl || video?.url || `/outputs/${encodeURIComponent(result?.fileName || video?.fileName || "")}`),
+      resourceUrl: "",
+      taskIds: batchIds,
+      autoTaskId: String(task?.id || ""),
+      assignedEnvId: connectionId,
+      connectionId,
+      accountName: String(account?.name || account?.displayName || account?.username || connectionId),
+      accountUsername: String(account?.username || ""),
+      accountSerialNo: "",
+      groupName: "TikTok 官方 API",
+      videoDesc: String(task?.publish?.videoDesc || ""),
+      operationMeta: task?.publish?.operationMeta || video?.operationMeta || null,
+      scheduleAt: Number(result?.scheduleAt) || Number(task?.publish?.scheduleAt) || Math.floor(now / 1000),
+      intervalMinutes: Number(task?.publish?.intervalMinutes) || 0,
+      shareLink: "",
+      metrics: null,
+      lastCheckedAt: null,
+      officialBatchIds: batchIds,
+      externalRef: String(result?.externalRef || ""),
+      remoteTaskId: String(result?.remoteTaskId || ""),
+      note: String(result?.message || "已提交到 TikTok 官方 API")
+    };
+  });
+}
+
+export function persistOfficialPublishRecords(workDir, task, results) {
+  const recordsPath = path.join(workDir, "publish-records.json");
+  const current = readJson(recordsPath, []);
+  const incoming = buildOfficialPublishRecords(task, results);
+  const incomingIds = new Set(incoming.map((record) => record.id));
+  const previousById = new Map(current.map((record) => [String(record?.id || ""), record]));
+  const mergedIncoming = incoming.map((record) => ({
+    ...previousById.get(record.id),
+    ...record,
+    createdAt: Number(previousById.get(record.id)?.createdAt) || record.createdAt
+  }));
+  writeJson(recordsPath, [...mergedIncoming, ...current.filter((record) => !incomingIds.has(String(record?.id || "")))]);
+  return mergedIncoming;
 }
 
 function countAudioFiles(directory) {

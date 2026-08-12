@@ -4,9 +4,10 @@ export function summarizeOperationSignals(accountSignals = [], options = {}) {
     return {
       schema: clean(account.schema),
       username: normalizeAccountName(account.username || account.profile?.username),
+      profile: normalizeProfile(account.profile),
       videoCount: videos.length,
       ...aggregatePrivateVideos(videos),
-      videos: videos.sort((left, right) => right.views - left.views).slice(0, 30)
+      videos: videos.sort((left, right) => right.views - left.views).slice(0, 100)
     };
   }).filter((account) => account.username);
   const allVideos = accounts.flatMap((account) => account.videos);
@@ -19,6 +20,23 @@ export function summarizeOperationSignals(accountSignals = [], options = {}) {
     generatedAt: Number(options.generatedAt) || Date.now(),
     summary: aggregatePrivateVideos(allVideos),
     accounts
+  };
+}
+
+function normalizeProfile(value = {}) {
+  return {
+    displayName: clean(value.displayName),
+    username: normalizeAccountName(value.username),
+    profileImage: clean(value.profileImage),
+    businessAccount: value.businessAccount === true,
+    following: Math.max(0, Number(value.following) || 0),
+    followers: Math.max(0, Number(value.followers) || 0),
+    videos: Math.max(0, Number(value.videos) || 0),
+    totalLikes: Math.max(0, Number(value.totalLikes) || 0),
+    verified: value.verified === true,
+    syncedAt: Math.max(0, Number(value.syncedAt) || 0),
+    ownerEmail: clean(value.ownerEmail),
+    groupName: clean(value.groupName)
   };
 }
 

@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { listMediaFiles } from "./asset-library.js";
+import { buildContentRuleDiagnostics } from "./content-diagnosis-rules.js";
 
 const ANALYSIS_WINDOW_DAYS = 10;
+const OFFICIAL_ANALYSIS_WINDOW_DAYS = 30;
+const OFFICIAL_VIDEOS_PER_ACCOUNT = 100;
 const DAY_MS = 86_400_000;
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm", ".ogg"]);
 
@@ -56,6 +59,8 @@ export function createOperationBrainService({
   workDir,
   analyticsService,
   privateAnalyticsService = null,
+  audioLibrary = null,
+  novelContentLibrary = null,
   autoTaskManager,
   codexBrain = null,
   deepseekBrain = null,
@@ -161,8 +166,8 @@ export function createOperationBrainService({
       try {
         privateAnalytics = await privateAnalyticsService.getOperationSignals({
           accountNames,
-          days: ANALYSIS_WINDOW_DAYS,
-          videosPerAccount: 30,
+          days: OFFICIAL_ANALYSIS_WINDOW_DAYS,
+          videosPerAccount: OFFICIAL_VIDEOS_PER_ACCOUNT,
           publishedAfter: analysisStartedAt
         });
       } catch (error) {
@@ -195,6 +200,14 @@ export function createOperationBrainService({
       accounts,
       stages: summarizeStages(accounts),
       contentFeedback,
+      matchedVideoLinks: matchedVideos.map((video) => ({
+        id: video.id || video.videoId || "",
+        videoId: video.videoId || video.id || "",
+        username: video.username || "",
+        createTime: Number(video.createTime) || 0,
+        views: Number(video.views) || 0,
+        local: video.local || null
+      })),
       privateAnalytics,
       dataStatus: {
         analysisStartedAt,
@@ -260,7 +273,7 @@ export function createOperationBrainService({
         throw statusError(400, `本次计划 ${plannedVideos} 条，超过每日 ${settings.maxDailyVideos} 条安全上限。`);
       }
       const strategyProvider = settings.strategyProvider;
-      const baseStrategyInput = buildCodexOperationInput({ overview, taskDrafts, settings, planDate });
+      const baseStrategyInput = buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary });
       const route = decideStrategyRoute({
         overview,
         provider: strategyProvider,
@@ -368,6 +381,12 @@ export function createOperationBrainService({
         }
       }
       const id = `op-${planDate.replaceAll("-", "")}-${hashText(`${settings.profileId}:${settings.groupNames.join("|")}:${now()}`).toString(36)}`;
+      const optimizedContent = await materializeScriptOptimizations({
+        strategy: aiStrategy,
+        audioLibrary,
+        planId: id,
+        targetAudioDir: settings.audioDir
+      });
       const plan = {
         id,
         planDate,
@@ -383,9 +402,11 @@ export function createOperationBrainService({
         dataStatus: overview.dataStatus,
         contentFeedback: overview.contentFeedback,
         privateAnalytics: compactPrivateAnalytics(overview.privateAnalytics),
+        contentRuleDiagnostics: baseStrategyInput.contentRuleDiagnostics,
         stages: overview.stages,
         accounts: overview.accounts,
         aiStrategy,
+        optimizedContent,
         taskDrafts,
         createdTaskIds: [],
         errors: []
@@ -1058,8 +1079,10 @@ function filterPhones(phones, groupNames) {
   return (phones || []).filter((phone) => !groups.size || groups.has(String(phone.groupName || "")));
 }
 
-function buildCodexOperationInput({ overview, taskDrafts, settings, planDate }) {
+function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary }) {
   const accounts = Array.isArray(overview.accounts) ? overview.accounts : [];
+  const novelContent = novelContentLibrary?.getAiContext?.() || { novels: [], scripts: [] };
+  const scriptLibrary = buildScriptLibrary(audioLibrary, overview.contentFeedback?.audioPerformance || [], novelContent);
   const stageSummary = Object.keys(STAGE_META).map((stage) => {
     const items = accounts.filter((account) => account.stage === stage);
     const averages = items.map((account) => Number(account.metrics?.averageViews10d ?? account.metrics?.averageViews7d) || 0);
@@ -1081,14 +1104,78 @@ function buildCodexOperationInput({ overview, taskDrafts, settings, planDate }) 
     stageSummary,
     workflowPerformance: overview.contentFeedback?.workflows || [],
     audioPerformance: (overview.contentFeedback?.audioPerformance || []).slice(0, 100),
+    novelContent,
+    scriptLibrary,
+    contentRuleDiagnostics: buildContentRuleDiagnostics({
+      privateAnalytics: overview.privateAnalytics,
+      matchedVideos: overview.matchedVideoLinks || [],
+      scriptLibrary,
+      generatedAt: Number(overview.privateAnalytics?.generatedAt) || Date.now()
+    }),
     publishTimePerformance: overview.contentFeedback?.publishTimePerformance || [],
-    privatePerformance: compactPrivateAnalytics(overview.privateAnalytics),
+    privatePerformance: compactPrivateAnalytics(overview.privateAnalytics, { videoLimit: OFFICIAL_VIDEOS_PER_ACCOUNT }),
     drafts: (taskDrafts || []).map((draft) => ({
       workflowId: draft.workflowId,
       accountCount: Number(draft.accountCount) || 0,
       scheduleAt: Number(draft.scheduleAt) || 0
     }))
   };
+}
+
+function buildScriptLibrary(audioLibrary, audioPerformance = [], novelContent = {}) {
+  const performanceByName = new Map((audioPerformance || []).map((item) => [
+    String(item.audioName || "").trim().toLowerCase(),
+    item
+  ]));
+  const hierarchyByAudioId = new Map((novelContent.scripts || []).map((item) => [String(item.audioId || ""), item]));
+  const novelById = new Map((novelContent.novels || []).map((item) => [String(item.id || ""), item]));
+  return (audioLibrary?.list?.() || []).filter((item) => String(item.script || "").trim()).slice(0, 40).map((item) => {
+    const hierarchy = hierarchyByAudioId.get(String(item.id || "")) || {};
+    const novel = novelById.get(String(hierarchy.novelId || "")) || {};
+    return {
+    id: String(item.id || ""),
+    scriptId: String(hierarchy.id || ""),
+    novelId: String(hierarchy.novelId || ""),
+    novelTitle: String(novel.title || ""),
+    parentScriptId: String(hierarchy.parentScriptId || ""),
+    hookVariantId: String(hierarchy.hookVariantId || ""),
+    versionLabel: String(hierarchy.versionLabel || ""),
+    title: String(item.title || ""),
+    script: String(item.script || ""),
+    performance: performanceByName.get(String(item.title || "").trim().toLowerCase()) || null
+    };
+  });
+}
+
+async function materializeScriptOptimizations({ strategy = {}, audioLibrary, planId, targetAudioDir }) {
+  const requests = Array.isArray(strategy?.scriptOptimizations) ? strategy.scriptOptimizations.slice(0, 3) : [];
+  if (!requests.length || !audioLibrary?.generateFromOptimizedScript) return [];
+  const available = new Map((audioLibrary.list?.() || []).map((item) => [String(item.id || ""), item]));
+  const results = [];
+  for (const request of requests) {
+    const sourceAudioId = String(request?.sourceAudioId || "").trim();
+    const source = available.get(sourceAudioId);
+    if (!source) {
+      results.push({ ...request, status: "skipped", error: "对应的本地原文与音频不存在，未生成新音频。" });
+      continue;
+    }
+    try {
+      const audio = await audioLibrary.generateFromOptimizedScript({
+        sourceAudioId,
+        sourceVideoId: request.sourceVideoId,
+        title: request.title || `${source.title} AI优化版`,
+        script: request.rewrittenScript,
+        diagnosis: request.diagnosis,
+        evidenceSummary: request.evidenceSummary,
+        planId,
+        targetAudioDir
+      });
+      results.push({ ...request, status: "completed", originalScript: source.script || "", audio });
+    } catch (error) {
+      results.push({ ...request, status: "failed", originalScript: source.script || "", error: String(error?.message || error) });
+    }
+  }
+  return results;
 }
 
 export function decideStrategyRoute({
@@ -1150,6 +1237,7 @@ export function decideStrategyRoute({
 function compactPrivateAnalytics(value = {}, { videoLimit = 0 } = {}) {
   const accounts = (value.accounts || []).map((account) => ({
     username: normalizeUsername(account.username),
+    profile: account.profile || {},
     videoCount: Number(account.videoCount) || 0,
     averageViews: account.averageViews ?? null,
     maxViews: Number(account.maxViews) || 0,
@@ -1163,14 +1251,19 @@ function compactPrivateAnalytics(value = {}, { videoLimit = 0 } = {}) {
     conflictCount: Number(account.conflictCount) || 0,
     videos: (account.videos || []).slice(0, Math.max(0, Number(videoLimit) || 0)).map((video) => ({
       videoId: String(video.videoId || ""),
+      caption: String(video.caption || "").slice(0, 500),
       views: Number(video.views) || 0,
+      reach: Number(video.reach) || 0,
       duration: Number(video.duration) || 0,
+      averageTimeWatched: video.averageTimeWatched ?? null,
       averageWatchRatio: video.averageWatchRatio ?? null,
       fullWatchRate: video.fullWatchRate ?? null,
       retentionAt3: video.retentionAt3 ?? null,
       retentionAt5: video.retentionAt5 ?? null,
       retentionAt10: video.retentionAt10 ?? null,
       retentionAtEnd: video.retentionAtEnd ?? null,
+      largestRetentionDrop: video.largestRetentionDrop ?? null,
+      largestRetentionDropSecond: video.largestRetentionDropSecond ?? null,
       forYouRate: video.forYouRate ?? null,
       conflict: String(video.conflict || "")
     }))

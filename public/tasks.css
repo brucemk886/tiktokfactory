@@ -223,6 +223,11 @@ body.tasks-page {
 .advanced-grid { padding: 14px; border-top: 1px solid var(--task-line-soft); }
 
 .publish-switch-row { min-height: 42px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--task-line-soft); border-radius: 6px; background: #111418; }
+.publish-provider-field { max-width: 360px; margin-bottom: 12px; }
+.official-account-toolbar { margin: 12px 0 8px; display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 10px; align-items: end; }
+.official-account-toolbar > div { display: flex; flex-direction: column; gap: 3px; }
+.official-account-toolbar > div strong { font-size: 11px; }
+.official-account-toolbar > div span { color: var(--task-muted); font-size: 9px; }
 .switch-control { display: flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .switch-control input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
 .switch-track { position: relative; width: 30px; height: 17px; border-radius: 10px; background: #3a4048; transition: .2s; }

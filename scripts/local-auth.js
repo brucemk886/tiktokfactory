@@ -1,27 +1,14 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sidebarModuleIdsForRole } from "./sidebar-modules.js";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const ADMIN_SIDEBAR_MODULES = Object.freeze([
-  "psychology-topics",
-  "psychology",
-  "schulte",
-  "ai",
-  "asset-usage",
-  "tasks",
-  "stats",
-  "analytics",
-  "operator",
-  "tiktok-connections",
-  "analytics-settings",
-  "accounts"
-]);
-const OPERATOR_SIDEBAR_MODULES = Object.freeze(["tasks", "stats", "analytics"]);
 
 export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
   const storePath = path.join(workDir, "local-accounts.json");
   const sessions = new Map();
+  const sidebarMigrationOverrides = new Map();
   fs.mkdirSync(workDir, { recursive: true });
   migrateStore();
 
@@ -34,16 +21,40 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 4) return;
+      if (version >= 8) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
         user.sidebarModules = user.sidebarModules.filter((moduleId) => moduleId !== "project-hub");
         if (version < 3 && user.role === "admin" && !user.sidebarModules.includes("tiktok-connections")) {
           user.sidebarModules.push("tiktok-connections");
         }
+        if (version < 5 && user.role === "admin" && !user.sidebarModules.includes("audio-library")) {
+          const operatorIndex = user.sidebarModules.indexOf("operator");
+          user.sidebarModules.splice(operatorIndex >= 0 ? operatorIndex + 1 : user.sidebarModules.length, 0, "audio-library");
+        }
+        if (version < 6 && user.role === "admin" && !user.sidebarModules.includes("novel-library")) {
+          const audioLibraryIndex = user.sidebarModules.indexOf("audio-library");
+          user.sidebarModules.splice(audioLibraryIndex >= 0 ? audioLibraryIndex : user.sidebarModules.length, 0, "novel-library");
+        }
+        if (version < 7 && user.role === "admin" && !user.sidebarModules.includes("official-publish-records")) {
+          const statsIndex = user.sidebarModules.indexOf("stats");
+          user.sidebarModules.splice(statsIndex >= 0 ? statsIndex + 1 : user.sidebarModules.length, 0, "official-publish-records");
+        }
+        if (version < 8 && user.role === "admin" && !user.sidebarModules.includes("official-analytics")) {
+          const publishIndex = user.sidebarModules.indexOf("official-publish-records");
+          user.sidebarModules.splice(publishIndex >= 0 ? publishIndex + 1 : user.sidebarModules.length, 0, "official-analytics");
+        }
       }
-      store.version = 4;
-      fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
+      store.version = 8;
+      try {
+        fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
+      } catch {
+        for (const user of store.users) {
+          if (user.id && Array.isArray(user.sidebarModules)) {
+            sidebarMigrationOverrides.set(user.id, [...user.sidebarModules]);
+          }
+        }
+      }
     } catch {
       // Leave malformed legacy data untouched; normal store recovery handles it.
     }
@@ -55,7 +66,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     const session = token ? sessions.get(token) : null;
     if (!session || session.expiresAt < Date.now()) return null;
     const user = readStore().users.find((entry) => entry.id === session.userId && entry.active !== false);
-    return user ? { token, user: publicUser(user) } : null;
+    return user ? { token, user: toPublicUser(user) } : null;
   }
 
   function setupAdmin({ username, password, displayName }) {
@@ -73,7 +84,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
       geelarkProfileId: "default",
       allowedDirectory: "",
       allowedGeeLarkGroups: [],
-      sidebarModules: [...ADMIN_SIDEBAR_MODULES],
+      sidebarModules: sidebarModuleIdsForRole("admin"),
       password: hashPassword(password),
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -89,7 +100,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     if (!user || !verifyPassword(password, user.password)) throw new Error("账号或密码不正确。");
     const token = crypto.randomBytes(32).toString("hex");
     sessions.set(token, { userId: user.id, expiresAt: Date.now() + SESSION_TTL_MS });
-    return { token, user: publicUser(user) };
+    return { token, user: toPublicUser(user) };
   }
 
   function logout(token) {
@@ -97,7 +108,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
   }
 
   function listUsers() {
-    return readStore().users.map(publicUser);
+    return readStore().users.map(toPublicUser);
   }
 
   function listProfiles() {
@@ -130,7 +141,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     };
     store.users.push(user);
     writeStore(store);
-    return publicUser(user);
+    return toPublicUser(user);
   }
 
   function updateUser(id, payload) {
@@ -157,7 +168,8 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     }
     user.updatedAt = Date.now();
     writeStore(store);
-    return publicUser(user);
+    sidebarMigrationOverrides.delete(user.id);
+    return toPublicUser(user);
   }
 
   function saveProfile(payload) {
@@ -214,6 +226,11 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
 
   function writeStore(store) {
     fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
+  }
+
+  function toPublicUser(user) {
+    const migratedModules = sidebarMigrationOverrides.get(user.id);
+    return publicUser(migratedModules ? { ...user, sidebarModules: migratedModules } : user);
   }
 
   return { hasUsers, getSession, setupAdmin, login, logout, listUsers, listProfiles, getProfile, createUser, updateUser, saveProfile, deleteProfile };
@@ -279,7 +296,7 @@ function normalizeGroups(value) {
 }
 
 function normalizeSidebarModules(value, role) {
-  const allowed = role === "admin" ? ADMIN_SIDEBAR_MODULES : OPERATOR_SIDEBAR_MODULES;
+  const allowed = sidebarModuleIdsForRole(role);
   if (!Array.isArray(value)) return [...allowed];
   const selected = new Set(value.map((item) => String(item || "").trim()).filter(Boolean));
   return allowed.filter((moduleId) => selected.has(moduleId));

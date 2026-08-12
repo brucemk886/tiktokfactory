@@ -106,20 +106,37 @@
           <div id="task-publish" class="config-section publish-config">
             <div class="section-heading section-heading-actions">
               <span class="section-index">03</span>
-              <div><h2>GeeLark 发布</h2><p>筛选目标账号，设置文案和同账号发布时间间隔。</p></div>
+              <div><h2>自动发布</h2><p>选择发布通道和目标账号，设置文案与发布时间。</p></div>
               <button id="refreshPhonesBtn" class="quiet-button" type="button">刷新账号</button>
             </div>
+            <label id="publishProviderField" class="field publish-provider-field" data-admin-only hidden>
+              <span>发布通道</span>
+              <select id="publishProvider">
+                <option value="geelark">GeeLark</option>
+                <option value="official">TikTok 官方 API</option>
+              </select>
+            </label>
             <div class="publish-switch-row">
               <label class="switch-control"><input id="autoPublish" type="checkbox" checked /><span class="switch-track"></span><span>生成完成后自动发布</span></label>
               <span id="phoneStatus" class="account-status">正在读取账号...</span>
             </div>
-            <div class="account-toolbar">
-              <label class="field"><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
-              <label class="field account-search"><span>搜索账号</span><input id="nameFilter" type="search" placeholder="名称、编号或备注" /></label>
-              <button id="selectVisibleBtn" class="quiet-button" type="button">全选筛选结果</button>
-              <span id="selectedAccountCount" class="selected-count">已选 0 个</span>
+            <div id="geelarkPublishAccounts">
+              <div class="account-toolbar">
+                <label class="field"><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
+                <label class="field account-search"><span>搜索账号</span><input id="nameFilter" type="search" placeholder="名称、编号或备注" /></label>
+                <button id="selectVisibleBtn" class="quiet-button" type="button">全选筛选结果</button>
+                <span id="selectedAccountCount" class="selected-count">已选 0 个</span>
+              </div>
+              <div id="phoneList" class="geelark-phone-list compact-phone-list"></div>
             </div>
-            <div id="phoneList" class="geelark-phone-list compact-phone-list"></div>
+            <div id="officialPublishAccounts" hidden>
+              <div class="official-account-toolbar">
+                <div><strong>官方授权账号</strong><span>仅显示具有 video.publish 权限的账号</span></div>
+                <button id="selectOfficialAccountsBtn" class="quiet-button" type="button">全选账号</button>
+                <span id="selectedOfficialAccountCount" class="selected-count">已选 0 个</span>
+              </div>
+              <div id="officialAccountList" class="geelark-phone-list compact-phone-list"></div>
+            </div>
             <div class="caption-editor">
               <div class="caption-editor-toolbar">
                 <strong>TikTok 文案</strong>

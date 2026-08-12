@@ -92,6 +92,25 @@ export const operationOutputSchema = {
         required: ["stage", "startHour", "startMinute", "windowMinutes", "slotIntervalMinutes", "rationale"],
         additionalProperties: false
       }
+    },
+    scriptOptimizations: {
+      type: "array",
+      minItems: 0,
+      maxItems: 3,
+      items: {
+        type: "object",
+        properties: {
+          sourceAudioId: { type: "string" },
+          sourceVideoId: { type: "string" },
+          title: { type: "string" },
+          evidenceSummary: { type: "string" },
+          diagnosis: { type: "string" },
+          openingAnalysis: { type: "string" },
+          rewrittenScript: { type: "string" }
+        },
+        required: ["sourceAudioId", "sourceVideoId", "title", "evidenceSummary", "diagnosis", "openingAnalysis", "rewrittenScript"],
+        additionalProperties: false
+      }
     }
   },
   required: [
@@ -99,7 +118,8 @@ export const operationOutputSchema = {
     "accountDiagnosis",
     "contentDirection",
     "riskNotes",
-    "publishingPlan"
+    "publishingPlan",
+    "scriptOptimizations"
   ],
   additionalProperties: false
 };
@@ -401,13 +421,16 @@ Display language:
 Hard boundaries:
 1. You cannot change accounts, account counts, total video counts, GeeLark settings, available template IDs, or safety limits.
 2. Optimize only for organic video views. Do not discuss monetization, followers, paid promotion, conversion, or revenue.
-3. Video generation is fixed to the user's existing Reddit auto-publish workflow. Do not create recipes, experiments, variants, scripts, copy alternatives, or generation-parameter tuning.
+3. Video generation remains fixed to the user's existing Reddit auto-publish workflow. You may rewrite at most three scripts from the supplied local script library; do not change video recipes, mixing, subtitles, deduplication, or other generation parameters.
 4. Do not change saved mixing, subtitle, deduplication, audio, material, or publishing-copy settings.
 5. Judge accounts and content only from organic view metrics. Engagement is not a scoring input.
 6. First-week accounts are always published from 22:00 through 22:30 and this rule cannot be changed. For accounts after operation day 7, provide one publishingPlan per account stage using the supplied time-slot performance. Use startHour 20-23, startMinute 0-59, windowMinutes 0-60, and slotIntervalMinutes 30-360. Prefer evidence over conventional posting-time assumptions.
 7. Use private retention and traffic-source metrics to diagnose hooks, pacing, completion quality, and distribution quality. A high-view video with weak retention and a low-view video with strong retention are different problems. Do not overfit one video.
 8. DeepSeek has already processed every recent video and every available second-by-second retention/like point in bounded batches. Use its evidence report as the complete private-data review, then independently make the final operating decision. Keep sound findings and correct unsupported conclusions.
-9. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
+9. For every scriptOptimizations item, use a real sourceAudioId from the local script library. Diagnose the opening text, retentionAt3, full-watch rate, average watch time, and largest retention-drop second when available. State unavailable evidence honestly. Rewrite the complete narration while preserving story facts and making the first three seconds immediately understandable and suspenseful. Never invent performance numbers.
+10. Treat the deterministic content-rule diagnostics as the rewrite gate. Only create scriptOptimizations for entries with rewriteEligible=true and a non-empty sourceAudioId. Do not rewrite keep_reuse, adjust_distribution, stop_use, observe, insufficient, or unmapped entries. The sentence timing in v1 is an estimate, not an exact transcript timestamp; describe it as an estimated corresponding sentence.
+11. Prefer local edits around the evidenced problem. Preserve people, events, causality, and ending facts. Never overwrite the original; the generated script must be a derived version. Produce at most two conceptual hook variants per weak source, but return one complete best rewrittenScript per schema item.
+12. If the local script library is empty or no rule diagnosis is rewrite-eligible, return scriptOptimizations as an empty array. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
 
 Plan date: ${input.planDate || "today"}
 Objective: ${input.objective}
@@ -422,8 +445,20 @@ ${JSON.stringify(input.workflowPerformance)}
 Matched performance by local 30-minute publishing window:
 ${JSON.stringify(input.publishTimePerformance)}
 
+Performance grouped by local narration audio/script:
+${JSON.stringify(input.audioPerformance || [])}
+
+Canonical content hierarchy. Treat the novel source as the first-level content unit and each generated opening/script as a comparable child variant:
+${JSON.stringify(input.novelContent || {})}
+
+Local novel script and paired-audio library. Only these sourceAudioId values may be rewritten:
+${JSON.stringify(input.scriptLibrary || [])}
+
 Owner-authorized private video performance from the official TikTok data bridge (ratios are 0-1):
 ${JSON.stringify(input.privatePerformance || {})}
+
+Deterministic novel-content diagnostics. This is the binding rewrite gate; ratios are 0-1 and sentence timing may be estimated:
+${JSON.stringify(input.contentRuleDiagnostics || {})}
 
 Model-routing context:
 ${JSON.stringify(input.routeContext || {})}
@@ -482,7 +517,56 @@ function normalizeOperationInput(payload = {}) {
           maxViews: Math.max(0, Number(item.maxViews) || 0)
         })).filter((item) => /^\d{2}:\d{2}$/.test(item.time))
       : [],
+    audioPerformance: Array.isArray(payload.audioPerformance)
+      ? payload.audioPerformance.slice(0, 100).map((item) => ({
+          audioName: cleanText(item.audioName, 160),
+          sampleCount: Math.max(0, Number(item.sampleCount) || 0),
+          averageViews: Math.max(0, Number(item.averageViews) || 0),
+          medianViews: Math.max(0, Number(item.medianViews) || 0),
+          maxViews: Math.max(0, Number(item.maxViews) || 0),
+          low200Rate: Math.max(0, Number(item.low200Rate) || 0),
+          recommendation: cleanText(item.recommendation, 40)
+        })).filter((item) => item.audioName)
+      : [],
+    novelContent: {
+      novels: Array.isArray(payload.novelContent?.novels) ? payload.novelContent.novels.slice(0, 40).map((item) => ({
+        id: cleanText(item.id, 160),
+        title: cleanText(item.title, 240),
+        category: cleanText(item.category, 120),
+        sourceExcerpt: cleanText(item.sourceExcerpt, 4000)
+      })) : [],
+      scripts: Array.isArray(payload.novelContent?.scripts) ? payload.novelContent.scripts.slice(0, 100).map((item) => ({
+        id: cleanText(item.id, 160),
+        novelId: cleanText(item.novelId, 160),
+        parentScriptId: cleanText(item.parentScriptId, 160),
+        hookVariantId: cleanText(item.hookVariantId, 160),
+        audioId: cleanText(item.audioId, 160),
+        title: cleanText(item.title, 240),
+        versionLabel: cleanText(item.versionLabel, 120)
+      })) : []
+    },
+    scriptLibrary: Array.isArray(payload.scriptLibrary)
+      ? payload.scriptLibrary.slice(0, 20).map((item) => ({
+          id: cleanText(item.id, 120),
+          scriptId: cleanText(item.scriptId, 160),
+          novelId: cleanText(item.novelId, 160),
+          novelTitle: cleanText(item.novelTitle, 240),
+          parentScriptId: cleanText(item.parentScriptId, 160),
+          hookVariantId: cleanText(item.hookVariantId, 160),
+          versionLabel: cleanText(item.versionLabel, 120),
+          title: cleanText(item.title, 240),
+          script: cleanText(item.script, 6000),
+          performance: item.performance && typeof item.performance === "object" ? {
+            sampleCount: Math.max(0, Number(item.performance.sampleCount) || 0),
+            averageViews: Math.max(0, Number(item.performance.averageViews) || 0),
+            medianViews: Math.max(0, Number(item.performance.medianViews) || 0),
+            maxViews: Math.max(0, Number(item.performance.maxViews) || 0),
+            low200Rate: Math.max(0, Number(item.performance.low200Rate) || 0)
+          } : null
+        })).filter((item) => item.id && item.script)
+      : [],
     privatePerformance: normalizePrivatePerformance(payload.privatePerformance),
+    contentRuleDiagnostics: normalizeContentRuleDiagnostics(payload.contentRuleDiagnostics),
     routeContext: {
       mode: cleanText(payload.routeContext?.mode, 30),
       reasons: Array.isArray(payload.routeContext?.reasons)
@@ -510,6 +594,53 @@ function normalizeOperationInput(payload = {}) {
             scheduleAt: Math.max(0, Number(item.scheduleAt) || 0)
           }))
       : []
+  };
+}
+
+function normalizeContentRuleDiagnostics(value = {}) {
+  return {
+    version: cleanText(value.version, 60),
+    generatedAt: Math.max(0, Number(value.generatedAt) || 0),
+    thresholds: value.thresholds && typeof value.thresholds === "object" ? value.thresholds : {},
+    summary: value.summary && typeof value.summary === "object" ? value.summary : {},
+    videos: Array.isArray(value.videos) ? value.videos.slice(0, 100).map((item) => ({
+      username: cleanText(item.username, 120),
+      videoId: cleanText(item.videoId, 160),
+      caption: cleanText(item.caption, 500),
+      duration: Math.max(0, Number(item.duration) || 0),
+      durationBucket: cleanText(item.durationBucket, 20),
+      views: Math.max(0, Number(item.views) || 0),
+      ageHours: item.ageHours === null ? null : Math.max(0, Number(item.ageHours) || 0),
+      sampleStatus: cleanText(item.sampleStatus, 30),
+      metrics: item.metrics && typeof item.metrics === "object" ? item.metrics : {},
+      baseline: item.baseline && typeof item.baseline === "object" ? item.baseline : {},
+      rules: Array.isArray(item.rules) ? item.rules.slice(0, 10).map((rule) => ({
+        code: cleanText(rule.code, 80),
+        category: cleanText(rule.category, 80),
+        action: cleanText(rule.action, 500)
+      })) : [],
+      decision: cleanText(item.decision, 40),
+      decisionReason: cleanText(item.decisionReason, 500),
+      rewriteEligible: item.rewriteEligible === true,
+      mapping: item.mapping && typeof item.mapping === "object" ? {
+        localVideoMatched: item.mapping.localVideoMatched === true,
+        publishRecordId: cleanText(item.mapping.publishRecordId, 160),
+        localFileName: cleanText(item.mapping.localFileName, 260),
+        audioName: cleanText(item.mapping.audioName, 260),
+        sourceAudioId: cleanText(item.mapping.sourceAudioId, 120),
+        scriptTitle: cleanText(item.mapping.scriptTitle, 240),
+        mappingMode: cleanText(item.mapping.mappingMode, 60),
+        sentenceTimingMode: cleanText(item.mapping.sentenceTimingMode, 80)
+      } : {},
+      largestDropSentence: item.largestDropSentence && typeof item.largestDropSentence === "object" ? {
+        index: Math.max(0, Number(item.largestDropSentence.index) || 0),
+        startSecond: Math.max(0, Number(item.largestDropSentence.startSecond) || 0),
+        endSecond: Math.max(0, Number(item.largestDropSentence.endSecond) || 0),
+        text: cleanText(item.largestDropSentence.text, 600),
+        exact: item.largestDropSentence.exact === true
+      } : null,
+      evidenceSummary: cleanText(item.evidenceSummary, 800)
+    })).filter((item) => item.videoId) : []
   };
 }
 
@@ -544,8 +675,35 @@ function normalizePrivatePerformance(value = {}) {
     accounts: Array.isArray(value.accounts)
       ? value.accounts.slice(0, 100).map((account) => ({
           username: cleanText(account.username, 80),
+          profile: {
+            displayName: cleanText(account.profile?.displayName, 160),
+            followers: Math.max(0, Number(account.profile?.followers) || 0),
+            following: Math.max(0, Number(account.profile?.following) || 0),
+            videos: Math.max(0, Number(account.profile?.videos) || 0),
+            totalLikes: Math.max(0, Number(account.profile?.totalLikes) || 0),
+            verified: account.profile?.verified === true,
+            businessAccount: account.profile?.businessAccount === true,
+            groupName: cleanText(account.profile?.groupName, 120)
+          },
           ...normalizeSummary(account),
-          videos: []
+          videos: Array.isArray(account.videos) ? account.videos.slice(0, 100).map((video) => ({
+            videoId: cleanText(video.videoId, 50),
+            caption: cleanText(video.caption, 500),
+            views: Math.max(0, Number(video.views) || 0),
+            reach: Math.max(0, Number(video.reach) || 0),
+            duration: Math.max(0, Number(video.duration) || 0),
+            averageTimeWatched: normalizeMetric(video.averageTimeWatched),
+            averageWatchRatio: normalizeMetric(video.averageWatchRatio),
+            fullWatchRate: normalizeMetric(video.fullWatchRate),
+            retentionAt3: normalizeMetric(video.retentionAt3),
+            retentionAt5: normalizeMetric(video.retentionAt5),
+            retentionAt10: normalizeMetric(video.retentionAt10),
+            retentionAtEnd: normalizeMetric(video.retentionAtEnd),
+            largestRetentionDrop: normalizeMetric(video.largestRetentionDrop),
+            largestRetentionDropSecond: normalizeMetric(video.largestRetentionDropSecond),
+            forYouRate: normalizeMetric(video.forYouRate),
+            conflict: cleanText(video.conflict, 100)
+          })) : []
         }))
       : []
   };

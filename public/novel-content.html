@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小说内容 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/novel-content.css" />
+  </head>
+  <body class="novel-content-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+      <a href="/tasks">Reddit 自动发布</a><a href="/stats">发布记录</a><a href="/analytics">数据总览</a>
+      <a href="/operator">小说 AI 自运营</a><a class="is-active" href="/novel-content">小说内容</a>
+      <a href="/tiktok-connections">TikTok 账号</a><a href="/accounts">账户管理</a>
+    </nav>
+
+    <main class="content-shell">
+      <header class="content-header">
+        <div><p>STORY CONTENT INTELLIGENCE</p><h1>小说内容</h1><span>以小说原文为主实体，管理它生成的不同文案、音频和对应视频数据。</span></div>
+        <button id="refreshBtn" class="primary-btn" type="button">刷新内容</button>
+      </header>
+
+      <section class="summary-strip" id="summaryStrip"></section>
+      <div class="toolbar">
+        <div class="tabs" role="tablist">
+          <button class="is-active" data-tab="novels" type="button">小说</button>
+          <button data-tab="scripts" type="button">文案与音频</button>
+          <button data-tab="unassigned" type="button">待归类 <em id="unassignedBadge">0</em></button>
+        </div>
+        <form id="searchForm" class="search-form"><input id="searchInput" placeholder="搜索小说名称、分类或原文" /><button type="submit">查询</button></form>
+      </div>
+
+      <div id="pageStatus" class="page-status">正在读取小说内容库...</div>
+
+      <section id="novelsTab" class="tab-panel">
+        <aside class="novel-sidebar">
+          <button id="showCreateBtn" class="create-button" type="button">＋ 新增小说</button>
+          <div id="novelList" class="novel-list"></div>
+        </aside>
+        <div class="novel-main">
+          <form id="createNovelForm" class="create-form" hidden>
+            <div class="form-head"><strong>新增小说</strong><button id="cancelCreateBtn" type="button">取消</button></div>
+            <label>小说名称<input name="title" maxlength="180" required /></label>
+            <label>分类<input name="category" maxlength="120" placeholder="例如：豪门、悬疑、复仇" /></label>
+            <label>小说原文<textarea name="sourceContent" minlength="20" required placeholder="粘贴小说原文。原文只保存一份，不会被 AI 改写覆盖。"></textarea></label>
+            <button class="primary-btn" type="submit">保存小说</button>
+          </form>
+          <div id="novelDetail" class="novel-detail"></div>
+        </div>
+      </section>
+
+      <section id="scriptsTab" class="tab-panel" hidden>
+        <div class="batch-bar"><label><input id="selectAll" type="checkbox" /> 全选有音频的文案</label><span id="selectedCount">0 条已选</span><button id="createTaskBtn" type="button">用选中音频创建任务</button></div>
+        <div id="scriptCatalog" class="script-catalog"></div>
+      </section>
+
+      <section id="unassignedTab" class="tab-panel" hidden>
+        <div class="unassigned-intro"><strong>待归类文案</strong><span>旧文案或无法自动判断来源的音频会放在这里。选择所属小说后，数据就会进入对应小说。</span></div>
+        <div id="unassignedList" class="script-catalog"></div>
+      </section>
+
+      <section class="tts-panel">
+        <label><span>ElevenLabs Voice ID</span><input id="voiceId" placeholder="生成新音频时使用；留空沿用现有配置" /></label>
+        <button id="retryAudioBtn" type="button" hidden>重新生成音频</button>
+      </section>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/novel-content.js" type="module"></script>
+  </body>
+</html>

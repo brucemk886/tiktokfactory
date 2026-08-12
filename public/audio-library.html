@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>音频素材库</title>
+    <title>小说文案与音频库</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/audio-library.css" />
   </head>
@@ -12,12 +12,12 @@
       <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
       <a href="/reddit">Reddit 视频生成</a><a href="/asset-cutter">视频素材切割</a><a href="/asset-usage">素材使用率</a>
       <a href="/tasks">自动任务</a><a href="/stats">发布记录</a><a href="/analytics">数据分析</a>
-      <a href="/novel-library">小说爆款书单</a><a class="is-active" href="/audio-library">音频素材库</a><a href="/analytics-settings">抓取配置</a>
+      <a href="/novel-library">小说爆款书单</a><a class="is-active" href="/audio-library">小说文案与音频库</a><a href="/analytics-settings">抓取配置</a>
     </nav>
 
     <main class="audio-shell">
       <header class="audio-header">
-        <div><p>AUDIO PIPELINE</p><h1>音频素材库</h1><span>营销文案生成配音后自动保存在这里，可多选批量生成视频。</span></div>
+        <div><p>SCRIPT &amp; AUDIO PIPELINE</p><h1>小说文案与音频库</h1><span>原文、AI 优化稿、数据诊断和 ElevenLabs 音频成对保存在这里，可直接进入下一轮生成。</span></div>
         <div class="header-actions"><a class="quiet-action" href="/novel-library">返回小说书单</a><button id="refreshBtn" class="primary-action" type="button">刷新音频</button></div>
       </header>
 
@@ -30,7 +30,7 @@
 
       <section class="audio-layout">
         <div class="library-panel">
-          <div class="panel-head"><div><strong>已生成音频</strong><small id="audioCount">0 条</small></div><label><input id="selectAll" type="checkbox" /> 全选</label></div>
+          <div class="panel-head"><div><strong>已保存文案与音频</strong><small id="audioCount">0 条</small></div><label><input id="selectAll" type="checkbox" /> 全选</label></div>
           <div id="audioList" class="audio-list"></div>
         </div>
 
@@ -43,6 +43,7 @@
         </aside>
       </section>
     </main>
+    <script src="/access.js"></script>
     <script src="/audio-library.js" type="module"></script>
   </body>
 </html>

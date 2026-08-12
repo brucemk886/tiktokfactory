@@ -61,12 +61,18 @@ const batchResults = $("#batchResults");
 const resultList = $("#resultList");
 const downloadSelectedBtn = $("#downloadSelectedBtn");
 const publishPanel = $("#publishPanel");
-const refreshGeeLarkPhonesBtn = $("#refreshGeeLarkPhonesBtn");
+const refreshPublishAccountsBtn = $("#refreshPublishAccountsBtn");
+const publishProvider = $("#publishProvider");
+const geelarkPublishAccounts = $("#geelarkPublishAccounts");
+const officialPublishAccounts = $("#officialPublishAccounts");
 const selectVisibleGeeLarkBtn = $("#selectVisibleGeeLarkBtn");
 const geelarkStatus = $("#geelarkStatus");
 const geelarkPhoneList = $("#geelarkPhoneList");
 const geelarkGroupFilter = $("#geelarkGroupFilter");
 const geelarkNameFilter = $("#geelarkNameFilter");
+const officialTikTokStatus = $("#officialTikTokStatus");
+const officialTikTokAccountList = $("#officialTikTokAccountList");
+const selectAllOfficialTikTokBtn = $("#selectAllOfficialTikTokBtn");
 const publishDesc = $("#publishDesc");
 const publishTime = $("#publishTime");
 const publishIntervalMinutes = $("#publishIntervalMinutes");
@@ -83,6 +89,7 @@ let knownResultUrls = new Set();
 let assetGroups = [];
 let assetUsage = {};
 let geelarkPhones = [];
+let officialTikTokAccounts = [];
 const dedupStorageKey = "reddit-mix-dedup-settings";
 const subtitleStorageKey = "reddit-mix-subtitle-settings";
 
@@ -93,8 +100,10 @@ assetModes.forEach((input) => input.addEventListener("change", updateAssetMode))
 segmentModes.forEach((input) => input.addEventListener("change", updateSegmentMode));
 assetGroupSelect?.addEventListener("change", renderAssetStats);
 downloadSelectedBtn.addEventListener("click", downloadSelected);
-refreshGeeLarkPhonesBtn?.addEventListener("click", loadGeeLarkPhones);
+refreshPublishAccountsBtn?.addEventListener("click", refreshPublishAccounts);
+publishProvider?.addEventListener("change", updatePublishProvider);
 selectVisibleGeeLarkBtn?.addEventListener("click", selectVisibleGeeLarkPhones);
+selectAllOfficialTikTokBtn?.addEventListener("click", selectAllOfficialTikTokAccounts);
 geelarkGroupFilter?.addEventListener("change", renderGeeLarkPhones);
 geelarkNameFilter?.addEventListener("input", renderGeeLarkPhones);
 publishSelectedBtn?.addEventListener("click", publishSelectedVideos);
@@ -112,7 +121,7 @@ loadSubtitleSettings();
 loadDedupSettings();
 loadSharedRedditSettings();
 setHelpOpen(localStorage.getItem("reddit-help-open") === "true");
-loadGeeLarkPhones();
+updatePublishProvider();
 loadAssetGroups();
 
 function attachDirectoryPickers() {
@@ -557,6 +566,62 @@ async function loadGeeLarkPhones() {
   }
 }
 
+function selectedPublishProvider() {
+  return publishProvider?.value === "official" ? "official" : "geelark";
+}
+
+async function updatePublishProvider() {
+  const useOfficial = selectedPublishProvider() === "official";
+  if (geelarkPublishAccounts) geelarkPublishAccounts.hidden = useOfficial;
+  if (officialPublishAccounts) officialPublishAccounts.hidden = !useOfficial;
+  setPublishResult("");
+  if (useOfficial) await loadOfficialTikTokAccounts();
+  else await loadGeeLarkPhones();
+}
+
+async function refreshPublishAccounts() {
+  if (selectedPublishProvider() === "official") await loadOfficialTikTokAccounts();
+  else await loadGeeLarkPhones();
+}
+
+async function loadOfficialTikTokAccounts() {
+  if (!officialTikTokAccountList || !officialTikTokStatus) return;
+  officialTikTokStatus.textContent = "正在读取线上已授权 TikTok 账号...";
+  officialTikTokAccountList.innerHTML = "";
+  try {
+    const response = await fetch(`/api/official-tiktok/publish-accounts?t=${Date.now()}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Request failed.");
+    const allAccounts = Array.isArray(data.accounts) ? data.accounts : [];
+    officialTikTokAccounts = allAccounts.filter((account) => Array.isArray(account.scopes) && account.scopes.includes("video.publish"));
+    if (!officialTikTokAccounts.length) {
+      officialTikTokStatus.textContent = allAccounts.length
+        ? "线上账号已连接，但没有账号包含 video.publish 发布权限，请重新授权后再试。"
+        : "线上中台没有返回可发布的授权账号。";
+      return;
+    }
+    officialTikTokAccountList.innerHTML = officialTikTokAccounts.map((account, index) => {
+      const connectionId = escapeHtml(account.connectionId || account.id || "");
+      const displayName = escapeHtml(account.displayName || account.username || `TikTok 账号 ${index + 1}`);
+      const ownerEmail = escapeHtml(account.ownerEmail || "未标记归属邮箱");
+      const username = escapeHtml(account.username ? `@${account.username}` : connectionId);
+      return `<label class="geelark-phone-item"><input class="official-tiktok-account-check" type="checkbox" value="${connectionId}" /><span><strong>${displayName}</strong><small>${ownerEmail} · ${username}</small></span></label>`;
+    }).join("");
+    const skippedCount = allAccounts.length - officialTikTokAccounts.length;
+    officialTikTokStatus.textContent = `已读取 ${officialTikTokAccounts.length} 个具有发布权限的账号${skippedCount ? `，已隐藏 ${skippedCount} 个无发布权限账号` : ""}；建议先选 1 个小范围测试。`;
+  } catch (error) {
+    officialTikTokStatus.textContent = error.message || "读取线上授权账号失败。";
+  }
+}
+
+function selectAllOfficialTikTokAccounts() {
+  if (!officialTikTokAccountList) return;
+  const checkboxes = Array.from(officialTikTokAccountList.querySelectorAll(".official-tiktok-account-check"));
+  const shouldSelect = checkboxes.some((item) => !item.checked);
+  checkboxes.forEach((item) => { item.checked = shouldSelect; });
+  setPublishResult(shouldSelect ? `已勾选 ${checkboxes.length} 个官方授权账号。` : "已取消全选官方授权账号。");
+}
+
 function updateGeeLarkFiltersFromDom() {
   if (!geelarkGroupFilter || !geelarkPhoneList) return;
   Array.from(geelarkPhoneList.querySelectorAll(".geelark-phone-item")).forEach((item, index) => {
@@ -600,9 +665,7 @@ function selectVisibleGeeLarkPhones() {
 
 async function publishSelectedVideos() {
   const checkedVideos = Array.from(resultList.querySelectorAll(".result-check:checked"));
-  const checkedPhones = Array.from(document.querySelectorAll(".geelark-phone-check:checked"));
   if (!checkedVideos.length) return setPublishResult("请先勾选要发布的视频。");
-  if (!checkedPhones.length) return setPublishResult("请先勾选 GeeLark 云手机账号。");
   const videos = checkedVideos.map((item) => ({
     videoUrl: item.dataset.url,
     fileName: item.dataset.filename,
@@ -614,6 +677,15 @@ async function publishSelectedVideos() {
     templateLabel: item.dataset.templateLabel || "Reddit 混剪",
     variant: Number(item.dataset.variant) || 1
   }));
+  const scheduleAt = publishTime?.value ? Math.floor(new Date(publishTime.value).getTime() / 1000) : Math.floor(Date.now() / 1000);
+  const intervalMinutes = Math.max(0, Number(publishIntervalMinutes?.value) || 0);
+
+  if (selectedPublishProvider() === "official") {
+    return publishSelectedVideosThroughOfficialApi(videos, scheduleAt, intervalMinutes);
+  }
+
+  const checkedPhones = Array.from(document.querySelectorAll(".geelark-phone-check:checked"));
+  if (!checkedPhones.length) return setPublishResult("请先勾选 GeeLark 云手机账号。");
   const envIds = checkedPhones.map((item) => item.value).filter(Boolean);
   const accounts = checkedPhones.map((item) => {
     const row = item.closest(".geelark-phone-item");
@@ -626,9 +698,6 @@ async function publishSelectedVideos() {
       remark: phone.remark || ""
     };
   });
-  const scheduleAt = publishTime?.value ? Math.floor(new Date(publishTime.value).getTime() / 1000) : Math.floor(Date.now() / 1000);
-  const intervalMinutes = Math.max(0, Number(publishIntervalMinutes?.value) || 0);
-
   publishSelectedBtn.disabled = true;
   setPublishResult(`正在提交 ${videos.length} 条视频到 ${envIds.length} 个账号...`);
   try {
@@ -643,6 +712,36 @@ async function publishSelectedVideos() {
     setPublishResult(`已提交发布任务：${data.results?.length || 0} 个视频，${taskCount} 个任务。`);
   } catch (error) {
     setPublishResult(error.message || "GeeLark 发布失败。");
+  } finally {
+    publishSelectedBtn.disabled = false;
+  }
+}
+
+async function publishSelectedVideosThroughOfficialApi(videos, scheduleAt, intervalMinutes) {
+  const checkedAccounts = Array.from(document.querySelectorAll(".official-tiktok-account-check:checked"));
+  const connectionIds = checkedAccounts.map((item) => item.value).filter(Boolean);
+  if (!connectionIds.length) return setPublishResult("请先勾选线上已授权的 TikTok 账号。");
+
+  publishSelectedBtn.disabled = true;
+  setPublishResult(`正在通过 TikTok 官方 API 提交 ${videos.length} 条视频到 ${connectionIds.length} 个账号...`);
+  try {
+    const response = await fetch("/api/official-tiktok/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        videos,
+        connectionIds,
+        videoDesc: publishDesc?.value || "",
+        scheduleAt,
+        intervalMinutes,
+        name: "Local Factory Reddit 发布"
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Request failed.");
+    setPublishResult(`TikTok 官方 API 已创建 ${data.taskCount || 0} 个任务，共 ${data.batchCount || 0} 个批次。可到线上中台查看处理状态和最终视频 ID。`);
+  } catch (error) {
+    setPublishResult(error.message || "TikTok 官方 API 发布失败。");
   } finally {
     publishSelectedBtn.disabled = false;
   }
