@@ -146,6 +146,72 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.data-strategy-block {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #354049;
+  background: #0c1216;
+}
+
+.data-strategy-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.data-strategy-head strong {
+  color: #f4f7f8;
+}
+
+.data-strategy-head p {
+  margin: 5px 0 0;
+  color: var(--op-muted);
+  font-size: 12px;
+}
+
+.strategy-select-field {
+  width: min(420px, 100%);
+  flex: 0 0 min(420px, 100%);
+}
+
+.strategy-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.strategy-source-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid #2d373e;
+  background: #0a0f12;
+}
+
+.strategy-source-card span,
+.strategy-source-card small {
+  color: var(--op-muted);
+  font-size: 11px;
+}
+
+.strategy-source-card strong {
+  color: #f4f7f8;
+  font-size: 15px;
+}
+
+.strategy-source-card.is-selected {
+  border-color: #bff747;
+  box-shadow: inset 3px 0 0 #bff747;
+  background: #111a0d;
+}
+
+.strategy-source-card.is-selected span {
+  color: #bff747;
+}
+
 .operator-panel .field > span {
   font-size: 12px;
   color: #c5d0d7;
@@ -695,5 +761,19 @@
 
   .audio-performance-head p {
     text-align: left;
+  }
+
+  .data-strategy-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .strategy-select-field {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .strategy-comparison {
+    grid-template-columns: 1fr;
   }
 }

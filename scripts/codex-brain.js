@@ -430,7 +430,8 @@ Hard boundaries:
 9. For every scriptOptimizations item, use a real sourceAudioId from the local script library. Diagnose the opening text, retentionAt3, full-watch rate, average watch time, and largest retention-drop second when available. State unavailable evidence honestly. Rewrite the complete narration while preserving story facts and making the first three seconds immediately understandable and suspenseful. Never invent performance numbers.
 10. Treat the deterministic content-rule diagnostics as the rewrite gate. Only create scriptOptimizations for entries with rewriteEligible=true and a non-empty sourceAudioId. Do not rewrite keep_reuse, adjust_distribution, stop_use, observe, insufficient, or unmapped entries. The sentence timing in v1 is an estimate, not an exact transcript timestamp; describe it as an estimated corresponding sentence.
 11. Prefer local edits around the evidenced problem. Preserve people, events, causality, and ending facts. Never overwrite the original; the generated script must be a derived version. Produce at most two conceptual hook variants per weak source, but return one complete best rewrittenScript per schema item.
-12. If the local script library is empty or no rule diagnosis is rewrite-eligible, return scriptOptimizations as an empty array. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
+12. Use the official novel-effect aggregation to compare opening/script variants only within the same novel. Separate source-novel quality from hook/script quality. Prefer exact TikTok video-ID mappings and never use an unmapped official video as evidence for a rewrite. State mapping gaps honestly.
+13. If the local script library is empty or no rule diagnosis is rewrite-eligible, return scriptOptimizations as an empty array. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
 
 Plan date: ${input.planDate || "today"}
 Objective: ${input.objective}
@@ -453,6 +454,9 @@ ${JSON.stringify(input.novelContent || {})}
 
 Local novel script and paired-audio library. Only these sourceAudioId values may be rewritten:
 ${JSON.stringify(input.scriptLibrary || [])}
+
+Official novel-effect aggregation joined by TikTok video ID to local novel, opening/script and audio:
+${JSON.stringify(input.novelEffectAnalysis || {})}
 
 Owner-authorized private video performance from the official TikTok data bridge (ratios are 0-1):
 ${JSON.stringify(input.privatePerformance || {})}
@@ -565,6 +569,7 @@ function normalizeOperationInput(payload = {}) {
           } : null
         })).filter((item) => item.id && item.script)
       : [],
+    novelEffectAnalysis: normalizeNovelEffectAnalysis(payload.novelEffectAnalysis),
     privatePerformance: normalizePrivatePerformance(payload.privatePerformance),
     contentRuleDiagnostics: normalizeContentRuleDiagnostics(payload.contentRuleDiagnostics),
     routeContext: {
@@ -594,6 +599,49 @@ function normalizeOperationInput(payload = {}) {
             scheduleAt: Math.max(0, Number(item.scheduleAt) || 0)
           }))
       : []
+  };
+}
+
+function normalizeNovelEffectAnalysis(value = {}) {
+  const metric = (input) => input === null || input === undefined || input === ""
+    ? null
+    : Math.max(0, Number(input) || 0);
+  const performance = (item = {}) => ({
+    videoCount: Math.max(0, Number(item.videoCount) || 0),
+    accountCount: Math.max(0, Number(item.accountCount) || 0),
+    totalViews: Math.max(0, Number(item.totalViews) || 0),
+    averageViews: metric(item.averageViews),
+    maxViews: metric(item.maxViews),
+    comments: Math.max(0, Number(item.comments) || 0),
+    averageTimeWatched: metric(item.averageTimeWatched),
+    fullWatchRate: metric(item.fullWatchRate),
+    retentionAt3: metric(item.retentionAt3),
+    diagnosis: cleanText(item.diagnosis, 800)
+  });
+  return {
+    dataStatus: value?.dataStatus && typeof value.dataStatus === "object" ? {
+      source: cleanText(value.dataStatus.source, 40),
+      status: cleanText(value.dataStatus.status, 40),
+      rawVideoCount: Math.max(0, Number(value.dataStatus.rawVideoCount) || 0),
+      mappedVideoCount: Math.max(0, Number(value.dataStatus.mappedVideoCount) || 0),
+      error: cleanText(value.dataStatus.error, 500)
+    } : null,
+    summary: value?.summary && typeof value.summary === "object" ? value.summary : {},
+    novels: Array.isArray(value?.novels) ? value.novels.slice(0, 40).map((novel) => ({
+      id: cleanText(novel.id, 160),
+      title: cleanText(novel.title, 240),
+      performance: performance(novel.performance),
+      scripts: Array.isArray(novel.scripts) ? novel.scripts.slice(0, 100).map((script) => ({
+        id: cleanText(script.id, 160),
+        novelId: cleanText(script.novelId, 160),
+        parentScriptId: cleanText(script.parentScriptId, 160),
+        hookVariantId: cleanText(script.hookVariantId, 160),
+        audioId: cleanText(script.audioId, 160),
+        title: cleanText(script.title, 240),
+        versionLabel: cleanText(script.versionLabel, 120),
+        performance: performance(script.performance)
+      })) : []
+    })) : []
   };
 }
 

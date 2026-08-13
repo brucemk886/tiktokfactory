@@ -27,6 +27,11 @@ export function createNovelContentLibraryService({
     return buildOverview(store, audioLibrary?.list?.() || [], videos, query);
   }
 
+  function getOverviewFromVideos(videos = [], { query = "" } = {}) {
+    const store = syncedStore();
+    return buildOverview(store, audioLibrary?.list?.() || [], Array.isArray(videos) ? videos : [], query);
+  }
+
   function getAiContext() {
     const store = syncedStore();
     return {
@@ -159,7 +164,7 @@ export function createNovelContentLibraryService({
     return { novelId: novel.id, scriptIds };
   }
 
-  return { getOverview, getAiContext, createNovel, updateNovel, assignScript, importMarketingResult };
+  return { getOverview, getOverviewFromVideos, getAiContext, createNovel, updateNovel, assignScript, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {
@@ -279,9 +284,17 @@ function compactVideo(video) {
     videoId: clean(video.id || video.videoId),
     username: clean(video.username),
     caption: clean(video.description || video.caption).slice(0, 500),
-    publishedAt: Number(video.createTime || video.createdAt) || 0,
+    publishedAt: Number(video.publishedAt || video.createTime || video.createdAt) || 0,
     views: number(video.views), likes: number(video.likes), comments: number(video.comments),
-    shares: number(video.shares), bookmarks: number(video.bookmarks), duration: number(video.duration),
+    shares: number(video.shares), bookmarks: number(video.bookmarks ?? video.favorites), duration: number(video.duration),
+    averageTimeWatched: nullableNumber(video.averageTimeWatched),
+    fullWatchRate: nullableRate(video.fullWatchRate),
+    retentionAt3: nullableRate(video.retentionAt3),
+    retentionAt5: nullableRate(video.retentionAt5),
+    retentionAt10: nullableRate(video.retentionAt10),
+    largestRetentionDrop: nullableNumber(video.largestRetentionDrop),
+    largestRetentionDropSecond: nullableNumber(video.largestRetentionDropSecond),
+    retentionCurve: Array.isArray(video.retentionCurve) ? video.retentionCurve.slice(0, 600) : [],
     matchConfidence: clean(video.local?.matchConfidence)
   };
 }
@@ -290,14 +303,47 @@ function summarizeVideos(videos) {
   const rows = Array.isArray(videos) ? videos : [];
   const views = rows.map((item) => number(item.views));
   const totalViews = views.reduce((sum, value) => sum + value, 0);
+  const averageWatch = averageAvailable(rows, "averageTimeWatched");
+  const completion = averageAvailable(rows, "fullWatchRate");
+  const retention3 = averageAvailable(rows, "retentionAt3");
   return {
     videoCount: rows.length,
     accountCount: new Set(rows.map((item) => clean(item.username).toLowerCase()).filter(Boolean)).size,
     totalViews,
     averageViews: rows.length ? Math.round(totalViews / rows.length) : 0,
     maxViews: views.length ? Math.max(...views) : 0,
-    comments: rows.reduce((sum, item) => sum + number(item.comments), 0)
+    comments: rows.reduce((sum, item) => sum + number(item.comments), 0),
+    averageTimeWatched: averageWatch,
+    fullWatchRate: completion,
+    retentionAt3: retention3,
+    diagnosis: diagnosePerformance({ rows, totalViews, averageWatch, completion, retention3 })
   };
+}
+
+function averageAvailable(rows, key) {
+  const values = rows.map((item) => item[key]).filter((value) => Number.isFinite(value));
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function diagnosePerformance({ rows, totalViews, averageWatch, completion, retention3 }) {
+  if (!rows.length) return "尚未匹配发布视频";
+  if (retention3 !== null && retention3 < 0.7) return "前3秒流失偏高，优先重写开头钩子";
+  if (completion !== null && completion < 0.25) return "完播偏低，建议压缩中段铺垫";
+  if (rows.length && totalViews / rows.length < 200) return "播放样本偏低，建议继续跨账号测试";
+  if (retention3 !== null && completion !== null) return "留存表现稳定，可保留并扩大测试";
+  return "数据维度不足，等待官方指标补齐";
+}
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
+function nullableRate(value) {
+  const parsed = nullableNumber(value);
+  if (parsed === null) return null;
+  return parsed > 1 && parsed <= 100 ? parsed / 100 : parsed;
 }
 
 function readStore(filePath) {

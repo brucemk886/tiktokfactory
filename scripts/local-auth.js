@@ -21,20 +21,16 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 8) return;
+      if (version >= 9) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
-        user.sidebarModules = user.sidebarModules.filter((moduleId) => moduleId !== "project-hub");
+        user.sidebarModules = user.sidebarModules.filter((moduleId) => !["project-hub", "audio-library"].includes(moduleId));
         if (version < 3 && user.role === "admin" && !user.sidebarModules.includes("tiktok-connections")) {
           user.sidebarModules.push("tiktok-connections");
         }
-        if (version < 5 && user.role === "admin" && !user.sidebarModules.includes("audio-library")) {
-          const operatorIndex = user.sidebarModules.indexOf("operator");
-          user.sidebarModules.splice(operatorIndex >= 0 ? operatorIndex + 1 : user.sidebarModules.length, 0, "audio-library");
-        }
         if (version < 6 && user.role === "admin" && !user.sidebarModules.includes("novel-library")) {
-          const audioLibraryIndex = user.sidebarModules.indexOf("audio-library");
-          user.sidebarModules.splice(audioLibraryIndex >= 0 ? audioLibraryIndex : user.sidebarModules.length, 0, "novel-library");
+          const operatorIndex = user.sidebarModules.indexOf("operator");
+          user.sidebarModules.splice(operatorIndex >= 0 ? operatorIndex + 1 : user.sidebarModules.length, 0, "novel-library");
         }
         if (version < 7 && user.role === "admin" && !user.sidebarModules.includes("official-publish-records")) {
           const statsIndex = user.sidebarModules.indexOf("stats");
@@ -45,7 +41,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
           user.sidebarModules.splice(publishIndex >= 0 ? publishIndex + 1 : user.sidebarModules.length, 0, "official-analytics");
         }
       }
-      store.version = 8;
+      store.version = 9;
       try {
         fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
       } catch {

@@ -10,7 +10,7 @@
   </head>
   <body class="tasks-page operator-page">
     <aside class="tasks-sidebar">
-      <a class="tasks-brand" href="/operator">
+      <a class="tasks-brand" href="/operator/third-party">
         <span class="brand-mark">LF</span>
         <span><strong>Local Factory</strong><small>内容自动化</small></span>
       </a>
@@ -23,7 +23,8 @@
         <a href="/tasks">Reddit 自动发布</a>
         <a href="/stats">发布记录</a>
         <a href="/analytics">数据总览</a>
-        <a class="is-active" data-admin-only href="/operator">小说 AI 自运营</a>
+        <a data-admin-only href="/operator/third-party">小说自运营 · 第三方</a>
+        <a data-admin-only href="/operator/official">小说自运营 · 官方 API</a>
         <a data-admin-only href="/analytics-settings">抓取配置</a>
         <a data-admin-only href="/accounts">账户管理</a>
       </nav>
@@ -38,8 +39,8 @@
       <header class="operator-header">
         <div>
           <p class="toolbar-kicker">NOVEL AUTONOMOUS OPERATIONS</p>
-          <h1>小说 AI 自运营</h1>
-          <p>读取小说矩阵数据，判断账号阶段与发布时间，并使用现有 Reddit 配置自动生成发布任务。</p>
+          <h1>第三方小说自运营</h1>
+          <p>仅使用 GeeLark 账号和第三方采集数据生成运营方案。</p>
         </div>
         <div class="operator-header-actions">
           <label class="switch-control header-switch"><input id="operatorEnabled" type="checkbox" /><span class="switch-track"></span><span>启用小说自运营</span></label>
@@ -58,12 +59,29 @@
           </div>
 
           <div class="operator-grid operator-grid-2">
-            <label class="field"><span>GeeLark 配置</span><select id="profileSelect"></select></label>
+            <label class="field profile-field"><span>GeeLark 配置</span><select id="profileSelect"></select></label>
             <label class="field"><span>每账号每日发布</span><select id="postsPerAccount">
               <option value="1">1 条</option>
               <option value="2">2 条</option>
               <option value="3">3 条</option>
             </select></label>
+          </div>
+
+          <div class="data-strategy-block" hidden>
+            <div class="data-strategy-head">
+              <div>
+                <strong>数据策略层</strong>
+                <p>账号判断、内容诊断与 AI 改写只使用当前选中的数据源；另一套数据仅用于覆盖情况对比。</p>
+              </div>
+              <label class="field strategy-select-field"><span>当前策略</span><select id="dataStrategy">
+                <option value="third_party">第三方数据策略</option>
+                <option value="official_api">TikTok 官方 API 完整数据策略</option>
+              </select></label>
+            </div>
+            <div id="strategyComparison" class="strategy-comparison">
+              <div class="strategy-source-card is-selected" data-strategy="third_party"><span>第三方数据</span><strong>等待读取</strong><small>保存策略后生效</small></div>
+              <div class="strategy-source-card" data-strategy="official_api"><span>官方 API 数据</span><strong>等待读取</strong><small>用于完整留存与受众诊断</small></div>
+            </div>
           </div>
 
           <div class="group-section">

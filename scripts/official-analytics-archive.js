@@ -106,9 +106,10 @@ export function createOfficialAnalyticsArchive({
     };
   }
 
-  function getDashboard({ days = 30, account = "", video = "", search = "" } = {}) {
+  function getDashboard({ days = 30, accountDays = 30, account = "", video = "", search = "" } = {}) {
     const safeDays = days === "all" ? "all" : Math.max(1, Math.min(3650, Math.floor(Number(days) || 30)));
-    return buildDashboardFromDatabase(database, { days: safeDays, account, video, search, state: getStatus(), archiveDir, databasePath });
+    const safeAccountDays = accountDays === "all" ? "all" : Math.max(1, Math.min(3650, Math.floor(Number(accountDays) || 30)));
+    return buildDashboardFromDatabase(database, { days: safeDays, accountDays: safeAccountDays, account, video, search, state: getStatus(), archiveDir, databasePath });
   }
 
   function start() {
@@ -244,7 +245,33 @@ function openDatabase(databasePath) {
       updated_at INTEGER NOT NULL DEFAULT 0
     );
   `);
+  repairLegacyVideoCreateTimes(database);
   return database;
+}
+
+function repairLegacyVideoCreateTimes(database) {
+  const tables = ["videos_latest", "video_daily_snapshots"];
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (const table of tables) {
+      const rows = database.prepare(`SELECT rowid, video_id, video_json FROM ${table} WHERE create_time IS NULL OR create_time <= 0`).all();
+      const update = database.prepare(`UPDATE ${table} SET create_time = ? WHERE rowid = ?`);
+      for (const row of rows) {
+        const raw = parseJson(row.video_json, {});
+        const analytics = raw?.analytics && typeof raw.analytics === "object" ? raw.analytics : {};
+        const corrected = timestamp(
+          raw?.createTime, raw?.createdAt, raw?.create_time, raw?.publishTime, raw?.publish_time, raw?.publishedAt, raw?.published_at,
+          analytics?.createTime, analytics?.createdAt, analytics?.create_time, analytics?.publishTime, analytics?.publish_time,
+          analytics?.publishedAt, analytics?.published_at,
+        ) || timestampFromTikTokId(row.video_id);
+        if (corrected > 0) update.run(corrected, row.rowid);
+      }
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function writeArchiveRun(database, snapshot, { source = "sqlite", replaceVideosForDate = true } = {}) {
@@ -273,13 +300,16 @@ function writeArchiveRun(database, snapshot, { source = "sqlite", replaceVideosF
     (video_id, account_key, snapshot_date, synced_at, create_time, title, views, likes, comments, shares, reach, video_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(video_id, account_key, snapshot_date) DO UPDATE SET synced_at=excluded.synced_at,
-      create_time=excluded.create_time, title=excluded.title, views=excluded.views, likes=excluded.likes,
+      create_time=CASE WHEN excluded.create_time > 0 THEN excluded.create_time ELSE video_daily_snapshots.create_time END,
+      title=excluded.title, views=excluded.views, likes=excluded.likes,
       comments=excluded.comments, shares=excluded.shares, reach=excluded.reach, video_json=excluded.video_json`);
   const upsertVideoLatest = database.prepare(`INSERT INTO videos_latest
     (video_id, account_key, snapshot_date, synced_at, create_time, title, views, likes, comments, shares, reach, video_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(video_id, account_key) DO UPDATE SET snapshot_date=excluded.snapshot_date,
-      synced_at=excluded.synced_at, create_time=excluded.create_time, title=excluded.title, views=excluded.views,
+      synced_at=excluded.synced_at,
+      create_time=CASE WHEN excluded.create_time > 0 THEN excluded.create_time ELSE videos_latest.create_time END,
+      title=excluded.title, views=excluded.views,
       likes=excluded.likes, comments=excluded.comments, shares=excluded.shares, reach=excluded.reach,
       video_json=excluded.video_json WHERE excluded.snapshot_date >= videos_latest.snapshot_date`);
 
@@ -316,15 +346,18 @@ function writeArchiveRun(database, snapshot, { source = "sqlite", replaceVideosF
 }
 
 function videoDbValues(video, accountKey, dateKey, syncedAt) {
+  const analytics = video?.analytics && typeof video.analytics === "object" ? video.analytics : {};
+  const videoId = String(video?.id || video?.videoId || video?.item_id || "");
   return [
-    String(video?.id || video?.videoId || ""), String(accountKey || ""), String(dateKey), number(syncedAt),
-    number(video?.createTime || video?.create_time || video?.publishedAt),
+    videoId, String(accountKey || ""), String(dateKey), number(syncedAt),
+    timestamp(video?.createTime, video?.createdAt, video?.create_time, video?.publishTime, video?.publish_time, video?.publishedAt, video?.published_at,
+      analytics?.createTime, analytics?.createdAt, analytics?.create_time, analytics?.publishTime, analytics?.publish_time, analytics?.publishedAt, analytics?.published_at) || timestampFromTikTokId(videoId),
     String(video?.title || video?.caption || video?.description || ""), number(video?.views), number(video?.likes),
     number(video?.comments), number(video?.shares), number(video?.reach), JSON.stringify(video || {}),
   ];
 }
 
-function buildDashboardFromDatabase(database, { days, account, video, search, state, archiveDir, databasePath }) {
+function buildDashboardFromDatabase(database, { days, accountDays, account, video, search, state, archiveDir, databasePath }) {
   const dateRows = days === "all"
     ? database.prepare("SELECT date_key FROM archive_runs ORDER BY date_key").all()
     : database.prepare("SELECT date_key FROM (SELECT date_key FROM archive_runs ORDER BY date_key DESC LIMIT ?) ORDER BY date_key").all(days);
@@ -339,15 +372,19 @@ function buildDashboardFromDatabase(database, { days, account, video, search, st
     WHERE ? = '%%' OR lower(a.account_key || ' ' || a.label || ' ' || a.profile_json) LIKE ?
     GROUP BY a.account_key ORDER BY a.label COLLATE NOCASE`).all(query, query).map(accountRow);
   const selectedAccount = String(account || accountRows[0]?.schema || "").trim();
+  const accountDateRows = accountDays === "all"
+    ? database.prepare("SELECT date_key FROM archive_runs ORDER BY date_key").all()
+    : database.prepare("SELECT date_key FROM (SELECT date_key FROM archive_runs ORDER BY date_key DESC LIMIT ?) ORDER BY date_key").all(accountDays);
+  const accountOldestDate = accountDateRows[0]?.date_key ? String(accountDateRows[0].date_key) : "";
   const accountHistorySql = `SELECT a.*,
       COUNT(v.video_id) AS video_count, COALESCE(SUM(v.views),0) AS views, COALESCE(SUM(v.likes),0) AS likes,
       COALESCE(SUM(v.comments),0) AS comments, COALESCE(SUM(v.shares),0) AS shares, COALESCE(SUM(v.reach),0) AS reach
     FROM account_daily_snapshots a LEFT JOIN video_daily_snapshots v
       ON v.account_key = a.account_key AND v.snapshot_date = a.snapshot_date
-    WHERE a.account_key = ? ${oldestDate ? "AND a.snapshot_date >= ?" : ""}
+    WHERE a.account_key = ? ${accountOldestDate ? "AND a.snapshot_date >= ?" : ""}
     GROUP BY a.account_key, a.snapshot_date ORDER BY a.snapshot_date`;
-  const accountHistoryRows = oldestDate
-    ? database.prepare(accountHistorySql).all(selectedAccount, oldestDate)
+  const accountHistoryRows = accountOldestDate
+    ? database.prepare(accountHistorySql).all(selectedAccount, accountOldestDate)
     : database.prepare(accountHistorySql).all(selectedAccount);
   const accountHistory = accountHistoryRows.map((row) => ({ dateKey: row.snapshot_date, ...accountRow(row) }));
   const videoRows = database.prepare("SELECT * FROM videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT 100").all(selectedAccount).map(videoRow);
@@ -372,15 +409,50 @@ function accountRow(row) {
     totalLikes: number(row.total_likes), reportedVideos: number(row.reported_videos), videoCount: number(row.video_count),
     views: number(row.views), likes: number(row.likes), comments: number(row.comments), shares: number(row.shares),
     reach: number(row.reach), syncedAt: number(row.synced_at), error: String(row.error || ""),
+    profileUrl: String(profile?.profileUrl || ""), businessAccount: Boolean(profile?.businessAccount),
+    verified: Boolean(profile?.verified), groupName: String(profile?.groupName || ""),
+    insights: profile?.insights && typeof profile.insights === "object" ? profile.insights : {},
   };
 }
 
 function videoRow(row) {
+  const raw = parseJson(row.video_json, {});
+  const analytics = raw?.analytics && typeof raw.analytics === "object" ? raw.analytics : {};
   return {
-    ...parseJson(row.video_json, {}), id: String(row.video_id || ""), account: String(row.account_key || ""),
-    createTime: number(row.create_time), title: String(row.title || ""), views: number(row.views), likes: number(row.likes),
+    ...raw, id: String(row.video_id || ""), account: String(row.account_key || ""),
+    createTime: timestamp(row.create_time, raw?.createTime, raw?.createdAt, raw?.create_time, raw?.publishTime, raw?.publish_time, raw?.publishedAt, raw?.published_at,
+      analytics?.createTime, analytics?.createdAt, analytics?.create_time, analytics?.publishTime, analytics?.publish_time, analytics?.publishedAt, analytics?.published_at) || timestampFromTikTokId(row.video_id),
+    title: String(row.title || raw?.title || raw?.caption || ""), views: number(row.views), likes: number(row.likes),
     comments: number(row.comments), shares: number(row.shares), reach: number(row.reach), syncedAt: number(row.synced_at),
   };
+}
+
+function timestamp(...values) {
+  const min = Date.UTC(2016, 0, 1) / 1000;
+  const max = (Date.now() + 14 * 86400000) / 1000;
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+    let numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      while (numeric > 1e11) numeric /= 1000;
+      numeric = Math.floor(numeric);
+      if (numeric >= min && numeric <= max) return numeric;
+    }
+    const parsed = Date.parse(String(value));
+    const seconds = Math.floor(parsed / 1000);
+    if (Number.isFinite(seconds) && seconds >= min && seconds <= max) return seconds;
+  }
+  return 0;
+}
+
+function timestampFromTikTokId(value) {
+  try {
+    const id = String(value || "").trim();
+    if (!/^\d{16,22}$/.test(id)) return 0;
+    return timestamp(Number(BigInt(id) >> 32n));
+  } catch {
+    return 0;
+  }
 }
 
 function migrateLegacyJsonFiles(database, archiveDir, logger) {

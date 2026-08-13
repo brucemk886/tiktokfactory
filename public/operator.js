@@ -1,9 +1,50 @@
 const $ = (selector) => document.querySelector(selector);
+const operatorRoute = window.location.pathname;
+const officialOperatorMode = operatorRoute === "/operator/official";
+const scopedOperatorRoute = officialOperatorMode || operatorRoute === "/operator/third-party";
+const operatorApiBase = officialOperatorMode
+  ? "/api/operator/official"
+  : operatorRoute === "/operator/third-party"
+    ? "/api/operator/third-party"
+    : "/api/operator";
+const fixedDataStrategy = officialOperatorMode ? "official_api" : "third_party";
+const operatorApi = (suffix) => `${operatorApiBase}${suffix}`;
 let settings = {};
 let overview = null;
 let activePlan = null;
 let groups = [];
 let assetGroups = [];
+
+configureOperatorMode();
+
+function configureOperatorMode() {
+  const activeHref = officialOperatorMode ? "/operator/official" : "/operator/third-party";
+  const modeName = officialOperatorMode ? "官方 API 小说自运营" : "第三方小说自运营";
+  document.body.dataset.operatorMode = officialOperatorMode ? "official" : "third-party";
+  document.title = `${modeName} · Local Factory`;
+
+  const heading = document.querySelector(".operator-header h1");
+  const description = heading?.nextElementSibling;
+  if (heading) heading.textContent = modeName;
+  if (description) {
+    description.textContent = officialOperatorMode
+      ? "仅使用 TikTok 官方授权账号和官方账号、视频、留存及受众数据生成运营方案。"
+      : "仅使用 GeeLark 账号和第三方采集数据生成运营方案。";
+  }
+
+  document.querySelectorAll(".tasks-nav a").forEach((link) => {
+    link.classList.toggle("is-active", link.getAttribute("href") === activeHref);
+  });
+
+  const strategyBlock = document.querySelector(".data-strategy-block");
+  if (strategyBlock) strategyBlock.hidden = true;
+  if (officialOperatorMode) {
+    const profileField = document.querySelector(".profile-field");
+    const groupSection = document.querySelector(".group-section");
+    if (profileField) profileField.hidden = true;
+    if (groupSection) groupSection.hidden = true;
+  }
+}
 
 $("#refreshOverviewBtn").addEventListener("click", loadOverview);
 $("#createPlanBtn").addEventListener("click", createPlan);
@@ -13,6 +54,7 @@ $("#saveSettingsBottomBtn").addEventListener("click", saveSettings);
 $("#reloadPlansBtn").addEventListener("click", loadPlans);
 $("#resetJudgmentsBtn").addEventListener("click", resetJudgments);
 $("#profileSelect").addEventListener("change", () => loadOverview({ resetGroups: true }));
+$("#dataStrategy").addEventListener("change", updateDataStrategyState);
 $("#autoCreate").addEventListener("change", toggleAutoCreate);
 $("#operatorEnabled").addEventListener("change", toggleOperator);
 $("#assetGroupSelect").addEventListener("change", updateSourceState);
@@ -28,8 +70,10 @@ async function initialize() {
   setBusy(true, "正在读取运营配置...");
   try {
     const [statusData, authData, assetData] = await Promise.all([
-      requestJson("/api/operator/status"),
-      requestJson("/api/auth/me"),
+      requestJson(operatorApi("/status")),
+      officialOperatorMode
+        ? Promise.resolve({ profiles: [{ id: "official", name: "TikTok 官方授权账号" }] })
+        : requestJson("/api/auth/me"),
       requestJson("/api/asset-groups")
     ]);
     settings = statusData.settings || {};
@@ -49,7 +93,7 @@ async function initialize() {
 }
 
 async function loadOverview(options = {}) {
-  setBusy(true, "正在读取 GeeLark 账号与最近数据...");
+  setBusy(true, officialOperatorMode ? "正在读取官方授权账号与完整数据..." : "正在读取 GeeLark 账号与最近数据...");
   try {
     const currentSelection = selectedGroups();
     const groupNames = options.resetGroups
@@ -62,12 +106,13 @@ async function loadOverview(options = {}) {
       objective: "traffic"
     });
     groupNames.forEach((name) => params.append("group", name));
-    overview = await requestJson(`/api/operator/overview?${params}`);
+    overview = await requestJson(`${operatorApi("/overview")}?${params}`);
     groups = overview.groups || [];
     renderGroups(groups, options.resetGroups ? [] : groupNames.length ? groupNames : settings.groupNames || []);
     renderStageStrip(overview.stages || []);
     renderAccounts(overview.accounts || []);
     renderDataStatus(overview);
+    renderStrategyComparison(overview.strategyComparison || {}, overview.dataStatus || {});
     setStatus(`已分析 ${overview.accountCount || 0} 个账号。`);
   } catch (error) {
     setStatus(error.message || "账号分析失败。", true);
@@ -79,13 +124,15 @@ async function loadOverview(options = {}) {
 async function saveSettings() {
   setBusy(true, "正在保存策略...");
   try {
-    const data = await requestJson("/api/operator/settings", {
+    const data = await requestJson(operatorApi("/settings"), {
       method: "POST",
       body: JSON.stringify(collectSettings())
     });
     settings = data.settings || {};
+    applySettings(settings);
     updateState({ settings, enabled: settings.enabled, autoCreateTasks: settings.autoCreateTasks });
     updateCycleState({ settings });
+    await loadOverview();
     setStatus(settings.enabled
       ? "运营策略已保存。每天到设定时间会按当前账号组重新判断阶段。"
       : "小说 AI 自运营已关闭，不会自动抓取、生成策略或创建发布任务。");
@@ -101,7 +148,7 @@ async function resetJudgments() {
   if (!confirmed) return;
   setBusy(true, "正在建立小说运营的新判断起点...");
   try {
-    const data = await requestJson("/api/operator/reset-judgments", { method: "POST" });
+    const data = await requestJson(operatorApi("/reset-judgments"), { method: "POST" });
     settings = data.settings || settings;
     await loadOverview();
     setStatus("账号判断已清空。后续只使用新起点之后发布的视频重新判断。 ");
@@ -134,7 +181,7 @@ async function createPlan() {
   if (!selectedGroups().length) return setStatus("请至少勾选一个账号组。", true);
   setBusy(true, "正在结合账号数据生成当天策略与脚本...");
   try {
-    const data = await requestJson("/api/operator/plans", {
+    const data = await requestJson(operatorApi("/plans"), {
       method: "POST",
       body: JSON.stringify({ ...collectSettings(), force: false, autoCreateTasks: false })
     });
@@ -154,7 +201,7 @@ async function approvePlan() {
   if (!confirmed) return;
   setBusy(true, "正在安全创建任务...");
   try {
-    const data = await requestJson(`/api/operator/plans/${encodeURIComponent(activePlan.id)}/approve`, { method: "POST" });
+    const data = await requestJson(operatorApi(`/plans/${encodeURIComponent(activePlan.id)}/approve`), { method: "POST" });
     activePlan = data.plan;
     renderPlan(activePlan);
     setStatus(activePlan.status === "approved"
@@ -169,10 +216,10 @@ async function approvePlan() {
 
 async function loadPlans({ renderLatest = true } = {}) {
   try {
-    const data = await requestJson("/api/operator/plans");
+    const data = await requestJson(operatorApi("/plans"));
     const latest = (data.plans || [])[0];
     if (renderLatest && latest) {
-      activePlan = await requestJson(`/api/operator/plans/${encodeURIComponent(latest.id)}`).then((item) => item.plan);
+      activePlan = await requestJson(operatorApi(`/plans/${encodeURIComponent(latest.id)}`)).then((item) => item.plan);
       renderPlan(activePlan);
       setStatus(`已打开 ${activePlan.planDate} 的最近运营方案。`);
     }
@@ -189,7 +236,8 @@ function renderProfiles(profiles) {
 }
 
 function applySettings(value) {
-  $("#profileSelect").value = value.profileId || "default";
+  $("#profileSelect").value = officialOperatorMode ? "official" : value.profileId || "default";
+  $("#dataStrategy").value = fixedDataStrategy;
   $("#postsPerAccount").value = String(value.postsPerAccount || 2);
   $("#maxDailyVideos").value = "300";
   $("#cycleDays").value = String(value.cycleDays || 7);
@@ -207,6 +255,7 @@ function applySettings(value) {
   syncAutoCreateControl();
   updateSourceState();
   updateCycleState({ settings: value });
+  updateDataStrategyState();
 }
 
 function renderAssetGroups(items) {
@@ -256,7 +305,8 @@ function collectSettings() {
     strategyProvider,
     strategyReasoning: settings.strategyReasoning === "disabled" ? "disabled" : "enabled",
     useCodex: ["hybrid", "codex"].includes(strategyProvider),
-    profileId: $("#profileSelect").value || "default",
+    profileId: officialOperatorMode ? "official" : $("#profileSelect").value || "default",
+    dataStrategy: fixedDataStrategy,
     groupNames: selectedGroups(),
     objective: "traffic",
     postsPerAccount: Number($("#postsPerAccount").value) || 2,
@@ -277,6 +327,11 @@ function collectSettings() {
 }
 
 function renderGroups(items, selectedNames) {
+  if (officialOperatorMode) {
+    $("#groupList").innerHTML = '<span class="loading-line">全部官方授权账号</span>';
+    $("#groupSelectionText").textContent = `${overview?.accountCount || 0} 个官方授权账号`;
+    return;
+  }
   const selected = new Set(selectedNames || []);
   $("#groupList").innerHTML = items.length
     ? items.map((group) => `<label class="operator-group-item">
@@ -289,12 +344,17 @@ function renderGroups(items, selectedNames) {
 }
 
 function updateGroupSelection() {
+  if (officialOperatorMode) {
+    $("#groupSelectionText").textContent = `${overview?.accountCount || 0} 个官方授权账号`;
+    return;
+  }
   const names = selectedGroups();
   const count = groups.filter((group) => names.includes(group.name)).reduce((sum, group) => sum + Number(group.accountCount || 0), 0);
   $("#groupSelectionText").textContent = names.length ? `已选 ${names.length} 组 · ${count} 个账号` : "未选择账号组";
 }
 
 function selectedGroups() {
+  if (officialOperatorMode) return ["official"];
   return Array.from($("#groupList").querySelectorAll("input:checked")).map((input) => input.value);
 }
 
@@ -331,13 +391,48 @@ function renderDataStatus(data) {
   $("#northStarNote").textContent = data.dataStatus?.northStarNote || "小说 AI 自运营只优化自然播放量。";
   const lastRun = data.dataStatus?.lastRun;
   const finishedAt = Number(lastRun?.finishedAt || lastRun?.startedAt || 0);
+  const selectedStrategy = data.dataStatus?.selectedStrategy === "official_api" ? "official_api" : "third_party";
   const privateState = data.dataStatus?.privateAnalytics || {};
-  const privateText = privateState.status === "ready"
-    ? ` · 留存 ${Number(privateState.detailedVideoCount) || 0} 条`
-    : privateState.status === "failed"
-      ? " · 留存读取失败"
-      : " · 暂无授权留存";
-  $("#dataFreshness").textContent = `${finishedAt ? `数据 ${formatDateTime(finishedAt)}` : "尚无抓取数据"}${privateText}`;
+  const sourceText = selectedStrategy === "official_api"
+    ? privateState.status === "ready"
+      ? ` · 官方明细 ${formatNumber(privateState.detailedVideoCount || 0)} 条 · 留存 ${formatNumber(privateState.retentionVideoCount || 0)} 条`
+      : privateState.status === "failed"
+        ? " · 官方 API 读取失败"
+        : " · 暂无官方 API 数据"
+    : ` · 第三方视频 ${formatNumber(data.dataStatus?.videoCount || 0)} 条`;
+  $("#dataFreshness").textContent = `${finishedAt ? `数据 ${formatDateTime(finishedAt)}` : "尚无抓取数据"}${sourceText}`;
+}
+
+function updateDataStrategyState() {
+  const selected = fixedDataStrategy;
+  document.querySelectorAll(".strategy-source-card").forEach((card) => {
+    card.classList.toggle("is-selected", card.dataset.strategy === selected);
+  });
+}
+
+function renderStrategyComparison(comparison, dataStatus) {
+  if (scopedOperatorRoute) {
+    $("#strategyComparison").innerHTML = "";
+    return;
+  }
+  const selected = comparison.selected === "official_api" ? "official_api" : "third_party";
+  const sources = [
+    { key: "third_party", label: "第三方数据策略", data: comparison.thirdParty || {} },
+    { key: "official_api", label: "TikTok 官方 API 完整数据策略", data: comparison.officialApi || {} }
+  ];
+  $("#strategyComparison").innerHTML = sources.map(({ key, label, data }) => {
+    const status = data.status === "ready" ? "数据已就绪" : data.status === "failed" ? "读取失败" : "暂无可用数据";
+    const error = String(data.error || "").trim();
+    return `<div class="strategy-source-card ${key === selected ? "is-selected" : ""}" data-strategy="${key}">
+      <span>${escapeHtml(label)}${key === selected ? " · 当前使用" : " · 仅对比"}</span>
+      <strong>${formatNumber(data.accountCount || 0)} 个账号 / ${formatNumber(data.videoCount || 0)} 条视频</strong>
+      <small>${escapeHtml(error ? `${status}：${shorten(error, 72)}` : status)}${data.generatedAt ? ` · ${formatDateTime(data.generatedAt)}` : ""}</small>
+    </div>`;
+  }).join("");
+  const selectedLabel = selected === "official_api" ? "官方 API" : "第三方";
+  $("#dataFreshness").dataset.strategy = selected;
+  $("#dataFreshness").title = `当前所有运营判断只使用${selectedLabel}数据，另一数据源不会混入决策。`;
+  updateDataStrategyState();
 }
 
 function renderPlan(plan) {
@@ -583,6 +678,10 @@ function formatDateTime(value) {
 function formatNumber(value) {
   if (typeof value === "string") return value;
   return new Intl.NumberFormat("zh-CN").format(Number(value) || 0);
+}
+
+function formatInteger(value) {
+  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(Number(value) || 0);
 }
 
 function shorten(value, max) {

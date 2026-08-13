@@ -14,6 +14,7 @@ import { createDeepSeekBrainService } from "./deepseek-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
+import { createNovelEffectService } from "./novel-effect-service.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
@@ -87,6 +88,11 @@ const novelContentLibrary = createNovelContentLibraryService({
   analyticsService: tiktokAnalytics,
   readPublishRecords
 });
+const novelEffectService = createNovelEffectService({
+  novelContentLibrary,
+  officialAnalyticsService: privateTikTokAnalytics,
+  readPublishRecords,
+});
 const operationBrain = createOperationBrainService({
   workDir,
   analyticsService: tiktokAnalytics,
@@ -99,7 +105,26 @@ const operationBrain = createOperationBrainService({
   listPhones: listGeeLarkPhonesForProfile,
   readPublishRecords,
   readRedditSettings: () => readRedditMixSettings().settings,
-  listProfiles: () => localAuth.listProfiles()
+  listProfiles: () => localAuth.listProfiles(),
+  fixedDataStrategy: "third_party",
+  accountSource: "geelark"
+});
+const officialOperationBrain = createOperationBrainService({
+  workDir: path.join(workDir, "official-operator"),
+  analyticsService: tiktokAnalytics,
+  privateAnalyticsService: privateTikTokAnalytics,
+  audioLibrary,
+  novelContentLibrary,
+  novelEffectService,
+  autoTaskManager,
+  codexBrain,
+  deepseekBrain,
+  listPhones: async () => [],
+  readPublishRecords,
+  readRedditSettings: () => readRedditMixSettings().settings,
+  listProfiles: () => [],
+  fixedDataStrategy: "official_api",
+  accountSource: "official"
 });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
@@ -232,6 +257,34 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "official-analytics.js"), "text/javascript; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/official-analytics-shared.js") {
+      return sendFile(res, path.join(publicDir, "official-analytics-shared.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-account-detail") {
+      return sendFile(res, path.join(publicDir, "official-account-detail.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-account-detail.js") {
+      return sendFile(res, path.join(publicDir, "official-account-detail.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-account-videos") {
+      return sendFile(res, path.join(publicDir, "official-account-videos.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-account-videos.js") {
+      return sendFile(res, path.join(publicDir, "official-account-videos.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-video-detail") {
+      return sendFile(res, path.join(publicDir, "official-video-detail.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-video-detail.js") {
+      return sendFile(res, path.join(publicDir, "official-video-detail.js"), "text/javascript; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/official-analytics.css") {
       return sendFile(res, path.join(publicDir, "official-analytics.css"), "text/css; charset=utf-8");
     }
@@ -339,7 +392,7 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "tasks.css"), "text/css; charset=utf-8");
     }
 
-    if (req.method === "GET" && url.pathname === "/operator") {
+    if (req.method === "GET" && ["/operator", "/operator/third-party", "/operator/official"].includes(url.pathname)) {
       return sendFile(res, path.join(publicDir, "operator.html"), "text/html; charset=utf-8");
     }
 
@@ -349,6 +402,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/operator.css") {
       return sendFile(res, path.join(publicDir, "operator.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-effects") {
+      return sendFile(res, path.join(publicDir, "novel-effects.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-effects.js") {
+      return sendFile(res, path.join(publicDir, "novel-effects.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-effects.css") {
+      return sendFile(res, path.join(publicDir, "novel-effects.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/asset-cutter") {
@@ -365,32 +430,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/novel-library.css") {
       return sendFile(res, path.join(publicDir, "novel-library.css"), "text/css; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/audio-library") {
-      const params = new URLSearchParams(url.searchParams);
-      params.set("tab", "scripts");
-      return redirect(res, `/novel-content?${params.toString()}`);
-    }
-
-    if (req.method === "GET" && url.pathname === "/novel-content") {
-      return sendFile(res, path.join(publicDir, "novel-content.html"), "text/html; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/novel-content.js") {
-      return sendFile(res, path.join(publicDir, "novel-content.js"), "text/javascript; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/novel-content.css") {
-      return sendFile(res, path.join(publicDir, "novel-content.css"), "text/css; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/audio-library.js") {
-      return sendFile(res, path.join(publicDir, "audio-library.js"), "text/javascript; charset=utf-8");
-    }
-
-    if (req.method === "GET" && url.pathname === "/audio-library.css") {
-      return sendFile(res, path.join(publicDir, "audio-library.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/asset-usage") {
@@ -472,13 +511,17 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (req.method === "GET" && url.pathname === "/api/operator/status") {
-      return sendJson(res, 200, operationBrain.getStatus());
+    const scopedOperatorMatch = url.pathname.match(/^\/api\/operator\/(third-party|official)(\/.*)?$/);
+    const activeOperationBrain = scopedOperatorMatch?.[1] === "official" ? officialOperationBrain : operationBrain;
+    const operatorPath = scopedOperatorMatch ? `/api/operator${scopedOperatorMatch[2] || ""}` : url.pathname;
+
+    if (req.method === "GET" && operatorPath === "/api/operator/status") {
+      return sendJson(res, 200, activeOperationBrain.getStatus());
     }
 
-    if (req.method === "GET" && url.pathname === "/api/operator/overview") {
+    if (req.method === "GET" && operatorPath === "/api/operator/overview") {
       try {
-        return sendJson(res, 200, await operationBrain.getOverview({
+        return sendJson(res, 200, await activeOperationBrain.getOverview({
           profileId: url.searchParams.get("profileId") || undefined,
           groupNames: url.searchParams.getAll("group"),
           objective: url.searchParams.get("objective") || undefined
@@ -488,46 +531,46 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    if (req.method === "POST" && url.pathname === "/api/operator/settings") {
+    if (req.method === "POST" && operatorPath === "/api/operator/settings") {
       try {
-        return sendJson(res, 200, { settings: operationBrain.saveSettings(await readJsonBody(req)) });
+        return sendJson(res, 200, { settings: activeOperationBrain.saveSettings(await readJsonBody(req)) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存运营设置失败。" });
       }
     }
 
-    if (req.method === "POST" && url.pathname === "/api/operator/reset-judgments") {
+    if (req.method === "POST" && operatorPath === "/api/operator/reset-judgments") {
       try {
-        return sendJson(res, 200, { settings: operationBrain.resetJudgments() });
+        return sendJson(res, 200, { settings: activeOperationBrain.resetJudgments() });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "清空账号判断失败。" });
       }
     }
 
-    if (req.method === "GET" && url.pathname === "/api/operator/plans") {
-      return sendJson(res, 200, { plans: operationBrain.listPlans() });
+    if (req.method === "GET" && operatorPath === "/api/operator/plans") {
+      return sendJson(res, 200, { plans: activeOperationBrain.listPlans() });
     }
 
-    if (req.method === "POST" && url.pathname === "/api/operator/plans") {
+    if (req.method === "POST" && operatorPath === "/api/operator/plans") {
       try {
-        return sendJson(res, 201, { plan: await operationBrain.createPlan(await readJsonBody(req)) });
+        return sendJson(res, 201, { plan: await activeOperationBrain.createPlan(await readJsonBody(req)) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "生成运营方案失败。" });
       }
     }
 
-    if (req.method === "GET" && /^\/api\/operator\/plans\/[^/]+$/.test(url.pathname)) {
+    if (req.method === "GET" && /^\/api\/operator\/plans\/[^/]+$/.test(operatorPath)) {
       try {
-        return sendJson(res, 200, { plan: operationBrain.getPlan(decodeURIComponent(url.pathname.split("/").pop())) });
+        return sendJson(res, 200, { plan: activeOperationBrain.getPlan(decodeURIComponent(operatorPath.split("/").pop())) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 404, { error: error.message || "运营方案不存在。" });
       }
     }
 
-    if (req.method === "POST" && /^\/api\/operator\/plans\/[^/]+\/approve$/.test(url.pathname)) {
+    if (req.method === "POST" && /^\/api\/operator\/plans\/[^/]+\/approve$/.test(operatorPath)) {
       try {
-        const planId = decodeURIComponent(url.pathname.split("/")[4]);
-        return sendJson(res, 200, { plan: operationBrain.approvePlan(planId) });
+        const planId = decodeURIComponent(operatorPath.split("/")[4]);
+        return sendJson(res, 200, { plan: activeOperationBrain.approvePlan(planId) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 500, { error: error.message || "创建运营任务失败。" });
       }
@@ -654,6 +697,22 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, novelContentLibrary.getOverview({ query: url.searchParams.get("query") || "" }));
     }
 
+    if (req.method === "GET" && url.pathname === "/api/novel-effects") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "Only administrators can view novel effects." });
+      try {
+        const result = await novelEffectService.getOverview({
+          source: url.searchParams.get("source") || "official_api",
+          query: url.searchParams.get("query") || "",
+          days: Number(url.searchParams.get("days") || 30),
+        });
+        return sendJson(res, 200, result, { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode || error.status) || 502, {
+          error: error.message || "Failed to load novel effects.",
+        });
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/novel-content/novels") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       try {
@@ -670,16 +729,6 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { novel: novelContentLibrary.updateNovel(id, await readJsonBody(req)) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新小说失败。" });
-      }
-    }
-
-    if (req.method === "POST" && /^\/api\/novel-content\/scripts\/[^/]+\/assign$/.test(url.pathname)) {
-      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
-      try {
-        const id = decodeURIComponent(url.pathname.split("/")[4]);
-        return sendJson(res, 200, { script: novelContentLibrary.assignScript(id, await readJsonBody(req)) });
-      } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "归类文案失败。" });
       }
     }
 
@@ -741,6 +790,7 @@ const server = http.createServer(async (req, res) => {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看 TikTok 官方历史数据。" });
       return sendJson(res, 200, officialAnalyticsArchive.getDashboard({
         days: String(url.searchParams.get("days") || "30"),
+        accountDays: String(url.searchParams.get("accountDays") || "30"),
         account: String(url.searchParams.get("account") || ""),
         video: String(url.searchParams.get("video") || ""),
         search: String(url.searchParams.get("search") || ""),
@@ -750,6 +800,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/official-analytics/sync") {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以同步 TikTok 官方历史数据。" });
       return sendJson(res, 200, await officialAnalyticsArchive.run({ ignoreDailyGuard: true }));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/official-analytics/video-detail") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看 TikTok 官方视频详情。" });
+      const accountId = String(url.searchParams.get("account") || "").trim();
+      const videoId = String(url.searchParams.get("video") || "").trim();
+      if (!accountId || !videoId) return sendJson(res, 400, { error: "缺少账号 ID 或视频 ID。" });
+      try {
+        return sendJson(res, 200, await privateTikTokAnalytics.getVideo({ accountId, videoId }), { "Cache-Control": "no-store" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 TikTok 视频详情失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/tiktok-analytics") {

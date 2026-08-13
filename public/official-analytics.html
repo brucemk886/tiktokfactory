@@ -3,38 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TikTok 官方数据</title>
+    <title>授权账号</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/official-analytics.css" />
   </head>
   <body class="work-page official-data-page">
-    <nav class="side-tabs">
-      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
-      <button class="nav-logout" type="button" data-logout>退出登录</button>
-    </nav>
+    <nav class="side-tabs"><a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
     <main class="official-data-shell">
       <header class="official-data-header">
-        <div><p class="toolbar-kicker">OFFICIAL TIKTOK HISTORY</p><h1>TikTok 官方数据总览</h1><p>每天 08:30 拉取官方账号与最近 100 条视频，按日期长期归档到本地 D 盘。</p></div>
+        <div><p class="toolbar-kicker">AUTHORIZED TIKTOK ACCOUNTS</p><h1>授权账号</h1><p>查看已授权账号的官方数据，并进入独立的账号详情与视频数据页面。</p></div>
         <button id="syncOfficialData" type="button">立即同步</button>
       </header>
       <section class="official-toolbar panel">
         <div id="daysFilter" class="segmented"><button data-days="7">近7天</button><button data-days="30" class="is-active">近30天</button><button data-days="90">近90天</button><button data-days="all">全部</button></div>
         <input id="accountSearch" type="search" placeholder="搜索账号" />
-        <div class="storage-note"><span>长期历史数据库</span><strong id="archiveDir">D:\localcodex\work\official-tiktok-history\official-history.sqlite</strong><small id="syncState">读取中…</small></div>
+        <small id="syncState" class="sync-state">读取中…</small>
       </section>
       <section id="overviewCards" class="overview-grid"></section>
       <section class="panel data-section">
-        <div class="section-title"><div><p>AUTHORIZED ACCOUNTS</p><h2>账号数据</h2></div><span id="accountCount">0 个账号</span></div>
-        <div class="table-wrap"><table><thead><tr><th>账号</th><th>粉丝</th><th>视频</th><th>播放</th><th>点赞</th><th>评论</th><th>分享</th><th>触达</th><th>同步时间</th></tr></thead><tbody id="accountRows"></tbody></table></div>
+        <div class="section-title"><div><p>AUTHORIZED ACCOUNTS</p><h2>账号列表</h2></div><span id="accountCount">0 个账号</span></div>
+        <div class="table-wrap"><table><thead><tr><th>账号</th><th>粉丝</th><th>视频</th><th>播放</th><th>点赞</th><th>评论</th><th>分享</th><th>触达</th><th>同步时间</th><th>操作</th></tr></thead><tbody id="accountRows"></tbody></table></div>
       </section>
-      <section class="trend-grid">
-        <article class="panel chart-card"><div class="section-title"><div><p>ACCOUNT HISTORY</p><h2 id="accountTrendTitle">账号历史变化</h2></div></div><div id="accountChart" class="chart"></div></article>
-        <article class="panel video-panel"><div class="section-title"><div><p>LATEST 100 VIDEOS</p><h2>账号视频</h2></div><input id="videoSearch" type="search" placeholder="搜索视频标题或 ID" /></div><div id="videoRows" class="video-list"></div></article>
-      </section>
-      <section class="panel chart-card"><div class="section-title"><div><p>VIDEO HISTORY</p><h2 id="videoTrendTitle">单视频历史变化</h2></div></div><div id="videoChart" class="chart"></div></section>
       <div id="pageStatus" class="page-status"></div>
     </main>
     <script src="/access.js"></script>
+    <script src="/official-analytics-shared.js"></script>
     <script src="/official-analytics.js"></script>
   </body>
 </html>

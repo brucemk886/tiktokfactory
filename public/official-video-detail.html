@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>视频留存分析</title><link rel="stylesheet" href="/app.css"/><link rel="stylesheet" href="/official-analytics.css"/></head>
+<body class="work-page official-data-page"><nav class="side-tabs"><a class="app-brand" href="/tasks"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav><main class="official-data-shell">
+<header class="official-data-header"><div><p class="toolbar-kicker">VIDEO RETENTION DETAIL</p><h1>视频留存分析</h1><p>仅展示流量来源、视频受众国家/地区、视频评论与逐秒留存数据。</p></div><a id="backVideos" class="back-link" href="/official-analytics">返回账号视频</a></header>
+<section class="detail-toolbar panel"><div id="videoProfile" class="profile-heading compact-video-profile"></div><a id="openVideo" class="back-link is-hidden" target="_blank" rel="noreferrer">打开视频</a></section>
+<section class="insights-grid video-insights"><article class="panel insight-card"><h3>流量来源</h3><div id="sourceDistribution"></div></article><article class="panel insight-card"><h3>视频受众国家/地区</h3><div id="videoCountryDistribution"></div></article></section>
+<section class="panel insight-card video-comments-card"><div class="section-title"><div><p>VIDEO COMMENTS</p><h2>视频评论</h2></div></div><div id="videoComments"></div></section>
+<section class="panel chart-card retention-card"><div class="section-title"><div><p>RETENTION BY SECOND</p><h2>逐秒视频留存曲线</h2><small class="section-hint">前 10 秒占曲线宽度的 50%，鼠标移到数据点查看具体秒数与留存。</small></div></div><div id="retentionChart" class="chart retention-chart"></div></section>
+<div id="pageStatus" class="page-status"></div></main><script src="/access.js"></script><script src="/official-analytics-shared.js"></script><script src="/official-video-detail.js"></script></body></html>

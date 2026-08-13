@@ -31,6 +31,10 @@ test("archives official history in indexed SQLite tables", async (context) => {
   assert.deepEqual(dashboard.accountHistory.map((item) => item.followers), [12, 12]);
   assert.deepEqual(dashboard.accountHistory.map((item) => item.views), [100, 220]);
   assert.equal(dashboard.overview.views, 220);
+
+  const independentRange = archive.getDashboard({ days: 1, accountDays: 30, account: "tiktok:one", video: "12345" });
+  assert.deepEqual(independentRange.videoHistory.map((item) => item.views), [220]);
+  assert.deepEqual(independentRange.accountHistory.map((item) => item.views), [100, 220]);
 });
 
 test("imports legacy daily JSON once and keeps the source file", (context) => {

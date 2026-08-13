@@ -628,3 +628,123 @@ test("resetting judgments establishes a durable analysis baseline", async (t) =>
   assert.equal(overview.contentFeedback.matchedVideos, 0);
   assert.equal(overview.dataStatus.analysisStartedAt, resetAt);
 });
+
+test("third-party operation service never reads official account data", async (t) => {
+  const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-third-party-isolation-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  let officialCalls = 0;
+  const service = createOperationBrainService({
+    workDir,
+    fixedDataStrategy: "third_party",
+    accountSource: "geelark",
+    listPhones: async () => [phone("one")],
+    listProfiles: () => [{ id: "default", name: "GeeLark" }],
+    readPublishRecords: () => [],
+    analyticsService: {
+      getDashboard: () => ({
+        accounts: [metrics("user-one")],
+        summary: { videoCount: 12, matchedCount: 12 },
+        status: { lastRun: { finishedAt: Date.now() } }
+      }),
+      getMatchedVideos: () => []
+    },
+    privateAnalyticsService: {
+      getPublicSettings: () => ({ configured: true }),
+      listAccounts: async () => {
+        officialCalls += 1;
+        return { accounts: [] };
+      },
+      getOperationSignals: async () => {
+        officialCalls += 1;
+        return { status: "ready", accounts: [], summary: {} };
+      }
+    },
+    autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) }
+  });
+
+  const overview = await service.getOverview();
+  assert.equal(overview.settings.dataStrategy, "third_party");
+  assert.equal(overview.accounts[0].username, "user-one");
+  assert.equal(officialCalls, 0);
+});
+
+test("official operation service never reads GeeLark accounts or analytics", async (t) => {
+  const workDir = fs.mkdtempSync(path.join(process.cwd(), ".tmp-operation-official-isolation-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const timestamp = new Date("2026-08-13T08:30:00+08:00").getTime();
+  let geeLarkCalls = 0;
+  const officialSignals = {
+    status: "ready",
+    generatedAt: timestamp,
+    matchedAccountCount: 1,
+    summary: { detailedVideoCount: 1 },
+    accounts: [{
+      username: "official-one",
+      videos: [{ id: "video-1", createdAt: timestamp - 60_000, views: 1200 }]
+    }]
+  };
+  let novelEffectSignal = null;
+  const service = createOperationBrainService({
+    workDir,
+    fixedDataStrategy: "official_api",
+    accountSource: "official",
+    now: () => timestamp,
+    listPhones: async () => {
+      geeLarkCalls += 1;
+      return [phone("leaked")];
+    },
+    listProfiles: () => {
+      geeLarkCalls += 1;
+      return [{ id: "default", name: "GeeLark" }];
+    },
+    readPublishRecords: () => [],
+    analyticsService: {
+      getDashboard: () => {
+        geeLarkCalls += 1;
+        return { accounts: [metrics("user-leaked")], summary: {}, status: {} };
+      },
+      getMatchedVideos: () => {
+        geeLarkCalls += 1;
+        return [];
+      }
+    },
+    privateAnalyticsService: {
+      getPublicSettings: () => ({ configured: true }),
+      listAccounts: async () => ({
+        accounts: [{ schema: "official-1", profile: { username: "official-one" } }]
+      }),
+      getOperationSignals: async () => officialSignals
+    },
+    novelEffectService: {
+      getDecisionContext: async ({ signals }) => {
+        novelEffectSignal = signals;
+        return {
+          summary: { novelCount: 1, scriptCount: 1, videoCount: 1 },
+          novels: [{
+            id: "novel-1",
+            title: "Story",
+            scripts: [{ id: "script-1", audio: { id: "audio-1" }, videos: [{ id: "video-1", views: 1200 }] }]
+          }],
+          videoMappings: [{
+            videoId: "video-1",
+            local: { novelId: "novel-1", scriptId: "script-1", audioLibraryId: "audio-1" }
+          }],
+          dataStatus: { source: "official_api", status: "ready" }
+        };
+      }
+    },
+    autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) }
+  });
+
+  const overview = await service.getOverview();
+  assert.equal(overview.settings.dataStrategy, "official_api");
+  assert.equal(overview.profiles.length, 1);
+  assert.equal(overview.profiles[0].id, "official");
+  assert.equal(overview.accounts[0].username, "official-one");
+  assert.equal(overview.accounts[0].metrics.videos10d, 1);
+  assert.equal(overview.dataStatus.videoCount, 1);
+  assert.equal(novelEffectSignal, officialSignals);
+  assert.equal(overview.matchedVideoLinks[0].local.scriptId, "script-1");
+  assert.equal(overview.novelEffectAnalysis.summary.novelCount, 1);
+  assert.equal(geeLarkCalls, 0);
+});

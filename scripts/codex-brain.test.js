@@ -3,7 +3,37 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createCodexBrainService } from "./codex-brain.js";
+import { buildOperationPromptV2, createCodexBrainService } from "./codex-brain.js";
+
+test("official operation prompt includes mapped novel-effect evidence", () => {
+  const prompt = buildOperationPromptV2({
+    planDate: "2026-08-13",
+    objective: "traffic",
+    accountCount: 1,
+    stageSummary: [],
+    workflowPerformance: [],
+    publishTimePerformance: [],
+    audioPerformance: [],
+    novelContent: {},
+    scriptLibrary: [],
+    privatePerformance: {},
+    contentRuleDiagnostics: {},
+    routeContext: {},
+    preliminaryStrategy: {},
+    deepseekEvidenceReport: {},
+    drafts: [],
+    novelEffectAnalysis: {
+      summary: { novelCount: 1 },
+      novels: [{ id: "novel-1", scripts: [{ id: "script-1", videos: [{ id: "video-1" }] }] }],
+      videoMappings: [{ videoId: "video-1", local: { novelId: "novel-1", scriptId: "script-1" } }]
+    }
+  });
+
+  assert.match(prompt, /Official novel-effect aggregation/);
+  assert.match(prompt, /novel-1/);
+  assert.match(prompt, /script-1/);
+  assert.match(prompt, /exact TikTok video-ID mappings/);
+});
 
 test("Codex connection test reports a successful local session", async () => {
   const calls = [];

@@ -48,7 +48,7 @@ test("rule v1 maps a TikTok video to its local script and gates evidence-based r
   assert.ok(weak.largestDropSentence?.text);
 });
 
-test("rule v1 never rewrites immature or low-view samples", () => {
+test("rule v1 includes immature and low-view samples in all statistics", () => {
   const result = buildContentRuleDiagnostics({
     generatedAt: NOW,
     privateAnalytics: {
@@ -63,8 +63,14 @@ test("rule v1 never rewrites immature or low-view samples", () => {
       }]
     }
   });
-  assert.equal(result.videos[0].sampleStatus, "insufficient");
-  assert.equal(result.videos[0].decision, "observe");
+  assert.equal(result.thresholds.sampleFilteringEnabled, false);
+  assert.equal(result.thresholds.minimumViews, 0);
+  assert.equal(result.thresholds.minimumPublishedHours, 0);
+  assert.equal(result.videos[0].sampleStatus, "eligible");
+  assert.equal(result.videos[0].sampleMaturity, "early");
+  assert.deepEqual(result.videos[0].sampleWarnings, ["published_under_24h", "views_under_200"]);
+  assert.equal(result.videos[0].baseline.sampleCount, 1);
+  assert.equal(result.videos[0].decision, "rewrite_test");
   assert.equal(result.videos[0].rewriteEligible, false);
 });
 

@@ -19,13 +19,17 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
     sidebarModuleIdsForRole("admin"),
     SIDEBAR_MODULES.filter((item) => item.roles.includes("admin")).map((item) => item.id)
   );
-  assert.deepEqual(sidebarModuleIdsForRole("operator"), ["tasks", "stats", "analytics"]);
+  assert.deepEqual(sidebarModuleIdsForRole("operator"), ["tasks", "analytics", "stats"]);
   assert.ok(sidebarModuleIdsForRole("admin").includes("novel-library"));
   assert.ok(sidebarModuleIdsForRole("admin").includes("official-publish-records"));
   assert.ok(sidebarModuleIdsForRole("admin").includes("official-analytics"));
+  assert.ok(sidebarModuleIdsForRole("admin").includes("operator-third-party"));
+  assert.ok(sidebarModuleIdsForRole("admin").includes("operator-official"));
+  assert.ok(sidebarModuleIdsForRole("admin").includes("novel-effects"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-publish-records"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-analytics"));
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
 });
 
 test("every authenticated HTML sidebar loads the canonical renderer", () => {
@@ -43,4 +47,14 @@ test("browser modules do not duplicate the sidebar catalog", () => {
     const source = fs.readFileSync(path.join(publicDir, name), "utf8");
     assert.doesNotMatch(source, /const\s+SIDEBAR_(?:ITEMS|MODULES)\s*=/);
   }
+});
+
+test("GeeLark pages are visibly distinguished from official TikTok pages", () => {
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "stats")?.label, "GeeLark · 发布记录");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "analytics")?.label, "GeeLark · 数据总览");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.label, "授权账号");
+  assert.ok(
+    SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") <
+      SIDEBAR_MODULES.findIndex((item) => item.id === "stats")
+  );
 });

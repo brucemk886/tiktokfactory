@@ -37,7 +37,7 @@ function renderCanonicalSidebars(user, sidebarModules) {
       link.href = item.href;
       link.textContent = item.label;
       link.dataset.sidebarModule = item.id;
-      if (location.pathname.replace(/\/$/, "") === item.href) {
+      if (sidebarPath(location.pathname) === item.href) {
         link.className = "is-active";
         link.setAttribute("aria-current", "page");
       }
@@ -45,6 +45,12 @@ function renderCanonicalSidebars(user, sidebarModules) {
     });
     nav.insertBefore(fragment, insertionPoint || null);
   });
+}
+
+function sidebarPath(pathname) {
+  const normalized = pathname.replace(/\/$/, "");
+  if (["/official-account-detail", "/official-account-videos", "/official-video-detail"].includes(normalized)) return "/official-analytics";
+  return normalized;
 }
 
 function applyRoleVisibility(user) {

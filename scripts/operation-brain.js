@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   autoCreateTasks: false,
   useCodex: true,
+  dataStrategy: "third_party",
   strategyProvider: "codex",
   strategyReasoning: "enabled",
   profileId: "default",
@@ -61,6 +62,7 @@ export function createOperationBrainService({
   privateAnalyticsService = null,
   audioLibrary = null,
   novelContentLibrary = null,
+  novelEffectService = null,
   autoTaskManager,
   codexBrain = null,
   deepseekBrain = null,
@@ -68,6 +70,8 @@ export function createOperationBrainService({
   readPublishRecords,
   readRedditSettings = () => ({}),
   listProfiles = () => [],
+  fixedDataStrategy = null,
+  accountSource = null,
   now = () => Date.now()
 }) {
   const settingsPath = path.join(workDir, "operation-brain-settings.json");
@@ -77,14 +81,24 @@ export function createOperationBrainService({
   let running = false;
   let nextRunAt = 0;
   let phoneCache = { key: "", expiresAt: 0, phones: [] };
+  const officialMode = accountSource === "official";
+  const legacyHybridMode = !fixedDataStrategy && !accountSource;
+  const normalizeScopedSettings = (value = {}) => normalizeSettings({
+    ...value,
+    ...(legacyHybridMode && privateAnalyticsService && !Object.hasOwn(value, "dataStrategy")
+      ? { dataStrategy: "official_api" }
+      : {}),
+    ...(fixedDataStrategy ? { dataStrategy: fixedDataStrategy } : {}),
+    ...(officialMode ? { profileId: "official", groupNames: ["official"] } : {})
+  });
 
   function getSettings() {
-    return normalizeSettings(readJson(settingsPath, {}));
+    return normalizeScopedSettings(readJson(settingsPath, {}));
   }
 
   function saveSettings(payload = {}) {
     const current = getSettings();
-    let next = normalizeSettings({ ...current, ...payload });
+    let next = normalizeScopedSettings({ ...current, ...payload });
     const timestamp = now();
     const currentCycle = getCycleState(current, timestamp);
     const cycleDaysChanged = Object.hasOwn(payload, "cycleDays") && next.cycleDays !== current.cycleDays;
@@ -97,7 +111,7 @@ export function createOperationBrainService({
       next = startCycle(next, timestamp);
     } else if (next.enabled && cycleDaysChanged) {
       const startedAt = Number(current.cycleStartedAt) || timestamp;
-      next = normalizeSettings({
+      next = normalizeScopedSettings({
         ...next,
         cycleStartedAt: startedAt,
         cycleEndsAt: startedAt + next.cycleDays * DAY_MS,
@@ -105,7 +119,7 @@ export function createOperationBrainService({
         cycleStopReason: ""
       });
     } else if (current.enabled && !next.enabled) {
-      next = normalizeSettings({
+      next = normalizeScopedSettings({
         ...next,
         cycleStoppedAt: timestamp,
         cycleStopReason: "manual"
@@ -134,13 +148,13 @@ export function createOperationBrainService({
 
   function resetJudgments() {
     const resetAt = now();
-    const next = normalizeSettings({ ...getSettings(), analysisResetAt: resetAt });
+    const next = normalizeScopedSettings({ ...getSettings(), analysisResetAt: resetAt });
     atomicWriteJson(settingsPath, { ...next, updatedAt: resetAt });
     return getSettings();
   }
 
   async function getOverview(payload = {}) {
-    const settings = normalizeSettings({ ...getSettings(), ...payload });
+    const settings = normalizeScopedSettings({ ...getSettings(), ...payload });
     const phones = await getPhones(settings.profileId);
     const selected = filterPhones(phones, settings.groupNames).slice(0, settings.maxDailyVideos);
     const accountNames = selected.map((phone) => phone.serialName || phone.name).filter(Boolean);
@@ -149,20 +163,23 @@ export function createOperationBrainService({
       Number(settings.analysisResetAt) || 0,
       Number(settings.cycleStartedAt) || 0
     );
-    const dashboard10 = analyticsService.getDashboard({ period: "10d", allowedAccounts: accountNames, publishedAfter: analysisStartedAt }, records);
-    const dashboard30 = analyticsService.getDashboard({ period: "30d", allowedAccounts: accountNames, publishedAfter: analysisStartedAt }, records);
-    const matchedVideos = filterVideosAfter(analyticsService.getMatchedVideos?.(records) || [], analysisStartedAt);
-    const accounts = classifyAccounts(selected, dashboard10.accounts || [], dashboard30.accounts || [], {
-      objective: settings.objective,
-      analysisStartedAt
-    });
+    const emptyThirdPartyDashboard = { accounts: [], totals: {}, status: { lastRun: null } };
+    const dashboard10 = officialMode
+      ? emptyThirdPartyDashboard
+      : analyticsService.getDashboard({ period: "10d", allowedAccounts: accountNames, publishedAfter: analysisStartedAt }, records);
+    const dashboard30 = officialMode
+      ? emptyThirdPartyDashboard
+      : analyticsService.getDashboard({ period: "30d", allowedAccounts: accountNames, publishedAfter: analysisStartedAt }, records);
+    const thirdPartyVideos = officialMode
+      ? []
+      : filterVideosAfter(analyticsService.getMatchedVideos?.(records) || [], analysisStartedAt);
     let privateAnalytics = {
       status: "unavailable",
       summary: { detailedVideoCount: 0 },
       accounts: [],
       error: "TikTok official data bridge is not configured."
     };
-    if (privateAnalyticsService?.getPublicSettings?.().configured && privateAnalyticsService?.getOperationSignals) {
+    if (settings.dataStrategy === "official_api" && privateAnalyticsService?.getPublicSettings?.().configured && privateAnalyticsService?.getOperationSignals) {
       try {
         privateAnalytics = await privateAnalyticsService.getOperationSignals({
           accountNames,
@@ -179,41 +196,99 @@ export function createOperationBrainService({
         };
       }
     }
+    let novelEffectAnalysis = null;
+    if (settings.dataStrategy === "official_api" && novelEffectService?.getDecisionContext) {
+      try {
+        novelEffectAnalysis = await novelEffectService.getDecisionContext({
+          signals: privateAnalytics,
+          days: OFFICIAL_ANALYSIS_WINDOW_DAYS
+        });
+      } catch (error) {
+        novelEffectAnalysis = {
+          summary: {},
+          novels: [],
+          videoMappings: [],
+          dataStatus: { source: "official_api", status: "failed", error: String(error?.message || error) }
+        };
+      }
+    }
+    const official10 = buildOfficialDashboard(privateAnalytics, {
+      days: ANALYSIS_WINDOW_DAYS,
+      analysisStartedAt,
+      currentTime: now()
+    });
+    const official30 = buildOfficialDashboard(privateAnalytics, {
+      days: OFFICIAL_ANALYSIS_WINDOW_DAYS,
+      analysisStartedAt,
+      currentTime: now()
+    });
+    const useOfficialData = settings.dataStrategy === "official_api";
+    const activeDashboard10 = useOfficialData ? official10 : dashboard10;
+    const activeDashboard30 = useOfficialData ? official30 : dashboard30;
+    const activeVideos = useOfficialData ? official30.videos : thirdPartyVideos;
+    const accounts = classifyAccounts(selected, activeDashboard10.accounts || [], activeDashboard30.accounts || [], {
+      objective: settings.objective,
+      analysisStartedAt
+    });
     const privateByUsername = new Map((privateAnalytics.accounts || []).map((item) => [normalizeUsername(item.username), item]));
     for (const account of accounts) {
-      account.privateMetrics = privateByUsername.get(normalizeUsername(account.username)) || null;
+      account.privateMetrics = useOfficialData
+        ? privateByUsername.get(normalizeUsername(account.username)) || null
+        : null;
     }
     const currentPlans = listPlans({ includeArchived: true }).filter((plan) =>
       !analysisStartedAt || Number(plan?.createdAt) >= analysisStartedAt
     );
-    applyOperationAges(accounts, matchedVideos, currentPlans, now());
-    const contentFeedback = summarizeContentFeedback(
-      matchedVideos,
-      accountNames,
-      now()
-    );
+    applyOperationAges(accounts, activeVideos, currentPlans, now());
+    const contentFeedback = useOfficialData
+      ? summarizeOfficialContentFeedback(privateAnalytics, accountNames, now())
+      : summarizeContentFeedback(thirdPartyVideos, accountNames, now());
+    const officialMappings = new Map((novelEffectAnalysis?.videoMappings || []).map((item) => [
+      String(item.videoId || ""),
+      item.local || null
+    ]));
+    const matchedVideoLinks = activeVideos.map((video) => ({
+      id: video.id || video.videoId || "",
+      videoId: video.videoId || video.id || "",
+      username: video.username || "",
+      caption: video.caption || "",
+      createTime: normalizeVideoCreateTimeSeconds(video),
+      views: Number(video.views) || 0,
+      likes: Number(video.likes) || 0,
+      comments: Number(video.comments) || 0,
+      shares: Number(video.shares) || 0,
+      local: useOfficialData
+        ? officialMappings.get(String(video.videoId || video.id || "")) || null
+        : video.local || null
+    }));
+    const strategyComparison = buildStrategyComparison({
+      selected: settings.dataStrategy,
+      thirdPartyDashboard: dashboard10,
+      thirdPartyVideos,
+      privateAnalytics
+    });
     return {
       settings,
-      profiles: listProfiles().map(({ id, name }) => ({ id, name })),
+      profiles: officialMode
+        ? [{ id: "official", name: "TikTok 官方授权账号" }]
+        : listProfiles().map(({ id, name }) => ({ id, name })),
       groups: summarizeGroups(phones),
       accountCount: accounts.length,
       accounts,
       stages: summarizeStages(accounts),
       contentFeedback,
-      matchedVideoLinks: matchedVideos.map((video) => ({
-        id: video.id || video.videoId || "",
-        videoId: video.videoId || video.id || "",
-        username: video.username || "",
-        createTime: Number(video.createTime) || 0,
-        views: Number(video.views) || 0,
-        local: video.local || null
-      })),
+      matchedVideoLinks,
+      novelEffectAnalysis,
       privateAnalytics,
+      strategyComparison,
       dataStatus: {
         analysisStartedAt,
-        lastRun: dashboard10.status?.lastRun || null,
-        videoCount: dashboard10.summary?.videoCount || 0,
-        matchedCount: dashboard10.summary?.matchedCount || 0,
+        selectedStrategy: settings.dataStrategy,
+        lastRun: useOfficialData
+          ? { finishedAt: Number(privateAnalytics.generatedAt) || 0 }
+          : dashboard10.status?.lastRun || null,
+        videoCount: activeVideos.length,
+        matchedCount: activeVideos.length,
         privateAnalytics: {
           status: privateAnalytics.status,
           detailedVideoCount: Number(privateAnalytics.summary?.detailedVideoCount) || 0,
@@ -230,7 +305,7 @@ export function createOperationBrainService({
     if (running) throw statusError(409, "小说 AI 自运营正在生成另一份方案。");
     running = true;
     try {
-      const requestedSettings = normalizeSettings({ ...getSettings(), ...payload });
+      const requestedSettings = normalizeScopedSettings({ ...getSettings(), ...payload });
       const cycle = getCycleState(requestedSettings, now());
       if (cycle.status === "expired") {
         throw statusError(409, "本轮小说 AI 自运营周期已经结束。请重新启用自运营，开始一个新的周期。");
@@ -239,7 +314,7 @@ export function createOperationBrainService({
       const overview = await getOverview(payload);
       overview.dataStatus.analyticsRefresh = analyticsRefresh;
       const settings = overview.settings;
-      if (!settings.groupNames.length) throw statusError(400, "请至少选择一个 GeeLark 账号组。");
+      if (!settings.groupNames.length) throw statusError(400, officialMode ? "暂无可用的 TikTok 官方授权账号。" : "请至少选择一个 GeeLark 账号组。");
       if (!overview.accounts.length) throw statusError(400, "选中的账号组里没有可运营账号。");
       if (!settings.assetGroupId && !settings.videoDir) throw statusError(400, "请先选择小说视频素材组或视频素材目录。");
       if (!settings.audioDir) throw statusError(400, "请先选择小说音频目录。");
@@ -292,7 +367,9 @@ export function createOperationBrainService({
             if (finalProvider === "deepseek" && deepseekBrain?.analyzeOperationDataset) {
               aiResult = await deepseekBrain.analyzeOperationDataset({
                 ...baseStrategyInput,
-                fullPrivatePerformance: overview.privateAnalytics
+                fullPrivatePerformance: settings.dataStrategy === "official_api"
+                  ? overview.privateAnalytics
+                  : null
               }, { reasoningMode: settings.strategyReasoning });
             } else {
               const firstService = finalProvider === "deepseek" ? deepseekBrain : codexBrain;
@@ -533,7 +610,7 @@ export function createOperationBrainService({
   }
 
   function stopExpiredCycle(settings) {
-    const stopped = normalizeSettings({
+    const stopped = normalizeScopedSettings({
       ...settings,
       enabled: false,
       autoCreateTasks: false,
@@ -545,6 +622,9 @@ export function createOperationBrainService({
   }
 
   async function refreshAnalytics(settings, { force = false } = {}) {
+    if (officialMode) {
+      return { status: "managed_by_official_bridge", refreshed: 0, stale: 0, checked: (await getPhones(settings.profileId)).length };
+    }
     if (!analyticsService?.fetchAccounts || !analyticsService?.getAccountFreshness) {
       return { status: "unavailable", refreshed: 0, stale: 0 };
     }
@@ -578,9 +658,29 @@ export function createOperationBrainService({
   }
 
   async function getPhones(profileId) {
-    const key = String(profileId || "default");
+    const key = officialMode ? "official" : String(profileId || "default");
     if (phoneCache.key === key && phoneCache.expiresAt > now()) return phoneCache.phones;
-    const phones = await listPhones(key);
+    let phones;
+    if (officialMode) {
+      const result = await privateAnalyticsService?.listAccounts?.();
+      phones = (Array.isArray(result?.accounts) ? result.accounts : []).map((account, index) => {
+        const schema = String(account?.schema || account?.id || `official-${index + 1}`);
+        const username = String(account?.profile?.username || account?.username || account?.profile?.displayName || schema);
+        return {
+          id: schema,
+          envId: schema,
+          serialNo: schema,
+          serialName: username,
+          name: username,
+          remark: "",
+          groupName: "official",
+          profileId: "official",
+          source: "official"
+        };
+      });
+    } else {
+      phones = await listPhones(key);
+    }
     phoneCache = { key, expiresAt: now() + 5 * 60 * 1000, phones };
     return phones;
   }
@@ -750,6 +850,137 @@ export function summarizeContentFeedback(videos, allowedAccounts = [], currentTi
     workflows,
     publishTimePerformance,
     audioPerformance
+  };
+}
+
+function normalizeOfficialCreatedAt(video = {}) {
+  let value = Number(video.createdAt ?? video.createTime) || 0;
+  if (value > 0 && value < 1_000_000_000_000) value *= 1000;
+  return value;
+}
+
+function normalizeVideoCreateTimeSeconds(video = {}) {
+  const value = normalizeOfficialCreatedAt(video);
+  return value ? Math.floor(value / 1000) : 0;
+}
+
+function buildOfficialDashboard(privateAnalytics = {}, {
+  days = OFFICIAL_ANALYSIS_WINDOW_DAYS,
+  analysisStartedAt = 0,
+  currentTime = Date.now()
+} = {}) {
+  const startAt = Math.max(
+    Number(analysisStartedAt) || 0,
+    Number(currentTime) - Math.max(1, Number(days) || OFFICIAL_ANALYSIS_WINDOW_DAYS) * 24 * 60 * 60 * 1000
+  );
+  const videos = [];
+  const accounts = (privateAnalytics.accounts || []).map((account) => {
+    const accountVideos = (account.videos || []).filter((video) => {
+      const createdAt = normalizeOfficialCreatedAt(video);
+      return createdAt >= startAt && createdAt <= Number(currentTime) + 60_000;
+    }).map((video) => ({ ...video, username: account.username }));
+    videos.push(...accountVideos);
+    const views = accountVideos.map((video) => Number(video.views) || 0);
+    return {
+      username: account.username,
+      videos: views.length,
+      views: views.reduce((sum, value) => sum + value, 0),
+      averageViews: round(mean(views), 0),
+      medianViews: round(percentile(views, 0.5), 0),
+      maxViews: views.length ? Math.max(...views) : 0,
+      low200Rate: views.length ? round(views.filter((value) => value < 200).length / views.length * 100, 1) : 0,
+      over500Rate: views.length ? round(views.filter((value) => value >= 500).length / views.length * 100, 1) : 0,
+      over1000Rate: views.length ? round(views.filter((value) => value >= 1000).length / views.length * 100, 1) : 0
+    };
+  });
+  return {
+    accounts,
+    videos,
+    summary: { videoCount: videos.length, matchedCount: videos.length },
+    status: { lastRun: { finishedAt: Number(privateAnalytics.generatedAt) || 0 } }
+  };
+}
+
+function summarizeOfficialContentFeedback(privateAnalytics = {}, allowedAccounts = [], currentTime = Date.now()) {
+  const allowed = new Set((allowedAccounts || []).map(normalizeName).filter(Boolean));
+  const currentStart = Number(currentTime) - ANALYSIS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const previousStart = currentStart - ANALYSIS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const currentViews = [];
+  const previousViews = [];
+  const publishTimeBuckets = new Map();
+  for (const account of privateAnalytics.accounts || []) {
+    if (allowed.size && !allowed.has(normalizeName(account.username))) continue;
+    for (const video of account.videos || []) {
+      const createdAt = normalizeOfficialCreatedAt(video);
+      if (!createdAt || createdAt < previousStart || createdAt > Number(currentTime) + 60_000) continue;
+      const views = Number(video.views) || 0;
+      if (createdAt >= currentStart) {
+        currentViews.push(views);
+        const created = new Date(createdAt);
+        const minute = created.getMinutes() < 30 ? 0 : 30;
+        const bucketId = `${String(created.getHours()).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+        const bucket = publishTimeBuckets.get(bucketId) || [];
+        bucket.push(views);
+        publishTimeBuckets.set(bucketId, bucket);
+      } else {
+        previousViews.push(views);
+      }
+    }
+  }
+  const averageViews = mean(currentViews);
+  const previousAverageViews = mean(previousViews);
+  return {
+    dataSource: "official_api",
+    windowDays: ANALYSIS_WINDOW_DAYS,
+    comparedWithPreviousDays: ANALYSIS_WINDOW_DAYS,
+    matchedVideos: currentViews.length,
+    unclassifiedVideos: 0,
+    workflows: [{
+      workflowId: "official_api",
+      label: "TikTok 官方 API",
+      sampleCount: currentViews.length,
+      previousSampleCount: previousViews.length,
+      averageViews: round(averageViews, 0),
+      previousAverageViews: round(previousAverageViews, 0),
+      medianViews: round(percentile(currentViews, 0.5), 0),
+      maxViews: currentViews.length ? Math.max(...currentViews) : 0,
+      low200Rate: currentViews.length ? round(currentViews.filter((value) => value < 200).length / currentViews.length * 100, 1) : 0,
+      over1000Rate: currentViews.length ? round(currentViews.filter((value) => value >= 1000).length / currentViews.length * 100, 1) : 0,
+      trend: previousAverageViews > 0 ? round(averageViews / previousAverageViews, 2) : 0
+    }],
+    publishTimePerformance: Array.from(publishTimeBuckets, ([time, views]) => ({
+      time,
+      sampleCount: views.length,
+      averageViews: round(mean(views), 0),
+      medianViews: round(percentile(views, 0.5), 0),
+      maxViews: views.length ? Math.max(...views) : 0
+    })).sort((left, right) => right.averageViews - left.averageViews),
+    audioPerformance: []
+  };
+}
+
+function buildStrategyComparison({ selected, thirdPartyDashboard = {}, thirdPartyVideos = [], privateAnalytics = {} }) {
+  const officialAccounts = privateAnalytics.accounts || [];
+  const officialVideoCount = officialAccounts.reduce((sum, account) => sum + (account.videos || []).length, 0);
+  return {
+    selected: normalizeDataStrategy(selected),
+    thirdParty: {
+      id: "third_party",
+      label: "第三方数据策略",
+      status: thirdPartyVideos.length ? "ready" : "empty",
+      accountCount: (thirdPartyDashboard.accounts || []).length,
+      videoCount: thirdPartyVideos.length,
+      generatedAt: Number(thirdPartyDashboard.status?.lastRun?.finishedAt) || 0
+    },
+    officialApi: {
+      id: "official_api",
+      label: "官方 API 完整数据策略",
+      status: privateAnalytics.status || (officialVideoCount ? "ready" : "empty"),
+      accountCount: officialAccounts.length,
+      videoCount: officialVideoCount,
+      generatedAt: Number(privateAnalytics.generatedAt) || 0,
+      error: String(privateAnalytics.error || "")
+    }
   };
 }
 
@@ -1081,8 +1312,18 @@ function filterPhones(phones, groupNames) {
 
 function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary }) {
   const accounts = Array.isArray(overview.accounts) ? overview.accounts : [];
+  const useOfficialData = settings.dataStrategy === "official_api";
+  const selectedPrivateAnalytics = useOfficialData
+    ? overview.privateAnalytics
+    : { status: "not_selected", summary: { detailedVideoCount: 0 }, accounts: [] };
   const novelContent = novelContentLibrary?.getAiContext?.() || { novels: [], scripts: [] };
-  const scriptLibrary = buildScriptLibrary(audioLibrary, overview.contentFeedback?.audioPerformance || [], novelContent);
+  const novelEffectAnalysis = compactNovelEffectAnalysis(overview.novelEffectAnalysis);
+  const scriptLibrary = buildScriptLibrary(
+    audioLibrary,
+    overview.contentFeedback?.audioPerformance || [],
+    novelContent,
+    novelEffectAnalysis
+  );
   const stageSummary = Object.keys(STAGE_META).map((stage) => {
     const items = accounts.filter((account) => account.stage === stage);
     const averages = items.map((account) => Number(account.metrics?.averageViews10d ?? account.metrics?.averageViews7d) || 0);
@@ -1100,20 +1341,25 @@ function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, au
   return {
     planDate,
     objective: settings.objective,
+    dataStrategy: settings.dataStrategy,
+    strategyComparison: overview.strategyComparison,
     accountCount: accounts.length,
     stageSummary,
     workflowPerformance: overview.contentFeedback?.workflows || [],
     audioPerformance: (overview.contentFeedback?.audioPerformance || []).slice(0, 100),
     novelContent,
+    novelEffectAnalysis,
     scriptLibrary,
     contentRuleDiagnostics: buildContentRuleDiagnostics({
-      privateAnalytics: overview.privateAnalytics,
+      privateAnalytics: selectedPrivateAnalytics,
       matchedVideos: overview.matchedVideoLinks || [],
       scriptLibrary,
-      generatedAt: Number(overview.privateAnalytics?.generatedAt) || Date.now()
+      generatedAt: Number(selectedPrivateAnalytics?.generatedAt) || Date.now()
     }),
     publishTimePerformance: overview.contentFeedback?.publishTimePerformance || [],
-    privatePerformance: compactPrivateAnalytics(overview.privateAnalytics, { videoLimit: OFFICIAL_VIDEOS_PER_ACCOUNT }),
+    privatePerformance: useOfficialData
+      ? compactPrivateAnalytics(selectedPrivateAnalytics, { videoLimit: OFFICIAL_VIDEOS_PER_ACCOUNT })
+      : null,
     drafts: (taskDrafts || []).map((draft) => ({
       workflowId: draft.workflowId,
       accountCount: Number(draft.accountCount) || 0,
@@ -1122,13 +1368,21 @@ function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, au
   };
 }
 
-function buildScriptLibrary(audioLibrary, audioPerformance = [], novelContent = {}) {
+function buildScriptLibrary(audioLibrary, audioPerformance = [], novelContent = {}, novelEffectAnalysis = {}) {
   const performanceByName = new Map((audioPerformance || []).map((item) => [
     String(item.audioName || "").trim().toLowerCase(),
     item
   ]));
   const hierarchyByAudioId = new Map((novelContent.scripts || []).map((item) => [String(item.audioId || ""), item]));
   const novelById = new Map((novelContent.novels || []).map((item) => [String(item.id || ""), item]));
+  const officialByScriptId = new Map();
+  const officialByAudioId = new Map();
+  for (const novel of novelEffectAnalysis.novels || []) {
+    for (const script of novel.scripts || []) {
+      if (script.id) officialByScriptId.set(String(script.id), script.performance || null);
+      if (script.audioId) officialByAudioId.set(String(script.audioId), script.performance || null);
+    }
+  }
   return (audioLibrary?.list?.() || []).filter((item) => String(item.script || "").trim()).slice(0, 40).map((item) => {
     const hierarchy = hierarchyByAudioId.get(String(item.id || "")) || {};
     const novel = novelById.get(String(hierarchy.novelId || "")) || {};
@@ -1142,9 +1396,53 @@ function buildScriptLibrary(audioLibrary, audioPerformance = [], novelContent = 
     versionLabel: String(hierarchy.versionLabel || ""),
     title: String(item.title || ""),
     script: String(item.script || ""),
-    performance: performanceByName.get(String(item.title || "").trim().toLowerCase()) || null
+    performance: officialByScriptId.get(String(hierarchy.id || ""))
+      || officialByAudioId.get(String(item.id || ""))
+      || performanceByName.get(String(item.title || "").trim().toLowerCase())
+      || null,
+    performanceSource: officialByScriptId.has(String(hierarchy.id || "")) || officialByAudioId.has(String(item.id || ""))
+      ? "official_api"
+      : "third_party"
     };
   });
+}
+
+function compactNovelEffectAnalysis(value = {}) {
+  const normalizePerformance = (performance = {}) => ({
+    videoCount: Math.max(0, Number(performance.videoCount) || 0),
+    accountCount: Math.max(0, Number(performance.accountCount) || 0),
+    totalViews: Math.max(0, Number(performance.totalViews) || 0),
+    averageViews: Math.max(0, Number(performance.averageViews) || 0),
+    maxViews: Math.max(0, Number(performance.maxViews) || 0),
+    comments: Math.max(0, Number(performance.comments) || 0),
+    averageTimeWatched: nullableNumber(performance.averageTimeWatched),
+    fullWatchRate: nullableNumber(performance.fullWatchRate),
+    retentionAt3: nullableNumber(performance.retentionAt3),
+    diagnosis: String(performance.diagnosis || "")
+  });
+  return {
+    dataStatus: value?.dataStatus || null,
+    summary: value?.summary || {},
+    novels: (value?.novels || []).slice(0, 40).map((novel) => ({
+      id: String(novel.id || ""),
+      title: String(novel.title || ""),
+      performance: normalizePerformance(novel.performance),
+      scripts: (novel.scripts || []).slice(0, 100).map((script) => ({
+        id: String(script.id || ""),
+        novelId: String(script.novelId || novel.id || ""),
+        parentScriptId: String(script.parentScriptId || ""),
+        hookVariantId: String(script.hookVariantId || ""),
+        audioId: String(script.audioId || script.audio?.id || ""),
+        title: String(script.title || script.audio?.title || ""),
+        versionLabel: String(script.versionLabel || ""),
+        performance: normalizePerformance(script.performance)
+      }))
+    }))
+  };
+}
+
+function nullableNumber(value) {
+  return value === null || value === undefined || value === "" ? null : Number(value) || 0;
 }
 
 async function materializeScriptOptimizations({ strategy = {}, audioLibrary, planId, targetAudioDir }) {
@@ -1208,10 +1506,21 @@ export function decideStrategyRoute({
     };
   }
 
+  const selectedDataStrategy = overview.settings?.dataStrategy;
+  const legacyFullPrivateData = !selectedDataStrategy;
+  const useOfficialData = selectedDataStrategy === "official_api" || legacyFullPrivateData;
   const summary = overview.privateAnalytics?.summary || {};
-  const detailedVideoCount = Math.max(0, Number(summary.detailedVideoCount) || 0);
-  const reasons = deepseekAvailable ? ["full_private_dataset_analysis"] : [];
-  if (!detailedVideoCount) reasons.push("private_dataset_empty");
+  const detailedVideoCount = useOfficialData
+    ? Math.max(0, Number(summary.detailedVideoCount) || 0)
+    : Math.max(0, Number(overview.dataStatus?.videoCount) || 0);
+  const reasons = deepseekAvailable
+    ? [legacyFullPrivateData
+      ? "full_private_dataset_analysis"
+      : useOfficialData
+        ? "official_api_dataset_analysis"
+        : "third_party_dataset_analysis"]
+    : [];
+  if (!detailedVideoCount) reasons.push(useOfficialData ? "official_dataset_empty" : "third_party_dataset_empty");
   if (!deepseekAvailable && solAvailable) reasons.push("deepseek_unavailable");
   const primaryProvider = deepseekAvailable ? "deepseek" : solAvailable ? "codex" : "";
   const escalateToSol = primaryProvider === "deepseek" && solAvailable;
@@ -1230,6 +1539,7 @@ export function decideStrategyRoute({
     solCalled: primaryProvider === "codex",
     escalateToSol,
     reasons,
+    dataStrategy: useOfficialData ? "official_api" : "third_party",
     detailedVideoCount
   };
 }
@@ -1399,6 +1709,7 @@ function normalizeSettings(value = {}) {
     enabled,
     autoCreateTasks: enabled && value.autoCreateTasks === true,
     useCodex: ["hybrid", "codex"].includes(strategyProvider),
+    dataStrategy: normalizeDataStrategy(value.dataStrategy),
     strategyProvider,
     strategyReasoning: value.strategyReasoning === "disabled" ? "disabled" : "enabled",
     profileId: String(value.profileId || DEFAULT_SETTINGS.profileId),
@@ -1429,6 +1740,10 @@ function normalizeSettings(value = {}) {
     backgroundMusicDir: String(value.backgroundMusicDir || "").trim(),
     videoDesc: sanitizeAiText(value.videoDesc || DEFAULT_SETTINGS.videoDesc, 500)
   };
+}
+
+function normalizeDataStrategy(value) {
+  return value === "official_api" ? "official_api" : "third_party";
 }
 
 function startCycle(settings, timestamp) {

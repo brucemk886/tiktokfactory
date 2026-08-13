@@ -1,8 +1,7 @@
 export const CONTENT_DIAGNOSIS_RULES_VERSION = "novel-content-v1";
 
-const DAY_MS = 86_400_000;
-const MIN_VIEWS = 200;
-const MIN_AGE_MS = DAY_MS;
+const MATURITY_REFERENCE_VIEWS = 200;
+const MATURITY_REFERENCE_HOURS = 24;
 
 export function buildContentRuleDiagnostics({
   privateAnalytics = {},
@@ -16,7 +15,7 @@ export function buildContentRuleDiagnostics({
 
   for (const account of privateAnalytics.accounts || []) {
     const videos = Array.isArray(account?.videos) ? account.videos : [];
-    const baselines = buildBaselines(videos, generatedAt);
+    const baselines = buildBaselines(videos);
     for (const video of videos) {
       const local = localByVideoId.get(clean(video.videoId || video.id)) || null;
       const script = resolveScript(local, scripts);
@@ -39,8 +38,11 @@ export function buildContentRuleDiagnostics({
     version: CONTENT_DIAGNOSIS_RULES_VERSION,
     generatedAt,
     thresholds: {
-      minimumViews: MIN_VIEWS,
-      minimumPublishedHours: 24,
+      sampleFilteringEnabled: false,
+      minimumViews: 0,
+      minimumPublishedHours: 0,
+      maturityReferenceViews: MATURITY_REFERENCE_VIEWS,
+      maturityReferencePublishedHours: MATURITY_REFERENCE_HOURS,
       openingLossPoints: 0.30,
       retention3BelowBaselinePoints: 0.15,
       retention3To10LossPoints: 0.20,
@@ -63,9 +65,13 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
   const duration = number(video.duration);
   const createdAtMs = normalizeTimestamp(video.createdAt);
   const ageHours = createdAtMs ? Math.max(0, (generatedAt - createdAtMs) / 3_600_000) : null;
-  const mature = ageHours === null || ageHours >= 24;
-  const enoughViews = views >= MIN_VIEWS;
-  const sampleStatus = mature && enoughViews ? "eligible" : "insufficient";
+  const mature = ageHours === null || ageHours >= MATURITY_REFERENCE_HOURS;
+  const enoughViews = views >= MATURITY_REFERENCE_VIEWS;
+  const sampleStatus = "eligible";
+  const sampleMaturity = mature && enoughViews ? "mature" : "early";
+  const sampleWarnings = [];
+  if (!mature) sampleWarnings.push("published_under_24h");
+  if (!enoughViews) sampleWarnings.push("views_under_200");
   const retentionAt3 = optionalRatio(video.retentionAt3);
   const retentionAt10 = optionalRatio(video.retentionAt10);
   const retentionStart = firstCurveValue(video.retentionCurve);
@@ -77,9 +83,7 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
   const largestDropSecond = Math.max(0, number(video.largestRetentionDropSecond));
   const rules = [];
 
-  if (!mature) rules.push(rule("sample_under_24h", "数据不足", "视频发布未满24小时，暂不自动改文。"));
-  if (!enoughViews) rules.push(rule("sample_under_200_views", "数据不足", "播放不足200，暂不根据单条样本改文。"));
-  if (sampleStatus === "eligible") {
+  {
     if (openingLoss !== null && openingLoss >= 0.30) {
       rules.push(rule("opening_loss_over_30pp", "开头问题", "前3秒流失超过30个百分点，重写第一句话并立即交代人物、冲突和悬念。"));
     }
@@ -104,7 +108,9 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
   const retentionStrong = isAtLeast(retentionAt3, baseline.retentionAt3)
     && isAtLeast(averageWatchRatio, baseline.averageWatchRatio);
   const viewsStrong = baseline.views === null ? views >= 1_000 : views >= baseline.views;
-  const viewsWeak = baseline.views === null ? views < MIN_VIEWS : views < Math.max(MIN_VIEWS, baseline.views * 0.6);
+  const viewsWeak = baseline.views === null
+    ? views < MATURITY_REFERENCE_VIEWS
+    : views < Math.max(MATURITY_REFERENCE_VIEWS, baseline.views * 0.6);
   const contentWeak = rules.some((item) => [
     "opening_loss_over_30pp",
     "retention3_below_peer_median",
@@ -119,10 +125,7 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
 
   let decision = "observe";
   let decisionReason = "当前证据不足以自动修改，继续积累样本。";
-  if (sampleStatus === "insufficient") {
-    decision = "observe";
-    decisionReason = "视频未满24小时或播放不足200。";
-  } else if (repeatedWeak) {
+  if (repeatedWeak) {
     decision = "stop_use";
     decisionReason = "同一文案已至少测试3次且持续低播放，并有明确内容流失证据。";
   } else if (contentWeak) {
@@ -149,6 +152,8 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
     views,
     ageHours: ageHours === null ? null : round(ageHours),
     sampleStatus,
+    sampleMaturity,
+    sampleWarnings,
     metrics: {
       retentionAt3,
       retentionAt5: optionalRatio(video.retentionAt5),
@@ -189,11 +194,9 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
   };
 }
 
-function buildBaselines(videos, generatedAt) {
+function buildBaselines(videos) {
   const buckets = new Map();
   for (const video of videos || []) {
-    const createdAtMs = normalizeTimestamp(video.createdAt);
-    if (number(video.views) < MIN_VIEWS || (createdAtMs && generatedAt - createdAtMs < MIN_AGE_MS)) continue;
     const key = durationBucket(video.duration);
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(video);

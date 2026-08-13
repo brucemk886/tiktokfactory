@@ -28,6 +28,8 @@ Updated: 2026-08-12
 
 - Official API result ingestion is a separate daily Local Factory job and does not change the legacy third-party analytics schedule. It runs at 08:30 Asia/Shanghai by default, queries only records whose planned publish date is before the current Beijing calendar date, groups requests by Signal Desk batch ID, and writes final status, TikTok video ID, actual publish time and stored video details back to the local publish record. Future-dated tasks are not queried early; missing details retry on later daily runs and unresolved records require review after seven days. Signal Desk bridge calls are serialized with a configurable 650 ms interval so larger account sets do not burst the bridge rate limit.
 - Official TikTok long-term analytics history uses indexed SQLite at `D:/localcodex/work/official-tiktok-history/official-history.sqlite`. Account/day and video/day snapshots are stored as separate rows, while legacy daily JSON files are imported once and retained as backups.
+- The local authorized-account detail now mirrors the hosted account view: profile totals, gender, age, country/region, city, audience activity, a direct all-videos entry, and daily account-play history.
+- The local account-video list now shows the hosted video fields (cover, caption, ID, publish time, duration, engagement, watch-time, completion, and reach). Each row opens a full retention detail view with traffic source, audience distributions, second-by-second retention, and daily play-history snapshots.
 
 - `AGENTS.md` defines shared working and handoff rules.
 - Project Hub is the shared project registry and cross-chat handoff memory.
@@ -44,5 +46,5 @@ Updated: 2026-08-12
 - Local Factory 每天北京时间 08:30 从 Signal Desk 读取全部官方授权账号与每个账号最近 100 条视频。
 - 每天的账号、视频和完整接口字段写入 `workDir/official-tiktok-history/YYYY-MM-DD.json`；当前 `workDir` 为 `D:/localcodex/work`，因此长期数据不占用 C 盘。
 - 同一天手动重跑覆盖当天快照，不同日期永久保留，支持账号与单视频历史变化查询。
-- 管理员侧边栏新增 `TikTok 官方数据` 页面，可查看归档路径、同步状态、账号/视频数据和历史趋势，并支持手动同步。
+- 管理员侧边栏的官方数据入口现为 `授权账号`，并拆分为账号列表、账号详情与播放历史、所选账号视频、单视频历史变化四个页面；四个页面继续读取同一份本地 SQLite 归档并支持手动同步。
 - 线上 Signal Desk 的官方日快照只保留 30 天；长期历史以本地 D 盘归档为准。
