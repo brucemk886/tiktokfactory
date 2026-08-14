@@ -27,6 +27,11 @@
 .audio-card-head h2 { margin: 0 0 6px; font-size: 18px; }
 .audio-card-head p { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.55; }
 .audio-card audio { width: 100%; }
+.retune-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.retune-row label { display: flex; align-items: center; gap: 8px; color: var(--lf-text, #1d1a14); font-size: 12px; font-weight: 800; }
+.retune-row em { min-width: 42px; color: #5c6a14; font-style: normal; }
+.retune-row input[type="range"] { width: 160px; accent-color: #5c6a14; }
+.retune-row small { width: 100%; color: var(--lf-muted, #6d6758); font-size: 11px; font-weight: 600; }
 .metric-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .metric { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #fff; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
 .metric b { font-size: 16px; }

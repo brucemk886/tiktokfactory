@@ -172,6 +172,7 @@ body.tasks-page {
 .tasks-page .grid { display: grid; gap: 12px; }
 .source-directory-stack { display: grid; gap: 14px; }
 .controls-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.shared-library-panel .controls-grid:has(#sharedAudioSource[hidden]) { grid-template-columns: repeat(2, minmax(0,1fr)); }
 .publish-grid { grid-template-columns: 1.25fr 1fr 1fr 1fr; }
 .task-name-field { margin-bottom: 14px; }
 .novel-audio-picker {
@@ -242,6 +243,13 @@ body.tasks-page {
 .advanced-actions span { color: var(--task-muted); font-size: 10px; line-height: 1.5; }
 .advanced-actions .quiet-button { flex: 0 0 auto; }
 .advanced-grid { padding: 14px; border-top: 1px solid var(--task-line-soft); }
+.rules-actions {
+  margin-top: 16px; padding-top: 14px; display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; border-top: 1px solid var(--task-line-soft);
+}
+.rules-actions > span { min-width: 0; color: var(--task-muted); font-size: 10px; line-height: 1.5; }
+.rules-action-buttons { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.rules-action-buttons .primary-action { min-height: 36px; }
 
 .publish-switch-row { min-height: 42px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--task-line-soft); border-radius: 6px; background: var(--lf-surface); }
 .publish-provider-field { max-width: 360px; margin-bottom: 12px; }
@@ -313,6 +321,43 @@ html:not([data-role="admin"]) [data-admin-action] { display: none !important; }
 .manual-item small { display: block; margin-top: 3px; color: var(--task-muted); }
 .manual-item button { min-height: 30px; flex: 0 0 auto; border: 1px solid #725436; border-radius: 5px; color: var(--lf-text); background: var(--lf-surface); font-size: 10px; cursor: pointer; }
 .task-error { margin-top: 9px; color: var(--task-red); font-size: 10px; overflow-wrap: anywhere; }
+.task-previews { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--task-line-soft); }
+.task-previews > strong { display: block; margin-bottom: 8px; color: var(--lf-text); font-size: 10px; }
+.task-preview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; max-height: 280px; overflow: auto; }
+.task-preview-card {
+  min-width: 0; padding: 0; border: 1px solid var(--task-line-soft); border-radius: 6px;
+  color: var(--lf-text); background: #111417; cursor: pointer; text-align: left; overflow: hidden;
+}
+.task-preview-card:hover { border-color: #6d7a3a; }
+.task-preview-card.is-gone { cursor: default; opacity: .55; }
+.task-preview-thumb {
+  aspect-ratio: 9 / 16; display: grid; place-items: center; background:
+    linear-gradient(180deg, #1b2026 0%, #0d1013 100%);
+}
+.task-preview-thumb i {
+  min-width: 28px; min-height: 28px; padding: 0 7px; display: inline-grid; place-items: center;
+  border-radius: 999px; color: #111; background: #d9f26a; font-size: 9px; font-style: normal; font-weight: 800;
+}
+.task-preview-card > span:last-child {
+  display: block; padding: 6px 7px 7px; color: #d7dde3; font-size: 9px; line-height: 1.35;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-preview-card small { display: block; margin-top: 2px; color: #8b949c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-preview-overlay {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  padding: 24px; background: rgba(8, 10, 12, 0.72);
+}
+.video-preview-overlay[hidden] { display: none; }
+.video-preview-sheet {
+  width: min(420px, 100%); padding: 12px; display: grid; gap: 10px;
+  border: 1px solid #2a3138; border-radius: 10px; background: #12161a;
+}
+.video-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.video-preview-head strong { min-width: 0; color: #f3f0e8; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-preview-sheet video {
+  width: 100%; max-height: min(78vh, 720px); aspect-ratio: 9 / 16; object-fit: contain;
+  border-radius: 6px; background: #000;
+}
 
 .empty-state { min-height: 230px; display: grid; place-content: center; gap: 6px; text-align: center; color: var(--task-muted); }
 .empty-state strong { color: var(--lf-text); font-size: 13px; }

@@ -21,7 +21,7 @@ export function resolveOpeningHookTitle({
   const audioItems = readAudioIndex(workDir);
   const audio = matchAudioRecord(audioItems, audioPath, workDir);
   const script = findScriptForAudio(store, audio);
-  return wrapHookTitle(script?.openingTitle || firstHookLine(script?.text) || fallbackTitle);
+  return sanitizeDrawtext(script?.openingTitle || firstHookLine(script?.text) || fallbackTitle).slice(0, 80);
 }
 
 export function buildOpeningTitleDrawtext({
@@ -29,30 +29,36 @@ export function buildOpeningTitleDrawtext({
   fontFile,
   textFile,
   durationSeconds = 3,
-  fontSize = 72
+  fontSize = 72,
+  width = 1080
 } = {}) {
-  const text = wrapHookTitle(title);
-  if (!text || !textFile) return "";
-  fs.mkdirSync(path.dirname(textFile), { recursive: true });
-  fs.writeFileSync(textFile, text, "utf8");
+  const fitted = fitOpeningTitle(title, { width, fontSize });
+  const lines = fitted.text.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  writeDrawtextFile(textFile, lines.join("\n"));
   const font = filterPath(fontFile || "C:/Windows/Fonts/msyhbd.ttc");
-  const end = Math.max(1, Math.min(5, Number(durationSeconds) || 3));
-  return [
+  const end = Math.max(1.2, Math.min(6, Number(durationSeconds) || 3));
+  const lineHeight = Math.round(fitted.fontSize * 1.38);
+  const offset = Math.round((lines.length - 1) * lineHeight / 2);
+  return lines.map((line, index) => {
+    const yShift = index * lineHeight - offset;
+    const y = yShift === 0 ? "(h-text_h)/2" : `(h-text_h)/2${yShift > 0 ? `+${yShift}` : yShift}`;
+    return [
     `drawtext=fontfile='${font}'`,
-    `textfile='${filterPath(textFile)}'`,
-    "reload=0",
+    `text='${escapeDrawtext(line)}'`,
+    "expansion=none",
     "x=(w-text_w)/2",
-    "y=(h-text_h)/2",
-    `fontsize=${Math.max(42, Math.min(110, Number(fontSize) || 72))}`,
+    `y=${y}`,
+    `fontsize=${fitted.fontSize}`,
     "fontcolor=white",
-    "borderw=12",
+    "borderw=10",
     "bordercolor=black",
     "box=1",
     "boxcolor=black@0.45",
-    "boxborderw=28",
-    "line_spacing=18",
+    "boxborderw=22",
     `enable='lt(t,${end})'`
-  ].join(":");
+    ].join(":");
+  }).join(",");
 }
 
 export function resolveNovelVideoBadge({
@@ -77,24 +83,26 @@ export function resolveNovelVideoBadge({
   };
 }
 
-export function buildNovelBadgeDrawtext({ badge, fontFile, textFile, x = 48, y = 72, fontSize = 54 } = {}) {
-  const lines = Array.isArray(badge?.lines) ? badge.lines.map((line) => String(line || "").trim()).filter(Boolean) : [];
-  if (!lines.length || !textFile) return "";
-  fs.mkdirSync(path.dirname(textFile), { recursive: true });
-  fs.writeFileSync(textFile, lines.join("\n"), "utf8");
+export function buildNovelBadgeDrawtext({ badge, fontFile, textFile, x = 110, y = 168, fontSize = 54 } = {}) {
+  const lines = Array.isArray(badge?.lines) ? badge.lines.map((line) => sanitizeDrawtext(line)).filter(Boolean) : [];
+  if (!lines.length) return "";
+  writeDrawtextFile(textFile, lines.join("\n"));
   const font = filterPath(fontFile || "C:/Windows/Fonts/msyhbd.ttc");
-  return [
+  const left = Math.max(16, Number(x) || 110);
+  const top = Math.max(16, Number(y) || 168);
+  const size = Math.max(28, Math.min(96, Number(fontSize) || 54));
+  const gap = Math.round(size * 1.28);
+  return lines.map((line, index) => [
     `drawtext=fontfile='${font}'`,
-    `textfile='${filterPath(textFile)}'`,
-    "reload=0",
-    `x=${Math.max(16, Number(x) || 48)}`,
-    `y=${Math.max(16, Number(y) || 72)}`,
-    `fontsize=${Math.max(28, Math.min(96, Number(fontSize) || 54))}`,
+    `text='${escapeDrawtext(line)}'`,
+    "expansion=none",
+    `x=${left}`,
+    `y=${top + index * gap}`,
+    `fontsize=${size}`,
     "fontcolor=white",
     "borderw=8",
-    "bordercolor=black",
-    "line_spacing=10"
-  ].join(":");
+    "bordercolor=black"
+  ].join(":")).join(",");
 }
 
 function findScriptForAudio(store, audio) {
@@ -111,23 +119,117 @@ function findNovelForAudio(store, audio) {
   return findNovelById(store, script?.novelId || audio?.source?.novelId);
 }
 
-export function wrapHookTitle(value, maxLine = 28) {
-  const text = String(value || "").replace(/\s+/g, " ").trim().slice(0, 80);
-  if (!text) return "";
-  if (text.length <= maxLine) return text;
-  const words = text.split(" ");
+export function buildSpokenNarration(openingTitle, script) {
+  const body = String(script || "").replace(/\s+/g, " ").trim();
+  const title = String(openingTitle || "").replace(/\s+/g, " ").trim();
+  if (!title) return body;
+  if (body.toLowerCase().startsWith(title.toLowerCase())) return body;
+  return `${title} ${body}`;
+}
+
+export function resolveOpeningTitleDuration(title, captions, fallbackSeconds = 3) {
+  const words = tokenizeTitle(title);
+  const fallback = clampTitleSeconds(fallbackSeconds, 3);
+  if (!words.length) return fallback;
+  const captionWords = Array.isArray(captions?.words) ? captions.words : [];
+  let matched = 0;
+  let end = 0;
+  for (const word of captionWords) {
+    const token = tokenizeTitle(word.text)[0];
+    if (!token) continue;
+    if (tokensMatch(token, words[matched])) {
+      matched += 1;
+      end = Number(word.end) || end;
+      if (matched >= words.length) return clampTitleSeconds(end + 0.12, fallback);
+      continue;
+    }
+    if (matched > 0) break;
+  }
+  return fallback;
+}
+
+export function hideCaptionsUntil(captions, untilSeconds) {
+  const until = Number(untilSeconds);
+  if (!captions || !(until > 0)) return captions;
+  const clip = (item) => {
+    const start = Number(item?.start);
+    const end = Number(item?.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= until) return null;
+    if (start >= until) return item;
+    return { ...item, start: until };
+  };
+  return {
+    ...captions,
+    cues: Array.isArray(captions.cues) ? captions.cues.map(clip).filter(Boolean) : captions.cues,
+    words: Array.isArray(captions.words) ? captions.words.map(clip).filter(Boolean) : captions.words
+  };
+}
+
+function tokenizeTitle(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ").trim().split(/\s+/).filter(Boolean);
+}
+
+function tokensMatch(left, right) {
+  return left === right || left.startsWith(right) || right.startsWith(left);
+}
+
+function clampTitleSeconds(value, fallback = 3) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(1.2, Math.min(6, number));
+}
+
+export function estimateDrawtextWidth(text, fontSize) {
+  const size = Math.max(1, Number(fontSize) || 72);
+  let width = 0;
+  for (const char of String(text || "")) {
+    if (char === "\n") continue;
+    if (char === " ") width += size * 0.34;
+    else if (/[\u4e00-\u9fff]/.test(char)) width += size * 1.05;
+    else if (/[A-ZMW]/.test(char)) width += size * 0.78;
+    else width += size * 0.66;
+  }
+  return width;
+}
+
+export function wrapTitleToWidth(title, maxWidth, fontSize, maxLines = 3) {
+  const words = sanitizeDrawtext(title).slice(0, 80).split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  const limit = Math.max(120, Number(maxWidth) || 0);
+  const size = Math.max(1, Number(fontSize) || 72);
   const lines = [];
   let current = "";
-  for (const word of words) {
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
     const next = current ? `${current} ${word}` : word;
-    if (next.length > maxLine && current) {
+    if (current && estimateDrawtextWidth(next, size) > limit) {
       lines.push(current);
       current = word;
+      if (lines.length >= maxLines - 1) {
+        current = [word, ...words.slice(index + 1)].join(" ");
+        break;
+      }
     } else current = next;
-    if (lines.length === 2) break;
   }
-  if (current && lines.length < 2) lines.push(current);
-  return lines.join("\n");
+  if (current) lines.push(current);
+  return lines.slice(0, maxLines).join("\n");
+}
+
+export function fitOpeningTitle(title, { width = 1080, fontSize = 72 } = {}) {
+  const maxWidth = Math.max(240, Math.round((Number(width) || 1080) * 0.72));
+  let size = Math.max(36, Math.min(96, Number(fontSize) || 72));
+  let text = wrapTitleToWidth(title, maxWidth, size);
+  while (size > 36 && text.split("\n").some((line) => estimateDrawtextWidth(line, size) > maxWidth)) {
+    size -= 4;
+    text = wrapTitleToWidth(title, maxWidth, size);
+  }
+  return { text, fontSize: size };
+}
+
+export function wrapHookTitle(value, maxLine = 22) {
+  const text = sanitizeDrawtext(value).slice(0, 80);
+  if (!text) return "";
+  return wrapTitleToWidth(text, Math.max(8, Number(maxLine) || 22) * 16, 28);
 }
 
 function firstHookLine(value) {
@@ -186,6 +288,31 @@ function safeResolve(value) {
   } catch {
     return "";
   }
+}
+
+function writeDrawtextFile(textFile, text) {
+  if (!textFile) return;
+  fs.mkdirSync(path.dirname(textFile), { recursive: true });
+  fs.writeFileSync(textFile, sanitizeDrawtext(text), "utf8");
+}
+
+function sanitizeDrawtext(value) {
+  return String(value || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n+$/g, "")
+    .trim();
+}
+
+function escapeDrawtext(value) {
+  return sanitizeDrawtext(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\u2019")
+    .replace(/:/g, "\\:")
+    .replace(/\n/g, "\\n");
 }
 
 function filterPath(value) {

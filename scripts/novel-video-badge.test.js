@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, displayNovelPlatform, resolveNovelVideoBadge, resolveOpeningHookTitle } from "./novel-video-badge.js";
+import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, displayNovelPlatform, fitOpeningTitle, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
 test("formats NovelMaster as two words for the burned-in badge", () => {
   assert.equal(displayNovelPlatform("NovelMaster"), "Novel Master");
@@ -60,6 +60,13 @@ test("writes a two-line ffmpeg drawtext filter for the top-left badge", () => {
     textFile
   });
   assert.match(filter, /drawtext=/);
+  assert.match(filter, /text='454311'/);
+  assert.match(filter, /text='Novel Master'/);
+  assert.match(filter, /y=168/);
+  assert.match(filter, /y=237/);
+  assert.doesNotMatch(filter, /text='454311\\nNovel Master'/);
+  assert.match(filter, /expansion=none/);
+  assert.doesNotMatch(filter, /textfile=/);
   assert.match(filter, /fontcolor=white/);
   assert.match(filter, /bordercolor=black/);
   assert.equal(fs.readFileSync(textFile, "utf8"), "454311\nNovel Master");
@@ -103,11 +110,62 @@ test("writes a centered 3-second ffmpeg drawtext filter for the opening title", 
     textFile
   });
   assert.match(filter, /drawtext=/);
+  assert.match(filter, /text='She married my'/);
+  assert.match(filter, /text='uncle'/);
   assert.match(filter, /x=\(w-text_w\)\/2/);
   assert.match(filter, /y=\(h-text_h\)\/2/);
   assert.match(filter, /enable='lt\(t,3\)'/);
   assert.match(filter, /box=1/);
-  assert.equal(fs.readFileSync(textFile, "utf8"), "She married my uncle");
+  assert.doesNotMatch(filter, /textfile=/);
+  assert.equal(fs.readFileSync(textFile, "utf8"), "She married my\nuncle");
   assert.equal(buildOpeningTitleDrawtext({ title: "", textFile }), "");
   fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test("wraps a long opening title to stay inside 80 percent of the frame", () => {
+  const fitted = fitOpeningTitle("She married my uncle after the church found the hidden letter in the pew", { width: 1080, fontSize: 72 });
+  assert.ok(fitted.text.includes("\n"));
+  assert.ok(fitted.text.split("\n").length <= 3);
+  assert.ok(fitted.fontSize <= 72);
+  const filter = buildOpeningTitleDrawtext({
+    title: "She married my uncle after the church found the hidden letter in the pew",
+    width: 1080,
+    fontFile: "C:/Windows/Fonts/msyhbd.ttc"
+  });
+  assert.doesNotMatch(filter, /text='[^']*\\n[^']*'/);
+  assert.match(filter, /drawtext=.*drawtext=/);
+});
+
+test("spoken narration prepends the hook title unless the script already starts with it", () => {
+  assert.equal(
+    buildSpokenNarration("She married my uncle", "The church went silent when I said his name."),
+    "She married my uncle The church went silent when I said his name."
+  );
+  assert.equal(
+    buildSpokenNarration("She married my uncle", "She married my uncle after I found the letter."),
+    "She married my uncle after I found the letter."
+  );
+  assert.equal(buildSpokenNarration("", "Just the body."), "Just the body.");
+});
+
+test("opening title duration follows spoken title words and hides overlapping captions", () => {
+  const captions = {
+    words: [
+      { text: "She", start: 0, end: 0.3 },
+      { text: "married", start: 0.3, end: 0.7 },
+      { text: "my", start: 0.7, end: 0.9 },
+      { text: "uncle", start: 0.9, end: 1.4 },
+      { text: "The", start: 1.8, end: 2.1 }
+    ],
+    cues: [
+      { text: "She married my uncle", start: 0, end: 1.4 },
+      { text: "The church went silent", start: 1.8, end: 3.6 }
+    ]
+  };
+  const until = resolveOpeningTitleDuration("She married my uncle", captions, 3);
+  assert.ok(until >= 1.4 && until <= 1.6);
+  const hidden = hideCaptionsUntil(captions, until);
+  assert.equal(hidden.cues.length, 1);
+  assert.equal(hidden.cues[0].text, "The church went silent");
+  assert.equal(hidden.words[0].text, "The");
 });

@@ -72,6 +72,7 @@ function renderNovel(novel) {
       input.closest(".audio-card")?.classList.toggle("is-off", !input.checked);
     });
   });
+  bindRetuneControls(elements.audioList);
 }
 
 async function saveMixAudios() {
@@ -176,7 +177,14 @@ function audioCard(script) {
           <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}">改写此版本</a>
         </div>
       </div>
-      ${audioId ? `<audio controls preload="none" src="/api/audio-library/${encodeURIComponent(audioId)}/file"></audio>` : "<p>音频文件缺失</p>"}
+      ${audioId ? `<audio controls preload="none" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>
+      <div class="retune-row">
+        <label>已生成变速 <em data-retune-label>${formatSpeed(audio.playbackSpeed)}</em>
+          <input type="range" min="0.8" max="1.4" step="0.05" value="${escapeHtml(String(currentSpeed(audio.playbackSpeed)))}" data-retune-range />
+        </label>
+        <button type="button" class="quiet-action" data-retune-id="${escapeHtml(audioId)}">应用变速</button>
+        <small>按原始音频变速，不会越调越快。太慢可拉到 1.10×–1.25×。</small>
+      </div>` : "<p>音频文件缺失</p>"}
       <div class="metric-row">
         ${metric("播放", formatNumber(performance.totalViews))}
         ${metric("视频", formatNumber(performance.videoCount))}
@@ -255,3 +263,46 @@ function formatSeconds(value) {
 
 function formatNumber(value) { return new Intl.NumberFormat("zh-CN").format(Number(value) || 0); }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
+
+function currentSpeed(value) {
+  const speed = Number(value);
+  return Number.isFinite(speed) && speed > 0 ? speed : 1;
+}
+
+function formatSpeed(value) {
+  return `${currentSpeed(value).toFixed(2)}×`;
+}
+
+function bindRetuneControls(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-retune-range]").forEach((input) => {
+    const label = input.closest(".retune-row")?.querySelector("[data-retune-label]");
+    input.addEventListener("input", () => {
+      if (label) label.textContent = formatSpeed(input.value);
+    });
+  });
+  root.querySelectorAll("[data-retune-id]").forEach((button) => {
+    button.addEventListener("click", () => retuneAudio(button));
+  });
+}
+
+async function retuneAudio(button) {
+  const row = button.closest(".retune-row");
+  const audioId = button.dataset.retuneId;
+  const speed = Number(row?.querySelector("[data-retune-range]")?.value || 1);
+  if (!audioId) return;
+  button.disabled = true;
+  button.textContent = "变速中...";
+  try {
+    await api(`/api/audio-library/${encodeURIComponent(audioId)}/retune`, {
+      method: "POST",
+      body: JSON.stringify({ speed })
+    });
+    await loadPage();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "应用变速";
+    elements.listStatus.textContent = error.message || "音频变速失败。";
+    elements.listStatus.className = "list-status is-error";
+  }
+}

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { createAudioLibraryService } from "./audio-library.js";
+import { createAudioLibraryService, tightenSpeechAudio } from "./audio-library.js";
 
 test("audio library generates once and reuses the same ElevenLabs result", async (context) => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-library-"));
@@ -158,4 +159,86 @@ test("script generation sends ElevenLabs speed and keeps default-speed cache", a
   assert.equal(bodies[0].voice_settings.speed, 1.1);
   assert.equal(bodies[1].voice_settings.speed, 1.2);
   assert.equal(first.speechSpeed, 1.1);
+});
+
+test("script generation speaks the opening title before the body", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-title-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const bodies = [];
+  const service = createAudioLibraryService({
+    root: "C:/test-project",
+    workDir,
+    readConfig: () => ({ elevenLabsApiKey: "secret-key", elevenLabsVoiceId: "voice-1" }),
+    fetchImpl: async (_url, options = {}) => {
+      bodies.push(JSON.parse(options.body || "{}"));
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.alloc(2048, 1) };
+    }
+  });
+  const script = "The church went silent when I said his name out loud and asked why the bride was wearing my mother's ring.";
+  const first = await service.generateFromScript({
+    title: "Opening",
+    script,
+    openingTitle: "She married my uncle"
+  });
+  const again = await service.generateFromScript({
+    title: "Opening",
+    script,
+    openingTitle: "She married my uncle"
+  });
+  const withoutTitle = await service.generateFromScript({ title: "Opening", script });
+  assert.equal(first.cacheHit, false);
+  assert.equal(again.cacheHit, true);
+  assert.equal(withoutTitle.cacheHit, false);
+  assert.equal(bodies[0].text, "She married my uncle The church went silent when I said his name out loud and asked why the bride was wearing my mother's ring.");
+  assert.equal(bodies[1].text, script);
+  assert.match(first.script, /^She married my uncle /);
+});
+
+test("retuneSpeed changes duration from the original file", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-retune-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const filesDir = path.join(workDir, "audio-library", "files");
+  fs.mkdirSync(filesDir, { recursive: true });
+  const fileName = "script-retune-demo.mp3";
+  const audioPath = path.join(filesDir, fileName);
+  const made = spawnSync("ffmpeg", ["-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "2", "-q:a", "9", audioPath], { encoding: "utf8", windowsHide: true });
+  assert.equal(made.status, 0, made.stderr || "ffmpeg 无法生成测试音频");
+  fs.writeFileSync(path.join(workDir, "audio-library", "index.json"), JSON.stringify([{
+    id: "script-retune-demo",
+    title: "Retune",
+    fileName,
+    duration: 2,
+    size: fs.statSync(audioPath).size,
+    script: "The church went silent when I said his name out loud."
+  }]));
+  const service = createAudioLibraryService({
+    root: "C:/test-project",
+    workDir,
+    readConfig: () => ({ elevenLabsApiKey: "secret-key", elevenLabsVoiceId: "voice-1" })
+  });
+  const faster = service.retuneSpeed({ id: "script-retune-demo", speed: 1.25 });
+  const again = service.retuneSpeed({ id: "script-retune-demo", speed: 1.25 });
+  assert.ok(faster.duration > 0 && faster.duration < 1.85);
+  assert.equal(faster.playbackSpeed, 1.25);
+  assert.ok(Math.abs(again.duration - faster.duration) < 0.15);
+  assert.ok(fs.existsSync(path.join(filesDir, "script-retune-demo.source.mp3")));
+});
+
+test("tightenSpeechAudio shortens a long pause between two spoken parts", (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-tighten-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const source = path.join(workDir, "gap.mp3");
+  const made = spawnSync("ffmpeg", [
+    "-y", "-f", "lavfi", "-t", "0.35", "-i", "sine=frequency=600:sample_rate=44100",
+    "-f", "lavfi", "-t", "0.9", "-i", "anullsrc=r=44100:cl=mono",
+    "-f", "lavfi", "-t", "0.35", "-i", "sine=frequency=600:sample_rate=44100",
+    "-filter_complex", "[0:a][1:a][2:a]concat=n=3:v=0:a=1",
+    source
+  ], { encoding: "utf8", windowsHide: true });
+  assert.equal(made.status, 0, made.stderr || "ffmpeg 无法生成带停顿的测试音频");
+  const before = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", source], { encoding: "utf8", windowsHide: true }).stdout);
+  assert.ok(tightenSpeechAudio(source, source));
+  const after = Number(spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", source], { encoding: "utf8", windowsHide: true }).stdout);
+  assert.ok(before > 1.4);
+  assert.ok(after > 0.5 && after < before - 0.35);
 });

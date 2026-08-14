@@ -2,17 +2,26 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { buildSpokenNarration } from "./novel-video-badge.js";
 
 export const NOVEL_TTS_MODEL_ID = "eleven_multilingual_v2";
 export const NOVEL_TTS_MODEL_NAME = "Eleven Multilingual v2";
 export const DEFAULT_SPEECH_SPEED = 1;
 export const MIN_SPEECH_SPEED = 0.7;
 export const MAX_SPEECH_SPEED = 1.2;
+export const MIN_RETUNE_SPEED = 0.8;
+export const MAX_RETUNE_SPEED = 1.4;
 
 export function normalizeSpeechSpeed(value) {
   const speed = Number(value);
   if (!Number.isFinite(speed)) return DEFAULT_SPEECH_SPEED;
   return Math.max(MIN_SPEECH_SPEED, Math.min(MAX_SPEECH_SPEED, Math.round(speed * 20) / 20));
+}
+
+export function normalizeRetuneSpeed(value) {
+  const speed = Number(value);
+  if (!Number.isFinite(speed)) return DEFAULT_SPEECH_SPEED;
+  return Math.max(MIN_RETUNE_SPEED, Math.min(MAX_RETUNE_SPEED, Math.round(speed * 20) / 20));
 }
 
 export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl = globalThis.fetch, getDefaultVoiceId = null }) {
@@ -192,6 +201,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
   async function generateFromScript({
     script,
     title,
+    openingTitle = "",
     voiceId: requestedVoiceId,
     targetAudioDir = "",
     novelId = "",
@@ -209,9 +219,10 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
     if (!voiceId) throw httpError(400, "ElevenLabs Voice ID 未配置。");
 
+    const spokenScript = buildSpokenNarration(resolveScriptOpeningTitle(openingTitle, scriptId), cleanScript);
     const speed = normalizeSpeechSpeed(speechSpeed);
     const fingerprint = crypto.createHash("sha256")
-      .update([novelId, scriptId, cleanScript, voiceId, modelId, outputFormat, speed === DEFAULT_SPEECH_SPEED ? "" : String(speed)].join("\0"))
+      .update([novelId, scriptId, spokenScript, voiceId, modelId, outputFormat, speed === DEFAULT_SPEECH_SPEED ? "" : String(speed)].join("\0"))
       .digest("hex").slice(0, 16);
     const id = safeStem(`script-${scriptId || novelId || "manual"}-${fingerprint}`);
     const existing = get(id);
@@ -223,7 +234,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       id,
       source: null,
       selected,
-      script: cleanScript,
+      script: spokenScript,
       apiKey,
       voiceId,
       modelId,
@@ -241,6 +252,20 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       return await operation;
     } finally {
       inFlight.delete(id);
+    }
+  }
+
+  function resolveScriptOpeningTitle(openingTitle, scriptId) {
+    const passed = String(openingTitle || "").trim();
+    if (passed) return passed;
+    const id = String(scriptId || "").trim();
+    if (!id) return "";
+    try {
+      const store = JSON.parse(fs.readFileSync(path.join(workDir, "novel-content-library.json"), "utf8"));
+      const script = (Array.isArray(store.scripts) ? store.scripts : []).find((item) => item.id === id);
+      return String(script?.openingTitle || "").trim();
+    } catch {
+      return "";
     }
   }
 
@@ -390,6 +415,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     const tempPath = `${outputPath}.tmp`;
     fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, outputPath);
+    tightenSpeechAudio(outputPath, outputPath, configFfmpeg(readConfig(root)));
     let targetAudioPath = "";
     if (String(targetAudioDir || "").trim()) {
       const resolvedTargetDir = path.resolve(String(targetAudioDir).trim());
@@ -403,7 +429,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       fileName,
       createdAt: new Date().toISOString(),
       duration: probeDuration(outputPath, configFfprobe(readConfig(root))),
-      size: buffer.length,
+      size: fs.statSync(outputPath).size,
       scriptChars: script.length,
       script,
       modelId,
@@ -418,7 +444,50 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     return { ...record, cacheHit: false };
   }
 
-  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, generateFromScript, listVoices, getVoice, previewVoiceAudio, prepareTaskBatch };
+  function retuneSpeed({ id, speed } = {}) {
+    const item = get(id);
+    if (!item) throw httpError(404, "没有这条音频。");
+    const factor = normalizeRetuneSpeed(speed);
+    const currentPath = resolveAudioPath(item.id);
+    if (!currentPath) throw httpError(404, "音频文件不存在。");
+    const sourceName = `${item.id}.source.mp3`;
+    const sourcePath = path.join(filesDir, sourceName);
+    if (!fs.existsSync(sourcePath)) fs.copyFileSync(currentPath, sourcePath);
+    const originalDuration = Number(item.originalDuration) > 0 ? Number(item.originalDuration) : Number(item.duration) || 0;
+    const outputPath = path.join(filesDir, item.fileName);
+    const tempPath = `${outputPath}.retune.tmp.mp3`;
+    const ffmpeg = configFfmpeg(readConfig(root));
+    tightenSpeechAudio(sourcePath, sourcePath, ffmpeg);
+    const result = spawnSync(ffmpeg, [
+      "-y", "-hide_banner", "-i", sourcePath,
+      "-filter:a", `atempo=${factor.toFixed(2)}`,
+      "-vn", "-c:a", "libmp3lame", "-q:a", "4",
+      tempPath
+    ], { encoding: "utf8", windowsHide: true });
+    if (result.status !== 0 || !fs.existsSync(tempPath) || fs.statSync(tempPath).size < 1024) {
+      try { fs.rmSync(tempPath, { force: true }); } catch {}
+      throw httpError(502, `音频变速失败：${String(result.stderr || result.stdout || "").slice(0, 400) || "ffmpeg 未返回有效文件"}`);
+    }
+    fs.renameSync(tempPath, outputPath);
+    if (item.targetAudioPath && fs.existsSync(path.dirname(item.targetAudioPath))) {
+      try { fs.copyFileSync(outputPath, item.targetAudioPath); } catch {}
+    }
+    const next = {
+      ...item,
+      duration: probeDuration(outputPath, configFfprobe(readConfig(root))),
+      size: fs.statSync(outputPath).size,
+      playbackSpeed: factor,
+      originalDuration,
+      sourceFileName: sourceName,
+      retunedAt: new Date().toISOString()
+    };
+    const records = readIndex(indexPath).filter((entry) => entry.id !== item.id);
+    records.push(next);
+    writeJsonAtomic(indexPath, records);
+    return next;
+  }
+
+  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, generateFromScript, listVoices, getVoice, previewVoiceAudio, prepareTaskBatch, retuneSpeed };
 }
 
 function readIndex(indexPath) {
@@ -447,6 +516,39 @@ function safeDisplayName(value) {
 
 function configFfprobe(config) {
   return String(config.ffprobePath || "ffprobe");
+}
+
+function configFfmpeg(config) {
+  return String(config.ffmpegPath || "ffmpeg");
+}
+
+export function tightenSpeechFilter() {
+  return [
+    "silenceremove=start_periods=1:start_silence=0.06:start_threshold=-34dB:detection=peak",
+    "areverse",
+    "silenceremove=start_periods=1:start_silence=0.06:start_threshold=-34dB:detection=peak",
+    "areverse",
+    "silenceremove=window=0.02:detection=peak:stop_periods=-1:stop_duration=0.28:stop_threshold=-34dB:stop_silence=0.10"
+  ].join(",");
+}
+
+export function tightenSpeechAudio(inputPath, outputPath = inputPath, ffmpeg = "ffmpeg") {
+  const source = String(inputPath || "").trim();
+  const target = String(outputPath || inputPath).trim();
+  if (!source || !fs.existsSync(source)) return false;
+  const tempPath = `${target}.tighten.tmp.mp3`;
+  const result = spawnSync(ffmpeg, [
+    "-y", "-hide_banner", "-i", source,
+    "-filter:a", tightenSpeechFilter(),
+    "-vn", "-c:a", "libmp3lame", "-q:a", "4",
+    tempPath
+  ], { encoding: "utf8", windowsHide: true });
+  if (result.status !== 0 || !fs.existsSync(tempPath) || fs.statSync(tempPath).size < 1024) {
+    try { fs.rmSync(tempPath, { force: true }); } catch {}
+    return false;
+  }
+  fs.renameSync(tempPath, target);
+  return true;
 }
 
 function probeDuration(filePath, executable) {

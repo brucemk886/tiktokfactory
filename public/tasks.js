@@ -12,6 +12,7 @@ let officialTikTokAccounts = [];
 let novels = [];
 let currentUserRole = "member";
 let assetGroups = [];
+let sharedLibrariesConfigured = false;
 let pollTimer = null;
 let lastTaskRenderKey = "";
 let captionPresets = [];
@@ -19,7 +20,8 @@ const captionPresetStorageKey = "reddit-publish-caption-presets";
 const selectedCaptionPresetKey = "reddit-publish-caption-selected";
 applyPublishChannelChrome();
 
-$("#createTaskBtn").addEventListener("click", createTask);
+$("#createTaskBtn").addEventListener("click", () => createTask());
+$("#generateVideosBtn")?.addEventListener("click", () => createTask({ generateOnly: true }));
 $("#refreshTasksBtn").addEventListener("click", loadTasks);
 $("#refreshPhonesBtn").addEventListener("click", refreshPublishAccounts);
 $("#selectVisibleBtn").addEventListener("click", selectVisible);
@@ -27,7 +29,7 @@ $("#selectOfficialAccountsBtn")?.addEventListener("click", selectOfficialAccount
 $("#officialGroupFilter")?.addEventListener("change", filterOfficialAccounts);
 $("#officialNameFilter")?.addEventListener("input", filterOfficialAccounts);
 $("#publishProvider")?.addEventListener("change", updatePublishProviderView);
-$("#saveDedupBtn").addEventListener("click", saveDedupSettings);
+$("#saveRulesBtn")?.addEventListener("click", saveGenerationRules);
 $("#openingTitleEnabled")?.addEventListener("change", persistOpeningTitleSetting);
 $("#captionPresetSelect").addEventListener("change", selectCaptionPreset);
 $("#addCaptionPresetBtn").addEventListener("click", addCaptionPreset);
@@ -37,6 +39,9 @@ $("#assetGroupSelect").addEventListener("change", updateVideoSourceVisibility);
 $("#refreshSharedLibrariesBtn")?.addEventListener("click", loadSharedLibraries);
 $("#sharedVideoLibrary")?.addEventListener("change", applySharedLibrarySelection);
 $("#sharedAudioLibrary")?.addEventListener("change", applySharedLibrarySelection);
+$("#audioDir")?.addEventListener("change", () => {
+  if ($("#audioDir").value.trim()) clearSelectedMixNovels();
+});
 $("#sharedMusicLibrary")?.addEventListener("change", applySharedLibrarySelection);
 groupFilter.addEventListener("change", filterPhones);
 nameFilter.addEventListener("input", filterPhones);
@@ -50,6 +55,13 @@ loadSharedLibraries();
 loadNovels();
 initializePublishProvider();
 loadTasks();
+$("#videoPreviewClose")?.addEventListener("click", closeVideoPreview);
+$("#videoPreviewOverlay")?.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) closeVideoPreview();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("#videoPreviewOverlay")?.hidden) closeVideoPreview();
+});
 window.addEventListener("pagehide", stopTaskPolling);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) stopTaskPolling();
@@ -62,24 +74,27 @@ function applyIncomingAudioBatch() {
   if (!audioDir || params.get("source") !== "audio-library") return;
   const count = Math.max(1, Number(params.get("count")) || 1);
   $("#audioDir").value = audioDir;
+  clearSelectedMixNovels();
   $("#taskName").value = `音频库 Reddit 任务 ${new Date().toLocaleDateString("zh-CN")}`;
   $("#totalVideos").value = String(count);
   setCreateStatus(`已从音频素材库载入 ${count} 条音频，请继续选择素材组和发布账号。`);
   history.replaceState({}, "", location.pathname);
 }
 
-async function createTask() {
+async function createTask(options = {}) {
+  const generateOnly = options.generateOnly === true;
   const provider = getPublishProvider();
   const selectedAudios = provider === "official" ? getSelectedAudioItems() : [];
   const selected = provider === "official"
     ? Array.from($("#officialAccountList").querySelectorAll(".official-tiktok-account-check:checked"))
     : Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
-  const autoPublish = $("#autoPublish").checked;
+  const autoPublish = generateOnly ? false : $("#autoPublish").checked;
   const materialSource = $("#assetGroupSelect")?.value || "";
   const assetGroupId = materialSource === "__manual__" ? "" : materialSource;
   if (!assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
-  if (provider !== "official" && !$("#audioDir").value.trim()) return setCreateStatus("请选择音频目录。");
-  if (provider === "official" && !selectedAudios.length && !$("#audioDir").value.trim()) return setCreateStatus("请勾选至少一本有生效音频的小说，或选择音频目录。");
+  const audioDir = selectedAudios.length ? "" : $("#audioDir").value.trim();
+  if (provider !== "official" && !audioDir) return setCreateStatus("请选择音频目录。");
+  if (provider === "official" && !selectedAudios.length && !audioDir) return setCreateStatus("请勾选混剪小说，或选择音频目录，二者选一个。");
   if (provider === "official" && selectedAudios.some((item) => !item.platform || !item.promotionCode)) {
     return setCreateStatus("勾选的小说里有书还缺少平台或推广码，请先回书单补全。");
   }
@@ -99,7 +114,7 @@ async function createTask() {
     generation: {
       assetGroupId,
       videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: true,
-      audioDir: $("#audioDir").value.trim(), audioItems: selectedAudios, backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
+      audioDir, audioItems: selectedAudios, backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
       segmentMode: "fixed", segmentSeconds: number("#segmentSeconds", 5), totalVideos: number("#totalVideos", 40),
       subtitleYPercent: number("#subtitleY", 66), subtitleFontSize: number("#subtitleSize", 62), subtitleAnimationMode: $("#subtitleMode").value,
       quality: $("#quality").value, autoCaptions: $("#autoCaptions").checked, openingTitleEnabled: $("#openingTitleEnabled")?.checked === true, dedup: collectDedup(),
@@ -113,22 +128,28 @@ async function createTask() {
       scheduleAt: schedule, intervalMinutes: number("#intervalMinutes", 15), batchPublishLimit: number("#batchLimit", 300), dailyPublishLimit: number("#dailyLimit", 300)
     }
   };
-  createTaskBtn.disabled = true;
-  setCreateStatus("正在创建任务...");
+  setCreateButtonsDisabled(true);
+  setCreateStatus(generateOnly ? "正在加入生成队列..." : "正在创建任务...");
   try {
     const response = await fetch("/api/auto-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "创建任务失败。");
-    clearAccountSelection();
-    setCreateStatus(`已加入队列：${data.task.name}`);
-    createTaskBtn.disabled = false;
-    void persistOpeningTitleSetting();
+    if (!generateOnly) clearAccountSelection();
+    setCreateStatus(generateOnly
+      ? `已加入生成队列：${data.task.name}。成片可在右侧预览，不会自动发布。`
+      : `已加入队列：${data.task.name}`);
+    void persistGenerationRules({ quiet: true });
     void loadTasks();
   } catch (error) {
     setCreateStatus(error.message || "创建任务失败。");
   } finally {
-    createTaskBtn.disabled = false;
+    setCreateButtonsDisabled(false);
   }
+}
+
+function setCreateButtonsDisabled(disabled) {
+  if (createTaskBtn) createTaskBtn.disabled = disabled;
+  if ($("#generateVideosBtn")) $("#generateVideosBtn").disabled = disabled;
 }
 
 async function loadTasks() {
@@ -209,10 +230,74 @@ function renderTasks(tasks) {
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
       <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>${task.publish?.provider === "official" ? "已提交中台" : "发布成功"} ${task.publishSummary?.submitted || 0}</span><span>处理中 ${task.publishSummary?.pending || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
-      ${scheduleHtml}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
+      ${scheduleHtml}${renderTaskPreviews(task)}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;
   }).join("");
   taskList.querySelectorAll("button[data-action]").forEach((button) => button.addEventListener("click", handleTaskAction));
+  taskList.querySelectorAll("[data-preview-url]").forEach((button) => {
+    button.addEventListener("click", () => openVideoPreview(button.dataset.previewUrl, button.dataset.previewTitle));
+  });
+}
+
+function previewVideoUrl(video) {
+  const fileName = String(video?.fileName || "").trim();
+  if (fileName) return `/outputs/${encodeURIComponent(fileName)}`;
+  const url = String(video?.videoUrl || "");
+  return url.startsWith("/outputs/") ? url : "";
+}
+
+function renderTaskPreviews(task) {
+  const videos = (task.generatedVideos || []).filter((item) => item.videoUrl || item.fileName);
+  if (!videos.length) return "";
+  return `<div class="task-previews">
+    <strong>混剪预览 ${videos.length} 条</strong>
+    <div class="task-preview-grid">
+      ${videos.map((video, index) => {
+        const url = previewVideoUrl(video);
+        const title = stripPreviewName(video.audioName || video.fileName || `视频 ${index + 1}`);
+        const badge = [video.novelPromotionCode, video.novelPlatform].filter(Boolean).join(" · ");
+        if (!url || video.outputDeletedAt) {
+          return `<div class="task-preview-card is-gone">
+            <span class="task-preview-thumb"><i>已清理</i></span>
+            <span>${escapeHtml(title)}${badge ? `<small>${escapeHtml(badge)}</small>` : ""}</span>
+          </div>`;
+        }
+        return `<button type="button" class="task-preview-card" data-preview-url="${escapeAttr(url)}" data-preview-title="${escapeAttr(title)}">
+          <span class="task-preview-thumb"><i>播放</i></span>
+          <span>${escapeHtml(title)}${badge ? `<small>${escapeHtml(badge)}</small>` : ""}</span>
+        </button>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+function stripPreviewName(value) {
+  return String(value || "").replace(/\.[a-z0-9]+$/i, "") || "混剪视频";
+}
+
+function openVideoPreview(url, title) {
+  const overlay = $("#videoPreviewOverlay");
+  const player = $("#videoPreviewPlayer");
+  const heading = $("#videoPreviewTitle");
+  if (!overlay || !player || !url) return;
+  if (heading) heading.textContent = title || "混剪预览";
+  if (player.src !== new URL(url, location.href).href) {
+    player.src = url;
+    player.load();
+  }
+  overlay.hidden = false;
+  player.play().catch(() => {});
+}
+
+function closeVideoPreview() {
+  const overlay = $("#videoPreviewOverlay");
+  const player = $("#videoPreviewPlayer");
+  if (player) {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+  }
+  if (overlay) overlay.hidden = true;
 }
 
 function createTaskRenderKey(tasks) {
@@ -228,6 +313,7 @@ function createTaskRenderKey(tasks) {
     expectedVideoCount: task.expectedVideoCount,
     failedVideoCount: task.failedVideoCount,
     generatedVideoCount: task.generatedVideos?.length || 0,
+    generatedVideoKeys: (task.generatedVideos || []).map((item) => item.videoUrl || item.fileName || ""),
     publishSummary: task.publishSummary,
     publishResultCount: task.publishResults?.length || 0,
     unresolvedResults: (task.publishResults || [])
@@ -325,7 +411,7 @@ function applyPublishChannelChrome() {
   const novelField = document.querySelector(".novel-select-field");
   if (novelField) novelField.hidden = !official;
   if ($("#pageLead")) $("#pageLead").textContent = official
-    ? "勾选小说一起混剪，只抽书单详情里勾过的生效音频，每条成片叠上对应书的平台和推广码。"
+    ? "勾选混剪小说，或改选音频目录，二者选一个。小说只抽书单详情里勾过的生效音频，成片叠上对应书的平台和推广码。"
     : "GeeLark 备用发布，成片不叠加平台和推广码。";
   if ($("#publishLead")) $("#publishLead").textContent = official
     ? "选择官方授权账号，设置文案与发布时间。GeeLark 发布已移到备用区。"
@@ -397,10 +483,12 @@ function updateNovelBadgeHint() {
   const selectedNovels = getSelectedNovels();
   const selected = getSelectedAudioItems();
   if (!selectedNovels.length) {
-    hint.textContent = "只勾小说。生效音频在书单详情里勾选保存，混剪只抽那些音频。";
+    hint.textContent = "勾选小说后不用再选音频目录；不勾小说就选下面的音频目录。生效音频在书单详情里勾选保存。";
+    updateAudioSourceMode();
     return;
   }
-  hint.textContent = `已选 ${selectedNovels.length} 本小说，将抽 ${selected.length} 条生效音频混剪。`;
+  hint.textContent = `已选 ${selectedNovels.length} 本小说，将抽 ${selected.length} 条生效音频。音频目录已收起。`;
+  updateAudioSourceMode();
 }
 
 function formatNovelBadge(novel) {
@@ -520,13 +608,14 @@ async function loadSharedLibraries() {
     if (!response.ok) throw new Error(data.error || "读取共享素材库失败。");
     if (!data.configured) {
       panel.hidden = true;
-      $("#directAudioSource").hidden = false;
+      sharedLibrariesConfigured = false;
       $("#directMusicSource").hidden = false;
+      updateAudioSourceMode();
       return;
     }
     const libraries = data.libraries || [];
     panel.hidden = false;
-    $("#directAudioSource").hidden = true;
+    sharedLibrariesConfigured = true;
     $("#directMusicSource").hidden = true;
     const options = libraries.map((library) => `<option value="${escapeAttr(library.path)}">${escapeHtml(library.name)}</option>`).join("");
     ["#sharedVideoLibrary", "#sharedAudioLibrary", "#sharedMusicLibrary"].forEach((selector, index) => {
@@ -537,9 +626,12 @@ async function loadSharedLibraries() {
       if (Array.from(select.options).some((option) => option.value === current)) select.value = current;
     });
     if (hint) hint.textContent = `共享目录：${data.root}，已读取 ${libraries.length} 个一级素材库。`;
+    updateAudioSourceMode();
   } catch (error) {
     panel.hidden = true;
+    sharedLibrariesConfigured = false;
     if (hint) hint.textContent = error.message || "共享素材库读取失败。";
+    updateAudioSourceMode();
   } finally {
     if (refresh) refresh.disabled = false;
   }
@@ -556,8 +648,28 @@ function applySharedLibrarySelection(event) {
       updateVideoSourceVisibility();
     }
   }
-  if (targetId === "sharedAudioLibrary") $("#audioDir").value = $("#sharedAudioLibrary")?.value || "";
+  if (targetId === "sharedAudioLibrary") {
+    $("#audioDir").value = $("#sharedAudioLibrary")?.value || "";
+    if ($("#sharedAudioLibrary")?.value) clearSelectedMixNovels();
+  }
   if (targetId === "sharedMusicLibrary") $("#musicDir").value = $("#sharedMusicLibrary")?.value || "";
+}
+
+function usingMixNovels() {
+  return publishChannel === "official" && getSelectedAudioItems().length > 0;
+}
+
+function clearSelectedMixNovels() {
+  document.querySelectorAll("#novelAudioPicker [data-novel-id]:checked").forEach((input) => { input.checked = false; });
+  updateNovelBadgeHint();
+}
+
+function updateAudioSourceMode() {
+  const useNovels = usingMixNovels();
+  const sharedAudio = $("#sharedAudioSource");
+  const directAudio = $("#directAudioSource");
+  if (directAudio) directAudio.hidden = useNovels || sharedLibrariesConfigured;
+  if (sharedAudio) sharedAudio.hidden = useNovels || !sharedLibrariesConfigured;
 }
 
 function updateVideoSourceVisibility() {}
@@ -635,7 +747,10 @@ function attachDirectoryPickers() {
     try {
       const response = await fetch("/api/select-directory", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ initialPath: input.value, title: "选择文件夹" }) });
       const data = await response.json();
-      if (data.path) input.value = data.path;
+      if (data.path) {
+        input.value = data.path;
+        if (input.id === "audioDir") clearSelectedMixNovels();
+      }
     } finally { button.disabled = false; }
   }));
 }
@@ -645,16 +760,55 @@ function collectDedup() {
   return { enabled: true, ...saved, scaleMin: number("#scaleMin", 1.03), scaleMax: number("#scaleMax", 1.08), rotateMin: number("#rotateMin", -0.8), rotateMax: number("#rotateMax", 0.8), mirrorChance: number("#mirrorChance", 30), sharpen: number("#sharpen", 0.2), speedMin: number("#speedMin", 0.96), speedMax: number("#speedMax", 1.04) };
 }
 
-async function saveDedupSettings() {
+function collectSubtitleSettings() {
+  return {
+    ...readStored("reddit-mix-subtitle-settings"),
+    yPercent: number("#subtitleY", 66),
+    fontSize: number("#subtitleSize", 62),
+    animationMode: $("#subtitleMode")?.value || "sentence",
+    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true
+  };
+}
+
+function collectGenerationSettings() {
+  return {
+    totalVideos: number("#totalVideos", 40),
+    segmentSeconds: number("#segmentSeconds", 5),
+    quality: $("#quality")?.value === "quality" ? "quality" : "fast",
+    autoCaptions: $("#autoCaptions")?.checked !== false
+  };
+}
+
+function applyGenerationSettings(settings) {
+  if (!settings || typeof settings !== "object") return;
+  setValue("#totalVideos", settings.totalVideos);
+  setValue("#segmentSeconds", settings.segmentSeconds);
+  setValue("#quality", settings.quality);
+  if ($("#autoCaptions") && typeof settings.autoCaptions === "boolean") $("#autoCaptions").checked = settings.autoCaptions;
+}
+
+function setRulesSaveStatus(message) {
+  const status = $("#rulesSaveStatus");
+  if (status) status.textContent = message;
+}
+
+async function persistGenerationRules({ quiet = false } = {}) {
+  const subtitle = collectSubtitleSettings();
+  const generation = collectGenerationSettings();
   const dedup = collectDedup();
+  localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(subtitle));
+  localStorage.setItem("reddit-mix-generation-settings", JSON.stringify(generation));
   localStorage.setItem("reddit-mix-dedup-settings", JSON.stringify(dedup));
-  const status = $("#dedupSaveStatus");
   try {
-    await saveSharedRedditSettings({ dedup });
-    if (status) status.textContent = `已统一保存 · ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+    await saveSharedRedditSettings({ subtitle, generation, dedup });
+    if (!quiet) setRulesSaveStatus(`已保存整组生成规则 · ${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`);
   } catch (error) {
-    if (status) status.textContent = `本机已保存，同步失败：${error.message || "请求失败"}`;
+    if (!quiet) setRulesSaveStatus(`本机已保存，同步失败：${error.message || "请求失败"}`);
   }
+}
+
+async function saveGenerationRules() {
+  return persistGenerationRules();
 }
 
 function loadCaptionPresets() {
@@ -752,6 +906,7 @@ async function loadSavedSettings() {
   const subtitle = readStored("reddit-mix-subtitle-settings");
   setValue("#subtitleY", subtitle.yPercent); setValue("#subtitleSize", subtitle.fontSize); setValue("#subtitleMode", subtitle.animationMode);
   if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = subtitle.openingTitleEnabled === true;
+  applyGenerationSettings(readStored("reddit-mix-generation-settings"));
   const dedup = readStored("reddit-mix-dedup-settings");
   setValue("#scaleMin", dedup.scaleMin); setValue("#scaleMax", dedup.scaleMax); setValue("#rotateMin", dedup.rotateMin); setValue("#rotateMax", dedup.rotateMax); setValue("#mirrorChance", dedup.mirrorChance); setValue("#sharpen", dedup.sharpen); setValue("#speedMin", dedup.speedMin); setValue("#speedMax", dedup.speedMax);
   try {
@@ -760,11 +915,14 @@ async function loadSavedSettings() {
     if (!response.ok) throw new Error(data.error || "读取统一配置失败。");
     if (!data.exists) return;
     const sharedSubtitle = data.settings?.subtitle || {};
+    const sharedGeneration = data.settings?.generation || {};
     const sharedDedup = data.settings?.dedup || {};
     setValue("#subtitleY", sharedSubtitle.yPercent); setValue("#subtitleSize", sharedSubtitle.fontSize); setValue("#subtitleMode", sharedSubtitle.animationMode);
     if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = sharedSubtitle.openingTitleEnabled === true;
+    applyGenerationSettings(sharedGeneration);
     setValue("#scaleMin", sharedDedup.scaleMin); setValue("#scaleMax", sharedDedup.scaleMax); setValue("#rotateMin", sharedDedup.rotateMin); setValue("#rotateMax", sharedDedup.rotateMax); setValue("#mirrorChance", sharedDedup.mirrorChance); setValue("#sharpen", sharedDedup.sharpen); setValue("#speedMin", sharedDedup.speedMin); setValue("#speedMax", sharedDedup.speedMax);
     localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(sharedSubtitle));
+    localStorage.setItem("reddit-mix-generation-settings", JSON.stringify(sharedGeneration));
     localStorage.setItem("reddit-mix-dedup-settings", JSON.stringify(sharedDedup));
   } catch (error) {
     setCreateStatus(`统一配置读取失败，当前使用本机配置：${error.message || "请求失败"}`);
@@ -772,18 +930,13 @@ async function loadSavedSettings() {
 }
 
 async function persistOpeningTitleSetting() {
-  const subtitle = {
-    ...readStored("reddit-mix-subtitle-settings"),
-    yPercent: number("#subtitleY", 66),
-    fontSize: number("#subtitleSize", 62),
-    animationMode: $("#subtitleMode")?.value || "sentence",
-    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true
-  };
+  const subtitle = collectSubtitleSettings();
   localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(subtitle));
   try {
     await saveSharedRedditSettings({ subtitle });
+    setRulesSaveStatus(`开头标题已${subtitle.openingTitleEnabled ? "开启" : "关闭"}并保存，下次打开仍用这个勾选。`);
   } catch {
-    // Keep the local checkbox even if the shared settings API is down.
+    setRulesSaveStatus("开头标题已保存在本机，统一配置同步失败。");
   }
 }
 

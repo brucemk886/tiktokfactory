@@ -51,20 +51,20 @@
           <div id="task-assets" class="config-section">
             <div class="section-heading">
               <span class="section-index">01</span>
-              <div><h2>任务与素材</h2><p>勾选要混的小说，再选视频素材和可选背景音乐。生效音频在书单详情里勾。</p></div>
+              <div><h2>任务与素材</h2><p>混剪小说和音频目录二选一。勾了小说就不用再选音频目录，生效音频在书单详情里勾。</p></div>
             </div>
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
             <div class="field novel-select-field">
               <span>混剪小说</span>
               <div id="novelAudioPicker" class="novel-audio-picker">正在读取小说书单...</div>
-              <small id="novelBadgeHint">只勾小说。生效音频在书单详情里勾选保存，混剪只抽那些音频。</small>
+              <small id="novelBadgeHint">勾选小说后不用再选音频目录；不勾小说就选下面的音频目录。生效音频在书单详情里勾选保存。</small>
             </div>
             <div class="source-directory-stack">
               <section id="sharedLibraryPanel" class="shared-library-panel" hidden>
                 <div class="shared-library-head"><div><strong>共享素材库</strong><small id="sharedLibraryHint">读取管理员分配的共享目录</small></div><button id="refreshSharedLibrariesBtn" class="quiet-button" type="button">更新素材库和音频库</button></div>
                 <div class="grid controls-grid">
                   <label class="field"><span>视频素材库</span><select id="sharedVideoLibrary"><option value="">请选择视频素材库</option></select></label>
-                  <label class="field"><span>音频库</span><select id="sharedAudioLibrary"><option value="">请选择音频库</option></select></label>
+                  <label id="sharedAudioSource" class="field"><span>音频库</span><select id="sharedAudioLibrary"><option value="">请选择音频库</option></select></label>
                   <label class="field"><span>背景音乐库 <em>可选</em></span><select id="sharedMusicLibrary"><option value="">不使用背景音乐</option></select></label>
                 </div>
               </section>
@@ -92,7 +92,7 @@
             <label class="compact-check"><input id="autoCaptions" type="checkbox" checked /><span>使用 ElevenLabs 识别字幕并复用缓存</span></label>
             <label class="compact-check"><input id="openingTitleEnabled" type="checkbox" /><span>前 3 秒在画面正中加开头标题，方便对比有无标题的流量</span></label>
             <details class="advanced-panel">
-              <summary><span>素材去重设置</span><small>默认读取上次保存的参数</small></summary>
+              <summary><span>素材去重设置</span><small>随下方「保存生成规则」一起记住</small></summary>
               <div class="grid controls-grid advanced-grid">
                 <label class="field"><span>缩放最小</span><input id="scaleMin" type="number" step="0.01" value="1.03" /></label>
                 <label class="field"><span>缩放最大</span><input id="scaleMax" type="number" step="0.01" value="1.08" /></label>
@@ -103,11 +103,14 @@
                 <label class="field"><span>变速最小</span><input id="speedMin" type="number" step="0.01" value="0.96" /></label>
                 <label class="field"><span>变速最大</span><input id="speedMax" type="number" step="0.01" value="1.04" /></label>
               </div>
-              <div class="advanced-actions">
-                <span id="dedupSaveStatus">修改后点击保存，后续任务会默认使用这组参数。</span>
-                <button id="saveDedupBtn" class="quiet-button" type="button">保存设置</button>
-              </div>
             </details>
+            <div class="rules-actions">
+              <span id="rulesSaveStatus">保存后，下次打开会带上条数、字幕、开头标题和去重参数。</span>
+              <div class="rules-action-buttons">
+                <button id="saveRulesBtn" class="quiet-button" type="button">保存生成规则</button>
+                <button id="generateVideosBtn" class="primary-action" type="button">生成视频</button>
+              </div>
+            </div>
           </div>
 
           <div id="task-publish" class="config-section publish-config">
@@ -180,6 +183,15 @@
           <div id="taskList" class="auto-task-list"><div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div></div>
         </aside>
       </main>
+    </div>
+    <div id="videoPreviewOverlay" class="video-preview-overlay" hidden>
+      <div class="video-preview-sheet">
+        <div class="video-preview-head">
+          <strong id="videoPreviewTitle">混剪预览</strong>
+          <button id="videoPreviewClose" class="quiet-button" type="button">关闭</button>
+        </div>
+        <video id="videoPreviewPlayer" controls playsinline></video>
+      </div>
     </div>
     <script src="/access.js"></script>
     <script src="/tasks.js"></script>

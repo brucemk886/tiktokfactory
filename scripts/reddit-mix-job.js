@@ -15,7 +15,7 @@ import {
   scoreClipReuse
 } from "./asset-library.js";
 import { resolveStorageDirs } from "./storage-paths.js";
-import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, resolveNovelVideoBadge, resolveOpeningHookTitle } from "./novel-video-badge.js";
+import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -356,12 +356,8 @@ function resolveMixAudios(payload) {
     if (found) fromItems.push(found);
   }
   let fromDir = [];
-  if (String(payload.audioDir || "").trim()) {
-    try {
-      fromDir = listMediaFiles(mustBeDirectory(payload.audioDir, "音频文件夹"), AUDIO_EXTENSIONS);
-    } catch (error) {
-      if (!fromItems.length) throw error;
-    }
+  if (!fromItems.length && String(payload.audioDir || "").trim()) {
+    fromDir = listMediaFiles(mustBeDirectory(payload.audioDir, "音频文件夹"), AUDIO_EXTENSIONS);
   }
   const merged = [];
   const seen = new Set();
@@ -693,17 +689,21 @@ function randomBetween(min, max) {
 function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "" }) {
   const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath, "-t", String(duration)];
   const filters = [];
+  const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
+  const visibleCaptions = openingTitle ? hideCaptionsUntil(captions, titleDuration) : captions;
   const titleFilter = buildOpeningTitleDrawtext({
     title: openingTitle,
     fontFile,
-    textFile: path.join(path.dirname(inputVideo), "opening-title.txt")
+    textFile: path.join(path.dirname(inputVideo), "opening-title.txt"),
+    durationSeconds: titleDuration || 3,
+    width
   });
   if (titleFilter) filters.push(titleFilter);
-  if (Array.isArray(captions?.cues) && captions.cues.length) {
+  if (Array.isArray(visibleCaptions?.cues) && visibleCaptions.cues.length) {
     const assPath = path.join(path.dirname(inputVideo), "captions.ass");
-    const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(captions?.words) && captions.words.length
-      ? makeWordHighlightSubtitles(captions.cues, captions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
-      : makeAssSubtitles(captions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
+    const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
+      ? makeWordHighlightSubtitles(visibleCaptions.cues, visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
+      : makeAssSubtitles(visibleCaptions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
     fs.writeFileSync(assPath, ass, "utf8");
     filters.push(`subtitles='${ffPath(assPath).replace(/'/g, "\\'")}'`);
   }

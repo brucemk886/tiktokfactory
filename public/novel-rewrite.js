@@ -181,13 +181,21 @@ function renderScripts(scripts) {
         <small>${script.parentScriptId ? "改写版本" : "原版本"} · ${formatNumber(script.performance?.totalViews || 0)} 播放</small>
         ${script.openingTitle ? `<em class="hook-title">${escapeHtml(script.openingTitle)}</em>` : ""}
         <p>${escapeHtml(excerpt(script.text, 80))}</p>
-        ${script.audio?.id ? `<audio class="variant-audio" controls preload="none" src="/api/audio-library/${encodeURIComponent(script.audio.id)}/file"></audio>` : ""}
+        ${script.audio?.id ? `<audio class="variant-audio" controls preload="none" src="/api/audio-library/${encodeURIComponent(script.audio.id)}/file?t=${Date.now()}"></audio>
+        <div class="retune-row">
+          <label>已生成变速 <em data-retune-label>${(Number(script.audio.playbackSpeed) > 0 ? Number(script.audio.playbackSpeed) : 1).toFixed(2)}×</em>
+            <input type="range" min="0.8" max="1.4" step="0.05" value="${escapeHtml(String(Number(script.audio.playbackSpeed) > 0 ? script.audio.playbackSpeed : 1))}" data-retune-range />
+          </label>
+          <button type="button" class="quiet-action" data-retune-id="${escapeHtml(script.audio.id)}">应用变速</button>
+        </div>` : ""}
       </button>`)
   ].join("");
   elements.scriptList.querySelectorAll("[data-script-id]").forEach((button) => {
     button.addEventListener("click", () => selectBase(button.dataset.scriptId || ""));
     button.querySelector("audio")?.addEventListener("click", (event) => event.stopPropagation());
+    button.querySelector(".retune-row")?.addEventListener("click", (event) => event.stopPropagation());
   });
+  bindRetuneControls(elements.scriptList);
 }
 
 function selectBase(scriptId) {
@@ -494,7 +502,13 @@ function renderVariants() {
       <p>${escapeHtml(variant.script)}</p>
       <small class="variant-meta">${formatNumber(wordCount(variant.script))} 词 · 预估 ${formatClock(estimateSpeechSeconds(wordCount(variant.script)))}</small>
       <button class="quiet-action" type="button" data-save-audio>${variant.status || "保存并生成音频"}</button>
-      ${variant.audioId ? `<audio class="variant-audio" controls preload="metadata" data-audio-id="${escapeHtml(variant.audioId)}" src="/api/audio-library/${encodeURIComponent(variant.audioId)}/file"></audio>` : ""}
+      ${variant.audioId ? `<audio class="variant-audio" controls preload="metadata" data-audio-id="${escapeHtml(variant.audioId)}" src="/api/audio-library/${encodeURIComponent(variant.audioId)}/file?t=${Date.now()}"></audio>
+      <div class="retune-row">
+        <label>已生成变速 <em data-retune-label>1.00×</em>
+          <input type="range" min="0.8" max="1.4" step="0.05" value="1" data-retune-range />
+        </label>
+        <button type="button" class="quiet-action" data-retune-id="${escapeHtml(variant.audioId)}">应用变速</button>
+      </div>` : ""}
     </article>`).join("");
   elements.variantList.querySelectorAll(".variant-card").forEach((card) => {
     const variant = state.variants.find((item) => item.id === card.dataset.variantId);
@@ -507,6 +521,7 @@ function renderVariants() {
     });
     card.querySelector("[data-save-audio]")?.addEventListener("click", () => saveVariantWithAudio(variant.id));
   });
+  bindRetuneControls(elements.variantList);
 }
 
 async function saveVariantWithAudio(variantId) {
@@ -532,6 +547,7 @@ async function saveVariantWithAudio(variantId) {
         scriptId: script.id,
         title: `${state.novel.title} ${variant.styleLabel || "AI 改版"}`,
         script: variant.script,
+        openingTitle: variant.openingTitle || firstHookLine(variant.script),
         voiceId,
         targetAudioDir,
         speechSpeed: selectedSpeechSpeed(),
@@ -649,6 +665,7 @@ async function generateAudio() {
         scriptId: script.id,
         title: `${state.novel.title} ${script.versionLabel || "人工改写"}`,
         script: text,
+        openingTitle: currentOpeningTitle(text),
         voiceId,
         targetAudioDir,
         speechSpeed: selectedSpeechSpeed(),
@@ -801,3 +818,39 @@ function excerpt(value, limit = 150) {
 
 function formatNumber(value) { return new Intl.NumberFormat("zh-CN").format(Number(value) || 0); }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
+
+function bindRetuneControls(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-retune-range]").forEach((input) => {
+    const label = input.closest(".retune-row")?.querySelector("[data-retune-label]");
+    input.addEventListener("input", () => {
+      if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
+    });
+  });
+  root.querySelectorAll("[data-retune-id]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const row = button.closest(".retune-row");
+      const audioId = button.dataset.retuneId;
+      const speed = Number(row?.querySelector("[data-retune-range]")?.value || 1);
+      if (!audioId) return;
+      button.disabled = true;
+      button.textContent = "变速中...";
+      try {
+        await api(`/api/audio-library/${encodeURIComponent(audioId)}/retune`, {
+          method: "POST",
+          body: JSON.stringify({ speed })
+        });
+        const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+        state.novel = data.novel;
+        renderWork();
+        setAudioStatus(`已把这条音频调到 ${speed.toFixed(2)}×，可直接试听。`, "success");
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = "应用变速";
+        setAudioStatus(error.message || "音频变速失败。", "error");
+      }
+    });
+  });
+}

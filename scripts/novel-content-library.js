@@ -367,7 +367,8 @@ function compactAudio(audio) {
     createdAt: audio.createdAt || "",
     scriptChars: Number(audio.scriptChars) || 0,
     targetAudioPath: String(audio.targetAudioPath || "").trim(),
-    sourceType: String(audio.source?.type || "").trim()
+    sourceType: String(audio.source?.type || "").trim(),
+    playbackSpeed: Number(audio.playbackSpeed) || 1
   };
 }
 

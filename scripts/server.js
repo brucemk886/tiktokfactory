@@ -1205,6 +1205,18 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, audioPath, mediaContentType(audioPath));
     }
 
+    if (req.method === "POST" && url.pathname.match(/^\/api\/audio-library\/[^/]+\/retune$/)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频变速仅允许在本机访问。" });
+      try {
+        const audioId = safeId(decodeURIComponent(url.pathname.split("/")[3]));
+        const payload = await readJsonBody(req);
+        const item = audioLibrary.retuneSpeed({ id: audioId, speed: payload.speed });
+        return sendJson(res, 200, { item });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "音频变速失败。" });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/publish-records") {
       return sendJson(res, 200, getPublishRecordsSummary(url.searchParams, session.user));
     }
@@ -2523,7 +2535,7 @@ function canAccessPage(user, pathname) {
 function canAccessApi(user, pathname) {
   if (pathname.startsWith("/api/auth/")) return true;
   if (user.role === "admin") return true;
-  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/reddit-mix/settings" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname);
+  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/reddit-mix/settings" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname) || /^\/api\/audio-library\/[^/]+\/retune$/.test(pathname);
 }
 
 function readPsychologySettings() {
@@ -2609,7 +2621,8 @@ function saveRedditMixSettings(payload) {
   const next = normalizeRedditMixSettings({
     ...current,
     ...(payload?.subtitle ? { subtitle: payload.subtitle } : {}),
-    ...(payload?.dedup ? { dedup: payload.dedup } : {})
+    ...(payload?.dedup ? { dedup: payload.dedup } : {}),
+    ...(payload?.generation ? { generation: payload.generation } : {})
   });
   fs.mkdirSync(path.dirname(redditMixSettingsPath), { recursive: true });
   fs.writeFileSync(redditMixSettingsPath, JSON.stringify({ ...next, updatedAt: Date.now() }, null, 2), "utf8");
@@ -2619,12 +2632,19 @@ function saveRedditMixSettings(payload) {
 function normalizeRedditMixSettings(value) {
   const subtitle = value?.subtitle && typeof value.subtitle === "object" ? value.subtitle : {};
   const dedup = value?.dedup && typeof value.dedup === "object" ? value.dedup : {};
+  const generation = value?.generation && typeof value.generation === "object" ? value.generation : {};
   return {
     subtitle: {
       yPercent: clampNumber(subtitle.yPercent, 38, 82, 66),
       fontSize: clampNumber(subtitle.fontSize, 42, 92, 62),
       animationMode: subtitle.animationMode === "word-highlight" ? "word-highlight" : "sentence",
       openingTitleEnabled: subtitle.openingTitleEnabled === true
+    },
+    generation: {
+      totalVideos: Math.round(clampNumber(generation.totalVideos, 1, 300, 40)),
+      segmentSeconds: clampNumber(generation.segmentSeconds, 2, 18, 5),
+      quality: generation.quality === "quality" ? "quality" : "fast",
+      autoCaptions: generation.autoCaptions !== false
     },
     dedup: {
       enabled: dedup.enabled !== false,

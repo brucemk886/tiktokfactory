@@ -110,6 +110,7 @@ export function createNovelSeedService({
       }
       const audio = await audioLibrary.generateFromScript({
         script: script.text,
+        openingTitle: script.openingTitle || "",
         title: `${novel.title} ${script.versionLabel || script.title || "开头"}`,
         voiceId,
         targetAudioDir,
