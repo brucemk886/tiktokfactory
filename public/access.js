@@ -1,3 +1,5 @@
+ensureThemeStylesheet();
+
 (async function guard() {
   try {
     const response = await fetch("/api/auth/me", { cache: "no-store" });
@@ -10,6 +12,9 @@
     applyRoleVisibility(user);
     document.querySelectorAll(".app-brand, .tasks-brand").forEach((item) => {
       item.href = "/";
+      const small = item.querySelector("small");
+      const activeGroup = document.querySelector(".sidebar-group.is-open .sidebar-group-toggle span");
+      if (small) small.textContent = activeGroup?.textContent || "业务总览";
     });
     document.documentElement.dataset.sidebarReady = "true";
 
@@ -28,6 +33,7 @@
 function renderCanonicalSidebars(user, sidebarModules) {
   const visibleModules = Array.isArray(user.sidebarModules) ? new Set(user.sidebarModules) : null;
   document.querySelectorAll(".tasks-nav, .side-tabs").forEach((nav) => {
+    ensureSidebarChrome(nav);
     nav.querySelectorAll("a[href], .sidebar-group").forEach((item) => {
       if (!item.classList.contains("app-brand") && !item.classList.contains("tasks-brand")) item.remove();
     });
@@ -49,7 +55,55 @@ function renderCanonicalSidebars(user, sidebarModules) {
       fragment.append(createSidebarGroup(item.group, items));
     });
     nav.insertBefore(fragment, insertionPoint || null);
+    if (!nav.querySelector(".sidebar-user")) {
+      nav.insertBefore(createSidebarUser(user), insertionPoint || null);
+    }
   });
+}
+
+function ensureThemeStylesheet() {
+  if (document.querySelector("link[data-lf-theme]")) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/theme-ops.css";
+  link.dataset.lfTheme = "light";
+  document.head.appendChild(link);
+}
+
+function ensureSidebarChrome(nav) {
+  if (nav.classList.contains("tasks-nav")) return;
+  if (!nav.querySelector(".app-brand")) {
+    const brand = document.createElement("a");
+    brand.className = "app-brand";
+    brand.href = "/";
+    brand.setAttribute("aria-label", "Local Factory");
+    brand.innerHTML = "<span>LF</span><b>Local Factory<small>业务总览</small></b>";
+    nav.prepend(brand);
+  }
+  if (!nav.querySelector("[data-logout]")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "nav-logout";
+    button.dataset.logout = "";
+    button.textContent = "退出登录";
+    nav.append(button);
+  }
+}
+
+function createSidebarUser(user) {
+  const box = document.createElement("div");
+  box.className = "sidebar-user";
+  const mark = document.createElement("i");
+  mark.textContent = String(user.username || "U").slice(0, 1).toUpperCase();
+  const meta = document.createElement("div");
+  const name = document.createElement("b");
+  name.dataset.accountName = "";
+  name.textContent = user.username || "";
+  const role = document.createElement("small");
+  role.textContent = user.role === "admin" ? "管理员" : "运营";
+  meta.append(name, role);
+  box.append(mark, meta);
+  return box;
 }
 
 function createSidebarLink(item) {

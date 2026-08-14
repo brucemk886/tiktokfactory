@@ -46,7 +46,7 @@
   border-left: 0;
   border-radius: 0 5px 5px 0;
   color: #879199;
-  background: #151a1e;
+  background: var(--lf-surface);
   font-size: 10px;
 }
 
@@ -59,8 +59,8 @@
 .schulte-path-picker button {
   border: 1px solid #343d45;
   border-radius: 5px;
-  color: #edf2ef;
-  background: #151a1e;
+  color: var(--lf-text);
+  background: var(--lf-surface);
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
@@ -75,7 +75,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   border: 1px solid var(--module-line);
-  background: #101418;
+  background: var(--lf-surface);
 }
 
 .schulte-feature-strip span {
@@ -114,7 +114,7 @@
   height: 4px;
   margin-top: 14px;
   overflow: hidden;
-  background: #252d32;
+  background: var(--lf-surface);
 }
 
 .schulte-progress span {
@@ -135,7 +135,7 @@
   margin: 0 auto;
   padding: 9px;
   border: 1px solid #303941;
-  background: #090c0e;
+  background: var(--lf-surface);
 }
 
 .schulte-player-frame video {
@@ -179,10 +179,10 @@
   column-gap: 12px;
   row-gap: 4px;
   text-align: left;
-  color: #eef3f0;
+  color: var(--lf-text);
   border: 1px solid #343d45;
   border-radius: 6px;
-  background: #101418;
+  background: var(--lf-surface);
   cursor: pointer;
 }
 
@@ -301,7 +301,7 @@
 }
 
 .schulte-batch-template-caption strong {
-  color: #f5f7f8;
+  color: var(--lf-text);
   font-size: 14px;
 }
 
@@ -319,7 +319,7 @@
   gap: 9px;
   border: 1px solid var(--module-line);
   border-radius: 5px;
-  background: #101418;
+  background: var(--lf-surface);
   cursor: pointer;
 }
 
@@ -380,7 +380,7 @@
   align-items: center;
   gap: 10px;
   border: 1px solid var(--module-line);
-  background: #101418;
+  background: var(--lf-surface);
   cursor: pointer;
 }
 
@@ -395,7 +395,7 @@
   height: 19px;
   position: relative;
   border-radius: 10px;
-  background: #3a4248;
+  background: var(--lf-surface);
   transition: background 0.18s ease;
 }
 
@@ -455,7 +455,7 @@
   gap: 7px;
   overflow-y: auto;
   border: 1px solid var(--module-line);
-  background: #0d1114;
+  background: var(--lf-surface-2, #f6f0e4);
 }
 
 .schulte-phone-card {
@@ -468,7 +468,7 @@
   gap: 9px;
   border: 1px solid #2e373e;
   border-radius: 5px;
-  background: #12171b;
+  background: #fff;
   cursor: pointer;
 }
 
@@ -537,7 +537,7 @@
 
 .schulte-batch-queue {
   min-width: 0;
-  background: #0d1114;
+  background: var(--lf-surface);
 }
 
 .schulte-queue-head {
@@ -558,7 +558,7 @@
   padding: 13px;
   border: 1px solid #303941;
   border-radius: 5px;
-  background: #11161a;
+  background: var(--lf-surface);
 }
 
 .schulte-task-card + .schulte-task-card {
@@ -577,7 +577,7 @@
 .schulte-task-top strong {
   min-width: 0;
   overflow: hidden;
-  color: #f2f5f3;
+  color: var(--lf-text);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -600,7 +600,7 @@
 .schulte-task-progress {
   height: 3px;
   overflow: hidden;
-  background: #293138;
+  background: var(--lf-surface);
 }
 
 .schulte-task-progress i {
@@ -625,10 +625,10 @@
 .schulte-task-actions button {
   min-height: 28px;
   padding: 5px 8px;
-  color: #dfe5e2;
+  color: var(--lf-text);
   border: 1px solid #374149;
   border-radius: 4px;
-  background: #151b1f;
+  background: var(--lf-surface);
   font: inherit;
   font-size: 9px;
   text-decoration: none;

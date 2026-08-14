@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const STORE_VERSION = 1;
-const NOVEL_PLATFORMS = new Set(["GoodNovel", "MotoNovel", "NovelMaster"]);
+const NOVEL_PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
+const NOVEL_PLATFORM_SET = new Set(NOVEL_PLATFORMS);
+const HIT_LIMIT = 50;
+const HIT_MIN_VIEWS = 200;
 
 export function createNovelContentLibraryService({
   workDir,
@@ -72,6 +75,7 @@ export function createNovelContentLibraryService({
       promotionCode: clean(payload.promotionCode).slice(0, 240),
       promotionCopy: clean(payload.promotionCopy).slice(0, 5_000),
       category: clean(payload.category).slice(0, 120),
+      featured: asBoolean(payload.featured),
       sourceContent,
       sourceFingerprint: fingerprint(sourceContent),
       status: "active",
@@ -92,6 +96,7 @@ export function createNovelContentLibraryService({
     if (payload.promotionCode !== undefined) novel.promotionCode = clean(payload.promotionCode).slice(0, 240);
     if (payload.promotionCopy !== undefined) novel.promotionCopy = clean(payload.promotionCopy).slice(0, 5_000);
     if (payload.category !== undefined) novel.category = clean(payload.category).slice(0, 120);
+    if (payload.featured !== undefined) novel.featured = asBoolean(payload.featured);
     if (payload.sourceContent !== undefined) {
       const sourceContent = String(payload.sourceContent || "").trim().slice(0, 200_000);
       if (sourceContent.length < 20) throw statusError(400, "小说内容至少需要 20 个字符。");
@@ -131,6 +136,7 @@ export function createNovelContentLibraryService({
         promotionCode: clean(payload.promotionCode).slice(0, 240),
         promotionCopy: clean(payload.promotionCopy).slice(0, 5_000),
         category: clean(payload.category).slice(0, 120),
+        featured: asBoolean(payload.featured),
         sourceContent,
         sourceFingerprint,
         status: "active",
@@ -168,12 +174,49 @@ export function createNovelContentLibraryService({
     return { novelId: novel.id, scriptIds };
   }
 
-  return { getOverview, getOverviewFromVideos, getAiContext, createNovel, updateNovel, assignScript, importMarketingResult };
+  function getNovel(id) {
+    const wanted = safeId(id) || clean(id);
+    const novel = getOverview().novels.find((item) => item.id === wanted || item.id === clean(id));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    return novel;
+  }
+
+  function createScript(novelId, payload = {}) {
+    const store = syncedStore();
+    const novel = store.novels.find((item) => item.id === safeId(novelId));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    const text = String(payload.text || "").trim().slice(0, 20_000);
+    if (text.length < 20) throw statusError(400, "改写文案至少需要 20 个字符。");
+    const parentId = safeId(payload.parentScriptId);
+    if (parentId && !store.scripts.some((item) => item.id === parentId && item.novelId === novel.id)) {
+      throw statusError(400, "原文案不属于这本小说。");
+    }
+    const createdAt = new Date(now()).toISOString();
+    const script = {
+      id: uniqueId("script", `${novel.id}:${text}`),
+      novelId: novel.id,
+      parentScriptId: parentId,
+      hookVariantId: uniqueId("hook", text),
+      audioId: "",
+      title: clean(payload.title).slice(0, 240) || `${novel.title} 改写`,
+      text,
+      versionLabel: clean(payload.versionLabel).slice(0, 100) || "人工改写",
+      sourceType: "manual-rewrite",
+      sourceVideoId: clean(payload.sourceVideoId).slice(0, 160),
+      createdAt,
+      updatedAt: createdAt
+    };
+    store.scripts.push(script);
+    writeStore(storePath, store);
+    return script;
+  }
+
+  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, createScript, assignScript, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {
   const platform = normalizeNovelPlatform(value);
-  if (!NOVEL_PLATFORMS.has(platform)) {
+  if (!NOVEL_PLATFORM_SET.has(platform)) {
     throw statusError(400, "小说平台仅支持 GoodNovel、MotoNovel 或 NovelMaster。");
   }
   return platform;
@@ -211,11 +254,11 @@ function buildOverview(store, audioItems, matchedVideos, query) {
     scriptsByNovel.get(script.novelId).push(script);
   }
   const normalizedQuery = clean(query).toLowerCase();
-  const novels = store.novels.map((novel) => {
+  const novels = annotatePlatformCatalog(store.novels.map((novel) => {
     const novelScripts = scriptsByNovel.get(novel.id) || [];
     const allVideos = novelScripts.flatMap((script) => script.videos);
     return { ...novel, scripts: novelScripts, performance: summarizeVideos(allVideos) };
-  }).filter((novel) => !normalizedQuery || [novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category, novel.sourceContent]
+  })).filter((novel) => !normalizedQuery || [novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category, novel.sourceContent]
     .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)));
   const knownNovelIds = new Set(store.novels.map((novel) => novel.id));
   const unassignedScripts = scripts.filter((script) => !script.novelId || !knownNovelIds.has(script.novelId));
@@ -228,6 +271,7 @@ function buildOverview(store, audioItems, matchedVideos, query) {
       videoCount: scripts.reduce((sum, item) => sum + item.performance.videoCount, 0),
       unassignedScriptCount: unassignedScripts.length
     },
+    catalog: buildCatalogSummary(novels),
     novels,
     unassignedScripts
   };
@@ -329,6 +373,55 @@ function averageAvailable(rows, key) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 }
 
+function annotatePlatformCatalog(novels) {
+  const groups = new Map();
+  for (const novel of novels) {
+    const platform = novel.platform || "未设置";
+    if (!groups.has(platform)) groups.set(platform, []);
+    groups.get(platform).push(novel);
+  }
+  for (const items of groups.values()) {
+    const ranked = [...items]
+      .filter((item) => number(item.performance?.totalViews) >= HIT_MIN_VIEWS || number(item.performance?.maxViews) >= HIT_MIN_VIEWS)
+      .sort((a, b) => {
+        const viewDiff = number(b.performance?.totalViews) - number(a.performance?.totalViews);
+        if (viewDiff) return viewDiff;
+        return number(b.performance?.maxViews) - number(a.performance?.maxViews);
+      })
+      .slice(0, HIT_LIMIT);
+    const hitRank = new Map(ranked.map((item, index) => [item.id, index + 1]));
+    for (const novel of items) {
+      const rank = hitRank.get(novel.id) || 0;
+      novel.featured = Boolean(novel.featured);
+      novel.hit = rank > 0;
+      novel.hitRank = rank || null;
+      novel.hitLabel = rank ? `平台播放 Top ${rank}` : "";
+    }
+  }
+  return novels;
+}
+
+function buildCatalogSummary(novels) {
+  const rows = Array.isArray(novels) ? novels : [];
+  const platforms = NOVEL_PLATFORMS.map((platform) => {
+    const items = rows.filter((item) => item.platform === platform);
+    return summarizeCatalogGroup(platform, items);
+  });
+  return {
+    platforms,
+    totals: summarizeCatalogGroup("all", rows)
+  };
+}
+
+function summarizeCatalogGroup(platform, items) {
+  return {
+    platform,
+    novelCount: items.length,
+    featuredCount: items.filter((item) => item.featured).length,
+    hitCount: items.filter((item) => item.hit).length
+  };
+}
+
 function diagnosePerformance({ rows, totalViews, averageWatch, completion, retention3 }) {
   if (!rows.length) return "尚未匹配发布视频";
   if (retention3 !== null && retention3 < 0.7) return "前3秒流失偏高，优先重写开头钩子";
@@ -369,6 +462,7 @@ function normalizeNovel(item) {
     platform: normalizeNovelPlatform(item.platform), promotionCode: clean(item.promotionCode).slice(0, 240),
     promotionCopy: clean(item.promotionCopy).slice(0, 5_000),
     category: clean(item.category).slice(0, 120),
+    featured: asBoolean(item.featured),
     sourceContent: String(item.sourceContent || "").trim().slice(0, 200_000),
     sourceFingerprint: clean(item.sourceFingerprint) || fingerprint(item.sourceContent), status: clean(item.status) || "active",
     createdAt: clean(item.createdAt), updatedAt: clean(item.updatedAt)
@@ -408,6 +502,12 @@ function mediaKey(value) { return clean(value).toLowerCase().replace(/\.[a-z0-9]
 function basename(value) { return value ? path.basename(String(value)) : ""; }
 function safeId(value) { return clean(value).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160); }
 function clean(value) { return String(value ?? "").trim(); }
+function asBoolean(value) {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value == null || value === "") return false;
+  const text = String(value).trim().toLowerCase();
+  return text === "true" || text === "1" || text === "yes" || text === "on";
+}
 function normalizeNovelPlatform(value) { return clean(value) === "MasterNovel" ? "NovelMaster" : clean(value).slice(0, 120); }
 function number(value) { return Math.max(0, Number(value) || 0); }
 function statusError(statusCode, message) { return Object.assign(new Error(message), { statusCode }); }

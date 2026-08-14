@@ -77,6 +77,95 @@ test("rejects unsupported novel platforms", () => {
   }), /GoodNovel.*MotoNovel.*NovelMaster/);
 });
 
+test("stores a creation-time featured mark and ranks data hits separately per platform", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
+  const audioItems = [{
+    id: "audio-goodnovel-hit", title: "Hit A", fileName: "hit-a.mp3", script: "A GoodNovel narration that is long enough for ranking.",
+    source: {}, createdAt: "2026-08-01T00:00:00.000Z"
+  }, {
+    id: "audio-motonovel-hit", title: "Hit B", fileName: "hit-b.mp3", script: "A MotoNovel narration that is long enough for ranking.",
+    source: {}, createdAt: "2026-08-01T00:00:00.000Z"
+  }];
+  const service = createNovelContentLibraryService({
+    workDir,
+    audioLibrary: { list: () => audioItems },
+    analyticsService: {
+      getMatchedVideos: () => [{
+        id: "video-goodnovel", username: "account-a", views: 2400, comments: 12, createTime: 10,
+        local: { audioName: "hit-a.mp3", matchConfidence: "high" }
+      }, {
+        id: "video-motonovel", username: "account-b", views: 1800, comments: 6, createTime: 11,
+        local: { audioName: "hit-b.mp3", matchConfidence: "high" }
+      }]
+    },
+    readPublishRecords: () => []
+  });
+  const featured = service.createNovel({
+    title: "Featured GoodNovel",
+    platform: "GoodNovel",
+    featured: true,
+    sourceContent: "This featured GoodNovel free chapter is long enough for the catalog."
+  });
+  const goodHit = service.createNovel({
+    title: "Data hit GoodNovel",
+    platform: "GoodNovel",
+    sourceContent: "This GoodNovel free chapter is long enough to receive a data hit mark."
+  });
+  const motoHit = service.createNovel({
+    title: "Data hit MotoNovel",
+    platform: "MotoNovel",
+    sourceContent: "This MotoNovel free chapter is long enough to receive a data hit mark."
+  });
+  service.assignScript("script-audio-goodnovel-hit", { novelId: goodHit.id });
+  service.assignScript("script-audio-motonovel-hit", { novelId: motoHit.id });
+
+  const overview = service.getOverview();
+  const byId = Object.fromEntries(overview.novels.map((item) => [item.id, item]));
+  assert.equal(byId[featured.id].featured, true);
+  assert.equal(byId[featured.id].hit, false);
+  assert.equal(byId[goodHit.id].featured, false);
+  assert.equal(byId[goodHit.id].hit, true);
+  assert.equal(byId[goodHit.id].hitRank, 1);
+  assert.equal(byId[goodHit.id].hitLabel, "平台播放 Top 1");
+  assert.equal(byId[motoHit.id].hit, true);
+  assert.equal(byId[motoHit.id].hitRank, 1);
+  assert.equal(overview.catalog.totals.featuredCount, 1);
+  assert.equal(overview.catalog.totals.hitCount, 2);
+  assert.equal(overview.catalog.platforms.find((item) => item.platform === "GoodNovel").featuredCount, 1);
+  assert.equal(overview.catalog.platforms.find((item) => item.platform === "GoodNovel").hitCount, 1);
+  assert.equal(overview.catalog.platforms.find((item) => item.platform === "MotoNovel").hitCount, 1);
+
+  service.updateNovel(featured.id, { featured: false });
+  assert.equal(service.getOverview().novels.find((item) => item.id === featured.id).featured, false);
+});
+
+test("saves a manual rewrite as a derived script under the selected novel", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  const novel = service.createNovel({
+    title: "Rewrite target",
+    platform: "NovelMaster",
+    sourceContent: "This free chapter is long enough to become the source for a manual rewrite."
+  });
+  const first = service.createScript(novel.id, {
+    title: "Opening A",
+    versionLabel: "原开头",
+    text: "A complete original narration that is long enough for this rewrite test."
+  });
+  const rewritten = service.createScript(novel.id, {
+    parentScriptId: first.id,
+    title: "Opening A rewrite",
+    versionLabel: "人工改写",
+    text: "A rewritten narration that starts with the conflict and keeps the same ending facts."
+  });
+  const loaded = service.getNovel(novel.id);
+  assert.equal(rewritten.parentScriptId, first.id);
+  assert.equal(rewritten.sourceType, "manual-rewrite");
+  assert.equal(loaded.scripts.length, 2);
+  assert.equal(loaded.scripts.find((item) => item.id === rewritten.id).versionLabel, "人工改写");
+  assert.throws(() => service.createScript(novel.id, { parentScriptId: "missing", text: "A rewritten narration that is long enough for validation." }), /原文案不属于这本小说/);
+});
+
 test("migrates legacy MasterNovel records to NovelMaster when reading the catalog", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
   fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({

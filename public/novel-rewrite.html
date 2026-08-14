@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文案改写 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/novel-rewrite.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
+  <body class="work-page rewrite-page novel-rewrite-page">
+    <nav class="side-tabs" aria-label="主导航"></nav>
+    <main class="rewrite-work-shell">
+      <header class="rewrite-work-header">
+        <div>
+          <p class="library-kicker">NOVEL REWRITE</p>
+          <h1 id="pageTitle">文案改写</h1>
+          <p id="pageLead">只改视频开头/配音文案，不改全书。免费章节只作对照摘录；有已有开头版本时，从那一条局部改。</p>
+        </div>
+        <div class="header-actions">
+          <a class="quiet-action" href="/novel-library">返回书单</a>
+          <a id="effectsLink" class="quiet-action" href="/novel-effects">小说效果</a>
+          <a id="recordsLink" class="quiet-action" href="/rewrite-records">改写记录</a>
+        </div>
+      </header>
+
+      <section id="pickerView" class="picker-card" hidden>
+        <label>
+          <span>选择要改写的小说</span>
+          <select id="novelPicker">
+            <option value="">请选择小说</option>
+          </select>
+        </label>
+        <p class="hint">也可以在小说书单里直接点「改写」。</p>
+      </section>
+
+      <section id="workView" class="rewrite-work" hidden>
+        <aside class="source-panel">
+          <div class="novel-summary">
+            <p class="library-kicker">NOVEL</p>
+            <h2 id="novelTitle">未选择小说</h2>
+            <div id="novelMeta" class="novel-meta"></div>
+            <p id="novelStats" class="novel-stats"></p>
+          </div>
+          <div class="source-block">
+            <h3>免费章节摘录</h3>
+            <p id="sourceExcerpt" class="source-excerpt">—</p>
+          </div>
+          <div class="source-block">
+            <h3>已有开头版本</h3>
+            <div id="scriptList" class="script-list"></div>
+          </div>
+        </aside>
+
+        <form id="rewriteForm" class="rewrite-editor">
+          <div class="section-heading">
+            <div><span>REWRITE</span><h2>写新开头版本</h2></div>
+          </div>
+          <p id="baseHint" class="hint">只改开头文案。默认带入已有开头版本；没有版本时，对照左侧章节摘录自己写一段口播，不必贴全书。</p>
+          <label><span>版本名称</span><input id="versionLabel" type="text" maxlength="100" placeholder="例如：前3秒冲突提前" value="人工改写" /></label>
+          <label><span>对照开头</span><textarea id="originalText" readonly></textarea></label>
+          <label><span>改写开头文案</span><textarea id="rewriteText" maxlength="4000" placeholder="只写视频口播/开头文案，一般几百到一两千字。保留人物、关键事件和结局，不要改全书。" required></textarea><small id="rewriteCount">0 / 4,000</small></label>
+          <div class="form-actions">
+            <button id="saveRewriteBtn" class="primary-action" type="submit">保存为新开头版本</button>
+            <span id="formStatus" role="status"></span>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/novel-rewrite.js" type="module"></script>
+  </body>
+</html>

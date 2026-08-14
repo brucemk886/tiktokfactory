@@ -21,7 +21,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 11) return;
+      if (version >= 13) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
         user.sidebarModules = user.sidebarModules.filter((moduleId) => !["project-hub", "audio-library"].includes(moduleId));
@@ -53,8 +53,16 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
         if (version < 11 && user.role === "operator" && !user.sidebarModules.includes("hub")) {
           user.sidebarModules.unshift("hub");
         }
+        if (version < 12 && user.role === "admin" && !user.sidebarModules.includes("geelark-novel-effects")) {
+          const geelarkIndex = user.sidebarModules.indexOf("operator-third-party");
+          user.sidebarModules.splice(geelarkIndex >= 0 ? geelarkIndex + 1 : user.sidebarModules.length, 0, "geelark-novel-effects");
+        }
+        if (version < 13 && user.role === "admin" && !user.sidebarModules.includes("novel-rewrite")) {
+          const libraryIndex = user.sidebarModules.indexOf("novel-library");
+          user.sidebarModules.splice(libraryIndex >= 0 ? libraryIndex + 1 : user.sidebarModules.length, 0, "novel-rewrite");
+        }
       }
-      store.version = 11;
+      store.version = 13;
       try {
         fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
       } catch {

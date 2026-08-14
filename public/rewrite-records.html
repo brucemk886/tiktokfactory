@@ -6,7 +6,8 @@
   <title>文案改写记录 · Local Factory</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/rewrite-records.css">
-</head>
+    <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
 <body class="work-page rewrite-page">
   <nav class="side-tabs" aria-label="主导航"></nav>
   <main class="rewrite-shell">
@@ -14,7 +15,7 @@
       <div>
         <p class="eyebrow">AI REWRITE ARCHIVE</p>
         <h1>文案改写记录</h1>
-        <p>集中查看官方 API 小说自运营产生的原文、诊断证据、改写版本与生成音频。</p>
+        <p>对照小说效果：这里是改写动作档案。官方自运营和书单「改写」保存的新开头版本都会出现在这里。</p>
       </div>
       <button id="refreshRecords" class="secondary-button" type="button">刷新记录</button>
     </header>
@@ -40,7 +41,7 @@
     <section id="recordList" class="record-list" aria-live="polite"></section>
     <section id="recordEmpty" class="record-empty" hidden>
       <strong>暂无文案改写记录</strong>
-      <span>官方 API 自运营生成改写方案后，会自动归档到这里。</span>
+      <span>从小说书单点「改写」，或等官方自运营产出改写后，记录会出现在这里。</span>
     </section>
   </main>
   <script src="/access.js"></script>

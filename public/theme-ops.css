@@ -1,0 +1,511 @@
+/* Light studio overrides for operational pages that still hardcode dark surfaces. */
+:root {
+  color-scheme: light;
+  --lf-bg: #f3eee4;
+  --lf-sidebar-bg: #fffaf2;
+  --lf-surface: #fffdf8;
+  --lf-surface-2: #f6f0e4;
+  --lf-line: rgba(45, 38, 24, 0.10);
+  --lf-line-strong: rgba(45, 38, 24, 0.16);
+  --lf-text: #1d1a14;
+  --lf-muted: #6d6758;
+  --lf-accent: #5c6a14;
+  --lf-accent-fill: #c8dc5a;
+  --lf-accent-ink: #1d1a14;
+  --task-bg: var(--lf-bg);
+  --task-surface: var(--lf-surface);
+  --task-surface-2: var(--lf-surface-2);
+  --task-line: var(--lf-line-strong);
+  --task-line-soft: var(--lf-line);
+  --task-text: var(--lf-text);
+  --task-muted: var(--lf-muted);
+  --task-accent: var(--lf-accent-fill);
+  --op-panel: var(--lf-surface);
+  --op-panel-soft: var(--lf-surface-2);
+  --op-line: var(--lf-line-strong);
+  --op-muted: var(--lf-muted);
+  --op-text: var(--lf-text);
+  --op-lime: var(--lf-accent);
+  --module-bg: var(--lf-bg);
+  --module-panel: var(--lf-surface);
+  --module-line: var(--lf-line-strong);
+  --module-muted: var(--lf-muted);
+  --module-text: var(--lf-text);
+  --module-accent: var(--lf-accent);
+}
+
+html,
+body,
+body.work-page,
+body.tasks-page,
+body.module-page,
+body.psychology-page,
+body.operator-page,
+body.strategy-page,
+body.novel-library-page,
+body.novel-effects-page,
+body.official-data-page,
+body.analytics-page,
+body.usage-page,
+body.connection-page,
+body.rewrite-page,
+body.novel-rewrite-page,
+body.stats-page {
+  background-color: var(--lf-bg) !important;
+  color: var(--lf-text) !important;
+}
+
+.tasks-sidebar,
+.work-page .side-tabs {
+  background: var(--lf-sidebar-bg) !important;
+  border-right-color: var(--lf-line) !important;
+  color: var(--lf-text);
+}
+
+.tasks-nav a,
+.work-page .side-tabs > a:not(.app-brand),
+.sidebar-group-toggle {
+  color: #5f5a4e !important;
+}
+
+.tasks-nav a.is-active,
+.work-page .side-tabs > a.is-active,
+.sidebar-group-items > a.is-active {
+  color: var(--lf-text) !important;
+  background: rgba(200, 220, 90, 0.32) !important;
+}
+
+.tasks-toolbar,
+.operator-header,
+.module-header,
+.psy-header,
+.page-heading,
+.library-header,
+.official-data-header,
+.analytics-header,
+.stats-topbar,
+.rewrite-heading {
+  color: var(--lf-text);
+  border-bottom-color: var(--lf-line) !important;
+  background: transparent !important;
+}
+
+.tasks-toolbar,
+.operator-header h1,
+.module-header h1,
+.psy-header h1,
+.page-heading h1,
+.library-header h1,
+.official-data-header h1,
+.analytics-header h1,
+.stats-topbar h1,
+.rewrite-heading h1 {
+  color: var(--lf-text) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+select,
+textarea {
+  background: #fff !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.operator-panel,
+.operator-grid,
+.data-strategy-block,
+.task-create-panel,
+.task-list-panel,
+.config-section,
+.manual-video-source,
+.advanced-panel,
+.publish-switch-row,
+.auto-task-item,
+.queue-metrics div,
+.module-panel,
+.module-metric,
+.topic-card,
+.ai-command-panel,
+.ai-history,
+.ai-result,
+.ai-result-card,
+.ai-mode-grid,
+.ai-credit,
+.psy-section,
+.psy-queue,
+.task-card,
+.phone-list,
+.phone-card,
+.model-option,
+.batch-topic-card,
+.strategy-card,
+.active-badge,
+.version-row,
+.book-editor,
+.book-list-panel,
+.book-table-wrap,
+.book-row,
+.toolbar-card,
+.source-status,
+.metric-card,
+.novel-card,
+.unassigned-section,
+.panel,
+.metric,
+.chart-card,
+.video-panel,
+.insight-card,
+.profile-card,
+.official-toolbar,
+.detail-toolbar,
+.settings-panel,
+.filter-bar,
+.data-panel,
+.metric-grid article,
+.period-overview article,
+.rewrite-card,
+.rewrite-toolbar,
+.script-panel,
+.diagnosis-box,
+.detail-item,
+.workflow-section,
+.account-section,
+.account-row,
+.stats-filters,
+.stats-card,
+.stats-table-wrap,
+.tool-panel,
+.usage-panel,
+.usage-summary-grid article,
+.editor,
+.preview,
+.caption-editor,
+.optimized-content,
+.optimized-script-card,
+.script-version,
+.change-log-row {
+  background: var(--lf-surface) !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line) !important;
+  box-shadow: none;
+}
+
+.quiet-button,
+.secondary-button,
+.secondary-btn,
+.back-link,
+.table-action,
+.quiet-action,
+.edit-button,
+.header-actions .quiet-link,
+.segmented button,
+.catalog-tab,
+.shelf-tab,
+.psy-mode-tabs button {
+  background: #fff !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.primary-action,
+.primary-button,
+.primary-btn,
+.primary-link,
+.primary-table-action,
+.module-button.primary,
+.copy-button,
+.auth-card button,
+.account-form button:not(.subtle):not(.text-action) {
+  background: var(--lf-accent-fill) !important;
+  border-color: var(--lf-accent-fill) !important;
+  color: var(--lf-accent-ink) !important;
+}
+
+.segmented button.is-active,
+.catalog-tab.is-active,
+.shelf-tab.is-active,
+.ai-mode.active,
+.ai-model-picker label.selected,
+.period-overview article.is-selected,
+.version-row.active {
+  background: rgba(200, 220, 90, 0.28) !important;
+  border-color: #8a9a32 !important;
+  color: var(--lf-text) !important;
+}
+
+.toolbar-kicker,
+.hub-kicker,
+.eyebrow,
+.module-kicker,
+.analytics-kicker,
+.section-heading p,
+.library-kicker {
+  color: var(--lf-accent) !important;
+}
+
+small,
+.hub-lead,
+.hub-card span,
+.hub-link-card small,
+.operator-header p,
+.module-header p,
+.psy-header p,
+.page-copy,
+.sync-state,
+.record-status {
+  color: var(--lf-muted) !important;
+}
+
+.hub-card,
+.hub-link-card {
+  background: var(--lf-surface) !important;
+  border-color: var(--lf-line) !important;
+  box-shadow: var(--lf-shadow);
+}
+
+.hub-pills span {
+  color: var(--lf-muted) !important;
+  background: #fff !important;
+  border-color: var(--lf-line) !important;
+}
+
+.hub-card b,
+.hub-card em {
+  color: var(--lf-accent) !important;
+}
+
+th,
+.stats-table th,
+.video-list-head,
+.video-list-head button {
+  color: var(--lf-muted) !important;
+  background: var(--lf-surface-2) !important;
+}
+
+td,
+.stats-table td,
+.video-row,
+.account-row,
+.book-row,
+.comment-row {
+  color: var(--lf-text) !important;
+}
+
+tbody tr:hover,
+.video-row:hover,
+.video-row.is-active,
+.book-row:hover {
+  background: var(--lf-surface-2) !important;
+}
+
+.chart-empty,
+.empty-state,
+.module-empty {
+  background: var(--lf-surface-2) !important;
+  color: var(--lf-muted) !important;
+  border-color: var(--lf-line) !important;
+}
+
+.reddit-page .tool-panel,
+.cutter-page .tool-panel,
+.reddit-page .mode-switch label,
+.cutter-page .mode-switch label,
+.reddit-page .grid:not(.directory-grid),
+.schulte-feature-strip,
+.schulte-path-picker button,
+.schulte-suffix b {
+  background: var(--lf-surface) !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line) !important;
+}
+
+.phone,
+.caption-preview-stage,
+.preview-player-wrap,
+.preview-player-wrap video,
+.ai-media,
+.ai-media-item {
+  background: #1a1c18 !important;
+  color: #f3f0e8 !important;
+}
+
+.tasks-sidebar .nav-logout,
+.work-page .side-tabs .nav-logout {
+  background: #fff !important;
+  color: #5f5a4e !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.sidebar-user {
+  border-top-color: var(--lf-line) !important;
+  color: var(--lf-text);
+}
+
+.account-form input,
+.account-form select,
+.group-checkbox-list,
+.sidebar-checkbox-list,
+.group-checkbox-item,
+.sidebar-checkbox-item {
+  background: #fff !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.account-form label,
+.group-field-title,
+.account-list small {
+  color: var(--lf-muted) !important;
+}
+
+.strategy-notice {
+  background: #f4f7e4 !important;
+  border-color: #b7c46a !important;
+  color: #3d4418 !important;
+}
+
+.strategy-notice span {
+  color: #4a5130 !important;
+}
+
+dialog {
+  background: var(--lf-surface) !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line) !important;
+}
+
+.novel-source-panel,
+.model-config-panel,
+.group-section,
+.data-strategy-block,
+.strategy-source-card,
+.geelark-phone-list,
+.geelark-phone-item,
+.compact-phone-list,
+.caption-editor,
+.caption-editor-toolbar,
+.task-schedule,
+.task-schedule > span,
+.path-picker button,
+.operator-panel input,
+.operator-panel select,
+.operator-panel textarea {
+  background: #fff !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.novel-source-panel,
+.model-config-panel,
+.group-section,
+.compact-phone-list,
+.caption-editor-toolbar,
+.task-schedule {
+  background: var(--lf-surface-2) !important;
+}
+
+.compact-phone-list .geelark-phone-item:has(input:checked),
+.geelark-phone-item:has(input:checked),
+.strategy-source-card.is-selected {
+  background: #f4f7e4 !important;
+  border-color: #8a9a32 !important;
+}
+
+.caption-editor-toolbar strong,
+.task-schedule > strong,
+.task-schedule b,
+.geelark-phone-item strong,
+.operator-panel .field > span {
+  color: var(--lf-text) !important;
+}
+
+.geelark-phone-item small,
+.task-schedule > strong,
+.compact-phone-list .geelark-phone-item small {
+  color: var(--lf-muted) !important;
+}
+
+.side-tabs a:not(.app-brand),
+.sidebar-group-items > a,
+.tasks-nav a {
+  background: transparent !important;
+  color: #5f5a4e !important;
+  border-color: transparent !important;
+}
+
+.side-tabs a:not(.app-brand).is-active,
+.sidebar-group-items > a.is-active,
+.tasks-nav a.is-active {
+  background: rgba(200, 220, 90, 0.32) !important;
+  color: var(--lf-text) !important;
+}
+
+.state-pill,
+.stage-badge,
+.draft-status,
+.task-status-badge,
+.task-groups b {
+  background: #fff !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.state-pill:not(.neutral),
+.stage-badge[data-stage="breakout"],
+.stage-badge[data-stage="scaling"],
+.stage-badge[data-stage="qualified"],
+.auto-task-item[data-status="done"] .task-status-badge,
+.task-groups b {
+  background: #f4f7e4 !important;
+  border-color: #c5d08a !important;
+  color: #3d5a28 !important;
+}
+
+.north-star-note,
+.ai-decision,
+.action-bar,
+.strategy-notice {
+  background: #f8f1e2 !important;
+  color: #6a5420 !important;
+  border-color: #e4c9a4 !important;
+}
+
+.action-bar {
+  background: var(--lf-surface) !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line) !important;
+}
+
+.ai-decision {
+  background: #f4f7e4 !important;
+  color: var(--lf-text) !important;
+  border-color: #c5d08a !important;
+}
+
+.manual-video-source,
+.phone-list,
+.phone-card,
+.schulte-phone-card,
+[class*="phone-list"],
+[class*="phone-card"],
+.back-link,
+.table-action,
+.segmented button,
+.quiet-action,
+.edit-button,
+.module-button:not(.primary),
+.account-form input,
+.account-form select,
+.group-checkbox-item,
+.sidebar-checkbox-item {
+  background: #fff !important;
+  color: var(--lf-text) !important;
+  border-color: var(--lf-line-strong) !important;
+}
+
+.primary-link,
+.primary-table-action {
+  background: var(--lf-accent-fill) !important;
+  color: var(--lf-accent-ink) !important;
+  border-color: var(--lf-accent-fill) !important;
+}

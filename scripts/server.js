@@ -282,6 +282,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/app.css") {
       return sendFile(res, path.join(publicDir, "app.css"), "text/css; charset=utf-8");
     }
+    if (req.method === "GET" && url.pathname === "/theme-ops.css") {
+      return sendFile(res, path.join(publicDir, "theme-ops.css"), "text/css; charset=utf-8");
+    }
 
     if (req.method === "GET" && url.pathname === "/app.js") {
       return sendFile(res, path.join(publicDir, "app.js"), "text/javascript; charset=utf-8");
@@ -462,12 +465,28 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "novel-effects.html"), "text/html; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/geelark-novel-effects") {
+      return sendFile(res, path.join(publicDir, "geelark-novel-effects.html"), "text/html; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/novel-effects.js") {
       return sendFile(res, path.join(publicDir, "novel-effects.js"), "text/javascript; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/novel-effects.css") {
       return sendFile(res, path.join(publicDir, "novel-effects.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-rewrite") {
+      return sendFile(res, path.join(publicDir, "novel-rewrite.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-rewrite.js") {
+      return sendFile(res, path.join(publicDir, "novel-rewrite.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-rewrite.css") {
+      return sendFile(res, path.join(publicDir, "novel-rewrite.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/rewrite-records") {
@@ -591,33 +610,77 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/rewrite-records") {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可查看文案改写记录。" });
-      const records = officialOperationBrain.listPlans({ includeArchived: true })
-        .flatMap((plan) => (Array.isArray(plan.optimizedContent) ? plan.optimizedContent : []).map((item, index) => ({
-          id: String(item.id || `${plan.id || "plan"}-${index}`),
-          planId: String(plan.id || ""),
-          planDate: String(plan.planDate || ""),
-          planStatus: String(plan.status || ""),
-          createdAt: Number(item.createdAt || plan.createdAt || 0),
-          updatedAt: Number(item.updatedAt || plan.updatedAt || item.createdAt || plan.createdAt || 0),
-          title: String(item.title || "未命名改写"),
-          status: String(item.status || "rewritten"),
-          sourceAudioId: String(item.sourceAudioId || ""),
-          sourceVideoId: String(item.sourceVideoId || ""),
-          originalScript: String(item.originalScript || ""),
-          rewrittenScript: String(item.rewrittenScript || ""),
-          diagnosis: String(item.diagnosis || ""),
-          evidenceSummary: String(item.evidenceSummary || ""),
-          problemLayer: String(item.problemLayer || ""),
-          rewriteScope: String(item.rewriteScope || ""),
-          targetSecondRange: String(item.targetSecondRange || ""),
-          estimatedSourceSentence: String(item.estimatedSourceSentence || ""),
-          rewriteGoal: String(item.rewriteGoal || ""),
-          singleVariable: String(item.singleVariable || ""),
-          preservedFacts: Array.isArray(item.preservedFacts) ? item.preservedFacts.map(String) : [],
-          changeLog: Array.isArray(item.changeLog) ? item.changeLog.map(String) : [],
-          audio: item.audio && typeof item.audio === "object" ? item.audio : null,
-          error: String(item.error || "")
-        })))
+      const novelId = String(url.searchParams.get("novel") || "").trim();
+      const overview = novelContentLibrary.getOverview();
+      const officialRecords = officialOperationBrain.listPlans({ includeArchived: true })
+        .flatMap((plan) => (Array.isArray(plan.optimizedContent) ? plan.optimizedContent : []).map((item, index) => {
+          const novel = findNovelForRewrite(overview, item);
+          return {
+            id: String(item.id || `${plan.id || "plan"}-${index}`),
+            origin: "official",
+            novelId: novel?.id || "",
+            novelTitle: novel?.title || "",
+            planId: String(plan.id || ""),
+            planDate: String(plan.planDate || ""),
+            planStatus: String(plan.status || ""),
+            createdAt: Number(item.createdAt || plan.createdAt || 0),
+            updatedAt: Number(item.updatedAt || plan.updatedAt || item.createdAt || plan.createdAt || 0),
+            title: String(item.title || "未命名改写"),
+            status: String(item.status || "rewritten"),
+            sourceAudioId: String(item.sourceAudioId || ""),
+            sourceVideoId: String(item.sourceVideoId || ""),
+            originalScript: String(item.originalScript || ""),
+            rewrittenScript: String(item.rewrittenScript || ""),
+            diagnosis: String(item.diagnosis || ""),
+            evidenceSummary: String(item.evidenceSummary || ""),
+            problemLayer: String(item.problemLayer || ""),
+            rewriteScope: String(item.rewriteScope || ""),
+            targetSecondRange: String(item.targetSecondRange || ""),
+            estimatedSourceSentence: String(item.estimatedSourceSentence || ""),
+            rewriteGoal: String(item.rewriteGoal || ""),
+            singleVariable: String(item.singleVariable || ""),
+            preservedFacts: Array.isArray(item.preservedFacts) ? item.preservedFacts.map(String) : [],
+            changeLog: Array.isArray(item.changeLog) ? item.changeLog.map(String) : [],
+            audio: item.audio && typeof item.audio === "object" ? item.audio : null,
+            error: String(item.error || "")
+          };
+        }));
+      const manualRecords = (overview.novels || []).flatMap((novel) => (novel.scripts || [])
+        .filter((script) => script.sourceType === "manual-rewrite")
+        .map((script) => {
+          const parent = (novel.scripts || []).find((item) => item.id === script.parentScriptId);
+          return {
+            id: script.id,
+            origin: "manual",
+            novelId: novel.id,
+            novelTitle: novel.title,
+            planId: "",
+            planDate: "",
+            planStatus: "",
+            createdAt: Date.parse(script.createdAt) || 0,
+            updatedAt: Date.parse(script.updatedAt || script.createdAt) || 0,
+            title: script.title || "人工改写",
+            status: "rewritten",
+            sourceAudioId: parent?.audioId || script.parentScriptId || "",
+            sourceVideoId: script.sourceVideoId || "",
+            originalScript: parent?.text || novel.sourceContent || "",
+            rewrittenScript: script.text || "",
+            diagnosis: "人工改写",
+            evidenceSummary: parent ? `基于开头版本 ${parent.versionLabel || parent.title || parent.id}` : "基于小说免费章节",
+            problemLayer: "",
+            rewriteScope: "",
+            targetSecondRange: "",
+            estimatedSourceSentence: "",
+            rewriteGoal: script.versionLabel || "人工改写",
+            singleVariable: "",
+            preservedFacts: [],
+            changeLog: [],
+            audio: script.audio || null,
+            error: ""
+          };
+        }));
+      const records = [...officialRecords, ...manualRecords]
+        .filter((item) => !novelId || item.novelId === novelId)
         .sort((left, right) => right.updatedAt - left.updatedAt);
       return sendJson(res, 200, { records }, { "Cache-Control": "no-store" });
     }
@@ -856,6 +919,16 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "GET" && /^\/api\/novel-content\/novels\/[^/]+$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, { novel: novelContentLibrary.getNovel(id) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 404, { error: error.message || "读取小说失败。" });
+      }
+    }
+
     if (req.method === "PATCH" && /^\/api\/novel-content\/novels\/[^/]+$/.test(url.pathname)) {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       try {
@@ -863,6 +936,16 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { novel: novelContentLibrary.updateNovel(id, await readJsonBody(req)) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新小说失败。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/scripts$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        return sendJson(res, 201, { script: novelContentLibrary.createScript(id, await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存改写失败。" });
       }
     }
 
@@ -2187,13 +2270,25 @@ function sessionCookie(token) {
   return `lf_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`;
 }
 
+function findNovelForRewrite(overview, item = {}) {
+  const sourceAudioId = String(item.sourceAudioId || "").trim();
+  const sourceVideoId = String(item.sourceVideoId || "").trim();
+  for (const novel of overview?.novels || []) {
+    for (const script of novel.scripts || []) {
+      if (sourceAudioId && (script.audioId === sourceAudioId || script.id === sourceAudioId)) return novel;
+      if (sourceVideoId && (script.videos || []).some((video) => String(video.videoId || video.id || "") === sourceVideoId)) return novel;
+    }
+  }
+  return null;
+}
+
 function requiresLogin(pathname) {
-  return !["/login", "/login.js", "/setup", "/setup.js", "/app.css", "/access.css"].includes(pathname);
+  return !["/login", "/login.js", "/setup", "/setup.js", "/app.css", "/access.css", "/theme-ops.css"].includes(pathname);
 }
 
 function canAccessPage(user, pathname) {
   if (user.role === "admin") return true;
-  return new Set(["/", "/hub.css", "/hub.js", "/tasks", "/tasks.js", "/tasks.css", "/stats", "/stats.js", "/analytics", "/analytics.js", "/analytics.css", "/app.css", "/access.css", "/access.js"]).has(pathname) || pathname.startsWith("/outputs/");
+  return new Set(["/", "/hub.css", "/hub.js", "/tasks", "/tasks.js", "/tasks.css", "/stats", "/stats.js", "/analytics", "/analytics.js", "/analytics.css", "/app.css", "/access.css", "/access.js", "/theme-ops.css"]).has(pathname) || pathname.startsWith("/outputs/");
 }
 
 function canAccessApi(user, pathname) {

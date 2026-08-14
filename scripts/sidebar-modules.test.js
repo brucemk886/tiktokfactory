@@ -21,7 +21,7 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   );
   assert.deepEqual(sidebarModuleIdsForRole("operator"), ["hub", "tasks", "analytics", "stats"]);
   for (const moduleId of ["hub", "mid-video", "podcast", "novel-library", "official-publish-records", "official-analytics", "operator-third-party",
-    "operator-official", "novel-effects", "rewrite-records"]) {
+    "operator-official", "novel-effects", "geelark-novel-effects", "novel-rewrite", "rewrite-records"]) {
     assert.ok(sidebarModuleIdsForRole("admin").includes(moduleId));
   }
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-publish-records"));
@@ -29,12 +29,13 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "rewrite-records")?.href, "/rewrite-records");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-rewrite")?.href, "/novel-rewrite");
 });
 
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-effects", "rewrite-records", "operator-official", "tasks"]
+    ["novel-strategy", "novel-library", "novel-rewrite", "novel-effects", "rewrite-records", "operator-official", "tasks"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
@@ -45,6 +46,8 @@ test("business lines keep official and GeeLark navigation apart", () => {
     ["psychology-topics", "psychology"]
   );
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "operator-third-party")?.group?.id, "geelark-backup");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-novel-effects")?.group?.id, "geelark-backup");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-novel-effects")?.href, "/geelark-novel-effects");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.group?.id, "official-channel");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "hub")?.href, "/");
 });
@@ -66,9 +69,20 @@ test("browser modules do not duplicate the sidebar catalog", () => {
   }
 });
 
+test("novel effects keep official and GeeLark data on separate pages", () => {
+  const official = fs.readFileSync(path.join(publicDir, "novel-effects.html"), "utf8");
+  const geelark = fs.readFileSync(path.join(publicDir, "geelark-novel-effects.html"), "utf8");
+  assert.match(official, /data-source="official_api"/);
+  assert.doesNotMatch(official, /id="sourceTabs"/);
+  assert.doesNotMatch(official, /data-source="third_party"/);
+  assert.match(geelark, /data-source="third_party"/);
+  assert.doesNotMatch(geelark, /data-source="official_api"/);
+});
+
 test("GeeLark pages are visibly distinguished from official TikTok pages", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "stats")?.label, "GeeLark · 发布记录");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "analytics")?.label, "GeeLark · 数据总览");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-novel-effects")?.label, "GeeLark · 小说效果");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.label, "授权账号数据");
   assert.ok(SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") < SIDEBAR_MODULES.findIndex((item) => item.id === "stats"));
 });

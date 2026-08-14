@@ -1,1 +1,26 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 Local Factory</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/access.css"></head><body class="auth-page"><main class="auth-card"><span class="auth-mark">LF</span><p class="auth-kicker">LOCAL FACTORY</p><h1>登录工作台</h1><p>使用分配给你的账号进入对应的任务与数据空间。</p><form id="loginForm"><label>登录账号<input id="username" autocomplete="username" required placeholder="例如 operator-a"></label><label>密码<input id="password" type="password" autocomplete="current-password" required placeholder="输入密码"></label><button type="submit">登录</button><p id="loginStatus" class="auth-status"></p></form></main><script src="/login.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>登录 Local Factory</title>
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/access.css">
+      <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
+  <body class="auth-page">
+    <main class="auth-card">
+      <span class="auth-mark">LF</span>
+      <p class="auth-kicker">LOCAL FACTORY</p>
+      <h1>登录工作台</h1>
+      <p>使用分配给你的账号进入对应的任务与数据空间。</p>
+      <form id="loginForm">
+        <label>登录账号<input id="username" autocomplete="username" required placeholder="例如 operator-a"></label>
+        <label>密码<input id="password" type="password" autocomplete="current-password" required placeholder="输入密码"></label>
+        <button type="submit">进入工作台</button>
+        <p id="loginStatus" class="auth-status"></p>
+      </form>
+    </main>
+    <script src="/login.js"></script>
+  </body>
+</html>

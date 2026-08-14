@@ -1,4 +1,5 @@
-const state = { records: [], query: "", status: "" };
+const params = new URLSearchParams(location.search);
+const state = { records: [], query: "", status: "", novelId: params.get("novel") || "" };
 
 const listNode = document.querySelector("#recordList");
 const emptyNode = document.querySelector("#recordEmpty");
@@ -22,7 +23,8 @@ await loadRecords();
 async function loadRecords() {
   setStatus("正在读取官方 API 文案改写记录……");
   try {
-    const response = await fetch("/api/rewrite-records", { cache: "no-store" });
+    const query = state.novelId ? `?novel=${encodeURIComponent(state.novelId)}` : "";
+    const response = await fetch(`/api/rewrite-records${query}`, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `读取失败（${response.status}）`);
     state.records = Array.isArray(payload.records) ? payload.records : [];
@@ -40,7 +42,7 @@ function render() {
     const statusMatches = !state.status || String(record.status || "").toLowerCase().includes(state.status);
     if (!statusMatches) return false;
     if (!state.query) return true;
-    return [record.title, record.originalScript, record.rewrittenScript, record.diagnosis,
+    return [record.title, record.novelTitle, record.originalScript, record.rewrittenScript, record.diagnosis,
       record.evidenceSummary, record.sourceVideoId, record.sourceAudioId, record.planId]
       .some((value) => String(value || "").toLowerCase().includes(state.query));
   });
@@ -55,9 +57,16 @@ function createCard(record) {
   const head = node("header", "record-head");
   const heading = node("div");
   const tags = node("div", "tag-row");
-  tags.append(tag(statusLabel(record.status), "accent"), tag(record.planDate || "未标日期"), tag(formatTime(record.updatedAt)));
+  tags.append(tag(statusLabel(record.status), "accent"), tag(record.origin === "manual" ? "书单改写" : "官方自运营"), tag(record.planDate || "未标日期"), tag(formatTime(record.updatedAt)));
   heading.append(tags, textNode("h2", record.title || "未命名改写"));
   const meta = node("div", "record-meta");
+  if (record.novelTitle) {
+    const novelLink = document.createElement("a");
+    novelLink.className = "tag accent";
+    novelLink.href = `/novel-rewrite?novel=${encodeURIComponent(record.novelId)}`;
+    novelLink.textContent = record.novelTitle;
+    meta.append(novelLink);
+  }
   if (record.sourceVideoId) meta.append(tag(`视频 ${record.sourceVideoId}`));
   if (record.sourceAudioId) meta.append(tag(`音频 ${record.sourceAudioId}`));
   if (record.planId) meta.append(tag(`方案 ${record.planId}`));

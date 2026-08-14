@@ -1,6 +1,9 @@
-const state = { source: "official_api", days: 30, query: "" };
+const state = {
+  source: document.body.dataset.source === "third_party" ? "third_party" : "official_api",
+  days: 30,
+  query: ""
+};
 
-const sourceTabs = document.querySelector("#sourceTabs");
 const daysTabs = document.querySelector("#daysTabs");
 const searchForm = document.querySelector("#effectSearchForm");
 const searchInput = document.querySelector("#effectSearch");
@@ -10,13 +13,6 @@ const summaryNode = document.querySelector("#summaryGrid");
 const resultsNode = document.querySelector("#novelResults");
 const unassignedNode = document.querySelector("#unassignedSection");
 
-sourceTabs?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-source]");
-  if (!button) return;
-  state.source = button.dataset.source;
-  setActive(sourceTabs, button);
-  loadEffects();
-});
 daysTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-days]");
   if (!button) return;
