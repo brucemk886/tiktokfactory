@@ -1,5 +1,4 @@
 const statsRange = document.querySelector("#statsRange");
-const statsProfile = document.querySelector("#statsProfile");
 const statsGroup = document.querySelector("#statsGroup");
 const statsAccount = document.querySelector("#statsAccount");
 const refreshStatsBtn = document.querySelector("#refreshStatsBtn");
@@ -15,10 +14,6 @@ const retryCount = document.querySelector("#retryCount");
 
 refreshStatsBtn?.addEventListener("click", loadStats);
 statsRange?.addEventListener("change", loadStats);
-statsProfile?.addEventListener("change", () => {
-  if (statsGroup) statsGroup.value = "";
-  loadStats();
-});
 statsGroup?.addEventListener("change", loadStats);
 statsAccount?.addEventListener("input", debounce(loadStats, 300));
 document.addEventListener("click", (event) => {
@@ -32,7 +27,6 @@ async function loadStats() {
   statsStatus.textContent = "正在读取发布记录...";
   const params = new URLSearchParams({
     range: statsRange.value,
-    profileId: statsProfile?.value || "",
     group: statsGroup.value,
     account: statsAccount.value.trim()
   });
@@ -41,7 +35,6 @@ async function loadStats() {
     const response = await fetch(`/api/publish-records?${params.toString()}&t=${Date.now()}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取发布记录失败。");
-    updateProfileOptions(data.filters?.profiles || [], data.filters?.selectedProfileId || "");
     updateGroupOptions(data.filters?.groups || []);
     renderSummary(data.summary || {});
     renderRows(data.records || []);
@@ -49,18 +42,6 @@ async function loadStats() {
   } catch (error) {
     statsStatus.textContent = error.message || "读取发布记录失败。";
   }
-}
-
-function updateProfileOptions(profiles, selectedProfileId) {
-  if (!statsProfile) return;
-  const current = statsProfile.value;
-  statsProfile.innerHTML = profiles.length
-    ? profiles.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name || profile.id)}</option>`).join("")
-    : `<option value="">未配置 GeeLark 账号</option>`;
-  const next = profiles.some((profile) => profile.id === current)
-    ? current
-    : selectedProfileId;
-  if (next) statsProfile.value = next;
 }
 
 function updateGroupOptions(groups) {

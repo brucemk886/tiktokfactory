@@ -72,3 +72,90 @@ test("audio library generates once and reuses the same ElevenLabs result", async
   assert.equal(service.get(optimized.id).metadata.changeLog.length, 1);
   assert.match(service.get(first.id).script, /direct narration script/);
 });
+
+test("audio library uses the official ElevenLabs preview when a voice has one", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-preview-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  let ttsCalls = 0;
+  const service = createAudioLibraryService({
+    root: "C:/test-project",
+    workDir,
+    readConfig: () => ({ elevenLabsApiKey: "secret-key", elevenLabsVoiceId: "voice-1" }),
+    fetchImpl: async (url) => {
+      if (String(url).includes("/v1/voices/voice-rachel") && !String(url).includes("text-to-speech")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ voice_id: "voice-rachel", name: "Rachel", preview_url: "https://example.com/rachel.mp3" })
+        };
+      }
+      ttsCalls += 1;
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.alloc(2048, 3) };
+    }
+  });
+  const preview = await service.previewVoiceAudio("voice-rachel");
+  assert.equal(preview.kind, "remote");
+  assert.equal(preview.url, "https://example.com/rachel.mp3");
+  assert.equal(ttsCalls, 0);
+});
+
+test("audio library maps ElevenLabs voice filters and keeps the multilingual v2 model", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-filters-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const service = createAudioLibraryService({
+    root: "C:/test-project",
+    workDir,
+    readConfig: () => ({ elevenLabsApiKey: "secret-key", elevenLabsVoiceId: "", elevenLabsModelId: "should-not-use" }),
+    fetchImpl: async (url) => {
+      if (String(url).includes("/v1/voices")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            voices: [{
+              voice_id: "voice-sarah",
+              name: "Sarah",
+              category: "premade",
+              preview_url: "https://example.com/sarah.mp3",
+              labels: { gender: "female", age: "young", language: "english" },
+              verified_languages: [{ language: "en", locale: "en-US" }]
+            }]
+          })
+        };
+      }
+      throw new Error(`unexpected url ${url}`);
+    }
+  });
+  const listed = await service.listVoices();
+  assert.equal(listed.modelId, "eleven_multilingual_v2");
+  assert.equal(listed.voices[0].gender, "female");
+  assert.equal(listed.voices[0].age, "young");
+  assert.deepEqual(listed.voices[0].languages, ["en"]);
+  assert.equal(listed.filters.genders[0].label, "女性");
+  assert.equal(listed.filters.languages[0].value, "en");
+});
+
+test("script generation sends ElevenLabs speed and keeps default-speed cache", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-speed-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const bodies = [];
+  const service = createAudioLibraryService({
+    root: "C:/test-project",
+    workDir,
+    readConfig: () => ({ elevenLabsApiKey: "secret-key", elevenLabsVoiceId: "voice-1" }),
+    fetchImpl: async (_url, options = {}) => {
+      bodies.push(JSON.parse(options.body || "{}"));
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.alloc(2048, 1) };
+    }
+  });
+  const script = "The letter on my kitchen table proved my entire childhood was a lie and I had less than one night to decide what to do next.";
+  const first = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.1 });
+  const again = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.1 });
+  const faster = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.2 });
+  assert.equal(first.cacheHit, false);
+  assert.equal(again.cacheHit, true);
+  assert.equal(faster.cacheHit, false);
+  assert.equal(bodies[0].voice_settings.speed, 1.1);
+  assert.equal(bodies[1].voice_settings.speed, 1.2);
+  assert.equal(first.speechSpeed, 1.1);
+});

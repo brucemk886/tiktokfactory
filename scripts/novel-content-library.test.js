@@ -67,6 +67,28 @@ test("stores and updates the book platform, free chapters, promotion code and pr
   assert.match(overview.novels[0].sourceContent, /free chapter content/);
 });
 
+test("saves which opening audios are enabled for mix", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-mix-audio-"));
+  const audioItems = [{
+    id: "audio-keep", title: "Keep", fileName: "keep.mp3", script: "A complete original narration that is long enough for this test."
+  }, {
+    id: "audio-skip", title: "Skip", fileName: "skip.mp3", script: "A rewritten narration with a stronger and clearer opening for testing."
+  }];
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => audioItems } });
+  const novel = service.createNovel({
+    title: "Mix story",
+    platform: "GoodNovel",
+    sourceContent: "This is the complete free chapter content used by the local novel library."
+  });
+  const keep = service.createScript(novel.id, { text: audioItems[0].script, versionLabel: "留下" });
+  const skip = service.createScript(novel.id, { text: audioItems[1].script, versionLabel: "关掉" });
+  service.attachScriptAudio(keep.id, "audio-keep");
+  service.attachScriptAudio(skip.id, "audio-skip");
+  const updated = service.setNovelMixAudios(novel.id, [keep.id]);
+  assert.equal(updated.scripts.find((item) => item.id === keep.id).mixEnabled, true);
+  assert.equal(updated.scripts.find((item) => item.id === skip.id).mixEnabled, false);
+});
+
 test("rejects unsupported novel platforms", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
   const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
@@ -158,12 +180,67 @@ test("saves a manual rewrite as a derived script under the selected novel", () =
     versionLabel: "人工改写",
     text: "A rewritten narration that starts with the conflict and keeps the same ending facts."
   });
-  const loaded = service.getNovel(novel.id);
   assert.equal(rewritten.parentScriptId, first.id);
   assert.equal(rewritten.sourceType, "manual-rewrite");
-  assert.equal(loaded.scripts.length, 2);
+  assert.equal(first.openingTitle, "A complete original narration that is long enough for this rewrite test.");
+  const titled = service.createScript(novel.id, {
+    parentScriptId: first.id,
+    title: "Opening A hook",
+    versionLabel: "钩子标题",
+    openingTitle: "She married my uncle",
+    text: "She married my uncle after I found the letter he hid in the church pew."
+  });
+  assert.equal(titled.openingTitle, "She married my uncle");
+  const styled = service.createScript(novel.id, {
+    parentScriptId: first.id,
+    title: "Opening A style",
+    versionLabel: "冲突先行",
+    sourceType: "ai-style-rewrite",
+    text: "A styled narration that starts with the conflict and keeps the same characters and ending."
+  });
+  const loaded = service.getNovel(novel.id);
+  assert.equal(styled.sourceType, "ai-style-rewrite");
+  assert.equal(loaded.scripts.length, 4);
   assert.equal(loaded.scripts.find((item) => item.id === rewritten.id).versionLabel, "人工改写");
   assert.throws(() => service.createScript(novel.id, { parentScriptId: "missing", text: "A rewritten narration that is long enough for validation." }), /原文案不属于这本小说/);
+});
+
+test("exposes rewrite audio files and performance on the novel for the audio board", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-audio-board-"));
+  const audioItems = [{
+    id: "audio-opening",
+    title: "Opening A",
+    fileName: "opening-a.mp3",
+    script: "A complete original narration that is long enough for this audio board.",
+    duration: 42,
+    size: 2048,
+    scriptChars: 80,
+    targetAudioPath: "D:/seed-audio/opening-a.mp3",
+    source: { type: "manual-rewrite" },
+    createdAt: "2026-08-14T00:00:00.000Z"
+  }];
+  const service = createNovelContentLibraryService({
+    workDir,
+    audioLibrary: { list: () => audioItems }
+  });
+  const novel = service.createNovel({
+    title: "Audio board story",
+    platform: "GoodNovel",
+    sourceContent: "This free chapter is long enough to generate rewrite audio for the board."
+  });
+  const script = service.createScript(novel.id, {
+    title: "Opening A",
+    versionLabel: "开头版本 1",
+    text: audioItems[0].script
+  });
+  service.attachScriptAudio(script.id, "audio-opening");
+  const loaded = service.getNovel(novel.id);
+  const row = loaded.scripts.find((item) => item.id === script.id);
+  assert.equal(row.audio.id, "audio-opening");
+  assert.equal(row.audio.duration, 42);
+  assert.equal(row.audio.size, 2048);
+  assert.equal(row.audio.targetAudioPath, "D:/seed-audio/opening-a.mp3");
+  assert.equal(row.audio.sourceType, "manual-rewrite");
 });
 
 test("migrates legacy MasterNovel records to NovelMaster when reading the catalog", () => {

@@ -15,6 +15,7 @@ import {
   scoreClipReuse
 } from "./asset-library.js";
 import { resolveStorageDirs } from "./storage-paths.js";
+import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, resolveNovelVideoBadge, resolveOpeningHookTitle } from "./novel-video-badge.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -40,11 +41,7 @@ main().catch((error) => {
 async function main() {
   const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
   const config = readJson(path.join(root, "config.json"));
-  const audioDir = mustBeDirectory(payload.audioDir, "音频文件夹");
-  const audios = resolvePrioritizedAudios(
-    listMediaFiles(audioDir, AUDIO_EXTENSIONS),
-    payload.audioPriority
-  );
+  const audios = resolveMixAudios(payload);
   const saveDir = resolveSaveDir(payload.saveDir);
   const backgroundMusicFiles = resolveBackgroundMusicFiles(payload.backgroundMusicDir);
   const legacyVariants = clampInt(payload.variants, 1, 20, 1);
@@ -177,6 +174,28 @@ async function main() {
       volume: clampNumber(payload.backgroundMusicVolume, 0, 1, 0.12)
     });
 
+    const novelBadge = payload.burnNovelBadge === false
+      ? null
+      : resolveNovelVideoBadge({
+        workDir: storageDirs.workDir,
+        audioPath,
+        fallback: fallbackForAudio(payload, audioPath)
+      });
+    if (payload.burnNovelBadge !== false && !novelBadge) {
+      warnings.push(`未找到小说平台/推广码，已跳过角标：${path.basename(audioPath)}`);
+    }
+
+    const openingTitle = payload.openingTitleEnabled
+      ? resolveOpeningHookTitle({
+        workDir: storageDirs.workDir,
+        audioPath,
+        fallbackTitle: payload.openingTitle || ""
+      })
+      : "";
+    if (payload.openingTitleEnabled && !openingTitle) {
+      warnings.push(`未找到开头标题，已跳过前3秒标题：${path.basename(audioPath)}`);
+    }
+
     muxAudioAndCaptions({
       inputVideo: concatVideo,
       audioPath: finalAudioPath,
@@ -184,11 +203,13 @@ async function main() {
       captions,
       width,
       height,
-      fontFile: config.fontFile || "C:/Windows/Fonts/msyh.ttc",
+      fontFile: resolveBadgeFont(config.fontFile),
       subtitleFontSize,
       subtitleYPercent,
       subtitleAnimationMode,
-      duration: audioDuration
+      duration: audioDuration,
+      novelBadge,
+      openingTitle
     });
 
     const savedPath = saveDir ? copyToSaveDir(outputPath, saveDir) : "";
@@ -206,6 +227,9 @@ async function main() {
       audioName: path.basename(audioPath),
       audioIndex,
       variant,
+      novelId: novelBadge?.novelId || "",
+      novelPlatform: novelBadge?.platform || "",
+      novelPromotionCode: novelBadge?.promotionCode || "",
       assetGroupId: group.id,
       assetGroupName: group.name || group.id,
       duration: audioDuration,
@@ -297,6 +321,71 @@ function cleanupRunDir(runDir) {
 function resolveSaveDir(value) {
   const text = String(value || "").trim();
   return text ? path.resolve(text) : "";
+}
+
+function normalizeAudioItems(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => ({
+      id: String(item?.id || "").trim(),
+      path: String(item?.path || item?.file || "").trim(),
+      novelId: String(item?.novelId || "").trim(),
+      platform: String(item?.platform || item?.novelPlatform || "").trim(),
+      promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim()
+    }))
+    .filter((item) => item.id || item.path);
+}
+
+function readAudioLibraryIndex(workDir) {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(workDir, "audio-library", "index.json"), "utf8"));
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function resolveMixAudios(payload) {
+  const items = normalizeAudioItems(payload.audioItems);
+  const index = readAudioLibraryIndex(storageDirs.workDir);
+  const filesDir = path.join(storageDirs.workDir, "audio-library", "files");
+  const fromItems = [];
+  for (const item of items) {
+    const record = index.find((entry) => String(entry?.id || "") === item.id);
+    const found = [item.path, record?.fileName ? path.join(filesDir, record.fileName) : "", record?.targetAudioPath]
+      .find((file) => file && fs.existsSync(file));
+    if (found) fromItems.push(found);
+  }
+  let fromDir = [];
+  if (String(payload.audioDir || "").trim()) {
+    try {
+      fromDir = listMediaFiles(mustBeDirectory(payload.audioDir, "音频文件夹"), AUDIO_EXTENSIONS);
+    } catch (error) {
+      if (!fromItems.length) throw error;
+    }
+  }
+  const merged = [];
+  const seen = new Set();
+  for (const file of [...fromItems, ...fromDir]) {
+    const key = path.resolve(file);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(file);
+  }
+  if (!merged.length) throw new Error("没有找到可用音频。请勾选小说音频，或选择音频目录。");
+  return resolvePrioritizedAudios(merged, payload.audioPriority);
+}
+
+function fallbackForAudio(payload, audioPath) {
+  const items = normalizeAudioItems(payload.audioItems);
+  const resolved = path.resolve(String(audioPath || ""));
+  const baseName = path.basename(resolved);
+  const hit = items.find((item) => item.path && path.resolve(item.path) === resolved)
+    || items.find((item) => item.id && (baseName.includes(item.id) || resolved.includes(item.id)));
+  return {
+    novelId: hit?.novelId || payload.novelId,
+    platform: hit?.platform || payload.novelPlatform,
+    promotionCode: hit?.promotionCode || payload.novelPromotionCode
+  };
 }
 
 function resolvePrioritizedAudios(files, priorityNames) {
@@ -601,20 +690,39 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration }) {
+function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "" }) {
   const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath, "-t", String(duration)];
+  const filters = [];
+  const titleFilter = buildOpeningTitleDrawtext({
+    title: openingTitle,
+    fontFile,
+    textFile: path.join(path.dirname(inputVideo), "opening-title.txt")
+  });
+  if (titleFilter) filters.push(titleFilter);
   if (Array.isArray(captions?.cues) && captions.cues.length) {
     const assPath = path.join(path.dirname(inputVideo), "captions.ass");
     const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(captions?.words) && captions.words.length
       ? makeWordHighlightSubtitles(captions.cues, captions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
       : makeAssSubtitles(captions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
     fs.writeFileSync(assPath, ass, "utf8");
-    args.push("-vf", `subtitles='${ffPath(assPath).replace(/'/g, "\\'")}'`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22");
-  } else {
-    args.push("-c:v", "copy");
+    filters.push(`subtitles='${ffPath(assPath).replace(/'/g, "\\'")}'`);
   }
+  const badgeFilter = buildNovelBadgeDrawtext({
+    badge: novelBadge,
+    fontFile,
+    textFile: path.join(path.dirname(inputVideo), "novel-badge.txt")
+  });
+  if (badgeFilter) filters.push(badgeFilter);
+  if (filters.length) args.push("-vf", filters.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "22");
+  else args.push("-c:v", "copy");
   args.push("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", outputPath);
   run("ffmpeg", args);
+}
+
+function resolveBadgeFont(fontFile) {
+  const bold = "C:/Windows/Fonts/msyhbd.ttc";
+  if (fs.existsSync(bold)) return bold;
+  return fontFile || "C:/Windows/Fonts/msyh.ttc";
 }
 
 async function getCachedOrTranscribeCaptions({ audioPath, apiKey, modelId, requireWords = false }) {

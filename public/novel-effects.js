@@ -1,7 +1,9 @@
+const pageParams = new URLSearchParams(location.search);
 const state = {
   source: document.body.dataset.source === "third_party" ? "third_party" : "official_api",
-  days: 30,
-  query: ""
+  days: Number(document.querySelector("#daysTabs .active")?.dataset.days) || 7,
+  query: "",
+  novelId: pageParams.get("novel") || ""
 };
 
 const daysTabs = document.querySelector("#daysTabs");
@@ -16,7 +18,7 @@ const unassignedNode = document.querySelector("#unassignedSection");
 daysTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-days]");
   if (!button) return;
-  state.days = Number(button.dataset.days) || 30;
+  state.days = Number(button.dataset.days) || 7;
   setActive(daysTabs, button);
   loadEffects();
 });
@@ -35,15 +37,15 @@ async function loadEffects() {
   refreshButton.disabled = true;
   refreshButton.textContent = "加载中…";
   statusNode.className = "source-status";
-  statusNode.innerHTML = "<span>正在读取小说、文案、音频与视频映射…</span>";
+  statusNode.innerHTML = "<span>正在读取小说、改写版本与播放排行…</span>";
   summaryNode.innerHTML = "";
-  resultsNode.innerHTML = '<div class="loading">正在计算小说效果…</div>';
+  resultsNode.innerHTML = '<div class="loading">正在按播放量排行…</div>';
   unassignedNode.hidden = true;
   try {
     const params = new URLSearchParams({ source: state.source, days: String(state.days), query: state.query });
     const response = await fetch(`/api/novel-effects?${params}`, { cache: "no-store" });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "读取小说效果失败");
+    if (!response.ok) throw new Error(payload.error || "读取数据概览失败");
     render(payload);
   } catch (error) {
     statusNode.classList.add("warning");
@@ -56,43 +58,89 @@ async function loadEffects() {
 }
 
 function render(data) {
-  renderStatus(data.dataStatus || {});
-  renderSummary(data.summary || {});
-  const novels = Array.isArray(data.novels) ? data.novels : [];
-  resultsNode.innerHTML = novels.length ? novels.map(renderNovel).join("") : '<div class="empty-state">暂无匹配的小说效果数据。请先在小说书单中建立小说，并将文案绑定对应音频。</div>';
+  const ranked = rankNovels(data.novels || []);
+  renderStatus(data.dataStatus || {}, ranked.length);
+  renderSummary(data.summary || {}, ranked);
+  resultsNode.innerHTML = ranked.length
+    ? ranked.map((novel, index) => renderNovel(novel, index + 1)).join("")
+    : `<div class="empty-state">这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 7 天 / 30 天排行。</div>`;
   renderUnassigned(data.unassignedScripts || []);
+  focusCurrentNovel();
 }
 
-function renderStatus(status) {
-  const sourceName = status.label || (state.source === "official_api" ? "TikTok 官方 API" : "GeeLark 第三方");
+function rankNovels(novels) {
+  const ranked = novels
+    .map((novel) => ({
+      ...novel,
+      scripts: [...(novel.scripts || [])].sort(byViews)
+    }))
+    .filter((novel) => Number(novel.performance?.totalViews) > 0 || novel.id === state.novelId)
+    .sort(byViews);
+  if (!state.novelId) return ranked;
+  const focused = ranked.find((novel) => novel.id === state.novelId);
+  return focused ? [focused, ...ranked.filter((novel) => novel.id !== state.novelId)] : ranked;
+}
+
+function byViews(left, right) {
+  return Number(right.performance?.totalViews || 0) - Number(left.performance?.totalViews || 0);
+}
+
+function renderStatus(status, rankedCount) {
   const raw = Number(status.rawVideoCount || 0);
   const mapped = Number(status.mappedVideoCount || 0);
+  const ready = status.status === "ready" ? "数据已就绪" : "当前数据不可用";
+  const prefix = state.source === "official_api" ? ready : `${status.label || "GeeLark 第三方"} · ${ready}`;
   statusNode.classList.toggle("warning", status.status !== "ready" || raw > mapped);
-  statusNode.innerHTML = `<span><strong>${escapeHtml(sourceName)}</strong> · ${status.status === "ready" ? "数据已就绪" : "当前数据不可用"}${status.error ? ` · ${escapeHtml(status.error)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · 近 ${formatInteger(status.days || state.days)} 天</small>`;
+  statusNode.innerHTML = `<span><strong>${escapeHtml(prefix)}</strong>${status.error ? ` · ${escapeHtml(status.error)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · ${periodLabel(status.days || state.days)} · ${formatInteger(rankedCount)} 本有播放</small>`;
 }
 
-function renderSummary(summary) {
+function renderSummary(summary, ranked) {
+  const rewriteCount = ranked.reduce((sum, novel) => sum + rewriteScripts(novel.scripts).length, 0);
   const metrics = [
-    ["小说", formatInteger(summary.novelCount)], ["开头 / 文案版本", formatInteger(summary.scriptCount)],
-    ["对应音频", formatInteger(summary.audioCount)], ["测试视频", formatInteger(summary.videoCount)],
-    ["测试账号", formatInteger(summary.testedAccountCount)], ["总播放", formatNumber(summary.totalViews)],
-    ["平均观看", formatSeconds(summary.averageTimeWatched)], ["平均完播率", formatRate(summary.fullWatchRate)],
-    ["平均3秒留存", formatRate(summary.retentionAt3)], ["评论", formatNumber(summary.comments)],
+    ["上榜小说", formatInteger(ranked.length)],
+    ["改写版本", formatInteger(rewriteCount)],
+    ["开头版本", formatInteger(summary.scriptCount)],
+    ["测试视频", formatInteger(summary.videoCount)],
+    ["测试账号", formatInteger(summary.testedAccountCount)],
+    ["总播放", formatNumber(summary.totalViews)],
+    ["平均观看", formatSeconds(summary.averageTimeWatched)],
+    ["平均完播率", formatRate(summary.fullWatchRate)],
+    ["平均3秒留存", formatRate(summary.retentionAt3)],
+    ["评论", formatNumber(summary.comments)],
   ];
   summaryNode.innerHTML = metrics.map(([label, value]) => `<article class="metric-card"><div class="metric-label">${label}</div><div class="metric-value">${value}</div></article>`).join("");
 }
 
-function renderNovel(novel) {
+function renderNovel(novel, rank) {
   const performance = novel.performance || {};
   const scripts = Array.isArray(novel.scripts) ? novel.scripts : [];
-  return `<article class="novel-card"><header class="novel-head"><div><p class="eyebrow">NOVEL</p><h2>${escapeHtml(novel.title || "未命名小说")}</h2><div class="novel-meta">${escapeHtml([novel.category, novel.platform, novel.promotionCode].filter(Boolean).join(" · ") || "未填写分类")}</div></div><div class="novel-total">${miniMetric("开头版本", scripts.length)}${miniMetric("视频", performance.videoCount)}${miniMetric("账号", performance.accountCount)}${miniMetric("播放", formatNumber(performance.totalViews))}</div></header>${renderScripts(scripts)}</article>`;
+  const rewrites = rewriteScripts(scripts);
+  return `<article class="novel-card${novel.id === state.novelId ? " is-focused" : ""}" id="novel-${escapeHtml(novel.id)}">
+    <header class="novel-head">
+      <div class="novel-title-block">
+        <div class="rank-badge" aria-label="第 ${rank} 名">${rank}</div>
+        <div>
+          <p class="eyebrow">NOVEL · ${periodLabel(state.days)}</p>
+          <h2>${escapeHtml(novel.title || "未命名小说")}</h2>
+          <div class="novel-meta">${escapeHtml([novel.category, novel.platform, novel.promotionCode].filter(Boolean).join(" · ") || "未填写分类")} · ${rewrites.length} 个改写版本</div>
+        </div>
+      </div>
+      <div class="novel-total">${miniMetric("播放", formatNumber(performance.totalViews))}${miniMetric("视频", performance.videoCount)}${miniMetric("账号", performance.accountCount)}${miniMetric("开头版本", scripts.length)}</div>
+    </header>
+    <div class="novel-actions">
+      <a class="quiet-action" href="/novel-audio?novel=${encodeURIComponent(novel.id)}">查看音频与改写记录</a>
+      <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">改写</a>
+    </div>
+    ${renderScripts(scripts)}
+  </article>`;
 }
 
 function renderScripts(scripts) {
   if (!scripts.length) return '<div class="empty-state">该小说还没有文案版本。</div>';
-  return `<table class="script-table"><thead><tr><th>开头 / 文案版本</th><th>视频</th><th>账号</th><th>播放</th><th>平均观看</th><th>完播率</th><th>3秒留存</th><th>评论</th><th>诊断</th></tr></thead><tbody>${scripts.map((script) => {
+  return `<table class="script-table"><thead><tr><th>改写 / 开头版本</th><th>视频</th><th>账号</th><th>播放</th><th>平均观看</th><th>完播率</th><th>3秒留存</th><th>评论</th><th>诊断</th></tr></thead><tbody>${scripts.map((script) => {
     const p = script.performance || {};
-    return `<tr><td><div class="script-opening">${escapeHtml(openingText(script))}</div><div class="script-version">${escapeHtml(script.versionLabel || script.title || script.id || "未命名版本")} · ${script.audio ? escapeHtml(script.audio.title || script.audio.id) : "未绑定音频"}</div>${renderVideoDetails(script.videos || [])}</td><td>${formatInteger(p.videoCount)}</td><td>${formatInteger(p.accountCount)}</td><td>${formatNumber(p.totalViews)}</td><td>${formatSeconds(p.averageTimeWatched)}</td><td>${formatRate(p.fullWatchRate)}</td><td>${formatRate(p.retentionAt3)}</td><td>${formatNumber(p.comments)}</td><td class="diagnosis">${escapeHtml(p.diagnosis || "—")}</td></tr>`;
+    const rewrite = isRewrite(script);
+    return `<tr class="${rewrite ? "is-rewrite" : ""}"><td><div class="script-opening">${escapeHtml(openingText(script))}</div><div class="script-version">${escapeHtml(sourceLabel(script))} · ${escapeHtml(script.versionLabel || script.title || script.id || "未命名版本")} · ${script.audio ? escapeHtml(script.audio.title || script.audio.id) : "未绑定音频"}</div>${renderVideoDetails(script.videos || [])}</td><td>${formatInteger(p.videoCount)}</td><td>${formatInteger(p.accountCount)}</td><td>${formatNumber(p.totalViews)}</td><td>${formatSeconds(p.averageTimeWatched)}</td><td>${formatRate(p.fullWatchRate)}</td><td>${formatRate(p.retentionAt3)}</td><td>${formatNumber(p.comments)}</td><td class="diagnosis">${escapeHtml(p.diagnosis || "—")}</td></tr>`;
   }).join("")}</tbody></table>`;
 }
 
@@ -102,9 +150,43 @@ function renderVideoDetails(videos) {
 }
 
 function renderUnassigned(scripts) {
-  unassignedNode.hidden = !scripts.length;
-  if (!scripts.length) return;
-  unassignedNode.innerHTML = `<p class="eyebrow">UNASSIGNED</p><h2>未归属小说的文案</h2><p class="page-copy">这些文案已有音频或视频映射，但尚未归入小说。</p>${renderScripts(scripts)}`;
+  const ranked = [...scripts].filter((script) => Number(script.performance?.totalViews) > 0).sort(byViews);
+  unassignedNode.hidden = !ranked.length;
+  if (!ranked.length) return;
+  unassignedNode.innerHTML = `<p class="eyebrow">UNASSIGNED</p><h2>未归属小说但已有播放的文案</h2><p class="page-copy">这些改写或开头已映射到视频，但还没归入书单里的小说。</p>${renderScripts(ranked)}`;
+}
+
+function rewriteScripts(scripts = []) {
+  return scripts.filter(isRewrite);
+}
+
+function isRewrite(script) {
+  return ["manual-rewrite", "ai-operation-rewrite", "ai-marketing", "ai-style-rewrite", "novel-seed"].includes(script?.sourceType)
+    || Boolean(script?.parentScriptId);
+}
+
+function sourceLabel(script) {
+  return ({
+    "manual-rewrite": "人工改写",
+    "ai-operation-rewrite": "AI 数据改写",
+    "ai-marketing": "营销生成",
+    "ai-style-rewrite": "风格改版",
+    "novel-seed": "种子音频",
+    "audio-library": "音频库"
+  })[script?.sourceType] || (script?.parentScriptId ? "改写版本" : "原版本");
+}
+
+function focusCurrentNovel() {
+  if (!state.novelId) return;
+  const card = document.querySelector(`#novel-${CSS.escape(state.novelId)}`);
+  if (card) card.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function periodLabel(days) {
+  const value = Number(days) || 7;
+  if (value <= 1) return "今天";
+  if (value <= 7) return "近 7 天";
+  return "近 30 天";
 }
 
 function openingText(script) { const text = String(script.openingText || script.hook || script.text || script.content || script.title || "—").replace(/\s+/g, " ").trim(); return text.length > 150 ? `${text.slice(0, 150)}…` : text || "—"; }

@@ -174,6 +174,21 @@ body.tasks-page {
 .controls-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .publish-grid { grid-template-columns: 1.25fr 1fr 1fr 1fr; }
 .task-name-field { margin-bottom: 14px; }
+.novel-audio-picker {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #30363e;
+  border-radius: 6px;
+  background: #fff;
+}
+.novel-audio-novel { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.novel-audio-novel:hover { background: var(--lf-surface-2, #f6f0e4); }
+.tasks-page .novel-audio-novel input { width: 16px; min-width: 16px; height: 16px; padding: 0; margin: 0; accent-color: #5c6a14; }
+.novel-audio-novel strong { color: var(--task-text, #1d1a14); font-size: 12px; }
+.novel-audio-novel small { color: var(--task-muted, #6d6758); font-size: 11px; }
 .manual-video-source { padding: 14px; border: 1px solid var(--task-line-soft); border-radius: 6px; background: var(--lf-surface-2, #f6f0e4); }
 .manual-video-source[hidden] { display: none; }
 .retention-note { margin: 14px 0 0; color: #727b85; font-size: 10px; line-height: 1.5; }
@@ -230,7 +245,9 @@ body.tasks-page {
 
 .publish-switch-row { min-height: 42px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--task-line-soft); border-radius: 6px; background: var(--lf-surface); }
 .publish-provider-field { max-width: 360px; margin-bottom: 12px; }
-.official-account-toolbar { margin: 12px 0 8px; display: grid; grid-template-columns: minmax(180px, 1fr) auto auto; gap: 10px; align-items: end; }
+.tasks-page .field small,
+#novelBadgeHint { display: block; margin-top: 6px; color: var(--task-muted); font-size: 11px; line-height: 1.45; }
+.official-account-toolbar { margin: 12px 0 8px; display: grid; grid-template-columns: minmax(140px, 0.8fr) minmax(180px, 1fr) auto auto; gap: 10px; align-items: end; }
 .official-account-toolbar > div { display: flex; flex-direction: column; gap: 3px; }
 .official-account-toolbar > div strong { font-size: 11px; }
 .official-account-toolbar > div span { color: var(--task-muted); font-size: 9px; }

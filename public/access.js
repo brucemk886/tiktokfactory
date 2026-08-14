@@ -4,17 +4,18 @@ ensureThemeStylesheet();
   try {
     const response = await fetch("/api/auth/me", { cache: "no-store" });
     if (!response.ok) return location.assign("/login");
-    const { user, sidebarModules } = await response.json();
+    const { user, home, sidebarModules } = await response.json();
     if (!Array.isArray(sidebarModules)) throw new Error("Sidebar catalog is unavailable.");
     document.documentElement.dataset.role = user.role;
 
     renderCanonicalSidebars(user, sidebarModules);
     applyRoleVisibility(user);
+    const homePath = home || (user.role === "admin" ? "/" : "");
     document.querySelectorAll(".app-brand, .tasks-brand").forEach((item) => {
-      item.href = "/";
+      item.href = homePath || "#";
       const small = item.querySelector("small");
       const activeGroup = document.querySelector(".sidebar-group.is-open .sidebar-group-toggle span");
-      if (small) small.textContent = activeGroup?.textContent || "业务总览";
+      if (small) small.textContent = activeGroup?.textContent || (user.role === "admin" ? "业务总览" : "GeeLark 备用");
     });
     document.documentElement.dataset.sidebarReady = "true";
 
@@ -152,6 +153,7 @@ function createSidebarGroup(group, items) {
 function sidebarPath(pathname) {
   const normalized = pathname.replace(/\/$/, "") || "/";
   if (["/official-account-detail", "/official-account-videos", "/official-video-detail"].includes(normalized)) return "/official-analytics";
+  if (["/novel-rewrite", "/novel-audio", "/rewrite-records"].includes(normalized)) return "/novel-library";
   if (normalized === "/operator") return "/operator/third-party";
   return normalized;
 }

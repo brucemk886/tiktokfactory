@@ -74,6 +74,7 @@ export function createOperationBrainService({
   fixedDataStrategy = null,
   accountSource = null,
   strategyPolicyProvider = null,
+  defaultVoiceIdProvider = null,
   now = () => Date.now()
 }) {
   const settingsPath = path.join(workDir, "operation-brain-settings.json");
@@ -482,7 +483,8 @@ export function createOperationBrainService({
         audioLibrary,
         planId: id,
         targetAudioDir: settings.audioDir,
-        strategyPolicy
+        strategyPolicy,
+        defaultVoiceId: typeof defaultVoiceIdProvider === "function" ? defaultVoiceIdProvider() : ""
       });
       const learningRegistration = settings.dataStrategy === "official_api" && novelLearningService
         ? novelLearningService.registerOptimizations({ planId: id, optimizedContent, createdAt: now() })
@@ -1172,6 +1174,7 @@ function buildTaskDrafts({ assignments, settings, redditDefaults = {}, contentFe
             subtitleAnimationMode: savedSubtitle.animationMode || "word-highlight",
             quality: "fast",
             autoCaptions: true,
+            openingTitleEnabled: savedSubtitle.openingTitleEnabled === true,
             dedup
           },
           publish: {
@@ -1473,7 +1476,7 @@ function nullableNumber(value) {
   return value === null || value === undefined || value === "" ? null : Number(value) || 0;
 }
 
-async function materializeScriptOptimizations({ strategy = {}, audioLibrary, planId, targetAudioDir, strategyPolicy = null }) {
+async function materializeScriptOptimizations({ strategy = {}, audioLibrary, planId, targetAudioDir, strategyPolicy = null, defaultVoiceId = "" }) {
   if (strategyPolicy?.rewrite?.enabled === false) return [];
   const maxVariants = Math.max(1, Math.min(10, Number(strategyPolicy?.rewrite?.maxVariants) || 3));
   const requests = Array.isArray(strategy?.scriptOptimizations) ? strategy.scriptOptimizations.slice(0, maxVariants) : [];
@@ -1497,6 +1500,7 @@ async function materializeScriptOptimizations({ strategy = {}, audioLibrary, pla
         sourceVideoId: request.sourceVideoId,
         title: request.title || `${source.title} AI优化版`,
         script: request.rewrittenScript,
+        voiceId: String(strategyPolicy?.audio?.voiceId || defaultVoiceId || "").trim(),
         diagnosis: request.diagnosis,
         evidenceSummary: request.evidenceSummary,
         rewriteMetadata: {

@@ -111,7 +111,7 @@ redditHelpToggle?.addEventListener("click", () => setHelpOpen(redditHelp?.datase
 redditHelpClose?.addEventListener("click", () => setHelpOpen(false));
 saveDedupSettingsBtn?.addEventListener("click", saveDedupSettings);
 saveSubtitleSettingsBtn?.addEventListener("click", saveSubtitleSettings);
-[subtitleYPercent, subtitleFontSize, subtitleAnimationMode].forEach((input) => input?.addEventListener("change", saveSubtitleSettings));
+[subtitleYPercent, subtitleFontSize, subtitleAnimationMode, $("#openingTitleEnabled")].forEach((input) => input?.addEventListener("change", saveSubtitleSettings));
 
 downloadLink.classList.remove("is-visible");
 attachDirectoryPickers();
@@ -332,6 +332,7 @@ function collectMixPayload() {
     subtitleAnimationMode: subtitleAnimationMode?.value || "sentence",
     quality: quality.value,
     autoCaptions: autoCaptions.checked,
+    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true,
     dedup: collectDedupSettings()
   };
 }
@@ -340,7 +341,8 @@ function collectSubtitleSettings() {
   return {
     yPercent: numberValue(subtitleYPercent, 66),
     fontSize: numberValue(subtitleFontSize, 62),
-    animationMode: subtitleAnimationMode?.value || "sentence"
+    animationMode: subtitleAnimationMode?.value || "sentence",
+    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true
   };
 }
 
@@ -369,6 +371,7 @@ function applySubtitleSettings(settings) {
   setInputValue(subtitleYPercent, settings.yPercent);
   setInputValue(subtitleFontSize, settings.fontSize);
   if (subtitleAnimationMode && settings.animationMode) subtitleAnimationMode.value = settings.animationMode;
+  if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = settings.openingTitleEnabled === true;
 }
 
 function collectDedupSettings() {

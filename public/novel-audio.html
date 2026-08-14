@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小说详情 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/novel-audio.css" />
+    <link rel="stylesheet" href="/rewrite-records.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
+  <body class="work-page novel-audio-page">
+    <nav class="side-tabs" aria-label="主导航"></nav>
+    <main class="audio-shell">
+      <header class="audio-header">
+        <div>
+          <p class="library-kicker">NOVEL DETAIL</p>
+          <h1 id="pageTitle">小说详情</h1>
+          <p id="pageLead">勾选这本要拿去混剪的生效音频并保存。混剪页只勾小说，会抽这里勾上的音频。</p>
+        </div>
+        <div class="header-actions">
+          <a class="quiet-action" href="/novel-library">返回书单</a>
+          <a id="rewriteLink" class="primary-action" href="/novel-rewrite">去改写</a>
+        </div>
+      </header>
+
+      <section id="summary" class="audio-summary" hidden></section>
+      <p id="listStatus" class="list-status">正在读取改写音频...</p>
+      <div id="mixToolbar" class="mix-toolbar" hidden>
+        <p>勾选生效音频后点保存。混剪勾这本小说时，只抽这些音频。</p>
+        <button id="saveMixAudiosBtn" class="primary-action" type="button">保存生效音频</button>
+        <span id="mixStatus" role="status"></span>
+      </div>
+      <section id="audioList" class="audio-list"></section>
+
+      <section id="records" class="records-section">
+        <header class="records-heading">
+          <div>
+            <p class="library-kicker">REWRITE ARCHIVE</p>
+            <h2>改写记录</h2>
+            <p>这本小说的人工改写和官方自运营改写都会出现在这里。</p>
+          </div>
+          <strong id="recordCount">0 条记录</strong>
+        </header>
+        <p id="recordStatus" class="record-status" role="status"></p>
+        <section id="recordList" class="record-list" aria-live="polite"></section>
+        <section id="recordEmpty" class="record-empty" hidden>
+          <strong>这本还没有改写记录</strong>
+          <span>点右上角「去改写」保存新开头后，记录会出现在这里。</span>
+        </section>
+      </section>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/novel-audio.js" type="module"></script>
+  </body>
+</html>

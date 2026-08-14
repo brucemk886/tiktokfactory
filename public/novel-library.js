@@ -114,6 +114,7 @@ function renderBooks() {
       <td>${novel.hit ? `<span class="mark-chip is-hit">${escapeHtml(novel.hitLabel || "爆款")}</span>` : "—"}</td>
       <td class="row-actions">
         <button class="edit-button" type="button" data-edit-id="${escapeHtml(novel.id)}">编辑</button>
+        <a class="edit-button audio-link" href="/novel-audio?novel=${encodeURIComponent(novel.id)}" data-audio-id="${escapeHtml(novel.id)}">查看音频</a>
         <a class="edit-button rewrite-link" href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}" data-rewrite-id="${escapeHtml(novel.id)}">改写</a>
       </td>
     </tr>`).join("");
@@ -122,6 +123,9 @@ function renderBooks() {
   });
   elements.list.querySelectorAll("[data-rewrite-id]").forEach((link) => {
     link.addEventListener("click", () => stashRewriteNovel(link.dataset.rewriteId));
+  });
+  elements.list.querySelectorAll("[data-audio-id]").forEach((link) => {
+    link.addEventListener("click", () => stashRewriteNovel(link.dataset.audioId));
   });
 }
 
@@ -144,6 +148,10 @@ function stashRewriteNovel(id) {
       text: script.text,
       versionLabel: script.versionLabel,
       parentScriptId: script.parentScriptId,
+      audioId: script.audioId || script.audio?.id || "",
+      audio: script.audio || null,
+      sourceType: script.sourceType || "",
+      createdAt: script.createdAt || "",
       performance: script.performance || {}
     })),
     performance: novel.performance || {}

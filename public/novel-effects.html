@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>小说效果 · Local Factory</title>
+  <title>数据概览 · Local Factory</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/novel-effects.css">
     <link rel="stylesheet" href="/theme-ops.css" />
@@ -11,15 +11,14 @@
 <body class="work-page novel-effects-page" data-source="official_api">
   <nav class="side-tabs" aria-label="主导航"></nav>
   <main class="effects-shell">
-    <header class="page-heading"><div><p class="eyebrow">NOVEL PERFORMANCE</p><h1>小说效果</h1><p class="page-copy">只看 TikTok 官方 API 已映射到小说与开头版本的真实发布数据。GeeLark 第三方效果在备用区单独查看。</p></div></header>
+    <header class="page-heading"><div><p class="eyebrow">NOVEL RANKING</p><h1>数据概览</h1><p class="page-copy">按播放量看今天、近 7 天、近 30 天跑得好的小说，以及对应改写版本。只统计 TikTok 官方 API 已映射到小说开头的真实发布数据。</p></div></header>
     <section class="toolbar-card">
-      <div class="control-group"><span class="control-label">数据通路</span><div class="source-lock">TikTok 官方 API</div></div>
-      <div class="control-group"><span class="control-label">统计周期</span><div class="segmented compact" id="daysTabs"><button type="button" data-days="7">近7天</button><button type="button" class="active" data-days="30">近30天</button></div></div>
+      <div class="control-group"><span class="control-label">统计周期</span><div class="segmented compact" id="daysTabs"><button type="button" data-days="1">今天</button><button type="button" class="active" data-days="7">近7天</button><button type="button" data-days="30">近30天</button></div></div>
       <form class="search-form" id="effectSearchForm"><label class="sr-only" for="effectSearch">搜索小说</label><input id="effectSearch" type="search" placeholder="搜索小说标题、分类或推广码"><button type="submit" class="primary-button">查询</button></form>
       <button type="button" class="ghost-button" id="effectRefresh">刷新</button>
     </section>
     <section class="source-status" id="sourceStatus" aria-live="polite"></section>
-    <section class="summary-grid" id="summaryGrid" aria-label="小说效果汇总"></section>
+    <section class="summary-grid" id="summaryGrid" aria-label="数据概览汇总"></section>
     <section class="novel-list" id="novelResults"></section>
     <section class="unassigned-section" id="unassignedSection" hidden></section>
   </main>

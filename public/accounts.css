@@ -1,0 +1,350 @@
+.accounts-page .accounts-shell {
+  max-width: 1500px;
+  padding: 30px 42px 80px;
+}
+
+.accounts-page .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--lf-line);
+}
+
+.accounts-page .page-header h1 {
+  margin: 5px 0 7px;
+  font-size: 34px;
+  letter-spacing: -0.03em;
+}
+
+.accounts-page .page-header p,
+.accounts-page .admin-chip small {
+  margin: 0;
+  color: var(--lf-muted);
+}
+
+.accounts-page .eyebrow {
+  color: var(--lf-accent);
+  font: 700 11px/1.2 ui-monospace, Consolas, monospace;
+}
+
+.accounts-page .admin-chip {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  padding: 12px 14px;
+  border: 1px solid var(--lf-line);
+  border-radius: var(--lf-radius-sm);
+  background: var(--lf-surface);
+}
+
+.accounts-page .admin-chip b {
+  font-size: 15px;
+}
+
+.accounts-page .workflow-section {
+  margin-top: 18px;
+  padding: 24px;
+  border: 1px solid var(--lf-line);
+  border-radius: var(--lf-radius);
+  background: var(--lf-surface);
+}
+
+.accounts-page .section-head {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.accounts-page .section-head > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--lf-accent);
+  border: 1px solid #8a9a32;
+  font-weight: 800;
+}
+
+.accounts-page .section-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.accounts-page .section-head p {
+  margin: 4px 0 0;
+  color: var(--lf-muted);
+  font-size: 12px;
+}
+
+.accounts-page .account-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.accounts-page .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.accounts-page .account-form label,
+.accounts-page .field-block > span {
+  display: grid;
+  gap: 7px;
+  color: var(--lf-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.accounts-page .account-form small,
+.accounts-page .field-meta small {
+  color: var(--lf-muted);
+  font-weight: 500;
+}
+
+.accounts-page .account-form input,
+.accounts-page .account-form select {
+  width: 100%;
+  height: 43px;
+  padding: 0 12px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--lf-text);
+  font: inherit;
+  color-scheme: light;
+}
+
+.accounts-page .field-block {
+  display: grid;
+  gap: 8px;
+}
+
+.accounts-page .checkbox-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--lf-line);
+  border-radius: 8px;
+  background: var(--lf-surface-2);
+}
+
+.accounts-page .checkbox-list.is-disabled {
+  opacity: 0.55;
+}
+
+.accounts-page .checkbox-item,
+.accounts-page .group-checkbox-item,
+.accounts-page .sidebar-checkbox-item {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--lf-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--lf-text) !important;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accounts-page .checkbox-item:hover,
+.accounts-page .group-checkbox-item:hover,
+.accounts-page .sidebar-checkbox-item:hover,
+.accounts-page .checkbox-item:has(input:checked),
+.accounts-page .group-checkbox-item:has(input:checked),
+.accounts-page .sidebar-checkbox-item:has(input:checked) {
+  border-color: #8a9a32;
+  background: rgba(200, 220, 90, 0.18);
+}
+
+.accounts-page .checkbox-item input,
+.accounts-page .group-checkbox-item input,
+.accounts-page .sidebar-checkbox-item input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  accent-color: var(--lf-accent);
+}
+
+.accounts-page .field-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.accounts-page .text-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accounts-page .text-action {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--lf-text);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.accounts-page .form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+}
+
+.accounts-page .primary-button,
+.accounts-page .account-form button[type="submit"],
+.accounts-page .sidebar-save-button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--lf-accent-fill);
+  border-radius: 5px;
+  background: var(--lf-accent-fill);
+  color: var(--lf-accent-ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.accounts-page .secondary-button,
+.accounts-page .account-form button.subtle {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--lf-text);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.accounts-page .auth-status {
+  margin: 0;
+  color: var(--lf-muted);
+  font-size: 12px;
+}
+
+.accounts-page .auth-status:not(:empty) {
+  color: var(--lf-green);
+}
+
+.accounts-page .inline-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.accounts-page .inline-check input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+}
+
+.accounts-page .accounts-split {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.1fr) minmax(320px, 0.9fr);
+  gap: 22px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.accounts-page .entity-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.accounts-page .list-panel {
+  padding: 16px;
+  border: 1px solid var(--lf-line);
+  border-radius: 12px;
+  background: var(--lf-surface-2);
+}
+
+.accounts-page .list-panel h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.accounts-page .entity-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--lf-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.accounts-page .entity-card strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.accounts-page .entity-card small {
+  display: block;
+  color: var(--lf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.accounts-page .entity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.accounts-page .entity-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--lf-text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.accounts-page .status-dot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid #2a7a52;
+  border-radius: 4px;
+  color: var(--lf-green);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.accounts-page .status-dot.off {
+  border-color: var(--lf-line-strong);
+  color: var(--lf-muted);
+}
+
+@media (max-width: 1100px) {
+  .accounts-page .accounts-shell { padding: 22px; }
+  .accounts-page .form-grid,
+  .accounts-page .accounts-split,
+  .accounts-page .checkbox-list { grid-template-columns: 1fr; }
+  .accounts-page .page-header { flex-direction: column; }
+}

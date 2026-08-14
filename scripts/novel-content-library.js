@@ -163,6 +163,7 @@ export function createNovelContentLibraryService({
         versionLabel: clean(selected.angle || `开头版本 ${rank}`).slice(0, 100),
         sourceType: "ai-marketing",
         sourceVideoId: "",
+        mixEnabled: current?.mixEnabled !== false,
         createdAt: current?.createdAt || record.generatedAt || new Date(now()).toISOString(),
         updatedAt: new Date(now()).toISOString()
       };
@@ -201,8 +202,12 @@ export function createNovelContentLibraryService({
       title: clean(payload.title).slice(0, 240) || `${novel.title} 改写`,
       text,
       versionLabel: clean(payload.versionLabel).slice(0, 100) || "人工改写",
-      sourceType: "manual-rewrite",
+      sourceType: ["manual-rewrite", "ai-marketing", "ai-style-rewrite", "ai-operation-rewrite"].includes(payload.sourceType)
+        ? payload.sourceType
+        : "manual-rewrite",
       sourceVideoId: clean(payload.sourceVideoId).slice(0, 160),
+      openingTitle: clean(payload.openingTitle || firstHookLine(text)).slice(0, 80),
+      mixEnabled: true,
       createdAt,
       updatedAt: createdAt
     };
@@ -211,7 +216,37 @@ export function createNovelContentLibraryService({
     return script;
   }
 
-  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, createScript, assignScript, importMarketingResult };
+  function attachScriptAudio(scriptId, audioId) {
+    const store = readStore(storePath);
+    const script = store.scripts.find((item) => item.id === safeId(scriptId));
+    if (!script) throw statusError(404, "没有找到该文案。");
+    const nextAudioId = safeId(audioId);
+    if (!nextAudioId) throw statusError(400, "缺少有效的音频编号。");
+    script.audioId = nextAudioId;
+    script.updatedAt = new Date(now()).toISOString();
+    writeStore(storePath, store);
+    return script;
+  }
+
+  function setNovelMixAudios(novelId, scriptIds) {
+    const store = syncedStore();
+    const novel = store.novels.find((item) => item.id === safeId(novelId));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    const wanted = new Set((Array.isArray(scriptIds) ? scriptIds : []).map((id) => safeId(id)).filter(Boolean));
+    const audioScripts = store.scripts.filter((item) => item.novelId === novel.id && item.audioId);
+    if (!audioScripts.length) throw statusError(400, "这本小说还没有可勾选的音频。");
+    const unknown = [...wanted].filter((id) => !audioScripts.some((item) => item.id === id));
+    if (unknown.length) throw statusError(400, "勾选的音频不属于这本小说。");
+    const timestamp = new Date(now()).toISOString();
+    for (const script of audioScripts) {
+      script.mixEnabled = wanted.has(script.id);
+      script.updatedAt = timestamp;
+    }
+    writeStore(storePath, store);
+    return getNovel(novel.id);
+  }
+
+  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, createScript, assignScript, attachScriptAudio, setNovelMixAudios, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {
@@ -258,7 +293,7 @@ function buildOverview(store, audioItems, matchedVideos, query) {
     const novelScripts = scriptsByNovel.get(novel.id) || [];
     const allVideos = novelScripts.flatMap((script) => script.videos);
     return { ...novel, scripts: novelScripts, performance: summarizeVideos(allVideos) };
-  })).filter((novel) => !normalizedQuery || [novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category, novel.sourceContent]
+  })).filter((novel) => !normalizedQuery || [novel.id, novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category, novel.sourceContent]
     .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)));
   const knownNovelIds = new Set(store.novels.map((novel) => novel.id));
   const unassignedScripts = scripts.filter((script) => !script.novelId || !knownNovelIds.has(script.novelId));
@@ -324,7 +359,16 @@ function syncAudioScripts(store, audioItems, currentTime) {
 
 function compactAudio(audio) {
   if (!audio) return null;
-  return { id: audio.id, title: audio.title, duration: Number(audio.duration) || 0, size: Number(audio.size) || 0, createdAt: audio.createdAt || "" };
+  return {
+    id: audio.id,
+    title: audio.title,
+    duration: Number(audio.duration) || 0,
+    size: Number(audio.size) || 0,
+    createdAt: audio.createdAt || "",
+    scriptChars: Number(audio.scriptChars) || 0,
+    targetAudioPath: String(audio.targetAudioPath || "").trim(),
+    sourceType: String(audio.source?.type || "").trim()
+  };
 }
 
 function compactVideo(video) {
@@ -476,6 +520,8 @@ function normalizeScript(item) {
     marketingRank: Number(item.marketingRank) || 0, title: clean(item.title).slice(0, 240),
     text: String(item.text || "").trim().slice(0, 20_000), versionLabel: clean(item.versionLabel).slice(0, 100),
     sourceType: clean(item.sourceType).slice(0, 80), sourceVideoId: clean(item.sourceVideoId).slice(0, 160),
+    openingTitle: clean(item.openingTitle || firstHookLine(item.text)).slice(0, 80),
+    mixEnabled: item.mixEnabled !== false,
     createdAt: clean(item.createdAt), updatedAt: clean(item.updatedAt)
   };
 }
@@ -502,6 +548,12 @@ function mediaKey(value) { return clean(value).toLowerCase().replace(/\.[a-z0-9]
 function basename(value) { return value ? path.basename(String(value)) : ""; }
 function safeId(value) { return clean(value).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160); }
 function clean(value) { return String(value ?? "").trim(); }
+function firstHookLine(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const match = text.match(/^(.{8,72}?[.!?。！？])(?:\s|$)/);
+  return (match?.[1] || text).slice(0, 72);
+}
 function asBoolean(value) {
   if (value === true || value === 1) return true;
   if (value === false || value === 0 || value == null || value === "") return false;

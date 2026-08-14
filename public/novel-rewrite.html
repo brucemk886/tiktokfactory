@@ -15,12 +15,12 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">只改视频开头/配音文案，不改全书。免费章节只作对照摘录；有已有开头版本时，从那一条局部改。</p>
+          <p id="pageLead">只改视频开头/配音文案，不改全书。默认用 AI 按勾选风格生成；也可以改成自己写。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
-          <a id="effectsLink" class="quiet-action" href="/novel-effects">小说效果</a>
-          <a id="recordsLink" class="quiet-action" href="/rewrite-records">改写记录</a>
+          <a id="audioLink" class="quiet-action" href="/novel-audio">查看音频与记录</a>
+          <a id="effectsLink" class="quiet-action" href="/novel-effects">数据概览</a>
         </div>
       </header>
 
@@ -35,36 +35,135 @@
       </section>
 
       <section id="workView" class="rewrite-work" hidden>
-        <aside class="source-panel">
-          <div class="novel-summary">
-            <p class="library-kicker">NOVEL</p>
-            <h2 id="novelTitle">未选择小说</h2>
-            <div id="novelMeta" class="novel-meta"></div>
-            <p id="novelStats" class="novel-stats"></p>
-          </div>
-          <div class="source-block">
-            <h3>免费章节摘录</h3>
-            <p id="sourceExcerpt" class="source-excerpt">—</p>
-          </div>
-          <div class="source-block">
-            <h3>已有开头版本</h3>
-            <div id="scriptList" class="script-list"></div>
-          </div>
-        </aside>
+        <div class="rewrite-column">
+          <aside class="source-panel">
+            <div class="novel-summary">
+              <p class="library-kicker">NOVEL</p>
+              <h2 id="novelTitle">未选择小说</h2>
+              <div id="novelMeta" class="novel-meta"></div>
+              <p id="novelStats" class="novel-stats"></p>
+            </div>
+            <div class="source-block">
+              <h3>免费章节摘录</h3>
+              <p id="sourceExcerpt" class="source-excerpt">—</p>
+            </div>
+          </aside>
 
-        <form id="rewriteForm" class="rewrite-editor">
-          <div class="section-heading">
-            <div><span>REWRITE</span><h2>写新开头版本</h2></div>
-          </div>
-          <p id="baseHint" class="hint">只改开头文案。默认带入已有开头版本；没有版本时，对照左侧章节摘录自己写一段口播，不必贴全书。</p>
-          <label><span>版本名称</span><input id="versionLabel" type="text" maxlength="100" placeholder="例如：前3秒冲突提前" value="人工改写" /></label>
-          <label><span>对照开头</span><textarea id="originalText" readonly></textarea></label>
-          <label><span>改写开头文案</span><textarea id="rewriteText" maxlength="4000" placeholder="只写视频口播/开头文案，一般几百到一两千字。保留人物、关键事件和结局，不要改全书。" required></textarea><small id="rewriteCount">0 / 4,000</small></label>
-          <div class="form-actions">
-            <button id="saveRewriteBtn" class="primary-action" type="submit">保存为新开头版本</button>
+          <form id="rewriteForm" class="rewrite-editor">
+            <div class="section-heading">
+              <div><span>REWRITE</span><h2>写新开头版本</h2></div>
+            </div>
+            <p id="baseHint" class="hint">对照用上面的免费章节。勾几种风格就生成几条；人工写开头时再出现文案框。</p>
+            <div class="mode-picker" role="radiogroup" aria-label="开头写法">
+              <label class="mode-option is-on">
+                <input name="rewriteMode" type="radio" value="ai" checked />
+                <span>AI 生成文案</span>
+              </label>
+              <label class="mode-option">
+                <input name="rewriteMode" type="radio" value="manual" />
+                <span>人工写开头</span>
+              </label>
+              <select id="openingModel" aria-label="改写模型">
+                <option value="gpt-5.6-sol">GPT-5.6 Sol · 旗舰</option>
+                <option value="gpt-5.6-terra">GPT-5.6 Terra · 第二档</option>
+              </select>
+            </div>
+            <div id="aiRewritePanel">
+              <div class="style-picker">
+                <div class="style-picker-head">
+                  <span>改版风格</span>
+                  <small id="styleCount">已选 3</small>
+                </div>
+                <p class="hint">勾选风格，卡片右侧数字是这种再写几条。冲突、对立、狗血的开头更抓人。</p>
+                <div id="styleOptions" class="style-options"></div>
+              </div>
+              <div class="form-actions">
+                <button id="generateVariantsBtn" class="primary-action" type="button">生成 3 个改版开头</button>
+              </div>
+              <section id="variantPanel" class="variant-panel" hidden>
+                <div class="section-heading">
+                  <div><span>AI VARIANTS</span><h2 id="variantHeading">改版开头</h2></div>
+                </div>
+                <p id="variantStatus" class="hint">勾选后可单条保存并生成音频。声音和目录用右边的默认设置。</p>
+                <div id="variantList" class="variant-list"></div>
+              </section>
+            </div>
+            <div id="manualRewritePanel" hidden>
+              <label>
+                <span>开头标题</span>
+                <input id="openingTitle" type="text" maxlength="80" placeholder="前 3 秒盖在画面正中，例如 She married my uncle" />
+                <small class="field-hint">第一眼钩子，4 到 10 个英文词，不要句号和书名。口播第一句对准这个冲突点。</small>
+              </label>
+              <label class="rewrite-text-field">
+                <span>新写开头文案</span>
+                <textarea id="rewriteText" maxlength="4000" placeholder="只写视频口播/开头文案。第一句就要勾住用户。保留人物、关键事件和结局，不要改全书。"></textarea>
+                <small id="rewriteCount" class="field-count">0 / 4,000</small>
+              </label>
+              <div class="form-actions">
+                <button id="saveRewriteBtn" class="primary-action" type="submit">保存为新开头版本</button>
+              </div>
+            </div>
             <span id="formStatus" role="status"></span>
-          </div>
-        </form>
+          </form>
+        </div>
+
+        <div class="audio-column">
+          <section class="source-panel">
+            <div class="source-block">
+              <h3>已有开头版本</h3>
+              <div id="scriptList" class="script-list"></div>
+            </div>
+          </section>
+          <section class="audio-panel rewrite-editor">
+            <div class="section-heading">
+              <div><span>AUDIO</span><h2>生成音频</h2></div>
+            </div>
+            <p class="hint">先筛声音，试听确认后再生成。这里选中的声音和目录会作为新书种子、以及机器自动改写配音的默认值。改写规则在 <a href="/novel-strategy">策略中心</a>。</p>
+            <p class="model-fixed">模型已固定：<strong>Eleven Multilingual v2</strong><span>工作室品质 · 29 种语言 · 旁白/有声书</span></p>
+            <div class="voice-studio">
+              <div class="voice-filter-bar" aria-label="声音筛选">
+                <label><span>语言</span><select id="voiceLanguage"><option value="">全部</option></select></label>
+                <label><span>类别</span><select id="voiceCategory"><option value="">全部</option></select></label>
+                <label><span>性别</span><select id="voiceGender"><option value="">全部</option></select></label>
+                <label><span>年龄</span><select id="voiceAge"><option value="">全部</option></select></label>
+              </div>
+              <div class="voice-pick">
+                <label class="voice-pick-main">
+                  <span>默认声音</span>
+                  <select id="voiceSelect">
+                    <option value="">正在读取声音...</option>
+                  </select>
+                </label>
+                <div class="voice-pick-actions">
+                  <button id="previewVoiceBtn" type="button">试听</button>
+                  <button id="reloadVoicesBtn" type="button">重新读取</button>
+                </div>
+              </div>
+              <audio id="voicePreview" preload="none"></audio>
+              <details class="voice-id-details">
+                <summary>手动填写 Voice ID</summary>
+                <input id="voiceIdInput" type="text" maxlength="80" placeholder="也可以直接粘贴 Voice ID" />
+              </details>
+            </div>
+            <label class="speed-field">
+              <span>配音速度 <em id="speechSpeedValue">1.00×</em></span>
+              <input id="speechSpeed" type="range" min="0.7" max="1.2" step="0.05" value="1" />
+              <small class="field-hint">1.00 是正常语速。要压在 2 分半内，英文口播控制在 320–360 词。</small>
+            </label>
+            <label>
+              <span>保存到音频库目录</span>
+              <div class="path-picker">
+                <input id="audioDir" type="text" placeholder="选择自运营会读取的音频目录" />
+                <button id="pickAudioDirBtn" type="button">选择</button>
+              </div>
+            </label>
+            <div class="form-actions">
+              <button id="generateAudioBtn" class="primary-action" type="button">生成音频并保存</button>
+              <span id="audioStatus" role="status"></span>
+            </div>
+            <audio id="generatedAudio" class="generated-audio" controls preload="metadata" hidden></audio>
+          </section>
+        </div>
       </section>
     </main>
     <script src="/access.js"></script>

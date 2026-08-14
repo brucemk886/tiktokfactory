@@ -15,15 +15,18 @@ import { createDeepSeekBrainService } from "./deepseek-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
+import { createNovelSeedService } from "./novel-seed-service.js";
 import { createNovelEffectService } from "./novel-effect-service.js";
 import { createNovelLearningService } from "./novel-learning-service.js";
 import { createNovelStrategyService } from "./novel-strategy-service.js";
+import { publicOpeningStyles } from "./novel-opening-styles.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
 import { createOperationBrainService } from "./operation-brain.js";
 import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
-import { publicSidebarModules } from "./sidebar-modules.js";
+import { createOfficialTikTokAccountGroups } from "./official-tiktok-account-groups.js";
+import { homePathForUser, publicSidebarModules, SIDEBAR_MODULES } from "./sidebar-modules.js";
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { collectOfficialBatchIdsFromRecords, filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
@@ -70,10 +73,16 @@ const codexBrain = createCodexBrainService({
 });
 const deepseekBrain = createDeepSeekBrainService({ workDir });
 const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
-const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
+const audioLibrary = createAudioLibraryService({
+  root,
+  workDir,
+  readConfig,
+  getDefaultVoiceId: () => String(readPsychologySettings().elevenLabsVoiceId || "").trim()
+});
 const psychologyTopics = createPsychologyTopicsService({ workDir });
 const kieAi = createKieAiService({ workDir, readApiKey: () => readPsychologySettings().kieApiKey });
 const privateTikTokAnalytics = createOfficialTikTokAnalyticsService({ workDir });
+const officialTikTokAccountGroups = createOfficialTikTokAccountGroups({ workDir });
 const officialPublishResultSync = createOfficialPublishResultSync({
   workDir,
   service: privateTikTokAnalytics,
@@ -95,6 +104,19 @@ const novelContentLibrary = createNovelContentLibraryService({
   audioLibrary,
   analyticsService: tiktokAnalytics,
   readPublishRecords
+});
+const novelSeedService = createNovelSeedService({
+  workDir,
+  novelContentLibrary,
+  audioLibrary,
+  marketingGenerator: (payload) => codexBrain.generateNovelMarketing(payload),
+  defaultAudioDir: () => {
+    try {
+      return String(operationBrain.getStatus()?.settings?.audioDir || "").trim();
+    } catch {
+      return "";
+    }
+  }
 });
 
 function createConfiguredCodexModelProvider() {
@@ -166,7 +188,8 @@ const officialOperationBrain = createOperationBrainService({
   listProfiles: () => [],
   fixedDataStrategy: "official_api",
   accountSource: "official",
-  strategyPolicyProvider: () => novelStrategyService.getActivePolicy()
+  strategyPolicyProvider: () => novelStrategyService.getActivePolicy(),
+  defaultVoiceIdProvider: () => novelSeedService.getSettings().voiceId
 });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
@@ -176,7 +199,11 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
 
     if (req.method === "GET" && url.pathname === "/login") {
-      if (localAuth.getSession(req)) return redirect(res, "/");
+      const activeSession = localAuth.getSession(req);
+      if (activeSession) {
+        const home = homePathForUser(activeSession.user);
+        if (home) return redirect(res, home);
+      }
       return sendFile(res, path.join(publicDir, "login.html"), "text/html; charset=utf-8");
     }
     if (req.method === "GET" && url.pathname === "/login.js") return sendFile(res, path.join(publicDir, "login.js"), "text/javascript; charset=utf-8");
@@ -194,11 +221,11 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const user = localAuth.setupAdmin(payload);
       const session = localAuth.login({ username: user.username, password: payload.password });
-      return sendJson(res, 201, { ok: true, user: session.user }, { "Set-Cookie": sessionCookie(session.token) });
+      return sendJson(res, 201, { ok: true, user: session.user, home: homePathForUser(session.user) }, { "Set-Cookie": sessionCookie(session.token) });
     }
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const session = localAuth.login(await readJsonBody(req));
-      return sendJson(res, 200, { ok: true, user: session.user }, { "Set-Cookie": sessionCookie(session.token) });
+      return sendJson(res, 200, { ok: true, user: session.user, home: homePathForUser(session.user) }, { "Set-Cookie": sessionCookie(session.token) });
     }
     if (req.method === "POST" && url.pathname === "/api/auth/logout") {
       localAuth.logout(localAuth.getSession(req)?.token);
@@ -212,7 +239,11 @@ const server = http.createServer(async (req, res) => {
     } else if (requiresLogin(url.pathname)) {
       if (!localAuth.hasUsers()) return redirect(res, isLoopbackRequest(req) ? "/setup" : "/login");
       if (!session) return redirect(res, "/login");
-      if (!canAccessPage(session.user, url.pathname)) return redirect(res, session.user.role === "admin" ? "/" : "/tasks");
+      if (!canAccessPage(session.user, url.pathname)) {
+        const home = homePathForUser(session.user);
+        if (!home || home === url.pathname) return sendJson(res, 403, { error: "当前账号没有此页面权限。" });
+        return redirect(res, home);
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/accounts") {
@@ -221,9 +252,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/accounts.js") {
       return sendFile(res, path.join(publicDir, "accounts.js"), "text/javascript; charset=utf-8");
     }
+
+    if (req.method === "GET" && url.pathname === "/accounts.css") {
+      return sendFile(res, path.join(publicDir, "accounts.css"), "text/css; charset=utf-8");
+    }
     if (req.method === "GET" && url.pathname === "/api/auth/me") {
       return sendJson(res, 200, {
         user: session.user,
+        home: homePathForUser(session.user),
         profiles: session.user.role === "admin" ? localAuth.listProfiles() : [],
         sidebarModules: publicSidebarModules()
       });
@@ -437,7 +473,7 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "module-pages.css"), "text/css; charset=utf-8");
     }
 
-    if (req.method === "GET" && url.pathname === "/tasks") {
+    if (req.method === "GET" && (url.pathname === "/tasks" || url.pathname === "/geelark-tasks")) {
       return sendFile(res, path.join(publicDir, "tasks.html"), "text/html; charset=utf-8");
     }
 
@@ -475,6 +511,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/novel-effects.css") {
       return sendFile(res, path.join(publicDir, "novel-effects.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-audio") {
+      return sendFile(res, path.join(publicDir, "novel-audio.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-audio.js") {
+      return sendFile(res, path.join(publicDir, "novel-audio.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-audio.css") {
+      return sendFile(res, path.join(publicDir, "novel-audio.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/novel-rewrite") {
@@ -561,14 +609,57 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/private-tiktok/accounts") {
-      return sendJson(res, 200, await privateTikTokAnalytics.listAccounts(), { "Cache-Control": "no-store" });
+      return sendJson(res, 200, officialTikTokAccountGroups.attach(await privateTikTokAnalytics.listAccounts()), { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/official-tiktok/account-groups") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
+      return sendJson(res, 200, officialTikTokAccountGroups.getState(), { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/official-tiktok/account-groups") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
+      try {
+        return sendJson(res, 201, officialTikTokAccountGroups.createGroup((await readJsonBody(req)).name));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建分组失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/official-tiktok/account-groups/assign") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
+      try {
+        return sendJson(res, 200, officialTikTokAccountGroups.assignAccounts(await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "账号分组失败。" });
+      }
+    }
+
+    if (req.method === "PATCH" && /^\/api\/official-tiktok\/account-groups\/[^/]+$/.test(url.pathname)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
+      try {
+        const groupId = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, officialTikTokAccountGroups.renameGroup(groupId, (await readJsonBody(req)).name));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "重命名分组失败。" });
+      }
+    }
+
+    if (req.method === "DELETE" && /^\/api\/official-tiktok\/account-groups\/[^/]+$/.test(url.pathname)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
+      try {
+        const groupId = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, officialTikTokAccountGroups.deleteGroup(groupId));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "删除分组失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/official-tiktok/publish-accounts") {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以读取 TikTok 官方发布账号。" });
       try {
         const data = await privateTikTokAnalytics.listPublishAccounts();
-        return sendJson(res, 200, { ...data, accounts: filterOfficialPublishAccounts(data.accounts) }, { "Cache-Control": "no-store" });
+        return sendJson(res, 200, officialTikTokAccountGroups.attach({ ...data, accounts: filterOfficialPublishAccounts(data.accounts) }), { "Cache-Control": "no-store" });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取官方发布账号失败。" });
       }
@@ -866,6 +957,27 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { items: audioLibrary.list() });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/elevenlabs/voices") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "ElevenLabs 声音列表仅允许在本机访问。" });
+      try {
+        return sendJson(res, 200, await audioLibrary.listVoices());
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 ElevenLabs 声音失败。" });
+      }
+    }
+
+    if (req.method === "GET" && /^\/api\/elevenlabs\/voices\/[^/]+\/preview$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "ElevenLabs 试听仅允许在本机访问。" });
+      try {
+        const voiceId = decodeURIComponent(url.pathname.split("/")[4]);
+        const preview = await audioLibrary.previewVoiceAudio(voiceId);
+        if (preview.kind === "remote") return redirect(res, preview.url);
+        return sendFile(res, preview.path, "audio/mpeg");
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "试听失败。" });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/novel-content") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       return sendJson(res, 200, novelContentLibrary.getOverview({ query: url.searchParams.get("query") || "" }));
@@ -910,10 +1022,38 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, novelStrategyService.rollback(payload.versionId));
     }
 
+    if (req.method === "GET" && url.pathname === "/api/novel-content/seed-settings") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      return sendJson(res, 200, { settings: novelSeedService.getSettings() });
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/novel-content/seed-settings") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        return sendJson(res, 200, { settings: novelSeedService.saveSettings(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存种子设置失败。" });
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/novel-content/novels") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       try {
-        return sendJson(res, 201, { novel: novelContentLibrary.createNovel(await readJsonBody(req)) });
+        const payload = await readJsonBody(req);
+        const novel = novelContentLibrary.createNovel(payload);
+        const settings = novelSeedService.getSettings();
+        const shouldSeed = payload.seedAudio !== undefined ? Boolean(payload.seedAudio) : settings.autoSeedOnCreate;
+        if (!shouldSeed) return sendJson(res, 201, { novel });
+        try {
+          const seed = await novelSeedService.seedNovel({
+            novelId: novel.id,
+            voiceId: payload.voiceId,
+            targetAudioDir: payload.targetAudioDir
+          });
+          return sendJson(res, 201, { novel: novelContentLibrary.getNovel(novel.id), seed });
+        } catch (error) {
+          return sendJson(res, 201, { novel, seedError: error.message || "种子音频生成失败。" });
+        }
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建小说失败。" });
       }
@@ -939,6 +1079,43 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "GET" && url.pathname === "/api/novel-content/opening-styles") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      return sendJson(res, 200, { styles: publicOpeningStyles() }, { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/opening-variants$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "改版开头生成仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        const novel = novelContentLibrary.getNovel(id);
+        const payload = await readJsonBody(req);
+        const baseOpening = String(payload.baseOpening || "").trim();
+        const result = await codexBrain.generateOpeningVariants({
+          title: novel.title,
+          language: payload.language || "English",
+          sourceText: novel.sourceContent,
+          baseOpening,
+          styles: payload.styles,
+          model: payload.model
+        });
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "生成改版开头失败。" });
+      }
+    }
+
+    if (req.method === "PUT" && /^\/api\/novel-content\/novels\/[^/]+\/mix-audios$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        const payload = await readJsonBody(req);
+        return sendJson(res, 200, { novel: novelContentLibrary.setNovelMixAudios(id, payload.scriptIds) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存生效音频失败。" });
+      }
+    }
+
     if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/scripts$/.test(url.pathname)) {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       try {
@@ -946,6 +1123,22 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 201, { script: novelContentLibrary.createScript(id, await readJsonBody(req)) });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "保存改写失败。" });
+      }
+    }
+
+    if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/seed$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        const payload = await readJsonBody(req);
+        const seed = await novelSeedService.seedNovel({
+          novelId: id,
+          voiceId: payload.voiceId,
+          targetAudioDir: payload.targetAudioDir
+        });
+        return sendJson(res, 200, { seed, novel: novelContentLibrary.getNovel(id) });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "种子音频生成失败。" });
       }
     }
 
@@ -965,6 +1158,29 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = await readJsonBody(req);
         const item = await audioLibrary.generateFromMarketing(payload);
+        return sendJson(res, 200, { item });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "音频生成失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/audio-library/generate-script") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频生成功能仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        const item = await audioLibrary.generateFromScript(payload);
+        if (payload.scriptId && item?.id) {
+          try {
+            novelContentLibrary.attachScriptAudio(payload.scriptId, item.id);
+          } catch {}
+        }
+        if (payload.voiceId || payload.targetAudioDir || payload.speechSpeed != null) {
+          novelSeedService.saveSettings({
+            voiceId: payload.voiceId,
+            targetAudioDir: payload.targetAudioDir,
+            speechSpeed: payload.speechSpeed
+          });
+        }
         return sendJson(res, 200, { item });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "音频生成失败。" });
@@ -2286,9 +2502,22 @@ function requiresLogin(pathname) {
   return !["/login", "/login.js", "/setup", "/setup.js", "/app.css", "/access.css", "/theme-ops.css"].includes(pathname);
 }
 
+const OPERATOR_SHARED_ASSETS = new Set(["/app.css", "/access.css", "/access.js", "/theme-ops.css"]);
+const OPERATOR_PAGE_ASSETS = {
+  "/geelark-tasks": ["/tasks.js", "/tasks.css"],
+  "/analytics": ["/analytics.js", "/analytics.css"],
+  "/stats": ["/stats.js"]
+};
+
 function canAccessPage(user, pathname) {
   if (user.role === "admin") return true;
-  return new Set(["/", "/hub.css", "/hub.js", "/tasks", "/tasks.js", "/tasks.css", "/stats", "/stats.js", "/analytics", "/analytics.js", "/analytics.css", "/app.css", "/access.css", "/access.js", "/theme-ops.css"]).has(pathname) || pathname.startsWith("/outputs/");
+  if (pathname.startsWith("/outputs/")) return true;
+  if (OPERATOR_SHARED_ASSETS.has(pathname)) return true;
+  const allowed = new Set(user.sidebarModules || []);
+  return SIDEBAR_MODULES.some((item) => {
+    if (!item.roles.includes(user.role) || !allowed.has(item.id)) return false;
+    return item.href === pathname || (OPERATOR_PAGE_ASSETS[item.href] || []).includes(pathname);
+  });
 }
 
 function canAccessApi(user, pathname) {
@@ -2394,7 +2623,8 @@ function normalizeRedditMixSettings(value) {
     subtitle: {
       yPercent: clampNumber(subtitle.yPercent, 38, 82, 66),
       fontSize: clampNumber(subtitle.fontSize, 42, 92, 62),
-      animationMode: subtitle.animationMode === "word-highlight" ? "word-highlight" : "sentence"
+      animationMode: subtitle.animationMode === "word-highlight" ? "word-highlight" : "sentence",
+      openingTitleEnabled: subtitle.openingTitleEnabled === true
     },
     dedup: {
       enabled: dedup.enabled !== false,

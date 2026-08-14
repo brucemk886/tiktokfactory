@@ -1154,7 +1154,8 @@ html:not([data-role="admin"]) [data-admin-only] { display: none !important; }
 .work-page .strategy-shell,
 .work-page .effects-shell,
 .work-page .library-shell,
-.work-page .connection-shell {
+.work-page .connection-shell,
+.work-page .accounts-shell {
   margin-left: 0;
 }
 

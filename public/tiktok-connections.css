@@ -22,11 +22,19 @@ button, .link-button { display: inline-flex; align-items: center; justify-conten
 button:disabled { opacity: .55; cursor: wait; }
 .status-message { margin-top: 18px; padding: 11px 13px; color: #a9c1cc; background: var(--lf-surface); border-left: 3px solid #55c8cd; }
 .status-message.is-error { color: #ff9b9b; border-left-color: #ff7474; }
+.account-toolbar { display: grid; grid-template-columns: minmax(160px, 0.7fr) minmax(220px, 1.1fr) minmax(260px, 1.2fr); gap: 12px; align-items: end; margin-top: 18px; }
+.assign-toolbar { grid-template-columns: auto minmax(180px, 0.8fr) auto auto minmax(80px, auto); }
+.account-toolbar .path-picker { display: flex; gap: 8px; }
+.account-toolbar .path-picker input { flex: 1; }
+.selected-count { color: var(--muted); font-size: 12px; align-self: center; }
 .account-list { display: grid; gap: 9px; margin-top: 12px; }
-.account-row { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(120px, .6fr)); gap: 20px; align-items: center; padding: 17px 18px; background: var(--lf-surface); border: 1px solid var(--line); }
+.account-row { display: grid; grid-template-columns: 28px minmax(220px, 1.4fr) minmax(100px, 0.5fr) repeat(3, minmax(110px, .55fr)); gap: 16px; align-items: center; padding: 17px 18px; background: var(--lf-surface); border: 1px solid var(--line); }
+.account-row input { width: 18px; height: 18px; min-height: 18px; padding: 0; accent-color: var(--accent); }
+.group-chip { width: fit-content; padding: 4px 8px; border: 1px solid var(--line); color: var(--lf-text) !important; font-size: 11px; }
+.group-chip.is-empty { color: var(--muted) !important; }
 .account-row > div { display: grid; gap: 4px; min-width: 0; }
 .account-row strong, .account-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .account-row span, .account-row small { color: var(--muted); font-size: 11px; }
 .ready-pill { padding: 6px 9px; color: var(--lf-text) !important; border: 1px solid #2e6f45; }
 .empty-state { padding: 36px; text-align: center; color: var(--muted); border: 1px dashed #37444b; }
-@media (max-width: 980px) { .connection-shell { margin-left: 0; padding: 22px; } .page-header { flex-direction: column; } .settings-grid { grid-template-columns: 1fr; } .account-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 980px) { .connection-shell { margin-left: 0; padding: 22px; } .page-header { flex-direction: column; } .settings-grid, .account-toolbar, .assign-toolbar { grid-template-columns: 1fr; } .account-row { grid-template-columns: 28px 1fr 1fr; } }

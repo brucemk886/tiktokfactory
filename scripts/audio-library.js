@@ -3,7 +3,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl = globalThis.fetch }) {
+export const NOVEL_TTS_MODEL_ID = "eleven_multilingual_v2";
+export const NOVEL_TTS_MODEL_NAME = "Eleven Multilingual v2";
+export const DEFAULT_SPEECH_SPEED = 1;
+export const MIN_SPEECH_SPEED = 0.7;
+export const MAX_SPEECH_SPEED = 1.2;
+
+export function normalizeSpeechSpeed(value) {
+  const speed = Number(value);
+  if (!Number.isFinite(speed)) return DEFAULT_SPEECH_SPEED;
+  return Math.max(MIN_SPEECH_SPEED, Math.min(MAX_SPEECH_SPEED, Math.round(speed * 20) / 20));
+}
+
+export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl = globalThis.fetch, getDefaultVoiceId = null }) {
   const libraryDir = path.join(workDir, "audio-library");
   const filesDir = path.join(libraryDir, "files");
   const indexPath = path.join(libraryDir, "index.json");
@@ -177,14 +189,194 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     }
   }
 
+  async function generateFromScript({
+    script,
+    title,
+    voiceId: requestedVoiceId,
+    targetAudioDir = "",
+    novelId = "",
+    scriptId = "",
+    sourceType = "manual-script",
+    speechSpeed
+  } = {}) {
+    const cleanScript = String(script || "").trim();
+    if (cleanScript.length < 20) throw httpError(400, "文案至少需要 20 个字符才能配音。");
+    const config = readConfig(root);
+    const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
+    const voiceId = String(requestedVoiceId || config.elevenLabsVoiceId || findRecentVoiceId(workDir) || "").trim();
+    const modelId = NOVEL_TTS_MODEL_ID;
+    const outputFormat = String(config.elevenLabsOutputFormat || "mp3_44100_128").trim();
+    if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
+    if (!voiceId) throw httpError(400, "ElevenLabs Voice ID 未配置。");
+
+    const speed = normalizeSpeechSpeed(speechSpeed);
+    const fingerprint = crypto.createHash("sha256")
+      .update([novelId, scriptId, cleanScript, voiceId, modelId, outputFormat, speed === DEFAULT_SPEECH_SPEED ? "" : String(speed)].join("\0"))
+      .digest("hex").slice(0, 16);
+    const id = safeStem(`script-${scriptId || novelId || "manual"}-${fingerprint}`);
+    const existing = get(id);
+    if (existing && resolveAudioPath(id)) return { ...existing, cacheHit: true };
+    if (inFlight.has(id)) return inFlight.get(id);
+
+    const selected = { title: String(title || "小说开头文案").trim(), rank: 0 };
+    const operation = synthesizeAndSave({
+      id,
+      source: null,
+      selected,
+      script: cleanScript,
+      apiKey,
+      voiceId,
+      modelId,
+      outputFormat,
+      speechSpeed: speed,
+      targetAudioDir,
+      recordSource: {
+        type: String(sourceType || "manual-script").trim().slice(0, 40) || "manual-script",
+        novelId: safeStem(novelId),
+        scriptId: safeStem(scriptId)
+      }
+    });
+    inFlight.set(id, operation);
+    try {
+      return await operation;
+    } finally {
+      inFlight.delete(id);
+    }
+  }
+
+  async function listVoices() {
+    const config = readConfig(root);
+    const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
+    const defaultVoiceId = String(
+      config.elevenLabsVoiceId
+      || (typeof getDefaultVoiceId === "function" ? getDefaultVoiceId() : "")
+      || findRecentVoiceId(workDir)
+      || ""
+    ).trim();
+    if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
+    const headers = { "xi-api-key": apiKey, Accept: "application/json" };
+    let response = await fetchImpl("https://api.elevenlabs.io/v1/voices", { headers });
+    let body = await readJsonSafe(response);
+    if (!response.ok || !Array.isArray(body.voices) || !body.voices.length) {
+      const fallback = await fetchImpl("https://api.elevenlabs.io/v2/voices?page_size=100", { headers });
+      const fallbackBody = await readJsonSafe(fallback);
+      if (fallback.ok && Array.isArray(fallbackBody.voices) && fallbackBody.voices.length) {
+        response = fallback;
+        body = fallbackBody;
+      }
+    }
+    if (!response.ok) {
+      const detail = voiceErrorDetail(body);
+      if (Number(response.status) === 401 && /voices_read/i.test(detail)) {
+        const fallback = fallbackVoices(defaultVoiceId);
+        return {
+          voices: fallback,
+          defaultVoiceId,
+          modelId: NOVEL_TTS_MODEL_ID,
+          modelName: NOVEL_TTS_MODEL_NAME,
+          filters: buildVoiceFilters(fallback),
+          restricted: true,
+          warning: "当前 ElevenLabs Key 没有声音列表权限（voices_read）。已带入最近用过的声音和常用声音，也可手动填写 Voice ID。"
+        };
+      }
+      throw httpError(response.status || 502, `读取 ElevenLabs 声音失败：${detail || response.status}`);
+    }
+    const voices = (Array.isArray(body.voices) ? body.voices : []).map(mapVoice).filter((voice) => voice.id);
+    if (!voices.length) {
+      const fallback = fallbackVoices(defaultVoiceId);
+      return {
+        voices: fallback,
+        defaultVoiceId,
+        modelId: NOVEL_TTS_MODEL_ID,
+        modelName: NOVEL_TTS_MODEL_NAME,
+        filters: buildVoiceFilters(fallback),
+        restricted: true,
+        warning: "ElevenLabs 没有返回声音列表。已带入最近用过的声音和常用声音，也可手动填写 Voice ID。"
+      };
+    }
+    return {
+      voices,
+      defaultVoiceId,
+      modelId: NOVEL_TTS_MODEL_ID,
+      modelName: NOVEL_TTS_MODEL_NAME,
+      filters: buildVoiceFilters(voices)
+    };
+  }
+
+  async function getVoice(voiceId) {
+    const safeVoiceId = String(voiceId || "").trim();
+    if (!safeVoiceId) throw httpError(400, "缺少 Voice ID。");
+    const config = readConfig(root);
+    const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
+    if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
+    const response = await fetchImpl(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(safeVoiceId)}`, {
+      headers: { "xi-api-key": apiKey, Accept: "application/json" }
+    });
+    const body = await readJsonSafe(response);
+    if (!response.ok) {
+      throw httpError(response.status || 502, `读取声音详情失败：${voiceErrorDetail(body) || response.status}`);
+    }
+    return {
+      id: String(body.voice_id || safeVoiceId).trim(),
+      name: String(body.name || safeVoiceId).trim(),
+      category: String(body.category || "").trim(),
+      previewUrl: String(body.preview_url || "").trim()
+    };
+  }
+
+  async function previewVoiceAudio(voiceId) {
+    const safeVoiceId = String(voiceId || "").trim();
+    if (!safeVoiceId) throw httpError(400, "请先选择要试听的声音。");
+    let voice = null;
+    try {
+      voice = await getVoice(safeVoiceId);
+    } catch (error) {
+      if (Number(error.statusCode) === 404) throw error;
+    }
+    if (voice?.previewUrl) return { kind: "remote", url: voice.previewUrl, voice };
+    const config = readConfig(root);
+    const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
+    const modelId = NOVEL_TTS_MODEL_ID;
+    const outputFormat = String(config.elevenLabsOutputFormat || "mp3_44100_128").trim();
+    if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
+    const previewDir = path.join(libraryDir, "previews");
+    fs.mkdirSync(previewDir, { recursive: true });
+    const outputPath = path.join(previewDir, `${safeStem(safeVoiceId)}.mp3`);
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
+      return { kind: "file", path: outputPath, voice: voice || { id: safeVoiceId, name: safeVoiceId, previewUrl: "" }, cacheHit: true };
+    }
+    const response = await fetchImpl(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(safeVoiceId)}?output_format=${encodeURIComponent(outputFormat)}`, {
+      method: "POST",
+      headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: "This is a short preview of this voice for novel narration.",
+        model_id: modelId
+      })
+    });
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!response.ok) {
+      throw httpError(response.status || 502, `试听失败：${buffer.toString("utf8").slice(0, 400) || response.status}`);
+    }
+    if (buffer.length < 1024) throw httpError(502, "ElevenLabs 没有返回有效试听音频。");
+    const tempPath = `${outputPath}.tmp`;
+    fs.writeFileSync(tempPath, buffer);
+    fs.renameSync(tempPath, outputPath);
+    return { kind: "file", path: outputPath, voice: voice || { id: safeVoiceId, name: safeVoiceId, previewUrl: "" }, cacheHit: false };
+  }
+
   async function synthesizeAndSave({
     id, source, selected, script, apiKey, voiceId, modelId, outputFormat,
-    targetAudioDir = "", recordSource = null, metadata = null
+    speechSpeed = DEFAULT_SPEECH_SPEED, targetAudioDir = "", recordSource = null, metadata = null
   }) {
+    const speed = normalizeSpeechSpeed(speechSpeed);
     const response = await fetchImpl(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`, {
       method: "POST",
       headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ text: script, model_id: modelId })
+      body: JSON.stringify({
+        text: script,
+        model_id: modelId,
+        voice_settings: { speed }
+      })
     });
     const buffer = Buffer.from(await response.arrayBuffer());
     if (!response.ok) {
@@ -215,6 +407,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       scriptChars: script.length,
       script,
       modelId,
+      speechSpeed: speed,
       source: recordSource || { marketingId: source?.id || "", rank: Number(selected.rank) || 0 },
       targetAudioPath,
       metadata: metadata || undefined
@@ -225,7 +418,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     return { ...record, cacheHit: false };
   }
 
-  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, prepareTaskBatch };
+  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, generateFromScript, listVoices, getVoice, previewVoiceAudio, prepareTaskBatch };
 }
 
 function readIndex(indexPath) {
@@ -264,6 +457,157 @@ function probeDuration(filePath, executable) {
   } catch {
     return 0;
   }
+}
+
+async function readJsonSafe(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
+function voiceErrorDetail(body) {
+  if (!body || typeof body !== "object") return "";
+  if (typeof body.detail === "string") return body.detail;
+  if (typeof body.message === "string") return body.message;
+  if (body.detail && typeof body.detail === "object") {
+    return String(body.detail.message || body.detail.status || JSON.stringify(body.detail)).slice(0, 400);
+  }
+  return "";
+}
+
+function mapVoice(voice = {}) {
+  const labels = voice.labels && typeof voice.labels === "object" ? voice.labels : {};
+  const languages = uniqueStrings([
+    ...languageCodes(voice.verified_languages),
+    labels.language,
+    labels.accent
+  ].map(normalizeLanguage)).filter(Boolean);
+  const category = normalizeCategory(voice.category);
+  const gender = normalizeGender(labels.gender);
+  const age = normalizeAge(labels.age);
+  return {
+    id: String(voice.voice_id || voice.id || "").trim(),
+    name: String(voice.name || voice.voice_id || "未命名声音").trim(),
+    category,
+    categoryLabel: CATEGORY_LABELS[category] || category,
+    gender,
+    genderLabel: GENDER_LABELS[gender] || gender,
+    age,
+    ageLabel: AGE_LABELS[age] || age,
+    languages,
+    languageLabels: languages.map((code) => LANGUAGE_LABELS[code] || code),
+    previewUrl: String(voice.preview_url || voice.previewUrl || "").trim()
+  };
+}
+
+function buildVoiceFilters(voices = []) {
+  return {
+    languages: uniqueOptions(voices.flatMap((voice) => (voice.languages || []).map((value, index) => ({
+      value,
+      label: voice.languageLabels?.[index] || LANGUAGE_LABELS[value] || value
+    })))),
+    categories: uniqueOptions(voices.filter((voice) => voice.category).map((voice) => ({
+      value: voice.category,
+      label: voice.categoryLabel || CATEGORY_LABELS[voice.category] || voice.category
+    }))),
+    genders: uniqueOptions(voices.filter((voice) => voice.gender).map((voice) => ({
+      value: voice.gender,
+      label: voice.genderLabel || GENDER_LABELS[voice.gender] || voice.gender
+    }))),
+    ages: uniqueOptions(voices.filter((voice) => voice.age).map((voice) => ({
+      value: voice.age,
+      label: voice.ageLabel || AGE_LABELS[voice.age] || voice.age
+    })))
+  };
+}
+
+function languageCodes(verified = []) {
+  return (Array.isArray(verified) ? verified : []).flatMap((item) => [
+    item?.language,
+    String(item?.locale || "").split("-")[0]
+  ]);
+}
+
+function normalizeLanguage(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return "";
+  if (LANGUAGE_ALIASES[text]) return LANGUAGE_ALIASES[text];
+  if (LANGUAGE_LABELS[text]) return text;
+  return text.slice(0, 24);
+}
+
+function normalizeCategory(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "premade" || text === "cloned" || text === "generated" || text === "professional" || text === "saved") return text;
+  return text;
+}
+
+function normalizeGender(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "male" || text === "female" || text === "neutral") return text;
+  return "";
+}
+
+function normalizeAge(value) {
+  const text = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (text === "young" || text === "old") return text;
+  if (text === "middle_aged" || text === "middle" || text === "middleaged") return "middle_aged";
+  return "";
+}
+
+function uniqueOptions(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const value = String(item?.value || "").trim();
+    if (!value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  }).sort((left, right) => String(left.label).localeCompare(String(right.label), "zh-Hans-CN"));
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+const LANGUAGE_LABELS = {
+  en: "English", zh: "Chinese", ja: "Japanese", ko: "Korean", es: "Spanish", fr: "French",
+  de: "German", pt: "Portuguese", it: "Italian", hi: "Hindi", ar: "Arabic", id: "Indonesian",
+  nl: "Dutch", pl: "Polish", ru: "Russian", tr: "Turkish", vi: "Vietnamese", th: "Thai"
+};
+
+const LANGUAGE_ALIASES = {
+  english: "en", chinese: "zh", japanese: "ja", korean: "ko", spanish: "es", french: "fr",
+  german: "de", portuguese: "pt", italian: "it", hindi: "hi", arabic: "ar", american: "en",
+  british: "en", australian: "en", "en-us": "en", "en-gb": "en", "zh-cn": "zh"
+};
+
+const CATEGORY_LABELS = {
+  premade: "官方音色",
+  cloned: "克隆音色",
+  generated: "生成音色",
+  professional: "专业音色",
+  saved: "最近使用"
+};
+
+const GENDER_LABELS = { male: "男性", female: "女性", neutral: "中性" };
+const AGE_LABELS = { young: "青年", middle_aged: "中年", old: "老年" };
+
+function fallbackVoices(defaultVoiceId) {
+  const saved = String(defaultVoiceId || "").trim();
+  const items = saved ? [mapVoice({ voice_id: saved, name: "最近使用的声音", category: "saved" })] : [];
+  for (const voice of [
+    { voice_id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", category: "premade", labels: { gender: "female", age: "young", language: "en" } },
+    { voice_id: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", category: "premade", labels: { gender: "female", age: "young", language: "en" } },
+    { voice_id: "pNInz6obpgDQGcFmaJgB", name: "Adam", category: "premade", labels: { gender: "male", age: "middle_aged", language: "en" } },
+    { voice_id: "JBFqnCBsd6RMkjVDRZzb", name: "George", category: "premade", labels: { gender: "male", age: "middle_aged", language: "en" } },
+    { voice_id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", category: "premade", labels: { gender: "male", age: "middle_aged", language: "en" } }
+  ]) {
+    const mapped = mapVoice(voice);
+    if (!items.some((item) => item.id === mapped.id)) items.push(mapped);
+  }
+  return items;
 }
 
 function findRecentVoiceId(workDir) {

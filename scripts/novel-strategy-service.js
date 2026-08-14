@@ -148,6 +148,7 @@ function sanitizePolicy(policy) {
       enabled: bool(merged.audio.enabled, true),
       provider: text(merged.audio.provider, "elevenlabs"),
       generateAfterRewrite: bool(merged.audio.generateAfterRewrite, true),
+      voiceId: text(merged.audio.voiceId),
       outputDirectory: text(merged.audio.outputDirectory),
       keepOriginal: bool(merged.audio.keepOriginal, true)
     },

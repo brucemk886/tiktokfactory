@@ -18,9 +18,10 @@ test("stores sidebar visibility per account and filters modules by role", () => 
     assert.ok(admin.sidebarModules.includes("operator-official"));
     assert.ok(admin.sidebarModules.includes("novel-effects"));
     assert.ok(admin.sidebarModules.includes("geelark-novel-effects"));
+    assert.ok(admin.sidebarModules.includes("geelark-tasks"));
     assert.ok(admin.sidebarModules.includes("novel-library"));
-    assert.ok(admin.sidebarModules.includes("novel-rewrite"));
-    assert.ok(admin.sidebarModules.includes("rewrite-records"));
+    assert.ok(!admin.sidebarModules.includes("novel-rewrite"));
+    assert.ok(!admin.sidebarModules.includes("rewrite-records"));
     assert.ok(admin.sidebarModules.includes("hub"));
     assert.ok(admin.sidebarModules.includes("podcast"));
     assert.ok(!admin.sidebarModules.includes("audio-library"));
@@ -33,15 +34,40 @@ test("stores sidebar visibility per account and filters modules by role", () => 
       displayName: "Operator",
       role: "operator",
       geelarkProfileId: "default",
-      sidebarModules: ["tasks", "analytics", "accounts"]
+      sidebarModules: ["geelark-tasks", "analytics", "accounts"]
     });
-    assert.deepEqual(operator.sidebarModules, ["tasks", "analytics"]);
+    assert.deepEqual(operator.sidebarModules, ["geelark-tasks", "analytics"]);
 
     const updated = auth.updateUser(operator.id, {
       ...operator,
       sidebarModules: []
     });
     assert.deepEqual(updated.sidebarModules, []);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("strips hub from existing operator accounts", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "local-auth-operator-hub-"));
+  try {
+    const storePath = path.join(workDir, "local-accounts.json");
+    fs.writeFileSync(storePath, JSON.stringify({
+      version: 15,
+      users: [{
+        id: "op-1",
+        username: "member",
+        displayName: "Member",
+        role: "operator",
+        active: true,
+        sidebarModules: ["hub", "geelark-tasks", "analytics", "stats"]
+      }],
+      geelarkProfiles: [{ id: "default", name: "默认 GeeLark 账号" }]
+    }), "utf8");
+
+    const auth = createLocalAuthService({ workDir });
+    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["geelark-tasks", "analytics", "stats"]);
+    assert.ok(!auth.listUsers()[0].sidebarModules.includes("hub"));
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -107,7 +133,7 @@ test("adds new admin modules to existing sidebars once", () => {
     }), "utf8");
 
     const auth = createLocalAuthService({ workDir });
-    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["hub", "mid-video", "podcast", "novel-library", "novel-rewrite", "rewrite-records", "tasks", "tiktok-connections", "official-analytics", "official-publish-records", "geelark-novel-effects", "accounts"]);
+    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["hub", "mid-video", "podcast", "novel-library", "tasks", "tiktok-connections", "official-analytics", "official-publish-records", "geelark-tasks", "geelark-novel-effects", "accounts"]);
 
     auth.updateUser("admin-1", { sidebarModules: ["tasks", "accounts"] });
     const reloaded = createLocalAuthService({ workDir });

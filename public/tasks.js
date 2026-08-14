@@ -6,8 +6,10 @@ const phoneList = $("#phoneList");
 const phoneStatus = $("#phoneStatus");
 const groupFilter = $("#groupFilter");
 const nameFilter = $("#nameFilter");
+const publishChannel = location.pathname === "/geelark-tasks" ? "geelark" : "official";
 let phones = [];
 let officialTikTokAccounts = [];
+let novels = [];
 let currentUserRole = "member";
 let assetGroups = [];
 let pollTimer = null;
@@ -15,14 +17,18 @@ let lastTaskRenderKey = "";
 let captionPresets = [];
 const captionPresetStorageKey = "reddit-publish-caption-presets";
 const selectedCaptionPresetKey = "reddit-publish-caption-selected";
+applyPublishChannelChrome();
 
 $("#createTaskBtn").addEventListener("click", createTask);
 $("#refreshTasksBtn").addEventListener("click", loadTasks);
 $("#refreshPhonesBtn").addEventListener("click", refreshPublishAccounts);
 $("#selectVisibleBtn").addEventListener("click", selectVisible);
 $("#selectOfficialAccountsBtn")?.addEventListener("click", selectOfficialAccounts);
+$("#officialGroupFilter")?.addEventListener("change", filterOfficialAccounts);
+$("#officialNameFilter")?.addEventListener("input", filterOfficialAccounts);
 $("#publishProvider")?.addEventListener("change", updatePublishProviderView);
 $("#saveDedupBtn").addEventListener("click", saveDedupSettings);
+$("#openingTitleEnabled")?.addEventListener("change", persistOpeningTitleSetting);
 $("#captionPresetSelect").addEventListener("change", selectCaptionPreset);
 $("#addCaptionPresetBtn").addEventListener("click", addCaptionPreset);
 $("#updateCaptionPresetBtn").addEventListener("click", updateCaptionPreset);
@@ -41,6 +47,7 @@ loadCaptionPresets();
 setDefaultSchedule();
 loadAssetGroups();
 loadSharedLibraries();
+loadNovels();
 initializePublishProvider();
 loadTasks();
 window.addEventListener("pagehide", stopTaskPolling);
@@ -58,18 +65,24 @@ function applyIncomingAudioBatch() {
   $("#taskName").value = `音频库 Reddit 任务 ${new Date().toLocaleDateString("zh-CN")}`;
   $("#totalVideos").value = String(count);
   setCreateStatus(`已从音频素材库载入 ${count} 条音频，请继续选择素材组和发布账号。`);
-  history.replaceState({}, "", "/tasks");
+  history.replaceState({}, "", location.pathname);
 }
 
 async function createTask() {
   const provider = getPublishProvider();
+  const selectedAudios = provider === "official" ? getSelectedAudioItems() : [];
   const selected = provider === "official"
     ? Array.from($("#officialAccountList").querySelectorAll(".official-tiktok-account-check:checked"))
     : Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
   const autoPublish = $("#autoPublish").checked;
   const materialSource = $("#assetGroupSelect")?.value || "";
   const assetGroupId = materialSource === "__manual__" ? "" : materialSource;
-  if ((!assetGroupId && !$("#videoDir").value.trim()) || !$("#audioDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录，并选择音频目录。");
+  if (!assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
+  if (provider !== "official" && !$("#audioDir").value.trim()) return setCreateStatus("请选择音频目录。");
+  if (provider === "official" && !selectedAudios.length && !$("#audioDir").value.trim()) return setCreateStatus("请勾选至少一本有生效音频的小说，或选择音频目录。");
+  if (provider === "official" && selectedAudios.some((item) => !item.platform || !item.promotionCode)) {
+    return setCreateStatus("勾选的小说里有书还缺少平台或推广码，请先回书单补全。");
+  }
   if (autoPublish && !selected.length) return setCreateStatus(provider === "official" ? "自动发布任务至少需要选择一个官方授权账号。" : "自动发布任务至少需要选择一个 GeeLark 账号。");
   const accounts = provider === "geelark" ? selected.map((input) => {
     const phone = phones.find((item) => String(item.id) === input.value) || {};
@@ -86,10 +99,11 @@ async function createTask() {
     generation: {
       assetGroupId,
       videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: true,
-      audioDir: $("#audioDir").value.trim(), backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
+      audioDir: $("#audioDir").value.trim(), audioItems: selectedAudios, backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
       segmentMode: "fixed", segmentSeconds: number("#segmentSeconds", 5), totalVideos: number("#totalVideos", 40),
       subtitleYPercent: number("#subtitleY", 66), subtitleFontSize: number("#subtitleSize", 62), subtitleAnimationMode: $("#subtitleMode").value,
-      quality: $("#quality").value, autoCaptions: $("#autoCaptions").checked, dedup: collectDedup()
+      quality: $("#quality").value, autoCaptions: $("#autoCaptions").checked, openingTitleEnabled: $("#openingTitleEnabled")?.checked === true, dedup: collectDedup(),
+      novelId: selectedAudios[0]?.novelId || "", novelPlatform: selectedAudios[0]?.platform || "", novelPromotionCode: selectedAudios[0]?.promotionCode || ""
     },
     publish: {
       provider, autoPublish,
@@ -108,6 +122,7 @@ async function createTask() {
     clearAccountSelection();
     setCreateStatus(`已加入队列：${data.task.name}`);
     createTaskBtn.disabled = false;
+    void persistOpeningTitleSetting();
     void loadTasks();
   } catch (error) {
     setCreateStatus(error.message || "创建任务失败。");
@@ -124,7 +139,11 @@ async function loadTasks() {
     const safety = await safetyResponse.json();
     if (!tasksResponse.ok) throw new Error(data.error || "读取任务失败。");
     $("#safetySummary").textContent = `今日已提交排期 ${safety.scheduledToday || 0}/${safety.defaultDailyLimit || 300}，待核实 ${safety.uncertainCount || 0}，成片保留 ${data.worker?.retentionHours || 48} 小时`;
-    const visibleTasks = (data.tasks || []).filter((task) => task.taskType !== "psychology");
+    const visibleTasks = (data.tasks || []).filter((task) => {
+      if (task.taskType === "psychology" || task.taskType === "schulte") return false;
+      const provider = task.publish?.provider || "geelark";
+      return publishChannel === "official" ? provider === "official" : provider !== "official";
+    });
     updateQueueMetrics(visibleTasks);
     const renderKey = createTaskRenderKey(visibleTasks);
     if (renderKey !== lastTaskRenderKey) {
@@ -288,13 +307,109 @@ async function initializePublishProvider() {
   }
   const providerField = $("#publishProviderField");
   const providerSelect = $("#publishProvider");
-  if (providerField) providerField.hidden = currentUserRole !== "admin";
-  if (providerSelect && currentUserRole !== "admin") providerSelect.value = "geelark";
+  if (providerField) providerField.hidden = true;
+  if (providerSelect) providerSelect.value = publishChannel;
   await updatePublishProviderView();
 }
 
 function getPublishProvider() {
-  return currentUserRole === "admin" && $("#publishProvider")?.value === "official" ? "official" : "geelark";
+  return publishChannel;
+}
+
+function applyPublishChannelChrome() {
+  document.body.dataset.publishChannel = publishChannel;
+  const official = publishChannel === "official";
+  document.title = official ? "Reddit 自动发布 · Local Factory" : "GeeLark · Reddit 自动发布 · Local Factory";
+  if ($("#pageKicker")) $("#pageKicker").textContent = official ? "OFFICIAL API" : "GEELARK BACKUP";
+  if ($("#pageTitle")) $("#pageTitle").textContent = official ? "Reddit 自动发布" : "GeeLark · Reddit 自动发布";
+  const novelField = document.querySelector(".novel-select-field");
+  if (novelField) novelField.hidden = !official;
+  if ($("#pageLead")) $("#pageLead").textContent = official
+    ? "勾选小说一起混剪，只抽书单详情里勾过的生效音频，每条成片叠上对应书的平台和推广码。"
+    : "GeeLark 备用发布，成片不叠加平台和推广码。";
+  if ($("#publishLead")) $("#publishLead").textContent = official
+    ? "选择官方授权账号，设置文案与发布时间。GeeLark 发布已移到备用区。"
+    : "选择 GeeLark 账号发布。官方 API 任务在小说推文的 Reddit 自动发布里。";
+}
+
+async function loadNovels() {
+  if (publishChannel !== "official") return;
+  const root = $("#novelAudioPicker");
+  if (!root) return;
+  try {
+    const response = await fetch(`/api/novel-content?t=${Date.now()}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取小说书单失败。");
+    novels = Array.isArray(data.novels) ? data.novels : [];
+    renderNovelAudioPicker();
+  } catch (error) {
+    novels = [];
+    root.textContent = error.message || "读取小说书单失败。";
+  }
+}
+
+function enabledMixAudios(novel) {
+  return (novel.scripts || []).filter((script) => script.audio?.id && script.mixEnabled !== false);
+}
+
+function renderNovelAudioPicker() {
+  const root = $("#novelAudioPicker");
+  if (!root) return;
+  if (!novels.length) {
+    root.textContent = "还没有小说书单。";
+    updateNovelBadgeHint();
+    return;
+  }
+  root.innerHTML = novels.map((novel) => {
+    const audios = enabledMixAudios(novel);
+    return `
+      <label class="novel-audio-novel">
+        <input type="checkbox" data-novel-id="${escapeAttr(novel.id)}" ${audios.length ? "" : "disabled"} />
+        <strong>${escapeHtml(novel.title || "未命名")}</strong>
+        <small>${escapeHtml(formatNovelBadge(novel))} · ${audios.length} 条生效音频</small>
+      </label>`;
+  }).join("");
+  root.querySelectorAll("[data-novel-id]").forEach((input) => {
+    input.addEventListener("change", updateNovelBadgeHint);
+  });
+  updateNovelBadgeHint();
+}
+
+function getSelectedNovels() {
+  return Array.from(document.querySelectorAll("#novelAudioPicker [data-novel-id]:checked"))
+    .map((input) => novels.find((item) => item.id === input.dataset.novelId))
+    .filter(Boolean);
+}
+
+function getSelectedAudioItems() {
+  return getSelectedNovels().flatMap((novel) => enabledMixAudios(novel).map((script) => ({
+    id: script.audio.id,
+    novelId: novel.id,
+    platform: novel.platform || "",
+    promotionCode: novel.promotionCode || "",
+    title: script.versionLabel || script.title || script.audio.title || ""
+  })));
+}
+
+function updateNovelBadgeHint() {
+  const hint = $("#novelBadgeHint");
+  if (!hint) return;
+  const selectedNovels = getSelectedNovels();
+  const selected = getSelectedAudioItems();
+  if (!selectedNovels.length) {
+    hint.textContent = "只勾小说。生效音频在书单详情里勾选保存，混剪只抽那些音频。";
+    return;
+  }
+  hint.textContent = `已选 ${selectedNovels.length} 本小说，将抽 ${selected.length} 条生效音频混剪。`;
+}
+
+function formatNovelBadge(novel) {
+  const platform = formatNovelPlatform(novel.platform);
+  return [novel.promotionCode, platform].filter(Boolean).join(" · ") || "未设置平台/推广码";
+}
+
+function formatNovelPlatform(platform) {
+  return platform === "NovelMaster" ? "Novel Master" : String(platform || "");
 }
 
 async function updatePublishProviderView() {
@@ -324,18 +439,24 @@ async function loadOfficialTikTokAccounts() {
     if (!response.ok) throw new Error(data.error || "读取官方授权账号失败。");
     const allAccounts = Array.isArray(data.accounts) ? data.accounts : [];
     officialTikTokAccounts = allAccounts.filter((account) => Array.isArray(account.scopes) && account.scopes.includes("video.publish"));
+    const groups = Array.from(new Set(officialTikTokAccounts.map((account) => account.groupName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    if ($("#officialGroupFilter")) {
+      $("#officialGroupFilter").innerHTML = `<option value="">全部分组</option><option value="ungrouped">未分组</option>${groups.map((group) => `<option value="${escapeAttr(group)}">${escapeHtml(group)}</option>`).join("")}`;
+    }
     list.innerHTML = officialTikTokAccounts.map((account, index) => {
       const connectionId = account.connectionId || account.id || "";
       const displayName = account.displayName || account.username || `TikTok 账号 ${index + 1}`;
       const username = account.username ? `@${account.username}` : connectionId;
       const owner = account.ownerEmail || "未标记归属邮箱";
-      return `<label class="geelark-phone-item"><input class="official-tiktok-account-check" type="checkbox" value="${escapeAttr(connectionId)}" /><span><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(username)} · ${escapeHtml(owner)}</small></span></label>`;
+      const groupName = account.groupName || "未分组";
+      return `<label class="geelark-phone-item" data-search="${escapeAttr([displayName, username, owner, groupName, connectionId].join(" ").toLowerCase())}" data-group="${escapeAttr(account.groupName || "")}"><input class="official-tiktok-account-check" type="checkbox" value="${escapeAttr(connectionId)}" /><span><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(username)} · ${escapeHtml(groupName)}</small></span></label>`;
     }).join("");
     list.querySelectorAll(".official-tiktok-account-check").forEach((input) => input.addEventListener("change", updateSelectedOfficialAccountCount));
     const hiddenCount = allAccounts.length - officialTikTokAccounts.length;
     phoneStatus.textContent = officialTikTokAccounts.length
-      ? `已读取 ${officialTikTokAccounts.length} 个可发布账号${hiddenCount ? `，隐藏 ${hiddenCount} 个无 video.publish 权限账号` : ""}。`
+      ? `已读取 ${officialTikTokAccounts.length} 个可发布账号${hiddenCount ? `，隐藏 ${hiddenCount} 个无 video.publish 权限账号` : ""}。可按分组筛选。`
       : allAccounts.length ? "没有具有 video.publish 权限的账号。" : "暂无官方授权账号。";
+    filterOfficialAccounts();
     updateSelectedOfficialAccountCount();
   } catch (error) {
     officialTikTokAccounts = [];
@@ -344,10 +465,22 @@ async function loadOfficialTikTokAccounts() {
 }
 
 function selectOfficialAccounts() {
-  const inputs = Array.from($("#officialAccountList")?.querySelectorAll(".official-tiktok-account-check") || []);
+  const inputs = Array.from($("#officialAccountList")?.querySelectorAll(".geelark-phone-item:not([hidden]) .official-tiktok-account-check") || []);
   const shouldCheck = inputs.some((input) => !input.checked);
   inputs.forEach((input) => { input.checked = shouldCheck; });
   updateSelectedOfficialAccountCount();
+}
+
+function filterOfficialAccounts() {
+  const list = $("#officialAccountList");
+  if (!list) return;
+  const group = $("#officialGroupFilter")?.value || "";
+  const query = String($("#officialNameFilter")?.value || "").trim().toLowerCase();
+  list.querySelectorAll(".geelark-phone-item").forEach((item) => {
+    const matchGroup = !group || (group === "ungrouped" ? !item.dataset.group : item.dataset.group === group);
+    const matchQuery = !query || String(item.dataset.search || "").includes(query);
+    item.hidden = !(matchGroup && matchQuery);
+  });
 }
 
 function updateSelectedOfficialAccountCount() {
@@ -618,6 +751,7 @@ function setCaptionPresetStatus(message, isWarning = false) {
 async function loadSavedSettings() {
   const subtitle = readStored("reddit-mix-subtitle-settings");
   setValue("#subtitleY", subtitle.yPercent); setValue("#subtitleSize", subtitle.fontSize); setValue("#subtitleMode", subtitle.animationMode);
+  if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = subtitle.openingTitleEnabled === true;
   const dedup = readStored("reddit-mix-dedup-settings");
   setValue("#scaleMin", dedup.scaleMin); setValue("#scaleMax", dedup.scaleMax); setValue("#rotateMin", dedup.rotateMin); setValue("#rotateMax", dedup.rotateMax); setValue("#mirrorChance", dedup.mirrorChance); setValue("#sharpen", dedup.sharpen); setValue("#speedMin", dedup.speedMin); setValue("#speedMax", dedup.speedMax);
   try {
@@ -628,11 +762,28 @@ async function loadSavedSettings() {
     const sharedSubtitle = data.settings?.subtitle || {};
     const sharedDedup = data.settings?.dedup || {};
     setValue("#subtitleY", sharedSubtitle.yPercent); setValue("#subtitleSize", sharedSubtitle.fontSize); setValue("#subtitleMode", sharedSubtitle.animationMode);
+    if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = sharedSubtitle.openingTitleEnabled === true;
     setValue("#scaleMin", sharedDedup.scaleMin); setValue("#scaleMax", sharedDedup.scaleMax); setValue("#rotateMin", sharedDedup.rotateMin); setValue("#rotateMax", sharedDedup.rotateMax); setValue("#mirrorChance", sharedDedup.mirrorChance); setValue("#sharpen", sharedDedup.sharpen); setValue("#speedMin", sharedDedup.speedMin); setValue("#speedMax", sharedDedup.speedMax);
     localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(sharedSubtitle));
     localStorage.setItem("reddit-mix-dedup-settings", JSON.stringify(sharedDedup));
   } catch (error) {
     setCreateStatus(`统一配置读取失败，当前使用本机配置：${error.message || "请求失败"}`);
+  }
+}
+
+async function persistOpeningTitleSetting() {
+  const subtitle = {
+    ...readStored("reddit-mix-subtitle-settings"),
+    yPercent: number("#subtitleY", 66),
+    fontSize: number("#subtitleSize", 62),
+    animationMode: $("#subtitleMode")?.value || "sentence",
+    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true
+  };
+  localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(subtitle));
+  try {
+    await saveSharedRedditSettings({ subtitle });
+  } catch {
+    // Keep the local checkbox even if the shared settings API is down.
   }
 }
 

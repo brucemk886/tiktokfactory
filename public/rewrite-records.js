@@ -1,5 +1,9 @@
 const params = new URLSearchParams(location.search);
-const state = { records: [], query: "", status: "", novelId: params.get("novel") || "" };
+const novelId = params.get("novel") || "";
+if (novelId) {
+  location.replace(`/novel-audio?novel=${encodeURIComponent(novelId)}#records`);
+}
+const state = { records: [], query: "", status: "", novelId: "" };
 
 const listNode = document.querySelector("#recordList");
 const emptyNode = document.querySelector("#recordEmpty");
@@ -18,7 +22,7 @@ filterNode?.addEventListener("change", () => {
   render();
 });
 
-await loadRecords();
+if (!novelId) await loadRecords();
 
 async function loadRecords() {
   setStatus("正在读取官方 API 文案改写记录……");
@@ -63,7 +67,7 @@ function createCard(record) {
   if (record.novelTitle) {
     const novelLink = document.createElement("a");
     novelLink.className = "tag accent";
-    novelLink.href = `/novel-rewrite?novel=${encodeURIComponent(record.novelId)}`;
+    novelLink.href = `/novel-audio?novel=${encodeURIComponent(record.novelId)}#records`;
     novelLink.textContent = record.novelTitle;
     meta.append(novelLink);
   }

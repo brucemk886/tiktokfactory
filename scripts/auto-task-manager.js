@@ -34,14 +34,14 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     publish.ownerUserId = String(payload.ownerUserId || publish.ownerUserId || "");
     const expectedVideoCount = taskType === "psychology" || taskType === "schulte"
       ? generation.totalVideos
-      : generation.totalVideos || countAudioFiles(generation.audioDir) * generation.variants;
+      : generation.totalVideos || ((generation.audioItems?.length || countAudioFiles(generation.audioDir)) * generation.variants);
     if (!expectedVideoCount) {
       throw new Error(
         taskType === "psychology"
           ? "请设置心理学视频生成数量。"
           : taskType === "schulte"
             ? "请设置舒尔特视频生成数量。"
-            : "音频目录中没有找到可用音频文件。"
+            : "没有找到可用音频。请勾选小说音频，或选择音频目录。"
       );
     }
     const publishAccountIds = getPublishAccountIds(publish);
@@ -318,7 +318,11 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       const jobId = safeId(`auto-${taskType}-${task.id}-${Date.now()}`);
       const payloadPath = path.join(generationJobsDir, `${jobId}.payload.json`);
       const jobPath = path.join(generationJobsDir, `${jobId}.json`);
-      fs.writeFileSync(payloadPath, JSON.stringify({ ...task.generation, jobId }, null, 2), "utf8");
+      fs.writeFileSync(payloadPath, JSON.stringify({
+        ...task.generation,
+        jobId,
+        burnNovelBadge: normalizePublishProvider(task.publish?.provider) === PUBLISH_PROVIDER_OFFICIAL
+      }, null, 2), "utf8");
       fs.writeFileSync(jobPath, JSON.stringify({ jobId, status: "queued", percent: 1, message: "自动任务开始生成。", createdAt: Date.now() }, null, 2), "utf8");
       const generatorScript = taskType === "psychology"
         ? "psychology-video-job.js"
@@ -568,7 +572,9 @@ function validateTaskPayload(payload) {
     return;
   }
   if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) throw new Error("请选择素材组或视频素材目录。");
-  if (!String(generation.audioDir || "").trim()) throw new Error("请选择音频目录。");
+  if (!String(generation.audioDir || "").trim() && !normalizeAudioItems(generation.audioItems).length) {
+    throw new Error("请勾选小说音频，或选择音频目录。");
+  }
   if (publish.autoPublish !== false && !getPublishAccountIds(publish).length) throw new Error("请选择至少一个发布账号。");
   const scheduleAt = Number(publish.scheduleAt);
   if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
@@ -684,6 +690,7 @@ function normalizeGenerationPayload(value = {}) {
     videoDir: String(value.videoDir || ""),
     includeVideoSubfolders: value.includeVideoSubfolders !== false,
     audioDir: String(value.audioDir || ""),
+    audioItems: normalizeAudioItems(value.audioItems),
     audioPriority: Array.isArray(value.audioPriority)
       ? value.audioPriority.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 300)
       : [],
@@ -703,6 +710,10 @@ function normalizeGenerationPayload(value = {}) {
     subtitleAnimationMode: value.subtitleAnimationMode === "word-highlight" ? "word-highlight" : "sentence",
     quality: value.quality === "quality" ? "quality" : "fast",
     autoCaptions: value.autoCaptions !== false,
+    openingTitleEnabled: value.openingTitleEnabled === true,
+    novelId: String(value.novelId || "").trim(),
+    novelPlatform: String(value.novelPlatform || value.platform || "").trim(),
+    novelPromotionCode: String(value.novelPromotionCode || value.promotionCode || "").trim(),
     dedup: value.dedup && typeof value.dedup === "object" ? value.dedup : { enabled: true }
   };
 }
@@ -800,8 +811,11 @@ function getTaskSchedulePlan(task) {
   if (!task?.publish?.autoPublish) return [];
   if (Array.isArray(task.schedulePlan) && task.schedulePlan.length) return task.schedulePlan;
   let videoCount = Number(task.expectedVideoCount) || Number(task.generatedVideos?.length) || 0;
-  if (!videoCount && task.generation?.audioDir) {
-    try { videoCount = Number(task.generation.totalVideos) || countAudioFiles(task.generation.audioDir) * (Number(task.generation.variants) || 1); } catch { videoCount = 0; }
+  if (!videoCount && (task.generation?.audioDir || task.generation?.audioItems?.length)) {
+    try {
+      videoCount = Number(task.generation.totalVideos)
+        || ((task.generation.audioItems?.length || countAudioFiles(task.generation.audioDir)) * (Number(task.generation.variants) || 1));
+    } catch { videoCount = 0; }
   }
   const accountIds = getPublishAccountIds(task.publish);
   const scheduledPublishCount = normalizePublishProvider(task.publish.provider) === PUBLISH_PROVIDER_OFFICIAL
@@ -991,6 +1005,20 @@ export function persistOfficialPublishRecords(workDir, task, results) {
   }));
   writeJson(recordsPath, [...mergedIncoming, ...current.filter((record) => !incomingIds.has(String(record?.id || "")))]);
   return mergedIncoming;
+}
+
+function normalizeAudioItems(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => ({
+      id: String(item?.id || "").trim(),
+      path: String(item?.path || item?.file || "").trim(),
+      novelId: String(item?.novelId || "").trim(),
+      platform: String(item?.platform || item?.novelPlatform || "").trim(),
+      promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),
+      title: String(item?.title || "").trim()
+    }))
+    .filter((item) => item.id || item.path)
+    .slice(0, 300);
 }
 
 function countAudioFiles(directory) {

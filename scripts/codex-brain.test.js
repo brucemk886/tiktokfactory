@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildOperationPromptV2, createCodexBrainService } from "./codex-brain.js";
+import { buildOperationPromptV2, createCodexBrainService, resolveOpeningModel } from "./codex-brain.js";
 
 test("official operation prompt includes mapped novel-effect evidence", () => {
   const prompt = buildOperationPromptV2({
@@ -127,6 +127,90 @@ test("novel marketing uses Sol, returns 20 hooks and saves five selected assets"
   assert.equal(saved.source.sourceChars, sourceText.length);
   assert.equal(Object.hasOwn(saved.source, "sourceText"), false);
   assert.equal(fs.readFileSync(savedPath, "utf8").includes(sourceText), false);
+});
+
+test("opening variants return three distinct style scripts", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-openings-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const variants = {
+    variants: [
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` },
+      { style: "secret-reveal", styleLabel: "秘密揭开", title: "The invitation was a trap", openingTitle: "The invitation was a trap", script: `${"I was never supposed to know about the second ceremony, but the envelope had my old address and a date I could not forget. ".repeat(8)}` },
+      { style: "emotional-immersion", styleLabel: "情绪代入", title: "My hands would not stop shaking", openingTitle: "My hands would not stop shaking", script: `${"My throat closed before I reached the church doors, because the man waiting at the altar had once promised this night would be mine. ".repeat(8)}` }
+    ]
+  };
+  class FakeCodex {
+    startThread() {
+      return {
+        run: async () => ({ finalResponse: JSON.stringify(variants), usage: { input_tokens: 20, output_tokens: 80 } })
+      };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["conflict-first", "secret-reveal", "emotional-immersion"]
+  });
+  assert.equal(result.variants.length, 3);
+  assert.deepEqual(result.variants.map((item) => item.style), ["conflict-first", "secret-reveal", "emotional-immersion"]);
+  assert.deepEqual(result.variants.map((item) => item.openingTitle), [
+    "She wore my mother's ring",
+    "The invitation was a trap",
+    "My hands would not stop shaking"
+  ]);
+  assert.ok(result.variants.every((item) => item.script.length >= 80));
+  assert.equal(result.model, "gpt-5.6-sol");
+});
+
+test("opening variants can use Terra as the second-tier model", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-terra-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const calls = [];
+  const variants = {
+    variants: [
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` }
+    ]
+  };
+  class FakeCodex {
+    startThread(options) {
+      calls.push(options);
+      return { run: async () => ({ finalResponse: JSON.stringify(variants), usage: { output_tokens: 40 } }) };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["conflict-first"],
+    model: "gpt-5.6-terra"
+  });
+  assert.equal(calls[0].model, "gpt-5.6-terra");
+  assert.equal(result.model, "gpt-5.6-terra");
+  assert.equal(resolveOpeningModel("unknown"), "gpt-5.6-sol");
+});
+
+test("opening variants can return a single selected style", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-one-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const variants = {
+    variants: [
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` }
+    ]
+  };
+  class FakeCodex {
+    startThread() {
+      return { run: async () => ({ finalResponse: JSON.stringify(variants), usage: { output_tokens: 40 } }) };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["conflict-first"]
+  });
+  assert.equal(result.variants.length, 1);
+  assert.equal(result.variants[0].style, "conflict-first");
 });
 
 test("novel marketing rejects source text that is too short", async () => {

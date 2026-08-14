@@ -17,7 +17,7 @@
 .page-heading h1 { margin: 0; font-size: clamp(34px, 4vw, 50px); line-height: 1.1; }
 .page-copy { margin: 10px 0 0; color: var(--effect-muted); }
 .toolbar-card, .source-status, .metric-card, .novel-card, .unassigned-section { border: 1px solid var(--effect-border); background: var(--effect-panel); }
-.toolbar-card { display: grid; grid-template-columns: auto auto minmax(280px, 1fr) auto; gap: 18px; align-items: end; padding: 18px; }
+.toolbar-card { display: grid; grid-template-columns: auto minmax(280px, 1fr) auto; gap: 18px; align-items: end; padding: 18px; }
 .control-group { display: grid; gap: 8px; }
 .control-label { color: var(--effect-muted); font-size: 12px; font-weight: 700; }
 .source-lock { display: inline-flex; min-height: 42px; align-items: center; border: 1px solid var(--effect-border); border-radius: 6px; background: #fff; color: var(--lf-text, #1d1a14); padding: 0 15px; font-size: 13px; font-weight: 800; }
@@ -42,9 +42,15 @@
 .metric-value { margin-top: 12px; font-size: 25px; font-weight: 900; }
 .novel-list { display: grid; gap: 18px; }
 .novel-card { padding: 20px; }
+.novel-card.is-focused { border-color: #8a9a32; box-shadow: 0 0 0 3px rgba(200, 220, 90, 0.35); }
 .novel-head { display: flex; justify-content: space-between; gap: 18px; padding-bottom: 17px; border-bottom: 1px solid var(--effect-border); }
+.novel-title-block { display: flex; align-items: flex-start; gap: 14px; }
+.rank-badge { min-width: 36px; height: 36px; display: grid; place-items: center; border-radius: 8px; background: var(--effect-accent); color: #10160b; font-size: 16px; font-weight: 900; }
 .novel-head h2 { margin: 2px 0 5px; font-size: 23px; }
 .novel-meta { color: var(--effect-muted); font-size: 12px; }
+.novel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+.novel-actions .quiet-action { min-height: 34px; display: inline-flex; align-items: center; border: 1px solid var(--effect-border); border-radius: 5px; padding: 0 12px; color: var(--effect-text); text-decoration: none; font-size: 12px; font-weight: 800; }
+.script-table tr.is-rewrite { background: rgba(214, 232, 106, 0.06); }
 .novel-total { display: grid; grid-template-columns: repeat(4, auto); align-content: start; gap: 7px 20px; text-align: right; }
 .novel-total span { color: var(--effect-muted); font-size: 11px; }
 .novel-total strong { display: block; margin-top: 2px; color: var(--effect-accent); font-size: 17px; }

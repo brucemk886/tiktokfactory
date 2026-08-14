@@ -38,9 +38,12 @@ function render() {
   if (state.profiles.some((profile) => profile.id === selectedProfileId)) $("#userProfile").value = selectedProfileId;
 
   $("#profileList").innerHTML = state.profiles.map((profile) => `
-    <article>
-      <div><strong>${esc(profile.name)}</strong><small>${esc(profile.appId || "未填写 App ID")} · ${profile.hasApiKey ? "已保存 API Key" : "未保存 API Key"}</small></div>
-      <div><button data-edit-profile="${esc(profile.id)}">编辑</button>${profile.id !== "default" ? `<button data-delete-profile="${esc(profile.id)}">删除</button>` : ""}</div>
+    <article class="entity-card">
+      <div>
+        <strong>${esc(profile.name)}</strong>
+        <small>${esc(profile.appId || "未填写 App ID")} · ${profile.hasApiKey ? "已保存 API Key" : "未保存 API Key"}</small>
+      </div>
+      <div class="entity-actions"><button data-edit-profile="${esc(profile.id)}">编辑</button>${profile.id !== "default" ? `<button data-delete-profile="${esc(profile.id)}">删除</button>` : ""}</div>
     </article>
   `).join("");
 
@@ -51,14 +54,14 @@ function render() {
     const directoryText = user.allowedDirectory ? user.allowedDirectory : "未分配共享目录";
     const sidebarText = sidebarModuleSummary(user.sidebarModules, user.role);
     return `
-      <article>
+      <article class="entity-card">
         <div>
           <strong>${esc(user.username)}</strong>
           <small>${user.role === "admin" ? "管理员" : "成员"} · ${esc(profileName(user.geelarkProfileId))}</small>
           <small>${esc(groupText)} · ${esc(directoryText)}</small>
           <small>侧边栏：${esc(sidebarText)}</small>
         </div>
-        <div><span class="status-dot ${user.active ? "" : "off"}">${user.active ? "启用" : "停用"}</span><button data-edit-user="${esc(user.id)}">编辑</button></div>
+        <div class="entity-actions"><span class="status-dot ${user.active ? "" : "off"}">${user.active ? "启用" : "停用"}</span><button data-edit-user="${esc(user.id)}">编辑</button></div>
       </article>
     `;
   }).join("");
@@ -271,12 +274,33 @@ function updateGroupPermissionHint() {
   $("#userGroupsHint").textContent = isAdmin ? "管理员默认可以查看全部 GeeLark 分组" : state.groupHint;
 }
 
-function availableSidebarModules(role = $("#userRole").value) {
+function isGeeLarkBackupModule(item) {
+  return item?.group?.id === "geelark-backup";
+}
+
+function roleSidebarModules(role = $("#userRole").value) {
   return state.sidebarModules.filter((item) => Array.isArray(item.roles) && item.roles.includes(role));
+}
+
+function availableSidebarModules(role = $("#userRole").value) {
+  return roleSidebarModules(role).filter(isGeeLarkBackupModule);
 }
 
 function defaultSidebarModules(role) {
   return availableSidebarModules(role).map((item) => item.id);
+}
+
+function geelarkModuleIds() {
+  return new Set(state.sidebarModules.filter(isGeeLarkBackupModule).map((item) => item.id));
+}
+
+function preservedSidebarModules(role = $("#userRole").value) {
+  const geelarkIds = geelarkModuleIds();
+  const user = state.users.find((item) => item.id === $("#userId").value);
+  const source = user && user.role === role && Array.isArray(user.sidebarModules)
+    ? user.sidebarModules
+    : roleSidebarModules(role).map((item) => item.id);
+  return source.filter((moduleId) => !geelarkIds.has(moduleId));
 }
 
 function renderSidebarOptions(selected) {
@@ -286,12 +310,14 @@ function renderSidebarOptions(selected) {
     `<label class="sidebar-checkbox-item"><input type="checkbox" value="${esc(item.id)}"${selectedSet.has(item.id) ? " checked" : ""}><span>${esc(item.label)}</span></label>`
   )).join("");
   $("#userSidebarHint").textContent = $("#userRole").value === "admin"
-    ? "勾选后，该管理员登录时才显示对应模块。"
-    : "成员仅可选择任务、发布记录和数据总览。";
+    ? "只勾选 GeeLark 备用页面。中视频、小说推文、官方通道等其他业务保持原样。"
+    : "成员只能分配 GeeLark 备用里的 Reddit 发布、数据总览和发布记录。";
 }
 
 function selectedSidebarModules() {
-  return Array.from($("#userSidebarModules").querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+  const checked = Array.from($("#userSidebarModules").querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+  if ($("#userRole").value !== "admin") return checked;
+  return [...preservedSidebarModules(), ...checked];
 }
 
 function setAllSidebarModules(checked) {
@@ -302,9 +328,10 @@ function setAllSidebarModules(checked) {
 
 function sidebarModuleSummary(selected, role) {
   const selectedSet = new Set(Array.isArray(selected) ? selected : defaultSidebarModules(role));
-  const labels = state.sidebarModules.filter((item) => selectedSet.has(item.id)).map((item) => item.label);
-  if (!labels.length) return "全部隐藏";
-  if (labels.length === availableSidebarModules(role).length) return "全部显示";
+  const modules = availableSidebarModules(role);
+  const labels = modules.filter((item) => selectedSet.has(item.id)).map((item) => item.label);
+  if (!labels.length) return "GeeLark 备用全部隐藏";
+  if (labels.length === modules.length) return "GeeLark 备用全部显示";
   return labels.join("、");
 }
 

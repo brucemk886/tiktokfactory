@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Reddit 自动发布</title>
+    <title>Reddit 自动发布 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/tasks.css" />
       <link rel="stylesheet" href="/theme-ops.css" />
   </head>
-  <body class="tasks-page">
+  <body class="tasks-page" data-publish-channel="official">
     <aside class="tasks-sidebar">
       <a class="tasks-brand" href="/tasks" aria-label="Reddit 自动发布">
         <span class="brand-mark">LF</span>
@@ -36,9 +36,9 @@
     <div class="tasks-workspace">
       <header class="tasks-toolbar">
         <div>
-          <p class="toolbar-kicker">WORKFLOW</p>
-          <h1>Reddit 自动发布</h1>
-          <p>配置一次，后台完成生成、分配和发布。</p>
+          <p class="toolbar-kicker" id="pageKicker">OFFICIAL API</p>
+          <h1 id="pageTitle">Reddit 自动发布</h1>
+          <p id="pageLead">混剪成片会叠上所选小说的平台和推广码，发布只走 TikTok 官方 API。</p>
         </div>
         <div class="toolbar-actions">
           <span id="createStatus" class="toolbar-status">准备创建任务</span>
@@ -51,9 +51,14 @@
           <div id="task-assets" class="config-section">
             <div class="section-heading">
               <span class="section-index">01</span>
-              <div><h2>任务与素材</h2><p>依次选择视频素材来源、音频和可选的背景音乐。</p></div>
+              <div><h2>任务与素材</h2><p>勾选要混的小说，再选视频素材和可选背景音乐。生效音频在书单详情里勾。</p></div>
             </div>
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
+            <div class="field novel-select-field">
+              <span>混剪小说</span>
+              <div id="novelAudioPicker" class="novel-audio-picker">正在读取小说书单...</div>
+              <small id="novelBadgeHint">只勾小说。生效音频在书单详情里勾选保存，混剪只抽那些音频。</small>
+            </div>
             <div class="source-directory-stack">
               <section id="sharedLibraryPanel" class="shared-library-panel" hidden>
                 <div class="shared-library-head"><div><strong>共享素材库</strong><small id="sharedLibraryHint">读取管理员分配的共享目录</small></div><button id="refreshSharedLibrariesBtn" class="quiet-button" type="button">更新素材库和音频库</button></div>
@@ -85,6 +90,7 @@
               <label class="field"><span>编码模式</span><select id="quality"><option value="fast">更快</option><option value="quality">更清晰</option></select></label>
             </div>
             <label class="compact-check"><input id="autoCaptions" type="checkbox" checked /><span>使用 ElevenLabs 识别字幕并复用缓存</span></label>
+            <label class="compact-check"><input id="openingTitleEnabled" type="checkbox" /><span>前 3 秒在画面正中加开头标题，方便对比有无标题的流量</span></label>
             <details class="advanced-panel">
               <summary><span>素材去重设置</span><small>默认读取上次保存的参数</small></summary>
               <div class="grid controls-grid advanced-grid">
@@ -107,7 +113,7 @@
           <div id="task-publish" class="config-section publish-config">
             <div class="section-heading section-heading-actions">
               <span class="section-index">03</span>
-              <div><h2>自动发布</h2><p>选择发布通道和目标账号，设置文案与发布时间。</p></div>
+              <div><h2>自动发布</h2><p id="publishLead">选择官方授权账号，设置文案与发布时间。GeeLark 发布已移到备用区。</p></div>
               <button id="refreshPhonesBtn" class="quiet-button" type="button">刷新账号</button>
             </div>
             <label id="publishProviderField" class="field publish-provider-field" data-admin-only hidden>
@@ -132,8 +138,9 @@
             </div>
             <div id="officialPublishAccounts" hidden>
               <div class="official-account-toolbar">
-                <div><strong>官方授权账号</strong><span>仅显示具有 video.publish 权限的账号</span></div>
-                <button id="selectOfficialAccountsBtn" class="quiet-button" type="button">全选账号</button>
+                <label class="field"><span>分组</span><select id="officialGroupFilter"><option value="">全部分组</option></select></label>
+                <label class="field account-search"><span>搜索账号</span><input id="officialNameFilter" type="search" placeholder="用户名或分组" /></label>
+                <button id="selectOfficialAccountsBtn" class="quiet-button" type="button">全选筛选结果</button>
                 <span id="selectedOfficialAccountCount" class="selected-count">已选 0 个</span>
               </div>
               <div id="officialAccountList" class="geelark-phone-list compact-phone-list"></div>
