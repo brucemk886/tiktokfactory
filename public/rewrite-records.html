@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>文案改写记录 · Local Factory</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/rewrite-records.css">
+</head>
+<body class="work-page rewrite-page">
+  <nav class="side-tabs" aria-label="主导航"></nav>
+  <main class="rewrite-shell">
+    <header class="rewrite-heading">
+      <div>
+        <p class="eyebrow">AI REWRITE ARCHIVE</p>
+        <h1>文案改写记录</h1>
+        <p>集中查看官方 API 小说自运营产生的原文、诊断证据、改写版本与生成音频。</p>
+      </div>
+      <button id="refreshRecords" class="secondary-button" type="button">刷新记录</button>
+    </header>
+
+    <section class="rewrite-toolbar" aria-label="记录筛选">
+      <label class="search-field">
+        <span>搜索</span>
+        <input id="recordSearch" type="search" placeholder="标题、文案、诊断、视频 ID">
+      </label>
+      <label class="status-field">
+        <span>状态</span>
+        <select id="statusFilter">
+          <option value="">全部状态</option>
+          <option value="rewritten">已改写</option>
+          <option value="generated">已生成</option>
+          <option value="failed">失败</option>
+        </select>
+      </label>
+      <strong id="recordCount">0 条记录</strong>
+    </section>
+
+    <p id="recordStatus" class="record-status" role="status"></p>
+    <section id="recordList" class="record-list" aria-live="polite"></section>
+    <section id="recordEmpty" class="record-empty" hidden>
+      <strong>暂无文案改写记录</strong>
+      <span>官方 API 自运营生成改写方案后，会自动归档到这里。</span>
+    </section>
+  </main>
+  <script src="/access.js"></script>
+  <script type="module" src="/rewrite-records.js"></script>
+</body>
+</html>

@@ -22,6 +22,12 @@ test("official operation prompt includes mapped novel-effect evidence", () => {
     preliminaryStrategy: {},
     deepseekEvidenceReport: {},
     drafts: [],
+    novelLearning: {
+      promotedPatterns: [{ key: "hook:opening:conflict:first_sentence", status: "promoted", score: 0.2, confidence: 0.8, evaluationCount: 3 }],
+      demotedPatterns: [],
+      testingPatterns: [],
+      activeExperiments: []
+    },
     novelEffectAnalysis: {
       summary: { novelCount: 1 },
       novels: [{ id: "novel-1", scripts: [{ id: "script-1", videos: [{ id: "video-1" }] }] }],
@@ -32,7 +38,9 @@ test("official operation prompt includes mapped novel-effect evidence", () => {
   assert.match(prompt, /Official novel-effect aggregation/);
   assert.match(prompt, /novel-1/);
   assert.match(prompt, /script-1/);
-  assert.match(prompt, /exact TikTok video-ID mappings/);
+  assert.match(prompt, /joined by TikTok video ID/);
+  assert.match(prompt, /Accumulated experiment learning/);
+  assert.match(prompt, /hook:opening:conflict:first_sentence/);
 });
 
 test("Codex connection test reports a successful local session", async () => {

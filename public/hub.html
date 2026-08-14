@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>业务总览 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/hub.css" />
+  </head>
+  <body class="work-page hub-page">
+    <nav class="side-tabs" aria-label="主导航">
+      <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>业务总览</small></b></a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </nav>
+    <main class="hub-shell">
+      <header class="hub-hero">
+        <p>LOCAL FACTORY</p>
+        <h1>选择一条业务线开始</h1>
+        <span>中视频、小说推文、心理学分开运营。官方 API 是主通道，GeeLark 整套保留作备用。</span>
+      </header>
+      <section id="businessGrid" class="hub-grid" aria-label="业务线"></section>
+      <section class="hub-secondary">
+        <a class="hub-link-card" href="/tiktok-connections" data-admin-only>
+          <strong>官方通道</strong>
+          <small>授权账号、官方数据和发布记录</small>
+        </a>
+        <a class="hub-link-card" href="/operator/third-party" data-admin-only>
+          <strong>GeeLark 备用</strong>
+          <small>第三方自运营、数据抓取和发布记录</small>
+        </a>
+        <a class="hub-link-card" href="/accounts" data-admin-only>
+          <strong>账户管理</strong>
+          <small>本地登录账号与侧边栏权限</small>
+        </a>
+      </section>
+    </main>
+    <script src="/access.js"></script>
+    <script type="module" src="/hub.js"></script>
+  </body>
+</html>

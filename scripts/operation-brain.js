@@ -63,6 +63,7 @@ export function createOperationBrainService({
   audioLibrary = null,
   novelContentLibrary = null,
   novelEffectService = null,
+  novelLearningService = null,
   autoTaskManager,
   codexBrain = null,
   deepseekBrain = null,
@@ -72,6 +73,7 @@ export function createOperationBrainService({
   listProfiles = () => [],
   fixedDataStrategy = null,
   accountSource = null,
+  strategyPolicyProvider = null,
   now = () => Date.now()
 }) {
   const settingsPath = path.join(workDir, "operation-brain-settings.json");
@@ -212,6 +214,18 @@ export function createOperationBrainService({
         };
       }
     }
+    let novelLearning = null;
+    if (settings.dataStrategy === "official_api" && novelLearningService) {
+      try {
+        novelLearningService.refreshFromAnalysis({ analysis: novelEffectAnalysis || {}, evaluatedAt: now() });
+        novelLearning = novelLearningService.getStrategyContext();
+      } catch (error) {
+        novelLearning = {
+          promotedPatterns: [], demotedPatterns: [], testingPatterns: [], activeExperiments: [],
+          error: String(error?.message || error)
+        };
+      }
+    }
     const official10 = buildOfficialDashboard(privateAnalytics, {
       days: ANALYSIS_WINDOW_DAYS,
       analysisStartedAt,
@@ -279,6 +293,7 @@ export function createOperationBrainService({
       contentFeedback,
       matchedVideoLinks,
       novelEffectAnalysis,
+      novelLearning,
       privateAnalytics,
       strategyComparison,
       dataStatus: {
@@ -348,7 +363,10 @@ export function createOperationBrainService({
         throw statusError(400, `本次计划 ${plannedVideos} 条，超过每日 ${settings.maxDailyVideos} 条安全上限。`);
       }
       const strategyProvider = settings.strategyProvider;
-      const baseStrategyInput = buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary });
+      const strategyPolicy = typeof strategyPolicyProvider === "function" ? strategyPolicyProvider() : null;
+      const baseStrategyInput = buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary, strategyPolicy });
+      const officialSlim = settings.dataStrategy === "official_api";
+      const aiInput = officialSlim ? slimOfficialStrategyInput(baseStrategyInput) : baseStrategyInput;
       const route = decideStrategyRoute({
         overview,
         provider: strategyProvider,
@@ -364,16 +382,17 @@ export function createOperationBrainService({
           let firstPass = null;
           let aiResult;
           try {
-            if (finalProvider === "deepseek" && deepseekBrain?.analyzeOperationDataset) {
+            if (finalProvider === "deepseek" && officialSlim && deepseekBrain?.generateOperationStrategy) {
+              aiResult = await deepseekBrain.generateOperationStrategy(aiInput, { reasoningMode: settings.strategyReasoning });
+              route.analysisStats = aiResult.analysisStats || { mode: "local_score", ...aiInput.scoreboard, batches: 0 };
+            } else if (finalProvider === "deepseek" && deepseekBrain?.analyzeOperationDataset) {
               aiResult = await deepseekBrain.analyzeOperationDataset({
                 ...baseStrategyInput,
-                fullPrivatePerformance: settings.dataStrategy === "official_api"
-                  ? overview.privateAnalytics
-                  : null
+                fullPrivatePerformance: null
               }, { reasoningMode: settings.strategyReasoning });
             } else {
               const firstService = finalProvider === "deepseek" ? deepseekBrain : codexBrain;
-              aiResult = await firstService.generateOperationStrategy(baseStrategyInput, { reasoningMode: settings.strategyReasoning });
+              aiResult = await firstService.generateOperationStrategy(aiInput, { reasoningMode: settings.strategyReasoning });
             }
             firstPass = aiResult;
             if (finalProvider === "deepseek") {
@@ -388,7 +407,7 @@ export function createOperationBrainService({
             route.reasons.push("deepseek_failed");
             finalProvider = "codex";
             aiResult = await codexBrain.generateOperationStrategy({
-              ...baseStrategyInput,
+              ...aiInput,
               routeContext: { mode: "fallback", reasons: route.reasons }
             }, { reasoningMode: settings.strategyReasoning });
             route.solDurationMs = Number(aiResult.durationMs) || 0;
@@ -397,13 +416,13 @@ export function createOperationBrainService({
             route.solCalled = true;
             try {
               const reviewedResult = await codexBrain.generateOperationStrategy({
-                ...baseStrategyInput,
+                ...aiInput,
                 preliminaryStrategy: summarizePreliminaryStrategy(firstPass?.strategy),
-                deepseekEvidenceReport: firstPass?.evidenceReport || null,
+                deepseekEvidenceReport: officialSlim ? null : firstPass?.evidenceReport || null,
                 routeContext: {
-                  mode: "full_dataset_review",
+                  mode: officialSlim ? "local_score_review" : "full_dataset_review",
                   reasons: route.reasons,
-                  analysisStats: firstPass?.analysisStats || null
+                  analysisStats: firstPass?.analysisStats || route.analysisStats || null
                 }
               }, { reasoningMode: settings.strategyReasoning });
               finalProvider = "codex";
@@ -462,8 +481,12 @@ export function createOperationBrainService({
         strategy: aiStrategy,
         audioLibrary,
         planId: id,
-        targetAudioDir: settings.audioDir
+        targetAudioDir: settings.audioDir,
+        strategyPolicy
       });
+      const learningRegistration = settings.dataStrategy === "official_api" && novelLearningService
+        ? novelLearningService.registerOptimizations({ planId: id, optimizedContent, createdAt: now() })
+        : null;
       const plan = {
         id,
         planDate,
@@ -484,6 +507,8 @@ export function createOperationBrainService({
         accounts: overview.accounts,
         aiStrategy,
         optimizedContent,
+        novelLearning: overview.novelLearning || null,
+        learningRegistration,
         taskDrafts,
         createdTaskIds: [],
         errors: []
@@ -1310,7 +1335,7 @@ function filterPhones(phones, groupNames) {
   return (phones || []).filter((phone) => !groups.size || groups.has(String(phone.groupName || "")));
 }
 
-function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary }) {
+function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, audioLibrary, novelContentLibrary, strategyPolicy = null }) {
   const accounts = Array.isArray(overview.accounts) ? overview.accounts : [];
   const useOfficialData = settings.dataStrategy === "official_api";
   const selectedPrivateAnalytics = useOfficialData
@@ -1349,12 +1374,15 @@ function buildCodexOperationInput({ overview, taskDrafts, settings, planDate, au
     audioPerformance: (overview.contentFeedback?.audioPerformance || []).slice(0, 100),
     novelContent,
     novelEffectAnalysis,
+    novelLearning: overview.novelLearning || null,
+    strategyPolicy,
     scriptLibrary,
     contentRuleDiagnostics: buildContentRuleDiagnostics({
       privateAnalytics: selectedPrivateAnalytics,
       matchedVideos: overview.matchedVideoLinks || [],
       scriptLibrary,
-      generatedAt: Number(selectedPrivateAnalytics?.generatedAt) || Date.now()
+      generatedAt: Number(selectedPrivateAnalytics?.generatedAt) || Date.now(),
+      thresholds: strategyPolicy?.diagnosis || {}
     }),
     publishTimePerformance: overview.contentFeedback?.publishTimePerformance || [],
     privatePerformance: useOfficialData
@@ -1445,9 +1473,15 @@ function nullableNumber(value) {
   return value === null || value === undefined || value === "" ? null : Number(value) || 0;
 }
 
-async function materializeScriptOptimizations({ strategy = {}, audioLibrary, planId, targetAudioDir }) {
-  const requests = Array.isArray(strategy?.scriptOptimizations) ? strategy.scriptOptimizations.slice(0, 3) : [];
+async function materializeScriptOptimizations({ strategy = {}, audioLibrary, planId, targetAudioDir, strategyPolicy = null }) {
+  if (strategyPolicy?.rewrite?.enabled === false) return [];
+  const maxVariants = Math.max(1, Math.min(10, Number(strategyPolicy?.rewrite?.maxVariants) || 3));
+  const requests = Array.isArray(strategy?.scriptOptimizations) ? strategy.scriptOptimizations.slice(0, maxVariants) : [];
   if (!requests.length || !audioLibrary?.generateFromOptimizedScript) return [];
+  if (strategyPolicy?.audio?.enabled === false || strategyPolicy?.audio?.generateAfterRewrite === false) {
+    return requests.map((request) => ({ ...request, status: "rewrite_ready", audio: null }));
+  }
+  const configuredAudioDir = String(strategyPolicy?.audio?.outputDirectory || "").trim();
   const available = new Map((audioLibrary.list?.() || []).map((item) => [String(item.id || ""), item]));
   const results = [];
   for (const request of requests) {
@@ -1465,8 +1499,18 @@ async function materializeScriptOptimizations({ strategy = {}, audioLibrary, pla
         script: request.rewrittenScript,
         diagnosis: request.diagnosis,
         evidenceSummary: request.evidenceSummary,
+        rewriteMetadata: {
+          problemLayer: request.problemLayer,
+          rewriteScope: request.rewriteScope,
+          targetSecondRange: request.targetSecondRange,
+          estimatedSourceSentence: request.estimatedSourceSentence,
+          rewriteGoal: request.rewriteGoal,
+          singleVariable: request.singleVariable,
+          preservedFacts: request.preservedFacts,
+          changeLog: request.changeLog
+        },
         planId,
-        targetAudioDir
+        targetAudioDir: configuredAudioDir || targetAudioDir
       });
       results.push({ ...request, status: "completed", originalScript: source.script || "", audio });
     } catch (error) {
@@ -1474,6 +1518,41 @@ async function materializeScriptOptimizations({ strategy = {}, audioLibrary, pla
     }
   }
   return results;
+}
+
+export function slimOfficialStrategyInput(input = {}) {
+  const diagnostics = input.contentRuleDiagnostics || {};
+  const videos = Array.isArray(diagnostics.videos) ? diagnostics.videos : [];
+  const eligible = videos.filter((item) => item.rewriteEligible === true).slice(0, 12);
+  const eligibleIds = new Set(eligible.map((item) => String(item.videoId || "")));
+  const compact = input.privatePerformance && typeof input.privatePerformance === "object"
+    ? input.privatePerformance
+    : null;
+  return {
+    ...input,
+    contentRuleDiagnostics: {
+      version: diagnostics.version || "",
+      generatedAt: diagnostics.generatedAt || 0,
+      thresholds: diagnostics.thresholds || {},
+      summary: diagnostics.summary || {},
+      videos: eligible
+    },
+    privatePerformance: compact
+      ? {
+          ...compact,
+          accounts: (compact.accounts || []).map((account) => ({
+            ...account,
+            videos: (account.videos || []).filter((video) => eligibleIds.has(String(video.videoId || "")))
+          }))
+        }
+      : compact,
+    scoreboard: {
+      videoCount: Number(diagnostics.summary?.videoCount) || videos.length,
+      rewriteEligibleCount: Number(diagnostics.summary?.rewriteEligibleCount) || eligible.length,
+      decisions: diagnostics.summary?.decisions || {},
+      sentToModel: eligible.length
+    }
+  };
 }
 
 export function decideStrategyRoute({
@@ -1514,11 +1593,7 @@ export function decideStrategyRoute({
     ? Math.max(0, Number(summary.detailedVideoCount) || 0)
     : Math.max(0, Number(overview.dataStatus?.videoCount) || 0);
   const reasons = deepseekAvailable
-    ? [legacyFullPrivateData
-      ? "full_private_dataset_analysis"
-      : useOfficialData
-        ? "official_api_dataset_analysis"
-        : "third_party_dataset_analysis"]
+    ? [useOfficialData ? "local_score_rewrite" : "third_party_dataset_analysis"]
     : [];
   if (!detailedVideoCount) reasons.push(useOfficialData ? "official_dataset_empty" : "third_party_dataset_empty");
   if (!deepseekAvailable && solAvailable) reasons.push("deepseek_unavailable");

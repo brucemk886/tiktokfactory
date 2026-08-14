@@ -4,7 +4,7 @@ import { buildContentRuleDiagnostics } from "./content-diagnosis-rules.js";
 
 const NOW = new Date("2026-08-10T08:00:00+08:00").getTime();
 
-test("rule v1 maps a TikTok video to its local script and gates evidence-based rewrites", () => {
+test("rule v2 maps a TikTok video and emits a binding opening rewrite brief", () => {
   const result = buildContentRuleDiagnostics({
     generatedAt: NOW,
     matchedVideos: [{
@@ -37,7 +37,7 @@ test("rule v1 maps a TikTok video to its local script and gates evidence-based r
   });
 
   const weak = result.videos.find((item) => item.videoId === "video-weak");
-  assert.equal(result.version, "novel-content-v1");
+  assert.equal(result.version, "novel-content-v2");
   assert.equal(weak.sampleStatus, "eligible");
   assert.equal(weak.decision, "rewrite_test");
   assert.equal(weak.rewriteEligible, true);
@@ -46,9 +46,15 @@ test("rule v1 maps a TikTok video to its local script and gates evidence-based r
   assert.ok(weak.rules.some((item) => item.code === "opening_loss_over_30pp"));
   assert.ok(weak.rules.some((item) => item.code === "rapid_loss_3_to_10"));
   assert.ok(weak.largestDropSentence?.text);
+  assert.equal(weak.rewriteBrief.problemLayer, "opening");
+  assert.equal(weak.rewriteBrief.rewriteScope, "opening_0_3s");
+  assert.equal(weak.rewriteBrief.targetSecondRange, "0-3s");
+  assert.equal(weak.rewriteBrief.singleVariable, "opening_hook");
+  assert.equal(weak.rewriteBrief.preserveFacts.length, 4);
+  assert.match(weak.rewriteBrief.rewriteGoal, /第一句/);
 });
 
-test("rule v1 includes immature and low-view samples in all statistics", () => {
+test("rule v2 includes immature and low-view samples in all statistics", () => {
   const result = buildContentRuleDiagnostics({
     generatedAt: NOW,
     privateAnalytics: {
@@ -72,9 +78,10 @@ test("rule v1 includes immature and low-view samples in all statistics", () => {
   assert.equal(result.videos[0].baseline.sampleCount, 1);
   assert.equal(result.videos[0].decision, "rewrite_test");
   assert.equal(result.videos[0].rewriteEligible, false);
+  assert.equal(result.videos[0].rewriteBrief.confidence, "low");
 });
 
-test("rule v1 separates distribution weakness from content weakness", () => {
+test("rule v2 separates distribution weakness from content weakness", () => {
   const result = buildContentRuleDiagnostics({
     generatedAt: NOW,
     privateAnalytics: {
@@ -91,6 +98,8 @@ test("rule v1 separates distribution weakness from content weakness", () => {
   const item = result.videos.find((video) => video.videoId === "low-distribution");
   assert.equal(item.decision, "adjust_distribution");
   assert.equal(item.rewriteEligible, false);
+  assert.equal(item.rewriteBrief.problemLayer, "distribution");
+  assert.equal(item.rewriteBrief.rewriteScope, "none");
 });
 
 function video(id, overrides = {}) {

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>策略中心 · Local Factory</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/novel-strategy.css">
+</head>
+<body class="work-page strategy-page">
+  <nav class="side-tabs" aria-label="主导航"></nav>
+  <main class="strategy-shell">
+    <header class="page-heading">
+      <div><p class="eyebrow">OFFICIAL API NOVEL STRATEGY</p><h1>策略中心</h1><p>只控制 TikTok 官方 API 小说自运营：诊断、改写、音频生成、实验评估和模型链。</p></div>
+      <div class="active-badge"><span>当前生效</span><strong id="activeVersion">尚未激活版本</strong></div>
+    </header>
+
+    <section class="strategy-notice"><strong>全部样本参与统计</strong><span>有效样本播放量和发布时间门槛固定为 0；草稿保存不会影响运行，只有“激活新版本”后才会应用。</span></section>
+
+    <form id="strategyForm">
+      <section class="strategy-card">
+        <div class="section-heading"><span>01</span><div><p>DIAGNOSIS</p><h2>诊断阈值</h2></div></div>
+        <div class="field-grid">
+          <label><span>最小播放量</span><input data-path="diagnosis.sampleMinViews" data-type="number" type="number" value="0" readonly><small>固定为 0，统计全部视频</small></label>
+          <label><span>最小发布小时</span><input data-path="diagnosis.sampleMinHours" data-type="number" type="number" value="0" readonly><small>固定为 0，不等待样本成熟</small></label>
+          <label><span>开头窗口（秒）</span><input data-path="diagnosis.earlyWindowSeconds" data-type="number" type="number" min="1" max="30"></label>
+          <label><span>开头流失告警（百分点）</span><input data-path="diagnosis.earlyDropPoints" data-type="number" type="number" min="0" max="100"></label>
+          <label><span>低于账号中位数（百分点）</span><input data-path="diagnosis.comparisonDeltaPoints" data-type="number" type="number" min="0" max="100"></label>
+          <label><span>铺垫段流失告警（百分点）</span><input data-path="diagnosis.setupDropPoints" data-type="number" type="number" min="0" max="100"></label>
+          <label><span>中段观看比例阈值（%）</span><input data-path="diagnosis.middleWatchRatioThreshold" data-type="number" type="number" min="0" max="100"></label>
+          <label><span>最小压缩比例（%）</span><input data-path="diagnosis.compressMinPercent" data-type="number" type="number" min="0" max="100"></label>
+          <label><span>最大压缩比例（%）</span><input data-path="diagnosis.compressMaxPercent" data-type="number" type="number" min="0" max="100"></label>
+        </div>
+      </section>
+
+      <section class="strategy-card">
+        <div class="section-heading"><span>02</span><div><p>STRUCTURED REWRITE</p><h2>文案改写约束</h2></div></div>
+        <div class="field-grid">
+          <label class="switch-field"><input data-path="rewrite.enabled" data-type="boolean" type="checkbox"><span>启用结构化改写</span></label>
+          <label><span>每条最多测试版本</span><input data-path="rewrite.maxVariants" data-type="number" type="number" min="1" max="10"></label>
+          <label><span>冲突出现时限（秒）</span><input data-path="rewrite.openingConflictWithinSeconds" data-type="number" type="number" min="1" max="30"></label>
+          <label class="switch-field"><input data-path="rewrite.preserveCharacters" data-type="boolean" type="checkbox"><span>保留人物</span></label>
+          <label class="switch-field"><input data-path="rewrite.preserveFacts" data-type="boolean" type="checkbox"><span>保留事实</span></label>
+          <label class="switch-field"><input data-path="rewrite.preserveEnding" data-type="boolean" type="checkbox"><span>保留结局</span></label>
+          <label class="switch-field"><input data-path="rewrite.localRewriteFirst" data-type="boolean" type="checkbox"><span>优先局部改写</span></label>
+          <label class="switch-field"><input data-path="rewrite.allowInventedPlot" data-type="boolean" type="checkbox"><span>允许虚构原文没有的情节</span></label>
+          <label class="switch-field"><input data-path="rewrite.evidenceRequired" data-type="boolean" type="checkbox"><span>改写必须有数据证据</span></label>
+        </div>
+      </section>
+
+      <section class="strategy-card">
+        <div class="section-heading"><span>03</span><div><p>AUDIO</p><h2>音频生成</h2></div></div>
+        <div class="field-grid">
+          <label class="switch-field"><input data-path="audio.enabled" data-type="boolean" type="checkbox"><span>启用音频生成</span></label>
+          <label><span>音频服务商</span><input data-path="audio.provider" type="text"></label>
+          <label class="switch-field"><input data-path="audio.generateAfterRewrite" data-type="boolean" type="checkbox"><span>改写后自动生成</span></label>
+          <label class="wide"><span>指定音频目录（留空使用系统默认）</span><input data-path="audio.outputDirectory" type="text" placeholder="留空使用默认音频目录"></label>
+          <label class="switch-field"><input data-path="audio.keepOriginal" data-type="boolean" type="checkbox"><span>保留原始音频</span></label>
+        </div>
+      </section>
+
+      <section class="strategy-card">
+        <div class="section-heading"><span>04</span><div><p>EXPERIMENT LEARNING</p><h2>评估与学习</h2></div></div>
+        <div class="field-grid">
+          <label><span>评估节点（小时，逗号分隔）</span><input data-path="evaluation.checkpointsHours" data-type="number-array" type="text"></label>
+          <label><span>账号基线天数</span><input data-path="evaluation.baselineDays" data-type="number" type="number" min="1" max="365"></label>
+          <label><span>策略置信最少测试数</span><input data-path="evaluation.confidenceMinTests" data-type="number" type="number" min="1" max="100"></label>
+          <label class="switch-field"><input data-path="evaluation.autoPromoteEnabled" data-type="boolean" type="checkbox"><span>成功模式自动升级</span></label>
+          <label class="switch-field"><input data-path="evaluation.autoDemoteEnabled" data-type="boolean" type="checkbox"><span>失败模式自动降级</span></label>
+        </div>
+      </section>
+
+      <section class="strategy-card">
+        <div class="section-heading"><span>05</span><div><p>MODEL CHAIN</p><h2>模型链与第三方预留</h2></div></div>
+        <div class="field-grid">
+          <label><span>主模型</span><input data-path="model.primary" type="text"></label>
+          <label><span>备用模型</span><input data-path="model.fallback" type="text"></label>
+          <label class="switch-field"><input data-path="model.externalProviderEnabled" data-type="boolean" type="checkbox"><span>启用第三方模型接口</span></label>
+          <label class="wide"><span>第三方接口地址</span><input data-path="model.externalProviderBaseUrl" type="url" placeholder="后续填写，不在页面保存密钥"></label>
+          <label><span>第三方模型名</span><input data-path="model.externalProviderModel" type="text"></label>
+        </div>
+      </section>
+
+      <section class="action-bar">
+        <div id="saveStatus" role="status"></div>
+        <button class="secondary-button" id="saveDraft" type="button">保存草稿</button>
+        <button class="primary-button" id="openActivate" type="button">激活新版本</button>
+      </section>
+    </form>
+
+    <section class="strategy-card versions-card">
+      <div class="section-heading"><span>06</span><div><p>IMMUTABLE VERSIONS</p><h2>版本记录与回滚</h2></div></div>
+      <div id="versionList" class="version-list"></div>
+    </section>
+  </main>
+
+  <dialog id="activateDialog">
+    <form method="dialog" id="activateForm">
+      <h2>激活策略版本</h2>
+      <p>激活后官方 API 自运营的下一次分析会使用此版本。</p>
+      <label><span>版本名称</span><input id="versionLabel" maxlength="80" required placeholder="例如：第一版开头优化策略"></label>
+      <label><span>变更说明</span><textarea id="versionNote" maxlength="500" rows="4" placeholder="记录本次调整目的"></textarea></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary-button">取消</button><button value="default" id="confirmActivate" class="primary-button">确认激活</button></div>
+    </form>
+  </dialog>
+  <script src="/access.js"></script>
+  <script type="module" src="/novel-strategy.js"></script>
+</body>
+</html>

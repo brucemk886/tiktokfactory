@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Codex } from "@openai/codex-sdk";
+import { createCodexSdkModelProvider } from "./brain-model-provider.js";
 
 const CONNECTION_REPLY = "CODEX_CONNECTED";
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -106,9 +107,32 @@ export const operationOutputSchema = {
           evidenceSummary: { type: "string" },
           diagnosis: { type: "string" },
           openingAnalysis: { type: "string" },
+          problemLayer: { type: "string", enum: ["novel", "hook", "opening", "setup", "middle", "transition", "ending"] },
+          rewriteScope: { type: "string", enum: ["hook_only", "opening_0_3s", "setup_3_10s", "middle_local", "transition_local", "ending_local", "full_compression"] },
+          targetSecondRange: { type: "string" },
+          estimatedSourceSentence: { type: "string" },
+          rewriteGoal: { type: "string" },
+          singleVariable: { type: "string" },
+          preservedFacts: { type: "array", minItems: 4, maxItems: 8, items: { type: "string" } },
+          changeLog: {
+            type: "array",
+            minItems: 1,
+            maxItems: 6,
+            items: {
+              type: "object",
+              properties: {
+                before: { type: "string" },
+                after: { type: "string" },
+                reason: { type: "string" },
+                evidence: { type: "string" }
+              },
+              required: ["before", "after", "reason", "evidence"],
+              additionalProperties: false
+            }
+          },
           rewrittenScript: { type: "string" }
         },
-        required: ["sourceAudioId", "sourceVideoId", "title", "evidenceSummary", "diagnosis", "openingAnalysis", "rewrittenScript"],
+        required: ["sourceAudioId", "sourceVideoId", "title", "evidenceSummary", "diagnosis", "openingAnalysis", "problemLayer", "rewriteScope", "targetSecondRange", "estimatedSourceSentence", "rewriteGoal", "singleVariable", "preservedFacts", "changeLog", "rewrittenScript"],
         additionalProperties: false
       }
     }
@@ -128,10 +152,12 @@ export function createCodexBrainService({
   root,
   workDir = path.join(root, "work"),
   CodexClass = Codex,
+  modelProvider = null,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   marketingTimeoutMs = DEFAULT_MARKETING_TIMEOUT_MS
 }) {
   const codexPath = resolveCodexExecutable();
+  const provider = modelProvider || createCodexSdkModelProvider({ CodexClass, codexPath, root });
   let runningOperation = "";
   let connected = false;
   let lastTest = null;
@@ -142,6 +168,7 @@ export function createCodexBrainService({
   function getStatus() {
     return {
       sdkReady: true,
+      modelProvider: provider.id,
       authentication: "local-codex-session",
       executable: codexPath ? "codex-desktop" : "sdk-bundled",
       marketingModel: MARKETING_MODEL,
@@ -167,18 +194,10 @@ export function createCodexBrainService({
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const codex = new CodexClass(codexPath ? { codexPathOverride: codexPath } : undefined);
-      const thread = codex.startThread({
-        workingDirectory: root,
-        sandboxMode: "read-only",
-        approvalPolicy: "never",
-        networkAccessEnabled: false,
-        webSearchMode: "disabled"
+      const result = await provider.run({
+        prompt: `This is a connection test. Do not inspect files, run commands, or use tools. Reply with exactly ${CONNECTION_REPLY}.`,
+        signal: controller.signal
       });
-      const result = await thread.run(
-        `This is a connection test. Do not inspect files, run commands, or use tools. Reply with exactly ${CONNECTION_REPLY}.`,
-        { signal: controller.signal }
-      );
       const response = String(result.finalResponse || "").trim();
       if (response !== CONNECTION_REPLY) {
         throw new Error(`Codex 已响应，但连接校验内容不符合预期：${response.slice(0, 120) || "空响应"}`);
@@ -221,17 +240,10 @@ export function createCodexBrainService({
     const timer = setTimeout(() => controller.abort(), marketingTimeoutMs);
 
     try {
-      const codex = new CodexClass(codexPath ? { codexPathOverride: codexPath } : undefined);
-      const thread = codex.startThread({
+      const result = await provider.run({
         model: MARKETING_MODEL,
-        modelReasoningEffort: "medium",
-        workingDirectory: root,
-        sandboxMode: "read-only",
-        approvalPolicy: "never",
-        networkAccessEnabled: false,
-        webSearchMode: "disabled"
-      });
-      const result = await thread.run(buildMarketingPrompt(input), {
+        reasoningEffort: "medium",
+        prompt: buildMarketingPrompt(input),
         outputSchema: marketingOutputSchema,
         signal: controller.signal
       });
@@ -297,17 +309,12 @@ export function createCodexBrainService({
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), marketingTimeoutMs);
     try {
-      const codex = new CodexClass(codexPath ? { codexPathOverride: codexPath } : undefined);
-      const thread = codex.startThread({
+      const result = await provider.run({
         model: CREATION_MODEL,
-        modelReasoningEffort: "medium",
-        workingDirectory: root,
-        sandboxMode: "read-only",
-        approvalPolicy: "never",
-        networkAccessEnabled: false,
-        webSearchMode: "disabled"
+        reasoningEffort: "medium",
+        prompt: buildCreationPrompt(input),
+        signal: controller.signal
       });
-      const result = await thread.run(buildCreationPrompt(input), { signal: controller.signal });
       const content = String(result.finalResponse || "").trim();
       if (!content) throw new Error("Codex 没有返回可用内容。");
       connected = true;
@@ -344,17 +351,10 @@ export function createCodexBrainService({
     const timer = setTimeout(() => controller.abort(), marketingTimeoutMs);
 
     try {
-      const codex = new CodexClass(codexPath ? { codexPathOverride: codexPath } : undefined);
-      const thread = codex.startThread({
+      const result = await provider.run({
         model: OPERATION_MODEL,
-        modelReasoningEffort: OPERATION_REASONING_EFFORT,
-        workingDirectory: root,
-        sandboxMode: "read-only",
-        approvalPolicy: "never",
-        networkAccessEnabled: false,
-        webSearchMode: "disabled"
-      });
-      const result = await thread.run(buildOperationPromptV2(input), {
+        reasoningEffort: OPERATION_REASONING_EFFORT,
+        prompt: buildOperationPromptV2(input),
         outputSchema: operationOutputSchema,
         signal: controller.signal
       });
@@ -429,9 +429,12 @@ Hard boundaries:
 8. DeepSeek has already processed every recent video and every available second-by-second retention/like point in bounded batches. Use its evidence report as the complete private-data review, then independently make the final operating decision. Keep sound findings and correct unsupported conclusions.
 9. For every scriptOptimizations item, use a real sourceAudioId from the local script library. Diagnose the opening text, retentionAt3, full-watch rate, average watch time, and largest retention-drop second when available. State unavailable evidence honestly. Rewrite the complete narration while preserving story facts and making the first three seconds immediately understandable and suspenseful. Never invent performance numbers.
 10. Treat the deterministic content-rule diagnostics as the rewrite gate. Only create scriptOptimizations for entries with rewriteEligible=true and a non-empty sourceAudioId. Do not rewrite keep_reuse, adjust_distribution, stop_use, observe, insufficient, or unmapped entries. The sentence timing in v1 is an estimate, not an exact transcript timestamp; describe it as an estimated corresponding sentence.
-11. Prefer local edits around the evidenced problem. Preserve people, events, causality, and ending facts. Never overwrite the original; the generated script must be a derived version. Produce at most two conceptual hook variants per weak source, but return one complete best rewrittenScript per schema item.
-12. Use the official novel-effect aggregation to compare opening/script variants only within the same novel. Separate source-novel quality from hook/script quality. Prefer exact TikTok video-ID mappings and never use an unmapped official video as evidence for a rewrite. State mapping gaps honestly.
-13. If the local script library is empty or no rule diagnosis is rewrite-eligible, return scriptOptimizations as an empty array. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
+11. The rewriteBrief attached to each eligible diagnosis is binding. Copy its problemLayer, rewriteScope, targetSecondRange, estimatedSourceSentence, rewriteGoal, and singleVariable into the output. Change exactly that one major variable; do not simultaneously change the hook, middle, ending, title, and distribution.
+12. Prefer the smallest evidenced local edit. Preserve people, relationships, key events, causality, and ending facts. Never overwrite the original; the generated script must be a derived version. Return a complete narration, plus a changeLog that names the before text, after text, reason, and exact evidence used. Do not claim estimated sentence timing is exact.
+13. Use official novel-effect aggregation to compare variants only within the same novel. If several openings of one novel fail while other novels work, classify the source novel as weak. If one opening loses while siblings of the same novel work, classify the hook/opening as weak. Never use an unmapped video as rewrite evidence.
+14. Do not rewrite a winning script or a distribution-only problem. Do not manufacture plot twists, facts, metrics, or comments. Produce at most two conceptual variants per weak source, but return only the single best complete rewrittenScript per schema item.
+15. If the local script library is empty or no rule diagnosis is rewrite-eligible, return scriptOptimizations as an empty array. Return only content matching the JSON schema. Do not inspect files, call tools, or search the web.
+16. Treat the accumulated 24-hour, 72-hour, and 7-day experiment learning as historical evidence, never as a replacement for the current deterministic diagnosis. Promoted patterns may guide rewrites, demoted patterns must be avoided, and testing patterns may be explored with only one controlled variable. Respect confidence and evaluation count; never invent evidence for a pattern.
 
 Plan date: ${input.planDate || "today"}
 Objective: ${input.objective}
@@ -463,6 +466,12 @@ ${JSON.stringify(input.privatePerformance || {})}
 
 Deterministic novel-content diagnostics. This is the binding rewrite gate; ratios are 0-1 and sentence timing may be estimated:
 ${JSON.stringify(input.contentRuleDiagnostics || {})}
+
+Accumulated experiment learning. Promoted patterns are reusable evidence, demoted patterns are failure warnings, and active experiments remain unproven:
+${JSON.stringify(input.novelLearning || {})}
+
+Active official strategy policy. These thresholds and rewrite/audio/model constraints are binding:
+${JSON.stringify(input.strategyPolicy || {})}
 
 Model-routing context:
 ${JSON.stringify(input.routeContext || {})}
@@ -572,6 +581,10 @@ function normalizeOperationInput(payload = {}) {
     novelEffectAnalysis: normalizeNovelEffectAnalysis(payload.novelEffectAnalysis),
     privatePerformance: normalizePrivatePerformance(payload.privatePerformance),
     contentRuleDiagnostics: normalizeContentRuleDiagnostics(payload.contentRuleDiagnostics),
+    novelLearning: normalizeNovelLearning(payload.novelLearning),
+    strategyPolicy: payload.strategyPolicy && typeof payload.strategyPolicy === "object"
+      ? JSON.parse(JSON.stringify(payload.strategyPolicy))
+      : null,
     routeContext: {
       mode: cleanText(payload.routeContext?.mode, 30),
       reasons: Array.isArray(payload.routeContext?.reasons)
@@ -676,6 +689,12 @@ function normalizeContentRuleDiagnostics(value = {}) {
         localFileName: cleanText(item.mapping.localFileName, 260),
         audioName: cleanText(item.mapping.audioName, 260),
         sourceAudioId: cleanText(item.mapping.sourceAudioId, 120),
+        scriptId: cleanText(item.mapping.scriptId, 160),
+        novelId: cleanText(item.mapping.novelId, 160),
+        novelTitle: cleanText(item.mapping.novelTitle, 240),
+        parentScriptId: cleanText(item.mapping.parentScriptId, 160),
+        hookVariantId: cleanText(item.mapping.hookVariantId, 160),
+        versionLabel: cleanText(item.mapping.versionLabel, 120),
         scriptTitle: cleanText(item.mapping.scriptTitle, 240),
         mappingMode: cleanText(item.mapping.mappingMode, 60),
         sentenceTimingMode: cleanText(item.mapping.sentenceTimingMode, 80)
@@ -687,8 +706,55 @@ function normalizeContentRuleDiagnostics(value = {}) {
         text: cleanText(item.largestDropSentence.text, 600),
         exact: item.largestDropSentence.exact === true
       } : null,
+      rewriteBrief: item.rewriteBrief && typeof item.rewriteBrief === "object" ? {
+        problemLayer: cleanText(item.rewriteBrief.problemLayer, 40),
+        rewriteScope: cleanText(item.rewriteBrief.rewriteScope, 40),
+        primaryRuleCode: cleanText(item.rewriteBrief.primaryRuleCode, 80),
+        targetSecondRange: cleanText(item.rewriteBrief.targetSecondRange, 40),
+        estimatedSourceSentence: cleanText(item.rewriteBrief.estimatedSourceSentence, 600),
+        rewriteGoal: cleanText(item.rewriteBrief.rewriteGoal, 500),
+        singleVariable: cleanText(item.rewriteBrief.singleVariable, 80),
+        preserveFacts: Array.isArray(item.rewriteBrief.preserveFacts) ? item.rewriteBrief.preserveFacts.slice(0, 8).map((value) => cleanText(value, 120)) : [],
+        maxConceptualVariants: Math.max(1, Math.min(2, Number(item.rewriteBrief.maxConceptualVariants) || 1)),
+        confidence: cleanText(item.rewriteBrief.confidence, 20)
+      } : {},
       evidenceSummary: cleanText(item.evidenceSummary, 800)
     })).filter((item) => item.videoId) : []
+  };
+}
+
+function normalizeNovelLearning(value = {}) {
+  const normalizePatterns = (items) => Array.isArray(items)
+    ? items.slice(0, 40).map((item) => ({
+        patternKey: cleanText(item.patternKey || item.key, 240),
+        problemLayer: cleanText(item.problemLayer, 80),
+        rewriteScope: cleanText(item.rewriteScope, 80),
+        singleVariable: cleanText(item.singleVariable, 160),
+        status: cleanText(item.status, 30),
+        score: Number.isFinite(Number(item.score)) ? Number(item.score) : 0,
+        confidence: Math.max(0, Math.min(1, Number(item.confidence) || 0)),
+        evaluationCount: Math.max(0, Number(item.evaluationCount) || 0),
+        winCount: Math.max(0, Number(item.winCount) || 0),
+        lossCount: Math.max(0, Number(item.lossCount) || 0)
+      })).filter((item) => item.patternKey)
+    : [];
+  return {
+    promotedPatterns: normalizePatterns(value.promotedPatterns),
+    demotedPatterns: normalizePatterns(value.demotedPatterns),
+    testingPatterns: normalizePatterns(value.testingPatterns),
+    activeExperiments: Array.isArray(value.activeExperiments)
+      ? value.activeExperiments.slice(0, 40).map((item) => ({
+          id: cleanText(item.id, 160),
+          parentExperimentId: cleanText(item.parentExperimentId, 160),
+          sourceAudioId: cleanText(item.sourceAudioId, 160),
+          generatedAudioId: cleanText(item.generatedAudioId || item.candidateAudioId, 160),
+          patternKey: cleanText(item.patternKey, 240),
+          status: cleanText(item.status, 30),
+          evaluationWindows: Array.isArray(item.evaluationWindows)
+            ? item.evaluationWindows.slice(0, 8).map((entry) => cleanText(entry, 20))
+            : []
+        })).filter((item) => item.id)
+      : []
   };
 }
 

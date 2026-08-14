@@ -8,6 +8,7 @@ import {
   createOperationBrainService,
   decideStrategyRoute,
   isAutoPlanSkipped,
+  slimOfficialStrategyInput,
   summarizeContentFeedback
 } from "./operation-brain.js";
 
@@ -17,30 +18,48 @@ test("scheduled skip only suppresses the matching local calendar date", () => {
   assert.equal(isAutoPlanSkipped(settings, new Date("2026-08-08T19:00:00+08:00").getTime()), false);
 });
 
-test("hybrid routing always runs full DeepSeek analysis before SOL final review", () => {
+test("hybrid official routing uses local scoring instead of full-curve analysis", () => {
   const lowSample = decideStrategyRoute({
     provider: "hybrid",
     deepseekAvailable: true,
     solAvailable: true,
-    overview: { privateAnalytics: { summary: { detailedVideoCount: 7, maxViews: 50_000, conflictCount: 2 } }, accounts: [] }
+    overview: { settings: { dataStrategy: "official_api" }, privateAnalytics: { summary: { detailedVideoCount: 7, maxViews: 50_000, conflictCount: 2 } }, accounts: [] }
   });
   assert.equal(lowSample.decision, "deepseek_then_sol");
   assert.equal(lowSample.escalateToSol, true);
-  assert.deepEqual(lowSample.reasons, ["full_private_dataset_analysis", "sol_final_review"]);
+  assert.deepEqual(lowSample.reasons, ["local_score_rewrite", "sol_final_review"]);
 
   const evidenceConflict = decideStrategyRoute({
     provider: "hybrid",
     deepseekAvailable: true,
     solAvailable: true,
     overview: {
+      settings: { dataStrategy: "official_api" },
       privateAnalytics: { summary: { detailedVideoCount: 12, maxViews: 12_000, conflictCount: 1, averageRetention3: 0.36, averageRetention5: 0.21 } },
       accounts: []
     }
   });
   assert.equal(evidenceConflict.decision, "deepseek_then_sol");
-  assert.equal(evidenceConflict.escalateToSol, true);
-  assert.ok(evidenceConflict.reasons.includes("full_private_dataset_analysis"));
+  assert.ok(evidenceConflict.reasons.includes("local_score_rewrite"));
   assert.ok(evidenceConflict.reasons.includes("sol_final_review"));
+});
+
+test("official strategy input keeps only rewrite-eligible videos", () => {
+  const slim = slimOfficialStrategyInput({
+    contentRuleDiagnostics: {
+      summary: { videoCount: 4, rewriteEligibleCount: 1, decisions: { rewrite_test: 1, keep_reuse: 3 } },
+      videos: [
+        { videoId: "keep", rewriteEligible: false },
+        { videoId: "rewrite", rewriteEligible: true }
+      ]
+    },
+    privatePerformance: {
+      accounts: [{ username: "demo", videos: [{ videoId: "keep" }, { videoId: "rewrite" }] }]
+    }
+  });
+  assert.deepEqual(slim.contentRuleDiagnostics.videos.map((item) => item.videoId), ["rewrite"]);
+  assert.deepEqual(slim.privatePerformance.accounts[0].videos.map((item) => item.videoId), ["rewrite"]);
+  assert.equal(slim.scoreboard.sentToModel, 1);
 });
 
 test("hybrid routing falls back to SOL when DeepSeek is unavailable", () => {
@@ -99,18 +118,13 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
     autoTaskManager: { listTasks: () => [], createTask: () => ({ id: "unused" }) },
     deepseekBrain: {
       getStatus: () => ({ model: "deepseek-v4-flash" }),
-      analyzeOperationDataset: async (input) => {
-        assert.equal(input.fullPrivatePerformance.summary.detailedVideoCount, 12);
+      generateOperationStrategy: async (input) => {
+        assert.ok(!input.fullPrivatePerformance);
+        assert.ok(input.scoreboard);
         return ({
         model: "deepseek-v4-flash",
         durationMs: 120,
-        analysisStats: { accounts: 1, videos: 12, retentionPoints: 240, batches: 2 },
-        evidenceReport: {
-          accountCount: 1,
-          videoCount: 12,
-          retentionPointCount: 240,
-          batches: [{ batch: 1, analysis: { crossVideoPatterns: ["3-second drop"] } }]
-        },
+        analysisStats: { mode: "local_score", sentToModel: 1, batches: 0 },
         usage: { inputTokens: 20, outputTokens: 30 },
         strategy: {
           executiveSummary: "Keep testing the strongest retention hook.",
@@ -125,6 +139,19 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
             evidenceSummary: "3-second retention was weak and the largest loss happened at second 2.",
             diagnosis: "The setup delays the conflict.",
             openingAnalysis: "The first sentence lacks an immediate consequence.",
+            problemLayer: "opening",
+            rewriteScope: "opening_0_3s",
+            targetSecondRange: "0-3s",
+            estimatedSourceSentence: "My missing sister had used my identity.",
+            rewriteGoal: "Make the conflict immediately understandable.",
+            singleVariable: "opening_hook",
+            preservedFacts: ["people", "relationships", "events", "ending"],
+            changeLog: [{
+              before: "My missing sister had used my identity.",
+              after: "The police called before sunrise: my missing sister had used my name to buy a house.",
+              reason: "Move the consequence into the first sentence.",
+              evidence: "3-second retention was weak."
+            }],
             rewrittenScript: "The police called before sunrise: my missing sister had used my name to buy a house. I had three minutes to decide whether to expose her or inherit her debt."
           }]
         }
@@ -134,8 +161,8 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
     codexBrain: {
       getStatus: () => ({ operationModel: "gpt-5.6-sol" }),
       generateOperationStrategy: async (input) => {
-        assert.equal(input.routeContext.mode, "full_dataset_review");
-        assert.equal(input.deepseekEvidenceReport.videoCount, 12);
+        assert.equal(input.routeContext.mode, "local_score_review");
+        assert.equal(input.deepseekEvidenceReport, null);
         throw new Error("SOL temporarily unavailable");
       }
     }
@@ -155,12 +182,16 @@ test("hybrid routing keeps the DeepSeek strategy when SOL review fails", async (
   assert.equal(plan.aiStrategy.model, "deepseek-v4-flash");
   assert.equal(plan.aiStrategy.route.finalProvider, "deepseek");
   assert.equal(plan.aiStrategy.route.decision, "deepseek_only_after_sol_failure");
-  assert.equal(plan.aiStrategy.route.analysisStats.retentionPoints, 240);
+  assert.equal(plan.aiStrategy.route.analysisStats.mode, "local_score");
+  assert.equal(plan.aiStrategy.route.analysisStats.batches, 0);
   assert.ok(plan.aiStrategy.route.reasons.includes("sol_review_failed"));
   assert.match(plan.aiStrategy.route.solError, /temporarily unavailable/);
   assert.equal(officialOptions.days, 30);
   assert.equal(officialOptions.videosPerAccount, 100);
   assert.equal(generatedRewrite.sourceAudioId, "audio-original");
+  assert.equal(generatedRewrite.rewriteMetadata.problemLayer, "opening");
+  assert.equal(generatedRewrite.rewriteMetadata.singleVariable, "opening_hook");
+  assert.equal(generatedRewrite.rewriteMetadata.changeLog.length, 1);
   assert.equal(plan.optimizedContent[0].audio.id, "audio-rewritten");
 });
 

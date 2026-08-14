@@ -1181,9 +1181,7 @@ html:not([data-role="admin"]) [data-admin-only] { display: none !important; }
 .work-page .side-tabs > a.is-active { color: #f2f4f5; border-left-color: #d9f26a; background: #1a1e22; }
 .work-page .side-tabs .nav-logout { width: calc(100% - 16px); min-height: 38px; margin: auto 8px 0; padding: 0 12px; border: 1px solid #2b3138; border-radius: 5px; color: #aeb4bc; background: #161a1f; font: inherit; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
 .work-page .side-tabs .nav-logout:hover { color: #f2f4f5; border-color: #3b444e; background: #1b2026; }
-.work-page .side-tabs > a[href="/"] { display: none; }
-.work-page .topbar-actions a[href="/"] { display: none; }
-.tasks-nav a[href="/"] { display: none; }
+.work-page .topbar-actions a[href="/podcast"] { display: none; }
 
 .work-page .shell {
   width: min(1360px, 100%);
@@ -1375,3 +1373,18 @@ html:not([data-sidebar-ready]) .tasks-nav > a:not(.tasks-brand),
 html:not([data-sidebar-ready]) .side-tabs > a:not(.app-brand) {
   visibility: hidden;
 }
+
+.sidebar-group { display: grid; gap: 3px; }
+.sidebar-group-toggle {
+  width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; border: 1px solid transparent; border-radius: 5px; color: #dce2e7;
+  background: transparent; font: inherit; text-align: left; cursor: pointer;
+}
+.sidebar-group-toggle:hover,
+.sidebar-group.is-open > .sidebar-group-toggle { border-color: #303840; background: #151a1f; color: #f4f6f7; }
+.sidebar-group-chevron { color: #a9c83e; transition: transform .18s ease; }
+.sidebar-group.is-open .sidebar-group-chevron { transform: rotate(180deg); }
+.sidebar-group-items { display: grid; gap: 2px; padding: 2px 0 7px 13px; }
+.sidebar-group-items[hidden] { display: none; }
+.sidebar-group-items > a { min-height: 36px !important; padding-left: 17px !important; border-left: 1px solid #343b43; font-size: 12px !important; }
+.sidebar-group-items > a.is-active { border-left-color: #c4ff3f; }

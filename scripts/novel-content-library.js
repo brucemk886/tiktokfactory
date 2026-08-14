@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const STORE_VERSION = 1;
-const NOVEL_PLATFORMS = new Set(["GoodNovel", "MotoNovel", "MasterNovel"]);
+const NOVEL_PLATFORMS = new Set(["GoodNovel", "MotoNovel", "NovelMaster"]);
 
 export function createNovelContentLibraryService({
   workDir,
@@ -40,6 +40,7 @@ export function createNovelContentLibraryService({
         title: novel.title,
         platform: novel.platform,
         promotionCode: novel.promotionCode,
+        promotionCopy: novel.promotionCopy,
         category: novel.category,
         sourceExcerpt: novel.sourceContent.slice(0, 4_000)
       })),
@@ -69,6 +70,7 @@ export function createNovelContentLibraryService({
       title,
       platform: requireNovelPlatform(payload.platform),
       promotionCode: clean(payload.promotionCode).slice(0, 240),
+      promotionCopy: clean(payload.promotionCopy).slice(0, 5_000),
       category: clean(payload.category).slice(0, 120),
       sourceContent,
       sourceFingerprint: fingerprint(sourceContent),
@@ -88,6 +90,7 @@ export function createNovelContentLibraryService({
     if (payload.title !== undefined) novel.title = clean(payload.title).slice(0, 180) || novel.title;
     if (payload.platform !== undefined) novel.platform = requireNovelPlatform(payload.platform);
     if (payload.promotionCode !== undefined) novel.promotionCode = clean(payload.promotionCode).slice(0, 240);
+    if (payload.promotionCopy !== undefined) novel.promotionCopy = clean(payload.promotionCopy).slice(0, 5_000);
     if (payload.category !== undefined) novel.category = clean(payload.category).slice(0, 120);
     if (payload.sourceContent !== undefined) {
       const sourceContent = String(payload.sourceContent || "").trim().slice(0, 200_000);
@@ -126,6 +129,7 @@ export function createNovelContentLibraryService({
         title: clean(payload.title || record.marketing?.packageTitle || "未命名小说").slice(0, 180),
         platform: clean(payload.platform).slice(0, 120),
         promotionCode: clean(payload.promotionCode).slice(0, 240),
+        promotionCopy: clean(payload.promotionCopy).slice(0, 5_000),
         category: clean(payload.category).slice(0, 120),
         sourceContent,
         sourceFingerprint,
@@ -168,9 +172,9 @@ export function createNovelContentLibraryService({
 }
 
 function requireNovelPlatform(value) {
-  const platform = clean(value);
+  const platform = normalizeNovelPlatform(value);
   if (!NOVEL_PLATFORMS.has(platform)) {
-    throw statusError(400, "小说平台仅支持 GoodNovel、MotoNovel 或 MasterNovel。");
+    throw statusError(400, "小说平台仅支持 GoodNovel、MotoNovel 或 NovelMaster。");
   }
   return platform;
 }
@@ -211,7 +215,7 @@ function buildOverview(store, audioItems, matchedVideos, query) {
     const novelScripts = scriptsByNovel.get(novel.id) || [];
     const allVideos = novelScripts.flatMap((script) => script.videos);
     return { ...novel, scripts: novelScripts, performance: summarizeVideos(allVideos) };
-  }).filter((novel) => !normalizedQuery || [novel.title, novel.platform, novel.promotionCode, novel.category, novel.sourceContent]
+  }).filter((novel) => !normalizedQuery || [novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category, novel.sourceContent]
     .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)));
   const knownNovelIds = new Set(store.novels.map((novel) => novel.id));
   const unassignedScripts = scripts.filter((script) => !script.novelId || !knownNovelIds.has(script.novelId));
@@ -362,7 +366,8 @@ function normalizeStore(value) {
 function normalizeNovel(item) {
   return {
     id: safeId(item.id), title: clean(item.title).slice(0, 180),
-    platform: clean(item.platform).slice(0, 120), promotionCode: clean(item.promotionCode).slice(0, 240),
+    platform: normalizeNovelPlatform(item.platform), promotionCode: clean(item.promotionCode).slice(0, 240),
+    promotionCopy: clean(item.promotionCopy).slice(0, 5_000),
     category: clean(item.category).slice(0, 120),
     sourceContent: String(item.sourceContent || "").trim().slice(0, 200_000),
     sourceFingerprint: clean(item.sourceFingerprint) || fingerprint(item.sourceContent), status: clean(item.status) || "active",
@@ -403,5 +408,6 @@ function mediaKey(value) { return clean(value).toLowerCase().replace(/\.[a-z0-9]
 function basename(value) { return value ? path.basename(String(value)) : ""; }
 function safeId(value) { return clean(value).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160); }
 function clean(value) { return String(value ?? "").trim(); }
+function normalizeNovelPlatform(value) { return clean(value) === "MasterNovel" ? "NovelMaster" : clean(value).slice(0, 120); }
 function number(value) { return Math.max(0, Number(value) || 0); }
 function statusError(statusCode, message) { return Object.assign(new Error(message), { statusCode }); }

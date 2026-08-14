@@ -21,7 +21,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 9) return;
+      if (version >= 11) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
         user.sidebarModules = user.sidebarModules.filter((moduleId) => !["project-hub", "audio-library"].includes(moduleId));
@@ -40,8 +40,21 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
           const publishIndex = user.sidebarModules.indexOf("official-publish-records");
           user.sidebarModules.splice(publishIndex >= 0 ? publishIndex + 1 : user.sidebarModules.length, 0, "official-analytics");
         }
+        if (version < 10 && user.role === "admin" && !user.sidebarModules.includes("rewrite-records")) {
+          const libraryIndex = user.sidebarModules.indexOf("novel-library");
+          const strategyIndex = user.sidebarModules.indexOf("novel-strategy");
+          const insertAt = strategyIndex >= 0 ? strategyIndex + 1 : libraryIndex >= 0 ? libraryIndex : user.sidebarModules.length;
+          user.sidebarModules.splice(insertAt, 0, "rewrite-records");
+        }
+        if (version < 11 && user.role === "admin") {
+          const extras = ["hub", "mid-video", "podcast"].filter((moduleId) => !user.sidebarModules.includes(moduleId));
+          user.sidebarModules = [...extras, ...user.sidebarModules];
+        }
+        if (version < 11 && user.role === "operator" && !user.sidebarModules.includes("hub")) {
+          user.sidebarModules.unshift("hub");
+        }
       }
-      store.version = 9;
+      store.version = 11;
       try {
         fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
       } catch {

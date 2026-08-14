@@ -10,11 +10,14 @@ import { createPublishService } from "./publish-service.js";
 import { createAutoTaskManager } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
+import { createOpenAICompatibleModelProvider } from "./brain-model-provider.js";
 import { createDeepSeekBrainService } from "./deepseek-brain.js";
 import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
 import { createNovelEffectService } from "./novel-effect-service.js";
+import { createNovelLearningService } from "./novel-learning-service.js";
+import { createNovelStrategyService } from "./novel-strategy-service.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
@@ -59,7 +62,12 @@ const tiktokAnalytics = createTikTokAnalyticsService({
   defaultApiKeys: bootConfig.tiktokApiStoreApiKeys,
   defaultApiKey: bootConfig.tiktokApiStoreApiKey
 });
-const codexBrain = createCodexBrainService({ root, workDir });
+const codexModelProvider = createConfiguredCodexModelProvider();
+const codexBrain = createCodexBrainService({
+  root,
+  workDir,
+  ...(codexModelProvider ? { modelProvider: codexModelProvider } : {})
+});
 const deepseekBrain = createDeepSeekBrainService({ workDir });
 const feishuBooks = createFeishuBookService({ root, workDir, readConfig });
 const audioLibrary = createAudioLibraryService({ root, workDir, readConfig });
@@ -88,10 +96,42 @@ const novelContentLibrary = createNovelContentLibraryService({
   analyticsService: tiktokAnalytics,
   readPublishRecords
 });
+
+function createConfiguredCodexModelProvider() {
+  const provider = String(process.env.OPERATION_MODEL_PROVIDER || "codex-sdk").trim().toLowerCase();
+  if (!provider || provider === "codex" || provider === "codex-sdk") return null;
+  if (provider !== "openai-compatible") {
+    console.warn(`[model-provider] Unknown OPERATION_MODEL_PROVIDER=${provider}; falling back to codex-sdk.`);
+    return null;
+  }
+  return createOpenAICompatibleModelProvider({
+    id: provider,
+    endpoint: String(process.env.OPERATION_MODEL_ENDPOINT || "").trim(),
+    apiKey: String(process.env.OPERATION_MODEL_API_KEY || "").trim(),
+    headers: readOptionalJsonObject(process.env.OPERATION_MODEL_HEADERS_JSON)
+  });
+}
+
+function readOptionalJsonObject(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    console.warn("[model-provider] OPERATION_MODEL_HEADERS_JSON is invalid JSON and was ignored.");
+    return {};
+  }
+}
 const novelEffectService = createNovelEffectService({
   novelContentLibrary,
   officialAnalyticsService: privateTikTokAnalytics,
   readPublishRecords,
+});
+const novelLearningService = createNovelLearningService({
+  statePath: path.join(workDir, "official-novel-learning.json")
+});
+const novelStrategyService = createNovelStrategyService({
+  statePath: path.join(workDir, "official-novel-strategy.json")
 });
 const operationBrain = createOperationBrainService({
   workDir,
@@ -116,6 +156,7 @@ const officialOperationBrain = createOperationBrainService({
   audioLibrary,
   novelContentLibrary,
   novelEffectService,
+  novelLearningService,
   autoTaskManager,
   codexBrain,
   deepseekBrain,
@@ -124,7 +165,8 @@ const officialOperationBrain = createOperationBrainService({
   readRedditSettings: () => readRedditMixSettings().settings,
   listProfiles: () => [],
   fixedDataStrategy: "official_api",
-  accountSource: "official"
+  accountSource: "official",
+  strategyPolicyProvider: () => novelStrategyService.getActivePolicy()
 });
 let scheduledAccountsCache = { expiresAt: 0, accounts: null };
 tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);
@@ -134,7 +176,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
 
     if (req.method === "GET" && url.pathname === "/login") {
-      if (localAuth.getSession(req)) return redirect(res, "/tasks");
+      if (localAuth.getSession(req)) return redirect(res, "/");
       return sendFile(res, path.join(publicDir, "login.html"), "text/html; charset=utf-8");
     }
     if (req.method === "GET" && url.pathname === "/login.js") return sendFile(res, path.join(publicDir, "login.js"), "text/javascript; charset=utf-8");
@@ -170,7 +212,7 @@ const server = http.createServer(async (req, res) => {
     } else if (requiresLogin(url.pathname)) {
       if (!localAuth.hasUsers()) return redirect(res, isLoopbackRequest(req) ? "/setup" : "/login");
       if (!session) return redirect(res, "/login");
-      if (!canAccessPage(session.user, url.pathname)) return redirect(res, "/tasks");
+      if (!canAccessPage(session.user, url.pathname)) return redirect(res, session.user.role === "admin" ? "/" : "/tasks");
     }
 
     if (req.method === "GET" && url.pathname === "/accounts") {
@@ -222,6 +264,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/") {
+      return sendFile(res, path.join(publicDir, "hub.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/hub.css") {
+      return sendFile(res, path.join(publicDir, "hub.css"), "text/css; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/hub.js") {
+      return sendFile(res, path.join(publicDir, "hub.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/mid-video") {
+      return sendFile(res, path.join(publicDir, "mid-video.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/podcast") {
       return sendFile(res, path.join(publicDir, "index.html"), "text/html; charset=utf-8");
     }
 
@@ -416,6 +470,30 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "novel-effects.css"), "text/css; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/rewrite-records") {
+      return sendFile(res, path.join(publicDir, "rewrite-records.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/rewrite-records.js") {
+      return sendFile(res, path.join(publicDir, "rewrite-records.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/rewrite-records.css") {
+      return sendFile(res, path.join(publicDir, "rewrite-records.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-strategy") {
+      return sendFile(res, path.join(publicDir, "novel-strategy.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-strategy.js") {
+      return sendFile(res, path.join(publicDir, "novel-strategy.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/novel-strategy.css") {
+      return sendFile(res, path.join(publicDir, "novel-strategy.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/asset-cutter") {
       return redirect(res, "/tasks");
     }
@@ -509,6 +587,39 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "DeepSeek ???????" });
       }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/rewrite-records") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可查看文案改写记录。" });
+      const records = officialOperationBrain.listPlans({ includeArchived: true })
+        .flatMap((plan) => (Array.isArray(plan.optimizedContent) ? plan.optimizedContent : []).map((item, index) => ({
+          id: String(item.id || `${plan.id || "plan"}-${index}`),
+          planId: String(plan.id || ""),
+          planDate: String(plan.planDate || ""),
+          planStatus: String(plan.status || ""),
+          createdAt: Number(item.createdAt || plan.createdAt || 0),
+          updatedAt: Number(item.updatedAt || plan.updatedAt || item.createdAt || plan.createdAt || 0),
+          title: String(item.title || "未命名改写"),
+          status: String(item.status || "rewritten"),
+          sourceAudioId: String(item.sourceAudioId || ""),
+          sourceVideoId: String(item.sourceVideoId || ""),
+          originalScript: String(item.originalScript || ""),
+          rewrittenScript: String(item.rewrittenScript || ""),
+          diagnosis: String(item.diagnosis || ""),
+          evidenceSummary: String(item.evidenceSummary || ""),
+          problemLayer: String(item.problemLayer || ""),
+          rewriteScope: String(item.rewriteScope || ""),
+          targetSecondRange: String(item.targetSecondRange || ""),
+          estimatedSourceSentence: String(item.estimatedSourceSentence || ""),
+          rewriteGoal: String(item.rewriteGoal || ""),
+          singleVariable: String(item.singleVariable || ""),
+          preservedFacts: Array.isArray(item.preservedFacts) ? item.preservedFacts.map(String) : [],
+          changeLog: Array.isArray(item.changeLog) ? item.changeLog.map(String) : [],
+          audio: item.audio && typeof item.audio === "object" ? item.audio : null,
+          error: String(item.error || "")
+        })))
+        .sort((left, right) => right.updatedAt - left.updatedAt);
+      return sendJson(res, 200, { records }, { "Cache-Control": "no-store" });
     }
 
     const scopedOperatorMatch = url.pathname.match(/^\/api\/operator\/(third-party|official)(\/.*)?$/);
@@ -711,6 +822,29 @@ const server = http.createServer(async (req, res) => {
           error: error.message || "Failed to load novel effects.",
         });
       }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/novel-strategy") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "Only administrators can manage the official strategy." });
+      return sendJson(res, 200, novelStrategyService.getState(), { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "PUT" && url.pathname === "/api/novel-strategy/draft") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "Only administrators can manage the official strategy." });
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, novelStrategyService.updateDraft(payload.policy || payload));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/novel-strategy/activate") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "Only administrators can manage the official strategy." });
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, novelStrategyService.activate({ label: payload.label, note: payload.note }));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/novel-strategy/rollback") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "Only administrators can manage the official strategy." });
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, novelStrategyService.rollback(payload.versionId));
     }
 
     if (req.method === "POST" && url.pathname === "/api/novel-content/novels") {
@@ -2059,7 +2193,7 @@ function requiresLogin(pathname) {
 
 function canAccessPage(user, pathname) {
   if (user.role === "admin") return true;
-  return new Set(["/tasks", "/tasks.js", "/tasks.css", "/stats", "/stats.js", "/analytics", "/analytics.js", "/analytics.css", "/app.css", "/access.css", "/access.js"]).has(pathname) || pathname.startsWith("/outputs/");
+  return new Set(["/", "/hub.css", "/hub.js", "/tasks", "/tasks.js", "/tasks.css", "/stats", "/stats.js", "/analytics", "/analytics.js", "/analytics.css", "/app.css", "/access.css", "/access.js"]).has(pathname) || pathname.startsWith("/outputs/");
 }
 
 function canAccessApi(user, pathname) {

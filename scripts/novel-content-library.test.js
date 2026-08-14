@@ -45,22 +45,25 @@ test("keeps orphan audio scripts unassigned until the operator selects a novel",
   assert.equal(overview.novels[0].scripts[0].audioId, "orphan-audio");
 });
 
-test("stores and updates the book platform, free chapters and promotion code", () => {
+test("stores and updates the book platform, free chapters, promotion code and promotion copy", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
   const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
   const novel = service.createNovel({
     title: "A novel title",
     platform: "GoodNovel",
     promotionCode: "PROMO-001",
+    promotionCopy: "A launch caption for the first campaign.",
     sourceContent: "This is the complete free chapter content used by the local novel library."
   });
   assert.equal(novel.platform, "GoodNovel");
   assert.equal(novel.promotionCode, "PROMO-001");
+  assert.equal(novel.promotionCopy, "A launch caption for the first campaign.");
 
-  service.updateNovel(novel.id, { platform: "MasterNovel", promotionCode: "PROMO-002" });
+  service.updateNovel(novel.id, { platform: "NovelMaster", promotionCode: "PROMO-002", promotionCopy: "Updated campaign caption." });
   const overview = service.getOverview();
-  assert.equal(overview.novels[0].platform, "MasterNovel");
+  assert.equal(overview.novels[0].platform, "NovelMaster");
   assert.equal(overview.novels[0].promotionCode, "PROMO-002");
+  assert.equal(overview.novels[0].promotionCopy, "Updated campaign caption.");
   assert.match(overview.novels[0].sourceContent, /free chapter content/);
 });
 
@@ -71,5 +74,22 @@ test("rejects unsupported novel platforms", () => {
     title: "Unsupported platform",
     platform: "Dreame",
     sourceContent: "This free chapter is long enough to validate the selected platform."
-  }), /GoodNovel.*MotoNovel.*MasterNovel/);
+  }), /GoodNovel.*MotoNovel.*NovelMaster/);
+});
+
+test("migrates legacy MasterNovel records to NovelMaster when reading the catalog", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
+  fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({
+    version: 1,
+    novels: [{
+      id: "legacy-master-novel",
+      title: "Legacy title",
+      platform: "MasterNovel",
+      promotionCode: "LEGACY",
+      sourceContent: "This legacy free chapter is long enough to remain in the catalog."
+    }],
+    scripts: []
+  }));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  assert.equal(service.getOverview().novels[0].platform, "NovelMaster");
 });

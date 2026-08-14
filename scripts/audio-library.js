@@ -115,6 +115,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     script,
     diagnosis = "",
     evidenceSummary = "",
+    rewriteMetadata = {},
     planId = "",
     voiceId: requestedVoiceId,
     targetAudioDir = ""
@@ -157,7 +158,15 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       },
       metadata: {
         diagnosis: String(diagnosis || "").trim().slice(0, 1200),
-        evidenceSummary: String(evidenceSummary || "").trim().slice(0, 1200)
+        evidenceSummary: String(evidenceSummary || "").trim().slice(0, 1200),
+        problemLayer: String(rewriteMetadata?.problemLayer || "").trim().slice(0, 40),
+        rewriteScope: String(rewriteMetadata?.rewriteScope || "").trim().slice(0, 40),
+        targetSecondRange: String(rewriteMetadata?.targetSecondRange || "").trim().slice(0, 40),
+        estimatedSourceSentence: String(rewriteMetadata?.estimatedSourceSentence || "").trim().slice(0, 600),
+        rewriteGoal: String(rewriteMetadata?.rewriteGoal || "").trim().slice(0, 500),
+        singleVariable: String(rewriteMetadata?.singleVariable || "").trim().slice(0, 80),
+        preservedFacts: Array.isArray(rewriteMetadata?.preservedFacts) ? rewriteMetadata.preservedFacts.slice(0, 8).map((value) => String(value || "").trim().slice(0, 120)) : [],
+        changeLog: Array.isArray(rewriteMetadata?.changeLog) ? rewriteMetadata.changeLog.slice(0, 6) : []
       }
     });
     inFlight.set(id, operation);

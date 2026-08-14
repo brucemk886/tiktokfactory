@@ -19,17 +19,34 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
     sidebarModuleIdsForRole("admin"),
     SIDEBAR_MODULES.filter((item) => item.roles.includes("admin")).map((item) => item.id)
   );
-  assert.deepEqual(sidebarModuleIdsForRole("operator"), ["tasks", "analytics", "stats"]);
-  assert.ok(sidebarModuleIdsForRole("admin").includes("novel-library"));
-  assert.ok(sidebarModuleIdsForRole("admin").includes("official-publish-records"));
-  assert.ok(sidebarModuleIdsForRole("admin").includes("official-analytics"));
-  assert.ok(sidebarModuleIdsForRole("admin").includes("operator-third-party"));
-  assert.ok(sidebarModuleIdsForRole("admin").includes("operator-official"));
-  assert.ok(sidebarModuleIdsForRole("admin").includes("novel-effects"));
+  assert.deepEqual(sidebarModuleIdsForRole("operator"), ["hub", "tasks", "analytics", "stats"]);
+  for (const moduleId of ["hub", "mid-video", "podcast", "novel-library", "official-publish-records", "official-analytics", "operator-third-party",
+    "operator-official", "novel-effects", "rewrite-records"]) {
+    assert.ok(sidebarModuleIdsForRole("admin").includes(moduleId));
+  }
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-publish-records"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-analytics"));
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "rewrite-records")?.href, "/rewrite-records");
+});
+
+test("business lines keep official and GeeLark navigation apart", () => {
+  assert.deepEqual(
+    SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
+    ["novel-strategy", "novel-library", "novel-effects", "rewrite-records", "operator-official", "tasks"]
+  );
+  assert.deepEqual(
+    SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
+    ["mid-video", "schulte", "podcast", "ai", "asset-usage"]
+  );
+  assert.deepEqual(
+    SIDEBAR_MODULES.filter((item) => item.group?.id === "psychology").map((item) => item.id),
+    ["psychology-topics", "psychology"]
+  );
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "operator-third-party")?.group?.id, "geelark-backup");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.group?.id, "official-channel");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "hub")?.href, "/");
 });
 
 test("every authenticated HTML sidebar loads the canonical renderer", () => {
@@ -52,9 +69,6 @@ test("browser modules do not duplicate the sidebar catalog", () => {
 test("GeeLark pages are visibly distinguished from official TikTok pages", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "stats")?.label, "GeeLark · 发布记录");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "analytics")?.label, "GeeLark · 数据总览");
-  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.label, "授权账号");
-  assert.ok(
-    SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") <
-      SIDEBAR_MODULES.findIndex((item) => item.id === "stats")
-  );
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.label, "授权账号数据");
+  assert.ok(SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") < SIDEBAR_MODULES.findIndex((item) => item.id === "stats"));
 });

@@ -17,7 +17,7 @@
         <div>
           <p class="library-kicker">NOVEL CATALOG</p>
           <h1>小说书单</h1>
-          <p>管理小说名称、平台、免费章节和推广码，供后续文案、配音与视频任务统一使用。</p>
+          <p>管理小说名称、平台、推广码、推广文案和免费章节，供后续文案、配音与视频任务统一使用。</p>
         </div>
       </header>
 
@@ -36,11 +36,12 @@
                 <option value="">请选择小说平台</option>
                 <option value="GoodNovel">GoodNovel</option>
                 <option value="MotoNovel">MotoNovel</option>
-                <option value="MasterNovel">MasterNovel</option>
+                <option value="NovelMaster">NovelMaster</option>
               </select>
             </label>
             <label><span>小说对应推广码</span><input id="bookPromotionCode" type="text" maxlength="240" placeholder="填写平台推广码或推广标识" /></label>
           </div>
+          <label><span>推广文案</span><textarea id="bookPromotionCopy" class="promotion-copy-input" maxlength="5000" placeholder="填写该小说投放或发布时使用的推广文案"></textarea></label>
           <label><span>小说免费章节</span><textarea id="bookChapters" maxlength="200000" placeholder="粘贴可用于改写和生成配音文案的免费章节正文，至少 20 个字符" required></textarea><small id="chapterCount">0 / 200,000</small></label>
           <div class="form-actions">
             <button id="saveBookBtn" class="primary-action" type="submit">保存小说</button>
@@ -51,7 +52,7 @@
         <section class="book-list-panel">
           <div class="list-toolbar">
             <div><span>BOOK LIST</span><h2>已保存小说</h2></div>
-            <label><span class="sr-only">搜索小说</span><input id="searchInput" type="search" placeholder="搜索名称、平台或推广码" /></label>
+            <label><span class="sr-only">搜索小说</span><input id="searchInput" type="search" placeholder="搜索名称、平台、推广码或推广文案" /></label>
           </div>
           <div id="listStatus" class="list-status">正在读取小说书单...</div>
           <div id="bookList" class="book-list"></div>

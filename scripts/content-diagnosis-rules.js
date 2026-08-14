@@ -1,4 +1,4 @@
-export const CONTENT_DIAGNOSIS_RULES_VERSION = "novel-content-v1";
+export const CONTENT_DIAGNOSIS_RULES_VERSION = "novel-content-v2";
 
 const MATURITY_REFERENCE_VIEWS = 200;
 const MATURITY_REFERENCE_HOURS = 24;
@@ -7,8 +7,10 @@ export function buildContentRuleDiagnostics({
   privateAnalytics = {},
   matchedVideos = [],
   scriptLibrary = [],
-  generatedAt = Date.now()
+  generatedAt = Date.now(),
+  thresholds = {}
 } = {}) {
+  const rulesConfig = normalizeThresholds(thresholds);
   const localByVideoId = buildLocalVideoIndex(matchedVideos);
   const scripts = buildScriptIndex(scriptLibrary);
   const diagnostics = [];
@@ -25,7 +27,8 @@ export function buildContentRuleDiagnostics({
         local,
         script,
         baseline: baselines.get(durationBucket(video.duration)) || baselines.get("all") || emptyBaseline(),
-        generatedAt
+        generatedAt,
+        rulesConfig
       }));
     }
   }
@@ -43,11 +46,11 @@ export function buildContentRuleDiagnostics({
       minimumPublishedHours: 0,
       maturityReferenceViews: MATURITY_REFERENCE_VIEWS,
       maturityReferencePublishedHours: MATURITY_REFERENCE_HOURS,
-      openingLossPoints: 0.30,
-      retention3BelowBaselinePoints: 0.15,
-      retention3To10LossPoints: 0.20,
-      weakAverageWatchRatio: 0.35,
-      repeatedTestCount: 3
+      openingLossPoints: rulesConfig.openingLoss,
+      retention3BelowBaselinePoints: rulesConfig.comparisonDelta,
+      retention3To10LossPoints: rulesConfig.setupDrop,
+      weakAverageWatchRatio: rulesConfig.middleWatchRatio,
+      repeatedTestCount: rulesConfig.confidenceMinTests
     },
     summary: {
       videoCount: diagnostics.length,
@@ -60,7 +63,7 @@ export function buildContentRuleDiagnostics({
   };
 }
 
-function diagnoseVideo({ account, video, local, script, baseline, generatedAt }) {
+function diagnoseVideo({ account, video, local, script, baseline, generatedAt, rulesConfig }) {
   const views = number(video.views);
   const duration = number(video.duration);
   const createdAtMs = normalizeTimestamp(video.createdAt);
@@ -84,16 +87,16 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
   const rules = [];
 
   {
-    if (openingLoss !== null && openingLoss >= 0.30) {
+    if (openingLoss !== null && openingLoss >= rulesConfig.openingLoss) {
       rules.push(rule("opening_loss_over_30pp", "开头问题", "前3秒流失超过30个百分点，重写第一句话并立即交代人物、冲突和悬念。"));
     }
-    if (retentionAt3 !== null && baseline.retentionAt3 !== null && retentionAt3 <= baseline.retentionAt3 - 0.15) {
+    if (retentionAt3 !== null && baseline.retentionAt3 !== null && retentionAt3 <= baseline.retentionAt3 - rulesConfig.comparisonDelta) {
       rules.push(rule("retention3_below_peer_median", "开头问题", "3秒留存低于同账号相近时长视频中位数15个百分点，生成两个钩子版本。"));
     }
-    if (loss3To10 !== null && loss3To10 >= 0.20) {
+    if (loss3To10 !== null && loss3To10 >= rulesConfig.setupDrop) {
       rules.push(rule("rapid_loss_3_to_10", "铺垫问题", "3至10秒连续快速下降，删除背景铺垫并将冲突提前。"));
     }
-    if (averageWatchRatio !== null && averageWatchRatio < 0.35) {
+    if (averageWatchRatio !== null && averageWatchRatio < rulesConfig.middleWatchRatio) {
       rules.push(rule("average_watch_ratio_under_35", "中段节奏问题", "平均观看比例低于35%，压缩重复描述并提高事件推进速度。"));
     }
     const dropPosition = duration > 0 ? largestDropSecond / duration : null;
@@ -119,7 +122,7 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
     "mid_video_cliff",
     "late_video_cliff"
   ].includes(item.code));
-  const repeatedWeak = number(script?.performance?.sampleCount) >= 3
+  const repeatedWeak = number(script?.performance?.sampleCount) >= rulesConfig.confidenceMinTests
     && number(script?.performance?.low200Rate) >= 85
     && contentWeak;
 
@@ -143,6 +146,16 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
   const dropSentence = timeline.find((item) => largestDropSecond >= item.startSecond && largestDropSecond < item.endSecond) || null;
   const sourceAudioId = clean(script?.id);
   const rewriteEligible = decision === "rewrite_test" && Boolean(sourceAudioId);
+  const rewriteBrief = buildRewriteBrief({
+    rules,
+    decision,
+    duration,
+    largestDropSecond,
+    dropSentence,
+    timeline,
+    sampleMaturity,
+    sourceAudioId
+  });
   return {
     username: normalizeAccount(account.username || account.profile?.username),
     videoId: clean(video.videoId || video.id),
@@ -190,8 +203,110 @@ function diagnoseVideo({ account, video, local, script, baseline, generatedAt })
       sentenceTimingMode: timeline.length ? "estimated_from_script_character_share_v1" : "unavailable"
     },
     largestDropSentence: dropSentence,
+    rewriteBrief,
     evidenceSummary: buildEvidenceSummary({ retentionAt3, retentionAt10, averageWatchRatio, fullWatchRate, largestDropSecond, decision })
   };
+}
+
+function normalizeThresholds(input = {}) {
+  const ratio = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(0, Math.min(1, parsed > 1 ? parsed / 100 : parsed));
+  };
+  return {
+    openingLoss: ratio(input.earlyDropPoints, 0.30),
+    comparisonDelta: ratio(input.comparisonDeltaPoints, 0.15),
+    setupDrop: ratio(input.setupDropPoints, 0.20),
+    middleWatchRatio: ratio(input.middleWatchRatioThreshold, 0.35),
+    confidenceMinTests: Math.max(1, Number(input.confidenceMinTests) || 3)
+  };
+}
+
+function buildRewriteBrief({ rules, decision, duration, largestDropSecond, dropSentence, timeline, sampleMaturity, sourceAudioId }) {
+  const codes = new Set((rules || []).map((item) => item.code));
+  let problemLayer = "insufficient";
+  let rewriteScope = "none";
+  let primaryRuleCode = "";
+  let targetSecondRange = "";
+  let estimatedSourceSentence = "";
+  let rewriteGoal = "继续积累证据，不自动改写。";
+  let singleVariable = "none";
+
+  if (decision === "adjust_distribution") {
+    problemLayer = "distribution";
+    rewriteGoal = "保留文案，只调整标题、标签或发布时间。";
+  } else if (decision === "keep_reuse") {
+    problemLayer = "winning";
+    rewriteGoal = "保留原文，提取其开头结构和叙事节奏供后续复用。";
+  } else if (decision === "stop_use") {
+    problemLayer = "novel";
+    rewriteGoal = "停止继续派生该内容，等待人工决定是否更换小说或叙事方向。";
+  } else if (decision === "rewrite_test") {
+    if (codes.has("opening_loss_over_30pp") || codes.has("retention3_below_peer_median")) {
+      problemLayer = codes.has("opening_loss_over_30pp") ? "opening" : "hook";
+      rewriteScope = problemLayer === "hook" ? "hook_only" : "opening_0_3s";
+      primaryRuleCode = codes.has("opening_loss_over_30pp") ? "opening_loss_over_30pp" : "retention3_below_peer_median";
+      targetSecondRange = "0-3s";
+      estimatedSourceSentence = clean(timeline?.[0]?.text);
+      rewriteGoal = "第一句立即交代人物、冲突与悬念，降低理解成本并提高前三秒留存。";
+      singleVariable = "opening_hook";
+    } else if (codes.has("rapid_loss_3_to_10")) {
+      problemLayer = "setup";
+      rewriteScope = "setup_3_10s";
+      primaryRuleCode = "rapid_loss_3_to_10";
+      targetSecondRange = "3-10s";
+      estimatedSourceSentence = clean(dropSentence?.text || timeline?.find((item) => item.startSecond <= 3 && item.endSecond > 3)?.text);
+      rewriteGoal = "删除背景铺垫和重复解释，把冲突与事件推进提前。";
+      singleVariable = "setup_density";
+    } else if (codes.has("mid_video_cliff")) {
+      problemLayer = "middle";
+      rewriteScope = "middle_local";
+      primaryRuleCode = "mid_video_cliff";
+      targetSecondRange = secondRange(largestDropSecond, duration);
+      estimatedSourceSentence = clean(dropSentence?.text);
+      rewriteGoal = "只修复最大流失点附近的长句、重复信息或剧情衔接。";
+      singleVariable = "mid_pacing";
+    } else if (codes.has("late_video_cliff")) {
+      problemLayer = "ending";
+      rewriteScope = "ending_local";
+      primaryRuleCode = "late_video_cliff";
+      targetSecondRange = secondRange(largestDropSecond, duration);
+      estimatedSourceSentence = clean(dropSentence?.text);
+      rewriteGoal = "强化结尾回报，延后答案但不改变原故事结局。";
+      singleVariable = "ending_payoff";
+    } else if (codes.has("average_watch_ratio_under_35")) {
+      problemLayer = "middle";
+      rewriteScope = "full_compression";
+      primaryRuleCode = "average_watch_ratio_under_35";
+      targetSecondRange = duration > 0 ? `0-${round(duration)}s` : "full";
+      estimatedSourceSentence = clean(dropSentence?.text);
+      rewriteGoal = "保留完整主线，压缩重复描述并提高单位时间的事件推进。";
+      singleVariable = "narrative_density";
+    }
+  }
+
+  const confidence = sampleMaturity === "mature" && sourceAudioId && primaryRuleCode
+    ? (estimatedSourceSentence ? "high" : "medium")
+    : (sourceAudioId && primaryRuleCode ? "medium" : "low");
+  return {
+    problemLayer,
+    rewriteScope,
+    primaryRuleCode,
+    targetSecondRange,
+    estimatedSourceSentence: estimatedSourceSentence.slice(0, 600),
+    rewriteGoal,
+    singleVariable,
+    preserveFacts: ["人物身份与关系", "关键事件", "因果关系", "结局事实"],
+    maxConceptualVariants: 2,
+    confidence
+  };
+}
+
+function secondRange(second, duration) {
+  const center = Math.max(0, number(second));
+  const end = duration > 0 ? Math.min(duration, center + 1) : center + 1;
+  return `${round(Math.max(0, center - 1))}-${round(end)}s`;
 }
 
 function buildBaselines(videos) {

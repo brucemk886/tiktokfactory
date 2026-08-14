@@ -4,6 +4,7 @@ const elements = {
   title: document.querySelector("#bookTitle"),
   platform: document.querySelector("#bookPlatform"),
   promotionCode: document.querySelector("#bookPromotionCode"),
+  promotionCopy: document.querySelector("#bookPromotionCopy"),
   chapters: document.querySelector("#bookChapters"),
   chapterCount: document.querySelector("#chapterCount"),
   editorTitle: document.querySelector("#editorTitle"),
@@ -58,6 +59,7 @@ function renderBooks(novels) {
       </div>
       <dl>
         <div><dt>推广码</dt><dd>${escapeHtml(novel.promotionCode || "未设置")}</dd></div>
+        <div><dt>推广文案</dt><dd title="${escapeHtml(novel.promotionCopy || "")}">${escapeHtml(novel.promotionCopy || "未设置")}</dd></div>
         <div><dt>免费章节</dt><dd>${formatNumber((novel.sourceContent || "").length)} 字</dd></div>
         <div><dt>关联文案</dt><dd>${formatNumber(novel.scripts?.length || 0)} 条</dd></div>
       </dl>
@@ -75,6 +77,7 @@ async function saveBook(event) {
     title: elements.title.value.trim(),
     platform: elements.platform.value.trim(),
     promotionCode: elements.promotionCode.value.trim(),
+    promotionCopy: elements.promotionCopy.value.trim(),
     sourceContent: elements.chapters.value.trim()
   };
   if (!payload.title) return setFormStatus("请填写小说名称。", "error");
@@ -105,6 +108,7 @@ function editBook(id) {
   elements.title.value = novel.title || "";
   elements.platform.value = novel.platform || "";
   elements.promotionCode.value = novel.promotionCode || "";
+  elements.promotionCopy.value = novel.promotionCopy || "";
   elements.chapters.value = novel.sourceContent || "";
   elements.editorTitle.textContent = "编辑小说";
   elements.saveButton.textContent = "保存修改";

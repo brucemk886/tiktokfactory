@@ -50,6 +50,16 @@ test("audio library generates once and reuses the same ElevenLabs result", async
     script: "The letter on my kitchen table proved my entire childhood was a lie. I opened it before sunrise, and the first sentence named the person who had been watching me for twenty years.",
     diagnosis: "Most viewers left during the setup before the conflict became clear.",
     evidenceSummary: "3-second retention 41%; largest loss at second 2.",
+    rewriteMetadata: {
+      problemLayer: "opening",
+      rewriteScope: "opening_0_3s",
+      targetSecondRange: "0-3s",
+      estimatedSourceSentence: "This is a direct narration script.",
+      rewriteGoal: "Move the conflict into the first sentence.",
+      singleVariable: "opening_hook",
+      preservedFacts: ["people", "relationships", "events", "ending"],
+      changeLog: [{ before: "old opening", after: "new opening", reason: "weak hook", evidence: "retentionAt3" }]
+    },
     planId: "plan-001",
     targetAudioDir
   });
@@ -57,4 +67,8 @@ test("audio library generates once and reuses the same ElevenLabs result", async
   assert.equal(optimized.source.type, "ai-operation-rewrite");
   assert.ok(fs.existsSync(optimized.targetAudioPath));
   assert.match(service.get(optimized.id).script, /kitchen table/);
+  assert.equal(service.get(optimized.id).metadata.problemLayer, "opening");
+  assert.equal(service.get(optimized.id).metadata.singleVariable, "opening_hook");
+  assert.equal(service.get(optimized.id).metadata.changeLog.length, 1);
+  assert.match(service.get(first.id).script, /direct narration script/);
 });
