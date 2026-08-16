@@ -215,6 +215,13 @@ body.tasks-page {
 .tasks-page input:focus, .tasks-page select:focus, .tasks-page textarea:focus { border-color: #727d89; box-shadow: 0 0 0 2px rgba(114,125,137,.12); }
 .tasks-page input::placeholder, .tasks-page textarea::placeholder { color: #555d66; }
 .caption-editor { max-width: 760px; margin-top: 14px; overflow: hidden; border: 1px solid var(--task-line); border-radius: 10px; background: #fff; }
+.caption-mode-bar { min-height: 45px; padding: 7px 11px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--task-line-soft); background: var(--lf-surface-2, #f6f0e4); }
+.caption-mode-bar strong { margin-right: auto; color: var(--lf-text); font-size: 11px; white-space: nowrap; }
+.caption-mode-option { display: flex; align-items: center; gap: 6px; color: var(--lf-text); font-size: 11px; white-space: nowrap; cursor: pointer; }
+.caption-mode-option input { width: 15px; height: 15px; margin: 0; accent-color: var(--task-accent); }
+.auto-caption-panel { padding: 11px; }
+.auto-caption-panel p { margin: 0; color: var(--task-muted); font-size: 11px; line-height: 1.55; }
+.auto-caption-preview { margin: 10px 0 0; padding: 10px 11px; border: 1px dashed var(--task-line); border-radius: 6px; background: #faf7f0; color: var(--task-text); white-space: pre-wrap; font: inherit; font-size: 12px; line-height: 1.5; }
 .caption-editor-toolbar { min-height: 45px; padding: 7px 9px 7px 11px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid var(--task-line-soft); background: var(--lf-surface-2, #f6f0e4); }
 .caption-editor-toolbar strong { margin-right: auto; color: var(--lf-text); font-size: 11px; white-space: nowrap; }
 .caption-editor-toolbar select { width: 190px; min-height: 30px; height: 30px; padding: 0 26px 0 8px; border-color: #343b43; font-size: 10px; }

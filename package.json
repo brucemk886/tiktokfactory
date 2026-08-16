@@ -6,6 +6,7 @@
   "scripts": {
     "generate": "node scripts/generate.js",
     "start": "node scripts/server.js",
+    "factory-worker": "node scripts/factory-cloud-worker.js",
     "remotion:studio": "remotion studio remotion/index.jsx"
   },
   "dependencies": {

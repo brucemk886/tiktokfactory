@@ -31,10 +31,15 @@ $("#officialNameFilter")?.addEventListener("input", filterOfficialAccounts);
 $("#publishProvider")?.addEventListener("change", updatePublishProviderView);
 $("#saveRulesBtn")?.addEventListener("click", saveGenerationRules);
 $("#openingTitleEnabled")?.addEventListener("change", persistOpeningTitleSetting);
-$("#captionPresetSelect").addEventListener("change", selectCaptionPreset);
-$("#addCaptionPresetBtn").addEventListener("click", addCaptionPreset);
-$("#updateCaptionPresetBtn").addEventListener("click", updateCaptionPreset);
-$("#deleteCaptionPresetBtn").addEventListener("click", deleteCaptionPreset);
+["#totalVideos", "#intervalMinutes", "#scheduleAt", "#autoPublish"].forEach((selector) => {
+  $(selector)?.addEventListener("input", updatePublishPlanHint);
+  $(selector)?.addEventListener("change", updatePublishPlanHint);
+});
+document.querySelectorAll("input[name='captionMode']").forEach((input) => input.addEventListener("change", persistCaptionMode));
+$("#captionPresetSelect")?.addEventListener("change", selectCaptionPreset);
+$("#addCaptionPresetBtn")?.addEventListener("click", addCaptionPreset);
+$("#updateCaptionPresetBtn")?.addEventListener("click", updateCaptionPreset);
+$("#deleteCaptionPresetBtn")?.addEventListener("click", deleteCaptionPreset);
 $("#assetGroupSelect").addEventListener("change", updateVideoSourceVisibility);
 $("#refreshSharedLibrariesBtn")?.addEventListener("click", loadSharedLibraries);
 $("#sharedVideoLibrary")?.addEventListener("change", applySharedLibrarySelection);
@@ -54,6 +59,7 @@ loadAssetGroups();
 loadSharedLibraries();
 loadNovels();
 initializePublishProvider();
+updatePublishPlanHint();
 loadTasks();
 $("#videoPreviewClose")?.addEventListener("click", closeVideoPreview);
 $("#videoPreviewOverlay")?.addEventListener("click", (event) => {
@@ -124,8 +130,9 @@ async function createTask(options = {}) {
       provider, autoPublish,
       envIds: provider === "geelark" ? selected.map((input) => input.value) : [], accounts,
       connectionIds: provider === "official" ? selected.map((input) => input.value) : [], officialAccounts,
-      videoDesc: $("#videoDesc").value,
-      scheduleAt: schedule, intervalMinutes: number("#intervalMinutes", 15), batchPublishLimit: number("#batchLimit", 300), dailyPublishLimit: number("#dailyLimit", 300)
+      captionMode: getCaptionMode(),
+      videoDesc: getCaptionMode() === "manual" ? $("#videoDesc").value : "",
+      scheduleAt: schedule, intervalMinutes: number("#intervalMinutes", 60), batchPublishLimit: number("#batchLimit", 300), dailyPublishLimit: number("#dailyLimit", 300)
     }
   };
   setCreateButtonsDisabled(true);
@@ -160,15 +167,16 @@ async function loadTasks() {
     const safety = await safetyResponse.json();
     if (!tasksResponse.ok) throw new Error(data.error || "读取任务失败。");
     $("#safetySummary").textContent = `今日已提交排期 ${safety.scheduledToday || 0}/${safety.defaultDailyLimit || 300}，待核实 ${safety.uncertainCount || 0}，成片保留 ${data.worker?.retentionHours || 48} 小时`;
-    const visibleTasks = (data.tasks || []).filter((task) => {
+    const allTasks = data.tasks || [];
+    const visibleTasks = allTasks.filter((task) => {
       if (task.taskType === "psychology" || task.taskType === "schulte") return false;
       const provider = task.publish?.provider || "geelark";
       return publishChannel === "official" ? provider === "official" : provider !== "official";
     });
     updateQueueMetrics(visibleTasks);
-    const renderKey = createTaskRenderKey(visibleTasks);
+    const renderKey = createTaskRenderKey(visibleTasks, allTasks);
     if (renderKey !== lastTaskRenderKey) {
-      renderTasks(visibleTasks);
+      renderTasks(visibleTasks, allTasks);
       lastTaskRenderKey = renderKey;
     }
   } catch (error) {
@@ -177,7 +185,7 @@ async function loadTasks() {
   if (!document.hidden) pollTimer = setTimeout(loadTasks, 3000);
 }
 
-function renderTasks(tasks) {
+function renderTasks(tasks, allTasks = tasks) {
   if (!tasks.length) {
     taskList.innerHTML = '<div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div>';
     return;
@@ -187,7 +195,8 @@ function renderTasks(tasks) {
     return scheduleDifference || Number(a.createdAt) - Number(b.createdAt);
   });
   const queuedPositions = new Map(queuedTasks.map((task, index) => [task.id, index]));
-  const activeCount = tasks.some((task) => task.status === "running") ? 1 : 0;
+  const blocking = (allTasks || []).find((task) => task.status === "running" || ["generating", "publishing", "checking", "retrying"].includes(task.phase));
+  const activeCount = blocking ? 1 : (tasks.some((task) => task.status === "running") ? 1 : 0);
   taskList.innerHTML = tasks.map((task) => {
     const progress = task.phase === "publishing" || task.phase === "retrying" ? task.publishProgress : task.progress;
     const current = Number(progress?.current) || 0;
@@ -220,7 +229,9 @@ function renderTasks(tasks) {
     const failureHtml = failures.length ? `<div class="manual-items"><strong>待人工处理</strong>${failures.map((item) => `<div class="manual-item"><span>${escapeHtml(item.fileName)}<small>${escapeHtml(item.message || item.status)}</small></span><button data-action="retry" data-task-id="${escapeAttr(task.id)}" data-record-id="${escapeAttr(item.recordId)}">重新发布</button></div>`).join("")}</div>` : "";
     const queueAhead = task.status === "queued" ? activeCount + (queuedPositions.get(task.id) || 0) : 0;
     const taskMessage = task.status === "queued"
-      ? queueAhead > 0
+      ? blocking && blocking.id !== task.id
+        ? `本机正在执行「${blocking.name || "其他任务"}」，完成后才会开始混剪。页面上的排期是发布时间，不是开始生成时间。`
+        : queueAhead > 0
         ? `排队等待中，前方 ${queueAhead} 个任务；完成后会自动开始。`
         : "即将开始生成。"
       : task.message || "等待执行";
@@ -300,8 +311,11 @@ function closeVideoPreview() {
   if (overlay) overlay.hidden = true;
 }
 
-function createTaskRenderKey(tasks) {
-  return JSON.stringify(tasks.map((task) => ({
+function createTaskRenderKey(tasks, allTasks = []) {
+  const blocking = (allTasks || []).find((task) => task.status === "running" || ["generating", "publishing"].includes(task.phase));
+  return JSON.stringify({
+    blocking: blocking ? { id: blocking.id, name: blocking.name, progress: blocking.progress } : null,
+    tasks: tasks.map((task) => ({
     id: task.id,
     name: task.name,
     status: task.status,
@@ -324,7 +338,8 @@ function createTaskRenderKey(tasks) {
     provider: task.publish?.provider || "geelark",
     accounts: (task.publish?.accounts || []).map((account) => [account.id, account.groupName]),
     officialAccounts: (task.publish?.officialAccounts || []).map((account) => [account.connectionId, account.name, account.username])
-  })));
+  }))
+  });
 }
 
 function stopTaskPolling() {
@@ -473,7 +488,9 @@ function getSelectedAudioItems() {
     novelId: novel.id,
     platform: novel.platform || "",
     promotionCode: novel.promotionCode || "",
-    title: script.versionLabel || script.title || script.audio.title || ""
+    promotionCopy: novel.promotionCopy || "",
+    openingTitle: script.openingTitle || script.title || "",
+    title: script.openingTitle || script.versionLabel || script.title || script.audio.title || ""
   })));
 }
 
@@ -485,10 +502,12 @@ function updateNovelBadgeHint() {
   if (!selectedNovels.length) {
     hint.textContent = "勾选小说后不用再选音频目录；不勾小说就选下面的音频目录。生效音频在书单详情里勾选保存。";
     updateAudioSourceMode();
+    updateCaptionModeView();
     return;
   }
   hint.textContent = `已选 ${selectedNovels.length} 本小说，将抽 ${selected.length} 条生效音频。音频目录已收起。`;
   updateAudioSourceMode();
+  updateCaptionModeView();
 }
 
 function formatNovelBadge(novel) {
@@ -574,6 +593,7 @@ function filterOfficialAccounts() {
 function updateSelectedOfficialAccountCount() {
   const count = $("#officialAccountList")?.querySelectorAll(".official-tiktok-account-check:checked").length || 0;
   if ($("#selectedOfficialAccountCount")) $("#selectedOfficialAccountCount").textContent = `已选 ${count} 个`;
+  updatePublishPlanHint();
 }
 
 async function loadAssetGroups() {
@@ -707,6 +727,28 @@ function updateSelectedAccountCount() {
   const count = phoneList.querySelectorAll(".geelark-phone-check:checked").length;
   const target = $("#selectedAccountCount");
   if (target) target.textContent = `已选 ${count} 个`;
+  updatePublishPlanHint();
+}
+
+function updatePublishPlanHint() {
+  const hint = $("#publishPlanHint");
+  if (!hint) return;
+  const videos = Math.max(0, number("#totalVideos", 0));
+  const accounts = getPublishProvider() === "official"
+    ? ($("#officialAccountList")?.querySelectorAll(".official-tiktok-account-check:checked").length || 0)
+    : (phoneList?.querySelectorAll(".geelark-phone-check:checked").length || 0);
+  const interval = Math.max(0, number("#intervalMinutes", 60));
+  if (!videos || !accounts) {
+    hint.textContent = "生成条数会轮流分给所选账号，同一账号的下一条才按间隔排期。例如 5 条视频 + 5 个账号 = 起始时间同时各发 1 条。";
+    return;
+  }
+  const waves = Math.ceil(videos / accounts);
+  const firstWave = Math.min(accounts, videos);
+  if (waves === 1) {
+    hint.textContent = `将生成 ${videos} 条视频，分给 ${accounts} 个账号，起始时间同时发出 ${firstWave} 条。每条视频只发一个账号。`;
+    return;
+  }
+  hint.textContent = `将生成 ${videos} 条视频，轮流分给 ${accounts} 个账号：起始时间先发 ${firstWave} 条，同一账号下一条间隔 ${interval} 分钟，共 ${waves} 个时间点。`;
 }
 
 function updateQueueMetrics(tasks) {
@@ -811,6 +853,60 @@ async function saveGenerationRules() {
   return persistGenerationRules();
 }
 
+function getCaptionMode() {
+  return document.querySelector("input[name='captionMode']:checked")?.value === "manual" ? "manual" : "auto";
+}
+
+function persistCaptionMode() {
+  localStorage.setItem("reddit-publish-caption-mode", getCaptionMode());
+  updateCaptionModeView();
+}
+
+function restoreCaptionMode() {
+  const saved = localStorage.getItem("reddit-publish-caption-mode") === "manual" ? "manual" : "auto";
+  document.querySelectorAll("input[name='captionMode']").forEach((input) => {
+    input.checked = input.value === saved;
+  });
+  updateCaptionModeView();
+}
+
+function updateCaptionModeView() {
+  const manual = getCaptionMode() === "manual";
+  const autoPanel = $("#autoCaptionPanel");
+  const manualPanel = $("#manualCaptionPanel");
+  if (autoPanel) autoPanel.hidden = manual;
+  if (manualPanel) manualPanel.hidden = !manual;
+  if (!manual) renderAutoCaptionPreview();
+}
+
+function renderAutoCaptionPreview() {
+  const hint = $("#autoCaptionHint");
+  const preview = $("#autoCaptionPreview");
+  if (!hint || !preview) return;
+  const selected = getSelectedAudioItems();
+  if (!selected.length) {
+    hint.textContent = "默认按每条音频自动生成：用音频文件名作文案，并轮换不同标签。勾选小说或选音频目录后可预览第一条。";
+    preview.hidden = true;
+    preview.textContent = "";
+    return;
+  }
+  const first = selected[0];
+  const sample = buildTikTokCaptionPreview(first);
+  hint.textContent = selected.length === 1
+    ? "这条成片将自动使用下面的文案；正文来自音频文件名，标签会按音频轮换。"
+    : `已选 ${selected.length} 条音频，每条成片用自己的文件名和不同标签。下面是第一条预览：`;
+  preview.hidden = !sample;
+  preview.textContent = sample;
+}
+
+function buildTikTokCaptionPreview(item = {}) {
+  const title = String(item.openingTitle || item.title || item.audioName || "").replace(/\s+/g, " ").trim();
+  const promo = String(item.promotionCopy || "").trim();
+  const platform = String(item.platform || "").replace(/\s+/g, "").trim();
+  const tags = [platform ? `#${platform}` : "", "#reddit", "#storytime"].filter(Boolean).join(" ");
+  return [title, promo, tags].filter(Boolean).join("\n\n");
+}
+
 function loadCaptionPresets() {
   try {
     const saved = JSON.parse(localStorage.getItem(captionPresetStorageKey) || "[]");
@@ -819,10 +915,12 @@ function loadCaptionPresets() {
     captionPresets = [];
   }
   renderCaptionPresets(localStorage.getItem(selectedCaptionPresetKey) || "");
+  restoreCaptionMode();
 }
 
 function renderCaptionPresets(selectedId = "") {
   const select = $("#captionPresetSelect");
+  if (!select) return;
   select.innerHTML = `<option value="">临时文案</option>${captionPresets.map((item, index) => `<option value="${escapeAttr(item.id)}">${index + 1}. ${escapeHtml(captionPresetLabel(item.text))}</option>`).join("")}`;
   const selected = captionPresets.find((item) => item.id === selectedId);
   select.value = selected ? selected.id : "";
@@ -886,9 +984,9 @@ function persistCaptionPresets(selectedId) {
 }
 
 function updateCaptionPresetButtons() {
-  const hasSelection = Boolean($("#captionPresetSelect").value);
-  $("#updateCaptionPresetBtn").disabled = !hasSelection;
-  $("#deleteCaptionPresetBtn").disabled = !hasSelection;
+  const hasSelection = Boolean($("#captionPresetSelect")?.value);
+  if ($("#updateCaptionPresetBtn")) $("#updateCaptionPresetBtn").disabled = !hasSelection;
+  if ($("#deleteCaptionPresetBtn")) $("#deleteCaptionPresetBtn").disabled = !hasSelection;
 }
 
 function captionPresetLabel(text) {
@@ -898,6 +996,7 @@ function captionPresetLabel(text) {
 
 function setCaptionPresetStatus(message, isWarning = false) {
   const status = $("#captionPresetStatus");
+  if (!status) return;
   status.textContent = message;
   status.style.color = isWarning ? "var(--task-amber)" : "var(--task-muted)";
 }

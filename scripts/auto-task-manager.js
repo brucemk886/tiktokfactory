@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { getPublishAccountIds, normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
+import { resolveTikTokCaption } from "./novel-video-badge.js";
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm"]);
 const MAX_DAILY_PLANNED_VIDEOS = 300;
@@ -45,11 +46,8 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       );
     }
     const publishAccountIds = getPublishAccountIds(publish);
-    const scheduledPublishCount = publish.provider === PUBLISH_PROVIDER_OFFICIAL
-      ? expectedVideoCount * publishAccountIds.length
-      : expectedVideoCount;
     const schedulePlan = publish.autoPublish
-      ? buildSchedulePlan({ videoCount: scheduledPublishCount, envIds: publishAccountIds, scheduleAt: publish.scheduleAt, intervalMinutes: publish.intervalMinutes })
+      ? buildSchedulePlan({ videoCount: expectedVideoCount, envIds: publishAccountIds, scheduleAt: publish.scheduleAt, intervalMinutes: publish.intervalMinutes })
       : [];
     validateScheduleCapacity({ plan: schedulePlan, tasks: listTasks(), dailyLimit: MAX_DAILY_PLANNED_VIDEOS });
     const id = safeId(`auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
@@ -99,7 +97,11 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
 
   function cancelTask(id) {
     const task = getTask(id);
-    if (task.workerPid) killProcessTree(task.workerPid);
+    if (task.generationJobId) {
+      const jobPath = path.join(generationJobsDir, `${safeId(task.generationJobId)}.json`);
+      const job = readJson(jobPath, null);
+      if (job) writeJson(jobPath, { ...job, status: "canceled", message: "任务已停止。", updatedAt: Date.now() });
+    }
     patchTask(task.id, {
       status: "canceled",
       phase: "canceled",
@@ -107,6 +109,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       workerPid: null,
       updatedAt: Date.now()
     });
+    if (task.workerPid) killProcessTree(task.workerPid);
     return getTask(task.id);
   }
 
@@ -176,7 +179,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     workerRunning = true;
     try {
       while (true) {
-        const next = listTasks().filter((task) => task.status === "queued").sort((a, b) => {
+        const next = listTasks().filter((task) => task.status === "queued" && task.source !== "factory-cloud").sort((a, b) => {
           const scheduleDifference = Number(a.publish?.scheduleAt || 0) - Number(b.publish?.scheduleAt || 0);
           return scheduleDifference || Number(a.createdAt) - Number(b.createdAt);
         })[0];
@@ -221,7 +224,32 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       let result;
       if (isOfficial) {
         if (typeof officialPublishService !== "function") throw new Error("TikTok 官方 API 发布服务未配置。");
-        const officialResult = await officialPublishService({ ...task.publish, videos: task.generatedVideos, name: task.name });
+        const officialResult = await officialPublishService({
+          ...task.publish,
+          videos: task.generatedVideos,
+          name: task.name,
+          taskId: task.id,
+          officialWaveSize: 10,
+          officialUploadConcurrency: 3,
+          checkpoint: task.officialPublishCheckpoint,
+          onCheckpoint: (next) => {
+            patchTask(id, { officialPublishCheckpoint: next, updatedAt: Date.now() });
+          },
+          onProgress: (progress) => {
+            const total = Math.max(1, Number(progress?.total) || task.generatedVideos?.length || 1);
+            const current = Math.max(0, Number(progress?.current) || 0);
+            patchTask(id, {
+              phase: "publishing",
+              message: progress?.message || "正在提交到 TikTok 官方 API...",
+              publishProgress: {
+                current,
+                total,
+                percent: Math.max(0, Math.min(99, Math.round(current / total * 100)))
+              },
+              updatedAt: Date.now()
+            });
+          }
+        });
         result = normalizeOfficialAutoPublishResult(task, officialResult);
         try {
           persistOfficialPublishRecords(workDir, task, result.results);
@@ -478,7 +506,26 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
   function patchTask(id, patch) {
     const task = readTask(id);
     if (!task) return;
+    if (task.status === "canceled" && patch.status !== "queued" && patch.status !== "canceled") {
+      return task;
+    }
     writeTask({ ...task, ...patch });
+  }
+
+  function mirrorExternalTask(patch = {}) {
+    const id = safeId(patch.id);
+    if (!id) return null;
+    const current = readTask(id) || {};
+    if (current.id && current.source !== "factory-cloud") return current;
+    const next = {
+      ...current,
+      ...patch,
+      id,
+      source: "factory-cloud",
+      updatedAt: Date.now()
+    };
+    writeTask(next);
+    return next;
   }
 
   function runOutputCleanup() {
@@ -549,7 +596,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     return cleanupStatus;
   }
 
-  return { createTask, listTasks, getTask, cancelTask, archiveTask, renameTask, resumeTask, retryPublishRecord, runOutputCleanup, getStatus: () => ({ workerRunning, activeTaskId, retentionHours, cleanup: cleanupStatus }) };
+  return { createTask, listTasks, getTask, cancelTask, archiveTask, renameTask, resumeTask, retryPublishRecord, runOutputCleanup, mirrorExternalTask, getStatus: () => ({ workerRunning, activeTaskId, retentionHours, cleanup: cleanupStatus }) };
 }
 
 function validateTaskPayload(payload) {
@@ -735,6 +782,8 @@ function normalizePublishPayload(value = {}) {
     accounts: Array.isArray(value.accounts) ? value.accounts : [],
     connectionIds: Array.isArray(value.connectionIds) ? value.connectionIds.map(String).filter(Boolean) : [],
     officialAccounts: Array.isArray(value.officialAccounts) ? value.officialAccounts : [],
+    accountAssignment: String(value.accountAssignment || "").trim().toLowerCase() === "all-accounts" ? "all-accounts" : "round-robin",
+    captionMode: String(value.captionMode || "").trim().toLowerCase() === "manual" ? "manual" : "auto",
     videoDesc: String(value.videoDesc || ""),
     scheduleAt: Number(value.scheduleAt) || Math.floor(Date.now() / 1000),
     intervalMinutes: Math.max(0, Number(value.intervalMinutes) || 0),
@@ -818,10 +867,36 @@ function getTaskSchedulePlan(task) {
     } catch { videoCount = 0; }
   }
   const accountIds = getPublishAccountIds(task.publish);
-  const scheduledPublishCount = normalizePublishProvider(task.publish.provider) === PUBLISH_PROVIDER_OFFICIAL
-    ? videoCount * accountIds.length
-    : videoCount;
-  return buildSchedulePlan({ videoCount: scheduledPublishCount, envIds: accountIds, scheduleAt: task.publish.scheduleAt, intervalMinutes: task.publish.intervalMinutes });
+  return buildSchedulePlan({ videoCount: videoCount, envIds: accountIds, scheduleAt: task.publish.scheduleAt, intervalMinutes: task.publish.intervalMinutes });
+}
+
+export function planOfficialPublishJobs({
+  videos = [],
+  connectionIds = [],
+  scheduleAt = 0,
+  interval = 0,
+  assignment = "round-robin"
+} = {}) {
+  const accounts = Array.from(new Set((Array.isArray(connectionIds) ? connectionIds : []).map((value) => String(value || "").trim()).filter(Boolean)));
+  const list = Array.isArray(videos) ? videos : [];
+  if (!list.length || !accounts.length) return [];
+  const startAt = Number(scheduleAt) || 0;
+  const step = Math.max(0, Number(interval) || 0);
+  const jobs = [];
+  if (assignment === "all-accounts") {
+    list.forEach((video, videoIndex) => {
+      accounts.forEach((connectionId) => {
+        jobs.push({ video, videoIndex, connectionId, scheduleAt: startAt + videoIndex * step });
+      });
+    });
+    return jobs;
+  }
+  list.forEach((video, videoIndex) => {
+    const connectionId = accounts[videoIndex % accounts.length];
+    const accountPostIndex = Math.floor(videoIndex / accounts.length);
+    jobs.push({ video, videoIndex, connectionId, scheduleAt: startAt + accountPostIndex * step });
+  });
+  return jobs;
 }
 
 export function normalizeOfficialAutoPublishResult(task, officialResult = {}) {
@@ -835,30 +910,32 @@ export function normalizeOfficialAutoPublishResult(task, officialResult = {}) {
     ...remoteTask,
     batchId: remoteTask?.batchId || batch?.id || batch?.batchId || ""
   })));
-  const results = [];
-  let jobIndex = 0;
-  videos.forEach((video, videoIndex) => {
-    connectionIds.forEach((connectionId) => {
-      const expectedExternalRef = `${String(video?.fileName || "")}:${connectionId}:${jobIndex}`.slice(0, 160);
-      const remoteTask = remoteTasks.find((item) => item?.externalRef === expectedExternalRef)
-        || remoteTasks.find((item) => item?.connectionId === connectionId && item?.fileName === String(video?.fileName || ""));
-      const batchId = remoteTask?.batchId || batchIds[Math.floor(jobIndex / 100)] || batchIds[0] || "";
-      results.push({
-        recordId: `${task.id}:official:${videoIndex}:${connectionId}`,
-        dedupeKey: `${task.id}:official:${videoIndex}:${connectionId}`,
-        provider: PUBLISH_PROVIDER_OFFICIAL,
-        videoIndex,
-        connectionId,
-        fileName: String(video?.fileName || ""),
-        scheduleAt: baseScheduleAt + videoIndex * intervalSeconds,
-        externalRef: remoteTask?.externalRef || expectedExternalRef,
-        remoteTaskId: remoteTask?.id || "",
-        status: "submitted",
-        message: "已提交发布中台",
-        batchIds: batchId ? [batchId] : []
-      });
-      jobIndex += 1;
-    });
+  const planned = planOfficialPublishJobs({
+    videos,
+    connectionIds,
+    scheduleAt: baseScheduleAt,
+    interval: intervalSeconds,
+    assignment: task?.publish?.accountAssignment
+  });
+  const results = planned.map((job, jobIndex) => {
+    const expectedExternalRef = `${String(job.video?.fileName || "")}:${job.connectionId}:${jobIndex}`.slice(0, 160);
+    const remoteTask = remoteTasks.find((item) => item?.externalRef === expectedExternalRef)
+      || remoteTasks.find((item) => item?.connectionId === job.connectionId && item?.fileName === String(job.video?.fileName || ""));
+    const batchId = remoteTask?.batchId || batchIds[Math.floor(jobIndex / 100)] || batchIds[0] || "";
+    return {
+      recordId: `${task.id}:official:${job.videoIndex}:${job.connectionId}`,
+      dedupeKey: `${task.id}:official:${job.videoIndex}:${job.connectionId}`,
+      provider: PUBLISH_PROVIDER_OFFICIAL,
+      videoIndex: job.videoIndex,
+      connectionId: job.connectionId,
+      fileName: String(job.video?.fileName || ""),
+      scheduleAt: job.scheduleAt,
+      externalRef: remoteTask?.externalRef || expectedExternalRef,
+      remoteTaskId: remoteTask?.id || "",
+      status: "submitted",
+      message: "已提交发布中台",
+      batchIds: batchId ? [batchId] : []
+    };
   });
   return {
     results,
@@ -936,7 +1013,7 @@ export function summarizeOfficialResults(results = []) {
   };
 }
 
-export function buildOfficialPublishRecords(task, results, now = Date.now()) {
+export function buildOfficialPublishRecords(task, results, now = Date.now(), recordsWorkDir = "") {
   const videos = Array.isArray(task?.generatedVideos) ? task.generatedVideos : [];
   const accounts = new Map((Array.isArray(task?.publish?.officialAccounts) ? task.publish.officialAccounts : [])
     .map((account) => [String(account?.connectionId || account?.id || ""), account]));
@@ -977,7 +1054,17 @@ export function buildOfficialPublishRecords(task, results, now = Date.now()) {
       accountUsername: String(account?.username || ""),
       accountSerialNo: "",
       groupName: "TikTok 官方 API",
-      videoDesc: String(task?.publish?.videoDesc || ""),
+      videoDesc: resolveTikTokCaption({
+        workDir: recordsWorkDir,
+        video,
+        captionMode: task?.publish?.captionMode,
+        manualCaption: task?.publish?.videoDesc,
+        fallback: {
+          novelId: video?.novelId || task?.generation?.novelId,
+          platform: video?.novelPlatform || task?.generation?.novelPlatform,
+          promotionCopy: video?.promotionCopy
+        }
+      }),
       operationMeta: task?.publish?.operationMeta || video?.operationMeta || null,
       scheduleAt: Number(result?.scheduleAt) || Number(task?.publish?.scheduleAt) || Math.floor(now / 1000),
       intervalMinutes: Number(task?.publish?.intervalMinutes) || 0,
@@ -995,7 +1082,7 @@ export function buildOfficialPublishRecords(task, results, now = Date.now()) {
 export function persistOfficialPublishRecords(workDir, task, results) {
   const recordsPath = path.join(workDir, "publish-records.json");
   const current = readJson(recordsPath, []);
-  const incoming = buildOfficialPublishRecords(task, results);
+  const incoming = buildOfficialPublishRecords(task, results, Date.now(), workDir);
   const incomingIds = new Set(incoming.map((record) => record.id));
   const previousById = new Map(current.map((record) => [String(record?.id || ""), record]));
   const mergedIncoming = incoming.map((record) => ({
@@ -1015,6 +1102,8 @@ function normalizeAudioItems(value) {
       novelId: String(item?.novelId || "").trim(),
       platform: String(item?.platform || item?.novelPlatform || "").trim(),
       promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),
+      promotionCopy: String(item?.promotionCopy || "").trim(),
+      openingTitle: String(item?.openingTitle || item?.title || "").trim(),
       title: String(item?.title || "").trim()
     }))
     .filter((item) => item.id || item.path)

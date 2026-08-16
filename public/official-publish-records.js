@@ -39,7 +39,11 @@ function renderRows(records) {
   }
   rows.innerHTML = records.map((record) => {
     const batchIds = unique([...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []), ...(Array.isArray(record.taskIds) ? record.taskIds : []), record.batchId]);
-    return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td><strong>${escapeHtml(record.accountName || record.accountUsername || record.connectionId || record.assignedEnvId || "-")}</strong><br><span class="muted">${escapeHtml(record.accountUsername || record.connectionId || "")}</span></td><td>${escapeHtml(record.fileName || record.title || "-")}</td><td>${escapeHtml(record.autoTaskId || "手动提交")}</td><td>${escapeHtml(batchIds.join(", ") || "-")}</td><td>${escapeHtml(statusLabel(record.status))}</td><td>${escapeHtml(record.note || "已由 Signal Desk 接管后续发布")}</td></tr>`;
+    const openUrl = record.shareLink || record.videoUrl || "";
+    const canOpen = /tiktok\.com\/@[\w.]+\/video\/\d{10,}/i.test(openUrl);
+    const note = escapeHtml(record.note || "已由 Signal Desk 接管后续发布");
+    const openLink = canOpen ? `<a href="${escapeHtml(openUrl)}" target="_blank" rel="noreferrer">打开视频</a><br><span class="muted">${note}</span>` : note;
+    return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td><strong>${escapeHtml(record.accountName || record.accountUsername || record.connectionId || record.assignedEnvId || "-")}</strong><br><span class="muted">${escapeHtml(record.accountUsername || record.connectionId || "")}</span></td><td>${escapeHtml(record.fileName || record.title || "-")}</td><td>${escapeHtml(record.autoTaskId || "手动提交")}</td><td>${escapeHtml(batchIds.join(", ") || "-")}</td><td>${escapeHtml(statusLabel(record.status))}</td><td>${openLink}</td></tr>`;
   }).join("");
   status.textContent = `已读取 ${records.length} 条官方 API 本地发布记录。`;
 }

@@ -15,7 +15,7 @@ import {
   scoreClipReuse
 } from "./asset-library.js";
 import { resolveStorageDirs } from "./storage-paths.js";
-import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -174,27 +174,32 @@ async function main() {
       volume: clampNumber(payload.backgroundMusicVolume, 0, 1, 0.12)
     });
 
+    const audioFallback = fallbackForAudio(payload, audioPath);
     const novelBadge = payload.burnNovelBadge === false
       ? null
       : resolveNovelVideoBadge({
         workDir: storageDirs.workDir,
         audioPath,
-        fallback: fallbackForAudio(payload, audioPath)
+        fallback: audioFallback
       });
     if (payload.burnNovelBadge !== false && !novelBadge) {
       warnings.push(`未找到小说平台/推广码，已跳过角标：${path.basename(audioPath)}`);
     }
 
-    const openingTitle = payload.openingTitleEnabled
-      ? resolveOpeningHookTitle({
-        workDir: storageDirs.workDir,
-        audioPath,
-        fallbackTitle: payload.openingTitle || ""
-      })
-      : "";
+    const captionTitle = resolveOpeningHookTitle({
+      workDir: storageDirs.workDir,
+      audioPath,
+      fallbackTitle: audioFallback.openingTitle || payload.openingTitle || ""
+    });
+    const openingTitle = payload.openingTitleEnabled ? captionTitle : "";
     if (payload.openingTitleEnabled && !openingTitle) {
       warnings.push(`未找到开头标题，已跳过前3秒标题：${path.basename(audioPath)}`);
     }
+    const tiktokCaption = buildTikTokCaption({
+      promotionCopy: novelBadge?.promotionCopy || audioFallback.promotionCopy || "",
+      platform: novelBadge?.platform || audioFallback.platform || "",
+      audioTitle: path.basename(audioPath)
+    });
 
     muxAudioAndCaptions({
       inputVideo: concatVideo,
@@ -209,7 +214,8 @@ async function main() {
       subtitleAnimationMode,
       duration: audioDuration,
       novelBadge,
-      openingTitle
+      openingTitle,
+      quality: payload.quality || "fast"
     });
 
     const savedPath = saveDir ? copyToSaveDir(outputPath, saveDir) : "";
@@ -227,9 +233,12 @@ async function main() {
       audioName: path.basename(audioPath),
       audioIndex,
       variant,
-      novelId: novelBadge?.novelId || "",
-      novelPlatform: novelBadge?.platform || "",
-      novelPromotionCode: novelBadge?.promotionCode || "",
+      novelId: novelBadge?.novelId || audioFallback.novelId || "",
+      novelPlatform: novelBadge?.platform || audioFallback.platform || "",
+      novelPromotionCode: novelBadge?.promotionCode || audioFallback.promotionCode || "",
+      openingTitle: captionTitle,
+      promotionCopy: novelBadge?.promotionCopy || audioFallback.promotionCopy || "",
+      videoDesc: tiktokCaption,
       assetGroupId: group.id,
       assetGroupName: group.name || group.id,
       duration: audioDuration,
@@ -330,7 +339,10 @@ function normalizeAudioItems(value) {
       path: String(item?.path || item?.file || "").trim(),
       novelId: String(item?.novelId || "").trim(),
       platform: String(item?.platform || item?.novelPlatform || "").trim(),
-      promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim()
+      promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),
+      promotionCopy: String(item?.promotionCopy || "").trim(),
+      openingTitle: String(item?.openingTitle || item?.title || "").trim(),
+      title: String(item?.title || "").trim()
     }))
     .filter((item) => item.id || item.path);
 }
@@ -380,7 +392,9 @@ function fallbackForAudio(payload, audioPath) {
   return {
     novelId: hit?.novelId || payload.novelId,
     platform: hit?.platform || payload.novelPlatform,
-    promotionCode: hit?.promotionCode || payload.novelPromotionCode
+    promotionCode: hit?.promotionCode || payload.novelPromotionCode,
+    promotionCopy: hit?.promotionCopy || payload.promotionCopy || "",
+    openingTitle: hit?.openingTitle || hit?.title || payload.openingTitle || ""
   };
 }
 
@@ -686,7 +700,7 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "" }) {
+function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", quality = "fast" }) {
   const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath, "-t", String(duration)];
   const filters = [];
   const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
@@ -713,10 +727,29 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
     textFile: path.join(path.dirname(inputVideo), "novel-badge.txt")
   });
   if (badgeFilter) filters.push(badgeFilter);
-  if (filters.length) args.push("-vf", filters.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "22");
-  else args.push("-c:v", "copy");
-  args.push("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", outputPath);
+  const encode = resolveFinalEncode(quality);
+  if (filters.length) {
+    args.push(
+      "-vf", filters.join(","),
+      "-c:v", "libx264",
+      "-preset", encode.preset,
+      "-crf", encode.crf,
+      "-maxrate", encode.maxrate,
+      "-bufsize", encode.bufsize,
+      "-pix_fmt", "yuv420p",
+      "-profile:v", "high",
+      "-level", "4.1"
+    );
+  } else args.push("-c:v", "copy");
+  args.push("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:a", "aac", "-b:a", encode.audio, "-movflags", "+faststart", outputPath);
   run("ffmpeg", args);
+}
+
+function resolveFinalEncode(quality) {
+  if (quality === "quality") {
+    return { preset: "medium", crf: "20", maxrate: "5M", bufsize: "10M", audio: "160k" };
+  }
+  return { preset: "fast", crf: "22", maxrate: "4M", bufsize: "8M", audio: "128k" };
 }
 
 function resolveBadgeFont(fontFile) {

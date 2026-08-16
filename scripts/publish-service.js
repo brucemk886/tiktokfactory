@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createGeeLarkClient } from "./geelark-client.js";
+import { resolveTikTokCaption } from "./novel-video-badge.js";
 
 const DEFAULT_DAILY_LIMIT = 300;
 const DEFAULT_RETRY_DELAY_MS = 2 * 60 * 1000;
@@ -287,7 +288,12 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
       const task = await client.createTikTokVideoTasks({
         envIds: [item.envId],
         videoUrl: resourceUrl,
-        videoDesc: payload.videoDesc || "",
+        videoDesc: resolveTikTokCaption({
+          workDir,
+          video: item.video,
+          captionMode: payload.captionMode,
+          manualCaption: payload.videoDesc
+        }),
         scheduleAt: item.scheduleAt,
         planName: item.planName
       });
@@ -411,7 +417,12 @@ function makeRecord({ item, index, payload, account, batchId, resourceUrl = "", 
     accountName: account.name || "",
     accountSerialNo: account.serialNo || "",
     groupName: account.groupName || "",
-    videoDesc: payload.videoDesc || "",
+    videoDesc: resolveTikTokCaption({
+      workDir,
+      video,
+      captionMode: payload.captionMode,
+      manualCaption: payload.videoDesc
+    }),
     operationMeta: normalizeOperationMeta(payload.operationMeta || video.operationMeta),
     scheduleAt: item.scheduleAt,
     intervalMinutes: Number(payload.intervalMinutes) || 0,

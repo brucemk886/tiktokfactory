@@ -12,6 +12,77 @@ export function displayNovelPlatform(platform) {
   return PLATFORM_LABELS[value] || value;
 }
 
+export function novelPlatformHashtag(platform) {
+  const value = String(platform || "").replace(/\s+/g, "").trim();
+  return value ? `#${value}` : "";
+}
+
+const STORY_HASHTAGS = Object.freeze([
+  "#reddit",
+  "#redditstories",
+  "#storytime",
+  "#aita",
+  "#tifu",
+  "#truestory",
+  "#storytok",
+  "#dailystory",
+  "#realtalk",
+  "#relationshipstories"
+]);
+
+export function extractAudioCaptionText(audioName = "") {
+  return humanizeAudioTitle(audioName);
+}
+
+export function pickVariedHashtags({ seed = "", platform = "", count = 3 } = {}) {
+  const platformTag = novelPlatformHashtag(platform);
+  const wanted = Math.max(1, Math.min(4, Number(count) || 3));
+  const pool = STORY_HASHTAGS.filter((tag) => tag !== platformTag);
+  let hash = hashSeed(seed || platformTag || "caption");
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    hash = (Math.imul(hash, 1664525) + 1013904223) >>> 0;
+    const swap = hash % (index + 1);
+    [pool[index], pool[swap]] = [pool[swap], pool[index]];
+  }
+  return [platformTag, ...pool.slice(0, wanted)].filter(Boolean);
+}
+
+export function buildTikTokCaption({
+  openingTitle = "",
+  promotionCopy = "",
+  platform = "",
+  audioTitle = ""
+} = {}) {
+  const title = String(extractAudioCaptionText(audioTitle) || openingTitle || "").replace(/\s+/g, " ").trim();
+  const promo = String(promotionCopy || "").trim();
+  const tags = pickVariedHashtags({ seed: title || audioTitle, platform }).join(" ");
+  return [title, promo, tags].filter(Boolean).join("\n\n").slice(0, 2200);
+}
+
+export function resolveTikTokCaption({
+  workDir = "",
+  video = {},
+  fallback = {},
+  captionMode = "",
+  manualCaption = ""
+} = {}) {
+  const mode = String(captionMode || "").trim().toLowerCase();
+  const shared = String(manualCaption || "").slice(0, 2200);
+  if (mode === "manual") return shared;
+
+  const lookedUp = workDir ? lookupCaptionFields(workDir, video, fallback) : {};
+  const openingTitle = String(video?.openingTitle || lookedUp.openingTitle || "").trim();
+  const promotionCopy = String(video?.promotionCopy || lookedUp.promotionCopy || fallback.promotionCopy || "").trim();
+  const platform = String(video?.novelPlatform || video?.platform || lookedUp.platform || fallback.platform || "").trim();
+  const generated = buildTikTokCaption({
+    openingTitle,
+    promotionCopy,
+    platform,
+    audioTitle: video?.audioName || video?.title || ""
+  });
+  return generated || String(video?.videoDesc || "").trim().slice(0, 2200) || shared;
+}
+
 export function resolveOpeningHookTitle({
   workDir,
   audioPath = "",
@@ -78,6 +149,7 @@ export function resolveNovelVideoBadge({
     novelId: String(novel?.id || fallback.novelId || ""),
     platform,
     promotionCode,
+    promotionCopy: String(novel?.promotionCopy || fallback.promotionCopy || "").trim(),
     displayPlatform,
     lines: [promotionCode, displayPlatform].filter(Boolean)
   };
@@ -237,6 +309,47 @@ function firstHookLine(value) {
   if (!text) return "";
   const match = text.match(/^(.{8,72}?[.!?。！？])(?:\s|$)/);
   return (match?.[1] || text).slice(0, 72);
+}
+
+function lookupCaptionFields(workDir, video = {}, fallback = {}) {
+  const store = readNovelStore(workDir);
+  const audioItems = readAudioIndex(workDir);
+  const audio = matchAudioRecord(audioItems, video.audioPath || "", workDir)
+    || matchAudioByName(audioItems, video.audioName);
+  const script = findScriptForAudio(store, audio);
+  const novel = findNovelForAudio(store, audio) || findNovelById(store, video.novelId || fallback.novelId);
+  return {
+    openingTitle: String(script?.openingTitle || firstHookLine(script?.text) || "").trim(),
+    promotionCopy: String(novel?.promotionCopy || "").trim(),
+    platform: String(novel?.platform || "").trim()
+  };
+}
+
+function matchAudioByName(items, audioName) {
+  const name = String(audioName || "").trim();
+  if (!name) return null;
+  return items.find((item) => {
+    if (item.fileName && item.fileName === name) return true;
+    if (item.id && name.includes(item.id)) return true;
+    const targetName = item.targetAudioPath ? path.basename(item.targetAudioPath) : "";
+    return Boolean(targetName && targetName === name);
+  }) || null;
+}
+
+function stripAudioExtension(value) {
+  return String(value || "").replace(/\.[a-z0-9]{2,5}$/i, "").trim();
+}
+
+function humanizeAudioTitle(value) {
+  const raw = stripAudioExtension(path.basename(String(value || "")));
+  if (!raw) return "";
+  const afterId = raw.match(/_(\d{8,})_(.+)$/);
+  const source = afterId ? afterId[2] : raw.replace(/^\[music\]/i, "");
+  return source.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function hashSeed(value) {
+  return [...String(value)].reduce((hash, char) => (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0, 2166136261);
 }
 
 function findNovelById(store, novelId) {

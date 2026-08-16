@@ -3,13 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { buildTikTokCaption } from "./novel-video-badge.js";
 import {
   buildOfficialPublishRecords,
   normalizeOfficialAutoPublishResult,
   persistOfficialPublishRecords,
 } from "./auto-task-manager.js";
 
-test("official publish result records every video and account at video-based intervals", () => {
+test("official publish assigns each video to one account in round-robin", () => {
   const result = normalizeOfficialAutoPublishResult({
     id: "task-1",
     publish: {
@@ -25,23 +26,19 @@ test("official publish result records every video and account at video-based int
     batches: [{ id: "batch-1" }],
   });
 
-  assert.equal(result.results.length, 4);
+  assert.equal(result.results.length, 2);
   assert.deepEqual(result.results.map((item) => item.connectionId), [
     "connection-1",
     "connection-2",
-    "connection-1",
-    "connection-2",
   ]);
-  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_000, 1_900, 1_900]);
+  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_000]);
   assert.deepEqual(result.results.map((item) => item.batchIds), [
-    ["batch-1"],
-    ["batch-1"],
     ["batch-1"],
     ["batch-1"],
   ]);
   assert.deepEqual(result.summary, {
-    total: 4,
-    submitted: 4,
+    total: 2,
+    submitted: 2,
     pending: 0,
     failed: 0,
     needsCheck: 0,
@@ -50,15 +47,38 @@ test("official publish result records every video and account at video-based int
   assert.deepEqual(result.results.map((item) => item.status), [
     "submitted",
     "submitted",
-    "submitted",
-    "submitted",
   ]);
   assert.deepEqual(result.results.map((item) => item.message), [
     "已提交发布中台",
     "已提交发布中台",
-    "已提交发布中台",
-    "已提交发布中台",
   ]);
+});
+
+test("the same account gets later videos at the configured interval", () => {
+  const result = normalizeOfficialAutoPublishResult({
+    id: "task-interval",
+    publish: {
+      connectionIds: ["connection-1", "connection-2"],
+      scheduleAt: 1_000,
+      intervalMinutes: 15,
+    },
+    generatedVideos: [
+      { fileName: "video-1.mp4" },
+      { fileName: "video-2.mp4" },
+      { fileName: "video-3.mp4" },
+      { fileName: "video-4.mp4" },
+    ],
+  }, {
+    batches: [{ id: "batch-1" }],
+  });
+
+  assert.deepEqual(result.results.map((item) => item.connectionId), [
+    "connection-1",
+    "connection-2",
+    "connection-1",
+    "connection-2",
+  ]);
+  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_000, 1_900, 1_900]);
 });
 
 test("official publish results map to the shared publish-record schema", () => {
@@ -114,6 +134,35 @@ test("official publish results map to the shared publish-record schema", () => {
     scheduleAt: 2_000,
   });
   assert.deepEqual(records[0].taskIds, ["official-batch-1"]);
+  assert.equal(records[0].videoDesc, buildTikTokCaption({ audioTitle: "story-1.mp3" }));
+});
+
+test("official publish records keep the per-video auto caption", () => {
+  const task = {
+    id: "task-auto-caption",
+    name: "Auto caption task",
+    publish: {
+      captionMode: "auto",
+      connectionIds: ["connection-1"],
+      officialAccounts: [{ connectionId: "connection-1", name: "Creator One" }],
+      scheduleAt: 2_000,
+      videoDesc: "should not be used"
+    },
+    generatedVideos: [{
+      fileName: "video-1.mp4",
+      openingTitle: "She married my uncle",
+      promotionCopy: "Read the rest on Novel Master.",
+      novelPlatform: "NovelMaster",
+      videoDesc: "She married my uncle\n\nRead the rest on Novel Master.\n\n#NovelMaster"
+    }],
+  };
+  const normalized = normalizeOfficialAutoPublishResult(task, { batches: [{ id: "batch-auto" }] });
+  const records = buildOfficialPublishRecords(task, normalized.results, 123_456);
+  assert.equal(records[0].videoDesc, buildTikTokCaption({
+    openingTitle: "She married my uncle",
+    promotionCopy: "Read the rest on Novel Master.",
+    platform: "NovelMaster"
+  }));
 });
 
 test("official publish record persistence is idempotent", () => {

@@ -149,23 +149,34 @@
               <div id="officialAccountList" class="geelark-phone-list compact-phone-list"></div>
             </div>
             <div class="caption-editor">
-              <div class="caption-editor-toolbar">
+              <div class="caption-mode-bar">
                 <strong>TikTok 文案</strong>
-                <select id="captionPresetSelect" aria-label="选择已保存文案"><option value="">临时文案</option></select>
-                <button id="addCaptionPresetBtn" class="quiet-button" type="button">新增当前</button>
-                <button id="updateCaptionPresetBtn" class="quiet-button" type="button">更新</button>
-                <button id="deleteCaptionPresetBtn" class="quiet-button danger-quiet" type="button">删除</button>
+                <label class="caption-mode-option"><input type="radio" name="captionMode" value="auto" checked /><span>自动生成</span></label>
+                <label class="caption-mode-option"><input type="radio" name="captionMode" value="manual" /><span>手动生成</span></label>
               </div>
-              <textarea id="videoDesc" rows="2" placeholder="输入发布文案，支持 #tag"></textarea>
-              <span id="captionPresetStatus">可直接使用临时文案，或将常用标签保存到文案库。</span>
+              <div id="autoCaptionPanel" class="auto-caption-panel">
+                <p id="autoCaptionHint">每条成片用这条音频的文件名作文案，并轮换不同标签，不再共用同一句 #fyp。</p>
+                <pre id="autoCaptionPreview" class="auto-caption-preview" hidden></pre>
+              </div>
+              <div id="manualCaptionPanel" hidden>
+                <div class="caption-editor-toolbar">
+                  <strong>文案库</strong>
+                  <select id="captionPresetSelect" aria-label="选择已保存文案"><option value="">临时文案</option></select>
+                  <button id="addCaptionPresetBtn" class="quiet-button" type="button">新增当前</button>
+                  <button id="updateCaptionPresetBtn" class="quiet-button" type="button">更新</button>
+                  <button id="deleteCaptionPresetBtn" class="quiet-button danger-quiet" type="button">删除</button>
+                </div>
+                <textarea id="videoDesc" rows="2" placeholder="输入发布文案，支持 #tag"></textarea>
+                <span id="captionPresetStatus">可直接使用临时文案，或将常用标签保存到文案库。</span>
+              </div>
             </div>
             <div class="grid publish-grid">
               <label class="field"><span>起始发布时间</span><input id="scheduleAt" type="datetime-local" /></label>
-              <label class="field"><span>同账号间隔</span><div class="input-suffix"><input id="intervalMinutes" type="number" min="0" value="15" /><b>分钟</b></div></label>
+              <label class="field"><span>同账号间隔</span><div class="input-suffix"><input id="intervalMinutes" type="number" min="0" value="60" /><b>分钟</b></div></label>
               <label class="field"><span>单批调用上限</span><input id="batchLimit" type="number" min="1" value="300" /></label>
               <label class="field"><span>每日计划发布上限</span><input id="dailyLimit" type="number" value="300" readonly /></label>
             </div>
-            <p class="field-help">每日 300 条按 TikTok 计划发布日期分别计算，可以提前创建多天任务。</p>
+            <p id="publishPlanHint" class="field-help">生成条数会轮流分给所选账号，同一账号的下一条才按间隔排期。5 条视频 + 5 个账号 = 起始时间同时各发 1 条，不会把每条都发到所有账号。</p>
           </div>
         </section>
 

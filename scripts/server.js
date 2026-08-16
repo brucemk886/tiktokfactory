@@ -7,7 +7,7 @@ import { createGeeLarkClient } from "./geelark-client.js";
 import { discoverAssetLibraryGroups, getAssetUsageDashboard, getAssetGroup, getGeneratedVideoReuseDetail, listAssetGroups, readUsage } from "./asset-library.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { createPublishService } from "./publish-service.js";
-import { createAutoTaskManager } from "./auto-task-manager.js";
+import { createAutoTaskManager, planOfficialPublishJobs } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { createOpenAICompatibleModelProvider } from "./brain-model-provider.js";
@@ -29,8 +29,10 @@ import { createOfficialTikTokAccountGroups } from "./official-tiktok-account-gro
 import { homePathForUser, publicSidebarModules, SIDEBAR_MODULES } from "./sidebar-modules.js";
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { collectOfficialBatchIdsFromRecords, filterPublishRecordsBySource } from "./publish-record-sources.js";
+import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
+import { startFactoryCloudWorker } from "./factory-cloud-worker.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -2139,6 +2141,7 @@ server.listen(port, () => {
   console.log(`Podcast video maker is running: http://localhost:${port}`);
   officialPublishResultSync.start();
   officialAnalyticsArchive.start();
+  startFactoryCloudWorker({ root, workDir, mirrorTask: (task) => autoTaskManager.mirrorExternalTask(task) });
 });
 
 async function publishThroughOfficialTikTok(payload = {}) {
@@ -2149,48 +2152,126 @@ async function publishThroughOfficialTikTok(payload = {}) {
   if (!connectionIds.length) throw Object.assign(new Error("请先选择官方授权账号。"), { statusCode: 400 });
   const baseScheduleMs = Math.max(Date.now(), Number(payload.scheduleAt || 0) * 1000 || Date.now());
   const intervalMs = Math.max(0, Number(payload.intervalMinutes || 0) || 0) * 60_000;
-  const caption = String(payload.videoDesc || "").slice(0, 2200);
-  const jobs = [];
-
-  for (const [videoIndex, video] of videos.entries()) {
-    const fileName = path.basename(String(video.fileName || "video.mp4"));
+  const planned = planOfficialPublishJobs({
+    videos,
+    connectionIds,
+    scheduleAt: baseScheduleMs,
+    interval: intervalMs,
+    assignment: payload.accountAssignment === "round-robin" ? "round-robin" : "all-accounts"
+  });
+  const jobs = planned.map((job) => {
+    const fileName = path.basename(String(job.video?.fileName || "video.mp4"));
     const filePath = path.resolve(outputDir, fileName);
     if (!isPathInside(filePath, outputDir) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
       throw Object.assign(new Error(`找不到待发布视频：${fileName}`), { statusCode: 404 });
     }
-    for (const connectionId of connectionIds) {
-      jobs.push({ videoIndex, connectionId, fileName, filePath, video });
-    }
-  }
+    return { ...job, fileName, filePath };
+  });
 
-  const batches = [];
-  for (let offset = 0; offset < jobs.length; offset += 100) {
-    const chunk = jobs.slice(offset, offset + 100);
+  const report = typeof payload.onProgress === "function" ? payload.onProgress : () => {};
+  const saveCheckpoint = typeof payload.onCheckpoint === "function" ? payload.onCheckpoint : () => {};
+  const waveSize = Math.max(1, Math.min(20, Number(payload.officialWaveSize) || 10));
+  const uploadConcurrency = Math.max(1, Math.min(4, Number(payload.officialUploadConcurrency) || 3));
+  const checkpoint = payload.checkpoint && typeof payload.checkpoint === "object" ? payload.checkpoint : {};
+  const submittedKeys = new Set(Array.isArray(checkpoint.submittedKeys) ? checkpoint.submittedKeys : []);
+  const savedAssets = checkpoint.assets && typeof checkpoint.assets === "object" ? { ...checkpoint.assets } : {};
+  const batches = Array.isArray(checkpoint.batches) ? [...checkpoint.batches] : [];
+  const pending = jobs
+    .map((job, index) => ({
+      job,
+      index,
+      ref: `${job.fileName}:${job.connectionId}:${index}`.slice(0, 160)
+    }))
+    .filter((item) => !submittedKeys.has(item.ref));
+
+  for (let offset = 0; offset < pending.length; offset += waveSize) {
+    const chunk = pending.slice(offset, offset + waveSize);
     const assets = new Map();
-    for (const job of chunk) {
-      if (assets.has(job.filePath)) continue;
-      assets.set(job.filePath, await privateTikTokAnalytics.uploadPublishAsset({
-        filePath: job.filePath,
-        fileName: job.fileName,
-        contentType: publishContentType(job.fileName),
-      }));
+    const toUpload = [];
+    const queuedPaths = new Set();
+    for (const item of chunk) {
+      const cached = savedAssets[item.job.filePath];
+      if (cached?.assetKey) {
+        assets.set(item.job.filePath, cached);
+        continue;
+      }
+      if (assets.has(item.job.filePath) || queuedPaths.has(item.job.filePath)) continue;
+      queuedPaths.add(item.job.filePath);
+      toUpload.push(item);
     }
-    const externalId = `local-factory-${Date.now()}-${Math.floor(offset / 100) + 1}`;
+    const readyBefore = assets.size;
+    let finishedUploads = 0;
+    await runPool(toUpload, uploadConcurrency, async (item) => {
+      const doneCount = submittedKeys.size + readyBefore + finishedUploads + 1;
+      const megabytes = Math.max(0.1, fs.statSync(item.job.filePath).size / 1024 / 1024);
+      report({
+        phase: "uploading",
+        current: doneCount,
+        total: jobs.length,
+        message: `正在并行上传成片（同时 ${uploadConcurrency} 条），第 ${doneCount}/${jobs.length} 条（约 ${megabytes.toFixed(0)}MB）...`
+      });
+      const uploaded = await privateTikTokAnalytics.uploadPublishAsset({
+        filePath: item.job.filePath,
+        fileName: item.job.fileName,
+        contentType: publishContentType(item.job.fileName),
+        onRetry: ({ attempt, attempts, status, delayMs }) => report({
+          phase: "uploading",
+          current: doneCount,
+          total: jobs.length,
+          message: `第 ${doneCount}/${jobs.length} 条上传遇到 HTTP ${status || "网络错误"}，${Math.round(delayMs / 1000)} 秒后重试（${attempt}/${attempts - 1}）...`
+        })
+      });
+      assets.set(item.job.filePath, uploaded);
+      savedAssets[item.job.filePath] = {
+        assetKey: uploaded.assetKey,
+        contentType: uploaded.contentType || publishContentType(item.job.fileName),
+        fileSize: Number(uploaded.fileSize || fs.statSync(item.job.filePath).size)
+      };
+      finishedUploads += 1;
+      saveCheckpoint({
+        submittedKeys: Array.from(submittedKeys),
+        assets: savedAssets,
+        batches
+      });
+    });
+    report({
+      phase: "creating_batch",
+      current: submittedKeys.size + chunk.length,
+      total: jobs.length,
+      message: `正在提交第 ${Math.floor(offset / waveSize) + 1} 波（${chunk.length} 条）到发布中台...`
+    });
+    const waveNumber = batches.length + 1;
     const result = await privateTikTokAnalytics.createPublishBatch({
-      externalId,
+      externalId: `local-factory-${String(payload.taskId || payload.externalId || Date.now()).slice(0, 80)}-w${waveNumber}`,
       name: String(payload.name || "Local Factory 手动发布").slice(0, 160),
-      items: chunk.map((job, index) => {
-        const asset = assets.get(job.filePath);
+      onRetry: ({ attempt, attempts, status, delayMs }) => report({
+        phase: "creating_batch",
+        current: submittedKeys.size + chunk.length,
+        total: jobs.length,
+        message: `第 ${waveNumber} 波建批次遇到 HTTP ${status || "网络错误"}，${Math.round(delayMs / 1000)} 秒后重试（${attempt}/${attempts - 1}）...`
+      }),
+      items: chunk.map((item) => {
+        const asset = assets.get(item.job.filePath);
         return {
-          externalRef: `${job.fileName}:${job.connectionId}:${offset + index}`.slice(0, 160),
-          connectionId: job.connectionId,
+          externalRef: item.ref,
+          connectionId: item.job.connectionId,
           assetKey: asset.assetKey,
-          fileName: job.fileName,
-          contentType: asset.contentType || publishContentType(job.fileName),
-          fileSize: Number(asset.fileSize || fs.statSync(job.filePath).size),
-          scheduleAt: baseScheduleMs + job.videoIndex * intervalMs,
+          fileName: item.job.fileName,
+          contentType: asset.contentType || publishContentType(item.job.fileName),
+          fileSize: Number(asset.fileSize || fs.statSync(item.job.filePath).size),
+          scheduleAt: item.job.scheduleAt,
           postInfo: {
-            caption,
+            caption: resolveTikTokCaption({
+              workDir,
+              video: item.job.video,
+              captionMode: payload.captionMode,
+              manualCaption: payload.videoDesc,
+              fallback: {
+                novelId: item.job.video?.novelId || payload.novelId,
+                platform: item.job.video?.novelPlatform || payload.novelPlatform,
+                promotionCopy: item.job.video?.promotionCopy
+              }
+            }),
             privacy_level: "PUBLIC_TO_EVERYONE",
             disable_comment: false,
             disable_duet: false,
@@ -2201,9 +2282,31 @@ async function publishThroughOfficialTikTok(payload = {}) {
       }),
     });
     batches.push(result.batch);
+    for (const item of chunk) {
+      submittedKeys.add(item.ref);
+      delete savedAssets[item.job.filePath];
+    }
+    saveCheckpoint({
+      submittedKeys: Array.from(submittedKeys),
+      assets: savedAssets,
+      batches
+    });
   }
 
   return { ok: true, provider: "official", taskCount: jobs.length, batchCount: batches.length, batches };
+}
+
+async function runPool(items, concurrency, worker) {
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, items.length || 1));
+  let next = 0;
+  async function consume() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => consume()));
 }
 
 function publishContentType(fileName) {
