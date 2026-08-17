@@ -221,7 +221,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
 
     if (previous?.status === "submitted") {
       const taskIds = Array.isArray(previous.taskIds) ? previous.taskIds : [];
-      const record = makeRecord({ item, index, payload, account, batchId, taskIds, resourceUrl: previous.resourceUrl || "", status: taskIds.length ? "submitted" : "needs_check", note: "skipped-safety-ledger" });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, taskIds, resourceUrl: previous.resourceUrl || "", status: taskIds.length ? "submitted" : "needs_check", note: "skipped-safety-ledger" });
       upsertRecord(recordsPath, record);
       return taskIds.length
         ? resultFor(item, record, "skipped", "安全账本已记录该任务提交成功，已跳过重复调用。", false)
@@ -230,21 +230,21 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
 
     if (remote || local?.taskIds?.length) {
       const taskIds = remote?.id ? [remote.id] : local.taskIds;
-      const record = makeRecord({ item, index, payload, account, batchId, taskIds, resourceUrl: local?.resourceUrl || "", status: "submitted", note: "skipped-existing-task" });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, taskIds, resourceUrl: local?.resourceUrl || "", status: "submitted", note: "skipped-existing-task" });
       upsertRecord(recordsPath, record);
       writeEntry(safetyPath, item.dedupeKey, { status: "submitted", taskIds, batchId, updatedAt: Date.now() });
       return resultFor(item, record, "skipped", "GeeLark 已存在相同任务，已安全跳过。", false);
     }
 
     if ((previous?.status === "submitting" || previous?.status === "needs_check") && !context.manual) {
-      const record = makeRecord({ item, index, payload, account, batchId, status: "needs_check", note: "previous-attempt-status-uncertain" });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, status: "needs_check", note: "previous-attempt-status-uncertain" });
       upsertRecord(recordsPath, record);
       return resultFor(item, record, "needs_check", "上一次提交状态不明确，已停止自动重试。", false);
     }
 
     const attempts = Number(previous?.attempts) || 0;
     if (attempts >= 2 && !context.manual) {
-      const record = makeRecord({ item, index, payload, account, batchId, status: "failed", note: "automatic-retry-limit-reached", attempts });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, status: "failed", note: "automatic-retry-limit-reached", attempts });
       upsertRecord(recordsPath, record);
       return resultFor(item, record, "failed", "已达到一次自动重试上限，转入人工处理。", false);
     }
@@ -252,7 +252,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
     const isFirstScheduledAttempt = attempts === 0;
     const limitError = getLimitError({ state, recordsPath, dailyLimit, batchLimit, batchAttempts: getBatchAttempts(), scheduleAt: item.scheduleAt, checkDailyLimit: isFirstScheduledAttempt });
     if (limitError) {
-      const record = makeRecord({ item, index, payload, account, batchId, status: "failed", note: `safety-limit: ${limitError}`, attempts });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, status: "failed", note: `safety-limit: ${limitError}`, attempts });
       upsertRecord(recordsPath, record);
       appendAudit(auditPath, { event: "safety_limit_blocked", batchId, dedupeKey: item.dedupeKey, error: limitError });
       return resultFor(item, record, "failed", limitError, false);
@@ -278,7 +278,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
     } catch (error) {
       const message = errorMessage(error);
       writeEntry(safetyPath, item.dedupeKey, { status: "failed", attempts: nextAttempt, batchId, phase: "upload", error: message, updatedAt: Date.now() });
-      const record = makeRecord({ item, index, payload, account, batchId, resourceUrl, status: "failed", note: `upload-failed: ${message}`, attempts: nextAttempt });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, resourceUrl, status: "failed", note: `upload-failed: ${message}`, attempts: nextAttempt });
       upsertRecord(recordsPath, record);
       appendAudit(auditPath, { event: "upload_failed", batchId, dedupeKey: item.dedupeKey, error: message });
       return resultFor(item, record, "failed", `上传失败：${message}`, !isRetry && nextAttempt < 2);
@@ -300,7 +300,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
       const taskIds = task?.taskIds || task?.data?.taskIds || [];
       if (!taskIds.length) throw new Error("GeeLark 已响应但没有返回任务 ID，已转入待核实。");
       writeEntry(safetyPath, item.dedupeKey, { status: "submitted", attempts: nextAttempt, batchId, taskIds, resourceUrl, updatedAt: Date.now() });
-      const record = makeRecord({ item, index, payload, account, batchId, resourceUrl, taskIds, status: "submitted", attempts: nextAttempt });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, resourceUrl, taskIds, status: "submitted", attempts: nextAttempt });
       upsertRecord(recordsPath, record);
       appendAudit(auditPath, { event: "submit_success", batchId, dedupeKey: item.dedupeKey, taskIds });
       return resultFor(item, record, "submitted", "已提交 GeeLark。", false);
@@ -310,7 +310,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
       const status = definiteFailure ? "failed" : "needs_check";
       const note = definiteFailure ? `task-add-failed: ${message}` : `task-add-uncertain: ${message}`;
       writeEntry(safetyPath, item.dedupeKey, { status, attempts: nextAttempt, batchId, phase: "task_add", resourceUrl, error: message, updatedAt: Date.now() });
-      const record = makeRecord({ item, index, payload, account, batchId, resourceUrl, status, note, attempts: nextAttempt });
+      const record = makeRecord({ workDir, item, index, payload, account, batchId, resourceUrl, status, note, attempts: nextAttempt });
       upsertRecord(recordsPath, record);
       appendAudit(auditPath, { event: definiteFailure ? "submit_failed" : "submit_uncertain", batchId, dedupeKey: item.dedupeKey, error: message });
       if (definiteFailure) return resultFor(item, record, "failed", `创建任务失败：${message}`, !isRetry && nextAttempt < 2);
@@ -388,7 +388,7 @@ function findLocalRecord(recordsPath, item) {
   ));
 }
 
-function makeRecord({ item, index, payload, account, batchId, resourceUrl = "", taskIds = [], status, note = "", attempts = 0 }) {
+function makeRecord({ item, index, payload, account, batchId, resourceUrl = "", taskIds = [], status, note = "", attempts = 0, workDir = "" }) {
   const video = item.video || {};
   return {
     id: item.dedupeKey,
