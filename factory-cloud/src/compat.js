@@ -1,6 +1,6 @@
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { errorJson, json, now, readJson, safeId } from "./http.js";
-import { applyJobToTask, cancelJob, enqueueJob, getJob, publicJob } from "./jobs.js";
+import { applyJobToTask, cancelJob, enqueueJob, getJob, isDeletedTask, publicJob } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 
@@ -68,6 +68,7 @@ export async function handleCompat(request, env, url, session) {
       });
       const live = [];
       for (const task of tasks) {
+        if (isDeletedTask(task)) continue;
         if (task.generationJobId) {
           const job = await getJob(db, task.generationJobId);
           live.push(job ? applyJobToTask(task, job) : task);
@@ -90,6 +91,10 @@ export async function handleCompat(request, env, url, session) {
           return errorJson("请选择素材组，或填写工人机上的视频素材目录。", 400);
         }
       }
+      const expectedVideoCount = Math.max(
+        Number(generation.totalVideos) || 0,
+        Array.isArray(generation.audioItems) ? generation.audioItems.length : 0
+      );
       const task = {
         id: safeId(`task-${now()}`),
         name: String(payload.name || payload.taskType || "云端任务"),
@@ -97,7 +102,8 @@ export async function handleCompat(request, env, url, session) {
         status: "queued",
         phase: "queued",
         message: "已下发本机混剪队列，等待 Local Factory 拉单。",
-        progress: { current: 0, total: 0, percent: 1 },
+        expectedVideoCount,
+        progress: { current: 0, total: expectedVideoCount, percent: 1 },
         generation,
         publish,
         generatedVideos: [],
@@ -144,9 +150,11 @@ export async function handleCompat(request, env, url, session) {
     if (method === "DELETE") {
       task.status = "deleted";
       task.deleted = 1;
+      task.deletedAt = now();
+      task.updatedAt = now();
       if (task.generationJobId) await cancelJob(db, task.generationJobId);
       await kvSet(db, "auto-tasks", tasks);
-      return json({ ok: true });
+      return json({ ok: true, task });
     }
     if (method === "POST" && taskMatch[2] === "cancel") {
       if (task.generationJobId) await cancelJob(db, task.generationJobId);

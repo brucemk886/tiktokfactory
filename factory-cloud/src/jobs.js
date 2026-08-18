@@ -161,6 +161,40 @@ async function handleWorkerApi(request, env, url) {
   const method = request.method;
   const pathname = url.pathname;
 
+  if (method === "POST" && pathname === "/api/worker/tasks/sync") {
+    const body = await readJson(request);
+    const patches = Array.isArray(body.tasks) ? body.tasks : (body.taskId || body.id ? [body] : []);
+    if (!patches.length) return json({ ok: true, updated: 0 });
+    const tasks = await kvGet(env.DB, "auto-tasks", []);
+    let updated = 0;
+    for (const patch of patches) {
+      const taskId = String(patch.taskId || patch.id || "").trim();
+      const index = tasks.findIndex((item) => item.id === taskId);
+      if (index < 0 || isDeletedTask(tasks[index])) continue;
+      const incoming = Array.isArray(patch.generatedVideos) ? patch.generatedVideos : [];
+      const generatedVideos = mergeGeneratedVideos(tasks[index].generatedVideos, incoming);
+      const expectedVideoCount = expectedTaskVideoCount({
+        ...tasks[index],
+        expectedVideoCount: patch.expectedVideoCount || tasks[index].expectedVideoCount
+      }, { progressTotal: patch.progressTotal }, generatedVideos);
+      tasks[index] = {
+        ...tasks[index],
+        expectedVideoCount,
+        generatedVideos,
+        failedVideoCount: Number(patch.failedVideoCount || tasks[index].failedVideoCount || 0),
+        progress: {
+          current: Math.max(Number(tasks[index].progress?.current) || 0, generatedVideos.length),
+          total: expectedVideoCount,
+          percent: Number(patch.percent || tasks[index].progress?.percent || 0)
+        },
+        updatedAt: now()
+      };
+      updated += 1;
+    }
+    if (updated) await kvSet(env.DB, "auto-tasks", compactAutoTasks(tasks));
+    return json({ ok: true, updated });
+  }
+
   if (method === "POST" && pathname === "/api/worker/sync") {
     const body = await readJson(request);
     const stamp = now();
@@ -220,12 +254,14 @@ async function handleWorkerApi(request, env, url) {
       Math.max(0, Math.min(100, Number(body.percent) || 0)),
       String(body.message || "").slice(0, 500),
       "running",
-      JSON.stringify(body.result || {}),
+      JSON.stringify(slimJobResult(body.result)),
       stamp,
       safeId(decodeURIComponent(progressMatch[1]))
     ).run();
     const job = await getJob(env.DB, decodeURIComponent(progressMatch[1]));
-    if (job) await syncAutoTaskFromJob(env.DB, job);
+    if (job) await syncAutoTaskFromJob(env.DB, job).catch((error) => {
+      console.error("syncAutoTaskFromJob", error?.message || error);
+    });
     return json({ ok: true });
   }
 
@@ -234,6 +270,7 @@ async function handleWorkerApi(request, env, url) {
     const body = await readJson(request);
     const stamp = now();
     const failed = Boolean(body.error);
+    const rawResult = body.result && typeof body.result === "object" ? body.result : {};
     await env.DB.prepare(`
       UPDATE factory_jobs
       SET status = ?, percent = ?, message = ?, result_json = ?, error = ?, completed_at = ?, updated_at = ?
@@ -242,19 +279,27 @@ async function handleWorkerApi(request, env, url) {
       failed ? "failed" : "done",
       failed ? Number(body.percent || 0) : 100,
       String(body.message || (failed ? body.error : "完成")).slice(0, 500),
-      JSON.stringify(body.result || {}),
+      JSON.stringify(persistableJobResult(rawResult)),
       String(body.error || ""),
       stamp,
       stamp,
       safeId(decodeURIComponent(completeMatch[1]))
     ).run();
     const job = await getJob(env.DB, decodeURIComponent(completeMatch[1]));
-    if (job) await syncAutoTaskFromJob(env.DB, job);
-    const result = parseJson(job?.result_json, {});
-    const incoming = Array.isArray(result.officialPublishRecords) ? result.officialPublishRecords : [];
+    if (job) {
+      await syncAutoTaskFromJob(env.DB, job).catch((error) => {
+        console.error("syncAutoTaskFromJob", error?.message || error);
+      });
+    }
+    const result = persistableJobResult(rawResult);
+    const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
     if (incoming.length) {
-      const existing = await kvGet(env.DB, "official-publish-records", []);
-      await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, incoming));
+      try {
+        const existing = await kvGet(env.DB, "official-publish-records", []);
+        await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, incoming).slice(0, 1200));
+      } catch (error) {
+        console.error("official-publish-records", error?.message || error);
+      }
     }
     if (job?.type === "audio-generate" && Array.isArray(result.items) && result.items.length) {
       await attachAudioGenerateResults(env.DB, result.items);
@@ -306,16 +351,46 @@ function parseJson(value, fallback) {
   }
 }
 
+export function isDeletedTask(task) {
+  return Boolean(task) && (Number(task.deleted) === 1 || task.status === "deleted");
+}
+
+export function mergeGeneratedVideos(existing, incoming) {
+  const current = Array.isArray(existing) ? existing.filter(Boolean) : [];
+  const next = Array.isArray(incoming) ? incoming.filter(Boolean) : [];
+  if (!next.length) return current;
+  if (!current.length || next.length >= current.length) return next;
+  const seen = new Set(current.map((video) => String(video.fileName || video.outputPath || "").trim()).filter(Boolean));
+  const extras = next.filter((video) => {
+    const key = String(video.fileName || video.outputPath || "").trim();
+    return key && !seen.has(key);
+  });
+  return extras.length ? current.concat(extras) : current;
+}
+
+export function expectedTaskVideoCount(task = {}, result = {}, videos = []) {
+  return Math.max(
+    Number(task.expectedVideoCount) || 0,
+    Number(task.generation?.totalVideos) || 0,
+    Number(result.progressTotal) || 0,
+    Number(task.progress?.total) || 0,
+    Array.isArray(videos) ? videos.length : 0
+  );
+}
+
 export function applyJobToTask(task, job) {
   if (!task || !job) return task;
+  if (isDeletedTask(task)) {
+    return { ...task, deleted: 1, status: "deleted" };
+  }
   const result = parseJson(job.result_json, {});
   const cancelled = job.status === "cancelled";
   const publishOnly = Boolean(result.publishOnly) || job.type === "official-publish";
-  const generatedVideos = !publishOnly && Array.isArray(result.results)
-    ? result.results
-    : (task.generatedVideos || []);
+  const incomingVideos = Array.isArray(result.results) ? result.results : [];
+  const generatedVideos = mergeGeneratedVideos(task.generatedVideos, incomingVideos);
   const publishResults = Array.isArray(result.publishResults) ? result.publishResults : (task.publishResults || []);
-  const generatedCount = Number(result.progressCurrent || generatedVideos.length || 0);
+  const expectedVideoCount = expectedTaskVideoCount(task, result, generatedVideos);
+  const generatedCount = Math.max(Number(result.progressCurrent) || 0, generatedVideos.length);
   const publishFailed = Boolean(result.publishFailed);
   const generationFailed = (job.status === "failed" || Boolean(job.error)) && !generatedVideos.length && !publishOnly;
   const done = job.status === "done" && !publishFailed;
@@ -345,6 +420,7 @@ export function applyJobToTask(task, job) {
   return {
     ...task,
     generationJobId: job.id,
+    expectedVideoCount,
     status,
     phase,
     message: job.message || task.message || "",
@@ -352,7 +428,7 @@ export function applyJobToTask(task, job) {
     publishError: result.publishError || (publishFailed ? job.error : "") || "",
     progress: {
       current: generatedCount,
-      total: Number(result.progressTotal || task.progress?.total || 0),
+      total: expectedVideoCount,
       percent: Number(job.percent || 0)
     },
     publishProgress: result.publishProgress || task.publishProgress || null,
@@ -373,7 +449,48 @@ async function syncAutoTaskFromJob(db, job) {
   if (!taskId) return;
   const tasks = await kvGet(db, "auto-tasks", []);
   const index = tasks.findIndex((item) => item.id === taskId);
-  if (index < 0) return;
+  if (index < 0 || isDeletedTask(tasks[index])) return;
   tasks[index] = applyJobToTask(tasks[index], job);
-  await kvSet(db, "auto-tasks", tasks);
+  await kvSet(db, "auto-tasks", compactAutoTasks(tasks));
+}
+
+function slimJobResult(value) {
+  const result = value && typeof value === "object" ? value : {};
+  const videos = Array.isArray(result.results) ? result.results : [];
+  return {
+    publishOnly: Boolean(result.publishOnly),
+    progressCurrent: Number(result.progressCurrent || videos.length || 0),
+    progressTotal: Number(result.progressTotal || 0),
+    publishProgress: result.publishProgress || null,
+    publishFailed: Boolean(result.publishFailed),
+    publishError: String(result.publishError || "").slice(0, 400),
+    results: videos.slice(0, 80).map((video) => ({
+      fileName: String(video?.fileName || ""),
+      outputPath: String(video?.outputPath || video?.path || "")
+    }))
+  };
+}
+
+function persistableJobResult(value) {
+  const result = value && typeof value === "object" ? value : {};
+  const slim = slimJobResult(result);
+  if (Array.isArray(result.items)) slim.items = result.items;
+  if (Array.isArray(result.publishResults)) slim.publishResults = result.publishResults.slice(0, 80);
+  if (result.publishSummary) slim.publishSummary = result.publishSummary;
+  if (Array.isArray(result.warnings)) slim.warnings = result.warnings.slice(0, 12);
+  slim.failedVideoCount = Number(result.failedVideoCount || 0);
+  return slim;
+}
+
+function compactAutoTasks(tasks) {
+  return (Array.isArray(tasks) ? tasks : []).slice(0, 200).map((task) => ({
+    ...task,
+    generatedVideos: (Array.isArray(task.generatedVideos) ? task.generatedVideos : []).slice(0, 80).map((video) => ({
+      fileName: String(video?.fileName || ""),
+      outputPath: String(video?.outputPath || video?.path || ""),
+      duration: video?.duration
+    })),
+    publishResults: (Array.isArray(task.publishResults) ? task.publishResults : []).slice(0, 80),
+    officialPublishRecords: undefined
+  }));
 }

@@ -785,7 +785,7 @@ function normalizePublishPayload(value = {}) {
     accounts: Array.isArray(value.accounts) ? value.accounts : [],
     connectionIds: Array.isArray(value.connectionIds) ? value.connectionIds.map(String).filter(Boolean) : [],
     officialAccounts: Array.isArray(value.officialAccounts) ? value.officialAccounts : [],
-    accountAssignment: String(value.accountAssignment || "").trim().toLowerCase() === "all-accounts" ? "all-accounts" : "round-robin",
+    accountAssignment: resolveOfficialAccountAssignment(value.accountAssignment),
     captionMode: String(value.captionMode || "").trim().toLowerCase() === "manual" ? "manual" : "auto",
     videoDesc: String(value.videoDesc || ""),
     scheduleAt: Number(value.scheduleAt) || Math.floor(Date.now() / 1000),
@@ -873,6 +873,10 @@ function getTaskSchedulePlan(task) {
   return buildSchedulePlan({ videoCount: videoCount, envIds: accountIds, scheduleAt: task.publish.scheduleAt, intervalMinutes: task.publish.intervalMinutes });
 }
 
+export function resolveOfficialAccountAssignment(value) {
+  return String(value || "").trim().toLowerCase() === "all-accounts" ? "all-accounts" : "round-robin";
+}
+
 export function planOfficialPublishJobs({
   videos = [],
   connectionIds = [],
@@ -880,6 +884,7 @@ export function planOfficialPublishJobs({
   interval = 0,
   assignment = "round-robin"
 } = {}) {
+  assignment = resolveOfficialAccountAssignment(assignment);
   const accounts = Array.from(new Set((Array.isArray(connectionIds) ? connectionIds : []).map((value) => String(value || "").trim()).filter(Boolean)));
   const list = Array.isArray(videos) ? videos : [];
   if (!list.length || !accounts.length) return [];

@@ -277,18 +277,24 @@ async function finishCloudJob(context, job, jobId, local, failed) {
 
 async function submitOfficialPublish(context, job, jobId, local) {
   const videos = Array.isArray(local.results) ? local.results : [];
-  await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
-    method: "POST",
-    body: {
-      percent: 90,
-      message: "正在提交 TikTok 官方发布...",
-      result: {
-        ...local,
-        publishOnly: Boolean(local.publishOnly),
-        publishProgress: { current: 0, total: videos.length, percent: 0 }
-      }
-    }
+  const slimProgress = (progress) => ({
+    publishOnly: Boolean(local.publishOnly),
+    progressCurrent: videos.length,
+    progressTotal: videos.length,
+    publishProgress: progress
   });
+  try {
+    await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: "POST",
+      body: {
+        percent: 90,
+        message: "正在提交 TikTok 官方发布...",
+        result: slimProgress({ current: 0, total: videos.length, percent: 0 })
+      }
+    });
+  } catch (error) {
+    console.error("回写发布进度失败：", error.message);
+  }
   return context.publishOfficial({
     ...(job.payload.publish || {}),
     videos,
@@ -300,7 +306,7 @@ async function submitOfficialPublish(context, job, jobId, local) {
         body: {
           percent: 90,
           message: progress.message || "正在提交 TikTok 官方发布...",
-          result: { ...local, publishOnly: Boolean(local.publishOnly), publishProgress: progress }
+          result: slimProgress(progress)
         }
       }).catch((error) => console.error("回写发布进度失败：", error.message));
     }

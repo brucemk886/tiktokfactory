@@ -172,6 +172,7 @@ async function loadTasks() {
     $("#safetySummary").textContent = `今日已提交排期 ${safety.scheduledToday || 0}/${safety.defaultDailyLimit || 300}，待核实 ${safety.uncertainCount || 0}，成片保留 ${data.worker?.retentionHours || 48} 小时`;
     const allTasks = data.tasks || [];
     const visibleTasks = allTasks.filter((task) => {
+      if (Number(task.deleted) === 1 || task.status === "deleted") return false;
       if (task.taskType === "psychology" || task.taskType === "schulte") return false;
       const provider = task.publish?.provider || "geelark";
       return publishChannel === "official" ? provider === "official" : provider !== "official";
@@ -186,6 +187,13 @@ async function loadTasks() {
     taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "读取任务失败。")}</div>`;
   }
   if (!document.hidden) pollTimer = setTimeout(loadTasks, 3000);
+}
+
+function expectedTaskVideos(task) {
+  return Number(task?.expectedVideoCount)
+    || Number(task?.generation?.totalVideos)
+    || Number(task?.progress?.total)
+    || 0;
 }
 
 function renderTasks(tasks, allTasks = tasks) {
@@ -243,7 +251,7 @@ function renderTasks(tasks, allTasks = tasks) {
       ${groupHtml}
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
-      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${task.expectedVideoCount || task.generatedVideos?.length || 0} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>${task.publish?.provider === "official" ? "已提交中台" : "发布成功"} ${task.publishSummary?.submitted || 0}</span><span>处理中 ${task.publishSummary?.pending || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
+      <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${expectedTaskVideos(task)} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>${task.publish?.provider === "official" ? "已提交中台" : "发布成功"} ${task.publishSummary?.submitted || 0}</span><span>处理中 ${task.publishSummary?.pending || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
       ${scheduleHtml}${renderTaskPreviews(task)}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;
   }).join("");
@@ -327,7 +335,7 @@ function createTaskRenderKey(tasks, allTasks = []) {
     error: task.error,
     progress: task.progress,
     publishProgress: task.publishProgress,
-    expectedVideoCount: task.expectedVideoCount,
+    expectedVideoCount: expectedTaskVideos(task),
     failedVideoCount: task.failedVideoCount,
     generatedVideoCount: task.generatedVideos?.length || 0,
     generatedVideoKeys: (task.generatedVideos || []).map((item) => item.videoUrl || item.fileName || ""),
@@ -799,7 +807,7 @@ function buildTaskScheduleLines(task) {
   const stored = (task.schedulePlan || []).flatMap((day) => Array.isArray(day.times) ? day.times : []);
   if (stored.length) return stored.sort((a, b) => Number(a.scheduleAt) - Number(b.scheduleAt));
   if (!task.publish?.autoPublish) return [];
-  const total = Number(task.expectedVideoCount) || Number(task.generatedVideos?.length) || 0;
+  const total = expectedTaskVideos(task);
   const accountCount = task.publish?.provider === "official"
     ? (Array.isArray(task.publish.connectionIds) ? task.publish.connectionIds.length : 0)
     : (Array.isArray(task.publish.envIds) ? task.publish.envIds.length : 0);

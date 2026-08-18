@@ -9,7 +9,7 @@ import { discoverAudioLibraryGroups, resolveAudioLibraryRoot, resolveTargetAudio
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { createPublishService } from "./publish-service.js";
-import { createAutoTaskManager, planOfficialPublishJobs } from "./auto-task-manager.js";
+import { createAutoTaskManager, planOfficialPublishJobs, resolveOfficialAccountAssignment } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { createOpenAICompatibleModelProvider } from "./brain-model-provider.js";
@@ -2410,12 +2410,13 @@ async function publishThroughOfficialTikTok(payload = {}) {
   if (!connectionIds.length) throw Object.assign(new Error("请先选择官方授权账号。"), { statusCode: 400 });
   const baseScheduleMs = Math.max(Date.now(), Number(payload.scheduleAt || 0) * 1000 || Date.now());
   const intervalMs = Math.max(0, Number(payload.intervalMinutes || 0) || 0) * 60_000;
+  const assignment = resolveOfficialAccountAssignment(payload.accountAssignment);
   const planned = planOfficialPublishJobs({
     videos,
     connectionIds,
     scheduleAt: baseScheduleMs,
     interval: intervalMs,
-    assignment: payload.accountAssignment === "round-robin" ? "round-robin" : "all-accounts"
+    assignment
   });
   const jobs = planned.map((job) => {
     const fileName = path.basename(String(job.video?.fileName || "video.mp4"));
@@ -2466,7 +2467,12 @@ async function publishThroughOfficialTikTok(payload = {}) {
         phase: "uploading",
         current: doneCount,
         total: jobs.length,
-        message: `正在并行上传成片（同时 ${uploadConcurrency} 条），第 ${doneCount}/${jobs.length} 条（约 ${megabytes.toFixed(0)}MB）...`
+        videoCount: videos.length,
+        accountCount: connectionIds.length,
+        assignment,
+        message: assignment === "all-accounts"
+          ? `正在上传第 ${doneCount}/${jobs.length} 次发布（${videos.length} 条成片 × ${connectionIds.length} 个号，约 ${megabytes.toFixed(0)}MB）...`
+          : `正在上传第 ${doneCount}/${jobs.length} 条成片（约 ${megabytes.toFixed(0)}MB）...`
       });
       const uploaded = await privateTikTokAnalytics.uploadPublishAsset({
         filePath: item.job.filePath,
@@ -2476,6 +2482,9 @@ async function publishThroughOfficialTikTok(payload = {}) {
           phase: "uploading",
           current: doneCount,
           total: jobs.length,
+          videoCount: videos.length,
+          accountCount: connectionIds.length,
+          assignment,
           message: `第 ${doneCount}/${jobs.length} 条上传遇到 HTTP ${status || "网络错误"}，${Math.round(delayMs / 1000)} 秒后重试（${attempt}/${attempts - 1}）...`
         })
       });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyJobToTask } from "./jobs.js";
+import { applyJobToTask, isDeletedTask } from "./jobs.js";
 
 test("publish failure after generation keeps videos and needs attention", () => {
   const task = applyJobToTask({
@@ -47,4 +47,49 @@ test("retry publish does not wipe generated videos", () => {
   assert.equal(task.status, "running");
   assert.equal(task.phase, "publishing");
   assert.deepEqual(task.generatedVideos, [{ fileName: "a.mp4" }]);
+});
+
+test("deleted task is not resurrected by job status", () => {
+  const task = applyJobToTask({
+    id: "task-1",
+    deleted: 1,
+    status: "deleted",
+    generatedVideos: [{ fileName: "a.mp4" }]
+  }, {
+    id: "job-1",
+    type: "reddit-mix",
+    status: "done",
+    message: "完成",
+    result_json: JSON.stringify({ results: [{ fileName: "a.mp4" }], publishFailed: true }),
+    updated_at: 12,
+    completed_at: 12
+  });
+  assert.equal(isDeletedTask(task), true);
+  assert.equal(task.status, "deleted");
+  assert.equal(task.deleted, 1);
+});
+
+test("expected count stays at planned total while videos are still generating", () => {
+  const task = applyJobToTask({
+    id: "task-1",
+    expectedVideoCount: 6,
+    generation: { totalVideos: 6 },
+    generatedVideos: [{ fileName: "a.mp4" }],
+    progress: { current: 1, total: 6 }
+  }, {
+    id: "job-1",
+    type: "reddit-mix",
+    status: "running",
+    percent: 20,
+    message: "已完成 2/6",
+    result_json: JSON.stringify({
+      results: [{ fileName: "a.mp4" }, { fileName: "b.mp4" }],
+      progressCurrent: 2,
+      progressTotal: 6
+    }),
+    updated_at: 13
+  });
+  assert.equal(task.expectedVideoCount, 6);
+  assert.equal(task.progress.total, 6);
+  assert.equal(task.generatedVideos.length, 2);
 });

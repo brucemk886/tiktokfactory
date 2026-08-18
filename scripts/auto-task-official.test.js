@@ -9,7 +9,25 @@ import {
   mergeOfficialPublishRecords,
   normalizeOfficialAutoPublishResult,
   persistOfficialPublishRecords,
+  planOfficialPublishJobs,
+  resolveOfficialAccountAssignment,
 } from "./auto-task-manager.js";
+
+test("missing official assignment stays one video per account, not every account", () => {
+  assert.equal(resolveOfficialAccountAssignment(""), "round-robin");
+  assert.equal(resolveOfficialAccountAssignment("all-accounts"), "all-accounts");
+  const jobs = planOfficialPublishJobs({
+    videos: [{ fileName: "a.mp4" }, { fileName: "b.mp4" }],
+    connectionIds: ["c1", "c2", "c3"]
+  });
+  assert.equal(jobs.length, 2);
+  const fanout = planOfficialPublishJobs({
+    videos: [{ fileName: "a.mp4" }, { fileName: "b.mp4" }],
+    connectionIds: ["c1", "c2", "c3"],
+    assignment: "all-accounts"
+  });
+  assert.equal(fanout.length, 6);
+});
 
 test("official publish assigns each video to one account in round-robin", () => {
   const result = normalizeOfficialAutoPublishResult({
