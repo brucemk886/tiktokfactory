@@ -3,7 +3,9 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverAssetLibraryGroups, listAssetGroups } from "./asset-library.js";
+import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
+import { normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { readConfig } from "./video-core.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 
@@ -20,7 +22,7 @@ const SCRIPT_BY_TYPE = {
   psychology: "psychology-video-job.js"
 };
 
-export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorTask } = {}) {
+export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorTask, publishOfficial } = {}) {
   const config = readConfig(root);
   const storage = resolveStorageDirs(root, config);
   const resolvedWorkDir = workDir || storage.workDir;
@@ -33,7 +35,7 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
 
   fs.mkdirSync(jobsDir, { recursive: true });
   const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
-  const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask };
+  const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial };
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}`);
   syncInventory(context).catch((error) => console.error("同步素材组失败：", error.message || error));
   setInterval(() => {
@@ -62,6 +64,10 @@ async function runJob(context, job) {
   const jobId = job.id || job.jobId;
   const type = resolveJobType(job);
   console.log(`接到工厂云任务 ${jobId} (${type})`);
+  if (type === "official-publish") {
+    await runOfficialPublishJob(context, job);
+    return;
+  }
   const payloadPath = path.join(context.jobsDir, `${jobId}.payload.json`);
   const jobPath = path.join(context.jobsDir, `${jobId}.json`);
   const payload = buildLocalPayload(job);
@@ -101,26 +107,162 @@ async function runJob(context, job) {
     if (["done", "completed", "success", "failed", "error", "cancelled", "canceled"].includes(String(local.status || ""))) {
       const failed = ["failed", "error", "cancelled", "canceled"].includes(String(local.status || ""));
       mirrorCloudTask(context, job, local);
-      await complete(context, jobId, {
-        error: failed ? (local.error || local.message || "任务失败") : "",
-        message: local.message,
-        result: local,
-        percent: local.percent
-      });
+      await finishCloudJob(context, job, jobId, local, failed);
       break;
     }
     if (child.exitCode !== null) {
       await sleep(1500);
       const latest = readLocalJob(jobPath);
-      if (["done", "completed", "success"].includes(String(latest.status || ""))) {
-        await complete(context, jobId, { message: latest.message, result: latest, percent: 100 });
-      } else {
-        await complete(context, jobId, { error: latest.error || `工人进程退出 ${child.exitCode}`, result: latest });
-      }
+      const failed = !["done", "completed", "success"].includes(String(latest.status || ""));
+      mirrorCloudTask(context, job, latest);
+      await finishCloudJob(context, job, jobId, latest, failed);
       break;
     }
     await sleep(2000);
   }
+}
+
+async function runOfficialPublishJob(context, job) {
+  const jobId = job.id || job.jobId;
+  const payload = job.payload || {};
+  const videos = Array.isArray(payload.videos) ? payload.videos : (payload.generatedVideos || []);
+  const local = { results: videos, publishOnly: true, progressCurrent: videos.length, progressTotal: videos.length };
+  if (!videos.length) {
+    await complete(context, jobId, { error: "没有已生成的成片，无法发布。", result: local, percent: 0 });
+    return;
+  }
+  try {
+    const published = await submitOfficialPublish(context, job, jobId, local);
+    await completeOfficialOutcome(context, job, jobId, local, { published });
+  } catch (error) {
+    await completeOfficialOutcome(context, job, jobId, local, { publishError: error.message || "官方发布失败" });
+  }
+}
+
+async function finishCloudJob(context, job, jobId, local, failed) {
+  const videos = Array.isArray(local.results) ? local.results : [];
+  if (failed && !videos.length) {
+    await complete(context, jobId, {
+      error: local.error || local.message || "任务失败",
+      message: local.message,
+      result: local,
+      percent: local.percent
+    });
+    return;
+  }
+  if (failed && videos.length) {
+    await complete(context, jobId, {
+      error: "",
+      message: `已出片 ${videos.length} 条，生成未全部完成：${local.error || local.message || "部分失败"}`,
+      result: { ...local, publishFailed: true, publishError: local.error || local.message || "生成未全部完成" },
+      percent: 100
+    });
+    return;
+  }
+  if (shouldOfficialPublish(job.payload) && typeof context.publishOfficial === "function") {
+    try {
+      const published = await submitOfficialPublish(context, job, jobId, local);
+      await completeOfficialOutcome(context, job, jobId, local, { published });
+    } catch (error) {
+      await completeOfficialOutcome(context, job, jobId, local, { publishError: error.message || "官方发布失败" });
+    }
+    return;
+  }
+  await complete(context, jobId, {
+    error: "",
+    message: local.message,
+    result: local,
+    percent: 100
+  });
+}
+
+async function submitOfficialPublish(context, job, jobId, local) {
+  const videos = Array.isArray(local.results) ? local.results : [];
+  await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+    method: "POST",
+    body: {
+      percent: 90,
+      message: "正在提交 TikTok 官方发布...",
+      result: {
+        ...local,
+        publishOnly: Boolean(local.publishOnly),
+        publishProgress: { current: 0, total: videos.length, percent: 0 }
+      }
+    }
+  });
+  return context.publishOfficial({
+    ...(job.payload.publish || {}),
+    videos,
+    name: job.payload.taskName || job.title,
+    taskId: job.payload.taskId,
+    onProgress: (progress) => {
+      request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+        method: "POST",
+        body: {
+          percent: 90,
+          message: progress.message || "正在提交 TikTok 官方发布...",
+          result: { ...local, publishOnly: Boolean(local.publishOnly), publishProgress: progress }
+        }
+      }).catch((error) => console.error("回写发布进度失败：", error.message));
+    }
+  });
+}
+
+async function completeOfficialOutcome(context, job, jobId, local, { published, publishError } = {}) {
+  const videos = Array.isArray(local.results) ? local.results : [];
+  const task = {
+    id: job.payload?.taskId || jobId,
+    name: job.payload?.taskName || job.title,
+    generation: job.payload?.generation || job.payload || {},
+    publish: job.payload?.publish || {},
+    generatedVideos: videos
+  };
+  let publishResults = [];
+  let publishSummary = null;
+  let officialPublishRecords = [];
+  if (published) {
+    const normalized = normalizeOfficialAutoPublishResult(task, published);
+    publishResults = normalized.results;
+    publishSummary = normalized.summary;
+    officialPublishRecords = buildOfficialPublishRecords(task, publishResults, Date.now(), context.workDir);
+    try {
+      persistOfficialPublishRecords(context.workDir, task, publishResults);
+    } catch {
+      // Cloud KV still receives officialPublishRecords; local file backup is optional.
+    }
+  } else if (publishError) {
+    publishResults = videos.map((video, videoIndex) => ({
+      recordId: `${task.id}:official:${videoIndex}:failed`,
+      dedupeKey: `${task.id}:official:${videoIndex}:failed`,
+      status: "failed",
+      fileName: String(video.fileName || ""),
+      videoIndex,
+      message: publishError
+    }));
+    officialPublishRecords = buildOfficialPublishRecords(task, publishResults, Date.now(), context.workDir);
+  }
+  await complete(context, jobId, {
+    error: "",
+    message: publishError
+      ? `已出片 ${videos.length} 条，官方发布失败：${publishError}`
+      : `出片 ${videos.length} 条，并已提交官方发布。`,
+    result: {
+      ...local,
+      results: videos,
+      publishOnly: Boolean(local.publishOnly),
+      publishResults,
+      publishSummary,
+      officialPublishRecords,
+      publishFailed: Boolean(publishError),
+      publishError: publishError || ""
+    },
+    percent: 100
+  });
+}
+
+function shouldOfficialPublish(payload = {}) {
+  const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
+  return normalizePublishProvider(publish.provider) === PUBLISH_PROVIDER_OFFICIAL && publish.autoPublish !== false;
 }
 
 function mirrorCloudTask(context, job, local = {}) {

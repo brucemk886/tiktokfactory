@@ -76,8 +76,8 @@ function normalizeMindmap(value, fallbackTitle) {
 }
 
 function sanitizeMindNode(node, fallbackId, fallbackTitle) {
-  const text = String(node?.text || node?.title || fallbackTitle || "未命名").trim().slice(0, 80) || "未命名";
-  const children = Array.isArray(node?.children) ? node.children.slice(0, 40) : [];
+  const text = String(node?.text || node?.title || fallbackTitle || "未命名").trim().slice(0, 160) || "未命名";
+  const children = Array.isArray(node?.children) ? node.children.slice(0, 80) : [];
   return {
     id: String(node?.id || fallbackId || "node").slice(0, 80),
     text,

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>脑图 · Local Factory</title>
+  <link rel="stylesheet" href="/work-journal-mindmap.css">
+</head>
+<body class="mindmap-app">
+  <header class="mind-toolbar">
+    <a class="mind-back" href="/work-journal">返回工作记录</a>
+    <input id="mapTitle" class="mind-title" maxlength="120" placeholder="脑图标题">
+    <div class="mind-tools">
+      <button type="button" data-action="add-child">子主题</button>
+      <button type="button" data-action="add-sibling">同级</button>
+      <button type="button" data-action="remove">删除</button>
+      <button type="button" data-action="fit">适应画布</button>
+      <span id="saveState" class="mind-save">未改动</span>
+      <button type="button" class="mind-save-btn" data-action="save">保存</button>
+    </div>
+  </header>
+  <div id="mindStage" class="mind-stage" tabindex="0">
+    <svg id="mindSvg" class="mind-svg"></svg>
+  </div>
+  <p class="mind-hint">向右展开 · 拖节点接到其他主题下 · 拖空白移动画布 · Tab 加子主题 · Enter 加同级</p>
+  <script type="module" src="/work-journal-mindmap.js"></script>
+</body>
+</html>

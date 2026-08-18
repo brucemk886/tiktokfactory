@@ -3,6 +3,9 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { getPublishAccountIds, normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
+import { mergeOfficialPublishRecords } from "./official-publish-records.js";
+
+export { mergeOfficialPublishRecords };
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm"]);
 const MAX_DAILY_PLANNED_VIDEOS = 300;
@@ -1039,6 +1042,13 @@ export function buildOfficialPublishRecords(task, results, now = Date.now(), rec
       fileName: String(result?.fileName || video?.fileName || ""),
       title: String(video?.title || task?.name || ""),
       audioName: String(video?.audioName || ""),
+      audioLibraryId: String(video?.audioLibraryId || video?.audioId || video?.sourceAudioId || ""),
+      sourceAudioId: String(video?.sourceAudioId || video?.audioId || video?.audioLibraryId || ""),
+      scriptId: String(video?.scriptId || ""),
+      novelId: String(video?.novelId || task?.generation?.novelId || ""),
+      username: String(account?.username || account?.name || ""),
+      publishedAt: (Number(result?.scheduleAt) || Number(task?.publish?.scheduleAt) || Math.floor(now / 1000)) * 1000,
+      videoId: String(result?.videoId || result?.tiktokVideoId || ""),
       audioIndex: Number(video?.audioIndex) || 0,
       template: String(video?.template || "reddit-mix"),
       templateIndex: Number(video?.templateIndex) || 0,

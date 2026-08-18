@@ -485,6 +485,7 @@ function getSelectedNovels() {
 function getSelectedAudioItems() {
   return getSelectedNovels().flatMap((novel) => enabledMixAudios(novel).map((script) => ({
     id: script.audio.id,
+    scriptId: script.id,
     novelId: novel.id,
     platform: novel.platform || "",
     promotionCode: novel.promotionCode || "",

@@ -15,7 +15,8 @@ ensureThemeStylesheet();
       item.href = homePath || "#";
       const small = item.querySelector("small");
       const activeGroup = document.querySelector(".sidebar-group.is-open .sidebar-group-toggle span");
-      if (small) small.textContent = activeGroup?.textContent || (user.role === "admin" ? "业务总览" : "GeeLark 备用");
+      const localWorker = ["localhost", "127.0.0.1"].includes(location.hostname);
+      if (small) small.textContent = activeGroup?.textContent || (user.role === "admin" ? (localWorker ? "本地执行" : "业务总览") : "GeeLark 备用");
     });
     document.documentElement.dataset.sidebarReady = "true";
 

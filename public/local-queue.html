@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>本地执行队列 · Local Factory</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/local-queue.css">
+  <link rel="stylesheet" href="/theme-ops.css">
+</head>
+<body class="work-page local-queue-page">
+  <nav class="side-tabs" aria-label="主导航"></nav>
+  <main class="queue-shell">
+    <header class="queue-heading">
+      <div>
+        <p class="eyebrow">LOCAL WORKER</p>
+        <h1>本地执行队列</h1>
+        <p class="page-copy">看这台机器上正在出片、排队和刚跑完的任务。建任务、加小说请去线上工厂；GeeLark 备用发布仍在本机。</p>
+      </div>
+      <a class="primary-button" href="https://factory.tiktokaitool.com/" target="_blank" rel="noreferrer">打开线上工厂</a>
+    </header>
+    <section class="queue-summary" id="queueSummary"></section>
+    <section class="queue-list" id="queueList">
+      <div class="empty-state">正在读取本机任务…</div>
+    </section>
+  </main>
+  <script src="/access.js"></script>
+  <script type="module" src="/local-queue.js"></script>
+</body>
+</html>

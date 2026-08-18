@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { SIDEBAR_MODULES, homePathForUser, sidebarModuleIdsForRole } from "./sidebar-modules.js";
+import { LOCAL_SIDEBAR_MODULE_IDS, SIDEBAR_MODULES, homePathForUser, shouldRedirectLocalPageToFactory, sidebarModuleIdsForRole } from "./sidebar-modules.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
@@ -17,13 +17,16 @@ test("sidebar catalog has unique ids and routes", () => {
 test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.deepEqual(
     sidebarModuleIdsForRole("admin"),
-    SIDEBAR_MODULES.filter((item) => item.roles.includes("admin")).map((item) => item.id)
+    SIDEBAR_MODULES.filter((item) => item.roles.includes("admin") && LOCAL_SIDEBAR_MODULE_IDS.includes(item.id)).map((item) => item.id)
   );
   assert.deepEqual(sidebarModuleIdsForRole("operator"), ["geelark-tasks", "analytics", "stats"]);
   assert.ok(!sidebarModuleIdsForRole("operator").includes("hub"));
-  for (const moduleId of ["hub", "work-journal", "mid-video", "podcast", "novel-library", "official-publish-records", "official-analytics", "operator-third-party",
-    "operator-official", "novel-effects", "geelark-tasks", "geelark-novel-effects"]) {
+  assert.deepEqual(sidebarModuleIdsForRole("admin"), [...LOCAL_SIDEBAR_MODULE_IDS]);
+  for (const moduleId of ["local-queue", "operator-third-party", "geelark-tasks", "geelark-novel-effects", "accounts"]) {
     assert.ok(sidebarModuleIdsForRole("admin").includes(moduleId));
+  }
+  for (const moduleId of ["hub", "work-journal", "mid-video", "novel-library", "operator-official", "official-analytics"]) {
+    assert.ok(!sidebarModuleIdsForRole("admin").includes(moduleId));
   }
   assert.ok(!sidebarModuleIdsForRole("admin").includes("novel-rewrite"));
   assert.ok(!sidebarModuleIdsForRole("admin").includes("rewrite-records"));
@@ -32,6 +35,8 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.label, "数据概览");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "mid-video-effects")?.label, "数据概览");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "psychology-effects")?.label, "数据概览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.href, "/work-journal");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.label, "工作记录");
   assert.equal(
@@ -43,17 +48,19 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-effects", "operator-official", "tasks"]
+    ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "novel-publish", "operator-official", "tasks"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
-    ["mid-video", "schulte", "podcast", "ai", "asset-usage"]
+    ["mid-video", "schulte", "podcast", "ai", "asset-usage", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "psychology").map((item) => item.id),
-    ["psychology-topics", "psychology"]
+    ["psychology-topics", "psychology", "psychology-effects", "psychology-ops-report", "psychology-publish"]
   );
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "operator-third-party")?.group?.id, "geelark-backup");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-profiles")?.group?.id, "geelark-backup");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-profiles")?.href, "/geelark-profiles");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-tasks")?.group?.id, "geelark-backup");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-tasks")?.href, "/geelark-tasks");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "tasks")?.group?.id, "novel-promotion");
@@ -66,15 +73,29 @@ test("business lines keep official and GeeLark navigation apart", () => {
 });
 
 test("operator home is the first granted GeeLark backup page", () => {
-  assert.equal(homePathForUser({ role: "admin", sidebarModules: ["hub"] }), "/");
+  assert.equal(homePathForUser({ role: "admin", sidebarModules: ["local-queue", "accounts"] }), "/local-queue");
   assert.equal(homePathForUser({ role: "operator", sidebarModules: ["hub", "analytics", "stats"] }), "/analytics");
   assert.equal(homePathForUser({ role: "operator", sidebarModules: ["geelark-tasks"] }), "/geelark-tasks");
   assert.equal(homePathForUser({ role: "operator", sidebarModules: [] }), "");
 });
 
+test("retired local pages redirect to the online factory", () => {
+  assert.equal(shouldRedirectLocalPageToFactory("/mid-video-effects"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/psychology-effects"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/novel-library"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/tasks"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/work-journal"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/work-journal-mindmap"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/operator/official"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/geelark-tasks"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/geelark-profiles"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/accounts"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/local-queue"), false);
+});
+
 test("every authenticated HTML sidebar loads the canonical renderer", () => {
   const missing = fs.readdirSync(publicDir)
-    .filter((name) => name.endsWith(".html"))
+    .filter((name) => name.endsWith(".html") && name !== "work-journal-mindmap.html")
     .filter((name) => {
       const source = fs.readFileSync(path.join(publicDir, name), "utf8");
       return /class="(?:tasks-nav|side-tabs)/.test(source) && !source.includes('src="/access.js"');

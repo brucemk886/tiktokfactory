@@ -12,7 +12,7 @@
     <nav class="side-tabs"><a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
     <main class="official-data-shell">
       <header class="official-data-header">
-        <div><p class="toolbar-kicker">AUTHORIZED TIKTOK ACCOUNTS</p><h1>授权账号</h1><p>查看已授权账号的官方数据，并进入独立的账号详情与视频数据页面。</p></div>
+        <div><p class="toolbar-kicker" id="pageKicker">AUTHORIZED TIKTOK ACCOUNTS</p><h1 id="pageTitle">授权账号</h1><p id="pageCopy">查看已授权账号的官方数据，并进入独立的账号详情与视频数据页面。</p></div>
         <button id="syncOfficialData" type="button">立即同步</button>
       </header>
       <section class="official-toolbar panel">
@@ -23,7 +23,7 @@
       <section id="overviewCards" class="overview-grid"></section>
       <section class="panel data-section">
         <div class="section-title"><div><p>AUTHORIZED ACCOUNTS</p><h2>账号列表</h2></div><span id="accountCount">0 个账号</span></div>
-        <div class="table-wrap"><table><thead><tr><th>账号</th><th>粉丝</th><th>视频</th><th>播放</th><th>点赞</th><th>评论</th><th>分享</th><th>触达</th><th>同步时间</th><th>操作</th></tr></thead><tbody id="accountRows"></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>账号</th><th>分组</th><th>粉丝</th><th>视频</th><th>播放</th><th>点赞</th><th>评论</th><th>分享</th><th>触达</th><th>同步时间</th><th>操作</th></tr></thead><tbody id="accountRows"></tbody></table></div>
       </section>
       <div id="pageStatus" class="page-status"></div>
     </main>

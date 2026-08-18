@@ -10,12 +10,15 @@ const state = {
   dateKey: "",
   entries: [],
   selectedId: "",
+  checkedIds: new Set(),
 };
 
 const listNode = document.querySelector("#journalList");
 const editorNode = document.querySelector("#journalEditor");
 const kindTabs = document.querySelector("#kindTabs");
 const searchForm = document.querySelector("#journalSearch");
+const deleteSelected = document.querySelector("#deleteSelected");
+const checkAll = document.querySelector("#checkAll");
 
 document.querySelectorAll("[data-create]").forEach((button) => {
   button.addEventListener("click", () => createEntry(button.dataset.create));
@@ -36,6 +39,19 @@ searchForm?.addEventListener("submit", (event) => {
   loadEntries();
 });
 
+deleteSelected?.addEventListener("click", () => {
+  deleteChecked();
+});
+
+checkAll?.addEventListener("change", () => {
+  if (checkAll.checked) {
+    state.entries.forEach((item) => state.checkedIds.add(item.id));
+  } else {
+    state.checkedIds.clear();
+  }
+  renderList();
+});
+
 async function loadEntries() {
   const params = new URLSearchParams();
   if (state.kind) params.set("kind", state.kind);
@@ -49,31 +65,94 @@ async function loadEntries() {
   }
   state.entries = payload.entries || [];
   if (state.selectedId && !state.entries.some((item) => item.id === state.selectedId)) state.selectedId = "";
+  pruneChecked();
   renderList();
-  if (state.selectedId) renderEditor(state.entries.find((item) => item.id === state.selectedId));
+  renderEditor(state.entries.find((item) => item.id === state.selectedId) || null);
 }
 
 function renderList() {
+  syncDeleteButton();
   if (!state.entries.length) {
     listNode.innerHTML = '<div class="empty-state">还没有记录。点右上角新建一条。</div>';
     return;
   }
-  listNode.innerHTML = state.entries.map((item) => `
-    <button type="button" class="journal-card${item.id === state.selectedId ? " is-active" : ""}" data-id="${escapeHtml(item.id)}">
-      <strong>${escapeHtml(item.title)}</strong>
-      <small>${escapeHtml(KIND_LABEL[item.kind] || item.kind)} · ${escapeHtml(item.dateKey)}</small>
-    </button>
-  `).join("");
+  listNode.innerHTML = state.entries.map((item) => {
+    const checked = state.checkedIds.has(item.id);
+    const classes = [
+      "journal-card",
+      item.id === state.selectedId ? "is-active" : "",
+      checked ? "is-checked" : "",
+    ].filter(Boolean).join(" ");
+    return `
+    <div class="${classes}">
+      <label class="journal-check">
+        <input type="checkbox" data-check-id="${escapeHtml(item.id)}"${checked ? " checked" : ""}>
+      </label>
+      <button type="button" class="journal-card-body" data-id="${escapeHtml(item.id)}">
+        <strong>${escapeHtml(item.title)}</strong>
+        <small>${escapeHtml(KIND_LABEL[item.kind] || item.kind)} · ${escapeHtml(item.dateKey)}</small>
+      </button>
+    </div>
+  `;
+  }).join("");
+  listNode.querySelectorAll("[data-check-id]").forEach((input) => {
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("change", () => {
+      toggleChecked(input.dataset.checkId, input.checked);
+    });
+  });
   listNode.querySelectorAll("[data-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedId = button.dataset.id;
-      renderList();
-      renderEditor(state.entries.find((item) => item.id === state.selectedId));
+    button.addEventListener("click", () => selectEntry(button.dataset.id));
+    button.addEventListener("dblclick", () => {
+      const entry = state.entries.find((item) => item.id === button.dataset.id);
+      if (entry?.kind === "mindmap") {
+        location.assign(`/work-journal-mindmap?id=${encodeURIComponent(entry.id)}`);
+      }
     });
   });
 }
 
+function selectEntry(id) {
+  const entry = state.entries.find((item) => item.id === id);
+  if (!entry) return;
+  state.selectedId = entry.id;
+  renderList();
+  renderEditor(entry);
+}
+
+function pruneChecked() {
+  const ids = new Set(state.entries.map((item) => item.id));
+  state.checkedIds = new Set([...state.checkedIds].filter((id) => ids.has(id)));
+}
+
+function toggleChecked(id, checked) {
+  if (checked) state.checkedIds.add(id);
+  else state.checkedIds.delete(id);
+  syncDeleteButton();
+  const card = listNode.querySelector(`[data-check-id="${CSS.escape(id)}"]`)?.closest(".journal-card");
+  card?.classList.toggle("is-checked", checked);
+}
+
+function checkedList() {
+  return state.entries.filter((item) => state.checkedIds.has(item.id));
+}
+
+function syncDeleteButton() {
+  const count = checkedList().length;
+  if (deleteSelected) {
+    deleteSelected.disabled = count === 0;
+    deleteSelected.textContent = count ? `删除（${count}）` : "删除";
+  }
+  if (checkAll) {
+    const total = state.entries.length;
+    checkAll.checked = total > 0 && count === total;
+    checkAll.indeterminate = count > 0 && count < total;
+    checkAll.disabled = total === 0;
+  }
+}
+
 function renderEditor(entry) {
+  syncDeleteButton();
   if (!entry) {
     editorNode.innerHTML = '<div class="empty-state">选左侧一条记录，或新建每日工作 / 随笔 / 脑图。</div>';
     return;
@@ -82,7 +161,6 @@ function renderEditor(entry) {
     <form class="editor-grid" id="entryForm">
       <div class="editor-actions">
         <button type="submit" class="primary-button">保存</button>
-        <button type="button" class="danger-button" id="deleteEntry">删除</button>
       </div>
       <label>类型
         <select name="kind">
@@ -93,77 +171,15 @@ function renderEditor(entry) {
       </label>
       <label>日期<input name="dateKey" type="date" value="${escapeHtml(entry.dateKey)}" required></label>
       <label>标题<input name="title" value="${escapeHtml(entry.title)}" maxlength="120" required></label>
-      ${entry.kind === "mindmap" ? `<div class="mindmap-board" id="mindmapBoard"></div>` : `<label>正文<textarea name="body">${escapeHtml(entry.body || "")}</textarea></label>`}
+      ${entry.kind === "mindmap"
+        ? `<div class="mindmap-launch"><p>脑图在独立全屏页里编辑，默认向右展开。双击左侧名称也可打开。</p><a class="primary-button" href="/work-journal-mindmap?id=${encodeURIComponent(entry.id)}">打开脑图</a></div>`
+        : `<label>正文<textarea name="body">${escapeHtml(entry.body || "")}</textarea></label>`}
     </form>
   `;
   const form = editorNode.querySelector("#entryForm");
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     saveEntry(entry, form);
-  });
-  editorNode.querySelector("#deleteEntry").addEventListener("click", () => deleteEntry(entry.id));
-  if (entry.kind === "mindmap") {
-    entry.mindmap = entry.mindmap || { id: "root", text: entry.title, children: [] };
-    renderMindmap(editorNode.querySelector("#mindmapBoard"), entry.mindmap, entry);
-  }
-}
-
-function renderMindmap(board, node, entry) {
-  board.innerHTML = renderMindNode(node);
-  board.querySelectorAll("[data-add]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const target = findNode(entry.mindmap, button.dataset.add);
-      target?.children.push({ id: `node-${Date.now()}`, text: "新节点", children: [] });
-      renderEditor(entry);
-    });
-  });
-  board.querySelectorAll("[data-remove]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.dataset.remove === "root") return;
-      removeNode(entry.mindmap, button.dataset.remove);
-      renderEditor(entry);
-    });
-  });
-  board.querySelectorAll("[data-node-input]").forEach((input) => {
-    input.addEventListener("input", () => {
-      const target = findNode(entry.mindmap, input.dataset.nodeInput);
-      if (target) target.text = input.value;
-      if (input.dataset.nodeInput === "root") {
-        const titleInput = editorNode.querySelector("input[name=title]");
-        if (titleInput) titleInput.value = input.value;
-      }
-    });
-  });
-}
-
-function renderMindNode(node) {
-  return `<div class="mind-node">
-    <div class="mind-card">
-      <input data-node-input="${escapeHtml(node.id)}" value="${escapeHtml(node.text)}">
-      <div class="mind-actions">
-        <button type="button" data-add="${escapeHtml(node.id)}">加子节点</button>
-        ${node.id === "root" ? "" : `<button type="button" data-remove="${escapeHtml(node.id)}">删除</button>`}
-      </div>
-    </div>
-    ${node.children?.length ? `<div class="mind-children">${node.children.map(renderMindNode).join("")}</div>` : ""}
-  </div>`;
-}
-
-function findNode(node, id) {
-  if (!node) return null;
-  if (node.id === id) return node;
-  for (const child of node.children || []) {
-    const found = findNode(child, id);
-    if (found) return found;
-  }
-  return null;
-}
-
-function removeNode(node, id) {
-  node.children = (node.children || []).filter((child) => {
-    if (child.id === id) return false;
-    removeNode(child, id);
-    return true;
   });
 }
 
@@ -184,6 +200,10 @@ async function createEntry(kind) {
   const payload = await response.json();
   if (!response.ok) {
     alert(payload.error || "创建失败");
+    return;
+  }
+  if (kind === "mindmap") {
+    location.assign(`/work-journal-mindmap?id=${encodeURIComponent(payload.entry.id)}`);
     return;
   }
   state.selectedId = payload.entry.id;
@@ -215,17 +235,23 @@ async function saveEntry(entry, form) {
   renderEditor(result.entry);
 }
 
-async function deleteEntry(id) {
-  if (!confirm("确定删除这条记录？")) return;
-  const response = await fetch(`/api/work-journal/${encodeURIComponent(id)}`, { method: "DELETE" });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    alert(payload.error || "删除失败");
-    return;
+async function deleteChecked() {
+  const ids = checkedList().map((item) => item.id);
+  if (!ids.length) return;
+  const label = ids.length === 1 ? "确定删除这条记录？" : `确定删除选中的 ${ids.length} 条记录？`;
+  if (!confirm(label)) return;
+  const failed = [];
+  for (const id of ids) {
+    const response = await fetch(`/api/work-journal/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      failed.push(payload.error || "删除失败");
+    }
   }
-  state.selectedId = "";
+  if (ids.includes(state.selectedId)) state.selectedId = "";
+  state.checkedIds.clear();
   await loadEntries();
-  renderEditor(null);
+  if (failed.length) alert(failed[0]);
 }
 
 function escapeHtml(value) {

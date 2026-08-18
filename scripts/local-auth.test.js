@@ -14,17 +14,17 @@ test("stores sidebar visibility per account and filters modules by role", () => 
       password: "password123",
       displayName: "Admin"
     });
+    assert.ok(admin.sidebarModules.includes("local-queue"));
     assert.ok(admin.sidebarModules.includes("operator-third-party"));
-    assert.ok(admin.sidebarModules.includes("operator-official"));
-    assert.ok(admin.sidebarModules.includes("novel-effects"));
     assert.ok(admin.sidebarModules.includes("geelark-novel-effects"));
     assert.ok(admin.sidebarModules.includes("geelark-tasks"));
-    assert.ok(admin.sidebarModules.includes("novel-library"));
-    assert.ok(!admin.sidebarModules.includes("novel-rewrite"));
-    assert.ok(!admin.sidebarModules.includes("rewrite-records"));
-    assert.ok(admin.sidebarModules.includes("hub"));
-    assert.ok(admin.sidebarModules.includes("work-journal"));
-    assert.ok(admin.sidebarModules.includes("podcast"));
+    assert.ok(admin.sidebarModules.includes("geelark-profiles"));
+    assert.ok(!admin.sidebarModules.includes("operator-official"));
+    assert.ok(!admin.sidebarModules.includes("novel-effects"));
+    assert.ok(!admin.sidebarModules.includes("novel-library"));
+    assert.ok(!admin.sidebarModules.includes("hub"));
+    assert.ok(!admin.sidebarModules.includes("work-journal"));
+    assert.ok(!admin.sidebarModules.includes("podcast"));
     assert.ok(!admin.sidebarModules.includes("audio-library"));
     assert.ok(!admin.sidebarModules.includes("project-hub"));
     assert.ok(admin.sidebarModules.includes("accounts"));
@@ -89,9 +89,57 @@ test("keeps all role-compatible sidebar modules for existing accounts", () => {
     fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
 
     const [admin] = auth.listUsers();
-    assert.ok(admin.sidebarModules.includes("psychology"));
-    assert.ok(admin.sidebarModules.includes("tasks"));
+    assert.ok(admin.sidebarModules.includes("local-queue"));
+    assert.ok(admin.sidebarModules.includes("geelark-tasks"));
     assert.ok(admin.sidebarModules.includes("accounts"));
+    assert.ok(!admin.sidebarModules.includes("psychology"));
+    assert.ok(!admin.sidebarModules.includes("tasks"));
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("admins can read and change stored account passwords", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "local-auth-password-"));
+  try {
+    const auth = createLocalAuthService({ workDir });
+    auth.setupAdmin({ username: "admin", password: "password123", displayName: "Admin" });
+    const operator = auth.createUser({
+      username: "operator",
+      password: "memberpass",
+      displayName: "Operator",
+      role: "operator",
+      geelarkProfileId: "default"
+    });
+    assert.equal(operator.password, "memberpass");
+    assert.equal(auth.listUsers().find((user) => user.username === "operator").password, "memberpass");
+    assert.equal(auth.login({ username: "admin", password: "password123" }).user.password, undefined);
+
+    const updated = auth.updateUser(operator.id, { password: "newpass12" });
+    assert.equal(updated.password, "newpass12");
+    assert.ok(auth.login({ username: "operator", password: "newpass12" }).user);
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("admins can delete member accounts but not the last admin", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "local-auth-delete-"));
+  try {
+    const auth = createLocalAuthService({ workDir });
+    const admin = auth.setupAdmin({ username: "admin", password: "password123", displayName: "Admin" });
+    const operator = auth.createUser({
+      username: "operator",
+      password: "memberpass",
+      displayName: "Operator",
+      role: "operator",
+      geelarkProfileId: "default"
+    });
+    assert.equal(auth.listUsers().length, 2);
+    assert.throws(() => auth.deleteUser(admin.id, admin.id), /不能删除当前正在使用的账号/);
+    assert.throws(() => auth.deleteUser(admin.id, operator.id), /至少需要保留一个启用中的管理员账号/);
+    auth.deleteUser(operator.id, admin.id);
+    assert.deepEqual(auth.listUsers().map((user) => user.username), ["admin"]);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -110,7 +158,7 @@ test("sidebar-only updates do not change the account role or active state", () =
     const updated = auth.updateUser(admin.id, { sidebarModules: ["tasks", "accounts"] });
     assert.equal(updated.role, "admin");
     assert.equal(updated.active, true);
-    assert.deepEqual(updated.sidebarModules, ["tasks", "accounts"]);
+    assert.deepEqual(updated.sidebarModules, ["accounts"]);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -134,11 +182,11 @@ test("adds new admin modules to existing sidebars once", () => {
     }), "utf8");
 
     const auth = createLocalAuthService({ workDir });
-    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["hub", "mid-video", "podcast", "novel-library", "tasks", "tiktok-connections", "official-analytics", "official-publish-records", "geelark-tasks", "geelark-novel-effects", "work-journal", "accounts"]);
+    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["local-queue", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "accounts"]);
 
-    auth.updateUser("admin-1", { sidebarModules: ["tasks", "accounts"] });
+    auth.updateUser("admin-1", { sidebarModules: ["geelark-tasks", "accounts"] });
     const reloaded = createLocalAuthService({ workDir });
-    assert.deepEqual(reloaded.listUsers()[0].sidebarModules, ["tasks", "accounts"]);
+    assert.deepEqual(reloaded.listUsers()[0].sidebarModules, ["geelark-tasks", "accounts"]);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

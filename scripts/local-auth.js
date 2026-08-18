@@ -21,7 +21,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 18) return;
+      if (version >= 20) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
         user.sidebarModules = user.sidebarModules.filter((moduleId) => !["project-hub", "audio-library"].includes(moduleId));
@@ -87,8 +87,19 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
           modules.splice(accountsIndex >= 0 ? accountsIndex : modules.length, 0, "work-journal");
           user.sidebarModules = modules;
         }
+        if (version < 19) {
+          const allowed = new Set(sidebarModuleIdsForRole(user.role));
+          user.sidebarModules = user.sidebarModules.filter((moduleId) => allowed.has(moduleId));
+          if (user.role === "admin" && !user.sidebarModules.includes("local-queue")) {
+            user.sidebarModules.unshift("local-queue");
+          }
+        }
+        if (version < 20 && user.role === "admin" && !user.sidebarModules.includes("geelark-profiles")) {
+          const settingsIndex = user.sidebarModules.indexOf("analytics-settings");
+          user.sidebarModules.splice(settingsIndex >= 0 ? settingsIndex + 1 : user.sidebarModules.length, 0, "geelark-profiles");
+        }
       }
-      store.version = 18;
+      store.version = 20;
       try {
         fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
       } catch {
@@ -129,6 +140,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
       allowedGeeLarkGroups: [],
       sidebarModules: sidebarModuleIdsForRole("admin"),
       password: hashPassword(password),
+      passwordPlain: String(password),
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -140,7 +152,9 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
   function login({ username, password }) {
     const cleanUsername = normalizeUsername(username);
     const user = readStore().users.find((entry) => entry.username === cleanUsername && entry.active !== false);
-    if (!user || !verifyPassword(password, user.password)) throw new Error("账号或密码不正确。");
+    const candidates = Array.from(new Set([String(password || ""), String(password || "").trim()].filter(Boolean)));
+    const matched = user && candidates.some((candidate) => verifyPassword(candidate, user.password) || (user.passwordPlain && candidate === user.passwordPlain));
+    if (!matched) throw new Error("账号或密码不正确。");
     const token = crypto.randomBytes(32).toString("hex");
     sessions.set(token, { userId: user.id, expiresAt: Date.now() + SESSION_TTL_MS });
     return { token, user: toPublicUser(user) };
@@ -151,7 +165,10 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
   }
 
   function listUsers() {
-    return readStore().users.map(toPublicUser);
+    return readStore().users.map((user) => ({
+      ...toPublicUser(user),
+      password: String(user.passwordPlain || "")
+    }));
   }
 
   function listProfiles() {
@@ -180,11 +197,13 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
       allowedDirectory: normalizeDirectory(payload.allowedDirectory),
       allowedGeeLarkGroups: normalizeGroups(payload.allowedGeeLarkGroups),
       sidebarModules: normalizeSidebarModules(payload.sidebarModules, role),
-      password: hashPassword(payload.password), createdAt: Date.now(), updatedAt: Date.now()
+      password: hashPassword(payload.password),
+      passwordPlain: String(payload.password),
+      createdAt: Date.now(), updatedAt: Date.now()
     };
     store.users.push(user);
     writeStore(store);
-    return toPublicUser(user);
+    return listUsers().find((item) => item.id === user.id);
   }
 
   function updateUser(id, payload) {
@@ -208,11 +227,29 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     if (String(payload.password || "")) {
       validatePassword(payload.password);
       user.password = hashPassword(payload.password);
+      user.passwordPlain = String(payload.password);
     }
     user.updatedAt = Date.now();
     writeStore(store);
     sidebarMigrationOverrides.delete(user.id);
-    return toPublicUser(user);
+    return listUsers().find((item) => item.id === user.id);
+  }
+
+  function deleteUser(id, currentUserId) {
+    const store = readStore();
+    const user = store.users.find((entry) => entry.id === String(id));
+    if (!user) throw new Error("账号不存在。");
+    if (user.id === currentUserId) throw new Error("不能删除当前正在使用的账号。");
+    if (user.role === "admin" && user.active !== false && activeAdminCount(store) <= 1) {
+      throw new Error("至少需要保留一个启用中的管理员账号。");
+    }
+    store.users = store.users.filter((entry) => entry.id !== user.id);
+    writeStore(store);
+    sidebarMigrationOverrides.delete(user.id);
+    for (const [token, session] of sessions.entries()) {
+      if (session.userId === user.id) sessions.delete(token);
+    }
+    return { ok: true };
   }
 
   function saveProfile(payload) {
@@ -276,7 +313,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     return publicUser(migratedModules ? { ...user, sidebarModules: migratedModules } : user);
   }
 
-  return { hasUsers, getSession, setupAdmin, login, logout, listUsers, listProfiles, getProfile, createUser, updateUser, saveProfile, deleteProfile };
+  return { hasUsers, getSession, setupAdmin, login, logout, listUsers, listProfiles, getProfile, createUser, updateUser, deleteUser, saveProfile, deleteProfile };
 }
 
 function publicUser(user) {

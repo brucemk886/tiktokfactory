@@ -1,7 +1,7 @@
 const ui = window.OfficialAnalytics;
 const params = new URLSearchParams(location.search);
 const state = { account: params.get("account") || "", video: params.get("video") || "", data: null, detail: null };
-if (!state.account || !state.video) location.replace("/official-analytics");
+if (!state.account || !state.video) location.replace(ui.listHref());
 load();
 
 async function load() {
@@ -29,7 +29,7 @@ function render() {
   const archived = (state.data?.videos || []).find((entry) => String(entry.id) === state.video);
   const live = state.detail?.video && typeof state.detail.video === "object" ? state.detail.video : {};
   const item = archived ? { ...archived, ...live, analytics: { ...ui.parseObject(archived.analytics), ...ui.parseObject(live.analytics) } } : live;
-  ui.$("#backVideos").href = `/official-account-videos?account=${encodeURIComponent(state.account)}`;
+  ui.$("#backVideos").href = ui.withModule(`/official-account-videos?account=${encodeURIComponent(state.account)}`);
   if (!item || !Object.keys(item).length) { ui.showStatus("未找到该视频归档"); return; }
   const title = item.title || item.caption || "未命名视频";
   const thumb = value(item, "thumbnailUrl", "thumbnail_url", "coverImageUrl", "cover_image_url");

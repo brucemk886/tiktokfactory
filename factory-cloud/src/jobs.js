@@ -1,7 +1,9 @@
+import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { mergeImportedNovelStore } from "./novels.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
+import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 
 const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/generate\/start$/, type: "generate", title: "生成视频" },
@@ -43,9 +45,20 @@ export async function handleJobs(request, env, url, session) {
 
   if (!session) return null;
 
+  if (method === "GET" && pathname === "/api/factory/recent-videos") {
+    return json({ videos: await listRecentVideos(env.DB, session.user) });
+  }
+
   for (const route of FFMPEG_START_ROUTES) {
     if (method === route.method && route.pattern.test(pathname)) {
       const payload = await readJson(request);
+      if (route.type === "official-publish") {
+        try {
+          await assertOfficialPublishAccess(env, session.user, payload);
+        } catch (error) {
+          return errorJson(error.message || "没有这些账号的发布权限。", error.statusCode || 403);
+        }
+      }
       const job = await enqueueJob(env.DB, {
         type: route.type,
         title: route.title,
@@ -88,6 +101,29 @@ export async function getJob(db, jobId) {
 export async function listRecentJobs(db, limit = 80) {
   const { results } = await db.prepare("SELECT * FROM factory_jobs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
   return results || [];
+}
+
+async function listRecentVideos(db, user) {
+  const rows = await listRecentJobs(db, 40);
+  const mine = user?.role === "admin" ? rows : rows.filter((row) => row.created_by === user?.username);
+  const videos = [];
+  for (const row of mine) {
+    let result = {};
+    try { result = JSON.parse(row.result_json || "{}"); } catch { result = {}; }
+    const items = Array.isArray(result.results) ? result.results : (Array.isArray(result.generatedVideos) ? result.generatedVideos : []);
+    for (const item of items) {
+      const fileName = String(item.fileName || item.name || "").trim();
+      if (!fileName) continue;
+      videos.push({
+        fileName,
+        title: item.title || row.title || fileName,
+        jobId: row.id,
+        createdAt: Number(row.created_at || 0),
+        createdBy: row.created_by || "",
+      });
+    }
+  }
+  return videos.slice(0, 60);
 }
 
 export async function enqueueJob(db, { type, title, payload, createdBy }) {
@@ -212,6 +248,12 @@ async function handleWorkerApi(request, env, url) {
     ).run();
     const job = await getJob(env.DB, decodeURIComponent(completeMatch[1]));
     if (job) await syncAutoTaskFromJob(env.DB, job);
+    const result = parseJson(job?.result_json, {});
+    const incoming = Array.isArray(result.officialPublishRecords) ? result.officialPublishRecords : [];
+    if (incoming.length) {
+      const existing = await kvGet(env.DB, "official-publish-records", []);
+      await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, incoming));
+    }
     return json({ ok: true });
   }
 
@@ -262,25 +304,61 @@ function parseJson(value, fallback) {
 export function applyJobToTask(task, job) {
   if (!task || !job) return task;
   const result = parseJson(job.result_json, {});
-  const failed = job.status === "failed" || job.status === "cancelled";
-  const done = job.status === "done";
-  const running = job.status === "running" || job.status === "queued";
+  const cancelled = job.status === "cancelled";
+  const publishOnly = Boolean(result.publishOnly) || job.type === "official-publish";
+  const generatedVideos = !publishOnly && Array.isArray(result.results)
+    ? result.results
+    : (task.generatedVideos || []);
+  const publishResults = Array.isArray(result.publishResults) ? result.publishResults : (task.publishResults || []);
+  const generatedCount = Number(result.progressCurrent || generatedVideos.length || 0);
+  const publishFailed = Boolean(result.publishFailed);
+  const generationFailed = (job.status === "failed" || Boolean(job.error)) && !generatedVideos.length && !publishOnly;
+  const done = job.status === "done" && !publishFailed;
+  const publishing = Boolean(result.publishProgress) && !done && !cancelled && !generationFailed;
+  const status = cancelled
+    ? "canceled"
+    : generationFailed
+      ? "failed"
+      : publishFailed
+        ? "needs_attention"
+        : done
+          ? "done"
+          : "running";
+  const phase = cancelled
+    ? "canceled"
+    : generationFailed
+      ? "failed"
+      : publishing
+        ? "publishing"
+        : publishFailed
+          ? "needs_attention"
+          : done
+            ? (publishResults.length ? "done" : "generated")
+            : publishOnly
+              ? "publishing"
+              : "generating";
   return {
     ...task,
     generationJobId: job.id,
-    status: failed ? (job.status === "cancelled" ? "canceled" : "failed") : done ? "done" : "running",
-    phase: failed ? (job.status === "cancelled" ? "canceled" : "failed") : done ? "generated" : "generating",
+    status,
+    phase,
     message: job.message || task.message || "",
-    error: job.error || "",
+    error: generationFailed ? (job.error || "") : "",
+    publishError: result.publishError || (publishFailed ? job.error : "") || "",
     progress: {
-      current: Number(result.progressCurrent || 0),
-      total: Number(result.progressTotal || 0),
+      current: generatedCount,
+      total: Number(result.progressTotal || task.progress?.total || 0),
       percent: Number(job.percent || 0)
     },
-    generatedVideos: Array.isArray(result.results) ? result.results : (task.generatedVideos || []),
+    publishProgress: result.publishProgress || task.publishProgress || null,
+    generatedVideos,
+    publishResults,
+    publishSummary: result.publishSummary || task.publishSummary || null,
     generationWarnings: Array.isArray(result.warnings) ? result.warnings : (task.generationWarnings || []),
     updatedAt: Number(job.updated_at || task.updatedAt || 0),
-    generationCompletedAt: done ? Number(job.completed_at || Date.now()) : task.generationCompletedAt || null
+    generationCompletedAt: generatedVideos.length || done || publishFailed
+      ? Number(job.completed_at || task.generationCompletedAt || Date.now())
+      : task.generationCompletedAt || null
   };
 }
 

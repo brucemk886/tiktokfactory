@@ -18,7 +18,7 @@ const sharedScript = read("official-analytics-shared.js");
 const accessScript = read("access.js");
 
 test("authorized accounts is a focused list page", () => {
-  assert.match(listHtml, /<h1>授权账号<\/h1>/);
+  assert.match(listHtml, /<h1 id="pageTitle">授权账号<\/h1>/);
   assert.match(listHtml, /账号列表/);
   assert.doesNotMatch(listHtml, /id="accountChart"|id="videoRows"|id="videoChart"/);
   assert.match(listScript, /official-account-detail\?account=/);

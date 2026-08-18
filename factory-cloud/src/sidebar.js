@@ -1,27 +1,38 @@
+const ALL = ["admin", "operator"];
+
 export const SIDEBAR_MODULES = Object.freeze([
-  moduleItem("hub", "/", "业务总览", ["admin"]),
-  moduleItem("mid-video", "/mid-video", "模板工作台", ["admin"], midVideoGroup()),
-  moduleItem("schulte", "/schulte", "舒尔特训练", ["admin"], midVideoGroup()),
-  moduleItem("podcast", "/podcast", "播客模板", ["admin"], midVideoGroup()),
-  moduleItem("ai", "/ai", "AI 创作", ["admin"], midVideoGroup()),
-  moduleItem("asset-usage", "/asset-usage", "素材使用率", ["admin"], midVideoGroup()),
-  moduleItem("novel-strategy", "/novel-strategy", "策略中心", ["admin"], novelPromotionGroup()),
-  moduleItem("novel-library", "/novel-library", "小说书单", ["admin"], novelPromotionGroup()),
-  moduleItem("novel-effects", "/novel-effects", "数据概览", ["admin"], novelPromotionGroup()),
-  moduleItem("operator-official", "/operator/official", "小说自运营", ["admin"], novelPromotionGroup()),
-  moduleItem("tasks", "/tasks", "Reddit 自动发布", ["admin"], novelPromotionGroup()),
-  moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ["admin"], psychologyGroup()),
-  moduleItem("psychology", "/psychology", "心理学视频自动化", ["admin"], psychologyGroup()),
-  moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ["admin"], officialChannelGroup()),
-  moduleItem("official-analytics", "/official-analytics", "授权账号数据", ["admin"], officialChannelGroup()),
-  moduleItem("official-publish-records", "/official-publish-records", "官方发布记录", ["admin"], officialChannelGroup()),
-  moduleItem("operator-third-party", "/operator/third-party", "小说自运营 · GeeLark 备用", ["admin"], geelarkBackupGroup()),
-  moduleItem("geelark-tasks", "/geelark-tasks", "GeeLark · Reddit 自动发布", ["admin", "operator"], geelarkBackupGroup()),
-  moduleItem("geelark-novel-effects", "/geelark-novel-effects", "GeeLark · 小说效果", ["admin"], geelarkBackupGroup()),
-  moduleItem("analytics", "/analytics", "GeeLark · 数据总览", ["admin", "operator"], geelarkBackupGroup()),
-  moduleItem("stats", "/stats", "GeeLark · 发布记录", ["admin", "operator"], geelarkBackupGroup()),
-  moduleItem("analytics-settings", "/analytics-settings", "GeeLark · 抓取配置", ["admin"], geelarkBackupGroup()),
-  moduleItem("work-journal", "/work-journal", "工作记录", ["admin"]),
+  moduleItem("hub", "/", "业务总览", ALL),
+  moduleItem("mid-video", "/mid-video", "模板工作台", ALL, midVideoGroup()),
+  moduleItem("schulte", "/schulte", "舒尔特训练", ALL, midVideoGroup()),
+  moduleItem("podcast", "/podcast", "播客模板", ALL, midVideoGroup()),
+  moduleItem("ai", "/ai", "AI 创作", ALL, midVideoGroup()),
+  moduleItem("asset-usage", "/asset-usage", "素材使用率", ALL, midVideoGroup()),
+  moduleItem("mid-video-effects", "/mid-video-effects", "数据概览", ALL, midVideoGroup()),
+  moduleItem("mid-video-ops-report", "/mid-video-ops-report", "运营报表", ALL, midVideoGroup()),
+  moduleItem("mid-video-publish", "/mid-video-publish", "视频发布", ALL, midVideoGroup()),
+  moduleItem("novel-strategy", "/novel-strategy", "策略中心", ALL, novelPromotionGroup()),
+  moduleItem("novel-library", "/novel-library", "小说书单", ALL, novelPromotionGroup()),
+  moduleItem("novel-effects", "/novel-effects", "数据概览", ALL, novelPromotionGroup()),
+  moduleItem("novel-ops-report", "/novel-ops-report", "运营报表", ALL, novelPromotionGroup()),
+  moduleItem("novel-publish", "/novel-publish", "视频发布", ALL, novelPromotionGroup()),
+  moduleItem("operator-official", "/operator/official", "小说自运营", ALL, novelPromotionGroup()),
+  moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
+  moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ALL, psychologyGroup()),
+  moduleItem("psychology", "/psychology", "心理学视频自动化", ALL, psychologyGroup()),
+  moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
+  moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
+  moduleItem("psychology-publish", "/psychology-publish", "视频发布", ALL, psychologyGroup()),
+  moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ALL, officialChannelGroup()),
+  moduleItem("official-analytics", "/official-analytics", "授权账号数据", ALL, officialChannelGroup()),
+  moduleItem("official-publish-records", "/official-publish-records", "官方发布记录", ALL, officialChannelGroup()),
+  moduleItem("operator-third-party", "/operator/third-party", "小说自运营 · GeeLark 备用", ALL, geelarkBackupGroup()),
+  moduleItem("geelark-profiles", "/geelark-profiles", "GeeLark 账户配置", ["admin"], geelarkBackupGroup()),
+  moduleItem("geelark-tasks", "/geelark-tasks", "GeeLark · Reddit 自动发布", ALL, geelarkBackupGroup()),
+  moduleItem("geelark-novel-effects", "/geelark-novel-effects", "GeeLark · 小说效果", ALL, geelarkBackupGroup()),
+  moduleItem("analytics", "/analytics", "GeeLark · 数据总览", ALL, geelarkBackupGroup()),
+  moduleItem("stats", "/stats", "GeeLark · 发布记录", ALL, geelarkBackupGroup()),
+  moduleItem("analytics-settings", "/analytics-settings", "GeeLark · 抓取配置", ALL, geelarkBackupGroup()),
+  moduleItem("work-journal", "/work-journal", "工作记录", ALL),
   moduleItem("accounts", "/accounts", "账户管理", ["admin"])
 ]);
 
@@ -45,8 +56,42 @@ export function visibleSidebarModules(user) {
 }
 
 export function homePathForUser(user) {
-  if (user?.role === "admin") return "/";
-  return visibleSidebarModules(user)[0]?.href || "";
+  const visible = visibleSidebarModules(user);
+  if (user?.role === "admin") return visible.find((item) => item.id === "hub")?.href || visible[0]?.href || "/";
+  return visible[0]?.href || "";
+}
+
+export function moduleIdForPath(pathname) {
+  const clean = String(pathname || "").replace(/\/$/, "") || "/";
+  const aliases = {
+    "/official-account-detail": "official-analytics",
+    "/official-account-videos": "official-analytics",
+    "/official-video-detail": "official-analytics",
+    "/novel-rewrite": "novel-library",
+    "/novel-audio": "novel-library",
+    "/rewrite-records": "novel-library",
+    "/operator": "operator-official",
+    "/ops-report": "novel-ops-report",
+    "/official-group-report": "novel-ops-report",
+    "/work-journal-mindmap": "work-journal",
+  };
+  if (aliases[clean]) return aliases[clean];
+  return SIDEBAR_MODULES.find((item) => item.href === clean)?.id || "";
+}
+
+const ACCOUNT_DATA_MODULES = Object.freeze(["official-analytics", "mid-video-effects", "psychology-effects"]);
+const ACCOUNT_DATA_DETAIL_PATHS = Object.freeze(["/official-account-detail", "/official-account-videos", "/official-video-detail"]);
+
+export function canAccessPath(user, pathname) {
+  if (!user) return false;
+  const clean = String(pathname || "").replace(/\/$/, "") || "/";
+  if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
+    return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
+  }
+  const moduleId = moduleIdForPath(pathname);
+  if (!moduleId) return true;
+  if (moduleId === "accounts" || moduleId === "geelark-profiles") return user.role === "admin";
+  return (user.sidebarModules || []).includes(moduleId);
 }
 
 function moduleItem(id, href, label, roles, group = null) {

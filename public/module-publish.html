@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>视频发布 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/official-analytics.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
+  <body class="work-page official-data-page module-publish-page">
+    <nav class="side-tabs"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
+    <main class="official-data-shell">
+      <header class="official-data-header">
+        <div>
+          <p class="toolbar-kicker" id="pageKicker">MODULE PUBLISH</p>
+          <h1 id="pageTitle">视频发布</h1>
+          <p id="pageCopy">只显示当前账号被分配的、属于本项目的分组账号。后续机器人会走同一套权限自动运营。</p>
+        </div>
+        <button id="refreshBtn" type="button">刷新账号</button>
+      </header>
+      <section id="groupPanel" class="panel data-section"></section>
+      <section class="panel data-section">
+        <div class="section-title"><div><p>ACCOUNTS</p><h2>可发布账号</h2></div><span id="accountCount">0 个账号</span></div>
+        <div id="accountList" class="publish-check-list"></div>
+      </section>
+      <section class="panel data-section">
+        <div class="section-title"><div><p>VIDEOS</p><h2>待发布成片</h2></div><span id="videoCount">0 条成片</span></div>
+        <div id="videoList" class="publish-check-list"></div>
+      </section>
+      <section class="panel data-section publish-form">
+        <div class="section-title"><div><p>SCHEDULE</p><h2>发布设置</h2></div></div>
+        <label class="field"><span>TikTok 文案</span><textarea id="publishDesc" rows="4" placeholder="发布到 TikTok 的视频文案，支持 #tag"></textarea></label>
+        <div class="publish-form-row">
+          <label class="field"><span>发布时间</span><input id="publishTime" type="datetime-local" /></label>
+          <label class="field"><span>间隔（分钟）</span><input id="publishInterval" type="number" min="0" step="1" value="60" /></label>
+        </div>
+        <button id="publishBtn" type="button">发布到已选账号</button>
+        <p id="publishResult" class="sync-state"></p>
+      </section>
+      <div id="pageStatus" class="page-status"></div>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/module-publish.js"></script>
+  </body>
+</html>

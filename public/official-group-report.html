@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>运营报表 · Local Factory</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/official-analytics.css">
+  <link rel="stylesheet" href="/theme-ops.css">
+</head>
+<body class="work-page official-data-page">
+  <nav class="side-tabs" aria-label="主导航"></nav>
+  <main class="official-data-shell">
+    <header class="official-data-header">
+      <div>
+        <p class="toolbar-kicker">MODULE OPS REPORT</p>
+        <h1 id="pageTitle">运营报表</h1>
+        <p id="pageCopy">按整个项目看今天和本周新发视频：0 播、低播、高播。开关关着就不统计。</p>
+      </div>
+    </header>
+    <section class="official-toolbar panel">
+      <div class="segmented" id="periodTabs">
+        <button type="button" data-period="today" class="is-active">今日</button>
+        <button type="button" data-period="week">本周</button>
+      </div>
+      <p id="reportMeta" class="sync-state">正在读取报表…</p>
+    </section>
+    <section class="data-section panel" id="groupPanel"></section>
+    <section class="overview-grid" id="summaryGrid"></section>
+    <section class="data-section panel" id="anomalySection"></section>
+    <section class="data-section panel" id="zeroSection"></section>
+    <section class="data-section panel" id="lowSection"></section>
+    <section class="data-section panel" id="highSection"></section>
+    <div id="pageStatus" class="page-status"></div>
+  </main>
+  <script src="/access.js"></script>
+  <script src="/official-group-report.js"></script>
+</body>
+</html>

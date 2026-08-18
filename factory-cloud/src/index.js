@@ -8,7 +8,7 @@ import { handleNovels } from "./novels.js";
 import { handleOfficial } from "./official.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
-import { homePathForUser } from "./sidebar.js";
+import { canAccessPath, homePathForUser } from "./sidebar.js";
 
 export default {
   async fetch(request, env) {
@@ -38,16 +38,10 @@ export default {
       if (!isPublicPath(url.pathname) && request.method === "GET") {
         if (!(await hasUsers(env.DB))) return redirect("/setup");
         if (!session) return redirect("/login");
-        if (session.user.role !== "admin") {
+        if (!canAccessPath(session.user, url.pathname)) {
           const home = homePathForUser(session.user);
-          const allowed = new Set(session.user.sidebarModules || []);
-          const pageId = Object.entries({
-            "/": "hub",
-            "/accounts": "accounts"
-          })[url.pathname];
-          if (url.pathname !== home && pageId && !allowed.has(pageId) && url.pathname !== home) {
-            if (home && home !== url.pathname) return redirect(home);
-          }
+          if (home && home !== url.pathname) return redirect(home);
+          return redirect("/login");
         }
       }
 

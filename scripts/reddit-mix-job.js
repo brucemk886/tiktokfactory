@@ -234,6 +234,8 @@ async function main() {
       audioIndex,
       variant,
       novelId: novelBadge?.novelId || audioFallback.novelId || "",
+      audioLibraryId: audioFallback.audioLibraryId || "",
+      scriptId: audioFallback.scriptId || "",
       novelPlatform: novelBadge?.platform || audioFallback.platform || "",
       novelPromotionCode: novelBadge?.promotionCode || audioFallback.promotionCode || "",
       openingTitle: captionTitle,
@@ -336,6 +338,7 @@ function normalizeAudioItems(value) {
   return (Array.isArray(value) ? value : [])
     .map((item) => ({
       id: String(item?.id || "").trim(),
+      scriptId: String(item?.scriptId || "").trim(),
       path: String(item?.path || item?.file || "").trim(),
       novelId: String(item?.novelId || "").trim(),
       platform: String(item?.platform || item?.novelPlatform || "").trim(),
@@ -390,6 +393,8 @@ function fallbackForAudio(payload, audioPath) {
   const hit = items.find((item) => item.path && path.resolve(item.path) === resolved)
     || items.find((item) => item.id && (baseName.includes(item.id) || resolved.includes(item.id)));
   return {
+    audioLibraryId: hit?.id || "",
+    scriptId: hit?.scriptId || "",
     novelId: hit?.novelId || payload.novelId,
     platform: hit?.platform || payload.novelPlatform,
     promotionCode: hit?.promotionCode || payload.novelPromotionCode,

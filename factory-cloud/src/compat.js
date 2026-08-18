@@ -172,7 +172,31 @@ export async function handleCompat(request, env, url, session) {
       return json({ task });
     }
     if (method === "POST" && taskMatch[2] === "retry-publish") {
-      return errorJson("发布重试仍由本机出片完成后走官方通道，当前先完成混剪下发。", 501);
+      const videos = Array.isArray(task.generatedVideos) ? task.generatedVideos : [];
+      if (!videos.length) return errorJson("没有已生成的成片，无法重试发布。", 400);
+      const job = await enqueueJob(db, {
+        type: "official-publish",
+        title: `${task.name} · 重试发布`,
+        payload: {
+          taskId: task.id,
+          taskName: task.name,
+          taskType: "official-publish",
+          publishOnly: true,
+          publish: task.publish || {},
+          videos,
+          generatedVideos: videos
+        },
+        createdBy: session.user.username
+      });
+      task.generationJobId = job.id;
+      task.status = "queued";
+      task.phase = "queued";
+      task.message = "已重新下发官方发布，等待本机工人提交。";
+      task.error = "";
+      task.publishError = "";
+      task.updatedAt = now();
+      await kvSet(db, "auto-tasks", tasks);
+      return json({ task });
     }
   }
 

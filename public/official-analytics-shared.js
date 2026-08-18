@@ -1,12 +1,45 @@
 (function () {
   const $ = (selector) => document.querySelector(selector);
 
+  const MODULE_PAGES = {
+    "/mid-video-effects": { module: "mid-video", title: "数据概览", kicker: "MID VIDEO ACCOUNTS", copy: "只看中视频项目下、已分到对应分组的账号数据和运营情况。" },
+    "/psychology-effects": { module: "psychology", title: "数据概览", kicker: "PSYCHOLOGY ACCOUNTS", copy: "只看心理学项目下、已分到对应分组的账号数据和运营情况。" }
+  };
+
+  function currentModule() {
+    const path = location.pathname.replace(/\/$/, "") || "/";
+    return MODULE_PAGES[path]?.module || String(new URLSearchParams(location.search).get("module") || "").trim();
+  }
+
+  function listHref(module = currentModule()) {
+    if (module === "mid-video") return "/mid-video-effects";
+    if (module === "psychology") return "/psychology-effects";
+    return "/official-analytics";
+  }
+
+  function withModule(href, module = currentModule()) {
+    if (!module) return href;
+    const url = new URL(href, location.origin);
+    url.searchParams.set("module", module);
+    return `${url.pathname}${url.search}`;
+  }
+
   async function fetchDashboard(values = {}) {
+    const module = values.module || currentModule();
     const params = new URLSearchParams({ ...values, t: String(Date.now()) });
+    if (module) params.set("module", module);
     const response = await fetch(`/api/official-analytics?${params}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取失败");
     return data;
+  }
+
+  async function syncNow(after) {
+    showStatus("正在同步官方数据…");
+    const response = await fetch("/api/official-analytics/sync", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "同步失败");
+    if (after) await after();
   }
 
   function drawChart(container, rows, key = "views", options = {}) {
@@ -127,5 +160,5 @@
   function videoDateTime(item) { const timestamp = videoTimestamp(item); return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { hour12: false }) : "-"; }
   function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
   function escapeHtml(value) { return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
-  window.OfficialAnalytics = { $, fetchDashboard, drawChart, drawRetention, renderDistribution, parseObject, pick, activate, avatar, showStatus, hideStatus, format, duration, percent, dateTime, videoDateTime, debounce, escapeHtml };
+  window.OfficialAnalytics = { $, fetchDashboard, syncNow, drawChart, drawRetention, renderDistribution, parseObject, pick, activate, avatar, showStatus, hideStatus, format, duration, percent, dateTime, videoDateTime, debounce, escapeHtml, currentModule, listHref, withModule, MODULE_PAGES };
 })();

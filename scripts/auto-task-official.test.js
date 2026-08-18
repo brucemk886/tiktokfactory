@@ -6,6 +6,7 @@ import test from "node:test";
 import { buildTikTokCaption } from "./novel-video-badge.js";
 import {
   buildOfficialPublishRecords,
+  mergeOfficialPublishRecords,
   normalizeOfficialAutoPublishResult,
   persistOfficialPublishRecords,
 } from "./auto-task-manager.js";
@@ -97,6 +98,9 @@ test("official publish results map to the shared publish-record schema", () => {
     generatedVideos: [{
       fileName: "video-1.mp4",
       audioName: "story-1.mp3",
+      audioLibraryId: "audio-1",
+      scriptId: "script-1",
+      novelId: "novel-1",
       template: "reddit-mix",
       templateLabel: "Reddit 混剪",
       variant: 2,
@@ -117,6 +121,10 @@ test("official publish results map to the shared publish-record schema", () => {
     groupName: records[0].groupName,
     fileName: records[0].fileName,
     audioName: records[0].audioName,
+    audioLibraryId: records[0].audioLibraryId,
+    scriptId: records[0].scriptId,
+    novelId: records[0].novelId,
+    username: records[0].username,
     status: records[0].status,
     scheduleAt: records[0].scheduleAt,
   }, {
@@ -130,6 +138,10 @@ test("official publish results map to the shared publish-record schema", () => {
     groupName: "TikTok 官方 API",
     fileName: "video-1.mp4",
     audioName: "story-1.mp3",
+    audioLibraryId: "audio-1",
+    scriptId: "script-1",
+    novelId: "novel-1",
+    username: "creator_one",
     status: "submitted",
     scheduleAt: 2_000,
   });
@@ -188,4 +200,21 @@ test("official publish record persistence is idempotent", () => {
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
+});
+
+test("cloud publish record merge drops stub summaries and keeps matchable fields", () => {
+  const merged = mergeOfficialPublishRecords(
+    [
+      { id: "old", audioName: "keep.mp3", username: "old_user" },
+      { status: "submitted", message: "已提交官方发布 3 条", batchCount: 1 }
+    ],
+    [
+      { id: "new", audioLibraryId: "audio-2", scriptId: "script-2", username: "creator_two", audioName: "story-2.mp3" },
+      { status: "submitted", message: "空摘要" }
+    ]
+  );
+  assert.equal(merged.length, 2);
+  assert.ok(merged.some((item) => item.id === "old" && item.audioName === "keep.mp3"));
+  assert.ok(merged.some((item) => item.id === "new" && item.audioLibraryId === "audio-2" && item.scriptId === "script-2"));
+  assert.ok(!merged.some((item) => item.message === "已提交官方发布 3 条"));
 });

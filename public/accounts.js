@@ -1,20 +1,16 @@
-const state = { users: [], profiles: [], groups: [], sidebarModules: [], groupHint: "选择 GeeLark 配置后自动读取分组" };
+const state = { users: [], profiles: [], sidebarModules: [], accountGroups: { projects: [], groups: [] }, originalPassword: "", currentUserId: "" };
 const $ = (selector) => document.querySelector(selector);
 
-$("#profileForm").addEventListener("submit", saveProfile);
 $("#userForm").addEventListener("submit", saveUser);
 $("#clearUserBtn").addEventListener("click", clearUserForm);
-$("#userProfile").addEventListener("change", () => loadProfileGroups([]));
+$("#togglePasswordBtn")?.addEventListener("click", togglePasswordVisible);
+$("#copyPasswordBtn")?.addEventListener("click", copyPassword);
+$("#deleteUserBtn")?.addEventListener("click", () => deleteUser($("#userId").value));
 $("#userRole").addEventListener("change", () => {
-  updateGroupPermissionHint();
-  renderSidebarOptions(selectedSidebarModules());
+  const user = currentUser();
+  renderSidebarOptions(user ? user.sidebarModules : defaultBusinessModules($("#userRole").value));
+  renderAccountGroups(user ? user.allowedAccountGroups : []);
 });
-$("#refreshUserGroupsBtn").addEventListener("click", () => loadProfileGroups(selectedGroups()));
-$("#selectAllUserGroupsBtn").addEventListener("click", () => setAllGroups(true));
-$("#clearUserGroupsBtn").addEventListener("click", () => setAllGroups(false));
-$("#selectAllSidebarBtn").addEventListener("click", () => setAllSidebarModules(true));
-$("#clearSidebarBtn").addEventListener("click", () => setAllSidebarModules(false));
-$("#saveSidebarBtn").addEventListener("click", saveSidebarSettings);
 
 load();
 
@@ -25,256 +21,151 @@ async function load() {
   state.users = data.users || [];
   state.profiles = data.profiles || [];
   state.sidebarModules = data.sidebarModules || [];
-  render();
-  renderSidebarOptions(defaultSidebarModules($("#userRole").value));
-  await loadProfileGroups([]);
+  state.accountGroups = data.accountGroups || { projects: [], groups: [] };
+  state.currentUserId = data.currentUserId || "";
+  renderPeople();
+  const editing = currentUser();
+  renderSidebarOptions(editing ? editing.sidebarModules : defaultBusinessModules($("#userRole").value));
+  renderAccountGroups(editing ? editing.allowedAccountGroups : []);
 }
 
-function render() {
-  const selectedProfileId = $("#userProfile").value;
-  $("#userProfile").innerHTML = state.profiles.map((profile) => (
-    `<option value="${esc(profile.id)}">${esc(profile.name)}${profile.hasApiKey ? "" : "（未配置密钥）"}</option>`
-  )).join("");
-  if (state.profiles.some((profile) => profile.id === selectedProfileId)) $("#userProfile").value = selectedProfileId;
-
-  $("#profileList").innerHTML = state.profiles.map((profile) => `
-    <article class="entity-card">
-      <div>
-        <strong>${esc(profile.name)}</strong>
-        <small>${esc(profile.appId || "未填写 App ID")} · ${profile.hasApiKey ? "已保存 API Key" : "未保存 API Key"}</small>
+function renderPeople() {
+  const editingId = $("#userId").value;
+  const visibleUsers = state.users.filter((user) => user.active);
+  $("#userList").innerHTML = visibleUsers.length
+    ? visibleUsers.map((user) => `
+      <div class="people-item${user.id === editingId ? " is-active" : ""}">
+        <button class="people-main" type="button" data-edit-user="${esc(user.id)}">
+          <span>
+            <strong>${esc(user.username)}</strong>
+            <small>${user.role === "admin" ? "管理员" : "成员"}</small>
+            <small class="people-password">${user.password ? `密码 ${esc(user.password)}` : "密码未记录"}</small>
+          </span>
+            <em>${esc(sidebarModuleSummary(user.sidebarModules, user.role))} · ${esc(accountGroupSummary(user.allowedAccountGroups))}</em>
+        </button>
+        ${user.id === state.currentUserId ? "" : `<button class="people-delete" type="button" data-delete-user="${esc(user.id)}">删除</button>`}
       </div>
-      <div class="entity-actions"><button data-edit-profile="${esc(profile.id)}">编辑</button>${profile.id !== "default" ? `<button data-delete-profile="${esc(profile.id)}">删除</button>` : ""}</div>
-    </article>
-  `).join("");
-
-  $("#userList").innerHTML = state.users.map((user) => {
-    const groupText = user.role === "admin"
-      ? "全部 GeeLark 分组"
-      : (user.allowedGeeLarkGroups?.length ? `分组：${user.allowedGeeLarkGroups.join("、")}` : "未分配 GeeLark 分组");
-    const directoryText = user.allowedDirectory ? user.allowedDirectory : "未分配共享目录";
-    const sidebarText = sidebarModuleSummary(user.sidebarModules, user.role);
-    return `
-      <article class="entity-card">
-        <div>
-          <strong>${esc(user.username)}</strong>
-          <small>${user.role === "admin" ? "管理员" : "成员"} · ${esc(profileName(user.geelarkProfileId))}</small>
-          <small>${esc(groupText)} · ${esc(directoryText)}</small>
-          <small>侧边栏：${esc(sidebarText)}</small>
-        </div>
-        <div class="entity-actions"><span class="status-dot ${user.active ? "" : "off"}">${user.active ? "启用" : "停用"}</span><button data-edit-user="${esc(user.id)}">编辑</button></div>
-      </article>
-    `;
-  }).join("");
-
-  document.querySelectorAll("[data-edit-profile]").forEach((button) => {
-    button.onclick = () => editProfile(button.dataset.editProfile);
-  });
-  document.querySelectorAll("[data-delete-profile]").forEach((button) => {
-    button.onclick = () => deleteProfile(button.dataset.deleteProfile);
-  });
+    `).join("")
+    : '<p class="empty-state">还没有启用中的登录账号。</p>';
   document.querySelectorAll("[data-edit-user]").forEach((button) => {
     button.onclick = () => editUser(button.dataset.editUser);
   });
-}
-
-function profileName(id) {
-  return state.profiles.find((profile) => profile.id === id)?.name || "默认 GeeLark";
-}
-
-function editProfile(id) {
-  const profile = state.profiles.find((item) => item.id === id);
-  $("#profileId").value = profile.id;
-  $("#profileName").value = profile.name;
-  $("#profileBaseUrl").value = profile.apiBaseUrl;
-  $("#profileAppId").value = profile.appId;
-  $("#profileApiKey").value = "";
-  $("#profileStatus").textContent = `正在编辑：${profile.name}`;
-}
-
-async function saveProfile(event) {
-  event.preventDefault();
-  const response = await fetch("/api/admin/geelark-profiles", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: $("#profileId").value,
-      name: $("#profileName").value,
-      apiBaseUrl: $("#profileBaseUrl").value,
-      appId: $("#profileAppId").value,
-      apiKey: $("#profileApiKey").value
-    })
+  document.querySelectorAll("[data-delete-user]").forEach((button) => {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      deleteUser(button.dataset.deleteUser);
+    };
   });
-  const data = await response.json();
-  $("#profileStatus").textContent = response.ok ? "GeeLark 配置已保存。" : data.error || "保存失败。";
-  if (response.ok) {
-    $("#profileForm").reset();
-    $("#profileBaseUrl").value = "https://openapi.geelark.cn";
-    await load();
-  }
 }
 
-async function deleteProfile(id) {
-  if (!confirm("确定删除这条 GeeLark 配置？")) return;
-  const response = await fetch(`/api/admin/geelark-profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
-  const data = await response.json();
-  if (!response.ok) return alert(data.error || "删除失败。");
-  await load();
+function currentUser() {
+  return state.users.find((item) => item.id === $("#userId").value) || null;
 }
 
-async function editUser(id) {
+function editUser(id) {
   const user = state.users.find((item) => item.id === id);
   $("#userId").value = user.id;
+  $("#formTitle").textContent = `编辑 ${user.username}`;
   $("#userName").value = user.username;
   $("#userName").disabled = true;
   $("#userRole").value = user.role;
-  $("#userProfile").value = user.geelarkProfileId;
-  $("#userAllowedDirectory").value = user.allowedDirectory || "";
-  $("#userPassword").value = "";
+  state.originalPassword = user.password || "";
+  $("#userPassword").value = user.password || "";
+  $("#userPassword").type = "text";
+  $("#togglePasswordBtn").textContent = "隐藏";
+  $("#passwordHint").textContent = user.password
+    ? "可直接改这段密码，保存后立即生效。"
+    : "旧密码已加密看不到，设一个新密码后就能在这里查看。";
   $("#userActive").checked = user.active;
-  $("#userStatus").textContent = `正在编辑：${user.username}`;
-  renderSidebarOptions(user.sidebarModules || defaultSidebarModules(user.role));
-  updateGroupPermissionHint();
-  await loadProfileGroups(user.allowedGeeLarkGroups || []);
+  $("#userStatus").textContent = "";
+  $("#deleteUserBtn").hidden = user.id === state.currentUserId;
+  renderSidebarOptions(user.sidebarModules);
+  renderAccountGroups(user.allowedAccountGroups);
+  renderPeople();
 }
 
-async function clearUserForm() {
+function clearUserForm() {
   $("#userForm").reset();
   $("#userId").value = "";
+  $("#formTitle").textContent = "新建账号";
   $("#userName").disabled = false;
   $("#userActive").checked = true;
+  state.originalPassword = "";
+  $("#userPassword").type = "text";
+  $("#togglePasswordBtn").textContent = "隐藏";
+  $("#passwordHint").textContent = "管理员可以直接查看和修改各账号密码。";
+  $("#deleteUserBtn").hidden = true;
   $("#userStatus").textContent = "";
-  renderSidebarOptions(defaultSidebarModules($("#userRole").value));
-  updateGroupPermissionHint();
-  await loadProfileGroups([]);
+  renderSidebarOptions(defaultBusinessModules($("#userRole").value));
+  renderAccountGroups([]);
+  renderPeople();
 }
 
 async function saveUser(event) {
   event.preventDefault();
-  const id = $("#userId").value;
+  const existing = currentUser();
+  const role = $("#userRole").value;
   const payload = {
     username: $("#userName").value,
     displayName: $("#userName").value,
-    role: $("#userRole").value,
-    geelarkProfileId: $("#userProfile").value,
-    allowedGeeLarkGroups: selectedGroups(),
-    sidebarModules: selectedSidebarModules(),
-    allowedDirectory: $("#userAllowedDirectory").value,
-    password: $("#userPassword").value,
+    role,
+    sidebarModules: mergeSidebarModules(existing, role),
+    allowedAccountGroups: selectedAccountGroups(),
     active: $("#userActive").checked
   };
+  const nextPassword = $("#userPassword").value;
+  if (!existing || nextPassword !== state.originalPassword) payload.password = nextPassword;
+  if (existing) {
+    payload.geelarkProfileId = existing.geelarkProfileId;
+    payload.allowedGeeLarkGroups = existing.allowedGeeLarkGroups || [];
+    payload.allowedDirectory = existing.allowedDirectory || "";
+  }
+  const id = existing?.id;
   const response = await fetch(id ? `/api/admin/accounts/${encodeURIComponent(id)}` : "/api/admin/accounts", {
     method: id ? "PATCH" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
   const data = await response.json();
-  $("#userStatus").textContent = response.ok ? "登录账号已保存。" : data.error || "保存失败。";
+  $("#userStatus").textContent = response.ok ? "账号已保存。" : data.error || "保存失败。";
   if (response.ok) {
-    await clearUserForm();
+    clearUserForm();
     await load();
   }
 }
 
-async function saveSidebarSettings() {
-  const id = $("#userId").value;
-  const status = $("#sidebarSaveStatus");
-  if (!id) {
-    status.textContent = "请先从下方账号列表点击“编辑”；新账号请使用“保存登录账号”。";
-    return;
-  }
-
-  const button = $("#saveSidebarBtn");
-  button.disabled = true;
-  status.textContent = "正在保存...";
-  try {
-    const response = await fetch(`/api/admin/accounts/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        role: $("#userRole").value,
-        sidebarModules: selectedSidebarModules()
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "保存失败。");
-    status.textContent = "角色与侧边栏设置已保存，刷新或重新登录后生效。";
-    await load();
-  } catch (error) {
-    status.textContent = error.message || "保存失败。";
-  } finally {
-    button.disabled = false;
-  }
+async function deleteUser(id) {
+  const user = state.users.find((item) => item.id === id);
+  if (!user) return;
+  if (user.id === state.currentUserId) return alert("不能删除当前正在使用的账号。");
+  if (!confirm(`确定删除账号 ${user.username}？删除后无法恢复。`)) return;
+  const response = await fetch(`/api/admin/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return alert(data.error || "删除失败。");
+  if ($("#userId").value === id) clearUserForm();
+  await load();
 }
 
-async function loadProfileGroups(preserveSelection = []) {
-  const profileId = $("#userProfile").value;
-  const groupSelect = $("#userGroups");
-  if (!profileId) {
-    groupSelect.innerHTML = "";
-    state.groupHint = "请先创建 GeeLark 配置";
-    $("#userGroupsHint").textContent = state.groupHint;
-    return;
-  }
-  state.groupHint = "正在读取 GeeLark 分组...";
-  $("#userGroupsHint").textContent = state.groupHint;
-  $("#refreshUserGroupsBtn").disabled = true;
-  try {
-    const response = await fetch(`/api/admin/geelark-profiles/${encodeURIComponent(profileId)}/groups?t=${Date.now()}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "读取分组失败。");
-    state.groups = data.groups || [];
-    renderGroupOptions(preserveSelection);
-    state.groupHint = state.groups.length
-      ? `共 ${state.groups.length} 个分组、${data.accountCount || 0} 个账号，可同时勾选多个`
-      : "该配置未读取到 GeeLark 分组";
-    $("#userGroupsHint").textContent = state.groupHint;
-  } catch (error) {
-    state.groups = [];
-    renderGroupOptions(preserveSelection);
-    state.groupHint = error.message || "读取分组失败。";
-    $("#userGroupsHint").textContent = state.groupHint;
-  } finally {
-    $("#refreshUserGroupsBtn").disabled = false;
-    updateGroupPermissionHint();
-  }
-}
-
-function renderGroupOptions(selected) {
-  const selectedSet = new Set((selected || []).map(String));
-  const currentNames = new Set(state.groups.map((group) => group.name));
-  const options = state.groups.map((group) => ({ name: group.name, label: `${group.name}（${group.accountCount} 个账号）` }));
-  for (const name of selectedSet) {
-    if (!currentNames.has(name)) options.push({ name, label: `${name}（已保存，当前接口未返回）` });
-  }
-  $("#userGroups").innerHTML = options.map((group) => (
-    `<label class="group-checkbox-item"><input type="checkbox" value="${esc(group.name)}"${selectedSet.has(group.name) ? " checked" : ""}><span>${esc(group.label)}</span></label>`
-  )).join("");
-}
-
-function selectedGroups() {
-  return Array.from($("#userGroups").querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
-}
-
-function setAllGroups(checked) {
-  if ($("#userRole").value === "admin") return;
-  $("#userGroups").querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.checked = checked;
+function copyPassword() {
+  const value = $("#userPassword").value;
+  if (!value) return;
+  navigator.clipboard.writeText(value).then(() => {
+    $("#copyPasswordBtn").textContent = "已复制";
+    setTimeout(() => { $("#copyPasswordBtn").textContent = "复制"; }, 1200);
+  }).catch(() => {
+    $("#userPassword").select();
+    document.execCommand("copy");
   });
 }
 
-function updateGroupPermissionHint() {
-  const groupList = $("#userGroups");
-  const isAdmin = $("#userRole").value === "admin";
-  groupList.classList.toggle("is-disabled", isAdmin);
-  groupList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.disabled = isAdmin;
-  });
-  $("#selectAllUserGroupsBtn").disabled = isAdmin;
-  $("#clearUserGroupsBtn").disabled = isAdmin;
-  $("#userGroupsHint").textContent = isAdmin ? "管理员默认可以查看全部 GeeLark 分组" : state.groupHint;
+function togglePasswordVisible() {
+  const input = $("#userPassword");
+  const hidden = input.type === "password";
+  input.type = hidden ? "text" : "password";
+  $("#togglePasswordBtn").textContent = hidden ? "隐藏" : "显示";
 }
 
-function isGeeLarkBackupModule(item) {
+function isGeeLarkModule(item) {
   return item?.group?.id === "geelark-backup";
 }
 
@@ -282,57 +173,178 @@ function roleSidebarModules(role = $("#userRole").value) {
   return state.sidebarModules.filter((item) => Array.isArray(item.roles) && item.roles.includes(role));
 }
 
-function availableSidebarModules(role = $("#userRole").value) {
-  return roleSidebarModules(role).filter(isGeeLarkBackupModule);
+function businessModules(role) {
+  return roleSidebarModules(role).filter((item) => !isGeeLarkModule(item) && item.id !== "accounts");
 }
 
-function defaultSidebarModules(role) {
-  return availableSidebarModules(role).map((item) => item.id);
+function geelarkModules(role) {
+  return roleSidebarModules(role).filter(isGeeLarkModule);
 }
 
-function geelarkModuleIds() {
-  return new Set(state.sidebarModules.filter(isGeeLarkBackupModule).map((item) => item.id));
+function businessGroups(role = $("#userRole").value) {
+  const groups = [];
+  for (const item of businessModules(role)) {
+    const id = item.group?.id || item.id;
+    const label = item.group?.label || item.label;
+    let group = groups.find((entry) => entry.id === id);
+    if (!group) {
+      group = { id, label, items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  return groups;
 }
 
-function preservedSidebarModules(role = $("#userRole").value) {
-  const geelarkIds = geelarkModuleIds();
-  const user = state.users.find((item) => item.id === $("#userId").value);
-  const source = user && user.role === role && Array.isArray(user.sidebarModules)
-    ? user.sidebarModules
-    : roleSidebarModules(role).map((item) => item.id);
-  return source.filter((moduleId) => !geelarkIds.has(moduleId));
+function defaultBusinessModules(role) {
+  if (role === "operator") return [];
+  return businessModules(role).map((item) => item.id);
+}
+
+function mergeSidebarModules(user, role) {
+  const geelarkIds = new Set(geelarkModules(role).map((item) => item.id));
+  const keptGeeLark = (user?.sidebarModules || []).filter((moduleId) => geelarkIds.has(moduleId));
+  const pinned = role === "admin" ? ["accounts"] : [];
+  return [...new Set([...selectedSidebarModules(), ...keptGeeLark, ...pinned])];
 }
 
 function renderSidebarOptions(selected) {
-  const selectedSet = new Set(Array.isArray(selected) ? selected : defaultSidebarModules($("#userRole").value));
-  const modules = availableSidebarModules();
-  $("#userSidebarModules").innerHTML = modules.map((item) => (
-    `<label class="sidebar-checkbox-item"><input type="checkbox" value="${esc(item.id)}"${selectedSet.has(item.id) ? " checked" : ""}><span>${esc(item.label)}</span></label>`
-  )).join("");
-  $("#userSidebarHint").textContent = $("#userRole").value === "admin"
-    ? "只勾选 GeeLark 备用页面。中视频、小说推文、官方通道等其他业务保持原样。"
-    : "成员只能分配 GeeLark 备用里的 Reddit 发布、数据总览和发布记录。";
+  const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+  $("#userSidebarModules").innerHTML = businessGroups().map((group) => {
+    const on = group.items.some((item) => selectedSet.has(item.id));
+    const canExpand = group.items.length > 1;
+    return `
+      <div class="module-card${on ? " is-on" : ""}" data-group-id="${esc(group.id)}">
+        <div class="module-card-head">
+          <label class="module-switch">
+            <input class="group-switch" type="checkbox"${on ? " checked" : ""}>
+            <span>
+              <strong>${esc(group.label)}</strong>
+              <small>${esc(group.items.map((item) => item.label).join("、"))}</small>
+            </span>
+          </label>
+          ${canExpand ? `<button class="module-expand" type="button">子功能</button>` : ""}
+        </div>
+        ${canExpand ? `
+          <div class="module-children" hidden>
+            ${group.items.map((item) => `
+              <label class="check-row">
+                <input class="child-switch" type="checkbox" value="${esc(item.id)}"${selectedSet.has(item.id) ? " checked" : ""}>
+                <span>${esc(item.label)}</span>
+              </label>
+            `).join("")}
+          </div>
+        ` : `<input class="child-switch" type="checkbox" value="${esc(group.items[0].id)}"${selectedSet.has(group.items[0].id) ? " checked" : ""} hidden>`}
+      </div>
+    `;
+  }).join("");
+  $("#userSidebarHint").textContent = "打开大模块后，可点「子功能」去掉不想展示的页面。";
+  bindModuleCards();
 }
 
-function selectedSidebarModules() {
-  const checked = Array.from($("#userSidebarModules").querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
-  if ($("#userRole").value !== "admin") return checked;
-  return [...preservedSidebarModules(), ...checked];
-}
-
-function setAllSidebarModules(checked) {
-  $("#userSidebarModules").querySelectorAll('input[type="checkbox"]').forEach((input) => {
-    input.checked = checked;
+function bindModuleCards() {
+  document.querySelectorAll(".module-card").forEach((card) => {
+    const groupSwitch = card.querySelector(".group-switch");
+    const children = Array.from(card.querySelectorAll(".child-switch"));
+    const expand = card.querySelector(".module-expand");
+    const panel = card.querySelector(".module-children");
+    groupSwitch.addEventListener("change", () => {
+      children.forEach((input) => { input.checked = groupSwitch.checked; });
+      card.classList.toggle("is-on", groupSwitch.checked);
+    });
+    children.forEach((input) => {
+      input.addEventListener("change", () => {
+        const anyOn = children.some((item) => item.checked);
+        groupSwitch.checked = anyOn;
+        card.classList.toggle("is-on", anyOn);
+      });
+    });
+    expand?.addEventListener("click", () => {
+      const open = panel.hidden;
+      panel.hidden = !open;
+      expand.classList.toggle("is-open", open);
+      expand.textContent = open ? "收起" : "子功能";
+    });
   });
 }
 
+function selectedSidebarModules() {
+  return Array.from($("#userSidebarModules").querySelectorAll(".child-switch:checked")).map((input) => input.value);
+}
+
 function sidebarModuleSummary(selected, role) {
-  const selectedSet = new Set(Array.isArray(selected) ? selected : defaultSidebarModules(role));
-  const modules = availableSidebarModules(role);
-  const labels = modules.filter((item) => selectedSet.has(item.id)).map((item) => item.label);
-  if (!labels.length) return "GeeLark 备用全部隐藏";
-  if (labels.length === modules.length) return "GeeLark 备用全部显示";
-  return labels.join("、");
+  const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+  const labels = businessGroups(role)
+    .filter((group) => group.items.some((item) => selectedSet.has(item.id)))
+    .map((group) => group.label);
+  if (!labels.length) return "未开模块";
+  if (labels.length === businessGroups(role).length) return "全部模块";
+  return labels.join(" · ");
+}
+
+function accountProjects() {
+  const groups = Array.isArray(state.accountGroups.groups) ? state.accountGroups.groups : [];
+  const projects = Array.isArray(state.accountGroups.projects) ? state.accountGroups.projects : [];
+  return projects.map((project) => ({
+    ...project,
+    groups: groups.filter((group) => group.projectId === project.id)
+  })).filter((project) => project.groups.length);
+}
+
+function renderAccountGroups(selected) {
+  const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+  const projects = accountProjects();
+  const node = $("#userAccountGroups");
+  if (!node) return;
+  node.innerHTML = projects.length
+    ? projects.map((project) => `
+      <div class="module-card${project.groups.some((group) => selectedSet.has(group.id)) ? " is-on" : ""}" data-project-id="${esc(project.id)}">
+        <div class="module-card-head">
+          <label class="module-switch">
+            <input class="group-switch" type="checkbox"${project.groups.some((group) => selectedSet.has(group.id)) ? " checked" : ""}>
+            <span>
+              <strong>${esc(project.name)}</strong>
+              <small>${esc(project.groups.map((group) => group.name).join("、"))}</small>
+            </span>
+          </label>
+        </div>
+        <div class="module-children">
+          ${project.groups.map((group) => `
+            <label class="check-row">
+              <input class="account-group-switch" type="checkbox" value="${esc(group.id)}"${selectedSet.has(group.id) ? " checked" : ""}>
+              <span>${esc(group.name)}${group.accountCount ? ` · ${group.accountCount} 个账号` : ""}</span>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+    `).join("")
+    : '<p class="empty-state">还没有账号分组。先到官方通道的 TikTok 账号页建项目和分组。</p>';
+  node.querySelectorAll(".module-card").forEach((card) => {
+    const groupSwitch = card.querySelector(".group-switch");
+    const children = Array.from(card.querySelectorAll(".account-group-switch"));
+    groupSwitch?.addEventListener("change", () => {
+      children.forEach((input) => { input.checked = groupSwitch.checked; });
+      card.classList.toggle("is-on", groupSwitch.checked);
+    });
+    children.forEach((input) => {
+      input.addEventListener("change", () => {
+        const anyOn = children.some((item) => item.checked);
+        if (groupSwitch) groupSwitch.checked = anyOn;
+        card.classList.toggle("is-on", anyOn);
+      });
+    });
+  });
+}
+
+function selectedAccountGroups() {
+  return Array.from(document.querySelectorAll(".account-group-switch:checked")).map((input) => input.value);
+}
+
+function accountGroupSummary(selected) {
+  const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+  const count = selectedSet.size;
+  if (!count) return "未分配分组";
+  return `${count} 个分组`;
 }
 
 function esc(value) {

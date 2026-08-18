@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GeeLark 账户配置 · Local Factory</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/theme-ops.css">
+  <link rel="stylesheet" href="/accounts.css">
+</head>
+<body class="work-page accounts-page">
+  <nav class="side-tabs" aria-label="主导航">
+    <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>GeeLark 备用</small></b></a>
+    <button class="nav-logout" type="button" data-logout>退出登录</button>
+  </nav>
+  <main class="accounts-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">GEELARK</p>
+        <h1>GeeLark 账户配置</h1>
+        <p>在这里管 API、在线云手机，以及每个登录账号能用的 GeeLark 分组和备用模块。</p>
+      </div>
+    </header>
+
+    <section class="workflow-section">
+      <div class="section-head">
+        <div>
+          <h2>API 配置</h2>
+          <p>备用通道密钥。官方 API 仍在 TikTok 账号页。</p>
+        </div>
+      </div>
+      <form id="profileForm" class="account-form">
+        <input id="profileId" type="hidden">
+        <div class="form-grid">
+          <label>配置名称<input id="profileName" required placeholder="例如：小说账号组 A"></label>
+          <label>API 地址<input id="profileBaseUrl" value="https://openapi.geelark.cn"></label>
+          <label>App ID<input id="profileAppId"></label>
+          <label>API Key <small>留空则保留原密钥</small><input id="profileApiKey" type="password" autocomplete="off"></label>
+        </div>
+        <div class="form-actions">
+          <button type="submit">保存配置</button>
+          <p id="profileStatus" class="auth-status"></p>
+        </div>
+      </form>
+      <div id="profileList" class="entity-list"></div>
+    </section>
+
+    <section class="workflow-section">
+      <div class="section-head">
+        <div>
+          <h2>在线账号</h2>
+          <p>只列出当前在线、可以拿来发布的云手机。</p>
+        </div>
+        <button id="refreshPhonesBtn" class="ghost-button" type="button">刷新</button>
+      </div>
+      <p id="phoneStatus" class="field-note"></p>
+      <div id="phoneList" class="entity-list"></div>
+    </section>
+
+    <section class="workflow-section">
+      <div class="section-head">
+        <div>
+          <h2>成员 GeeLark 权限</h2>
+          <p>给已启用的登录账号分配配置、可见分组和备用侧栏。</p>
+        </div>
+      </div>
+      <div class="accounts-layout">
+        <aside class="people-panel">
+          <div id="userList" class="people-list"></div>
+        </aside>
+        <form id="userForm" class="account-form">
+          <input id="userId" type="hidden">
+          <h2 id="formTitle">选择左侧账号</h2>
+          <label>GeeLark 配置<select id="userProfile"></select></label>
+          <fieldset class="module-field">
+            <legend>可查看分组</legend>
+            <p id="userGroupsHint" class="field-note">选择配置后读取分组</p>
+            <div id="userGroups" class="module-groups"></div>
+            <div class="field-meta">
+              <span class="text-actions">
+                <button id="selectAllUserGroupsBtn" class="text-action" type="button">全选</button>
+                <button id="clearUserGroupsBtn" class="text-action" type="button">清空</button>
+                <button id="refreshUserGroupsBtn" class="text-action" type="button">刷新</button>
+              </span>
+            </div>
+          </fieldset>
+          <fieldset class="module-field">
+            <legend>GeeLark 备用模块</legend>
+            <p id="userSidebarHint" class="field-note">只控制 GeeLark 备用分组里的页面。</p>
+            <div id="userSidebarModules" class="module-groups"></div>
+          </fieldset>
+          <div class="form-actions">
+            <button type="submit">保存 GeeLark 权限</button>
+            <p id="userStatus" class="auth-status"></p>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+  <script src="/access.js"></script>
+  <script src="/geelark-profiles.js"></script>
+</body>
+</html>

@@ -1,3 +1,24 @@
+import {
+  accountMatchesProject,
+  assignAccounts,
+  attachAccounts,
+  createGroup,
+  createProject,
+  deleteGroup,
+  deleteProject,
+  ensureModuleProjects,
+  findProjectForModule,
+  normalizeStore,
+  publicState,
+  scopeOfficialAccess,
+  updateGroup,
+  updateProject,
+  rememberAccountAliases,
+  accountsFromArchiveRows,
+  userAllowedGroupIds,
+} from "../../scripts/official-account-group-store.js";
+import { computeGroupReport, videosForGroup, videosForProject } from "../../scripts/official-group-report.js";
+import { mapArchiveVideoRow } from "../../scripts/official-archive-signals.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
@@ -41,20 +62,18 @@ export async function handleOfficial(request, env, url, session) {
     }
   }
 
-  if (pathname.startsWith("/api/official-tiktok/account-groups")) {
-    return handleAccountGroups(request, db, url);
+  if (pathname.startsWith("/api/official-tiktok/projects") || pathname.startsWith("/api/official-tiktok/account-groups") || pathname.startsWith("/api/official-tiktok/groups/") || pathname === "/api/official-tiktok/ops-report") {
+    return handleAccountGroups(request, db, url, session);
   }
 
   if (method === "GET" && pathname === "/api/official-tiktok/publish-accounts") {
     try {
       const data = await signalDesk(env, db, "/api/v1/accounts");
-      const groups = await kvGet(db, "official-account-groups", { groups: [], assignments: {} });
-      const accounts = (data.accounts || []).map((account) => attachGroup(account, groups));
+      const store = await loadGroupStore(db);
+      const scoped = scopeOfficialAccess(data, store, session.user, url.searchParams.get("module") || "");
       return json({
-        ...data,
-        accounts,
-        groups: groups.groups || [],
-        ungroupedCount: accounts.filter((item) => !item.groupId).length
+        ...scoped,
+        accounts: (scoped.accounts || []).filter((account) => !Array.isArray(account.scopes) || account.scopes.includes("video.publish")),
       });
     } catch (error) {
       return errorJson(error.message || "读取官方发布账号失败。", error.statusCode || 502);
@@ -63,7 +82,7 @@ export async function handleOfficial(request, env, url, session) {
 
   if (method === "GET" && pathname === "/api/official-analytics") {
     try {
-      return json(await officialDashboard(env, db, url.searchParams));
+      return json(await officialDashboard(env, db, url.searchParams, session.user));
     } catch (error) {
       return errorJson(error.message || "读取官方数据失败。", error.statusCode || 502);
     }
@@ -113,50 +132,80 @@ export async function handleOfficial(request, env, url, session) {
   return null;
 }
 
-async function handleAccountGroups(request, db, url) {
+export async function assertOfficialPublishAccess(env, user, payload = {}) {
+  const store = await loadGroupStore(env.DB);
+  const data = await signalDesk(env, env.DB, "/api/v1/accounts");
+  const scoped = scopeOfficialAccess(data, store, user, payload.module || "");
+  const allowed = new Set((scoped.accounts || []).map((account) => account.connectionId || account.id).filter(Boolean));
+  const requested = Array.from(new Set((Array.isArray(payload.connectionIds) ? payload.connectionIds : []).map((id) => String(id || "").trim()).filter(Boolean)));
+  if (!requested.length) {
+    const error = new Error("请先选择官方授权账号。");
+    error.statusCode = 400;
+    throw error;
+  }
+  const blocked = requested.filter((id) => !allowed.has(id));
+  if (blocked.length) {
+    const error = new Error("只能发布到已分配分组里的账号。");
+    error.statusCode = 403;
+    throw error;
+  }
+  return scoped;
+}
+
+async function handleAccountGroups(request, db, url, session) {
   const method = request.method;
   const pathname = url.pathname;
-  const store = await kvGet(db, "official-account-groups", { groups: [], assignments: {} });
+  const store = await loadGroupStore(db);
 
-  if (method === "GET" && pathname === "/api/official-tiktok/account-groups") {
-    return json(store);
-  }
-  if (method === "POST" && pathname === "/api/official-tiktok/account-groups") {
-    const payload = await readJson(request);
-    const name = String(payload.name || "").trim().slice(0, 60);
-    if (!name) return errorJson("请填写分组名称。", 400);
-    store.groups.push({ id: `group-${Date.now()}`, name });
-    await kvSet(db, "official-account-groups", store);
-    return json(store);
-  }
-  if (method === "POST" && pathname === "/api/official-tiktok/account-groups/assign") {
-    const payload = await readJson(request);
-    const groupId = String(payload.groupId || "");
-    for (const account of payload.accounts || []) {
-      const key = String(account.connectionId || account.id || account.schema || "").trim();
-      if (!key) continue;
-      if (groupId) store.assignments[key] = groupId;
-      else delete store.assignments[key];
+  try {
+    if (method === "GET" && pathname === "/api/official-tiktok/account-groups") {
+      return json(publicState(store));
     }
-    await kvSet(db, "official-account-groups", store);
-    return json(store);
-  }
-  const match = pathname.match(/^\/api\/official-tiktok\/account-groups\/([^/]+)$/);
-  if (method === "DELETE" && match) {
-    const id = decodeURIComponent(match[1]);
-    store.groups = (store.groups || []).filter((item) => item.id !== id);
-    for (const [key, value] of Object.entries(store.assignments || {})) {
-      if (value === id) delete store.assignments[key];
+    if (method === "GET" && pathname === "/api/official-tiktok/projects") {
+      return json(publicState(store));
     }
-    await kvSet(db, "official-account-groups", store);
-    return json(store);
+    if (method === "POST" && pathname === "/api/official-tiktok/projects") {
+      const payload = await readJson(request);
+      return json(await saveGroupStore(db, createProject(store, payload.name)), 201);
+    }
+    const projectMatch = pathname.match(/^\/api\/official-tiktok\/projects\/([^/]+)$/);
+    if (method === "PATCH" && projectMatch) {
+      return json(await saveGroupStore(db, updateProject(store, decodeURIComponent(projectMatch[1]), await readJson(request))));
+    }
+    if (method === "DELETE" && projectMatch) {
+      return json(await saveGroupStore(db, deleteProject(store, decodeURIComponent(projectMatch[1]))));
+    }
+    if (method === "POST" && pathname === "/api/official-tiktok/account-groups") {
+      const payload = await readJson(request);
+      return json(await saveGroupStore(db, createGroup(store, payload.name, { projectId: payload.projectId })), 201);
+    }
+    if (method === "POST" && pathname === "/api/official-tiktok/account-groups/assign") {
+      return json(await saveGroupStore(db, assignAccounts(store, await readJson(request))));
+    }
+    const groupMatch = pathname.match(/^\/api\/official-tiktok\/account-groups\/([^/]+)$/);
+    if (method === "PATCH" && groupMatch) {
+      return json(await saveGroupStore(db, updateGroup(store, decodeURIComponent(groupMatch[1]), await readJson(request))));
+    }
+    if (method === "DELETE" && groupMatch) {
+      return json(await saveGroupStore(db, deleteGroup(store, decodeURIComponent(groupMatch[1]))));
+    }
+    const reportMatch = pathname.match(/^\/api\/official-tiktok\/groups\/([^/]+)\/report$/);
+    if (method === "GET" && reportMatch) {
+      return json(await buildGroupReport(db, store, decodeURIComponent(reportMatch[1]), url.searchParams.get("period") || "today"));
+    }
+    if (method === "GET" && pathname === "/api/official-tiktok/ops-report") {
+      return json(await buildModuleReport(db, store, url.searchParams.get("module") || "", url.searchParams.get("period") || "today", session?.user));
+    }
+  } catch (error) {
+    return errorJson(error.message || "分组操作失败。", error.statusCode || 400);
   }
   return null;
 }
 
-async function officialDashboard(env, db, searchParams) {
+async function officialDashboard(env, db, searchParams, user) {
   const search = String(searchParams.get("search") || "").trim().toLowerCase();
   const accountFilter = String(searchParams.get("account") || "").trim();
+  const moduleKey = String(searchParams.get("module") || "").trim();
   const accounts = [];
   let cursor = "";
   for (let page = 0; page < 20; page += 1) {
@@ -167,12 +216,20 @@ async function officialDashboard(env, db, searchParams) {
     if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
     cursor = data.nextCursor;
   }
-  const rows = accounts.map(archiveAccountRow).filter((item) => {
-    if (search && !`${item.label} ${item.schema}`.toLowerCase().includes(search)) return false;
+  const store = await loadGroupStore(db);
+  const project = moduleKey ? findProjectForModule(store, moduleKey) : null;
+  const scoped = moduleKey
+    ? accounts.filter((account) => project && accountMatchesProject(account, store, project.id))
+    : accounts;
+  const allowedIds = userAllowedGroupIds(user);
+  const attached = attachAccounts({ accounts: scoped }, store).accounts || [];
+  const rows = attached.map(archiveAccountRow).filter((item) => {
+    if (allowedIds && !allowedIds.has(item.groupId)) return false;
+    if (search && !`${item.label} ${item.schema} ${item.groupName}`.toLowerCase().includes(search)) return false;
     return true;
   });
   const selectedAccount = accountFilter || rows[0]?.schema || "";
-  const selected = accounts.find((item) => item.schema === selectedAccount) || accounts[0];
+  const selected = scoped.find((item) => item.schema === selectedAccount) || scoped[0];
   const videos = (selected?.videos || []).map((video) => ({
     ...video,
     id: String(video.id || video.videoId || ""),
@@ -207,7 +264,9 @@ async function officialDashboard(env, db, searchParams) {
     accountHistory: [],
     videos,
     selectedVideo: String(searchParams.get("video") || videos[0]?.id || ""),
-    videoHistory: []
+    videoHistory: [],
+    module: moduleKey || "",
+    project: project ? publicState(store).projects.find((item) => item.id === project.id) || project : null
   };
 }
 
@@ -230,7 +289,11 @@ function archiveAccountRow(account) {
     syncedAt: Number(account.latestSyncAt || account.archiveFetchedAt || 0),
     snapshotDate: account.snapshotDate || "",
     profileUrl: profile.profileUrl || "",
-    insights: profile.insights || {}
+    insights: profile.insights || {},
+    groupId: account.groupId || "",
+    groupName: account.groupName || "",
+    projectId: account.projectId || "",
+    projectName: account.projectName || ""
   };
 }
 
@@ -245,7 +308,7 @@ async function listAllAccounts(env, db) {
     if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
     cursor = data.nextCursor;
   }
-  return { connected: true, accounts };
+  return attachAccounts({ connected: true, accounts }, await loadGroupStore(db));
 }
 
 async function publicOfficialSettings(db, env) {
@@ -260,11 +323,89 @@ async function publicOfficialSettings(db, env) {
   };
 }
 
-function attachGroup(account, store) {
-  const keys = [account.connectionId, account.id, account.schema, account.username].map((item) => String(item || "").trim()).filter(Boolean);
-  const groupId = keys.map((key) => store.assignments?.[key]).find(Boolean) || "";
-  const group = (store.groups || []).find((item) => item.id === groupId);
-  return { ...account, groupId, groupName: group?.name || "" };
+async function loadGroupStore(db) {
+  const store = ensureModuleProjects(await kvGet(db, "official-account-groups", {}));
+  const { results } = await db.prepare("SELECT account_key, label, profile_json FROM official_accounts_latest").all();
+  return rememberAccountAliases(store, accountsFromArchiveRows(results || []));
+}
+
+async function saveGroupStore(db, store) {
+  const next = normalizeStore(store);
+  await kvSet(db, "official-account-groups", next);
+  return publicState(next);
+}
+
+async function buildModuleReport(db, store, moduleKey, period, user) {
+  const project = findProjectForModule(store, moduleKey);
+  if (!project) {
+    const error = new Error("这个模块还没有对应项目。");
+    error.statusCode = 404;
+    throw error;
+  }
+  const state = publicState(store);
+  const allowedIds = userAllowedGroupIds(user);
+  const groups = state.groups.filter((item) => item.projectId === project.id && (!allowedIds || allowedIds.has(item.id)));
+  const liveProject = state.projects.find((item) => item.id === project.id) || project;
+  if (!liveProject.reportEnabled) {
+    return { module: liveProject.moduleKey, project: liveProject, groups, report: { enabled: false, period, project: liveProject } };
+  }
+  const accountRows = (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
+  const videosByAccount = new Map();
+  for (const row of accountRows) {
+    const rows = (await db.prepare(
+      "SELECT * FROM official_videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT 80"
+    ).bind(row.account_key).all()).results || [];
+    videosByAccount.set(row.account_key, rows.map(mapArchiveVideoRow));
+  }
+  const { accounts, videos } = videosForProject({
+    store,
+    projectId: liveProject.id,
+    accountRows,
+    videosByAccount,
+    groupIds: allowedIds ? Array.from(allowedIds) : null,
+  });
+  return {
+    module: liveProject.moduleKey,
+    project: liveProject,
+    groups,
+    report: computeGroupReport({
+      group: liveProject,
+      project: liveProject,
+      accounts,
+      videos,
+      period,
+    }),
+  };
+}
+
+async function buildGroupReport(db, store, groupId, period) {
+  const state = publicState(store);
+  const group = state.groups.find((item) => item.id === groupId);
+  if (!group) {
+    const error = new Error("没有找到这个分组。");
+    error.statusCode = 404;
+    throw error;
+  }
+  const project = state.projects.find((item) => item.id === group.projectId) || null;
+  if (!project?.reportEnabled) {
+    return { enabled: false, group, project, period };
+  }
+  const accountRows = (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
+  const videosByAccount = new Map();
+  for (const row of accountRows) {
+    const rows = (await db.prepare(
+      "SELECT * FROM official_videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT 80"
+    ).bind(row.account_key).all()).results || [];
+    videosByAccount.set(row.account_key, rows.map(mapArchiveVideoRow));
+  }
+  const { accounts, videos } = videosForGroup({ store, groupId, accountRows, videosByAccount });
+  return computeGroupReport({
+    group,
+    project,
+    accounts,
+    videos,
+    period,
+  });
 }
 
 function normalizeBase(value) {

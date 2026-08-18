@@ -52,20 +52,44 @@
       <section class="workflow-section">
         <div class="section-head">
           <span>02</span>
-          <div><h2>已授权账号</h2><p>给账号分组后，发布时可以按组筛选，不用一次翻几百个。</p></div>
+          <div><h2>已授权账号</h2><p>先建项目，再在项目下建分组。运营报表在小说推文、中视频、心理学各自模块里看。</p></div>
           <button id="refreshButton" class="secondary-button" type="button">刷新账号</button>
         </div>
-        <div class="account-toolbar">
-          <label><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
-          <label class="account-search"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="用户名或显示名" /></label>
-          <label><span>新建分组</span><div class="path-picker"><input id="newGroupName" type="text" maxlength="40" placeholder="例如：A组" /><button id="createGroupBtn" class="secondary-button" type="button">新建</button></div></label>
-        </div>
-        <div class="account-toolbar assign-toolbar">
-          <button id="selectVisibleBtn" class="secondary-button" type="button">全选筛选结果</button>
-          <label><span>将已选移入</span><select id="assignGroupSelect"><option value="">未分组</option></select></label>
-          <button id="assignGroupBtn" class="primary-button" type="button">移入分组</button>
-          <button id="deleteGroupBtn" class="secondary-button" type="button">删除当前分组</button>
-          <span id="selectedCount" class="selected-count">已选 0 个</span>
+        <div class="account-panels">
+          <section class="account-panel">
+            <h3>筛选</h3>
+            <div class="account-toolbar filter-toolbar">
+              <label><span>项目</span><select id="projectFilter"><option value="">全部项目</option></select></label>
+              <label><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
+              <label class="account-search"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="用户名或显示名" /></label>
+            </div>
+          </section>
+          <section class="account-panel">
+            <h3>新建</h3>
+            <div class="account-toolbar create-toolbar">
+              <label><span>新建项目</span><div class="path-picker"><input id="newProjectName" type="text" maxlength="40" placeholder="例如：小说推文" /><button id="createProjectBtn" class="secondary-button" type="button">新建</button></div></label>
+              <label><span>新建分组</span><div class="path-picker"><input id="newGroupName" type="text" maxlength="40" placeholder="例如：A组" /><button id="createGroupBtn" class="secondary-button" type="button">新建</button></div></label>
+            </div>
+          </section>
+          <section class="account-panel">
+            <h3>移动</h3>
+            <div class="account-toolbar assign-toolbar">
+              <button id="selectVisibleBtn" class="secondary-button" type="button">全选筛选结果</button>
+              <label><span>将已选移入</span><select id="assignGroupSelect"><option value="">未分组</option></select></label>
+              <button id="assignGroupBtn" class="primary-button" type="button">移入分组</button>
+              <span id="selectedCount" class="selected-count">已选 0 个</span>
+            </div>
+            <div class="account-toolbar manage-toolbar">
+              <button id="deleteProjectBtn" class="secondary-button" type="button">删除当前项目</button>
+              <button id="deleteGroupBtn" class="secondary-button" type="button">删除当前分组</button>
+            </div>
+          </section>
+          <section class="account-panel group-report-toolbar" id="groupReportBar" hidden>
+            <h3>当前分组</h3>
+            <div class="account-toolbar report-toolbar">
+              <label><span>所属项目</span><select id="groupProjectSelect"><option value="">未分配项目</option></select></label>
+            </div>
+          </section>
         </div>
         <div id="statusMessage" class="status-message" hidden></div>
         <div id="accountList" class="account-list"><div class="empty-state">正在读取已授权账号...</div></div>

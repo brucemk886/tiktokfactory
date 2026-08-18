@@ -1,4 +1,6 @@
+import { ensureModuleProjects, publicState, rememberAccountAliases, accountsFromArchiveRows } from "../../scripts/official-account-group-store.js";
 import { homePathForUser, publicSidebarModules, sidebarModuleIdsForRole } from "./sidebar.js";
+import { kvGet } from "./kv.js";
 import {
   clearSessionCookie,
   errorJson,
@@ -43,8 +45,7 @@ export async function handleAuth(request, env, url) {
     const username = normalizeUsername(payload.username);
     const row = await env.DB.prepare("SELECT * FROM factory_users WHERE username = ?").bind(username).first();
     if (!row || row.active === 0) return errorJson("账号或密码不正确。", 401);
-    const ok = await verifyPassword(payload.password, row.password_salt, row.password_hash);
-    if (!ok) return errorJson("账号或密码不正确。", 401);
+    if (!await passwordMatches(row, payload.password)) return errorJson("账号或密码不正确。", 401);
     const session = await createSession(env.DB, row.id);
     const user = toPublicUser(row);
     return json({ ok: true, user, home: homePathForUser(user) }, 200, {
@@ -82,23 +83,33 @@ export async function handleAccounts(request, env, url, session) {
   const pathname = url.pathname;
 
   if (method === "GET" && pathname === "/api/admin/accounts") {
+    const store = rememberAccountAliases(
+      ensureModuleProjects(await kvGet(env.DB, "official-account-groups", {})),
+      accountsFromArchiveRows(((await env.DB.prepare("SELECT account_key, label, profile_json FROM official_accounts_latest").all()).results) || [])
+    );
     return json({
       users: await listUsers(env.DB),
       profiles: await listProfiles(env.DB),
-      sidebarModules: publicSidebarModules()
+      sidebarModules: publicSidebarModules(),
+      accountGroups: publicState(store),
+      currentUserId: session.user.id
     });
   }
 
   if (method === "POST" && pathname === "/api/admin/accounts") {
     const payload = await readJson(request);
     const user = await createUserRecord(env.DB, payload);
-    return json({ user: toPublicUser(user) }, 201);
+    return json({ user: toAdminUser(user) }, 201);
   }
 
   const accountMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
   if (method === "PATCH" && accountMatch) {
     const user = await updateUserRecord(env.DB, decodeURIComponent(accountMatch[1]), await readJson(request));
     return json({ user });
+  }
+  if (method === "DELETE" && accountMatch) {
+    await deleteUserRecord(env.DB, decodeURIComponent(accountMatch[1]), session.user.id);
+    return json({ ok: true });
   }
 
   if (method === "POST" && pathname === "/api/admin/geelark-profiles") {
@@ -137,7 +148,7 @@ export async function hasUsers(db) {
 
 async function listUsers(db) {
   const { results } = await db.prepare("SELECT * FROM factory_users ORDER BY created_at").all();
-  return (results || []).map(toPublicUser);
+  return (results || []).map(toAdminUser);
 }
 
 export async function listProfiles(db) {
@@ -177,22 +188,25 @@ async function createUserRecord(db, payload) {
     active: payload.active === false ? 0 : 1,
     password_hash: hashed.hash,
     password_salt: hashed.salt,
+    password_plain: String(payload.password),
     geelark_profile_id: String(payload.geelarkProfileId || "default"),
     allowed_directory: String(payload.allowedDirectory || "").trim(),
     allowed_geelark_groups_json: JSON.stringify(normalizeGroups(payload.allowedGeeLarkGroups)),
+    allowed_account_groups_json: JSON.stringify(normalizeGroups(payload.allowedAccountGroups)),
     sidebar_modules_json: JSON.stringify(normalizeSidebarModules(payload.sidebarModules, role)),
     created_at: now(),
     updated_at: now()
   };
   await db.prepare(`
     INSERT INTO factory_users (
-      id, username, display_name, role, active, password_hash, password_salt,
-      geelark_profile_id, allowed_directory, allowed_geelark_groups_json, sidebar_modules_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, username, display_name, role, active, password_hash, password_salt, password_plain,
+      geelark_profile_id, allowed_directory, allowed_geelark_groups_json, allowed_account_groups_json,
+      sidebar_modules_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
-    user.id, user.username, user.display_name, user.role, user.active, user.password_hash, user.password_salt,
-    user.geelark_profile_id, user.allowed_directory, user.allowed_geelark_groups_json, user.sidebar_modules_json,
-    user.created_at, user.updated_at
+    user.id, user.username, user.display_name, user.role, user.active, user.password_hash, user.password_salt, user.password_plain,
+    user.geelark_profile_id, user.allowed_directory, user.allowed_geelark_groups_json, user.allowed_account_groups_json,
+    user.sidebar_modules_json, user.created_at, user.updated_at
   ).run();
   return user;
 }
@@ -208,29 +222,44 @@ async function updateUserRecord(db, id, payload) {
   }
   let hash = row.password_hash;
   let salt = row.password_salt;
+  let passwordPlain = row.password_plain || "";
   if (String(payload.password || "")) {
     validatePassword(payload.password);
     const hashed = await hashPassword(payload.password);
     hash = hashed.hash;
     salt = hashed.salt;
+    passwordPlain = String(payload.password);
   }
   const displayName = String(payload.displayName ?? row.display_name).trim().slice(0, 40) || row.username;
   const modules = JSON.stringify(normalizeSidebarModules(payload.sidebarModules ?? parseJson(row.sidebar_modules_json, []), nextRole));
   await db.prepare(`
     UPDATE factory_users SET
-      display_name = ?, role = ?, active = ?, password_hash = ?, password_salt = ?,
+      display_name = ?, role = ?, active = ?, password_hash = ?, password_salt = ?, password_plain = ?,
       geelark_profile_id = ?, allowed_directory = ?, allowed_geelark_groups_json = ?,
-      sidebar_modules_json = ?, updated_at = ?
+      allowed_account_groups_json = ?, sidebar_modules_json = ?, updated_at = ?
     WHERE id = ?
   `).bind(
-    displayName, nextRole, nextActive, hash, salt,
+    displayName, nextRole, nextActive, hash, salt, passwordPlain,
     String(payload.geelarkProfileId || row.geelark_profile_id || "default"),
     String(payload.allowedDirectory ?? row.allowed_directory ?? ""),
     JSON.stringify(normalizeGroups(payload.allowedGeeLarkGroups ?? parseJson(row.allowed_geelark_groups_json, []))),
+    JSON.stringify(normalizeGroups(payload.allowedAccountGroups ?? parseJson(row.allowed_account_groups_json, []))),
     modules, now(), row.id
   ).run();
   const updated = await db.prepare("SELECT * FROM factory_users WHERE id = ?").bind(row.id).first();
-  return toPublicUser(updated);
+  return toAdminUser(updated);
+}
+
+async function deleteUserRecord(db, id, currentUserId) {
+  const row = await db.prepare("SELECT * FROM factory_users WHERE id = ?").bind(String(id)).first();
+  if (!row) throw Object.assign(new Error("账号不存在。"), { statusCode: 404 });
+  if (row.id === currentUserId) throw Object.assign(new Error("不能删除当前正在使用的账号。"), { statusCode: 400 });
+  if (row.role === "admin" && row.active !== 0) {
+    const admins = await db.prepare("SELECT COUNT(*) AS count FROM factory_users WHERE role = 'admin' AND active = 1").first();
+    if (Number(admins?.count || 0) <= 1) throw Object.assign(new Error("至少需要保留一个启用中的管理员账号。"), { statusCode: 400 });
+  }
+  await db.prepare("DELETE FROM factory_sessions WHERE user_id = ?").bind(row.id).run();
+  await db.prepare("DELETE FROM factory_users WHERE id = ?").bind(row.id).run();
 }
 
 async function saveProfile(db, payload) {
@@ -290,7 +319,15 @@ function toPublicUser(row) {
     geelarkProfileId: row.geelark_profile_id || row.geelarkProfileId || "default",
     allowedDirectory: row.allowed_directory || row.allowedDirectory || "",
     allowedGeeLarkGroups: normalizeGroups(parseJson(row.allowed_geelark_groups_json, row.allowedGeeLarkGroups || [])),
-    sidebarModules: normalizeSidebarModules(withWorkJournalModule(parseJson(row.sidebar_modules_json, row.sidebarModules), role), role)
+    allowedAccountGroups: normalizeGroups(parseJson(row.allowed_account_groups_json, row.allowedAccountGroups || [])),
+    sidebarModules: normalizeSidebarModules(withOpsReportModules(withWorkJournalModule(parseJson(row.sidebar_modules_json, row.sidebarModules), role), role), role)
+  };
+}
+
+function toAdminUser(row) {
+  return {
+    ...toPublicUser(row),
+    password: String(row.password_plain || row.passwordPlain || "")
   };
 }
 
@@ -311,6 +348,15 @@ function normalizeUsername(value) {
   return username;
 }
 
+async function passwordMatches(row, password) {
+  const candidates = Array.from(new Set([String(password ?? ""), String(password ?? "").trim()].filter(Boolean)));
+  for (const candidate of candidates) {
+    if (await verifyPassword(candidate, row.password_salt, row.password_hash)) return true;
+    if (row.password_plain && candidate === row.password_plain) return true;
+  }
+  return false;
+}
+
 function validatePassword(password) {
   if (String(password || "").length < 8) throw Object.assign(new Error("密码至少需要 8 位。"), { statusCode: 400 });
 }
@@ -318,6 +364,39 @@ function validatePassword(password) {
 function normalizeGroups(value) {
   const groups = Array.isArray(value) ? value : String(value || "").split(/[,，\n]/);
   return Array.from(new Set(groups.map((group) => String(group || "").trim()).filter(Boolean))).slice(0, 100);
+}
+
+function withOpsReportModules(value, role) {
+  const modules = Array.isArray(value) ? [...value] : [];
+  if (!modules.length) return value;
+  const midVideoIds = ["mid-video", "schulte", "podcast", "ai", "asset-usage", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
+  const psychologyIds = ["psychology-topics", "psychology", "psychology-effects", "psychology-ops-report", "psychology-publish"];
+  const novelIds = ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "novel-publish", "operator-official", "tasks"];
+  if (modules.some((moduleId) => midVideoIds.includes(moduleId))) {
+    insertModuleAfter(modules, "asset-usage", "mid-video-effects");
+    insertModuleAfter(modules, "mid-video-effects", "mid-video-ops-report");
+    insertModuleAfter(modules, "mid-video-ops-report", "mid-video-publish");
+  }
+  if (modules.some((moduleId) => psychologyIds.includes(moduleId))) {
+    insertModuleAfter(modules, "psychology", "psychology-effects");
+    insertModuleAfter(modules, "psychology-effects", "psychology-ops-report");
+    insertModuleAfter(modules, "psychology-ops-report", "psychology-publish");
+  }
+  if (modules.some((moduleId) => novelIds.includes(moduleId))) {
+    insertModuleAfter(modules, "novel-effects", "novel-ops-report");
+    insertModuleAfter(modules, "novel-ops-report", "novel-publish");
+  }
+  if (role === "admin") {
+    insertModuleAfter(modules, "analytics-settings", "geelark-profiles");
+  }
+  return modules;
+}
+
+function insertModuleAfter(modules, afterId, moduleId) {
+  const existing = modules.indexOf(moduleId);
+  if (existing >= 0) modules.splice(existing, 1);
+  const after = modules.indexOf(afterId);
+  modules.splice(after >= 0 ? after + 1 : modules.length, 0, moduleId);
 }
 
 function withWorkJournalModule(value, role) {
@@ -332,7 +411,7 @@ function withWorkJournalModule(value, role) {
 
 function normalizeSidebarModules(value, role) {
   const allowed = sidebarModuleIdsForRole(role);
-  if (!Array.isArray(value)) return [...allowed];
+  if (!Array.isArray(value)) return role === "operator" ? [] : [...allowed];
   const selected = new Set(value.map((item) => String(item || "").trim()).filter(Boolean));
   return allowed.filter((moduleId) => selected.has(moduleId));
 }

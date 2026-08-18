@@ -1,0 +1,142 @@
+html,
+body.mindmap-app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f4efe4;
+  color: #1d1a14;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.mind-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  background: #fffdf8;
+  border-bottom: 1px solid rgba(45, 38, 24, 0.1);
+}
+
+.mind-back,
+.mind-tools button,
+.mind-save-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.mind-back,
+.mind-tools button {
+  background: #f6f0e4;
+}
+
+.mind-title {
+  flex: 1;
+  min-width: 180px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mind-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mind-save {
+  color: #6d6758;
+  font-size: 13px;
+}
+
+.mind-save-btn {
+  background: #c8dc5a;
+}
+
+.mind-stage {
+  position: relative;
+  height: calc(100vh - 84px);
+  outline: none;
+  cursor: grab;
+  overflow: hidden;
+}
+
+.mind-stage.is-panning {
+  cursor: grabbing;
+}
+
+.mind-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.mind-hint {
+  margin: 0;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  color: #6d6758;
+  font-size: 12px;
+}
+
+.mind-link {
+  fill: none;
+  stroke-width: 2.4;
+}
+
+.mind-node {
+  cursor: pointer;
+}
+
+.mind-node rect {
+  stroke-width: 1.5;
+}
+
+.mind-node.is-root rect {
+  fill: #c8dc5a;
+  stroke: #5c6a14;
+}
+
+.mind-node.is-selected rect {
+  stroke: #1d1a14;
+  stroke-width: 2.2;
+}
+
+.mind-node.is-drop rect {
+  stroke: #2f6f4e;
+  stroke-width: 3;
+  fill: #e7f6df;
+}
+
+.mind-node.is-dragging {
+  opacity: 0.35;
+}
+
+.mind-node text {
+  font: 600 14px/1 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  fill: #1d1a14;
+  pointer-events: none;
+}
+
+.mind-node.is-root text {
+  font-size: 16px;
+}
+
+.mind-editor {
+  position: absolute;
+  border: 2px solid #5c6a14;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font: 600 14px/1.3 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #fff;
+  outline: none;
+  min-width: 80px;
+}

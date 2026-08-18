@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>账户管理 · Local Factory</title>
   <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/accounts.css">
   <link rel="stylesheet" href="/theme-ops.css">
+  <link rel="stylesheet" href="/accounts.css">
 </head>
 <body class="work-page accounts-page">
   <nav class="side-tabs" aria-label="主导航">
@@ -16,105 +16,73 @@
   <main class="accounts-shell">
     <header class="page-header">
       <div>
-        <p class="eyebrow">LOCAL ACCESS</p>
         <h1>账户管理</h1>
-        <p>管理本地登录账号、侧边栏权限，以及 GeeLark 备用配置。</p>
+        <p>管理登录账号，按大模块开关侧栏。GeeLark 请到 <a href="/geelark-profiles">GeeLark 账户配置</a>。</p>
       </div>
-      <div class="admin-chip">
-        <small>当前管理员</small>
-        <b data-account-name></b>
-      </div>
+      <span class="header-badge">管理员 <b data-account-name></b></span>
     </header>
 
-    <section class="workflow-section">
-      <div class="section-head">
-        <span>01</span>
-        <div>
-          <h2>GeeLark 配置</h2>
-          <p>备用发布通道的密钥。官方 API 账号在 TikTok 账号页管理。</p>
+    <div class="accounts-layout">
+      <section class="bs-card people-card">
+        <div class="bs-card-head">
+          <h2>已启用账号</h2>
+          <button id="clearUserBtn" class="btn btn-outline" type="button">新建账号</button>
         </div>
-      </div>
-      <form id="profileForm" class="account-form">
-        <input id="profileId" type="hidden">
+        <div id="userList" class="people-list"></div>
+      </section>
+
+      <form id="userForm" class="bs-card account-form">
+        <input id="userId" type="hidden">
+        <div class="bs-card-head">
+          <h2 id="formTitle">新建账号</h2>
+        </div>
         <div class="form-grid">
-          <label>配置名称<input id="profileName" required placeholder="例如：小说账号组 A"></label>
-          <label>API 地址<input id="profileBaseUrl" value="https://openapi.geelark.cn"></label>
-          <label>App ID<input id="profileAppId"></label>
-          <label>API Key <small>留空则保留原密钥</small><input id="profileApiKey" type="password" autocomplete="off"></label>
+          <label class="form-field">登录账号
+            <input id="userName" class="form-control" required placeholder="英文、数字、_ 或 -">
+          </label>
+          <label class="form-field">角色
+            <select id="userRole" class="form-control">
+              <option value="operator">成员：只看打开的模块</option>
+              <option value="admin">管理员：可管账号</option>
+            </select>
+          </label>
+          <label class="form-field">密码
+            <div class="password-field">
+              <input id="userPassword" class="form-control" type="text" autocomplete="new-password" placeholder="至少 8 位">
+              <button id="copyPasswordBtn" class="btn btn-outline" type="button">复制</button>
+              <button id="togglePasswordBtn" class="btn btn-outline" type="button">隐藏</button>
+            </div>
+            <small id="passwordHint">管理员可以直接查看和修改各账号密码。</small>
+          </label>
+          <label class="switch-row">
+            <input id="userActive" type="checkbox" checked>
+            <span>启用此账号</span>
+          </label>
         </div>
+
+        <div class="module-block">
+          <div class="module-block-head">
+            <h3>可见模块</h3>
+            <p id="userSidebarHint">打开大模块后，可点「子功能」去掉不想展示的页面。</p>
+          </div>
+          <div id="userSidebarModules" class="module-switch-list"></div>
+        </div>
+
+        <div class="module-block">
+          <div class="module-block-head">
+            <h3>账号分组</h3>
+            <p>一个用户可以分配多个分组。成员登录后，数据概览、运营报表和视频发布只看这些分组里的账号。</p>
+          </div>
+          <div id="userAccountGroups" class="module-switch-list"></div>
+        </div>
+
         <div class="form-actions">
-          <button type="submit">保存 GeeLark 配置</button>
-          <p id="profileStatus" class="auth-status"></p>
+          <button class="btn btn-primary" type="submit">保存账号</button>
+          <button id="deleteUserBtn" class="btn btn-danger" type="button" hidden>删除账号</button>
+          <p id="userStatus" class="auth-status"></p>
         </div>
       </form>
-      <div id="profileList" class="entity-list"></div>
-    </section>
-
-    <section class="workflow-section">
-      <div class="section-head">
-        <span>02</span>
-        <div>
-          <h2>登录账号</h2>
-          <p>给每个成员分配角色、GeeLark 备用模块、分组和共享素材目录。</p>
-        </div>
-      </div>
-      <div class="accounts-split">
-        <form id="userForm" class="account-form">
-          <input id="userId" type="hidden">
-          <div class="form-grid">
-            <label>登录账号<input id="userName" required placeholder="英文、数字、_ 或 -"></label>
-            <label>角色
-              <select id="userRole">
-                <option value="operator">成员：仅任务和发布记录</option>
-                <option value="admin">管理员：全部页面和配置</option>
-              </select>
-            </label>
-          </div>
-          <div class="field-block sidebar-permission-field">
-            <span>GeeLark 备用模块</span>
-            <span id="userSidebarModules" class="checkbox-list sidebar-checkbox-list"></span>
-            <div class="field-meta">
-              <small id="userSidebarHint">只控制 GeeLark 备用分组里的页面，其他业务线不受影响。</small>
-              <span class="text-actions group-actions">
-                <button id="selectAllSidebarBtn" class="text-action" type="button">全选</button>
-                <button id="clearSidebarBtn" class="text-action" type="button">清空</button>
-              </span>
-            </div>
-            <div class="form-actions sidebar-save-row">
-              <small id="sidebarSaveStatus">编辑已有账号时，可单独保存角色和菜单勾选结果。</small>
-              <button id="saveSidebarBtn" class="sidebar-save-button" type="button">保存角色与侧边栏</button>
-            </div>
-          </div>
-          <label>GeeLark 配置<select id="userProfile"></select></label>
-          <div class="field-block group-permission-field">
-            <span>可查看 GeeLark 分组</span>
-            <span id="userGroups" class="checkbox-list group-checkbox-list"></span>
-            <div class="field-meta">
-              <small id="userGroupsHint">选择 GeeLark 配置后自动读取分组</small>
-              <span class="text-actions group-actions">
-                <button id="selectAllUserGroupsBtn" class="text-action" type="button">全选</button>
-                <button id="clearUserGroupsBtn" class="text-action" type="button">清空</button>
-                <button id="refreshUserGroupsBtn" class="text-action" type="button">刷新</button>
-              </span>
-            </div>
-          </div>
-          <label>可选共享目录 <small>成员只能选择该目录及其子文件夹</small><input id="userAllowedDirectory" placeholder="G:\苏丽凤视频素材"></label>
-          <div class="form-grid">
-            <label>密码 <small>编辑时留空表示不改密码</small><input id="userPassword" type="password" autocomplete="new-password"></label>
-            <label class="inline-check"><input id="userActive" type="checkbox" checked> 启用此账号</label>
-          </div>
-          <div class="form-actions">
-            <button type="submit">保存登录账号</button>
-            <button id="clearUserBtn" class="subtle" type="button">新建账号</button>
-            <p id="userStatus" class="auth-status"></p>
-          </div>
-        </form>
-        <aside class="list-panel">
-          <h3>已有账号</h3>
-          <div id="userList" class="entity-list"></div>
-        </aside>
-      </div>
-    </section>
+    </div>
   </main>
   <script src="/access.js"></script>
   <script src="/accounts.js"></script>

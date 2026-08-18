@@ -26,7 +26,8 @@ import { createKieAiService } from "./kie-ai.js";
 import { createOperationBrainService } from "./operation-brain.js";
 import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
 import { createOfficialTikTokAccountGroups } from "./official-tiktok-account-groups.js";
-import { homePathForUser, publicSidebarModules, SIDEBAR_MODULES } from "./sidebar-modules.js";
+import { computeGroupReport } from "./official-group-report.js";
+import { factoryCloudPageUrl, homePathForUser, publicSidebarModules, shouldRedirectLocalPageToFactory, SIDEBAR_MODULES } from "./sidebar-modules.js";
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { collectOfficialBatchIdsFromRecords, filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
@@ -248,10 +249,23 @@ const server = http.createServer(async (req, res) => {
         if (!home || home === url.pathname) return sendJson(res, 403, { error: "当前账号没有此页面权限。" });
         return redirect(res, home);
       }
+      if (req.method === "GET" && url.pathname === "/operator") return redirect(res, "/operator/third-party");
+      if (req.method === "GET" && shouldRedirectLocalPageToFactory(url.pathname)) {
+        return redirect(res, factoryCloudPageUrl(url.pathname, url.search));
+      }
+      if (req.method === "GET" && url.pathname === "/") {
+        return redirect(res, homePathForUser(session.user) || "/local-queue");
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/accounts") {
       return sendFile(res, path.join(publicDir, "accounts.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/geelark-profiles") {
+      return sendFile(res, path.join(publicDir, "geelark-profiles.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/geelark-profiles.js") {
+      return sendFile(res, path.join(publicDir, "geelark-profiles.js"), "text/javascript; charset=utf-8");
     }
     if (req.method === "GET" && url.pathname === "/accounts.js") {
       return sendFile(res, path.join(publicDir, "accounts.js"), "text/javascript; charset=utf-8");
@@ -272,7 +286,8 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         users: localAuth.listUsers(),
         profiles: localAuth.listProfiles(),
-        sidebarModules: publicSidebarModules()
+        sidebarModules: publicSidebarModules(),
+        currentUserId: session.user.id
       });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/accounts") {
@@ -280,6 +295,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "PATCH" && url.pathname.match(/^\/api\/admin\/accounts\/[^/]+$/)) {
       return sendJson(res, 200, { user: localAuth.updateUser(decodeURIComponent(url.pathname.split("/").pop()), await readJsonBody(req)) });
+    }
+    if (req.method === "DELETE" && url.pathname.match(/^\/api\/admin\/accounts\/[^/]+$/)) {
+      localAuth.deleteUser(decodeURIComponent(url.pathname.split("/").pop()), session.user.id);
+      return sendJson(res, 200, { ok: true });
     }
     if (req.method === "POST" && url.pathname === "/api/admin/geelark-profiles") {
       return sendJson(res, 200, { profile: localAuth.saveProfile(await readJsonBody(req)) });
@@ -303,6 +322,15 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true });
     }
 
+    if (req.method === "GET" && url.pathname === "/local-queue") {
+      return sendFile(res, path.join(publicDir, "local-queue.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/local-queue.js") {
+      return sendFile(res, path.join(publicDir, "local-queue.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/local-queue.css") {
+      return sendFile(res, path.join(publicDir, "local-queue.css"), "text/css; charset=utf-8");
+    }
     if (req.method === "GET" && url.pathname === "/") {
       return sendFile(res, path.join(publicDir, "hub.html"), "text/html; charset=utf-8");
     }
@@ -346,7 +374,19 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "official-publish-records.js"), "text/javascript; charset=utf-8");
     }
 
-    if (req.method === "GET" && url.pathname === "/official-analytics") {
+    if (req.method === "GET" && ["/official-group-report", "/ops-report", "/novel-ops-report", "/mid-video-ops-report", "/psychology-ops-report"].includes(url.pathname)) {
+      return sendFile(res, path.join(publicDir, "official-group-report.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && ["/novel-publish", "/mid-video-publish", "/psychology-publish"].includes(url.pathname)) {
+      return sendFile(res, path.join(publicDir, "module-publish.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/official-group-report.js") {
+      return sendFile(res, path.join(publicDir, "official-group-report.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && ["/official-analytics", "/mid-video-effects", "/psychology-effects"].includes(url.pathname)) {
       return sendFile(res, path.join(publicDir, "official-analytics.html"), "text/html; charset=utf-8");
     }
 
@@ -510,6 +550,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/work-journal.css") {
       return sendFile(res, path.join(publicDir, "work-journal.css"), "text/css; charset=utf-8");
     }
+    if (req.method === "GET" && url.pathname === "/work-journal-mindmap") {
+      return sendFile(res, path.join(publicDir, "work-journal-mindmap.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/work-journal-mindmap.js") {
+      return sendFile(res, path.join(publicDir, "work-journal-mindmap.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/work-journal-mindmap.css") {
+      return sendFile(res, path.join(publicDir, "work-journal-mindmap.css"), "text/css; charset=utf-8");
+    }
 
     if (req.method === "GET" && url.pathname === "/novel-effects") {
       return sendFile(res, path.join(publicDir, "novel-effects.html"), "text/html; charset=utf-8");
@@ -631,10 +680,40 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, officialTikTokAccountGroups.getState(), { "Cache-Control": "no-store" });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/official-tiktok/projects") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号项目。" });
+      try {
+        return sendJson(res, 201, officialTikTokAccountGroups.createProject((await readJsonBody(req)).name));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建项目失败。" });
+      }
+    }
+
+    if (req.method === "PATCH" && /^\/api\/official-tiktok\/projects\/[^/]+$/.test(url.pathname)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号项目。" });
+      try {
+        const projectId = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, officialTikTokAccountGroups.updateProject(projectId, await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "重命名项目失败。" });
+      }
+    }
+
+    if (req.method === "DELETE" && /^\/api\/official-tiktok\/projects\/[^/]+$/.test(url.pathname)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号项目。" });
+      try {
+        const projectId = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, officialTikTokAccountGroups.deleteProject(projectId));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "删除项目失败。" });
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/official-tiktok/account-groups") {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
       try {
-        return sendJson(res, 201, officialTikTokAccountGroups.createGroup((await readJsonBody(req)).name));
+        const body = await readJsonBody(req);
+        return sendJson(res, 201, officialTikTokAccountGroups.createGroup(body.name, { projectId: body.projectId }));
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "创建分组失败。" });
       }
@@ -653,10 +732,66 @@ const server = http.createServer(async (req, res) => {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以管理官方账号分组。" });
       try {
         const groupId = decodeURIComponent(url.pathname.split("/").pop());
-        return sendJson(res, 200, officialTikTokAccountGroups.renameGroup(groupId, (await readJsonBody(req)).name));
+        return sendJson(res, 200, officialTikTokAccountGroups.updateGroup(groupId, await readJsonBody(req)));
       } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "重命名分组失败。" });
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "更新分组失败。" });
       }
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/official-tiktok/ops-report") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看运营报表。" });
+      const moduleKey = url.searchParams.get("module") || "";
+      const period = url.searchParams.get("period") || "today";
+      const storeState = officialTikTokAccountGroups.getState();
+      const project = officialTikTokAccountGroups.findProjectForModule(moduleKey);
+      if (!project) return sendJson(res, 404, { error: "这个模块还没有对应项目。" });
+      const liveProject = storeState.projects.find((item) => item.id === project.id) || project;
+      const groups = storeState.groups.filter((item) => item.projectId === liveProject.id);
+      if (!liveProject.reportEnabled) {
+        return sendJson(res, 200, { module: liveProject.moduleKey, project: liveProject, groups, report: { enabled: false, period, project: liveProject } });
+      }
+      const signals = officialAnalyticsArchive.getOperationSignals({ days: period === "week" ? 7 : 2, videosPerAccount: 80 });
+      const attached = officialTikTokAccountGroups.attach({ accounts: signals.accounts || [] });
+      const accounts = (attached.accounts || []).filter((item) => item.projectId === liveProject.id);
+      const videos = accounts.flatMap((account) => (account.videos || []).map((video) => ({
+        ...video,
+        account: account.schema,
+        username: account.username || account.profile?.username || "",
+      })));
+      return sendJson(res, 200, {
+        module: liveProject.moduleKey,
+        project: liveProject,
+        groups,
+        report: computeGroupReport({ group: liveProject, project: liveProject, accounts, videos, period }),
+      }, { "Cache-Control": "no-store" });
+    }
+
+    if (req.method === "GET" && /^\/api\/official-tiktok\/groups\/[^/]+\/report$/.test(url.pathname)) {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看运营报表。" });
+      const groupId = decodeURIComponent(url.pathname.split("/")[4]);
+      const period = url.searchParams.get("period") || "today";
+      const state = officialTikTokAccountGroups.getState();
+      const group = state.groups.find((item) => item.id === groupId);
+      if (!group) return sendJson(res, 404, { error: "没有找到这个分组。" });
+      const project = state.projects.find((item) => item.id === group.projectId) || null;
+      if (!project?.reportEnabled) {
+        return sendJson(res, 200, { enabled: false, group, project, period });
+      }
+      const signals = officialAnalyticsArchive.getOperationSignals({ days: period === "week" ? 7 : 2, videosPerAccount: 80 });
+      const attached = officialTikTokAccountGroups.attach({ accounts: signals.accounts || [] });
+      const accounts = (attached.accounts || []).filter((item) => item.groupId === groupId);
+      const videos = accounts.flatMap((account) => (account.videos || []).map((video) => ({
+        ...video,
+        account: account.schema,
+        username: account.username || account.profile?.username || "",
+      })));
+      return sendJson(res, 200, computeGroupReport({
+        group,
+        project: state.projects.find((item) => item.id === group.projectId) || null,
+        accounts,
+        videos,
+        period,
+      }), { "Cache-Control": "no-store" });
     }
 
     if (req.method === "DELETE" && /^\/api\/official-tiktok\/account-groups\/[^/]+$/.test(url.pathname)) {
@@ -2194,7 +2329,12 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, () => {
   console.log(`Podcast video maker is running: http://localhost:${port}`);
   officialPublishResultSync.start();
-  startFactoryCloudWorker({ root, workDir, mirrorTask: (task) => autoTaskManager.mirrorExternalTask(task) });
+  startFactoryCloudWorker({
+    root,
+    workDir,
+    mirrorTask: (task) => autoTaskManager.mirrorExternalTask(task),
+    publishOfficial: (payload) => publishThroughOfficialTikTok(payload)
+  });
 });
 
 async function publishThroughOfficialTikTok(payload = {}) {
