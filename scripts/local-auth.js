@@ -21,7 +21,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 17) return;
+      if (version >= 18) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
         user.sidebarModules = user.sidebarModules.filter((moduleId) => !["project-hub", "audio-library"].includes(moduleId));
@@ -78,11 +78,17 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
           user.sidebarModules = user.sidebarModules.filter((moduleId) => moduleId !== "hub");
         }
         if (version < 17 && user.role === "admin" && !user.sidebarModules.includes("work-journal")) {
-          const hubIndex = user.sidebarModules.indexOf("hub");
-          user.sidebarModules.splice(hubIndex >= 0 ? hubIndex + 1 : 0, 0, "work-journal");
+          const accountsIndex = user.sidebarModules.indexOf("accounts");
+          user.sidebarModules.splice(accountsIndex >= 0 ? accountsIndex : user.sidebarModules.length, 0, "work-journal");
+        }
+        if (version < 18 && user.role === "admin" && user.sidebarModules.includes("work-journal")) {
+          const modules = user.sidebarModules.filter((moduleId) => moduleId !== "work-journal");
+          const accountsIndex = modules.indexOf("accounts");
+          modules.splice(accountsIndex >= 0 ? accountsIndex : modules.length, 0, "work-journal");
+          user.sidebarModules = modules;
         }
       }
-      store.version = 17;
+      store.version = 18;
       try {
         fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
       } catch {

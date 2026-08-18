@@ -34,6 +34,10 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.label, "数据概览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.href, "/work-journal");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.label, "工作记录");
+  assert.equal(
+    SIDEBAR_MODULES.map((item) => item.id).indexOf("work-journal"),
+    SIDEBAR_MODULES.map((item) => item.id).indexOf("accounts") - 1
+  );
 });
 
 test("business lines keep official and GeeLark navigation apart", () => {

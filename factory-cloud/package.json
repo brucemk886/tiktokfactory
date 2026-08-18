@@ -1,0 +1,12 @@
+{
+  "name": "tiktokaitool-factory",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler d1 migrations apply factory-prod --remote --config wrangler.jsonc && wrangler deploy --config wrangler.jsonc",
+    "d1:create": "wrangler d1 create factory-prod --config wrangler.jsonc"
+  },
+  "devDependencies": {
+    "wrangler": "^4.92.0"
+  }
+}
