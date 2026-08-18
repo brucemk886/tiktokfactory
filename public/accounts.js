@@ -40,21 +40,14 @@ function renderPeople() {
             <strong>${esc(user.username)}</strong>
             <small>${user.role === "admin" ? "管理员" : "成员"}</small>
             <small class="people-password">${user.password ? `密码 ${esc(user.password)}` : "密码未记录"}</small>
-          </span>
             <em>${esc(sidebarModuleSummary(user.sidebarModules, user.role))} · ${esc(accountGroupSummary(user.allowedAccountGroups))}</em>
+          </span>
         </button>
-        ${user.id === state.currentUserId ? "" : `<button class="people-delete" type="button" data-delete-user="${esc(user.id)}">删除</button>`}
       </div>
     `).join("")
     : '<p class="empty-state">还没有启用中的登录账号。</p>';
   document.querySelectorAll("[data-edit-user]").forEach((button) => {
     button.onclick = () => editUser(button.dataset.editUser);
-  });
-  document.querySelectorAll("[data-delete-user]").forEach((button) => {
-    button.onclick = (event) => {
-      event.stopPropagation();
-      deleteUser(button.dataset.deleteUser);
-    };
   });
 }
 

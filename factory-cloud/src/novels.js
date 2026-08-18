@@ -1,6 +1,7 @@
 import { assembleOfficialNovelEffects } from "../../scripts/novel-effect-core.js";
 import { audioItemsFromScripts } from "../../scripts/novel-overview.js";
-import { errorJson, json, now, readJson, safeId } from "./http.js";
+import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
+import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { getOfficialOperationSignals, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 
@@ -38,7 +39,7 @@ export async function handleNovels(request, env, url, session) {
 
   const novelMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)$/);
   if (method === "GET" && novelMatch) {
-    const novel = await getNovel(db, decodeURIComponent(novelMatch[1]));
+    const novel = await hydrateNovel(db, decodeURIComponent(novelMatch[1]));
     if (!novel) return errorJson("没有找到该小说。", 404);
     return json({ novel });
   }
@@ -47,8 +48,21 @@ export async function handleNovels(request, env, url, session) {
     return json({ novel });
   }
 
+  const scriptMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/scripts$/);
+  if (method === "POST" && scriptMatch) {
+    const script = await createScript(db, decodeURIComponent(scriptMatch[1]), await readJson(request));
+    return json({ script }, 201);
+  }
+
+  const mixMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/mix-audios$/);
+  if (method === "PUT" && mixMatch) {
+    const payload = await readJson(request);
+    const novel = await setNovelMixAudios(db, decodeURIComponent(mixMatch[1]), payload.scriptIds);
+    return json({ novel });
+  }
+
   if (method === "GET" && pathname === "/api/novel-content/opening-styles") {
-    return json({ styles: [] });
+    return json({ styles: publicOpeningStyles(), version: 3 });
   }
 
   if (method === "GET" && pathname === "/api/novel-content/seed-settings") {
@@ -161,7 +175,7 @@ async function novelOverview(db, query) {
     summary: {
       novelCount: store.novels.length,
       scriptCount: store.scripts.length,
-      audioCount: 0,
+      audioCount: store.scripts.filter((item) => item.audioId || item.audio?.id).length,
       videoCount: 0,
       unassignedScriptCount: store.scripts.filter((item) => !item.novelId).length
     },
@@ -222,7 +236,132 @@ async function updateNovel(db, id, payload) {
 
 async function getNovel(db, id) {
   const store = await readStore(db);
-  return store.novels.find((item) => item.id === safeId(id)) || null;
+  return store.novels.find((item) => item.id === String(id || "").trim() || item.id === safeId(id)) || null;
+}
+
+export async function hydrateNovel(db, id) {
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(id || "").trim() || item.id === safeId(id));
+  if (!novel) return null;
+  return {
+    ...novel,
+    scripts: store.scripts.filter((item) => item.novelId === novel.id)
+  };
+}
+
+async function createScript(db, novelId, payload = {}) {
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const text = String(payload.text || "").trim().slice(0, 20_000);
+  if (text.length < 20) throw Object.assign(new Error("改写文案至少需要 20 个字符。"), { statusCode: 400 });
+  const createdAt = new Date().toISOString();
+  const script = {
+    id: safeId(`script-${now()}-${randomToken(3)}`),
+    novelId: novel.id,
+    parentScriptId: String(payload.parentScriptId || "").trim(),
+    audioId: "",
+    title: String(payload.title || `${novel.title} 改写`).trim().slice(0, 240),
+    text,
+    versionLabel: String(payload.versionLabel || "人工改写").trim().slice(0, 100),
+    sourceType: String(payload.sourceType || "manual-rewrite").trim().slice(0, 80),
+    openingTitle: String(payload.openingTitle || "").trim().slice(0, 80),
+    mixEnabled: true,
+    createdAt,
+    updatedAt: createdAt
+  };
+  store.scripts.push(script);
+  await kvSet(db, "novel-content", store);
+  return script;
+}
+
+async function setNovelMixAudios(db, novelId, scriptIds) {
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const wanted = new Set((Array.isArray(scriptIds) ? scriptIds : []).map((id) => String(id || "").trim()).filter(Boolean));
+  const novelScripts = store.scripts.filter((item) => item.novelId === novel.id);
+  if (!novelScripts.length) throw Object.assign(new Error("这本小说还没有可勾选的改写文案。"), { statusCode: 400 });
+  const unknown = [...wanted].filter((id) => !novelScripts.some((item) => item.id === id));
+  if (unknown.length) throw Object.assign(new Error("勾选的音频不属于这本小说。"), { statusCode: 400 });
+  const timestamp = new Date().toISOString();
+  for (const script of novelScripts) {
+    script.mixEnabled = wanted.has(script.id);
+    script.updatedAt = timestamp;
+  }
+  await kvSet(db, "novel-content", store);
+  return hydrateNovel(db, novel.id);
+}
+
+export async function resolveNovelTitle(db, { novelId = "", novelTitle = "" } = {}) {
+  const title = String(novelTitle || "").trim();
+  if (title) return title;
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  return String(novel?.title || "").trim();
+}
+
+export async function buildAudioGeneratePayload(db, body = {}) {
+  const store = await readStore(db);
+  const requested = Array.isArray(body.items) && body.items.length
+    ? body.items
+    : (Array.isArray(body.scriptIds) ? body.scriptIds.map((id) => ({ scriptId: id, novelId: body.novelId })) : [body]);
+  const items = [];
+  for (const raw of requested) {
+    const scriptId = String(raw.scriptId || "").trim();
+    const script = store.scripts.find((item) => item.id === scriptId);
+    const text = String(raw.script || raw.text || script?.text || "").trim();
+    if (text.length < 20) continue;
+    const novelId = String(raw.novelId || script?.novelId || body.novelId || "").trim();
+    const novel = store.novels.find((item) => item.id === novelId);
+    items.push({
+      novelId: novel?.id || script?.novelId || novelId,
+      novelTitle: String(raw.novelTitle || novel?.title || body.novelTitle || "").trim(),
+      scriptId: script?.id || scriptId,
+      audioId: raw.audioId || script?.audioId || script?.audio?.id || "",
+      fileName: raw.fileName || script?.audio?.fileName || "",
+      targetAudioPath: raw.targetAudioPath || script?.audio?.targetAudioPath || "",
+      title: String(raw.title || `${novel?.title || ""} ${script?.versionLabel || "改写"}`).trim(),
+      script: text,
+      openingTitle: String(raw.openingTitle || script?.openingTitle || "").trim(),
+      voiceId: String(raw.voiceId || body.voiceId || "").trim(),
+      speechSpeed: raw.speechSpeed ?? body.speechSpeed,
+      sourceType: String(raw.sourceType || script?.sourceType || "manual-rewrite").trim()
+    });
+  }
+  if (!items.length) {
+    throw Object.assign(new Error("没有可下发的改写文案。请先保存文案，或勾选有正文的版本。"), { statusCode: 400 });
+  }
+  return {
+    targetAudioDir: String(body.targetAudioDir || "").trim(),
+    novelTitle: String(body.novelTitle || items[0]?.novelTitle || "").trim(),
+    voiceId: String(body.voiceId || "").trim(),
+    speechSpeed: body.speechSpeed,
+    items
+  };
+}
+
+export async function attachAudioGenerateResults(db, items = []) {
+  const store = await readStore(db);
+  let changed = 0;
+  for (const item of Array.isArray(items) ? items : []) {
+    const script = store.scripts.find((row) => row.id === String(item.scriptId || "").trim());
+    if (!script || !item.audioId) continue;
+    script.audioId = item.audioId;
+    script.audio = {
+      id: item.audioId,
+      title: item.title || script.title,
+      fileName: item.fileName || "",
+      targetAudioPath: item.targetAudioPath || "",
+      duration: Number(item.duration) || 0,
+      size: Number(item.size) || 0,
+      createdAt: item.createdAt || new Date().toISOString()
+    };
+    script.updatedAt = new Date().toISOString();
+    changed += 1;
+  }
+  if (changed) await kvSet(db, "novel-content", store);
+  return changed;
 }
 
 export async function mergeImportedNovelStore(db, incoming = {}) {

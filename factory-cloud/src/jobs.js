@@ -1,7 +1,7 @@
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { mergeImportedNovelStore } from "./novels.js";
+import { attachAudioGenerateResults, mergeImportedNovelStore } from "./novels.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 
@@ -165,6 +165,7 @@ async function handleWorkerApi(request, env, url) {
     const body = await readJson(request);
     const stamp = now();
     if (Array.isArray(body.assetGroups)) await kvSet(env.DB, "asset-groups", body.assetGroups);
+    if (Array.isArray(body.audioGroups)) await kvSet(env.DB, "audio-groups", body.audioGroups);
     if (body.usage) await kvSet(env.DB, "asset-usage", body.usage);
     if (body.redditMixSettings) await kvSet(env.DB, "reddit-mix-settings", body.redditMixSettings);
     let novelImport = null;
@@ -172,7 +173,8 @@ async function handleWorkerApi(request, env, url) {
       novelImport = await mergeImportedNovelStore(env.DB, body.novelContent);
     }
     if (Array.isArray(body.officialPublishRecords)) {
-      await kvSet(env.DB, "official-publish-records", body.officialPublishRecords);
+      const existing = await kvGet(env.DB, "official-publish-records", []);
+      await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, body.officialPublishRecords));
     }
     let archive = null;
     if (body.refreshOfficialArchive) {
@@ -253,6 +255,9 @@ async function handleWorkerApi(request, env, url) {
     if (incoming.length) {
       const existing = await kvGet(env.DB, "official-publish-records", []);
       await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, incoming));
+    }
+    if (job?.type === "audio-generate" && Array.isArray(result.items) && result.items.length) {
+      await attachAudioGenerateResults(env.DB, result.items);
     }
     return json({ ok: true });
   }

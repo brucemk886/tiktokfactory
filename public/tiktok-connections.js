@@ -15,9 +15,14 @@ const elements = {
   groupFilter: document.querySelector("#groupFilter"),
   accountSearch: document.querySelector("#accountSearch"),
   newGroupName: document.querySelector("#newGroupName"),
+  newGroupProject: document.querySelector("#newGroupProject"),
   createGroupBtn: document.querySelector("#createGroupBtn"),
   groupReportBar: document.querySelector("#groupReportBar"),
   groupProjectSelect: document.querySelector("#groupProjectSelect"),
+  saveGroupProjectBtn: document.querySelector("#saveGroupProjectBtn"),
+  moveGroupSelect: document.querySelector("#moveGroupSelect"),
+  moveGroupProjectSelect: document.querySelector("#moveGroupProjectSelect"),
+  moveGroupToProjectBtn: document.querySelector("#moveGroupToProjectBtn"),
   selectVisibleBtn: document.querySelector("#selectVisibleBtn"),
   assignGroupSelect: document.querySelector("#assignGroupSelect"),
   assignGroupBtn: document.querySelector("#assignGroupBtn"),
@@ -31,13 +36,19 @@ elements.saveButton?.addEventListener("click", saveSettings);
 elements.testButton?.addEventListener("click", testConnection);
 elements.refreshButton?.addEventListener("click", loadAccounts);
 elements.bridgeUrl?.addEventListener("input", updateAuthorizeLink);
-elements.projectFilter?.addEventListener("change", () => { fillGroupSelects(); renderAccounts(); syncGroupReportBar(); });
+elements.projectFilter?.addEventListener("change", () => {
+  syncNewGroupProjectFromFilter();
+  fillGroupSelects();
+  renderAccounts();
+  syncGroupReportBar();
+});
 elements.groupFilter?.addEventListener("change", () => { renderAccounts(); syncGroupReportBar(); });
 elements.accountSearch?.addEventListener("input", renderAccounts);
 elements.createProjectBtn?.addEventListener("click", createProject);
 elements.deleteProjectBtn?.addEventListener("click", deleteCurrentProject);
 elements.createGroupBtn?.addEventListener("click", createGroup);
-elements.groupProjectSelect?.addEventListener("change", saveCurrentGroupProject);
+elements.saveGroupProjectBtn?.addEventListener("click", saveCurrentGroupProject);
+elements.moveGroupToProjectBtn?.addEventListener("click", moveGroupToProject);
 elements.selectVisibleBtn?.addEventListener("click", selectVisible);
 elements.assignGroupBtn?.addEventListener("click", assignSelected);
 elements.deleteGroupBtn?.addEventListener("click", deleteCurrentGroup);
@@ -120,6 +131,24 @@ function fillProjectSelects() {
     elements.groupProjectSelect.innerHTML = `<option value="">未分配项目</option>${state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`).join("")}`;
     if ([...elements.groupProjectSelect.options].some((item) => item.value === selected)) elements.groupProjectSelect.value = selected;
   }
+  if (elements.newGroupProject) {
+    const selected = elements.newGroupProject.value;
+    elements.newGroupProject.innerHTML = `<option value="">请选择项目</option>${state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`).join("")}`;
+    const preferred = selected || (current && current !== "unassigned" ? current : "");
+    if ([...elements.newGroupProject.options].some((item) => item.value === preferred)) elements.newGroupProject.value = preferred;
+  }
+  if (elements.moveGroupProjectSelect) {
+    const selected = elements.moveGroupProjectSelect.value;
+    elements.moveGroupProjectSelect.innerHTML = `<option value="">请选择项目</option>${state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`).join("")}`;
+    if ([...elements.moveGroupProjectSelect.options].some((item) => item.value === selected)) elements.moveGroupProjectSelect.value = selected;
+  }
+}
+
+function syncNewGroupProjectFromFilter() {
+  const filter = elements.projectFilter?.value || "";
+  if (elements.newGroupProject && filter && filter !== "unassigned") {
+    elements.newGroupProject.value = filter;
+  }
 }
 
 function visibleGroups() {
@@ -144,6 +173,11 @@ function fillGroupSelects() {
   elements.assignGroupSelect.innerHTML = `<option value="">未分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
   if ([...elements.groupFilter.options].some((item) => item.value === currentFilter)) elements.groupFilter.value = currentFilter;
   if ([...elements.assignGroupSelect.options].some((item) => item.value === currentAssign)) elements.assignGroupSelect.value = currentAssign;
+  if (elements.moveGroupSelect) {
+    const currentMove = elements.moveGroupSelect.value || (currentFilter && currentFilter !== "ungrouped" ? currentFilter : "");
+    elements.moveGroupSelect.innerHTML = `<option value="">请选择分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
+    if ([...elements.moveGroupSelect.options].some((item) => item.value === currentMove)) elements.moveGroupSelect.value = currentMove;
+  }
 }
 
 function visibleAccounts() {
@@ -254,8 +288,10 @@ async function deleteCurrentProject() {
 
 async function createGroup() {
   const name = elements.newGroupName.value.trim();
+  const projectId = elements.newGroupProject?.value || "";
+  if (!projectId) return showStatus("请先选择这个分组属于哪个项目。", true);
   if (!name) return showStatus("请填写分组名称。", true);
-  const projectId = ["", "unassigned"].includes(elements.projectFilter.value) ? "" : elements.projectFilter.value;
+  const project = state.projects.find((item) => item.id === projectId);
   setBusy(elements.createGroupBtn, true, "创建中...");
   try {
     const result = await requestJson("/api/official-tiktok/account-groups", {
@@ -265,7 +301,9 @@ async function createGroup() {
     });
     elements.newGroupName.value = "";
     applyGroupState(result);
-    showStatus(`已创建分组「${name}」${projectId ? "并放进当前项目" : ""}。`);
+    if (project) elements.projectFilter.value = project.id;
+    fillGroupSelects();
+    showStatus(`已在「${project?.name || "项目"}」下创建分组「${name}」。`);
   } catch (error) {
     showStatus(error.message || "创建分组失败。", true);
   } finally {
@@ -275,17 +313,41 @@ async function createGroup() {
 
 async function saveCurrentGroupProject() {
   const groupId = currentGroupId();
-  if (!groupId) return;
+  if (!groupId) return showStatus("请先在筛选里选中要移动的分组。", true);
+  const projectId = elements.groupProjectSelect?.value || "";
+  if (!projectId) return showStatus("请选择要移入的项目。", true);
+  await applyGroupProject(groupId, projectId, elements.saveGroupProjectBtn);
+}
+
+async function moveGroupToProject() {
+  const groupId = elements.moveGroupSelect?.value || "";
+  const projectId = elements.moveGroupProjectSelect?.value || "";
+  if (!groupId) return showStatus("请选择要移动的分组。", true);
+  if (!projectId) return showStatus("请选择要移入的项目。", true);
+  await applyGroupProject(groupId, projectId, elements.moveGroupToProjectBtn);
+}
+
+async function applyGroupProject(groupId, projectId, button) {
+  const group = state.groups.find((item) => item.id === groupId);
+  const project = state.projects.find((item) => item.id === projectId);
+  setBusy(button, true, "移动中...");
   try {
     const result = await requestJson(`/api/official-tiktok/account-groups/${encodeURIComponent(groupId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: elements.groupProjectSelect.value })
+      body: JSON.stringify({ projectId })
     });
     applyGroupState(result);
-    showStatus("分组所属项目已更新。");
+    elements.projectFilter.value = projectId;
+    if (elements.groupFilter) elements.groupFilter.value = groupId;
+    fillGroupSelects();
+    renderAccounts();
+    syncGroupReportBar();
+    showStatus(`已将分组「${group?.name || groupId}」移入「${project?.name || "项目"}」。`);
   } catch (error) {
-    showStatus(error.message || "更新分组项目失败。", true);
+    showStatus(error.message || "分组移入项目失败。", true);
+  } finally {
+    setBusy(button, false, "移入项目");
   }
 }
 

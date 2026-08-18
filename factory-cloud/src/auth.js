@@ -371,7 +371,7 @@ function withOpsReportModules(value, role) {
   if (!modules.length) return value;
   const midVideoIds = ["mid-video", "schulte", "podcast", "ai", "asset-usage", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
   const psychologyIds = ["psychology-topics", "psychology", "psychology-effects", "psychology-ops-report", "psychology-publish"];
-  const novelIds = ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "novel-publish", "operator-official", "tasks"];
+  const novelIds = ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "operator-official", "tasks"];
   if (modules.some((moduleId) => midVideoIds.includes(moduleId))) {
     insertModuleAfter(modules, "asset-usage", "mid-video-effects");
     insertModuleAfter(modules, "mid-video-effects", "mid-video-ops-report");
@@ -384,7 +384,6 @@ function withOpsReportModules(value, role) {
   }
   if (modules.some((moduleId) => novelIds.includes(moduleId))) {
     insertModuleAfter(modules, "novel-effects", "novel-ops-report");
-    insertModuleAfter(modules, "novel-ops-report", "novel-publish");
   }
   if (role === "admin") {
     insertModuleAfter(modules, "analytics-settings", "geelark-profiles");

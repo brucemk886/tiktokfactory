@@ -1,3 +1,5 @@
+import { requestAudioJob, waitForCloudJob } from "./audio-job.js";
+
 const params = new URLSearchParams(location.search);
 const elements = {
   pageTitle: document.querySelector("#pageTitle"),
@@ -27,11 +29,14 @@ const elements = {
   voiceSelect: document.querySelector("#voiceSelect"),
   voiceIdInput: document.querySelector("#voiceIdInput"),
   audioDir: document.querySelector("#audioDir"),
+  audioGroupSelect: document.querySelector("#audioGroupSelect"),
+  audioGroupHint: document.querySelector("#audioGroupHint"),
   speechSpeed: document.querySelector("#speechSpeed"),
   speechSpeedValue: document.querySelector("#speechSpeedValue"),
   pickAudioDirButton: document.querySelector("#pickAudioDirBtn"),
   generateAudioButton: document.querySelector("#generateAudioBtn"),
   generateVariantsButton: document.querySelector("#generateVariantsBtn"),
+  generateSelectedAudioButton: document.querySelector("#generateSelectedAudioBtn"),
   reloadVoicesButton: document.querySelector("#reloadVoicesBtn"),
   previewVoiceButton: document.querySelector("#previewVoiceBtn"),
   voicePreview: document.querySelector("#voicePreview"),
@@ -42,12 +47,13 @@ const elements = {
   styleOptions: document.querySelector("#styleOptions"),
   styleCount: document.querySelector("#styleCount"),
   openingModel: document.querySelector("#openingModel"),
+  openingReasoning: document.querySelector("#openingReasoning"),
   effectsLink: document.querySelector("#effectsLink"),
   audioLink: document.querySelector("#audioLink"),
   generatedAudio: document.querySelector("#generatedAudio")
 };
 
-const DEFAULT_STYLE_IDS = ["conflict-first", "betrayal-caught", "secret-reveal"];
+const DEFAULT_STYLE_IDS = ["conflict-first", "betrayal-caught", "secret-reveal", "forbidden-line"];
 const state = {
   novelId: params.get("novel") || "",
   novel: readStashedNovel(),
@@ -55,12 +61,14 @@ const state = {
   parentScriptId: "",
   lastScriptId: "",
   voices: [],
+  audioGroups: [],
   variants: [],
   styles: [],
   selectedStyles: readSavedStyles(),
   styleCopies: readSavedStyleCopies(),
   rewriteMode: "ai",
-  openingModel: readSavedOpeningModel()
+  openingModel: readSavedOpeningModel(),
+  openingReasoning: readSavedOpeningReasoning()
 };
 
 elements.novelPicker.addEventListener("change", () => {
@@ -69,12 +77,18 @@ elements.novelPicker.addEventListener("change", () => {
 });
 elements.form.addEventListener("submit", saveRewrite);
 elements.generateVariantsButton?.addEventListener("click", generateVariants);
+elements.generateSelectedAudioButton?.addEventListener("click", generateSelectedVariantAudios);
 elements.rewriteText?.addEventListener("input", updateCount);
 document.querySelectorAll('input[name="rewriteMode"]').forEach((input) => {
   input.addEventListener("change", () => setRewriteMode(input.value));
 });
 elements.openingModel?.addEventListener("change", () => setOpeningModel(elements.openingModel.value));
-elements.pickAudioDirButton.addEventListener("click", pickAudioDirectory);
+elements.openingReasoning?.addEventListener("change", () => setOpeningReasoning(elements.openingReasoning.value));
+elements.pickAudioDirButton?.addEventListener("click", pickAudioDirectory);
+elements.audioGroupSelect?.addEventListener("change", () => {
+  applyAudioGroupSelection();
+  persistAudioSettings();
+});
 elements.reloadVoicesButton.addEventListener("click", () => loadAudioControls(true));
 elements.previewVoiceButton.addEventListener("click", previewSelectedVoice);
 elements.generateAudioButton.addEventListener("click", generateAudio);
@@ -102,10 +116,12 @@ elements.speechSpeed?.addEventListener("change", persistAudioSettings);
 updateCount();
 setRewriteMode("ai");
 setOpeningModel(state.openingModel);
+setOpeningReasoning(state.openingReasoning);
 updateGenerateButton();
 loadStyles();
 loadPage();
 loadAudioControls();
+loadAudioGroups();
 
 async function loadPage() {
   if (state.novel && state.novel.id === state.novelId) renderWork();
@@ -216,6 +232,7 @@ function setRewriteMode(mode) {
   if (elements.aiRewritePanel) elements.aiRewritePanel.hidden = isManual;
   if (elements.manualRewritePanel) elements.manualRewritePanel.hidden = !isManual;
   if (elements.openingModel) elements.openingModel.hidden = isManual;
+  if (elements.openingReasoning) elements.openingReasoning.hidden = isManual;
   document.querySelectorAll('input[name="rewriteMode"]').forEach((input) => {
     input.checked = input.value === state.rewriteMode;
     input.closest(".mode-option")?.classList.toggle("is-on", input.checked);
@@ -233,13 +250,33 @@ function selectedOpeningModel() {
   return elements.openingModel?.value || state.openingModel || "gpt-5.6-sol";
 }
 
-function openingModelLabel(model) {
-  return model === "gpt-5.6-terra" ? "GPT-5.6 Terra" : "GPT-5.6 Sol";
+function setOpeningReasoning(value) {
+  state.openingReasoning = value === "medium" || value === "xhigh" ? value : "high";
+  localStorage.setItem("lf-opening-reasoning", state.openingReasoning);
+  if (elements.openingReasoning) elements.openingReasoning.value = state.openingReasoning;
+}
+
+function selectedOpeningReasoning() {
+  return elements.openingReasoning?.value || state.openingReasoning || "high";
+}
+
+function openingReasoningLabel(value) {
+  return value === "xhigh" ? "极强" : value === "medium" ? "标准" : "强";
+}
+
+function openingModelLabel(model, reasoning) {
+  const name = model === "gpt-5.6-terra" ? "GPT-5.6 Terra" : "GPT-5.6 Sol";
+  return `${name} · ${openingReasoningLabel(reasoning || selectedOpeningReasoning())}`;
 }
 
 function readSavedOpeningModel() {
   const saved = localStorage.getItem("lf-opening-model") || "";
   return saved === "gpt-5.6-terra" ? saved : "gpt-5.6-sol";
+}
+
+function readSavedOpeningReasoning() {
+  const saved = localStorage.getItem("lf-opening-reasoning") || "";
+  return saved === "medium" || saved === "xhigh" ? saved : "high";
 }
 
 function playGeneratedAudio(audioId) {
@@ -325,7 +362,7 @@ async function saveCurrentScript(text, extras = {}) {
 
 async function loadStyles() {
   try {
-    const data = await api("/api/novel-content/opening-styles");
+    const data = await api(`/api/novel-content/opening-styles?v=${Date.now()}`);
     state.styles = Array.isArray(data.styles) ? data.styles : [];
   } catch {
     state.styles = [];
@@ -348,6 +385,7 @@ function renderStyleOptions() {
       <strong>${escapeHtml(style.label)}</strong>
       <input type="number" min="1" max="5" value="${styleCopyCount(style.id)}" aria-label="${escapeHtml(style.label)} 条数" />
       <em>${escapeHtml(style.hook)}</em>
+      ${style.example ? `<small>例：${escapeHtml(style.example)}</small>` : ""}
     </div>`).join("");
   elements.styleOptions.querySelectorAll(".style-option").forEach((card) => {
     const id = card.dataset.styleId;
@@ -381,7 +419,7 @@ function toggleStyle(id, checked) {
 }
 
 function updateStyleCount() {
-  if (elements.styleCount) elements.styleCount.textContent = `已选 ${state.selectedStyles.length}`;
+  if (elements.styleCount) elements.styleCount.textContent = `已选 ${state.selectedStyles.length} / 共 ${state.styles.length || 4} 种`;
   updateGenerateButton();
 }
 
@@ -452,22 +490,38 @@ async function generateVariants() {
   if (elements.variantHeading) elements.variantHeading.textContent = `${styles.length} 个改版开头`;
   elements.variantStatus.textContent = `正在生成 ${styles.length} 个改版开头，请稍候。`;
   try {
-    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`, {
+    let data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`, {
       method: "POST",
-      body: JSON.stringify({ baseOpening, styles, model: selectedOpeningModel() })
+      body: JSON.stringify({
+        baseOpening,
+        styles,
+        model: selectedOpeningModel(),
+        reasoningEffort: selectedOpeningReasoning()
+      })
     });
+    if (data.jobId && !Array.isArray(data.variants)) {
+      elements.variantStatus.textContent = data.message || "已交给本机工人生成，请稍候。";
+      data = await waitForCloudJob(data.jobId, {
+        api,
+        onProgress: (job) => {
+          elements.variantStatus.textContent = job.message || `工人机正在生成 ${styles.length} 个改版开头...`;
+        }
+      });
+    }
     const model = data.model || selectedOpeningModel();
+    const reasoningEffort = data.reasoningEffort || selectedOpeningReasoning();
     state.variants = (data.variants || []).map((item, index) => ({
       ...item,
       id: item.id || `variant-${index + 1}`,
       selected: true,
       status: "",
       model,
+      reasoningEffort,
       audioId: "",
       audioPath: ""
     }));
     renderVariants();
-    setStatus(`已用 ${openingModelLabel(model)} 生成 ${state.variants.length} 个开头，可勾选后单条保存并配音。`, "success");
+    setStatus(`已用 ${openingModelLabel(model, reasoningEffort)} 生成 ${state.variants.length} 个开头，并带中文对照。勾选后可一键依次配音。`, "success");
   } catch (error) {
     elements.variantStatus.textContent = error.message || "生成改版开头失败。";
     setStatus(error.message, "error");
@@ -484,8 +538,8 @@ function renderVariants() {
   }
   elements.variantPanel.hidden = false;
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个不同风格改版`;
-  const modelLabel = openingModelLabel(state.variants[0]?.model);
-  elements.variantStatus.textContent = `已用 ${modelLabel} 按你选的风格分别改写。勾选后点「保存并生成音频」，可直接在这条下面试听。`;
+  const modelLabel = openingModelLabel(state.variants[0]?.model, state.variants[0]?.reasoningEffort);
+  elements.variantStatus.textContent = `已用 ${modelLabel} 按风格改写，并给出中文对照。勾选后点「一键生成勾选音频」，会按顺序配音。`;
   elements.variantList.innerHTML = state.variants.map((variant) => `
     <article class="variant-card" data-variant-id="${escapeHtml(variant.id)}">
       <div class="variant-head">
@@ -500,6 +554,10 @@ function renderVariants() {
         <input type="text" maxlength="80" data-opening-title value="${escapeHtml(variant.openingTitle || firstHookLine(variant.script))}" />
       </label>
       <p>${escapeHtml(variant.script)}</p>
+      ${variant.scriptZh || variant.openingTitleZh ? `<div class="variant-zh">
+        ${variant.openingTitleZh ? `<strong>${escapeHtml(variant.openingTitleZh)}</strong>` : ""}
+        <p>${escapeHtml(variant.scriptZh || "")}</p>
+      </div>` : ""}
       <small class="variant-meta">${formatNumber(wordCount(variant.script))} 词 · 预估 ${formatClock(estimateSpeechSeconds(wordCount(variant.script)))}</small>
       <button class="quiet-action" type="button" data-save-audio>${variant.status || "保存并生成音频"}</button>
       ${variant.audioId ? `<audio class="variant-audio" controls preload="metadata" data-audio-id="${escapeHtml(variant.audioId)}" src="/api/audio-library/${encodeURIComponent(variant.audioId)}/file?t=${Date.now()}"></audio>
@@ -528,48 +586,91 @@ async function saveVariantWithAudio(variantId) {
   const variant = state.variants.find((item) => item.id === variantId);
   if (!variant) return;
   if (variant.selected === false) return setStatus("先勾选这一条，再保存并生成音频。", "error");
-  const voiceId = selectedVoiceId();
-  const targetAudioDir = elements.audioDir.value.trim();
-  if (!voiceId) return setAudioStatus("请先在右边选择 ElevenLabs 声音。", "error");
-  if (!targetAudioDir) return setAudioStatus("请先在右边选择音频库目录。", "error");
-  variant.status = "保存中...";
-  renderVariants();
   try {
-    const script = await saveCurrentScript(variant.script, {
-      versionLabel: variant.styleLabel || "AI 改版",
-      sourceType: "ai-style-rewrite",
-      openingTitle: variant.openingTitle || firstHookLine(variant.script)
-    });
-    const result = await api("/api/audio-library/generate-script", {
-      method: "POST",
-      body: JSON.stringify({
-        novelId: state.novelId,
-        scriptId: script.id,
-        title: `${state.novel.title} ${variant.styleLabel || "AI 改版"}`,
-        script: variant.script,
-        openingTitle: variant.openingTitle || firstHookLine(variant.script),
-        voiceId,
-        targetAudioDir,
-        speechSpeed: selectedSpeechSpeed(),
-        sourceType: "ai-style-rewrite"
-      })
-    });
-    variant.status = "已保存并配音";
-    variant.audioId = result.item?.id || "";
-    variant.audioPath = result.item?.targetAudioPath || "";
-    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
-    state.novel = data.novel;
-    renderScripts(state.novel.scripts || []);
-    renderVariants();
+    await generateVariantAudios([variant]);
     playGeneratedAudio(variant.audioId);
     setStatus(`${variant.styleLabel} 已保存，可直接在这条下面试听。`, "success");
-    setAudioStatus(variant.audioPath ? `已生成并保存到 ${variant.audioPath}` : "已生成并写入音频库。", "success");
   } catch (error) {
     variant.status = "失败，可重试";
     renderVariants();
     setStatus(error.message, "error");
     setAudioStatus(error.message, "error");
   }
+}
+
+async function generateSelectedVariantAudios() {
+  const selected = state.variants.filter((item) => item.selected !== false);
+  if (!selected.length) return setStatus("先勾选要配音的改版开头。", "error");
+  if (elements.generateSelectedAudioButton) {
+    elements.generateSelectedAudioButton.disabled = true;
+    elements.generateSelectedAudioButton.textContent = `正在依次生成 ${selected.length} 条...`;
+  }
+  try {
+    await generateVariantAudios(selected);
+    setStatus(`已按顺序生成 ${selected.filter((item) => item.audioId).length} 条勾选音频。`, "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+    setAudioStatus(error.message, "error");
+  } finally {
+    if (elements.generateSelectedAudioButton) {
+      elements.generateSelectedAudioButton.disabled = false;
+      elements.generateSelectedAudioButton.textContent = "一键生成勾选音频";
+    }
+  }
+}
+
+async function generateVariantAudios(variants) {
+  const voiceId = selectedVoiceId();
+  const targetAudioDir = selectedAudioDir();
+  if (!voiceId) setAudioStatus("未选手动声音，将用工人机默认 Voice ID。");
+  const items = [];
+  for (let index = 0; index < variants.length; index += 1) {
+    const variant = variants[index];
+    variant.status = variants.length > 1 ? `保存文案 ${index + 1}/${variants.length}` : "保存中...";
+    renderVariants();
+    const script = await saveCurrentScript(variant.script, {
+      versionLabel: variant.styleLabel || "AI 改版",
+      sourceType: "ai-style-rewrite",
+      openingTitle: variant.openingTitle || firstHookLine(variant.script)
+    });
+    variant.scriptId = script.id;
+    items.push({
+      novelId: state.novelId,
+      novelTitle: state.novel?.title || "",
+      scriptId: script.id,
+      title: `${state.novel.title} ${variant.styleLabel || "AI 改版"}`,
+      script: variant.script,
+      openingTitle: variant.openingTitle || firstHookLine(variant.script),
+      voiceId,
+      speechSpeed: selectedSpeechSpeed(),
+      sourceType: "ai-style-rewrite"
+    });
+  }
+  setAudioStatus(`正在按顺序生成 ${items.length} 条音频...`);
+  const result = await requestAudioJob("/api/audio-library/sync-local", {
+    novelId: state.novelId,
+    novelTitle: state.novel?.title || "",
+    targetAudioDir,
+    voiceId,
+    items
+  }, { api, onProgress: (job) => setAudioStatus(job.message || "工人机正在依次配音...") });
+  const saved = Array.isArray(result.items) ? result.items : [];
+  for (const row of saved) {
+    const variant = variants.find((item) => item.scriptId === row.scriptId);
+    if (!variant) continue;
+    variant.status = "已保存并配音";
+    variant.audioId = row.audioId || row.id || "";
+    variant.audioPath = row.targetAudioPath || "";
+  }
+  for (const variant of variants) {
+    if (!variant.audioId) variant.status = "失败，可重试";
+  }
+  const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+  state.novel = data.novel;
+  renderScripts(state.novel.scripts || []);
+  renderVariants();
+  setAudioStatus(result.targetAudioDir ? `已保存到 ${result.targetAudioDir}` : "已写入本机音频目录。", "success");
+  if (!saved.length) throw new Error("工人机没有返回已生成的音频。");
 }
 
 async function loadAudioControls(force = false) {
@@ -596,10 +697,13 @@ async function loadAudioControls(force = false) {
     } else {
       renderVoiceOptions(selected);
       if (selected && !state.voices.some((voice) => voice.id === selected)) elements.voiceIdInput.value = selected;
-      if (voicesData.warning) setAudioStatus(voicesData.warning, "error");
-      else setAudioStatus(force ? `已读取 ${state.voices.length} 个声音，模型固定为 Eleven Multilingual v2。` : "");
+      if (voicesData.warning) setAudioStatus(voicesData.warning, state.voices.length ? "" : "error");
+      else setAudioStatus(force || state.voices.length ? `已读取 ${state.voices.length} 个声音，模型固定为 Eleven Multilingual v2。` : "");
     }
-    if (!force || !elements.audioDir.value.trim()) elements.audioDir.value = settings.targetAudioDir || elements.audioDir.value;
+    if (settings.targetAudioDir) {
+      elements.audioDir.value = settings.targetAudioDir;
+      if (state.audioGroups.length) applyAudioGroupSelection();
+    }
     if (elements.speechSpeed && settings.speechSpeed) elements.speechSpeed.value = String(settings.speechSpeed);
     updateSpeechSpeedLabel();
   } catch (error) {
@@ -613,13 +717,50 @@ function voiceErrorText(message) {
   return text || "读取 ElevenLabs 声音失败。";
 }
 
+async function loadAudioGroups() {
+  const select = elements.audioGroupSelect;
+  if (!select) return;
+  try {
+    const data = await api(`/api/audio-groups?t=${Date.now()}`);
+    state.audioGroups = Array.isArray(data.groups) ? data.groups : [];
+    const current = elements.audioDir.value.trim();
+    select.innerHTML = [
+      `<option value="__novel__">按小说名称自动建文件夹</option>`,
+      ...state.audioGroups.map((group) => `<option value="${escapeAttr(group.path)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets) || 0} 条）</option>`)
+    ].join("");
+    const matched = state.audioGroups.find((group) => group.path === current);
+    select.value = matched ? matched.path : "__novel__";
+    applyAudioGroupSelection();
+    if (elements.audioGroupHint) {
+      const book = state.novel?.title || "小说名";
+      elements.audioGroupHint.textContent = `默认写到 F:\\音频目录\\${book}。线上点生成后，工人机会自动建文件夹。`;
+    }
+  } catch {
+    if (elements.audioGroupHint) elements.audioGroupHint.textContent = "读取本机音频目录失败时，会按小说名在 F:\\音频目录 下自动建文件夹。";
+  }
+}
+
+function applyAudioGroupSelection() {
+  const value = elements.audioGroupSelect?.value || "__novel__";
+  if (elements.audioDir) elements.audioDir.value = value === "__novel__" || value === "__today__" ? value : value;
+}
+
+function selectedAudioDir() {
+  applyAudioGroupSelection();
+  return elements.audioDir?.value.trim() || "";
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
 async function persistAudioSettings() {
   try {
     await api("/api/novel-content/seed-settings", {
       method: "PUT",
       body: JSON.stringify({
         voiceId: selectedVoiceId(),
-        targetAudioDir: elements.audioDir.value.trim(),
+        targetAudioDir: selectedAudioDir(),
         speechSpeed: selectedSpeechSpeed()
       })
     });
@@ -649,38 +790,36 @@ async function generateAudio() {
   const text = elements.rewriteText.value.trim();
   if (text.length < 20) return setAudioStatus("文案至少需要 20 个字符。", "error");
   const voiceId = selectedVoiceId();
-  const targetAudioDir = elements.audioDir.value.trim();
-  if (!voiceId) return setAudioStatus("请先选择 ElevenLabs 声音，或手动填写 Voice ID。", "error");
-  if (!targetAudioDir) return setAudioStatus("请先选择音频库目录。", "error");
+  const targetAudioDir = selectedAudioDir();
+  if (!voiceId) setAudioStatus("未选手动声音，将用工人机默认 Voice ID。");
   elements.generateAudioButton.disabled = true;
-  elements.generateAudioButton.textContent = "正在生成音频...";
+  elements.generateAudioButton.textContent = "正在交给工人机...";
   try {
     const existing = (state.novel.scripts || []).find((script) => String(script.text || "").trim() === text);
     const script = existing || await saveCurrentScript(text);
     state.lastScriptId = script.id;
-    const result = await api("/api/audio-library/generate-script", {
-      method: "POST",
-      body: JSON.stringify({
-        novelId: state.novelId,
-        scriptId: script.id,
-        title: `${state.novel.title} ${script.versionLabel || "人工改写"}`,
-        script: text,
-        openingTitle: currentOpeningTitle(text),
-        voiceId,
-        targetAudioDir,
-        speechSpeed: selectedSpeechSpeed(),
-        sourceType: "manual-rewrite"
-      })
-    });
+    const result = await requestAudioJob("/api/audio-library/generate-script", {
+      novelId: state.novelId,
+      novelTitle: state.novel?.title || "",
+      scriptId: script.id,
+      title: `${state.novel.title} ${script.versionLabel || "人工改写"}`,
+      script: text,
+      openingTitle: currentOpeningTitle(text),
+      voiceId,
+      targetAudioDir,
+      speechSpeed: selectedSpeechSpeed(),
+      sourceType: "manual-rewrite"
+    }, { api, onProgress: (job) => setAudioStatus(job.message || "工人机正在生成音频...") });
+    const item = result.item || result.items?.[0] || {};
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = data.novel;
     renderWork();
     selectBase(script.id);
     elements.rewriteText.value = text;
-    playGeneratedAudio(result.item?.id);
+    playGeneratedAudio(item.id || item.audioId);
     updateCount();
-    setAudioStatus(result.item?.targetAudioPath ? `已生成并保存到 ${result.item.targetAudioPath}` : "已生成并写入音频库。", "success");
-    setStatus("文案已保存，音频已写入指定目录。", "success");
+    setAudioStatus(item.targetAudioPath ? `已生成并保存到 ${item.targetAudioPath}` : "已交给工人机写入本机音频目录。", "success");
+    setStatus(`文案已保存，音频会写到本机 F:\\音频目录\\${state.novel?.title || "小说名"}。`, "success");
   } catch (error) {
     setAudioStatus(error.message, "error");
   } finally {

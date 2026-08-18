@@ -2,9 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { discoverAssetLibraryGroups, listAssetGroups } from "./asset-library.js";
+import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
+import { runAudioGenerateJob } from "./audio-generate-job.js";
+import { discoverAudioLibraryGroups, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { createCodexBrainService } from "./codex-brain.js";
 import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
+import { normalizeOfficialPublishRecord } from "./official-publish-records.js";
 import { normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { readConfig } from "./video-core.js";
 import { resolveStorageDirs } from "./storage-paths.js";
@@ -68,6 +72,18 @@ async function runJob(context, job) {
     await runOfficialPublishJob(context, job);
     return;
   }
+  if (type === "audio-generate") {
+    await runAudioGenerateCloudJob(context, job);
+    return;
+  }
+  if (type === "audio-ensure-folder") {
+    await runAudioEnsureFolderJob(context, job);
+    return;
+  }
+  if (type === "opening-variants") {
+    await runOpeningVariantsJob(context, job);
+    return;
+  }
   const payloadPath = path.join(context.jobsDir, `${jobId}.payload.json`);
   const jobPath = path.join(context.jobsDir, `${jobId}.json`);
   const payload = buildLocalPayload(job);
@@ -119,6 +135,89 @@ async function runJob(context, job) {
       break;
     }
     await sleep(2000);
+  }
+}
+
+async function runOpeningVariantsJob(context, job) {
+  const jobId = job.id || job.jobId;
+  const payload = job.payload || {};
+  try {
+    await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: "POST",
+      body: { percent: 8, message: `正在用 Codex 生成 ${Array.isArray(payload.styles) ? payload.styles.length : 0} 个改版开头...` }
+    });
+    const brain = createCodexBrainService({ root: context.root, workDir: context.workDir });
+    const result = await brain.generateOpeningVariants(payload);
+    await complete(context, jobId, {
+      error: "",
+      message: `已生成 ${Array.isArray(result.variants) ? result.variants.length : 0} 个改版开头`,
+      result,
+      percent: 100
+    });
+  } catch (error) {
+    await complete(context, jobId, {
+      error: error.message || "生成改版开头失败。",
+      percent: 0
+    });
+  }
+}
+
+async function runAudioEnsureFolderJob(context, job) {
+  const jobId = job.id || job.jobId;
+  const payload = job.payload || {};
+  try {
+    const targetAudioDir = resolveTargetAudioDir(context.config, "__novel__", { novelTitle: payload.novelTitle });
+    await complete(context, jobId, {
+      error: "",
+      message: `已在本机创建 ${targetAudioDir}`,
+      result: { targetAudioDir, novelTitle: payload.novelTitle || "" },
+      percent: 100
+    });
+  } catch (error) {
+    await complete(context, jobId, {
+      error: error.message || "本机创建音频文件夹失败。",
+      percent: 0
+    });
+  }
+}
+
+async function runAudioGenerateCloudJob(context, job) {
+  const jobId = job.id || job.jobId;
+  const payload = job.payload || {};
+  const total = Array.isArray(payload.items) ? payload.items.length : 0;
+  try {
+    await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: "POST",
+      body: { percent: 4, message: total ? `开始生成 ${total} 条小说音频...` : "开始生成小说音频...", result: { progressTotal: total } }
+    });
+    const result = await runAudioGenerateJob({
+      root: context.root,
+      workDir: context.workDir,
+      config: context.config,
+      payload,
+      onProgress: (progress) => {
+        request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+          method: "POST",
+          body: {
+            percent: progress.percent || 8,
+            message: progress.message || "正在生成小说音频...",
+            result: { progressCurrent: progress.current, progressTotal: progress.total }
+          }
+        }).catch((error) => console.error("回写音频进度失败：", error.message));
+      }
+    });
+    const failedText = result.failed?.length ? `，${result.failed.length} 条失败` : "";
+    await complete(context, jobId, {
+      error: "",
+      message: `已保存 ${result.items.length} 条到 ${result.targetAudioDir}${failedText}`,
+      result,
+      percent: 100
+    });
+  } catch (error) {
+    await complete(context, jobId, {
+      error: error.message || "小说音频生成失败。",
+      percent: 0
+    });
   }
 }
 
@@ -327,17 +426,26 @@ async function syncInventory(context) {
   const body = {
     workerId: context.workerId,
     retentionHours: 48,
-    assetGroups: groups.map((group) => ({
-      id: group.id,
-      name: group.name,
-      path: group.path || group.dir || "",
-      clipCount: Number(group.clipCount || group.assetCount || (group.assets || []).length || 0)
-    })),
-    redditMixSettings
+    assetGroups: groups.map((group) => {
+      const totalAssets = countGroupAssets(group);
+      return {
+        id: group.id,
+        name: group.name,
+        path: group.path || group.sourceDir || group.dir || "",
+        sourceDir: group.sourceDir || group.path || "",
+        totalAssets,
+        clipCount: totalAssets,
+        totalDuration: Number(group.totalDuration || 0),
+        usedAssets: Number(group.usedAssets || 0),
+        generatedVideos: Number(group.generatedVideos || 0)
+      };
+    }),
+    redditMixSettings,
+    audioGroups: discoverAudioLibraryGroups(context.config)
   };
+  body.officialPublishRecords = readOfficialPublishRecords(context.workDir);
   if (!fs.existsSync(importMarker)) {
     body.novelContent = readLocalNovelStore(context.workDir);
-    body.officialPublishRecords = readOfficialPublishRecords(context.workDir);
   }
   const result = await request(context, "/api/worker/sync", {
     method: "POST",
@@ -349,6 +457,18 @@ async function syncInventory(context) {
       novelImport: result.novelImport || null
     }, null, 2), "utf8");
     console.log("已把本机小说书单导入线上工厂。之后以线上为准，不再回传书单。");
+  }
+}
+
+function countGroupAssets(group) {
+  const indexed = Number(group.totalAssets || (group.assets || []).length || 0);
+  if (indexed > 0) return indexed;
+  const dir = String(group.sourceDir || group.path || group.dir || "").trim();
+  if (!dir || !fs.existsSync(dir)) return 0;
+  try {
+    return listMediaFiles(dir, VIDEO_EXTENSIONS, { recursive: group.includeSubfolders !== false }).length;
+  } catch {
+    return 0;
   }
 }
 
@@ -367,20 +487,48 @@ function readLocalNovelStore(workDir) {
 function readOfficialPublishRecords(workDir) {
   try {
     const records = JSON.parse(fs.readFileSync(path.join(workDir, "publish-records.json"), "utf8"));
-    return filterPublishRecordsBySource(records, "official").map((record) => ({
-      id: record.id || record.taskId || record.jobId || "",
-      videoId: record.videoId || record.tiktokVideoId || record.itemId || "",
-      username: record.username || record.accountName || record.tiktokUsername || "",
-      publishedAt: record.publishedAt || record.actualPublishedAt || record.publishTime || 0,
-      audioLibraryId: record.audioLibraryId || record.audioId || "",
-      sourceAudioId: record.sourceAudioId || "",
-      audioName: record.audioName || record.audioFileName || "",
-      scriptId: record.scriptId || "",
-      novelId: record.novelId || "",
-    })).filter((record) => record.videoId || record.audioLibraryId || record.scriptId).slice(0, 3000);
+    return filterPublishRecordsBySource(records, "official")
+      .map((record) => compactOfficialPublishRecord(record))
+      .filter((record) => record.id)
+      .slice(0, 800);
   } catch {
     return [];
   }
+}
+
+function compactOfficialPublishRecord(record) {
+  const item = normalizeOfficialPublishRecord(record) || {};
+  return {
+    id: item.id,
+    dedupeKey: item.dedupeKey,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    publishedAt: item.publishedAt,
+    scheduleAt: item.scheduleAt,
+    username: item.username,
+    accountName: item.accountName,
+    accountUsername: item.accountUsername,
+    connectionId: item.connectionId,
+    assignedEnvId: item.assignedEnvId,
+    fileName: item.fileName,
+    title: item.title,
+    audioName: item.audioName,
+    videoId: item.videoId,
+    status: item.status,
+    officialBatchIds: item.officialBatchIds,
+    taskIds: item.taskIds,
+    batchId: item.batchId,
+    autoTaskId: item.autoTaskId,
+    note: String(item.note || "").slice(0, 180),
+    source: item.source || "official-tiktok",
+    provider: item.provider || "official",
+    audioLibraryId: item.audioLibraryId || "",
+    sourceAudioId: item.sourceAudioId || "",
+    scriptId: item.scriptId || "",
+    novelId: item.novelId || "",
+    shareLink: item.shareLink || "",
+    videoUrl: item.videoUrl || ""
+  };
 }
 
 async function complete(context, jobId, body) {

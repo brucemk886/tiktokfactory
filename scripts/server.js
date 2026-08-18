@@ -5,6 +5,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { ensureProject, readConfig, renderPodcastVideo } from "./video-core.js";
 import { createGeeLarkClient } from "./geelark-client.js";
 import { discoverAssetLibraryGroups, getAssetUsageDashboard, getAssetGroup, getGeneratedVideoReuseDetail, listAssetGroups, readUsage } from "./asset-library.js";
+import { discoverAudioLibraryGroups, resolveAudioLibraryRoot, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { createPublishService } from "./publish-service.js";
 import { createAutoTaskManager, planOfficialPublishJobs } from "./auto-task-manager.js";
@@ -29,7 +31,8 @@ import { createOfficialTikTokAccountGroups } from "./official-tiktok-account-gro
 import { computeGroupReport } from "./official-group-report.js";
 import { factoryCloudPageUrl, homePathForUser, publicSidebarModules, shouldRedirectLocalPageToFactory, SIDEBAR_MODULES } from "./sidebar-modules.js";
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
-import { collectOfficialBatchIdsFromRecords, filterPublishRecordsBySource } from "./publish-record-sources.js";
+import { filterPublishRecordsBySource } from "./publish-record-sources.js";
+import { summarizeOfficialPublishRecords } from "./official-publish-records.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
@@ -378,7 +381,7 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "official-group-report.html"), "text/html; charset=utf-8");
     }
 
-    if (req.method === "GET" && ["/novel-publish", "/mid-video-publish", "/psychology-publish"].includes(url.pathname)) {
+    if (req.method === "GET" && ["/mid-video-publish", "/psychology-publish"].includes(url.pathname)) {
       return sendFile(res, path.join(publicDir, "module-publish.html"), "text/html; charset=utf-8");
     }
 
@@ -1256,7 +1259,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/novel-content/opening-styles") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
-      return sendJson(res, 200, { styles: publicOpeningStyles() }, { "Cache-Control": "no-store" });
+      return sendJson(res, 200, { styles: publicOpeningStyles(), version: 3 }, { "Cache-Control": "no-store" });
     }
 
     if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/opening-variants$/.test(url.pathname)) {
@@ -1272,7 +1275,8 @@ const server = http.createServer(async (req, res) => {
           sourceText: novel.sourceContent,
           baseOpening,
           styles: payload.styles,
-          model: payload.model
+          model: payload.model,
+          reasoningEffort: payload.reasoningEffort
         });
         return sendJson(res, 200, result);
       } catch (error) {
@@ -1343,6 +1347,9 @@ const server = http.createServer(async (req, res) => {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频生成功能仅允许在本机访问。" });
       try {
         const payload = await readJsonBody(req);
+        payload.targetAudioDir = resolveTargetAudioDir(readConfig(root), payload.targetAudioDir, {
+          novelTitle: payload.novelTitle
+        });
         const item = await audioLibrary.generateFromScript(payload);
         if (payload.scriptId && item?.id) {
           try {
@@ -1359,6 +1366,56 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { item });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "音频生成失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/audio-library/sync-local") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "音频下发仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!items.length && Array.isArray(payload.scriptIds)) {
+          const novel = payload.novelId ? novelContentLibrary.getNovel(payload.novelId) : null;
+          const wanted = new Set(payload.scriptIds.map((id) => String(id || "").trim()).filter(Boolean));
+          payload.novelTitle = novel?.title || payload.novelTitle || "";
+          payload.items = (novel?.scripts || []).filter((script) => wanted.has(script.id)).map((script) => ({
+            novelId: novel.id,
+            novelTitle: novel.title,
+            scriptId: script.id,
+            audioId: script.audioId || script.audio?.id || "",
+            fileName: script.audio?.fileName || "",
+            targetAudioPath: script.audio?.targetAudioPath || "",
+            title: `${novel.title} ${script.versionLabel || "改写"}`.trim(),
+            script: script.text,
+            openingTitle: script.openingTitle || "",
+            voiceId: payload.voiceId,
+            speechSpeed: payload.speechSpeed,
+            sourceType: script.sourceType
+          }));
+        }
+        const result = await runAudioGenerateJob({
+          root,
+          workDir,
+          config: readConfig(root),
+          payload,
+          audioLibrary,
+          novelContentLibrary
+        });
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "下发到本机失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/audio-library/ensure-folder") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "新建音频文件夹仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        const novelTitle = String(payload.novelTitle || (payload.novelId ? novelContentLibrary.getNovel(payload.novelId)?.title : "") || "").trim();
+        const targetAudioDir = resolveTargetAudioDir(readConfig(root), "__novel__", { novelTitle });
+        return sendJson(res, 200, { targetAudioDir, novelTitle: novelTitle || "未命名小说" });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "本机创建音频文件夹失败。" });
       }
     }
 
@@ -1661,6 +1718,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/asset-groups") {
       const groups = getConfiguredAssetGroups();
       return sendJson(res, 200, { groups, usage: readUsage(root) });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/audio-groups") {
+      const config = readConfig(root);
+      return sendJson(res, 200, {
+        libraryRoot: resolveAudioLibraryRoot(config),
+        groups: discoverAudioLibraryGroups(config)
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/asset-usage") {
@@ -3216,38 +3281,10 @@ function getPublishRecordsSummary(searchParams, user = null) {
 }
 
 function getOfficialPublishRecordsSummary(searchParams) {
-  const range = String(searchParams.get("range") || "7d");
-  const query = String(searchParams.get("query") || "").trim().toLowerCase();
-  const from = resolveStatsFrom(range);
-  const allRecords = filterPublishRecordsBySource(readPublishRecords(), "official");
-  const records = allRecords
-    .filter((record) => !from || Math.max(Number(record.createdAt) || 0, Number(record.scheduleAt) * 1000 || 0) >= from)
-    .filter((record) => {
-      if (!query) return true;
-      return [
-        record.autoTaskId,
-        record.accountName,
-        record.accountUsername,
-        record.connectionId,
-        record.assignedEnvId,
-        record.fileName,
-        record.title,
-        record.externalRef,
-        ...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []),
-        ...(Array.isArray(record.taskIds) ? record.taskIds : [])
-      ].filter(Boolean).join(" ").toLowerCase().includes(query);
-    })
-    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-  const batchIds = collectOfficialBatchIdsFromRecords(records);
-  return {
-    records,
-    summary: {
-      recordCount: records.length,
-      batchCount: batchIds.length,
-      accountCount: new Set(records.map((record) => record.connectionId || record.assignedEnvId).filter(Boolean)).size,
-      submittedCount: records.filter((record) => ["submitted", "done"].includes(String(record.status || ""))).length
-    }
-  };
+  return summarizeOfficialPublishRecords(filterPublishRecordsBySource(readPublishRecords(), "official"), {
+    range: String(searchParams.get("range") || "7d"),
+    query: String(searchParams.get("query") || "")
+  });
 }
 
 function getAccessiblePublishProfiles(user) {

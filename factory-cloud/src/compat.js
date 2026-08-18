@@ -1,6 +1,8 @@
+import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { errorJson, json, now, readJson, safeId } from "./http.js";
-import { applyJobToTask, cancelJob, enqueueJob, getJob } from "./jobs.js";
+import { applyJobToTask, cancelJob, enqueueJob, getJob, publicJob } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
+import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 
 export async function handleCompat(request, env, url, session) {
   if (!session) return null;
@@ -13,7 +15,13 @@ export async function handleCompat(request, env, url, session) {
   }
 
   if (method === "GET" && pathname === "/api/asset-groups") {
-    return json({ groups: await kvGet(db, "asset-groups", []), usage: await kvGet(db, "asset-usage", {}) });
+    return json({ groups: publicAssetGroups(await kvGet(db, "asset-groups", [])), usage: await kvGet(db, "asset-usage", {}) });
+  }
+  if (method === "GET" && pathname === "/api/audio-groups") {
+    return json({
+      libraryRoot: "F:/音频目录",
+      groups: publicAudioGroups(await kvGet(db, "audio-groups", []))
+    });
   }
   if (method === "GET" && pathname === "/api/shared-libraries") {
     return json({ libraries: await kvGet(db, "shared-libraries", []) });
@@ -235,6 +243,110 @@ export async function handleCompat(request, env, url, session) {
     return json({ accepted: true, queued: true, message: "生图请求已记录，工人机或后续云端 Kie 调用会处理。" });
   }
 
+  const openingMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/opening-variants$/);
+  if (method === "POST" && openingMatch) {
+    const novel = await hydrateNovel(db, decodeURIComponent(openingMatch[1]));
+    if (!novel) return errorJson("没有找到该小说。", 404);
+    const body = await readJson(request);
+    const styles = Array.isArray(body.styles) ? body.styles : [];
+    if (!styles.length) return errorJson("请先勾选至少 1 种风格，再生成改版开头。", 400);
+    const job = await enqueueJob(db, {
+      type: "opening-variants",
+      title: `生成 ${styles.length} 个改版开头`,
+      payload: {
+        novelId: novel.id,
+        title: novel.title,
+        language: body.language || "English",
+        sourceText: novel.sourceContent || "",
+        baseOpening: String(body.baseOpening || "").trim(),
+        styles,
+        model: body.model || "",
+        reasoningEffort: body.reasoningEffort || ""
+      },
+      createdBy: session.user.username
+    });
+    return json({
+      queued: true,
+      accepted: true,
+      jobId: job.id,
+      message: "已交给本机工人用 Codex 生成改版开头。"
+    });
+  }
+
+  if (method === "POST" && pathname === "/api/audio-library/generate-script") {
+    const payload = await buildAudioGeneratePayload(db, await readJson(request));
+    const job = await enqueueJob(db, {
+      type: "audio-generate",
+      title: payload.items.length > 1 ? `下发 ${payload.items.length} 条小说音频` : "生成小说音频",
+      payload,
+      createdBy: session.user.username
+    });
+    return json({
+      queued: true,
+      accepted: true,
+      jobId: job.id,
+      message: "已交给本机工人生成，完成后会写到 F:\\音频目录。"
+    });
+  }
+
+  if (method === "POST" && pathname === "/api/audio-library/ensure-folder") {
+    const body = await readJson(request);
+    const novelTitle = await resolveNovelTitle(db, body);
+    if (!novelTitle) return errorJson("请先打开一本小说，再按书名建文件夹。", 400);
+    const job = await enqueueJob(db, {
+      type: "audio-ensure-folder",
+      title: `新建音频文件夹 ${novelTitle}`,
+      payload: { novelTitle, novelId: String(body.novelId || "").trim() },
+      createdBy: session.user.username
+    });
+    return json({
+      queued: true,
+      accepted: true,
+      jobId: job.id,
+      message: `已让工人机在 F:\\音频目录 下创建「${novelTitle}」文件夹。`
+    });
+  }
+
+  if (method === "POST" && pathname === "/api/audio-library/sync-local") {
+    const payload = await buildAudioGeneratePayload(db, await readJson(request));
+    const job = await enqueueJob(db, {
+      type: "audio-generate",
+      title: `下发 ${payload.items.length} 条小说音频`,
+      payload,
+      createdBy: session.user.username
+    });
+    return json({
+      queued: true,
+      accepted: true,
+      jobId: job.id,
+      count: payload.items.length,
+      message: `已下发 ${payload.items.length} 条到本机工人，生成后写入 F:\\音频目录。`
+    });
+  }
+
+  const audioProgress = pathname.match(/^\/api\/audio-library\/progress\/([^/]+)$/);
+  if (method === "GET" && audioProgress) {
+    const job = await getJob(db, decodeURIComponent(audioProgress[1]));
+    if (!job) return errorJson("音频任务不存在。", 404);
+    return json(publicJob(job));
+  }
+
+  if (method === "GET" && pathname === "/api/elevenlabs/voices") {
+    const settings = await kvGet(db, "novel-seed-settings", {});
+    const apiKey = String(env.ELEVENLABS_API_KEY || "").trim();
+    if (!apiKey) {
+      return errorJson("线上未配置 ElevenLabs API Key。请在 Cloudflare Worker 写入 ELEVENLABS_API_KEY。", 400);
+    }
+    try {
+      return json(await listElevenLabsVoices({
+        apiKey,
+        defaultVoiceId: String(settings.voiceId || "").trim()
+      }));
+    } catch (error) {
+      return errorJson(error.message || "读取 ElevenLabs 声音失败。", error.statusCode || 502);
+    }
+  }
+
   if (method === "GET" && pathname === "/api/audio-library") {
     return json({ items: [] });
   }
@@ -326,4 +438,24 @@ function defaultOperatorSettings(scope) {
     groupNames: [],
     maxDailyVideos: 20
   };
+}
+
+function publicAssetGroups(groups) {
+  return (Array.isArray(groups) ? groups : []).map((group) => {
+    const totalAssets = Number(group.totalAssets ?? group.clipCount ?? group.assetCount ?? group.videoCount ?? (group.assets || []).length) || 0;
+    return {
+      ...group,
+      totalAssets,
+      clipCount: Number(group.clipCount || totalAssets) || totalAssets
+    };
+  });
+}
+
+function publicAudioGroups(groups) {
+  return (Array.isArray(groups) ? groups : []).map((group) => ({
+    id: String(group.id || group.name || "").trim(),
+    name: String(group.name || group.id || "").trim(),
+    path: String(group.path || group.sourceDir || "").trim(),
+    totalAssets: Number(group.totalAssets ?? group.clipCount ?? group.fileCount) || 0
+  })).filter((group) => group.id && group.path);
 }

@@ -64,7 +64,7 @@ body.work-page.accounts-page {
 
 .accounts-page .accounts-layout {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 0.9fr) minmax(420px, 1.4fr);
   gap: 20px;
   align-items: start;
 }
@@ -116,39 +116,19 @@ body.work-page.accounts-page {
 }
 
 .accounts-page .people-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   width: 100%;
-  padding: 4px 4px 4px 8px;
+  padding: 2px 4px;
   border-radius: 8px;
 }
 
 .accounts-page .people-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  padding: 8px 4px;
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
   border: 0;
   background: transparent;
   color: #212529;
   text-align: left;
-  cursor: pointer;
-}
-
-.accounts-page .people-delete {
-  flex: 0 0 auto;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 1px solid #f1aeb5 !important;
-  border-radius: 6px;
-  background: #fff !important;
-  color: #dc3545 !important;
-  font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
 }
 
@@ -185,8 +165,7 @@ body.work-page.accounts-page {
 }
 
 .accounts-page .people-item em {
-  flex: 0 1 auto;
-  max-width: 46%;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

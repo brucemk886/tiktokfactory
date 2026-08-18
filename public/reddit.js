@@ -292,7 +292,7 @@ async function loadAssetGroups() {
     assetUsage = data.usage || {};
     const current = assetGroupSelect.value;
     assetGroupSelect.innerHTML = assetGroups.length
-      ? assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${group.totalAssets || 0} 条）</option>`).join("")
+      ? assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${assetCount(group)} 条）</option>`).join("")
       : `<option value="">先生成或导入素材组</option>`;
     if (assetGroups.some((group) => group.id === current)) assetGroupSelect.value = current;
     renderAssetStats();
@@ -309,9 +309,9 @@ function renderAssetStats() {
     return;
   }
   const assets = Array.isArray(group.assets) ? group.assets : [];
-  const usedCount = assets.filter((asset) => assetUsage.assets?.[asset.id]?.usedCount > 0).length;
+  const usedCount = Number(group.usedAssets) || assets.filter((asset) => assetUsage.assets?.[asset.id]?.usedCount > 0).length;
   const totalUsed = assets.reduce((sum, asset) => sum + (assetUsage.assets?.[asset.id]?.usedCount || 0), 0);
-  assetGroupStats.textContent = `素材组：${group.name || group.id}｜素材 ${assets.length} 条｜总时长 ${formatDuration(group.totalDuration || 0)}｜已用素材 ${usedCount} 条｜片段使用 ${totalUsed} 次｜生成视频 ${group.generatedVideos || 0} 条`;
+  assetGroupStats.textContent = `素材组：${group.name || group.id}｜素材 ${assetCount(group)} 条｜总时长 ${formatDuration(group.totalDuration || 0)}｜已用素材 ${usedCount} 条｜片段使用 ${totalUsed} 次｜生成视频 ${group.generatedVideos || 0} 条`;
 }
 
 function collectMixPayload() {
@@ -836,6 +836,10 @@ function formatDuration(seconds) {
 
 function stripExtension(fileName) {
   return String(fileName || "").replace(/\.[^.]+$/, "");
+}
+
+function assetCount(group) {
+  return Number(group?.totalAssets ?? group?.clipCount ?? group?.assetCount ?? group?.videoCount ?? group?.assets?.length) || 0;
 }
 
 function escapeHtml(value) {

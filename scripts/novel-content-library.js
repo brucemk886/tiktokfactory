@@ -233,12 +233,12 @@ export function createNovelContentLibraryService({
     const novel = store.novels.find((item) => item.id === safeId(novelId));
     if (!novel) throw statusError(404, "没有找到该小说。");
     const wanted = new Set((Array.isArray(scriptIds) ? scriptIds : []).map((id) => safeId(id)).filter(Boolean));
-    const audioScripts = store.scripts.filter((item) => item.novelId === novel.id && item.audioId);
-    if (!audioScripts.length) throw statusError(400, "这本小说还没有可勾选的音频。");
-    const unknown = [...wanted].filter((id) => !audioScripts.some((item) => item.id === id));
+    const novelScripts = store.scripts.filter((item) => item.novelId === novel.id);
+    if (!novelScripts.length) throw statusError(400, "这本小说还没有可勾选的改写文案。");
+    const unknown = [...wanted].filter((id) => !novelScripts.some((item) => item.id === id));
     if (unknown.length) throw statusError(400, "勾选的音频不属于这本小说。");
     const timestamp = new Date(now()).toISOString();
-    for (const script of audioScripts) {
+    for (const script of novelScripts) {
       script.mixEnabled = wanted.has(script.id);
       script.updatedAt = timestamp;
     }

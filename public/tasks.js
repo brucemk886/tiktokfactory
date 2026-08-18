@@ -12,6 +12,7 @@ let officialTikTokAccounts = [];
 let novels = [];
 let currentUserRole = "member";
 let assetGroups = [];
+let audioGroups = [];
 let sharedLibrariesConfigured = false;
 let pollTimer = null;
 let lastTaskRenderKey = "";
@@ -47,6 +48,7 @@ $("#sharedAudioLibrary")?.addEventListener("change", applySharedLibrarySelection
 $("#audioDir")?.addEventListener("change", () => {
   if ($("#audioDir").value.trim()) clearSelectedMixNovels();
 });
+$("#audioGroupSelect")?.addEventListener("change", () => applyAudioGroupSelection());
 $("#sharedMusicLibrary")?.addEventListener("change", applySharedLibrarySelection);
 groupFilter.addEventListener("change", filterPhones);
 nameFilter.addEventListener("input", filterPhones);
@@ -56,6 +58,7 @@ applyIncomingAudioBatch();
 loadCaptionPresets();
 setDefaultSchedule();
 loadAssetGroups();
+loadAudioGroups();
 loadSharedLibraries();
 loadNovels();
 initializePublishProvider();
@@ -426,7 +429,7 @@ function applyPublishChannelChrome() {
   const novelField = document.querySelector(".novel-select-field");
   if (novelField) novelField.hidden = !official;
   if ($("#pageLead")) $("#pageLead").textContent = official
-    ? "勾选混剪小说，或改选音频目录，二者选一个。小说只抽书单详情里勾过的生效音频，成片叠上对应书的平台和推广码。"
+    ? "勾选混剪小说，或改选本机 F:\\音频目录 里的文件夹。小说音频不用传到线上，工人在本机按文件名查找。"
     : "GeeLark 备用发布，成片不叠加平台和推广码。";
   if ($("#publishLead")) $("#publishLead").textContent = official
     ? "选择官方授权账号，设置文案与发布时间。GeeLark 发布已移到备用区。"
@@ -485,6 +488,8 @@ function getSelectedNovels() {
 function getSelectedAudioItems() {
   return getSelectedNovels().flatMap((novel) => enabledMixAudios(novel).map((script) => ({
     id: script.audio.id,
+    path: script.audio.targetAudioPath || "",
+    fileName: script.audio.fileName || "",
     scriptId: script.id,
     novelId: novel.id,
     platform: novel.platform || "",
@@ -501,7 +506,7 @@ function updateNovelBadgeHint() {
   const selectedNovels = getSelectedNovels();
   const selected = getSelectedAudioItems();
   if (!selectedNovels.length) {
-    hint.textContent = "勾选小说后不用再选音频目录；不勾小说就选下面的音频目录。生效音频在书单详情里勾选保存。";
+    hint.textContent = "勾选小说后不用再选音频目录。工人会在本机 F:\\音频目录 和音频库里找对应 mp3，不用再往线上传。";
     updateAudioSourceMode();
     updateCaptionModeView();
     return;
@@ -597,6 +602,36 @@ function updateSelectedOfficialAccountCount() {
   updatePublishPlanHint();
 }
 
+async function loadAudioGroups() {
+  const select = $("#audioGroupSelect");
+  const hint = $("#audioGroupHint");
+  if (!select) return;
+  try {
+    const response = await fetch(`/api/audio-groups?t=${Date.now()}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取音频目录失败。");
+    audioGroups = Array.isArray(data.groups) ? data.groups : [];
+    const current = select.value || $("#audioDir")?.value || "";
+    select.innerHTML = `<option value="">请选择音频文件夹</option>${audioGroups.map((group) => `<option value="${escapeAttr(group.id)}" data-path="${escapeAttr(group.path)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets) || 0} 条）</option>`).join("")}`;
+    const matched = audioGroups.find((group) => group.id === current || group.path === current);
+    if (matched) select.value = matched.id;
+    applyAudioGroupSelection({ keepNovels: true });
+    if (hint) hint.textContent = audioGroups.length
+      ? `固定读取 ${data.libraryRoot || "F:\\音频目录"}，已同步 ${audioGroups.length} 个文件夹。`
+      : "本机 F:\\音频目录 下还没有文件夹，或工人还没同步上来。";
+  } catch (error) {
+    select.innerHTML = '<option value="">音频目录读取失败</option>';
+    if (hint) hint.textContent = error.message || "读取音频目录失败。";
+  }
+}
+
+function applyAudioGroupSelection({ keepNovels = false } = {}) {
+  const select = $("#audioGroupSelect");
+  const group = audioGroups.find((item) => item.id === select?.value);
+  if ($("#audioDir")) $("#audioDir").value = group?.path || "";
+  if (group?.path && !keepNovels) clearSelectedMixNovels();
+}
+
 async function loadAssetGroups() {
   const select = $("#assetGroupSelect");
   const hint = $("#assetGroupHint");
@@ -606,7 +641,7 @@ async function loadAssetGroups() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取素材组失败。");
     assetGroups = Array.isArray(data.groups) ? data.groups : [];
-    select.innerHTML = `<option value="">请选择一个素材组</option>${assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets ?? group.assets?.length) || 0} 条）</option>`).join("")}`;
+    select.innerHTML = `<option value="">请选择一个素材组</option>${assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${assetCount(group)} 条）</option>`).join("")}`;
     if (hint) hint.textContent = assetGroups.length ? `已读取 ${assetGroups.length} 个素材组。` : "暂无已建立索引的素材组，请使用共享素材库。";
     updateVideoSourceVisibility();
   } catch (error) {
@@ -1054,5 +1089,9 @@ function number(selector, fallback) { const value = Number($(selector)?.value); 
 function setValue(selector, value) { if (value !== undefined && value !== null && value !== "" && $(selector)) $(selector).value = value; }
 function readStored(key) { try { return JSON.parse(localStorage.getItem(key) || "{}"); } catch { return {}; } }
 function setCreateStatus(text) { createStatus.textContent = text; }
+function assetCount(group) {
+  return Number(group?.totalAssets ?? group?.clipCount ?? group?.assetCount ?? group?.videoCount ?? group?.assets?.length) || 0;
+}
+
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]); }
 function escapeAttr(value) { return escapeHtml(value).replace(/`/g, "&#96;"); }

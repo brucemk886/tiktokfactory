@@ -68,7 +68,7 @@ async function pollReindex(jobId) {
 function updateGroups(groups, selectedId) {
   const current = groupSelect.value;
   groupSelect.innerHTML = groups.length
-    ? groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)} · ${Number(group.totalAssets) || 0} 条</option>`).join("")
+    ? groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)} · ${Number(group.totalAssets ?? group.clipCount) || 0} 条</option>`).join("")
     : `<option value="">暂无素材组</option>`;
   const target = groups.some((group) => group.id === current) ? current : selectedId;
   if (target) groupSelect.value = target;

@@ -30,7 +30,6 @@ const PAGE_FILES = {
   "/novel-ops-report": "official-group-report.html",
   "/mid-video-ops-report": "official-group-report.html",
   "/psychology-ops-report": "official-group-report.html",
-  "/novel-publish": "module-publish.html",
   "/mid-video-publish": "module-publish.html",
   "/psychology-publish": "module-publish.html",
   "/mid-video-effects": "official-analytics.html",

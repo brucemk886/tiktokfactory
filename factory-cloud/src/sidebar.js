@@ -14,7 +14,6 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("novel-library", "/novel-library", "小说书单", ALL, novelPromotionGroup()),
   moduleItem("novel-effects", "/novel-effects", "数据概览", ALL, novelPromotionGroup()),
   moduleItem("novel-ops-report", "/novel-ops-report", "运营报表", ALL, novelPromotionGroup()),
-  moduleItem("novel-publish", "/novel-publish", "视频发布", ALL, novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ALL, novelPromotionGroup()),
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
   moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ALL, psychologyGroup()),

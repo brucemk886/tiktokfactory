@@ -2,59 +2,34 @@ export const OPENING_STYLES = Object.freeze([
   Object.freeze({
     id: "conflict-first",
     label: "冲突先行",
-    hook: "前 3 秒就对质、拆穿或吵架，滑动的人立刻停下来。"
+    hook: "第一句就点名对质，把戒指、签名、亲吻这类物证砸在对方脸上。",
+    firstLine: "第一句必须是对质句：称呼 + 正在发生的物证。禁止从走进房间、看见人群写起。例：Why is the bride wearing my mother's ring?"
   }),
   Object.freeze({
     id: "secret-reveal",
     label: "秘密揭开",
-    hook: "先丢一个不该被知道的秘密，再落到具体事件。"
+    hook: "第一句先爆出不该存在的秘密，听完就能复述那件事。",
+    firstLine: "第一句直接说破秘密本身（私生子、第二场婚礼、遗嘱、她是他的…），不要先铺“我本来不该知道”。例：The baby in her arms has my husband's last name."
   }),
   Object.freeze({
     id: "betrayal-caught",
     label: "当场背叛",
-    hook: "撞见出轨、婚礼、另一个女人，羞耻和愤怒同时砸下来。"
+    hook: "第一句就撞见出轨、婚礼或另一个女人，羞耻当场爆发。",
+    firstLine: "第一句必须是目击句：我看见谁在对谁做什么。必须有动作（kiss, unzip, sign, walk down the aisle）。例：I caught them kissing in our wedding suite."
   }),
   Object.freeze({
     id: "forbidden-line",
     label: "禁忌越界",
-    hook: "用一句话钉死不该发生的关系，让观众想看他们怎么收场。"
-  }),
-  Object.freeze({
-    id: "identity-twist",
-    label: "身份反转",
-    hook: "开头就错位：他不是表面上的那个人，她也不是来做客的。"
-  }),
-  Object.freeze({
-    id: "public-shame",
-    label: "当众受辱",
-    hook: "宴席、婚礼或公司里被当众打脸，围观本身就是冲突。"
-  }),
-  Object.freeze({
-    id: "deadline-lock",
-    label: "时间锁死",
-    hook: "今晚、周年、婚礼倒计时，来不及解释，只能先行动。"
-  }),
-  Object.freeze({
-    id: "emotional-immersion",
-    label: "情绪代入",
-    hook: "第一人称先给身体感受和心跳，再带出事件。"
-  }),
-  Object.freeze({
-    id: "villain-open",
-    label: "反派开口",
-    hook: "从对方、小三或长辈的嘴开始讲，观众先站错队再被打脸。"
-  }),
-  Object.freeze({
-    id: "ending-flash",
-    label: "结局倒叙",
-    hook: "先给后果或最后一晚，再跳回这件事是怎么开始的。"
+    hook: "第一句用称呼钉死禁忌关系，让人立刻想看怎么收场。",
+    firstLine: "第一句必须带禁忌称呼（uncle, stepson, husband's brother, my son's wife）+ 正在发生的越界。不要空喊“我们不该这样”。例：I am pregnant with my uncle's child."
   })
 ]);
 
 export const DEFAULT_OPENING_STYLE_IDS = Object.freeze([
   "conflict-first",
   "betrayal-caught",
-  "secret-reveal"
+  "secret-reveal",
+  "forbidden-line"
 ]);
 
 export function resolveOpeningStyles(ids) {
@@ -78,6 +53,15 @@ export function resolveOpeningStyles(ids) {
   return styles;
 }
 
+export function formatOpeningStyleBrief(style, index) {
+  return `${index + 1}. ${style.id} / ${style.label}：${style.hook}\n   第一句做法：${style.firstLine}`;
+}
+
 export function publicOpeningStyles() {
-  return OPENING_STYLES.map((item) => ({ ...item }));
+  return OPENING_STYLES.map((item) => ({
+    id: item.id,
+    label: item.label,
+    hook: item.hook,
+    example: String(item.firstLine || "").split("例：")[1] || ""
+  }));
 }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260818-3" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -67,6 +67,11 @@
                 <option value="gpt-5.6-sol">GPT-5.6 Sol · 旗舰</option>
                 <option value="gpt-5.6-terra">GPT-5.6 Terra · 第二档</option>
               </select>
+              <select id="openingReasoning" aria-label="推理强度">
+                <option value="medium">标准</option>
+                <option value="high" selected>强</option>
+                <option value="xhigh">极强</option>
+              </select>
             </div>
             <div id="aiRewritePanel">
               <div class="style-picker">
@@ -74,7 +79,7 @@
                   <span>改版风格</span>
                   <small id="styleCount">已选 3</small>
                 </div>
-                <p class="hint">勾选风格，卡片右侧数字是这种再写几条。冲突、对立、狗血的开头更抓人。</p>
+                <p class="hint">只留 4 种最能停滑的风格。勾选后右侧数字是这种再写几条。每张卡片都带第一句例句。</p>
                 <div id="styleOptions" class="style-options"></div>
               </div>
               <div class="form-actions">
@@ -84,7 +89,10 @@
                 <div class="section-heading">
                   <div><span>AI VARIANTS</span><h2 id="variantHeading">改版开头</h2></div>
                 </div>
-                <p id="variantStatus" class="hint">勾选后可单条保存并生成音频。声音和目录用右边的默认设置。</p>
+                <p id="variantStatus" class="hint">英文口播会带中文对照。勾选后可一条条配音，或一键按顺序生成多条。</p>
+                <div class="form-actions">
+                  <button id="generateSelectedAudioBtn" class="primary-action" type="button">一键生成勾选音频</button>
+                </div>
                 <div id="variantList" class="variant-list"></div>
               </section>
             </div>
@@ -151,11 +159,12 @@
               <small class="field-hint">1.00 是正常语速。要压在 2 分半内，英文口播控制在 320–360 词。</small>
             </label>
             <label>
-              <span>保存到音频库目录</span>
-              <div class="path-picker">
-                <input id="audioDir" type="text" placeholder="选择自运营会读取的音频目录" />
-                <button id="pickAudioDirBtn" type="button">选择</button>
-              </div>
+              <span>保存到本机音频目录</span>
+              <select id="audioGroupSelect">
+                <option value="__novel__">按小说名称自动建文件夹</option>
+              </select>
+              <input id="audioDir" type="hidden" />
+              <small id="audioGroupHint">默认写到 F:\音频目录\小说名。线上点生成后，工人机会自动建这个文件夹。</small>
             </label>
             <div class="form-actions">
               <button id="generateAudioBtn" class="primary-action" type="button">生成音频并保存</button>
@@ -167,6 +176,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260818-3" type="module"></script>
   </body>
 </html>

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildOperationPromptV2, createCodexBrainService, resolveOpeningModel } from "./codex-brain.js";
+import { buildOperationPromptV2, createCodexBrainService, resolveOpeningModel, resolveOpeningReasoning } from "./codex-brain.js";
 
 test("official operation prompt includes mapped novel-effect evidence", () => {
   const prompt = buildOperationPromptV2({
@@ -134,9 +134,9 @@ test("opening variants return three distinct style scripts", async (context) => 
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
   const variants = {
     variants: [
-      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` },
-      { style: "secret-reveal", styleLabel: "秘密揭开", title: "The invitation was a trap", openingTitle: "The invitation was a trap", script: `${"I was never supposed to know about the second ceremony, but the envelope had my old address and a date I could not forget. ".repeat(8)}` },
-      { style: "emotional-immersion", styleLabel: "情绪代入", title: "My hands would not stop shaking", openingTitle: "My hands would not stop shaking", script: `${"My throat closed before I reached the church doors, because the man waiting at the altar had once promised this night would be mine. ".repeat(8)}` }
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}`, titleZh: "她还是走进去了", openingTitleZh: "她戴着我妈的戒指", scriptZh: "婚礼大厅突然安静，我大声喊出他的名字，质问新娘为什么戴着我妈妈的戒指。" },
+      { style: "secret-reveal", styleLabel: "秘密揭开", title: "The invitation was a trap", openingTitle: "The invitation was a trap", script: `${"I was never supposed to know about the second ceremony, but the envelope had my old address and a date I could not forget. ".repeat(8)}`, titleZh: "请柬是个陷阱", openingTitleZh: "请柬是个陷阱", scriptZh: "我不该知道第二场仪式，可信封上写着我的旧地址和那个忘不掉的日期。" },
+      { style: "forbidden-line", styleLabel: "禁忌越界", title: "My hands would not stop shaking", openingTitle: "I am his secret", script: `${"I am pregnant with my uncle's child and the family still wants me to toast his wife. ".repeat(8)}`, titleZh: "我是他的秘密", openingTitleZh: "我是他的秘密", scriptZh: "我怀了叔叔的孩子，家里却还要我给新娘敬酒。" }
     ]
   };
   class FakeCodex {
@@ -150,16 +150,17 @@ test("opening variants return three distinct style scripts", async (context) => 
   const result = await service.generateOpeningVariants({
     title: "Secret Uncle",
     sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
-    styles: ["conflict-first", "secret-reveal", "emotional-immersion"]
+    styles: ["conflict-first", "secret-reveal", "forbidden-line"]
   });
   assert.equal(result.variants.length, 3);
-  assert.deepEqual(result.variants.map((item) => item.style), ["conflict-first", "secret-reveal", "emotional-immersion"]);
+  assert.deepEqual(result.variants.map((item) => item.style), ["conflict-first", "secret-reveal", "forbidden-line"]);
   assert.deepEqual(result.variants.map((item) => item.openingTitle), [
     "She wore my mother's ring",
     "The invitation was a trap",
-    "My hands would not stop shaking"
+    "I am his secret"
   ]);
   assert.ok(result.variants.every((item) => item.script.length >= 80));
+  assert.equal(result.variants[0].scriptZh.includes("戒指"), true);
   assert.equal(result.model, "gpt-5.6-sol");
 });
 
@@ -190,6 +191,34 @@ test("opening variants can use Terra as the second-tier model", async (context) 
   assert.equal(resolveOpeningModel("unknown"), "gpt-5.6-sol");
 });
 
+test("opening variants pass strong and extreme reasoning effort", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-effort-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const calls = [];
+  const variants = {
+    variants: [
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` }
+    ]
+  };
+  class FakeCodex {
+    startThread(options) {
+      calls.push(options);
+      return { run: async () => ({ finalResponse: JSON.stringify(variants), usage: { output_tokens: 40 } }) };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["conflict-first"],
+    reasoningEffort: "xhigh"
+  });
+  assert.equal(calls[0].modelReasoningEffort, "xhigh");
+  assert.equal(result.reasoningEffort, "xhigh");
+  assert.equal(resolveOpeningReasoning("high"), "high");
+  assert.equal(resolveOpeningReasoning("unknown"), "high");
+});
+
 test("opening variants can return a single selected style", async (context) => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-one-"));
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
@@ -211,6 +240,37 @@ test("opening variants can return a single selected style", async (context) => {
   });
   assert.equal(result.variants.length, 1);
   assert.equal(result.variants[0].style, "conflict-first");
+});
+
+test("opening variant prompt forces a stop-scroll first sentence", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-prompt-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const prompts = [];
+  const variants = {
+    variants: [
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"Why is the bride wearing my mother's ring in front of two hundred guests? ".repeat(8)}` }
+    ]
+  };
+  class FakeCodex {
+    startThread() {
+      return {
+        run: async (prompt) => {
+          prompts.push(prompt);
+          return { finalResponse: JSON.stringify(variants), usage: { output_tokens: 40 } };
+        }
+      };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["conflict-first"]
+  });
+  assert.match(prompts[0], /第一句铁律/);
+  assert.match(prompts[0], /第一句做法：/);
+  assert.match(prompts[0], /Why is the bride wearing my mother's ring/);
+  assert.match(prompts[0], /I walked into/);
 });
 
 test("novel marketing rejects source text that is too short", async () => {

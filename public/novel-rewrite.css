@@ -93,7 +93,7 @@
 .field-count { position: absolute; right: 10px; bottom: 8px; color: var(--lf-muted, #6d6758); font-size: 11px; }
 .style-picker { display: grid; gap: 8px; }
 .style-picker-head span, .style-picker-head small { color: var(--lf-muted, #6d6758); font-size: 12px; font-weight: 800; }
-.style-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.style-options { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .style-option { display: grid; grid-template-columns: 16px 1fr 52px; gap: 8px 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: 10px; background: #fff; cursor: pointer; }
 .style-option.is-on { border-color: #8a9a32; background: rgba(200, 220, 90, 0.18); }
 .style-option input[type="checkbox"] { width: 16px; height: 16px; margin-top: 2px; accent-color: #5c6a14; }
@@ -112,6 +112,7 @@
   cursor: text;
 }
 .style-option em { grid-column: 2 / 4; color: var(--lf-muted, #6d6758); font-size: 12px; font-style: normal; line-height: 1.45; }
+.style-option small { grid-column: 2 / 4; color: #5c6a14; font-size: 12px; font-weight: 800; line-height: 1.45; }
 .form-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .form-actions .quiet-action { min-height: 40px; }
 .variant-panel { display: grid; gap: 12px; padding-top: 8px; border-top: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
@@ -126,6 +127,9 @@
 .variant-hook { display: grid; gap: 6px; }
 .variant-hook input { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.16)); border-radius: 8px; font: inherit; }
 .variant-card p { margin: 0; max-height: 180px; overflow: auto; color: var(--lf-text, #1d1a14); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.variant-zh { display: grid; gap: 6px; padding: 10px 12px; border-radius: 8px; background: #f6f3ea; }
+.variant-zh strong { color: #5c6a14; font-size: 13px; }
+.variant-zh p { max-height: 140px; color: #3f3a30; }
 .variant-card .quiet-action { justify-self: start; }
 .form-actions > span,
 #formStatus { color: var(--lf-muted, #6d6758); font-size: 12px; }

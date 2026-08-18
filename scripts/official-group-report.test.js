@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeGroupReport, periodWindow, shanghaiDateKey } from "./official-group-report.js";
+import { computeGroupReport, periodWindow, shanghaiDateKey, snapshotDateKey } from "./official-group-report.js";
 
 test("classifies today videos into zero, low and high view buckets", () => {
   const now = Date.parse("2026-08-18T12:00:00+08:00");
@@ -22,12 +22,35 @@ test("classifies today videos into zero, low and high view buckets", () => {
   assert.equal(report.summary.zeroView, 1);
   assert.equal(report.summary.lowView, 1);
   assert.equal(report.summary.highView, 1);
+  assert.equal(report.summary.views, 1680);
+  assert.equal(report.summary.avgView, 560);
   assert.equal(report.anomalyAccounts[0].username, "a");
   assert.equal(report.buckets.highView[0].id, "v2");
+});
+
+test("custom date range only includes videos in the selected days", () => {
+  const report = computeGroupReport({
+    group: { id: "g1", name: "A组" },
+    project: { id: "p1", name: "小说推文" },
+    fromKey: "2026-08-16",
+    toKey: "2026-08-17",
+    videos: [
+      { id: "v1", username: "a", title: "范围内", views: 400, createdAt: Date.parse("2026-08-16T09:00:00+08:00") },
+      { id: "v2", username: "a", title: "范围内", views: 200, createdAt: Date.parse("2026-08-17T21:00:00+08:00") },
+      { id: "v3", username: "a", title: "范围外", views: 9000, createdAt: Date.parse("2026-08-18T09:00:00+08:00") },
+    ],
+  });
+  assert.equal(report.summary.published, 2);
+  assert.equal(report.summary.avgView, 300);
+  assert.equal(report.fromKey, "2026-08-16");
+  assert.equal(report.toKey, "2026-08-17");
 });
 
 test("week window starts on Monday in Shanghai", () => {
   const sunday = Date.parse("2026-08-16T10:00:00+08:00");
   const window = periodWindow("week", sunday);
   assert.equal(shanghaiDateKey(window.startAt), "2026-08-10");
+  assert.equal(window.dateKey, "2026-08-10");
+  assert.equal(snapshotDateKey("week", sunday), "2026-08-10");
+  assert.equal(snapshotDateKey("today", sunday), "2026-08-16");
 });

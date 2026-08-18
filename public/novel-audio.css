@@ -13,6 +13,8 @@
 .list-status { color: var(--lf-muted, #6d6758); font-size: 12px; }
 .list-status.is-error { color: var(--lf-red, #c24741); }
 .mix-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.folder-field { display: inline-flex; align-items: center; gap: 8px; color: var(--lf-text, #1d1a14); font-size: 12px; font-weight: 800; }
+.folder-field select { min-height: 36px; min-width: 220px; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 5px; padding: 0 10px; font: inherit; }
 .mix-toolbar p { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; }
 .mix-toolbar span { color: var(--lf-muted, #6d6758); font-size: 12px; font-weight: 800; }
 .mix-toolbar span.is-ok { color: #3d4710; }

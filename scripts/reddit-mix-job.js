@@ -14,6 +14,7 @@ import {
   round2,
   scoreClipReuse
 } from "./asset-library.js";
+import { findAudioInLibrary, listAudioLibraryFiles } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
@@ -340,6 +341,7 @@ function normalizeAudioItems(value) {
       id: String(item?.id || "").trim(),
       scriptId: String(item?.scriptId || "").trim(),
       path: String(item?.path || item?.file || "").trim(),
+      fileName: String(item?.fileName || "").trim(),
       novelId: String(item?.novelId || "").trim(),
       platform: String(item?.platform || item?.novelPlatform || "").trim(),
       promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),
@@ -364,11 +366,22 @@ function resolveMixAudios(payload) {
   const index = readAudioLibraryIndex(storageDirs.workDir);
   const filesDir = path.join(storageDirs.workDir, "audio-library", "files");
   const fromItems = [];
+  const missing = [];
+  const libraryFiles = items.length ? listAudioLibraryFiles(bootConfig) : [];
   for (const item of items) {
     const record = index.find((entry) => String(entry?.id || "") === item.id);
-    const found = [item.path, record?.fileName ? path.join(filesDir, record.fileName) : "", record?.targetAudioPath]
-      .find((file) => file && fs.existsSync(file));
+    const found = [
+      item.path,
+      record?.fileName ? path.join(filesDir, record.fileName) : "",
+      record?.targetAudioPath,
+      item.fileName ? path.join(filesDir, item.fileName) : "",
+      findAudioInLibrary([item.path, item.fileName, record?.fileName, item.id], bootConfig, libraryFiles)
+    ].find((file) => file && fs.existsSync(file));
     if (found) fromItems.push(found);
+    else missing.push(item.title || item.fileName || item.id);
+  }
+  if (items.length && missing.length) {
+    throw new Error(`本机音频目录里找不到这些小说音频：${missing.join("、")}。把 mp3 放到 F:\\音频目录，或在这台工人机上生成音频。`);
   }
   let fromDir = [];
   if (!fromItems.length && String(payload.audioDir || "").trim()) {
@@ -382,7 +395,7 @@ function resolveMixAudios(payload) {
     seen.add(key);
     merged.push(file);
   }
-  if (!merged.length) throw new Error("没有找到可用音频。请勾选小说音频，或选择音频目录。");
+  if (!merged.length) throw new Error("没有找到可用音频。请勾选混剪小说，或选择音频目录。");
   return resolvePrioritizedAudios(merged, payload.audioPriority);
 }
 

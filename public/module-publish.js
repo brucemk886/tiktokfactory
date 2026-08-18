@@ -1,5 +1,4 @@
 const MODULE_FROM_PATH = {
-  "/novel-publish": { module: "novel-promotion", label: "小说推文", kicker: "NOVEL PUBLISH" },
   "/mid-video-publish": { module: "mid-video", label: "中视频", kicker: "MID VIDEO PUBLISH" },
   "/psychology-publish": { module: "psychology", label: "心理学", kicker: "PSYCHOLOGY PUBLISH" },
 };

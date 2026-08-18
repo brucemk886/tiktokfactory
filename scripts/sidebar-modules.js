@@ -27,7 +27,6 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("novel-library", "/novel-library", "小说书单", ["admin"], novelPromotionGroup()),
   moduleItem("novel-effects", "/novel-effects", "数据概览", ["admin"], novelPromotionGroup()),
   moduleItem("novel-ops-report", "/novel-ops-report", "运营报表", ["admin"], novelPromotionGroup()),
-  moduleItem("novel-publish", "/novel-publish", "视频发布", ["admin"], novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ["admin"], novelPromotionGroup()),
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ["admin"], psychologyGroup()),
@@ -107,7 +106,6 @@ export function shouldRedirectLocalPageToFactory(pathname) {
       "/psychology-effects",
       "/psychology-ops-report",
       "/psychology-publish",
-      "/novel-publish",
       "/reddit",
       "/asset-cutter",
       "/work-journal-mindmap"

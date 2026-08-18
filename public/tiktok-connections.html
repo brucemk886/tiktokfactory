@@ -68,6 +68,7 @@
             <h3>新建</h3>
             <div class="account-toolbar create-toolbar">
               <label><span>新建项目</span><div class="path-picker"><input id="newProjectName" type="text" maxlength="40" placeholder="例如：小说推文" /><button id="createProjectBtn" class="secondary-button" type="button">新建</button></div></label>
+              <label><span>分组所属项目</span><select id="newGroupProject"><option value="">请选择项目</option></select></label>
               <label><span>新建分组</span><div class="path-picker"><input id="newGroupName" type="text" maxlength="40" placeholder="例如：A组" /><button id="createGroupBtn" class="secondary-button" type="button">新建</button></div></label>
             </div>
           </section>
@@ -79,6 +80,11 @@
               <button id="assignGroupBtn" class="primary-button" type="button">移入分组</button>
               <span id="selectedCount" class="selected-count">已选 0 个</span>
             </div>
+            <div class="account-toolbar move-group-toolbar">
+              <label><span>将分组</span><select id="moveGroupSelect"><option value="">请选择分组</option></select></label>
+              <label><span>移入项目</span><select id="moveGroupProjectSelect"><option value="">请选择项目</option></select></label>
+              <button id="moveGroupToProjectBtn" class="primary-button" type="button">移入项目</button>
+            </div>
             <div class="account-toolbar manage-toolbar">
               <button id="deleteProjectBtn" class="secondary-button" type="button">删除当前项目</button>
               <button id="deleteGroupBtn" class="secondary-button" type="button">删除当前分组</button>
@@ -88,6 +94,7 @@
             <h3>当前分组</h3>
             <div class="account-toolbar report-toolbar">
               <label><span>所属项目</span><select id="groupProjectSelect"><option value="">未分配项目</option></select></label>
+              <button id="saveGroupProjectBtn" class="primary-button" type="button">移入项目</button>
             </div>
           </section>
         </div>

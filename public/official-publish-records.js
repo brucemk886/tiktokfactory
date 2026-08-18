@@ -48,7 +48,14 @@ function renderRows(records) {
   status.textContent = `已读取 ${records.length} 条官方 API 本地发布记录。`;
 }
 
-function statusLabel(value) { const item = String(value || ""); if (["submitted", "done"].includes(item)) return "已提交发布中台"; if (item === "failed") return "本地交接失败"; if (item === "needs_check") return "待人工核实"; return item || "-"; }
+function statusLabel(value) {
+  const item = String(value || "");
+  if (["submitted", "done"].includes(item)) return "已提交发布中台";
+  if (item === "published") return "已发布到 TikTok";
+  if (item === "failed") return "本地交接失败";
+  if (item === "needs_check") return "待人工核实";
+  return item || "-";
+}
 function formatMilliseconds(value) { const timestamp = Number(value); return Number.isFinite(timestamp) && timestamp > 0 ? formatDate(new Date(timestamp)) : "-"; }
 function formatSeconds(value) { const timestamp = Number(value); return Number.isFinite(timestamp) && timestamp > 0 ? formatDate(new Date(timestamp * 1000)) : "-"; }
 function formatDate(date) { const pad = (part) => String(part).padStart(2, "0"); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; }

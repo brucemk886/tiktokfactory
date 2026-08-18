@@ -1,3 +1,5 @@
+import { requestAudioJob } from "./audio-job.js";
+
 const params = new URLSearchParams(location.search);
 const elements = {
   pageTitle: document.querySelector("#pageTitle"),
@@ -46,9 +48,9 @@ async function loadPage() {
 }
 
 function renderNovel(novel) {
-  const audios = (novel.scripts || []).filter((script) => script.audio?.id || script.audioId);
+  const audios = (novel.scripts || []).filter((script) => String(script.text || "").trim() || script.audio?.id || script.audioId);
   elements.pageTitle.textContent = novel.title;
-  elements.pageLead.textContent = "勾选这本要拿去混剪的生效音频并保存。混剪页只勾小说，会抽这里勾上的音频。";
+  elements.pageLead.textContent = "勾选生效音频，点「保存生效音频到本机」。混剪只抽这些，工人机会按书名建文件夹并保存。";
   elements.summary.hidden = false;
   elements.summary.innerHTML = [
     novel.platform,
@@ -78,18 +80,29 @@ function renderNovel(novel) {
 async function saveMixAudios() {
   if (!state.novelId || !elements.saveMixAudiosButton) return;
   const scriptIds = Array.from(elements.audioList.querySelectorAll("[data-script-id]:checked")).map((input) => input.dataset.scriptId);
+  if (!scriptIds.length) return setMixStatus("先勾选要保存到本机的生效音频。", "error");
   elements.saveMixAudiosButton.disabled = true;
-  setMixStatus("正在保存生效音频...");
+  setMixStatus("正在保存生效音频并下发到本机...");
   try {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/mix-audios`, {
       method: "PUT",
       body: JSON.stringify({ scriptIds })
     });
     state.novel = data.novel;
+    const result = await requestAudioJob("/api/audio-library/sync-local", {
+      novelId: state.novelId,
+      novelTitle: state.novel?.title || "",
+      scriptIds,
+      targetAudioDir: "__novel__"
+    }, { api, onProgress: (job) => setMixStatus(job.message || "工人机正在保存到本机...") });
+    const saved = Array.isArray(result.items) ? result.items.length : scriptIds.length;
+    const folder = result.targetAudioDir || `F:\\音频目录\\${state.novel?.title || "小说名"}`;
+    const refreshed = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+    state.novel = refreshed.novel;
     renderNovel(state.novel);
-    setMixStatus(`已保存，混剪将抽 ${scriptIds.length} 条生效音频。`, "ok");
+    setMixStatus(`已保存 ${saved} 条生效音频到 ${folder}。`, "ok");
   } catch (error) {
-    setMixStatus(error.message || "保存生效音频失败。", "error");
+    setMixStatus(error.message || "保存到本机失败。", "error");
   } finally {
     elements.saveMixAudiosButton.disabled = false;
   }
@@ -184,7 +197,7 @@ function audioCard(script) {
         </label>
         <button type="button" class="quiet-action" data-retune-id="${escapeHtml(audioId)}">应用变速</button>
         <small>按原始音频变速，不会越调越快。太慢可拉到 1.10×–1.25×。</small>
-      </div>` : "<p>音频文件缺失</p>"}
+      </div>` : "<p>还没有本机音频。勾选生效后点「保存生效音频到本机」，没有文件夹会自动创建。</p>"}
       <div class="metric-row">
         ${metric("播放", formatNumber(performance.totalViews))}
         ${metric("视频", formatNumber(performance.videoCount))}

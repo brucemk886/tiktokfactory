@@ -262,8 +262,8 @@ function renderAssetGroups(items) {
   $("#assetGroupSelect").innerHTML = [
     '<option value="">不使用素材组</option>',
     ...items.map((group) => {
-      const assetCount = Number(group.totalAssets ?? group.assets?.length ?? group.videoCount) || 0;
-      return `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)} (${formatNumber(assetCount)} 条)</option>`;
+      const count = Number(group.totalAssets ?? group.clipCount ?? group.assets?.length ?? group.videoCount) || 0;
+      return `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)} (${formatNumber(count)} 条)</option>`;
     })
   ].join("");
 }

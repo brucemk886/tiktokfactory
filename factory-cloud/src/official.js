@@ -17,11 +17,18 @@ import {
   accountsFromArchiveRows,
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
-import { computeGroupReport, videosForGroup, videosForProject } from "../../scripts/official-group-report.js";
-import { mapArchiveVideoRow } from "../../scripts/official-archive-signals.js";
+import { parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
+import { summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
+import {
+  computeLiveReport,
+  listOpsDates,
+  loadArchiveBundle,
+  persistProjectOpsSnapshots,
+  readOpsSnapshot,
+} from "./ops-report-store.js";
 import { signalDesk } from "./signal-desk.js";
 
 export async function handleOfficial(request, env, url, session) {
@@ -62,7 +69,7 @@ export async function handleOfficial(request, env, url, session) {
     }
   }
 
-  if (pathname.startsWith("/api/official-tiktok/projects") || pathname.startsWith("/api/official-tiktok/account-groups") || pathname.startsWith("/api/official-tiktok/groups/") || pathname === "/api/official-tiktok/ops-report") {
+  if (pathname.startsWith("/api/official-tiktok/projects") || pathname.startsWith("/api/official-tiktok/account-groups") || pathname.startsWith("/api/official-tiktok/groups/") || pathname === "/api/official-tiktok/ops-report" || pathname === "/api/official-tiktok/ops-report-history") {
     return handleAccountGroups(request, db, url, session);
   }
 
@@ -113,16 +120,10 @@ export async function handleOfficial(request, env, url, session) {
   }
 
   if (method === "GET" && pathname === "/api/official-publish-records") {
-    const records = await kvGet(db, "official-publish-records", []);
-    const query = String(url.searchParams.get("query") || "").trim().toLowerCase();
-    const filtered = (Array.isArray(records) ? records : []).filter((item) => {
-      if (!query) return true;
-      return JSON.stringify(item).toLowerCase().includes(query);
-    });
-    return json({
-      records: filtered,
-      summary: { recordCount: filtered.length, taskCount: filtered.length, accountCount: new Set(filtered.map((item) => item.account || item.connectionId).filter(Boolean)).size }
-    });
+    return json(summarizeOfficialPublishRecords(await kvGet(db, "official-publish-records", []), {
+      range: url.searchParams.get("range") || "7d",
+      query: url.searchParams.get("query") || ""
+    }));
   }
 
   if (method === "POST" && pathname === "/api/official-publish-records/sync") {
@@ -194,7 +195,10 @@ async function handleAccountGroups(request, db, url, session) {
       return json(await buildGroupReport(db, store, decodeURIComponent(reportMatch[1]), url.searchParams.get("period") || "today"));
     }
     if (method === "GET" && pathname === "/api/official-tiktok/ops-report") {
-      return json(await buildModuleReport(db, store, url.searchParams.get("module") || "", url.searchParams.get("period") || "today", session?.user));
+      return json(await buildModuleReport(db, store, url.searchParams, session?.user));
+    }
+    if (method === "GET" && pathname === "/api/official-tiktok/ops-report-history") {
+      return json(await listModuleReportHistory(db, store, url.searchParams, session?.user));
     }
   } catch (error) {
     return errorJson(error.message || "分组操作失败。", error.statusCode || 400);
@@ -323,7 +327,7 @@ async function publicOfficialSettings(db, env) {
   };
 }
 
-async function loadGroupStore(db) {
+export async function loadGroupStore(db) {
   const store = ensureModuleProjects(await kvGet(db, "official-account-groups", {}));
   const { results } = await db.prepare("SELECT account_key, label, profile_json FROM official_accounts_latest").all();
   return rememberAccountAliases(store, accountsFromArchiveRows(results || []));
@@ -335,7 +339,121 @@ async function saveGroupStore(db, store) {
   return publicState(next);
 }
 
-async function buildModuleReport(db, store, moduleKey, period, user) {
+async function buildModuleReport(db, store, searchParams, user) {
+  const moduleKey = String(searchParams.get("module") || "").trim();
+  let period = searchParams.get("period") === "week" ? "week" : searchParams.get("period") === "range" ? "range" : "today";
+  let groupId = String(searchParams.get("group") || "").trim();
+  const dateKey = String(searchParams.get("date") || "").trim();
+  const fromKey = parseShanghaiDate(searchParams.get("from")) || parseShanghaiDate(dateKey);
+  const toKey = parseShanghaiDate(searchParams.get("to")) || fromKey;
+  const context = reportContext(store, moduleKey, user);
+  const { liveProject, groups, allowedIds, canSeeProjectTotal } = context;
+  if (!liveProject.reportEnabled) {
+    return {
+      module: liveProject.moduleKey,
+      project: liveProject,
+      groups,
+      canSeeProjectTotal,
+      scopes: reportScopes(groups, canSeeProjectTotal),
+      report: { enabled: false, period, project: liveProject },
+    };
+  }
+  if (groupId && !groups.some((item) => item.id === groupId)) {
+    const error = new Error(allowedIds && !allowedIds.has(groupId) ? "没有这个分组的权限。" : "没有找到这个分组。");
+    error.statusCode = allowedIds && !allowedIds.has(groupId) ? 403 : 404;
+    throw error;
+  }
+  if (!groupId && !canSeeProjectTotal) {
+    groupId = groups[0]?.id || "";
+  }
+  const now = Date.now();
+  const todayKey = shanghaiDateKey(now);
+  const currentFrom = period === "week" ? weekStartKey(now) : todayKey;
+  const currentTo = todayKey;
+  const queryFrom = fromKey || currentFrom;
+  const queryTo = toKey || currentTo;
+  if (period !== "week" && queryFrom !== queryTo) period = "range";
+  const bundle = await loadArchiveBundle(db);
+  try {
+    await persistProjectOpsSnapshots(db, store, liveProject, now, bundle);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "ops-report-persist-failed", module: liveProject.moduleKey, error: String(error?.message || error) }));
+  }
+  const livePayload = () => ({
+    module: liveProject.moduleKey,
+    project: liveProject,
+    groups,
+    canSeeProjectTotal,
+    scopes: reportScopes(groups, canSeeProjectTotal),
+    source: "live",
+    dates: [],
+    report: computeLiveReport({
+      store,
+      project: liveProject,
+      groupId,
+      period: period === "week" ? "week" : "today",
+      now,
+      fromKey: queryFrom,
+      toKey: queryTo,
+      bundle,
+      groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
+    }),
+  });
+  const isCurrentWindow = queryFrom === currentFrom && queryTo === currentTo && (period === "week" || period === "today" || queryFrom === queryTo);
+  if (isCurrentWindow || queryFrom !== queryTo) {
+    return livePayload();
+  }
+  const snapshot = await readOpsSnapshot(db, {
+    moduleKey: liveProject.moduleKey,
+    projectId: liveProject.id,
+    groupId,
+    period: "today",
+    dateKey: queryFrom,
+  });
+  return {
+    module: liveProject.moduleKey,
+    project: liveProject,
+    groups,
+    canSeeProjectTotal,
+    scopes: reportScopes(groups, canSeeProjectTotal),
+    source: snapshot ? "snapshot" : "missing",
+    persistedAt: snapshot?.updated_at || 0,
+    dates: [],
+    report: snapshot?.report || emptySnapshotReport(liveProject, period, queryFrom, groupId, groups, queryTo),
+  };
+}
+
+async function listModuleReportHistory(db, store, searchParams, user) {
+  const moduleKey = String(searchParams.get("module") || "").trim();
+  const period = searchParams.get("period") === "week" ? "week" : "today";
+  let groupId = String(searchParams.get("group") || "").trim();
+  const { liveProject, groups, allowedIds, canSeeProjectTotal } = reportContext(store, moduleKey, user);
+  if (groupId && !groups.some((item) => item.id === groupId)) {
+    const error = new Error(allowedIds && !allowedIds.has(groupId) ? "没有这个分组的权限。" : "没有找到这个分组。");
+    error.statusCode = allowedIds && !allowedIds.has(groupId) ? 403 : 404;
+    throw error;
+  }
+  if (!groupId && !canSeeProjectTotal) {
+    groupId = groups[0]?.id || "";
+  }
+  return {
+    module: liveProject.moduleKey,
+    project: liveProject,
+    groups,
+    canSeeProjectTotal,
+    scopes: reportScopes(groups, canSeeProjectTotal),
+    period,
+    groupId,
+    dates: await listOpsDates(db, {
+      moduleKey: liveProject.moduleKey,
+      projectId: liveProject.id,
+      groupId,
+      period,
+    }),
+  };
+}
+
+function reportContext(store, moduleKey, user) {
   const project = findProjectForModule(store, moduleKey);
   if (!project) {
     const error = new Error("这个模块还没有对应项目。");
@@ -343,38 +461,49 @@ async function buildModuleReport(db, store, moduleKey, period, user) {
     throw error;
   }
   const state = publicState(store);
-  const allowedIds = userAllowedGroupIds(user);
-  const groups = state.groups.filter((item) => item.projectId === project.id && (!allowedIds || allowedIds.has(item.id)));
   const liveProject = state.projects.find((item) => item.id === project.id) || project;
-  if (!liveProject.reportEnabled) {
-    return { module: liveProject.moduleKey, project: liveProject, groups, report: { enabled: false, period, project: liveProject } };
-  }
-  const accountRows = (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
-  const videosByAccount = new Map();
-  for (const row of accountRows) {
-    const rows = (await db.prepare(
-      "SELECT * FROM official_videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT 80"
-    ).bind(row.account_key).all()).results || [];
-    videosByAccount.set(row.account_key, rows.map(mapArchiveVideoRow));
-  }
-  const { accounts, videos } = videosForProject({
-    store,
-    projectId: liveProject.id,
-    accountRows,
-    videosByAccount,
-    groupIds: allowedIds ? Array.from(allowedIds) : null,
-  });
+  const allowedIds = userAllowedGroupIds(user);
+  const projectGroups = state.groups.filter((item) => item.projectId === liveProject.id);
+  const groups = projectGroups.filter((item) => !allowedIds || allowedIds.has(item.id));
+  const canSeeProjectTotal = !allowedIds || (projectGroups.length > 0 && projectGroups.every((item) => allowedIds.has(item.id)));
+  return { liveProject, groups, projectGroups, allowedIds, canSeeProjectTotal };
+}
+
+function reportScopes(groups, canSeeProjectTotal) {
+  return [
+    ...(canSeeProjectTotal ? [{ id: "", name: "全部项目" }] : []),
+    ...groups.map((item) => ({ id: item.id, name: item.name })),
+  ];
+}
+
+function emptySnapshotReport(project, period, dateKey, groupId, groups, toKey = "") {
+  const group = groups.find((item) => item.id === groupId);
   return {
-    module: liveProject.moduleKey,
-    project: liveProject,
-    groups,
-    report: computeGroupReport({
-      group: liveProject,
-      project: liveProject,
-      accounts,
-      videos,
-      period,
-    }),
+    enabled: true,
+    missing: true,
+    period,
+    dateKey,
+    fromKey: dateKey,
+    toKey: toKey || dateKey,
+    moduleKey: project.moduleKey,
+    projectId: project.id,
+    projectName: project.name || "",
+    groupId,
+    groupName: group?.name || (groupId ? groupId : "全部项目"),
+    thresholds: { lowView: 200, highView: 1000 },
+    summary: {
+      published: 0,
+      zeroView: 0,
+      lowView: 0,
+      midView: 0,
+      highView: 0,
+      views: 0,
+      avgView: 0,
+      accountCount: 0,
+      anomalyAccountCount: 0,
+    },
+    buckets: { zeroView: [], lowView: [], highView: [] },
+    anomalyAccounts: [],
   };
 }
 
@@ -390,21 +519,13 @@ async function buildGroupReport(db, store, groupId, period) {
   if (!project?.reportEnabled) {
     return { enabled: false, group, project, period };
   }
-  const accountRows = (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
-  const videosByAccount = new Map();
-  for (const row of accountRows) {
-    const rows = (await db.prepare(
-      "SELECT * FROM official_videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT 80"
-    ).bind(row.account_key).all()).results || [];
-    videosByAccount.set(row.account_key, rows.map(mapArchiveVideoRow));
-  }
-  const { accounts, videos } = videosForGroup({ store, groupId, accountRows, videosByAccount });
-  return computeGroupReport({
-    group,
+  const bundle = await loadArchiveBundle(db);
+  return computeLiveReport({
+    store,
     project,
-    accounts,
-    videos,
+    groupId,
     period,
+    bundle,
   });
 }
 

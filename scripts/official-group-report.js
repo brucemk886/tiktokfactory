@@ -7,15 +7,76 @@ export function shanghaiDateKey(timestamp = Date.now()) {
   return new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
 }
 
+export function weekStartKey(timestamp = Date.now()) {
+  return shanghaiDateKey(periodWindow("week", timestamp).startAt);
+}
+
+export function snapshotDateKey(period = "today", timestamp = Date.now()) {
+  return periodWindow(period, timestamp).dateKey;
+}
+
+export function parseShanghaiDate(value) {
+  const key = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return "";
+  return Number.isFinite(Date.parse(`${key}T00:00:00+08:00`)) ? key : "";
+}
+
+export function rangeWindow(fromKey, toKey) {
+  const start = parseShanghaiDate(fromKey);
+  const end = parseShanghaiDate(toKey);
+  if (!start || !end) {
+    const error = new Error("请选择有效的开始和结束日期。");
+    error.statusCode = 400;
+    throw error;
+  }
+  const startAt = Date.parse(`${start}T00:00:00+08:00`);
+  const endAt = Date.parse(`${end}T00:00:00+08:00`) + 86_400_000;
+  if (endAt <= startAt) {
+    const error = new Error("结束日期不能早于开始日期。");
+    error.statusCode = 400;
+    throw error;
+  }
+  if ((endAt - startAt) / 86_400_000 > 90) {
+    const error = new Error("时间范围不能超过 90 天。");
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    startAt,
+    endAt,
+    dateKey: start === end ? start : `${start}~${end}`,
+    fromKey: start,
+    toKey: end,
+    period: start === end ? "today" : "range",
+  };
+}
+
 export function periodWindow(period = "today", now = Date.now()) {
   const dateKey = shanghaiDateKey(now);
   const dayStart = Date.parse(`${dateKey}T00:00:00+08:00`);
   if (period === "week") {
     const weekday = new Date(now).toLocaleDateString("en-US", { timeZone: "Asia/Shanghai", weekday: "short" });
     const offset = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }[weekday] ?? 0;
-    return { startAt: dayStart - offset * 86_400_000, endAt: dayStart + 86_400_000, dateKey, period: "week" };
+    const startAt = dayStart - offset * 86_400_000;
+    return {
+      startAt,
+      endAt: dayStart + 86_400_000,
+      dateKey: shanghaiDateKey(startAt),
+      fromKey: shanghaiDateKey(startAt),
+      toKey: dateKey,
+      period: "week",
+    };
   }
-  return { startAt: dayStart, endAt: dayStart + 86_400_000, dateKey, period: "today" };
+  return { startAt: dayStart, endAt: dayStart + 86_400_000, dateKey, fromKey: dateKey, toKey: dateKey, period: "today" };
+}
+
+export function resolveReportWindow({ period = "today", now = Date.now(), fromKey = "", toKey = "" } = {}) {
+  if (parseShanghaiDate(fromKey) && parseShanghaiDate(toKey)) {
+    const window = rangeWindow(fromKey, toKey);
+    if (period === "week" && window.fromKey !== window.toKey) return { ...window, period: "week" };
+    return window;
+  }
+  return periodWindow(period, now);
 }
 
 export function computeGroupReport({
@@ -25,10 +86,12 @@ export function computeGroupReport({
   accounts = [],
   period = "today",
   now = Date.now(),
+  fromKey = "",
+  toKey = "",
   lowView = LOW_VIEW,
   highView = HIGH_VIEW,
 } = {}) {
-  const window = periodWindow(period, now);
+  const window = resolveReportWindow({ period, now, fromKey, toKey });
   const inWindow = videos.filter((video) => {
     const createdAt = toMillis(video.createdAt || video.createTime);
     return createdAt >= window.startAt && createdAt < window.endAt;
@@ -82,12 +145,15 @@ export function computeGroupReport({
     .filter((item) => item.published > 0 && item.zero > 0)
     .sort((a, b) => b.zero - a.zero || b.published - a.published);
 
+  const views = inWindow.reduce((sum, item) => sum + item.views, 0);
   return {
     enabled: true,
     group,
     project,
     period: window.period,
     dateKey: window.dateKey,
+    fromKey: window.fromKey || window.dateKey,
+    toKey: window.toKey || window.dateKey,
     computedAt: now,
     thresholds: { lowView, highView },
     summary: {
@@ -96,7 +162,8 @@ export function computeGroupReport({
       lowView: lowViewVideos.length,
       midView: midViewVideos.length,
       highView: highViewVideos.length,
-      views: inWindow.reduce((sum, item) => sum + item.views, 0),
+      views,
+      avgView: inWindow.length ? Math.round(views / inWindow.length) : 0,
       accountCount: [...accountStats.values()].filter((item) => item.published > 0).length,
       anomalyAccountCount: anomalyAccounts.length,
     },

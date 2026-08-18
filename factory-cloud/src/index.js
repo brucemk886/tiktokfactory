@@ -5,8 +5,9 @@ import { errorJson, json, redirect } from "./http.js";
 import { handleJournal } from "./journal.js";
 import { handleJobs } from "./jobs.js";
 import { handleNovels } from "./novels.js";
-import { handleOfficial } from "./official.js";
+import { handleOfficial, loadGroupStore } from "./official.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
+import { persistOpsSnapshots } from "./ops-report-store.js";
 import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
 import { canAccessPath, homePathForUser } from "./sidebar.js";
 
@@ -61,6 +62,13 @@ export default {
       console.info(JSON.stringify({ event: "official-archive-prefetch", cron: controller.cron, ...meta }));
     } catch (error) {
       console.error(JSON.stringify({ event: "official-archive-prefetch-failed", cron: controller.cron, error: String(error?.message || error) }));
+    }
+    try {
+      const store = await loadGroupStore(env.DB);
+      const persisted = await persistOpsSnapshots(env.DB, store);
+      console.info(JSON.stringify({ event: "ops-report-persist", cron: controller.cron, ...persisted }));
+    } catch (error) {
+      console.error(JSON.stringify({ event: "ops-report-persist-failed", cron: controller.cron, error: String(error?.message || error) }));
     }
   }
 };

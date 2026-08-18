@@ -1109,6 +1109,7 @@ function normalizeAudioItems(value) {
     .map((item) => ({
       id: String(item?.id || "").trim(),
       path: String(item?.path || item?.file || "").trim(),
+      fileName: String(item?.fileName || "").trim(),
       novelId: String(item?.novelId || "").trim(),
       platform: String(item?.platform || item?.novelPlatform || "").trim(),
       promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),

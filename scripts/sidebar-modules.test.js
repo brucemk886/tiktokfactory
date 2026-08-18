@@ -48,7 +48,7 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "novel-publish", "operator-official", "tasks"]
+    ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "operator-official", "tasks"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
