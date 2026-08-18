@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverAssetLibraryGroups, listAssetGroups } from "./asset-library.js";
+import { filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { readConfig } from "./video-core.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 
@@ -180,20 +181,64 @@ async function syncInventory(context) {
   } catch {
     redditMixSettings = {};
   }
-  await request(context, "/api/worker/sync", {
+  const importMarker = path.join(context.workDir, "factory-novel-imported.json");
+  const body = {
+    workerId: context.workerId,
+    retentionHours: 48,
+    assetGroups: groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      path: group.path || group.dir || "",
+      clipCount: Number(group.clipCount || group.assetCount || (group.assets || []).length || 0)
+    })),
+    redditMixSettings
+  };
+  if (!fs.existsSync(importMarker)) {
+    body.novelContent = readLocalNovelStore(context.workDir);
+    body.officialPublishRecords = readOfficialPublishRecords(context.workDir);
+  }
+  const result = await request(context, "/api/worker/sync", {
     method: "POST",
-    body: {
-      workerId: context.workerId,
-      retentionHours: 48,
-      assetGroups: groups.map((group) => ({
-        id: group.id,
-        name: group.name,
-        path: group.path || group.dir || "",
-        clipCount: Number(group.clipCount || group.assetCount || (group.assets || []).length || 0)
-      })),
-      redditMixSettings
-    }
+    body
   });
+  if (!fs.existsSync(importMarker) && result?.ok) {
+    fs.writeFileSync(importMarker, JSON.stringify({
+      importedAt: Date.now(),
+      novelImport: result.novelImport || null
+    }, null, 2), "utf8");
+    console.log("已把本机小说书单导入线上工厂。之后以线上为准，不再回传书单。");
+  }
+}
+
+function readLocalNovelStore(workDir) {
+  try {
+    const store = JSON.parse(fs.readFileSync(path.join(workDir, "novel-content-library.json"), "utf8"));
+    return {
+      novels: Array.isArray(store.novels) ? store.novels : [],
+      scripts: Array.isArray(store.scripts) ? store.scripts : []
+    };
+  } catch {
+    return { novels: [], scripts: [] };
+  }
+}
+
+function readOfficialPublishRecords(workDir) {
+  try {
+    const records = JSON.parse(fs.readFileSync(path.join(workDir, "publish-records.json"), "utf8"));
+    return filterPublishRecordsBySource(records, "official").map((record) => ({
+      id: record.id || record.taskId || record.jobId || "",
+      videoId: record.videoId || record.tiktokVideoId || record.itemId || "",
+      username: record.username || record.accountName || record.tiktokUsername || "",
+      publishedAt: record.publishedAt || record.actualPublishedAt || record.publishTime || 0,
+      audioLibraryId: record.audioLibraryId || record.audioId || "",
+      sourceAudioId: record.sourceAudioId || "",
+      audioName: record.audioName || record.audioFileName || "",
+      scriptId: record.scriptId || "",
+      novelId: record.novelId || "",
+    })).filter((record) => record.videoId || record.audioLibraryId || record.scriptId).slice(0, 3000);
+  } catch {
+    return [];
+  }
 }
 
 async function complete(context, jobId, body) {

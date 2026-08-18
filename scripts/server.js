@@ -33,6 +33,7 @@ import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
 import { startFactoryCloudWorker } from "./factory-cloud-worker.js";
+import { createWorkJournalService } from "./work-journal-local.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -146,6 +147,7 @@ function readOptionalJsonObject(value) {
     return {};
   }
 }
+const workJournal = createWorkJournalService({ workDir });
 const novelEffectService = createNovelEffectService({
   novelContentLibrary,
   officialAnalyticsService: privateTikTokAnalytics,
@@ -497,6 +499,16 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/operator.css") {
       return sendFile(res, path.join(publicDir, "operator.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/work-journal") {
+      return sendFile(res, path.join(publicDir, "work-journal.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/work-journal.js") {
+      return sendFile(res, path.join(publicDir, "work-journal.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/work-journal.css") {
+      return sendFile(res, path.join(publicDir, "work-journal.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/novel-effects") {
@@ -980,6 +992,31 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "GET" && url.pathname === "/api/work-journal") {
+      return sendJson(res, 200, workJournal.list({
+        kind: url.searchParams.get("kind") || "",
+        query: url.searchParams.get("query") || "",
+        dateKey: url.searchParams.get("date") || "",
+      }), { "Cache-Control": "no-store" });
+    }
+    if (req.method === "POST" && url.pathname === "/api/work-journal") {
+      try {
+        return sendJson(res, 201, { entry: workJournal.create(await readJsonBody(req)) });
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || "创建失败。" });
+      }
+    }
+    const journalMatch = url.pathname.match(/^\/api\/work-journal\/([^/]+)$/);
+    if (journalMatch) {
+      const journalId = decodeURIComponent(journalMatch[1]);
+      try {
+        if (req.method === "PATCH") return sendJson(res, 200, { entry: workJournal.update(journalId, await readJsonBody(req)) });
+        if (req.method === "DELETE") return sendJson(res, 200, workJournal.remove(journalId));
+      } catch (error) {
+        return sendJson(res, Number(error.status) || 400, { error: error.message || "保存失败。" });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/novel-content") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       return sendJson(res, 200, novelContentLibrary.getOverview({ query: url.searchParams.get("query") || "" }));
@@ -993,7 +1030,8 @@ const server = http.createServer(async (req, res) => {
           query: url.searchParams.get("query") || "",
           days: Number(url.searchParams.get("days") || 30),
         });
-        return sendJson(res, 200, result, { "Cache-Control": "no-store" });
+        const { videoMappings, ...page } = result;
+        return sendJson(res, 200, page, { "Cache-Control": "no-store" });
       } catch (error) {
         return sendJson(res, Number(error.statusCode || error.status) || 502, {
           error: error.message || "Failed to load novel effects.",
@@ -1246,7 +1284,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/official-analytics/sync") {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以同步 TikTok 官方历史数据。" });
-      return sendJson(res, 200, await officialAnalyticsArchive.run({ ignoreDailyGuard: true }));
+      return sendJson(res, 200, {
+        ok: true,
+        skipped: true,
+        message: "官方播放以线上工厂缓存为准，本机不再写入 sqlite。",
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/official-analytics/video-detail") {
@@ -2152,7 +2194,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, () => {
   console.log(`Podcast video maker is running: http://localhost:${port}`);
   officialPublishResultSync.start();
-  officialAnalyticsArchive.start();
   startFactoryCloudWorker({ root, workDir, mirrorTask: (task) => autoTaskManager.mirrorExternalTask(task) });
 });
 

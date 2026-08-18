@@ -20,6 +20,8 @@ export function createOfficialTikTokAnalyticsService({
 } = {}) {
   if (!workDir) throw new Error("Official TikTok analytics service requires a work directory.");
   const settingsPath = path.join(workDir, "official-tiktok-analytics-settings.json");
+  const OPERATION_SIGNALS_CACHE_MS = 90_000;
+  let operationSignalsCache = { key: "", expiresAt: 0, value: null };
   fs.mkdirSync(workDir, { recursive: true });
 
   function getPublicSettings() {
@@ -240,35 +242,45 @@ export function createOfficialTikTokAnalyticsService({
       return unavailableResult("Official TikTok analytics is not configured.");
     }
 
-    try {
-      const requested = new Set((accountNames || []).map(normalizeAccountName).filter(Boolean));
-      const accountResult = await listAccounts();
-      const matchedAccounts = (accountResult.accounts || []).filter((account) => {
-        const username = normalizeAccountName(account.profile?.username);
-        return !requested.size || requested.has(username);
-      });
-      const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 10)));
-      const cutoffAt = Math.max(now() - safeDays * 86_400_000, Number(publishedAfter) || 0);
-      const signals = [];
+    const requested = new Set((accountNames || []).map(normalizeAccountName).filter(Boolean));
+    const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 10)));
+    const safeVideos = Math.max(1, Math.min(100, Math.floor(Number(videosPerAccount) || 30)));
+    const cutoffAt = Math.max(now() - safeDays * 86_400_000, Number(publishedAfter) || 0);
+    const cacheKey = JSON.stringify({
+      names: [...requested].sort(),
+      days: safeDays,
+      videosPerAccount: safeVideos,
+      publishedAfter: Number(publishedAfter) || 0,
+    });
+    if (operationSignalsCache.key === cacheKey && operationSignalsCache.expiresAt > now()) {
+      return operationSignalsCache.value;
+    }
 
-      for (const account of matchedAccounts) {
-        const result = await listVideos({ schema: account.schema, limit: videosPerAccount, includePrivate: true });
+    const signals = [];
+    let cursor = "";
+    while (signals.length < 10_000) {
+      const page = await listArchivePage({ cursor, limit: 20, videosPerAccount: safeVideos });
+      for (const account of page.accounts || []) {
+        const username = normalizeAccountName(account.profile?.username);
+        if (requested.size && !requested.has(username)) continue;
         signals.push({
           schema: account.schema,
-          username: normalizeAccountName(account.profile?.username),
+          username,
           profile: account.profile,
-          videos: (result.videos || []).filter((video) => !video.createdAt || Number(video.createdAt) >= cutoffAt),
+          videos: (account.videos || []).filter((video) => !video.createdAt || Number(video.createdAt) >= cutoffAt),
         });
       }
-
-      return summarizeOperationSignals(signals, {
-        days: safeDays,
-        requestedAccountCount: requested.size,
-        generatedAt: now(),
-      });
-    } catch (error) {
-      throw error;
+      if (!page.hasMore || !page.nextCursor || page.nextCursor === cursor) break;
+      cursor = page.nextCursor;
     }
+
+    const result = summarizeOperationSignals(signals, {
+      days: safeDays,
+      requestedAccountCount: requested.size,
+      generatedAt: now(),
+    });
+    operationSignalsCache = { key: cacheKey, expiresAt: now() + OPERATION_SIGNALS_CACHE_MS, value: result };
+    return result;
   }
 
   async function requestJson(endpoint, options = {}) {

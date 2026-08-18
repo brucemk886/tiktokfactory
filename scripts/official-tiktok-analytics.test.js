@@ -20,23 +20,29 @@ test("official bridge maps authorized accounts and private video data for operat
           profile: { username: "demo_account", displayName: "Demo" },
         }], hasMore: false, nextCursor: "" });
       }
-      if (parsed.pathname.endsWith("/videos")) {
-        assert.equal(parsed.searchParams.get("accountId"), "tiktok:connection-1");
-        assert.equal(parsed.searchParams.get("includePrivate"), "1");
-        return jsonResponse({ videos: [{
-          id: "765432109876543210",
-          createdAt: 1_999_999_000_000,
-          duration: 20,
-          views: 2_000,
-          reach: 1_500,
-          likes: 120,
-          comments: 8,
-          shares: 5,
-          averageTimeWatched: 4,
-          fullWatchRate: 0.12,
-          retention: [{ second: 0, percentage: 1 }, { second: 3, percentage: 0.35 }],
-          impressionSources: [{ impressionSource: "For You", percentage: 0.9 }],
-        }] });
+      if (parsed.pathname.endsWith("/archive")) {
+        return jsonResponse({
+          accounts: [{
+            schema: "tiktok:connection-1",
+            profile: { username: "demo_account", displayName: "Demo" },
+            videos: [{
+              id: "765432109876543210",
+              createdAt: 1_999_999_000_000,
+              duration: 20,
+              views: 2_000,
+              reach: 1_500,
+              likes: 120,
+              comments: 8,
+              shares: 5,
+              averageTimeWatched: 4,
+              fullWatchRate: 0.12,
+              retention: [{ second: 0, percentage: 1 }, { second: 3, percentage: 0.35 }],
+              impressionSources: [{ impressionSource: "For You", percentage: 0.9 }],
+            }],
+          }],
+          hasMore: false,
+          nextCursor: "",
+        });
       }
       return jsonResponse({ error: "Not found" }, 404);
     },

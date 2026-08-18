@@ -91,7 +91,8 @@ function renderStatus(status, rankedCount) {
   const ready = status.status === "ready" ? "数据已就绪" : "当前数据不可用";
   const prefix = state.source === "official_api" ? ready : `${status.label || "GeeLark 第三方"} · ${ready}`;
   statusNode.classList.toggle("warning", status.status !== "ready" || raw > mapped);
-  statusNode.innerHTML = `<span><strong>${escapeHtml(prefix)}</strong>${status.error ? ` · ${escapeHtml(status.error)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · ${periodLabel(status.days || state.days)} · ${formatInteger(rankedCount)} 本有播放</small>`;
+  const archive = status.archiveDate ? `归档 ${status.archiveDate}` : "";
+  statusNode.innerHTML = `<span><strong>${escapeHtml(prefix)}</strong>${status.error ? ` · ${escapeHtml(status.error)}` : ""}${archive ? ` · ${escapeHtml(archive)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · ${periodLabel(status.days || state.days)} · ${formatInteger(rankedCount)} 本有播放</small>`;
 }
 
 function renderSummary(summary, ranked) {

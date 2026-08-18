@@ -21,7 +21,7 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   );
   assert.deepEqual(sidebarModuleIdsForRole("operator"), ["geelark-tasks", "analytics", "stats"]);
   assert.ok(!sidebarModuleIdsForRole("operator").includes("hub"));
-  for (const moduleId of ["hub", "mid-video", "podcast", "novel-library", "official-publish-records", "official-analytics", "operator-third-party",
+  for (const moduleId of ["hub", "work-journal", "mid-video", "podcast", "novel-library", "official-publish-records", "official-analytics", "operator-third-party",
     "operator-official", "novel-effects", "geelark-tasks", "geelark-novel-effects"]) {
     assert.ok(sidebarModuleIdsForRole("admin").includes(moduleId));
   }
@@ -32,6 +32,8 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.label, "数据概览");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.href, "/work-journal");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.label, "工作记录");
 });
 
 test("business lines keep official and GeeLark navigation apart", () => {

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>工作记录 · Local Factory</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/work-journal.css">
+  <link rel="stylesheet" href="/theme-ops.css">
+</head>
+<body class="work-page work-journal-page">
+  <nav class="side-tabs" aria-label="主导航"></nav>
+  <main class="journal-shell">
+    <header class="journal-heading">
+      <div>
+        <p class="eyebrow">WORK JOURNAL</p>
+        <h1>工作记录</h1>
+        <p class="page-copy">记下每天做了什么、随手写下想法，或把思路摊成脑图。数据存在线上工厂。</p>
+      </div>
+      <div class="journal-heading-actions">
+        <button type="button" class="primary-button" data-create="daily_work">写每日工作</button>
+        <button type="button" class="ghost-button" data-create="essay">写随笔</button>
+        <button type="button" class="ghost-button" data-create="mindmap">新建脑图</button>
+      </div>
+    </header>
+    <section class="journal-toolbar">
+      <div class="segmented" id="kindTabs">
+        <button type="button" class="active" data-kind="">全部</button>
+        <button type="button" data-kind="daily_work">每日工作</button>
+        <button type="button" data-kind="essay">每日随笔</button>
+        <button type="button" data-kind="mindmap">脑图</button>
+      </div>
+      <form id="journalSearch" class="search-form">
+        <input id="journalQuery" type="search" placeholder="搜索标题或正文">
+        <input id="journalDate" type="date">
+        <button type="submit" class="primary-button">查询</button>
+      </form>
+    </section>
+    <section class="journal-layout">
+      <aside class="journal-list" id="journalList"></aside>
+      <section class="journal-editor" id="journalEditor">
+        <div class="empty-state">选左侧一条记录，或新建每日工作 / 随笔 / 脑图。</div>
+      </section>
+    </section>
+  </main>
+  <script src="/access.js"></script>
+  <script type="module" src="/work-journal.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { summarizeOperationSignals } from "./private-tiktok-signals.js";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_SYNC_HOUR = 8;
@@ -158,7 +159,66 @@ export function createOfficialAnalyticsArchive({
     };
   }
 
-  return { run, start, stop, close, getStatus, getDashboard };
+  function getOperationSignals({ accountNames = [], days = 10, videosPerAccount = 100, publishedAfter = 0 } = {}) {
+    const requested = new Set((accountNames || []).map((value) => String(value || "").trim().replace(/^@/, "").toLowerCase()).filter(Boolean));
+    const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 10)));
+    const safeVideos = Math.max(1, Math.min(100, Math.floor(Number(videosPerAccount) || 100)));
+    const cutoffAt = Math.max(now() - safeDays * DAY_MS, Number(publishedAfter) || 0);
+    const status = getStatus();
+    const accountRows = database.prepare("SELECT * FROM accounts_latest ORDER BY label COLLATE NOCASE").all();
+    if (!accountRows.length) {
+      return {
+        connected: Boolean(status.lastRunDate),
+        status: "unavailable",
+        error: "本地官方归档还没有账号数据。等每天定时同步完成后再打开。",
+        archiveDate: status.lastRunDate,
+        archiveAt: status.lastRunAt,
+        matchedAccountCount: 0,
+        summary: { detailedVideoCount: 0 },
+        accounts: [],
+      };
+    }
+    const videoStmt = database.prepare("SELECT * FROM videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT ?");
+    const signals = [];
+    for (const row of accountRows) {
+      const profile = parseJson(row.profile_json, {});
+      const username = String(profile.username || row.label || "").trim().replace(/^@/, "").toLowerCase();
+      if (requested.size && !requested.has(username)) continue;
+      const videos = videoStmt.all(row.account_key, safeVideos).map(videoRow).flatMap((video) => {
+        const createdAt = Number(video.createTime) > 0 && Number(video.createTime) < 1e12
+          ? Number(video.createTime) * 1000
+          : Number(video.createTime) || 0;
+        if (createdAt && createdAt < cutoffAt) return [];
+        return [{
+          ...video,
+          id: video.id,
+          createdAt,
+          caption: video.title || video.caption || "",
+        }];
+      });
+      signals.push({
+        schema: row.account_key,
+        username,
+        profile: {
+          ...profile,
+          username,
+          displayName: profile.displayName || row.label || username,
+        },
+        videos,
+      });
+    }
+    return {
+      ...summarizeOperationSignals(signals, {
+        days: safeDays,
+        requestedAccountCount: requested.size,
+        generatedAt: now(),
+      }),
+      archiveDate: status.lastRunDate,
+      archiveAt: status.lastRunAt,
+    };
+  }
+
+  return { run, start, stop, close, getStatus, getDashboard, getOperationSignals };
 }
 
 function openDatabase(databasePath) {
