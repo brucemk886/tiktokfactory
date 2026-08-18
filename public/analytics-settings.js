@@ -99,7 +99,7 @@ async function loadSettings() {
     selectedProfileIds = new Set(settings.profileIds || ["default"]);
     renderProfiles();
     groups = (data.availableGroups || []).map((name) => ({ name, count: Number(data.groupCounts?.[name] || 0) }));
-    selectedGroups = new Set(settings.groups || []);
+    selectedGroups = new Set((settings.groups || []).filter((name) => groups.some((group) => group.name === name)));
     setTimeValue(elements.runHourButton, elements.runHourMenu, settings.runHour);
     setTimeValue(elements.runMinuteButton, elements.runMinuteMenu, settings.runMinute);
     elements.autoFetchInput.checked = settings.enabled === true;

@@ -2,7 +2,7 @@ const elements = Object.fromEntries([
   "syncState", "periodFilter", "groupFilter", "accountFilter", "sortFilter", "analyticsNav", "pageTitle", "pageDescription",
   "refreshBtn", "manualFetchProfile", "manualFetchGroupOptions", "manualFetchGroupSummary", "manualFetchBtn", "videoCount", "matchedCount", "totalViews", "totalLikes", "commentShareCount", "engagementRate",
   "pageStatus",
-  "accountCountBadge", "accountRows", "accountPagination", "quotaList", "nextRunText", "videoCountBadge", "videoRows", "videoPagination",
+  "accountCountBadge", "accountRows", "accountPagination", "nextRunText", "videoCountBadge", "videoRows", "videoPagination",
   "audioCountBadge", "audioRows", "audioDetailEmpty", "audioDetailPanel", "audioDetailTitle", "audioDetailMeta", "audioPlayer", "audioVideoRows",
   "audioOverview", "audioOverviewTotal", "audioOverviewVideos", "audioOverviewStrong", "audioOverviewWatch", "audioOverviewWeak",
   "audioStrongBar", "audioWatchBar", "audioWeakBar", "audioBestList", "audioRiskList",
@@ -701,15 +701,9 @@ function matchLabel(local) {
 
 function renderQuota(status) {
   const settings = status.settings || {};
-  const usageEntry = Object.entries(status.dailyUsage || {}).at(-1);
-  const usage = usageEntry?.[1] || [];
-  const limit = settings.dailyRequestLimit || 100;
-  const totalUsed = usage.reduce((sum, item) => sum + Number(item || 0), 0);
-  elements.quotaList.innerHTML = settings.configured
-    ? (settings.maskedApiKeys || []).map((masked, index) => { const used = Number(usage[index] || 0); const percent = Math.min(100, used / limit * 100); return `<div class="quota-item"><div><strong>Key ${index + 1}</strong><span>${used} / ${limit}</span></div><div class="quota-track"><i style="width:${percent}%"></i></div></div>`; }).join("") + `<div class="provider-note">今日合计 ${totalUsed} / ${settings.totalDailyLimit || settings.keyCount * limit} · 双Key自动轮询</div>`
-    : `<div class="quota-empty">尚未配置 TikTokAPI.store API Key，请进入抓取配置页面。</div>`;
+  const groups = (settings.groups || []).map((name) => String(name || "").trim()).filter(Boolean);
   elements.nextRunText.textContent = settings.enabled
-    ? `${formatDateTime(settings.nextRunAt)} · ${(settings.groups || []).join("、")}`
+    ? `${formatDateTime(settings.nextRunAt)}${groups.length ? ` · ${groups.join("、")}` : ""}`
     : "未启用";
 }
 

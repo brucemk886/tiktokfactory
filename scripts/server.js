@@ -1411,6 +1411,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/tiktok-analytics/settings") {
       const payload = await readJsonBody(req);
+      const requestedProfileIds = Array.from(new Set((payload.profileIds || []).map((item) => String(item || "").trim()).filter(Boolean)));
+      if (requestedProfileIds.length && Array.isArray(payload.groups)) {
+        try {
+          const phones = session.user.role === "admin"
+            ? await getCurrentGeeLarkPhones(requestedProfileIds)
+            : await getAuthorizedGeeLarkPhones(session.user);
+          const availableGroups = new Set(phones.map((phone) => String(phone.groupName || "").trim()).filter(Boolean));
+          payload.groups = payload.groups.filter((name) => availableGroups.has(String(name || "").trim()));
+        } catch {
+          // Keep submitted groups if GeeLark is temporarily unavailable.
+        }
+      }
       const settings = tiktokAnalytics.saveSettings(payload);
       scheduledAccountsCache = { expiresAt: 0, accounts: null };
       const nextRunAt = tiktokAnalytics.scheduleNextRun(getScheduledTikTokAccounts);

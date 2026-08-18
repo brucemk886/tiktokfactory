@@ -207,7 +207,7 @@ function renderTasks(tasks, allTasks = tasks) {
     const accountLabels = Array.from(new Set(
       (isOfficial ? task.publish?.officialAccounts : task.publish?.accounts || [])
         .map((account) => String(isOfficial
-          ? account?.name || account?.username || account?.connectionId || ""
+          ? account?.username || account?.name || account?.connectionId || ""
           : account?.groupName || "").trim())
         .filter(Boolean)
     ));
