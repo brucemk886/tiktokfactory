@@ -1,6 +1,6 @@
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { errorJson, json, now, readJson, safeId } from "./http.js";
-import { applyJobToTask, cancelJob, enqueueJob, getJob, isDeletedTask, publicJob } from "./jobs.js";
+import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
@@ -255,6 +255,13 @@ export async function handleCompat(request, env, url, session) {
   }
 
   const openingMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/opening-variants$/);
+  if (method === "GET" && openingMatch) {
+    const job = await findLatestOpeningVariantsJob(db, {
+      novelId: decodeURIComponent(openingMatch[1]),
+      createdBy: session.user.username
+    });
+    return json({ job: job ? publicJob(job) : null });
+  }
   if (method === "POST" && openingMatch) {
     const novel = await hydrateNovel(db, decodeURIComponent(openingMatch[1]));
     if (!novel) return errorJson("没有找到该小说。", 404);

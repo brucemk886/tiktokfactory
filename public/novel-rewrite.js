@@ -69,7 +69,9 @@ const state = {
   styleCopies: readSavedStyleCopies(),
   rewriteMode: "ai",
   openingModel: readSavedOpeningModel(),
-  openingReasoning: readSavedOpeningReasoning()
+  openingReasoning: readSavedOpeningReasoning(),
+  openingJobId: "",
+  restoringOpeningJob: false
 };
 
 elements.novelPicker.addEventListener("change", () => {
@@ -138,10 +140,12 @@ async function loadPage() {
     if (!novel) throw new Error("没有找到这本小说，请从书单重新点「改写」。");
     state.novel = novel;
     renderWork();
+    void restoreLatestOpeningJob();
   } catch (error) {
     if (state.novel) {
       renderWork();
       setStatus(error.message || "已先带入书单内容，完整数据稍后可刷新。", "error");
+      void restoreLatestOpeningJob();
       return;
     }
     elements.pickerView.hidden = false;
@@ -502,6 +506,7 @@ async function generateVariants() {
       })
     });
     if (data.jobId && !Array.isArray(data.variants)) {
+      state.openingJobId = data.jobId;
       elements.variantStatus.textContent = data.message || "已交给本机工人生成，请稍候。";
       data = await waitForCloudJob(data.jobId, {
         api,
@@ -510,26 +515,68 @@ async function generateVariants() {
         }
       });
     }
-    const model = data.model || selectedOpeningModel();
-    const reasoningEffort = data.reasoningEffort || selectedOpeningReasoning();
-    state.variants = (data.variants || []).map((item, index) => ({
-      ...item,
-      id: item.id || `variant-${index + 1}`,
-      selected: true,
-      status: "",
-      model,
-      reasoningEffort,
-      audioId: "",
-      audioPath: ""
-    }));
-    renderVariants();
-    setStatus(`已用 ${openingModelLabel(model, reasoningEffort)} 筛选出 ${state.variants.length} 个强钩子，并带中文对照。勾选后可一键依次配音。`, "success");
+    applyOpeningVariantResult(data);
   } catch (error) {
     elements.variantStatus.textContent = error.message || "生成改版开头失败。";
     setStatus(error.message, "error");
   } finally {
     updateGenerateButton();
   }
+}
+
+async function restoreLatestOpeningJob() {
+  if (!state.novelId || state.restoringOpeningJob) return;
+  state.restoringOpeningJob = true;
+  try {
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`);
+    const job = data.job;
+    if (!job?.jobId || (job.jobId === state.openingJobId && state.variants.length)) return;
+    state.openingJobId = job.jobId;
+    let result = job.result || {};
+    if (["queued", "running"].includes(String(job.status || ""))) {
+      elements.variantPanel.hidden = false;
+      elements.variantStatus.textContent = job.message || "正在恢复尚未完成的开头任务...";
+      result = await waitForCloudJob(job.jobId, {
+        api,
+        onProgress: (progress) => {
+          elements.variantStatus.textContent = progress.message || "工人机正在生成强钩子开头...";
+        }
+      });
+    }
+    if (job.status === "done" || Array.isArray(result.variants)) {
+      applyOpeningVariantResult(result, { restored: true });
+    }
+  } catch (error) {
+    if (elements.variantPanel && !elements.variantPanel.hidden) {
+      elements.variantStatus.textContent = error.message || "恢复上次开头任务失败。";
+    }
+  } finally {
+    state.restoringOpeningJob = false;
+    updateGenerateButton();
+  }
+}
+
+function applyOpeningVariantResult(data, { restored = false } = {}) {
+  if (!Array.isArray(data.variants) || !data.variants.length) {
+    throw new Error("任务已完成，但没有取回生成结果。请刷新页面重试，不要重复生成。");
+  }
+  const model = data.model || selectedOpeningModel();
+  const reasoningEffort = data.reasoningEffort || selectedOpeningReasoning();
+  state.variants = data.variants.map((item, index) => ({
+    ...item,
+    id: item.id || `variant-${index + 1}`,
+    selected: true,
+    status: "",
+    model,
+    reasoningEffort,
+    audioId: "",
+    audioPath: ""
+  }));
+  elements.variantPanel.hidden = false;
+  if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子开头`;
+  elements.variantStatus.textContent = restored ? `已恢复上次生成的 ${state.variants.length} 个强钩子。` : `已生成 ${state.variants.length} 个强钩子。`;
+  renderVariants();
+  setStatus(`${restored ? "已找回" : "已用"} ${openingModelLabel(model, reasoningEffort)} 筛选出的 ${state.variants.length} 个强钩子，并带中文对照。勾选后可一键依次配音。`, "success");
 }
 
 function renderVariants() {

@@ -84,3 +84,20 @@ test("rejects unknown novel effect sources", async () => {
   const service = createNovelEffectService({ novelContentLibrary: { getOverview: () => overviewFor() } });
   await assert.rejects(() => service.getOverview({ source: "mixed" }), /Unsupported data source/);
 });
+
+test("slims novel effects payload and drops zero-view books", async () => {
+  const { slimEffectsPage } = await import("./novel-effect-core.js");
+  const page = slimEffectsPage({
+    summary: { totalViews: 12 },
+    novels: [
+      { id: "hot", title: "Hot", sourceContent: "very long body", performance: { totalViews: 12 }, scripts: [{ id: "s1", text: "A".repeat(400), performance: { totalViews: 12 }, videos: [{ caption: "B".repeat(300), views: 12 }] }] },
+      { id: "cold", title: "Cold", sourceContent: "unused", performance: { totalViews: 0 }, scripts: [] },
+    ],
+    unassignedScripts: [{ id: "u1", performance: { totalViews: 0 } }],
+  });
+  assert.equal(page.novels.length, 1);
+  assert.equal(page.novels[0].sourceContent, undefined);
+  assert.ok(page.novels[0].scripts[0].openingText.length <= 180);
+  assert.ok(page.novels[0].scripts[0].videos[0].caption.length <= 160);
+  assert.equal(page.unassignedScripts.length, 0);
+});

@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-08-14
+Updated: 2026-08-19
 
 ## Platform
 
@@ -19,6 +19,8 @@ Updated: 2026-08-14
 - `/novel-library` now defaults to the book catalog. Create and edit are separate pages. Each platform keeps its own featured list (set when creating/editing) and historical-hit list (auto-ranked from matched video plays, top 50 with at least 200 views).
 - Novel effects are split by channel. `/novel-effects` is official API only. GeeLark third-party novel effects live at `/geelark-novel-effects` under the GeeLark backup group. The two sources are never mixed.
 - `/novel-rewrite` is the manual rewrite workspace. The book list has a 改写 button that opens that novel. Saved versions stay under the novel, show up in novel effects, and appear in `/rewrite-records` next to official-operation rewrites.
+- Cloud novel-opening jobs persist their full bilingual variants and the rewrite page automatically resumes the current user's latest job for that novel for 24 hours, so a timeout or page refresh does not force duplicate generation.
+- `/novel-library` and `/novel-effects` paginate book/result cards in groups of 20. Official effect reads omit full source chapters, fetch independent datasets in parallel, and return only the current or viewed result rows to keep the hosted pages responsive.
 - The sidebar module is now `小说内容`: the first-level entity is the canonical novel source, and its child records are generated script/opening variants, paired local audio, and matched TikTok video performance. Existing audio records are imported as unassigned scripts until an operator links them to a novel; AI rewrites inherit their parent script's novel relationship.
 - Novel marketing generation automatically stores the submitted source as a novel and its five selected outputs as script variants. The operation brain receives the same novel/script hierarchy, so later evidence-based rewrites can be traced back to the original novel rather than analyzed as unrelated audio files.
 - Novel AI Operations creates one standard Reddit automation workflow from one selected novel audio directory and one asset group or video directory. It uses the currently saved Reddit subtitle, deduplication, queue, retry, scheduling, publishing-copy, and GeeLark safety settings without generating alternate recipes or variants.

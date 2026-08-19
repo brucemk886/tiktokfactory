@@ -74,6 +74,11 @@
 .video-stat { text-align: right; }
 .video-stat strong { font-size: 13px; }
 .unassigned-section { margin-top: 18px; padding: 20px; }
+.novel-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 0 0; }
+.novel-pager span { color: var(--effect-muted); font-size: 12px; margin-right: 4px; }
+.novel-pager button { min-height: 34px; min-width: 34px; padding: 0 10px; border: 1px solid var(--effect-border); border-radius: 5px; background: var(--effect-panel); color: var(--effect-text); font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.novel-pager button.is-active { background: var(--effect-accent); color: #10160b; }
+.novel-pager button:disabled { opacity: 0.45; cursor: default; }
 .loading, .empty-state, .error-state { padding: 44px 20px; text-align: center; color: var(--effect-muted); border: 1px dashed var(--effect-border); }
 .error-state { color: #ff9b9b; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }

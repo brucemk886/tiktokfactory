@@ -24,6 +24,15 @@ export async function listNovels(db) {
   return (results || []).map(novelFromRow);
 }
 
+export async function listNovelSummaries(db) {
+  const { results } = await db.prepare(`
+    SELECT id, title, platform, book_id, promotion_code, promotion_copy, category, featured,
+           selling_point, note, substr(source_content, 1, 160) AS source_content, status, created_at, updated_at
+    FROM factory_novels
+  `).all();
+  return (results || []).map(novelFromRow);
+}
+
 export async function insertNovels(db, novels = []) {
   const items = Array.isArray(novels) ? novels.filter((item) => item?.id && item.title) : [];
   if (!items.length) return 0;

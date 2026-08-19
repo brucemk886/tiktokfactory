@@ -32,6 +32,62 @@ export function assembleOfficialNovelEffects({
   };
 }
 
+export function slimEffectsPage(page = {}, { keepZeroView = false, keepNovelId = "" } = {}) {
+  const novels = (Array.isArray(page.novels) ? page.novels : [])
+    .filter((novel) => keepZeroView || Number(novel.performance?.totalViews) > 0 || novel.id === keepNovelId)
+    .map(slimEffectNovel);
+  return {
+    ...page,
+    novels,
+    unassignedScripts: (Array.isArray(page.unassignedScripts) ? page.unassignedScripts : [])
+      .filter((script) => Number(script.performance?.totalViews) > 0)
+      .map(slimEffectScript),
+  };
+}
+
+function slimEffectNovel(novel) {
+  return {
+    id: novel.id,
+    title: novel.title,
+    platform: novel.platform,
+    category: novel.category,
+    promotionCode: novel.promotionCode,
+    performance: novel.performance,
+    scripts: (Array.isArray(novel.scripts) ? novel.scripts : []).map(slimEffectScript),
+  };
+}
+
+function slimEffectScript(script) {
+  return {
+    id: script.id,
+    novelId: script.novelId,
+    title: script.title,
+    versionLabel: script.versionLabel,
+    sourceType: script.sourceType,
+    parentScriptId: script.parentScriptId,
+    openingText: String(script.openingText || script.hook || script.text || script.content || script.title || "").replace(/\s+/g, " ").trim().slice(0, 180),
+    audio: script.audio ? { id: script.audio.id, title: script.audio.title } : null,
+    performance: script.performance,
+    videos: (Array.isArray(script.videos) ? script.videos : []).map(slimEffectVideo),
+  };
+}
+
+function slimEffectVideo(video) {
+  return {
+    videoId: video.videoId || video.id,
+    caption: String(video.caption || video.title || "").slice(0, 160),
+    username: video.username,
+    publishedAt: video.publishedAt,
+    matchConfidence: video.matchConfidence,
+    views: video.views,
+    averageTimeWatched: video.averageTimeWatched,
+    fullWatchRate: video.fullWatchRate,
+    retentionAt3: video.retentionAt3,
+    comments: video.comments,
+    duration: video.duration,
+  };
+}
+
 export function decorate(overview = {}, dataStatus) {
   const novels = Array.isArray(overview.novels) ? overview.novels : [];
   return {

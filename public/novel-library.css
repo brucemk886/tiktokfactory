@@ -48,6 +48,11 @@
 .audio-link { background: #fff8e8; border-color: #d7b07a; }
 .rewrite-link { background: rgba(200, 220, 90, 0.28); border-color: #8a9a32; }
 .empty-state { min-height: 220px; display: grid; place-items: center; color: var(--lf-muted, #6d6758); font-size: 13px; text-align: center; }
+.book-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 4px 0; }
+.book-pager span { color: var(--lf-muted, #6d6758); font-size: 12px; margin-right: 4px; }
+.book-pager button { min-height: 34px; min-width: 34px; padding: 0 10px; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 5px; background: #fff; color: var(--lf-text, #1d1a14); font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.book-pager button.is-active { background: rgba(200, 220, 90, 0.32); border-color: #8a9a32; }
+.book-pager button:disabled { opacity: 0.45; cursor: default; }
 .book-editor { display: grid; gap: 14px; max-width: 820px; padding: 22px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .section-heading h2 { margin: 4px 0 0; font-size: 19px; }

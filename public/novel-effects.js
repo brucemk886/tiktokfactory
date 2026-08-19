@@ -3,7 +3,10 @@ const state = {
   source: document.body.dataset.source === "third_party" ? "third_party" : "official_api",
   days: Number(document.querySelector("#daysTabs .active")?.dataset.days) || 7,
   query: "",
-  novelId: pageParams.get("novel") || ""
+  novelId: pageParams.get("novel") || "",
+  page: 1,
+  pageSize: 20,
+  ranked: []
 };
 
 const daysTabs = document.querySelector("#daysTabs");
@@ -14,17 +17,20 @@ const statusNode = document.querySelector("#sourceStatus");
 const summaryNode = document.querySelector("#summaryGrid");
 const resultsNode = document.querySelector("#novelResults");
 const unassignedNode = document.querySelector("#unassignedSection");
+const pagerNode = document.querySelector("#novelPager");
 
 daysTabs?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-days]");
   if (!button) return;
   state.days = Number(button.dataset.days) || 7;
+  state.page = 1;
   setActive(daysTabs, button);
   loadEffects();
 });
 searchForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   state.query = searchInput.value.trim();
+  state.page = 1;
   loadEffects();
 });
 refreshButton?.addEventListener("click", loadEffects);
@@ -43,6 +49,7 @@ async function loadEffects() {
   unassignedNode.hidden = true;
   try {
     const params = new URLSearchParams({ source: state.source, days: String(state.days), query: state.query });
+    if (state.novelId) params.set("novel", state.novelId);
     const response = await fetch(`/api/novel-effects?${params}`, { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "读取数据概览失败");
@@ -58,14 +65,54 @@ async function loadEffects() {
 }
 
 function render(data) {
-  const ranked = rankNovels(data.novels || []);
-  renderStatus(data.dataStatus || {}, ranked.length);
-  renderSummary(data.summary || {}, ranked);
-  resultsNode.innerHTML = ranked.length
-    ? ranked.map((novel, index) => renderNovel(novel, index + 1)).join("")
-    : `<div class="empty-state">这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 7 天 / 30 天排行。</div>`;
+  state.ranked = rankNovels(data.novels || []);
+  renderStatus(data.dataStatus || {}, state.ranked.length);
+  renderSummary(data.summary || {}, state.ranked);
+  renderPage();
   renderUnassigned(data.unassignedScripts || []);
+}
+
+function renderPage() {
+  const ranked = state.ranked;
+  const pageCount = Math.max(1, Math.ceil(ranked.length / state.pageSize));
+  state.page = Math.min(Math.max(1, state.page), pageCount);
+  const start = (state.page - 1) * state.pageSize;
+  const pageNovels = ranked.slice(start, start + state.pageSize);
+  resultsNode.innerHTML = pageNovels.length
+    ? pageNovels.map((novel, index) => renderNovel(novel, start + index + 1)).join("")
+    : `<div class="empty-state">这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 7 天 / 30 天排行。</div>`;
+  renderPager(ranked.length, pageCount);
   focusCurrentNovel();
+}
+
+function renderPager(total, pageCount) {
+  if (!pagerNode) return;
+  if (total <= state.pageSize) {
+    pagerNode.hidden = true;
+    pagerNode.innerHTML = "";
+    return;
+  }
+  pagerNode.hidden = false;
+  const buttons = [];
+  buttons.push(`<button type="button" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一页</button>`);
+  for (let page = 1; page <= pageCount; page++) {
+    if (pageCount > 9 && page !== 1 && page !== pageCount && Math.abs(page - state.page) > 2) {
+      if (buttons[buttons.length - 1] !== "<span>…</span>") buttons.push("<span>…</span>");
+      continue;
+    }
+    buttons.push(`<button type="button" data-page="${page}" class="${page === state.page ? "is-active" : ""}">${page}</button>`);
+  }
+  buttons.push(`<button type="button" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`);
+  pagerNode.innerHTML = `<span>共 ${pageCount} 页 · ${total} 本</span>${buttons.join("")}`;
+  pagerNode.querySelectorAll("[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = Number(button.dataset.page);
+      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.page) return;
+      state.page = next;
+      renderPage();
+      resultsNode.scrollIntoView({ block: "start" });
+    });
+  });
 }
 
 function rankNovels(novels) {

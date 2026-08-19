@@ -1,11 +1,11 @@
-import { assembleOfficialNovelEffects } from "../../scripts/novel-effect-core.js";
+import { assembleOfficialNovelEffects, slimEffectsPage } from "../../scripts/novel-effect-core.js";
 import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
 import { audioItemsFromScripts } from "../../scripts/novel-overview.js";
 import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { insertNovels, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
+import { insertNovels, listNovelSummaries, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
 import { getOfficialOperationSignals, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 
 const PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
@@ -122,10 +122,11 @@ export async function handleNovels(request, env, url, session) {
   if (method === "GET" && pathname === "/api/novel-effects") {
     const source = url.searchParams.get("source") || "official_api";
     const query = url.searchParams.get("query") || "";
+    const novelId = url.searchParams.get("novel") || "";
     const days = Math.max(1, Math.min(30, Math.floor(Number(url.searchParams.get("days") || 30))));
     if (source === "third_party") {
       const overview = await novelOverview(db, query);
-      return json({
+      return json(slimEffectsPage({
         ...overview,
         dataStatus: {
           source,
@@ -135,16 +136,18 @@ export async function handleNovels(request, env, url, session) {
           mappedVideoCount: Number(overview?.summary?.videoCount || 0),
           days,
         },
-      });
+      }, { keepZeroView: true }));
     }
     try {
       let meta = await readArchiveMeta(db);
       if (!meta.accountCount) {
         meta = await refreshOfficialArchive(env, db);
       }
-      const signals = await getOfficialOperationSignals(db, { days, videosPerAccount: 100 });
-      const store = await readStore(db);
-      const records = await kvGet(db, "official-publish-records", []);
+      const [signals, store, records] = await Promise.all([
+        getOfficialOperationSignals(db, { days, videosPerAccount: 100 }),
+        readStore(db, { includeSource: false }),
+        kvGet(db, "official-publish-records", []),
+      ]);
       const { videoMappings, ...page } = assembleOfficialNovelEffects({
         store,
         audioItems: audioItemsFromScripts(store.scripts),
@@ -154,14 +157,14 @@ export async function handleNovels(request, env, url, session) {
         days,
         label: "线上官方归档",
       });
-      return json({
+      return json(slimEffectsPage({
         ...page,
         dataStatus: {
           ...page.dataStatus,
           cacheUpdatedAt: meta.updatedAt,
           archiveDate: signals.archiveDate || meta.archiveDate,
         },
-      });
+      }, { keepNovelId: novelId }));
     } catch (error) {
       return errorJson(error.message || "读取数据概览失败。", error.statusCode || 502);
     }
@@ -171,7 +174,7 @@ export async function handleNovels(request, env, url, session) {
 }
 
 async function novelOverview(db, query) {
-  const store = await readStore(db);
+  const store = await readStore(db, { includeSource: false });
   const normalized = String(query || "").trim().toLowerCase();
   const novels = store.novels
     .map((novel) => ({
@@ -179,7 +182,7 @@ async function novelOverview(db, query) {
       scripts: store.scripts.filter((script) => script.novelId === novel.id),
       performance: { videoCount: 0, totalViews: 0, averageViews: 0, maxViews: 0, comments: 0 }
     }))
-    .filter((novel) => !normalized || [novel.id, novel.title, novel.platform, novel.bookId, novel.promotionCode, novel.promotionCopy, novel.category, novel.sellingPoint, novel.note, novel.sourceContent]
+    .filter((novel) => !normalized || [novel.id, novel.title, novel.platform, novel.bookId, novel.promotionCode, novel.promotionCopy, novel.category, novel.sellingPoint, novel.note]
       .some((value) => String(value || "").toLowerCase().includes(normalized)));
   return {
     version: 1,
@@ -430,11 +433,11 @@ export async function mergeImportedNovelStore(db, incoming = {}) {
   return { novelCount: novels.length, scriptCount: scripts.length, importedNovelCount: (incoming.novels || []).length, importedScriptCount: (incoming.scripts || []).length };
 }
 
-async function readStore(db) {
+async function readStore(db, { includeSource = true } = {}) {
   await migrateNovelsFromKv(db);
   const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
   return {
-    novels: await listNovels(db),
+    novels: includeSource ? await listNovels(db) : await listNovelSummaries(db),
     scripts: Array.isArray(store.scripts) ? store.scripts : []
   };
 }

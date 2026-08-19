@@ -24,7 +24,8 @@ const elements = {
   formStatus: document.querySelector("#formStatus"),
   search: document.querySelector("#searchInput"),
   listStatus: document.querySelector("#listStatus"),
-  list: document.querySelector("#bookList")
+  list: document.querySelector("#bookList"),
+  pager: document.querySelector("#bookPager")
 };
 
 const state = {
@@ -32,6 +33,8 @@ const state = {
   catalog: { platforms: [], totals: { novelCount: 0, featuredCount: 0, hitCount: 0 } },
   platform: "all",
   shelf: "library",
+  page: 1,
+  pageSize: 20,
   searchTimer: null
 };
 
@@ -48,6 +51,7 @@ elements.search.addEventListener("input", () => {
 document.querySelectorAll("[data-platform]").forEach((button) => {
   button.addEventListener("click", () => {
     state.platform = button.dataset.platform;
+    state.page = 1;
     document.querySelectorAll("[data-platform]").forEach((item) => item.classList.toggle("is-active", item === button));
     renderBooks();
   });
@@ -55,6 +59,7 @@ document.querySelectorAll("[data-platform]").forEach((button) => {
 document.querySelectorAll("[data-shelf]").forEach((button) => {
   button.addEventListener("click", () => {
     state.shelf = button.dataset.shelf;
+    state.page = 1;
     document.querySelectorAll("[data-shelf]").forEach((item) => item.classList.toggle("is-active", item === button));
     renderBooks();
   });
@@ -72,6 +77,7 @@ async function loadBooks() {
     const data = await api(`/api/novel-content${query ? `?query=${encodeURIComponent(query)}` : ""}`);
     state.novels = data.novels || [];
     state.catalog = data.catalog || state.catalog;
+    state.page = 1;
     renderBooks();
   } catch (error) {
     elements.list.innerHTML = "";
@@ -91,14 +97,22 @@ function visibleNovels() {
 function renderBooks() {
   const novels = visibleNovels();
   const counts = currentCounts();
+  const pageCount = Math.max(1, Math.ceil(novels.length / state.pageSize));
+  state.page = Math.min(Math.max(1, state.page), pageCount);
+  const start = (state.page - 1) * state.pageSize;
+  const pageNovels = novels.slice(start, start + state.pageSize);
   const scope = state.platform === "all" ? "全部平台" : state.platform;
   const shelfLabel = state.shelf === "featured" ? "重点书单" : "全书库";
-  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · 全书库 ${counts.novelCount} · 重点 ${counts.featuredCount}`;
+  const rangeLabel = novels.length
+    ? `第 ${start + 1}-${start + pageNovels.length} 本`
+    : "0 本";
+  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 全书库 ${counts.novelCount} · 重点 ${counts.featuredCount}`;
   if (!novels.length) {
     elements.list.innerHTML = `<tr><td colspan="8"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
+    renderPager(0, 1);
     return;
   }
-  elements.list.innerHTML = novels.map((novel) => `
+  elements.list.innerHTML = pageNovels.map((novel) => `
     <tr>
       <td class="cell-date">${escapeHtml(formatDate(novel.createdAt))}</td>
       <td class="cell-title">
@@ -124,6 +138,37 @@ function renderBooks() {
   });
   elements.list.querySelectorAll("[data-audio-id]").forEach((link) => {
     link.addEventListener("click", () => stashRewriteNovel(link.dataset.audioId));
+  });
+  renderPager(novels.length, pageCount);
+}
+
+function renderPager(total, pageCount) {
+  if (!elements.pager) return;
+  if (total <= state.pageSize) {
+    elements.pager.hidden = true;
+    elements.pager.innerHTML = "";
+    return;
+  }
+  elements.pager.hidden = false;
+  const buttons = [];
+  buttons.push(`<button type="button" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一页</button>`);
+  for (let page = 1; page <= pageCount; page++) {
+    if (pageCount > 9 && page !== 1 && page !== pageCount && Math.abs(page - state.page) > 2) {
+      if (buttons[buttons.length - 1] !== '<span>…</span>') buttons.push("<span>…</span>");
+      continue;
+    }
+    buttons.push(`<button type="button" data-page="${page}" class="${page === state.page ? "is-active" : ""}">${page}</button>`);
+  }
+  buttons.push(`<button type="button" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`);
+  elements.pager.innerHTML = `<span>共 ${pageCount} 页</span>${buttons.join("")}`;
+  elements.pager.querySelectorAll("[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = Number(button.dataset.page);
+      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.page) return;
+      state.page = next;
+      renderBooks();
+      elements.list.closest(".book-table-wrap")?.scrollIntoView({ block: "start" });
+    });
   });
 }
 

@@ -98,6 +98,22 @@ export async function getJob(db, jobId) {
   return db.prepare("SELECT * FROM factory_jobs WHERE id = ?").bind(safeId(jobId)).first();
 }
 
+export async function findLatestOpeningVariantsJob(db, { novelId, createdBy, maxAgeMs = 24 * 60 * 60 * 1000 } = {}) {
+  const targetNovelId = String(novelId || "").trim();
+  const username = String(createdBy || "").trim();
+  if (!targetNovelId || !username) return null;
+  const { results } = await db.prepare(`
+    SELECT * FROM factory_jobs
+    WHERE type = 'opening-variants' AND created_by = ? AND created_at >= ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).bind(username, now() - Math.max(60_000, Number(maxAgeMs) || 0)).all();
+  return (results || []).find((row) => {
+    const payload = parseJson(row.payload_json, {});
+    return String(payload.novelId || "") === targetNovelId;
+  }) || null;
+}
+
 export async function listRecentJobs(db, limit = 80) {
   const { results } = await db.prepare("SELECT * FROM factory_jobs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
   return results || [];
@@ -471,15 +487,35 @@ function slimJobResult(value) {
   };
 }
 
-function persistableJobResult(value) {
+export function persistableJobResult(value) {
   const result = value && typeof value === "object" ? value : {};
   const slim = slimJobResult(result);
   if (Array.isArray(result.items)) slim.items = result.items;
   if (Array.isArray(result.publishResults)) slim.publishResults = result.publishResults.slice(0, 80);
   if (result.publishSummary) slim.publishSummary = result.publishSummary;
   if (Array.isArray(result.warnings)) slim.warnings = result.warnings.slice(0, 12);
+  if (Array.isArray(result.variants)) {
+    slim.variants = result.variants.slice(0, 10).map((variant, index) => compactOpeningVariant(variant, index)).filter((variant) => variant.script);
+    slim.model = String(result.model || "").slice(0, 120);
+    slim.reasoningEffort = String(result.reasoningEffort || "").slice(0, 40);
+  }
   slim.failedVideoCount = Number(result.failedVideoCount || 0);
   return slim;
+}
+
+function compactOpeningVariant(value, index) {
+  const variant = value && typeof value === "object" ? value : {};
+  return {
+    id: String(variant.id || `variant-${index + 1}`).slice(0, 120),
+    style: String(variant.style || "").slice(0, 80),
+    styleLabel: String(variant.styleLabel || "").slice(0, 80),
+    title: String(variant.title || "").slice(0, 240),
+    openingTitle: String(variant.openingTitle || "").slice(0, 120),
+    script: String(variant.script || "").slice(0, 20000),
+    titleZh: String(variant.titleZh || "").slice(0, 240),
+    openingTitleZh: String(variant.openingTitleZh || "").slice(0, 120),
+    scriptZh: String(variant.scriptZh || "").slice(0, 20000)
+  };
 }
 
 function compactAutoTasks(tasks) {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyJobToTask, isDeletedTask } from "./jobs.js";
+import { applyJobToTask, findLatestOpeningVariantsJob, isDeletedTask, persistableJobResult } from "./jobs.js";
 
 test("publish failure after generation keeps videos and needs attention", () => {
   const task = applyJobToTask({
@@ -92,4 +92,47 @@ test("expected count stays at planned total while videos are still generating", 
   assert.equal(task.expectedVideoCount, 6);
   assert.equal(task.progress.total, 6);
   assert.equal(task.generatedVideos.length, 2);
+});
+
+test("opening variants survive job-result persistence", () => {
+  const result = persistableJobResult({
+    model: "gpt-5.6-sol",
+    reasoningEffort: "xhigh",
+    variants: [{
+      style: "smart-strongest",
+      styleLabel: "智能最强钩子",
+      title: "The tenants bankrupted me",
+      openingTitle: "They Bankrupted Their Dream Landlord",
+      script: "My tenants sued me into bankruptcy.",
+      titleZh: "租客让我破产",
+      openingTitleZh: "他们让梦想房东破产",
+      scriptZh: "我的租客把我告到破产。"
+    }]
+  });
+  assert.equal(result.model, "gpt-5.6-sol");
+  assert.equal(result.reasoningEffort, "xhigh");
+  assert.equal(result.variants.length, 1);
+  assert.equal(result.variants[0].style, "smart-strongest");
+  assert.match(result.variants[0].script, /bankruptcy/);
+  assert.match(result.variants[0].scriptZh, /破产/);
+});
+
+test("latest opening-variant lookup returns the newest matching novel for the current user", async () => {
+  const rows = [
+    { id: "job-other", payload_json: JSON.stringify({ novelId: "novel-2" }) },
+    { id: "job-match", payload_json: JSON.stringify({ novelId: "novel-1" }) }
+  ];
+  const db = {
+    prepare() {
+      return {
+        bind(username, createdAfter) {
+          assert.equal(username, "admin");
+          assert.ok(Number.isFinite(createdAfter));
+          return { all: async () => ({ results: rows }) };
+        }
+      };
+    }
+  };
+  const job = await findLatestOpeningVariantsJob(db, { novelId: "novel-1", createdBy: "admin" });
+  assert.equal(job.id, "job-match");
 });
