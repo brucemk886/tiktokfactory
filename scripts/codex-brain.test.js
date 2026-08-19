@@ -150,10 +150,11 @@ test("opening variants return three distinct style scripts", async (context) => 
   const result = await service.generateOpeningVariants({
     title: "Secret Uncle",
     sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
-    styles: ["conflict-first", "secret-reveal", "forbidden-line"]
+    styles: ["evidence-slam", "identity-bomb", "cornered-counterstrike"]
   });
   assert.equal(result.variants.length, 3);
-  assert.deepEqual(result.variants.map((item) => item.style), ["conflict-first", "secret-reveal", "forbidden-line"]);
+  assert.deepEqual(result.variants.map((item) => item.style), ["evidence-slam", "identity-bomb", "cornered-counterstrike"]);
+  assert.deepEqual(result.variants.map((item) => item.styleLabel), ["铁证砸脸", "身份炸弹", "绝境反杀"]);
   assert.deepEqual(result.variants.map((item) => item.openingTitle), [
     "She wore my mother's ring",
     "The invitation was a trap",
@@ -239,7 +240,7 @@ test("opening variants can return a single selected style", async (context) => {
     styles: ["conflict-first"]
   });
   assert.equal(result.variants.length, 1);
-  assert.equal(result.variants[0].style, "conflict-first");
+  assert.equal(result.variants[0].style, "evidence-slam");
 });
 
 test("opening variant prompt forces a stop-scroll first sentence", async (context) => {
@@ -265,11 +266,15 @@ test("opening variant prompt forces a stop-scroll first sentence", async (contex
   await service.generateOpeningVariants({
     title: "Secret Uncle",
     sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
-    styles: ["conflict-first"]
+    styles: ["smart-strongest"]
   });
-  assert.match(prompts[0], /第一句铁律/);
+  assert.match(prompts[0], /内部选钩流程/);
+  assert.match(prompts[0], /先构思 6 个不同的前三句候选/);
+  assert.match(prompts[0], /停滑力 35 分、信息缺口 30 分/);
+  assert.match(prompts[0], /原文没有确认的怀孕、死亡、血缘/);
+  assert.match(prompts[0], /前三句铁律/);
   assert.match(prompts[0], /第一句做法：/);
-  assert.match(prompts[0], /Why is the bride wearing my mother's ring/);
+  assert.match(prompts[0], /Finally home/);
   assert.match(prompts[0], /I walked into/);
 });
 

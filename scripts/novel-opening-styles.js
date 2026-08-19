@@ -1,36 +1,52 @@
+export const SMART_OPENING_STYLE_ID = "smart-strongest";
+
 export const OPENING_STYLES = Object.freeze([
   Object.freeze({
-    id: "conflict-first",
-    label: "冲突先行",
-    hook: "第一句就点名对质，把戒指、签名、亲吻这类物证砸在对方脸上。",
-    firstLine: "第一句必须是对质句：称呼 + 正在发生的物证。禁止从走进房间、看见人群写起。例：Why is the bride wearing my mother's ring?"
+    id: SMART_OPENING_STYLE_ID,
+    label: "智能最强钩子",
+    recommended: true,
+    hook: "第一句前先找出原文里的最大背叛、异常、身份反差和主角底牌，再组合成最强三拍反转。",
+    firstLine: "第一句砸出原文中最严重且已经确认的事实；第二句写对方的错误预期或直接后果；第三句用主角的反常反应或真实底牌留下信息缺口。例：My fiancé drugged me and handed me to a mob boss. He thought I was terrified. I whispered, ‘Finally home.’",
+    threeBeat: "事实炸点 → 错误预期或后果 → 反常反应或隐藏底牌"
   }),
   Object.freeze({
-    id: "secret-reveal",
-    label: "秘密揭开",
-    hook: "第一句先爆出不该存在的秘密，听完就能复述那件事。",
-    firstLine: "第一句直接说破秘密本身（私生子、第二场婚礼、遗嘱、她是他的…），不要先铺“我本来不该知道”。例：The baby in her arms has my husband's last name."
+    id: "evidence-slam",
+    label: "铁证砸脸",
+    hook: "第一句直接亮出戒指、短信、录音、DNA 或转账等原文已经存在的具体证据。",
+    firstLine: "第一句必须包含人物关系 + 看得见的证据 + 证据证明的背叛或谎言，不先解释发现过程。例：My husband's wedding ring was on my sister's nightstand.",
+    threeBeat: "具体铁证 → 铁证指向的伤害 → 仍未解释的关键问题"
   }),
   Object.freeze({
-    id: "betrayal-caught",
-    label: "当场背叛",
-    hook: "第一句就撞见出轨、婚礼或另一个女人，羞耻当场爆发。",
-    firstLine: "第一句必须是目击句：我看见谁在对谁做什么。必须有动作（kiss, unzip, sign, walk down the aisle）。例：I caught them kissing in our wedding suite."
+    id: "identity-bomb",
+    label: "身份炸弹",
+    hook: "第一句揭开原文已经确认、足以瞬间改写人物关系或权力位置的身份事实。",
+    firstLine: "第一句同时写出旧认知和真实身份，让两者形成不可能共存的反差；原文没有身份反转就不能编造。例：The mob boss they sold me to was the father I thought was dead.",
+    threeBeat: "旧身份认知 → 真实身份爆雷 → 新身份将造成的危险"
   }),
   Object.freeze({
-    id: "forbidden-line",
-    label: "禁忌越界",
-    hook: "第一句用称呼钉死禁忌关系，让人立刻想看怎么收场。",
-    firstLine: "第一句必须带禁忌称呼（uncle, stepson, husband's brother, my son's wife）+ 正在发生的越界。不要空喊“我们不该这样”。例：I am pregnant with my uncle's child."
+    id: "scene-meltdown",
+    label: "现场失控",
+    hook: "第一句从婚礼、葬礼、宴会或签约等原文已有的公开现场爆雷，让所有人都无法体面收场。",
+    firstLine: "第一句必须写清地点、人物和正在发生的不可挽回动作；没有公开场面时，用原文最难收场的现场，不能另编婚礼。例：My fiancé kissed my best friend while I stood at the altar.",
+    threeBeat: "公开动作 → 众人或主角的即时后果 → 更大的秘密即将暴露"
+  }),
+  Object.freeze({
+    id: "cornered-counterstrike",
+    label: "绝境反杀",
+    hook: "第一句让主角落入原文最深的绝境，随后露出对方不知道、但原文确实存在的翻盘底牌。",
+    firstLine: "第一句写清谁把主角推入什么绝境；第二句写对方以为自己赢了；第三句只露出足以翻盘的底牌，不提前解释完。例：They sold me to save their company. They forgot I owned its debt.",
+    threeBeat: "主角被逼入绝境 → 对方误判胜局 → 主角底牌反杀"
   })
 ]);
 
-export const DEFAULT_OPENING_STYLE_IDS = Object.freeze([
-  "conflict-first",
-  "betrayal-caught",
-  "secret-reveal",
-  "forbidden-line"
-]);
+const LEGACY_STYLE_ALIASES = Object.freeze({
+  "conflict-first": "evidence-slam",
+  "secret-reveal": "identity-bomb",
+  "betrayal-caught": "scene-meltdown",
+  "forbidden-line": "cornered-counterstrike"
+});
+
+export const DEFAULT_OPENING_STYLE_IDS = Object.freeze([SMART_OPENING_STYLE_ID]);
 
 export function resolveOpeningStyles(ids) {
   const wanted = (Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean);
@@ -44,7 +60,10 @@ export function resolveOpeningStyles(ids) {
     error.statusCode = 400;
     throw error;
   }
-  const styles = wanted.map((id) => OPENING_STYLES.find((item) => item.id === id));
+  const styles = wanted.map((id) => {
+    const canonicalId = LEGACY_STYLE_ALIASES[id] || id;
+    return OPENING_STYLES.find((item) => item.id === canonicalId);
+  });
   if (styles.some((item) => !item)) {
     const error = new Error("所选风格无效，请重新勾选。");
     error.statusCode = 400;
@@ -54,7 +73,7 @@ export function resolveOpeningStyles(ids) {
 }
 
 export function formatOpeningStyleBrief(style, index) {
-  return `${index + 1}. ${style.id} / ${style.label}：${style.hook}\n   第一句做法：${style.firstLine}`;
+  return `${index + 1}. ${style.id} / ${style.label}：${style.hook}\n   三拍结构：${style.threeBeat}\n   第一句做法：${style.firstLine}`;
 }
 
 export function publicOpeningStyles() {
@@ -62,6 +81,7 @@ export function publicOpeningStyles() {
     id: item.id,
     label: item.label,
     hook: item.hook,
+    recommended: item.recommended === true,
     example: String(item.firstLine || "").split("例：")[1] || ""
   }));
 }

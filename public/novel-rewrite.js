@@ -53,7 +53,8 @@ const elements = {
   generatedAudio: document.querySelector("#generatedAudio")
 };
 
-const DEFAULT_STYLE_IDS = ["conflict-first", "betrayal-caught", "secret-reveal", "forbidden-line"];
+const SMART_STYLE_ID = "smart-strongest";
+const DEFAULT_STYLE_IDS = [SMART_STYLE_ID];
 const state = {
   novelId: params.get("novel") || "",
   novel: readStashedNovel(),
@@ -380,9 +381,9 @@ function renderStyleOptions() {
     return;
   }
   elements.styleOptions.innerHTML = state.styles.map((style) => `
-    <div class="style-option${state.selectedStyles.includes(style.id) ? " is-on" : ""}" data-style-id="${escapeHtml(style.id)}">
+    <div class="style-option${style.recommended ? " is-recommended" : ""}${state.selectedStyles.includes(style.id) ? " is-on" : ""}" data-style-id="${escapeHtml(style.id)}">
       <input type="checkbox" value="${escapeHtml(style.id)}" ${state.selectedStyles.includes(style.id) ? "checked" : ""} />
-      <strong>${escapeHtml(style.label)}</strong>
+      <strong>${escapeHtml(style.label)}${style.recommended ? '<span class="style-badge">推荐</span>' : ""}</strong>
       <input type="number" min="1" max="5" value="${styleCopyCount(style.id)}" aria-label="${escapeHtml(style.label)} 条数" />
       <em>${escapeHtml(style.hook)}</em>
       ${style.example ? `<small>例：${escapeHtml(style.example)}</small>` : ""}
@@ -419,7 +420,7 @@ function toggleStyle(id, checked) {
 }
 
 function updateStyleCount() {
-  if (elements.styleCount) elements.styleCount.textContent = `已选 ${state.selectedStyles.length} / 共 ${state.styles.length || 4} 种`;
+  if (elements.styleCount) elements.styleCount.textContent = `已选 ${state.selectedStyles.length} / 共 ${state.styles.length || 5} 种`;
   updateGenerateButton();
 }
 
@@ -431,7 +432,8 @@ function selectedStyleIds() {
 }
 
 function styleCopyCount(id) {
-  const value = Math.floor(Number(state.styleCopies[id]) || 1);
+  const defaultCount = id === SMART_STYLE_ID ? 2 : 1;
+  const value = Math.floor(Number(Object.hasOwn(state.styleCopies, id) ? state.styleCopies[id] : defaultCount) || defaultCount);
   return Math.max(1, Math.min(5, value));
 }
 
@@ -462,7 +464,7 @@ function saveStyleCopies() {
 function updateGenerateButton() {
   const count = selectedStyleIds().length;
   if (!elements.generateVariantsButton) return;
-  elements.generateVariantsButton.textContent = count ? `生成 ${count} 个改版开头` : "生成改版开头";
+  elements.generateVariantsButton.textContent = count ? `生成 ${count} 个强钩子开头` : "生成强钩子开头";
   elements.generateVariantsButton.disabled = !count;
 }
 
@@ -481,14 +483,14 @@ function saveSelectedStyles() {
 
 async function generateVariants() {
   const styles = selectedStyleIds();
-  if (!styles.length) return setStatus("请先勾选至少 1 种风格，再生成改版开头。", "error");
+  if (!styles.length) return setStatus("请先勾选至少 1 种策略，再生成强钩子开头。", "error");
   const selected = (state.novel.scripts || []).find((item) => item.id === state.parentScriptId);
   const baseOpening = selected?.text || "";
   elements.generateVariantsButton.disabled = true;
-  elements.generateVariantsButton.textContent = `正在生成 ${styles.length} 个改版...`;
+  elements.generateVariantsButton.textContent = `正在筛选 ${styles.length} 个强钩子...`;
   elements.variantPanel.hidden = false;
-  if (elements.variantHeading) elements.variantHeading.textContent = `${styles.length} 个改版开头`;
-  elements.variantStatus.textContent = `正在生成 ${styles.length} 个改版开头，请稍候。`;
+  if (elements.variantHeading) elements.variantHeading.textContent = `${styles.length} 个强钩子开头`;
+  elements.variantStatus.textContent = `正在提取事实、生成候选并筛选 ${styles.length} 个强钩子，请稍候。`;
   try {
     let data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`, {
       method: "POST",
@@ -504,7 +506,7 @@ async function generateVariants() {
       data = await waitForCloudJob(data.jobId, {
         api,
         onProgress: (job) => {
-          elements.variantStatus.textContent = job.message || `工人机正在生成 ${styles.length} 个改版开头...`;
+          elements.variantStatus.textContent = job.message || `工人机正在筛选 ${styles.length} 个强钩子开头...`;
         }
       });
     }
@@ -521,7 +523,7 @@ async function generateVariants() {
       audioPath: ""
     }));
     renderVariants();
-    setStatus(`已用 ${openingModelLabel(model, reasoningEffort)} 生成 ${state.variants.length} 个开头，并带中文对照。勾选后可一键依次配音。`, "success");
+    setStatus(`已用 ${openingModelLabel(model, reasoningEffort)} 筛选出 ${state.variants.length} 个强钩子，并带中文对照。勾选后可一键依次配音。`, "success");
   } catch (error) {
     elements.variantStatus.textContent = error.message || "生成改版开头失败。";
     setStatus(error.message, "error");
@@ -537,9 +539,9 @@ function renderVariants() {
     return;
   }
   elements.variantPanel.hidden = false;
-  if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个不同风格改版`;
+  if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子结果`;
   const modelLabel = openingModelLabel(state.variants[0]?.model, state.variants[0]?.reasoningEffort);
-  elements.variantStatus.textContent = `已用 ${modelLabel} 按风格改写，并给出中文对照。勾选后点「一键生成勾选音频」，会按顺序配音。`;
+  elements.variantStatus.textContent = `已用 ${modelLabel} 按策略筛选，并给出中文对照。勾选后点「一键生成勾选音频」，会按顺序配音。`;
   elements.variantList.innerHTML = state.variants.map((variant) => `
     <article class="variant-card" data-variant-id="${escapeHtml(variant.id)}">
       <div class="variant-head">

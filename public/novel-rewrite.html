@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260818-3" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260819-1" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -53,7 +53,7 @@
             <div class="section-heading">
               <div><span>REWRITE</span><h2>写新开头版本</h2></div>
             </div>
-            <p id="baseHint" class="hint">对照用上面的免费章节。勾几种风格就生成几条；人工写开头时再出现文案框。</p>
+            <p id="baseHint" class="hint">对照用上面的免费章节。默认由 AI 先找最大爆点并筛选强钩子；也可以手动指定一种策略。</p>
             <div class="mode-picker" role="radiogroup" aria-label="开头写法">
               <label class="mode-option is-on">
                 <input name="rewriteMode" type="radio" value="ai" checked />
@@ -76,14 +76,14 @@
             <div id="aiRewritePanel">
               <div class="style-picker">
                 <div class="style-picker-head">
-                  <span>改版风格</span>
-                  <small id="styleCount">已选 3</small>
+                  <span>钩子策略</span>
+                  <small id="styleCount">已选 1 / 共 5 种</small>
                 </div>
-                <p class="hint">只留 4 种最能停滑的风格。勾选后右侧数字是这种再写几条。每张卡片都带第一句例句。</p>
+                <p class="hint">推荐“智能最强钩子”：先核对原文事实，再从 6 个候选中评分选优。默认输出 2 条；手动策略可控制具体方向。</p>
                 <div id="styleOptions" class="style-options"></div>
               </div>
               <div class="form-actions">
-                <button id="generateVariantsBtn" class="primary-action" type="button">生成 3 个改版开头</button>
+                <button id="generateVariantsBtn" class="primary-action" type="button">生成 2 个强钩子开头</button>
               </div>
               <section id="variantPanel" class="variant-panel" hidden>
                 <div class="section-heading">
@@ -176,6 +176,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260818-3" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260819-1" type="module"></script>
   </body>
 </html>
