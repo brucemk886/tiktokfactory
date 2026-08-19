@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "deploy": "wrangler d1 migrations apply factory-prod --remote --config wrangler.jsonc && wrangler deploy --config wrangler.jsonc",
-    "d1:create": "wrangler d1 create factory-prod --config wrangler.jsonc"
+    "cloudflare:check": "node scripts/check-origin-main.mjs",
+    "deploy": "npm run cloudflare:check && wrangler d1 migrations apply factory-prod --remote --config wrangler.jsonc && wrangler deploy --config wrangler.jsonc",
+    "d1:create": "wrangler d1 create factory-prod --config wrangler.jsonc",
+    "test": "node --test src/jobs.test.js scripts/check-origin-main.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.92.0"
