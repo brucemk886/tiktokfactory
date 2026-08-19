@@ -6,7 +6,6 @@ import { handleJournal } from "./journal.js";
 import { handleJobs, pruneFactoryJobs } from "./jobs.js";
 import { handleNovels } from "./novels.js";
 import { handleOfficial, loadGroupStore } from "./official.js";
-import { refreshOfficialArchive } from "./official-archive-store.js";
 import { collectFactoryStorageSample, handleSignalDeskIntegration } from "./factory-storage.js";
 import { persistOpsSnapshots, pruneOfficialOpsReports } from "./ops-report-store.js";
 import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
@@ -62,12 +61,6 @@ export default {
   },
 
   async scheduled(controller, env) {
-    try {
-      const meta = await refreshOfficialArchive(env, env.DB);
-      console.info(JSON.stringify({ event: "official-archive-prefetch", cron: controller.cron, ...meta }));
-    } catch (error) {
-      console.error(JSON.stringify({ event: "official-archive-prefetch-failed", cron: controller.cron, error: String(error?.message || error) }));
-    }
     try {
       const store = await loadGroupStore(env.DB);
       const persisted = await persistOpsSnapshots(env, env.DB, store);

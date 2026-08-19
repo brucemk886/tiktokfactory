@@ -109,7 +109,7 @@ export async function handleOfficial(request, env, url, session) {
       return json({
         ok: true,
         ...meta,
-        message: "已从主站归档写入工厂缓存。"
+        message: "已从主站补漏写入工厂缓存，不会删除已有账号。"
       });
     } catch (error) {
       return errorJson(error.message || "刷新官方归档缓存失败。", error.statusCode || 502);

@@ -40,7 +40,7 @@ function render() {
     ? "正在同步…"
     : data.latestDate
       ? `最近同步：${data.latestDate}`
-      : "尚无数据，请点击立即同步";
+      : "尚无数据，等待中台推送或点击立即同步补漏";
   renderOverview(data.overview || {});
   const rows = data.accounts || [];
   ui.$("#accountCount").textContent = `${rows.length} 个账号`;

@@ -11,25 +11,37 @@ const BATCH_SIZE = 40;
 const R2_CONCURRENCY = 8;
 
 export async function refreshOfficialArchive(env, db) {
-  const accounts = [];
   let cursor = "";
+  let pulled = 0;
   for (let page = 0; page < 20; page += 1) {
     const params = new URLSearchParams({ limit: "20", videosPerAccount: "100" });
     if (cursor) params.set("cursor", cursor);
     const data = await signalDesk(env, db, `/api/integrations/local-factory/archive?${params}`);
-    accounts.push(...(data.accounts || []));
+    const accounts = data.accounts || [];
+    if (accounts.length) {
+      await upsertOfficialAccounts(env, db, accounts);
+      pulled += accounts.length;
+    }
     if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
     cursor = data.nextCursor;
   }
-  if (!accounts.length) {
+  if (!pulled) {
+    const existing = await readArchiveMeta(db);
+    if (existing.accountCount) return { ...existing, pulled: 0 };
     await db.prepare(`
       INSERT INTO official_archive_meta (id, archive_date, archive_at, account_count, video_count, updated_at, error)
       VALUES ('latest', '', ?, 0, 0, ?, ?)
       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, error = excluded.error
     `).bind(Date.now(), Date.now(), "主站归档没有返回账号。").run();
-    return readArchiveMeta(db);
   }
-  await writeArchiveSnapshot(env, db, accounts);
+  return { ...(await readArchiveMeta(db)), pulled };
+}
+
+export async function applyOfficialArchivePush(env, db, payload = {}) {
+  const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+  const deleteAccountKeys = uniqueAccountKeys(payload.deleteAccountKeys);
+  if (accounts.length) await upsertOfficialAccounts(env, db, accounts);
+  if (deleteAccountKeys.length) await deleteOfficialAccounts(env, db, deleteAccountKeys);
   return readArchiveMeta(db);
 }
 
@@ -184,77 +196,63 @@ export async function saveAccountAssignments(db, assignments = {}) {
   }
 }
 
-async function writeArchiveSnapshot(env, db, accounts) {
+export async function upsertOfficialAccounts(env, db, accounts) {
   const stamp = Date.now();
-  const rows = accounts.map((account) => buildAccountRow(account, stamp)).filter((row) => row.account_key);
-  const keep = new Set(rows.map((row) => row.account_key));
-  let archiveDate = "";
-  let archiveAt = 0;
-  let videoCount = 0;
-  const upserts = [];
-  for (const row of rows) {
-    archiveDate = row.snapshot_date > archiveDate ? row.snapshot_date : archiveDate;
-    archiveAt = Math.max(archiveAt, row.synced_at);
-    videoCount += row.video_count;
-    upserts.push(db.prepare(`
-      INSERT INTO official_accounts_latest (
-        account_key, snapshot_date, synced_at, label, profile_json, error,
-        video_count, views, likes, comments, shares, reach
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(account_key) DO UPDATE SET
-        snapshot_date = excluded.snapshot_date,
-        synced_at = excluded.synced_at,
-        label = excluded.label,
-        profile_json = excluded.profile_json,
-        error = excluded.error,
-        video_count = excluded.video_count,
-        views = excluded.views,
-        likes = excluded.likes,
-        comments = excluded.comments,
-        shares = excluded.shares,
-        reach = excluded.reach
-    `).bind(
-      row.account_key,
-      row.snapshot_date,
-      row.synced_at,
-      row.label,
-      row.profile_json,
-      row.error,
-      row.video_count,
-      row.views,
-      row.likes,
-      row.comments,
-      row.shares,
-      row.reach
-    ));
-  }
+  const rows = (accounts || []).map((account) => buildAccountRow(account, stamp)).filter((row) => row.account_key);
+  if (!rows.length) return readArchiveMeta(db);
+  const upserts = rows.map((row) => db.prepare(`
+    INSERT INTO official_accounts_latest (
+      account_key, snapshot_date, synced_at, label, profile_json, error,
+      video_count, views, likes, comments, shares, reach
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_key) DO UPDATE SET
+      snapshot_date = excluded.snapshot_date,
+      synced_at = excluded.synced_at,
+      label = excluded.label,
+      profile_json = excluded.profile_json,
+      error = excluded.error,
+      video_count = excluded.video_count,
+      views = excluded.views,
+      likes = excluded.likes,
+      comments = excluded.comments,
+      shares = excluded.shares,
+      reach = excluded.reach
+  `).bind(
+    row.account_key,
+    row.snapshot_date,
+    row.synced_at,
+    row.label,
+    row.profile_json,
+    row.error,
+    row.video_count,
+    row.views,
+    row.likes,
+    row.comments,
+    row.shares,
+    row.reach
+  ));
   for (const slice of chunk(upserts, BATCH_SIZE)) {
     await db.batch(slice);
   }
   for (const slice of chunk(rows, R2_CONCURRENCY)) {
     await Promise.all(slice.map((row) => writeAccountVideos(env, row.account_key, row.videos, row)));
   }
-  const existing = (await db.prepare("SELECT account_key FROM official_accounts_latest").all()).results || [];
-  const stale = existing.map((row) => row.account_key).filter((key) => !keep.has(key));
-  for (const slice of chunk(stale, BATCH_SIZE)) {
+  await deleteLeftoverVideos(db, rows.map((row) => row.account_key));
+  return refreshArchiveMeta(db, stamp);
+}
+
+export async function deleteOfficialAccounts(env, db, accountKeys) {
+  const keys = uniqueAccountKeys(accountKeys);
+  if (!keys.length) return readArchiveMeta(db);
+  for (const slice of chunk(keys, BATCH_SIZE)) {
     await db.batch(slice.flatMap((accountKey) => [
       db.prepare("DELETE FROM official_accounts_latest WHERE account_key = ?").bind(accountKey),
       db.prepare("DELETE FROM official_account_assignments WHERE account_key = ?").bind(accountKey),
     ]));
     await Promise.all(slice.map((accountKey) => deleteAccountVideos(env, accountKey)));
   }
-  await db.prepare("DELETE FROM official_videos_latest").run();
-  await db.prepare(`
-    INSERT INTO official_archive_meta (id, archive_date, archive_at, account_count, video_count, updated_at, error)
-    VALUES ('latest', ?, ?, ?, ?, ?, '')
-    ON CONFLICT(id) DO UPDATE SET
-      archive_date = excluded.archive_date,
-      archive_at = excluded.archive_at,
-      account_count = excluded.account_count,
-      video_count = excluded.video_count,
-      updated_at = excluded.updated_at,
-      error = ''
-  `).bind(archiveDate, archiveAt, rows.length, videoCount, stamp).run();
+  await deleteLeftoverVideos(db, keys);
+  return refreshArchiveMeta(db);
 }
 
 async function writeAccountVideos(env, accountKey, videos, extra = {}) {
@@ -278,6 +276,46 @@ async function readAccountVideos(env, accountKey) {
 async function deleteAccountVideos(env, accountKey) {
   if (!env?.ARCHIVE) return;
   await env.ARCHIVE.delete(accountVideoObjectKey(accountKey)).catch(() => {});
+}
+
+async function refreshArchiveMeta(db, stamp = Date.now()) {
+  const row = await db.prepare(`
+    SELECT COUNT(*) AS account_count,
+      COALESCE(SUM(video_count), 0) AS video_count,
+      COALESCE(MAX(snapshot_date), '') AS archive_date,
+      COALESCE(MAX(synced_at), 0) AS archive_at
+    FROM official_accounts_latest
+  `).first();
+  await db.prepare(`
+    INSERT INTO official_archive_meta (id, archive_date, archive_at, account_count, video_count, updated_at, error)
+    VALUES ('latest', ?, ?, ?, ?, ?, '')
+    ON CONFLICT(id) DO UPDATE SET
+      archive_date = excluded.archive_date,
+      archive_at = excluded.archive_at,
+      account_count = excluded.account_count,
+      video_count = excluded.video_count,
+      updated_at = excluded.updated_at,
+      error = ''
+  `).bind(
+    String(row?.archive_date || ""),
+    Number(row?.archive_at || 0),
+    Number(row?.account_count || 0),
+    Number(row?.video_count || 0),
+    stamp
+  ).run();
+  return readArchiveMeta(db);
+}
+
+async function deleteLeftoverVideos(db, accountKeys) {
+  const keys = uniqueAccountKeys(accountKeys);
+  for (const slice of chunk(keys, BATCH_SIZE)) {
+    const placeholders = slice.map(() => "?").join(", ");
+    await db.prepare(`DELETE FROM official_videos_latest WHERE account_key IN (${placeholders})`).bind(...slice).run();
+  }
+}
+
+function uniqueAccountKeys(accountKeys = []) {
+  return [...new Set((Array.isArray(accountKeys) ? accountKeys : []).map((key) => String(key || "").trim()).filter(Boolean))];
 }
 
 async function loadVideosFromD1(db, accountKeys, videosPerAccount) {
