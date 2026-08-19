@@ -15,13 +15,21 @@ import {
   updateProject,
   rememberAccountAliases,
   accountsFromArchiveRows,
+  archiveAccountKeysForScope,
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
 import { parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
 import { summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { refreshOfficialArchive } from "./official-archive-store.js";
+import {
+  accountsFromLatestArchive,
+  listLatestArchiveAccounts,
+  loadAccountAssignments,
+  loadVideosForAccounts,
+  refreshOfficialArchive,
+  saveAccountAssignments,
+} from "./official-archive-store.js";
 import {
   computeLiveReport,
   listOpsDates,
@@ -70,7 +78,7 @@ export async function handleOfficial(request, env, url, session) {
   }
 
   if (pathname.startsWith("/api/official-tiktok/projects") || pathname.startsWith("/api/official-tiktok/account-groups") || pathname.startsWith("/api/official-tiktok/groups/") || pathname === "/api/official-tiktok/ops-report" || pathname === "/api/official-tiktok/ops-report-history") {
-    return handleAccountGroups(request, db, url, session);
+    return handleAccountGroups(request, env, db, url, session);
   }
 
   if (method === "GET" && pathname === "/api/official-tiktok/publish-accounts") {
@@ -153,7 +161,7 @@ export async function assertOfficialPublishAccess(env, user, payload = {}) {
   return scoped;
 }
 
-async function handleAccountGroups(request, db, url, session) {
+async function handleAccountGroups(request, env, db, url, session) {
   const method = request.method;
   const pathname = url.pathname;
   const store = await loadGroupStore(db);
@@ -192,10 +200,10 @@ async function handleAccountGroups(request, db, url, session) {
     }
     const reportMatch = pathname.match(/^\/api\/official-tiktok\/groups\/([^/]+)\/report$/);
     if (method === "GET" && reportMatch) {
-      return json(await buildGroupReport(db, store, decodeURIComponent(reportMatch[1]), url.searchParams.get("period") || "today"));
+      return json(await buildGroupReport(env, db, store, decodeURIComponent(reportMatch[1]), url.searchParams.get("period") || "today"));
     }
     if (method === "GET" && pathname === "/api/official-tiktok/ops-report") {
-      return json(await buildModuleReport(db, store, url.searchParams, session?.user));
+      return json(await buildModuleReport(env, db, store, url.searchParams, session?.user));
     }
     if (method === "GET" && pathname === "/api/official-tiktok/ops-report-history") {
       return json(await listModuleReportHistory(db, store, url.searchParams, session?.user));
@@ -210,16 +218,8 @@ async function officialDashboard(env, db, searchParams, user) {
   const search = String(searchParams.get("search") || "").trim().toLowerCase();
   const accountFilter = String(searchParams.get("account") || "").trim();
   const moduleKey = String(searchParams.get("module") || "").trim();
-  const accounts = [];
-  let cursor = "";
-  for (let page = 0; page < 20; page += 1) {
-    const params = new URLSearchParams({ limit: "20", videosPerAccount: "20" });
-    if (cursor) params.set("cursor", cursor);
-    const data = await signalDesk(env, db, `/api/integrations/local-factory/archive?${params}`);
-    accounts.push(...(data.accounts || []));
-    if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
-    cursor = data.nextCursor;
-  }
+  const accountRows = await listLatestArchiveAccounts(db);
+  const accounts = accountsFromLatestArchive(accountRows);
   const store = await loadGroupStore(db);
   const project = moduleKey ? findProjectForModule(store, moduleKey) : null;
   const scoped = moduleKey
@@ -233,8 +233,10 @@ async function officialDashboard(env, db, searchParams, user) {
     return true;
   });
   const selectedAccount = accountFilter || rows[0]?.schema || "";
-  const selected = scoped.find((item) => item.schema === selectedAccount) || scoped[0];
-  const videos = (selected?.videos || []).map((video) => ({
+  const selectedVideos = selectedAccount
+    ? (await loadVideosForAccounts(env, db, [selectedAccount], 20)).get(selectedAccount) || []
+    : [];
+  const videos = selectedVideos.map((video) => ({
     ...video,
     id: String(video.id || video.videoId || ""),
     account: selectedAccount,
@@ -276,7 +278,6 @@ async function officialDashboard(env, db, searchParams, user) {
 
 function archiveAccountRow(account) {
   const profile = account.profile || {};
-  const videos = Array.isArray(account.videos) ? account.videos : [];
   return {
     schema: account.schema,
     label: account.label || (profile.username ? `@${profile.username}` : account.schema),
@@ -284,12 +285,12 @@ function archiveAccountRow(account) {
     followers: Number(profile.followers || profile.followerCount || 0),
     following: Number(profile.following || 0),
     totalLikes: Number(profile.hearts || profile.likes || 0),
-    videoCount: videos.length || Number(account.syncedVideoCount || 0),
-    views: videos.reduce((sum, item) => sum + Number(item.views || item.playCount || 0), 0),
-    likes: videos.reduce((sum, item) => sum + Number(item.likes || item.diggCount || 0), 0),
-    comments: videos.reduce((sum, item) => sum + Number(item.comments || item.commentCount || 0), 0),
-    shares: videos.reduce((sum, item) => sum + Number(item.shares || item.shareCount || 0), 0),
-    reach: videos.reduce((sum, item) => sum + Number(item.reach || 0), 0),
+    videoCount: Number(account.videoCount || account.video_count || 0),
+    views: Number(account.views || 0),
+    likes: Number(account.likes || 0),
+    comments: Number(account.comments || 0),
+    shares: Number(account.shares || 0),
+    reach: Number(account.reach || 0),
     syncedAt: Number(account.latestSyncAt || account.archiveFetchedAt || 0),
     snapshotDate: account.snapshotDate || "",
     profileUrl: profile.profileUrl || "",
@@ -329,17 +330,23 @@ async function publicOfficialSettings(db, env) {
 
 export async function loadGroupStore(db) {
   const store = ensureModuleProjects(await kvGet(db, "official-account-groups", {}));
+  const assignments = await loadAccountAssignments(db);
+  if (Object.keys(assignments).length) store.assignments = assignments;
+  else if (store.assignments && Object.keys(store.assignments).length) {
+    await saveAccountAssignments(db, store.assignments);
+  }
   const { results } = await db.prepare("SELECT account_key, label, profile_json FROM official_accounts_latest").all();
   return rememberAccountAliases(store, accountsFromArchiveRows(results || []));
 }
 
 async function saveGroupStore(db, store) {
   const next = normalizeStore(store);
-  await kvSet(db, "official-account-groups", next);
-  return publicState(next);
+  await saveAccountAssignments(db, next.assignments);
+  await kvSet(db, "official-account-groups", { ...next, assignments: {} });
+  return publicState({ ...next, assignments: next.assignments });
 }
 
-async function buildModuleReport(db, store, searchParams, user) {
+async function buildModuleReport(env, db, store, searchParams, user) {
   const moduleKey = String(searchParams.get("module") || "").trim();
   let period = searchParams.get("period") === "week" ? "week" : searchParams.get("period") === "range" ? "range" : "today";
   let groupId = String(searchParams.get("group") || "").trim();
@@ -373,9 +380,17 @@ async function buildModuleReport(db, store, searchParams, user) {
   const queryFrom = fromKey || currentFrom;
   const queryTo = toKey || currentTo;
   if (period !== "week" && queryFrom !== queryTo) period = "range";
-  const bundle = await loadArchiveBundle(db);
+  const accountRows = await listLatestArchiveAccounts(db);
+  const bundle = await loadArchiveBundle(env, db, archiveAccountKeysForScope(store, accountRows, {
+    groupId,
+    projectId: liveProject.id,
+    groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
+  }));
   try {
-    await persistProjectOpsSnapshots(db, store, liveProject, now, bundle);
+    await persistProjectOpsSnapshots(env, db, store, liveProject, now, bundle, {
+      groupId,
+      groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
+    });
   } catch (error) {
     console.error(JSON.stringify({ event: "ops-report-persist-failed", module: liveProject.moduleKey, error: String(error?.message || error) }));
   }
@@ -507,7 +522,7 @@ function emptySnapshotReport(project, period, dateKey, groupId, groups, toKey = 
   };
 }
 
-async function buildGroupReport(db, store, groupId, period) {
+async function buildGroupReport(env, db, store, groupId, period) {
   const state = publicState(store);
   const group = state.groups.find((item) => item.id === groupId);
   if (!group) {
@@ -519,7 +534,8 @@ async function buildGroupReport(db, store, groupId, period) {
   if (!project?.reportEnabled) {
     return { enabled: false, group, project, period };
   }
-  const bundle = await loadArchiveBundle(db);
+  const accountRows = await listLatestArchiveAccounts(db);
+  const bundle = await loadArchiveBundle(env, db, archiveAccountKeysForScope(store, accountRows, { groupId }));
   return computeLiveReport({
     store,
     project,

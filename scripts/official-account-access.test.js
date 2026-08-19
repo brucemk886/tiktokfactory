@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scopeOfficialAccess, userAllowedGroupIds } from "./official-account-group-store.js";
+import { archiveAccountKeysForScope, scopeOfficialAccess, userAllowedGroupIds } from "./official-account-group-store.js";
 
 const store = {
   projects: [
@@ -45,6 +45,16 @@ test("operator with no groups sees nothing", () => {
   const scoped = scopeOfficialAccess({ accounts }, store, { role: "operator", allowedAccountGroups: [] }, "mid-video");
   assert.deepEqual(scoped.groups, []);
   assert.deepEqual(scoped.accounts, []);
+});
+
+test("report scope only returns the current group's archive keys", () => {
+  const rows = [
+    { account_key: "acc-mid-a", label: "@mida", profile_json: "{}" },
+    { account_key: "acc-mid-b", label: "@midb", profile_json: "{}" },
+    { account_key: "acc-psy", label: "@psy", profile_json: "{}" },
+  ];
+  assert.deepEqual(archiveAccountKeysForScope(store, rows, { groupId: "g-mid-a" }), ["acc-mid-a"]);
+  assert.deepEqual(archiveAccountKeysForScope(store, rows, { projectId: "proj-mid" }).sort(), ["acc-mid-a", "acc-mid-b"]);
 });
 
 test("group accountCount counts one account even when aliases are stored twice", () => {

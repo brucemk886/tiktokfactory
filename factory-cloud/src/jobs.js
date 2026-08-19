@@ -518,6 +518,14 @@ function compactOpeningVariant(value, index) {
   };
 }
 
+export async function pruneFactoryJobs(db, keepDays = 30) {
+  const cutoff = Date.now() - Math.max(1, Number(keepDays) || 30) * 86_400_000;
+  await db.prepare(`
+    DELETE FROM factory_jobs
+    WHERE status IN ('done', 'failed', 'cancelled') AND updated_at < ?
+  `).bind(cutoff).run();
+}
+
 function compactAutoTasks(tasks) {
   return (Array.isArray(tasks) ? tasks : []).slice(0, 200).map((task) => ({
     ...task,

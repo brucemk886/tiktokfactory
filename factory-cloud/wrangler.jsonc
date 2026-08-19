@@ -26,6 +26,12 @@
       "migrations_dir": "./migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "ARCHIVE",
+      "bucket_name": "factory-archive"
+    }
+  ],
   "triggers": {
     "crons": ["0 0 * * *", "0 16 * * *"]
   },

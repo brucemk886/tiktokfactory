@@ -1,5 +1,8 @@
-import { publicState } from "../../scripts/official-account-group-store.js";
-import { mapArchiveVideoRow } from "../../scripts/official-archive-signals.js";
+import { archiveAccountKeysForScope, publicState } from "../../scripts/official-account-group-store.js";
+import {
+  listLatestArchiveAccounts,
+  loadVideosForAccounts,
+} from "./official-archive-store.js";
 import {
   computeGroupReport,
   shanghaiDateKey,
@@ -11,34 +14,44 @@ import {
 const PROJECT_GROUP_ID = "";
 const PROJECT_GROUP_NAME = "全部项目";
 
-export async function loadArchiveBundle(db) {
-  const accountRows = (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
-  const videosByAccount = new Map();
-  for (const row of accountRows) {
-    const rows = (await db.prepare(
-      "SELECT * FROM official_videos_latest WHERE account_key = ? ORDER BY create_time DESC, video_id LIMIT 80"
-    ).bind(row.account_key).all()).results || [];
-    videosByAccount.set(row.account_key, rows.map(mapArchiveVideoRow));
-  }
-  return { accountRows, videosByAccount };
+export async function loadArchiveBundle(env, db, accountKeys = null) {
+  const accountRows = await listLatestArchiveAccounts(db);
+  const keys = Array.isArray(accountKeys)
+    ? accountKeys
+    : accountRows.map((row) => row.account_key);
+  const videosByAccount = await loadVideosForAccounts(env, db, keys, 80);
+  return {
+    accountRows: Array.isArray(accountKeys)
+      ? accountRows.filter((row) => keys.includes(row.account_key))
+      : accountRows,
+    videosByAccount,
+  };
 }
 
-export async function persistOpsSnapshots(db, store, now = Date.now(), bundle = null) {
-  const archive = bundle || await loadArchiveBundle(db);
+export async function persistOpsSnapshots(env, db, store, now = Date.now(), bundle = null) {
   const state = publicState(store);
+  const projects = state.projects.filter((item) => item.reportEnabled && item.moduleKey);
+  if (!projects.length) return { count: 0 };
+  const accountRows = bundle ? bundle.accountRows : await listLatestArchiveAccounts(db);
+  const keys = [...new Set(projects.flatMap((project) => archiveAccountKeysForScope(store, accountRows, { projectId: project.id })))];
+  const archive = bundle || await loadArchiveBundle(env, db, keys);
   let count = 0;
-  for (const project of state.projects.filter((item) => item.reportEnabled && item.moduleKey)) {
-    count += (await persistProjectOpsSnapshots(db, store, project, now, archive)).length;
+  for (const project of projects) {
+    count += (await persistProjectOpsSnapshots(env, db, store, project, now, archive)).length;
   }
   return { count };
 }
 
-export async function persistProjectOpsSnapshots(db, store, project, now = Date.now(), bundle = null) {
+export async function persistProjectOpsSnapshots(env, db, store, project, now = Date.now(), bundle = null, scope = {}) {
   if (!project?.id || !project.reportEnabled || !project.moduleKey) return [];
-  const archive = bundle || await loadArchiveBundle(db);
+  const archive = bundle || await loadArchiveBundle(env, db, archiveAccountKeysForScope(store, await listLatestArchiveAccounts(db), {
+    groupId: scope.groupId || "",
+    projectId: project.id,
+    groupIds: scope.groupIds || null,
+  }));
   const rows = [];
   for (const timestamp of snapshotTimestamps(now)) {
-    rows.push(...buildProjectSnapshotRows(store, project, archive, timestamp));
+    rows.push(...buildProjectSnapshotRows(store, project, archive, timestamp, scope));
   }
   await upsertSnapshots(db, rows);
   return rows;
@@ -108,19 +121,26 @@ function snapshotTimestamps(now) {
   return timestamps;
 }
 
-function buildProjectSnapshotRows(store, project, bundle, now) {
+function buildProjectSnapshotRows(store, project, bundle, now, scope = {}) {
   const state = publicState(store);
-  const groups = state.groups.filter((item) => item.projectId === project.id);
+  const groups = state.groups.filter((item) => {
+    if (item.projectId !== project.id) return false;
+    if (scope.groupId) return item.id === scope.groupId;
+    if (Array.isArray(scope.groupIds)) return scope.groupIds.includes(item.id);
+    return true;
+  });
   const rows = [];
   for (const period of ["today", "week"]) {
-    rows.push(snapshotRow({
-      moduleKey: project.moduleKey,
-      project,
-      group: { id: PROJECT_GROUP_ID, name: PROJECT_GROUP_NAME },
-      period,
-      report: computeLiveReport({ store, project, groupId: "", period, now, bundle }),
-      now,
-    }));
+    if (!scope.groupId && !scope.groupIds) {
+      rows.push(snapshotRow({
+        moduleKey: project.moduleKey,
+        project,
+        group: { id: PROJECT_GROUP_ID, name: PROJECT_GROUP_NAME },
+        period,
+        report: computeLiveReport({ store, project, groupId: "", period, now, bundle }),
+        now,
+      }));
+    }
     for (const group of groups) {
       rows.push(snapshotRow({
         moduleKey: project.moduleKey,
@@ -173,6 +193,11 @@ function decorateReport(report, { moduleKey, project, group, period, now }) {
     groupId: String(group.id || ""),
     groupName: group.name || PROJECT_GROUP_NAME,
   };
+}
+
+export async function pruneOfficialOpsReports(db, keepDays = 90) {
+  const cutoff = shanghaiDateKey(Date.now() - Math.max(1, keepDays) * 86_400_000);
+  await db.prepare("DELETE FROM official_ops_reports WHERE date_key < ?").bind(cutoff).run();
 }
 
 async function upsertSnapshots(db, rows) {

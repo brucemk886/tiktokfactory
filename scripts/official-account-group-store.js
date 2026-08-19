@@ -273,6 +273,18 @@ export function accountMatchesProject(account, store, projectId) {
   return groupIds.some((groupId) => accountMatchesGroup(account, next, groupId));
 }
 
+export function archiveAccountKeysForScope(store, accountRows = [], { groupId = "", projectId = "", groupIds = null } = {}) {
+  return accountsFromArchiveRows(accountRows)
+    .filter((account) => {
+      if (groupId) return accountMatchesGroup(account, store, groupId);
+      if (Array.isArray(groupIds)) return accountMatchesAnyGroup(account, store, groupIds);
+      if (projectId) return accountMatchesProject(account, store, projectId);
+      return true;
+    })
+    .map((account) => account.accountKey || account.schema)
+    .filter(Boolean);
+}
+
 export function userAllowedGroupIds(user) {
   if (!user || user.role === "admin") return null;
   return new Set((Array.isArray(user.allowedAccountGroups) ? user.allowedAccountGroups : []).map((id) => safeId(id)).filter(Boolean));

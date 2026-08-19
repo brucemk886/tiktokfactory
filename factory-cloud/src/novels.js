@@ -6,7 +6,9 @@ import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { insertNovels, listNovelSummaries, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
-import { getOfficialOperationSignals, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
+import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
+import { loadGroupStore } from "./official.js";
+import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 
 const PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
 const DEFAULT_STRATEGY = {
@@ -143,8 +145,16 @@ export async function handleNovels(request, env, url, session) {
       if (!meta.accountCount) {
         meta = await refreshOfficialArchive(env, db);
       }
+      const [groupStore, accountRows] = await Promise.all([
+        loadGroupStore(db),
+        listLatestArchiveAccounts(db),
+      ]);
       const [signals, store, records] = await Promise.all([
-        getOfficialOperationSignals(db, { days, videosPerAccount: 100 }),
+        getOfficialOperationSignals(env, db, {
+          days,
+          videosPerAccount: 100,
+          accountKeys: archiveAccountKeysForScope(groupStore, accountRows, { projectId: "proj-novel" }),
+        }),
         readStore(db, { includeSource: false }),
         kvGet(db, "official-publish-records", []),
       ]);
