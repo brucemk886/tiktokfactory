@@ -7,6 +7,7 @@ import { handleJobs, pruneFactoryJobs } from "./jobs.js";
 import { handleNovels } from "./novels.js";
 import { handleOfficial, loadGroupStore } from "./official.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
+import { collectFactoryStorageSample, handleSignalDeskIntegration } from "./factory-storage.js";
 import { persistOpsSnapshots, pruneOfficialOpsReports } from "./ops-report-store.js";
 import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
 import { canAccessPath, homePathForUser } from "./sidebar.js";
@@ -21,6 +22,10 @@ export default {
 
       const authResponse = await handleAuth(request, env, url);
       if (authResponse) return authResponse;
+
+      if (url.pathname.startsWith("/api/integrations/signal-desk/")) {
+        return handleSignalDeskIntegration(request, env, url);
+      }
 
       if (url.pathname.startsWith("/api/")) {
         const session = await getSession(request, env.DB);
@@ -71,6 +76,11 @@ export default {
       console.info(JSON.stringify({ event: "ops-report-persist", cron: controller.cron, ...persisted }));
     } catch (error) {
       console.error(JSON.stringify({ event: "ops-report-persist-failed", cron: controller.cron, error: String(error?.message || error) }));
+    }
+    try {
+      await collectFactoryStorageSample(env, env.DB);
+    } catch (error) {
+      console.error(JSON.stringify({ event: "factory-storage-sample-failed", cron: controller.cron, error: String(error?.message || error) }));
     }
   }
 };
