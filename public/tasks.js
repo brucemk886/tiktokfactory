@@ -73,13 +73,6 @@ loadNovels();
 initializePublishProvider();
 updatePublishPlanHint();
 loadTasks();
-$("#videoPreviewClose")?.addEventListener("click", closeVideoPreview);
-$("#videoPreviewOverlay")?.addEventListener("click", (event) => {
-  if (event.target === event.currentTarget) closeVideoPreview();
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("#videoPreviewOverlay")?.hidden) closeVideoPreview();
-});
 window.addEventListener("pagehide", stopTaskPolling);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) stopTaskPolling();
@@ -268,74 +261,10 @@ function renderTasks(tasks, allTasks = tasks) {
       <div class="task-progress"><div style="width:${Math.max(0, Math.min(100, percent))}%"></div></div>
       <p>${escapeHtml(taskMessage)}</p>
       <div class="task-counts">${Number(task.failedVideoCount) > 0 ? `<span>\u751f\u6210\u8df3\u8fc7 ${Number(task.failedVideoCount)} \u6761</span>` : ""}<span>预计 ${expectedTaskVideos(task)} 条</span><span>生成 ${task.generatedVideos?.length || 0} 条</span><span>${task.publish?.provider === "official" ? "已提交中台" : "发布成功"} ${task.publishSummary?.submitted || 0}</span><span>处理中 ${task.publishSummary?.pending || 0}</span><span>安全跳过 ${task.publishSummary?.skipped || 0}</span><span>\u5f85\u6838\u5b9e ${task.publishSummary?.needsCheck || 0}</span><span>失败 ${task.publishSummary?.failed || 0}</span></div>
-      ${scheduleHtml}${renderTaskPreviews(task)}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
+      ${scheduleHtml}${task.error ? `<div class="task-error">${escapeHtml(task.error)}</div>` : ""}${failureHtml}
     </article>`;
   }).join("");
   taskList.querySelectorAll("button[data-action]").forEach((button) => button.addEventListener("click", handleTaskAction));
-  taskList.querySelectorAll("[data-preview-url]").forEach((button) => {
-    button.addEventListener("click", () => openVideoPreview(button.dataset.previewUrl, button.dataset.previewTitle));
-  });
-}
-
-function previewVideoUrl(video) {
-  const fileName = String(video?.fileName || "").trim();
-  if (fileName) return `/outputs/${encodeURIComponent(fileName)}`;
-  const url = String(video?.videoUrl || "");
-  return url.startsWith("/outputs/") ? url : "";
-}
-
-function renderTaskPreviews(task) {
-  const videos = (task.generatedVideos || []).filter((item) => item.videoUrl || item.fileName);
-  if (!videos.length) return "";
-  return `<div class="task-previews">
-    <strong>混剪预览 ${videos.length} 条</strong>
-    <div class="task-preview-grid">
-      ${videos.map((video, index) => {
-        const url = previewVideoUrl(video);
-        const title = stripPreviewName(video.audioName || video.fileName || `视频 ${index + 1}`);
-        const badge = [video.novelPromotionCode, video.novelPlatform].filter(Boolean).join(" · ");
-        if (!url || video.outputDeletedAt) {
-          return `<div class="task-preview-card is-gone">
-            <span class="task-preview-thumb"><i>已清理</i></span>
-            <span>${escapeHtml(title)}${badge ? `<small>${escapeHtml(badge)}</small>` : ""}</span>
-          </div>`;
-        }
-        return `<button type="button" class="task-preview-card" data-preview-url="${escapeAttr(url)}" data-preview-title="${escapeAttr(title)}">
-          <span class="task-preview-thumb"><i>播放</i></span>
-          <span>${escapeHtml(title)}${badge ? `<small>${escapeHtml(badge)}</small>` : ""}</span>
-        </button>`;
-      }).join("")}
-    </div>
-  </div>`;
-}
-
-function stripPreviewName(value) {
-  return String(value || "").replace(/\.[a-z0-9]+$/i, "") || "混剪视频";
-}
-
-function openVideoPreview(url, title) {
-  const overlay = $("#videoPreviewOverlay");
-  const player = $("#videoPreviewPlayer");
-  const heading = $("#videoPreviewTitle");
-  if (!overlay || !player || !url) return;
-  if (heading) heading.textContent = title || "混剪预览";
-  if (player.src !== new URL(url, location.href).href) {
-    player.src = url;
-    player.load();
-  }
-  overlay.hidden = false;
-  player.play().catch(() => {});
-}
-
-function closeVideoPreview() {
-  const overlay = $("#videoPreviewOverlay");
-  const player = $("#videoPreviewPlayer");
-  if (player) {
-    player.pause();
-    player.removeAttribute("src");
-    player.load();
-  }
-  if (overlay) overlay.hidden = true;
 }
 
 function createTaskRenderKey(tasks, allTasks = []) {
