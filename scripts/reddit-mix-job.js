@@ -16,6 +16,7 @@ import {
 } from "./asset-library.js";
 import { findAudioInLibrary, listAudioLibraryFiles } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
+import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
 import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
 const payloadPath = process.argv[2];
@@ -78,6 +79,7 @@ async function main() {
   const results = [];
   const audioContexts = new Map();
   const skippedAudios = new Set();
+  const usedParkourIds = new Set();
   const warnings = [];
   let done = 0;
   let candidateIndex = 0;
@@ -144,19 +146,40 @@ async function main() {
     patchJob({
       status: "running",
       percent: progress(done, total, 12),
-      message: `抽取素材组：${group.name || group.id}，${path.basename(audioPath)} 第 ${variant} 轮`,
+      message: isParkourVideoTemplate(payload)
+        ? `套用跑酷成片：${group.name || group.id}，${path.basename(audioPath)} 第 ${variant} 轮`
+        : `抽取素材组：${group.name || group.id}，${path.basename(audioPath)} 第 ${variant} 轮`,
       progressCurrent: Math.min(total, done + 1),
       progressTotal: total,
       updatedAt: Date.now()
     });
 
-    const segmentSeconds = resolveSegmentSeconds(payload, audioDuration);
     const usage = readUsage(root);
-    const clips = pickClips({ videoMeta, audioDuration, segmentSeconds, usage });
-    const concatVideo = path.join(runDir, "mixed-video.mp4");
     const outputPath = path.join(defaultOutputDir, `${id}.mp4`);
-
-    renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality: payload.quality || "fast", dedup, overlayFiles, warnings });
+    let clips;
+    let concatVideo;
+    if (isParkourVideoTemplate(payload)) {
+      const bed = renderParkourBed({
+        videoMeta,
+        audioDuration,
+        usage,
+        usedIds: usedParkourIds,
+        runDir,
+        width,
+        height,
+        fps,
+        quality: payload.quality || "fast"
+      });
+      clips = bed.clips;
+      concatVideo = bed.concatVideo;
+      if (clips[0]?.assetId) usedParkourIds.add(clips[0].assetId);
+      if (clips[0]?.file) usedParkourIds.add(clips[0].file);
+    } else {
+      const segmentSeconds = resolveSegmentSeconds(payload, audioDuration);
+      clips = pickClips({ videoMeta, audioDuration, segmentSeconds, usage });
+      concatVideo = path.join(runDir, "mixed-video.mp4");
+      renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality: payload.quality || "fast", dedup, overlayFiles, warnings });
+    }
 
     patchJob({
       status: "running",
@@ -452,6 +475,29 @@ function resolveSegmentSeconds(payload, audioDuration) {
     return clampNumber(audioDuration * ratio / 100, 2, 18, 6);
   }
   return clampNumber(payload.segmentSeconds, 2, 18, 5);
+}
+
+function renderParkourBed({ videoMeta, audioDuration, usage, usedIds, runDir, width, height, fps, quality }) {
+  const source = pickUnusedParkourSource(videoMeta, { usedIds, usage });
+  if (!source) throw new Error("跑酷视频都已抽过，没有未使用的成片了。");
+  const concatVideo = path.join(runDir, "parkour-bed.mp4");
+  const preset = quality === "quality" ? "medium" : "veryfast";
+  const crf = quality === "quality" ? "20" : "24";
+  const filter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=${fps},format=yuv420p`;
+  const args = ["-y", "-hide_banner"];
+  if (parkourNeedsLoop(source.duration, audioDuration)) args.push("-stream_loop", "-1");
+  args.push("-i", source.file, "-t", String(audioDuration), "-vf", filter, "-an", "-c:v", "libx264", "-preset", preset, "-crf", crf, concatVideo);
+  run("ffmpeg", args);
+  return {
+    concatVideo,
+    clips: [{
+      assetId: source.id,
+      file: source.file,
+      fileName: source.fileName || path.basename(source.file),
+      start: 0,
+      duration: audioDuration
+    }]
+  };
 }
 
 function pickClips({ videoMeta, audioDuration, segmentSeconds, usage }) {

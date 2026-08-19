@@ -49,8 +49,8 @@
   "videoCodec": "libx264",
   "psychologyVideoCodec": "libx264",
   "audioCodec": "aac",
-  "workDir": "D:/localcodex/work",
-  "outputDir": "D:/localcodex/outputs",
+  "workDir": "D:/localfactory-data/work",
+  "outputDir": "D:/localfactory-data/outputs",
   "assetLibraryRoot": "F:/视频素材",
   "audioLibraryRoot": "F:/音频目录"
 }

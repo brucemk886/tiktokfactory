@@ -5,7 +5,7 @@
 ## 快速开始
 
 ```powershell
-cd C:\Users\111\Documents\Codex\2026-06-30\z
+cd D:\cursor\localfactory
 npm.cmd run start
 ```
 

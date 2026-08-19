@@ -10,6 +10,7 @@ const publishChannel = location.pathname === "/geelark-tasks" ? "geelark" : "off
 let phones = [];
 let officialTikTokAccounts = [];
 let novels = [];
+let novelPlatformFilter = "all";
 let currentUserRole = "member";
 let assetGroups = [];
 let audioGroups = [];
@@ -42,6 +43,7 @@ $("#addCaptionPresetBtn")?.addEventListener("click", addCaptionPreset);
 $("#updateCaptionPresetBtn")?.addEventListener("click", updateCaptionPreset);
 $("#deleteCaptionPresetBtn")?.addEventListener("click", deleteCaptionPreset);
 $("#assetGroupSelect").addEventListener("change", updateVideoSourceVisibility);
+$("#videoTemplateSelect")?.addEventListener("change", updateVideoSourceVisibility);
 $("#refreshSharedLibrariesBtn")?.addEventListener("click", loadSharedLibraries);
 $("#sharedVideoLibrary")?.addEventListener("change", applySharedLibrarySelection);
 $("#sharedAudioLibrary")?.addEventListener("change", applySharedLibrarySelection);
@@ -60,6 +62,13 @@ setDefaultSchedule();
 loadAssetGroups();
 loadAudioGroups();
 loadSharedLibraries();
+document.querySelectorAll("[data-novel-platform]").forEach((button) => {
+  button.addEventListener("click", () => {
+    novelPlatformFilter = button.dataset.novelPlatform || "all";
+    document.querySelectorAll("[data-novel-platform]").forEach((item) => item.classList.toggle("is-active", item === button));
+    renderNovelAudioPicker();
+  });
+});
 loadNovels();
 initializePublishProvider();
 updatePublishPlanHint();
@@ -98,9 +107,15 @@ async function createTask(options = {}) {
     ? Array.from($("#officialAccountList").querySelectorAll(".official-tiktok-account-check:checked"))
     : Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
   const autoPublish = generateOnly ? false : $("#autoPublish").checked;
+  const videoTemplate = $("#videoTemplateSelect")?.value === "parkour" ? "parkour" : "mix";
+  if (videoTemplate === "parkour") {
+    const parkourDir = ($("#parkourVideoDir")?.value || "").trim() || "D:\\方块跑酷模拟器视频\\0818";
+    $("#videoDir").value = parkourDir;
+  }
   const materialSource = $("#assetGroupSelect")?.value || "";
-  const assetGroupId = materialSource === "__manual__" ? "" : materialSource;
-  if (!assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
+  const assetGroupId = videoTemplate === "parkour" ? "" : (materialSource === "__manual__" ? "" : materialSource);
+  if (videoTemplate === "mix" && !assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
+  if (videoTemplate === "parkour" && !$("#videoDir").value.trim()) return setCreateStatus("请选择跑酷视频目录。");
   const audioDir = selectedAudios.length ? "" : $("#audioDir").value.trim();
   if (provider !== "official" && !audioDir) return setCreateStatus("请选择音频目录。");
   if (provider === "official" && !selectedAudios.length && !audioDir) return setCreateStatus("请勾选混剪小说，或选择音频目录，二者选一个。");
@@ -121,6 +136,7 @@ async function createTask(options = {}) {
   const payload = {
     name: $("#taskName").value.trim(),
     generation: {
+      videoTemplate,
       assetGroupId,
       videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: true,
       audioDir, audioItems: selectedAudios, backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
@@ -431,14 +447,15 @@ function getPublishProvider() {
 function applyPublishChannelChrome() {
   document.body.dataset.publishChannel = publishChannel;
   const official = publishChannel === "official";
-  document.title = official ? "Reddit 自动发布 · Local Factory" : "GeeLark · Reddit 自动发布 · Local Factory";
+  document.title = official ? "Reddit 混剪 · Local Factory" : "GeeLark · Reddit 混剪 · Local Factory";
   if ($("#pageKicker")) $("#pageKicker").textContent = official ? "OFFICIAL API" : "GEELARK BACKUP";
-  if ($("#pageTitle")) $("#pageTitle").textContent = official ? "Reddit 自动发布" : "GeeLark · Reddit 自动发布";
+  if ($("#pageTitle")) $("#pageTitle").textContent = official ? "Reddit 混剪" : "GeeLark · Reddit 混剪";
   const novelField = document.querySelector(".novel-select-field");
   if (novelField) novelField.hidden = !official;
   if ($("#pageLead")) $("#pageLead").textContent = official
-    ? "勾选混剪小说，或改选本机 F:\\音频目录 里的文件夹。小说音频不用传到线上，工人在本机按文件名查找。"
+    ? "先选视频模板。模板1混剪，模板2直接用跑酷成片写字幕叠音频。再勾选小说或本机音频目录。"
     : "GeeLark 备用发布，成片不叠加平台和推广码。";
+  updateVideoSourceVisibility();
   if ($("#publishLead")) $("#publishLead").textContent = official
     ? "选择官方授权账号，设置文案与发布时间。GeeLark 发布已移到备用区。"
     : "选择 GeeLark 账号发布。官方 API 任务在小说推文的 Reddit 自动发布里。";
@@ -461,22 +478,32 @@ async function loadNovels() {
 }
 
 function enabledMixAudios(novel) {
-  return (novel.scripts || []).filter((script) => script.audio?.id && script.mixEnabled !== false);
+  return (novel.scripts || []).filter((script) => (script.audio?.id || script.audioId) && script.mixEnabled !== false);
 }
 
 function renderNovelAudioPicker() {
   const root = $("#novelAudioPicker");
   if (!root) return;
-  if (!novels.length) {
-    root.textContent = "还没有小说书单。";
+  const selectedIds = new Set(getSelectedNovels().map((novel) => novel.id));
+  const mixable = novels.filter((novel) => enabledMixAudios(novel).length);
+  const visible = novelPlatformFilter === "all"
+    ? mixable
+    : mixable.filter((novel) => novel.platform === novelPlatformFilter);
+  if (!mixable.length) {
+    root.textContent = "还没有已生成音频的小说。";
     updateNovelBadgeHint();
     return;
   }
-  root.innerHTML = novels.map((novel) => {
+  if (!visible.length) {
+    root.textContent = "这个平台没有已生成音频的小说。";
+    updateNovelBadgeHint();
+    return;
+  }
+  root.innerHTML = visible.map((novel) => {
     const audios = enabledMixAudios(novel);
     return `
       <label class="novel-audio-novel">
-        <input type="checkbox" data-novel-id="${escapeAttr(novel.id)}" ${audios.length ? "" : "disabled"} />
+        <input type="checkbox" data-novel-id="${escapeAttr(novel.id)}" ${selectedIds.has(novel.id) ? "checked" : ""} />
         <strong>${escapeHtml(novel.title || "未命名")}</strong>
         <small>${escapeHtml(formatNovelBadge(novel))} · ${audios.length} 条生效音频</small>
       </label>`;
@@ -495,9 +522,9 @@ function getSelectedNovels() {
 
 function getSelectedAudioItems() {
   return getSelectedNovels().flatMap((novel) => enabledMixAudios(novel).map((script) => ({
-    id: script.audio.id,
-    path: script.audio.targetAudioPath || "",
-    fileName: script.audio.fileName || "",
+    id: script.audio?.id || script.audioId,
+    path: script.audio?.targetAudioPath || "",
+    fileName: script.audio?.fileName || "",
     scriptId: script.id,
     novelId: novel.id,
     platform: novel.platform || "",
@@ -736,7 +763,16 @@ function updateAudioSourceMode() {
   if (sharedAudio) sharedAudio.hidden = useNovels || !sharedLibrariesConfigured;
 }
 
-function updateVideoSourceVisibility() {}
+function updateVideoSourceVisibility() {
+  const parkour = $("#videoTemplateSelect")?.value === "parkour";
+  document.querySelectorAll(".mix-only").forEach((item) => { item.hidden = parkour; });
+  if ($("#parkourDirField")) $("#parkourDirField").hidden = !parkour;
+  if ($("#sharedVideoLibrary")?.closest("label")) $("#sharedVideoLibrary").closest("label").hidden = parkour;
+  const hint = $("#videoTemplateHint");
+  if (hint) hint.textContent = parkour
+    ? "模板2 会直接拿目录里的整条跑酷视频，叠小说音频和字幕，不再抽片段混剪。"
+    : "模板1 从素材组抽片段拼接；模板2 直接用跑酷成片写字幕、生成音频。";
+}
 
 function clearAccountSelection() {
   groupFilter.value = "";

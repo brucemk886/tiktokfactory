@@ -2,6 +2,7 @@ export const FACTORY_CLOUD_ORIGIN = "https://factory.tiktokaitool.com";
 
 export const LOCAL_SIDEBAR_MODULE_IDS = Object.freeze([
   "local-queue",
+  "tasks",
   "operator-third-party",
   "geelark-profiles",
   "geelark-tasks",
@@ -28,7 +29,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("novel-effects", "/novel-effects", "数据概览", ["admin"], novelPromotionGroup()),
   moduleItem("novel-ops-report", "/novel-ops-report", "运营报表", ["admin"], novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ["admin"], novelPromotionGroup()),
-  moduleItem("tasks", "/tasks", "Reddit 自动发布", ["admin"], novelPromotionGroup()),
+  moduleItem("tasks", "/tasks", "Reddit 混剪", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ["admin"], psychologyGroup()),
   moduleItem("psychology", "/psychology", "心理学视频自动化", ["admin"], psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ["admin"], psychologyGroup()),

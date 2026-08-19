@@ -58,8 +58,48 @@ function renderTasks(tasks) {
       </div>
       <div class="queue-bar" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, percent))}%"></i></div>
       <p>${escapeHtml(task.message || "等待执行")}</p>
+      ${renderTaskVideos(task)}
     </article>`;
   }).join("");
+}
+
+function renderTaskVideos(task) {
+  const videos = Array.isArray(task.generatedVideos) ? task.generatedVideos : [];
+  const uploads = Array.isArray(task.publishResults) ? task.publishResults : [];
+  if (!videos.length && !uploads.length) return "";
+  const videoRows = videos.map((video, index) => {
+    const url = previewVideoUrl(video);
+    const name = video.fileName || video.audioName || `视频 ${index + 1}`;
+    return `<li>${url ? `<a href="${escapeAttr(url)}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>` : `<span>${escapeHtml(name)}</span>`}<small>${escapeHtml(video.audioName || "")}</small></li>`;
+  }).join("");
+  const uploadRows = uploads.map((item) => {
+    const account = item.username || item.name || item.connectionId || "未分配账号";
+    return `<li><span>${escapeHtml(item.fileName || "未命名成片")}</span><small>${escapeHtml(account)} · ${escapeHtml(uploadStatusLabel(item.status))}${item.scheduleAt ? ` · ${formatTime(Number(item.scheduleAt) * 1000)}` : ""}</small></li>`;
+  }).join("");
+  return `<details class="queue-videos">
+    <summary>查看要上传的视频（${videos.length} 条成片${uploads.length ? ` · ${uploads.length} 条上传记录` : ""}）</summary>
+    ${videos.length ? `<div><strong>已生成</strong><ul>${videoRows}</ul></div>` : ""}
+    ${uploads.length ? `<div><strong>上传队列</strong><ul>${uploadRows}</ul></div>` : ""}
+  </details>`;
+}
+
+function previewVideoUrl(video) {
+  const fileName = String(video?.fileName || "").trim();
+  if (fileName) return `/outputs/${encodeURIComponent(fileName)}`;
+  const url = String(video?.videoUrl || "");
+  return url.startsWith("/outputs/") ? url : "";
+}
+
+function uploadStatusLabel(status) {
+  return ({
+    queued: "待上传",
+    submitted: "已提交",
+    success: "已发布",
+    pending: "处理中",
+    failed: "失败",
+    skipped: "已跳过",
+    needs_check: "待核验"
+  })[status] || status || "未知";
 }
 
 function card(label, value) {

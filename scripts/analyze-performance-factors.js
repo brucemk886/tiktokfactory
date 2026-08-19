@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ANALYTICS_URL = "http://localhost:3010/api/tiktok-analytics?period=all";
-const STORAGE_ROOT = process.env.LOCAL_CODEX_WORK || "D:\\localcodex\\work";
+const STORAGE_ROOT = process.env.LOCAL_FACTORY_WORK || "D:\\localfactory-data\\work";
 
 const normalizeOutputId = (value) => {
   const fileName = path.basename(String(value || ""));

@@ -175,6 +175,22 @@ body.tasks-page {
 .shared-library-panel .controls-grid:has(#sharedAudioSource[hidden]) { grid-template-columns: repeat(2, minmax(0,1fr)); }
 .publish-grid { grid-template-columns: 1.25fr 1fr 1fr 1fr; }
 .task-name-field { margin-bottom: 14px; }
+.novel-platform-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.novel-platform-tab {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16));
+  border-radius: 5px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--lf-text, #1d1a14);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.novel-platform-tab.is-active { background: rgba(200, 220, 90, 0.32); border-color: #8a9a32; }
 .novel-audio-picker {
   display: grid;
   gap: 8px;

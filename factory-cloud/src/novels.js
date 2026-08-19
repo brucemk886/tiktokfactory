@@ -1,8 +1,11 @@
 import { assembleOfficialNovelEffects } from "../../scripts/novel-effect-core.js";
+import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
 import { audioItemsFromScripts } from "../../scripts/novel-overview.js";
 import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
+import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
+import { insertNovels, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
 import { getOfficialOperationSignals, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 
 const PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
@@ -30,6 +33,14 @@ export async function handleNovels(request, env, url, session) {
 
   if (method === "GET" && pathname === "/api/novel-content") {
     return json(await novelOverview(db, url.searchParams.get("query") || ""));
+  }
+
+  if (method === "GET" && pathname === "/api/novel-content/feishu/status") {
+    return json(feishuStatus(env));
+  }
+
+  if (method === "POST" && pathname === "/api/novel-content/feishu/import") {
+    return json(await importFeishuNovelFields(db, env, await readJson(request)));
   }
 
   if (method === "POST" && pathname === "/api/novel-content/novels") {
@@ -168,7 +179,7 @@ async function novelOverview(db, query) {
       scripts: store.scripts.filter((script) => script.novelId === novel.id),
       performance: { videoCount: 0, totalViews: 0, averageViews: 0, maxViews: 0, comments: 0 }
     }))
-    .filter((novel) => !normalized || [novel.id, novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category, novel.sourceContent]
+    .filter((novel) => !normalized || [novel.id, novel.title, novel.platform, novel.bookId, novel.promotionCode, novel.promotionCopy, novel.category, novel.sellingPoint, novel.note, novel.sourceContent]
       .some((value) => String(value || "").toLowerCase().includes(normalized)));
   return {
     version: 1,
@@ -185,6 +196,30 @@ async function novelOverview(db, query) {
   };
 }
 
+export async function importFeishuNovelFields(db, env) {
+  const fetched = await fetchFeishuCatalogBooks(env);
+  const store = await readStore(db);
+  const existingIds = new Set(store.novels.map((item) => item.id));
+  const beforeBookIds = new Map(store.novels.map((item) => [item.id, String(item.bookId || "")]));
+  const applied = applyFeishuCatalogImport(store.novels, fetched.books, {
+    now: new Date().toISOString(),
+    createId: () => safeId(`novel-${now()}-${randomToken(3)}`)
+  });
+  const createdNovels = applied.novels.filter((novel) => !existingIds.has(novel.id));
+  const filledNovels = applied.novels.filter((novel) => existingIds.has(novel.id) && String(novel.bookId || "") !== (beforeBookIds.get(novel.id) || ""));
+  if (createdNovels.length) await insertNovels(db, createdNovels);
+  for (const novel of filledNovels) await upsertNovel(db, novel);
+  return {
+    sourceTitle: fetched.sourceTitle,
+    sheets: fetched.sheets,
+    rowCount: fetched.books.length,
+    created: applied.created,
+    skipped: applied.skipped,
+    filledBookId: filledNovels.length,
+    details: applied.details.slice(0, 80)
+  };
+}
+
 async function createNovel(db, payload) {
   const title = String(payload.title || "").trim().slice(0, 180);
   const sourceContent = String(payload.sourceContent || "").trim().slice(0, 200_000);
@@ -196,18 +231,19 @@ async function createNovel(db, payload) {
     id: safeId(`novel-${now()}`),
     title,
     platform: payload.platform,
+    bookId: String(payload.bookId || "").trim().slice(0, 240),
     promotionCode: String(payload.promotionCode || "").trim().slice(0, 240),
     promotionCopy: String(payload.promotionCopy || "").trim().slice(0, 5_000),
     category: String(payload.category || "").trim().slice(0, 120),
     featured: Boolean(payload.featured),
+    sellingPoint: String(payload.sellingPoint || "").trim().slice(0, 2_000),
+    note: String(payload.note || "").trim().slice(0, 2_000),
     sourceContent,
     status: "active",
     createdAt,
     updatedAt: createdAt
   };
-  const store = await readStore(db);
-  store.novels.push(novel);
-  await kvSet(db, "novel-content", store);
+  await upsertNovel(db, novel);
   return novel;
 }
 
@@ -220,17 +256,20 @@ async function updateNovel(db, id, payload) {
     if (!PLATFORMS.includes(payload.platform)) throw Object.assign(new Error("请选择小说平台。"), { statusCode: 400 });
     novel.platform = payload.platform;
   }
+  if (payload.bookId !== undefined) novel.bookId = String(payload.bookId || "").trim().slice(0, 240);
   if (payload.promotionCode !== undefined) novel.promotionCode = String(payload.promotionCode || "").trim().slice(0, 240);
   if (payload.promotionCopy !== undefined) novel.promotionCopy = String(payload.promotionCopy || "").trim().slice(0, 5_000);
   if (payload.category !== undefined) novel.category = String(payload.category || "").trim().slice(0, 120);
   if (payload.featured !== undefined) novel.featured = Boolean(payload.featured);
+  if (payload.sellingPoint !== undefined) novel.sellingPoint = String(payload.sellingPoint || "").trim().slice(0, 2_000);
+  if (payload.note !== undefined) novel.note = String(payload.note || "").trim().slice(0, 2_000);
   if (payload.sourceContent !== undefined) {
     const sourceContent = String(payload.sourceContent || "").trim().slice(0, 200_000);
     if (sourceContent.length < 20) throw Object.assign(new Error("小说内容至少需要 20 个字符。"), { statusCode: 400 });
     novel.sourceContent = sourceContent;
   }
   novel.updatedAt = new Date().toISOString();
-  await kvSet(db, "novel-content", store);
+  await upsertNovel(db, novel);
   return novel;
 }
 
@@ -271,7 +310,7 @@ async function createScript(db, novelId, payload = {}) {
     updatedAt: createdAt
   };
   store.scripts.push(script);
-  await kvSet(db, "novel-content", store);
+  await writeScripts(db, store.scripts);
   return script;
 }
 
@@ -289,7 +328,7 @@ async function setNovelMixAudios(db, novelId, scriptIds) {
     script.mixEnabled = wanted.has(script.id);
     script.updatedAt = timestamp;
   }
-  await kvSet(db, "novel-content", store);
+  await writeScripts(db, store.scripts);
   return hydrateNovel(db, novel.id);
 }
 
@@ -360,7 +399,7 @@ export async function attachAudioGenerateResults(db, items = []) {
     script.updatedAt = new Date().toISOString();
     changed += 1;
   }
-  if (changed) await kvSet(db, "novel-content", store);
+  if (changed) await writeScripts(db, store.scripts);
   return changed;
 }
 
@@ -386,14 +425,16 @@ export async function mergeImportedNovelStore(db, incoming = {}) {
       scripts.push(script);
     }
   }
-  await kvSet(db, "novel-content", { novels, scripts });
+  for (const novel of novels) await upsertNovel(db, novel);
+  await writeScripts(db, scripts);
   return { novelCount: novels.length, scriptCount: scripts.length, importedNovelCount: (incoming.novels || []).length, importedScriptCount: (incoming.scripts || []).length };
 }
 
 async function readStore(db) {
+  await migrateNovelsFromKv(db);
   const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
   return {
-    novels: Array.isArray(store.novels) ? store.novels : [],
+    novels: await listNovels(db),
     scripts: Array.isArray(store.scripts) ? store.scripts : []
   };
 }

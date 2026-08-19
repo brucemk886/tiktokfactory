@@ -37,8 +37,8 @@
       <header class="tasks-toolbar">
         <div>
           <p class="toolbar-kicker" id="pageKicker">OFFICIAL API</p>
-          <h1 id="pageTitle">Reddit 自动发布</h1>
-          <p id="pageLead">混剪成片会叠上所选小说的平台和推广码，发布只走 TikTok 官方 API。</p>
+          <h1 id="pageTitle">Reddit 混剪</h1>
+          <p id="pageLead">先选视频模板。模板1走片段混剪，模板2直接用已生成的跑酷视频写字幕、叠音频。</p>
         </div>
         <div class="toolbar-actions">
           <span id="createStatus" class="toolbar-status">准备创建任务</span>
@@ -56,6 +56,12 @@
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
             <div class="field novel-select-field">
               <span>混剪小说</span>
+              <div class="novel-platform-tabs" role="tablist" aria-label="小说平台">
+                <button type="button" class="novel-platform-tab is-active" data-novel-platform="all">全部平台</button>
+                <button type="button" class="novel-platform-tab" data-novel-platform="GoodNovel">GoodNovel</button>
+                <button type="button" class="novel-platform-tab" data-novel-platform="MotoNovel">MotoNovel</button>
+                <button type="button" class="novel-platform-tab" data-novel-platform="NovelMaster">NovelMaster</button>
+              </div>
               <div id="novelAudioPicker" class="novel-audio-picker">正在读取小说书单...</div>
               <small id="novelBadgeHint">勾选小说后不用再选音频目录。工人会在本机 F:\音频目录 和音频库里找对应 mp3，不用再往线上传。</small>
             </div>
@@ -68,7 +74,9 @@
                   <label class="field"><span>背景音乐库 <em>可选</em></span><select id="sharedMusicLibrary"><option value="">不使用背景音乐</option></select></label>
                 </div>
               </section>
-              <label data-admin-only class="field"><span>素材来源</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
+              <label class="field"><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix">模板1 · 混剪</option><option value="parkour">模板2 · 跑酷成片</option></select><small id="videoTemplateHint">模板1 从素材组抽片段拼接；模板2 直接用跑酷成片写字幕、生成音频。</small></label>
+              <label data-admin-only id="assetGroupField" class="field mix-only"><span>素材组</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
+              <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0818" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">默认读取 0818 这批已生成的跑酷视频。</small></label>
               <input id="videoDir" type="hidden" />
               <label id="directAudioSource" class="field"><span>音频目录</span><select id="audioGroupSelect"><option value="">正在读取本机音频目录...</option></select><input id="audioDir" type="hidden" /><small id="audioGroupHint">固定读取工人机 F:\音频目录 下的文件夹。</small></label>
               <label id="directMusicSource" class="field"><span>背景音乐目录 <em>可选</em></span><div class="path-picker"><input id="musicDir" type="text" placeholder="不使用可留空" /><button type="button" data-pick-directory="musicDir">选择</button></div></label>
@@ -83,7 +91,7 @@
             </div>
             <div class="grid controls-grid">
               <label class="field"><span>生成视频总条数</span><div class="input-suffix"><input id="totalVideos" type="number" min="1" max="300" value="40" /><b>条</b></div></label>
-              <label class="field"><span>每段素材时长</span><div class="input-suffix"><input id="segmentSeconds" type="number" min="2" max="18" value="5" /><b>秒</b></div></label>
+              <label class="field mix-only"><span>每段素材时长</span><div class="input-suffix"><input id="segmentSeconds" type="number" min="2" max="18" value="5" /><b>秒</b></div></label>
               <label class="field"><span>字幕位置</span><div class="input-suffix"><input id="subtitleY" type="number" min="38" max="82" value="66" /><b>%</b></div></label>
               <label class="field"><span>字幕字号</span><input id="subtitleSize" type="number" min="42" max="92" value="62" /></label>
               <label class="field"><span>字幕效果</span><select id="subtitleMode"><option value="sentence">整句字幕</option><option value="word-highlight">逐词高亮</option></select></label>
@@ -91,7 +99,7 @@
             </div>
             <label class="compact-check"><input id="autoCaptions" type="checkbox" checked /><span>使用 ElevenLabs 识别字幕并复用缓存</span></label>
             <label class="compact-check"><input id="openingTitleEnabled" type="checkbox" /><span>前 3 秒在画面正中加开头标题，方便对比有无标题的流量</span></label>
-            <details class="advanced-panel">
+            <details class="advanced-panel mix-only">
               <summary><span>素材去重设置</span><small>随下方「保存生成规则」一起记住</small></summary>
               <div class="grid controls-grid advanced-grid">
                 <label class="field"><span>缩放最小</span><input id="scaleMin" type="number" step="0.01" value="1.03" /></label>

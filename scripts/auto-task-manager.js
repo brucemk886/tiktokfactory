@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { getPublishAccountIds, normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { mergeOfficialPublishRecords } from "./official-publish-records.js";
+import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
 
 export { mergeOfficialPublishRecords };
 
@@ -621,7 +622,11 @@ function validateTaskPayload(payload) {
     if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
     return;
   }
-  if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) throw new Error("请选择素材组或视频素材目录。");
+  if (isParkourVideoTemplate(generation)) {
+    if (!String(generation.videoDir || "").trim()) throw new Error("请选择跑酷视频目录。");
+  } else if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) {
+    throw new Error("请选择素材组或视频素材目录。");
+  }
   if (!String(generation.audioDir || "").trim() && !normalizeAudioItems(generation.audioItems).length) {
     throw new Error("请勾选小说音频，或选择音频目录。");
   }
@@ -736,8 +741,13 @@ function normalizeSchulteGenerationPayload(value = {}) {
 }
 
 function normalizeGenerationPayload(value = {}) {
+  const videoTemplate = normalizeVideoTemplate(value.videoTemplate);
+  const videoDir = videoTemplate === "parkour"
+    ? resolveParkourVideoDir(value.videoDir)
+    : String(value.videoDir || "");
   return {
-    videoDir: String(value.videoDir || ""),
+    videoTemplate,
+    videoDir,
     includeVideoSubfolders: value.includeVideoSubfolders !== false,
     audioDir: String(value.audioDir || ""),
     audioItems: normalizeAudioItems(value.audioItems),

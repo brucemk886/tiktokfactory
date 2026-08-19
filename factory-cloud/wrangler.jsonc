@@ -30,6 +30,7 @@
     "crons": ["0 0 * * *", "0 16 * * *"]
   },
   "vars": {
-    "SIGNAL_DESK_BASE_URL": "https://tiktokaitool.com"
+    "SIGNAL_DESK_BASE_URL": "https://tiktokaitool.com",
+    "FEISHU_WIKI_URL": "https://my.feishu.cn/wiki/DMPvw98Wri5WCfk9wkScDrV1nce?sheet=acDhJT"
   }
 }

@@ -3,6 +3,7 @@ import { errorJson, json, now, readJson, safeId } from "./http.js";
 import { applyJobToTask, cancelJob, enqueueJob, getJob, isDeletedTask, publicJob } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
+import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
 
 export async function handleCompat(request, env, url, session) {
   if (!session) return null;
@@ -81,13 +82,15 @@ export async function handleCompat(request, env, url, session) {
     if (method === "POST") {
       const payload = await readJson(request);
       const taskType = normalizeTaskType(payload.taskType);
-      const generation = payload.generation && typeof payload.generation === "object" ? payload.generation : {};
+      const generation = normalizeRedditGeneration(payload.generation);
       const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
       if (taskType === "reddit-mix") {
         if (!String(generation.audioDir || "").trim() && !(Array.isArray(generation.audioItems) && generation.audioItems.length)) {
           return errorJson("请勾选混剪小说，或填写工人机上的音频目录。", 400);
         }
-        if (!String(generation.videoDir || "").trim() && !String(generation.assetGroupId || "").trim()) {
+        if (isParkourVideoTemplate(generation)) {
+          if (!String(generation.videoDir || "").trim()) return errorJson("请填写工人机上的跑酷视频目录。", 400);
+        } else if (!String(generation.videoDir || "").trim() && !String(generation.assetGroupId || "").trim()) {
           return errorJson("请选择素材组，或填写工人机上的视频素材目录。", 400);
         }
       }
@@ -170,7 +173,7 @@ export async function handleCompat(request, env, url, session) {
         type: normalizeTaskType(task.taskType),
         title: task.name,
         payload: {
-          ...(task.generation || {}),
+          ...normalizeRedditGeneration(task.generation),
           taskId: task.id,
           taskName: task.name,
           taskType: normalizeTaskType(task.taskType),
@@ -435,6 +438,16 @@ function normalizeTaskType(value) {
   if (value === "psychology") return "psychology";
   if (value === "schulte") return "schulte";
   return "reddit-mix";
+}
+
+function normalizeRedditGeneration(value = {}) {
+  const generation = value && typeof value === "object" ? { ...value } : {};
+  generation.videoTemplate = normalizeVideoTemplate(generation.videoTemplate);
+  if (generation.videoTemplate === "parkour") {
+    generation.videoDir = resolveParkourVideoDir(generation.videoDir);
+    generation.assetGroupId = "";
+  }
+  return generation;
 }
 
 function defaultOperatorSettings(scope) {

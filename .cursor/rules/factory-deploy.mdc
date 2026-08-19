@@ -13,4 +13,4 @@ npm run deploy
 
 不要直接跑 `npx wrangler deploy` 或 `wrangler deploy`。`npm run deploy` 会先核对 GitHub `main`：本地落后或分叉就拒绝发布。
 
-中台 `tiktokaitool.com` 继续用 `tiktok-analytics-cloud` 里的 `npm run cloudflare:deploy`。
+中台 `tiktokaitool.com` 继续在独立仓库 `D:\cursor\tiktokaitool` 里运行 `npm run cloudflare:deploy`。

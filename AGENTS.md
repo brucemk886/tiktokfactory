@@ -18,7 +18,7 @@ Before working on this repository:
 - Keep automated Project Hub agents read-only. Code changes require an explicit implementation task.
 - Update or add focused tests for changes to publishing, queues, analytics, permissions, or video generation.
 - Deploy factory.tiktokaitool.com only with `npm run deploy` from `factory-cloud`. Do not run `wrangler deploy` directly.
-- Deploy tiktokaitool.com with `npm run cloudflare:deploy` from `tiktok-analytics-cloud`.
+- Deploy tiktokaitool.com with `npm run cloudflare:deploy` from the sibling repository at `D:/cursor/tiktokaitool`.
 
 ## Handoff
 

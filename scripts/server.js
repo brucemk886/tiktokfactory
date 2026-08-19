@@ -2123,7 +2123,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       if (!String(payload.audioDir || "").trim()) return sendJson(res, 400, { error: "请输入音频文件夹路径。" });
       if (!String(payload.videoDir || "").trim() && !String(payload.assetGroupId || "").trim()) {
-        return sendJson(res, 400, { error: "请选择素材组或视频素材目录。" });
+        return sendJson(res, 400, { error: payload.videoTemplate === "parkour" ? "请选择跑酷视频目录。" : "请选择素材组或视频素材目录。" });
       }
 
       const jobId = safeId(`reddit-mix-${Date.now()}`);
