@@ -17,6 +17,8 @@ Before working on this repository:
 - Never call GeeLark publishing APIs from tests.
 - Keep automated Project Hub agents read-only. Code changes require an explicit implementation task.
 - Update or add focused tests for changes to publishing, queues, analytics, permissions, or video generation.
+- Every production deployment must be committed and pushed to GitHub `main` first.
+- Require a clean worktree and an exact `HEAD == origin/main` match before deploying; never publish uncommitted or merely local commits.
 - Deploy factory.tiktokaitool.com only with `npm run deploy` from `factory-cloud`. Do not run `wrangler deploy` directly.
 - Deploy tiktokaitool.com with `npm run cloudflare:deploy` from the sibling repository at `D:/cursor/tiktokaitool`.
 

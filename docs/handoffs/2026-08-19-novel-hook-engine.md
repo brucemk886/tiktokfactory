@@ -13,6 +13,7 @@ Make the online novel rewrite openings more likely to stop scrolling without inv
 - Every opening now follows a three-beat structure: confirmed fact, mistaken expectation or consequence, then a reversal-shaped information gap.
 - Smart generation internally builds a fact ledger, drafts six candidates, rejects unsupported facts, and ranks the remainder by stop-scroll power, curiosity gap, emotional intensity, and spoken-English rhythm.
 - Legacy style IDs remain accepted for already queued jobs, but resolve to the new canonical strategies.
+- Production deployment now requires a clean `main` worktree whose `HEAD` exactly matches `origin/main`.
 
 ## Files changed
 
@@ -23,6 +24,9 @@ Make the online novel rewrite openings more likely to stop scrolling without inv
 - `public/novel-rewrite.html`
 - `public/novel-rewrite.js`
 - `public/novel-rewrite.css`
+- `factory-cloud/scripts/check-origin-main.mjs`
+- `factory-cloud/scripts/check-origin-main.test.js`
+- `AGENTS.md`
 
 ## Tests performed
 

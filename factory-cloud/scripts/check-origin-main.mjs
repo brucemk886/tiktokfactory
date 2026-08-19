@@ -15,10 +15,11 @@ export function findGitRoot(start = here) {
   }
 }
 
-export function evaluateDeployAlignment({ head, remote, base }) {
-  if (!head || !remote || !base) return { ok: false, reason: "missing-refs" };
-  if (base !== remote) return { ok: false, reason: "behind-or-diverged" };
-  if (head !== remote) return { ok: true, reason: "ahead" };
+export function evaluateDeployAlignment({ head, remote, branch, dirty }) {
+  if (!head || !remote) return { ok: false, reason: "missing-refs" };
+  if (branch !== "main") return { ok: false, reason: "non-main" };
+  if (dirty) return { ok: false, reason: "dirty" };
+  if (head !== remote) return { ok: false, reason: "not-synchronized" };
   return { ok: true, reason: "up-to-date" };
 }
 
@@ -38,21 +39,22 @@ export function checkOriginMain(repo = findGitRoot()) {
   git(repo, ["fetch", "origin", "main"]);
   const head = git(repo, ["rev-parse", "HEAD"]);
   const remote = git(repo, ["rev-parse", "origin/main"]);
-  const base = git(repo, ["merge-base", "HEAD", "origin/main"]);
-  const result = evaluateDeployAlignment({ head, remote, base });
+  const branch = git(repo, ["branch", "--show-current"]);
+  const dirty = Boolean(git(repo, ["status", "--porcelain", "--untracked-files=all"]));
+  const result = evaluateDeployAlignment({ head, remote, branch, dirty });
   if (!result.ok) {
-    const message = result.reason === "missing-refs"
-      ? "拒绝部署：读不到 origin/main。请确认已配置 GitHub 远程。"
-      : `拒绝部署：本地 ${short(head)} 落后或分叉于 origin/main ${short(remote)}。请先 git pull。`;
+    const messages = {
+      "missing-refs": "拒绝部署：读不到 origin/main。请确认已配置 GitHub 远程。",
+      "non-main": `拒绝部署：当前分支是 ${branch || "detached HEAD"}，生产发布必须从 main 执行。`,
+      dirty: "拒绝部署：工作区存在未提交或未跟踪文件。请先明确提交或清理。",
+      "not-synchronized": `拒绝部署：本地 ${short(head)} 与 origin/main ${short(remote)} 不一致。请先同步 GitHub。`
+    };
+    const message = messages[result.reason] || "拒绝部署：GitHub 同步状态异常。";
     const error = new Error(message);
     error.code = "FACTORY_DEPLOY_REFUSED";
     throw error;
   }
-  if (result.reason === "ahead") {
-    console.log(`本地 ${short(head)} 比 origin/main ${short(remote)} 超前。可以部署本地已提交代码，但还没推到 GitHub。`);
-  } else {
-    console.log(`已与 origin/main ${short(remote)} 对齐。`);
-  }
+  console.log(`GitHub main 已同步且工作区干净：${short(remote)}。可以部署。`);
   return result;
 }
 
