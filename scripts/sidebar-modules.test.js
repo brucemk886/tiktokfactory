@@ -65,6 +65,9 @@ test("business lines keep official and GeeLark navigation apart", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-tasks")?.href, "/geelark-tasks");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "tasks")?.group?.id, "novel-promotion");
   assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "tasks")?.roles, ["admin"]);
+  assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "geelark-tasks")?.roles, ["admin", "operator"]);
+  assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "analytics")?.roles, ["admin", "operator"]);
+  assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "stats")?.roles, ["admin", "operator"]);
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-novel-effects")?.group?.id, "geelark-backup");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-novel-effects")?.href, "/geelark-novel-effects");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.group?.id, "official-channel");
@@ -72,8 +75,9 @@ test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "hub")?.roles, ["admin"]);
 });
 
-test("operator home is the first granted GeeLark backup page", () => {
+test("operator home is the first granted page", () => {
   assert.equal(homePathForUser({ role: "admin", sidebarModules: ["local-queue", "accounts"] }), "/local-queue");
+  assert.equal(homePathForUser({ role: "operator", sidebarModules: ["tasks", "analytics", "stats"] }), "/analytics");
   assert.equal(homePathForUser({ role: "operator", sidebarModules: ["hub", "analytics", "stats"] }), "/analytics");
   assert.equal(homePathForUser({ role: "operator", sidebarModules: ["geelark-tasks"] }), "/geelark-tasks");
   assert.equal(homePathForUser({ role: "operator", sidebarModules: [] }), "");
@@ -83,7 +87,7 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/mid-video-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/psychology-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-library"), true);
-  assert.equal(shouldRedirectLocalPageToFactory("/tasks"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/tasks"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/work-journal"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/work-journal-mindmap"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/operator/official"), true);
@@ -129,7 +133,7 @@ test("GeeLark pages are visibly distinguished from official TikTok pages", () =>
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "analytics")?.label, "GeeLark · 数据总览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-novel-effects")?.label, "GeeLark · 小说效果");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "geelark-tasks")?.label, "GeeLark · Reddit 自动发布");
-  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "tasks")?.label, "Reddit 自动发布");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "tasks")?.label, "Reddit 混剪");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.label, "授权账号数据");
   assert.ok(SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") < SIDEBAR_MODULES.findIndex((item) => item.id === "stats"));
 });

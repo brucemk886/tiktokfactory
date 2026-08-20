@@ -51,10 +51,10 @@
           <div id="task-assets" class="config-section">
             <div class="section-heading">
               <span class="section-index">01</span>
-              <div><h2>任务与素材</h2><p>混剪小说和音频目录二选一。勾了小说就不用再选音频目录，生效音频在书单详情里勾。</p></div>
+              <div><h2>任务与素材</h2><p id="assetSectionLead">选择共享素材库和音频目录。</p></div>
             </div>
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
-            <div class="field novel-select-field">
+            <div class="field novel-select-field" data-admin-only hidden>
               <span>混剪小说</span>
               <div class="novel-platform-tabs" role="tablist" aria-label="小说平台">
                 <button type="button" class="novel-platform-tab is-active" data-novel-platform="all">全部平台</button>
@@ -74,7 +74,7 @@
                   <label class="field"><span>背景音乐库 <em>可选</em></span><select id="sharedMusicLibrary"><option value="">不使用背景音乐</option></select></label>
                 </div>
               </section>
-              <label class="field"><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix">模板1 · 混剪</option><option value="parkour">模板2 · 跑酷成片</option></select><small id="videoTemplateHint">模板1 从素材组抽片段拼接；模板2 直接用跑酷成片写字幕、生成音频。</small></label>
+              <label class="field" id="videoTemplateField" data-admin-only><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix">模板1 · 混剪</option><option value="parkour">模板2 · 跑酷成片</option></select><small id="videoTemplateHint">模板1 从素材组抽片段拼接；模板2 直接用跑酷成片写字幕、生成音频。</small></label>
               <label data-admin-only id="assetGroupField" class="field mix-only"><span>素材组</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
               <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0818" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">默认读取 0818 这批已生成的跑酷视频。</small></label>
               <input id="videoDir" type="hidden" />

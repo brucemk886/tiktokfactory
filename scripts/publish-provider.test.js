@@ -9,6 +9,7 @@ import {
 assert.equal(normalizePublishProvider("official"), "official");
 assert.equal(normalizePublishProvider("unknown"), "geelark");
 assert.equal(assertPublishProviderAccess({ role: "admin" }, "official"), "official");
+assert.equal(assertPublishProviderAccess({ role: "operator" }, "official", { generateOnly: true }), "official");
 assert.throws(
   () => assertPublishProviderAccess({ role: "member" }, "official"),
   (error) => error?.statusCode === 403 && /仅管理员/.test(error.message)

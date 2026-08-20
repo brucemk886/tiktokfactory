@@ -1,6 +1,7 @@
 const ALL = ["admin", "operator"];
 
 export const SIDEBAR_MODULES = Object.freeze([
+  // 新模块默认只给 admin。不要把 operator 加进新功能，除非用户明确要求。
   moduleItem("hub", "/", "业务总览", ALL),
   moduleItem("mid-video", "/mid-video", "模板工作台", ALL, midVideoGroup()),
   moduleItem("schulte", "/schulte", "舒尔特训练", ALL, midVideoGroup()),

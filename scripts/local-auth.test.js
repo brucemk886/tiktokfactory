@@ -92,8 +92,8 @@ test("keeps all role-compatible sidebar modules for existing accounts", () => {
     assert.ok(admin.sidebarModules.includes("local-queue"));
     assert.ok(admin.sidebarModules.includes("geelark-tasks"));
     assert.ok(admin.sidebarModules.includes("accounts"));
+    assert.ok(admin.sidebarModules.includes("tasks"));
     assert.ok(!admin.sidebarModules.includes("psychology"));
-    assert.ok(!admin.sidebarModules.includes("tasks"));
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -158,7 +158,7 @@ test("sidebar-only updates do not change the account role or active state", () =
     const updated = auth.updateUser(admin.id, { sidebarModules: ["tasks", "accounts"] });
     assert.equal(updated.role, "admin");
     assert.equal(updated.active, true);
-    assert.deepEqual(updated.sidebarModules, ["accounts"]);
+    assert.deepEqual(updated.sidebarModules, ["tasks", "accounts"]);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
@@ -182,7 +182,7 @@ test("adds new admin modules to existing sidebars once", () => {
     }), "utf8");
 
     const auth = createLocalAuthService({ workDir });
-    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["local-queue", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "accounts"]);
+    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["local-queue", "tasks", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "accounts"]);
 
     auth.updateUser("admin-1", { sidebarModules: ["geelark-tasks", "accounts"] });
     const reloaded = createLocalAuthService({ workDir });

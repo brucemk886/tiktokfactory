@@ -54,6 +54,10 @@ function renderCanonicalSidebars(user, sidebarModules) {
       if (emittedGroups.has(item.group.id)) return;
       emittedGroups.add(item.group.id);
       const items = available.filter((candidate) => candidate.group?.id === item.group.id);
+      if (items.length === 1) {
+        fragment.append(createSidebarLink(items[0]));
+        return;
+      }
       fragment.append(createSidebarGroup(item.group, items));
     });
     nav.insertBefore(fragment, insertionPoint || null);

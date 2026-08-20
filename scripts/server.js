@@ -1158,6 +1158,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/novel-content") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看混剪小说。" });
       return sendJson(res, 200, novelContentLibrary.getOverview({ query: url.searchParams.get("query") || "" }));
     }
 
@@ -1967,9 +1968,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/auto-tasks") {
       const payload = await readJsonBody(req);
+      const generateOnly = payload.publish?.autoPublish === false;
       let publishProvider;
       try {
-        publishProvider = assertPublishProviderAccess(session.user, payload.publish?.provider);
+        publishProvider = assertPublishProviderAccess(session.user, payload.publish?.provider, { generateOnly });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 403, { error: error.message });
       }
@@ -2027,7 +2029,7 @@ const server = http.createServer(async (req, res) => {
       }
       payload.ownerUserId = session.user.id;
       payload.geelarkProfileId = session.user.geelarkProfileId;
-      payload.publish = { ...(payload.publish || {}), provider: session.user.role === "admin" ? publishProvider : PUBLISH_PROVIDER_GEELARK, ownerUserId: session.user.id, geelarkProfileId: session.user.geelarkProfileId };
+      payload.publish = { ...(payload.publish || {}), provider: session.user.role === "admin" || generateOnly ? publishProvider : PUBLISH_PROVIDER_GEELARK, ownerUserId: session.user.id, geelarkProfileId: session.user.geelarkProfileId };
       return sendJson(res, 201, { task: autoTaskManager.createTask(payload) });
     }
 
@@ -2901,6 +2903,7 @@ function requiresLogin(pathname) {
 
 const OPERATOR_SHARED_ASSETS = new Set(["/app.css", "/access.css", "/access.js", "/theme-ops.css"]);
 const OPERATOR_PAGE_ASSETS = {
+  "/tasks": ["/tasks.js", "/tasks.css"],
   "/geelark-tasks": ["/tasks.js", "/tasks.css"],
   "/analytics": ["/analytics.js", "/analytics.css"],
   "/stats": ["/stats.js"]
@@ -2920,7 +2923,7 @@ function canAccessPage(user, pathname) {
 function canAccessApi(user, pathname) {
   if (pathname.startsWith("/api/auth/")) return true;
   if (user.role === "admin") return true;
-  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/shared-libraries" || pathname === "/api/reddit-mix/settings" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname) || /^\/api\/audio-library\/[^/]+\/retune$/.test(pathname);
+  return pathname === "/api/geelark/phones" || pathname === "/api/geelark/safety" || pathname === "/api/asset-groups" || pathname === "/api/audio-groups" || pathname === "/api/shared-libraries" || pathname === "/api/reddit-mix/settings" || pathname === "/api/select-directory" || pathname === "/api/publish-records" || pathname === "/api/tiktok-analytics" || pathname === "/api/tiktok-analytics/account-details" || /^\/api\/tiktok-analytics\/videos\/[^/]+\/reuse$/.test(pathname) || /^\/api\/publish-records\/[^/]+\/retry$/.test(pathname) || pathname === "/api/auto-tasks" || /^\/api\/auto-tasks\/[^/]+(?:\/(?:cancel|resume|retry-publish))?$/.test(pathname) || /^\/api\/audio-library\/[^/]+\/retune$/.test(pathname);
 }
 
 function readPsychologySettings() {

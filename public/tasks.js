@@ -69,7 +69,6 @@ document.querySelectorAll("[data-novel-platform]").forEach((button) => {
     renderNovelAudioPicker();
   });
 });
-loadNovels();
 initializePublishProvider();
 updatePublishPlanHint();
 loadTasks();
@@ -366,7 +365,27 @@ async function initializePublishProvider() {
   const providerSelect = $("#publishProvider");
   if (providerField) providerField.hidden = true;
   if (providerSelect) providerSelect.value = publishChannel;
+  applyMemberMixRestrictions();
+  applyPublishChannelChrome();
+  if (currentUserRole === "admin") await loadNovels();
   await updatePublishProviderView();
+}
+
+function applyMemberMixRestrictions() {
+  const novelField = document.querySelector(".novel-select-field");
+  if (currentUserRole !== "admin") {
+    if (novelField) novelField.hidden = true;
+    novels = [];
+    const picker = $("#novelAudioPicker");
+    if (picker) picker.replaceChildren();
+    const select = $("#videoTemplateSelect");
+    if (select) {
+      select.value = "mix";
+      select.querySelector('option[value="parkour"]')?.remove();
+    }
+    return;
+  }
+  if (novelField) novelField.hidden = publishChannel !== "official";
 }
 
 function getPublishProvider() {
@@ -379,10 +398,19 @@ function applyPublishChannelChrome() {
   document.title = official ? "Reddit 混剪 · Local Factory" : "GeeLark · Reddit 混剪 · Local Factory";
   if ($("#pageKicker")) $("#pageKicker").textContent = official ? "OFFICIAL API" : "GEELARK BACKUP";
   if ($("#pageTitle")) $("#pageTitle").textContent = official ? "Reddit 混剪" : "GeeLark · Reddit 混剪";
-  const novelField = document.querySelector(".novel-select-field");
-  if (novelField) novelField.hidden = !official;
+  if (currentUserRole === "admin") {
+    const novelField = document.querySelector(".novel-select-field");
+    if (novelField) novelField.hidden = !official;
+  }
+  if ($("#assetSectionLead")) {
+    $("#assetSectionLead").textContent = currentUserRole === "admin" && official
+      ? "混剪小说和音频目录二选一。勾了小说就不用再选音频目录，生效音频在书单详情里勾。"
+      : "选择共享素材库和音频目录。";
+  }
   if ($("#pageLead")) $("#pageLead").textContent = official
-    ? "先选视频模板。模板1混剪，模板2直接用跑酷成片写字幕叠音频。再勾选小说或本机音频目录。"
+    ? (currentUserRole === "admin"
+      ? "先选视频模板。模板1混剪，模板2直接用跑酷成片写字幕叠音频。再勾选小说或本机音频目录。"
+      : "按混剪规则出片。选择共享素材库和音频目录。")
     : "GeeLark 备用发布，成片不叠加平台和推广码。";
   updateVideoSourceVisibility();
   if ($("#publishLead")) $("#publishLead").textContent = official
@@ -391,7 +419,7 @@ function applyPublishChannelChrome() {
 }
 
 async function loadNovels() {
-  if (publishChannel !== "official") return;
+  if (publishChannel !== "official" || currentUserRole !== "admin") return;
   const root = $("#novelAudioPicker");
   if (!root) return;
   try {
@@ -1049,6 +1077,7 @@ async function persistOpeningTitleSetting() {
 }
 
 async function saveSharedRedditSettings(payload) {
+  if (currentUserRole !== "admin") return payload;
   const response = await fetch("/api/reddit-mix/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "保存统一配置失败。");

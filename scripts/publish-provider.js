@@ -5,9 +5,9 @@ export function normalizePublishProvider(value) {
   return value === PUBLISH_PROVIDER_OFFICIAL ? PUBLISH_PROVIDER_OFFICIAL : PUBLISH_PROVIDER_GEELARK;
 }
 
-export function assertPublishProviderAccess(user, provider) {
+export function assertPublishProviderAccess(user, provider, options = {}) {
   const normalized = normalizePublishProvider(provider);
-  if (normalized === PUBLISH_PROVIDER_OFFICIAL && user?.role !== "admin") {
+  if (normalized === PUBLISH_PROVIDER_OFFICIAL && user?.role !== "admin" && !options.generateOnly) {
     throw Object.assign(new Error("仅管理员可以使用 TikTok 官方 API 发布通道。"), { statusCode: 403 });
   }
   return normalized;
