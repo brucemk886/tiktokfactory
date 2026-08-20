@@ -32,11 +32,12 @@ import { computeGroupReport } from "./official-group-report.js";
 import { factoryCloudPageUrl, homePathForUser, publicSidebarModules, shouldRedirectLocalPageToFactory, SIDEBAR_MODULES } from "./sidebar-modules.js";
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
-import { summarizeOfficialPublishRecords } from "./official-publish-records.js";
+import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "./official-publish-records.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
 import { startFactoryCloudWorker } from "./factory-cloud-worker.js";
+import { isOfficialPublishAbort, throwIfOfficialPublishAborted } from "./official-publish-abort.js";
 import { createWorkJournalService } from "./work-journal-local.js";
 
 const root = process.cwd();
@@ -1455,7 +1456,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/official-publish-records") {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以查看官方 API 发布记录。" });
-      return sendJson(res, 200, getOfficialPublishRecordsSummary(url.searchParams));
+      return sendJson(res, 200, await getOfficialPublishRecordsSummary(url.searchParams));
     }
 
     if (req.method === "POST" && url.pathname === "/api/official-publish-records/sync") {
@@ -2442,8 +2443,11 @@ async function publishThroughOfficialTikTok(payload = {}) {
       ref: `${job.fileName}:${job.connectionId}:${index}`.slice(0, 160)
     }))
     .filter((item) => !submittedKeys.has(item.ref));
+  const shouldAbort = payload.shouldAbort;
 
+  try {
   for (let offset = 0; offset < pending.length; offset += waveSize) {
+    await throwIfOfficialPublishAborted(shouldAbort);
     const chunk = pending.slice(offset, offset + waveSize);
     const assets = new Map();
     const toUpload = [];
@@ -2461,6 +2465,7 @@ async function publishThroughOfficialTikTok(payload = {}) {
     const readyBefore = assets.size;
     let finishedUploads = 0;
     await runPool(toUpload, uploadConcurrency, async (item) => {
+      await throwIfOfficialPublishAborted(shouldAbort);
       const doneCount = submittedKeys.size + readyBefore + finishedUploads + 1;
       const megabytes = Math.max(0.1, fs.statSync(item.job.filePath).size / 1024 / 1024);
       report({
@@ -2501,6 +2506,7 @@ async function publishThroughOfficialTikTok(payload = {}) {
         batches
       });
     });
+    await throwIfOfficialPublishAborted(shouldAbort);
     report({
       phase: "creating_batch",
       current: submittedKeys.size + chunk.length,
@@ -2558,9 +2564,18 @@ async function publishThroughOfficialTikTok(payload = {}) {
       assets: savedAssets,
       batches
     });
+    await throwIfOfficialPublishAborted(shouldAbort);
   }
 
   return { ok: true, provider: "official", taskCount: jobs.length, batchCount: batches.length, batches };
+  } catch (error) {
+    if (isOfficialPublishAbort(error) && batches.length) {
+      await Promise.allSettled(batches.map((batch) => (
+        privateTikTokAnalytics.cancelPublishBatch(batch?.id || batch?.batchId)
+      )));
+    }
+    throw error;
+  }
 }
 
 async function runPool(items, concurrency, worker) {
@@ -3289,11 +3304,12 @@ function getPublishRecordsSummary(searchParams, user = null) {
   };
 }
 
-function getOfficialPublishRecordsSummary(searchParams) {
-  return summarizeOfficialPublishRecords(filterPublishRecordsBySource(readPublishRecords(), "official"), {
-    range: String(searchParams.get("range") || "7d"),
-    query: String(searchParams.get("query") || "")
-  });
+async function getOfficialPublishRecordsSummary(searchParams) {
+  const range = String(searchParams.get("range") || "7d");
+  const query = String(searchParams.get("query") || "");
+  const stored = filterOfficialPublishRecordsByRange(filterPublishRecordsBySource(readPublishRecords(), "official"), range);
+  const records = await hydrateOfficialPublishRecords(stored, (batchId) => privateTikTokAnalytics.getPublishBatch(batchId)).catch(() => stored);
+  return summarizeOfficialPublishRecords(records, { range: "all", query });
 }
 
 function getAccessiblePublishProfiles(user) {

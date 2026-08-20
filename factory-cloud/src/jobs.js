@@ -160,6 +160,19 @@ async function jobProgress(db, jobId) {
   return publicJob(job);
 }
 
+export function isCancelledJob(job) {
+  return ["cancelled", "canceled"].includes(String(job?.status || "").toLowerCase());
+}
+
+export function completeJobNextStatus({ existingStatus, cancelled, failed } = {}) {
+  if (isCancelledJob({ status: existingStatus }) || cancelled) return "cancelled";
+  return failed ? "failed" : "done";
+}
+
+export function shouldWriteOfficialPublishRecords({ existingStatus, cancelled, records } = {}) {
+  return !isCancelledJob({ status: existingStatus }) && !cancelled && Array.isArray(records) && records.length > 0;
+}
+
 export async function cancelJob(db, jobId) {
   const stamp = now();
   await db.prepare(`
@@ -259,49 +272,68 @@ async function handleWorkerApi(request, env, url) {
     return json({ job: workerJob({ ...job, status: "running" }) });
   }
 
+  const jobMatch = pathname.match(/^\/api\/worker\/jobs\/([^/]+)$/);
+  if (method === "GET" && jobMatch) {
+    const job = await getJob(env.DB, decodeURIComponent(jobMatch[1]));
+    if (!job) return errorJson("任务不存在。", 404);
+    return json({ job: workerJob(job), cancelled: isCancelledJob(job) });
+  }
+
   const progressMatch = pathname.match(/^\/api\/worker\/jobs\/([^/]+)\/progress$/);
   if (method === "POST" && progressMatch) {
+    const jobId = safeId(decodeURIComponent(progressMatch[1]));
+    const current = await getJob(env.DB, jobId);
+    if (!current) return errorJson("任务不存在。", 404);
+    if (isCancelledJob(current)) return json({ ok: true, cancelled: true });
     const body = await readJson(request);
     const stamp = now();
     await env.DB.prepare(`
-      UPDATE factory_jobs SET percent = ?, message = ?, status = ?, result_json = ?, updated_at = ?
-      WHERE id = ?
+      UPDATE factory_jobs SET percent = ?, message = ?, result_json = ?, updated_at = ?
+      WHERE id = ? AND status = 'running'
     `).bind(
       Math.max(0, Math.min(100, Number(body.percent) || 0)),
       String(body.message || "").slice(0, 500),
-      "running",
       JSON.stringify(slimJobResult(body.result)),
       stamp,
-      safeId(decodeURIComponent(progressMatch[1]))
+      jobId
     ).run();
-    const job = await getJob(env.DB, decodeURIComponent(progressMatch[1]));
+    const job = await getJob(env.DB, jobId);
+    if (isCancelledJob(job)) return json({ ok: true, cancelled: true });
     if (job) await syncAutoTaskFromJob(env.DB, job).catch((error) => {
       console.error("syncAutoTaskFromJob", error?.message || error);
     });
-    return json({ ok: true });
+    return json({ ok: true, cancelled: false });
   }
 
   const completeMatch = pathname.match(/^\/api\/worker\/jobs\/([^/]+)\/complete$/);
   if (method === "POST" && completeMatch) {
+    const jobId = safeId(decodeURIComponent(completeMatch[1]));
+    const current = await getJob(env.DB, jobId);
+    if (!current) return errorJson("任务不存在。", 404);
     const body = await readJson(request);
     const stamp = now();
-    const failed = Boolean(body.error);
     const rawResult = body.result && typeof body.result === "object" ? body.result : {};
+    const cancelled = Boolean(body.cancelled) || isCancelledJob(current);
+    const nextStatus = completeJobNextStatus({
+      existingStatus: current.status,
+      cancelled,
+      failed: Boolean(body.error)
+    });
     await env.DB.prepare(`
       UPDATE factory_jobs
       SET status = ?, percent = ?, message = ?, result_json = ?, error = ?, completed_at = ?, updated_at = ?
       WHERE id = ?
     `).bind(
-      failed ? "failed" : "done",
-      failed ? Number(body.percent || 0) : 100,
-      String(body.message || (failed ? body.error : "完成")).slice(0, 500),
+      nextStatus,
+      nextStatus === "cancelled" ? Number(current.percent || body.percent || 0) : (Boolean(body.error) ? Number(body.percent || 0) : 100),
+      String(nextStatus === "cancelled" ? (body.message || current.message || "已取消") : (body.message || (body.error ? body.error : "完成"))).slice(0, 500),
       JSON.stringify(persistableJobResult(rawResult)),
-      String(body.error || ""),
+      nextStatus === "cancelled" ? "" : String(body.error || ""),
       stamp,
       stamp,
-      safeId(decodeURIComponent(completeMatch[1]))
+      jobId
     ).run();
-    const job = await getJob(env.DB, decodeURIComponent(completeMatch[1]));
+    const job = await getJob(env.DB, jobId);
     if (job) {
       await syncAutoTaskFromJob(env.DB, job).catch((error) => {
         console.error("syncAutoTaskFromJob", error?.message || error);
@@ -309,7 +341,7 @@ async function handleWorkerApi(request, env, url) {
     }
     const result = persistableJobResult(rawResult);
     const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
-    if (incoming.length) {
+    if (shouldWriteOfficialPublishRecords({ existingStatus: nextStatus, cancelled, records: incoming })) {
       try {
         const existing = await kvGet(env.DB, "official-publish-records", []);
         await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, incoming).slice(0, 1200));
@@ -317,10 +349,10 @@ async function handleWorkerApi(request, env, url) {
         console.error("official-publish-records", error?.message || error);
       }
     }
-    if (job?.type === "audio-generate" && Array.isArray(result.items) && result.items.length) {
+    if (nextStatus !== "cancelled" && job?.type === "audio-generate" && Array.isArray(result.items) && result.items.length) {
       await attachAudioGenerateResults(env.DB, result.items);
     }
-    return json({ ok: true });
+    return json({ ok: true, cancelled: nextStatus === "cancelled" });
   }
 
   if (method === "GET" && pathname === "/api/worker/jobs") {
@@ -400,11 +432,14 @@ export function applyJobToTask(task, job) {
     return { ...task, deleted: 1, status: "deleted" };
   }
   const result = parseJson(job.result_json, {});
-  const cancelled = job.status === "cancelled";
+  const sameJob = !task.generationJobId || String(task.generationJobId) === String(job.id || "");
+  const cancelled = isCancelledJob(job) || (sameJob && String(task.status || "") === "canceled");
   const publishOnly = Boolean(result.publishOnly) || job.type === "official-publish";
   const incomingVideos = Array.isArray(result.results) ? result.results : [];
   const generatedVideos = mergeGeneratedVideos(task.generatedVideos, incomingVideos);
-  const publishResults = Array.isArray(result.publishResults) ? result.publishResults : (task.publishResults || []);
+  const publishResults = cancelled
+    ? (Array.isArray(task.publishResults) ? task.publishResults : [])
+    : (Array.isArray(result.publishResults) ? result.publishResults : (task.publishResults || []));
   const expectedVideoCount = expectedTaskVideoCount(task, result, generatedVideos);
   const generatedCount = Math.max(Number(result.progressCurrent) || 0, generatedVideos.length);
   const publishFailed = Boolean(result.publishFailed);

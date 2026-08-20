@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyJobToTask, findLatestOpeningVariantsJob, isDeletedTask, persistableJobResult } from "./jobs.js";
+import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, persistableJobResult, shouldWriteOfficialPublishRecords } from "./jobs.js";
 
 test("publish failure after generation keeps videos and needs attention", () => {
   const task = applyJobToTask({
@@ -92,6 +92,39 @@ test("expected count stays at planned total while videos are still generating", 
   assert.equal(task.expectedVideoCount, 6);
   assert.equal(task.progress.total, 6);
   assert.equal(task.generatedVideos.length, 2);
+});
+
+test("stop keeps the task canceled and does not write publish records", () => {
+  const task = applyJobToTask({
+    id: "task-1",
+    status: "canceled",
+    generationJobId: "job-1",
+    generatedVideos: [{ fileName: "a.mp4" }],
+    publishResults: []
+  }, {
+    id: "job-1",
+    type: "reddit-mix",
+    status: "done",
+    message: "出片 1 条，并已提交官方发布。",
+    result_json: JSON.stringify({
+      results: [{ fileName: "a.mp4" }],
+      officialPublishRecords: [{ id: "r1" }],
+      publishResults: [{ status: "submitted", fileName: "a.mp4" }]
+    }),
+    updated_at: 20,
+    completed_at: 20
+  });
+  assert.equal(task.status, "canceled");
+  assert.equal(task.phase, "canceled");
+  assert.deepEqual(task.publishResults, []);
+  assert.equal(completeJobNextStatus({ existingStatus: "cancelled", failed: false }), "cancelled");
+  assert.equal(completeJobNextStatus({ cancelled: true, failed: false }), "cancelled");
+  assert.equal(shouldWriteOfficialPublishRecords({
+    existingStatus: "cancelled",
+    cancelled: true,
+    records: [{ id: "r1" }]
+  }), false);
+  assert.equal(isCancelledJob({ status: "cancelled" }), true);
 });
 
 test("opening variants survive job-result persistence", () => {

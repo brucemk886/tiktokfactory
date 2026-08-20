@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { getPublishAccountIds, normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { mergeOfficialPublishRecords } from "./official-publish-records.js";
+import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
 
 export { mergeOfficialPublishRecords };
@@ -218,6 +219,10 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       }
 
       task = getTask(id);
+      if (["canceled", "cancelled"].includes(String(task.status || ""))) {
+        patchTask(id, { status: "canceled", phase: "canceled", message: "任务已停止。", workerPid: null, updatedAt: Date.now() });
+        return;
+      }
       if (!task.publish.autoPublish) {
         patchTask(id, { status: "awaiting_review", phase: "awaiting_review", message: "视频已生成，等待人工确认发布。", updatedAt: Date.now() });
         return;
@@ -228,32 +233,48 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       let result;
       if (isOfficial) {
         if (typeof officialPublishService !== "function") throw new Error("TikTok 官方 API 发布服务未配置。");
-        const officialResult = await officialPublishService({
-          ...task.publish,
-          videos: task.generatedVideos,
-          name: task.name,
-          taskId: task.id,
-          officialWaveSize: 10,
-          officialUploadConcurrency: 3,
-          checkpoint: task.officialPublishCheckpoint,
-          onCheckpoint: (next) => {
-            patchTask(id, { officialPublishCheckpoint: next, updatedAt: Date.now() });
-          },
-          onProgress: (progress) => {
-            const total = Math.max(1, Number(progress?.total) || task.generatedVideos?.length || 1);
-            const current = Math.max(0, Number(progress?.current) || 0);
-            patchTask(id, {
-              phase: "publishing",
-              message: progress?.message || "正在提交到 TikTok 官方 API...",
-              publishProgress: {
-                current,
-                total,
-                percent: Math.max(0, Math.min(99, Math.round(current / total * 100)))
-              },
-              updatedAt: Date.now()
-            });
+        let officialResult;
+        try {
+          officialResult = await officialPublishService({
+            ...task.publish,
+            videos: task.generatedVideos,
+            name: task.name,
+            taskId: task.id,
+            officialWaveSize: 10,
+            officialUploadConcurrency: 3,
+            checkpoint: task.officialPublishCheckpoint,
+            shouldAbort: () => ["canceled", "cancelled"].includes(String(readTask(id)?.status || "")),
+            onCheckpoint: (next) => {
+              if (["canceled", "cancelled"].includes(String(readTask(id)?.status || ""))) return;
+              patchTask(id, { officialPublishCheckpoint: next, updatedAt: Date.now() });
+            },
+            onProgress: (progress) => {
+              if (["canceled", "cancelled"].includes(String(readTask(id)?.status || ""))) return;
+              const total = Math.max(1, Number(progress?.total) || task.generatedVideos?.length || 1);
+              const current = Math.max(0, Number(progress?.current) || 0);
+              patchTask(id, {
+                phase: "publishing",
+                message: progress?.message || "正在提交到 TikTok 官方 API...",
+                publishProgress: {
+                  current,
+                  total,
+                  percent: Math.max(0, Math.min(99, Math.round(current / total * 100)))
+                },
+                updatedAt: Date.now()
+              });
+            }
+          });
+        } catch (error) {
+          if (isOfficialPublishAbort(error) || ["canceled", "cancelled"].includes(String(readTask(id)?.status || ""))) {
+            patchTask(id, { status: "canceled", phase: "canceled", message: "任务已停止。", workerPid: null, updatedAt: Date.now() });
+            return;
           }
-        });
+          throw error;
+        }
+        if (["canceled", "cancelled"].includes(String(readTask(id)?.status || ""))) {
+          patchTask(id, { status: "canceled", phase: "canceled", message: "任务已停止。", workerPid: null, updatedAt: Date.now() });
+          return;
+        }
         result = normalizeOfficialAutoPublishResult(task, officialResult);
         try {
           persistOfficialPublishRecords(workDir, task, result.results);

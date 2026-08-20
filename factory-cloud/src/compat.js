@@ -163,7 +163,7 @@ export async function handleCompat(request, env, url, session) {
       if (task.generationJobId) await cancelJob(db, task.generationJobId);
       task.status = "canceled";
       task.phase = "canceled";
-      task.message = "已取消";
+      task.message = "任务已停止。";
       task.updatedAt = now();
       await kvSet(db, "auto-tasks", tasks);
       return json({ task });

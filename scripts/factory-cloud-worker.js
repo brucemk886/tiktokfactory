@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
@@ -9,6 +9,7 @@ import { createCodexBrainService } from "./codex-brain.js";
 import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { normalizeOfficialPublishRecord } from "./official-publish-records.js";
+import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { readConfig } from "./video-core.js";
 import { resolveStorageDirs } from "./storage-paths.js";
@@ -105,12 +106,16 @@ async function runJob(context, job) {
 
   let lastFingerprint = "";
   while (true) {
+    if (await cloudJobCancelled(context, jobId)) {
+      await abortRunningJob(context, job, jobId, jobPath, child);
+      break;
+    }
     const local = readLocalJob(jobPath);
     const fingerprint = `${local.status}|${local.percent}|${local.message}`;
     if (fingerprint !== lastFingerprint) {
       lastFingerprint = fingerprint;
       mirrorCloudTask(context, job, local);
-      await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      const progress = await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
         method: "POST",
         body: {
           percent: local.percent,
@@ -118,16 +123,31 @@ async function runJob(context, job) {
           status: "running",
           result: local
         }
-      }).catch((error) => console.error("回写进度失败：", error.message));
+      }).catch((error) => {
+        console.error("回写进度失败：", error.message);
+        return {};
+      });
+      if (progress?.cancelled) {
+        await abortRunningJob(context, job, jobId, jobPath, child);
+        break;
+      }
     }
-    if (["done", "completed", "success", "failed", "error", "cancelled", "canceled"].includes(String(local.status || ""))) {
-      const failed = ["failed", "error", "cancelled", "canceled"].includes(String(local.status || ""));
+    if (isCancelStatus(local.status)) {
+      await abortRunningJob(context, job, jobId, jobPath, child);
+      break;
+    }
+    if (["done", "completed", "success", "failed", "error"].includes(String(local.status || ""))) {
+      const failed = ["failed", "error"].includes(String(local.status || ""));
       mirrorCloudTask(context, job, local);
       await finishCloudJob(context, job, jobId, local, failed);
       break;
     }
     if (child.exitCode !== null) {
       await sleep(1500);
+      if (await cloudJobCancelled(context, jobId)) {
+        await abortRunningJob(context, job, jobId, jobPath, child);
+        break;
+      }
       const latest = readLocalJob(jobPath);
       const failed = !["done", "completed", "success"].includes(String(latest.status || ""));
       mirrorCloudTask(context, job, latest);
@@ -231,14 +251,30 @@ async function runOfficialPublishJob(context, job) {
     return;
   }
   try {
+    if (await cloudJobCancelled(context, jobId)) {
+      await completeCancelled(context, jobId, local);
+      return;
+    }
     const published = await submitOfficialPublish(context, job, jobId, local);
+    if (await cloudJobCancelled(context, jobId)) {
+      await completeCancelled(context, jobId, local);
+      return;
+    }
     await completeOfficialOutcome(context, job, jobId, local, { published });
   } catch (error) {
+    if (isOfficialPublishAbort(error) || await cloudJobCancelled(context, jobId)) {
+      await completeCancelled(context, jobId, local);
+      return;
+    }
     await completeOfficialOutcome(context, job, jobId, local, { publishError: error.message || "官方发布失败" });
   }
 }
 
 async function finishCloudJob(context, job, jobId, local, failed) {
+  if (await cloudJobCancelled(context, jobId) || isCancelStatus(local.status)) {
+    await completeCancelled(context, jobId, local);
+    return;
+  }
   const videos = Array.isArray(local.results) ? local.results : [];
   if (failed && !videos.length) {
     await complete(context, jobId, {
@@ -261,8 +297,16 @@ async function finishCloudJob(context, job, jobId, local, failed) {
   if (shouldOfficialPublish(job.payload) && typeof context.publishOfficial === "function") {
     try {
       const published = await submitOfficialPublish(context, job, jobId, local);
+      if (await cloudJobCancelled(context, jobId)) {
+        await completeCancelled(context, jobId, local);
+        return;
+      }
       await completeOfficialOutcome(context, job, jobId, local, { published });
     } catch (error) {
+      if (isOfficialPublishAbort(error) || await cloudJobCancelled(context, jobId)) {
+        await completeCancelled(context, jobId, local);
+        return;
+      }
       await completeOfficialOutcome(context, job, jobId, local, { publishError: error.message || "官方发布失败" });
     }
     return;
@@ -300,6 +344,7 @@ async function submitOfficialPublish(context, job, jobId, local) {
     videos,
     name: job.payload.taskName || job.title,
     taskId: job.payload.taskId,
+    shouldAbort: () => cloudJobCancelled(context, jobId),
     onProgress: (progress) => {
       request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
         method: "POST",
@@ -525,6 +570,9 @@ function compactOfficialPublishRecord(record) {
     taskIds: item.taskIds,
     batchId: item.batchId,
     autoTaskId: item.autoTaskId,
+    remoteTaskId: item.remoteTaskId || "",
+    externalRef: item.externalRef || "",
+    publishError: item.publishError || "",
     note: String(item.note || "").slice(0, 180),
     source: item.source || "official-tiktok",
     provider: item.provider || "official",
@@ -535,6 +583,53 @@ function compactOfficialPublishRecord(record) {
     shareLink: item.shareLink || "",
     videoUrl: item.videoUrl || ""
   };
+}
+
+export function isCancelStatus(value) {
+  return ["cancelled", "canceled"].includes(String(value || "").toLowerCase());
+}
+
+async function cloudJobCancelled(context, jobId) {
+  try {
+    const data = await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}`);
+    return Boolean(data?.cancelled || isCancelStatus(data?.job?.status));
+  } catch {
+    return false;
+  }
+}
+
+async function completeCancelled(context, jobId, local = {}) {
+  await complete(context, jobId, {
+    cancelled: true,
+    error: "",
+    message: "任务已停止。",
+    result: {
+      ...local,
+      officialPublishRecords: [],
+      publishResults: [],
+      publishFailed: false,
+      publishError: ""
+    },
+    percent: Number(local.percent || 0)
+  });
+}
+
+async function abortRunningJob(context, job, jobId, jobPath, child) {
+  killProcessTree(child?.pid);
+  const local = { ...readLocalJob(jobPath), status: "canceled", message: "任务已停止。" };
+  writeLocalJob(jobPath, local);
+  mirrorCloudTask(context, job, local);
+  await completeCancelled(context, jobId, local);
+}
+
+function killProcessTree(pid) {
+  const safePid = Number(pid);
+  if (!Number.isInteger(safePid) || safePid <= 0) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill.exe", ["/PID", String(safePid), "/T", "/F"], { encoding: "utf8", windowsHide: true });
+    return;
+  }
+  try { process.kill(safePid, "SIGTERM"); } catch { /* already stopped */ }
 }
 
 async function complete(context, jobId, body) {
