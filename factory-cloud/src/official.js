@@ -19,7 +19,7 @@ import {
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
 import { parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
-import { summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import {
@@ -128,10 +128,13 @@ export async function handleOfficial(request, env, url, session) {
   }
 
   if (method === "GET" && pathname === "/api/official-publish-records") {
-    return json(summarizeOfficialPublishRecords(await kvGet(db, "official-publish-records", []), {
-      range: url.searchParams.get("range") || "7d",
-      query: url.searchParams.get("query") || ""
-    }));
+    const range = url.searchParams.get("range") || "7d";
+    const query = url.searchParams.get("query") || "";
+    const stored = filterOfficialPublishRecordsByRange(await kvGet(db, "official-publish-records", []), range);
+    const records = await hydrateOfficialPublishRecords(stored, (batchId) => (
+      signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
+    )).catch(() => stored);
+    return json(summarizeOfficialPublishRecords(records, { range: "all", query }));
   }
 
   if (method === "POST" && pathname === "/api/official-publish-records/sync") {

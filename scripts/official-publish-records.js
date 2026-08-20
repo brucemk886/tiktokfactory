@@ -99,6 +99,129 @@ export function summarizeOfficialPublishRecords(records, { range = "7d", query =
   };
 }
 
+const TERMINAL_REMOTE_FAILURES = new Set(["failed", "rejected", "status_timeout", "needs_review", "canceled", "enqueue_failed"]);
+const FAIL_REASON_LABELS = {
+  spam_risk: "TikTok 审核判定这次发布有风险，没有更细原因，官方要求不要重试",
+  spam_risk_text: "文案被判定有垃圾或风险内容，不要重试",
+  spam_risk_too_many_posts: "该账号 24 小时内通过开放接口发得太多，请改用 TikTok App",
+  spam_risk_too_many_pending_share: "该账号待发布草稿太多",
+  spam_risk_user_banned_from_posting: "该账号已被 TikTok 禁止发新帖，不要重试",
+  picture_size: "封面或图片尺寸不符合限制",
+  picture_size_check_failed: "封面或图片尺寸不符合限制",
+  duration: "时长不符合 TikTok 限制",
+  duration_check_failed: "时长不符合 TikTok 限制",
+  file_format: "文件格式不符合 TikTok 限制",
+  file_format_check_failed: "文件格式不符合 TikTok 限制",
+  frame_rate: "帧率不符合 TikTok 限制",
+  frame_rate_check_failed: "帧率不符合 TikTok 限制",
+  video_pull_failed: "TikTok 拉不到视频文件（地址无法访问或超时）",
+  photo_pull_failed: "TikTok 拉不到图片文件（地址无法访问或超时）",
+  internal: "TikTok 服务端异常，可以稍后重试",
+  auth_removed: "发布过程中账号取消了授权，不要重试",
+  publish_cancelled: "发布已被取消",
+  privacy_level_not_authorized: "该账号未授权所选隐私级别"
+};
+
+export function officialFailReasonLabel(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const mapped = FAIL_REASON_LABELS[raw.toLowerCase()];
+  return mapped ? `${mapped}（${raw}）` : raw;
+}
+
+export function officialBatchUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+export function collectOfficialLiveBatchIds(records, limit = 20) {
+  const ids = [];
+  const seen = new Set();
+  for (const record of Array.isArray(records) ? records : []) {
+    const candidates = [
+      record?.batchId,
+      ...(Array.isArray(record?.officialBatchIds) ? record.officialBatchIds : []),
+      ...(Array.isArray(record?.taskIds) ? record.taskIds : [])
+    ];
+    for (const value of candidates) {
+      const id = String(value || "").trim();
+      if (!officialBatchUuid(id) || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= limit) return ids;
+    }
+  }
+  return ids;
+}
+
+export function filterOfficialPublishRecordsByRange(records, range = "7d") {
+  const from = resolveStatsFrom(range);
+  return (Array.isArray(records) ? records : [])
+    .map((item) => normalizeOfficialPublishRecord(item))
+    .filter(Boolean)
+    .filter((item) => item.id && (!from || officialRecordTime(item) >= from));
+}
+
+export async function hydrateOfficialPublishRecords(records, fetchBatch) {
+  const list = Array.isArray(records) ? records : [];
+  const batchIds = collectOfficialLiveBatchIds(list);
+  if (!batchIds.length || typeof fetchBatch !== "function") return list;
+  const settled = await Promise.allSettled(batchIds.map((id) => fetchBatch(id)));
+  const batches = [];
+  for (const result of settled) {
+    if (result.status !== "fulfilled" || !result.value) continue;
+    const batch = result.value.batch || result.value;
+    if (batch && typeof batch === "object") batches.push(batch);
+  }
+  return attachOfficialRemoteOutcomes(list, batches);
+}
+
+export function findOfficialRemoteTask(record, tasks) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  const remoteTaskId = String(record?.remoteTaskId || "").trim();
+  const externalRef = String(record?.externalRef || "").trim();
+  const connectionId = String(record?.connectionId || "").trim();
+  const fileName = String(record?.fileName || "").trim();
+  return (remoteTaskId && list.find((task) => String(task?.id || "").trim() === remoteTaskId))
+    || (externalRef && list.find((task) => String(task?.externalRef || "").trim() === externalRef))
+    || (connectionId && fileName && list.find((task) => String(task?.connectionId || "").trim() === connectionId && String(task?.fileName || "").trim() === fileName))
+    || null;
+}
+
+export function applyOfficialRemoteOutcome(record, remote) {
+  if (!record || !remote) return record;
+  const username = String(remote.username || record.accountUsername || record.username || "").replace(/^@/, "").trim();
+  const remoteStatus = String(remote.status || "").toLowerCase();
+  const reason = String(remote.error || "").trim();
+  const published = remoteStatus === "published" || remoteStatus === "publish_complete";
+  const failed = TERMINAL_REMOTE_FAILURES.has(remoteStatus);
+  return {
+    ...record,
+    username: username || record.username,
+    accountUsername: username || record.accountUsername,
+    officialRemoteStatus: remoteStatus || record.officialRemoteStatus || "",
+    publishError: reason || record.publishError || "",
+    videoId: String(remote.videoId || record.videoId || "").trim(),
+    shareLink: String(remote.videoUrl || record.shareLink || ""),
+    videoUrl: String(remote.videoUrl || record.videoUrl || ""),
+    status: published ? "published" : failed ? "failed" : record.status,
+    note: published
+      ? (record.note && record.note.includes("已确认") ? record.note : "TikTok 官方 API 已确认发布成功")
+      : failed
+        ? (reason ? `TikTok 拒绝：${officialFailReasonLabel(reason)}` : `TikTok 发布失败：${remoteStatus}`)
+        : record.note
+  };
+}
+
+export function attachOfficialRemoteOutcomes(records, batches) {
+  const list = Array.isArray(records) ? records : [];
+  const tasks = (Array.isArray(batches) ? batches : []).flatMap((batch) => Array.isArray(batch?.tasks) ? batch.tasks : []);
+  if (!tasks.length) return list;
+  return list.map((record) => {
+    const remote = findOfficialRemoteTask(record, tasks);
+    return remote ? applyOfficialRemoteOutcome(record, remote) : record;
+  });
+}
+
 export function officialRecordTime(record) {
   return toMillis(record?.createdAt)
     || toMillis(record?.publishedAt)

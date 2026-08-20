@@ -94,14 +94,23 @@ export function createOfficialPublishResultSync({
           updatedAt: startedAt,
         };
 
+        const username = String(remote.username || record.accountUsername || record.username || "").replace(/^@/, "").trim();
+        if (username) {
+          update.username = username;
+          update.accountUsername = username;
+        }
         if (published) {
           update.status = "published";
+          update.publishError = "";
           update.note = "TikTok 官方 API 已确认发布成功";
           summary.published += 1;
           if (videoId) update.officialVideoDetailStatus = "pending";
         } else if (failed) {
           update.status = "failed";
-          update.note = String(remote.error || `TikTok 发布失败：${remoteStatus}`);
+          update.publishError = String(remote.error || "");
+          update.note = update.publishError
+            ? `TikTok 拒绝：${update.publishError}`
+            : `TikTok 发布失败：${remoteStatus}`;
           summary.failed += 1;
         } else {
           update.status = "submitted";
@@ -272,9 +281,14 @@ function groupByBatch(records) {
 }
 
 function findRemoteTask(record, tasks) {
-  return tasks.find((task) => String(task.id || "") === String(record.remoteTaskId || ""))
-    || tasks.find((task) => String(task.externalRef || "") === String(record.externalRef || ""))
-    || tasks.find((task) => String(task.connectionId || "") === String(record.connectionId || "") && String(task.fileName || "") === String(record.fileName || ""));
+  const remoteTaskId = String(record.remoteTaskId || "").trim();
+  const externalRef = String(record.externalRef || "").trim();
+  const connectionId = String(record.connectionId || "").trim();
+  const fileName = String(record.fileName || "").trim();
+  return (remoteTaskId && tasks.find((task) => String(task.id || "").trim() === remoteTaskId))
+    || (externalRef && tasks.find((task) => String(task.externalRef || "").trim() === externalRef))
+    || (connectionId && fileName && tasks.find((task) => String(task.connectionId || "").trim() === connectionId && String(task.fileName || "").trim() === fileName))
+    || null;
 }
 
 function batchIdOf(record) {

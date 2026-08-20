@@ -79,6 +79,45 @@ test("daily sync groups batch requests and writes video id plus detailed officia
   assert.equal(records[0].officialAccountSnapshots[0].followers, 20);
 });
 
+test("daily sync writes TikTok handle and fail_reason onto failed records", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "official-result-fail-"));
+  let records = [
+    officialRecord("record-fail", "2026-08-11T10:00:00+08:00", {
+      externalRef: "cut-1.mp4:acc-1:0",
+      connectionId: "acc-1",
+      fileName: "cut-1.mp4",
+      accountName: "leonardoduan",
+    }),
+  ];
+  const sync = createOfficialPublishResultSync({
+    workDir,
+    service: {
+      async getPublishBatch() {
+        return { batch: { tasks: [{
+          id: "t1",
+          externalRef: "cut-1.mp4:acc-1:0",
+          connectionId: "acc-1",
+          fileName: "cut-1.mp4",
+          status: "failed",
+          error: "spam_risk",
+          username: "dominicktown39",
+        }] } };
+      },
+      async listVideos() { return { videos: [] }; },
+    },
+    readRecords: () => records,
+    writeRecords: (next) => { records = next; },
+    now: () => SHANGHAI_MORNING,
+    requestIntervalMs: 0,
+  });
+  const result = await sync.run();
+  assert.equal(result.failed, 1);
+  assert.equal(records[0].status, "failed");
+  assert.equal(records[0].accountUsername, "dominicktown39");
+  assert.equal(records[0].publishError, "spam_risk");
+  assert.equal(records[0].note, "TikTok 拒绝：spam_risk");
+});
+
 test("published records without stored video detail are retried on a later daily run", () => {
   const record = officialRecord("published", "2026-08-10T10:00:00+08:00", { status: "published", videoId: "700000000000000003", officialVideoDetailStatus: "pending" });
   assert.deepEqual(selectDueOfficialPublishRecords([record], SHANGHAI_MORNING).map((item) => item.id), ["published"]);
