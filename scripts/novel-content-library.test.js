@@ -243,6 +243,36 @@ test("exposes rewrite audio files and performance on the novel for the audio boa
   assert.equal(row.audio.sourceType, "manual-rewrite");
 });
 
+test("deletes a novel and its rewrite scripts without removing other books", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-delete-"));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  const keep = service.createNovel({
+    title: "Keep this book",
+    platform: "GoodNovel",
+    sourceContent: "This free chapter belongs to the book that should stay in the catalog."
+  });
+  const remove = service.createNovel({
+    title: "Remove this book",
+    platform: "NovelMaster",
+    sourceContent: "This free chapter belongs to the book that should be deleted from the catalog."
+  });
+  service.createScript(remove.id, {
+    title: "Opening A",
+    versionLabel: "原开头",
+    text: "A complete original narration that is long enough for this delete test."
+  });
+  const result = service.deleteNovel(remove.id);
+  assert.equal(result.ok, true);
+  assert.equal(result.id, remove.id);
+  assert.equal(result.removedScriptCount, 1);
+  const overview = service.getOverview();
+  assert.equal(overview.novels.length, 1);
+  assert.equal(overview.novels[0].id, keep.id);
+  assert.equal(overview.novels[0].scripts.length, 0);
+  assert.throws(() => service.getNovel(remove.id), /没有找到该小说/);
+  assert.throws(() => service.deleteNovel("missing-novel"), /没有找到该小说/);
+});
+
 test("migrates legacy MasterNovel records to NovelMaster when reading the catalog", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-"));
   fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({

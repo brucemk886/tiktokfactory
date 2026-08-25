@@ -108,6 +108,19 @@ export function createNovelContentLibraryService({
     return novel;
   }
 
+  function deleteNovel(id) {
+    const store = readStore(storePath);
+    const wanted = safeId(id) || clean(id);
+    const novel = store.novels.find((item) => item.id === wanted || item.id === clean(id));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    const remainingScripts = store.scripts.filter((item) => item.novelId !== novel.id);
+    const removedScriptCount = store.scripts.length - remainingScripts.length;
+    store.novels = store.novels.filter((item) => item.id !== novel.id);
+    store.scripts = remainingScripts;
+    writeStore(storePath, store);
+    return { ok: true, id: novel.id, title: novel.title, removedScriptCount };
+  }
+
   function assignScript(scriptId, payload = {}) {
     const store = syncedStore();
     const script = store.scripts.find((item) => item.id === safeId(scriptId) || item.audioId === safeId(scriptId));
@@ -246,7 +259,7 @@ export function createNovelContentLibraryService({
     return getNovel(novel.id);
   }
 
-  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, createScript, assignScript, attachScriptAudio, setNovelMixAudios, importMarketingResult };
+  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, assignScript, attachScriptAudio, setNovelMixAudios, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {

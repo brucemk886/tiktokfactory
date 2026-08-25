@@ -5,7 +5,7 @@ import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { insertNovels, listNovelSummaries, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
+import { deleteNovelRow, insertNovels, listNovelSummaries, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
 import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
@@ -59,6 +59,10 @@ export async function handleNovels(request, env, url, session) {
   if (method === "PATCH" && novelMatch) {
     const novel = await updateNovel(db, decodeURIComponent(novelMatch[1]), await readJson(request));
     return json({ novel });
+  }
+  if (method === "DELETE" && novelMatch) {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以删除小说。", 403);
+    return json(await deleteNovel(db, decodeURIComponent(novelMatch[1])));
   }
 
   const scriptMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/scripts$/);
@@ -284,6 +288,31 @@ async function updateNovel(db, id, payload) {
   novel.updatedAt = new Date().toISOString();
   await upsertNovel(db, novel);
   return novel;
+}
+
+export function takeNovelFromStore(store, id) {
+  const wanted = String(id || "").trim();
+  const novel = (store.novels || []).find((item) => item.id === wanted || item.id === safeId(id));
+  if (!novel) return null;
+  return {
+    novel,
+    novels: store.novels.filter((item) => item.id !== novel.id),
+    scripts: (store.scripts || []).filter((item) => item.novelId !== novel.id)
+  };
+}
+
+async function deleteNovel(db, id) {
+  const store = await readStore(db);
+  const taken = takeNovelFromStore(store, id);
+  if (!taken) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  await deleteNovelRow(db, taken.novel.id);
+  if (taken.scripts.length !== store.scripts.length) await writeScripts(db, taken.scripts);
+  return {
+    ok: true,
+    id: taken.novel.id,
+    title: taken.novel.title,
+    removedScriptCount: store.scripts.length - taken.scripts.length
+  };
 }
 
 async function getNovel(db, id) {

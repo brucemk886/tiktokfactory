@@ -20,6 +20,7 @@ const elements = {
   chapterCount: document.querySelector("#chapterCount"),
   editorTitle: document.querySelector("#editorTitle"),
   saveButton: document.querySelector("#saveBookBtn"),
+  deleteButton: document.querySelector("#deleteBookBtn"),
   cancelButton: document.querySelector("#cancelEditBtn"),
   formStatus: document.querySelector("#formStatus"),
   search: document.querySelector("#searchInput"),
@@ -35,12 +36,15 @@ const state = {
   shelf: "library",
   page: 1,
   pageSize: 20,
-  searchTimer: null
+  searchTimer: null,
+  role: document.documentElement.dataset.role || "",
+  deletingId: ""
 };
 
 elements.form.addEventListener("submit", saveBook);
 elements.cancelButton.addEventListener("click", showCatalog);
 elements.createButton.addEventListener("click", () => openEditor());
+elements.deleteButton.addEventListener("click", () => deleteBook(elements.bookId.value));
 elements.importButton.addEventListener("click", importFromFeishu);
 elements.promotionCode.addEventListener("input", updatePromotionCopy);
 elements.chapters.addEventListener("input", updateChapterCount);
@@ -65,11 +69,27 @@ document.querySelectorAll("[data-shelf]").forEach((button) => {
   });
 });
 
+loadCurrentRole();
 loadBooks();
 updateChapterCount();
 updatePromotionCopy();
 
-async function loadBooks() {
+async function loadCurrentRole() {
+  try {
+    const data = await api("/api/auth/me");
+    state.role = data.user?.role || "";
+    if (state.novels.length) renderBooks();
+    syncEditorDeleteButton();
+  } catch {
+    state.role = document.documentElement.dataset.role || state.role;
+  }
+}
+
+function canDeleteBooks() {
+  return state.role === "admin" || document.documentElement.dataset.role === "admin";
+}
+
+async function loadBooks({ resetPage = true } = {}) {
   elements.listStatus.className = "list-status";
   elements.listStatus.textContent = "正在读取小说书单...";
   try {
@@ -77,7 +97,7 @@ async function loadBooks() {
     const data = await api(`/api/novel-content${query ? `?query=${encodeURIComponent(query)}` : ""}`);
     state.novels = data.novels || [];
     state.catalog = data.catalog || state.catalog;
-    state.page = 1;
+    if (resetPage) state.page = 1;
     renderBooks();
   } catch (error) {
     elements.list.innerHTML = "";
@@ -128,10 +148,14 @@ function renderBooks() {
         <button class="edit-button" type="button" data-edit-id="${escapeHtml(novel.id)}">编辑</button>
         <a class="edit-button audio-link" href="/novel-audio?novel=${encodeURIComponent(novel.id)}" data-audio-id="${escapeHtml(novel.id)}">查看音频</a>
         <a class="edit-button rewrite-link" href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}" data-rewrite-id="${escapeHtml(novel.id)}">改写</a>
+        ${canDeleteBooks() ? `<button class="edit-button delete-button" type="button" data-delete-id="${escapeHtml(novel.id)}" ${state.deletingId === novel.id ? "disabled" : ""}>删除</button>` : ""}
       </td>
     </tr>`).join("");
   elements.list.querySelectorAll("[data-edit-id]").forEach((button) => {
     button.addEventListener("click", () => openEditor(button.dataset.editId));
+  });
+  elements.list.querySelectorAll("[data-delete-id]").forEach((button) => {
+    button.addEventListener("click", () => deleteBook(button.dataset.deleteId));
   });
   elements.list.querySelectorAll("[data-rewrite-id]").forEach((link) => {
     link.addEventListener("click", () => stashRewriteNovel(link.dataset.rewriteId));
@@ -299,11 +323,45 @@ async function openEditor(id = "") {
   setFormStatus("");
   updateChapterCount();
   updatePromotionCopy();
+  syncEditorDeleteButton();
   elements.catalogView.hidden = true;
   elements.editorView.hidden = false;
   elements.createButton.hidden = true;
   elements.importButton.hidden = true;
   elements.title.focus();
+}
+
+function syncEditorDeleteButton() {
+  if (!elements.deleteButton) return;
+  elements.deleteButton.hidden = !elements.bookId.value || !canDeleteBooks();
+  elements.deleteButton.disabled = Boolean(state.deletingId);
+}
+
+async function deleteBook(id) {
+  const novelId = String(id || "").trim();
+  const novel = state.novels.find((item) => item.id === novelId);
+  if (!novelId || !canDeleteBooks() || state.deletingId) return;
+  const title = novel?.title || "这本小说";
+  if (!confirm(`确定删除「${title}」？书单和这本书的改写文案会一起删掉，已生成的音频和发布记录会保留。`)) return;
+  state.deletingId = novelId;
+  syncEditorDeleteButton();
+  elements.listStatus.className = "list-status";
+  elements.listStatus.textContent = `正在删除「${title}」...`;
+  try {
+    await api(`/api/novel-content/novels/${encodeURIComponent(novelId)}`, { method: "DELETE" });
+    if (elements.bookId.value === novelId) showCatalog();
+    await loadBooks({ resetPage: false });
+    elements.listStatus.className = "list-status";
+    elements.listStatus.textContent = `已删除「${title}」。`;
+  } catch (error) {
+    elements.listStatus.textContent = error.message;
+    elements.listStatus.className = "list-status is-error";
+    if (!elements.catalogView.hidden) renderBooks();
+    else setFormStatus(error.message, "error");
+  } finally {
+    state.deletingId = "";
+    syncEditorDeleteButton();
+  }
 }
 
 function showCatalog() {
@@ -317,6 +375,7 @@ function showCatalog() {
   setFormStatus("");
   updateChapterCount();
   updatePromotionCopy();
+  syncEditorDeleteButton();
   elements.editorView.hidden = true;
   elements.catalogView.hidden = false;
   elements.createButton.hidden = false;

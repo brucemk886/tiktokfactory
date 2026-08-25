@@ -1259,6 +1259,17 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "DELETE" && /^\/api\/novel-content\/novels\/[^/]+$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以删除小说。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/").pop());
+        return sendJson(res, 200, novelContentLibrary.deleteNovel(id));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "删除小说失败。" });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/novel-content/opening-styles") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       return sendJson(res, 200, { styles: publicOpeningStyles(), version: 3 }, { "Cache-Control": "no-store" });

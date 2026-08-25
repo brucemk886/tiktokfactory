@@ -102,6 +102,10 @@ export async function upsertNovel(db, novel) {
   return novel;
 }
 
+export async function deleteNovelRow(db, id) {
+  await db.prepare("DELETE FROM factory_novels WHERE id = ?").bind(String(id || "").trim()).run();
+}
+
 export async function writeScripts(db, scripts) {
   const current = await kvGet(db, "novel-content", { novels: [], scripts: [] });
   await kvSet(db, "novel-content", { novels: [], scripts });
