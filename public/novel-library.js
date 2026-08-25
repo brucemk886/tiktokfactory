@@ -111,7 +111,11 @@ function visibleNovels() {
     if (state.platform !== "all" && novel.platform !== state.platform) return false;
     if (state.shelf === "featured") return Boolean(novel.featured);
     return true;
-  }).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  }).sort((a, b) => {
+    const featuredDiff = Number(Boolean(b.featured)) - Number(Boolean(a.featured));
+    if (featuredDiff) return featuredDiff;
+    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
 }
 
 function renderBooks() {
