@@ -83,6 +83,16 @@ export async function handleNovels(request, env, url, session) {
     return json({ script }, 201);
   }
 
+  const scriptItemMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/scripts\/([^/]+)$/);
+  if (method === "PATCH" && scriptItemMatch) {
+    try {
+      const script = await updateScript(db, decodeURIComponent(scriptItemMatch[1]), decodeURIComponent(scriptItemMatch[2]), await readJson(request));
+      return json({ script, novel: await hydrateNovel(db, script.novelId) });
+    } catch (error) {
+      return errorJson(error.message || "保存文案失败。", error.statusCode || 400);
+    }
+  }
+
   const pruneMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/prune-drafts$/);
   if (method === "POST" && pruneMatch) {
     const payload = await readJson(request);
@@ -454,6 +464,23 @@ async function createScript(db, novelId, payload = {}) {
     updatedAt: createdAt
   };
   store.scripts.push(script);
+  await writeScripts(db, store.scripts);
+  return script;
+}
+
+export async function updateScript(db, novelId, scriptId, payload = {}) {
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
+  if (!script) throw Object.assign(new Error("没有找到这条文案。"), { statusCode: 404 });
+  const text = payload.text == null ? script.text : String(payload.text || "").trim().slice(0, 20_000);
+  if (text.length < 20) throw Object.assign(new Error("改写文案至少需要 20 个字符。"), { statusCode: 400 });
+  script.text = text;
+  if (payload.openingTitle != null) script.openingTitle = String(payload.openingTitle || "").trim().slice(0, 80);
+  if (payload.speakOpeningTitle != null) script.speakOpeningTitle = payload.speakOpeningTitle === true;
+  script.kept = true;
+  script.updatedAt = new Date().toISOString();
   await writeScripts(db, store.scripts);
   return script;
 }

@@ -154,25 +154,41 @@ function renderPending(pending, novel) {
           </label>
           <button class="quiet-action" type="button" data-generate-id="${escapeHtml(script.id)}">生成音频</button>
           <button class="quiet-action delete-script" type="button" data-delete-id="${escapeHtml(script.id)}">删除文案</button>
+          <button class="quiet-action" type="button" data-edit-id="${escapeHtml(script.id)}">修改文案</button>
+          <button class="quiet-action" type="button" data-copy-id="${escapeHtml(script.id)}">一键复制文案</button>
+          <button class="quiet-action" type="button" data-save-id="${escapeHtml(script.id)}" hidden>保存文案</button>
+          <button class="quiet-action" type="button" data-cancel-id="${escapeHtml(script.id)}" hidden>取消</button>
         </div>
       </div>
       <div class="pending-title-block">
         <span class="hook-title">开头标题</span>
         <div class="pending-title-row">
-          <input class="pending-title" type="text" maxlength="80" data-opening-title value="${escapeHtml(script.openingTitle || "")}" />
+          <input class="pending-title" type="text" maxlength="80" data-opening-title value="${escapeHtml(script.openingTitle || "")}" readonly />
           <label class="speak-title-check">
             <input type="checkbox" data-speak-title ${script.speakOpeningTitle === true || speakDefault ? "checked" : ""} />
             标题也配音
           </label>
         </div>
       </div>
-      <p class="script-full">${escapeHtml(script.text || "")}</p>
+      <textarea class="script-full pending-script" data-script-text readonly>${escapeHtml(script.text || "")}</textarea>
     </article>`).join("");
   elements.pendingList.querySelectorAll("[data-generate-id]").forEach((button) => {
     button.addEventListener("click", () => generatePendingAudios([button.dataset.generateId]));
   });
   elements.pendingList.querySelectorAll("[data-delete-id]").forEach((button) => {
     button.addEventListener("click", () => deletePendingScript(button.dataset.deleteId));
+  });
+  elements.pendingList.querySelectorAll("[data-edit-id]").forEach((button) => {
+    button.addEventListener("click", () => beginPendingEdit(button.dataset.editId));
+  });
+  elements.pendingList.querySelectorAll("[data-save-id]").forEach((button) => {
+    button.addEventListener("click", () => savePendingScript(button.dataset.saveId));
+  });
+  elements.pendingList.querySelectorAll("[data-cancel-id]").forEach((button) => {
+    button.addEventListener("click", () => cancelPendingEdit(button.dataset.cancelId));
+  });
+  elements.pendingList.querySelectorAll("[data-copy-id]").forEach((button) => {
+    button.addEventListener("click", () => copyPendingScript(button.dataset.copyId, button));
   });
 }
 
@@ -206,6 +222,7 @@ function readPendingSelection(onlyIds) {
     return [{
       card,
       script,
+      text: card.querySelector("[data-script-text]")?.value.trim() || script.text || "",
       openingTitle: card.querySelector("[data-opening-title]")?.value.trim() || script.openingTitle || "",
       speakOpeningTitle: card.querySelector("[data-speak-title]")?.checked === true
     }];
@@ -224,6 +241,11 @@ async function generatePendingAudios(onlyIds) {
   }
   setPendingStatus(`正在按顺序生成 ${selected.length} 条音频...`);
   try {
+    for (const item of selected) {
+      const dirty = item.text !== String(item.script.text || "").trim()
+        || item.openingTitle !== String(item.script.openingTitle || "").trim();
+      if (dirty) await savePendingScript(item.script.id, { silent: true });
+    }
     const result = await requestAudioJob("/api/audio-library/sync-local", {
       novelId: state.novelId,
       novelTitle: state.novel?.title || "",
@@ -235,7 +257,7 @@ async function generatePendingAudios(onlyIds) {
         novelTitle: state.novel?.title || "",
         scriptId: item.script.id,
         title: `${state.novel.title} ${item.script.versionLabel || "改写"}`,
-        script: item.script.text,
+        script: item.text || item.script.text,
         openingTitle: item.openingTitle,
         speakOpeningTitle: item.speakOpeningTitle,
         voiceId,
@@ -257,6 +279,105 @@ async function generatePendingAudios(onlyIds) {
       elements.generatePendingButton.disabled = false;
       elements.generatePendingButton.textContent = "一键生成勾选音频";
     }
+  }
+}
+
+function pendingCard(scriptId) {
+  return elements.pendingList?.querySelector(`.pending-card[data-script-id="${CSS.escape(scriptId)}"]`);
+}
+
+function setPendingEditMode(card, editing) {
+  if (!card) return;
+  card.classList.toggle("is-editing", editing);
+  const textarea = card.querySelector("[data-script-text]");
+  const title = card.querySelector("[data-opening-title]");
+  if (textarea) textarea.readOnly = !editing;
+  if (title) title.readOnly = !editing;
+  const edit = card.querySelector("[data-edit-id]");
+  const save = card.querySelector("[data-save-id]");
+  const cancel = card.querySelector("[data-cancel-id]");
+  if (edit) edit.hidden = editing;
+  if (save) save.hidden = !editing;
+  if (cancel) cancel.hidden = !editing;
+  if (editing) textarea?.focus();
+}
+
+function beginPendingEdit(scriptId) {
+  const card = pendingCard(scriptId);
+  if (!card) return;
+  const textarea = card.querySelector("[data-script-text]");
+  const title = card.querySelector("[data-opening-title]");
+  if (textarea) textarea.dataset.originalText = textarea.value;
+  if (title) title.dataset.originalTitle = title.value;
+  setPendingEditMode(card, true);
+}
+
+function cancelPendingEdit(scriptId) {
+  const card = pendingCard(scriptId);
+  if (!card) return;
+  const textarea = card.querySelector("[data-script-text]");
+  const title = card.querySelector("[data-opening-title]");
+  if (textarea && Object.hasOwn(textarea.dataset, "originalText")) textarea.value = textarea.dataset.originalText;
+  if (title && Object.hasOwn(title.dataset, "originalTitle")) title.value = title.dataset.originalTitle;
+  setPendingEditMode(card, false);
+}
+
+async function savePendingScript(scriptId, { silent = false } = {}) {
+  const card = pendingCard(scriptId);
+  if (!card) return;
+  const text = card.querySelector("[data-script-text]")?.value.trim() || "";
+  const openingTitle = card.querySelector("[data-opening-title]")?.value.trim() || "";
+  const speakOpeningTitle = card.querySelector("[data-speak-title]")?.checked === true;
+  if (text.length < 20) {
+    if (!silent) setPendingStatus("改写文案至少需要 20 个字符。", "error");
+    throw new Error("改写文案至少需要 20 个字符。");
+  }
+  if (!silent) setPendingStatus("正在保存文案...");
+  try {
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(scriptId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text, openingTitle, speakOpeningTitle, kept: true })
+    });
+    if (data.novel) state.novel = data.novel;
+    else if (data.script && Array.isArray(state.novel?.scripts)) {
+      state.novel.scripts = state.novel.scripts.map((item) => item.id === data.script.id ? { ...item, ...data.script } : item);
+    }
+    setPendingEditMode(card, false);
+    if (!silent) {
+      renderNovel(state.novel);
+      setPendingStatus("文案已保存。", "ok");
+    }
+  } catch (error) {
+    if (!silent) setPendingStatus(error.message || "保存文案失败。", "error");
+    throw error;
+  }
+}
+
+async function copyPendingScript(scriptId, button) {
+  const card = pendingCard(scriptId);
+  const text = card?.querySelector("[data-script-text]")?.value.trim()
+    || (state.novel?.scripts || []).find((item) => item.id === scriptId)?.text
+    || "";
+  if (!text) return setPendingStatus("这条还没有文案可复制。", "error");
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    else {
+      const textarea = card?.querySelector("[data-script-text]");
+      textarea?.removeAttribute("readonly");
+      textarea?.select();
+      document.execCommand("copy");
+      textarea?.setAttribute("readonly", "");
+    }
+    if (button) {
+      const label = button.textContent;
+      button.textContent = "已复制";
+      setTimeout(() => {
+        if (button.textContent === "已复制") button.textContent = label;
+      }, 1600);
+    }
+    setPendingStatus("已复制整段文案。", "ok");
+  } catch (error) {
+    setPendingStatus(error.message || "复制失败，请手动选中文案。", "error");
   }
 }
 

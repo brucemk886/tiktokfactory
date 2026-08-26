@@ -205,6 +205,32 @@ test("saves a manual rewrite as a derived script under the selected novel", () =
   assert.throws(() => service.createScript(novel.id, { parentScriptId: "missing", text: "A rewritten narration that is long enough for validation." }), /原文案不属于这本小说/);
 });
 
+test("updates a saved script text without creating another version", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-edit-"));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  const novel = service.createNovel({
+    title: "Edit target",
+    platform: "NovelMaster",
+    sourceContent: "This free chapter is long enough to become the source for a manual rewrite."
+  });
+  const script = service.createScript(novel.id, {
+    title: "Opening A",
+    versionLabel: "人工改写",
+    kept: true,
+    text: "A complete original narration that is long enough for this rewrite test."
+  });
+  const updated = service.updateScript(novel.id, script.id, {
+    text: "The comments told him to take the other girl, and he did it on live after dinner.",
+    openingTitle: "He chose her on live"
+  });
+  assert.equal(updated.id, script.id);
+  assert.match(updated.text, /comments told him/);
+  assert.equal(updated.openingTitle, "He chose her on live");
+  assert.equal(updated.kept, true);
+  assert.equal(service.getNovel(novel.id).scripts.length, 1);
+  assert.throws(() => service.updateScript(novel.id, script.id, { text: "too short" }), /至少需要 20/);
+});
+
 test("exposes rewrite audio files and performance on the novel for the audio board", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-audio-board-"));
   const audioItems = [{

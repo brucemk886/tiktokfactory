@@ -106,7 +106,31 @@
 .field-hint { color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.5; }
 .speak-title-check { display: inline-flex; align-items: center; gap: 6px; color: var(--lf-text, #1d1a14); font-size: 12px; font-weight: 800; cursor: pointer; }
 .speak-title-check input { width: 16px; height: 16px; margin: 0; accent-color: #5c6a14; }
-.pending-card .script-full { max-height: 180px; overflow: auto; }
+.pending-card .script-full {
+  display: block;
+  width: 100%;
+  min-height: 140px;
+  max-height: 180px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  resize: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--lf-text, #1d1a14);
+  font: inherit;
+  line-height: 1.65;
+}
+.pending-card.is-editing .script-full {
+  min-height: 220px;
+  max-height: none;
+  padding: 12px;
+  resize: vertical;
+  border-color: var(--lf-line-strong, rgba(45, 38, 24, 0.16));
+  border-radius: 8px;
+  background: #fff;
+}
+.pending-card.is-editing .pending-title { border-color: #8a9a32; background: #fff; }
 .pending-title { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.16)); border-radius: 8px; font: inherit; }
 @media (max-width: 1280px) {
   .metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }

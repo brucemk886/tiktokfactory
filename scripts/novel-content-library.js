@@ -231,6 +231,23 @@ export function createNovelContentLibraryService({
     return script;
   }
 
+  function updateScript(novelId, scriptId, payload = {}) {
+    const store = syncedStore();
+    const novel = store.novels.find((item) => item.id === safeId(novelId));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    const script = store.scripts.find((item) => item.id === safeId(scriptId) && item.novelId === novel.id);
+    if (!script) throw statusError(404, "没有找到这条文案。");
+    const text = payload.text == null ? script.text : String(payload.text || "").trim().slice(0, 20_000);
+    if (text.length < 20) throw statusError(400, "改写文案至少需要 20 个字符。");
+    script.text = text;
+    if (payload.openingTitle != null) script.openingTitle = clean(payload.openingTitle).slice(0, 80);
+    if (payload.speakOpeningTitle != null) script.speakOpeningTitle = payload.speakOpeningTitle === true;
+    script.kept = true;
+    script.updatedAt = new Date(now()).toISOString();
+    writeStore(storePath, store);
+    return script;
+  }
+
   function attachScriptAudio(scriptId, audioId) {
     const store = readStore(storePath);
     const script = store.scripts.find((item) => item.id === safeId(scriptId));
@@ -280,7 +297,7 @@ export function createNovelContentLibraryService({
     return { ok: true, removedCount, novel: getNovel(novel.id) };
   }
 
-  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, assignScript, attachScriptAudio, setNovelMixAudios, pruneDraftScripts, importMarketingResult };
+  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, updateScript, assignScript, attachScriptAudio, setNovelMixAudios, pruneDraftScripts, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {
