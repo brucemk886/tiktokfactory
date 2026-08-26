@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260826-4" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260826-5" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -68,9 +68,9 @@
                 <option value="gpt-5.6-terra">GPT-5.6 Terra · 第二档</option>
               </select>
               <select id="openingReasoning" aria-label="推理强度">
-                <option value="medium">标准</option>
-                <option value="high" selected>强</option>
-                <option value="xhigh">极强</option>
+                <option value="medium" selected>标准 · 更快</option>
+                <option value="high">强</option>
+                <option value="xhigh">极强 · 很慢</option>
               </select>
             </div>
             <div id="aiRewritePanel">
@@ -79,7 +79,7 @@
                   <span>钩子策略</span>
                   <small id="styleCount">已选 1 / 共 5 种</small>
                 </div>
-                <p class="hint">推荐“智能最强钩子”：先核对原文事实，再从 6 个候选中评分选优。默认输出 2 条；手动策略可控制具体方向。</p>
+                <p class="hint">默认标准推理、一次 2 条，会快很多。要更稳再开「强」。一次勾 4 条以上会明显变慢。</p>
                 <div id="styleOptions" class="style-options"></div>
               </div>
               <div class="form-actions">
@@ -184,6 +184,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260826-4" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260826-5" type="module"></script>
   </body>
 </html>

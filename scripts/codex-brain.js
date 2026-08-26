@@ -20,7 +20,7 @@ export const OPENING_REASONING_LEVELS = Object.freeze([
   Object.freeze({ id: "high", label: "强", hint: "更稳" }),
   Object.freeze({ id: "xhigh", label: "极强", hint: "更慢更细" })
 ]);
-export const DEFAULT_OPENING_REASONING = "high";
+export const DEFAULT_OPENING_REASONING = "medium";
 
 export function resolveOpeningModel(value) {
   const id = String(value || "").trim();
@@ -33,12 +33,12 @@ export function resolveOpeningReasoning(value) {
 }
 
 export function openingReasoningLabel(value) {
-  return OPENING_REASONING_LEVELS.find((item) => item.id === resolveOpeningReasoning(value))?.label || "强";
+  return OPENING_REASONING_LEVELS.find((item) => item.id === resolveOpeningReasoning(value))?.label || "标准";
 }
 const OPERATION_REASONING_EFFORT = "xhigh";
 const MAX_SOURCE_CHARS = 120_000;
 const MAX_CREATION_CHARS = 20_000;
-export const OPENING_SOURCE_MAX = 24_000;
+export const OPENING_SOURCE_MAX = 12_000;
 
 function buildOpeningVariantOutputSchema(count) {
   const n = Math.max(1, Math.min(10, Number(count) || 1));
@@ -1158,12 +1158,10 @@ function buildOpeningVariantPrompt(input) {
 必须按这个顺序覆盖这 ${input.styles.length} 种风格：
 ${styleLines}
 
-内部选钩流程（必须完成，但不要在 JSON 中输出过程、候选或评分）：
-1. 先通读全部故事资料，建立“事实账本”：只记录原文明示的人物关系、行为、证据、地点、严重后果和主角真实拥有的底牌。后半段出现的反转也要记入账本。
-2. 针对每一个指定输出，先构思 6 个不同的前三句候选。
-3. 任何候选只要增加原文没有确认的怀孕、死亡、血缘、婚姻、孩子、DNA、财产、犯罪或隐藏身份，立即淘汰。
-4. 对剩余候选内部评分：停滑力 35 分、信息缺口 30 分、情绪强度 20 分、英文口播节奏 15 分，只保留总分最高的一条。
-5. 每条都必须写 coreFact：第一句依据的那条原文明示事实，用一句话，不含评价。
+快速选钩（直接写最终口播，不要输出过程、候选或评分）：
+1. 只使用原文明示的人物、动作、证据和后果；后半段反转也要用，不要通读后反复打分。
+2. 每条先在心里换 2 个不同前三句，丢掉补造怀孕、死亡、血缘、婚姻、孩子、DNA、财产、犯罪或隐藏身份的候选，立刻写下更停滑的一条。
+3. 写 coreFact：第一句依据的原文明示事实，一句话，不含评价。
 
 smart-strongest 规则：
 - 只从事实账本里已经存在的机制里选，最多组合两种真实机制。
@@ -1192,7 +1190,7 @@ ${repeatedStyles.length ? "同一策略出现多次时，第一条和第二条�
 2. 第 ${input.styles.map((_, index) => index + 1).join("/")} 条的 style 必须分别是 ${input.styles.map((item) => item.id).join("、")}。
 3. styleLabel 必须分别是 ${input.styles.map((item) => item.label).join("、")}。
 4. openingTitle 是视频前 3 秒盖在画面正中的钩子标题：4 到 8 个英文单词，第一眼就能停住滑动，不要句号，不要书名。
-5. script 的前三句必须严格执行“事实炸点 → 错误预期或后果 → 反转信息缺口”，并且和 openingTitle 对准同一冲突；全文是连续口播，大约 220 到 340 个英文单词，最多 380 个单词，按正常语速口播不超过 2 分 30 秒。
+5. script 的前三句必须严格执行“事实炸点 → 错误预期或后果 → 反转信息缺口”，并且和 openingTitle 对准同一冲突；全文是连续口播，大约 200 到 280 个英文单词，最多 320 个单词，按正常语速口播不超过 2 分 10 秒。
 6. 每条第一句都要能单独当停滑钩子，并严格遵守该策略的「三拍结构」和「第一句做法」。
 7. 故事资料如果出现中间省略标记，只使用前后两段已给出的原文，不要脑补省略部分。
 8. 不要栏目名、制作说明、方括号、项目符号、舞台指令；除最后一句指定 App 引导外，不要关注、点赞、评论或 Patreon。

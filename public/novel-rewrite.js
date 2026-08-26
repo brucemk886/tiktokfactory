@@ -226,13 +226,13 @@ function selectedOpeningModel() {
 }
 
 function setOpeningReasoning(value) {
-  state.openingReasoning = value === "medium" || value === "xhigh" ? value : "high";
+  state.openingReasoning = value === "high" || value === "xhigh" ? value : "medium";
   localStorage.setItem("lf-opening-reasoning", state.openingReasoning);
   if (elements.openingReasoning) elements.openingReasoning.value = state.openingReasoning;
 }
 
 function selectedOpeningReasoning() {
-  return elements.openingReasoning?.value || state.openingReasoning || "high";
+  return elements.openingReasoning?.value || state.openingReasoning || "medium";
 }
 
 function openingReasoningLabel(value) {
@@ -250,8 +250,13 @@ function readSavedOpeningModel() {
 }
 
 function readSavedOpeningReasoning() {
+  if (localStorage.getItem("lf-opening-speed-v1") !== "1") {
+    localStorage.setItem("lf-opening-speed-v1", "1");
+    localStorage.setItem("lf-opening-reasoning", "medium");
+    return "medium";
+  }
   const saved = localStorage.getItem("lf-opening-reasoning") || "";
-  return saved === "medium" || saved === "xhigh" ? saved : "high";
+  return saved === "high" || saved === "xhigh" ? saved : "medium";
 }
 
 function readSavedSpeakOpeningTitle() {
@@ -467,7 +472,7 @@ async function generateVariants() {
   elements.generateVariantsButton.disabled = true;
   elements.generateVariantsButton.textContent = `正在筛选 ${styles.length} 个强钩子...`;
   beginVariantGeneration(styles.length);
-  elements.variantStatus.textContent = `正在提取事实、生成候选并筛选 ${styles.length} 个强钩子。${styles.length >= 4 ? "4 条以上强推理通常要 8–20 分钟" : "通常要几分钟"}，不是卡住了。`;
+  elements.variantStatus.textContent = `正在生成 ${styles.length} 个钩子。${styles.length >= 4 ? "一次 4 条以上会慢很多，建议先出 2 条。" : "标准推理通常 2–6 分钟。"}`;
   try {
     let data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`, {
       method: "POST",

@@ -219,7 +219,7 @@ test("opening variants pass strong and extreme reasoning effort", async (context
   assert.equal(calls[0].modelReasoningEffort, "xhigh");
   assert.equal(result.reasoningEffort, "xhigh");
   assert.equal(resolveOpeningReasoning("high"), "high");
-  assert.equal(resolveOpeningReasoning("unknown"), "high");
+  assert.equal(resolveOpeningReasoning("unknown"), "medium");
 });
 
 test("opening variants can return a single selected style", async (context) => {
@@ -270,16 +270,15 @@ test("opening variant prompt forces a stop-scroll first sentence", async (contex
     sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
     styles: ["smart-strongest"]
   });
-  assert.match(prompts[0], /内部选钩流程/);
-  assert.match(prompts[0], /先构思 6 个不同的前三句候选/);
-  assert.match(prompts[0], /停滑力 35 分、信息缺口 30 分/);
-  assert.match(prompts[0], /原文没有确认的怀孕、死亡、血缘/);
+  assert.match(prompts[0], /快速选钩/);
+  assert.match(prompts[0], /每条先在心里换 2 个不同前三句/);
+  assert.match(prompts[0], /怀孕、死亡、血缘/);
   assert.match(prompts[0], /前三句铁律/);
   assert.match(prompts[0], /第一句做法：/);
   assert.match(prompts[0], /Finally home/);
   assert.match(prompts[0], /I walked into/);
   assert.match(prompts[0], /不要为了凑齐铁证、身份炸弹、婚礼或 mafia/);
-  assert.match(prompts[0], /后半段出现的反转也要记入账本/);
+  assert.match(prompts[0], /后半段反转也要用/);
   assert.match(prompts[0], /结尾铁律/);
   assert.match(prompts[0], /Search Secret Uncle on the Novel Master app to read the full story/);
   assert.match(prompts[0], /禁止弱收束/);
@@ -297,10 +296,10 @@ test("spoken app CTA uses the promotion code and platform", () => {
   assert.match(spokenAppCta({ platform: "GoodNovel", title: "Hidden Heiress" }), /GoodNovel app/);
 });
 
-test("opening source keeps a full 20k chapter and windows only longer text", () => {
-  const full = `${"A confirmed betrayal sentence that stays in the ledger. ".repeat(400)}`;
+test("opening source keeps a mid-length chapter and windows only longer text", () => {
+  const full = `${"A confirmed betrayal sentence that stays in the ledger. ".repeat(180)}`;
   assert.equal(clipOpeningSource(full).length, full.length);
-  assert.ok(full.length > 8_000 && full.length < OPENING_SOURCE_MAX);
+  assert.ok(full.length > 6_000 && full.length < OPENING_SOURCE_MAX);
   const long = `HEAD-START ${"x".repeat(30_000)} TAIL-END-REVEAL`;
   const clipped = clipOpeningSource(long);
   assert.ok(clipped.length <= OPENING_SOURCE_MAX);
