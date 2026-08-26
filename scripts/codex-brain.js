@@ -62,7 +62,7 @@ function buildOpeningVariantOutputSchema(count) {
             openingTitleZh: { type: "string" },
             scriptZh: { type: "string" }
           },
-          required: ["style", "styleLabel", "title", "openingTitle", "script", "titleZh", "openingTitleZh", "scriptZh"],
+          required: ["style", "styleLabel", "title", "openingTitle", "script", "coreFact", "titleZh", "openingTitleZh", "scriptZh"],
           additionalProperties: false
         }
       }
