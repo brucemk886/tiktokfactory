@@ -184,3 +184,10 @@ test("latest opening-variant lookup returns the newest matching novel for the cu
   const job = await findLatestOpeningVariantsJob(db, { novelId: "novel-1", createdBy: "admin" });
   assert.equal(job.id, "job-match");
 });
+
+test("worker audio upload route is wired for generate-time cloud playback", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("./jobs.js", import.meta.url), "utf8");
+  assert.match(source, /putNovelAudio/);
+  assert.match(source, /worker\\\/audio/);
+});

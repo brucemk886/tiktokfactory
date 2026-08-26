@@ -2,6 +2,7 @@ import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { attachAudioGenerateResults, buildAudioGeneratePayload, mergeImportedNovelStore, persistOpeningVariantScripts } from "./novels.js";
+import { putNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 
@@ -189,6 +190,22 @@ async function handleWorkerApi(request, env, url) {
 
   const method = request.method;
   const pathname = url.pathname;
+
+  const audioUpload = pathname.match(/^\/api\/worker\/audio\/([^/]+)$/);
+  if ((method === "PUT" || method === "POST") && audioUpload) {
+    const audioId = decodeURIComponent(audioUpload[1] || "");
+    const contentType = request.headers.get("content-type") || "audio/mpeg";
+    if (!/^audio\//i.test(contentType) && contentType !== "application/octet-stream") {
+      return errorJson("只接受音频文件。", 415);
+    }
+    const length = Number(request.headers.get("content-length") || 0);
+    if (length > 20 * 1024 * 1024) return errorJson("音频文件太大。", 413);
+    try {
+      return json(await putNovelAudio(env, audioId, request.body, contentType));
+    } catch (error) {
+      return errorJson(error.message || "上传试听文件失败。", error.statusCode || 502);
+    }
+  }
 
   if (method === "POST" && pathname === "/api/worker/tasks/sync") {
     const body = await readJson(request);

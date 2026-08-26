@@ -2,6 +2,7 @@ import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { errorJson, json, now, readJson, safeId } from "./http.js";
 import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
+import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
 
@@ -340,7 +341,7 @@ export async function handleCompat(request, env, url, session) {
       queued: true,
       accepted: true,
       jobId: job.id,
-      message: "已交给本机工人生成，完成后会写到 F:\\音频目录。"
+      message: "已交给本机工人生成，完成后会传到线上网页，并写到 F:\\音频目录。"
     });
   }
 
@@ -375,7 +376,7 @@ export async function handleCompat(request, env, url, session) {
       accepted: true,
       jobId: job.id,
       count: payload.items.length,
-      message: `已下发 ${payload.items.length} 条到本机工人，生成后写入 F:\\音频目录。`
+      message: `已下发 ${payload.items.length} 条到本机工人，生成后传到线上网页，并写入 F:\\音频目录。`
     });
   }
 
@@ -384,6 +385,16 @@ export async function handleCompat(request, env, url, session) {
     const job = await getJob(db, decodeURIComponent(audioProgress[1]));
     if (!job) return errorJson("音频任务不存在。", 404);
     return json(publicJob(job));
+  }
+
+  const audioFile = pathname.match(/^\/api\/audio-library\/([^/]+)\/file$/);
+  if (method === "GET" && audioFile) {
+    const audioId = decodeURIComponent(audioFile[1] || "");
+    const response = await serveNovelAudio(env, audioId, request);
+    if (!response) {
+      return errorJson("网页还没有这份试听文件。重新生成后，工人机会在配音完成时传到线上。", 404);
+    }
+    return response;
   }
 
   if (method === "GET" && pathname === "/api/elevenlabs/voices") {

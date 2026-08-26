@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css?v=20260826-4" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260826-6" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -30,7 +30,7 @@
         <div class="section-heading">
           <div><span>VOICE</span><h2>配音设置</h2></div>
         </div>
-        <p class="hint">选好声音、速度和目录后，到下面待配音列表里生成。这里也会记成这本书的默认声音。</p>
+        <p class="hint">选好声音后到下面生成。ElevenLabs 一出音频，工人会立刻传到线上网页，不必先保存到本机才能听。</p>
         <p class="model-fixed">模型已固定：<strong>Eleven Multilingual v2</strong><span>工作室品质 · 29 种语言 · 旁白/有声书</span></p>
         <div class="voice-studio">
           <div class="voice-filter-bar" aria-label="声音筛选">
@@ -94,12 +94,12 @@
         <div>
           <p class="library-kicker">OPENINGS</p>
           <h2>已配音</h2>
-          <p>勾选生效音频后点「保存生效音频到本机」。</p>
+          <p>生成时工人会把试听文件传到线上，可直接播放。保存到本机只是拷给混剪用。</p>
         </div>
       </section>
       <p id="listStatus" class="list-status">正在读取改写音频...</p>
       <div id="mixToolbar" class="mix-toolbar" hidden>
-        <p>勾选的生效音频会保存，并下发到本机 F:\音频目录\书名\。没有文件夹会自动创建。</p>
+        <p>勾选后点保存，会覆盖拷到本机 F:\音频目录\书名\，给混剪用。试听不用先保存；以前生成的点卡片上「传到网页试听」。</p>
         <button id="saveMixAudiosBtn" class="primary-action" type="button">保存生效音频到本机</button>
         <span id="mixStatus" role="status"></span>
       </div>
@@ -123,6 +123,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js?v=20260826-5" type="module"></script>
+    <script src="/novel-audio.js?v=20260826-6" type="module"></script>
   </body>
 </html>

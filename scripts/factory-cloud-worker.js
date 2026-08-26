@@ -4,7 +4,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
+import { createAudioLibraryService } from "./audio-library.js";
 import { discoverAudioLibraryGroups, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { resolveLocalAudioUploadPath } from "./novel-audio-upload.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
@@ -234,6 +236,11 @@ async function runAudioGenerateCloudJob(context, job) {
   const jobId = job.id || job.jobId;
   const payload = job.payload || {};
   const total = Array.isArray(payload.items) ? payload.items.length : 0;
+  const library = createAudioLibraryService({
+    root: context.root,
+    workDir: context.workDir,
+    readConfig: () => context.config
+  });
   try {
     await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
       method: "POST",
@@ -244,6 +251,7 @@ async function runAudioGenerateCloudJob(context, job) {
       workDir: context.workDir,
       config: context.config,
       payload,
+      audioLibrary: library,
       onProgress: (progress) => {
         request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
           method: "POST",
@@ -255,11 +263,18 @@ async function runAudioGenerateCloudJob(context, job) {
         }).catch((error) => console.error("回写音频进度失败：", error.message));
       }
     });
+    await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: "POST",
+      body: { percent: 94, message: "ElevenLabs 已出音频，正在传到线上网页..." }
+    }).catch((error) => console.error("回写上传进度失败：", error.message));
+    const upload = await uploadNovelAudiosToCloud(context, result.items, library);
     const failedText = result.failed?.length ? `，${result.failed.length} 条失败` : "";
+    const uploadText = upload.uploaded ? `，已传到网页 ${upload.uploaded} 条可试听` : "";
+    const uploadFail = upload.failed.length ? `，${upload.failed.length} 条网页试听未传上` : "";
     await complete(context, jobId, {
       error: "",
-      message: `已保存 ${result.items.length} 条到 ${result.targetAudioDir}${failedText}`,
-      result,
+      message: `已保存 ${result.items.length} 条到 ${result.targetAudioDir}${failedText}${uploadText}${uploadFail}`,
+      result: { ...result, uploadedCount: upload.uploaded, uploadFailed: upload.failed },
       percent: 100
     });
   } catch (error) {
@@ -268,6 +283,44 @@ async function runAudioGenerateCloudJob(context, job) {
       percent: 0
     });
   }
+}
+
+async function uploadNovelAudiosToCloud(context, items, library) {
+  let uploaded = 0;
+  const failed = [];
+  for (const item of items || []) {
+    const audioId = String(item.audioId || "").trim();
+    if (!audioId) continue;
+    const filePath = resolveLocalAudioUploadPath(library, item);
+    if (!filePath) {
+      failed.push(audioId);
+      continue;
+    }
+    try {
+      await uploadAudioFile(context, audioId, filePath);
+      uploaded += 1;
+    } catch (error) {
+      console.error(`上传试听失败 ${audioId}：`, error.message || error);
+      failed.push(audioId);
+    }
+  }
+  return { uploaded, failed };
+}
+
+async function uploadAudioFile(context, audioId, filePath) {
+  const body = fs.readFileSync(filePath);
+  const response = await fetch(`${context.settings.url}/api/worker/audio/${encodeURIComponent(audioId)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${context.settings.token}`,
+      "content-type": "audio/mpeg",
+      "x-factory-worker": context.workerId
+    },
+    body
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
 }
 
 async function runOfficialPublishJob(context, job) {

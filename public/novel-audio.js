@@ -209,6 +209,10 @@ function renderVoiced(audios, novel) {
       input.closest(".audio-card")?.classList.toggle("is-off", !input.checked);
     });
   });
+  elements.audioList.querySelectorAll("[data-reupload-id]").forEach((button) => {
+    button.addEventListener("click", () => reuploadPlayback(button.dataset.reuploadId, button));
+  });
+  bindVoicedPlayback(elements.audioList);
   bindRetuneControls(elements.audioList);
 }
 
@@ -274,8 +278,8 @@ async function generatePendingAudios(onlyIds) {
     const refreshed = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = refreshed.novel;
     renderNovel(state.novel);
-    setPendingStatus(saved ? `已生成 ${saved} 条音频。` : "工人机没有返回已生成的音频。", saved ? "ok" : "error");
-    setAudioStatus(result.targetAudioDir ? `已保存到 ${result.targetAudioDir}` : "已写入本机音频目录。", saved ? "ok" : "");
+    setPendingStatus(saved ? `已生成 ${saved} 条音频，可直接在网页试听。` : "工人机没有返回已生成的音频。", saved ? "ok" : "error");
+    setAudioStatus(result.targetAudioDir ? `本机也写到了 ${result.targetAudioDir}` : "已写入本机音频目录。", saved ? "ok" : "");
   } catch (error) {
     setPendingStatus(error.message || "生成音频失败。", "error");
     setAudioStatus(error.message || "生成音频失败。", "error");
@@ -445,6 +449,48 @@ function setMixStatus(message, tone = "") {
   elements.mixStatus.className = tone === "ok" ? "is-ok" : tone === "error" ? "is-error" : "";
 }
 
+function bindVoicedPlayback(root) {
+  root?.querySelectorAll("audio[data-audio-id]").forEach((player) => {
+    player.addEventListener("error", () => {
+      const card = player.closest(".audio-card");
+      if (!card || card.querySelector(".play-hint")) return;
+      const hint = document.createElement("p");
+      hint.className = "play-hint is-error";
+      hint.textContent = "网页还没有这份试听。点「传到网页试听」，工人会把本机已有文件传到线上，不用重新配音。";
+      player.after(hint);
+    });
+  });
+}
+
+async function reuploadPlayback(scriptId, button) {
+  if (!scriptId || !state.novelId) return;
+  const script = (state.novel?.scripts || []).find((item) => item.id === scriptId);
+  if (!scriptHasAudio(script)) return setMixStatus("这条还没有音频可传到网页。", "error");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "正在上传...";
+  }
+  setMixStatus("正在把本机已有音频传到网页试听...");
+  try {
+    await requestAudioJob("/api/audio-library/sync-local", {
+      novelId: state.novelId,
+      novelTitle: state.novel?.title || "",
+      scriptIds: [scriptId],
+      targetAudioDir: "__novel__"
+    }, { api, onProgress: (job) => setMixStatus(job.message || "工人机正在上传试听...") });
+    const refreshed = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+    state.novel = refreshed.novel;
+    renderNovel(state.novel);
+    setMixStatus("试听文件已传到网页，可以播放了。", "ok");
+  } catch (error) {
+    setMixStatus(error.message || "传到网页失败。", "error");
+    if (button) {
+      button.disabled = false;
+      button.textContent = "传到网页试听";
+    }
+  }
+}
+
 async function loadRecords() {
   if (!elements.recordStatus) return;
   elements.recordStatus.textContent = "正在读取这本小说的改写记录…";
@@ -507,7 +553,7 @@ function audioCard(script) {
   const audioId = audio.id || script.audioId;
   const performance = script.performance || {};
   return `
-    <article class="audio-card${script.mixEnabled === false ? " is-off" : ""}">
+    <article class="audio-card${script.mixEnabled === false ? " is-off" : ""}" data-voiced-id="${escapeHtml(script.id)}">
       <div class="audio-card-head">
         <div>
           <h2>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</h2>
@@ -518,10 +564,11 @@ function audioCard(script) {
             <input type="checkbox" data-script-id="${escapeHtml(script.id)}" ${script.mixEnabled === false ? "" : "checked"} />
             生效音频
           </label>
+          <button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>
           <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}">去改写</a>
         </div>
       </div>
-      <audio controls preload="none" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>
+      <audio controls preload="metadata" data-audio-id="${escapeHtml(audioId)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>
       <div class="retune-row">
         <label>已生成变速 <em data-retune-label>${formatSpeed(audio.playbackSpeed)}</em>
           <input type="range" min="0.8" max="1.4" step="0.05" value="${escapeHtml(String(currentSpeed(audio.playbackSpeed)))}" data-retune-range />
