@@ -221,6 +221,8 @@ export function createNovelContentLibraryService({
       sourceVideoId: clean(payload.sourceVideoId).slice(0, 160),
       openingTitle: clean(payload.openingTitle || firstHookLine(text)).slice(0, 80),
       mixEnabled: true,
+      kept: payload.kept === true,
+      speakOpeningTitle: payload.speakOpeningTitle === true,
       createdAt,
       updatedAt: createdAt
     };
@@ -370,6 +372,8 @@ function normalizeScript(item) {
     sourceType: clean(item.sourceType).slice(0, 80), sourceVideoId: clean(item.sourceVideoId).slice(0, 160),
     openingTitle: clean(item.openingTitle || firstHookLine(item.text)).slice(0, 80),
     mixEnabled: item.mixEnabled !== false,
+    kept: item.kept === true,
+    speakOpeningTitle: item.speakOpeningTitle === true,
     createdAt: clean(item.createdAt), updatedAt: clean(item.updatedAt)
   };
 }

@@ -1,7 +1,7 @@
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { attachAudioGenerateResults, mergeImportedNovelStore, removeDraftScripts } from "./novels.js";
+import { attachAudioGenerateResults, mergeImportedNovelStore } from "./novels.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 
@@ -353,11 +353,6 @@ async function handleWorkerApi(request, env, url) {
       if (nextStatus !== "cancelled" && Array.isArray(result.items) && result.items.length) {
         await attachAudioGenerateResults(env.DB, result.items);
       }
-      const payload = parseJson(job?.payload_json, {});
-      const done = new Set((result.items || []).filter((item) => item?.audioId && item?.scriptId).map((item) => String(item.scriptId)));
-      const requested = (Array.isArray(payload.items) ? payload.items : []).map((item) => String(item?.scriptId || "")).filter(Boolean);
-      const failed = requested.filter((id) => !done.has(id));
-      if (failed.length) await removeDraftScripts(env.DB, failed);
     }
     return json({ ok: true, cancelled: nextStatus === "cancelled" });
   }

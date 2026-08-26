@@ -11,16 +11,79 @@ const elements = {
   saveMixAudiosButton: document.querySelector("#saveMixAudiosBtn"),
   mixStatus: document.querySelector("#mixStatus"),
   audioList: document.querySelector("#audioList"),
+  pendingList: document.querySelector("#pendingList"),
+  pendingToolbar: document.querySelector("#pendingToolbar"),
+  generatePendingButton: document.querySelector("#generatePendingBtn"),
+  pendingStatus: document.querySelector("#pendingStatus"),
+  speakOpeningTitle: document.querySelector("#speakOpeningTitle"),
+  voiceLanguage: document.querySelector("#voiceLanguage"),
+  voiceCategory: document.querySelector("#voiceCategory"),
+  voiceGender: document.querySelector("#voiceGender"),
+  voiceAge: document.querySelector("#voiceAge"),
+  voiceSelect: document.querySelector("#voiceSelect"),
+  voiceIdInput: document.querySelector("#voiceIdInput"),
+  audioDir: document.querySelector("#audioDir"),
+  audioGroupSelect: document.querySelector("#audioGroupSelect"),
+  audioGroupHint: document.querySelector("#audioGroupHint"),
+  speechSpeed: document.querySelector("#speechSpeed"),
+  speechSpeedValue: document.querySelector("#speechSpeedValue"),
+  reloadVoicesButton: document.querySelector("#reloadVoicesBtn"),
+  previewVoiceButton: document.querySelector("#previewVoiceBtn"),
+  voicePreview: document.querySelector("#voicePreview"),
+  audioStatus: document.querySelector("#audioStatus"),
   recordList: document.querySelector("#recordList"),
   recordEmpty: document.querySelector("#recordEmpty"),
   recordCount: document.querySelector("#recordCount"),
   recordStatus: document.querySelector("#recordStatus")
 };
 
-const state = { novelId: params.get("novel") || "", novel: readStashedNovel() };
+const state = {
+  novelId: params.get("novel") || "",
+  novel: readStashedNovel(),
+  voices: [],
+  audioGroups: []
+};
 
 elements.saveMixAudiosButton?.addEventListener("click", saveMixAudios);
+elements.generatePendingButton?.addEventListener("click", () => generatePendingAudios());
+elements.speakOpeningTitle?.addEventListener("change", () => {
+  localStorage.setItem("lf-speak-opening-title", elements.speakOpeningTitle.checked ? "1" : "0");
+  elements.pendingList?.querySelectorAll("[data-speak-title]").forEach((input) => {
+    input.checked = elements.speakOpeningTitle.checked;
+  });
+});
+elements.reloadVoicesButton?.addEventListener("click", () => loadAudioControls(true));
+elements.previewVoiceButton?.addEventListener("click", previewSelectedVoice);
+elements.voiceLanguage?.addEventListener("change", () => renderVoiceOptions());
+elements.voiceCategory?.addEventListener("change", () => renderVoiceOptions());
+elements.voiceGender?.addEventListener("change", () => renderVoiceOptions());
+elements.voiceAge?.addEventListener("change", () => renderVoiceOptions());
+elements.voiceSelect?.addEventListener("change", () => {
+  stopVoicePreview();
+  persistAudioSettings();
+});
+elements.voiceIdInput?.addEventListener("change", () => {
+  stopVoicePreview();
+  persistAudioSettings();
+});
+elements.audioGroupSelect?.addEventListener("change", () => {
+  applyAudioGroupSelection();
+  persistAudioSettings();
+});
+elements.speechSpeed?.addEventListener("input", updateSpeechSpeedLabel);
+elements.speechSpeed?.addEventListener("change", persistAudioSettings);
+elements.voicePreview?.addEventListener("ended", () => {
+  if (elements.previewVoiceButton) elements.previewVoiceButton.textContent = "试听";
+});
+elements.voicePreview?.addEventListener("pause", () => {
+  if (elements.voicePreview.ended || elements.voicePreview.currentTime === 0) {
+    if (elements.previewVoiceButton) elements.previewVoiceButton.textContent = "试听";
+  }
+});
+if (elements.speakOpeningTitle) elements.speakOpeningTitle.checked = localStorage.getItem("lf-speak-opening-title") === "1";
 loadPage();
+loadAudioControls();
+loadAudioGroups();
 
 async function loadPage() {
   if (!state.novelId) {
@@ -32,13 +95,7 @@ async function loadPage() {
   if (state.novel) renderNovel(state.novel);
   loadRecords();
   try {
-    const pruned = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/prune-drafts`, {
-      method: "POST",
-      body: JSON.stringify({ graceMs: 20 * 60 * 1000 })
-    }).catch(() => null);
-    const data = pruned?.novel
-      ? pruned
-      : await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = data.novel;
     renderNovel(state.novel);
   } catch (error) {
@@ -53,22 +110,75 @@ async function loadPage() {
   }
 }
 
+function scriptHasAudio(script) {
+  return Boolean(String(script?.audioId || script?.audio?.id || "").trim());
+}
+
 function renderNovel(novel) {
-  const audios = (novel.scripts || []).filter((script) => script.audio?.id || script.audioId);
+  const scripts = novel.scripts || [];
+  const pending = scripts.filter((script) => !scriptHasAudio(script));
+  const audios = scripts.filter(scriptHasAudio);
   elements.pageTitle.textContent = novel.title;
-  elements.pageLead.textContent = "这里只保留已配音的开头版本。没生成音频的文案不会留下。勾选后点「保存生效音频到本机」。";
+  elements.pageLead.textContent = "改写页保存的文案在这里配音。没点保存的预览不会出现。";
   elements.summary.hidden = false;
   elements.summary.innerHTML = [
     novel.platform,
     novel.category,
+    `${pending.length} 条待配音`,
     `${audios.length} 条已配音开头`,
     `${formatNumber(novel.performance?.videoCount || 0)} 条视频`,
     `${formatNumber(novel.performance?.totalViews || 0)} 播放`
   ].filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join("");
+  renderPending(pending, novel);
+  renderVoiced(audios, novel);
+}
+
+function renderPending(pending, novel) {
+  if (elements.pendingToolbar) elements.pendingToolbar.hidden = !pending.length;
+  if (!pending.length) {
+    elements.pendingList.innerHTML = `<div class="empty-state"><strong>还没有待配音文案</strong><span>先到改写页生成并保存开头。<a href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">去改写</a></span></div>`;
+    return;
+  }
+  const speakDefault = elements.speakOpeningTitle?.checked === true;
+  elements.pendingList.innerHTML = pending.map((script) => `
+    <article class="audio-card pending-card" data-script-id="${escapeHtml(script.id)}">
+      <div class="audio-card-head">
+        <div>
+          <h2>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</h2>
+          <p>${escapeHtml(sourceLabel(script.sourceType))} · ${escapeHtml(formatDate(script.createdAt))} · 待配音</p>
+        </div>
+        <div class="audio-card-actions">
+          <label class="mix-check">
+            <input type="checkbox" data-pending-id="${escapeHtml(script.id)}" checked />
+            选中配音
+          </label>
+          <button class="quiet-action" type="button" data-generate-id="${escapeHtml(script.id)}">生成音频</button>
+          <button class="quiet-action" type="button" data-delete-id="${escapeHtml(script.id)}">删除文案</button>
+        </div>
+      </div>
+      <label>
+        <span class="hook-title">开头标题</span>
+        <input class="pending-title" type="text" maxlength="80" data-opening-title value="${escapeHtml(script.openingTitle || "")}" />
+      </label>
+      <label class="speak-title-check">
+        <input type="checkbox" data-speak-title ${script.speakOpeningTitle === true || speakDefault ? "checked" : ""} />
+        标题也配音
+      </label>
+      <p class="script-full">${escapeHtml(script.text || "")}</p>
+    </article>`).join("");
+  elements.pendingList.querySelectorAll("[data-generate-id]").forEach((button) => {
+    button.addEventListener("click", () => generatePendingAudios([button.dataset.generateId]));
+  });
+  elements.pendingList.querySelectorAll("[data-delete-id]").forEach((button) => {
+    button.addEventListener("click", () => deletePendingScript(button.dataset.deleteId));
+  });
+}
+
+function renderVoiced(audios, novel) {
   if (!audios.length) {
     if (elements.mixToolbar) elements.mixToolbar.hidden = true;
     elements.listStatus.textContent = "";
-    elements.audioList.innerHTML = `<div class="empty-state"><strong>这本还没有已配音的开头</strong><span>先到改写页生成开头并配音。没配音的文案不会留在这里。<a href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">去改写</a></span></div>`;
+    elements.audioList.innerHTML = `<div class="empty-state"><strong>这本还没有已配音的开头</strong><span>先把上面的待配音文案生成音频。</span></div>`;
     return;
   }
   const enabledCount = audios.filter((script) => script.mixEnabled !== false).length;
@@ -81,6 +191,93 @@ function renderNovel(novel) {
     });
   });
   bindRetuneControls(elements.audioList);
+}
+
+function readPendingSelection(onlyIds) {
+  const wanted = Array.isArray(onlyIds) && onlyIds.length ? new Set(onlyIds) : null;
+  return Array.from(elements.pendingList.querySelectorAll(".pending-card")).flatMap((card) => {
+    const id = card.dataset.scriptId;
+    const checked = card.querySelector("[data-pending-id]")?.checked !== false;
+    if (wanted ? !wanted.has(id) : !checked) return [];
+    const script = (state.novel.scripts || []).find((item) => item.id === id);
+    if (!script) return [];
+    return [{
+      card,
+      script,
+      openingTitle: card.querySelector("[data-opening-title]")?.value.trim() || script.openingTitle || "",
+      speakOpeningTitle: card.querySelector("[data-speak-title]")?.checked === true
+    }];
+  });
+}
+
+async function generatePendingAudios(onlyIds) {
+  const selected = readPendingSelection(onlyIds);
+  if (!selected.length) return setPendingStatus("先勾选要配音的文案。", "error");
+  const voiceId = selectedVoiceId();
+  const targetAudioDir = selectedAudioDir();
+  if (!voiceId) setAudioStatus("未选手动声音，将用工人机默认 Voice ID。");
+  if (elements.generatePendingButton) {
+    elements.generatePendingButton.disabled = true;
+    elements.generatePendingButton.textContent = `正在生成 ${selected.length} 条...`;
+  }
+  setPendingStatus(`正在按顺序生成 ${selected.length} 条音频...`);
+  try {
+    const result = await requestAudioJob("/api/audio-library/sync-local", {
+      novelId: state.novelId,
+      novelTitle: state.novel?.title || "",
+      targetAudioDir,
+      voiceId,
+      speechSpeed: selectedSpeechSpeed(),
+      items: selected.map((item) => ({
+        novelId: state.novelId,
+        novelTitle: state.novel?.title || "",
+        scriptId: item.script.id,
+        title: `${state.novel.title} ${item.script.versionLabel || "改写"}`,
+        script: item.script.text,
+        openingTitle: item.openingTitle,
+        speakOpeningTitle: item.speakOpeningTitle,
+        voiceId,
+        speechSpeed: selectedSpeechSpeed(),
+        sourceType: item.script.sourceType || "ai-style-rewrite"
+      }))
+    }, { api, onProgress: (job) => setPendingStatus(job.message || "工人机正在依次配音...") });
+    const saved = Array.isArray(result.items) ? result.items.length : 0;
+    const refreshed = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+    state.novel = refreshed.novel;
+    renderNovel(state.novel);
+    setPendingStatus(saved ? `已生成 ${saved} 条音频。` : "工人机没有返回已生成的音频。", saved ? "ok" : "error");
+    setAudioStatus(result.targetAudioDir ? `已保存到 ${result.targetAudioDir}` : "已写入本机音频目录。", saved ? "ok" : "");
+  } catch (error) {
+    setPendingStatus(error.message || "生成音频失败。", "error");
+    setAudioStatus(error.message || "生成音频失败。", "error");
+  } finally {
+    if (elements.generatePendingButton) {
+      elements.generatePendingButton.disabled = false;
+      elements.generatePendingButton.textContent = "一键生成勾选音频";
+    }
+  }
+}
+
+async function deletePendingScript(scriptId) {
+  if (!scriptId) return;
+  setPendingStatus("正在删除这条未配音文案...");
+  try {
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/prune-drafts`, {
+      method: "POST",
+      body: JSON.stringify({ scriptIds: [scriptId] })
+    });
+    state.novel = data.novel;
+    renderNovel(state.novel);
+    setPendingStatus("已删除这条文案。", "ok");
+  } catch (error) {
+    setPendingStatus(error.message || "删除失败。", "error");
+  }
+}
+
+function setPendingStatus(message, tone = "") {
+  if (!elements.pendingStatus) return;
+  elements.pendingStatus.textContent = message;
+  elements.pendingStatus.className = tone === "ok" ? "is-ok" : tone === "error" ? "is-error" : "";
 }
 
 async function saveMixAudios() {
@@ -241,6 +438,186 @@ function readStashedNovel() {
   }
 }
 
+async function loadAudioControls(force = false) {
+  try {
+    if (force) setAudioStatus("正在重新读取 ElevenLabs 声音...");
+    const [settingsData, voicesData] = await Promise.all([
+      api("/api/novel-content/seed-settings").catch(() => ({ settings: {} })),
+      api("/api/elevenlabs/voices").catch((error) => ({ error: voiceErrorText(error.message), voices: [], defaultVoiceId: "" }))
+    ]);
+    const settings = settingsData.settings || {};
+    state.voices = voicesData.voices || [];
+    const selected = settings.voiceId || voicesData.defaultVoiceId || "";
+    fillFilterSelect(elements.voiceLanguage, voicesData.filters?.languages, "全部语言");
+    fillFilterSelect(elements.voiceCategory, voicesData.filters?.categories, "全部类别");
+    fillFilterSelect(elements.voiceGender, voicesData.filters?.genders, "全部性别");
+    fillFilterSelect(elements.voiceAge, voicesData.filters?.ages, "全部年龄");
+    if (voicesData.error && !state.voices.length) {
+      if (elements.voiceSelect) elements.voiceSelect.innerHTML = `<option value="">${escapeHtml(voicesData.error)}</option>`;
+      if (elements.voiceIdInput) elements.voiceIdInput.value = selected;
+      setAudioStatus(voicesData.error, "error");
+    } else {
+      renderVoiceOptions(selected);
+      if (selected && !state.voices.some((voice) => voice.id === selected) && elements.voiceIdInput) {
+        elements.voiceIdInput.value = selected;
+      }
+      setAudioStatus(voicesData.warning || (state.voices.length ? `已读取 ${state.voices.length} 个声音。` : ""), voicesData.warning && !state.voices.length ? "error" : "");
+    }
+    if (settings.targetAudioDir && elements.audioDir) {
+      elements.audioDir.value = settings.targetAudioDir;
+      if (state.audioGroups.length) applyAudioGroupSelection();
+    }
+    if (elements.speechSpeed && settings.speechSpeed) elements.speechSpeed.value = String(settings.speechSpeed);
+    updateSpeechSpeedLabel();
+  } catch (error) {
+    setAudioStatus(voiceErrorText(error.message), "error");
+  }
+}
+
+function voiceErrorText(message) {
+  const text = String(message || "").trim();
+  if (/not found/i.test(text)) return "声音列表接口还没加载，请重启本地服务后刷新本页。";
+  return text || "读取 ElevenLabs 声音失败。";
+}
+
+async function loadAudioGroups() {
+  const select = elements.audioGroupSelect;
+  if (!select) return;
+  try {
+    const data = await api(`/api/audio-groups?t=${Date.now()}`);
+    state.audioGroups = Array.isArray(data.groups) ? data.groups : [];
+    const current = elements.audioDir?.value.trim() || "";
+    select.innerHTML = [
+      `<option value="__novel__">按小说名称自动建文件夹</option>`,
+      ...state.audioGroups.map((group) => `<option value="${escapeAttr(group.path)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets) || 0} 条）</option>`)
+    ].join("");
+    const matched = state.audioGroups.find((group) => group.path === current);
+    select.value = matched ? matched.path : "__novel__";
+    applyAudioGroupSelection();
+    if (elements.audioGroupHint) {
+      const book = state.novel?.title || "小说名";
+      elements.audioGroupHint.textContent = `默认写到 F:\\音频目录\\${book}。线上点生成后，工人机会自动建文件夹。`;
+    }
+  } catch {
+    if (elements.audioGroupHint) elements.audioGroupHint.textContent = "读取本机音频目录失败时，会按小说名在 F:\\音频目录 下自动建文件夹。";
+  }
+}
+
+function applyAudioGroupSelection() {
+  const value = elements.audioGroupSelect?.value || "__novel__";
+  if (elements.audioDir) elements.audioDir.value = value;
+}
+
+function selectedAudioDir() {
+  applyAudioGroupSelection();
+  return elements.audioDir?.value.trim() || "";
+}
+
+function selectedVoiceId() {
+  return elements.voiceSelect?.value.trim() || elements.voiceIdInput?.value.trim() || "";
+}
+
+function selectedSpeechSpeed() {
+  return Number(elements.speechSpeed?.value) || 1;
+}
+
+function updateSpeechSpeedLabel() {
+  if (elements.speechSpeedValue) elements.speechSpeedValue.textContent = `${selectedSpeechSpeed().toFixed(2)}×`;
+}
+
+function fillFilterSelect(select, options, emptyLabel) {
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = [`<option value="">${emptyLabel}</option>`, ...(options || []).map((item) =>
+    `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+  )].join("");
+  if (current && [...select.options].some((option) => option.value === current)) select.value = current;
+}
+
+function filteredVoices() {
+  const language = elements.voiceLanguage?.value.trim() || "";
+  const category = elements.voiceCategory?.value.trim() || "";
+  const gender = elements.voiceGender?.value.trim() || "";
+  const age = elements.voiceAge?.value.trim() || "";
+  return state.voices.filter((voice) => {
+    if (language && !(voice.languages || []).includes(language)) return false;
+    if (category && voice.category !== category) return false;
+    if (gender && voice.gender !== gender) return false;
+    if (age && voice.age !== age) return false;
+    return true;
+  });
+}
+
+function renderVoiceOptions(preferredId = "") {
+  if (!elements.voiceSelect) return;
+  const selected = preferredId || selectedVoiceId();
+  const voices = filteredVoices();
+  elements.voiceSelect.innerHTML = [`<option value="">${voices.length ? "请选择声音" : "当前筛选没有声音"}</option>`, ...voices.map((voice) => {
+    const meta = [voice.languageLabels?.[0], voice.genderLabel, voice.ageLabel, voice.categoryLabel].filter(Boolean).join(" · ");
+    return `<option value="${escapeHtml(voice.id)}" data-preview-url="${escapeHtml(voice.previewUrl || "")}">${escapeHtml(voice.name)}${meta ? ` · ${escapeHtml(meta)}` : ""}</option>`;
+  })].join("");
+  if (selected && voices.some((voice) => voice.id === selected)) elements.voiceSelect.value = selected;
+  else if (voices.length === 1) elements.voiceSelect.value = voices[0].id;
+}
+
+async function persistAudioSettings() {
+  try {
+    await api("/api/novel-content/seed-settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        voiceId: selectedVoiceId(),
+        targetAudioDir: selectedAudioDir(),
+        speechSpeed: selectedSpeechSpeed()
+      })
+    });
+    if (selectedVoiceId()) setAudioStatus("已记住为默认配音。", "ok");
+  } catch (error) {
+    setAudioStatus(error.message, "error");
+  }
+}
+
+function selectedPreviewUrl() {
+  return elements.voiceSelect?.selectedOptions[0]?.dataset.previewUrl || "";
+}
+
+function stopVoicePreview() {
+  const audio = elements.voicePreview;
+  if (!audio) return;
+  if (!audio.paused) audio.pause();
+  audio.currentTime = 0;
+  if (elements.previewVoiceButton) elements.previewVoiceButton.textContent = "试听";
+}
+
+async function previewSelectedVoice() {
+  const voiceId = selectedVoiceId();
+  if (!voiceId) return setAudioStatus("请先选择声音，或填写 Voice ID。", "error");
+  const audio = elements.voicePreview;
+  if (!audio) return;
+  if (!audio.paused) {
+    stopVoicePreview();
+    return;
+  }
+  elements.previewVoiceButton.disabled = true;
+  elements.previewVoiceButton.textContent = "试听中...";
+  try {
+    audio.src = selectedPreviewUrl() || `/api/elevenlabs/voices/${encodeURIComponent(voiceId)}/preview`;
+    await audio.play();
+    elements.previewVoiceButton.textContent = "停止";
+    setAudioStatus("正在试听所选声音。");
+  } catch (error) {
+    stopVoicePreview();
+    setAudioStatus(error.message || "试听失败。", "error");
+  } finally {
+    elements.previewVoiceButton.disabled = false;
+  }
+}
+
+function setAudioStatus(message, tone = "") {
+  if (!elements.audioStatus) return;
+  elements.audioStatus.textContent = message;
+  elements.audioStatus.className = tone === "ok" ? "list-status is-ok" : tone === "error" ? "list-status is-error" : "list-status";
+}
+
 async function api(url, options = {}) {
   const response = await fetch(url, {
     cache: "no-store",
@@ -282,6 +659,7 @@ function formatSeconds(value) {
 
 function formatNumber(value) { return new Intl.NumberFormat("zh-CN").format(Number(value) || 0); }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>\"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
+function escapeAttr(value) { return escapeHtml(value).replace(/"/g, "&quot;"); }
 
 function currentSpeed(value) {
   const speed = Number(value);

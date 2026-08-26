@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css?v=20260826-1" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260826-2" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -14,22 +14,87 @@
     <main class="audio-shell">
       <header class="audio-header">
         <div>
-          <p class="library-kicker">NOVEL DETAIL</p>
+          <p class="library-kicker">NOVEL AUDIO</p>
           <h1 id="pageTitle">小说详情</h1>
-          <p id="pageLead">这里只保留已配音的开头版本。没生成音频的文案不会留下。勾选生效音频后点「保存生效音频到本机」。</p>
+          <p id="pageLead">改写页保存的文案在这里配音。先选声音，再勾选待配音开头一键生成。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
-          <a id="rewriteLink" class="primary-action" href="/novel-rewrite">去改写</a>
+          <a id="rewriteLink" class="quiet-action" href="/novel-rewrite">去改写</a>
         </div>
       </header>
 
       <section id="summary" class="audio-summary" hidden></section>
+
+      <section class="voice-panel">
+        <div class="section-heading">
+          <div><span>VOICE</span><h2>配音设置</h2></div>
+        </div>
+        <p class="hint">选好声音、速度和目录后，到下面待配音列表里生成。这里也会记成这本书的默认声音。</p>
+        <p class="model-fixed">模型已固定：<strong>Eleven Multilingual v2</strong><span>工作室品质 · 29 种语言 · 旁白/有声书</span></p>
+        <div class="voice-studio">
+          <div class="voice-filter-bar" aria-label="声音筛选">
+            <label><span>语言</span><select id="voiceLanguage"><option value="">全部</option></select></label>
+            <label><span>类别</span><select id="voiceCategory"><option value="">全部</option></select></label>
+            <label><span>性别</span><select id="voiceGender"><option value="">全部</option></select></label>
+            <label><span>年龄</span><select id="voiceAge"><option value="">全部</option></select></label>
+          </div>
+          <div class="voice-pick">
+            <label class="voice-pick-main">
+              <span>默认声音</span>
+              <select id="voiceSelect">
+                <option value="">正在读取声音...</option>
+              </select>
+            </label>
+            <div class="voice-pick-actions">
+              <button id="previewVoiceBtn" type="button">试听</button>
+              <button id="reloadVoicesBtn" type="button">重新读取</button>
+            </div>
+          </div>
+          <audio id="voicePreview" preload="none"></audio>
+          <details class="voice-id-details">
+            <summary>手动填写 Voice ID</summary>
+            <input id="voiceIdInput" type="text" maxlength="80" placeholder="也可以直接粘贴 Voice ID" />
+          </details>
+        </div>
+        <label class="speed-field">
+          <span>配音速度 <em id="speechSpeedValue">1.00×</em></span>
+          <input id="speechSpeed" type="range" min="0.7" max="1.2" step="0.05" value="1" />
+          <small class="field-hint">1.00 是正常语速。要压在 2 分半内，英文口播控制在 320–360 词。</small>
+        </label>
+        <label>
+          <span>保存到本机音频目录</span>
+          <select id="audioGroupSelect">
+            <option value="__novel__">按小说名称自动建文件夹</option>
+          </select>
+          <input id="audioDir" type="hidden" />
+          <small id="audioGroupHint">默认写到 F:\音频目录\小说名。线上点生成后，工人机会自动建这个文件夹。</small>
+        </label>
+        <p id="audioStatus" class="list-status" role="status"></p>
+      </section>
+
+      <section class="openings-heading">
+        <div>
+          <p class="library-kicker">PENDING</p>
+          <h2>待配音</h2>
+          <p>改写页保存、还没出音频的开头。勾选后点「一键生成勾选音频」。</p>
+        </div>
+      </section>
+      <div id="pendingToolbar" class="mix-toolbar" hidden>
+        <label class="speak-title-check">
+          <input id="speakOpeningTitle" type="checkbox" />
+          开头标题也生成音频
+        </label>
+        <button id="generatePendingBtn" class="primary-action" type="button">一键生成勾选音频</button>
+        <span id="pendingStatus" role="status"></span>
+      </div>
+      <section id="pendingList" class="audio-list"></section>
+
       <section class="openings-heading">
         <div>
           <p class="library-kicker">OPENINGS</p>
-          <h2>已有开头版本</h2>
-          <p>只显示已经配音的文案。要新版本，去改写页生成并配音。</p>
+          <h2>已配音</h2>
+          <p>勾选生效音频后点「保存生效音频到本机」。</p>
         </div>
       </section>
       <p id="listStatus" class="list-status">正在读取改写音频...</p>
@@ -58,6 +123,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js?v=20260826-1" type="module"></script>
+    <script src="/novel-audio.js?v=20260826-2" type="module"></script>
   </body>
 </html>

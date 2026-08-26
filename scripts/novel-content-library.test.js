@@ -243,7 +243,7 @@ test("exposes rewrite audio files and performance on the novel for the audio boa
   assert.equal(row.audio.sourceType, "manual-rewrite");
 });
 
-test("prunes text-only drafts and keeps scripts that already have audio", () => {
+test("prunes unsaved drafts and keeps voiced or explicitly saved scripts", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-prune-"));
   const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
   const novel = service.createNovel({
@@ -256,6 +256,12 @@ test("prunes text-only drafts and keeps scripts that already have audio", () => 
     versionLabel: "已配音",
     text: "A complete narration that should stay because it will be attached to audio."
   });
+  const pending = service.createScript(novel.id, {
+    title: "Keep pending",
+    versionLabel: "待配音",
+    kept: true,
+    text: "A complete narration that should stay because the operator saved it for later audio."
+  });
   const drop = service.createScript(novel.id, {
     title: "Drop draft",
     versionLabel: "未配音",
@@ -264,7 +270,7 @@ test("prunes text-only drafts and keeps scripts that already have audio", () => 
   service.attachScriptAudio(keep.id, "audio-keep");
   const result = service.pruneDraftScripts(novel.id);
   assert.equal(result.removedCount, 1);
-  assert.deepEqual(result.novel.scripts.map((item) => item.id), [keep.id]);
+  assert.deepEqual(result.novel.scripts.map((item) => item.id).sort(), [keep.id, pending.id].sort());
   assert.ok(!result.novel.scripts.some((item) => item.id === drop.id));
 });
 
