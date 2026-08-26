@@ -1206,8 +1206,8 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/novel-content/batch-audio-versions") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
-      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以批量出音频版本。" });
-      if (localBatchAudioRunning) return sendJson(res, 409, { error: "上一批还在跑，先等工人把钩子和配音做完。" });
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以批量保存文案。" });
+      if (localBatchAudioRunning) return sendJson(res, 409, { error: "上一批还在跑，先等工人把钩子写完。" });
       try {
         const payload = await readJsonBody(req);
         const planned = await planLocalBatchAudioVersions({
@@ -1217,7 +1217,7 @@ const server = http.createServer(async (req, res) => {
         });
         const queued = planned.filter((item) => !item.skipped);
         if (!queued.length) {
-          return sendJson(res, 400, { error: planned[0]?.reason || "勾选的书都不用再出音频版本。" });
+          return sendJson(res, 400, { error: planned[0]?.reason || "勾选的书都不用再写文案。" });
         }
         const settings = novelSeedService.getSettings();
         localBatchAudioRunning = true;
@@ -1229,13 +1229,7 @@ const server = http.createServer(async (req, res) => {
           speechSpeed: payload.speechSpeed ?? settings.speechSpeed,
           speakOpeningTitle: payload.speakOpeningTitle === true,
           novelContentLibrary,
-          generateOpeningVariants: (input) => codexBrain.generateOpeningVariants(input),
-          generateAudio: (audioPayload) => runAudioGenerateJob({
-            root,
-            workDir,
-            config: readConfig(root),
-            payload: audioPayload
-          })
+          generateOpeningVariants: (input) => codexBrain.generateOpeningVariants(input)
         }).catch((error) => {
           console.error("batch-audio-versions", error?.message || error);
         }).finally(() => {
@@ -1247,7 +1241,7 @@ const server = http.createServer(async (req, res) => {
           count: queued.length,
           skipped: planned.length - queued.length,
           items: planned,
-          message: `已开始为本机 ${queued.length} 本写钩子并配音。不要关 Local Factory。`
+          message: `已开始为本机 ${queued.length} 本写钩子并保存到音频页，不配音。不要关 Local Factory。`
         });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "批量出音频失败。" });

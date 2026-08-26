@@ -26,7 +26,7 @@ export async function planLocalBatchAudioVersions({
     }
     const needed = remainingAudioVersionCount(novel.scripts, count);
     if (!needed) {
-      items.push({ novelId, title: novel.title, skipped: true, reason: "已经有足够的保存或已配音版本。", needed: 0 });
+      items.push({ novelId, title: novel.title, skipped: true, reason: "已经有足够的保存文案。", needed: 0 });
       continue;
     }
     items.push({ novelId: novel.id, title: novel.title, skipped: false, needed, styles: batchOpeningStyleIds(needed) });
@@ -43,7 +43,7 @@ export async function runLocalBatchAudioVersions({
   speakOpeningTitle = false,
   novelContentLibrary,
   generateOpeningVariants,
-  generateAudio
+  generateAudio = null
 }) {
   const results = [];
   for (const item of items.filter((row) => !row.skipped)) {
@@ -66,34 +66,38 @@ export async function runLocalBatchAudioVersions({
         novelContentLibrary.createScript(novel.id, payload)
       ));
       if (!scripts.length) throw new Error("生成了开头，但没有可保存的文案。");
-      const audio = await generateAudio({
-        novelTitle: novel.title,
-        voiceId,
-        speechSpeed,
-        items: scripts.map((script) => ({
-          novelId: novel.id,
+      let audioCount = 0;
+      if (typeof generateAudio === "function") {
+        const audio = await generateAudio({
           novelTitle: novel.title,
-          scriptId: script.id,
-          title: script.title,
-          script: script.text,
-          openingTitle: script.openingTitle,
-          speakOpeningTitle: script.speakOpeningTitle === true,
           voiceId,
           speechSpeed,
-          sourceType: script.sourceType
-        }))
-      });
+          items: scripts.map((script) => ({
+            novelId: novel.id,
+            novelTitle: novel.title,
+            scriptId: script.id,
+            title: script.title,
+            script: script.text,
+            openingTitle: script.openingTitle,
+            speakOpeningTitle: script.speakOpeningTitle === true,
+            voiceId,
+            speechSpeed,
+            sourceType: script.sourceType
+          }))
+        });
+        audioCount = Array.isArray(audio?.items) ? audio.items.length : 0;
+      }
       results.push({
         novelId: novel.id,
         title: novel.title,
         scriptCount: scripts.length,
-        audioCount: Array.isArray(audio?.items) ? audio.items.length : 0
+        audioCount
       });
     } catch (error) {
       results.push({
         novelId: item.novelId,
         title: item.title,
-        error: error.message || "这本批量出音频失败。"
+        error: error.message || "这本批量写文案失败。"
       });
     }
   }

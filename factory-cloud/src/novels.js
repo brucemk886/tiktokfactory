@@ -58,7 +58,7 @@ export async function handleNovels(request, env, url, session) {
   }
 
   if (method === "POST" && pathname === "/api/novel-content/batch-audio-versions") {
-    if (session.user?.role !== "admin") return errorJson("仅管理员可以批量出音频版本。", 403);
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以批量保存文案。", 403);
     return json(await enqueueBatchAudioVersions(db, session.user, await readJson(request)));
   }
 
@@ -363,7 +363,7 @@ export async function persistOpeningVariantScripts(db, payload = {}, result = {}
 
 export async function enqueueBatchAudioVersions(db, user, body = {}) {
   const novelIds = uniqueNovelIds(body.novelIds);
-  if (!novelIds.length) throw Object.assign(new Error("请先勾选要出音频的小说。"), { statusCode: 400 });
+  if (!novelIds.length) throw Object.assign(new Error("请先勾选要写文案的小说。"), { statusCode: 400 });
   const count = Number(body.count) || 3;
   const settings = await kvGet(db, "novel-seed-settings", {});
   const voiceId = String(body.voiceId || settings.voiceId || "").trim();
@@ -382,13 +382,13 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
     }
     const needed = remainingAudioVersionCount(novel.scripts, count);
     if (!needed) {
-      items.push({ novelId, title: novel.title, skipped: true, reason: `已经有足够的保存或已配音版本。`, needed: 0 });
+      items.push({ novelId, title: novel.title, skipped: true, reason: "已经有足够的保存文案。", needed: 0 });
       continue;
     }
     const styles = batchOpeningStyleIds(needed);
     const job = await enqueueJob(db, {
       type: "opening-variants",
-      title: `${novel.title} · ${styles.length} 个音频版本`,
+      title: `${novel.title} · ${styles.length} 条开头文案`,
       payload: {
         novelId: novel.id,
         title: novel.title,
@@ -403,7 +403,7 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
         model: body.model || "gpt-5.6-sol",
         reasoningEffort: body.reasoningEffort || "medium",
         autoKeep: true,
-        autoVoice: true,
+        autoVoice: false,
         voiceId,
         speechSpeed,
         speakOpeningTitle: body.speakOpeningTitle === true
@@ -419,14 +419,14 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
     });
   }
   const queued = items.filter((item) => !item.skipped).length;
-  if (!queued) throw Object.assign(new Error(items[0]?.reason || "勾选的书都不用再出音频版本。"), { statusCode: 400 });
+  if (!queued) throw Object.assign(new Error(items[0]?.reason || "勾选的书都不用再写文案。"), { statusCode: 400 });
   return {
     accepted: true,
     queued: true,
     count: queued,
     skipped: items.length - queued,
     items,
-    message: `已下发 ${queued} 本，工人会按本写钩子再配音。已有 3 条的已跳过。`
+    message: `已下发 ${queued} 本，工人只写钩子并保存到音频页，不配音。已有 3 条的已跳过。`
   };
 }
 

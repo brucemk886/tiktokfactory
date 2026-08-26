@@ -450,13 +450,13 @@ function syncBatchBar() {
   if (elements.batchAudioButton) {
     elements.batchAudioButton.disabled = state.batching || !selected.length;
     elements.batchAudioButton.textContent = selected.length
-      ? `勾选的 ${selected.length} 本各出 3 个音频版本`
-      : "勾选的每本出 3 个音频版本";
+      ? `勾选的 ${selected.length} 本各出 3 条文案到音频页`
+      : "勾选的每本出 3 条文案到音频页";
   }
   if (elements.batchStatus && !state.batching) {
     elements.batchStatus.textContent = selected.length
-      ? `已勾 ${selected.length} 本。点一下就写钩子并配音，已有 3 条的会跳过。本机工人不要关。`
-      : "先勾书。每本自动写 3 条钩子并配音，已有 3 条的会跳过。本机工人不要关。";
+      ? `已勾 ${selected.length} 本。点一下只写钩子并保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。`
+      : "先勾书。每本自动写 3 条钩子并保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。";
     elements.batchStatus.className = "";
   }
 }
@@ -469,8 +469,8 @@ function setBatchStatus(message, tone = "") {
 
 async function startBatchAudioVersions() {
   const novelIds = selectedNovelIds();
-  if (!novelIds.length) return setBatchStatus("先勾选要出音频的小说。", "error");
-  if (!confirm(`将给 ${novelIds.length} 本各出 3 个音频版本。已有 3 条保存/配音的会跳过。本机工人要一直开着。继续？`)) return;
+  if (!novelIds.length) return setBatchStatus("先勾选要写文案的小说。", "error");
+  if (!confirm(`将给 ${novelIds.length} 本各写 3 条开头文案，保存到音频页，不配音。已有 3 条的会跳过。本机工人要一直开着。继续？`)) return;
   state.batching = true;
   if (elements.batchAudioButton) elements.batchAudioButton.disabled = true;
   setBatchStatus("正在下发给工人...", "");
@@ -481,7 +481,7 @@ async function startBatchAudioVersions() {
     });
     setBatchStatus(result.message || `已下发 ${result.count || 0} 本。`, "ok");
   } catch (error) {
-    setBatchStatus(error.message || "批量出音频失败。", "error");
+    setBatchStatus(error.message || "批量写文案失败。", "error");
   } finally {
     state.batching = false;
     syncBatchBar();
