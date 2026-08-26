@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260826-1" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -16,7 +16,7 @@
         <div>
           <p class="library-kicker">NOVEL DETAIL</p>
           <h1 id="pageTitle">小说详情</h1>
-          <p id="pageLead">勾选生效音频后点「保存生效音频到本机」。混剪只抽这些音频，工人机会按书名建文件夹并保存。</p>
+          <p id="pageLead">这里只保留已配音的开头版本。没生成音频的文案不会留下。勾选生效音频后点「保存生效音频到本机」。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
@@ -25,6 +25,13 @@
       </header>
 
       <section id="summary" class="audio-summary" hidden></section>
+      <section class="openings-heading">
+        <div>
+          <p class="library-kicker">OPENINGS</p>
+          <h2>已有开头版本</h2>
+          <p>只显示已经配音的文案。要新版本，去改写页生成并配音。</p>
+        </div>
+      </section>
       <p id="listStatus" class="list-status">正在读取改写音频...</p>
       <div id="mixToolbar" class="mix-toolbar" hidden>
         <p>勾选的生效音频会保存，并下发到本机 F:\音频目录\书名\。没有文件夹会自动创建。</p>
@@ -51,6 +58,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js" type="module"></script>
+    <script src="/novel-audio.js?v=20260826-1" type="module"></script>
   </body>
 </html>

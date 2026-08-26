@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { dropDraftScripts, removeDraftScriptsById, scriptHasAudio } from "../../scripts/novel-overview.js";
 import { takeNovelFromStore } from "./novels.js";
 
 test("removes one novel and only its rewrite scripts from the catalog store", () => {
@@ -23,4 +24,23 @@ test("removes one novel and only its rewrite scripts from the catalog store", ()
 
 test("returns null when the novel is missing", () => {
   assert.equal(takeNovelFromStore({ novels: [{ id: "novel-keep", title: "Keep" }], scripts: [] }, "missing"), null);
+});
+
+test("drops text-only drafts and keeps scripts that already have audio", () => {
+  const scripts = [
+    { id: "keep-audio", novelId: "novel-1", audioId: "audio-1" },
+    { id: "drop-draft", novelId: "novel-1", audioId: "" },
+    { id: "other-book", novelId: "novel-2", audioId: "" }
+  ];
+  assert.equal(scriptHasAudio(scripts[0]), true);
+  assert.deepEqual(dropDraftScripts(scripts, { novelId: "novel-1" }).map((item) => item.id), ["keep-audio", "other-book"]);
+  assert.deepEqual(removeDraftScriptsById(scripts, ["drop-draft", "keep-audio"]).map((item) => item.id), ["keep-audio", "other-book"]);
+});
+
+test("keeps recent drafts when a grace window is set", () => {
+  const scripts = [
+    { id: "old-draft", novelId: "novel-1", createdAt: "2020-01-01T00:00:00.000Z" },
+    { id: "new-draft", novelId: "novel-1", createdAt: new Date().toISOString() }
+  ];
+  assert.deepEqual(dropDraftScripts(scripts, { novelId: "novel-1", graceMs: 60_000 }).map((item) => item.id), ["new-draft"]);
 });

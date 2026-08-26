@@ -1322,6 +1322,16 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/prune-drafts$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const id = decodeURIComponent(url.pathname.split("/")[4]);
+        return sendJson(res, 200, novelContentLibrary.pruneDraftScripts(id, await readJsonBody(req)));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "清理未配音文案失败。" });
+      }
+    }
+
     if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/seed$/.test(url.pathname)) {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       try {

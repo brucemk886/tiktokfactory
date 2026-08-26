@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260826-1" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260826-2" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -15,7 +15,7 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">只改视频开头/配音文案，不改全书。默认用 AI 按勾选风格生成；也可以改成自己写。</p>
+          <p id="pageLead">只改视频开头并配音。已配音的版本在「查看音频与记录」里看；没生成音频的文案不会留下。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
@@ -53,7 +53,7 @@
             <div class="section-heading">
               <div><span>REWRITE</span><h2>写新开头版本</h2></div>
             </div>
-            <p id="baseHint" class="hint">对照用上面的免费章节。默认只跑智能钩子，从原文真实机制里选两条不同事实；四种打法按需勾选，原文没有就不要硬套。</p>
+            <p id="baseHint" class="hint">对照上面的免费章节生成。配好音的版本去「查看音频与记录」看，没配音的文案不会保存。</p>
             <div class="mode-picker" role="radiogroup" aria-label="开头写法">
               <label class="mode-option is-on">
                 <input name="rewriteMode" type="radio" value="ai" checked />
@@ -108,7 +108,7 @@
                 <small id="rewriteCount" class="field-count">0 / 4,000</small>
               </label>
               <div class="form-actions">
-                <button id="saveRewriteBtn" class="primary-action" type="submit">保存为新开头版本</button>
+                <button id="saveRewriteBtn" class="primary-action" type="submit">保存并生成音频</button>
               </div>
             </div>
             <span id="formStatus" role="status"></span>
@@ -116,16 +116,6 @@
         </div>
 
         <div class="audio-column">
-          <section class="source-panel">
-            <div class="source-block">
-              <div class="source-block-head">
-                <h3>已有开头版本</h3>
-                <button id="toggleScriptsBtn" class="quiet-action" type="button" hidden>折叠已有</button>
-              </div>
-              <p id="scriptFoldHint" class="hint" hidden></p>
-              <div id="scriptList" class="script-list"></div>
-            </div>
-          </section>
           <section class="audio-panel rewrite-editor">
             <div class="section-heading">
               <div><span>AUDIO</span><h2>生成音频</h2></div>
@@ -180,6 +170,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260826-1" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260826-2" type="module"></script>
   </body>
 </html>

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { buildOverview } from "./novel-overview.js";
+import { buildOverview, dropDraftScripts, removeDraftScriptsById } from "./novel-overview.js";
 
 const STORE_VERSION = 1;
 const NOVEL_PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
@@ -259,7 +259,26 @@ export function createNovelContentLibraryService({
     return getNovel(novel.id);
   }
 
-  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, assignScript, attachScriptAudio, setNovelMixAudios, importMarketingResult };
+  function pruneDraftScripts(novelId, payload = {}) {
+    const store = syncedStore();
+    const novel = store.novels.find((item) => item.id === safeId(novelId));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    const next = Array.isArray(payload.scriptIds) && payload.scriptIds.length
+      ? removeDraftScriptsById(store.scripts, payload.scriptIds)
+      : dropDraftScripts(store.scripts, {
+        novelId: novel.id,
+        keepIds: payload.keepIds,
+        graceMs: payload.graceMs
+      });
+    const removedCount = store.scripts.length - next.length;
+    if (removedCount) {
+      store.scripts = next;
+      writeStore(storePath, store);
+    }
+    return { ok: true, removedCount, novel: getNovel(novel.id) };
+  }
+
+  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, assignScript, attachScriptAudio, setNovelMixAudios, pruneDraftScripts, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {

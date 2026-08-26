@@ -59,6 +59,29 @@ export function buildOverview(store, audioItems, matchedVideos, query) {
   };
 }
 
+export function scriptHasAudio(script) {
+  return Boolean(String(script?.audioId || script?.audio?.id || "").trim());
+}
+
+export function dropDraftScripts(scripts = [], { novelId = "", keepIds = [], graceMs = 0 } = {}) {
+  const keep = new Set((Array.isArray(keepIds) ? keepIds : []).map((id) => String(id || "").trim()).filter(Boolean));
+  const cutoff = Number(graceMs) > 0 ? Date.now() - Number(graceMs) : 0;
+  const targetNovelId = String(novelId || "").trim();
+  return (Array.isArray(scripts) ? scripts : []).filter((script) => {
+    if (targetNovelId && String(script?.novelId || "") !== targetNovelId) return true;
+    if (scriptHasAudio(script)) return true;
+    if (keep.has(String(script?.id || ""))) return true;
+    if (cutoff && Date.parse(script?.createdAt || 0) >= cutoff) return true;
+    return false;
+  });
+}
+
+export function removeDraftScriptsById(scripts = [], scriptIds = []) {
+  const drop = new Set((Array.isArray(scriptIds) ? scriptIds : []).map((id) => String(id || "").trim()).filter(Boolean));
+  if (!drop.size) return Array.isArray(scripts) ? scripts : [];
+  return (Array.isArray(scripts) ? scripts : []).filter((script) => !drop.has(String(script?.id || "")) || scriptHasAudio(script));
+}
+
 export function audioItemsFromScripts(scripts = []) {
   return scripts.map((script) => ({
     id: script.audioId || script.audio?.id || "",

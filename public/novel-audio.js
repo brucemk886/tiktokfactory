@@ -32,7 +32,13 @@ async function loadPage() {
   if (state.novel) renderNovel(state.novel);
   loadRecords();
   try {
-    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+    const pruned = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/prune-drafts`, {
+      method: "POST",
+      body: JSON.stringify({ graceMs: 20 * 60 * 1000 })
+    }).catch(() => null);
+    const data = pruned?.novel
+      ? pruned
+      : await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = data.novel;
     renderNovel(state.novel);
   } catch (error) {
@@ -48,21 +54,21 @@ async function loadPage() {
 }
 
 function renderNovel(novel) {
-  const audios = (novel.scripts || []).filter((script) => String(script.text || "").trim() || script.audio?.id || script.audioId);
+  const audios = (novel.scripts || []).filter((script) => script.audio?.id || script.audioId);
   elements.pageTitle.textContent = novel.title;
-  elements.pageLead.textContent = "勾选生效音频，点「保存生效音频到本机」。混剪只抽这些，工人机会按书名建文件夹并保存。";
+  elements.pageLead.textContent = "这里只保留已配音的开头版本。没生成音频的文案不会留下。勾选后点「保存生效音频到本机」。";
   elements.summary.hidden = false;
   elements.summary.innerHTML = [
     novel.platform,
     novel.category,
-    `${audios.length} 条改写音频`,
+    `${audios.length} 条已配音开头`,
     `${formatNumber(novel.performance?.videoCount || 0)} 条视频`,
     `${formatNumber(novel.performance?.totalViews || 0)} 播放`
   ].filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join("");
   if (!audios.length) {
     if (elements.mixToolbar) elements.mixToolbar.hidden = true;
     elements.listStatus.textContent = "";
-    elements.audioList.innerHTML = `<div class="empty-state"><strong>这本还没有改写音频</strong><span>先到改写页写开头并生成音频。<a href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">去改写</a></span></div>`;
+    elements.audioList.innerHTML = `<div class="empty-state"><strong>这本还没有已配音的开头</strong><span>先到改写页生成开头并配音。没配音的文案不会留在这里。<a href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">去改写</a></span></div>`;
     return;
   }
   const enabledCount = audios.filter((script) => script.mixEnabled !== false).length;
@@ -187,17 +193,17 @@ function audioCard(script) {
             <input type="checkbox" data-script-id="${escapeHtml(script.id)}" ${script.mixEnabled === false ? "" : "checked"} />
             生效音频
           </label>
-          <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}">改写此版本</a>
+          <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}">去改写</a>
         </div>
       </div>
-      ${audioId ? `<audio controls preload="none" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>
+      <audio controls preload="none" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>
       <div class="retune-row">
         <label>已生成变速 <em data-retune-label>${formatSpeed(audio.playbackSpeed)}</em>
           <input type="range" min="0.8" max="1.4" step="0.05" value="${escapeHtml(String(currentSpeed(audio.playbackSpeed)))}" data-retune-range />
         </label>
         <button type="button" class="quiet-action" data-retune-id="${escapeHtml(audioId)}">应用变速</button>
         <small>按原始音频变速，不会越调越快。太慢可拉到 1.10×–1.25×。</small>
-      </div>` : "<p>还没有本机音频。勾选生效后点「保存生效音频到本机」，没有文件夹会自动创建。</p>"}
+      </div>
       <div class="metric-row">
         ${metric("播放", formatNumber(performance.totalViews))}
         ${metric("视频", formatNumber(performance.videoCount))}

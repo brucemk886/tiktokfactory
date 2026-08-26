@@ -1,6 +1,6 @@
 import { assembleOfficialNovelEffects, slimEffectsPage } from "../../scripts/novel-effect-core.js";
 import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
-import { audioItemsFromScripts } from "../../scripts/novel-overview.js";
+import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById } from "../../scripts/novel-overview.js";
 import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
@@ -69,6 +69,12 @@ export async function handleNovels(request, env, url, session) {
   if (method === "POST" && scriptMatch) {
     const script = await createScript(db, decodeURIComponent(scriptMatch[1]), await readJson(request));
     return json({ script }, 201);
+  }
+
+  const pruneMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/prune-drafts$/);
+  if (method === "POST" && pruneMatch) {
+    const payload = await readJson(request);
+    return json(await pruneDraftScripts(db, decodeURIComponent(pruneMatch[1]), payload));
   }
 
   const mixMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/mix-audios$/);
@@ -354,6 +360,30 @@ async function createScript(db, novelId, payload = {}) {
   store.scripts.push(script);
   await writeScripts(db, store.scripts);
   return script;
+}
+
+export async function pruneDraftScripts(db, novelId, payload = {}) {
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const next = Array.isArray(payload.scriptIds) && payload.scriptIds.length
+    ? removeDraftScriptsById(store.scripts, payload.scriptIds)
+    : dropDraftScripts(store.scripts, {
+      novelId: novel.id,
+      keepIds: payload.keepIds,
+      graceMs: payload.graceMs
+    });
+  const removedCount = store.scripts.length - next.length;
+  if (removedCount) await writeScripts(db, next);
+  return { ok: true, removedCount, novel: await hydrateNovel(db, novel.id) };
+}
+
+export async function removeDraftScripts(db, scriptIds = []) {
+  const store = await readStore(db);
+  const next = removeDraftScriptsById(store.scripts, scriptIds);
+  const removedCount = store.scripts.length - next.length;
+  if (removedCount) await writeScripts(db, next);
+  return removedCount;
 }
 
 async function setNovelMixAudios(db, novelId, scriptIds) {

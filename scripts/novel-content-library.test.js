@@ -243,6 +243,31 @@ test("exposes rewrite audio files and performance on the novel for the audio boa
   assert.equal(row.audio.sourceType, "manual-rewrite");
 });
 
+test("prunes text-only drafts and keeps scripts that already have audio", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-prune-"));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  const novel = service.createNovel({
+    title: "Prune drafts book",
+    platform: "NovelMaster",
+    sourceContent: "This free chapter is long enough for the prune drafts catalog test."
+  });
+  const keep = service.createScript(novel.id, {
+    title: "Keep audio",
+    versionLabel: "已配音",
+    text: "A complete narration that should stay because it will be attached to audio."
+  });
+  const drop = service.createScript(novel.id, {
+    title: "Drop draft",
+    versionLabel: "未配音",
+    text: "A complete narration that should be removed because it never received audio."
+  });
+  service.attachScriptAudio(keep.id, "audio-keep");
+  const result = service.pruneDraftScripts(novel.id);
+  assert.equal(result.removedCount, 1);
+  assert.deepEqual(result.novel.scripts.map((item) => item.id), [keep.id]);
+  assert.ok(!result.novel.scripts.some((item) => item.id === drop.id));
+});
+
 test("deletes a novel and its rewrite scripts without removing other books", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-delete-"));
   const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
