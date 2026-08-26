@@ -87,7 +87,7 @@ elements.generateVariantsButton?.addEventListener("click", generateVariants);
 elements.generateSelectedAudioButton?.addEventListener("click", generateSelectedVariantAudios);
 elements.regenerateTitlesButton?.addEventListener("click", () => regenerateOpeningTitles());
 elements.regenerateManualTitleButton?.addEventListener("click", regenerateManualOpeningTitle);
-elements.speakOpeningTitle?.addEventListener("change", () => setSpeakOpeningTitle(elements.speakOpeningTitle.checked));
+elements.speakOpeningTitle?.addEventListener("change", () => setSpeakOpeningTitle(elements.speakOpeningTitle.checked, { applyToVariants: true }));
 elements.speakOpeningTitleManual?.addEventListener("change", () => setSpeakOpeningTitle(elements.speakOpeningTitleManual.checked));
 elements.rewriteText?.addEventListener("input", updateCount);
 document.querySelectorAll('input[name="rewriteMode"]').forEach((input) => {
@@ -263,14 +263,17 @@ function readSavedSpeakOpeningTitle() {
   return localStorage.getItem("lf-speak-opening-title") === "1";
 }
 
-function setSpeakOpeningTitle(on) {
+function setSpeakOpeningTitle(on, { applyToVariants = false } = {}) {
   state.speakOpeningTitle = on === true;
   localStorage.setItem("lf-speak-opening-title", state.speakOpeningTitle ? "1" : "0");
   if (elements.speakOpeningTitle) elements.speakOpeningTitle.checked = state.speakOpeningTitle;
   if (elements.speakOpeningTitleManual) elements.speakOpeningTitleManual.checked = state.speakOpeningTitle;
-  elements.variantList?.querySelectorAll("[data-speak-title]").forEach((input) => {
-    input.checked = state.speakOpeningTitle;
-  });
+  if (applyToVariants) {
+    for (const variant of state.variants) variant.speakOpeningTitle = state.speakOpeningTitle;
+    elements.variantList?.querySelectorAll("[data-speak-title]").forEach((input) => {
+      input.checked = state.speakOpeningTitle;
+    });
+  }
   updateSpeechSpeedLabel();
 }
 
@@ -651,6 +654,7 @@ function applyOpeningVariantResult(data, { restored = false } = {}) {
     ...item,
     id: item.id || `variant-${index + 1}`,
     selected: true,
+    speakOpeningTitle: state.speakOpeningTitle,
     status: "",
     model,
     reasoningEffort,
@@ -691,7 +695,7 @@ function renderVariants() {
         <span class="variant-hook-head">
           <span>开头标题</span>
           <label class="speak-title-check">
-            <input type="checkbox" data-speak-title ${state.speakOpeningTitle ? "checked" : ""} />
+            <input type="checkbox" data-speak-title ${variant.speakOpeningTitle ? "checked" : ""} />
             标题也配音
           </label>
         </span>
@@ -705,7 +709,7 @@ function renderVariants() {
         ${variant.openingTitleZh ? `<strong>${escapeHtml(variant.openingTitleZh)}</strong>` : ""}
         <p>${escapeHtml(variant.scriptZh || "")}</p>
       </div>` : ""}
-      <small class="variant-meta">${formatNumber(spokenWordCount(variant.script, variant.openingTitle))} 词 · 预估 ${formatClock(estimateSpeechSeconds(spokenWordCount(variant.script, variant.openingTitle)))}</small>
+      <small class="variant-meta">${formatNumber(spokenWordCount(variant.script, variant.openingTitle, variant.speakOpeningTitle))} 词 · 预估 ${formatClock(estimateSpeechSeconds(spokenWordCount(variant.script, variant.openingTitle, variant.speakOpeningTitle)))}</small>
       <button class="quiet-action" type="button" data-save-audio>${variant.status || "保存并生成音频"}</button>
       ${variant.audioId ? `<audio class="variant-audio" controls preload="metadata" data-audio-id="${escapeHtml(variant.audioId)}" src="/api/audio-library/${encodeURIComponent(variant.audioId)}/file?t=${Date.now()}"></audio>
       <div class="retune-row">
@@ -718,7 +722,7 @@ function renderVariants() {
   elements.variantList.querySelectorAll(".variant-card").forEach((card) => {
     const variant = state.variants.find((item) => item.id === card.dataset.variantId);
     if (!variant) return;
-    card.querySelector("input[type=checkbox]")?.addEventListener("change", (event) => {
+    card.querySelector(".variant-check input")?.addEventListener("change", (event) => {
       variant.selected = event.target.checked;
     });
     card.querySelector("[data-opening-title]")?.addEventListener("input", (event) => {
@@ -726,7 +730,8 @@ function renderVariants() {
       updateSpeechSpeedLabel();
     });
     card.querySelector("[data-speak-title]")?.addEventListener("change", (event) => {
-      setSpeakOpeningTitle(event.target.checked);
+      variant.speakOpeningTitle = event.target.checked;
+      updateSpeechSpeedLabel();
     });
     card.querySelector("[data-regen-title]")?.addEventListener("click", () => regenerateOpeningTitles([variant]));
     card.querySelector("[data-save-audio]")?.addEventListener("click", () => saveVariantWithAudio(variant.id));
@@ -794,7 +799,7 @@ async function generateVariantAudios(variants) {
         title: `${state.novel.title} ${variant.styleLabel || "AI 改版"}`,
         script: variant.script,
         openingTitle: variant.openingTitle || firstHookLine(variant.script),
-        speakOpeningTitle: state.speakOpeningTitle,
+        speakOpeningTitle: variant.speakOpeningTitle === true,
         voiceId,
         speechSpeed: selectedSpeechSpeed(),
         sourceType: "ai-style-rewrite"
@@ -1063,7 +1068,7 @@ function updateSpeechSpeedLabel() {
     const variant = state.variants.find((item) => item.id === card.dataset.variantId);
     const meta = card.querySelector(".variant-meta");
     if (variant && meta) {
-      const words = spokenWordCount(variant.script, variant.openingTitle);
+      const words = spokenWordCount(variant.script, variant.openingTitle, variant.speakOpeningTitle);
       meta.textContent = `${formatNumber(words)} 词 · 预估 ${formatClock(estimateSpeechSeconds(words))}`;
     }
   });
@@ -1073,10 +1078,10 @@ function wordCount(value) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).length;
 }
 
-function spokenWordCount(script, title) {
+function spokenWordCount(script, title, speakTitle = state.speakOpeningTitle) {
   const body = String(script || "").replace(/\s+/g, " ").trim();
   const hook = String(title || "").replace(/\s+/g, " ").trim();
-  if (!state.speakOpeningTitle || !hook) return wordCount(body);
+  if (!speakTitle || !hook) return wordCount(body);
   if (body.toLowerCase().startsWith(hook.toLowerCase())) return wordCount(body);
   return wordCount(body) + wordCount(hook);
 }
