@@ -178,12 +178,14 @@ test("script generation speaks the opening title before the body", async (contex
   const first = await service.generateFromScript({
     title: "Opening",
     script,
-    openingTitle: "She married my uncle"
+    openingTitle: "She married my uncle",
+    speakOpeningTitle: true
   });
   const again = await service.generateFromScript({
     title: "Opening",
     script,
-    openingTitle: "She married my uncle"
+    openingTitle: "She married my uncle",
+    speakOpeningTitle: true
   });
   const withoutTitle = await service.generateFromScript({ title: "Opening", script });
   const skippedTitle = await service.generateFromScript({

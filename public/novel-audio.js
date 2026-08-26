@@ -81,7 +81,7 @@ elements.voicePreview?.addEventListener("pause", () => {
     if (elements.previewVoiceButton) elements.previewVoiceButton.textContent = "试听";
   }
 });
-if (elements.speakOpeningTitle) elements.speakOpeningTitle.checked = localStorage.getItem("lf-speak-opening-title") === "1";
+if (elements.speakOpeningTitle) elements.speakOpeningTitle.checked = false;
 loadPage();
 loadAudioControls();
 loadAudioGroups();
@@ -166,7 +166,7 @@ function renderPending(pending, novel) {
         <div class="pending-title-row">
           <input class="pending-title" type="text" maxlength="80" data-opening-title value="${escapeHtml(script.openingTitle || "")}" readonly />
           <label class="speak-title-check">
-            <input type="checkbox" data-speak-title ${script.speakOpeningTitle === true || speakDefault ? "checked" : ""} />
+            <input type="checkbox" data-speak-title ${speakDefault ? "checked" : ""} />
             标题也配音
           </label>
         </div>

@@ -221,7 +221,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     if (!voiceId) throw httpError(400, "ElevenLabs Voice ID 未配置。");
 
     const spokenScript = buildSpokenNarration(
-      speakOpeningTitle === false ? "" : resolveScriptOpeningTitle(openingTitle, scriptId),
+      speakOpeningTitle === true ? resolveScriptOpeningTitle(openingTitle, scriptId) : "",
       cleanScript
     );
     const speed = normalizeSpeechSpeed(speechSpeed);
