@@ -239,12 +239,14 @@ export function accountsFromArchiveRows(rows = []) {
     if (!profile || typeof profile !== "object") {
       try { profile = JSON.parse(row.profile_json || "{}"); } catch { profile = {}; }
     }
+    const label = String(row.label || "");
+    const username = profile.username || row.username || (label.startsWith("@") ? label.slice(1) : "");
     return {
       accountKey: row.account_key || row.accountKey || row.schema,
       schema: row.account_key || row.schema,
       label: row.label,
-      username: profile.username || row.username,
-      profile,
+      username,
+      profile: profile.username ? profile : { ...profile, username },
     };
   });
 }

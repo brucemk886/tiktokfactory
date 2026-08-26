@@ -34,7 +34,7 @@ const state = { accounts: [], groups: [], projects: [] };
 
 elements.saveButton?.addEventListener("click", saveSettings);
 elements.testButton?.addEventListener("click", testConnection);
-elements.refreshButton?.addEventListener("click", loadAccounts);
+elements.refreshButton?.addEventListener("click", () => loadAccounts({ refresh: true }));
 elements.bridgeUrl?.addEventListener("input", updateAuthorizeLink);
 elements.projectFilter?.addEventListener("change", () => {
   syncNewGroupProjectFromFilter();
@@ -99,11 +99,11 @@ async function testConnection() {
   }
 }
 
-async function loadAccounts() {
-  setBusy(elements.refreshButton, true, "刷新中...");
+async function loadAccounts({ refresh = false } = {}) {
+  setBusy(elements.refreshButton, true, refresh ? "正在从主站同步..." : "刷新中...");
   elements.accountList.innerHTML = '<div class="empty-state">正在读取已授权账号...</div>';
   try {
-    const result = await requestJson("/api/private-tiktok/accounts");
+    const result = await requestJson(`/api/private-tiktok/accounts${refresh ? "?refresh=1" : ""}`);
     state.accounts = Array.isArray(result.accounts) ? result.accounts : [];
     state.groups = Array.isArray(result.groups) ? result.groups : [];
     state.projects = Array.isArray(result.projects) ? result.projects : [];

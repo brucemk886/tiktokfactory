@@ -85,7 +85,7 @@ export async function handleAccounts(request, env, url, session) {
   if (method === "GET" && pathname === "/api/admin/accounts") {
     const store = rememberAccountAliases(
       ensureModuleProjects(await kvGet(env.DB, "official-account-groups", {})),
-      accountsFromArchiveRows(((await env.DB.prepare("SELECT account_key, label, profile_json FROM official_accounts_latest").all()).results) || [])
+      accountsFromArchiveRows(((await env.DB.prepare("SELECT account_key, label FROM official_accounts_latest").all()).results) || [])
     );
     return json({
       users: await listUsers(env.DB),

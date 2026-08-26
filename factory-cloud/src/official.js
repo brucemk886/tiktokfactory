@@ -24,6 +24,8 @@ import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import {
   accountsFromLatestArchive,
+  directoryAccountsFromRows,
+  listAccountDirectory,
   listLatestArchiveAccounts,
   loadAccountAssignments,
   loadVideosForAccounts,
@@ -71,7 +73,7 @@ export async function handleOfficial(request, env, url, session) {
 
   if (method === "GET" && pathname === "/api/private-tiktok/accounts") {
     try {
-      return json(await listAllAccounts(env, db));
+      return json(await listAllAccounts(env, db, url.searchParams.get("refresh") === "1"));
     } catch (error) {
       return errorJson(error.message || "读取官方账号失败。", error.statusCode || 502);
     }
@@ -305,18 +307,13 @@ function archiveAccountRow(account) {
   };
 }
 
-async function listAllAccounts(env, db) {
-  const accounts = [];
-  let cursor = "";
-  for (let page = 0; page < 50; page += 1) {
-    const params = new URLSearchParams({ limit: "100" });
-    if (cursor) params.set("cursor", cursor);
-    const data = await signalDesk(env, db, `/api/integrations/local-factory/accounts?${params}`);
-    accounts.push(...(data.accounts || []));
-    if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
-    cursor = data.nextCursor;
+async function listAllAccounts(env, db, refresh = false) {
+  if (refresh) {
+    await refreshOfficialArchive(env, db);
   }
-  return attachAccounts({ connected: true, accounts }, await loadGroupStore(db));
+  const store = await loadGroupStore(db);
+  const accounts = directoryAccountsFromRows(await listAccountDirectory(db));
+  return attachAccounts({ connected: true, source: refresh ? "archive-refresh" : "archive", accounts }, store);
 }
 
 async function publicOfficialSettings(db, env) {
@@ -338,7 +335,10 @@ export async function loadGroupStore(db) {
   else if (store.assignments && Object.keys(store.assignments).length) {
     await saveAccountAssignments(db, store.assignments);
   }
-  const { results } = await db.prepare("SELECT account_key, label, profile_json FROM official_accounts_latest").all();
+  const { results } = await db.prepare(`
+    SELECT account_key, label
+    FROM official_accounts_latest
+  `).all();
   return rememberAccountAliases(store, accountsFromArchiveRows(results || []));
 }
 

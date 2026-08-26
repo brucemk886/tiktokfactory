@@ -64,38 +64,45 @@ export async function getOfficialOperationSignals(env, db, options = {}) {
 }
 
 export async function listLatestArchiveAccounts(db) {
-  await backfillAccountMetricsFromD1(db);
   return (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
 }
 
-async function backfillAccountMetricsFromD1(db) {
-  const pending = await db.prepare(`
-    SELECT COUNT(*) AS n FROM official_accounts_latest WHERE video_count = 0
-  `).first();
-  const leftover = await db.prepare("SELECT COUNT(*) AS n FROM official_videos_latest").first();
-  if (!Number(pending?.n) || !Number(leftover?.n)) return;
-  const { results } = await db.prepare(`
-    SELECT account_key,
-      COUNT(*) AS video_count,
-      COALESCE(SUM(views), 0) AS views,
-      COALESCE(SUM(likes), 0) AS likes,
-      COALESCE(SUM(comments), 0) AS comments,
-      COALESCE(SUM(shares), 0) AS shares,
-      COALESCE(SUM(reach), 0) AS reach
-    FROM official_videos_latest
-    GROUP BY account_key
-  `).all();
-  if (!results?.length) return;
-  const statement = db.prepare(`
-    UPDATE official_accounts_latest
-    SET video_count = ?, views = ?, likes = ?, comments = ?, shares = ?, reach = ?
-    WHERE account_key = ?
-  `);
-  for (const slice of chunk(results, BATCH_SIZE)) {
-    await db.batch(slice.map((row) => statement.bind(
-      row.video_count, row.views, row.likes, row.comments, row.shares, row.reach, row.account_key
-    )));
-  }
+export async function listAccountDirectory(db) {
+  return (await db.prepare(`
+    SELECT account_key, label, synced_at, video_count, views
+    FROM official_accounts_latest
+    ORDER BY label COLLATE NOCASE
+  `).all()).results || [];
+}
+
+export function directoryUsername(row = {}) {
+  const username = String(row.username || "").trim();
+  if (username) return username;
+  const label = String(row.label || "").trim();
+  return label.startsWith("@") ? label.slice(1) : label;
+}
+
+export function directoryAccountsFromRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const username = directoryUsername(row);
+    return {
+      accountKey: row.account_key,
+      schema: row.account_key,
+      id: row.account_key,
+      connectionId: row.account_key,
+      label: row.label,
+      username,
+      profile: {
+        username,
+        displayName: String(row.displayName || username || "")
+      },
+      videoCount: Number(row.video_count || 0),
+      syncedVideoCount: Number(row.video_count || 0),
+      syncedAt: Number(row.synced_at || 0),
+      updatedAt: Number(row.synced_at || 0),
+      views: Number(row.views || 0)
+    };
+  });
 }
 
 export async function loadLatestArchiveVideosByAccount(env, db, videosPerAccount = 80) {

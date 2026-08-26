@@ -23,4 +23,26 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(storage, /\/api\/integrations\/signal-desk\/archive-accounts/);
   assert.match(storage, /applyOfficialArchivePush/);
   assert.match(official, /不会删除已有账号/);
+  assert.match(official, /listAccountDirectory/);
+  assert.doesNotMatch(official, /for \(let page = 0; page < 50;/);
+  assert.doesNotMatch(official, /json_extract\(profile_json/);
+  assert.doesNotMatch(store, /backfillAccountMetricsFromD1/);
+  assert.match(store, /SELECT account_key, label, synced_at, video_count, views/);
+  assert.doesNotMatch(store, /json_extract\(profile_json/);
+});
+
+test("directory rows keep list fields without shipping full profile json", async () => {
+  const { directoryAccountsFromRows } = await import("./official-archive-store.js");
+  const [account] = directoryAccountsFromRows([{
+    account_key: "acc-1",
+    label: "@demo",
+    username: "demo",
+    displayName: "Demo",
+    video_count: 12,
+    synced_at: 100,
+    views: 50
+  }]);
+  assert.equal(account.schema, "acc-1");
+  assert.equal(account.profile.username, "demo");
+  assert.equal(account.syncedVideoCount, 12);
 });
