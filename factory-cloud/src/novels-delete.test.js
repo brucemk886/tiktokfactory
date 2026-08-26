@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dropDraftScripts, removeDraftScriptsById, scriptHasAudio, scriptIsKept } from "../../scripts/novel-overview.js";
+import { buildOverview, dropDraftScripts, removeDraftScriptsById, scriptHasAudio, scriptIsKept } from "../../scripts/novel-overview.js";
 import { takeNovelFromStore } from "./novels.js";
 
 test("removes one novel and only its rewrite scripts from the catalog store", () => {
@@ -45,4 +45,15 @@ test("keeps recent drafts when a grace window is set", () => {
     { id: "new-draft", novelId: "novel-1", createdAt: new Date().toISOString() }
   ];
   assert.deepEqual(dropDraftScripts(scripts, { novelId: "novel-1", graceMs: 60_000 }).map((item) => item.id), ["new-draft"]);
+});
+
+test("overview novels count generated audio per book", () => {
+  const page = buildOverview({
+    novels: [{ id: "n1", title: "A", platform: "GoodNovel" }],
+    scripts: [
+      { id: "s1", novelId: "n1", audioId: "audio-1" },
+      { id: "s2", novelId: "n1" }
+    ]
+  }, [{ id: "audio-1", title: "Opening", fileName: "opening.mp3" }], []);
+  assert.equal(page.novels[0].audioCount, 1);
 });

@@ -149,7 +149,7 @@ function renderBooks() {
     : "0 本";
   elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 全书库 ${counts.novelCount} · 重点 ${counts.featuredCount}`;
   if (!novels.length) {
-    elements.list.innerHTML = `<tr><td colspan="${canBatchAudio() ? 9 : 8}"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
+    elements.list.innerHTML = `<tr><td colspan="10"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -166,6 +166,7 @@ function renderBooks() {
       <td>${novel.category ? `<span class="channel-chip">${escapeHtml(novel.category)}</span>` : "—"}</td>
       <td class="cell-mono">${escapeHtml(novel.bookId || "未设置")}</td>
       <td class="cell-mono">${escapeHtml(novel.promotionCode || "未设置")}</td>
+      <td class="cell-mono cell-audio">${generatedAudioCount(novel)}</td>
       <td>${novel.featured ? `<span class="mark-chip is-featured">重点</span>` : "—"}</td>
       <td class="row-actions">
         <button class="edit-button" type="button" data-edit-id="${escapeHtml(novel.id)}">编辑</button>
@@ -522,6 +523,14 @@ async function api(url, options = {}) {
 function excerpt(value, limit = 150) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length > limit ? `${text.slice(0, limit)}...` : text || "暂无免费章节";
+}
+
+function generatedAudioCount(novel) {
+  const counted = Number(novel?.audioCount);
+  if (Number.isFinite(counted)) return Math.max(0, Math.floor(counted));
+  return (Array.isArray(novel?.scripts) ? novel.scripts : []).filter((script) => {
+    return Boolean(String(script?.audioId || script?.audio?.id || "").trim());
+  }).length;
 }
 
 function formatDate(value) {

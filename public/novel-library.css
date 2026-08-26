@@ -34,6 +34,7 @@
 .book-table .col-channel { width: 72px; }
 .book-table .col-book-id { width: 112px; }
 .book-table .col-promo { width: 88px; }
+.book-table .col-audio { width: 88px; }
 .book-table .col-mark { width: 58px; }
 .book-table .col-actions { width: 268px; }
 .book-table th, .book-table td { padding: 12px 10px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
@@ -46,6 +47,7 @@
 .book-table .cell-title strong { display: block; margin-bottom: 4px; font-size: 15px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .book-table .cell-title p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.45; font-weight: 500; }
 .book-table .cell-mono { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.book-table .cell-audio { font-weight: 800; }
 .book-table tr:last-child td { border-bottom: 0; }
 .book-table tr:hover td { background: rgba(246, 240, 228, 0.7); }
 .platform-chip, .channel-chip, .mark-chip { display: inline-flex; min-height: 23px; align-items: center; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 800; white-space: nowrap; }

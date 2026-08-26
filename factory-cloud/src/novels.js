@@ -1,6 +1,6 @@
 import { assembleOfficialNovelEffects, slimEffectsPage } from "../../scripts/novel-effect-core.js";
 import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
-import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById } from "../../scripts/novel-overview.js";
+import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById, scriptHasAudio } from "../../scripts/novel-overview.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
@@ -219,11 +219,15 @@ async function novelOverview(db, query) {
   const store = await readStore(db, { includeSource: false });
   const normalized = String(query || "").trim().toLowerCase();
   const novels = store.novels
-    .map((novel) => ({
-      ...novel,
-      scripts: store.scripts.filter((script) => script.novelId === novel.id),
-      performance: { videoCount: 0, totalViews: 0, averageViews: 0, maxViews: 0, comments: 0 }
-    }))
+    .map((novel) => {
+      const scripts = store.scripts.filter((script) => script.novelId === novel.id);
+      return {
+        ...novel,
+        scripts,
+        audioCount: scripts.filter(scriptHasAudio).length,
+        performance: { videoCount: 0, totalViews: 0, averageViews: 0, maxViews: 0, comments: 0 }
+      };
+    })
     .filter((novel) => !normalized || [novel.id, novel.title, novel.platform, novel.bookId, novel.promotionCode, novel.promotionCopy, novel.category, novel.sellingPoint, novel.note]
       .some((value) => String(value || "").toLowerCase().includes(normalized)));
   return {

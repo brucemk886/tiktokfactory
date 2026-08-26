@@ -38,7 +38,12 @@ export function buildOverview(store, audioItems, matchedVideos, query) {
   const novels = annotatePlatformCatalog((store.novels || []).map((novel) => {
     const novelScripts = scriptsByNovel.get(novel.id) || [];
     const allVideos = novelScripts.flatMap((script) => script.videos);
-    return { ...novel, scripts: novelScripts, performance: summarizeVideos(allVideos) };
+    return {
+      ...novel,
+      scripts: novelScripts,
+      audioCount: novelScripts.filter((script) => scriptHasAudio(script)).length,
+      performance: summarizeVideos(allVideos)
+    };
   })).filter((novel) => !normalizedQuery || [novel.id, novel.title, novel.platform, novel.promotionCode, novel.promotionCopy, novel.category]
     .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)));
   const knownNovelIds = new Set((store.novels || []).map((novel) => novel.id));
