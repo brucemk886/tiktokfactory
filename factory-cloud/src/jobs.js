@@ -2,7 +2,7 @@ import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { attachAudioGenerateResults, buildAudioGeneratePayload, mergeImportedNovelStore, persistOpeningVariantScripts } from "./novels.js";
-import { putNovelAudio } from "./novel-audio-archive.js";
+import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 
@@ -192,6 +192,12 @@ async function handleWorkerApi(request, env, url) {
   const pathname = url.pathname;
 
   const audioUpload = pathname.match(/^\/api\/worker\/audio\/([^/]+)$/);
+  if (method === "GET" && audioUpload) {
+    const audioId = decodeURIComponent(audioUpload[1] || "");
+    const response = await serveNovelAudio(env, audioId, request);
+    if (!response) return errorJson("没有这份音频。", 404);
+    return response;
+  }
   if ((method === "PUT" || method === "POST") && audioUpload) {
     const audioId = decodeURIComponent(audioUpload[1] || "");
     const contentType = request.headers.get("content-type") || "audio/mpeg";
@@ -366,7 +372,7 @@ async function handleWorkerApi(request, env, url) {
         console.error("official-publish-records", error?.message || error);
       }
     }
-    if (job?.type === "audio-generate") {
+    if (job?.type === "audio-generate" || job?.type === "audio-import") {
       if (nextStatus !== "cancelled" && Array.isArray(result.items) && result.items.length) {
         await attachAudioGenerateResults(env.DB, result.items);
       }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css?v=20260826-7" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260826-8" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -62,14 +62,18 @@
           <input id="speechSpeed" type="range" min="0.7" max="1.2" step="0.05" value="1" />
           <small class="field-hint">1.00 是正常语速。要压在 2 分半内，英文口播控制在 320–360 词。</small>
         </label>
-        <label>
+        <div class="audio-dir-block">
           <span>保存到本机音频目录</span>
-          <select id="audioGroupSelect">
-            <option value="__novel__">按小说名称自动建文件夹</option>
-          </select>
+          <div class="audio-dir-row">
+            <select id="audioGroupSelect">
+              <option value="__novel__">按小说名称自动建文件夹</option>
+            </select>
+            <button id="uploadAudioBtn" type="button">上传音频</button>
+          </div>
           <input id="audioDir" type="hidden" />
-          <small id="audioGroupHint">默认写到 F:\音频目录\小说名。线上点生成后，工人机会自动建这个文件夹。</small>
-        </label>
+          <input id="uploadAudioInput" type="file" accept="audio/mpeg,.mp3" multiple hidden />
+          <small id="audioGroupHint">默认写到 F:\音频目录\小说名。也可直接上传已生成的 mp3，按待配音顺序挂上；没有待配音会新增一条。</small>
+        </div>
         <p id="audioStatus" class="list-status" role="status"></p>
       </section>
 
@@ -123,6 +127,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js?v=20260826-7" type="module"></script>
+    <script src="/novel-audio.js?v=20260826-8" type="module"></script>
   </body>
 </html>

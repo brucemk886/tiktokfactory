@@ -252,3 +252,29 @@ test("tightenSpeechAudio shortens a long pause between two spoken parts", (conte
   assert.ok(before > 1.4);
   assert.ok(after > 0.5 && after < before - 0.35);
 });
+
+test("importExistingFile copies an uploaded mp3 into the library and novel folder", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-import-file-"));
+  const source = path.join(workDir, "in.mp3");
+  fs.writeFileSync(source, Buffer.alloc(2048, 7));
+  const service = createAudioLibraryService({
+    root: workDir,
+    workDir,
+    readConfig: () => ({})
+  });
+  const target = path.join(workDir, "book");
+  const record = service.importExistingFile({
+    id: "upload-abc123456789",
+    title: "Hook",
+    sourcePath: source,
+    targetAudioDir: target,
+    novelId: "n1",
+    scriptId: "s1"
+  });
+  assert.equal(record.id, "upload-abc123456789");
+  assert.equal(record.source.type, "uploaded-audio");
+  assert.ok(fs.existsSync(service.resolveAudioPath(record.id)));
+  assert.ok(record.targetAudioPath.startsWith(target));
+  assert.ok(fs.existsSync(record.targetAudioPath));
+  fs.rmSync(workDir, { recursive: true, force: true });
+});

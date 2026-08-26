@@ -1,4 +1,4 @@
-import { requestAudioJob } from "./audio-job.js";
+import { requestAudioJob, waitForAudioJob } from "./audio-job.js";
 
 const params = new URLSearchParams(location.search);
 const elements = {
@@ -25,6 +25,8 @@ const elements = {
   audioDir: document.querySelector("#audioDir"),
   audioGroupSelect: document.querySelector("#audioGroupSelect"),
   audioGroupHint: document.querySelector("#audioGroupHint"),
+  uploadAudioButton: document.querySelector("#uploadAudioBtn"),
+  uploadAudioInput: document.querySelector("#uploadAudioInput"),
   speechSpeed: document.querySelector("#speechSpeed"),
   speechSpeedValue: document.querySelector("#speechSpeedValue"),
   reloadVoicesButton: document.querySelector("#reloadVoicesBtn"),
@@ -70,6 +72,15 @@ elements.voiceIdInput?.addEventListener("change", () => {
 elements.audioGroupSelect?.addEventListener("change", () => {
   applyAudioGroupSelection();
   persistAudioSettings();
+});
+elements.uploadAudioButton?.addEventListener("click", () => {
+  if (elements.uploadAudioInput) elements.uploadAudioInput.dataset.scriptIds = "";
+  elements.uploadAudioInput?.click();
+});
+elements.uploadAudioInput?.addEventListener("change", () => {
+  const files = Array.from(elements.uploadAudioInput.files || []);
+  elements.uploadAudioInput.value = "";
+  uploadExistingAudios(files);
 });
 elements.speechSpeed?.addEventListener("input", updateSpeechSpeedLabel);
 elements.speechSpeed?.addEventListener("change", persistAudioSettings);
@@ -154,6 +165,7 @@ function renderPending(pending, novel) {
             选中配音
           </label>
           <button class="quiet-action" type="button" data-generate-id="${escapeHtml(script.id)}">生成音频</button>
+          <button class="quiet-action" type="button" data-upload-script="${escapeHtml(script.id)}">上传音频</button>
           <button class="quiet-action delete-script" type="button" data-delete-id="${escapeHtml(script.id)}">删除文案</button>
           <button class="quiet-action" type="button" data-edit-id="${escapeHtml(script.id)}">修改文案</button>
           <button class="quiet-action" type="button" data-copy-id="${escapeHtml(script.id)}">一键复制文案</button>
@@ -175,6 +187,9 @@ function renderPending(pending, novel) {
     </article>`).join("");
   elements.pendingList.querySelectorAll("[data-generate-id]").forEach((button) => {
     button.addEventListener("click", () => generatePendingAudios([button.dataset.generateId]));
+  });
+  elements.pendingList.querySelectorAll("[data-upload-script]").forEach((button) => {
+    button.addEventListener("click", () => pickAndUploadAudios([button.dataset.uploadScript]));
   });
   elements.pendingList.querySelectorAll("[data-delete-id]").forEach((button) => {
     button.addEventListener("click", () => deletePendingScript(button.dataset.deleteId));
@@ -600,7 +615,8 @@ function sourceLabel(value) {
     "ai-style-rewrite": "风格改版",
     "novel-seed": "种子音频",
     "ai-operation-rewrite": "AI 数据改写",
-    "audio-library": "音频库"
+    "audio-library": "音频库",
+    "uploaded-audio": "上传音频"
   })[value] || "改写音频";
 }
 
@@ -799,6 +815,62 @@ async function previewSelectedVoice() {
   } finally {
     elements.previewVoiceButton.disabled = false;
   }
+}
+
+function pickAndUploadAudios(scriptIds) {
+  if (!elements.uploadAudioInput) return;
+  elements.uploadAudioInput.dataset.scriptIds = Array.isArray(scriptIds) ? scriptIds.join(",") : "";
+  elements.uploadAudioInput.click();
+}
+
+async function uploadExistingAudios(fileList, onlyScriptIds) {
+  const files = Array.from(fileList || []).filter((file) => /\.mp3$/i.test(file.name || "") || /audio\/mpeg|audio\/mp3/i.test(file.type || ""));
+  if (!files.length) return setAudioStatus("请选择 mp3 文件。", "error");
+  if (!state.novelId) return setAudioStatus("请先打开一本小说。", "error");
+  if (elements.uploadAudioButton) {
+    elements.uploadAudioButton.disabled = true;
+    elements.uploadAudioButton.textContent = "正在上传...";
+  }
+  setAudioStatus(`正在上传 ${files.length} 条已有音频...`);
+  try {
+    const form = new FormData();
+    files.forEach((file) => form.append("files", file));
+    const scriptIds = Array.isArray(onlyScriptIds) && onlyScriptIds.length
+      ? onlyScriptIds
+      : String(elements.uploadAudioInput?.dataset.scriptIds || "").split(",").map((id) => id.trim()).filter(Boolean);
+    scriptIds.forEach((id) => form.append("scriptIds", id));
+    form.append("targetAudioDir", selectedAudioDir() || "__novel__");
+    form.append("novelTitle", state.novel?.title || "");
+    const data = await apiUpload(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/import-audio`, form);
+    if (elements.uploadAudioInput) elements.uploadAudioInput.dataset.scriptIds = "";
+    state.novel = data.novel;
+    renderNovel(state.novel);
+    setAudioStatus(data.message || `已上传 ${data.count || files.length} 条，可直接试听。`, "ok");
+    if (data.jobId) {
+      waitForAudioJob(data.jobId, {
+        api,
+        onProgress: (job) => setAudioStatus(job.message || "工人机正在写到本机目录...")
+      }).then((result) => {
+        setAudioStatus(result?.targetAudioDir ? `已上传到网页，本机也写到了 ${result.targetAudioDir}` : "已上传到网页。", "ok");
+      }).catch((error) => {
+        setAudioStatus(error.message || "网页已可试听，本机目录稍后写入。", "error");
+      });
+    }
+  } catch (error) {
+    setAudioStatus(error.message || "上传音频失败。", "error");
+  } finally {
+    if (elements.uploadAudioButton) {
+      elements.uploadAudioButton.disabled = false;
+      elements.uploadAudioButton.textContent = "上传音频";
+    }
+  }
+}
+
+async function apiUpload(url, form) {
+  const response = await fetch(url, { method: "POST", body: form, cache: "no-store" });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `请求失败：${response.status}`);
+  return body;
 }
 
 function setAudioStatus(message, tone = "") {

@@ -2,6 +2,13 @@ import { assembleOfficialNovelEffects, slimEffectsPage } from "../../scripts/nov
 import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
 import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById, scriptHasAudio } from "../../scripts/novel-overview.js";
 import {
+  isImportedAudioFile,
+  planImportedAudioAssignments,
+  uploadedAudioOpeningTitle,
+  uploadedAudioScriptText
+} from "../../scripts/novel-audio-import.js";
+import { putNovelAudio } from "./novel-audio-archive.js";
+import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
   openingVariantScriptPayloads,
@@ -97,6 +104,15 @@ export async function handleNovels(request, env, url, session) {
   if (method === "POST" && pruneMatch) {
     const payload = await readJson(request);
     return json(await pruneDraftScripts(db, decodeURIComponent(pruneMatch[1]), payload));
+  }
+
+  const importAudioMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/import-audio$/);
+  if (method === "POST" && importAudioMatch) {
+    try {
+      return json(await importNovelAudios(env, db, session, decodeURIComponent(importAudioMatch[1]), request));
+    } catch (error) {
+      return errorJson(error.message || "上传音频失败。", error.statusCode || 400);
+    }
   }
 
   const mixMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/mix-audios$/);
@@ -441,6 +457,97 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
     skipped: items.length - queued,
     items,
     message: `已下发 ${queued} 本，工人会按每本书的免费章节选模板写钩子并保存到音频页，不配音。已有 3 条的已跳过。`
+  };
+}
+
+async function importNovelAudios(env, db, session, novelId, request) {
+  const form = await request.formData();
+  const files = form.getAll("files").filter((file) => file && typeof file.arrayBuffer === "function");
+  if (!files.length) throw Object.assign(new Error("请选择要上传的 mp3。"), { statusCode: 400 });
+  if (files.length > 8) throw Object.assign(new Error("一次最多上传 8 条音频。"), { statusCode: 400 });
+  const invalid = files.find((file) => !isImportedAudioFile(file));
+  if (invalid) throw Object.assign(new Error("只接受 mp3 音频。"), { statusCode: 400 });
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const pending = store.scripts.filter((script) => script.novelId === novel.id && !scriptHasAudio(script));
+  const scriptIds = form.getAll("scriptIds").map((id) => String(id || "").trim()).filter(Boolean);
+  const plan = planImportedAudioAssignments({ pendingScripts: pending, files, scriptIds });
+  const createdAt = new Date().toISOString();
+  const items = [];
+  for (const step of plan) {
+    const size = Number(step.file.size || 0);
+    if (size > 20 * 1024 * 1024) throw Object.assign(new Error(`${step.file.name || "音频"} 超过 20MB。`), { statusCode: 413 });
+    const bytes = await step.file.arrayBuffer();
+    if (bytes.byteLength < 1024) throw Object.assign(new Error(`${step.file.name || "音频"} 文件太小。`), { statusCode: 400 });
+    const audioId = safeId(`upload-${now()}-${randomToken(4)}`);
+    await putNovelAudio(env, audioId, bytes, step.file.type || "audio/mpeg");
+    const fileName = String(step.file.name || `${audioId}.mp3`).trim();
+    const openingTitle = uploadedAudioOpeningTitle(fileName);
+    const title = `${novel.title} ${openingTitle || "上传音频"}`.trim().slice(0, 240);
+    let script = step.scriptId
+      ? store.scripts.find((row) => row.id === step.scriptId && row.novelId === novel.id)
+      : null;
+    if (!script) {
+      script = {
+        id: safeId(`script-${now()}-${randomToken(3)}`),
+        novelId: novel.id,
+        parentScriptId: "",
+        title,
+        text: uploadedAudioScriptText(fileName),
+        versionLabel: "上传音频",
+        sourceType: "uploaded-audio",
+        openingTitle,
+        mixEnabled: true,
+        kept: true,
+        speakOpeningTitle: false,
+        createdAt,
+        updatedAt: createdAt
+      };
+      store.scripts.push(script);
+    }
+    script.audioId = audioId;
+    script.audio = {
+      id: audioId,
+      title,
+      fileName,
+      targetAudioPath: "",
+      duration: 0,
+      size: bytes.byteLength,
+      createdAt
+    };
+    script.kept = true;
+    script.updatedAt = createdAt;
+    items.push({
+      novelId: novel.id,
+      novelTitle: novel.title,
+      scriptId: script.id,
+      audioId,
+      fileName,
+      title,
+      size: bytes.byteLength,
+      createdAt
+    });
+  }
+  await writeScripts(db, store.scripts);
+  const { enqueueJob } = await import("./jobs.js");
+  const job = await enqueueJob(db, {
+    type: "audio-import",
+    title: `导入 ${items.length} 条上传音频`,
+    payload: {
+      novelId: novel.id,
+      novelTitle: novel.title,
+      targetAudioDir: String(form.get("targetAudioDir") || "__novel__").trim() || "__novel__",
+      items
+    },
+    createdBy: session?.user?.username || ""
+  });
+  return {
+    novel: await hydrateNovel(db, novel.id),
+    jobId: job.id,
+    count: items.length,
+    items,
+    message: `已上传 ${items.length} 条，可直接试听。工人会再写到本机音频目录。`
   };
 }
 

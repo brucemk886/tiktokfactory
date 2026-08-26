@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
+import { runAudioImportJob } from "./audio-import-job.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { discoverAudioLibraryGroups, resolveTargetAudioDir } from "./audio-library-groups.js";
@@ -77,6 +78,10 @@ async function runJob(context, job) {
   }
   if (type === "audio-generate") {
     await runAudioGenerateCloudJob(context, job);
+    return;
+  }
+  if (type === "audio-import") {
+    await runAudioImportCloudJob(context, job);
     return;
   }
   if (type === "audio-ensure-folder") {
@@ -208,6 +213,49 @@ async function runOpeningTitlesJob(context, job) {
   } catch (error) {
     await complete(context, jobId, {
       error: error.message || "重写开头标题失败。",
+      percent: 0
+    });
+  }
+}
+
+async function runAudioImportCloudJob(context, job) {
+  const jobId = job.id || job.jobId;
+  const payload = job.payload || {};
+  const total = Array.isArray(payload.items) ? payload.items.length : 0;
+  try {
+    await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: "POST",
+      body: { percent: 6, message: total ? `开始把 ${total} 条上传音频写到本机...` : "开始写入上传音频..." }
+    });
+    const result = await runAudioImportJob({
+      root: context.root,
+      workDir: context.workDir,
+      config: context.config,
+      payload,
+      cloudUrl: context.settings.url,
+      workerToken: context.settings.token,
+      workerId: context.workerId,
+      onProgress: (progress) => {
+        request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+          method: "POST",
+          body: {
+            percent: progress.percent || 12,
+            message: progress.message || "正在写入上传音频...",
+            result: { progressCurrent: progress.current, progressTotal: progress.total }
+          }
+        }).catch((error) => console.error("回写导入进度失败：", error.message));
+      }
+    });
+    const failedText = result.failed?.length ? `，${result.failed.length} 条本机未写入` : "";
+    await complete(context, jobId, {
+      error: "",
+      message: `已把 ${result.items.length} 条上传音频写到 ${result.targetAudioDir}${failedText}`,
+      result,
+      percent: 100
+    });
+  } catch (error) {
+    await complete(context, jobId, {
+      error: error.message || "上传音频写入本机失败。",
       percent: 0
     });
   }

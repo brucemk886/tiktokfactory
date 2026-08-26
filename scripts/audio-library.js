@@ -448,7 +448,53 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     return next;
   }
 
-  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, generateFromScript, listVoices, getVoice, previewVoiceAudio, prepareTaskBatch, retuneSpeed };
+  function importExistingFile({
+    id,
+    title,
+    sourcePath,
+    targetAudioDir = "",
+    novelId = "",
+    scriptId = "",
+    sourceType = "uploaded-audio"
+  } = {}) {
+    const safe = safeStem(id);
+    if (!safe) throw httpError(400, "音频 ID 无效。");
+    if (!sourcePath || !fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
+      throw httpError(404, "上传的音频文件不存在。");
+    }
+    if (fs.statSync(sourcePath).size < 1024) throw httpError(400, "上传的音频文件太小。");
+    const fileName = `${safe}.mp3`;
+    const outputPath = path.join(filesDir, fileName);
+    fs.mkdirSync(filesDir, { recursive: true });
+    if (path.resolve(sourcePath) !== path.resolve(outputPath)) fs.copyFileSync(sourcePath, outputPath);
+    let targetAudioPath = "";
+    if (String(targetAudioDir || "").trim()) {
+      const resolvedTargetDir = path.resolve(String(targetAudioDir).trim());
+      fs.mkdirSync(resolvedTargetDir, { recursive: true });
+      targetAudioPath = path.join(resolvedTargetDir, `${safeDisplayName(title || "上传音频")}-${safe.slice(-12)}.mp3`);
+      if (path.resolve(targetAudioPath) !== path.resolve(outputPath)) fs.copyFileSync(outputPath, targetAudioPath);
+    }
+    const record = {
+      id: safe,
+      title: String(title || "上传音频").trim() || "上传音频",
+      fileName,
+      createdAt: new Date().toISOString(),
+      duration: probeDuration(outputPath, configFfprobe(readConfig(root))),
+      size: fs.statSync(outputPath).size,
+      source: {
+        type: String(sourceType || "uploaded-audio").trim().slice(0, 40) || "uploaded-audio",
+        novelId: String(novelId || "").trim(),
+        scriptId: String(scriptId || "").trim()
+      },
+      targetAudioPath
+    };
+    const records = readIndex(indexPath).filter((item) => item.id !== safe);
+    records.push(record);
+    writeJsonAtomic(indexPath, records);
+    return record;
+  }
+
+  return { list, get, resolveAudioPath, generateFromMarketing, generateFromOptimizedScript, generateFromScript, importExistingFile, listVoices, getVoice, previewVoiceAudio, prepareTaskBatch, retuneSpeed };
 }
 
 function readIndex(indexPath) {
