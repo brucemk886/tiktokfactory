@@ -426,7 +426,7 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
     count: queued,
     skipped: items.length - queued,
     items,
-    message: `已下发 ${queued} 本，工人只写钩子并保存到音频页，不配音。已有 3 条的已跳过。`
+    message: `已下发 ${queued} 本，工人会按每本书的免费章节选模板写钩子并保存到音频页，不配音。已有 3 条的已跳过。`
   };
 }
 

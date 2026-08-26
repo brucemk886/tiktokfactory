@@ -1,10 +1,25 @@
 export const SMART_OPENING_STYLE_ID = "smart-strongest";
+export const AUTO_OPENING_STYLE_ID = "auto";
+export const CONCRETE_OPENING_STYLE_IDS = Object.freeze([
+  "evidence-slam",
+  "identity-bomb",
+  "scene-meltdown",
+  "cornered-counterstrike"
+]);
 
 export const OPENING_STYLES = Object.freeze([
   Object.freeze({
+    id: AUTO_OPENING_STYLE_ID,
+    label: "按本书选最爆模板",
+    recommended: true,
+    hook: "先通读这本书已给出的免费章节，从铁证砸脸、身份炸弹、现场失控、绝境反杀里选原文真正撑得住、最容易停滑的模板。第一句必须来自该模板对应的原文明示事实。原文没有戒指、婚礼、DNA 或隐藏身份就不要硬套。四种都不贴才退回智能最强钩子。",
+    firstLine: "先选定模板，再按该模板的三拍写第一句；第一句必须来自原文明示事实。例句只示范句式。例：The comments told him to take the other girl, and he did it on live.",
+    threeBeat: "判断本书最强机制 → 套入对应模板三拍 → 写出停滑第一句"
+  }),
+  Object.freeze({
     id: SMART_OPENING_STYLE_ID,
     label: "智能最强钩子",
-    recommended: true,
+    recommended: false,
     hook: "第一句前只从原文明示的人物关系、行为、证据、地点、后果和底牌里选最强机制；最多组合两种真实机制。原文没有戒指、婚礼或 mafia 身份就不要硬套。",
     firstLine: "第一句砸出账本里最严重且已经确认的事实；第二句写对方的错误预期或直接后果；第三句用主角的反常反应或真实底牌留下信息缺口。例句只示范句式，不要复制剧情。例：My fiancé drugged me and handed me to a mob boss. He thought I was terrified. I whispered, ‘Finally home.’",
     threeBeat: "事实炸点 → 错误预期或后果 → 反常反应或隐藏底牌"
@@ -46,7 +61,20 @@ const LEGACY_STYLE_ALIASES = Object.freeze({
   "forbidden-line": "cornered-counterstrike"
 });
 
-export const DEFAULT_OPENING_STYLE_IDS = Object.freeze([SMART_OPENING_STYLE_ID]);
+export const DEFAULT_OPENING_STYLE_IDS = Object.freeze([AUTO_OPENING_STYLE_ID]);
+
+export function isAutoOpeningStyle(id) {
+  return String(id || "").trim() === AUTO_OPENING_STYLE_ID;
+}
+
+export function openingStyleById(id) {
+  const canonicalId = LEGACY_STYLE_ALIASES[String(id || "").trim()] || String(id || "").trim();
+  return OPENING_STYLES.find((item) => item.id === canonicalId) || null;
+}
+
+export function concreteOpeningStyles() {
+  return OPENING_STYLES.filter((item) => CONCRETE_OPENING_STYLE_IDS.includes(item.id));
+}
 
 export function resolveOpeningStyles(ids) {
   const wanted = (Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean);

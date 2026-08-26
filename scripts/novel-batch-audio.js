@@ -1,4 +1,4 @@
-import { SMART_OPENING_STYLE_ID } from "./novel-opening-styles.js";
+import { AUTO_OPENING_STYLE_ID } from "./novel-opening-styles.js";
 import { scriptHasAudio, scriptIsKept } from "./novel-overview.js";
 
 export const DEFAULT_BATCH_AUDIO_VERSIONS = 3;
@@ -11,7 +11,7 @@ export function clampBatchAudioVersionCount(value) {
 }
 
 export function batchOpeningStyleIds(count = DEFAULT_BATCH_AUDIO_VERSIONS) {
-  return Array.from({ length: clampBatchAudioVersionCount(count) }, () => SMART_OPENING_STYLE_ID);
+  return Array.from({ length: clampBatchAudioVersionCount(count) }, () => AUTO_OPENING_STYLE_ID);
 }
 
 export function keptOrVoicedCount(scripts = []) {

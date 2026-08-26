@@ -455,8 +455,8 @@ function syncBatchBar() {
   }
   if (elements.batchStatus && !state.batching) {
     elements.batchStatus.textContent = selected.length
-      ? `已勾 ${selected.length} 本。点一下只写钩子并保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。`
-      : "先勾书。每本自动写 3 条钩子并保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。";
+      ? `已勾 ${selected.length} 本。点一下会把每本免费章节丢给 AI，按这本书选最容易爆的模板写 3 条，保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。`
+      : "先勾书。每本先读免费章节再选模板写 3 条钩子，保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。";
     elements.batchStatus.className = "";
   }
 }
@@ -470,7 +470,7 @@ function setBatchStatus(message, tone = "") {
 async function startBatchAudioVersions() {
   const novelIds = selectedNovelIds();
   if (!novelIds.length) return setBatchStatus("先勾选要写文案的小说。", "error");
-  if (!confirm(`将给 ${novelIds.length} 本各写 3 条开头文案，保存到音频页，不配音。已有 3 条的会跳过。本机工人要一直开着。继续？`)) return;
+  if (!confirm(`将给 ${novelIds.length} 本各写 3 条开头文案：每本先读免费章节，再单独判断哪个模板更容易爆。保存到音频页，不配音。已有 3 条的会跳过。本机工人要一直开着。继续？`)) return;
   state.batching = true;
   if (elements.batchAudioButton) elements.batchAudioButton.disabled = true;
   setBatchStatus("正在下发给工人...", "");

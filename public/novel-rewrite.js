@@ -38,7 +38,10 @@ const elements = {
 };
 
 const SMART_STYLE_ID = "smart-strongest";
-const DEFAULT_STYLE_IDS = [SMART_STYLE_ID];
+const AUTO_STYLE_ID = "auto";
+const DEFAULT_STYLE_IDS = [AUTO_STYLE_ID];
+const STYLE_STORAGE_KEY = "lf-opening-styles-v2";
+const STYLE_COPIES_STORAGE_KEY = "lf-opening-style-copies-v2";
 const state = {
   novelId: params.get("novel") || "",
   novel: readStashedNovel(),
@@ -329,8 +332,11 @@ function renderStyleOptions() {
 
 function toggleStyle(id, checked) {
   if (checked) {
-    if (state.selectedStyles.includes(id)) return;
-    state.selectedStyles = [...state.selectedStyles, id];
+    if (id === AUTO_STYLE_ID) {
+      state.selectedStyles = [AUTO_STYLE_ID];
+    } else {
+      state.selectedStyles = [...state.selectedStyles.filter((item) => item !== AUTO_STYLE_ID && item !== id), id];
+    }
   } else {
     state.selectedStyles = state.selectedStyles.filter((item) => item !== id);
   }
@@ -351,7 +357,7 @@ function selectedStyleIds() {
 }
 
 function styleCopyCount(id) {
-  const defaultCount = id === SMART_STYLE_ID ? 2 : 1;
+  const defaultCount = id === AUTO_STYLE_ID || id === SMART_STYLE_ID ? 2 : 1;
   const value = Math.floor(Number(Object.hasOwn(state.styleCopies, id) ? state.styleCopies[id] : defaultCount) || defaultCount);
   return Math.max(1, Math.min(5, value));
 }
@@ -368,7 +374,7 @@ function styleCopyCountFrom(raw) {
 
 function readSavedStyleCopies() {
   try {
-    const parsed = JSON.parse(localStorage.getItem("lf-opening-style-copies") || "{}");
+    const parsed = JSON.parse(localStorage.getItem(STYLE_COPIES_STORAGE_KEY) || "{}");
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     return Object.fromEntries(Object.entries(parsed).map(([id, value]) => [id, styleCopyCountFrom(value)]));
   } catch {
@@ -377,7 +383,7 @@ function readSavedStyleCopies() {
 }
 
 function saveStyleCopies() {
-  localStorage.setItem("lf-opening-style-copies", JSON.stringify(state.styleCopies));
+  localStorage.setItem(STYLE_COPIES_STORAGE_KEY, JSON.stringify(state.styleCopies));
 }
 
 function updateGenerateButton() {
@@ -389,7 +395,7 @@ function updateGenerateButton() {
 
 function readSavedStyles() {
   try {
-    const saved = JSON.parse(localStorage.getItem("lf-opening-styles") || "[]");
+    const saved = JSON.parse(localStorage.getItem(STYLE_STORAGE_KEY) || "[]");
     return Array.isArray(saved) ? saved.filter(Boolean) : [];
   } catch {
     return [];
@@ -397,7 +403,7 @@ function readSavedStyles() {
 }
 
 function saveSelectedStyles() {
-  localStorage.setItem("lf-opening-styles", JSON.stringify(state.selectedStyles));
+  localStorage.setItem(STYLE_STORAGE_KEY, JSON.stringify(state.selectedStyles));
 }
 
 function formatWait(ms) {

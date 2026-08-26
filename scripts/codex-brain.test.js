@@ -379,6 +379,39 @@ test("opening variant prompt asks for two different smart-hook facts and keeps c
   assert.match(prompts[0], /Search Secret Uncle on the Novel Master app to read the full story/);
 });
 
+test("auto styles pick a template from the story instead of locking one recipe", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-auto-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const prompts = [];
+  const variants = {
+    variants: [
+      { style: "scene-meltdown", styleLabel: "现场失控", title: "A", openingTitle: "He chose her on live", script: `${"The comments told him to take the other girl, and he did it on live. ".repeat(8)}${APP_CTA}`, coreFact: "live comments told him to take the other girl", titleZh: "甲", openingTitleZh: "他直播选了她", scriptZh: "评论让他选另一个女孩。" },
+      { style: "identity-bomb", styleLabel: "身份炸弹", title: "B", openingTitle: "He was my uncle", script: `${"The man they sold me to was the uncle who raised me after the wedding. ".repeat(8)}${APP_CTA}`, coreFact: "the buyer was her uncle", titleZh: "乙", openingTitleZh: "买我的人是舅舅", scriptZh: "买她的人是养她的舅舅。" }
+    ]
+  };
+  class FakeCodex {
+    startThread() {
+      return {
+        run: async (prompt) => {
+          prompts.push(prompt);
+          return { finalResponse: JSON.stringify(variants) };
+        }
+      };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["auto", "auto"]
+  });
+  assert.deepEqual(result.variants.map((item) => item.style), ["scene-meltdown", "identity-bomb"]);
+  assert.match(prompts[0], /为这本书单独判断/);
+  assert.match(prompts[0], /禁止对所有小说套同一个固定模板/);
+  assert.match(prompts[0], /没有铁证不要选铁证砸脸/);
+  assert.doesNotMatch(prompts[0], /必须按这个顺序覆盖这 2 种风格/);
+});
+
 test("opening titles rewrite only the cover title", async (context) => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-titles-"));
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));

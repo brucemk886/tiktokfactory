@@ -9,8 +9,8 @@ import {
   uniqueNovelIds
 } from "./novel-batch-audio.js";
 
-test("default batch is three smart-strongest styles", () => {
-  assert.deepEqual(batchOpeningStyleIds(), ["smart-strongest", "smart-strongest", "smart-strongest"]);
+test("default batch is three auto-picked styles", () => {
+  assert.deepEqual(batchOpeningStyleIds(), ["auto", "auto", "auto"]);
   assert.equal(clampBatchAudioVersionCount(99), 5);
   assert.equal(clampBatchAudioVersionCount("nope"), 3);
 });
