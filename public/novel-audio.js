@@ -142,28 +142,30 @@ function renderPending(pending, novel) {
   const speakDefault = elements.speakOpeningTitle?.checked === true;
   elements.pendingList.innerHTML = pending.map((script) => `
     <article class="audio-card pending-card" data-script-id="${escapeHtml(script.id)}">
-      <div class="audio-card-head">
+      <div class="pending-head">
         <div>
           <h2>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</h2>
           <p>${escapeHtml(sourceLabel(script.sourceType))} · ${escapeHtml(formatDate(script.createdAt))} · 待配音</p>
         </div>
-        <div class="audio-card-actions">
+        <div class="pending-actions">
           <label class="mix-check">
             <input type="checkbox" data-pending-id="${escapeHtml(script.id)}" checked />
             选中配音
           </label>
           <button class="quiet-action" type="button" data-generate-id="${escapeHtml(script.id)}">生成音频</button>
-          <button class="quiet-action" type="button" data-delete-id="${escapeHtml(script.id)}">删除文案</button>
+          <button class="quiet-action delete-script" type="button" data-delete-id="${escapeHtml(script.id)}">删除文案</button>
         </div>
       </div>
-      <label>
+      <div class="pending-title-block">
         <span class="hook-title">开头标题</span>
-        <input class="pending-title" type="text" maxlength="80" data-opening-title value="${escapeHtml(script.openingTitle || "")}" />
-      </label>
-      <label class="speak-title-check">
-        <input type="checkbox" data-speak-title ${script.speakOpeningTitle === true || speakDefault ? "checked" : ""} />
-        标题也配音
-      </label>
+        <div class="pending-title-row">
+          <input class="pending-title" type="text" maxlength="80" data-opening-title value="${escapeHtml(script.openingTitle || "")}" />
+          <label class="speak-title-check">
+            <input type="checkbox" data-speak-title ${script.speakOpeningTitle === true || speakDefault ? "checked" : ""} />
+            标题也配音
+          </label>
+        </div>
+      </div>
       <p class="script-full">${escapeHtml(script.text || "")}</p>
     </article>`).join("");
   elements.pendingList.querySelectorAll("[data-generate-id]").forEach((button) => {

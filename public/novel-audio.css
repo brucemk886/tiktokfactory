@@ -1,5 +1,5 @@
 .novel-audio-page { min-width: 1120px; color: var(--lf-text, #1d1a14); }
-.audio-shell { margin-left: 0; min-height: 100vh; padding: 34px 34px 60px; }
+.audio-shell { width: min(1040px, 100%); margin-left: 0; min-height: 100vh; padding: 34px 34px 60px; }
 .audio-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
 .audio-header h1 { margin: 4px 0 8px; font-size: 32px; line-height: 1.15; }
 .audio-header p { margin: 0; max-width: 760px; color: var(--lf-muted, #6d6758); }
@@ -28,8 +28,16 @@
 .mix-check { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; color: var(--lf-text, #1d1a14); font-size: 13px; font-weight: 800; cursor: pointer; }
 .mix-check input { width: 16px; height: 16px; accent-color: #5c6a14; }
 .audio-card { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
-.audio-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.audio-card-actions { display: grid; gap: 8px; justify-items: end; }
+.audio-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 12px 16px; }
+.audio-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pending-head { display: grid; gap: 12px; }
+.pending-head h2 { margin: 0 0 6px; font-size: 18px; }
+.pending-head p { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.55; }
+.pending-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pending-actions .delete-script { border-color: #d9a29a; color: #8a2f28; }
+.pending-title-block { display: grid; gap: 8px; }
+.pending-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.pending-title-row .pending-title { flex: 1 1 280px; }
 .audio-card-head h2 { margin: 0 0 6px; font-size: 18px; }
 .audio-card-head p { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.55; }
 .audio-card audio { width: 100%; }
