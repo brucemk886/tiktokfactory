@@ -44,6 +44,8 @@ const elements = {
   variantPanel: document.querySelector("#variantPanel"),
   variantList: document.querySelector("#variantList"),
   variantStatus: document.querySelector("#variantStatus"),
+  toggleScriptsButton: document.querySelector("#toggleScriptsBtn"),
+  scriptFoldHint: document.querySelector("#scriptFoldHint"),
   styleOptions: document.querySelector("#styleOptions"),
   styleCount: document.querySelector("#styleCount"),
   openingModel: document.querySelector("#openingModel"),
@@ -71,7 +73,9 @@ const state = {
   openingModel: readSavedOpeningModel(),
   openingReasoning: readSavedOpeningReasoning(),
   openingJobId: "",
-  restoringOpeningJob: false
+  restoringOpeningJob: false,
+  generationStartedAt: "",
+  scriptsCollapsed: false
 };
 
 elements.novelPicker.addEventListener("change", () => {
@@ -81,6 +85,7 @@ elements.novelPicker.addEventListener("change", () => {
 elements.form.addEventListener("submit", saveRewrite);
 elements.generateVariantsButton?.addEventListener("click", generateVariants);
 elements.generateSelectedAudioButton?.addEventListener("click", generateSelectedVariantAudios);
+elements.toggleScriptsButton?.addEventListener("click", toggleSavedScripts);
 elements.rewriteText?.addEventListener("input", updateCount);
 document.querySelectorAll('input[name="rewriteMode"]').forEach((input) => {
   input.addEventListener("change", () => setRewriteMode(input.value));
@@ -190,14 +195,42 @@ function renderWork() {
   renderVariants();
 }
 
+function isNewScript(script) {
+  if (!state.generationStartedAt) return false;
+  return String(script.createdAt || "") >= state.generationStartedAt;
+}
+
+function toggleSavedScripts() {
+  state.scriptsCollapsed = !state.scriptsCollapsed;
+  renderScripts(state.novel?.scripts || []);
+}
+
 function renderScripts(scripts) {
-  if (!scripts.length) {
+  const list = Array.isArray(scripts) ? scripts : [];
+  const older = list.filter((script) => !isNewScript(script));
+  const newer = list.filter((script) => isNewScript(script));
+  if (elements.toggleScriptsButton) {
+    elements.toggleScriptsButton.hidden = !older.length;
+    elements.toggleScriptsButton.textContent = state.scriptsCollapsed
+      ? `展开已有 (${older.length})`
+      : "折叠已有";
+  }
+  if (elements.scriptFoldHint) {
+    const showHint = state.scriptsCollapsed && older.length;
+    elements.scriptFoldHint.hidden = !showHint;
+    elements.scriptFoldHint.textContent = newer.length
+      ? `已折叠 ${older.length} 个已有版本，只看这次新生成的 ${newer.length} 个。`
+      : `已折叠 ${older.length} 个已有版本，生成并保存后会只出现在这里。`;
+  }
+  if (!list.length) {
+    elements.scriptList.classList.remove("is-collapsed");
     elements.scriptList.innerHTML = `<div class="empty-script">还没有开头版本。左边勾选风格生成，或改成人工写开头。</div>`;
     return;
   }
+  elements.scriptList.classList.toggle("is-collapsed", Boolean(state.scriptsCollapsed && older.length));
   elements.scriptList.innerHTML = [
-    ...scripts.map((script) => `
-      <button class="script-item${script.id === state.parentScriptId ? " is-active" : ""}" type="button" data-script-id="${escapeHtml(script.id)}">
+    ...list.map((script) => `
+      <button class="script-item${script.id === state.parentScriptId ? " is-active" : ""}${isNewScript(script) ? " is-new" : " is-old"}" type="button" data-script-id="${escapeHtml(script.id)}">
         <strong>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</strong>
         <small>${script.parentScriptId ? "改写版本" : "原版本"} · ${formatNumber(script.performance?.totalViews || 0)} 播放</small>
         ${script.openingTitle ? `<em class="hook-title">${escapeHtml(script.openingTitle)}</em>` : ""}
@@ -485,16 +518,34 @@ function saveSelectedStyles() {
   localStorage.setItem("lf-opening-styles", JSON.stringify(state.selectedStyles));
 }
 
+function formatWait(ms) {
+  const seconds = Math.max(0, Math.floor(Number(ms) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes ? `${minutes} 分 ${String(rest).padStart(2, "0")} 秒` : `${rest} 秒`;
+}
+
+function beginVariantGeneration(count) {
+  state.generationStartedAt = new Date().toISOString();
+  state.scriptsCollapsed = true;
+  state.variants = [];
+  if (elements.variantList) elements.variantList.innerHTML = "";
+  if (elements.variantPanel) elements.variantPanel.hidden = false;
+  if (elements.variantHeading) elements.variantHeading.textContent = `${count} 个强钩子开头`;
+  if (elements.generateSelectedAudioButton) elements.generateSelectedAudioButton.hidden = true;
+  renderScripts(state.novel?.scripts || []);
+}
+
 async function generateVariants() {
   const styles = selectedStyleIds();
   if (!styles.length) return setStatus("请先勾选至少 1 种策略，再生成强钩子开头。", "error");
   const selected = (state.novel.scripts || []).find((item) => item.id === state.parentScriptId);
   const baseOpening = selected?.text || "";
+  const startedAt = Date.now();
   elements.generateVariantsButton.disabled = true;
   elements.generateVariantsButton.textContent = `正在筛选 ${styles.length} 个强钩子...`;
-  elements.variantPanel.hidden = false;
-  if (elements.variantHeading) elements.variantHeading.textContent = `${styles.length} 个强钩子开头`;
-  elements.variantStatus.textContent = `正在提取事实、生成候选并筛选 ${styles.length} 个强钩子，请稍候。`;
+  beginVariantGeneration(styles.length);
+  elements.variantStatus.textContent = `正在提取事实、生成候选并筛选 ${styles.length} 个强钩子。${styles.length >= 4 ? "4 条以上强推理通常要 8–20 分钟" : "通常要几分钟"}，不是卡住了。`;
   try {
     let data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`, {
       method: "POST",
@@ -507,11 +558,12 @@ async function generateVariants() {
     });
     if (data.jobId && !Array.isArray(data.variants)) {
       state.openingJobId = data.jobId;
-      elements.variantStatus.textContent = data.message || "已交给本机工人生成，请稍候。";
+      elements.variantStatus.textContent = `${data.message || "已交给本机工人生成。"} 已等待 ${formatWait(Date.now() - startedAt)}。`;
       data = await waitForCloudJob(data.jobId, {
         api,
+        attempts: 900,
         onProgress: (job) => {
-          elements.variantStatus.textContent = job.message || `工人机正在筛选 ${styles.length} 个强钩子开头...`;
+          elements.variantStatus.textContent = `${job.message || `工人机正在筛选 ${styles.length} 个强钩子开头...`} 已等待 ${formatWait(Date.now() - startedAt)}。`;
         }
       });
     }
@@ -534,12 +586,15 @@ async function restoreLatestOpeningJob() {
     state.openingJobId = job.jobId;
     let result = job.result || {};
     if (["queued", "running"].includes(String(job.status || ""))) {
-      elements.variantPanel.hidden = false;
-      elements.variantStatus.textContent = job.message || "正在恢复尚未完成的开头任务...";
+      const startedAt = Number(job.createdAt) || Date.now();
+      const count = Array.isArray(job.payload?.styles) ? job.payload.styles.length : selectedStyleIds().length;
+      beginVariantGeneration(count || 2);
+      elements.variantStatus.textContent = `${job.message || "正在恢复尚未完成的开头任务..."} 已等待 ${formatWait(Date.now() - startedAt)}。`;
       result = await waitForCloudJob(job.jobId, {
         api,
+        attempts: 900,
         onProgress: (progress) => {
-          elements.variantStatus.textContent = progress.message || "工人机正在生成强钩子开头...";
+          elements.variantStatus.textContent = `${progress.message || "工人机正在生成强钩子开头..."} 已等待 ${formatWait(Date.now() - startedAt)}。`;
         }
       });
     }
@@ -573,6 +628,7 @@ function applyOpeningVariantResult(data, { restored = false } = {}) {
     audioPath: ""
   }));
   elements.variantPanel.hidden = false;
+  if (elements.generateSelectedAudioButton) elements.generateSelectedAudioButton.hidden = false;
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子开头`;
   elements.variantStatus.textContent = restored ? `已恢复上次生成的 ${state.variants.length} 个强钩子。` : `已生成 ${state.variants.length} 个强钩子。`;
   renderVariants();
@@ -582,10 +638,11 @@ function applyOpeningVariantResult(data, { restored = false } = {}) {
 function renderVariants() {
   if (!elements.variantPanel) return;
   if (!state.variants.length) {
-    elements.variantPanel.hidden = true;
+    if (elements.generateSelectedAudioButton) elements.generateSelectedAudioButton.hidden = true;
     return;
   }
   elements.variantPanel.hidden = false;
+  if (elements.generateSelectedAudioButton) elements.generateSelectedAudioButton.hidden = false;
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子结果`;
   const modelLabel = openingModelLabel(state.variants[0]?.model, state.variants[0]?.reasoningEffort);
   elements.variantStatus.textContent = `已用 ${modelLabel} 按策略筛选，并给出中文对照。勾选后点「一键生成勾选音频」，会按顺序配音。`;

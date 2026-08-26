@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260819-1" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260826-1" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -118,7 +118,11 @@
         <div class="audio-column">
           <section class="source-panel">
             <div class="source-block">
-              <h3>已有开头版本</h3>
+              <div class="source-block-head">
+                <h3>已有开头版本</h3>
+                <button id="toggleScriptsBtn" class="quiet-action" type="button" hidden>折叠已有</button>
+              </div>
+              <p id="scriptFoldHint" class="hint" hidden></p>
               <div id="scriptList" class="script-list"></div>
             </div>
           </section>
@@ -176,6 +180,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260819-2" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260826-1" type="module"></script>
   </body>
 </html>
