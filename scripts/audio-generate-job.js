@@ -82,6 +82,7 @@ async function generateOne(library, item, targetAudioDir, config) {
     script: item.script || item.text,
     title: item.title,
     openingTitle: item.openingTitle,
+    speakOpeningTitle: item.speakOpeningTitle,
     voiceId: item.voiceId,
     targetAudioDir,
     novelId: item.novelId,

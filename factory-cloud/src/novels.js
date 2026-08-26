@@ -435,6 +435,7 @@ export async function buildAudioGeneratePayload(db, body = {}) {
       title: String(raw.title || `${novel?.title || ""} ${script?.versionLabel || "改写"}`).trim(),
       script: text,
       openingTitle: String(raw.openingTitle || script?.openingTitle || "").trim(),
+      speakOpeningTitle: raw.speakOpeningTitle === true || (body.speakOpeningTitle === true && raw.speakOpeningTitle !== false),
       voiceId: String(raw.voiceId || body.voiceId || "").trim(),
       speechSpeed: raw.speechSpeed ?? body.speechSpeed,
       sourceType: String(raw.sourceType || script?.sourceType || "manual-rewrite").trim()

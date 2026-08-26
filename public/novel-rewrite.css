@@ -127,6 +127,12 @@
 .script-item .hook-title,
 .variant-hook span { color: #5c6a14; font-size: 12px; font-style: normal; font-weight: 800; }
 .variant-hook { display: grid; gap: 6px; }
+.variant-hook-head, .variant-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.variant-title-row input { flex: 1; }
+.variant-title-row .quiet-action, .opening-title-field .quiet-action { min-height: 40px; padding: 0 12px; white-space: nowrap; }
+.speak-title-check { display: inline-flex; align-items: center; gap: 6px; color: var(--lf-text, #1d1a14); font-size: 12px; font-weight: 800; cursor: pointer; }
+.speak-title-check input { width: 16px; height: 16px; margin: 0; accent-color: #5c6a14; }
+.opening-title-field { display: grid; gap: 7px; }
 .variant-hook input { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.16)); border-radius: 8px; font: inherit; }
 .variant-card p { margin: 0; max-height: 180px; overflow: auto; color: var(--lf-text, #1d1a14); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
 .variant-zh { display: grid; gap: 6px; padding: 10px 12px; border-radius: 8px; background: #f6f3ea; }

@@ -1275,6 +1275,21 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { styles: publicOpeningStyles(), version: 4 }, { "Cache-Control": "no-store" });
     }
 
+    if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/opening-titles$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "开头标题生成仅允许在本机访问。" });
+      try {
+        const payload = await readJsonBody(req);
+        const result = await codexBrain.generateOpeningTitles({
+          language: payload.language || "English",
+          items: payload.items,
+          model: payload.model
+        });
+        return sendJson(res, 200, result);
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "重写开头标题失败。" });
+      }
+    }
+
     if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/opening-variants$/.test(url.pathname)) {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "改版开头生成仅允许在本机访问。" });
       try {
@@ -1415,6 +1430,7 @@ const server = http.createServer(async (req, res) => {
             title: `${novel.title} ${script.versionLabel || "改写"}`.trim(),
             script: script.text,
             openingTitle: script.openingTitle || "",
+            speakOpeningTitle: payload.speakOpeningTitle === true,
             voiceId: payload.voiceId,
             speechSpeed: payload.speechSpeed,
             sourceType: script.sourceType

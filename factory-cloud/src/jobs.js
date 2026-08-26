@@ -541,6 +541,15 @@ export function persistableJobResult(value) {
     slim.model = String(result.model || "").slice(0, 120);
     slim.reasoningEffort = String(result.reasoningEffort || "").slice(0, 40);
   }
+  if (Array.isArray(result.titles)) {
+    slim.titles = result.titles.slice(0, 10).map((item) => ({
+      id: String(item?.id || "").slice(0, 120),
+      openingTitle: String(item?.openingTitle || "").slice(0, 120),
+      openingTitleZh: String(item?.openingTitleZh || "").slice(0, 120)
+    })).filter((item) => item.id && item.openingTitle);
+    slim.model = String(result.model || slim.model || "").slice(0, 120);
+    slim.reasoningEffort = String(result.reasoningEffort || slim.reasoningEffort || "").slice(0, 40);
+  }
   slim.failedVideoCount = Number(result.failedVideoCount || 0);
   return slim;
 }

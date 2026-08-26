@@ -85,6 +85,10 @@ async function runJob(context, job) {
     await runOpeningVariantsJob(context, job);
     return;
   }
+  if (type === "opening-titles") {
+    await runOpeningTitlesJob(context, job);
+    return;
+  }
   const payloadPath = path.join(context.jobsDir, `${jobId}.payload.json`);
   const jobPath = path.join(context.jobsDir, `${jobId}.json`);
   const payload = buildLocalPayload(job);
@@ -177,6 +181,31 @@ async function runOpeningVariantsJob(context, job) {
   } catch (error) {
     await complete(context, jobId, {
       error: error.message || "生成改版开头失败。",
+      percent: 0
+    });
+  }
+}
+
+async function runOpeningTitlesJob(context, job) {
+  const jobId = job.id || job.jobId;
+  const payload = job.payload || {};
+  const count = Array.isArray(payload.items) ? payload.items.length : 0;
+  try {
+    await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: "POST",
+      body: { percent: 12, message: `正在单独重写 ${count || 1} 个开头标题...` }
+    });
+    const brain = createCodexBrainService({ root: context.root, workDir: context.workDir });
+    const result = await brain.generateOpeningTitles(payload);
+    await complete(context, jobId, {
+      error: "",
+      message: `已重写 ${Array.isArray(result.titles) ? result.titles.length : 0} 个开头标题`,
+      result,
+      percent: 100
+    });
+  } catch (error) {
+    await complete(context, jobId, {
+      error: error.message || "重写开头标题失败。",
       percent: 0
     });
   }

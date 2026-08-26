@@ -186,11 +186,19 @@ test("script generation speaks the opening title before the body", async (contex
     openingTitle: "She married my uncle"
   });
   const withoutTitle = await service.generateFromScript({ title: "Opening", script });
+  const skippedTitle = await service.generateFromScript({
+    title: "Opening",
+    script,
+    openingTitle: "She married my uncle",
+    speakOpeningTitle: false
+  });
   assert.equal(first.cacheHit, false);
   assert.equal(again.cacheHit, true);
   assert.equal(withoutTitle.cacheHit, false);
+  assert.equal(skippedTitle.cacheHit, true);
   assert.equal(bodies[0].text, "She married my uncle The church went silent when I said his name out loud and asked why the bride was wearing my mother's ring.");
   assert.equal(bodies[1].text, script);
+  assert.equal(bodies.length, 2);
   assert.match(first.script, /^She married my uncle /);
 });
 

@@ -380,6 +380,38 @@ test("opening variant prompt asks for two different smart-hook facts and keeps c
   assert.match(prompts[0], /Search Secret Uncle on the Novel Master app to read the full story/);
 });
 
+test("opening titles rewrite only the cover title", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-titles-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const prompts = [];
+  class FakeCodex {
+    startThread() {
+      return {
+        run: async (prompt) => {
+          prompts.push(prompt);
+          return {
+            finalResponse: JSON.stringify({
+              titles: [{ id: "variant-1", openingTitle: "The Rescue Was Their Trap", openingTitleZh: "这场救援是它们的陷阱" }]
+            })
+          };
+        }
+      };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningTitles({
+    items: [{
+      id: "variant-1",
+      openingTitle: "They Staged Their Own Rescue",
+      script: "Two tiny snakes I rescued last winter just staged a rescue of their own and now they are hunting me through the house."
+    }]
+  });
+  assert.equal(result.titles.length, 1);
+  assert.equal(result.titles[0].openingTitle, "The Rescue Was Their Trap");
+  assert.match(prompts[0], /只改视频前 3 秒/);
+  assert.match(prompts[0], /They Staged Their Own Rescue/);
+});
+
 test("novel marketing rejects source text that is too short", async () => {
   const service = createCodexBrainService({ root: "C:/test-project", CodexClass: class {} });
   await assert.rejects(

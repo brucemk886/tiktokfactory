@@ -403,6 +403,48 @@ export function createCodexBrainService({
     }
   }
 
+  async function generateOpeningTitles(payload = {}) {
+    assertIdle("开头标题生成");
+    const input = normalizeOpeningTitleInput(payload);
+    const model = resolveOpeningModel(payload.model);
+    runningOperation = "opening-titles";
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), marketingTimeoutMs);
+    try {
+      const result = await provider.run({
+        model,
+        reasoningEffort: "medium",
+        prompt: buildOpeningTitlePrompt(input),
+        outputSchema: buildOpeningTitleOutputSchema(input.items.length),
+        signal: controller.signal
+      });
+      const titles = parseOpeningTitleResponse(result.finalResponse, input.items);
+      connected = true;
+      return {
+        titles,
+        durationMs: Date.now() - startedAt,
+        model,
+        reasoningEffort: "medium",
+        usage: result.usage || null
+      };
+    } catch (error) {
+      const rawMessage = String(error?.message || error);
+      const interrupted = /stream disconnected|fetch failed|ECONNRESET|socket hang up|network connection was lost/i.test(rawMessage);
+      const message = error?.name === "AbortError"
+        ? `开头标题生成超过 ${Math.round(marketingTimeoutMs / 60_000)} 分钟，已停止。`
+        : interrupted
+          ? "Codex 生成连接临时中断，本次未保存不完整结果。请再点一次「重新生成」。"
+          : rawMessage;
+      const wrapped = new Error(message);
+      wrapped.statusCode = interrupted ? 503 : (error?.statusCode || 502);
+      throw wrapped;
+    } finally {
+      clearTimeout(timer);
+      runningOperation = "";
+    }
+  }
+
   async function generateCreation(payload = {}) {
     assertIdle("AI 创作");
     const input = normalizeCreationInput(payload);
@@ -500,7 +542,9 @@ export function createCodexBrainService({
       ? "小说营销素材生成"
       : runningOperation === "opening-variants"
         ? "改版开头生成"
-        : runningOperation === "ai-creation"
+        : runningOperation === "opening-titles"
+          ? "开头标题生成"
+          : runningOperation === "ai-creation"
           ? "AI 创作"
           : runningOperation === "operation-strategy"
             ? "运营策略生成"
@@ -510,7 +554,7 @@ export function createCodexBrainService({
     throw error;
   }
 
-  return { getStatus, testConnection, generateNovelMarketing, generateOpeningVariants, generateCreation, generateOperationStrategy };
+  return { getStatus, testConnection, generateNovelMarketing, generateOpeningVariants, generateOpeningTitles, generateCreation, generateOperationStrategy };
 }
 
 export function buildOperationPromptV2(input) {
@@ -1160,6 +1204,102 @@ ${input.category ? `故事频道：${input.category}\n` : ""}${input.platform ? 
 <story_source>
 ${input.sourceText}
 </story_source>`;
+}
+
+function buildOpeningTitleOutputSchema(count) {
+  const n = Math.max(1, Math.min(10, Number(count) || 1));
+  return {
+    type: "object",
+    properties: {
+      titles: {
+        type: "array",
+        minItems: n,
+        maxItems: n,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            openingTitle: { type: "string" },
+            openingTitleZh: { type: "string" }
+          },
+          required: ["id", "openingTitle", "openingTitleZh"],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ["titles"],
+    additionalProperties: false
+  };
+}
+
+function normalizeOpeningTitleInput(payload) {
+  const items = (Array.isArray(payload.items) ? payload.items : []).map((item, index) => ({
+    id: cleanText(item.id, 80) || `title-${index + 1}`,
+    style: cleanText(item.style, 40),
+    styleLabel: cleanText(item.styleLabel, 40),
+    openingTitle: cleanText(item.openingTitle, 80),
+    script: String(item.script || "").trim()
+  })).filter((item) => item.script.length >= 40);
+  if (!items.length) {
+    const error = new Error("请先有口播正文，再单独重新生成开头标题。");
+    error.statusCode = 400;
+    throw error;
+  }
+  return {
+    language: cleanText(payload.language, 40) || "English",
+    items: items.slice(0, 10)
+  };
+}
+
+function firstSpokenSentences(script, count = 3) {
+  const text = String(script || "").replace(/\s+/g, " ").trim();
+  const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  return (parts.length ? parts.slice(0, count) : [text]).join(" ");
+}
+
+function buildOpeningTitlePrompt(input) {
+  const blocks = input.items.map((item, index) => `第 ${index + 1} 条
+id: ${item.id}
+当前标题: ${item.openingTitle || "（无）"}
+风格: ${item.styleLabel || item.style || "智能最强钩子"}
+口播前三句: ${firstSpokenSentences(item.script, 3)}`).join("\n\n");
+  return `你是 Local Factory 的开头标题编辑。只改视频前 3 秒盖在画面正中的标题，不改口播正文。
+
+任务：为下面 ${input.items.length} 条已有口播，各写 1 个新的 openingTitle，并给 openingTitleZh。
+- openingTitle 必须使用 ${input.language}，4 到 8 个英文单词，像指控，不像书名，不要句号。
+- 必须对准该条口播前三句的同一冲突，不得另起故事，不得补造原文没有的关系或结局。
+- 必须和当前标题明显不同，不能只改大小写或换一个同义词。
+- 禁止 That day、That night、I remember、The story of、My story。
+- openingTitleZh 是对应中文封面字：短、冲、能一眼看懂。
+- 返回的 id 必须和输入完全一致。只返回符合 JSON Schema 的结果。
+
+${blocks}`;
+}
+
+function parseOpeningTitleResponse(value, items = []) {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error("Codex 返回的开头标题不是有效 JSON，请重试。");
+    }
+  }
+  const titles = Array.isArray(parsed?.titles) ? parsed.titles : [];
+  if (titles.length !== items.length) {
+    throw new Error(`Codex 没有返回 ${items.length} 个开头标题，请重试。`);
+  }
+  const byId = new Map(titles.map((item) => [cleanText(item.id, 80), item]));
+  return items.map((item) => {
+    const next = byId.get(item.id) || titles[items.indexOf(item)] || {};
+    const openingTitle = cleanText(next.openingTitle, 80);
+    const openingTitleZh = cleanText(next.openingTitleZh, 80);
+    if (!openingTitle) throw new Error("Codex 返回的开头标题是空的，请重试。");
+    if (item.openingTitle && openingTitle.toLowerCase() === item.openingTitle.toLowerCase()) {
+      throw new Error("新标题和当前标题相同。请再点一次「重新生成」。");
+    }
+    return { id: item.id, openingTitle, openingTitleZh };
+  });
 }
 
 function parseOpeningVariantResponse(value, fallbackStyles = []) {

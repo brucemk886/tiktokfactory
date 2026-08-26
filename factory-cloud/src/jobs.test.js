@@ -150,6 +150,21 @@ test("opening variants survive job-result persistence", () => {
   assert.match(result.variants[0].scriptZh, /破产/);
 });
 
+test("opening titles survive job-result persistence", () => {
+  const result = persistableJobResult({
+    model: "gpt-5.6-sol",
+    reasoningEffort: "medium",
+    titles: [{
+      id: "variant-1",
+      openingTitle: "They Staged Their Rescue",
+      openingTitleZh: "这场救援是它们布置的"
+    }]
+  });
+  assert.equal(result.titles.length, 1);
+  assert.equal(result.titles[0].id, "variant-1");
+  assert.match(result.titles[0].openingTitle, /Rescue/);
+});
+
 test("latest opening-variant lookup returns the newest matching novel for the current user", async () => {
   const rows = [
     { id: "job-other", payload_json: JSON.stringify({ novelId: "novel-2" }) },

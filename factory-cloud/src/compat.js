@@ -295,6 +295,39 @@ export async function handleCompat(request, env, url, session) {
     });
   }
 
+  const titleMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/opening-titles$/);
+  if (method === "POST" && titleMatch) {
+    const novel = await hydrateNovel(db, decodeURIComponent(titleMatch[1]));
+    if (!novel) return errorJson("没有找到该小说。", 404);
+    const body = await readJson(request);
+    const items = Array.isArray(body.items) ? body.items : [];
+    if (!items.length) return errorJson("请先勾选要重写标题的开头。", 400);
+    const job = await enqueueJob(db, {
+      type: "opening-titles",
+      title: `重写 ${items.length} 个开头标题`,
+      payload: {
+        novelId: novel.id,
+        title: novel.title,
+        language: body.language || "English",
+        items: items.slice(0, 10).map((item) => ({
+          id: String(item.id || "").trim(),
+          style: String(item.style || "").trim(),
+          styleLabel: String(item.styleLabel || "").trim(),
+          openingTitle: String(item.openingTitle || "").trim(),
+          script: String(item.script || "").trim().slice(0, 1200)
+        })),
+        model: body.model || ""
+      },
+      createdBy: session.user.username
+    });
+    return json({
+      queued: true,
+      accepted: true,
+      jobId: job.id,
+      message: "已交给本机工人单独重写开头标题。"
+    });
+  }
+
   if (method === "POST" && pathname === "/api/audio-library/generate-script") {
     const payload = await buildAudioGeneratePayload(db, await readJson(request));
     const job = await enqueueJob(db, {

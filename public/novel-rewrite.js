@@ -36,6 +36,10 @@ const elements = {
   generateAudioButton: document.querySelector("#generateAudioBtn"),
   generateVariantsButton: document.querySelector("#generateVariantsBtn"),
   generateSelectedAudioButton: document.querySelector("#generateSelectedAudioBtn"),
+  regenerateTitlesButton: document.querySelector("#regenerateTitlesBtn"),
+  regenerateManualTitleButton: document.querySelector("#regenerateManualTitleBtn"),
+  speakOpeningTitle: document.querySelector("#speakOpeningTitle"),
+  speakOpeningTitleManual: document.querySelector("#speakOpeningTitleManual"),
   reloadVoicesButton: document.querySelector("#reloadVoicesBtn"),
   previewVoiceButton: document.querySelector("#previewVoiceBtn"),
   voicePreview: document.querySelector("#voicePreview"),
@@ -70,7 +74,8 @@ const state = {
   openingModel: readSavedOpeningModel(),
   openingReasoning: readSavedOpeningReasoning(),
   openingJobId: "",
-  restoringOpeningJob: false
+  restoringOpeningJob: false,
+  speakOpeningTitle: readSavedSpeakOpeningTitle()
 };
 
 elements.novelPicker.addEventListener("change", () => {
@@ -80,6 +85,10 @@ elements.novelPicker.addEventListener("change", () => {
 elements.form.addEventListener("submit", saveRewrite);
 elements.generateVariantsButton?.addEventListener("click", generateVariants);
 elements.generateSelectedAudioButton?.addEventListener("click", generateSelectedVariantAudios);
+elements.regenerateTitlesButton?.addEventListener("click", () => regenerateOpeningTitles());
+elements.regenerateManualTitleButton?.addEventListener("click", regenerateManualOpeningTitle);
+elements.speakOpeningTitle?.addEventListener("change", () => setSpeakOpeningTitle(elements.speakOpeningTitle.checked));
+elements.speakOpeningTitleManual?.addEventListener("change", () => setSpeakOpeningTitle(elements.speakOpeningTitleManual.checked));
 elements.rewriteText?.addEventListener("input", updateCount);
 document.querySelectorAll('input[name="rewriteMode"]').forEach((input) => {
   input.addEventListener("change", () => setRewriteMode(input.value));
@@ -119,6 +128,7 @@ updateCount();
 setRewriteMode("ai");
 setOpeningModel(state.openingModel);
 setOpeningReasoning(state.openingReasoning);
+setSpeakOpeningTitle(state.speakOpeningTitle);
 updateGenerateButton();
 loadStyles();
 loadPage();
@@ -242,6 +252,21 @@ function readSavedOpeningModel() {
 function readSavedOpeningReasoning() {
   const saved = localStorage.getItem("lf-opening-reasoning") || "";
   return saved === "medium" || saved === "xhigh" ? saved : "high";
+}
+
+function readSavedSpeakOpeningTitle() {
+  return localStorage.getItem("lf-speak-opening-title") === "1";
+}
+
+function setSpeakOpeningTitle(on) {
+  state.speakOpeningTitle = on === true;
+  localStorage.setItem("lf-speak-opening-title", state.speakOpeningTitle ? "1" : "0");
+  if (elements.speakOpeningTitle) elements.speakOpeningTitle.checked = state.speakOpeningTitle;
+  if (elements.speakOpeningTitleManual) elements.speakOpeningTitleManual.checked = state.speakOpeningTitle;
+  elements.variantList?.querySelectorAll("[data-speak-title]").forEach((input) => {
+    input.checked = state.speakOpeningTitle;
+  });
+  updateSpeechSpeedLabel();
 }
 
 function playGeneratedAudio(audioId) {
@@ -473,6 +498,113 @@ async function generateVariants() {
   }
 }
 
+function titleRewriteItems(variants) {
+  return variants.map((variant) => ({
+    id: variant.id,
+    style: variant.style || "",
+    styleLabel: variant.styleLabel || "",
+    openingTitle: variant.openingTitle || firstHookLine(variant.script),
+    script: variant.script
+  }));
+}
+
+function applyRewrittenTitles(titles) {
+  const byId = new Map((Array.isArray(titles) ? titles : []).map((item) => [item.id, item]));
+  let changed = 0;
+  for (const variant of state.variants) {
+    const next = byId.get(variant.id);
+    if (!next?.openingTitle) continue;
+    variant.openingTitle = next.openingTitle;
+    variant.openingTitleZh = next.openingTitleZh || variant.openingTitleZh;
+    variant.titleStatus = "已重写标题";
+    changed += 1;
+  }
+  renderVariants();
+  return changed;
+}
+
+async function requestOpeningTitles(items) {
+  let data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-titles`, {
+    method: "POST",
+    body: JSON.stringify({
+      items,
+      model: selectedOpeningModel(),
+      language: "English"
+    })
+  });
+  if (data.jobId && !Array.isArray(data.titles)) {
+    data = await waitForCloudJob(data.jobId, {
+      api,
+      attempts: 180,
+      onProgress: (job) => {
+        setStatus(job.message || "工人机正在单独重写开头标题...", "");
+      }
+    });
+  }
+  if (!Array.isArray(data.titles) || !data.titles.length) {
+    throw new Error("没有取回新的开头标题。");
+  }
+  return data.titles;
+}
+
+async function regenerateOpeningTitles(targetVariants) {
+  const variants = Array.isArray(targetVariants) && targetVariants.length
+    ? targetVariants
+    : state.variants.filter((item) => item.selected !== false);
+  if (!variants.length) return setStatus("先勾选要重写标题的开头。", "error");
+  const items = titleRewriteItems(variants);
+  variants.forEach((variant) => {
+    variant.titleStatus = "标题生成中...";
+  });
+  renderVariants();
+  if (elements.regenerateTitlesButton) {
+    elements.regenerateTitlesButton.disabled = true;
+    elements.regenerateTitlesButton.textContent = `正在重写 ${items.length} 个标题...`;
+  }
+  try {
+    const titles = await requestOpeningTitles(items);
+    const changed = applyRewrittenTitles(titles);
+    setStatus(`已单独重写 ${changed} 个开头标题，正文没动。`, "success");
+  } catch (error) {
+    variants.forEach((variant) => {
+      variant.titleStatus = "标题失败，可重试";
+    });
+    renderVariants();
+    setStatus(error.message || "重写开头标题失败。", "error");
+  } finally {
+    if (elements.regenerateTitlesButton) {
+      elements.regenerateTitlesButton.disabled = false;
+      elements.regenerateTitlesButton.textContent = "重新生成勾选标题";
+    }
+  }
+}
+
+async function regenerateManualOpeningTitle() {
+  const text = elements.rewriteText?.value.trim() || "";
+  if (text.length < 40) return setStatus("先写口播正文，再单独重新生成开头标题。", "error");
+  if (elements.regenerateManualTitleButton) {
+    elements.regenerateManualTitleButton.disabled = true;
+    elements.regenerateManualTitleButton.textContent = "正在重写...";
+  }
+  try {
+    const titles = await requestOpeningTitles([{
+      id: "manual-title",
+      openingTitle: currentOpeningTitle(text),
+      script: text
+    }]);
+    const next = titles[0];
+    if (elements.openingTitle) elements.openingTitle.value = next.openingTitle;
+    setStatus(`开头标题已换成：${next.openingTitle}`, "success");
+  } catch (error) {
+    setStatus(error.message || "重写开头标题失败。", "error");
+  } finally {
+    if (elements.regenerateManualTitleButton) {
+      elements.regenerateManualTitleButton.disabled = false;
+      elements.regenerateManualTitleButton.textContent = "重新生成";
+    }
+  }
+}
+
 async function restoreLatestOpeningJob() {
   if (!state.novelId || state.restoringOpeningJob) return;
   state.restoringOpeningJob = true;
@@ -532,10 +664,12 @@ function renderVariants() {
   if (!elements.variantPanel) return;
   if (!state.variants.length) {
     if (elements.generateSelectedAudioButton) elements.generateSelectedAudioButton.hidden = true;
+    if (elements.regenerateTitlesButton) elements.regenerateTitlesButton.hidden = true;
     return;
   }
   elements.variantPanel.hidden = false;
   if (elements.generateSelectedAudioButton) elements.generateSelectedAudioButton.hidden = false;
+  if (elements.regenerateTitlesButton) elements.regenerateTitlesButton.hidden = false;
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子结果`;
   const modelLabel = openingModelLabel(state.variants[0]?.model, state.variants[0]?.reasoningEffort);
   elements.variantStatus.textContent = `已用 ${modelLabel} 按策略筛选，并给出中文对照。勾选后点「一键生成勾选音频」，会按顺序配音。`;
@@ -549,15 +683,24 @@ function renderVariants() {
         <small>${escapeHtml(variant.title || "")}</small>
       </div>
       <label class="variant-hook">
-        <span>开头标题</span>
-        <input type="text" maxlength="80" data-opening-title value="${escapeHtml(variant.openingTitle || firstHookLine(variant.script))}" />
+        <span class="variant-hook-head">
+          <span>开头标题</span>
+          <label class="speak-title-check">
+            <input type="checkbox" data-speak-title ${state.speakOpeningTitle ? "checked" : ""} />
+            标题也配音
+          </label>
+        </span>
+        <div class="variant-title-row">
+          <input type="text" maxlength="80" data-opening-title value="${escapeHtml(variant.openingTitle || firstHookLine(variant.script))}" />
+          <button class="quiet-action" type="button" data-regen-title>${variant.titleStatus || "重新生成"}</button>
+        </div>
       </label>
       <p>${escapeHtml(variant.script)}</p>
       ${variant.scriptZh || variant.openingTitleZh ? `<div class="variant-zh">
         ${variant.openingTitleZh ? `<strong>${escapeHtml(variant.openingTitleZh)}</strong>` : ""}
         <p>${escapeHtml(variant.scriptZh || "")}</p>
       </div>` : ""}
-      <small class="variant-meta">${formatNumber(wordCount(variant.script))} 词 · 预估 ${formatClock(estimateSpeechSeconds(wordCount(variant.script)))}</small>
+      <small class="variant-meta">${formatNumber(spokenWordCount(variant.script, variant.openingTitle))} 词 · 预估 ${formatClock(estimateSpeechSeconds(spokenWordCount(variant.script, variant.openingTitle)))}</small>
       <button class="quiet-action" type="button" data-save-audio>${variant.status || "保存并生成音频"}</button>
       ${variant.audioId ? `<audio class="variant-audio" controls preload="metadata" data-audio-id="${escapeHtml(variant.audioId)}" src="/api/audio-library/${encodeURIComponent(variant.audioId)}/file?t=${Date.now()}"></audio>
       <div class="retune-row">
@@ -575,7 +718,12 @@ function renderVariants() {
     });
     card.querySelector("[data-opening-title]")?.addEventListener("input", (event) => {
       variant.openingTitle = event.target.value;
+      updateSpeechSpeedLabel();
     });
+    card.querySelector("[data-speak-title]")?.addEventListener("change", (event) => {
+      setSpeakOpeningTitle(event.target.checked);
+    });
+    card.querySelector("[data-regen-title]")?.addEventListener("click", () => regenerateOpeningTitles([variant]));
     card.querySelector("[data-save-audio]")?.addEventListener("click", () => saveVariantWithAudio(variant.id));
   });
   bindRetuneControls(elements.variantList);
@@ -641,6 +789,7 @@ async function generateVariantAudios(variants) {
         title: `${state.novel.title} ${variant.styleLabel || "AI 改版"}`,
         script: variant.script,
         openingTitle: variant.openingTitle || firstHookLine(variant.script),
+        speakOpeningTitle: state.speakOpeningTitle,
         voiceId,
         speechSpeed: selectedSpeechSpeed(),
         sourceType: "ai-style-rewrite"
@@ -838,6 +987,7 @@ async function generateAudio() {
       title: `${state.novel.title} ${script.versionLabel || "人工改写"}`,
       script: text,
       openingTitle: currentOpeningTitle(text),
+      speakOpeningTitle: state.speakOpeningTitle,
       voiceId,
       targetAudioDir,
       speechSpeed: selectedSpeechSpeed(),
@@ -907,12 +1057,23 @@ function updateSpeechSpeedLabel() {
   elements.variantList?.querySelectorAll(".variant-card").forEach((card) => {
     const variant = state.variants.find((item) => item.id === card.dataset.variantId);
     const meta = card.querySelector(".variant-meta");
-    if (variant && meta) meta.textContent = `${formatNumber(wordCount(variant.script))} 词 · 预估 ${formatClock(estimateSpeechSeconds(wordCount(variant.script)))}`;
+    if (variant && meta) {
+      const words = spokenWordCount(variant.script, variant.openingTitle);
+      meta.textContent = `${formatNumber(words)} 词 · 预估 ${formatClock(estimateSpeechSeconds(words))}`;
+    }
   });
 }
 
 function wordCount(value) {
   return String(value || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function spokenWordCount(script, title) {
+  const body = String(script || "").replace(/\s+/g, " ").trim();
+  const hook = String(title || "").replace(/\s+/g, " ").trim();
+  if (!state.speakOpeningTitle || !hook) return wordCount(body);
+  if (body.toLowerCase().startsWith(hook.toLowerCase())) return wordCount(body);
+  return wordCount(body) + wordCount(hook);
 }
 
 function estimateSpeechSeconds(words, speed = selectedSpeechSpeed()) {

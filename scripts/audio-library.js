@@ -202,6 +202,7 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     script,
     title,
     openingTitle = "",
+    speakOpeningTitle,
     voiceId: requestedVoiceId,
     targetAudioDir = "",
     novelId = "",
@@ -219,7 +220,10 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
     if (!voiceId) throw httpError(400, "ElevenLabs Voice ID 未配置。");
 
-    const spokenScript = buildSpokenNarration(resolveScriptOpeningTitle(openingTitle, scriptId), cleanScript);
+    const spokenScript = buildSpokenNarration(
+      speakOpeningTitle === false ? "" : resolveScriptOpeningTitle(openingTitle, scriptId),
+      cleanScript
+    );
     const speed = normalizeSpeechSpeed(speechSpeed);
     const fingerprint = crypto.createHash("sha256")
       .update([novelId, scriptId, spokenScript, voiceId, modelId, outputFormat, speed === DEFAULT_SPEECH_SPEED ? "" : String(speed)].join("\0"))
