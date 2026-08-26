@@ -48,3 +48,31 @@ test("copies existing local audio into the fixed library folder", async () => {
   assert.equal(path.dirname(result.items[0].targetAudioPath), target);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("uses the job payload voice when an item omits voiceId", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "audio-voice-"));
+  let usedVoice = "";
+  const result = await runAudioGenerateJob({
+    root,
+    workDir: path.join(root, "work"),
+    config: { audioLibraryRoot: root },
+    payload: {
+      voiceId: "voice-from-page",
+      items: [{
+        scriptId: "script-voice",
+        title: "Opening",
+        script: "This opening is long enough to pass the twenty character check."
+      }]
+    },
+    audioLibrary: {
+      generateFromScript: async (input) => {
+        usedVoice = input.voiceId;
+        return { id: "audio-new", title: input.title, fileName: "opening.mp3" };
+      },
+      resolveAudioPath() { return ""; }
+    }
+  });
+  assert.equal(result.items.length, 1);
+  assert.equal(usedVoice, "voice-from-page");
+  fs.rmSync(root, { recursive: true, force: true });
+});

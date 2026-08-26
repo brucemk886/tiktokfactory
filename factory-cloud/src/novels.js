@@ -537,6 +537,8 @@ export async function resolveNovelTitle(db, { novelId = "", novelTitle = "" } = 
 
 export async function buildAudioGeneratePayload(db, body = {}) {
   const store = await readStore(db);
+  const settings = await kvGet(db, "novel-seed-settings", {});
+  const voiceId = String(body.voiceId || settings.voiceId || "").trim();
   const requested = Array.isArray(body.items) && body.items.length
     ? body.items
     : (Array.isArray(body.scriptIds) ? body.scriptIds.map((id) => ({ scriptId: id, novelId: body.novelId })) : [body]);
@@ -559,7 +561,7 @@ export async function buildAudioGeneratePayload(db, body = {}) {
       script: text,
       openingTitle: String(raw.openingTitle || script?.openingTitle || "").trim(),
       speakOpeningTitle: raw.speakOpeningTitle === true || script?.speakOpeningTitle === true || (body.speakOpeningTitle === true && raw.speakOpeningTitle !== false),
-      voiceId: String(raw.voiceId || body.voiceId || "").trim(),
+      voiceId: String(raw.voiceId || voiceId || "").trim(),
       speechSpeed: raw.speechSpeed ?? body.speechSpeed,
       sourceType: String(raw.sourceType || script?.sourceType || "manual-rewrite").trim()
     });
@@ -570,7 +572,7 @@ export async function buildAudioGeneratePayload(db, body = {}) {
   return {
     targetAudioDir: String(body.targetAudioDir || "").trim(),
     novelTitle: String(body.novelTitle || items[0]?.novelTitle || "").trim(),
-    voiceId: String(body.voiceId || "").trim(),
+    voiceId,
     speechSpeed: body.speechSpeed,
     items
   };

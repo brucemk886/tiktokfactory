@@ -33,7 +33,7 @@ export async function runAudioGenerateJob({
       message: `正在生成第 ${index + 1}/${items.length} 条到 ${path.basename(targetAudioDir)}...`
     });
     try {
-      const record = await generateOne(library, item, targetAudioDir, bootConfig);
+      const record = await generateOne(library, item, targetAudioDir, bootConfig, payload);
       if (novels && item.scriptId && record.id) {
         try { novels.attachScriptAudio(item.scriptId, record.id); } catch {}
       }
@@ -64,7 +64,7 @@ export function resolveItemAudioDir(config, payload = {}, item = {}) {
   });
 }
 
-async function generateOne(library, item, targetAudioDir, config) {
+async function generateOne(library, item, targetAudioDir, config, payload = {}) {
   const existingPath = findExistingAudio(library, item, config);
   if (existingPath) {
     const copied = copyToTarget(existingPath, targetAudioDir, item.title || item.fileName || item.id || "audio", item.audioId || path.basename(existingPath, path.extname(existingPath)));
@@ -83,7 +83,7 @@ async function generateOne(library, item, targetAudioDir, config) {
     title: item.title,
     openingTitle: item.openingTitle,
     speakOpeningTitle: item.speakOpeningTitle,
-    voiceId: item.voiceId,
+    voiceId: String(item.voiceId || payload.voiceId || localSeedVoiceId(payload, config) || "").trim(),
     targetAudioDir,
     novelId: item.novelId,
     scriptId: item.scriptId,
@@ -95,6 +95,10 @@ async function generateOne(library, item, targetAudioDir, config) {
     record.targetAudioPath = copyToTarget(sourcePath, targetAudioDir, record.title || item.title || "audio", record.id);
   }
   return record;
+}
+
+function localSeedVoiceId(payload = {}, config = {}) {
+  return String(payload.voiceId || config.elevenLabsVoiceId || "").trim();
 }
 
 function findExistingAudio(library, item, config) {

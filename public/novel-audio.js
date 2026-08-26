@@ -41,7 +41,8 @@ const state = {
   novelId: params.get("novel") || "",
   novel: readStashedNovel(),
   voices: [],
-  audioGroups: []
+  audioGroups: [],
+  voiceId: ""
 };
 
 elements.saveMixAudiosButton?.addEventListener("click", saveMixAudios);
@@ -234,7 +235,11 @@ async function generatePendingAudios(onlyIds) {
   if (!selected.length) return setPendingStatus("先勾选要配音的文案。", "error");
   const voiceId = selectedVoiceId();
   const targetAudioDir = selectedAudioDir();
-  if (!voiceId) setAudioStatus("未选手动声音，将用工人机默认 Voice ID。");
+  if (!voiceId) {
+    setPendingStatus("请先在上面「默认声音」里选一个 ElevenLabs 声音，或手动填写 Voice ID。", "error");
+    setAudioStatus("还没选声音，不能生成音频。", "error");
+    return;
+  }
   if (elements.generatePendingButton) {
     elements.generatePendingButton.disabled = true;
     elements.generatePendingButton.textContent = `正在生成 ${selected.length} 条...`;
@@ -570,7 +575,8 @@ async function loadAudioControls(force = false) {
     ]);
     const settings = settingsData.settings || {};
     state.voices = voicesData.voices || [];
-    const selected = settings.voiceId || voicesData.defaultVoiceId || "";
+    const selected = settings.voiceId || voicesData.defaultVoiceId || state.voiceId || "";
+    if (selected) state.voiceId = selected;
     fillFilterSelect(elements.voiceLanguage, voicesData.filters?.languages, "全部语言");
     fillFilterSelect(elements.voiceCategory, voicesData.filters?.categories, "全部类别");
     fillFilterSelect(elements.voiceGender, voicesData.filters?.genders, "全部性别");
@@ -637,7 +643,9 @@ function selectedAudioDir() {
 }
 
 function selectedVoiceId() {
-  return elements.voiceSelect?.value.trim() || elements.voiceIdInput?.value.trim() || "";
+  const current = elements.voiceSelect?.value.trim() || elements.voiceIdInput?.value.trim() || state.voiceId || "";
+  if (current) state.voiceId = current;
+  return current;
 }
 
 function selectedSpeechSpeed() {
@@ -679,8 +687,19 @@ function renderVoiceOptions(preferredId = "") {
     const meta = [voice.languageLabels?.[0], voice.genderLabel, voice.ageLabel, voice.categoryLabel].filter(Boolean).join(" · ");
     return `<option value="${escapeHtml(voice.id)}" data-preview-url="${escapeHtml(voice.previewUrl || "")}">${escapeHtml(voice.name)}${meta ? ` · ${escapeHtml(meta)}` : ""}</option>`;
   })].join("");
-  if (selected && voices.some((voice) => voice.id === selected)) elements.voiceSelect.value = selected;
-  else if (voices.length === 1) elements.voiceSelect.value = voices[0].id;
+  if (selected && voices.some((voice) => voice.id === selected)) {
+    elements.voiceSelect.value = selected;
+    state.voiceId = selected;
+  } else if (selected) {
+    const kept = state.voices.find((voice) => voice.id === selected);
+    const label = kept ? `${kept.name}（当前筛选已隐藏）` : `已选 Voice ID ${selected.slice(0, 8)}…`;
+    elements.voiceSelect.insertAdjacentHTML("afterbegin", `<option value="${escapeHtml(selected)}">${escapeHtml(label)}</option>`);
+    elements.voiceSelect.value = selected;
+    state.voiceId = selected;
+  } else if (voices.length === 1) {
+    elements.voiceSelect.value = voices[0].id;
+    state.voiceId = voices[0].id;
+  }
 }
 
 async function persistAudioSettings() {
