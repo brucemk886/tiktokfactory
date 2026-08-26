@@ -5,36 +5,36 @@ export const OPENING_STYLES = Object.freeze([
     id: SMART_OPENING_STYLE_ID,
     label: "智能最强钩子",
     recommended: true,
-    hook: "第一句前先找出原文里的最大背叛、异常、身份反差和主角底牌，再组合成最强三拍反转。",
-    firstLine: "第一句砸出原文中最严重且已经确认的事实；第二句写对方的错误预期或直接后果；第三句用主角的反常反应或真实底牌留下信息缺口。例：My fiancé drugged me and handed me to a mob boss. He thought I was terrified. I whispered, ‘Finally home.’",
+    hook: "第一句前只从原文明示的人物关系、行为、证据、地点、后果和底牌里选最强机制；最多组合两种真实机制。原文没有戒指、婚礼或 mafia 身份就不要硬套。",
+    firstLine: "第一句砸出账本里最严重且已经确认的事实；第二句写对方的错误预期或直接后果；第三句用主角的反常反应或真实底牌留下信息缺口。例句只示范句式，不要复制剧情。例：My fiancé drugged me and handed me to a mob boss. He thought I was terrified. I whispered, ‘Finally home.’",
     threeBeat: "事实炸点 → 错误预期或后果 → 反常反应或隐藏底牌"
   }),
   Object.freeze({
     id: "evidence-slam",
     label: "铁证砸脸",
-    hook: "第一句直接亮出戒指、短信、录音、DNA 或转账等原文已经存在的具体证据。",
-    firstLine: "第一句必须包含人物关系 + 看得见的证据 + 证据证明的背叛或谎言，不先解释发现过程。例：My husband's wedding ring was on my sister's nightstand.",
+    hook: "第一句直接亮出原文已经存在的具体证据。没有戒指、短信、录音、DNA 或转账就不要编一件证物。",
+    firstLine: "第一句必须包含人物关系 + 看得见的证据 + 证据证明的背叛或谎言，不先解释发现过程。例句只示范句式。例：The judge gave me three years for a crime she confessed in my kitchen.",
     threeBeat: "具体铁证 → 铁证指向的伤害 → 仍未解释的关键问题"
   }),
   Object.freeze({
     id: "identity-bomb",
     label: "身份炸弹",
-    hook: "第一句揭开原文已经确认、足以瞬间改写人物关系或权力位置的身份事实。",
-    firstLine: "第一句同时写出旧认知和真实身份，让两者形成不可能共存的反差；原文没有身份反转就不能编造。例：The mob boss they sold me to was the father I thought was dead.",
+    hook: "第一句揭开原文已经确认、足以瞬间改写人物关系或权力位置的身份事实。没有身份反转就不能编造。",
+    firstLine: "第一句同时写出旧认知和真实身份，让两者形成不可能共存的反差。例句只示范句式。例：The man they sold me to was the uncle who raised me.",
     threeBeat: "旧身份认知 → 真实身份爆雷 → 新身份将造成的危险"
   }),
   Object.freeze({
     id: "scene-meltdown",
     label: "现场失控",
-    hook: "第一句从婚礼、葬礼、宴会或签约等原文已有的公开现场爆雷，让所有人都无法体面收场。",
-    firstLine: "第一句必须写清地点、人物和正在发生的不可挽回动作；没有公开场面时，用原文最难收场的现场，不能另编婚礼。例：My fiancé kissed my best friend while I stood at the altar.",
+    hook: "第一句从原文已有的公开现场爆雷。没有婚礼、葬礼或直播就用原文最难收场的现场，不能另编婚礼。",
+    firstLine: "第一句必须写清地点、人物和正在发生的不可挽回动作。例句只示范句式。例：The comments told him to take the other girl, and he did it on live.",
     threeBeat: "公开动作 → 众人或主角的即时后果 → 更大的秘密即将暴露"
   }),
   Object.freeze({
     id: "cornered-counterstrike",
     label: "绝境反杀",
-    hook: "第一句让主角落入原文最深的绝境，随后露出对方不知道、但原文确实存在的翻盘底牌。",
-    firstLine: "第一句写清谁把主角推入什么绝境；第二句写对方以为自己赢了；第三句只露出足以翻盘的底牌，不提前解释完。例：They sold me to save their company. They forgot I owned its debt.",
+    hook: "第一句让主角落入原文最深的绝境，随后露出对方不知道、但原文确实存在的翻盘底牌。没有底牌就不要假装反杀。",
+    firstLine: "第一句写清谁把主角推入什么绝境；第二句写对方以为自己赢了；第三句只露出足以翻盘的底牌。例句只示范句式。例：They left me on the countdown they stole from me.",
     threeBeat: "主角被逼入绝境 → 对方误判胜局 → 主角底牌反杀"
   })
 ]);

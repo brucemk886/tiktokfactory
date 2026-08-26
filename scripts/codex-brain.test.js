@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildOperationPromptV2, createCodexBrainService, resolveOpeningModel, resolveOpeningReasoning } from "./codex-brain.js";
+import { buildOperationPromptV2, clipOpeningSource, createCodexBrainService, OPENING_SOURCE_MAX, resolveOpeningModel, resolveOpeningReasoning, variantsReuseSameOpeningFact } from "./codex-brain.js";
 
 test("official operation prompt includes mapped novel-effect evidence", () => {
   const prompt = buildOperationPromptV2({
@@ -276,6 +276,90 @@ test("opening variant prompt forces a stop-scroll first sentence", async (contex
   assert.match(prompts[0], /第一句做法：/);
   assert.match(prompts[0], /Finally home/);
   assert.match(prompts[0], /I walked into/);
+  assert.match(prompts[0], /不要为了凑齐铁证、身份炸弹、婚礼或 mafia/);
+  assert.match(prompts[0], /后半段出现的反转也要记入账本/);
+});
+
+test("opening source keeps a full 20k chapter and windows only longer text", () => {
+  const full = `${"A confirmed betrayal sentence that stays in the ledger. ".repeat(400)}`;
+  assert.equal(clipOpeningSource(full).length, full.length);
+  assert.ok(full.length > 8_000 && full.length < OPENING_SOURCE_MAX);
+  const long = `HEAD-START ${"x".repeat(30_000)} TAIL-END-REVEAL`;
+  const clipped = clipOpeningSource(long);
+  assert.ok(clipped.length <= OPENING_SOURCE_MAX);
+  assert.match(clipped, /HEAD-START/);
+  assert.match(clipped, /TAIL-END-REVEAL/);
+  assert.match(clipped, /middle omitted/);
+});
+
+test("two smart openings must use different core facts", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-diverse-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const sameFact = `${"My husband sold me to a mob boss after he drugged my drink at dinner. He thought I would beg. I smiled instead and waited. ".repeat(6)}`;
+  const service = createCodexBrainService({
+    root: "C:/test-project",
+    workDir,
+    CodexClass: class {
+      startThread() {
+        return {
+          run: async () => ({
+            finalResponse: JSON.stringify({
+              variants: [
+                { style: "smart-strongest", styleLabel: "智能最强钩子", title: "A", openingTitle: "He sold me tonight", script: sameFact, titleZh: "甲", openingTitleZh: "他今晚把我卖了", scriptZh: "同一事实。" },
+                { style: "smart-strongest", styleLabel: "智能最强钩子", title: "B", openingTitle: "He sold me tonight", script: sameFact, titleZh: "乙", openingTitleZh: "他今晚把我卖了", scriptZh: "同一事实。" }
+              ]
+            })
+          })
+        };
+      }
+    }
+  });
+  await assert.rejects(
+    service.generateOpeningVariants({
+      title: "Secret Uncle",
+      sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+      styles: ["smart-strongest", "smart-strongest"]
+    }),
+    /同一条核心事实/
+  );
+  assert.equal(variantsReuseSameOpeningFact([
+    { style: "smart-strongest", coreFact: "husband sold her to a mob boss", script: sameFact },
+    { style: "smart-strongest", coreFact: "the comments told him to take the other girl", script: `${"The comments told him to take the other girl on live, and he did. ".repeat(8)}` }
+  ]), false);
+});
+
+test("opening variant prompt asks for two different smart-hook facts and keeps category", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-split-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const prompts = [];
+  const variants = {
+    variants: [
+      { style: "smart-strongest", styleLabel: "智能最强钩子", title: "A", openingTitle: "He sold me tonight", script: `${"My husband sold me to a mob boss after he drugged my drink at dinner. ".repeat(8)}`, coreFact: "husband sold her to a mob boss", titleZh: "甲", openingTitleZh: "他今晚把我卖了", scriptZh: "丈夫把她卖了。" },
+      { style: "smart-strongest", styleLabel: "智能最强钩子", title: "B", openingTitle: "The comments chose her", script: `${"The comments told him to take the other girl on live, and he did it. ".repeat(8)}`, coreFact: "live comments told him to take the other girl", titleZh: "乙", openingTitleZh: "评论让他选她", scriptZh: "评论让他选另一个女孩。" }
+    ]
+  };
+  class FakeCodex {
+    startThread() {
+      return {
+        run: async (prompt) => {
+          prompts.push(prompt);
+          return { finalResponse: JSON.stringify(variants) };
+        }
+      };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  const result = await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    category: "女频",
+    sellingPoint: "直播评论反转",
+    sourceText: "A woman has secretly loved her uncle for years and is invited to his wedding anniversary, where old promises and a hidden letter finally collide in front of the family.",
+    styles: ["smart-strongest", "smart-strongest"]
+  });
+  assert.equal(result.variants.length, 2);
+  assert.match(prompts[0], /coreFact 和第一句必须指向不同的原文事件/);
+  assert.match(prompts[0], /故事频道：女频/);
+  assert.match(prompts[0], /小说卖点：直播评论反转/);
 });
 
 test("novel marketing rejects source text that is too short", async () => {

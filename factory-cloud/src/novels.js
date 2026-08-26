@@ -79,7 +79,7 @@ export async function handleNovels(request, env, url, session) {
   }
 
   if (method === "GET" && pathname === "/api/novel-content/opening-styles") {
-    return json({ styles: publicOpeningStyles(), version: 3 });
+    return json({ styles: publicOpeningStyles(), version: 4 });
   }
 
   if (method === "GET" && pathname === "/api/novel-content/seed-settings") {

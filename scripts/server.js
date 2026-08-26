@@ -1272,7 +1272,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/novel-content/opening-styles") {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
-      return sendJson(res, 200, { styles: publicOpeningStyles(), version: 3 }, { "Cache-Control": "no-store" });
+      return sendJson(res, 200, { styles: publicOpeningStyles(), version: 4 }, { "Cache-Control": "no-store" });
     }
 
     if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/opening-variants$/.test(url.pathname)) {
@@ -1286,6 +1286,8 @@ const server = http.createServer(async (req, res) => {
           title: novel.title,
           language: payload.language || "English",
           sourceText: novel.sourceContent,
+          category: novel.category,
+          sellingPoint: novel.sellingPoint,
           baseOpening,
           styles: payload.styles,
           model: payload.model,

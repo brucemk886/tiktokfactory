@@ -26,6 +26,9 @@ test("every opening style defines a factual three-beat hook recipe", () => {
   assert.match(brief, /三拍结构：/);
   assert.match(brief, /第一句做法：/);
   assert.match(brief, /Finally home/);
+  assert.match(brief, /第一句前只从原文明示/);
+  assert.match(brief, /不要硬套/);
+  assert.match(OPENING_STYLES.find((item) => item.id === "evidence-slam").firstLine, /three years/);
   const published = publicOpeningStyles();
   assert.equal(published.length, 5);
   assert.ok(published.every((item) => item.example));
