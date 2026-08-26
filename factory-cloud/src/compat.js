@@ -277,6 +277,8 @@ export async function handleCompat(request, env, url, session) {
         language: body.language || "English",
         sourceText: novel.sourceContent || "",
         category: novel.category || "",
+        platform: novel.platform || "",
+        promotionCode: novel.promotionCode || "",
         sellingPoint: novel.sellingPoint || "",
         baseOpening: String(body.baseOpening || "").trim(),
         styles,

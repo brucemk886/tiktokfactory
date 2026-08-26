@@ -1287,6 +1287,8 @@ const server = http.createServer(async (req, res) => {
           language: payload.language || "English",
           sourceText: novel.sourceContent,
           category: novel.category,
+          platform: novel.platform,
+          promotionCode: novel.promotionCode,
           sellingPoint: novel.sellingPoint,
           baseOpening,
           styles: payload.styles,

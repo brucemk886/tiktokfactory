@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildOperationPromptV2, clipOpeningSource, createCodexBrainService, OPENING_SOURCE_MAX, resolveOpeningModel, resolveOpeningReasoning, variantsReuseSameOpeningFact } from "./codex-brain.js";
+import { buildOperationPromptV2, clipOpeningSource, createCodexBrainService, OPENING_SOURCE_MAX, resolveOpeningModel, resolveOpeningReasoning, spokenAppCta, spokenAppCtaZh, variantsReuseSameOpeningFact } from "./codex-brain.js";
+
+const APP_CTA = " Search 454311 on the Novel Master app to read the full story.";
 
 test("official operation prompt includes mapped novel-effect evidence", () => {
   const prompt = buildOperationPromptV2({
@@ -134,9 +136,9 @@ test("opening variants return three distinct style scripts", async (context) => 
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
   const variants = {
     variants: [
-      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}`, titleZh: "她还是走进去了", openingTitleZh: "她戴着我妈的戒指", scriptZh: "婚礼大厅突然安静，我大声喊出他的名字，质问新娘为什么戴着我妈妈的戒指。" },
-      { style: "secret-reveal", styleLabel: "秘密揭开", title: "The invitation was a trap", openingTitle: "The invitation was a trap", script: `${"I was never supposed to know about the second ceremony, but the envelope had my old address and a date I could not forget. ".repeat(8)}`, titleZh: "请柬是个陷阱", openingTitleZh: "请柬是个陷阱", scriptZh: "我不该知道第二场仪式，可信封上写着我的旧地址和那个忘不掉的日期。" },
-      { style: "forbidden-line", styleLabel: "禁忌越界", title: "My hands would not stop shaking", openingTitle: "I am his secret", script: `${"I am pregnant with my uncle's child and the family still wants me to toast his wife. ".repeat(8)}`, titleZh: "我是他的秘密", openingTitleZh: "我是他的秘密", scriptZh: "我怀了叔叔的孩子，家里却还要我给新娘敬酒。" }
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}${APP_CTA}`, titleZh: "她还是走进去了", openingTitleZh: "她戴着我妈的戒指", scriptZh: "婚礼大厅突然安静，我大声喊出他的名字，质问新娘为什么戴着我妈妈的戒指。" },
+      { style: "secret-reveal", styleLabel: "秘密揭开", title: "The invitation was a trap", openingTitle: "The invitation was a trap", script: `${"I was never supposed to know about the second ceremony, but the envelope had my old address and a date I could not forget. ".repeat(8)}${APP_CTA}`, titleZh: "请柬是个陷阱", openingTitleZh: "请柬是个陷阱", scriptZh: "我不该知道第二场仪式，可信封上写着我的旧地址和那个忘不掉的日期。" },
+      { style: "forbidden-line", styleLabel: "禁忌越界", title: "My hands would not stop shaking", openingTitle: "I am his secret", script: `${"I am pregnant with my uncle's child and the family still wants me to toast his wife. ".repeat(8)}${APP_CTA}`, titleZh: "我是他的秘密", openingTitleZh: "我是他的秘密", scriptZh: "我怀了叔叔的孩子，家里却还要我给新娘敬酒。" }
     ]
   };
   class FakeCodex {
@@ -171,7 +173,7 @@ test("opening variants can use Terra as the second-tier model", async (context) 
   const calls = [];
   const variants = {
     variants: [
-      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` }
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}${APP_CTA}` }
     ]
   };
   class FakeCodex {
@@ -198,7 +200,7 @@ test("opening variants pass strong and extreme reasoning effort", async (context
   const calls = [];
   const variants = {
     variants: [
-      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` }
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}${APP_CTA}` }
     ]
   };
   class FakeCodex {
@@ -225,7 +227,7 @@ test("opening variants can return a single selected style", async (context) => {
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
   const variants = {
     variants: [
-      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}` }
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"The wedding hall went silent when I said his name out loud and asked why the bride was wearing my mother's ring. ".repeat(8)}${APP_CTA}` }
     ]
   };
   class FakeCodex {
@@ -249,7 +251,7 @@ test("opening variant prompt forces a stop-scroll first sentence", async (contex
   const prompts = [];
   const variants = {
     variants: [
-      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"Why is the bride wearing my mother's ring in front of two hundred guests? ".repeat(8)}` }
+      { style: "conflict-first", styleLabel: "冲突先行", title: "She walked in anyway", openingTitle: "She wore my mother's ring", script: `${"Why is the bride wearing my mother's ring in front of two hundred guests? ".repeat(8)}${APP_CTA}` }
     ]
   };
   class FakeCodex {
@@ -278,6 +280,21 @@ test("opening variant prompt forces a stop-scroll first sentence", async (contex
   assert.match(prompts[0], /I walked into/);
   assert.match(prompts[0], /不要为了凑齐铁证、身份炸弹、婚礼或 mafia/);
   assert.match(prompts[0], /后半段出现的反转也要记入账本/);
+  assert.match(prompts[0], /结尾铁律/);
+  assert.match(prompts[0], /Search Secret Uncle on the Novel Master app to read the full story/);
+  assert.match(prompts[0], /禁止弱收束/);
+});
+
+test("spoken app CTA uses the promotion code and platform", () => {
+  assert.equal(
+    spokenAppCta({ platform: "NovelMaster", promotionCode: "454311" }),
+    "Search 454311 on the Novel Master app to read the full story."
+  );
+  assert.equal(
+    spokenAppCtaZh({ platform: "NovelMaster", promotionCode: "454311" }),
+    "去 Novel Master APP 搜索 454311，看完整版。"
+  );
+  assert.match(spokenAppCta({ platform: "GoodNovel", title: "Hidden Heiress" }), /GoodNovel app/);
 });
 
 test("opening source keeps a full 20k chapter and windows only longer text", () => {
@@ -295,7 +312,7 @@ test("opening source keeps a full 20k chapter and windows only longer text", () 
 test("two smart openings must use different core facts", async (context) => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-diverse-"));
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
-  const sameFact = `${"My husband sold me to a mob boss after he drugged my drink at dinner. He thought I would beg. I smiled instead and waited. ".repeat(6)}`;
+  const sameFact = `${"My husband sold me to a mob boss after he drugged my drink at dinner. He thought I would beg. I smiled instead and waited. ".repeat(6)}${APP_CTA}`;
   const service = createCodexBrainService({
     root: "C:/test-project",
     workDir,
@@ -324,7 +341,7 @@ test("two smart openings must use different core facts", async (context) => {
   );
   assert.equal(variantsReuseSameOpeningFact([
     { style: "smart-strongest", coreFact: "husband sold her to a mob boss", script: sameFact },
-    { style: "smart-strongest", coreFact: "the comments told him to take the other girl", script: `${"The comments told him to take the other girl on live, and he did. ".repeat(8)}` }
+    { style: "smart-strongest", coreFact: "the comments told him to take the other girl", script: `${"The comments told him to take the other girl on live, and he did. ".repeat(8)}${APP_CTA}` }
   ]), false);
 });
 
@@ -334,8 +351,8 @@ test("opening variant prompt asks for two different smart-hook facts and keeps c
   const prompts = [];
   const variants = {
     variants: [
-      { style: "smart-strongest", styleLabel: "智能最强钩子", title: "A", openingTitle: "He sold me tonight", script: `${"My husband sold me to a mob boss after he drugged my drink at dinner. ".repeat(8)}`, coreFact: "husband sold her to a mob boss", titleZh: "甲", openingTitleZh: "他今晚把我卖了", scriptZh: "丈夫把她卖了。" },
-      { style: "smart-strongest", styleLabel: "智能最强钩子", title: "B", openingTitle: "The comments chose her", script: `${"The comments told him to take the other girl on live, and he did it. ".repeat(8)}`, coreFact: "live comments told him to take the other girl", titleZh: "乙", openingTitleZh: "评论让他选她", scriptZh: "评论让他选另一个女孩。" }
+      { style: "smart-strongest", styleLabel: "智能最强钩子", title: "A", openingTitle: "He sold me tonight", script: `${"My husband sold me to a mob boss after he drugged my drink at dinner. ".repeat(8)}${APP_CTA}`, coreFact: "husband sold her to a mob boss", titleZh: "甲", openingTitleZh: "他今晚把我卖了", scriptZh: "丈夫把她卖了。" },
+      { style: "smart-strongest", styleLabel: "智能最强钩子", title: "B", openingTitle: "The comments chose her", script: `${"The comments told him to take the other girl on live, and he did it. ".repeat(8)}${APP_CTA}`, coreFact: "live comments told him to take the other girl", titleZh: "乙", openingTitleZh: "评论让他选她", scriptZh: "评论让他选另一个女孩。" }
     ]
   };
   class FakeCodex {
@@ -360,6 +377,7 @@ test("opening variant prompt asks for two different smart-hook facts and keeps c
   assert.match(prompts[0], /coreFact 和第一句必须指向不同的原文事件/);
   assert.match(prompts[0], /故事频道：女频/);
   assert.match(prompts[0], /小说卖点：直播评论反转/);
+  assert.match(prompts[0], /Search Secret Uncle on the Novel Master app to read the full story/);
 });
 
 test("novel marketing rejects source text that is too short", async () => {
