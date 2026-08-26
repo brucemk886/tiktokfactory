@@ -18,6 +18,7 @@ import { createFeishuBookService } from "./feishu-books.js";
 import { createAudioLibraryService } from "./audio-library.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
 import { createNovelSeedService } from "./novel-seed-service.js";
+import { planLocalBatchAudioVersions, runLocalBatchAudioVersions } from "./novel-batch-audio-job.js";
 import { createNovelEffectService } from "./novel-effect-service.js";
 import { createNovelLearningService } from "./novel-learning-service.js";
 import { createNovelStrategyService } from "./novel-strategy-service.js";
@@ -113,6 +114,7 @@ const novelContentLibrary = createNovelContentLibraryService({
   analyticsService: tiktokAnalytics,
   readPublishRecords
 });
+let localBatchAudioRunning = false;
 const novelSeedService = createNovelSeedService({
   workDir,
   novelContentLibrary,
@@ -1200,6 +1202,56 @@ const server = http.createServer(async (req, res) => {
       if (session.user.role !== "admin") return sendJson(res, 403, { error: "Only administrators can manage the official strategy." });
       const payload = await readJsonBody(req);
       return sendJson(res, 200, novelStrategyService.rollback(payload.versionId));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/novel-content/batch-audio-versions") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以批量出音频版本。" });
+      if (localBatchAudioRunning) return sendJson(res, 409, { error: "上一批还在跑，先等工人把钩子和配音做完。" });
+      try {
+        const payload = await readJsonBody(req);
+        const planned = await planLocalBatchAudioVersions({
+          novelIds: payload.novelIds,
+          count: payload.count,
+          novelContentLibrary
+        });
+        const queued = planned.filter((item) => !item.skipped);
+        if (!queued.length) {
+          return sendJson(res, 400, { error: planned[0]?.reason || "勾选的书都不用再出音频版本。" });
+        }
+        const settings = novelSeedService.getSettings();
+        localBatchAudioRunning = true;
+        runLocalBatchAudioVersions({
+          items: planned,
+          model: payload.model,
+          reasoningEffort: payload.reasoningEffort || "medium",
+          voiceId: payload.voiceId || settings.voiceId,
+          speechSpeed: payload.speechSpeed ?? settings.speechSpeed,
+          speakOpeningTitle: payload.speakOpeningTitle === true,
+          novelContentLibrary,
+          generateOpeningVariants: (input) => codexBrain.generateOpeningVariants(input),
+          generateAudio: (audioPayload) => runAudioGenerateJob({
+            root,
+            workDir,
+            config: readConfig(root),
+            payload: audioPayload
+          })
+        }).catch((error) => {
+          console.error("batch-audio-versions", error?.message || error);
+        }).finally(() => {
+          localBatchAudioRunning = false;
+        });
+        return sendJson(res, 200, {
+          accepted: true,
+          queued: true,
+          count: queued.length,
+          skipped: planned.length - queued.length,
+          items: planned,
+          message: `已开始为本机 ${queued.length} 本写钩子并配音。不要关 Local Factory。`
+        });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "批量出音频失败。" });
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/novel-content/seed-settings") {

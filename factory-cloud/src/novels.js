@@ -1,6 +1,13 @@
 import { assembleOfficialNovelEffects, slimEffectsPage } from "../../scripts/novel-effect-core.js";
 import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
 import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById } from "../../scripts/novel-overview.js";
+import {
+  BATCH_AUDIO_MIN_SOURCE,
+  batchOpeningStyleIds,
+  openingVariantScriptPayloads,
+  remainingAudioVersionCount,
+  uniqueNovelIds
+} from "../../scripts/novel-batch-audio.js";
 import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
@@ -48,6 +55,11 @@ export async function handleNovels(request, env, url, session) {
   if (method === "POST" && pathname === "/api/novel-content/novels") {
     const novel = await createNovel(db, await readJson(request));
     return json({ novel }, 201);
+  }
+
+  if (method === "POST" && pathname === "/api/novel-content/batch-audio-versions") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以批量出音频版本。", 403);
+    return json(await enqueueBatchAudioVersions(db, session.user, await readJson(request)));
   }
 
   const novelMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)$/);
@@ -333,6 +345,88 @@ export async function hydrateNovel(db, id) {
   return {
     ...novel,
     scripts: store.scripts.filter((item) => item.novelId === novel.id)
+  };
+}
+
+export async function persistOpeningVariantScripts(db, payload = {}, result = {}) {
+  const novelId = String(payload.novelId || "").trim();
+  if (!novelId) return [];
+  const novel = await hydrateNovel(db, novelId);
+  if (!novel) return [];
+  const extras = { speakOpeningTitle: payload.speakOpeningTitle === true };
+  const scripts = [];
+  for (const item of openingVariantScriptPayloads(novel, result.variants, extras)) {
+    scripts.push(await createScript(db, novel.id, item));
+  }
+  return scripts;
+}
+
+export async function enqueueBatchAudioVersions(db, user, body = {}) {
+  const novelIds = uniqueNovelIds(body.novelIds);
+  if (!novelIds.length) throw Object.assign(new Error("请先勾选要出音频的小说。"), { statusCode: 400 });
+  const count = Number(body.count) || 3;
+  const settings = await kvGet(db, "novel-seed-settings", {});
+  const voiceId = String(body.voiceId || settings.voiceId || "").trim();
+  const speechSpeed = body.speechSpeed ?? settings.speechSpeed;
+  const { enqueueJob } = await import("./jobs.js");
+  const items = [];
+  for (const novelId of novelIds) {
+    const novel = await hydrateNovel(db, novelId);
+    if (!novel) {
+      items.push({ novelId, skipped: true, reason: "没有找到该小说。" });
+      continue;
+    }
+    if (String(novel.sourceContent || "").trim().length < BATCH_AUDIO_MIN_SOURCE) {
+      items.push({ novelId, title: novel.title, skipped: true, reason: "免费章节太短，先补章节再出。" });
+      continue;
+    }
+    const needed = remainingAudioVersionCount(novel.scripts, count);
+    if (!needed) {
+      items.push({ novelId, title: novel.title, skipped: true, reason: `已经有足够的保存或已配音版本。`, needed: 0 });
+      continue;
+    }
+    const styles = batchOpeningStyleIds(needed);
+    const job = await enqueueJob(db, {
+      type: "opening-variants",
+      title: `${novel.title} · ${styles.length} 个音频版本`,
+      payload: {
+        novelId: novel.id,
+        title: novel.title,
+        language: "English",
+        sourceText: novel.sourceContent || "",
+        category: novel.category || "",
+        platform: novel.platform || "",
+        promotionCode: novel.promotionCode || "",
+        sellingPoint: novel.sellingPoint || "",
+        baseOpening: "",
+        styles,
+        model: body.model || "gpt-5.6-sol",
+        reasoningEffort: body.reasoningEffort || "medium",
+        autoKeep: true,
+        autoVoice: true,
+        voiceId,
+        speechSpeed,
+        speakOpeningTitle: body.speakOpeningTitle === true
+      },
+      createdBy: user?.username || ""
+    });
+    items.push({
+      novelId: novel.id,
+      title: novel.title,
+      skipped: false,
+      needed: styles.length,
+      jobId: job.id
+    });
+  }
+  const queued = items.filter((item) => !item.skipped).length;
+  if (!queued) throw Object.assign(new Error(items[0]?.reason || "勾选的书都不用再出音频版本。"), { statusCode: 400 });
+  return {
+    accepted: true,
+    queued: true,
+    count: queued,
+    skipped: items.length - queued,
+    items,
+    message: `已下发 ${queued} 本，工人会按本写钩子再配音。已有 3 条的已跳过。`
   };
 }
 

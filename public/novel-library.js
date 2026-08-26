@@ -26,7 +26,11 @@ const elements = {
   search: document.querySelector("#searchInput"),
   listStatus: document.querySelector("#listStatus"),
   list: document.querySelector("#bookList"),
-  pager: document.querySelector("#bookPager")
+  pager: document.querySelector("#bookPager"),
+  batchBar: document.querySelector("#batchBar"),
+  selectVisible: document.querySelector("#selectVisibleBtn"),
+  batchAudioButton: document.querySelector("#batchAudioBtn"),
+  batchStatus: document.querySelector("#batchStatus")
 };
 
 const state = {
@@ -38,7 +42,9 @@ const state = {
   pageSize: 20,
   searchTimer: null,
   role: document.documentElement.dataset.role || "",
-  deletingId: ""
+  deletingId: "",
+  selectedIds: new Set(),
+  batching: false
 };
 
 elements.form.addEventListener("submit", saveBook);
@@ -48,6 +54,10 @@ elements.deleteButton.addEventListener("click", () => deleteBook(elements.bookId
 elements.importButton.addEventListener("click", importFromFeishu);
 elements.promotionCode.addEventListener("input", updatePromotionCopy);
 elements.chapters.addEventListener("input", updateChapterCount);
+elements.selectVisible?.addEventListener("change", () => {
+  toggleVisibleSelection(elements.selectVisible.checked);
+});
+elements.batchAudioButton?.addEventListener("click", startBatchAudioVersions);
 elements.search.addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadBooks, 250);
@@ -80,6 +90,7 @@ async function loadCurrentRole() {
     state.role = data.user?.role || "";
     if (state.novels.length) renderBooks();
     syncEditorDeleteButton();
+    syncBatchBar();
   } catch {
     state.role = document.documentElement.dataset.role || state.role;
   }
@@ -87,6 +98,10 @@ async function loadCurrentRole() {
 
 function canDeleteBooks() {
   return state.role === "admin" || document.documentElement.dataset.role === "admin";
+}
+
+function canBatchAudio() {
+  return canDeleteBooks();
 }
 
 async function loadBooks({ resetPage = true } = {}) {
@@ -132,12 +147,14 @@ function renderBooks() {
     : "0 本";
   elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 全书库 ${counts.novelCount} · 重点 ${counts.featuredCount}`;
   if (!novels.length) {
-    elements.list.innerHTML = `<tr><td colspan="8"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
+    elements.list.innerHTML = `<tr><td colspan="${canBatchAudio() ? 9 : 8}"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
+    syncBatchBar();
     return;
   }
   elements.list.innerHTML = pageNovels.map((novel) => `
     <tr>
+      ${canBatchAudio() ? `<td class="cell-check"><input type="checkbox" data-select-id="${escapeHtml(novel.id)}" ${state.selectedIds.has(novel.id) ? "checked" : ""} /></td>` : `<td class="cell-check"></td>`}
       <td class="cell-date">${escapeHtml(formatDate(novel.createdAt))}</td>
       <td class="cell-title">
         <strong>${escapeHtml(novel.title)}</strong>
@@ -167,7 +184,15 @@ function renderBooks() {
   elements.list.querySelectorAll("[data-audio-id]").forEach((link) => {
     link.addEventListener("click", () => stashRewriteNovel(link.dataset.audioId));
   });
+  elements.list.querySelectorAll("[data-select-id]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) state.selectedIds.add(input.dataset.selectId);
+      else state.selectedIds.delete(input.dataset.selectId);
+      syncBatchBar();
+    });
+  });
   renderPager(novels.length, pageCount);
+  syncBatchBar();
 }
 
 function renderPager(total, pageCount) {
@@ -332,6 +357,7 @@ async function openEditor(id = "") {
   elements.editorView.hidden = false;
   elements.createButton.hidden = true;
   elements.importButton.hidden = true;
+  if (elements.batchBar) elements.batchBar.hidden = true;
   elements.title.focus();
 }
 
@@ -384,6 +410,7 @@ function showCatalog() {
   elements.catalogView.hidden = false;
   elements.createButton.hidden = false;
   elements.importButton.hidden = false;
+  syncBatchBar();
 }
 
 function promotionCopyFromCode(code = "") {
@@ -396,6 +423,69 @@ function updatePromotionCopy() {
 
 function updateChapterCount() {
   elements.chapterCount.textContent = `${formatNumber(elements.chapters.value.length)} / 200,000`;
+}
+
+function toggleVisibleSelection(checked) {
+  for (const novel of visibleNovels()) {
+    if (checked) state.selectedIds.add(novel.id);
+    else state.selectedIds.delete(novel.id);
+  }
+  renderBooks();
+}
+
+function selectedNovelIds() {
+  return [...state.selectedIds].filter((id) => state.novels.some((novel) => novel.id === id));
+}
+
+function syncBatchBar() {
+  if (!elements.batchBar) return;
+  const show = canBatchAudio() && !elements.catalogView.hidden;
+  elements.batchBar.hidden = !show;
+  if (!show) return;
+  const visible = visibleNovels();
+  const selected = selectedNovelIds();
+  if (elements.selectVisible) {
+    elements.selectVisible.checked = Boolean(visible.length) && visible.every((novel) => state.selectedIds.has(novel.id));
+  }
+  if (elements.batchAudioButton) {
+    elements.batchAudioButton.disabled = state.batching || !selected.length;
+    elements.batchAudioButton.textContent = selected.length
+      ? `勾选的 ${selected.length} 本各出 3 个音频版本`
+      : "勾选的每本出 3 个音频版本";
+  }
+  if (elements.batchStatus && !state.batching) {
+    elements.batchStatus.textContent = selected.length
+      ? `已勾 ${selected.length} 本。点一下就写钩子并配音，已有 3 条的会跳过。本机工人不要关。`
+      : "先勾书。每本自动写 3 条钩子并配音，已有 3 条的会跳过。本机工人不要关。";
+    elements.batchStatus.className = "";
+  }
+}
+
+function setBatchStatus(message, tone = "") {
+  if (!elements.batchStatus) return;
+  elements.batchStatus.textContent = message;
+  elements.batchStatus.className = tone ? `is-${tone}` : "";
+}
+
+async function startBatchAudioVersions() {
+  const novelIds = selectedNovelIds();
+  if (!novelIds.length) return setBatchStatus("先勾选要出音频的小说。", "error");
+  if (!confirm(`将给 ${novelIds.length} 本各出 3 个音频版本。已有 3 条保存/配音的会跳过。本机工人要一直开着。继续？`)) return;
+  state.batching = true;
+  if (elements.batchAudioButton) elements.batchAudioButton.disabled = true;
+  setBatchStatus("正在下发给工人...", "");
+  try {
+    const result = await api("/api/novel-content/batch-audio-versions", {
+      method: "POST",
+      body: JSON.stringify({ novelIds, count: 3 })
+    });
+    setBatchStatus(result.message || `已下发 ${result.count || 0} 本。`, "ok");
+  } catch (error) {
+    setBatchStatus(error.message || "批量出音频失败。", "error");
+  } finally {
+    state.batching = false;
+    syncBatchBar();
+  }
 }
 
 function setFormStatus(message, tone = "") {

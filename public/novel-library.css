@@ -19,8 +19,15 @@
 .list-toolbar label { width: min(360px, 42%); }
 .list-status { color: var(--lf-muted, #6d6758); font-size: 12px; }
 .list-status.is-error, .form-actions > span.is-error { color: var(--lf-red, #c24741); }
+.batch-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: 10px; background: #fffdf4; }
+.batch-check-all { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.batch-check-all input { width: 16px; height: 16px; accent-color: #5c6a14; }
+.batch-bar #batchStatus { color: var(--lf-muted, #6d6758); font-size: 12px; }
+.batch-bar #batchStatus.is-ok { color: var(--lf-green, #2a7a52); }
+.batch-bar #batchStatus.is-error { color: var(--lf-red, #c24741); }
 .book-table-wrap { overflow: auto; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
-.book-table { width: 100%; min-width: 1240px; table-layout: fixed; border-collapse: collapse; }
+.book-table { width: 100%; min-width: 1280px; table-layout: fixed; border-collapse: collapse; }
+.book-table .col-check { width: 36px; }
 .book-table .col-date { width: 76px; }
 .book-table .col-title { width: auto; }
 .book-table .col-platform { width: 118px; }
@@ -32,6 +39,8 @@
 .book-table th, .book-table td { padding: 12px 10px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
 .book-table th { position: sticky; top: 0; background: #f6f0c8; color: #3d3a20; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .book-table td { font-size: 13px; color: var(--lf-text, #1d1a14); }
+.book-table .cell-check { width: 36px; text-align: center; }
+.book-table .cell-check input { width: 16px; height: 16px; accent-color: #5c6a14; }
 .book-table .cell-date { white-space: nowrap; }
 .book-table .cell-title { vertical-align: top; }
 .book-table .cell-title strong { display: block; margin-bottom: 4px; font-size: 15px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

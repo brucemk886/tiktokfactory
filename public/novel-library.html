@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说书单 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-library.css" />
+    <link rel="stylesheet" href="/novel-library.css?v=20260826-9" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page">
@@ -41,9 +41,18 @@
           <div id="listStatus" class="list-status">正在读取小说书单...</div>
           <label><span class="sr-only">搜索小说</span><input id="searchInput" type="search" placeholder="搜索名称、书籍id、推广码、频道或推广文案" /></label>
         </div>
+        <div id="batchBar" class="batch-bar" hidden>
+          <label class="batch-check-all">
+            <input id="selectVisibleBtn" type="checkbox" />
+            全选当前列表
+          </label>
+          <button id="batchAudioBtn" class="primary-action" type="button">勾选的每本出 3 个音频版本</button>
+          <span id="batchStatus" role="status">先勾书。每本自动写 3 条钩子并配音，已有 3 条的会跳过。本机工人不要关。</span>
+        </div>
         <div class="book-table-wrap">
           <table class="book-table">
             <colgroup>
+              <col class="col-check" />
               <col class="col-date" />
               <col class="col-title" />
               <col class="col-platform" />
@@ -55,6 +64,7 @@
             </colgroup>
             <thead>
               <tr>
+                <th class="cell-check"><span class="sr-only">选择</span></th>
                 <th>日期</th>
                 <th>书名</th>
                 <th>平台</th>
@@ -119,6 +129,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-library.js" type="module"></script>
+    <script src="/novel-library.js?v=20260826-9" type="module"></script>
   </body>
 </html>

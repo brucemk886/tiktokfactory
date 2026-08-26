@@ -1,7 +1,7 @@
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { attachAudioGenerateResults, mergeImportedNovelStore } from "./novels.js";
+import { attachAudioGenerateResults, buildAudioGeneratePayload, mergeImportedNovelStore, persistOpeningVariantScripts } from "./novels.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 
@@ -354,6 +354,11 @@ async function handleWorkerApi(request, env, url) {
         await attachAudioGenerateResults(env.DB, result.items);
       }
     }
+    if (job?.type === "opening-variants" && nextStatus === "done") {
+      await autoKeepAndVoiceOpeningJob(env.DB, job, result).catch((error) => {
+        console.error("autoKeepAndVoiceOpeningJob", error?.message || error);
+      });
+    }
     return json({ ok: true, cancelled: nextStatus === "cancelled" });
   }
 
@@ -524,6 +529,56 @@ function slimJobResult(value) {
   };
 }
 
+async function autoKeepAndVoiceOpeningJob(db, job, result) {
+  const payload = parseJson(job.payload_json, {});
+  if (!payload.autoKeep || payload.autoKeptDone) return;
+  const scripts = await persistOpeningVariantScripts(db, payload, result);
+  if (!scripts.length) return;
+  let audioJobId = "";
+  if (payload.autoVoice) {
+    const audioPayload = await buildAudioGeneratePayload(db, {
+      novelId: payload.novelId,
+      novelTitle: payload.title,
+      voiceId: payload.voiceId,
+      speechSpeed: payload.speechSpeed,
+      speakOpeningTitle: payload.speakOpeningTitle === true,
+      items: scripts.map((script) => ({
+        novelId: script.novelId,
+        novelTitle: payload.title,
+        scriptId: script.id,
+        title: script.title,
+        script: script.text,
+        openingTitle: script.openingTitle,
+        speakOpeningTitle: script.speakOpeningTitle === true,
+        voiceId: payload.voiceId,
+        speechSpeed: payload.speechSpeed,
+        sourceType: script.sourceType
+      }))
+    });
+    const audioJob = await enqueueJob(db, {
+      type: "audio-generate",
+      title: `${payload.title || "小说"} · 配音 ${audioPayload.items.length} 条`,
+      payload: audioPayload,
+      createdBy: job.created_by || ""
+    });
+    audioJobId = audioJob.id;
+  }
+  const existing = parseJson(job.result_json, {});
+  const nextPayload = { ...payload, autoKeptDone: true };
+  await db.prepare("UPDATE factory_jobs SET payload_json = ?, result_json = ?, updated_at = ? WHERE id = ?")
+    .bind(
+      JSON.stringify(nextPayload),
+      JSON.stringify({
+        ...existing,
+        autoKeptScriptIds: scripts.map((script) => script.id),
+        audioJobId
+      }),
+      now(),
+      job.id
+    )
+    .run();
+}
+
 export function persistableJobResult(value) {
   const result = value && typeof value === "object" ? value : {};
   const slim = slimJobResult(result);
@@ -536,6 +591,10 @@ export function persistableJobResult(value) {
     slim.model = String(result.model || "").slice(0, 120);
     slim.reasoningEffort = String(result.reasoningEffort || "").slice(0, 40);
   }
+  if (Array.isArray(result.autoKeptScriptIds)) {
+    slim.autoKeptScriptIds = result.autoKeptScriptIds.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 10);
+  }
+  if (result.audioJobId) slim.audioJobId = String(result.audioJobId).slice(0, 120);
   if (Array.isArray(result.titles)) {
     slim.titles = result.titles.slice(0, 10).map((item) => ({
       id: String(item?.id || "").slice(0, 120),
