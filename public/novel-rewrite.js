@@ -480,27 +480,23 @@ async function restoreLatestOpeningJob() {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`);
     const job = data.job;
     if (!job?.jobId || (job.jobId === state.openingJobId && state.variants.length)) return;
+    if (!["queued", "running"].includes(String(job.status || ""))) return;
     state.openingJobId = job.jobId;
-    let result = job.result || {};
-    if (["queued", "running"].includes(String(job.status || ""))) {
-      const startedAt = Number(job.createdAt) || Date.now();
-      const count = Array.isArray(job.payload?.styles) ? job.payload.styles.length : selectedStyleIds().length;
-      beginVariantGeneration(count || 2);
-      elements.variantStatus.textContent = `${job.message || "正在恢复尚未完成的开头任务..."} 已等待 ${formatWait(Date.now() - startedAt)}。`;
-      result = await waitForCloudJob(job.jobId, {
-        api,
-        attempts: 900,
-        onProgress: (progress) => {
-          elements.variantStatus.textContent = `${progress.message || "工人机正在生成强钩子开头..."} 已等待 ${formatWait(Date.now() - startedAt)}。`;
-        }
-      });
-    }
-    if (job.status === "done" || Array.isArray(result.variants)) {
-      applyOpeningVariantResult(result, { restored: true });
-    }
+    const startedAt = Number(job.createdAt) || Date.now();
+    const count = Array.isArray(job.payload?.styles) ? job.payload.styles.length : selectedStyleIds().length;
+    beginVariantGeneration(count || 2);
+    elements.variantStatus.textContent = `${job.message || "正在恢复尚未完成的开头任务..."} 已等待 ${formatWait(Date.now() - startedAt)}。`;
+    const result = await waitForCloudJob(job.jobId, {
+      api,
+      attempts: 900,
+      onProgress: (progress) => {
+        elements.variantStatus.textContent = `${progress.message || "工人机正在生成强钩子开头..."} 已等待 ${formatWait(Date.now() - startedAt)}。`;
+      }
+    });
+    if (Array.isArray(result.variants)) applyOpeningVariantResult(result);
   } catch (error) {
     if (elements.variantPanel && !elements.variantPanel.hidden) {
-      elements.variantStatus.textContent = error.message || "恢复上次开头任务失败。";
+      elements.variantStatus.textContent = error.message || "恢复未完成的开头任务失败。";
     }
   } finally {
     state.restoringOpeningJob = false;
