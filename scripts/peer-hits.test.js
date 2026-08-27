@@ -5,6 +5,7 @@ import {
   attachFactoryNovel,
   attachPeerHitTimes,
   attachScaleRunMarks,
+  collapseDuplicateAudioScripts,
   collapseScaleRunHits,
   planPeerHitPublishedAtWrites,
   collectImportItems,
@@ -239,6 +240,16 @@ test("keeps only the best-playing video in a scale-run cluster", () => {
   assert.equal(collapsed[0].importedToAudioBoard, true);
   assert.equal(collapsed[0].scaleRun.videoCount, 3);
   assert.equal(collapseScaleRunHits(marked.filter((item) => item.id !== "h1")).map((item) => item.id).join(","), "h2,h4");
+});
+
+test("keeps one audio card when the same clip is imported twice", () => {
+  const scaleRun = { videoCount: 3, playCount: 782100, videos: [{ id: "h1" }, { id: "h2" }, { id: "h3" }] };
+  const collapsed = collapseDuplicateAudioScripts([
+    { id: "s1", mixEnabled: true, createdAt: "2026-08-27T08:00:00.000Z", audio: { size: 7843884, duration: 490 }, scaleRun },
+    { id: "s2", mixEnabled: true, createdAt: "2026-08-27T09:00:00.000Z", audio: { size: 7846809, duration: 490.3 }, scaleRun },
+    { id: "s3", mixEnabled: true, createdAt: 3, audio: { size: 2_200_000, duration: 80 } }
+  ]);
+  assert.deepEqual(collapsed.map((item) => item.id), ["s2", "s3"]);
 });
 
 test("derives TikTok publish time from the video id", () => {

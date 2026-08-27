@@ -393,6 +393,69 @@ export function scaleRunForScript(script, markedHits = []) {
   return (Array.isArray(markedHits) ? markedHits : []).find((hit) => hit.scaleRun && clipsAreNearDuplicate(clip, clipOfHit(hit)))?.scaleRun || null;
 }
 
+function scriptClip(script) {
+  return {
+    size: Number(script?.audio?.size || script?.audioSize || 0),
+    duration: Number(script?.audio?.duration || script?.audioDuration || 0)
+  };
+}
+
+function scaleRunKey(script) {
+  const videos = Array.isArray(script?.scaleRun?.videos) ? script.scaleRun.videos : [];
+  if (videos.length < 2) return "";
+  return videos.map((video) => String(video.id || video.videoUrl || "")).filter(Boolean).sort().join("|");
+}
+
+function scriptTime(script) {
+  const raw = script?.audio?.createdAt || script?.createdAt || 0;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function scriptBetter(left, right) {
+  const rank = (script) => [
+    script?.mixEnabled === false ? 0 : 1,
+    Number(script?.scaleRun?.playCount || script?.performance?.totalViews || 0),
+    scriptTime(script)
+  ];
+  const a = rank(left);
+  const b = rank(right);
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return a[index] > b[index];
+  }
+  return false;
+}
+
+export function collapseDuplicateAudioScripts(scripts = []) {
+  const list = Array.isArray(scripts) ? scripts : [];
+  const hidden = new Set();
+  const used = new Set();
+  for (let index = 0; index < list.length; index++) {
+    const current = list[index];
+    if (used.has(current.id)) continue;
+    const cluster = [current];
+    used.add(current.id);
+    const key = scaleRunKey(current);
+    for (let next = index + 1; next < list.length; next++) {
+      const item = list[next];
+      if (used.has(item.id)) continue;
+      const sameScale = Boolean(key) && scaleRunKey(item) === key;
+      const sameClip = cluster.some((member) => clipsAreNearDuplicate(scriptClip(member), scriptClip(item)));
+      if (!sameScale && !sameClip) continue;
+      cluster.push(item);
+      used.add(item.id);
+    }
+    if (cluster.length < 2) continue;
+    const keep = cluster.reduce((best, item) => (scriptBetter(item, best) ? item : best));
+    for (const item of cluster) {
+      if (item.id !== keep.id) hidden.add(item.id);
+    }
+  }
+  return list.filter((script) => !hidden.has(script.id));
+}
+
 export function importedClipFingerprintsByNovel(scripts = []) {
   const map = new Map();
   for (const script of Array.isArray(scripts) ? scripts : []) {
