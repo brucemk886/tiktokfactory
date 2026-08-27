@@ -490,8 +490,8 @@ function syncBatchBar() {
   }
   if (elements.batchStatus && !state.batching) {
     elements.batchStatus.textContent = selected.length
-      ? `已勾 ${selected.length} 本，共 ${audioCount} 条音频，和上面的总音频同一口径。点一下保存到本机 F:\\音频目录\\书名\\。本机工人不要关。`
-      : "先勾书，再保存这些书的已生成音频到本机。数量和上面的总音频一致。本机工人不要关。";
+      ? `已勾 ${selected.length} 本，共 ${audioCount} 条音频。点一下保存到本机 F:\\音频目录\\书名\\。本机工人不要关。`
+      : "先勾书，再保存这些书的已生成音频到本机。本机工人不要关。";
     elements.batchStatus.className = "";
   }
 }
