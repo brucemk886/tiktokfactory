@@ -20,7 +20,8 @@ const elements = {
   selectVisible: document.querySelector("#selectVisibleBtn"),
   importToNovelsButton: document.querySelector("#importToNovelsBtn"),
   batchStatus: document.querySelector("#batchStatus"),
-  hitList: document.querySelector("#hitList")
+  hitList: document.querySelector("#hitList"),
+  pager: document.querySelector("#hitPager")
 };
 
 const state = {
@@ -29,7 +30,9 @@ const state = {
   platform: "all",
   range: "all",
   selectedIds: new Set(),
-  importing: false
+  importing: false,
+  page: 1,
+  pageSize: 20
 };
 
 elements.toggleImportButton?.addEventListener("click", () => {
@@ -45,6 +48,7 @@ elements.importForm?.addEventListener("submit", (event) => {
 });
 elements.searchInput?.addEventListener("input", () => {
   state.query = elements.searchInput.value.trim();
+  state.page = 1;
   renderList();
 });
 elements.selectVisible?.addEventListener("change", () => {
@@ -55,6 +59,7 @@ document.querySelectorAll("[data-platform]").forEach((button) => {
   button.addEventListener("click", () => {
     if (state.platform === button.dataset.platform) return;
     state.platform = button.dataset.platform || "all";
+    state.page = 1;
     state.selectedIds.clear();
     document.querySelectorAll("[data-platform]").forEach((item) => item.classList.toggle("is-active", item === button));
     renderList();
@@ -64,6 +69,7 @@ document.querySelectorAll("[data-range]").forEach((button) => {
   button.addEventListener("click", () => {
     if (state.range === button.dataset.range) return;
     state.range = button.dataset.range || "all";
+    state.page = 1;
     state.selectedIds.clear();
     document.querySelectorAll("[data-range]").forEach((item) => item.classList.toggle("is-active", item === button));
     loadList();
@@ -93,20 +99,24 @@ async function loadList() {
 
 function renderList() {
   const items = visibleItems();
+  const pageCount = Math.max(1, Math.ceil(items.length / state.pageSize));
+  if (state.page > pageCount) state.page = pageCount;
+  const pageItems = items.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
   const importedCount = items.filter((item) => item.importedToAudioBoard).length;
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
-      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，播放量从高到低${importedCount ? `，${importedCount} 条已写入音频页` : ""}${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
+      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，第 ${state.page}/${pageCount} 页，播放量从高到低${importedCount ? `，${importedCount} 条已写入音频页` : ""}${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
       : emptyCopy();
     elements.listStatus.className = "list-status";
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="10"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="9"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    renderPager(0, 1);
     syncBatchBar();
     return;
   }
-  elements.hitList.innerHTML = items.map((item) => `
+  elements.hitList.innerHTML = pageItems.map((item) => `
     <tr${item.importedToAudioBoard ? " class=\"is-imported\"" : ""}>
       <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
@@ -116,7 +126,6 @@ function renderList() {
       <td class="cell-play">${escapeHtml(formatPlayCount(item.playCount))}</td>
       <td class="cell-video"><a href="${escapeAttr(item.videoUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(item.videoUrl))}</a></td>
       <td class="cell-audio">${item.audioId ? `<audio controls preload="none" src="/api/peer-hits/${encodeURIComponent(item.id)}/audio"></audio>` : "未导入"}</td>
-      <td class="cell-data">${escapeHtml(formatVideoData(item.videoData))}</td>
       <td class="row-actions">
         <button class="edit-button delete-button" type="button" data-delete-id="${escapeAttr(item.id)}">删除</button>
       </td>
@@ -132,6 +141,7 @@ function renderList() {
       syncBatchBar();
     });
   });
+  renderPager(items.length, pageCount);
   syncBatchBar();
 }
 
@@ -158,8 +168,17 @@ function visibleItems() {
   });
 }
 
+function pageItems() {
+  const items = visibleItems();
+  return items.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
+}
+
 function selectableItems() {
   return visibleItems().filter((item) => Boolean(item.audioId) && !item.importedToAudioBoard);
+}
+
+function selectablePageItems() {
+  return pageItems().filter((item) => Boolean(item.audioId) && !item.importedToAudioBoard);
 }
 
 function selectCell(item) {
@@ -169,7 +188,7 @@ function selectCell(item) {
 }
 
 function toggleVisibleSelection(checked) {
-  for (const item of selectableItems()) {
+  for (const item of selectablePageItems()) {
     if (checked) state.selectedIds.add(item.id);
     else state.selectedIds.delete(item.id);
   }
@@ -185,17 +204,19 @@ function pruneSelection() {
 
 function syncBatchBar() {
   const selectable = selectableItems();
+  const pageSelectable = selectablePageItems();
   const selected = selectable.filter((item) => state.selectedIds.has(item.id));
+  const pageSelected = pageSelectable.filter((item) => state.selectedIds.has(item.id));
   const matched = selected.filter((item) => item.factoryNovelId);
   if (elements.selectVisible) {
-    elements.selectVisible.checked = Boolean(selectable.length) && selected.length === selectable.length;
-    elements.selectVisible.indeterminate = selected.length > 0 && selected.length < selectable.length;
-    elements.selectVisible.disabled = state.importing || !selectable.length;
+    elements.selectVisible.checked = Boolean(pageSelectable.length) && pageSelected.length === pageSelectable.length;
+    elements.selectVisible.indeterminate = pageSelected.length > 0 && pageSelected.length < pageSelectable.length;
+    elements.selectVisible.disabled = state.importing || !pageSelectable.length;
   }
   if (elements.importToNovelsButton) elements.importToNovelsButton.disabled = state.importing || !selected.length;
   if (!elements.batchStatus || state.importing) return;
   if (!selected.length) {
-    setBatchStatus("勾选有音频、还没写入音频页、且小说id和平台能对上书单的条目。已写入的不会再导入。一次最多 20 条。");
+    setBatchStatus("勾选有音频、还没写入音频页、且小说id和平台能对上书单的条目。已写入的不会再导入。可跨页勾选。");
     return;
   }
   const extra = selected.length - matched.length;
@@ -260,42 +281,51 @@ async function importHits() {
 }
 
 async function importToNovels() {
-  const ids = selectableItems().map((item) => item.id).filter((id) => state.selectedIds.has(id)).slice(0, 20);
+  const ids = selectableItems().map((item) => item.id).filter((id) => state.selectedIds.has(id));
   if (!ids.length) return setBatchStatus("先勾选有音频的同行爆款。", "error");
+  const total = ids.length;
+  const chunkSize = 20;
   state.importing = true;
-  if (elements.importToNovelsButton) {
-    elements.importToNovelsButton.disabled = true;
-    elements.importToNovelsButton.textContent = "正在导入...";
-  }
-  setBatchStatus("正在按小说id和平台写入书单音频页...");
+  if (elements.importToNovelsButton) elements.importToNovelsButton.disabled = true;
+  let finished = 0;
+  const dirs = [];
+  const messages = [];
   try {
-    const data = await api("/api/peer-hits/import-to-novels", {
-      method: "POST",
-      body: JSON.stringify({ ids })
-    });
+    for (let offset = 0; offset < ids.length; offset += chunkSize) {
+      const chunk = ids.slice(offset, offset + chunkSize);
+      setImportProgress(finished, total, "正在写入音频页...");
+      const data = await api("/api/peer-hits/import-to-novels", {
+        method: "POST",
+        body: JSON.stringify({ ids: chunk })
+      });
+      if (data.message) messages.push(data.message);
+      const jobs = Array.isArray(data.jobs) ? data.jobs.filter((job) => job?.jobId) : [];
+      for (let index = 0; index < jobs.length; index += 1) {
+        const job = jobs[index];
+        const result = await waitForAudioJob(job.jobId, {
+          api,
+          onProgress: (progress) => setImportProgress(
+            finished,
+            total,
+            `本机 ${index + 1}/${jobs.length} · ${progress.message || `工人正在写入 ${job.novelTitle || "本机音频目录"}...`}`
+          )
+        });
+        if (result?.targetAudioDir) dirs.push(`${job.novelTitle || "小说"} → ${result.targetAudioDir}`);
+      }
+      finished = Math.min(offset + chunk.length, total);
+      setImportProgress(finished, total, jobs.length ? "本机这一批已写完" : "这一批已写入音频页");
+    }
     state.selectedIds.clear();
     await loadList();
-    const jobs = Array.isArray(data.jobs) ? data.jobs.filter((job) => job?.jobId) : [];
-    if (!jobs.length) {
-      setBatchStatus(data.message || "没有可导入的爆款音频。", data.imported ? "ok" : "error");
-      return;
-    }
-    const dirs = [];
-    for (const job of jobs) {
-      const result = await waitForAudioJob(job.jobId, {
-        api,
-        onProgress: (progress) => setBatchStatus(progress.message || `工人正在写入 ${job.novelTitle || "本机音频目录"}...`)
-      });
-      if (result?.targetAudioDir) dirs.push(`${job.novelTitle || "小说"} → ${result.targetAudioDir}`);
-    }
+    const summary = messages[messages.length - 1] || `已导入 ${finished} 条到书单音频页`;
     setBatchStatus(
       dirs.length
-        ? `${data.message || "已导入到音频页"}。本机已写入：${dirs.join("；")}`
-        : (data.message || "已导入到音频页。"),
+        ? `${summary}。进度 ${finished}/${total}。本机已写入：${dirs.join("；")}`
+        : `${summary}。进度 ${finished}/${total}。`,
       "ok"
     );
   } catch (error) {
-    setBatchStatus(error.message || "网页已导入，本机目录稍后写入。请确认本机工厂已启动。", "error");
+    setBatchStatus(`进度 ${finished}/${total}。${error.message || "网页已导入，本机目录稍后写入。请确认本机工厂已启动。"}`, "error");
   } finally {
     state.importing = false;
     if (elements.importToNovelsButton) {
@@ -303,11 +333,47 @@ async function importToNovels() {
       elements.importToNovelsButton.disabled = !selectableItems().some((item) => state.selectedIds.has(item.id));
     }
     if (elements.selectVisible) {
-      elements.selectVisible.disabled = !selectableItems().length;
+      elements.selectVisible.disabled = !selectablePageItems().length;
       elements.selectVisible.checked = false;
       elements.selectVisible.indeterminate = false;
     }
   }
+}
+
+function setImportProgress(done, total, detail = "") {
+  const label = `${done}/${total}`;
+  if (elements.importToNovelsButton) elements.importToNovelsButton.textContent = label;
+  setBatchStatus(detail ? `导入中 ${label}：${detail}` : `导入中 ${label}`);
+}
+
+function renderPager(total, pageCount) {
+  if (!elements.pager) return;
+  if (total <= state.pageSize) {
+    elements.pager.hidden = true;
+    elements.pager.innerHTML = "";
+    return;
+  }
+  elements.pager.hidden = false;
+  const buttons = [];
+  buttons.push(`<button type="button" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一页</button>`);
+  for (let page = 1; page <= pageCount; page += 1) {
+    if (pageCount > 9 && page !== 1 && page !== pageCount && Math.abs(page - state.page) > 2) {
+      if (buttons[buttons.length - 1] !== "<span>…</span>") buttons.push("<span>…</span>");
+      continue;
+    }
+    buttons.push(`<button type="button" data-page="${page}" class="${page === state.page ? "is-active" : ""}">${page}</button>`);
+  }
+  buttons.push(`<button type="button" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`);
+  elements.pager.innerHTML = `<span>每页 20 条 · 共 ${pageCount} 页</span>${buttons.join("")}`;
+  elements.pager.querySelectorAll("[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = Number(button.dataset.page);
+      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.page) return;
+      state.page = next;
+      renderList();
+      elements.hitList?.closest(".book-table-wrap")?.scrollIntoView({ block: "start" });
+    });
+  });
 }
 
 function readImportForm() {

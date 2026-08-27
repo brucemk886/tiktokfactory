@@ -1,15 +1,13 @@
-.peer-table { min-width: 1520px; }
+.peer-table { min-width: 1280px; }
 .peer-table .col-platform { width: 118px; }
 .peer-table .col-check { width: 36px; }
 .peer-table .col-play { width: 96px; }
 .peer-table .col-video { width: 200px; }
 .peer-table .col-audio { width: 220px; }
-.peer-table .col-data { width: 180px; }
 .peer-table .cell-audio audio { width: 100%; height: 32px; }
 .peer-table .col-actions { width: 88px; }
 .peer-table .cell-play { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .peer-table .cell-video a { color: #3d4710; font-weight: 800; word-break: break-all; }
-.peer-table .cell-data { color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.5; }
 .peer-table .cell-title a { color: inherit; text-decoration: none; }
 .peer-table .cell-title a:hover { text-decoration: underline; }
 .peer-table .cell-title { display: grid; gap: 6px; justify-items: start; }
