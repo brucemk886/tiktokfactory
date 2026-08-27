@@ -251,9 +251,11 @@ export function filterPeerHits(items, query = "") {
     item.platform,
     item.factoryNovelId,
     item.importedToAudioBoard ? "是 已写入音频页" : "否",
+    item.scaleRun ? "能跑量 同一音频 多条视频" : "",
     item.videoUrl,
     item.playCount,
-    JSON.stringify(item.videoData || {})
+    JSON.stringify(item.videoData || {}),
+    ...(Array.isArray(item.scaleRun?.videos) ? item.scaleRun.videos.flatMap((video) => [video.videoUrl, video.playCount, video.publishedAt]) : [])
   ].join(" ").toLowerCase().includes(needle));
 }
 
@@ -353,6 +355,34 @@ export function attachScaleRunMarks(hits = []) {
     }
   }
   return list;
+}
+
+export function collapseScaleRunHits(hits = []) {
+  const list = Array.isArray(hits) ? hits : [];
+  const hiddenIds = new Set();
+  const importedPrimaryIds = new Set();
+  const seen = new Set();
+  for (const hit of list) {
+    const videos = Array.isArray(hit.scaleRun?.videos) ? hit.scaleRun.videos : [];
+    if (videos.length < 2 || seen.has(hit.id)) continue;
+    const members = videos.map((video) => list.find((item) => item.id === video.id)).filter(Boolean);
+    for (const member of members) seen.add(member.id);
+    if (members.length < 2) continue;
+    const primary = [...members].sort((left, right) => {
+      const play = (Number(right.playCount) || 0) - (Number(left.playCount) || 0);
+      if (play) return play;
+      return (Number(right.publishedAt) || 0) - (Number(left.publishedAt) || 0);
+    })[0];
+    for (const member of members) {
+      if (member.id !== primary.id) hiddenIds.add(member.id);
+    }
+    if (members.some((item) => item.importedToAudioBoard)) importedPrimaryIds.add(primary.id);
+  }
+  return list.filter((hit) => !hiddenIds.has(hit.id)).map((hit) => (
+    importedPrimaryIds.has(hit.id) && !hit.importedToAudioBoard
+      ? { ...hit, importedToAudioBoard: true }
+      : hit
+  ));
 }
 
 export function scaleRunForScript(script, markedHits = []) {

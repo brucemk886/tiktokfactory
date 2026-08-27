@@ -4,6 +4,7 @@ import {
   attachFactoryNovel,
   attachPeerHitTimes,
   attachScaleRunMarks,
+  collapseScaleRunHits,
   collectImportItems,
   filterPeerHits,
   filterPeerHitsByTime,
@@ -32,12 +33,12 @@ export async function handlePeerHits(request, env, url, session) {
     const rows = await listPeerHitRows(db);
     const novels = await listNovelsMatchingPeerHits(db, rows);
     const importedIds = importedPeerHitIdSet(await listNovelScripts(db));
-    const items = sortPeerHits(filterPeerHitsByTime(
+    const items = sortPeerHits(collapseScaleRunHits(filterPeerHitsByTime(
       filterPeerHits(attachScaleRunMarks(attachPeerHitTimes(rows.map((item) => attachAudioBoardImportStatus(attachFactoryNovel(item, novels), importedIds)))), url.searchParams.get("query") || ""),
       url.searchParams.get("range") || "all",
       Date.now(),
       Number(url.searchParams.get("since")) || 0
-    ));
+    )));
     return json({ items, count: items.length });
   }
 

@@ -5,6 +5,7 @@ import {
   attachFactoryNovel,
   attachPeerHitTimes,
   attachScaleRunMarks,
+  collapseScaleRunHits,
   planPeerHitPublishedAtWrites,
   collectImportItems,
   filterPeerHits,
@@ -224,6 +225,20 @@ test("marks the same audio across multiple videos as a scale run", () => {
   assert.equal(marked[0].scaleRun.videos[0].playCount, 561500);
   assert.ok(marked[0].scaleRun.videos[0].publishedAt > 0);
   assert.deepEqual(scaleRunForScript({ peerHitId: "h1", audio: { size: 7843884 } }, marked), marked[0].scaleRun);
+});
+
+test("keeps only the best-playing video in a scale-run cluster", () => {
+  const marked = attachScaleRunMarks([
+    { id: "h1", factoryNovelId: "n1", audioId: "a1", audioSize: 7843884, playCount: 780000, importedToAudioBoard: false },
+    { id: "h2", factoryNovelId: "n1", audioId: "a2", audioSize: 7846809, playCount: 640000, importedToAudioBoard: true },
+    { id: "h3", factoryNovelId: "n1", audioId: "a3", audioSize: 7845000, playCount: 570000, importedToAudioBoard: false },
+    { id: "h4", factoryNovelId: "n1", audioId: "a4", audioSize: 1_200_000, playCount: 9 }
+  ]);
+  const collapsed = collapseScaleRunHits(marked);
+  assert.deepEqual(collapsed.map((item) => item.id), ["h1", "h4"]);
+  assert.equal(collapsed[0].importedToAudioBoard, true);
+  assert.equal(collapsed[0].scaleRun.videoCount, 3);
+  assert.equal(collapseScaleRunHits(marked.filter((item) => item.id !== "h1")).map((item) => item.id).join(","), "h2,h4");
 });
 
 test("derives TikTok publish time from the video id", () => {

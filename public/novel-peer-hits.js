@@ -103,9 +103,11 @@ function renderList() {
   if (state.page > pageCount) state.page = pageCount;
   const pageItems = items.slice((state.page - 1) * state.pageSize, state.page * state.pageSize);
   const importedCount = items.filter((item) => item.importedToAudioBoard).length;
+  const scoped = scopedItems();
+  const overlapped = Math.max(0, scoped.length - collapseScaleRunHits(scoped).length);
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
-      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，第 ${state.page}/${pageCount} 页，播放量从高到低${importedCount ? `，${importedCount} 条已写入音频页` : ""}${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
+      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，第 ${state.page}/${pageCount} 页，播放量从高到低${overlapped ? `，同一音频重叠收起 ${overlapped} 条` : ""}${importedCount ? `，${importedCount} 条已写入音频页` : ""}${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
       : emptyCopy();
     elements.listStatus.className = "list-status";
   }
@@ -157,13 +159,17 @@ function renderList() {
   syncBatchBar();
 }
 
-function visibleItems() {
-  const needle = state.query.toLowerCase();
-  const scoped = state.platform === "all"
+function scopedItems() {
+  return state.platform === "all"
     ? state.items
     : state.items.filter((item) => item.platform === state.platform);
+}
+
+function visibleItems() {
+  const needle = state.query.toLowerCase();
+  const collapsed = collapseScaleRunHits(scopedItems());
   const items = needle
-    ? scoped.filter((item) => [
+    ? collapsed.filter((item) => [
       item.novelTitle,
       item.novelId,
       item.platform,
@@ -172,14 +178,43 @@ function visibleItems() {
       item.scaleRun ? "能跑量 同一音频 多条视频" : "",
       formatPublishedAt(item.publishedAt),
       item.videoUrl,
-      formatVideoData(item.videoData)
+      formatVideoData(item.videoData),
+      ...(Array.isArray(item.scaleRun?.videos) ? item.scaleRun.videos.flatMap((video) => [
+        video.videoUrl,
+        formatPlayCount(video.playCount),
+        formatPublishedAt(video.publishedAt, true)
+      ]) : [])
     ].join(" ").toLowerCase().includes(needle))
-    : scoped;
+    : collapsed;
   return [...items].sort((left, right) => {
     const play = (Number(right.playCount) || 0) - (Number(left.playCount) || 0);
     if (play) return play;
     return (Number(right.updatedAt) || 0) - (Number(left.updatedAt) || 0);
   });
+}
+
+function collapseScaleRunHits(hits = []) {
+  const list = Array.isArray(hits) ? hits : [];
+  const hiddenIds = new Set();
+  const importedPrimaryIds = new Set();
+  const seen = new Set();
+  for (const hit of list) {
+    const videos = Array.isArray(hit.scaleRun?.videos) ? hit.scaleRun.videos : [];
+    if (videos.length < 2 || seen.has(hit.id)) continue;
+    const members = videos.map((video) => list.find((item) => item.id === video.id)).filter(Boolean);
+    for (const member of members) seen.add(member.id);
+    if (members.length < 2) continue;
+    const primary = [...members].sort((left, right) => (Number(right.playCount) || 0) - (Number(left.playCount) || 0))[0];
+    for (const member of members) {
+      if (member.id !== primary.id) hiddenIds.add(member.id);
+    }
+    if (members.some((item) => item.importedToAudioBoard)) importedPrimaryIds.add(primary.id);
+  }
+  return list.filter((hit) => !hiddenIds.has(hit.id)).map((hit) => (
+    importedPrimaryIds.has(hit.id) && !hit.importedToAudioBoard
+      ? { ...hit, importedToAudioBoard: true }
+      : hit
+  ));
 }
 
 function pageItems() {
