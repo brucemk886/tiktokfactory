@@ -26,7 +26,10 @@ const elements = {
   audioGroupSelect: document.querySelector("#audioGroupSelect"),
   audioGroupHint: document.querySelector("#audioGroupHint"),
   uploadAudioButton: document.querySelector("#uploadAudioBtn"),
+  uploadAudioTopButton: document.querySelector("#uploadAudioTopBtn"),
+  uploadAudioPanelButton: document.querySelector("#uploadAudioPanelBtn"),
   uploadAudioInput: document.querySelector("#uploadAudioInput"),
+  uploadStatus: document.querySelector("#uploadStatus"),
   speechSpeed: document.querySelector("#speechSpeed"),
   speechSpeedValue: document.querySelector("#speechSpeedValue"),
   reloadVoicesButton: document.querySelector("#reloadVoicesBtn"),
@@ -73,10 +76,9 @@ elements.audioGroupSelect?.addEventListener("change", () => {
   applyAudioGroupSelection();
   persistAudioSettings();
 });
-elements.uploadAudioButton?.addEventListener("click", () => {
-  if (elements.uploadAudioInput) elements.uploadAudioInput.dataset.scriptIds = "";
-  elements.uploadAudioInput?.click();
-});
+elements.uploadAudioButton?.addEventListener("click", () => startAudioUpload());
+elements.uploadAudioTopButton?.addEventListener("click", () => startAudioUpload());
+elements.uploadAudioPanelButton?.addEventListener("click", () => startAudioUpload());
 elements.uploadAudioInput?.addEventListener("change", () => {
   const files = Array.from(elements.uploadAudioInput.files || []);
   elements.uploadAudioInput.value = "";
@@ -120,6 +122,9 @@ async function loadPage() {
     elements.listStatus.textContent = error.message || "读取小说音频失败。";
     elements.listStatus.className = "list-status is-error";
   }
+  if (location.hash === "#upload") {
+    document.querySelector(".upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function scriptHasAudio(script) {
@@ -131,7 +136,7 @@ function renderNovel(novel) {
   const pending = scripts.filter((script) => !scriptHasAudio(script));
   const audios = scripts.filter(scriptHasAudio);
   elements.pageTitle.textContent = novel.title;
-  elements.pageLead.textContent = "改写页保存的文案在这里配音。没点保存的预览不会出现。";
+  elements.pageLead.textContent = "改写页保存的文案在这里配音。也可以直接上传已经做好的 mp3。没点保存的预览不会出现。";
   elements.summary.hidden = false;
   elements.summary.innerHTML = [
     novel.platform,
@@ -817,20 +822,30 @@ async function previewSelectedVoice() {
   }
 }
 
-function pickAndUploadAudios(scriptIds) {
+function startAudioUpload(scriptIds) {
   if (!elements.uploadAudioInput) return;
   elements.uploadAudioInput.dataset.scriptIds = Array.isArray(scriptIds) ? scriptIds.join(",") : "";
   elements.uploadAudioInput.click();
+}
+
+function pickAndUploadAudios(scriptIds) {
+  startAudioUpload(scriptIds);
+}
+
+function setUploadButtonsBusy(busy) {
+  for (const button of [elements.uploadAudioButton, elements.uploadAudioTopButton, elements.uploadAudioPanelButton]) {
+    if (!button) continue;
+    button.disabled = busy;
+    if (button === elements.uploadAudioPanelButton) button.textContent = busy ? "正在上传..." : "选择 mp3 上传";
+    else button.textContent = busy ? "正在上传..." : "上传音频";
+  }
 }
 
 async function uploadExistingAudios(fileList, onlyScriptIds) {
   const files = Array.from(fileList || []).filter((file) => /\.mp3$/i.test(file.name || "") || /audio\/mpeg|audio\/mp3/i.test(file.type || ""));
   if (!files.length) return setAudioStatus("请选择 mp3 文件。", "error");
   if (!state.novelId) return setAudioStatus("请先打开一本小说。", "error");
-  if (elements.uploadAudioButton) {
-    elements.uploadAudioButton.disabled = true;
-    elements.uploadAudioButton.textContent = "正在上传...";
-  }
+  setUploadButtonsBusy(true);
   setAudioStatus(`正在上传 ${files.length} 条已有音频...`);
   try {
     const form = new FormData();
@@ -859,10 +874,7 @@ async function uploadExistingAudios(fileList, onlyScriptIds) {
   } catch (error) {
     setAudioStatus(error.message || "上传音频失败。", "error");
   } finally {
-    if (elements.uploadAudioButton) {
-      elements.uploadAudioButton.disabled = false;
-      elements.uploadAudioButton.textContent = "上传音频";
-    }
+    setUploadButtonsBusy(false);
   }
 }
 
@@ -874,9 +886,15 @@ async function apiUpload(url, form) {
 }
 
 function setAudioStatus(message, tone = "") {
-  if (!elements.audioStatus) return;
-  elements.audioStatus.textContent = message;
-  elements.audioStatus.className = tone === "ok" ? "list-status is-ok" : tone === "error" ? "list-status is-error" : "list-status";
+  const className = tone === "ok" ? "list-status is-ok" : tone === "error" ? "list-status is-error" : "list-status";
+  if (elements.audioStatus) {
+    elements.audioStatus.textContent = message;
+    elements.audioStatus.className = className;
+  }
+  if (elements.uploadStatus) {
+    elements.uploadStatus.textContent = message;
+    elements.uploadStatus.className = className;
+  }
 }
 
 async function api(url, options = {}) {

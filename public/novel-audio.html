@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css?v=20260826-8" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260826-9" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -16,15 +16,25 @@
         <div>
           <p class="library-kicker">NOVEL AUDIO</p>
           <h1 id="pageTitle">小说详情</h1>
-          <p id="pageLead">改写页保存的文案在这里配音。先选声音，再勾选待配音开头一键生成。</p>
+          <p id="pageLead">改写页保存的文案在这里配音。也可以直接上传已经做好的 mp3。</p>
         </div>
         <div class="header-actions">
+          <button id="uploadAudioTopBtn" class="primary-action" type="button">上传音频</button>
           <a class="quiet-action" href="/novel-library">返回书单</a>
           <a id="rewriteLink" class="quiet-action" href="/novel-rewrite">去改写</a>
         </div>
       </header>
 
       <section id="summary" class="audio-summary" hidden></section>
+
+      <section class="upload-panel">
+        <div class="section-heading">
+          <div><span>IMPORT</span><h2>上传已有音频</h2></div>
+          <button id="uploadAudioPanelBtn" class="primary-action" type="button">选择 mp3 上传</button>
+        </div>
+        <p class="hint">已经用别的工具做好的 mp3，点这里就能挂到这本书。有待配音文案就按顺序贴上去，没有就新增一条「上传音频」。</p>
+        <p id="uploadStatus" class="list-status" role="status"></p>
+      </section>
 
       <section class="voice-panel">
         <div class="section-heading">
@@ -127,6 +137,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js?v=20260826-8" type="module"></script>
+    <script src="/novel-audio.js?v=20260826-9" type="module"></script>
   </body>
 </html>

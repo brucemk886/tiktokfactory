@@ -171,6 +171,7 @@ function renderBooks() {
       <td class="row-actions">
         <button class="edit-button" type="button" data-edit-id="${escapeHtml(novel.id)}">编辑</button>
         <a class="edit-button audio-link" href="/novel-audio?novel=${encodeURIComponent(novel.id)}" data-audio-id="${escapeHtml(novel.id)}">查看音频</a>
+        <a class="edit-button audio-link" href="/novel-audio?novel=${encodeURIComponent(novel.id)}#upload" data-audio-id="${escapeHtml(novel.id)}">上传音频</a>
         <a class="edit-button rewrite-link" href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}" data-rewrite-id="${escapeHtml(novel.id)}">改写</a>
         ${canDeleteBooks() ? `<button class="edit-button delete-button" type="button" data-delete-id="${escapeHtml(novel.id)}" ${state.deletingId === novel.id ? "disabled" : ""}>删除</button>` : ""}
       </td>

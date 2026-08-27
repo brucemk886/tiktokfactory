@@ -63,6 +63,11 @@
 .records-heading strong { color: #3d4710; padding-top: 8px; white-space: nowrap; }
 .novel-audio-page .rewrite-card, .novel-audio-page .record-empty { background: var(--lf-surface, #fffdf8); }
 .novel-audio-page .record-empty { min-height: 180px; }
+.upload-panel { display: grid; gap: 10px; margin: 22px 0 8px; padding: 20px; border: 1px solid rgba(138, 154, 50, 0.45); border-radius: var(--lf-radius, 14px); background: rgba(200, 220, 90, 0.12); }
+.upload-panel .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.upload-panel .section-heading span { color: var(--lf-accent, #5c6a14); font-size: 11px; font-weight: 900; letter-spacing: 0.08em; }
+.upload-panel .section-heading h2 { margin: 4px 0 0; font-size: 19px; }
+.upload-panel .hint { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.55; }
 .voice-panel { display: grid; gap: 12px; margin: 22px 0 8px; padding: 20px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
 .voice-panel .section-heading span { color: var(--lf-accent, #5c6a14); font-size: 11px; font-weight: 900; letter-spacing: 0.08em; }
 .voice-panel .section-heading h2 { margin: 4px 0 0; font-size: 19px; }
