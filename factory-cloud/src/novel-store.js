@@ -70,23 +70,42 @@ export async function countNovels(db) {
   return Number(row?.n || 0);
 }
 
-export async function markNovelsWorking(db, ids = []) {
-  const wanted = [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
+function uniqueNovelIds(ids = []) {
+  return [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
+async function updateWorkingFlag(db, ids = [], working) {
+  const wanted = uniqueNovelIds(ids);
   if (!wanted.length) return 0;
+  const flag = working ? 1 : 0;
+  const opposite = working ? 0 : 1;
   let changed = 0;
   for (let index = 0; index < wanted.length; index += 40) {
     const slice = wanted.slice(index, index + 40);
     const result = await db.prepare(
-      `UPDATE factory_novels SET working = 1 WHERE id IN (${slice.map(() => "?").join(", ")}) AND working = 0`
+      `UPDATE factory_novels SET working = ${flag} WHERE id IN (${slice.map(() => "?").join(", ")}) AND working = ${opposite}`
     ).bind(...slice).run();
     changed += Number(result?.meta?.changes || 0);
   }
   return changed;
 }
 
-export async function syncWorkingNovels(db, extraIds = []) {
-  await db.prepare("UPDATE factory_novels SET working = 1 WHERE featured = 0 AND working = 0").run();
-  return markNovelsWorking(db, extraIds);
+export async function markNovelsWorking(db, ids = []) {
+  return updateWorkingFlag(db, ids, true);
+}
+
+export async function markNovelsIdle(db, ids = []) {
+  return updateWorkingFlag(db, ids, false);
+}
+
+export async function syncWorkingNovels(db, extraIds = [], { unmarkMissing = true } = {}) {
+  const wanted = uniqueNovelIds(extraIds);
+  const marked = await markNovelsWorking(db, wanted);
+  if (!unmarkMissing) return { marked, unmarked: 0 };
+  const { results } = await db.prepare("SELECT id FROM factory_novels WHERE working = 1").all();
+  const keep = new Set(wanted);
+  const drop = (results || []).map((row) => String(row.id || "").trim()).filter((id) => id && !keep.has(id));
+  return { marked, unmarked: await markNovelsIdle(db, drop) };
 }
 
 export async function updateNovelBookId(db, id, bookId, updatedAt) {

@@ -296,9 +296,11 @@ async function importFromFeishu() {
   }
 }
 
+const WORKING_LIST_LEAD = "只显示有文案或有音频的书。没写文案也没音频的留在总表，不占书单。";
+
 function emptyCopy() {
-  if (state.shelf === "featured") return "这个范围还没有重点书单。新增或编辑小说时勾选「加入该平台重点书单」。";
-  return "还没有符合条件的小说，点击右上角新增一本。";
+  if (state.shelf === "featured") return "这个范围还没有有文案或音频的重点书。";
+  return "还没有有文案或音频的小说。新增后先去改写出文案，才会出现在书单。";
 }
 
 async function saveBook(event) {
@@ -322,10 +324,20 @@ async function saveBook(event) {
   elements.saveButton.disabled = true;
   elements.saveButton.textContent = "保存中...";
   try {
-    await api(id ? `/api/novel-content/novels/${encodeURIComponent(id)}` : "/api/novel-content/novels", {
+    const data = await api(id ? `/api/novel-content/novels/${encodeURIComponent(id)}` : "/api/novel-content/novels", {
       method: id ? "PATCH" : "POST",
       body: JSON.stringify(payload)
     });
+    if (!id && data.novel?.id) {
+      elements.bookId.value = data.novel.id;
+      elements.editorTitle.textContent = "编辑小说";
+      elements.saveButton.textContent = "保存修改";
+      elements.pageTitle.textContent = "编辑小说";
+      elements.pageLead.textContent = "已保存。还没有文案或音频，书单暂不显示。点改写去出文案，或上传音频。";
+      setFormStatus("已保存。点改写才会出现在书单。", "success");
+      syncEditorActionButtons();
+      return;
+    }
     showCatalog();
     await loadBooks();
   } catch (error) {
@@ -365,7 +377,7 @@ async function openEditor(id = "") {
   elements.pageTitle.textContent = novel ? "编辑小说" : "新增小说";
   elements.pageLead.textContent = novel
     ? "修改书单信息。重点可在这里勾选。播放和爆款在数据概览查看。"
-    : "填写小说后保存，会回到书单列表。重点是创建时勾选的标记。";
+    : "填写小说后保存。还没文案或音频时不会出现在书单，保存后可点改写。";
   setFormStatus("");
   updateChapterCount();
   updatePromotionCopy();
@@ -435,7 +447,7 @@ function showCatalog() {
   elements.editorTitle.textContent = "新增小说";
   elements.saveButton.textContent = "保存小说";
   elements.pageTitle.textContent = "小说书单";
-  elements.pageLead.textContent = "按平台查看全书库和重点书单。重点在创建或编辑时勾选。播放和爆款在数据概览查看。";
+  elements.pageLead.textContent = WORKING_LIST_LEAD;
   setFormStatus("");
   updateChapterCount();
   updatePromotionCopy();

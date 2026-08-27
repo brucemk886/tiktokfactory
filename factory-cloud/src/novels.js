@@ -21,7 +21,7 @@ import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchIndex, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, migrateNovelsFromKv, syncWorkingNovels, updateNovelBookId, upsertNovel, writeScripts } from "./novel-store.js";
+import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchIndex, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsIdle, markNovelsWorking, migrateNovelsFromKv, syncWorkingNovels, updateNovelBookId, upsertNovel, writeScripts } from "./novel-store.js";
 import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
@@ -317,7 +317,7 @@ async function createNovel(db, payload) {
     note: String(payload.note || "").trim().slice(0, 2_000),
     sourceContent,
     status: "active",
-    working: true,
+    working: false,
     createdAt,
     updatedAt: createdAt
   };
@@ -345,7 +345,6 @@ async function updateNovel(db, id, payload) {
     if (sourceContent.length < 20) throw Object.assign(new Error("小说内容至少需要 20 个字符。"), { statusCode: 400 });
     novel.sourceContent = sourceContent;
   }
-  novel.working = true;
   novel.updatedAt = new Date().toISOString();
   await upsertNovel(db, novel);
   return novel;
@@ -689,6 +688,7 @@ export async function deleteScript(env, db, novelId, scriptId) {
   if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
   const next = removeScriptsById(store.scripts, [script.id]);
   await writeScripts(db, next);
+  if (!next.some((item) => item.novelId === novel.id)) await markNovelsIdle(db, [novel.id]);
   const audioId = String(script.audioId || script.audio?.id || "").trim();
   if (audioId) await deleteNovelAudio(env, audioId).catch(() => false);
   return { ok: true, removed: true, novel: await hydrateNovel(db, novel.id) };
@@ -723,7 +723,10 @@ export async function pruneDraftScripts(db, novelId, payload = {}) {
       graceMs: payload.graceMs
     });
   const removedCount = store.scripts.length - next.length;
-  if (removedCount) await writeScripts(db, next);
+  if (removedCount) {
+    await writeScripts(db, next);
+    if (!next.some((item) => item.novelId === novel.id)) await markNovelsIdle(db, [novel.id]);
+  }
   return { ok: true, removedCount, novel: await hydrateNovel(db, novel.id) };
 }
 
@@ -850,18 +853,20 @@ export async function mergeImportedNovelStore(db, incoming = {}) {
       scripts.push(script);
     }
   }
-  for (const novel of novels) await upsertNovel(db, { ...novel, working: true });
+  for (const novel of novels) await upsertNovel(db, novel);
   await writeScripts(db, scripts);
-  await markNovelsWorking(db, novels.map((item) => item.id));
+  await syncWorkingNovels(db, scripts.map((item) => item.novelId), {
+    unmarkMissing: Boolean(scripts.length || incoming.scripts?.length)
+  });
   return { novelCount: novels.length, scriptCount: scripts.length, importedNovelCount: (incoming.novels || []).length, importedScriptCount: (incoming.scripts || []).length };
 }
 
 async function readStore(db, { includeSource = true, workingOnly = false } = {}) {
   await migrateNovelsFromKv(db);
-  const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
-  const scripts = Array.isArray(store.scripts) ? store.scripts : [];
+  const store = await kvGet(db, "novel-content", null);
+  const scripts = Array.isArray(store?.scripts) ? store.scripts : [];
   if (workingOnly) {
-    await syncWorkingNovels(db, scripts.map((item) => item.novelId));
+    await syncWorkingNovels(db, scripts.map((item) => item.novelId), { unmarkMissing: store != null });
     return { novels: await listWorkingNovelSummaries(db), scripts };
   }
   return {

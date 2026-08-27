@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getNovelRow, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, upsertNovel } from "./novel-store.js";
+import { getNovelRow, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsIdle, markNovelsWorking, syncWorkingNovels, upsertNovel } from "./novel-store.js";
 
 test("peer-hit matching does not scan the catalog when a hit has no book id or title", async () => {
   let prepared = 0;
@@ -103,6 +103,70 @@ test("markNovelsWorking updates only given ids", async () => {
   assert.equal(await markNovelsWorking(db, ["a", "a", "b", ""]), 2);
   assert.match(sql, /SET working = 1/);
   assert.deepEqual(binds, ["a", "b"]);
+});
+
+test("markNovelsIdle updates only given ids", async () => {
+  let sql = "";
+  let binds = [];
+  const db = {
+    prepare(text) {
+      sql = text;
+      return {
+        bind(...args) {
+          binds = args;
+          return { run: async () => ({ meta: { changes: 1 } }) };
+        }
+      };
+    }
+  };
+  assert.equal(await markNovelsIdle(db, ["drop", "drop", ""]), 1);
+  assert.match(sql, /SET working = 0/);
+  assert.deepEqual(binds, ["drop"]);
+});
+
+test("syncWorkingNovels marks script books and unmarks empty working books", async () => {
+  const sqls = [];
+  const db = {
+    prepare(text) {
+      const call = { sql: text, binds: [] };
+      sqls.push(call);
+      return {
+        bind(...args) {
+          call.binds = args;
+          return {
+            run: async () => ({ meta: { changes: 1 } }),
+            all: async () => ({ results: [{ id: "keep" }, { id: "drop" }] })
+          };
+        },
+        run: async () => ({ meta: { changes: 0 } }),
+        all: async () => ({ results: [{ id: "keep" }, { id: "drop" }] })
+      };
+    }
+  };
+  const result = await syncWorkingNovels(db, ["keep"]);
+  assert.equal(result.marked, 1);
+  assert.equal(result.unmarked, 1);
+  assert.equal(sqls.some((item) => /featured = 0/.test(item.sql)), false);
+  assert.equal(sqls.some((item) => /SET working = 1/.test(item.sql) && item.binds[0] === "keep"), true);
+  assert.equal(sqls.some((item) => /SET working = 0/.test(item.sql) && item.binds[0] === "drop"), true);
+});
+
+test("syncWorkingNovels does not unmark when script store is missing", async () => {
+  const sqls = [];
+  const db = {
+    prepare(text) {
+      sqls.push(text);
+      return {
+        bind() {
+          return { run: async () => ({ meta: { changes: 1 } }) };
+        },
+        all: async () => ({ results: [{ id: "keep" }] })
+      };
+    }
+  };
+  const result = await syncWorkingNovels(db, [], { unmarkMissing: false });
+  assert.equal(result.unmarked, 0);
+  assert.equal(sqls.some((sql) => /SET working = 0/.test(sql)), false);
 });
 
 test("upsert keeps an existing working flag when the incoming book is idle", async () => {
