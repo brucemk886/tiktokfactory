@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, fitOpeningTitle, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, fitOpeningTitle, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, resolveNovelAppIconFile, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
 
 test("end card uses each novel's book id and platform icon", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-end-card-"));
@@ -27,7 +27,11 @@ test("end card uses each novel's book id and platform icon", () => {
   assert.equal(card.searchCode, "464137");
   assert.equal(card.displayPlatform, "Novel Master");
   assert.equal(card.icon.key, "novelmaster");
-  assert.equal(novelAppIconSpec("GoodNovel").letter, "G");
+  assert.equal(card.icon.fileName, "novelmaster.png");
+  assert.equal(novelAppIconSpec("GoodNovel").fileName, "goodnovel.png");
+  assert.ok(resolveNovelAppIconFile("NovelMaster").endsWith("novelmaster.png"));
+  assert.ok(resolveNovelAppIconFile("GoodNovel").endsWith("goodnovel.png"));
+  assert.ok(resolveNovelAppIconFile("MotoNovel").endsWith("motonovel.png"));
   assert.deepEqual(endCardNameParts("NovelMaster").map((item) => item.text), ["Novel", "Master"]);
   const filters = buildNovelEndCardDrawtext({ card, startAt: 12, fontFile: "C:/Windows/Fonts/msyhbd.ttc" });
   const joined = filters.join(",");

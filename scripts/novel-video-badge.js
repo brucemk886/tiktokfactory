@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const APP_ICON_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "app-icons");
 
 const PLATFORM_LABELS = Object.freeze({
   GoodNovel: "GoodNovel",
@@ -184,9 +187,15 @@ export function resolveNovelEndCard({
 
 export function novelAppIconSpec(platform) {
   const key = String(platform || "").replace(/\s+/g, "");
-  if (key === "GoodNovel") return { key: "goodnovel", letter: "G", color: "0x1E9B6F", label: "GoodNovel" };
-  if (key === "MotoNovel") return { key: "motonovel", letter: "M", color: "0xE23B6B", label: "MotoNovel" };
-  return { key: "novelmaster", letter: "M", color: "0xFF4B1F", label: "NovelMaster" };
+  if (key === "GoodNovel") return { key: "goodnovel", fileName: "goodnovel.png", letter: "G", color: "0x1E9B6F", label: "GoodNovel" };
+  if (key === "MotoNovel") return { key: "motonovel", fileName: "motonovel.png", letter: "M", color: "0xE23B6B", label: "MotoNovel" };
+  return { key: "novelmaster", fileName: "novelmaster.png", letter: "M", color: "0xFF4B1F", label: "NovelMaster" };
+}
+
+export function resolveNovelAppIconFile(platform) {
+  const spec = novelAppIconSpec(platform);
+  const file = path.join(APP_ICON_DIR, spec.fileName);
+  return fs.existsSync(file) ? file : "";
 }
 
 export function endCardStartAt(duration, seconds = 3) {
@@ -287,6 +296,12 @@ export function renderNovelAppIcon({ platform, destPath, fontFile } = {}) {
   const output = String(destPath || "").trim();
   if (!output) return "";
   fs.mkdirSync(path.dirname(output), { recursive: true });
+  const official = resolveNovelAppIconFile(platform);
+  if (official) {
+    if (copyOfficialIcon(official, output) && fs.existsSync(output)) return output;
+    fs.copyFileSync(official, output);
+    return output;
+  }
   const font = filterPath(fontFile || "C:/Windows/Fonts/arialbd.ttf");
   const size = 256;
   const radius = 40;
@@ -312,6 +327,20 @@ export function renderNovelAppIcon({ platform, destPath, fontFile } = {}) {
   ];
   if (runFfmpeg(square) && fs.existsSync(output)) return output;
   return "";
+}
+
+function copyOfficialIcon(source, destPath) {
+  const size = 256;
+  const radius = 48;
+  const inner = size / 2 - radius;
+  const alpha = `if(gt(abs(X-${size / 2}),${inner})*gt(abs(Y-${size / 2}),${inner})*gt(pow(abs(X-${size / 2})-${inner}\\,2)+pow(abs(Y-${size / 2})-${inner}\\,2),${radius * radius}),0,255)`;
+  return runFfmpeg([
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-i", source,
+    "-vf", `scale=${size}:${size}:force_original_aspect_ratio=increase,crop=${size}:${size},format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${alpha}'`,
+    "-frames:v", "1",
+    destPath
+  ]);
 }
 
 function runFfmpeg(args) {
