@@ -151,7 +151,7 @@ function renderBooks() {
     : "0 本";
   const catalogCount = Number(state.summary.catalogCount || 0);
   const catalogHint = catalogCount > Number(counts.novelCount || 0) ? ` · 总表 ${catalogCount} 本` : "";
-  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 在用 ${counts.novelCount} · 重点 ${counts.featuredCount}${catalogHint}`;
+  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 在用 ${counts.novelCount} · 重点 ${counts.featuredCount} · 总音频 ${currentAudioCount()}${catalogHint}`;
   if (!novels.length) {
     elements.list.innerHTML = `<tr><td colspan="9"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
@@ -258,8 +258,17 @@ function stashRewriteNovel(id) {
 }
 
 function currentCounts() {
-  if (state.platform === "all") return state.catalog.totals || { novelCount: state.novels.length, featuredCount: 0, hitCount: 0 };
-  return state.catalog.platforms?.find((item) => item.platform === state.platform) || { novelCount: 0, featuredCount: 0, hitCount: 0 };
+  if (state.platform === "all") return state.catalog.totals || { novelCount: state.novels.length, featuredCount: 0, hitCount: 0, audioCount: 0 };
+  return state.catalog.platforms?.find((item) => item.platform === state.platform) || { novelCount: 0, featuredCount: 0, hitCount: 0, audioCount: 0 };
+}
+
+function currentAudioCount() {
+  const counted = currentCounts().audioCount;
+  if (counted != null && Number.isFinite(Number(counted))) return Math.max(0, Math.floor(Number(counted)));
+  const scoped = state.platform === "all"
+    ? state.novels
+    : state.novels.filter((novel) => novel.platform === state.platform);
+  return scoped.reduce((sum, novel) => sum + generatedAudioCount(novel), 0);
 }
 
 async function importFromFeishu() {

@@ -153,6 +153,10 @@ test("stores a creation-time featured mark and ranks data hits separately per pl
   assert.equal(byId[motoHit.id].hitRank, 1);
   assert.equal(overview.catalog.totals.featuredCount, 1);
   assert.equal(overview.catalog.totals.hitCount, 2);
+  assert.equal(
+    overview.catalog.totals.audioCount,
+    overview.novels.reduce((sum, item) => sum + Number(item.audioCount || 0), 0)
+  );
   assert.equal(overview.catalog.platforms.find((item) => item.platform === "GoodNovel").featuredCount, 1);
   assert.equal(overview.catalog.platforms.find((item) => item.platform === "GoodNovel").hitCount, 1);
   assert.equal(overview.catalog.platforms.find((item) => item.platform === "MotoNovel").hitCount, 1);

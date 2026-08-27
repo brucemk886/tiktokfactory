@@ -896,7 +896,8 @@ function catalogSummary(novels) {
     platform,
     novelCount: items.length,
     featuredCount: items.filter((item) => item.featured).length,
-    hitCount: items.filter((item) => item.hit).length
+    hitCount: items.filter((item) => item.hit).length,
+    audioCount: items.reduce((sum, item) => sum + (Number(item.audioCount) || 0), 0)
   });
   return {
     platforms: PLATFORMS.map((platform) => group(platform, rows.filter((item) => item.platform === platform))),
