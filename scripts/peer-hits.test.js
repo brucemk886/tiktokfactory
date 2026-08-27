@@ -7,6 +7,7 @@ import {
   filterPeerHits,
   filterPeerHitsByPlatform,
   filterPeerHitsByTime,
+  importedClipFingerprintsByNovel,
   importedPeerHitIdSet,
   importedSourceTokensByNovel,
   mergePeerHit,
@@ -187,6 +188,18 @@ test("skips peer-hit import when the same source file is already on that book", 
     [{ id: "h9", audioId: "peer-9", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha", audioName: "111_7664612119932833038.mp3" }],
     novels,
     { importedSourceTokensByNovel: tokens }
+  )[0].skipReason, /已经写入音频页/);
+});
+
+test("skips peer-hit import when the book already has a near-identical clip", () => {
+  const novels = [{ id: "n1", title: "Alpha", bookId: "111", platform: "GoodNovel" }];
+  const fingerprints = importedClipFingerprintsByNovel([
+    { novelId: "n1", audio: { size: 7843884, duration: 490.187 } }
+  ]);
+  assert.match(planPeerHitNovelImports(
+    [{ id: "h8", audioId: "peer-8", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha", audioSize: 7846809, audioDuration: 490.37 }],
+    novels,
+    { importedClipFingerprintsByNovel: fingerprints }
   )[0].skipReason, /已经写入音频页/);
 });
 

@@ -8,7 +8,7 @@ import {
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
 import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
-import { importedPeerHitIdSet, importedSourceTokensByNovel, planPeerHitNovelImports } from "../../scripts/peer-hits.js";
+import { importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, planPeerHitNovelImports } from "../../scripts/peer-hits.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
@@ -586,7 +586,8 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
   let imported = 0;
   for (const step of planPeerHitNovelImports(selected, novels, {
     importedPeerHitIds: importedPeerHitIdSet(store.scripts),
-    importedSourceTokensByNovel: importedSourceTokensByNovel(store.scripts)
+    importedSourceTokensByNovel: importedSourceTokensByNovel(store.scripts),
+    importedClipFingerprintsByNovel: importedClipFingerprintsByNovel(store.scripts)
   })) {
     if (step.skipReason) {
       skipped.push(step.skipReason);

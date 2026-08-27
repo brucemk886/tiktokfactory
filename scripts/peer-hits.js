@@ -220,6 +220,33 @@ export function importedPeerHitIdSet(scripts = []) {
     .map((script) => String(script.peerHitId).trim()));
 }
 
+export function clipsAreNearDuplicate(left, right) {
+  const sa = Number(left?.size || left?.audio?.size || left?.audioSize || 0);
+  const sb = Number(right?.size || right?.audio?.size || right?.audioSize || 0);
+  if (sa && sb && sa === sb) return true;
+  const da = Number(left?.duration || left?.audio?.duration || 0);
+  const db = Number(right?.duration || right?.audio?.duration || 0);
+  if (sa && sb && da && db) {
+    return Math.abs(sa - sb) / Math.max(sa, sb) <= 0.005 && Math.abs(da - db) <= 0.5;
+  }
+  return false;
+}
+
+export function importedClipFingerprintsByNovel(scripts = []) {
+  const map = new Map();
+  for (const script of Array.isArray(scripts) ? scripts : []) {
+    const novelId = String(script?.novelId || "").trim();
+    const size = Number(script?.audio?.size || 0);
+    if (!novelId || !size) continue;
+    if (!map.has(novelId)) map.set(novelId, []);
+    map.get(novelId).push({
+      size,
+      duration: Number(script?.audio?.duration || 0)
+    });
+  }
+  return map;
+}
+
 export function importedSourceTokensByNovel(scripts = []) {
   const map = new Map();
   for (const script of Array.isArray(scripts) ? scripts : []) {
@@ -245,9 +272,14 @@ export function attachAudioBoardImportStatus(hit, importedIds = new Set()) {
   };
 }
 
-export function planPeerHitNovelImports(hits, novels = [], { importedPeerHitIds, importedSourceTokensByNovel: tokensByNovel } = {}) {
+export function planPeerHitNovelImports(hits, novels = [], {
+  importedPeerHitIds,
+  importedSourceTokensByNovel: tokensByNovel,
+  importedClipFingerprintsByNovel: fingerprintsByNovel
+} = {}) {
   const imported = importedPeerHitIds instanceof Set ? importedPeerHitIds : new Set();
   const tokens = tokensByNovel instanceof Map ? tokensByNovel : new Map();
+  const fingerprints = fingerprintsByNovel instanceof Map ? fingerprintsByNovel : new Map();
   return (Array.isArray(hits) ? hits : []).map((hit) => {
     const label = hit?.novelTitle || hit?.novelId || "这条";
     if (!String(hit?.audioId || "").trim()) return { hit, novel: null, skipReason: `${label} 还没有爆款音频` };
@@ -256,6 +288,10 @@ export function planPeerHitNovelImports(hits, novels = [], { importedPeerHitIds,
     if (imported.has(String(hit?.id || "").trim())) return { hit, novel, skipReason: `${label} 已经写入音频页` };
     const token = sourceFileToken([hit.audioName, hit.novelTitle, hit.title]);
     if (token && tokens.get(novel.id)?.has(token)) return { hit, novel, skipReason: `${label} 已经写入音频页` };
+    const incoming = { size: Number(hit.audioSize) || 0, duration: Number(hit.audioDuration) || 0 };
+    if ((fingerprints.get(novel.id) || []).some((item) => clipsAreNearDuplicate(incoming, item))) {
+      return { hit, novel, skipReason: `${label} 已经写入音频页` };
+    }
     return { hit, novel, skipReason: "" };
   });
 }
