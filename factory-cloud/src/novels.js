@@ -8,7 +8,7 @@ import {
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
 import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
-import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript } from "../../scripts/peer-hits.js";
+import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
 import { listPeerHitRows } from "./peer-hits-store.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
@@ -50,7 +50,7 @@ export async function handleNovels(request, env, url, session) {
   const pathname = url.pathname;
 
   if (method === "GET" && pathname === "/api/novel-content") {
-    return json(await novelOverview(db, url.searchParams.get("query") || ""));
+    return json(await novelOverview(db, url.searchParams.get("query") || "", env));
   }
 
   if (method === "GET" && pathname === "/api/novel-content/feishu/status") {
@@ -184,7 +184,7 @@ export async function handleNovels(request, env, url, session) {
     const novelId = url.searchParams.get("novel") || "";
     const days = Math.max(1, Math.min(30, Math.floor(Number(url.searchParams.get("days") || 30))));
     if (source === "third_party") {
-      const overview = await novelOverview(db, query);
+      const overview = await novelOverview(db, query, env);
       return json(slimEffectsPage({
         ...overview,
         dataStatus: {
@@ -240,17 +240,27 @@ export async function handleNovels(request, env, url, session) {
   return null;
 }
 
-async function novelOverview(db, query) {
+async function novelOverview(db, query, env) {
   const store = await readStore(db, { includeSource: false, workingOnly: true });
   const catalogCount = await countNovels(db);
+  const split = takeDuplicateAudioScripts(store.scripts);
+  let scripts = store.scripts;
+  if (split.removed.length) {
+    await writeScripts(db, split.kept);
+    scripts = split.kept;
+    for (const script of split.removed) {
+      const audioId = String(script.audioId || script.audio?.id || "").trim();
+      if (audioId && env) await deleteNovelAudio(env, audioId).catch(() => false);
+    }
+  }
   const normalized = String(query || "").trim().toLowerCase();
   const novels = store.novels
     .map((novel) => {
-      const scripts = store.scripts.filter((script) => script.novelId === novel.id);
+      const owned = collapseDuplicateAudioScripts(scripts.filter((script) => script.novelId === novel.id));
       return {
         ...novel,
-        scripts,
-        audioCount: scripts.filter(scriptHasAudio).length,
+        scripts: owned,
+        audioCount: owned.filter(scriptHasAudio).length,
         performance: { videoCount: 0, totalViews: 0, averageViews: 0, maxViews: 0, comments: 0 }
       };
     })
@@ -261,14 +271,14 @@ async function novelOverview(db, query) {
     summary: {
       novelCount: store.novels.length,
       catalogCount,
-      scriptCount: store.scripts.length,
-      audioCount: store.scripts.filter((item) => item.audioId || item.audio?.id).length,
+      scriptCount: scripts.length,
+      audioCount: collapseDuplicateAudioScripts(scripts).filter((item) => item.audioId || item.audio?.id).length,
       videoCount: 0,
-      unassignedScriptCount: store.scripts.filter((item) => !item.novelId).length
+      unassignedScriptCount: scripts.filter((item) => !item.novelId).length
     },
     catalog: catalogSummary(novels),
     novels,
-    unassignedScripts: store.scripts.filter((item) => !item.novelId)
+    unassignedScripts: scripts.filter((item) => !item.novelId)
   };
 }
 

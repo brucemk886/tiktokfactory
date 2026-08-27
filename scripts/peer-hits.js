@@ -296,15 +296,18 @@ export function importedPeerHitIdSet(scripts = []) {
     .map((script) => String(script.peerHitId).trim()));
 }
 
+const CLIP_SIZE_RATIO = 0.01;
+const CLIP_DURATION_SLACK = 3;
+
 export function clipsAreNearDuplicate(left, right) {
   const sa = Number(left?.size || left?.audio?.size || left?.audioSize || 0);
   const sb = Number(right?.size || right?.audio?.size || right?.audioSize || 0);
   if (!sa || !sb) return false;
   if (sa === sb) return true;
-  if (Math.abs(sa - sb) / Math.max(sa, sb) > 0.005) return false;
+  if (Math.abs(sa - sb) / Math.max(sa, sb) > CLIP_SIZE_RATIO) return false;
   const da = Number(left?.duration || left?.audio?.duration || 0);
   const db = Number(right?.duration || right?.audio?.duration || 0);
-  if (da && db) return Math.abs(da - db) <= 0.5;
+  if (da && db) return Math.abs(da - db) <= CLIP_DURATION_SLACK;
   return true;
 }
 
@@ -444,8 +447,7 @@ function scriptBetter(left, right) {
   return false;
 }
 
-export function collapseDuplicateAudioScripts(scripts = []) {
-  const list = Array.isArray(scripts) ? scripts : [];
+function collapseDuplicateAudioScriptsInList(list = []) {
   const hidden = new Set();
   const used = new Set();
   for (let index = 0; index < list.length; index++) {
@@ -470,6 +472,34 @@ export function collapseDuplicateAudioScripts(scripts = []) {
     }
   }
   return list.filter((script) => !hidden.has(script.id));
+}
+
+export function collapseDuplicateAudioScripts(scripts = []) {
+  const list = Array.isArray(scripts) ? scripts : [];
+  const groups = new Map();
+  const leftover = [];
+  for (const script of list) {
+    const novelId = String(script?.novelId || "").trim();
+    if (!novelId) {
+      leftover.push(script);
+      continue;
+    }
+    if (!groups.has(novelId)) groups.set(novelId, []);
+    groups.get(novelId).push(script);
+  }
+  return [
+    ...[...groups.values()].flatMap((group) => collapseDuplicateAudioScriptsInList(group)),
+    ...collapseDuplicateAudioScriptsInList(leftover)
+  ];
+}
+
+export function takeDuplicateAudioScripts(scripts = []) {
+  const list = Array.isArray(scripts) ? scripts : [];
+  const keep = new Set(collapseDuplicateAudioScripts(list).map((item) => item.id));
+  return {
+    kept: list.filter((item) => keep.has(item.id)),
+    removed: list.filter((item) => !keep.has(item.id))
+  };
 }
 
 export function importedClipFingerprintsByNovel(scripts = []) {

@@ -6,6 +6,7 @@ import {
   attachPeerHitTimes,
   attachScaleRunMarks,
   collapseDuplicateAudioScripts,
+  takeDuplicateAudioScripts,
   collapseScaleRunHits,
   planPeerHitPublishedAtWrites,
   collectImportItems,
@@ -246,6 +247,33 @@ test("keeps only the best-playing video in a scale-run cluster", () => {
   assert.equal(collapsed[0].importedToAudioBoard, true);
   assert.equal(collapsed[0].scaleRun.videoCount, 3);
   assert.equal(collapseScaleRunHits(marked.filter((item) => item.id !== "h1")).map((item) => item.id).join(","), "h2,h4");
+});
+
+test("treats slightly reencoded same-voice clips as one card", () => {
+  const collapsed = collapseDuplicateAudioScripts([
+    { id: "a", novelId: "n1", createdAt: "2026-08-27T05:54:42.795Z", audio: { size: 8115558, duration: 507.22 } },
+    { id: "b", novelId: "n1", createdAt: "2026-08-27T05:54:42.795Z", audio: { size: 8107199, duration: 506.7 } },
+    { id: "c", novelId: "n1", createdAt: "2026-08-27T05:54:42.795Z", audio: { size: 8139382, duration: 508.71 } }
+  ]);
+  assert.equal(collapsed.length, 1);
+});
+
+test("does not collapse similar clips that belong to different novels", () => {
+  const collapsed = collapseDuplicateAudioScripts([
+    { id: "a", novelId: "n1", audio: { size: 8115558, duration: 507.22 } },
+    { id: "b", novelId: "n2", audio: { size: 8107199, duration: 506.7 } }
+  ]);
+  assert.deepEqual(collapsed.map((item) => item.id).sort(), ["a", "b"]);
+});
+
+test("takeDuplicateAudioScripts keeps one copy and lists the extras", () => {
+  const split = takeDuplicateAudioScripts([
+    { id: "keep", novelId: "n1", createdAt: "2026-08-27T09:00:00.000Z", audio: { size: 8115558, duration: 507.22 } },
+    { id: "drop", novelId: "n1", createdAt: "2026-08-27T05:00:00.000Z", audio: { size: 8139382, duration: 508.71 } },
+    { id: "draft", novelId: "n1" }
+  ]);
+  assert.deepEqual(split.kept.map((item) => item.id), ["keep", "draft"]);
+  assert.deepEqual(split.removed.map((item) => item.id), ["drop"]);
 });
 
 test("keeps one audio card when the same clip is imported twice", () => {
