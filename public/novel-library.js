@@ -149,7 +149,7 @@ function renderBooks() {
     : "0 本";
   elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 全书库 ${counts.novelCount} · 重点 ${counts.featuredCount}`;
   if (!novels.length) {
-    elements.list.innerHTML = `<tr><td colspan="10"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
+    elements.list.innerHTML = `<tr><td colspan="9"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -163,7 +163,6 @@ function renderBooks() {
         <p>${escapeHtml(excerpt(novel.sourceContent, 72))}</p>
       </td>
       <td><span class="platform-chip">${escapeHtml(novel.platform || "未设置")}</span></td>
-      <td>${novel.category ? `<span class="channel-chip">${escapeHtml(novel.category)}</span>` : "—"}</td>
       <td class="cell-mono">${escapeHtml(novel.bookId || "未设置")}</td>
       <td class="cell-mono">${escapeHtml(novel.promotionCode || "未设置")}</td>
       <td class="cell-mono cell-audio">${generatedAudioCount(novel)}</td>
