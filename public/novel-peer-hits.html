@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-1" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-2" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -19,31 +19,36 @@
         <div>
           <p class="library-kicker">PEER HITS</p>
           <h1>同行爆款</h1>
-          <p id="pageLead">GrokBot 导入的同行视频。提交视频链接、播放量、视频数据、小说名称和小说id。同一条链接再导入会覆盖播放量和数据。</p>
+          <p id="pageLead">把同行视频填进下面的输入框。同一条链接再导入会覆盖播放量和数据。</p>
         </div>
         <div class="library-header-actions">
-          <button id="toggleImportBtn" class="primary-action" type="button">导入视频</button>
+          <button id="toggleImportBtn" class="primary-action" type="button">导入同行爆款</button>
         </div>
       </header>
 
       <section id="importPanel" class="import-panel" hidden>
         <div class="section-heading">
-          <div><span>IMPORT</span><h2>导入同行视频</h2></div>
+          <div><span>IMPORT</span><h2>导入同行爆款</h2></div>
         </div>
-        <p class="import-hint">可以贴一条 JSON，也可以贴数组。中英文字段都行：视频链接 / videoUrl，播放量 / playCount，视频数据 / videoData，小说名称 / novelTitle，小说id / novelId。</p>
-        <textarea id="importInput" maxlength="200000" placeholder='[
-  {
-    "视频链接": "https://www.tiktok.com/@user/video/123",
-    "播放量": 128000,
-    "视频数据": { "点赞": 880, "评论": 21, "分享": 9 },
-    "小说名称": "My Husband Stole My Lifespan for His Ex",
-    "小说id": "5070518208"
-  }
-]'></textarea>
-        <div class="form-actions">
-          <button id="importBtn" class="primary-action" type="button">写入列表</button>
-          <span id="importStatus" role="status"></span>
-        </div>
+        <form id="importForm" class="import-form">
+          <div class="field-row">
+            <label><span>小说名称</span><input id="importNovelTitle" type="text" maxlength="180" placeholder="例如：My Husband Stole My Lifespan for His Ex" /></label>
+            <label><span>小说id</span><input id="importNovelId" type="text" maxlength="240" placeholder="例如：5070518208" /></label>
+          </div>
+          <div class="field-row">
+            <label><span>视频链接</span><input id="importVideoUrl" type="text" maxlength="800" placeholder="https://www.tiktok.com/@user/video/123" required /></label>
+            <label><span>播放量</span><input id="importPlayCount" type="text" maxlength="40" placeholder="例如：128000 或 12.8万" /></label>
+          </div>
+          <div class="field-row field-row-3">
+            <label><span>点赞</span><input id="importLikes" type="text" maxlength="40" placeholder="选填" /></label>
+            <label><span>评论</span><input id="importComments" type="text" maxlength="40" placeholder="选填" /></label>
+            <label><span>分享</span><input id="importShares" type="text" maxlength="40" placeholder="选填" /></label>
+          </div>
+          <div class="form-actions">
+            <button id="importBtn" class="primary-action" type="submit">写入列表</button>
+            <span id="importStatus" role="status"></span>
+          </div>
+        </form>
       </section>
 
       <section class="catalog-view">
@@ -80,6 +85,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-1" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-2" type="module"></script>
   </body>
 </html>

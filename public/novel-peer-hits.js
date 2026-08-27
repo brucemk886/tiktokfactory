@@ -1,7 +1,14 @@
 const elements = {
   toggleImportButton: document.querySelector("#toggleImportBtn"),
   importPanel: document.querySelector("#importPanel"),
-  importInput: document.querySelector("#importInput"),
+  importForm: document.querySelector("#importForm"),
+  importNovelTitle: document.querySelector("#importNovelTitle"),
+  importNovelId: document.querySelector("#importNovelId"),
+  importVideoUrl: document.querySelector("#importVideoUrl"),
+  importPlayCount: document.querySelector("#importPlayCount"),
+  importLikes: document.querySelector("#importLikes"),
+  importComments: document.querySelector("#importComments"),
+  importShares: document.querySelector("#importShares"),
   importButton: document.querySelector("#importBtn"),
   importStatus: document.querySelector("#importStatus"),
   listStatus: document.querySelector("#listStatus"),
@@ -17,11 +24,14 @@ const state = {
 elements.toggleImportButton?.addEventListener("click", () => {
   if (!elements.importPanel) return;
   elements.importPanel.hidden = !elements.importPanel.hidden;
-  elements.toggleImportButton.textContent = elements.importPanel.hidden ? "导入视频" : "收起导入";
-  if (!elements.importPanel.hidden) elements.importInput?.focus();
+  elements.toggleImportButton.textContent = elements.importPanel.hidden ? "导入同行爆款" : "收起导入";
+  if (!elements.importPanel.hidden) elements.importVideoUrl?.focus();
 });
 
-elements.importButton?.addEventListener("click", importHits);
+elements.importForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  importHits();
+});
 elements.searchInput?.addEventListener("input", () => {
   state.query = elements.searchInput.value.trim();
   renderList();
@@ -48,7 +58,7 @@ function renderList() {
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
       ? `共 ${state.items.length} 条同行视频${state.query ? `，当前显示 ${items.length} 条` : ""}`
-      : "还没有同行爆款。点右上角导入，或让 GrokBot 提交视频链接、播放量、视频数据和小说信息。";
+      : "还没有同行爆款。点右上角「导入同行爆款」，填入视频链接、播放量和小说信息。";
     elements.listStatus.className = "list-status";
   }
   if (!elements.hitList) return;
@@ -86,22 +96,19 @@ function visibleItems() {
 }
 
 async function importHits() {
-  let payload;
-  try {
-    payload = parseImportText(elements.importInput?.value || "");
-  } catch (error) {
-    return setImportStatus(error.message.includes("JSON") ? error.message : "JSON 格式不对。", "error");
-  }
+  const payload = readImportForm();
+  if (!payload.videoUrl) return setImportStatus("请填写视频链接。", "error");
   if (elements.importButton) {
     elements.importButton.disabled = true;
     elements.importButton.textContent = "正在写入...";
   }
-  setImportStatus("正在导入同行视频...");
+  setImportStatus("正在导入同行爆款...");
   try {
     const data = await api("/api/peer-hits/import", { method: "POST", body: JSON.stringify(payload) });
     const listed = await api("/api/peer-hits");
     state.items = Array.isArray(listed.items) ? listed.items : [];
     renderList();
+    clearImportForm();
     setImportStatus(data.message || "已写入。", "ok");
   } catch (error) {
     setImportStatus(error.message || "导入失败。", "error");
@@ -110,6 +117,37 @@ async function importHits() {
       elements.importButton.disabled = false;
       elements.importButton.textContent = "写入列表";
     }
+  }
+}
+
+function readImportForm() {
+  const likes = elements.importLikes?.value.trim() || "";
+  const comments = elements.importComments?.value.trim() || "";
+  const shares = elements.importShares?.value.trim() || "";
+  const videoData = {};
+  if (likes) videoData.点赞 = likes;
+  if (comments) videoData.评论 = comments;
+  if (shares) videoData.分享 = shares;
+  return {
+    videoUrl: elements.importVideoUrl?.value.trim() || "",
+    playCount: elements.importPlayCount?.value.trim() || "",
+    novelTitle: elements.importNovelTitle?.value.trim() || "",
+    novelId: elements.importNovelId?.value.trim() || "",
+    videoData
+  };
+}
+
+function clearImportForm() {
+  for (const input of [
+    elements.importNovelTitle,
+    elements.importNovelId,
+    elements.importVideoUrl,
+    elements.importPlayCount,
+    elements.importLikes,
+    elements.importComments,
+    elements.importShares
+  ]) {
+    if (input) input.value = "";
   }
 }
 
@@ -125,19 +163,6 @@ async function deleteHit(id) {
       elements.listStatus.className = "list-status is-error";
     }
   }
-}
-
-function parseImportText(text) {
-  const raw = String(text || "").trim();
-  if (!raw) throw new Error("先粘贴 JSON。");
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error("JSON 格式不对。");
-  }
-  if (Array.isArray(data) || (data && typeof data === "object")) return data;
-  throw new Error("JSON 必须是一条对象或一个数组。");
 }
 
 function novelTitleCell(item) {
