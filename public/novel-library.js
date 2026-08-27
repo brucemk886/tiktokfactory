@@ -37,6 +37,7 @@ const elements = {
 const state = {
   novels: [],
   catalog: { platforms: [], totals: { novelCount: 0, featuredCount: 0, hitCount: 0 } },
+  summary: { novelCount: 0, catalogCount: 0 },
   platform: "all",
   shelf: "library",
   page: 1,
@@ -114,6 +115,7 @@ async function loadBooks({ resetPage = true } = {}) {
     const data = await api(`/api/novel-content${query ? `?query=${encodeURIComponent(query)}` : ""}`);
     state.novels = data.novels || [];
     state.catalog = data.catalog || state.catalog;
+    state.summary = data.summary || state.summary;
     if (resetPage) state.page = 1;
     renderBooks();
   } catch (error) {
@@ -147,7 +149,9 @@ function renderBooks() {
   const rangeLabel = novels.length
     ? `第 ${start + 1}-${start + pageNovels.length} 本`
     : "0 本";
-  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 全书库 ${counts.novelCount} · 重点 ${counts.featuredCount}`;
+  const catalogCount = Number(state.summary.catalogCount || 0);
+  const catalogHint = catalogCount > Number(counts.novelCount || 0) ? ` · 总表 ${catalogCount} 本` : "";
+  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 在用 ${counts.novelCount} · 重点 ${counts.featuredCount}${catalogHint}`;
   if (!novels.length) {
     elements.list.innerHTML = `<tr><td colspan="9"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);

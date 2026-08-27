@@ -14,9 +14,33 @@ export function novelFromRow(row) {
     note: row.note || "",
     sourceContent: row.source_content || "",
     status: row.status || "active",
+    working: Boolean(row.working),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+const NOVEL_SUMMARY_COLUMNS = `id, title, platform, book_id, promotion_code, promotion_copy, category, featured,
+           selling_point, note, substr(source_content, 1, 160) AS source_content, status, created_at, updated_at, working`;
+
+function novelColumnValues(novel) {
+  return [
+    novel.id,
+    String(novel.title || "").slice(0, 180),
+    novel.platform || "NovelMaster",
+    String(novel.bookId || "").slice(0, 240),
+    String(novel.promotionCode || "").slice(0, 240),
+    String(novel.promotionCopy || "").slice(0, 5_000),
+    String(novel.category || "").slice(0, 120),
+    novel.featured ? 1 : 0,
+    String(novel.sellingPoint || "").slice(0, 2_000),
+    String(novel.note || "").slice(0, 2_000),
+    String(novel.sourceContent || "").slice(0, 200_000),
+    novel.status || "active",
+    novel.createdAt,
+    novel.updatedAt,
+    novel.working ? 1 : 0
+  ];
 }
 
 export async function listNovels(db) {
@@ -26,11 +50,51 @@ export async function listNovels(db) {
 
 export async function listNovelSummaries(db) {
   const { results } = await db.prepare(`
-    SELECT id, title, platform, book_id, promotion_code, promotion_copy, category, featured,
-           selling_point, note, substr(source_content, 1, 160) AS source_content, status, created_at, updated_at
+    SELECT ${NOVEL_SUMMARY_COLUMNS}
     FROM factory_novels
   `).all();
   return (results || []).map(novelFromRow);
+}
+
+export async function listWorkingNovelSummaries(db) {
+  const { results } = await db.prepare(`
+    SELECT ${NOVEL_SUMMARY_COLUMNS}
+    FROM factory_novels
+    WHERE working = 1
+  `).all();
+  return (results || []).map(novelFromRow);
+}
+
+export async function countNovels(db) {
+  const row = await db.prepare("SELECT COUNT(*) AS n FROM factory_novels").first();
+  return Number(row?.n || 0);
+}
+
+export async function markNovelsWorking(db, ids = []) {
+  const wanted = [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!wanted.length) return 0;
+  let changed = 0;
+  for (let index = 0; index < wanted.length; index += 40) {
+    const slice = wanted.slice(index, index + 40);
+    const result = await db.prepare(
+      `UPDATE factory_novels SET working = 1 WHERE id IN (${slice.map(() => "?").join(", ")}) AND working = 0`
+    ).bind(...slice).run();
+    changed += Number(result?.meta?.changes || 0);
+  }
+  return changed;
+}
+
+export async function syncWorkingNovels(db, extraIds = []) {
+  await db.prepare("UPDATE factory_novels SET working = 1 WHERE featured = 0 AND working = 0").run();
+  return markNovelsWorking(db, extraIds);
+}
+
+export async function updateNovelBookId(db, id, bookId, updatedAt) {
+  const wanted = String(id || "").trim();
+  if (!wanted) return;
+  await db.prepare("UPDATE factory_novels SET book_id = ?, updated_at = ? WHERE id = ?")
+    .bind(String(bookId || "").slice(0, 240), updatedAt, wanted)
+    .run();
 }
 
 function novelMatchRow(row) {
@@ -92,27 +156,12 @@ export async function insertNovels(db, novels = []) {
   const statement = db.prepare(`
     INSERT OR IGNORE INTO factory_novels (
       id, title, platform, book_id, promotion_code, promotion_copy, category, featured,
-      selling_point, note, source_content, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      selling_point, note, source_content, status, created_at, updated_at, working
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (let index = 0; index < items.length; index += 40) {
     const slice = items.slice(index, index + 40);
-    await db.batch(slice.map((novel) => statement.bind(
-      novel.id,
-      String(novel.title || "").slice(0, 180),
-      novel.platform || "NovelMaster",
-      String(novel.bookId || "").slice(0, 240),
-      String(novel.promotionCode || "").slice(0, 240),
-      String(novel.promotionCopy || "").slice(0, 5_000),
-      String(novel.category || "").slice(0, 120),
-      novel.featured ? 1 : 0,
-      String(novel.sellingPoint || "").slice(0, 2_000),
-      String(novel.note || "").slice(0, 2_000),
-      String(novel.sourceContent || "").slice(0, 200_000),
-      novel.status || "active",
-      novel.createdAt,
-      novel.updatedAt
-    )));
+    await db.batch(slice.map((novel) => statement.bind(...novelColumnValues(novel))));
   }
   return items.length;
 }
@@ -121,8 +170,8 @@ export async function upsertNovel(db, novel) {
   await db.prepare(`
     INSERT INTO factory_novels (
       id, title, platform, book_id, promotion_code, promotion_copy, category, featured,
-      selling_point, note, source_content, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      selling_point, note, source_content, status, created_at, updated_at, working
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
       platform = excluded.platform,
@@ -135,23 +184,9 @@ export async function upsertNovel(db, novel) {
       note = excluded.note,
       source_content = excluded.source_content,
       status = excluded.status,
-      updated_at = excluded.updated_at
-  `).bind(
-    novel.id,
-    String(novel.title || "").slice(0, 180),
-    novel.platform || "NovelMaster",
-    String(novel.bookId || "").slice(0, 240),
-    String(novel.promotionCode || "").slice(0, 240),
-    String(novel.promotionCopy || "").slice(0, 5_000),
-    String(novel.category || "").slice(0, 120),
-    novel.featured ? 1 : 0,
-    String(novel.sellingPoint || "").slice(0, 2_000),
-    String(novel.note || "").slice(0, 2_000),
-    String(novel.sourceContent || "").slice(0, 200_000),
-    novel.status || "active",
-    novel.createdAt,
-    novel.updatedAt
-  ).run();
+      updated_at = excluded.updated_at,
+      working = CASE WHEN factory_novels.working = 1 OR excluded.working = 1 THEN 1 ELSE 0 END
+  `).bind(...novelColumnValues(novel)).run();
   return novel;
 }
 

@@ -112,6 +112,8 @@ test("stress catalog matches production scale and exposes leftover hotspots", ()
   const fullCatalog = timed("listNovels + hydrate", () => oldHydrate(novels, scripts, "novel-12"));
   const oneBook = timed("getNovelRow + scripts", () => newHydrate(novels[12], scripts));
   const bookList = timed("novelOverview", () => overviewPayload(summaries, scripts));
+  const workingSummaries = summaries.filter((_, index) => index < 200);
+  const workingList = timed("working overview", () => overviewPayload(workingSummaries, scripts));
   const importPlan = timed("plan 20 peer imports", () => planPeerHitNovelImports(hits.slice(0, 20), novels.slice(0, 20), {
     importedPeerHitIds: importedPeerHitIdSet(scripts)
   }));
@@ -125,6 +127,7 @@ test("stress catalog matches production scale and exposes leftover hotspots", ()
     fullCatalogJsonKb: Number((bytes(novels) / 1024).toFixed(1)),
     oneBookJsonKb: Number((bytes(oneBook.result) / 1024).toFixed(1)),
     overviewJsonKb: Number((bytes({ novels: bookList.result }) / 1024).toFixed(1)),
+    workingOverviewJsonKb: Number((bytes({ novels: workingList.result }) / 1024).toFixed(1)),
     scriptsJsonKb: Number((bytes({ novels: [], scripts }) / 1024).toFixed(1)),
     peerListBindBudget: matchBindBudget(hits),
     peerListFallsBackToFullIndex: matchBindBudget(hits) > 80,
@@ -132,6 +135,7 @@ test("stress catalog matches production scale and exposes leftover hotspots", ()
       fullCatalogHydrate: fullCatalog.ms,
       oneBookHydrate: oneBook.ms,
       bookListOverview: bookList.ms,
+      workingOverview: workingList.ms,
       importPlan20: importPlan.ms,
       writeScriptsBlob: writeBlob.ms
     }
@@ -141,7 +145,8 @@ test("stress catalog matches production scale and exposes leftover hotspots", ()
   assert.ok(report.fullCatalogSourceBytes > 2_000_000, "full catalog source should exceed 2MB");
   assert.ok(report.fullCatalogJsonKb > 2000, "loading all novels is a multi-megabyte Worker payload");
   assert.ok(report.oneBookJsonKb < 50, "single-book hydrate must stay tiny");
-  assert.ok(report.overviewJsonKb > 1500, "book list still serializes the whole catalog");
+  assert.ok(report.overviewJsonKb > 1500, "full catalog list remains a leftover hotspot");
+  assert.ok(report.workingOverviewJsonKb < 800, "working book list must stay well under the catalog dump");
   assert.equal(report.peerListFallsBackToFullIndex, true);
   assert.ok(report.peerListBindBudget > 80);
   assert.equal(importPlan.result.length, 20);

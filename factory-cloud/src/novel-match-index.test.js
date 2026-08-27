@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getNovelRow, listNovelsMatchingPeerHits } from "./novel-store.js";
+import { getNovelRow, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, upsertNovel } from "./novel-store.js";
 
 test("peer-hit matching does not scan the catalog when a hit has no book id or title", async () => {
   let prepared = 0;
@@ -71,4 +71,52 @@ test("getNovelRow reads one book by id", async () => {
   assert.equal(novel.id, "n1");
   assert.equal(novel.title, "One");
   assert.equal(await getNovelRow(db, ""), null);
+});
+
+test("working summaries query only working books", async () => {
+  let sql = "";
+  const db = {
+    prepare(text) {
+      sql = text;
+      return { all: async () => ({ results: [{ id: "n1", title: "One", platform: "NovelMaster", book_id: "1", working: 1 }] }) };
+    }
+  };
+  const novels = await listWorkingNovelSummaries(db);
+  assert.match(sql, /WHERE working = 1/);
+  assert.equal(novels[0].working, true);
+});
+
+test("markNovelsWorking updates only given ids", async () => {
+  let sql = "";
+  let binds = [];
+  const db = {
+    prepare(text) {
+      sql = text;
+      return {
+        bind(...args) {
+          binds = args;
+          return { run: async () => ({ meta: { changes: 2 } }) };
+        }
+      };
+    }
+  };
+  assert.equal(await markNovelsWorking(db, ["a", "a", "b", ""]), 2);
+  assert.match(sql, /SET working = 1/);
+  assert.deepEqual(binds, ["a", "b"]);
+});
+
+test("upsert keeps an existing working flag when the incoming book is idle", async () => {
+  let sql = "";
+  const db = {
+    prepare(text) {
+      sql = text;
+      return {
+        bind() {
+          return { run: async () => ({}) };
+        }
+      };
+    }
+  };
+  await upsertNovel(db, { id: "n1", title: "One", createdAt: "t", updatedAt: "t" });
+  assert.match(sql, /working = CASE WHEN factory_novels.working = 1 OR excluded.working = 1 THEN 1 ELSE 0 END/);
 });

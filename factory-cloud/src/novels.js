@@ -20,7 +20,7 @@ import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { deleteNovelRow, getNovelRow, insertNovels, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
+import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchIndex, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, migrateNovelsFromKv, syncWorkingNovels, updateNovelBookId, upsertNovel, writeScripts } from "./novel-store.js";
 import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
@@ -211,7 +211,7 @@ export async function handleNovels(request, env, url, session) {
           videosPerAccount: 100,
           accountKeys: archiveAccountKeysForScope(groupStore, accountRows, { projectId: "proj-novel" }),
         }),
-        readStore(db, { includeSource: false }),
+        readStore(db, { includeSource: false, workingOnly: true }),
         kvGet(db, "official-publish-records", []),
       ]);
       const { videoMappings, ...page } = assembleOfficialNovelEffects({
@@ -240,7 +240,8 @@ export async function handleNovels(request, env, url, session) {
 }
 
 async function novelOverview(db, query) {
-  const store = await readStore(db, { includeSource: false });
+  const store = await readStore(db, { includeSource: false, workingOnly: true });
+  const catalogCount = await countNovels(db);
   const normalized = String(query || "").trim().toLowerCase();
   const novels = store.novels
     .map((novel) => {
@@ -258,6 +259,7 @@ async function novelOverview(db, query) {
     version: 1,
     summary: {
       novelCount: store.novels.length,
+      catalogCount,
       scriptCount: store.scripts.length,
       audioCount: store.scripts.filter((item) => item.audioId || item.audio?.id).length,
       videoCount: 0,
@@ -271,17 +273,18 @@ async function novelOverview(db, query) {
 
 export async function importFeishuNovelFields(db, env) {
   const fetched = await fetchFeishuCatalogBooks(env);
-  const store = await readStore(db);
-  const existingIds = new Set(store.novels.map((item) => item.id));
-  const beforeBookIds = new Map(store.novels.map((item) => [item.id, String(item.bookId || "")]));
-  const applied = applyFeishuCatalogImport(store.novels, fetched.books, {
+  await migrateNovelsFromKv(db);
+  const novels = await listNovelMatchIndex(db);
+  const existingIds = new Set(novels.map((item) => item.id));
+  const beforeBookIds = new Map(novels.map((item) => [item.id, String(item.bookId || "")]));
+  const applied = applyFeishuCatalogImport(novels, fetched.books, {
     now: new Date().toISOString(),
     createId: () => safeId(`novel-${now()}-${randomToken(3)}`)
   });
   const createdNovels = applied.novels.filter((novel) => !existingIds.has(novel.id));
   const filledNovels = applied.novels.filter((novel) => existingIds.has(novel.id) && String(novel.bookId || "") !== (beforeBookIds.get(novel.id) || ""));
   if (createdNovels.length) await insertNovels(db, createdNovels);
-  for (const novel of filledNovels) await upsertNovel(db, novel);
+  for (const novel of filledNovels) await updateNovelBookId(db, novel.id, novel.bookId, novel.updatedAt);
   return {
     sourceTitle: fetched.sourceTitle,
     sheets: fetched.sheets,
@@ -313,6 +316,7 @@ async function createNovel(db, payload) {
     note: String(payload.note || "").trim().slice(0, 2_000),
     sourceContent,
     status: "active",
+    working: true,
     createdAt,
     updatedAt: createdAt
   };
@@ -340,6 +344,7 @@ async function updateNovel(db, id, payload) {
     if (sourceContent.length < 20) throw Object.assign(new Error("小说内容至少需要 20 个字符。"), { statusCode: 400 });
     novel.sourceContent = sourceContent;
   }
+  novel.working = true;
   novel.updatedAt = new Date().toISOString();
   await upsertNovel(db, novel);
   return novel;
@@ -544,6 +549,7 @@ async function importNovelAudios(env, db, session, novelId, request) {
     });
   }
   await writeScripts(db, store.scripts);
+  await markNovelsWorking(db, [novel.id]);
   const { enqueueJob } = await import("./jobs.js");
   const job = await enqueueJob(db, {
     type: "audio-import",
@@ -576,6 +582,7 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
   const store = { scripts: await listNovelScripts(db) };
   const createdAt = new Date().toISOString();
   const skipped = [];
+  const importedNovelIds = [];
   let imported = 0;
   for (const step of planPeerHitNovelImports(selected, novels, { importedPeerHitIds: importedPeerHitIdSet(store.scripts) })) {
     if (step.skipReason) {
@@ -614,8 +621,12 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
       }
     });
     imported += 1;
+    importedNovelIds.push(step.novel.id);
   }
-  if (imported) await writeScripts(db, store.scripts);
+  if (imported) {
+    await writeScripts(db, store.scripts);
+    await markNovelsWorking(db, importedNovelIds);
+  }
   const parts = [];
   if (imported) parts.push(`已导入 ${imported} 条到书单音频页`);
   if (skipped.length) parts.push(`跳过 ${skipped.length} 条`);
@@ -654,6 +665,7 @@ async function createScript(db, novelId, payload = {}) {
   };
   store.scripts.push(script);
   await writeScripts(db, store.scripts);
+  await markNovelsWorking(db, [novel.id]);
   return script;
 }
 
@@ -826,17 +838,23 @@ export async function mergeImportedNovelStore(db, incoming = {}) {
       scripts.push(script);
     }
   }
-  for (const novel of novels) await upsertNovel(db, novel);
+  for (const novel of novels) await upsertNovel(db, { ...novel, working: true });
   await writeScripts(db, scripts);
+  await markNovelsWorking(db, novels.map((item) => item.id));
   return { novelCount: novels.length, scriptCount: scripts.length, importedNovelCount: (incoming.novels || []).length, importedScriptCount: (incoming.scripts || []).length };
 }
 
-async function readStore(db, { includeSource = true } = {}) {
+async function readStore(db, { includeSource = true, workingOnly = false } = {}) {
   await migrateNovelsFromKv(db);
   const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
+  const scripts = Array.isArray(store.scripts) ? store.scripts : [];
+  if (workingOnly) {
+    await syncWorkingNovels(db, scripts.map((item) => item.novelId));
+    return { novels: await listWorkingNovelSummaries(db), scripts };
+  }
   return {
     novels: includeSource ? await listNovels(db) : await listNovelSummaries(db),
-    scripts: Array.isArray(store.scripts) ? store.scripts : []
+    scripts
   };
 }
 
