@@ -20,7 +20,7 @@ import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { deleteNovelRow, insertNovels, listNovelSummaries, listNovels, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
+import { deleteNovelRow, insertNovels, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
 import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
@@ -566,7 +566,7 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
     error.statusCode = 400;
     throw error;
   }
-  const novels = await listNovelSummaries(db);
+  const novels = await listNovelsMatchingPeerHits(db, selected);
   const store = await readStore(db);
   const createdAt = new Date().toISOString();
   const byNovel = new Map();

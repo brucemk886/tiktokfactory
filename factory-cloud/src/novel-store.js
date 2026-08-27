@@ -33,6 +33,59 @@ export async function listNovelSummaries(db) {
   return (results || []).map(novelFromRow);
 }
 
+function novelMatchRow(row) {
+  return {
+    id: row.id,
+    title: row.title || "",
+    platform: row.platform || "",
+    bookId: row.book_id || ""
+  };
+}
+
+export async function listNovelMatchIndex(db) {
+  const { results } = await db.prepare("SELECT id, title, platform, book_id FROM factory_novels").all();
+  return (results || []).map(novelMatchRow);
+}
+
+export async function listNovelsMatchingPeerHit(db, hit = {}) {
+  return listNovelsMatchingPeerHits(db, [hit]);
+}
+
+export async function listNovelsMatchingPeerHits(db, hits = []) {
+  const ids = new Set();
+  const titles = new Set();
+  for (const hit of Array.isArray(hits) ? hits : []) {
+    const factoryId = String(hit?.factoryNovelId || "").trim();
+    const bookId = String(hit?.novelId || "").trim();
+    const title = String(hit?.novelTitle || "").trim();
+    if (factoryId) ids.add(factoryId);
+    if (bookId) ids.add(bookId);
+    if (title) titles.add(title);
+  }
+  const idList = [...ids];
+  const titleList = [...titles];
+  if (!idList.length && !titleList.length) return [];
+  if (idList.length * 2 + titleList.length > 80) return listNovelMatchIndex(db);
+  const clauses = [];
+  const binds = [];
+  if (idList.length) {
+    const marks = idList.map(() => "?").join(", ");
+    clauses.push(`id IN (${marks})`);
+    clauses.push(`book_id IN (${marks})`);
+    binds.push(...idList, ...idList);
+  }
+  if (titleList.length) {
+    clauses.push(`title IN (${titleList.map(() => "?").join(", ")})`);
+    binds.push(...titleList);
+  }
+  const { results } = await db.prepare(`
+    SELECT id, title, platform, book_id FROM factory_novels
+    WHERE ${clauses.join(" OR ")}
+    LIMIT 100
+  `).bind(...binds).all();
+  return (results || []).map(novelMatchRow);
+}
+
 export async function insertNovels(db, novels = []) {
   const items = Array.isArray(novels) ? novels.filter((item) => item?.id && item.title) : [];
   if (!items.length) return 0;

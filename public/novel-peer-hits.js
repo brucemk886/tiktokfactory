@@ -213,22 +213,39 @@ async function importHits() {
     elements.importButton.disabled = true;
     elements.importButton.textContent = "正在写入...";
   }
-  setImportStatus(audio ? "正在导入同行爆款和音频..." : "正在导入同行爆款...");
+  setImportStatus("正在写入同行爆款...");
   try {
-    const form = new FormData();
-    form.append("platform", payload.platform);
-    form.append("videoUrl", payload.videoUrl);
-    form.append("playCount", payload.playCount);
-    form.append("novelTitle", payload.novelTitle);
-    form.append("novelId", payload.novelId);
-    form.append("likes", payload.videoData.点赞 || "");
-    form.append("comments", payload.videoData.评论 || "");
-    form.append("shares", payload.videoData.分享 || "");
-    if (audio) form.append("audio", audio);
-    const data = await api("/api/peer-hits/import", { method: "POST", body: form });
-    await loadList();
+    const data = await api("/api/peer-hits/import", {
+      method: "POST",
+      body: JSON.stringify({
+        platform: payload.platform,
+        videoUrl: payload.videoUrl,
+        playCount: payload.playCount,
+        novelTitle: payload.novelTitle,
+        novelId: payload.novelId,
+        videoData: payload.videoData
+      })
+    });
+    const hit = Array.isArray(data.items) ? data.items[0] : null;
+    let message = data.message || "已写入。";
+    if (audio && hit?.id) {
+      setImportStatus("条目已写入，正在上传音频...");
+      try {
+        const uploaded = await api(`/api/peer-hits/${encodeURIComponent(hit.id)}/audio`, {
+          method: "POST",
+          body: appendAudioForm(audio)
+        });
+        message = uploaded.message ? `${message}，${uploaded.message}` : `${message}，已导入音频`;
+      } catch (error) {
+        message = `${message}，音频没传上去。刷新后看这条，再写入一次同一视频即可补音频。${error.message ? `（${error.message}）` : ""}`;
+        await refreshListQuietly();
+        clearImportForm();
+        return setImportStatus(message, "error");
+      }
+    }
+    await refreshListQuietly();
     clearImportForm();
-    setImportStatus(data.message || "已写入。", "ok");
+    setImportStatus(message, "ok");
   } catch (error) {
     setImportStatus(error.message || "导入失败。", "error");
   } finally {
@@ -434,6 +451,23 @@ function setBatchStatus(message, tone = "") {
   elements.batchStatus.className = tone === "ok" ? "is-ok" : tone === "error" ? "is-error" : "";
 }
 
+function appendAudioForm(audio) {
+  const form = new FormData();
+  form.append("audio", audio);
+  return form;
+}
+
+async function refreshListQuietly() {
+  try {
+    await loadList();
+  } catch {
+    if (elements.listStatus) {
+      elements.listStatus.textContent = "条目可能已写入，刷新页面再看列表。";
+      elements.listStatus.className = "list-status is-error";
+    }
+  }
+}
+
 async function api(url, options = {}) {
   const response = await fetch(url, {
     cache: "no-store",
@@ -441,7 +475,12 @@ async function api(url, options = {}) {
     ...options
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `请求失败：${response.status}`);
+  if (!response.ok) {
+    if (!body.error && (response.status === 502 || response.status === 503 || response.status === 504)) {
+      throw new Error("工厂忙不过来，多半是音频太大。先刷新列表，条目往往已经写进去了。");
+    }
+    throw new Error(body.error || `请求失败：${response.status}`);
+  }
   return body;
 }
 

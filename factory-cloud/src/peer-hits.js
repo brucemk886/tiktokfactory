@@ -11,7 +11,7 @@ import {
 import { errorJson, json, readJson, safeId } from "./http.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerAudiosToNovels } from "./novels.js";
-import { listNovelSummaries } from "./novel-store.js";
+import { listNovelMatchIndex, listNovelsMatchingPeerHit, listNovelsMatchingPeerHits } from "./novel-store.js";
 import { deletePeerHitRow, findPeerHitById, findPeerHitByKey, listPeerHitRows, upsertPeerHitRow } from "./peer-hits-store.js";
 
 const IMPORT_LIMIT = 200;
@@ -25,9 +25,10 @@ export async function handlePeerHits(request, env, url, session) {
   const pathname = url.pathname;
 
   if (method === "GET" && pathname === "/api/peer-hits") {
-    const novels = await listNovelSummaries(db);
+    const rows = await listPeerHitRows(db);
+    const novels = await listNovelsMatchingPeerHits(db, rows);
     const items = sortPeerHits(filterPeerHitsByTime(
-      filterPeerHits((await listPeerHitRows(db)).map((item) => attachFactoryNovel(item, novels)), url.searchParams.get("query") || ""),
+      filterPeerHits(rows.map((item) => attachFactoryNovel(item, novels)), url.searchParams.get("query") || ""),
       url.searchParams.get("range") || "all",
       Date.now(),
       Number(url.searchParams.get("since")) || 0
@@ -55,12 +56,22 @@ export async function handlePeerHits(request, env, url, session) {
   }
 
   const audioMatch = pathname.match(/^\/api\/peer-hits\/([^/]+)\/audio$/);
-  if (method === "GET" && audioMatch) {
-    const current = await findPeerHitById(db, decodeURIComponent(audioMatch[1]));
-    if (!current?.audioId) return errorJson("这条还没有导入音频。", 404);
-    const response = await serveNovelAudio(env, current.audioId, request);
-    if (!response) return errorJson("没有这份音频。", 404);
-    return response;
+  if (audioMatch) {
+    const id = decodeURIComponent(audioMatch[1]);
+    if (method === "GET") {
+      const current = await findPeerHitById(db, id);
+      if (!current?.audioId) return errorJson("这条还没有导入音频。", 404);
+      const response = await serveNovelAudio(env, current.audioId, request);
+      if (!response) return errorJson("没有这份音频。", 404);
+      return response;
+    }
+    if (method === "POST") {
+      try {
+        return json(await uploadPeerHitAudio(env, db, id, request));
+      } catch (error) {
+        return errorJson(error.message || "音频上传失败。", error.statusCode || 400);
+      }
+    }
   }
 
   const match = pathname.match(/^\/api\/peer-hits\/([^/]+)$/);
@@ -83,12 +94,14 @@ async function importPeerHits(db, payload) {
     error.statusCode = 400;
     throw error;
   }
-  const novels = await listNovelSummaries(db);
   const now = Date.now();
   let created = 0;
   let updated = 0;
   const skipped = [];
   const items = [];
+  const novels = rawItems.length === 1
+    ? await listNovelsMatchingPeerHit(db, normalizePeerHitInput(rawItems[0], { now, source: "grokbot" }))
+    : await listNovelMatchIndex(db);
   for (const raw of rawItems) {
     try {
       const incoming = attachFactoryNovel(normalizePeerHitInput(raw, { now, source: "grokbot" }), novels);
@@ -129,34 +142,43 @@ async function importPeerHitsFromForm(env, db, request) {
   });
   const hit = result.items[0];
   if (!hit || !file || !Number(file.size || 0)) return result;
-  if (!isImportedAudioFile(file)) {
-    const error = new Error("只接受 mp3 音频。");
-    error.statusCode = 400;
-    throw error;
+  try {
+    const saved = await attachPeerHitAudioFile(env, db, hit, file);
+    result.items = [saved];
+    result.message = result.message ? `${result.message}，已导入音频` : "已导入音频";
+  } catch (error) {
+    result.message = result.message
+      ? `${result.message}，音频没传上去：${error.message || "上传失败"}`
+      : (error.message || "条目已写入，音频没传上去。");
+    result.audioError = error.message || "音频上传失败。";
   }
-  if (Number(file.size || 0) > 20 * 1024 * 1024) {
-    const error = new Error("音频文件超过 20MB。");
-    error.statusCode = 413;
-    throw error;
-  }
+  return result;
+}
+
+async function uploadPeerHitAudio(env, db, id, request) {
+  const hit = await findPeerHitById(db, id);
+  if (!hit) throw Object.assign(new Error("没有找到这条同行视频。"), { statusCode: 404 });
+  const form = await request.formData();
+  const file = [form.get("audio"), form.get("file")].find((item) => item && typeof item.arrayBuffer === "function");
+  if (!file || !Number(file.size || 0)) throw Object.assign(new Error("请选择要导入的 mp3。"), { statusCode: 400 });
+  const saved = await attachPeerHitAudioFile(env, db, hit, file);
+  return { ok: true, item: saved, items: [saved], message: "已导入音频" };
+}
+
+async function attachPeerHitAudioFile(env, db, hit, file) {
+  if (!isImportedAudioFile(file)) throw Object.assign(new Error("只接受 mp3 音频。"), { statusCode: 400 });
+  if (Number(file.size || 0) > 20 * 1024 * 1024) throw Object.assign(new Error("音频文件超过 20MB。"), { statusCode: 413 });
   const bytes = await file.arrayBuffer();
-  if (bytes.byteLength < 1024) {
-    const error = new Error("音频文件太小。");
-    error.statusCode = 400;
-    throw error;
-  }
+  if (bytes.byteLength < 1024) throw Object.assign(new Error("音频文件太小。"), { statusCode: 400 });
   const audioId = safeId(`peer-${hit.id}`);
   await putNovelAudio(env, audioId, bytes, file.type || "audio/mpeg");
-  const saved = await upsertPeerHitRow(db, {
+  return upsertPeerHitRow(db, {
     ...hit,
     audioId,
     audioName: String(file.name || `${audioId}.mp3`).trim().slice(0, 240),
     audioSize: bytes.byteLength,
     updatedAt: Date.now()
   });
-  result.items = [saved];
-  result.message = result.message ? `${result.message}，已导入音频` : "已导入音频";
-  return result;
 }
 
 function summarizeImport({ created, updated, skipped }) {
