@@ -28,7 +28,7 @@
 .book-table-wrap { overflow: auto; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
 .book-table { width: 100%; min-width: 1280px; table-layout: fixed; border-collapse: collapse; }
 .book-table .col-check { width: 36px; }
-.book-table .col-date { width: 76px; }
+.book-table .col-date { width: 88px; }
 .book-table .col-title { width: auto; }
 .book-table .col-platform { width: 118px; }
 .book-table .col-channel { width: 72px; }

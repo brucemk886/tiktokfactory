@@ -129,7 +129,6 @@ export function applyFeishuCatalogImport(novels, books, { now = new Date().toISO
       continue;
     }
 
-    const createdAt = toCreatedAt(book.date) || now;
     const novel = {
       id: String(makeId() || "").trim() || `novel-${Date.now()}`,
       title,
@@ -143,7 +142,8 @@ export function applyFeishuCatalogImport(novels, books, { now = new Date().toISO
       note: book.note.slice(0, 2_000),
       sourceContent: book.sourceContent.slice(0, 200_000),
       status: "active",
-      createdAt,
+      listedAt: toCreatedAt(book.date),
+      createdAt: now,
       updatedAt: now
     };
     next.push(novel);

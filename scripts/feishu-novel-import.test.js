@@ -66,7 +66,8 @@ test("skips existing titles and creates missing novels without promotion codes",
   assert.equal(result.novels[1].category, "男频");
   assert.equal(result.novels[1].sellingPoint, "复仇");
   assert.equal(result.novels[1].note, "可做");
-  assert.equal(result.novels[1].createdAt, "2026-08-02T00:00:00.000Z");
+  assert.equal(result.novels[1].listedAt, "2026-08-02T00:00:00.000Z");
+  assert.equal(result.novels[1].createdAt, "2026-08-19T04:00:00.000Z");
 });
 
 test("merges the same title from both sheets into one new novel", () => {
