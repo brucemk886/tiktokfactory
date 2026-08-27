@@ -6,7 +6,7 @@
     "cloudflare:check": "node scripts/check-origin-main.mjs",
     "deploy": "npm run cloudflare:check && wrangler d1 migrations apply factory-prod --remote --config wrangler.jsonc && wrangler deploy --config wrangler.jsonc",
     "d1:create": "wrangler d1 create factory-prod --config wrangler.jsonc",
-    "test": "node --test src/jobs.test.js src/official-archive-store.test.js src/novels-delete.test.js src/novel-audio-archive.test.js src/novel-match-index.test.js scripts/check-origin-main.test.js ../scripts/feishu-novel-import.test.js ../scripts/novel-batch-audio.test.js ../scripts/novel-batch-audio-job.test.js ../scripts/novel-audio-upload.test.js ../scripts/novel-audio-import.test.js ../scripts/audio-import-job.test.js ../scripts/peer-hits.test.js ../scripts/sidebar-modules.test.js ../scripts/novel-video-badge.test.js ../scripts/reddit-mix-encode.test.js"
+    "test": "node --test src/jobs.test.js src/official-archive-store.test.js src/novels-delete.test.js src/novel-audio-archive.test.js src/novel-match-index.test.js src/novel-module-load.test.js scripts/check-origin-main.test.js ../scripts/feishu-novel-import.test.js ../scripts/novel-batch-audio.test.js ../scripts/novel-batch-audio-job.test.js ../scripts/novel-audio-upload.test.js ../scripts/novel-audio-import.test.js ../scripts/audio-import-job.test.js ../scripts/peer-hits.test.js ../scripts/sidebar-modules.test.js ../scripts/novel-video-badge.test.js ../scripts/reddit-mix-encode.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.92.0"
