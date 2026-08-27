@@ -122,7 +122,7 @@ function renderList() {
       <td><span class="platform-chip">${escapeHtml(item.platform || "未设置")}</span></td>
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
       <td class="cell-play">${escapeHtml(formatPlayCount(item.playCount))}</td>
-      <td class="cell-video"><a href="${escapeAttr(item.videoUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(item.videoUrl))}</a></td>
+      <td class="cell-video"><a href="${escapeAttr(item.videoUrl)}" target="_blank" rel="noreferrer" title="${escapeAttr(item.videoUrl)}">${escapeHtml(shortUrl(item.videoUrl))}</a></td>
       <td class="cell-audio">${item.audioId ? `<audio controls preload="none" src="/api/peer-hits/${encodeURIComponent(item.id)}/audio"></audio>` : "未导入"}</td>
       <td class="row-actions">
         <button class="edit-button delete-button" type="button" data-delete-id="${escapeAttr(item.id)}">删除</button>
@@ -416,18 +416,18 @@ async function deleteHit(id) {
 
 function novelTitleCell(item) {
   const title = item.novelTitle || "未设置小说名称";
+  const heading = item.factoryNovelId
+    ? `<strong title="${escapeAttr(title)}"><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}" title="${escapeAttr(title)}">${escapeHtml(title)}</a></strong>`
+    : `<strong title="${escapeAttr(title)}">${escapeHtml(title)}</strong>`;
+  const mark = item.importedToAudioBoard ? `<span class="import-chip">已写入</span>` : "";
   const hint = item.importedToAudioBoard
-    ? "已写入音频页"
+    ? ""
     : item.factoryNovelId
       ? "已对上书单"
       : item.novelId
         ? "小说id和平台还对不上书单"
         : "没有小说id";
-  const heading = item.factoryNovelId
-    ? `<strong title="${escapeAttr(title)}"><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}" title="${escapeAttr(title)}">${escapeHtml(title)}</a></strong>`
-    : `<strong title="${escapeAttr(title)}">${escapeHtml(title)}</strong>`;
-  const mark = item.importedToAudioBoard ? `<span class="import-chip">已写入音频页</span>` : "";
-  return `${heading}${mark}<p>${escapeHtml(hint)}</p>`;
+  return `<div class="title-line">${heading}${mark}</div>${hint ? `<p>${escapeHtml(hint)}</p>` : ""}`;
 }
 
 function formatVideoData(data) {
