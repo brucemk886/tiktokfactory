@@ -605,7 +605,6 @@ function audioCard(script) {
         <div>
           <h2>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</h2>
           <p>${escapeHtml(sourceLabel(script.sourceType))} · ${escapeHtml(formatDate(audio.createdAt || script.createdAt))} · ${formatDuration(audio.duration)} · ${formatSize(audio.size)}</p>
-          ${scaleRunNote(script.scaleRun)}
         </div>
         <div class="audio-card-actions">
           <label class="mix-check">
@@ -625,14 +624,14 @@ function audioCard(script) {
         <button type="button" class="quiet-action" data-retune-id="${escapeHtml(audioId)}">应用变速</button>
         <small>按原始音频变速，不会越调越快。太慢可拉到 1.10×–1.25×。</small>
       </div>
-      <div class="metric-row">
+      ${script.sourceType === "peer-hit" ? peerHitStats(script) : `<div class="metric-row">
         ${metric("播放", formatNumber(performance.totalViews))}
         ${metric("视频", formatNumber(performance.videoCount))}
         ${metric("账号", formatNumber(performance.accountCount))}
         ${metric("前3秒留存", formatPercent(performance.retentionAt3))}
         ${metric("完播率", formatPercent(performance.fullWatchRate))}
         ${metric("均看时长", formatSeconds(performance.averageTimeWatched))}
-      </div>
+      </div>`}
       ${script.openingTitle ? `<p class="hook-title">${escapeHtml(script.openingTitle)}</p>` : ""}
       <p class="script-full">${escapeHtml(script.text || "")}</p>
     </article>`;
@@ -642,17 +641,23 @@ function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
 }
 
-function scaleRunNote(scaleRun) {
-  const videos = Array.isArray(scaleRun?.videos) ? scaleRun.videos : [];
-  const count = Number(scaleRun?.videoCount) || videos.length || 0;
-  if (count < 2) return "";
-  const extra = videos.length
-    ? `<ul class="scale-run-videos">${videos.map((video) => {
-      const href = video.videoUrl ? escapeHtml(video.videoUrl) : "";
-      return `<li>${escapeHtml(formatNumber(video.playCount))} 播放 · ${escapeHtml(formatDateTime(video.publishedAt))}${href ? ` · <a href="${href}" target="_blank" rel="noreferrer">打开视频</a>` : ""}</li>`;
-    }).join("")}</ul>`
-    : "";
-  return `<div class="scale-run-note"><p>这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来。</p>${extra}</div>`;
+function peerHitStats(script) {
+  const videos = Array.isArray(script.peerVideos) && script.peerVideos.length
+    ? script.peerVideos
+    : (Array.isArray(script.scaleRun?.videos) ? script.scaleRun.videos : []);
+  if (!videos.length) return "";
+  return `<div class="peer-hit-stats">${videos.map((video) => {
+    const href = video.videoUrl ? escapeAttr(video.videoUrl) : "";
+    return `<div class="peer-hit-stat">
+      <span>播放量</span>
+      <strong>${escapeHtml(formatNumber(video.playCount))}</strong>
+      ${href ? `<a href="${href}" target="_blank" rel="noreferrer">${escapeHtml(shortVideoUrl(video.videoUrl))}</a>` : "<em>没有视频链接</em>"}
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function shortVideoUrl(value) {
+  return String(value || "").replace(/^https?:\/\/(www\.)?/i, "");
 }
 
 function sourceLabel(value) {

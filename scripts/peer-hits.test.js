@@ -17,6 +17,7 @@ import {
   importedSourceTokensByNovel,
   mergePeerHit,
   planPeerHitNovelImports,
+  peerVideosForScript,
   scaleRunForScript,
   sortPeerHits,
   normalizePeerHitInput,
@@ -226,6 +227,11 @@ test("marks the same audio across multiple videos as a scale run", () => {
   assert.equal(marked[0].scaleRun.videos[0].playCount, 561500);
   assert.ok(marked[0].scaleRun.videos[0].publishedAt > 0);
   assert.deepEqual(scaleRunForScript({ peerHitId: "h1", audio: { size: 7843884 } }, marked), marked[0].scaleRun);
+  assert.equal(peerVideosForScript({ peerHitId: "h1" }, marked).length, 2);
+  assert.equal(peerVideosForScript({
+    peerHitId: "solo",
+    audio: { size: 1_200_000 }
+  }, marked)[0].playCount, 9);
 });
 
 test("keeps only the best-playing video in a scale-run cluster", () => {

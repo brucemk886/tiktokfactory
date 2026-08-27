@@ -393,6 +393,22 @@ export function scaleRunForScript(script, markedHits = []) {
   return (Array.isArray(markedHits) ? markedHits : []).find((hit) => hit.scaleRun && clipsAreNearDuplicate(clip, clipOfHit(hit)))?.scaleRun || null;
 }
 
+export function peerVideosForScript(script, markedHits = []) {
+  const scaleRun = scaleRunForScript(script, markedHits);
+  if (Array.isArray(scaleRun?.videos) && scaleRun.videos.length) return scaleRun.videos;
+  const peerId = String(script?.peerHitId || "").trim();
+  const list = Array.isArray(markedHits) ? markedHits : [];
+  const hit = (peerId && list.find((item) => item.id === peerId))
+    || list.find((item) => clipsAreNearDuplicate(scriptClip(script), clipOfHit(item)));
+  if (!hit) return [];
+  return [{
+    id: hit.id,
+    videoUrl: hit.videoUrl || "",
+    playCount: Number(hit.playCount) || 0,
+    publishedAt: Number(hit.publishedAt) || peerHitPublishedAt(hit)
+  }];
+}
+
 function scriptClip(script) {
   return {
     size: Number(script?.audio?.size || script?.audioSize || 0),
