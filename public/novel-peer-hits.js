@@ -1,5 +1,3 @@
-import { waitForAudioJob } from "./audio-job.js";
-
 const elements = {
   toggleImportButton: document.querySelector("#toggleImportBtn"),
   importPanel: document.querySelector("#importPanel"),
@@ -300,27 +298,18 @@ async function importToNovels() {
       });
       if (data.message) messages.push(data.message);
       const jobs = Array.isArray(data.jobs) ? data.jobs.filter((job) => job?.jobId) : [];
-      for (let index = 0; index < jobs.length; index += 1) {
-        const job = jobs[index];
-        const result = await waitForAudioJob(job.jobId, {
-          api,
-          onProgress: (progress) => setImportProgress(
-            finished,
-            total,
-            `本机 ${index + 1}/${jobs.length} · ${progress.message || `工人正在写入 ${job.novelTitle || "本机音频目录"}...`}`
-          )
-        });
-        if (result?.targetAudioDir) dirs.push(`${job.novelTitle || "小说"} → ${result.targetAudioDir}`);
+      for (const job of jobs) {
+        if (job.novelTitle) dirs.push(job.novelTitle);
       }
       finished = Math.min(offset + chunk.length, total);
-      setImportProgress(finished, total, jobs.length ? "本机这一批已写完" : "这一批已写入音频页");
+      setImportProgress(finished, total, "已写入音频页，本机目录后台拷贝");
     }
     state.selectedIds.clear();
     await loadList();
     const summary = messages[messages.length - 1] || `已导入 ${finished} 条到书单音频页`;
     setBatchStatus(
       dirs.length
-        ? `${summary}。进度 ${finished}/${total}。本机已写入：${dirs.join("；")}`
+        ? `${summary}。进度 ${finished}/${total}。本机目录后台写入：${[...new Set(dirs)].join("；")}`
         : `${summary}。进度 ${finished}/${total}。`,
       "ok"
     );
@@ -435,8 +424,8 @@ function novelTitleCell(item) {
         ? "小说id和平台还对不上书单"
         : "没有小说id";
   const heading = item.factoryNovelId
-    ? `<strong><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}">${escapeHtml(title)}</a></strong>`
-    : `<strong>${escapeHtml(title)}</strong>`;
+    ? `<strong title="${escapeAttr(title)}"><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}" title="${escapeAttr(title)}">${escapeHtml(title)}</a></strong>`
+    : `<strong title="${escapeAttr(title)}">${escapeHtml(title)}</strong>`;
   const mark = item.importedToAudioBoard ? `<span class="import-chip">已写入音频页</span>` : "";
   return `${heading}${mark}<p>${escapeHtml(hint)}</p>`;
 }

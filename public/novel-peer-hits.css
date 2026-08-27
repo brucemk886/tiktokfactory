@@ -8,9 +8,29 @@
 .peer-table .col-actions { width: 88px; }
 .peer-table .cell-play { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .peer-table .cell-video a { color: #3d4710; font-weight: 800; word-break: break-all; }
+.peer-table .cell-title {
+  display: grid;
+  gap: 6px;
+  justify-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+}
+.peer-table .cell-title strong,
+.peer-table .cell-title a {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .peer-table .cell-title a { color: inherit; text-decoration: none; }
 .peer-table .cell-title a:hover { text-decoration: underline; }
-.peer-table .cell-title { display: grid; gap: 6px; justify-items: start; }
+.peer-table .cell-title p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .peer-table .import-chip { display: inline-flex; min-height: 23px; align-items: center; border-radius: 999px; padding: 2px 8px; border: 1px solid #8a9a32; background: #eef6b8; color: #3d4710; font-size: 11px; font-weight: 800; }
 .peer-table tr.is-imported td { background: rgba(238, 246, 184, 0.28); }
 .peer-table .cell-check input:disabled { opacity: 0.35; cursor: not-allowed; }
