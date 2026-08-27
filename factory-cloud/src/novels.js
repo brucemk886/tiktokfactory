@@ -557,6 +557,10 @@ async function importNovelAudios(env, db, session, novelId, request) {
     items.push({
       novelId: novel.id,
       novelTitle: novel.title,
+      platform: novel.platform || "",
+      promotionCode: novel.promotionCode || "",
+      promotionCopy: novel.promotionCopy || "",
+      bookId: novel.bookId || "",
       scriptId: script.id,
       audioId,
       fileName,
@@ -789,6 +793,10 @@ export async function buildAudioGeneratePayload(db, body = {}) {
     items.push({
       novelId: novel?.id || script?.novelId || novelId,
       novelTitle: String(raw.novelTitle || novel?.title || body.novelTitle || "").trim(),
+      platform: String(raw.platform || novel?.platform || body.platform || "").trim(),
+      promotionCode: String(raw.promotionCode || novel?.promotionCode || body.promotionCode || "").trim(),
+      promotionCopy: String(raw.promotionCopy || novel?.promotionCopy || body.promotionCopy || "").trim(),
+      bookId: String(raw.bookId || novel?.bookId || body.bookId || "").trim(),
       scriptId: script?.id || scriptId,
       audioId: raw.audioId || script?.audioId || script?.audio?.id || "",
       fileName: raw.fileName || script?.audio?.fileName || "",

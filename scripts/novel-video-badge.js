@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readNovelAudioMeta } from "./novel-audio-meta.js";
 
 const APP_ICON_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "app-icons");
 
@@ -141,21 +142,16 @@ export function resolveNovelVideoBadge({
   audioPath = "",
   fallback = {}
 } = {}) {
-  const store = readNovelStore(workDir);
-  const audioItems = readAudioIndex(workDir);
-  const audio = matchAudioRecord(audioItems, audioPath, workDir);
-  const novel = findNovelForAudio(store, audio) || findNovelById(store, fallback.novelId);
-  const platform = String(novel?.platform || fallback.platform || fallback.novelPlatform || "").trim();
-  const promotionCode = String(novel?.promotionCode || fallback.promotionCode || fallback.novelPromotionCode || "").trim();
-  if (!platform && !promotionCode) return null;
-  const displayPlatform = displayNovelPlatform(platform);
+  const identity = resolveNovelIdentity({ workDir, audioPath, fallback });
+  if (!identity.platform && !identity.promotionCode) return null;
+  const displayPlatform = displayNovelPlatform(identity.platform);
   return {
-    novelId: String(novel?.id || fallback.novelId || ""),
-    platform,
-    promotionCode,
-    promotionCopy: String(novel?.promotionCopy || fallback.promotionCopy || "").trim(),
+    novelId: identity.novelId,
+    platform: identity.platform,
+    promotionCode: identity.promotionCode,
+    promotionCopy: identity.promotionCopy,
     displayPlatform,
-    lines: [promotionCode, displayPlatform].filter(Boolean)
+    lines: [identity.promotionCode, displayPlatform].filter(Boolean)
   };
 }
 
@@ -164,24 +160,17 @@ export function resolveNovelEndCard({
   audioPath = "",
   fallback = {}
 } = {}) {
-  const store = readNovelStore(workDir);
-  const audioItems = readAudioIndex(workDir);
-  const audio = matchAudioRecord(audioItems, audioPath, workDir);
-  const novel = findNovelForAudio(store, audio) || findNovelById(store, fallback.novelId);
-  const platform = String(novel?.platform || fallback.platform || fallback.novelPlatform || "").trim();
-  const bookId = String(novel?.bookId || fallback.bookId || fallback.novelBookId || "").trim();
-  const promotionCode = String(novel?.promotionCode || fallback.promotionCode || fallback.novelPromotionCode || "").trim();
-  const searchCode = bookId || promotionCode;
-  if (!searchCode && !platform) return null;
+  const identity = resolveNovelIdentity({ workDir, audioPath, fallback });
+  if (!identity.promotionCode && !identity.platform) return null;
   return {
-    novelId: String(novel?.id || fallback.novelId || ""),
-    novelTitle: String(novel?.title || fallback.novelTitle || "").trim(),
-    platform,
-    bookId,
-    promotionCode,
-    searchCode,
-    displayPlatform: displayNovelPlatform(platform),
-    icon: novelAppIconSpec(platform)
+    novelId: identity.novelId,
+    novelTitle: identity.novelTitle,
+    platform: identity.platform,
+    bookId: identity.bookId,
+    promotionCode: identity.promotionCode,
+    searchCode: identity.promotionCode,
+    displayPlatform: displayNovelPlatform(identity.platform),
+    icon: novelAppIconSpec(identity.platform)
   };
 }
 
@@ -198,10 +187,53 @@ export function resolveNovelAppIconFile(platform) {
   return fs.existsSync(file) ? file : "";
 }
 
+const END_CARD_MAX_LOOKBACK = 10;
+
 export function endCardStartAt(duration, seconds = 3) {
   const total = Math.max(0, Number(duration) || 0);
   const hold = Math.min(Math.max(1.5, Number(seconds) || 3), total || 3);
   return Math.max(0, Number((total - hold).toFixed(2)));
+}
+
+export function isSpokenEndCardText(text) {
+  const value = String(text || "").toLowerCase();
+  return /\bsearch\b/.test(value)
+    || /full story|whole story/.test(value)
+    || (/\bapp\b/.test(value) && /\b(on|novel|goodnovel|motonovel|master)\b/.test(value));
+}
+
+export function resolveEndCardStart(duration, captions, fallbackSeconds = 3) {
+  const fallback = endCardStartAt(duration, fallbackSeconds);
+  const total = Math.max(0, Number(duration) || 0);
+  if (!(total > 0)) return fallback;
+  const earliest = Math.max(0, total - END_CARD_MAX_LOOKBACK);
+  const fromWords = lastSearchWordStart(captions);
+  if (fromWords >= earliest && fromWords < total) return Number(fromWords.toFixed(2));
+  const fromCues = lastEndCardCueStart(captions);
+  if (fromCues >= earliest && fromCues < total) return Number(fromCues.toFixed(2));
+  return fallback;
+}
+
+function lastSearchWordStart(captions) {
+  const words = Array.isArray(captions?.words) ? captions.words : [];
+  for (let i = words.length - 1; i >= 0; i -= 1) {
+    const token = String(words[i]?.text || "").replace(/[^a-zA-Z]/g, "");
+    if (/^search$/i.test(token) && Number.isFinite(Number(words[i].start))) {
+      return Number(words[i].start);
+    }
+  }
+  return Number.NaN;
+}
+
+function lastEndCardCueStart(captions) {
+  const cues = Array.isArray(captions?.cues) ? captions.cues : [];
+  let start = Number.NaN;
+  for (let i = cues.length - 1; i >= 0; i -= 1) {
+    if (!isSpokenEndCardText(cues[i]?.text)) break;
+    const cueStart = Number(cues[i].start);
+    if (Number.isFinite(cueStart)) start = cueStart;
+  }
+  return start;
 }
 
 export function hideCaptionsAfter(captions, afterSeconds) {
@@ -240,7 +272,7 @@ export function buildNovelEndCardDrawtext({
   height = 1920,
   fontSize = 76
 } = {}) {
-  const searchCode = sanitizeDrawtext(card?.searchCode || card?.bookId || card?.promotionCode || "");
+  const searchCode = sanitizeDrawtext(card?.searchCode || card?.promotionCode || "");
   const platform = String(card?.platform || "");
   if (!searchCode && !platform) return [];
   const font = filterPath(fontFile || "C:/Windows/Fonts/msyhbd.ttc");
@@ -250,17 +282,17 @@ export function buildNovelEndCardDrawtext({
   const firstY = Math.round((Number(height) || 1920) * 0.42);
   const space = estimateDrawtextWidth(" ", size);
   const lines = [
-    [
+    searchCode ? [
       { text: "Search", color: "0xF5E000" },
       { text: searchCode, color: "white" }
-    ].filter((part) => part.text),
+    ] : null,
     [
       { text: "On", color: "0x3DDC4A" },
       ...endCardNameParts(platform),
       { text: "app", color: "0x3DDC4A" }
     ].filter((part) => part.text),
     [{ text: "to read whole story", color: "0xF5E000" }]
-  ];
+  ].filter(Boolean);
   return lines.flatMap((parts, lineIndex) => {
     const total = parts.reduce((sum, part, index) => (
       sum + estimateDrawtextWidth(part.text, size) + (index < parts.length - 1 ? space : 0)
@@ -378,6 +410,32 @@ function findScriptForAudio(store, audio) {
       || item.id === String(audio.source?.scriptId || "")
       || (audio.source?.marketingId && item.marketingId === audio.source.marketingId && Number(item.marketingRank) === Number(audio.source.rank));
   }) || null;
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function resolveNovelIdentity({ workDir, audioPath = "", fallback = {} } = {}) {
+  const store = readNovelStore(workDir);
+  const audioItems = readAudioIndex(workDir);
+  const audio = matchAudioRecord(audioItems, audioPath, workDir);
+  const novel = findNovelForAudio(store, audio) || findNovelById(store, fallback.novelId);
+  const fileMeta = readNovelAudioMeta(audioPath);
+  return {
+    novel,
+    audio,
+    novelId: firstText(novel?.id, fileMeta.novelId, fallback.novelId),
+    novelTitle: firstText(novel?.title, fileMeta.novelTitle, fallback.novelTitle),
+    platform: firstText(novel?.platform, fileMeta.platform, fallback.platform, fallback.novelPlatform),
+    promotionCode: firstText(novel?.promotionCode, fileMeta.promotionCode, fallback.promotionCode, fallback.novelPromotionCode),
+    promotionCopy: firstText(novel?.promotionCopy, fileMeta.promotionCopy, fallback.promotionCopy),
+    bookId: firstText(novel?.bookId, fileMeta.bookId, fallback.bookId, fallback.novelBookId)
+  };
 }
 
 function findNovelForAudio(store, audio) {

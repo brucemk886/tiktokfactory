@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createAudioLibraryService } from "./audio-library.js";
 import { findAudioInLibrary, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { novelAudioMetaFrom, writeNovelAudioMeta } from "./novel-audio-meta.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
 import { readConfig } from "./video-core.js";
 
@@ -34,6 +35,7 @@ export async function runAudioGenerateJob({
     });
     try {
       const record = await generateOne(library, item, targetAudioDir, bootConfig, payload);
+      stampNovelAudioMeta(record.targetAudioPath, targetAudioDir, item, payload);
       if (novels && item.scriptId && record.id) {
         try { novels.attachScriptAudio(item.scriptId, record.id); } catch {}
       }
@@ -119,6 +121,14 @@ function copyToTarget(sourcePath, targetAudioDir, title, id) {
   const dest = path.join(targetAudioDir, `${safeDisplayName(title)}-${String(id || "audio").slice(-12)}.mp3`);
   if (path.resolve(sourcePath) !== path.resolve(dest)) fs.copyFileSync(sourcePath, dest);
   return dest;
+}
+
+function stampNovelAudioMeta(audioPath, targetAudioDir, item, payload) {
+  writeNovelAudioMeta({
+    dir: targetAudioDir || (audioPath ? path.dirname(audioPath) : ""),
+    audioPath,
+    novel: novelAudioMetaFrom(item, payload)
+  });
 }
 
 function publicAudioResult(item, record, targetAudioDir) {

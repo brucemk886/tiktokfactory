@@ -22,7 +22,9 @@ test("import job downloads cloud audio and copies it into the novel folder", asy
         scriptId: "s1",
         audioId: "upload-job-1",
         title: "Imported Hook",
-        fileName: "hook.mp3"
+        fileName: "hook.mp3",
+        platform: "GoodNovel",
+        promotionCode: "GN-88"
       }]
     },
     cloudUrl: "https://factory.example",
@@ -38,5 +40,8 @@ test("import job downloads cloud audio and copies it into the novel folder", asy
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].audioId, "upload-job-1");
   assert.ok(fs.existsSync(result.items[0].targetAudioPath));
+  const folderMeta = JSON.parse(fs.readFileSync(path.join(path.dirname(result.items[0].targetAudioPath), "novel.json"), "utf8"));
+  assert.equal(folderMeta.platform, "GoodNovel");
+  assert.equal(folderMeta.promotionCode, "GN-88");
   fs.rmSync(root, { recursive: true, force: true });
 });

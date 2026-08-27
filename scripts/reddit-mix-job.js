@@ -17,7 +17,7 @@ import {
 import { findAudioInLibrary, listAudioLibraryFiles } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
-import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, endCardStartAt, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -227,7 +227,7 @@ async function main() {
         fallback: audioFallback
       });
     if (payload.endCardEnabled !== false && !endCard) {
-      warnings.push(`未找到小说id/平台，已跳过片尾搜书引导：${path.basename(audioPath)}`);
+      warnings.push(`未找到推广码/平台，已跳过片尾搜书引导：${path.basename(audioPath)}`);
     }
     const tiktokCaption = buildTikTokCaption({
       promotionCopy: novelBadge?.promotionCopy || audioFallback.promotionCopy || "",
@@ -781,7 +781,7 @@ function randomBetween(min, max) {
 
 function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", endCard = null, quality = "fast" }) {
   const workFolder = path.dirname(inputVideo);
-  const endStart = endCard ? endCardStartAt(duration, 3) : 0;
+  const endStart = endCard ? resolveEndCardStart(duration, captions, 3) : 0;
   const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
   let visibleCaptions = captions;
   if (openingTitle) visibleCaptions = hideCaptionsUntil(visibleCaptions, titleDuration);

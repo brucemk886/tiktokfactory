@@ -33,7 +33,9 @@ test("copies existing local audio into the fixed library folder", async () => {
         title: "第一章开头",
         audioId: "audio-abc123456789",
         targetAudioPath: source,
-        script: "This opening is long enough to pass the twenty character check."
+        script: "This opening is long enough to pass the twenty character check.",
+        platform: "NovelMaster",
+        promotionCode: "454311"
       }]
     },
     audioLibrary: {
@@ -46,6 +48,11 @@ test("copies existing local audio into the fixed library folder", async () => {
   assert.equal(result.items[0].cacheHit, true);
   assert.ok(fs.existsSync(result.items[0].targetAudioPath));
   assert.equal(path.dirname(result.items[0].targetAudioPath), target);
+  const folderMeta = JSON.parse(fs.readFileSync(path.join(target, "novel.json"), "utf8"));
+  assert.equal(folderMeta.platform, "NovelMaster");
+  assert.equal(folderMeta.promotionCode, "454311");
+  const sidecar = JSON.parse(fs.readFileSync(`${result.items[0].targetAudioPath}.json`, "utf8"));
+  assert.equal(sidecar.promotionCode, "454311");
   fs.rmSync(root, { recursive: true, force: true });
 });
 

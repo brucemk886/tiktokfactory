@@ -1492,6 +1492,10 @@ const server = http.createServer(async (req, res) => {
           payload.items = (novel?.scripts || []).filter((script) => wanted.has(script.id)).map((script) => ({
             novelId: novel.id,
             novelTitle: novel.title,
+            platform: novel.platform || "",
+            promotionCode: novel.promotionCode || "",
+            promotionCopy: novel.promotionCopy || "",
+            bookId: novel.bookId || "",
             scriptId: script.id,
             audioId: script.audioId || script.audio?.id || "",
             fileName: script.audio?.fileName || "",

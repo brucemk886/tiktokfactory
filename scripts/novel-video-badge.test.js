@@ -3,9 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, fitOpeningTitle, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, resolveNovelAppIconFile, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, fitOpeningTitle, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, resolveEndCardStart, resolveNovelAppIconFile, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
 
-test("end card uses each novel's book id and platform icon", () => {
+test("end card uses each novel's promotion code and platform icon", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-end-card-"));
   const audioDir = path.join(workDir, "seed-audio");
   fs.mkdirSync(audioDir, { recursive: true });
@@ -24,7 +24,9 @@ test("end card uses each novel's book id and platform icon", () => {
   }));
 
   const card = resolveNovelEndCard({ workDir, audioPath });
-  assert.equal(card.searchCode, "464137");
+  assert.equal(card.searchCode, "454311");
+  assert.equal(card.bookId, "464137");
+  assert.equal(card.promotionCode, "454311");
   assert.equal(card.displayPlatform, "Novel Master");
   assert.equal(card.icon.key, "novelmaster");
   assert.equal(card.icon.fileName, "novelmaster.png");
@@ -36,13 +38,45 @@ test("end card uses each novel's book id and platform icon", () => {
   const filters = buildNovelEndCardDrawtext({ card, startAt: 12, fontFile: "C:/Windows/Fonts/msyhbd.ttc" });
   const joined = filters.join(",");
   assert.match(joined, /text='Search'/);
-  assert.match(joined, /text='464137'/);
+  assert.match(joined, /text='454311'/);
+  assert.doesNotMatch(joined, /text='464137'/);
   assert.match(joined, /text='Novel'/);
   assert.match(joined, /text='Master'/);
   assert.match(joined, /text='to read whole story'/);
   assert.match(joined, /enable='gte\(t,12\.00\)'/);
   assert.match(buildEndCardDimFilter(12), /gte\(t,12\.00\)/);
   assert.equal(endCardStartAt(15, 3), 12);
+  assert.equal(resolveEndCardStart(60, {
+    words: [
+      { text: "Search", start: 54.2, end: 54.5 },
+      { text: "454311", start: 54.5, end: 55.4 }
+    ],
+    cues: [
+      { text: "I closed the door.", start: 50, end: 52 },
+      { text: "Search 2763520548 on the Novel Master app", start: 54.2, end: 57.1 },
+      { text: "to read the full story.", start: 57.1, end: 58.8 }
+    ]
+  }), 54.2);
+  assert.equal(resolveEndCardStart(15, { cues: [{ text: "I closed the door.", start: 10, end: 14 }] }), 12);
+  fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test("end card never falls back to the book id", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-end-card-bookid-"));
+  fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({
+    novels: [{ id: "novel-1", title: "Hidden Family", platform: "NovelMaster", bookId: "464137" }],
+    scripts: []
+  }));
+  const card = resolveNovelEndCard({
+    workDir,
+    audioPath: path.join(workDir, "missing.mp3"),
+    fallback: { novelId: "novel-1" }
+  });
+  assert.equal(card.searchCode, "");
+  assert.equal(card.bookId, "464137");
+  const joined = buildNovelEndCardDrawtext({ card, startAt: 12 }).join(",");
+  assert.doesNotMatch(joined, /text='464137'/);
+  assert.doesNotMatch(joined, /text='Search'/);
   fs.rmSync(workDir, { recursive: true, force: true });
 });
 
@@ -105,6 +139,29 @@ test("falls back to the selected novel when the audio is not in the library", ()
   });
   assert.equal(badge.platform, "GoodNovel");
   assert.equal(badge.promotionCode, "GN-88");
+  fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test("reads platform and promotion code from saved local audio metadata", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-badge-sidecar-"));
+  const audioDir = path.join(workDir, "saved-audio");
+  fs.mkdirSync(audioDir, { recursive: true });
+  const audioPath = path.join(audioDir, "opening.mp3");
+  fs.writeFileSync(audioPath, "audio");
+  fs.writeFileSync(path.join(audioDir, "novel.json"), JSON.stringify({
+    novelId: "novel-sidecar",
+    novelTitle: "Saved Local Book",
+    platform: "MotoNovel",
+    promotionCode: "778899"
+  }));
+  fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({ novels: [], scripts: [] }));
+
+  const badge = resolveNovelVideoBadge({ workDir, audioPath });
+  assert.equal(badge.platform, "MotoNovel");
+  assert.equal(badge.promotionCode, "778899");
+  const card = resolveNovelEndCard({ workDir, audioPath });
+  assert.equal(card.searchCode, "778899");
+  assert.equal(card.displayPlatform, "MotoNovel");
   fs.rmSync(workDir, { recursive: true, force: true });
 });
 

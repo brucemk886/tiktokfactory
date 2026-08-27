@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createAudioLibraryService } from "./audio-library.js";
 import { resolveTargetAudioDir } from "./audio-library-groups.js";
+import { novelAudioMetaFrom, writeNovelAudioMeta } from "./novel-audio-meta.js";
 import { readConfig } from "./video-core.js";
 
 export async function runAudioImportJob({
@@ -58,6 +59,11 @@ export async function runAudioImportJob({
         novelId: item.novelId,
         scriptId: item.scriptId,
         sourceType: "uploaded-audio"
+      });
+      writeNovelAudioMeta({
+        dir: targetAudioDir,
+        audioPath: record.targetAudioPath,
+        novel: novelAudioMetaFrom(item, payload)
       });
       results.push({
         scriptId: String(item.scriptId || "").trim(),

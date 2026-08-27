@@ -287,6 +287,10 @@ async function generatePendingAudios(onlyIds) {
       items: selected.map((item) => ({
         novelId: state.novelId,
         novelTitle: state.novel?.title || "",
+        platform: state.novel?.platform || "",
+        promotionCode: state.novel?.promotionCode || "",
+        promotionCopy: state.novel?.promotionCopy || "",
+        bookId: state.novel?.bookId || "",
         scriptId: item.script.id,
         title: `${state.novel.title} ${item.script.versionLabel || "改写"}`,
         script: item.text || item.script.text,
@@ -474,6 +478,10 @@ async function saveMixAudios() {
     const result = await requestAudioJob("/api/audio-library/sync-local", {
       novelId: state.novelId,
       novelTitle: state.novel?.title || "",
+      platform: state.novel?.platform || "",
+      promotionCode: state.novel?.promotionCode || "",
+      promotionCopy: state.novel?.promotionCopy || "",
+      bookId: state.novel?.bookId || "",
       scriptIds,
       targetAudioDir: "__novel__"
     }, { api, onProgress: (job) => setMixStatus(job.message || "工人机正在保存到本机...") });
@@ -522,6 +530,10 @@ async function reuploadPlayback(scriptId, button) {
     await requestAudioJob("/api/audio-library/sync-local", {
       novelId: state.novelId,
       novelTitle: state.novel?.title || "",
+      platform: state.novel?.platform || "",
+      promotionCode: state.novel?.promotionCode || "",
+      promotionCopy: state.novel?.promotionCopy || "",
+      bookId: state.novel?.bookId || "",
       scriptIds: [scriptId],
       targetAudioDir: "__novel__"
     }, { api, onProgress: (job) => setMixStatus(job.message || "工人机正在上传试听...") });
