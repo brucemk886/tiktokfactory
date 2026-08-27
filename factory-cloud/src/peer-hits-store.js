@@ -15,6 +15,7 @@ export function peerHitFromRow(row) {
     playCount: Number(row.play_count) || 0,
     novelTitle: row.novel_title || "",
     novelId: row.novel_id || "",
+    platform: row.platform || "",
     factoryNovelId: row.factory_novel_id || "",
     audioId: row.audio_id || "",
     audioName: row.audio_name || "",
@@ -48,14 +49,15 @@ export async function findPeerHitById(db, id) {
 export async function upsertPeerHitRow(db, hit) {
   await db.prepare(`
     INSERT INTO ${TABLE} (
-      id, video_key, video_url, play_count, novel_title, novel_id, factory_novel_id,
+      id, video_key, video_url, play_count, novel_title, novel_id, platform, factory_novel_id,
       video_data_json, source, imported_at, updated_at, audio_id, audio_name, audio_size
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
       play_count = excluded.play_count,
       novel_title = CASE WHEN excluded.novel_title = '' THEN factory_peer_hits.novel_title ELSE excluded.novel_title END,
       novel_id = CASE WHEN excluded.novel_id = '' THEN factory_peer_hits.novel_id ELSE excluded.novel_id END,
+      platform = CASE WHEN excluded.platform = '' THEN factory_peer_hits.platform ELSE excluded.platform END,
       factory_novel_id = CASE WHEN excluded.factory_novel_id = '' THEN factory_peer_hits.factory_novel_id ELSE excluded.factory_novel_id END,
       video_data_json = excluded.video_data_json,
       source = excluded.source,
@@ -70,6 +72,7 @@ export async function upsertPeerHitRow(db, hit) {
     hit.playCount,
     hit.novelTitle,
     hit.novelId,
+    hit.platform || "",
     hit.factoryNovelId || "",
     JSON.stringify(hit.videoData || {}),
     hit.source,

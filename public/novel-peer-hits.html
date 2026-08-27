@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-4" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-5" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -19,7 +19,7 @@
         <div>
           <p class="library-kicker">PEER HITS</p>
           <h1>同行爆款</h1>
-          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。列表按播放量从高到低。勾选有音频、小说id能对上书单的条目，一键写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</p>
+          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。按 GoodNovel / MotoNovel / NovelMaster 对应书单。列表按播放量从高到低。勾选有音频、小说id和平台能对上书单的条目，一键写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</p>
         </div>
         <div class="library-header-actions">
           <button id="toggleImportBtn" class="primary-action" type="button">导入同行爆款</button>
@@ -31,7 +31,16 @@
           <div><span>IMPORT</span><h2>导入同行爆款</h2></div>
         </div>
         <form id="importForm" class="import-form">
-          <div class="field-row">
+          <div class="field-row field-row-3">
+            <label>
+              <span>平台</span>
+              <select id="importPlatform" required>
+                <option value="">选择平台</option>
+                <option value="GoodNovel">GoodNovel</option>
+                <option value="MotoNovel">MotoNovel</option>
+                <option value="NovelMaster">NovelMaster</option>
+              </select>
+            </label>
             <label><span>小说名称</span><input id="importNovelTitle" type="text" maxlength="180" placeholder="例如：My Husband Stole My Lifespan for His Ex" /></label>
             <label><span>小说id</span><input id="importNovelId" type="text" maxlength="240" placeholder="例如：5070518208" /></label>
           </div>
@@ -57,6 +66,12 @@
       </section>
 
       <section class="catalog-view">
+        <div class="catalog-tabs" role="tablist" aria-label="小说平台">
+          <button type="button" class="catalog-tab is-active" data-platform="all">全部平台</button>
+          <button type="button" class="catalog-tab" data-platform="GoodNovel">GoodNovel</button>
+          <button type="button" class="catalog-tab" data-platform="MotoNovel">MotoNovel</button>
+          <button type="button" class="catalog-tab" data-platform="NovelMaster">NovelMaster</button>
+        </div>
         <div class="shelf-tabs" role="tablist" aria-label="导入时间">
           <button type="button" class="shelf-tab is-active" data-range="all">全部</button>
           <button type="button" class="shelf-tab" data-range="today">今天</button>
@@ -65,7 +80,7 @@
         </div>
         <div class="list-toolbar">
           <div id="listStatus" class="list-status">正在读取同行爆款...</div>
-          <label><span class="sr-only">搜索</span><input id="searchInput" type="search" placeholder="搜索小说名称、小说id或视频链接" /></label>
+          <label><span class="sr-only">搜索</span><input id="searchInput" type="search" placeholder="搜索小说名称、小说id、平台或视频链接" /></label>
         </div>
         <div id="batchBar" class="batch-bar">
           <label class="batch-check-all">
@@ -73,7 +88,7 @@
             全选当前有音频的
           </label>
           <button id="importToNovelsBtn" class="primary-action" type="button">一键导入小说音频</button>
-          <span id="batchStatus" role="status">勾选有音频、且小说id能对上书单的条目。会写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</span>
+          <span id="batchStatus" role="status">勾选有音频、且小说id和平台能对上书单的条目。会写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</span>
         </div>
         <div class="book-table-wrap">
           <table class="book-table peer-table">
@@ -81,6 +96,7 @@
               <col class="col-check" />
               <col class="col-date" />
               <col class="col-title" />
+              <col class="col-platform" />
               <col class="col-book-id" />
               <col class="col-play" />
               <col class="col-video" />
@@ -93,6 +109,7 @@
                 <th class="cell-check"><span class="sr-only">选择</span></th>
                 <th>导入时间</th>
                 <th>小说名称</th>
+                <th>平台</th>
                 <th>小说id</th>
                 <th>播放量</th>
                 <th>视频链接</th>
@@ -108,6 +125,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-4" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-5" type="module"></script>
   </body>
 </html>

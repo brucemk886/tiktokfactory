@@ -4,6 +4,7 @@ const elements = {
   toggleImportButton: document.querySelector("#toggleImportBtn"),
   importPanel: document.querySelector("#importPanel"),
   importForm: document.querySelector("#importForm"),
+  importPlatform: document.querySelector("#importPlatform"),
   importNovelTitle: document.querySelector("#importNovelTitle"),
   importNovelId: document.querySelector("#importNovelId"),
   importVideoUrl: document.querySelector("#importVideoUrl"),
@@ -25,6 +26,7 @@ const elements = {
 const state = {
   items: [],
   query: "",
+  platform: "all",
   range: "all",
   selectedIds: new Set(),
   importing: false
@@ -49,6 +51,15 @@ elements.selectVisible?.addEventListener("change", () => {
   toggleVisibleSelection(elements.selectVisible.checked);
 });
 elements.importToNovelsButton?.addEventListener("click", importToNovels);
+document.querySelectorAll("[data-platform]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (state.platform === button.dataset.platform) return;
+    state.platform = button.dataset.platform || "all";
+    state.selectedIds.clear();
+    document.querySelectorAll("[data-platform]").forEach((item) => item.classList.toggle("is-active", item === button));
+    renderList();
+  });
+});
 document.querySelectorAll("[data-range]").forEach((button) => {
   button.addEventListener("click", () => {
     if (state.range === button.dataset.range) return;
@@ -84,13 +95,13 @@ function renderList() {
   const items = visibleItems();
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
-      ? `${rangeLabel(state.range)} ${state.items.length} 条，播放量从高到低${state.query ? `，当前显示 ${items.length} 条` : ""}`
+      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，播放量从高到低${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
       : emptyCopy();
     elements.listStatus.className = "list-status";
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="9"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="10"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
     syncBatchBar();
     return;
   }
@@ -99,6 +110,7 @@ function renderList() {
       <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
       <td class="cell-title">${novelTitleCell(item)}</td>
+      <td><span class="platform-chip">${escapeHtml(item.platform || "未设置")}</span></td>
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
       <td class="cell-play">${escapeHtml(formatPlayCount(item.playCount))}</td>
       <td class="cell-video"><a href="${escapeAttr(item.videoUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(item.videoUrl))}</a></td>
@@ -124,15 +136,19 @@ function renderList() {
 
 function visibleItems() {
   const needle = state.query.toLowerCase();
+  const scoped = state.platform === "all"
+    ? state.items
+    : state.items.filter((item) => item.platform === state.platform);
   const items = needle
-    ? state.items.filter((item) => [
+    ? scoped.filter((item) => [
       item.novelTitle,
       item.novelId,
+      item.platform,
       item.factoryNovelId,
       item.videoUrl,
       formatVideoData(item.videoData)
     ].join(" ").toLowerCase().includes(needle))
-    : state.items;
+    : scoped;
   return [...items].sort((left, right) => {
     const play = (Number(right.playCount) || 0) - (Number(left.playCount) || 0);
     if (play) return play;
@@ -176,17 +192,18 @@ function syncBatchBar() {
   if (elements.importToNovelsButton) elements.importToNovelsButton.disabled = state.importing || !selected.length;
   if (!elements.batchStatus || state.importing) return;
   if (!selected.length) {
-    setBatchStatus("勾选有音频、且小说id能对上书单的条目。一次最多 20 条。会写到该书音频页，本机工人再拷到 F:\\音频目录\\书名\\。");
+    setBatchStatus("勾选有音频、且小说id和平台能对上书单的条目。一次最多 20 条。会写到该书音频页，本机工人再拷到 F:\\音频目录\\书名\\。");
     return;
   }
   const extra = selected.length - matched.length;
   setBatchStatus(extra
     ? `已勾选 ${selected.length} 条，其中 ${matched.length} 条能对上书单，${extra} 条会跳过。`
-    : `已勾选 ${selected.length} 条，小说id都能对上书单。`);
+    : `已勾选 ${selected.length} 条，小说id和平台都能对上书单。`);
 }
 
 async function importHits() {
   const payload = readImportForm();
+  if (!payload.platform) return setImportStatus("请选择平台。", "error");
   if (!payload.videoUrl) return setImportStatus("请填写视频链接。", "error");
   const audio = elements.importAudio?.files?.[0];
   if (audio && !/\.mp3$/i.test(audio.name || "") && !/audio\/mpeg|audio\/mp3/i.test(audio.type || "")) {
@@ -199,6 +216,7 @@ async function importHits() {
   setImportStatus(audio ? "正在导入同行爆款和音频..." : "正在导入同行爆款...");
   try {
     const form = new FormData();
+    form.append("platform", payload.platform);
     form.append("videoUrl", payload.videoUrl);
     form.append("playCount", payload.playCount);
     form.append("novelTitle", payload.novelTitle);
@@ -229,7 +247,7 @@ async function importToNovels() {
     elements.importToNovelsButton.disabled = true;
     elements.importToNovelsButton.textContent = "正在导入...";
   }
-  setBatchStatus("正在按小说id写入书单音频页...");
+  setBatchStatus("正在按小说id和平台写入书单音频页...");
   try {
     const data = await api("/api/peer-hits/import-to-novels", {
       method: "POST",
@@ -282,6 +300,7 @@ function readImportForm() {
   return {
     videoUrl: elements.importVideoUrl?.value.trim() || "",
     playCount: elements.importPlayCount?.value.trim() || "",
+    platform: elements.importPlatform?.value.trim() || "",
     novelTitle: elements.importNovelTitle?.value.trim() || "",
     novelId: elements.importNovelId?.value.trim() || "",
     videoData
@@ -290,6 +309,7 @@ function readImportForm() {
 
 function clearImportForm() {
   for (const input of [
+    elements.importPlatform,
     elements.importNovelTitle,
     elements.importNovelId,
     elements.importVideoUrl,
@@ -323,7 +343,7 @@ function novelTitleCell(item) {
   const hint = item.factoryNovelId
     ? "已对上书单"
     : item.novelId
-      ? "小说id还对不上书单"
+      ? "小说id和平台还对不上书单"
       : "没有小说id";
   const heading = item.factoryNovelId
     ? `<strong><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}">${escapeHtml(title)}</a></strong>`
@@ -375,6 +395,15 @@ function rangeSince(range) {
   return 0;
 }
 
+function platformLabel(platform) {
+  return ({
+    GoodNovel: "GoodNovel",
+    MotoNovel: "MotoNovel",
+    NovelMaster: "NovelMaster",
+    all: "全部平台"
+  })[platform] || "全部平台";
+}
+
 function rangeLabel(range) {
   return ({
     today: "今天",
@@ -385,9 +414,12 @@ function rangeLabel(range) {
 }
 
 function emptyCopy() {
-  return state.range === "all"
-    ? "还没有同行爆款。点右上角「导入同行爆款」，填入视频链接、播放量，也可以一起导入音频。"
-    : `${rangeLabel(state.range)}还没有同行视频。`;
+  if (!state.items.length) {
+    return state.range === "all"
+      ? "还没有同行爆款。点右上角「导入同行爆款」，选好平台，填入视频链接、播放量，也可以一起导入音频。"
+      : `${rangeLabel(state.range)}还没有同行视频。`;
+  }
+  return `${platformLabel(state.platform)}${state.range === "all" ? "" : ` ${rangeLabel(state.range)}`}还没有同行视频。`;
 }
 
 function setImportStatus(message, tone = "") {

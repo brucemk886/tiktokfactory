@@ -4,6 +4,7 @@ const TOP_KEYS = new Set([
   "playCount", "play_count", "views", "viewCount", "view_count", "播放量", "播放",
   "novelTitle", "novel_title", "title", "bookTitle", "book_title", "小说名称", "书名", "小说名",
   "novelId", "novel_id", "bookId", "book_id", "书籍id", "书籍Id", "小说id", "小说ID",
+  "platform", "平台", "novelPlatform", "novel_platform",
   "factoryNovelId", "factory_novel_id",
   "audioId", "audio_id", "audioName", "audio_name", "audioSize", "audio_size", "audio",
   "videoData", "video_data", "视频数据",
@@ -14,6 +15,14 @@ const VIDEO_URL_KEYS = ["videoUrl", "video_url", "url", "link", "videoLink", "vi
 const PLAY_COUNT_KEYS = ["playCount", "play_count", "views", "viewCount", "view_count", "播放量", "播放"];
 const NOVEL_TITLE_KEYS = ["novelTitle", "novel_title", "title", "bookTitle", "book_title", "小说名称", "书名", "小说名"];
 const NOVEL_ID_KEYS = ["novelId", "novel_id", "bookId", "book_id", "书籍id", "书籍Id", "小说id", "小说ID"];
+const PLATFORM_KEYS = ["platform", "平台", "novelPlatform", "novel_platform"];
+const NOVEL_PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
+
+export function normalizePeerHitPlatform(value) {
+  const raw = String(value || "").replace(/\s+/g, "").trim();
+  if (raw === "MasterNovel") return "NovelMaster";
+  return NOVEL_PLATFORMS.includes(raw) ? raw : "";
+}
 
 export function pickFirst(item, keys) {
   if (!item || typeof item !== "object") return "";
@@ -82,6 +91,7 @@ export function normalizePeerHitInput(raw, options = {}) {
   const playCount = parsePlayCount(pickFirst(item, PLAY_COUNT_KEYS) || videoData.playCount || videoData.播放量 || videoData.views);
   const novelTitle = String(pickFirst(item, NOVEL_TITLE_KEYS)).trim().slice(0, 180);
   const novelId = String(pickFirst(item, NOVEL_ID_KEYS)).trim().slice(0, 240);
+  const platform = normalizePeerHitPlatform(pickFirst(item, PLATFORM_KEYS));
   return {
     id: String(options.id || item.id || "").trim() || newPeerHitId(stamp),
     videoUrl,
@@ -89,6 +99,7 @@ export function normalizePeerHitInput(raw, options = {}) {
     playCount,
     novelTitle,
     novelId,
+    platform,
     factoryNovelId: String(item.factoryNovelId || item.factory_novel_id || "").trim(),
     audioId: String(item.audioId || item.audio_id || "").trim(),
     audioName: String(item.audioName || item.audio_name || "").trim().slice(0, 240),
@@ -106,15 +117,19 @@ export function matchFactoryNovel(hit, novels = []) {
     const byFactory = novels.find((novel) => String(novel.id || "") === factoryId);
     if (byFactory) return byFactory;
   }
+  const platform = normalizePeerHitPlatform(hit?.platform);
+  const scoped = platform
+    ? novels.filter((novel) => normalizePeerHitPlatform(novel.platform) === platform)
+    : novels;
   const bookId = String(hit?.novelId || "").trim();
   if (bookId) {
-    const byId = novels.find((novel) => String(novel.bookId || "").trim() === bookId || String(novel.id || "") === bookId);
-    if (byId) return byId;
+    const byId = scoped.filter((novel) => String(novel.bookId || "").trim() === bookId || String(novel.id || "") === bookId);
+    if (byId.length === 1) return byId[0];
   }
   const title = String(hit?.novelTitle || "").trim().toLowerCase();
   if (title) {
-    const byTitle = novels.find((novel) => String(novel.title || "").trim().toLowerCase() === title);
-    if (byTitle) return byTitle;
+    const byTitle = scoped.filter((novel) => String(novel.title || "").trim().toLowerCase() === title);
+    if (byTitle.length === 1) return byTitle[0];
   }
   return null;
 }
@@ -126,7 +141,8 @@ export function attachFactoryNovel(hit, novels = []) {
     ...hit,
     factoryNovelId: matched.id,
     novelTitle: hit.novelTitle || matched.title || "",
-    novelId: hit.novelId || matched.bookId || ""
+    novelId: hit.novelId || matched.bookId || "",
+    platform: normalizePeerHitPlatform(hit.platform) || normalizePeerHitPlatform(matched.platform)
   };
 }
 
@@ -139,6 +155,7 @@ export function mergePeerHit(current, incoming) {
     playCount: Number.isFinite(incoming.playCount) ? incoming.playCount : current.playCount,
     novelTitle: incoming.novelTitle || current.novelTitle,
     novelId: incoming.novelId || current.novelId,
+    platform: incoming.platform || current.platform || "",
     factoryNovelId: incoming.factoryNovelId || current.factoryNovelId,
     audioId: incoming.audioId || current.audioId || "",
     audioName: incoming.audioName || current.audioName || "",
@@ -157,11 +174,19 @@ export function filterPeerHits(items, query = "") {
   return list.filter((item) => [
     item.novelTitle,
     item.novelId,
+    item.platform,
     item.factoryNovelId,
     item.videoUrl,
     item.playCount,
     JSON.stringify(item.videoData || {})
   ].join(" ").toLowerCase().includes(needle));
+}
+
+export function filterPeerHitsByPlatform(items, platform = "all") {
+  const wanted = normalizePeerHitPlatform(platform);
+  const list = Array.isArray(items) ? items : [];
+  if (!wanted) return list;
+  return list.filter((item) => normalizePeerHitPlatform(item.platform) === wanted);
 }
 
 export function filterPeerHitsByTime(items, range = "all", now = Date.now(), since = 0) {
@@ -188,7 +213,7 @@ export function planPeerHitNovelImports(hits, novels = []) {
     const label = hit?.novelTitle || hit?.novelId || "这条";
     if (!String(hit?.audioId || "").trim()) return { hit, novel: null, skipReason: `${label} 还没有爆款音频` };
     const novel = matchFactoryNovel(hit, novels);
-    if (!novel) return { hit, novel: null, skipReason: `${label} 的小说id对不上书单` };
+    if (!novel) return { hit, novel: null, skipReason: `${label} 的小说id和平台对不上书单` };
     return { hit, novel, skipReason: "" };
   });
 }

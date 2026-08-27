@@ -120,6 +120,7 @@ async function importPeerHitsFromForm(env, db, request) {
     playCount: String(form.get("playCount") || form.get("播放量") || ""),
     novelTitle: String(form.get("novelTitle") || form.get("小说名称") || ""),
     novelId: String(form.get("novelId") || form.get("小说id") || ""),
+    platform: String(form.get("platform") || form.get("平台") || ""),
     videoData: {
       点赞: String(form.get("likes") || form.get("点赞") || ""),
       评论: String(form.get("comments") || form.get("评论") || ""),

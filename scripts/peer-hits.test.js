@@ -4,11 +4,13 @@ import {
   attachFactoryNovel,
   collectImportItems,
   filterPeerHits,
+  filterPeerHitsByPlatform,
   filterPeerHitsByTime,
   mergePeerHit,
   planPeerHitNovelImports,
   sortPeerHits,
   normalizePeerHitInput,
+  normalizePeerHitPlatform,
   normalizeVideoKey,
   parsePlayCount,
   pickFirst
@@ -20,6 +22,7 @@ test("reads Chinese and English import fields", () => {
     播放量: "12.3万",
     小说名称: "My Husband Stole My Lifespan for His Ex",
     小说id: "5070518208",
+    平台: "GoodNovel",
     视频数据: { 点赞: 880, 评论: 21 }
   }, { now: 1, id: "peer-1" });
   assert.equal(hit.videoUrl, "https://www.tiktok.com/@peer/video/1234567890?q=1");
@@ -27,6 +30,7 @@ test("reads Chinese and English import fields", () => {
   assert.equal(hit.playCount, 123000);
   assert.equal(hit.novelTitle, "My Husband Stole My Lifespan for His Ex");
   assert.equal(hit.novelId, "5070518208");
+  assert.equal(hit.platform, "GoodNovel");
   assert.equal(hit.videoData.点赞, 880);
   assert.equal(hit.videoData.评论, 21);
 });
@@ -52,12 +56,38 @@ test("accepts a single object or a wrapped list", () => {
 
 test("matches factory novels by book id then title", () => {
   const novels = [
-    { id: "n1", title: "Alpha", bookId: "111" },
-    { id: "n2", title: "Beta Book", bookId: "222" }
+    { id: "n1", title: "Alpha", bookId: "111", platform: "GoodNovel" },
+    { id: "n2", title: "Beta Book", bookId: "222", platform: "MotoNovel" }
   ];
   assert.equal(attachFactoryNovel({ novelId: "222", novelTitle: "" }, novels).factoryNovelId, "n2");
+  assert.equal(attachFactoryNovel({ novelId: "222", novelTitle: "" }, novels).platform, "MotoNovel");
   assert.equal(attachFactoryNovel({ novelId: "", novelTitle: "Alpha" }, novels).factoryNovelId, "n1");
   assert.equal(attachFactoryNovel({ novelId: "999", novelTitle: "Missing" }, novels).factoryNovelId, "");
+});
+
+test("matches the same book id to the selected platform", () => {
+  const novels = [
+    { id: "n-good", title: "Shared", bookId: "111", platform: "GoodNovel" },
+    { id: "n-moto", title: "Shared", bookId: "111", platform: "MotoNovel" }
+  ];
+  assert.equal(attachFactoryNovel({ novelId: "111", platform: "MotoNovel" }, novels).factoryNovelId, "n-moto");
+  assert.equal(attachFactoryNovel({ novelId: "111", platform: "GoodNovel" }, novels).factoryNovelId, "n-good");
+  assert.equal(attachFactoryNovel({ novelId: "111", novelTitle: "Shared" }, novels).factoryNovelId, "");
+  assert.equal(normalizePeerHitPlatform("MasterNovel"), "NovelMaster");
+  assert.equal(normalizePeerHitInput({
+    videoUrl: "https://www.tiktok.com/@a/video/8",
+    platform: "MasterNovel"
+  }, { now: 1, id: "peer-plat" }).platform, "NovelMaster");
+});
+
+test("filters peer hits by novel platform", () => {
+  const items = [
+    { id: "a", platform: "GoodNovel" },
+    { id: "b", platform: "MotoNovel" },
+    { id: "c", platform: "NovelMaster" }
+  ];
+  assert.deepEqual(filterPeerHitsByPlatform(items, "MotoNovel").map((item) => item.id), ["b"]);
+  assert.equal(filterPeerHitsByPlatform(items, "all").length, 3);
 });
 
 test("same video updates play count instead of duplicating", () => {
@@ -110,15 +140,18 @@ test("sorts peer hits by play count descending", () => {
 });
 
 test("plans novel imports by book id and skips missing audio", () => {
-  const novels = [{ id: "n1", title: "Alpha", bookId: "111" }];
+  const novels = [{ id: "n1", title: "Alpha", bookId: "111", platform: "GoodNovel" }];
   const plan = planPeerHitNovelImports([
-    { id: "h1", audioId: "peer-1", novelId: "111", novelTitle: "Alpha" },
-    { id: "h2", audioId: "", novelId: "111", novelTitle: "Alpha" },
-    { id: "h3", audioId: "peer-3", novelId: "999", novelTitle: "Missing" }
+    { id: "h1", audioId: "peer-1", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha" },
+    { id: "h2", audioId: "", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha" },
+    { id: "h3", audioId: "peer-3", novelId: "999", platform: "GoodNovel", novelTitle: "Missing" }
   ], novels);
   assert.equal(plan[0].novel.id, "n1");
   assert.match(plan[1].skipReason, /还没有爆款音频/);
   assert.match(plan[2].skipReason, /对不上书单/);
+  assert.match(planPeerHitNovelImports([
+    { id: "h4", audioId: "peer-4", novelId: "111", platform: "MotoNovel", novelTitle: "Alpha" }
+  ], novels)[0].skipReason, /对不上书单/);
 });
 
 test("pickFirst skips empty values", () => {
