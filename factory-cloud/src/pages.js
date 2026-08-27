@@ -13,6 +13,7 @@ const PAGE_FILES = {
   "/asset-usage": "asset-usage.html",
   "/novel-strategy": "novel-strategy.html",
   "/novel-library": "novel-library.html",
+  "/novel-peer-hits": "novel-peer-hits.html",
   "/novel-effects": "novel-effects.html",
   "/novel-audio": "novel-audio.html",
   "/novel-rewrite": "novel-rewrite.html",

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { SIDEBAR_MODULES as CLOUD_SIDEBAR_MODULES } from "../factory-cloud/src/sidebar.js";
 import { LOCAL_SIDEBAR_MODULE_IDS, SIDEBAR_MODULES, homePathForUser, shouldRedirectLocalPageToFactory, sidebarModuleIdsForRole } from "./sidebar-modules.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -33,6 +34,9 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-publish-records"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-analytics"));
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.href, "/novel-peer-hits");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.label, "同行爆款");
+  assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.roles, ["admin"]);
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.label, "数据概览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "mid-video-effects")?.label, "数据概览");
@@ -48,7 +52,7 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-effects", "novel-ops-report", "operator-official", "tasks"]
+    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-effects", "novel-ops-report", "operator-official", "tasks"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
@@ -87,6 +91,7 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/mid-video-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/psychology-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-library"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/novel-peer-hits"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/tasks"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/work-journal"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/work-journal-mindmap"), true);
@@ -136,4 +141,12 @@ test("GeeLark pages are visibly distinguished from official TikTok pages", () =>
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "tasks")?.label, "Reddit 混剪");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "official-analytics")?.label, "授权账号数据");
   assert.ok(SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") < SIDEBAR_MODULES.findIndex((item) => item.id === "stats"));
+});
+
+test("factory cloud keeps peer hits under novel promotion for admin only", () => {
+  const item = CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-peer-hits");
+  assert.equal(item?.href, "/novel-peer-hits");
+  assert.equal(item?.label, "同行爆款");
+  assert.equal(item?.group?.id, "novel-promotion");
+  assert.deepEqual(item?.roles, ["admin"]);
 });

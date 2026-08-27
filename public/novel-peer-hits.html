@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>同行爆款 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-1" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
+  <body class="work-page novel-library-page novel-peer-hits-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+    </nav>
+
+    <main class="library-shell">
+      <header class="library-header">
+        <div>
+          <p class="library-kicker">PEER HITS</p>
+          <h1>同行爆款</h1>
+          <p id="pageLead">GrokBot 导入的同行视频。提交视频链接、播放量、视频数据、小说名称和小说id。同一条链接再导入会覆盖播放量和数据。</p>
+        </div>
+        <div class="library-header-actions">
+          <button id="toggleImportBtn" class="primary-action" type="button">导入视频</button>
+        </div>
+      </header>
+
+      <section id="importPanel" class="import-panel" hidden>
+        <div class="section-heading">
+          <div><span>IMPORT</span><h2>导入同行视频</h2></div>
+        </div>
+        <p class="import-hint">可以贴一条 JSON，也可以贴数组。中英文字段都行：视频链接 / videoUrl，播放量 / playCount，视频数据 / videoData，小说名称 / novelTitle，小说id / novelId。</p>
+        <textarea id="importInput" maxlength="200000" placeholder='[
+  {
+    "视频链接": "https://www.tiktok.com/@user/video/123",
+    "播放量": 128000,
+    "视频数据": { "点赞": 880, "评论": 21, "分享": 9 },
+    "小说名称": "My Husband Stole My Lifespan for His Ex",
+    "小说id": "5070518208"
+  }
+]'></textarea>
+        <div class="form-actions">
+          <button id="importBtn" class="primary-action" type="button">写入列表</button>
+          <span id="importStatus" role="status"></span>
+        </div>
+      </section>
+
+      <section class="catalog-view">
+        <div class="list-toolbar">
+          <div id="listStatus" class="list-status">正在读取同行爆款...</div>
+          <label><span class="sr-only">搜索</span><input id="searchInput" type="search" placeholder="搜索小说名称、小说id或视频链接" /></label>
+        </div>
+        <div class="book-table-wrap">
+          <table class="book-table peer-table">
+            <colgroup>
+              <col class="col-date" />
+              <col class="col-title" />
+              <col class="col-book-id" />
+              <col class="col-play" />
+              <col class="col-video" />
+              <col class="col-data" />
+              <col class="col-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>导入时间</th>
+                <th>小说名称</th>
+                <th>小说id</th>
+                <th>播放量</th>
+                <th>视频链接</th>
+                <th>视频数据</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="hitList"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/access.js"></script>
+    <script src="/novel-peer-hits.js?v=20260827-1" type="module"></script>
+  </body>
+</html>

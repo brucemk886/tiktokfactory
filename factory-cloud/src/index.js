@@ -5,6 +5,7 @@ import { errorJson, json, redirect } from "./http.js";
 import { handleJournal } from "./journal.js";
 import { handleJobs, pruneFactoryJobs } from "./jobs.js";
 import { handleNovels } from "./novels.js";
+import { handlePeerHits } from "./peer-hits.js";
 import { handleOfficial, loadGroupStore } from "./official.js";
 import { collectFactoryStorageSample, handleSignalDeskIntegration } from "./factory-storage.js";
 import { persistOpsSnapshots, pruneOfficialOpsReports } from "./ops-report-store.js";
@@ -31,7 +32,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleJobs, handleAccounts, handleOfficial, handleNovels, handleJournal, handleGeeLark, handleCompat];
+        const handlers = [handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session);
           if (response) return response;

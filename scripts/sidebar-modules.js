@@ -26,6 +26,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("mid-video-publish", "/mid-video-publish", "视频发布", ["admin"], midVideoGroup()),
   moduleItem("novel-strategy", "/novel-strategy", "策略中心", ["admin"], novelPromotionGroup()),
   moduleItem("novel-library", "/novel-library", "小说书单", ["admin"], novelPromotionGroup()),
+  moduleItem("novel-peer-hits", "/novel-peer-hits", "同行爆款", ["admin"], novelPromotionGroup()),
   moduleItem("novel-effects", "/novel-effects", "数据概览", ["admin"], novelPromotionGroup()),
   moduleItem("novel-ops-report", "/novel-ops-report", "运营报表", ["admin"], novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ["admin"], novelPromotionGroup()),
@@ -93,6 +94,7 @@ export function shouldRedirectLocalPageToFactory(pathname) {
   return SIDEBAR_MODULES.some((item) => item.href === clean && !isLocalSidebarModule(item.id))
     || [
       "/novel-audio",
+      "/novel-peer-hits",
       "/novel-rewrite",
       "/rewrite-records",
       "/official-account-detail",

@@ -13,6 +13,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("mid-video-publish", "/mid-video-publish", "视频发布", ALL, midVideoGroup()),
   moduleItem("novel-strategy", "/novel-strategy", "策略中心", ALL, novelPromotionGroup()),
   moduleItem("novel-library", "/novel-library", "小说书单", ALL, novelPromotionGroup()),
+  moduleItem("novel-peer-hits", "/novel-peer-hits", "同行爆款", ["admin"], novelPromotionGroup()),
   moduleItem("novel-effects", "/novel-effects", "数据概览", ALL, novelPromotionGroup()),
   moduleItem("novel-ops-report", "/novel-ops-report", "运营报表", ALL, novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ALL, novelPromotionGroup()),
