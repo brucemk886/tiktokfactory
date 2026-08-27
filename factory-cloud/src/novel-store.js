@@ -159,6 +159,13 @@ export async function deleteNovelRow(db, id) {
   await db.prepare("DELETE FROM factory_novels WHERE id = ?").bind(String(id || "").trim()).run();
 }
 
+export async function getNovelRow(db, id) {
+  const wanted = String(id || "").trim();
+  if (!wanted) return null;
+  const row = await db.prepare("SELECT * FROM factory_novels WHERE id = ?").bind(wanted).first();
+  return row ? novelFromRow(row) : null;
+}
+
 export async function listNovelScripts(db) {
   const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
   return Array.isArray(store.scripts) ? store.scripts : [];

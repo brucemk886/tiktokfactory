@@ -20,7 +20,7 @@ import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { deleteNovelRow, insertNovels, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
+import { deleteNovelRow, getNovelRow, insertNovels, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, migrateNovelsFromKv, upsertNovel, writeScripts } from "./novel-store.js";
 import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
@@ -321,8 +321,7 @@ async function createNovel(db, payload) {
 }
 
 async function updateNovel(db, id, payload) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === safeId(id));
+  const novel = await findNovelById(db, id);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
   if (payload.title !== undefined) novel.title = String(payload.title || "").trim().slice(0, 180) || novel.title;
   if (payload.platform !== undefined) {
@@ -358,31 +357,38 @@ export function takeNovelFromStore(store, id) {
 }
 
 async function deleteNovel(db, id) {
-  const store = await readStore(db);
-  const taken = takeNovelFromStore(store, id);
-  if (!taken) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const novel = await findNovelById(db, id);
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const scripts = await listNovelScripts(db);
+  const taken = takeNovelFromStore({ novels: [novel], scripts }, novel.id);
   await deleteNovelRow(db, taken.novel.id);
-  if (taken.scripts.length !== store.scripts.length) await writeScripts(db, taken.scripts);
+  if (taken.scripts.length !== scripts.length) await writeScripts(db, taken.scripts);
   return {
     ok: true,
     id: taken.novel.id,
     title: taken.novel.title,
-    removedScriptCount: store.scripts.length - taken.scripts.length
+    removedScriptCount: scripts.length - taken.scripts.length
   };
 }
 
+async function findNovelById(db, id) {
+  await migrateNovelsFromKv(db);
+  const wanted = String(id || "").trim();
+  if (!wanted) return null;
+  return (await getNovelRow(db, wanted)) || (wanted === safeId(id) ? null : await getNovelRow(db, safeId(id)));
+}
+
 async function getNovel(db, id) {
-  const store = await readStore(db);
-  return store.novels.find((item) => item.id === String(id || "").trim() || item.id === safeId(id)) || null;
+  return findNovelById(db, id);
 }
 
 export async function hydrateNovel(db, id) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(id || "").trim() || item.id === safeId(id));
+  const novel = await findNovelById(db, id);
   if (!novel) return null;
+  const scripts = await listNovelScripts(db);
   return {
     ...novel,
-    scripts: store.scripts.filter((item) => item.novelId === novel.id)
+    scripts: scripts.filter((item) => item.novelId === novel.id)
   };
 }
 
@@ -475,9 +481,9 @@ async function importNovelAudios(env, db, session, novelId, request) {
   if (files.length > 8) throw Object.assign(new Error("一次最多上传 8 条音频。"), { statusCode: 400 });
   const invalid = files.find((file) => !isImportedAudioFile(file));
   if (invalid) throw Object.assign(new Error("只接受 mp3 音频。"), { statusCode: 400 });
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
   const pending = store.scripts.filter((script) => script.novelId === novel.id && !scriptHasAudio(script));
   const scriptIds = form.getAll("scriptIds").map((id) => String(id || "").trim()).filter(Boolean);
   const plan = planImportedAudioAssignments({ pendingScripts: pending, files, scriptIds });
@@ -567,7 +573,7 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
     throw error;
   }
   const novels = await listNovelsMatchingPeerHits(db, selected);
-  const store = await readStore(db);
+  const store = { scripts: await listNovelScripts(db) };
   const createdAt = new Date().toISOString();
   const skipped = [];
   let imported = 0;
@@ -624,9 +630,9 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
 }
 
 async function createScript(db, novelId, payload = {}) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
   const text = String(payload.text || "").trim().slice(0, 20_000);
   if (text.length < 20) throw Object.assign(new Error("改写文案至少需要 20 个字符。"), { statusCode: 400 });
   const createdAt = new Date().toISOString();
@@ -652,9 +658,9 @@ async function createScript(db, novelId, payload = {}) {
 }
 
 export async function deleteScript(env, db, novelId, scriptId) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
   const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
   if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
   const next = removeScriptsById(store.scripts, [script.id]);
@@ -665,9 +671,9 @@ export async function deleteScript(env, db, novelId, scriptId) {
 }
 
 export async function updateScript(db, novelId, scriptId, payload = {}) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
   const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
   if (!script) throw Object.assign(new Error("没有找到这条文案。"), { statusCode: 404 });
   const text = payload.text == null ? script.text : String(payload.text || "").trim().slice(0, 20_000);
@@ -682,9 +688,9 @@ export async function updateScript(db, novelId, scriptId, payload = {}) {
 }
 
 export async function pruneDraftScripts(db, novelId, payload = {}) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
   const next = Array.isArray(payload.scriptIds) && payload.scriptIds.length
     ? removeDraftScriptsById(store.scripts, payload.scriptIds)
     : dropDraftScripts(store.scripts, {
@@ -698,7 +704,7 @@ export async function pruneDraftScripts(db, novelId, payload = {}) {
 }
 
 export async function removeDraftScripts(db, scriptIds = []) {
-  const store = await readStore(db);
+  const store = { scripts: await listNovelScripts(db) };
   const next = removeDraftScriptsById(store.scripts, scriptIds);
   const removedCount = store.scripts.length - next.length;
   if (removedCount) await writeScripts(db, next);
@@ -706,9 +712,9 @@ export async function removeDraftScripts(db, scriptIds = []) {
 }
 
 async function setNovelMixAudios(db, novelId, scriptIds) {
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
   const wanted = new Set((Array.isArray(scriptIds) ? scriptIds : []).map((id) => String(id || "").trim()).filter(Boolean));
   const novelScripts = store.scripts.filter((item) => item.novelId === novel.id);
   if (!novelScripts.length) throw Object.assign(new Error("这本小说还没有可勾选的改写文案。"), { statusCode: 400 });
@@ -726,26 +732,27 @@ async function setNovelMixAudios(db, novelId, scriptIds) {
 export async function resolveNovelTitle(db, { novelId = "", novelTitle = "" } = {}) {
   const title = String(novelTitle || "").trim();
   if (title) return title;
-  const store = await readStore(db);
-  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  const novel = await findNovelById(db, novelId);
   return String(novel?.title || "").trim();
 }
 
 export async function buildAudioGeneratePayload(db, body = {}) {
-  const store = await readStore(db);
+  const scripts = await listNovelScripts(db);
   const settings = await kvGet(db, "novel-seed-settings", {});
   const voiceId = String(body.voiceId || settings.voiceId || "").trim();
   const requested = Array.isArray(body.items) && body.items.length
     ? body.items
     : (Array.isArray(body.scriptIds) ? body.scriptIds.map((id) => ({ scriptId: id, novelId: body.novelId })) : [body]);
   const items = [];
+  const novels = new Map();
   for (const raw of requested) {
     const scriptId = String(raw.scriptId || "").trim();
-    const script = store.scripts.find((item) => item.id === scriptId);
+    const script = scripts.find((item) => item.id === scriptId);
     const text = String(raw.script || raw.text || script?.text || "").trim();
     if (text.length < 20) continue;
     const novelId = String(raw.novelId || script?.novelId || body.novelId || "").trim();
-    const novel = store.novels.find((item) => item.id === novelId);
+    if (novelId && !novels.has(novelId)) novels.set(novelId, await findNovelById(db, novelId));
+    const novel = novels.get(novelId) || null;
     items.push({
       novelId: novel?.id || script?.novelId || novelId,
       novelTitle: String(raw.novelTitle || novel?.title || body.novelTitle || "").trim(),
@@ -775,7 +782,7 @@ export async function buildAudioGeneratePayload(db, body = {}) {
 }
 
 export async function attachAudioGenerateResults(db, items = []) {
-  const store = await readStore(db);
+  const store = { scripts: await listNovelScripts(db) };
   let changed = 0;
   for (const item of Array.isArray(items) ? items : []) {
     const script = store.scripts.find((row) => row.id === String(item.scriptId || "").trim());
