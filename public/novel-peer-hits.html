@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-10" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-11" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -19,7 +19,7 @@
         <div>
           <p class="library-kicker">PEER HITS</p>
           <h1>同行爆款</h1>
-          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。按 GoodNovel / MotoNovel / NovelMaster 对应书单。列表按播放量从高到低。勾选有音频、小说id和平台能对上书单的条目，一键写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</p>
+          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。按 GoodNovel / MotoNovel / NovelMaster 对应书单。列表按播放量从高到低。勾选有音频、小说id和平台能对上书单的条目，一键写到该书音频页。要拷到本机，去小说音频页单独下载。</p>
         </div>
         <div class="library-header-actions">
           <button id="toggleImportBtn" class="primary-action" type="button">导入同行爆款</button>
@@ -96,6 +96,7 @@
               <col class="col-check" />
               <col class="col-date" />
               <col class="col-title" />
+              <col class="col-imported" />
               <col class="col-platform" />
               <col class="col-book-id" />
               <col class="col-play" />
@@ -108,6 +109,7 @@
                 <th class="cell-check"><span class="sr-only">选择</span></th>
                 <th>导入时间</th>
                 <th>小说名称</th>
+                <th class="cell-imported">是否已导入音频页</th>
                 <th>平台</th>
                 <th>小说id</th>
                 <th>播放量</th>
@@ -124,6 +126,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-10" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-11" type="module"></script>
   </body>
 </html>

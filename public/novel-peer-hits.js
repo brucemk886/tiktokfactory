@@ -109,7 +109,7 @@ function renderList() {
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="9"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="10"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -119,6 +119,7 @@ function renderList() {
       <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
       <td class="cell-title">${novelTitleCell(item)}</td>
+      <td class="cell-imported">${item.importedToAudioBoard ? "是" : "否"}</td>
       <td><span class="platform-chip">${escapeHtml(item.platform || "未设置")}</span></td>
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
       <td class="cell-play">${escapeHtml(formatPlayCount(item.playCount))}</td>
@@ -154,7 +155,7 @@ function visibleItems() {
       item.novelId,
       item.platform,
       item.factoryNovelId,
-      item.importedToAudioBoard ? "已写入音频页" : "",
+      item.importedToAudioBoard ? "是 已写入音频页" : "否",
       item.videoUrl,
       formatVideoData(item.videoData)
     ].join(" ").toLowerCase().includes(needle))
@@ -286,7 +287,6 @@ async function importToNovels() {
   state.importing = true;
   if (elements.importToNovelsButton) elements.importToNovelsButton.disabled = true;
   let finished = 0;
-  const dirs = [];
   const messages = [];
   try {
     for (let offset = 0; offset < ids.length; offset += chunkSize) {
@@ -297,24 +297,15 @@ async function importToNovels() {
         body: JSON.stringify({ ids: chunk })
       });
       if (data.message) messages.push(data.message);
-      const jobs = Array.isArray(data.jobs) ? data.jobs.filter((job) => job?.jobId) : [];
-      for (const job of jobs) {
-        if (job.novelTitle) dirs.push(job.novelTitle);
-      }
       finished = Math.min(offset + chunk.length, total);
-      setImportProgress(finished, total, "已写入音频页，本机目录后台拷贝");
+      setImportProgress(finished, total, "已写入音频页");
     }
     state.selectedIds.clear();
     await loadList();
     const summary = messages[messages.length - 1] || `已导入 ${finished} 条到书单音频页`;
-    setBatchStatus(
-      dirs.length
-        ? `${summary}。进度 ${finished}/${total}。本机目录后台写入：${[...new Set(dirs)].join("；")}`
-        : `${summary}。进度 ${finished}/${total}。`,
-      "ok"
-    );
+    setBatchStatus(`${summary}。进度 ${finished}/${total}。要拷到本机，去小说音频页下载。`, "ok");
   } catch (error) {
-    setBatchStatus(`进度 ${finished}/${total}。${error.message || "网页已导入，本机目录稍后写入。请确认本机工厂已启动。"}`, "error");
+    setBatchStatus(`进度 ${finished}/${total}。${error.message || "写入音频页失败。"}`, "error");
   } finally {
     state.importing = false;
     if (elements.importToNovelsButton) {
@@ -416,18 +407,9 @@ async function deleteHit(id) {
 
 function novelTitleCell(item) {
   const title = item.novelTitle || "未设置小说名称";
-  const heading = item.factoryNovelId
+  return item.factoryNovelId
     ? `<strong title="${escapeAttr(title)}"><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}" title="${escapeAttr(title)}">${escapeHtml(title)}</a></strong>`
     : `<strong title="${escapeAttr(title)}">${escapeHtml(title)}</strong>`;
-  const mark = item.importedToAudioBoard ? `<span class="import-chip">已写入</span>` : "";
-  const hint = item.importedToAudioBoard
-    ? ""
-    : item.factoryNovelId
-      ? "已对上书单"
-      : item.novelId
-        ? "小说id和平台还对不上书单"
-        : "没有小说id";
-  return `<div class="title-line">${heading}${mark}</div>${hint ? `<p>${escapeHtml(hint)}</p>` : ""}`;
 }
 
 function formatVideoData(data) {

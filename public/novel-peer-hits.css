@@ -1,12 +1,15 @@
 .peer-table { min-width: 1280px; }
 .peer-table .col-platform { width: 118px; }
 .peer-table .col-check { width: 36px; }
+.peer-table .col-imported { width: 108px; }
 .peer-table .col-play { width: 96px; }
 .peer-table .col-video { width: 200px; }
 .peer-table .col-audio { width: 220px; }
 .peer-table .cell-audio audio { width: 100%; height: 32px; }
 .peer-table .col-actions { width: 88px; }
 .peer-table .cell-play { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.peer-table .cell-imported { font-weight: 800; }
+.peer-table th.cell-imported { white-space: normal; line-height: 1.3; }
 .peer-table .cell-video { min-width: 0; }
 .peer-table .cell-video a {
   display: block;
@@ -17,50 +20,18 @@
   white-space: nowrap;
 }
 .peer-table .cell-title { min-width: 0; overflow: hidden; }
-.peer-table .title-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.peer-table .title-line strong {
-  flex: 1 1 auto;
-  min-width: 0;
+.peer-table .cell-title strong {
+  display: block;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.peer-table .title-line a {
-  display: block;
-  overflow: hidden;
+.peer-table .cell-title a {
   color: inherit;
   text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.peer-table .title-line a:hover { text-decoration: underline; }
-.peer-table .cell-title p {
-  margin: 4px 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.peer-table .import-chip {
-  flex: 0 0 auto;
-  display: inline-flex;
-  min-height: 23px;
-  align-items: center;
-  border-radius: 999px;
-  padding: 2px 8px;
-  border: 1px solid #8a9a32;
-  background: #eef6b8;
-  color: #3d4710;
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-.peer-table tr.is-imported td { background: rgba(238, 246, 184, 0.28); }
+.peer-table .cell-title a:hover { text-decoration: underline; }
 .peer-table .cell-check input:disabled { opacity: 0.35; cursor: not-allowed; }
 .peer-table .cell-play { cursor: default; }
 .import-panel { display: grid; gap: 12px; margin: 22px 0 0; padding: 20px; border: 1px solid rgba(138, 154, 50, 0.45); border-radius: var(--lf-radius, 14px); background: rgba(200, 220, 90, 0.12); }

@@ -176,7 +176,7 @@ export function filterPeerHits(items, query = "") {
     item.novelId,
     item.platform,
     item.factoryNovelId,
-    item.importedToAudioBoard ? "已写入音频页" : "",
+    item.importedToAudioBoard ? "是 已写入音频页" : "否",
     item.videoUrl,
     item.playCount,
     JSON.stringify(item.videoData || {})
