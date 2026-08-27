@@ -8,6 +8,7 @@ import {
   filterPeerHitsByPlatform,
   filterPeerHitsByTime,
   importedPeerHitIdSet,
+  importedSourceTokensByNovel,
   mergePeerHit,
   planPeerHitNovelImports,
   sortPeerHits,
@@ -169,6 +170,23 @@ test("marks peer hits already written to a novel audio board", () => {
     [{ id: "h1", audioId: "peer-1", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha" }],
     [{ id: "n1", title: "Alpha", bookId: "111", platform: "GoodNovel" }],
     { importedPeerHitIds: imported }
+  )[0].skipReason, /已经写入音频页/);
+});
+
+test("skips peer-hit import when the same source file is already on that book", () => {
+  const novels = [{ id: "n1", title: "Alpha", bookId: "111", platform: "GoodNovel" }];
+  const tokens = importedSourceTokensByNovel([
+    {
+      novelId: "n1",
+      title: "Alpha 111_7664612119932833038",
+      text: "Uploaded audio for this novel opening. Source file: 111_7664612119932833038.mp3."
+    }
+  ]);
+  assert.deepEqual([...tokens.get("n1")], ["111_7664612119932833038"]);
+  assert.match(planPeerHitNovelImports(
+    [{ id: "h9", audioId: "peer-9", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha", audioName: "111_7664612119932833038.mp3" }],
+    novels,
+    { importedSourceTokensByNovel: tokens }
   )[0].skipReason, /已经写入音频页/);
 });
 

@@ -209,10 +209,33 @@ function rangeStart(range, now) {
   return 0;
 }
 
+export function sourceFileToken(values = []) {
+  const blob = (Array.isArray(values) ? values : [values]).map((value) => String(value || "")).join(" ");
+  return blob.match(/(\d+_\d{8,})/)?.[1] || "";
+}
+
 export function importedPeerHitIdSet(scripts = []) {
   return new Set((Array.isArray(scripts) ? scripts : [])
     .filter((script) => String(script?.peerHitId || "").trim() && String(script?.audioId || script?.audio?.id || "").trim())
     .map((script) => String(script.peerHitId).trim()));
+}
+
+export function importedSourceTokensByNovel(scripts = []) {
+  const map = new Map();
+  for (const script of Array.isArray(scripts) ? scripts : []) {
+    const novelId = String(script?.novelId || "").trim();
+    const token = sourceFileToken([
+      script?.title,
+      script?.openingTitle,
+      script?.text,
+      script?.audio?.fileName,
+      script?.audio?.title
+    ]);
+    if (!novelId || !token) continue;
+    if (!map.has(novelId)) map.set(novelId, new Set());
+    map.get(novelId).add(token);
+  }
+  return map;
 }
 
 export function attachAudioBoardImportStatus(hit, importedIds = new Set()) {
@@ -222,14 +245,17 @@ export function attachAudioBoardImportStatus(hit, importedIds = new Set()) {
   };
 }
 
-export function planPeerHitNovelImports(hits, novels = [], { importedPeerHitIds } = {}) {
+export function planPeerHitNovelImports(hits, novels = [], { importedPeerHitIds, importedSourceTokensByNovel: tokensByNovel } = {}) {
   const imported = importedPeerHitIds instanceof Set ? importedPeerHitIds : new Set();
+  const tokens = tokensByNovel instanceof Map ? tokensByNovel : new Map();
   return (Array.isArray(hits) ? hits : []).map((hit) => {
     const label = hit?.novelTitle || hit?.novelId || "这条";
     if (!String(hit?.audioId || "").trim()) return { hit, novel: null, skipReason: `${label} 还没有爆款音频` };
     const novel = matchFactoryNovel(hit, novels);
     if (!novel) return { hit, novel: null, skipReason: `${label} 的小说id和平台对不上书单` };
     if (imported.has(String(hit?.id || "").trim())) return { hit, novel, skipReason: `${label} 已经写入音频页` };
+    const token = sourceFileToken([hit.audioName, hit.novelTitle, hit.title]);
+    if (token && tokens.get(novel.id)?.has(token)) return { hit, novel, skipReason: `${label} 已经写入音频页` };
     return { hit, novel, skipReason: "" };
   });
 }
