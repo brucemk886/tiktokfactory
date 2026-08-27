@@ -139,10 +139,12 @@ async function importPeerHitsFromForm(env, db, request) {
     novelTitle: String(form.get("novelTitle") || form.get("小说名称") || ""),
     novelId: String(form.get("novelId") || form.get("小说id") || ""),
     platform: String(form.get("platform") || form.get("平台") || ""),
+    publishedAt: String(form.get("publishedAt") || form.get("发布时间") || ""),
     videoData: {
       点赞: String(form.get("likes") || form.get("点赞") || ""),
       评论: String(form.get("comments") || form.get("评论") || ""),
-      分享: String(form.get("shares") || form.get("分享") || "")
+      分享: String(form.get("shares") || form.get("分享") || ""),
+      发布时间: String(form.get("publishedAt") || form.get("发布时间") || "")
     }
   });
   const hit = result.items[0];

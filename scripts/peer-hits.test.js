@@ -5,6 +5,7 @@ import {
   attachFactoryNovel,
   attachPeerHitTimes,
   attachScaleRunMarks,
+  planPeerHitPublishedAtWrites,
   collectImportItems,
   filterPeerHits,
   filterPeerHitsByPlatform,
@@ -242,6 +243,37 @@ test("prefers recorded publish time over the TikTok video id", () => {
     videoUrl: "https://www.tiktok.com/@a/video/7665161307120766222",
     发布时间: recorded
   }, { now: 1, id: "peer-time" }).videoData.发布时间, recorded);
+});
+
+test("writes publish time into video data on import and later scrape updates", () => {
+  const fromId = publishedAtFromTikTokId("7665161307120766222");
+  const imported = normalizePeerHitInput({
+    videoUrl: "https://www.tiktok.com/@a/video/7665161307120766222",
+    playCount: 100
+  }, { now: 1, id: "peer-write" });
+  assert.equal(imported.videoData.发布时间, fromId);
+
+  const fromCreateTime = normalizePeerHitInput({
+    videoUrl: "https://www.tiktok.com/@a/video/1",
+    videoData: { createTime: 1_753_171_240, 点赞: 8 }
+  }, { now: 1, id: "peer-create" });
+  assert.equal(fromCreateTime.videoData.发布时间, 1_753_171_240_000);
+  assert.equal(fromCreateTime.videoData.点赞, 8);
+
+  const merged = mergePeerHit(
+    { id: "peer-old", videoUrl: imported.videoUrl, videoData: { 点赞: 1 }, playCount: 10 },
+    { id: "peer-new", videoUrl: imported.videoUrl, videoData: { 点赞: 2 }, playCount: 20, updatedAt: 2 }
+  );
+  assert.equal(merged.videoData.发布时间, fromId);
+  assert.equal(merged.videoData.点赞, 2);
+
+  const planned = planPeerHitPublishedAtWrites([
+    { id: "missing", videoUrl: imported.videoUrl, videoData: { 点赞: 1 } },
+    { id: "ready", videoUrl: imported.videoUrl, videoData: { 发布时间: fromId } }
+  ]);
+  assert.equal(planned.length, 1);
+  assert.equal(planned[0].id, "missing");
+  assert.equal(planned[0].publishedAt, fromId);
 });
 
 test("pickFirst skips empty values", () => {

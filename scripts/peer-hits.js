@@ -84,18 +84,38 @@ export function parsePublishedAt(value) {
 export function peerHitPublishedAt(hit = {}) {
   const data = hit?.videoData && typeof hit.videoData === "object" ? hit.videoData : {};
   const recorded = parsePublishedAt(
-    data.发布时间 || data.publishedAt || data.publishTime || data.createTime || data.createdAt
-    || hit.publishedAt || hit.published_at
+    data.发布时间 || data.publishedAt || data.publishTime || data.publish_time
+    || data.createTime || data.create_time || data.createdAt || data.created_at
+    || hit.publishedAt || hit.published_at || hit["发布时间"]
+    || hit.createTime || hit.create_time || hit.createdAt || hit.created_at
   );
   if (recorded) return recorded;
   return publishedAtFromTikTokId(tiktokVideoIdFromUrl(hit.videoUrl || hit.video_url));
 }
 
+export function withPersistedPublishedAt(hit = {}) {
+  const publishedAt = peerHitPublishedAt(hit);
+  const data = hit.videoData && typeof hit.videoData === "object" && !Array.isArray(hit.videoData)
+    ? { ...hit.videoData }
+    : {};
+  if (!publishedAt) return { ...hit, videoData: data };
+  if (parsePublishedAt(data.发布时间) === publishedAt) {
+    return hit.publishedAt === publishedAt ? hit : { ...hit, publishedAt, videoData: data };
+  }
+  return { ...hit, publishedAt, videoData: { ...data, 发布时间: publishedAt } };
+}
+
+export function planPeerHitPublishedAtWrites(hits = []) {
+  return (Array.isArray(hits) ? hits : []).map((hit) => {
+    const next = withPersistedPublishedAt(hit);
+    const before = parsePublishedAt(hit?.videoData?.发布时间);
+    const after = parsePublishedAt(next.videoData?.发布时间);
+    return { id: hit?.id || "", hit: next, publishedAt: after, changed: Boolean(after) && after !== before };
+  }).filter((item) => item.changed);
+}
+
 export function attachPeerHitTimes(hits = []) {
-  return (Array.isArray(hits) ? hits : []).map((hit) => ({
-    ...hit,
-    publishedAt: peerHitPublishedAt(hit)
-  }));
+  return (Array.isArray(hits) ? hits : []).map((hit) => withPersistedPublishedAt(hit));
 }
 
 export function normalizeVideoKey(url) {
@@ -136,11 +156,11 @@ export function normalizePeerHitInput(raw, options = {}) {
     error.statusCode = 400;
     throw error;
   }
-  const videoData = { ...readVideoData(item) };
-  const publishedAt = parsePublishedAt(
-    item.publishedAt || item.published_at || item["发布时间"] || videoData.发布时间 || videoData.publishedAt
-  );
-  if (publishedAt) videoData.发布时间 = publishedAt;
+  const videoData = withPersistedPublishedAt({
+    ...item,
+    videoUrl,
+    videoData: readVideoData(item)
+  }).videoData;
   const playCount = parsePlayCount(pickFirst(item, PLAY_COUNT_KEYS) || videoData.playCount || videoData.播放量 || videoData.views);
   const novelTitle = String(pickFirst(item, NOVEL_TITLE_KEYS)).trim().slice(0, 180);
   const novelId = String(pickFirst(item, NOVEL_ID_KEYS)).trim().slice(0, 240);
@@ -200,10 +220,11 @@ export function attachFactoryNovel(hit, novels = []) {
 }
 
 export function mergePeerHit(current, incoming) {
-  if (!current) return incoming;
-  return {
+  if (!current) return withPersistedPublishedAt(incoming);
+  const videoUrl = incoming.videoUrl || current.videoUrl;
+  return withPersistedPublishedAt({
     ...current,
-    videoUrl: incoming.videoUrl || current.videoUrl,
+    videoUrl,
     videoKey: incoming.videoKey || current.videoKey,
     playCount: Number.isFinite(incoming.playCount) ? incoming.playCount : current.playCount,
     novelTitle: incoming.novelTitle || current.novelTitle,
@@ -217,7 +238,7 @@ export function mergePeerHit(current, incoming) {
     source: incoming.source || current.source,
     importedAt: current.importedAt || incoming.importedAt,
     updatedAt: incoming.updatedAt
-  };
+  });
 }
 
 export function filterPeerHits(items, query = "") {
