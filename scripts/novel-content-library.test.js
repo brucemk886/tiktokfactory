@@ -300,6 +300,33 @@ test("prunes unsaved drafts and keeps voiced or explicitly saved scripts", () =>
   assert.ok(!result.novel.scripts.some((item) => item.id === drop.id));
 });
 
+test("deletes a voiced script without removing other openings", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-script-delete-"));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  const novel = service.createNovel({
+    title: "Delete voiced book",
+    platform: "GoodNovel",
+    sourceContent: "This free chapter is long enough for the voiced script delete test."
+  });
+  const keep = service.createScript(novel.id, {
+    title: "Keep this opening",
+    versionLabel: "保留",
+    text: "A complete narration that should stay after the other voiced opening is deleted."
+  });
+  const drop = service.createScript(novel.id, {
+    title: "Drop this opening",
+    versionLabel: "删除",
+    text: "A complete narration that should be removed even though it already has audio."
+  });
+  service.attachScriptAudio(keep.id, "audio-keep");
+  service.attachScriptAudio(drop.id, "audio-drop");
+  const result = service.deleteScript(novel.id, drop.id);
+  assert.equal(result.ok, true);
+  assert.equal(result.removed, true);
+  assert.deepEqual(result.novel.scripts.map((item) => item.id), [keep.id]);
+  assert.throws(() => service.deleteScript(novel.id, drop.id), /没有找到这条音频/);
+});
+
 test("deletes a novel and its rewrite scripts without removing other books", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-delete-"));
   const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });

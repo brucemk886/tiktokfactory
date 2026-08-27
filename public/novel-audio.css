@@ -34,7 +34,8 @@
 .pending-head h2 { margin: 0 0 6px; font-size: 18px; }
 .pending-head p { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.55; }
 .pending-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.pending-actions .delete-script { border-color: #d9a29a; color: #8a2f28; }
+.pending-actions .delete-script,
+.audio-card-actions .delete-script { border-color: #d9a29a; color: #8a2f28; }
 .pending-title-block { display: grid; gap: 8px; }
 .pending-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .pending-title-row .pending-title { flex: 1 1 280px; }

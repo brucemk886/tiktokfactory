@@ -91,6 +91,12 @@ export function removeDraftScriptsById(scripts = [], scriptIds = []) {
   return (Array.isArray(scripts) ? scripts : []).filter((script) => !drop.has(String(script?.id || "")) || scriptHasAudio(script));
 }
 
+export function removeScriptsById(scripts = [], scriptIds = []) {
+  const drop = new Set((Array.isArray(scriptIds) ? scriptIds : []).map((id) => String(id || "").trim()).filter(Boolean));
+  if (!drop.size) return Array.isArray(scripts) ? scripts : [];
+  return (Array.isArray(scripts) ? scripts : []).filter((script) => !drop.has(String(script?.id || "")));
+}
+
 export function audioItemsFromScripts(scripts = []) {
   return scripts.map((script) => ({
     id: script.audioId || script.audio?.id || "",

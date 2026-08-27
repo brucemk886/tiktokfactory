@@ -1395,6 +1395,17 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "DELETE" && /^\/api\/novel-content\/novels\/[^/]+\/scripts\/[^/]+$/.test(url.pathname)) {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
+      try {
+        const novelId = decodeURIComponent(url.pathname.split("/")[4]);
+        const scriptId = decodeURIComponent(url.pathname.split("/")[6]);
+        return sendJson(res, 200, novelContentLibrary.deleteScript(novelId, scriptId));
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "删除失败。" });
+      }
+    }
+
     if (req.method === "POST" && /^\/api\/novel-content\/novels\/[^/]+\/prune-drafts$/.test(url.pathname)) {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "小说内容库仅允许在本机访问。" });
       try {

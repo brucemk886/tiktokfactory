@@ -232,6 +232,9 @@ function renderVoiced(audios, novel) {
   elements.audioList.querySelectorAll("[data-reupload-id]").forEach((button) => {
     button.addEventListener("click", () => reuploadPlayback(button.dataset.reuploadId, button));
   });
+  elements.audioList.querySelectorAll("[data-delete-voiced-id]").forEach((button) => {
+    button.addEventListener("click", () => deleteVoicedScript(button.dataset.deleteVoicedId, button));
+  });
   bindVoicedPlayback(elements.audioList);
   bindRetuneControls(elements.audioList);
 }
@@ -407,6 +410,30 @@ async function copyPendingScript(scriptId, button) {
     setPendingStatus("已复制整段文案。", "ok");
   } catch (error) {
     setPendingStatus(error.message || "复制失败，请手动选中文案。", "error");
+  }
+}
+
+async function deleteVoicedScript(scriptId, button) {
+  if (!scriptId || !state.novelId) return;
+  const confirmed = window.confirm("确定删除这条已配音？音频页和混剪将不再用它。本机 F:\\音频目录 里的文件需要自己再删。");
+  if (!confirmed) return;
+  if (button) button.disabled = true;
+  setMixStatus("正在删除这条已配音...");
+  try {
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(scriptId)}`, {
+      method: "DELETE"
+    });
+    state.novel = data.novel;
+    renderNovel(state.novel);
+    if (elements.mixToolbar?.hidden && elements.listStatus) {
+      elements.listStatus.textContent = "已删除这条已配音。";
+      elements.listStatus.className = "list-status is-ok";
+    } else {
+      setMixStatus("已删除这条已配音。", "ok");
+    }
+  } catch (error) {
+    if (button) button.disabled = false;
+    setMixStatus(error.message || "删除失败。", "error");
   }
 }
 
@@ -586,6 +613,7 @@ function audioCard(script) {
           </label>
           <button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>
           <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}">去改写</a>
+          <button class="quiet-action delete-script" type="button" data-delete-voiced-id="${escapeHtml(script.id)}">删除</button>
         </div>
       </div>
       <audio controls preload="metadata" data-audio-id="${escapeHtml(audioId)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>

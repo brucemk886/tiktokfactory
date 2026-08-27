@@ -1,13 +1,13 @@
 import { assembleOfficialNovelEffects, slimEffectsPage } from "../../scripts/novel-effect-core.js";
 import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
-import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById, scriptHasAudio } from "../../scripts/novel-overview.js";
+import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById, removeScriptsById, scriptHasAudio } from "../../scripts/novel-overview.js";
 import {
   isImportedAudioFile,
   planImportedAudioAssignments,
   uploadedAudioOpeningTitle,
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
-import { copyNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
+import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
 import { planPeerHitNovelImports } from "../../scripts/peer-hits.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
@@ -98,6 +98,13 @@ export async function handleNovels(request, env, url, session) {
       return json({ script, novel: await hydrateNovel(db, script.novelId) });
     } catch (error) {
       return errorJson(error.message || "保存文案失败。", error.statusCode || 400);
+    }
+  }
+  if (method === "DELETE" && scriptItemMatch) {
+    try {
+      return json(await deleteScript(env, db, decodeURIComponent(scriptItemMatch[1]), decodeURIComponent(scriptItemMatch[2])));
+    } catch (error) {
+      return errorJson(error.message || "删除失败。", error.statusCode || 400);
     }
   }
 
@@ -677,6 +684,19 @@ async function createScript(db, novelId, payload = {}) {
   store.scripts.push(script);
   await writeScripts(db, store.scripts);
   return script;
+}
+
+export async function deleteScript(env, db, novelId, scriptId) {
+  const store = await readStore(db);
+  const novel = store.novels.find((item) => item.id === String(novelId || "").trim() || item.id === safeId(novelId));
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
+  if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
+  const next = removeScriptsById(store.scripts, [script.id]);
+  await writeScripts(db, next);
+  const audioId = String(script.audioId || script.audio?.id || "").trim();
+  if (audioId) await deleteNovelAudio(env, audioId).catch(() => false);
+  return { ok: true, removed: true, novel: await hydrateNovel(db, novel.id) };
 }
 
 export async function updateScript(db, novelId, scriptId, payload = {}) {

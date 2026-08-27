@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildOverview, dropDraftScripts, removeDraftScriptsById, scriptHasAudio, scriptIsKept } from "../../scripts/novel-overview.js";
+import { buildOverview, dropDraftScripts, removeDraftScriptsById, removeScriptsById, scriptHasAudio, scriptIsKept } from "../../scripts/novel-overview.js";
 import { takeNovelFromStore } from "./novels.js";
 
 test("removes one novel and only its rewrite scripts from the catalog store", () => {
@@ -37,6 +37,7 @@ test("drops text-only drafts and keeps voiced or explicitly saved scripts", () =
   assert.equal(scriptIsKept(scripts[1]), true);
   assert.deepEqual(dropDraftScripts(scripts, { novelId: "novel-1" }).map((item) => item.id), ["keep-audio", "keep-pending", "other-book"]);
   assert.deepEqual(removeDraftScriptsById(scripts, ["drop-draft", "keep-audio"]).map((item) => item.id), ["keep-audio", "keep-pending", "other-book"]);
+  assert.deepEqual(removeScriptsById(scripts, ["keep-audio", "drop-draft"]).map((item) => item.id), ["keep-pending", "other-book"]);
 });
 
 test("keeps recent drafts when a grace window is set", () => {

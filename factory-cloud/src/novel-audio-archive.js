@@ -14,6 +14,13 @@ export async function putNovelAudio(env, audioId, body, contentType = "audio/mpe
   return { ok: true, audioId: key.slice("novel-audio/".length, -4), key };
 }
 
+export async function deleteNovelAudio(env, audioId) {
+  const key = novelAudioObjectKey(audioId);
+  if (!key || !env?.ARCHIVE) return false;
+  await env.ARCHIVE.delete(key);
+  return true;
+}
+
 export async function copyNovelAudio(env, fromId, toId) {
   const fromKey = novelAudioObjectKey(fromId);
   const toKey = novelAudioObjectKey(toId);

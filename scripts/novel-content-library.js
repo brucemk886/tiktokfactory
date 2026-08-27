@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { buildOverview, dropDraftScripts, removeDraftScriptsById } from "./novel-overview.js";
+import { buildOverview, dropDraftScripts, removeDraftScriptsById, removeScriptsById } from "./novel-overview.js";
 
 const STORE_VERSION = 1;
 const NOVEL_PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
@@ -248,6 +248,17 @@ export function createNovelContentLibraryService({
     return script;
   }
 
+  function deleteScript(novelId, scriptId) {
+    const store = syncedStore();
+    const novel = store.novels.find((item) => item.id === safeId(novelId));
+    if (!novel) throw statusError(404, "没有找到该小说。");
+    const script = store.scripts.find((item) => item.id === safeId(scriptId) && item.novelId === novel.id);
+    if (!script) throw statusError(404, "没有找到这条音频。");
+    store.scripts = removeScriptsById(store.scripts, [script.id]);
+    writeStore(storePath, store);
+    return { ok: true, removed: true, novel: getNovel(novel.id) };
+  }
+
   function attachScriptAudio(scriptId, audioId) {
     const store = readStore(storePath);
     const script = store.scripts.find((item) => item.id === safeId(scriptId));
@@ -297,7 +308,7 @@ export function createNovelContentLibraryService({
     return { ok: true, removedCount, novel: getNovel(novel.id) };
   }
 
-  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, updateScript, assignScript, attachScriptAudio, setNovelMixAudios, pruneDraftScripts, importMarketingResult };
+  return { getOverview, getOverviewFromVideos, getAiContext, getNovel, createNovel, updateNovel, deleteNovel, createScript, updateScript, deleteScript, assignScript, attachScriptAudio, setNovelMixAudios, pruneDraftScripts, importMarketingResult };
 }
 
 function requireNovelPlatform(value) {
