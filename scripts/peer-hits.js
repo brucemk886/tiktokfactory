@@ -223,13 +223,64 @@ export function importedPeerHitIdSet(scripts = []) {
 export function clipsAreNearDuplicate(left, right) {
   const sa = Number(left?.size || left?.audio?.size || left?.audioSize || 0);
   const sb = Number(right?.size || right?.audio?.size || right?.audioSize || 0);
-  if (sa && sb && sa === sb) return true;
+  if (!sa || !sb) return false;
+  if (sa === sb) return true;
+  if (Math.abs(sa - sb) / Math.max(sa, sb) > 0.005) return false;
   const da = Number(left?.duration || left?.audio?.duration || 0);
   const db = Number(right?.duration || right?.audio?.duration || 0);
-  if (sa && sb && da && db) {
-    return Math.abs(sa - sb) / Math.max(sa, sb) <= 0.005 && Math.abs(da - db) <= 0.5;
+  if (da && db) return Math.abs(da - db) <= 0.5;
+  return true;
+}
+
+function scaleBookKey(hit) {
+  return String(hit?.factoryNovelId || "").trim()
+    || [normalizePeerHitPlatform(hit?.platform), String(hit?.novelId || "").trim()].filter(Boolean).join("::")
+    || String(hit?.novelTitle || "").trim().toLowerCase();
+}
+
+function clipOfHit(hit) {
+  return { size: Number(hit?.audioSize) || 0, duration: Number(hit?.audioDuration) || 0 };
+}
+
+export function attachScaleRunMarks(hits = []) {
+  const list = (Array.isArray(hits) ? hits : []).map((item) => ({ ...item }));
+  const byBook = new Map();
+  for (const hit of list) {
+    const book = scaleBookKey(hit);
+    if (!book || !String(hit.audioId || "").trim()) continue;
+    if (!byBook.has(book)) byBook.set(book, []);
+    byBook.get(book).push(hit);
   }
-  return false;
+  for (const group of byBook.values()) {
+    const used = new Set();
+    for (let index = 0; index < group.length; index++) {
+      if (used.has(group[index].id)) continue;
+      const cluster = [group[index]];
+      used.add(group[index].id);
+      for (let next = index + 1; next < group.length; next++) {
+        if (used.has(group[next].id)) continue;
+        if (cluster.some((item) => clipsAreNearDuplicate(clipOfHit(item), clipOfHit(group[next])))) {
+          cluster.push(group[next]);
+          used.add(group[next].id);
+        }
+      }
+      if (cluster.length < 2) continue;
+      const scaleRun = {
+        videoCount: cluster.length,
+        playCount: cluster.reduce((sum, item) => sum + (Number(item.playCount) || 0), 0)
+      };
+      for (const hit of cluster) hit.scaleRun = scaleRun;
+    }
+  }
+  return list;
+}
+
+export function scaleRunForScript(script, markedHits = []) {
+  const peerId = String(script?.peerHitId || "").trim();
+  const byPeer = (Array.isArray(markedHits) ? markedHits : []).find((hit) => hit.scaleRun && hit.id === peerId);
+  if (byPeer) return byPeer.scaleRun;
+  const clip = { size: Number(script?.audio?.size || 0), duration: Number(script?.audio?.duration || 0) };
+  return (Array.isArray(markedHits) ? markedHits : []).find((hit) => hit.scaleRun && clipsAreNearDuplicate(clip, clipOfHit(hit)))?.scaleRun || null;
 }
 
 export function importedClipFingerprintsByNovel(scripts = []) {

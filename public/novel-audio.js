@@ -605,6 +605,7 @@ function audioCard(script) {
         <div>
           <h2>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</h2>
           <p>${escapeHtml(sourceLabel(script.sourceType))} · ${escapeHtml(formatDate(audio.createdAt || script.createdAt))} · ${formatDuration(audio.duration)} · ${formatSize(audio.size)}</p>
+          ${scaleRunNote(script.scaleRun)}
         </div>
         <div class="audio-card-actions">
           <label class="mix-check">
@@ -639,6 +640,12 @@ function audioCard(script) {
 
 function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
+}
+
+function scaleRunNote(scaleRun) {
+  const count = Number(scaleRun?.videoCount) || 0;
+  if (count < 2) return "";
+  return `<p class="scale-run-note">这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来。</p>`;
 }
 
 function sourceLabel(value) {

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   attachAudioBoardImportStatus,
   attachFactoryNovel,
+  attachScaleRunMarks,
   collectImportItems,
   filterPeerHits,
   filterPeerHitsByPlatform,
@@ -12,6 +13,7 @@ import {
   importedSourceTokensByNovel,
   mergePeerHit,
   planPeerHitNovelImports,
+  scaleRunForScript,
   sortPeerHits,
   normalizePeerHitInput,
   normalizePeerHitPlatform,
@@ -201,6 +203,18 @@ test("skips peer-hit import when the book already has a near-identical clip", ()
     novels,
     { importedClipFingerprintsByNovel: fingerprints }
   )[0].skipReason, /已经写入音频页/);
+});
+
+test("marks the same audio across multiple videos as a scale run", () => {
+  const marked = attachScaleRunMarks([
+    { id: "h1", factoryNovelId: "n1", audioId: "a1", audioSize: 7843884, playCount: 561500 },
+    { id: "h2", factoryNovelId: "n1", audioId: "a2", audioSize: 7846809, playCount: 220600 },
+    { id: "h3", factoryNovelId: "n1", audioId: "a3", audioSize: 1_200_000, playCount: 9 }
+  ]);
+  assert.equal(marked[0].scaleRun.videoCount, 2);
+  assert.equal(marked[1].scaleRun.playCount, 782100);
+  assert.equal(marked[2].scaleRun, undefined);
+  assert.deepEqual(scaleRunForScript({ peerHitId: "h1", audio: { size: 7843884 } }, marked), marked[0].scaleRun);
 });
 
 test("pickFirst skips empty values", () => {

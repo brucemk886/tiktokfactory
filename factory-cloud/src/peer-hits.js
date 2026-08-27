@@ -2,6 +2,7 @@ import { isImportedAudioFile } from "../../scripts/novel-audio-import.js";
 import {
   attachAudioBoardImportStatus,
   attachFactoryNovel,
+  attachScaleRunMarks,
   collectImportItems,
   filterPeerHits,
   filterPeerHitsByTime,
@@ -31,7 +32,7 @@ export async function handlePeerHits(request, env, url, session) {
     const novels = await listNovelsMatchingPeerHits(db, rows);
     const importedIds = importedPeerHitIdSet(await listNovelScripts(db));
     const items = sortPeerHits(filterPeerHitsByTime(
-      filterPeerHits(rows.map((item) => attachAudioBoardImportStatus(attachFactoryNovel(item, novels), importedIds)), url.searchParams.get("query") || ""),
+      filterPeerHits(attachScaleRunMarks(rows.map((item) => attachAudioBoardImportStatus(attachFactoryNovel(item, novels), importedIds))), url.searchParams.get("query") || ""),
       url.searchParams.get("range") || "all",
       Date.now(),
       Number(url.searchParams.get("since")) || 0

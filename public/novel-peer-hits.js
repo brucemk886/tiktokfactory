@@ -118,7 +118,7 @@ function renderList() {
     <tr${item.importedToAudioBoard ? " class=\"is-imported\"" : ""}>
       <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
-      <td class="cell-title">${novelTitleCell(item)}</td>
+      <td class="cell-title">${novelTitleCell(item)}${scaleRunChip(item.scaleRun)}</td>
       <td class="cell-imported">${item.importedToAudioBoard ? "是" : "否"}</td>
       <td><span class="platform-chip">${escapeHtml(item.platform || "未设置")}</span></td>
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
@@ -156,6 +156,7 @@ function visibleItems() {
       item.platform,
       item.factoryNovelId,
       item.importedToAudioBoard ? "是 已写入音频页" : "否",
+      item.scaleRun ? "能跑量 同一音频 多条视频" : "",
       item.videoUrl,
       formatVideoData(item.videoData)
     ].join(" ").toLowerCase().includes(needle))
@@ -403,6 +404,12 @@ async function deleteHit(id) {
       elements.listStatus.className = "list-status is-error";
     }
   }
+}
+
+function scaleRunChip(scaleRun) {
+  const count = Number(scaleRun?.videoCount) || 0;
+  if (count < 2) return "";
+  return `<small class="scale-run-chip" title="这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来">能跑量 · 同一音频 ${count} 条视频</small>`;
 }
 
 function novelTitleCell(item) {

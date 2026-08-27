@@ -53,6 +53,7 @@
 .metric { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; background: #fff; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
 .metric b { font-size: 16px; }
 .metric span { color: var(--lf-muted, #6d6758); font-size: 11px; font-weight: 800; }
+.scale-run-note { margin: 8px 0 0; color: #3d4710; font-size: 12px; font-weight: 800; }
 .hook-title { margin: 0; color: #5c6a14; font-size: 13px; font-weight: 800; }
 .script-full { margin: 0; color: var(--lf-text, #1d1a14); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
 .empty-state { min-height: 220px; display: grid; place-items: center; gap: 8px; color: var(--lf-muted, #6d6758); font-size: 13px; text-align: center; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
