@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-2" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-3" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -19,7 +19,7 @@
         <div>
           <p class="library-kicker">PEER HITS</p>
           <h1>同行爆款</h1>
-          <p id="pageLead">把同行视频填进下面的输入框。同一条链接再导入会覆盖播放量和数据。</p>
+          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。同一条链接再导入会覆盖播放量、数据和音频。</p>
         </div>
         <div class="library-header-actions">
           <button id="toggleImportBtn" class="primary-action" type="button">导入同行爆款</button>
@@ -44,6 +44,11 @@
             <label><span>评论</span><input id="importComments" type="text" maxlength="40" placeholder="选填" /></label>
             <label><span>分享</span><input id="importShares" type="text" maxlength="40" placeholder="选填" /></label>
           </div>
+          <label class="audio-field">
+            <span>导入音频</span>
+            <input id="importAudio" type="file" accept="audio/mpeg,.mp3" />
+            <small>选填。把爆款口播 mp3 直接挂到这条同行视频上，列表里能试听。</small>
+          </label>
           <div class="form-actions">
             <button id="importBtn" class="primary-action" type="submit">写入列表</button>
             <span id="importStatus" role="status"></span>
@@ -64,6 +69,7 @@
               <col class="col-book-id" />
               <col class="col-play" />
               <col class="col-video" />
+              <col class="col-audio" />
               <col class="col-data" />
               <col class="col-actions" />
             </colgroup>
@@ -74,6 +80,7 @@
                 <th>小说id</th>
                 <th>播放量</th>
                 <th>视频链接</th>
+                <th>音频</th>
                 <th>视频数据</th>
                 <th></th>
               </tr>
@@ -85,6 +92,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-2" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-3" type="module"></script>
   </body>
 </html>

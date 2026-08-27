@@ -67,6 +67,15 @@ test("same video updates play count instead of duplicating", () => {
   assert.equal(merged.importedAt, 1);
 });
 
+test("keeps an imported audio when the same video is updated", () => {
+  const first = { id: "peer-old", audioId: "peer-old", audioName: "hit.mp3", audioSize: 2048, playCount: 10, videoData: {} };
+  const next = { id: "peer-new", playCount: 99, videoData: { likes: 3 } };
+  const merged = mergePeerHit(first, next);
+  assert.equal(merged.audioId, "peer-old");
+  assert.equal(merged.audioName, "hit.mp3");
+  assert.equal(merged.playCount, 99);
+});
+
 test("filters by novel name or video url", () => {
   const items = [
     { novelTitle: "Alpha", novelId: "1", videoUrl: "https://tiktok.com/a", playCount: 9, videoData: {} },

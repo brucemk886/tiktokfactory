@@ -5,6 +5,7 @@ const TOP_KEYS = new Set([
   "novelTitle", "novel_title", "title", "bookTitle", "book_title", "小说名称", "书名", "小说名",
   "novelId", "novel_id", "bookId", "book_id", "书籍id", "书籍Id", "小说id", "小说ID",
   "factoryNovelId", "factory_novel_id",
+  "audioId", "audio_id", "audioName", "audio_name", "audioSize", "audio_size", "audio",
   "videoData", "video_data", "视频数据",
   "source", "importedAt", "imported_at", "updatedAt", "updated_at", "createdAt", "created_at"
 ]);
@@ -89,6 +90,9 @@ export function normalizePeerHitInput(raw, options = {}) {
     novelTitle,
     novelId,
     factoryNovelId: String(item.factoryNovelId || item.factory_novel_id || "").trim(),
+    audioId: String(item.audioId || item.audio_id || "").trim(),
+    audioName: String(item.audioName || item.audio_name || "").trim().slice(0, 240),
+    audioSize: Number(item.audioSize || item.audio_size) || 0,
     videoData,
     source: String(item.source || options.source || "grokbot").trim().slice(0, 40) || "grokbot",
     importedAt: Number(item.importedAt || item.imported_at) || stamp,
@@ -131,6 +135,9 @@ export function mergePeerHit(current, incoming) {
     novelTitle: incoming.novelTitle || current.novelTitle,
     novelId: incoming.novelId || current.novelId,
     factoryNovelId: incoming.factoryNovelId || current.factoryNovelId,
+    audioId: incoming.audioId || current.audioId || "",
+    audioName: incoming.audioName || current.audioName || "",
+    audioSize: incoming.audioId ? Number(incoming.audioSize) || 0 : Number(current.audioSize) || 0,
     videoData: { ...(current.videoData || {}), ...(incoming.videoData || {}) },
     source: incoming.source || current.source,
     importedAt: current.importedAt || incoming.importedAt,

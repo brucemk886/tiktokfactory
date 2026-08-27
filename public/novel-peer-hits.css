@@ -1,7 +1,9 @@
-.peer-table { min-width: 1180px; }
+.peer-table { min-width: 1360px; }
 .peer-table .col-play { width: 96px; }
-.peer-table .col-video { width: 220px; }
-.peer-table .col-data { width: 220px; }
+.peer-table .col-video { width: 200px; }
+.peer-table .col-audio { width: 220px; }
+.peer-table .col-data { width: 180px; }
+.peer-table .cell-audio audio { width: 100%; height: 32px; }
 .peer-table .col-actions { width: 88px; }
 .peer-table .cell-play { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .peer-table .cell-video a { color: #3d4710; font-weight: 800; word-break: break-all; }
@@ -15,6 +17,8 @@
 .import-form label > span { color: var(--lf-muted, #6d6758); font-size: 12px; font-weight: 800; }
 .import-form input { width: 100%; height: 43px; padding: 0 12px; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 5px; background: #fff; color: var(--lf-text, #1d1a14); font: inherit; }
 .import-form .field-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+.import-form .audio-field input[type="file"] { height: auto; padding: 10px 12px; }
+.import-form .audio-field small { color: var(--lf-muted, #6d6758); font-size: 11px; font-weight: 600; }
 .import-panel .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .import-panel .form-actions span { color: var(--lf-muted, #6d6758); font-size: 12px; }
 .import-panel .form-actions span.is-ok { color: #3d4710; }

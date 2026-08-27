@@ -16,6 +16,9 @@ export function peerHitFromRow(row) {
     novelTitle: row.novel_title || "",
     novelId: row.novel_id || "",
     factoryNovelId: row.factory_novel_id || "",
+    audioId: row.audio_id || "",
+    audioName: row.audio_name || "",
+    audioSize: Number(row.audio_size) || 0,
     videoData,
     source: row.source || "grokbot",
     importedAt: Number(row.imported_at) || 0,
@@ -46,8 +49,8 @@ export async function upsertPeerHitRow(db, hit) {
   await db.prepare(`
     INSERT INTO ${TABLE} (
       id, video_key, video_url, play_count, novel_title, novel_id, factory_novel_id,
-      video_data_json, source, imported_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      video_data_json, source, imported_at, updated_at, audio_id, audio_name, audio_size
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
       play_count = excluded.play_count,
@@ -56,7 +59,10 @@ export async function upsertPeerHitRow(db, hit) {
       factory_novel_id = CASE WHEN excluded.factory_novel_id = '' THEN factory_peer_hits.factory_novel_id ELSE excluded.factory_novel_id END,
       video_data_json = excluded.video_data_json,
       source = excluded.source,
-      updated_at = excluded.updated_at
+      updated_at = excluded.updated_at,
+      audio_id = CASE WHEN excluded.audio_id = '' THEN factory_peer_hits.audio_id ELSE excluded.audio_id END,
+      audio_name = CASE WHEN excluded.audio_name = '' THEN factory_peer_hits.audio_name ELSE excluded.audio_name END,
+      audio_size = CASE WHEN excluded.audio_id = '' THEN factory_peer_hits.audio_size ELSE excluded.audio_size END
   `).bind(
     hit.id,
     hit.videoKey,
@@ -68,7 +74,10 @@ export async function upsertPeerHitRow(db, hit) {
     JSON.stringify(hit.videoData || {}),
     hit.source,
     hit.importedAt,
-    hit.updatedAt
+    hit.updatedAt,
+    hit.audioId || "",
+    hit.audioName || "",
+    Number(hit.audioSize) || 0
   ).run();
   return findPeerHitByKey(db, hit.videoKey);
 }

@@ -9,6 +9,7 @@ const elements = {
   importLikes: document.querySelector("#importLikes"),
   importComments: document.querySelector("#importComments"),
   importShares: document.querySelector("#importShares"),
+  importAudio: document.querySelector("#importAudio"),
   importButton: document.querySelector("#importBtn"),
   importStatus: document.querySelector("#importStatus"),
   listStatus: document.querySelector("#listStatus"),
@@ -58,12 +59,12 @@ function renderList() {
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
       ? `共 ${state.items.length} 条同行视频${state.query ? `，当前显示 ${items.length} 条` : ""}`
-      : "还没有同行爆款。点右上角「导入同行爆款」，填入视频链接、播放量和小说信息。";
+      : "还没有同行爆款。点右上角「导入同行爆款」，填入视频链接、播放量，也可以一起导入音频。";
     elements.listStatus.className = "list-status";
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="7"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="8"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
     return;
   }
   elements.hitList.innerHTML = items.map((item) => `
@@ -73,6 +74,7 @@ function renderList() {
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
       <td class="cell-play">${escapeHtml(formatPlayCount(item.playCount))}</td>
       <td class="cell-video"><a href="${escapeAttr(item.videoUrl)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(item.videoUrl))}</a></td>
+      <td class="cell-audio">${item.audioId ? `<audio controls preload="none" src="/api/peer-hits/${encodeURIComponent(item.id)}/audio"></audio>` : "未导入"}</td>
       <td class="cell-data">${escapeHtml(formatVideoData(item.videoData))}</td>
       <td class="row-actions">
         <button class="edit-button delete-button" type="button" data-delete-id="${escapeAttr(item.id)}">删除</button>
@@ -98,13 +100,26 @@ function visibleItems() {
 async function importHits() {
   const payload = readImportForm();
   if (!payload.videoUrl) return setImportStatus("请填写视频链接。", "error");
+  const audio = elements.importAudio?.files?.[0];
+  if (audio && !/\.mp3$/i.test(audio.name || "") && !/audio\/mpeg|audio\/mp3/i.test(audio.type || "")) {
+    return setImportStatus("音频只接受 mp3。", "error");
+  }
   if (elements.importButton) {
     elements.importButton.disabled = true;
     elements.importButton.textContent = "正在写入...";
   }
-  setImportStatus("正在导入同行爆款...");
+  setImportStatus(audio ? "正在导入同行爆款和音频..." : "正在导入同行爆款...");
   try {
-    const data = await api("/api/peer-hits/import", { method: "POST", body: JSON.stringify(payload) });
+    const form = new FormData();
+    form.append("videoUrl", payload.videoUrl);
+    form.append("playCount", payload.playCount);
+    form.append("novelTitle", payload.novelTitle);
+    form.append("novelId", payload.novelId);
+    form.append("likes", payload.videoData.点赞 || "");
+    form.append("comments", payload.videoData.评论 || "");
+    form.append("shares", payload.videoData.分享 || "");
+    if (audio) form.append("audio", audio);
+    const data = await api("/api/peer-hits/import", { method: "POST", body: form });
     const listed = await api("/api/peer-hits");
     state.items = Array.isArray(listed.items) ? listed.items : [];
     renderList();
@@ -145,7 +160,8 @@ function clearImportForm() {
     elements.importPlayCount,
     elements.importLikes,
     elements.importComments,
-    elements.importShares
+    elements.importShares,
+    elements.importAudio
   ]) {
     if (input) input.value = "";
   }
@@ -214,7 +230,7 @@ function setImportStatus(message, tone = "") {
 async function api(url, options = {}) {
   const response = await fetch(url, {
     cache: "no-store",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    headers: options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : undefined,
     ...options
   });
   const body = await response.json().catch(() => ({}));

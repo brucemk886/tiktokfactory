@@ -1,3 +1,4 @@
+import { isImportedAudioFile } from "../../scripts/novel-audio-import.js";
 import {
   attachFactoryNovel,
   collectImportItems,
@@ -6,7 +7,8 @@ import {
   normalizePeerHitInput,
   sortPeerHits
 } from "../../scripts/peer-hits.js";
-import { errorJson, json, readJson } from "./http.js";
+import { errorJson, json, readJson, safeId } from "./http.js";
+import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { listNovelSummaries } from "./novel-store.js";
 import { deletePeerHitRow, findPeerHitById, findPeerHitByKey, listPeerHitRows, upsertPeerHitRow } from "./peer-hits-store.js";
 
@@ -27,7 +29,20 @@ export async function handlePeerHits(request, env, url, session) {
   }
 
   if (method === "POST" && (pathname === "/api/peer-hits" || pathname === "/api/peer-hits/import")) {
+    const type = String(request.headers.get("content-type") || "");
+    if (type.includes("multipart/form-data")) {
+      return json(await importPeerHitsFromForm(env, db, request));
+    }
     return json(await importPeerHits(db, await readJson(request)));
+  }
+
+  const audioMatch = pathname.match(/^\/api\/peer-hits\/([^/]+)\/audio$/);
+  if (method === "GET" && audioMatch) {
+    const current = await findPeerHitById(db, decodeURIComponent(audioMatch[1]));
+    if (!current?.audioId) return errorJson("这条还没有导入音频。", 404);
+    const response = await serveNovelAudio(env, current.audioId, request);
+    if (!response) return errorJson("没有这份音频。", 404);
+    return response;
   }
 
   const match = pathname.match(/^\/api\/peer-hits\/([^/]+)$/);
@@ -77,6 +92,52 @@ async function importPeerHits(db, payload) {
     count: items.length,
     message: summarizeImport({ created, updated, skipped: skipped.length })
   };
+}
+
+async function importPeerHitsFromForm(env, db, request) {
+  const form = await request.formData();
+  const file = [form.get("audio"), form.get("file")].find((item) => item && typeof item.arrayBuffer === "function");
+  const result = await importPeerHits(db, {
+    videoUrl: String(form.get("videoUrl") || form.get("视频链接") || ""),
+    playCount: String(form.get("playCount") || form.get("播放量") || ""),
+    novelTitle: String(form.get("novelTitle") || form.get("小说名称") || ""),
+    novelId: String(form.get("novelId") || form.get("小说id") || ""),
+    videoData: {
+      点赞: String(form.get("likes") || form.get("点赞") || ""),
+      评论: String(form.get("comments") || form.get("评论") || ""),
+      分享: String(form.get("shares") || form.get("分享") || "")
+    }
+  });
+  const hit = result.items[0];
+  if (!hit || !file || !Number(file.size || 0)) return result;
+  if (!isImportedAudioFile(file)) {
+    const error = new Error("只接受 mp3 音频。");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (Number(file.size || 0) > 20 * 1024 * 1024) {
+    const error = new Error("音频文件超过 20MB。");
+    error.statusCode = 413;
+    throw error;
+  }
+  const bytes = await file.arrayBuffer();
+  if (bytes.byteLength < 1024) {
+    const error = new Error("音频文件太小。");
+    error.statusCode = 400;
+    throw error;
+  }
+  const audioId = safeId(`peer-${hit.id}`);
+  await putNovelAudio(env, audioId, bytes, file.type || "audio/mpeg");
+  const saved = await upsertPeerHitRow(db, {
+    ...hit,
+    audioId,
+    audioName: String(file.name || `${audioId}.mp3`).trim().slice(0, 240),
+    audioSize: bytes.byteLength,
+    updatedAt: Date.now()
+  });
+  result.items = [saved];
+  result.message = result.message ? `${result.message}，已导入音频` : "已导入音频";
+  return result;
 }
 
 function summarizeImport({ created, updated, skipped }) {
