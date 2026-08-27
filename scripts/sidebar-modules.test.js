@@ -143,10 +143,10 @@ test("GeeLark pages are visibly distinguished from official TikTok pages", () =>
   assert.ok(SIDEBAR_MODULES.findIndex((item) => item.id === "analytics") < SIDEBAR_MODULES.findIndex((item) => item.id === "stats"));
 });
 
-test("factory cloud keeps peer hits under novel promotion for admin only", () => {
+test("factory cloud keeps peer hits under novel promotion", () => {
   const item = CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-peer-hits");
   assert.equal(item?.href, "/novel-peer-hits");
   assert.equal(item?.label, "同行爆款");
   assert.equal(item?.group?.id, "novel-promotion");
-  assert.deepEqual(item?.roles, ["admin"]);
+  assert.deepEqual(item?.roles, ["admin", "operator"]);
 });

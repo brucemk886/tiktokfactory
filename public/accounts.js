@@ -231,9 +231,7 @@ function renderSidebarOptions(selected) {
       </div>
     `;
   }).join("");
-  $("#userSidebarHint").textContent = $("#userRole").value === "admin"
-    ? "打开大模块后，可去掉不想展示的子页面。同行爆款在「小说推文」下面，只给管理员。"
-    : "成员只能勾选已开放的模块。同行爆款等新页面只给管理员，请把角色改成管理员后再看。";
+  $("#userSidebarHint").textContent = "打开大模块后，可去掉不想展示的子页面。同行爆款在「小说推文」下面。";
   bindModuleCards();
 }
 

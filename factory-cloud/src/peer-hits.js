@@ -17,7 +17,6 @@ const IMPORT_LIMIT = 200;
 export async function handlePeerHits(request, env, url, session) {
   if (!url.pathname.startsWith("/api/peer-hits")) return null;
   if (!session) return errorJson("请先登录。", 401);
-  if (session.user?.role !== "admin") return errorJson("仅管理员可以使用同行爆款。", 403);
 
   const db = env.DB;
   const method = request.method;
