@@ -481,17 +481,17 @@ function syncBatchBar() {
   if (elements.selectVisible) {
     elements.selectVisible.checked = Boolean(visible.length) && visible.every((novel) => state.selectedIds.has(novel.id));
   }
+  const audioCount = selectedAudioCount();
   if (elements.batchAudioButton) {
     elements.batchAudioButton.disabled = state.batching || !selected.length;
     elements.batchAudioButton.textContent = selected.length
-      ? `保存勾选的 ${selected.length} 本音频`
+      ? `保存勾选的 ${audioCount} 条音频`
       : "保存勾选小说音频";
   }
   if (elements.batchStatus && !state.batching) {
-    const audioCount = selectedAudioScriptIds().length;
     elements.batchStatus.textContent = selected.length
-      ? `已勾 ${selected.length} 本，其中 ${audioCount} 条生效音频。点一下保存到本机 F:\\音频目录\\书名\\。本机工人不要关。`
-      : "先勾有音频的书，再把这些书的生效音频保存到本机。本机工人不要关。";
+      ? `已勾 ${selected.length} 本，共 ${audioCount} 条音频，和上面的总音频同一口径。点一下保存到本机 F:\\音频目录\\书名\\。本机工人不要关。`
+      : "先勾书，再保存这些书的已生成音频到本机。数量和上面的总音频一致。本机工人不要关。";
     elements.batchStatus.className = "";
   }
 }
@@ -502,13 +502,20 @@ function setBatchStatus(message, tone = "") {
   elements.batchStatus.className = tone ? `is-${tone}` : "";
 }
 
-function selectedAudioScriptIds() {
+function selectedNovels() {
   const selected = new Set(selectedNovelIds());
+  return state.novels.filter((novel) => selected.has(novel.id));
+}
+
+function selectedAudioCount() {
+  return selectedNovels().reduce((sum, novel) => sum + generatedAudioCount(novel), 0);
+}
+
+function selectedAudioScriptIds(novels = selectedNovels()) {
   const ids = [];
-  for (const novel of state.novels) {
-    if (!selected.has(novel.id)) continue;
+  for (const novel of novels) {
     for (const script of novel.scripts || []) {
-      if ((script.audioId || script.audio?.id) && script.mixEnabled !== false) ids.push(script.id);
+      if (script.audioId || script.audio?.id) ids.push(script.id);
     }
   }
   return ids;
@@ -517,18 +524,20 @@ function selectedAudioScriptIds() {
 async function saveSelectedNovelAudios() {
   const novelIds = selectedNovelIds();
   if (!novelIds.length) return setBatchStatus("先勾选要保存音频的小说。", "error");
+  const expected = selectedAudioCount();
   let scriptIds = selectedAudioScriptIds();
-  if (!scriptIds.length) {
-    setBatchStatus("正在核对勾选书的生效音频...", "");
+  if (scriptIds.length < expected) {
+    setBatchStatus("正在核对勾选书的音频...", "");
+    scriptIds = [];
     for (const novelId of novelIds) {
       const data = await api(`/api/novel-content/novels/${encodeURIComponent(novelId)}`);
       for (const script of data.novel?.scripts || []) {
-        if ((script.audioId || script.audio?.id) && script.mixEnabled !== false) scriptIds.push(script.id);
+        if (script.audioId || script.audio?.id) scriptIds.push(script.id);
       }
     }
   }
-  if (!scriptIds.length) return setBatchStatus("勾选的书没有生效音频。先去音频页勾上要保存的那几条。", "error");
-  if (!confirm(`将把 ${novelIds.length} 本共 ${scriptIds.length} 条生效音频保存到本机 F:\\音频目录\\书名\\。本机工人不要关。继续？`)) return;
+  if (!scriptIds.length) return setBatchStatus("勾选的书还没有已生成音频。", "error");
+  if (!confirm(`将把 ${novelIds.length} 本共 ${scriptIds.length} 条音频保存到本机 F:\\音频目录\\书名\\。本机工人不要关。继续？`)) return;
   state.batching = true;
   if (elements.batchAudioButton) elements.batchAudioButton.disabled = true;
   setBatchStatus("正在下发给工人...", "");
