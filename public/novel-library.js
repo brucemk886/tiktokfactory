@@ -1,3 +1,5 @@
+import { requestAudioJob } from "./audio-job.js";
+
 const elements = {
   pageTitle: document.querySelector("#pageTitle"),
   pageLead: document.querySelector("#pageLead"),
@@ -60,7 +62,7 @@ elements.chapters.addEventListener("input", updateChapterCount);
 elements.selectVisible?.addEventListener("change", () => {
   toggleVisibleSelection(elements.selectVisible.checked);
 });
-elements.batchAudioButton?.addEventListener("click", startBatchAudioVersions);
+elements.batchAudioButton?.addEventListener("click", saveSelectedNovelAudios);
 elements.search.addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadBooks, 250);
@@ -482,13 +484,14 @@ function syncBatchBar() {
   if (elements.batchAudioButton) {
     elements.batchAudioButton.disabled = state.batching || !selected.length;
     elements.batchAudioButton.textContent = selected.length
-      ? `勾选的 ${selected.length} 本各出 3 条文案到音频页`
-      : "勾选的每本出 3 条文案到音频页";
+      ? `保存勾选的 ${selected.length} 本音频`
+      : "保存勾选小说音频";
   }
   if (elements.batchStatus && !state.batching) {
+    const audioCount = selectedAudioScriptIds().length;
     elements.batchStatus.textContent = selected.length
-      ? `已勾 ${selected.length} 本。点一下会把每本免费章节丢给 AI，按这本书选最容易爆的模板写 3 条，保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。`
-      : "先勾书。每本先读免费章节再选模板写 3 条钩子，保存到音频页，不配音。已有 3 条的会跳过。本机工人不要关。";
+      ? `已勾 ${selected.length} 本，其中 ${audioCount} 条生效音频。点一下保存到本机 F:\\音频目录\\书名\\。本机工人不要关。`
+      : "先勾有音频的书，再把这些书的生效音频保存到本机。本机工人不要关。";
     elements.batchStatus.className = "";
   }
 }
@@ -499,21 +502,45 @@ function setBatchStatus(message, tone = "") {
   elements.batchStatus.className = tone ? `is-${tone}` : "";
 }
 
-async function startBatchAudioVersions() {
+function selectedAudioScriptIds() {
+  const selected = new Set(selectedNovelIds());
+  const ids = [];
+  for (const novel of state.novels) {
+    if (!selected.has(novel.id)) continue;
+    for (const script of novel.scripts || []) {
+      if ((script.audioId || script.audio?.id) && script.mixEnabled !== false) ids.push(script.id);
+    }
+  }
+  return ids;
+}
+
+async function saveSelectedNovelAudios() {
   const novelIds = selectedNovelIds();
-  if (!novelIds.length) return setBatchStatus("先勾选要写文案的小说。", "error");
-  if (!confirm(`将给 ${novelIds.length} 本各写 3 条开头文案：每本先读免费章节，再单独判断哪个模板更容易爆。保存到音频页，不配音。已有 3 条的会跳过。本机工人要一直开着。继续？`)) return;
+  if (!novelIds.length) return setBatchStatus("先勾选要保存音频的小说。", "error");
+  let scriptIds = selectedAudioScriptIds();
+  if (!scriptIds.length) {
+    setBatchStatus("正在核对勾选书的生效音频...", "");
+    for (const novelId of novelIds) {
+      const data = await api(`/api/novel-content/novels/${encodeURIComponent(novelId)}`);
+      for (const script of data.novel?.scripts || []) {
+        if ((script.audioId || script.audio?.id) && script.mixEnabled !== false) scriptIds.push(script.id);
+      }
+    }
+  }
+  if (!scriptIds.length) return setBatchStatus("勾选的书没有生效音频。先去音频页勾上要保存的那几条。", "error");
+  if (!confirm(`将把 ${novelIds.length} 本共 ${scriptIds.length} 条生效音频保存到本机 F:\\音频目录\\书名\\。本机工人不要关。继续？`)) return;
   state.batching = true;
   if (elements.batchAudioButton) elements.batchAudioButton.disabled = true;
   setBatchStatus("正在下发给工人...", "");
   try {
-    const result = await api("/api/novel-content/batch-audio-versions", {
-      method: "POST",
-      body: JSON.stringify({ novelIds, count: 3 })
-    });
-    setBatchStatus(result.message || `已下发 ${result.count || 0} 本。`, "ok");
+    const result = await requestAudioJob("/api/audio-library/sync-local", {
+      scriptIds,
+      targetAudioDir: "__novel__"
+    }, { api, onProgress: (job) => setBatchStatus(job.message || "工人机正在保存到本机...") });
+    const saved = Array.isArray(result.items) ? result.items.length : scriptIds.length;
+    setBatchStatus(`已保存 ${saved} 条到本机。`, "ok");
   } catch (error) {
-    setBatchStatus(error.message || "批量写文案失败。", "error");
+    setBatchStatus(error.message || "保存到本机失败。", "error");
   } finally {
     state.batching = false;
     syncBatchBar();
