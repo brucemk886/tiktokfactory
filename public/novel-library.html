@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说书单 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-library.css?v=20260826-15" />
+    <link rel="stylesheet" href="/novel-library.css?v=20260827-1" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page">
@@ -18,7 +18,7 @@
         <div>
           <p class="library-kicker">NOVEL CATALOG</p>
           <h1 id="pageTitle">小说书单</h1>
-          <p id="pageLead">只显示有文案或有音频的书。没写文案也没音频的留在总表，不占书单。</p>
+          <p id="pageLead">默认看有音频的书。没配音的、包括刚新增的，都在「没音频书单」。飞书总表空书不进这两份书单。</p>
         </div>
         <div class="library-header-actions">
           <button id="importFeishuBtn" class="quiet-action" type="button">飞书导入</button>
@@ -36,6 +36,10 @@
         <div class="shelf-tabs" role="tablist" aria-label="书单视图">
           <button type="button" class="shelf-tab is-active" data-shelf="library">全书库</button>
           <button type="button" class="shelf-tab" data-shelf="featured">重点书单</button>
+        </div>
+        <div class="audio-tabs" role="tablist" aria-label="音频书单">
+          <button type="button" class="shelf-tab is-active" data-audio-shelf="voiced">有音频书单</button>
+          <button type="button" class="shelf-tab" data-audio-shelf="silent">没音频书单</button>
         </div>
         <div class="list-toolbar">
           <div id="listStatus" class="list-status">正在读取小说书单...</div>
@@ -130,6 +134,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-library.js?v=20260827-5" type="module"></script>
+    <script src="/novel-library.js?v=20260827-6" type="module"></script>
   </body>
 </html>

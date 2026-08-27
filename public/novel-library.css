@@ -10,9 +10,10 @@
 .primary-action { border: 0; background: var(--lf-accent-fill, #c8dc5a); color: var(--lf-accent-ink, #1d1a14); }
 .text-action { border: 0; background: transparent; color: var(--lf-muted, #6d6758); padding: 0; }
 .catalog-view, .editor-view { padding-top: 22px; }
-.catalog-tabs, .shelf-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.catalog-tabs, .shelf-tabs, .audio-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
 .catalog-tabs { margin-bottom: 12px; }
-.shelf-tabs { margin-bottom: 16px; }
+.shelf-tabs { margin-bottom: 10px; }
+.audio-tabs { margin-bottom: 16px; }
 .catalog-tab, .shelf-tab { border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); background: #fff; color: var(--lf-text, #1d1a14); }
 .catalog-tab.is-active, .shelf-tab.is-active { background: rgba(200, 220, 90, 0.32); border-color: #8a9a32; }
 .list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; padding: 0 4px 12px; }

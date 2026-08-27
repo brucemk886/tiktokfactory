@@ -42,6 +42,7 @@ const state = {
   summary: { novelCount: 0, catalogCount: 0 },
   platform: "all",
   shelf: "library",
+  audioShelf: "voiced",
   page: 1,
   pageSize: 20,
   searchTimer: null,
@@ -80,6 +81,14 @@ document.querySelectorAll("[data-shelf]").forEach((button) => {
     state.shelf = button.dataset.shelf;
     state.page = 1;
     document.querySelectorAll("[data-shelf]").forEach((item) => item.classList.toggle("is-active", item === button));
+    renderBooks();
+  });
+});
+document.querySelectorAll("[data-audio-shelf]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.audioShelf = button.dataset.audioShelf;
+    state.page = 1;
+    syncAudioTabs();
     renderBooks();
   });
 });
@@ -127,15 +136,39 @@ async function loadBooks({ resetPage = true } = {}) {
   }
 }
 
-function visibleNovels() {
+function scopedNovels() {
   return state.novels.filter((novel) => {
     if (state.platform !== "all" && novel.platform !== state.platform) return false;
     if (state.shelf === "featured") return Boolean(novel.featured);
     return true;
+  });
+}
+
+function novelHasAudio(novel) {
+  return generatedAudioCount(novel) > 0;
+}
+
+function visibleNovels() {
+  return scopedNovels().filter((novel) => {
+    return state.audioShelf === "voiced" ? novelHasAudio(novel) : !novelHasAudio(novel);
   }).sort((a, b) => {
     const featuredDiff = Number(Boolean(b.featured)) - Number(Boolean(a.featured));
     if (featuredDiff) return featuredDiff;
     return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
+}
+
+function audioShelfCounts() {
+  const rows = scopedNovels();
+  return {
+    voiced: rows.filter(novelHasAudio).length,
+    silent: rows.filter((novel) => !novelHasAudio(novel)).length
+  };
+}
+
+function syncAudioTabs() {
+  document.querySelectorAll("[data-audio-shelf]").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.audioShelf === state.audioShelf);
   });
 }
 
@@ -148,12 +181,14 @@ function renderBooks() {
   const pageNovels = novels.slice(start, start + state.pageSize);
   const scope = state.platform === "all" ? "全部平台" : state.platform;
   const shelfLabel = state.shelf === "featured" ? "重点书单" : "全书库";
+  const audioLabel = state.audioShelf === "voiced" ? "有音频书单" : "没音频书单";
+  const audioCounts = audioShelfCounts();
   const rangeLabel = novels.length
     ? `第 ${start + 1}-${start + pageNovels.length} 本`
     : "0 本";
   const catalogCount = Number(state.summary.catalogCount || 0);
   const catalogHint = catalogCount > Number(counts.novelCount || 0) ? ` · 总表 ${catalogCount} 本` : "";
-  elements.listStatus.textContent = `${scope} · ${shelfLabel} ${novels.length} 本 · ${rangeLabel} · 在用 ${counts.novelCount} · 重点 ${counts.featuredCount} · 总音频 ${currentAudioCount()}${catalogHint}`;
+  elements.listStatus.textContent = `${scope} · ${shelfLabel} · ${audioLabel} ${novels.length} 本 · ${rangeLabel} · 有音频 ${audioCounts.voiced} · 没音频 ${audioCounts.silent} · 重点 ${counts.featuredCount} · 总音频 ${currentAudioCount()}${catalogHint}`;
   if (!novels.length) {
     elements.list.innerHTML = `<tr><td colspan="9"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
@@ -296,11 +331,14 @@ async function importFromFeishu() {
   }
 }
 
-const WORKING_LIST_LEAD = "只显示有文案或有音频的书。没写文案也没音频的留在总表，不占书单。";
+const CATALOG_LEAD = "默认看有音频的书。没配音的、包括刚新增的，都在「没音频书单」。飞书总表空书不进这两份书单。";
 
 function emptyCopy() {
-  if (state.shelf === "featured") return "这个范围还没有有文案或音频的重点书。";
-  return "还没有有文案或音频的小说。新增后先去改写出文案，才会出现在书单。";
+  const featured = state.shelf === "featured";
+  if (state.audioShelf === "voiced") {
+    return featured ? "这个范围还没有已配音的重点书。" : "这个范围还没有已配音的书。";
+  }
+  return featured ? "这个范围还没有没音频的重点书。" : "还没有没音频的书。新增小说会进这里。";
 }
 
 async function saveBook(event) {
@@ -329,14 +367,8 @@ async function saveBook(event) {
       body: JSON.stringify(payload)
     });
     if (!id && data.novel?.id) {
-      elements.bookId.value = data.novel.id;
-      elements.editorTitle.textContent = "编辑小说";
-      elements.saveButton.textContent = "保存修改";
-      elements.pageTitle.textContent = "编辑小说";
-      elements.pageLead.textContent = "已保存。还没有文案或音频，书单暂不显示。点改写去出文案，或上传音频。";
-      setFormStatus("已保存。点改写才会出现在书单。", "success");
-      syncEditorActionButtons();
-      return;
+      state.audioShelf = "silent";
+      syncAudioTabs();
     }
     showCatalog();
     await loadBooks();
@@ -377,7 +409,7 @@ async function openEditor(id = "") {
   elements.pageTitle.textContent = novel ? "编辑小说" : "新增小说";
   elements.pageLead.textContent = novel
     ? "修改书单信息。重点可在这里勾选。播放和爆款在数据概览查看。"
-    : "填写小说后保存。还没文案或音频时不会出现在书单，保存后可点改写。";
+    : "填写小说后保存，会进「没音频书单」。配音之后会出现在有音频书单。";
   setFormStatus("");
   updateChapterCount();
   updatePromotionCopy();
@@ -447,7 +479,7 @@ function showCatalog() {
   elements.editorTitle.textContent = "新增小说";
   elements.saveButton.textContent = "保存小说";
   elements.pageTitle.textContent = "小说书单";
-  elements.pageLead.textContent = WORKING_LIST_LEAD;
+  elements.pageLead.textContent = CATALOG_LEAD;
   setFormStatus("");
   updateChapterCount();
   updatePromotionCopy();

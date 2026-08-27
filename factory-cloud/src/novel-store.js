@@ -98,7 +98,7 @@ export async function markNovelsIdle(db, ids = []) {
   return updateWorkingFlag(db, ids, false);
 }
 
-export async function syncWorkingNovels(db, extraIds = [], { unmarkMissing = true } = {}) {
+export async function syncWorkingNovels(db, extraIds = [], { unmarkMissing = false } = {}) {
   const wanted = uniqueNovelIds(extraIds);
   const marked = await markNovelsWorking(db, wanted);
   if (!unmarkMissing) return { marked, unmarked: 0 };

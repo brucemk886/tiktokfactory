@@ -143,12 +143,30 @@ test("syncWorkingNovels marks script books and unmarks empty working books", asy
       };
     }
   };
-  const result = await syncWorkingNovels(db, ["keep"]);
+  const result = await syncWorkingNovels(db, ["keep"], { unmarkMissing: true });
   assert.equal(result.marked, 1);
   assert.equal(result.unmarked, 1);
   assert.equal(sqls.some((item) => /featured = 0/.test(item.sql)), false);
   assert.equal(sqls.some((item) => /SET working = 1/.test(item.sql) && item.binds[0] === "keep"), true);
   assert.equal(sqls.some((item) => /SET working = 0/.test(item.sql) && item.binds[0] === "drop"), true);
+});
+
+test("syncWorkingNovels keeps idle books unless unmark is requested", async () => {
+  const sqls = [];
+  const db = {
+    prepare(text) {
+      sqls.push(text);
+      return {
+        bind() {
+          return { run: async () => ({ meta: { changes: 1 } }) };
+        },
+        all: async () => ({ results: [{ id: "keep" }, { id: "drop" }] })
+      };
+    }
+  };
+  const result = await syncWorkingNovels(db, ["keep"]);
+  assert.equal(result.unmarked, 0);
+  assert.equal(sqls.some((sql) => /SET working = 0/.test(sql)), false);
 });
 
 test("syncWorkingNovels does not unmark when script store is missing", async () => {
