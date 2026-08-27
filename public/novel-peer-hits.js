@@ -7,6 +7,7 @@ const elements = {
   importNovelId: document.querySelector("#importNovelId"),
   importVideoUrl: document.querySelector("#importVideoUrl"),
   importPlayCount: document.querySelector("#importPlayCount"),
+  importPublishedAt: document.querySelector("#importPublishedAt"),
   importLikes: document.querySelector("#importLikes"),
   importComments: document.querySelector("#importComments"),
   importShares: document.querySelector("#importShares"),
@@ -28,6 +29,7 @@ const state = {
   platform: "all",
   range: "all",
   selectedIds: new Set(),
+  expandedIds: new Set(),
   importing: false,
   page: 1,
   pageSize: 20
@@ -109,7 +111,7 @@ function renderList() {
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="10"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="11"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -118,7 +120,8 @@ function renderList() {
     <tr${item.importedToAudioBoard ? " class=\"is-imported\"" : ""}>
       <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
-      <td class="cell-title">${novelTitleCell(item)}${scaleRunChip(item.scaleRun)}</td>
+      <td class="cell-date">${escapeHtml(formatPublishedAt(item.publishedAt))}</td>
+      <td class="cell-title">${novelTitleCell(item)}${scaleRunActions(item)}</td>
       <td class="cell-imported">${item.importedToAudioBoard ? "是" : "否"}</td>
       <td><span class="platform-chip">${escapeHtml(item.platform || "未设置")}</span></td>
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
@@ -129,9 +132,19 @@ function renderList() {
         <button class="edit-button delete-button" type="button" data-delete-id="${escapeAttr(item.id)}">删除</button>
       </td>
     </tr>
+    ${scaleRunDetailRow(item)}
   `).join("");
   elements.hitList.querySelectorAll("[data-delete-id]").forEach((button) => {
     button.addEventListener("click", () => deleteHit(button.dataset.deleteId));
+  });
+  elements.hitList.querySelectorAll("[data-expand-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.expandId;
+      if (!id) return;
+      if (state.expandedIds.has(id)) state.expandedIds.delete(id);
+      else state.expandedIds.add(id);
+      renderList();
+    });
   });
   elements.hitList.querySelectorAll("[data-select-id]").forEach((input) => {
     input.addEventListener("change", () => {
@@ -157,6 +170,7 @@ function visibleItems() {
       item.factoryNovelId,
       item.importedToAudioBoard ? "是 已写入音频页" : "否",
       item.scaleRun ? "能跑量 同一音频 多条视频" : "",
+      formatPublishedAt(item.publishedAt),
       item.videoUrl,
       formatVideoData(item.videoData)
     ].join(" ").toLowerCase().includes(needle))
@@ -365,6 +379,8 @@ function readImportForm() {
   if (likes) videoData.点赞 = likes;
   if (comments) videoData.评论 = comments;
   if (shares) videoData.分享 = shares;
+  const publishedAt = parseLocalDateTime(elements.importPublishedAt?.value);
+  if (publishedAt) videoData.发布时间 = publishedAt;
   return {
     videoUrl: elements.importVideoUrl?.value.trim() || "",
     playCount: elements.importPlayCount?.value.trim() || "",
@@ -382,6 +398,7 @@ function clearImportForm() {
     elements.importNovelId,
     elements.importVideoUrl,
     elements.importPlayCount,
+    elements.importPublishedAt,
     elements.importLikes,
     elements.importComments,
     elements.importShares,
@@ -406,10 +423,33 @@ async function deleteHit(id) {
   }
 }
 
-function scaleRunChip(scaleRun) {
+function scaleRunActions(item) {
+  const scaleRun = item.scaleRun;
   const count = Number(scaleRun?.videoCount) || 0;
   if (count < 2) return "";
-  return `<small class="scale-run-chip" title="这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来">能跑量 · 同一音频 ${count} 条视频</small>`;
+  const others = count - 1;
+  const open = state.expandedIds.has(item.id);
+  return `<span class="scale-run-actions">
+    <small class="scale-run-chip" title="这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来">能跑量 · 同一音频 ${count} 条视频</small>
+    <button class="scale-run-toggle" type="button" data-expand-id="${escapeAttr(item.id)}" aria-expanded="${open ? "true" : "false"}">${open ? "收起" : `看另外 ${others} 条`}</button>
+  </span>`;
+}
+
+function scaleRunDetailRow(item) {
+  if (!state.expandedIds.has(item.id)) return "";
+  const videos = Array.isArray(item.scaleRun?.videos) ? item.scaleRun.videos : [];
+  if (!videos.length) {
+    return `<tr class="scale-run-detail"><td colspan="11"><p class="scale-run-empty">刷新页面后再看另外几条的播放量和发布时间。</p></td></tr>`;
+  }
+  return `<tr class="scale-run-detail"><td colspan="11"><ul class="scale-run-videos">${videos.map((video) => {
+    const current = video.id === item.id;
+    const href = video.videoUrl ? escapeAttr(video.videoUrl) : "";
+    return `<li class="scale-run-video${current ? " is-current" : ""}">
+      <strong>${current ? "本条" : "另一条"} · ${escapeHtml(formatPlayCount(video.playCount))}</strong>
+      <span>发布 ${escapeHtml(formatPublishedAt(video.publishedAt, true))}</span>
+      ${href ? `<a href="${href}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(video.videoUrl))}</a>` : ""}
+    </li>`;
+  }).join("")}</ul></td></tr>`;
 }
 
 function novelTitleCell(item) {
@@ -445,6 +485,22 @@ function formatDate(value) {
   const date = new Date(Number(value) || 0);
   if (Number.isNaN(date.getTime()) || !Number(value)) return "未记录";
   return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function formatPublishedAt(value, withTime = false) {
+  const date = new Date(Number(value) || 0);
+  if (Number.isNaN(date.getTime()) || !Number(value)) return "未记录";
+  const day = `${date.getMonth() + 1}月${date.getDate()}日`;
+  if (!withTime) return day;
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day} ${hours}:${minutes}`;
+}
+
+function parseLocalDateTime(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return 0;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5])).getTime();
 }
 
 function shortUrl(value) {

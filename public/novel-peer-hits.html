@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-12" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-13" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -44,9 +44,14 @@
             <label><span>小说名称</span><input id="importNovelTitle" type="text" maxlength="180" placeholder="例如：My Husband Stole My Lifespan for His Ex" /></label>
             <label><span>小说id</span><input id="importNovelId" type="text" maxlength="240" placeholder="例如：5070518208" /></label>
           </div>
+          <label><span>视频链接</span><input id="importVideoUrl" type="text" maxlength="800" placeholder="https://www.tiktok.com/@user/video/123" required /></label>
           <div class="field-row">
-            <label><span>视频链接</span><input id="importVideoUrl" type="text" maxlength="800" placeholder="https://www.tiktok.com/@user/video/123" required /></label>
             <label><span>播放量</span><input id="importPlayCount" type="text" maxlength="40" placeholder="例如：128000 或 12.8万" /></label>
+            <label>
+              <span>视频发布时间</span>
+              <input id="importPublishedAt" type="datetime-local" />
+              <small>选填。不填则按 TikTok 视频 id 推算；旧数据也是这样补的。</small>
+            </label>
           </div>
           <div class="field-row field-row-3">
             <label><span>点赞</span><input id="importLikes" type="text" maxlength="40" placeholder="选填" /></label>
@@ -95,6 +100,7 @@
             <colgroup>
               <col class="col-check" />
               <col class="col-date" />
+              <col class="col-published" />
               <col class="col-title" />
               <col class="col-imported" />
               <col class="col-platform" />
@@ -108,6 +114,7 @@
               <tr>
                 <th class="cell-check"><span class="sr-only">选择</span></th>
                 <th>导入时间</th>
+                <th>视频发布时间</th>
                 <th>小说名称</th>
                 <th class="cell-imported">是否已导入音频页</th>
                 <th>平台</th>
@@ -126,6 +133,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-12" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-13" type="module"></script>
   </body>
 </html>

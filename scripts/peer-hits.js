@@ -8,7 +8,8 @@ const TOP_KEYS = new Set([
   "factoryNovelId", "factory_novel_id",
   "audioId", "audio_id", "audioName", "audio_name", "audioSize", "audio_size", "audio",
   "videoData", "video_data", "视频数据",
-  "source", "importedAt", "imported_at", "updatedAt", "updated_at", "createdAt", "created_at"
+  "source", "importedAt", "imported_at", "updatedAt", "updated_at", "createdAt", "created_at",
+  "publishedAt", "published_at", "发布时间"
 ]);
 
 const VIDEO_URL_KEYS = ["videoUrl", "video_url", "url", "link", "videoLink", "video_link", "视频链接", "视频地址", "视频url"];
@@ -49,6 +50,54 @@ export function parsePlayCount(value) {
   return Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0;
 }
 
+export function tiktokVideoIdFromUrl(url) {
+  const text = String(url || "").trim();
+  return text.match(/\/video\/(\d+)/)?.[1] || text.match(/[?&]video_id=(\d+)/)?.[1] || "";
+}
+
+export function publishedAtFromTikTokId(videoId) {
+  const id = String(videoId || "").trim();
+  if (!/^\d{15,}$/.test(id)) return 0;
+  try {
+    const ms = Number(BigInt(id) >> 32n) * 1000;
+    if (!Number.isFinite(ms) || ms < Date.parse("2016-01-01") || ms > Date.now() + 86_400_000) return 0;
+    return ms;
+  } catch {
+    return 0;
+  }
+}
+
+export function parsePublishedAt(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value > 1e12) return Math.round(value);
+    if (value > 1e9) return Math.round(value * 1000);
+    return 0;
+  }
+  const text = String(value).trim();
+  if (!text) return 0;
+  if (/^\d{10,13}$/.test(text)) return parsePublishedAt(Number(text));
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function peerHitPublishedAt(hit = {}) {
+  const data = hit?.videoData && typeof hit.videoData === "object" ? hit.videoData : {};
+  const recorded = parsePublishedAt(
+    data.发布时间 || data.publishedAt || data.publishTime || data.createTime || data.createdAt
+    || hit.publishedAt || hit.published_at
+  );
+  if (recorded) return recorded;
+  return publishedAtFromTikTokId(tiktokVideoIdFromUrl(hit.videoUrl || hit.video_url));
+}
+
+export function attachPeerHitTimes(hits = []) {
+  return (Array.isArray(hits) ? hits : []).map((hit) => ({
+    ...hit,
+    publishedAt: peerHitPublishedAt(hit)
+  }));
+}
+
 export function normalizeVideoKey(url) {
   const text = String(url || "").trim();
   const videoId = text.match(/\/video\/(\d+)/)?.[1] || text.match(/[?&]video_id=(\d+)/)?.[1];
@@ -87,7 +136,11 @@ export function normalizePeerHitInput(raw, options = {}) {
     error.statusCode = 400;
     throw error;
   }
-  const videoData = readVideoData(item);
+  const videoData = { ...readVideoData(item) };
+  const publishedAt = parsePublishedAt(
+    item.publishedAt || item.published_at || item["发布时间"] || videoData.发布时间 || videoData.publishedAt
+  );
+  if (publishedAt) videoData.发布时间 = publishedAt;
   const playCount = parsePlayCount(pickFirst(item, PLAY_COUNT_KEYS) || videoData.playCount || videoData.播放量 || videoData.views);
   const novelTitle = String(pickFirst(item, NOVEL_TITLE_KEYS)).trim().slice(0, 180);
   const novelId = String(pickFirst(item, NOVEL_ID_KEYS)).trim().slice(0, 240);
@@ -267,7 +320,13 @@ export function attachScaleRunMarks(hits = []) {
       if (cluster.length < 2) continue;
       const scaleRun = {
         videoCount: cluster.length,
-        playCount: cluster.reduce((sum, item) => sum + (Number(item.playCount) || 0), 0)
+        playCount: cluster.reduce((sum, item) => sum + (Number(item.playCount) || 0), 0),
+        videos: cluster.map((item) => ({
+          id: item.id,
+          videoUrl: item.videoUrl || "",
+          playCount: Number(item.playCount) || 0,
+          publishedAt: Number(item.publishedAt) || peerHitPublishedAt(item)
+        })).sort((left, right) => (Number(right.playCount) || 0) - (Number(left.playCount) || 0))
       };
       for (const hit of cluster) hit.scaleRun = scaleRun;
     }

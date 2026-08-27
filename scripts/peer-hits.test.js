@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   attachAudioBoardImportStatus,
   attachFactoryNovel,
+  attachPeerHitTimes,
   attachScaleRunMarks,
   collectImportItems,
   filterPeerHits,
@@ -19,7 +20,10 @@ import {
   normalizePeerHitPlatform,
   normalizeVideoKey,
   parsePlayCount,
-  pickFirst
+  parsePublishedAt,
+  peerHitPublishedAt,
+  pickFirst,
+  publishedAtFromTikTokId
 } from "./peer-hits.js";
 
 test("reads Chinese and English import fields", () => {
@@ -206,15 +210,38 @@ test("skips peer-hit import when the book already has a near-identical clip", ()
 });
 
 test("marks the same audio across multiple videos as a scale run", () => {
-  const marked = attachScaleRunMarks([
-    { id: "h1", factoryNovelId: "n1", audioId: "a1", audioSize: 7843884, playCount: 561500 },
-    { id: "h2", factoryNovelId: "n1", audioId: "a2", audioSize: 7846809, playCount: 220600 },
+  const marked = attachScaleRunMarks(attachPeerHitTimes([
+    { id: "h1", factoryNovelId: "n1", audioId: "a1", audioSize: 7843884, playCount: 561500, videoUrl: "https://www.tiktok.com/@a/video/7665161307120766222" },
+    { id: "h2", factoryNovelId: "n1", audioId: "a2", audioSize: 7846809, playCount: 220600, videoUrl: "https://www.tiktok.com/@b/video/7670570595171454229" },
     { id: "h3", factoryNovelId: "n1", audioId: "a3", audioSize: 1_200_000, playCount: 9 }
-  ]);
+  ]));
   assert.equal(marked[0].scaleRun.videoCount, 2);
   assert.equal(marked[1].scaleRun.playCount, 782100);
   assert.equal(marked[2].scaleRun, undefined);
+  assert.equal(marked[0].scaleRun.videos.length, 2);
+  assert.equal(marked[0].scaleRun.videos[0].id, "h1");
+  assert.equal(marked[0].scaleRun.videos[0].playCount, 561500);
+  assert.ok(marked[0].scaleRun.videos[0].publishedAt > 0);
   assert.deepEqual(scaleRunForScript({ peerHitId: "h1", audio: { size: 7843884 } }, marked), marked[0].scaleRun);
+});
+
+test("derives TikTok publish time from the video id", () => {
+  const publishedAt = publishedAtFromTikTokId("7665161307120766222");
+  assert.equal(publishedAt, Number(BigInt("7665161307120766222") >> 32n) * 1000);
+  assert.equal(new Date(publishedAt).toISOString().slice(0, 10), "2026-07-22");
+  assert.equal(parsePublishedAt("2026-07-22T09:40:40+08:00"), Date.parse("2026-07-22T09:40:40+08:00"));
+});
+
+test("prefers recorded publish time over the TikTok video id", () => {
+  const recorded = Date.parse("2026-06-01T12:00:00+08:00");
+  assert.equal(peerHitPublishedAt({
+    videoUrl: "https://www.tiktok.com/@a/video/7665161307120766222",
+    videoData: { 发布时间: recorded }
+  }), recorded);
+  assert.equal(normalizePeerHitInput({
+    videoUrl: "https://www.tiktok.com/@a/video/7665161307120766222",
+    发布时间: recorded
+  }, { now: 1, id: "peer-time" }).videoData.发布时间, recorded);
 });
 
 test("pickFirst skips empty values", () => {

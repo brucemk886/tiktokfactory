@@ -643,9 +643,16 @@ function metric(label, value) {
 }
 
 function scaleRunNote(scaleRun) {
-  const count = Number(scaleRun?.videoCount) || 0;
+  const videos = Array.isArray(scaleRun?.videos) ? scaleRun.videos : [];
+  const count = Number(scaleRun?.videoCount) || videos.length || 0;
   if (count < 2) return "";
-  return `<p class="scale-run-note">这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来。</p>`;
+  const extra = videos.length
+    ? `<ul class="scale-run-videos">${videos.map((video) => {
+      const href = video.videoUrl ? escapeHtml(video.videoUrl) : "";
+      return `<li>${escapeHtml(formatNumber(video.playCount))} 播放 · ${escapeHtml(formatDateTime(video.publishedAt))}${href ? ` · <a href="${href}" target="_blank" rel="noreferrer">打开视频</a>` : ""}</li>`;
+    }).join("")}</ul>`
+    : "";
+  return `<div class="scale-run-note"><p>这个脚本能跑量，同一个音频 ${count} 条视频都能跑起来。</p>${extra}</div>`;
 }
 
 function sourceLabel(value) {

@@ -1,4 +1,5 @@
-.peer-table { min-width: 1280px; }
+.peer-table { min-width: 1400px; }
+.peer-table .col-published { width: 108px; }
 .peer-table .col-platform { width: 118px; }
 .peer-table .col-check { width: 36px; }
 .peer-table .col-imported { width: 108px; }
@@ -32,9 +33,15 @@
   text-decoration: none;
 }
 .peer-table .cell-title a:hover { text-decoration: underline; }
+.peer-table .scale-run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
 .peer-table .scale-run-chip {
   display: inline-flex;
-  margin-top: 6px;
   min-height: 22px;
   align-items: center;
   border-radius: 999px;
@@ -46,6 +53,50 @@
   font-weight: 800;
   white-space: nowrap;
 }
+.peer-table .scale-run-toggle {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid #8a9a32;
+  border-radius: 999px;
+  background: #fff;
+  color: #3d4710;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.peer-table .scale-run-toggle[aria-expanded="true"] {
+  background: #eef6b8;
+}
+.peer-table .scale-run-detail td {
+  padding: 8px 12px 14px 52px;
+  background: #f4f6e6;
+}
+.peer-table .scale-run-empty {
+  margin: 0;
+  color: var(--lf-muted, #6d6758);
+  font-size: 12px;
+}
+.peer-table .scale-run-videos {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.peer-table .scale-run-video {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  color: #3d4710;
+  font-size: 13px;
+  font-weight: 700;
+}
+.peer-table .scale-run-video a {
+  color: #3d4710;
+  font-weight: 800;
+}
+.peer-table .scale-run-video.is-current strong { color: #2f3a08; }
 .peer-table .cell-check input:disabled { opacity: 0.35; cursor: not-allowed; }
 .peer-table .cell-play { cursor: default; }
 .import-panel { display: grid; gap: 12px; margin: 22px 0 0; padding: 20px; border: 1px solid rgba(138, 154, 50, 0.45); border-radius: var(--lf-radius, 14px); background: rgba(200, 220, 90, 0.12); }
@@ -57,6 +108,7 @@
 .import-form select { width: 100%; height: 43px; padding: 0 12px; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 5px; background: #fff; color: var(--lf-text, #1d1a14); font: inherit; }
 .import-form .field-row-3 { grid-template-columns: 1fr 1fr 1fr; }
 .import-form .audio-field input[type="file"] { height: auto; padding: 10px 12px; }
+.import-form label small,
 .import-form .audio-field small { color: var(--lf-muted, #6d6758); font-size: 11px; font-weight: 600; }
 .import-panel .form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .import-panel .form-actions span { color: var(--lf-muted, #6d6758); font-size: 12px; }

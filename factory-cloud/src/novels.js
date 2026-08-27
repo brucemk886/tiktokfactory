@@ -8,7 +8,7 @@ import {
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
 import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
-import { attachScaleRunMarks, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, planPeerHitNovelImports, scaleRunForScript } from "../../scripts/peer-hits.js";
+import { attachPeerHitTimes, attachScaleRunMarks, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, planPeerHitNovelImports, scaleRunForScript } from "../../scripts/peer-hits.js";
 import { listPeerHitRows } from "./peer-hits-store.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
@@ -392,9 +392,9 @@ export async function hydrateNovel(db, id) {
   const novel = await findNovelById(db, id);
   if (!novel) return null;
   const [scripts, hits] = await Promise.all([listNovelScripts(db), listPeerHitRows(db)]);
-  const markedHits = attachScaleRunMarks(hits.filter((hit) => {
+  const markedHits = attachScaleRunMarks(attachPeerHitTimes(hits.filter((hit) => {
     return hit.factoryNovelId === novel.id || (novel.bookId && hit.novelId === novel.bookId);
-  }));
+  })));
   return {
     ...novel,
     scripts: scripts.filter((item) => item.novelId === novel.id).map((script) => ({
