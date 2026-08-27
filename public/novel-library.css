@@ -31,6 +31,7 @@
 .book-table .col-check { width: 36px; }
 .book-table .col-date { width: 88px; }
 .book-table .col-title { width: auto; }
+.book-table .col-channel { width: 72px; }
 .book-table .col-platform { width: 118px; }
 .book-table .col-book-id { width: 112px; }
 .book-table .col-promo { width: 88px; }
@@ -53,6 +54,8 @@
 .platform-chip, .channel-chip, .mark-chip { display: inline-flex; min-height: 23px; align-items: center; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 800; white-space: nowrap; }
 .platform-chip { border: 1px solid #8a9a32; background: rgba(200, 220, 90, 0.22); color: #3d4710; }
 .channel-chip { border: 1px solid #d7b07a; background: #fff4e0; color: #8a5a12; }
+.channel-chip.is-female { border-color: #d7a0b4; background: #fff0f4; color: #8a2f4e; }
+.channel-chip.is-male { border-color: #7a93c4; background: #eef3ff; color: #2a3f73; }
 .mark-chip.is-featured { border: 1px solid #8a9a32; background: #eef6b8; color: #3d4710; }
 .edit-button { min-width: 0; padding: 0 10px; }
 .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }

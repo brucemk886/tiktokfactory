@@ -190,7 +190,7 @@ function renderBooks() {
   const catalogHint = catalogCount > Number(counts.novelCount || 0) ? ` · 总表 ${catalogCount} 本` : "";
   elements.listStatus.textContent = `${scope} · ${shelfLabel} · ${audioLabel} ${novels.length} 本 · ${rangeLabel} · 有音频 ${audioCounts.voiced} · 没音频 ${audioCounts.silent} · 重点 ${counts.featuredCount} · 总音频 ${currentAudioCount()}${catalogHint}`;
   if (!novels.length) {
-    elements.list.innerHTML = `<tr><td colspan="9"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
+    elements.list.innerHTML = `<tr><td colspan="10"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -203,6 +203,7 @@ function renderBooks() {
         <strong>${escapeHtml(novel.title)}</strong>
         <p>${escapeHtml(excerpt(novel.sourceContent, 72))}</p>
       </td>
+      <td>${channelChip(novel)}</td>
       <td><span class="platform-chip">${escapeHtml(novel.platform || "未设置")}</span></td>
       <td class="cell-mono">${escapeHtml(novel.bookId || "未设置")}</td>
       <td class="cell-mono">${escapeHtml(novel.promotionCode || "未设置")}</td>
@@ -623,6 +624,20 @@ function generatedAudioCount(novel) {
   return (Array.isArray(novel?.scripts) ? novel.scripts : []).filter((script) => {
     return Boolean(String(script?.audioId || script?.audio?.id || "").trim());
   }).length;
+}
+
+function channelLabel(novel) {
+  const raw = String(novel?.category || "").trim();
+  if (/男频/.test(raw)) return "男频";
+  if (/女频/.test(raw)) return "女频";
+  return raw;
+}
+
+function channelChip(novel) {
+  const label = channelLabel(novel);
+  if (!label) return "—";
+  const kind = label === "男频" ? "is-male" : label === "女频" ? "is-female" : "";
+  return `<span class="channel-chip ${kind}">${escapeHtml(label)}</span>`;
 }
 
 function formatDate(value) {
