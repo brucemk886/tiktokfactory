@@ -7,7 +7,8 @@ import {
   uploadedAudioOpeningTitle,
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
-import { putNovelAudio } from "./novel-audio-archive.js";
+import { copyNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
+import { planPeerHitNovelImports } from "../../scripts/peer-hits.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
@@ -548,6 +549,105 @@ async function importNovelAudios(env, db, session, novelId, request) {
     count: items.length,
     items,
     message: `已上传 ${items.length} 条，可直接试听。工人会再写到本机音频目录。`
+  };
+}
+
+export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
+  const selected = (Array.isArray(hits) ? hits : []).slice(0, 20);
+  if (!selected.length) {
+    const error = new Error("先勾选有音频的同行爆款。");
+    error.statusCode = 400;
+    throw error;
+  }
+  const novels = await listNovelSummaries(db);
+  const store = await readStore(db);
+  const createdAt = new Date().toISOString();
+  const byNovel = new Map();
+  const skipped = [];
+  let imported = 0;
+  for (const step of planPeerHitNovelImports(selected, novels)) {
+    if (step.skipReason) {
+      skipped.push(step.skipReason);
+      continue;
+    }
+    const already = store.scripts.find((script) => script.novelId === step.novel.id && script.peerHitId === step.hit.id && scriptHasAudio(script));
+    if (already) {
+      skipped.push(`${step.novel.title} 已经导入过这条爆款音频`);
+      continue;
+    }
+    const audioId = safeId(`upload-${now()}-${randomToken(4)}`);
+    const copied = await copyNovelAudio(env, step.hit.audioId, audioId);
+    const fileName = String(step.hit.audioName || `${audioId}.mp3`).trim();
+    const openingTitle = uploadedAudioOpeningTitle(fileName) || "同行爆款";
+    const title = `${step.novel.title} ${openingTitle}`.trim().slice(0, 240);
+    const script = {
+      id: safeId(`script-${now()}-${randomToken(3)}`),
+      novelId: step.novel.id,
+      parentScriptId: "",
+      title,
+      text: uploadedAudioScriptText(fileName),
+      versionLabel: "同行爆款",
+      sourceType: "peer-hit",
+      peerHitId: step.hit.id,
+      openingTitle,
+      mixEnabled: true,
+      kept: true,
+      speakOpeningTitle: false,
+      createdAt,
+      updatedAt: createdAt,
+      audioId,
+      audio: {
+        id: audioId,
+        title,
+        fileName,
+        targetAudioPath: "",
+        duration: 0,
+        size: copied.size,
+        createdAt
+      }
+    };
+    store.scripts.push(script);
+    const bucket = byNovel.get(step.novel.id) || { novel: step.novel, items: [] };
+    bucket.items.push({
+      novelId: step.novel.id,
+      novelTitle: step.novel.title,
+      scriptId: script.id,
+      audioId,
+      fileName,
+      title,
+      size: copied.size,
+      createdAt
+    });
+    byNovel.set(step.novel.id, bucket);
+    imported += 1;
+  }
+  if (imported) await writeScripts(db, store.scripts);
+  const { enqueueJob } = await import("./jobs.js");
+  const jobs = [];
+  for (const { novel, items } of byNovel.values()) {
+    const job = await enqueueJob(db, {
+      type: "audio-import",
+      title: `导入 ${items.length} 条同行爆款音频`,
+      payload: {
+        novelId: novel.id,
+        novelTitle: novel.title,
+        targetAudioDir: "__novel__",
+        items
+      },
+      createdBy: session?.user?.username || ""
+    });
+    jobs.push({ jobId: job.id, novelId: novel.id, novelTitle: novel.title, count: items.length });
+  }
+  const parts = [];
+  if (imported) parts.push(`已导入 ${imported} 条到书单音频页`);
+  if (skipped.length) parts.push(`跳过 ${skipped.length} 条`);
+  return {
+    imported,
+    skipped: skipped.length,
+    skippedMessages: skipped.slice(0, 8),
+    jobs,
+    jobId: jobs[0]?.jobId || "",
+    message: parts.join("，") || "没有可导入的爆款音频。"
   };
 }
 

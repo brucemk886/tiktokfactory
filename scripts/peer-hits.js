@@ -101,6 +101,11 @@ export function normalizePeerHitInput(raw, options = {}) {
 }
 
 export function matchFactoryNovel(hit, novels = []) {
+  const factoryId = String(hit?.factoryNovelId || "").trim();
+  if (factoryId) {
+    const byFactory = novels.find((novel) => String(novel.id || "") === factoryId);
+    if (byFactory) return byFactory;
+  }
   const bookId = String(hit?.novelId || "").trim();
   if (bookId) {
     const byId = novels.find((novel) => String(novel.bookId || "").trim() === bookId || String(novel.id || "") === bookId);
@@ -157,6 +162,35 @@ export function filterPeerHits(items, query = "") {
     item.playCount,
     JSON.stringify(item.videoData || {})
   ].join(" ").toLowerCase().includes(needle));
+}
+
+export function filterPeerHitsByTime(items, range = "all", now = Date.now(), since = 0) {
+  const list = Array.isArray(items) ? items : [];
+  const start = Number(since) > 0 ? Number(since) : rangeStart(range, now);
+  if (!start) return list;
+  return list.filter((item) => Number(item.importedAt || item.updatedAt || 0) >= start);
+}
+
+function rangeStart(range, now) {
+  if (!range || range === "all") return 0;
+  if (range === "today") {
+    const date = new Date(now);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  }
+  if (range === "7d") return now - 7 * 86_400_000;
+  if (range === "30d") return now - 30 * 86_400_000;
+  return 0;
+}
+
+export function planPeerHitNovelImports(hits, novels = []) {
+  return (Array.isArray(hits) ? hits : []).map((hit) => {
+    const label = hit?.novelTitle || hit?.novelId || "这条";
+    if (!String(hit?.audioId || "").trim()) return { hit, novel: null, skipReason: `${label} 还没有爆款音频` };
+    const novel = matchFactoryNovel(hit, novels);
+    if (!novel) return { hit, novel: null, skipReason: `${label} 的小说id对不上书单` };
+    return { hit, novel, skipReason: "" };
+  });
 }
 
 export function sortPeerHits(items) {

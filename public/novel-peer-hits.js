@@ -1,3 +1,5 @@
+import { waitForAudioJob } from "./audio-job.js";
+
 const elements = {
   toggleImportButton: document.querySelector("#toggleImportBtn"),
   importPanel: document.querySelector("#importPanel"),
@@ -14,12 +16,18 @@ const elements = {
   importStatus: document.querySelector("#importStatus"),
   listStatus: document.querySelector("#listStatus"),
   searchInput: document.querySelector("#searchInput"),
+  selectVisible: document.querySelector("#selectVisibleBtn"),
+  importToNovelsButton: document.querySelector("#importToNovelsBtn"),
+  batchStatus: document.querySelector("#batchStatus"),
   hitList: document.querySelector("#hitList")
 };
 
 const state = {
   items: [],
-  query: ""
+  query: "",
+  range: "all",
+  selectedIds: new Set(),
+  importing: false
 };
 
 elements.toggleImportButton?.addEventListener("click", () => {
@@ -37,14 +45,32 @@ elements.searchInput?.addEventListener("input", () => {
   state.query = elements.searchInput.value.trim();
   renderList();
 });
+elements.selectVisible?.addEventListener("change", () => {
+  toggleVisibleSelection(elements.selectVisible.checked);
+});
+elements.importToNovelsButton?.addEventListener("click", importToNovels);
+document.querySelectorAll("[data-range]").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (state.range === button.dataset.range) return;
+    state.range = button.dataset.range || "all";
+    state.selectedIds.clear();
+    document.querySelectorAll("[data-range]").forEach((item) => item.classList.toggle("is-active", item === button));
+    loadList();
+  });
+});
 
 loadList();
 
 async function loadList() {
   if (elements.listStatus) elements.listStatus.textContent = "正在读取同行爆款...";
   try {
-    const data = await api("/api/peer-hits");
+    const params = new URLSearchParams();
+    if (state.range && state.range !== "all") params.set("range", state.range);
+    const since = rangeSince(state.range);
+    if (since) params.set("since", String(since));
+    const data = await api(`/api/peer-hits${params.toString() ? `?${params}` : ""}`);
     state.items = Array.isArray(data.items) ? data.items : [];
+    pruneSelection();
     renderList();
   } catch (error) {
     if (elements.listStatus) {
@@ -58,17 +84,19 @@ function renderList() {
   const items = visibleItems();
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
-      ? `共 ${state.items.length} 条同行视频${state.query ? `，当前显示 ${items.length} 条` : ""}`
-      : "还没有同行爆款。点右上角「导入同行爆款」，填入视频链接、播放量，也可以一起导入音频。";
+      ? `${rangeLabel(state.range)} ${state.items.length} 条，播放量从高到低${state.query ? `，当前显示 ${items.length} 条` : ""}`
+      : emptyCopy();
     elements.listStatus.className = "list-status";
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="8"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="9"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    syncBatchBar();
     return;
   }
   elements.hitList.innerHTML = items.map((item) => `
     <tr>
+      <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
       <td class="cell-title">${novelTitleCell(item)}</td>
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
@@ -84,17 +112,77 @@ function renderList() {
   elements.hitList.querySelectorAll("[data-delete-id]").forEach((button) => {
     button.addEventListener("click", () => deleteHit(button.dataset.deleteId));
   });
+  elements.hitList.querySelectorAll("[data-select-id]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) state.selectedIds.add(input.dataset.selectId);
+      else state.selectedIds.delete(input.dataset.selectId);
+      syncBatchBar();
+    });
+  });
+  syncBatchBar();
 }
 
 function visibleItems() {
   const needle = state.query.toLowerCase();
-  if (!needle) return state.items;
-  return state.items.filter((item) => [
-    item.novelTitle,
-    item.novelId,
-    item.videoUrl,
-    formatVideoData(item.videoData)
-  ].join(" ").toLowerCase().includes(needle));
+  const items = needle
+    ? state.items.filter((item) => [
+      item.novelTitle,
+      item.novelId,
+      item.factoryNovelId,
+      item.videoUrl,
+      formatVideoData(item.videoData)
+    ].join(" ").toLowerCase().includes(needle))
+    : state.items;
+  return [...items].sort((left, right) => {
+    const play = (Number(right.playCount) || 0) - (Number(left.playCount) || 0);
+    if (play) return play;
+    return (Number(right.updatedAt) || 0) - (Number(left.updatedAt) || 0);
+  });
+}
+
+function selectableItems() {
+  return visibleItems().filter((item) => Boolean(item.audioId));
+}
+
+function selectCell(item) {
+  if (!item.audioId) return `<input type="checkbox" disabled title="这条还没有爆款音频" />`;
+  return `<input type="checkbox" data-select-id="${escapeAttr(item.id)}" ${state.selectedIds.has(item.id) ? "checked" : ""} />`;
+}
+
+function toggleVisibleSelection(checked) {
+  for (const item of selectableItems()) {
+    if (checked) state.selectedIds.add(item.id);
+    else state.selectedIds.delete(item.id);
+  }
+  renderList();
+}
+
+function pruneSelection() {
+  const known = new Set(state.items.map((item) => item.id));
+  for (const id of [...state.selectedIds]) {
+    if (!known.has(id)) state.selectedIds.delete(id);
+  }
+}
+
+function syncBatchBar() {
+  const selectable = selectableItems();
+  const selected = selectable.filter((item) => state.selectedIds.has(item.id));
+  const matched = selected.filter((item) => item.factoryNovelId);
+  if (elements.selectVisible) {
+    elements.selectVisible.checked = Boolean(selectable.length) && selected.length === selectable.length;
+    elements.selectVisible.indeterminate = selected.length > 0 && selected.length < selectable.length;
+    elements.selectVisible.disabled = state.importing || !selectable.length;
+  }
+  if (elements.importToNovelsButton) elements.importToNovelsButton.disabled = state.importing || !selected.length;
+  if (!elements.batchStatus || state.importing) return;
+  if (!selected.length) {
+    setBatchStatus("勾选有音频、且小说id能对上书单的条目。一次最多 20 条。会写到该书音频页，本机工人再拷到 F:\\音频目录\\书名\\。");
+    return;
+  }
+  const extra = selected.length - matched.length;
+  setBatchStatus(extra
+    ? `已勾选 ${selected.length} 条，其中 ${matched.length} 条能对上书单，${extra} 条会跳过。`
+    : `已勾选 ${selected.length} 条，小说id都能对上书单。`);
 }
 
 async function importHits() {
@@ -120,9 +208,7 @@ async function importHits() {
     form.append("shares", payload.videoData.分享 || "");
     if (audio) form.append("audio", audio);
     const data = await api("/api/peer-hits/import", { method: "POST", body: form });
-    const listed = await api("/api/peer-hits");
-    state.items = Array.isArray(listed.items) ? listed.items : [];
-    renderList();
+    await loadList();
     clearImportForm();
     setImportStatus(data.message || "已写入。", "ok");
   } catch (error) {
@@ -131,6 +217,56 @@ async function importHits() {
     if (elements.importButton) {
       elements.importButton.disabled = false;
       elements.importButton.textContent = "写入列表";
+    }
+  }
+}
+
+async function importToNovels() {
+  const ids = selectableItems().map((item) => item.id).filter((id) => state.selectedIds.has(id)).slice(0, 20);
+  if (!ids.length) return setBatchStatus("先勾选有音频的同行爆款。", "error");
+  state.importing = true;
+  if (elements.importToNovelsButton) {
+    elements.importToNovelsButton.disabled = true;
+    elements.importToNovelsButton.textContent = "正在导入...";
+  }
+  setBatchStatus("正在按小说id写入书单音频页...");
+  try {
+    const data = await api("/api/peer-hits/import-to-novels", {
+      method: "POST",
+      body: JSON.stringify({ ids })
+    });
+    state.selectedIds.clear();
+    const jobs = Array.isArray(data.jobs) ? data.jobs.filter((job) => job?.jobId) : [];
+    if (!jobs.length) {
+      setBatchStatus(data.message || "没有可导入的爆款音频。", data.imported ? "ok" : "error");
+      return;
+    }
+    const dirs = [];
+    for (const job of jobs) {
+      const result = await waitForAudioJob(job.jobId, {
+        api,
+        onProgress: (progress) => setBatchStatus(progress.message || `工人正在写入 ${job.novelTitle || "本机音频目录"}...`)
+      });
+      if (result?.targetAudioDir) dirs.push(`${job.novelTitle || "小说"} → ${result.targetAudioDir}`);
+    }
+    setBatchStatus(
+      dirs.length
+        ? `${data.message || "已导入到音频页"}。本机已写入：${dirs.join("；")}`
+        : (data.message || "已导入到音频页。"),
+      "ok"
+    );
+  } catch (error) {
+    setBatchStatus(error.message || "网页已导入，本机目录稍后写入。请确认本机工厂已启动。", "error");
+  } finally {
+    state.importing = false;
+    if (elements.importToNovelsButton) {
+      elements.importToNovelsButton.textContent = "一键导入小说音频";
+      elements.importToNovelsButton.disabled = !selectableItems().some((item) => state.selectedIds.has(item.id));
+    }
+    if (elements.selectVisible) {
+      elements.selectVisible.disabled = !selectableItems().length;
+      elements.selectVisible.checked = false;
+      elements.selectVisible.indeterminate = false;
     }
   }
 }
@@ -172,6 +308,7 @@ async function deleteHit(id) {
   try {
     await api(`/api/peer-hits/${encodeURIComponent(id)}`, { method: "DELETE" });
     state.items = state.items.filter((item) => item.id !== id);
+    state.selectedIds.delete(id);
     renderList();
   } catch (error) {
     if (elements.listStatus) {
@@ -183,10 +320,15 @@ async function deleteHit(id) {
 
 function novelTitleCell(item) {
   const title = item.novelTitle || "未设置小说名称";
-  if (item.factoryNovelId) {
-    return `<strong><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}">${escapeHtml(title)}</a></strong>`;
-  }
-  return `<strong>${escapeHtml(title)}</strong>`;
+  const hint = item.factoryNovelId
+    ? "已对上书单"
+    : item.novelId
+      ? "小说id还对不上书单"
+      : "没有小说id";
+  const heading = item.factoryNovelId
+    ? `<strong><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}">${escapeHtml(title)}</a></strong>`
+    : `<strong>${escapeHtml(title)}</strong>`;
+  return `${heading}<p>${escapeHtml(hint)}</p>`;
 }
 
 function formatVideoData(data) {
@@ -221,10 +363,43 @@ function shortUrl(value) {
   return String(value || "").replace(/^https?:\/\/(www\.)?/i, "");
 }
 
+function rangeSince(range) {
+  const now = Date.now();
+  if (range === "today") {
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  }
+  if (range === "7d") return now - 7 * 86_400_000;
+  if (range === "30d") return now - 30 * 86_400_000;
+  return 0;
+}
+
+function rangeLabel(range) {
+  return ({
+    today: "今天",
+    "7d": "近7天",
+    "30d": "近30天",
+    all: "全部"
+  })[range] || "全部";
+}
+
+function emptyCopy() {
+  return state.range === "all"
+    ? "还没有同行爆款。点右上角「导入同行爆款」，填入视频链接、播放量，也可以一起导入音频。"
+    : `${rangeLabel(state.range)}还没有同行视频。`;
+}
+
 function setImportStatus(message, tone = "") {
   if (!elements.importStatus) return;
   elements.importStatus.textContent = message;
   elements.importStatus.className = tone === "ok" ? "is-ok" : tone === "error" ? "is-error" : "";
+}
+
+function setBatchStatus(message, tone = "") {
+  if (!elements.batchStatus) return;
+  elements.batchStatus.textContent = message;
+  elements.batchStatus.className = tone === "ok" ? "is-ok" : tone === "error" ? "is-error" : "";
 }
 
 async function api(url, options = {}) {

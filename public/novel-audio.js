@@ -621,7 +621,8 @@ function sourceLabel(value) {
     "novel-seed": "种子音频",
     "ai-operation-rewrite": "AI 数据改写",
     "audio-library": "音频库",
-    "uploaded-audio": "上传音频"
+    "uploaded-audio": "上传音频",
+    "peer-hit": "同行爆款"
   })[value] || "改写音频";
 }
 

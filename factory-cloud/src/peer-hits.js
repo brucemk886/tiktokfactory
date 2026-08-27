@@ -3,12 +3,14 @@ import {
   attachFactoryNovel,
   collectImportItems,
   filterPeerHits,
+  filterPeerHitsByTime,
   mergePeerHit,
   normalizePeerHitInput,
   sortPeerHits
 } from "../../scripts/peer-hits.js";
 import { errorJson, json, readJson, safeId } from "./http.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
+import { attachPeerAudiosToNovels } from "./novels.js";
 import { listNovelSummaries } from "./novel-store.js";
 import { deletePeerHitRow, findPeerHitById, findPeerHitByKey, listPeerHitRows, upsertPeerHitRow } from "./peer-hits-store.js";
 
@@ -23,8 +25,25 @@ export async function handlePeerHits(request, env, url, session) {
   const pathname = url.pathname;
 
   if (method === "GET" && pathname === "/api/peer-hits") {
-    const items = sortPeerHits(filterPeerHits(await listPeerHitRows(db), url.searchParams.get("query") || ""));
+    const novels = await listNovelSummaries(db);
+    const items = sortPeerHits(filterPeerHitsByTime(
+      filterPeerHits((await listPeerHitRows(db)).map((item) => attachFactoryNovel(item, novels)), url.searchParams.get("query") || ""),
+      url.searchParams.get("range") || "all",
+      Date.now(),
+      Number(url.searchParams.get("since")) || 0
+    ));
     return json({ items, count: items.length });
+  }
+
+  if (method === "POST" && pathname === "/api/peer-hits/import-to-novels") {
+    const payload = await readJson(request);
+    const ids = Array.isArray(payload.ids) ? payload.ids.map((id) => String(id || "").trim()).filter(Boolean).slice(0, 20) : [];
+    const hits = [];
+    for (const id of ids) {
+      const hit = await findPeerHitById(db, id);
+      if (hit) hits.push(hit);
+    }
+    return json(await attachPeerAudiosToNovels(env, db, session, hits));
   }
 
   if (method === "POST" && (pathname === "/api/peer-hits" || pathname === "/api/peer-hits/import")) {

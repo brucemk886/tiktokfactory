@@ -4,7 +4,10 @@ import {
   attachFactoryNovel,
   collectImportItems,
   filterPeerHits,
+  filterPeerHitsByTime,
   mergePeerHit,
+  planPeerHitNovelImports,
+  sortPeerHits,
   normalizePeerHitInput,
   normalizeVideoKey,
   parsePlayCount,
@@ -82,6 +85,40 @@ test("filters by novel name or video url", () => {
     { novelTitle: "Beta", novelId: "2", videoUrl: "https://tiktok.com/b", playCount: 8, videoData: {} }
   ];
   assert.deepEqual(filterPeerHits(items, "beta").map((item) => item.novelId), ["2"]);
+});
+
+test("time filter keeps recent imports", () => {
+  const now = Date.parse("2026-08-27T12:00:00+08:00");
+  const items = [
+    { id: "old", importedAt: now - 10 * 86_400_000, playCount: 9 },
+    { id: "week", importedAt: now - 3 * 86_400_000, playCount: 8 },
+    { id: "today", importedAt: now - 2 * 3_600_000, playCount: 7 }
+  ];
+  assert.deepEqual(filterPeerHitsByTime(items, "today", now).map((item) => item.id), ["today"]);
+  assert.deepEqual(filterPeerHitsByTime(items, "7d", now).map((item) => item.id), ["week", "today"]);
+  assert.equal(filterPeerHitsByTime(items, "all", now).length, 3);
+  assert.deepEqual(filterPeerHitsByTime(items, "all", now, now - 4 * 86_400_000).map((item) => item.id), ["week", "today"]);
+});
+
+test("sorts peer hits by play count descending", () => {
+  const items = [
+    { id: "low", playCount: 8, updatedAt: 9 },
+    { id: "high", playCount: 99, updatedAt: 1 },
+    { id: "mid", playCount: 20, updatedAt: 8 }
+  ];
+  assert.deepEqual(sortPeerHits(items).map((item) => item.id), ["high", "mid", "low"]);
+});
+
+test("plans novel imports by book id and skips missing audio", () => {
+  const novels = [{ id: "n1", title: "Alpha", bookId: "111" }];
+  const plan = planPeerHitNovelImports([
+    { id: "h1", audioId: "peer-1", novelId: "111", novelTitle: "Alpha" },
+    { id: "h2", audioId: "", novelId: "111", novelTitle: "Alpha" },
+    { id: "h3", audioId: "peer-3", novelId: "999", novelTitle: "Missing" }
+  ], novels);
+  assert.equal(plan[0].novel.id, "n1");
+  assert.match(plan[1].skipReason, /还没有爆款音频/);
+  assert.match(plan[2].skipReason, /对不上书单/);
 });
 
 test("pickFirst skips empty values", () => {

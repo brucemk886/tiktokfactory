@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-3" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-4" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -19,7 +19,7 @@
         <div>
           <p class="library-kicker">PEER HITS</p>
           <h1>同行爆款</h1>
-          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。同一条链接再导入会覆盖播放量、数据和音频。</p>
+          <p id="pageLead">把同行视频填进下面的输入框，也可以一起导入爆款音频。列表按播放量从高到低。勾选有音频、小说id能对上书单的条目，一键写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</p>
         </div>
         <div class="library-header-actions">
           <button id="toggleImportBtn" class="primary-action" type="button">导入同行爆款</button>
@@ -57,13 +57,28 @@
       </section>
 
       <section class="catalog-view">
+        <div class="shelf-tabs" role="tablist" aria-label="导入时间">
+          <button type="button" class="shelf-tab is-active" data-range="all">全部</button>
+          <button type="button" class="shelf-tab" data-range="today">今天</button>
+          <button type="button" class="shelf-tab" data-range="7d">近7天</button>
+          <button type="button" class="shelf-tab" data-range="30d">近30天</button>
+        </div>
         <div class="list-toolbar">
           <div id="listStatus" class="list-status">正在读取同行爆款...</div>
           <label><span class="sr-only">搜索</span><input id="searchInput" type="search" placeholder="搜索小说名称、小说id或视频链接" /></label>
         </div>
+        <div id="batchBar" class="batch-bar">
+          <label class="batch-check-all">
+            <input id="selectVisibleBtn" type="checkbox" />
+            全选当前有音频的
+          </label>
+          <button id="importToNovelsBtn" class="primary-action" type="button">一键导入小说音频</button>
+          <span id="batchStatus" role="status">勾选有音频、且小说id能对上书单的条目。会写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</span>
+        </div>
         <div class="book-table-wrap">
           <table class="book-table peer-table">
             <colgroup>
+              <col class="col-check" />
               <col class="col-date" />
               <col class="col-title" />
               <col class="col-book-id" />
@@ -75,6 +90,7 @@
             </colgroup>
             <thead>
               <tr>
+                <th class="cell-check"><span class="sr-only">选择</span></th>
                 <th>导入时间</th>
                 <th>小说名称</th>
                 <th>小说id</th>
@@ -92,6 +108,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-3" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-4" type="module"></script>
   </body>
 </html>

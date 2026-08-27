@@ -14,6 +14,19 @@ export async function putNovelAudio(env, audioId, body, contentType = "audio/mpe
   return { ok: true, audioId: key.slice("novel-audio/".length, -4), key };
 }
 
+export async function copyNovelAudio(env, fromId, toId) {
+  const fromKey = novelAudioObjectKey(fromId);
+  const toKey = novelAudioObjectKey(toId);
+  if (!fromKey || !toKey) throw Object.assign(new Error("音频 ID 无效。"), { statusCode: 400 });
+  if (!env?.ARCHIVE) throw Object.assign(new Error("工厂未绑定音频存储。"), { statusCode: 501 });
+  const object = await env.ARCHIVE.get(fromKey);
+  if (!object) throw Object.assign(new Error("没有这份爆款音频。"), { statusCode: 404 });
+  await env.ARCHIVE.put(toKey, object.body, {
+    httpMetadata: { contentType: object.httpMetadata?.contentType || "audio/mpeg" }
+  });
+  return { ok: true, audioId: toId, key: toKey, size: Number(object.size) || 0 };
+}
+
 export async function serveNovelAudio(env, audioId, request) {
   const key = novelAudioObjectKey(audioId);
   if (!key || !env?.ARCHIVE) return null;
