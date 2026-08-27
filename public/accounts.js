@@ -216,10 +216,10 @@ function renderSidebarOptions(selected) {
               <small>${esc(group.items.map((item) => item.label).join("、"))}</small>
             </span>
           </label>
-          ${canExpand ? `<button class="module-expand" type="button">子功能</button>` : ""}
+          ${canExpand ? `<button class="module-expand is-open" type="button">收起</button>` : ""}
         </div>
         ${canExpand ? `
-          <div class="module-children" hidden>
+          <div class="module-children">
             ${group.items.map((item) => `
               <label class="check-row">
                 <input class="child-switch" type="checkbox" value="${esc(item.id)}"${selectedSet.has(item.id) ? " checked" : ""}>
@@ -231,7 +231,9 @@ function renderSidebarOptions(selected) {
       </div>
     `;
   }).join("");
-  $("#userSidebarHint").textContent = "打开大模块后，可点「子功能」去掉不想展示的页面。";
+  $("#userSidebarHint").textContent = $("#userRole").value === "admin"
+    ? "打开大模块后，可去掉不想展示的子页面。同行爆款在「小说推文」下面，只给管理员。"
+    : "成员只能勾选已开放的模块。同行爆款等新页面只给管理员，请把角色改成管理员后再看。";
   bindModuleCards();
 }
 
