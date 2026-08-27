@@ -55,7 +55,7 @@
 .channel-chip { border: 1px solid #d7b07a; background: #fff4e0; color: #8a5a12; }
 .mark-chip.is-featured { border: 1px solid #8a9a32; background: #eef6b8; color: #3d4710; }
 .edit-button { min-width: 0; padding: 0 10px; }
-.row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
 .audio-link { background: #fff8e8; border-color: #d7b07a; }
 .rewrite-link { background: rgba(200, 220, 90, 0.28); border-color: #8a9a32; }
 .delete-button { background: #fff5f3; border-color: #d9a29a; color: #8a2f28; }
