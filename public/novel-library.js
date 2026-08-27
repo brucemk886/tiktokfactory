@@ -535,7 +535,7 @@ function syncBatchBar() {
   }
   if (elements.batchStatus && !state.batching) {
     elements.batchStatus.textContent = selected.length
-      ? `已勾 ${selected.length} 本，共 ${audioCount} 条音频。点一下保存到本机 F:\\音频目录\\书名\\。本机工人不要关。`
+      ? `已勾 ${selected.length} 本，共 ${audioCount} 条音频。点一下保存到本机 F:\\音频目录\\平台\\书名\\。本机工人不要关。`
       : "先勾书，再保存这些书的已生成音频到本机。本机工人不要关。";
     elements.batchStatus.className = "";
   }
@@ -582,7 +582,7 @@ async function saveSelectedNovelAudios() {
     }
   }
   if (!scriptIds.length) return setBatchStatus("勾选的书还没有已生成音频。", "error");
-  if (!confirm(`将把 ${novelIds.length} 本共 ${scriptIds.length} 条音频保存到本机 F:\\音频目录\\书名\\。本机工人不要关。继续？`)) return;
+  if (!confirm(`将把 ${novelIds.length} 本共 ${scriptIds.length} 条音频保存到本机 F:\\音频目录\\平台\\书名\\。本机工人不要关。继续？`)) return;
   state.batching = true;
   if (elements.batchAudioButton) elements.batchAudioButton.disabled = true;
   setBatchStatus("正在下发给工人...", "");

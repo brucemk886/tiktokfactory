@@ -578,6 +578,10 @@ async function importNovelAudios(env, db, session, novelId, request) {
     payload: {
       novelId: novel.id,
       novelTitle: novel.title,
+      platform: novel.platform || "",
+      promotionCode: novel.promotionCode || "",
+      promotionCopy: novel.promotionCopy || "",
+      bookId: novel.bookId || "",
       targetAudioDir: String(form.get("targetAudioDir") || "__novel__").trim() || "__novel__",
       items
     },
@@ -816,6 +820,7 @@ export async function buildAudioGeneratePayload(db, body = {}) {
   return {
     targetAudioDir: String(body.targetAudioDir || "").trim(),
     novelTitle: String(body.novelTitle || items[0]?.novelTitle || "").trim(),
+    platform: String(body.platform || items[0]?.platform || "").trim(),
     voiceId,
     speechSpeed: body.speechSpeed,
     items

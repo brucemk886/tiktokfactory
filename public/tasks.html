@@ -55,15 +55,9 @@
             </div>
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
             <div class="field novel-select-field" data-admin-only hidden>
-              <span>混剪小说</span>
-              <div class="novel-platform-tabs" role="tablist" aria-label="小说平台">
-                <button type="button" class="novel-platform-tab is-active" data-novel-platform="all">全部平台</button>
-                <button type="button" class="novel-platform-tab" data-novel-platform="GoodNovel">GoodNovel</button>
-                <button type="button" class="novel-platform-tab" data-novel-platform="MotoNovel">MotoNovel</button>
-                <button type="button" class="novel-platform-tab" data-novel-platform="NovelMaster">NovelMaster</button>
-              </div>
-              <div id="novelAudioPicker" class="novel-audio-picker">正在读取小说书单...</div>
-              <small id="novelBadgeHint">勾选小说后不用再选音频目录。工人会在本机 F:\音频目录 和音频库里找对应 mp3，不用再往线上传。</small>
+              <span>小说平台</span>
+              <div id="novelAudioPicker" class="novel-audio-picker">正在读取本机音频目录...</div>
+              <small id="novelBadgeHint">勾选工人机 F:\音频目录 下的小说平台。混该平台文件夹里的全部小说，角标和片尾读每本书自己的推广码。</small>
             </div>
             <div class="source-directory-stack">
               <section id="sharedLibraryPanel" class="shared-library-panel" hidden>

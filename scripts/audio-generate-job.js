@@ -62,7 +62,8 @@ export async function runAudioGenerateJob({
 
 export function resolveItemAudioDir(config, payload = {}, item = {}) {
   return resolveTargetAudioDir(config, payload.targetAudioDir, {
-    novelTitle: item.novelTitle || payload.novelTitle || item.title
+    novelTitle: item.novelTitle || payload.novelTitle || item.title,
+    platform: item.platform || payload.platform
   });
 }
 

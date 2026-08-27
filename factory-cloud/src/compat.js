@@ -86,8 +86,8 @@ export async function handleCompat(request, env, url, session) {
       const generation = normalizeRedditGeneration(payload.generation);
       const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
       if (taskType === "reddit-mix") {
-        if (!String(generation.audioDir || "").trim() && !(Array.isArray(generation.audioItems) && generation.audioItems.length)) {
-          return errorJson("请勾选混剪小说，或填写工人机上的音频目录。", 400);
+        if (!hasMixAudio(generation)) {
+          return errorJson("请勾选小说平台。", 400);
         }
         if (isParkourVideoTemplate(generation)) {
           if (!String(generation.videoDir || "").trim()) return errorJson("请填写工人机上的跑酷视频目录。", 400);
@@ -347,19 +347,22 @@ export async function handleCompat(request, env, url, session) {
 
   if (method === "POST" && pathname === "/api/audio-library/ensure-folder") {
     const body = await readJson(request);
-    const novelTitle = await resolveNovelTitle(db, body);
+    const novelId = String(body.novelId || "").trim();
+    const novel = novelId ? await hydrateNovel(db, novelId) : null;
+    const novelTitle = await resolveNovelTitle(db, body) || String(novel?.title || "").trim();
     if (!novelTitle) return errorJson("请先打开一本小说，再按书名建文件夹。", 400);
+    const platform = String(body.platform || novel?.platform || "").trim();
     const job = await enqueueJob(db, {
       type: "audio-ensure-folder",
       title: `新建音频文件夹 ${novelTitle}`,
-      payload: { novelTitle, novelId: String(body.novelId || "").trim() },
+      payload: { novelTitle, novelId, platform },
       createdBy: session.user.username
     });
     return json({
       queued: true,
       accepted: true,
       jobId: job.id,
-      message: `已让工人机在 F:\\音频目录 下创建「${novelTitle}」文件夹。`
+      message: `已让工人机在 F:\\音频目录\\${platform || "未分平台"} 下创建「${novelTitle}」文件夹。`
     });
   }
 
@@ -502,7 +505,20 @@ function normalizeRedditGeneration(value = {}) {
     generation.videoDir = resolveParkourVideoDir(generation.videoDir);
     generation.assetGroupId = "";
   }
+  generation.audioDirs = (Array.isArray(generation.audioDirs) ? generation.audioDirs : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const audioDir = String(generation.audioDir || "").trim();
+  if (audioDir && !generation.audioDirs.includes(audioDir)) generation.audioDirs.unshift(audioDir);
+  if (!generation.audioDir && generation.audioDirs[0]) generation.audioDir = generation.audioDirs[0];
   return generation;
+}
+
+function hasMixAudio(generation = {}) {
+  if (String(generation.audioDir || "").trim()) return true;
+  if (Array.isArray(generation.audioDirs) && generation.audioDirs.some((item) => String(item || "").trim())) return true;
+  if (Array.isArray(generation.audioItems) && generation.audioItems.length) return true;
+  return false;
 }
 
 function defaultOperatorSettings(scope) {
@@ -528,10 +544,24 @@ function publicAssetGroups(groups) {
 }
 
 function publicAudioGroups(groups) {
-  return (Array.isArray(groups) ? groups : []).map((group) => ({
-    id: String(group.id || group.name || "").trim(),
-    name: String(group.name || group.id || "").trim(),
-    path: String(group.path || group.sourceDir || "").trim(),
-    totalAssets: Number(group.totalAssets ?? group.clipCount ?? group.fileCount) || 0
-  })).filter((group) => group.id && group.path);
+  return (Array.isArray(groups) ? groups : []).map((group) => {
+    const paths = Array.isArray(group.paths)
+      ? group.paths.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    return {
+      id: String(group.id || group.name || "").trim(),
+      kind: String(group.kind || "").trim(),
+      name: String(group.name || group.id || "").trim(),
+      path: String(group.path || paths[0] || group.sourceDir || "").trim(),
+      paths,
+      totalAssets: Number(group.totalAssets ?? group.clipCount ?? group.fileCount) || 0,
+      bookCount: Number(group.bookCount) || 0,
+      rootOnly: group.rootOnly === true,
+      parentId: String(group.parentId || "").trim(),
+      novelId: String(group.novelId || "").trim(),
+      platform: String(group.platform || "").trim(),
+      promotionCode: String(group.promotionCode || "").trim(),
+      promotionCopy: String(group.promotionCopy || "").trim()
+    };
+  }).filter((group) => group.id && (group.path || group.paths.length));
 }

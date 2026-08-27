@@ -6,6 +6,7 @@ import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { mergeOfficialPublishRecords } from "./official-publish-records.js";
 import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
+import { normalizeAudioDirs } from "./audio-library-groups.js";
 
 export { mergeOfficialPublishRecords };
 
@@ -40,14 +41,14 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     publish.ownerUserId = String(payload.ownerUserId || publish.ownerUserId || "");
     const expectedVideoCount = taskType === "psychology" || taskType === "schulte"
       ? generation.totalVideos
-      : generation.totalVideos || ((generation.audioItems?.length || countAudioFiles(generation.audioDir)) * generation.variants);
+      : generation.totalVideos || ((generation.audioItems?.length || mixAudioFileCount(generation)) * generation.variants);
     if (!expectedVideoCount) {
       throw new Error(
         taskType === "psychology"
           ? "请设置心理学视频生成数量。"
           : taskType === "schulte"
             ? "请设置舒尔特视频生成数量。"
-            : "没有找到可用音频。请勾选小说音频，或选择音频目录。"
+            : "没有找到可用音频。请勾选小说平台。"
       );
     }
     const publishAccountIds = getPublishAccountIds(publish);
@@ -648,8 +649,8 @@ function validateTaskPayload(payload) {
   } else if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) {
     throw new Error("请选择素材组或视频素材目录。");
   }
-  if (!String(generation.audioDir || "").trim() && !normalizeAudioItems(generation.audioItems).length) {
-    throw new Error("请勾选小说音频，或选择音频目录。");
+  if (!String(generation.audioDir || "").trim() && !normalizeAudioDirs(generation.audioDirs).length && !normalizeAudioItems(generation.audioItems).length) {
+    throw new Error("请勾选小说平台。");
   }
   if (publish.autoPublish !== false && !getPublishAccountIds(publish).length) throw new Error("请选择至少一个发布账号。");
   const scheduleAt = Number(publish.scheduleAt);
@@ -771,6 +772,7 @@ function normalizeGenerationPayload(value = {}) {
     videoDir,
     includeVideoSubfolders: value.includeVideoSubfolders !== false,
     audioDir: String(value.audioDir || ""),
+    audioDirs: normalizeAudioDirs(value.audioDirs, value.audioDir),
     audioItems: normalizeAudioItems(value.audioItems),
     audioPriority: Array.isArray(value.audioPriority)
       ? value.audioPriority.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 300)
@@ -896,10 +898,10 @@ function getTaskSchedulePlan(task) {
   if (!task?.publish?.autoPublish) return [];
   if (Array.isArray(task.schedulePlan) && task.schedulePlan.length) return task.schedulePlan;
   let videoCount = Number(task.expectedVideoCount) || Number(task.generatedVideos?.length) || 0;
-  if (!videoCount && (task.generation?.audioDir || task.generation?.audioItems?.length)) {
+  if (!videoCount && (task.generation?.audioDir || task.generation?.audioDirs?.length || task.generation?.audioItems?.length)) {
     try {
       videoCount = Number(task.generation.totalVideos)
-        || ((task.generation.audioItems?.length || countAudioFiles(task.generation.audioDir)) * (Number(task.generation.variants) || 1));
+        || ((task.generation.audioItems?.length || mixAudioFileCount(task.generation)) * (Number(task.generation.variants) || 1));
     } catch { videoCount = 0; }
   }
   const accountIds = getPublishAccountIds(task.publish);
@@ -1159,6 +1161,12 @@ function normalizeAudioItems(value) {
     }))
     .filter((item) => item.id || item.path)
     .slice(0, 300);
+}
+
+function mixAudioFileCount(generation = {}) {
+  const items = normalizeAudioItems(generation.audioItems);
+  if (items.length) return items.length;
+  return normalizeAudioDirs(generation.audioDirs, generation.audioDir).reduce((sum, dir) => sum + countAudioFiles(dir), 0);
 }
 
 function countAudioFiles(directory) {

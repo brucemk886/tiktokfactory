@@ -1459,7 +1459,8 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload = await readJsonBody(req);
         payload.targetAudioDir = resolveTargetAudioDir(readConfig(root), payload.targetAudioDir, {
-          novelTitle: payload.novelTitle
+          novelTitle: payload.novelTitle,
+          platform: payload.platform
         });
         const item = await audioLibrary.generateFromScript(payload);
         if (payload.scriptId && item?.id) {
@@ -1527,9 +1528,11 @@ const server = http.createServer(async (req, res) => {
       if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "新建音频文件夹仅允许在本机访问。" });
       try {
         const payload = await readJsonBody(req);
-        const novelTitle = String(payload.novelTitle || (payload.novelId ? novelContentLibrary.getNovel(payload.novelId)?.title : "") || "").trim();
-        const targetAudioDir = resolveTargetAudioDir(readConfig(root), "__novel__", { novelTitle });
-        return sendJson(res, 200, { targetAudioDir, novelTitle: novelTitle || "未命名小说" });
+        const novel = payload.novelId ? novelContentLibrary.getNovel(payload.novelId) : null;
+        const novelTitle = String(payload.novelTitle || novel?.title || "").trim();
+        const platform = String(payload.platform || novel?.platform || "").trim();
+        const targetAudioDir = resolveTargetAudioDir(readConfig(root), "__novel__", { novelTitle, platform });
+        return sendJson(res, 200, { targetAudioDir, novelTitle: novelTitle || "未命名小说", platform });
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 400, { error: error.message || "本机创建音频文件夹失败。" });
       }

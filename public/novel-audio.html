@@ -76,13 +76,13 @@
           <span>保存到本机音频目录</span>
           <div class="audio-dir-row">
             <select id="audioGroupSelect">
-              <option value="__novel__">按小说名称自动建文件夹</option>
+              <option value="__novel__">按平台和书名自动建文件夹</option>
             </select>
             <button id="uploadAudioBtn" type="button">上传音频</button>
           </div>
           <input id="audioDir" type="hidden" />
           <input id="uploadAudioInput" type="file" accept="audio/mpeg,.mp3" multiple hidden />
-          <small id="audioGroupHint">默认写到 F:\音频目录\小说名。也可直接上传已生成的 mp3，按待配音顺序挂上；没有待配音会新增一条。</small>
+          <small id="audioGroupHint">默认写到 F:\音频目录\平台\书名。也可直接上传已生成的 mp3，按待配音顺序挂上；没有待配音会新增一条。</small>
         </div>
         <p id="audioStatus" class="list-status" role="status"></p>
       </section>
@@ -113,7 +113,7 @@
       </section>
       <p id="listStatus" class="list-status">正在读取改写音频...</p>
       <div id="mixToolbar" class="mix-toolbar" hidden>
-        <p>勾选后点保存，会覆盖拷到本机 F:\音频目录\书名\，给混剪用。试听不用先保存；以前生成的点卡片上「传到网页试听」。</p>
+        <p>勾选后点保存，会覆盖拷到本机 F:\音频目录\平台\书名\，给混剪用。试听不用先保存；以前生成的点卡片上「传到网页试听」。</p>
         <button id="saveMixAudiosBtn" class="primary-action" type="button">保存生效音频到本机</button>
         <span id="mixStatus" role="status"></span>
       </div>

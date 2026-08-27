@@ -26,7 +26,8 @@ export async function runAudioImportJob({
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) throw Object.assign(new Error("没有可导入的音频。"), { statusCode: 400 });
   const targetAudioDir = resolveTargetAudioDir(bootConfig, payload.targetAudioDir, {
-    novelTitle: payload.novelTitle || items[0]?.novelTitle
+    novelTitle: payload.novelTitle || items[0]?.novelTitle,
+    platform: payload.platform || items[0]?.platform
   });
   const tempDir = path.join(workDir || root, "imported-audio");
   fs.mkdirSync(tempDir, { recursive: true });

@@ -15,5 +15,6 @@ test("final mux keeps 1080p quality while capping bitrate for smaller files", ()
   assert.doesNotMatch(mixJob, /muxAudioAndCaptions[\s\S]*-preset", "veryfast"/);
   assert.match(mixJob, /endCardEnabled === false/);
   assert.match(mixJob, /resolveNovelEndCard/);
+  assert.match(mixJob, /normalizeAudioDirs/);
   assert.match(mixJob, /renderNovelAppIcon/);
 });

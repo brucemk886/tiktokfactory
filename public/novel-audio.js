@@ -486,7 +486,7 @@ async function saveMixAudios() {
       targetAudioDir: "__novel__"
     }, { api, onProgress: (job) => setMixStatus(job.message || "工人机正在保存到本机...") });
     const saved = Array.isArray(result.items) ? result.items.length : scriptIds.length;
-    const folder = result.targetAudioDir || `F:\\音频目录\\${state.novel?.title || "小说名"}`;
+    const folder = result.targetAudioDir || localNovelAudioDirHint();
     const refreshed = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = refreshed.novel;
     renderNovel(state.novel);
@@ -737,6 +737,32 @@ function voiceErrorText(message) {
   return text || "读取 ElevenLabs 声音失败。";
 }
 
+function platformFolderName(platform = "") {
+  const raw = String(platform || "").replace(/\s+/g, "");
+  if (/^goodnovel$/i.test(raw)) return "GoodNovel";
+  if (/^motonovel$/i.test(raw)) return "MotoNovel";
+  if (/^novelmaster$/i.test(raw)) return "NovelMaster";
+  return "未分平台";
+}
+
+function localNovelAudioDirHint(novel = state.novel) {
+  const platform = platformFolderName(novel?.platform);
+  const book = String(novel?.title || "小说名").trim() || "小说名";
+  return `F:\\音频目录\\${platform}\\${book}`;
+}
+
+function writeTargetAudioGroups(groups = []) {
+  const list = Array.isArray(groups) ? groups : [];
+  const typed = list.some((group) => group.kind);
+  if (!typed) return list.filter((group) => !group.rootOnly);
+  return list.filter((group) => group.kind === "book" || group.kind === "legacy");
+}
+
+function formatWriteAudioGroupLabel(group) {
+  const platform = group.platform && group.kind === "book" ? `${group.platform} / ` : "";
+  return `${platform}${group.name || group.id}（${Number(group.totalAssets) || 0} 条）`;
+}
+
 async function loadAudioGroups() {
   const select = elements.audioGroupSelect;
   if (!select) return;
@@ -744,19 +770,19 @@ async function loadAudioGroups() {
     const data = await api(`/api/audio-groups?t=${Date.now()}`);
     state.audioGroups = Array.isArray(data.groups) ? data.groups : [];
     const current = elements.audioDir?.value.trim() || "";
+    const folders = writeTargetAudioGroups(state.audioGroups);
     select.innerHTML = [
-      `<option value="__novel__">按小说名称自动建文件夹</option>`,
-      ...state.audioGroups.map((group) => `<option value="${escapeAttr(group.path)}">${escapeHtml(group.name || group.id)}（${Number(group.totalAssets) || 0} 条）</option>`)
+      `<option value="__novel__">按平台和书名自动建文件夹</option>`,
+      ...folders.map((group) => `<option value="${escapeAttr(group.path)}">${escapeHtml(formatWriteAudioGroupLabel(group))}</option>`)
     ].join("");
-    const matched = state.audioGroups.find((group) => group.path === current);
+    const matched = folders.find((group) => group.path === current);
     select.value = matched ? matched.path : "__novel__";
     applyAudioGroupSelection();
     if (elements.audioGroupHint) {
-      const book = state.novel?.title || "小说名";
-      elements.audioGroupHint.textContent = `默认写到 F:\\音频目录\\${book}。线上点生成后，工人机会自动建文件夹。`;
+      elements.audioGroupHint.textContent = `默认写到 ${localNovelAudioDirHint()}。线上点生成后，工人机会自动建文件夹。`;
     }
   } catch {
-    if (elements.audioGroupHint) elements.audioGroupHint.textContent = "读取本机音频目录失败时，会按小说名在 F:\\音频目录 下自动建文件夹。";
+    if (elements.audioGroupHint) elements.audioGroupHint.textContent = "读取本机音频目录失败时，会按平台和书名在 F:\\音频目录 下自动建文件夹。";
   }
 }
 

@@ -265,7 +265,10 @@ async function runAudioEnsureFolderJob(context, job) {
   const jobId = job.id || job.jobId;
   const payload = job.payload || {};
   try {
-    const targetAudioDir = resolveTargetAudioDir(context.config, "__novel__", { novelTitle: payload.novelTitle });
+    const targetAudioDir = resolveTargetAudioDir(context.config, "__novel__", {
+      novelTitle: payload.novelTitle,
+      platform: payload.platform
+    });
     await complete(context, jobId, {
       error: "",
       message: `已在本机创建 ${targetAudioDir}`,

@@ -51,6 +51,14 @@ export function writeNovelAudioMeta({ dir = "", audioPath = "", novel = {} } = {
   return written;
 }
 
+export function readFolderNovelMeta(folderPath) {
+  try {
+    return normalizeNovelAudioMeta(JSON.parse(fs.readFileSync(path.join(folderPath, NOVEL_AUDIO_META_NAME), "utf8")));
+  } catch {
+    return normalizeNovelAudioMeta();
+  }
+}
+
 export function readNovelAudioMeta(audioPath = "") {
   const resolved = String(audioPath || "").trim();
   if (!resolved) return normalizeNovelAudioMeta();

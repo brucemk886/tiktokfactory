@@ -40,6 +40,7 @@ test("import job downloads cloud audio and copies it into the novel folder", asy
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0].audioId, "upload-job-1");
   assert.ok(fs.existsSync(result.items[0].targetAudioPath));
+  assert.equal(path.dirname(result.items[0].targetAudioPath), path.join(root, "library", "GoodNovel", "Imported Book"));
   const folderMeta = JSON.parse(fs.readFileSync(path.join(path.dirname(result.items[0].targetAudioPath), "novel.json"), "utf8"));
   assert.equal(folderMeta.platform, "GoodNovel");
   assert.equal(folderMeta.promotionCode, "GN-88");

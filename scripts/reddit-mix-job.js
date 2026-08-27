@@ -14,7 +14,7 @@ import {
   round2,
   scoreClipReuse
 } from "./asset-library.js";
-import { findAudioInLibrary, listAudioLibraryFiles } from "./audio-library-groups.js";
+import { findAudioInLibrary, listAudioLibraryFiles, normalizeAudioDirs } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
@@ -420,8 +420,10 @@ function resolveMixAudios(payload) {
     throw new Error(`本机音频目录里找不到这些小说音频：${missing.join("、")}。把 mp3 放到 F:\\音频目录，或在这台工人机上生成音频。`);
   }
   let fromDir = [];
-  if (!fromItems.length && String(payload.audioDir || "").trim()) {
-    fromDir = listMediaFiles(mustBeDirectory(payload.audioDir, "音频文件夹"), AUDIO_EXTENSIONS);
+  if (!fromItems.length) {
+    for (const dir of normalizeAudioDirs(payload.audioDirs, payload.audioDir)) {
+      fromDir.push(...listMediaFiles(mustBeDirectory(dir, "音频文件夹"), AUDIO_EXTENSIONS));
+    }
   }
   const merged = [];
   const seen = new Set();
@@ -431,7 +433,7 @@ function resolveMixAudios(payload) {
     seen.add(key);
     merged.push(file);
   }
-  if (!merged.length) throw new Error("没有找到可用音频。请勾选混剪小说，或选择音频目录。");
+  if (!merged.length) throw new Error("没有找到可用音频。请勾选小说平台。");
   return resolvePrioritizedAudios(merged, payload.audioPriority);
 }
 
