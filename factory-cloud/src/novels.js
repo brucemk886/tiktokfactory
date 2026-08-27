@@ -8,7 +8,7 @@ import {
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
 import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
-import { planPeerHitNovelImports } from "../../scripts/peer-hits.js";
+import { importedPeerHitIdSet, planPeerHitNovelImports } from "../../scripts/peer-hits.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
@@ -572,14 +572,9 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
   const byNovel = new Map();
   const skipped = [];
   let imported = 0;
-  for (const step of planPeerHitNovelImports(selected, novels)) {
+  for (const step of planPeerHitNovelImports(selected, novels, { importedPeerHitIds: importedPeerHitIdSet(store.scripts) })) {
     if (step.skipReason) {
       skipped.push(step.skipReason);
-      continue;
-    }
-    const already = store.scripts.find((script) => script.novelId === step.novel.id && script.peerHitId === step.hit.id && scriptHasAudio(script));
-    if (already) {
-      skipped.push(`${step.novel.title} 已经导入过这条爆款音频`);
       continue;
     }
     const audioId = safeId(`upload-${now()}-${randomToken(4)}`);

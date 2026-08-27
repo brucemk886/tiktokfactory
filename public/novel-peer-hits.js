@@ -93,9 +93,10 @@ async function loadList() {
 
 function renderList() {
   const items = visibleItems();
+  const importedCount = items.filter((item) => item.importedToAudioBoard).length;
   if (elements.listStatus) {
     elements.listStatus.textContent = state.items.length
-      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，播放量从高到低${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
+      ? `${platformLabel(state.platform)} ${rangeLabel(state.range)} ${items.length} 条，播放量从高到低${importedCount ? `，${importedCount} 条已写入音频页` : ""}${state.query || state.platform !== "all" ? `，全部 ${state.items.length} 条` : ""}`
       : emptyCopy();
     elements.listStatus.className = "list-status";
   }
@@ -106,7 +107,7 @@ function renderList() {
     return;
   }
   elements.hitList.innerHTML = items.map((item) => `
-    <tr>
+    <tr${item.importedToAudioBoard ? " class=\"is-imported\"" : ""}>
       <td class="cell-check">${selectCell(item)}</td>
       <td class="cell-date">${escapeHtml(formatDate(item.importedAt || item.updatedAt))}</td>
       <td class="cell-title">${novelTitleCell(item)}</td>
@@ -145,6 +146,7 @@ function visibleItems() {
       item.novelId,
       item.platform,
       item.factoryNovelId,
+      item.importedToAudioBoard ? "已写入音频页" : "",
       item.videoUrl,
       formatVideoData(item.videoData)
     ].join(" ").toLowerCase().includes(needle))
@@ -157,10 +159,11 @@ function visibleItems() {
 }
 
 function selectableItems() {
-  return visibleItems().filter((item) => Boolean(item.audioId));
+  return visibleItems().filter((item) => Boolean(item.audioId) && !item.importedToAudioBoard);
 }
 
 function selectCell(item) {
+  if (item.importedToAudioBoard) return `<input type="checkbox" disabled title="已经写入音频页，不会再导入" />`;
   if (!item.audioId) return `<input type="checkbox" disabled title="这条还没有爆款音频" />`;
   return `<input type="checkbox" data-select-id="${escapeAttr(item.id)}" ${state.selectedIds.has(item.id) ? "checked" : ""} />`;
 }
@@ -174,7 +177,7 @@ function toggleVisibleSelection(checked) {
 }
 
 function pruneSelection() {
-  const known = new Set(state.items.map((item) => item.id));
+  const known = new Set(state.items.filter((item) => item.audioId && !item.importedToAudioBoard).map((item) => item.id));
   for (const id of [...state.selectedIds]) {
     if (!known.has(id)) state.selectedIds.delete(id);
   }
@@ -192,7 +195,7 @@ function syncBatchBar() {
   if (elements.importToNovelsButton) elements.importToNovelsButton.disabled = state.importing || !selected.length;
   if (!elements.batchStatus || state.importing) return;
   if (!selected.length) {
-    setBatchStatus("勾选有音频、且小说id和平台能对上书单的条目。一次最多 20 条。会写到该书音频页，本机工人再拷到 F:\\音频目录\\书名\\。");
+    setBatchStatus("勾选有音频、还没写入音频页、且小说id和平台能对上书单的条目。已写入的不会再导入。一次最多 20 条。");
     return;
   }
   const extra = selected.length - matched.length;
@@ -271,6 +274,7 @@ async function importToNovels() {
       body: JSON.stringify({ ids })
     });
     state.selectedIds.clear();
+    await loadList();
     const jobs = Array.isArray(data.jobs) ? data.jobs.filter((job) => job?.jobId) : [];
     if (!jobs.length) {
       setBatchStatus(data.message || "没有可导入的爆款音频。", data.imported ? "ok" : "error");
@@ -357,15 +361,18 @@ async function deleteHit(id) {
 
 function novelTitleCell(item) {
   const title = item.novelTitle || "未设置小说名称";
-  const hint = item.factoryNovelId
-    ? "已对上书单"
-    : item.novelId
-      ? "小说id和平台还对不上书单"
-      : "没有小说id";
+  const hint = item.importedToAudioBoard
+    ? "已写入音频页"
+    : item.factoryNovelId
+      ? "已对上书单"
+      : item.novelId
+        ? "小说id和平台还对不上书单"
+        : "没有小说id";
   const heading = item.factoryNovelId
     ? `<strong><a href="/novel-audio?novel=${encodeURIComponent(item.factoryNovelId)}">${escapeHtml(title)}</a></strong>`
     : `<strong>${escapeHtml(title)}</strong>`;
-  return `${heading}<p>${escapeHtml(hint)}</p>`;
+  const mark = item.importedToAudioBoard ? `<span class="import-chip">已写入音频页</span>` : "";
+  return `${heading}${mark}<p>${escapeHtml(hint)}</p>`;
 }
 
 function formatVideoData(data) {

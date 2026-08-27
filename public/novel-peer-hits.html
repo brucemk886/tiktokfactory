@@ -6,7 +6,7 @@
     <title>同行爆款 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/novel-library.css?v=20260826-14" />
-    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-6" />
+    <link rel="stylesheet" href="/novel-peer-hits.css?v=20260827-7" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page novel-library-page novel-peer-hits-page">
@@ -85,10 +85,10 @@
         <div id="batchBar" class="batch-bar">
           <label class="batch-check-all">
             <input id="selectVisibleBtn" type="checkbox" />
-            全选当前有音频的
+            全选未写入的
           </label>
           <button id="importToNovelsBtn" class="primary-action" type="button">一键导入小说音频</button>
-          <span id="batchStatus" role="status">勾选有音频、且小说id和平台能对上书单的条目。会写到该书音频页，本机工人再拷到 F:\音频目录\书名\。</span>
+          <span id="batchStatus" role="status">勾选有音频、还没写入音频页的条目。已写入的不会再导入。</span>
         </div>
         <div class="book-table-wrap">
           <table class="book-table peer-table">
@@ -125,6 +125,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/novel-peer-hits.js?v=20260827-6" type="module"></script>
+    <script src="/novel-peer-hits.js?v=20260827-7" type="module"></script>
   </body>
 </html>

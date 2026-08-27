@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  attachAudioBoardImportStatus,
   attachFactoryNovel,
   collectImportItems,
   filterPeerHits,
   filterPeerHitsByPlatform,
   filterPeerHitsByTime,
+  importedPeerHitIdSet,
   mergePeerHit,
   planPeerHitNovelImports,
   sortPeerHits,
@@ -152,6 +154,22 @@ test("plans novel imports by book id and skips missing audio", () => {
   assert.match(planPeerHitNovelImports([
     { id: "h4", audioId: "peer-4", novelId: "111", platform: "MotoNovel", novelTitle: "Alpha" }
   ], novels)[0].skipReason, /对不上书单/);
+});
+
+test("marks peer hits already written to a novel audio board", () => {
+  const imported = importedPeerHitIdSet([
+    { peerHitId: "h1", audioId: "upload-1" },
+    { peerHitId: "h2", audioId: "" },
+    { peerHitId: "", audioId: "upload-3" }
+  ]);
+  assert.deepEqual([...imported], ["h1"]);
+  assert.equal(attachAudioBoardImportStatus({ id: "h1" }, imported).importedToAudioBoard, true);
+  assert.equal(attachAudioBoardImportStatus({ id: "h2" }, imported).importedToAudioBoard, false);
+  assert.match(planPeerHitNovelImports(
+    [{ id: "h1", audioId: "peer-1", novelId: "111", platform: "GoodNovel", novelTitle: "Alpha" }],
+    [{ id: "n1", title: "Alpha", bookId: "111", platform: "GoodNovel" }],
+    { importedPeerHitIds: imported }
+  )[0].skipReason, /已经写入音频页/);
 });
 
 test("pickFirst skips empty values", () => {

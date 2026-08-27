@@ -1,9 +1,11 @@
 import { isImportedAudioFile } from "../../scripts/novel-audio-import.js";
 import {
+  attachAudioBoardImportStatus,
   attachFactoryNovel,
   collectImportItems,
   filterPeerHits,
   filterPeerHitsByTime,
+  importedPeerHitIdSet,
   mergePeerHit,
   normalizePeerHitInput,
   sortPeerHits
@@ -11,7 +13,7 @@ import {
 import { errorJson, json, readJson, safeId } from "./http.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerAudiosToNovels } from "./novels.js";
-import { listNovelMatchIndex, listNovelsMatchingPeerHit, listNovelsMatchingPeerHits } from "./novel-store.js";
+import { listNovelMatchIndex, listNovelScripts, listNovelsMatchingPeerHit, listNovelsMatchingPeerHits } from "./novel-store.js";
 import { deletePeerHitRow, findPeerHitById, findPeerHitByKey, listPeerHitRows, upsertPeerHitRow } from "./peer-hits-store.js";
 
 const IMPORT_LIMIT = 200;
@@ -27,8 +29,9 @@ export async function handlePeerHits(request, env, url, session) {
   if (method === "GET" && pathname === "/api/peer-hits") {
     const rows = await listPeerHitRows(db);
     const novels = await listNovelsMatchingPeerHits(db, rows);
+    const importedIds = importedPeerHitIdSet(await listNovelScripts(db));
     const items = sortPeerHits(filterPeerHitsByTime(
-      filterPeerHits(rows.map((item) => attachFactoryNovel(item, novels)), url.searchParams.get("query") || ""),
+      filterPeerHits(rows.map((item) => attachAudioBoardImportStatus(attachFactoryNovel(item, novels), importedIds)), url.searchParams.get("query") || ""),
       url.searchParams.get("range") || "all",
       Date.now(),
       Number(url.searchParams.get("since")) || 0

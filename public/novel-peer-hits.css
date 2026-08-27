@@ -12,6 +12,9 @@
 .peer-table .cell-data { color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.5; }
 .peer-table .cell-title a { color: inherit; text-decoration: none; }
 .peer-table .cell-title a:hover { text-decoration: underline; }
+.peer-table .cell-title { display: grid; gap: 6px; justify-items: start; }
+.peer-table .import-chip { display: inline-flex; min-height: 23px; align-items: center; border-radius: 999px; padding: 2px 8px; border: 1px solid #8a9a32; background: #eef6b8; color: #3d4710; font-size: 11px; font-weight: 800; }
+.peer-table tr.is-imported td { background: rgba(238, 246, 184, 0.28); }
 .peer-table .cell-check input:disabled { opacity: 0.35; cursor: not-allowed; }
 .peer-table .cell-play { cursor: default; }
 .import-panel { display: grid; gap: 12px; margin: 22px 0 0; padding: 20px; border: 1px solid rgba(138, 154, 50, 0.45); border-radius: var(--lf-radius, 14px); background: rgba(200, 220, 90, 0.12); }

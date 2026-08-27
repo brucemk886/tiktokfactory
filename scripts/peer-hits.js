@@ -176,6 +176,7 @@ export function filterPeerHits(items, query = "") {
     item.novelId,
     item.platform,
     item.factoryNovelId,
+    item.importedToAudioBoard ? "已写入音频页" : "",
     item.videoUrl,
     item.playCount,
     JSON.stringify(item.videoData || {})
@@ -208,12 +209,27 @@ function rangeStart(range, now) {
   return 0;
 }
 
-export function planPeerHitNovelImports(hits, novels = []) {
+export function importedPeerHitIdSet(scripts = []) {
+  return new Set((Array.isArray(scripts) ? scripts : [])
+    .filter((script) => String(script?.peerHitId || "").trim() && String(script?.audioId || script?.audio?.id || "").trim())
+    .map((script) => String(script.peerHitId).trim()));
+}
+
+export function attachAudioBoardImportStatus(hit, importedIds = new Set()) {
+  return {
+    ...hit,
+    importedToAudioBoard: importedIds.has(String(hit?.id || "").trim())
+  };
+}
+
+export function planPeerHitNovelImports(hits, novels = [], { importedPeerHitIds } = {}) {
+  const imported = importedPeerHitIds instanceof Set ? importedPeerHitIds : new Set();
   return (Array.isArray(hits) ? hits : []).map((hit) => {
     const label = hit?.novelTitle || hit?.novelId || "这条";
     if (!String(hit?.audioId || "").trim()) return { hit, novel: null, skipReason: `${label} 还没有爆款音频` };
     const novel = matchFactoryNovel(hit, novels);
     if (!novel) return { hit, novel: null, skipReason: `${label} 的小说id和平台对不上书单` };
+    if (imported.has(String(hit?.id || "").trim())) return { hit, novel, skipReason: `${label} 已经写入音频页` };
     return { hit, novel, skipReason: "" };
   });
 }
