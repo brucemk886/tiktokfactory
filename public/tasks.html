@@ -99,6 +99,7 @@
             </div>
             <label class="compact-check"><input id="autoCaptions" type="checkbox" checked /><span>使用 ElevenLabs 识别字幕并复用缓存</span></label>
             <label class="compact-check"><input id="openingTitleEnabled" type="checkbox" /><span>前 3 秒在画面正中加开头标题，方便对比有无标题的流量</span></label>
+            <label class="compact-check"><input id="endCardEnabled" type="checkbox" checked /><span>片尾写上搜书引导：Search 小说id、平台名和图标。不同小说用各自的 id 和图标</span></label>
             <details class="advanced-panel mix-only">
               <summary><span>素材去重设置</span><small>随下方「保存生成规则」一起记住</small></summary>
               <div class="grid controls-grid advanced-grid">
@@ -113,7 +114,7 @@
               </div>
             </details>
             <div class="rules-actions">
-              <span id="rulesSaveStatus">保存后，下次打开会带上条数、字幕、开头标题和去重参数。</span>
+              <span id="rulesSaveStatus">保存后，下次打开会带上条数、字幕、开头标题、片尾引导和去重参数。</span>
               <div class="rules-action-buttons">
                 <button id="saveRulesBtn" class="quiet-button" type="button">保存生成规则</button>
                 <button id="generateVideosBtn" class="primary-action" type="button">生成视频</button>
@@ -204,6 +205,6 @@
       </main>
     </div>
     <script src="/access.js"></script>
-    <script src="/tasks.js"></script>
+    <script src="/tasks.js?v=20260827-5"></script>
   </body>
 </html>

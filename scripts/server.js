@@ -3125,7 +3125,8 @@ function normalizeRedditMixSettings(value) {
       yPercent: clampNumber(subtitle.yPercent, 38, 82, 66),
       fontSize: clampNumber(subtitle.fontSize, 42, 92, 62),
       animationMode: subtitle.animationMode === "word-highlight" ? "word-highlight" : "sentence",
-      openingTitleEnabled: subtitle.openingTitleEnabled === true
+      openingTitleEnabled: subtitle.openingTitleEnabled === true,
+      endCardEnabled: subtitle.endCardEnabled !== false
     },
     generation: {
       totalVideos: Math.round(clampNumber(generation.totalVideos, 1, 300, 40)),

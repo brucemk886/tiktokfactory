@@ -792,9 +792,11 @@ function normalizeGenerationPayload(value = {}) {
     quality: value.quality === "quality" ? "quality" : "fast",
     autoCaptions: value.autoCaptions !== false,
     openingTitleEnabled: value.openingTitleEnabled === true,
+    endCardEnabled: value.endCardEnabled !== false,
     novelId: String(value.novelId || "").trim(),
     novelPlatform: String(value.novelPlatform || value.platform || "").trim(),
     novelPromotionCode: String(value.novelPromotionCode || value.promotionCode || "").trim(),
+    novelBookId: String(value.novelBookId || value.bookId || "").trim(),
     dedup: value.dedup && typeof value.dedup === "object" ? value.dedup : { enabled: true }
   };
 }
@@ -1151,7 +1153,9 @@ function normalizeAudioItems(value) {
       promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),
       promotionCopy: String(item?.promotionCopy || "").trim(),
       openingTitle: String(item?.openingTitle || item?.title || "").trim(),
-      title: String(item?.title || "").trim()
+      title: String(item?.title || "").trim(),
+      bookId: String(item?.bookId || item?.novelBookId || "").trim(),
+      novelTitle: String(item?.novelTitle || "").trim()
     }))
     .filter((item) => item.id || item.path)
     .slice(0, 300);

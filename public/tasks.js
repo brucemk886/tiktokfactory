@@ -33,6 +33,7 @@ $("#officialNameFilter")?.addEventListener("input", filterOfficialAccounts);
 $("#publishProvider")?.addEventListener("change", updatePublishProviderView);
 $("#saveRulesBtn")?.addEventListener("click", saveGenerationRules);
 $("#openingTitleEnabled")?.addEventListener("change", persistOpeningTitleSetting);
+$("#endCardEnabled")?.addEventListener("change", persistEndCardSetting);
 ["#totalVideos", "#intervalMinutes", "#scheduleAt", "#autoPublish"].forEach((selector) => {
   $(selector)?.addEventListener("input", updatePublishPlanHint);
   $(selector)?.addEventListener("change", updatePublishPlanHint);
@@ -134,8 +135,8 @@ async function createTask(options = {}) {
       audioDir, audioItems: selectedAudios, backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
       segmentMode: "fixed", segmentSeconds: number("#segmentSeconds", 5), totalVideos: number("#totalVideos", 40),
       subtitleYPercent: number("#subtitleY", 66), subtitleFontSize: number("#subtitleSize", 62), subtitleAnimationMode: $("#subtitleMode").value,
-      quality: $("#quality").value, autoCaptions: $("#autoCaptions").checked, openingTitleEnabled: $("#openingTitleEnabled")?.checked === true, dedup: collectDedup(),
-      novelId: selectedAudios[0]?.novelId || "", novelPlatform: selectedAudios[0]?.platform || "", novelPromotionCode: selectedAudios[0]?.promotionCode || ""
+      quality: $("#quality").value, autoCaptions: $("#autoCaptions").checked, openingTitleEnabled: $("#openingTitleEnabled")?.checked === true, endCardEnabled: $("#endCardEnabled")?.checked !== false, dedup: collectDedup(),
+      novelId: selectedAudios[0]?.novelId || "", novelPlatform: selectedAudios[0]?.platform || "", novelPromotionCode: selectedAudios[0]?.promotionCode || "", novelBookId: selectedAudios[0]?.bookId || ""
     },
     publish: {
       provider, autoPublish,
@@ -487,6 +488,8 @@ function getSelectedAudioItems() {
     platform: novel.platform || "",
     promotionCode: novel.promotionCode || "",
     promotionCopy: novel.promotionCopy || "",
+    bookId: novel.bookId || "",
+    novelTitle: novel.title || "",
     openingTitle: script.openingTitle || script.title || "",
     title: script.openingTitle || script.versionLabel || script.title || script.audio.title || ""
   })));
@@ -845,7 +848,8 @@ function collectSubtitleSettings() {
     yPercent: number("#subtitleY", 66),
     fontSize: number("#subtitleSize", 62),
     animationMode: $("#subtitleMode")?.value || "sentence",
-    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true
+    openingTitleEnabled: $("#openingTitleEnabled")?.checked === true,
+    endCardEnabled: $("#endCardEnabled")?.checked !== false
   };
 }
 
@@ -1042,6 +1046,7 @@ async function loadSavedSettings() {
   const subtitle = readStored("reddit-mix-subtitle-settings");
   setValue("#subtitleY", subtitle.yPercent); setValue("#subtitleSize", subtitle.fontSize); setValue("#subtitleMode", subtitle.animationMode);
   if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = subtitle.openingTitleEnabled === true;
+  if ($("#endCardEnabled")) $("#endCardEnabled").checked = subtitle.endCardEnabled !== false;
   applyGenerationSettings(readStored("reddit-mix-generation-settings"));
   const dedup = readStored("reddit-mix-dedup-settings");
   setValue("#scaleMin", dedup.scaleMin); setValue("#scaleMax", dedup.scaleMax); setValue("#rotateMin", dedup.rotateMin); setValue("#rotateMax", dedup.rotateMax); setValue("#mirrorChance", dedup.mirrorChance); setValue("#sharpen", dedup.sharpen); setValue("#speedMin", dedup.speedMin); setValue("#speedMax", dedup.speedMax);
@@ -1055,6 +1060,7 @@ async function loadSavedSettings() {
     const sharedDedup = data.settings?.dedup || {};
     setValue("#subtitleY", sharedSubtitle.yPercent); setValue("#subtitleSize", sharedSubtitle.fontSize); setValue("#subtitleMode", sharedSubtitle.animationMode);
     if ($("#openingTitleEnabled")) $("#openingTitleEnabled").checked = sharedSubtitle.openingTitleEnabled === true;
+    if ($("#endCardEnabled")) $("#endCardEnabled").checked = sharedSubtitle.endCardEnabled !== false;
     applyGenerationSettings(sharedGeneration);
     setValue("#scaleMin", sharedDedup.scaleMin); setValue("#scaleMax", sharedDedup.scaleMax); setValue("#rotateMin", sharedDedup.rotateMin); setValue("#rotateMax", sharedDedup.rotateMax); setValue("#mirrorChance", sharedDedup.mirrorChance); setValue("#sharpen", sharedDedup.sharpen); setValue("#speedMin", sharedDedup.speedMin); setValue("#speedMax", sharedDedup.speedMax);
     localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(sharedSubtitle));
@@ -1073,6 +1079,17 @@ async function persistOpeningTitleSetting() {
     setRulesSaveStatus(`开头标题已${subtitle.openingTitleEnabled ? "开启" : "关闭"}并保存，下次打开仍用这个勾选。`);
   } catch {
     setRulesSaveStatus("开头标题已保存在本机，统一配置同步失败。");
+  }
+}
+
+async function persistEndCardSetting() {
+  const subtitle = collectSubtitleSettings();
+  localStorage.setItem("reddit-mix-subtitle-settings", JSON.stringify(subtitle));
+  try {
+    await saveSharedRedditSettings({ subtitle });
+    setRulesSaveStatus(`片尾搜书引导已${subtitle.endCardEnabled !== false ? "开启" : "关闭"}并保存，下次打开仍用这个勾选。`);
+  } catch {
+    setRulesSaveStatus("片尾搜书引导已保存在本机，统一配置同步失败。");
   }
 }
 

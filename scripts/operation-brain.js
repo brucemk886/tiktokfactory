@@ -1175,6 +1175,7 @@ function buildTaskDrafts({ assignments, settings, redditDefaults = {}, contentFe
             quality: "fast",
             autoCaptions: true,
             openingTitleEnabled: savedSubtitle.openingTitleEnabled === true,
+            endCardEnabled: savedSubtitle.endCardEnabled !== false,
             dedup
           },
           publish: {

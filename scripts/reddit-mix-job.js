@@ -17,7 +17,7 @@ import {
 import { findAudioInLibrary, listAudioLibraryFiles } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
-import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsUntil, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, endCardStartAt, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -219,6 +219,16 @@ async function main() {
     if (payload.openingTitleEnabled && !openingTitle) {
       warnings.push(`未找到开头标题，已跳过前3秒标题：${path.basename(audioPath)}`);
     }
+    const endCard = payload.endCardEnabled === false
+      ? null
+      : resolveNovelEndCard({
+        workDir: storageDirs.workDir,
+        audioPath,
+        fallback: audioFallback
+      });
+    if (payload.endCardEnabled !== false && !endCard) {
+      warnings.push(`未找到小说id/平台，已跳过片尾搜书引导：${path.basename(audioPath)}`);
+    }
     const tiktokCaption = buildTikTokCaption({
       promotionCopy: novelBadge?.promotionCopy || audioFallback.promotionCopy || "",
       platform: novelBadge?.platform || audioFallback.platform || "",
@@ -239,6 +249,7 @@ async function main() {
       duration: audioDuration,
       novelBadge,
       openingTitle,
+      endCard,
       quality: payload.quality || "fast"
     });
 
@@ -370,7 +381,9 @@ function normalizeAudioItems(value) {
       promotionCode: String(item?.promotionCode || item?.novelPromotionCode || "").trim(),
       promotionCopy: String(item?.promotionCopy || "").trim(),
       openingTitle: String(item?.openingTitle || item?.title || "").trim(),
-      title: String(item?.title || "").trim()
+      title: String(item?.title || "").trim(),
+      bookId: String(item?.bookId || item?.novelBookId || "").trim(),
+      novelTitle: String(item?.novelTitle || "").trim()
     }))
     .filter((item) => item.id || item.path);
 }
@@ -435,7 +448,9 @@ function fallbackForAudio(payload, audioPath) {
     platform: hit?.platform || payload.novelPlatform,
     promotionCode: hit?.promotionCode || payload.novelPromotionCode,
     promotionCopy: hit?.promotionCopy || payload.promotionCopy || "",
-    openingTitle: hit?.openingTitle || hit?.title || payload.openingTitle || ""
+    openingTitle: hit?.openingTitle || hit?.title || payload.openingTitle || "",
+    bookId: hit?.bookId || payload.novelBookId || payload.bookId || "",
+    novelTitle: hit?.novelTitle || payload.novelTitle || ""
   };
 }
 
@@ -764,21 +779,24 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", quality = "fast" }) {
-  const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath, "-t", String(duration)];
-  const filters = [];
+function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", endCard = null, quality = "fast" }) {
+  const workFolder = path.dirname(inputVideo);
+  const endStart = endCard ? endCardStartAt(duration, 3) : 0;
   const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
-  const visibleCaptions = openingTitle ? hideCaptionsUntil(captions, titleDuration) : captions;
+  let visibleCaptions = captions;
+  if (openingTitle) visibleCaptions = hideCaptionsUntil(visibleCaptions, titleDuration);
+  if (endCard) visibleCaptions = hideCaptionsAfter(visibleCaptions, endStart);
+  const filters = [];
   const titleFilter = buildOpeningTitleDrawtext({
     title: openingTitle,
     fontFile,
-    textFile: path.join(path.dirname(inputVideo), "opening-title.txt"),
+    textFile: path.join(workFolder, "opening-title.txt"),
     durationSeconds: titleDuration || 3,
     width
   });
   if (titleFilter) filters.push(titleFilter);
   if (Array.isArray(visibleCaptions?.cues) && visibleCaptions.cues.length) {
-    const assPath = path.join(path.dirname(inputVideo), "captions.ass");
+    const assPath = path.join(workFolder, "captions.ass");
     const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
       ? makeWordHighlightSubtitles(visibleCaptions.cues, visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
       : makeAssSubtitles(visibleCaptions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
@@ -788,13 +806,39 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
   const badgeFilter = buildNovelBadgeDrawtext({
     badge: novelBadge,
     fontFile,
-    textFile: path.join(path.dirname(inputVideo), "novel-badge.txt")
+    textFile: path.join(workFolder, "novel-badge.txt"),
+    enable: endCard ? `lt(t,${endStart.toFixed(2)})` : ""
   });
   if (badgeFilter) filters.push(badgeFilter);
+  const iconPath = endCard
+    ? renderNovelAppIcon({
+      platform: endCard.platform,
+      destPath: path.join(workFolder, `end-card-icon-${endCard.icon?.key || "app"}.png`),
+      fontFile
+    })
+    : "";
+  if (endCard) {
+    filters.push(buildEndCardDimFilter(endStart));
+    filters.push(...buildNovelEndCardDrawtext({
+      card: endCard,
+      fontFile,
+      startAt: endStart,
+      width,
+      height
+    }));
+  }
   const encode = resolveFinalEncode(quality);
-  if (filters.length) {
+  const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath];
+  if (iconPath) args.push("-i", iconPath);
+  args.push("-t", String(duration));
+  if (iconPath) {
+    const pre = filters.length ? filters.join(",") : "format=yuv420p";
+    const iconY = Math.round((Number(height) || 1920) * 0.22);
     args.push(
-      "-vf", filters.join(","),
+      "-filter_complex",
+      `[0:v]${pre}[dec];[2:v]scale=220:220,format=rgba[icon];[dec][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${endStart.toFixed(2)})'[vout]`,
+      "-map", "[vout]",
+      "-map", "1:a:0",
       "-c:v", "libx264",
       "-preset", encode.preset,
       "-crf", encode.crf,
@@ -804,8 +848,24 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
       "-profile:v", "high",
       "-level", "4.1"
     );
-  } else args.push("-c:v", "copy");
-  args.push("-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:a", "aac", "-b:a", encode.audio, "-movflags", "+faststart", outputPath);
+  } else if (filters.length) {
+    args.push(
+      "-vf", filters.join(","),
+      "-map", "0:v:0",
+      "-map", "1:a:0",
+      "-c:v", "libx264",
+      "-preset", encode.preset,
+      "-crf", encode.crf,
+      "-maxrate", encode.maxrate,
+      "-bufsize", encode.bufsize,
+      "-pix_fmt", "yuv420p",
+      "-profile:v", "high",
+      "-level", "4.1"
+    );
+  } else {
+    args.push("-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy");
+  }
+  args.push("-shortest", "-c:a", "aac", "-b:a", encode.audio, "-movflags", "+faststart", outputPath);
   run("ffmpeg", args);
 }
 

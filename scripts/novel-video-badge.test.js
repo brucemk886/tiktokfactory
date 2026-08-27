@@ -3,7 +3,60 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildNovelBadgeDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, extractAudioCaptionText, fitOpeningTitle, hideCaptionsUntil, novelPlatformHashtag, pickVariedHashtags, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, fitOpeningTitle, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
+
+test("end card uses each novel's book id and platform icon", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-end-card-"));
+  const audioDir = path.join(workDir, "seed-audio");
+  fs.mkdirSync(audioDir, { recursive: true });
+  const audioPath = path.join(audioDir, "opening-audio-endcard123.mp3");
+  fs.writeFileSync(audioPath, "audio");
+  fs.mkdirSync(path.join(workDir, "audio-library"), { recursive: true });
+  fs.writeFileSync(path.join(workDir, "audio-library", "index.json"), JSON.stringify([{
+    id: "audio-endcard123",
+    fileName: "opening-audio-endcard123.mp3",
+    targetAudioPath: audioPath,
+    source: { novelId: "novel-1", scriptId: "script-1" }
+  }]));
+  fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({
+    novels: [{ id: "novel-1", title: "Hidden Family", platform: "NovelMaster", bookId: "464137", promotionCode: "454311" }],
+    scripts: [{ id: "script-1", novelId: "novel-1", audioId: "audio-endcard123" }]
+  }));
+
+  const card = resolveNovelEndCard({ workDir, audioPath });
+  assert.equal(card.searchCode, "464137");
+  assert.equal(card.displayPlatform, "Novel Master");
+  assert.equal(card.icon.key, "novelmaster");
+  assert.equal(novelAppIconSpec("GoodNovel").letter, "G");
+  assert.deepEqual(endCardNameParts("NovelMaster").map((item) => item.text), ["Novel", "Master"]);
+  const filters = buildNovelEndCardDrawtext({ card, startAt: 12, fontFile: "C:/Windows/Fonts/msyhbd.ttc" });
+  const joined = filters.join(",");
+  assert.match(joined, /text='Search'/);
+  assert.match(joined, /text='464137'/);
+  assert.match(joined, /text='Novel'/);
+  assert.match(joined, /text='Master'/);
+  assert.match(joined, /text='to read whole story'/);
+  assert.match(joined, /enable='gte\(t,12\.00\)'/);
+  assert.match(buildEndCardDimFilter(12), /gte\(t,12\.00\)/);
+  assert.equal(endCardStartAt(15, 3), 12);
+  fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test("hides captions during the end card window", () => {
+  const hidden = hideCaptionsAfter({
+    cues: [
+      { text: "before", start: 8, end: 11 },
+      { text: "overlap", start: 11.5, end: 13.2 },
+      { text: "after", start: 13.4, end: 15 }
+    ],
+    words: [
+      { text: "keep", start: 8, end: 8.4 },
+      { text: "drop", start: 13.5, end: 13.8 }
+    ]
+  }, 12);
+  assert.deepEqual(hidden.cues.map((item) => [item.text, item.end]), [["before", 11], ["overlap", 12]]);
+  assert.deepEqual(hidden.words.map((item) => item.text), ["keep"]);
+});
 
 test("formats NovelMaster as two words for the burned-in badge", () => {
   assert.equal(displayNovelPlatform("NovelMaster"), "Novel Master");

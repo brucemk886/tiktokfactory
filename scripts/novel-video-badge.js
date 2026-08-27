@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -155,7 +156,170 @@ export function resolveNovelVideoBadge({
   };
 }
 
-export function buildNovelBadgeDrawtext({ badge, fontFile, textFile, x = 110, y = 168, fontSize = 54 } = {}) {
+export function resolveNovelEndCard({
+  workDir,
+  audioPath = "",
+  fallback = {}
+} = {}) {
+  const store = readNovelStore(workDir);
+  const audioItems = readAudioIndex(workDir);
+  const audio = matchAudioRecord(audioItems, audioPath, workDir);
+  const novel = findNovelForAudio(store, audio) || findNovelById(store, fallback.novelId);
+  const platform = String(novel?.platform || fallback.platform || fallback.novelPlatform || "").trim();
+  const bookId = String(novel?.bookId || fallback.bookId || fallback.novelBookId || "").trim();
+  const promotionCode = String(novel?.promotionCode || fallback.promotionCode || fallback.novelPromotionCode || "").trim();
+  const searchCode = bookId || promotionCode;
+  if (!searchCode && !platform) return null;
+  return {
+    novelId: String(novel?.id || fallback.novelId || ""),
+    novelTitle: String(novel?.title || fallback.novelTitle || "").trim(),
+    platform,
+    bookId,
+    promotionCode,
+    searchCode,
+    displayPlatform: displayNovelPlatform(platform),
+    icon: novelAppIconSpec(platform)
+  };
+}
+
+export function novelAppIconSpec(platform) {
+  const key = String(platform || "").replace(/\s+/g, "");
+  if (key === "GoodNovel") return { key: "goodnovel", letter: "G", color: "0x1E9B6F", label: "GoodNovel" };
+  if (key === "MotoNovel") return { key: "motonovel", letter: "M", color: "0xE23B6B", label: "MotoNovel" };
+  return { key: "novelmaster", letter: "M", color: "0xFF4B1F", label: "NovelMaster" };
+}
+
+export function endCardStartAt(duration, seconds = 3) {
+  const total = Math.max(0, Number(duration) || 0);
+  const hold = Math.min(Math.max(1.5, Number(seconds) || 3), total || 3);
+  return Math.max(0, Number((total - hold).toFixed(2)));
+}
+
+export function hideCaptionsAfter(captions, afterSeconds) {
+  const after = Number(afterSeconds);
+  if (!captions || !(after > 0)) return captions;
+  const clip = (item) => {
+    const start = Number(item?.start);
+    const end = Number(item?.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start >= after) return null;
+    if (end <= after) return item;
+    return { ...item, end: after };
+  };
+  return {
+    ...captions,
+    cues: Array.isArray(captions.cues) ? captions.cues.map(clip).filter(Boolean) : captions.cues,
+    words: Array.isArray(captions.words) ? captions.words.map(clip).filter(Boolean) : captions.words
+  };
+}
+
+export function endCardNameParts(platform) {
+  const key = String(platform || "").replace(/\s+/g, "");
+  if (key === "NovelMaster") {
+    return [
+      { text: "Novel", color: "white" },
+      { text: "Master", color: "0x3DDC4A" }
+    ];
+  }
+  return [{ text: displayNovelPlatform(platform) || "NovelMaster", color: "white" }];
+}
+
+export function buildNovelEndCardDrawtext({
+  card,
+  fontFile,
+  startAt = 0,
+  width = 1080,
+  height = 1920,
+  fontSize = 76
+} = {}) {
+  const searchCode = sanitizeDrawtext(card?.searchCode || card?.bookId || card?.promotionCode || "");
+  const platform = String(card?.platform || "");
+  if (!searchCode && !platform) return [];
+  const font = filterPath(fontFile || "C:/Windows/Fonts/msyhbd.ttc");
+  const size = Math.max(48, Math.min(96, Number(fontSize) || 76));
+  const enable = `gte(t,${Math.max(0, Number(startAt) || 0).toFixed(2)})`;
+  const lineGap = Math.round(size * 1.22);
+  const firstY = Math.round((Number(height) || 1920) * 0.42);
+  const space = estimateDrawtextWidth(" ", size);
+  const lines = [
+    [
+      { text: "Search", color: "0xF5E000" },
+      { text: searchCode, color: "white" }
+    ].filter((part) => part.text),
+    [
+      { text: "On", color: "0x3DDC4A" },
+      ...endCardNameParts(platform),
+      { text: "app", color: "0x3DDC4A" }
+    ].filter((part) => part.text),
+    [{ text: "to read whole story", color: "0xF5E000" }]
+  ];
+  return lines.flatMap((parts, lineIndex) => {
+    const total = parts.reduce((sum, part, index) => (
+      sum + estimateDrawtextWidth(part.text, size) + (index < parts.length - 1 ? space : 0)
+    ), 0);
+    let cursor = Math.round(((Number(width) || 1080) - total) / 2);
+    const y = firstY + lineIndex * lineGap;
+    return parts.map((part, index) => {
+      const filter = [
+        `drawtext=fontfile='${font}'`,
+        `text='${escapeDrawtext(part.text)}'`,
+        "expansion=none",
+        `x=${cursor}`,
+        `y=${y}`,
+        `fontsize=${size}`,
+        `fontcolor=${part.color}`,
+        "borderw=10",
+        "bordercolor=black",
+        `enable='${enable}'`
+      ].join(":");
+      cursor += Math.round(estimateDrawtextWidth(part.text, size) + (index < parts.length - 1 ? space : 0));
+      return filter;
+    });
+  });
+}
+
+export function buildEndCardDimFilter(startAt = 0) {
+  const start = Math.max(0, Number(startAt) || 0).toFixed(2);
+  return `drawbox=x=0:y=0:w=iw:h=ih:color=black@0.38:t=fill:enable='gte(t,${start})'`;
+}
+
+export function renderNovelAppIcon({ platform, destPath, fontFile } = {}) {
+  const spec = novelAppIconSpec(platform);
+  const output = String(destPath || "").trim();
+  if (!output) return "";
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  const font = filterPath(fontFile || "C:/Windows/Fonts/arialbd.ttf");
+  const size = 256;
+  const radius = 40;
+  const inner = size / 2 - radius;
+  const alpha = `if(gt(abs(X-${size / 2}),${inner})*gt(abs(Y-${size / 2}),${inner})*gt(pow(abs(X-${size / 2})-${inner}\\,2)+pow(abs(Y-${size / 2})-${inner}\\,2),${radius * radius}),0,255)`;
+  const draw = `drawtext=fontfile='${font}':text='${spec.letter}':fontsize=150:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`;
+  const rounded = [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi",
+    "-i", `color=c=${spec.color}:s=${size}x${size}:d=1,format=rgba`,
+    "-vf", `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${alpha}',${draw}`,
+    "-frames:v", "1",
+    output
+  ];
+  if (runFfmpeg(rounded) && fs.existsSync(output)) return output;
+  const square = [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi",
+    "-i", `color=c=${spec.color}:s=${size}x${size}:d=1,format=rgba`,
+    "-vf", draw,
+    "-frames:v", "1",
+    output
+  ];
+  if (runFfmpeg(square) && fs.existsSync(output)) return output;
+  return "";
+}
+
+function runFfmpeg(args) {
+  const result = spawnSync("ffmpeg", args, { encoding: "utf8", windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
+  return result.status === 0;
+}
+
+export function buildNovelBadgeDrawtext({ badge, fontFile, textFile, x = 110, y = 168, fontSize = 54, enable = "" } = {}) {
   const lines = Array.isArray(badge?.lines) ? badge.lines.map((line) => sanitizeDrawtext(line)).filter(Boolean) : [];
   if (!lines.length) return "";
   writeDrawtextFile(textFile, lines.join("\n"));
@@ -173,8 +337,9 @@ export function buildNovelBadgeDrawtext({ badge, fontFile, textFile, x = 110, y 
     `fontsize=${size}`,
     "fontcolor=white",
     "borderw=8",
-    "bordercolor=black"
-  ].join(":")).join(",");
+    "bordercolor=black",
+    enable ? `enable='${enable}'` : ""
+  ].filter(Boolean).join(":")).join(",");
 }
 
 function findScriptForAudio(store, audio) {
