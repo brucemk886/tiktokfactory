@@ -899,7 +899,7 @@ function renderAutoCaptionPreview() {
   if (!hint || !preview) return;
   const folders = getSelectedAudioFolders();
   if (!folders.length) {
-    hint.textContent = "默认按每条音频自动生成：用音频文件名作文案，并轮换不同标签。勾选小说平台后可预览第一条。";
+    hint.textContent = "默认按每条音频自动生成：有推广文案就用文案，再按平台打标签。勾选小说平台后可预览第一条。";
     preview.hidden = true;
     preview.textContent = "";
     return;
@@ -911,18 +911,18 @@ function renderAutoCaptionPreview() {
     platform: first.platform
   });
   hint.textContent = folders.length === 1
-    ? "这个文件夹里的成片将自动使用下面的文案；正文来自音频文件名，标签会按音频轮换。"
-    : `已选 ${folders.length} 个文件夹，每条成片用自己的文件名和不同标签。下面是第一个文件夹预览：`;
+    ? "这个文件夹里的成片将自动使用下面的文案；正文用书里的推广文案，标签按平台轮换。"
+    : `已选 ${folders.length} 个平台，每条成片用自己的推广文案和对应平台标签。下面是第一个预览：`;
   preview.hidden = !sample;
   preview.textContent = sample;
 }
 
 function buildTikTokCaptionPreview(item = {}) {
-  const title = String(item.openingTitle || item.title || item.audioName || "").replace(/\s+/g, " ").trim();
   const promo = String(item.promotionCopy || "").trim();
+  const title = String(item.openingTitle || item.title || item.audioName || "").replace(/\s+/g, " ").trim();
   const platform = String(item.platform || "").replace(/\s+/g, "").trim();
   const tags = [platform ? `#${platform}` : "", "#reddit", "#storytime"].filter(Boolean).join(" ");
-  return [title, promo, tags].filter(Boolean).join("\n\n");
+  return [promo || title, tags].filter(Boolean).join("\n\n");
 }
 
 function loadCaptionPresets() {

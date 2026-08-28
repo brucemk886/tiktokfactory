@@ -288,12 +288,29 @@ test("TikTok captions join audio title, promotion copy, and a compact platform h
   assert.equal(novelPlatformHashtag("NovelMaster"), "#NovelMaster");
   assert.equal(novelPlatformHashtag("Novel Master"), "#NovelMaster");
   assert.equal(novelPlatformHashtag("GoodNovel"), "#GoodNovel");
+  assert.equal(novelPlatformHashtag("MotoNovel"), "#MotoNovel");
+  const novelMasterPromo = "Search 『479093』 on Novel Master APP to get the following";
   assert.equal(buildTikTokCaption({
     openingTitle: "She married my uncle",
-    promotionCopy: "Search 『479093』 on Novel Master APP to get the following",
+    promotionCopy: novelMasterPromo,
     platform: "NovelMaster",
     audioTitle: "3 Years in Prison for Her Lies 同行爆款-457-0f67a2a8.mp3"
-  }), "Search 『479093』 on Novel Master APP to get the following");
+  }), [
+    novelMasterPromo,
+    pickVariedHashtags({ seed: novelMasterPromo, platform: "NovelMaster" }).join(" ")
+  ].join("\n\n"));
+  assert.match(buildTikTokCaption({
+    promotionCopy: novelMasterPromo,
+    platform: "NovelMaster"
+  }), /^Search 『479093』 on Novel Master APP to get the following\n\n#NovelMaster /);
+  assert.match(buildTikTokCaption({
+    promotionCopy: "Continue on GoodNovel.",
+    platform: "GoodNovel"
+  }), /^Continue on GoodNovel\.\n\n#GoodNovel /);
+  assert.match(buildTikTokCaption({
+    promotionCopy: "Read more on MotoNovel.",
+    platform: "MotoNovel"
+  }), /^Read more on MotoNovel\.\n\n#MotoNovel /);
   assert.equal(buildTikTokCaption({
     audioTitle: "conflict-first",
     platform: "GoodNovel"
@@ -334,12 +351,18 @@ test("auto TikTok captions prefer the video fields and look up the book list whe
       novelPlatform: "GoodNovel"
     },
     manualCaption: "should not be used"
-  }), "Continue on GoodNovel.");
+  }), [
+    "Continue on GoodNovel.",
+    pickVariedHashtags({ seed: "Continue on GoodNovel.", platform: "GoodNovel" }).join(" ")
+  ].join("\n\n"));
   assert.equal(resolveTikTokCaption({
     workDir,
     captionMode: "auto",
     video: { audioName: "audio-caption-1.mp3", novelId: "novel-1" }
-  }), "Unlock the rest with code 454311.");
+  }), [
+    "Unlock the rest with code 454311.",
+    pickVariedHashtags({ seed: "Unlock the rest with code 454311.", platform: "NovelMaster" }).join(" ")
+  ].join("\n\n"));
   const redditCaption = resolveTikTokCaption({
     captionMode: "auto",
     video: { audioName: "plain.mp3" },
