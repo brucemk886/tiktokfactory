@@ -16,7 +16,7 @@ import {
 } from "./asset-library.js";
 import { findAudioInLibrary, listAudioLibraryFiles, normalizeAudioDirs } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
-import { planMixAudioOrder, refreshAudioHitWeights } from "./mix-audio-pick.js";
+import { planMixAudioOrder } from "./mix-audio-pick.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 
@@ -44,9 +44,7 @@ main().catch((error) => {
 async function main() {
   const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
   const config = readJson(path.join(root, "config.json"));
-  const audios = planMixAudioOrder(resolveMixAudios(payload), {
-    weightsByName: await refreshAudioHitWeights(storageDirs.workDir)
-  });
+  const audios = planMixAudioOrder(resolveMixAudios(payload));
   const saveDir = resolveSaveDir(payload.saveDir);
   const backgroundMusicFiles = resolveBackgroundMusicFiles(payload.backgroundMusicDir);
   const legacyVariants = clampInt(payload.variants, 1, 20, 1);

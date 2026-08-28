@@ -21,15 +21,13 @@ test("mix audio order is a random permutation, not filename order", () => {
   assert.notDeepEqual(first, second);
 });
 
-test("higher play count is more likely to be picked first", () => {
+test("play count does not change mix order", () => {
   const files = ["normal.mp3", "hit.mp3"];
-  const weightsByName = { "hit.mp3": 2_800_000, "normal.mp3": 0 };
-  let hitFirst = 0;
-  for (let index = 0; index < 400; index += 1) {
-    const order = planMixAudioOrder(files, { weightsByName });
-    if (order[0] === "hit.mp3") hitFirst += 1;
-  }
-  assert.ok(hitFirst > 300, `hitFirst=${hitFirst}`);
+  const random = () => 0.25;
+  assert.deepEqual(
+    planMixAudioOrder(files, { random, weightsByName: { "hit.mp3": 2_800_000 } }),
+    planMixAudioOrder(files, { random, weightsByName: {} })
+  );
 });
 
 test("readAudioHitWeights maps file names to play counts", () => {

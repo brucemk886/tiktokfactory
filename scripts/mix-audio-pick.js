@@ -18,12 +18,11 @@ export function pickWeightedIndex(weights, random = Math.random) {
   return list.length - 1;
 }
 
-export function planMixAudioOrder(files, { weightsByName = {}, random = Math.random } = {}) {
+export function planMixAudioOrder(files, { random = Math.random } = {}) {
   const remaining = (Array.isArray(files) ? files : []).filter(Boolean);
   const order = [];
   while (remaining.length) {
-    const weights = remaining.map((file) => audioHitWeight(lookupHitPlays(weightsByName, file)));
-    const index = pickWeightedIndex(weights, random);
+    const index = Math.min(remaining.length - 1, Math.floor(random() * remaining.length));
     order.push(remaining.splice(index, 1)[0]);
   }
   return order;
@@ -87,7 +86,3 @@ function normalizeWeightMap(value) {
   return next;
 }
 
-function lookupHitPlays(weightsByName, file) {
-  const name = path.basename(String(file || "")).trim().toLowerCase();
-  return Number(weightsByName?.[name] || 0);
-}
