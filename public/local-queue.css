@@ -89,6 +89,32 @@
   color: var(--lf-muted, #6d6758);
 }
 
+.queue-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.queue-stop-btn {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16));
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lf-text, #1d1a14);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.queue-stop-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .queue-badge {
   display: inline-flex;
   align-items: center;

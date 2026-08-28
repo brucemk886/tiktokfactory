@@ -49,7 +49,10 @@ function renderTasks(tasks) {
           <strong>${escapeHtml(task.name || "未命名任务")}</strong>
           <small>${escapeHtml(formatTime(task.updatedAt || task.createdAt))}</small>
         </div>
-        <span class="queue-badge">${escapeHtml(statusLabel(task.status, task.phase))}</span>
+        <div class="queue-item-actions">
+          <span class="queue-badge">${escapeHtml(statusLabel(task.status, task.phase))}</span>
+          ${canStop(task) ? `<button class="queue-stop-btn" type="button" data-action="cancel" data-id="${escapeAttr(task.id)}">停止</button>` : ""}
+        </div>
       </div>
       <div class="queue-meta">
         <span class="queue-badge">${escapeHtml(sourceLabel(task))}</span>
@@ -61,6 +64,25 @@ function renderTasks(tasks) {
       ${renderTaskVideos(task)}
     </article>`;
   }).join("");
+  listEl.querySelectorAll("button[data-action='cancel']").forEach((button) => {
+    button.addEventListener("click", stopTask);
+  });
+}
+
+async function stopTask(event) {
+  const button = event.currentTarget;
+  const taskId = button.dataset.id;
+  if (!taskId) return;
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/auto-tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "停止任务失败。");
+    await loadQueue();
+  } catch (error) {
+    button.disabled = false;
+    alert(error.message || "停止任务失败。");
+  }
 }
 
 function renderTaskVideos(task) {
@@ -108,6 +130,11 @@ function card(label, value) {
 
 function isActive(task) {
   return task.status === "running" || ["generating", "publishing", "checking", "retrying"].includes(task.phase);
+}
+
+function canStop(task) {
+  return ["queued", "running"].includes(task.status)
+    || ["generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.phase);
 }
 
 function sourceLabel(task) {

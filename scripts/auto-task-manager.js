@@ -103,10 +103,11 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
 
   function cancelTask(id) {
     const task = getTask(id);
-    if (task.generationJobId) {
-      const jobPath = path.join(generationJobsDir, `${safeId(task.generationJobId)}.json`);
-      const job = readJson(jobPath, null);
-      if (job) writeJson(jobPath, { ...job, status: "canceled", message: "任务已停止。", updatedAt: Date.now() });
+    const generationJobId = safeId(task.generationJobId);
+    if (generationJobId && generationJobId !== "task") {
+      const jobPath = path.join(generationJobsDir, `${generationJobId}.json`);
+      const job = readJson(jobPath, {});
+      writeJson(jobPath, { ...job, jobId: generationJobId, status: "canceled", message: "任务已停止。", updatedAt: Date.now() });
     }
     patchTask(task.id, {
       status: "canceled",
@@ -454,6 +455,10 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     let recovered = false;
     for (const task of listTasks()) {
       if (!["running", "generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.status) && !["generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.phase)) continue;
+      if (task.source === "factory-cloud") {
+        patchTask(task.id, { workerPid: null, updatedAt: Date.now() });
+        continue;
+      }
       if (task?.publish?.provider === PUBLISH_PROVIDER_OFFICIAL && collectOfficialBatchIds(task.publishResults, task.officialBatchIds).length) {
         const results = markOfficialResultsHandedOff(task.publishResults);
         patchTask(task.id, {
@@ -543,6 +548,10 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     if (!id) return null;
     const current = readTask(id) || {};
     if (current.id && current.source !== "factory-cloud") return current;
+    if (["canceled", "cancelled"].includes(String(current.status || ""))
+      && !["queued", "canceled", "cancelled"].includes(String(patch.status || ""))) {
+      return current;
+    }
     const next = {
       ...current,
       ...patch,

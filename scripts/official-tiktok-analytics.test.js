@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
+import { MAX_DIRECT_PUBLISH_FILE_BYTES, createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
+
+test("direct official publish allows files up to 1 GB", () => {
+  assert.equal(MAX_DIRECT_PUBLISH_FILE_BYTES, 1024 * 1024 * 1024);
+});
 
 test("official bridge maps authorized accounts and private video data for operations", async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "official-tiktok-"));

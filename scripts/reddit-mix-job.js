@@ -96,6 +96,7 @@ async function main() {
 
   while (done < total && attempts < maxAttempts) {
     attempts += 1;
+    let runDir = "";
     try {
     const latest = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
     if (["canceled", "cancelled"].includes(String(latest.status || "").toLowerCase())) {
@@ -157,7 +158,7 @@ async function main() {
 
     const baseId = safeFileName(`${path.basename(audioPath, path.extname(audioPath)).slice(0, 24)}-reddit-${variant}`);
     const id = uniqueOutputId(baseId);
-    const runDir = path.join(workDir, `${id}-${Date.now()}`);
+    runDir = path.join(workDir, `${id}-${Date.now()}`);
     ensureDir(runDir);
 
     patchJob({
@@ -262,58 +263,9 @@ async function main() {
     };
 
     let encodeSeconds = 0;
-    let clipSeconds = 0;
-    let muxSeconds = 0;
-    let encodeMode = isParkourVideoTemplate(payload) ? "parkour" : "legacy";
+    let encodeMode = isParkourVideoTemplate(payload) ? "parkour" : "one-pass";
     const encodeStarted = Date.now();
-    const useOnePass = payload.onePass !== false && !isParkourVideoTemplate(payload);
-    if (useOnePass) {
-      patchJob({
-        status: "running",
-        percent: progress(done, total, 28),
-        message: `一次合成：${path.basename(audioPath)} 第 ${variant} 轮`,
-        progressCurrent: Math.min(total, done + 1),
-        progressTotal: total,
-        updatedAt: Date.now()
-      });
-      try {
-        renderMixOnePass({
-          clips,
-          runDir,
-          width,
-          height,
-          fps,
-          quality,
-          dedup,
-          overlayFiles,
-          ...muxOptions
-        });
-        encodeMode = "one-pass";
-      } catch (error) {
-        const reason = String(error?.message || error || "").replace(/\s+/g, " ").slice(0, 240);
-        warnings.push(`一次合成失败，已改回分段编码：${reason}`);
-        const clipStarted = Date.now();
-        await renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings });
-        clipSeconds = round2((Date.now() - clipStarted) / 1000);
-        const muxStarted = Date.now();
-        muxAudioAndCaptions({ inputVideo: concatVideo, ...muxOptions });
-        muxSeconds = round2((Date.now() - muxStarted) / 1000);
-        encodeMode = "legacy-fallback";
-      }
-    } else {
-      if (!isParkourVideoTemplate(payload)) {
-        patchJob({
-          status: "running",
-          percent: progress(done, total, 28),
-          message: `切段编码（${clipRenderConcurrency()} 路并行）：${path.basename(audioPath)} 第 ${variant} 轮`,
-          progressCurrent: Math.min(total, done + 1),
-          progressTotal: total,
-          updatedAt: Date.now()
-        });
-        const clipStarted = Date.now();
-        await renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings });
-        clipSeconds = round2((Date.now() - clipStarted) / 1000);
-      }
+    if (isParkourVideoTemplate(payload)) {
       patchJob({
         status: "running",
         percent: progress(done, total, 62),
@@ -322,9 +274,27 @@ async function main() {
         progressTotal: total,
         updatedAt: Date.now()
       });
-      const muxStarted = Date.now();
       muxAudioAndCaptions({ inputVideo: concatVideo, ...muxOptions });
-      muxSeconds = round2((Date.now() - muxStarted) / 1000);
+    } else {
+      patchJob({
+        status: "running",
+        percent: progress(done, total, 28),
+        message: `一次合成：${path.basename(audioPath)} 第 ${variant} 轮`,
+        progressCurrent: Math.min(total, done + 1),
+        progressTotal: total,
+        updatedAt: Date.now()
+      });
+      renderMixOnePass({
+        clips,
+        runDir,
+        width,
+        height,
+        fps,
+        quality,
+        dedup,
+        overlayFiles,
+        ...muxOptions
+      });
     }
     encodeSeconds = round2((Date.now() - encodeStarted) / 1000);
 
@@ -355,8 +325,6 @@ async function main() {
       assetGroupName: group.name || group.id,
       duration: audioDuration,
       encodeSeconds,
-      clipSeconds,
-      muxSeconds,
       encodeMode,
       videoUrl: `/outputs/${encodeURIComponent(path.basename(outputPath))}`,
       fileName: path.basename(outputPath),
@@ -372,9 +340,7 @@ async function main() {
     patchJob({
       status: "running",
       percent: progress(done, total, 0),
-      message: muxSeconds
-        ? `已完成 ${done}/${total}，本条 ${encodeSeconds} 秒（切段 ${clipSeconds} + 字幕片尾 ${muxSeconds}）`
-        : `已完成 ${done}/${total}，本条合成 ${encodeSeconds} 秒`,
+      message: `已完成 ${done}/${total}，本条合成 ${encodeSeconds} 秒`,
       progressCurrent: done,
       progressTotal: total,
       results,
@@ -384,13 +350,13 @@ async function main() {
     cleanupRunDir(runDir);
     } catch (error) {
       failedVideos += 1;
-      const reason = String(error?.message || error || "????").replace(/\s+/g, " ").slice(0, 1200);
-      const warning = `???? ${attempts} ?????????${reason}`;
+      const reason = String(error?.message || error || "未知错误").replace(/\s+/g, " ").slice(0, 1200);
+      const warning = `第 ${attempts} 条合成失败，已跳过：${reason}`;
       warnings.push(warning);
       patchJob({
         status: "running",
         percent: progress(done, total, 0),
-        message: `${warning}???????????`,
+        message: `${warning} 继续下一条。`,
         progressCurrent: done,
         progressTotal: total,
         failedVideoCount: failedVideos,
@@ -399,14 +365,15 @@ async function main() {
         warnings,
         updatedAt: Date.now()
       });
+      if (runDir) cleanupRunDir(runDir);
     }
   }
 
   if (!results.length && failedVideos > 0) {
-    throw new Error(`????????????? ${failedVideos} ???????${warnings.at(-1) || "????"}`);
+    throw new Error(`全部合成失败，已跳过 ${failedVideos} 条。${warnings.at(-1) || ""}`);
   }
   if (done < total) {
-    warnings.push(`???????? ${maxAttempts} ?????? ${done}/${total} ?????? ${failedVideos} ??`);
+    warnings.push(`任务结束：完成 ${done}/${total}，跳过 ${failedVideos} 条。`);
   }
 
   patchJob({
@@ -744,7 +711,7 @@ function renderMixOnePass({
       outputPath
     );
     const commandLength = ["ffmpeg", ...args].reduce((sum, value) => sum + String(value).length + 3, 0);
-    if (commandLength > 28000) throw new Error("一次合成命令过长，改回分段编码。");
+    if (commandLength > 28000) throw new Error("一次合成命令过长。");
     run("ffmpeg", args);
   } finally {
     for (const dir of shortInputs.dirs || []) {
@@ -1118,10 +1085,13 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
 }
 
 function resolveFinalEncode(quality) {
-  if (quality === "quality") {
-    return { preset: "medium", crf: "20", maxrate: "3.5M", bufsize: "7M", audio: "160k" };
-  }
-  return { preset: "fast", crf: "22", maxrate: "2.5M", bufsize: "5M", audio: "128k" };
+  return {
+    bitrate: "3600k",
+    maxrate: "3600k",
+    bufsize: "7200k",
+    audio: quality === "quality" ? "160k" : "128k",
+    preset: quality === "quality" ? "medium" : "fast"
+  };
 }
 
 function hasNvencEncoder() {
@@ -1132,14 +1102,7 @@ function hasNvencEncoder() {
 }
 
 function clipVideoEncodeArgs(quality = "fast") {
-  if (hasNvencEncoder()) {
-    return quality === "quality"
-      ? ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "21", "-pix_fmt", "yuv420p"]
-      : ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-pix_fmt", "yuv420p"];
-  }
-  const preset = quality === "quality" ? "medium" : "veryfast";
-  const crf = quality === "quality" ? "20" : "24";
-  return ["-c:v", "libx264", "-preset", preset, "-crf", crf];
+  return finalVideoEncodeArgs(quality);
 }
 
 function finalVideoEncodeArgs(quality = "fast") {
@@ -1148,8 +1111,8 @@ function finalVideoEncodeArgs(quality = "fast") {
     return [
       "-c:v", "h264_nvenc",
       "-preset", quality === "quality" ? "p5" : "p4",
-      "-rc", "vbr",
-      "-cq", quality === "quality" ? "21" : "23",
+      "-rc", "cbr",
+      "-b:v", encode.bitrate,
       "-maxrate", encode.maxrate,
       "-bufsize", encode.bufsize,
       "-pix_fmt", "yuv420p",
@@ -1159,7 +1122,7 @@ function finalVideoEncodeArgs(quality = "fast") {
   return [
     "-c:v", "libx264",
     "-preset", encode.preset,
-    "-crf", encode.crf,
+    "-b:v", encode.bitrate,
     "-maxrate", encode.maxrate,
     "-bufsize", encode.bufsize,
     "-pix_fmt", "yuv420p",

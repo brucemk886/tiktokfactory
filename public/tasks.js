@@ -88,15 +88,11 @@ async function createTask(options = {}) {
     ? Array.from($("#officialAccountList").querySelectorAll(".official-tiktok-account-check:checked"))
     : Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
   const autoPublish = generateOnly ? false : $("#autoPublish").checked;
-  const videoTemplate = $("#videoTemplateSelect")?.value === "parkour" ? "parkour" : "mix";
-  if (videoTemplate === "parkour") {
-    const parkourDir = ($("#parkourVideoDir")?.value || "").trim() || "D:\\方块跑酷模拟器视频\\0818";
-    $("#videoDir").value = parkourDir;
-  }
+  const videoTemplate = "mix";
+  if ($("#videoTemplateSelect")) $("#videoTemplateSelect").value = "mix";
   const materialSource = $("#assetGroupSelect")?.value || "";
-  const assetGroupId = videoTemplate === "parkour" ? "" : (materialSource === "__manual__" ? "" : materialSource);
-  if (videoTemplate === "mix" && !assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
-  if (videoTemplate === "parkour" && !$("#videoDir").value.trim()) return setCreateStatus("请选择跑酷视频目录。");
+  const assetGroupId = materialSource === "__manual__" ? "" : materialSource;
+  if (!assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
   const audioDir = audioDirs[0] || (provider === "official" ? "" : $("#audioDir").value.trim());
   if (provider !== "official" && !audioDir) return setCreateStatus("请选择音频目录。");
   if (provider === "official" && !audioDirs.length) return setCreateStatus("请勾选小说平台。");
@@ -357,10 +353,9 @@ function applyMemberMixRestrictions() {
     const picker = $("#novelAudioPicker");
     if (picker) picker.replaceChildren();
     const select = $("#videoTemplateSelect");
-    if (select) {
-      select.value = "mix";
-      select.querySelector('option[value="parkour"]')?.remove();
-    }
+    if (select) select.value = "mix";
+    if ($("#videoTemplateField")) $("#videoTemplateField").hidden = true;
+    if ($("#parkourDirField")) $("#parkourDirField").hidden = true;
     return;
   }
   if (novelField) novelField.hidden = publishChannel !== "official";
@@ -388,7 +383,7 @@ function applyPublishChannelChrome() {
   }
   if ($("#pageLead")) $("#pageLead").textContent = official
     ? (currentUserRole === "admin"
-      ? "先选视频模板，再勾选小说平台出片。"
+      ? "勾选小说平台，从素材组抽片段混剪出片。"
       : "按混剪规则出片。选择共享素材库和音频目录。")
     : "GeeLark 备用发布，成片不叠加平台和推广码。";
   updateVideoSourceVisibility();
@@ -703,14 +698,13 @@ function updateAudioSourceMode() {
 }
 
 function updateVideoSourceVisibility() {
-  const parkour = $("#videoTemplateSelect")?.value === "parkour";
-  document.querySelectorAll(".mix-only").forEach((item) => { item.hidden = parkour; });
-  if ($("#parkourDirField")) $("#parkourDirField").hidden = !parkour;
-  if ($("#sharedVideoLibrary")?.closest("label")) $("#sharedVideoLibrary").closest("label").hidden = parkour;
+  if ($("#videoTemplateSelect")) $("#videoTemplateSelect").value = "mix";
+  if ($("#videoTemplateField")) $("#videoTemplateField").hidden = true;
+  document.querySelectorAll(".mix-only").forEach((item) => { item.hidden = false; });
+  if ($("#parkourDirField")) $("#parkourDirField").hidden = true;
+  if ($("#sharedVideoLibrary")?.closest("label")) $("#sharedVideoLibrary").closest("label").hidden = false;
   const hint = $("#videoTemplateHint");
-  if (hint) hint.textContent = parkour
-    ? "模板2 会直接拿目录里的整条跑酷视频，叠小说音频和字幕，不再抽片段混剪。"
-    : "模板1 从素材组抽片段拼接；模板2 直接用跑酷成片写字幕、生成音频。";
+  if (hint) hint.textContent = "从素材组抽片段拼接混剪。";
 }
 
 function clearAccountSelection() {

@@ -38,7 +38,7 @@
         <div>
           <p class="toolbar-kicker" id="pageKicker">OFFICIAL API</p>
           <h1 id="pageTitle">Reddit 混剪</h1>
-          <p id="pageLead">先选视频模板。模板1走片段混剪，模板2直接用已生成的跑酷视频写字幕、叠音频。</p>
+          <p id="pageLead">从素材组抽片段混剪出片。</p>
         </div>
         <div class="toolbar-actions">
           <span id="createStatus" class="toolbar-status">准备创建任务</span>
@@ -68,7 +68,7 @@
                   <label class="field"><span>背景音乐库 <em>可选</em></span><select id="sharedMusicLibrary"><option value="">不使用背景音乐</option></select></label>
                 </div>
               </section>
-              <label class="field" id="videoTemplateField" data-admin-only><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix">模板1 · 混剪</option><option value="parkour">模板2 · 跑酷成片</option></select><small id="videoTemplateHint">模板1 从素材组抽片段拼接；模板2 直接用跑酷成片写字幕、生成音频。</small></label>
+              <label class="field" id="videoTemplateField" data-admin-only hidden><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix" selected>模板1 · 混剪</option></select><small id="videoTemplateHint">从素材组抽片段拼接混剪。</small></label>
               <label data-admin-only id="assetGroupField" class="field mix-only"><span>素材组</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
               <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0818" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">默认读取 0818 这批已生成的跑酷视频。</small></label>
               <input id="videoDir" type="hidden" />

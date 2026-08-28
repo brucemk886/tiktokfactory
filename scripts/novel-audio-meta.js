@@ -32,23 +32,12 @@ export function hasNovelAudioMeta(meta) {
 export function writeNovelAudioMeta({ dir = "", audioPath = "", novel = {} } = {}) {
   const meta = normalizeNovelAudioMeta(novel);
   if (!hasNovelAudioMeta(meta)) return "";
-  const payload = { ...meta, updatedAt: new Date().toISOString() };
-  const json = `${JSON.stringify(payload, null, 2)}\n`;
   const folder = String(dir || (audioPath ? path.dirname(audioPath) : "")).trim();
-  let written = "";
-  if (folder) {
-    fs.mkdirSync(folder, { recursive: true });
-    const folderFile = path.join(folder, NOVEL_AUDIO_META_NAME);
-    fs.writeFileSync(folderFile, json, "utf8");
-    written = folderFile;
-  }
-  if (audioPath) {
-    const sidecar = `${audioPath}.json`;
-    fs.mkdirSync(path.dirname(sidecar), { recursive: true });
-    fs.writeFileSync(sidecar, json, "utf8");
-    written = sidecar;
-  }
-  return written;
+  if (!folder) return "";
+  fs.mkdirSync(folder, { recursive: true });
+  const folderFile = path.join(folder, NOVEL_AUDIO_META_NAME);
+  fs.writeFileSync(folderFile, `${JSON.stringify({ ...meta, updatedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
+  return folderFile;
 }
 
 export function readFolderNovelMeta(folderPath) {
@@ -63,13 +52,13 @@ export function readNovelAudioMeta(audioPath = "") {
   const resolved = String(audioPath || "").trim();
   if (!resolved) return normalizeNovelAudioMeta();
   const dir = path.dirname(resolved);
-  const files = [`${resolved}.json`, path.join(dir, NOVEL_AUDIO_META_NAME)];
+  const files = [path.join(dir, NOVEL_AUDIO_META_NAME), `${resolved}.json`];
   for (const file of files) {
     try {
       const meta = normalizeNovelAudioMeta(JSON.parse(fs.readFileSync(file, "utf8")));
       if (hasNovelAudioMeta(meta)) return meta;
     } catch {
-      // Missing or invalid sidecar is not an error; try the next file.
+      // Missing folder meta or leftover sidecar is not an error; try the next file.
     }
   }
   return normalizeNovelAudioMeta();

@@ -5,7 +5,7 @@ import { summarizeOperationSignals } from "./private-tiktok-signals.js";
 const DEFAULT_BASE_URL = "https://tiktokaitool.com";
 const REQUEST_TIMEOUT_MS = 20_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
-const MAX_PUBLISH_FILE_BYTES = 95 * 1024 * 1024;
+export const MAX_DIRECT_PUBLISH_FILE_BYTES = 1024 * 1024 * 1024;
 const NETWORK_RETRY_DELAYS_MS = [2_000, 5_000];
 const PUBLISH_RETRY_DELAYS_MS = [3_000, 8_000, 20_000];
 const RETRYABLE_HTTP_STATUSES = new Set([408, 429, 502, 503, 504]);
@@ -92,8 +92,8 @@ export function createOfficialTikTokAnalyticsService({
   async function uploadPublishAsset({ filePath, fileName = "video.mp4", contentType = "video/mp4", onRetry } = {}) {
     const resolvedPath = path.resolve(clean(filePath));
     const stat = fs.statSync(resolvedPath);
-    if (!stat.isFile() || stat.size < 1 || stat.size > MAX_PUBLISH_FILE_BYTES) {
-      throw statusError(413, "The official TikTok publishing file must be between 1 byte and 95 MB.");
+    if (!stat.isFile() || stat.size < 1 || stat.size > MAX_DIRECT_PUBLISH_FILE_BYTES) {
+      throw statusError(413, "The official TikTok publishing file must be between 1 byte and 1 GB.");
     }
     const type = clean(contentType) || "video/mp4";
     const signed = await requestSignedUpload({
@@ -161,7 +161,7 @@ export function createOfficialTikTokAnalyticsService({
     };
     for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 180_000);
+      const timer = setTimeout(() => controller.abort(), Math.max(180_000, Math.min(20 * 60 * 1000, Math.ceil(size / (256 * 1024)) * 1000)));
       try {
         const response = await fetchImpl(uploadUrl, {
           method: "PUT",

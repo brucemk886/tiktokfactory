@@ -56,8 +56,7 @@ test("copies existing local audio into the fixed library folder", async () => {
   const folderMeta = JSON.parse(fs.readFileSync(path.join(target, "novel.json"), "utf8"));
   assert.equal(folderMeta.platform, "NovelMaster");
   assert.equal(folderMeta.promotionCode, "454311");
-  const sidecar = JSON.parse(fs.readFileSync(`${result.items[0].targetAudioPath}.json`, "utf8"));
-  assert.equal(sidecar.promotionCode, "454311");
+  assert.equal(fs.existsSync(`${result.items[0].targetAudioPath}.json`), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
