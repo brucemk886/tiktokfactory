@@ -58,10 +58,11 @@ export function buildTikTokCaption({
   platform = "",
   audioTitle = ""
 } = {}) {
-  const title = String(extractAudioCaptionText(audioTitle) || openingTitle || "").replace(/\s+/g, " ").trim();
   const promo = String(promotionCopy || "").trim();
+  if (promo) return promo.slice(0, 2200);
+  const title = String(extractAudioCaptionText(audioTitle) || openingTitle || "").replace(/\s+/g, " ").trim();
   const tags = pickVariedHashtags({ seed: title || audioTitle, platform }).join(" ");
-  return [title, promo, tags].filter(Boolean).join("\n\n").slice(0, 2200);
+  return [title, tags].filter(Boolean).join("\n\n").slice(0, 2200);
 }
 
 export function resolveTikTokCaption({

@@ -290,13 +290,10 @@ test("TikTok captions join audio title, promotion copy, and a compact platform h
   assert.equal(novelPlatformHashtag("GoodNovel"), "#GoodNovel");
   assert.equal(buildTikTokCaption({
     openingTitle: "She married my uncle",
-    promotionCopy: "Read the full story on Novel Master. Code 454311",
-    platform: "NovelMaster"
-  }), [
-    "She married my uncle",
-    "Read the full story on Novel Master. Code 454311",
-    pickVariedHashtags({ seed: "She married my uncle", platform: "NovelMaster" }).join(" ")
-  ].join("\n\n"));
+    promotionCopy: "Search 『479093』 on Novel Master APP to get the following",
+    platform: "NovelMaster",
+    audioTitle: "3 Years in Prison for Her Lies 同行爆款-457-0f67a2a8.mp3"
+  }), "Search 『479093』 on Novel Master APP to get the following");
   assert.equal(buildTikTokCaption({
     audioTitle: "conflict-first",
     platform: "GoodNovel"
@@ -337,20 +334,12 @@ test("auto TikTok captions prefer the video fields and look up the book list whe
       novelPlatform: "GoodNovel"
     },
     manualCaption: "should not be used"
-  }), buildTikTokCaption({
-    openingTitle: "The invitation was a trap",
-    promotionCopy: "Continue on GoodNovel.",
-    platform: "GoodNovel"
-  }));
+  }), "Continue on GoodNovel.");
   assert.equal(resolveTikTokCaption({
     workDir,
     captionMode: "auto",
     video: { audioName: "audio-caption-1.mp3", novelId: "novel-1" }
-  }), buildTikTokCaption({
-    promotionCopy: "Unlock the rest with code 454311.",
-    platform: "NovelMaster",
-    audioTitle: "audio-caption-1.mp3"
-  }));
+  }), "Unlock the rest with code 454311.");
   const redditCaption = resolveTikTokCaption({
     captionMode: "auto",
     video: { audioName: "plain.mp3" },
