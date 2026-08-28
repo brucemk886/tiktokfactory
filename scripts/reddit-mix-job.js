@@ -1086,9 +1086,9 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
 
 function resolveFinalEncode(quality) {
   return {
-    bitrate: "3600k",
-    maxrate: "3600k",
-    bufsize: "7200k",
+    bitrate: "2000k",
+    maxrate: "2000k",
+    bufsize: "4000k",
     audio: quality === "quality" ? "160k" : "128k",
     preset: quality === "quality" ? "medium" : "fast"
   };

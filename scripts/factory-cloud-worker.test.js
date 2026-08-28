@@ -3,18 +3,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createAutoTaskManager } from "./auto-task-manager.js";
+import { createAutoTaskManager, normalizeOfficialAutoPublishResult } from "./auto-task-manager.js";
 import {
   DEFAULT_POLL_MS,
   DEFAULT_SYNC_MS,
   loadSettings,
-  localJobCancelled
+  localJobCancelled,
+  mirrorCloudTask
 } from "./factory-cloud-worker.js";
 
 test("factory worker requeues its own interrupted jobs on hello", () => {
   const source = fs.readFileSync(new URL("./factory-cloud-worker.js", import.meta.url), "utf8");
   assert.match(source, /\/api\/worker\/hello/);
   assert.match(source, /工人重启，已把/);
+  assert.match(source, /mirrorCloudTask\(context, job, outcomeLocal\)/);
 });
 
 test("factory worker claims once a minute and does not poll cloud cancel", () => {
@@ -76,4 +78,77 @@ test("cancelTask writes the generation job file so the local worker can stop", (
   assert.equal(stopped.status, "canceled");
   const job = JSON.parse(fs.readFileSync(path.join(jobsDir, "job-9.json"), "utf8"));
   assert.equal(job.status, "canceled");
+});
+
+test("official publish completion remirrors local queue as done with upload results", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-mirror-"));
+  const workDir = path.join(dir, "work");
+  const outputDir = path.join(dir, "outputs");
+  fs.mkdirSync(path.join(workDir, "scheduled-tasks"), { recursive: true });
+  fs.mkdirSync(outputDir, { recursive: true });
+  const manager = createAutoTaskManager({ root: process.cwd(), workDir, outputDir, publishService: {} });
+  const publish = {
+    provider: "official",
+    connectionIds: ["conn-1"],
+    officialAccounts: [{ connectionId: "conn-1", username: "demo" }]
+  };
+  const job = {
+    id: "job-official",
+    payload: {
+      taskId: "task-official",
+      taskName: "官方回写",
+      taskType: "reddit-mix",
+      generation: {},
+      publish
+    }
+  };
+  const videos = [{ fileName: "clip.mp4", audioName: "clip.mp3" }];
+  const context = { mirrorTask: manager.mirrorExternalTask };
+  mirrorCloudTask(context, job, {
+    status: "running",
+    percent: 90,
+    message: "正在提交第 1 波（1 条）到发布中台...",
+    progressCurrent: 1,
+    progressTotal: 1,
+    results: videos
+  });
+  const running = manager.getTask("task-official");
+  assert.equal(running.status, "running");
+  assert.equal(running.phase, "generating");
+  assert.equal((running.publishResults || []).length, 0);
+
+  const normalized = normalizeOfficialAutoPublishResult({
+    id: "task-official",
+    generatedVideos: videos,
+    publish
+  }, {
+    batches: [{
+      id: "batch-1",
+      tasks: [{
+        id: "remote-1",
+        connectionId: "conn-1",
+        fileName: "clip.mp4",
+        externalRef: "clip.mp4:conn-1:0"
+      }]
+    }]
+  });
+  mirrorCloudTask(context, job, {
+    status: "done",
+    percent: 100,
+    message: "出片 1 条，并已提交官方发布。",
+    progressCurrent: 1,
+    progressTotal: 1,
+    results: videos,
+    publishResults: normalized.results,
+    publishSummary: normalized.summary,
+    generationCompletedAt: 1_700
+  });
+  const done = manager.getTask("task-official");
+  assert.equal(done.status, "done");
+  assert.equal(done.phase, "done");
+  assert.equal(done.message, "出片 1 条，并已提交官方发布。");
+  assert.equal(done.publishResults.length, 1);
+  assert.equal(done.publishResults[0].status, "submitted");
+  assert.equal(done.progress.percent, 100);
+  assert.equal(done.generationCompletedAt, 1_700);
 });

@@ -459,11 +459,30 @@ async function completeOfficialOutcome(context, job, jobId, local, { published, 
     }));
     officialPublishRecords = buildOfficialPublishRecords(task, publishResults, Date.now(), context.workDir);
   }
+  const message = publishError
+    ? `已出片 ${videos.length} 条，官方发布失败：${publishError}`
+    : `出片 ${videos.length} 条，并已提交官方发布。`;
+  const outcomeLocal = {
+    ...local,
+    status: "done",
+    percent: 100,
+    message,
+    error: "",
+    progressCurrent: videos.length,
+    progressTotal: videos.length,
+    results: videos,
+    generatedVideos: videos,
+    publishResults,
+    publishSummary,
+    officialPublishRecords,
+    publishFailed: Boolean(publishError),
+    publishError: publishError || "",
+    generationCompletedAt: Number(local.generationCompletedAt) || Date.now()
+  };
+  mirrorCloudTask(context, job, outcomeLocal);
   await complete(context, jobId, {
     error: "",
-    message: publishError
-      ? `已出片 ${videos.length} 条，官方发布失败：${publishError}`
-      : `出片 ${videos.length} 条，并已提交官方发布。`,
+    message,
     result: {
       ...local,
       results: videos,
@@ -483,30 +502,44 @@ function shouldOfficialPublish(payload = {}) {
   return normalizePublishProvider(publish.provider) === PUBLISH_PROVIDER_OFFICIAL && publish.autoPublish !== false;
 }
 
-function mirrorCloudTask(context, job, local = {}) {
+export function mirrorCloudTask(context, job, local = {}) {
   if (typeof context.mirrorTask !== "function") return;
   const payload = job.payload || {};
   const failed = ["failed", "error", "cancelled", "canceled"].includes(String(local.status || ""));
   const done = ["done", "completed", "success"].includes(String(local.status || ""));
-  context.mirrorTask({
+  const generatedVideos = Array.isArray(local.results)
+    ? local.results
+    : (Array.isArray(local.generatedVideos) ? local.generatedVideos : []);
+  const mirrored = {
     id: String(payload.taskId || `cloud-${job.id || job.jobId}`),
     name: String(payload.taskName || job.title || "工厂云任务"),
     taskType: payload.taskType || job.type || "reddit-mix",
     status: failed ? (String(local.status).startsWith("cancel") ? "canceled" : "failed") : done ? "done" : "running",
-    phase: failed ? (String(local.status).startsWith("cancel") ? "canceled" : "failed") : done ? "generated" : "generating",
+    phase: failed
+      ? (String(local.status).startsWith("cancel") ? "canceled" : "failed")
+      : done
+        ? (Array.isArray(local.publishResults) ? "done" : "generated")
+        : "generating",
     message: local.message || job.message || "工厂云任务执行中",
     error: failed ? (local.error || local.message || "") : "",
     progress: {
-      current: Number(local.progressCurrent || 0),
-      total: Number(local.progressTotal || 0),
-      percent: Number(local.percent || 0)
+      current: Number(local.progressCurrent || local.progress?.current || generatedVideos.length || 0),
+      total: Number(local.progressTotal || local.progress?.total || 0),
+      percent: Number(local.percent || local.progress?.percent || 0)
     },
     generation: payload.generation || payload,
     publish: payload.publish || {},
-    generatedVideos: Array.isArray(local.results) ? local.results : [],
+    generatedVideos,
     generationJobId: job.id || job.jobId,
-    generationCompletedAt: done ? Date.now() : null
-  });
+    generationCompletedAt: done ? (Number(local.generationCompletedAt) || Date.now()) : null
+  };
+  if (Array.isArray(local.publishResults)) mirrored.publishResults = local.publishResults;
+  if (local.publishSummary && typeof local.publishSummary === "object") mirrored.publishSummary = local.publishSummary;
+  if (Array.isArray(local.officialPublishRecords)) mirrored.officialPublishRecords = local.officialPublishRecords;
+  if (done) mirrored.completedAt = Number(local.completedAt) || Date.now();
+  if (local.publishFailed != null) mirrored.publishFailed = Boolean(local.publishFailed);
+  if (local.publishError) mirrored.publishError = String(local.publishError);
+  context.mirrorTask(mirrored);
 }
 
 function resolveJobType(job) {

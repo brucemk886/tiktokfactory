@@ -1,11 +1,12 @@
 const summaryEl = document.querySelector("#queueSummary");
 const listEl = document.querySelector("#queueList");
-let pollTimer = 0;
+const refreshBtn = document.querySelector("#refreshQueueBtn");
 
+refreshBtn?.addEventListener("click", loadQueue);
 loadQueue();
 
 async function loadQueue() {
-  clearTimeout(pollTimer);
+  if (refreshBtn) refreshBtn.disabled = true;
   try {
     const response = await fetch(`/api/auto-tasks?t=${Date.now()}`, { cache: "no-store" });
     const data = await response.json();
@@ -15,8 +16,9 @@ async function loadQueue() {
     renderTasks(tasks);
   } catch (error) {
     listEl.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "读取本地队列失败。")}</div>`;
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
   }
-  if (!document.hidden) pollTimer = setTimeout(loadQueue, 3000);
 }
 
 function renderSummary(tasks, worker, watchdog = {}) {

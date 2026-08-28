@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 
 const mixJob = fs.readFileSync(fileURLToPath(new URL("./reddit-mix-job.js", import.meta.url)), "utf8");
 
-test("final mux locks video bitrate at 3600k", () => {
+test("final mux locks video bitrate at 2000k", () => {
   assert.match(mixJob, /const quality = payload\.quality \|\| "fast"/);
-  assert.match(mixJob, /bitrate: "3600k"/);
-  assert.match(mixJob, /maxrate: "3600k"/);
-  assert.match(mixJob, /bufsize: "7200k"/);
+  assert.match(mixJob, /bitrate: "2000k"/);
+  assert.match(mixJob, /maxrate: "2000k"/);
+  assert.match(mixJob, /bufsize: "4000k"/);
   assert.match(mixJob, /"-rc", "cbr"/);
   assert.match(mixJob, /"-b:v", encode\.bitrate/);
   assert.match(mixJob, /h264_nvenc/);
@@ -17,6 +17,7 @@ test("final mux locks video bitrate at 3600k", () => {
   assert.match(mixJob, /"-profile:v", "high"/);
   assert.doesNotMatch(mixJob, /maxrate: "2\.5M"/);
   assert.doesNotMatch(mixJob, /maxrate: "3\.5M"/);
+  assert.doesNotMatch(mixJob, /bitrate: "3600k"/);
   assert.doesNotMatch(mixJob, /muxAudioAndCaptions[\s\S]*-preset", "veryfast"/);
   assert.match(mixJob, /endCardEnabled === false/);
   assert.match(mixJob, /resolveNovelEndCard/);
