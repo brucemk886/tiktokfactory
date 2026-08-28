@@ -28,6 +28,8 @@ const state = {
   query: "",
   platform: "all",
   range: "all",
+  bookId: "",
+  factoryNovelId: "",
   selectedIds: new Set(),
   expandedIds: new Set(),
   importing: false,
@@ -48,6 +50,8 @@ elements.importForm?.addEventListener("submit", (event) => {
 });
 elements.searchInput?.addEventListener("input", () => {
   state.query = elements.searchInput.value.trim();
+  state.bookId = "";
+  state.factoryNovelId = "";
   state.page = 1;
   renderList();
 });
@@ -59,6 +63,8 @@ document.querySelectorAll("[data-platform]").forEach((button) => {
   button.addEventListener("click", () => {
     if (state.platform === button.dataset.platform) return;
     state.platform = button.dataset.platform || "all";
+    state.bookId = "";
+    state.factoryNovelId = "";
     state.page = 1;
     state.selectedIds.clear();
     document.querySelectorAll("[data-platform]").forEach((item) => item.classList.toggle("is-active", item === button));
@@ -76,7 +82,28 @@ document.querySelectorAll("[data-range]").forEach((button) => {
   });
 });
 
+applyIncomingFilters();
 loadList();
+
+function applyIncomingFilters() {
+  const params = new URLSearchParams(location.search);
+  const platform = String(params.get("platform") || "").trim();
+  const bookId = String(params.get("bookId") || "").trim();
+  const novel = String(params.get("novel") || "").trim();
+  const query = String(params.get("query") || bookId || "").trim();
+  if (["GoodNovel", "MotoNovel", "NovelMaster"].includes(platform)) {
+    state.platform = platform;
+    document.querySelectorAll("[data-platform]").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.platform === platform);
+    });
+  }
+  state.bookId = bookId;
+  state.factoryNovelId = novel;
+  if (query && elements.searchInput) {
+    elements.searchInput.value = query;
+    state.query = query;
+  }
+}
 
 async function loadList() {
   if (elements.listStatus) elements.listStatus.textContent = "正在读取同行爆款...";
@@ -186,7 +213,14 @@ function visibleItems() {
       ]) : [])
     ].join(" ").toLowerCase().includes(needle))
     : collapsed;
-  return [...items].sort((left, right) => {
+  const filtered = (state.factoryNovelId || state.bookId)
+    ? items.filter((item) => {
+      if (state.factoryNovelId && String(item.factoryNovelId || "") === state.factoryNovelId) return true;
+      if (state.bookId && String(item.novelId || "").trim() === state.bookId) return true;
+      return false;
+    })
+    : items;
+  return [...filtered].sort((left, right) => {
     const play = (Number(right.playCount) || 0) - (Number(left.playCount) || 0);
     if (play) return play;
     return (Number(right.updatedAt) || 0) - (Number(left.updatedAt) || 0);

@@ -61,6 +61,8 @@
 .channel-chip.is-male { border-color: #7a93c4; background: #eef3ff; color: #2a3f73; }
 .mark-chip.is-featured { border: 1px solid #8a9a32; background: #eef6b8; color: #3d4710; }
 .mark-chip.is-hit { border: 1px solid #c47a32; background: #fff0d8; color: #8a4a10; }
+a.mark-chip.is-hit { text-decoration: none; cursor: pointer; }
+a.mark-chip.is-hit:hover { background: #ffe4b8; }
 .edit-button { min-width: 0; padding: 0 10px; }
 .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
 .audio-link { background: #fff8e8; border-color: #d7b07a; }

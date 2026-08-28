@@ -212,7 +212,7 @@ function renderBooks() {
       <td class="cell-mono cell-audio">${generatedAudioCount(novel)}</td>
       <td class="cell-mono">${formatPlayCount(novel.ownPlayCount)}</td>
       <td class="cell-mono">${formatPlayCount(novel.peerPlayCount)}</td>
-      <td>${novel.hit ? `<span class="mark-chip is-hit">${escapeHtml(novel.hitLabel || "爆款")}</span>` : "—"}</td>
+      <td>${hitChip(novel)}</td>
       <td>${novel.featured ? `<span class="mark-chip is-featured">重点</span>` : "—"}</td>
       <td class="row-actions">
         <button class="edit-button" type="button" data-edit-id="${escapeHtml(novel.id)}">编辑</button>
@@ -643,6 +643,30 @@ function channelChip(novel) {
   if (!label) return "—";
   const kind = label === "男频" ? "is-male" : label === "女频" ? "is-female" : "";
   return `<span class="channel-chip ${kind}">${escapeHtml(label)}</span>`;
+}
+
+function hitChip(novel) {
+  if (!novel?.hit) return "—";
+  const label = escapeHtml(novel.hitLabel || "爆款");
+  if (!hasPeerHitLink(novel)) return `<span class="mark-chip is-hit">${label}</span>`;
+  return `<a class="mark-chip is-hit is-hit-link" href="${escapeAttr(peerHitsHref(novel))}">${label}</a>`;
+}
+
+function hasPeerHitLink(novel) {
+  return Number(novel?.peerPlayCount) > 0 || /同行/.test(String(novel?.hitLabel || ""));
+}
+
+function peerHitsHref(novel) {
+  const params = new URLSearchParams();
+  if (novel.platform) params.set("platform", novel.platform);
+  if (novel.bookId) params.set("bookId", novel.bookId);
+  if (novel.id) params.set("novel", novel.id);
+  if (!novel.bookId && novel.title) params.set("query", novel.title);
+  return `/novel-peer-hits?${params}`;
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
 }
 
 function hitPlayCount(novel) {
