@@ -412,15 +412,22 @@ async function submitOfficialPublish(context, job, jobId, local) {
     videos,
     name: job.payload.taskName || job.title,
     taskId: job.payload.taskId,
+    officialWaveSize: 10,
+    officialUploadConcurrency: 10,
     shouldAbort: () => localJobCancelled(context, job, jobId),
     onProgress: (progress) => {
       mirrorCloudTask(context, job, {
         ...local,
         status: "running",
+        phase: "publishing",
         percent: 90,
         message: progress.message || "正在提交 TikTok 官方发布...",
-        progressCurrent: Number(progress.current || 0),
-        progressTotal: Number(progress.total || videos.length)
+        progressCurrent: videos.length,
+        progressTotal: videos.length,
+        publishProgress: {
+          current: Number(progress.current || 0),
+          total: Number(progress.total || videos.length)
+        }
       });
     }
   });
@@ -510,6 +517,9 @@ export function mirrorCloudTask(context, job, local = {}) {
   const generatedVideos = Array.isArray(local.results)
     ? local.results
     : (Array.isArray(local.generatedVideos) ? local.generatedVideos : []);
+  const publishing = local.phase === "publishing"
+    || Boolean(local.publishProgress)
+    || /上传|提交.*中台|官方发布/.test(String(local.message || ""));
   const mirrored = {
     id: String(payload.taskId || `cloud-${job.id || job.jobId}`),
     name: String(payload.taskName || job.title || "工厂云任务"),
@@ -519,12 +529,18 @@ export function mirrorCloudTask(context, job, local = {}) {
       ? (String(local.status).startsWith("cancel") ? "canceled" : "failed")
       : done
         ? (Array.isArray(local.publishResults) ? "done" : "generated")
-        : "generating",
+        : publishing
+          ? "publishing"
+          : "generating",
     message: local.message || job.message || "工厂云任务执行中",
     error: failed ? (local.error || local.message || "") : "",
     progress: {
-      current: Number(local.progressCurrent || local.progress?.current || generatedVideos.length || 0),
-      total: Number(local.progressTotal || local.progress?.total || 0),
+      current: publishing
+        ? generatedVideos.length
+        : Number(local.progressCurrent || local.progress?.current || generatedVideos.length || 0),
+      total: publishing
+        ? (Number(payload.generation?.totalVideos) || generatedVideos.length || 0)
+        : Number(local.progressTotal || local.progress?.total || 0),
       percent: Number(local.percent || local.progress?.percent || 0)
     },
     generation: payload.generation || payload,
@@ -533,6 +549,7 @@ export function mirrorCloudTask(context, job, local = {}) {
     generationJobId: job.id || job.jobId,
     generationCompletedAt: done ? (Number(local.generationCompletedAt) || Date.now()) : null
   };
+  if (local.publishProgress && typeof local.publishProgress === "object") mirrored.publishProgress = local.publishProgress;
   if (Array.isArray(local.publishResults)) mirrored.publishResults = local.publishResults;
   if (local.publishSummary && typeof local.publishSummary === "object") mirrored.publishSummary = local.publishSummary;
   if (Array.isArray(local.officialPublishRecords)) mirrored.officialPublishRecords = local.officialPublishRecords;

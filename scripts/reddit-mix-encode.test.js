@@ -23,6 +23,8 @@ test("final mux locks video bitrate at 2000k", () => {
   assert.match(mixJob, /resolveNovelEndCard/);
   assert.match(mixJob, /normalizeAudioDirs/);
   assert.match(mixJob, /renderNovelAppIcon/);
+  assert.match(mixJob, /planMixAudioOrder/);
+  assert.match(mixJob, /refreshAudioHitWeights/);
 });
 
 test("mix always one-passes and skips on failure", () => {

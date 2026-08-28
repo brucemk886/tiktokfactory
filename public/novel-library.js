@@ -154,6 +154,8 @@ function visibleNovels() {
   }).sort((a, b) => {
     const featuredDiff = Number(Boolean(b.featured)) - Number(Boolean(a.featured));
     if (featuredDiff) return featuredDiff;
+    const hitDiff = hitPlayCount(b) - hitPlayCount(a);
+    if (hitDiff) return hitDiff;
     return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
   });
 }
@@ -188,9 +190,9 @@ function renderBooks() {
     : "0 本";
   const catalogCount = Number(state.summary.catalogCount || 0);
   const catalogHint = catalogCount > Number(counts.novelCount || 0) ? ` · 总表 ${catalogCount} 本` : "";
-  elements.listStatus.textContent = `${scope} · ${shelfLabel} · ${audioLabel} ${novels.length} 本 · ${rangeLabel} · 有音频 ${audioCounts.voiced} · 没音频 ${audioCounts.silent} · 重点 ${counts.featuredCount} · 总音频 ${currentAudioCount()}${catalogHint}`;
+  elements.listStatus.textContent = `${scope} · ${shelfLabel} · ${audioLabel} ${novels.length} 本 · ${rangeLabel} · 有音频 ${audioCounts.voiced} · 没音频 ${audioCounts.silent} · 爆款 ${counts.hitCount || 0} · 重点 ${counts.featuredCount} · 总音频 ${currentAudioCount()}${catalogHint}`;
   if (!novels.length) {
-    elements.list.innerHTML = `<tr><td colspan="10"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
+    elements.list.innerHTML = `<tr><td colspan="13"><div class="empty-state">${emptyCopy()}</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -208,6 +210,9 @@ function renderBooks() {
       <td class="cell-mono">${escapeHtml(novel.bookId || "未设置")}</td>
       <td class="cell-mono">${escapeHtml(novel.promotionCode || "未设置")}</td>
       <td class="cell-mono cell-audio">${generatedAudioCount(novel)}</td>
+      <td class="cell-mono">${formatPlayCount(novel.ownPlayCount)}</td>
+      <td class="cell-mono">${formatPlayCount(novel.peerPlayCount)}</td>
+      <td>${novel.hit ? `<span class="mark-chip is-hit">${escapeHtml(novel.hitLabel || "爆款")}</span>` : "—"}</td>
       <td>${novel.featured ? `<span class="mark-chip is-featured">重点</span>` : "—"}</td>
       <td class="row-actions">
         <button class="edit-button" type="button" data-edit-id="${escapeHtml(novel.id)}">编辑</button>
@@ -409,7 +414,7 @@ async function openEditor(id = "") {
   elements.saveButton.textContent = novel ? "保存修改" : "保存小说";
   elements.pageTitle.textContent = novel ? "编辑小说" : "新增小说";
   elements.pageLead.textContent = novel
-    ? "修改书单信息。重点可在这里勾选。播放和爆款在数据概览查看。"
+    ? "修改书单信息。重点可在这里勾选。列表里的自有/同行播放来自官方归档和同行爆款。"
     : "填写小说后保存，会进「没音频书单」。配音之后会出现在有音频书单。";
   setFormStatus("");
   updateChapterCount();
@@ -638,6 +643,20 @@ function channelChip(novel) {
   if (!label) return "—";
   const kind = label === "男频" ? "is-male" : label === "女频" ? "is-female" : "";
   return `<span class="channel-chip ${kind}">${escapeHtml(label)}</span>`;
+}
+
+function hitPlayCount(novel) {
+  return Math.max(Number(novel?.ownPlayCount) || 0, Number(novel?.peerPlayCount) || 0);
+}
+
+function formatPlayCount(value) {
+  const count = Number(value) || 0;
+  if (!count) return "—";
+  if (count >= 10_000) {
+    const wan = count / 10_000;
+    return `${wan.toFixed(wan >= 10 ? 0 : 1).replace(/\.0$/, "")}万`;
+  }
+  return formatNumber(count);
 }
 
 function formatDate(value) {

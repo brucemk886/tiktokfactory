@@ -9,6 +9,7 @@ import {
 } from "../../scripts/novel-audio-import.js";
 import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
+import { attachNovelHitStats, buildAudioHitWeights, buildOwnHitSnapshot } from "../../scripts/novel-hit-scores.js";
 import { listPeerHitRows } from "./peer-hits-store.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
@@ -215,7 +216,7 @@ export async function handleNovels(request, env, url, session) {
         readStore(db, { includeSource: false, workingOnly: true }),
         kvGet(db, "official-publish-records", []),
       ]);
-      const { videoMappings, ...page } = assembleOfficialNovelEffects({
+      const assembled = assembleOfficialNovelEffects({
         store,
         audioItems: audioItemsFromScripts(store.scripts),
         signals,
@@ -224,6 +225,8 @@ export async function handleNovels(request, env, url, session) {
         days,
         label: "线上官方归档",
       });
+      await kvSet(db, "novel-hit-snapshot", buildOwnHitSnapshot(assembled)).catch(() => {});
+      const { videoMappings, ...page } = assembled;
       return json(slimEffectsPage({
         ...page,
         dataStatus: {
@@ -242,7 +245,11 @@ export async function handleNovels(request, env, url, session) {
 
 async function novelOverview(db, query, env) {
   const store = await readStore(db, { includeSource: false, workingOnly: true });
-  const catalogCount = await countNovels(db);
+  const [catalogCount, peerHits, snapshot] = await Promise.all([
+    countNovels(db),
+    listPeerHitRows(db).catch(() => []),
+    kvGet(db, "novel-hit-snapshot", {})
+  ]);
   const split = takeDuplicateAudioScripts(store.scripts);
   let scripts = store.scripts;
   if (split.removed.length) {
@@ -254,7 +261,7 @@ async function novelOverview(db, query, env) {
     }
   }
   const normalized = String(query || "").trim().toLowerCase();
-  const novels = store.novels
+  const novels = attachNovelHitStats(store.novels
     .map((novel) => {
       const owned = collapseDuplicateAudioScripts(scripts.filter((script) => script.novelId === novel.id));
       return {
@@ -265,7 +272,10 @@ async function novelOverview(db, query, env) {
       };
     })
     .filter((novel) => !normalized || [novel.id, novel.title, novel.platform, novel.bookId, novel.promotionCode, novel.promotionCopy, novel.category, novel.sellingPoint, novel.note]
-      .some((value) => String(value || "").toLowerCase().includes(normalized)));
+      .some((value) => String(value || "").toLowerCase().includes(normalized))), {
+    peerHits,
+    ownByNovelId: snapshot?.ownByNovelId || {}
+  });
   return {
     version: 1,
     summary: {
@@ -273,12 +283,29 @@ async function novelOverview(db, query, env) {
       catalogCount,
       scriptCount: scripts.length,
       audioCount: collapseDuplicateAudioScripts(scripts).filter((item) => item.audioId || item.audio?.id).length,
-      videoCount: 0,
+      videoCount: novels.reduce((sum, novel) => sum + Number(novel.performance?.videoCount || 0), 0),
       unassignedScriptCount: scripts.filter((item) => !item.novelId).length
     },
     catalog: catalogSummary(novels),
     novels,
     unassignedScripts: scripts.filter((item) => !item.novelId)
+  };
+}
+
+export async function buildWorkerAudioHitWeights(db) {
+  const [store, peerHits, snapshot] = await Promise.all([
+    readStore(db, { includeSource: false, workingOnly: true }),
+    listPeerHitRows(db).catch(() => []),
+    kvGet(db, "novel-hit-snapshot", {})
+  ]);
+  return {
+    updatedAt: new Date().toISOString(),
+    snapshotAt: snapshot?.updatedAt || "",
+    weights: buildAudioHitWeights({
+      scripts: store.scripts,
+      peerHits,
+      ownByAudioName: snapshot?.ownByAudioName || {}
+    })
   };
 }
 

@@ -162,11 +162,13 @@ export function createOfficialTikTokAnalyticsService({
     for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), Math.max(180_000, Math.min(20 * 60 * 1000, Math.ceil(size / (256 * 1024)) * 1000)));
+      const stream = fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 });
       try {
         const response = await fetchImpl(uploadUrl, {
           method: "PUT",
           headers: putHeaders,
-          body: fs.readFileSync(filePath),
+          body: stream,
+          duplex: "half",
           signal: controller.signal,
         });
         if (!response.ok) {
@@ -175,6 +177,7 @@ export function createOfficialTikTokAnalyticsService({
         }
         return;
       } catch (error) {
+        stream.destroy();
         if (!shouldRetryBridgeError(error, true) || attempt >= retryDelays.length) {
           throw describeBridgeError(error, operationLabel, attempt + 1);
         }

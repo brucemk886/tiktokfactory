@@ -243,7 +243,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
             name: task.name,
             taskId: task.id,
             officialWaveSize: 10,
-            officialUploadConcurrency: 3,
+            officialUploadConcurrency: 10,
             checkpoint: task.officialPublishCheckpoint,
             shouldAbort: () => ["canceled", "cancelled"].includes(String(readTask(id)?.status || "")),
             onCheckpoint: (next) => {

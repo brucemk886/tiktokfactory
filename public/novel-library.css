@@ -1,4 +1,4 @@
-.novel-library-page { min-width: 1280px; background-color: transparent; color: var(--lf-text, #1d1a14); }
+.novel-library-page { min-width: 1480px; background-color: transparent; color: var(--lf-text, #1d1a14); }
 .library-shell { margin-left: 0; min-height: 100vh; padding: 34px 34px 60px; }
 .library-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
 .library-header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -27,7 +27,7 @@
 .batch-bar #batchStatus.is-ok { color: var(--lf-green, #2a7a52); }
 .batch-bar #batchStatus.is-error { color: var(--lf-red, #c24741); }
 .book-table-wrap { overflow: auto; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
-.book-table { width: 100%; min-width: 1280px; table-layout: fixed; border-collapse: collapse; }
+.book-table { width: 100%; min-width: 1480px; table-layout: fixed; border-collapse: collapse; }
 .book-table .col-check { width: 36px; }
 .book-table .col-date { width: 88px; }
 .book-table .col-title { width: auto; }
@@ -36,6 +36,9 @@
 .book-table .col-book-id { width: 112px; }
 .book-table .col-promo { width: 88px; }
 .book-table .col-audio { width: 88px; }
+.book-table .col-own { width: 78px; }
+.book-table .col-peer { width: 78px; }
+.book-table .col-hit { width: 88px; }
 .book-table .col-mark { width: 58px; }
 .book-table .col-actions { width: 268px; }
 .book-table th, .book-table td { padding: 12px 10px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); }
@@ -57,6 +60,7 @@
 .channel-chip.is-female { border-color: #d7a0b4; background: #fff0f4; color: #8a2f4e; }
 .channel-chip.is-male { border-color: #7a93c4; background: #eef3ff; color: #2a3f73; }
 .mark-chip.is-featured { border: 1px solid #8a9a32; background: #eef6b8; color: #3d4710; }
+.mark-chip.is-hit { border: 1px solid #c47a32; background: #fff0d8; color: #8a4a10; }
 .edit-button { min-width: 0; padding: 0 10px; }
 .row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; }
 .audio-link { background: #fff8e8; border-color: #d7b07a; }

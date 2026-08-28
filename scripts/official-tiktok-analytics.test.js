@@ -197,10 +197,8 @@ test("official bridge uploads directly to R2 when a signed URL is available", as
         assert.equal(options.headers.Authorization, undefined);
         assert.equal(options.headers["Content-Type"], "video/mp4");
         assert.equal(options.headers["Content-Length"], String(fs.statSync(videoPath).size));
-        assert.equal(options.duplex, undefined);
-        const uploadedBytes = Buffer.isBuffer(options.body)
-          ? options.body.length
-          : Buffer.from(options.body).length;
+        assert.equal(options.duplex, "half");
+        const uploadedBytes = await readUploadBodyBytes(options.body);
         assert.equal(uploadedBytes, fs.statSync(videoPath).size);
         return jsonResponse({}, 200);
       }
@@ -243,8 +241,10 @@ test("official bridge retries a failed R2 PUT with a fresh file stream", async (
       }
       if (parsed.hostname === "acct.r2.cloudflarestorage.com") {
         puts += 1;
-        bodies.push(options.body);
+        assert.equal(options.duplex, "half");
         assert.equal(options.headers["Content-Length"], String(fs.statSync(videoPath).size));
+        const uploadedBytes = await readUploadBodyBytes(options.body);
+        bodies.push(uploadedBytes);
         if (puts < 3) return jsonResponse({ error: "slow down" }, 503);
         return jsonResponse({}, 200);
       }
@@ -256,7 +256,7 @@ test("official bridge retries a failed R2 PUT with a fresh file stream", async (
   const asset = await service.uploadPublishAsset({ filePath: videoPath, fileName: "sample.mp4" });
   assert.equal(asset.assetKey, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.mp4");
   assert.equal(puts, 3);
-  assert.ok(bodies.every((body) => Buffer.isBuffer(body) && body.length === fs.statSync(videoPath).size));
+  assert.ok(bodies.every((size) => size === fs.statSync(videoPath).size));
 });
 
 test("official bridge gets one stored video detail by account and video id", async () => {
@@ -397,4 +397,14 @@ function jsonResponse(payload, status = 200) {
     json: async () => payload,
     text: async () => payload.error || "",
   };
+}
+
+async function readUploadBodyBytes(body) {
+  if (Buffer.isBuffer(body)) return body.length;
+  if (body && typeof body[Symbol.asyncIterator] === "function") {
+    let uploadedBytes = 0;
+    for await (const chunk of body) uploadedBytes += chunk.length;
+    return uploadedBytes;
+  }
+  return Buffer.from(body || "").length;
 }

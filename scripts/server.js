@@ -2567,7 +2567,7 @@ async function publishThroughOfficialTikTok(payload = {}) {
   const report = typeof payload.onProgress === "function" ? payload.onProgress : () => {};
   const saveCheckpoint = typeof payload.onCheckpoint === "function" ? payload.onCheckpoint : () => {};
   const waveSize = Math.max(1, Math.min(20, Number(payload.officialWaveSize) || 10));
-  const uploadConcurrency = Math.max(1, Math.min(4, Number(payload.officialUploadConcurrency) || 3));
+  const uploadConcurrency = Math.max(1, Math.min(10, Number(payload.officialUploadConcurrency) || 10));
   const checkpoint = payload.checkpoint && typeof payload.checkpoint === "object" ? payload.checkpoint : {};
   const submittedKeys = new Set(Array.isArray(checkpoint.submittedKeys) ? checkpoint.submittedKeys : []);
   const savedAssets = checkpoint.assets && typeof checkpoint.assets === "object" ? { ...checkpoint.assets } : {};
@@ -2600,33 +2600,37 @@ async function publishThroughOfficialTikTok(payload = {}) {
     }
     const readyBefore = assets.size;
     let finishedUploads = 0;
-    await runPool(toUpload, uploadConcurrency, async (item) => {
-      await throwIfOfficialPublishAborted(shouldAbort);
-      const doneCount = submittedKeys.size + readyBefore + finishedUploads + 1;
-      const megabytes = Math.max(0.1, fs.statSync(item.job.filePath).size / 1024 / 1024);
+    const waveTotal = toUpload.length;
+    const reportUploadProgress = (extra = "") => {
+      const megabytes = toUpload.reduce((sum, item) => sum + Math.max(0, fs.statSync(item.job.filePath).size), 0) / 1024 / 1024;
+      const inFlight = Math.max(0, waveTotal - finishedUploads);
       report({
         phase: "uploading",
-        current: doneCount,
+        current: submittedKeys.size + readyBefore + finishedUploads,
         total: jobs.length,
         videoCount: videos.length,
         accountCount: connectionIds.length,
         assignment,
-        message: assignment === "all-accounts"
-          ? `正在上传第 ${doneCount}/${jobs.length} 次发布（${videos.length} 条成片 × ${connectionIds.length} 个号，约 ${megabytes.toFixed(0)}MB）...`
-          : `正在上传第 ${doneCount}/${jobs.length} 条成片（约 ${megabytes.toFixed(0)}MB）...`
+        message: extra || (inFlight
+          ? `正在并行上传 ${inFlight} 条成片（本波 ${waveTotal} 条，合计约 ${megabytes.toFixed(0)}MB）...`
+          : `本波 ${waveTotal} 条已传完，准备提交中台...`)
       });
+    };
+    reportUploadProgress();
+    await runPool(toUpload, uploadConcurrency, async (item) => {
+      await throwIfOfficialPublishAborted(shouldAbort);
       const uploaded = await privateTikTokAnalytics.uploadPublishAsset({
         filePath: item.job.filePath,
         fileName: item.job.fileName,
         contentType: publishContentType(item.job.fileName),
         onRetry: ({ attempt, attempts, status, delayMs }) => report({
           phase: "uploading",
-          current: doneCount,
+          current: submittedKeys.size + readyBefore + finishedUploads,
           total: jobs.length,
           videoCount: videos.length,
           accountCount: connectionIds.length,
           assignment,
-          message: `第 ${doneCount}/${jobs.length} 条上传遇到 HTTP ${status || "网络错误"}，${Math.round(delayMs / 1000)} 秒后重试（${attempt}/${attempts - 1}）...`
+          message: `并行上传中有一条遇到 HTTP ${status || "网络错误"}，${Math.round(delayMs / 1000)} 秒后重试（${attempt}/${attempts - 1}）...`
         })
       });
       assets.set(item.job.filePath, uploaded);
@@ -2636,6 +2640,7 @@ async function publishThroughOfficialTikTok(payload = {}) {
         fileSize: Number(uploaded.fileSize || fs.statSync(item.job.filePath).size)
       };
       finishedUploads += 1;
+      reportUploadProgress();
       saveCheckpoint({
         submittedKeys: Array.from(submittedKeys),
         assets: savedAssets,

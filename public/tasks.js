@@ -233,7 +233,7 @@ function renderTasks(tasks, allTasks = tasks) {
         : queueAhead > 0
         ? `排队等待中，前方 ${queueAhead} 个任务；完成后会自动开始。`
         : "即将开始生成。"
-      : task.message || "等待执行";
+      : displayUploadMessage(task);
     return `<article class="auto-task-item" data-status="${escapeAttr(task.status)}">
       <div class="task-item-head"><div><strong>${escapeHtml(task.name)}</strong><small>${formatTime(task.createdAt)}</small></div><div class="task-head-actions"><span class="task-status-badge">${escapeHtml(statusLabel(task.status))}</span>${renameAction}${actions}${archiveAction}</div></div>
       ${groupHtml}
@@ -1079,6 +1079,15 @@ async function saveSharedRedditSettings(payload) {
 }
 
 function setDefaultSchedule() { const date = new Date(Date.now() + 30 * 60 * 1000); date.setSeconds(0, 0); $("#scheduleAt").value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`; }
+function displayUploadMessage(task) {
+  const message = String(task.message || "等待执行");
+  const sequential = message.match(/正在上传第\s*\d+\s*\/\s*(\d+)\s*条成片(?:（约\s*(\d+)MB）)?/);
+  if (!sequential) return message;
+  const total = Number(task.generatedVideos?.length || task.generation?.totalVideos || sequential[1] || 0);
+  const megabytes = sequential[2] ? `，每条约 ${sequential[2]}MB` : "";
+  return total ? `正在并行上传 ${total} 条成片${megabytes}...` : "正在并行上传成片...";
+}
+
 function statusLabel(status) { return ({ queued: "排队中", running: "执行中", generating: "生成中", publishing: "发布中", retry_wait: "等待重试", retrying: "正在重试", done: "已完成", failed: "执行失败", needs_attention: "待人工处理", awaiting_review: "等待确认发布", canceled: "已停止" })[status] || status; }
 function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : ""; }
 function number(selector, fallback) { const value = Number($(selector)?.value); return Number.isFinite(value) ? value : fallback; }

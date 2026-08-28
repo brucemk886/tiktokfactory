@@ -1,7 +1,7 @@
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { attachAudioGenerateResults, buildAudioGeneratePayload, mergeImportedNovelStore, persistOpeningVariantScripts } from "./novels.js";
+import { attachAudioGenerateResults, buildAudioGeneratePayload, buildWorkerAudioHitWeights, mergeImportedNovelStore, persistOpeningVariantScripts } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -427,6 +427,10 @@ async function handleWorkerApi(request, env, url) {
   if (method === "GET" && pathname === "/api/worker/jobs") {
     const { results } = await env.DB.prepare("SELECT * FROM factory_jobs ORDER BY created_at DESC LIMIT 50").all();
     return json({ jobs: (results || []).map(publicJob) });
+  }
+
+  if (method === "GET" && pathname === "/api/worker/audio-hit-weights") {
+    return json(await buildWorkerAudioHitWeights(env.DB));
   }
 
   return errorJson("未知工人接口。", 404);

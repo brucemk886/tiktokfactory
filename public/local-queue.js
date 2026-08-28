@@ -43,9 +43,12 @@ function renderTasks(tasks) {
     return;
   }
   listEl.innerHTML = visible.map((task) => {
-    const progress = task.phase === "publishing" || task.phase === "retrying" ? task.publishProgress : task.progress;
-    const current = Number(progress?.current || task.generatedVideos?.length || 0);
-    const total = Number(progress?.total || task.expectedVideoCount || 0);
+    const generatedCount = Array.isArray(task.generatedVideos) ? task.generatedVideos.length : Number(task.progress?.current || 0);
+    const expectedCount = Number(task.expectedVideoCount || task.generation?.totalVideos || 0);
+    const uploading = isUploading(task);
+    const progress = uploading ? (task.publishProgress || task.progress) : task.progress;
+    const current = Number(progress?.current || generatedCount || 0);
+    const total = Number(progress?.total || expectedCount || 0);
     const percent = total > 0 ? Math.round(current / total * 100) : Number(progress?.percent || 0);
     const uploads = (task.publishResults || []).filter((item) => item.status === "submitted" || item.status === "success").length;
     return `<article class="queue-item" data-status="${escapeAttr(task.status)}">
@@ -55,17 +58,17 @@ function renderTasks(tasks) {
           <small>${escapeHtml(formatTime(task.updatedAt || task.createdAt))}</small>
         </div>
         <div class="queue-item-actions">
-          <span class="queue-badge">${escapeHtml(statusLabel(task.status, task.phase))}</span>
+          <span class="queue-badge">${escapeHtml(statusLabel(task.status, uploading ? "publishing" : task.phase))}</span>
           ${canStop(task) ? `<button class="queue-stop-btn" type="button" data-action="cancel" data-id="${escapeAttr(task.id)}">停止</button>` : ""}
         </div>
       </div>
       <div class="queue-meta">
         <span class="queue-badge">${escapeHtml(sourceLabel(task))}</span>
-        <span class="queue-badge">出片 ${current}${total ? `/${total}` : ""}</span>
-        <span class="queue-badge">上传 ${uploads}</span>
+        <span class="queue-badge">出片 ${generatedCount}${expectedCount ? `/${expectedCount}` : ""}</span>
+        <span class="queue-badge">${uploading && !uploads ? `并行上传 ${total || generatedCount || ""}`.trim() : `上传 ${uploads}`}</span>
       </div>
       <div class="queue-bar" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, percent))}%"></i></div>
-      <p>${escapeHtml(task.message || "等待执行")}</p>
+      <p>${escapeHtml(displayMessage(task))}</p>
       ${renderTaskVideos(task)}
     </article>`;
   }).join("");
@@ -131,6 +134,21 @@ function uploadStatusLabel(status) {
 
 function card(label, value) {
   return `<article><small>${escapeHtml(label)}</small><b>${escapeHtml(String(value))}</b></article>`;
+}
+
+function isUploading(task) {
+  return task.phase === "publishing"
+    || task.phase === "retrying"
+    || /上传|提交.*中台|官方发布/.test(String(task.message || ""));
+}
+
+function displayMessage(task) {
+  const message = String(task.message || "等待执行");
+  const sequential = message.match(/正在上传第\s*\d+\s*\/\s*(\d+)\s*条成片(?:（约\s*(\d+)MB）)?/);
+  if (!sequential) return message;
+  const total = Number(task.generatedVideos?.length || task.generation?.totalVideos || sequential[1] || 0);
+  const megabytes = sequential[2] ? `，每条约 ${sequential[2]}MB` : "";
+  return total ? `正在并行上传 ${total} 条成片${megabytes}...` : "正在并行上传成片...";
 }
 
 function isActive(task) {
