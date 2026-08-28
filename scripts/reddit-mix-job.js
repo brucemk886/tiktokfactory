@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   VIDEO_EXTENSIONS,
   getAssetGroup,
@@ -59,6 +59,13 @@ async function main() {
   const overlayFiles = resolveOverlayFiles(dedup.overlayDir);
 
   if (!audios.length) throw new Error("音频文件夹里没有找到可用音频。");
+  patchJob({
+    status: "running",
+    message: hasNvencEncoder()
+      ? "混剪使用显卡一次合成（NVENC）。去重只保留缩放、镜像和变速。"
+      : "混剪使用 CPU 一次合成。去重只保留缩放、镜像和变速。本机未检测到 NVENC。",
+    updatedAt: Date.now()
+  });
 
   ensureDir(defaultOutputDir);
   if (saveDir) ensureDir(saveDir);
@@ -90,6 +97,16 @@ async function main() {
   while (done < total && attempts < maxAttempts) {
     attempts += 1;
     try {
+    const latest = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
+    if (["canceled", "cancelled"].includes(String(latest.status || "").toLowerCase())) {
+      patchJob({
+        status: "canceled",
+        message: "任务已停止。",
+        percent: Number(latest.percent || 0),
+        updatedAt: Date.now()
+      });
+      break;
+    }
     const audioIndex = (candidateIndex + Math.max(0, Number(payload.audioOffset) || 0)) % audios.length;
     const audioPath = audios[audioIndex];
     const variant = Math.floor(candidateIndex / audios.length) + 1;
@@ -156,8 +173,10 @@ async function main() {
 
     const usage = readUsage(root);
     const outputPath = path.join(defaultOutputDir, `${id}.mp4`);
+    const quality = payload.quality || "fast";
+    const fontFile = resolveBadgeFont(config.fontFile);
     let clips;
-    let concatVideo;
+    let concatVideo = "";
     if (isParkourVideoTemplate(payload)) {
       const bed = renderParkourBed({
         videoMeta,
@@ -168,7 +187,7 @@ async function main() {
         width,
         height,
         fps,
-        quality: payload.quality || "fast"
+        quality
       });
       clips = bed.clips;
       concatVideo = bed.concatVideo;
@@ -178,17 +197,7 @@ async function main() {
       const segmentSeconds = resolveSegmentSeconds(payload, audioDuration);
       clips = pickClips({ videoMeta, audioDuration, segmentSeconds, usage });
       concatVideo = path.join(runDir, "mixed-video.mp4");
-      renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality: payload.quality || "fast", dedup, overlayFiles, warnings });
     }
-
-    patchJob({
-      status: "running",
-      percent: progress(done, total, 62),
-      message: `合成音频和字幕：${path.basename(audioPath)} 第 ${variant} 轮`,
-      progressCurrent: Math.min(total, done + 1),
-      progressTotal: total,
-      updatedAt: Date.now()
-    });
 
     const finalAudioPath = prepareAudioWithBackgroundMusic({
       audioPath,
@@ -235,14 +244,13 @@ async function main() {
       audioTitle: path.basename(audioPath)
     });
 
-    muxAudioAndCaptions({
-      inputVideo: concatVideo,
+    const muxOptions = {
       audioPath: finalAudioPath,
       outputPath,
       captions,
       width,
       height,
-      fontFile: resolveBadgeFont(config.fontFile),
+      fontFile,
       subtitleFontSize,
       subtitleYPercent,
       subtitleAnimationMode,
@@ -250,8 +258,75 @@ async function main() {
       novelBadge,
       openingTitle,
       endCard,
-      quality: payload.quality || "fast"
-    });
+      quality
+    };
+
+    let encodeSeconds = 0;
+    let clipSeconds = 0;
+    let muxSeconds = 0;
+    let encodeMode = isParkourVideoTemplate(payload) ? "parkour" : "legacy";
+    const encodeStarted = Date.now();
+    const useOnePass = payload.onePass !== false && !isParkourVideoTemplate(payload);
+    if (useOnePass) {
+      patchJob({
+        status: "running",
+        percent: progress(done, total, 28),
+        message: `一次合成：${path.basename(audioPath)} 第 ${variant} 轮`,
+        progressCurrent: Math.min(total, done + 1),
+        progressTotal: total,
+        updatedAt: Date.now()
+      });
+      try {
+        renderMixOnePass({
+          clips,
+          runDir,
+          width,
+          height,
+          fps,
+          quality,
+          dedup,
+          overlayFiles,
+          ...muxOptions
+        });
+        encodeMode = "one-pass";
+      } catch (error) {
+        const reason = String(error?.message || error || "").replace(/\s+/g, " ").slice(0, 240);
+        warnings.push(`一次合成失败，已改回分段编码：${reason}`);
+        const clipStarted = Date.now();
+        await renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings });
+        clipSeconds = round2((Date.now() - clipStarted) / 1000);
+        const muxStarted = Date.now();
+        muxAudioAndCaptions({ inputVideo: concatVideo, ...muxOptions });
+        muxSeconds = round2((Date.now() - muxStarted) / 1000);
+        encodeMode = "legacy-fallback";
+      }
+    } else {
+      if (!isParkourVideoTemplate(payload)) {
+        patchJob({
+          status: "running",
+          percent: progress(done, total, 28),
+          message: `切段编码（${clipRenderConcurrency()} 路并行）：${path.basename(audioPath)} 第 ${variant} 轮`,
+          progressCurrent: Math.min(total, done + 1),
+          progressTotal: total,
+          updatedAt: Date.now()
+        });
+        const clipStarted = Date.now();
+        await renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings });
+        clipSeconds = round2((Date.now() - clipStarted) / 1000);
+      }
+      patchJob({
+        status: "running",
+        percent: progress(done, total, 62),
+        message: `合成音频和字幕：${path.basename(audioPath)} 第 ${variant} 轮`,
+        progressCurrent: Math.min(total, done + 1),
+        progressTotal: total,
+        updatedAt: Date.now()
+      });
+      const muxStarted = Date.now();
+      muxAudioAndCaptions({ inputVideo: concatVideo, ...muxOptions });
+      muxSeconds = round2((Date.now() - muxStarted) / 1000);
+    }
+    encodeSeconds = round2((Date.now() - encodeStarted) / 1000);
 
     const savedPath = saveDir ? copyToSaveDir(outputPath, saveDir) : "";
 
@@ -279,6 +354,10 @@ async function main() {
       assetGroupId: group.id,
       assetGroupName: group.name || group.id,
       duration: audioDuration,
+      encodeSeconds,
+      clipSeconds,
+      muxSeconds,
+      encodeMode,
       videoUrl: `/outputs/${encodeURIComponent(path.basename(outputPath))}`,
       fileName: path.basename(outputPath),
       savedPath,
@@ -293,7 +372,9 @@ async function main() {
     patchJob({
       status: "running",
       percent: progress(done, total, 0),
-      message: `已完成 ${done}/${total}`,
+      message: muxSeconds
+        ? `已完成 ${done}/${total}，本条 ${encodeSeconds} 秒（切段 ${clipSeconds} + 字幕片尾 ${muxSeconds}）`
+        : `已完成 ${done}/${total}，本条合成 ${encodeSeconds} 秒`,
       progressCurrent: done,
       progressTotal: total,
       results,
@@ -498,12 +579,10 @@ function renderParkourBed({ videoMeta, audioDuration, usage, usedIds, runDir, wi
   const source = pickUnusedParkourSource(videoMeta, { usedIds, usage });
   if (!source) throw new Error("跑酷视频都已抽过，没有未使用的成片了。");
   const concatVideo = path.join(runDir, "parkour-bed.mp4");
-  const preset = quality === "quality" ? "medium" : "veryfast";
-  const crf = quality === "quality" ? "20" : "24";
   const filter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=${fps},format=yuv420p`;
   const args = ["-y", "-hide_banner"];
   if (parkourNeedsLoop(source.duration, audioDuration)) args.push("-stream_loop", "-1");
-  args.push("-i", source.file, "-t", String(audioDuration), "-vf", filter, "-an", "-c:v", "libx264", "-preset", preset, "-crf", crf, concatVideo);
+  args.push("-i", source.file, "-t", String(audioDuration), "-vf", filter, "-an", ...clipVideoEncodeArgs(quality), concatVideo);
   run("ffmpeg", args);
   return {
     concatVideo,
@@ -551,27 +630,237 @@ function pickClips({ videoMeta, audioDuration, segmentSeconds, usage }) {
   return clips;
 }
 
-function renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings = [] }) {
-  const preset = quality === "quality" ? "medium" : "veryfast";
-  const crf = quality === "quality" ? "20" : "24";
+function renderMixOnePass({
+  clips,
+  runDir,
+  width,
+  height,
+  fps,
+  quality,
+  dedup,
+  overlayFiles,
+  audioPath,
+  outputPath,
+  captions,
+  fontFile,
+  subtitleFontSize,
+  subtitleYPercent,
+  subtitleAnimationMode,
+  duration,
+  novelBadge,
+  openingTitle,
+  endCard
+}) {
+  if (!Array.isArray(clips) || !clips.length) throw new Error("没有可合成的素材片段。");
+  const overlayIndexes = pickOverlayIndexes(clips.length, dedup.overlayCount, overlayFiles.length);
+  const linkFiles = clips.map((clip) => clip.file);
+  const overlayByClip = new Map();
+  for (const index of overlayIndexes) {
+    const overlayPath = overlayFiles[Math.floor(Math.random() * overlayFiles.length)];
+    if (overlayPath) {
+      overlayByClip.set(index, overlayPath);
+      linkFiles.push(overlayPath);
+    }
+  }
+  const runKey = `${path.basename(runDir).slice(0, 40)}-${Date.now()}`;
+  const shortInputs = createShortMixInputs(linkFiles, runKey);
+  try {
+    const clipInputs = shortInputs.mapped.slice(0, clips.length);
+    const overlayInputs = shortInputs.mapped.slice(clips.length);
+    let overlayCursor = 0;
+    const chains = [];
+    const concatLabels = [];
+    clips.forEach((clip, index) => {
+      const speed = dedup.enabled ? randomBetween(dedup.speedMin, dedup.speedMax) : 1;
+      clip.inputDuration = Math.max(0.1, clip.duration * speed);
+      clip.filter = buildClipFilter({ width, height, fps, dedup, speed });
+      const overlayPath = overlayByClip.get(index) ? overlayInputs[overlayCursor++] : "";
+      const videoLabel = `[${index}:v]${clip.filter}`;
+      if (overlayPath) {
+        const overlayIndex = clips.length + overlayInputs.indexOf(overlayPath);
+        chains.push(`${videoLabel}[b${index}]`);
+        chains.push(`[${overlayIndex}:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=rgba,colorchannelmixer=aa=${dedup.overlayOpacity.toFixed(3)}[ol${index}]`);
+        chains.push(`[b${index}][ol${index}]overlay=0:0:shortest=1,format=yuv420p[v${index}]`);
+      } else {
+        chains.push(`${videoLabel}[v${index}]`);
+      }
+      concatLabels.push(`[v${index}]`);
+    });
+    if (clips.length > 1) {
+      chains.push(`${concatLabels.join("")}concat=n=${clips.length}:v=1:a=0[vcat]`);
+    }
+    const finish = buildFinishVideoFilters({
+      workFolder: runDir,
+      captions,
+      width,
+      height,
+      fontFile,
+      subtitleFontSize,
+      subtitleYPercent,
+      subtitleAnimationMode,
+      duration,
+      novelBadge,
+      openingTitle,
+      endCard
+    });
+    const audioIndex = clips.length + overlayInputs.length;
+    const iconIndex = finish.iconPath ? audioIndex + 1 : -1;
+    const sourceLabel = clips.length === 1 ? "v0" : "vcat";
+    if (iconIndex >= 0) {
+      const pre = finish.filters.length ? finish.filters.join(",") : "format=yuv420p";
+      const iconY = Math.round((Number(height) || 1920) * 0.22);
+      chains.push(`[${sourceLabel}]${pre}[dec];[${iconIndex}:v]scale=220:220,format=rgba[icon];[dec][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${finish.endStart.toFixed(2)})'[vout]`);
+    } else if (finish.filters.length) {
+      chains.push(`[${sourceLabel}]${finish.filters.join(",")}[vout]`);
+    } else {
+      chains.push(`[${sourceLabel}]format=yuv420p[vout]`);
+    }
+    const scriptPath = path.join(runDir, "one-pass.txt");
+    fs.writeFileSync(scriptPath, `${chains.join(";\n")}\n`, "utf8");
+    writeClipPlan(path.join(runDir, "clip-plan.json"), clips);
+    const args = ["-y", "-hide_banner"];
+    clips.forEach((clip, index) => {
+      args.push("-ss", String(Math.max(0, clip.start)), "-t", String(clip.inputDuration), "-i", clipInputs[index]);
+    });
+    overlayInputs.forEach((overlayPath, index) => {
+      const clipIndex = [...overlayByClip.keys()][index];
+      const clipDuration = Math.max(0.1, Number(clips[clipIndex]?.duration) || 5);
+      const overlayExt = path.extname(overlayPath).toLowerCase();
+      if ([".png", ".jpg", ".jpeg", ".webp"].includes(overlayExt)) args.push("-loop", "1", "-t", String(clipDuration), "-i", overlayPath);
+      else args.push("-stream_loop", "-1", "-t", String(clipDuration), "-i", overlayPath);
+    });
+    args.push("-i", audioPath);
+    if (finish.iconPath) args.push("-i", finish.iconPath);
+    args.push(
+      "-t", String(duration),
+      "-/filter_complex", scriptPath,
+      "-map", "[vout]",
+      "-map", `${audioIndex}:a:0`,
+      ...finalVideoEncodeArgs(quality),
+      "-shortest",
+      "-c:a", "aac",
+      "-b:a", resolveFinalEncode(quality).audio,
+      "-movflags", "+faststart",
+      outputPath
+    );
+    const commandLength = ["ffmpeg", ...args].reduce((sum, value) => sum + String(value).length + 3, 0);
+    if (commandLength > 28000) throw new Error("一次合成命令过长，改回分段编码。");
+    run("ffmpeg", args);
+  } finally {
+    for (const dir of shortInputs.dirs || []) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+  }
+}
+
+function createShortMixInputs(files, runKey) {
+  const groups = new Map();
+  const dirs = [];
+  const mapped = [];
+  for (const file of files) {
+    const resolved = path.resolve(file);
+    const root = path.parse(resolved).root;
+    if (!groups.has(root)) {
+      const dir = path.join(root, "localfactory-mix-in", safeFileName(runKey));
+      ensureDir(dir);
+      groups.set(root, { dir, index: 0 });
+      dirs.push(dir);
+    }
+    const group = groups.get(root);
+    const dest = path.join(group.dir, `${String(group.index).padStart(4, "0")}${path.extname(resolved) || ".mp4"}`);
+    group.index += 1;
+    try {
+      fs.rmSync(dest, { force: true });
+      fs.linkSync(resolved, dest);
+      mapped.push(dest);
+    } catch {
+      mapped.push(resolved);
+    }
+  }
+  return { mapped, dirs };
+}
+
+function buildFinishVideoFilters({
+  workFolder,
+  captions,
+  width,
+  height,
+  fontFile,
+  subtitleFontSize,
+  subtitleYPercent,
+  subtitleAnimationMode,
+  duration,
+  novelBadge,
+  openingTitle = "",
+  endCard = null
+}) {
+  const endStart = endCard ? resolveEndCardStart(duration, captions, 3) : 0;
+  const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
+  let visibleCaptions = captions;
+  if (openingTitle) visibleCaptions = hideCaptionsUntil(visibleCaptions, titleDuration);
+  if (endCard) visibleCaptions = hideCaptionsAfter(visibleCaptions, endStart);
+  const filters = [];
+  const titleFilter = buildOpeningTitleDrawtext({
+    title: openingTitle,
+    fontFile,
+    textFile: path.join(workFolder, "opening-title.txt"),
+    durationSeconds: titleDuration || 3,
+    width
+  });
+  if (titleFilter) filters.push(titleFilter);
+  if (Array.isArray(visibleCaptions?.cues) && visibleCaptions.cues.length) {
+    const assPath = path.join(workFolder, "captions.ass");
+    const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
+      ? makeWordHighlightSubtitles(visibleCaptions.cues, visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
+      : makeAssSubtitles(visibleCaptions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
+    fs.writeFileSync(assPath, ass, "utf8");
+    filters.push(`subtitles='${ffPath(assPath).replace(/'/g, "\\'")}'`);
+  }
+  const badgeFilter = buildNovelBadgeDrawtext({
+    badge: novelBadge,
+    fontFile,
+    textFile: path.join(workFolder, "novel-badge.txt"),
+    enable: endCard ? `lt(t,${endStart.toFixed(2)})` : ""
+  });
+  if (badgeFilter) filters.push(badgeFilter);
+  const iconPath = endCard
+    ? renderNovelAppIcon({
+      platform: endCard.platform,
+      destPath: path.join(workFolder, `end-card-icon-${endCard.icon?.key || "app"}.png`),
+      fontFile
+    })
+    : "";
+  if (endCard) {
+    filters.push(buildEndCardDimFilter(endStart));
+    filters.push(...buildNovelEndCardDrawtext({
+      card: endCard,
+      fontFile,
+      startAt: endStart,
+      width,
+      height
+    }));
+  }
+  return { filters, iconPath, endStart };
+}
+
+async function renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings = [] }) {
   const listPath = path.join(runDir, "concat.txt");
   const planPath = path.join(runDir, "clip-plan.json");
-  const clipPaths = [];
   const overlayIndexes = pickOverlayIndexes(clips.length, dedup.overlayCount, overlayFiles.length);
   const failedAssetIds = new Set();
+  const encodeArgs = clipVideoEncodeArgs(quality);
+  const clipPaths = clips.map((_, index) => path.join(runDir, `clip-${String(index).padStart(4, "0")}.mp4`));
 
   writeClipPlan(planPath, clips);
-  for (let index = 0; index < clips.length; index += 1) {
-    const clipPath = path.join(runDir, `clip-${String(index).padStart(4, "0")}.mp4`);
+  await mapLimit(clips, clipRenderConcurrency(), async (_clip, index) => {
+    const clipPath = clipPaths[index];
     let lastError = null;
-    let rendered = false;
-
-    for (let attempt = 0; attempt < 4 && !rendered; attempt += 1) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
       const clip = clips[index];
       try {
         try { fs.rmSync(clipPath, { force: true }); } catch { /* best effort */ }
-        renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles, width, height, fps, preset, crf, dedup });
-        rendered = true;
+        await renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles, width, height, fps, encodeArgs, dedup });
+        return;
       } catch (error) {
         lastError = error;
         failedAssetIds.add(String(clip.assetId || clip.file));
@@ -589,19 +878,16 @@ function renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, heig
         writeClipPlan(planPath, clips, { index, attempt: attempt + 1, warning, error: error.message });
       }
     }
-
-    if (!rendered) {
-      const clip = clips[index];
-      throw new Error(`无法渲染素材片段 ${index + 1}/${clips.length}：${path.basename(clip.file)}，起点 ${round2(clip.start)} 秒。${lastError?.message || "FFmpeg 未返回详细错误"}`);
-    }
-    clipPaths.push(clipPath);
-  }
+    const clip = clips[index];
+    throw new Error(`无法渲染素材片段 ${index + 1}/${clips.length}：${path.basename(clip.file)}，起点 ${round2(clip.start)} 秒。${lastError?.message || "FFmpeg 未返回详细错误"}`);
+  });
+  writeClipPlan(planPath, clips);
 
   fs.writeFileSync(listPath, clipPaths.map((file) => `file '${file.replace(/\\/g, "/").replace(/'/g, "'\\''")}'`).join("\n"), "utf8");
   run("ffmpeg", ["-y", "-hide_banner", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", concatVideo]);
 }
 
-function renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles, width, height, fps, preset, crf, dedup }) {
+async function renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles, width, height, fps, encodeArgs, dedup }) {
   const speed = dedup.enabled ? randomBetween(dedup.speedMin, dedup.speedMax) : 1;
   const inputDuration = Math.max(0.1, clip.duration * speed);
   const filter = buildClipFilter({ width, height, fps, dedup, speed });
@@ -619,19 +905,38 @@ function renderSingleClip({ clip, clipPath, index, overlayIndexes, overlayFiles,
     args.push(
       "-filter_complex",
       `[0:v]${filter}[base];[1:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=rgba,colorchannelmixer=aa=${dedup.overlayOpacity.toFixed(3)}[ol];[base][ol]overlay=0:0:shortest=1,format=yuv420p[out]`,
-      "-map", "[out]", "-an", "-c:v", "libx264", "-preset", preset, "-crf", crf, clipPath
+      "-map", "[out]", "-an", ...encodeArgs, clipPath
     );
-    run("ffmpeg", args);
+    await runAsync("ffmpeg", args);
     return;
   }
-  run("ffmpeg", [
+  await runAsync("ffmpeg", [
     "-y", "-hide_banner",
     "-ss", String(Math.max(0, clip.start)),
     "-t", String(inputDuration),
     "-i", clip.file,
     "-vf", filter,
-    "-an", "-c:v", "libx264", "-preset", preset, "-crf", crf, clipPath
+    "-an", ...encodeArgs, clipPath
   ]);
+}
+
+function clipRenderConcurrency() {
+  return hasNvencEncoder() ? 3 : 2;
+}
+
+async function mapLimit(items, limit, worker) {
+  const total = Array.isArray(items) ? items.length : 0;
+  if (!total) return;
+  const size = Math.max(1, Math.min(Number(limit) || 1, total));
+  let next = 0;
+  async function pump() {
+    while (next < total) {
+      const index = next;
+      next += 1;
+      await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: size }, () => pump()));
 }
 
 function pickReplacementClip({ videoMeta, duration, usage, excludedIds }) {
@@ -701,25 +1006,12 @@ function buildClipFilter({ width, height, fps, dedup, speed = 1 }) {
   const filters = [];
   if (dedup?.enabled) {
     const scaleFactor = randomBetween(dedup.scaleMin, dedup.scaleMax);
-    const rotateDeg = randomBetween(dedup.rotateMin, dedup.rotateMax);
-    const brightness = randomBetween(dedup.brightnessMin, dedup.brightnessMax);
-    const contrast = randomBetween(dedup.contrastMin, dedup.contrastMax);
-    const saturation = randomBetween(dedup.saturationMin, dedup.saturationMax);
     const mirror = Math.random() * 100 < dedup.mirrorChance;
     const scaledWidth = Math.ceil(width * scaleFactor / 2) * 2;
     const scaledHeight = Math.ceil(height * scaleFactor / 2) * 2;
     filters.push(`scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=increase`);
     if (mirror) filters.push("hflip");
-    if (Math.abs(rotateDeg) > 0.01) {
-      filters.push(`rotate=${(rotateDeg * Math.PI / 180).toFixed(6)}:ow=rotw(iw):oh=roth(ih):fillcolor=black`);
-      filters.push(`scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=increase`);
-    }
     filters.push(`crop=${width}:${height}`);
-    filters.push(`eq=brightness=${brightness.toFixed(3)}:contrast=${contrast.toFixed(3)}:saturation=${saturation.toFixed(3)}`);
-    if (dedup.sharpen > 0) {
-      const amount = dedup.sharpen.toFixed(2);
-      filters.push(`unsharp=5:5:${amount}:3:3:0.00`);
-    }
   } else {
     filters.push(`scale=${width}:${height}:force_original_aspect_ratio=increase`);
     filters.push(`crop=${width}:${height}`);
@@ -783,86 +1075,40 @@ function randomBetween(min, max) {
 
 function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", endCard = null, quality = "fast" }) {
   const workFolder = path.dirname(inputVideo);
-  const endStart = endCard ? resolveEndCardStart(duration, captions, 3) : 0;
-  const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
-  let visibleCaptions = captions;
-  if (openingTitle) visibleCaptions = hideCaptionsUntil(visibleCaptions, titleDuration);
-  if (endCard) visibleCaptions = hideCaptionsAfter(visibleCaptions, endStart);
-  const filters = [];
-  const titleFilter = buildOpeningTitleDrawtext({
-    title: openingTitle,
+  const finish = buildFinishVideoFilters({
+    workFolder,
+    captions,
+    width,
+    height,
     fontFile,
-    textFile: path.join(workFolder, "opening-title.txt"),
-    durationSeconds: titleDuration || 3,
-    width
+    subtitleFontSize,
+    subtitleYPercent,
+    subtitleAnimationMode,
+    duration,
+    novelBadge,
+    openingTitle,
+    endCard
   });
-  if (titleFilter) filters.push(titleFilter);
-  if (Array.isArray(visibleCaptions?.cues) && visibleCaptions.cues.length) {
-    const assPath = path.join(workFolder, "captions.ass");
-    const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
-      ? makeWordHighlightSubtitles(visibleCaptions.cues, visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
-      : makeAssSubtitles(visibleCaptions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
-    fs.writeFileSync(assPath, ass, "utf8");
-    filters.push(`subtitles='${ffPath(assPath).replace(/'/g, "\\'")}'`);
-  }
-  const badgeFilter = buildNovelBadgeDrawtext({
-    badge: novelBadge,
-    fontFile,
-    textFile: path.join(workFolder, "novel-badge.txt"),
-    enable: endCard ? `lt(t,${endStart.toFixed(2)})` : ""
-  });
-  if (badgeFilter) filters.push(badgeFilter);
-  const iconPath = endCard
-    ? renderNovelAppIcon({
-      platform: endCard.platform,
-      destPath: path.join(workFolder, `end-card-icon-${endCard.icon?.key || "app"}.png`),
-      fontFile
-    })
-    : "";
-  if (endCard) {
-    filters.push(buildEndCardDimFilter(endStart));
-    filters.push(...buildNovelEndCardDrawtext({
-      card: endCard,
-      fontFile,
-      startAt: endStart,
-      width,
-      height
-    }));
-  }
   const encode = resolveFinalEncode(quality);
   const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath];
-  if (iconPath) args.push("-i", iconPath);
+  if (finish.iconPath) args.push("-i", finish.iconPath);
   args.push("-t", String(duration));
-  if (iconPath) {
-    const pre = filters.length ? filters.join(",") : "format=yuv420p";
+  if (finish.iconPath) {
+    const pre = finish.filters.length ? finish.filters.join(",") : "format=yuv420p";
     const iconY = Math.round((Number(height) || 1920) * 0.22);
     args.push(
       "-filter_complex",
-      `[0:v]${pre}[dec];[2:v]scale=220:220,format=rgba[icon];[dec][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${endStart.toFixed(2)})'[vout]`,
+      `[0:v]${pre}[dec];[2:v]scale=220:220,format=rgba[icon];[dec][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${finish.endStart.toFixed(2)})'[vout]`,
       "-map", "[vout]",
       "-map", "1:a:0",
-      "-c:v", "libx264",
-      "-preset", encode.preset,
-      "-crf", encode.crf,
-      "-maxrate", encode.maxrate,
-      "-bufsize", encode.bufsize,
-      "-pix_fmt", "yuv420p",
-      "-profile:v", "high",
-      "-level", "4.1"
+      ...finalVideoEncodeArgs(quality)
     );
-  } else if (filters.length) {
+  } else if (finish.filters.length) {
     args.push(
-      "-vf", filters.join(","),
+      "-vf", finish.filters.join(","),
       "-map", "0:v:0",
       "-map", "1:a:0",
-      "-c:v", "libx264",
-      "-preset", encode.preset,
-      "-crf", encode.crf,
-      "-maxrate", encode.maxrate,
-      "-bufsize", encode.bufsize,
-      "-pix_fmt", "yuv420p",
-      "-profile:v", "high",
-      "-level", "4.1"
+      ...finalVideoEncodeArgs(quality)
     );
   } else {
     args.push("-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy");
@@ -873,9 +1119,53 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
 
 function resolveFinalEncode(quality) {
   if (quality === "quality") {
-    return { preset: "medium", crf: "20", maxrate: "5M", bufsize: "10M", audio: "160k" };
+    return { preset: "medium", crf: "20", maxrate: "3.5M", bufsize: "7M", audio: "160k" };
   }
-  return { preset: "fast", crf: "22", maxrate: "4M", bufsize: "8M", audio: "128k" };
+  return { preset: "fast", crf: "22", maxrate: "2.5M", bufsize: "5M", audio: "128k" };
+}
+
+function hasNvencEncoder() {
+  if (hasNvencEncoder.cached != null) return hasNvencEncoder.cached;
+  const result = spawnSync("ffmpeg", ["-hide_banner", "-encoders"], { encoding: "utf8", windowsHide: true });
+  hasNvencEncoder.cached = /\bh264_nvenc\b/.test(String(result.stdout || ""));
+  return hasNvencEncoder.cached;
+}
+
+function clipVideoEncodeArgs(quality = "fast") {
+  if (hasNvencEncoder()) {
+    return quality === "quality"
+      ? ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "21", "-pix_fmt", "yuv420p"]
+      : ["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-pix_fmt", "yuv420p"];
+  }
+  const preset = quality === "quality" ? "medium" : "veryfast";
+  const crf = quality === "quality" ? "20" : "24";
+  return ["-c:v", "libx264", "-preset", preset, "-crf", crf];
+}
+
+function finalVideoEncodeArgs(quality = "fast") {
+  const encode = resolveFinalEncode(quality);
+  if (hasNvencEncoder()) {
+    return [
+      "-c:v", "h264_nvenc",
+      "-preset", quality === "quality" ? "p5" : "p4",
+      "-rc", "vbr",
+      "-cq", quality === "quality" ? "21" : "23",
+      "-maxrate", encode.maxrate,
+      "-bufsize", encode.bufsize,
+      "-pix_fmt", "yuv420p",
+      "-profile:v", "high"
+    ];
+  }
+  return [
+    "-c:v", "libx264",
+    "-preset", encode.preset,
+    "-crf", encode.crf,
+    "-maxrate", encode.maxrate,
+    "-bufsize", encode.bufsize,
+    "-pix_fmt", "yuv420p",
+    "-profile:v", "high",
+    "-level", "4.1"
+  ];
 }
 
 function resolveBadgeFont(fontFile) {
@@ -1039,6 +1329,37 @@ function run(command, args) {
   }
 }
 
+function runAsync(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true });
+    let stderr = "";
+    let stdout = "";
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+      if (stderr.length > 20 * 1024 * 1024) stderr = stderr.slice(-2 * 1024 * 1024);
+    });
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.length > 2 * 1024 * 1024) stdout = stdout.slice(-2 * 1024 * 1024);
+    });
+    child.on("error", (error) => {
+      reject(new Error(`${command} failed to start: ${error.message}`));
+    });
+    child.on("close", (status, signal) => {
+      if (status === 0) {
+        resolve();
+        return;
+      }
+      const output = String(stderr || stdout || "").trim();
+      const tail = output ? output.slice(-2400) : `signal=${signal || "none"}`;
+      const commandLine = [command, ...args].map((value) => /\s/.test(String(value)) ? JSON.stringify(String(value)) : String(value)).join(" ");
+      reject(new Error(`${command} failed with exit code ${status}: ${tail}\nCommand: ${commandLine}`));
+    });
+  });
+}
+
 function patchJob(patch) {
   const current = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
   fs.writeFileSync(jobPath, JSON.stringify({ ...current, ...patch }, null, 2), "utf8");
@@ -1055,7 +1376,7 @@ function uniqueOutputId(baseId) {
 }
 
 function safeFileName(value) {
-  return String(value || "reddit-mix").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "reddit-mix";
+  return String(value || "reddit-mix").trim().replace(/[<>:"/\\|?*'`\x00-\x1F]/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "reddit-mix";
 }
 
 function readJson(filePath) {

@@ -95,14 +95,11 @@
             <label class="compact-check"><input id="openingTitleEnabled" type="checkbox" /><span>前 3 秒在画面正中加开头标题，方便对比有无标题的流量</span></label>
             <label class="compact-check"><input id="endCardEnabled" type="checkbox" checked /><span>片尾写上搜书引导：Search 小说id、平台名和图标。不同小说用各自的 id 和图标</span></label>
             <details class="advanced-panel mix-only">
-              <summary><span>素材去重设置</span><small>随下方「保存生成规则」一起记住</small></summary>
+              <summary><span>素材去重设置</span><small>只保留缩放、镜像、变速；旋转和锐化已去掉</small></summary>
               <div class="grid controls-grid advanced-grid">
                 <label class="field"><span>缩放最小</span><input id="scaleMin" type="number" step="0.01" value="1.03" /></label>
                 <label class="field"><span>缩放最大</span><input id="scaleMax" type="number" step="0.01" value="1.08" /></label>
-                <label class="field"><span>旋转最小</span><input id="rotateMin" type="number" step="0.1" value="-0.8" /></label>
-                <label class="field"><span>旋转最大</span><input id="rotateMax" type="number" step="0.1" value="0.8" /></label>
                 <label class="field"><span>镜像概率</span><div class="input-suffix"><input id="mirrorChance" type="number" value="30" /><b>%</b></div></label>
-                <label class="field"><span>锐化强度</span><input id="sharpen" type="number" step="0.05" value="0.2" /></label>
                 <label class="field"><span>变速最小</span><input id="speedMin" type="number" step="0.01" value="0.96" /></label>
                 <label class="field"><span>变速最大</span><input id="speedMax" type="number" step="0.01" value="1.04" /></label>
               </div>

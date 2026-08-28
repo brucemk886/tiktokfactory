@@ -818,7 +818,7 @@ function attachDirectoryPickers() {
 
 function collectDedup() {
   const saved = readStored("reddit-mix-dedup-settings");
-  return { enabled: true, ...saved, scaleMin: number("#scaleMin", 1.03), scaleMax: number("#scaleMax", 1.08), rotateMin: number("#rotateMin", -0.8), rotateMax: number("#rotateMax", 0.8), mirrorChance: number("#mirrorChance", 30), sharpen: number("#sharpen", 0.2), speedMin: number("#speedMin", 0.96), speedMax: number("#speedMax", 1.04) };
+  return { enabled: true, ...saved, scaleMin: number("#scaleMin", 1.03), scaleMax: number("#scaleMax", 1.08), rotateMin: 0, rotateMax: 0, mirrorChance: number("#mirrorChance", 30), sharpen: 0, speedMin: number("#speedMin", 0.96), speedMax: number("#speedMax", 1.04) };
 }
 
 function collectSubtitleSettings() {
