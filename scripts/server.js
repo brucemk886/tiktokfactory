@@ -38,6 +38,7 @@ import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
 import { startFactoryCloudWorker } from "./factory-cloud-worker.js";
+import { readWatchdogSummary } from "./factory-watchdog.js";
 import { isOfficialPublishAbort, throwIfOfficialPublishAborted } from "./official-publish-abort.js";
 import { createWorkJournalService } from "./work-journal-local.js";
 
@@ -53,6 +54,18 @@ const psychologySettingsPath = path.join(workDir, "psychology-video-settings.jso
 
 ensureProject(root, bootConfig);
 fs.mkdirSync(jobsDir, { recursive: true });
+function logServerCrash(type, error) {
+  const text = `${new Date().toISOString()} ${type} ${error?.stack || error}\n`;
+  try { fs.appendFileSync(path.join(workDir, "server-crash.log"), text, "utf8"); } catch { /* keep crashing visible */ }
+  console.error(text);
+}
+process.on("uncaughtException", (error) => {
+  logServerCrash("uncaughtException", error);
+  process.exit(1);
+});
+process.on("unhandledRejection", (error) => {
+  logServerCrash("unhandledRejection", error);
+});
 const localAuth = createLocalAuthService({ workDir, initialGeeLark: bootConfig.geelark || {} });
 const publishService = createPublishService({
   root,
@@ -2080,7 +2093,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/auto-tasks") {
       const includeDeleted = session.user.role === "admin" && url.searchParams.get("includeDeleted") === "1";
-      return sendJson(res, 200, { tasks: filterTasksForUser(autoTaskManager.listTasks({ includeDeleted }), session.user), worker: autoTaskManager.getStatus() });
+      return sendJson(res, 200, {
+        tasks: filterTasksForUser(autoTaskManager.listTasks({ includeDeleted }), session.user),
+        worker: autoTaskManager.getStatus(),
+        watchdog: readWatchdogSummary(workDir)
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auto-tasks") {

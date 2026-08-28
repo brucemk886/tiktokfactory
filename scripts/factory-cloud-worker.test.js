@@ -11,6 +11,12 @@ import {
   localJobCancelled
 } from "./factory-cloud-worker.js";
 
+test("factory worker requeues its own interrupted jobs on hello", () => {
+  const source = fs.readFileSync(new URL("./factory-cloud-worker.js", import.meta.url), "utf8");
+  assert.match(source, /\/api\/worker\/hello/);
+  assert.match(source, /工人重启，已把/);
+});
+
 test("factory worker claims once a minute and does not poll cloud cancel", () => {
   assert.equal(DEFAULT_POLL_MS, 60_000);
   assert.equal(DEFAULT_SYNC_MS, 300_000);

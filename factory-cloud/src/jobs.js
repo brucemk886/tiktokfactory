@@ -165,6 +165,14 @@ export function isCancelledJob(job) {
   return ["cancelled", "canceled"].includes(String(job?.status || "").toLowerCase());
 }
 
+export function isOrphanRunningJob(job, workerId) {
+  const id = String(workerId || "").trim();
+  return Boolean(id)
+    && String(job?.status || "") === "running"
+    && String(job?.worker_id || "") === id
+    && !isCancelledJob(job);
+}
+
 export function completeJobNextStatus({ existingStatus, cancelled, failed } = {}) {
   if (isCancelledJob({ status: existingStatus }) || cancelled) return "cancelled";
   return failed ? "failed" : "done";
@@ -275,6 +283,37 @@ async function handleWorkerApi(request, env, url) {
       message: "本机工人在线，混剪任务会在 Local Factory 执行。"
     });
     return json({ ok: true, novelImport, archive });
+  }
+
+  if (method === "POST" && pathname === "/api/worker/hello") {
+    const payload = await readJson(request).catch(() => ({}));
+    const workerId = String(payload.workerId || request.headers.get("x-factory-worker") || "worker").slice(0, 80);
+    const stamp = now();
+    const rows = await env.DB.prepare(`
+      SELECT * FROM factory_jobs WHERE status = 'running' AND worker_id = ?
+    `).bind(workerId).all();
+    let requeued = 0;
+    for (const job of rows.results || []) {
+      if (!isOrphanRunningJob(job, workerId)) continue;
+      const changed = await env.DB.prepare(`
+        UPDATE factory_jobs
+        SET status = 'queued', worker_id = NULL, claimed_at = NULL, message = ?, updated_at = ?
+        WHERE id = ? AND status = 'running' AND worker_id = ?
+      `).bind("工人重启，已重新排队", stamp, job.id, workerId).run();
+      if (!changed.meta?.changes) continue;
+      await syncAutoTaskFromJob(env.DB, { ...job, status: "queued", message: "工人重启，已重新排队", percent: 0 }).catch((error) => {
+        console.error("syncAutoTaskFromJob", error?.message || error);
+      });
+      requeued += 1;
+    }
+    await kvSet(env.DB, "factory-worker-status", {
+      running: true,
+      cloud: false,
+      workerId,
+      lastSeenAt: stamp,
+      message: requeued ? `本机工人已上线，${requeued} 条中断任务已重新排队。` : "本机工人在线，混剪任务会在 Local Factory 执行。"
+    });
+    return json({ ok: true, requeued });
   }
 
   if (method === "POST" && pathname === "/api/worker/claim") {

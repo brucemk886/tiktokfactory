@@ -11,7 +11,7 @@ async function loadQueue() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取本地队列失败。");
     const tasks = Array.isArray(data.tasks) ? data.tasks.filter((task) => !task.deleted) : [];
-    renderSummary(tasks, data.worker || {});
+    renderSummary(tasks, data.worker || {}, data.watchdog || {});
     renderTasks(tasks);
   } catch (error) {
     listEl.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "读取本地队列失败。")}</div>`;
@@ -19,7 +19,7 @@ async function loadQueue() {
   if (!document.hidden) pollTimer = setTimeout(loadQueue, 3000);
 }
 
-function renderSummary(tasks, worker) {
+function renderSummary(tasks, worker, watchdog = {}) {
   const running = tasks.filter((task) => isActive(task)).length;
   const queued = tasks.filter((task) => task.status === "queued").length;
   const generated = tasks.reduce((sum, task) => sum + Number(task.generatedVideos?.length || task.progress?.current || 0), 0);
@@ -27,8 +27,11 @@ function renderSummary(tasks, worker) {
     card("正在执行", running),
     card("排队中", queued),
     card("已生成视频", generated),
-    card("工人", worker.running === false ? "未启动" : worker.activeTaskId ? "忙碌" : "空闲")
+    card("工人", worker.running === false ? "未启动" : worker.activeTaskId ? "忙碌" : "空闲"),
+    card("守护", watchdog.running ? (watchdog.restartCount ? `已拉起${watchdog.restartCount}次` : "在跑") : "未开")
   ].join("");
+  const note = document.querySelector("#watchdogNote");
+  if (note) note.textContent = watchdog.message || "";
 }
 
 function renderTasks(tasks) {

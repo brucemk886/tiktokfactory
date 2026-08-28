@@ -6,6 +6,8 @@
   "scripts": {
     "generate": "node scripts/generate.js",
     "start": "node scripts/server.js",
+    "watchdog": "node scripts/factory-watchdog.js",
+    "watchdog:install": "node scripts/factory-watchdog.js --install",
     "factory-worker": "node scripts/factory-cloud-worker.js",
     "remotion:studio": "remotion studio remotion/index.jsx"
   },

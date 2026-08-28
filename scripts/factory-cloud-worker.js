@@ -45,6 +45,7 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
   const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
   const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial };
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}`);
+  helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
   syncInventory(context).catch((error) => console.error("同步素材组失败：", error.message || error));
   setInterval(() => {
     syncInventory(context).catch((error) => console.error("同步素材组失败：", error.message || error));
@@ -53,6 +54,13 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
     console.error("工厂云工人退出：", error);
   });
   return { running: true, workerId };
+}
+
+async function helloWorker(context) {
+  const data = await request(context, "/api/worker/hello", { method: "POST", body: { workerId: context.workerId } });
+  if (Number(data?.requeued || 0) > 0) {
+    console.log(`工人重启，已把 ${data.requeued} 条中断任务重新排队。`);
+  }
 }
 
 async function loop(context) {

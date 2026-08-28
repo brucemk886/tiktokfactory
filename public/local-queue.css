@@ -46,7 +46,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
+}
+
+#watchdogNote {
+  margin: 0 0 18px;
 }
 
 .queue-summary article {

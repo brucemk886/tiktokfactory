@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, persistableJobResult, shouldWriteOfficialPublishRecords } from "./jobs.js";
+import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, isOrphanRunningJob, persistableJobResult, shouldWriteOfficialPublishRecords } from "./jobs.js";
 
 test("publish failure after generation keeps videos and needs attention", () => {
   const task = applyJobToTask({
@@ -125,6 +125,13 @@ test("stop keeps the task canceled and does not write publish records", () => {
     records: [{ id: "r1" }]
   }), false);
   assert.equal(isCancelledJob({ status: "cancelled" }), true);
+});
+
+test("worker restart requeues only its own running jobs", () => {
+  assert.equal(isOrphanRunningJob({ status: "running", worker_id: "windows-local" }, "windows-local"), true);
+  assert.equal(isOrphanRunningJob({ status: "queued", worker_id: "windows-local" }, "windows-local"), false);
+  assert.equal(isOrphanRunningJob({ status: "running", worker_id: "other" }, "windows-local"), false);
+  assert.equal(isOrphanRunningJob({ status: "cancelled", worker_id: "windows-local" }, "windows-local"), false);
 });
 
 test("opening variants survive job-result persistence", () => {

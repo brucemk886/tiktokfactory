@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>本地执行队列 · Local Factory</title>
   <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/local-queue.css?v=20260828-2">
+  <link rel="stylesheet" href="/local-queue.css?v=20260828-3">
   <link rel="stylesheet" href="/theme-ops.css">
 </head>
 <body class="work-page local-queue-page">
@@ -15,7 +15,7 @@
       <div>
         <p class="eyebrow">LOCAL WORKER</p>
         <h1>本地执行队列</h1>
-        <p class="page-copy">进度在本机看。要停就点停止，不会去问线上。线上工厂只在整单完成或失败时收到结果。</p>
+        <p class="page-copy">进度在本机看。要停就点停止，不会去问线上。工人掉线会由本机守护自动拉起。</p>
       </div>
       <div class="queue-heading-actions">
         <a class="primary-button" href="/tasks">Reddit 混剪</a>
@@ -23,11 +23,12 @@
       </div>
     </header>
     <section class="queue-summary" id="queueSummary"></section>
+    <p class="page-copy" id="watchdogNote"></p>
     <section class="queue-list" id="queueList">
       <div class="empty-state">正在读取本机任务…</div>
     </section>
   </main>
   <script src="/access.js"></script>
-  <script type="module" src="/local-queue.js?v=20260828-2"></script>
+  <script type="module" src="/local-queue.js?v=20260828-3"></script>
 </body>
 </html>
