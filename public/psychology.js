@@ -1,7 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 let phones = [];
 let settingsConfigured = false;
-let pollTimer = null;
 let previewTaskId = "";
 let generationMode = "batch";
 let batchTopics = [];
@@ -644,7 +643,6 @@ function updateSelectedCount() {
 }
 
 async function loadTasks() {
-  clearTimeout(pollTimer);
   try {
     const response = await fetch(`/api/auto-tasks?t=${Date.now()}`);
     const data = await response.json();
@@ -653,7 +651,6 @@ async function loadTasks() {
   } catch (error) {
     $("#taskList").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
   }
-  pollTimer = setTimeout(loadTasks, 2500);
 }
 
 function renderTasks(tasks) {

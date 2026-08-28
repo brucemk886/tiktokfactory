@@ -3,7 +3,6 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const FINAL_STATES = new Set(["success", "fail"]);
 let kind = "image";
 let tasks = [];
-let pollTimer = 0;
 
 $$("[data-kind]").forEach((button) => button.addEventListener("click", () => setKind(button.dataset.kind)));
 $$('input[name="imageModel"]').forEach((input) => input.addEventListener("change", () => input.closest("label").classList.toggle("selected", input.checked)));
@@ -36,7 +35,6 @@ async function loadOverview() {
     $("#credits").textContent = data.credits === null ? "--" : Number(data.credits).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
     $("#historyState").textContent = data.configured ? `${tasks.length} 条记录` : "Kie API Key 未配置";
     renderTasks();
-    schedulePolling();
   } catch (error) {
     setMessage(error.message, true);
     $("#historyState").textContent = "读取失败";
@@ -77,34 +75,12 @@ async function submit(event) {
     tasks = [...created, ...tasks];
     $("#prompt").value = "";
     renderTasks();
-    schedulePolling();
-    setMessage(failures.length ? `已提交 ${created.length} 个任务；${failures.length} 个模型失败：${failures.join("；")}` : kind === "chat" ? "AI 已回复。" : `已提交 ${created.length} 个生成任务，结果会自动更新。`, Boolean(failures.length));
+    setMessage(failures.length ? `已提交 ${created.length} 个任务；${failures.length} 个模型失败：${failures.join("；")}` : kind === "chat" ? "AI 已回复。" : `已提交 ${created.length} 个生成任务，点刷新查看结果。`, Boolean(failures.length));
   } catch (error) {
     setMessage(error.message || "生成失败。", true);
   } finally {
     button.disabled = false;
     button.textContent = kind === "chat" ? "发送" : "开始生成";
-  }
-}
-
-function schedulePolling() {
-  clearInterval(pollTimer);
-  const active = tasks.filter((task) => !FINAL_STATES.has(task.status));
-  if (!active.length) return;
-  pollTimer = window.setInterval(refreshActiveTasks, 4000);
-}
-
-async function refreshActiveTasks() {
-  const active = tasks.filter((task) => !FINAL_STATES.has(task.status));
-  if (!active.length) return schedulePolling();
-  const refreshed = await Promise.all(active.map((task) => requestJson(`/api/kie-ai/${encodeURIComponent(task.id)}`).then((data) => data.task).catch(() => null)));
-  const byId = new Map(refreshed.filter(Boolean).map((task) => [task.id, task]));
-  tasks = tasks.map((task) => byId.get(task.id) || task);
-  renderTasks();
-  if (!tasks.some((task) => !FINAL_STATES.has(task.status))) {
-    clearInterval(pollTimer);
-    pollTimer = 0;
-    loadOverview();
   }
 }
 

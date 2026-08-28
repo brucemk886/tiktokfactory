@@ -13,7 +13,6 @@ let currentUserRole = "member";
 let assetGroups = [];
 let audioGroups = [];
 let sharedLibrariesConfigured = false;
-let pollTimer = null;
 let lastTaskRenderKey = "";
 let captionPresets = [];
 const captionPresetStorageKey = "reddit-publish-caption-presets";
@@ -67,11 +66,6 @@ loadSharedLibraries();
 initializePublishProvider();
 updatePublishPlanHint();
 loadTasks();
-window.addEventListener("pagehide", stopTaskPolling);
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopTaskPolling();
-  else void loadTasks();
-});
 
 function applyIncomingAudioBatch() {
   const params = new URLSearchParams(location.search);
@@ -163,7 +157,6 @@ function setCreateButtonsDisabled(disabled) {
 }
 
 async function loadTasks() {
-  clearTimeout(pollTimer);
   try {
     const [tasksResponse, safetyResponse] = await Promise.all([fetch(`/api/auto-tasks?t=${Date.now()}`), fetch(`/api/geelark/safety?t=${Date.now()}`)]);
     const data = await tasksResponse.json();
@@ -186,7 +179,6 @@ async function loadTasks() {
   } catch (error) {
     taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "读取任务失败。")}</div>`;
   }
-  if (!document.hidden) pollTimer = setTimeout(loadTasks, 3000);
 }
 
 function expectedTaskVideos(task) {
@@ -287,11 +279,6 @@ function createTaskRenderKey(tasks, allTasks = []) {
     officialAccounts: (task.publish?.officialAccounts || []).map((account) => [account.connectionId, account.name, account.username])
   }))
   });
-}
-
-function stopTaskPolling() {
-  clearTimeout(pollTimer);
-  pollTimer = null;
 }
 
 async function handleTaskAction(event) {

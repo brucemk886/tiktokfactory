@@ -9,7 +9,6 @@ let pollTimer = null;
 let currentJobId = "";
 let selectedTemplate = "wheel";
 const SCHULTE_TEMPLATES = ["wheel", "tracking", "memory", "peripheral"];
-let batchTaskPollTimer = null;
 let batchPhones = [];
 const selectedBatchPhoneIds = new Set();
 
@@ -824,7 +823,6 @@ function updateBatchSelectedCount() {
 }
 
 async function loadBatchTasks() {
-  clearTimeout(batchTaskPollTimer);
   try {
     const response = await fetch(`/api/auto-tasks?t=${Date.now()}`);
     const data = await response.json();
@@ -833,7 +831,6 @@ async function loadBatchTasks() {
   } catch (error) {
     $("#batchTaskList").innerHTML = `<div class="schulte-empty">${escapeHtml(error.message)}</div>`;
   }
-  batchTaskPollTimer = setTimeout(loadBatchTasks, 2500);
 }
 
 function renderBatchTasks(tasks) {

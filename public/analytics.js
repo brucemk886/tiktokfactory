@@ -13,7 +13,6 @@ const elements = Object.fromEntries([
   "reuseModal", "reuseDialogTitle", "reuseDialogMeta", "reuseDialogBody", "closeReuseBtn"
 ].map((id) => [id, document.querySelector(`#${id}`)]));
 
-let pollTimer = 0;
 let currentAudioName = "";
 let currentAccountName = "";
 let accountAnalyticsItems = [];
@@ -172,7 +171,6 @@ async function loadDashboard() {
   try {
     const data = await requestJson(`/api/tiktok-analytics?${params}`);
     renderDashboard(data);
-    if (data.status?.running) startPolling();
   } catch (error) {
     setStatus(error.message, "error");
   }
@@ -211,7 +209,6 @@ function renderDashboard(data) {
     elements.syncState.textContent = run?.finishedAt ? `上次 ${formatDateTime(run.finishedAt)}` : "尚未抓取";
     if (run?.finishedAt) setStatus(`上次抓取完成：${run.completed || 0}/${run.total || 0} 个账号，失败 ${run.failed || 0} 个。`, run.failed ? "warning" : "success");
     else setStatus(`已读取 ${summary.videoCount || 0} 条本地视频数据。`, "success");
-    stopPolling();
   }
 }
 
@@ -711,16 +708,6 @@ function updateGroupOptions(groups) {
   const current = elements.groupFilter.value;
   elements.groupFilter.innerHTML = `<option value="">全部账号组</option>${groups.map((group) => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("")}`;
   if (groups.includes(current)) elements.groupFilter.value = current;
-}
-
-function startPolling() {
-  if (pollTimer) return;
-  pollTimer = window.setInterval(loadDashboard, 2000);
-}
-
-function stopPolling() {
-  window.clearInterval(pollTimer);
-  pollTimer = 0;
 }
 
 async function requestJson(url, options = {}) {
