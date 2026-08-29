@@ -82,8 +82,8 @@ function renderDashboard(data) {
   setText("#coveragePercent", formatPercent(summary.coveragePercent));
   setText("#generatedVideos", data.group?.generatedVideos || 0);
   usageStatus.textContent = data.group
-    ? `${data.group.name} · ${data.folders?.length || 0} 个子文件夹 · 实际使用率按秒计算，5秒片段触达率按区间计算`
-    : "尚未导入素材组。先在 Reddit 生成器中使用一次该素材目录。";
+    ? `${data.group.name} · ${data.folders?.length || 0} 个子文件夹 · 实际使用率按秒计算，5秒片段触达率按区间计算${formatSampledAt(data.sampledAt)}`
+    : "本机工人还没有把素材使用率同步上来。混剪仍会记账，工人在线后会传到工厂。";
   renderFolders(data.folders || []);
   renderAssets(data.highReuseAssets || []);
 }
@@ -157,5 +157,10 @@ function formatDuration(seconds) {
 }
 
 function formatPercent(value) { return `${Math.round(Number(value) || 0)}%`; }
+function formatSampledAt(value) {
+  const at = Number(value) || 0;
+  if (!at) return "";
+  return ` · 本机同步 ${new Date(at).toLocaleString("zh-CN", { hour12: false })}`;
+}
 function setText(selector, value) { const target = document.querySelector(selector); if (target) target.textContent = String(value); }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]); }

@@ -17,6 +17,7 @@ test("factory worker requeues its own interrupted jobs on hello", () => {
   assert.match(source, /\/api\/worker\/hello/);
   assert.match(source, /工人重启，已把/);
   assert.match(source, /mirrorCloudTask\(context, job, outcomeLocal\)/);
+  assert.match(source, /assetUsageDashboard: buildAssetUsageSnapshot/);
 });
 
 test("factory worker claims once a minute and does not poll cloud cancel", () => {

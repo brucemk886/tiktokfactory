@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
+import { buildAssetUsageSnapshot, discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
 import { runAudioImportJob } from "./audio-import-job.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { createAudioLibraryService } from "./audio-library.js";
@@ -610,7 +610,10 @@ async function syncInventory(context) {
       };
     }),
     redditMixSettings,
-    audioGroups: discoverAudioLibraryGroups(context.config)
+    audioGroups: discoverAudioLibraryGroups(context.config),
+    assetUsageDashboard: buildAssetUsageSnapshot(context.root, {
+      groupIds: groups.map((group) => group.id)
+    })
   };
   body.officialPublishRecords = readOfficialPublishRecords(context.workDir);
   if (!fs.existsSync(importMarker)) {

@@ -29,7 +29,8 @@ export async function handleCompat(request, env, url, session) {
     return json({ libraries: await kvGet(db, "shared-libraries", []) });
   }
   if (method === "GET" && pathname === "/api/asset-usage") {
-    return json({ groupId: url.searchParams.get("groupId") || "", clips: [], totals: { used: 0, unused: 0 } });
+    const snapshot = await kvGet(db, "asset-usage-dashboard", null);
+    return json(cloudAssetUsageDashboard(snapshot, String(url.searchParams.get("groupId") || "")));
   }
   if (method === "GET" && pathname === "/api/asset-library-root") {
     return json({ libraryRoot: "", cloud: true, message: "素材目录在工人机本地。" });
@@ -564,4 +565,44 @@ function publicAudioGroups(groups) {
       promotionCopy: String(group.promotionCopy || "").trim()
     };
   }).filter((group) => group.id && (group.path || group.paths.length));
+}
+
+function cloudAssetUsageDashboard(snapshot, groupId = "") {
+  const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
+  const emptySummary = {
+    folder: "",
+    totalAssets: 0,
+    usedAssets: 0,
+    totalDuration: 0,
+    usedSeconds: 0,
+    totalBuckets: 0,
+    usedBuckets: 0,
+    reusedBuckets: 0,
+    maxBucketReuse: 0,
+    clipUses: 0,
+    coveragePercent: 0,
+    freshPercent: 100,
+    reusePressure: 0,
+    risk: "low"
+  };
+  if (!groups.length) {
+    return {
+      groups: [],
+      group: null,
+      summary: emptySummary,
+      folders: [],
+      highReuseAssets: [],
+      sampledAt: Number(snapshot?.sampledAt) || 0
+    };
+  }
+  const selected = groups.find((group) => group.id === groupId) || groups[0];
+  const dash = snapshot?.dashboards?.[selected.id] || {};
+  return {
+    groups,
+    sampledAt: Number(snapshot?.sampledAt) || 0,
+    group: dash.group || selected,
+    summary: dash.summary || emptySummary,
+    folders: Array.isArray(dash.folders) ? dash.folders : [],
+    highReuseAssets: Array.isArray(dash.highReuseAssets) ? dash.highReuseAssets : []
+  };
 }

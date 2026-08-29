@@ -54,11 +54,11 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks"]
+    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "asset-usage"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
-    ["mid-video", "schulte", "podcast", "ai", "asset-usage", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"]
+    ["mid-video", "schulte", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "psychology").map((item) => item.id),
@@ -93,6 +93,7 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/mid-video-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/psychology-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-library"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/asset-usage"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-peer-hits"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/tasks"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/work-journal"), true);
@@ -163,6 +164,8 @@ test("factory cloud keeps peer hits under novel promotion", () => {
   assert.deepEqual(item?.roles, ["admin", "operator"]);
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-ops-report")?.label, "数据概览");
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-effects")?.label, "小说数据统计");
+  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage")?.group?.id, "novel-promotion");
+  assert.deepEqual(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage")?.roles, ["admin"]);
   assert.ok(
     CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-ops-report")
     < CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-effects")

@@ -20,7 +20,6 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("schulte", "/schulte", "舒尔特训练", ["admin"], midVideoGroup()),
   moduleItem("podcast", "/podcast", "播客模板", ["admin"], midVideoGroup()),
   moduleItem("ai", "/ai", "AI 创作", ["admin"], midVideoGroup()),
-  moduleItem("asset-usage", "/asset-usage", "素材使用率", ["admin"], midVideoGroup()),
   moduleItem("mid-video-effects", "/mid-video-effects", "数据概览", ["admin"], midVideoGroup()),
   moduleItem("mid-video-ops-report", "/mid-video-ops-report", "运营报表", ["admin"], midVideoGroup()),
   moduleItem("mid-video-publish", "/mid-video-publish", "视频发布", ["admin"], midVideoGroup()),
@@ -31,6 +30,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("novel-effects", "/novel-effects", "小说数据统计", ["admin"], novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ["admin"], novelPromotionGroup()),
   moduleItem("tasks", "/tasks", "Reddit 混剪", ["admin"], novelPromotionGroup()),
+  moduleItem("asset-usage", "/asset-usage", "素材使用率", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ["admin"], psychologyGroup()),
   moduleItem("psychology", "/psychology", "心理学视频自动化", ["admin"], psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ["admin"], psychologyGroup()),
@@ -110,6 +110,7 @@ export function shouldRedirectLocalPageToFactory(pathname) {
       "/psychology-ops-report",
       "/psychology-publish",
       "/reddit",
+      "/asset-usage",
       "/asset-cutter",
       "/work-journal-mindmap"
     ].includes(clean);

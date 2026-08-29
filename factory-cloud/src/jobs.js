@@ -261,6 +261,9 @@ async function handleWorkerApi(request, env, url) {
     if (Array.isArray(body.assetGroups)) await kvSet(env.DB, "asset-groups", body.assetGroups);
     if (Array.isArray(body.audioGroups)) await kvSet(env.DB, "audio-groups", body.audioGroups);
     if (body.usage) await kvSet(env.DB, "asset-usage", body.usage);
+    if (body.assetUsageDashboard && typeof body.assetUsageDashboard === "object") {
+      await kvSet(env.DB, "asset-usage-dashboard", body.assetUsageDashboard);
+    }
     if (body.redditMixSettings) await kvSet(env.DB, "reddit-mix-settings", body.redditMixSettings);
     let novelImport = null;
     if (body.novelContent && typeof body.novelContent === "object") {

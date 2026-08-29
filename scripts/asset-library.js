@@ -234,20 +234,62 @@ export function readUsage(root) {
 }
 
 export function getAssetUsageDashboard(root, groupId = "", options = {}) {
+  return dashboardFromSnapshot(buildAssetUsageSnapshot(root, options), groupId);
+}
+
+export function buildAssetUsageSnapshot(root, options = {}) {
   const visibleIds = Array.isArray(options.groupIds) && options.groupIds.length ? new Set(options.groupIds) : null;
   const groups = listAssetGroups(root).filter((group) => !visibleIds || visibleIds.has(group.id));
-  const selected = groups.find((group) => group.id === groupId) || groups[0] || null;
-  if (!selected) {
-    return {
-      groups: [],
-      group: null,
-      summary: emptyUsageSummary(),
-      folders: [],
-      highReuseAssets: []
-    };
-  }
-
   const usage = readUsage(root);
+  const publicGroups = groups.map(publicUsageGroup);
+  const dashboards = {};
+  for (const selected of groups) {
+    dashboards[selected.id] = buildGroupUsageDashboard(selected, usage);
+  }
+  return {
+    sampledAt: Date.now(),
+    groups: publicGroups,
+    dashboards
+  };
+}
+
+export function dashboardFromSnapshot(snapshot, groupId = "") {
+  const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
+  if (!groups.length) return emptyAssetUsageDashboard(Number(snapshot?.sampledAt) || 0);
+  const selected = groups.find((group) => group.id === groupId) || groups[0];
+  const dash = snapshot?.dashboards?.[selected.id] || {};
+  return {
+    groups,
+    sampledAt: Number(snapshot?.sampledAt) || 0,
+    group: dash.group || selected,
+    summary: dash.summary || emptyUsageSummary(),
+    folders: Array.isArray(dash.folders) ? dash.folders : [],
+    highReuseAssets: Array.isArray(dash.highReuseAssets) ? dash.highReuseAssets : []
+  };
+}
+
+export function emptyAssetUsageDashboard(sampledAt = 0) {
+  return {
+    groups: [],
+    group: null,
+    summary: emptyUsageSummary(),
+    folders: [],
+    highReuseAssets: [],
+    sampledAt
+  };
+}
+
+function publicUsageGroup(group) {
+  return {
+    id: group.id,
+    name: group.name || group.id,
+    totalAssets: group.totalAssets,
+    totalDuration: group.totalDuration,
+    generatedVideos: group.generatedVideos
+  };
+}
+
+function buildGroupUsageDashboard(selected, usage) {
   const folderMap = new Map();
   const assetRows = (selected.assets || []).map((asset) => buildUsageRow(asset, usage.assets?.[asset.id], selected.sourceDir));
   for (const row of assetRows) {
@@ -263,13 +305,6 @@ export function getAssetUsageDashboard(root, groupId = "", options = {}) {
     .sort((a, b) => b.totalDuration - a.totalDuration || a.folder.localeCompare(b.folder, "zh-Hans-CN"));
 
   return {
-    groups: groups.map((group) => ({
-      id: group.id,
-      name: group.name || group.id,
-      totalAssets: group.totalAssets,
-      totalDuration: group.totalDuration,
-      generatedVideos: group.generatedVideos
-    })),
     group: {
       id: selected.id,
       name: selected.name || selected.id,

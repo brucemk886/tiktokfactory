@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { getGeneratedVideoReuseDetail } from "./asset-library.js";
+import { dashboardFromSnapshot, getGeneratedVideoReuseDetail } from "./asset-library.js";
 import { createTikTokAnalyticsService, deduplicateVideoEntries, matchPublishRecords, normalizeTikTokPost } from "./tiktok-analytics.js";
 
 test("normalizes TikTokAPI.store post fields", () => {
@@ -292,6 +292,26 @@ test("calculates exact overlap between generated video clips", () => {
   assert.equal(detail.summary.reusedSeconds, 5);
   assert.equal(detail.summary.reusePercent, 50);
   assert.equal(detail.relatedVideos[0].sharedSeconds, 5);
+});
+
+test("factory asset-usage snapshot can resolve a group dashboard", () => {
+  const snapshot = {
+    sampledAt: 1788000000000,
+    groups: [{ id: "asmr", name: "ASMR", totalAssets: 2, totalDuration: 20, generatedVideos: 3 }],
+    dashboards: {
+      asmr: {
+        group: { id: "asmr", name: "ASMR", generatedVideos: 3 },
+        summary: { totalAssets: 2, usedSeconds: 10, coveragePercent: 40 },
+        folders: [{ folder: "food", totalAssets: 2 }],
+        highReuseAssets: [{ fileName: "ice.mp4", usedCount: 8 }]
+      }
+    }
+  };
+  const dash = dashboardFromSnapshot(snapshot, "asmr");
+  assert.equal(dash.group.id, "asmr");
+  assert.equal(dash.sampledAt, 1788000000000);
+  assert.equal(dash.highReuseAssets[0].usedCount, 8);
+  assert.equal(dashboardFromSnapshot(null).groups.length, 0);
 });
 
 test("stops before exceeding the configured daily request limit", async () => {
