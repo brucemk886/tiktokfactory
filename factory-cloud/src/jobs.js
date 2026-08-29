@@ -1,3 +1,4 @@
+import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -262,7 +263,12 @@ async function handleWorkerApi(request, env, url) {
     if (Array.isArray(body.audioGroups)) await kvSet(env.DB, "audio-groups", body.audioGroups);
     if (body.usage) await kvSet(env.DB, "asset-usage", body.usage);
     if (body.assetUsageDashboard && typeof body.assetUsageDashboard === "object") {
-      await kvSet(env.DB, "asset-usage-dashboard", body.assetUsageDashboard);
+      const existingDashboard = await kvGet(env.DB, "asset-usage-dashboard", null);
+      const incomingIds = collectSnapshotVideoIds(body.assetUsageDashboard).length;
+      const existingIds = collectSnapshotVideoIds(existingDashboard).length;
+      if (incomingIds || !existingIds) {
+        await kvSet(env.DB, "asset-usage-dashboard", body.assetUsageDashboard);
+      }
     }
     if (body.redditMixSettings) await kvSet(env.DB, "reddit-mix-settings", body.redditMixSettings);
     let novelImport = null;

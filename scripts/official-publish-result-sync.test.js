@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createOfficialPublishResultSync, nextBeijingRun, selectDueOfficialPublishRecords } from "./official-publish-result-sync.js";
+import { createOfficialPublishResultSync, nextBeijingRun, refreshOfficialPublishVideoIds, selectDueOfficialPublishRecords } from "./official-publish-result-sync.js";
 
 const SHANGHAI_MORNING = Date.parse("2026-08-12T10:00:00+08:00");
 
@@ -129,6 +129,36 @@ test("published records without stored video detail are retried on a later daily
     officialVideoDetailStatus: "synced",
     officialVideoSnapshots: [{ snapshotDate: "2026-08-12", syncedAt: SHANGHAI_MORNING }],
   }], SHANGHAI_MORNING).length, 0);
+});
+
+test("video id refresh only hits publish batches and writes ids back", async () => {
+  const records = [
+    officialRecord("record-1", "2026-08-28T01:00:00+08:00", { externalRef: "video-1:connection-1:0" }),
+    officialRecord("record-2", "2026-08-28T01:10:00+08:00", { status: "published", videoId: "already" }),
+  ];
+  let batchCalls = 0;
+  let detailCalls = 0;
+  const result = await refreshOfficialPublishVideoIds({
+    records,
+    service: {
+      async getPublishBatch() {
+        batchCalls += 1;
+        return { batch: { tasks: [remoteTask("task-1", "video-1:connection-1:0", "700000000000000099")] } };
+      },
+      async listVideos() {
+        detailCalls += 1;
+        return { videos: [] };
+      },
+    },
+  });
+  assert.equal(batchCalls, 1);
+  assert.equal(detailCalls, 0);
+  assert.equal(result.updated, 1);
+  assert.equal(result.published, 1);
+  assert.equal(result.withVideoId, 1);
+  assert.equal(result.nextRecords[0].videoId, "700000000000000099");
+  assert.equal(result.nextRecords[0].status, "published");
+  assert.equal(result.nextRecords[1].videoId, "already");
 });
 
 function officialRecord(id, scheduleIso, extra = {}) {

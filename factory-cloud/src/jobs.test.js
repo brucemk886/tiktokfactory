@@ -198,3 +198,10 @@ test("worker audio upload route is wired for generate-time cloud playback", asyn
   assert.match(source, /putNovelAudio/);
   assert.match(source, /worker\\\/audio/);
 });
+
+test("worker sync does not wipe a publish-linked usage snapshot", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("./jobs.js", import.meta.url), "utf8");
+  assert.match(source, /collectSnapshotVideoIds/);
+  assert.match(source, /incomingIds \|\| !existingIds/);
+});

@@ -10,6 +10,7 @@ body.usage-page { min-height: 100vh; background: var(--lf-surface); color: var(-
 .usage-actions button { height: 36px; padding: 0 12px; border: 1px solid #3b434d; border-radius: 5px; color: var(--lf-text); background: var(--lf-surface); font-size: 12px; font-weight: 700; cursor: pointer; }
 .usage-status { margin: 14px 0; color: #98a1aa; font-size: 12px; }
 .usage-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+.usage-impact-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .usage-summary-grid article { min-height: 92px; padding: 15px; border: 1px solid #292f36; border-radius: 6px; background: var(--lf-surface); }
 .usage-summary-grid span, .usage-summary-grid strong, .usage-summary-grid small { display: block; }
 .usage-summary-grid span { color: #939ca5; font-size: 11px; }

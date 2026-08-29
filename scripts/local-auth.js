@@ -21,7 +21,7 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
     try {
       const store = JSON.parse(fs.readFileSync(storePath, "utf8"));
       const version = Number(store.version || 1);
-      if (version >= 24) return;
+      if (version >= 25) return;
       for (const user of Array.isArray(store.users) ? store.users : []) {
         if (!Array.isArray(user.sidebarModules)) continue;
         user.sidebarModules = user.sidebarModules.filter((moduleId) => !["project-hub", "audio-library"].includes(moduleId));
@@ -111,8 +111,12 @@ export function createLocalAuthService({ workDir, initialGeeLark = {} }) {
         if (version < 24 && user.role !== "admin") {
           user.sidebarModules = sidebarModuleIdsForRole(user.role);
         }
+        if (version < 25 && user.role === "admin" && !user.sidebarModules.includes("asset-usage")) {
+          const tasksIndex = user.sidebarModules.indexOf("tasks");
+          user.sidebarModules.splice(tasksIndex >= 0 ? tasksIndex + 1 : user.sidebarModules.length, 0, "asset-usage");
+        }
       }
-      store.version = 24;
+      store.version = 25;
       try {
         fs.writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
       } catch {

@@ -19,6 +19,7 @@ test("stores sidebar visibility per account and filters modules by role", () => 
     assert.ok(admin.sidebarModules.includes("geelark-novel-effects"));
     assert.ok(admin.sidebarModules.includes("geelark-tasks"));
     assert.ok(admin.sidebarModules.includes("geelark-profiles"));
+    assert.ok(admin.sidebarModules.includes("asset-usage"));
     assert.ok(!admin.sidebarModules.includes("operator-official"));
     assert.ok(!admin.sidebarModules.includes("novel-effects"));
     assert.ok(!admin.sidebarModules.includes("novel-library"));
@@ -182,7 +183,7 @@ test("adds new admin modules to existing sidebars once", () => {
     }), "utf8");
 
     const auth = createLocalAuthService({ workDir });
-    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["local-queue", "tasks", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "accounts"]);
+    assert.deepEqual(auth.listUsers()[0].sidebarModules, ["local-queue", "tasks", "asset-usage", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "accounts"]);
 
     auth.updateUser("admin-1", { sidebarModules: ["geelark-tasks", "accounts"] });
     const reloaded = createLocalAuthService({ workDir });

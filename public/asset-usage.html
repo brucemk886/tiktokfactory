@@ -30,11 +30,12 @@
         <div>
           <p class="usage-kicker">ASSET INTELLIGENCE</p>
           <h1>素材使用率</h1>
-          <p>同时查看真实使用时长和5秒片段触达情况，避免把素材库误判为已经用完。</p>
+          <p>同时查看真实使用时长、成片对照和素材复用对播放的影响。</p>
         </div>
         <div class="usage-actions">
           <label class="usage-group-picker"><span>素材组</span><select id="groupSelect"></select></label>
-          <button id="reindexUsageBtn" type="button">更新当前账号组</button>
+          <button data-local-only id="syncUsageBtn" type="button">同步到线上</button>
+          <button data-local-only id="reindexUsageBtn" type="button">更新当前账号组</button>
           <button id="refreshUsageBtn" type="button">刷新素材组</button>
         </div>
       </header>
@@ -46,6 +47,33 @@
         <article><span>实际使用率</span><strong id="actualUsePercent">0%</strong><small>已使用时长 / 总时长</small></article>
         <article><span>5秒片段触达率</span><strong id="coveragePercent">0%</strong><small>触达过的5秒区间</small></article>
         <article><span>已生成视频</span><strong id="generatedVideos">0</strong><small>当前素材组</small></article>
+      </section>
+
+      <section class="usage-summary-grid usage-impact-grid" aria-label="成片与播放对照">
+        <article><span>对上官方发布</span><strong id="publishedMatched">0</strong><small>成片文件名对上发布记录</small></article>
+        <article><span>已回传视频 ID</span><strong id="withVideoId">0</strong><small>可对照 TikTok 成片</small></article>
+        <article><span>已有播放</span><strong id="withViews">0</strong><small>归档里对上的条数</small></article>
+        <article><span>对照均播</span><strong id="avgViews">0</strong><small>有播放数据的成片</small></article>
+      </section>
+
+      <section class="usage-panel">
+        <div class="usage-panel-head">
+          <div><h2>复用分层与播放</h2><p>按成片所用素材的平均使用次数分层，看复用高低对播放量的影响。只统计对上官方发布且已有视频 ID / 播放的成片。</p></div>
+        </div>
+        <div class="usage-table-wrap">
+          <table class="usage-table">
+            <thead>
+              <tr>
+                <th>复用分层</th>
+                <th>对上成片</th>
+                <th>有播放</th>
+                <th>均播</th>
+                <th>中位播放</th>
+              </tr>
+            </thead>
+            <tbody id="reuseTierRows"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="usage-panel">
@@ -73,11 +101,11 @@
       </section>
 
       <section class="usage-panel">
-        <div class="usage-panel-head"><div><h2>高复用素材</h2><p>这些源视频的5秒片段出现次数较高，后续抽取会自动降权。</p></div></div>
+        <div class="usage-panel-head"><div><h2>高复用素材</h2><p>这些源视频的5秒片段出现次数较高。对上官方成片后，可以看出同一素材复用对播放的影响。</p></div></div>
         <div class="usage-table-wrap">
           <table class="usage-table compact-table">
             <thead>
-              <tr><th>视频文件</th><th>子文件夹</th><th>时长</th><th>抽取次数</th><th>实际使用率</th><th>5秒片段触达率</th><th>重复5秒区间</th><th>状态</th></tr>
+              <tr><th>视频文件</th><th>子文件夹</th><th>时长</th><th>抽取次数</th><th>对上成片</th><th>均播</th><th>实际使用率</th><th>5秒片段触达率</th><th>重复5秒区间</th><th>状态</th></tr>
             </thead>
             <tbody id="assetRows"></tbody>
           </table>

@@ -2,6 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
+import {
+  buildPublishIndex,
+  collectGroupPublishVideos,
+  dashboardFromSnapshot,
+  emptyAssetUsageDashboard,
+  normalizeOutputId,
+  summarizeAssetImpact,
+  summarizePublishImpact
+} from "./asset-usage-impact.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 
 export const VIDEO_EXTENSIONS = [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"];
@@ -233,6 +242,8 @@ export function readUsage(root) {
   return readJson(store.usagePath, { assets: {}, generated: [] });
 }
 
+export { dashboardFromSnapshot, emptyAssetUsageDashboard, normalizeOutputId };
+
 export function getAssetUsageDashboard(root, groupId = "", options = {}) {
   return dashboardFromSnapshot(buildAssetUsageSnapshot(root, options), groupId);
 }
@@ -241,41 +252,19 @@ export function buildAssetUsageSnapshot(root, options = {}) {
   const visibleIds = Array.isArray(options.groupIds) && options.groupIds.length ? new Set(options.groupIds) : null;
   const groups = listAssetGroups(root).filter((group) => !visibleIds || visibleIds.has(group.id));
   const usage = readUsage(root);
+  const publishIndex = buildPublishIndex(options.publishRecords || []);
+  const viewsByVideoId = options.viewsByVideoId instanceof Map
+    ? options.viewsByVideoId
+    : new Map(Object.entries(options.viewsByVideoId || {}));
   const publicGroups = groups.map(publicUsageGroup);
   const dashboards = {};
   for (const selected of groups) {
-    dashboards[selected.id] = buildGroupUsageDashboard(selected, usage);
+    dashboards[selected.id] = buildGroupUsageDashboard(selected, usage, publishIndex, viewsByVideoId);
   }
   return {
     sampledAt: Date.now(),
     groups: publicGroups,
     dashboards
-  };
-}
-
-export function dashboardFromSnapshot(snapshot, groupId = "") {
-  const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
-  if (!groups.length) return emptyAssetUsageDashboard(Number(snapshot?.sampledAt) || 0);
-  const selected = groups.find((group) => group.id === groupId) || groups[0];
-  const dash = snapshot?.dashboards?.[selected.id] || {};
-  return {
-    groups,
-    sampledAt: Number(snapshot?.sampledAt) || 0,
-    group: dash.group || selected,
-    summary: dash.summary || emptyUsageSummary(),
-    folders: Array.isArray(dash.folders) ? dash.folders : [],
-    highReuseAssets: Array.isArray(dash.highReuseAssets) ? dash.highReuseAssets : []
-  };
-}
-
-export function emptyAssetUsageDashboard(sampledAt = 0) {
-  return {
-    groups: [],
-    group: null,
-    summary: emptyUsageSummary(),
-    folders: [],
-    highReuseAssets: [],
-    sampledAt
   };
 }
 
@@ -289,7 +278,7 @@ function publicUsageGroup(group) {
   };
 }
 
-function buildGroupUsageDashboard(selected, usage) {
+function buildGroupUsageDashboard(selected, usage, publishIndex = new Map(), viewsByVideoId = new Map()) {
   const folderMap = new Map();
   const assetRows = (selected.assets || []).map((asset) => buildUsageRow(asset, usage.assets?.[asset.id], selected.sourceDir));
   for (const row of assetRows) {
@@ -303,6 +292,7 @@ function buildGroupUsageDashboard(selected, usage) {
   const folders = Array.from(folderMap.values())
     .map(finalizeUsageAggregate)
     .sort((a, b) => b.totalDuration - a.totalDuration || a.folder.localeCompare(b.folder, "zh-Hans-CN"));
+  const { generatedCount, videos } = collectGroupPublishVideos(selected, usage, publishIndex, viewsByVideoId);
 
   return {
     group: {
@@ -313,21 +303,28 @@ function buildGroupUsageDashboard(selected, usage) {
     },
     summary: finalizeUsageAggregate(summary),
     folders,
+    impact: summarizePublishImpact(videos, generatedCount || selected.generatedVideos || 0),
+    videos: videos.map(({ assetIds, ...video }) => video),
     highReuseAssets: assetRows
       .filter((row) => row.usedCount > 0)
       .sort((a, b) => b.reusePressure - a.reusePressure || b.usedSeconds - a.usedSeconds)
       .slice(0, 20)
-      .map((row) => ({
-        fileName: row.fileName,
-        folder: row.folder,
-        duration: row.duration,
-        usedCount: row.usedCount,
-        usedSeconds: row.usedSeconds,
-        coveragePercent: row.coveragePercent,
-        reusedBuckets: row.reusedBuckets,
-        maxBucketReuse: row.maxBucketReuse,
-        risk: usageRisk(row)
-      }))
+      .map((row) => {
+        const matched = videos.filter((video) => video.assetIds.includes(row.assetId));
+        return {
+          fileName: row.fileName,
+          folder: row.folder,
+          duration: row.duration,
+          usedCount: row.usedCount,
+          usedSeconds: row.usedSeconds,
+          coveragePercent: row.coveragePercent,
+          reusedBuckets: row.reusedBuckets,
+          maxBucketReuse: row.maxBucketReuse,
+          risk: usageRisk(row),
+          impact: summarizeAssetImpact(matched),
+          matchedVideoIds: [...new Set(matched.map((video) => video.videoId).filter(Boolean))]
+        };
+      })
   };
 }
 
@@ -467,10 +464,6 @@ export function scoreClipReuse(usage, assetId, start, duration) {
   return bucketScore + (Number(assetUsage.usedCount) || 0) * 0.15;
 }
 
-function normalizeOutputId(value) {
-  const fileName = path.basename(String(value || ""));
-  return path.basename(fileName, path.extname(fileName)).toLowerCase();
-}
 
 function overlapRange(startA, durationA, startB, durationB) {
   const start = Math.max(Number(startA) || 0, Number(startB) || 0);
@@ -513,6 +506,7 @@ function buildUsageRow(asset, usageEntry = {}, sourceDir = "") {
   const coveragePercent = round2(Math.min(100, usedBuckets / totalBuckets * 100));
   const reusePressure = round2(reusedBuckets + Math.max(0, usedCount - 1) * 0.5 + Math.max(0, maxBucketReuse - 1) * 2);
   return {
+    assetId: asset.id || "",
     fileName: asset.fileName || path.basename(asset.file || ""),
     folder: topLevelFolder(asset.file, sourceDir),
     duration,
@@ -579,10 +573,6 @@ function usageRisk(value) {
   if (Number(value.maxBucketReuse) >= 5 || Number(value.reusePressure) >= 30) return "high";
   if (Number(value.maxBucketReuse) >= 2 || Number(value.reusePressure) >= 8) return "medium";
   return "low";
-}
-
-function emptyUsageSummary() {
-  return finalizeUsageAggregate(createUsageAggregate(""));
 }
 
 export function coveredBuckets(start, duration) {

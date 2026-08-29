@@ -612,7 +612,8 @@ async function syncInventory(context) {
     redditMixSettings,
     audioGroups: discoverAudioLibraryGroups(context.config),
     assetUsageDashboard: buildAssetUsageSnapshot(context.root, {
-      groupIds: groups.map((group) => group.id)
+      groupIds: groups.map((group) => group.id),
+      publishRecords: readOfficialPublishRecords(context.workDir)
     })
   };
   body.officialPublishRecords = readOfficialPublishRecords(context.workDir);
@@ -789,6 +790,43 @@ async function request(context, pathname, { method = "GET", body } = {}) {
 export const DEFAULT_POLL_MS = 60_000;
 export const DEFAULT_SYNC_MS = 300_000;
 export const LOCAL_WATCH_MS = 2_000;
+
+export async function pushAssetUsageDashboard({ root = process.cwd(), workDir, publishRecords } = {}) {
+  const config = readConfig(root);
+  const storage = resolveStorageDirs(root, config);
+  const resolvedWorkDir = workDir || storage.workDir;
+  const settings = loadSettings(resolvedWorkDir);
+  if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把素材使用率同步到线上。");
+  const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
+  const libraryRoot = String(config.assetLibraryRoot || "").trim();
+  const discovered = discoverAssetLibraryGroups(root, libraryRoot);
+  const groups = discovered.length
+    ? listAssetGroups(root).filter((group) => discovered.some((item) => item.id === group.id))
+    : listAssetGroups(root);
+  const records = Array.isArray(publishRecords) ? publishRecords : readOfficialPublishRecords(resolvedWorkDir);
+  const assetUsageDashboard = buildAssetUsageSnapshot(root, {
+    groupIds: groups.map((group) => group.id),
+    publishRecords: records
+  });
+  await request({ settings, workerId }, "/api/worker/sync", {
+    method: "POST",
+    body: { workerId, assetUsageDashboard }
+  });
+  const impact = Object.values(assetUsageDashboard.dashboards || {}).reduce((sum, dash) => {
+    const item = dash.impact || {};
+    return {
+      publishedMatched: sum.publishedMatched + Number(item.publishedMatched || 0),
+      withVideoId: sum.withVideoId + Number(item.withVideoId || 0),
+      withViews: sum.withViews + Number(item.withViews || 0)
+    };
+  }, { publishedMatched: 0, withVideoId: 0, withViews: 0 });
+  return {
+    ok: true,
+    sampledAt: assetUsageDashboard.sampledAt,
+    groups: assetUsageDashboard.groups?.length || 0,
+    ...impact
+  };
+}
 
 export function loadSettings(workDir) {
   let file = {};

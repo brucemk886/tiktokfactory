@@ -1,12 +1,20 @@
 const groupSelect = document.querySelector("#groupSelect");
 const refreshButton = document.querySelector("#refreshUsageBtn");
 const reindexButton = document.querySelector("#reindexUsageBtn");
+const syncButton = document.querySelector("#syncUsageBtn");
 const usageStatus = document.querySelector("#usageStatus");
 const folderRows = document.querySelector("#folderRows");
 const assetRows = document.querySelector("#assetRows");
+const reuseTierRows = document.querySelector("#reuseTierRows");
+const isLocalWorkerPage = ["localhost", "127.0.0.1"].includes(location.hostname);
+
+document.querySelectorAll("[data-local-only]").forEach((item) => {
+  item.hidden = !isLocalWorkerPage;
+});
 
 refreshButton?.addEventListener("click", loadUsage);
 reindexButton?.addEventListener("click", startReindex);
+syncButton?.addEventListener("click", syncToFactory);
 groupSelect?.addEventListener("change", loadUsage);
 loadUsage();
 
@@ -23,8 +31,29 @@ async function loadUsage() {
   } catch (error) {
     usageStatus.textContent = error.message || "读取素材使用率失败。";
     folderRows.innerHTML = `<tr><td colspan="8">暂无可用素材组。</td></tr>`;
-    assetRows.innerHTML = `<tr><td colspan="8">暂无数据。</td></tr>`;
+    assetRows.innerHTML = `<tr><td colspan="10">暂无数据。</td></tr>`;
+    if (reuseTierRows) reuseTierRows.innerHTML = `<tr><td colspan="5">暂无对照数据。</td></tr>`;
   } finally {
+    refreshButton.disabled = false;
+  }
+}
+
+async function syncToFactory() {
+  if (!isLocalWorkerPage) return;
+  syncButton.disabled = true;
+  refreshButton.disabled = true;
+  usageStatus.textContent = "正在回拉官方视频 ID，并同步盘点到线上...";
+  try {
+    const response = await fetch("/api/asset-usage/sync", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "同步到线上失败。");
+    const pulled = data.videoIds || {};
+    usageStatus.textContent = `已同步到线上：对上 ${data.publishedMatched || 0} 条发布，回传 ${pulled.withVideoId || data.withVideoId || 0} 个视频 ID。`;
+    await loadUsage();
+  } catch (error) {
+    usageStatus.textContent = error.message || "同步到线上失败。";
+  } finally {
+    syncButton.disabled = false;
     refreshButton.disabled = false;
   }
 }
@@ -76,16 +105,47 @@ function updateGroups(groups, selectedId) {
 
 function renderDashboard(data) {
   const summary = data.summary || {};
+  const impact = data.impact || {};
   setText("#totalAssets", summary.totalAssets || 0);
   setText("#totalDuration", formatDuration(summary.totalDuration));
   setText("#actualUsePercent", formatPercent(actualUsePercent(summary)));
   setText("#coveragePercent", formatPercent(summary.coveragePercent));
-  setText("#generatedVideos", data.group?.generatedVideos || 0);
+  setText("#generatedVideos", data.group?.generatedVideos || impact.generatedVideos || 0);
+  setText("#publishedMatched", impact.publishedMatched || 0);
+  setText("#withVideoId", impact.withVideoId || 0);
+  setText("#withViews", impact.withViews || 0);
+  setText("#avgViews", formatCount(impact.avgViews));
   usageStatus.textContent = data.group
-    ? `${data.group.name} · ${data.folders?.length || 0} 个子文件夹 · 实际使用率按秒计算，5秒片段触达率按区间计算${formatSampledAt(data.sampledAt)}`
-    : "本机工人还没有把素材使用率同步上来。混剪仍会记账，工人在线后会传到工厂。";
+    ? `${data.group.name} · 对上 ${impact.publishedMatched || 0} 条官方发布 · ${impact.withVideoId || 0} 条已有视频 ID${formatImpactHint(data, impact)}${formatSampledAt(data.sampledAt)}`
+    : (isLocalWorkerPage
+      ? "还没有素材使用率数据。混剪记账后点「同步到线上」传到工厂。"
+      : "本机工人还没有把素材使用率同步上来。混剪仍会记账，本地点同步后会传到工厂。");
+  renderReuseTiers(impact.reuseTiers || []);
   renderFolders(data.folders || []);
   renderAssets(data.highReuseAssets || []);
+}
+
+function formatImpactHint(data, impact) {
+  if (data.viewsEnriched) return " · 播放来自工厂官方归档";
+  if (impact.withVideoId && !impact.withViews) return isLocalWorkerPage ? " · 播放量同步到线上后对照归档" : " · 归档里还没有这些视频的播放";
+  return "";
+}
+
+function renderReuseTiers(rows) {
+  if (!reuseTierRows) return;
+  if (!rows.length) {
+    reuseTierRows.innerHTML = `<tr><td colspan="5">暂无对照数据。</td></tr>`;
+    return;
+  }
+  reuseTierRows.innerHTML = rows.map((row) => `
+    <tr>
+      <td><strong>${escapeHtml(row.label)}</strong></td>
+      <td>${row.videos || 0}</td>
+      <td>${row.withViews || 0}</td>
+      <td>${formatCount(row.avgViews)}</td>
+      <td>${formatCount(row.medianViews)}</td>
+    </tr>
+  `).join("");
 }
 
 function renderFolders(rows) {
@@ -109,7 +169,7 @@ function renderFolders(rows) {
 
 function renderAssets(rows) {
   if (!rows.length) {
-    assetRows.innerHTML = `<tr><td colspan="8">当前没有已使用的素材。</td></tr>`;
+    assetRows.innerHTML = `<tr><td colspan="10">当前没有已使用的素材。</td></tr>`;
     return;
   }
   assetRows.innerHTML = rows.map((row) => `
@@ -118,6 +178,8 @@ function renderAssets(rows) {
       <td>${escapeHtml(row.folder)}</td>
       <td>${formatDuration(row.duration)}</td>
       <td>${row.usedCount}</td>
+      <td>${row.impact?.matchedVideos || 0}</td>
+      <td>${formatCount(row.impact?.avgViews)}</td>
       <td>${formatPercent(actualUsePercent(row))}</td>
       <td>${formatPercent(row.coveragePercent)}</td>
       <td>${reuseCell(row)}</td>
@@ -150,13 +212,17 @@ function riskBadge(risk) {
 }
 
 function formatDuration(seconds) {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const total = Math.max(0, Number(seconds) || 0);
   const minutes = Math.floor(total / 60);
-  const remaining = total % 60;
+  const remaining = Math.round(total % 60);
   return minutes ? `${minutes}m ${String(remaining).padStart(2, "0")}s` : `${remaining}s`;
 }
 
 function formatPercent(value) { return `${Math.round(Number(value) || 0)}%`; }
+function formatCount(value) {
+  const number = Number(value) || 0;
+  return Number.isInteger(number) ? String(number) : number.toFixed(1);
+}
 function formatSampledAt(value) {
   const at = Number(value) || 0;
   if (!at) return "";

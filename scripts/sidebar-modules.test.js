@@ -33,6 +33,8 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.ok(!sidebarModuleIdsForRole("admin").includes("rewrite-records"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-publish-records"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-analytics"));
+  assert.ok(sidebarModuleIdsForRole("admin").includes("asset-usage"));
+  assert.ok(!sidebarModuleIdsForRole("operator").includes("asset-usage"));
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.href, "/novel-peer-hits");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.label, "同行爆款");
@@ -93,7 +95,7 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/mid-video-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/psychology-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-library"), true);
-  assert.equal(shouldRedirectLocalPageToFactory("/asset-usage"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/asset-usage"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-peer-hits"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/tasks"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/work-journal"), true);
@@ -103,6 +105,15 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/geelark-profiles"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/accounts"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/local-queue"), false);
+});
+
+test("asset usage stays local and only syncs from the worker machine", () => {
+  const html = fs.readFileSync(path.join(publicDir, "asset-usage.html"), "utf8");
+  const js = fs.readFileSync(path.join(publicDir, "asset-usage.js"), "utf8");
+  assert.match(html, /id="syncUsageBtn"/);
+  assert.match(html, /data-local-only/);
+  assert.match(js, /\/api\/asset-usage\/sync/);
+  assert.match(js, /item\.hidden = !isLocalWorkerPage/);
 });
 
 test("every authenticated HTML sidebar loads the canonical renderer", () => {

@@ -318,6 +318,94 @@ function beijingTimeForDate(timestamp, hour, minute = 0) {
   return Date.parse(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+08:00`);
 }
 
+export async function refreshOfficialPublishVideoIds({
+  service,
+  records,
+  now = Date.now,
+  requestIntervalMs = 0,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+} = {}) {
+  if (!service) throw new Error("Official publish video id refresh is not configured.");
+  const currentTime = now();
+  const all = Array.isArray(records) ? records : [];
+  const need = all.filter((record) => {
+    if (!isOfficial(record) || !batchIdOf(record)) return false;
+    const status = String(record.status || "").toLowerCase();
+    const videoId = String(record.videoId || "").trim();
+    if (videoId && (status === "published" || TERMINAL_FAILURES.has(status))) return false;
+    return true;
+  });
+  const byBatch = groupByBatch(need);
+  const updates = new Map();
+  const summary = { batches: byBatch.size, records: need.length, published: 0, failed: 0, withVideoId: 0, pending: 0 };
+  let lastRequestAt = 0;
+
+  async function callBridge(callback) {
+    const interval = Math.max(0, Number(requestIntervalMs) || 0);
+    const waitMs = Math.max(0, lastRequestAt + interval - now());
+    if (waitMs) await sleep(waitMs);
+    lastRequestAt = now();
+    return callback();
+  }
+
+  for (const [batchId, batchRecords] of byBatch) {
+    let batch;
+    try {
+      batch = (await callBridge(() => service.getPublishBatch(batchId)))?.batch;
+    } catch {
+      continue;
+    }
+    const remoteTasks = Array.isArray(batch?.tasks) ? batch.tasks : [];
+    for (const record of batchRecords) {
+      const remote = findRemoteTask(record, remoteTasks);
+      if (!remote) continue;
+      const remoteStatus = String(remote.status || "").toLowerCase();
+      const videoId = String(remote.videoId || "").trim();
+      const published = remoteStatus === "published";
+      const failed = TERMINAL_FAILURES.has(remoteStatus);
+      const username = String(remote.username || record.accountUsername || record.username || "").replace(/^@/, "").trim();
+      const update = {
+        officialRemoteStatus: remoteStatus,
+        remoteTaskId: String(remote.id || record.remoteTaskId || ""),
+        publishId: String(remote.publishId || record.publishId || ""),
+        videoId: videoId || String(record.videoId || ""),
+        videoUrl: String(remote.videoUrl || record.videoUrl || ""),
+        shareLink: String(remote.videoUrl || record.shareLink || ""),
+        updatedAt: currentTime,
+      };
+      if (username) {
+        update.username = username;
+        update.accountUsername = username;
+      }
+      if (published) {
+        update.status = "published";
+        update.publishError = "";
+        update.note = "TikTok 官方 API 已确认发布成功";
+        summary.published += 1;
+      } else if (failed) {
+        update.status = "failed";
+        update.publishError = String(remote.error || "");
+        update.note = update.publishError
+          ? `TikTok 拒绝：${update.publishError}`
+          : `TikTok 发布失败：${remoteStatus}`;
+        summary.failed += 1;
+      } else {
+        update.status = "submitted";
+        update.note = `TikTok 仍在处理：${remoteStatus || "queued"}`;
+        summary.pending += 1;
+      }
+      if (update.videoId) summary.withVideoId += 1;
+      updates.set(record.id, update);
+    }
+  }
+
+  return {
+    nextRecords: all.map((record) => (updates.has(record.id) ? { ...record, ...updates.get(record.id) } : record)),
+    updated: updates.size,
+    ...summary,
+  };
+}
+
 export function nextBeijingRun(timestamp, hour, minute = 0) {
   const today = beijingTimeForDate(timestamp, hour, minute);
   return timestamp < today ? today : today + DAY_MS;

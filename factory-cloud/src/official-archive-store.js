@@ -72,6 +72,22 @@ export async function getOfficialOperationSignals(env, db, options = {}) {
   });
 }
 
+export async function loadArchiveViewsByVideoIds(db, videoIds = []) {
+  const ids = [...new Set((Array.isArray(videoIds) ? videoIds : []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const views = new Map();
+  if (!ids.length) return views;
+  for (const slice of chunk(ids, 80)) {
+    const placeholders = slice.map(() => "?").join(", ");
+    const { results } = await db.prepare(
+      `SELECT video_id, views FROM official_videos_latest WHERE video_id IN (${placeholders})`
+    ).bind(...slice).all();
+    for (const row of results || []) {
+      views.set(String(row.video_id), Number(row.views) || 0);
+    }
+  }
+  return views;
+}
+
 export async function listLatestArchiveAccounts(db) {
   return (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
 }

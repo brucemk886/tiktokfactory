@@ -3,6 +3,7 @@ export const FACTORY_CLOUD_ORIGIN = "https://factory.tiktokaitool.com";
 export const LOCAL_SIDEBAR_MODULE_IDS = Object.freeze([
   "local-queue",
   "tasks",
+  "asset-usage",
   "operator-third-party",
   "geelark-profiles",
   "geelark-tasks",
@@ -110,7 +111,6 @@ export function shouldRedirectLocalPageToFactory(pathname) {
       "/psychology-ops-report",
       "/psychology-publish",
       "/reddit",
-      "/asset-usage",
       "/asset-cutter",
       "/work-journal-mindmap"
     ].includes(clean);

@@ -15,6 +15,8 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(store, /export async function upsertOfficialAccounts/);
   assert.match(store, /export async function deleteOfficialAccounts/);
   assert.match(store, /export async function applyOfficialArchivePush/);
+  assert.match(store, /export async function loadArchiveViewsByVideoIds/);
+  assert.match(store, /official_videos_latest WHERE video_id IN/);
   assert.match(store, /refreshArchiveMeta/);
   assert.match(store, /COALESCE\(SUM\(video_count\), 0\)/);
   assert.doesNotMatch(store, /filter\(\(key\) => !keep\.has\(key\)\)/);
@@ -38,6 +40,14 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(novels, /archiveAge > 30 \* 60 \* 1000/);
   assert.match(novels, /waitUntil/);
   assert.doesNotMatch(novels, /if \(!meta\.accountCount \|\| archiveAge/);
+});
+
+test("factory asset-usage reads archive views without importing the local asset library", async () => {
+  const compat = await readFile(new URL("compat.js", root), "utf8");
+  assert.match(compat, /applyArchiveViewsToSnapshot/);
+  assert.match(compat, /loadArchiveViewsByVideoIds/);
+  assert.match(compat, /asset-usage-impact\.js/);
+  assert.doesNotMatch(compat, /asset-library\.js/);
 });
 
 test("directory rows keep list fields without shipping full profile json", async () => {

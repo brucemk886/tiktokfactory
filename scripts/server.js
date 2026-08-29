@@ -35,9 +35,9 @@ import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PRO
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "./official-publish-records.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
-import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
+import { createOfficialPublishResultSync, refreshOfficialPublishVideoIds } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
-import { startFactoryCloudWorker } from "./factory-cloud-worker.js";
+import { pushAssetUsageDashboard, startFactoryCloudWorker } from "./factory-cloud-worker.js";
 import { readWatchdogSummary } from "./factory-watchdog.js";
 import { isOfficialPublishAbort, throwIfOfficialPublishAborted } from "./official-publish-abort.js";
 import { createWorkJournalService } from "./work-journal-local.js";
@@ -1871,8 +1871,36 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/asset-usage") {
       const groups = getConfiguredAssetGroups();
       return sendJson(res, 200, getAssetUsageDashboard(root, String(url.searchParams.get("groupId") || ""), {
-        groupIds: groups.map((group) => group.id)
+        groupIds: groups.map((group) => group.id),
+        publishRecords: readPublishRecords()
       }));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/asset-usage/sync") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以把素材使用率同步到线上。" });
+      const pulled = await refreshOfficialPublishVideoIds({
+        service: privateTikTokAnalytics,
+        records: readPublishRecords(),
+      });
+      if (pulled.updated) writePublishRecords(pulled.nextRecords);
+      const uploaded = await pushAssetUsageDashboard({
+        root,
+        workDir,
+        publishRecords: pulled.nextRecords
+      });
+      return sendJson(res, 200, {
+        ok: true,
+        videoIds: {
+          batches: pulled.batches,
+          checked: pulled.records,
+          updated: pulled.updated,
+          published: pulled.published,
+          failed: pulled.failed,
+          withVideoId: pulled.withVideoId,
+          pending: pulled.pending
+        },
+        ...uploaded
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/asset-library-root") {
