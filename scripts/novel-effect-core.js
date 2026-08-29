@@ -34,7 +34,10 @@ export function assembleOfficialNovelEffects({
 
 export function slimEffectsPage(page = {}, { keepZeroView = false, keepNovelId = "" } = {}) {
   const novels = (Array.isArray(page.novels) ? page.novels : [])
-    .filter((novel) => keepZeroView || Number(novel.performance?.totalViews) > 0 || novel.id === keepNovelId)
+    .filter((novel) => keepZeroView
+      || Number(novel.performance?.totalViews) > 0
+      || Number(novel.performance?.videoCount) > 0
+      || novel.id === keepNovelId)
     .map(slimEffectNovel);
   return {
     ...page,

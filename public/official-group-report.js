@@ -129,6 +129,9 @@ function render() {
   document.querySelector("#reportMeta").textContent = `${rangeLabel(report)} · ${scopeName} · ${sourceLabel} · 低播 < ${report.thresholds?.lowView || 200} · 高播 ≥ ${report.thresholds?.highView || 1000}`;
   document.querySelector("#summaryGrid").innerHTML = [
     ["发布视频", formatNumber(summary.published)],
+    ["发布成功", formatNumber(summary.publishSuccess)],
+    ["发布失败", formatNumber(summary.publishFailed)],
+    ["风控账号", formatNumber(summary.riskAccountCount)],
     ["0 播", formatNumber(summary.zeroView)],
     ["低播", formatNumber(summary.lowView)],
     ["高播", formatNumber(summary.highView)],

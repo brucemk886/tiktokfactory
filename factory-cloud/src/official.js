@@ -18,7 +18,7 @@ import {
   archiveAccountKeysForScope,
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
-import { parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
+import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
 import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -397,7 +397,7 @@ async function buildModuleReport(env, db, store, searchParams, user) {
   } catch (error) {
     console.error(JSON.stringify({ event: "ops-report-persist-failed", module: liveProject.moduleKey, error: String(error?.message || error) }));
   }
-  const livePayload = () => ({
+  const livePayload = async () => ({
     module: liveProject.moduleKey,
     project: liveProject,
     groups,
@@ -405,7 +405,7 @@ async function buildModuleReport(env, db, store, searchParams, user) {
     scopes: reportScopes(groups, canSeeProjectTotal),
     source: "live",
     dates: [],
-    report: computeLiveReport({
+    report: attachPublishOutcome(computeLiveReport({
       store,
       project: liveProject,
       groupId,
@@ -415,7 +415,7 @@ async function buildModuleReport(env, db, store, searchParams, user) {
       toKey: queryTo,
       bundle,
       groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-    }),
+    }), await loadScopedPublishStats(env, db, bundle, queryFrom, queryTo)),
   });
   const isCurrentWindow = queryFrom === currentFrom && queryTo === currentTo && (period === "week" || period === "today" || queryFrom === queryTo);
   if (isCurrentWindow || queryFrom !== queryTo) {
@@ -437,7 +437,10 @@ async function buildModuleReport(env, db, store, searchParams, user) {
     source: snapshot ? "snapshot" : "missing",
     persistedAt: snapshot?.updated_at || 0,
     dates: [],
-    report: snapshot?.report || emptySnapshotReport(liveProject, period, queryFrom, groupId, groups, queryTo),
+    report: attachPublishOutcome(
+      snapshot?.report || emptySnapshotReport(liveProject, period, queryFrom, groupId, groups, queryTo),
+      await loadScopedPublishStats(env, db, bundle, queryFrom, queryTo),
+    ),
   };
 }
 
@@ -519,6 +522,9 @@ function emptySnapshotReport(project, period, dateKey, groupId, groups, toKey = 
       avgView: 0,
       accountCount: 0,
       anomalyAccountCount: 0,
+      publishSuccess: 0,
+      publishFailed: 0,
+      riskAccountCount: 0,
     },
     buckets: { zeroView: [], lowView: [], highView: [] },
     anomalyAccounts: [],
@@ -546,6 +552,26 @@ async function buildGroupReport(env, db, store, groupId, period) {
     period,
     bundle,
   });
+}
+
+async function loadScopedPublishStats(env, db, bundle, fromKey, toKey) {
+  const start = Date.parse(`${fromKey}T00:00:00+08:00`);
+  const end = Date.parse(`${toKey}T00:00:00+08:00`) + 86_400_000;
+  const connectionIds = connectionIdsFromArchiveRows(bundle?.accountRows);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !connectionIds.length) {
+    return { success: 0, failed: 0, riskAccounts: 0 };
+  }
+  try {
+    const parts = [];
+    for (const chunk of chunkList(connectionIds, 200)) {
+      const params = new URLSearchParams({ from: String(start), to: String(end), connectionIds: chunk.join(",") });
+      parts.push(await signalDesk(env, db, `/api/v1/publish/stats?${params}`));
+    }
+    return mergePublishStats(parts);
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "publish-stats-unavailable", error: String(error?.message || error) }));
+    return { success: 0, failed: 0, riskAccounts: 0 };
+  }
 }
 
 function normalizeBase(value) {

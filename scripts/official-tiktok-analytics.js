@@ -218,6 +218,16 @@ export function createOfficialTikTokAnalyticsService({
     return requestJson(`/api/v1/publish/batches/${encodeURIComponent(id)}`);
   }
 
+  async function getPublishStats({ from, to, connectionIds = [] } = {}) {
+    const params = new URLSearchParams({
+      from: String(Math.max(0, Number(from) || 0)),
+      to: String(Math.max(0, Number(to) || 0)),
+    });
+    const ids = [...new Set((Array.isArray(connectionIds) ? connectionIds : []).map((value) => clean(value)).filter(Boolean))];
+    if (ids.length) params.set("connectionIds", ids.join(","));
+    return requestJson(`/api/v1/publish/stats?${params}`);
+  }
+
   async function cancelPublishBatch(batchId) {
     const id = clean(batchId);
     if (!id) return { skipped: true };
@@ -355,7 +365,7 @@ export function createOfficialTikTokAnalyticsService({
     };
   }
 
-  return { getPublicSettings, saveSettings, testConnection, listAccountPage, listAccounts, listArchivePage, listPublishAccounts, uploadPublishAsset, createPublishBatch, getPublishBatch, cancelPublishBatch, listVideos, getVideo, getOperationSignals };
+  return { getPublicSettings, saveSettings, testConnection, listAccountPage, listAccounts, listArchivePage, listPublishAccounts, uploadPublishAsset, createPublishBatch, getPublishBatch, getPublishStats, cancelPublishBatch, listVideos, getVideo, getOperationSignals };
 }
 
 function normalizeBaseUrl(value) {

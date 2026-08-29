@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeGroupReport, periodWindow, shanghaiDateKey, snapshotDateKey } from "./official-group-report.js";
+import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, periodWindow, shanghaiDateKey, snapshotDateKey } from "./official-group-report.js";
 
 test("classifies today videos into zero, low and high view buckets", () => {
   const now = Date.parse("2026-08-18T12:00:00+08:00");
@@ -44,6 +44,30 @@ test("custom date range only includes videos in the selected days", () => {
   assert.equal(report.summary.avgView, 300);
   assert.equal(report.fromKey, "2026-08-16");
   assert.equal(report.toKey, "2026-08-17");
+});
+
+test("attaches hub publish outcomes without changing archive video counts", () => {
+  const report = computeGroupReport({
+    group: { id: "g1", name: "A组" },
+    project: { id: "p1", name: "小说推文" },
+    period: "today",
+    now: Date.parse("2026-08-18T12:00:00+08:00"),
+    videos: [{ id: "v1", username: "a", title: "片", views: 80, createdAt: Date.parse("2026-08-18T09:00:00+08:00") }],
+  });
+  const next = attachPublishOutcome(report, { success: 92, failed: 14, riskAccounts: 7 });
+  assert.equal(next.summary.published, 1);
+  assert.equal(next.summary.publishSuccess, 92);
+  assert.equal(next.summary.publishFailed, 14);
+  assert.equal(next.summary.riskAccountCount, 7);
+  assert.deepEqual(connectionIdsFromArchiveRows([
+    { account_key: "tiktok:conn-1" },
+    { schema: "tiktok:conn-1" },
+    { accountKey: "local-only" },
+  ]), ["conn-1"]);
+  assert.deepEqual(mergePublishStats([
+    { success: 90, failed: 10, riskAccounts: 6 },
+    { success: 2, failed: 4, riskAccounts: 1 },
+  ]), { success: 92, failed: 14, riskAccounts: 7, pendingIngest: 0 });
 });
 
 test("week window starts on Monday in Shanghai", () => {

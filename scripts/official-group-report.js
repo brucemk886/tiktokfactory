@@ -166,6 +166,9 @@ export function computeGroupReport({
       avgView: inWindow.length ? Math.round(views / inWindow.length) : 0,
       accountCount: [...accountStats.values()].filter((item) => item.published > 0).length,
       anomalyAccountCount: anomalyAccounts.length,
+      publishSuccess: 0,
+      publishFailed: 0,
+      riskAccountCount: 0,
     },
     buckets: {
       zeroView: sortVideos(zeroView),
@@ -174,6 +177,42 @@ export function computeGroupReport({
     },
     anomalyAccounts,
   };
+}
+
+export function attachPublishOutcome(report, stats = {}) {
+  const current = report?.summary || {};
+  return {
+    ...report,
+    summary: {
+      ...current,
+      publishSuccess: Number(stats.success || 0),
+      publishFailed: Number(stats.failed || 0),
+      riskAccountCount: Number(stats.riskAccounts || 0),
+    },
+  };
+}
+
+export function connectionIdsFromArchiveRows(accountRows = []) {
+  return [...new Set((Array.isArray(accountRows) ? accountRows : []).map((row) => {
+    const key = String(row?.account_key || row?.accountKey || row?.schema || "").trim();
+    return key.startsWith("tiktok:") ? key.slice("tiktok:".length) : "";
+  }).filter(Boolean))];
+}
+
+export function chunkList(items = [], size = 200) {
+  const list = Array.isArray(items) ? items : [];
+  const chunks = [];
+  for (let index = 0; index < list.length; index += size) chunks.push(list.slice(index, index + size));
+  return chunks;
+}
+
+export function mergePublishStats(parts = []) {
+  return (Array.isArray(parts) ? parts : []).reduce((total, part) => ({
+    success: total.success + Number(part?.success || 0),
+    failed: total.failed + Number(part?.failed || 0),
+    riskAccounts: total.riskAccounts + Number(part?.riskAccounts || 0),
+    pendingIngest: total.pendingIngest + Number(part?.pendingIngest || 0),
+  }), { success: 0, failed: 0, riskAccounts: 0, pendingIngest: 0 });
 }
 
 export function videosForProject({ store, projectId, accountRows = [], videosByAccount = new Map(), groupIds = null }) {

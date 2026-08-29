@@ -5,11 +5,12 @@ import test from "node:test";
 const root = new URL("./", import.meta.url);
 
 test("archive ingest upserts batches and only deletes named accounts", async () => {
-  const [store, storage, index, official] = await Promise.all([
+  const [store, storage, index, official, novels] = await Promise.all([
     readFile(new URL("official-archive-store.js", root), "utf8"),
     readFile(new URL("factory-storage.js", root), "utf8"),
     readFile(new URL("index.js", root), "utf8"),
     readFile(new URL("official.js", root), "utf8"),
+    readFile(new URL("novels.js", root), "utf8"),
   ]);
   assert.match(store, /export async function upsertOfficialAccounts/);
   assert.match(store, /export async function deleteOfficialAccounts/);
@@ -29,6 +30,10 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.doesNotMatch(store, /backfillAccountMetricsFromD1/);
   assert.match(store, /SELECT account_key, label, synced_at, video_count, views/);
   assert.doesNotMatch(store, /json_extract\(profile_json/);
+  assert.match(official, /\/api\/v1\/publish\/stats/);
+  assert.match(official, /attachPublishOutcome/);
+  assert.match(novels, /hydrateOfficialPublishRecords/);
+  assert.match(novels, /archiveAge > 30 \* 60 \* 1000/);
 });
 
 test("directory rows keep list fields without shipping full profile json", async () => {

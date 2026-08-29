@@ -26,6 +26,8 @@ import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchI
 import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
+import { hydrateOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { signalDesk } from "./signal-desk.js";
 
 const PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
 const DEFAULT_STRATEGY = {
@@ -200,13 +202,15 @@ export async function handleNovels(request, env, url, session) {
     }
     try {
       let meta = await readArchiveMeta(db);
-      if (!meta.accountCount) {
-        meta = await refreshOfficialArchive(env, db);
+      const archiveAge = Date.now() - Number(meta.updatedAt || meta.archiveAt || 0);
+      if (!meta.accountCount || archiveAge > 30 * 60 * 1000) {
+        meta = await refreshOfficialArchive(env, db).catch(() => meta);
       }
       const [groupStore, accountRows] = await Promise.all([
         loadGroupStore(db),
         listLatestArchiveAccounts(db),
       ]);
+      const storedRecords = await kvGet(db, "official-publish-records", []);
       const [signals, store, records] = await Promise.all([
         getOfficialOperationSignals(env, db, {
           days,
@@ -214,8 +218,13 @@ export async function handleNovels(request, env, url, session) {
           accountKeys: archiveAccountKeysForScope(groupStore, accountRows, { projectId: "proj-novel" }),
         }),
         readStore(db, { includeSource: false, workingOnly: true }),
-        kvGet(db, "official-publish-records", []),
+        hydrateOfficialPublishRecords(storedRecords, (batchId) => (
+          signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
+        )).catch(() => storedRecords),
       ]);
+      if (officialPublishRecordsNeedPersist(storedRecords, records)) {
+        await kvSet(db, "official-publish-records", records).catch(() => {});
+      }
       const assembled = assembleOfficialNovelEffects({
         store,
         audioItems: audioItemsFromScripts(store.scripts),
@@ -962,4 +971,14 @@ function deepMerge(base, patch) {
     else result[key] = value;
   }
   return result;
+}
+
+function officialPublishRecordsNeedPersist(before, after) {
+  if (before === after) return false;
+  if (!Array.isArray(before) || !Array.isArray(after) || before.length !== after.length) return true;
+  return after.some((item, index) => (
+    String(item?.videoId || "") !== String(before[index]?.videoId || "")
+    || String(item?.status || "") !== String(before[index]?.status || "")
+    || String(item?.officialRemoteStatus || "") !== String(before[index]?.officialRemoteStatus || "")
+  ));
 }
