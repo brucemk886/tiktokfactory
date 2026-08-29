@@ -17,6 +17,10 @@ let lastTaskRenderKey = "";
 let captionPresets = [];
 const captionPresetStorageKey = "reddit-publish-caption-presets";
 const selectedCaptionPresetKey = "reddit-publish-caption-selected";
+const isLocalWorkerPage = ["localhost", "127.0.0.1"].includes(location.hostname);
+document.querySelectorAll("[data-local-only]").forEach((item) => {
+  item.hidden = !isLocalWorkerPage;
+});
 applyPublishChannelChrome();
 
 $("#createTaskBtn").addEventListener("click", () => createTask());
@@ -42,6 +46,8 @@ $("#updateCaptionPresetBtn")?.addEventListener("click", updateCaptionPreset);
 $("#deleteCaptionPresetBtn")?.addEventListener("click", deleteCaptionPreset);
 $("#assetGroupSelect").addEventListener("change", updateVideoSourceVisibility);
 $("#videoTemplateSelect")?.addEventListener("change", updateVideoSourceVisibility);
+$("#syncAudioGroupsBtn")?.addEventListener("click", syncAudioGroupsToFactory);
+$("#syncAssetGroupsBtn")?.addEventListener("click", syncAssetGroupsToFactory);
 $("#refreshSharedLibrariesBtn")?.addEventListener("click", () => {
   loadSharedLibraries();
   loadAudioGroups();
@@ -430,7 +436,7 @@ function renderAudioFolderPicker() {
   if (!folders.length) {
     root.textContent = audioGroups.length
       ? "本机 F:\\音频目录 下还没有按平台分好的小说音频。"
-      : "本机 F:\\音频目录 还没同步上来，或工人还没连上。";
+      : "本机 F:\\音频目录 下还没有可勾选的平台文件夹。";
     updateAudioFolderHint();
     return;
   }
@@ -463,7 +469,7 @@ function updateAudioFolderHint() {
   if (hint) {
     hint.textContent = folders.length
       ? `已选 ${folders.length} 个平台，共 ${folders.reduce((sum, folder) => sum + (Number(folder.bookCount) || 0), 0)} 本、${audioCount} 条音频。角标和片尾读每本书文件夹里的推广码。`
-      : "勾选工人机 F:\\音频目录 下的小说平台。混该平台文件夹里的全部小说，角标和片尾读每本书自己的推广码。";
+      : "勾选本机 F:\\音频目录 下的小说平台。线上只认本机点「刷新并推送」后的目录，不会每 5 分钟自动同步。";
   }
   updateAudioSourceMode();
   updateCaptionModeView();
@@ -570,6 +576,31 @@ function updateSelectedOfficialAccountCount() {
   updatePublishPlanHint();
 }
 
+async function syncAudioGroupsToFactory() {
+  if (!isLocalWorkerPage) return;
+  const button = $("#syncAudioGroupsBtn");
+  const hint = $("#novelBadgeHint");
+  if (button) button.disabled = true;
+  if (hint) hint.textContent = "正在刷新本机 F:\\音频目录，并推送到线上...";
+  try {
+    const response = await fetch("/api/audio-groups/sync", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "刷新并推送失败。");
+    await loadAudioGroups();
+    if (hint) {
+      const folders = Number(data.folders ?? data.groups?.length) || 0;
+      const platforms = Number(data.platforms) || 0;
+      hint.textContent = getSelectedAudioFolders().length
+        ? `已刷新并推送到线上。${hint.textContent}`
+        : `已刷新并推送到线上：${platforms} 个平台、${folders} 个目录。勾选后才会用来混剪。`;
+    }
+  } catch (error) {
+    if (hint) hint.textContent = error.message || "刷新并推送失败。";
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function loadAudioGroups() {
   const select = $("#audioGroupSelect");
   const hint = $("#audioGroupHint");
@@ -588,7 +619,7 @@ async function loadAudioGroups() {
     renderAudioFolderPicker();
     if (hint) hint.textContent = folders.length
       ? `固定读取 ${data.libraryRoot || "F:\\音频目录"}，已同步 ${folders.filter((group) => group.kind === "platform").length || folders.length} 个平台文件夹。`
-      : "本机 F:\\音频目录 下还没有文件夹，或工人还没同步上来。";
+      : "本机 F:\\音频目录 下还没有可勾选的文件夹。";
   } catch (error) {
     select.innerHTML = '<option value="">音频目录读取失败</option>';
     if (hint) hint.textContent = error.message || "读取音频目录失败。";
@@ -600,6 +631,25 @@ function applyAudioGroupSelection({ keepFolders = false } = {}) {
   const group = audioGroups.find((item) => item.id === select?.value);
   if ($("#audioDir")) $("#audioDir").value = group?.path || "";
   if (group?.path && !keepFolders) clearSelectedAudioFolders();
+}
+
+async function syncAssetGroupsToFactory() {
+  if (!isLocalWorkerPage) return;
+  const button = $("#syncAssetGroupsBtn");
+  const hint = $("#assetGroupHint");
+  if (button) button.disabled = true;
+  if (hint) hint.textContent = "正在刷新本机素材组，并推送到线上...";
+  try {
+    const response = await fetch("/api/asset-groups/sync", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "刷新并推送失败。");
+    await loadAssetGroups();
+    if (hint) hint.textContent = `已刷新并推送到线上：${Number(data.folders ?? data.groups?.length) || 0} 个素材组。${hint.textContent}`;
+  } catch (error) {
+    if (hint) hint.textContent = error.message || "刷新并推送失败。";
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 async function loadAssetGroups() {

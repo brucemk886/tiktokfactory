@@ -55,9 +55,12 @@
             </div>
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
             <div class="field novel-select-field" data-admin-only hidden>
-              <span>小说平台</span>
+              <div class="novel-platform-head">
+                <span>小说平台</span>
+                <button data-local-only id="syncAudioGroupsBtn" class="quiet-button" type="button">刷新并推送</button>
+              </div>
               <div id="novelAudioPicker" class="novel-audio-picker">正在读取本机音频目录...</div>
-              <small id="novelBadgeHint">勾选工人机 F:\音频目录 下的小说平台。混该平台文件夹里的全部小说，角标和片尾读每本书自己的推广码。</small>
+              <small id="novelBadgeHint">勾选本机 F:\音频目录 下的小说平台。线上只认本机点「刷新并推送」后的目录，不会每 5 分钟自动同步。</small>
             </div>
             <div class="source-directory-stack">
               <section id="sharedLibraryPanel" class="shared-library-panel" hidden>
@@ -69,7 +72,14 @@
                 </div>
               </section>
               <label class="field" id="videoTemplateField" data-admin-only hidden><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix" selected>模板1 · 混剪</option></select><small id="videoTemplateHint">从素材组抽片段拼接混剪。</small></label>
-              <label data-admin-only id="assetGroupField" class="field mix-only"><span>素材组</span><select id="assetGroupSelect"><option value="">正在读取素材组...</option></select><small id="assetGroupHint">请选择已建立索引的素材组</small></label>
+              <label data-admin-only id="assetGroupField" class="field mix-only">
+                <div class="novel-platform-head">
+                  <span>素材组</span>
+                  <button data-local-only id="syncAssetGroupsBtn" class="quiet-button" type="button">刷新并推送</button>
+                </div>
+                <select id="assetGroupSelect"><option value="">正在读取素材组...</option></select>
+                <small id="assetGroupHint">本地混剪读本机索引。线上素材组只认本机点「刷新并推送」后的目录。</small>
+              </label>
               <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0818" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">默认读取 0818 这批已生成的跑酷视频。</small></label>
               <input id="videoDir" type="hidden" />
               <label id="directAudioSource" class="field"><span>音频目录</span><select id="audioGroupSelect"><option value="">正在读取本机音频目录...</option></select><input id="audioDir" type="hidden" /><small id="audioGroupHint">固定读取工人机 F:\音频目录 下的文件夹。</small></label>

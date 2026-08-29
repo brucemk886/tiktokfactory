@@ -107,6 +107,22 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/local-queue"), false);
 });
 
+test("local reddit mix can refresh audio folders and push them to the factory", () => {
+  const html = fs.readFileSync(path.join(publicDir, "tasks.html"), "utf8");
+  const js = fs.readFileSync(path.join(publicDir, "tasks.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "scripts", "server.js"), "utf8");
+  assert.match(html, /id="syncAudioGroupsBtn"/);
+  assert.match(html, /id="syncAssetGroupsBtn"/);
+  assert.match(html, /data-local-only/);
+  assert.match(js, /\/api\/audio-groups\/sync/);
+  assert.match(js, /\/api\/asset-groups\/sync/);
+  assert.match(js, /item\.hidden = !isLocalWorkerPage/);
+  assert.match(server, /\/api\/audio-groups\/sync/);
+  assert.match(server, /\/api\/asset-groups\/sync/);
+  assert.match(server, /pushAudioGroups/);
+  assert.match(server, /pushAssetGroups/);
+});
+
 test("asset usage stays local and only syncs from the worker machine", () => {
   const html = fs.readFileSync(path.join(publicDir, "asset-usage.html"), "utf8");
   const js = fs.readFileSync(path.join(publicDir, "asset-usage.js"), "utf8");

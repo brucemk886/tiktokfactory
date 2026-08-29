@@ -7,9 +7,13 @@ import { createAutoTaskManager, normalizeOfficialAutoPublishResult } from "./aut
 import {
   DEFAULT_POLL_MS,
   DEFAULT_SYNC_MS,
+  dailyViewDataAlreadyPushed,
   loadSettings,
   localJobCancelled,
-  mirrorCloudTask
+  mirrorCloudTask,
+  pushAssetGroups,
+  pushAudioGroups,
+  pushDailyViewData
 } from "./factory-cloud-worker.js";
 
 test("factory worker requeues its own interrupted jobs on hello", () => {
@@ -17,9 +21,32 @@ test("factory worker requeues its own interrupted jobs on hello", () => {
   assert.match(source, /\/api\/worker\/hello/);
   assert.match(source, /工人重启，已把/);
   assert.match(source, /mirrorCloudTask\(context, job, outcomeLocal\)/);
-  assert.match(source, /assetUsageDashboard: buildAssetUsageSnapshot/);
-  assert.match(source, /publishRecords: readOfficialPublishRecords/);
+  assert.match(source, /assetUsageDashboard = buildAssetUsageSnapshot/);
+  assert.match(source, /officialPublishRecords: readOfficialPublishRecords/);
   assert.match(source, /export async function pushAssetUsageDashboard/);
+  assert.match(source, /export async function pushAudioGroups/);
+  assert.match(source, /export async function pushAssetGroups/);
+  assert.match(source, /export async function pushDailyViewData/);
+  assert.match(source, /audioGroups: groups/);
+  assert.match(source, /latestAudioCatalog/);
+  assert.match(source, /latestAssetCatalog/);
+  assert.doesNotMatch(source, /audioGroups: discoverAudioLibraryGroups/);
+  assert.doesNotMatch(source, /assetUsageDashboard: buildAssetUsageSnapshot\(context/);
+});
+
+test("daily view data is marked once per Beijing day", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-daily-view-"));
+  assert.equal(dailyViewDataAlreadyPushed(dir), false);
+  fs.writeFileSync(path.join(dir, "factory-daily-data-sync.json"), JSON.stringify({ dateKey: "2026-08-29" }));
+  assert.equal(dailyViewDataAlreadyPushed(dir, Date.parse("2026-08-29T23:00:00+08:00")), true);
+  assert.equal(dailyViewDataAlreadyPushed(dir, Date.parse("2026-08-30T00:30:00+08:00")), false);
+});
+
+test("catalog pushes refuse to upload when the factory worker is not configured", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-catalog-sync-"));
+  await assert.rejects(() => pushAssetGroups({ root: process.cwd(), workDir: dir }), /未配置工厂云工人/);
+  await assert.rejects(() => pushAudioGroups({ root: process.cwd(), workDir: dir }), /未配置工厂云工人/);
+  await assert.rejects(() => pushDailyViewData({ root: process.cwd(), workDir: dir, force: true }), /未配置工厂云工人/);
 });
 
 test("factory worker claims once a minute and does not poll cloud cancel", () => {

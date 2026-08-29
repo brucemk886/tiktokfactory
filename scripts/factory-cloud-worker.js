@@ -6,7 +6,7 @@ import { buildAssetUsageSnapshot, discoverAssetLibraryGroups, listAssetGroups, l
 import { runAudioImportJob } from "./audio-import-job.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { createAudioLibraryService } from "./audio-library.js";
-import { discoverAudioLibraryGroups, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { discoverAudioLibraryGroups, latestAudioCatalog, resolveAudioLibraryRoot, resolveTargetAudioDir } from "./audio-library-groups.js";
 import { resolveLocalAudioUploadPath } from "./novel-audio-upload.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
@@ -46,9 +46,11 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
   const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial };
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}`);
   helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
-  syncInventory(context).catch((error) => console.error("同步素材组失败：", error.message || error));
+  syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
+  syncDailyViewData(context);
   setInterval(() => {
-    syncInventory(context).catch((error) => console.error("同步素材组失败：", error.message || error));
+    syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
+    syncDailyViewData(context);
   }, settings.syncMs || DEFAULT_SYNC_MS);
   loop(context).catch((error) => {
     console.error("工厂云工人退出：", error);
@@ -580,11 +582,6 @@ function buildLocalPayload(job) {
 }
 
 async function syncInventory(context) {
-  const libraryRoot = String(context.config.assetLibraryRoot || "").trim();
-  const discovered = discoverAssetLibraryGroups(context.root, libraryRoot);
-  const groups = discovered.length
-    ? listAssetGroups(context.root).filter((group) => discovered.some((item) => item.id === group.id))
-    : listAssetGroups(context.root);
   let redditMixSettings = {};
   try {
     redditMixSettings = JSON.parse(fs.readFileSync(path.join(context.workDir, "reddit-mix-settings.json"), "utf8"));
@@ -595,28 +592,9 @@ async function syncInventory(context) {
   const body = {
     workerId: context.workerId,
     retentionHours: 48,
-    assetGroups: groups.map((group) => {
-      const totalAssets = countGroupAssets(group);
-      return {
-        id: group.id,
-        name: group.name,
-        path: group.path || group.sourceDir || group.dir || "",
-        sourceDir: group.sourceDir || group.path || "",
-        totalAssets,
-        clipCount: totalAssets,
-        totalDuration: Number(group.totalDuration || 0),
-        usedAssets: Number(group.usedAssets || 0),
-        generatedVideos: Number(group.generatedVideos || 0)
-      };
-    }),
     redditMixSettings,
-    audioGroups: discoverAudioLibraryGroups(context.config),
-    assetUsageDashboard: buildAssetUsageSnapshot(context.root, {
-      groupIds: groups.map((group) => group.id),
-      publishRecords: readOfficialPublishRecords(context.workDir)
-    })
+    officialPublishRecords: readOfficialPublishRecords(context.workDir)
   };
-  body.officialPublishRecords = readOfficialPublishRecords(context.workDir);
   if (!fs.existsSync(importMarker)) {
     body.novelContent = readLocalNovelStore(context.workDir);
   }
@@ -630,6 +608,17 @@ async function syncInventory(context) {
       novelImport: result.novelImport || null
     }, null, 2), "utf8");
     console.log("已把本机小说书单导入线上工厂。之后以线上为准，不再回传书单。");
+  }
+}
+
+async function syncDailyViewData(context) {
+  try {
+    const result = await pushDailyViewData({ root: context.root, workDir: context.workDir });
+    if (!result.skipped) {
+      console.log(`已把 ${result.dateKey} 的最新目录数量、素材使用率和发布记录推到线上。`);
+    }
+  } catch (error) {
+    console.error("每日数据推送失败：", error.message || error);
   }
 }
 
@@ -790,6 +779,152 @@ async function request(context, pathname, { method = "GET", body } = {}) {
 export const DEFAULT_POLL_MS = 60_000;
 export const DEFAULT_SYNC_MS = 300_000;
 export const LOCAL_WATCH_MS = 2_000;
+export const DAILY_VIEW_DATA_FILE = "factory-daily-data-sync.json";
+
+export function beijingDateKey(now = Date.now()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(now));
+}
+
+export function dailyViewDataAlreadyPushed(workDir, now = Date.now()) {
+  try {
+    const marker = JSON.parse(fs.readFileSync(path.join(workDir, DAILY_VIEW_DATA_FILE), "utf8"));
+    return String(marker.dateKey || "") === beijingDateKey(now);
+  } catch {
+    return false;
+  }
+}
+
+function collectIndexedAssetGroups(root, config) {
+  const libraryRoot = String(config.assetLibraryRoot || "").trim();
+  const discovered = discoverAssetLibraryGroups(root, libraryRoot);
+  return discovered.length
+    ? listAssetGroups(root).filter((group) => discovered.some((item) => item.id === group.id))
+    : listAssetGroups(root);
+}
+
+function slimAssetCatalogRow(group) {
+  return {
+    id: group.id,
+    name: group.name,
+    path: group.path,
+    sourceDir: group.sourceDir,
+    totalAssets: group.totalAssets,
+    clipCount: group.clipCount
+  };
+}
+
+function latestAssetCatalog(root, config, { limit = 8 } = {}) {
+  return publicAssetGroupRows(collectIndexedAssetGroups(root, config))
+    .map((group) => {
+      let mtime = 0;
+      const dir = String(group.sourceDir || group.path || "").trim();
+      try {
+        if (dir && fs.existsSync(dir)) mtime = fs.statSync(dir).mtimeMs;
+      } catch {
+        mtime = 0;
+      }
+      return { group: slimAssetCatalogRow(group), mtime };
+    })
+    .sort((left, right) => right.mtime - left.mtime || String(left.group.name).localeCompare(String(right.group.name), "zh-Hans-CN"))
+    .slice(0, Math.max(1, Number(limit) || 8))
+    .map((item) => item.group);
+}
+
+function publicAssetGroupRows(groups) {
+  return groups.map((group) => {
+    const totalAssets = countGroupAssets(group);
+    return {
+      id: group.id,
+      name: group.name,
+      path: group.path || group.sourceDir || group.dir || "",
+      sourceDir: group.sourceDir || group.path || "",
+      totalAssets,
+      clipCount: totalAssets,
+      totalDuration: Number(group.totalDuration || 0),
+      usedAssets: Number(group.usedAssets || 0),
+      generatedVideos: Number(group.generatedVideos || 0)
+    };
+  });
+}
+
+export async function pushAssetGroups({ root = process.cwd(), workDir } = {}) {
+  const config = readConfig(root);
+  const storage = resolveStorageDirs(root, config);
+  const resolvedWorkDir = workDir || storage.workDir;
+  const settings = loadSettings(resolvedWorkDir);
+  if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把素材组同步到线上。");
+  const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
+  const groups = publicAssetGroupRows(collectIndexedAssetGroups(root, config));
+  await request({ settings, workerId }, "/api/worker/sync", {
+    method: "POST",
+    body: { workerId, assetGroups: groups }
+  });
+  return { ok: true, groups, folders: groups.length };
+}
+
+export async function pushDailyViewData({ root = process.cwd(), workDir, force = false, now = Date.now() } = {}) {
+  const config = readConfig(root);
+  const storage = resolveStorageDirs(root, config);
+  const resolvedWorkDir = workDir || storage.workDir;
+  const dateKey = beijingDateKey(now);
+  if (!force && dailyViewDataAlreadyPushed(resolvedWorkDir, now)) return { ok: true, skipped: true, dateKey };
+  const settings = loadSettings(resolvedWorkDir);
+  if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把今日数据同步到线上。");
+  const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
+  const records = readOfficialPublishRecords(resolvedWorkDir);
+  const groups = collectIndexedAssetGroups(root, config);
+  const assetUsageDashboard = buildAssetUsageSnapshot(root, {
+    groupIds: groups.map((group) => group.id),
+    publishRecords: records
+  });
+  const audioGroups = latestAudioCatalog(config);
+  const assetGroups = latestAssetCatalog(root, config);
+  await request({ settings, workerId }, "/api/worker/sync", {
+    method: "POST",
+    body: {
+      workerId,
+      audioGroups,
+      assetGroups,
+      assetUsageDashboard,
+      officialPublishRecords: records
+    }
+  });
+  const result = {
+    ok: true,
+    skipped: false,
+    dateKey,
+    groups: assetUsageDashboard.groups?.length || 0,
+    audioFolders: audioGroups.length,
+    assetFolders: assetGroups.length,
+    sampledAt: assetUsageDashboard.sampledAt
+  };
+  fs.writeFileSync(path.join(resolvedWorkDir, DAILY_VIEW_DATA_FILE), JSON.stringify({
+    ...result,
+    pushedAt: now
+  }, null, 2), "utf8");
+  return result;
+}
+
+export async function pushAudioGroups({ root = process.cwd(), workDir } = {}) {
+  const config = readConfig(root);
+  const storage = resolveStorageDirs(root, config);
+  const resolvedWorkDir = workDir || storage.workDir;
+  const settings = loadSettings(resolvedWorkDir);
+  if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把音频目录同步到线上。");
+  const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
+  const groups = discoverAudioLibraryGroups(config);
+  await request({ settings, workerId }, "/api/worker/sync", {
+    method: "POST",
+    body: { workerId, audioGroups: groups }
+  });
+  return {
+    ok: true,
+    libraryRoot: resolveAudioLibraryRoot(config),
+    groups,
+    platforms: groups.filter((group) => group.kind === "platform").length,
+    folders: groups.length
+  };
+}
 
 export async function pushAssetUsageDashboard({ root = process.cwd(), workDir, publishRecords } = {}) {
   const config = readConfig(root);
@@ -798,11 +933,7 @@ export async function pushAssetUsageDashboard({ root = process.cwd(), workDir, p
   const settings = loadSettings(resolvedWorkDir);
   if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把素材使用率同步到线上。");
   const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
-  const libraryRoot = String(config.assetLibraryRoot || "").trim();
-  const discovered = discoverAssetLibraryGroups(root, libraryRoot);
-  const groups = discovered.length
-    ? listAssetGroups(root).filter((group) => discovered.some((item) => item.id === group.id))
-    : listAssetGroups(root);
+  const groups = collectIndexedAssetGroups(root, config);
   const records = Array.isArray(publishRecords) ? publishRecords : readOfficialPublishRecords(resolvedWorkDir);
   const assetUsageDashboard = buildAssetUsageSnapshot(root, {
     groupIds: groups.map((group) => group.id),

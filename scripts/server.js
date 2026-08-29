@@ -37,7 +37,7 @@ import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, sum
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync, refreshOfficialPublishVideoIds } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
-import { pushAssetUsageDashboard, startFactoryCloudWorker } from "./factory-cloud-worker.js";
+import { pushAssetGroups, pushAssetUsageDashboard, pushAudioGroups, startFactoryCloudWorker } from "./factory-cloud-worker.js";
 import { readWatchdogSummary } from "./factory-watchdog.js";
 import { isOfficialPublishAbort, throwIfOfficialPublishAborted } from "./official-publish-abort.js";
 import { createWorkJournalService } from "./work-journal-local.js";
@@ -1860,12 +1860,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { groups, usage: readUsage(root) });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/asset-groups/sync") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以刷新素材组并推送到线上。" });
+      const uploaded = await pushAssetGroups({ root, workDir });
+      return sendJson(res, 200, uploaded);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/audio-groups") {
       const config = readConfig(root);
       return sendJson(res, 200, {
         libraryRoot: resolveAudioLibraryRoot(config),
         groups: discoverAudioLibraryGroups(config)
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/audio-groups/sync") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以刷新音频目录并推送到线上。" });
+      const uploaded = await pushAudioGroups({ root, workDir });
+      return sendJson(res, 200, uploaded);
     }
 
     if (req.method === "GET" && url.pathname === "/api/asset-usage") {

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   discoverAudioLibraryGroups,
   findAudioInLibrary,
+  latestAudioCatalog,
   normalizeAudioDirs,
   safePlatformFolderName
 } from "./audio-library-groups.js";
@@ -87,6 +88,37 @@ test("finds novel audio by file name or id inside the fixed library", () => {
   fs.writeFileSync(file, "x");
   assert.equal(findAudioInLibrary(["opening-audio-abc123456789.mp3"], { audioLibraryRoot: root }), file);
   assert.equal(findAudioInLibrary(["abc123456789"], { audioLibraryRoot: root }), file);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("daily audio catalog keeps platforms plus the newest first-level folders and counts only", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "audio-latest-"));
+  const good = path.join(root, "GoodNovel", "Old Book");
+  fs.mkdirSync(good, { recursive: true });
+  fs.writeFileSync(path.join(good, "old.mp3"), "x");
+  const folders = {
+    "0701": Date.now() - 40 * 86400000,
+    "0810": Date.now() - 20 * 86400000,
+    "0828测试": Date.now() - 2 * 86400000,
+    "0830": Date.now() - 3600000
+  };
+  for (const [name, mtime] of Object.entries(folders)) {
+    const folder = path.join(root, name);
+    fs.mkdirSync(folder);
+    fs.writeFileSync(path.join(folder, "a.mp3"), "x");
+    fs.utimesSync(folder, new Date(mtime), new Date(mtime));
+  }
+  const catalog = latestAudioCatalog({ audioLibraryRoot: root }, { limit: 2 });
+  assert.equal(catalog.some((item) => item.kind === "book"), false);
+  assert.deepEqual(
+    catalog.filter((item) => item.kind === "platform").map((item) => [item.name, item.totalAssets]),
+    [["GoodNovel", 1]]
+  );
+  assert.deepEqual(
+    catalog.filter((item) => item.kind !== "platform" && item.kind !== "legacy-bundle").map((item) => item.name),
+    ["0830", "0828测试"]
+  );
+  assert.ok(catalog.every((item) => Number(item.totalAssets) > 0 && !("promotionCode" in item)));
   fs.rmSync(root, { recursive: true, force: true });
 });
 
