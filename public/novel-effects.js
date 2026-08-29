@@ -200,14 +200,17 @@ function renderHotHits(ranked) {
   hotHitsNode.innerHTML = `<header class="hot-hits-head"><div><p class="eyebrow">HOT NOW</p><h2>当下爆款</h2></div><p class="page-copy">${periodLabel(state.days)}效果最好的 ${hits.length} 本</p></header>
     <div class="hot-hits-grid">${hits.map((novel, index) => {
       const performance = novel.performance || {};
-      return `<button type="button" class="hot-hit-card" data-hot-id="${escapeHtml(novel.id)}">
-        <div class="rank-badge" aria-label="第 ${index + 1} 名">${index + 1}</div>
-        <div class="hot-hit-body">
-          <h3>${escapeHtml(novel.title || "未命名小说")}</h3>
-          <div class="novel-meta">${escapeHtml([novel.category, novel.platform, novel.promotionCode].filter(Boolean).join(" · ") || "未填写分类")}</div>
+      return `<article class="hot-hit-card">
+        <header class="hot-hit-head">
+          <div class="rank-badge" aria-label="第 ${index + 1} 名">${index + 1}</div>
+          <div class="hot-hit-body">
+            <h3><button type="button" data-hot-id="${escapeHtml(novel.id)}">${escapeHtml(novel.title || "未命名小说")}</button></h3>
+            <div class="novel-meta">${escapeHtml([novel.category, novel.platform, novel.promotionCode].filter(Boolean).join(" · ") || "未填写分类")}</div>
+          </div>
           <div class="hot-hit-metrics">${miniMetric("播放", formatNumber(performance.totalViews))}${miniMetric("视频", performance.videoCount)}${miniMetric("账号", performance.accountCount)}</div>
-        </div>
-      </button>`;
+        </header>
+        ${renderVideoJumpList(novelVideos(novel))}
+      </article>`;
     }).join("")}</div>`;
   hotHitsNode.querySelectorAll("[data-hot-id]").forEach((button) => {
     button.addEventListener("click", () => focusNovel(button.dataset.hotId));
@@ -247,6 +250,7 @@ function renderNovel(novel, rank) {
       <a class="quiet-action" href="/novel-audio?novel=${encodeURIComponent(novel.id)}">查看音频与改写记录</a>
       <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">改写</a>
     </div>
+    ${renderVideoJumpList(novelVideos(novel))}
     ${renderScripts(scripts)}
   </article>`;
 }
@@ -262,7 +266,47 @@ function renderScripts(scripts) {
 
 function renderVideoDetails(videos) {
   if (!videos.length) return "";
-  return `<details class="video-details"><summary>查看 ${videos.length} 条对应视频</summary><div class="video-grid">${videos.map((video) => `<div class="video-row"><div class="video-main"><strong>${escapeHtml(video.caption || video.videoId || "未命名视频")}</strong><small>${escapeHtml(video.username || "未知账号")} · ${formatDate(video.publishedAt)} · ${escapeHtml(video.matchConfidence || "已映射")}</small></div>${videoMetric("播放", formatNumber(video.views))}${videoMetric("平均观看", formatSeconds(video.averageTimeWatched))}${videoMetric("完播", formatRate(video.fullWatchRate))}${videoMetric("3秒留存", formatRate(video.retentionAt3))}${videoMetric("评论", formatNumber(video.comments))}${videoMetric("时长", formatSeconds(video.duration))}</div>`).join("")}</div></details>`;
+  return `<details class="video-details"><summary>查看 ${videos.length} 条对应视频</summary><div class="video-grid">${videos.map((video) => {
+    const href = tiktokWatchUrl(video);
+    const title = video.caption || video.videoId || "未命名视频";
+    const titleHtml = href
+      ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a>`
+      : `<strong>${escapeHtml(title)}</strong>`;
+    const openHtml = href
+      ? `<a class="video-open" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">打开</a>`
+      : "";
+    return `<div class="video-row"><div class="video-main"><div class="video-title-row">${titleHtml}${openHtml}</div><small>${escapeHtml(video.username ? `@${String(video.username).replace(/^@/, "")}` : "未知账号")} · ${formatDate(video.publishedAt)} · ${escapeHtml(video.matchConfidence || "已映射")}</small></div>${videoMetric("播放", formatNumber(video.views))}${videoMetric("平均观看", formatSeconds(video.averageTimeWatched))}${videoMetric("完播", formatRate(video.fullWatchRate))}${videoMetric("3秒留存", formatRate(video.retentionAt3))}${videoMetric("评论", formatNumber(video.comments))}${videoMetric("时长", formatSeconds(video.duration))}</div>`;
+  }).join("")}</div></details>`;
+}
+
+function novelVideos(novel) {
+  return (Array.isArray(novel?.scripts) ? novel.scripts : [])
+    .flatMap((script) => Array.isArray(script.videos) ? script.videos : [])
+    .slice()
+    .sort((left, right) => Number(right.views || 0) - Number(left.views || 0));
+}
+
+function tiktokWatchUrl(video = {}) {
+  const existing = String(video.shareLink || video.videoUrl || video.url || "").trim();
+  if (/tiktok\.com\/@[\w.]+\/video\/\d{10,}/i.test(existing)) return existing;
+  const id = String(video.videoId || video.id || "").trim();
+  const username = String(video.username || "").replace(/^@/, "").trim();
+  if (/^\d{10,}$/.test(id) && username) return `https://www.tiktok.com/@${encodeURIComponent(username)}/video/${id}`;
+  return "";
+}
+
+function renderVideoJumpList(videos) {
+  if (!videos.length) return '<p class="video-jump-empty">这本还没有可跳转的视频。</p>';
+  return `<ul class="video-jump-list">${videos.map((video) => {
+    const href = tiktokWatchUrl(video);
+    const title = video.caption || video.videoId || "未命名视频";
+    const account = video.username ? `@${String(video.username).replace(/^@/, "")}` : "未知账号";
+    const meta = `${account} · ${formatNumber(video.views)} 播放`;
+    if (!href) {
+      return `<li><span>${escapeHtml(title)}</span><small>${escapeHtml(meta)}</small><span class="empty-value">无链接</span></li>`;
+    }
+    return `<li><a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(title)}</a><small>${escapeHtml(meta)}</small><a class="video-open" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">打开</a></li>`;
+  }).join("")}</ul>`;
 }
 
 function renderUnassigned(scripts) {

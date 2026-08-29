@@ -49,14 +49,27 @@
 .hot-hits-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 16px; }
 .hot-hits-head h2 { margin: 2px 0 0; font-size: 24px; }
 .hot-hits-head .page-copy { margin: 0; }
-.hot-hits-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.hot-hit-card { display: flex; align-items: flex-start; gap: 12px; min-height: 148px; padding: 14px; border: 1px solid var(--effect-border); border-radius: 8px; background: var(--effect-panel-2); color: inherit; text-align: left; cursor: pointer; font: inherit; }
-.hot-hit-card:hover, .hot-hit-card:focus-visible { border-color: var(--effect-accent); outline: none; }
-.hot-hit-body { min-width: 0; }
-.hot-hit-card h3 { margin: 0 0 6px; font-size: 16px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.hot-hit-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.hot-hits-grid { display: grid; gap: 12px; }
+.hot-hit-card { padding: 16px; border: 1px solid var(--effect-border); border-radius: 8px; background: var(--effect-panel-2); }
+.hot-hit-head { display: flex; align-items: flex-start; gap: 12px; }
+.hot-hit-body { min-width: 0; flex: 1; }
+.hot-hit-card h3 { margin: 0 0 6px; font-size: 18px; line-height: 1.35; }
+.hot-hit-card h3 button { appearance: none; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; font-weight: 800; text-align: left; cursor: pointer; }
+.hot-hit-card h3 button:hover { color: var(--effect-accent); }
+.hot-hit-metrics { display: grid; grid-template-columns: repeat(3, auto); gap: 8px 16px; text-align: right; }
 .hot-hit-metrics span { color: var(--effect-muted); font-size: 11px; }
 .hot-hit-metrics strong { display: block; margin-top: 2px; color: var(--effect-accent); font-size: 15px; }
+.video-jump-list { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.video-jump-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px 14px; align-items: center; padding: 8px 10px; border: 1px solid #243034; background: var(--effect-panel); }
+.video-jump-list a { color: var(--effect-accent); text-decoration: none; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-jump-list a:hover { text-decoration: underline; }
+.video-jump-list small { color: var(--effect-muted); font-size: 12px; white-space: nowrap; }
+.video-open { min-height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; border: 1px solid var(--effect-border); border-radius: 5px; color: var(--effect-text) !important; font-size: 12px; font-weight: 800; text-decoration: none !important; }
+.video-open:hover { border-color: var(--effect-accent); color: var(--effect-accent) !important; }
+.video-jump-empty { margin: 12px 0 0; color: var(--effect-muted); font-size: 13px; }
+.video-main a { color: var(--effect-accent); text-decoration: none; font-weight: 750; }
+.video-main a:hover { text-decoration: underline; }
+.video-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .list-heading { margin: 4px 0 12px; }
 .list-heading h2 { margin: 2px 0 0; font-size: 22px; }
 .novel-list { display: grid; gap: 18px; }
@@ -105,7 +118,7 @@
 @media (max-width: 1180px) {
   .toolbar-card { grid-template-columns: 1fr 1fr; }
   .summary-grid { grid-template-columns: repeat(3, 1fr); }
-  .hot-hits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hot-hit-metrics { text-align: left; }
   .script-table { display: block; overflow-x: auto; }
   .script-table tbody, .script-table thead { min-width: 1050px; display: table; width: 100%; table-layout: fixed; }
 }
@@ -115,7 +128,9 @@
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
   .hot-hits-head { display: block; }
   .hot-hits-head .page-copy { margin-top: 8px; }
-  .hot-hits-grid { grid-template-columns: 1fr; }
+  .hot-hit-head { display: block; }
+  .hot-hit-metrics { margin-top: 12px; }
+  .video-jump-list li { grid-template-columns: 1fr auto; }
   .novel-head { display: block; }
   .novel-total { margin-top: 15px; text-align: left; }
   .video-row { grid-template-columns: 1fr 1fr; }
