@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyOfficialRemoteOutcome, attachOfficialRemoteOutcomes, hydrateOfficialPublishRecords, mergeOfficialPublishRecords, normalizeOfficialPublishRecord, officialFailReasonLabel, summarizeOfficialPublishRecords } from "./official-publish-records.js";
+import { applyOfficialRemoteOutcome, attachOfficialRemoteOutcomes, collectOfficialLiveBatchIds, hydrateOfficialPublishRecords, mergeOfficialPublishRecords, normalizeOfficialPublishRecord, officialFailReasonLabel, summarizeOfficialPublishRecords } from "./official-publish-records.js";
 
 test("normalizes slim worker records for the official publish table", () => {
   const record = normalizeOfficialPublishRecord({
@@ -121,4 +121,11 @@ test("hydrate pulls live batch tasks and maps TikTok handles", async () => {
   assert.equal(records[0].accountUsername, "dominicktown39");
   assert.equal(records[0].publishError, "spam_risk");
   assert.equal(records[0].status, "failed");
+});
+
+test("skips already resolved publish batches when hydrating overview records", () => {
+  assert.deepEqual(collectOfficialLiveBatchIds([
+    { videoId: "v1", batchId: "a9bf8e63-4607-4281-9582-42c6cb763cea" },
+    { batchId: "b9bf8e63-4607-4281-9582-42c6cb763ceb" },
+  ], 20, { skipResolved: true }), ["b9bf8e63-4607-4281-9582-42c6cb763ceb"]);
 });

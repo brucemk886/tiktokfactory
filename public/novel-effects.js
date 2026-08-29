@@ -37,7 +37,7 @@ searchForm?.addEventListener("submit", (event) => {
   state.page = 1;
   loadEffects();
 });
-refreshButton?.addEventListener("click", loadEffects);
+refreshButton?.addEventListener("click", () => loadEffects({ refresh: true }));
 
 function setActive(container, active) {
   container.querySelectorAll("button").forEach((button) => {
@@ -48,7 +48,7 @@ function setActive(container, active) {
   });
 }
 
-async function loadEffects() {
+async function loadEffects({ refresh = false } = {}) {
   refreshButton.disabled = true;
   refreshButton.textContent = "加载中…";
   statusNode.className = "source-status";
@@ -59,6 +59,7 @@ async function loadEffects() {
   try {
     const params = new URLSearchParams({ source: state.source, days: String(state.days), query: state.query });
     if (state.novelId) params.set("novel", state.novelId);
+    if (refresh) params.set("refresh", "1");
     const response = await fetch(`/api/novel-effects?${params}`, { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "读取数据概览失败");

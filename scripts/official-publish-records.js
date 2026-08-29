@@ -133,10 +133,11 @@ export function officialBatchUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 }
 
-export function collectOfficialLiveBatchIds(records, limit = 20) {
+export function collectOfficialLiveBatchIds(records, limit = 20, { skipResolved = false } = {}) {
   const ids = [];
   const seen = new Set();
   for (const record of Array.isArray(records) ? records : []) {
+    if (skipResolved && String(record?.videoId || record?.tiktokVideoId || "").trim()) continue;
     const candidates = [
       record?.batchId,
       ...(Array.isArray(record?.officialBatchIds) ? record.officialBatchIds : []),
@@ -161,9 +162,9 @@ export function filterOfficialPublishRecordsByRange(records, range = "7d") {
     .filter((item) => item.id && (!from || officialRecordTime(item) >= from));
 }
 
-export async function hydrateOfficialPublishRecords(records, fetchBatch) {
+export async function hydrateOfficialPublishRecords(records, fetchBatch, options = {}) {
   const list = Array.isArray(records) ? records : [];
-  const batchIds = collectOfficialLiveBatchIds(list);
+  const batchIds = collectOfficialLiveBatchIds(list, options.limit || 20, options);
   if (!batchIds.length || typeof fetchBatch !== "function") return list;
   const settled = await Promise.allSettled(batchIds.map((id) => fetchBatch(id)));
   const batches = [];

@@ -13,7 +13,7 @@ import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
 import { canAccessPath, homePathForUser } from "./sidebar.js";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/health") {
@@ -34,7 +34,7 @@ export default {
         }
         const handlers = [handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleCompat];
         for (const handler of handlers) {
-          const response = await handler(request, env, url, session);
+          const response = await handler(request, env, url, session, ctx);
           if (response) return response;
         }
         return errorJson("此接口尚未迁到工厂云，或需要工人机处理。", 501);

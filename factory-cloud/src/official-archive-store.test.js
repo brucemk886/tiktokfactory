@@ -33,7 +33,10 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(official, /\/api\/v1\/publish\/stats/);
   assert.match(official, /attachPublishOutcome/);
   assert.match(novels, /hydrateOfficialPublishRecords/);
+  assert.match(novels, /skipResolved: true/);
   assert.match(novels, /archiveAge > 30 \* 60 \* 1000/);
+  assert.match(novels, /waitUntil/);
+  assert.doesNotMatch(novels, /if \(!meta\.accountCount \|\| archiveAge/);
 });
 
 test("directory rows keep list fields without shipping full profile json", async () => {

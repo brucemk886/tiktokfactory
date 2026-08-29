@@ -46,7 +46,7 @@ const DEFAULT_STRATEGY = {
   model: { primary: "sol", fallback: "deepseek-v4-flash", externalProviderEnabled: false, externalProviderBaseUrl: "", externalProviderModel: "" }
 };
 
-export async function handleNovels(request, env, url, session) {
+export async function handleNovels(request, env, url, session, ctx) {
   if (!session) return null;
   const db = env.DB;
   const method = request.method;
@@ -186,6 +186,7 @@ export async function handleNovels(request, env, url, session) {
     const query = url.searchParams.get("query") || "";
     const novelId = url.searchParams.get("novel") || "";
     const days = Math.max(1, Math.min(30, Math.floor(Number(url.searchParams.get("days") || 30))));
+    const forceRefresh = url.searchParams.get("refresh") === "1";
     if (source === "third_party") {
       const overview = await novelOverview(db, query, env);
       return json(slimEffectsPage({
@@ -201,10 +202,19 @@ export async function handleNovels(request, env, url, session) {
       }, { keepZeroView: true }));
     }
     try {
+      const cacheKey = `novel-effects-cache:${days}:${query}:${novelId}`;
+      if (!forceRefresh) {
+        const cached = await kvGet(db, cacheKey, null);
+        if (cached?.page && Date.now() - Number(cached.at || 0) < 60_000) {
+          return json(cached.page);
+        }
+      }
       let meta = await readArchiveMeta(db);
       const archiveAge = Date.now() - Number(meta.updatedAt || meta.archiveAt || 0);
-      if (!meta.accountCount || archiveAge > 30 * 60 * 1000) {
+      if (!meta.accountCount) {
         meta = await refreshOfficialArchive(env, db).catch(() => meta);
+      } else if (archiveAge > 30 * 60 * 1000) {
+        ctx?.waitUntil?.(refreshOfficialArchive(env, db).catch(() => {}));
       }
       const [groupStore, accountRows] = await Promise.all([
         loadGroupStore(db),
@@ -214,17 +224,14 @@ export async function handleNovels(request, env, url, session) {
       const [signals, store, records] = await Promise.all([
         getOfficialOperationSignals(env, db, {
           days,
-          videosPerAccount: 100,
+          videosPerAccount: overviewVideosPerAccount(days),
           accountKeys: archiveAccountKeysForProject(groupStore, accountRows, "proj-novel"),
         }),
         readStore(db, { includeSource: false, workingOnly: true }),
         hydrateOfficialPublishRecords(storedRecords, (batchId) => (
           signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
-        )).catch(() => storedRecords),
+        ), { skipResolved: true, limit: 8 }).catch(() => storedRecords),
       ]);
-      if (officialPublishRecordsNeedPersist(storedRecords, records)) {
-        await kvSet(db, "official-publish-records", records).catch(() => {});
-      }
       const assembled = assembleOfficialNovelEffects({
         store,
         audioItems: audioItemsFromScripts(store.scripts),
@@ -235,16 +242,25 @@ export async function handleNovels(request, env, url, session) {
         label: "线上官方归档",
         projectAccountCount: uniqueProjectAccountCount(groupStore, "proj-novel"),
       });
-      await kvSet(db, "novel-hit-snapshot", buildOwnHitSnapshot(assembled)).catch(() => {});
       const { videoMappings, ...page } = assembled;
-      return json(slimEffectsPage({
+      const payload = slimEffectsPage({
         ...page,
         dataStatus: {
           ...page.dataStatus,
           cacheUpdatedAt: meta.updatedAt,
           archiveDate: signals.archiveDate || meta.archiveDate,
         },
-      }, { keepNovelId: novelId }));
+      }, { keepNovelId: novelId });
+      const persist = () => Promise.all([
+        officialPublishRecordsNeedPersist(storedRecords, records)
+          ? kvSet(db, "official-publish-records", records)
+          : Promise.resolve(),
+        kvSet(db, "novel-hit-snapshot", buildOwnHitSnapshot(assembled)),
+        kvSet(db, cacheKey, { at: Date.now(), page: payload }),
+      ]).catch(() => {});
+      if (ctx?.waitUntil) ctx.waitUntil(persist());
+      else await persist();
+      return json(payload);
     } catch (error) {
       return errorJson(error.message || "读取数据概览失败。", error.statusCode || 502);
     }
@@ -972,6 +988,12 @@ function deepMerge(base, patch) {
     else result[key] = value;
   }
   return result;
+}
+
+function overviewVideosPerAccount(days) {
+  if (days <= 1) return 20;
+  if (days <= 7) return 40;
+  return 80;
 }
 
 function officialPublishRecordsNeedPersist(before, after) {
