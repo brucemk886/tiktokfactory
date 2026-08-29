@@ -427,6 +427,13 @@ dialog {
   color: var(--lf-muted) !important;
 }
 
+.geelark-phone-item .risk-pill,
+.risk-pill {
+  border-color: #c48a8d !important;
+  background: #f8e8e8 !important;
+  color: #9a2f35 !important;
+}
+
 .side-tabs a:not(.app-brand),
 .sidebar-group-items > a,
 .tasks-nav a {

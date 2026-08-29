@@ -26,7 +26,12 @@ load();
 async function load() {
   ui.showStatus("正在读取账号数据…");
   try {
-    state.data = await ui.fetchDashboard({ days: state.days, search: state.search, module: state.module });
+    const [data, riskAccounts] = await Promise.all([
+      ui.fetchDashboard({ days: state.days, search: state.search, module: state.module }),
+      ui.fetchPublishRiskAccounts()
+    ]);
+    data.accounts = ui.attachPublishRiskMarks(data.accounts || [], riskAccounts);
+    state.data = data;
     render();
     ui.hideStatus();
   } catch (error) {
@@ -42,13 +47,13 @@ function render() {
       ? `最近同步：${data.latestDate}`
       : "尚无数据，等待中台推送或点击立即同步补漏";
   renderOverview(data.overview || {});
-  const rows = data.accounts || [];
+  const rows = [...(data.accounts || [])].sort((left, right) => Number(Boolean(right.publishRisk?.flagged)) - Number(Boolean(left.publishRisk?.flagged)));
   ui.$("#accountCount").textContent = `${rows.length} 个账号`;
   const empty = state.module
     ? "这个模块还没有绑定账号。请到官方通道的 TikTok 账号里，把账号分到对应项目的分组。"
     : "暂无官方授权账号归档";
   ui.$("#accountRows").innerHTML = rows.length
-    ? rows.map((item) => `<tr><td><div class="account-name">${ui.avatar(item)}<div><strong>${ui.escapeHtml(item.label)}</strong><small>${ui.escapeHtml(item.schema)}</small></div></div></td><td>${ui.escapeHtml(item.groupName || "未分组")}</td><td>${ui.format(item.followers)}</td><td>${ui.format(item.videoCount)}</td><td>${ui.format(item.views)}</td><td>${ui.format(item.likes)}</td><td>${ui.format(item.comments)}</td><td>${ui.format(item.shares)}</td><td>${ui.format(item.reach)}</td><td>${ui.dateTime(item.syncedAt)}</td><td><span class="video-actions"><a class="table-action" href="${ui.withModule(`/official-account-detail?account=${encodeURIComponent(item.schema)}`)}">账号详情</a><a class="table-action primary-table-action" href="${ui.withModule(`/official-account-videos?account=${encodeURIComponent(item.schema)}`)}">全部视频</a></span></td></tr>`).join("")
+    ? rows.map((item) => `<tr><td><div class="account-name">${ui.avatar(item)}<div><strong>${ui.escapeHtml(item.label)}${ui.riskBadge(item.publishRisk)}</strong><small>${ui.escapeHtml(item.schema)}${item.publishRisk?.flagged ? ` · ${ui.escapeHtml(item.publishRisk.label || "官方接口风控")}` : ""}</small></div></div></td><td>${ui.escapeHtml(item.groupName || "未分组")}</td><td>${ui.format(item.followers)}</td><td>${ui.format(item.videoCount)}</td><td>${ui.format(item.views)}</td><td>${ui.format(item.likes)}</td><td>${ui.format(item.comments)}</td><td>${ui.format(item.shares)}</td><td>${ui.format(item.reach)}</td><td>${ui.dateTime(item.syncedAt)}</td><td><span class="video-actions"><a class="table-action" href="${ui.withModule(`/official-account-detail?account=${encodeURIComponent(item.schema)}`)}">账号详情</a><a class="table-action primary-table-action" href="${ui.withModule(`/official-account-videos?account=${encodeURIComponent(item.schema)}`)}">全部视频</a></span></td></tr>`).join("")
     : `<tr><td colspan="11" class="empty">${empty}</td></tr>`;
 }
 

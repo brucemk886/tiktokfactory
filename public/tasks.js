@@ -529,7 +529,8 @@ async function loadOfficialTikTokAccounts() {
       const username = account.username ? `@${account.username}` : connectionId;
       const owner = account.ownerEmail || "未标记归属邮箱";
       const groupName = account.groupName || "未分组";
-      return `<label class="geelark-phone-item" data-search="${escapeAttr([displayName, username, owner, groupName, connectionId].join(" ").toLowerCase())}" data-group="${escapeAttr(account.groupName || "")}"><input class="official-tiktok-account-check" type="checkbox" value="${escapeAttr(connectionId)}" /><span><strong>${escapeHtml(displayName)}</strong><small>${escapeHtml(username)} · ${escapeHtml(groupName)}</small></span></label>`;
+      const risk = account.publishRisk?.flagged ? " · 风控" : "";
+      return `<label class="geelark-phone-item${account.publishRisk?.flagged ? " is-risk" : ""}" data-search="${escapeAttr([displayName, username, owner, groupName, connectionId, risk].join(" ").toLowerCase())}" data-group="${escapeAttr(account.groupName || "")}"><input class="official-tiktok-account-check" type="checkbox" value="${escapeAttr(connectionId)}" /><span><strong>${escapeHtml(displayName)}${account.publishRisk?.flagged ? `<em class="risk-pill">风控</em>` : ""}</strong><small>${escapeHtml(username)} · ${escapeHtml(groupName)}${account.publishRisk?.flagged ? ` · ${escapeHtml(account.publishRisk.label || "官方接口风控")}` : ""}</small></span></label>`;
     }).join("");
     list.querySelectorAll(".official-tiktok-account-check").forEach((input) => input.addEventListener("change", updateSelectedOfficialAccountCount));
     const hiddenCount = allAccounts.length - officialTikTokAccounts.length;

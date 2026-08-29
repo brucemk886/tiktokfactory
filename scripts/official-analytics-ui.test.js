@@ -23,6 +23,10 @@ test("authorized accounts is a focused list page", () => {
   assert.doesNotMatch(listHtml, /id="accountChart"|id="videoRows"|id="videoChart"/);
   assert.match(listScript, /official-account-detail\?account=/);
   assert.match(listScript, /official-account-videos\?account=/);
+  assert.match(listScript, /fetchPublishRiskAccounts/);
+  assert.match(listScript, /riskBadge/);
+  assert.match(sharedScript, /function attachPublishRiskMarks/);
+  assert.match(sharedScript, /风控/);
 });
 
 test("account detail owns metrics, audience insights and playback history", () => {
@@ -33,6 +37,7 @@ test("account detail owns metrics, audience insights and playback history", () =
     assert.match(accountHtml, new RegExp(`id="${id}"`));
   }
   assert.match(accountScript, /official-account-videos\?account=/);
+  assert.match(accountScript, /fetchPublishRiskAccounts/);
   assert.match(accountScript, /accountHistory/);
   assert.match(accountScript, /renderDistribution/);
 });

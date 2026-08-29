@@ -160,5 +160,37 @@
   function videoDateTime(item) { const timestamp = videoTimestamp(item); return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { hour12: false }) : "-"; }
   function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
   function escapeHtml(value) { return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
-  window.OfficialAnalytics = { $, fetchDashboard, syncNow, drawChart, drawRetention, renderDistribution, parseObject, pick, activate, avatar, showStatus, hideStatus, format, duration, percent, dateTime, videoDateTime, debounce, escapeHtml, currentModule, listHref, withModule, MODULE_PAGES };
+  async function fetchPublishRiskAccounts() {
+    try {
+      const response = await fetch(`/api/official-tiktok/publish-accounts?t=${Date.now()}`, { cache: "no-store" });
+      const data = await response.json();
+      return Array.isArray(data.accounts) ? data.accounts : [];
+    } catch {
+      return [];
+    }
+  }
+  function attachPublishRiskMarks(accounts, riskAccounts) {
+    const byId = new Map();
+    for (const item of Array.isArray(riskAccounts) ? riskAccounts : []) {
+      const risk = item?.publishRisk;
+      if (!risk?.flagged) continue;
+      const connectionId = String(item.connectionId || item.id || "").trim();
+      const schema = String(item.schema || (connectionId ? `tiktok:${connectionId}` : "")).trim();
+      if (connectionId) byId.set(connectionId, risk);
+      if (schema) byId.set(schema, risk);
+      if (schema.startsWith("tiktok:")) byId.set(schema.slice("tiktok:".length), risk);
+    }
+    return (Array.isArray(accounts) ? accounts : []).map((account) => {
+      const connectionId = String(account.connectionId || account.id || "").trim();
+      const schema = String(account.schema || account.username || (connectionId ? `tiktok:${connectionId}` : "")).trim();
+      const risk = byId.get(connectionId) || byId.get(schema) || (schema.startsWith("tiktok:") ? byId.get(schema.slice("tiktok:".length)) : null);
+      return risk ? { ...account, publishRisk: risk } : account;
+    });
+  }
+  function riskBadge(risk) {
+    if (!risk?.flagged) return "";
+    const times = Number(risk.count || 0) > 1 ? ` · ${risk.count} 次` : "";
+    return `<span class="risk-pill" title="${escapeHtml(`${risk.label || "官方接口风控"}（${risk.reason || "spam_risk"}）${times}`)}">风控</span>`;
+  }
+  window.OfficialAnalytics = { $, fetchDashboard, syncNow, drawChart, drawRetention, renderDistribution, parseObject, pick, activate, avatar, showStatus, hideStatus, format, duration, percent, dateTime, videoDateTime, debounce, escapeHtml, currentModule, listHref, withModule, MODULE_PAGES, fetchPublishRiskAccounts, attachPublishRiskMarks, riskBadge };
 })();

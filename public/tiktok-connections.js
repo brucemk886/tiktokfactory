@@ -103,8 +103,11 @@ async function loadAccounts({ refresh = false } = {}) {
   setBusy(elements.refreshButton, true, refresh ? "正在从主站同步..." : "刷新中...");
   elements.accountList.innerHTML = '<div class="empty-state">正在读取已授权账号...</div>';
   try {
-    const result = await requestJson(`/api/private-tiktok/accounts${refresh ? "?refresh=1" : ""}`);
-    state.accounts = Array.isArray(result.accounts) ? result.accounts : [];
+    const [result, hub] = await Promise.all([
+      requestJson(`/api/private-tiktok/accounts${refresh ? "?refresh=1" : ""}`),
+      requestJson("/api/official-tiktok/publish-accounts").catch(() => ({ accounts: [] }))
+    ]);
+    state.accounts = attachPublishRiskMarks(Array.isArray(result.accounts) ? result.accounts : [], hub.accounts || []);
     state.groups = Array.isArray(result.groups) ? result.groups : [];
     state.projects = Array.isArray(result.projects) ? result.projects : [];
     fillProjectSelects();
@@ -189,11 +192,13 @@ function visibleAccounts() {
     if (projectId && projectId !== "unassigned" && account.projectId !== projectId) return false;
     if (groupId === "ungrouped" && account.groupId) return false;
     if (groupId && groupId !== "ungrouped" && account.groupId !== groupId) return false;
-    if (!query) return true;
-    const profile = account.profile || {};
-    return [profile.username, profile.displayName, account.label, account.groupName, account.projectName, account.schema]
-      .some((value) => String(value || "").toLowerCase().includes(query));
-  });
+    if (query) {
+      const profile = account.profile || {};
+      const haystack = [profile.username, profile.displayName, account.label, account.groupName, account.projectName, account.schema, account.publishRisk?.flagged ? "风控 spam_risk" : ""];
+      if (!haystack.some((value) => String(value || "").toLowerCase().includes(query))) return false;
+    }
+    return true;
+  }).sort((left, right) => Number(Boolean(right.publishRisk?.flagged)) - Number(Boolean(left.publishRisk?.flagged)));
 }
 
 function renderAccounts() {
@@ -215,13 +220,15 @@ function renderAccounts() {
     const videoCount = Number(account.syncedVideoCount ?? account.videoCount ?? 0);
     const syncedAt = formatTime(account.syncedAt || account.updatedAt);
     const key = accountKey(account);
-    return `<article class="account-row">
+    const risk = account.publishRisk;
+    const riskTitle = risk?.flagged ? `${risk.label || "官方接口风控"}（${risk.reason || "spam_risk"}）${Number(risk.count || 0) > 1 ? ` · ${risk.count} 次` : ""}` : "";
+    return `<article class="account-row${risk?.flagged ? " is-risk" : ""}">
       <input class="account-check" type="checkbox" value="${escapeHtml(key)}" data-schema="${escapeHtml(account.schema || "")}" data-username="${escapeHtml(profile.username || "")}" />
-      <div><strong>${escapeHtml(username)}</strong><span>${escapeHtml(displayName)}</span></div>
+      <div><strong>${escapeHtml(username)}${risk?.flagged ? `<span class="risk-pill" title="${escapeHtml(riskTitle)}">风控</span>` : ""}</strong><span>${escapeHtml(displayName)}</span></div>
       <div><small>项目 / 分组</small><b class="group-chip${account.groupName ? "" : " is-empty"}">${escapeHtml([account.projectName, account.groupName || "未分组"].filter(Boolean).join(" / "))}</b></div>
       <div><small>视频</small><b>${formatNumber(videoCount)}</b></div>
       <div><small>最近同步</small><b>${escapeHtml(syncedAt)}</b></div>
-      <div><small>状态</small><b class="ready-pill">已授权</b></div>
+      <div><small>状态</small><b class="${risk?.flagged ? "risk-pill" : "ready-pill"}" title="${escapeHtml(riskTitle)}">${risk?.flagged ? "风控" : "已授权"}</b></div>
     </article>`;
   }).join("");
   elements.accountList.querySelectorAll(".account-check").forEach((input) => input.addEventListener("change", updateSelectedCount));
@@ -469,6 +476,25 @@ function setBusy(button, busy, label) {
   if (!button) return;
   button.disabled = busy;
   button.textContent = label;
+}
+
+function attachPublishRiskMarks(accounts, riskAccounts) {
+  const byId = new Map();
+  for (const item of Array.isArray(riskAccounts) ? riskAccounts : []) {
+    const risk = item?.publishRisk;
+    if (!risk?.flagged) continue;
+    const connectionId = String(item.connectionId || item.id || "").trim();
+    const schema = String(item.schema || (connectionId ? `tiktok:${connectionId}` : "")).trim();
+    if (connectionId) byId.set(connectionId, risk);
+    if (schema) byId.set(schema, risk);
+    if (schema.startsWith("tiktok:")) byId.set(schema.slice("tiktok:".length), risk);
+  }
+  return (Array.isArray(accounts) ? accounts : []).map((account) => {
+    const connectionId = String(account.connectionId || account.id || "").trim();
+    const schema = String(account.schema || account.username || (connectionId ? `tiktok:${connectionId}` : "")).trim();
+    const risk = byId.get(connectionId) || byId.get(schema) || (schema.startsWith("tiktok:") ? byId.get(schema.slice("tiktok:".length)) : null);
+    return risk ? { ...account, publishRisk: risk } : account;
+  });
 }
 
 async function requestJson(url, options = {}) {
