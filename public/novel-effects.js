@@ -1,7 +1,7 @@
 const pageParams = new URLSearchParams(location.search);
 const state = {
   source: document.body.dataset.source === "third_party" ? "third_party" : "official_api",
-  days: Number(document.querySelector("#daysTabs .active")?.dataset.days) || 7,
+  days: Number(document.querySelector("#daysTabs .is-active, #daysTabs .active")?.dataset.days) || 7,
   query: "",
   novelId: pageParams.get("novel") || "",
   page: 1,
@@ -27,6 +27,10 @@ daysTabs?.addEventListener("click", (event) => {
   setActive(daysTabs, button);
   loadEffects();
 });
+if (daysTabs) {
+  const current = daysTabs.querySelector(`[data-days="${state.days}"]`) || daysTabs.querySelector(".is-active");
+  if (current) setActive(daysTabs, current);
+}
 searchForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   state.query = searchInput.value.trim();
@@ -36,7 +40,12 @@ searchForm?.addEventListener("submit", (event) => {
 refreshButton?.addEventListener("click", loadEffects);
 
 function setActive(container, active) {
-  container.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button === active));
+  container.querySelectorAll("button").forEach((button) => {
+    const on = button === active;
+    button.classList.toggle("is-active", on);
+    button.classList.remove("active");
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+  });
 }
 
 async function loadEffects() {

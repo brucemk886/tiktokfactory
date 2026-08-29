@@ -25,7 +25,12 @@
 .segmented button, .ghost-button, .primary-button { border: 0; cursor: pointer; font: inherit; font-weight: 800; }
 .segmented button { padding: 11px 15px; color: #b8c7cd; background: var(--lf-surface); border-right: 1px solid var(--effect-border); }
 .segmented button:last-child { border-right: 0; }
-.segmented button.active { color: #10160b; background: var(--effect-accent); }
+.segmented button.active,
+.novel-effects-page .segmented button.is-active {
+  color: #10160b !important;
+  background: var(--effect-accent) !important;
+  border-color: var(--effect-accent) !important;
+}
 .segmented.compact button { padding-inline: 12px; }
 .search-form { display: flex; gap: 8px; }
 .search-form input { min-width: 0; width: 100%; border: 1px solid var(--effect-border); border-radius: 5px; padding: 11px 13px; color: var(--effect-text); background: var(--lf-surface); }
