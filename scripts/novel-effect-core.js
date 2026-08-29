@@ -8,6 +8,7 @@ export function assembleOfficialNovelEffects({
   query = "",
   days = 30,
   label = "官方归档",
+  projectAccountCount = 0,
 } = {}) {
   const videos = flattenOfficialVideos(signals, normalizeRecords(records));
   const overview = buildOverview(store, audioItems || audioItemsFromScripts(store?.scripts || []), videos, query);
@@ -22,6 +23,9 @@ export function assembleOfficialNovelEffects({
       days,
       archiveDate: signals?.archiveDate || "",
       archiveAt: Number(signals?.archiveAt) || 0,
+    }, {
+      videos,
+      accountCount: projectAccountCount,
     }),
     videoMappings: videos.map((video) => ({
       videoId: clean(video.videoId || video.itemId || video.id),
@@ -91,27 +95,31 @@ function slimEffectVideo(video) {
   };
 }
 
-export function decorate(overview = {}, dataStatus) {
+export function decorate(overview = {}, dataStatus, projectScope = null) {
   const novels = Array.isArray(overview.novels) ? overview.novels : [];
   return {
     ...overview,
     novels,
     unassignedScripts: Array.isArray(overview.unassignedScripts) ? overview.unassignedScripts : [],
-    summary: enrichSummary(overview.summary, novels),
+    summary: enrichSummary(overview.summary, novels, projectScope),
     dataStatus,
   };
 }
 
-export function enrichSummary(summary = {}, novels = []) {
+export function enrichSummary(summary = {}, novels = [], projectScope = null) {
   const scripts = novels.flatMap((novel) => Array.isArray(novel.scripts) ? novel.scripts : []);
-  const videos = scripts.flatMap((script) => Array.isArray(script.videos) ? script.videos : []);
+  const mappedVideos = scripts.flatMap((script) => Array.isArray(script.videos) ? script.videos : []);
+  const videos = Array.isArray(projectScope?.videos) ? projectScope.videos : mappedVideos;
+  const testedAccountCount = Number(projectScope?.accountCount) > 0
+    ? Number(projectScope.accountCount)
+    : new Set(videos.map((video) => clean(video.username)).filter(Boolean)).size;
   return {
     ...summary,
     novelCount: Number(summary.novelCount || novels.length),
     scriptCount: Number(summary.scriptCount || scripts.length),
     audioCount: Number(summary.audioCount || scripts.filter((script) => script.audio).length),
-    videoCount: Number(summary.videoCount || videos.length),
-    testedAccountCount: new Set(videos.map((video) => video.username).filter(Boolean)).size,
+    videoCount: videos.length,
+    testedAccountCount,
     totalViews: sum(videos, "views"),
     comments: sum(videos, "comments"),
     averageTimeWatched: weightedAverage(videos, "averageTimeWatched"),

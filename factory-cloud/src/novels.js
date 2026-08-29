@@ -23,7 +23,7 @@ import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchIndex, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, migrateNovelsFromKv, syncWorkingNovels, updateNovelBookId, upsertNovel, writeScripts } from "./novel-store.js";
-import { archiveAccountKeysForScope } from "../../scripts/official-account-group-store.js";
+import { archiveAccountKeysForProject, uniqueProjectAccountCount } from "../../scripts/official-account-group-store.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 import { hydrateOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -215,7 +215,7 @@ export async function handleNovels(request, env, url, session) {
         getOfficialOperationSignals(env, db, {
           days,
           videosPerAccount: 100,
-          accountKeys: archiveAccountKeysForScope(groupStore, accountRows, { projectId: "proj-novel" }),
+          accountKeys: archiveAccountKeysForProject(groupStore, accountRows, "proj-novel"),
         }),
         readStore(db, { includeSource: false, workingOnly: true }),
         hydrateOfficialPublishRecords(storedRecords, (batchId) => (
@@ -233,6 +233,7 @@ export async function handleNovels(request, env, url, session) {
         query,
         days,
         label: "线上官方归档",
+        projectAccountCount: uniqueProjectAccountCount(groupStore, "proj-novel"),
       });
       await kvSet(db, "novel-hit-snapshot", buildOwnHitSnapshot(assembled)).catch(() => {});
       const { videoMappings, ...page } = assembled;

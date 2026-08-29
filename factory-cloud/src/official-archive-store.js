@@ -50,7 +50,16 @@ export async function getOfficialOperationSignals(env, db, options = {}) {
   const accountRows = await listLatestArchiveAccounts(db);
   const requested = Array.isArray(options.accountKeys) ? options.accountKeys.filter(Boolean) : null;
   const scopedRows = requested?.length
-    ? accountRows.filter((row) => requested.includes(row.account_key))
+    ? [
+      ...accountRows.filter((row) => requested.includes(row.account_key)),
+      ...requested
+        .filter((key) => !accountRows.some((row) => row.account_key === key))
+        .map((key) => ({
+          account_key: key,
+          label: String(key).startsWith("tiktok:") ? key.slice("tiktok:".length) : key,
+          profile_json: "{}",
+        })),
+    ]
     : accountRows;
   const safeVideos = Math.max(1, Math.min(100, Math.floor(Number(options.videosPerAccount) || 100)));
   const videosByAccount = await loadVideosForAccounts(env, db, scopedRows.map((row) => row.account_key), safeVideos);

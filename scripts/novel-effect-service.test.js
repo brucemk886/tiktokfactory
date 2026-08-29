@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { assembleOfficialNovelEffects } from "./novel-effect-core.js";
+import { archiveAccountKeysForProject, uniqueProjectAccountCount } from "./official-account-group-store.js";
 import { createNovelEffectService } from "./novel-effect-service.js";
 
 function overviewFor(videos = []) {
@@ -83,6 +85,43 @@ test("reuses supplied official signals when building the operation decision cont
 test("rejects unknown novel effect sources", async () => {
   const service = createNovelEffectService({ novelContentLibrary: { getOverview: () => overviewFor() } });
   await assert.rejects(() => service.getOverview({ source: "mixed" }), /Unsupported data source/);
+});
+
+test("overview summary counts all novel-project videos not only mapped openings", () => {
+  const page = assembleOfficialNovelEffects({
+    store: {
+      novels: [{ id: "novel-1", title: "Story" }],
+      scripts: [{ id: "script-1", novelId: "novel-1", audioId: "audio-1" }],
+    },
+    audioItems: [{ id: "audio-1", title: "Opening" }],
+    signals: {
+      status: "ready",
+      connected: true,
+      accounts: [
+        { username: "mapped", videos: [{ id: "v1", views: 100, comments: 2, createTime: 1_786_000_000 }] },
+        { username: "unmapped", videos: [{ id: "v2", views: 40, comments: 1, createTime: 1_786_000_000 }] },
+      ],
+    },
+    records: [{ videoId: "v1", username: "mapped", audioLibraryId: "audio-1" }],
+    projectAccountCount: 3,
+  });
+  assert.equal(page.summary.totalViews, 140);
+  assert.equal(page.summary.videoCount, 2);
+  assert.equal(page.summary.testedAccountCount, 3);
+  assert.equal(page.dataStatus.mappedVideoCount, 1);
+  assert.equal(page.novels[0].performance.totalViews, 100);
+});
+
+test("lists every assigned novel-project account even if archive is missing one", () => {
+  const store = {
+    projects: [{ id: "proj-novel", name: "小说推文", moduleKey: "novel-promotion" }],
+    groups: [{ id: "g-novel", name: "A组", projectId: "proj-novel" }],
+    assignments: { "connection-1": "g-novel", "connection-2": "g-novel" },
+  };
+  assert.equal(uniqueProjectAccountCount(store, "proj-novel"), 2);
+  assert.deepEqual(archiveAccountKeysForProject(store, [
+    { account_key: "tiktok:connection-1", label: "@one", username: "one" },
+  ], "proj-novel").sort(), ["tiktok:connection-1", "tiktok:connection-2"]);
 });
 
 test("slims novel effects payload and keeps books that have videos even at zero views", async () => {

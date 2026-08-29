@@ -58,7 +58,7 @@ export function createNovelEffectService({
           rawVideoCount: countOfficialVideos(resolvedSignals),
           mappedVideoCount: videos.filter(hasContentMapping).length,
           days: safeDays,
-        }),
+        }, { videos }),
         videoMappings: videos.map((video) => ({
           videoId: clean(video.videoId || video.itemId || video.id),
           username: clean(video.username),

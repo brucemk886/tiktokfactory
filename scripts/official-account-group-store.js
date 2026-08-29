@@ -287,6 +287,40 @@ export function archiveAccountKeysForScope(store, accountRows = [], { groupId = 
     .filter(Boolean);
 }
 
+export function uniqueProjectAccountCount(store, projectId) {
+  const next = rememberAccountAliases(store);
+  const groupIds = new Set(next.groups.filter((item) => item.projectId === safeId(projectId)).map((item) => item.id));
+  const primaries = new Set();
+  for (const [key, assigned] of Object.entries(next.assignments)) {
+    if (!groupIds.has(assigned)) continue;
+    primaries.add(next.aliases[key] || key);
+  }
+  return primaries.size;
+}
+
+export function archiveAccountKeysForProject(store, accountRows = [], projectId) {
+  const next = normalizeStore(store);
+  const groupIds = new Set(next.groups.filter((item) => item.projectId === safeId(projectId)).map((item) => item.id));
+  const assigned = new Set(Object.entries(next.assignments)
+    .filter(([, groupId]) => groupIds.has(groupId))
+    .map(([key]) => key));
+  const keys = [];
+  const seen = new Set();
+  for (const account of accountsFromArchiveRows(accountRows)) {
+    const norms = officialAccountKeys(account);
+    if (!norms.some((key) => assigned.has(key))) continue;
+    const archiveKey = account.accountKey || account.schema;
+    if (archiveKey) keys.push(archiveKey);
+    for (const key of norms) seen.add(key);
+  }
+  for (const key of assigned) {
+    if (seen.has(key)) continue;
+    keys.push(key.includes(":") ? key : `tiktok:${key}`);
+    seen.add(key);
+  }
+  return [...new Set(keys.filter(Boolean))];
+}
+
 export function userAllowedGroupIds(user) {
   if (!user || user.role === "admin") return null;
   return new Set((Array.isArray(user.allowedAccountGroups) ? user.allowedAccountGroups : []).map((id) => safeId(id)).filter(Boolean));
