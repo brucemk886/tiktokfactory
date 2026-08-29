@@ -224,7 +224,12 @@ export function selectDueOfficialPublishRecords(records, currentTime = Date.now(
   return (Array.isArray(records) ? records : []).filter((record) => {
     if (!isOfficial(record) || TERMINAL_FAILURES.has(String(record.status || "").toLowerCase())) return false;
     const scheduledAt = Math.max(0, Number(record.scheduleAt || 0) * 1000 || Number(record.createdAt || 0));
-    if (!(scheduledAt > 0) || beijingDateKey(currentTime) <= beijingDateKey(scheduledAt)) return false;
+    if (!(scheduledAt > 0) || scheduledAt > currentTime) return false;
+    const sameDay = beijingDateKey(currentTime) <= beijingDateKey(scheduledAt);
+    if (sameDay) {
+      if (String(record.status || "").toLowerCase() === "published") return !String(record.videoId || "").trim();
+      return true;
+    }
     if (String(record.status || "").toLowerCase() !== "published") return true;
     const publishedAt = Math.max(0, Number(record.publishedAt || record.completedAt || scheduledAt));
     if (currentTime - publishedAt > SNAPSHOT_TRACKING_DAYS * DAY_MS) return false;

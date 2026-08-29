@@ -18,14 +18,16 @@ test("official result sync schedules the next run at 08:30 Beijing time", () => 
   );
 });
 
-test("official result sync only selects records on a later Beijing calendar day", () => {
+test("official result sync selects same-day records after their schedule time", () => {
   const records = [
     officialRecord("yesterday", "2026-08-11T23:50:00+08:00"),
     officialRecord("today", "2026-08-12T00:01:00+08:00"),
+    officialRecord("later-today", "2026-08-12T11:00:00+08:00"),
     officialRecord("next-week", "2026-08-19T10:00:00+08:00"),
     { ...officialRecord("geelark", "2026-08-11T10:00:00+08:00"), provider: "geelark", source: "geelark" },
+    officialRecord("published-today", "2026-08-12T01:15:00+08:00", { status: "published", videoId: "7001" }),
   ];
-  assert.deepEqual(selectDueOfficialPublishRecords(records, SHANGHAI_MORNING).map((record) => record.id), ["yesterday"]);
+  assert.deepEqual(selectDueOfficialPublishRecords(records, SHANGHAI_MORNING).map((record) => record.id), ["yesterday", "today"]);
 });
 
 test("daily sync groups batch requests and writes video id plus detailed official data", async () => {
