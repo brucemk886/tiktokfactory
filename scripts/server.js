@@ -3392,7 +3392,7 @@ async function attachLocalPublishOutcome(report, accounts, fromKey, toKey, perio
   if (!connectionIds.length) return attachPublishOutcome(report, {});
   try {
     const parts = [];
-    for (const chunk of chunkList(connectionIds, 200)) {
+    for (const chunk of chunkList(connectionIds, 80)) {
       parts.push(await privateTikTokAnalytics.getPublishStats({
         from: window.startAt,
         to: window.endAt,

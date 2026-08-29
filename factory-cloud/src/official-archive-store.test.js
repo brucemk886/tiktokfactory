@@ -31,6 +31,7 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(store, /SELECT account_key, label, synced_at, video_count, views/);
   assert.doesNotMatch(store, /json_extract\(profile_json/);
   assert.match(official, /\/api\/v1\/publish\/stats/);
+  assert.match(official, /chunkList\(connectionIds, 80\)/);
   assert.match(official, /attachPublishOutcome/);
   assert.match(novels, /hydrateOfficialPublishRecords/);
   assert.match(novels, /skipResolved: true/);

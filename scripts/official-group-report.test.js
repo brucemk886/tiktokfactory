@@ -61,10 +61,10 @@ test("attaches hub publish outcomes without changing archive video counts", () =
   assert.equal(next.summary.publishFailed, 14);
   assert.equal(next.summary.riskAccountCount, 7);
   assert.deepEqual(connectionIdsFromArchiveRows([
-    { account_key: "tiktok:conn-1" },
-    { schema: "tiktok:conn-1" },
-    { accountKey: "local-only" },
-  ]), ["conn-1"]);
+    { account_key: "tiktok:c6a46b42-c30b-4f4e-b832-50082715f5f2" },
+    { schema: "tiktok:c6a46b42-c30b-4f4e-b832-50082715f5f2" },
+    { accountKey: "zoedecker03" },
+  ]), ["c6a46b42-c30b-4f4e-b832-50082715f5f2"]);
   assert.deepEqual(mergePublishStats([
     { success: 90, failed: 10, riskAccounts: 6 },
     { success: 2, failed: 4, riskAccounts: 1 },

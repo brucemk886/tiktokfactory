@@ -197,7 +197,8 @@ export function attachPublishOutcome(report, stats = {}) {
 export function connectionIdsFromArchiveRows(accountRows = []) {
   return [...new Set((Array.isArray(accountRows) ? accountRows : []).map((row) => {
     const key = String(row?.account_key || row?.accountKey || row?.schema || "").trim();
-    return key.startsWith("tiktok:") ? key.slice("tiktok:".length) : "";
+    const id = key.startsWith("tiktok:") ? key.slice("tiktok:".length) : key;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : "";
   }).filter(Boolean))];
 }
 

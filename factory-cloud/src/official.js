@@ -584,7 +584,7 @@ async function loadScopedPublishStats(env, db, { store, projectId, groupId, grou
   }
   try {
     const parts = [];
-    for (const chunk of chunkList(connectionIds, 200)) {
+    for (const chunk of chunkList(connectionIds, 80)) {
       const params = new URLSearchParams({ from: String(start), to: String(end), connectionIds: chunk.join(",") });
       parts.push(await signalDesk(env, db, `/api/v1/publish/stats?${params}`));
     }

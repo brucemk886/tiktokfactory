@@ -1019,7 +1019,7 @@ async function loadOverviewPublishStats(env, db, store, days) {
   const connectionIds = connectionIdsForProjectScope(store, { projectId: "proj-novel" });
   if (!connectionIds.length) return { total: 0, success: 0, failed: 0 };
   const parts = [];
-  for (const chunk of chunkList(connectionIds, 200)) {
+  for (const chunk of chunkList(connectionIds, 80)) {
     const params = new URLSearchParams({
       from: String(window.startAt),
       to: String(window.endAt),

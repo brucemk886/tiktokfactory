@@ -298,8 +298,12 @@ export function uniqueProjectAccountCount(store, projectId) {
   return primaries.size;
 }
 
+export function isTikTokConnectionId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
 export function connectionIdsForProjectScope(store, { projectId = "", groupId = "", groupIds = null } = {}) {
-  const next = normalizeStore(store);
+  const next = rememberAccountAliases(normalizeStore(store));
   const allowed = groupId
     ? new Set([safeId(groupId)])
     : Array.isArray(groupIds)
@@ -310,7 +314,8 @@ export function connectionIdsForProjectScope(store, { projectId = "", groupId = 
   if (!allowed) return [];
   return [...new Set(Object.entries(next.assignments)
     .filter(([, assigned]) => allowed.has(assigned))
-    .map(([key]) => key))];
+    .map(([key]) => next.aliases[key] || key)
+    .filter(isTikTokConnectionId))];
 }
 
 export function archiveAccountKeysForProject(store, accountRows = [], projectId) {

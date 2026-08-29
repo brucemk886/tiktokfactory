@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { archiveAccountKeysForScope, scopeOfficialAccess, userAllowedGroupIds } from "./official-account-group-store.js";
+import { archiveAccountKeysForScope, connectionIdsForProjectScope, scopeOfficialAccess, userAllowedGroupIds } from "./official-account-group-store.js";
 
 const store = {
   projects: [
@@ -55,6 +55,27 @@ test("report scope only returns the current group's archive keys", () => {
   ];
   assert.deepEqual(archiveAccountKeysForScope(store, rows, { groupId: "g-mid-a" }), ["acc-mid-a"]);
   assert.deepEqual(archiveAccountKeysForScope(store, rows, { projectId: "proj-mid" }).sort(), ["acc-mid-a", "acc-mid-b"]);
+});
+
+test("project publish stats only send TikTok connection UUIDs", () => {
+  const assigned = {
+    projects: [{ id: "proj-novel", name: "小说推文", moduleKey: "novel-promotion" }],
+    groups: [{ id: "g-novel", name: "A组", projectId: "proj-novel" }],
+    assignments: {
+      "c6a46b42-c30b-4f4e-b832-50082715f5f2": "g-novel",
+      zoedecker03: "g-novel",
+      "067e37a4-d159-402b-bf36-c8e2d6a71977": "g-novel",
+      ikekuzjy8qv: "g-novel",
+    },
+    aliases: {
+      zoedecker03: "c6a46b42-c30b-4f4e-b832-50082715f5f2",
+      ikekuzjy8qv: "067e37a4-d159-402b-bf36-c8e2d6a71977",
+    },
+  };
+  assert.deepEqual(connectionIdsForProjectScope(assigned, { projectId: "proj-novel" }).sort(), [
+    "067e37a4-d159-402b-bf36-c8e2d6a71977",
+    "c6a46b42-c30b-4f4e-b832-50082715f5f2",
+  ]);
 });
 
 test("group accountCount counts one account even when aliases are stored twice", () => {
