@@ -10,6 +10,7 @@ const MODULE_LABEL = {
   "psychology": "心理学",
 };
 
+const PAGE_SIZE = 10;
 const params = new URLSearchParams(location.search);
 const todayKey = shanghaiDateKey();
 const state = {
@@ -19,6 +20,7 @@ const state = {
   fromKey: params.get("from") || params.get("date") || "",
   toKey: params.get("to") || params.get("date") || "",
   data: null,
+  pages: { high: 1, low: 1 },
 };
 
 if (!state.fromKey || !state.toKey) {
@@ -94,6 +96,7 @@ async function loadReport() {
     if (!state.groupId && data.report?.groupId) state.groupId = data.report.groupId;
     if (data.report?.fromKey) state.fromKey = data.report.fromKey;
     if (data.report?.toKey) state.toKey = data.report.toKey;
+    state.pages = { high: 1, low: 1 };
     render();
   } catch (error) {
     meta.textContent = error.message || "读取报表失败。";
@@ -128,8 +131,8 @@ function render() {
   const sourceLabel = data.source === "snapshot" ? "历史快照" : "实时查询";
   document.querySelector("#reportMeta").textContent = `${rangeLabel(report)} · ${scopeName} · ${sourceLabel} · 低播 < ${report.thresholds?.lowView || 200} · 高播 ≥ ${report.thresholds?.highView || 1000}`;
   document.querySelector("#summaryGrid").innerHTML = [
-    ["发布视频", formatNumber(summary.published)],
     ["发布总数", formatNumber(summary.publishTotal ?? ((Number(summary.publishSuccess) || 0) + (Number(summary.publishFailed) || 0)))],
+    ["发布视频", formatNumber(summary.published)],
     ["发布成功", formatNumber(summary.publishSuccess)],
     ["发布失败", formatNumber(summary.publishFailed)],
     ["风控账号", formatNumber(summary.riskAccountCount)],
@@ -142,8 +145,8 @@ function render() {
   ].map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
   renderAnomalies(report.anomalyAccounts || []);
   renderBucket("zeroSection", "0 播 / 账号异常", "发布后还是 0 播放，优先检查账号或审核。", report.buckets?.zeroView || []);
-  renderBucket("lowSection", "低播视频", `播放低于 ${report.thresholds?.lowView || 200}。`, report.buckets?.lowView || []);
-  renderBucket("highSection", "高播视频", `播放达到 ${report.thresholds?.highView || 1000} 以上。`, report.buckets?.highView || []);
+  renderBucket("highSection", "高播视频", `播放达到 ${report.thresholds?.highView || 1000} 以上。`, report.buckets?.highView || [], "high");
+  renderBucket("lowSection", "低播视频", `播放低于 ${report.thresholds?.lowView || 200}。`, report.buckets?.lowView || [], "low");
 }
 
 function fillSelects(data) {
@@ -235,21 +238,89 @@ function renderAnomalies(rows) {
     </tr>`).join("")}</tbody></table></div>`;
 }
 
-function renderBucket(id, title, hint, rows) {
+function renderBucket(id, title, hint, rows, pageKey = "") {
   const node = document.querySelector(`#${id}`);
   if (!rows.length) {
     node.innerHTML = `<div class="section-title"><div><p>VIDEO</p><h2>${escapeHtml(title)}</h2></div></div><div class="empty">${escapeHtml(hint)} 这一时段没有这类视频。</div>`;
     return;
   }
-  node.innerHTML = `<div class="section-title"><div><p>VIDEO</p><h2>${escapeHtml(title)}</h2></div></div>
-    <div class="table-wrap"><table><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th></tr></thead>
-    <tbody>${rows.map((item) => `<tr>
-      <td>${escapeHtml(item.title || item.id)}</td>
+  const paged = pageKey ? paginateItems(rows, state.pages[pageKey] || 1) : { items: rows, page: 1, pageCount: 1, total: rows.length };
+  if (pageKey) state.pages[pageKey] = paged.page;
+  node.innerHTML = `<div class="section-title"><div><p>VIDEO</p><h2>${escapeHtml(title)}</h2></div><span>${paged.total} 条</span></div>
+    <div class="table-wrap"><table><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>跳转</th></tr></thead>
+    <tbody>${paged.items.map((item) => `<tr>
+      <td>${videoTitleCell(item)}</td>
       <td>@${escapeHtml(item.username || "-")}</td>
       <td>${formatNumber(item.views)}</td>
       <td>${formatNumber(item.likes)}</td>
       <td>${formatTime(item.createdAt)}</td>
-    </tr>`).join("")}</tbody></table></div>`;
+      <td>${videoJumpCell(item)}</td>
+    </tr>`).join("")}</tbody></table></div>
+    ${pageKey ? renderPager(pageKey, paged) : ""}`;
+  if (pageKey) bindPager(node, pageKey);
+}
+
+function paginateItems(items, page) {
+  const list = Array.isArray(items) ? items : [];
+  const pageCount = Math.max(1, Math.ceil(list.length / PAGE_SIZE) || 1);
+  const current = Math.min(pageCount, Math.max(1, Number(page) || 1));
+  const start = (current - 1) * PAGE_SIZE;
+  return {
+    items: list.slice(start, start + PAGE_SIZE),
+    page: current,
+    pageCount,
+    total: list.length,
+  };
+}
+
+function renderPager(pageKey, paged) {
+  if (paged.total <= PAGE_SIZE) return "";
+  const buttons = [];
+  buttons.push(`<button type="button" data-page="${paged.page - 1}" ${paged.page <= 1 ? "disabled" : ""}>上一页</button>`);
+  for (let page = 1; page <= paged.pageCount; page++) {
+    if (paged.pageCount > 9 && page !== 1 && page !== paged.pageCount && Math.abs(page - paged.page) > 2) {
+      if (buttons[buttons.length - 1] !== "<span>…</span>") buttons.push("<span>…</span>");
+      continue;
+    }
+    buttons.push(`<button type="button" data-page="${page}" class="${page === paged.page ? "is-active" : ""}">${page}</button>`);
+  }
+  buttons.push(`<button type="button" data-page="${paged.page + 1}" ${paged.page >= paged.pageCount ? "disabled" : ""}>下一页</button>`);
+  return `<div class="ops-video-pager" data-bucket="${escapeHtml(pageKey)}"><span>每页 ${PAGE_SIZE} 条 · 共 ${paged.pageCount} 页 · ${paged.total} 条</span>${buttons.join("")}</div>`;
+}
+
+function bindPager(node, pageKey) {
+  node.querySelectorAll("[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = Number(button.dataset.page);
+      const pageCount = Math.max(1, Math.ceil((state.data?.report?.buckets?.[pageKey === "high" ? "highView" : "lowView"] || []).length / PAGE_SIZE) || 1);
+      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.pages[pageKey]) return;
+      state.pages[pageKey] = next;
+      render();
+      document.querySelector(`#${pageKey === "high" ? "highSection" : "lowSection"}`)?.scrollIntoView({ block: "start" });
+    });
+  });
+}
+
+function tiktokWatchUrl(video = {}) {
+  const existing = String(video.shareLink || video.videoUrl || video.url || "").trim();
+  if (/tiktok\.com\/@[\w.]+\/video\/\d{10,}/i.test(existing)) return existing;
+  const id = String(video.id || video.videoId || "").trim();
+  const username = String(video.username || "").replace(/^@/, "").trim();
+  if (/^\d{10,}$/.test(id) && username) return `https://www.tiktok.com/@${encodeURIComponent(username)}/video/${id}`;
+  return "";
+}
+
+function videoTitleCell(item) {
+  const title = escapeHtml(item.title || item.id || "未命名视频");
+  const href = tiktokWatchUrl(item);
+  return href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${title}</a>` : title;
+}
+
+function videoJumpCell(item) {
+  const href = tiktokWatchUrl(item);
+  return href
+    ? `<a class="table-action" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">打开</a>`
+    : "—";
 }
 
 function readFilters() {

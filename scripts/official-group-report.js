@@ -265,6 +265,32 @@ function collectVideos({ accountRows = [], videosByAccount = new Map(), match = 
   return { accounts, videos };
 }
 
+export const OPS_VIDEO_PAGE_SIZE = 10;
+
+export function paginateItems(items = [], page = 1, pageSize = OPS_VIDEO_PAGE_SIZE) {
+  const list = Array.isArray(items) ? items : [];
+  const size = Math.max(1, Number(pageSize) || OPS_VIDEO_PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(list.length / size) || 1);
+  const current = Math.min(pageCount, Math.max(1, Number(page) || 1));
+  const start = (current - 1) * size;
+  return {
+    items: list.slice(start, start + size),
+    page: current,
+    pageCount,
+    total: list.length,
+    pageSize: size,
+  };
+}
+
+export function tiktokWatchUrl(video = {}) {
+  const existing = String(video.shareLink || video.videoUrl || video.url || "").trim();
+  if (/tiktok\.com\/@[\w.]+\/video\/\d{10,}/i.test(existing)) return existing;
+  const id = String(video.id || video.videoId || "").trim();
+  const username = String(video.username || "").replace(/^@/, "").trim();
+  if (/^\d{10,}$/.test(id) && username) return `https://www.tiktok.com/@${encodeURIComponent(username)}/video/${id}`;
+  return "";
+}
+
 function normalizeVideo(video) {
   return {
     id: String(video.id || video.videoId || ""),
@@ -275,11 +301,12 @@ function normalizeVideo(video) {
     likes: Number(video.likes || 0),
     comments: Number(video.comments || 0),
     createdAt: toMillis(video.createdAt || video.createTime),
+    shareLink: String(video.shareLink || video.videoUrl || video.url || "").trim(),
   };
 }
 
 function sortVideos(list, highFirst = false) {
-  return [...list].sort((a, b) => (highFirst ? b.views - a.views : a.views - b.views || b.createdAt - a.createdAt)).slice(0, 80);
+  return [...list].sort((a, b) => (highFirst ? b.views - a.views : a.views - b.views || b.createdAt - a.createdAt));
 }
 
 function toMillis(value) {

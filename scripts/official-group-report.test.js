@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, periodWindow, shanghaiDateKey, snapshotDateKey } from "./official-group-report.js";
+import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, paginateItems, periodWindow, shanghaiDateKey, snapshotDateKey, tiktokWatchUrl } from "./official-group-report.js";
+import { readFile } from "node:fs/promises";
 
 test("classifies today videos into zero, low and high view buckets", () => {
   const now = Date.parse("2026-08-18T12:00:00+08:00");
@@ -69,6 +70,36 @@ test("attaches hub publish outcomes without changing archive video counts", () =
     { success: 90, failed: 10, riskAccounts: 6 },
     { success: 2, failed: 4, riskAccounts: 1 },
   ]), { total: 106, success: 92, failed: 14, riskAccounts: 7, pendingIngest: 0 });
+});
+
+test("pages low and high videos ten at a time and builds TikTok jump links", () => {
+  const rows = Array.from({ length: 23 }, (_, index) => ({ id: `v${index + 1}`, views: index }));
+  const first = paginateItems(rows, 1);
+  const third = paginateItems(rows, 3);
+  assert.equal(first.pageSize, 10);
+  assert.equal(first.items.length, 10);
+  assert.equal(first.items[0].id, "v1");
+  assert.equal(third.page, 3);
+  assert.equal(third.items.length, 3);
+  assert.equal(third.pageCount, 3);
+  assert.equal(tiktokWatchUrl({
+    id: "7550123456789012345",
+    username: "zoedecker03",
+  }), "https://www.tiktok.com/@zoedecker03/video/7550123456789012345");
+});
+
+test("ops report puts publish total first and high videos above low videos", async () => {
+  const root = new URL(".", import.meta.url);
+  const [page, html] = await Promise.all([
+    readFile(new URL("../public/official-group-report.js", root), "utf8"),
+    readFile(new URL("../public/official-group-report.html", root), "utf8"),
+  ]);
+  assert.match(page, /PAGE_SIZE = 10/);
+  assert.match(page, /ops-video-pager/);
+  assert.match(page, /打开/);
+  assert.ok(page.indexOf('["发布总数"') < page.indexOf('["发布视频"'));
+  assert.ok(page.indexOf("highSection") < page.indexOf("lowSection"));
+  assert.ok(html.indexOf('id="highSection"') < html.indexOf('id="lowSection"'));
 });
 
 test("week window starts on Monday in Shanghai", () => {
