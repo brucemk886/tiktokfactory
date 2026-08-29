@@ -5,7 +5,7 @@ const state = {
   query: "",
   novelId: pageParams.get("novel") || "",
   page: 1,
-  pageSize: 20,
+  pageSize: 10,
   ranked: []
 };
 
@@ -15,6 +15,8 @@ const searchInput = document.querySelector("#effectSearch");
 const refreshButton = document.querySelector("#effectRefresh");
 const statusNode = document.querySelector("#sourceStatus");
 const summaryNode = document.querySelector("#summaryGrid");
+const hotHitsNode = document.querySelector("#hotHits");
+const listHeadingNode = document.querySelector("#listHeading");
 const resultsNode = document.querySelector("#novelResults");
 const unassignedNode = document.querySelector("#unassignedSection");
 const pagerNode = document.querySelector("#novelPager");
@@ -35,7 +37,7 @@ searchForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   state.query = searchInput.value.trim();
   state.page = 1;
-  loadEffects();
+  renderPage();
 });
 refreshButton?.addEventListener("click", () => loadEffects({ refresh: true }));
 
@@ -52,12 +54,17 @@ async function loadEffects({ refresh = false } = {}) {
   refreshButton.disabled = true;
   refreshButton.textContent = "加载中…";
   statusNode.className = "source-status";
-  statusNode.innerHTML = "<span>正在读取小说、改写版本与播放排行…</span>";
+  statusNode.innerHTML = "<span>正在读取小说播放排行…</span>";
   summaryNode.innerHTML = "";
-  resultsNode.innerHTML = '<div class="loading">正在按播放量排行…</div>';
+  if (hotHitsNode) {
+    hotHitsNode.hidden = true;
+    hotHitsNode.innerHTML = "";
+  }
+  if (listHeadingNode) listHeadingNode.hidden = true;
+  resultsNode.innerHTML = '<div class="loading">正在按效果倒序排列…</div>';
   unassignedNode.hidden = true;
   try {
-    const params = new URLSearchParams({ source: state.source, days: String(state.days), query: state.query });
+    const params = new URLSearchParams({ source: state.source, days: String(state.days) });
     if (state.novelId) params.set("novel", state.novelId);
     if (refresh) params.set("refresh", "1");
     const response = await fetch(`/api/novel-effects?${params}`, { cache: "no-store" });
@@ -77,20 +84,35 @@ async function loadEffects({ refresh = false } = {}) {
 function render(data) {
   state.ranked = rankNovels(data.novels || []);
   renderStatus(data.dataStatus || {}, state.ranked.length);
-  renderSummary(data.summary || {}, state.ranked);
+  renderSummary(data.summary || {});
+  renderHotHits(state.ranked);
+  if (state.novelId) {
+    const index = visibleNovels().findIndex((novel) => novel.id === state.novelId);
+    if (index >= 0) state.page = Math.floor(index / state.pageSize) + 1;
+  }
   renderPage();
   renderUnassigned(data.unassignedScripts || []);
 }
 
+function visibleNovels() {
+  const query = state.query.trim().toLowerCase();
+  if (!query) return state.ranked;
+  return state.ranked.filter((novel) => (
+    [novel.id, novel.title, novel.category, novel.platform, novel.promotionCode]
+      .some((value) => String(value || "").toLowerCase().includes(query))
+  ));
+}
+
 function renderPage() {
-  const ranked = state.ranked;
+  const ranked = visibleNovels();
   const pageCount = Math.max(1, Math.ceil(ranked.length / state.pageSize));
   state.page = Math.min(Math.max(1, state.page), pageCount);
   const start = (state.page - 1) * state.pageSize;
   const pageNovels = ranked.slice(start, start + state.pageSize);
+  if (listHeadingNode) listHeadingNode.hidden = !pageNovels.length;
   resultsNode.innerHTML = pageNovels.length
     ? pageNovels.map((novel, index) => renderNovel(novel, start + index + 1)).join("")
-    : `<div class="empty-state">这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 7 天 / 30 天排行。</div>`;
+    : `<div class="empty-state">${state.query ? "没有匹配的小说。" : "这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 7 天 / 30 天排行。"}</div>`;
   renderPager(ranked.length, pageCount);
   focusCurrentNovel();
 }
@@ -113,7 +135,7 @@ function renderPager(total, pageCount) {
     buttons.push(`<button type="button" data-page="${page}" class="${page === state.page ? "is-active" : ""}">${page}</button>`);
   }
   buttons.push(`<button type="button" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`);
-  pagerNode.innerHTML = `<span>共 ${pageCount} 页 · ${total} 本</span>${buttons.join("")}`;
+  pagerNode.innerHTML = `<span>每页 ${state.pageSize} 条 · 共 ${pageCount} 页 · ${total} 本</span>${buttons.join("")}`;
   pagerNode.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => {
       const next = Number(button.dataset.page);
@@ -126,16 +148,13 @@ function renderPager(total, pageCount) {
 }
 
 function rankNovels(novels) {
-  const ranked = novels
+  return novels
     .map((novel) => ({
       ...novel,
       scripts: [...(novel.scripts || [])].sort(byViews)
     }))
     .filter((novel) => Number(novel.performance?.totalViews) > 0 || novel.id === state.novelId)
     .sort(byViews);
-  if (!state.novelId) return ranked;
-  const focused = ranked.find((novel) => novel.id === state.novelId);
-  return focused ? [focused, ...ranked.filter((novel) => novel.id !== state.novelId)] : ranked;
 }
 
 function byViews(left, right) {
@@ -152,16 +171,13 @@ function renderStatus(status, rankedCount) {
   statusNode.innerHTML = `<span><strong>${escapeHtml(prefix)}</strong>${status.error ? ` · ${escapeHtml(status.error)}` : ""}${archive ? ` · ${escapeHtml(archive)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · ${periodLabel(status.days || state.days)} · ${formatInteger(rankedCount)} 本有播放</small>`;
 }
 
-function renderSummary(summary, ranked) {
-  const rewriteCount = ranked.reduce((sum, novel) => sum + rewriteScripts(novel.scripts).length, 0);
+function renderSummary(summary) {
   const metrics = [
-    ["上榜小说", formatInteger(ranked.length)],
-    ["改写版本", formatInteger(rewriteCount)],
-    ["开头版本", formatInteger(summary.scriptCount)],
-    ["发布总数", formatInteger(summary.publishTotal)],
-    ["发布成功", formatInteger(summary.publishSuccess)],
-    ["发布失败", formatInteger(summary.publishFailed)],
-    ["发布视频", formatInteger(summary.videoCount)],
+    ...(state.source === "official_api" ? [
+      ["发布总数", formatInteger(summary.publishTotal)],
+      ["发布成功", formatInteger(summary.publishSuccess)],
+      ["发布失败", formatInteger(summary.publishFailed)],
+    ] : []),
     ["项目账号", formatInteger(summary.testedAccountCount)],
     ["总播放", formatNumber(summary.totalViews)],
     ["平均观看", formatSeconds(summary.averageTimeWatched)],
@@ -170,6 +186,45 @@ function renderSummary(summary, ranked) {
     ["评论", formatNumber(summary.comments)],
   ];
   summaryNode.innerHTML = metrics.map(([label, value]) => `<article class="metric-card"><div class="metric-label">${label}</div><div class="metric-value">${value}</div></article>`).join("");
+}
+
+function renderHotHits(ranked) {
+  if (!hotHitsNode) return;
+  const hits = ranked.filter((novel) => Number(novel.performance?.totalViews) > 0).slice(0, 5);
+  if (!hits.length) {
+    hotHitsNode.hidden = true;
+    hotHitsNode.innerHTML = "";
+    return;
+  }
+  hotHitsNode.hidden = false;
+  hotHitsNode.innerHTML = `<header class="hot-hits-head"><div><p class="eyebrow">HOT NOW</p><h2>当下爆款</h2></div><p class="page-copy">${periodLabel(state.days)}效果最好的 ${hits.length} 本</p></header>
+    <div class="hot-hits-grid">${hits.map((novel, index) => {
+      const performance = novel.performance || {};
+      return `<button type="button" class="hot-hit-card" data-hot-id="${escapeHtml(novel.id)}">
+        <div class="rank-badge" aria-label="第 ${index + 1} 名">${index + 1}</div>
+        <div class="hot-hit-body">
+          <h3>${escapeHtml(novel.title || "未命名小说")}</h3>
+          <div class="novel-meta">${escapeHtml([novel.category, novel.platform, novel.promotionCode].filter(Boolean).join(" · ") || "未填写分类")}</div>
+          <div class="hot-hit-metrics">${miniMetric("播放", formatNumber(performance.totalViews))}${miniMetric("视频", performance.videoCount)}${miniMetric("账号", performance.accountCount)}</div>
+        </div>
+      </button>`;
+    }).join("")}</div>`;
+  hotHitsNode.querySelectorAll("[data-hot-id]").forEach((button) => {
+    button.addEventListener("click", () => focusNovel(button.dataset.hotId));
+  });
+}
+
+function focusNovel(novelId) {
+  if (!novelId) return;
+  state.novelId = novelId;
+  if (state.query && !visibleNovels().some((novel) => novel.id === novelId)) {
+    state.query = "";
+    if (searchInput) searchInput.value = "";
+  }
+  const index = visibleNovels().findIndex((novel) => novel.id === novelId);
+  state.page = index >= 0 ? Math.floor(index / state.pageSize) + 1 : 1;
+  renderPage();
+  resultsNode.scrollIntoView({ block: "start" });
 }
 
 function renderNovel(novel, rank) {

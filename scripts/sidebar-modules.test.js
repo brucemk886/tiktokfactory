@@ -129,6 +129,12 @@ test("novel effects keep official and GeeLark data on separate pages", () => {
   assert.doesNotMatch(official, /数据通路/);
   assert.doesNotMatch(official, /source-lock/);
   assert.match(official, /data-source="official_api"/);
+  assert.match(official, /id="hotHits"/);
+  assert.match(official, /当下爆款/);
+  const effectsJs = fs.readFileSync(path.join(publicDir, "novel-effects.js"), "utf8");
+  assert.match(effectsJs, /pageSize:\s*10/);
+  assert.doesNotMatch(effectsJs, /上榜小说/);
+  assert.doesNotMatch(effectsJs, /\["发布视频"/);
   assert.doesNotMatch(official, /id="sourceTabs"/);
   assert.doesNotMatch(official, /data-source="third_party"/);
   assert.match(geelark, /data-source="third_party"/);
