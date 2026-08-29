@@ -69,7 +69,7 @@ async function loadEffects({ refresh = false } = {}) {
     if (refresh) params.set("refresh", "1");
     const response = await fetch(`/api/novel-effects?${params}`, { cache: "no-store" });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "读取数据概览失败");
+    if (!response.ok) throw new Error(payload.error || "读取小说数据统计失败");
     render(payload);
   } catch (error) {
     statusNode.classList.add("warning");

@@ -3,22 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>数据概览 · Local Factory</title>
+  <title>小说数据统计 · Local Factory</title>
   <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/novel-effects.css?v=20260829-2">
+  <link rel="stylesheet" href="/novel-effects.css?v=20260829-3">
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
 <body class="work-page novel-effects-page" data-source="official_api">
   <nav class="side-tabs" aria-label="主导航"></nav>
   <main class="effects-shell">
-    <header class="page-heading"><div><p class="eyebrow">NOVEL RANKING</p><h1>数据概览</h1><p class="page-copy">汇总小说推文项目下全部官方账号的播放。当下爆款取当前周期效果最好的 5 本，下方按效果倒序。</p></div></header>
+    <header class="page-heading"><div><p class="eyebrow">NOVEL STATS</p><h1>小说数据统计</h1><p class="page-copy">只统计对上书单的小说视频。当下爆款取当前周期效果最好的 5 本，下方按效果倒序。</p></div></header>
     <section class="toolbar-card">
       <div class="control-group"><span class="control-label">统计周期</span><div class="segmented compact" id="daysTabs"><button type="button" data-days="1">今天</button><button type="button" class="is-active" data-days="7" aria-pressed="true">近7天</button><button type="button" data-days="30">近30天</button></div></div>
       <form class="search-form" id="effectSearchForm"><label class="sr-only" for="effectSearch">搜索小说</label><input id="effectSearch" type="search" placeholder="搜索小说标题、分类或推广码"><button type="submit" class="primary-button">查询</button></form>
       <button type="button" class="ghost-button" id="effectRefresh">刷新</button>
     </section>
     <section class="source-status" id="sourceStatus" aria-live="polite"></section>
-    <section class="summary-grid" id="summaryGrid" aria-label="数据概览汇总"></section>
+    <section class="summary-grid" id="summaryGrid" aria-label="小说数据统计汇总"></section>
     <section class="hot-hits" id="hotHits" hidden></section>
     <section class="list-heading" id="listHeading" hidden>
       <p class="eyebrow">RANKING</p>
@@ -29,6 +29,6 @@
     <section class="unassigned-section" id="unassignedSection" hidden></section>
   </main>
   <script src="/access.js"></script>
-  <script type="module" src="/novel-effects.js?v=20260829-2"></script>
+  <script type="module" src="/novel-effects.js?v=20260829-3"></script>
 </body>
 </html>

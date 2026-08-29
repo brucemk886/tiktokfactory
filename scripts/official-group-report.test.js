@@ -97,6 +97,7 @@ test("ops report puts publish total first and high videos above low videos", asy
   assert.match(page, /PAGE_SIZE = 10/);
   assert.match(page, /ops-video-pager/);
   assert.match(page, /打开/);
+  assert.match(page, /state.module === "novel-promotion" \? "数据概览"/);
   assert.ok(page.indexOf('["发布总数"') < page.indexOf('["发布视频"'));
   assert.ok(page.indexOf("highSection") < page.indexOf("lowSection"));
   assert.ok(html.indexOf('id="highSection"') < html.indexOf('id="lowSection"'));

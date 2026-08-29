@@ -271,7 +271,7 @@ export async function handleNovels(request, env, url, session, ctx) {
       else await persist();
       return json(payload);
     } catch (error) {
-      return errorJson(error.message || "读取数据概览失败。", error.statusCode || 502);
+      return errorJson(error.message || "读取小说数据统计失败。", error.statusCode || 502);
     }
   }
 

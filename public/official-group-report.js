@@ -10,6 +10,27 @@ const MODULE_LABEL = {
   "psychology": "心理学",
 };
 
+function reportNoun() {
+  return state.module === "novel-promotion" ? "数据概览" : "运营报表";
+}
+
+function reportTitle() {
+  return state.module === "novel-promotion"
+    ? "数据概览"
+    : `${MODULE_LABEL[state.module] || "项目"} · 运营报表`;
+}
+
+function reportCopy(project = {}) {
+  if (state.module === "novel-promotion") {
+    return project.name
+      ? `${project.name} 看项目账号的发布和播放，不区分是不是小说内容。`
+      : "看小说推文项目账号的发布和播放，不区分是不是小说内容。";
+  }
+  return project.name
+    ? `${project.name} 按分组落日报和周报，方便后面分开对照。`
+    : "这个模块还没有项目。";
+}
+
 const PAGE_SIZE = 10;
 const params = new URLSearchParams(location.search);
 const todayKey = shanghaiDateKey();
@@ -81,7 +102,7 @@ async function loadReport() {
     renderEmpty("运营报表按项目和分组分别落库。");
     return;
   }
-  title.textContent = `${MODULE_LABEL[state.module] || "项目"} · 运营报表`;
+  title.textContent = reportTitle();
   document.title = title.textContent;
   meta.textContent = "正在读取报表…";
   try {
@@ -110,15 +131,13 @@ function render() {
   const groups = data.groups || [];
   const report = data.report || {};
   const scopeName = report.groupName || (state.groupId ? groups.find((item) => item.id === state.groupId)?.name : "全部项目") || "全部项目";
-  document.querySelector("#pageCopy").textContent = project.name
-    ? `${project.name} 按分组落日报和周报，方便后面分开对照。`
-    : "这个模块还没有项目。";
+  document.querySelector("#pageCopy").textContent = reportCopy(project);
   fillSelects(data);
   fillDateInputs();
   bindReportToggle(project);
   renderProjectBar(project, groups);
   if (!report.enabled) {
-    document.querySelector("#reportMeta").textContent = "这个项目还没打开运营报表。";
+    document.querySelector("#reportMeta").textContent = `这个项目还没打开${reportNoun()}。`;
     renderEmpty("打开最上方的开关后，会按项目和分组分别统计 0 播、低播、高播和均播。");
     return;
   }

@@ -38,7 +38,9 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.label, "同行爆款");
   assert.deepEqual(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.roles, ["admin"]);
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.href, "/novel-effects");
-  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.label, "数据概览");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-effects")?.label, "小说数据统计");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-ops-report")?.href, "/novel-ops-report");
+  assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-ops-report")?.label, "数据概览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "mid-video-effects")?.label, "数据概览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "psychology-effects")?.label, "数据概览");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "work-journal")?.href, "/work-journal");
@@ -52,7 +54,7 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-effects", "novel-ops-report", "operator-official", "tasks"]
+    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
@@ -122,7 +124,7 @@ test("browser modules do not duplicate the sidebar catalog", () => {
 test("novel effects keep official and GeeLark data on separate pages", () => {
   const official = fs.readFileSync(path.join(publicDir, "novel-effects.html"), "utf8");
   const geelark = fs.readFileSync(path.join(publicDir, "geelark-novel-effects.html"), "utf8");
-  assert.match(official, /数据概览/);
+  assert.match(official, /小说数据统计/);
   assert.match(official, /data-days="1"/);
   assert.match(official, /id="daysTabs"/);
   assert.match(official, /class="is-active" data-days="7"/);
@@ -159,4 +161,10 @@ test("factory cloud keeps peer hits under novel promotion", () => {
   assert.equal(item?.label, "同行爆款");
   assert.equal(item?.group?.id, "novel-promotion");
   assert.deepEqual(item?.roles, ["admin", "operator"]);
+  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-ops-report")?.label, "数据概览");
+  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-effects")?.label, "小说数据统计");
+  assert.ok(
+    CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-ops-report")
+    < CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-effects")
+  );
 });
