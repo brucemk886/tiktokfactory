@@ -56,11 +56,11 @@
             <label class="field task-name-field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：7月10日 小说组 A" /></label>
             <div class="field novel-select-field" data-admin-only hidden>
               <div class="novel-platform-head">
-                <span>小说平台</span>
+                <span>音频文件夹</span>
                 <button data-local-only id="syncAudioGroupsBtn" class="quiet-button" type="button">刷新并推送</button>
               </div>
               <div id="novelAudioPicker" class="novel-audio-picker">正在读取本机音频目录...</div>
-              <small id="novelBadgeHint">勾选本机 F:\音频目录 下的小说平台。线上只认本机点「刷新并推送」后的目录，不会每 5 分钟自动同步。</small>
+              <small id="novelBadgeHint">勾选本机 F:\音频目录 下的文件夹。每个夹单独列出，不会收成「旧文件夹」。</small>
             </div>
             <div class="source-directory-stack">
               <section id="sharedLibraryPanel" class="shared-library-panel" hidden>

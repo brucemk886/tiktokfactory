@@ -132,19 +132,6 @@ export function discoverAudioLibraryGroups(config = {}) {
     }
   }
   groups.push(...legacyBooks);
-  const voicedLegacy = legacyBooks.filter((item) => Number(item.totalAssets) > 0);
-  if (voicedLegacy.length) {
-    groups.push({
-      id: "legacy-root-books",
-      kind: "legacy-bundle",
-      name: "旧文件夹",
-      platform: UNASSIGNED_AUDIO_PLATFORM,
-      path: voicedLegacy[0].path,
-      paths: voicedLegacy.map((item) => item.path),
-      totalAssets: voicedLegacy.reduce((sum, item) => sum + (Number(item.totalAssets) || 0), 0),
-      bookCount: voicedLegacy.length
-    });
-  }
   if (rootFiles.length) {
     groups.unshift({
       id: "audio-root",
@@ -241,7 +228,6 @@ export function slimAudioCatalogRow(group = {}) {
 export function latestAudioCatalog(config = {}, { limit = 8 } = {}) {
   const groups = discoverAudioLibraryGroups(config);
   const platforms = groups.filter((group) => group.kind === "platform").map(slimAudioCatalogRow);
-  const bundle = groups.filter((group) => group.kind === "legacy-bundle").map(slimAudioCatalogRow);
   const recent = groups
     .filter((group) => group.kind === "batch" || group.kind === "legacy")
     .map((group) => {
@@ -257,7 +243,7 @@ export function latestAudioCatalog(config = {}, { limit = 8 } = {}) {
     .slice(0, Math.max(1, Number(limit) || 8))
     .map((item) => item.row);
   const byId = new Map();
-  for (const row of [...platforms, ...bundle, ...recent]) {
+  for (const row of [...platforms, ...recent]) {
     if (row.id) byId.set(row.id, row);
   }
   return [...byId.values()];

@@ -40,10 +40,7 @@ test("reads saved platform and promotion code from a legacy novel audio folder",
   assert.equal(book.kind, "legacy");
   assert.equal(book.platform, "NovelMaster");
   assert.equal(book.promotionCode, "454311");
-  const bundle = groups.find((item) => item.kind === "legacy-bundle");
-  assert.equal(bundle.name, "旧文件夹");
-  assert.equal(bundle.bookCount, 1);
-  assert.deepEqual(bundle.paths, [folder]);
+  assert.equal(groups.some((item) => item.kind === "legacy-bundle"), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -115,7 +112,7 @@ test("daily audio catalog keeps platforms plus the newest first-level folders an
     [["GoodNovel", 1]]
   );
   assert.deepEqual(
-    catalog.filter((item) => item.kind !== "platform" && item.kind !== "legacy-bundle").map((item) => item.name),
+    catalog.filter((item) => item.kind !== "platform").map((item) => item.name),
     ["0830", "0828测试"]
   );
   assert.ok(catalog.every((item) => Number(item.totalAssets) > 0 && !("promotionCode" in item)));

@@ -101,7 +101,7 @@ async function createTask(options = {}) {
   if (!assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
   const audioDir = audioDirs[0] || (provider === "official" ? "" : $("#audioDir").value.trim());
   if (provider !== "official" && !audioDir) return setCreateStatus("请选择音频目录。");
-  if (provider === "official" && !audioDirs.length) return setCreateStatus("请勾选小说平台。");
+  if (provider === "official" && !audioDirs.length) return setCreateStatus("请勾选音频文件夹。");
   if (autoPublish && !selected.length) return setCreateStatus(provider === "official" ? "自动发布任务至少需要选择一个官方授权账号。" : "自动发布任务至少需要选择一个 GeeLark 账号。");
   const accounts = provider === "geelark" ? selected.map((input) => {
     const phone = phones.find((item) => String(item.id) === input.value) || {};
@@ -384,12 +384,12 @@ function applyPublishChannelChrome() {
   }
   if ($("#assetSectionLead")) {
     $("#assetSectionLead").textContent = currentUserRole === "admin" && official
-      ? "勾选本机 F:\\音频目录 下的小说平台。混该平台文件夹里的全部小说，角标和片尾读每本书自己的推广码。"
+      ? "勾选本机 F:\\音频目录 下的文件夹。每个夹单独混，不会收成「旧文件夹」。"
       : "选择共享素材库和音频目录。";
   }
   if ($("#pageLead")) $("#pageLead").textContent = official
     ? (currentUserRole === "admin"
-      ? "勾选小说平台，从素材组抽片段混剪出片。"
+      ? "勾选音频文件夹，从素材组抽片段混剪出片。"
       : "按混剪规则出片。选择共享素材库和音频目录。")
     : "GeeLark 备用发布，成片不叠加平台和推广码。";
   updateVideoSourceVisibility();
@@ -399,20 +399,20 @@ function applyPublishChannelChrome() {
     : "选择 GeeLark 账号发布。官方 API 任务在小说推文的 Reddit 自动发布里。";
 }
 
+function isTopLevelAudioFolder(group) {
+  return group.kind === "platform" || group.kind === "batch" || group.kind === "legacy";
+}
+
 function mixableAudioFolders() {
   const typed = audioGroups.some((group) => group.kind);
   const folders = typed
-    ? audioGroups.filter((group) => group.kind === "platform" || group.kind === "legacy-bundle")
-    : audioGroups.filter((group) => !group.rootOnly);
+    ? audioGroups.filter(isTopLevelAudioFolder)
+    : audioGroups.filter((group) => !group.rootOnly && group.kind !== "legacy-bundle");
   return folders.filter((group) => Number(group.totalAssets) > 0);
 }
 
 function selectableAudioFolders() {
-  const typed = audioGroups.some((group) => group.kind);
-  const folders = typed
-    ? audioGroups.filter((group) => group.kind === "platform" || group.kind === "batch" || group.kind === "legacy-bundle")
-    : audioGroups.filter((group) => !group.rootOnly);
-  return folders.filter((group) => Number(group.totalAssets) > 0);
+  return mixableAudioFolders();
 }
 
 function audioDirsOfFolder(folder) {
@@ -435,8 +435,8 @@ function renderAudioFolderPicker() {
   const folders = mixableAudioFolders();
   if (!folders.length) {
     root.textContent = audioGroups.length
-      ? "本机 F:\\音频目录 下还没有按平台分好的小说音频。"
-      : "本机 F:\\音频目录 下还没有可勾选的平台文件夹。";
+      ? "本机 F:\\音频目录 下还没有带音频的一级文件夹。"
+      : "本机 F:\\音频目录 下还没有可勾选的文件夹。";
     updateAudioFolderHint();
     return;
   }
@@ -468,26 +468,25 @@ function updateAudioFolderHint() {
   }
   if (hint) {
     hint.textContent = folders.length
-      ? `已选 ${folders.length} 个平台，共 ${folders.reduce((sum, folder) => sum + (Number(folder.bookCount) || 0), 0)} 本、${audioCount} 条音频。角标和片尾读每本书文件夹里的推广码。`
-      : "勾选本机 F:\\音频目录 下的小说平台。线上只认本机点「刷新并推送」后的目录，不会每 5 分钟自动同步。";
+      ? `已选 ${folders.length} 个文件夹，共 ${audioCount} 条音频。平台夹混该平台下全部书；其它夹只混这一个目录。`
+      : "勾选本机 F:\\音频目录 下的文件夹。每个夹单独列出，不会收成「旧文件夹」。";
   }
   updateAudioSourceMode();
   updateCaptionModeView();
 }
 
 function formatFolderBadge(folder) {
-  if (folder.kind === "platform" || folder.kind === "legacy-bundle") {
+  const audios = Number(folder.totalAssets) || 0;
+  if (folder.kind === "platform") {
     const books = Number(folder.bookCount) || 0;
-    const audios = Number(folder.totalAssets) || 0;
     return `${books} 本 · ${audios} 条音频`;
   }
-  const platform = formatNovelPlatform(folder.platform);
-  return [folder.promotionCode, platform].filter(Boolean).join(" · ") || "未写推广码";
+  return `${audios} 条音频`;
 }
 
 function formatAudioGroupOption(group) {
   const count = Number(group.totalAssets) || 0;
-  if (group.kind === "platform" || group.kind === "legacy-bundle") {
+  if (group.kind === "platform") {
     const books = Number(group.bookCount) || 0;
     return `${group.name || group.id}（${books} 本 / ${count} 条）`;
   }
@@ -618,7 +617,7 @@ async function loadAudioGroups() {
     applyAudioGroupSelection({ keepFolders: true });
     renderAudioFolderPicker();
     if (hint) hint.textContent = folders.length
-      ? `固定读取 ${data.libraryRoot || "F:\\音频目录"}，已同步 ${folders.filter((group) => group.kind === "platform").length || folders.length} 个平台文件夹。`
+      ? `固定读取 ${data.libraryRoot || "F:\\音频目录"}，已列出 ${folders.length} 个文件夹。`
       : "本机 F:\\音频目录 下还没有可勾选的文件夹。";
   } catch (error) {
     select.innerHTML = '<option value="">音频目录读取失败</option>';
@@ -950,7 +949,7 @@ function renderAutoCaptionPreview() {
   if (!hint || !preview) return;
   const folders = getSelectedAudioFolders();
   if (!folders.length) {
-    hint.textContent = "默认按每条音频自动生成：有推广文案就用文案，再按平台打标签。勾选小说平台后可预览第一条。";
+    hint.textContent = "默认按每条音频自动生成：有推广文案就用文案，再按平台打标签。勾选音频文件夹后可预览第一条。";
     preview.hidden = true;
     preview.textContent = "";
     return;
