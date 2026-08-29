@@ -16,6 +16,7 @@ import {
   rememberAccountAliases,
   accountsFromArchiveRows,
   archiveAccountKeysForScope,
+  connectionIdsForProjectScope,
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
 import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
@@ -415,7 +416,15 @@ async function buildModuleReport(env, db, store, searchParams, user) {
       toKey: queryTo,
       bundle,
       groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-    }), await loadScopedPublishStats(env, db, bundle, queryFrom, queryTo)),
+    }), await loadScopedPublishStats(env, db, {
+      store,
+      projectId: liveProject.id,
+      groupId,
+      groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
+      bundle,
+      fromKey: queryFrom,
+      toKey: queryTo,
+    })),
   });
   const isCurrentWindow = queryFrom === currentFrom && queryTo === currentTo && (period === "week" || period === "today" || queryFrom === queryTo);
   if (isCurrentWindow || queryFrom !== queryTo) {
@@ -439,7 +448,15 @@ async function buildModuleReport(env, db, store, searchParams, user) {
     dates: [],
     report: attachPublishOutcome(
       snapshot?.report || emptySnapshotReport(liveProject, period, queryFrom, groupId, groups, queryTo),
-      await loadScopedPublishStats(env, db, bundle, queryFrom, queryTo),
+      await loadScopedPublishStats(env, db, {
+        store,
+        projectId: liveProject.id,
+        groupId,
+        groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
+        bundle,
+        fromKey: queryFrom,
+        toKey: queryTo,
+      }),
     ),
   };
 }
@@ -522,6 +539,7 @@ function emptySnapshotReport(project, period, dateKey, groupId, groups, toKey = 
       avgView: 0,
       accountCount: 0,
       anomalyAccountCount: 0,
+      publishTotal: 0,
       publishSuccess: 0,
       publishFailed: 0,
       riskAccountCount: 0,
@@ -554,12 +572,15 @@ async function buildGroupReport(env, db, store, groupId, period) {
   });
 }
 
-async function loadScopedPublishStats(env, db, bundle, fromKey, toKey) {
+async function loadScopedPublishStats(env, db, { store, projectId, groupId, groupIds, bundle, fromKey, toKey }) {
   const start = Date.parse(`${fromKey}T00:00:00+08:00`);
   const end = Date.parse(`${toKey}T00:00:00+08:00`) + 86_400_000;
-  const connectionIds = connectionIdsFromArchiveRows(bundle?.accountRows);
+  const connectionIds = [...new Set([
+    ...connectionIdsFromArchiveRows(bundle?.accountRows),
+    ...connectionIdsForProjectScope(store, { projectId, groupId, groupIds }),
+  ])];
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !connectionIds.length) {
-    return { success: 0, failed: 0, riskAccounts: 0 };
+    return { total: 0, success: 0, failed: 0, riskAccounts: 0 };
   }
   try {
     const parts = [];
@@ -570,7 +591,7 @@ async function loadScopedPublishStats(env, db, bundle, fromKey, toKey) {
     return mergePublishStats(parts);
   } catch (error) {
     console.warn(JSON.stringify({ event: "publish-stats-unavailable", error: String(error?.message || error) }));
-    return { success: 0, failed: 0, riskAccounts: 0 };
+    return { total: 0, success: 0, failed: 0, riskAccounts: 0 };
   }
 }
 

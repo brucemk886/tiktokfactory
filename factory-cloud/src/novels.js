@@ -23,7 +23,8 @@ import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchIndex, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, migrateNovelsFromKv, syncWorkingNovels, updateNovelBookId, upsertNovel, writeScripts } from "./novel-store.js";
-import { archiveAccountKeysForProject, uniqueProjectAccountCount } from "../../scripts/official-account-group-store.js";
+import { archiveAccountKeysForProject, connectionIdsForProjectScope, uniqueProjectAccountCount } from "../../scripts/official-account-group-store.js";
+import { chunkList, mergePublishStats, periodWindow } from "../../scripts/official-group-report.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 import { hydrateOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -221,16 +222,18 @@ export async function handleNovels(request, env, url, session, ctx) {
         listLatestArchiveAccounts(db),
       ]);
       const storedRecords = await kvGet(db, "official-publish-records", []);
-      const [signals, store, records] = await Promise.all([
+      const accountKeys = archiveAccountKeysForProject(groupStore, accountRows, "proj-novel");
+      const [signals, store, records, publishStats] = await Promise.all([
         getOfficialOperationSignals(env, db, {
           days,
           videosPerAccount: overviewVideosPerAccount(days),
-          accountKeys: archiveAccountKeysForProject(groupStore, accountRows, "proj-novel"),
+          accountKeys,
         }),
         readStore(db, { includeSource: false, workingOnly: true }),
         hydrateOfficialPublishRecords(storedRecords, (batchId) => (
           signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
         ), { skipResolved: true, limit: 8 }).catch(() => storedRecords),
+        loadOverviewPublishStats(env, db, groupStore, days).catch(() => ({ total: 0, success: 0, failed: 0 })),
       ]);
       const assembled = assembleOfficialNovelEffects({
         store,
@@ -243,6 +246,12 @@ export async function handleNovels(request, env, url, session, ctx) {
         projectAccountCount: uniqueProjectAccountCount(groupStore, "proj-novel"),
       });
       const { videoMappings, ...page } = assembled;
+      page.summary = {
+        ...page.summary,
+        publishTotal: Number(publishStats.total || 0) || (Number(publishStats.success || 0) + Number(publishStats.failed || 0)),
+        publishSuccess: Number(publishStats.success || 0),
+        publishFailed: Number(publishStats.failed || 0),
+      };
       const payload = slimEffectsPage({
         ...page,
         dataStatus: {
@@ -994,6 +1003,31 @@ function overviewVideosPerAccount(days) {
   if (days <= 1) return 20;
   if (days <= 7) return 40;
   return 80;
+}
+
+function overviewPublishWindow(days, now = Date.now()) {
+  const today = periodWindow("today", now);
+  const span = Math.max(1, Math.min(30, Number(days) || 7));
+  return {
+    startAt: today.startAt - (span - 1) * 86_400_000,
+    endAt: today.endAt,
+  };
+}
+
+async function loadOverviewPublishStats(env, db, store, days) {
+  const window = overviewPublishWindow(days);
+  const connectionIds = connectionIdsForProjectScope(store, { projectId: "proj-novel" });
+  if (!connectionIds.length) return { total: 0, success: 0, failed: 0 };
+  const parts = [];
+  for (const chunk of chunkList(connectionIds, 200)) {
+    const params = new URLSearchParams({
+      from: String(window.startAt),
+      to: String(window.endAt),
+      connectionIds: chunk.join(","),
+    });
+    parts.push(await signalDesk(env, db, `/api/v1/publish/stats?${params}`));
+  }
+  return mergePublishStats(parts);
 }
 
 function officialPublishRecordsNeedPersist(before, after) {

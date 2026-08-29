@@ -54,8 +54,9 @@ test("attaches hub publish outcomes without changing archive video counts", () =
     now: Date.parse("2026-08-18T12:00:00+08:00"),
     videos: [{ id: "v1", username: "a", title: "片", views: 80, createdAt: Date.parse("2026-08-18T09:00:00+08:00") }],
   });
-  const next = attachPublishOutcome(report, { success: 92, failed: 14, riskAccounts: 7 });
+  const next = attachPublishOutcome(report, { total: 106, success: 92, failed: 14, riskAccounts: 7 });
   assert.equal(next.summary.published, 1);
+  assert.equal(next.summary.publishTotal, 106);
   assert.equal(next.summary.publishSuccess, 92);
   assert.equal(next.summary.publishFailed, 14);
   assert.equal(next.summary.riskAccountCount, 7);
@@ -67,7 +68,7 @@ test("attaches hub publish outcomes without changing archive video counts", () =
   assert.deepEqual(mergePublishStats([
     { success: 90, failed: 10, riskAccounts: 6 },
     { success: 2, failed: 4, riskAccounts: 1 },
-  ]), { success: 92, failed: 14, riskAccounts: 7, pendingIngest: 0 });
+  ]), { total: 106, success: 92, failed: 14, riskAccounts: 7, pendingIngest: 0 });
 });
 
 test("week window starts on Monday in Shanghai", () => {

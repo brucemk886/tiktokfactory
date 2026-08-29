@@ -166,6 +166,7 @@ export function computeGroupReport({
       avgView: inWindow.length ? Math.round(views / inWindow.length) : 0,
       accountCount: [...accountStats.values()].filter((item) => item.published > 0).length,
       anomalyAccountCount: anomalyAccounts.length,
+      publishTotal: 0,
       publishSuccess: 0,
       publishFailed: 0,
       riskAccountCount: 0,
@@ -185,6 +186,7 @@ export function attachPublishOutcome(report, stats = {}) {
     ...report,
     summary: {
       ...current,
+      publishTotal: Number(stats.total || 0) || (Number(stats.success || 0) + Number(stats.failed || 0)),
       publishSuccess: Number(stats.success || 0),
       publishFailed: Number(stats.failed || 0),
       riskAccountCount: Number(stats.riskAccounts || 0),
@@ -208,11 +210,12 @@ export function chunkList(items = [], size = 200) {
 
 export function mergePublishStats(parts = []) {
   return (Array.isArray(parts) ? parts : []).reduce((total, part) => ({
+    total: total.total + (Number(part?.total) || Number(part?.success || 0) + Number(part?.failed || 0)),
     success: total.success + Number(part?.success || 0),
     failed: total.failed + Number(part?.failed || 0),
     riskAccounts: total.riskAccounts + Number(part?.riskAccounts || 0),
     pendingIngest: total.pendingIngest + Number(part?.pendingIngest || 0),
-  }), { success: 0, failed: 0, riskAccounts: 0, pendingIngest: 0 });
+  }), { total: 0, success: 0, failed: 0, riskAccounts: 0, pendingIngest: 0 });
 }
 
 export function videosForProject({ store, projectId, accountRows = [], videosByAccount = new Map(), groupIds = null }) {

@@ -298,6 +298,21 @@ export function uniqueProjectAccountCount(store, projectId) {
   return primaries.size;
 }
 
+export function connectionIdsForProjectScope(store, { projectId = "", groupId = "", groupIds = null } = {}) {
+  const next = normalizeStore(store);
+  const allowed = groupId
+    ? new Set([safeId(groupId)])
+    : Array.isArray(groupIds)
+      ? new Set(groupIds.map((id) => safeId(id)).filter(Boolean))
+      : projectId
+        ? new Set(next.groups.filter((item) => item.projectId === safeId(projectId)).map((item) => item.id))
+        : null;
+  if (!allowed) return [];
+  return [...new Set(Object.entries(next.assignments)
+    .filter(([, assigned]) => allowed.has(assigned))
+    .map(([key]) => key))];
+}
+
 export function archiveAccountKeysForProject(store, accountRows = [], projectId) {
   const next = normalizeStore(store);
   const groupIds = new Set(next.groups.filter((item) => item.projectId === safeId(projectId)).map((item) => item.id));
