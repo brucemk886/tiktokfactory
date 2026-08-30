@@ -15,7 +15,7 @@
       <div>
         <p class="toolbar-kicker">MODULE OPS REPORT</p>
         <h1 id="pageTitle">运营报表</h1>
-        <p id="pageCopy">按项目和分组分别存日报、周报。不同分组可以分开对照。</p>
+        <p id="pageCopy">按今天、昨天、近7天和最近30天查看发布和播放。</p>
       </div>
     </header>
     <section class="official-toolbar panel ops-report-toolbar">
@@ -26,18 +26,14 @@
           <i></i>
         </label>
         <div class="segmented" id="periodTabs">
-          <button type="button" data-period="today" class="is-active">今日</button>
-          <button type="button" data-period="week">本周</button>
+          <button type="button" data-period="today" class="is-active">今天</button>
+          <button type="button" data-period="yesterday">昨天</button>
+          <button type="button" data-period="7d">近7天</button>
+          <button type="button" data-period="30d">最近30天</button>
         </div>
         <div class="ops-report-filters">
           <label>分组
             <select id="groupSelect"></select>
-          </label>
-          <label>开始日期
-            <input id="fromDate" type="date">
-          </label>
-          <label>结束日期
-            <input id="toDate" type="date">
           </label>
           <button id="queryBtn" class="primary-link" type="button">查询</button>
         </div>
@@ -53,6 +49,6 @@
     <div id="pageStatus" class="page-status"></div>
   </main>
   <script src="/access.js"></script>
-  <script src="/official-group-report.js?v=20260829-3"></script>
+  <script src="/official-group-report.js?v=20260830-1"></script>
 </body>
 </html>

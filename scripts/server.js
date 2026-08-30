@@ -29,7 +29,7 @@ import { createKieAiService } from "./kie-ai.js";
 import { createOperationBrainService } from "./operation-brain.js";
 import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
 import { createOfficialTikTokAccountGroups } from "./official-tiktok-account-groups.js";
-import { attachPublishOutcome, chunkList, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, periodWindow } from "./official-group-report.js";
+import { attachPublishOutcome, chunkList, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, resolveReportWindow } from "./official-group-report.js";
 import { factoryCloudPageUrl, homePathForUser, publicSidebarModules, shouldRedirectLocalPageToFactory, SIDEBAR_MODULES } from "./sidebar-modules.js";
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
@@ -771,7 +771,10 @@ const server = http.createServer(async (req, res) => {
       }
       const fromKey = parseShanghaiDate(url.searchParams.get("from"));
       const toKey = parseShanghaiDate(url.searchParams.get("to")) || fromKey;
-      const signals = officialAnalyticsArchive.getOperationSignals({ days: period === "week" ? 7 : 2, videosPerAccount: 80 });
+      const signals = officialAnalyticsArchive.getOperationSignals({
+        days: reportArchiveDays(period, fromKey, toKey),
+        videosPerAccount: 80,
+      });
       const attached = officialTikTokAccountGroups.attach({ accounts: signals.accounts || [] });
       const accounts = (attached.accounts || []).filter((item) => item.projectId === liveProject.id);
       const videos = accounts.flatMap((account) => (account.videos || []).map((video) => ({
@@ -801,7 +804,10 @@ const server = http.createServer(async (req, res) => {
       }
       const fromKey = parseShanghaiDate(url.searchParams.get("from"));
       const toKey = parseShanghaiDate(url.searchParams.get("to")) || fromKey;
-      const signals = officialAnalyticsArchive.getOperationSignals({ days: period === "week" ? 7 : 2, videosPerAccount: 80 });
+      const signals = officialAnalyticsArchive.getOperationSignals({
+        days: reportArchiveDays(period, fromKey, toKey),
+        videosPerAccount: 80,
+      });
       const attached = officialTikTokAccountGroups.attach({ accounts: signals.accounts || [] });
       const accounts = (attached.accounts || []).filter((item) => item.groupId === groupId);
       const videos = accounts.flatMap((account) => (account.videos || []).map((video) => ({
@@ -3424,10 +3430,13 @@ function buildPublishRecord({
   };
 }
 
+function reportArchiveDays(period, fromKey, toKey) {
+  const window = resolveReportWindow({ period, fromKey, toKey });
+  return Math.max(2, Math.round((window.endAt - window.startAt) / 86_400_000));
+}
+
 async function attachLocalPublishOutcome(report, accounts, fromKey, toKey, period) {
-  const window = parseShanghaiDate(fromKey) && parseShanghaiDate(toKey)
-    ? { startAt: Date.parse(`${fromKey}T00:00:00+08:00`), endAt: Date.parse(`${toKey}T00:00:00+08:00`) + 86_400_000 }
-    : periodWindow(period === "week" ? "week" : "today");
+  const window = resolveReportWindow({ period, fromKey, toKey });
   const connectionIds = connectionIdsFromArchiveRows(accounts);
   if (!connectionIds.length) return attachPublishOutcome(report, {});
   try {

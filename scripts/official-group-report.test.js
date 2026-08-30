@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, paginateItems, periodWindow, shanghaiDateKey, snapshotDateKey, tiktokWatchUrl } from "./official-group-report.js";
+import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, paginateItems, periodWindow, resolveReportWindow, shanghaiDateKey, snapshotDateKey, tiktokWatchUrl } from "./official-group-report.js";
 import { readFile } from "node:fs/promises";
 
 test("classifies today videos into zero, low and high view buckets", () => {
@@ -101,6 +101,13 @@ test("ops report puts publish total first and high videos above low videos", asy
   assert.ok(page.indexOf('["发布总数"') < page.indexOf('["发布视频"'));
   assert.ok(page.indexOf("highSection") < page.indexOf("lowSection"));
   assert.ok(html.indexOf('id="highSection"') < html.indexOf('id="lowSection"'));
+  assert.match(html, /data-period="today"/);
+  assert.match(html, /data-period="yesterday"/);
+  assert.match(html, /data-period="7d"/);
+  assert.match(html, /data-period="30d"/);
+  assert.doesNotMatch(html, /id="fromDate"/);
+  assert.match(page, /近7天/);
+  assert.match(page, /最近30天/);
 });
 
 test("week window starts on Monday in Shanghai", () => {
@@ -110,4 +117,36 @@ test("week window starts on Monday in Shanghai", () => {
   assert.equal(window.dateKey, "2026-08-10");
   assert.equal(snapshotDateKey("week", sunday), "2026-08-10");
   assert.equal(snapshotDateKey("today", sunday), "2026-08-16");
+});
+
+test("yesterday, 7d and 30d windows use Shanghai calendar days", () => {
+  const now = Date.parse("2026-08-30T19:00:00+08:00");
+  const yesterday = periodWindow("yesterday", now);
+  const week = periodWindow("7d", now);
+  const month = periodWindow("30d", now);
+  assert.equal(yesterday.fromKey, "2026-08-29");
+  assert.equal(yesterday.toKey, "2026-08-29");
+  assert.equal(week.fromKey, "2026-08-24");
+  assert.equal(week.toKey, "2026-08-30");
+  assert.equal(month.fromKey, "2026-08-01");
+  assert.equal(month.toKey, "2026-08-30");
+  const report = computeGroupReport({
+    group: { id: "g1", name: "A组" },
+    project: { id: "p1", name: "小说推文" },
+    period: "7d",
+    now,
+    videos: [
+      { id: "edge", username: "a", title: "第1天", views: 100, createdAt: Date.parse("2026-08-24T00:10:00+08:00") },
+      { id: "today", username: "a", title: "今天", views: 200, createdAt: Date.parse("2026-08-30T18:00:00+08:00") },
+      { id: "before", username: "a", title: "更早", views: 9000, createdAt: Date.parse("2026-08-23T23:50:00+08:00") },
+    ],
+  });
+  assert.equal(report.summary.published, 2);
+  assert.equal(report.period, "7d");
+  assert.equal(resolveReportWindow({
+    period: "today",
+    now,
+    fromKey: "2026-08-01",
+    toKey: "2026-08-30",
+  }).period, "30d");
 });

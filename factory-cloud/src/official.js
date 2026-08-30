@@ -19,7 +19,7 @@ import {
   connectionIdsForProjectScope,
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
-import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, shanghaiDateKey, weekStartKey } from "../../scripts/official-group-report.js";
+import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, resolveReportWindow } from "../../scripts/official-group-report.js";
 import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -352,11 +352,20 @@ async function saveGroupStore(db, store) {
 
 async function buildModuleReport(env, db, store, searchParams, user) {
   const moduleKey = String(searchParams.get("module") || "").trim();
-  let period = searchParams.get("period") === "week" ? "week" : searchParams.get("period") === "range" ? "range" : "today";
   let groupId = String(searchParams.get("group") || "").trim();
   const dateKey = String(searchParams.get("date") || "").trim();
   const fromKey = parseShanghaiDate(searchParams.get("from")) || parseShanghaiDate(dateKey);
   const toKey = parseShanghaiDate(searchParams.get("to")) || fromKey;
+  const now = Date.now();
+  const selected = resolveReportWindow({
+    period: searchParams.get("period") || "today",
+    now,
+    fromKey,
+    toKey,
+  });
+  const period = selected.period;
+  const queryFrom = selected.fromKey;
+  const queryTo = selected.toKey;
   const context = reportContext(store, moduleKey, user);
   const { liveProject, groups, allowedIds, canSeeProjectTotal } = context;
   if (!liveProject.reportEnabled) {
@@ -377,13 +386,6 @@ async function buildModuleReport(env, db, store, searchParams, user) {
   if (!groupId && !canSeeProjectTotal) {
     groupId = groups[0]?.id || "";
   }
-  const now = Date.now();
-  const todayKey = shanghaiDateKey(now);
-  const currentFrom = period === "week" ? weekStartKey(now) : todayKey;
-  const currentTo = todayKey;
-  const queryFrom = fromKey || currentFrom;
-  const queryTo = toKey || currentTo;
-  if (period !== "week" && queryFrom !== queryTo) period = "range";
   const accountRows = await listLatestArchiveAccounts(db);
   const bundle = await loadArchiveBundle(env, db, archiveAccountKeysForScope(store, accountRows, {
     groupId,
@@ -410,7 +412,7 @@ async function buildModuleReport(env, db, store, searchParams, user) {
       store,
       project: liveProject,
       groupId,
-      period: period === "week" ? "week" : "today",
+      period,
       now,
       fromKey: queryFrom,
       toKey: queryTo,
@@ -426,8 +428,8 @@ async function buildModuleReport(env, db, store, searchParams, user) {
       toKey: queryTo,
     })),
   });
-  const isCurrentWindow = queryFrom === currentFrom && queryTo === currentTo && (period === "week" || period === "today" || queryFrom === queryTo);
-  if (isCurrentWindow || queryFrom !== queryTo) {
+  const isPresetWindow = ["today", "yesterday", "7d", "30d", "week"].includes(period);
+  if (isPresetWindow || queryFrom !== queryTo) {
     return livePayload();
   }
   const snapshot = await readOpsSnapshot(db, {

@@ -27,16 +27,17 @@ function reportCopy(project = {}) {
       : "看小说推文项目账号的发布和播放，不区分是不是小说内容。";
   }
   return project.name
-    ? `${project.name} 按分组落日报和周报，方便后面分开对照。`
+    ? `${project.name} 按今天、昨天、近7天和最近30天看分组发布和播放。`
     : "这个模块还没有项目。";
 }
 
 const PAGE_SIZE = 10;
+const PRESET_PERIODS = ["today", "yesterday", "7d", "30d"];
 const params = new URLSearchParams(location.search);
 const todayKey = shanghaiDateKey();
 const state = {
   module: MODULE_FROM_PATH[location.pathname] || params.get("module") || "",
-  period: params.get("period") === "week" ? "week" : params.get("period") === "range" ? "range" : "today",
+  period: normalizePeriodParam(params.get("period")),
   groupId: params.get("group") || "",
   fromKey: params.get("from") || params.get("date") || "",
   toKey: params.get("to") || params.get("date") || "",
@@ -44,8 +45,10 @@ const state = {
   pages: { high: 1, low: 1 },
 };
 
-if (!state.fromKey || !state.toKey) {
-  applyPeriodRange(state.period === "week" ? "week" : "today");
+if (PRESET_PERIODS.includes(state.period) || !state.fromKey || !state.toKey) {
+  applyPeriodRange(state.period);
+} else {
+  syncPeriodFromDates();
 }
 
 bindToolbar();
@@ -53,30 +56,19 @@ loadReport();
 
 function bindToolbar() {
   document.querySelectorAll("#periodTabs [data-period]").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.period === (state.period === "range" ? "" : state.period));
+    button.classList.toggle("is-active", button.dataset.period === state.period);
     button.addEventListener("click", () => {
       applyPeriodRange(button.dataset.period);
-      fillDateInputs();
-      document.querySelectorAll("#periodTabs [data-period]").forEach((item) => item.classList.toggle("is-active", item === button));
+      markActivePeriod();
+      syncQuery();
+      loadReport();
     });
-  });
-  document.querySelector("#fromDate")?.addEventListener("change", () => {
-    state.fromKey = document.querySelector("#fromDate").value;
-    syncPeriodFromDates();
-  });
-  document.querySelector("#toDate")?.addEventListener("change", () => {
-    state.toKey = document.querySelector("#toDate").value;
-    syncPeriodFromDates();
   });
   document.querySelector("#groupSelect")?.addEventListener("change", (event) => {
     state.groupId = event.target.value;
   });
   document.querySelector("#queryBtn")?.addEventListener("click", () => {
     readFilters();
-    if (state.fromKey && state.toKey && state.fromKey > state.toKey) {
-      document.querySelector("#reportMeta").textContent = "结束日期不能早于开始日期。";
-      return;
-    }
     syncQuery();
     loadReport();
   });
@@ -88,7 +80,7 @@ function bindToolbar() {
     }
     toggleProjectReport(projectId, event.target.checked);
   });
-  fillDateInputs();
+  markActivePeriod();
 }
 
 async function loadReport() {
@@ -115,8 +107,13 @@ async function loadReport() {
     if (!response.ok) throw new Error(data.error || "读取报表失败。");
     state.data = data;
     if (!state.groupId && data.report?.groupId) state.groupId = data.report.groupId;
-    if (data.report?.fromKey) state.fromKey = data.report.fromKey;
-    if (data.report?.toKey) state.toKey = data.report.toKey;
+    if (PRESET_PERIODS.includes(data.report?.period)) {
+      applyPeriodRange(data.report.period);
+    } else {
+      if (data.report?.fromKey) state.fromKey = data.report.fromKey;
+      if (data.report?.toKey) state.toKey = data.report.toKey;
+      if (data.report?.period) state.period = normalizePeriodParam(data.report.period);
+    }
     state.pages = { high: 1, low: 1 };
     render();
   } catch (error) {
@@ -133,7 +130,7 @@ function render() {
   const scopeName = report.groupName || (state.groupId ? groups.find((item) => item.id === state.groupId)?.name : "全部项目") || "全部项目";
   document.querySelector("#pageCopy").textContent = reportCopy(project);
   fillSelects(data);
-  fillDateInputs();
+  markActivePeriod();
   bindReportToggle(project);
   renderProjectBar(project, groups);
   if (!report.enabled) {
@@ -182,17 +179,10 @@ function fillSelects(data) {
   state.groupId = groupSelect.value;
 }
 
-function fillDateInputs() {
-  const fromInput = document.querySelector("#fromDate");
-  const toInput = document.querySelector("#toDate");
-  if (fromInput) {
-    fromInput.max = todayKey;
-    fromInput.value = state.fromKey || todayKey;
-  }
-  if (toInput) {
-    toInput.max = todayKey;
-    toInput.value = state.toKey || todayKey;
-  }
+function markActivePeriod() {
+  document.querySelectorAll("#periodTabs [data-period]").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.period === state.period);
+  });
 }
 
 function bindReportToggle(project) {
@@ -344,15 +334,22 @@ function videoJumpCell(item) {
 
 function readFilters() {
   state.groupId = document.querySelector("#groupSelect")?.value || "";
-  state.fromKey = document.querySelector("#fromDate")?.value || state.fromKey;
-  state.toKey = document.querySelector("#toDate")?.value || state.toKey;
-  syncPeriodFromDates();
 }
 
 function applyPeriodRange(period) {
-  state.period = period;
-  if (period === "week") {
-    state.fromKey = weekStartKey();
+  state.period = normalizePeriodParam(period);
+  if (state.period === "yesterday") {
+    state.fromKey = shiftDateKey(todayKey, -1);
+    state.toKey = state.fromKey;
+    return;
+  }
+  if (state.period === "7d") {
+    state.fromKey = shiftDateKey(todayKey, -6);
+    state.toKey = todayKey;
+    return;
+  }
+  if (state.period === "30d") {
+    state.fromKey = shiftDateKey(todayKey, -29);
     state.toKey = todayKey;
     return;
   }
@@ -361,19 +358,16 @@ function applyPeriodRange(period) {
 }
 
 function syncPeriodFromDates() {
-  const weekStart = weekStartKey();
-  if (state.fromKey === todayKey && state.toKey === todayKey) {
-    state.period = "today";
-    document.querySelectorAll("#periodTabs [data-period]").forEach((item) => item.classList.toggle("is-active", item.dataset.period === "today"));
-    return;
-  }
-  if (state.fromKey === weekStart && state.toKey === todayKey) {
-    state.period = "week";
-    document.querySelectorAll("#periodTabs [data-period]").forEach((item) => item.classList.toggle("is-active", item.dataset.period === "week"));
-    return;
-  }
-  state.period = "range";
-  document.querySelectorAll("#periodTabs [data-period]").forEach((item) => item.classList.remove("is-active"));
+  const matched = PRESET_PERIODS.find((period) => {
+    const from = period === "yesterday" ? shiftDateKey(todayKey, -1)
+      : period === "7d" ? shiftDateKey(todayKey, -6)
+        : period === "30d" ? shiftDateKey(todayKey, -29)
+          : todayKey;
+    const to = period === "yesterday" ? from : todayKey;
+    return state.fromKey === from && state.toKey === to;
+  });
+  state.period = matched || "today";
+  markActivePeriod();
 }
 
 function syncQuery() {
@@ -392,9 +386,12 @@ function syncQuery() {
 function rangeLabel(report) {
   const from = report.fromKey || report.dateKey || state.fromKey;
   const to = report.toKey || report.dateKey || state.toKey;
+  if (report.period === "yesterday") return `昨天 · ${from}`;
+  if (report.period === "7d") return `近7天 · ${from} 至 ${to}`;
+  if (report.period === "30d") return `最近30天 · ${from} 至 ${to}`;
   if (report.period === "week") return `本周 · ${from} 至 ${to}`;
   if (from && to && from !== to) return `${from} 至 ${to}`;
-  return `今日 · ${from || to || ""}`;
+  return `今天 · ${from || to || ""}`;
 }
 
 function averageViews(summary) {
@@ -406,12 +403,14 @@ function shanghaiDateKey(timestamp = Date.now()) {
   return new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
 }
 
-function weekStartKey(timestamp = Date.now()) {
-  const dateKey = shanghaiDateKey(timestamp);
-  const dayStart = Date.parse(`${dateKey}T00:00:00+08:00`);
-  const weekday = new Date(timestamp).toLocaleDateString("en-US", { timeZone: "Asia/Shanghai", weekday: "short" });
-  const offset = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }[weekday] ?? 0;
-  return shanghaiDateKey(dayStart - offset * 86_400_000);
+function shiftDateKey(dateKey, days) {
+  return shanghaiDateKey(Date.parse(`${dateKey}T00:00:00+08:00`) + days * 86_400_000);
+}
+
+function normalizePeriodParam(value) {
+  const period = String(value || "").trim();
+  if (period === "week") return "7d";
+  return PRESET_PERIODS.includes(period) ? period : "today";
 }
 
 function formatNumber(value) {

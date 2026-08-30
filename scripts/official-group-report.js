@@ -21,6 +21,14 @@ export function parseShanghaiDate(value) {
   return Number.isFinite(Date.parse(`${key}T00:00:00+08:00`)) ? key : "";
 }
 
+export const REPORT_PERIODS = Object.freeze(["today", "yesterday", "7d", "30d", "week", "range"]);
+const PRESET_PERIODS = Object.freeze(["today", "yesterday", "7d", "30d", "week"]);
+
+export function normalizeReportPeriod(value) {
+  const period = String(value || "").trim();
+  return REPORT_PERIODS.includes(period) ? period : "today";
+}
+
 export function rangeWindow(fromKey, toKey) {
   const start = parseShanghaiDate(fromKey);
   const end = parseShanghaiDate(toKey);
@@ -52,9 +60,24 @@ export function rangeWindow(fromKey, toKey) {
 }
 
 export function periodWindow(period = "today", now = Date.now()) {
+  const normalized = normalizeReportPeriod(period);
   const dateKey = shanghaiDateKey(now);
   const dayStart = Date.parse(`${dateKey}T00:00:00+08:00`);
-  if (period === "week") {
+  if (normalized === "yesterday") {
+    const startAt = dayStart - 86_400_000;
+    const yesterdayKey = shanghaiDateKey(startAt);
+    return {
+      startAt,
+      endAt: dayStart,
+      dateKey: yesterdayKey,
+      fromKey: yesterdayKey,
+      toKey: yesterdayKey,
+      period: "yesterday",
+    };
+  }
+  if (normalized === "7d") return rollingWindow(7, now, "7d");
+  if (normalized === "30d") return rollingWindow(30, now, "30d");
+  if (normalized === "week") {
     const weekday = new Date(now).toLocaleDateString("en-US", { timeZone: "Asia/Shanghai", weekday: "short" });
     const offset = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }[weekday] ?? 0;
     const startAt = dayStart - offset * 86_400_000;
@@ -71,12 +94,31 @@ export function periodWindow(period = "today", now = Date.now()) {
 }
 
 export function resolveReportWindow({ period = "today", now = Date.now(), fromKey = "", toKey = "" } = {}) {
+  const normalized = normalizeReportPeriod(period);
   if (parseShanghaiDate(fromKey) && parseShanghaiDate(toKey)) {
     const window = rangeWindow(fromKey, toKey);
-    if (period === "week" && window.fromKey !== window.toKey) return { ...window, period: "week" };
-    return window;
+    if (normalized === "week" && window.fromKey !== window.toKey) return { ...window, period: "week" };
+    const matched = PRESET_PERIODS.find((item) => {
+      const preset = periodWindow(item, now);
+      return preset.fromKey === window.fromKey && preset.toKey === window.toKey;
+    });
+    return { ...window, period: matched || window.period };
   }
-  return periodWindow(period, now);
+  return periodWindow(normalized, now);
+}
+
+function rollingWindow(days, now, period) {
+  const dateKey = shanghaiDateKey(now);
+  const dayStart = Date.parse(`${dateKey}T00:00:00+08:00`);
+  const startAt = dayStart - (Math.max(1, Number(days) || 1) - 1) * 86_400_000;
+  return {
+    startAt,
+    endAt: dayStart + 86_400_000,
+    dateKey: shanghaiDateKey(startAt),
+    fromKey: shanghaiDateKey(startAt),
+    toKey: dateKey,
+    period,
+  };
 }
 
 export function computeGroupReport({
