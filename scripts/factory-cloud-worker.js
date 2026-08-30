@@ -409,6 +409,8 @@ async function submitOfficialPublish(context, job, jobId, local) {
     progressCurrent: 0,
     progressTotal: videos.length
   });
+  const taskId = String(job.payload?.taskId || "");
+  const existing = readMirroredTask(context, taskId);
   return context.publishOfficial({
     ...(job.payload.publish || {}),
     videos,
@@ -416,7 +418,18 @@ async function submitOfficialPublish(context, job, jobId, local) {
     taskId: job.payload.taskId,
     officialWaveSize: 10,
     officialUploadConcurrency: 10,
+    checkpoint: existing?.officialPublishCheckpoint,
     shouldAbort: () => localJobCancelled(context, job, jobId),
+    onCheckpoint: (next) => {
+      if (localJobCancelled(context, job, jobId)) return;
+      mirrorCloudTask(context, job, {
+        ...local,
+        ...readMirroredTask(context, taskId),
+        status: "running",
+        phase: "publishing",
+        officialPublishCheckpoint: next
+      });
+    },
     onProgress: (progress) => {
       mirrorCloudTask(context, job, {
         ...local,
@@ -426,6 +439,7 @@ async function submitOfficialPublish(context, job, jobId, local) {
         message: progress.message || "正在提交 TikTok 官方发布...",
         progressCurrent: videos.length,
         progressTotal: videos.length,
+        officialPublishCheckpoint: readMirroredTask(context, taskId)?.officialPublishCheckpoint,
         publishProgress: {
           current: Number(progress.current || 0),
           total: Number(progress.total || videos.length)
@@ -473,7 +487,7 @@ async function completeOfficialOutcome(context, job, jobId, local, { published, 
     : `出片 ${videos.length} 条，并已提交官方发布。`;
   const outcomeLocal = {
     ...local,
-    status: "done",
+    status: publishError ? "needs_attention" : "done",
     percent: 100,
     message,
     error: "",
@@ -515,25 +529,36 @@ export function mirrorCloudTask(context, job, local = {}) {
   if (typeof context.mirrorTask !== "function") return;
   const payload = job.payload || {};
   const failed = ["failed", "error", "cancelled", "canceled"].includes(String(local.status || ""));
-  const done = ["done", "completed", "success"].includes(String(local.status || ""));
+  const needsAttention = Boolean(local.publishFailed) || String(local.status || "") === "needs_attention";
+  const done = ["done", "completed", "success"].includes(String(local.status || "")) && !needsAttention;
   const generatedVideos = Array.isArray(local.results)
     ? local.results
     : (Array.isArray(local.generatedVideos) ? local.generatedVideos : []);
-  const publishing = local.phase === "publishing"
+  const publishing = !done && !failed && !needsAttention && (
+    local.phase === "publishing"
     || Boolean(local.publishProgress)
-    || /上传|提交.*中台|官方发布/.test(String(local.message || ""));
+    || isOfficialPublishProgressMessage(local.message)
+  );
   const mirrored = {
     id: String(payload.taskId || `cloud-${job.id || job.jobId}`),
     name: String(payload.taskName || job.title || "工厂云任务"),
     taskType: payload.taskType || job.type || "reddit-mix",
-    status: failed ? (String(local.status).startsWith("cancel") ? "canceled" : "failed") : done ? "done" : "running",
+    status: failed
+      ? (String(local.status).startsWith("cancel") ? "canceled" : "failed")
+      : needsAttention
+        ? "needs_attention"
+        : done
+          ? "done"
+          : "running",
     phase: failed
       ? (String(local.status).startsWith("cancel") ? "canceled" : "failed")
-      : done
-        ? (Array.isArray(local.publishResults) ? "done" : "generated")
-        : publishing
-          ? "publishing"
-          : "generating",
+      : needsAttention
+        ? "needs_attention"
+        : done
+          ? (Array.isArray(local.publishResults) ? "done" : "generated")
+          : publishing
+            ? "publishing"
+            : "generating",
     message: local.message || job.message || "工厂云任务执行中",
     error: failed ? (local.error || local.message || "") : "",
     progress: {
@@ -558,7 +583,24 @@ export function mirrorCloudTask(context, job, local = {}) {
   if (done) mirrored.completedAt = Number(local.completedAt) || Date.now();
   if (local.publishFailed != null) mirrored.publishFailed = Boolean(local.publishFailed);
   if (local.publishError) mirrored.publishError = String(local.publishError);
+  if (local.officialPublishCheckpoint && typeof local.officialPublishCheckpoint === "object") {
+    mirrored.officialPublishCheckpoint = local.officialPublishCheckpoint;
+  }
   context.mirrorTask(mirrored);
+}
+
+export function isOfficialPublishProgressMessage(message) {
+  return /正在(?:并行)?上传|正在提交第|正在提交到|准备提交中台|正在提交 TikTok/.test(String(message || ""));
+}
+
+function readMirroredTask(context, taskId) {
+  const id = String(taskId || "").trim();
+  if (!id || !context?.workDir) return null;
+  try {
+    return JSON.parse(fs.readFileSync(path.join(context.workDir, "scheduled-tasks", `${id}.json`), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 function resolveJobType(job) {

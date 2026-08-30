@@ -9,7 +9,7 @@ import { discoverAudioLibraryGroups, resolveAudioLibraryRoot, resolveTargetAudio
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { createPublishService } from "./publish-service.js";
-import { createAutoTaskManager, planOfficialPublishJobs, resolveOfficialAccountAssignment } from "./auto-task-manager.js";
+import { createAutoTaskManager, describeMissingOfficialPublishFiles, missingOfficialPublishFiles, planOfficialPublishJobs, resolveOfficialAccountAssignment } from "./auto-task-manager.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { createOpenAICompatibleModelProvider } from "./brain-model-provider.js";
@@ -2610,15 +2610,6 @@ async function publishThroughOfficialTikTok(payload = {}) {
     interval: intervalMs,
     assignment
   });
-  const jobs = planned.map((job) => {
-    const fileName = path.basename(String(job.video?.fileName || "video.mp4"));
-    const filePath = path.resolve(outputDir, fileName);
-    if (!isPathInside(filePath, outputDir) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-      throw Object.assign(new Error(`找不到待发布视频：${fileName}`), { statusCode: 404 });
-    }
-    return { ...job, fileName, filePath };
-  });
-
   const report = typeof payload.onProgress === "function" ? payload.onProgress : () => {};
   const saveCheckpoint = typeof payload.onCheckpoint === "function" ? payload.onCheckpoint : () => {};
   const waveSize = Math.max(1, Math.min(20, Number(payload.officialWaveSize) || 10));
@@ -2627,6 +2618,18 @@ async function publishThroughOfficialTikTok(payload = {}) {
   const submittedKeys = new Set(Array.isArray(checkpoint.submittedKeys) ? checkpoint.submittedKeys : []);
   const savedAssets = checkpoint.assets && typeof checkpoint.assets === "object" ? { ...checkpoint.assets } : {};
   const batches = Array.isArray(checkpoint.batches) ? [...checkpoint.batches] : [];
+  const missingFiles = missingOfficialPublishFiles({ videos, outputDir, savedAssets });
+  if (missingFiles.length) {
+    throw Object.assign(new Error(describeMissingOfficialPublishFiles(missingFiles)), { statusCode: 404 });
+  }
+  const jobs = planned.map((job) => {
+    const fileName = path.basename(String(job.video?.fileName || "video.mp4"));
+    const filePath = path.resolve(outputDir, fileName);
+    if (!isPathInside(filePath, outputDir)) {
+      throw Object.assign(new Error(`找不到待发布视频：${fileName}`), { statusCode: 404 });
+    }
+    return { ...job, fileName, filePath };
+  });
   const pending = jobs
     .map((job, index) => ({
       job,

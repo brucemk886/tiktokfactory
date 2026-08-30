@@ -573,7 +573,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       const outputRoot = path.resolve(outputDir);
       const tasks = listTasks();
       const protectedNames = new Set(tasks
-        .filter((task) => task.status !== "done")
+        .filter((task) => taskStillNeedsOutputFiles(task))
         .flatMap((task) => task.generatedVideos || [])
         .map((video) => path.basename(String(video.fileName || "")))
         .filter(Boolean));
@@ -915,6 +915,38 @@ function getTaskSchedulePlan(task) {
   }
   const accountIds = getPublishAccountIds(task.publish);
   return buildSchedulePlan({ videoCount: videoCount, envIds: accountIds, scheduleAt: task.publish.scheduleAt, intervalMinutes: task.publish.intervalMinutes });
+}
+
+export function taskStillNeedsOutputFiles(task) {
+  if (!task || Number(task.deleted) === 1 || task.status === "deleted") return false;
+  if (task.status !== "done") return true;
+  if (task.publishFailed) return true;
+  const results = Array.isArray(task.publishResults) ? task.publishResults : [];
+  if (results.some((item) => String(item.status || "") === "failed")) return true;
+  const safelyPublished = results.length > 0 && results.every((item) => item.status === "submitted" || item.status === "skipped");
+  if (safelyPublished) return false;
+  const hasVideos = (Array.isArray(task.generatedVideos) ? task.generatedVideos : []).some((video) => String(video?.fileName || "").trim());
+  return hasVideos && normalizePublishProvider(task.publish?.provider) === PUBLISH_PROVIDER_OFFICIAL;
+}
+
+export function missingOfficialPublishFiles({ videos = [], outputDir, savedAssets = {} } = {}) {
+  const missing = [];
+  for (const video of Array.isArray(videos) ? videos : []) {
+    const fileName = path.basename(String(video?.fileName || "").trim());
+    if (!fileName) continue;
+    const filePath = path.resolve(outputDir, fileName);
+    if (savedAssets[filePath]?.assetKey) continue;
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) missing.push(fileName);
+  }
+  return [...new Set(missing)];
+}
+
+export function describeMissingOfficialPublishFiles(names) {
+  const list = [...new Set((Array.isArray(names) ? names : []).map((name) => String(name || "").trim()).filter(Boolean))];
+  if (!list.length) return "";
+  const shown = list.slice(0, 8);
+  const extra = list.length > shown.length ? ` 等 ${list.length} 条` : "";
+  return `找不到待发布视频：${shown.join("、")}${extra}`;
 }
 
 export function resolveOfficialAccountAssignment(value) {

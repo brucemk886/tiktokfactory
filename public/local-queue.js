@@ -137,9 +137,10 @@ function card(label, value) {
 }
 
 function isUploading(task) {
+  if (["done", "failed", "canceled", "cancelled", "needs_attention"].includes(String(task.status || ""))) return false;
   return task.phase === "publishing"
     || task.phase === "retrying"
-    || /上传|提交.*中台|官方发布/.test(String(task.message || ""));
+    || /正在(?:并行)?上传|正在提交第|正在提交到|准备提交中台|正在提交 TikTok/.test(String(task.message || ""));
 }
 
 function displayMessage(task) {

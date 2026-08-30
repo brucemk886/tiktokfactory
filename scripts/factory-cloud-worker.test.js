@@ -8,6 +8,7 @@ import {
   DEFAULT_POLL_MS,
   DEFAULT_SYNC_MS,
   dailyViewDataAlreadyPushed,
+  isOfficialPublishProgressMessage,
   loadSettings,
   localJobCancelled,
   mirrorCloudTask,
@@ -32,6 +33,17 @@ test("factory worker requeues its own interrupted jobs on hello", () => {
   assert.match(source, /latestAssetCatalog/);
   assert.doesNotMatch(source, /audioGroups: discoverAudioLibraryGroups/);
   assert.doesNotMatch(source, /assetUsageDashboard: buildAssetUsageSnapshot\(context/);
+  assert.match(source, /checkpoint: existing\?\.officialPublishCheckpoint/);
+  assert.match(source, /onCheckpoint:/);
+  assert.match(source, /officialPublishCheckpoint: next/);
+});
+
+test("official publish progress messages do not treat failure copy as uploading", () => {
+  assert.equal(isOfficialPublishProgressMessage("正在提交第 1 波（10 条）到发布中台..."), true);
+  assert.equal(isOfficialPublishProgressMessage("正在并行上传 10 条成片（本波 10 条，合计约 240MB）..."), true);
+  assert.equal(isOfficialPublishProgressMessage("正在提交 TikTok 官方发布..."), true);
+  assert.equal(isOfficialPublishProgressMessage("已出片 40 条，官方发布失败：ECONNRESET"), false);
+  assert.equal(isOfficialPublishProgressMessage("出片 40 条，并已提交官方发布。"), false);
 });
 
 test("daily view data is marked once per Beijing day", () => {
@@ -144,7 +156,7 @@ test("official publish completion remirrors local queue as done with upload resu
   });
   const running = manager.getTask("task-official");
   assert.equal(running.status, "running");
-  assert.equal(running.phase, "generating");
+  assert.equal(running.phase, "publishing");
   assert.equal((running.publishResults || []).length, 0);
 
   const normalized = normalizeOfficialAutoPublishResult({
@@ -181,4 +193,16 @@ test("official publish completion remirrors local queue as done with upload resu
   assert.equal(done.publishResults[0].status, "submitted");
   assert.equal(done.progress.percent, 100);
   assert.equal(done.generationCompletedAt, 1_700);
+
+  mirrorCloudTask(context, job, {
+    status: "done",
+    publishFailed: true,
+    message: "已出片 1 条，官方发布失败：找不到待发布视频：clip.mp4",
+    results: videos,
+    publishResults: [{ status: "failed", fileName: "clip.mp4" }]
+  });
+  const failedPublish = manager.getTask("task-official");
+  assert.equal(failedPublish.status, "needs_attention");
+  assert.equal(failedPublish.phase, "needs_attention");
+  assert.equal(failedPublish.publishFailed, true);
 });
