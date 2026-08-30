@@ -24,7 +24,7 @@ import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { countNovels, deleteNovelRow, getNovelRow, insertNovels, listNovelMatchIndex, listNovelScripts, listNovelSummaries, listNovels, listNovelsMatchingPeerHits, listWorkingNovelSummaries, markNovelsWorking, migrateNovelsFromKv, syncWorkingNovels, updateNovelBookId, upsertNovel, writeScripts } from "./novel-store.js";
 import { archiveAccountKeysForProject, connectionIdsForProjectScope, uniqueProjectAccountCount } from "../../scripts/official-account-group-store.js";
-import { chunkList, mergePublishStats, periodWindow } from "../../scripts/official-group-report.js";
+import { chunkList, effectsLookbackDays, mergePublishStats, periodWindow, resolveEffectsPeriod } from "../../scripts/official-group-report.js";
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 import { hydrateOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -186,7 +186,12 @@ export async function handleNovels(request, env, url, session, ctx) {
     const source = url.searchParams.get("source") || "official_api";
     const query = url.searchParams.get("query") || "";
     const novelId = url.searchParams.get("novel") || "";
-    const days = Math.max(1, Math.min(30, Math.floor(Number(url.searchParams.get("days") || 30))));
+    const period = resolveEffectsPeriod({
+      period: url.searchParams.get("period"),
+      days: url.searchParams.get("days"),
+    });
+    const days = effectsLookbackDays(period);
+    const window = periodWindow(period);
     const forceRefresh = url.searchParams.get("refresh") === "1";
     if (source === "third_party") {
       const overview = await novelOverview(db, query, env);
@@ -199,11 +204,12 @@ export async function handleNovels(request, env, url, session, ctx) {
           rawVideoCount: Number(overview?.summary?.videoCount || 0),
           mappedVideoCount: Number(overview?.summary?.videoCount || 0),
           days,
+          period,
         },
       }, { keepZeroView: true }));
     }
     try {
-      const cacheKey = `novel-effects-cache:${days}:${query}:${novelId}`;
+      const cacheKey = `novel-effects-cache:${period}:${query}:${novelId}`;
       if (!forceRefresh) {
         const cached = await kvGet(db, cacheKey, null);
         if (cached?.page && Date.now() - Number(cached.at || 0) < 60_000) {
@@ -226,6 +232,8 @@ export async function handleNovels(request, env, url, session, ctx) {
       const [signals, store, records, publishStats] = await Promise.all([
         getOfficialOperationSignals(env, db, {
           days,
+          publishedAfter: window.startAt,
+          publishedBefore: window.endAt,
           videosPerAccount: overviewVideosPerAccount(days),
           accountKeys,
         }),
@@ -233,7 +241,7 @@ export async function handleNovels(request, env, url, session, ctx) {
         hydrateOfficialPublishRecords(storedRecords, (batchId) => (
           signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
         ), { skipResolved: true, limit: 8 }).catch(() => storedRecords),
-        loadOverviewPublishStats(env, db, groupStore, days).catch(() => ({ total: 0, success: 0, failed: 0 })),
+        loadOverviewPublishStats(env, db, groupStore, period).catch(() => ({ total: 0, success: 0, failed: 0 })),
       ]);
       const assembled = assembleOfficialNovelEffects({
         store,
@@ -242,6 +250,7 @@ export async function handleNovels(request, env, url, session, ctx) {
         records,
         query,
         days,
+        period,
         label: "线上官方归档",
         projectAccountCount: uniqueProjectAccountCount(groupStore, "proj-novel"),
       });
@@ -1005,17 +1014,8 @@ function overviewVideosPerAccount(days) {
   return 80;
 }
 
-function overviewPublishWindow(days, now = Date.now()) {
-  const today = periodWindow("today", now);
-  const span = Math.max(1, Math.min(30, Number(days) || 7));
-  return {
-    startAt: today.startAt - (span - 1) * 86_400_000,
-    endAt: today.endAt,
-  };
-}
-
-async function loadOverviewPublishStats(env, db, store, days) {
-  const window = overviewPublishWindow(days);
+async function loadOverviewPublishStats(env, db, store, period) {
+  const window = periodWindow(period);
   const connectionIds = connectionIdsForProjectScope(store, { projectId: "proj-novel" });
   if (!connectionIds.length) return { total: 0, success: 0, failed: 0 };
   const parts = [];

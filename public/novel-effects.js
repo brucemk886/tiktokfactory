@@ -1,7 +1,8 @@
 const pageParams = new URLSearchParams(location.search);
 const state = {
   source: document.body.dataset.source === "third_party" ? "third_party" : "official_api",
-  days: Number(document.querySelector("#daysTabs .is-active, #daysTabs .active")?.dataset.days) || 7,
+  period: document.querySelector("#daysTabs .is-active, #daysTabs .active")?.dataset.period || inferPeriodFromDays(document.querySelector("#daysTabs .is-active, #daysTabs .active")?.dataset.days),
+  days: document.querySelector("#daysTabs .is-active, #daysTabs .active")?.dataset.days || "7",
   query: "",
   novelId: pageParams.get("novel") || "",
   page: 1,
@@ -22,15 +23,18 @@ const unassignedNode = document.querySelector("#unassignedSection");
 const pagerNode = document.querySelector("#novelPager");
 
 daysTabs?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-days]");
+  const button = event.target.closest("[data-period], [data-days]");
   if (!button) return;
-  state.days = Number(button.dataset.days) || 7;
+  state.period = button.dataset.period || inferPeriodFromDays(button.dataset.days);
+  state.days = button.dataset.days || state.days;
   state.page = 1;
   setActive(daysTabs, button);
   loadEffects();
 });
 if (daysTabs) {
-  const current = daysTabs.querySelector(`[data-days="${state.days}"]`) || daysTabs.querySelector(".is-active");
+  const current = daysTabs.querySelector(`[data-period="${state.period}"]`)
+    || daysTabs.querySelector(`[data-days="${state.days}"]`)
+    || daysTabs.querySelector(".is-active");
   if (current) setActive(daysTabs, current);
 }
 searchForm?.addEventListener("submit", (event) => {
@@ -64,7 +68,7 @@ async function loadEffects({ refresh = false } = {}) {
   resultsNode.innerHTML = '<div class="loading">正在按效果倒序排列…</div>';
   unassignedNode.hidden = true;
   try {
-    const params = new URLSearchParams({ source: state.source, days: String(state.days) });
+    const params = new URLSearchParams({ source: state.source, period: state.period, days: String(state.days) });
     if (state.novelId) params.set("novel", state.novelId);
     if (refresh) params.set("refresh", "1");
     const response = await fetch(`/api/novel-effects?${params}`, { cache: "no-store" });
@@ -112,7 +116,7 @@ function renderPage() {
   if (listHeadingNode) listHeadingNode.hidden = !pageNovels.length;
   resultsNode.innerHTML = pageNovels.length
     ? pageNovels.map((novel, index) => renderNovel(novel, start + index + 1)).join("")
-    : `<div class="empty-state">${state.query ? "没有匹配的小说。" : "这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 7 天 / 30 天排行。"}</div>`;
+    : `<div class="empty-state">${state.query ? "没有匹配的小说。" : "这个周期还没有跑出播放的小说。先在书单里给开头配音并发布，再回来看今天 / 昨天 / 7 天 / 30 天排行。"}</div>`;
   renderPager(ranked.length, pageCount);
   focusCurrentNovel();
 }
@@ -168,7 +172,7 @@ function renderStatus(status, rankedCount) {
   const prefix = state.source === "official_api" ? ready : `${status.label || "GeeLark 第三方"} · ${ready}`;
   statusNode.classList.toggle("warning", status.status !== "ready" || raw > mapped);
   const archive = status.archiveDate ? `归档 ${status.archiveDate}` : "";
-  statusNode.innerHTML = `<span><strong>${escapeHtml(prefix)}</strong>${status.error ? ` · ${escapeHtml(status.error)}` : ""}${archive ? ` · ${escapeHtml(archive)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · ${periodLabel(status.days || state.days)} · ${formatInteger(rankedCount)} 本有播放</small>`;
+  statusNode.innerHTML = `<span><strong>${escapeHtml(prefix)}</strong>${status.error ? ` · ${escapeHtml(status.error)}` : ""}${archive ? ` · ${escapeHtml(archive)}` : ""}</span><small>读取视频 ${formatInteger(raw)} 条 · 已匹配内容 ${formatInteger(mapped)} 条 · ${periodLabel(status.period || status.days || state.period)} · ${formatInteger(rankedCount)} 本有播放</small>`;
 }
 
 function renderSummary(summary) {
@@ -197,7 +201,7 @@ function renderHotHits(ranked) {
     return;
   }
   hotHitsNode.hidden = false;
-  hotHitsNode.innerHTML = `<header class="hot-hits-head"><div><p class="eyebrow">HOT NOW</p><h2>当下爆款</h2></div><p class="page-copy">${periodLabel(state.days)}效果最好的 ${hits.length} 本</p></header>
+  hotHitsNode.innerHTML = `<header class="hot-hits-head"><div><p class="eyebrow">HOT NOW</p><h2>当下爆款</h2></div><p class="page-copy">${periodLabel(state.period)}效果最好的 ${hits.length} 本</p></header>
     <div class="hot-hits-grid">${hits.map((novel, index) => {
       const performance = novel.performance || {};
       return `<article class="hot-hit-card">
@@ -239,7 +243,7 @@ function renderNovel(novel, rank) {
       <div class="novel-title-block">
         <div class="rank-badge" aria-label="第 ${rank} 名">${rank}</div>
         <div>
-          <p class="eyebrow">NOVEL · ${periodLabel(state.days)}</p>
+          <p class="eyebrow">NOVEL · ${periodLabel(state.period)}</p>
           <h2>${escapeHtml(novel.title || "未命名小说")}</h2>
           <div class="novel-meta">${escapeHtml([novel.category, novel.platform, novel.promotionCode].filter(Boolean).join(" · ") || "未填写分类")} · ${rewrites.length} 个改写版本</div>
         </div>
@@ -342,10 +346,20 @@ function focusCurrentNovel() {
   if (card) card.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
-function periodLabel(days) {
-  const value = Number(days) || 7;
-  if (value <= 1) return "今天";
-  if (value <= 7) return "近 7 天";
+function inferPeriodFromDays(value) {
+  const raw = String(value || "").trim();
+  if (raw === "yesterday") return "yesterday";
+  const days = Number(raw);
+  if (days <= 1) return "today";
+  if (days <= 7) return "7d";
+  return "30d";
+}
+
+function periodLabel(value) {
+  const key = String(value || state.period || "").trim();
+  if (key === "yesterday") return "昨天";
+  if (key === "today" || Number(key) <= 1) return "今天";
+  if (key === "7d" || Number(key) <= 7) return "近 7 天";
   return "近 30 天";
 }
 

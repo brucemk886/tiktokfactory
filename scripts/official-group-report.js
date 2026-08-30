@@ -29,6 +29,24 @@ export function normalizeReportPeriod(value) {
   return REPORT_PERIODS.includes(period) ? period : "today";
 }
 
+export function resolveEffectsPeriod({ period = "", days = "" } = {}) {
+  const rawPeriod = String(period || "").trim();
+  if (rawPeriod === "yesterday" || rawPeriod === "today" || rawPeriod === "7d" || rawPeriod === "30d") return rawPeriod;
+  const rawDays = String(days || "").trim();
+  if (rawDays === "yesterday") return "yesterday";
+  const span = Math.max(1, Math.min(30, Math.floor(Number(rawDays || 30))));
+  if (!Number.isFinite(span)) return "30d";
+  if (span <= 1) return "today";
+  if (span <= 7) return "7d";
+  return "30d";
+}
+
+export function effectsLookbackDays(period) {
+  if (period === "yesterday" || period === "today") return 2;
+  if (period === "7d") return 7;
+  return 30;
+}
+
 export function rangeWindow(fromKey, toKey) {
   const start = parseShanghaiDate(fromKey);
   const end = parseShanghaiDate(toKey);

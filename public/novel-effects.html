@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>小说数据统计 · Local Factory</title>
   <link rel="stylesheet" href="/app.css">
-  <link rel="stylesheet" href="/novel-effects.css?v=20260829-3">
+  <link rel="stylesheet" href="/novel-effects.css?v=20260830-2">
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
 <body class="work-page novel-effects-page" data-source="official_api">
@@ -13,7 +13,7 @@
   <main class="effects-shell">
     <header class="page-heading"><div><p class="eyebrow">NOVEL STATS</p><h1>小说数据统计</h1><p class="page-copy">只统计对上书单的小说视频。当下爆款取当前周期效果最好的 5 本，下方按效果倒序。</p></div></header>
     <section class="toolbar-card">
-      <div class="control-group"><span class="control-label">统计周期</span><div class="segmented compact" id="daysTabs"><button type="button" data-days="1">今天</button><button type="button" class="is-active" data-days="7" aria-pressed="true">近7天</button><button type="button" data-days="30">近30天</button></div></div>
+      <div class="control-group"><span class="control-label">统计周期</span><div class="segmented compact" id="daysTabs"><button type="button" data-period="today" data-days="1">今天</button><button type="button" data-period="yesterday" data-days="yesterday">昨天</button><button type="button" class="is-active" data-period="7d" data-days="7" aria-pressed="true">近7天</button><button type="button" data-period="30d" data-days="30">近30天</button></div></div>
       <form class="search-form" id="effectSearchForm"><label class="sr-only" for="effectSearch">搜索小说</label><input id="effectSearch" type="search" placeholder="搜索小说标题、分类或推广码"><button type="submit" class="primary-button">查询</button></form>
       <button type="button" class="ghost-button" id="effectRefresh">刷新</button>
     </section>
@@ -29,6 +29,6 @@
     <section class="unassigned-section" id="unassignedSection" hidden></section>
   </main>
   <script src="/access.js"></script>
-  <script type="module" src="/novel-effects.js?v=20260829-3"></script>
+  <script type="module" src="/novel-effects.js?v=20260830-2"></script>
 </body>
 </html>

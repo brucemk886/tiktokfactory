@@ -9,6 +9,7 @@ export function buildArchiveOperationSignals({
   days = 10,
   videosPerAccount = 100,
   publishedAfter = 0,
+  publishedBefore = 0,
   archiveDate = "",
   archiveAt = 0,
   now = Date.now,
@@ -17,6 +18,7 @@ export function buildArchiveOperationSignals({
   const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 10)));
   const safeVideos = Math.max(1, Math.min(100, Math.floor(Number(videosPerAccount) || 100)));
   const cutoffAt = Math.max(now() - safeDays * DAY_MS, Number(publishedAfter) || 0);
+  const endAt = Number(publishedBefore) || 0;
   if (!accountRows.length) {
     return {
       connected: Boolean(archiveDate),
@@ -40,6 +42,7 @@ export function buildArchiveOperationSignals({
     const videos = (videosForAccount(row.account_key, safeVideos) || []).flatMap((video) => {
       const createdAt = toMillis(video.createTime || video.createdAt);
       if (createdAt && createdAt < cutoffAt) return [];
+      if (endAt && createdAt && createdAt >= endAt) return [];
       return [{
         ...video,
         id: video.id || video.videoId,

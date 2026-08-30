@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, mergePublishStats, paginateItems, periodWindow, resolveReportWindow, shanghaiDateKey, snapshotDateKey, tiktokWatchUrl } from "./official-group-report.js";
+import { attachPublishOutcome, computeGroupReport, connectionIdsFromArchiveRows, effectsLookbackDays, mergePublishStats, paginateItems, periodWindow, resolveEffectsPeriod, resolveReportWindow, shanghaiDateKey, snapshotDateKey, tiktokWatchUrl } from "./official-group-report.js";
 import { readFile } from "node:fs/promises";
 
 test("classifies today videos into zero, low and high view buckets", () => {
@@ -149,4 +149,8 @@ test("yesterday, 7d and 30d windows use Shanghai calendar days", () => {
     fromKey: "2026-08-01",
     toKey: "2026-08-30",
   }).period, "30d");
+  assert.equal(resolveEffectsPeriod({ period: "yesterday" }), "yesterday");
+  assert.equal(resolveEffectsPeriod({ days: "yesterday" }), "yesterday");
+  assert.equal(resolveEffectsPeriod({ days: "1" }), "today");
+  assert.equal(effectsLookbackDays("yesterday"), 2);
 });

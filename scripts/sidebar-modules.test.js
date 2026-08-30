@@ -157,8 +157,9 @@ test("novel effects keep official and GeeLark data on separate pages", () => {
   const geelark = fs.readFileSync(path.join(publicDir, "geelark-novel-effects.html"), "utf8");
   assert.match(official, /小说数据统计/);
   assert.match(official, /data-days="1"/);
+  assert.match(official, /data-period="yesterday"/);
   assert.match(official, /id="daysTabs"/);
-  assert.match(official, /class="is-active" data-days="7"/);
+  assert.match(official, /class="is-active" data-period="7d" data-days="7"/);
   assert.doesNotMatch(official, /数据通路/);
   assert.doesNotMatch(official, /source-lock/);
   assert.match(official, /data-source="official_api"/);

@@ -82,6 +82,39 @@ test("reuses supplied official signals when building the operation decision cont
   assert.equal(result.videoMappings[0].local.audioLibraryId, "audio-1");
 });
 
+test("yesterday period only keeps videos from the previous Shanghai day", async () => {
+  let captured = [];
+  const service = createNovelEffectService({
+    novelContentLibrary: {
+      getOverviewFromVideos(videos) { captured = videos; return overviewFor(videos); },
+    },
+    officialAnalyticsService: {
+      getOperationSignals: async () => ({
+        status: "ready",
+        connected: true,
+        accounts: [{
+          username: "creator",
+          videos: [
+            { id: "today", views: 90, createdAt: Date.parse("2026-08-30T10:00:00+08:00") },
+            { id: "yesterday", views: 40, createdAt: Date.parse("2026-08-29T22:00:00+08:00") },
+            { id: "older", views: 10, createdAt: Date.parse("2026-08-28T22:00:00+08:00") },
+          ],
+        }],
+      }),
+    },
+  });
+  const now = Date.now;
+  Date.now = () => Date.parse("2026-08-30T19:40:00+08:00");
+  try {
+    const result = await service.getOverview({ source: "official_api", period: "yesterday" });
+    assert.deepEqual(captured.map((video) => video.id || video.videoId), ["yesterday"]);
+    assert.equal(result.dataStatus.period, "yesterday");
+    assert.equal(result.summary.totalViews, 40);
+  } finally {
+    Date.now = now;
+  }
+});
+
 test("rejects unknown novel effect sources", async () => {
   const service = createNovelEffectService({ novelContentLibrary: { getOverview: () => overviewFor() } });
   await assert.rejects(() => service.getOverview({ source: "mixed" }), /Unsupported data source/);

@@ -1197,7 +1197,8 @@ const server = http.createServer(async (req, res) => {
         const result = await novelEffectService.getOverview({
           source: url.searchParams.get("source") || "official_api",
           query: url.searchParams.get("query") || "",
-          days: Number(url.searchParams.get("days") || 30),
+          days: url.searchParams.get("days") || 30,
+          period: url.searchParams.get("period") || "",
         });
         const { videoMappings, ...page } = result;
         return sendJson(res, 200, page, { "Cache-Control": "no-store" });

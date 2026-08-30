@@ -7,6 +7,7 @@ export function assembleOfficialNovelEffects({
   records = [],
   query = "",
   days = 30,
+  period = "",
   label = "官方归档",
   projectAccountCount = 0,
 } = {}) {
@@ -21,6 +22,7 @@ export function assembleOfficialNovelEffects({
       rawVideoCount: countOfficialVideos(signals),
       mappedVideoCount: videos.filter(hasContentMapping).length,
       days,
+      period: period || "",
       archiveDate: signals?.archiveDate || "",
       archiveAt: Number(signals?.archiveAt) || 0,
     }, {

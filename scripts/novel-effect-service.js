@@ -1,4 +1,5 @@
 import { decorate, flattenOfficialVideos, normalizeRecords } from "./novel-effect-core.js";
+import { effectsLookbackDays, periodWindow, resolveEffectsPeriod } from "./official-group-report.js";
 
 const SOURCES = new Set(["official_api", "third_party"]);
 
@@ -9,9 +10,10 @@ export function createNovelEffectService({
 } = {}) {
   if (!novelContentLibrary) throw new Error("Novel effect service requires the novel content library.");
 
-  async function getOverview({ source = "official_api", query = "", days = 30 } = {}) {
+  async function getOverview({ source = "official_api", query = "", days = 30, period = "" } = {}) {
     if (!SOURCES.has(source)) throw statusError(400, "Unsupported data source.");
-    const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 30)));
+    const resolvedPeriod = resolveEffectsPeriod({ period, days });
+    const safeDays = effectsLookbackDays(resolvedPeriod);
 
     if (source === "third_party") {
       const overview = novelContentLibrary.getOverview({ query });
@@ -22,14 +24,17 @@ export function createNovelEffectService({
         rawVideoCount: Number(overview?.summary?.videoCount || 0),
         mappedVideoCount: Number(overview?.summary?.videoCount || 0),
         days: safeDays,
+        period: resolvedPeriod,
       });
     }
 
-    return getDecisionContext({ query, days: safeDays });
+    return getDecisionContext({ query, days: safeDays, period: resolvedPeriod });
   }
 
-  async function getDecisionContext({ signals = null, query = "", days = 30 } = {}) {
-    const safeDays = Math.max(1, Math.min(30, Math.floor(Number(days) || 30)));
+  async function getDecisionContext({ signals = null, query = "", days = 30, period = "" } = {}) {
+    const resolvedPeriod = resolveEffectsPeriod({ period, days });
+    const safeDays = effectsLookbackDays(resolvedPeriod);
+    const window = periodWindow(resolvedPeriod);
     if (!signals && !officialAnalyticsService?.getOperationSignals) {
       return decorate({ summary: {}, novels: [], unassignedScripts: [], query }, {
         source: "official_api",
@@ -39,13 +44,17 @@ export function createNovelEffectService({
         rawVideoCount: 0,
         mappedVideoCount: 0,
         days: safeDays,
+        period: resolvedPeriod,
       });
     }
     try {
-      const resolvedSignals = signals || await officialAnalyticsService.getOperationSignals({
+      const fetched = signals || await officialAnalyticsService.getOperationSignals({
         days: safeDays,
         videosPerAccount: 100,
       });
+      const resolvedSignals = resolvedPeriod === "yesterday" || resolvedPeriod === "today"
+        ? filterSignalsByWindow(fetched, window)
+        : fetched;
       const records = normalizeRecords(readPublishRecords());
       const videos = flattenOfficialVideos(resolvedSignals, records);
       const overview = novelContentLibrary.getOverviewFromVideos(videos, { query });
@@ -58,6 +67,7 @@ export function createNovelEffectService({
           rawVideoCount: countOfficialVideos(resolvedSignals),
           mappedVideoCount: videos.filter(hasContentMapping).length,
           days: safeDays,
+          period: resolvedPeriod,
         }, { videos }),
         videoMappings: videos.map((video) => ({
           videoId: clean(video.videoId || video.itemId || video.id),
@@ -75,11 +85,33 @@ export function createNovelEffectService({
         rawVideoCount: 0,
         mappedVideoCount: 0,
         days: safeDays,
+        period: resolvedPeriod,
       });
     }
   }
 
   return { getOverview, getDecisionContext };
+}
+
+function filterSignalsByWindow(signals, window) {
+  if (!window?.startAt || !window?.endAt) return signals;
+  return {
+    ...signals,
+    accounts: (Array.isArray(signals?.accounts) ? signals.accounts : []).map((account) => ({
+      ...account,
+      videos: (Array.isArray(account?.videos) ? account.videos : []).filter((video) => {
+        const createdAt = toMillis(video.createdAt || video.createTime || video.publishedAt);
+        if (!createdAt) return true;
+        return createdAt >= window.startAt && createdAt < window.endAt;
+      }),
+    })),
+  };
+}
+
+function toMillis(value) {
+  const number = Number(value) || 0;
+  if (number <= 0) return 0;
+  return number < 1e12 ? number * 1000 : number;
 }
 
 function countOfficialVideos(signals) {
