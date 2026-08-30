@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, isOrphanRunningJob, persistableJobResult, shouldWriteOfficialPublishRecords } from "./jobs.js";
+import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, isOrphanRunningJob, persistableJobResult, shouldWriteOfficialPublishRecords, videosForOfficialRetry } from "./jobs.js";
 
 test("publish failure after generation keeps videos and needs attention", () => {
   const task = applyJobToTask({
@@ -29,6 +29,33 @@ test("publish failure after generation keeps videos and needs attention", () => 
   assert.equal(task.error, "");
   assert.equal(task.publishError, "缺少账号");
   assert.equal(task.generatedVideos.length, 2);
+});
+
+test("official retry collects the whole generated batch", () => {
+  const videos = videosForOfficialRetry({
+    generatedVideos: [{ fileName: "a.mp4" }],
+    publishResults: [{ fileName: "a.mp4" }, { fileName: "b.mp4" }]
+  });
+  assert.deepEqual(videos.map((item) => item.fileName), ["a.mp4"]);
+
+  const fromResults = videosForOfficialRetry({
+    generatedVideos: [],
+    publishResults: [{ fileName: "a.mp4" }, { fileName: "b.mp4" }, { fileName: "a.mp4" }]
+  });
+  assert.deepEqual(fromResults.map((item) => item.fileName), ["a.mp4", "b.mp4"]);
+
+  const fromJob = videosForOfficialRetry({
+    generatedVideos: [],
+    publishResults: []
+  }, {
+    id: "job-1",
+    status: "done",
+    result_json: JSON.stringify({
+      results: [{ fileName: "keep-1.mp4" }, { fileName: "keep-2.mp4" }],
+      publishFailed: true
+    })
+  });
+  assert.deepEqual(fromJob.map((item) => item.fileName), ["keep-1.mp4", "keep-2.mp4"]);
 });
 
 test("retry publish does not wipe generated videos", () => {

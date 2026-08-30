@@ -485,6 +485,15 @@ export function isDeletedTask(task) {
   return Boolean(task) && (Number(task.deleted) === 1 || task.status === "deleted");
 }
 
+export function videosForOfficialRetry(task = {}, job = null) {
+  const live = job ? applyJobToTask({ ...task }, job) : task;
+  const videos = Array.isArray(live?.generatedVideos) ? live.generatedVideos.filter((item) => String(item?.fileName || "").trim()) : [];
+  if (videos.length) return videos;
+  const results = Array.isArray(task?.publishResults) ? task.publishResults : [];
+  const names = [...new Set(results.map((item) => String(item?.fileName || "").trim()).filter(Boolean))];
+  return names.map((fileName) => ({ fileName }));
+}
+
 export function mergeGeneratedVideos(existing, incoming) {
   const current = Array.isArray(existing) ? existing.filter(Boolean) : [];
   const next = Array.isArray(incoming) ? incoming.filter(Boolean) : [];

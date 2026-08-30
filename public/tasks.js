@@ -209,6 +209,7 @@ function renderTasks(tasks, allTasks = tasks) {
     const percent = total > 0 ? Math.round(current / total * 100) : Number(progress?.percent) || 0;
     const failures = (task.publishResults || []).filter((item) => item.status === "failed" || item.status === "needs_check");
     const isOfficial = task.publish?.provider === "official";
+    const officialRetryCount = Math.max(Number(task.generatedVideos?.length || 0), failures.length);
     const accountLabels = Array.from(new Set(
       (isOfficial ? task.publish?.officialAccounts : task.publish?.accounts || [])
         .map((account) => String(isOfficial
@@ -224,14 +225,21 @@ function renderTasks(tasks, allTasks = tasks) {
       ? `<div class="task-schedule"><strong>具体排期</strong>${scheduleLines.map((item) => `<span><b>${escapeHtml(formatScheduleAt(item.scheduleAt))}</b><em>${item.count} 条</em></span>`).join("")}</div>`
       : "";
     const taskIsActive = ["running", "queued"].includes(task.status) || ["generating", "publishing", "checking", "retry_wait", "retrying"].includes(task.phase);
+    const officialNeedsRepublish = isOfficial && !taskIsActive && officialRetryCount > 0 && (failures.length > 0 || task.status === "needs_attention");
     const actions = taskIsActive
       ? `<button class="secondary-btn" data-action="cancel" data-id="${escapeAttr(task.id)}">停止</button>`
-      : ["failed", "paused", "awaiting_review"].includes(task.status)
-        ? `<button class="secondary-btn" data-action="resume" data-id="${escapeAttr(task.id)}">继续执行</button>`
-        : "";
+      : officialNeedsRepublish
+        ? `<button class="secondary-btn" data-action="retry-all" data-id="${escapeAttr(task.id)}">重新发布全部 ${officialRetryCount} 条</button>`
+        : ["failed", "paused", "awaiting_review"].includes(task.status)
+          ? `<button class="secondary-btn" data-action="resume" data-id="${escapeAttr(task.id)}">继续执行</button>`
+          : "";
     const renameAction = `<button class="secondary-btn" data-action="rename" data-id="${escapeAttr(task.id)}">改名</button>`;
     const archiveAction = !taskIsActive ? `<button class="secondary-btn task-delete-btn" data-admin-action data-action="archive" data-id="${escapeAttr(task.id)}">删除</button>` : "";
-    const failureHtml = failures.length ? `<div class="manual-items"><strong>待人工处理</strong>${failures.map((item) => `<div class="manual-item"><span>${escapeHtml(item.fileName)}<small>${escapeHtml(item.message || item.status)}</small></span><button data-action="retry" data-task-id="${escapeAttr(task.id)}" data-record-id="${escapeAttr(item.recordId)}">重新发布</button></div>`).join("")}</div>` : "";
+    const failureHtml = failures.length
+      ? isOfficial
+        ? `<div class="manual-items"><strong>待人工处理</strong><p>官方通道一次会重发全部已出片，不用逐条点。</p>${failures.slice(0, 6).map((item) => `<div class="manual-item"><span>${escapeHtml(item.fileName)}<small>${escapeHtml(item.message || item.status)}</small></span></div>`).join("")}${failures.length > 6 ? `<div class="manual-item"><span>还有 ${failures.length - 6} 条同样失败</span></div>` : ""}</div>`
+        : `<div class="manual-items"><strong>待人工处理</strong>${failures.map((item) => `<div class="manual-item"><span>${escapeHtml(item.fileName)}<small>${escapeHtml(item.message || item.status)}</small></span><button data-action="retry" data-task-id="${escapeAttr(task.id)}" data-record-id="${escapeAttr(item.recordId)}">重新发布</button></div>`).join("")}</div>`
+      : "";
     const queueAhead = task.status === "queued" ? activeCount + (queuedPositions.get(task.id) || 0) : 0;
     const taskMessage = task.status === "queued"
       ? blocking && blocking.id !== task.id
@@ -299,8 +307,10 @@ async function handleTaskAction(event) {
       const response = await fetch(`/api/auto-tasks/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "删除任务失败。");
-    } else if (action === "retry") {
-      const response = await fetch(`/api/auto-tasks/${encodeURIComponent(button.dataset.taskId)}/retry-publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordId: button.dataset.recordId }) });
+    } else if (action === "retry" || action === "retry-all") {
+      const taskId = button.dataset.taskId || button.dataset.id;
+      const body = action === "retry" ? { recordId: button.dataset.recordId } : {};
+      const response = await fetch(`/api/auto-tasks/${encodeURIComponent(taskId)}/retry-publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "重新发布失败。");
     } else {

@@ -1,7 +1,7 @@
 import { applyArchiveViewsToSnapshot, collectSnapshotVideoIds, dashboardFromSnapshot } from "../../scripts/asset-usage-impact.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { errorJson, json, now, readJson, safeId } from "./http.js";
-import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob } from "./jobs.js";
+import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob, videosForOfficialRetry } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
 import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
@@ -196,7 +196,8 @@ export async function handleCompat(request, env, url, session) {
       return json({ task });
     }
     if (method === "POST" && taskMatch[2] === "retry-publish") {
-      const videos = Array.isArray(task.generatedVideos) ? task.generatedVideos : [];
+      const currentJob = task.generationJobId ? await getJob(db, task.generationJobId) : null;
+      const videos = videosForOfficialRetry(task, currentJob);
       if (!videos.length) return errorJson("没有已生成的成片，无法重试发布。", 400);
       const job = await enqueueJob(db, {
         type: "official-publish",
