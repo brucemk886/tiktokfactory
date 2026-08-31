@@ -183,9 +183,20 @@ function voicedScriptLabel(script) {
   })[script?.sourceType] || script?.versionLabel || "已配音";
 }
 
+function hasVisibleTranscript(script) {
+  return String(script?.text || "").trim() && !isPlaceholderUploadedScript(script.text) && script.transcriptStatus !== "failed";
+}
+
 function renderVoicedScripts() {
   if (!elements.voicedScriptsPanel || !elements.voicedScripts) return;
-  const scripts = (state.novel?.scripts || []).filter(scriptHasAudio).sort((left, right) => {
+  const focusId = params.get("script") || state.parentScriptId || "";
+  const scripts = (state.novel?.scripts || []).filter((script) => {
+    if (!scriptHasAudio(script)) return false;
+    if (script.id === focusId) return true;
+    return hasVisibleTranscript(script);
+  }).sort((left, right) => {
+    if (left.id === focusId) return -1;
+    if (right.id === focusId) return 1;
     if (left.sourceType === "peer-hit" && right.sourceType !== "peer-hit") return -1;
     if (right.sourceType === "peer-hit" && left.sourceType !== "peer-hit") return 1;
     return 0;
@@ -195,54 +206,34 @@ function renderVoicedScripts() {
     elements.voicedScripts.innerHTML = "";
     return;
   }
-  const focusId = params.get("script") || state.parentScriptId || "";
   elements.voicedScriptsPanel.hidden = false;
   elements.voicedScripts.innerHTML = scripts.map((script) => {
-    const placeholder = isPlaceholderUploadedScript(script.text);
-    const pending = script.transcriptStatus === "running" || needsPeerTranscript(script) || placeholder;
+    const focused = script.id === focusId;
     const failed = script.transcriptStatus === "failed";
+    const pending = focused && (script.transcriptStatus === "running" || needsPeerTranscript(script) || isPlaceholderUploadedScript(script.text));
     const body = failed
       ? (script.transcriptError || "口播识别失败")
-      : (pending ? (script.transcriptStatus === "running" ? "正在识别这条口播…" : "点「对照这条改写」才会识别口播。") : (script.text || "还没有文案"));
-    return `<article class="voiced-script-card${script.id === focusId ? " is-active" : ""}" data-script-id="${escapeHtml(script.id)}">
+      : (pending ? "正在识别口播…" : (script.text || "还没有文案"));
+    return `<article class="voiced-script-card${focused ? " is-active" : ""}" data-script-id="${escapeHtml(script.id)}">
       <header>
         <strong>${escapeHtml(script.versionLabel || voicedScriptLabel(script))}</strong>
         <small>${escapeHtml(script.openingTitle || script.title || "")}</small>
       </header>
       <p class="${failed ? "is-error" : pending ? "is-pending" : ""}">${escapeHtml(body)}</p>
-      <div class="voiced-script-actions">
-        <button class="quiet-action" type="button" data-use-script>对照这条改写</button>
-        ${script.sourceType === "peer-hit" && (pending || failed) ? `<button class="quiet-action" type="button" data-transcribe-id="${escapeHtml(script.id)}">${failed ? "重新识别" : "识别口播"}</button>` : ""}
-      </div>
+      ${failed ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}
     </article>`;
   }).join("");
-  elements.voicedScripts.querySelectorAll(".voiced-script-card").forEach((card) => {
-    const script = scripts.find((item) => item.id === card.dataset.scriptId);
-    if (!script) return;
-    card.querySelector("[data-use-script]")?.addEventListener("click", () => useVoicedScript(script));
-    card.querySelector("[data-transcribe-id]")?.addEventListener("click", (event) => transcribePeerScript(script.id, event.currentTarget));
+  elements.voicedScripts.querySelectorAll("[data-retry-id]").forEach((button) => {
+    button.addEventListener("click", () => transcribePeerScript(button.dataset.retryId, button));
   });
   elements.voicedScripts.querySelector(".voiced-script-card.is-active")?.scrollIntoView({ block: "nearest" });
-}
-
-function useVoicedScript(script) {
-  state.parentScriptId = script.id;
-  if (elements.baseHint) {
-    elements.baseHint.textContent = `对照「${script.versionLabel || voicedScriptLabel(script)}」的口播改写。勾选后保存到音频页再配音。`;
-  }
-  renderVoicedScripts();
-  if (needsPeerTranscript(script) || script.transcriptStatus === "running") {
-    setStatus("正在识别这条口播，识别完再对照改写。", "");
-    void transcribePeerScript(script.id);
-    return;
-  }
-  setStatus(`已对照这条${voicedScriptLabel(script)}文案。生成后会记成它的改写。`, "success");
 }
 
 async function transcribeSelectedPeerScript() {
   const scriptId = params.get("script") || state.parentScriptId || "";
   const script = (state.novel?.scripts || []).find((item) => item.id === scriptId);
   if (!script || (!needsPeerTranscript(script) && script.transcriptStatus !== "running")) return;
+  setStatus("正在识别这条口播…", "");
   await transcribePeerScript(script.id);
 }
 
@@ -252,6 +243,9 @@ async function transcribePeerScript(scriptId, button) {
     button.disabled = true;
     button.textContent = "正在识别...";
   }
+  const current = (state.novel?.scripts || []).find((item) => item.id === scriptId);
+  if (current) current.transcriptStatus = "running";
+  renderVoicedScripts();
   try {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(scriptId)}/transcribe`, { method: "POST" });
     if (data.novel) state.novel = data.novel;
@@ -259,6 +253,11 @@ async function transcribePeerScript(scriptId, button) {
     updateNovelStats();
     setStatus("已识别口播文案。", "success");
   } catch (error) {
+    if (current) {
+      current.transcriptStatus = "failed";
+      current.transcriptError = error.message || "识别口播失败。";
+    }
+    renderVoicedScripts();
     setStatus(error.message || "识别口播失败。", "error");
     if (button) {
       button.disabled = false;
