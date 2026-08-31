@@ -251,7 +251,7 @@ function renderNovel(novel, rank) {
       <div class="novel-total">${miniMetric("播放", formatNumber(performance.totalViews))}${miniMetric("视频", performance.videoCount)}${miniMetric("账号", performance.accountCount)}${miniMetric("开头版本", scripts.length)}</div>
     </header>
     <div class="novel-actions">
-      <a class="quiet-action" href="/novel-audio?novel=${encodeURIComponent(novel.id)}">查看音频与改写记录</a>
+      <a class="quiet-action" href="/novel-audio?novel=${encodeURIComponent(novel.id)}">查看音频</a>
       <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(novel.id)}">改写</a>
     </div>
     ${renderVideoJumpList(novelVideos(novel))}

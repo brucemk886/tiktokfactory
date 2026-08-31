@@ -10,11 +10,7 @@ const elements = {
   mixToolbar: document.querySelector("#mixToolbar"),
   saveMixAudiosButton: document.querySelector("#saveMixAudiosBtn"),
   mixStatus: document.querySelector("#mixStatus"),
-  audioList: document.querySelector("#audioList"),
-  recordList: document.querySelector("#recordList"),
-  recordEmpty: document.querySelector("#recordEmpty"),
-  recordCount: document.querySelector("#recordCount"),
-  recordStatus: document.querySelector("#recordStatus")
+  audioList: document.querySelector("#audioList")
 };
 
 const state = {
@@ -33,7 +29,6 @@ async function loadPage() {
   }
   elements.rewriteLink.href = `/novel-rewrite?novel=${encodeURIComponent(state.novelId)}`;
   if (state.novel) renderNovel(state.novel);
-  loadRecords();
   try {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = data.novel;
@@ -247,63 +242,6 @@ async function reuploadPlayback(scriptId, button) {
       button.textContent = "传到网页试听";
     }
   }
-}
-
-async function loadRecords() {
-  if (!elements.recordStatus) return;
-  elements.recordStatus.textContent = "正在读取这本小说的改写记录…";
-  try {
-    const data = await api(`/api/rewrite-records?novel=${encodeURIComponent(state.novelId)}`);
-    renderRecords(Array.isArray(data.records) ? data.records : []);
-  } catch (error) {
-    elements.recordStatus.textContent = error.message || "读取改写记录失败。";
-    renderRecords([]);
-  }
-}
-
-function renderRecords(records) {
-  if (!elements.recordList) return;
-  elements.recordCount.textContent = `${records.length} 条记录`;
-  elements.recordStatus.textContent = records.length ? `已读取 ${records.length} 条改写记录。` : "";
-  elements.recordEmpty.hidden = records.length > 0;
-  elements.recordList.replaceChildren(...records.map(createRecordCard));
-}
-
-function createRecordCard(record) {
-  const card = document.createElement("article");
-  card.className = `rewrite-card${/fail|error|失败/i.test(`${record.status || ""} ${record.error || ""}`) ? " is-failed" : ""}`;
-  card.innerHTML = `
-    <header class="record-head">
-      <div>
-        <div class="tag-row">
-          <span class="tag accent">${escapeHtml(recordStatusLabel(record.status))}</span>
-          <span class="tag">${record.origin === "manual" ? "书单改写" : "官方自运营"}</span>
-          <span class="tag">${escapeHtml(record.planDate || formatDateTime(record.updatedAt))}</span>
-        </div>
-        <h2>${escapeHtml(record.title || "未命名改写")}</h2>
-      </div>
-    </header>
-    <section class="diagnosis-grid">
-      <div class="diagnosis-box"><h3>诊断结论</h3><p>${escapeHtml(record.diagnosis || record.error || "暂无诊断说明")}</p></div>
-      <div class="diagnosis-box"><h3>数据证据</h3><p>${escapeHtml(record.evidenceSummary || "暂无证据摘要")}</p></div>
-    </section>
-    <section class="script-grid">
-      <section class="script-panel"><h3>原始文案</h3><p class="script-content">${escapeHtml(record.originalScript || "未保存原始文案")}</p></section>
-      <section class="script-panel rewritten"><h3>改写版本</h3><p class="script-content">${escapeHtml(record.rewrittenScript || "尚未生成改写文案")}</p></section>
-    </section>`;
-  return card;
-}
-
-function recordStatusLabel(value) {
-  const status = String(value || "").toLowerCase();
-  if (/fail|error/.test(status)) return "生成失败";
-  if (/generated|audio/.test(status)) return "音频已生成";
-  return "已改写";
-}
-
-function formatDateTime(value) {
-  const time = Number(value || 0);
-  return time ? new Date(time).toLocaleString("zh-CN", { hour12: false }) : "时间未记录";
 }
 
 function audioCard(script) {
