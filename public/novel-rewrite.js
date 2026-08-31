@@ -95,8 +95,8 @@ async function loadPage() {
       renderPicker();
       return;
     }
-    const novel = state.novels.find((item) => item.id === state.novelId)
-      || (await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`).catch(() => ({}))).novel;
+    const novel = (await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`).catch(() => ({}))).novel
+      || state.novels.find((item) => item.id === state.novelId);
     if (!novel) throw new Error("没有找到这本小说，请从书单重新点「改写」。");
     state.novel = novel;
     renderWork();
@@ -183,6 +183,40 @@ function voicedScriptLabel(script) {
   })[script?.sourceType] || script?.versionLabel || "已配音";
 }
 
+function voicedScriptMeta(script) {
+  const href = peerListenHref(script) || audioFileHref(script);
+  const link = href
+    ? `<a href="${escapeAttr(href)}" target="_blank" rel="noreferrer">${escapeHtml(shortAudioUrl(href))}</a>`
+    : "<em>没有音频链接</em>";
+  return `<div class="voiced-script-meta"><span>时长 ${escapeHtml(formatAudioDuration(script.audio?.duration))}</span>${link}</div>`;
+}
+
+function peerListenHref(script) {
+  const videos = Array.isArray(script.peerVideos) && script.peerVideos.length
+    ? script.peerVideos
+    : (Array.isArray(script.scaleRun?.videos) ? script.scaleRun.videos : []);
+  return videos.find((video) => video.videoUrl)?.videoUrl || "";
+}
+
+function audioFileHref(script) {
+  const audioId = String(script?.audio?.id || script?.audioId || "").trim();
+  return audioId ? `/api/audio-library/${encodeURIComponent(audioId)}/file` : "";
+}
+
+function shortAudioUrl(value) {
+  return String(value || "").replace(/^https?:\/\/(www\.)?/i, "") || "音频链接";
+}
+
+function formatAudioDuration(value) {
+  const seconds = Math.max(0, Math.round(Number(value) || 0));
+  if (!seconds) return "未知";
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
 function hasVisibleTranscript(script) {
   return script?.transcriptStatus === "ready" && String(script?.text || "").trim();
 }
@@ -220,6 +254,7 @@ function renderVoicedScripts() {
         <strong>${escapeHtml(script.versionLabel || voicedScriptLabel(script))}</strong>
         <small>${escapeHtml(script.openingTitle || script.title || "")}</small>
       </header>
+      ${voicedScriptMeta(script)}
       <p class="${failed ? "is-error" : pending ? "is-pending" : ""}" ${pending ? "data-transcript-status" : ""}>${escapeHtml(body)}</p>
       ${pending ? `<div class="transcript-progress" aria-hidden="true"><span data-transcript-bar style="width:${wait.percent}%"></span></div>` : ""}
       ${failed ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}

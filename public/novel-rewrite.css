@@ -31,6 +31,9 @@
 .voiced-script-card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
 .voiced-script-card header strong { font-size: 13px; }
 .voiced-script-card header small { color: var(--lf-muted, #6d6758); font-size: 12px; }
+.voiced-script-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; color: var(--lf-muted, #6d6758); font-size: 12px; font-weight: 700; }
+.voiced-script-meta a { color: #3d4710; font-weight: 800; word-break: break-all; }
+.voiced-script-meta em { font-style: normal; }
 .voiced-script-card p { margin: 0; max-height: 160px; overflow: auto; color: var(--lf-text, #1d1a14); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
 .voiced-script-card p.is-pending { color: var(--lf-muted, #6d6758); }
 .voiced-script-card p.is-error { color: var(--lf-red, #c24741); }
