@@ -697,6 +697,9 @@ function scriptTextBlock(script) {
   if (script.transcriptStatus === "failed") {
     return `<p class="script-full is-error">${escapeHtml(script.transcriptError || "口播识别失败")}</p>`;
   }
+  if (script.transcriptStatus === "ready" && String(script.text || "").trim()) {
+    return `<p class="script-full">${escapeHtml(script.text)}</p>`;
+  }
   if (script.transcriptStatus === "running" || isPlaceholderUploadedScript(script.text) || !String(script.text || "").trim()) {
     return `<p class="script-full is-pending">${script.transcriptStatus === "running" ? "正在识别口播文案…" : "点「去改写」才会识别这条口播。没改写的不识别。"}</p>`;
   }

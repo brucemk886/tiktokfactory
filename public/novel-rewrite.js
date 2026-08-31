@@ -58,7 +58,9 @@ const state = {
   openingModel: readSavedOpeningModel(),
   openingReasoning: readSavedOpeningReasoning(),
   openingJobId: "",
-  restoringOpeningJob: false
+  restoringOpeningJob: false,
+  transcriptWait: null,
+  transcriptTimer: 0
 };
 
 elements.novelPicker.addEventListener("change", () => {
@@ -164,9 +166,7 @@ function isPlaceholderUploadedScript(text) {
 function needsPeerTranscript(script) {
   if (script?.sourceType !== "peer-hit") return false;
   if (script.transcriptStatus === "running") return false;
-  if (script.transcriptStatus === "ready" && !isPlaceholderUploadedScript(script.text) && String(script.text || "").trim().length >= 8) {
-    return false;
-  }
+  if (script.transcriptStatus === "ready") return false;
   return isPlaceholderUploadedScript(script.text)
     || script.transcriptStatus === "pending"
     || script.transcriptStatus === "failed"
@@ -184,7 +184,7 @@ function voicedScriptLabel(script) {
 }
 
 function hasVisibleTranscript(script) {
-  return String(script?.text || "").trim() && !isPlaceholderUploadedScript(script.text) && script.transcriptStatus !== "failed";
+  return script?.transcriptStatus === "ready" && String(script?.text || "").trim();
 }
 
 function renderVoicedScripts() {
@@ -210,16 +210,18 @@ function renderVoicedScripts() {
   elements.voicedScripts.innerHTML = scripts.map((script) => {
     const focused = script.id === focusId;
     const failed = script.transcriptStatus === "failed";
-    const pending = focused && (script.transcriptStatus === "running" || needsPeerTranscript(script) || isPlaceholderUploadedScript(script.text));
+    const pending = focused && (script.transcriptStatus === "running" || needsPeerTranscript(script));
+    const wait = pending ? transcriptWaitView(script) : null;
     const body = failed
       ? (script.transcriptError || "口播识别失败")
-      : (pending ? "正在识别口播…" : (script.text || "还没有文案"));
+      : (pending ? wait.text : (script.text || "还没有文案"));
     return `<article class="voiced-script-card${focused ? " is-active" : ""}" data-script-id="${escapeHtml(script.id)}">
       <header>
         <strong>${escapeHtml(script.versionLabel || voicedScriptLabel(script))}</strong>
         <small>${escapeHtml(script.openingTitle || script.title || "")}</small>
       </header>
-      <p class="${failed ? "is-error" : pending ? "is-pending" : ""}">${escapeHtml(body)}</p>
+      <p class="${failed ? "is-error" : pending ? "is-pending" : ""}" ${pending ? "data-transcript-status" : ""}>${escapeHtml(body)}</p>
+      ${pending ? `<div class="transcript-progress" aria-hidden="true"><span data-transcript-bar style="width:${wait.percent}%"></span></div>` : ""}
       ${failed ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}
     </article>`;
   }).join("");
@@ -245,10 +247,12 @@ async function transcribePeerScript(scriptId, button) {
   }
   const current = (state.novel?.scripts || []).find((item) => item.id === scriptId);
   if (current) current.transcriptStatus = "running";
+  startTranscriptWait(current || { id: scriptId });
   renderVoicedScripts();
   try {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(scriptId)}/transcribe`, { method: "POST" });
     if (data.novel) state.novel = data.novel;
+    stopTranscriptWait();
     renderVoicedScripts();
     updateNovelStats();
     setStatus("已识别口播文案。", "success");
@@ -257,6 +261,7 @@ async function transcribePeerScript(scriptId, button) {
       current.transcriptStatus = "failed";
       current.transcriptError = error.message || "识别口播失败。";
     }
+    stopTranscriptWait();
     renderVoicedScripts();
     setStatus(error.message || "识别口播失败。", "error");
     if (button) {
@@ -264,6 +269,74 @@ async function transcribePeerScript(scriptId, button) {
       button.textContent = "重新识别";
     }
   }
+}
+
+function estimateTranscriptSeconds(script) {
+  const duration = Number(script?.audio?.duration || 0);
+  if (duration > 0) return Math.min(180, Math.max(18, Math.round(duration * 0.5 + 15)));
+  const size = Number(script?.audio?.size || 0);
+  if (size > 1024) return Math.min(180, Math.max(18, Math.round(size / 24000 + 15)));
+  return 40;
+}
+
+function transcriptWaitSnapshot(script) {
+  const expected = state.transcriptWait?.scriptId === script?.id
+    ? state.transcriptWait.expectedSeconds
+    : estimateTranscriptSeconds(script);
+  const startedAt = state.transcriptWait?.scriptId === script?.id
+    ? state.transcriptWait.startedAt
+    : Date.now();
+  const elapsed = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const stuck = elapsed >= expected + 25;
+  const percent = Math.min(92, Math.round((elapsed / Math.max(1, expected)) * 100));
+  return { elapsed, expected, stuck, percent, text: transcriptWaitText(elapsed, expected, stuck) };
+}
+
+function transcriptWaitView(script) {
+  return transcriptWaitSnapshot(script);
+}
+
+function transcriptWaitText(elapsed, expected, stuck) {
+  if (stuck) {
+    return `正在识别口播… 已等待 ${formatClock(elapsed)}。比平时慢，还没返回；超过 2 分钟多半卡住了，可刷新重试。`;
+  }
+  return `正在识别口播… 已等待 ${formatClock(elapsed)} / 大约 ${formatClock(expected)}`;
+}
+
+function startTranscriptWait(script) {
+  stopTranscriptWait(false);
+  state.transcriptWait = {
+    scriptId: script?.id || "",
+    startedAt: Date.now(),
+    expectedSeconds: estimateTranscriptSeconds(script)
+  };
+  tickTranscriptWait();
+  state.transcriptTimer = window.setInterval(tickTranscriptWait, 1000);
+}
+
+function stopTranscriptWait(clear = true) {
+  if (state.transcriptTimer) window.clearInterval(state.transcriptTimer);
+  state.transcriptTimer = 0;
+  if (clear) state.transcriptWait = null;
+}
+
+function tickTranscriptWait() {
+  const wait = state.transcriptWait;
+  if (!wait) return;
+  const view = transcriptWaitSnapshot({ id: wait.scriptId, audio: (state.novel?.scripts || []).find((item) => item.id === wait.scriptId)?.audio });
+  const card = elements.voicedScripts?.querySelector(`.voiced-script-card[data-script-id="${cssEscape(wait.scriptId)}"]`);
+  const line = card?.querySelector("[data-transcript-status]");
+  const bar = card?.querySelector("[data-transcript-bar]");
+  if (line) line.textContent = view.text;
+  if (bar) bar.style.width = `${view.percent}%`;
+  setStatus(view.stuck
+    ? `识别已等 ${formatClock(view.elapsed)}，比平时慢。还在等结果，超过 2 分钟可刷新重试。`
+    : `正在识别口播… 已等待 ${formatClock(view.elapsed)}，大约 ${formatClock(view.expected)} 出结果。`, view.stuck ? "error" : "");
+}
+
+function cssEscape(value) {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(String(value || ""));
+  return String(value || "").replace(/["\\]/g, "\\$&");
 }
 
 function setRewriteMode(mode) {

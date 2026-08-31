@@ -25,9 +25,7 @@ export function isPlaceholderUploadedScript(text) {
 export function needsPeerSpeechTranscript(script = {}) {
   if (String(script.sourceType || "") !== "peer-hit") return false;
   if (script.transcriptStatus === "running") return false;
-  if (script.transcriptStatus === "ready" && !isPlaceholderUploadedScript(script.text) && String(script.text || "").trim().length >= 8) {
-    return false;
-  }
+  if (script.transcriptStatus === "ready") return false;
   return isPlaceholderUploadedScript(script.text)
     || script.transcriptStatus === "pending"
     || script.transcriptStatus === "failed"

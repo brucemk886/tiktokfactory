@@ -878,7 +878,7 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
   if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
   const audioId = String(script.audioId || script.audio?.id || "").trim();
   if (!audioId) throw Object.assign(new Error("这条还没有音频可识别。"), { statusCode: 400 });
-  if (!force && script.transcriptStatus === "ready" && !isPlaceholderUploadedScript(script.text) && String(script.text || "").trim().length >= 8) {
+  if (!force && script.transcriptStatus === "ready") {
     return script;
   }
   if (!force && script.transcriptStatus === "running") {

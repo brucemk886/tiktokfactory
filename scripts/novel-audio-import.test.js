@@ -53,6 +53,11 @@ test("uploaded audio helpers keep a playable title and long enough script", () =
     transcriptStatus: "ready"
   }), false);
   assert.equal(needsPeerSpeechTranscript({
+    sourceType: "peer-hit",
+    text: uploadedAudioScriptText("a.mp3"),
+    transcriptStatus: "ready"
+  }), false);
+  assert.equal(needsPeerSpeechTranscript({
     sourceType: "uploaded-audio",
     text: uploadedAudioScriptText("a.mp3")
   }), false);
