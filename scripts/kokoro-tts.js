@@ -7,6 +7,7 @@ import {
   DEFAULT_KOKORO_VOICE,
   KOKORO_VOICES,
   isKokoroVoiceId,
+  kokoroLangCode,
   listKokoroVoices,
   normalizeTtsProvider,
   resolveKokoroVoice,
@@ -17,6 +18,7 @@ export {
   DEFAULT_KOKORO_VOICE,
   KOKORO_VOICES,
   isKokoroVoiceId,
+  kokoroLangCode,
   listKokoroVoices,
   normalizeTtsProvider,
   resolveKokoroVoice,
@@ -70,6 +72,7 @@ export function generateKokoroSpeech({
     install.script,
     "--text-file", textPath,
     "--voice", resolveKokoroVoice(voice),
+    "--lang", kokoroLangCode(voice),
     "--speed", String(speed || 1),
     "--out", wavPath,
     "--meta", metaPath

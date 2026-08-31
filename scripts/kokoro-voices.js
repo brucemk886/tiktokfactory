@@ -9,15 +9,32 @@ export const KOKORO_VOICES = Object.freeze([
   { id: "am_liam", name: "Liam", gender: "male", age: "young", language: "en-us" },
   { id: "am_onyx", name: "Onyx", gender: "male", age: "middle", language: "en-us" },
   { id: "am_puck", name: "Puck", gender: "male", age: "young", language: "en-us" },
+  { id: "am_santa", name: "Santa", gender: "male", age: "middle", language: "en-us" },
   { id: "af_heart", name: "Heart", gender: "female", age: "young", language: "en-us" },
+  { id: "af_alloy", name: "Alloy", gender: "female", age: "young", language: "en-us" },
+  { id: "af_aoede", name: "Aoede", gender: "female", age: "young", language: "en-us" },
   { id: "af_bella", name: "Bella", gender: "female", age: "young", language: "en-us" },
+  { id: "af_jessica", name: "Jessica", gender: "female", age: "young", language: "en-us" },
+  { id: "af_kore", name: "Kore", gender: "female", age: "young", language: "en-us" },
   { id: "af_nicole", name: "Nicole", gender: "female", age: "young", language: "en-us" },
+  { id: "af_nova", name: "Nova", gender: "female", age: "young", language: "en-us" },
+  { id: "af_river", name: "River", gender: "female", age: "young", language: "en-us" },
   { id: "af_sarah", name: "Sarah", gender: "female", age: "young", language: "en-us" },
   { id: "af_sky", name: "Sky", gender: "female", age: "young", language: "en-us" },
+  { id: "bf_alice", name: "Alice", gender: "female", age: "young", language: "en-gb" },
   { id: "bf_emma", name: "Emma", gender: "female", age: "young", language: "en-gb" },
+  { id: "bf_isabella", name: "Isabella", gender: "female", age: "young", language: "en-gb" },
+  { id: "bf_lily", name: "Lily", gender: "female", age: "young", language: "en-gb" },
+  { id: "bm_daniel", name: "Daniel", gender: "male", age: "middle", language: "en-gb" },
+  { id: "bm_fable", name: "Fable", gender: "male", age: "young", language: "en-gb" },
   { id: "bm_george", name: "George", gender: "male", age: "middle", language: "en-gb" },
   { id: "bm_lewis", name: "Lewis", gender: "male", age: "young", language: "en-gb" }
 ]);
+
+export function kokoroLangCode(voiceId) {
+  const prefix = String(voiceId || "").trim().slice(0, 1).toLowerCase();
+  return prefix === "b" ? "b" : "a";
+}
 
 export function normalizeTtsProvider(value) {
   return String(value || "").trim() === "elevenlabs" ? "elevenlabs" : "kokoro";
