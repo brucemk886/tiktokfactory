@@ -148,6 +148,6 @@ test("defaults new audio jobs to Kokoro and remaps old ElevenLabs voice ids", as
     }
   });
   assert.equal(used.ttsProvider, "kokoro");
-  assert.equal(used.voiceId, "am_michael");
+  assert.equal(used.voiceId, "am_adam");
   fs.rmSync(root, { recursive: true, force: true });
 });

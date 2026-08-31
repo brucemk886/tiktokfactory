@@ -1,8 +1,10 @@
-export const DEFAULT_KOKORO_VOICE = "am_michael";
+export const DEFAULT_KOKORO_MALE_VOICE = "am_adam";
+export const DEFAULT_KOKORO_FEMALE_VOICE = "af_jessica";
+export const DEFAULT_KOKORO_VOICE = DEFAULT_KOKORO_MALE_VOICE;
 
 export const KOKORO_VOICES = Object.freeze([
-  { id: "am_michael", name: "Michael", gender: "male", age: "middle", language: "en-us" },
   { id: "am_adam", name: "Adam", gender: "male", age: "young", language: "en-us" },
+  { id: "am_michael", name: "Michael", gender: "male", age: "middle", language: "en-us" },
   { id: "am_echo", name: "Echo", gender: "male", age: "middle", language: "en-us" },
   { id: "am_eric", name: "Eric", gender: "male", age: "middle", language: "en-us" },
   { id: "am_fenrir", name: "Fenrir", gender: "male", age: "middle", language: "en-us" },
@@ -10,11 +12,11 @@ export const KOKORO_VOICES = Object.freeze([
   { id: "am_onyx", name: "Onyx", gender: "male", age: "middle", language: "en-us" },
   { id: "am_puck", name: "Puck", gender: "male", age: "young", language: "en-us" },
   { id: "am_santa", name: "Santa", gender: "male", age: "middle", language: "en-us" },
+  { id: "af_jessica", name: "Jessica", gender: "female", age: "young", language: "en-us" },
   { id: "af_heart", name: "Heart", gender: "female", age: "young", language: "en-us" },
   { id: "af_alloy", name: "Alloy", gender: "female", age: "young", language: "en-us" },
   { id: "af_aoede", name: "Aoede", gender: "female", age: "young", language: "en-us" },
   { id: "af_bella", name: "Bella", gender: "female", age: "young", language: "en-us" },
-  { id: "af_jessica", name: "Jessica", gender: "female", age: "young", language: "en-us" },
   { id: "af_kore", name: "Kore", gender: "female", age: "young", language: "en-us" },
   { id: "af_nicole", name: "Nicole", gender: "female", age: "young", language: "en-us" },
   { id: "af_nova", name: "Nova", gender: "female", age: "young", language: "en-us" },
@@ -45,8 +47,12 @@ export function isKokoroVoiceId(value) {
   return KOKORO_VOICES.some((voice) => voice.id === id);
 }
 
-export function resolveKokoroVoice(value) {
-  return isKokoroVoiceId(value) ? String(value).trim() : DEFAULT_KOKORO_VOICE;
+export function defaultKokoroVoice(gender = "") {
+  return String(gender || "").trim() === "female" ? DEFAULT_KOKORO_FEMALE_VOICE : DEFAULT_KOKORO_MALE_VOICE;
+}
+
+export function resolveKokoroVoice(value, { gender } = {}) {
+  return isKokoroVoiceId(value) ? String(value).trim() : defaultKokoroVoice(gender);
 }
 
 export function resolveVoiceForProvider(provider, voiceId) {
@@ -65,6 +71,8 @@ export function listKokoroVoices({ defaultVoiceId = "" } = {}) {
     provider: "kokoro",
     voices,
     defaultVoiceId: selected,
+    defaultMaleVoiceId: DEFAULT_KOKORO_MALE_VOICE,
+    defaultFemaleVoiceId: DEFAULT_KOKORO_FEMALE_VOICE,
     modelId: "kokoro-82m",
     modelName: "Kokoro 82M 本地配音",
     filters: {
@@ -87,7 +95,11 @@ function mapKokoroVoice(voice) {
   const age = voice.age === "middle" ? "middle_aged" : voice.age;
   return {
     id: voice.id,
-    name: voice.name,
+    name: voice.id === DEFAULT_KOKORO_FEMALE_VOICE
+      ? `${voice.name}（默认女声）`
+      : voice.id === DEFAULT_KOKORO_MALE_VOICE
+        ? `${voice.name}（默认男声）`
+        : voice.name,
     category: "kokoro",
     categoryLabel: "本机 Kokoro",
     gender: voice.gender,

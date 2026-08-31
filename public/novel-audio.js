@@ -50,7 +50,9 @@ const state = {
   voices: [],
   audioGroups: [],
   voiceId: "",
-  ttsProvider: "kokoro"
+  ttsProvider: "kokoro",
+  defaultMaleVoiceId: "am_adam",
+  defaultFemaleVoiceId: "af_jessica"
 };
 
 elements.saveMixAudiosButton?.addEventListener("click", saveMixAudios);
@@ -74,7 +76,11 @@ elements.ttsProvider?.addEventListener("change", async () => {
 elements.previewVoiceButton?.addEventListener("click", previewSelectedVoice);
 elements.voiceLanguage?.addEventListener("change", () => renderVoiceOptions());
 elements.voiceCategory?.addEventListener("change", () => renderVoiceOptions());
-elements.voiceGender?.addEventListener("change", () => renderVoiceOptions());
+elements.voiceGender?.addEventListener("change", () => {
+  applyGenderDefaultVoice();
+  renderVoiceOptions();
+  persistAudioSettings();
+});
 elements.voiceAge?.addEventListener("change", () => renderVoiceOptions());
 elements.voiceSelect?.addEventListener("change", () => {
   stopVoicePreview();
@@ -724,7 +730,11 @@ async function loadAudioControls(force = false) {
     updateModelFixed();
     const voicesData = await api(`/api/elevenlabs/voices?provider=${encodeURIComponent(selectedTtsProvider())}`).catch((error) => ({ error: voiceErrorText(error.message), voices: [], defaultVoiceId: "" }));
     state.voices = voicesData.voices || [];
-    const selected = settings.voiceId || voicesData.defaultVoiceId || state.voiceId || "";
+    state.defaultMaleVoiceId = voicesData.defaultMaleVoiceId || "am_adam";
+    state.defaultFemaleVoiceId = voicesData.defaultFemaleVoiceId || "af_jessica";
+    const selected = selectedTtsProvider() === "kokoro"
+      ? preferredKokoroVoice(settings.voiceId || state.voiceId, voicesData)
+      : (settings.voiceId || voicesData.defaultVoiceId || state.voiceId || "");
     if (selected) state.voiceId = selected;
     fillFilterSelect(elements.voiceLanguage, voicesData.filters?.languages, "全部语言");
     fillFilterSelect(elements.voiceCategory, voicesData.filters?.categories, "全部类别");
@@ -738,6 +748,9 @@ async function loadAudioControls(force = false) {
       renderVoiceOptions(selected);
       if (selected && !state.voices.some((voice) => voice.id === selected) && elements.voiceIdInput) {
         elements.voiceIdInput.value = selected;
+      }
+      if (selectedTtsProvider() === "kokoro" && selected && selected !== settings.voiceId) {
+        persistAudioSettings();
       }
       setAudioStatus(voicesData.warning || (state.voices.length ? `已读取 ${state.voices.length} 个声音。` : ""), voicesData.warning && !state.voices.length ? "error" : "");
     }
@@ -853,6 +866,24 @@ function fillFilterSelect(select, options, emptyLabel) {
     `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
   )].join("");
   if (current && [...select.options].some((option) => option.value === current)) select.value = current;
+}
+
+function preferredKokoroVoice(saved, voicesData = {}) {
+  const male = voicesData.defaultMaleVoiceId || state.defaultMaleVoiceId || "am_adam";
+  const female = voicesData.defaultFemaleVoiceId || state.defaultFemaleVoiceId || "af_jessica";
+  const gender = elements.voiceGender?.value.trim() || "";
+  const id = String(saved || "").trim();
+  const current = state.voices.find((voice) => voice.id === id);
+  if (current && id !== "am_michael") {
+    if (gender && current.gender !== gender) return gender === "female" ? female : male;
+    return id;
+  }
+  return gender === "female" ? female : male;
+}
+
+function applyGenderDefaultVoice() {
+  if (selectedTtsProvider() !== "kokoro") return;
+  state.voiceId = preferredKokoroVoice(selectedVoiceId());
 }
 
 function filteredVoices() {

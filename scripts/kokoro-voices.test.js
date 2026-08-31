@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KOKORO_VOICES, kokoroLangCode, listKokoroVoices, normalizeTtsProvider, resolveVoiceForProvider } from "./kokoro-voices.js";
+import { DEFAULT_KOKORO_FEMALE_VOICE, DEFAULT_KOKORO_MALE_VOICE, KOKORO_VOICES, kokoroLangCode, listKokoroVoices, normalizeTtsProvider, resolveVoiceForProvider } from "./kokoro-voices.js";
 
 test("tts provider defaults to kokoro and keeps elevenlabs when asked", () => {
   assert.equal(normalizeTtsProvider(""), "kokoro");
   assert.equal(normalizeTtsProvider("elevenlabs"), "elevenlabs");
-  assert.equal(resolveVoiceForProvider("kokoro", "cgSgspJ2msm6clMCkdW9"), "am_michael");
+  assert.equal(resolveVoiceForProvider("kokoro", "cgSgspJ2msm6clMCkdW9"), "am_adam");
+  assert.equal(resolveVoiceForProvider("kokoro", ""), "am_adam");
   assert.equal(resolveVoiceForProvider("kokoro", "af_bella"), "af_bella");
   assert.equal(resolveVoiceForProvider("elevenlabs", "cgSgspJ2msm6clMCkdW9"), "cgSgspJ2msm6clMCkdW9");
 });
@@ -23,4 +24,8 @@ test("kokoro voice list is UI-shaped and does not need an API key", () => {
   assert.equal(listed.voices.find((voice) => voice.id === "bf_alice").previewUrl, "/kokoro-previews/bf_alice.mp3");
   assert.equal(kokoroLangCode("bf_emma"), "b");
   assert.equal(kokoroLangCode("am_michael"), "a");
+  assert.equal(listed.defaultMaleVoiceId, DEFAULT_KOKORO_MALE_VOICE);
+  assert.equal(listed.defaultFemaleVoiceId, DEFAULT_KOKORO_FEMALE_VOICE);
+  assert.match(listed.voices.find((voice) => voice.id === "am_adam").name, /默认男声/);
+  assert.match(listed.voices.find((voice) => voice.id === "af_jessica").name, /默认女声/);
 });
