@@ -322,7 +322,7 @@ async function handleWorkerApi(request, env, url, ctx) {
 
   if (method === "POST" && pathname === "/api/worker/compact-transcripts") {
     try {
-      return json(await compactNovelContentTranscripts(env.DB));
+      return json(await compactNovelContentTranscripts(env.DB, await readJson(request).catch(() => ({}))));
     } catch (error) {
       return errorJson(error.message || "压缩书单识别结果失败。", error.statusCode || 400);
     }

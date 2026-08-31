@@ -1091,13 +1091,13 @@ async function readNovelContentRow(db) {
   return { store, updatedAt: Number(row?.updated_at || 0) };
 }
 
-async function casNovelContent(db, store, expectedUpdatedAt) {
+async function casNovelContent(db, store, expectedUpdatedAt, { persist = true } = {}) {
   const now = Date.now();
   const scripts = Array.isArray(store.scripts) ? store.scripts : [];
-  await persistScriptTranscripts(db, scripts);
+  if (persist) await persistScriptTranscripts(db, scripts);
   const payload = JSON.stringify({
     novels: Array.isArray(store.novels) ? store.novels : [],
-    scripts: slimNovelScripts(scripts)
+    scripts: persist ? slimNovelScripts(scripts) : scripts
   });
   if (!expectedUpdatedAt) {
     await kvSet(db, "novel-content", JSON.parse(payload));
@@ -1228,16 +1228,27 @@ export async function resetRunningImportedTranscripts(db) {
   return { requeued: 0, ids: [] };
 }
 
-export async function compactNovelContentTranscripts(db) {
+export async function compactNovelContentTranscripts(db, { limit = 3 } = {}) {
+  const batchSize = Math.max(1, Math.min(8, Number(limit) || 3));
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const { store, updatedAt } = await readNovelContentRow(db);
-    const moved = await persistScriptTranscripts(db, store.scripts);
-    if (await casNovelContent(db, store, updatedAt)) {
+    const pending = store.scripts.filter((script) => Array.isArray(script.words) && script.words.length);
+    const batch = pending.slice(0, batchSize);
+    const moved = await persistScriptTranscripts(db, batch);
+    for (const script of batch) delete script.words;
+    if (await casNovelContent(db, store, updatedAt, { persist: false })) {
+      const leftover = store.scripts.filter((script) => Array.isArray(script.words) && script.words.length).length;
       const row = await db.prepare("SELECT length(value_json) AS bytes FROM factory_kv WHERE key = ?").bind("novel-content").first();
-      return { moved, written: true, blobBytes: Number(row?.bytes || 0) };
+      return {
+        moved,
+        written: true,
+        remaining: leftover,
+        more: leftover > 0,
+        blobBytes: Number(row?.bytes || 0)
+      };
     }
   }
-  return { moved: 0, written: false, blobBytes: 0 };
+  return { moved: 0, written: false, remaining: 0, more: false, blobBytes: 0 };
 }
 
 export async function drainTranscriptQueueBatch(env, db, { limit = SCRIBE_QUEUE_CONCURRENCY } = {}) {
