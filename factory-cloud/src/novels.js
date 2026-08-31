@@ -18,6 +18,7 @@ import {
   isImportedSpeechSource,
   isStaleTranscriptRun,
   pickNextQueuedTranscript,
+  requeueStaleTranscriptRuns,
   scribeLockKey,
   SCRIBE_QUEUE_CONCURRENCY,
   SCRIBE_QUEUE_LOCK_MS,
@@ -160,16 +161,16 @@ export async function handleNovels(request, env, url, session, ctx) {
 
   if (method === "POST" && pathname === "/api/novel-content/transcribe-queue") {
     const importedPass = await enqueueImportedTranscriptPass(db);
+    await requeueStaleImportedTranscripts(db);
     const summary = summarizeTranscriptQueue(await listNovelScripts(db));
-    acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
     return json({ ...summary, kicked: true, importedPass });
   }
 
   if (method === "POST" && pathname === "/api/novel-content/enqueue-imported-transcripts") {
     if (session.user?.role !== "admin") return errorJson("仅管理员可以排队已导入音频。", 403);
     const importedPass = await enqueueImportedTranscriptPass(db, await readJson(request).catch(() => ({})));
+    await requeueStaleImportedTranscripts(db);
     const summary = summarizeTranscriptQueue(await listNovelScripts(db));
-    acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
     return json({ ...summary, importedPass });
   }
 
@@ -715,7 +716,6 @@ async function importNovelAudios(env, db, session, novelId, request, ctx = null)
   }
   await writeScripts(db, store.scripts);
   await markNovelsWorking(db, [novel.id]);
-  acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
   const { enqueueJob } = await import("./jobs.js");
   const job = await enqueueJob(db, {
     type: "audio-import",
@@ -737,7 +737,7 @@ async function importNovelAudios(env, db, session, novelId, request, ctx = null)
     jobId: job.id,
     count: items.length,
     items,
-    message: `已上传 ${items.length} 条，可直接试听。口播排队识别，一次一条。工人会再写到本机音频目录。`
+    message: `已上传 ${items.length} 条，可直接试听。口播排队识别，最多同时 ${SCRIBE_QUEUE_CONCURRENCY} 条。工人会再写到本机音频目录。`
   };
 }
 
@@ -802,10 +802,9 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx 
     latest.push(...created);
     await writeScripts(db, latest);
     await markNovelsWorking(db, importedNovelIds);
-    acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
   }
   const parts = [];
-  if (created.length) parts.push(`已导入 ${created.length} 条到书单音频页，口播排队识别，一次一条`);
+  if (created.length) parts.push(`已导入 ${created.length} 条到书单音频页，口播排队识别，最多同时 ${SCRIBE_QUEUE_CONCURRENCY} 条`);
   if (skipped.length) parts.push(`跳过 ${skipped.length} 条`);
   return {
     imported: created.length,
@@ -895,8 +894,8 @@ export async function updateScript(db, novelId, scriptId, payload = {}) {
 export async function transcribePeerScriptsForNovel(env, db, novelId, ctx = null, request = null) {
   const novel = await hydrateNovel(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  await requeueStaleImportedTranscripts(db);
   const summary = summarizeTranscriptQueue(await listNovelScripts(db));
-  acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
   return {
     started: summary.pending + summary.running,
     count: summary.pending,
@@ -1127,15 +1126,6 @@ async function claimNextQueuedTranscript(db) {
   return { busy: true, script: null, running: 0 };
 }
 
-function factoryOrigin(request, env) {
-  try {
-    if (request?.url) return new URL(request.url).origin;
-  } catch {
-    // Fall through to the public factory host.
-  }
-  return String(env?.FACTORY_PUBLIC_URL || "https://factory.tiktokaitool.com").replace(/\/+$/, "");
-}
-
 async function tryAcquireScribeLock(db, scriptId) {
   const now = Date.now();
   for (let slot = 0; slot < SCRIBE_QUEUE_CONCURRENCY; slot += 1) {
@@ -1202,36 +1192,26 @@ export async function processNextQueuedTranscript(env, db) {
   }
 }
 
-async function kickTranscriptNext(env, origin) {
-  if (!origin || !String(env?.WORKER_TOKEN || "").trim()) return;
-  try {
-    await fetch(`${String(origin).replace(/\/+$/, "")}/api/worker/transcribe-next`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${String(env.WORKER_TOKEN).trim()}`,
-        "content-type": "application/json"
-      },
-      body: "{}"
-    });
-  } catch {
-    // The next page poll or cron tick will resume the queue.
+export async function requeueStaleImportedTranscripts(db) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { store, updatedAt } = await readNovelContentRow(db);
+    const ids = requeueStaleTranscriptRuns(store.scripts);
+    if (!ids.length) return { requeued: 0, ids: [] };
+    if (await casNovelContent(db, store, updatedAt)) return { requeued: ids.length, ids };
   }
+  return { requeued: 0, ids: [] };
 }
 
-export async function drainTranscriptQueueTick(env, db, origin = "") {
+export async function drainTranscriptQueueBatch(env, db, { limit = SCRIBE_QUEUE_CONCURRENCY } = {}) {
   await enqueueImportedTranscriptPass(db).catch(() => null);
-  const before = summarizeTranscriptQueue(await listNovelScripts(db));
-  const extra = Math.min(
-    Math.max(0, SCRIBE_QUEUE_CONCURRENCY - before.running - 1),
-    Math.max(0, before.pending - 1)
-  );
-  if (extra > 0) {
-    await Promise.all(Array.from({ length: extra }, () => kickTranscriptNext(env, origin)));
-  }
-  const result = await processNextQueuedTranscript(env, db);
-  const after = summarizeTranscriptQueue(await listNovelScripts(db));
-  if (result.processed && after.pending > 0) await kickTranscriptNext(env, origin);
-  return result;
+  await requeueStaleImportedTranscripts(db);
+  const slots = Math.max(1, Math.min(SCRIBE_QUEUE_CONCURRENCY, Number(limit) || SCRIBE_QUEUE_CONCURRENCY));
+  return Promise.all(Array.from({ length: slots }, () => processNextQueuedTranscript(env, db)));
+}
+
+export async function drainTranscriptQueueTick(env, db) {
+  const results = await drainTranscriptQueueBatch(env, db);
+  return results.find((item) => item?.processed) || results[0] || { busy: true };
 }
 
 export async function transcriptQueueStatus(db) {
@@ -1245,10 +1225,10 @@ export async function transcriptQueueStatus(db) {
   };
 }
 
-export function acceptTranscriptQueueTick(env, db, ctx, origin) {
-  const run = drainTranscriptQueueTick(env, db, origin);
-  if (ctx?.waitUntil) ctx.waitUntil(run);
-  return { accepted: true };
+export async function acceptTranscriptQueueTick(env, db) {
+  await requeueStaleImportedTranscripts(db);
+  const result = await processNextQueuedTranscript(env, db);
+  return { accepted: true, ...result };
 }
 
 export async function repairOverwrittenPeerAudios(env, db, { limit = 40 } = {}) {

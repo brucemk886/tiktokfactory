@@ -33,7 +33,10 @@
     }
   ],
   "triggers": {
-    "crons": ["0 0 * * *", "0 16 * * *"]
+    "crons": ["* * * * *", "0 0 * * *", "0 16 * * *"]
+  },
+  "limits": {
+    "cpu_ms": 300000
   },
   "vars": {
     "SIGNAL_DESK_BASE_URL": "https://tiktokaitool.com",

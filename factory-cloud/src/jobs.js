@@ -2,7 +2,7 @@ import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios, transcriptQueueStatus } from "./novels.js";
+import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios, requeueStaleImportedTranscripts, transcriptQueueStatus } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -305,7 +305,7 @@ async function handleWorkerApi(request, env, url, ctx) {
   if (method === "POST" && pathname === "/api/worker/enqueue-imported-transcripts") {
     try {
       const importedPass = await enqueueImportedTranscriptPass(env.DB, await readJson(request).catch(() => ({})));
-      acceptTranscriptQueueTick(env, env.DB, ctx, new URL(request.url).origin);
+      await requeueStaleImportedTranscripts(env.DB);
       return json({ importedPass, kicked: true });
     } catch (error) {
       return errorJson(error.message || "排队已导入音频失败。", error.statusCode || 400);
@@ -321,7 +321,11 @@ async function handleWorkerApi(request, env, url, ctx) {
   }
 
   if (method === "POST" && pathname === "/api/worker/transcribe-next") {
-    return json(acceptTranscriptQueueTick(env, env.DB, ctx, new URL(request.url).origin));
+    try {
+      return json(await acceptTranscriptQueueTick(env, env.DB));
+    } catch (error) {
+      return errorJson(error.message || "识别下一条失败。", error.statusCode || 400);
+    }
   }
 
   if (method === "POST" && pathname === "/api/worker/repair-peer-audios") {

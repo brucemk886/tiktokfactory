@@ -4,6 +4,7 @@ import { uploadedAudioScriptText } from "./novel-audio-import.js";
 import {
   enqueueExistingImportedTranscripts,
   isStaleTranscriptRun,
+  requeueStaleTranscriptRuns,
   needsQueuedSpeechTranscript,
   pickNextQueuedTranscript,
   shouldEnqueueExistingImportedTranscript,
@@ -99,7 +100,7 @@ test("picks more queued scripts until ten imported clips are running", () => {
 });
 
 test("stale running jobs can be claimed again", () => {
-  const now = Date.parse("2026-08-31T06:10:00.000Z");
+  const now = Date.parse("2026-08-31T06:16:00.000Z");
   const stale = {
     id: "s1",
     sourceType: "uploaded-audio",
@@ -109,10 +110,12 @@ test("stale running jobs can be claimed again", () => {
   };
   assert.equal(isStaleTranscriptRun(stale, now), true);
   assert.equal(pickNextQueuedTranscript([stale], now).script.id, "s1");
+  assert.deepEqual(requeueStaleTranscriptRuns([stale], now), ["s1"]);
+  assert.equal(stale.transcriptStatus, "pending");
   assert.deepEqual(summarizeTranscriptQueue([stale, {
     sourceType: "peer-hit",
     audioId: "a2",
     transcriptStatus: "pending",
     text: uploadedAudioScriptText("c.mp3")
-  }], now), { pending: 1, running: 0, failed: 0 });
+  }], now), { pending: 2, running: 0, failed: 0 });
 });
