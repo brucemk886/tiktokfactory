@@ -319,7 +319,7 @@ async function transcribeSelectedPeerScript() {
   if (!script || (!needsPeerTranscript(script) && script.transcriptStatus !== "running")) return;
   startTranscriptWait(script);
   renderVoicedScripts();
-  setStatus("已加入识别队列，最多同时 10 条。", "");
+    setStatus("已加入识别队列，最多同时 3 条。", "");
   try {
     await api("/api/novel-content/transcribe-queue", { method: "POST" });
   } catch {
@@ -385,7 +385,7 @@ async function transcribePeerScript(scriptId, button) {
         current.transcriptStatus = "pending";
         current.transcriptError = "";
       }
-      setStatus("队列已满，这条会接着排，最多同时 10 条。", "");
+      setStatus("队列已满，这条会接着排，最多同时 3 条。", "");
       renderVoicedScripts();
       if (button) {
         button.disabled = false;

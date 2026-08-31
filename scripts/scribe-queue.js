@@ -3,7 +3,7 @@ import { isPlaceholderUploadedScript } from "./novel-audio-import.js";
 export const SCRIBE_QUEUE_LOCK_KEY = "scribe-queue-lock";
 export const SCRIBE_QUEUE_LOCK_MS = 15 * 60 * 1000;
 export const SCRIBE_STALE_RUNNING_MS = 15 * 60 * 1000;
-export const SCRIBE_QUEUE_CONCURRENCY = 10;
+export const SCRIBE_QUEUE_CONCURRENCY = 3;
 export const IMPORTED_TRANSCRIPT_PASS_KEY = "imported-transcript-pass-v1";
 
 export function scribeLockKey(slot = 0) {
@@ -60,6 +60,19 @@ export function requeueStaleTranscriptRuns(scripts = [], now = Date.now()) {
   const stamp = new Date(now).toISOString();
   for (const script of Array.isArray(scripts) ? scripts : []) {
     if (!isImportedSpeechSource(script) || !isStaleTranscriptRun(script, now)) continue;
+    script.transcriptStatus = "pending";
+    script.transcriptError = "";
+    script.updatedAt = stamp;
+    ids.push(script.id);
+  }
+  return ids;
+}
+
+export function requeueRunningTranscriptRuns(scripts = [], now = Date.now()) {
+  const ids = [];
+  const stamp = new Date(now).toISOString();
+  for (const script of Array.isArray(scripts) ? scripts : []) {
+    if (!isImportedSpeechSource(script) || String(script.transcriptStatus || "") !== "running") continue;
     script.transcriptStatus = "pending";
     script.transcriptError = "";
     script.updatedAt = stamp;

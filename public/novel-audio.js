@@ -114,7 +114,7 @@ function renderVoiced(audios, novel) {
   const queuedCount = audios.filter(isQueuedTranscript).length;
   if (elements.mixToolbar) elements.mixToolbar.hidden = false;
   elements.listStatus.textContent = queuedCount
-    ? `共 ${audios.length} 条改写音频，当前 ${enabledCount} 条生效，${queuedCount} 条排队识别（最多同时 10 条）。`
+    ? `共 ${audios.length} 条改写音频，当前 ${enabledCount} 条生效，${queuedCount} 条排队识别（最多同时 3 条）。`
     : `共 ${audios.length} 条改写音频，当前 ${enabledCount} 条生效。`;
   elements.audioList.innerHTML = audios.map((script) => audioCard(script)).join("");
   elements.audioList.querySelectorAll("[data-script-id]").forEach((input) => {
@@ -328,7 +328,7 @@ function scriptTextBlock(script) {
   if (isQueuedTranscript(script)) {
     const text = script.transcriptStatus === "running"
       ? "正在识别口播文案…"
-      : "已排队识别，最多同时 10 条。";
+      : "已排队识别，最多同时 3 条。";
     return `<p class="script-full is-pending">${text}</p>`;
   }
   return `<p class="script-full">${escapeHtml(script.text || "")}</p>`;

@@ -66,7 +66,7 @@ export default {
   async scheduled(controller, env, ctx) {
     if (controller.cron === TRANSCRIPT_QUEUE_CRON) {
       try {
-        await drainTranscriptQueueBatch(env, env.DB);
+        await drainTranscriptQueueBatch(env, env.DB, { limit: 1 });
       } catch (error) {
         console.error(JSON.stringify({ event: "transcript-queue-drain-failed", error: String(error?.message || error) }));
       }

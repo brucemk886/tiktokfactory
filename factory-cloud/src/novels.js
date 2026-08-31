@@ -18,6 +18,7 @@ import {
   isImportedSpeechSource,
   isStaleTranscriptRun,
   pickNextQueuedTranscript,
+  requeueRunningTranscriptRuns,
   requeueStaleTranscriptRuns,
   scribeLockKey,
   SCRIBE_QUEUE_CONCURRENCY,
@@ -1196,6 +1197,19 @@ export async function requeueStaleImportedTranscripts(db) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const { store, updatedAt } = await readNovelContentRow(db);
     const ids = requeueStaleTranscriptRuns(store.scripts);
+    if (!ids.length) return { requeued: 0, ids: [] };
+    if (await casNovelContent(db, store, updatedAt)) return { requeued: ids.length, ids };
+  }
+  return { requeued: 0, ids: [] };
+}
+
+export async function resetRunningImportedTranscripts(db) {
+  for (let slot = 0; slot < 10; slot += 1) {
+    await releaseScribeLock(db, slot);
+  }
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { store, updatedAt } = await readNovelContentRow(db);
+    const ids = requeueRunningTranscriptRuns(store.scripts);
     if (!ids.length) return { requeued: 0, ids: [] };
     if (await casNovelContent(db, store, updatedAt)) return { requeued: ids.length, ids };
   }

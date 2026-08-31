@@ -4,6 +4,7 @@ import { uploadedAudioScriptText } from "./novel-audio-import.js";
 import {
   enqueueExistingImportedTranscripts,
   isStaleTranscriptRun,
+  requeueRunningTranscriptRuns,
   requeueStaleTranscriptRuns,
   needsQueuedSpeechTranscript,
   pickNextQueuedTranscript,
@@ -76,7 +77,7 @@ test("existing imported pass queues failed and placeholder-ready clips once", ()
   assert.equal(ready.transcriptStatus, "ready");
 });
 
-test("picks more queued scripts until ten imported clips are running", () => {
+test("picks more queued scripts until three imported clips are running", () => {
   const now = Date.parse("2026-08-31T06:00:00.000Z");
   const pending = {
     id: "s2",
@@ -92,11 +93,14 @@ test("picks more queued scripts until ten imported clips are running", () => {
     transcriptStatus: "running",
     updatedAt: "2026-08-31T05:59:00.000Z"
   });
-  const live = Array.from({ length: 10 }, (_, index) => running(`r${index}`));
+  const live = Array.from({ length: 3 }, (_, index) => running(`r${index}`));
   assert.equal(pickNextQueuedTranscript([pending, running("s1")], now).script.id, "s2");
   assert.equal(pickNextQueuedTranscript([pending], now).script.id, "s2");
-  assert.equal(pickNextQueuedTranscript([pending, ...live.slice(0, 9)], now).script.id, "s2");
+  assert.equal(pickNextQueuedTranscript([pending, ...live.slice(0, 2)], now).script.id, "s2");
   assert.equal(pickNextQueuedTranscript([pending, ...live], now).busy, true);
+  const stuck = [running("z1"), running("z2")];
+  assert.deepEqual(requeueRunningTranscriptRuns(stuck, now), ["z1", "z2"]);
+  assert.equal(stuck[0].transcriptStatus, "pending");
 });
 
 test("stale running jobs can be claimed again", () => {
