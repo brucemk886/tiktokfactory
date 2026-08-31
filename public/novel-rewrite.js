@@ -317,8 +317,48 @@ async function transcribeSelectedPeerScript() {
   const scriptId = params.get("script") || state.parentScriptId || "";
   const script = (state.novel?.scripts || []).find((item) => item.id === scriptId);
   if (!script || (!needsPeerTranscript(script) && script.transcriptStatus !== "running")) return;
-  setStatus("正在识别这条口播…", "");
-  await transcribePeerScript(script.id);
+  startTranscriptWait(script);
+  renderVoicedScripts();
+  setStatus("已加入识别队列，最多同时 10 条。", "");
+  try {
+    await api("/api/novel-content/transcribe-queue", { method: "POST" });
+  } catch {
+    // Cron and the next poll will keep draining the queue.
+  }
+  await watchQueuedTranscript(scriptId);
+}
+
+async function watchQueuedTranscript(scriptId) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    try {
+      const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+      if (data.novel) {
+        state.novel = data.novel;
+        const current = (state.novel.scripts || []).find((item) => item.id === scriptId);
+        const ready = current?.transcriptStatus === "ready"
+          && String(current.text || "").trim()
+          && !isPlaceholderUploadedScript(current.text);
+        if (ready) {
+          stopTranscriptWait();
+          renderVoicedScripts();
+          updateNovelStats();
+          setStatus("已识别口播文案。", "success");
+          return;
+        }
+        if (current?.transcriptStatus === "failed") {
+          stopTranscriptWait();
+          renderVoicedScripts();
+          setStatus(current.transcriptError || "识别口播失败。", "error");
+          return;
+        }
+        renderVoicedScripts();
+      }
+      await api("/api/novel-content/transcribe-queue", { method: "POST" }).catch(() => {});
+    } catch {
+      // Keep waiting; the cloud queue may still be running.
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 8000));
+  }
 }
 
 async function transcribePeerScript(scriptId, button) {
@@ -339,6 +379,21 @@ async function transcribePeerScript(scriptId, button) {
     updateNovelStats();
     setStatus("已识别口播文案。", "success");
   } catch (error) {
+    const queued = /最多同时|正在识别/.test(String(error.message || ""));
+    if (queued) {
+      if (current) {
+        current.transcriptStatus = "pending";
+        current.transcriptError = "";
+      }
+      setStatus("队列已满，这条会接着排，最多同时 10 条。", "");
+      renderVoicedScripts();
+      if (button) {
+        button.disabled = false;
+        button.textContent = "重新识别";
+      }
+      await watchQueuedTranscript(scriptId);
+      return;
+    }
     if (current) {
       current.transcriptStatus = "failed";
       current.transcriptError = error.message || "识别口播失败。";

@@ -13,10 +13,13 @@ import { readMp3Duration } from "../../scripts/mp3-duration.js";
 import { shouldRestorePeerSourceAudio } from "../../scripts/peer-audio-restore.js";
 import {
   enqueueExistingImportedTranscripts,
+  hasSuccessfulImportedTranscript,
   IMPORTED_TRANSCRIPT_PASS_KEY,
+  isImportedSpeechSource,
   isStaleTranscriptRun,
   pickNextQueuedTranscript,
-  SCRIBE_QUEUE_LOCK_KEY,
+  scribeLockKey,
+  SCRIBE_QUEUE_CONCURRENCY,
   SCRIBE_QUEUE_LOCK_MS,
   summarizeTranscriptQueue
 } from "../../scripts/scribe-queue.js";
@@ -903,7 +906,7 @@ export async function transcribePeerScriptsForNovel(env, db, novelId, ctx = null
   };
 }
 
-export async function transcribeNovelScript(env, db, novelId, scriptId, { force = false } = {}) {
+export async function transcribeNovelScript(env, db, novelId, scriptId, { force = false, claimed = false } = {}) {
   const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
   const wantedId = String(scriptId || "").trim();
@@ -911,21 +914,28 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
   if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
   const audioId = String(script.audioId || script.audio?.id || "").trim();
   if (!audioId) throw Object.assign(new Error("这条还没有音频可识别。"), { statusCode: 400 });
-  if (!force && script.transcriptStatus === "ready") {
-    return script;
-  }
-  if (!force && script.transcriptStatus === "running" && !isStaleTranscriptRun(script)) {
-    return script;
-  }
-  if (!(await tryAcquireScribeLock(db, wantedId))) {
-    throw Object.assign(new Error("正在识别另一条音频，一次只跑一条。"), { statusCode: 409 });
+  let lockSlot = null;
+  if (!claimed) {
+    if (!force && script.transcriptStatus === "ready") {
+      return script;
+    }
+    if (!force && script.transcriptStatus === "running" && !isStaleTranscriptRun(script)) {
+      return script;
+    }
+    const lock = await tryAcquireScribeLock(db, wantedId);
+    if (!lock) {
+      throw Object.assign(new Error(`正在识别其他音频，最多同时 ${SCRIBE_QUEUE_CONCURRENCY} 条。`), { statusCode: 409 });
+    }
+    lockSlot = lock.slot;
   }
   try {
-    script = await patchScriptRecord(db, novel.id, wantedId, (row) => {
-      row.transcriptStatus = "running";
-      row.transcriptError = "";
-      row.updatedAt = new Date().toISOString();
-    });
+    if (!claimed) {
+      script = await patchScriptRecord(db, novel.id, wantedId, (row) => {
+        row.transcriptStatus = "running";
+        row.transcriptError = "";
+        row.updatedAt = new Date().toISOString();
+      });
+    }
     const restored = force ? await restorePeerSourceAudio(env, db, script) : false;
     const file = await getNovelAudioBytes(env, audioId);
     if (!file?.bytes?.byteLength) throw Object.assign(new Error("没有这份音频文件。"), { statusCode: 404 });
@@ -958,7 +968,7 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
     }).catch(() => null);
     throw error;
   } finally {
-    await releaseScribeLock(db);
+    if (lockSlot != null) await releaseScribeLock(db, lockSlot);
   }
 }
 
@@ -1058,13 +1068,63 @@ async function findScriptRecord(db, novelId, scriptId) {
   return scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novelId) || null;
 }
 
+async function readNovelContentRow(db) {
+  const row = await db.prepare("SELECT value_json, updated_at FROM factory_kv WHERE key = ?").bind("novel-content").first();
+  let store = { novels: [], scripts: [] };
+  try {
+    store = JSON.parse(row?.value_json || "{}") || store;
+  } catch {
+    store = { novels: [], scripts: [] };
+  }
+  if (!Array.isArray(store.scripts)) store.scripts = [];
+  if (!Array.isArray(store.novels)) store.novels = [];
+  return { store, updatedAt: Number(row?.updated_at || 0) };
+}
+
+async function casNovelContent(db, store, expectedUpdatedAt) {
+  const now = Date.now();
+  const payload = JSON.stringify({
+    novels: Array.isArray(store.novels) ? store.novels : [],
+    scripts: Array.isArray(store.scripts) ? store.scripts : []
+  });
+  if (!expectedUpdatedAt) {
+    await kvSet(db, "novel-content", JSON.parse(payload));
+    return true;
+  }
+  const result = await db.prepare(`
+    UPDATE factory_kv SET value_json = ?, updated_at = ?
+    WHERE key = ? AND updated_at = ?
+  `).bind(payload, now, "novel-content", expectedUpdatedAt).run();
+  return Number(result.meta?.changes || 0) > 0;
+}
+
 async function patchScriptRecord(db, novelId, scriptId, updater) {
-  const scripts = await listNovelScripts(db);
-  const script = scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novelId);
-  if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
-  updater(script);
-  await writeScripts(db, scripts);
-  return script;
+  const wantedId = String(scriptId || "").trim();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { store, updatedAt } = await readNovelContentRow(db);
+    const script = store.scripts.find((item) => item.id === wantedId && item.novelId === novelId);
+    if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
+    updater(script);
+    if (await casNovelContent(db, store, updatedAt)) return script;
+  }
+  throw Object.assign(new Error("保存识别结果冲突，请稍后重试。"), { statusCode: 409 });
+}
+
+async function claimNextQueuedTranscript(db) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { store, updatedAt } = await readNovelContentRow(db);
+    const picked = pickNextQueuedTranscript(store.scripts);
+    if (picked.busy || !picked.script) return picked;
+    if (isStaleTranscriptRun(picked.script)) {
+      picked.script.transcriptStatus = "pending";
+      picked.script.transcriptError = "";
+    }
+    picked.script.transcriptStatus = "running";
+    picked.script.transcriptError = "";
+    picked.script.updatedAt = new Date().toISOString();
+    if (await casNovelContent(db, store, updatedAt)) return { busy: false, script: picked.script, running: picked.running };
+  }
+  return { busy: true, script: null, running: 0 };
 }
 
 function factoryOrigin(request, env) {
@@ -1078,24 +1138,27 @@ function factoryOrigin(request, env) {
 
 async function tryAcquireScribeLock(db, scriptId) {
   const now = Date.now();
-  const result = await db.prepare(`
-    INSERT INTO factory_kv (key, value_json, updated_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value_json = excluded.value_json,
-      updated_at = excluded.updated_at
-    WHERE factory_kv.updated_at < ?
-  `).bind(
-    SCRIBE_QUEUE_LOCK_KEY,
-    JSON.stringify({ at: now, scriptId: scriptId || "" }),
-    now,
-    now - SCRIBE_QUEUE_LOCK_MS
-  ).run();
-  return Number(result.meta?.changes || 0) > 0;
+  for (let slot = 0; slot < SCRIBE_QUEUE_CONCURRENCY; slot += 1) {
+    const result = await db.prepare(`
+      INSERT INTO factory_kv (key, value_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at = excluded.updated_at
+      WHERE factory_kv.updated_at < ?
+    `).bind(
+      scribeLockKey(slot),
+      JSON.stringify({ at: now, scriptId: scriptId || "", slot }),
+      now,
+      now - SCRIBE_QUEUE_LOCK_MS
+    ).run();
+    if (Number(result.meta?.changes || 0) > 0) return { slot, scriptId: scriptId || "" };
+  }
+  return null;
 }
 
-async function releaseScribeLock(db) {
-  await db.prepare("DELETE FROM factory_kv WHERE key = ?").bind(SCRIBE_QUEUE_LOCK_KEY).run();
+async function releaseScribeLock(db, slot) {
+  await db.prepare("DELETE FROM factory_kv WHERE key = ?").bind(scribeLockKey(slot)).run();
 }
 
 export async function enqueueImportedTranscriptPass(db, { force = false } = {}) {
@@ -1114,40 +1177,33 @@ export async function enqueueImportedTranscriptPass(db, { force = false } = {}) 
 }
 
 export async function processNextQueuedTranscript(env, db) {
-  const scripts = await listNovelScripts(db);
-  const picked = pickNextQueuedTranscript(scripts);
-  if (picked.busy) return { busy: true, scriptId: picked.script?.id || "" };
-  if (!picked.script) return { done: true };
+  const lock = await tryAcquireScribeLock(db, "");
+  if (!lock) return { busy: true };
   try {
-    if (isStaleTranscriptRun(picked.script)) {
-      await patchScriptRecord(db, picked.script.novelId, picked.script.id, (row) => {
-        row.transcriptStatus = "pending";
-        row.transcriptError = "";
-        row.updatedAt = new Date().toISOString();
-      });
-    }
-    await transcribeNovelScript(env, db, picked.script.novelId, picked.script.id, { force: false });
+    const picked = await claimNextQueuedTranscript(db);
+    if (picked.busy) return { busy: true, scriptId: picked.script?.id || "", running: picked.running };
+    if (!picked.script) return { done: true };
+    await transcribeNovelScript(env, db, picked.script.novelId, picked.script.id, { force: false, claimed: true });
     return {
       processed: true,
       scriptId: picked.script.id,
       novelId: picked.script.novelId
     };
   } catch (error) {
-    if (Number(error.statusCode) === 409) return { busy: true, scriptId: picked.script.id };
+    if (Number(error.statusCode) === 409) return { busy: true, scriptId: "" };
     return {
       processed: true,
       failed: true,
-      scriptId: picked.script.id,
-      novelId: picked.script.novelId,
+      scriptId: "",
       error: error.message || "识别失败"
     };
+  } finally {
+    await releaseScribeLock(db, lock.slot);
   }
 }
 
-export async function drainTranscriptQueueTick(env, db, origin = "") {
-  await enqueueImportedTranscriptPass(db).catch(() => null);
-  const result = await processNextQueuedTranscript(env, db);
-  if (!result?.processed || !origin || !String(env?.WORKER_TOKEN || "").trim()) return result;
+async function kickTranscriptNext(env, origin) {
+  if (!origin || !String(env?.WORKER_TOKEN || "").trim()) return;
   try {
     await fetch(`${String(origin).replace(/\/+$/, "")}/api/worker/transcribe-next`, {
       method: "POST",
@@ -1160,7 +1216,33 @@ export async function drainTranscriptQueueTick(env, db, origin = "") {
   } catch {
     // The next page poll or cron tick will resume the queue.
   }
+}
+
+export async function drainTranscriptQueueTick(env, db, origin = "") {
+  await enqueueImportedTranscriptPass(db).catch(() => null);
+  const before = summarizeTranscriptQueue(await listNovelScripts(db));
+  const extra = Math.min(
+    Math.max(0, SCRIBE_QUEUE_CONCURRENCY - before.running - 1),
+    Math.max(0, before.pending - 1)
+  );
+  if (extra > 0) {
+    await Promise.all(Array.from({ length: extra }, () => kickTranscriptNext(env, origin)));
+  }
+  const result = await processNextQueuedTranscript(env, db);
+  const after = summarizeTranscriptQueue(await listNovelScripts(db));
+  if (result.processed && after.pending > 0) await kickTranscriptNext(env, origin);
   return result;
+}
+
+export async function transcriptQueueStatus(db) {
+  const scripts = await listNovelScripts(db);
+  const imported = scripts.filter(isImportedSpeechSource);
+  return {
+    ...summarizeTranscriptQueue(scripts),
+    ready: imported.filter(hasSuccessfulImportedTranscript).length,
+    imported: imported.length,
+    concurrency: SCRIBE_QUEUE_CONCURRENCY
+  };
 }
 
 export function acceptTranscriptQueueTick(env, db, ctx, origin) {

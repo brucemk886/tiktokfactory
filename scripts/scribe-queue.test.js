@@ -75,7 +75,7 @@ test("existing imported pass queues failed and placeholder-ready clips once", ()
   assert.equal(ready.transcriptStatus, "ready");
 });
 
-test("picks one queued script and waits when another imported clip is running", () => {
+test("picks more queued scripts until ten imported clips are running", () => {
   const now = Date.parse("2026-08-31T06:00:00.000Z");
   const pending = {
     id: "s2",
@@ -84,15 +84,18 @@ test("picks one queued script and waits when another imported clip is running", 
     transcriptStatus: "pending",
     text: uploadedAudioScriptText("b.mp3")
   };
-  const running = {
-    id: "s1",
+  const running = (id) => ({
+    id,
     sourceType: "peer-hit",
-    audioId: "a1",
+    audioId: id,
     transcriptStatus: "running",
     updatedAt: "2026-08-31T05:59:00.000Z"
-  };
-  assert.deepEqual(pickNextQueuedTranscript([pending, running], now), { busy: true, script: running });
+  });
+  const live = Array.from({ length: 10 }, (_, index) => running(`r${index}`));
+  assert.equal(pickNextQueuedTranscript([pending, running("s1")], now).script.id, "s2");
   assert.equal(pickNextQueuedTranscript([pending], now).script.id, "s2");
+  assert.equal(pickNextQueuedTranscript([pending, ...live.slice(0, 9)], now).script.id, "s2");
+  assert.equal(pickNextQueuedTranscript([pending, ...live], now).busy, true);
 });
 
 test("stale running jobs can be claimed again", () => {

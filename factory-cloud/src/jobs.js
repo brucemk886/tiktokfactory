@@ -2,7 +2,7 @@ import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios } from "./novels.js";
+import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios, transcriptQueueStatus } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -309,6 +309,14 @@ async function handleWorkerApi(request, env, url, ctx) {
       return json({ importedPass, kicked: true });
     } catch (error) {
       return errorJson(error.message || "排队已导入音频失败。", error.statusCode || 400);
+    }
+  }
+
+  if (method === "GET" && pathname === "/api/worker/transcribe-status") {
+    try {
+      return json(await transcriptQueueStatus(env.DB));
+    } catch (error) {
+      return errorJson(error.message || "读取识别队列失败。", error.statusCode || 400);
     }
   }
 

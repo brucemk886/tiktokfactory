@@ -3,7 +3,13 @@ import { isPlaceholderUploadedScript } from "./novel-audio-import.js";
 export const SCRIBE_QUEUE_LOCK_KEY = "scribe-queue-lock";
 export const SCRIBE_QUEUE_LOCK_MS = 4 * 60 * 1000;
 export const SCRIBE_STALE_RUNNING_MS = 4 * 60 * 1000;
+export const SCRIBE_QUEUE_CONCURRENCY = 10;
 export const IMPORTED_TRANSCRIPT_PASS_KEY = "imported-transcript-pass-v1";
+
+export function scribeLockKey(slot = 0) {
+  const index = Math.max(0, Math.min(SCRIBE_QUEUE_CONCURRENCY - 1, Number(slot) || 0));
+  return index === 0 ? SCRIBE_QUEUE_LOCK_KEY : `${SCRIBE_QUEUE_LOCK_KEY}-${index}`;
+}
 
 export function isImportedSpeechSource(script = {}) {
   const source = String(script.sourceType || "");
@@ -55,18 +61,20 @@ export function isStaleTranscriptRun(script = {}, now = Date.now(), staleMs = SC
   return updated > 0 && now - updated >= staleMs;
 }
 
-export function pickNextQueuedTranscript(scripts = [], now = Date.now()) {
+export function pickNextQueuedTranscript(scripts = [], now = Date.now(), concurrency = SCRIBE_QUEUE_CONCURRENCY) {
   const list = Array.isArray(scripts) ? scripts : [];
-  const liveRunning = list.find((script) => (
+  const max = Math.max(1, Number(concurrency) || SCRIBE_QUEUE_CONCURRENCY);
+  const liveRunning = list.filter((script) => (
     isImportedSpeechSource(script)
     && script.transcriptStatus === "running"
     && !isStaleTranscriptRun(script, now)
   ));
-  if (liveRunning) return { busy: true, script: liveRunning };
+  if (liveRunning.length >= max) return { busy: true, script: liveRunning[0], running: liveRunning.length };
   const next = list.find((script) => needsQueuedSpeechTranscript(script))
     || list.find((script) => isImportedSpeechSource(script) && isStaleTranscriptRun(script, now))
     || null;
-  return { busy: false, script: next };
+  if (!next && liveRunning.length) return { busy: true, script: liveRunning[0], running: liveRunning.length };
+  return { busy: false, script: next, running: liveRunning.length };
 }
 
 export function summarizeTranscriptQueue(scripts = [], now = Date.now()) {
