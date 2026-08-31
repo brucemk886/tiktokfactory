@@ -19,6 +19,7 @@ import {
   uniqueNovelIds
 } from "../../scripts/novel-batch-audio.js";
 import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
+import { normalizeTtsProvider, resolveVoiceForProvider } from "../../scripts/kokoro-voices.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -42,7 +43,7 @@ const DEFAULT_STRATEGY = {
     preserveEnding: true, localRewriteFirst: true, openingConflictWithinSeconds: 3,
     allowInventedPlot: false, evidenceRequired: true
   },
-  audio: { enabled: true, provider: "elevenlabs", generateAfterRewrite: true, outputDirectory: "", keepOriginal: true },
+  audio: { enabled: true, provider: "kokoro", generateAfterRewrite: true, outputDirectory: "", keepOriginal: true },
   evaluation: { checkpointsHours: [24, 72, 168], baselineDays: 30, confidenceMinTests: 3, autoPromoteEnabled: true, autoDemoteEnabled: true },
   model: { primary: "sol", fallback: "deepseek-v4-flash", externalProviderEnabled: false, externalProviderBaseUrl: "", externalProviderModel: "" }
 };
@@ -140,10 +141,12 @@ export async function handleNovels(request, env, url, session, ctx) {
   }
 
   if (method === "GET" && pathname === "/api/novel-content/seed-settings") {
-    return json({ settings: await kvGet(db, "novel-seed-settings", { autoSeedOnCreate: false }) });
+    return json({ settings: normalizeSeedSettings(await kvGet(db, "novel-seed-settings", { autoSeedOnCreate: false })) });
   }
   if (method === "PUT" && pathname === "/api/novel-content/seed-settings") {
-    return json({ settings: await kvSet(db, "novel-seed-settings", await readJson(request)) });
+    const current = normalizeSeedSettings(await kvGet(db, "novel-seed-settings", { autoSeedOnCreate: false }));
+    const body = await readJson(request);
+    return json({ settings: await kvSet(db, "novel-seed-settings", normalizeSeedSettings({ ...current, ...body })) });
   }
 
   if (method === "GET" && pathname === "/api/novel-strategy") {
@@ -850,8 +853,9 @@ export async function resolveNovelTitle(db, { novelId = "", novelTitle = "" } = 
 
 export async function buildAudioGeneratePayload(db, body = {}) {
   const scripts = await listNovelScripts(db);
-  const settings = await kvGet(db, "novel-seed-settings", {});
-  const voiceId = String(body.voiceId || settings.voiceId || "").trim();
+  const settings = normalizeSeedSettings(await kvGet(db, "novel-seed-settings", {}));
+  const ttsProvider = normalizeTtsProvider(body.ttsProvider || settings.ttsProvider);
+  const voiceId = resolveVoiceForProvider(ttsProvider, body.voiceId || settings.voiceId);
   const requested = Array.isArray(body.items) && body.items.length
     ? body.items
     : (Array.isArray(body.scriptIds) ? body.scriptIds.map((id) => ({ scriptId: id, novelId: body.novelId })) : [body]);
@@ -865,6 +869,7 @@ export async function buildAudioGeneratePayload(db, body = {}) {
     const novelId = String(raw.novelId || script?.novelId || body.novelId || "").trim();
     if (novelId && !novels.has(novelId)) novels.set(novelId, await findNovelById(db, novelId));
     const novel = novels.get(novelId) || null;
+    const itemProvider = normalizeTtsProvider(raw.ttsProvider || ttsProvider);
     items.push({
       novelId: novel?.id || script?.novelId || novelId,
       novelTitle: String(raw.novelTitle || novel?.title || body.novelTitle || "").trim(),
@@ -880,8 +885,9 @@ export async function buildAudioGeneratePayload(db, body = {}) {
       script: text,
       openingTitle: String(raw.openingTitle || script?.openingTitle || "").trim(),
       speakOpeningTitle: raw.speakOpeningTitle === true || script?.speakOpeningTitle === true || (body.speakOpeningTitle === true && raw.speakOpeningTitle !== false),
-      voiceId: String(raw.voiceId || voiceId || "").trim(),
+      voiceId: resolveVoiceForProvider(itemProvider, raw.voiceId || voiceId),
       speechSpeed: raw.speechSpeed ?? body.speechSpeed,
+      ttsProvider: itemProvider,
       sourceType: String(raw.sourceType || script?.sourceType || "manual-rewrite").trim()
     });
   }
@@ -894,7 +900,17 @@ export async function buildAudioGeneratePayload(db, body = {}) {
     platform: String(body.platform || items[0]?.platform || "").trim(),
     voiceId,
     speechSpeed: body.speechSpeed,
+    ttsProvider,
     items
+  };
+}
+
+function normalizeSeedSettings(value = {}) {
+  const ttsProvider = normalizeTtsProvider(value.ttsProvider);
+  return {
+    ...value,
+    ttsProvider,
+    voiceId: resolveVoiceForProvider(ttsProvider, value.voiceId)
   };
 }
 

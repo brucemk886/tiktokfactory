@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { listElevenLabsVoices, NOVEL_TTS_MODEL_ID, NOVEL_TTS_MODEL_NAME } from "./elevenlabs-voices.js";
+import { writeCaptionCacheForFiles } from "./caption-cache.js";
+import { generateKokoroSpeech, isKokoroVoiceId, KOKORO_PREVIEW_TEXT, listKokoroVoices, normalizeTtsProvider, resolveKokoroVoice } from "./kokoro-tts.js";
 import { buildSpokenNarration } from "./novel-video-badge.js";
 
 export { NOVEL_TTS_MODEL_ID, NOVEL_TTS_MODEL_NAME };
@@ -24,7 +26,7 @@ export function normalizeRetuneSpeed(value) {
   return Math.max(MIN_RETUNE_SPEED, Math.min(MAX_RETUNE_SPEED, Math.round(speed * 20) / 20));
 }
 
-export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl = globalThis.fetch, getDefaultVoiceId = null }) {
+export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl = globalThis.fetch, getDefaultVoiceId = null, synthesizeKokoro = null }) {
   const libraryDir = path.join(workDir, "audio-library");
   const filesDir = path.join(libraryDir, "files");
   const indexPath = path.join(libraryDir, "index.json");
@@ -208,11 +210,36 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     novelId = "",
     scriptId = "",
     sourceType = "manual-script",
-    speechSpeed
+    speechSpeed,
+    ttsProvider
   } = {}) {
     const cleanScript = String(script || "").trim();
     if (cleanScript.length < 20) throw httpError(400, "文案至少需要 20 个字符才能配音。");
     const config = readConfig(root);
+    const provider = normalizeTtsProvider(ttsProvider || config.novelTtsProvider);
+    const spokenScript = buildSpokenNarration(
+      speakOpeningTitle === true ? resolveScriptOpeningTitle(openingTitle, scriptId) : "",
+      cleanScript
+    );
+    const speed = normalizeSpeechSpeed(speechSpeed);
+    const selected = { title: String(title || "小说开头文案").trim(), rank: 0 };
+    const recordSource = {
+      type: String(sourceType || "manual-script").trim().slice(0, 40) || "manual-script",
+      novelId: safeStem(novelId),
+      scriptId: safeStem(scriptId)
+    };
+    if (provider === "kokoro") {
+      return synthesizeKokoroAndSave({
+        spokenScript,
+        selected,
+        voiceId: requestedVoiceId,
+        speed,
+        targetAudioDir,
+        recordSource,
+        novelId,
+        scriptId
+      });
+    }
     const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
     const voiceId = String(requestedVoiceId || config.elevenLabsVoiceId || findRecentVoiceId(workDir) || "").trim();
     const modelId = NOVEL_TTS_MODEL_ID;
@@ -220,20 +247,14 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
     if (!voiceId) throw httpError(400, "ElevenLabs Voice ID 未配置。");
 
-    const spokenScript = buildSpokenNarration(
-      speakOpeningTitle === true ? resolveScriptOpeningTitle(openingTitle, scriptId) : "",
-      cleanScript
-    );
-    const speed = normalizeSpeechSpeed(speechSpeed);
     const fingerprint = crypto.createHash("sha256")
-      .update([novelId, scriptId, spokenScript, voiceId, modelId, outputFormat, speed === DEFAULT_SPEECH_SPEED ? "" : String(speed)].join("\0"))
+      .update(["elevenlabs", novelId, scriptId, spokenScript, voiceId, modelId, outputFormat, speed === DEFAULT_SPEECH_SPEED ? "" : String(speed)].join("\0"))
       .digest("hex").slice(0, 16);
     const id = safeStem(`script-${scriptId || novelId || "manual"}-${fingerprint}`);
     const existing = get(id);
     if (existing && resolveAudioPath(id)) return { ...existing, cacheHit: true };
     if (inFlight.has(id)) return inFlight.get(id);
 
-    const selected = { title: String(title || "小说开头文案").trim(), rank: 0 };
     const operation = synthesizeAndSave({
       id,
       source: null,
@@ -245,12 +266,87 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
       outputFormat,
       speechSpeed: speed,
       targetAudioDir,
-      recordSource: {
-        type: String(sourceType || "manual-script").trim().slice(0, 40) || "manual-script",
-        novelId: safeStem(novelId),
-        scriptId: safeStem(scriptId)
-      }
+      recordSource
     });
+    inFlight.set(id, operation);
+    try {
+      return await operation;
+    } finally {
+      inFlight.delete(id);
+    }
+  }
+
+  async function synthesizeKokoroAndSave({
+    spokenScript,
+    selected,
+    voiceId: requestedVoiceId,
+    speed,
+    targetAudioDir,
+    recordSource,
+    novelId = "",
+    scriptId = ""
+  }) {
+    const config = readConfig(root);
+    const voiceId = resolveKokoroVoice(requestedVoiceId);
+    const fingerprint = crypto.createHash("sha256")
+      .update(["kokoro", novelId, scriptId, spokenScript, voiceId, String(speed)].join("\0"))
+      .digest("hex").slice(0, 16);
+    const id = safeStem(`script-${scriptId || novelId || "manual"}-${fingerprint}`);
+    const existing = get(id);
+    if (existing && resolveAudioPath(id)) return { ...existing, cacheHit: true };
+    if (inFlight.has(id)) return inFlight.get(id);
+    const operation = (async () => {
+      const tempDir = path.join(libraryDir, "tmp", id);
+      fs.mkdirSync(tempDir, { recursive: true });
+      try {
+        const generated = await (synthesizeKokoro || generateKokoroSpeech)({
+          text: spokenScript,
+          voice: voiceId,
+          speed,
+          outDir: tempDir,
+          ffmpeg: configFfmpeg(config),
+          config
+        });
+        const fileName = `${id}.mp3`;
+        const outputPath = path.join(filesDir, fileName);
+        fs.copyFileSync(generated.mp3Path, outputPath);
+        let targetAudioPath = "";
+        if (String(targetAudioDir || "").trim()) {
+          const resolvedTargetDir = path.resolve(String(targetAudioDir).trim());
+          fs.mkdirSync(resolvedTargetDir, { recursive: true });
+          targetAudioPath = path.join(resolvedTargetDir, `${safeDisplayName(selected.title || "小说开头文案")}-${id.slice(-12)}.mp3`);
+          if (path.resolve(targetAudioPath) !== path.resolve(outputPath)) fs.copyFileSync(outputPath, targetAudioPath);
+        }
+        writeCaptionCacheForFiles(workDir, [outputPath, targetAudioPath], {
+          provider: "kokoro",
+          model: "kokoro-82m",
+          text: spokenScript,
+          words: generated.words,
+          cues: generated.cues
+        });
+        const record = {
+          id,
+          title: String(selected.title || "未命名音频").trim(),
+          fileName,
+          createdAt: new Date().toISOString(),
+          duration: probeDuration(outputPath, configFfprobe(config)) || Number(generated.duration) || 0,
+          size: fs.statSync(outputPath).size,
+          scriptChars: spokenScript.length,
+          script: spokenScript,
+          modelId: "kokoro-82m",
+          ttsProvider: "kokoro",
+          speechSpeed: speed,
+          source: recordSource,
+          targetAudioPath
+        };
+        const records = readIndex(indexPath).filter((item) => item.id !== id);
+        records.push(record);
+        writeJsonAtomic(indexPath, records);
+        return { ...record, cacheHit: false };
+      } finally {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+      }
+    })();
     inFlight.set(id, operation);
     try {
       return await operation;
@@ -273,7 +369,10 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     }
   }
 
-  async function listVoices() {
+  async function listVoices({ provider } = {}) {
+    if (String(provider || "").trim() === "kokoro") {
+      return listKokoroVoices({ defaultVoiceId: resolveKokoroVoice(findRecentVoiceId(workDir)) });
+    }
     const config = readConfig(root);
     const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
     const defaultVoiceId = String(
@@ -292,6 +391,10 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
   async function getVoice(voiceId) {
     const safeVoiceId = String(voiceId || "").trim();
     if (!safeVoiceId) throw httpError(400, "缺少 Voice ID。");
+    if (isKokoroVoiceId(safeVoiceId)) {
+      const listed = listKokoroVoices({ defaultVoiceId: safeVoiceId }).voices.find((item) => item.id === safeVoiceId);
+      return listed || { id: safeVoiceId, name: safeVoiceId, category: "kokoro", previewUrl: "" };
+    }
     const config = readConfig(root);
     const apiKey = String(process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey || "").trim();
     if (!apiKey) throw httpError(400, "ElevenLabs API Key 未配置。");
@@ -313,6 +416,9 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
   async function previewVoiceAudio(voiceId) {
     const safeVoiceId = String(voiceId || "").trim();
     if (!safeVoiceId) throw httpError(400, "请先选择要试听的声音。");
+    if (isKokoroVoiceId(safeVoiceId)) {
+      return previewKokoroVoice(safeVoiceId);
+    }
     let voice = null;
     try {
       voice = await getVoice(safeVoiceId);
@@ -348,6 +454,33 @@ export function createAudioLibraryService({ root, workDir, readConfig, fetchImpl
     fs.writeFileSync(tempPath, buffer);
     fs.renameSync(tempPath, outputPath);
     return { kind: "file", path: outputPath, voice: voice || { id: safeVoiceId, name: safeVoiceId, previewUrl: "" }, cacheHit: false };
+  }
+
+  async function previewKokoroVoice(voiceId) {
+    const config = readConfig(root);
+    const previewDir = path.join(libraryDir, "previews");
+    fs.mkdirSync(previewDir, { recursive: true });
+    const outputPath = path.join(previewDir, `${safeStem(voiceId)}.mp3`);
+    const voice = (await getVoice(voiceId));
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024) {
+      return { kind: "file", path: outputPath, voice, cacheHit: true };
+    }
+    const tempDir = path.join(previewDir, `tmp-${safeStem(voiceId)}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+    try {
+      const generated = await (synthesizeKokoro || generateKokoroSpeech)({
+        text: KOKORO_PREVIEW_TEXT,
+        voice: voiceId,
+        speed: 1,
+        outDir: tempDir,
+        ffmpeg: configFfmpeg(config),
+        config
+      });
+      fs.copyFileSync(generated.mp3Path, outputPath);
+    } finally {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    }
+    return { kind: "file", path: outputPath, voice, cacheHit: false };
   }
 
   async function synthesizeAndSave({

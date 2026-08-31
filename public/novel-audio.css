@@ -95,6 +95,9 @@
 .model-fixed { margin: 0; padding: 10px 14px; border: 1px solid rgba(138, 154, 50, 0.35); border-radius: 10px; background: rgba(200, 220, 90, 0.18); color: var(--lf-text, #1d1a14); font-size: 13px; }
 .model-fixed strong { margin-right: 8px; }
 .model-fixed span { color: var(--lf-muted, #6d6758); font-size: 12px; }
+.provider-pick { display: grid; gap: 6px; }
+.provider-pick span { color: var(--lf-muted, #6d6758); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.provider-pick select { height: 44px; padding: 0 12px; border: 1px solid #8a9a32; border-radius: 8px; font-weight: 700; cursor: pointer; }
 .voice-studio { display: grid; gap: 14px; padding: 14px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: 12px; background: #fff; }
 .voice-filter-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px; border-radius: 10px; background: #f6f0e4; }
 .voice-filter-bar label { display: grid; gap: 6px; min-width: 0; }

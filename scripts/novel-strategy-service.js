@@ -27,7 +27,7 @@ export const DEFAULT_NOVEL_STRATEGY = Object.freeze({
   },
   audio: {
     enabled: true,
-    provider: "elevenlabs",
+    provider: "kokoro",
     generateAfterRewrite: true,
     outputDirectory: "",
     keepOriginal: true
@@ -146,7 +146,7 @@ function sanitizePolicy(policy) {
     },
     audio: {
       enabled: bool(merged.audio.enabled, true),
-      provider: text(merged.audio.provider, "elevenlabs"),
+      provider: text(merged.audio.provider, "kokoro"),
       generateAfterRewrite: bool(merged.audio.generateAfterRewrite, true),
       voiceId: text(merged.audio.voiceId),
       outputDirectory: text(merged.audio.outputDirectory),

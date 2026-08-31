@@ -104,6 +104,7 @@ test("uses the job payload voice when an item omits voiceId", async () => {
     config: { audioLibraryRoot: root },
     payload: {
       voiceId: "voice-from-page",
+      ttsProvider: "elevenlabs",
       items: [{
         scriptId: "script-voice",
         title: "Opening",
@@ -120,5 +121,33 @@ test("uses the job payload voice when an item omits voiceId", async () => {
   });
   assert.equal(result.items.length, 1);
   assert.equal(usedVoice, "voice-from-page");
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("defaults new audio jobs to Kokoro and remaps old ElevenLabs voice ids", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "audio-kokoro-job-"));
+  let used = null;
+  await runAudioGenerateJob({
+    root,
+    workDir: path.join(root, "work"),
+    config: { audioLibraryRoot: root },
+    payload: {
+      voiceId: "cgSgspJ2msm6clMCkdW9",
+      items: [{
+        scriptId: "script-kokoro",
+        title: "Opening",
+        script: "This opening is long enough to pass the twenty character check."
+      }]
+    },
+    audioLibrary: {
+      generateFromScript: async (input) => {
+        used = input;
+        return { id: "audio-new", title: input.title, fileName: "opening.mp3" };
+      },
+      resolveAudioPath() { return ""; }
+    }
+  });
+  assert.equal(used.ttsProvider, "kokoro");
+  assert.equal(used.voiceId, "am_michael");
   fs.rmSync(root, { recursive: true, force: true });
 });

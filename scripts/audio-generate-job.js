@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createAudioLibraryService } from "./audio-library.js";
 import { findAudioInLibrary, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { normalizeTtsProvider, resolveVoiceForProvider } from "./kokoro-voices.js";
 import { novelAudioMetaFrom, writeNovelAudioMeta } from "./novel-audio-meta.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
 import { readConfig } from "./video-core.js";
@@ -81,17 +82,19 @@ async function generateOne(library, item, targetAudioDir, config, payload = {}) 
       cacheHit: true
     };
   }
+  const ttsProvider = normalizeTtsProvider(item.ttsProvider || payload.ttsProvider);
   const record = await library.generateFromScript({
     script: item.script || item.text,
     title: item.title,
     openingTitle: item.openingTitle,
     speakOpeningTitle: item.speakOpeningTitle,
-    voiceId: String(item.voiceId || payload.voiceId || localSeedVoiceId(payload, config) || "").trim(),
+    voiceId: resolveVoiceForProvider(ttsProvider, item.voiceId || payload.voiceId || localSeedVoiceId(payload, config, ttsProvider)),
     targetAudioDir,
     novelId: item.novelId,
     scriptId: item.scriptId,
     sourceType: item.sourceType,
-    speechSpeed: item.speechSpeed
+    speechSpeed: item.speechSpeed ?? payload.speechSpeed,
+    ttsProvider
   });
   const sourcePath = library.resolveAudioPath?.(record.id) || record.targetAudioPath;
   if (sourcePath && fs.existsSync(sourcePath)) {
@@ -100,8 +103,11 @@ async function generateOne(library, item, targetAudioDir, config, payload = {}) 
   return record;
 }
 
-function localSeedVoiceId(payload = {}, config = {}) {
-  return String(payload.voiceId || config.elevenLabsVoiceId || "").trim();
+function localSeedVoiceId(payload = {}, config = {}, ttsProvider = "kokoro") {
+  if (normalizeTtsProvider(ttsProvider) === "elevenlabs") {
+    return String(payload.voiceId || config.elevenLabsVoiceId || "").trim();
+  }
+  return resolveVoiceForProvider("kokoro", payload.voiceId);
 }
 
 function findExistingAudio(library, item, config) {

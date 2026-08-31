@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css?v=20260827-5" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260831-1" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -40,9 +40,16 @@
         <div class="section-heading">
           <div><span>VOICE</span><h2>配音设置</h2></div>
         </div>
-        <p class="hint">选好声音后到下面生成。ElevenLabs 一出音频，工人会立刻传到线上网页，不必先保存到本机才能听。</p>
-        <p class="model-fixed">模型已固定：<strong>Eleven Multilingual v2</strong><span>工作室品质 · 29 种语言 · 旁白/有声书</span></p>
+        <p class="hint">默认用本机 Kokoro 出声，并同时写下词时间，混剪直接走字幕缓存，不再调用 Scribe。上传的旧音频、ElevenLabs 旧音仍用 Scribe。ElevenLabs 只在指定音色时再用。</p>
+        <p id="modelFixed" class="model-fixed">配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span></p>
         <div class="voice-studio">
+          <label class="provider-pick">
+            <span>配音引擎</span>
+            <select id="ttsProvider">
+              <option value="kokoro">Kokoro 本机出声（默认，免字符费）</option>
+              <option value="elevenlabs">ElevenLabs Multilingual v2</option>
+            </select>
+          </label>
           <div class="voice-filter-bar" aria-label="声音筛选">
             <label><span>语言</span><select id="voiceLanguage"><option value="">全部</option></select></label>
             <label><span>类别</span><select id="voiceCategory"><option value="">全部</option></select></label>
@@ -137,6 +144,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js?v=20260827-5" type="module"></script>
+    <script src="/novel-audio.js?v=20260831-1" type="module"></script>
   </body>
 </html>

@@ -1141,11 +1141,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/elevenlabs/voices") {
-      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "ElevenLabs 声音列表仅允许在本机访问。" });
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "声音列表仅允许在本机访问。" });
       try {
-        return sendJson(res, 200, await audioLibrary.listVoices());
+        return sendJson(res, 200, await audioLibrary.listVoices({ provider: url.searchParams.get("provider") || "" }));
       } catch (error) {
-        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取 ElevenLabs 声音失败。" });
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "读取声音失败。" });
       }
     }
 
@@ -1497,11 +1497,12 @@ const server = http.createServer(async (req, res) => {
             novelContentLibrary.attachScriptAudio(payload.scriptId, item.id);
           } catch {}
         }
-        if (payload.voiceId || payload.targetAudioDir || payload.speechSpeed != null) {
+        if (payload.voiceId || payload.targetAudioDir || payload.speechSpeed != null || payload.ttsProvider) {
           novelSeedService.saveSettings({
             voiceId: payload.voiceId,
             targetAudioDir: payload.targetAudioDir,
-            speechSpeed: payload.speechSpeed
+            speechSpeed: payload.speechSpeed,
+            ttsProvider: payload.ttsProvider
           });
         }
         return sendJson(res, 200, { item });
@@ -1536,6 +1537,7 @@ const server = http.createServer(async (req, res) => {
             speakOpeningTitle: payload.speakOpeningTitle === true,
             voiceId: payload.voiceId,
             speechSpeed: payload.speechSpeed,
+            ttsProvider: payload.ttsProvider,
             sourceType: script.sourceType
           }));
         }

@@ -150,9 +150,9 @@ test("script generation sends ElevenLabs speed and keeps default-speed cache", a
     }
   });
   const script = "The letter on my kitchen table proved my entire childhood was a lie and I had less than one night to decide what to do next.";
-  const first = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.1 });
-  const again = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.1 });
-  const faster = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.2 });
+  const first = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.1, ttsProvider: "elevenlabs" });
+  const again = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.1, ttsProvider: "elevenlabs" });
+  const faster = await service.generateFromScript({ title: "Opening", script, speechSpeed: 1.2, ttsProvider: "elevenlabs" });
   assert.equal(first.cacheHit, false);
   assert.equal(again.cacheHit, true);
   assert.equal(faster.cacheHit, false);
@@ -179,20 +179,23 @@ test("script generation speaks the opening title before the body", async (contex
     title: "Opening",
     script,
     openingTitle: "She married my uncle",
-    speakOpeningTitle: true
+    speakOpeningTitle: true,
+    ttsProvider: "elevenlabs"
   });
   const again = await service.generateFromScript({
     title: "Opening",
     script,
     openingTitle: "She married my uncle",
-    speakOpeningTitle: true
+    speakOpeningTitle: true,
+    ttsProvider: "elevenlabs"
   });
-  const withoutTitle = await service.generateFromScript({ title: "Opening", script });
+  const withoutTitle = await service.generateFromScript({ title: "Opening", script, ttsProvider: "elevenlabs" });
   const skippedTitle = await service.generateFromScript({
     title: "Opening",
     script,
     openingTitle: "She married my uncle",
-    speakOpeningTitle: false
+    speakOpeningTitle: false,
+    ttsProvider: "elevenlabs"
   });
   assert.equal(first.cacheHit, false);
   assert.equal(again.cacheHit, true);
@@ -277,4 +280,76 @@ test("importExistingFile copies an uploaded mp3 into the library and novel folde
   assert.ok(record.targetAudioPath.startsWith(target));
   assert.ok(fs.existsSync(record.targetAudioPath));
   fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test("listVoices can return local Kokoro voices without ElevenLabs", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-kokoro-voices-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const service = createAudioLibraryService({
+    root: workDir,
+    workDir,
+    readConfig: () => ({})
+  });
+  const listed = await service.listVoices({ provider: "kokoro" });
+  assert.equal(listed.provider, "kokoro");
+  assert.equal(listed.modelId, "kokoro-82m");
+  assert.ok(listed.voices.some((voice) => voice.id === "am_michael"));
+  assert.equal(listed.filters.genders[0].label, "女性");
+});
+
+test("Kokoro script generation writes caption cache and skips ElevenLabs", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-kokoro-gen-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  let called = 0;
+  const target = path.join(workDir, "book");
+  const service = createAudioLibraryService({
+    root: workDir,
+    workDir,
+    readConfig: () => ({}),
+    fetchImpl: async () => {
+      throw new Error("Kokoro 路径不应请求 ElevenLabs");
+    },
+    synthesizeKokoro: async ({ text, voice, outDir }) => {
+      called += 1;
+      fs.mkdirSync(outDir, { recursive: true });
+      const mp3Path = path.join(outDir, "speech.mp3");
+      fs.writeFileSync(mp3Path, Buffer.alloc(2048, 9));
+      return {
+        mp3Path,
+        duration: 1.5,
+        voice,
+        text,
+        words: [
+          { text: "The", start: 0, end: 0.2 },
+          { text: "letter", start: 0.2, end: 0.55 }
+        ],
+        cues: [{ start: 0, end: 0.55, text: "The letter" }]
+      };
+    }
+  });
+  const script = "The letter on my kitchen table proved my entire childhood was a lie.";
+  const first = await service.generateFromScript({
+    title: "Opening",
+    script,
+    voiceId: "am_michael",
+    targetAudioDir: target
+  });
+  const again = await service.generateFromScript({
+    title: "Opening",
+    script,
+    voiceId: "am_michael",
+    targetAudioDir: target
+  });
+  assert.equal(called, 1);
+  assert.equal(first.cacheHit, false);
+  assert.equal(again.cacheHit, true);
+  assert.equal(first.ttsProvider, "kokoro");
+  assert.ok(fs.existsSync(service.resolveAudioPath(first.id)));
+  const { captionCachePath } = await import("./caption-cache.js");
+  const cachePath = captionCachePath(workDir, service.resolveAudioPath(first.id));
+  assert.ok(fs.existsSync(cachePath));
+  const cached = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+  assert.equal(cached.provider, "kokoro");
+  assert.equal(cached.words[0].text, "The");
+  assert.ok(fs.existsSync(captionCachePath(workDir, first.targetAudioPath)));
 });

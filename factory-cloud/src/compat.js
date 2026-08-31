@@ -1,5 +1,6 @@
 import { applyArchiveViewsToSnapshot, collectSnapshotVideoIds, dashboardFromSnapshot } from "../../scripts/asset-usage-impact.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
+import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
 import { errorJson, json, now, readJson, safeId } from "./http.js";
 import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob, videosForOfficialRetry } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -407,6 +408,10 @@ export async function handleCompat(request, env, url, session) {
 
   if (method === "GET" && pathname === "/api/elevenlabs/voices") {
     const settings = await kvGet(db, "novel-seed-settings", {});
+    const provider = String(url.searchParams.get("provider") || "").trim();
+    if (provider === "kokoro") {
+      return json(listKokoroVoices({ defaultVoiceId: String(settings.voiceId || "").trim() }));
+    }
     const apiKey = String(env.ELEVENLABS_API_KEY || "").trim();
     if (!apiKey) {
       return errorJson("线上未配置 ElevenLabs API Key。请在 Cloudflare Worker 写入 ELEVENLABS_API_KEY。", 400);
@@ -419,6 +424,14 @@ export async function handleCompat(request, env, url, session) {
     } catch (error) {
       return errorJson(error.message || "读取 ElevenLabs 声音失败。", error.statusCode || 502);
     }
+  }
+
+  if (method === "GET" && /^\/api\/elevenlabs\/voices\/[^/]+\/preview$/.test(pathname)) {
+    const voiceId = decodeURIComponent(pathname.split("/")[4] || "");
+    if (isKokoroVoiceId(voiceId)) {
+      return errorJson("Kokoro 试听只在本机工人出声。线上先选好音色，生成后就能在网页播放。", 400);
+    }
+    return null;
   }
 
   if (method === "GET" && pathname === "/api/audio-library") {

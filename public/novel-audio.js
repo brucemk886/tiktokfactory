@@ -21,6 +21,8 @@ const elements = {
   voiceGender: document.querySelector("#voiceGender"),
   voiceAge: document.querySelector("#voiceAge"),
   voiceSelect: document.querySelector("#voiceSelect"),
+  ttsProvider: document.querySelector("#ttsProvider"),
+  modelFixed: document.querySelector("#modelFixed"),
   voiceIdInput: document.querySelector("#voiceIdInput"),
   audioDir: document.querySelector("#audioDir"),
   audioGroupSelect: document.querySelector("#audioGroupSelect"),
@@ -47,7 +49,8 @@ const state = {
   novel: readStashedNovel(),
   voices: [],
   audioGroups: [],
-  voiceId: ""
+  voiceId: "",
+  ttsProvider: "kokoro"
 };
 
 elements.saveMixAudiosButton?.addEventListener("click", saveMixAudios);
@@ -59,6 +62,15 @@ elements.speakOpeningTitle?.addEventListener("change", () => {
   });
 });
 elements.reloadVoicesButton?.addEventListener("click", () => loadAudioControls(true));
+elements.ttsProvider?.addEventListener("change", async () => {
+  stopVoicePreview();
+  state.ttsProvider = selectedTtsProvider();
+  state.voiceId = "";
+  if (elements.voiceIdInput) elements.voiceIdInput.value = "";
+  updateModelFixed();
+  await persistAudioSettings();
+  await loadAudioControls(true);
+});
 elements.previewVoiceButton?.addEventListener("click", previewSelectedVoice);
 elements.voiceLanguage?.addEventListener("change", () => renderVoiceOptions());
 elements.voiceCategory?.addEventListener("change", () => renderVoiceOptions());
@@ -263,7 +275,7 @@ async function generatePendingAudios(onlyIds) {
   const voiceId = selectedVoiceId();
   const targetAudioDir = selectedAudioDir();
   if (!voiceId) {
-    setPendingStatus("请先在上面「默认声音」里选一个 ElevenLabs 声音，或手动填写 Voice ID。", "error");
+    setPendingStatus("请先在上面「默认声音」里选一个音色，或手动填写 Voice ID。", "error");
     setAudioStatus("还没选声音，不能生成音频。", "error");
     return;
   }
@@ -283,6 +295,7 @@ async function generatePendingAudios(onlyIds) {
       novelTitle: state.novel?.title || "",
       targetAudioDir,
       voiceId,
+      ttsProvider: selectedTtsProvider(),
       speechSpeed: selectedSpeechSpeed(),
       items: selected.map((item) => ({
         novelId: state.novelId,
@@ -297,6 +310,7 @@ async function generatePendingAudios(onlyIds) {
         openingTitle: item.openingTitle,
         speakOpeningTitle: item.speakOpeningTitle,
         voiceId,
+        ttsProvider: selectedTtsProvider(),
         speechSpeed: selectedSpeechSpeed(),
         sourceType: item.script.sourceType || "ai-style-rewrite"
       }))
@@ -696,12 +710,19 @@ function readStashedNovel() {
 
 async function loadAudioControls(force = false) {
   try {
-    if (force) setAudioStatus("正在重新读取 ElevenLabs 声音...");
-    const [settingsData, voicesData] = await Promise.all([
-      api("/api/novel-content/seed-settings").catch(() => ({ settings: {} })),
-      api("/api/elevenlabs/voices").catch((error) => ({ error: voiceErrorText(error.message), voices: [], defaultVoiceId: "" }))
+    if (force) setAudioStatus(selectedTtsProvider() === "kokoro" ? "正在读取本机 Kokoro 音色..." : "正在重新读取 ElevenLabs 声音...");
+    const [settingsData] = await Promise.all([
+      api("/api/novel-content/seed-settings").catch(() => ({ settings: {} }))
     ]);
     const settings = settingsData.settings || {};
+    if (settings.ttsProvider) {
+      state.ttsProvider = settings.ttsProvider === "elevenlabs" ? "elevenlabs" : "kokoro";
+      if (elements.ttsProvider) elements.ttsProvider.value = state.ttsProvider;
+    } else if (elements.ttsProvider?.value) {
+      state.ttsProvider = selectedTtsProvider();
+    }
+    updateModelFixed();
+    const voicesData = await api(`/api/elevenlabs/voices?provider=${encodeURIComponent(selectedTtsProvider())}`).catch((error) => ({ error: voiceErrorText(error.message), voices: [], defaultVoiceId: "" }));
     state.voices = voicesData.voices || [];
     const selected = settings.voiceId || voicesData.defaultVoiceId || state.voiceId || "";
     if (selected) state.voiceId = selected;
@@ -734,7 +755,22 @@ async function loadAudioControls(force = false) {
 function voiceErrorText(message) {
   const text = String(message || "").trim();
   if (/not found/i.test(text)) return "声音列表接口还没加载，请重启本地服务后刷新本页。";
-  return text || "读取 ElevenLabs 声音失败。";
+  return text || "读取声音失败。";
+}
+
+function selectedTtsProvider() {
+  const value = elements.ttsProvider?.value.trim() || state.ttsProvider || "kokoro";
+  state.ttsProvider = value === "elevenlabs" ? "elevenlabs" : "kokoro";
+  return state.ttsProvider;
+}
+
+function updateModelFixed() {
+  if (!elements.modelFixed) return;
+  if (selectedTtsProvider() === "elevenlabs") {
+    elements.modelFixed.innerHTML = "配音引擎：<strong>Eleven Multilingual v2</strong><span>收费配音 · 混剪仍走 Scribe 识别字幕</span>";
+    return;
+  }
+  elements.modelFixed.innerHTML = "配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span>";
 }
 
 function platformFolderName(platform = "") {
@@ -862,6 +898,7 @@ async function persistAudioSettings() {
       method: "PUT",
       body: JSON.stringify({
         voiceId: selectedVoiceId(),
+        ttsProvider: selectedTtsProvider(),
         targetAudioDir: selectedAudioDir(),
         speechSpeed: selectedSpeechSpeed()
       })

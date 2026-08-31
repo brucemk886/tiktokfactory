@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeTtsProvider, resolveVoiceForProvider } from "./kokoro-voices.js";
 
 export const SEED_VERSION_COUNT = 3;
 const MIN_SCRIPT_CHARS = 20;
@@ -25,7 +26,8 @@ export function createNovelSeedService({
       voiceId: stored.voiceId,
       targetAudioDir: stored.targetAudioDir || resolveDefaultAudioDir(),
       autoSeedOnCreate: stored.autoSeedOnCreate,
-      speechSpeed: stored.speechSpeed
+      speechSpeed: stored.speechSpeed,
+      ttsProvider: stored.ttsProvider
     });
   }
 
@@ -35,18 +37,20 @@ export function createNovelSeedService({
       voiceId: payload.voiceId !== undefined ? payload.voiceId : current.voiceId,
       targetAudioDir: payload.targetAudioDir !== undefined ? payload.targetAudioDir : current.targetAudioDir,
       autoSeedOnCreate: payload.autoSeedOnCreate !== undefined ? payload.autoSeedOnCreate : current.autoSeedOnCreate,
-      speechSpeed: payload.speechSpeed !== undefined ? payload.speechSpeed : current.speechSpeed
+      speechSpeed: payload.speechSpeed !== undefined ? payload.speechSpeed : current.speechSpeed,
+      ttsProvider: payload.ttsProvider !== undefined ? payload.ttsProvider : current.ttsProvider
     });
     writeJson(settingsPath, next);
     return next;
   }
 
-  async function seedNovel({ novelId, voiceId, targetAudioDir, count = SEED_VERSION_COUNT } = {}) {
+  async function seedNovel({ novelId, voiceId, targetAudioDir, count = SEED_VERSION_COUNT, ttsProvider } = {}) {
     const settings = getSettings();
-    const resolvedVoiceId = String(voiceId || settings.voiceId || "").trim();
+    const provider = normalizeTtsProvider(ttsProvider || settings.ttsProvider);
+    const resolvedVoiceId = resolveVoiceForProvider(provider, voiceId || settings.voiceId);
     const resolvedDir = String(targetAudioDir || settings.targetAudioDir || resolveDefaultAudioDir() || "").trim();
     const versionCount = clampCount(count);
-    if (!resolvedVoiceId) throw statusError(400, "请先选择 ElevenLabs 声音。");
+    if (provider === "elevenlabs" && !resolvedVoiceId) throw statusError(400, "请先选择配音声音。");
     if (!resolvedDir) throw statusError(400, "请先选择种子音频保存目录。");
 
     const wanted = String(novelId || "").trim();
@@ -57,7 +61,8 @@ export function createNovelSeedService({
       novelId: wanted,
       voiceId: resolvedVoiceId,
       targetAudioDir: resolvedDir,
-      count: versionCount
+      count: versionCount,
+      ttsProvider: provider
     });
     inFlight.set(wanted, operation);
     try {
@@ -67,7 +72,7 @@ export function createNovelSeedService({
     }
   }
 
-  async function runSeed({ novelId, voiceId, targetAudioDir, count }) {
+  async function runSeed({ novelId, voiceId, targetAudioDir, count, ttsProvider }) {
     const novel = novelContentLibrary.getNovel(novelId);
     let scripts = usableScripts(novel.scripts);
     let marketingId = "";
@@ -116,7 +121,8 @@ export function createNovelSeedService({
         targetAudioDir,
         novelId: novel.id,
         scriptId: script.id,
-        sourceType: "novel-seed"
+        sourceType: "novel-seed",
+        ttsProvider
       });
       novelContentLibrary.attachScriptAudio(script.id, audio.id);
       results.push({
@@ -134,6 +140,7 @@ export function createNovelSeedService({
       novelId: novel.id,
       title: novel.title,
       voiceId,
+      ttsProvider,
       targetAudioDir,
       marketingId,
       generatedAt: new Date(now()).toISOString(),
@@ -166,12 +173,14 @@ function pickSeedTargets(scripts, count) {
 }
 
 function normalizeSettings(value = {}) {
+  const ttsProvider = normalizeTtsProvider(value.ttsProvider);
   return {
-    voiceId: String(value.voiceId || "").trim(),
+    voiceId: resolveVoiceForProvider(ttsProvider, value.voiceId),
     targetAudioDir: String(value.targetAudioDir || "").trim(),
     versionCount: SEED_VERSION_COUNT,
     autoSeedOnCreate: value.autoSeedOnCreate !== false,
-    speechSpeed: clampSpeechSpeed(value.speechSpeed)
+    speechSpeed: clampSpeechSpeed(value.speechSpeed),
+    ttsProvider
   };
 }
 
