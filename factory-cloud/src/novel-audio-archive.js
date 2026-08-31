@@ -21,6 +21,18 @@ export async function deleteNovelAudio(env, audioId) {
   return true;
 }
 
+export async function getNovelAudioBytes(env, audioId) {
+  const key = novelAudioObjectKey(audioId);
+  if (!key || !env?.ARCHIVE) return null;
+  const object = await env.ARCHIVE.get(key);
+  if (!object) return null;
+  return {
+    bytes: new Uint8Array(await object.arrayBuffer()),
+    contentType: object.httpMetadata?.contentType || "audio/mpeg",
+    size: Number(object.size) || 0
+  };
+}
+
 export async function copyNovelAudio(env, fromId, toId) {
   const fromKey = novelAudioObjectKey(fromId);
   const toKey = novelAudioObjectKey(toId);

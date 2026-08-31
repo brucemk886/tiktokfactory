@@ -18,6 +18,22 @@ export function uploadedAudioScriptText(fileName) {
   return `Uploaded audio for this novel opening. Source file: ${name}.`;
 }
 
+export function isPlaceholderUploadedScript(text) {
+  return /^uploaded audio for this novel opening\./i.test(String(text || "").trim());
+}
+
+export function needsPeerSpeechTranscript(script = {}) {
+  if (String(script.sourceType || "") !== "peer-hit") return false;
+  if (script.transcriptStatus === "running") return false;
+  if (script.transcriptStatus === "ready" && !isPlaceholderUploadedScript(script.text) && String(script.text || "").trim().length >= 8) {
+    return false;
+  }
+  return isPlaceholderUploadedScript(script.text)
+    || script.transcriptStatus === "pending"
+    || script.transcriptStatus === "failed"
+    || !String(script.text || "").trim();
+}
+
 export function uploadedAudioOpeningTitle(fileName) {
   return String(fileName || "")
     .replace(/\.[^.]+$/, "")

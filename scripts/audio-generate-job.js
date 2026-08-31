@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createAudioLibraryService } from "./audio-library.js";
 import { findAudioInLibrary, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { writeCaptionCacheForFiles } from "./caption-cache.js";
 import { normalizeTtsProvider, resolveVoiceForProvider } from "./kokoro-voices.js";
 import { novelAudioMetaFrom, writeNovelAudioMeta } from "./novel-audio-meta.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
@@ -35,7 +36,7 @@ export async function runAudioGenerateJob({
       message: `正在生成第 ${index + 1}/${items.length} 条到 ${path.basename(targetAudioDir)}...`
     });
     try {
-      const record = await generateOne(library, item, targetAudioDir, bootConfig, payload);
+      const record = await generateOne(library, item, targetAudioDir, bootConfig, payload, workDir);
       stampNovelAudioMeta(record.targetAudioPath, targetAudioDir, item, payload);
       if (novels && item.scriptId && record.id) {
         try { novels.attachScriptAudio(item.scriptId, record.id); } catch {}
@@ -68,10 +69,11 @@ export function resolveItemAudioDir(config, payload = {}, item = {}) {
   });
 }
 
-async function generateOne(library, item, targetAudioDir, config, payload = {}) {
+async function generateOne(library, item, targetAudioDir, config, payload = {}, workDir = "") {
   const existingPath = findExistingAudio(library, item, config);
   if (existingPath) {
     const copied = copyToTarget(existingPath, targetAudioDir, item.title || item.fileName || item.id || "audio", item.audioId || path.basename(existingPath, path.extname(existingPath)));
+    writeImportedTranscriptCache(workDir, item, copied);
     const current = item.audioId ? library.get?.(item.audioId) : null;
     return {
       ...(current || {}),
@@ -101,6 +103,16 @@ async function generateOne(library, item, targetAudioDir, config, payload = {}) 
     record.targetAudioPath = copyToTarget(sourcePath, targetAudioDir, record.title || item.title || "audio", record.id);
   }
   return record;
+}
+
+function writeImportedTranscriptCache(workDir, item, audioPath) {
+  if (!workDir || !audioPath || !Array.isArray(item?.words) || !item.words.length) return;
+  writeCaptionCacheForFiles(workDir, [audioPath], {
+    provider: "elevenlabs",
+    model: "scribe_v2",
+    text: item.script || item.text || "",
+    words: item.words
+  });
 }
 
 function localSeedVoiceId(payload = {}, config = {}, ttsProvider = "kokoro") {

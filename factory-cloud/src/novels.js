@@ -3,11 +3,14 @@ import { applyFeishuCatalogImport } from "../../scripts/feishu-novel-import.js";
 import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById, removeScriptsById, scriptHasAudio } from "../../scripts/novel-overview.js";
 import {
   isImportedAudioFile,
+  isPlaceholderUploadedScript,
+  needsPeerSpeechTranscript,
   planImportedAudioAssignments,
   uploadedAudioOpeningTitle,
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
-import { copyNovelAudio, deleteNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
+import { transcribeAudioBuffer } from "../../scripts/scribe-transcribe.js";
+import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, putNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
 import { attachNovelHitStats, buildAudioHitWeights, buildOwnHitSnapshot } from "../../scripts/novel-hit-scores.js";
 import { listPeerHitRows } from "./peer-hits-store.js";
@@ -111,6 +114,25 @@ export async function handleNovels(request, env, url, session, ctx) {
       return json(await deleteScript(env, db, decodeURIComponent(scriptItemMatch[1]), decodeURIComponent(scriptItemMatch[2])));
     } catch (error) {
       return errorJson(error.message || "删除失败。", error.statusCode || 400);
+    }
+  }
+
+  const transcribeOneMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/scripts\/([^/]+)\/transcribe$/);
+  if (method === "POST" && transcribeOneMatch) {
+    try {
+      const script = await transcribeNovelScript(env, db, decodeURIComponent(transcribeOneMatch[1]), decodeURIComponent(transcribeOneMatch[2]), { force: true });
+      return json({ script, novel: await hydrateNovel(db, script.novelId) });
+    } catch (error) {
+      return errorJson(error.message || "识别口播失败。", error.statusCode || 400);
+    }
+  }
+
+  const transcribePeerMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/transcribe-peer-scripts$/);
+  if (method === "POST" && transcribePeerMatch) {
+    try {
+      return json(await transcribePeerScriptsForNovel(env, db, decodeURIComponent(transcribePeerMatch[1]), ctx));
+    } catch (error) {
+      return errorJson(error.message || "识别口播失败。", error.statusCode || 400);
     }
   }
 
@@ -670,7 +692,7 @@ async function importNovelAudios(env, db, session, novelId, request) {
   };
 }
 
-export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
+export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx = null) {
   const selected = (Array.isArray(hits) ? hits : []).slice(0, 20);
   if (!selected.length) {
     const error = new Error("先勾选有音频的同行爆款。");
@@ -697,7 +719,7 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
     const fileName = String(step.hit.audioName || `${audioId}.mp3`).trim();
     const openingTitle = uploadedAudioOpeningTitle(fileName) || "同行爆款";
     const title = `${step.novel.title} ${openingTitle}`.trim().slice(0, 240);
-    store.scripts.push({
+    const script = {
       id: safeId(`script-${now()}-${randomToken(3)}`),
       novelId: step.novel.id,
       parentScriptId: "",
@@ -710,6 +732,7 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
       mixEnabled: true,
       kept: true,
       speakOpeningTitle: false,
+      transcriptStatus: "pending",
       createdAt,
       updatedAt: createdAt,
       audioId,
@@ -722,7 +745,8 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = []) {
         size: copied.size,
         createdAt
       }
-    });
+    };
+    store.scripts.push(script);
     imported += 1;
     importedNovelIds.push(step.novel.id);
   }
@@ -796,10 +820,99 @@ export async function updateScript(db, novelId, scriptId, payload = {}) {
   script.text = text;
   if (payload.openingTitle != null) script.openingTitle = String(payload.openingTitle || "").trim().slice(0, 80);
   if (payload.speakOpeningTitle != null) script.speakOpeningTitle = payload.speakOpeningTitle === true;
+  if (Array.isArray(payload.words)) script.words = payload.words;
+  if (payload.transcriptStatus != null) script.transcriptStatus = String(payload.transcriptStatus || "").trim().slice(0, 40);
+  if (payload.text != null && !isPlaceholderUploadedScript(text)) {
+    script.transcriptStatus = script.transcriptStatus || "ready";
+  }
   script.kept = true;
   script.updatedAt = new Date().toISOString();
   await writeScripts(db, store.scripts);
   return script;
+}
+
+async function transcribeImportedPeerScripts(env, db, items = [], options = {}) {
+  for (const item of Array.isArray(items) ? items : []) {
+    try {
+      await transcribeNovelScript(env, db, item.novelId, item.scriptId, options);
+    } catch {
+      // Keep the imported audio even if Scribe fails; the page can retry.
+    }
+  }
+}
+
+export async function transcribePeerScriptsForNovel(env, db, novelId, ctx = null, { limit = 8 } = {}) {
+  const novel = await hydrateNovel(db, novelId);
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const pending = (novel.scripts || []).filter(needsPeerSpeechTranscript).slice(0, Math.max(1, Number(limit) || 8));
+  if (!pending.length) {
+    return { started: 0, count: 0, failed: 0, items: [], novel };
+  }
+  const store = { scripts: await listNovelScripts(db) };
+  const wanted = new Set(pending.map((script) => script.id));
+  for (const script of store.scripts) {
+    if (!wanted.has(script.id)) continue;
+    script.transcriptStatus = "running";
+    script.transcriptError = "";
+    script.updatedAt = new Date().toISOString();
+  }
+  await writeScripts(db, store.scripts);
+  const jobs = pending.map((script) => ({ novelId: novel.id, scriptId: script.id }));
+  const run = transcribeImportedPeerScripts(env, db, jobs, { force: true });
+  if (ctx?.waitUntil) ctx.waitUntil(run);
+  else await run;
+  return {
+    started: pending.length,
+    count: pending.length,
+    failed: 0,
+    items: jobs.map((item) => ({ scriptId: item.scriptId, ok: true, transcriptStatus: "running" })),
+    novel: await hydrateNovel(db, novel.id)
+  };
+}
+
+export async function transcribeNovelScript(env, db, novelId, scriptId, { force = false } = {}) {
+  const novel = await findNovelById(db, novelId);
+  if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
+  const store = { scripts: await listNovelScripts(db) };
+  const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
+  if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
+  const audioId = String(script.audioId || script.audio?.id || "").trim();
+  if (!audioId) throw Object.assign(new Error("这条还没有音频可识别。"), { statusCode: 400 });
+  if (!force && script.transcriptStatus === "ready" && !isPlaceholderUploadedScript(script.text) && String(script.text || "").trim().length >= 8) {
+    return script;
+  }
+  if (!force && script.transcriptStatus === "running") {
+    return script;
+  }
+  script.transcriptStatus = "running";
+  script.transcriptError = "";
+  script.updatedAt = new Date().toISOString();
+  await writeScripts(db, store.scripts);
+  try {
+    const file = await getNovelAudioBytes(env, audioId);
+    if (!file?.bytes?.byteLength) throw Object.assign(new Error("没有这份音频文件。"), { statusCode: 404 });
+    const result = await transcribeAudioBuffer({
+      apiKey: env.ELEVENLABS_API_KEY,
+      audioBuffer: file.bytes,
+      fileName: String(script.audio?.fileName || `${audioId}.mp3`),
+      contentType: file.contentType
+    });
+    script.text = String(result.text || "").slice(0, 20_000);
+    script.words = result.words;
+    script.transcriptStatus = "ready";
+    script.transcriptProvider = result.provider;
+    script.transcriptModel = result.model;
+    script.transcriptError = "";
+    script.updatedAt = new Date().toISOString();
+    await writeScripts(db, store.scripts);
+    return script;
+  } catch (error) {
+    script.transcriptStatus = "failed";
+    script.transcriptError = error.message || "识别失败";
+    script.updatedAt = new Date().toISOString();
+    await writeScripts(db, store.scripts);
+    throw error;
+  }
 }
 
 export async function pruneDraftScripts(db, novelId, payload = {}) {
@@ -888,7 +1001,8 @@ export async function buildAudioGeneratePayload(db, body = {}) {
       voiceId: resolveVoiceForProvider(itemProvider, raw.voiceId || voiceId),
       speechSpeed: raw.speechSpeed ?? body.speechSpeed,
       ttsProvider: itemProvider,
-      sourceType: String(raw.sourceType || script?.sourceType || "manual-rewrite").trim()
+      sourceType: String(raw.sourceType || script?.sourceType || "manual-rewrite").trim(),
+      words: Array.isArray(raw.words) ? raw.words : (Array.isArray(script?.words) ? script.words : [])
     });
   }
   if (!items.length) {

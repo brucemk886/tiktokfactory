@@ -24,6 +24,17 @@
 .source-block summary { cursor: pointer; color: var(--lf-muted, #6d6758); font-size: 13px; font-weight: 800; }
 .source-block[open] summary { margin-bottom: 10px; }
 .source-excerpt { margin: 0; max-height: 180px; overflow: auto; color: var(--lf-text, #1d1a14); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.voiced-scripts-panel { display: grid; gap: 12px; padding: 20px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
+.voiced-scripts { display: grid; gap: 10px; }
+.voiced-script-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 8px; background: #fff; }
+.voiced-script-card.is-active { border-color: #8a9a32; background: rgba(200, 220, 90, 0.16); }
+.voiced-script-card header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+.voiced-script-card header strong { font-size: 13px; }
+.voiced-script-card header small { color: var(--lf-muted, #6d6758); font-size: 12px; }
+.voiced-script-card p { margin: 0; color: var(--lf-text, #1d1a14); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+.voiced-script-card p.is-pending { color: var(--lf-muted, #6d6758); }
+.voiced-script-card p.is-error { color: var(--lf-red, #c24741); }
+.voiced-script-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .script-list { display: grid; gap: 8px; }
 .script-item { display: grid; gap: 4px; width: 100%; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 8px; background: #fff; color: inherit; padding: 10px 12px; text-align: left; cursor: pointer; }
 .script-item strong { font-size: 13px; }

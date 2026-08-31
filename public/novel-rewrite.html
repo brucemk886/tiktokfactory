@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260826-8" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260831-1" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -47,6 +47,14 @@
             <p id="sourceExcerpt" class="source-excerpt">—</p>
           </details>
         </aside>
+
+        <section id="voicedScriptsPanel" class="voiced-scripts-panel" hidden>
+          <div class="section-heading">
+            <div><span>AUDIO COPY</span><h2>已配音文案</h2></div>
+          </div>
+          <p class="hint">只有点改写的那条才会识别口播。没点的不识别，省一次听写。</p>
+          <div id="voicedScripts" class="voiced-scripts"></div>
+        </section>
 
         <form id="rewriteForm" class="rewrite-editor">
           <div class="section-heading">
@@ -121,6 +129,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260826-12" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260831-2" type="module"></script>
   </body>
 </html>

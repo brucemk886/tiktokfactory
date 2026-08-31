@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isImportedAudioFile,
+  isPlaceholderUploadedScript,
+  needsPeerSpeechTranscript,
   planImportedAudioAssignments,
   uploadedAudioOpeningTitle,
   uploadedAudioScriptText
@@ -38,4 +40,20 @@ test("uploaded audio helpers keep a playable title and long enough script", () =
   assert.ok(uploadedAudioScriptText("Hook Line.mp3").length >= 20);
   assert.equal(isImportedAudioFile({ name: "a.mp3", type: "" }), true);
   assert.equal(isImportedAudioFile({ name: "a.wav", type: "audio/wav" }), false);
+  assert.equal(isPlaceholderUploadedScript(uploadedAudioScriptText("409094_7653665467319471374.mp3")), true);
+  assert.equal(isPlaceholderUploadedScript("She spread a dirty lie about me in front of everyone."), false);
+  assert.equal(needsPeerSpeechTranscript({
+    sourceType: "peer-hit",
+    text: uploadedAudioScriptText("a.mp3"),
+    transcriptStatus: "pending"
+  }), true);
+  assert.equal(needsPeerSpeechTranscript({
+    sourceType: "peer-hit",
+    text: "She spread a dirty lie about me in front of everyone.",
+    transcriptStatus: "ready"
+  }), false);
+  assert.equal(needsPeerSpeechTranscript({
+    sourceType: "uploaded-audio",
+    text: uploadedAudioScriptText("a.mp3")
+  }), false);
 });

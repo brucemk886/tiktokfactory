@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { copyNovelAudio, deleteNovelAudio, novelAudioObjectKey, putNovelAudio } from "./novel-audio-archive.js";
+import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, novelAudioObjectKey, putNovelAudio } from "./novel-audio-archive.js";
 
 test("novel audio object keys stay inside the R2 prefix", () => {
   assert.equal(novelAudioObjectKey("script-abc-123"), "novel-audio/script-abc-123.mp3");
@@ -45,6 +45,24 @@ test("copyNovelAudio copies bytes to a new object key", async () => {
   assert.equal(result.size, 9);
   assert.equal(stored.key, "novel-audio/upload-2.mp3");
   assert.equal(stored.body, "hit-bytes");
+});
+
+test("getNovelAudioBytes reads the stored mp3", async () => {
+  const file = await getNovelAudioBytes({
+    ARCHIVE: {
+      async get(key) {
+        assert.equal(key, "novel-audio/peer-1.mp3");
+        return {
+          arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+          size: 3,
+          httpMetadata: { contentType: "audio/mpeg" }
+        };
+      }
+    }
+  }, "peer-1");
+  assert.deepEqual([...file.bytes], [1, 2, 3]);
+  assert.equal(file.contentType, "audio/mpeg");
+  assert.equal(file.size, 3);
 });
 
 test("deleteNovelAudio removes the R2 object", async () => {

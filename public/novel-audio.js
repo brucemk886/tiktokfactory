@@ -631,6 +631,8 @@ function audioCard(script) {
   const audio = script.audio || {};
   const audioId = audio.id || script.audioId;
   const performance = script.performance || {};
+  const isPeer = script.sourceType === "peer-hit";
+  const listenHref = isPeer ? peerListenHref(script) : "";
   return `
     <article class="audio-card${script.mixEnabled === false ? " is-off" : ""}" data-voiced-id="${escapeHtml(script.id)}">
       <div class="audio-card-head">
@@ -643,12 +645,16 @@ function audioCard(script) {
             <input type="checkbox" data-script-id="${escapeHtml(script.id)}" ${script.mixEnabled === false ? "" : "checked"} />
             生效音频
           </label>
-          <button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>
-          <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}">去改写</a>
+          ${isPeer
+            ? (listenHref
+              ? `<a class="primary-action peer-listen" href="${escapeAttr(listenHref)}" target="_blank" rel="noreferrer">去听原片</a>`
+              : `<span class="play-hint">没有视频链接</span>`)
+            : `<button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>`}
+          <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}&script=${encodeURIComponent(script.id)}">去改写</a>
           <button class="quiet-action delete-script" type="button" data-delete-voiced-id="${escapeHtml(script.id)}">删除</button>
         </div>
       </div>
-      <audio controls preload="metadata" data-audio-id="${escapeHtml(audioId)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>
+      ${isPeer ? "" : `<audio controls preload="metadata" data-audio-id="${escapeHtml(audioId)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>`}
       <div class="retune-row">
         <label>已生成变速 <em data-retune-label>${formatSpeed(audio.playbackSpeed)}</em>
           <input type="range" min="0.8" max="1.4" step="0.05" value="${escapeHtml(String(currentSpeed(audio.playbackSpeed)))}" data-retune-range />
@@ -656,7 +662,7 @@ function audioCard(script) {
         <button type="button" class="quiet-action" data-retune-id="${escapeHtml(audioId)}">应用变速</button>
         <small>按原始音频变速，不会越调越快。太慢可拉到 1.10×–1.25×。</small>
       </div>
-      ${script.sourceType === "peer-hit" ? peerHitStats(script) : `<div class="metric-row">
+      ${isPeer ? peerHitStats(script) : `<div class="metric-row">
         ${metric("播放", formatNumber(performance.totalViews))}
         ${metric("视频", formatNumber(performance.videoCount))}
         ${metric("账号", formatNumber(performance.accountCount))}
@@ -665,12 +671,36 @@ function audioCard(script) {
         ${metric("均看时长", formatSeconds(performance.averageTimeWatched))}
       </div>`}
       ${script.openingTitle ? `<p class="hook-title">${escapeHtml(script.openingTitle)}</p>` : ""}
-      <p class="script-full">${escapeHtml(script.text || "")}</p>
+      ${scriptTextBlock(script)}
     </article>`;
 }
 
 function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
+}
+
+function peerListenHref(script) {
+  const videos = Array.isArray(script.peerVideos) && script.peerVideos.length
+    ? script.peerVideos
+    : (Array.isArray(script.scaleRun?.videos) ? script.scaleRun.videos : []);
+  return videos.find((video) => video.videoUrl)?.videoUrl || "";
+}
+
+function isPlaceholderUploadedScript(text) {
+  return /^uploaded audio for this novel opening\./i.test(String(text || "").trim());
+}
+
+function scriptTextBlock(script) {
+  if (script.sourceType !== "peer-hit") {
+    return script.text ? `<p class="script-full">${escapeHtml(script.text)}</p>` : "";
+  }
+  if (script.transcriptStatus === "failed") {
+    return `<p class="script-full is-error">${escapeHtml(script.transcriptError || "口播识别失败")}</p>`;
+  }
+  if (script.transcriptStatus === "running" || isPlaceholderUploadedScript(script.text) || !String(script.text || "").trim()) {
+    return `<p class="script-full is-pending">${script.transcriptStatus === "running" ? "正在识别口播文案…" : "点「去改写」才会识别这条口播。没改写的不识别。"}</p>`;
+  }
+  return `<p class="script-full">${escapeHtml(script.text || "")}</p>`;
 }
 
 function peerHitStats(script) {

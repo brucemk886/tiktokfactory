@@ -151,3 +151,42 @@ test("defaults new audio jobs to Kokoro and remaps old ElevenLabs voice ids", as
   assert.equal(used.voiceId, "am_adam");
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("writes caption cache when imported peer audio already has words", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "audio-peer-cache-"));
+  const workDir = path.join(root, "work");
+  const source = path.join(root, "source.mp3");
+  fs.writeFileSync(source, "peer-audio-bytes-for-caption-cache");
+  const result = await runAudioGenerateJob({
+    root,
+    workDir,
+    config: { audioLibraryRoot: root },
+    payload: {
+      targetAudioDir: path.join(root, "NovelMaster", "Peer Book"),
+      items: [{
+        scriptId: "script-peer",
+        title: "同行爆款",
+        audioId: "audio-peer123456",
+        targetAudioPath: source,
+        script: "She spread a dirty lie about me in front of everyone.",
+        words: [
+          { text: "She", start: 0, end: 0.2 },
+          { text: "spread", start: 0.2, end: 0.5 }
+        ],
+        sourceType: "peer-hit"
+      }]
+    },
+    audioLibrary: {
+      get() { return null; },
+      resolveAudioPath() { return ""; }
+    }
+  });
+  const cacheDir = path.join(workDir, "caption-cache");
+  const files = fs.existsSync(cacheDir) ? fs.readdirSync(cacheDir).filter((name) => name.endsWith(".json")) : [];
+  assert.ok(files.length >= 1, "peer transcript should land in caption cache");
+  const cached = JSON.parse(fs.readFileSync(path.join(cacheDir, files[0]), "utf8"));
+  assert.equal(cached.provider, "elevenlabs");
+  assert.equal(cached.text, "She spread a dirty lie about me in front of everyone.");
+  assert.ok(fs.existsSync(result.items[0].targetAudioPath));
+  fs.rmSync(root, { recursive: true, force: true });
+});

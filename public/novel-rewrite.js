@@ -34,7 +34,9 @@ const elements = {
   openingModel: document.querySelector("#openingModel"),
   openingReasoning: document.querySelector("#openingReasoning"),
   effectsLink: document.querySelector("#effectsLink"),
-  audioLink: document.querySelector("#audioLink")
+  audioLink: document.querySelector("#audioLink"),
+  voicedScriptsPanel: document.querySelector("#voicedScriptsPanel"),
+  voicedScripts: document.querySelector("#voicedScripts")
 };
 
 const SMART_STYLE_ID = "smart-strongest";
@@ -96,11 +98,13 @@ async function loadPage() {
     if (!novel) throw new Error("没有找到这本小说，请从书单重新点「改写」。");
     state.novel = novel;
     renderWork();
+    void transcribeSelectedPeerScript();
     void restoreLatestOpeningJob();
   } catch (error) {
     if (state.novel) {
       renderWork();
       setStatus(error.message || "已先带入书单内容，完整数据稍后可刷新。", "error");
+      void transcribeSelectedPeerScript();
       void restoreLatestOpeningJob();
       return;
     }
@@ -141,14 +145,126 @@ function renderWork() {
   if (elements.audioLink) elements.audioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.savedAudioLink) elements.savedAudioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.baseHint) {
-    elements.baseHint.textContent = "对照上面的免费章节生成。勾选后保存到音频页再配音，没点保存的预览不会留下。";
+    elements.baseHint.textContent = "对照上面的免费章节和已配音文案生成。勾选后保存到音频页再配音，没点保存的预览不会留下。";
   }
-  state.parentScriptId = "";
+  const focusId = params.get("script") || "";
+  state.parentScriptId = (novel.scripts || []).some((item) => item.id === focusId) ? focusId : state.parentScriptId || "";
+  renderVoicedScripts();
   renderVariants();
 }
 
 function scriptHasAudio(script) {
   return Boolean(String(script?.audioId || script?.audio?.id || "").trim());
+}
+
+function isPlaceholderUploadedScript(text) {
+  return /^uploaded audio for this novel opening\./i.test(String(text || "").trim());
+}
+
+function needsPeerTranscript(script) {
+  if (script?.sourceType !== "peer-hit") return false;
+  if (script.transcriptStatus === "running") return false;
+  if (script.transcriptStatus === "ready" && !isPlaceholderUploadedScript(script.text) && String(script.text || "").trim().length >= 8) {
+    return false;
+  }
+  return isPlaceholderUploadedScript(script.text)
+    || script.transcriptStatus === "pending"
+    || script.transcriptStatus === "failed"
+    || !String(script.text || "").trim();
+}
+
+function voicedScriptLabel(script) {
+  return ({
+    "peer-hit": "同行爆款",
+    "uploaded-audio": "上传音频",
+    "manual-rewrite": "人工改写",
+    "ai-style-rewrite": "风格改版",
+    "novel-seed": "种子音频"
+  })[script?.sourceType] || script?.versionLabel || "已配音";
+}
+
+function renderVoicedScripts() {
+  if (!elements.voicedScriptsPanel || !elements.voicedScripts) return;
+  const scripts = (state.novel?.scripts || []).filter(scriptHasAudio).sort((left, right) => {
+    if (left.sourceType === "peer-hit" && right.sourceType !== "peer-hit") return -1;
+    if (right.sourceType === "peer-hit" && left.sourceType !== "peer-hit") return 1;
+    return 0;
+  });
+  if (!scripts.length) {
+    elements.voicedScriptsPanel.hidden = true;
+    elements.voicedScripts.innerHTML = "";
+    return;
+  }
+  const focusId = params.get("script") || state.parentScriptId || "";
+  elements.voicedScriptsPanel.hidden = false;
+  elements.voicedScripts.innerHTML = scripts.map((script) => {
+    const placeholder = isPlaceholderUploadedScript(script.text);
+    const pending = script.transcriptStatus === "running" || needsPeerTranscript(script) || placeholder;
+    const failed = script.transcriptStatus === "failed";
+    const body = failed
+      ? (script.transcriptError || "口播识别失败")
+      : (pending ? (script.transcriptStatus === "running" ? "正在识别这条口播…" : "点「对照这条改写」才会识别口播。") : (script.text || "还没有文案"));
+    return `<article class="voiced-script-card${script.id === focusId ? " is-active" : ""}" data-script-id="${escapeHtml(script.id)}">
+      <header>
+        <strong>${escapeHtml(script.versionLabel || voicedScriptLabel(script))}</strong>
+        <small>${escapeHtml(script.openingTitle || script.title || "")}</small>
+      </header>
+      <p class="${failed ? "is-error" : pending ? "is-pending" : ""}">${escapeHtml(body)}</p>
+      <div class="voiced-script-actions">
+        <button class="quiet-action" type="button" data-use-script>对照这条改写</button>
+        ${script.sourceType === "peer-hit" && (pending || failed) ? `<button class="quiet-action" type="button" data-transcribe-id="${escapeHtml(script.id)}">${failed ? "重新识别" : "识别口播"}</button>` : ""}
+      </div>
+    </article>`;
+  }).join("");
+  elements.voicedScripts.querySelectorAll(".voiced-script-card").forEach((card) => {
+    const script = scripts.find((item) => item.id === card.dataset.scriptId);
+    if (!script) return;
+    card.querySelector("[data-use-script]")?.addEventListener("click", () => useVoicedScript(script));
+    card.querySelector("[data-transcribe-id]")?.addEventListener("click", (event) => transcribePeerScript(script.id, event.currentTarget));
+  });
+  elements.voicedScripts.querySelector(".voiced-script-card.is-active")?.scrollIntoView({ block: "nearest" });
+}
+
+function useVoicedScript(script) {
+  state.parentScriptId = script.id;
+  if (elements.baseHint) {
+    elements.baseHint.textContent = `对照「${script.versionLabel || voicedScriptLabel(script)}」的口播改写。勾选后保存到音频页再配音。`;
+  }
+  renderVoicedScripts();
+  if (needsPeerTranscript(script) || script.transcriptStatus === "running") {
+    setStatus("正在识别这条口播，识别完再对照改写。", "");
+    void transcribePeerScript(script.id);
+    return;
+  }
+  setStatus(`已对照这条${voicedScriptLabel(script)}文案。生成后会记成它的改写。`, "success");
+}
+
+async function transcribeSelectedPeerScript() {
+  const scriptId = params.get("script") || state.parentScriptId || "";
+  const script = (state.novel?.scripts || []).find((item) => item.id === scriptId);
+  if (!script || (!needsPeerTranscript(script) && script.transcriptStatus !== "running")) return;
+  await transcribePeerScript(script.id);
+}
+
+async function transcribePeerScript(scriptId, button) {
+  if (!scriptId || !state.novelId) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "正在识别...";
+  }
+  try {
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(scriptId)}/transcribe`, { method: "POST" });
+    if (data.novel) state.novel = data.novel;
+    renderVoicedScripts();
+    updateNovelStats();
+    setStatus("已识别口播文案。", "success");
+  } catch (error) {
+    setStatus(error.message || "识别口播失败。", "error");
+    if (button) {
+      button.disabled = false;
+      button.textContent = "重新识别";
+    }
+  }
 }
 
 function setRewriteMode(mode) {
@@ -722,6 +838,7 @@ async function refreshNovel() {
   const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
   state.novel = data.novel;
   updateNovelStats();
+  renderVoicedScripts();
 }
 
 function updateNovelStats() {

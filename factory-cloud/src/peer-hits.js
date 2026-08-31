@@ -21,7 +21,7 @@ import { deletePeerHitRow, findPeerHitById, findPeerHitByKey, listPeerHitRows, u
 
 const IMPORT_LIMIT = 200;
 
-export async function handlePeerHits(request, env, url, session) {
+export async function handlePeerHits(request, env, url, session, ctx) {
   if (!url.pathname.startsWith("/api/peer-hits")) return null;
   if (!session) return errorJson("请先登录。", 401);
 
@@ -50,7 +50,7 @@ export async function handlePeerHits(request, env, url, session) {
       const hit = await findPeerHitById(db, id);
       if (hit) hits.push(hit);
     }
-    return json(await attachPeerAudiosToNovels(env, db, session, hits));
+    return json(await attachPeerAudiosToNovels(env, db, session, hits, ctx));
   }
 
   if (method === "POST" && (pathname === "/api/peer-hits" || pathname === "/api/peer-hits/import")) {
