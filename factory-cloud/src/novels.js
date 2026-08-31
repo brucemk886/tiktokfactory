@@ -4,14 +4,23 @@ import { audioItemsFromScripts, dropDraftScripts, removeDraftScriptsById, remove
 import {
   isImportedAudioFile,
   isPlaceholderUploadedScript,
-  needsPeerSpeechTranscript,
   planImportedAudioAssignments,
   uploadedAudioOpeningTitle,
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
 import { transcribeAudioBuffer } from "../../scripts/scribe-transcribe.js";
+import { readMp3Duration } from "../../scripts/mp3-duration.js";
 import { shouldRestorePeerSourceAudio } from "../../scripts/peer-audio-restore.js";
-import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, headNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
+import {
+  enqueueExistingImportedTranscripts,
+  IMPORTED_TRANSCRIPT_PASS_KEY,
+  isStaleTranscriptRun,
+  pickNextQueuedTranscript,
+  SCRIBE_QUEUE_LOCK_KEY,
+  SCRIBE_QUEUE_LOCK_MS,
+  summarizeTranscriptQueue
+} from "../../scripts/scribe-queue.js";
+import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, getNovelAudioPrefix, headNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
 import { attachNovelHitStats, buildAudioHitWeights, buildOwnHitSnapshot } from "../../scripts/novel-hit-scores.js";
 import { findPeerHitById, listPeerHitRows } from "./peer-hits-store.js";
@@ -84,7 +93,7 @@ export async function handleNovels(request, env, url, session, ctx) {
   if (method === "GET" && novelMatch) {
     const novel = await hydrateNovel(db, decodeURIComponent(novelMatch[1]));
     if (!novel) return errorJson("没有找到该小说。", 404);
-    return json({ novel });
+    return json({ novel: await fillMissingScriptDurations(env, db, novel) });
   }
   if (method === "PATCH" && novelMatch) {
     const novel = await updateNovel(db, decodeURIComponent(novelMatch[1]), await readJson(request));
@@ -131,7 +140,7 @@ export async function handleNovels(request, env, url, session, ctx) {
   const transcribePeerMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/transcribe-peer-scripts$/);
   if (method === "POST" && transcribePeerMatch) {
     try {
-      return json(await transcribePeerScriptsForNovel(env, db, decodeURIComponent(transcribePeerMatch[1]), ctx));
+      return json(await transcribePeerScriptsForNovel(env, db, decodeURIComponent(transcribePeerMatch[1]), ctx, request));
     } catch (error) {
       return errorJson(error.message || "识别口播失败。", error.statusCode || 400);
     }
@@ -146,6 +155,30 @@ export async function handleNovels(request, env, url, session, ctx) {
     }
   }
 
+  if (method === "POST" && pathname === "/api/novel-content/transcribe-queue") {
+    const importedPass = await enqueueImportedTranscriptPass(db);
+    const summary = summarizeTranscriptQueue(await listNovelScripts(db));
+    acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
+    return json({ ...summary, kicked: true, importedPass });
+  }
+
+  if (method === "POST" && pathname === "/api/novel-content/enqueue-imported-transcripts") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以排队已导入音频。", 403);
+    const importedPass = await enqueueImportedTranscriptPass(db, await readJson(request).catch(() => ({})));
+    const summary = summarizeTranscriptQueue(await listNovelScripts(db));
+    acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
+    return json({ ...summary, importedPass });
+  }
+
+  if (method === "POST" && pathname === "/api/novel-content/backfill-audio-durations") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以回填音频时长。", 403);
+    try {
+      return json(await backfillMissingAudioDurations(env, db, await readJson(request).catch(() => ({}))));
+    } catch (error) {
+      return errorJson(error.message || "回填音频时长失败。", error.statusCode || 400);
+    }
+  }
+
   const pruneMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/prune-drafts$/);
   if (method === "POST" && pruneMatch) {
     const payload = await readJson(request);
@@ -155,7 +188,7 @@ export async function handleNovels(request, env, url, session, ctx) {
   const importAudioMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/import-audio$/);
   if (method === "POST" && importAudioMatch) {
     try {
-      return json(await importNovelAudios(env, db, session, decodeURIComponent(importAudioMatch[1]), request));
+      return json(await importNovelAudios(env, db, session, decodeURIComponent(importAudioMatch[1]), request, ctx));
     } catch (error) {
       return errorJson(error.message || "上传音频失败。", error.statusCode || 400);
     }
@@ -602,7 +635,7 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
   };
 }
 
-async function importNovelAudios(env, db, session, novelId, request) {
+async function importNovelAudios(env, db, session, novelId, request, ctx = null) {
   const form = await request.formData();
   const files = form.getAll("files").filter((file) => file && typeof file.arrayBuffer === "function");
   if (!files.length) throw Object.assign(new Error("请选择要上传的 mp3。"), { statusCode: 400 });
@@ -643,6 +676,7 @@ async function importNovelAudios(env, db, session, novelId, request) {
         mixEnabled: true,
         kept: true,
         speakOpeningTitle: false,
+        transcriptStatus: "pending",
         createdAt,
         updatedAt: createdAt
       };
@@ -654,11 +688,12 @@ async function importNovelAudios(env, db, session, novelId, request) {
       title,
       fileName,
       targetAudioPath: "",
-      duration: 0,
-      size: bytes.byteLength,
+        duration: readMp3Duration(new Uint8Array(bytes), bytes.byteLength),
+        size: bytes.byteLength,
       createdAt
     };
     script.kept = true;
+    script.transcriptStatus = "pending";
     script.updatedAt = createdAt;
     items.push({
       novelId: novel.id,
@@ -677,6 +712,7 @@ async function importNovelAudios(env, db, session, novelId, request) {
   }
   await writeScripts(db, store.scripts);
   await markNovelsWorking(db, [novel.id]);
+  acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
   const { enqueueJob } = await import("./jobs.js");
   const job = await enqueueJob(db, {
     type: "audio-import",
@@ -698,11 +734,11 @@ async function importNovelAudios(env, db, session, novelId, request) {
     jobId: job.id,
     count: items.length,
     items,
-    message: `已上传 ${items.length} 条，可直接试听。工人会再写到本机音频目录。`
+    message: `已上传 ${items.length} 条，可直接试听。口播排队识别，一次一条。工人会再写到本机音频目录。`
   };
 }
 
-export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx = null) {
+export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx = null, request = null) {
   const selected = (Array.isArray(hits) ? hits : []).slice(0, 20);
   if (!selected.length) {
     const error = new Error("先勾选有音频的同行爆款。");
@@ -710,15 +746,15 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx 
     throw error;
   }
   const novels = await listNovelsMatchingPeerHits(db, selected);
-  const store = { scripts: await listNovelScripts(db) };
+  const existing = await listNovelScripts(db);
   const createdAt = new Date().toISOString();
   const skipped = [];
   const importedNovelIds = [];
-  let imported = 0;
+  const created = [];
   for (const step of planPeerHitNovelImports(selected, novels, {
-    importedPeerHitIds: importedPeerHitIdSet(store.scripts),
-    importedSourceTokensByNovel: importedSourceTokensByNovel(store.scripts),
-    importedClipFingerprintsByNovel: importedClipFingerprintsByNovel(store.scripts)
+    importedPeerHitIds: importedPeerHitIdSet(existing),
+    importedSourceTokensByNovel: importedSourceTokensByNovel(existing),
+    importedClipFingerprintsByNovel: importedClipFingerprintsByNovel(existing)
   })) {
     if (step.skipReason) {
       skipped.push(step.skipReason);
@@ -729,7 +765,7 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx 
     const fileName = String(step.hit.audioName || `${audioId}.mp3`).trim();
     const openingTitle = uploadedAudioOpeningTitle(fileName) || "同行爆款";
     const title = `${step.novel.title} ${openingTitle}`.trim().slice(0, 240);
-    const script = {
+    created.push({
       id: safeId(`script-${now()}-${randomToken(3)}`),
       novelId: step.novel.id,
       parentScriptId: "",
@@ -751,24 +787,25 @@ export async function attachPeerAudiosToNovels(env, db, session, hits = [], ctx 
         title,
         fileName,
         targetAudioPath: "",
-        duration: 0,
+        duration: await probeNovelAudioDuration(env, audioId),
         size: copied.size,
         createdAt
       }
-    };
-    store.scripts.push(script);
-    imported += 1;
+    });
     importedNovelIds.push(step.novel.id);
   }
-  if (imported) {
-    await writeScripts(db, store.scripts);
+  if (created.length) {
+    const latest = await listNovelScripts(db);
+    latest.push(...created);
+    await writeScripts(db, latest);
     await markNovelsWorking(db, importedNovelIds);
+    acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
   }
   const parts = [];
-  if (imported) parts.push(`已导入 ${imported} 条到书单音频页`);
+  if (created.length) parts.push(`已导入 ${created.length} 条到书单音频页，口播排队识别，一次一条`);
   if (skipped.length) parts.push(`跳过 ${skipped.length} 条`);
   return {
-    imported,
+    imported: created.length,
     skipped: skipped.length,
     skippedMessages: skipped.slice(0, 8),
     jobs: [],
@@ -825,6 +862,17 @@ export async function updateScript(db, novelId, scriptId, payload = {}) {
   const store = { scripts: await listNovelScripts(db) };
   const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
   if (!script) throw Object.assign(new Error("没有找到这条文案。"), { statusCode: 404 });
+  const durationOnly = payload.text == null && (payload.duration != null || payload.audioDuration != null);
+  if (durationOnly) {
+    const duration = Number(payload.duration ?? payload.audioDuration);
+    if (!script.audio || !Number.isFinite(duration) || duration <= 0) {
+      throw Object.assign(new Error("音频时长无效。"), { statusCode: 400 });
+    }
+    script.audio.duration = Math.round(duration * 10) / 10;
+    script.updatedAt = new Date().toISOString();
+    await writeScripts(db, store.scripts);
+    return script;
+  }
   const text = payload.text == null ? script.text : String(payload.text || "").trim().slice(0, 20_000);
   if (text.length < 20) throw Object.assign(new Error("改写文案至少需要 20 个字符。"), { statusCode: 400 });
   script.text = text;
@@ -841,41 +889,16 @@ export async function updateScript(db, novelId, scriptId, payload = {}) {
   return script;
 }
 
-async function transcribeImportedPeerScripts(env, db, items = [], options = {}) {
-  for (const item of Array.isArray(items) ? items : []) {
-    try {
-      await transcribeNovelScript(env, db, item.novelId, item.scriptId, options);
-    } catch {
-      // Keep the imported audio even if Scribe fails; the page can retry.
-    }
-  }
-}
-
-export async function transcribePeerScriptsForNovel(env, db, novelId, ctx = null, { limit = 8 } = {}) {
+export async function transcribePeerScriptsForNovel(env, db, novelId, ctx = null, request = null) {
   const novel = await hydrateNovel(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
-  const pending = (novel.scripts || []).filter(needsPeerSpeechTranscript).slice(0, Math.max(1, Number(limit) || 8));
-  if (!pending.length) {
-    return { started: 0, count: 0, failed: 0, items: [], novel };
-  }
-  const store = { scripts: await listNovelScripts(db) };
-  const wanted = new Set(pending.map((script) => script.id));
-  for (const script of store.scripts) {
-    if (!wanted.has(script.id)) continue;
-    script.transcriptStatus = "running";
-    script.transcriptError = "";
-    script.updatedAt = new Date().toISOString();
-  }
-  await writeScripts(db, store.scripts);
-  const jobs = pending.map((script) => ({ novelId: novel.id, scriptId: script.id }));
-  const run = transcribeImportedPeerScripts(env, db, jobs, { force: true });
-  if (ctx?.waitUntil) ctx.waitUntil(run);
-  else await run;
+  const summary = summarizeTranscriptQueue(await listNovelScripts(db));
+  acceptTranscriptQueueTick(env, db, ctx, factoryOrigin(request, env));
   return {
-    started: pending.length,
-    count: pending.length,
-    failed: 0,
-    items: jobs.map((item) => ({ scriptId: item.scriptId, ok: true, transcriptStatus: "running" })),
+    started: summary.pending + summary.running,
+    count: summary.pending,
+    failed: summary.failed,
+    items: [],
     novel: await hydrateNovel(db, novel.id)
   };
 }
@@ -883,23 +906,27 @@ export async function transcribePeerScriptsForNovel(env, db, novelId, ctx = null
 export async function transcribeNovelScript(env, db, novelId, scriptId, { force = false } = {}) {
   const novel = await findNovelById(db, novelId);
   if (!novel) throw Object.assign(new Error("没有找到该小说。"), { statusCode: 404 });
-  const store = { scripts: await listNovelScripts(db) };
-  const script = store.scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novel.id);
+  const wantedId = String(scriptId || "").trim();
+  let script = await findScriptRecord(db, novel.id, wantedId);
   if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
   const audioId = String(script.audioId || script.audio?.id || "").trim();
   if (!audioId) throw Object.assign(new Error("这条还没有音频可识别。"), { statusCode: 400 });
   if (!force && script.transcriptStatus === "ready") {
     return script;
   }
-  if (!force && script.transcriptStatus === "running") {
+  if (!force && script.transcriptStatus === "running" && !isStaleTranscriptRun(script)) {
     return script;
   }
-  script.transcriptStatus = "running";
-  script.transcriptError = "";
-  script.updatedAt = new Date().toISOString();
-  await writeScripts(db, store.scripts);
+  if (!(await tryAcquireScribeLock(db, wantedId))) {
+    throw Object.assign(new Error("正在识别另一条音频，一次只跑一条。"), { statusCode: 409 });
+  }
   try {
-    if (force) await restorePeerSourceAudio(env, db, script);
+    script = await patchScriptRecord(db, novel.id, wantedId, (row) => {
+      row.transcriptStatus = "running";
+      row.transcriptError = "";
+      row.updatedAt = new Date().toISOString();
+    });
+    const restored = force ? await restorePeerSourceAudio(env, db, script) : false;
     const file = await getNovelAudioBytes(env, audioId);
     if (!file?.bytes?.byteLength) throw Object.assign(new Error("没有这份音频文件。"), { statusCode: 404 });
     const result = await transcribeAudioBuffer({
@@ -908,26 +935,30 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
       fileName: String(script.audio?.fileName || `${audioId}.mp3`),
       contentType: file.contentType
     });
-    script.text = String(result.text || "").slice(0, 20_000);
-    script.words = result.words;
-    script.transcriptStatus = "ready";
-    script.transcriptProvider = result.provider;
-    script.transcriptModel = result.model;
-    script.transcriptError = "";
     const spokenEnd = Number(result.words?.[result.words.length - 1]?.end);
-    if (script.audio) {
-      script.audio.size = file.size || file.bytes.byteLength;
-      if (Number.isFinite(spokenEnd) && spokenEnd > 0) script.audio.duration = spokenEnd;
-    }
-    script.updatedAt = new Date().toISOString();
-    await writeScripts(db, store.scripts);
-    return script;
+    return patchScriptRecord(db, novel.id, wantedId, (row) => {
+      row.text = String(result.text || "").slice(0, 20_000);
+      row.words = result.words;
+      row.transcriptStatus = "ready";
+      row.transcriptProvider = result.provider;
+      row.transcriptModel = result.model;
+      row.transcriptError = "";
+      if (row.audio) {
+        row.audio.size = file.size || file.bytes.byteLength || Number(restored?.size || 0) || row.audio.size;
+        if (restored?.fileName) row.audio.fileName = restored.fileName;
+        if (Number.isFinite(spokenEnd) && spokenEnd > 0) row.audio.duration = spokenEnd;
+      }
+      row.updatedAt = new Date().toISOString();
+    });
   } catch (error) {
-    script.transcriptStatus = "failed";
-    script.transcriptError = error.message || "识别失败";
-    script.updatedAt = new Date().toISOString();
-    await writeScripts(db, store.scripts);
+    await patchScriptRecord(db, novel.id, wantedId, (row) => {
+      row.transcriptStatus = "failed";
+      row.transcriptError = error.message || "识别失败";
+      row.updatedAt = new Date().toISOString();
+    }).catch(() => null);
     throw error;
+  } finally {
+    await releaseScribeLock(db);
   }
 }
 
@@ -951,12 +982,191 @@ async function restorePeerSourceAudioFromHit(env, script, hit) {
     destDuration: script.audio?.duration
   })) return false;
   const copied = await copyNovelAudio(env, sourceId, destId);
+  const size = copied.size || sourceSize;
+  const fileName = hit.audioName || script.audio?.fileName || "";
+  const duration = await probeNovelAudioDuration(env, destId);
   if (script.audio) {
-    script.audio.size = copied.size || sourceSize;
-    script.audio.fileName = hit.audioName || script.audio.fileName;
-    script.audio.duration = 0;
+    script.audio.size = size;
+    script.audio.fileName = fileName;
+    script.audio.duration = duration || 0;
   }
-  return true;
+  return { size, fileName, duration };
+}
+
+async function probeNovelAudioDuration(env, audioId) {
+  const prefix = await getNovelAudioPrefix(env, audioId);
+  if (!prefix?.bytes?.byteLength) return 0;
+  return readMp3Duration(prefix.bytes, prefix.size);
+}
+
+async function fillMissingScriptDurations(env, db, novel) {
+  const missing = (novel?.scripts || []).filter((script) => {
+    const audioId = String(script.audioId || script.audio?.id || "").trim();
+    return audioId && script.audio && !(Number(script.audio.duration) > 0);
+  });
+  for (const script of missing) {
+    const duration = await probeNovelAudioDuration(env, script.audioId || script.audio.id);
+    if (!(duration > 0)) continue;
+    script.audio.duration = duration;
+    await patchScriptRecord(db, novel.id, script.id, (row) => {
+      if (row.audio) row.audio.duration = duration;
+      row.updatedAt = new Date().toISOString();
+    }).catch(() => null);
+  }
+  return novel;
+}
+
+export async function backfillMissingAudioDurations(env, db, { limit = 40 } = {}) {
+  const scripts = await listNovelScripts(db);
+  const max = Math.max(1, Math.min(80, Number(limit) || 40));
+  let scanned = 0;
+  let filled = 0;
+  let skipped = 0;
+  const items = [];
+  for (const script of scripts) {
+    const source = String(script.sourceType || "");
+    if (source !== "peer-hit" && source !== "uploaded-audio") continue;
+    const audioId = String(script.audioId || script.audio?.id || "").trim();
+    if (!audioId || !script.audio) continue;
+    scanned += 1;
+    if (Number(script.audio.duration) > 0) {
+      skipped += 1;
+      continue;
+    }
+    if (filled >= max) continue;
+    const duration = await probeNovelAudioDuration(env, audioId);
+    if (!(duration > 0)) {
+      skipped += 1;
+      continue;
+    }
+    await patchScriptRecord(db, script.novelId, script.id, (row) => {
+      if (row.audio) row.audio.duration = duration;
+      row.updatedAt = new Date().toISOString();
+    });
+    filled += 1;
+    items.push({
+      scriptId: script.id,
+      novelId: script.novelId,
+      duration
+    });
+  }
+  return { scanned, filled, skipped, more: filled >= max, items };
+}
+
+async function findScriptRecord(db, novelId, scriptId) {
+  const scripts = await listNovelScripts(db);
+  return scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novelId) || null;
+}
+
+async function patchScriptRecord(db, novelId, scriptId, updater) {
+  const scripts = await listNovelScripts(db);
+  const script = scripts.find((item) => item.id === String(scriptId || "").trim() && item.novelId === novelId);
+  if (!script) throw Object.assign(new Error("没有找到这条音频。"), { statusCode: 404 });
+  updater(script);
+  await writeScripts(db, scripts);
+  return script;
+}
+
+function factoryOrigin(request, env) {
+  try {
+    if (request?.url) return new URL(request.url).origin;
+  } catch {
+    // Fall through to the public factory host.
+  }
+  return String(env?.FACTORY_PUBLIC_URL || "https://factory.tiktokaitool.com").replace(/\/+$/, "");
+}
+
+async function tryAcquireScribeLock(db, scriptId) {
+  const now = Date.now();
+  const result = await db.prepare(`
+    INSERT INTO factory_kv (key, value_json, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value_json = excluded.value_json,
+      updated_at = excluded.updated_at
+    WHERE factory_kv.updated_at < ?
+  `).bind(
+    SCRIBE_QUEUE_LOCK_KEY,
+    JSON.stringify({ at: now, scriptId: scriptId || "" }),
+    now,
+    now - SCRIBE_QUEUE_LOCK_MS
+  ).run();
+  return Number(result.meta?.changes || 0) > 0;
+}
+
+async function releaseScribeLock(db) {
+  await db.prepare("DELETE FROM factory_kv WHERE key = ?").bind(SCRIBE_QUEUE_LOCK_KEY).run();
+}
+
+export async function enqueueImportedTranscriptPass(db, { force = false } = {}) {
+  const existing = await kvGet(db, IMPORTED_TRANSCRIPT_PASS_KEY, null);
+  if (existing?.done && !force) return { ...existing, skipped: true };
+  const scripts = await listNovelScripts(db);
+  const ids = enqueueExistingImportedTranscripts(scripts);
+  if (ids.length) await writeScripts(db, scripts);
+  const result = {
+    done: true,
+    queued: ids.length,
+    at: new Date().toISOString()
+  };
+  await kvSet(db, IMPORTED_TRANSCRIPT_PASS_KEY, result);
+  return result;
+}
+
+export async function processNextQueuedTranscript(env, db) {
+  const scripts = await listNovelScripts(db);
+  const picked = pickNextQueuedTranscript(scripts);
+  if (picked.busy) return { busy: true, scriptId: picked.script?.id || "" };
+  if (!picked.script) return { done: true };
+  try {
+    if (isStaleTranscriptRun(picked.script)) {
+      await patchScriptRecord(db, picked.script.novelId, picked.script.id, (row) => {
+        row.transcriptStatus = "pending";
+        row.transcriptError = "";
+        row.updatedAt = new Date().toISOString();
+      });
+    }
+    await transcribeNovelScript(env, db, picked.script.novelId, picked.script.id, { force: false });
+    return {
+      processed: true,
+      scriptId: picked.script.id,
+      novelId: picked.script.novelId
+    };
+  } catch (error) {
+    if (Number(error.statusCode) === 409) return { busy: true, scriptId: picked.script.id };
+    return {
+      processed: true,
+      failed: true,
+      scriptId: picked.script.id,
+      novelId: picked.script.novelId,
+      error: error.message || "识别失败"
+    };
+  }
+}
+
+export async function drainTranscriptQueueTick(env, db, origin = "") {
+  await enqueueImportedTranscriptPass(db).catch(() => null);
+  const result = await processNextQueuedTranscript(env, db);
+  if (!result?.processed || !origin || !String(env?.WORKER_TOKEN || "").trim()) return result;
+  try {
+    await fetch(`${String(origin).replace(/\/+$/, "")}/api/worker/transcribe-next`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${String(env.WORKER_TOKEN).trim()}`,
+        "content-type": "application/json"
+      },
+      body: "{}"
+    });
+  } catch {
+    // The next page poll or cron tick will resume the queue.
+  }
+  return result;
+}
+
+export function acceptTranscriptQueueTick(env, db, ctx, origin) {
+  const run = drainTranscriptQueueTick(env, db, origin);
+  if (ctx?.waitUntil) ctx.waitUntil(run);
+  return { accepted: true };
 }
 
 export async function repairOverwrittenPeerAudios(env, db, { limit = 40 } = {}) {

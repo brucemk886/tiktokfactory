@@ -32,6 +32,22 @@ export async function headNovelAudio(env, audioId) {
   };
 }
 
+export async function getNovelAudioPrefix(env, audioId, length = 131072) {
+  const key = novelAudioObjectKey(audioId);
+  if (!key || !env?.ARCHIVE) return null;
+  const head = await env.ARCHIVE.head(key);
+  if (!head) return null;
+  const size = Number(head.size) || 0;
+  const object = await env.ARCHIVE.get(key, {
+    range: { offset: 0, length: Math.min(Math.max(4096, Number(length) || 131072), Math.max(1, size)) }
+  });
+  if (!object) return null;
+  return {
+    bytes: new Uint8Array(await object.arrayBuffer()),
+    size
+  };
+}
+
 export async function getNovelAudioBytes(env, audioId) {
   const key = novelAudioObjectKey(audioId);
   if (!key || !env?.ARCHIVE) return null;

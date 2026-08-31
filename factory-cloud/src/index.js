@@ -4,7 +4,7 @@ import { handleGeeLark } from "./geelark.js";
 import { errorJson, json, redirect } from "./http.js";
 import { handleJournal } from "./journal.js";
 import { handleJobs, pruneFactoryJobs } from "./jobs.js";
-import { handleNovels } from "./novels.js";
+import { backfillMissingAudioDurations, drainTranscriptQueueTick, handleNovels } from "./novels.js";
 import { handlePeerHits } from "./peer-hits.js";
 import { handleOfficial, loadGroupStore } from "./official.js";
 import { collectFactoryStorageSample, handleSignalDeskIntegration } from "./factory-storage.js";
@@ -61,7 +61,7 @@ export default {
     }
   },
 
-  async scheduled(controller, env) {
+  async scheduled(controller, env, ctx) {
     try {
       const store = await loadGroupStore(env.DB);
       const persisted = await persistOpsSnapshots(env, env.DB, store);
@@ -76,5 +76,9 @@ export default {
     } catch (error) {
       console.error(JSON.stringify({ event: "factory-storage-sample-failed", cron: controller.cron, error: String(error?.message || error) }));
     }
+    ctx?.waitUntil?.((async () => {
+      await backfillMissingAudioDurations(env, env.DB, { limit: 40 }).catch(() => {});
+      await drainTranscriptQueueTick(env, env.DB, "https://factory.tiktokaitool.com").catch(() => {});
+    })());
   }
 };

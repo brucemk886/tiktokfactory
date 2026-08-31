@@ -50,7 +50,7 @@ export async function handlePeerHits(request, env, url, session, ctx) {
       const hit = await findPeerHitById(db, id);
       if (hit) hits.push(hit);
     }
-    return json(await attachPeerAudiosToNovels(env, db, session, hits, ctx));
+    return json(await attachPeerAudiosToNovels(env, db, session, hits, ctx, request));
   }
 
   if (method === "POST" && (pathname === "/api/peer-hits" || pathname === "/api/peer-hits/import")) {

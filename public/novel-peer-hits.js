@@ -140,7 +140,7 @@ function renderList() {
   }
   if (!elements.hitList) return;
   if (!items.length) {
-    elements.hitList.innerHTML = `<tr><td colspan="11"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
+    elements.hitList.innerHTML = `<tr><td colspan="10"><div class="empty-state">这个范围还没有同行视频。</div></td></tr>`;
     renderPager(0, 1);
     syncBatchBar();
     return;
@@ -156,7 +156,6 @@ function renderList() {
       <td class="cell-mono">${escapeHtml(item.novelId || "未设置")}</td>
       <td class="cell-play">${escapeHtml(formatPlayCount(item.playCount))}</td>
       <td class="cell-video"><a href="${escapeAttr(item.videoUrl)}" target="_blank" rel="noreferrer" title="${escapeAttr(item.videoUrl)}">${escapeHtml(shortUrl(item.videoUrl))}</a></td>
-      <td class="cell-audio">${item.audioId ? `<audio controls preload="none" src="/api/peer-hits/${encodeURIComponent(item.id)}/audio"></audio>` : "未导入"}</td>
       <td class="row-actions">
         <button class="edit-button delete-button" type="button" data-delete-id="${escapeAttr(item.id)}">删除</button>
       </td>
@@ -387,7 +386,7 @@ async function importToNovels() {
     state.selectedIds.clear();
     await loadList();
     const summary = messages[messages.length - 1] || `已导入 ${finished} 条到书单音频页`;
-    setBatchStatus(`${summary}。进度 ${finished}/${total}。要拷到本机，去小说音频页下载。`, "ok");
+    setBatchStatus(`${summary}。进度 ${finished}/${total}。口播已排队，一次识别一条。要拷到本机，去小说音频页下载。`, "ok");
   } catch (error) {
     setBatchStatus(`进度 ${finished}/${total}。${error.message || "写入音频页失败。"}`, "error");
   } finally {
@@ -508,9 +507,9 @@ function scaleRunDetailRow(item) {
   if (!state.expandedIds.has(item.id)) return "";
   const videos = Array.isArray(item.scaleRun?.videos) ? item.scaleRun.videos : [];
   if (!videos.length) {
-    return `<tr class="scale-run-detail"><td colspan="11"><p class="scale-run-empty">刷新页面后再看另外几条的播放量和发布时间。</p></td></tr>`;
+    return `<tr class="scale-run-detail"><td colspan="10"><p class="scale-run-empty">刷新页面后再看另外几条的播放量和发布时间。</p></td></tr>`;
   }
-  return `<tr class="scale-run-detail"><td colspan="11"><ul class="scale-run-videos">${videos.map((video) => {
+  return `<tr class="scale-run-detail"><td colspan="10"><ul class="scale-run-videos">${videos.map((video) => {
     const current = video.id === item.id;
     const href = video.videoUrl ? escapeAttr(video.videoUrl) : "";
     return `<li class="scale-run-video${current ? " is-current" : ""}">

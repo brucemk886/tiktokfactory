@@ -2,7 +2,7 @@ import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { attachAudioGenerateResults, buildAudioGeneratePayload, buildWorkerAudioHitWeights, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios } from "./novels.js";
+import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -37,12 +37,12 @@ const CANCEL_ROUTES = [
   { pattern: /^\/api\/images\/unsplash\/cancel\/([^/]+)$/ }
 ];
 
-export async function handleJobs(request, env, url, session) {
+export async function handleJobs(request, env, url, session, ctx) {
   const method = request.method;
   const pathname = url.pathname;
 
   if (pathname.startsWith("/api/worker/")) {
-    return handleWorkerApi(request, env, url);
+    return handleWorkerApi(request, env, url, ctx);
   }
 
   if (!session) return null;
@@ -191,7 +191,7 @@ export async function cancelJob(db, jobId) {
   `).bind(stamp, stamp, safeId(jobId)).run();
 }
 
-async function handleWorkerApi(request, env, url) {
+async function handleWorkerApi(request, env, url, ctx) {
   const expected = String(env.WORKER_TOKEN || "").trim();
   if (!expected) return errorJson("工人密钥未配置。", 501);
   const supplied = bearer(request);
@@ -292,6 +292,28 @@ async function handleWorkerApi(request, env, url) {
       message: "本机工人在线，混剪任务会在 Local Factory 执行。"
     });
     return json({ ok: true, novelImport, archive });
+  }
+
+  if (method === "POST" && pathname === "/api/worker/backfill-audio-durations") {
+    try {
+      return json(await backfillMissingAudioDurations(env, env.DB, await readJson(request).catch(() => ({}))));
+    } catch (error) {
+      return errorJson(error.message || "回填音频时长失败。", error.statusCode || 400);
+    }
+  }
+
+  if (method === "POST" && pathname === "/api/worker/enqueue-imported-transcripts") {
+    try {
+      const importedPass = await enqueueImportedTranscriptPass(env.DB, await readJson(request).catch(() => ({})));
+      acceptTranscriptQueueTick(env, env.DB, ctx, new URL(request.url).origin);
+      return json({ importedPass, kicked: true });
+    } catch (error) {
+      return errorJson(error.message || "排队已导入音频失败。", error.statusCode || 400);
+    }
+  }
+
+  if (method === "POST" && pathname === "/api/worker/transcribe-next") {
+    return json(acceptTranscriptQueueTick(env, env.DB, ctx, new URL(request.url).origin));
   }
 
   if (method === "POST" && pathname === "/api/worker/repair-peer-audios") {

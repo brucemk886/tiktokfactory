@@ -130,6 +130,7 @@ async function loadPage() {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
     state.novel = data.novel;
     renderNovel(state.novel);
+    startTranscriptWatch();
   } catch (error) {
     if (state.novel) {
       renderNovel(state.novel);
@@ -143,6 +144,43 @@ async function loadPage() {
   if (location.hash === "#upload") {
     document.querySelector(".upload-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
+}
+
+let transcriptWatchTimer = 0;
+
+function startTranscriptWatch() {
+  if (transcriptWatchTimer) return;
+  transcriptWatchTimer = window.setInterval(() => {
+    void tickTranscriptWatch();
+  }, 8000);
+  void tickTranscriptWatch();
+}
+
+function stopTranscriptWatch() {
+  if (transcriptWatchTimer) window.clearInterval(transcriptWatchTimer);
+  transcriptWatchTimer = 0;
+}
+
+function queueWatchNeeded(novel) {
+  return (novel?.scripts || []).some(isQueuedTranscript);
+}
+
+async function tickTranscriptWatch() {
+  if (!state.novelId) {
+    stopTranscriptWatch();
+    return;
+  }
+  try {
+    await api("/api/novel-content/transcribe-queue", { method: "POST" });
+    const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+    if (data.novel) {
+      state.novel = data.novel;
+      renderNovel(state.novel);
+    }
+  } catch {
+    // Keep polling; the cloud queue may still be running.
+  }
+  if (!queueWatchNeeded(state.novel)) stopTranscriptWatch();
 }
 
 function scriptHasAudio(script) {
@@ -239,8 +277,11 @@ function renderVoiced(audios, novel) {
     return;
   }
   const enabledCount = audios.filter((script) => script.mixEnabled !== false).length;
+  const queuedCount = audios.filter(isQueuedTranscript).length;
   if (elements.mixToolbar) elements.mixToolbar.hidden = false;
-  elements.listStatus.textContent = `共 ${audios.length} 条改写音频，当前 ${enabledCount} 条生效。`;
+  elements.listStatus.textContent = queuedCount
+    ? `共 ${audios.length} 条改写音频，当前 ${enabledCount} 条生效，${queuedCount} 条排队识别（一次一条）。`
+    : `共 ${audios.length} 条改写音频，当前 ${enabledCount} 条生效。`;
   elements.audioList.innerHTML = audios.map((script) => audioCard(script)).join("");
   elements.audioList.querySelectorAll("[data-script-id]").forEach((input) => {
     input.addEventListener("change", () => {
@@ -255,6 +296,7 @@ function renderVoiced(audios, novel) {
   });
   bindVoicedPlayback(elements.audioList);
   bindRetuneControls(elements.audioList);
+  bindDurationProbes(elements.audioList);
 }
 
 function readPendingSelection(onlyIds) {
@@ -645,14 +687,18 @@ function audioCard(script) {
               <input type="checkbox" data-script-id="${escapeHtml(script.id)}" ${script.mixEnabled === false ? "" : "checked"} />
               生效音频
             </label>
-            <span class="audio-duration">时长 ${formatDuration(audio.duration)}</span>
+            <span class="audio-duration" data-duration-label>时长 ${formatDuration(audio.duration)}</span>
           </div>
           ${isPeer ? "" : `<button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>`}
           <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}&script=${encodeURIComponent(script.id)}">去改写</a>
           <button class="quiet-action delete-script" type="button" data-delete-voiced-id="${escapeHtml(script.id)}">删除</button>
         </div>
       </div>
-      ${isPeer ? "" : `<audio controls preload="metadata" data-audio-id="${escapeHtml(audioId)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>`}
+      ${isPeer
+        ? (audioId && !Number(audio.duration)
+          ? `<audio hidden preload="metadata" data-duration-script="${escapeHtml(script.id)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file"></audio>`
+          : "")
+        : `<audio controls preload="metadata" data-audio-id="${escapeHtml(audioId)}" data-duration-script="${escapeHtml(script.id)}" src="/api/audio-library/${encodeURIComponent(audioId)}/file?t=${Date.now()}"></audio>`}
       <div class="retune-row">
         <label>已生成变速 <em data-retune-label>${formatSpeed(audio.playbackSpeed)}</em>
           <input type="range" min="0.8" max="1.4" step="0.05" value="${escapeHtml(String(currentSpeed(audio.playbackSpeed)))}" data-retune-range />
@@ -681,18 +727,34 @@ function isPlaceholderUploadedScript(text) {
   return /^uploaded audio for this novel opening\./i.test(String(text || "").trim());
 }
 
+function isImportedSpeechSource(script) {
+  return script?.sourceType === "peer-hit" || script?.sourceType === "uploaded-audio";
+}
+
+function isQueuedTranscript(script) {
+  if (!isImportedSpeechSource(script)) return false;
+  if (script.transcriptStatus === "ready" || script.transcriptStatus === "failed") return false;
+  return script.transcriptStatus === "running"
+    || script.transcriptStatus === "pending"
+    || isPlaceholderUploadedScript(script.text)
+    || !String(script.text || "").trim();
+}
+
 function scriptTextBlock(script) {
-  if (script.sourceType !== "peer-hit") {
+  if (!isImportedSpeechSource(script)) {
     return script.text ? `<p class="script-full">${escapeHtml(script.text)}</p>` : "";
   }
   if (script.transcriptStatus === "failed") {
     return `<p class="script-full is-error">${escapeHtml(script.transcriptError || "口播识别失败")}</p>`;
   }
-  if (script.transcriptStatus === "ready" && String(script.text || "").trim()) {
+  if (script.transcriptStatus === "ready" && String(script.text || "").trim() && !isPlaceholderUploadedScript(script.text)) {
     return `<p class="script-full">${escapeHtml(script.text)}</p>`;
   }
-  if (script.transcriptStatus === "running" || isPlaceholderUploadedScript(script.text) || !String(script.text || "").trim()) {
-    return `<p class="script-full is-pending">${script.transcriptStatus === "running" ? "正在识别口播文案…" : "点「去改写」才会识别这条口播。没改写的不识别。"}</p>`;
+  if (isQueuedTranscript(script)) {
+    const text = script.transcriptStatus === "running"
+      ? "正在识别口播文案…"
+      : "已排队识别，一次只跑一条。";
+    return `<p class="script-full is-pending">${text}</p>`;
   }
   return `<p class="script-full">${escapeHtml(script.text || "")}</p>`;
 }
@@ -1057,7 +1119,8 @@ async function uploadExistingAudios(fileList, onlyScriptIds) {
     if (elements.uploadAudioInput) elements.uploadAudioInput.dataset.scriptIds = "";
     state.novel = data.novel;
     renderNovel(state.novel);
-    setAudioStatus(data.message || `已上传 ${data.count || files.length} 条，可直接试听。`, "ok");
+    startTranscriptWatch();
+    setAudioStatus(data.message || `已上传 ${data.count || files.length} 条，可直接试听。口播排队识别，一次一条。`, "ok");
     if (data.jobId) {
       waitForAudioJob(data.jobId, {
         api,
@@ -1144,6 +1207,28 @@ function currentSpeed(value) {
 
 function formatSpeed(value) {
   return `${currentSpeed(value).toFixed(2)}×`;
+}
+
+function bindDurationProbes(root) {
+  if (!root) return;
+  root.querySelectorAll("audio[data-duration-script]").forEach((el) => {
+    const apply = () => {
+      const seconds = Number(el.duration);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      const label = el.closest(".audio-card")?.querySelector("[data-duration-label]");
+      if (label) label.textContent = `时长 ${formatDuration(seconds)}`;
+      const script = (state.novel?.scripts || []).find((item) => item.id === el.dataset.durationScript);
+      if (script?.audio) script.audio.duration = Math.round(seconds * 10) / 10;
+      if (el.dataset.durationSaved === "1" || !state.novelId || !el.dataset.durationScript) return;
+      el.dataset.durationSaved = "1";
+      void api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(el.dataset.durationScript)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ duration: seconds })
+      }).catch(() => {});
+    };
+    el.addEventListener("loadedmetadata", apply);
+    if (el.readyState >= 1) apply();
+  });
 }
 
 function bindRetuneControls(root) {
