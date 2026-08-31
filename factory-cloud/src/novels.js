@@ -23,8 +23,10 @@ import {
   scribeLockKey,
   SCRIBE_QUEUE_CONCURRENCY,
   SCRIBE_QUEUE_LOCK_MS,
-  summarizeTranscriptQueue
+  summarizeTranscriptQueue,
+  TRANSCRIPT_QUEUE_PAUSED
 } from "../../scripts/scribe-queue.js";
+import { attachScriptTranscripts, persistScriptTranscripts, slimNovelScripts } from "./script-transcripts.js";
 import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, getNovelAudioPrefix, headNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
 import { attachNovelHitStats, buildAudioHitWeights, buildOwnHitSnapshot } from "../../scripts/novel-hit-scores.js";
@@ -161,6 +163,13 @@ export async function handleNovels(request, env, url, session, ctx) {
   }
 
   if (method === "POST" && pathname === "/api/novel-content/transcribe-queue") {
+    if (TRANSCRIPT_QUEUE_PAUSED) {
+      return json({
+        ...summarizeTranscriptQueue(await listNovelScripts(db)),
+        kicked: false,
+        paused: true
+      });
+    }
     const importedPass = await enqueueImportedTranscriptPass(db);
     await requeueStaleImportedTranscripts(db);
     const summary = summarizeTranscriptQueue(await listNovelScripts(db));
@@ -548,9 +557,10 @@ export async function hydrateNovel(db, id) {
   const markedHits = attachScaleRunMarks(attachPeerHitTimes(hits.filter((hit) => {
     return hit.factoryNovelId === novel.id || (novel.bookId && hit.novelId === novel.bookId);
   })));
+  const owned = await attachScriptTranscripts(db, scripts.filter((item) => item.novelId === novel.id));
   return {
     ...novel,
-    scripts: collapseDuplicateAudioScripts(scripts.filter((item) => item.novelId === novel.id).map((script) => ({
+    scripts: collapseDuplicateAudioScripts(owned.map((script) => ({
       ...script,
       scaleRun: scaleRunForScript(script, markedHits),
       peerVideos: peerVideosForScript(script, markedHits)
@@ -1083,9 +1093,11 @@ async function readNovelContentRow(db) {
 
 async function casNovelContent(db, store, expectedUpdatedAt) {
   const now = Date.now();
+  const scripts = Array.isArray(store.scripts) ? store.scripts : [];
+  await persistScriptTranscripts(db, scripts);
   const payload = JSON.stringify({
     novels: Array.isArray(store.novels) ? store.novels : [],
-    scripts: Array.isArray(store.scripts) ? store.scripts : []
+    scripts: slimNovelScripts(scripts)
   });
   if (!expectedUpdatedAt) {
     await kvSet(db, "novel-content", JSON.parse(payload));
@@ -1216,7 +1228,20 @@ export async function resetRunningImportedTranscripts(db) {
   return { requeued: 0, ids: [] };
 }
 
+export async function compactNovelContentTranscripts(db) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { store, updatedAt } = await readNovelContentRow(db);
+    const moved = await persistScriptTranscripts(db, store.scripts);
+    if (await casNovelContent(db, store, updatedAt)) {
+      const row = await db.prepare("SELECT length(value_json) AS bytes FROM factory_kv WHERE key = ?").bind("novel-content").first();
+      return { moved, written: true, blobBytes: Number(row?.bytes || 0) };
+    }
+  }
+  return { moved: 0, written: false, blobBytes: 0 };
+}
+
 export async function drainTranscriptQueueBatch(env, db, { limit = SCRIBE_QUEUE_CONCURRENCY } = {}) {
+  if (TRANSCRIPT_QUEUE_PAUSED) return [{ paused: true }];
   await enqueueImportedTranscriptPass(db).catch(() => null);
   await requeueStaleImportedTranscripts(db);
   const slots = Math.max(1, Math.min(SCRIBE_QUEUE_CONCURRENCY, Number(limit) || SCRIBE_QUEUE_CONCURRENCY));
@@ -1231,11 +1256,14 @@ export async function drainTranscriptQueueTick(env, db) {
 export async function transcriptQueueStatus(db) {
   const scripts = await listNovelScripts(db);
   const imported = scripts.filter(isImportedSpeechSource);
+  const row = await db.prepare("SELECT length(value_json) AS bytes FROM factory_kv WHERE key = ?").bind("novel-content").first();
   return {
     ...summarizeTranscriptQueue(scripts),
     ready: imported.filter(hasSuccessfulImportedTranscript).length,
     imported: imported.length,
-    concurrency: SCRIBE_QUEUE_CONCURRENCY
+    concurrency: SCRIBE_QUEUE_CONCURRENCY,
+    paused: TRANSCRIPT_QUEUE_PAUSED,
+    blobBytes: Number(row?.bytes || 0)
   };
 }
 
@@ -1343,7 +1371,7 @@ export async function resolveNovelTitle(db, { novelId = "", novelTitle = "" } = 
 }
 
 export async function buildAudioGeneratePayload(db, body = {}) {
-  const scripts = await listNovelScripts(db);
+  const scripts = await attachScriptTranscripts(db, await listNovelScripts(db));
   const settings = normalizeSeedSettings(await kvGet(db, "novel-seed-settings", {}));
   const ttsProvider = normalizeTtsProvider(body.ttsProvider || settings.ttsProvider);
   const voiceId = resolveVoiceForProvider(ttsProvider, body.voiceId || settings.voiceId);

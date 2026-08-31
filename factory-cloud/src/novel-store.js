@@ -1,4 +1,5 @@
 import { kvGet, kvSet } from "./kv.js";
+import { persistScriptTranscripts, slimNovelScripts } from "./script-transcripts.js";
 
 export function novelFromRow(row) {
   return {
@@ -227,7 +228,8 @@ export async function listNovelScripts(db) {
 
 export async function writeScripts(db, scripts) {
   const current = await kvGet(db, "novel-content", { novels: [], scripts: [] });
-  await kvSet(db, "novel-content", { novels: [], scripts });
+  await persistScriptTranscripts(db, scripts);
+  await kvSet(db, "novel-content", { novels: [], scripts: slimNovelScripts(scripts) });
   return current;
 }
 

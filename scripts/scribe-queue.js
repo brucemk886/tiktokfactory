@@ -5,6 +5,7 @@ export const SCRIBE_QUEUE_LOCK_MS = 15 * 60 * 1000;
 export const SCRIBE_STALE_RUNNING_MS = 15 * 60 * 1000;
 export const SCRIBE_QUEUE_CONCURRENCY = 3;
 export const IMPORTED_TRANSCRIPT_PASS_KEY = "imported-transcript-pass-v1";
+export const TRANSCRIPT_QUEUE_PAUSED = true;
 
 export function scribeLockKey(slot = 0) {
   const index = Math.max(0, Math.min(SCRIBE_QUEUE_CONCURRENCY - 1, Number(slot) || 0));

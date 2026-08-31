@@ -9,8 +9,13 @@ import {
   needsQueuedSpeechTranscript,
   pickNextQueuedTranscript,
   shouldEnqueueExistingImportedTranscript,
-  summarizeTranscriptQueue
+  summarizeTranscriptQueue,
+  TRANSCRIPT_QUEUE_PAUSED
 } from "./scribe-queue.js";
+
+test("imported transcript cron stays paused until sidecar writes are live", () => {
+  assert.equal(TRANSCRIPT_QUEUE_PAUSED, true);
+});
 
 test("queued transcripts skip ready, failed, and live running items", () => {
   assert.equal(needsQueuedSpeechTranscript({

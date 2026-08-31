@@ -2,7 +2,7 @@ import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios, requeueStaleImportedTranscripts, resetRunningImportedTranscripts, transcriptQueueStatus } from "./novels.js";
+import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, compactNovelContentTranscripts, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios, requeueStaleImportedTranscripts, resetRunningImportedTranscripts, transcriptQueueStatus } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -317,6 +317,14 @@ async function handleWorkerApi(request, env, url, ctx) {
       return json(await resetRunningImportedTranscripts(env.DB));
     } catch (error) {
       return errorJson(error.message || "清理卡住的识别失败。", error.statusCode || 400);
+    }
+  }
+
+  if (method === "POST" && pathname === "/api/worker/compact-transcripts") {
+    try {
+      return json(await compactNovelContentTranscripts(env.DB));
+    } catch (error) {
+      return errorJson(error.message || "压缩书单识别结果失败。", error.statusCode || 400);
     }
   }
 

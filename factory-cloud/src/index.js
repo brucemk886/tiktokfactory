@@ -4,7 +4,7 @@ import { handleGeeLark } from "./geelark.js";
 import { errorJson, json, redirect } from "./http.js";
 import { handleJournal } from "./journal.js";
 import { handleJobs, pruneFactoryJobs } from "./jobs.js";
-import { backfillMissingAudioDurations, drainTranscriptQueueBatch, handleNovels } from "./novels.js";
+import { backfillMissingAudioDurations, handleNovels } from "./novels.js";
 
 export const TRANSCRIPT_QUEUE_CRON = "* * * * *";
 import { handlePeerHits } from "./peer-hits.js";
@@ -65,11 +65,6 @@ export default {
 
   async scheduled(controller, env, ctx) {
     if (controller.cron === TRANSCRIPT_QUEUE_CRON) {
-      try {
-        await drainTranscriptQueueBatch(env, env.DB, { limit: 1 });
-      } catch (error) {
-        console.error(JSON.stringify({ event: "transcript-queue-drain-failed", error: String(error?.message || error) }));
-      }
       return;
     }
     try {
