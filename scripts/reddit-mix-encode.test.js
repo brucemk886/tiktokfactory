@@ -13,6 +13,8 @@ test("final mux locks video bitrate at 2000k", () => {
   assert.match(mixJob, /"-rc", "cbr"/);
   assert.match(mixJob, /"-b:v", encode\.bitrate/);
   assert.match(mixJob, /h264_nvenc/);
+  assert.match(mixJob, /makeWordPopSubtitles/);
+  assert.match(mixJob, /word-pop/);
   assert.match(mixJob, /"-pix_fmt", "yuv420p"/);
   assert.match(mixJob, /"-profile:v", "high"/);
   assert.doesNotMatch(mixJob, /maxrate: "2\.5M"/);

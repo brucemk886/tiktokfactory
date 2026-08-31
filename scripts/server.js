@@ -10,6 +10,7 @@ import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { createPublishService } from "./publish-service.js";
 import { createAutoTaskManager, describeMissingOfficialPublishFiles, missingOfficialPublishFiles, planOfficialPublishJobs, resolveOfficialAccountAssignment } from "./auto-task-manager.js";
+import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 import { createTikTokAnalyticsService } from "./tiktok-analytics.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { createOpenAICompatibleModelProvider } from "./brain-model-provider.js";
@@ -3222,7 +3223,7 @@ function normalizeRedditMixSettings(value) {
     subtitle: {
       yPercent: clampNumber(subtitle.yPercent, 38, 82, 66),
       fontSize: clampNumber(subtitle.fontSize, 42, 92, 62),
-      animationMode: subtitle.animationMode === "word-highlight" ? "word-highlight" : "sentence",
+      animationMode: normalizeSubtitleAnimationMode(subtitle.animationMode),
       openingTitleEnabled: subtitle.openingTitleEnabled === true,
       endCardEnabled: subtitle.endCardEnabled !== false
     },

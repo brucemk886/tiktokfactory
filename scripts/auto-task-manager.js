@@ -7,6 +7,7 @@ import { mergeOfficialPublishRecords } from "./official-publish-records.js";
 import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
 import { normalizeAudioDirs } from "./audio-library-groups.js";
+import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 
 export { mergeOfficialPublishRecords };
 
@@ -799,7 +800,7 @@ function normalizeGenerationPayload(value = {}) {
     totalVideos: Math.max(0, Math.min(300, Math.floor(Number(value.totalVideos) || 0))),
     subtitleYPercent: Number(value.subtitleYPercent) || 66,
     subtitleFontSize: Number(value.subtitleFontSize) || 62,
-    subtitleAnimationMode: value.subtitleAnimationMode === "word-highlight" ? "word-highlight" : "sentence",
+    subtitleAnimationMode: normalizeSubtitleAnimationMode(value.subtitleAnimationMode),
     quality: value.quality === "quality" ? "quality" : "fast",
     autoCaptions: value.autoCaptions !== false,
     openingTitleEnabled: value.openingTitleEnabled === true,

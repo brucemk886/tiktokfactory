@@ -19,6 +19,7 @@ import { resolveStorageDirs } from "./storage-paths.js";
 import { planMixAudioOrder } from "./mix-audio-pick.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { makeWordPopSubtitles, normalizeSubtitleAnimationMode, subtitleNeedsWordTimestamps } from "./subtitle-animation.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -133,7 +134,7 @@ async function main() {
             audioPath,
             apiKey: process.env.ELEVENLABS_API_KEY || config.elevenLabsApiKey,
             modelId: config.elevenLabsSttModelId || "scribe_v2",
-            requireWords: subtitleAnimationMode === "word-highlight"
+            requireWords: subtitleNeedsWordTimestamps(subtitleAnimationMode)
           })).captions;
         } catch (error) {
           if (error?.code !== "EMPTY_TRANSCRIPT") throw error;
@@ -778,9 +779,11 @@ function buildFinishVideoFilters({
   if (titleFilter) filters.push(titleFilter);
   if (Array.isArray(visibleCaptions?.cues) && visibleCaptions.cues.length) {
     const assPath = path.join(workFolder, "captions.ass");
-    const ass = subtitleAnimationMode === "word-highlight" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
-      ? makeWordHighlightSubtitles(visibleCaptions.cues, visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
-      : makeAssSubtitles(visibleCaptions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
+    const ass = subtitleAnimationMode === "word-pop" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
+      ? makeWordPopSubtitles(visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
+      : subtitleAnimationMode === "word-highlight" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
+        ? makeWordHighlightSubtitles(visibleCaptions.cues, visibleCaptions.words, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent })
+        : makeAssSubtitles(visibleCaptions.cues, { width, height, fontFile, fontSize: subtitleFontSize, yPercent: subtitleYPercent });
     fs.writeFileSync(assPath, ass, "utf8");
     filters.push(`subtitles='${ffPath(assPath).replace(/'/g, "\\'")}'`);
   }
@@ -1360,9 +1363,6 @@ function clampNumber(value, min, max, fallback) {
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
 }
 
-function normalizeSubtitleAnimationMode(value) {
-  return value === "word-highlight" ? "word-highlight" : "sentence";
-}
 
 function progress(done, total, stagePercent) {
   const base = total > 0 ? (done / total) * 100 : 0;
