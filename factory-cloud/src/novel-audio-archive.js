@@ -21,6 +21,17 @@ export async function deleteNovelAudio(env, audioId) {
   return true;
 }
 
+export async function headNovelAudio(env, audioId) {
+  const key = novelAudioObjectKey(audioId);
+  if (!key || !env?.ARCHIVE) return null;
+  const object = await env.ARCHIVE.head(key);
+  if (!object) return null;
+  return {
+    size: Number(object.size) || 0,
+    contentType: object.httpMetadata?.contentType || "audio/mpeg"
+  };
+}
+
 export async function getNovelAudioBytes(env, audioId) {
   const key = novelAudioObjectKey(audioId);
   if (!key || !env?.ARCHIVE) return null;

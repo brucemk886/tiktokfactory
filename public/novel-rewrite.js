@@ -257,7 +257,7 @@ function renderVoicedScripts() {
       ${voicedScriptMeta(script)}
       <p class="${failed ? "is-error" : pending ? "is-pending" : ""}" ${pending ? "data-transcript-status" : ""}>${escapeHtml(body)}</p>
       ${pending ? `<div class="transcript-progress" aria-hidden="true"><span data-transcript-bar style="width:${wait.percent}%"></span></div>` : ""}
-      ${failed ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}
+      ${script.sourceType === "peer-hit" && !pending ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}
     </article>`;
   }).join("");
   elements.voicedScripts.querySelectorAll("[data-retry-id]").forEach((button) => {

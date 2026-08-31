@@ -10,10 +10,11 @@ import {
   uploadedAudioScriptText
 } from "../../scripts/novel-audio-import.js";
 import { transcribeAudioBuffer } from "../../scripts/scribe-transcribe.js";
-import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, putNovelAudio } from "./novel-audio-archive.js";
+import { shouldRestorePeerSourceAudio } from "../../scripts/peer-audio-restore.js";
+import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, headNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
 import { attachNovelHitStats, buildAudioHitWeights, buildOwnHitSnapshot } from "../../scripts/novel-hit-scores.js";
-import { listPeerHitRows } from "./peer-hits-store.js";
+import { findPeerHitById, listPeerHitRows } from "./peer-hits-store.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
@@ -133,6 +134,15 @@ export async function handleNovels(request, env, url, session, ctx) {
       return json(await transcribePeerScriptsForNovel(env, db, decodeURIComponent(transcribePeerMatch[1]), ctx));
     } catch (error) {
       return errorJson(error.message || "识别口播失败。", error.statusCode || 400);
+    }
+  }
+
+  if (method === "POST" && pathname === "/api/novel-content/repair-peer-audios") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以修复同行音频。", 403);
+    try {
+      return json(await repairOverwrittenPeerAudios(env, db, await readJson(request).catch(() => ({}))));
+    } catch (error) {
+      return errorJson(error.message || "修复同行音频失败。", error.statusCode || 400);
     }
   }
 
@@ -889,6 +899,7 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
   script.updatedAt = new Date().toISOString();
   await writeScripts(db, store.scripts);
   try {
+    if (force) await restorePeerSourceAudio(env, db, script);
     const file = await getNovelAudioBytes(env, audioId);
     if (!file?.bytes?.byteLength) throw Object.assign(new Error("没有这份音频文件。"), { statusCode: 404 });
     const result = await transcribeAudioBuffer({
@@ -903,6 +914,11 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
     script.transcriptProvider = result.provider;
     script.transcriptModel = result.model;
     script.transcriptError = "";
+    const spokenEnd = Number(result.words?.[result.words.length - 1]?.end);
+    if (script.audio) {
+      script.audio.size = file.size || file.bytes.byteLength;
+      if (Number.isFinite(spokenEnd) && spokenEnd > 0) script.audio.duration = spokenEnd;
+    }
     script.updatedAt = new Date().toISOString();
     await writeScripts(db, store.scripts);
     return script;
@@ -913,6 +929,82 @@ export async function transcribeNovelScript(env, db, novelId, scriptId, { force 
     await writeScripts(db, store.scripts);
     throw error;
   }
+}
+
+async function restorePeerSourceAudio(env, db, script) {
+  if (String(script.sourceType || "") !== "peer-hit") return false;
+  const hit = await findPeerHitById(db, script.peerHitId);
+  return restorePeerSourceAudioFromHit(env, script, hit);
+}
+
+async function restorePeerSourceAudioFromHit(env, script, hit) {
+  const sourceId = String(hit?.audioId || "").trim();
+  const destId = String(script.audioId || script.audio?.id || "").trim();
+  if (!sourceId || !destId || sourceId === destId) return false;
+  const sourceHead = await headNovelAudio(env, sourceId);
+  const destHead = await headNovelAudio(env, destId);
+  const sourceSize = sourceHead?.size || Number(hit?.audioSize || 0);
+  const destSize = destHead?.size || Number(script.audio?.size || 0);
+  if (!shouldRestorePeerSourceAudio({
+    destSize,
+    sourceSize,
+    destDuration: script.audio?.duration
+  })) return false;
+  const copied = await copyNovelAudio(env, sourceId, destId);
+  if (script.audio) {
+    script.audio.size = copied.size || sourceSize;
+    script.audio.fileName = hit.audioName || script.audio.fileName;
+    script.audio.duration = 0;
+  }
+  return true;
+}
+
+export async function repairOverwrittenPeerAudios(env, db, { limit = 40 } = {}) {
+  const scripts = await listNovelScripts(db);
+  const { results } = await db.prepare(`
+    SELECT id, audio_id, audio_size, audio_name FROM factory_peer_hits
+  `).all();
+  const hitById = new Map((results || []).map((row) => [String(row.id || ""), {
+    id: row.id,
+    audioId: row.audio_id || "",
+    audioSize: Number(row.audio_size) || 0,
+    audioName: row.audio_name || ""
+  }]));
+  const max = Math.max(1, Math.min(80, Number(limit) || 40));
+  let scanned = 0;
+  let repaired = 0;
+  let skipped = 0;
+  const items = [];
+  for (const script of scripts) {
+    if (String(script.sourceType || "") !== "peer-hit") continue;
+    scanned += 1;
+    if (repaired >= max) continue;
+    const hit = hitById.get(String(script.peerHitId || ""));
+    const destId = String(script.audioId || script.audio?.id || "").trim();
+    const sourceId = String(hit?.audioId || "").trim();
+    try {
+      const restored = await restorePeerSourceAudioFromHit(env, script, hit);
+      if (!restored) {
+        skipped += 1;
+        continue;
+      }
+      script.transcriptStatus = "pending";
+      script.transcriptError = "";
+      script.updatedAt = new Date().toISOString();
+      repaired += 1;
+      items.push({
+        scriptId: script.id,
+        novelId: script.novelId,
+        destId,
+        sourceId,
+        size: Number(script.audio?.size || 0)
+      });
+    } catch {
+      skipped += 1;
+    }
+  }
+  if (repaired) await writeScripts(db, scripts);
+  return { scanned, repaired, skipped, more: repaired >= max, items };
 }
 
 export async function pruneDraftScripts(db, novelId, payload = {}) {

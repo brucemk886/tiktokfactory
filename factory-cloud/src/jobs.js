@@ -2,7 +2,7 @@ import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
-import { attachAudioGenerateResults, buildAudioGeneratePayload, buildWorkerAudioHitWeights, mergeImportedNovelStore, persistOpeningVariantScripts } from "./novels.js";
+import { attachAudioGenerateResults, buildAudioGeneratePayload, buildWorkerAudioHitWeights, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
@@ -292,6 +292,14 @@ async function handleWorkerApi(request, env, url) {
       message: "本机工人在线，混剪任务会在 Local Factory 执行。"
     });
     return json({ ok: true, novelImport, archive });
+  }
+
+  if (method === "POST" && pathname === "/api/worker/repair-peer-audios") {
+    try {
+      return json(await repairOverwrittenPeerAudios(env, env.DB, await readJson(request).catch(() => ({}))));
+    } catch (error) {
+      return errorJson(error.message || "修复同行音频失败。", error.statusCode || 400);
+    }
   }
 
   if (method === "POST" && pathname === "/api/worker/hello") {

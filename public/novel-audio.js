@@ -632,24 +632,22 @@ function audioCard(script) {
   const audioId = audio.id || script.audioId;
   const performance = script.performance || {};
   const isPeer = script.sourceType === "peer-hit";
-  const listenHref = isPeer ? peerListenHref(script) : "";
   return `
     <article class="audio-card${script.mixEnabled === false ? " is-off" : ""}" data-voiced-id="${escapeHtml(script.id)}">
       <div class="audio-card-head">
         <div>
           <h2>${escapeHtml(script.versionLabel || script.title || "未命名版本")}</h2>
-          <p>${escapeHtml(sourceLabel(script.sourceType))} · ${escapeHtml(formatDate(audio.createdAt || script.createdAt))} · ${formatDuration(audio.duration)} · ${formatSize(audio.size)}</p>
+          <p>${escapeHtml(sourceLabel(script.sourceType))} · ${escapeHtml(formatDate(audio.createdAt || script.createdAt))} · ${formatSize(audio.size)}</p>
         </div>
         <div class="audio-card-actions">
-          <label class="mix-check">
-            <input type="checkbox" data-script-id="${escapeHtml(script.id)}" ${script.mixEnabled === false ? "" : "checked"} />
-            生效音频
-          </label>
-          ${isPeer
-            ? (listenHref
-              ? `<a class="primary-action peer-listen" href="${escapeAttr(listenHref)}" target="_blank" rel="noreferrer">去听原片</a>`
-              : `<span class="play-hint">没有视频链接</span>`)
-            : `<button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>`}
+          <div class="mix-block">
+            <label class="mix-check">
+              <input type="checkbox" data-script-id="${escapeHtml(script.id)}" ${script.mixEnabled === false ? "" : "checked"} />
+              生效音频
+            </label>
+            <span class="audio-duration">时长 ${formatDuration(audio.duration)}</span>
+          </div>
+          ${isPeer ? "" : `<button class="quiet-action" type="button" data-reupload-id="${escapeHtml(script.id)}">传到网页试听</button>`}
           <a class="quiet-action" href="/novel-rewrite?novel=${encodeURIComponent(state.novelId)}&script=${encodeURIComponent(script.id)}">去改写</a>
           <button class="quiet-action delete-script" type="button" data-delete-voiced-id="${escapeHtml(script.id)}">删除</button>
         </div>
@@ -677,13 +675,6 @@ function audioCard(script) {
 
 function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
-}
-
-function peerListenHref(script) {
-  const videos = Array.isArray(script.peerVideos) && script.peerVideos.length
-    ? script.peerVideos
-    : (Array.isArray(script.scaleRun?.videos) ? script.scaleRun.videos : []);
-  return videos.find((video) => video.videoUrl)?.videoUrl || "";
 }
 
 function isPlaceholderUploadedScript(text) {
@@ -1123,7 +1114,7 @@ function formatDate(value) {
 
 function formatDuration(value) {
   const seconds = Math.max(0, Math.round(Number(value) || 0));
-  if (!seconds) return "时长未知";
+  if (!seconds) return "未知";
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
