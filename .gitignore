@@ -21,6 +21,7 @@ tmp/
 
 # Audio/video and subtitle artifacts
 *.mp3
+!public/kokoro-previews/*.mp3
 *.wav
 *.m4a
 *.aac

@@ -913,6 +913,25 @@ function selectedPreviewUrl() {
   return elements.voiceSelect?.selectedOptions[0]?.dataset.previewUrl || "";
 }
 
+function previewAudioSrc(voiceId) {
+  const listed = selectedPreviewUrl();
+  if (listed) return listed;
+  if (selectedTtsProvider() === "kokoro" || /^[ab][mf]_/.test(voiceId)) {
+    return `/kokoro-previews/${encodeURIComponent(voiceId)}.mp3`;
+  }
+  return `/api/elevenlabs/voices/${encodeURIComponent(voiceId)}/preview`;
+}
+
+function previewErrorText(error) {
+  const text = String(error?.message || "").trim();
+  if (/no supported source|NotSupportedError|NotAllowedError|failed to load/i.test(text)) {
+    return selectedTtsProvider() === "kokoro"
+      ? "这条 Kokoro 试听还没准备好。可以换一个音色，或直接生成一条听效果。"
+      : "试听文件打不开，请换一个声音再试。";
+  }
+  return text || "试听失败。";
+}
+
 function stopVoicePreview() {
   const audio = elements.voicePreview;
   if (!audio) return;
@@ -933,13 +952,13 @@ async function previewSelectedVoice() {
   elements.previewVoiceButton.disabled = true;
   elements.previewVoiceButton.textContent = "试听中...";
   try {
-    audio.src = selectedPreviewUrl() || `/api/elevenlabs/voices/${encodeURIComponent(voiceId)}/preview`;
+    audio.src = previewAudioSrc(voiceId);
     await audio.play();
     elements.previewVoiceButton.textContent = "停止";
     setAudioStatus("正在试听所选声音。");
   } catch (error) {
     stopVoicePreview();
-    setAudioStatus(error.message || "试听失败。", "error");
+    setAudioStatus(previewErrorText(error), "error");
   } finally {
     elements.previewVoiceButton.disabled = false;
   }

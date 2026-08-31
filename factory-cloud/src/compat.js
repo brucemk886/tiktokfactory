@@ -1,7 +1,7 @@
 import { applyArchiveViewsToSnapshot, collectSnapshotVideoIds, dashboardFromSnapshot } from "../../scripts/asset-usage-impact.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
-import { errorJson, json, now, readJson, safeId } from "./http.js";
+import { errorJson, json, now, readJson, redirect, safeId } from "./http.js";
 import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob, videosForOfficialRetry } from "./jobs.js";
 import { kvGet, kvSet } from "./kv.js";
 import { serveNovelAudio } from "./novel-audio-archive.js";
@@ -429,7 +429,7 @@ export async function handleCompat(request, env, url, session) {
   if (method === "GET" && /^\/api\/elevenlabs\/voices\/[^/]+\/preview$/.test(pathname)) {
     const voiceId = decodeURIComponent(pathname.split("/")[4] || "");
     if (isKokoroVoiceId(voiceId)) {
-      return errorJson("Kokoro 试听只在本机工人出声。线上先选好音色，生成后就能在网页播放。", 400);
+      return redirect(`/kokoro-previews/${voiceId}.mp3`);
     }
     return null;
   }

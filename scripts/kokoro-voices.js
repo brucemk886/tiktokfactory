@@ -37,6 +37,10 @@ export function resolveVoiceForProvider(provider, voiceId) {
   return resolveKokoroVoice(voiceId);
 }
 
+export function kokoroPreviewUrl(voiceId) {
+  return `/kokoro-previews/${resolveKokoroVoice(voiceId)}.mp3`;
+}
+
 export function listKokoroVoices({ defaultVoiceId = "" } = {}) {
   const selected = resolveKokoroVoice(defaultVoiceId);
   const voices = KOKORO_VOICES.map(mapKokoroVoice);
@@ -75,7 +79,7 @@ function mapKokoroVoice(voice) {
     ageLabel: age === "middle_aged" ? "中年" : "青年",
     languages: ["en"],
     languageLabels: [british ? "English (UK)" : "English"],
-    previewUrl: ""
+    previewUrl: `/kokoro-previews/${voice.id}.mp3`
   };
 }
 

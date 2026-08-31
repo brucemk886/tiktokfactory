@@ -16,4 +16,5 @@ test("kokoro voice list is UI-shaped and does not need an API key", () => {
   assert.ok(listed.voices.every((voice) => Array.isArray(voice.languages)));
   assert.ok(listed.filters.languages[0].value);
   assert.ok(listed.filters.genders.some((item) => item.label === "男性"));
+  assert.equal(listed.voices.find((voice) => voice.id === "am_michael").previewUrl, "/kokoro-previews/am_michael.mp3");
 });
