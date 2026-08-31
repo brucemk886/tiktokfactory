@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260831-4" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260831-5" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -15,11 +15,11 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">这里只写开头。勾选后保存到音频页再配音。没点保存的预览不会留下。</p>
+          <p id="pageLead">主流程是改写已经验证的同行爆款口播，保存后按下面的配音设置直接出声。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
-          <a id="audioLink" class="primary-action" href="/novel-audio">去音频页配音</a>
+          <a id="audioLink" class="quiet-action" href="/novel-audio">去音频页</a>
           <a id="effectsLink" class="quiet-action" href="/novel-effects">小说数据统计</a>
         </div>
       </header>
@@ -52,15 +52,77 @@
           <div class="section-heading">
             <div><span>AUDIO COPY</span><h2>已配音文案</h2></div>
           </div>
-          <p class="hint">导入后会自动排队识别口播。点「去改写」也可看这条；识别错了或时长不对，点「重新识别」会先找回同行原音频再听写。</p>
+          <p class="hint">导入后会自动排队识别口播。对照这条改写；识别错了或时长不对，点「重新识别」会先找回同行原音频再听写。</p>
           <div id="voicedScripts" class="voiced-scripts"></div>
+        </section>
+
+        <section class="voice-panel">
+          <div class="section-heading">
+            <div><span>VOICE</span><h2>配音设置</h2></div>
+          </div>
+          <p class="hint">改写保存后按这里的音色出声。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。ElevenLabs 只在指定音色时再用。</p>
+          <p id="modelFixed" class="model-fixed">配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span></p>
+          <div class="voice-studio">
+            <label class="provider-pick">
+              <span>配音引擎</span>
+              <select id="ttsProvider">
+                <option value="kokoro">Kokoro 本机出声（默认，免字符费）</option>
+                <option value="elevenlabs">ElevenLabs Multilingual v2</option>
+              </select>
+            </label>
+            <div class="voice-filter-bar" aria-label="声音筛选">
+              <label><span>语言</span><select id="voiceLanguage"><option value="">全部</option></select></label>
+              <label><span>类别</span><select id="voiceCategory"><option value="">全部</option></select></label>
+              <label><span>性别</span><select id="voiceGender"><option value="">全部</option></select></label>
+              <label><span>年龄</span><select id="voiceAge"><option value="">全部</option></select></label>
+            </div>
+            <div class="voice-pick">
+              <label class="voice-pick-main">
+                <span>默认声音</span>
+                <select id="voiceSelect">
+                  <option value="">正在读取声音...</option>
+                </select>
+              </label>
+              <div class="voice-pick-actions">
+                <button id="previewVoiceBtn" type="button">试听</button>
+                <button id="reloadVoicesBtn" type="button">重新读取</button>
+              </div>
+            </div>
+            <audio id="voicePreview" preload="none"></audio>
+            <details class="voice-id-details">
+              <summary>手动填写 Voice ID</summary>
+              <input id="voiceIdInput" type="text" maxlength="80" placeholder="也可以直接粘贴 Voice ID" />
+            </details>
+          </div>
+          <label class="speed-field">
+            <span>配音速度 <em id="speechSpeedValue">1.00×</em></span>
+            <input id="speechSpeed" type="range" min="0.7" max="1.2" step="0.05" value="1" />
+            <small class="field-hint">1.00 是正常语速。要压在 2 分半内，英文口播控制在 320–360 词。</small>
+          </label>
+          <label class="speak-title-check">
+            <input id="speakOpeningTitle" type="checkbox" />
+            开头标题也生成音频
+          </label>
+          <div class="audio-dir-block">
+            <span>保存到本机音频目录</span>
+            <select id="audioGroupSelect">
+              <option value="__novel__">按平台和书名自动建文件夹</option>
+            </select>
+            <input id="audioDir" type="hidden" />
+            <small id="audioGroupHint">默认写到 F:\音频目录\平台\书名。线上点配音后，工人机会自动建文件夹。</small>
+          </div>
+          <div id="pendingVoiceRow" class="voice-generate-row" hidden>
+            <p id="pendingVoiceHint"></p>
+            <button id="generatePendingVoiceBtn" class="primary-action" type="button">为未出音频的改写配音</button>
+          </div>
+          <p id="audioStatus" class="list-status" role="status"></p>
         </section>
 
         <form id="rewriteForm" class="rewrite-editor">
           <div class="section-heading">
             <div><span>WRITE</span><h2>写开头</h2></div>
           </div>
-          <p id="baseHint" class="hint">生成后先看文案，再勾选保存到音频页。配音、选声音都在音频页。</p>
+          <p id="baseHint" class="hint">对照上面的同行口播生成改写。勾选后保存并按上面的配音设置出声。</p>
           <div class="mode-picker" role="radiogroup" aria-label="开头写法">
             <label class="mode-option is-on">
               <input name="rewriteMode" type="radio" value="ai" checked />
@@ -100,7 +162,7 @@
                 <input id="openingTitle" type="text" maxlength="80" placeholder="前 3 秒盖在画面正中，例如 She married my uncle" />
                 <button id="regenerateManualTitleBtn" class="quiet-action" type="button">重新生成</button>
               </div>
-              <small class="field-hint">只改封面标题，不改正文。保存后去音频页再决定要不要念这句。</small>
+              <small class="field-hint">只改封面标题，不改正文。要不要念这句，看上面配音设置里的「开头标题也生成音频」。</small>
             </label>
             <label class="rewrite-text-field">
               <span>新写开头文案</span>
@@ -108,7 +170,7 @@
               <small id="rewriteCount" class="field-count">0 / 4,000</small>
             </label>
             <div class="form-actions">
-              <button id="saveRewriteBtn" class="primary-action" type="submit">保存到音频页</button>
+              <button id="saveRewriteBtn" class="primary-action" type="submit">保存并配音</button>
             </div>
           </div>
           <span id="formStatus" role="status"></span>
@@ -118,17 +180,17 @@
           <div class="section-heading">
             <div><span>RESULT</span><h2 id="variantHeading">改版开头</h2></div>
           </div>
-          <p id="variantStatus" class="hint">英文口播会带中文对照。勾选后保存到音频页，再去那里配音。</p>
+          <p id="variantStatus" class="hint">英文口播会带中文对照。勾选后保存并按上面的配音设置出声。</p>
           <div class="form-actions">
             <button id="regenerateTitlesBtn" class="quiet-action" type="button">重新生成勾选标题</button>
-            <button id="saveSelectedScriptsBtn" class="primary-action" type="button">保存勾选到音频页</button>
-            <a id="savedAudioLink" class="quiet-action" hidden href="/novel-audio">去音频页配音</a>
+            <button id="saveSelectedScriptsBtn" class="primary-action" type="button">保存勾选并配音</button>
+            <a id="savedAudioLink" class="quiet-action" hidden href="/novel-audio">去音频页</a>
           </div>
           <div id="variantList" class="variant-list"></div>
         </section>
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260831-9" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260831-10" type="module"></script>
   </body>
 </html>

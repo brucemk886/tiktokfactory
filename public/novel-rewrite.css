@@ -163,6 +163,24 @@
 #formStatus.is-error { color: var(--lf-red, #c24741); }
 .audio-panel { display: grid; gap: 12px; padding: 20px; }
 .audio-panel .hint a { color: #3d4710; font-weight: 800; }
+.voice-panel { display: grid; gap: 12px; padding: 20px; border: 1px solid var(--lf-line, rgba(45, 38, 24, 0.10)); border-radius: var(--lf-radius, 14px); background: var(--lf-surface, #fffdf8); }
+.voice-panel .hint { margin: 0; }
+.voice-panel label { display: grid; gap: 7px; }
+.voice-panel label > span { color: var(--lf-muted, #6d6758); font-size: 12px; font-weight: 800; }
+.voice-panel input[type="text"], .voice-panel select { width: 100%; height: 43px; padding: 0 12px; border: 1px solid var(--lf-line-strong, rgba(45, 38, 24, 0.16)); border-radius: 5px; background: #fff; color: var(--lf-text, #1d1a14); font: inherit; }
+.provider-pick select { height: 44px; border-color: #8a9a32; border-radius: 8px; font-weight: 700; cursor: pointer; }
+.speed-field input[type="range"] { width: 100%; height: 28px; accent-color: #5c6a14; }
+.speed-field em { color: #5c6a14; font-style: normal; }
+.field-hint { color: var(--lf-muted, #6d6758); font-size: 12px; line-height: 1.5; }
+.speak-title-check { display: inline-flex; flex-direction: row; align-items: center; gap: 8px; color: var(--lf-text, #1d1a14); font-size: 12px; font-weight: 800; cursor: pointer; }
+.speak-title-check input { width: 16px; height: 16px; margin: 0; accent-color: #5c6a14; }
+.audio-dir-block { display: grid; gap: 7px; }
+.audio-dir-block > span { color: var(--lf-muted, #6d6758); font-size: 12px; font-weight: 800; }
+.voice-generate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.voice-generate-row p { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; }
+.list-status { margin: 0; color: var(--lf-muted, #6d6758); font-size: 12px; }
+.list-status.is-ok { color: var(--lf-green, #2a7a52); }
+.list-status.is-error { color: var(--lf-red, #c24741); }
 .model-fixed { margin: 0; padding: 10px 14px; border: 1px solid rgba(138, 154, 50, 0.35); border-radius: 10px; background: rgba(200, 220, 90, 0.18); color: var(--lf-text, #1d1a14); font-size: 13px; }
 .model-fixed strong { margin-right: 8px; }
 .model-fixed span { color: var(--lf-muted, #6d6758); font-size: 12px; }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>小说详情 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-audio.css?v=20260831-6" />
+    <link rel="stylesheet" href="/novel-audio.css?v=20260831-7" />
     <link rel="stylesheet" href="/rewrite-records.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
@@ -16,106 +16,21 @@
         <div>
           <p class="library-kicker">NOVEL AUDIO</p>
           <h1 id="pageTitle">小说详情</h1>
-          <p id="pageLead">改写页保存的文案在这里配音。也可以直接上传已经做好的 mp3。</p>
+          <p id="pageLead">这里看已经导入或改写出声的音频。配音和改写都在改写页。</p>
         </div>
         <div class="header-actions">
-          <button id="uploadAudioTopBtn" class="primary-action" type="button">上传音频</button>
           <a class="quiet-action" href="/novel-library">返回书单</a>
-          <a id="rewriteLink" class="quiet-action" href="/novel-rewrite">去改写</a>
+          <a id="rewriteLink" class="primary-action" href="/novel-rewrite">去改写</a>
         </div>
       </header>
 
       <section id="summary" class="audio-summary" hidden></section>
 
-      <section class="upload-panel">
-        <div class="section-heading">
-          <div><span>IMPORT</span><h2>上传已有音频</h2></div>
-          <button id="uploadAudioPanelBtn" class="primary-action" type="button">选择 mp3 上传</button>
-        </div>
-        <p class="hint">已经用别的工具做好的 mp3，点这里就能挂到这本书。有待配音文案就按顺序贴上去，没有就新增一条「上传音频」。</p>
-        <p id="uploadStatus" class="list-status" role="status"></p>
-      </section>
-
-      <section class="voice-panel">
-        <div class="section-heading">
-          <div><span>VOICE</span><h2>配音设置</h2></div>
-        </div>
-        <p class="hint">默认用本机 Kokoro 出声，并同时写下词时间，混剪直接走字幕缓存，不再调用 Scribe。上传的旧音频、ElevenLabs 旧音仍用 Scribe。ElevenLabs 只在指定音色时再用。</p>
-        <p id="modelFixed" class="model-fixed">配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span></p>
-        <div class="voice-studio">
-          <label class="provider-pick">
-            <span>配音引擎</span>
-            <select id="ttsProvider">
-              <option value="kokoro">Kokoro 本机出声（默认，免字符费）</option>
-              <option value="elevenlabs">ElevenLabs Multilingual v2</option>
-            </select>
-          </label>
-          <div class="voice-filter-bar" aria-label="声音筛选">
-            <label><span>语言</span><select id="voiceLanguage"><option value="">全部</option></select></label>
-            <label><span>类别</span><select id="voiceCategory"><option value="">全部</option></select></label>
-            <label><span>性别</span><select id="voiceGender"><option value="">全部</option></select></label>
-            <label><span>年龄</span><select id="voiceAge"><option value="">全部</option></select></label>
-          </div>
-          <div class="voice-pick">
-            <label class="voice-pick-main">
-              <span>默认声音</span>
-              <select id="voiceSelect">
-                <option value="">正在读取声音...</option>
-              </select>
-            </label>
-            <div class="voice-pick-actions">
-              <button id="previewVoiceBtn" type="button">试听</button>
-              <button id="reloadVoicesBtn" type="button">重新读取</button>
-            </div>
-          </div>
-          <audio id="voicePreview" preload="none"></audio>
-          <details class="voice-id-details">
-            <summary>手动填写 Voice ID</summary>
-            <input id="voiceIdInput" type="text" maxlength="80" placeholder="也可以直接粘贴 Voice ID" />
-          </details>
-        </div>
-        <label class="speed-field">
-          <span>配音速度 <em id="speechSpeedValue">1.00×</em></span>
-          <input id="speechSpeed" type="range" min="0.7" max="1.2" step="0.05" value="1" />
-          <small class="field-hint">1.00 是正常语速。要压在 2 分半内，英文口播控制在 320–360 词。</small>
-        </label>
-        <div class="audio-dir-block">
-          <span>保存到本机音频目录</span>
-          <div class="audio-dir-row">
-            <select id="audioGroupSelect">
-              <option value="__novel__">按平台和书名自动建文件夹</option>
-            </select>
-            <button id="uploadAudioBtn" type="button">上传音频</button>
-          </div>
-          <input id="audioDir" type="hidden" />
-          <input id="uploadAudioInput" type="file" accept="audio/mpeg,.mp3" multiple hidden />
-          <small id="audioGroupHint">默认写到 F:\音频目录\平台\书名。也可直接上传已生成的 mp3，按待配音顺序挂上；没有待配音会新增一条。</small>
-        </div>
-        <p id="audioStatus" class="list-status" role="status"></p>
-      </section>
-
-      <section class="openings-heading">
-        <div>
-          <p class="library-kicker">PENDING</p>
-          <h2>待配音</h2>
-          <p>改写页保存、还没出音频的开头。勾选后点「一键生成勾选音频」。</p>
-        </div>
-      </section>
-      <div id="pendingToolbar" class="mix-toolbar" hidden>
-        <label class="speak-title-check">
-          <input id="speakOpeningTitle" type="checkbox" />
-          开头标题也生成音频
-        </label>
-        <button id="generatePendingBtn" class="primary-action" type="button">一键生成勾选音频</button>
-        <span id="pendingStatus" role="status"></span>
-      </div>
-      <section id="pendingList" class="audio-list"></section>
-
       <section class="openings-heading">
         <div>
           <p class="library-kicker">OPENINGS</p>
           <h2>已配音</h2>
-          <p>生成时工人会把试听文件传到线上，可直接播放。保存到本机只是拷给混剪用。</p>
+          <p>同行爆款导入后会自动识别口播。改写出声也在改写页完成。保存到本机只是拷给混剪用。</p>
         </div>
       </section>
       <p id="listStatus" class="list-status">正在读取改写音频...</p>
@@ -144,6 +59,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-audio.js?v=20260831-9" type="module"></script>
+    <script src="/novel-audio.js?v=20260831-10" type="module"></script>
   </body>
 </html>

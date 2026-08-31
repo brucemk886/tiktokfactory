@@ -1,4 +1,13 @@
-import { waitForCloudJob } from "./audio-job.js";
+import { requestAudioJob, waitForCloudJob } from "./audio-job.js";
+import {
+  bindVoiceStudio,
+  loadVoiceControls,
+  selectedAudioDir,
+  selectedSpeechSpeed,
+  selectedTtsProvider,
+  selectedVoiceId,
+  speakOpeningTitle
+} from "./voice-studio.js";
 
 const params = new URLSearchParams(location.search);
 const elements = {
@@ -36,7 +45,28 @@ const elements = {
   effectsLink: document.querySelector("#effectsLink"),
   audioLink: document.querySelector("#audioLink"),
   voicedScriptsPanel: document.querySelector("#voicedScriptsPanel"),
-  voicedScripts: document.querySelector("#voicedScripts")
+  voicedScripts: document.querySelector("#voicedScripts"),
+  ttsProvider: document.querySelector("#ttsProvider"),
+  voiceLanguage: document.querySelector("#voiceLanguage"),
+  voiceCategory: document.querySelector("#voiceCategory"),
+  voiceGender: document.querySelector("#voiceGender"),
+  voiceAge: document.querySelector("#voiceAge"),
+  voiceSelect: document.querySelector("#voiceSelect"),
+  voiceIdInput: document.querySelector("#voiceIdInput"),
+  modelFixed: document.querySelector("#modelFixed"),
+  speechSpeed: document.querySelector("#speechSpeed"),
+  speechSpeedValue: document.querySelector("#speechSpeedValue"),
+  reloadVoicesButton: document.querySelector("#reloadVoicesBtn"),
+  previewVoiceButton: document.querySelector("#previewVoiceBtn"),
+  voicePreview: document.querySelector("#voicePreview"),
+  speakOpeningTitle: document.querySelector("#speakOpeningTitle"),
+  audioDir: document.querySelector("#audioDir"),
+  audioGroupSelect: document.querySelector("#audioGroupSelect"),
+  audioGroupHint: document.querySelector("#audioGroupHint"),
+  generatePendingVoiceButton: document.querySelector("#generatePendingVoiceBtn"),
+  pendingVoiceRow: document.querySelector("#pendingVoiceRow"),
+  pendingVoiceHint: document.querySelector("#pendingVoiceHint"),
+  audioStatus: document.querySelector("#audioStatus")
 };
 
 const SMART_STYLE_ID = "smart-strongest";
@@ -60,7 +90,21 @@ const state = {
   openingJobId: "",
   restoringOpeningJob: false,
   transcriptWait: null,
-  transcriptTimer: 0
+  transcriptTimer: 0,
+  voices: [],
+  audioGroups: [],
+  voiceId: "",
+  ttsProvider: "kokoro",
+  defaultMaleVoiceId: "am_adam",
+  defaultFemaleVoiceId: "af_jessica"
+};
+
+const voiceCtx = {
+  elements,
+  state,
+  get api() { return api; },
+  setStatus: (message, tone) => setVoiceStatus(message, tone),
+  getNovel: () => state.novel
 };
 
 elements.novelPicker.addEventListener("change", () => {
@@ -83,6 +127,9 @@ setRewriteMode("ai");
 setOpeningModel(state.openingModel);
 setOpeningReasoning(state.openingReasoning);
 updateGenerateButton();
+bindVoiceStudio(voiceCtx);
+elements.generatePendingVoiceButton?.addEventListener("click", generateLeftoverPendingAudios);
+loadVoiceControls(voiceCtx);
 loadStyles();
 loadPage();
 
@@ -140,19 +187,19 @@ function renderWork() {
   ].filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join("");
   const scripts = novel.scripts || [];
   const audioCount = scripts.filter(scriptHasAudio).length;
-  const pendingCount = scripts.filter((item) => !scriptHasAudio(item)).length;
-  elements.novelStats.textContent = `${formatNumber(pendingCount)} 条待配音 · ${formatNumber(audioCount)} 条已配音 · ${formatNumber(novel.performance?.videoCount || 0)} 条视频 · ${formatNumber(novel.performance?.totalViews || 0)} 播放`;
+  elements.novelStats.textContent = `${formatNumber(audioCount)} 条已配音 · ${formatNumber(novel.performance?.videoCount || 0)} 条视频 · ${formatNumber(novel.performance?.totalViews || 0)} 播放`;
   elements.sourceExcerpt.textContent = excerpt(novel.sourceContent, 400);
   if (elements.effectsLink) elements.effectsLink.href = `/novel-effects?novel=${encodeURIComponent(novel.id)}`;
   if (elements.audioLink) elements.audioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.savedAudioLink) elements.savedAudioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.baseHint) {
-    elements.baseHint.textContent = "对照上面的免费章节和已配音文案生成。勾选后保存到音频页再配音，没点保存的预览不会留下。";
+    elements.baseHint.textContent = "对照上面的同行口播生成改写。勾选后保存并按上面的配音设置出声。";
   }
   const focusId = params.get("script") || "";
   state.parentScriptId = (novel.scripts || []).some((item) => item.id === focusId) ? focusId : state.parentScriptId || "";
   renderVoicedScripts();
   renderVariants();
+  updatePendingVoiceRow();
 }
 
 function scriptHasAudio(script) {
@@ -458,19 +505,24 @@ async function saveRewrite(event) {
   if (text.length < 20) return setStatus("文案至少需要 20 个字符。", "error");
   if (elements.saveButton) {
     elements.saveButton.disabled = true;
-    elements.saveButton.textContent = "正在保存...";
+    elements.saveButton.textContent = "正在保存并配音...";
   }
   try {
     const existing = (state.novel.scripts || []).find((item) => String(item.text || "").trim() === text);
     const script = existing || await saveCurrentScript(text);
     state.lastScriptId = script.id;
     await refreshNovel();
+    const fresh = (state.novel.scripts || []).find((item) => item.id === script.id) || script;
+    if (!scriptHasAudio(fresh)) {
+      setStatus("已保存，正在按配音设置出声...", "success");
+      await generateScriptAudios([fresh], (job) => setStatus(job.message || "工人机正在配音...", ""));
+    }
     showSavedAudioLink();
-    setStatus(`已保存到音频页。去配音：${script.openingTitle || "这条开头"}`, "success");
+    setStatus(`已保存并配音：${fresh.openingTitle || "这条开头"}`, "success");
     if (elements.saveButton) elements.saveButton.textContent = "已保存，可再改再存";
   } catch (error) {
     setStatus(error.message, "error");
-    if (elements.saveButton) elements.saveButton.textContent = "保存到音频页";
+    if (elements.saveButton) elements.saveButton.textContent = "保存并配音";
   } finally {
     if (elements.saveButton) elements.saveButton.disabled = false;
   }
@@ -499,7 +551,7 @@ async function saveCurrentScript(text, extras = {}) {
       sourceType: extras.sourceType || "manual-rewrite",
       openingTitle: extras.openingTitle || currentOpeningTitle(text),
       kept: true,
-      speakOpeningTitle: extras.speakOpeningTitle === true,
+      speakOpeningTitle: extras.speakOpeningTitle ?? speakOpeningTitle(voiceCtx),
       text
     })
   });
@@ -840,7 +892,7 @@ function applyOpeningVariantResult(data, { restored = false } = {}) {
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子开头`;
   elements.variantStatus.textContent = restored ? `已恢复上次生成的 ${state.variants.length} 个强钩子。` : `已生成 ${state.variants.length} 个强钩子。`;
   renderVariants();
-  setStatus(`${restored ? "已找回" : "已用"} ${openingModelLabel(model, reasoningEffort)} 筛选出的 ${state.variants.length} 个强钩子，并带中文对照。勾选后保存到音频页再配音。`, "success");
+  setStatus(`${restored ? "已找回" : "已用"} ${openingModelLabel(model, reasoningEffort)} 筛选出的 ${state.variants.length} 个强钩子，并带中文对照。勾选后保存并配音。`, "success");
 }
 
 function renderVariants() {
@@ -855,7 +907,7 @@ function renderVariants() {
   if (elements.regenerateTitlesButton) elements.regenerateTitlesButton.hidden = false;
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子结果`;
   const modelLabel = openingModelLabel(state.variants[0]?.model, state.variants[0]?.reasoningEffort);
-  elements.variantStatus.textContent = `已用 ${modelLabel} 按策略筛选，并给出中文对照。勾选后保存到音频页再配音。`;
+  elements.variantStatus.textContent = `已用 ${modelLabel} 按策略筛选，并给出中文对照。勾选后保存并按上面的配音设置出声。`;
   elements.variantList.innerHTML = state.variants.map((variant) => `
     <article class="variant-card" data-variant-id="${escapeHtml(variant.id)}">
       <div class="variant-head">
@@ -878,7 +930,7 @@ function renderVariants() {
         <p>${escapeHtml(variant.scriptZh || "")}</p>
       </div>` : ""}
       <small class="variant-meta">${formatNumber(wordCount(variant.script))} 词 · 预估 ${formatClock(estimateSpeechSeconds(wordCount(variant.script)))}</small>
-      <button class="quiet-action" type="button" data-save-script>${variant.status || "保存到音频页"}</button>
+      <button class="quiet-action" type="button" data-save-script>${variant.status || "保存并配音"}</button>
     </article>`).join("");
   elements.variantList.querySelectorAll(".variant-card").forEach((card) => {
     const variant = state.variants.find((item) => item.id === card.dataset.variantId);
@@ -909,7 +961,7 @@ async function saveVariants(variants) {
     for (let index = 0; index < variants.length; index += 1) {
       const variant = variants[index];
       if (variant.scriptId) {
-        variant.status = "已在音频页";
+        variant.status = "已保存";
         continue;
       }
       variant.status = variants.length > 1 ? `保存中 ${index + 1}/${variants.length}` : "保存中...";
@@ -923,10 +975,20 @@ async function saveVariants(variants) {
       variant.status = "已保存";
     }
     await refreshNovel();
+    const toVoice = variants
+      .map((variant) => (state.novel.scripts || []).find((item) => item.id === variant.scriptId))
+      .filter((script) => script && !scriptHasAudio(script));
+    if (toVoice.length) {
+      setStatus(`已保存，正在为 ${toVoice.length} 条配音...`, "success");
+      await generateScriptAudios(toVoice, (job) => setStatus(job.message || "工人机正在配音...", ""));
+      variants.forEach((variant) => {
+        if (variant.scriptId) variant.status = "已配音";
+      });
+    }
     renderVariants();
     showSavedAudioLink();
     const saved = variants.filter((item) => item.scriptId).length;
-    setStatus(`已保存 ${saved} 条到音频页，去那里选声音配音。`, "success");
+    setStatus(toVoice.length ? `已保存并配音 ${saved} 条。` : `已保存 ${saved} 条。`, "success");
   } catch (error) {
     variants.forEach((variant) => {
       if (!variant.scriptId) variant.status = "失败，可重试";
@@ -936,7 +998,7 @@ async function saveVariants(variants) {
   } finally {
     if (elements.saveSelectedScriptsButton) {
       elements.saveSelectedScriptsButton.disabled = false;
-      elements.saveSelectedScriptsButton.textContent = "保存勾选到音频页";
+      elements.saveSelectedScriptsButton.textContent = "保存勾选并配音";
     }
   }
 }
@@ -946,14 +1008,95 @@ async function refreshNovel() {
   state.novel = data.novel;
   updateNovelStats();
   renderVoicedScripts();
+  updatePendingVoiceRow();
 }
 
 function updateNovelStats() {
   if (!elements.novelStats || !state.novel) return;
   const scripts = state.novel.scripts || [];
   const audioCount = scripts.filter(scriptHasAudio).length;
-  const pendingCount = scripts.filter((item) => !scriptHasAudio(item)).length;
-  elements.novelStats.textContent = `${formatNumber(pendingCount)} 条待配音 · ${formatNumber(audioCount)} 条已配音 · ${formatNumber(state.novel.performance?.videoCount || 0)} 条视频 · ${formatNumber(state.novel.performance?.totalViews || 0)} 播放`;
+  elements.novelStats.textContent = `${formatNumber(audioCount)} 条已配音 · ${formatNumber(state.novel.performance?.videoCount || 0)} 条视频 · ${formatNumber(state.novel.performance?.totalViews || 0)} 播放`;
+}
+
+function pendingRewriteScripts() {
+  return (state.novel?.scripts || []).filter((script) => {
+    if (scriptHasAudio(script)) return false;
+    const source = String(script.sourceType || "");
+    return source !== "peer-hit" && source !== "uploaded-audio";
+  });
+}
+
+function updatePendingVoiceRow() {
+  const pending = pendingRewriteScripts();
+  if (!elements.pendingVoiceRow) return;
+  elements.pendingVoiceRow.hidden = !pending.length;
+  if (elements.pendingVoiceHint) {
+    elements.pendingVoiceHint.textContent = pending.length
+      ? `这本书还有 ${pending.length} 条改写还没出音频。`
+      : "";
+  }
+}
+
+function setVoiceStatus(message, tone = "") {
+  if (!elements.audioStatus) return;
+  elements.audioStatus.textContent = message || "";
+  elements.audioStatus.className = tone === "ok" || tone === "success"
+    ? "list-status is-ok"
+    : tone === "error" ? "list-status is-error" : "list-status";
+}
+
+async function generateScriptAudios(scripts, onProgress) {
+  const items = (scripts || []).filter((script) => script?.id && !scriptHasAudio(script) && String(script.text || "").trim().length >= 20);
+  if (!items.length) return { saved: 0 };
+  const voiceId = selectedVoiceId(voiceCtx);
+  if (!voiceId) throw new Error("请先在配音设置里选一个音色。");
+  const result = await requestAudioJob("/api/audio-library/sync-local", {
+    novelId: state.novelId,
+    novelTitle: state.novel?.title || "",
+    targetAudioDir: selectedAudioDir(voiceCtx),
+    voiceId,
+    ttsProvider: selectedTtsProvider(voiceCtx),
+    speechSpeed: selectedSpeechSpeed(voiceCtx),
+    items: items.map((script) => ({
+      novelId: state.novelId,
+      novelTitle: state.novel?.title || "",
+      platform: state.novel?.platform || "",
+      promotionCode: state.novel?.promotionCode || "",
+      promotionCopy: state.novel?.promotionCopy || "",
+      bookId: state.novel?.bookId || "",
+      scriptId: script.id,
+      title: `${state.novel.title} ${script.versionLabel || "改写"}`,
+      script: script.text,
+      openingTitle: script.openingTitle || "",
+      speakOpeningTitle: speakOpeningTitle(voiceCtx),
+      voiceId,
+      ttsProvider: selectedTtsProvider(voiceCtx),
+      speechSpeed: selectedSpeechSpeed(voiceCtx),
+      sourceType: script.sourceType || "ai-style-rewrite"
+    }))
+  }, { api, onProgress });
+  await refreshNovel();
+  return { saved: Array.isArray(result.items) ? result.items.length : items.length, result };
+}
+
+async function generateLeftoverPendingAudios() {
+  const pending = pendingRewriteScripts();
+  if (!pending.length) return setVoiceStatus("没有未出音频的改写。");
+  if (elements.generatePendingVoiceButton) {
+    elements.generatePendingVoiceButton.disabled = true;
+    elements.generatePendingVoiceButton.textContent = `正在配音 ${pending.length} 条...`;
+  }
+  try {
+    const { saved } = await generateScriptAudios(pending, (job) => setVoiceStatus(job.message || "工人机正在配音..."));
+    setVoiceStatus(saved ? `已为 ${saved} 条改写配音。` : "工人机没有返回已生成的音频。", saved ? "ok" : "error");
+  } catch (error) {
+    setVoiceStatus(error.message || "配音失败。", "error");
+  } finally {
+    if (elements.generatePendingVoiceButton) {
+      elements.generatePendingVoiceButton.disabled = false;
+      elements.generatePendingVoiceButton.textContent = "为未出音频的改写配音";
+    }
+  }
 }
 
 function wordCount(value) {
