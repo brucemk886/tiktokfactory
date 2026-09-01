@@ -1,5 +1,6 @@
 import { isPlaceholderUploadedScript } from "./novel-audio-import.js";
 import { uniqueNovelIds } from "./novel-batch-audio.js";
+import { normalizeNarratorGender, normalizeTtsProvider, resolveVoiceForNarrator } from "./kokoro-voices.js";
 
 export const PEER_REWRITE_MIN_CHARS = 80;
 export const BATCH_REWRITE_MAX_NOVELS = 10;
@@ -72,6 +73,8 @@ export function peerRewriteOpeningPayload(novel, body = {}) {
   }
   const source = resolvePeerRewriteSource(novel, sourceScriptId);
   const styles = Array.isArray(body.styles) ? body.styles : [];
+  const narratorGender = normalizeNarratorGender(body.narratorGender);
+  const ttsProvider = normalizeTtsProvider(body.ttsProvider);
   return {
     novelId: novel.id,
     title: novel.title,
@@ -89,9 +92,11 @@ export function peerRewriteOpeningPayload(novel, body = {}) {
     styles,
     model: body.model || "",
     reasoningEffort: body.reasoningEffort || "",
+    narratorGender,
+    ttsProvider,
     autoKeep: body.autoKeep === true,
     autoVoice: body.autoVoice === true,
-    voiceId: String(body.voiceId || "").trim(),
+    voiceId: resolveVoiceForNarrator(ttsProvider, body.voiceId, narratorGender),
     speechSpeed: body.speechSpeed,
     speakOpeningTitle: body.speakOpeningTitle === true
   };

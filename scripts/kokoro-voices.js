@@ -47,8 +47,17 @@ export function isKokoroVoiceId(value) {
   return KOKORO_VOICES.some((voice) => voice.id === id);
 }
 
+export function normalizeNarratorGender(value) {
+  return String(value || "").trim() === "female" ? "female" : "male";
+}
+
 export function defaultKokoroVoice(gender = "") {
-  return String(gender || "").trim() === "female" ? DEFAULT_KOKORO_FEMALE_VOICE : DEFAULT_KOKORO_MALE_VOICE;
+  return normalizeNarratorGender(gender) === "female" ? DEFAULT_KOKORO_FEMALE_VOICE : DEFAULT_KOKORO_MALE_VOICE;
+}
+
+export function kokoroVoiceGender(voiceId) {
+  const id = String(voiceId || "").trim();
+  return KOKORO_VOICES.find((voice) => voice.id === id)?.gender || "";
 }
 
 export function resolveKokoroVoice(value, { gender } = {}) {
@@ -58,6 +67,14 @@ export function resolveKokoroVoice(value, { gender } = {}) {
 export function resolveVoiceForProvider(provider, voiceId) {
   if (normalizeTtsProvider(provider) === "elevenlabs") return String(voiceId || "").trim();
   return resolveKokoroVoice(voiceId);
+}
+
+export function resolveVoiceForNarrator(provider, voiceId, gender) {
+  const narratorGender = normalizeNarratorGender(gender);
+  if (normalizeTtsProvider(provider) === "elevenlabs") return String(voiceId || "").trim();
+  const id = String(voiceId || "").trim();
+  if (id && kokoroVoiceGender(id) === narratorGender) return id;
+  return defaultKokoroVoice(narratorGender);
 }
 
 export function kokoroPreviewUrl(voiceId) {

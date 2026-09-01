@@ -92,6 +92,7 @@ export async function loadVoiceControls(ctx, force = false) {
     if (elements.speechSpeed && settings.speechSpeed) elements.speechSpeed.value = String(settings.speechSpeed);
     updateSpeechSpeedLabel(ctx);
     await loadAudioGroups(ctx);
+    if (ctx.state.narratorGender) applyNarratorGender(ctx, ctx.state.narratorGender, { persist: false });
   } catch (error) {
     setStatus?.(voiceErrorText(error.message), "error");
   }
@@ -120,6 +121,16 @@ export function selectedAudioDir(ctx) {
 
 export function speakOpeningTitle(ctx) {
   return ctx.elements.speakOpeningTitle?.checked === true;
+}
+
+export function applyNarratorGender(ctx, gender, { persist = true } = {}) {
+  const next = String(gender || "").trim() === "female" ? "female" : "male";
+  if (ctx.elements.voiceGender) ctx.elements.voiceGender.value = next;
+  const before = selectedVoiceId(ctx);
+  applyGenderDefaultVoice(ctx);
+  if (ctx.elements.voiceIdInput && ctx.state.voiceId) ctx.elements.voiceIdInput.value = ctx.state.voiceId;
+  renderVoiceOptions(ctx, ctx.state.voiceId);
+  if (persist && selectedVoiceId(ctx) && selectedVoiceId(ctx) !== before) persistVoiceSettings(ctx);
 }
 
 export async function persistVoiceSettings(ctx) {

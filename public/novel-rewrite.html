@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-4" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-6" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -15,7 +15,7 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">只改当前这本。勾选它已识别的同行口播，可一次改多条音频。不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
+          <p id="pageLead">只改当前这本。勾选它已识别的同行口播，可一次改多条音频。开头按钩子重做，后面只换说法。保存后按所选男声或女声出声。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
@@ -60,7 +60,7 @@
           <div class="section-heading">
             <div><span>WRITE</span><h2>写开头</h2></div>
           </div>
-          <p id="baseHint" class="hint">先勾选上面当前这本的同行口播，可一次改多条。不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
+          <p id="baseHint" class="hint">先勾选上面当前这本的同行口播，可一次改多条。前三句按钩子重做，后面只换说法。选男声或女声后，改写和配音都按这个性别走。</p>
           <div class="mode-picker" role="radiogroup" aria-label="开头写法">
             <label class="mode-option is-on">
               <input name="rewriteMode" type="radio" value="ai" checked />
@@ -79,6 +79,18 @@
               <option value="high">强</option>
               <option value="xhigh">极强 · 很慢</option>
             </select>
+          </div>
+          <div class="narrator-gender" role="radiogroup" aria-label="出声性别">
+            <span>出声性别</span>
+            <label class="mode-option is-on">
+              <input name="narratorGender" type="radio" value="male" checked />
+              <span>男声</span>
+            </label>
+            <label class="mode-option">
+              <input name="narratorGender" type="radio" value="female" />
+              <span>女声</span>
+            </label>
+            <small>对照口播按这个人称写，保存后按对应音色出声。底部还可换具体声音。</small>
           </div>
           <div id="aiRewritePanel">
             <div class="style-picker">
@@ -131,7 +143,7 @@
           <div class="section-heading">
             <div><span>VOICE</span><h2>配音设置</h2></div>
           </div>
-          <p class="hint">改写保存后按这里的音色出声。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。ElevenLabs 只在指定音色时再用。</p>
+          <p class="hint">改写保存后按这里的音色出声。上面选男声默认 Adam，女声默认 Jessica。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。</p>
           <p id="modelFixed" class="model-fixed">配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span></p>
           <div class="voice-studio">
             <label class="provider-pick">
@@ -191,6 +203,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260901-4" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260901-6" type="module"></script>
   </body>
 </html>

@@ -682,6 +682,7 @@ async function autoKeepAndVoiceOpeningJob(db, job, result) {
       novelId: payload.novelId,
       novelTitle: payload.title,
       voiceId: payload.voiceId,
+      ttsProvider: payload.ttsProvider,
       speechSpeed: payload.speechSpeed,
       speakOpeningTitle: payload.speakOpeningTitle === true,
       items: scripts.map((script) => ({

@@ -116,3 +116,30 @@ test("opening payload sends the peer transcript, not novel.sourceContent", () =>
   assert.equal(payload.baseOpening, "");
   assert.notEqual(payload.sourceText, novel.sourceContent);
 });
+
+test("opening payload aligns narrator gender with a matching kokoro voice", () => {
+  const novel = novelWith([
+    { id: "peer-2", sourceType: "peer-hit", transcriptStatus: "ready", text: readyText, openingTitle: "He did it on live" }
+  ]);
+  const female = peerRewriteOpeningPayload(novel, {
+    sourceScriptId: "peer-2",
+    styles: ["auto"],
+    narratorGender: "female",
+    voiceId: "am_adam"
+  });
+  assert.equal(female.narratorGender, "female");
+  assert.equal(female.voiceId, "af_jessica");
+  const kept = peerRewriteOpeningPayload(novel, {
+    sourceScriptId: "peer-2",
+    styles: ["auto"],
+    narratorGender: "female",
+    voiceId: "af_bella"
+  });
+  assert.equal(kept.voiceId, "af_bella");
+  const male = peerRewriteOpeningPayload(novel, {
+    sourceScriptId: "peer-2",
+    styles: ["auto"]
+  });
+  assert.equal(male.narratorGender, "male");
+  assert.equal(male.voiceId, "am_adam");
+});

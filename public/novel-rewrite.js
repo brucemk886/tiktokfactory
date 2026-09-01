@@ -1,5 +1,6 @@
 import { requestAudioJob, waitForCloudJob } from "./audio-job.js";
 import {
+  applyNarratorGender,
   bindVoiceStudio,
   loadVoiceControls,
   selectedAudioDir,
@@ -7,7 +8,7 @@ import {
   selectedTtsProvider,
   selectedVoiceId,
   speakOpeningTitle
-} from "./voice-studio.js";
+} from "./voice-studio.js?v=20260901-6";
 
 const params = new URLSearchParams(location.search);
 const elements = {
@@ -67,7 +68,8 @@ const elements = {
   generatePendingVoiceButton: document.querySelector("#generatePendingVoiceBtn"),
   pendingVoiceRow: document.querySelector("#pendingVoiceRow"),
   pendingVoiceHint: document.querySelector("#pendingVoiceHint"),
-  audioStatus: document.querySelector("#audioStatus")
+  audioStatus: document.querySelector("#audioStatus"),
+  narratorGenderInputs: document.querySelectorAll('input[name="narratorGender"]')
 };
 
 const SMART_STYLE_ID = "smart-strongest";
@@ -75,6 +77,7 @@ const AUTO_STYLE_ID = "auto";
 const DEFAULT_STYLE_IDS = [AUTO_STYLE_ID];
 const STYLE_STORAGE_KEY = "lf-opening-styles-v2";
 const STYLE_COPIES_STORAGE_KEY = "lf-opening-style-copies-v2";
+const NARRATOR_GENDER_STORAGE_KEY = "lf-narrator-gender";
 const BATCH_AUDIO_MAX = 10;
 const state = {
   novelId: params.get("novel") || "",
@@ -92,6 +95,7 @@ const state = {
   selectedStyles: readSavedStyles(),
   styleCopies: readSavedStyleCopies(),
   rewriteMode: "ai",
+  narratorGender: readSavedNarratorGender(),
   openingModel: readSavedOpeningModel(),
   openingReasoning: readSavedOpeningReasoning(),
   openingJobId: "",
@@ -129,14 +133,24 @@ document.querySelectorAll('input[name="rewriteMode"]').forEach((input) => {
 });
 elements.openingModel?.addEventListener("change", () => setOpeningModel(elements.openingModel.value));
 elements.openingReasoning?.addEventListener("change", () => setOpeningReasoning(elements.openingReasoning.value));
+elements.narratorGenderInputs?.forEach((input) => {
+  input.addEventListener("change", () => setNarratorGender(input.value));
+});
+elements.voiceGender?.addEventListener("change", () => {
+  const gender = elements.voiceGender.value;
+  if (gender === "male" || gender === "female") setNarratorGender(gender, { syncVoice: false });
+});
 updateCount();
 setRewriteMode("ai");
+setNarratorGender(state.narratorGender, { syncVoice: false });
 setOpeningModel(state.openingModel);
 setOpeningReasoning(state.openingReasoning);
 updateGenerateButton();
 bindVoiceStudio(voiceCtx);
 elements.generatePendingVoiceButton?.addEventListener("click", generateLeftoverPendingAudios);
-loadVoiceControls(voiceCtx);
+void loadVoiceControls(voiceCtx).then(() => {
+  applyNarratorGender(voiceCtx, state.narratorGender, { persist: false });
+});
 loadStyles();
 loadPage();
 
@@ -230,7 +244,7 @@ function renderWork() {
   if (elements.audioLink) elements.audioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.savedAudioLink) elements.savedAudioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.baseHint) {
-    elements.baseHint.textContent = "先勾选上面当前这本的同行口播，可一次改多条。不再直接改免费章节原文。保存后按页面底部的配音设置出声。";
+    elements.baseHint.textContent = "先勾选上面当前这本的同行口播，可一次改多条。前三句按钩子重做，后面只换说法。选男声或女声后，改写和配音都按这个性别走。";
   }
   syncSourceScriptIds(novel.scripts || []);
   renderVoicedScripts();
@@ -672,6 +686,36 @@ function setRewriteMode(mode) {
   updateGenerateButton();
 }
 
+function setNarratorGender(gender, { syncVoice = true } = {}) {
+  const next = gender === "female" ? "female" : "male";
+  state.narratorGender = next;
+  localStorage.setItem(NARRATOR_GENDER_STORAGE_KEY, next);
+  elements.narratorGenderInputs?.forEach((input) => {
+    input.checked = input.value === next;
+    input.closest(".mode-option")?.classList.toggle("is-on", input.checked);
+  });
+  if (syncVoice) applyNarratorGender(voiceCtx, next);
+}
+
+function readSavedNarratorGender() {
+  return localStorage.getItem(NARRATOR_GENDER_STORAGE_KEY) === "female" ? "female" : "male";
+}
+
+function selectedNarratorGender() {
+  const checked = document.querySelector('input[name="narratorGender"]:checked')?.value;
+  return checked === "female" ? "female" : state.narratorGender || "male";
+}
+
+function openingVoicePayload() {
+  return {
+    narratorGender: selectedNarratorGender(),
+    voiceId: selectedVoiceId(voiceCtx),
+    ttsProvider: selectedTtsProvider(voiceCtx),
+    speechSpeed: selectedSpeechSpeed(voiceCtx),
+    speakOpeningTitle: speakOpeningTitle(voiceCtx)
+  };
+}
+
 function setOpeningModel(model) {
   state.openingModel = model === "gpt-5.6-terra" ? "gpt-5.6-terra" : "gpt-5.6-sol";
   localStorage.setItem("lf-opening-model", state.openingModel);
@@ -996,7 +1040,8 @@ async function requestOpeningVariants(target, styles, startedAt) {
       sourceScriptId: target.source.id,
       styles,
       model: selectedOpeningModel(),
-      reasoningEffort: selectedOpeningReasoning()
+      reasoningEffort: selectedOpeningReasoning(),
+      ...openingVoicePayload()
     })
   });
   if (data.jobId && !Array.isArray(data.variants)) {

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildOperationPromptV2, clipOpeningSource, createCodexBrainService, OPENING_SOURCE_MAX, resolveOpeningModel, resolveOpeningReasoning, spokenAppCta, spokenAppCtaZh, variantsReuseSameOpeningFact } from "./codex-brain.js";
+import { buildOpeningVariantPrompt, buildOperationPromptV2, clipOpeningSource, createCodexBrainService, normalizeOpeningVariantInput, OPENING_SOURCE_MAX, resolveOpeningModel, resolveOpeningReasoning, spokenAppCta, spokenAppCtaZh, variantsReuseSameOpeningFact } from "./codex-brain.js";
 
 const APP_CTA = " Search 454311 on the Novel Master app to read the full story.";
 
@@ -306,6 +306,25 @@ test("opening source keeps a mid-length chapter and windows only longer text", (
   assert.match(clipped, /HEAD-START/);
   assert.match(clipped, /TAIL-END-REVEAL/);
   assert.match(clipped, /middle omitted/);
+});
+
+test("opening rewrite prompt keeps mid-script paraphrase and narrator gender", () => {
+  const sourceText = "The comments told him to take the other girl, and he did it on live while I stood there holding the ring he promised me last winter. I still have the screenshot and the hotel key he left on the table.";
+  const input = normalizeOpeningVariantInput({
+    title: "Sold Tonight",
+    language: "English",
+    sourceKind: "peer-transcript",
+    sourceLabel: "同行爆款",
+    sourceText,
+    styles: ["evidence-slam"],
+    narratorGender: "female"
+  });
+  assert.equal(input.narratorGender, "female");
+  const prompt = buildOpeningVariantPrompt(input);
+  assert.match(prompt, /只换说法/);
+  assert.match(prompt, /成年女性/);
+  assert.match(prompt, /中后段是同义改写/);
+  assert.equal(prompt.includes("不能写成同义改写"), false);
 });
 
 test("two smart openings must use different core facts", async (context) => {

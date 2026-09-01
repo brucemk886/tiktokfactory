@@ -58,6 +58,23 @@
 .section-heading h2 { margin: 4px 0 0; font-size: 19px; }
 .rewrite-editor textarea { min-height: 160px; resize: vertical; padding: 12px; line-height: 1.65; }
 .mode-picker { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.narrator-gender {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.narrator-gender > span {
+  color: var(--lf-muted, #6d6758);
+  font-size: 12px;
+  font-weight: 800;
+}
+.narrator-gender small {
+  flex: 1 1 220px;
+  color: var(--lf-muted, #6d6758);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .rewrite-editor label.mode-option {
   display: inline-flex;
   flex-direction: row;
