@@ -573,7 +573,10 @@ export async function persistOpeningVariantScripts(db, payload = {}, result = {}
   if (!novelId) return [];
   const novel = await hydrateNovel(db, novelId);
   if (!novel) return [];
-  const extras = { speakOpeningTitle: payload.speakOpeningTitle === true };
+  const extras = {
+    speakOpeningTitle: payload.speakOpeningTitle === true,
+    parentScriptId: String(payload.parentScriptId || payload.sourceScriptId || "").trim()
+  };
   const scripts = [];
   for (const item of openingVariantScriptPayloads(novel, result.variants, extras)) {
     scripts.push(await createScript(db, novel.id, item));

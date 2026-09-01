@@ -6,6 +6,7 @@ import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, ge
 import { kvGet, kvSet } from "./kv.js";
 import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
+import { peerRewriteOpeningPayload } from "../../scripts/novel-rewrite-source.js";
 import { loadArchiveViewsByVideoIds } from "./official-archive-store.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
 
@@ -275,23 +276,16 @@ export async function handleCompat(request, env, url, session) {
     const body = await readJson(request);
     const styles = Array.isArray(body.styles) ? body.styles : [];
     if (!styles.length) return errorJson("请先勾选至少 1 种风格，再生成改版开头。", 400);
+    let rewritePayload;
+    try {
+      rewritePayload = peerRewriteOpeningPayload(novel, body);
+    } catch (error) {
+      return errorJson(error.message || "请先勾选一条已识别完成的同行爆款口播。", error.statusCode || 400);
+    }
     const job = await enqueueJob(db, {
       type: "opening-variants",
       title: `生成 ${styles.length} 个改版开头`,
-      payload: {
-        novelId: novel.id,
-        title: novel.title,
-        language: body.language || "English",
-        sourceText: novel.sourceContent || "",
-        category: novel.category || "",
-        platform: novel.platform || "",
-        promotionCode: novel.promotionCode || "",
-        sellingPoint: novel.sellingPoint || "",
-        baseOpening: String(body.baseOpening || "").trim(),
-        styles,
-        model: body.model || "",
-        reasoningEffort: body.reasoningEffort || ""
-      },
+      payload: rewritePayload,
       createdBy: session.user.username
     });
     return json({

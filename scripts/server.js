@@ -24,6 +24,7 @@ import { createNovelEffectService } from "./novel-effect-service.js";
 import { createNovelLearningService } from "./novel-learning-service.js";
 import { createNovelStrategyService } from "./novel-strategy-service.js";
 import { publicOpeningStyles } from "./novel-opening-styles.js";
+import { peerRewriteOpeningPayload } from "./novel-rewrite-source.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
@@ -1371,20 +1372,7 @@ const server = http.createServer(async (req, res) => {
         const id = decodeURIComponent(url.pathname.split("/")[4]);
         const novel = novelContentLibrary.getNovel(id);
         const payload = await readJsonBody(req);
-        const baseOpening = String(payload.baseOpening || "").trim();
-        const result = await codexBrain.generateOpeningVariants({
-          title: novel.title,
-          language: payload.language || "English",
-          sourceText: novel.sourceContent,
-          category: novel.category,
-          platform: novel.platform,
-          promotionCode: novel.promotionCode,
-          sellingPoint: novel.sellingPoint,
-          baseOpening,
-          styles: payload.styles,
-          model: payload.model,
-          reasoningEffort: payload.reasoningEffort
-        });
+        const result = await codexBrain.generateOpeningVariants(peerRewriteOpeningPayload(novel, payload));
         return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "生成改版开头失败。" });

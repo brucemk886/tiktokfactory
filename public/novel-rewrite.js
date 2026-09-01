@@ -46,6 +46,7 @@ const elements = {
   audioLink: document.querySelector("#audioLink"),
   voicedScriptsPanel: document.querySelector("#voicedScriptsPanel"),
   voicedScripts: document.querySelector("#voicedScripts"),
+  voicedScriptsHint: document.querySelector("#voicedScriptsHint"),
   ttsProvider: document.querySelector("#ttsProvider"),
   voiceLanguage: document.querySelector("#voiceLanguage"),
   voiceCategory: document.querySelector("#voiceCategory"),
@@ -79,6 +80,8 @@ const state = {
   novel: readStashedNovel(),
   novels: [],
   parentScriptId: "",
+  sourceScriptId: "",
+  sourceScriptTouched: false,
   lastScriptId: "",
   variants: [],
   styles: [],
@@ -193,10 +196,9 @@ function renderWork() {
   if (elements.audioLink) elements.audioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.savedAudioLink) elements.savedAudioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.baseHint) {
-    elements.baseHint.textContent = "对照上面的同行口播生成改写。勾选后保存并按上面的配音设置出声。";
+    elements.baseHint.textContent = "先勾选上面的同行爆款口播，再生成改写。不再直接改免费章节原文。勾选结果后保存并按上面的配音设置出声。";
   }
-  const focusId = params.get("script") || "";
-  state.parentScriptId = (novel.scripts || []).some((item) => item.id === focusId) ? focusId : state.parentScriptId || "";
+  syncSourceScriptId(novel.scripts || []);
   renderVoicedScripts();
   renderVariants();
   updatePendingVoiceRow();
@@ -268,14 +270,75 @@ function hasVisibleTranscript(script) {
   return script?.transcriptStatus === "ready" && String(script?.text || "").trim();
 }
 
+function isReadyPeerRewriteScript(script) {
+  if (script?.sourceType !== "peer-hit") return false;
+  const status = String(script.transcriptStatus || "").trim();
+  if (status === "pending" || status === "running" || status === "failed") return false;
+  if (status && status !== "ready") return false;
+  const text = String(script.text || "").trim();
+  return text.length >= 80 && !isPlaceholderUploadedScript(text);
+}
+
+function readyPeerRewriteScripts(scripts = state.novel?.scripts || []) {
+  return (Array.isArray(scripts) ? scripts : []).filter(isReadyPeerRewriteScript);
+}
+
+function selectedPeerRewriteScript() {
+  return readyPeerRewriteScripts().find((script) => script.id === state.sourceScriptId) || null;
+}
+
+function syncSourceScriptId(scripts = state.novel?.scripts || []) {
+  const ready = readyPeerRewriteScripts(scripts);
+  if (ready.some((script) => script.id === state.sourceScriptId)) {
+    state.parentScriptId = state.sourceScriptId;
+    return;
+  }
+  if (state.sourceScriptTouched) {
+    state.sourceScriptId = "";
+    state.parentScriptId = "";
+    return;
+  }
+  const focusId = params.get("script") || "";
+  state.sourceScriptId = ready.find((script) => script.id === focusId)?.id || ready[0]?.id || "";
+  state.parentScriptId = state.sourceScriptId;
+}
+
+function selectSourceScript(scriptId, { touched = true } = {}) {
+  const next = String(scriptId || "").trim();
+  if (touched) state.sourceScriptTouched = true;
+  state.sourceScriptId = isReadyPeerRewriteScript((state.novel?.scripts || []).find((item) => item.id === next))
+    ? next
+    : "";
+  state.parentScriptId = state.sourceScriptId;
+  renderVoicedScripts();
+}
+
+function updateVoicedScriptsHint() {
+  if (!elements.voicedScriptsHint) return;
+  const selected = selectedPeerRewriteScript();
+  const readyCount = readyPeerRewriteScripts().length;
+  if (selected) {
+    const label = selected.versionLabel || selected.openingTitle || selected.title || "同行爆款";
+    elements.voicedScriptsHint.textContent = `当前对照：${label}。将按这条已识别口播改写，不再改免费章节原文。识别错了或时长不对，点「重新识别」。`;
+    return;
+  }
+  if (!readyCount) {
+    elements.voicedScriptsHint.textContent = "还没有已识别完成的同行爆款口播。等上面识别出正文并勾选后，才能对照改写。";
+    return;
+  }
+  elements.voicedScriptsHint.textContent = "勾选一条已识别的同行爆款口播，再对照它生成改写。不再直接改免费章节原文。识别错了或时长不对，点「重新识别」。";
+}
+
 function renderVoicedScripts() {
   if (!elements.voicedScriptsPanel || !elements.voicedScripts) return;
   const focusId = params.get("script") || state.parentScriptId || "";
   const scripts = (state.novel?.scripts || []).filter((script) => {
     if (!scriptHasAudio(script)) return false;
-    if (script.id === focusId) return true;
-    return hasVisibleTranscript(script);
+    if (script.id === focusId || script.id === state.sourceScriptId) return true;
+    return hasVisibleTranscript(script) || script.sourceType === "peer-hit";
   }).sort((left, right) => {
+    if (left.id === state.sourceScriptId) return -1;
+    if (right.id === state.sourceScriptId) return 1;
     if (left.id === focusId) return -1;
     if (right.id === focusId) return 1;
     if (left.sourceType === "peer-hit" && right.sourceType !== "peer-hit") return -1;
@@ -285,31 +348,54 @@ function renderVoicedScripts() {
   if (!scripts.length) {
     elements.voicedScriptsPanel.hidden = true;
     elements.voicedScripts.innerHTML = "";
+    updateVoicedScriptsHint();
     return;
   }
   elements.voicedScriptsPanel.hidden = false;
   elements.voicedScripts.innerHTML = scripts.map((script) => {
-    const focused = script.id === focusId;
+    const selected = script.id === state.sourceScriptId;
+    const selectable = isReadyPeerRewriteScript(script);
+    const isPeer = script.sourceType === "peer-hit";
     const failed = script.transcriptStatus === "failed";
-    const pending = focused && (script.transcriptStatus === "running" || needsPeerTranscript(script));
+    const pending = isPeer && (script.transcriptStatus === "running" || needsPeerTranscript(script));
     const wait = pending ? transcriptWaitView(script) : null;
     const body = failed
       ? (script.transcriptError || "口播识别失败")
       : (pending ? wait.text : (script.text || "还没有文案"));
-    return `<article class="voiced-script-card${focused ? " is-active" : ""}" data-script-id="${escapeHtml(script.id)}">
+    const title = escapeHtml(script.versionLabel || voicedScriptLabel(script));
+    const pick = isPeer
+      ? `<label class="voiced-script-pick"><input type="checkbox" ${selectable ? "" : "disabled"} ${selected ? "checked" : ""} data-source-id="${escapeHtml(script.id)}" /> <strong>${title}</strong></label>`
+      : `<strong>${title}</strong>`;
+    return `<article class="voiced-script-card${selected ? " is-active" : ""}${selectable ? " is-pickable" : ""}" data-script-id="${escapeHtml(script.id)}">
       <header>
-        <strong>${escapeHtml(script.versionLabel || voicedScriptLabel(script))}</strong>
+        ${pick}
         <small>${escapeHtml(script.openingTitle || script.title || "")}</small>
       </header>
       ${voicedScriptMeta(script)}
       <p class="${failed ? "is-error" : pending ? "is-pending" : ""}" ${pending ? "data-transcript-status" : ""}>${escapeHtml(body)}</p>
       ${pending ? `<div class="transcript-progress" aria-hidden="true"><span data-transcript-bar style="width:${wait.percent}%"></span></div>` : ""}
-      ${script.sourceType === "peer-hit" && !pending ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}
+      ${isPeer && !pending ? `<div class="voiced-script-actions"><button class="quiet-action" type="button" data-retry-id="${escapeHtml(script.id)}">重新识别</button></div>` : ""}
     </article>`;
   }).join("");
   elements.voicedScripts.querySelectorAll("[data-retry-id]").forEach((button) => {
-    button.addEventListener("click", () => transcribePeerScript(button.dataset.retryId, button));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      transcribePeerScript(button.dataset.retryId, button);
+    });
   });
+  elements.voicedScripts.querySelectorAll("[data-source-id]").forEach((checkbox) => {
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      selectSourceScript(checkbox.checked ? checkbox.dataset.sourceId : "");
+    });
+  });
+  elements.voicedScripts.querySelectorAll(".voiced-script-card.is-pickable").forEach((card) => {
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, input, label")) return;
+      selectSourceScript(card.dataset.scriptId);
+    });
+  });
+  updateVoicedScriptsHint();
   elements.voicedScripts.querySelector(".voiced-script-card.is-active")?.scrollIntoView({ block: "nearest" });
 }
 
@@ -340,6 +426,12 @@ async function watchQueuedTranscript(scriptId) {
           && !isPlaceholderUploadedScript(current.text);
         if (ready) {
           stopTranscriptWait();
+          if (!state.sourceScriptId && isReadyPeerRewriteScript(current)) {
+            state.sourceScriptId = current.id;
+            state.parentScriptId = current.id;
+          } else {
+            syncSourceScriptId(state.novel.scripts || []);
+          }
           renderVoicedScripts();
           updateNovelStats();
           setStatus("已识别口播文案。", "success");
@@ -375,6 +467,13 @@ async function transcribePeerScript(scriptId, button) {
     const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/scripts/${encodeURIComponent(scriptId)}/transcribe`, { method: "POST" });
     if (data.novel) state.novel = data.novel;
     stopTranscriptWait();
+    const fresh = (state.novel?.scripts || []).find((item) => item.id === scriptId);
+    if (!state.sourceScriptId && isReadyPeerRewriteScript(fresh)) {
+      state.sourceScriptId = fresh.id;
+      state.parentScriptId = fresh.id;
+    } else {
+      syncSourceScriptId(state.novel?.scripts || []);
+    }
     renderVoicedScripts();
     updateNovelStats();
     setStatus("已识别口播文案。", "success");
@@ -556,6 +655,7 @@ function readStashedNovel() {
 async function saveRewrite(event) {
   event.preventDefault();
   if (state.rewriteMode !== "manual") return;
+  if (!selectedPeerRewriteScript()) return setStatus("请先勾选上面已识别好的同行爆款口播，再保存改写。", "error");
   const text = elements.rewriteText.value.trim();
   if (text.length < 20) return setStatus("文案至少需要 20 个字符。", "error");
   if (elements.saveButton) {
@@ -632,14 +732,19 @@ function renderStyleOptions() {
     elements.styleOptions.innerHTML = `<p class="hint">风格列表还没加载，请刷新后再选。</p>`;
     return;
   }
-  elements.styleOptions.innerHTML = state.styles.map((style) => `
+  elements.styleOptions.innerHTML = state.styles.map((style) => {
+    const hook = style.id === AUTO_STYLE_ID
+      ? "先通读勾选的同行爆款口播，从铁证砸脸、身份炸弹、现场失控、绝境反杀里选口播真正撑得住、最容易停滑的模板。第一句必须来自该模板对应的口播明示事实。口播没有戒指、婚礼、DNA 或隐藏身份就不要硬套。"
+      : style.hook;
+    return `
     <div class="style-option${style.recommended ? " is-recommended" : ""}${state.selectedStyles.includes(style.id) ? " is-on" : ""}" data-style-id="${escapeHtml(style.id)}">
       <input type="checkbox" value="${escapeHtml(style.id)}" ${state.selectedStyles.includes(style.id) ? "checked" : ""} />
       <strong>${escapeHtml(style.label)}${style.recommended ? '<span class="style-badge">推荐</span>' : ""}</strong>
       <input type="number" min="1" max="5" value="${styleCopyCount(style.id)}" aria-label="${escapeHtml(style.label)} 条数" />
-      <em>${escapeHtml(style.hook)}</em>
+      <em>${escapeHtml(hook)}</em>
       ${style.example ? `<small>例：${escapeHtml(style.example)}</small>` : ""}
-    </div>`).join("");
+    </div>`;
+  }).join("");
   elements.styleOptions.querySelectorAll(".style-option").forEach((card) => {
     const id = card.dataset.styleId;
     const checkbox = card.querySelector("input[type=checkbox]");
@@ -754,17 +859,18 @@ function beginVariantGeneration(count) {
 async function generateVariants() {
   const styles = selectedStyleIds();
   if (!styles.length) return setStatus("请先勾选至少 1 种策略，再生成强钩子开头。", "error");
-  const baseOpening = "";
+  const source = selectedPeerRewriteScript();
+  if (!source) return setStatus("请先勾选上面已识别好的同行爆款口播，再生成改写。", "error");
   const startedAt = Date.now();
   elements.generateVariantsButton.disabled = true;
   elements.generateVariantsButton.textContent = `正在筛选 ${styles.length} 个强钩子...`;
   beginVariantGeneration(styles.length);
-  elements.variantStatus.textContent = `正在生成 ${styles.length} 个钩子。${styles.length >= 4 ? "一次 4 条以上会慢很多，建议先出 2 条。" : "标准推理通常 2–6 分钟。"}`;
+  elements.variantStatus.textContent = `正在对照勾选的同行口播生成 ${styles.length} 个钩子。${styles.length >= 4 ? "一次 4 条以上会慢很多，建议先出 2 条。" : "标准推理通常 2–6 分钟。"}`;
   try {
     let data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}/opening-variants`, {
       method: "POST",
       body: JSON.stringify({
-        baseOpening,
+        sourceScriptId: source.id,
         styles,
         model: selectedOpeningModel(),
         reasoningEffort: selectedOpeningReasoning()
@@ -1062,6 +1168,7 @@ async function refreshNovel() {
   const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
   state.novel = data.novel;
   updateNovelStats();
+  syncSourceScriptId(state.novel.scripts || []);
   renderVoicedScripts();
   updatePendingVoiceRow();
 }

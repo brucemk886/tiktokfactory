@@ -42,6 +42,7 @@ export function openingVariantScriptPayloads(novel, variants = [], extras = {}) 
       openingTitle: String(variant.openingTitle || firstHookLine(text)).trim().slice(0, 80),
       kept: true,
       speakOpeningTitle: extras.speakOpeningTitle === true,
+      parentScriptId: String(extras.parentScriptId || "").trim(),
       text
     };
   }).filter(Boolean);

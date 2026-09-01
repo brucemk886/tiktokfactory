@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260831-5" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-1" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -15,7 +15,7 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">主流程是改写已经验证的同行爆款口播，保存后按下面的配音设置直接出声。</p>
+          <p id="pageLead">主流程是勾选已识别的同行爆款口播再改写，不再直接改免费章节原文。保存后按下面的配音设置直接出声。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
@@ -52,7 +52,7 @@
           <div class="section-heading">
             <div><span>AUDIO COPY</span><h2>已配音文案</h2></div>
           </div>
-          <p class="hint">导入后会自动排队识别口播，最多同时 3 条。对照这条改写；识别错了或时长不对，点「重新识别」会先找回同行原音频再听写。</p>
+          <p id="voicedScriptsHint" class="hint">勾选一条已识别的同行爆款口播，再对照它生成改写。不再直接改免费章节原文。识别错了或时长不对，点「重新识别」。</p>
           <div id="voicedScripts" class="voiced-scripts"></div>
         </section>
 
@@ -122,7 +122,7 @@
           <div class="section-heading">
             <div><span>WRITE</span><h2>写开头</h2></div>
           </div>
-          <p id="baseHint" class="hint">对照上面的同行口播生成改写。勾选后保存并按上面的配音设置出声。</p>
+          <p id="baseHint" class="hint">先勾选上面的同行爆款口播，再生成改写。不再直接改免费章节原文。勾选结果后保存并按上面的配音设置出声。</p>
           <div class="mode-picker" role="radiogroup" aria-label="开头写法">
             <label class="mode-option is-on">
               <input name="rewriteMode" type="radio" value="ai" checked />
@@ -148,7 +148,7 @@
                 <span>钩子策略</span>
                 <small id="styleCount">已选 1 / 共 6 种</small>
               </div>
-              <p class="hint">默认按每本书的免费章节选最容易爆的模板，一次先出 2 条。要指定铁证/身份等再改勾选。一次勾 4 条以上会明显变慢。</p>
+              <p class="hint">默认按勾选的同行口播选最容易爆的模板，一次先出 2 条。要指定铁证/身份等再改勾选。一次勾 4 条以上会明显变慢。</p>
               <div id="styleOptions" class="style-options"></div>
             </div>
             <div class="form-actions">
@@ -191,6 +191,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260831-14" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260901-1" type="module"></script>
   </body>
 </html>

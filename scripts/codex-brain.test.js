@@ -412,6 +412,39 @@ test("auto styles pick a template from the story instead of locking one recipe",
   assert.doesNotMatch(prompts[0], /必须按这个顺序覆盖这 2 种风格/);
 });
 
+test("peer transcript rewrite prompt uses the checked口播 instead of free chapters", async (context) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-opening-peer-"));
+  context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const prompts = [];
+  const variants = {
+    variants: [
+      { style: "scene-meltdown", styleLabel: "现场失控", title: "A", openingTitle: "He chose her on live", script: `${"The comments told him to take the other girl, and he did it on live. ".repeat(8)}${APP_CTA}`, coreFact: "live comments told him to take the other girl", titleZh: "甲", openingTitleZh: "他直播选了她", scriptZh: "评论让他选另一个女孩。" }
+    ]
+  };
+  class FakeCodex {
+    startThread() {
+      return {
+        run: async (prompt) => {
+          prompts.push(prompt);
+          return { finalResponse: JSON.stringify(variants) };
+        }
+      };
+    }
+  }
+  const service = createCodexBrainService({ root: "C:/test-project", workDir, CodexClass: FakeCodex });
+  await service.generateOpeningVariants({
+    title: "Secret Uncle",
+    sourceKind: "peer-transcript",
+    sourceLabel: "同行爆款",
+    sourceText: "The comments told him to take the other girl, and he did it on live while I stood there holding the ring he promised me last winter.",
+    styles: ["auto"]
+  });
+  assert.match(prompts[0], /先通读勾选的同行爆款口播/);
+  assert.match(prompts[0], /禁止回到免费章节另写一条/);
+  assert.match(prompts[0], /对照来源：同行爆款口播（同行爆款）/);
+  assert.doesNotMatch(prompts[0], /先通读这本书的免费章节/);
+});
+
 test("opening titles rewrite only the cover title", async (context) => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-titles-"));
   context.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
