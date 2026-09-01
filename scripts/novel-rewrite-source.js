@@ -1,6 +1,16 @@
 import { isPlaceholderUploadedScript } from "./novel-audio-import.js";
+import { uniqueNovelIds } from "./novel-batch-audio.js";
 
 export const PEER_REWRITE_MIN_CHARS = 80;
+export const BATCH_REWRITE_MAX_NOVELS = 10;
+
+export function uniqueRewriteNovelIds(value) {
+  return uniqueNovelIds(value).slice(0, BATCH_REWRITE_MAX_NOVELS);
+}
+
+export function firstReadyPeerRewriteScript(novel) {
+  return (Array.isArray(novel?.scripts) ? novel.scripts : []).find((script) => isReadyPeerRewriteScript(script)) || null;
+}
 
 export function isReadyPeerRewriteScript(script = {}) {
   if (String(script?.sourceType || "") !== "peer-hit") return false;
@@ -56,7 +66,11 @@ export function resolvePeerRewriteSource(novel, sourceScriptId) {
 }
 
 export function peerRewriteOpeningPayload(novel, body = {}) {
-  const source = resolvePeerRewriteSource(novel, body.sourceScriptId);
+  let sourceScriptId = String(body.sourceScriptId || "").trim();
+  if (!sourceScriptId && body.autoPickPeer) {
+    sourceScriptId = firstReadyPeerRewriteScript(novel)?.id || "";
+  }
+  const source = resolvePeerRewriteSource(novel, sourceScriptId);
   const styles = Array.isArray(body.styles) ? body.styles : [];
   return {
     novelId: novel.id,
@@ -74,6 +88,45 @@ export function peerRewriteOpeningPayload(novel, body = {}) {
     baseOpening: "",
     styles,
     model: body.model || "",
-    reasoningEffort: body.reasoningEffort || ""
+    reasoningEffort: body.reasoningEffort || "",
+    autoKeep: body.autoKeep === true,
+    autoVoice: body.autoVoice === true,
+    voiceId: String(body.voiceId || "").trim(),
+    speechSpeed: body.speechSpeed,
+    speakOpeningTitle: body.speakOpeningTitle === true
   };
+}
+
+export function sourceScriptIdByNovel(items = []) {
+  const map = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    const novelId = String(item?.novelId || "").trim();
+    const sourceScriptId = String(item?.sourceScriptId || "").trim();
+    if (novelId && sourceScriptId) map.set(novelId, sourceScriptId);
+  }
+  return map;
+}
+
+export function resolveBatchPeerRewriteJobs(novelById, body = {}) {
+  const novelIds = uniqueRewriteNovelIds(body.novelIds);
+  const sourceByNovel = sourceScriptIdByNovel(body.items);
+  const autoPick = body.autoPickPeer !== false;
+  return novelIds.map((novelId) => {
+    const novel = novelById instanceof Map ? novelById.get(novelId) : novelById?.[novelId];
+    if (!novel) return { novelId, skipped: true, reason: "没有找到该小说。" };
+    try {
+      return {
+        novelId,
+        title: novel.title,
+        skipped: false,
+        payload: peerRewriteOpeningPayload(novel, {
+          ...body,
+          sourceScriptId: sourceByNovel.get(novelId) || "",
+          autoPickPeer: autoPick
+        })
+      };
+    } catch (error) {
+      return { novelId, title: novel.title, skipped: true, reason: error.message || "这本还不能改写。" };
+    }
+  });
 }

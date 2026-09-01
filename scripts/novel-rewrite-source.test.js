@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { uploadedAudioScriptText } from "./novel-audio-import.js";
 import {
+  firstReadyPeerRewriteScript,
   isReadyPeerRewriteScript,
   peerRewriteOpeningPayload,
+  resolveBatchPeerRewriteJobs,
   resolvePeerRewriteSource
 } from "./novel-rewrite-source.js";
 
@@ -63,6 +65,40 @@ test("missing or unfinished peer audio is rejected", () => {
   assert.throws(() => resolvePeerRewriteSource(novel, ""), /勾选一条已识别完成的同行爆款口播/);
   assert.throws(() => resolvePeerRewriteSource(novel, "peer-1"), /还在识别中/);
   assert.throws(() => resolvePeerRewriteSource(novel, "missing"), /没有找到勾选的同行爆款口播/);
+});
+
+test("auto-pick uses the first ready peer transcript", () => {
+  const novel = novelWith([
+    { id: "peer-pending", sourceType: "peer-hit", transcriptStatus: "pending", text: uploadedAudioScriptText("hit.mp3") },
+    { id: "peer-ready", sourceType: "peer-hit", transcriptStatus: "ready", text: readyText, versionLabel: "同行爆款" }
+  ]);
+  assert.equal(firstReadyPeerRewriteScript(novel).id, "peer-ready");
+  const payload = peerRewriteOpeningPayload(novel, { styles: ["auto"], autoPickPeer: true });
+  assert.equal(payload.sourceScriptId, "peer-ready");
+  assert.equal(payload.sourceText, readyText);
+});
+
+test("batch rewrite plans one job per novel and skips books without a ready peer", () => {
+  const ready = novelWith([
+    { id: "peer-2", sourceType: "peer-hit", transcriptStatus: "ready", text: readyText, versionLabel: "同行爆款" }
+  ]);
+  ready.id = "novel-ready";
+  const pending = novelWith([
+    { id: "peer-wait", sourceType: "peer-hit", transcriptStatus: "pending", text: uploadedAudioScriptText("hit.mp3") }
+  ]);
+  pending.id = "novel-wait";
+  const items = resolveBatchPeerRewriteJobs(new Map([
+    [ready.id, ready],
+    [pending.id, pending]
+  ]), {
+    novelIds: [ready.id, pending.id],
+    styles: ["auto"],
+    autoPickPeer: true
+  });
+  assert.equal(items[0].skipped, false);
+  assert.equal(items[0].payload.sourceScriptId, "peer-2");
+  assert.equal(items[1].skipped, true);
+  assert.match(items[1].reason, /勾选一条已识别完成的同行爆款口播/);
 });
 
 test("opening payload sends the peer transcript, not novel.sourceContent", () => {

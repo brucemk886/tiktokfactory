@@ -39,6 +39,7 @@ import {
   uniqueNovelIds
 } from "../../scripts/novel-batch-audio.js";
 import { publicOpeningStyles } from "../../scripts/novel-opening-styles.js";
+import { resolveBatchPeerRewriteJobs, uniqueRewriteNovelIds } from "../../scripts/novel-rewrite-source.js";
 import { normalizeTtsProvider, resolveVoiceForProvider } from "../../scripts/kokoro-voices.js";
 import { fetchFeishuCatalogBooks, feishuStatus } from "./feishu-sheets.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
@@ -94,6 +95,11 @@ export async function handleNovels(request, env, url, session, ctx) {
   if (method === "POST" && pathname === "/api/novel-content/batch-audio-versions") {
     if (session.user?.role !== "admin") return errorJson("仅管理员可以批量保存文案。", 403);
     return json(await enqueueBatchAudioVersions(db, session.user, await readJson(request)));
+  }
+
+  if (method === "POST" && pathname === "/api/novel-content/batch-opening-variants") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以批量改写。", 403);
+    return json(await enqueueBatchPeerRewrites(db, session.user, await readJson(request)));
   }
 
   const novelMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)$/);
@@ -650,6 +656,50 @@ export async function enqueueBatchAudioVersions(db, user, body = {}) {
     skipped: items.length - queued,
     items,
     message: `已下发 ${queued} 本，工人会按每本书的免费章节选模板写钩子并保存到音频页，不配音。已有 3 条的已跳过。`
+  };
+}
+
+export async function enqueueBatchPeerRewrites(db, user, body = {}) {
+  const novelIds = uniqueRewriteNovelIds(body.novelIds);
+  if (!novelIds.length) throw Object.assign(new Error("请先勾选要改写的小说。"), { statusCode: 400 });
+  const styles = Array.isArray(body.styles) ? body.styles : [];
+  if (!styles.length) throw Object.assign(new Error("请先勾选至少 1 种风格，再生成改版开头。"), { statusCode: 400 });
+  const { enqueueJob } = await import("./jobs.js");
+  const novelById = new Map();
+  for (const novelId of novelIds) {
+    const novel = await hydrateNovel(db, novelId);
+    if (novel) novelById.set(novel.id, novel);
+  }
+  const planned = resolveBatchPeerRewriteJobs(novelById, { ...body, novelIds, styles });
+  const items = [];
+  for (const item of planned) {
+    if (item.skipped) {
+      items.push(item);
+      continue;
+    }
+    const job = await enqueueJob(db, {
+      type: "opening-variants",
+      title: `${item.title} · ${styles.length} 个改版开头`,
+      payload: item.payload,
+      createdBy: user?.username || ""
+    });
+    items.push({
+      novelId: item.novelId,
+      title: item.title,
+      skipped: false,
+      jobId: job.id,
+      sourceScriptId: item.payload.sourceScriptId
+    });
+  }
+  const queued = items.filter((item) => !item.skipped).length;
+  if (!queued) throw Object.assign(new Error(items[0]?.reason || "勾选的书都还不能对照同行口播改写。"), { statusCode: 400 });
+  return {
+    accepted: true,
+    queued: true,
+    count: queued,
+    skipped: items.length - queued,
+    items,
+    message: `已下发 ${queued} 本对照同行口播改写。`
   };
 }
 

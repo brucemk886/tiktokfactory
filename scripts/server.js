@@ -24,7 +24,7 @@ import { createNovelEffectService } from "./novel-effect-service.js";
 import { createNovelLearningService } from "./novel-learning-service.js";
 import { createNovelStrategyService } from "./novel-strategy-service.js";
 import { publicOpeningStyles } from "./novel-opening-styles.js";
-import { peerRewriteOpeningPayload } from "./novel-rewrite-source.js";
+import { peerRewriteOpeningPayload, resolveBatchPeerRewriteJobs, uniqueRewriteNovelIds } from "./novel-rewrite-source.js";
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
@@ -1363,6 +1363,66 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "重写开头标题失败。" });
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/novel-content/batch-opening-variants") {
+      if (!isLoopbackRequest(req)) return sendJson(res, 403, { error: "批量改写仅允许在本机访问。" });
+      try {
+        const body = await readJsonBody(req);
+        const novelIds = uniqueRewriteNovelIds(body.novelIds);
+        if (!novelIds.length) return sendJson(res, 400, { error: "请先勾选要改写的小说。" });
+        const styles = Array.isArray(body.styles) ? body.styles : [];
+        if (!styles.length) return sendJson(res, 400, { error: "请先勾选至少 1 种风格，再生成改版开头。" });
+        const novelById = new Map();
+        for (const id of novelIds) {
+          try {
+            novelById.set(id, novelContentLibrary.getNovel(id));
+          } catch {
+            // resolveBatchPeerRewriteJobs 会把缺书记成 skipped
+          }
+        }
+        const planned = resolveBatchPeerRewriteJobs(novelById, { ...body, novelIds, styles });
+        const items = [];
+        const variants = [];
+        let model = "";
+        let reasoningEffort = "";
+        for (const item of planned) {
+          if (item.skipped) {
+            items.push(item);
+            continue;
+          }
+          const result = await codexBrain.generateOpeningVariants(item.payload);
+          model = result.model || model;
+          reasoningEffort = result.reasoningEffort || reasoningEffort;
+          const tagged = (Array.isArray(result.variants) ? result.variants : []).map((variant, index) => ({
+            ...variant,
+            id: variant.id || `${item.novelId}-variant-${index + 1}`,
+            novelId: item.novelId,
+            novelTitle: item.title,
+            parentScriptId: item.payload.parentScriptId
+          }));
+          variants.push(...tagged);
+          items.push({
+            novelId: item.novelId,
+            title: item.title,
+            skipped: false,
+            sourceScriptId: item.payload.sourceScriptId,
+            variants: tagged
+          });
+        }
+        if (!variants.length) return sendJson(res, 400, { error: items[0]?.reason || "勾选的书都还不能对照同行口播改写。" });
+        return sendJson(res, 200, {
+          accepted: true,
+          count: items.filter((item) => !item.skipped).length,
+          skipped: items.filter((item) => item.skipped).length,
+          items,
+          variants,
+          model,
+          reasoningEffort
+        });
+      } catch (error) {
+        return sendJson(res, Number(error.statusCode) || 502, { error: error.message || "批量改写失败。" });
       }
     }
 

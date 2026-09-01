@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-1" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-3" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -15,7 +15,7 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">主流程是勾选已识别的同行爆款口播再改写，不再直接改免费章节原文。保存后按下面的配音设置直接出声。</p>
+          <p id="pageLead">可勾多本一起改写。每本先勾一条已识别的同行爆款口播，不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
@@ -31,10 +31,20 @@
             <option value="">请选择小说</option>
           </select>
         </label>
-        <p class="hint">也可以在小说书单里直接点「改写」。</p>
+        <p class="hint">也可以在小说书单里直接点「改写」，或勾多本后点「改写勾选」。</p>
       </section>
 
       <section id="workView" class="rewrite-work" hidden>
+        <section id="novelPickPanel" class="novel-pick-panel">
+          <div class="section-heading">
+            <div><span>BOOKS</span><h2>要改写的小说</h2></div>
+            <small id="novelPickCount">已选 0 本</small>
+          </div>
+          <p class="hint">可勾多本，最多 10 本一起对照各自的同行口播改写。书单里勾选后点「改写勾选」会带到这里。</p>
+          <input id="novelPickSearch" type="search" placeholder="搜索书名、平台或推广码" />
+          <div id="novelPickList" class="novel-pick-list"></div>
+        </section>
+
         <aside class="source-panel">
           <div class="novel-summary">
             <p class="library-kicker">NOVEL</p>
@@ -56,11 +66,82 @@
           <div id="voicedScripts" class="voiced-scripts"></div>
         </section>
 
+        <form id="rewriteForm" class="rewrite-editor">
+          <div class="section-heading">
+            <div><span>WRITE</span><h2>写开头</h2></div>
+          </div>
+          <p id="baseHint" class="hint">先勾选上面每本书的同行爆款口播，再生成改写。不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
+          <div class="mode-picker" role="radiogroup" aria-label="开头写法">
+            <label class="mode-option is-on">
+              <input name="rewriteMode" type="radio" value="ai" checked />
+              <span>AI 生成文案</span>
+            </label>
+            <label class="mode-option">
+              <input name="rewriteMode" type="radio" value="manual" />
+              <span>人工写开头</span>
+            </label>
+            <select id="openingModel" aria-label="改写模型">
+              <option value="gpt-5.6-sol">GPT-5.6 Sol · 旗舰</option>
+              <option value="gpt-5.6-terra">GPT-5.6 Terra · 第二档</option>
+            </select>
+            <select id="openingReasoning" aria-label="推理强度">
+              <option value="medium" selected>标准 · 更快</option>
+              <option value="high">强</option>
+              <option value="xhigh">极强 · 很慢</option>
+            </select>
+          </div>
+          <div id="aiRewritePanel">
+            <div class="style-picker">
+              <div class="style-picker-head">
+                <span>钩子策略</span>
+                <small id="styleCount">已选 1 / 共 6 种</small>
+              </div>
+              <p class="hint">默认按勾选的同行口播选最容易爆的模板，一次先出 2 条。要指定铁证/身份等再改勾选。一次勾 4 条以上会明显变慢。</p>
+              <div id="styleOptions" class="style-options"></div>
+            </div>
+            <div class="form-actions">
+              <button id="generateVariantsBtn" class="primary-action" type="button">生成 2 个强钩子开头</button>
+            </div>
+          </div>
+          <div id="manualRewritePanel" hidden>
+            <label class="opening-title-field">
+              <span>开头标题</span>
+              <div class="variant-title-row">
+                <input id="openingTitle" type="text" maxlength="80" placeholder="前 3 秒盖在画面正中，例如 She married my uncle" />
+                <button id="regenerateManualTitleBtn" class="quiet-action" type="button">重新生成</button>
+              </div>
+              <small class="field-hint">只改封面标题，不改正文。要不要念这句，看页面底部配音设置里的「开头标题也生成音频」。</small>
+            </label>
+            <label class="rewrite-text-field">
+              <span>新写开头文案</span>
+              <textarea id="rewriteText" maxlength="4000" placeholder="只写视频口播/开头文案。第一句就要勾住用户。保留人物、关键事件和结局，不要改全书。"></textarea>
+              <small id="rewriteCount" class="field-count">0 / 4,000</small>
+            </label>
+            <div class="form-actions">
+              <button id="saveRewriteBtn" class="primary-action" type="submit">保存并配音</button>
+            </div>
+          </div>
+          <span id="formStatus" role="status"></span>
+        </form>
+
+        <section id="variantPanel" class="variant-panel rewrite-editor" hidden>
+          <div class="section-heading">
+            <div><span>RESULT</span><h2 id="variantHeading">改版开头</h2></div>
+          </div>
+          <p id="variantStatus" class="hint">英文口播会带中文对照。勾选后保存并按页面底部的配音设置出声。</p>
+          <div class="form-actions">
+            <button id="regenerateTitlesBtn" class="quiet-action" type="button">重新生成勾选标题</button>
+            <button id="saveSelectedScriptsBtn" class="primary-action" type="button">保存勾选并配音</button>
+            <a id="savedAudioLink" class="quiet-action" hidden href="/novel-audio">去音频页</a>
+          </div>
+          <div id="variantList" class="variant-list"></div>
+        </section>
+
         <section class="voice-panel">
           <div class="section-heading">
             <div><span>VOICE</span><h2>配音设置</h2></div>
           </div>
-          <p class="hint">改写保存后按这里的音色出声。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。ElevenLabs 只在指定音色时再用。</p>
+          <p class="hint">改写保存后按这里的音色出声。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。ElevenLabs 只在指定音色时再用。多本一起改时，仍按平台和书名各自建文件夹。</p>
           <p id="modelFixed" class="model-fixed">配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span></p>
           <div class="voice-studio">
             <label class="provider-pick">
@@ -117,80 +198,9 @@
           </div>
           <p id="audioStatus" class="list-status" role="status"></p>
         </section>
-
-        <form id="rewriteForm" class="rewrite-editor">
-          <div class="section-heading">
-            <div><span>WRITE</span><h2>写开头</h2></div>
-          </div>
-          <p id="baseHint" class="hint">先勾选上面的同行爆款口播，再生成改写。不再直接改免费章节原文。勾选结果后保存并按上面的配音设置出声。</p>
-          <div class="mode-picker" role="radiogroup" aria-label="开头写法">
-            <label class="mode-option is-on">
-              <input name="rewriteMode" type="radio" value="ai" checked />
-              <span>AI 生成文案</span>
-            </label>
-            <label class="mode-option">
-              <input name="rewriteMode" type="radio" value="manual" />
-              <span>人工写开头</span>
-            </label>
-            <select id="openingModel" aria-label="改写模型">
-              <option value="gpt-5.6-sol">GPT-5.6 Sol · 旗舰</option>
-              <option value="gpt-5.6-terra">GPT-5.6 Terra · 第二档</option>
-            </select>
-            <select id="openingReasoning" aria-label="推理强度">
-              <option value="medium" selected>标准 · 更快</option>
-              <option value="high">强</option>
-              <option value="xhigh">极强 · 很慢</option>
-            </select>
-          </div>
-          <div id="aiRewritePanel">
-            <div class="style-picker">
-              <div class="style-picker-head">
-                <span>钩子策略</span>
-                <small id="styleCount">已选 1 / 共 6 种</small>
-              </div>
-              <p class="hint">默认按勾选的同行口播选最容易爆的模板，一次先出 2 条。要指定铁证/身份等再改勾选。一次勾 4 条以上会明显变慢。</p>
-              <div id="styleOptions" class="style-options"></div>
-            </div>
-            <div class="form-actions">
-              <button id="generateVariantsBtn" class="primary-action" type="button">生成 2 个强钩子开头</button>
-            </div>
-          </div>
-          <div id="manualRewritePanel" hidden>
-            <label class="opening-title-field">
-              <span>开头标题</span>
-              <div class="variant-title-row">
-                <input id="openingTitle" type="text" maxlength="80" placeholder="前 3 秒盖在画面正中，例如 She married my uncle" />
-                <button id="regenerateManualTitleBtn" class="quiet-action" type="button">重新生成</button>
-              </div>
-              <small class="field-hint">只改封面标题，不改正文。要不要念这句，看上面配音设置里的「开头标题也生成音频」。</small>
-            </label>
-            <label class="rewrite-text-field">
-              <span>新写开头文案</span>
-              <textarea id="rewriteText" maxlength="4000" placeholder="只写视频口播/开头文案。第一句就要勾住用户。保留人物、关键事件和结局，不要改全书。"></textarea>
-              <small id="rewriteCount" class="field-count">0 / 4,000</small>
-            </label>
-            <div class="form-actions">
-              <button id="saveRewriteBtn" class="primary-action" type="submit">保存并配音</button>
-            </div>
-          </div>
-          <span id="formStatus" role="status"></span>
-        </form>
-
-        <section id="variantPanel" class="variant-panel rewrite-editor" hidden>
-          <div class="section-heading">
-            <div><span>RESULT</span><h2 id="variantHeading">改版开头</h2></div>
-          </div>
-          <p id="variantStatus" class="hint">英文口播会带中文对照。勾选后保存并按上面的配音设置出声。</p>
-          <div class="form-actions">
-            <button id="regenerateTitlesBtn" class="quiet-action" type="button">重新生成勾选标题</button>
-            <button id="saveSelectedScriptsBtn" class="primary-action" type="button">保存勾选并配音</button>
-            <a id="savedAudioLink" class="quiet-action" hidden href="/novel-audio">去音频页</a>
-          </div>
-          <div id="variantList" class="variant-list"></div>
-        </section>
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260901-1" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260901-3" type="module"></script>
   </body>
 </html>
