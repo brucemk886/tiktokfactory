@@ -39,7 +39,7 @@ function sleep(ms) {
 
 function runMigrationApply() {
   const command = process.platform === "win32" ? "npx.cmd" : "npx";
-  return spawnSync(command, [
+  const result = spawnSync(command, [
     "wrangler",
     "d1",
     "migrations",
@@ -50,8 +50,14 @@ function runMigrationApply() {
     "wrangler.jsonc"
   ], {
     cwd: path.resolve(here, ".."),
-    encoding: "utf8"
+    encoding: "utf8",
+    shell: process.platform === "win32"
   });
+  if (result.error) {
+    result.stderr = `${result.stderr || ""}\n${result.error.message}`.trim();
+    if (result.status == null) result.status = 1;
+  }
+  return result;
 }
 
 export function applyRemoteMigrations({
