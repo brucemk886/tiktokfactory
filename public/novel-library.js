@@ -33,7 +33,6 @@ const elements = {
   batchBar: document.querySelector("#batchBar"),
   selectVisible: document.querySelector("#selectVisibleBtn"),
   batchAudioButton: document.querySelector("#batchAudioBtn"),
-  batchRewriteButton: document.querySelector("#batchRewriteBtn"),
   batchStatus: document.querySelector("#batchStatus")
 };
 
@@ -538,15 +537,6 @@ function syncBatchBar() {
     elements.batchAudioButton.textContent = selected.length
       ? `保存勾选的 ${audioCount} 条音频`
       : "保存勾选小说音频";
-  }
-  if (elements.batchRewriteButton) {
-    const ids = selected.slice(0, 10);
-    elements.batchRewriteButton.href = ids.length === 1
-      ? `/novel-rewrite?novel=${encodeURIComponent(ids[0])}`
-      : ids.length
-        ? `/novel-rewrite?novels=${ids.map(encodeURIComponent).join(",")}`
-        : "/novel-rewrite";
-    elements.batchRewriteButton.textContent = ids.length > 1 ? `改写勾选的 ${ids.length} 本` : "改写勾选";
   }
   if (elements.batchStatus && !state.batching) {
     elements.batchStatus.textContent = selected.length

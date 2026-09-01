@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>文案改写 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-3" />
+    <link rel="stylesheet" href="/novel-rewrite.css?v=20260901-4" />
     <link rel="stylesheet" href="/theme-ops.css" />
   </head>
   <body class="work-page rewrite-page novel-rewrite-page">
@@ -15,7 +15,7 @@
         <div>
           <p class="library-kicker">NOVEL REWRITE</p>
           <h1 id="pageTitle">文案改写</h1>
-          <p id="pageLead">可勾多本一起改写。每本先勾一条已识别的同行爆款口播，不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
+          <p id="pageLead">只改当前这本。勾选它已识别的同行口播，可一次改多条音频。不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
         </div>
         <div class="header-actions">
           <a class="quiet-action" href="/novel-library">返回书单</a>
@@ -31,20 +31,10 @@
             <option value="">请选择小说</option>
           </select>
         </label>
-        <p class="hint">也可以在小说书单里直接点「改写」，或勾多本后点「改写勾选」。</p>
+        <p class="hint">也可以在小说书单里直接点「改写」。</p>
       </section>
 
       <section id="workView" class="rewrite-work" hidden>
-        <section id="novelPickPanel" class="novel-pick-panel">
-          <div class="section-heading">
-            <div><span>BOOKS</span><h2>要改写的小说</h2></div>
-            <small id="novelPickCount">已选 0 本</small>
-          </div>
-          <p class="hint">可勾多本，最多 10 本一起对照各自的同行口播改写。书单里勾选后点「改写勾选」会带到这里。</p>
-          <input id="novelPickSearch" type="search" placeholder="搜索书名、平台或推广码" />
-          <div id="novelPickList" class="novel-pick-list"></div>
-        </section>
-
         <aside class="source-panel">
           <div class="novel-summary">
             <p class="library-kicker">NOVEL</p>
@@ -62,7 +52,7 @@
           <div class="section-heading">
             <div><span>AUDIO COPY</span><h2>已配音文案</h2></div>
           </div>
-          <p id="voicedScriptsHint" class="hint">勾选一条已识别的同行爆款口播，再对照它生成改写。不再直接改免费章节原文。识别错了或时长不对，点「重新识别」。</p>
+          <p id="voicedScriptsHint" class="hint">勾选当前这本已识别的同行口播，可一次改多条。不再直接改免费章节原文。识别错了或时长不对，点「重新识别」。</p>
           <div id="voicedScripts" class="voiced-scripts"></div>
         </section>
 
@@ -70,7 +60,7 @@
           <div class="section-heading">
             <div><span>WRITE</span><h2>写开头</h2></div>
           </div>
-          <p id="baseHint" class="hint">先勾选上面每本书的同行爆款口播，再生成改写。不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
+          <p id="baseHint" class="hint">先勾选上面当前这本的同行口播，可一次改多条。不再直接改免费章节原文。保存后按页面底部的配音设置出声。</p>
           <div class="mode-picker" role="radiogroup" aria-label="开头写法">
             <label class="mode-option is-on">
               <input name="rewriteMode" type="radio" value="ai" checked />
@@ -141,7 +131,7 @@
           <div class="section-heading">
             <div><span>VOICE</span><h2>配音设置</h2></div>
           </div>
-          <p class="hint">改写保存后按这里的音色出声。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。ElevenLabs 只在指定音色时再用。多本一起改时，仍按平台和书名各自建文件夹。</p>
+          <p class="hint">改写保存后按这里的音色出声。默认用本机 Kokoro，并写下词时间，混剪直接走字幕缓存。ElevenLabs 只在指定音色时再用。</p>
           <p id="modelFixed" class="model-fixed">配音引擎：<strong>Kokoro 82M 本地</strong><span>出声后写入字幕缓存，混剪不再识别</span></p>
           <div class="voice-studio">
             <label class="provider-pick">
@@ -201,6 +191,6 @@
       </section>
     </main>
     <script src="/access.js"></script>
-    <script src="/novel-rewrite.js?v=20260901-3" type="module"></script>
+    <script src="/novel-rewrite.js?v=20260901-4" type="module"></script>
   </body>
 </html>

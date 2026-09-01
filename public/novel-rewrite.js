@@ -47,10 +47,6 @@ const elements = {
   voicedScriptsPanel: document.querySelector("#voicedScriptsPanel"),
   voicedScripts: document.querySelector("#voicedScripts"),
   voicedScriptsHint: document.querySelector("#voicedScriptsHint"),
-  novelPickPanel: document.querySelector("#novelPickPanel"),
-  novelPickCount: document.querySelector("#novelPickCount"),
-  novelPickSearch: document.querySelector("#novelPickSearch"),
-  novelPickList: document.querySelector("#novelPickList"),
   ttsProvider: document.querySelector("#ttsProvider"),
   voiceLanguage: document.querySelector("#voiceLanguage"),
   voiceCategory: document.querySelector("#voiceCategory"),
@@ -79,18 +75,16 @@ const AUTO_STYLE_ID = "auto";
 const DEFAULT_STYLE_IDS = [AUTO_STYLE_ID];
 const STYLE_STORAGE_KEY = "lf-opening-styles-v2";
 const STYLE_COPIES_STORAGE_KEY = "lf-opening-style-copies-v2";
-const BATCH_REWRITE_MAX = 10;
+const BATCH_AUDIO_MAX = 10;
 const state = {
   novelId: params.get("novel") || "",
   novel: readStashedNovel(),
   novels: [],
   novelsById: {},
-  selectedNovelIds: selectedNovelIdsFromParams(),
-  sourceByNovelId: {},
-  sourceTouchedByNovelId: {},
-  novelPickQuery: "",
-  parentScriptId: "",
-  sourceScriptId: "",
+  sourceScriptIds: [],
+  sourceTouched: false,
+  parentScriptId: params.get("script") || "",
+  sourceScriptId: params.get("script") || "",
   sourceScriptTouched: false,
   lastScriptId: "",
   variants: [],
@@ -120,24 +114,9 @@ const voiceCtx = {
   getNovel: () => focusedNovel()
 };
 
-function selectedNovelIdsFromParams() {
-  const many = String(params.get("novels") || "").split(",").map((id) => id.trim()).filter(Boolean);
-  const one = String(params.get("novel") || "").trim();
-  const ids = [];
-  for (const id of [...many, one]) {
-    if (id && !ids.includes(id)) ids.push(id);
-    if (ids.length >= BATCH_REWRITE_MAX) break;
-  }
-  return ids;
-}
-
 elements.novelPicker.addEventListener("change", () => {
   const id = elements.novelPicker.value;
-  if (id) void toggleSelectedNovel(id, true);
-});
-elements.novelPickSearch?.addEventListener("input", () => {
-  state.novelPickQuery = elements.novelPickSearch.value.trim().toLowerCase();
-  renderNovelPicker();
+  if (id) location.assign(`/novel-rewrite?novel=${encodeURIComponent(id)}`);
 });
 elements.form.addEventListener("submit", saveRewrite);
 elements.generateVariantsButton?.addEventListener("click", generateVariants);
@@ -162,36 +141,34 @@ loadStyles();
 loadPage();
 
 async function loadPage() {
-  if (state.novel?.id && !state.selectedNovelIds.includes(state.novel.id)) {
-    state.selectedNovelIds = [state.novel.id, ...state.selectedNovelIds].slice(0, BATCH_REWRITE_MAX);
-  }
+  if (state.novel?.id && !state.novelId) state.novelId = state.novel.id;
   try {
     const data = await api("/api/novel-content");
     state.novels = data.novels || [];
-    for (const novel of state.novels) {
-      if (!state.novelsById[novel.id]) state.novelsById[novel.id] = novel;
+    fillNovelPicker();
+    if (!state.novelId) {
+      elements.pickerView.hidden = false;
+      elements.workView.hidden = true;
+      return;
     }
     elements.pickerView.hidden = true;
     elements.workView.hidden = false;
-    renderNovelPicker();
-    if (!state.selectedNovelIds.length) {
-      renderEmptyWork();
-      return;
-    }
-    await loadSelectedNovels();
+    await loadCurrentNovel();
     renderWork();
     void transcribeSelectedPeerScript();
     void restoreLatestOpeningJob();
   } catch (error) {
-    elements.workView.hidden = false;
-    elements.pickerView.hidden = true;
-    renderNovelPicker();
     if (state.novel) {
+      elements.pickerView.hidden = true;
+      elements.workView.hidden = false;
+      state.novelsById[state.novel.id] = state.novel;
       renderWork();
       setStatus(error.message || "已先带入书单内容，完整数据稍后可刷新。", "error");
       return;
     }
-    renderEmptyWork();
+    elements.pickerView.hidden = false;
+    elements.workView.hidden = true;
+    fillNovelPicker();
     setStatus(error.message || "读取小说失败。", "error");
   }
 }
@@ -203,133 +180,47 @@ function focusedNovel() {
 function novelIdForScript(scriptId) {
   const wanted = String(scriptId || "").trim();
   if (!wanted) return "";
-  return Object.keys(state.novelsById).find((id) => (state.novelsById[id]?.scripts || []).some((script) => script.id === wanted)) || "";
+  const novel = focusedNovel();
+  if ((novel?.scripts || []).some((script) => script.id === wanted)) return novel.id;
+  return Object.keys(state.novelsById).find((id) => (state.novelsById[id]?.scripts || []).some((script) => script.id === wanted)) || state.novelId;
 }
 
-function selectedHydratedNovels() {
-  return state.selectedNovelIds.map((id) => state.novelsById[id]).filter(Boolean);
+function fillNovelPicker() {
+  if (!elements.novelPicker) return;
+  elements.novelPicker.innerHTML = `<option value="">请选择小说</option>${state.novels.map((novel) => (
+    `<option value="${escapeHtml(novel.id)}">${escapeHtml(novel.title)}</option>`
+  )).join("")}`;
+  if (state.novelId) elements.novelPicker.value = state.novelId;
 }
 
-function renderEmptyWork() {
-  elements.pageTitle.textContent = "文案改写";
-  if (elements.novelTitle) elements.novelTitle.textContent = "未选择小说";
-  if (elements.novelMeta) elements.novelMeta.innerHTML = "";
-  if (elements.novelStats) elements.novelStats.textContent = "先勾选上面的小说。";
-  if (elements.sourceExcerpt) elements.sourceExcerpt.textContent = "—";
-  if (elements.voicedScriptsPanel) elements.voicedScriptsPanel.hidden = true;
-  updateGenerateButton();
-}
-
-function renderNovelPicker() {
-  if (!elements.novelPickList) return;
-  const query = state.novelPickQuery;
-  const novels = state.novels.filter((novel) => {
-    if (!query) return true;
-    return [novel.title, novel.platform, novel.promotionCode, novel.category]
-      .some((value) => String(value || "").toLowerCase().includes(query));
-  });
-  if (elements.novelPickCount) {
-    elements.novelPickCount.textContent = `已选 ${state.selectedNovelIds.length} / 最多 ${BATCH_REWRITE_MAX} 本`;
-  }
-  if (!novels.length) {
-    elements.novelPickList.innerHTML = `<p class="hint">没有匹配的小说。</p>`;
-    return;
-  }
-  elements.novelPickList.innerHTML = novels.map((novel) => {
-    const checked = state.selectedNovelIds.includes(novel.id);
-    const ready = readyPeerRewriteScripts(novel.scripts || []).length;
-    return `<label class="novel-pick-item${checked ? " is-on" : ""}">
-      <input type="checkbox" data-novel-id="${escapeHtml(novel.id)}" ${checked ? "checked" : ""} />
-      <span>
-        <strong>${escapeHtml(novel.title)}</strong>
-        <small>${escapeHtml([novel.platform, ready ? `${ready} 条已识别同行口播` : "还没有识别好的同行口播"].filter(Boolean).join(" · "))}</small>
-      </span>
-    </label>`;
-  }).join("");
-  elements.novelPickList.querySelectorAll("[data-novel-id]").forEach((box) => {
-    box.addEventListener("change", () => {
-      void toggleSelectedNovel(box.dataset.novelId, box.checked);
-    });
-  });
-}
-
-async function toggleSelectedNovel(novelId, checked) {
-  const id = String(novelId || "").trim();
-  if (!id) return;
-  if (checked) {
-    if (!state.selectedNovelIds.includes(id) && state.selectedNovelIds.length >= BATCH_REWRITE_MAX) {
-      setStatus(`一次最多改写 ${BATCH_REWRITE_MAX} 本。`, "error");
-      renderNovelPicker();
-      return;
-    }
-    if (!state.selectedNovelIds.includes(id)) state.selectedNovelIds.push(id);
-    state.novelId = id;
-  } else {
-    state.selectedNovelIds = state.selectedNovelIds.filter((item) => item !== id);
-    if (state.novelId === id) state.novelId = state.selectedNovelIds[0] || "";
-  }
-  syncRewriteUrl();
-  renderNovelPicker();
-  if (!state.selectedNovelIds.length) {
-    state.novel = null;
-    renderEmptyWork();
-    renderVoicedScripts();
-    return;
-  }
-  await loadSelectedNovels();
-  renderWork();
-}
-
-function syncRewriteUrl() {
-  const url = new URL(location.href);
-  url.searchParams.delete("novel");
-  url.searchParams.delete("novels");
-  const ids = state.selectedNovelIds;
-  if (ids.length === 1) url.searchParams.set("novel", ids[0]);
-  else if (ids.length > 1) url.searchParams.set("novels", ids.join(","));
-  history.replaceState(null, "", `${url.pathname}${url.search}`);
-}
-
-async function loadSelectedNovels() {
-  await Promise.all(state.selectedNovelIds.map(async (id) => {
-    if (state.novelsById[id]?.hydrated) return;
-    try {
-      const data = await api(`/api/novel-content/novels/${encodeURIComponent(id)}`);
-      if (data.novel) state.novelsById[id] = { ...data.novel, hydrated: true };
-    } catch {
-      // 列表里的摘要仍可勾选，生成时再报错
-    }
-  }));
-  state.novelId = state.selectedNovelIds.includes(state.novelId) ? state.novelId : (state.selectedNovelIds[0] || "");
-  state.novel = focusedNovel();
-  for (const id of state.selectedNovelIds) {
-    syncSourceScriptId(state.novelsById[id]?.scripts || [], id);
-  }
-  renderNovelPicker();
+async function loadCurrentNovel() {
+  if (!state.novelId) return;
+  const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+  if (!data.novel) throw new Error("没有找到该小说。");
+  state.novel = { ...data.novel, hydrated: true };
+  state.novelsById[data.novel.id] = state.novel;
+  syncSourceScriptIds(state.novel.scripts || []);
 }
 
 function renderWork() {
   const novel = focusedNovel();
   elements.pickerView.hidden = true;
   elements.workView.hidden = false;
-  renderNovelPicker();
   if (!novel) {
-    renderEmptyWork();
-    renderVoicedScripts();
+    elements.pageTitle.textContent = "文案改写";
+    if (elements.novelTitle) elements.novelTitle.textContent = "未选择小说";
+    if (elements.voicedScriptsPanel) elements.voicedScriptsPanel.hidden = true;
     updateGenerateButton();
     return;
   }
-  elements.pageTitle.textContent = state.selectedNovelIds.length > 1
-    ? `改写 · ${state.selectedNovelIds.length} 本`
-    : `改写 · ${novel.title}`;
+  elements.pageTitle.textContent = `改写 · ${novel.title}`;
   elements.novelTitle.textContent = novel.title;
   elements.novelMeta.innerHTML = [
     novel.platform,
     novel.category,
     novel.promotionCode,
     novel.featured ? "重点" : "",
-    novel.hit ? novel.hitLabel || "爆款" : "",
-    state.selectedNovelIds.length > 1 ? `已勾 ${state.selectedNovelIds.length} 本` : ""
+    novel.hit ? novel.hitLabel || "爆款" : ""
   ].filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join("");
   const scripts = novel.scripts || [];
   const audioCount = scripts.filter(scriptHasAudio).length;
@@ -339,11 +230,9 @@ function renderWork() {
   if (elements.audioLink) elements.audioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.savedAudioLink) elements.savedAudioLink.href = `/novel-audio?novel=${encodeURIComponent(novel.id)}`;
   if (elements.baseHint) {
-    elements.baseHint.textContent = state.selectedNovelIds.length > 1
-      ? "每本先勾一条已识别的同行口播，再一次生成。保存后按页面底部的配音设置出声。"
-      : "先勾选上面的同行爆款口播，再生成改写。不再直接改免费章节原文。保存后按页面底部的配音设置出声。";
+    elements.baseHint.textContent = "先勾选上面当前这本的同行口播，可一次改多条。不再直接改免费章节原文。保存后按页面底部的配音设置出声。";
   }
-  syncSourceScriptId(novel.scripts || [], novel.id);
+  syncSourceScriptIds(novel.scripts || []);
   renderVoicedScripts();
   renderVariants();
   updatePendingVoiceRow();
@@ -429,88 +318,99 @@ function readyPeerRewriteScripts(scripts = focusedNovel()?.scripts || []) {
   return (Array.isArray(scripts) ? scripts : []).filter(isReadyPeerRewriteScript);
 }
 
-function selectedPeerRewriteScript(novel = focusedNovel()) {
-  if (!novel) return null;
-  const sourceId = state.sourceByNovelId[novel.id] || (novel.id === state.novelId ? state.sourceScriptId : "");
-  return readyPeerRewriteScripts(novel.scripts || []).find((script) => script.id === sourceId) || null;
+function sourceLabel(script) {
+  const title = String(script?.openingTitle || "").trim();
+  const version = String(script?.versionLabel || "").trim();
+  if (title && version && title !== version) return `${version} · ${title}`;
+  return title || version || String(script?.title || "同行爆款").trim();
+}
+
+function adoptReadySource(script, scripts) {
+  if (isReadyPeerRewriteScript(script) && !state.sourceScriptIds.includes(script.id) && !state.sourceTouched) {
+    state.sourceScriptIds = [...state.sourceScriptIds, script.id].slice(0, BATCH_AUDIO_MAX);
+    state.sourceScriptId = state.sourceScriptIds[0] || script.id;
+    state.parentScriptId = state.sourceScriptId;
+    return;
+  }
+  syncSourceScriptIds(scripts);
+}
+
+function selectedPeerRewriteScripts() {
+  const selected = new Set(state.sourceScriptIds);
+  return readyPeerRewriteScripts().filter((script) => selected.has(script.id));
+}
+
+function selectedPeerRewriteScript() {
+  return selectedPeerRewriteScripts()[0] || null;
 }
 
 function selectedRewriteTargets() {
-  return selectedHydratedNovels().map((novel) => {
-    const source = selectedPeerRewriteScript(novel);
-    return source ? { novel, source } : null;
-  }).filter(Boolean);
+  const novel = focusedNovel();
+  if (!novel) return [];
+  return selectedPeerRewriteScripts().map((source) => ({ novel, source }));
 }
 
-function syncSourceScriptId(scripts = focusedNovel()?.scripts || [], novelId = state.novelId) {
-  const id = String(novelId || "").trim();
-  if (!id) return;
+function syncSourceScriptIds(scripts = focusedNovel()?.scripts || []) {
   const ready = readyPeerRewriteScripts(scripts);
-  const current = state.sourceByNovelId[id] || "";
-  if (ready.some((script) => script.id === current)) {
-    if (id === state.novelId) {
-      state.sourceScriptId = current;
-      state.parentScriptId = current;
-    }
-    return;
+  const readyIds = new Set(ready.map((script) => script.id));
+  const kept = state.sourceScriptIds.filter((id) => readyIds.has(id));
+  if (state.sourceTouched) {
+    state.sourceScriptIds = kept;
+  } else if (kept.length) {
+    state.sourceScriptIds = kept;
+  } else {
+    const focusId = String(params.get("script") || "").trim();
+    state.sourceScriptIds = focusId && readyIds.has(focusId)
+      ? [focusId]
+      : ready.slice(0, BATCH_AUDIO_MAX).map((script) => script.id);
   }
-  if (state.sourceTouchedByNovelId[id]) {
-    state.sourceByNovelId[id] = "";
-    if (id === state.novelId) {
-      state.sourceScriptId = "";
-      state.parentScriptId = "";
-    }
-    return;
-  }
-  const focusId = id === state.selectedNovelIds[0] ? (params.get("script") || "") : "";
-  const next = ready.find((script) => script.id === focusId)?.id || ready[0]?.id || "";
-  state.sourceByNovelId[id] = next;
-  if (id === state.novelId) {
-    state.sourceScriptId = next;
-    state.parentScriptId = next;
-  }
+  state.sourceScriptId = state.sourceScriptIds[0] || "";
+  state.parentScriptId = state.sourceScriptId;
 }
 
-function selectSourceScript(scriptId, { touched = true, novelId = state.novelId } = {}) {
-  const id = String(novelId || state.novelId || "").trim();
+function setSourceScriptChecked(scriptId, checked) {
   const next = String(scriptId || "").trim();
-  const novel = state.novelsById[id] || focusedNovel();
-  if (touched && id) state.sourceTouchedByNovelId[id] = true;
-  const selected = isReadyPeerRewriteScript((novel?.scripts || []).find((item) => item.id === next)) ? next : "";
-  if (id) state.sourceByNovelId[id] = selected;
-  if (id === state.novelId) {
-    state.sourceScriptId = selected;
-    state.parentScriptId = selected;
+  const novel = focusedNovel();
+  const script = (novel?.scripts || []).find((item) => item.id === next);
+  state.sourceTouched = true;
+  if (checked) {
+    if (!isReadyPeerRewriteScript(script)) return;
+    if (!state.sourceScriptIds.includes(next) && state.sourceScriptIds.length >= BATCH_AUDIO_MAX) {
+      setStatus(`一次最多对照 ${BATCH_AUDIO_MAX} 条口播改写。`, "error");
+      renderVoicedScripts();
+      return;
+    }
+    if (!state.sourceScriptIds.includes(next)) state.sourceScriptIds.push(next);
+  } else {
+    state.sourceScriptIds = state.sourceScriptIds.filter((id) => id !== next);
   }
+  state.sourceScriptId = state.sourceScriptIds[0] || "";
+  state.parentScriptId = state.sourceScriptId;
   renderVoicedScripts();
+  updateGenerateButton();
 }
 
 function updateVoicedScriptsHint() {
   if (!elements.voicedScriptsHint) return;
-  const targets = selectedRewriteTargets();
-  const books = state.selectedNovelIds.length;
-  if (books > 1) {
-    elements.voicedScriptsHint.textContent = targets.length === books
-      ? `已为 ${books} 本各勾一条同行口播，将按这些口播分别改写。`
-      : `已勾 ${books} 本，其中 ${targets.length} 本有对照口播。每本都要勾一条已识别的同行爆款才能一起生成。`;
+  const selected = selectedPeerRewriteScripts();
+  const readyCount = readyPeerRewriteScripts().length;
+  if (selected.length > 1) {
+    elements.voicedScriptsHint.textContent = `已勾 ${selected.length} 条当前书的同行口播，将分别对照这些音频改写。`;
     return;
   }
-  const selected = selectedPeerRewriteScript();
-  const readyCount = readyPeerRewriteScripts().length;
-  if (selected) {
-    const label = selected.versionLabel || selected.openingTitle || selected.title || "同行爆款";
-    elements.voicedScriptsHint.textContent = `当前对照：${label}。将按这条已识别口播改写，不再改免费章节原文。识别错了或时长不对，点「重新识别」。`;
+  if (selected.length === 1) {
+    elements.voicedScriptsHint.textContent = `当前对照：${sourceLabel(selected[0])}。将按这条已识别口播改写，不再改免费章节原文。识别错了或时长不对，点「重新识别」。`;
     return;
   }
   if (!readyCount) {
     elements.voicedScriptsHint.textContent = "还没有已识别完成的同行爆款口播。等上面识别出正文并勾选后，才能对照改写。";
     return;
   }
-  elements.voicedScriptsHint.textContent = "勾选一条已识别的同行爆款口播，再对照它生成改写。不再直接改免费章节原文。识别错了或时长不对，点「重新识别」。";
+  elements.voicedScriptsHint.textContent = "勾选当前这本已识别的同行口播，可一次改多条。不再直接改免费章节原文。识别错了或时长不对，点「重新识别」。";
 }
 
-function voicedScriptCard(script, { novelId = state.novelId } = {}) {
-  const selected = script.id === (state.sourceByNovelId[novelId] || "");
+function voicedScriptCard(script) {
+  const selected = state.sourceScriptIds.includes(script.id);
   const selectable = isReadyPeerRewriteScript(script);
   const isPeer = script.sourceType === "peer-hit";
   const failed = script.transcriptStatus === "failed";
@@ -521,9 +421,9 @@ function voicedScriptCard(script, { novelId = state.novelId } = {}) {
     : (pending ? wait.text : (script.text || "还没有文案"));
   const title = escapeHtml(script.versionLabel || voicedScriptLabel(script));
   const pick = isPeer
-    ? `<label class="voiced-script-pick"><input type="checkbox" ${selectable ? "" : "disabled"} ${selected ? "checked" : ""} data-source-id="${escapeHtml(script.id)}" data-novel-id="${escapeHtml(novelId)}" /> <strong>${title}</strong></label>`
+    ? `<label class="voiced-script-pick"><input type="checkbox" ${selectable ? "" : "disabled"} ${selected ? "checked" : ""} data-source-id="${escapeHtml(script.id)}" /> <strong>${title}</strong></label>`
     : `<strong>${title}</strong>`;
-  return `<article class="voiced-script-card${selected ? " is-active" : ""}${selectable ? " is-pickable" : ""}" data-script-id="${escapeHtml(script.id)}" data-novel-id="${escapeHtml(novelId)}">
+  return `<article class="voiced-script-card${selected ? " is-active" : ""}${selectable ? " is-pickable" : ""}" data-script-id="${escapeHtml(script.id)}">
     <header>
       ${pick}
       <small>${escapeHtml(script.openingTitle || script.title || "")}</small>
@@ -536,15 +436,16 @@ function voicedScriptCard(script, { novelId = state.novelId } = {}) {
 }
 
 function visibleVoicedScripts(novel) {
-  const sourceId = state.sourceByNovelId[novel.id] || "";
-  const focusId = novel.id === state.selectedNovelIds[0] ? (params.get("script") || sourceId) : sourceId;
+  const selected = new Set(state.sourceScriptIds);
+  const focusId = params.get("script") || "";
   return (novel.scripts || []).filter((script) => {
     if (!scriptHasAudio(script)) return false;
-    if (script.id === focusId || script.id === sourceId) return true;
+    if (selected.has(script.id) || script.id === focusId) return true;
     return hasVisibleTranscript(script) || script.sourceType === "peer-hit";
   }).sort((left, right) => {
-    if (left.id === sourceId) return -1;
-    if (right.id === sourceId) return 1;
+    const leftOn = selected.has(left.id);
+    const rightOn = selected.has(right.id);
+    if (leftOn !== rightOn) return leftOn ? -1 : 1;
     if (left.sourceType === "peer-hit" && right.sourceType !== "peer-hit") return -1;
     if (right.sourceType === "peer-hit" && left.sourceType !== "peer-hit") return 1;
     return 0;
@@ -553,20 +454,16 @@ function visibleVoicedScripts(novel) {
 
 function renderVoicedScripts() {
   if (!elements.voicedScriptsPanel || !elements.voicedScripts) return;
-  const novels = selectedHydratedNovels();
-  const groups = novels.map((novel) => ({ novel, scripts: visibleVoicedScripts(novel) })).filter((group) => group.scripts.length);
-  if (!groups.length) {
+  const novel = focusedNovel();
+  const scripts = novel ? visibleVoicedScripts(novel) : [];
+  if (!scripts.length) {
     elements.voicedScriptsPanel.hidden = true;
     elements.voicedScripts.innerHTML = "";
     updateVoicedScriptsHint();
     return;
   }
   elements.voicedScriptsPanel.hidden = false;
-  elements.voicedScripts.innerHTML = groups.map((group) => {
-    const cards = group.scripts.map((script) => voicedScriptCard(script, { novelId: group.novel.id })).join("");
-    if (groups.length === 1) return cards;
-    return `<div class="voiced-script-group"><h3>${escapeHtml(group.novel.title)}</h3>${cards}</div>`;
-  }).join("");
+  elements.voicedScripts.innerHTML = scripts.map((script) => voicedScriptCard(script)).join("");
   elements.voicedScripts.querySelectorAll("[data-retry-id]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -576,17 +473,16 @@ function renderVoicedScripts() {
   elements.voicedScripts.querySelectorAll("[data-source-id]").forEach((checkbox) => {
     checkbox.addEventListener("click", (event) => event.stopPropagation());
     checkbox.addEventListener("change", () => {
-      selectSourceScript(checkbox.checked ? checkbox.dataset.sourceId : "", { novelId: checkbox.dataset.novelId });
+      setSourceScriptChecked(checkbox.dataset.sourceId, checkbox.checked);
     });
   });
   elements.voicedScripts.querySelectorAll(".voiced-script-card.is-pickable").forEach((card) => {
     card.addEventListener("click", (event) => {
       if (event.target.closest("a, button, input, label")) return;
-      selectSourceScript(card.dataset.scriptId, { novelId: card.dataset.novelId });
+      setSourceScriptChecked(card.dataset.scriptId, !state.sourceScriptIds.includes(card.dataset.scriptId));
     });
   });
   updateVoicedScriptsHint();
-  elements.voicedScripts.querySelector(".voiced-script-card.is-active")?.scrollIntoView({ block: "nearest" });
 }
 
 async function transcribeSelectedPeerScript() {
@@ -618,15 +514,7 @@ async function watchQueuedTranscript(scriptId) {
           && !isPlaceholderUploadedScript(current.text);
         if (ready) {
           stopTranscriptWait();
-          if (!state.sourceByNovelId[data.novel.id] && isReadyPeerRewriteScript(current)) {
-            state.sourceByNovelId[data.novel.id] = current.id;
-            if (data.novel.id === state.novelId) {
-              state.sourceScriptId = current.id;
-              state.parentScriptId = current.id;
-            }
-          } else {
-            syncSourceScriptId(data.novel.scripts || [], data.novel.id);
-          }
+          adoptReadySource(current, data.novel.scripts || []);
           renderVoicedScripts();
           updateNovelStats();
           setStatus("已识别口播文案。", "success");
@@ -668,15 +556,7 @@ async function transcribePeerScript(scriptId, button) {
     }
     stopTranscriptWait();
     const fresh = ((state.novelsById[novelId] || data.novel)?.scripts || []).find((item) => item.id === scriptId);
-    if (!state.sourceByNovelId[novelId] && isReadyPeerRewriteScript(fresh)) {
-      state.sourceByNovelId[novelId] = fresh.id;
-      if (novelId === state.novelId) {
-        state.sourceScriptId = fresh.id;
-        state.parentScriptId = fresh.id;
-      }
-    } else {
-      syncSourceScriptId((state.novelsById[novelId] || data.novel)?.scripts || [], novelId);
-    }
+    adoptReadySource(fresh, (state.novelsById[novelId] || data.novel)?.scripts || []);
     renderVoicedScripts();
     updateNovelStats();
     setStatus("已识别口播文案。", "success");
@@ -902,7 +782,7 @@ function setStatus(message, tone = "") {
 async function saveCurrentScript(text, extras = {}) {
   const novelId = extras.novelId || state.novelId;
   const novel = state.novelsById[novelId] || focusedNovel() || state.novel;
-  const parentScriptId = extras.parentScriptId || state.sourceByNovelId[novelId] || state.parentScriptId;
+  const parentScriptId = extras.parentScriptId || state.sourceScriptId || state.parentScriptId;
   const data = await api(`/api/novel-content/novels/${encodeURIComponent(novelId)}/scripts`, {
     method: "POST",
     body: JSON.stringify({
@@ -1029,15 +909,15 @@ function saveStyleCopies() {
 
 function updateGenerateButton() {
   const hooks = selectedStyleIds().length;
-  const books = Math.max(1, state.selectedNovelIds.length);
+  const audios = selectedPeerRewriteScripts().length;
   if (!elements.generateVariantsButton) return;
   if (!hooks) {
     elements.generateVariantsButton.textContent = "生成强钩子开头";
     elements.generateVariantsButton.disabled = true;
     return;
   }
-  elements.generateVariantsButton.textContent = books > 1
-    ? `生成 ${books} 本 · 各 ${hooks} 个钩子`
+  elements.generateVariantsButton.textContent = audios > 1
+    ? `生成 ${audios} 条口播 · 各 ${hooks} 个钩子`
     : `生成 ${hooks} 个强钩子开头`;
   elements.generateVariantsButton.disabled = false;
 }
@@ -1073,72 +953,34 @@ function beginVariantGeneration(count) {
 async function generateVariants() {
   const styles = selectedStyleIds();
   if (!styles.length) return setStatus("请先勾选至少 1 种策略，再生成强钩子开头。", "error");
-  if (!state.selectedNovelIds.length) return setStatus("请先勾选要改写的小说。", "error");
+  if (!state.novelId) return setStatus("请先选择要改写的小说。", "error");
   const targets = selectedRewriteTargets();
-  if (!targets.length) return setStatus("请先为每本勾选已识别好的同行爆款口播，再生成改写。", "error");
-  if (targets.length < state.selectedNovelIds.length) {
-    return setStatus(`已勾 ${state.selectedNovelIds.length} 本，只有 ${targets.length} 本有对照口播。每本都要勾一条再一起生成。`, "error");
-  }
+  if (!targets.length) return setStatus("请先勾选当前这本已识别好的同行口播，再生成改写。", "error");
   const startedAt = Date.now();
   const total = styles.length * targets.length;
   elements.generateVariantsButton.disabled = true;
   elements.generateVariantsButton.textContent = targets.length > 1
-    ? `正在改写 ${targets.length} 本...`
+    ? `正在改写 ${targets.length} 条口播...`
     : `正在筛选 ${styles.length} 个强钩子...`;
   beginVariantGeneration(total);
   elements.variantStatus.textContent = targets.length > 1
-    ? `正在对照各书同行口播生成 ${targets.length} 本、各 ${styles.length} 个钩子。`
+    ? `正在对照当前书已勾的 ${targets.length} 条口播，各生成 ${styles.length} 个钩子。`
     : `正在对照勾选的同行口播生成 ${styles.length} 个钩子。${styles.length >= 4 ? "一次 4 条以上会慢很多，建议先出 2 条。" : "标准推理通常 2–6 分钟。"}`;
   try {
-    if (targets.length === 1) {
-      const data = await requestOpeningVariants(targets[0], styles, startedAt);
-      applyOpeningVariantResult(data, { novel: targets[0].novel, source: targets[0].source });
-      return;
-    }
-    const data = await api("/api/novel-content/batch-opening-variants", {
-      method: "POST",
-      body: JSON.stringify({
-        novelIds: targets.map((item) => item.novel.id),
-        items: targets.map((item) => ({ novelId: item.novel.id, sourceScriptId: item.source.id })),
-        autoPickPeer: false,
-        styles,
-        model: selectedOpeningModel(),
-        reasoningEffort: selectedOpeningReasoning()
-      })
-    });
     const variants = [];
-    if (Array.isArray(data.variants) && data.variants.length) {
-      variants.push(...data.variants);
-    } else {
-      const jobs = (Array.isArray(data.items) ? data.items : []).filter((item) => item.jobId);
-      for (let index = 0; index < jobs.length; index += 1) {
-        const item = jobs[index];
-        const target = targets.find((entry) => entry.novel.id === item.novelId);
-        elements.variantStatus.textContent = `正在改写 ${index + 1}/${jobs.length} · ${item.title || target?.novel.title || ""}。已等待 ${formatWait(Date.now() - startedAt)}。`;
-        const result = await waitForCloudJob(item.jobId, {
-          api,
-          attempts: 900,
-          onProgress: (job) => {
-            elements.variantStatus.textContent = `${job.message || `工人机正在改写 ${item.title || ""}...`} ${index + 1}/${jobs.length} · 已等待 ${formatWait(Date.now() - startedAt)}。`;
-          }
-        });
-        const tagged = (Array.isArray(result.variants) ? result.variants : []).map((variant, variantIndex) => ({
-          ...variant,
-          id: variant.id || `${item.novelId}-variant-${variantIndex + 1}`,
-          novelId: item.novelId,
-          novelTitle: item.title || target?.novel.title || "",
-          parentScriptId: target?.source.id || item.sourceScriptId || ""
-        }));
-        variants.push(...tagged);
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      if (targets.length > 1) {
+        elements.variantStatus.textContent = `正在改写 ${index + 1}/${targets.length} · ${sourceLabel(target.source)}。已等待 ${formatWait(Date.now() - startedAt)}。`;
       }
+      const data = await requestOpeningVariants(target, styles, startedAt);
+      variants.push(...(data.variants || []));
     }
-    const skipped = (Array.isArray(data.items) ? data.items : []).filter((item) => item.skipped);
     applyOpeningVariantResult({
       variants,
-      model: data.model || selectedOpeningModel(),
-      reasoningEffort: data.reasoningEffort || selectedOpeningReasoning()
+      model: selectedOpeningModel(),
+      reasoningEffort: selectedOpeningReasoning()
     });
-    if (skipped.length) setStatus(`已生成 ${variants.length} 条；${skipped.length} 本跳过：${skipped.map((item) => item.reason).join("；")}`, "error");
   } catch (error) {
     elements.variantStatus.textContent = error.message || "生成改版开头失败。";
     setStatus(error.message, "error");
@@ -1172,9 +1014,10 @@ async function requestOpeningVariants(target, styles, startedAt) {
     ...data,
     variants: (Array.isArray(data.variants) ? data.variants : []).map((variant, index) => ({
       ...variant,
-      id: variant.id || `${target.novel.id}-variant-${index + 1}`,
+      id: variant.id || `${target.source.id}-variant-${index + 1}`,
       novelId: target.novel.id,
       novelTitle: target.novel.title,
+      sourceLabel: sourceLabel(target.source),
       parentScriptId: target.source.id
     }))
   };
@@ -1329,7 +1172,8 @@ function applyOpeningVariantResult(data, { restored = false, novel = null, sourc
     id: item.id || `variant-${index + 1}`,
     novelId: item.novelId || novel?.id || state.novelId,
     novelTitle: item.novelTitle || novel?.title || focusedNovel()?.title || "",
-    parentScriptId: item.parentScriptId || source?.id || state.sourceByNovelId[item.novelId || novel?.id || state.novelId] || "",
+    sourceLabel: item.sourceLabel || (source ? sourceLabel(source) : ""),
+    parentScriptId: item.parentScriptId || source?.id || state.sourceScriptId || "",
     selected: true,
     status: "",
     model,
@@ -1356,8 +1200,8 @@ function renderVariants() {
   if (elements.variantHeading) elements.variantHeading.textContent = `${state.variants.length} 个强钩子结果`;
   const modelLabel = openingModelLabel(state.variants[0]?.model, state.variants[0]?.reasoningEffort);
   elements.variantStatus.textContent = `已用 ${modelLabel} 按策略筛选，并给出中文对照。勾选后保存并按页面底部的配音设置出声。`;
-  const novelIds = [...new Set(state.variants.map((item) => item.novelId).filter(Boolean))];
-  const showGroups = novelIds.length > 1;
+  const sourceLabels = [...new Set(state.variants.map((item) => item.sourceLabel).filter(Boolean))];
+  const showGroups = sourceLabels.length > 1;
   const renderCard = (variant) => `
     <article class="variant-card" data-variant-id="${escapeHtml(variant.id)}">
       <div class="variant-head">
@@ -1365,7 +1209,7 @@ function renderVariants() {
           <input type="checkbox" ${variant.selected === false ? "" : "checked"} />
           <span>${escapeHtml(variant.styleLabel || variant.style || "改版开头")}</span>
         </label>
-        <small>${escapeHtml([showGroups ? "" : variant.novelTitle, variant.title].filter(Boolean).join(" · "))}</small>
+        <small>${escapeHtml([showGroups ? "" : variant.sourceLabel, variant.title].filter(Boolean).join(" · "))}</small>
       </div>
       <label class="variant-hook">
         <span>开头标题</span>
@@ -1383,9 +1227,9 @@ function renderVariants() {
       <button class="quiet-action" type="button" data-save-script>${variant.status || "保存并配音"}</button>
     </article>`;
   elements.variantList.innerHTML = showGroups
-    ? novelIds.map((id) => {
-      const items = state.variants.filter((item) => item.novelId === id);
-      return `<div class="variant-group"><h3>${escapeHtml(items[0]?.novelTitle || id)}</h3>${items.map(renderCard).join("")}</div>`;
+    ? sourceLabels.map((label) => {
+      const items = state.variants.filter((item) => item.sourceLabel === label);
+      return `<div class="variant-group"><h3>${escapeHtml(label)}</h3>${items.map(renderCard).join("")}</div>`;
     }).join("")
     : state.variants.map(renderCard).join("");
   elements.variantList.querySelectorAll(".variant-card").forEach((card) => {
@@ -1433,7 +1277,7 @@ async function saveVariants(variants) {
       variant.status = "已保存";
     }
     await refreshSelectedNovels();
-    const scripts = selectedHydratedNovels().flatMap((novel) => novel.scripts || []);
+    const scripts = focusedNovel()?.scripts || [];
     const toVoice = variants
       .map((variant) => scripts.find((item) => item.id === variant.scriptId))
       .filter((script) => script && !scriptHasAudio(script));
@@ -1467,13 +1311,13 @@ async function refreshNovel() {
 }
 
 async function refreshSelectedNovels() {
-  const ids = state.selectedNovelIds.length ? state.selectedNovelIds : [state.novelId].filter(Boolean);
-  await Promise.all(ids.map(async (id) => {
-    const data = await api(`/api/novel-content/novels/${encodeURIComponent(id)}`);
-    if (data.novel) state.novelsById[id] = { ...data.novel, hydrated: true };
-  }));
-  state.novel = focusedNovel();
-  for (const id of ids) syncSourceScriptId(state.novelsById[id]?.scripts || [], id);
+  if (!state.novelId) return;
+  const data = await api(`/api/novel-content/novels/${encodeURIComponent(state.novelId)}`);
+  if (data.novel) {
+    state.novelsById[data.novel.id] = { ...data.novel, hydrated: true };
+    state.novel = state.novelsById[data.novel.id];
+    syncSourceScriptIds(data.novel.scripts || []);
+  }
   updateNovelStats();
   renderVoicedScripts();
   updatePendingVoiceRow();
@@ -1488,11 +1332,11 @@ function updateNovelStats() {
 }
 
 function pendingRewriteScripts() {
-  return selectedHydratedNovels().flatMap((novel) => (novel.scripts || []).filter((script) => {
+  return (focusedNovel()?.scripts || []).filter((script) => {
     if (scriptHasAudio(script)) return false;
     const source = String(script.sourceType || "");
     return source !== "peer-hit" && source !== "uploaded-audio";
-  }));
+  });
 }
 
 function updatePendingVoiceRow() {
@@ -1501,7 +1345,7 @@ function updatePendingVoiceRow() {
   elements.pendingVoiceRow.hidden = !pending.length;
   if (elements.pendingVoiceHint) {
     elements.pendingVoiceHint.textContent = pending.length
-      ? `勾选的书里还有 ${pending.length} 条改写还没出音频。`
+      ? `这本书还有 ${pending.length} 条改写还没出音频。`
       : "";
   }
 }
