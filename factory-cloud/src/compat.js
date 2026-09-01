@@ -254,14 +254,6 @@ export async function handleCompat(request, env, url, session) {
     return handleOperator(request, db, url, session);
   }
 
-  if (method === "GET" && pathname === "/api/kie-ai") {
-    return json({ configured: false, tasks: [], credit: null, cloud: true });
-  }
-  if (method === "POST" && pathname === "/api/kie-ai") {
-    await enqueueJob(db, { type: "kie-ai", title: "Kie 生图", payload: await readJson(request), createdBy: session.user.username });
-    return json({ accepted: true, queued: true, message: "生图请求已记录，工人机或后续云端 Kie 调用会处理。" });
-  }
-
   const openingMatch = pathname.match(/^\/api\/novel-content\/novels\/([^/]+)\/opening-variants$/);
   if (method === "GET" && openingMatch) {
     const job = await findLatestOpeningVariantsJob(db, {

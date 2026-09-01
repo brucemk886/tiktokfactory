@@ -3,6 +3,7 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const FINAL_STATES = new Set(["success", "fail"]);
 let kind = "image";
 let tasks = [];
+let pollTimer = 0;
 
 $$("[data-kind]").forEach((button) => button.addEventListener("click", () => setKind(button.dataset.kind)));
 $$('input[name="imageModel"]').forEach((input) => input.addEventListener("change", () => input.closest("label").classList.toggle("selected", input.checked)));
@@ -13,18 +14,17 @@ setKind("image");
 loadOverview();
 
 function setKind(nextKind) {
-  kind = nextKind;
-  $$('[data-kind]').forEach((button) => button.classList.toggle("active", button.dataset.kind === kind));
-  const labels = { image: "AI 生图", video: "AI 生视频", chat: "AI 对话" };
-  $("#modeTitle").textContent = labels[kind];
-  $("#promptLabel").textContent = kind === "chat" ? "你想问什么" : "画面描述";
+  kind = nextKind === "video" ? "video" : "image";
+  $$("[data-kind]").forEach((button) => button.classList.toggle("active", button.dataset.kind === kind));
+  $("#modeTitle").textContent = kind === "video" ? "AI 生视频" : "AI 生图";
+  $("#promptLabel").textContent = "画面描述";
   $("#prompt").placeholder = placeholderFor(kind);
   $("#imageModelPanel").hidden = kind !== "image";
   $("#noTextPanel").hidden = kind !== "image";
-  $("#mediaOptions").hidden = kind === "chat";
+  $("#mediaOptions").hidden = false;
   $("#durationField").hidden = kind !== "video";
   $("#resolutionField").hidden = kind !== "video";
-  $("#submitBtn").textContent = kind === "chat" ? "发送" : "开始生成";
+  $("#submitBtn").textContent = "开始生成";
 }
 
 async function loadOverview() {
@@ -32,9 +32,10 @@ async function loadOverview() {
   try {
     const data = await requestJson("/api/kie-ai");
     tasks = data.tasks || [];
-    $("#credits").textContent = data.credits === null ? "--" : Number(data.credits).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-    $("#historyState").textContent = data.configured ? `${tasks.length} 条记录` : "Kie API Key 未配置";
+    $("#credits").textContent = data.credits === null || data.credits === undefined ? "--" : Number(data.credits).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    $("#historyState").textContent = data.configured === false ? "Kie API Key 未配置" : `${tasks.length} 条记录`;
     renderTasks();
+    watchPending();
   } catch (error) {
     setMessage(error.message, true);
     $("#historyState").textContent = "读取失败";
@@ -46,14 +47,14 @@ async function loadOverview() {
 async function submit(event) {
   event.preventDefault();
   const prompt = $("#prompt").value.trim();
-  if (!prompt) return setMessage("请输入生成描述或对话内容。", true);
+  if (!prompt) return setMessage("请输入生成描述。", true);
   const selectedModels = $$('input[name="imageModel"]:checked').map((input) => input.value);
   if (kind === "image" && !selectedModels.length) return setMessage("请至少选择一个生图模型。", true);
 
   const button = $("#submitBtn");
   button.disabled = true;
-  button.textContent = kind === "chat" ? "正在回复…" : "正在提交…";
-  setMessage(kind === "chat" ? "Gemini 正在生成回复。" : "正在向 Kie.ai 提交生成任务。", false);
+  button.textContent = "正在提交…";
+  setMessage("正在向 Kie.ai 提交生成任务。", false);
   try {
     const modelRequests = kind === "image" ? selectedModels : [null];
     const results = await Promise.allSettled(modelRequests.map((imageModel) => requestJson("/api/kie-ai", {
@@ -75,13 +76,28 @@ async function submit(event) {
     tasks = [...created, ...tasks];
     $("#prompt").value = "";
     renderTasks();
-    setMessage(failures.length ? `已提交 ${created.length} 个任务；${failures.length} 个模型失败：${failures.join("；")}` : kind === "chat" ? "AI 已回复。" : `已提交 ${created.length} 个生成任务，点刷新查看结果。`, Boolean(failures.length));
+    watchPending();
+    setMessage(failures.length ? `已提交 ${created.length} 个任务；${failures.length} 个模型失败：${failures.join("；")}` : `已提交 ${created.length} 个生成任务，结果会自动更新。`, Boolean(failures.length));
   } catch (error) {
     setMessage(error.message || "生成失败。", true);
   } finally {
     button.disabled = false;
-    button.textContent = kind === "chat" ? "发送" : "开始生成";
+    button.textContent = "开始生成";
   }
+}
+
+function watchPending() {
+  window.clearInterval(pollTimer);
+  const activeIds = tasks.filter((task) => !FINAL_STATES.has(task.status)).map((task) => task.id);
+  if (!activeIds.length) return;
+  pollTimer = window.setInterval(async () => {
+    const refreshed = await Promise.all(activeIds.map((id) => requestJson(`/api/kie-ai?id=${encodeURIComponent(id)}`).then((data) => data.task).catch(() => null)));
+    tasks = tasks.map((task) => refreshed.find((item) => item?.id === task.id) || task);
+    renderTasks();
+    if (tasks.every((task) => FINAL_STATES.has(task.status) || !activeIds.includes(task.id))) {
+      window.clearInterval(pollTimer);
+    }
+  }, 4000);
 }
 
 function renderTasks() {
@@ -97,12 +113,11 @@ function taskCard(task) {
     : task.kind === "video" && urls[0]
       ? `<video class="ai-media ai-video" src="${escapeHtml(urls[0])}" controls preload="metadata"></video>`
       : "";
-  const resultText = task.resultText ? `<div class="ai-chat-result">${escapeHtml(task.resultText)}</div>` : "";
   const progress = pending ? `<div class="ai-progress"><div><span style="width:${Math.max(5, Number(task.progress || 0))}%"></span></div><small>${task.progress ? `${task.progress}%` : "任务排队中"}</small></div>` : "";
   return `<article class="ai-result-card">
     <div class="ai-result-meta"><span>${kindLabel(task)}</span><b class="ai-task-status ${escapeHtml(task.status)}">${statusLabel(task.status)}</b></div>
     <p class="ai-result-prompt">${escapeHtml(task.prompt)}</p>
-    ${resultText}${media}${progress}
+    ${media}${progress}
     ${task.error ? `<p class="ai-error">${escapeHtml(task.error)}</p>` : ""}
     <div class="ai-result-footer"><span>${formatTime(task.createdAt)}${Number(task.creditsConsumed) > 0 ? ` · ${Number(task.creditsConsumed).toLocaleString("zh-CN")} 积分` : ""}</span>${urls[0] ? `<span class="ai-result-actions"><a href="${escapeHtml(urls[0])}" target="_blank" rel="noreferrer" title="打开结果">↗</a><a href="${escapeHtml(urls[0])}" download title="下载">↓</a></span>` : ""}</div>
   </article>`;
@@ -112,7 +127,7 @@ function kindLabel(task) {
   if (task.model === "google/nano-banana") return "图片 · Nano Banana 标准版";
   if (task.model === "grok-imagine/text-to-image") return "图片 · Grok Imagine";
   if (task.kind === "video") return "视频 · Grok Imagine Video";
-  return "对话 · Gemini 3.5 Flash";
+  return "图片";
 }
 
 function statusLabel(status) {
@@ -123,7 +138,6 @@ function statusLabel(status) {
 }
 
 function placeholderFor(value) {
-  if (value === "chat") return "例如：把这段 Reddit 故事改成适合 TikTok 的英文开场，前三秒制造冲突……";
   if (value === "video") return "例如：第一人称镜头穿过雨夜的纽约街道，霓虹反射在湿润路面，电影感，镜头缓慢推进……";
   return "例如：竖版电影海报，一名女性坐在复古唱片机旁，暖色灯光，细腻胶片颗粒，画面上方留出标题空间……";
 }

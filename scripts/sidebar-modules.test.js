@@ -197,6 +197,8 @@ test("factory cloud keeps peer hits under novel promotion", () => {
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-effects")?.label, "小说数据统计");
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage")?.group?.id, "novel-promotion");
   assert.deepEqual(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage")?.roles, ["admin"]);
+  assert.deepEqual(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "ai")?.roles, ["admin"]);
+  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "ai")?.href, "/ai");
   assert.ok(
     CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-ops-report")
     < CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-effects")

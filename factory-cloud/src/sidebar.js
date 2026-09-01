@@ -6,7 +6,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("mid-video", "/mid-video", "模板工作台", ALL, midVideoGroup()),
   moduleItem("schulte", "/schulte", "舒尔特训练", ALL, midVideoGroup()),
   moduleItem("podcast", "/podcast", "播客模板", ALL, midVideoGroup()),
-  moduleItem("ai", "/ai", "AI 创作", ALL, midVideoGroup()),
+  moduleItem("ai", "/ai", "AI 创作", ["admin"], midVideoGroup()),
   moduleItem("mid-video-effects", "/mid-video-effects", "数据概览", ALL, midVideoGroup()),
   moduleItem("mid-video-ops-report", "/mid-video-ops-report", "运营报表", ALL, midVideoGroup()),
   moduleItem("mid-video-publish", "/mid-video-publish", "视频发布", ALL, midVideoGroup()),

@@ -1,3 +1,4 @@
+import { handleAi } from "./ai.js";
 import { handleAccounts, handleAuth, getSession, hasUsers } from "./auth.js";
 import { handleCompat } from "./compat.js";
 import { handleGeeLark } from "./geelark.js";
@@ -34,7 +35,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleCompat];
+        const handlers = [handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;

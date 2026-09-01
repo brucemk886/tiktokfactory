@@ -388,6 +388,7 @@ function withOpsReportModules(value, role) {
     if (role === "admin") insertModuleAfter(modules, "tasks", "asset-usage");
   }
   if (role === "admin") {
+    insertModuleAfter(modules, "podcast", "ai");
     insertModuleAfter(modules, "analytics-settings", "geelark-profiles");
   }
   return modules;
