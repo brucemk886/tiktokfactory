@@ -9,6 +9,7 @@ const PAGE_FILES = {
   "/mid-video": "mid-video.html",
   "/podcast": "index.html",
   "/schulte": "schulte.html",
+  "/quiz": "quiz.html",
   "/ai": "ai.html",
   "/asset-usage": "asset-usage.html",
   "/novel-strategy": "novel-strategy.html",

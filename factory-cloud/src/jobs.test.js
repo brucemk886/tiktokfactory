@@ -199,6 +199,30 @@ test("opening titles survive job-result persistence", () => {
   assert.match(result.titles[0].openingTitle, /Rescue/);
 });
 
+test("quiz render metadata survives cloud job-result persistence", () => {
+  const persisted = persistableJobResult({
+    status: "done",
+    result: {
+      fileName: "测试题-English-7题-种子2609.mp4",
+      videoUrl: "/outputs/test.mp4",
+      language: "en",
+      questionCount: 7,
+      durationSeconds: 60.5,
+      seed: 2609,
+      backgroundMusic: "无"
+    }
+  });
+  assert.deepEqual(persisted.renderedArtifact, {
+    fileName: "测试题-English-7题-种子2609.mp4",
+    videoUrl: "/outputs/test.mp4",
+    language: "en",
+    questionCount: 7,
+    durationSeconds: 60.5,
+    seed: 2609,
+    backgroundMusic: "无"
+  });
+});
+
 test("latest opening-variant lookup returns the newest matching novel for the current user", async () => {
   const rows = [
     { id: "job-other", payload_json: JSON.stringify({ novelId: "novel-2" }) },

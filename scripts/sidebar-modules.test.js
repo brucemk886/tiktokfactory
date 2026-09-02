@@ -64,7 +64,7 @@ test("business lines keep official and GeeLark navigation apart", () => {
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
-    ["mid-video", "schulte", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"]
+    ["mid-video", "schulte", "quiz", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "psychology").map((item) => item.id),

@@ -1,13 +1,14 @@
 # Current State
 
-Updated: 2026-08-19
+Updated: 2026-09-02
 
 ## Platform
 
 - Local Factory serves its authenticated UI on port 3010 by default. Logged-in admins land on `/` business hub.
 - The workspace UI is now a light paper studio: warm cream background, ink text, olive/lime accents, 236px sidebar. Operational pages load `theme-ops.css` last so hardcoded dark panels, forms, and tables flip to the same light surfaces.
 - The product is split into three business lines: mid-form video templates, novel promotion, and psychology. Official TikTok API is the primary publish/data channel; GeeLark pages remain as an explicit backup group.
-- Reddit, psychology, Schulte, analytics, GeeLark publishing, and operations-brain modules are present.
+- Reddit, psychology, Schulte, quiz, analytics, GeeLark publishing, and operations-brain modules are present.
+- The mid-video workbench now includes `/quiz`: a configurable 6–9 question, three-choice paper quiz with timed downward scrolling, code-drawn illustrations, red-marker answer reveals, Chinese/English starter banks, local Remotion rendering, and Cloudflare-to-local-worker queue support. Missing built-in background music automatically falls back to silent rendering instead of failing the job.
 - Runtime output and queue data use configured work and output directories.
 - TikTok AI Tool is maintained as a separate hosted subproject.
 - Official TikTok authorization is hosted by TikTok AI Tool. Local Factory's `/tiktok-connections` page stores only the hosted bridge URL/API key and lists accounts that completed authorization successfully.

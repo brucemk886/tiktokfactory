@@ -23,6 +23,7 @@ const SCRIPT_BY_TYPE = {
   "auto-task": "reddit-mix-job.js",
   schulte: "schulte-render-job.js",
   "schulte-batch": "schulte-batch-job.js",
+  quiz: "quiz-render-job.js",
   "asset-preprocess": "asset-preprocess-job.js",
   "folder-classify": "folder-classify-job.js",
   unsplash: "unsplash-image-job.js",

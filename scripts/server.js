@@ -43,6 +43,7 @@ import { pushAssetGroups, pushAssetUsageDashboard, pushAudioGroups, startFactory
 import { readWatchdogSummary } from "./factory-watchdog.js";
 import { isOfficialPublishAbort, throwIfOfficialPublishAborted } from "./official-publish-abort.js";
 import { createWorkJournalService } from "./work-journal-local.js";
+import { normalizeQuizPayload } from "./quiz-content.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -508,6 +509,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/schulte.css") {
       return sendFile(res, path.join(publicDir, "schulte.css"), "text/css; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/quiz") {
+      return sendFile(res, path.join(publicDir, "quiz.html"), "text/html; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/quiz.js") {
+      return sendFile(res, path.join(publicDir, "quiz.js"), "text/javascript; charset=utf-8");
+    }
+
+    if (req.method === "GET" && url.pathname === "/quiz.css") {
+      return sendFile(res, path.join(publicDir, "quiz.css"), "text/css; charset=utf-8");
     }
 
     if (req.method === "GET" && url.pathname === "/schulte-sample.mp4") {
@@ -2194,6 +2207,43 @@ const server = http.createServer(async (req, res) => {
       const jobId = safeId(decodeURIComponent(url.pathname.slice("/api/schulte/progress/".length)));
       const jobPath = path.join(jobsDir, `${jobId}.json`);
       if (!fs.existsSync(jobPath)) return sendJson(res, 404, { error: "舒尔特训练任务不存在。" });
+      return sendJson(res, 200, readJobWithEstimate(jobPath));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/quiz/start") {
+      let payload;
+      try {
+        payload = normalizeQuizPayload(await readJsonBody(req));
+      } catch (error) {
+        return sendJson(res, 400, { error: error.message || "测试题参数不正确。" });
+      }
+      const jobId = safeId(`quiz-${Date.now()}`);
+      const payloadPath = path.join(jobsDir, `${jobId}.payload.json`);
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      fs.writeFileSync(payloadPath, JSON.stringify({ ...payload, jobId }, null, 2), "utf8");
+      writeJob(jobPath, {
+        jobId,
+        type: "quiz",
+        status: "queued",
+        percent: 2,
+        message: "测试题任务已加入生成队列。",
+        createdAt: Date.now()
+      });
+      const child = spawn(process.execPath, [path.join(root, "scripts", "quiz-render-job.js"), payloadPath, jobPath], {
+        cwd: root,
+        detached: false,
+        stdio: "ignore",
+        windowsHide: true
+      });
+      patchJob(jobPath, { workerPid: child.pid, message: "测试题任务已启动。", updatedAt: Date.now() });
+      child.unref();
+      return sendJson(res, 200, { jobId });
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/quiz/progress/")) {
+      const jobId = safeId(decodeURIComponent(url.pathname.slice("/api/quiz/progress/".length)));
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      if (!fs.existsSync(jobPath)) return sendJson(res, 404, { error: "测试题任务不存在。" });
       return sendJson(res, 200, readJobWithEstimate(jobPath));
     }
 

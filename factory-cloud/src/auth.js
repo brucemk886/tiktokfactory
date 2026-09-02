@@ -369,7 +369,7 @@ function normalizeGroups(value) {
 function withOpsReportModules(value, role) {
   const modules = Array.isArray(value) ? [...value] : [];
   if (!modules.length) return value;
-  const midVideoIds = ["mid-video", "schulte", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
+  const midVideoIds = ["mid-video", "schulte", "quiz", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
   const psychologyIds = ["psychology-topics", "psychology", "psychology-effects", "psychology-ops-report", "psychology-publish"];
   const novelIds = ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "asset-usage"];
   if (modules.some((moduleId) => midVideoIds.includes(moduleId))) {
@@ -388,6 +388,7 @@ function withOpsReportModules(value, role) {
     if (role === "admin") insertModuleAfter(modules, "tasks", "asset-usage");
   }
   if (role === "admin") {
+    insertModuleAfter(modules, "schulte", "quiz");
     insertModuleAfter(modules, "podcast", "ai");
     insertModuleAfter(modules, "analytics-settings", "geelark-profiles");
   }

@@ -11,6 +11,7 @@ const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/generate\/start$/, type: "generate", title: "生成视频" },
   { method: "POST", pattern: /^\/api\/reddit-mix\/start$/, type: "reddit-mix", title: "Reddit 混剪" },
   { method: "POST", pattern: /^\/api\/schulte\/start$/, type: "schulte", title: "舒尔特出片" },
+  { method: "POST", pattern: /^\/api\/quiz\/start$/, type: "quiz", title: "测试题出片" },
   { method: "POST", pattern: /^\/api\/asset-groups\/preprocess\/start$/, type: "asset-preprocess", title: "素材预处理" },
   { method: "POST", pattern: /^\/api\/folder-classify\/start$/, type: "folder-classify", title: "文件夹分类" },
   { method: "POST", pattern: /^\/api\/images\/unsplash\/start$/, type: "unsplash", title: "Unsplash 拉图" },
@@ -23,6 +24,7 @@ const PROGRESS_ROUTES = [
   { pattern: /^\/api\/generate\/progress\/([^/]+)$/, type: "generate" },
   { pattern: /^\/api\/reddit-mix\/progress\/([^/]+)$/, type: "reddit-mix" },
   { pattern: /^\/api\/schulte\/progress\/([^/]+)$/, type: "schulte" },
+  { pattern: /^\/api\/quiz\/progress\/([^/]+)$/, type: "quiz" },
   { pattern: /^\/api\/asset-groups\/preprocess\/progress\/([^/]+)$/, type: "asset-preprocess" },
   { pattern: /^\/api\/folder-classify\/progress\/([^/]+)$/, type: "folder-classify" },
   { pattern: /^\/api\/images\/unsplash\/progress\/([^/]+)$/, type: "unsplash" },
@@ -723,6 +725,18 @@ async function autoKeepAndVoiceOpeningJob(db, job, result) {
 export function persistableJobResult(value) {
   const result = value && typeof value === "object" ? value : {};
   const slim = slimJobResult(result);
+  const rendered = result.result && typeof result.result === "object" ? result.result : result;
+  if (rendered.fileName) {
+    slim.renderedArtifact = {
+      fileName: String(rendered.fileName).slice(0, 240),
+      videoUrl: String(rendered.videoUrl || "").slice(0, 500),
+      language: rendered.language === "zh" ? "zh" : "en",
+      questionCount: Math.max(0, Math.min(20, Number(rendered.questionCount) || 0)),
+      durationSeconds: Math.max(0, Number(rendered.durationSeconds) || 0),
+      seed: Math.max(0, Number(rendered.seed) || 0),
+      backgroundMusic: String(rendered.backgroundMusic || "").slice(0, 120)
+    };
+  }
   if (Array.isArray(result.items)) slim.items = result.items;
   if (Array.isArray(result.publishResults)) slim.publishResults = result.publishResults.slice(0, 80);
   if (result.publishSummary) slim.publishSummary = result.publishSummary;
