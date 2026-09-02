@@ -151,7 +151,8 @@ export async function assertOfficialPublishAccess(env, user, payload = {}) {
   const store = await loadGroupStore(env.DB);
   const data = await signalDesk(env, env.DB, "/api/v1/accounts");
   const scoped = scopeOfficialAccess(data, store, user, payload.module || "");
-  const allowed = new Set((scoped.accounts || []).map((account) => account.connectionId || account.id).filter(Boolean));
+  const publishableAccounts = (scoped.accounts || []).filter((account) => !Array.isArray(account.scopes) || account.scopes.includes("video.publish"));
+  const allowed = new Set(publishableAccounts.map((account) => account.connectionId || account.id).filter(Boolean));
   const requested = Array.from(new Set((Array.isArray(payload.connectionIds) ? payload.connectionIds : []).map((id) => String(id || "").trim()).filter(Boolean)));
   if (!requested.length) {
     const error = new Error("请先选择官方授权账号。");
@@ -164,7 +165,7 @@ export async function assertOfficialPublishAccess(env, user, payload = {}) {
     error.statusCode = 403;
     throw error;
   }
-  return scoped;
+  return { ...scoped, accounts: publishableAccounts };
 }
 
 async function handleAccountGroups(request, env, db, url, session) {

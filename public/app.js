@@ -36,11 +36,11 @@ const batchResults = document.querySelector("#batchResults");
 const resultList = document.querySelector("#resultList");
 const downloadSelectedBtn = document.querySelector("#downloadSelectedBtn");
 const publishPanel = document.querySelector("#publishPanel");
-const refreshGeeLarkPhonesBtn = document.querySelector("#refreshGeeLarkPhonesBtn");
-const geelarkStatus = document.querySelector("#geelarkStatus");
-const geelarkPhoneList = document.querySelector("#geelarkPhoneList");
-const geelarkGroupFilter = document.querySelector("#geelarkGroupFilter");
-const geelarkNameFilter = document.querySelector("#geelarkNameFilter");
+const refreshOfficialAccountsBtn = document.querySelector("#refreshOfficialAccountsBtn");
+const officialAccountStatus = document.querySelector("#officialAccountStatus");
+const officialAccountList = document.querySelector("#officialAccountList");
+const officialGroupFilter = document.querySelector("#officialGroupFilter");
+const officialNameFilter = document.querySelector("#officialNameFilter");
 const publishDesc = document.querySelector("#publishDesc");
 const publishTime = document.querySelector("#publishTime");
 const publishIntervalMinutes = document.querySelector("#publishIntervalMinutes");
@@ -82,7 +82,7 @@ let pollTimer = null;
 let activeCaptionTemplate = "player";
 let currentJobId = "";
 let stopRequested = false;
-let geelarkPhones = [];
+let officialAccounts = [];
 let unsplashPollTimer = null;
 let currentUnsplashJobId = "";
 
@@ -167,10 +167,10 @@ downloadSelectedBtn?.addEventListener("click", async () => {
   setStatus(`已触发 ${checkedItems.length} 条视频下载。`);
 });
 
-refreshGeeLarkPhonesBtn?.addEventListener("click", loadGeeLarkPhones);
+refreshOfficialAccountsBtn?.addEventListener("click", loadOfficialAccounts);
 publishSelectedBtn?.addEventListener("click", publishSelectedVideos);
-geelarkGroupFilter?.addEventListener("change", renderGeeLarkPhones);
-geelarkNameFilter?.addEventListener("input", renderGeeLarkPhones);
+officialGroupFilter?.addEventListener("change", renderOfficialAccounts);
+officialNameFilter?.addEventListener("input", renderOfficialAccounts);
 startUnsplashBtn?.addEventListener("click", startUnsplashDownload);
 sourceModes.forEach((mode) => mode.addEventListener("change", updateSourceMode));
 removeUnsupportedTemplateOptions();
@@ -197,7 +197,7 @@ updatePreviewAspect();
 setCaptionPositionOpen(false);
 updateCaptionPreviewFromSelection();
 updateSourceMode();
-loadGeeLarkPhones();
+loadOfficialAccounts();
 
 async function startUnsplashDownload() {
   if (currentUnsplashJobId) return cancelUnsplashDownload();
@@ -502,32 +502,28 @@ function clearUnsplashPoll() {
   unsplashPollTimer = null;
 }
 
-async function loadGeeLarkPhones() {
-  if (!geelarkPhoneList || !geelarkStatus) return;
-  geelarkStatus.textContent = "正在读取 GeeLark 云手机...";
-  geelarkPhoneList.innerHTML = "";
+async function loadOfficialAccounts() {
+  if (!officialAccountList || !officialAccountStatus) return;
+  officialAccountStatus.textContent = "正在读取 TikTok 官方授权账号...";
+  officialAccountList.innerHTML = "";
   try {
-    const response = await fetch(`/api/geelark/phones?t=${Date.now()}`);
+    const response = await fetch(`/api/official-tiktok/publish-accounts?module=mid-video&t=${Date.now()}`, { cache: "no-store" });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "读取 GeeLark 云手机失败。");
-    if (!data.configured) {
-      geelarkStatus.textContent = "GeeLark API 未配置。";
+    if (!response.ok) throw new Error(data.error || "读取 TikTok 官方账号失败。");
+    const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+    officialAccounts = accounts;
+    if (!accounts.length) {
+      officialAccountStatus.textContent = "本项目还没有可发布的官方账号，请先在账户管理中分配账号分组。";
       return;
     }
-    const phones = Array.isArray(data.phones) ? data.phones : [];
-    geelarkPhones = phones;
-    if (!phones.length) {
-      geelarkStatus.textContent = "没有读取到云手机，请确认 GeeLark 账号下已有云手机。";
-      return;
-    }
-    geelarkStatus.textContent = `已读取 ${phones.length} 个云手机账号。`;
-    geelarkPhoneList.innerHTML = phones.map((phone, index) => {
-      const id = escapeHtml(phone.id || phone.envId || phone.phoneId || phone.serialNo || "");
-      const name = escapeHtml(phone.serialName || phone.name || phone.deviceName || `云手机 ${index + 1}`);
-      const groupName = escapeHtml(phone.group?.name || phone.groupName || "");
+    officialAccountStatus.textContent = `已读取 ${accounts.length} 个 TikTok 官方账号。`;
+    officialAccountList.innerHTML = accounts.map((account, index) => {
+      const id = escapeHtml(account.connectionId || account.id || "");
+      const name = escapeHtml(account.displayName || account.label || account.username || `官方账号 ${index + 1}`);
+      const groupName = escapeHtml(account.groupName || "未分组");
       return `
-        <label class="geelark-phone-item">
-          <input class="geelark-phone-check" type="checkbox" value="${id}" />
+        <label class="official-account-item">
+          <input class="official-account-check" type="checkbox" value="${id}" />
           <span>
             <strong>${name}</strong>
             <small>${groupName || id}</small>
@@ -535,18 +531,22 @@ async function loadGeeLarkPhones() {
         </label>
       `;
     }).join("");
-    updateGeeLarkFiltersFromDom();
+    updateOfficialFiltersFromDom();
   } catch (error) {
-    geelarkStatus.textContent = error.message || "读取 GeeLark 云手机失败。";
+    officialAccountStatus.textContent = error.message || "读取 TikTok 官方账号失败。";
   }
 }
 
-function updateGeeLarkFiltersFromDom() {
-  if (!geelarkGroupFilter || !geelarkPhoneList) return;
-  Array.from(geelarkPhoneList.querySelectorAll(".geelark-phone-item")).forEach((item, index) => {
-    const phone = geelarkPhones[index] || {};
+function updateOfficialFiltersFromDom() {
+  if (!officialGroupFilter || !officialAccountList) return;
+  Array.from(officialAccountList.querySelectorAll(".official-account-item")).forEach((item, index) => {
+    const phone = officialAccounts[index] || {};
     item.dataset.searchText = [
       phone.id,
+      phone.connectionId,
+      phone.displayName,
+      phone.username,
+      phone.ownerEmail,
       phone.serialName,
       phone.serialNo,
       phone.groupName,
@@ -554,33 +554,33 @@ function updateGeeLarkFiltersFromDom() {
     ].filter(Boolean).join(" ").toLowerCase();
   });
 
-  const currentGroup = geelarkGroupFilter.value;
-  const groups = Array.from(geelarkPhoneList.querySelectorAll(".geelark-phone-item small"))
+  const currentGroup = officialGroupFilter.value;
+  const groups = Array.from(officialAccountList.querySelectorAll(".official-account-item small"))
     .map((item) => item.textContent.trim())
     .filter(Boolean)
     .filter((value, index, arr) => arr.indexOf(value) === index)
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
 
-  geelarkGroupFilter.innerHTML = `<option value="">全部分组</option>${groups.map((group) => (
+  officialGroupFilter.innerHTML = `<option value="">全部分组</option>${groups.map((group) => (
     `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`
   )).join("")}`;
 
   if (groups.includes(currentGroup)) {
-    geelarkGroupFilter.value = currentGroup;
+    officialGroupFilter.value = currentGroup;
   }
-  renderGeeLarkPhones();
+  renderOfficialAccounts();
 }
 
-function renderGeeLarkPhones() {
-  if (!geelarkPhoneList) return;
-  const groupKeyword = (geelarkGroupFilter?.value || "").trim().toLowerCase();
-  const nameKeyword = (geelarkNameFilter?.value || "").trim().toLowerCase();
+function renderOfficialAccounts() {
+  if (!officialAccountList) return;
+  const groupKeyword = (officialGroupFilter?.value || "").trim().toLowerCase();
+  const nameKeyword = (officialNameFilter?.value || "").trim().toLowerCase();
   let visibleCount = 0;
 
-  geelarkPhoneList.querySelectorAll(".geelark-phone-item").forEach((item) => {
+  officialAccountList.querySelectorAll(".official-account-item").forEach((item) => {
     const name = item.querySelector("strong")?.textContent.trim().toLowerCase() || "";
     const group = item.querySelector("small")?.textContent.trim().toLowerCase() || "";
-    const id = item.querySelector(".geelark-phone-check")?.value.toLowerCase() || "";
+    const id = item.querySelector(".official-account-check")?.value.toLowerCase() || "";
     const haystack = item.dataset.searchText || `${name} ${group} ${id}`;
     const groupMatched = !groupKeyword || group === groupKeyword;
     const nameMatched = !nameKeyword || haystack.includes(nameKeyword);
@@ -589,20 +589,20 @@ function renderGeeLarkPhones() {
     if (visible) visibleCount += 1;
   });
 
-  if (geelarkStatus && geelarkPhoneList.children.length) {
-    geelarkStatus.textContent = `已显示 ${visibleCount}/${geelarkPhoneList.children.length} 个 GeeLark 账号`;
+  if (officialAccountStatus && officialAccountList.children.length) {
+    officialAccountStatus.textContent = `已显示 ${visibleCount}/${officialAccountList.children.length} 个 TikTok 官方账号`;
   }
 }
 
 async function publishSelectedVideos() {
   const checkedVideos = Array.from(resultList.querySelectorAll(".result-check:checked"));
-  const checkedPhones = Array.from(document.querySelectorAll(".geelark-phone-check:checked"));
+  const checkedPhones = Array.from(document.querySelectorAll(".official-account-check:checked"));
   if (!checkedVideos.length) {
     setPublishResult("请先勾选要发布的视频。");
     return;
   }
   if (!checkedPhones.length) {
-    setPublishResult("请先勾选要发布到的 GeeLark 云手机账号。");
+    setPublishResult("请先勾选要发布到的 TikTok 官方授权账号。");
     return;
   }
 
@@ -617,43 +617,32 @@ async function publishSelectedVideos() {
     templateLabel: item.dataset.templateLabel || "",
     variant: Number(item.dataset.variant) || 1
   }));
-  const envIds = checkedPhones.map((item) => item.value).filter(Boolean);
-  const accounts = checkedPhones.map((item) => {
-    const row = item.closest(".geelark-phone-item");
-    const phone = geelarkPhones.find((entry) => String(entry.id) === item.value) || {};
-    return {
-      id: item.value,
-      name: row?.querySelector("strong")?.textContent.trim() || phone.serialName || "",
-      serialNo: phone.serialNo || "",
-      groupName: phone.groupName || row?.querySelector("small")?.textContent.trim() || "",
-      remark: phone.remark || ""
-    };
-  });
+  const connectionIds = checkedPhones.map((item) => item.value).filter(Boolean);
   const scheduleAt = publishTime?.value ? Math.floor(new Date(publishTime.value).getTime() / 1000) : Math.floor(Date.now() / 1000);
   const intervalMinutes = Math.max(0, Number(publishIntervalMinutes?.value) || 0);
 
   publishSelectedBtn.disabled = true;
-  setPublishResult(`正在矩阵轮转分配 ${videos.length} 条视频到 ${envIds.length} 个账号，间隔 ${intervalMinutes} 分钟...`);
+  setPublishResult(`正在把 ${videos.length} 条视频提交到 ${connectionIds.length} 个官方账号，间隔 ${intervalMinutes} 分钟...`);
   try {
-    const response = await fetch("/api/geelark/publish", {
+    const response = await fetch("/api/official-tiktok/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        module: "mid-video",
+        name: "播客模板视频发布",
         videos,
-        envIds,
-        accounts,
+        connectionIds,
+        accountAssignment: "round-robin",
         videoDesc: publishDesc?.value || "",
         scheduleAt,
         intervalMinutes
       })
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "GeeLark 发布失败。");
-    const taskCount = (data.results || []).reduce((sum, item) => sum + (item.taskIds || []).length, 0);
-    const scheduleRange = formatPublishScheduleRange(data.results || []);
-    setPublishResult(`已提交矩阵轮转任务：${data.results?.length || 0} 个视频，${taskCount} 个发布任务。${scheduleRange}`);
+    if (!response.ok) throw new Error(data.error || "TikTok 官方发布失败。");
+    setPublishResult(data.message || `已下发 ${videos.length} 条视频的官方发布任务${data.jobId ? `：${data.jobId}` : ""}。`);
   } catch (error) {
-    setPublishResult(error.message || "GeeLark 发布失败。");
+    setPublishResult(error.message || "TikTok 官方发布失败。");
   } finally {
     publishSelectedBtn.disabled = false;
   }
@@ -955,4 +944,3 @@ function delay(ms) {
 function stripExtension(fileName) {
   return String(fileName || "").replace(/\.[^.]+$/, "");
 }
-

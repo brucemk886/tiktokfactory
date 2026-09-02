@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const STORAGE_KEY = "local-factory-quiz-settings-v2";
+const STORAGE_KEY = "local-factory-quiz-settings-v3";
 const ILLUSTRATIONS = [
   ["mountain", "山峰"], ["ocean", "海洋"], ["desert", "沙漠"], ["landmark", "建筑"],
   ["river", "河流"], ["globe", "地球"], ["boot", "版图"], ["planet", "星球"], ["leaf", "植物"]
@@ -37,10 +37,14 @@ const BANKS = {
 let questions = clone(BANKS.en.questions);
 let currentJobId = "";
 let pollTimer = null;
+let publishAccounts = [];
+const selectedPublishAccountIds = new Set();
 
+setDefaultPublishSchedule();
 restore();
 renderQuestions();
 updateSummary();
+loadPublishAccounts();
 
 $("#language").addEventListener("change", updateLoadLabel);
 $("#loadDefaultsBtn").addEventListener("click", () => loadBank($("#language").value));
@@ -50,10 +54,21 @@ $("#questionList").addEventListener("input", handleQuestionInput);
 $("#questionList").addEventListener("change", handleQuestionInput);
 $("#questionList").addEventListener("click", handleQuestionClick);
 $("#generateBtn").addEventListener("click", generate);
+$("#refreshPublishAccountsBtn").addEventListener("click", loadPublishAccounts);
+$("#publishGroupFilter").addEventListener("change", renderPublishAccounts);
+$("#publishNameFilter").addEventListener("input", renderPublishAccounts);
+$("#publishAccountList").addEventListener("change", handlePublishAccountSelection);
+$("#selectVisibleAccountsBtn").addEventListener("click", selectVisiblePublishAccounts);
+$("#quizAutoPublish").addEventListener("change", () => { updatePublishState(); save(); });
+["publishDesc", "publishScheduleAt", "publishIntervalMinutes"].forEach((id) => {
+  $(`#${id}`).addEventListener("input", save);
+  $(`#${id}`).addEventListener("change", save);
+});
 ["language", "secondsPerQuestion", "seed", "title", "hook", "cta"].forEach((id) => {
   $(`#${id}`).addEventListener("input", () => { save(); updateSummary(); });
   $(`#${id}`).addEventListener("change", () => { save(); updateSummary(); });
 });
+updatePublishState();
 
 function q(prompt, options, answerIndex, illustration) { return { prompt, options, answerIndex, illustration }; }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -121,6 +136,12 @@ function renderQuestions() {
 async function generate() {
   if (questions.length < 6 || questions.length > 9) return setStatus("测试题需要 6–9 道题。", true);
   const payload = collectPayload();
+  if (payload.publish.autoPublish && !payload.publish.connectionIds.length) {
+    return setStatus("自动发布至少需要选择一个 TikTok 官方授权账号。", true);
+  }
+  if (payload.publish.autoPublish && payload.publish.scheduleAt < Math.floor(Date.now() / 1000) + 300) {
+    return setStatus("起始发布时间至少要晚于当前时间 5 分钟。", true);
+  }
   setBusy(true); setProgress(2); setStatus("正在创建测试题任务...");
   try {
     const response = await fetchWithTimeout("/api/quiz/start", {
@@ -170,20 +191,103 @@ function showResult(result) {
     $("#downloadLink").href = result.videoUrl;
     $("#downloadLink").classList.remove("is-hidden");
     $("#cloudHint").classList.add("is-hidden");
-    setStatus("测试题视频生成完成，可以播放或下载。");
+    setStatus($("#quizAutoPublish").checked ? "测试题视频生成完成，并已提交 TikTok 官方发布。" : "测试题视频生成完成，可以播放或下载。");
   } else {
     $("#cloudHint").classList.remove("is-hidden");
-    setStatus(`测试题视频生成完成：${result.fileName || "已保存到本地输出目录"}`);
+    setStatus(`测试题视频生成完成${$("#quizAutoPublish").checked ? "并已提交官方发布" : ""}：${result.fileName || "已保存到本地输出目录"}`);
   }
 }
 
 function collectPayload() {
+  const autoPublish = $("#quizAutoPublish").checked;
+  const connectionIds = Array.from(selectedPublishAccountIds);
+  const accountsById = new Map(publishAccounts.map((account) => [account.id, account]));
   return {
+    module: "mid-video",
     language: $("#language").value,
     title: $("#title").value.trim(), hook: $("#hook").value.trim(), cta: $("#cta").value.trim(),
     secondsPerQuestion: Number($("#secondsPerQuestion").value), seed: Number($("#seed").value),
-    backgroundMusicEnabled: true, backgroundMusicVolume: 0.18, questions: clone(questions)
+    backgroundMusicEnabled: true, backgroundMusicVolume: 0.18, questions: clone(questions),
+    publish: {
+      provider: "official",
+      autoPublish,
+      connectionIds: autoPublish ? connectionIds : [],
+      officialAccounts: autoPublish ? connectionIds.map((connectionId) => {
+        const account = accountsById.get(connectionId) || {};
+        return { connectionId, name: account.name || connectionId, username: account.username || "", ownerEmail: account.ownerEmail || "", groupName: account.groupName || "" };
+      }) : [],
+      envIds: [],
+      accounts: [],
+      accountAssignment: "round-robin",
+      videoDesc: $("#publishDesc").value.trim(),
+      scheduleAt: autoPublish ? Math.floor(new Date($("#publishScheduleAt").value).getTime() / 1000) : 0,
+      intervalMinutes: Math.max(0, Math.min(1440, Number($("#publishIntervalMinutes").value) || 0))
+    }
   };
+}
+
+async function loadPublishAccounts() {
+  $("#publishAccountList").innerHTML = '<div class="quiz-account-empty">正在读取 TikTok 官方账号...</div>';
+  try {
+    const response = await fetch(`/api/official-tiktok/publish-accounts?module=mid-video&t=${Date.now()}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取 TikTok 官方账号失败。");
+    publishAccounts = (Array.isArray(data.accounts) ? data.accounts : []).map((account) => ({
+      ...account,
+      id: String(account.connectionId || account.id || ""),
+      name: account.displayName || account.label || account.username || account.connectionId || account.id || "",
+      groupName: account.groupName || "未分组"
+    })).filter((account) => account.id);
+    const validIds = new Set(publishAccounts.map((account) => account.id));
+    for (const id of selectedPublishAccountIds) if (!validIds.has(id)) selectedPublishAccountIds.delete(id);
+    const groups = Array.from(new Set(publishAccounts.map((account) => account.groupName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"));
+    const currentGroup = $("#publishGroupFilter").value;
+    $("#publishGroupFilter").innerHTML = '<option value="">全部分组</option>' + groups.map((group) => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("");
+    if (groups.includes(currentGroup)) $("#publishGroupFilter").value = currentGroup;
+    renderPublishAccounts();
+  } catch (error) {
+    $("#publishAccountList").innerHTML = `<div class="quiz-account-empty">${escapeHtml(error.message || "读取账号失败。")}</div>`;
+  }
+}
+
+function visiblePublishAccounts() {
+  const group = $("#publishGroupFilter").value;
+  const query = $("#publishNameFilter").value.trim().toLowerCase();
+  return publishAccounts.filter((account) => (!group || account.groupName === group) && (!query || [account.name, account.username, account.ownerEmail, account.groupName, account.id].some((value) => String(value || "").toLowerCase().includes(query))));
+}
+
+function renderPublishAccounts() {
+  const accounts = visiblePublishAccounts();
+  $("#publishAccountList").innerHTML = accounts.length ? accounts.map((account) => `<label class="quiz-account-card"><input class="quiz-account-check" type="checkbox" value="${escapeHtml(account.id)}" ${selectedPublishAccountIds.has(account.id) ? "checked" : ""} /><span><strong>${escapeHtml(account.name || account.id)}</strong><small>${escapeHtml([account.username ? `@${account.username}` : "", account.groupName].filter(Boolean).join(" · "))}</small></span></label>`).join("") : '<div class="quiz-account-empty">当前筛选没有可发布账号。</div>';
+  updatePublishSelectedCount();
+}
+
+function handlePublishAccountSelection(event) {
+  const input = event.target.closest(".quiz-account-check");
+  if (!input) return;
+  if (input.checked) selectedPublishAccountIds.add(input.value); else selectedPublishAccountIds.delete(input.value);
+  updatePublishSelectedCount(); save();
+}
+
+function selectVisiblePublishAccounts() {
+  const ids = visiblePublishAccounts().map((account) => account.id);
+  const shouldSelect = ids.some((id) => !selectedPublishAccountIds.has(id));
+  ids.forEach((id) => shouldSelect ? selectedPublishAccountIds.add(id) : selectedPublishAccountIds.delete(id));
+  renderPublishAccounts(); save();
+}
+
+function updatePublishSelectedCount() { $("#publishSelectedCount").textContent = `已选 ${selectedPublishAccountIds.size} 个`; }
+function updatePublishState() {
+  const enabled = $("#quizAutoPublish").checked;
+  ["publishGroupFilter", "publishNameFilter", "selectVisibleAccountsBtn", "publishDesc", "publishScheduleAt", "publishIntervalMinutes"].forEach((id) => { $(`#${id}`).disabled = !enabled; });
+  $("#publishAccountList").style.opacity = enabled ? "1" : "0.45";
+  $("#publishAccountList").style.pointerEvents = enabled ? "" : "none";
+  if (!$("#generateBtn").disabled) $("#generateBtn").textContent = enabled ? "生成并官方发布" : "仅生成测试题视频";
+}
+
+function setDefaultPublishSchedule() {
+  const date = new Date(Date.now() + 30 * 60 * 1000); date.setSeconds(0, 0);
+  $("#publishScheduleAt").value = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 function updateSummary() {
@@ -194,7 +298,7 @@ function updateSummary() {
   updateLoadLabel();
 }
 function updateLoadLabel() { $("#loadDefaultsBtn").textContent = $("#language").value === "zh" ? "载入中文示例题库" : "载入英文示例题库"; }
-function setBusy(busy) { $("#generateBtn").disabled = busy; $("#generateBtn").textContent = busy ? "正在生成..." : "生成测试题视频"; }
+function setBusy(busy) { $("#generateBtn").disabled = busy; $("#generateBtn").textContent = busy ? "正在生成..." : ($("#quizAutoPublish").checked ? "生成并官方发布" : "仅生成测试题视频"); }
 function setProgress(value) { $("#progressBar").style.width = `${Math.max(0, Math.min(100, value))}%`; }
 function setStatus(message, error = false) { $("#statusText").textContent = message; $("#statusText").classList.toggle("error", error); }
 function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collectPayload())); } catch { /* optional */ } }
@@ -204,6 +308,15 @@ function restore() {
     if (!stored || !Array.isArray(stored.questions) || stored.questions.length < 6 || stored.questions.length > 9) return;
     questions = stored.questions;
     ["language", "title", "hook", "cta", "secondsPerQuestion", "seed"].forEach((id) => { if (stored[id] !== undefined) $(`#${id}`).value = String(stored[id]); });
+    const publish = stored.publish && typeof stored.publish === "object" ? stored.publish : {};
+    $("#quizAutoPublish").checked = publish.autoPublish !== false;
+    $("#publishDesc").value = String(publish.videoDesc || "");
+    if (Number(publish.scheduleAt) > Date.now() / 1000) {
+      const date = new Date(Number(publish.scheduleAt) * 1000);
+      $("#publishScheduleAt").value = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+    $("#publishIntervalMinutes").value = String(Math.max(0, Number(publish.intervalMinutes) || 15));
+    (Array.isArray(publish.connectionIds) ? publish.connectionIds : []).forEach((id) => selectedPublishAccountIds.add(String(id)));
   } catch { /* ignore malformed local settings */ }
 }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[char]); }

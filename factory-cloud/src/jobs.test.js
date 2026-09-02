@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, isOrphanRunningJob, persistableJobResult, shouldWriteOfficialPublishRecords, videosForOfficialRetry } from "./jobs.js";
+import { applyJobToTask, completeJobNextStatus, findLatestOpeningVariantsJob, isCancelledJob, isDeletedTask, isJobInModule, isOrphanRunningJob, moduleForJobType, persistableJobResult, shouldWriteOfficialPublishRecords, videosForOfficialRetry } from "./jobs.js";
+
+test("recent-video module scope keeps mid-video renders separate", () => {
+  assert.equal(moduleForJobType("generate"), "mid-video");
+  assert.equal(moduleForJobType("schulte"), "mid-video");
+  assert.equal(moduleForJobType("quiz"), "mid-video");
+  assert.equal(moduleForJobType("psychology"), "psychology");
+  assert.equal(isJobInModule("quiz", "mid-video"), true);
+  assert.equal(isJobInModule("psychology", "mid-video"), false);
+  assert.equal(isJobInModule("reddit-mix", "mid-video"), false);
+  assert.equal(isJobInModule("reddit-mix", ""), true);
+});
 
 test("publish failure after generation keeps videos and needs attention", () => {
   const task = applyJobToTask({

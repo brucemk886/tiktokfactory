@@ -20,8 +20,8 @@
             <p>批量选择本地音频，勾选模板，一次生成多条视频。</p>
           </div>
           <div class="topbar-actions">
-            <a class="topbar-link-btn" href="/tasks">Reddit 自动发布</a>
-            <a class="topbar-link-btn" href="/stats">发布记录与统计</a>
+            <a class="topbar-link-btn" href="/mid-video-publish">中视频发布</a>
+            <a class="topbar-link-btn" href="/official-publish-records">官方发布记录</a>
             <button id="generateBtn" type="button">生成视频</button>
             <button id="stopBtn" class="secondary-btn" type="button" hidden>停止生成</button>
           </div>
@@ -270,24 +270,24 @@ overthinking</textarea>
         </div>
         <div id="publishPanel" class="publish-panel" hidden>
           <div class="batch-results-head">
-            <strong>GeeLark 发布</strong>
-            <button id="refreshGeeLarkPhonesBtn" type="button">刷新账号</button>
+            <strong>TikTok 官方发布</strong>
+            <button id="refreshOfficialAccountsBtn" type="button">刷新账号</button>
           </div>
-          <div id="geelarkStatus" class="publish-status">正在读取 GeeLark 云手机...</div>
-          <div class="publish-status publish-mode-note">当前发布模式：矩阵轮转分配。按音频序号 + 模板序号轮流分配账号，同一音频的一轮模板使用同一个发布时间。</div>
-          <div class="geelark-filter-row">
+          <div id="officialAccountStatus" class="publish-status">正在读取 TikTok 官方授权账号...</div>
+          <div class="publish-status publish-mode-note">当前发布模式：官方账号轮转。成片由本地工人上传，随后交给 Signal Desk 发布中台按账号和时间排期。</div>
+          <div class="official-account-filter-row">
             <label class="field">
               <span>分组筛选</span>
-              <select id="geelarkGroupFilter">
+              <select id="officialGroupFilter">
                 <option value="">全部分组</option>
               </select>
             </label>
             <label class="field">
               <span>账号名称</span>
-              <input id="geelarkNameFilter" type="search" placeholder="输入账号名称/编号/备注" />
+              <input id="officialNameFilter" type="search" placeholder="输入昵称、用户名或邮箱" />
             </label>
           </div>
-          <div id="geelarkPhoneList" class="geelark-phone-list"></div>
+          <div id="officialAccountList" class="official-account-list"></div>
           <label class="field">
             <span>TikTok 文案</span>
             <textarea id="publishDesc" rows="4" spellcheck="false" placeholder="发布到 TikTok 的视频文案，支持 #tag"></textarea>
@@ -302,7 +302,7 @@ overthinking</textarea>
           </label>
           <button id="publishSelectedBtn" type="button">发布选中视频</button>
           <div id="publishResult" class="publish-status"></div>
-          <a class="stats-link" href="/stats">查看发布记录与数据统计</a>
+          <a class="stats-link" href="/official-publish-records">查看 TikTok 官方发布记录</a>
         </div>
       </section>
     </main>

@@ -599,7 +599,7 @@ video {
   line-height: 1.5;
 }
 
-.publish-panel > .publish-status:not(#geelarkStatus):not(#publishResult):not(.publish-mode-note) {
+.publish-panel > .publish-status:not(#officialAccountStatus):not(#publishResult):not(.publish-mode-note) {
   display: none;
 }
 
@@ -762,7 +762,7 @@ video {
   color: #77777f;
 }
 
-.geelark-filter-row {
+.official-account-filter-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   gap: 12px;
@@ -804,7 +804,7 @@ video {
   content: "收起";
 }
 
-.geelark-phone-list {
+.official-account-list {
   display: grid;
   gap: 10px;
   max-height: 220px;
@@ -812,7 +812,7 @@ video {
   padding-right: 4px;
 }
 
-.geelark-phone-item {
+.official-account-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -823,13 +823,13 @@ video {
   padding: 10px 12px;
 }
 
-.geelark-phone-item input {
+.official-account-item input {
   width: 18px;
   height: 18px;
 }
 
-.geelark-phone-item strong,
-.geelark-phone-item small {
+.official-account-item strong,
+.official-account-item small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -950,7 +950,7 @@ video {
   .task-four-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.geelark-phone-item strong {
+.official-account-item strong {
   color: #f6f6f2;
   font-size: 14px;
   display: inline-flex;
@@ -958,7 +958,7 @@ video {
   gap: 8px;
 }
 
-.geelark-phone-item .risk-pill,
+.official-account-item .risk-pill,
 .risk-pill {
   display: inline-block;
   padding: 2px 6px;
@@ -970,7 +970,7 @@ video {
   font-style: normal;
 }
 
-.geelark-phone-item small {
+.official-account-item small {
   margin-top: 3px;
   color: #a9a9ad;
   font-size: 12px;

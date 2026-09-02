@@ -50,15 +50,38 @@ export async function handleJobs(request, env, url, session, ctx) {
   if (!session) return null;
 
   if (method === "GET" && pathname === "/api/factory/recent-videos") {
-    return json({ videos: await listRecentVideos(env.DB, session.user) });
+    return json({ videos: await listRecentVideos(env.DB, session.user, url.searchParams.get("module") || "") });
   }
 
   for (const route of FFMPEG_START_ROUTES) {
     if (method === route.method && route.pattern.test(pathname)) {
       const payload = await readJson(request);
-      if (route.type === "official-publish") {
+      const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
+      const automaticOfficialPublish = publish.provider === "official" && publish.autoPublish !== false;
+      if (route.type === "official-publish" || automaticOfficialPublish) {
         try {
-          await assertOfficialPublishAccess(env, session.user, payload);
+          const scoped = await assertOfficialPublishAccess(env, session.user, route.type === "official-publish" ? payload : {
+            module: payload.module || moduleForJobType(route.type),
+            connectionIds: publish.connectionIds
+          });
+          if (automaticOfficialPublish) {
+            const requested = new Set((publish.connectionIds || []).map(String));
+            payload.publish = {
+              ...publish,
+              connectionIds: Array.from(requested),
+              officialAccounts: (scoped.accounts || [])
+                .filter((account) => requested.has(String(account.connectionId || account.id || "")))
+                .map((account) => ({
+                  connectionId: String(account.connectionId || account.id || ""),
+                  name: account.displayName || account.label || account.username || account.connectionId || account.id || "",
+                  username: account.username || "",
+                  ownerEmail: account.ownerEmail || "",
+                  groupName: account.groupName || ""
+                })),
+              envIds: [],
+              accounts: []
+            };
+          }
         } catch (error) {
           return errorJson(error.message || "没有这些账号的发布权限。", error.statusCode || 403);
         }
@@ -123,9 +146,10 @@ export async function listRecentJobs(db, limit = 80) {
   return results || [];
 }
 
-async function listRecentVideos(db, user) {
+async function listRecentVideos(db, user, moduleKey = "") {
   const rows = await listRecentJobs(db, 40);
-  const mine = user?.role === "admin" ? rows : rows.filter((row) => row.created_by === user?.username);
+  const scopedRows = rows.filter((row) => isJobInModule(row.type, moduleKey));
+  const mine = user?.role === "admin" ? scopedRows : scopedRows.filter((row) => row.created_by === user?.username);
   const videos = [];
   for (const row of mine) {
     let result = {};
@@ -144,6 +168,18 @@ async function listRecentVideos(db, user) {
     }
   }
   return videos.slice(0, 60);
+}
+
+export function moduleForJobType(type) {
+  const value = String(type || "").trim();
+  if (["generate", "schulte", "quiz"].includes(value)) return "mid-video";
+  if (["psychology", "psychology-narrative", "psychology-collage"].includes(value)) return "psychology";
+  return "";
+}
+
+export function isJobInModule(type, moduleKey = "") {
+  const requested = String(moduleKey || "").trim();
+  return !requested || moduleForJobType(type) === requested;
 }
 
 export async function enqueueJob(db, { type, title, payload, createdBy }) {

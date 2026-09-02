@@ -8,6 +8,7 @@ import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 import { peerRewriteOpeningPayload } from "../../scripts/novel-rewrite-source.js";
 import { loadArchiveViewsByVideoIds } from "./official-archive-store.js";
+import { assertOfficialPublishAccess } from "./official.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
 
 export async function handleCompat(request, env, url, session) {
@@ -91,6 +92,32 @@ export async function handleCompat(request, env, url, session) {
       const taskType = normalizeTaskType(payload.taskType);
       const generation = normalizeRedditGeneration(payload.generation);
       const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
+      if (taskType === "schulte") {
+        payload.module = "mid-video";
+        publish.provider = "official";
+      }
+      if (publish.provider === "official" && publish.autoPublish !== false) {
+        try {
+          const scoped = await assertOfficialPublishAccess(env, session.user, {
+            module: payload.module || "",
+            connectionIds: publish.connectionIds
+          });
+          const requested = new Set((publish.connectionIds || []).map(String));
+          publish.officialAccounts = (scoped.accounts || [])
+            .filter((account) => requested.has(String(account.connectionId || account.id || "")))
+            .map((account) => ({
+              connectionId: String(account.connectionId || account.id || ""),
+              name: account.displayName || account.label || account.username || account.connectionId || account.id || "",
+              username: account.username || "",
+              ownerEmail: account.ownerEmail || "",
+              groupName: account.groupName || ""
+            }));
+          publish.envIds = [];
+          publish.accounts = [];
+        } catch (error) {
+          return errorJson(error.message || "没有这些账号的官方发布权限。", error.statusCode || 403);
+        }
+      }
       if (taskType === "reddit-mix") {
         if (!hasMixAudio(generation)) {
           return errorJson("请勾选小说平台。", 400);
@@ -126,6 +153,7 @@ export async function handleCompat(request, env, url, session) {
         title: task.name,
         payload: {
           ...generation,
+          module: payload.module || "",
           taskId: task.id,
           taskName: task.name,
           taskType,
@@ -569,4 +597,3 @@ function publicAudioGroups(groups) {
     };
   }).filter((group) => group.id && (group.path || group.paths.length));
 }
-

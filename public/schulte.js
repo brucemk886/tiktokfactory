@@ -9,8 +9,8 @@ let pollTimer = null;
 let currentJobId = "";
 let selectedTemplate = "wheel";
 const SCHULTE_TEMPLATES = ["wheel", "tracking", "memory", "peripheral"];
-let batchPhones = [];
-const selectedBatchPhoneIds = new Set();
+let batchAccounts = [];
+const selectedBatchAccountIds = new Set();
 
 loadSavedSettings();
 selectTemplate(selectedTemplate, false);
@@ -637,7 +637,10 @@ async function createSampleBatchTask(generation) {
           startDay: generation.day
         },
         publish: {
+          provider: "official",
           autoPublish: false,
+          connectionIds: [],
+          officialAccounts: [],
           envIds: [],
           accounts: [],
           videoDesc: "",
@@ -652,7 +655,7 @@ async function createSampleBatchTask(generation) {
     if (!response.ok) throw new Error(data.error || "创建本地样片任务失败。");
 
     setProgress(100);
-    setStatus(`已加入队列：将顺序生成 ${totalVideos} 条本地样片，不会发布到 GeeLark。`);
+    setStatus(`已加入队列：将顺序生成 ${totalVideos} 条本地样片，不会自动发布。`);
     await loadBatchTasks();
     document.querySelector(".schulte-batch-section")?.scrollIntoView({behavior: "smooth", block: "start"});
   } catch (error) {
@@ -668,7 +671,7 @@ async function createBatchTask() {
   const batchTemplates = getSelectedBatchTemplates();
   const totalVideos = clampNumber($("#batchTotalVideos").value, 1, 300, 30);
   const autoPublish = $("#batchAutoPublish").checked;
-  const envIds = Array.from(selectedBatchPhoneIds);
+  const connectionIds = Array.from(selectedBatchAccountIds);
   const scheduleAt = Math.floor(new Date($("#batchScheduleAt").value).getTime() / 1000);
 
   if (!batchTemplates.length) {
@@ -687,22 +690,22 @@ async function createBatchTask() {
   if (generation.backgroundMusicMode === "local" && !generation.backgroundMusicDir) {
     return setBatchStatus("请选择本地背景音乐文件夹，或改用内置音乐。", true);
   }
-  if (autoPublish && !envIds.length) {
-    return setBatchStatus("自动发布至少需要选择一个 GeeLark 账号。", true);
+  if (autoPublish && !connectionIds.length) {
+    return setBatchStatus("自动发布至少需要选择一个 TikTok 官方授权账号。", true);
   }
   if (autoPublish && (!scheduleAt || scheduleAt < Math.floor(Date.now() / 1000) + 300)) {
     return setBatchStatus("起始发布时间至少要晚于当前时间 5 分钟。", true);
   }
 
-  const accountsById = new Map(batchPhones.map((phone) => [String(phone.id), phone]));
-  const accounts = envIds.map((id) => {
-    const phone = accountsById.get(id) || {};
+  const accountsById = new Map(batchAccounts.map((account) => [String(account.id), account]));
+  const officialAccounts = connectionIds.map((connectionId) => {
+    const account = accountsById.get(connectionId) || {};
     return {
-      id,
-      name: phone.serialName || "",
-      serialNo: phone.serialNo || "",
-      groupName: phone.groupName || "",
-      remark: phone.remark || ""
+      connectionId,
+      name: account.name || connectionId,
+      username: account.username || "",
+      ownerEmail: account.ownerEmail || "",
+      groupName: account.groupName || ""
     };
   });
   const taskName = $("#batchTaskName").value.trim()
@@ -717,6 +720,7 @@ async function createBatchTask() {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
+        module: "mid-video",
         taskType: "schulte",
         name: taskName,
         generation: {
@@ -727,13 +731,17 @@ async function createBatchTask() {
           startDay: generation.day
         },
         publish: {
+          provider: "official",
           autoPublish,
-          envIds,
-          accounts,
+          connectionIds: autoPublish ? connectionIds : [],
+          officialAccounts: autoPublish ? officialAccounts : [],
+          envIds: [],
+          accounts: [],
+          accountAssignment: "round-robin",
           videoDesc: $("#batchVideoDesc").value.trim(),
           scheduleAt: autoPublish ? scheduleAt : 0,
           intervalMinutes: clampNumber($("#batchIntervalMinutes").value, 0, 1440, 15),
-          batchPublishLimit: clampNumber($("#batchPublishLimit").value, 1, 300, 300),
+          batchPublishLimit: 300,
           dailyPublishLimit: 300
         }
       })
@@ -741,7 +749,7 @@ async function createBatchTask() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "创建舒尔特批量任务失败。");
 
-    selectedBatchPhoneIds.clear();
+    selectedBatchAccountIds.clear();
     renderBatchPhones();
     $("#batchTaskName").value = "";
     setBatchStatus(`任务已加入队列，将生成 ${totalVideos} 条视频${autoPublish ? "并按计划自动发布" : "，生成后等待人工检查"}。`);
@@ -754,17 +762,22 @@ async function createBatchTask() {
 }
 
 async function loadBatchPhones() {
-  $("#batchPhoneList").innerHTML = '<div class="schulte-empty">正在读取 GeeLark 账号...</div>';
+  $("#batchPhoneList").innerHTML = '<div class="schulte-empty">正在读取 TikTok 官方账号...</div>';
   try {
-    const response = await fetch(`/api/geelark/phones?t=${Date.now()}`);
+    const response = await fetch(`/api/official-tiktok/publish-accounts?module=mid-video&t=${Date.now()}`, { cache: "no-store" });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "读取 GeeLark 账号失败。");
-    batchPhones = Array.isArray(data.phones) ? data.phones : [];
-    const validIds = new Set(batchPhones.map((phone) => String(phone.id)));
-    for (const id of selectedBatchPhoneIds) {
-      if (!validIds.has(id)) selectedBatchPhoneIds.delete(id);
+    if (!response.ok) throw new Error(data.error || "读取 TikTok 官方账号失败。");
+    batchAccounts = (Array.isArray(data.accounts) ? data.accounts : []).map((account) => ({
+      ...account,
+      id: String(account.connectionId || account.id || ""),
+      name: account.displayName || account.label || account.username || account.connectionId || account.id || "",
+      groupName: account.groupName || "未分组"
+    })).filter((account) => account.id);
+    const validIds = new Set(batchAccounts.map((account) => account.id));
+    for (const id of selectedBatchAccountIds) {
+      if (!validIds.has(id)) selectedBatchAccountIds.delete(id);
     }
-    const groups = Array.from(new Set(batchPhones.map((phone) => phone.groupName).filter(Boolean)))
+    const groups = Array.from(new Set(batchAccounts.map((account) => account.groupName).filter(Boolean)))
       .sort((a, b) => String(a).localeCompare(String(b), "zh-CN"));
     const previousGroup = $("#batchGroupFilter").value;
     $("#batchGroupFilter").innerHTML = '<option value="">全部分组</option>'
@@ -779,9 +792,9 @@ async function loadBatchPhones() {
 function visibleBatchPhones() {
   const group = $("#batchGroupFilter").value;
   const query = $("#batchNameFilter").value.trim().toLowerCase();
-  return batchPhones.filter((phone) => {
-    if (group && phone.groupName !== group) return false;
-    return !query || [phone.serialName, phone.serialNo, phone.remark, phone.groupName]
+  return batchAccounts.filter((account) => {
+    if (group && account.groupName !== group) return false;
+    return !query || [account.name, account.username, account.ownerEmail, account.groupName, account.id]
       .some((value) => String(value || "").toLowerCase().includes(query));
   });
 }
@@ -789,11 +802,11 @@ function visibleBatchPhones() {
 function renderBatchPhones() {
   const phones = visibleBatchPhones();
   $("#batchPhoneList").innerHTML = phones.length
-    ? phones.map((phone) => {
-      const id = String(phone.id);
+    ? phones.map((account) => {
+      const id = String(account.id);
       return `<label class="schulte-phone-card">
-        <input class="schulte-phone-check" type="checkbox" value="${escapeHtml(id)}" ${selectedBatchPhoneIds.has(id) ? "checked" : ""} />
-        <span><strong>${escapeHtml(phone.serialName || phone.serialNo || id)}</strong><small>${escapeHtml(phone.groupName || "未分组")}</small></span>
+        <input class="schulte-phone-check" type="checkbox" value="${escapeHtml(id)}" ${selectedBatchAccountIds.has(id) ? "checked" : ""} />
+        <span><strong>${escapeHtml(account.name || id)}</strong><small>${escapeHtml([account.username ? `@${account.username}` : "", account.groupName || "未分组"].filter(Boolean).join(" · "))}</small></span>
       </label>`;
     }).join("")
     : '<div class="schulte-empty">当前筛选没有账号。</div>';
@@ -803,23 +816,23 @@ function renderBatchPhones() {
 function handleBatchPhoneSelection(event) {
   const input = event.target.closest(".schulte-phone-check");
   if (!input) return;
-  if (input.checked) selectedBatchPhoneIds.add(input.value);
-  else selectedBatchPhoneIds.delete(input.value);
+  if (input.checked) selectedBatchAccountIds.add(input.value);
+  else selectedBatchAccountIds.delete(input.value);
   updateBatchSelectedCount();
 }
 
 function selectVisibleBatchPhones() {
-  const ids = visibleBatchPhones().map((phone) => String(phone.id));
-  const shouldSelect = ids.some((id) => !selectedBatchPhoneIds.has(id));
+  const ids = visibleBatchPhones().map((account) => String(account.id));
+  const shouldSelect = ids.some((id) => !selectedBatchAccountIds.has(id));
   ids.forEach((id) => {
-    if (shouldSelect) selectedBatchPhoneIds.add(id);
-    else selectedBatchPhoneIds.delete(id);
+    if (shouldSelect) selectedBatchAccountIds.add(id);
+    else selectedBatchAccountIds.delete(id);
   });
   renderBatchPhones();
 }
 
 function updateBatchSelectedCount() {
-  $("#batchSelectedCount").textContent = `已选 ${selectedBatchPhoneIds.size} 个`;
+  $("#batchSelectedCount").textContent = `已选 ${selectedBatchAccountIds.size} 个`;
 }
 
 async function loadBatchTasks() {
@@ -955,7 +968,6 @@ function updateBatchPublishState() {
   $("#batchVideoDesc").disabled = !enabled;
   $("#batchScheduleAt").disabled = !enabled;
   $("#batchIntervalMinutes").disabled = !enabled;
-  $("#batchPublishLimit").disabled = !enabled;
   $("#batchPhoneList").style.opacity = enabled ? "1" : "0.45";
   $("#batchPhoneList").style.pointerEvents = enabled ? "" : "none";
 }
@@ -975,7 +987,7 @@ function saveBatchSettings() {
     autoPublish: $("#batchAutoPublish").checked,
     videoDesc: $("#batchVideoDesc").value,
     intervalMinutes: clampNumber($("#batchIntervalMinutes").value, 0, 1440, 15),
-    batchPublishLimit: clampNumber($("#batchPublishLimit").value, 1, 300, 300)
+    accountAssignment: "round-robin"
   }));
 }
 
@@ -990,7 +1002,6 @@ function applyBatchSettings(settings) {
   $("#batchAutoPublish").checked = settings.autoPublish !== false;
   $("#batchVideoDesc").value = String(settings.videoDesc || "");
   $("#batchIntervalMinutes").value = String(clampNumber(settings.intervalMinutes, 0, 1440, 15));
-  $("#batchPublishLimit").value = String(clampNumber(settings.batchPublishLimit, 1, 300, 300));
   updateBatchPublishState();
   updateBatchSequence();
   updateBatchTemplateSummary();

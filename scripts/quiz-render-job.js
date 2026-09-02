@@ -96,21 +96,24 @@ async function run() {
   }
   if (!fs.existsSync(outputPath)) throw new Error("Remotion 未输出测试题视频。");
 
+  const renderedArtifact = {
+    template: "quiz",
+    videoUrl: `/outputs/${encodeURIComponent(outputName)}`,
+    fileName: outputName,
+    title: quiz.title,
+    language: quiz.language,
+    questionCount: quiz.questions.length,
+    durationSeconds: quiz.durationSeconds,
+    seed: quiz.seed,
+    backgroundMusic: props.backgroundMusicEnabled ? "内置轻音乐" : "无"
+  };
   updateJob({
     status: "done",
     percent: 100,
     message: "测试题视频生成完成。",
-    result: {
-      template: "quiz",
-      videoUrl: `/outputs/${encodeURIComponent(outputName)}`,
-      fileName: outputName,
-      title: quiz.title,
-      language: quiz.language,
-      questionCount: quiz.questions.length,
-      durationSeconds: quiz.durationSeconds,
-      seed: quiz.seed,
-      backgroundMusic: props.backgroundMusicEnabled ? "内置轻音乐" : "无"
-    },
+    result: renderedArtifact,
+    results: [renderedArtifact],
+    generatedVideos: [renderedArtifact],
     updatedAt: Date.now()
   });
 }

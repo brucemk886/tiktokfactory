@@ -126,7 +126,7 @@
             <h2>批量生成与发布</h2>
             <p>勾选一个或多个模板；每个模板沿用上方对应参数，并为每条视频生成唯一随机种子。</p>
           </div>
-          <button id="refreshBatchPhonesBtn" class="module-button" type="button">刷新 GeeLark 账号</button>
+          <button id="refreshBatchPhonesBtn" class="module-button" type="button">刷新官方账号</button>
         </div>
 
         <div class="schulte-batch-shell">
@@ -171,7 +171,7 @@
             <div class="schulte-batch-block">
               <div class="schulte-batch-block-head">
                 <span>02</span>
-                <div><h3>GeeLark 发布</h3><p>按分组筛选并勾选账号；关闭自动发布时只生成本地视频。</p></div>
+                <div><h3>TikTok 官方发布</h3><p>按项目分组筛选官方授权账号；成片由本地工人上传并交给发布中台排期。</p></div>
               </div>
               <label class="schulte-publish-toggle">
                 <input id="batchAutoPublish" type="checkbox" checked />
@@ -184,12 +184,11 @@
                 <button id="batchSelectVisibleBtn" class="module-button" type="button">全选筛选结果</button>
                 <b id="batchSelectedCount">已选 0 个</b>
               </div>
-              <div id="batchPhoneList" class="schulte-phone-list"><div class="schulte-empty">正在读取 GeeLark 账号...</div></div>
+              <div id="batchPhoneList" class="schulte-phone-list"><div class="schulte-empty">正在读取 TikTok 官方账号...</div></div>
               <label class="module-field schulte-batch-desc"><span>TikTok 发布文案</span><textarea id="batchVideoDesc" rows="2" placeholder="#focus #braintraining #attentiontraining"></textarea></label>
               <div class="schulte-publish-fields">
                 <label class="module-field"><span>起始发布时间</span><input id="batchScheduleAt" type="datetime-local" /></label>
                 <label class="module-field"><span>同账号发布间隔</span><div class="schulte-suffix"><input id="batchIntervalMinutes" type="number" min="0" max="1440" value="15" /><b>分钟</b></div></label>
-                <label class="module-field"><span>单批调用上限</span><input id="batchPublishLimit" type="number" min="1" max="300" value="300" /></label>
               </div>
             </div>
 

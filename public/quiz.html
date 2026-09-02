@@ -63,9 +63,28 @@
             <span><b id="durationText">约 61 秒</b><i>每题含 5 秒倒计时</i></span>
             <span><b>内置音效</b><i>划线 · 节拍 · 揭晓</i></span>
           </div>
+          <section class="quiz-publish-box">
+            <div class="quiz-publish-head">
+              <div><p class="module-kicker">OFFICIAL PUBLISH</p><h2>TikTok 官方发布</h2><span>生成完成后由本地工人上传成片，再交给 Signal Desk 官方发布中台排期。</span></div>
+              <button id="refreshPublishAccountsBtn" class="module-button" type="button">刷新官方账号</button>
+            </div>
+            <label class="quiz-publish-toggle"><input id="quizAutoPublish" type="checkbox" checked /><i></i><span>生成完成后自动发布</span></label>
+            <div class="quiz-publish-tools">
+              <label class="module-field"><span>分组</span><select id="publishGroupFilter"><option value="">全部分组</option></select></label>
+              <label class="module-field"><span>搜索账号</span><input id="publishNameFilter" type="search" placeholder="昵称、用户名或邮箱" /></label>
+              <button id="selectVisibleAccountsBtn" class="module-button" type="button">全选筛选结果</button>
+              <b id="publishSelectedCount">已选 0 个</b>
+            </div>
+            <div id="publishAccountList" class="quiz-account-list"><div class="quiz-account-empty">正在读取 TikTok 官方账号...</div></div>
+            <label class="module-field quiz-wide"><span>TikTok 发布文案</span><textarea id="publishDesc" rows="2" placeholder="#quiz #trivia #challenge"></textarea></label>
+            <div class="quiz-publish-fields">
+              <label class="module-field"><span>起始发布时间</span><input id="publishScheduleAt" type="datetime-local" /></label>
+              <label class="module-field"><span>同账号发布间隔</span><div class="quiz-suffix"><input id="publishIntervalMinutes" type="number" min="0" max="1440" value="15" /><b>分钟</b></div></label>
+            </div>
+          </section>
           <div class="quiz-actions">
             <div id="statusText" class="module-status" aria-live="polite">可以生成第一条测试题样片。</div>
-            <button id="generateBtn" class="module-button primary" type="button">生成测试题视频</button>
+            <button id="generateBtn" class="module-button primary" type="button">生成并官方发布</button>
           </div>
           <div class="quiz-progress" aria-hidden="true"><span id="progressBar"></span></div>
         </section>

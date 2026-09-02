@@ -9,6 +9,7 @@ Updated: 2026-09-02
 - The product is split into three business lines: mid-form video templates, novel promotion, and psychology. Official TikTok API is the primary publish/data channel; GeeLark pages remain as an explicit backup group.
 - Reddit, psychology, Schulte, quiz, analytics, GeeLark publishing, and operations-brain modules are present.
 - The mid-video workbench now includes `/quiz`: a configurable 6–9 question, three-choice paper quiz with dense multi-question framing, single-line auto-fit question titles, a red-marker underline followed by a hand exit, a hand-free 5-to-1 countdown, green answer ticks, built-in marker/tick/reveal sound effects, fast viewport scrolling, Chinese/English starter banks, local Remotion rendering, and Cloudflare-to-local-worker queue support. Missing built-in background music automatically falls back to sound-effects-only rendering instead of failing the job.
+- Shipped mid-video publishing is official-only: Schulte batch jobs and quiz jobs select accounts from the `mid-video` Signal Desk project and can auto-submit after rendering; podcast results publish manually through the same official endpoint. The shared `/mid-video-publish` page lists only mid-video render jobs. Cloud queue creation validates account-group access and `video.publish` scope before a job can be claimed; GeeLark remains available only in its explicitly separate backup business modules.
 - Runtime output and queue data use configured work and output directories.
 - TikTok AI Tool is maintained as a separate hosted subproject.
 - Official TikTok authorization is hosted by TikTok AI Tool. Local Factory's `/tiktok-connections` page stores only the hosted bridge URL/API key and lists accounts that completed authorization successfully.
@@ -51,7 +52,7 @@ Updated: 2026-09-02
 
 - Project Hub is read-only context storage and does not execute code or call external services.
 - API keys and credentials must not be written to documentation or Git.
-- Publishing actions remain behind existing task safety and GeeLark controls.
+- Official publishing actions remain behind project-group authorization and `video.publish` scope checks; GeeLark safety controls remain limited to explicit backup modules.
 # TikTok 官方数据本地历史归档（2026-08-12）
 
 - Local Factory 每天北京时间 08:30 从 Signal Desk 读取全部官方授权账号与每个账号最近 100 条视频。

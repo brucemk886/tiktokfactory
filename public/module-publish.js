@@ -19,7 +19,7 @@ async function load() {
   try {
     const [accountsRes, videosRes] = await Promise.all([
       fetch(`/api/official-tiktok/publish-accounts?module=${encodeURIComponent(state.module)}&t=${Date.now()}`, { cache: "no-store" }),
-      fetch(`/api/factory/recent-videos?t=${Date.now()}`, { cache: "no-store" }),
+      fetch(`/api/factory/recent-videos?module=${encodeURIComponent(state.module)}&t=${Date.now()}`, { cache: "no-store" }),
     ]);
     const accountsData = await accountsRes.json();
     const videosData = await videosRes.json().catch(() => ({ videos: [] }));
