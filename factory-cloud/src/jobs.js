@@ -11,6 +11,8 @@ const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/generate\/start$/, type: "generate", title: "生成视频" },
   { method: "POST", pattern: /^\/api\/reddit-mix\/start$/, type: "reddit-mix", title: "Reddit 混剪" },
   { method: "POST", pattern: /^\/api\/schulte\/start$/, type: "schulte", title: "舒尔特出片" },
+  { method: "POST", pattern: /^\/api\/psychology-collage\/start$/, type: "psychology-collage", title: "心理学目标1出片" },
+  { method: "POST", pattern: /^\/api\/psychology-narrative\/start$/, type: "psychology-target-2", title: "心理学目标2出片" },
   { method: "POST", pattern: /^\/api\/quiz\/start$/, type: "quiz", title: "测试题出片" },
   { method: "POST", pattern: /^\/api\/asset-groups\/preprocess\/start$/, type: "asset-preprocess", title: "素材预处理" },
   { method: "POST", pattern: /^\/api\/folder-classify\/start$/, type: "folder-classify", title: "文件夹分类" },
@@ -24,6 +26,8 @@ const PROGRESS_ROUTES = [
   { pattern: /^\/api\/generate\/progress\/([^/]+)$/, type: "generate" },
   { pattern: /^\/api\/reddit-mix\/progress\/([^/]+)$/, type: "reddit-mix" },
   { pattern: /^\/api\/schulte\/progress\/([^/]+)$/, type: "schulte" },
+  { pattern: /^\/api\/psychology-collage\/progress\/([^/]+)$/, type: "psychology-collage" },
+  { pattern: /^\/api\/psychology-narrative\/progress\/([^/]+)$/, type: "psychology-target-2" },
   { pattern: /^\/api\/quiz\/progress\/([^/]+)$/, type: "quiz" },
   { pattern: /^\/api\/asset-groups\/preprocess\/progress\/([^/]+)$/, type: "asset-preprocess" },
   { pattern: /^\/api\/folder-classify\/progress\/([^/]+)$/, type: "folder-classify" },
@@ -504,7 +508,9 @@ async function handleWorkerApi(request, env, url, ctx) {
 }
 
 export function publicJob(job) {
+  const result = parseJson(job.result_json, {});
   return {
+    ...result,
     jobId: job.id,
     id: job.id,
     type: job.type,
@@ -512,7 +518,7 @@ export function publicJob(job) {
     percent: Number(job.percent || 0),
     message: job.message || "",
     error: job.error || "",
-    result: parseJson(job.result_json, {}),
+    result,
     createdAt: Number(job.created_at || 0),
     updatedAt: Number(job.updated_at || 0)
   };
@@ -657,7 +663,7 @@ async function syncAutoTaskFromJob(db, job) {
 function slimJobResult(value) {
   const result = value && typeof value === "object" ? value : {};
   const videos = Array.isArray(result.results) ? result.results : [];
-  return {
+  const slim = {
     publishOnly: Boolean(result.publishOnly),
     progressCurrent: Number(result.progressCurrent || videos.length || 0),
     progressTotal: Number(result.progressTotal || 0),
@@ -666,9 +672,25 @@ function slimJobResult(value) {
     publishError: String(result.publishError || "").slice(0, 400),
     results: videos.slice(0, 80).map((video) => ({
       fileName: String(video?.fileName || ""),
-      outputPath: String(video?.outputPath || video?.path || "")
+      outputPath: String(video?.outputPath || video?.path || ""),
+      videoUrl: String(video?.videoUrl || "").slice(0, 500),
+      contactSheetFileName: String(video?.contactSheetFileName || ""),
+      contactSheetUrl: String(video?.contactSheetUrl || "").slice(0, 500),
+      title: String(video?.title || "").slice(0, 160),
+      template: String(video?.template || "").slice(0, 80),
+      templateLabel: String(video?.templateLabel || "").slice(0, 120),
+      quizType: String(video?.quizType || "").slice(0, 80),
+      layout: String(video?.layout || "").slice(0, 40),
+      language: String(video?.language || "").slice(0, 20),
+      ttsProvider: String(video?.ttsProvider || "").slice(0, 40),
+      duration: Math.max(0, Number(video?.duration) || 0),
+      score: Math.max(0, Number(video?.score) || 0),
     }))
   };
+  if (result.score && typeof result.score === "object") slim.score = result.score;
+  if (result.plan && typeof result.plan === "object") slim.plan = result.plan;
+  if (Array.isArray(result.captionTimings)) slim.captionTimings = result.captionTimings.slice(0, 12);
+  return slim;
 }
 
 async function autoKeepAndVoiceOpeningJob(db, job, result) {

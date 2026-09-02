@@ -1,0 +1,48 @@
+.psychology-mid-page { --psy-ink:#e8efe3; }
+.psy-render-note { color:var(--module-muted); font-size:11px; }
+.psy-shell { grid-template-columns:minmax(540px,1fr) minmax(420px,.92fr); align-items:start; }
+.psy-layout-picker { margin-bottom:16px; display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; }
+.psy-layout { min-height:78px; padding:12px 13px; display:grid; gap:4px; text-align:left; border:1px solid var(--module-line); border-radius:7px; color:var(--lf-text); background:var(--lf-surface); cursor:pointer; }
+.psy-layout strong { font-size:13px; }
+.psy-layout small { color:var(--module-muted); font-size:10px; line-height:1.4; }
+.psy-layout.is-active { border-color:var(--module-accent); box-shadow:inset 3px 0 0 var(--module-accent); }
+.psy-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
+.psy-wide { grid-column:1/-1; }
+.psy-fields textarea { min-height:78px; }
+.psy-suffix { display:grid; grid-template-columns:minmax(0,1fr) 58px; }
+.psy-suffix input { border-radius:5px 0 0 5px; }
+.psy-suffix b { display:grid; place-items:center; border:1px solid var(--lf-line-strong); border-left:0; border-radius:0 5px 5px 0; color:var(--module-muted); background:var(--lf-surface); font-size:10px; }
+.psy-directory { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.psy-models { margin-top:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.psy-models label { min-height:64px; padding:11px 12px; display:flex; align-items:center; gap:10px; border:1px solid var(--module-line); border-radius:7px; background:var(--lf-surface); cursor:pointer; }
+.psy-models label:has(input:checked) { border-color:var(--module-accent); box-shadow:inset 3px 0 0 var(--module-accent); }
+.psy-models span { display:grid; gap:3px; }
+.psy-models small { color:var(--module-muted); font-size:10px; }
+.psy-api { margin-top:14px; border:1px solid var(--module-line); border-radius:7px; background:var(--lf-surface); }
+.psy-api summary { padding:12px 13px; cursor:pointer; font-size:12px; font-weight:750; }
+.psy-api-grid { padding:0 13px 13px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.psy-actions { margin-top:17px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.psy-actions .module-status { margin:0; }
+.psy-progress { height:4px; margin-top:13px; overflow:hidden; background:var(--lf-surface); }
+.psy-progress span { width:0; height:100%; display:block; background:var(--module-accent); transition:width .3s ease; }
+.psy-format-note { margin:10px 0 0; color:var(--module-muted); font-size:10px; line-height:1.55; }
+.psy-preview-panel { position:sticky; top:24px; }
+.psy-player-frame { width:100%; padding:10px; border:1px solid var(--module-line); background:#111; }
+.psy-player-frame video { width:100%; aspect-ratio:16/9; display:block; object-fit:contain; background:#111; }
+.psy-preview-empty { width:100%; aspect-ratio:16/9; display:grid; place-content:center; gap:6px; text-align:center; color:#111; background:linear-gradient(#f3f3f3,#e7e7e7); }
+.psy-preview-empty b { font-size:28px; }
+.psy-preview-empty span { font-size:13px; font-weight:800; }
+.psy-preview-empty small { color:#666; font-size:11px; }
+.psy-score { margin-top:12px; display:grid; gap:4px; color:var(--module-muted); font-size:11px; }
+.psy-score strong { color:var(--lf-text); font-size:12px; }
+.psy-download { display:inline-flex; align-items:center; text-decoration:none; }
+.is-hidden,.psy-download.is-hidden { display:none!important; }
+.psy-results-panel { max-width:1320px; margin:14px auto 0; }
+.psy-result-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.psy-result-card { padding:14px; display:grid; gap:10px; border:1px solid var(--module-line); border-radius:7px; background:var(--lf-surface); }
+.psy-result-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.psy-result-meta,.psy-result-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.psy-result-meta span { padding:4px 7px; border-radius:999px; color:var(--module-muted); background:var(--lf-surface-2); font-size:9px; }
+.psy-result-card a { color:var(--module-accent); font-size:11px; font-weight:800; text-decoration:none; }
+.psy-empty { padding:34px; grid-column:1/-1; border:1px dashed var(--module-line); color:var(--module-muted); text-align:center; font-size:11px; }
+@media(max-width:1180px){.psy-shell{grid-template-columns:1fr}.psy-result-list{grid-template-columns:repeat(2,minmax(0,1fr))}}

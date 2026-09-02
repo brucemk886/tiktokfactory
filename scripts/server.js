@@ -365,6 +365,24 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/mid-video") {
       return sendFile(res, path.join(publicDir, "mid-video.html"), "text/html; charset=utf-8");
     }
+    if (req.method === "GET" && ["/psychology-narrative", "/psychology-target-2"].includes(url.pathname)) {
+      return sendFile(res, path.join(publicDir, "psychology-narrative.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/psychology-narrative.js") {
+      return sendFile(res, path.join(publicDir, "psychology-narrative.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/psychology-narrative.css") {
+      return sendFile(res, path.join(publicDir, "psychology-narrative.css"), "text/css; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/psychology-collage") {
+      return sendFile(res, path.join(publicDir, "psychology-collage.html"), "text/html; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/psychology-collage.js") {
+      return sendFile(res, path.join(publicDir, "psychology-collage.js"), "text/javascript; charset=utf-8");
+    }
+    if (req.method === "GET" && url.pathname === "/psychology-collage.css") {
+      return sendFile(res, path.join(publicDir, "psychology-collage.css"), "text/css; charset=utf-8");
+    }
     if (req.method === "GET" && url.pathname === "/podcast") {
       return sendFile(res, path.join(publicDir, "index.html"), "text/html; charset=utf-8");
     }
@@ -688,7 +706,13 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname.startsWith("/outputs/")) {
       const fileName = path.basename(decodeURIComponent(url.pathname.slice("/outputs/".length)));
-      return sendFile(res, path.join(outputDir, fileName), "video/mp4");
+      const extension = path.extname(fileName).toLowerCase();
+      const contentType = extension === ".jpg" || extension === ".jpeg"
+        ? "image/jpeg"
+        : extension === ".png"
+          ? "image/png"
+          : "video/mp4";
+      return sendFile(res, path.join(outputDir, fileName), contentType);
     }
 
     if (req.method === "GET" && url.pathname === "/api/private-tiktok/settings") {
@@ -2115,6 +2139,104 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/psychology/settings") {
       return sendJson(res, 200, { ok: true, settings: publicPsychologySettings(savePsychologySettings(await readJsonBody(req))) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/psychology-narrative/start") {
+      const payload = await readJsonBody(req);
+      const settings = readPsychologySettings();
+      const topic = String(payload.topic || "").trim();
+      if (topic.length < 4) return sendJson(res, 400, { error: "请输入至少 4 个字的心理学选题。" });
+      if (topic.length > 160) return sendJson(res, 400, { error: "心理学选题不能超过 160 个字符。" });
+      if (!settings.kieApiKey && !String(process.env.KIE_API_KEY || "").trim()) {
+        return sendJson(res, 400, { error: "请先完成 Kie.ai API Key 配置。英文口播使用本机 Kokoro；中文口播自动使用 ElevenLabs。" });
+      }
+
+      payload.topic = topic;
+      payload.angle = String(payload.angle || "").trim().slice(0, 1000);
+      payload.script = String(payload.script || "").trim().slice(0, 8000);
+      payload.language = /[\u3400-\u9fff]/u.test(payload.script) ? "zh-CN" : "en";
+      payload.quizType = ["hidden-number", "position-choice", "character-choice", "embrace-choice"].includes(payload.quizType)
+        ? payload.quizType
+        : "auto";
+      payload.layout = ["single", "choices-4", "choices-6"].includes(payload.layout) ? payload.layout : "auto";
+      payload.targetDuration = Math.max(12, Math.min(20, Math.round(Number(payload.targetDuration) || 16)));
+      payload.totalVideos = Math.max(1, Math.min(3, Math.round(Number(payload.totalVideos) || 1)));
+      payload.imageModel = payload.imageModel === "grok" ? "grok" : "nano-banana";
+      const defaultPsychologyCredit = payload.language === "zh-CN" ? "一知心理课 一场心灵旅" : "PSYCHOLOGY LAB";
+      payload.credit = String(payload.credit || defaultPsychologyCredit).trim().slice(0, 24) || defaultPsychologyCredit;
+      payload.backgroundMusicDir = String(payload.backgroundMusicDir || "").trim();
+      payload.backgroundMusicVolume = Math.max(0, Math.min(0.5, Number(payload.backgroundMusicVolume) || 0.10));
+      payload.kokoroVoice = String(payload.kokoroVoice || "am_adam").trim();
+      payload.elevenLabsVoiceId = String(payload.elevenLabsVoiceId || settings.elevenLabsVoiceId || "").trim();
+      payload.elevenLabsModelId = String(payload.elevenLabsModelId || settings.elevenLabsModelId || "eleven_multilingual_v2").trim();
+
+      const jobId = safeId(`psychology-narrative-${Date.now()}`);
+      const payloadPath = path.join(jobsDir, `${jobId}.payload.json`);
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      fs.writeFileSync(payloadPath, JSON.stringify({ ...payload, jobId }, null, 2), "utf8");
+      writeJob(jobPath, {
+        jobId,
+        type: "psychology-target-2",
+        status: "queued",
+        percent: 2,
+        message: "心理学目标2任务已加入本地生成队列。",
+        createdAt: Date.now(),
+      });
+
+      const child = spawn(process.execPath, [path.join(root, "scripts", "psychology-narrative-job.js"), payloadPath, jobPath], {
+        cwd: root,
+        detached: false,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      patchJob(jobPath, {
+        workerPid: child.pid,
+        message: "心理学目标2任务已启动。",
+        updatedAt: Date.now(),
+      });
+      child.unref();
+      return sendJson(res, 200, { jobId });
+    }
+    if (req.method === "POST" && url.pathname === "/api/psychology-collage/start") {
+      const payload = await readJsonBody(req);
+      const settings = readPsychologySettings();
+      const topic = String(payload.topic || "").trim();
+      if (topic.length < 4 || topic.length > 160) return sendJson(res, 400, { error: "心理学选题需要 4–160 个字符。" });
+      if (!settings.kieApiKey || !settings.elevenLabsApiKey || !settings.elevenLabsVoiceId) {
+        return sendJson(res, 400, { error: "请先完成 Kie、ElevenLabs 和 Voice ID 配置。" });
+      }
+      payload.topic = topic;
+      payload.angle = String(payload.angle || "").trim().slice(0, 1000);
+      payload.script = String(payload.script || "").trim().slice(0, 8000);
+      payload.targetDuration = Math.max(60, Math.min(120, Math.round(Number(payload.targetDuration) || 90)));
+      payload.sceneCount = Math.max(8, Math.min(12, Math.round(Number(payload.sceneCount) || 10)));
+      payload.totalVideos = Math.max(1, Math.min(3, Math.round(Number(payload.totalVideos) || 1)));
+      payload.imageModel = payload.imageModel === "grok" ? "grok" : "nano-banana";
+      payload.credit = String(payload.credit || "@心理学").trim().slice(0, 32) || "@心理学";
+      payload.backgroundMusicDir = String(payload.backgroundMusicDir || "").trim();
+      payload.backgroundMusicVolume = Math.max(0, Math.min(0.5, Number.isFinite(Number(payload.backgroundMusicVolume)) ? Number(payload.backgroundMusicVolume) : 0.10));
+      payload.elevenLabsVoiceId = String(payload.elevenLabsVoiceId || settings.elevenLabsVoiceId).trim();
+      payload.elevenLabsModelId = String(payload.elevenLabsModelId || settings.elevenLabsModelId || "eleven_multilingual_v2").trim();
+      const jobId = safeId(`psychology-collage-${Date.now()}`);
+      const payloadPath = path.join(jobsDir, `${jobId}.payload.json`);
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      fs.writeFileSync(payloadPath, JSON.stringify({ ...payload, jobId }, null, 2), "utf8");
+      writeJob(jobPath, { jobId, type: "psychology-collage", status: "queued", percent: 2, message: "心理学拼贴中视频已加入本地队列。", createdAt: Date.now() });
+      const child = spawn(process.execPath, [path.join(root, "scripts", "psychology-collage-job.js"), payloadPath, jobPath], { cwd: root, detached: false, stdio: "ignore", windowsHide: true });
+      patchJob(jobPath, { workerPid: child.pid, message: "心理学拼贴中视频任务已启动。", updatedAt: Date.now() });
+      child.unref();
+      return sendJson(res, 200, { jobId });
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/api/psychology-collage/progress/")) {
+      const jobId = safeId(decodeURIComponent(url.pathname.slice("/api/psychology-collage/progress/".length)));
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      if (!fs.existsSync(jobPath)) return sendJson(res, 404, { error: "心理学拼贴任务不存在。" });
+      return sendJson(res, 200, readJobWithEstimate(jobPath));
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/api/psychology-narrative/progress/")) {
+      const jobId = safeId(decodeURIComponent(url.pathname.slice("/api/psychology-narrative/progress/".length)));
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      if (!fs.existsSync(jobPath)) return sendJson(res, 404, { error: "心理学目标2任务不存在。" });
+      return sendJson(res, 200, readJobWithEstimate(jobPath));
     }
     if (req.method === "POST" && url.pathname === "/api/schulte/start") {
       const payload = await readJsonBody(req);

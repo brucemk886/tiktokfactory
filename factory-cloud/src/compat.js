@@ -50,8 +50,24 @@ export async function handleCompat(request, env, url, session) {
   }
 
   if (pathname === "/api/psychology/settings") {
-    if (method === "GET") return json(await kvGet(db, "psychology-settings", defaultPsychology()));
-    if (method === "POST") return json(await kvSet(db, "psychology-settings", { ...defaultPsychology(), ...await readJson(request) }));
+    if (method === "GET") {
+      return json(publicPsychologySettings(await kvGet(db, "psychology-settings", defaultPsychology())));
+    }
+    if (method === "POST") {
+      const current = await kvGet(db, "psychology-settings", defaultPsychology());
+      const incoming = await readJson(request);
+      const next = {
+        ...defaultPsychology(),
+        ...current,
+        ...incoming,
+        kieApiKey: String(incoming.kieApiKey || current.kieApiKey || "").trim(),
+        elevenLabsApiKey: String(incoming.elevenLabsApiKey || current.elevenLabsApiKey || "").trim(),
+        elevenLabsVoiceId: String(incoming.elevenLabsVoiceId ?? current.elevenLabsVoiceId ?? "").trim(),
+        elevenLabsModelId: String(incoming.elevenLabsModelId || current.elevenLabsModelId || "eleven_multilingual_v2").trim(),
+      };
+      await kvSet(db, "psychology-settings", next);
+      return json({ ok: true, settings: publicPsychologySettings(next) });
+    }
   }
 
   if (method === "GET" && pathname === "/api/psychology-topics") {
@@ -496,6 +512,25 @@ function defaultPsychology() {
   };
 }
 
+export function publicPsychologySettings(settings = {}) {
+  const value = { ...defaultPsychology(), ...(settings || {}) };
+  return {
+    configured: Boolean(value.kieApiKey && value.elevenLabsApiKey && value.elevenLabsVoiceId),
+    kieConfigured: Boolean(value.kieApiKey),
+    elevenLabsConfigured: Boolean(value.elevenLabsApiKey),
+    elevenLabsVoiceId: String(value.elevenLabsVoiceId || ""),
+    elevenLabsModelId: String(value.elevenLabsModelId || "eleven_multilingual_v2"),
+    imageModels: Array.isArray(value.imageModels) ? value.imageModels : ["nano-banana"],
+    totalVideos: Math.max(1, Number(value.totalVideos) || 1),
+    aspectRatio: value.aspectRatio === "9:16" ? "9:16" : "16:9",
+    titlePosition: Number(value.titlePosition) || 14,
+    titleFontSize: Number(value.titleFontSize) || 68,
+    motion: String(value.motion || "test-motion"),
+    backgroundMusicDir: String(value.backgroundMusicDir || ""),
+    backgroundMusicVolume: Number(value.backgroundMusicVolume ?? 0.1),
+  };
+}
+
 function normalizeTaskType(value) {
   if (value === "psychology") return "psychology";
   if (value === "schulte") return "schulte";
@@ -569,4 +604,3 @@ function publicAudioGroups(groups) {
     };
   }).filter((group) => group.id && (group.path || group.paths.length));
 }
-

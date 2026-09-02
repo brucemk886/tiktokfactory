@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { makeCaptionCues, normalizeCaptionWords } from "./caption-cache.js";
 import {
+  DEFAULT_KOKORO_CHINESE_VOICE,
   DEFAULT_KOKORO_VOICE,
   KOKORO_VOICES,
   isKokoroVoiceId,
@@ -15,6 +16,7 @@ import {
 } from "./kokoro-voices.js";
 
 export {
+  DEFAULT_KOKORO_CHINESE_VOICE,
   DEFAULT_KOKORO_VOICE,
   KOKORO_VOICES,
   isKokoroVoiceId,
@@ -51,13 +53,15 @@ export function generateKokoroSpeech({
   text,
   voice = DEFAULT_KOKORO_VOICE,
   speed = 1,
+  minimumCharacters = 20,
   outDir,
   ffmpeg = "ffmpeg",
   config = {}
 } = {}) {
   const script = String(text || "").trim();
-  if (script.length < 20) {
-    throw Object.assign(new Error("文案至少需要 20 个字符才能配音。"), { statusCode: 400 });
+  const minimum = Math.max(1, Math.floor(Number(minimumCharacters) || 20));
+  if (Array.from(script).length < minimum) {
+    throw Object.assign(new Error(`文案至少需要 ${minimum} 个字符才能配音。`), { statusCode: 400 });
   }
   const install = assertKokoroReady(config);
   const destDir = String(outDir || "").trim();

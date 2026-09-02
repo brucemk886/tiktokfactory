@@ -1,6 +1,7 @@
 export const DEFAULT_KOKORO_MALE_VOICE = "am_adam";
 export const DEFAULT_KOKORO_FEMALE_VOICE = "af_jessica";
 export const DEFAULT_KOKORO_VOICE = DEFAULT_KOKORO_MALE_VOICE;
+export const DEFAULT_KOKORO_CHINESE_VOICE = "zf_xiaoxiao";
 
 export const KOKORO_VOICES = Object.freeze([
   { id: "am_adam", name: "Adam", gender: "male", age: "young", language: "en-us" },
@@ -30,12 +31,23 @@ export const KOKORO_VOICES = Object.freeze([
   { id: "bm_daniel", name: "Daniel", gender: "male", age: "middle", language: "en-gb" },
   { id: "bm_fable", name: "Fable", gender: "male", age: "young", language: "en-gb" },
   { id: "bm_george", name: "George", gender: "male", age: "middle", language: "en-gb" },
-  { id: "bm_lewis", name: "Lewis", gender: "male", age: "young", language: "en-gb" }
+  { id: "bm_lewis", name: "Lewis", gender: "male", age: "young", language: "en-gb" },
+  { id: "zf_xiaoxiao", name: "Xiaoxiao", gender: "female", age: "young", language: "zh-cn" },
+  { id: "zf_xiaoni", name: "Xiaoni", gender: "female", age: "young", language: "zh-cn" },
+  { id: "zf_xiaobei", name: "Xiaobei", gender: "female", age: "young", language: "zh-cn" },
+  { id: "zf_xiaoyi", name: "Xiaoyi", gender: "female", age: "young", language: "zh-cn" },
+  { id: "zm_yunxi", name: "Yunxi", gender: "male", age: "young", language: "zh-cn" },
+  { id: "zm_yunyang", name: "Yunyang", gender: "male", age: "middle", language: "zh-cn" },
+  { id: "zm_yunjian", name: "Yunjian", gender: "male", age: "middle", language: "zh-cn" },
+  { id: "zm_yunxia", name: "Yunxia", gender: "male", age: "young", language: "zh-cn" }
 ]);
 
 export function kokoroLangCode(voiceId) {
   const prefix = String(voiceId || "").trim().slice(0, 1).toLowerCase();
-  return prefix === "b" ? "b" : "a";
+  if (prefix === "b") return "b";
+  if (prefix === "z") return "z";
+  if (prefix === "j") return "j";
+  return "a";
 }
 
 export function normalizeTtsProvider(value) {
@@ -108,23 +120,26 @@ export function listKokoroVoices({ defaultVoiceId = "" } = {}) {
 }
 
 function mapKokoroVoice(voice) {
+  const chinese = voice.language === "zh-cn";
   const british = voice.language === "en-gb";
   const age = voice.age === "middle" ? "middle_aged" : voice.age;
   return {
     id: voice.id,
     name: voice.id === DEFAULT_KOKORO_FEMALE_VOICE
       ? `${voice.name}（默认女声）`
-      : voice.id === DEFAULT_KOKORO_MALE_VOICE
+      : voice.id === DEFAULT_KOKORO_VOICE
         ? `${voice.name}（默认男声）`
-        : voice.name,
+        : voice.id === DEFAULT_KOKORO_CHINESE_VOICE
+          ? `${voice.name}（中文女声）`
+          : voice.name,
     category: "kokoro",
     categoryLabel: "本机 Kokoro",
     gender: voice.gender,
     genderLabel: voice.gender === "female" ? "女性" : "男性",
     age,
     ageLabel: age === "middle_aged" ? "中年" : "青年",
-    languages: ["en"],
-    languageLabels: [british ? "English (UK)" : "English"],
+    languages: chinese ? ["zh"] : ["en"],
+    languageLabels: [chinese ? "中文" : british ? "English (UK)" : "English"],
     previewUrl: `/kokoro-previews/${voice.id}.mp3`
   };
 }
