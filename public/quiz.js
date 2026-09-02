@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const STORAGE_KEY = "local-factory-quiz-settings-v1";
+const STORAGE_KEY = "local-factory-quiz-settings-v2";
 const ILLUSTRATIONS = [
   ["mountain", "山峰"], ["ocean", "海洋"], ["desert", "沙漠"], ["landmark", "建筑"],
   ["river", "河流"], ["globe", "地球"], ["boot", "版图"], ["planet", "星球"], ["leaf", "植物"]
@@ -187,7 +187,7 @@ function collectPayload() {
 }
 
 function updateSummary() {
-  const duration = 3.5 + questions.length * Math.max(6, Math.min(12, Number($("#secondsPerQuestion").value) || 7.5)) + 4.5;
+  const duration = 0.8 + questions.length * Math.max(6, Math.min(12, Number($("#secondsPerQuestion").value) || 8)) + 4.2;
   $("#questionCount").textContent = String(questions.length);
   $("#durationText").textContent = `约 ${Math.round(duration)} 秒`;
   $("#addQuestionBtn").disabled = questions.length >= 9;

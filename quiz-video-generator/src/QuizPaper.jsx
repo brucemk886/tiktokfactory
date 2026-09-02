@@ -1,219 +1,227 @@
 import React from "react";
-import { AbsoluteFill, Audio, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Audio, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 
-const COLORS = {
-  red: "#d7352f",
-  blue: "#1864a8",
-  ink: "#15191d",
-  muted: "#65717c",
-  paper: "#fffdf8",
-  desk: "#d9d1c3"
-};
-const HEADER_HEIGHT = 236;
-const QUESTION_HEIGHT = 278;
+const RED = "#e12822";
+const BLUE = "#139bd2";
+const GREEN = "#24b34b";
+const INK = "#111315";
+const HEADER_HEIGHT = 154;
+const QUESTION_HEIGHT = 250;
 const LETTERS = ["A", "B", "C"];
 
 export function QuizPaper(props) {
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const questions = Array.isArray(props.questions) ? props.questions : [];
-  const introFrames = Math.round((Number(props.introSeconds) || 3.5) * fps);
-  const questionFrames = Math.round((Number(props.secondsPerQuestion) || 7.5) * fps);
-  const outroStart = introFrames + questionFrames * questions.length;
-  const contentHeight = HEADER_HEIGHT + questions.length * QUESTION_HEIGHT + 210;
-  const maxScroll = Math.max(0, contentHeight - height + 108);
+  const introFrames = Math.round((Number(props.introSeconds) || 0.8) * fps);
+  const questionFrames = Math.round((Number(props.secondsPerQuestion) || 8) * fps);
+  const outroStart = introFrames + questions.length * questionFrames;
+  const contentHeight = HEADER_HEIGHT + questions.length * QUESTION_HEIGHT + 158;
+  const maxScroll = Math.max(0, contentHeight - height + 28);
   const activeIndex = clamp(Math.floor((frame - introFrames) / questionFrames), 0, Math.max(0, questions.length - 1));
-  const currentStart = introFrames + activeIndex * questionFrames;
-  const travel = interpolate(frame, [currentStart, currentStart + Math.round(questionFrames * 0.22)], [0, 1], {
+  const activeStart = introFrames + activeIndex * questionFrames;
+  const localFrame = frame - activeStart;
+  const previousScroll = scrollTarget(activeIndex - 1, height, maxScroll);
+  const activeScroll = scrollTarget(activeIndex, height, maxScroll);
+  const scrollProgress = interpolate(localFrame, [0, Math.round(0.36 * fps)], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp"
   });
-  const previousTarget = scrollTarget(activeIndex - 1, maxScroll);
-  const nextTarget = scrollTarget(activeIndex, maxScroll);
-  const regularScroll = lerp(previousTarget, nextTarget, smooth(travel));
-  const outroProgress = interpolate(frame, [outroStart, outroStart + Math.round(1.2 * fps)], [0, 1], {
+  const regularScroll = lerp(previousScroll, activeScroll, easeOutCubic(scrollProgress));
+  const outroProgress = interpolate(frame, [outroStart, outroStart + Math.round(0.45 * fps)], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp"
   });
   const scrollY = frame < introFrames
     ? 0
     : frame >= outroStart
-      ? lerp(regularScroll, maxScroll, smooth(outroProgress))
+      ? lerp(regularScroll, maxScroll, easeOutCubic(outroProgress))
       : regularScroll;
-  const paperEnter = spring({ frame, fps, config: { damping: 18, stiffness: 120, mass: 0.8 } });
-  const activeQuestion = questions[activeIndex];
-  const markerVisible = frame >= introFrames && frame < outroStart && Boolean(activeQuestion);
-  const markerLocal = frame - currentStart;
-  const markerEnter = interpolate(markerLocal, [questionFrames * 0.36, questionFrames * 0.5], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp"
-  });
-  const markerExit = interpolate(markerLocal, [questionFrames * 0.78, questionFrames * 0.93], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp"
-  });
-  const markerTop = HEADER_HEIGHT + activeIndex * QUESTION_HEIGHT + 113 + (activeQuestion?.answerIndex || 0) * 44 - scrollY;
-  const finalVisible = frame >= outroStart;
+  const intro = spring({ frame, fps, config: { damping: 22, stiffness: 210, mass: 0.55 } });
+  const activeTop = HEADER_HEIGHT + activeIndex * QUESTION_HEIGHT - scrollY;
+  const markerVisible = frame >= introFrames && frame < outroStart && Boolean(questions[activeIndex]);
 
   return (
     <AbsoluteFill style={styles.canvas}>
       {props.backgroundMusicEnabled ? (
         <Audio src={staticFile(props.backgroundMusicFile || "focus-ambient.wav")} volume={Number(props.backgroundMusicVolume) || 0.18} loop />
       ) : null}
-      <div style={styles.deskGlow} />
-      <div style={{ ...styles.paper, transform: `translateY(${lerp(64, 0, paperEnter)}px)`, opacity: paperEnter }}>
-        <div style={{ ...styles.paperContent, height: contentHeight, transform: `translateY(${-scrollY}px)` }}>
-          <header style={styles.header}>
-            <div style={styles.eyebrow}>QUICK KNOWLEDGE TEST</div>
-            <h1 style={styles.title}>{colorTitle(props.title)}</h1>
-            <p style={styles.hook}>{props.hook}</p>
-            <div style={styles.rule}><span style={styles.ruleLine} /></div>
-          </header>
-          {questions.map((item, index) => (
-            <Question
-              key={`${item.prompt}-${index}`}
-              item={item}
-              index={index}
-              frame={frame}
-              startFrame={introFrames + index * questionFrames}
-              questionFrames={questionFrames}
-            />
-          ))}
-          <div style={styles.ctaBlock}>
-            <div style={styles.ctaTick}>✓</div>
-            <strong>{props.cta}</strong>
-            <small>FOLLOW FOR THE NEXT QUIZ</small>
-          </div>
+      <div style={{ ...styles.content, height: contentHeight, transform: `translateY(${-scrollY}px)`, opacity: clamp(intro, 0, 1) }}>
+        <QuizHeader title={props.title} hook={props.hook} />
+        {questions.map((item, index) => (
+          <Question
+            key={`${item.prompt}-${index}`}
+            item={item}
+            index={index}
+            frame={frame}
+            startFrame={introFrames + index * questionFrames}
+            questionFrames={questionFrames}
+            fps={fps}
+          />
+        ))}
+        <div style={styles.cta}>
+          <strong>{props.cta}</strong>
+          <span>FOLLOW FOR MORE QUICK QUIZZES</span>
         </div>
       </div>
       {markerVisible ? (
-        <MarkerHand
-          top={markerTop}
-          opacity={Math.min(markerEnter, markerExit)}
-          swing={Math.sin(markerLocal / 4) * 2.2}
-        />
+        <MarkerHand localFrame={localFrame} questionFrames={questionFrames} fps={fps} questionTop={activeTop} />
       ) : null}
-      <div style={{ ...styles.scoreBug, opacity: finalVisible ? outroProgress : 0, transform: `translateY(${lerp(24, 0, outroProgress)}px)` }}>
-        <b>YOUR SCORE?</b><span>__/ {questions.length}</span>
-      </div>
-      <div style={styles.safeTop} />
-      <div style={styles.safeBottom} />
+      <div style={styles.edgeFadeTop} />
+      <div style={styles.edgeFadeBottom} />
     </AbsoluteFill>
   );
 }
 
-function Question({ item, index, frame, startFrame, questionFrames }) {
-  const local = frame - startFrame;
-  const reveal = interpolate(local, [questionFrames * 0.48, questionFrames * 0.7], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp"
-  });
-  const check = interpolate(local, [questionFrames * 0.67, questionFrames * 0.82], [0, 1], {
+function QuizHeader({ title, hook }) {
+  return (
+    <header style={styles.header}>
+      <h1 style={styles.title}>{colorTitle(title)}</h1>
+      <p style={styles.hook}>{hook}</p>
+      <div style={styles.headerRule}><span style={styles.headerRuleRed} /><i style={styles.headerRuleBlue} /></div>
+    </header>
+  );
+}
+
+function Question({ item, index, frame, startFrame, questionFrames, fps }) {
+  const localFrame = frame - startFrame;
+  const countdownStart = Math.round(0.55 * fps);
+  const countdownEnd = Math.min(questionFrames - Math.round(0.85 * fps), countdownStart + 5 * fps);
+  const revealFrame = countdownEnd + Math.round(0.12 * fps);
+  const answered = localFrame >= revealFrame;
+  const reveal = spring({ frame: localFrame - revealFrame, fps, config: { damping: 12, stiffness: 240, mass: 0.45 } });
+  const underline = interpolate(localFrame, [0, Math.round(0.52 * fps)], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp"
   });
   return (
     <section style={styles.question}>
-      <div style={styles.number}>{index + 1}</div>
-      <div style={styles.questionCopy}>
-        <h2 style={styles.questionTitle}>{item.prompt}</h2>
-        <div style={styles.options}>
-          {item.options.map((option, optionIndex) => (
-            <div key={option} style={styles.option}>
-              <span style={styles.optionLetter}>{LETTERS[optionIndex]}.</span>
-              <span>{option}</span>
-              {optionIndex === item.answerIndex ? <AnswerCircle progress={reveal} /> : null}
-            </div>
-          ))}
-        </div>
-      </div>
-      <Illustration type={item.illustration} accentIndex={index} />
-      <svg style={styles.redCheck} viewBox="0 0 62 50" aria-hidden="true">
-        <path d="M5 25 C15 32 20 38 25 43 C34 25 43 13 58 5" fill="none" stroke={COLORS.red} strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" pathLength="1" strokeDasharray="1" strokeDashoffset={1 - check} />
+      <h2 style={styles.questionTitle}>
+        <b style={styles.questionNumber}>{index + 1}.</b>
+        <span>{item.prompt}</span>
+      </h2>
+      <svg style={styles.underline} viewBox="0 0 430 12" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M3 8 C110 4 278 9 426 5" fill="none" stroke={RED} strokeWidth="4" strokeLinecap="round" pathLength="1" strokeDasharray="1" strokeDashoffset={1 - underline} opacity={localFrame >= 0 && !answered ? 1 : 0} />
       </svg>
+      <div style={styles.options}>
+        {item.options.map((option, optionIndex) => (
+          <div key={`${option}-${optionIndex}`} style={styles.option}>
+            <span style={styles.letter}>{LETTERS[optionIndex]}.</span>
+            <span>{option}</span>
+            {optionIndex === item.answerIndex && answered ? (
+              <span style={{ ...styles.correct, opacity: clamp(reveal, 0, 1), transform: `scale(${lerp(0.4, 1, clamp(reveal, 0, 1))}) rotate(-8deg)` }}>✓</span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <Illustration type={item.illustration} index={index} />
+      <Countdown localFrame={localFrame} startFrame={countdownStart} endFrame={countdownEnd} fps={fps} answered={answered} />
     </section>
   );
 }
 
-function AnswerCircle({ progress }) {
+function Countdown({ localFrame, startFrame, endFrame, fps, answered }) {
+  if (localFrame < startFrame || answered) return null;
+  const interval = Math.max(1, (endFrame - startFrame) / 5);
+  const elapsed = clamp(localFrame - startFrame, 0, Math.max(0, endFrame - startFrame - 1));
+  const step = clamp(Math.floor(elapsed / interval), 0, 4);
+  const digit = 5 - step;
+  const within = (elapsed - step * interval) / interval;
+  const draw = interpolate(within, [0, 0.34, 1], [0.04, 1, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const pulse = spring({ frame: Math.round(within * interval), fps, config: { damping: 11, stiffness: 300, mass: 0.35 } });
   return (
-    <svg style={styles.answerCircle} viewBox="0 0 355 46" preserveAspectRatio="none" aria-hidden="true">
-      <path d="M9 24 C15 4 86 2 176 4 C272 2 341 6 347 22 C350 37 280 43 177 42 C75 44 8 39 9 24Z" fill="none" stroke={COLORS.red} strokeWidth="4.5" strokeLinecap="round" pathLength="1" strokeDasharray="1" strokeDashoffset={1 - progress} />
-    </svg>
-  );
-}
-
-function MarkerHand({ top, opacity, swing }) {
-  return (
-    <div style={{ ...styles.markerHand, top, opacity, transform: `translateX(${lerp(180, 0, opacity)}px) rotate(${swing}deg)` }}>
-      <div style={styles.glovePalm} />
-      <div style={styles.gloveFinger} />
-      <div style={styles.markerBar}><span /></div>
-      <div style={styles.markerTip} />
+    <div style={{ ...styles.countdown, transform: `rotate(${step % 2 ? 4 : -4}deg) scale(${lerp(0.84, 1, clamp(pulse, 0, 1))})` }}>
+      <svg viewBox="0 0 62 62" aria-hidden="true">
+        <path d="M31 4 C48 3 59 15 58 31 C58 48 47 58 30 58 C13 58 4 48 4 31 C4 15 15 5 31 4Z" fill="rgba(255,255,255,.92)" stroke={RED} strokeWidth="3.3" strokeLinecap="round" pathLength="1" strokeDasharray="1" strokeDashoffset={1 - draw} />
+      </svg>
+      <b style={styles.countdownDigit}>{digit}</b>
     </div>
   );
 }
 
-function Illustration({ type, accentIndex }) {
-  const palette = ["#62a1dd", "#f2b74e", "#70b77e", "#ef7b70", "#8b79cf"];
-  const accent = palette[accentIndex % palette.length];
-  const common = { fill: "none", stroke: COLORS.ink, strokeWidth: 5, strokeLinecap: "round", strokeLinejoin: "round" };
+function MarkerHand({ localFrame, questionFrames, fps, questionTop }) {
+  const countdownStart = 0.55 * fps;
+  const countdownEnd = Math.min(questionFrames - 0.85 * fps, countdownStart + 5 * fps);
+  const enter = interpolate(localFrame, [0, 0.22 * fps], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const exit = interpolate(localFrame, [countdownEnd - 0.08 * fps, countdownEnd + 0.22 * fps], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const sweep = interpolate(localFrame, [0, 0.38 * fps, 0.72 * fps], [0, 1, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const writing = clamp((localFrame - countdownStart) / Math.max(1, countdownEnd - countdownStart), 0, 1);
+  const tick = writing * 5;
+  const digitPhase = tick - Math.floor(tick);
+  const writeX = 113 + Math.cos(digitPhase * Math.PI * 2) * 9;
+  const writeY = questionTop + 222 + Math.sin(digitPhase * Math.PI * 2) * 7;
+  const underlineX = lerp(126, 414, easeOutCubic(clamp(localFrame / (0.42 * fps), 0, 1)));
+  const underlineY = questionTop + 51 + Math.sin(localFrame * 0.35) * 2;
+  const tipX = localFrame < countdownStart ? lerp(underlineX, 113, easeInOut(clamp((localFrame - 0.34 * fps) / (0.34 * fps), 0, 1))) : writeX;
+  const tipY = localFrame < countdownStart ? lerp(underlineY, questionTop + 222, easeInOut(clamp((localFrame - 0.34 * fps) / (0.34 * fps), 0, 1))) : writeY;
+  const opacity = Math.min(enter, exit);
+  const offscreen = lerp(290, 0, easeOutCubic(enter));
+  return (
+    <Img
+      src={staticFile("marker-hand-v2.png")}
+      style={{
+        ...styles.markerHand,
+        left: tipX - 82 + offscreen,
+        top: tipY - 46 + offscreen * 0.34,
+        opacity,
+        transform: `rotate(${lerp(4, -2, sweep) + Math.sin(localFrame * 0.22) * 1.2}deg)`
+      }}
+    />
+  );
+}
+
+function Illustration({ type, index }) {
+  const id = `art-${type}-${index}`;
+  const line = { stroke: "#12202a", strokeWidth: 3.2, strokeLinecap: "round", strokeLinejoin: "round" };
   let art;
-  if (type === "mountain") art = <><path d="M8 72 48 18 76 50 94 30 126 72Z" fill={accent} stroke={COLORS.ink} strokeWidth="5"/><path d="m39 31 10-13 13 23" {...common}/><circle cx="109" cy="17" r="10" fill="#ffd15c"/></>;
-  else if (type === "ocean") art = <><path d="M8 43c18-16 31 16 50 0s32 16 52 0 28 9 28 9" {...common}/><path d="M8 67c18-16 31 16 50 0s32 16 52 0 28 9 28 9" {...common}/><path d="m89 20 24 9-18 9Z" fill={accent} stroke={COLORS.ink} strokeWidth="4"/></>;
-  else if (type === "desert") art = <><circle cx="110" cy="21" r="12" fill="#ffd15c"/><path d="M5 73c24-31 48-29 70 0 21-26 44-28 64 0" fill={accent} stroke={COLORS.ink} strokeWidth="5"/><path d="M44 61V25m0 15c-13 0-13-12-13-18m13 27c14 0 14-13 14-19" {...common}/></>;
-  else if (type === "landmark") art = <><path d="M32 74h77M43 70V32h55v38M37 31l33-20 34 20Z" fill={accent} stroke={COLORS.ink} strokeWidth="5"/><path d="M58 70V46h24v24" {...common}/></>;
-  else if (type === "river") art = <><path d="M18 12c35 15 18 34 53 40s38 17 51 26" stroke={accent} strokeWidth="17" fill="none" strokeLinecap="round"/><path d="M18 12c35 15 18 34 53 40s38 17 51 26" {...common}/><path d="M103 18c-14 6-19 13-23 23M53 56c-11 5-17 12-22 20" {...common}/></>;
-  else if (type === "boot") art = <><path d="M47 9c18 2 34 10 42 22l-12 14 14 17 28 3-1 19-39 1-22-19 6-20-23-17Z" fill={accent} stroke={COLORS.ink} strokeWidth="5"/></>;
-  else if (type === "planet") art = <><circle cx="72" cy="46" r="31" fill={accent} stroke={COLORS.ink} strokeWidth="5"/><path d="M14 61c24 7 70-4 112-32M22 71c36 7 80-12 105-31" {...common}/></>;
-  else if (type === "leaf") art = <><path d="M25 69C29 24 63 10 112 14c-2 46-37 70-87 55Z" fill={accent} stroke={COLORS.ink} strokeWidth="5"/><path d="M25 70c25-19 49-31 76-45M61 48 55 28m20 12 19 8" {...common}/></>;
-  else art = <><circle cx="70" cy="45" r="38" fill={accent} stroke={COLORS.ink} strokeWidth="5"/><path d="M32 45h76M70 7c-21 22-21 54 0 76M70 7c21 22 21 54 0 76M42 20c18 10 38 10 56 0M42 70c18-10 38-10 56 0" {...common}/></>;
-  return <svg style={styles.illustration} viewBox="0 0 145 90" aria-hidden="true">{art}</svg>;
+  if (type === "mountain") art = <><defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop stopColor="#72c9ff"/><stop offset="1" stopColor="#eef9ff"/></linearGradient></defs><circle cx="76" cy="55" r="50" fill={`url(#${id})`} {...line}/><path d="M25 86 61 36 78 56 94 28 128 86Z" fill="#dcecf2" {...line}/><path d="m49 53 12-17 10 13 7 7 16-28 13 22" fill="#fff" {...line}/><path d="M24 86h106" fill="none" {...line}/></>;
+  else if (type === "ocean") art = <><path d="M7 57c16-19 29-19 44 0 16-22 32-22 49 0 17-19 31-19 47 0v38H7Z" fill="#31b8eb" opacity=".8"/><path d="M7 57c16-19 29-19 44 0 16-22 32-22 49 0 17-19 31-19 47 0M8 78c18-17 31-17 48 0 16-18 30-18 47 0 16-16 29-16 44 0" fill="none" {...line}/><path d="m102 19 26 12-25 11-17-11Z" fill="#ffbd3f" {...line}/><circle cx="25" cy="28" r="10" fill="#80daf8"/></>;
+  else if (type === "desert") art = <><circle cx="123" cy="23" r="15" fill="#ffca39"/><path d="M5 93c29-46 55-44 82 0 20-33 42-33 63 0Z" fill="#e8902e" {...line}/><path d="M45 82V34m0 20c-15 0-16-12-16-21m16 32c15 0 16-13 16-23" fill="none" stroke="#289448" strokeWidth="7" strokeLinecap="round"/><path d="M76 91 102 47l28 44" fill="#d26a31" {...line}/></>;
+  else if (type === "landmark") art = <><path d="M22 95h116M35 91V42h91v49M29 42 80 13l52 29Z" fill="#ef9b37" {...line}/><path d="M47 91V53h13v38m20 0V53h13v38m20 0V53h13" fill="#4fa9d7" {...line}/><path d="M69 91V67h22v24" fill="#fff2bc" {...line}/><circle cx="80" cy="29" r="7" fill="#4fa9d7"/></>;
+  else if (type === "river") art = <><path d="M3 91h148V47c-20-14-42-15-62-1-22-19-50-19-86 0Z" fill="#6fc76f" {...line}/><path d="M72 40c24 15 5 29 26 40 12 6 18 10 23 15" fill="none" stroke="#31a7e2" strokeWidth="18" strokeLinecap="round"/><path d="M72 40c24 15 5 29 26 40 12 6 18 10 23 15" fill="none" {...line}/><path d="M17 52 37 22l21 30M102 48l17-25 19 30" fill="#8b7258" {...line}/><circle cx="24" cy="25" r="12" fill="#ffcf42"/></>;
+  else if (type === "boot") art = <><path d="M49 9c22 2 40 12 49 26L84 51l13 22 38 6-2 22-52-1-29-25 7-24-26-22Z" fill="#f1b93f" {...line}/><path d="m82 99 7-18 41 7" fill="none" stroke="#d88a21" strokeWidth="6" strokeLinecap="round"/></>;
+  else art = <><circle cx="78" cy="54" r="49" fill="#62c9ed" {...line}/><path d="M30 54h96M78 5c-25 29-25 70 0 98M78 5c25 29 25 70 0 98M43 20c23 14 48 14 70 0M43 89c23-14 48-14 70 0" fill="none" {...line}/><path d="M47 39c8-10 15-12 23-5l-5 13-13 4Zm38 22c14-11 25-8 32 5l-13 17-18-5Z" fill="#4faf58"/></>;
+  return <svg style={styles.illustration} viewBox="0 0 155 110" aria-hidden="true">{art}</svg>;
 }
 
 function colorTitle(title) {
-  const words = String(title || "Quiz").split(/\s+/).filter(Boolean);
-  if (words.length === 1) return <><span style={{ color: COLORS.red }}>{words[0]}</span></>;
-  return words.map((word, index) => <React.Fragment key={`${word}-${index}`}><span style={{ color: index % 2 ? COLORS.blue : COLORS.red }}>{word}</span>{index < words.length - 1 ? " " : ""}</React.Fragment>);
+  const words = String(title || "Geography Quiz").split(/\s+/).filter(Boolean);
+  if (words.length === 1) return <span style={{ color: RED }}>{words[0]}</span>;
+  return words.map((word, index) => <React.Fragment key={`${word}-${index}`}><span style={{ color: index === words.length - 1 ? BLUE : RED }}>{word}</span>{index < words.length - 1 ? " " : ""}</React.Fragment>);
 }
 
-function scrollTarget(index, maxScroll) {
-  if (index < 1) return 0;
-  return clamp(HEADER_HEIGHT + index * QUESTION_HEIGHT - 380, 0, maxScroll);
+function scrollTarget(index, viewportHeight, maxScroll) {
+  if (index < 0) return 0;
+  const bottom = HEADER_HEIGHT + (index + 1) * QUESTION_HEIGHT;
+  return clamp(bottom - (viewportHeight - 76), 0, maxScroll);
 }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function lerp(from, to, progress) { return from + (to - from) * progress; }
-function smooth(value) { const x = clamp(value, 0, 1); return x * x * (3 - 2 * x); }
+function easeOutCubic(value) { return 1 - Math.pow(1 - clamp(value, 0, 1), 3); }
+function easeInOut(value) { const x = clamp(value, 0, 1); return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
 
 const styles = {
-  canvas: { overflow: "hidden", background: COLORS.desk, fontFamily: '"Segoe UI", Arial, sans-serif', color: COLORS.ink },
-  deskGlow: { position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 34%, rgba(255,255,255,.7), transparent 58%), linear-gradient(115deg,#c9c0b1,#eee9df 50%,#c8beae)" },
-  paper: { position: "absolute", left: 26, top: -18, width: 668, height: 1350, overflow: "hidden", background: COLORS.paper, borderRadius: 5, boxShadow: "0 16px 48px rgba(52,43,31,.34)" },
-  paperContent: { position: "absolute", left: 0, right: 0, top: 0, padding: "68px 48px 0", boxSizing: "border-box", background: "linear-gradient(90deg,rgba(214,62,48,.045) 1px,transparent 1px),linear-gradient(rgba(24,100,168,.035) 1px,transparent 1px)", backgroundSize: "28px 28px" },
-  header: { height: HEADER_HEIGHT - 46, textAlign: "center" },
-  eyebrow: { fontSize: 15, letterSpacing: 4.2, fontWeight: 900, color: COLORS.muted },
-  title: { margin: "10px 0 4px", fontSize: 58, lineHeight: 1, letterSpacing: -2.8, fontFamily: 'Georgia,"Times New Roman",serif' },
-  hook: { margin: "15px 0 12px", fontSize: 19, fontWeight: 700, color: "#3c4850" },
-  rule: { display: "flex", justifyContent: "center" },
-  ruleLine: { width: 124, height: 5, borderRadius: 4, background: `linear-gradient(90deg,${COLORS.red} 0 48%,${COLORS.blue} 48%)` },
-  question: { position: "relative", height: QUESTION_HEIGHT, borderTop: "2px solid rgba(21,25,29,.11)", boxSizing: "border-box", paddingTop: 30 },
-  number: { position: "absolute", left: -3, top: 28, width: 41, height: 41, display: "grid", placeItems: "center", borderRadius: "50%", color: "#fff", background: COLORS.ink, fontSize: 22, fontWeight: 900 },
-  questionCopy: { paddingLeft: 55, paddingRight: 164 },
-  questionTitle: { minHeight: 54, margin: 0, display: "flex", alignItems: "center", fontSize: 20, lineHeight: 1.25, letterSpacing: -0.25 },
-  options: { display: "grid", gap: 6, marginTop: 11 },
-  option: { position: "relative", height: 38, display: "flex", alignItems: "center", gap: 8, padding: "0 11px", fontSize: 18, fontWeight: 650, whiteSpace: "nowrap" },
-  optionLetter: { width: 22, fontWeight: 900, color: COLORS.blue },
-  answerCircle: { position: "absolute", left: -2, top: -3, width: 355, height: 46, overflow: "visible", pointerEvents: "none" },
-  illustration: { position: "absolute", right: 8, top: 68, width: 145, height: 90 },
-  redCheck: { position: "absolute", right: 8, bottom: 18, width: 53, height: 42, transform: "rotate(-7deg)" },
-  ctaBlock: { height: 170, display: "grid", placeItems: "center", alignContent: "center", gap: 8, borderTop: "2px solid rgba(21,25,29,.11)", textAlign: "center" },
-  ctaTick: { width: 47, height: 47, display: "grid", placeItems: "center", borderRadius: "50%", background: COLORS.red, color: "#fff", fontSize: 28, fontWeight: 900 },
-  markerHand: { position: "absolute", right: -84, width: 322, height: 184, transformOrigin: "90% 70%" },
-  glovePalm: { position: "absolute", right: 0, top: 58, width: 166, height: 126, borderRadius: "55% 20% 0 0", background: "linear-gradient(135deg,#121416,#020303)", boxShadow: "inset 10px 9px 20px rgba(255,255,255,.11),0 9px 18px rgba(0,0,0,.3)" },
-  gloveFinger: { position: "absolute", right: 118, top: 44, width: 125, height: 50, borderRadius: 28, background: "linear-gradient(#171a1c,#030404)", transform: "rotate(-8deg)", boxShadow: "inset 0 7px 9px rgba(255,255,255,.1)" },
-  markerBar: { position: "absolute", left: 12, top: 45, width: 205, height: 31, borderRadius: 16, background: "linear-gradient(#ee3f38,#a90f0d)", transform: "rotate(-9deg)", boxShadow: "0 7px 10px rgba(0,0,0,.2)" },
-  markerTip: { position: "absolute", left: -7, top: 64, width: 39, height: 18, clipPath: "polygon(0 50%,100% 0,100% 100%)", background: "#77110f", transform: "rotate(-9deg)" },
-  scoreBug: { position: "absolute", left: 121, right: 121, bottom: 92, minHeight: 106, display: "flex", alignItems: "center", justifyContent: "center", gap: 18, border: "4px solid #15191d", borderRadius: 14, background: "rgba(255,253,248,.97)", boxShadow: "0 8px 26px rgba(0,0,0,.25)", fontSize: 26 },
-  safeTop: { position: "absolute", left: 0, right: 0, top: 0, height: 18, background: "rgba(0,0,0,.06)" },
-  safeBottom: { position: "absolute", left: 0, right: 0, bottom: 0, height: 28, background: "linear-gradient(transparent,rgba(0,0,0,.16))" }
+  canvas: { overflow: "hidden", background: "#ffffff", color: INK, fontFamily: 'Arial,"Segoe UI","Microsoft YaHei UI",sans-serif' },
+  content: { position: "absolute", inset: "0 0 auto", background: "#fff", padding: "0 44px", boxSizing: "border-box", willChange: "transform" },
+  header: { height: HEADER_HEIGHT, display: "grid", alignContent: "center", justifyItems: "center", textAlign: "center" },
+  title: { margin: "7px 0 8px", fontSize: 42, lineHeight: 1, letterSpacing: -2, fontWeight: 900 },
+  hook: { maxWidth: 590, margin: 0, color: "#4d5358", fontSize: 15, lineHeight: 1.25, fontWeight: 700 },
+  headerRule: { marginTop: 13, display: "flex", gap: 4 },
+  headerRuleRed: { width: 58, height: 4, borderRadius: 2, background: RED },
+  headerRuleBlue: { width: 58, height: 4, borderRadius: 2, background: BLUE },
+  question: { position: "relative", height: QUESTION_HEIGHT, boxSizing: "border-box", paddingTop: 13 },
+  questionTitle: { width: 600, minHeight: 42, margin: 0, display: "flex", alignItems: "center", color: INK, fontSize: 23, lineHeight: 1.16, fontWeight: 800, letterSpacing: -0.4 },
+  questionNumber: { flex: "0 0 auto", marginRight: 7 },
+  underline: { position: "absolute", left: 11, top: 49, width: 430, height: 12 },
+  options: { marginTop: 6, display: "grid", gap: 1 },
+  option: { position: "relative", height: 37, display: "flex", alignItems: "center", paddingLeft: 2, color: "#202326", fontSize: 22, lineHeight: 1, fontWeight: 500 },
+  letter: { width: 35 },
+  correct: { position: "absolute", left: -31, top: -1, color: GREEN, fontSize: 35, lineHeight: 1, fontFamily: '"Segoe Print","Comic Sans MS",cursive', fontWeight: 900, transformOrigin: "center" },
+  countdown: { position: "absolute", left: 38, bottom: 1, width: 48, height: 48, transformOrigin: "center" },
+  countdownDigit: { position: "absolute", inset: 0, display: "grid", placeItems: "center", color: RED, fontSize: 25, lineHeight: 1, fontFamily: '"Segoe Print","Comic Sans MS",cursive', fontWeight: 900 },
+  illustration: { position: "absolute", right: 9, top: 76, width: 155, height: 110, overflow: "visible" },
+  markerHand: { position: "absolute", width: 475, height: "auto", transformOrigin: "82px 46px", pointerEvents: "none", filter: "drop-shadow(0 8px 7px rgba(0,0,0,.2))", willChange: "left,top,transform" },
+  cta: { height: 142, display: "grid", justifyItems: "center", alignContent: "center", gap: 8, borderTop: "2px solid #eef0f1", textAlign: "center" },
+  edgeFadeTop: { position: "absolute", left: 0, right: 0, top: 0, height: 10, background: "linear-gradient(rgba(0,0,0,.035),transparent)" },
+  edgeFadeBottom: { position: "absolute", left: 0, right: 0, bottom: 0, height: 18, background: "linear-gradient(transparent,rgba(0,0,0,.045))" }
 };

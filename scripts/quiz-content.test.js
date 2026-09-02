@@ -6,7 +6,7 @@ test("quiz defaults create a roughly one-minute seven-question video", () => {
   const result = normalizeQuizPayload({});
   assert.equal(result.language, "en");
   assert.equal(result.questions.length, 7);
-  assert.equal(result.durationSeconds, 60.5);
+  assert.equal(result.durationSeconds, 61);
   assert.equal(result.questions[0].answerIndex, 1);
 });
 

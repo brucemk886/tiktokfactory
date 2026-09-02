@@ -40,9 +40,9 @@ export function normalizeQuizPayload(payload = {}) {
     throw new Error("测试题需要 6–9 道题。 ");
   }
   const questions = source.map((item, index) => normalizeQuestion(item, index));
-  const secondsPerQuestion = clampDecimal(payload.secondsPerQuestion, 6, 12, 7.5);
-  const introSeconds = clampDecimal(payload.introSeconds, 2.5, 6, 3.5);
-  const outroSeconds = clampDecimal(payload.outroSeconds, 3, 8, 4.5);
+  const secondsPerQuestion = clampDecimal(payload.secondsPerQuestion, 6, 12, 8);
+  const introSeconds = clampDecimal(payload.introSeconds, 0.5, 2, 0.8);
+  const outroSeconds = clampDecimal(payload.outroSeconds, 2, 6, 4.2);
   const defaults = language === "zh"
     ? { title: "地理知识测试", hook: "红笔揭晓答案前，你能答对几道？", cta: "你答对了几道？评论区留下分数" }
     : { title: "Geography Quiz", hook: "Which questions can you solve before the red marker reveals every answer?", cta: "What was your score? Comment below" };

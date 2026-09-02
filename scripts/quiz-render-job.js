@@ -28,13 +28,13 @@ async function run() {
   const { outputDir } = resolveStorageDirs(root, config);
   const projectDir = path.join(root, "quiz-video-generator");
   const entry = path.join(projectDir, "src", "index.jsx");
-  const sharedPublicDir = path.join(root, "schulte-grid-generator", "public");
+  const publicDir = path.join(projectDir, "public");
   const remotionCli = path.join(root, "node_modules", "@remotion", "cli", "remotion-cli.js");
   if (!fs.existsSync(entry)) throw new Error("测试题 Remotion 项目不存在。");
   if (!fs.existsSync(remotionCli)) throw new Error("Remotion CLI 不存在，请先安装项目依赖。");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const builtInMusic = path.join(sharedPublicDir, "focus-ambient.wav");
+  const builtInMusic = path.join(publicDir, "focus-ambient.wav");
   const props = {
     ...quiz,
     backgroundMusicEnabled: quiz.backgroundMusicEnabled && fs.existsSync(builtInMusic),
@@ -69,7 +69,7 @@ async function run() {
     "3",
     "--overwrite"
   ];
-  if (fs.existsSync(sharedPublicDir)) args.push("--public-dir", sharedPublicDir);
+  if (fs.existsSync(publicDir)) args.push("--public-dir", publicDir);
   const chromePath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
   if (fs.existsSync(chromePath)) args.push("--browser-executable", chromePath);
 

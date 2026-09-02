@@ -31,7 +31,7 @@
         <div>
           <p class="module-kicker">INTERACTIVE QUIZ</p>
           <h1>测试题视频</h1>
-          <p>纵向试卷逐题下滚，红笔圈出答案。题目、选项、语言和节奏都可以直接修改。</p>
+          <p>纵向试卷同屏展示多题，红笔连续写 5 秒倒计时，再用绿勾揭晓答案。</p>
         </div>
         <span class="quiz-render-note">720 × 1280 · 30 FPS · 约 60 秒</span>
       </header>
@@ -44,7 +44,7 @@
           </div>
           <div class="quiz-fields">
             <label class="module-field"><span>语言</span><select id="language"><option value="en">English</option><option value="zh">中文</option></select></label>
-            <label class="module-field"><span>每题停留</span><div class="quiz-suffix"><input id="secondsPerQuestion" type="number" min="6" max="12" step="0.5" value="7.5" /><b>秒</b></div></label>
+            <label class="module-field"><span>每题停留</span><div class="quiz-suffix"><input id="secondsPerQuestion" type="number" min="6" max="12" step="0.5" value="8" /><b>秒</b></div></label>
             <label class="module-field"><span>随机种子</span><input id="seed" type="number" min="1" max="999999" value="2609" /></label>
             <button id="loadDefaultsBtn" class="module-button quiz-load" type="button">载入英文示例题库</button>
             <label class="module-field quiz-wide"><span>主标题</span><input id="title" maxlength="48" value="Geography Quiz" /></label>
@@ -60,7 +60,7 @@
 
           <div class="quiz-feature-strip">
             <span><b id="questionCount">7</b><i>题目数量</i></span>
-            <span><b id="durationText">约 61 秒</b><i>预计时长</i></span>
+            <span><b id="durationText">约 61 秒</b><i>每题含 5 秒倒计时</i></span>
             <span><b>自动降级</b><i>无背景音乐也照常出片</i></span>
           </div>
           <div class="quiz-actions">
@@ -71,7 +71,7 @@
         </section>
 
         <aside class="module-panel quiz-preview-panel">
-          <div class="module-panel-head"><div><h2>生成预览</h2><p id="previewMeta">纵向试卷 · 三选一 · 红笔揭晓</p></div></div>
+          <div class="module-panel-head"><div><h2>生成预览</h2><p id="previewMeta">纵向试卷 · 红笔 5→1 倒计时 · 绿勾揭晓</p></div></div>
           <div class="quiz-player-frame">
             <video id="previewVideo" controls playsinline preload="metadata"></video>
             <div id="previewPlaceholder" class="quiz-placeholder">
