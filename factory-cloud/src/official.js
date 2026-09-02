@@ -20,7 +20,8 @@ import {
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
 import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, resolveReportWindow } from "../../scripts/official-group-report.js";
-import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { hydrateOfficialPublishRecords, publishRecordsSince, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { listPublishRecords } from "./publish-records-store.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import {
@@ -37,7 +38,6 @@ import {
   computeLiveReport,
   listOpsDates,
   loadArchiveBundle,
-  persistProjectOpsSnapshots,
   readOpsSnapshot,
 } from "./ops-report-store.js";
 import { signalDesk } from "./signal-desk.js";
@@ -133,10 +133,10 @@ export async function handleOfficial(request, env, url, session) {
   if (method === "GET" && pathname === "/api/official-publish-records") {
     const range = url.searchParams.get("range") || "7d";
     const query = url.searchParams.get("query") || "";
-    const stored = filterOfficialPublishRecordsByRange(await kvGet(db, "official-publish-records", []), range);
+    const stored = await listPublishRecords(db, { from: publishRecordsSince(range), limit: 800 });
     const records = await hydrateOfficialPublishRecords(stored, (batchId) => (
       signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
-    )).catch(() => stored);
+    ), { skipResolved: true, limit: 8 }).catch(() => stored);
     return json(summarizeOfficialPublishRecords(records, { range: "all", query }));
   }
 
@@ -392,14 +392,6 @@ async function buildModuleReport(env, db, store, searchParams, user) {
     projectId: liveProject.id,
     groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
   }));
-  try {
-    await persistProjectOpsSnapshots(env, db, store, liveProject, now, bundle, {
-      groupId,
-      groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-    });
-  } catch (error) {
-    console.error(JSON.stringify({ event: "ops-report-persist-failed", module: liveProject.moduleKey, error: String(error?.message || error) }));
-  }
   const livePayload = async () => ({
     module: liveProject.moduleKey,
     project: liveProject,

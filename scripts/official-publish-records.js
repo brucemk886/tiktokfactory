@@ -242,6 +242,10 @@ function mergeRecordFields(prev, next) {
   return merged;
 }
 
+export function publishRecordsSince(range = "7d") {
+  return resolveStatsFrom(range);
+}
+
 function resolveStatsFrom(range) {
   const now = Date.now();
   if (range === "1d") return now - 24 * 60 * 60 * 1000;

@@ -36,6 +36,29 @@ export async function listPeerHitRows(db) {
   return (results || []).map(peerHitFromRow);
 }
 
+export async function listPeerHitRowsForNovel(db, novel = {}) {
+  const factoryId = String(novel?.id || "").trim();
+  const bookId = String(novel?.bookId || "").trim();
+  if (!factoryId && !bookId) return [];
+  const clauses = [];
+  const binds = [];
+  if (factoryId) {
+    clauses.push("factory_novel_id = ?");
+    binds.push(factoryId);
+  }
+  if (bookId) {
+    clauses.push("novel_id = ?");
+    binds.push(bookId);
+  }
+  const { results } = await db.prepare(`
+    SELECT * FROM ${TABLE}
+    WHERE ${clauses.join(" OR ")}
+    ORDER BY play_count DESC, updated_at DESC
+    LIMIT 200
+  `).bind(...binds).all();
+  return (results || []).map(peerHitFromRow);
+}
+
 export async function findPeerHitByKey(db, videoKey) {
   const row = await db.prepare(`SELECT * FROM ${TABLE} WHERE video_key = ?`).bind(videoKey).first();
   return peerHitFromRow(row);

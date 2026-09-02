@@ -1,6 +1,7 @@
 import { buildFactoryStorageReport } from "../../scripts/factory-storage-report.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
+import { countNovels } from "./novel-store.js";
 import { applyOfficialArchivePush } from "./official-archive-store.js";
 
 const SAMPLE_KEY = "factory-storage-sample";
@@ -45,7 +46,6 @@ export async function collectFactoryStorageSample(env, db, sampledAt = Date.now(
     db.prepare("SELECT COUNT(*) AS n FROM official_videos_latest"),
     db.prepare("SELECT COUNT(*) AS n FROM official_account_assignments"),
     db.prepare("SELECT COUNT(*) AS n FROM factory_jobs"),
-    db.prepare("SELECT COUNT(*) AS n FROM factory_novels"),
     db.prepare("SELECT COUNT(*) AS n FROM official_ops_reports"),
   ]);
   const numberAt = (index) => Number(counts[index]?.results?.[0]?.n || 0);
@@ -58,8 +58,8 @@ export async function collectFactoryStorageSample(env, db, sampledAt = Date.now(
     leftoverVideos: numberAt(2),
     assignments: numberAt(3),
     jobs: numberAt(4),
-    novels: numberAt(5),
-    reports: numberAt(6),
+    novels: await countNovels(db),
+    reports: numberAt(5),
     r2Bytes: r2.bytes,
     r2Objects: r2.objects,
   });

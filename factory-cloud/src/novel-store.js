@@ -233,16 +233,116 @@ export async function getNovelRow(db, id) {
   return row ? novelFromRow(row) : null;
 }
 
-export async function listNovelScripts(db) {
+const SCRIPT_TABLE = "factory_novel_scripts";
+
+function filterScripts(scripts = [], options = {}) {
+  const items = Array.isArray(scripts) ? scripts : [];
+  if (!options.novelIds && !options.includeUnassigned) return items;
+  const wanted = new Set((Array.isArray(options.novelIds) ? options.novelIds : []).map((id) => String(id || "").trim()).filter(Boolean));
+  return items.filter((script) => {
+    const novelId = String(script?.novelId || "").trim();
+    if (!novelId) return Boolean(options.includeUnassigned);
+    return wanted.has(novelId);
+  });
+}
+
+async function hasScriptTable(db) {
+  try {
+    await db.prepare(`SELECT 1 FROM ${SCRIPT_TABLE} LIMIT 1`).first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scriptFromRow(row) {
+  try {
+    const parsed = JSON.parse(row?.value_json || "{}");
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function listScriptsFromTable(db, options = {}) {
+  const novelIds = uniqueNovelIds(options.novelIds || []);
+  const clauses = [];
+  const binds = [];
+  if (novelIds.length) {
+    clauses.push(`novel_id IN (${novelIds.map(() => "?").join(", ")})`);
+    binds.push(...novelIds);
+  }
+  if (options.includeUnassigned) clauses.push("novel_id = ''");
+  const where = clauses.length ? `WHERE ${clauses.join(" OR ")}` : "";
+  const { results } = binds.length
+    ? await db.prepare(`SELECT value_json FROM ${SCRIPT_TABLE} ${where}`).bind(...binds).all()
+    : await db.prepare(`SELECT value_json FROM ${SCRIPT_TABLE} ${where}`).all();
+  return (results || []).map(scriptFromRow).filter(Boolean);
+}
+
+export async function migrateScriptsFromKv(db) {
+  if (!await hasScriptTable(db)) return 0;
+  const count = await db.prepare(`SELECT COUNT(*) AS n FROM ${SCRIPT_TABLE}`).first();
+  if (Number(count?.n || 0) > 0) return 0;
   const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
-  return Array.isArray(store.scripts) ? store.scripts : [];
+  const scripts = slimNovelScripts(Array.isArray(store?.scripts) ? store.scripts : []);
+  if (!scripts.length) return 0;
+  await replaceScriptRows(db, scripts);
+  await kvSet(db, "novel-content", { novels: [], scripts: [] });
+  return scripts.length;
+}
+
+async function replaceScriptRows(db, scripts = []) {
+  const items = slimNovelScripts(scripts).filter((script) => script?.id);
+  const now = Date.now();
+  const statement = db.prepare(`
+    INSERT INTO ${SCRIPT_TABLE} (id, novel_id, audio_id, value_json, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      novel_id = excluded.novel_id,
+      audio_id = excluded.audio_id,
+      value_json = excluded.value_json,
+      updated_at = excluded.updated_at
+  `);
+  for (let index = 0; index < items.length; index += 40) {
+    const slice = items.slice(index, index + 40);
+    await db.batch(slice.map((script) => statement.bind(
+      String(script.id),
+      String(script.novelId || "").trim(),
+      String(script.audioId || script.audio?.id || "").trim(),
+      JSON.stringify(script),
+      now
+    )));
+  }
+  const keep = new Set(items.map((script) => String(script.id)));
+  const { results } = await db.prepare(`SELECT id FROM ${SCRIPT_TABLE}`).all();
+  const drop = (results || []).map((row) => String(row.id || "")).filter((id) => id && !keep.has(id));
+  for (let index = 0; index < drop.length; index += 40) {
+    const slice = drop.slice(index, index + 40);
+    await db.prepare(`DELETE FROM ${SCRIPT_TABLE} WHERE id IN (${slice.map(() => "?").join(", ")})`).bind(...slice).run();
+  }
+  return items.length;
+}
+
+export async function listNovelScripts(db, options = {}) {
+  await migrateScriptsFromKv(db);
+  if (await hasScriptTable(db)) return listScriptsFromTable(db, options);
+  const store = await kvGet(db, "novel-content", { novels: [], scripts: [] });
+  return filterScripts(store.scripts, options);
 }
 
 export async function writeScripts(db, scripts) {
-  const current = await kvGet(db, "novel-content", { novels: [], scripts: [] });
+  const slim = slimNovelScripts(scripts);
+  await migrateScriptsFromKv(db);
   await persistScriptTranscripts(db, scripts);
-  await kvSet(db, "novel-content", { novels: [], scripts: slimNovelScripts(scripts) });
-  return current;
+  if (await hasScriptTable(db)) {
+    await replaceScriptRows(db, slim);
+    await kvSet(db, "novel-content", { novels: [], scripts: [] });
+  } else {
+    await kvSet(db, "novel-content", { novels: [], scripts: slim });
+  }
+  await syncWorkingNovels(db, slim.map((item) => item.novelId), { unmarkMissing: false });
+  return { novels: [], scripts: slim };
 }
 
 export async function migrateNovelsFromKv(db) {

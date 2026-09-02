@@ -5,7 +5,7 @@ import { kvGet, kvSet } from "./kv.js";
 import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingAudioDurations, buildAudioGeneratePayload, buildWorkerAudioHitWeights, compactNovelContentTranscripts, enqueueImportedTranscriptPass, mergeImportedNovelStore, persistOpeningVariantScripts, repairOverwrittenPeerAudios, requeueStaleImportedTranscripts, resetRunningImportedTranscripts, transcriptQueueStatus } from "./novels.js";
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
-import { mergeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { mergeAndStorePublishRecords } from "./publish-records-store.js";
 
 const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/generate\/start$/, type: "generate", title: "生成视频" },
@@ -276,8 +276,7 @@ async function handleWorkerApi(request, env, url, ctx) {
       novelImport = await mergeImportedNovelStore(env.DB, body.novelContent);
     }
     if (Array.isArray(body.officialPublishRecords)) {
-      const existing = await kvGet(env.DB, "official-publish-records", []);
-      await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, body.officialPublishRecords));
+      await mergeAndStorePublishRecords(env.DB, body.officialPublishRecords);
     }
     let archive = null;
     if (body.refreshOfficialArchive) {
@@ -472,8 +471,7 @@ async function handleWorkerApi(request, env, url, ctx) {
     const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
     if (shouldWriteOfficialPublishRecords({ existingStatus: nextStatus, cancelled, records: incoming })) {
       try {
-        const existing = await kvGet(env.DB, "official-publish-records", []);
-        await kvSet(env.DB, "official-publish-records", mergeOfficialPublishRecords(existing, incoming).slice(0, 1200));
+        await mergeAndStorePublishRecords(env.DB, incoming, { limit: 1200 });
       } catch (error) {
         console.error("official-publish-records", error?.message || error);
       }

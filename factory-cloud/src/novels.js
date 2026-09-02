@@ -30,7 +30,7 @@ import { attachScriptTranscripts, persistScriptTranscripts, slimNovelScripts } f
 import { copyNovelAudio, deleteNovelAudio, getNovelAudioBytes, getNovelAudioPrefix, headNovelAudio, putNovelAudio } from "./novel-audio-archive.js";
 import { attachPeerHitTimes, attachScaleRunMarks, collapseDuplicateAudioScripts, importedClipFingerprintsByNovel, importedPeerHitIdSet, importedSourceTokensByNovel, peerVideosForScript, planPeerHitNovelImports, scaleRunForScript, takeDuplicateAudioScripts } from "../../scripts/peer-hits.js";
 import { attachNovelHitStats, buildAudioHitWeights, buildOwnHitSnapshot } from "../../scripts/novel-hit-scores.js";
-import { findPeerHitById, listPeerHitRows } from "./peer-hits-store.js";
+import { findPeerHitById, listPeerHitRows, listPeerHitRowsForNovel } from "./peer-hits-store.js";
 import {
   BATCH_AUDIO_MIN_SOURCE,
   batchOpeningStyleIds,
@@ -50,6 +50,7 @@ import { chunkList, effectsLookbackDays, mergePublishStats, periodWindow, resolv
 import { loadGroupStore } from "./official.js";
 import { getOfficialOperationSignals, listLatestArchiveAccounts, readArchiveMeta, refreshOfficialArchive } from "./official-archive-store.js";
 import { hydrateOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { listPublishRecords, mergeAndStorePublishRecords } from "./publish-records-store.js";
 import { signalDesk } from "./signal-desk.js";
 
 const PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
@@ -300,7 +301,7 @@ export async function handleNovels(request, env, url, session, ctx) {
       const cacheKey = `novel-effects-cache:${period}:${query}:${novelId}`;
       if (!forceRefresh) {
         const cached = await kvGet(db, cacheKey, null);
-        if (cached?.page && Date.now() - Number(cached.at || 0) < 60_000) {
+        if (cached?.page && Date.now() - Number(cached.at || 0) < 5 * 60_000) {
           return json(cached.page);
         }
       }
@@ -308,14 +309,14 @@ export async function handleNovels(request, env, url, session, ctx) {
       const archiveAge = Date.now() - Number(meta.updatedAt || meta.archiveAt || 0);
       if (!meta.accountCount) {
         meta = await refreshOfficialArchive(env, db).catch(() => meta);
-      } else if (archiveAge > 30 * 60 * 1000) {
+      } else if (forceRefresh && archiveAge > 6 * 60 * 60 * 1000) {
         ctx?.waitUntil?.(refreshOfficialArchive(env, db).catch(() => {}));
       }
       const [groupStore, accountRows] = await Promise.all([
         loadGroupStore(db),
         listLatestArchiveAccounts(db),
       ]);
-      const storedRecords = await kvGet(db, "official-publish-records", []);
+      const storedRecords = await listPublishRecords(db, { from: Number(window.startAt || 0), limit: 400 });
       const accountKeys = archiveAccountKeysForProject(groupStore, accountRows, "proj-novel");
       const [signals, store, records, publishStats] = await Promise.all([
         getOfficialOperationSignals(env, db, {
@@ -359,7 +360,7 @@ export async function handleNovels(request, env, url, session, ctx) {
       }, { keepNovelId: novelId });
       const persist = () => Promise.all([
         officialPublishRecordsNeedPersist(storedRecords, records)
-          ? kvSet(db, "official-publish-records", records)
+          ? mergeAndStorePublishRecords(db, records)
           : Promise.resolve(),
         kvSet(db, "novel-hit-snapshot", buildOwnHitSnapshot(assembled)),
         kvSet(db, cacheKey, { at: Date.now(), page: payload }),
@@ -382,16 +383,7 @@ async function novelOverview(db, query, env) {
     listPeerHitRows(db).catch(() => []),
     kvGet(db, "novel-hit-snapshot", {})
   ]);
-  const split = takeDuplicateAudioScripts(store.scripts);
-  let scripts = store.scripts;
-  if (split.removed.length) {
-    await writeScripts(db, split.kept);
-    scripts = split.kept;
-    for (const script of split.removed) {
-      const audioId = String(script.audioId || script.audio?.id || "").trim();
-      if (audioId && env) await deleteNovelAudio(env, audioId).catch(() => false);
-    }
-  }
+  const scripts = takeDuplicateAudioScripts(store.scripts).kept;
   const normalized = String(query || "").trim().toLowerCase();
   const novels = attachNovelHitStats(store.novels
     .map((novel) => {
@@ -419,8 +411,31 @@ async function novelOverview(db, query, env) {
       unassignedScriptCount: scripts.filter((item) => !item.novelId).length
     },
     catalog: catalogSummary(novels),
-    novels,
-    unassignedScripts: scripts.filter((item) => !item.novelId)
+    novels: novels.map(slimOverviewNovel),
+    unassignedScripts: scripts.filter((item) => !item.novelId).map(slimOverviewScript)
+  };
+}
+
+function slimOverviewScript(script) {
+  return {
+    id: script.id,
+    novelId: script.novelId,
+    title: script.title,
+    versionLabel: script.versionLabel,
+    parentScriptId: script.parentScriptId,
+    audioId: script.audioId || script.audio?.id || "",
+    audio: script.audio || null,
+    sourceType: script.sourceType || "",
+    createdAt: script.createdAt || "",
+    kept: script.kept,
+    performance: script.performance
+  };
+}
+
+function slimOverviewNovel(novel) {
+  return {
+    ...novel,
+    scripts: (novel.scripts || []).map(slimOverviewScript)
   };
 }
 
@@ -559,7 +574,10 @@ async function getNovel(db, id) {
 export async function hydrateNovel(db, id) {
   const novel = await findNovelById(db, id);
   if (!novel) return null;
-  const [scripts, hits] = await Promise.all([listNovelScripts(db), listPeerHitRows(db)]);
+  const [scripts, hits] = await Promise.all([
+    listNovelScripts(db, { novelIds: [novel.id] }),
+    listPeerHitRowsForNovel(db, novel).catch(() => [])
+  ]);
   const markedHits = attachScaleRunMarks(attachPeerHitTimes(hits.filter((hit) => {
     return hit.factoryNovelId === novel.id || (novel.bookId && hit.novelId === novel.bookId);
   })));
@@ -1551,15 +1569,16 @@ export async function mergeImportedNovelStore(db, incoming = {}) {
 
 async function readStore(db, { includeSource = true, workingOnly = false } = {}) {
   await migrateNovelsFromKv(db);
-  const store = await kvGet(db, "novel-content", null);
-  const scripts = Array.isArray(store?.scripts) ? store.scripts : [];
   if (workingOnly) {
-    await syncWorkingNovels(db, scripts.map((item) => item.novelId), { unmarkMissing: false });
-    return { novels: await listWorkingNovelSummaries(db), scripts };
+    const novels = await listWorkingNovelSummaries(db);
+    return {
+      novels,
+      scripts: await listNovelScripts(db, { novelIds: novels.map((item) => item.id), includeUnassigned: true })
+    };
   }
   return {
     novels: includeSource ? await listNovels(db) : await listNovelSummaries(db),
-    scripts
+    scripts: await listNovelScripts(db)
   };
 }
 

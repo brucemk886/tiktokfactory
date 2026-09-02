@@ -31,7 +31,7 @@ test("merge keeps rich fields when a slimmer sync arrives", () => {
 });
 
 test("summary uses normalized fields and range", () => {
-  const now = Date.parse("2026-08-18T18:00:00+08:00");
+  const now = Date.now();
   const page = summarizeOfficialPublishRecords([
     { id: "old", username: "a", publishedAt: now - 10 * 86_400_000, videoId: "1" },
     { id: "fresh", username: "b", publishedAt: now - 2 * 86_400_000, videoId: "2", status: "submitted" }

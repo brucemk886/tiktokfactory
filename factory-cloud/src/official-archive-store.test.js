@@ -37,9 +37,13 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(official, /attachPublishOutcome/);
   assert.match(novels, /hydrateOfficialPublishRecords/);
   assert.match(novels, /skipResolved: true/);
-  assert.match(novels, /archiveAge > 30 \* 60 \* 1000/);
+  assert.match(novels, /forceRefresh && archiveAge > 6 \* 60 \* 60 \* 1000/);
   assert.match(novels, /waitUntil/);
+  assert.match(novels, /listPublishRecords/);
   assert.doesNotMatch(novels, /if \(!meta\.accountCount \|\| archiveAge/);
+  assert.doesNotMatch(official, /persistProjectOpsSnapshots/);
+  assert.match(official, /skipResolved: true/);
+  assert.match(official, /listPublishRecords/);
 });
 
 test("factory asset-usage reads archive views without importing the local asset library", async () => {
