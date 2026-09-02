@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>心理学 · 目标2</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/tasks.css" />
+    <link rel="stylesheet" href="/module-pages.css" />
+    <link rel="stylesheet" href="/psychology-narrative.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+  </head>
+  <body class="module-page psychology-mid-page">
+    <aside class="tasks-sidebar">
+      <a class="tasks-brand" href="/" aria-label="Local Factory"><span class="brand-mark">LF</span><span><strong>Local Factory</strong><small>中视频</small></span></a>
+      <nav class="tasks-nav" aria-label="主导航"><a class="is-active" href="/psychology-target-2">心理学 · 目标2</a></nav>
+      <div class="sidebar-safety"><span class="live-dot"></span><div><strong>互动测试型</strong><small>默认英文 · 中文走 ElevenLabs</small></div></div>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </aside>
+
+    <main class="module-main">
+      <header class="module-header">
+        <div>
+          <p class="module-kicker">PSYCHOLOGY TARGET 02</p>
+          <h1>心理学 · 目标2</h1>
+          <p>12–20 秒互动测试型：默认生成全英文内容；英文由本机 Kokoro 一次配完整段，中文文案自动改走 ElevenLabs。每句话仍按真实时间戳同步字幕和 SVG 动作。</p>
+        </div>
+        <span class="psy-render-note">1920 × 1080 · 12–20 秒 · 本地 Remotion</span>
+      </header>
+
+      <div class="module-shell psy-shell">
+        <section class="module-panel psy-config">
+          <div class="module-panel-head">
+            <div><h2>目标2设置</h2><p>对齐参考片的白底信息板：顶部问题、中央测试图、右侧简笔人、底部逐句字幕。</p></div>
+            <button id="saveSettingsBtn" class="module-button" type="button">保存设置</button>
+          </div>
+
+          <div class="psy-layout-picker" role="radiogroup" aria-label="目标2题型">
+            <button class="psy-layout is-active" type="button" data-quiz-type="auto" role="radio" aria-checked="true"><strong>自动识别</strong><small>根据题目选模板</small></button>
+            <button class="psy-layout" type="button" data-quiz-type="hidden-number" role="radio" aria-checked="false"><strong>隐藏数字</strong><small>错觉纹理看数字</small></button>
+            <button class="psy-layout" type="button" data-quiz-type="position-choice" role="radio" aria-checked="false"><strong>位置选择</strong><small>电梯或房间 A–F</small></button>
+            <button class="psy-layout" type="button" data-quiz-type="character-choice" role="radio" aria-checked="false"><strong>人物选择</strong><small>背影或角色 A–D</small></button>
+            <button class="psy-layout" type="button" data-quiz-type="embrace-choice" role="radio" aria-checked="false"><strong>拥抱偏好</strong><small>四种姿势 A–D</small></button>
+          </div>
+
+          <div class="psy-fields">
+            <label class="module-field psy-wide"><span>测试题目 / 钩子</span><input id="topic" type="text" maxlength="160" value="The position you choose reveals how guarded you are" /></label>
+            <label class="module-field psy-wide"><span>结果提示 <em>可选</em></span><textarea id="angle" rows="3" maxlength="1000" placeholder="可用中文或英文描述观点；默认会输出自然英文。"></textarea></label>
+            <label class="module-field psy-wide"><span>已有文案 <em>可选</em></span><textarea id="script" rows="4" maxlength="4000" placeholder="留空则原创英文；粘贴中文口播时会保留中文并自动使用 ElevenLabs。"></textarea></label>
+            <label class="module-field"><span>目标时长</span><div class="psy-suffix"><input id="targetDuration" type="number" min="12" max="20" value="16" /><b>秒</b></div></label>
+            <label class="module-field"><span>样片条数</span><div class="psy-suffix"><input id="totalVideos" type="number" min="1" max="3" value="1" /><b>条</b></div></label>
+            <label class="module-field"><span>片头署名</span><input id="credit" type="text" maxlength="24" value="PSYCHOLOGY LAB" /></label>
+            <label class="module-field"><span>背景音乐音量</span><div class="psy-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10" /><b>0–0.5</b></div></label>
+            <label class="module-field psy-wide"><span>背景音乐目录 <em>可选</em></span><div class="psy-directory"><input id="backgroundMusicDir" type="text" placeholder="不填则只保留解说" /><button id="pickMusicBtn" class="module-button" type="button">选择目录</button></div></label>
+          </div>
+
+          <div class="psy-models">
+            <label><input type="radio" name="imageModel" value="nano-banana" checked /><span><strong>Nano Banana</strong><small>构图更稳</small></span></label>
+            <label><input type="radio" name="imageModel" value="grok" /><span><strong>Grok Imagine</strong><small>低成本试验</small></span></label>
+          </div>
+
+          <details class="psy-api">
+            <summary>接口与配音</summary>
+            <div class="psy-api-grid">
+              <label class="module-field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
+              <label class="module-field"><span>英文 Kokoro 声音</span>
+                <select id="kokoroVoice">
+                  <option value="am_adam" selected>Adam（美式男声）</option>
+                  <option value="af_jessica">Jessica（美式女声）</option>
+                  <option value="af_heart">Heart（美式女声）</option>
+                  <option value="am_michael">Michael（美式男声）</option>
+                  <option value="bf_emma">Emma（英式女声）</option>
+                  <option value="bm_george">George（英式男声）</option>
+                </select>
+              </label>
+              <label class="module-field"><span>ElevenLabs API Key <em>中文时使用</em></span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
+              <label class="module-field"><span>ElevenLabs Voice ID</span><input id="elevenLabsVoiceId" type="text" autocomplete="off" placeholder="中文声线 ID" /></label>
+              <label class="module-field"><span>ElevenLabs Model</span><input id="elevenLabsModelId" type="text" value="eleven_multilingual_v2" /></label>
+            </div>
+            <p id="settingsStatus" class="module-status">英文口播走本机 Kokoro；中文文案自动走 ElevenLabs；生图走 Kie.ai。</p>
+          </details>
+
+          <div class="psy-actions">
+            <div id="statusText" class="module-status">准备生成心理学目标2样片。</div>
+            <button id="startBtn" class="module-button primary" type="button">生成一条样片</button>
+          </div>
+          <p class="psy-format-note">内容仅用于互动与自我观察，不把图片选择包装成抑郁、焦虑或其他疾病诊断。</p>
+          <div class="psy-progress" aria-hidden="true"><span id="progressBar"></span></div>
+        </section>
+
+        <section class="module-panel psy-preview-panel">
+          <div class="module-panel-head"><div><h2>目标2预览</h2><p id="previewMeta">生成后会在这里播放 1920×1080 成片。</p></div><a id="downloadLink" class="module-button psy-download is-hidden" download>下载视频</a></div>
+          <div class="psy-player-frame">
+            <div id="previewEmpty" class="psy-preview-empty">
+              <b>心理学 · 目标2</b>
+              <span>测试图 + 简笔人 + 解说</span>
+               <small>白底 · 顶部问题 · 逐句同步字幕</small>
+            </div>
+            <video id="previewVideo" class="is-hidden" controls playsinline preload="metadata"></video>
+          </div>
+          <div id="scorePanel" class="psy-score" hidden></div>
+        </section>
+      </div>
+
+      <section class="module-panel psy-results-panel">
+        <div class="module-panel-head"><div><p class="module-kicker">TARGET 02 OUTPUTS</p><h2>本次生成结果</h2><p>每条都是目标2互动测试型，不会混入目标1长叙事或其他模板。</p></div></div>
+        <div id="resultList" class="psy-result-list"><div class="psy-empty">还没有生成结果。</div></div>
+      </section>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/psychology-narrative.js"></script>
+  </body>
+</html>

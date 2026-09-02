@@ -5,6 +5,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("hub", "/", "业务总览", ALL),
   moduleItem("mid-video", "/mid-video", "模板工作台", ALL, midVideoGroup()),
   moduleItem("schulte", "/schulte", "舒尔特训练", ALL, midVideoGroup()),
+  moduleItem("psychology-narrative", "/psychology-target-2", "心理学模板", ["admin"], midVideoGroup()),
   moduleItem("quiz", "/quiz", "测试题", ["admin"], midVideoGroup()),
   moduleItem("podcast", "/podcast", "播客模板", ALL, midVideoGroup()),
   moduleItem("ai", "/ai", "AI 创作", ["admin"], midVideoGroup()),
@@ -76,6 +77,8 @@ export function moduleIdForPath(pathname) {
     "/ops-report": "novel-ops-report",
     "/official-group-report": "novel-ops-report",
     "/work-journal-mindmap": "work-journal",
+    "/psychology-narrative": "psychology-narrative",
+    "/psychology-collage": "psychology-narrative",
   };
   if (aliases[clean]) return aliases[clean];
   return SIDEBAR_MODULES.find((item) => item.href === clean)?.id || "";

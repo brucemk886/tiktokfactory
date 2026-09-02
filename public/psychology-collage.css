@@ -1,0 +1,45 @@
+.collage-page { background: #eeece2; color: #202118; }
+.collage-header { align-items: flex-end; }
+.collage-header > div:last-child { display: flex; align-items: center; gap: 14px; }
+.collage-header #statusText { max-width: 260px; color: #747468; font-size: 13px; text-align: right; }
+.collage-grid { display: grid; grid-template-columns: minmax(600px, 1fr) 410px; gap: 22px; align-items: start; }
+.collage-form { display: grid; gap: 18px; }
+.collage-panel { padding: 22px; background: rgba(255, 254, 248, .9); border-color: rgba(50, 51, 38, .14); }
+.collage-panel .module-field { margin-top: 13px; }
+.collage-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.collage-fields.two { grid-template-columns: 2fr 1fr; }
+.collage-suffix, .collage-directory { display: flex; }
+.collage-suffix input, .collage-directory input { min-width: 0; border-radius: 8px 0 0 8px; }
+.collage-suffix b { display: grid; place-items: center; padding: 0 10px; border: 1px solid #d8d7cb; border-left: 0; border-radius: 0 8px 8px 0; background: #efeee5; color: #77776b; font-size: 12px; }
+.collage-directory button { border-radius: 0 8px 8px 0; }
+.collage-models { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
+.collage-models label { position: relative; cursor: pointer; }
+.collage-models input { position: absolute; opacity: 0; }
+.collage-models span { display: grid; gap: 3px; padding: 13px; border: 1px solid #d8d7cb; border-radius: 9px; background: #faf9f3; }
+.collage-models input:checked + span { border-color: #7f920e; background: #eef0d6; box-shadow: inset 0 0 0 1px #7f920e; }
+.collage-models small { color: #77776b; }
+.collage-cost { display: flex; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 11px 13px; border-radius: 9px; background: #f0ebcd; font-size: 12px; }
+.collage-cost span { color: #77776b; }
+.collage-side { position: sticky; top: 20px; display: grid; gap: 18px; }
+.collage-reference { overflow: hidden; padding: 0; }
+.collage-stage { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: radial-gradient(circle at 50% 62%, #d95b2c 0 16px, transparent 17px), linear-gradient(152deg, transparent 48%, #4a4433 49% 61%, transparent 62%), linear-gradient(24deg, #b9ae7c 0 21%, transparent 22% 70%, #887b5e 71% 82%, transparent 83%), #e8e3d5; }
+.collage-stage::after { content: ""; position: absolute; inset: 0; opacity: .13; mix-blend-mode: multiply; background: repeating-linear-gradient(8deg, rgba(44,37,24,.35) 0 1px, transparent 1px 5px); }
+.collage-stage > i, .collage-stage > b { position: absolute; z-index: 2; top: 16px; font-style: normal; }
+.collage-stage > i { left: 18px; font-weight: 800; }
+.collage-stage > b { right: 18px; font-size: 13px; }
+.collage-stage > em { position: absolute; z-index: 2; left: 46%; top: 31%; width: 44px; height: 122px; background: #333328; clip-path: polygon(45% 0, 70% 38%, 100% 100%, 0 100%, 31% 38%); }
+.collage-stage > div { position: absolute; z-index: 3; left: 20px; right: 20px; bottom: 15px; display: grid; text-align: center; text-shadow: 0 2px 4px #000; }
+.collage-stage strong { color: #efd63f; font-size: 17px; }
+.collage-stage small { color: white; font-size: 10px; }
+.collage-reference > p { margin: 0; padding: 14px 16px; color: #717165; font-size: 12px; line-height: 1.6; }
+.collage-job { padding: 18px; }
+.collage-progress { height: 8px; overflow: hidden; border-radius: 999px; background: #dfded2; }
+.collage-progress i { display: block; width: 0; height: 100%; background: linear-gradient(90deg, #81940e, #cfba2f); transition: width .3s ease; }
+.collage-job > p { min-height: 38px; color: #747468; font-size: 13px; line-height: 1.55; }
+.collage-score { padding: 10px; border-radius: 8px; background: #eef0d7; font-size: 12px; line-height: 1.6; }
+.collage-results { display: grid; gap: 9px; margin-top: 12px; }
+.collage-result { padding: 11px; border: 1px solid #dbdacd; border-radius: 9px; background: #fbfaf4; }
+.collage-result strong { display: block; margin-bottom: 8px; font-size: 13px; }
+.collage-result div { display: flex; gap: 7px; }
+.collage-result a { padding: 7px 9px; border-radius: 7px; background: #373c23; color: white; text-decoration: none; font-size: 12px; font-weight: 700; }
+@media (max-width: 1320px) { .collage-grid { grid-template-columns: minmax(580px, 1fr) 350px; } }

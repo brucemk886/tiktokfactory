@@ -18,12 +18,14 @@ test("kokoro voice list is UI-shaped and does not need an API key", () => {
   assert.ok(listed.filters.languages[0].value);
   assert.ok(listed.filters.genders.some((item) => item.label === "男性"));
   assert.equal(listed.voices.find((voice) => voice.id === "am_michael").previewUrl, "/kokoro-previews/am_michael.mp3");
-  assert.equal(KOKORO_VOICES.length, 28);
+  assert.equal(KOKORO_VOICES.length, 36);
   assert.ok(listed.voices.some((voice) => voice.id === "af_jessica"));
   assert.ok(listed.voices.some((voice) => voice.id === "bm_fable"));
+  assert.ok(listed.voices.some((voice) => voice.id === "zf_xiaoxiao"));
   assert.equal(listed.voices.find((voice) => voice.id === "bf_alice").previewUrl, "/kokoro-previews/bf_alice.mp3");
   assert.equal(kokoroLangCode("bf_emma"), "b");
   assert.equal(kokoroLangCode("am_michael"), "a");
+  assert.equal(kokoroLangCode("zf_xiaoxiao"), "z");
   assert.equal(listed.defaultMaleVoiceId, DEFAULT_KOKORO_MALE_VOICE);
   assert.equal(listed.defaultFemaleVoiceId, DEFAULT_KOKORO_FEMALE_VOICE);
   assert.match(listed.voices.find((voice) => voice.id === "am_adam").name, /默认男声/);
