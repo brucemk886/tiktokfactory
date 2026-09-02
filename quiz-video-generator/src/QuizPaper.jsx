@@ -95,6 +95,7 @@ function QuizHeader({ title, hook }) {
 
 function Question({ item, index, frame, startFrame, questionFrames, fps }) {
   const localFrame = frame - startFrame;
+  const titleFontSize = questionTitleFontSize(item.prompt);
   const countdownStart = Math.round(COUNTDOWN_START_SECONDS * fps);
   const countdownEnd = Math.min(questionFrames - Math.round(0.85 * fps), countdownStart + COUNTDOWN_SECONDS * fps);
   const revealFrame = countdownEnd + Math.round(REVEAL_DELAY_SECONDS * fps);
@@ -106,9 +107,9 @@ function Question({ item, index, frame, startFrame, questionFrames, fps }) {
   });
   return (
     <section style={styles.question}>
-      <h2 style={styles.questionTitle}>
+      <h2 style={{ ...styles.questionTitle, fontSize: titleFontSize }}>
         <b style={styles.questionNumber}>{index + 1}.</b>
-        <span>{item.prompt}</span>
+        <span style={styles.questionPrompt}>{item.prompt}</span>
       </h2>
       <svg style={styles.underline} viewBox="0 0 430 12" preserveAspectRatio="none" aria-hidden="true">
         <path d="M3 8 C110 4 278 9 426 5" fill="none" stroke={RED} strokeWidth="4" strokeLinecap="round" pathLength="1" strokeDasharray="1" strokeDashoffset={1 - underline} opacity={localFrame >= 0 && !answered ? 1 : 0} />
@@ -223,6 +224,13 @@ function scrollTarget(index, viewportHeight, maxScroll) {
   const bottom = HEADER_HEIGHT + (index + 1) * QUESTION_HEIGHT;
   return clamp(bottom - (viewportHeight - 76), 0, maxScroll);
 }
+function questionTitleFontSize(prompt) {
+  const visualUnits = Array.from(String(prompt || "")).reduce(
+    (total, character) => total + (/[㐀-鿿]/.test(character) ? 1.85 : 1),
+    0
+  );
+  return clamp(23 - Math.max(0, visualUnits - 38) * 0.24, 14, 23);
+}
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function lerp(from, to, progress) { return from + (to - from) * progress; }
 function easeOutCubic(value) { return 1 - Math.pow(1 - clamp(value, 0, 1), 3); }
@@ -238,8 +246,9 @@ const styles = {
   headerRuleRed: { width: 58, height: 4, borderRadius: 2, background: RED },
   headerRuleBlue: { width: 58, height: 4, borderRadius: 2, background: BLUE },
   question: { position: "relative", height: QUESTION_HEIGHT, boxSizing: "border-box", paddingTop: 13 },
-  questionTitle: { width: 600, minHeight: 42, margin: 0, display: "flex", alignItems: "center", color: INK, fontSize: 23, lineHeight: 1.16, fontWeight: 800, letterSpacing: -0.4 },
+  questionTitle: { width: 632, minHeight: 42, margin: 0, display: "flex", alignItems: "center", color: INK, fontSize: 23, lineHeight: 1.16, fontWeight: 800, letterSpacing: -0.4 },
   questionNumber: { flex: "0 0 auto", marginRight: 7 },
+  questionPrompt: { minWidth: 0, whiteSpace: "nowrap" },
   underline: { position: "absolute", left: 11, top: 49, width: 430, height: 12 },
   options: { marginTop: 6, display: "grid", gap: 1 },
   option: { position: "relative", height: 37, display: "flex", alignItems: "center", paddingLeft: 2, color: "#202326", fontSize: 22, lineHeight: 1, fontWeight: 500 },
