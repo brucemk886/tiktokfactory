@@ -188,10 +188,10 @@ test("syncWorkingNovels does not unmark when script store is missing", async () 
 });
 
 test("upsert keeps an existing working flag when the incoming book is idle", async () => {
-  let sql = "";
+  const sqls = [];
   const db = {
     prepare(text) {
-      sql = text;
+      sqls.push(text);
       return {
         bind() {
           return { run: async () => ({}) };
@@ -200,5 +200,5 @@ test("upsert keeps an existing working flag when the incoming book is idle", asy
     }
   };
   await upsertNovel(db, { id: "n1", title: "One", createdAt: "t", updatedAt: "t" });
-  assert.match(sql, /working = CASE WHEN factory_novels.working = 1 OR excluded.working = 1 THEN 1 ELSE 0 END/);
+  assert.equal(sqls.some((sql) => /working = CASE WHEN factory_novels.working = 1 OR excluded.working = 1 THEN 1 ELSE 0 END/.test(sql)), true);
 });

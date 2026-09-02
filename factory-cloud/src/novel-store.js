@@ -23,6 +23,7 @@ export function novelFromRow(row) {
 
 const NOVEL_SUMMARY_COLUMNS = `id, title, platform, book_id, promotion_code, promotion_copy, category, featured,
            selling_point, note, substr(source_content, 1, 160) AS source_content, status, created_at, updated_at, working`;
+const NOVEL_COUNT_KEY = "novel-catalog-count";
 
 function novelColumnValues(novel) {
   return [
@@ -67,8 +68,16 @@ export async function listWorkingNovelSummaries(db) {
 }
 
 export async function countNovels(db) {
+  const cached = await kvGet(db, NOVEL_COUNT_KEY, null);
+  if (cached && Number.isFinite(Number(cached.n))) return Number(cached.n);
   const row = await db.prepare("SELECT COUNT(*) AS n FROM factory_novels").first();
-  return Number(row?.n || 0);
+  const n = Number(row?.n || 0);
+  await kvSet(db, NOVEL_COUNT_KEY, { n });
+  return n;
+}
+
+async function invalidateNovelCount(db) {
+  await db.prepare("DELETE FROM factory_kv WHERE key = ?").bind(NOVEL_COUNT_KEY).run();
 }
 
 function uniqueNovelIds(ids = []) {
@@ -183,6 +192,7 @@ export async function insertNovels(db, novels = []) {
     const slice = items.slice(index, index + 40);
     await db.batch(slice.map((novel) => statement.bind(...novelColumnValues(novel))));
   }
+  await invalidateNovelCount(db);
   return items.length;
 }
 
@@ -207,11 +217,13 @@ export async function upsertNovel(db, novel) {
       updated_at = excluded.updated_at,
       working = CASE WHEN factory_novels.working = 1 OR excluded.working = 1 THEN 1 ELSE 0 END
   `).bind(...novelColumnValues(novel)).run();
+  await invalidateNovelCount(db);
   return novel;
 }
 
 export async function deleteNovelRow(db, id) {
   await db.prepare("DELETE FROM factory_novels WHERE id = ?").bind(String(id || "").trim()).run();
+  await invalidateNovelCount(db);
 }
 
 export async function getNovelRow(db, id) {

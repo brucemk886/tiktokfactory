@@ -2,6 +2,10 @@ export const FACTORY_CLOUD_ORIGIN = "https://factory.tiktokaitool.com";
 
 export const LOCAL_SIDEBAR_MODULE_IDS = Object.freeze([
   "local-queue",
+  "mid-video",
+  "schulte",
+  "podcast",
+  "ai",
   "tasks",
   "asset-usage",
   "operator-third-party",

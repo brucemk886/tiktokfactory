@@ -26,8 +26,12 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   for (const moduleId of ["local-queue", "operator-third-party", "geelark-tasks", "geelark-novel-effects", "accounts"]) {
     assert.ok(sidebarModuleIdsForRole("admin").includes(moduleId));
   }
-  for (const moduleId of ["hub", "work-journal", "mid-video", "novel-library", "operator-official", "official-analytics"]) {
+  for (const moduleId of ["hub", "work-journal", "novel-library", "operator-official", "official-analytics"]) {
     assert.ok(!sidebarModuleIdsForRole("admin").includes(moduleId));
+  }
+  for (const moduleId of ["mid-video", "schulte", "podcast", "ai"]) {
+    assert.ok(sidebarModuleIdsForRole("admin").includes(moduleId));
+    assert.ok(!sidebarModuleIdsForRole("operator").includes(moduleId));
   }
   assert.ok(!sidebarModuleIdsForRole("admin").includes("novel-rewrite"));
   assert.ok(!sidebarModuleIdsForRole("admin").includes("rewrite-records"));
@@ -92,6 +96,10 @@ test("operator home is the first granted page", () => {
 });
 
 test("retired local pages redirect to the online factory", () => {
+  assert.equal(shouldRedirectLocalPageToFactory("/mid-video"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/schulte"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/podcast"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/ai"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/mid-video-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/psychology-effects"), true);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-library"), true);
