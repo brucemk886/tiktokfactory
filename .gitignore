@@ -24,6 +24,7 @@ tmp/
 *.mp3
 !public/kokoro-previews/*.mp3
 *.wav
+!quiz-video-generator/public/quiz-*.wav
 *.m4a
 *.aac
 *.mp4

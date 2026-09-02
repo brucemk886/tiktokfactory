@@ -1,5 +1,5 @@
 import React from "react";
-import { AbsoluteFill, Audio, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Audio, Img, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 
 const RED = "#e12822";
 const BLUE = "#139bd2";
@@ -8,6 +8,13 @@ const INK = "#111315";
 const HEADER_HEIGHT = 154;
 const QUESTION_HEIGHT = 250;
 const LETTERS = ["A", "B", "C"];
+const HAND_ENTER_START_SECONDS = 0.2;
+const UNDERLINE_START_SECONDS = 0.45;
+const UNDERLINE_END_SECONDS = 1.45;
+const HAND_EXIT_END_SECONDS = 2;
+const COUNTDOWN_START_SECONDS = 1.7;
+const COUNTDOWN_SECONDS = 5;
+const REVEAL_DELAY_SECONDS = 0.12;
 
 export function QuizPaper(props) {
   const frame = useCurrentFrame();
@@ -46,6 +53,9 @@ export function QuizPaper(props) {
       {props.backgroundMusicEnabled ? (
         <Audio src={staticFile(props.backgroundMusicFile || "focus-ambient.wav")} volume={Number(props.backgroundMusicVolume) || 0.18} loop />
       ) : null}
+      {props.soundEffectsEnabled !== false ? (
+        <QuizSoundEffects questions={questions} introFrames={introFrames} questionFrames={questionFrames} fps={fps} />
+      ) : null}
       <div style={{ ...styles.content, height: contentHeight, transform: `translateY(${-scrollY}px)`, opacity: clamp(intro, 0, 1) }}>
         <QuizHeader title={props.title} hook={props.hook} />
         {questions.map((item, index) => (
@@ -65,7 +75,7 @@ export function QuizPaper(props) {
         </div>
       </div>
       {markerVisible ? (
-        <MarkerHand localFrame={localFrame} questionFrames={questionFrames} fps={fps} questionTop={activeTop} />
+        <MarkerHand localFrame={localFrame} fps={fps} questionTop={activeTop} />
       ) : null}
       <div style={styles.edgeFadeTop} />
       <div style={styles.edgeFadeBottom} />
@@ -85,12 +95,12 @@ function QuizHeader({ title, hook }) {
 
 function Question({ item, index, frame, startFrame, questionFrames, fps }) {
   const localFrame = frame - startFrame;
-  const countdownStart = Math.round(0.55 * fps);
-  const countdownEnd = Math.min(questionFrames - Math.round(0.85 * fps), countdownStart + 5 * fps);
-  const revealFrame = countdownEnd + Math.round(0.12 * fps);
+  const countdownStart = Math.round(COUNTDOWN_START_SECONDS * fps);
+  const countdownEnd = Math.min(questionFrames - Math.round(0.85 * fps), countdownStart + COUNTDOWN_SECONDS * fps);
+  const revealFrame = countdownEnd + Math.round(REVEAL_DELAY_SECONDS * fps);
   const answered = localFrame >= revealFrame;
   const reveal = spring({ frame: localFrame - revealFrame, fps, config: { damping: 12, stiffness: 240, mass: 0.45 } });
-  const underline = interpolate(localFrame, [0, Math.round(0.52 * fps)], [0, 1], {
+  const underline = interpolate(localFrame, [Math.round(UNDERLINE_START_SECONDS * fps), Math.round(UNDERLINE_END_SECONDS * fps)], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp"
   });
@@ -139,22 +149,16 @@ function Countdown({ localFrame, startFrame, endFrame, fps, answered }) {
   );
 }
 
-function MarkerHand({ localFrame, questionFrames, fps, questionTop }) {
-  const countdownStart = 0.55 * fps;
-  const countdownEnd = Math.min(questionFrames - 0.85 * fps, countdownStart + 5 * fps);
-  const enter = interpolate(localFrame, [0, 0.22 * fps], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const exit = interpolate(localFrame, [countdownEnd - 0.08 * fps, countdownEnd + 0.22 * fps], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const sweep = interpolate(localFrame, [0, 0.38 * fps, 0.72 * fps], [0, 1, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const writing = clamp((localFrame - countdownStart) / Math.max(1, countdownEnd - countdownStart), 0, 1);
-  const tick = writing * 5;
-  const digitPhase = tick - Math.floor(tick);
-  const writeX = 113 + Math.cos(digitPhase * Math.PI * 2) * 9;
-  const writeY = questionTop + 222 + Math.sin(digitPhase * Math.PI * 2) * 7;
-  const underlineX = lerp(126, 414, easeOutCubic(clamp(localFrame / (0.42 * fps), 0, 1)));
+function MarkerHand({ localFrame, fps, questionTop }) {
+  const enter = interpolate(localFrame, [HAND_ENTER_START_SECONDS * fps, UNDERLINE_START_SECONDS * fps], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const draw = interpolate(localFrame, [UNDERLINE_START_SECONDS * fps, UNDERLINE_END_SECONDS * fps], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const leave = interpolate(localFrame, [UNDERLINE_END_SECONDS * fps, HAND_EXIT_END_SECONDS * fps], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const exitOpacity = interpolate(localFrame, [(HAND_EXIT_END_SECONDS - 0.28) * fps, HAND_EXIT_END_SECONDS * fps], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const underlineX = lerp(126, 414, easeInOut(draw));
   const underlineY = questionTop + 51 + Math.sin(localFrame * 0.35) * 2;
-  const tipX = localFrame < countdownStart ? lerp(underlineX, 113, easeInOut(clamp((localFrame - 0.34 * fps) / (0.34 * fps), 0, 1))) : writeX;
-  const tipY = localFrame < countdownStart ? lerp(underlineY, questionTop + 222, easeInOut(clamp((localFrame - 0.34 * fps) / (0.34 * fps), 0, 1))) : writeY;
-  const opacity = Math.min(enter, exit);
+  const tipX = leave > 0 ? lerp(414, 850, easeInOut(leave)) : underlineX;
+  const tipY = leave > 0 ? lerp(underlineY, questionTop + 14, easeInOut(leave)) : underlineY;
+  const opacity = Math.min(enter, exitOpacity);
   const offscreen = lerp(290, 0, easeOutCubic(enter));
   return (
     <Img
@@ -164,10 +168,34 @@ function MarkerHand({ localFrame, questionFrames, fps, questionTop }) {
         left: tipX - 82 + offscreen,
         top: tipY - 46 + offscreen * 0.34,
         opacity,
-        transform: `rotate(${lerp(4, -2, sweep) + Math.sin(localFrame * 0.22) * 1.2}deg)`
+        transform: `rotate(${lerp(4, -2, draw) + lerp(0, -5, leave)}deg)`
       }}
     />
   );
+}
+
+function QuizSoundEffects({ questions, introFrames, questionFrames, fps }) {
+  const underlineOffset = Math.round(UNDERLINE_START_SECONDS * fps);
+  const countdownOffset = Math.round(COUNTDOWN_START_SECONDS * fps);
+  const revealOffset = countdownOffset + Math.round((COUNTDOWN_SECONDS + REVEAL_DELAY_SECONDS) * fps);
+  return questions.map((_, questionIndex) => {
+    const questionStart = introFrames + questionIndex * questionFrames;
+    return (
+      <React.Fragment key={`quiz-sfx-${questionIndex}`}>
+        <Sequence from={questionStart + underlineOffset} durationInFrames={Math.round(1.15 * fps)}>
+          <Audio src={staticFile("quiz-marker-scratch.wav")} volume={0.34} />
+        </Sequence>
+        {Array.from({ length: 5 }, (__, tickIndex) => (
+          <Sequence key={`tick-${tickIndex}`} from={questionStart + countdownOffset + tickIndex * fps} durationInFrames={Math.round(0.14 * fps)}>
+            <Audio src={staticFile("quiz-countdown-tick.wav")} volume={0.42} />
+          </Sequence>
+        ))}
+        <Sequence from={questionStart + revealOffset} durationInFrames={Math.round(0.5 * fps)}>
+          <Audio src={staticFile("quiz-correct-chime.wav")} volume={0.5} />
+        </Sequence>
+      </React.Fragment>
+    );
+  });
 }
 
 function Illustration({ type, index }) {

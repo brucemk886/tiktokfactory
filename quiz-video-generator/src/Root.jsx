@@ -14,6 +14,7 @@ const defaults = {
   durationSeconds: 61,
   backgroundMusicEnabled: false,
   backgroundMusicVolume: 0.18,
+  soundEffectsEnabled: true,
   questions: [
     { prompt: "Which mountain is the highest above sea level?", options: ["K2", "Mount Everest", "Kangchenjunga"], answerIndex: 1, illustration: "mountain" },
     { prompt: "Which is the largest ocean on Earth?", options: ["Atlantic Ocean", "Indian Ocean", "Pacific Ocean"], answerIndex: 2, illustration: "ocean" },
