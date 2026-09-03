@@ -80,11 +80,16 @@ export const DEFAULT_PUBLISH_CONCURRENCY = 1;
 // different bottlenecks, so each lane claims and runs its own job types with
 // its own concurrency instead of one serial loop doing everything.
 export function workerLanes(settings = {}) {
+  // A secondary worker that only mirrors the video/audio libraries should not
+  // pick up jobs that create machine-local state (audio generation, asset
+  // indexing, folder classification), otherwise the primary never sees the
+  // result. renderJobTypes narrows its render lane to a whitelist.
+  const renderTypes = normalizeJobTypes(settings.renderJobTypes).filter((type) => !PUBLISH_JOB_TYPES.includes(type));
   return [
     {
       name: "render",
       concurrency: clampConcurrency(settings.renderConcurrency, DEFAULT_RENDER_CONCURRENCY),
-      claim: { excludeTypes: PUBLISH_JOB_TYPES }
+      claim: renderTypes.length ? { types: renderTypes } : { excludeTypes: PUBLISH_JOB_TYPES }
     },
     {
       name: "publish",
@@ -97,6 +102,11 @@ export function workerLanes(settings = {}) {
 function clampConcurrency(value, fallback) {
   const number = Math.floor(Number(value));
   return Number.isFinite(number) && number > 0 ? Math.min(8, number) : fallback;
+}
+
+export function normalizeJobTypes(value) {
+  const list = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(list.map((item) => String(item || "").trim()).filter(Boolean))].slice(0, 20);
 }
 
 async function laneLoop(context, lane) {
@@ -698,11 +708,15 @@ async function syncInventory(context) {
   const body = {
     workerId: context.workerId,
     retentionHours: 48,
-    redditMixSettings,
     officialPublishRecords: recordsChangedSince(readOfficialPublishRecords(context.workDir), context.publishRecordsSyncedAt)
   };
+  // A second worker without a local settings file must not blank the cloud copy.
+  if (Object.keys(redditMixSettings).length) body.redditMixSettings = redditMixSettings;
   if (!fs.existsSync(importMarker)) {
-    body.novelContent = readLocalNovelStore(context.workDir);
+    const novelContent = readLocalNovelStore(context.workDir);
+    // An empty local store (new worker) has nothing to import; skip the merge so
+    // the cloud does not rewrite every novel row for no reason.
+    if (novelContent.novels.length || novelContent.scripts.length) body.novelContent = novelContent;
   }
   const result = await request(context, "/api/worker/sync", {
     method: "POST",
@@ -1093,7 +1107,8 @@ export function loadSettings(workDir) {
     pollMs: Number(process.env.FACTORY_WORKER_POLL_MS || file.pollMs || DEFAULT_POLL_MS),
     syncMs: Number(process.env.FACTORY_WORKER_SYNC_MS || file.syncMs || DEFAULT_SYNC_MS),
     renderConcurrency: Number(process.env.FACTORY_WORKER_RENDER_CONCURRENCY || file.renderConcurrency || DEFAULT_RENDER_CONCURRENCY),
-    publishConcurrency: Number(process.env.FACTORY_WORKER_PUBLISH_CONCURRENCY || file.publishConcurrency || DEFAULT_PUBLISH_CONCURRENCY)
+    publishConcurrency: Number(process.env.FACTORY_WORKER_PUBLISH_CONCURRENCY || file.publishConcurrency || DEFAULT_PUBLISH_CONCURRENCY),
+    renderJobTypes: normalizeJobTypes(process.env.FACTORY_WORKER_RENDER_JOB_TYPES || file.renderJobTypes || [])
   };
 }
 

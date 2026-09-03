@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { claimTypeFilter, officialPublishFollowupPayload } from "./jobs.js";
+import { claimTypeFilter, hasOwnKeys, officialPublishFollowupPayload } from "./jobs.js";
 
 test("claim filter lets a lane pick only its own job types", () => {
   assert.deepEqual(claimTypeFilter({}), { sql: "", binds: [], types: [], excludeTypes: [] });
@@ -15,10 +15,28 @@ test("claim filter lets a lane pick only its own job types", () => {
   assert.equal(capped.binds.length, 20);
 });
 
+test("publish lane only claims official-publish jobs rendered on the same worker", () => {
+  const publish = claimTypeFilter({ workerId: "windows-local", types: ["official-publish"] });
+  assert.equal(publish.sql, " AND type IN (?) AND COALESCE(json_extract(payload_json, '$.renderWorkerId'), '') IN ('', ?)");
+  assert.deepEqual(publish.binds, ["official-publish", "windows-local"]);
+  // Render lane: any worker may render, no affinity clause.
+  const render = claimTypeFilter({ workerId: "windows-local", excludeTypes: ["official-publish"] });
+  assert.equal(render.sql, " AND type NOT IN (?)");
+  assert.deepEqual(render.binds, ["official-publish"]);
+});
+
+test("empty settings from a fresh worker do not count as settings", () => {
+  assert.equal(hasOwnKeys({}), false);
+  assert.equal(hasOwnKeys(null), false);
+  assert.equal(hasOwnKeys([1]), false);
+  assert.equal(hasOwnKeys({ subtitle: {} }), true);
+});
+
 test("a finished render with publishPending becomes an official-publish job", () => {
   const job = {
     id: "reddit-mix-1",
     title: "书单 A",
+    worker_id: "windows-local",
     payload_json: JSON.stringify({
       taskId: "task-1",
       taskName: "书单 A",
@@ -35,6 +53,7 @@ test("a finished render with publishPending becomes an official-publish job", ()
   assert.equal(payload.taskType, "official-publish");
   assert.equal(payload.taskId, "task-1");
   assert.equal(payload.renderJobId, "reddit-mix-1");
+  assert.equal(payload.renderWorkerId, "windows-local");
   assert.deepEqual(payload.videos.map((video) => video.fileName), ["a.mp4"]);
   assert.deepEqual(payload.publish, { provider: "official", connectionIds: ["c1"], scheduleAt: 1 });
   assert.deepEqual(payload.generation, { totalVideos: 2 });

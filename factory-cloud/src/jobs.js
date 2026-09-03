@@ -325,7 +325,9 @@ async function handleWorkerApi(request, env, url, ctx) {
         await kvSet(env.DB, "asset-usage-dashboard", body.assetUsageDashboard);
       }
     }
-    if (body.redditMixSettings) await kvSet(env.DB, "reddit-mix-settings", body.redditMixSettings);
+    // A freshly set-up worker has no local reddit-mix-settings.json and sends {};
+    // that must not wipe the settings another worker already synced.
+    if (hasOwnKeys(body.redditMixSettings)) await kvSet(env.DB, "reddit-mix-settings", body.redditMixSettings);
     let novelImport = null;
     if (body.novelContent && typeof body.novelContent === "object") {
       novelImport = await mergeImportedNovelStore(env.DB, body.novelContent);
@@ -580,6 +582,7 @@ export function publicJob(job) {
     percent: Number(job.percent || 0),
     message: job.message || "",
     error: job.error || "",
+    workerId: String(job.worker_id || ""),
     result,
     createdAt: Number(job.created_at || 0),
     updatedAt: Number(job.updated_at || 0)
@@ -607,16 +610,27 @@ function parseJson(value, fallback) {
   }
 }
 
+export function hasOwnKeys(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
+}
+
 const CLAIM_TYPE_LIMIT = 20;
+const OFFICIAL_PUBLISH_TYPE = "official-publish";
 
 // Workers run separate lanes (render vs. publish); each lane claims only its
 // own job types so a long upload never blocks a render slot and vice versa.
+//
+// official-publish jobs upload files that live on the disk of whichever worker
+// rendered them, so when several workers share the queue a publish job is only
+// handed to the worker named in payload.renderWorkerId. Jobs without that field
+// (manual publishes, jobs created before multi-worker) stay claimable by anyone.
 export function claimTypeFilter(payload = {}) {
   const clean = (list) => [...new Set((Array.isArray(list) ? list : [])
     .map((value) => String(value || "").trim().slice(0, 40))
     .filter(Boolean))].slice(0, CLAIM_TYPE_LIMIT);
   const types = clean(payload.types);
   const excludeTypes = clean(payload.excludeTypes);
+  const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = "";
   const binds = [];
   if (types.length) {
@@ -626,6 +640,10 @@ export function claimTypeFilter(payload = {}) {
   if (excludeTypes.length) {
     sql += ` AND type NOT IN (${excludeTypes.map(() => "?").join(", ")})`;
     binds.push(...excludeTypes);
+  }
+  if (workerId && types.includes(OFFICIAL_PUBLISH_TYPE)) {
+    sql += " AND COALESCE(json_extract(payload_json, '$.renderWorkerId'), '') IN ('', ?)";
+    binds.push(workerId);
   }
   return { sql, binds, types, excludeTypes };
 }
@@ -640,13 +658,14 @@ export function officialPublishFollowupPayload(job, rawResult = {}) {
   return {
     taskId,
     taskName: String(payload.taskName || job.title || ""),
-    taskType: "official-publish",
+    taskType: OFFICIAL_PUBLISH_TYPE,
     publishOnly: true,
     publish,
     generation: payload.generation && typeof payload.generation === "object" ? payload.generation : payload,
     videos,
     generatedVideos: videos,
-    renderJobId: String(job.id || "")
+    renderJobId: String(job.id || ""),
+    renderWorkerId: String(job.worker_id || "")
   };
 }
 

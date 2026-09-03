@@ -56,11 +56,12 @@
 | 键 | 当前值 | 说明 |
 |---|---|---|
 | `url` / `token` | `https://factory.tiktokaitool.com` / `WORKER_TOKEN` | 必填 |
-| `workerId` | `windows-local` | 必须固定，hello 只重排同 id 的中断任务 |
+| `workerId` | `windows-local` | 每台机器固定且互不相同；hello 只重排同 id 的中断任务，`official-publish` 只发给渲染它的那台（见 2.6） |
 | `pollMs` | 60000 | 空闲时 claim 间隔 |
 | `syncMs` | 300000 | 库存同步间隔 |
 | `renderConcurrency` | 默认 2（1–8） | `FACTORY_WORKER_RENDER_CONCURRENCY` |
 | `publishConcurrency` | 默认 1（1–8） | `FACTORY_WORKER_PUBLISH_CONCURRENCY` |
+| `renderJobTypes` | 默认空 = 除 `official-publish` 外都接 | 渲染通道白名单（数组或逗号分隔），`FACTORY_WORKER_RENDER_JOB_TYPES`；第二台机器配 `["auto-task","reddit-mix"]` 只接混剪 |
 
 两条通道各自循环：`render` 通道 claim 除 `official-publish` 外的所有类型；`publish` 通道只 claim `official-publish`。每次 claim 最多 1 条，通道内用 `active` 集合顶到并发上限。claim 失败固定睡 5s 重试；任务失败只打日志、释放槽位。
 
@@ -89,6 +90,17 @@
 
 每日 08:30（北京）`official-publish-result-sync` 拉批次快照校对本地记录，7 天无终态标 `needs_review`。
 
+### 2.6 多台工人
+
+队列是共享的：所有工人都从同一张 `factory_jobs` 拉单，渲染任务谁先 claim 谁做。约束和坑：
+
+- **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道 claim 时只拿 `renderWorkerId` 为空或等于自己的任务；管理员「重试发布」也带上上一次任务的 `worker_id`。所以一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
+- **素材与音频每台机器都要有一份**。任务 payload 只带 `assetGroupId` 和 `audioItems`（id / fileName），工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败（错误信息「本机音频目录里找不到这些小说音频」）。两台机器 `assetLibraryRoot` / `audioLibraryRoot` 下的目录名要一致，并各自跑过素材索引；新生成的小说音频只会落在生成它的那台上，另一台要同步。
+- **`work/` 下每台各一份**：`publish-records.json`、`scheduled-tasks/`、`asset-library/usage.json`（素材使用去重是按机器算的，两台可能各自抽到同一段素材）、`caption-cache/`（可以从老机器拷过去省 ElevenLabs 识别费）。不要把老机器的 `publish-records.json` 拷到新机器，两份都会往云端 sync。
+- 云端 `reddit-mix-settings` 由工人 sync 上传；没有本地文件的新工人不发这个字段，云端也忽略空对象，不会互相清空。新工人本地小说库为空时也不触发导入。
+- 云端 `factory-worker-status` 只记最后一次 sync 的 `workerId`，页面上「本机工人在线」只反映一台，是已知的显示局限。
+- 日规划上限（`config.autoTasks.dailyPlannedLimit`）只在本机 3010 页面建任务时校验，按每台机器自己的任务算；云端页面建的任务不经过它。两台机器都从 `config.json` 读，各配各的。
+
 ---
 
 ## 3. 工厂云
@@ -105,7 +117,7 @@
 
 ### 3.2 任务表 `factory_jobs`
 
-状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。hello 把该 `worker_id` 下的 `running` 改回 `queued`（`LIMIT 200`，单工人同时在跑的不过几条）。终态 30 天后 cron 删除。
+状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] [AND renderWorkerId IN ('', 本工人)] ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。发布通道的工人亲和条件走 `json_extract(payload_json, '$.renderWorkerId')`，只作用在 queued 行上，量很小。hello 把该 `worker_id` 下的 `running` 改回 `queued`（`LIMIT 200`，单工人同时在跑的不过几条）。终态 30 天后 cron 删除。
 
 `complete` 时 `done && publishPending` 且 `publish.provider=official`、`autoPublish!==false` → 入队 `official-publish`（`publishOnly: true`），同时把 auto-task 的 `generationJobId` 指到新任务、`phase=publish-queued`。
 
@@ -278,7 +290,7 @@
 
 ### 1000 号阶段仍要盯的（不是 bug，是容量边界）
 
-- 本机渲染 2 并发约 20s/条，3000 条/日 ≈ 8.3h 连续渲染，CPU 吃紧就提 `FACTORY_WORKER_RENDER_CONCURRENCY` 或加第二台工人（`workerId` 必须不同）。
+- 本机渲染 2 并发约 20s/条，3000 条/日 ≈ 8.3h 连续渲染，CPU 吃紧就提 `FACTORY_WORKER_RENDER_CONCURRENCY` 或加第二台工人（`workerId` 必须不同，搭建步骤见 2.6 与 `docs/WORKER-SETUP.md`）。
 - 中台日配额 `max(5000, 账号×10)`，1000 号即 10000；超过 3 条/号/日要另议。
 - 每小时告警邮件是主要感知渠道，收件人回落 `ADMIN_EMAILS`，务必确认能收到。
 - D1 rows_read/written 在 Cloudflare 面板看趟势；本轮索引修正后，1000 号规模下每天读写应在免费/付费档内，但没有实测数据，第一周要看。

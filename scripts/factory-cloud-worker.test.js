@@ -31,6 +31,21 @@ test("worker runs a render lane and a publish lane with configurable concurrency
   const settings = loadSettings(fs.mkdtempSync(path.join(os.tmpdir(), "factory-lanes-")));
   assert.equal(settings.renderConcurrency, 2);
   assert.equal(settings.publishConcurrency, 1);
+  assert.deepEqual(settings.renderJobTypes, []);
+});
+
+test("a secondary worker can narrow its render lane to a job-type whitelist", () => {
+  const lanes = workerLanes({ renderJobTypes: ["auto-task", "reddit-mix", "official-publish", " auto-task ", ""] });
+  assert.deepEqual(lanes[0].claim, { types: ["auto-task", "reddit-mix"] });
+  assert.deepEqual(lanes[1].claim, { types: ["official-publish"] });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-lanes-"));
+  fs.writeFileSync(path.join(dir, "factory-cloud-worker.json"), JSON.stringify({
+    url: "https://factory.example.com",
+    token: "t",
+    workerId: "windows-2",
+    renderJobTypes: "auto-task, reddit-mix"
+  }));
+  assert.deepEqual(loadSettings(dir).renderJobTypes, ["auto-task", "reddit-mix"]);
 });
 
 test("inventory sync only re-sends publish records touched since the last sync", () => {

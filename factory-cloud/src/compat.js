@@ -248,7 +248,9 @@ export async function handleCompat(request, env, url, session) {
           publishOnly: true,
           publish: task.publish || {},
           videos,
-          generatedVideos: videos
+          generatedVideos: videos,
+          // The files sit on whichever worker ran the previous job for this task.
+          renderWorkerId: String(currentJob?.worker_id || "")
         },
         createdBy: session.user.username
       });
