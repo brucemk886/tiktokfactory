@@ -95,7 +95,7 @@
 队列是共享的：所有工人都从同一张 `factory_jobs` 拉单，渲染任务谁先 claim 谁做。约束和坑：
 
 - **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道 claim 时只拿 `renderWorkerId` 为空或等于自己的任务；管理员「重试发布」也带上上一次任务的 `worker_id`。所以一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
-- **素材与音频每台机器都要有一份**。任务 payload 只带 `assetGroupId` 和 `audioItems`（id / fileName），工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败（错误信息「本机音频目录里找不到这些小说音频」）。两台机器 `assetLibraryRoot` / `audioLibraryRoot` 下的目录名要一致，并各自跑过素材索引；新生成的小说音频只会落在生成它的那台上，另一台要同步。
+- **素材与音频每台机器都要能读到**。任务 payload 带 `assetGroupId`、`audioItems`（id / fileName / targetAudioPath）以及主机的绝对路径（`audioDir: F:\音频目录\0708`、`videoDir`、`backgroundMusicDir`、`dedup.overlayDir`）。推荐做法是第二台不拷素材，直接读主机的 SMB 只读共享：`config.assetLibraryRoot`/`audioLibraryRoot` 指向 `//主机/factory-videos`、`//主机/factory-audio`，`config.pathAliases`（`scripts/path-aliases.js`）把 payload 里主机的绝对路径前缀改写到共享——只改本机不存在的路径，主机自己不受影响。`scripts/worker-setup/` 里 `primary-share.ps1`（主机建共享 + 导出 seed）和 `worker-bootstrap.ps1`（新机一键装环境、按 seed 生成配置）就是干这个的。手动拷贝也行，但新生成的音频要持续同步。
 - **`work/` 下每台各一份**：`publish-records.json`、`scheduled-tasks/`、`asset-library/usage.json`（素材使用去重是按机器算的，两台可能各自抽到同一段素材）、`caption-cache/`（可以从老机器拷过去省 ElevenLabs 识别费）。不要把老机器的 `publish-records.json` 拷到新机器，两份都会往云端 sync。
 - 云端 `reddit-mix-settings` 由工人 sync 上传；没有本地文件的新工人不发这个字段，云端也忽略空对象，不会互相清空。新工人本地小说库为空时也不触发导入。
 - 云端 `factory-worker-status` 只记最后一次 sync 的 `workerId`，页面上「本机工人在线」只反映一台，是已知的显示局限。
@@ -286,7 +286,7 @@
 - 工厂早期迁移 `0004/0005/0008/0009/0011-0013` 的 `ADD COLUMN` 没 `IF NOT EXISTS`：SQLite 语法不支持，wrangler 用 `d1_migrations` 表记录已跑过的文件，线上不会重跑，不用改。
 - `compat.js` 里 `GET /api/publish-records` 读旧 KV、`tiktok-analytics*` 空桩、音频库根写死 `F:/音频目录`：GeeLark 备用页的桩，不在官方发布链路上。
 - 中台 R2 孤儿清理拉全部 `asset_key != ''`：终态任务 5 分钟一轮清空 `asset_key`，这个集合只有在途任务，且改成字面量后走 `open_asset` partial index，实际有界。
-- `config.example.json` 还没有 `factory-cloud-worker.json` 示例。
+- `config.example.json` 还没有 `factory-cloud-worker.json` 示例（`docs/WORKER-SETUP.md` 里有一份完整示例）。
 
 ### 1000 号阶段仍要盯的（不是 bug，是容量边界）
 
