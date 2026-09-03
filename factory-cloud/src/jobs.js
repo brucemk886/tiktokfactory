@@ -417,7 +417,7 @@ async function handleWorkerApi(request, env, url, ctx) {
       if (!isOrphanRunningJob(job, workerId)) continue;
       const changed = await env.DB.prepare(`
         UPDATE factory_jobs
-        SET status = 'queued', worker_id = NULL, claimed_at = NULL, message = ?, updated_at = ?
+        SET status = 'queued', worker_id = '', claimed_at = 0, message = ?, updated_at = ?
         WHERE id = ? AND status = 'running' AND worker_id = ?
       `).bind("工人重启，已重新排队", stamp, job.id, workerId).run();
       if (!changed.meta?.changes) continue;
