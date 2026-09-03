@@ -1,0 +1,285 @@
+# 发布链路总览（2026-09-03）
+
+本文描述当前线上真正在跑的一条链路：本机工人渲染 → 工厂云调度 → 中台 Signal Desk 调 TikTok API 发布 → 结果回执回到工厂。三段代码分别在：
+
+| 段 | 位置 | 运行环境 | 域名 |
+|---|---|---|---|
+| 本机工人 | `scripts/server.js` + `scripts/factory-cloud-worker.js`（本仓库） | Windows 本机 Node，端口 3010，守护 `scripts/factory-watchdog.js` | — |
+| 工厂云 | `factory-cloud/`（本仓库） | Cloudflare Worker，D1 `factory-prod`，R2 `factory-archive` | `factory.tiktokaitool.com` |
+| 中台 Signal Desk | `D:\cursor\tiktokaitool` | Cloudflare Worker，D1 `signal-desk-prod`，R2，Queues，Durable Object | `tiktokaitool.com` |
+
+发布规则：工厂云用 `factory-cloud` 目录的 `npm run deploy`；中台用 `tiktok-analytics-cloud` 的 `npm run cloudflare:deploy`。两者都会先核对 GitHub `main`。
+
+---
+
+## 1. 一张图
+
+```
+ 本机工人 (windows-local)                 工厂云 factory.tiktokaitool.com                中台 tiktokaitool.com                 TikTok
+ ─────────────────────                    ────────────────────────────                 ───────────────────────               ──────
+ hello ───────────────────────────────▶  /api/worker/hello  重排本机中断 running
+ render lane ×2  claim ───────────────▶  /api/worker/claim  LIMIT 1, 排除 official-publish
+   ffmpeg/TTS 渲染成片
+   complete{publishPending} ──────────▶  /api/worker/jobs/:id/complete
+                                          └─ enqueue official-publish (publishOnly)
+ publish lane ×1  claim ──────────────▶  /api/worker/claim  仅 official-publish
+   上传成片 ──────────────────────────────────────────────────────────────────▶  POST /api/v1/publish/assets(/sign) → R2
+   创建批次 ──────────────────────────────────────────────────────────────────▶  POST /api/v1/publish/batches
+   本地写 publish-records.json                                                    prepare 队列 → scheduled/queued
+                                                                                  每分钟 cron 派发到期 → submit 队列
+                                                                                  submit：账号锁 + 全局限流 16rps ─────────▶ video/publish
+                                                                                  status 队列 60/120/300s 轮询 ────────────▶ publish/status
+                                                                                  published(+item_id) / failed / needs_review
+                                                                                  写 hub_webhook_deliveries
+ 每 5 min syncInventory ──────────────▶  /api/worker/sync                          每分钟 cron 入队投递
+   只传 5 min 内有变化的官方记录           merge 只 upsert 变化行 + 建 refs 索引
+                                          ◀──────────────── POST /api/integrations/signal-desk/publish-events (HMAC) ◀── webhook 队列
+                                          receipt → refs 找 record → 回写状态/item_id
+ 每日 08:30 official-publish-result-sync                                            每 5 min 补拉：只处理缺 item_id 的账号，40 个/次
+   拉批次快照，7 天无终态 → needs_review                                             每日 23:00 UTC 全量同步账号+视频，资料组每周一次
+```
+
+---
+
+## 2. 本机工人
+
+### 2.1 进程与守护
+
+- 入口 `scripts/server.js`，`PORT` 默认 3010；`config.json` 里 `workDir=D:/localfactory-data/work`、`outputDir=D:/localfactory-data/outputs`。
+- 守护 `scripts/factory-watchdog.js`：每 10s 探活端口，进程死且端口关就拉起（最短间隔 5s）；状态文件 `work/factory-watchdog.json`，日志 `work/factory-watchdog.log`；单实例锁 `work/factory-watchdog.lock`。开机由计划任务 `LocalFactoryWatchdog`（ONLOGON）拉起，`node scripts/factory-watchdog.js --install` 可重注册。
+- `uncaughtException` 记 `work/server-crash.log` 后退出（交给守护重启）；`unhandledRejection` 只记日志不退出。
+
+### 2.2 与工厂云的协议（`scripts/factory-cloud-worker.js`）
+
+配置来自 `work/factory-cloud-worker.json` 或环境变量：
+
+| 键 | 当前值 | 说明 |
+|---|---|---|
+| `url` / `token` | `https://factory.tiktokaitool.com` / `WORKER_TOKEN` | 必填 |
+| `workerId` | `windows-local` | 必须固定，hello 只重排同 id 的中断任务 |
+| `pollMs` | 60000 | 空闲时 claim 间隔 |
+| `syncMs` | 300000 | 库存同步间隔 |
+| `renderConcurrency` | 默认 2（1–8） | `FACTORY_WORKER_RENDER_CONCURRENCY` |
+| `publishConcurrency` | 默认 1（1–8） | `FACTORY_WORKER_PUBLISH_CONCURRENCY` |
+
+两条通道各自循环：`render` 通道 claim 除 `official-publish` 外的所有类型；`publish` 通道只 claim `official-publish`。每次 claim 最多 1 条，通道内用 `active` 集合顶到并发上限。claim 失败固定睡 5s 重试；任务失败只打日志、释放槽位。
+
+渲染完成后 `complete` 带 `publishPending: true`，云端另起一条 `official-publish` 任务给 publish 通道，渲染和发布互不阻塞。
+
+本机不上报 `/progress`（云端 UI 在 claim 到 complete 之间没有中间进度），也不轮询云端取消，取消只看本地任务文件。
+
+### 2.3 库存同步 `syncInventory`
+
+每 5 分钟 `POST /api/worker/sync`，body 里 `officialPublishRecords` 只含 `max(updatedAt, createdAt, publishedAt) >= 上次同步时间 - 60s` 的官方记录，最多 800 条；首次启动传全量。另带 `redditMixSettings`、`retentionHours: 48`，首次还会上传小说库。GeeLark 记录不上传。
+
+### 2.4 排产与日上限（`scripts/auto-task-manager.js`）
+
+- 日规划上限：`FACTORY_DAILY_PLANNED_LIMIT` 环境变量 > `config.autoTasks.dailyPlannedLimit` > 默认 **300**，上限 100000。**当前本机没配，仍是 300。**
+- GeeLark 日上限：`config.geelarkSafety.dailyPublishLimit`，默认 300。
+- 调度：第 i 条视频给第 `i % n` 个账号，同账号第 k 条时间 `scheduleAt + k * interval`；自动发布起点至少 now+300s；磁盘剩余 <20GB 拒绝。
+- 容量校验只统计已完成任务的 `submitted` 条数，排队中的任务不计入。
+- 本地任务队列串行一条（`source=factory-cloud` 的镜像任务跳过）。成片默认保留 48h，每 6h 清理。
+
+### 2.5 官方发布（本机侧）
+
+`publishThroughOfficialTikTok`：按 `officialWaveSize`（默认 10）分波，`officialUploadConcurrency`（默认 10）并行上传到中台（预签名 R2 或直传），然后 `POST /api/v1/publish/batches`。有断点（`submittedKeys/assets/batches`），中止时尽量取消已建批次。本地记录字段：`id = {taskId}:official:{videoIndex}:{connectionId}`、`remoteTaskId`（中台 task.id）、`externalRef = {fileName}:{connectionId}:{jobIndex}`、`connectionId`、`status`、`officialBatchIds`。
+
+网络重试 `[2s, 5s]`，发布重试 `[3s, 8s, 20s]`，可重试码 408/429/502/503/504。
+
+每日 08:30（北京）`official-publish-result-sync` 拉批次快照校对本地记录，7 天无终态标 `needs_review`。
+
+---
+
+## 3. 工厂云
+
+### 3.1 路由与鉴权
+
+| 路径 | 鉴权 |
+|---|---|
+| `/api/worker/*` | `WORKER_TOKEN`（Bearer 或 `x-factory-worker-token`），无 session |
+| `/api/integrations/signal-desk/publish-events` | HMAC-SHA256：`x-signal-timestamp` + `x-signal-signature: v1=…`，密钥 `official-settings.webhookSecret`，时钟偏差 ≤10min |
+| `/api/integrations/signal-desk/storage`、`archive-accounts` | Bearer = 桥接密钥 |
+| 其余 `/api/*` | Cookie session；`official-publish-records/sync`、`/webhook` 仅 admin |
+| 出站到中台 | `signalDesk()`：Bearer = `official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`（线上用后者） |
+
+### 3.2 任务表 `factory_jobs`
+
+状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。hello 把该 `worker_id` 下所有 `running` 改回 `queued`。终态 30 天后 cron 删除。
+
+`complete` 时 `done && publishPending` 且 `publish.provider=official`、`autoPublish!==false` → 入队 `official-publish`（`publishOnly: true`），同时把 auto-task 的 `generationJobId` 指到新任务、`phase=publish-queued`。
+
+### 3.3 auto-tasks
+
+一行一任务表 `factory_auto_tasks`（`value_json`），`generatedVideos`/`publishResults` 各截 80。软删 30 天、终态 90 天后 prune。旧 KV `auto-tasks` 整包只在表为空时迁移一次。
+
+### 3.4 发布记录与回执
+
+- `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行，新建才裁剪到 `STORE_LIMIT=3000`。
+- `factory_publish_record_refs`：`task:{remoteTaskId}`、`ref:{externalRef}` → record id。
+- `factory_publish_receipts`：每条 webhook 一行；找不到记录（回执先于本机上传）保持 `applied_at=0`，下次 sync 合并时补上。
+- `keepReceiptOutcome`：已有回执的记录，本机上传的过期状态不会覆盖云端结论。
+- 回执 30 天后清理（同时清 30 天前的 refs）。
+
+### 3.5 webhook 注册（三条路都会触发）
+
+1. 每日 cron `ensurePublishWebhook`。
+2. admin `POST /api/official-publish-records/sync`（`?force=1` 强制重注册）。
+3. 本机每 5 分钟带记录 sync 时 `ensurePublishWebhookLazily`：未注册就注册，失败后 1 小时内不重试。
+
+当前状态：endpoint `a33292c6-…`，URL `https://factory.tiktokaitool.com/api/integrations/signal-desk/publish-events`，事件 `publish.completed` / `publish.failed`，中台侧 `active=1`。
+
+### 3.6 从中台拉什么
+
+| 用途 | 中台接口 | 分页 |
+|---|---|---|
+| 账号 | `GET /api/v1/accounts` | 500/页，最多 20 页 |
+| 归档 | `/api/integrations/local-factory/archive` | 20 账号/页，每账号 100 视频，每次 20 页、20s 预算，游标存 KV 可续跑 |
+| 批次详情 | `GET /api/v1/publish/batches/:id` | 页面 hydrate：已注册 webhook 时 2 个，否则 8 个 |
+| 发布统计 | `GET /api/v1/publish/stats` | connectionIds 每 80 个一批 |
+
+### 3.7 cron
+
+`wrangler.jsonc`：`0 0 * * *` 与 `0 16 * * *`（UTC，即北京 08:00 / 00:00），两档跑同一段：
+`persistOpsSnapshots → pruneOfficialOpsReports(90d) → pruneFactoryJobs(30d) → pruneAutoTasks → prunePublishReceipts(30d) → recomputeArchiveMeta`（一个 try），然后 `ensurePublishWebhook`（独立 try），`collectFactoryStorageSample`（独立 try），`backfillMissingAudioDurations` 走 waitUntil。
+
+---
+
+## 4. 中台 Signal Desk
+
+### 4.1 批次创建（`lib/hub-publishing.ts`）
+
+- 每批最多 100 条，预约最远 14 天；batch 按 `externalId` 幂等，task 按 `batch:{externalId}:{externalRef}` 幂等。
+- 连接必须 `active` 且带 `video.publish` scope。
+- 同账号最小间隔 `TIKTOK_PUBLISH_MIN_ACCOUNT_INTERVAL_SECONDS` 默认 180s；账号间打散 `TIKTOK_PUBLISH_SPREAD_SECONDS` 默认 300s。
+- 日配额 `max(5000, 活跃账号 × 10)` 条，1000 号即 10000 条/日。
+- 资产：直传 ≤95MB 写 R2 `temporary--{uuid}`；预签名 ≤1GB，有效 1800s。
+
+### 4.2 队列（`wrangler.direct.jsonc`）
+
+| 队列 | 用途 | batch | 并发 | 重试 | DLQ |
+|---|---|---|---|---|---|
+| `…-publish-prepare` | head R2、签 URL、进 scheduled/queued | 1 | 8 | 8 | 有 |
+| `…-publish` | 提交 TikTok | 1 | **4** | 8 | 有 |
+| `…-publish-status` | 轮询状态、拿 item_id | 1 | 8 | 8 | 有 |
+| `…-sync` | 账号/视频同步 | 1 | 8 | 8 | 有 |
+| `…-hub-webhooks` | 投递回执 | 5 | 5 | 3（实际总 ack，靠 DB 重试） | 有 |
+| `…-factory-push` | 推给工厂 | 20 | 2 | 8 | 有 |
+
+状态流：`preparing → preparing_media → scheduled|queued → submitting → processing → published | failed | needs_review`。
+
+关键常量：status 轮询 `[60,120,300]s`；缺 item_id 追查 `[120,300,600,1800,3600]s`；status 超时 24h；`submitting` 超 5min → `needs_review`（防重复发帖）；账号锁租约 5min，抢不到 5s 后重试；已有 `publishId` 的任务绝不再 POST TikTok。
+
+### 4.3 限流（Durable Object `TIKTOK_RATE_LIMITER`）
+
+单实例 `tiktok-global` 给所有 TikTok 调用配速：正常 16 rps；收到 429 升级惩罚 8 → 4 → 2 rps，冷却 `[0, 60s, 2min, 5min]`，10 分钟无 429 归零。等待超过 20s 的调用放弃槽位、抛 `Saturated`，由队列稍后重投。无 DO 绑定的环境回落到 D1 单行实现。所有 TikTok 请求经 `pacedTikTokFetch`（`lib/tiktok-auth.ts`）。
+
+### 4.4 回执 webhook（`lib/hub-webhooks.ts`）
+
+- 任务到终态时 `recordPublishTaskOutcome` 写 `hub_webhook_deliveries`（`(endpoint, event, task)` 唯一）；每分钟 cron 取 100 条入队。
+- 事件：`published → publish.completed`，其它终态 → `publish.failed`。
+- 签名头 `X-Signal-Event / X-Signal-Delivery / X-Signal-Timestamp / X-Signal-Signature: v1=hmac(timestamp.body)`；fetch 超时 10s。
+- 失败退避 `[30s,1m,2m,5m,10m,30m,1h,2h,4h,6h]`，10 次后 `exhausted`。端点不会因失败自动停用。
+- 注册 `POST /api/v1/webhooks`（机器密钥），同 URL 重注册会停用旧端点。
+
+### 4.5 账号同步与补拉
+
+- 全量：每日 `0 23 * * *`（UTC）一条 dispatch → 每页 500 连接、每 100 条 sendBatch、页间 2s。每账号视频最多 5 页；资料核心字段每天、5 组 insights 每周一次（`_insights_fetched_at`，手动同步始终刷新）。
+- 补拉：每 5 分钟，只挑 `published` 且 `item_id=''`、完成超过 30 分钟的账号，按 `lastSyncedAt` 最久优先，40 个/次，单账号 20 分钟冷却；`catchup` 模式只拉 2 页视频并按 ±3h 时间窗回填 item_id。
+- token 刷新：`token-refresh:{id}` 锁，租约 30s，最多等 12×1s；过期前 5 分钟内才刷。
+
+### 4.6 cron（`worker/index.ts`）
+
+配置只有 `* * * * *` 和 `0 23 * * *`，按 UTC 分钟细分：
+
+| 频率 | 任务 |
+|---|---|
+| 每分钟 | 派发到期任务（100 条/次）；webhook 投递入队（100 条/次） |
+| 每 5 分钟 | prepare 恢复（100）；publish/status 恢复（50）；释放终态成片 R2（40）；补拉入队（40 账号） |
+| 每小时第 7 分 | `runOpsAlertCheck`（阈值告警邮件） |
+| 每日 23:00 UTC | 全量同步入队；`cleanupExpiredOperationalData`；归档清理；Cloudflare 存储采样；R2 孤儿清理 |
+
+### 4.7 告警（`lib/ops-alert-policy.ts`）
+
+阈值：`needs_review ≥10`、缺 item_id ≥20、到期未派发 ≥5（15min）、queued 卡住 ≥5（30min）、submitting 卡住 ≥3（30min）、24h webhook exhausted ≥5、失效连接 ≥1、限流惩罚等级 ≥2、队列积压 ≥60s、失败率 ≥20%（样本 ≥20）。收件人 `OPS_ALERT_EMAILS`，未配则 `ADMIN_EMAILS`（当前即此）；发信用 `RESEND_API_KEY` + `EMAIL_FROM`；同一告警冷却 6 小时，新告警或升级立即发。管理员可用 `GET/POST /api/admin/ops-alerts` 看快照/手动触发。
+
+### 4.8 保留策略
+
+| 对象 | 保留 |
+|---|---|
+| `video_snapshots` | 90 天 |
+| official 日快照 | 30 天 |
+| 终态发布任务（published/failed/canceled） | 90 天，每次最多删 5000 |
+| `needs_review` 未处理 | 7 天后自动置 `failed` |
+| webhook 投递记录（非 pending） | 30 天 |
+| sync_runs / api_usage / storage 采样 | 30 / 90 / 180 天 |
+| R2 临时资产 | 6h；终态任务的成片 5 分钟一轮释放 |
+
+### 4.9 工厂可调的 `/api/v1` 面
+
+鉴权 `requireHubPrincipal`：Bearer ∈ `PUBLISH_HUB_API_KEYS` / `LOCAL_FACTORY_BRIDGE_API_KEYS` / `LOCAL_FACTORY_BRIDGE_API_KEY`（线上配的是最后一个）。
+
+`GET /api/v1/accounts`（500/页，cursor）、`GET/POST /api/v1/publish/batches`、`GET/DELETE /api/v1/publish/batches/:id`、`POST /api/v1/publish/assets(/sign)`、`GET /api/v1/publish/stats`、`POST /api/v1/publish/tasks/:id/retry`（含 needs_review）、`POST /api/v1/publish/tasks/:id/dismiss`、`GET/POST /api/v1/webhooks`。
+
+---
+
+## 5. 容量对照（1000 号 × 3 条/日 ≈ 3000 条）
+
+| 环节 | 当前上限 | 结论 |
+|---|---|---|
+| 本机日规划 | 300（未配置） | **必须把 `FACTORY_DAILY_PLANNED_LIMIT` 抬到 ≥3000**，GeeLark 通道另配 `geelarkSafety.dailyPublishLimit` |
+| 本机渲染 | 2 并发，约 20s/条 | 3000 条约 8.3h，紧；可提 `renderConcurrency`（看 CPU）或加第二台工人 |
+| 本机上传 | 1 发布通道 × 10 并行上传 | 够 |
+| 中台派发 | 100 条/分钟 | 够（3000 条打散在全天） |
+| 中台提交 | 并发 4，限流 16 rps | 够 |
+| 中台日配额 | max(5000, 号数×10) | 够 |
+| 补拉 | 40 账号 / 5 分钟 = 11520/日 | 够（只处理缺 item_id 的账号） |
+| 工厂记录表 | 3000 条上限 | **一天就满**，需要抬 `STORE_LIMIT` 或按日归档 |
+| 工厂同步写入 | 只写变化行 | 够 |
+| D1 单行 | auto-task 一行一任务，各截 80 | 够 |
+
+---
+
+## 6. 本次复查发现的问题
+
+按影响排序。标 ★ 的直接影响今天上线的回执链路。
+
+### 必须尽快修
+
+1. ★ **工厂设置页保存会抹掉 webhook 密钥。** `factory-cloud/src/official.js:55-62` `POST /api/private-tiktok/settings` 用 `{baseUrl, apiKey, updatedAt}` 整包覆盖 `official-settings`，`webhookSecret / webhookEndpointId / webhookUrl / webhookLastReceiptAt` 全丢。之后回执统一 503，直到 1 小时后 lazy 注册或夜间 cron 重注册；期间的回执要靠中台重投（最多 10 次、6 小时）才能补回。修法：`{...current, ...}`。
+2. **中台 cron 链没有逐项 try/catch。** `worker/index.ts:70-103` 只有三个 job 包了 `runScheduledJob`，`enqueueDueTikTokPublishTasks` 一抛错，同一分钟的 webhook 入队、恢复、补拉全跳过；每日维护里 `cleanupExpiredOperationalData` 抛错则归档清理和存储采样不跑。
+3. **工厂 cron 六个维护动作绑在一个 try 里。** `factory-cloud/src/index.js:75-86`，`persistOpsSnapshots` 失败则后面 prune 全不跑。
+4. **本机运行的代码目录不干净。** `D:\cursor\localfactory` 在分支 `feat/psychology-mid-video-template`，工作区有 31 个未提交改动（内容基本等于 main + 未提交的 tetris 模板）。工人是从这个目录起的。要么把 tetris 工作提交并 rebase 到 main，要么让守护改从一个干净的 main checkout 起服务，否则下次修 bug 无法确定线上跑的是什么。
+5. **工厂发布记录 `STORE_LIMIT=3000`**（`publish-records-store.js`）。扩到 3000 条/日后一天就开始裁剪，早上发的记录晚上可能被裁掉，回执也就无处可挂。
+
+### 应该修
+
+6. 中台保留策略漏了 `status_timeout` / `rejected`（`lib/retention-policy.ts:5`），这些任务永久留在 D1。
+7. 中台 webhook 端点不会因持续失败停用，坏 URL 会一直占 cron 和告警；补一个连续 exhausted 计数 → `active=0`。
+8. 工厂 `prunePublishReceipts` 顺手删 30 天前的 refs，但记录本身可留更久；超过 30 天的记录再收到回执只能靠 2 天窗口的 LIKE 兜底。回执一般 24h 内到，风险低，但 refs 应跟记录一起删而不是按时间。
+9. 本机排产容量只算已完成任务，多个排队任务可把同一天超卖。
+10. 本机 `unhandledRejection` 不退出，异步链断了进程还活着，守护探不出来。
+11. 本机 `scheduleDateKey` 用系统时区、中台补拉用 Asia/Shanghai；本机时区变了会日切错位。
+12. 工厂云 `hello` 拉 running 无 LIMIT、`listLatestArchiveAccounts` 与 `loadGroupStore` 全表、`publishReceiptStats` 7 天聚合；中台 `enqueuePublishCatchupSyncs` 的 GROUP BY、`loadPublishRiskByConnectionId`（每页 accounts 请求都跑 30 天 spam_risk 聚合）、R2 孤儿清理拉全部 assetKey 都无界。现阶段行数小，1000 号后要盯 D1 rows_read。
+13. 工厂 `official-settings` 里 `apiKey` 为空、线上靠 `SIGNAL_DESK_BRIDGE_KEY`，而 webhook 校验又允许 `SIGNAL_DESK_WEBHOOK_SECRET` 环境变量兜底，两处双源，排障时容易看错。
+
+### 权限/规范
+
+14. 工厂 `/api/official-tiktok/projects|account-groups|groups/*/report|ops-report*`、`/api/private-tiktok/settings`、`/api/auto-tasks*`、各 `*/start` 出片接口只查 session 不查角色；按「新功能只给 admin」的规则，至少设置、分组 CRUD、auto-tasks 增删应加 admin 校验。
+15. 工厂 `TRANSCRIPT_QUEUE_CRON="* * * * *"` 守卫（`index.js:11`）永不命中，是死代码；`compat.js` 里 `GET /api/publish-records` 仍读旧 KV、`tiktok-analytics*` 返回空桩、音频库根写死 `F:/音频目录`。
+16. 工厂早期迁移 `0004/0005/0008/0009/0011-0013` 的 `ALTER TABLE ADD COLUMN` 没有 `IF NOT EXISTS`，只能在全新库上按序跑一次。
+17. 中台 hub-webhooks 队列 `max_retries=3` 无效（consumer 总 ack），重试全靠 DB `nextAttemptAt`，配置有误导性。
+18. `config.example.json` 缺 `autoTasks.dailyPlannedLimit`、`geelarkSafety.dailyPublishLimit`、`factory-cloud-worker.json` 示例；GeeLark 示例 `baseUrl` 是 `open.geelark.cn`，代码默认 `openapi.geelark.cn`。
+
+---
+
+## 7. 排障速查
+
+| 现象 | 先看 |
+|---|---|
+| 工厂发布记录长时间停在 `submitted` | 工厂 `GET /api/official-publish-records/webhook`（admin）看 `registered` 与 `lastReceiptAt`；中台 `hub_webhook_deliveries` 该 endpoint 的 `status/attempts`；再看本机是否 5 分钟内有 sync |
+| 回执 401 | `official-settings.webhookSecret` 与中台 `hub_webhook_endpoints.secret` 不一致（多半是问题 1），admin `POST /api/official-publish-records/sync?force=1` |
+| 中台任务卡 `queued`/`submitting` | 每小时告警邮件 `stuckQueued/stuckSubmitting`；`/api/admin/ops-alerts` 快照；5 分钟 recovery 会自动重投，`submitting` 超 5 分钟进 `needs_review` |
+| `needs_review` 堆积 | 中台发布页管理员「待人工核对」区，重试或放弃；7 天不处理自动关闭 |
+| 429 增多 | 告警 `rateLimitLevel`；DO 会自动降到 8/4/2 rps，10 分钟无 429 恢复 |
+| 本机没在拉单 | `work/factory-watchdog.json` 心跳、`work/factory-watchdog.log`、`work/server-crash.log`；确认 `workerId=windows-local` 未变 |
+| D1 rows_written 告警 | 工厂：`/api/worker/sync` 是否又在传全量（`publishRecordsSyncedAt` 是否被重置）；中台：补拉是否退化成全量（`enqueuePublishCatchupSyncs` 的候选数） |
