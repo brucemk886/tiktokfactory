@@ -11,6 +11,7 @@
     "factory-worker": "node scripts/factory-cloud-worker.js",
     "worker:seed": "node scripts/worker-setup/export-seed.mjs",
     "worker:index": "node scripts/worker-setup/index-and-push.mjs",
+    "worker:push": "node scripts/worker-setup/index-and-push.mjs --skip-index",
     "remotion:studio": "remotion studio remotion/index.jsx"
   },
   "dependencies": {

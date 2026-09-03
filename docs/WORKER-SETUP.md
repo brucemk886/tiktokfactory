@@ -63,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File D:\cursor\localfactory\scripts\worker-s
 
 | 事 | 做法 |
 |---|---|
-| B 加了新素材/音频 | 在 B 上 `npm run worker:index`（重建索引并推送）；只推送不重建索引：`npm run worker:index -- --skip-index` |
+| B 加了新素材/音频 | 在 B 上 `npm run worker:index`（重建索引并推送，逐条 ffprobe 较慢）；只推送不重建索引：`npm run worker:push`（PowerShell 会吞掉 `npm run … -- --flag` 里的 `--`，所以不要用 `--skip-index` 的写法） |
 | 重启工人 | `Stop-Process` 掉 `server.js` 的 node 进程，守护 10 秒内拉起 |
 | 改了 `config.json` / `factory-cloud-worker.json` | 重启工人才生效 |
 | 换 token / 主机改了密钥 | A 重新 `npm run worker:seed`，B 重跑 `apply-seed.mjs`（脚本第 3 步的命令行，见 `apply-seed.mjs` 头部注释） |
