@@ -133,3 +133,22 @@ export async function saveAutoTasks(db, tasks = []) {
   }
   return list.length;
 }
+
+export const AUTO_TASK_TERMINAL_STATUSES = ["done", "failed", "canceled", "cancelled"];
+
+// Soft-deleted tasks and long-finished history are dropped nightly so the
+// table stays proportional to recent activity rather than lifetime volume.
+export async function pruneAutoTasks(db, { deletedKeepDays = 30, finishedKeepDays = 90, now = Date.now() } = {}) {
+  if (!await hasAutoTaskTable(db)) return { deleted: 0, finished: 0 };
+  const deletedCutoff = now - Math.max(1, Number(deletedKeepDays) || 30) * 86_400_000;
+  const finishedCutoff = now - Math.max(1, Number(finishedKeepDays) || 90) * 86_400_000;
+  const placeholders = AUTO_TASK_TERMINAL_STATUSES.map(() => "?").join(", ");
+  const [deleted, finished] = await db.batch([
+    db.prepare("DELETE FROM factory_auto_tasks WHERE deleted = 1 AND updated_at < ?").bind(deletedCutoff),
+    db.prepare(`DELETE FROM factory_auto_tasks WHERE status IN (${placeholders}) AND updated_at < ?`).bind(...AUTO_TASK_TERMINAL_STATUSES, finishedCutoff)
+  ]);
+  return {
+    deleted: Number(deleted?.meta?.changes || 0),
+    finished: Number(finished?.meta?.changes || 0)
+  };
+}

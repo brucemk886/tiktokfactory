@@ -86,7 +86,19 @@ export function createOfficialTikTokAnalyticsService({
   }
 
   async function listPublishAccounts() {
-    return requestJson("/api/v1/accounts");
+    // Paged endpoint (id keyset); merge every page into one list.
+    const accounts = [];
+    let cursor = "";
+    let last = {};
+    for (let page = 0; page < 20; page += 1) {
+      const params = new URLSearchParams({ limit: "500" });
+      if (cursor) params.set("cursor", cursor);
+      last = await requestJson(`/api/v1/accounts?${params}`);
+      accounts.push(...(Array.isArray(last.accounts) ? last.accounts : []));
+      if (!last.hasMore || !last.nextCursor || last.nextCursor === cursor) break;
+      cursor = last.nextCursor;
+    }
+    return { ...last, accounts, hasMore: false, nextCursor: "" };
   }
 
   async function uploadPublishAsset({ filePath, fileName = "video.mp4", contentType = "video/mp4", onRetry } = {}) {

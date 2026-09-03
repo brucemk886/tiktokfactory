@@ -27,3 +27,20 @@ export async function signalDesk(env, db, endpoint, options = {}) {
   }
   return data;
 }
+
+// /api/v1/accounts is paged (id keyset). Walk every page so callers that
+// need the whole fleet still get one merged list.
+export async function signalDeskAllAccounts(env, db, { pageLimit = 500, maxPages = 20 } = {}) {
+  const accounts = [];
+  let cursor = "";
+  let last = {};
+  for (let page = 0; page < Math.max(1, maxPages); page += 1) {
+    const params = new URLSearchParams({ limit: String(pageLimit) });
+    if (cursor) params.set("cursor", cursor);
+    last = await signalDesk(env, db, `/api/v1/accounts?${params}`);
+    accounts.push(...(Array.isArray(last.accounts) ? last.accounts : []));
+    if (!last.hasMore || !last.nextCursor || last.nextCursor === cursor) break;
+    cursor = last.nextCursor;
+  }
+  return { ...last, accounts, hasMore: false, nextCursor: "" };
+}

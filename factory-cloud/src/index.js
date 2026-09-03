@@ -5,6 +5,7 @@ import { handleGeeLark } from "./geelark.js";
 import { errorJson, json, redirect } from "./http.js";
 import { handleJournal } from "./journal.js";
 import { handleJobs, pruneFactoryJobs } from "./jobs.js";
+import { pruneAutoTasks } from "./auto-tasks-store.js";
 import { backfillMissingAudioDurations, handleNovels } from "./novels.js";
 
 export const TRANSCRIPT_QUEUE_CRON = "* * * * *";
@@ -73,6 +74,7 @@ export default {
       const persisted = await persistOpsSnapshots(env, env.DB, store);
       await pruneOfficialOpsReports(env.DB);
       await pruneFactoryJobs(env.DB);
+      await pruneAutoTasks(env.DB);
       console.info(JSON.stringify({ event: "ops-report-persist", cron: controller.cron, ...persisted }));
     } catch (error) {
       console.error(JSON.stringify({ event: "ops-report-persist-failed", cron: controller.cron, error: String(error?.message || error) }));

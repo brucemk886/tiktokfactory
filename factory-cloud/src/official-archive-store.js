@@ -6,14 +6,25 @@ import {
 } from "../../scripts/official-archive-snapshot.js";
 import { buildArchiveOperationSignals, mapArchiveVideoRow } from "../../scripts/official-archive-signals.js";
 import { signalDesk } from "./signal-desk.js";
+import { kvGet, kvSet } from "./kv.js";
 
 const BATCH_SIZE = 40;
 const R2_CONCURRENCY = 8;
+const ARCHIVE_REFRESH_CURSOR_KEY = "official-archive-refresh-cursor";
+const ARCHIVE_REFRESH_PAGES_PER_RUN = 20;
+const ARCHIVE_REFRESH_TIME_BUDGET_MS = 20_000;
 
-export async function refreshOfficialArchive(env, db) {
-  let cursor = "";
+// A single run used to walk at most 20 pages × 20 accounts from the start, so
+// with more than 400 accounts the tail never got refreshed. The cursor now
+// survives between runs: each run continues where the previous one stopped
+// and only rewinds to the beginning once the whole list has been covered.
+export async function refreshOfficialArchive(env, db, { pagesPerRun = ARCHIVE_REFRESH_PAGES_PER_RUN, timeBudgetMs = ARCHIVE_REFRESH_TIME_BUDGET_MS } = {}) {
+  const startedAt = Date.now();
+  const saved = await kvGet(db, ARCHIVE_REFRESH_CURSOR_KEY, null);
+  let cursor = typeof saved?.cursor === "string" ? saved.cursor : "";
   let pulled = 0;
-  for (let page = 0; page < 20; page += 1) {
+  let completed = false;
+  for (let page = 0; page < Math.max(1, pagesPerRun); page += 1) {
     const params = new URLSearchParams({ limit: "20", videosPerAccount: "100" });
     if (cursor) params.set("cursor", cursor);
     const data = await signalDesk(env, db, `/api/integrations/local-factory/archive?${params}`);
@@ -22,10 +33,16 @@ export async function refreshOfficialArchive(env, db) {
       await upsertOfficialAccounts(env, db, accounts);
       pulled += accounts.length;
     }
-    if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
+    if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) {
+      completed = true;
+      cursor = "";
+      break;
+    }
     cursor = data.nextCursor;
+    if (Date.now() - startedAt > timeBudgetMs) break;
   }
-  if (!pulled) {
+  await kvSet(db, ARCHIVE_REFRESH_CURSOR_KEY, { cursor, updatedAt: Date.now(), completed });
+  if (!pulled && !cursor) {
     const existing = await readArchiveMeta(db);
     if (existing.accountCount) return { ...existing, pulled: 0 };
     await db.prepare(`
@@ -34,7 +51,7 @@ export async function refreshOfficialArchive(env, db) {
       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, error = excluded.error
     `).bind(Date.now(), Date.now(), "主站归档没有返回账号。").run();
   }
-  return { ...(await readArchiveMeta(db)), pulled };
+  return { ...(await readArchiveMeta(db)), pulled, completed, resumeCursor: cursor };
 }
 
 export async function applyOfficialArchivePush(env, db, payload = {}) {

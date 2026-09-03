@@ -40,7 +40,7 @@ import {
   loadArchiveBundle,
   readOpsSnapshot,
 } from "./ops-report-store.js";
-import { signalDesk } from "./signal-desk.js";
+import { signalDesk, signalDeskAllAccounts } from "./signal-desk.js";
 
 export async function handleOfficial(request, env, url, session) {
   if (!session) return null;
@@ -86,7 +86,7 @@ export async function handleOfficial(request, env, url, session) {
 
   if (method === "GET" && pathname === "/api/official-tiktok/publish-accounts") {
     try {
-      const data = await signalDesk(env, db, "/api/v1/accounts");
+      const data = await signalDeskAllAccounts(env, db);
       const store = await loadGroupStore(db);
       const scoped = scopeOfficialAccess(data, store, session.user, url.searchParams.get("module") || "");
       return json({
@@ -149,7 +149,7 @@ export async function handleOfficial(request, env, url, session) {
 
 export async function assertOfficialPublishAccess(env, user, payload = {}) {
   const store = await loadGroupStore(env.DB);
-  const data = await signalDesk(env, env.DB, "/api/v1/accounts");
+  const data = await signalDeskAllAccounts(env, env.DB);
   const scoped = scopeOfficialAccess(data, store, user, payload.module || "");
   const publishableAccounts = (scoped.accounts || []).filter((account) => !Array.isArray(account.scopes) || account.scopes.includes("video.publish"));
   const allowed = new Set(publishableAccounts.map((account) => account.connectionId || account.id).filter(Boolean));
