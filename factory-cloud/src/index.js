@@ -7,8 +7,6 @@ import { handleJournal } from "./journal.js";
 import { handleJobs, pruneFactoryJobs } from "./jobs.js";
 import { pruneAutoTasks } from "./auto-tasks-store.js";
 import { backfillMissingAudioDurations, handleNovels } from "./novels.js";
-
-export const TRANSCRIPT_QUEUE_CRON = "* * * * *";
 import { handlePeerHits } from "./peer-hits.js";
 import { handleOfficial, loadGroupStore } from "./official.js";
 import { recomputeArchiveMeta } from "./official-archive-store.js";
@@ -69,9 +67,6 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    if (controller.cron === TRANSCRIPT_QUEUE_CRON) {
-      return;
-    }
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
       ["prune-ops-reports", () => pruneOfficialOpsReports(env.DB)],
@@ -80,8 +75,9 @@ export default {
       ["prune-publish-receipts", () => prunePublishReceipts(env.DB)],
       ["prune-publish-records", () => prunePublishRecords(env.DB)],
       ["recompute-archive-meta", () => recomputeArchiveMeta(env.DB)],
-      // Self-heals the hub webhook registration (first deploy, URL change).
-      ["publish-webhook-register", () => ensurePublishWebhook(env, env.DB)],
+      // Self-heals the hub webhook registration (first deploy, URL change,
+      // endpoint deactivated by the hub after a long outage).
+      ["publish-webhook-register", () => ensurePublishWebhook(env, env.DB, { verify: true })],
       ["factory-storage-sample", () => collectFactoryStorageSample(env, env.DB)],
     ]);
     console.info(JSON.stringify({ event: "scheduled-steps-completed", cron: controller.cron, ...results }));

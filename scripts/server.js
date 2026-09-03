@@ -66,8 +66,11 @@ process.on("uncaughtException", (error) => {
   logServerCrash("uncaughtException", error);
   process.exit(1);
 });
+// Exit like uncaughtException does: a half-dead process that still holds the
+// port looks healthy to the watchdog, so crashing is the recoverable option.
 process.on("unhandledRejection", (error) => {
   logServerCrash("unhandledRejection", error);
+  process.exit(1);
 });
 const localAuth = createLocalAuthService({ workDir, initialGeeLark: bootConfig.geelark || {} });
 const publishService = createPublishService({

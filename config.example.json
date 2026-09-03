@@ -24,9 +24,15 @@
   "tiktokApiStoreApiKey": "",
   "tiktokApiStoreApiKeys": [],
   "geelark": {
-    "baseUrl": "https://open.geelark.cn",
+    "apiBaseUrl": "https://openapi.geelark.cn",
     "appId": "",
     "apiKey": ""
+  },
+  "autoTasks": {
+    "dailyPlannedLimit": 3000
+  },
+  "geelarkSafety": {
+    "dailyPublishLimit": 3000
   },
   "feishu": {
     "appId": "",

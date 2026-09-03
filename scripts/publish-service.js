@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createGeeLarkClient } from "./geelark-client.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
+import { scheduleDateKey } from "./schedule-date.js";
 
 const DEFAULT_DAILY_LIMIT = 300;
 // Configured limits (payload or config.geelarkSafety.dailyPublishLimit) used to be
@@ -573,11 +574,6 @@ function resolveRetrySchedule(value) {
 
 function dayKey() {
   return scheduleDateKey(Math.floor(Date.now() / 1000));
-}
-
-function scheduleDateKey(value) {
-  const date = new Date(Number(value) * 1000);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function clampInt(value, min, max, fallback) {

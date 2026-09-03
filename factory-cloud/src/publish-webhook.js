@@ -23,6 +23,9 @@ export async function readPublishWebhookState(db, env, now = Date.now()) {
   const stats = await publishReceiptStats(db, now);
   return {
     registered: Boolean(settings.webhookSecret && settings.webhookEndpointId),
+    // Same precedence as handlePublishWebhook, surfaced so a 401 can be traced
+    // to the right secret without reading code.
+    secretSource: settings.webhookSecret ? "settings" : (String(env?.SIGNAL_DESK_WEBHOOK_SECRET || "").trim() ? "env" : "none"),
     url: String(settings.webhookUrl || ""),
     endpointId: String(settings.webhookEndpointId || ""),
     registeredAt: Number(settings.webhookRegisteredAt) || 0,
@@ -33,13 +36,21 @@ export async function readPublishWebhookState(db, env, now = Date.now()) {
 
 // Registers (or re-registers) this factory as a hub webhook endpoint through
 // the hub's machine-key API and keeps the signing secret in settings.
-export async function ensurePublishWebhook(env, db, { force = false, requestUrl = "" } = {}) {
+export async function ensurePublishWebhook(env, db, { force = false, verify = false, requestUrl = "" } = {}) {
   const settings = await kvGet(db, SETTINGS_KEY, {});
   const baseUrl = factoryPublicBaseUrl(env, requestUrl);
   if (!baseUrl) return { ok: false, registered: false, reason: "factory-base-url-missing" };
   const url = `${baseUrl}${PUBLISH_WEBHOOK_PATH}`;
   const alreadyCurrent = settings.webhookSecret && settings.webhookEndpointId && settings.webhookUrl === url;
-  if (alreadyCurrent && !force) return { ok: true, registered: true, url, endpointId: settings.webhookEndpointId, changed: false };
+  if (alreadyCurrent && !force) {
+    // The hub switches an endpoint off after a long run of failed deliveries
+    // (e.g. a factory outage). Local settings would still look current, so the
+    // daily check asks the hub whether our endpoint is still active.
+    if (!verify || await hubEndpointActive(env, db, settings.webhookEndpointId)) {
+      return { ok: true, registered: true, url, endpointId: settings.webhookEndpointId, changed: false };
+    }
+    console.warn(JSON.stringify({ event: "publish-webhook-endpoint-inactive", endpointId: settings.webhookEndpointId }));
+  }
   const result = await signalDesk(env, db, "/api/v1/webhooks", {
     method: "POST",
     body: { name: "tiktok-factory", url, events: WEBHOOK_EVENTS },
@@ -54,6 +65,19 @@ export async function ensurePublishWebhook(env, db, { force = false, requestUrl 
     webhookRegisteredAt: now,
   });
   return { ok: true, registered: true, url, endpointId: String(result.id), changed: true, replaced: Number(result.replaced || 0) };
+}
+
+// GET /api/v1/webhooks lists only active endpoints. A hub error is treated as
+// "still active" so a transient outage never triggers a needless re-register.
+async function hubEndpointActive(env, db, endpointId) {
+  try {
+    const result = await signalDesk(env, db, "/api/v1/webhooks");
+    const endpoints = Array.isArray(result?.endpoints) ? result.endpoints : [];
+    return endpoints.some((endpoint) => String(endpoint?.id || "") === String(endpointId));
+  } catch (error) {
+    console.warn("publish webhook verification skipped", error?.message || error);
+    return true;
+  }
 }
 
 // Failed registration attempts back off this long before the next lazy retry.

@@ -355,21 +355,27 @@ async function markReceiptsApplied(db, entries, now = Date.now()) {
   }
 }
 
+// Two indexed reads instead of a week-long scan: pending rides the
+// (applied_at, received_at) index and the 24h window rides received_at, so the
+// publish-records page stays cheap however many receipts are retained.
 export async function publishReceiptStats(db, now = Date.now()) {
   if (!await hasReceiptTables(db)) return { available: false, pending: 0, applied24h: 0, received24h: 0 };
-  const row = await db.prepare(`
-    SELECT
-      SUM(CASE WHEN applied_at = 0 THEN 1 ELSE 0 END) AS pending,
-      SUM(CASE WHEN applied_at >= ? THEN 1 ELSE 0 END) AS applied_24h,
-      SUM(CASE WHEN received_at >= ? THEN 1 ELSE 0 END) AS received_24h
-    FROM ${RECEIPTS_TABLE}
-    WHERE received_at >= ?
-  `).bind(now - 86_400_000, now - 86_400_000, now - 7 * 86_400_000).first();
+  const since = now - 86_400_000;
+  const [pendingRow, dayRow] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS pending FROM ${RECEIPTS_TABLE} WHERE applied_at = 0`).first(),
+    db.prepare(`
+      SELECT
+        SUM(CASE WHEN applied_at >= ? THEN 1 ELSE 0 END) AS applied_24h,
+        COUNT(*) AS received_24h
+      FROM ${RECEIPTS_TABLE}
+      WHERE received_at >= ?
+    `).bind(since, since).first(),
+  ]);
   return {
     available: true,
-    pending: Number(row?.pending || 0),
-    applied24h: Number(row?.applied_24h || 0),
-    received24h: Number(row?.received_24h || 0),
+    pending: Number(pendingRow?.pending || 0),
+    applied24h: Number(dayRow?.applied_24h || 0),
+    received24h: Number(dayRow?.received_24h || 0),
   };
 }
 

@@ -108,8 +108,12 @@ export async function loadArchiveViewsByVideoIds(db, videoIds = []) {
   return views;
 }
 
+// One row per authorized account; the cap is a safety net well above the
+// 1000-account target so a bug elsewhere cannot turn these into full scans.
+export const LATEST_ACCOUNTS_LIMIT = 5000;
+
 export async function listLatestArchiveAccounts(db) {
-  return (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE").all()).results || [];
+  return (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE LIMIT ?").bind(LATEST_ACCOUNTS_LIMIT).all()).results || [];
 }
 
 export async function listAccountDirectory(db) {
@@ -117,7 +121,8 @@ export async function listAccountDirectory(db) {
     SELECT account_key, label, synced_at, video_count, views
     FROM official_accounts_latest
     ORDER BY label COLLATE NOCASE
-  `).all()).results || [];
+    LIMIT ?
+  `).bind(LATEST_ACCOUNTS_LIMIT).all()).results || [];
 }
 
 export function directoryUsername(row = {}) {

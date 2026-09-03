@@ -8,8 +8,13 @@ import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
 import { normalizeAudioDirs } from "./audio-library-groups.js";
 import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
+import { scheduleDateKey } from "./schedule-date.js";
 
 export { mergeOfficialPublishRecords };
+
+// Tasks in these states still own their schedule plan: the videos are either
+// waiting to render or mid-flight, so their planned slots are reserved.
+const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm"]);
 export const DEFAULT_DAILY_PLANNED_VIDEOS = 300;
@@ -896,22 +901,30 @@ export function buildSchedulePlan({ videoCount, envIds, scheduleAt, intervalMinu
 }
 
 export function validateScheduleCapacity({ plan, tasks = [], dailyLimit = DEFAULT_DAILY_PLANNED_VIDEOS, excludeTaskId = "" }) {
-  const completed = new Map();
+  const reserved = new Map();
+  const reserve = (date, count) => reserved.set(date, (reserved.get(date) || 0) + count);
   for (const task of tasks) {
-    if (!task || task.id === excludeTaskId || task.status !== "done") continue;
-    for (const result of task.publishResults || []) {
-      if (result?.status !== "submitted") continue;
-      const scheduleAt = Number(result.scheduleAt) || 0;
-      if (!scheduleAt) continue;
-      const date = scheduleDateKey(scheduleAt);
-      completed.set(date, (completed.get(date) || 0) + 1);
+    if (!task || task.id === excludeTaskId || Number(task.deleted) === 1) continue;
+    if (task.status === "done") {
+      for (const result of task.publishResults || []) {
+        if (result?.status !== "submitted") continue;
+        const scheduleAt = Number(result.scheduleAt) || 0;
+        if (!scheduleAt) continue;
+        reserve(scheduleDateKey(scheduleAt), 1);
+      }
+      continue;
     }
+    // Queued/running tasks have not published yet, so their whole plan is
+    // still ahead of them; counting it stops several pending tasks from
+    // overselling the same day.
+    if (!ACTIVE_TASK_STATUSES.has(task.status)) continue;
+    for (const item of getTaskSchedulePlan(task)) reserve(item.date, Number(item.count) || 0);
   }
   for (const item of plan || []) {
-    const existing = completed.get(item.date) || 0;
+    const existing = reserved.get(item.date) || 0;
     const incoming = Number(item.count) || 0;
     if (existing + incoming > dailyLimit) {
-      throw new Error(`${item.date} 已完成发布 ${existing} 条，本任务再安排 ${incoming} 条，将超过每天 ${dailyLimit} 条上限。请减少视频数量或改到其他日期。`);
+      throw new Error(`${item.date} 已发布或已排期 ${existing} 条，本任务再安排 ${incoming} 条，将超过每天 ${dailyLimit} 条上限。请减少视频数量或改到其他日期。`);
     }
   }
 }
@@ -1236,11 +1249,6 @@ function countAudioFiles(directory) {
     }
   }
   return count;
-}
-
-function scheduleDateKey(value) {
-  const date = new Date(Number(value) * 1000);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function mergePublishResults(current, incoming) {

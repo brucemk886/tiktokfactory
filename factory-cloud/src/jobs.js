@@ -413,8 +413,10 @@ async function handleWorkerApi(request, env, url, ctx) {
     const payload = await readJson(request).catch(() => ({}));
     const workerId = String(payload.workerId || request.headers.get("x-factory-worker") || "worker").slice(0, 80);
     const stamp = now();
+    // One worker holds at most a handful of running jobs (render + publish
+    // lanes); the cap only guards against a runaway table.
     const rows = await env.DB.prepare(`
-      SELECT * FROM factory_jobs WHERE status = 'running' AND worker_id = ?
+      SELECT * FROM factory_jobs WHERE status = 'running' AND worker_id = ? ORDER BY claimed_at LIMIT 200
     `).bind(workerId).all();
     let requeued = 0;
     for (const job of rows.results || []) {

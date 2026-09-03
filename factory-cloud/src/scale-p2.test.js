@@ -199,6 +199,42 @@ test("factory registers itself with the hub and keeps the secret in settings", a
   }
 });
 
+test("daily verification re-registers when the hub has switched the endpoint off", async () => {
+  const db = fakeDb();
+  db.kv.set("official-settings", {
+    baseUrl: "https://desk.test", apiKey: "bridge-key",
+    webhookSecret: "whsec_old", webhookEndpointId: "ep-old", webhookUrl: "https://factory.test/api/integrations/signal-desk/publish-events",
+  });
+  const env = { FACTORY_PUBLIC_BASE_URL: "https://factory.test" };
+  let activeIds = ["ep-old"];
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method || "GET" });
+    if ((init?.method || "GET") === "GET") {
+      return new Response(JSON.stringify({ endpoints: activeIds.map((id) => ({ id, active: true })) }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ id: "ep-new", secret: "whsec_new", replaced: 0 }), { status: 201, headers: { "content-type": "application/json" } });
+  };
+  try {
+    // Still active on the hub: one GET, no re-register.
+    assert.equal((await ensurePublishWebhook(env, db, { verify: true })).changed, false);
+    assert.deepEqual(calls.map((call) => call.method), ["GET"]);
+    // Hub deactivated it: GET shows it missing, so the factory registers again.
+    activeIds = [];
+    const result = await ensurePublishWebhook(env, db, { verify: true });
+    assert.equal(result.changed, true);
+    assert.equal(db.kv.get("official-settings").webhookEndpointId, "ep-new");
+    assert.equal(db.kv.get("official-settings").webhookSecret, "whsec_new");
+    // Without verify the cheap path never talks to the hub.
+    const before = calls.length;
+    assert.equal((await ensurePublishWebhook(env, db)).changed, false);
+    assert.equal(calls.length, before);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("lazy registration backs off for an hour after a hub failure and stops once registered", async () => {
   const db = fakeDb();
   db.kv.set("official-settings", { baseUrl: "https://desk.test", apiKey: "bridge-key" });
@@ -262,6 +298,22 @@ test("saving desk settings keeps the webhook registration state", async () => {
   assert.equal(saved.webhookEndpointId, "ep-keep");
   assert.equal(saved.webhookUrl, "https://factory.test/hook");
   assert.equal(saved.webhookLastReceiptAt, 123);
+});
+
+test("operators cannot change desk settings or mutate account groups", async () => {
+  const db = fakeDb();
+  db.kv.set("official-settings", { baseUrl: "https://desk.test", apiKey: "bridge-key" });
+  const operator = { user: { role: "operator", username: "op" } };
+  const settings = new Request("https://factory.test/api/private-tiktok/settings", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ baseUrl: "https://evil.test" }),
+  });
+  assert.equal((await handleOfficial(settings, { DB: db }, new URL(settings.url), operator)).status, 403);
+  assert.equal(db.kv.get("official-settings").baseUrl, "https://desk.test");
+
+  const createGroup = new Request("https://factory.test/api/official-tiktok/account-groups", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x" }),
+  });
+  assert.equal((await handleOfficial(createGroup, { DB: db }, new URL(createGroup.url), operator)).status, 403);
 });
 
 test("one failing maintenance step does not stop the rest of the cron", async () => {

@@ -28,6 +28,7 @@ import { kvGet, kvSet } from "./kv.js";
 import {
   accountsFromLatestArchive,
   directoryAccountsFromRows,
+  LATEST_ACCOUNTS_LIMIT,
   listAccountDirectory,
   listLatestArchiveAccounts,
   loadAccountAssignments,
@@ -52,6 +53,7 @@ export async function handleOfficial(request, env, url, session) {
   if (pathname === "/api/private-tiktok/settings") {
     if (method === "GET") return json(await publicOfficialSettings(db, env));
     if (method === "POST") {
+      if (!isAdmin(session)) return errorJson("仅管理员可以修改官方通道设置。", 403);
       const payload = await readJson(request);
       const current = await kvGet(db, "official-settings", {});
       // Spread the stored settings so webhook registration state survives a save.
@@ -151,7 +153,7 @@ export async function handleOfficial(request, env, url, session) {
   if (method === "POST" && pathname === "/api/official-publish-records/sync") {
     if (session.user?.role !== "admin") return errorJson("仅管理员可以操作。", 403);
     try {
-      const result = await ensurePublishWebhook(env, db, { force: url.searchParams.get("force") === "1", requestUrl: request.url });
+      const result = await ensurePublishWebhook(env, db, { force: url.searchParams.get("force") === "1", verify: true, requestUrl: request.url });
       return json({ ...result, message: result.changed ? "已向主站注册发布回执 webhook。" : "发布回执 webhook 已在线，主站会实时回写结果。" });
     } catch (error) {
       return errorJson(error.message || "注册发布回执失败。", error.statusCode || 502);
@@ -187,9 +189,16 @@ export async function assertOfficialPublishAccess(env, user, payload = {}) {
   return { ...scoped, accounts: publishableAccounts };
 }
 
+function isAdmin(session) {
+  return session?.user?.role === "admin";
+}
+
 async function handleAccountGroups(request, env, db, url, session) {
   const method = request.method;
   const pathname = url.pathname;
+  // Reads stay open to every signed-in user (operators need their scoped
+  // groups); creating, renaming, deleting or reassigning is admin-only.
+  if (method !== "GET" && !isAdmin(session)) return errorJson("仅管理员可以管理项目与分组。", 403);
   const store = await loadGroupStore(db);
 
   try {
@@ -344,6 +353,9 @@ async function publicOfficialSettings(db, env) {
     configured: Boolean((settings.baseUrl || env.SIGNAL_DESK_BASE_URL) && (settings.apiKey || envKey)),
     baseUrl: settings.baseUrl || env.SIGNAL_DESK_BASE_URL || "https://tiktokaitool.com",
     hasApiKey: Boolean(settings.apiKey || envKey),
+    // Which key signalDesk() actually sends: the page-entered one wins, the
+    // Worker secret SIGNAL_DESK_BRIDGE_KEY is the fallback (what production uses).
+    apiKeySource: settings.apiKey ? "settings" : (envKey ? "env" : "none"),
     updatedAt: Number(settings.updatedAt || 0),
     source: "official"
   };
@@ -359,7 +371,8 @@ export async function loadGroupStore(db) {
   const { results } = await db.prepare(`
     SELECT account_key, label
     FROM official_accounts_latest
-  `).all();
+    LIMIT ?
+  `).bind(LATEST_ACCOUNTS_LIMIT).all();
   return rememberAccountAliases(store, accountsFromArchiveRows(results || []));
 }
 

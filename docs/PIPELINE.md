@@ -47,7 +47,7 @@
 
 - 入口 `scripts/server.js`，`PORT` 默认 3010；`config.json` 里 `workDir=D:/localfactory-data/work`、`outputDir=D:/localfactory-data/outputs`。
 - 守护 `scripts/factory-watchdog.js`：每 10s 探活端口，进程死且端口关就拉起（最短间隔 5s）；状态文件 `work/factory-watchdog.json`，日志 `work/factory-watchdog.log`；单实例锁 `work/factory-watchdog.lock`。开机由计划任务 `LocalFactoryWatchdog`（ONLOGON）拉起，`node scripts/factory-watchdog.js --install` 可重注册。
-- `uncaughtException` 记 `work/server-crash.log` 后退出（交给守护重启）；`unhandledRejection` 只记日志不退出。
+- `uncaughtException` 与 `unhandledRejection` 都记 `work/server-crash.log` 后 `exit(1)`，交给守护重启（半死进程占着端口会骗过守护，所以宁可崩）。
 
 ### 2.2 与工厂云的协议（`scripts/factory-cloud-worker.js`）
 
@@ -74,10 +74,11 @@
 
 ### 2.4 排产与日上限（`scripts/auto-task-manager.js`）
 
-- 日规划上限：`FACTORY_DAILY_PLANNED_LIMIT` 环境变量 > `config.autoTasks.dailyPlannedLimit` > 默认 **300**，上限 100000。**当前本机没配，仍是 300。**
-- GeeLark 日上限：`config.geelarkSafety.dailyPublishLimit`，默认 300。
+- 日规划上限：`FACTORY_DAILY_PLANNED_LIMIT` 环境变量 > `config.autoTasks.dailyPlannedLimit` > 默认 300，上限 100000。**本机 `config.json` 已配 3000**（`config.json` 不进 git，`config.example.json` 有同样示例）。
+- GeeLark 日上限：`config.geelarkSafety.dailyPublishLimit`，本机已配 3000（默认 300）。
 - 调度：第 i 条视频给第 `i % n` 个账号，同账号第 k 条时间 `scheduleAt + k * interval`；自动发布起点至少 now+300s；磁盘剩余 <20GB 拒绝。
-- 容量校验只统计已完成任务的 `submitted` 条数，排队中的任务不计入。
+- 容量校验（`validateScheduleCapacity`）：已完成任务算 `submitted` 条数，`queued`/`running` 任务算整份 `schedulePlan`，两者相加不能超日上限；`paused`/`failed`/软删任务不占位，resume 时排除自身。
+- 日切统一用 `scripts/schedule-date.js` 的 `scheduleDateKey`，固定 `Asia/Shanghai`，与中台补拉一致，不再跟系统时区走。
 - 本地任务队列串行一条（`source=factory-cloud` 的镜像任务跳过）。成片默认保留 48h，每 6h 清理。
 
 ### 2.5 官方发布（本机侧）
@@ -99,12 +100,12 @@
 | `/api/worker/*` | `WORKER_TOKEN`（Bearer 或 `x-factory-worker-token`），无 session |
 | `/api/integrations/signal-desk/publish-events` | HMAC-SHA256：`x-signal-timestamp` + `x-signal-signature: v1=…`，密钥 `official-settings.webhookSecret`，时钟偏差 ≤10min |
 | `/api/integrations/signal-desk/storage`、`archive-accounts` | Bearer = 桥接密钥 |
-| 其余 `/api/*` | Cookie session；`official-publish-records/sync`、`/webhook` 仅 admin |
-| 出站到中台 | `signalDesk()`：Bearer = `official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`（线上用后者） |
+| 其余 `/api/*` | Cookie session；仅 admin：`official-publish-records/sync`、`/webhook`、`POST private-tiktok/settings`、项目/分组的所有写操作（POST/PATCH/DELETE，读仍对所有登录用户开放） |
+| 出站到中台 | `signalDesk()`：Bearer = `official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`（线上用后者）。`GET /api/private-tiktok/settings` 返回 `apiKeySource: settings|env|none`，`GET /api/official-publish-records/webhook` 返回 `secretSource`，排障先看这两个字段 |
 
 ### 3.2 任务表 `factory_jobs`
 
-状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。hello 把该 `worker_id` 下所有 `running` 改回 `queued`。终态 30 天后 cron 删除。
+状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。hello 把该 `worker_id` 下的 `running` 改回 `queued`（`LIMIT 200`，单工人同时在跑的不过几条）。终态 30 天后 cron 删除。
 
 `complete` 时 `done && publishPending` 且 `publish.provider=official`、`autoPublish!==false` → 入队 `official-publish`（`publishOnly: true`），同时把 auto-task 的 `generationJobId` 指到新任务、`phase=publish-queued`。
 
@@ -116,15 +117,16 @@
 
 - `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行。表按时间保留 90 天（`prunePublishRecords`，每晚 cron），不按条数裁剪。
 - `factory_publish_record_refs`：`task:{remoteTaskId}`、`ref:{externalRef}` → record id。
-- `factory_publish_receipts`：每条 webhook 一行；找不到记录（回执先于本机上传）保持 `applied_at=0`，下次 sync 合并时补上。
+- `factory_publish_receipts`：每条 webhook 一行；找不到记录（回执先于本机上传）保持 `applied_at=0`，下次 sync 合并时补上。页面上的回执统计 `publishReceiptStats` 拆成两条索引查询（`applied_at=0` 计数 + 24h 窗口），迁移 `0018` 加了 `received_at` 索引，不再扫 7 天。
+- `official_accounts_latest` 的几处读取（归档列表、分组别名）统一 `LIMIT 5000`（`LATEST_ACCOUNTS_LIMIT`），一行一账号，1000 号远不到顶。
 - `keepReceiptOutcome`：已有回执的记录，本机上传的过期状态不会覆盖云端结论。
 - 回执 30 天后清理；refs 跟随记录一起在 90 天时删除。
 
 ### 3.5 webhook 注册（三条路都会触发）
 
-1. 每日 cron `ensurePublishWebhook`。
-2. admin `POST /api/official-publish-records/sync`（`?force=1` 强制重注册）。
-3. 本机每 5 分钟带记录 sync 时 `ensurePublishWebhookLazily`：未注册就注册，失败后 1 小时内不重试。
+1. 每日 cron `ensurePublishWebhook({ verify: true })`：本地看着已注册时，再 `GET /api/v1/webhooks` 核对端点仍在中台的 active 列表里；不在（被中台自动停用）就重注册。中台查不通视为仍在线，不误重注册。
+2. admin `POST /api/official-publish-records/sync`（同样 verify；`?force=1` 强制重注册）。
+3. 本机每 5 分钟带记录 sync 时 `ensurePublishWebhookLazily`：未注册就注册，失败后 1 小时内不重试；不做远端核对，保持便宜。
 
 当前状态：endpoint `a33292c6-…`，URL `https://factory.tiktokaitool.com/api/integrations/signal-desk/publish-events`，事件 `publish.completed` / `publish.failed`，中台侧 `active=1`。
 
@@ -178,13 +180,16 @@
 - 任务到终态时 `recordPublishTaskOutcome` 写 `hub_webhook_deliveries`（`(endpoint, event, task)` 唯一）；每分钟 cron 取 100 条入队。
 - 事件：`published → publish.completed`，其它终态 → `publish.failed`。
 - 签名头 `X-Signal-Event / X-Signal-Delivery / X-Signal-Timestamp / X-Signal-Signature: v1=hmac(timestamp.body)`；fetch 超时 10s。
-- 失败退避 `[30s,1m,2m,5m,10m,30m,1h,2h,4h,6h]`，10 次后 `exhausted`。端点不会因失败自动停用。
-- 注册 `POST /api/v1/webhooks`（机器密钥），同 URL 重注册会停用旧端点。
+- 失败退避 `[30s,1m,2m,5m,10m,30m,1h,2h,4h,6h]`，10 次后 `exhausted`。
+- 自动停用（`deactivateDeadWebhookEndpoint`，规则在 `lib/hub-webhook-policy.ts`）：某条投递 `exhausted` 时，取该端点最近 20 条已结束投递（delivered/exhausted，按 `updated_at` 倒序，走 `0029` 的 `(endpoint_id, updated_at)` 索引），全是 `exhausted` 才置 `active=0`，日志 `hub-webhook-endpoint-deactivated`。之后新终态不再给它写投递；工厂靠每日 verify 重注册，中间漏掉的回执由工厂 08:30 结果同步和页面 hydrate 补。
+- 队列 `max_retries=3` 只管 consumer 崩溃，投递失败重试全靠 DB `next_attempt_at`（配置里已注明）。
+- 注册 `POST /api/v1/webhooks`（机器密钥），同 URL 重注册会停用旧端点；`GET /api/v1/webhooks` 只列 active 端点。
 
 ### 4.5 账号同步与补拉
 
 - 全量：每日 `0 23 * * *`（UTC）一条 dispatch → 每页 500 连接、每 100 条 sendBatch、页间 2s。每账号视频最多 5 页；资料核心字段每天、5 组 insights 每周一次（`_insights_fetched_at`，手动同步始终刷新）。
 - 补拉：每 5 分钟，只挑 `published` 且 `item_id=''`、完成超过 30 分钟的账号，按 `lastSyncedAt` 最久优先，40 个/次，单账号 20 分钟冷却；`catchup` 模式只拉 2 页视频并按 ±3h 时间窗回填 item_id。
+- **partial index 与绑定参数**：SQLite 只在查询文本里出现与索引 WHERE 相同的字面量时才会用 partial index，drizzle 的 `eq(status, "published")` 生成 `status = ?`，命不中。0026 建的三个 partial index（`published_missing_item`、`open_asset`、`published_completed`）对应的热查询已改成 `sql\`… = 'published'\`` 字面量：补拉候选、`staleItemIdTasks` 重投、成片释放、R2 孤儿清理。新增 `0029` 的 `spam_risk` partial index 给 `loadPublishRiskByConnectionId`（每页 `/api/v1/accounts` 和仪表盘都调）。以后写涉及这些索引的查询要照这个写法。
 - token 刷新：`token-refresh:{id}` 锁，租约 30s，最多等 12×1s；过期前 5 分钟内才刷。
 
 ### 4.6 cron（`worker/index.ts`）
@@ -200,7 +205,7 @@
 
 ### 4.7 告警（`lib/ops-alert-policy.ts`）
 
-阈值：`needs_review ≥10`、缺 item_id ≥20、到期未派发 ≥5（15min）、queued 卡住 ≥5（30min）、submitting 卡住 ≥3（30min）、24h webhook exhausted ≥5、失效连接 ≥1、限流惩罚等级 ≥2、队列积压 ≥60s、失败率 ≥20%（样本 ≥20）。收件人 `OPS_ALERT_EMAILS`，未配则 `ADMIN_EMAILS`（当前即此）；发信用 `RESEND_API_KEY` + `EMAIL_FROM`；同一告警冷却 6 小时，新告警或升级立即发。管理员可用 `GET/POST /api/admin/ops-alerts` 看快照/手动触发。
+阈值：`needs_review ≥10`、缺 item_id ≥20、到期未派发 ≥5（15min）、queued 卡住 ≥5（30min）、submitting 卡住 ≥3（30min）、24h webhook exhausted ≥5、**回执端点全部离线（有端点但无 active，直接 critical）**、失效连接 ≥1、限流惩罚等级 ≥2、队列积压 ≥60s、失败率 ≥20%（样本 ≥20）。收件人 `OPS_ALERT_EMAILS`，未配则 `ADMIN_EMAILS`（当前即此）；发信用 `RESEND_API_KEY` + `EMAIL_FROM`；同一告警冷却 6 小时，新告警或升级立即发。管理员可用 `GET/POST /api/admin/ops-alerts` 看快照/手动触发。
 
 ### 4.8 保留策略
 
@@ -208,7 +213,7 @@
 |---|---|
 | `video_snapshots` | 90 天 |
 | official 日快照 | 30 天 |
-| 终态发布任务（published/failed/canceled） | 90 天，每次最多删 5000 |
+| 终态发布任务（published/failed/rejected/status_timeout/canceled） | 90 天，每次最多删 5000 |
 | `needs_review` 未处理 | 7 天后自动置 `failed` |
 | webhook 投递记录（非 pending） | 30 天 |
 | sync_runs / api_usage / storage 采样 | 30 / 90 / 180 天 |
@@ -226,7 +231,7 @@
 
 | 环节 | 当前上限 | 结论 |
 |---|---|---|
-| 本机日规划 | 300（未配置） | **必须把 `FACTORY_DAILY_PLANNED_LIMIT` 抬到 ≥3000**，GeeLark 通道另配 `geelarkSafety.dailyPublishLimit` |
+| 本机日规划 | 3000（`config.json` 已配） | 够；容量校验已把排队任务算进去 |
 | 本机渲染 | 2 并发，约 20s/条 | 3000 条约 8.3h，紧；可提 `renderConcurrency`（看 CPU）或加第二台工人 |
 | 本机上传 | 1 发布通道 × 10 并行上传 | 够 |
 | 中台派发 | 100 条/分钟 | 够（3000 条打散在全天） |
@@ -239,36 +244,44 @@
 
 ---
 
-## 6. 本次复查发现的问题
+## 6. 复查问题清单
 
-按影响排序。标 ★ 的直接影响今天上线的回执链路。
+### 已修（2026-09-03 下午，第一批）
 
-### 已修（2026-09-03 下午上线）
+1. ★ **工厂设置页保存会抹掉 webhook 密钥。** `POST /api/private-tiktok/settings` 原来整包覆盖 `official-settings`，现在展开原设置再覆盖。
+2. **中台 cron 链没有逐项 try/catch。** 每个 job 包在 `runScheduledJob` 里。
+3. **工厂 cron 六个维护动作绑在一个 try 里。** 改为 `runScheduledSteps`。
+4. **本机运行目录不干净。** 切回干净 `main`。
+5. **工厂发布记录按条数裁剪。** 改为 90 天按时间保留；refs 与记录同寿命；同步不再 `COUNT(*)`。
 
-1. ★ **工厂设置页保存会抹掉 webhook 密钥。** `POST /api/private-tiktok/settings` 原来用 `{baseUrl, apiKey, updatedAt}` 整包覆盖 `official-settings`。现在展开原设置再覆盖，webhook 字段保留。
-2. **中台 cron 链没有逐项 try/catch。** `worker/index.ts` 现在每个 job 都包在 `runScheduledJob` 里，任一失败只记 `scheduled-job-failed`，其余照跑；测试锁定。
-3. **工厂 cron 六个维护动作绑在一个 try 里。** 改为 `runScheduledSteps`，每步独立 try，日志 `scheduled-steps-completed` 带每步结果。
-4. **本机运行目录不干净。** `D:\cursor\localfactory` 已丢弃未提交的 tetris 模板工作，切回干净的 `main`，工人从 main 起。
-5. **工厂发布记录按条数裁剪（3000）。** 改为按时间保留：`prunePublishRecords` 每晚删 90 天前的记录及其 refs；工人同步不再对表做 `COUNT(*)`（原来每次同步和每次页面加载都全表计数）。`STORE_LIMIT=5000` 只作为单次列表读取上限。
-8. refs 不再按 30 天删除，跟记录同寿命。
+### 已修（2026-09-03 傍晚，第二批）
 
-### 应该修
+6. 本机日规划上限 300 → **3000**（`config.json` + example），GeeLark 日上限同步 3000。
+7. 本机排产容量只算已完成任务 → `queued`/`running` 任务的 `schedulePlan` 也计入。
+8. 本机 `scheduleDateKey` 跟系统时区 → 抽到 `scripts/schedule-date.js`，固定 `Asia/Shanghai`。
+9. 本机 `unhandledRejection` 不退出 → `exit(1)` 交给守护。
+10. 中台保留策略漏 `status_timeout`/`rejected` → 已加入 `TERMINAL_PUBLISH_TASK_STATUSES`。
+11. 中台 webhook 端点不会自动停用 → 连续 20 条 exhausted 置 `active=0`，新告警「回执端点全部离线」，工厂每日 verify 自动重注册。
+12. 无界/低效查询：工厂 `hello` 加 LIMIT、账号表读取加 `LIMIT 5000`、回执统计拆成两条索引查询（迁移 0018）；中台 partial index 因绑定参数根本没生效，四处热查询改字面量，新增 `spam_risk` partial index 和 webhook 投递 `(endpoint_id, updated_at)` 索引（迁移 0029）。
+13. 密钥双源 → 接口返回 `apiKeySource` / `secretSource`，排障直接看。
+14. 权限：`POST private-tiktok/settings`、项目/分组写操作改 admin-only。`auto-tasks`、各 `*/start` 是成员现有入口（GeeLark 自动发布、舒尔特、心理学等），按规则保持原样，没加限制。
+15. 工厂 `TRANSCRIPT_QUEUE_CRON` 死代码删除；中台 hub-webhooks `max_retries` 加注释说明。
+16. `config.example.json` 补 `autoTasks.dailyPlannedLimit`、`geelarkSafety.dailyPublishLimit`，GeeLark 键名改为代码实际读取的 `apiBaseUrl`，默认 `openapi.geelark.cn`。
+17. 仓库根 `jobs/`、`.codex-tmp/` 加进 `.gitignore`。
 
-6. 中台保留策略漏了 `status_timeout` / `rejected`（`lib/retention-policy.ts:5`），这些任务永久留在 D1。
-7. 中台 webhook 端点不会因持续失败停用，坏 URL 会一直占 cron 和告警；补一个连续 exhausted 计数 → `active=0`。
-9. 本机排产容量只算已完成任务，多个排队任务可把同一天超卖。
-10. 本机 `unhandledRejection` 不退出，异步链断了进程还活着，守护探不出来。
-11. 本机 `scheduleDateKey` 用系统时区、中台补拉用 Asia/Shanghai；本机时区变了会日切错位。
-12. 工厂云 `hello` 拉 running 无 LIMIT、`listLatestArchiveAccounts` 与 `loadGroupStore` 全表、`publishReceiptStats` 7 天聚合；中台 `enqueuePublishCatchupSyncs` 的 GROUP BY、`loadPublishRiskByConnectionId`（每页 accounts 请求都跑 30 天 spam_risk 聚合）、R2 孤儿清理拉全部 assetKey 都无界。现阶段行数小，1000 号后要盯 D1 rows_read。
-13. 工厂 `official-settings` 里 `apiKey` 为空、线上靠 `SIGNAL_DESK_BRIDGE_KEY`，而 webhook 校验又允许 `SIGNAL_DESK_WEBHOOK_SECRET` 环境变量兜底，两处双源，排障时容易看错。
+### 未修（评估后不需要，或超出本阶段）
 
-### 权限/规范
+- 工厂早期迁移 `0004/0005/0008/0009/0011-0013` 的 `ADD COLUMN` 没 `IF NOT EXISTS`：SQLite 语法不支持，wrangler 用 `d1_migrations` 表记录已跑过的文件，线上不会重跑，不用改。
+- `compat.js` 里 `GET /api/publish-records` 读旧 KV、`tiktok-analytics*` 空桩、音频库根写死 `F:/音频目录`：GeeLark 备用页的桩，不在官方发布链路上。
+- 中台 R2 孤儿清理拉全部 `asset_key != ''`：终态任务 5 分钟一轮清空 `asset_key`，这个集合只有在途任务，且改成字面量后走 `open_asset` partial index，实际有界。
+- `config.example.json` 还没有 `factory-cloud-worker.json` 示例。
 
-14. 工厂 `/api/official-tiktok/projects|account-groups|groups/*/report|ops-report*`、`/api/private-tiktok/settings`、`/api/auto-tasks*`、各 `*/start` 出片接口只查 session 不查角色；按「新功能只给 admin」的规则，至少设置、分组 CRUD、auto-tasks 增删应加 admin 校验。
-15. 工厂 `TRANSCRIPT_QUEUE_CRON="* * * * *"` 守卫（`index.js:11`）永不命中，是死代码；`compat.js` 里 `GET /api/publish-records` 仍读旧 KV、`tiktok-analytics*` 返回空桩、音频库根写死 `F:/音频目录`。
-16. 工厂早期迁移 `0004/0005/0008/0009/0011-0013` 的 `ALTER TABLE ADD COLUMN` 没有 `IF NOT EXISTS`，只能在全新库上按序跑一次。
-17. 中台 hub-webhooks 队列 `max_retries=3` 无效（consumer 总 ack），重试全靠 DB `nextAttemptAt`，配置有误导性。
-18. `config.example.json` 缺 `autoTasks.dailyPlannedLimit`、`geelarkSafety.dailyPublishLimit`、`factory-cloud-worker.json` 示例；GeeLark 示例 `baseUrl` 是 `open.geelark.cn`，代码默认 `openapi.geelark.cn`。
+### 1000 号阶段仍要盯的（不是 bug，是容量边界）
+
+- 本机渲染 2 并发约 20s/条，3000 条/日 ≈ 8.3h 连续渲染，CPU 吃紧就提 `FACTORY_WORKER_RENDER_CONCURRENCY` 或加第二台工人（`workerId` 必须不同）。
+- 中台日配额 `max(5000, 账号×10)`，1000 号即 10000；超过 3 条/号/日要另议。
+- 每小时告警邮件是主要感知渠道，收件人回落 `ADMIN_EMAILS`，务必确认能收到。
+- D1 rows_read/written 在 Cloudflare 面板看趟势；本轮索引修正后，1000 号规模下每天读写应在免费/付费档内，但没有实测数据，第一周要看。
 
 ---
 
@@ -277,7 +290,8 @@
 | 现象 | 先看 |
 |---|---|
 | 工厂发布记录长时间停在 `submitted` | 工厂 `GET /api/official-publish-records/webhook`（admin）看 `registered` 与 `lastReceiptAt`；中台 `hub_webhook_deliveries` 该 endpoint 的 `status/attempts`；再看本机是否 5 分钟内有 sync |
-| 回执 401 | `official-settings.webhookSecret` 与中台 `hub_webhook_endpoints.secret` 不一致（多半是问题 1），admin `POST /api/official-publish-records/sync?force=1` |
+| 回执 401 | `official-settings.webhookSecret` 与中台 `hub_webhook_endpoints.secret` 不一致（多半是问题 1），先看 `/webhook` 的 `secretSource`，再 admin `POST /api/official-publish-records/sync?force=1` |
+| 回执突然停了、中台告警「回执端点全部离线」 | 中台把工厂端点自动停用了（工厂曾长时间不可达）。工厂下一次每日 cron 会自动重注册；要立刻恢复就 admin `POST /api/official-publish-records/sync`（带 verify） |
 | 中台任务卡 `queued`/`submitting` | 每小时告警邮件 `stuckQueued/stuckSubmitting`；`/api/admin/ops-alerts` 快照；5 分钟 recovery 会自动重投，`submitting` 超 5 分钟进 `needs_review` |
 | `needs_review` 堆积 | 中台发布页管理员「待人工核对」区，重试或放弃；7 天不处理自动关闭 |
 | 429 增多 | 告警 `rateLimitLevel`；DO 会自动降到 8/4/2 rps，10 分钟无 429 恢复 |

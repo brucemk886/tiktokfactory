@@ -36,6 +36,8 @@ tmp/
 
 # Local Codex metadata
 .agents/
+.codex-tmp/
+/jobs/
 .codex/
 !.codex/
 .codex/*
