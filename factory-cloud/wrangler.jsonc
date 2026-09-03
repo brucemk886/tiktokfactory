@@ -37,6 +37,7 @@
   },
   "vars": {
     "SIGNAL_DESK_BASE_URL": "https://tiktokaitool.com",
+    "FACTORY_PUBLIC_BASE_URL": "https://factory.tiktokaitool.com",
     "FEISHU_WIKI_URL": "https://my.feishu.cn/wiki/DMPvw98Wri5WCfk9wkScDrV1nce?sheet=acDhJT"
   }
 }

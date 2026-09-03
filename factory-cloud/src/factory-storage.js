@@ -3,12 +3,18 @@ import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import { countNovels } from "./novel-store.js";
 import { applyOfficialArchivePush } from "./official-archive-store.js";
+import { handlePublishWebhook, PUBLISH_WEBHOOK_PATH } from "./publish-webhook.js";
 
 const SAMPLE_KEY = "factory-storage-sample";
 const SAMPLE_CACHE_MS = 60 * 60 * 1000;
 const MANUAL_REFRESH_MIN_MS = 5 * 60 * 1000;
 
 export async function handleSignalDeskIntegration(request, env, url) {
+  // Hub webhook receipts are HMAC-signed rather than bearer-authenticated.
+  if (url.pathname === PUBLISH_WEBHOOK_PATH) {
+    const result = await handlePublishWebhook(request, env, env.DB);
+    return result.status === 200 ? json(result.body) : errorJson(result.body.error, result.status);
+  }
   if (request.method === "GET" && url.pathname === "/api/integrations/signal-desk/storage") {
     await requireSignalDeskCaller(request, env);
     const force = url.searchParams.get("refresh") === "1";

@@ -42,6 +42,9 @@ export async function refreshOfficialArchive(env, db, { pagesPerRun = ARCHIVE_RE
     if (Date.now() - startedAt > timeBudgetMs) break;
   }
   await kvSet(db, ARCHIVE_REFRESH_CURSOR_KEY, { cursor, updatedAt: Date.now(), completed });
+  // Pushes bump the meta counters incrementally; a completed full walk is the
+  // moment to recompute them exactly and clear any accumulated drift.
+  if (completed && pulled) await recomputeArchiveMeta(db);
   if (!pulled && !cursor) {
     const existing = await readArchiveMeta(db);
     if (existing.accountCount) return { ...existing, pulled: 0 };
@@ -249,6 +252,7 @@ export async function upsertOfficialAccounts(env, db, accounts) {
   const stamp = Date.now();
   const rows = (accounts || []).map((account) => buildAccountRow(account, stamp)).filter((row) => row.account_key);
   if (!rows.length) return readArchiveMeta(db);
+  const previous = await readAccountVideoCounts(db, rows.map((row) => row.account_key));
   const upserts = rows.map((row) => db.prepare(`
     INSERT INTO official_accounts_latest (
       account_key, snapshot_date, synced_at, label, profile_json, error,
@@ -287,12 +291,13 @@ export async function upsertOfficialAccounts(env, db, accounts) {
     await Promise.all(slice.map((row) => writeAccountVideos(env, row.account_key, row.videos, row)));
   }
   await deleteLeftoverVideos(db, rows.map((row) => row.account_key));
-  return refreshArchiveMeta(db, stamp);
+  return bumpArchiveMeta(db, archiveMetaDelta(rows, previous), stamp);
 }
 
 export async function deleteOfficialAccounts(env, db, accountKeys) {
   const keys = uniqueAccountKeys(accountKeys);
   if (!keys.length) return readArchiveMeta(db);
+  const previous = await readAccountVideoCounts(db, keys);
   for (const slice of chunk(keys, BATCH_SIZE)) {
     await db.batch(slice.flatMap((accountKey) => [
       db.prepare("DELETE FROM official_accounts_latest WHERE account_key = ?").bind(accountKey),
@@ -301,7 +306,65 @@ export async function deleteOfficialAccounts(env, db, accountKeys) {
     await Promise.all(slice.map((accountKey) => deleteAccountVideos(env, accountKey)));
   }
   await deleteLeftoverVideos(db, keys);
-  return refreshArchiveMeta(db);
+  let videoDelta = 0;
+  for (const count of previous.values()) videoDelta -= count;
+  return bumpArchiveMeta(db, { accountDelta: -previous.size, videoDelta, archiveDate: "", archiveAt: 0 });
+}
+
+async function readAccountVideoCounts(db, accountKeys) {
+  const counts = new Map();
+  for (const slice of chunk(uniqueAccountKeys(accountKeys), BATCH_SIZE)) {
+    const placeholders = slice.map(() => "?").join(", ");
+    const { results } = await db.prepare(
+      `SELECT account_key, video_count FROM official_accounts_latest WHERE account_key IN (${placeholders})`
+    ).bind(...slice).all();
+    for (const row of results || []) counts.set(String(row.account_key), Number(row.video_count) || 0);
+  }
+  return counts;
+}
+
+// Pure: how one upsert batch moves the meta counters.
+export function archiveMetaDelta(rows, previousCounts) {
+  let accountDelta = 0;
+  let videoDelta = 0;
+  let archiveDate = "";
+  let archiveAt = 0;
+  for (const row of rows) {
+    const key = String(row.account_key);
+    if (!previousCounts.has(key)) accountDelta += 1;
+    videoDelta += (Number(row.video_count) || 0) - (previousCounts.get(key) || 0);
+    if (String(row.snapshot_date || "") > archiveDate) archiveDate = String(row.snapshot_date || "");
+    archiveAt = Math.max(archiveAt, Number(row.synced_at) || 0);
+  }
+  return { accountDelta, videoDelta, archiveDate, archiveAt };
+}
+
+// Incremental meta update: one UPDATE instead of a COUNT/SUM over every
+// account per push. The nightly walk recomputes exactly.
+async function bumpArchiveMeta(db, delta, stamp = Date.now()) {
+  const result = await db.prepare(`
+    UPDATE official_archive_meta
+    SET account_count = MAX(0, account_count + ?),
+      video_count = MAX(0, video_count + ?),
+      archive_date = CASE WHEN ? > archive_date THEN ? ELSE archive_date END,
+      archive_at = MAX(archive_at, ?),
+      updated_at = ?,
+      error = ''
+    WHERE id = 'latest'
+  `).bind(
+    Number(delta.accountDelta) || 0,
+    Number(delta.videoDelta) || 0,
+    String(delta.archiveDate || ""),
+    String(delta.archiveDate || ""),
+    Number(delta.archiveAt) || 0,
+    stamp
+  ).run();
+  if (!Number(result?.meta?.changes || 0)) return refreshArchiveMeta(db, stamp);
+  return readArchiveMeta(db);
+}
+
+export async function recomputeArchiveMeta(db, stamp = Date.now()) {
+  return refreshArchiveMeta(db, stamp);
 }
 
 async function writeAccountVideos(env, accountKey, videos, extra = {}) {

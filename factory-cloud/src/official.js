@@ -22,6 +22,7 @@ import {
 import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, resolveReportWindow } from "../../scripts/official-group-report.js";
 import { hydrateOfficialPublishRecords, publishRecordsSince, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { listPublishRecords } from "./publish-records-store.js";
+import { ensurePublishWebhook, readPublishWebhookState } from "./publish-webhook.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
 import {
@@ -134,14 +135,30 @@ export async function handleOfficial(request, env, url, session) {
     const range = url.searchParams.get("range") || "7d";
     const query = url.searchParams.get("query") || "";
     const stored = await listPublishRecords(db, { from: publishRecordsSince(range), limit: 800 });
+    const webhook = await readPublishWebhookState(db, env).catch(() => null);
+    // With receipts flowing, hub batch hydration is only a fallback for the
+    // handful of records that never got one; without receipts keep the old
+    // per-request hydration.
+    const hydrateLimit = webhook?.registered ? 2 : 8;
     const records = await hydrateOfficialPublishRecords(stored, (batchId) => (
       signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
-    ), { skipResolved: true, limit: 8 }).catch(() => stored);
-    return json(summarizeOfficialPublishRecords(records, { range: "all", query }));
+    ), { skipResolved: true, limit: hydrateLimit }).catch(() => stored);
+    return json({ ...summarizeOfficialPublishRecords(records, { range: "all", query }), webhook });
   }
 
   if (method === "POST" && pathname === "/api/official-publish-records/sync") {
-    return json({ ok: true, message: "发布结果由主站回写，工厂云已保存本地副本。" });
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以操作。", 403);
+    try {
+      const result = await ensurePublishWebhook(env, db, { force: url.searchParams.get("force") === "1", requestUrl: request.url });
+      return json({ ...result, message: result.changed ? "已向主站注册发布回执 webhook。" : "发布回执 webhook 已在线，主站会实时回写结果。" });
+    } catch (error) {
+      return errorJson(error.message || "注册发布回执失败。", error.statusCode || 502);
+    }
+  }
+
+  if (method === "GET" && pathname === "/api/official-publish-records/webhook") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以查看。", 403);
+    return json(await readPublishWebhookState(db, env));
   }
 
   return null;
