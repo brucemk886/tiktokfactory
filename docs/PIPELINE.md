@@ -79,7 +79,9 @@
 
 - 日规划上限：`FACTORY_DAILY_PLANNED_LIMIT` 环境变量 > `config.autoTasks.dailyPlannedLimit` > 默认 300，上限 100000。**本机 `config.json` 已配 3000**（`config.json` 不进 git，`config.example.json` 有同样示例）。
 - GeeLark 日上限：`config.geelarkSafety.dailyPublishLimit`，本机已配 3000（默认 300）。
-- 调度：第 i 条视频给第 `i % n` 个账号，同账号第 k 条时间 `scheduleAt + k * interval`；自动发布起点至少 now+300s；磁盘剩余 <20GB 拒绝。
+- 调度（`planOfficialPublishJobs`）：轮询分账号，但在「当前条数最少的账号」里优先挑**没发过这条音频**的那个，同一账号只在所有账号都发过这本书时才重复；账号 k 的时间是 `scheduleAt + 本账号第几条 * interval + floor(interval * k / n)`，即同一波的 n 个账号在间隔内错开（interval=0 不错开）。`schedulePlan` 的展示仍按波次起点归并。自动发布起点至少 now+300s；磁盘剩余 <20GB 拒绝。
+- 音频轮转（`scripts/audio-rotation.js`）：按音频文件夹勾选的任务，工人在 `work/audio-rotation.json` 里按「文件夹组合」记游标，每个任务从上次停下的位置接着走完整个文件夹再回头；领窗口时就推进游标，两条渲染道并跑也不撞。传了 `audioOffset`、`audioPriority`、`audioItems` 或 `audioRotation:false` 的任务不走游标。
+- 推广码门禁（`reddit-mix-job.js`）：`burnNovelBadge !== false` 的任务，某条音频解析不出 `promotionCode`（小说库 → 文件夹 `novel.json` → 任务兜底）就跳过不出片，warning 写「没有推广码，已跳过」，全部没码则任务失败。勾了多个音频文件夹时任务 payload 里那份（只来自第一个文件夹）的 platform/推广码不再兜底给其它文件夹的音频，避免 A 书的码印到 B 书上。`requirePromotionCode:false` 可关。
 - 容量校验（`validateScheduleCapacity`）：已完成任务算 `submitted` 条数，`queued`/`running` 任务算整份 `schedulePlan`，两者相加不能超日上限；`paused`/`failed`/软删任务不占位，resume 时排除自身。
 - 日切统一用 `scripts/schedule-date.js` 的 `scheduleDateKey`，固定 `Asia/Shanghai`，与中台补拉一致，不再跟系统时区走。
 - 本地任务队列串行一条（`source=factory-cloud` 的镜像任务跳过）。成片默认保留 48h，每 6h 清理。
@@ -286,6 +288,12 @@
 15. 工厂 `TRANSCRIPT_QUEUE_CRON` 死代码删除；中台 hub-webhooks `max_retries` 加注释说明。
 16. `config.example.json` 补 `autoTasks.dailyPlannedLimit`、`geelarkSafety.dailyPublishLimit`，GeeLark 键名改为代码实际读取的 `apiBaseUrl`，默认 `openapi.geelark.cn`。
 17. 仓库根 `jobs/`、`.codex-tmp/` 加进 `.gitignore`。
+
+### 已修（2026-09-03 夜，小说推文业务逻辑第一批）
+
+18. 混剪音频每个任务随机洗牌、无记忆 → 按文件夹组合记游标轮转（`audio-rotation.js`），任务之间接着走，整个文件夹走完才回头。
+19. 没推广码的音频照样出片照样发 → 渲染前先解析推广码，没有就跳过该音频；多文件夹任务不再把第一个文件夹的码兜底给其它文件夹。
+20. 视频→账号 `i % n` 与音频周期相撞、同一波所有账号同一秒齐发 → 账号分配改成「最少条数里优先没发过这条音频的」，同一波账号在间隔内按 `k/n` 错开。
 
 ### 未修（评估后不需要，或超出本阶段）
 

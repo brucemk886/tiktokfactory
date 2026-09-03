@@ -50,7 +50,9 @@ test("official publish assigns each video to one account in round-robin", () => 
     "connection-1",
     "connection-2",
   ]);
-  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_000]);
+  // Two accounts, 15-minute interval: the second account is pushed half an
+  // interval later instead of firing at the same second as the first.
+  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_450]);
   assert.deepEqual(result.results.map((item) => item.batchIds), [
     ["batch-1"],
     ["batch-1"],
@@ -97,7 +99,55 @@ test("the same account gets later videos at the configured interval", () => {
     "connection-1",
     "connection-2",
   ]);
-  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_000, 1_900, 1_900]);
+  assert.deepEqual(result.results.map((item) => item.scheduleAt), [1_000, 1_450, 1_900, 2_350]);
+});
+
+test("accounts are staggered inside the interval and never fire together", () => {
+  const jobs = planOfficialPublishJobs({
+    videos: Array.from({ length: 6 }, (_, index) => ({ fileName: `v${index}.mp4` })),
+    connectionIds: ["a", "b", "c"],
+    scheduleAt: 0,
+    interval: 3_600
+  });
+  assert.deepEqual(jobs.map((job) => job.scheduleAt), [0, 1_200, 2_400, 3_600, 4_800, 6_000]);
+  assert.equal(new Set(jobs.map((job) => job.scheduleAt)).size, jobs.length);
+  // interval 0 means "as soon as possible": nothing to spread over.
+  const immediate = planOfficialPublishJobs({
+    videos: [{ fileName: "a.mp4" }, { fileName: "b.mp4" }],
+    connectionIds: ["a", "b"],
+    scheduleAt: 500,
+    interval: 0
+  });
+  assert.deepEqual(immediate.map((job) => job.scheduleAt), [500, 500]);
+});
+
+test("an account does not get the same audio twice while another account still lacks it", () => {
+  // 4 audios cycled over 8 videos, 2 accounts: plain `i % 2` would put s1 and
+  // s3 on account a twice and never on b.
+  const audios = ["s1.mp3", "s2.mp3", "s3.mp3", "s4.mp3"];
+  const videos = Array.from({ length: 8 }, (_, index) => ({ fileName: `v${index}.mp4`, audioName: audios[index % audios.length] }));
+  const jobs = planOfficialPublishJobs({ videos, connectionIds: ["a", "b"], scheduleAt: 0, interval: 600 });
+  const byAccount = new Map();
+  for (const job of jobs) {
+    const list = byAccount.get(job.connectionId) || [];
+    list.push(job.video.audioName);
+    byAccount.set(job.connectionId, list);
+  }
+  assert.deepEqual(byAccount.get("a").length, 4);
+  assert.deepEqual(byAccount.get("b").length, 4);
+  assert.equal(new Set(byAccount.get("a")).size, 4, "account a repeats an audio");
+  assert.equal(new Set(byAccount.get("b")).size, 4, "account b repeats an audio");
+  // Load stays balanced wave by wave and the plan is deterministic.
+  const again = planOfficialPublishJobs({ videos, connectionIds: ["a", "b"], scheduleAt: 0, interval: 600 });
+  assert.deepEqual(again.map((job) => [job.connectionId, job.scheduleAt]), jobs.map((job) => [job.connectionId, job.scheduleAt]));
+  // Once every account has seen an audio, repeating is allowed rather than starving.
+  const forced = planOfficialPublishJobs({
+    videos: Array.from({ length: 4 }, (_, index) => ({ fileName: `v${index}.mp4`, audioName: "only.mp3" })),
+    connectionIds: ["a", "b"],
+    scheduleAt: 0,
+    interval: 600
+  });
+  assert.deepEqual(forced.map((job) => job.connectionId), ["a", "b", "a", "b"]);
 });
 
 test("official publish results map to the shared publish-record schema", () => {

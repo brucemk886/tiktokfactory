@@ -913,16 +913,18 @@ function updatePublishPlanHint() {
     : (phoneList?.querySelectorAll(".geelark-phone-check:checked").length || 0);
   const interval = Math.max(0, number("#intervalMinutes", 60));
   if (!videos || !accounts) {
-    hint.textContent = "生成条数会轮流分给所选账号，同一账号的下一条才按间隔排期。例如 5 条视频 + 5 个账号 = 起始时间同时各发 1 条。";
+    hint.textContent = "生成条数会轮流分给所选账号，同一账号的下一条才按间隔排期。同一批账号会在间隔内错开发出，不会同一秒齐发；同一账号尽量不重复同一本书。";
     return;
   }
   const waves = Math.ceil(videos / accounts);
   const firstWave = Math.min(accounts, videos);
+  const gapSeconds = accounts > 1 && interval > 0 ? Math.floor((interval * 60) / accounts) : 0;
+  const staggerText = gapSeconds > 0 ? `，每个账号之间错开约 ${gapSeconds >= 60 ? `${Math.floor(gapSeconds / 60)} 分钟` : `${gapSeconds} 秒`}` : "";
   if (waves === 1) {
-    hint.textContent = `将生成 ${videos} 条视频，分给 ${accounts} 个账号，起始时间同时发出 ${firstWave} 条。每条视频只发一个账号。`;
+    hint.textContent = `将生成 ${videos} 条视频，分给 ${accounts} 个账号，从起始时间开始发出 ${firstWave} 条${staggerText}。每条视频只发一个账号。`;
     return;
   }
-  hint.textContent = `将生成 ${videos} 条视频，轮流分给 ${accounts} 个账号：起始时间先发 ${firstWave} 条，同一账号下一条间隔 ${interval} 分钟，共 ${waves} 个时间点。`;
+  hint.textContent = `将生成 ${videos} 条视频，轮流分给 ${accounts} 个账号：起始时间先发 ${firstWave} 条${staggerText}，同一账号下一条间隔 ${interval} 分钟，共 ${waves} 个时间点；同一账号尽量不重复同一本书。`;
 }
 
 function updateQueueMetrics(tasks) {

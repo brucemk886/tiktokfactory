@@ -1000,12 +1000,52 @@ export function planOfficialPublishJobs({
     });
     return jobs;
   }
+  // Round-robin, but audio-aware: with A audios and n accounts the plain
+  // `videoIndex % n` mapping lands the same story on the same account every
+  // time A is a multiple of n. Among the least-loaded accounts we prefer one
+  // that has not posted this audio yet, so an account only repeats a story
+  // when every account already has it. Deterministic, so re-running this on
+  // the same task reproduces the same plan (publish records rely on that).
+  const postCounts = new Map(accounts.map((id) => [id, 0]));
+  const seenAudio = new Map(accounts.map((id) => [id, new Set()]));
   list.forEach((video, videoIndex) => {
-    const connectionId = accounts[videoIndex % accounts.length];
-    const accountPostIndex = Math.floor(videoIndex / accounts.length);
-    jobs.push({ video, videoIndex, connectionId, scheduleAt: startAt + accountPostIndex * step });
+    const audioKey = String(video?.audioName || video?.audioLibraryId || "").trim().toLowerCase();
+    const minCount = Math.min(...accounts.map((id) => postCounts.get(id)));
+    const preferred = accounts[videoIndex % accounts.length];
+    const startIndex = accounts.indexOf(preferred);
+    let connectionId = "";
+    let fallback = "";
+    for (let offset = 0; offset < accounts.length; offset += 1) {
+      const candidate = accounts[(startIndex + offset) % accounts.length];
+      if (postCounts.get(candidate) !== minCount) continue;
+      if (!fallback) fallback = candidate;
+      if (!audioKey || !seenAudio.get(candidate).has(audioKey)) {
+        connectionId = candidate;
+        break;
+      }
+    }
+    connectionId = connectionId || fallback || preferred;
+    const accountPostIndex = postCounts.get(connectionId);
+    postCounts.set(connectionId, accountPostIndex + 1);
+    if (audioKey) seenAudio.get(connectionId).add(audioKey);
+    jobs.push({
+      video,
+      videoIndex,
+      connectionId,
+      scheduleAt: startAt + accountPostIndex * step + accountStagger(step, accounts.indexOf(connectionId), accounts.length)
+    });
   });
   return jobs;
+}
+
+// Spread the accounts' posts across the interval instead of firing all of
+// them at the same second: account k posts at wave start + k/n of the gap.
+export function accountStagger(step, accountIndex, accountCount) {
+  const gap = Math.max(0, Number(step) || 0);
+  const count = Math.max(1, Math.floor(Number(accountCount) || 1));
+  const index = Math.max(0, Math.floor(Number(accountIndex) || 0));
+  if (!gap || count <= 1) return 0;
+  return Math.floor((gap * index) / count);
 }
 
 export function normalizeOfficialAutoPublishResult(task, officialResult = {}) {

@@ -17,6 +17,7 @@ import {
 import { findAudioInLibrary, listAudioLibraryFiles, normalizeAudioDirs } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { planMixAudioOrder } from "./mix-audio-pick.js";
+import { reserveAudioRotation } from "./audio-rotation.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 import { makeWordPopSubtitles, normalizeSubtitleAnimationMode, subtitleNeedsWordTimestamps } from "./subtitle-animation.js";
@@ -45,10 +46,12 @@ main().catch((error) => {
 async function main() {
   const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
   const config = readJson(path.join(root, "config.json"));
-  const audios = planMixAudioOrder(resolveMixAudios(payload));
+  const legacyVariants = clampInt(payload.variants, 1, 20, 1);
+  const audioFiles = resolveMixAudios(payload);
+  const total = clampInt(payload.totalVideos, 1, 300, audioFiles.length * legacyVariants);
+  const { audios, rotation } = orderMixAudios(payload, audioFiles, total);
   const saveDir = resolveSaveDir(payload.saveDir);
   const backgroundMusicFiles = resolveBackgroundMusicFiles(payload.backgroundMusicDir);
-  const legacyVariants = clampInt(payload.variants, 1, 20, 1);
   const width = Number(config.width) || 1080;
   const height = Number(config.height) || 1920;
   const fps = Number(config.fps) || 30;
@@ -61,11 +64,13 @@ async function main() {
   const overlayFiles = resolveOverlayFiles(dedup.overlayDir);
 
   if (!audios.length) throw new Error("音频文件夹里没有找到可用音频。");
+  const requirePromotionCode = payload.requirePromotionCode !== false && payload.burnNovelBadge !== false;
   patchJob({
     status: "running",
     message: hasNvencEncoder()
       ? "混剪使用显卡一次合成（NVENC）。去重只保留缩放、镜像和变速。"
       : "混剪使用 CPU 一次合成。去重只保留缩放、镜像和变速。本机未检测到 NVENC。",
+    audioRotation: rotation,
     updatedAt: Date.now()
   });
 
@@ -84,7 +89,6 @@ async function main() {
     .filter((asset) => asset.file && fs.existsSync(asset.file) && asset.duration > 1);
   if (!videoMeta.length) throw new Error("No usable videos found in the video material folder.");
 
-  const total = clampInt(payload.totalVideos, 1, 300, audios.length * legacyVariants);
   const results = [];
   const audioContexts = new Map();
   const skippedAudios = new Set();
@@ -110,11 +114,37 @@ async function main() {
       });
       break;
     }
-    const audioIndex = (candidateIndex + Math.max(0, Number(payload.audioOffset) || 0)) % audios.length;
+    const audioIndex = candidateIndex % audios.length;
     const audioPath = audios[audioIndex];
     const variant = Math.floor(candidateIndex / audios.length) + 1;
     candidateIndex += 1;
-    if (skippedAudios.has(audioPath)) continue;
+    if (skippedAudios.has(audioPath)) {
+      // Walking past an already-skipped audio is not a render attempt.
+      attempts -= 1;
+      continue;
+    }
+    const audioFallback = fallbackForAudio(payload, audioPath);
+    if (requirePromotionCode && !audioContexts.has(audioPath)) {
+      // A video the viewer cannot act on (no promo code to search) still burns a
+      // publish slot on an account. Skip the audio instead of shipping it blind.
+      const identity = resolveNovelEndCard({ workDir: storageDirs.workDir, audioPath, fallback: audioFallback });
+      if (!identity?.promotionCode) {
+        const warning = `没有推广码，已跳过：${path.basename(audioPath)}（在音频文件夹的 novel.json 或小说库里补推广码）`;
+        skippedAudios.add(audioPath);
+        warnings.push(warning);
+        patchJob({
+          status: "running",
+          message: warning,
+          warnings,
+          progressCurrent: done,
+          progressTotal: total,
+          updatedAt: Date.now()
+        });
+        if (skippedAudios.size >= audios.length) throw new Error("所有音频都没有推广码，任务无法继续。请先在音频文件夹里补 novel.json（platform + promotionCode）。");
+        attempts -= 1;
+        continue;
+      }
+    }
     let audioContext = audioContexts.get(audioPath);
     if (!audioContext) {
       const audioDuration = probeDuration(audioPath, 0);
@@ -210,7 +240,6 @@ async function main() {
       volume: clampNumber(payload.backgroundMusicVolume, 0, 1, 0.12)
     });
 
-    const audioFallback = fallbackForAudio(payload, audioPath);
     const novelBadge = payload.burnNovelBadge === false
       ? null
       : resolveNovelVideoBadge({
@@ -487,22 +516,60 @@ function resolveMixAudios(payload) {
   return resolvePrioritizedAudios(merged, payload.audioPriority);
 }
 
+// Folder-based selections walk the folder with a persistent cursor so the
+// next task continues where this one stops. Explicit lists (audioItems from the
+// operation brain, audioPriority, or a hand-set audioOffset) keep their order.
+function orderMixAudios(payload, files, total) {
+  const list = Array.isArray(files) ? files.filter(Boolean) : [];
+  const manualOffset = Math.max(0, Number(payload.audioOffset) || 0);
+  const hasItems = normalizeAudioItems(payload.audioItems).length > 0;
+  const hasPriority = Array.isArray(payload.audioPriority) && payload.audioPriority.some((name) => String(name || "").trim());
+  if (!list.length) return { audios: list, rotation: null };
+  if (hasItems || hasPriority) {
+    return { audios: rotateList(planMixAudioOrder(list), manualOffset), rotation: null };
+  }
+  const dirs = normalizeAudioDirs(payload.audioDirs, payload.audioDir);
+  if (manualOffset > 0 || payload.audioRotation === false) {
+    return { audios: rotateList(list, manualOffset), rotation: null };
+  }
+  const reservation = reserveAudioRotation({ workDir: storageDirs.workDir, dirs, audioCount: list.length, count: total });
+  return {
+    audios: rotateList(list, reservation.offset),
+    rotation: reservation.reserved
+      ? { key: reservation.key, offset: reservation.offset, audioCount: list.length, count: total }
+      : null
+  };
+}
+
+function rotateList(list, offset) {
+  if (!list.length) return list;
+  const shift = ((Math.floor(Number(offset) || 0) % list.length) + list.length) % list.length;
+  return shift ? [...list.slice(shift), ...list.slice(0, shift)] : list;
+}
+
 function fallbackForAudio(payload, audioPath) {
   const items = normalizeAudioItems(payload.audioItems);
   const resolved = path.resolve(String(audioPath || ""));
   const baseName = path.basename(resolved);
   const hit = items.find((item) => item.path && path.resolve(item.path) === resolved)
     || items.find((item) => item.id && (baseName.includes(item.id) || resolved.includes(item.id)));
+  // The task payload only carries the novel fields of the first ticked folder.
+  // With several folders ticked, applying them to every audio would stamp
+  // folder A's promo code on folder B's story, so only trust them for a
+  // single-folder task; multi-folder audio must resolve from its own
+  // novel.json / novel store.
+  const multiFolder = !hit && normalizeAudioDirs(payload.audioDirs, payload.audioDir).length > 1;
+  const payloadNovel = multiFolder ? {} : payload;
   return {
     audioLibraryId: hit?.id || "",
     scriptId: hit?.scriptId || "",
-    novelId: hit?.novelId || payload.novelId,
-    platform: hit?.platform || payload.novelPlatform,
-    promotionCode: hit?.promotionCode || payload.novelPromotionCode,
-    promotionCopy: hit?.promotionCopy || payload.promotionCopy || "",
-    openingTitle: hit?.openingTitle || hit?.title || payload.openingTitle || "",
-    bookId: hit?.bookId || payload.novelBookId || payload.bookId || "",
-    novelTitle: hit?.novelTitle || payload.novelTitle || ""
+    novelId: hit?.novelId || payloadNovel.novelId,
+    platform: hit?.platform || payloadNovel.novelPlatform,
+    promotionCode: hit?.promotionCode || payloadNovel.novelPromotionCode,
+    promotionCopy: hit?.promotionCopy || payloadNovel.promotionCopy || "",
+    openingTitle: hit?.openingTitle || hit?.title || payloadNovel.openingTitle || "",
+    bookId: hit?.bookId || payloadNovel.novelBookId || payloadNovel.bookId || "",
+    novelTitle: hit?.novelTitle || payloadNovel.novelTitle || ""
   };
 }
 
