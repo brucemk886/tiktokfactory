@@ -2,7 +2,8 @@ import { applyArchiveViewsToSnapshot, collectSnapshotVideoIds, dashboardFromSnap
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
 import { errorJson, json, now, readJson, redirect, safeId } from "./http.js";
-import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, isDeletedTask, publicJob, videosForOfficialRetry } from "./jobs.js";
+import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, getJobsByIds, publicJob, videosForOfficialRetry } from "./jobs.js";
+import { getAutoTask, listAutoTasks, saveAutoTask } from "./auto-tasks-store.js";
 import { kvGet, kvSet } from "./kv.js";
 import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
@@ -85,22 +86,17 @@ export async function handleCompat(request, env, url, session) {
 
   if (pathname === "/api/auto-tasks") {
     if (method === "GET") {
-      const tasks = await kvGet(db, "auto-tasks", []);
+      const tasks = await listAutoTasks(db, { limit: Number(url.searchParams.get("limit")) || 200 });
       const worker = await kvGet(db, "factory-worker-status", {
         running: false,
         cloud: true,
         message: "本机工人未上线。请在 Local Factory 运行 npm start。"
       });
-      const live = [];
-      for (const task of tasks) {
-        if (isDeletedTask(task)) continue;
-        if (task.generationJobId) {
-          const job = await getJob(db, task.generationJobId);
-          live.push(job ? applyJobToTask(task, job) : task);
-        } else {
-          live.push(task);
-        }
-      }
+      const jobs = await getJobsByIds(db, tasks.map((task) => task.generationJobId).filter(Boolean));
+      const live = tasks.map((task) => {
+        const job = task.generationJobId ? jobs.get(String(task.generationJobId)) : null;
+        return job ? applyJobToTask(task, job) : task;
+      });
       return json({ tasks: live, worker });
     }
     if (method === "POST") {
@@ -179,17 +175,14 @@ export async function handleCompat(request, env, url, session) {
         createdBy: session.user.username
       });
       task.generationJobId = job.id;
-      const tasks = await kvGet(db, "auto-tasks", []);
-      tasks.unshift(task);
-      await kvSet(db, "auto-tasks", tasks.slice(0, 500));
+      await saveAutoTask(db, task);
       return json({ task }, 201);
     }
   }
 
   const taskMatch = pathname.match(/^\/api\/auto-tasks\/([^/]+)(?:\/(cancel|resume|retry-publish))?$/);
   if (taskMatch) {
-    const tasks = await kvGet(db, "auto-tasks", []);
-    const task = tasks.find((item) => item.id === decodeURIComponent(taskMatch[1]));
+    const task = await getAutoTask(db, decodeURIComponent(taskMatch[1]));
     if (!task) return errorJson("任务不存在。", 404);
     if (method === "GET" && !taskMatch[2]) {
       if (!task.generationJobId) return json({ task });
@@ -197,8 +190,8 @@ export async function handleCompat(request, env, url, session) {
       return json({ task: job ? applyJobToTask(task, job) : task });
     }
     if (method === "PATCH") {
-      Object.assign(task, await readJson(request), { updatedAt: now() });
-      await kvSet(db, "auto-tasks", tasks);
+      Object.assign(task, await readJson(request), { id: task.id, updatedAt: now() });
+      await saveAutoTask(db, task);
       return json({ task });
     }
     if (method === "DELETE") {
@@ -207,7 +200,7 @@ export async function handleCompat(request, env, url, session) {
       task.deletedAt = now();
       task.updatedAt = now();
       if (task.generationJobId) await cancelJob(db, task.generationJobId);
-      await kvSet(db, "auto-tasks", tasks);
+      await saveAutoTask(db, task);
       return json({ ok: true, task });
     }
     if (method === "POST" && taskMatch[2] === "cancel") {
@@ -216,7 +209,7 @@ export async function handleCompat(request, env, url, session) {
       task.phase = "canceled";
       task.message = "任务已停止。";
       task.updatedAt = now();
-      await kvSet(db, "auto-tasks", tasks);
+      await saveAutoTask(db, task);
       return json({ task });
     }
     if (method === "POST" && taskMatch[2] === "resume") {
@@ -238,7 +231,7 @@ export async function handleCompat(request, env, url, session) {
       task.phase = "queued";
       task.message = "已重新下发本机混剪队列。";
       task.updatedAt = now();
-      await kvSet(db, "auto-tasks", tasks);
+      await saveAutoTask(db, task);
       return json({ task });
     }
     if (method === "POST" && taskMatch[2] === "retry-publish") {
@@ -266,7 +259,7 @@ export async function handleCompat(request, env, url, session) {
       task.error = "";
       task.publishError = "";
       task.updatedAt = now();
-      await kvSet(db, "auto-tasks", tasks);
+      await saveAutoTask(db, task);
       return json({ task });
     }
   }

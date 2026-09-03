@@ -6,6 +6,7 @@ import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingA
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeAndStorePublishRecords } from "./publish-records-store.js";
+import { getAutoTask, saveAutoTask, saveAutoTasks } from "./auto-tasks-store.js";
 
 const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/generate\/start$/, type: "generate", title: "生成视频" },
@@ -127,6 +128,19 @@ export async function handleJobs(request, env, url, session, ctx) {
 
 export async function getJob(db, jobId) {
   return db.prepare("SELECT * FROM factory_jobs WHERE id = ?").bind(safeId(jobId)).first();
+}
+
+export async function getJobsByIds(db, jobIds = []) {
+  const ids = [...new Set((Array.isArray(jobIds) ? jobIds : []).map((id) => safeId(id)).filter(Boolean))];
+  const jobs = new Map();
+  for (let index = 0; index < ids.length; index += 90) {
+    const slice = ids.slice(index, index + 90);
+    const { results } = await db.prepare(
+      `SELECT * FROM factory_jobs WHERE id IN (${slice.map(() => "?").join(", ")})`
+    ).bind(...slice).all();
+    for (const row of results || []) jobs.set(String(row.id), row);
+  }
+  return jobs;
 }
 
 export async function findLatestOpeningVariantsJob(db, { novelId, createdBy, maxAgeMs = 24 * 60 * 60 * 1000 } = {}) {
@@ -268,34 +282,32 @@ async function handleWorkerApi(request, env, url, ctx) {
     const body = await readJson(request);
     const patches = Array.isArray(body.tasks) ? body.tasks : (body.taskId || body.id ? [body] : []);
     if (!patches.length) return json({ ok: true, updated: 0 });
-    const tasks = await kvGet(env.DB, "auto-tasks", []);
-    let updated = 0;
+    const changed = [];
     for (const patch of patches) {
       const taskId = String(patch.taskId || patch.id || "").trim();
-      const index = tasks.findIndex((item) => item.id === taskId);
-      if (index < 0 || isDeletedTask(tasks[index])) continue;
+      const task = taskId ? await getAutoTask(env.DB, taskId) : null;
+      if (!task || isDeletedTask(task)) continue;
       const incoming = Array.isArray(patch.generatedVideos) ? patch.generatedVideos : [];
-      const generatedVideos = mergeGeneratedVideos(tasks[index].generatedVideos, incoming);
+      const generatedVideos = mergeGeneratedVideos(task.generatedVideos, incoming);
       const expectedVideoCount = expectedTaskVideoCount({
-        ...tasks[index],
-        expectedVideoCount: patch.expectedVideoCount || tasks[index].expectedVideoCount
+        ...task,
+        expectedVideoCount: patch.expectedVideoCount || task.expectedVideoCount
       }, { progressTotal: patch.progressTotal }, generatedVideos);
-      tasks[index] = {
-        ...tasks[index],
+      changed.push({
+        ...task,
         expectedVideoCount,
         generatedVideos,
-        failedVideoCount: Number(patch.failedVideoCount || tasks[index].failedVideoCount || 0),
+        failedVideoCount: Number(patch.failedVideoCount || task.failedVideoCount || 0),
         progress: {
-          current: Math.max(Number(tasks[index].progress?.current) || 0, generatedVideos.length),
+          current: Math.max(Number(task.progress?.current) || 0, generatedVideos.length),
           total: expectedVideoCount,
-          percent: Number(patch.percent || tasks[index].progress?.percent || 0)
+          percent: Number(patch.percent || task.progress?.percent || 0)
         },
         updatedAt: now()
-      };
-      updated += 1;
+      });
     }
-    if (updated) await kvSet(env.DB, "auto-tasks", compactAutoTasks(tasks));
-    return json({ ok: true, updated });
+    if (changed.length) await saveAutoTasks(env.DB, changed);
+    return json({ ok: true, updated: changed.length });
   }
 
   if (method === "POST" && pathname === "/api/worker/sync") {
@@ -513,7 +525,7 @@ async function handleWorkerApi(request, env, url, ctx) {
     const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
     if (shouldWriteOfficialPublishRecords({ existingStatus: nextStatus, cancelled, records: incoming })) {
       try {
-        await mergeAndStorePublishRecords(env.DB, incoming, { limit: 1200 });
+        await mergeAndStorePublishRecords(env.DB, incoming);
       } catch (error) {
         console.error("official-publish-records", error?.message || error);
       }
@@ -689,11 +701,9 @@ async function syncAutoTaskFromJob(db, job) {
   const payload = parseJson(job.payload_json, {});
   const taskId = String(payload.taskId || "").trim();
   if (!taskId) return;
-  const tasks = await kvGet(db, "auto-tasks", []);
-  const index = tasks.findIndex((item) => item.id === taskId);
-  if (index < 0 || isDeletedTask(tasks[index])) return;
-  tasks[index] = applyJobToTask(tasks[index], job);
-  await kvSet(db, "auto-tasks", compactAutoTasks(tasks));
+  const task = await getAutoTask(db, taskId);
+  if (!task || isDeletedTask(task)) return;
+  await saveAutoTask(db, applyJobToTask(task, job));
 }
 
 function slimJobResult(value) {
@@ -842,17 +852,4 @@ export async function pruneFactoryJobs(db, keepDays = 30) {
     DELETE FROM factory_jobs
     WHERE status IN ('done', 'failed', 'cancelled') AND updated_at < ?
   `).bind(cutoff).run();
-}
-
-function compactAutoTasks(tasks) {
-  return (Array.isArray(tasks) ? tasks : []).slice(0, 200).map((task) => ({
-    ...task,
-    generatedVideos: (Array.isArray(task.generatedVideos) ? task.generatedVideos : []).slice(0, 80).map((video) => ({
-      fileName: String(video?.fileName || ""),
-      outputPath: String(video?.outputPath || video?.path || ""),
-      duration: video?.duration
-    })),
-    publishResults: (Array.isArray(task.publishResults) ? task.publishResults : []).slice(0, 80),
-    officialPublishRecords: undefined
-  }));
 }

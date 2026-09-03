@@ -634,11 +634,12 @@ async function syncInventory(context) {
     redditMixSettings = {};
   }
   const importMarker = path.join(context.workDir, "factory-novel-imported.json");
+  const startedAt = Date.now();
   const body = {
     workerId: context.workerId,
     retentionHours: 48,
     redditMixSettings,
-    officialPublishRecords: readOfficialPublishRecords(context.workDir)
+    officialPublishRecords: recordsChangedSince(readOfficialPublishRecords(context.workDir), context.publishRecordsSyncedAt)
   };
   if (!fs.existsSync(importMarker)) {
     body.novelContent = readLocalNovelStore(context.workDir);
@@ -647,6 +648,7 @@ async function syncInventory(context) {
     method: "POST",
     body
   });
+  if (result?.ok) context.publishRecordsSyncedAt = startedAt;
   if (!fs.existsSync(importMarker) && result?.ok) {
     fs.writeFileSync(importMarker, JSON.stringify({
       importedAt: Date.now(),
@@ -701,6 +703,19 @@ function readOfficialPublishRecords(workDir) {
   } catch {
     return [];
   }
+}
+
+// The first sync after start sends everything; later syncs only send records
+// touched since the previous successful sync (with a minute of overlap). The
+// cloud store also skips unchanged rows, so overlap costs nothing.
+export function recordsChangedSince(records, syncedAt = 0) {
+  const since = Math.max(0, Number(syncedAt) || 0);
+  if (!since) return records;
+  const cutoff = since - 60_000;
+  return (Array.isArray(records) ? records : []).filter((record) => {
+    const touched = Math.max(Number(record?.updatedAt) || 0, Number(record?.createdAt) || 0, (Number(record?.publishedAt) || 0));
+    return touched >= cutoff;
+  });
 }
 
 function compactOfficialPublishRecord(record) {

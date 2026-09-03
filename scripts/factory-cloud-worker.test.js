@@ -14,8 +14,20 @@ import {
   mirrorCloudTask,
   pushAssetGroups,
   pushAudioGroups,
-  pushDailyViewData
+  pushDailyViewData,
+  recordsChangedSince
 } from "./factory-cloud-worker.js";
+
+test("inventory sync only re-sends publish records touched since the last sync", () => {
+  const now = Date.now();
+  const records = [
+    { id: "old", createdAt: now - 3 * 3600_000, updatedAt: now - 3 * 3600_000 },
+    { id: "touched", createdAt: now - 3 * 3600_000, updatedAt: now - 30_000 },
+    { id: "fresh", createdAt: now - 10_000 }
+  ];
+  assert.deepEqual(recordsChangedSince(records, 0).map((item) => item.id), ["old", "touched", "fresh"]);
+  assert.deepEqual(recordsChangedSince(records, now - 120_000).map((item) => item.id), ["touched", "fresh"]);
+});
 
 test("factory worker requeues its own interrupted jobs on hello", () => {
   const source = fs.readFileSync(new URL("./factory-cloud-worker.js", import.meta.url), "utf8");
@@ -23,7 +35,8 @@ test("factory worker requeues its own interrupted jobs on hello", () => {
   assert.match(source, /工人重启，已把/);
   assert.match(source, /mirrorCloudTask\(context, job, outcomeLocal\)/);
   assert.match(source, /assetUsageDashboard = buildAssetUsageSnapshot/);
-  assert.match(source, /officialPublishRecords: readOfficialPublishRecords/);
+  assert.match(source, /officialPublishRecords: recordsChangedSince\(readOfficialPublishRecords\(context\.workDir\), context\.publishRecordsSyncedAt\)/);
+  assert.match(source, /if \(result\?\.ok\) context\.publishRecordsSyncedAt = startedAt;/);
   assert.match(source, /export async function pushAssetUsageDashboard/);
   assert.match(source, /export async function pushAudioGroups/);
   assert.match(source, /export async function pushAssetGroups/);
