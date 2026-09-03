@@ -83,7 +83,8 @@ const autoTaskManager = createAutoTaskManager({
   outputDir,
   publishService,
   officialPublishService: publishThroughOfficialTikTok,
-  outputRetentionHours: 48
+  outputRetentionHours: 48,
+  dailyPlannedLimit: bootConfig.autoTasks?.dailyPlannedLimit
 });
 const tiktokAnalytics = createTikTokAnalyticsService({
   workDir,

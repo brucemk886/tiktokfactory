@@ -6,6 +6,9 @@ import { createGeeLarkClient } from "./geelark-client.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 
 const DEFAULT_DAILY_LIMIT = 300;
+// Configured limits (payload or config.geelarkSafety.dailyPublishLimit) used to be
+// clamped back down to the 300 default; only guard against nonsense values now.
+const MAX_DAILY_LIMIT = 100_000;
 const DEFAULT_RETRY_DELAY_MS = 2 * 60 * 1000;
 
 export function createPublishService({ root, workDir, outputDir, readConfig, resolveConfig, clientFactory = createGeeLarkClient, outputValidator = resolveOutputPath, historyRetryDelays = [3000, 10000] }) {
@@ -27,7 +30,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
     const autoRetry = options.autoRetry !== false && payload.autoRetry !== false;
     const manual = options.manual === true;
     const config = resolveConfig ? resolveConfig(payload.geelarkProfileId) : readConfig(root);
-    const dailyLimit = clampInt(payload.dailyPublishLimit ?? config.geelarkSafety?.dailyPublishLimit, 1, DEFAULT_DAILY_LIMIT, DEFAULT_DAILY_LIMIT);
+    const dailyLimit = clampInt(payload.dailyPublishLimit ?? config.geelarkSafety?.dailyPublishLimit, 1, MAX_DAILY_LIMIT, DEFAULT_DAILY_LIMIT);
     const batchLimit = clampInt(payload.batchPublishLimit, 1, 10000, Math.max(videos.length, videos.length * 2));
     const client = clientFactory(config);
     if (!client.isConfigured()) throw new Error("GeeLark API 未配置。");

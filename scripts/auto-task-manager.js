@@ -12,9 +12,20 @@ import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 export { mergeOfficialPublishRecords };
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm"]);
-const MAX_DAILY_PLANNED_VIDEOS = 300;
+export const DEFAULT_DAILY_PLANNED_VIDEOS = 300;
+const MAX_DAILY_PLANNED_VIDEOS_CAP = 100_000;
 
-export function createAutoTaskManager({ root, workDir, outputDir, publishService, officialPublishService, outputRetentionHours = 48 }) {
+// The per-day planning cap used to be a hard-coded 300. It is now read from
+// config.autoTasks.dailyPlannedLimit (or FACTORY_DAILY_PLANNED_LIMIT) so a
+// 1000-account fleet can plan 3000/day without touching code.
+export function resolveDailyPlannedLimit(value, fallback = DEFAULT_DAILY_PLANNED_VIDEOS) {
+  const number = Math.floor(Number(value));
+  if (!Number.isFinite(number) || number < 1) return fallback;
+  return Math.min(MAX_DAILY_PLANNED_VIDEOS_CAP, number);
+}
+
+export function createAutoTaskManager({ root, workDir, outputDir, publishService, officialPublishService, outputRetentionHours = 48, dailyPlannedLimit } = {}) {
+  const MAX_DAILY_PLANNED_VIDEOS = resolveDailyPlannedLimit(process.env.FACTORY_DAILY_PLANNED_LIMIT || dailyPlannedLimit);
   const tasksDir = path.join(workDir, "scheduled-tasks");
   const generationJobsDir = path.join(workDir, "jobs");
   const retentionHours = Math.max(1, Math.min(720, Number(outputRetentionHours) || 48));
@@ -37,7 +48,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       : taskType === "schulte"
         ? normalizeSchulteGenerationPayload(payload.generation)
         : normalizeGenerationPayload(payload.generation);
-    const publish = normalizePublishPayload(payload.publish);
+    const publish = normalizePublishPayload(payload.publish, MAX_DAILY_PLANNED_VIDEOS);
     publish.geelarkProfileId = String(payload.geelarkProfileId || publish.geelarkProfileId || "default");
     publish.ownerUserId = String(payload.ownerUserId || publish.ownerUserId || "");
     const expectedVideoCount = taskType === "psychology" || taskType === "schulte"
@@ -822,7 +833,7 @@ function ensureDiskSpace(directory, minimumFreeBytes = 20 * 1024 ** 3) {
   }
 }
 
-function normalizePublishPayload(value = {}) {
+function normalizePublishPayload(value = {}, dailyPublishLimit = DEFAULT_DAILY_PLANNED_VIDEOS) {
   return {
     provider: normalizePublishProvider(value.provider),
     autoPublish: value.autoPublish !== false,
@@ -835,7 +846,7 @@ function normalizePublishPayload(value = {}) {
     videoDesc: String(value.videoDesc || ""),
     scheduleAt: Number(value.scheduleAt) || Math.floor(Date.now() / 1000),
     intervalMinutes: Math.max(0, Number(value.intervalMinutes) || 0),
-    dailyPublishLimit: MAX_DAILY_PLANNED_VIDEOS,
+    dailyPublishLimit,
     batchPublishLimit: Math.max(1, Number(value.batchPublishLimit) || 300),
     geelarkProfileId: String(value.geelarkProfileId || "default"),
     ownerUserId: String(value.ownerUserId || ""),
@@ -884,7 +895,7 @@ export function buildSchedulePlan({ videoCount, envIds, scheduleAt, intervalMinu
   })).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function validateScheduleCapacity({ plan, tasks = [], dailyLimit = MAX_DAILY_PLANNED_VIDEOS, excludeTaskId = "" }) {
+export function validateScheduleCapacity({ plan, tasks = [], dailyLimit = DEFAULT_DAILY_PLANNED_VIDEOS, excludeTaskId = "" }) {
   const completed = new Map();
   for (const task of tasks) {
     if (!task || task.id === excludeTaskId || task.status !== "done") continue;

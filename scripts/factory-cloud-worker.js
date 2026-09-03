@@ -46,8 +46,9 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
 
   fs.mkdirSync(jobsDir, { recursive: true });
   const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
-  const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial };
-  console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}`);
+  const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial, cloudSplitPublish: false };
+  const lanes = workerLanes(settings);
+  console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}  渲染并发=${lanes[0].concurrency} 发布并发=${lanes[1].concurrency}`);
   helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
   syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
   syncDailyViewData(context);
@@ -55,29 +56,77 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
     syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
     syncDailyViewData(context);
   }, settings.syncMs || DEFAULT_SYNC_MS);
-  loop(context).catch((error) => {
-    console.error("工厂云工人退出：", error);
-  });
-  return { running: true, workerId };
+  for (const lane of lanes) {
+    laneLoop(context, lane).catch((error) => {
+      console.error(`工厂云工人 ${lane.name} 通道退出：`, error);
+    });
+  }
+  return { running: true, workerId, lanes: lanes.map((lane) => ({ name: lane.name, concurrency: lane.concurrency })) };
 }
 
 async function helloWorker(context) {
   const data = await request(context, "/api/worker/hello", { method: "POST", body: { workerId: context.workerId } });
+  context.cloudSplitPublish = Boolean(data?.splitPublish);
   if (Number(data?.requeued || 0) > 0) {
     console.log(`工人重启，已把 ${data.requeued} 条中断任务重新排队。`);
   }
 }
 
-async function loop(context) {
-  while (true) {
-    try {
-      const claimed = await request(context, "/api/worker/claim", { method: "POST", body: { workerId: context.workerId } });
-      if (claimed.job) await runJob(context, claimed.job);
-      else await sleep(context.settings.pollMs || DEFAULT_POLL_MS);
-    } catch (error) {
-      console.error("拉单失败：", error.message || error);
-      await sleep(5000);
+export const PUBLISH_JOB_TYPES = ["official-publish"];
+export const DEFAULT_RENDER_CONCURRENCY = 2;
+export const DEFAULT_PUBLISH_CONCURRENCY = 1;
+
+// Render jobs (ffmpeg, TTS) and publish jobs (uploads to the desk) have very
+// different bottlenecks, so each lane claims and runs its own job types with
+// its own concurrency instead of one serial loop doing everything.
+export function workerLanes(settings = {}) {
+  return [
+    {
+      name: "render",
+      concurrency: clampConcurrency(settings.renderConcurrency, DEFAULT_RENDER_CONCURRENCY),
+      claim: { excludeTypes: PUBLISH_JOB_TYPES }
+    },
+    {
+      name: "publish",
+      concurrency: clampConcurrency(settings.publishConcurrency, DEFAULT_PUBLISH_CONCURRENCY),
+      claim: { types: PUBLISH_JOB_TYPES }
     }
+  ];
+}
+
+function clampConcurrency(value, fallback) {
+  const number = Math.floor(Number(value));
+  return Number.isFinite(number) && number > 0 ? Math.min(8, number) : fallback;
+}
+
+async function laneLoop(context, lane) {
+  const active = new Set();
+  const pollMs = context.settings.pollMs || DEFAULT_POLL_MS;
+  while (true) {
+    if (active.size >= lane.concurrency) {
+      await Promise.race(active);
+      continue;
+    }
+    let claimed = null;
+    try {
+      claimed = await request(context, "/api/worker/claim", {
+        method: "POST",
+        body: { workerId: context.workerId, lane: lane.name, ...lane.claim }
+      });
+    } catch (error) {
+      console.error(`拉单失败（${lane.name}）：`, error.message || error);
+      await sleep(5000);
+      continue;
+    }
+    if (claimed?.job) {
+      const running = runJob(context, claimed.job)
+        .catch((error) => console.error(`任务执行失败（${lane.name}）：`, error.message || error))
+        .finally(() => active.delete(running));
+      active.add(running);
+      continue;
+    }
+    // Nothing queued: wait for a poll interval, or wake early when a slot frees.
+    await (active.size ? Promise.race([...active, sleep(pollMs)]) : sleep(pollMs));
   }
 }
 
@@ -378,6 +427,17 @@ async function finishCloudJob(context, job, jobId, local, failed) {
     return;
   }
   if (shouldOfficialPublish(job.payload) && typeof context.publishOfficial === "function") {
+    if (context.cloudSplitPublish) {
+      // Free the render slot now; the cloud enqueues an official-publish job
+      // that the publish lane picks up with these videos.
+      await complete(context, jobId, {
+        error: "",
+        message: `已出片 ${videos.length} 条，已排队官方发布`,
+        result: { ...local, publishPending: true },
+        percent: 100
+      });
+      return;
+    }
     try {
       const published = await submitOfficialPublish(context, job, jobId, local);
       if (localJobCancelled(context, job, jobId)) {
@@ -1031,7 +1091,9 @@ export function loadSettings(workDir) {
     token: String(process.env.FACTORY_WORKER_TOKEN || file.token || "").trim(),
     workerId: String(process.env.FACTORY_WORKER_ID || file.workerId || "").trim(),
     pollMs: Number(process.env.FACTORY_WORKER_POLL_MS || file.pollMs || DEFAULT_POLL_MS),
-    syncMs: Number(process.env.FACTORY_WORKER_SYNC_MS || file.syncMs || DEFAULT_SYNC_MS)
+    syncMs: Number(process.env.FACTORY_WORKER_SYNC_MS || file.syncMs || DEFAULT_SYNC_MS),
+    renderConcurrency: Number(process.env.FACTORY_WORKER_RENDER_CONCURRENCY || file.renderConcurrency || DEFAULT_RENDER_CONCURRENCY),
+    publishConcurrency: Number(process.env.FACTORY_WORKER_PUBLISH_CONCURRENCY || file.publishConcurrency || DEFAULT_PUBLISH_CONCURRENCY)
   };
 }
 

@@ -433,15 +433,18 @@ async function handleWorkerApi(request, env, url, ctx) {
       lastSeenAt: stamp,
       message: requeued ? `本机工人已上线，${requeued} 条中断任务已重新排队。` : "本机工人在线，混剪任务会在 Local Factory 执行。"
     });
-    return json({ ok: true, requeued });
+    // splitPublish tells the worker it may finish a render job with
+    // publishPending and let the cloud enqueue the official-publish follow-up.
+    return json({ ok: true, requeued, splitPublish: true });
   }
 
   if (method === "POST" && pathname === "/api/worker/claim") {
     const payload = await readJson(request).catch(() => ({}));
     const workerId = String(payload.workerId || request.headers.get("x-factory-worker") || "worker").slice(0, 80);
+    const filter = claimTypeFilter(payload);
     const job = await env.DB.prepare(`
-      SELECT * FROM factory_jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1
-    `).first();
+      SELECT * FROM factory_jobs WHERE status = 'queued'${filter.sql} ORDER BY created_at LIMIT 1
+    `).bind(...filter.binds).first();
     if (!job) return json({ job: null });
     const stamp = now();
     const changed = await env.DB.prepare(`
@@ -522,6 +525,11 @@ async function handleWorkerApi(request, env, url, ctx) {
       });
     }
     const result = persistableJobResult(rawResult);
+    if (job && nextStatus === "done" && rawResult.publishPending) {
+      await enqueueOfficialPublishFollowup(env.DB, job, rawResult).catch((error) => {
+        console.error("official-publish-followup", error?.message || error);
+      });
+    }
     const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
     if (shouldWriteOfficialPublishRecords({ existingStatus: nextStatus, cancelled, records: incoming })) {
       try {
@@ -591,6 +599,74 @@ function parseJson(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+const CLAIM_TYPE_LIMIT = 20;
+
+// Workers run separate lanes (render vs. publish); each lane claims only its
+// own job types so a long upload never blocks a render slot and vice versa.
+export function claimTypeFilter(payload = {}) {
+  const clean = (list) => [...new Set((Array.isArray(list) ? list : [])
+    .map((value) => String(value || "").trim().slice(0, 40))
+    .filter(Boolean))].slice(0, CLAIM_TYPE_LIMIT);
+  const types = clean(payload.types);
+  const excludeTypes = clean(payload.excludeTypes);
+  let sql = "";
+  const binds = [];
+  if (types.length) {
+    sql += ` AND type IN (${types.map(() => "?").join(", ")})`;
+    binds.push(...types);
+  }
+  if (excludeTypes.length) {
+    sql += ` AND type NOT IN (${excludeTypes.map(() => "?").join(", ")})`;
+    binds.push(...excludeTypes);
+  }
+  return { sql, binds, types, excludeTypes };
+}
+
+export function officialPublishFollowupPayload(job, rawResult = {}) {
+  const payload = parseJson(job?.payload_json, {});
+  const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
+  const videos = (Array.isArray(rawResult.results) ? rawResult.results : []).filter((video) => String(video?.fileName || "").trim());
+  if (payload.publishOnly || !videos.length) return null;
+  if (String(publish.provider || "").trim().toLowerCase() !== "official" || publish.autoPublish === false) return null;
+  const taskId = String(payload.taskId || "").trim();
+  return {
+    taskId,
+    taskName: String(payload.taskName || job.title || ""),
+    taskType: "official-publish",
+    publishOnly: true,
+    publish,
+    generation: payload.generation && typeof payload.generation === "object" ? payload.generation : payload,
+    videos,
+    generatedVideos: videos,
+    renderJobId: String(job.id || "")
+  };
+}
+
+async function enqueueOfficialPublishFollowup(db, job, rawResult) {
+  const payload = officialPublishFollowupPayload(job, rawResult);
+  if (!payload) return null;
+  const publishJob = await enqueueJob(db, {
+    type: "official-publish",
+    title: `${payload.taskName || job.title || "任务"} · 官方发布`,
+    payload,
+    createdBy: job.created_by
+  });
+  if (payload.taskId) {
+    const task = await getAutoTask(db, payload.taskId);
+    if (task && !isDeletedTask(task)) {
+      await saveAutoTask(db, {
+        ...task,
+        generationJobId: publishJob.id,
+        status: "queued",
+        phase: "publish-queued",
+        message: `已出片 ${payload.videos.length} 条，等待本机工人提交官方发布。`,
+        updatedAt: now()
+      });
+    }
+  }
+  return publishJob;
 }
 
 export function isDeletedTask(task) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildSchedulePlan, validateScheduleCapacity } from "./auto-task-manager.js";
+import { buildSchedulePlan, resolveDailyPlannedLimit, validateScheduleCapacity } from "./auto-task-manager.js";
 
 const start = new Date(2030, 0, 1, 23, 50, 0, 0);
 const plan = buildSchedulePlan({
@@ -14,11 +14,13 @@ assert.deepEqual(plan, [
   { date: localDate(new Date(start.getTime() + 15 * 60 * 1000)), count: 5, times: [{ scheduleAt: Math.floor(start.getTime() / 1000) + 15 * 60, count: 5 }] }
 ]);
 
+// Capacity counts publishes that actually went out (done tasks with submitted
+// results), not what queued tasks merely plan to do.
 const existing = [{
   id: "existing",
-  status: "queued",
+  status: "done",
   publish: { autoPublish: true },
-  schedulePlan: [{ date: plan[0].date, count: 250 }]
+  publishResults: Array.from({ length: 250 }, () => ({ status: "submitted", scheduleAt: Math.floor(start.getTime() / 1000) }))
 }];
 
 assert.doesNotThrow(() => validateScheduleCapacity({
@@ -44,6 +46,17 @@ assert.doesNotThrow(() => validateScheduleCapacity({
   tasks: [{ ...existing[0], status: "failed" }],
   dailyLimit: 300
 }));
+
+assert.doesNotThrow(() => validateScheduleCapacity({
+  plan: [{ date: plan[0].date, count: 2750 }],
+  tasks: existing,
+  dailyLimit: 3000
+}));
+
+assert.equal(resolveDailyPlannedLimit(undefined), 300);
+assert.equal(resolveDailyPlannedLimit("3000"), 3000);
+assert.equal(resolveDailyPlannedLimit(0), 300);
+assert.equal(resolveDailyPlannedLimit(10_000_000), 100_000);
 
 console.log("auto-task schedule planning test passed");
 
