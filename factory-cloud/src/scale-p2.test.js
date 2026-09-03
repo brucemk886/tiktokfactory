@@ -9,6 +9,8 @@ import {
 } from "./publish-records-store.js";
 import { ensurePublishWebhook, ensurePublishWebhookLazily, handlePublishWebhook, verifyPublishWebhookSignature } from "./publish-webhook.js";
 import { archiveMetaDelta } from "./official-archive-store.js";
+import { handleOfficial } from "./official.js";
+import { runScheduledSteps } from "./index.js";
 
 // In-memory stand-in for the four tables the receipt path touches.
 function fakeDb() {
@@ -238,4 +240,39 @@ test("archive meta moves incrementally per push", () => {
     { account_key: "tiktok:c", video_count: 7, snapshot_date: "2026-09-03", synced_at: 210 },
   ];
   assert.deepEqual(archiveMetaDelta(rows, previous), { accountDelta: 1, videoDelta: 9, archiveDate: "2026-09-03", archiveAt: 210 });
+});
+
+test("saving desk settings keeps the webhook registration state", async () => {
+  const db = fakeDb();
+  db.kv.set("official-settings", {
+    baseUrl: "https://desk.test", apiKey: "bridge-key",
+    webhookSecret: "whsec_keep", webhookEndpointId: "ep-keep", webhookUrl: "https://factory.test/hook", webhookLastReceiptAt: 123,
+  });
+  const request = new Request("https://factory.test/api/private-tiktok/settings", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ baseUrl: "https://desk2.test/" }),
+  });
+  const response = await handleOfficial(request, { DB: db }, new URL(request.url), { user: { role: "admin" } });
+  assert.equal(response.status, 200);
+  const saved = db.kv.get("official-settings");
+  assert.equal(saved.baseUrl, "https://desk2.test");
+  assert.equal(saved.apiKey, "bridge-key");
+  assert.equal(saved.webhookSecret, "whsec_keep");
+  assert.equal(saved.webhookEndpointId, "ep-keep");
+  assert.equal(saved.webhookUrl, "https://factory.test/hook");
+  assert.equal(saved.webhookLastReceiptAt, 123);
+});
+
+test("one failing maintenance step does not stop the rest of the cron", async () => {
+  const ran = [];
+  const results = await runScheduledSteps("0 0 * * *", [
+    ["first", async () => { ran.push("first"); return { rows: 1 }; }],
+    ["boom", async () => { throw new Error("hub down"); }],
+    ["last", async () => { ran.push("last"); }],
+  ]);
+  assert.deepEqual(ran, ["first", "last"]);
+  assert.deepEqual(results.first, { rows: 1 });
+  assert.deepEqual(results.boom, { ok: false, error: "hub down" });
+  assert.deepEqual(results.last, { ok: true });
 });

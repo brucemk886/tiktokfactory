@@ -14,7 +14,7 @@ import { handleOfficial, loadGroupStore } from "./official.js";
 import { recomputeArchiveMeta } from "./official-archive-store.js";
 import { collectFactoryStorageSample, handleSignalDeskIntegration } from "./factory-storage.js";
 import { persistOpsSnapshots, pruneOfficialOpsReports } from "./ops-report-store.js";
-import { prunePublishReceipts } from "./publish-records-store.js";
+import { prunePublishReceipts, prunePublishRecords } from "./publish-records-store.js";
 import { ensurePublishWebhook } from "./publish-webhook.js";
 import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
 import { canAccessPath, homePathForUser } from "./sidebar.js";
@@ -72,30 +72,36 @@ export default {
     if (controller.cron === TRANSCRIPT_QUEUE_CRON) {
       return;
     }
-    try {
-      const store = await loadGroupStore(env.DB);
-      const persisted = await persistOpsSnapshots(env, env.DB, store);
-      await pruneOfficialOpsReports(env.DB);
-      await pruneFactoryJobs(env.DB);
-      await pruneAutoTasks(env.DB);
-      await prunePublishReceipts(env.DB);
-      await recomputeArchiveMeta(env.DB);
-      console.info(JSON.stringify({ event: "ops-report-persist", cron: controller.cron, ...persisted }));
-    } catch (error) {
-      console.error(JSON.stringify({ event: "ops-report-persist-failed", cron: controller.cron, error: String(error?.message || error) }));
-    }
-    try {
+    const results = await runScheduledSteps(controller.cron, [
+      ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
+      ["prune-ops-reports", () => pruneOfficialOpsReports(env.DB)],
+      ["prune-factory-jobs", () => pruneFactoryJobs(env.DB)],
+      ["prune-auto-tasks", () => pruneAutoTasks(env.DB)],
+      ["prune-publish-receipts", () => prunePublishReceipts(env.DB)],
+      ["prune-publish-records", () => prunePublishRecords(env.DB)],
+      ["recompute-archive-meta", () => recomputeArchiveMeta(env.DB)],
       // Self-heals the hub webhook registration (first deploy, URL change).
-      const webhook = await ensurePublishWebhook(env, env.DB);
-      if (webhook.changed) console.info(JSON.stringify({ event: "publish-webhook-registered", ...webhook }));
-    } catch (error) {
-      console.error(JSON.stringify({ event: "publish-webhook-register-failed", error: String(error?.message || error) }));
-    }
-    try {
-      await collectFactoryStorageSample(env, env.DB);
-    } catch (error) {
-      console.error(JSON.stringify({ event: "factory-storage-sample-failed", cron: controller.cron, error: String(error?.message || error) }));
-    }
+      ["publish-webhook-register", () => ensurePublishWebhook(env, env.DB)],
+      ["factory-storage-sample", () => collectFactoryStorageSample(env, env.DB)],
+    ]);
+    console.info(JSON.stringify({ event: "scheduled-steps-completed", cron: controller.cron, ...results }));
     ctx?.waitUntil?.(backfillMissingAudioDurations(env, env.DB, { limit: 40 }).catch(() => {}));
   }
 };
+
+// Each maintenance step gets its own try/catch so one failing step (for
+// example a hub outage during snapshot persistence) cannot skip the pruning
+// that keeps D1 small.
+export async function runScheduledSteps(cron, steps) {
+  const results = {};
+  for (const [name, run] of steps) {
+    try {
+      const value = await run();
+      results[name] = value && typeof value === "object" ? value : { ok: true };
+    } catch (error) {
+      results[name] = { ok: false, error: String(error?.message || error) };
+      console.error(JSON.stringify({ event: "scheduled-step-failed", cron, step: name, error: String(error?.message || error) }));
+    }
+  }
+  return results;
+}

@@ -54,7 +54,9 @@ export async function handleOfficial(request, env, url, session) {
     if (method === "POST") {
       const payload = await readJson(request);
       const current = await kvGet(db, "official-settings", {});
+      // Spread the stored settings so webhook registration state survives a save.
       const next = {
+        ...current,
         baseUrl: normalizeBase(payload.baseUrl || current.baseUrl || env.SIGNAL_DESK_BASE_URL || "https://tiktokaitool.com"),
         apiKey: String(payload.apiKey || "").trim() || current.apiKey || "",
         updatedAt: Date.now()

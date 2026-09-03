@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { compactAutoTask, getAutoTask, listAutoTasks, saveAutoTask, saveAutoTasks } from "./auto-tasks-store.js";
-import { listPublishRecords, mergeAndStorePublishRecords } from "./publish-records-store.js";
+import { listPublishRecords, mergeAndStorePublishRecords, prunePublishRecords } from "./publish-records-store.js";
 
 // Minimal D1 stand-in that records how many rows each call writes.
 function memoryDb() {
   const kv = new Map();
   const records = new Map();
   const tasks = new Map();
-  const stats = { writes: 0, deletes: 0 };
+  const stats = { writes: 0, deletes: 0, counts: 0 };
   const statement = (sql) => ({
     bind(...binds) {
       return { ...statement(sql), binds };
@@ -21,7 +21,10 @@ function memoryDb() {
         const value = kv.get(binds[0]);
         return value === undefined ? null : { value_json: JSON.stringify(value) };
       }
-      if (sql.includes("COUNT(*) AS n FROM factory_publish_records")) return { n: records.size };
+      if (sql.includes("COUNT(*) AS n FROM factory_publish_records")) {
+        stats.counts += 1;
+        return { n: records.size };
+      }
       if (sql.includes("COUNT(*) AS n FROM factory_auto_tasks")) return { n: tasks.size };
       if (sql.includes("FROM factory_auto_tasks WHERE id = ?")) {
         const row = tasks.get(binds[0]);
@@ -63,9 +66,8 @@ function memoryDb() {
         records.set(binds[0], { created_at: binds[1], value: JSON.parse(binds[2]) });
         return { meta: { changes: 1 } };
       }
-      if (sql.includes("DELETE FROM factory_publish_records")) {
-        const keep = [...records.entries()].sort((a, b) => b[1].created_at - a[1].created_at).slice(0, binds[0]).map(([id]) => id);
-        const drop = [...records.keys()].filter((id) => !keep.includes(id));
+      if (sql.includes("DELETE FROM factory_publish_records WHERE created_at < ?")) {
+        const drop = [...records.entries()].filter(([, row]) => row.created_at < binds[0]).map(([id]) => id);
         for (const id of drop) records.delete(id);
         stats.deletes += drop.length;
         return { meta: { changes: drop.length } };
@@ -119,17 +121,19 @@ test("re-sending the same publish records writes nothing", async () => {
   assert.equal(a.batchId, "11111111-1111-4111-8111-111111111111");
 });
 
-test("publish record trimming only runs when new rows were inserted", async () => {
+test("worker syncs never count or trim the publish records table; retention prunes by age", async () => {
   const db = memoryDb();
   const now = Date.now();
   await mergeAndStorePublishRecords(db, [
-    { id: "old", createdAt: now - 5 * 86400000, status: "published" },
+    { id: "ancient", createdAt: now - 120 * 86400000, status: "published" },
     { id: "mid", createdAt: now - 2 * 86400000, status: "published" }
   ]);
-  await mergeAndStorePublishRecords(db, [{ id: "mid", createdAt: now - 2 * 86400000, status: "published", note: "touched" }], { limit: 2 });
+  const result = await mergeAndStorePublishRecords(db, [{ id: "new", createdAt: now, status: "submitted" }]);
+  assert.equal(result.trimmed, 0);
   assert.equal(db.stats.deletes, 0);
-  const result = await mergeAndStorePublishRecords(db, [{ id: "new", createdAt: now, status: "submitted" }], { limit: 2 });
-  assert.equal(result.trimmed, 1);
+  assert.equal(db.stats.counts, 0);
+  const pruned = await prunePublishRecords(db, now);
+  assert.equal(pruned.deletedRecords, 1);
   const kept = (await listPublishRecords(db, { from: 0, limit: 10 })).map((item) => item.id).sort();
   assert.deepEqual(kept, ["mid", "new"]);
 });

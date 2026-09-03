@@ -114,11 +114,11 @@
 
 ### 3.4 发布记录与回执
 
-- `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行，新建才裁剪到 `STORE_LIMIT=3000`。
+- `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行。表按时间保留 90 天（`prunePublishRecords`，每晚 cron），不按条数裁剪。
 - `factory_publish_record_refs`：`task:{remoteTaskId}`、`ref:{externalRef}` → record id。
 - `factory_publish_receipts`：每条 webhook 一行；找不到记录（回执先于本机上传）保持 `applied_at=0`，下次 sync 合并时补上。
 - `keepReceiptOutcome`：已有回执的记录，本机上传的过期状态不会覆盖云端结论。
-- 回执 30 天后清理（同时清 30 天前的 refs）。
+- 回执 30 天后清理；refs 跟随记录一起在 90 天时删除。
 
 ### 3.5 webhook 注册（三条路都会触发）
 
@@ -139,8 +139,8 @@
 
 ### 3.7 cron
 
-`wrangler.jsonc`：`0 0 * * *` 与 `0 16 * * *`（UTC，即北京 08:00 / 00:00），两档跑同一段：
-`persistOpsSnapshots → pruneOfficialOpsReports(90d) → pruneFactoryJobs(30d) → pruneAutoTasks → prunePublishReceipts(30d) → recomputeArchiveMeta`（一个 try），然后 `ensurePublishWebhook`（独立 try），`collectFactoryStorageSample`（独立 try），`backfillMissingAudioDurations` 走 waitUntil。
+`wrangler.jsonc`：`0 0 * * *` 与 `0 16 * * *`（UTC，即北京 08:00 / 00:00），两档跑同一段，每步独立 try（`runScheduledSteps`）：
+`persistOpsSnapshots → pruneOfficialOpsReports(90d) → pruneFactoryJobs(30d) → pruneAutoTasks → prunePublishReceipts(30d) → prunePublishRecords(90d) → recomputeArchiveMeta → ensurePublishWebhook → collectFactoryStorageSample`，`backfillMissingAudioDurations` 走 waitUntil。
 
 ---
 
@@ -189,7 +189,7 @@
 
 ### 4.6 cron（`worker/index.ts`）
 
-配置只有 `* * * * *` 和 `0 23 * * *`，按 UTC 分钟细分：
+配置只有 `* * * * *` 和 `0 23 * * *`，按 UTC 分钟细分；每个 job 都包在 `runScheduledJob` 里，失败只记日志不影响同一 tick 的其它 job：
 
 | 频率 | 任务 |
 |---|---|
@@ -233,7 +233,7 @@
 | 中台提交 | 并发 4，限流 16 rps | 够 |
 | 中台日配额 | max(5000, 号数×10) | 够 |
 | 补拉 | 40 账号 / 5 分钟 = 11520/日 | 够（只处理缺 item_id 的账号） |
-| 工厂记录表 | 3000 条上限 | **一天就满**，需要抬 `STORE_LIMIT` 或按日归档 |
+| 工厂记录表 | 按 90 天保留，约 27 万行 | 够；D1 单表无硬顶，list 读取仍限 800 |
 | 工厂同步写入 | 只写变化行 | 够 |
 | D1 单行 | auto-task 一行一任务，各截 80 | 够 |
 
@@ -243,19 +243,19 @@
 
 按影响排序。标 ★ 的直接影响今天上线的回执链路。
 
-### 必须尽快修
+### 已修（2026-09-03 下午上线）
 
-1. ★ **工厂设置页保存会抹掉 webhook 密钥。** `factory-cloud/src/official.js:55-62` `POST /api/private-tiktok/settings` 用 `{baseUrl, apiKey, updatedAt}` 整包覆盖 `official-settings`，`webhookSecret / webhookEndpointId / webhookUrl / webhookLastReceiptAt` 全丢。之后回执统一 503，直到 1 小时后 lazy 注册或夜间 cron 重注册；期间的回执要靠中台重投（最多 10 次、6 小时）才能补回。修法：`{...current, ...}`。
-2. **中台 cron 链没有逐项 try/catch。** `worker/index.ts:70-103` 只有三个 job 包了 `runScheduledJob`，`enqueueDueTikTokPublishTasks` 一抛错，同一分钟的 webhook 入队、恢复、补拉全跳过；每日维护里 `cleanupExpiredOperationalData` 抛错则归档清理和存储采样不跑。
-3. **工厂 cron 六个维护动作绑在一个 try 里。** `factory-cloud/src/index.js:75-86`，`persistOpsSnapshots` 失败则后面 prune 全不跑。
-4. **本机运行的代码目录不干净。** `D:\cursor\localfactory` 在分支 `feat/psychology-mid-video-template`，工作区有 31 个未提交改动（内容基本等于 main + 未提交的 tetris 模板）。工人是从这个目录起的。要么把 tetris 工作提交并 rebase 到 main，要么让守护改从一个干净的 main checkout 起服务，否则下次修 bug 无法确定线上跑的是什么。
-5. **工厂发布记录 `STORE_LIMIT=3000`**（`publish-records-store.js`）。扩到 3000 条/日后一天就开始裁剪，早上发的记录晚上可能被裁掉，回执也就无处可挂。
+1. ★ **工厂设置页保存会抹掉 webhook 密钥。** `POST /api/private-tiktok/settings` 原来用 `{baseUrl, apiKey, updatedAt}` 整包覆盖 `official-settings`。现在展开原设置再覆盖，webhook 字段保留。
+2. **中台 cron 链没有逐项 try/catch。** `worker/index.ts` 现在每个 job 都包在 `runScheduledJob` 里，任一失败只记 `scheduled-job-failed`，其余照跑；测试锁定。
+3. **工厂 cron 六个维护动作绑在一个 try 里。** 改为 `runScheduledSteps`，每步独立 try，日志 `scheduled-steps-completed` 带每步结果。
+4. **本机运行目录不干净。** `D:\cursor\localfactory` 已丢弃未提交的 tetris 模板工作，切回干净的 `main`，工人从 main 起。
+5. **工厂发布记录按条数裁剪（3000）。** 改为按时间保留：`prunePublishRecords` 每晚删 90 天前的记录及其 refs；工人同步不再对表做 `COUNT(*)`（原来每次同步和每次页面加载都全表计数）。`STORE_LIMIT=5000` 只作为单次列表读取上限。
+8. refs 不再按 30 天删除，跟记录同寿命。
 
 ### 应该修
 
 6. 中台保留策略漏了 `status_timeout` / `rejected`（`lib/retention-policy.ts:5`），这些任务永久留在 D1。
 7. 中台 webhook 端点不会因持续失败停用，坏 URL 会一直占 cron 和告警；补一个连续 exhausted 计数 → `active=0`。
-8. 工厂 `prunePublishReceipts` 顺手删 30 天前的 refs，但记录本身可留更久；超过 30 天的记录再收到回执只能靠 2 天窗口的 LIKE 兜底。回执一般 24h 内到，风险低，但 refs 应跟记录一起删而不是按时间。
 9. 本机排产容量只算已完成任务，多个排队任务可把同一天超卖。
 10. 本机 `unhandledRejection` 不退出，异步链断了进程还活着，守护探不出来。
 11. 本机 `scheduleDateKey` 用系统时区、中台补拉用 Asia/Shanghai；本机时区变了会日切错位。

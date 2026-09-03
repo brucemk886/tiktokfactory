@@ -5,7 +5,11 @@ const TABLE = "factory_publish_records";
 const REFS_TABLE = "factory_publish_record_refs";
 const RECEIPTS_TABLE = "factory_publish_receipts";
 const KV_KEY = "official-publish-records";
-const STORE_LIMIT = 3000;
+// Upper bound for a single list read and for the legacy KV blob fallback. The
+// table itself is bounded by age (see prunePublishRecords), not by row count,
+// so a 3000-post day no longer pushes the morning's records out by evening.
+const STORE_LIMIT = 5000;
+export const PUBLISH_RECORD_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 // D1 caps bound parameters per statement at 100.
 const ID_CHUNK = 90;
 const WRITE_CHUNK = 40;
@@ -61,15 +65,24 @@ export function publishRecordRefs(record) {
   return [taskRef(record?.remoteTaskId), externalRefKey(record?.externalRef)].filter(Boolean);
 }
 
+// Once the table is known to hold rows the legacy KV migration is over for the
+// life of this isolate; before that a LIMIT 1 probe replaces the old COUNT(*),
+// which read the whole table on every worker sync and page load.
+let publishTablePopulated = false;
 export async function migratePublishRecordsFromKv(db) {
+  if (publishTablePopulated) return 0;
   if (!await hasPublishTable(db)) return 0;
-  const count = await db.prepare(`SELECT COUNT(*) AS n FROM ${TABLE}`).first();
-  if (Number(count?.n || 0) > 0) return 0;
+  const any = await db.prepare(`SELECT 1 AS present FROM ${TABLE} LIMIT 1`).first();
+  if (any) {
+    publishTablePopulated = true;
+    return 0;
+  }
   const stored = await kvGet(db, KV_KEY, []);
   const records = mergeOfficialPublishRecords([], stored).slice(0, STORE_LIMIT);
   if (!records.length) return 0;
   await upsertPublishRecordRows(db, records);
   await kvSet(db, KV_KEY, []);
+  publishTablePopulated = true;
   return records.length;
 }
 
@@ -115,15 +128,22 @@ async function loadPublishRecordRowsByIds(db, ids = []) {
   return rows;
 }
 
-async function trimPublishRecords(db, limit = STORE_LIMIT) {
-  const cap = Math.max(1, Math.min(Number(limit) || STORE_LIMIT, STORE_LIMIT));
-  const count = await db.prepare(`SELECT COUNT(*) AS n FROM ${TABLE}`).first();
-  if (Number(count?.n || 0) <= cap) return 0;
-  const result = await db.prepare(`
-    DELETE FROM ${TABLE}
-    WHERE id IN (SELECT id FROM ${TABLE} ORDER BY created_at DESC LIMIT -1 OFFSET ?)
-  `).bind(cap).run();
-  return Number(result?.meta?.changes || 0);
+// Nightly: drop records past retention together with their ref index rows.
+// Runs off the created_at index, so it costs rows proportional to what it
+// deletes rather than a COUNT(*) over the whole table on every worker sync.
+export async function prunePublishRecords(db, now = Date.now(), retentionMs = PUBLISH_RECORD_RETENTION_MS) {
+  if (!await hasPublishTable(db)) return { deletedRecords: 0, deletedRefs: 0 };
+  const cutoff = now - retentionMs;
+  let deletedRefs = 0;
+  if (await hasReceiptTables(db)) {
+    const refs = await db.prepare(`
+      DELETE FROM ${REFS_TABLE}
+      WHERE record_id IN (SELECT id FROM ${TABLE} WHERE created_at < ?)
+    `).bind(cutoff).run();
+    deletedRefs = Number(refs?.meta?.changes || 0);
+  }
+  const records = await db.prepare(`DELETE FROM ${TABLE} WHERE created_at < ?`).bind(cutoff).run();
+  return { deletedRecords: Number(records?.meta?.changes || 0), deletedRefs };
 }
 
 export async function listPublishRecords(db, { from = 0, limit = 800 } = {}) {
@@ -182,8 +202,7 @@ export async function mergeAndStorePublishRecords(db, incoming = [], { limit = S
   }
   if (changed.length) await upsertPublishRecordRows(db, changed);
   if (appliedReceiptRefs.length) await markReceiptsApplied(db, appliedReceiptRefs);
-  const trimmed = inserted ? await trimPublishRecords(db, limit) : 0;
-  return { received: items.length, written: changed.length, inserted, trimmed, receiptsApplied: appliedReceiptRefs.length };
+  return { received: items.length, written: changed.length, inserted, trimmed: 0, receiptsApplied: appliedReceiptRefs.length };
 }
 
 const RECEIPT_OUTCOME_FIELDS = ["status", "videoId", "shareLink", "videoUrl", "note", "publishError", "officialRemoteStatus", "receiptAt", "username", "accountUsername"];
@@ -354,14 +373,13 @@ export async function publishReceiptStats(db, now = Date.now()) {
   };
 }
 
+// Refs are not aged out here: they live exactly as long as their record (see
+// prunePublishRecords), so a late receipt for an old record still resolves.
 export async function prunePublishReceipts(db, now = Date.now()) {
-  if (!await hasReceiptTables(db)) return { deletedReceipts: 0, deletedRefs: 0 };
+  if (!await hasReceiptTables(db)) return { deletedReceipts: 0 };
   const cutoff = now - RECEIPT_RETENTION_MS;
-  const [receipts, refs] = await db.batch([
-    db.prepare(`DELETE FROM ${RECEIPTS_TABLE} WHERE received_at < ?`).bind(cutoff),
-    db.prepare(`DELETE FROM ${REFS_TABLE} WHERE created_at > 0 AND created_at < ?`).bind(cutoff),
-  ]);
-  return { deletedReceipts: Number(receipts?.meta?.changes || 0), deletedRefs: Number(refs?.meta?.changes || 0) };
+  const receipts = await db.prepare(`DELETE FROM ${RECEIPTS_TABLE} WHERE received_at < ?`).bind(cutoff).run();
+  return { deletedReceipts: Number(receipts?.meta?.changes || 0) };
 }
 
 function sameRecord(left, right) {
