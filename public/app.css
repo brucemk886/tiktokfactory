@@ -804,7 +804,8 @@ video {
   content: "收起";
 }
 
-.official-account-list {
+.official-account-list,
+.geelark-phone-list {
   display: grid;
   gap: 10px;
   max-height: 220px;
@@ -812,7 +813,8 @@ video {
   padding-right: 4px;
 }
 
-.official-account-item {
+.official-account-item,
+.geelark-phone-item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -823,13 +825,16 @@ video {
   padding: 10px 12px;
 }
 
-.official-account-item input {
+.official-account-item input,
+.geelark-phone-item input {
   width: 18px;
   height: 18px;
 }
 
 .official-account-item strong,
-.official-account-item small {
+.official-account-item small,
+.geelark-phone-item strong,
+.geelark-phone-item small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -950,7 +955,8 @@ video {
   .task-four-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-.official-account-item strong {
+.official-account-item strong,
+.geelark-phone-item strong {
   color: #f6f6f2;
   font-size: 14px;
   display: inline-flex;
@@ -959,6 +965,7 @@ video {
 }
 
 .official-account-item .risk-pill,
+.geelark-phone-item .risk-pill,
 .risk-pill {
   display: inline-block;
   padding: 2px 6px;
@@ -970,7 +977,8 @@ video {
   font-style: normal;
 }
 
-.official-account-item small {
+.official-account-item small,
+.geelark-phone-item small {
   margin-top: 3px;
   color: #a9a9ad;
   font-size: 12px;
