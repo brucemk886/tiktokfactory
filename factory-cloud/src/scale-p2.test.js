@@ -7,7 +7,7 @@ import {
   receiptFromWebhookPayload,
   resetPublishReceiptTableCache,
 } from "./publish-records-store.js";
-import { ensurePublishWebhook, handlePublishWebhook, verifyPublishWebhookSignature } from "./publish-webhook.js";
+import { ensurePublishWebhook, ensurePublishWebhookLazily, handlePublishWebhook, verifyPublishWebhookSignature } from "./publish-webhook.js";
 import { archiveMetaDelta } from "./official-archive-store.js";
 
 // In-memory stand-in for the four tables the receipt path touches.
@@ -192,6 +192,39 @@ test("factory registers itself with the hub and keeps the secret in settings", a
     const second = await ensurePublishWebhook({ FACTORY_PUBLIC_BASE_URL: "https://factory.test" }, db);
     assert.equal(second.changed, false);
     assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("lazy registration backs off for an hour after a hub failure and stops once registered", async () => {
+  const db = fakeDb();
+  db.kv.set("official-settings", { baseUrl: "https://desk.test", apiKey: "bridge-key" });
+  let calls = 0;
+  let respondOk = false;
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (!respondOk) return new Response(JSON.stringify({ error: "down" }), { status: 503, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ id: "ep-9", secret: "whsec_lazy" }), { status: 201, headers: { "content-type": "application/json" } });
+  };
+  const env = { FACTORY_PUBLIC_BASE_URL: "https://factory.test" };
+  try {
+    const t0 = Date.now();
+    const failed = await ensurePublishWebhookLazily(env, db, { now: t0 });
+    assert.equal(failed.ok, false);
+    assert.equal(calls, 1);
+    const backoff = await ensurePublishWebhookLazily(env, db, { now: t0 + 5 * 60_000 });
+    assert.equal(backoff.reason, "backoff");
+    assert.equal(calls, 1);
+    respondOk = true;
+    const ok = await ensurePublishWebhookLazily(env, db, { now: t0 + 61 * 60_000 });
+    assert.equal(ok.registered, true);
+    assert.equal(calls, 2);
+    assert.equal(db.kv.get("official-settings").webhookSecret, "whsec_lazy");
+    const settled = await ensurePublishWebhookLazily(env, db, { now: t0 + 62 * 60_000 });
+    assert.equal(settled.changed, false);
+    assert.equal(calls, 2);
   } finally {
     globalThis.fetch = original;
   }

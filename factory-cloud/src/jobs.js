@@ -6,6 +6,7 @@ import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingA
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeAndStorePublishRecords } from "./publish-records-store.js";
+import { ensurePublishWebhookLazily } from "./publish-webhook.js";
 import { getAutoTask, saveAutoTask, saveAutoTasks } from "./auto-tasks-store.js";
 
 const FFMPEG_START_ROUTES = [
@@ -331,6 +332,9 @@ async function handleWorkerApi(request, env, url, ctx) {
     }
     if (Array.isArray(body.officialPublishRecords)) {
       await mergeAndStorePublishRecords(env.DB, body.officialPublishRecords);
+      const registration = ensurePublishWebhookLazily(env, env.DB, { requestUrl: request.url });
+      if (ctx?.waitUntil) ctx.waitUntil(registration);
+      else await registration;
     }
     let archive = null;
     if (body.refreshOfficialArchive) {

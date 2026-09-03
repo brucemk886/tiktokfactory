@@ -56,6 +56,27 @@ export async function ensurePublishWebhook(env, db, { force = false, requestUrl 
   return { ok: true, registered: true, url, endpointId: String(result.id), changed: true, replaced: Number(result.replaced || 0) };
 }
 
+// Failed registration attempts back off this long before the next lazy retry.
+const LAZY_REGISTER_RETRY_MS = 60 * 60 * 1000;
+
+// Called from hot worker paths (record uploads). Cheap when already registered;
+// otherwise attempts registration at most once per hour so a hub outage never
+// makes the worker sync slower or noisier.
+export async function ensurePublishWebhookLazily(env, db, { requestUrl = "", now = Date.now() } = {}) {
+  const settings = await kvGet(db, SETTINGS_KEY, {});
+  if (settings.webhookSecret && settings.webhookEndpointId) return { ok: true, registered: true, changed: false };
+  if (now - (Number(settings.webhookLastAttemptAt) || 0) < LAZY_REGISTER_RETRY_MS) {
+    return { ok: false, registered: false, reason: "backoff" };
+  }
+  await kvSet(db, SETTINGS_KEY, { ...settings, webhookLastAttemptAt: now });
+  try {
+    return await ensurePublishWebhook(env, db, { requestUrl });
+  } catch (error) {
+    console.warn("publish webhook lazy registration failed", error?.message || error);
+    return { ok: false, registered: false, reason: String(error?.message || error) };
+  }
+}
+
 export async function verifyPublishWebhookSignature(request, rawBody, secret, now = Date.now()) {
   const timestamp = String(request.headers.get("x-signal-timestamp") || "").trim();
   const signature = String(request.headers.get("x-signal-signature") || "").trim();
