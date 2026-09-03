@@ -16,7 +16,6 @@ import {
 } from "./asset-library.js";
 import { findAudioInLibrary, listAudioLibraryFiles, normalizeAudioDirs } from "./audio-library-groups.js";
 import { resolveStorageDirs } from "./storage-paths.js";
-import { remapPayloadPaths } from "./path-aliases.js";
 import { planMixAudioOrder } from "./mix-audio-pick.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
@@ -44,10 +43,8 @@ main().catch((error) => {
 });
 
 async function main() {
+  const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
   const config = readJson(path.join(root, "config.json"));
-  // Payloads carry the primary machine's absolute paths; on a secondary worker
-  // config.pathAliases points them at the primary's shares.
-  const payload = remapPayloadPaths(JSON.parse(fs.readFileSync(payloadPath, "utf8")), config.pathAliases);
   const audios = planMixAudioOrder(resolveMixAudios(payload));
   const saveDir = resolveSaveDir(payload.saveDir);
   const backgroundMusicFiles = resolveBackgroundMusicFiles(payload.backgroundMusicDir);
@@ -427,10 +424,7 @@ function normalizeAudioItems(value) {
     .map((item) => ({
       id: String(item?.id || "").trim(),
       scriptId: String(item?.scriptId || "").trim(),
-      // targetAudioPath is where the generating machine copied the mp3 under the
-      // audio library root; its basename is what a second worker can find in a
-      // shared/mirrored library even without that machine's index.
-      path: String(item?.path || item?.file || item?.targetAudioPath || "").trim(),
+      path: String(item?.path || item?.file || "").trim(),
       fileName: String(item?.fileName || "").trim(),
       novelId: String(item?.novelId || "").trim(),
       platform: String(item?.platform || item?.novelPlatform || "").trim(),
@@ -467,7 +461,7 @@ function resolveMixAudios(payload) {
       record?.fileName ? path.join(filesDir, record.fileName) : "",
       record?.targetAudioPath,
       item.fileName ? path.join(filesDir, item.fileName) : "",
-      findAudioInLibrary([item.path, record?.targetAudioPath, item.fileName, record?.fileName, item.id], bootConfig, libraryFiles)
+      findAudioInLibrary([item.path, item.fileName, record?.fileName, item.id], bootConfig, libraryFiles)
     ].find((file) => file && fs.existsSync(file));
     if (found) fromItems.push(found);
     else missing.push(item.title || item.fileName || item.id);
