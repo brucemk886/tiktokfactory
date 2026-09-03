@@ -5,7 +5,7 @@ alwaysApply: true
 
 # 工厂发布
 
-发 `factory.tiktokaitool.com` 时，在 `factory-cloud` 目录执行：
+真正代码在 `D:\cursor\localfactory`（分支 `main`）。发 `factory.tiktokaitool.com` 时，在该仓库的 `factory-cloud` 目录执行：
 
 ```bash
 npm run deploy
@@ -13,4 +13,4 @@ npm run deploy
 
 不要直接跑 `npx wrangler deploy` 或 `wrangler deploy`。`npm run deploy` 会先核对 GitHub `main`：本地落后或分叉就拒绝发布。
 
-中台 `tiktokaitool.com` 继续在独立仓库 `D:\cursor\tiktokaitool` 里运行 `npm run cloudflare:deploy`。
+中台 `tiktokaitool.com` 的代码在 `D:\cursor\tiktokaitool`，用 `npm run cloudflare:deploy` 发布。

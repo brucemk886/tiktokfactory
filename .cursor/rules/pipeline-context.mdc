@@ -1,0 +1,39 @@
+---
+description: 发布链路的代码位置、上线方式、本机工人、已知遗留问题（2026-09-03 复查结论）
+alwaysApply: true
+---
+
+# 链路上下文
+
+先读 `D:\cursor\localfactory\docs\PIPELINE.md`，那是整条链路的权威文档（本机工人 → 工厂云 → 中台 → TikTok → webhook 回执），含容量对照、遗留问题、排障速查。改完链路相关代码要同步更新它。
+
+## 代码在哪
+
+| 段 | 目录 | 分支 | 线上 |
+|---|---|---|---|
+| 本机工人 + 工厂云 | `D:\cursor\localfactory`（`factory-cloud/` 是云端） | `main` | `factory.tiktokaitool.com` |
+| 中台 Signal Desk | `D:\cursor\tiktokaitool` | `main` | `tiktokaitool.com` |
+
+`D:\cursor\localfactory-worktrees\psychology-release` 是游离 HEAD 的旧 worktree，不要在里面改。`C:\Users\111\Documents\Codex\...` 不是 git 仓库，别切过去。Cursor 工作区 `D:\cursor\project\localfactory` 只放规则，没有代码。
+
+## 上线
+
+- 工厂：`D:\cursor\localfactory\factory-cloud` 里 `npm run deploy`（先核对 GitHub main，脏树或落后会拒绝）。
+- 中台：`D:\cursor\tiktokaitool` 里 `npm run cloudflare:deploy`（同样核对 main）。
+- 两边都是：改 → 跑测试（工厂 `npm test` 171 条，中台 `npm test` 65 条）→ commit → push main → deploy。
+- 若 `git status` 显示改动但 `git diff --numstat` 为空，是 CRLF 差异，`git checkout -- <文件>` 还原即可。
+
+## 本机工人
+
+- 守护 `scripts/factory-watchdog.js`（计划任务 `LocalFactoryWatchdog`）每 10s 探活 3010 端口，进程死了自动拉起 `scripts/server.js`。
+- 重启工人：`Stop-Process` 掉 `server.js` 的 node 进程，守护 10s 内拉起新进程；状态看 `D:\localfactory-data\work\factory-watchdog.json`。
+- 数据目录 `D:\localfactory-data\work`；工人配置 `factory-cloud-worker.json`，`workerId=windows-local` 不要改。
+- 日规划上限 `FACTORY_DAILY_PLANNED_LIMIT` 未配，仍是 300；扩到 1000 号前要抬。
+
+## 2026-09-03 已上线的优化
+
+发布记录只写变化行、auto-task 一行一任务、补拉只处理缺 item_id 的账号、渲染/发布双通道、中台限流改 Durable Object、needs_review 人工面 + 7 天自动关闭、每小时阈值告警邮件（收件人回落 `ADMIN_EMAILS`）、工厂注册中台 webhook 收发布回执、cron 每步独立 try、发布记录按 90 天保留。
+
+## 还没修（见 PIPELINE.md 第 6 节）
+
+中台保留策略漏 `status_timeout/rejected`；webhook 端点失败不停用；本机排产容量不算排队任务；若干无界查询（工厂 hello/归档/分组、中台补拉 GROUP BY、`/api/v1/accounts` 每页跑 30 天 spam_risk 聚合）；工厂多数官方接口只查 session 不查 admin；`config.example.json` 缺新配置项。
