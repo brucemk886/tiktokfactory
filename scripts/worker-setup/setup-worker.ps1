@@ -1,31 +1,37 @@
 ﻿<#
 .SYNOPSIS
-  One-shot setup of a second Local Factory worker machine.
+  One-shot setup of a Local Factory worker machine from scratch.
 
 .DESCRIPTION
-  Installs Node/Git/ffmpeg when missing (winget), clones the repo, applies the
-  seed exported on the primary (config.json, factory token, settings), indexes
-  this machine's own asset library, pushes its asset/audio catalogs to the
-  factory, installs the watchdog scheduled task and checks the worker is up.
+  Nothing is copied from any other machine. The script installs Node/Git/ffmpeg
+  when missing (winget), clones the repo, writes this machine's config from the
+  repo's config.example.json plus the shared service keys the factory cloud
+  already holds (fetched with the factory worker token), indexes this
+  machine's own asset library, pushes its asset/audio catalogs to the factory,
+  installs the watchdog scheduled task and checks the worker is up.
 
-  The machine does NOT need to reach the primary: it only talks to
-  factory.tiktokaitool.com. Assets and audio live on this machine's own disks.
+  The only secret you need is the factory's WORKER_TOKEN (Cloudflare secret of
+  the tiktok-factory worker). It is the factory's credential, shared by every
+  worker machine.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File setup-worker.ps1 -Seed D:\worker-seed.json `
+  powershell -ExecutionPolicy Bypass -File setup-worker.ps1 -Token <WORKER_TOKEN> `
     -WorkerId worker-2 -Label "老家那台" -AssetRoot E:\视频素材 -AudioRoot E:\音频目录
 #>
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory = $true)][string]$Seed,
+  [Parameter(Mandatory = $true)][string]$Token,
   [Parameter(Mandatory = $true)][string]$WorkerId,
   [Parameter(Mandatory = $true)][string]$AssetRoot,
   [Parameter(Mandatory = $true)][string]$AudioRoot,
   [string]$Label = "",
+  [string]$FactoryUrl = "https://factory.tiktokaitool.com",
   [string]$RepoDir = "D:\cursor\localfactory",
   [string]$DataDir = "D:\localfactory-data",
   [string]$RepoUrl = "https://github.com/brucemk886/tiktokfactory.git",
   [int]$RenderConcurrency = 2,
+  [string]$ElevenLabsKey = "",
+  [string]$DeskApiKey = "",
   [switch]$SkipInstallWatchdog
 )
 
@@ -47,7 +53,6 @@ function Ensure-Tool($command, $wingetId) {
   }
 }
 
-if (-not (Test-Path $Seed)) { throw "Seed file not found: $Seed" }
 if (-not (Test-Path $AssetRoot)) { throw "Asset root not found: $AssetRoot" }
 if (-not (Test-Path $AudioRoot)) { throw "Audio root not found: $AudioRoot" }
 
@@ -70,15 +75,19 @@ Push-Location $RepoDir
 try {
   npm install --no-audit --no-fund
 
-  Step "Applying seed"
-  $applyArgs = @("scripts/worker-setup/apply-seed.mjs", "--seed", $Seed, "--worker-id", $WorkerId,
-    "--asset-root", $AssetRoot, "--audio-root", $AudioRoot, "--data-dir", $DataDir,
+  Step "Writing config.json and worker settings (shared keys fetched from $FactoryUrl)"
+  $bootArgs = @("scripts/worker-setup/bootstrap-worker.mjs", "--token", $Token, "--worker-id", $WorkerId,
+    "--factory-url", $FactoryUrl, "--asset-root", $AssetRoot, "--audio-root", $AudioRoot, "--data-dir", $DataDir,
     "--render-concurrency", "$RenderConcurrency")
-  if ($Label) { $applyArgs += @("--label", $Label) }
-  node @applyArgs
+  if ($Label) { $bootArgs += @("--label", $Label) }
+  if ($ElevenLabsKey) { $bootArgs += @("--elevenlabs-key", $ElevenLabsKey) }
+  if ($DeskApiKey) { $bootArgs += @("--desk-api-key", $DeskApiKey) }
+  node @bootArgs
+  if ($LASTEXITCODE -ne 0) { throw "bootstrap-worker failed (exit $LASTEXITCODE)" }
 
-  Step "Indexing $AssetRoot and pushing catalogs to the factory (this probes every video, can take a while)"
+  Step "Indexing $AssetRoot and pushing catalogs to the factory (probes every video, can take a while)"
   node scripts/worker-setup/index-and-push.mjs
+  if ($LASTEXITCODE -ne 0) { throw "index-and-push failed (exit $LASTEXITCODE)" }
 
   if (-not $SkipInstallWatchdog) {
     Step "Installing watchdog scheduled task (LocalFactoryWatchdog)"

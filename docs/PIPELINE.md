@@ -102,7 +102,7 @@
 - **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道只会拿到自己渲染的；一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
 - **素材组 / 音频文件夹按机器合并**：`/api/worker/sync` 里的 `assetGroups` / `audioGroups` 会打上 `workerId`，`mergeWorkerCatalog` 只替换同一机器的旧条目（以及 id 相同的未打标旧条目），不同机器的并存；`/api/asset-groups`、`/api/audio-groups` 返回带 `workerId`，建任务页选了机器就只显示那台的。同名素材组在两台机器上是两条不同记录，各自用各自的路径。
 - **任务 payload 只带 `assetGroupId` 和音频 id/文件名**，工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败。所以任务必须指给拥有那些素材的机器——UI 的过滤只是帮你别选错，云端不校验。
-- **`work/` 下每台各一份**：`publish-records.json`、`scheduled-tasks/`、`asset-library/usage.json`、`caption-cache/`。不要把老机器的 `publish-records.json` 拷到新机器。种子（`npm run worker:seed`）只带 `config.json`、token 和 `*-settings.json`。
+- **机器之间不传任何东西**。新机器只需要工厂的 `WORKER_TOKEN`；`GET /api/worker/bootstrap`（worker token 鉴权）下发中台地址 + bridge key（`official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`）、ElevenLabs key（`ELEVENLABS_API_KEY` 或 `psychology-settings`）、`reddit-mix-settings`；`scripts/worker-setup/bootstrap-worker.mjs` 用它加仓库里的 `config.example.json` 生成本机全部配置。`work/` 下每台各一份，谁也不拷谁的。
 - 云端 `reddit-mix-settings` 由工人 sync 上传；没有本地文件的新工人不发这个字段，云端也忽略空对象，不会互相清空。新工人本地小说库为空时也不触发导入。
 - 已知显示局限：`factory-worker-status`、`asset-usage`、`asset-usage-dashboard` 都只记最后一次推送的机器（数据总览的素材使用率多机下只看主机的）；建任务页的「排队等待中，前方 N 个」按同机器算，但没区分不指定机器的任务。
 - 日规划上限（`config.autoTasks.dailyPlannedLimit`）只在本机 3010 页面建任务时校验，按每台机器自己的任务算；云端页面建的任务不经过它。两台机器都从 `config.json` 读，各配各的。
@@ -115,7 +115,7 @@
 
 | 路径 | 鉴权 |
 |---|---|
-| `/api/worker/*` | `WORKER_TOKEN`（Bearer 或 `x-factory-worker-token`），无 session |
+| `/api/worker/*` | `WORKER_TOKEN`（Bearer 或 `x-factory-worker-token`），无 session。`GET /api/worker/bootstrap` 用它下发共享密钥给新机器，所以这个 token 等同于拿到中台 bridge key 和 ElevenLabs key |
 | `/api/integrations/signal-desk/publish-events` | HMAC-SHA256：`x-signal-timestamp` + `x-signal-signature: v1=…`，密钥 `official-settings.webhookSecret`，时钟偏差 ≤10min |
 | `/api/integrations/signal-desk/storage`、`archive-accounts` | Bearer = 桥接密钥 |
 | 其余 `/api/*` | Cookie session；仅 admin：`official-publish-records/sync`、`/webhook`、`POST private-tiktok/settings`、项目/分组的所有写操作（POST/PATCH/DELETE，读仍对所有登录用户开放） |

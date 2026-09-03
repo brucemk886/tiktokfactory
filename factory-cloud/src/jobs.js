@@ -417,6 +417,22 @@ async function handleWorkerApi(request, env, url, ctx) {
     }
   }
 
+  // A fresh worker machine needs the shared service credentials the factory
+  // already holds (desk bridge key, ElevenLabs key) so nothing has to be copied
+  // from another machine. Worker-token protected like every /api/worker route.
+  if (method === "GET" && pathname === "/api/worker/bootstrap") {
+    const official = await kvGet(env.DB, "official-settings", {});
+    const psychology = await kvGet(env.DB, "psychology-settings", {});
+    return json({
+      signalDesk: {
+        baseUrl: String(official.baseUrl || env.SIGNAL_DESK_BASE_URL || "https://tiktokaitool.com").replace(/\/+$/, ""),
+        apiKey: String(official.apiKey || env.SIGNAL_DESK_BRIDGE_KEY || "").trim()
+      },
+      elevenLabsApiKey: String(env.ELEVENLABS_API_KEY || psychology.elevenLabsApiKey || "").trim(),
+      redditMixSettings: await kvGet(env.DB, "reddit-mix-settings", {})
+    });
+  }
+
   if (method === "POST" && pathname === "/api/worker/hello") {
     const payload = await readJson(request).catch(() => ({}));
     const workerId = String(payload.workerId || request.headers.get("x-factory-worker") || "worker").slice(0, 80);

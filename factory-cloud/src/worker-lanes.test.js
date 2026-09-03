@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { claimTypeFilter, hasOwnKeys, mergeWorkerCatalog, officialPublishFollowupPayload } from "./jobs.js";
+import { claimTypeFilter, handleJobs, hasOwnKeys, mergeWorkerCatalog, officialPublishFollowupPayload } from "./jobs.js";
 
 test("claim filter lets a lane pick only its own job types", () => {
   assert.deepEqual(claimTypeFilter({}), { sql: "", binds: [], types: [], excludeTypes: [] });
@@ -28,6 +28,32 @@ test("a worker only claims jobs pinned to itself or to nobody", () => {
   const pinned = claimTypeFilter({ workerId: "worker-2", assignedOnly: true, excludeTypes: ["official-publish"] });
   assert.equal(pinned.sql, ` AND type NOT IN (?) AND ${WORKER_SQL} = ?`);
   assert.deepEqual(pinned.binds, ["official-publish", "worker-2"]);
+});
+
+test("a new worker can pull the shared service keys with just the factory token", async () => {
+  const kv = new Map([
+    ["official-settings", { baseUrl: "https://desk.test/", apiKey: "" }],
+    ["reddit-mix-settings", { fontSize: 62 }]
+  ]);
+  const db = {
+    prepare: () => ({
+      bind: (key) => ({ first: async () => (kv.has(key) ? { value_json: JSON.stringify(kv.get(key)) } : null) })
+    })
+  };
+  const env = { DB: db, WORKER_TOKEN: "tok", SIGNAL_DESK_BRIDGE_KEY: "bridge", ELEVENLABS_API_KEY: "eleven" };
+  const call = (token) => handleJobs(
+    new Request("https://factory.test/api/worker/bootstrap", { headers: { Authorization: `Bearer ${token}` } }),
+    env,
+    new URL("https://factory.test/api/worker/bootstrap"),
+    null
+  );
+  assert.equal((await call("wrong")).status, 401);
+  const body = await (await call("tok")).json();
+  assert.deepEqual(body, {
+    signalDesk: { baseUrl: "https://desk.test", apiKey: "bridge" },
+    elevenLabsApiKey: "eleven",
+    redditMixSettings: { fontSize: 62 }
+  });
 });
 
 test("worker catalogs merge per machine instead of last push wins", () => {

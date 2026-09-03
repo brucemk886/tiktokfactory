@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { syncAssetLibraryRoot } from "../asset-library.js";
 import { pushAssetGroups, pushAudioGroups } from "../factory-cloud-worker.js";
 import { readConfig } from "../video-core.js";
-import { parseArgs } from "./apply-seed.mjs";
+import { parseArgs } from "./bootstrap-worker.mjs";
 
 export async function indexAndPush({ root = process.cwd(), skipIndex = false, log = console.log } = {}) {
   const config = readConfig(root);
