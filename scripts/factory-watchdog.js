@@ -89,8 +89,18 @@ function appendLog(workDir, line) {
   fs.appendFileSync(path.join(workDir, "factory-watchdog.log"), `${new Date().toISOString()} ${line}\n`, "utf8");
 }
 
+// wscript runs the watchdog without any console window. A visible node.exe
+// console invites a close click, which used to take the worker down with it.
 export function windowsTaskCommand(root = process.cwd(), nodePath = process.execPath) {
-  return `"${nodePath}" "${path.join(root, "scripts", "factory-watchdog.js")}"`;
+  const launcher = path.join(root, "scripts", "factory-watchdog-hidden.vbs");
+  return `wscript.exe "${launcher}" "${nodePath}" "${path.join(root, "scripts", "factory-watchdog.js")}"`;
+}
+
+// schtasks expects inner quotes inside /TR to be written as \" and node's
+// default argument quoting mangles that, so the command line is built verbatim.
+export function schtasksCreateCommandLine(root = process.cwd(), nodePath = process.execPath) {
+  const tr = windowsTaskCommand(root, nodePath).replace(/"/g, "\\\"");
+  return `schtasks /Create /TN ${WINDOWS_TASK_NAME} /TR "${tr}" /SC ONLOGON /F`;
 }
 
 export function startupCommandPath() {
@@ -99,22 +109,40 @@ export function startupCommandPath() {
   return path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "LocalFactoryWatchdog.cmd");
 }
 
-export function ensureWindowsAutostart(root = process.cwd()) {
+// Register-ScheduledTask works for the signed-in user without elevation,
+// whereas schtasks /Create is refused on non-admin accounts.
+export function registerTaskPowerShellScript(root = process.cwd(), nodePath = process.execPath) {
+  const ps = (value) => `'${String(value).replace(/'/g, "''")}'`;
+  const launcher = path.join(root, "scripts", "factory-watchdog-hidden.vbs");
+  const watchdog = path.join(root, "scripts", "factory-watchdog.js");
+  const argument = `"${launcher}" "${nodePath}" "${watchdog}"`;
+  return [
+    `$action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ${ps(argument)} -WorkingDirectory ${ps(root)}`,
+    "$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME",
+    "$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries",
+    `Register-ScheduledTask -TaskName ${ps(WINDOWS_TASK_NAME)} -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null`
+  ].join("\n");
+}
+
+export function ensureWindowsAutostart(root = process.cwd(), { force = false } = {}) {
   if (process.platform !== "win32") return { ok: false, reason: "not-windows" };
   const query = spawnSync("schtasks", ["/Query", "/TN", WINDOWS_TASK_NAME], { encoding: "utf8", windowsHide: true });
-  if (query.status === 0) return { ok: true, reason: "exists" };
-  const created = spawnSync("schtasks", [
-    "/Create",
-    "/TN", WINDOWS_TASK_NAME,
-    "/TR", windowsTaskCommand(root),
-    "/SC", "ONLOGON",
-    "/F"
+  if (query.status === 0 && !force) return { ok: true, reason: "exists" };
+  const registered = spawnSync("powershell.exe", [
+    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-EncodedCommand", Buffer.from(registerTaskPowerShellScript(root), "utf16le").toString("base64")
   ], { encoding: "utf8", windowsHide: true });
+  if (registered.status === 0) return { ok: true, reason: "created" };
+  const created = spawnSync("cmd.exe", ["/d", "/s", "/c", `"${schtasksCreateCommandLine(root)}"`], {
+    encoding: "utf8",
+    windowsHide: true,
+    windowsVerbatimArguments: true
+  });
   if (created.status === 0) return { ok: true, reason: "created" };
   const cmdPath = startupCommandPath();
   if (!cmdPath) return { ok: false, reason: String(created.stderr || created.stdout || "create-failed").trim() };
   fs.mkdirSync(path.dirname(cmdPath), { recursive: true });
-  fs.writeFileSync(cmdPath, `@echo off\r\nstart "LocalFactoryWatchdog" /min ${windowsTaskCommand(root)}\r\n`, "utf8");
+  fs.writeFileSync(cmdPath, `@echo off\r\nstart "" ${windowsTaskCommand(root)}\r\n`, "utf8");
   return { ok: true, reason: "startup-folder" };
 }
 
@@ -138,7 +166,9 @@ async function main() {
   const port = Number(process.env.PORT || DEFAULT_PORT);
   const { workDir } = resolveStorageDirs(root, readConfig(root));
   const installOnly = process.argv.includes("--install");
-  const task = ensureWindowsAutostart(root);
+  // --install always re-registers so an old task definition (for example one
+  // that opened a visible console) gets replaced by the current launcher.
+  const task = ensureWindowsAutostart(root, { force: installOnly });
   if (installOnly) {
     if (!task.ok) {
       console.error(`无法注册开机守护：${task.reason}`);
@@ -146,7 +176,7 @@ async function main() {
     }
     const messages = {
       exists: "开机守护已存在。",
-      created: "已注册开机守护：登录 Windows 后自动看管 3010。",
+      created: "已注册开机守护（无窗口计划任务）：登录 Windows 后自动看管 3010。",
       "startup-folder": "已写入开机启动项：登录 Windows 后自动看管 3010。"
     };
     console.log(messages[task.reason] || "开机守护已就绪。");
@@ -182,10 +212,13 @@ async function main() {
   };
 
   const startServer = () => {
+    // detached: the worker gets its own console session, so closing whatever
+    // window the watchdog was started from no longer kills the worker too.
     child = spawn(process.execPath, [path.join(root, "scripts", "server.js")], {
       cwd: root,
       stdio: "ignore",
-      windowsHide: true
+      windowsHide: true,
+      detached: true
     });
     serverPid = child.pid || 0;
     if (lastRestartAt) restartCount += 1;

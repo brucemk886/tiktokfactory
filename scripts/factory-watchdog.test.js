@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import {
   HEARTBEAT_STALE_MS,
   nextWatchAction,
+  registerTaskPowerShellScript,
+  schtasksCreateCommandLine,
   startupCommandPath,
   summarizeWatchdog,
   windowsTaskCommand
@@ -25,9 +28,24 @@ test("watchdog summary expires after the heartbeat goes stale", () => {
   assert.match(dead.message, /不会自动拉起/);
 });
 
-test("windows task command keeps the watchdog outside Cursor", () => {
+test("windows task command keeps the watchdog outside Cursor and without a console", () => {
   const command = windowsTaskCommand("D:\\cursor\\localfactory", "C:\\nodejs\\node.exe");
-  assert.match(command, /factory-watchdog\.js/);
-  assert.match(command, /node\.exe/);
+  assert.match(command, /^wscript\.exe "D:\\cursor\\localfactory\\scripts\\factory-watchdog-hidden\.vbs" "C:\\nodejs\\node\.exe" "D:\\cursor\\localfactory\\scripts\\factory-watchdog\.js"$/);
   assert.match(startupCommandPath(), /Startup\\LocalFactoryWatchdog\.cmd$/);
+  const create = schtasksCreateCommandLine("D:\\cursor\\localfactory", "C:\\nodejs\\node.exe");
+  assert.match(create, /^schtasks \/Create \/TN LocalFactoryWatchdog \/TR "wscript\.exe \\"D:\\cursor\\localfactory\\scripts\\factory-watchdog-hidden\.vbs\\" \\"C:\\nodejs\\node\.exe\\" \\"D:\\cursor\\localfactory\\scripts\\factory-watchdog\.js\\"" \/SC ONLOGON \/F$/);
+});
+
+test("windows task is registered through PowerShell with a hidden launcher", () => {
+  const script = registerTaskPowerShellScript("D:\\cursor\\localfactory", "C:\\nodejs\\node.exe");
+  assert.match(script, /New-ScheduledTaskAction -Execute 'wscript\.exe' -Argument '"D:\\cursor\\localfactory\\scripts\\factory-watchdog-hidden\.vbs" "C:\\nodejs\\node\.exe" "D:\\cursor\\localfactory\\scripts\\factory-watchdog\.js"' -WorkingDirectory 'D:\\cursor\\localfactory'/);
+  assert.match(script, /New-ScheduledTaskTrigger -AtLogOn/);
+  assert.match(script, /-ExecutionTimeLimit \(\[TimeSpan\]::Zero\)/);
+  assert.match(script, /Register-ScheduledTask -TaskName 'LocalFactoryWatchdog'/);
+});
+
+test("watchdog launches the worker detached so closing its window cannot kill the worker", () => {
+  const source = fs.readFileSync(new URL("./factory-watchdog.js", import.meta.url), "utf8");
+  assert.match(source, /detached: true/);
+  assert.match(source, /windowsVerbatimArguments: true/);
 });
