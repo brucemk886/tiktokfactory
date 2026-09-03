@@ -72,6 +72,11 @@
                 </div>
               </section>
               <label class="field" id="videoTemplateField" data-admin-only hidden><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix" selected>模板1 · 混剪</option></select><small id="videoTemplateHint">从素材组抽片段拼接混剪。</small></label>
+              <label data-admin-only id="workerField" class="field" hidden>
+                <span>执行机器</span>
+                <select id="workerSelect"></select>
+                <small id="workerHint">任务只会下发给这台机器，素材组和音频文件夹也只显示这台机器上的。</small>
+              </label>
               <label data-admin-only id="assetGroupField" class="field mix-only">
                 <div class="novel-platform-head">
                   <span>素材组</span>

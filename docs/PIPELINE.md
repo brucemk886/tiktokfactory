@@ -56,7 +56,9 @@
 | 键 | 当前值 | 说明 |
 |---|---|---|
 | `url` / `token` | `https://factory.tiktokaitool.com` / `WORKER_TOKEN` | 必填 |
-| `workerId` | `windows-local` | 每台机器固定且互不相同；hello 只重排同 id 的中断任务，`official-publish` 只发给渲染它的那台（见 2.6） |
+| `workerId` | `windows-local` | 每台机器固定且互不相同；hello 只重排同 id 的中断任务，任务可在创建时指定给某台（见 2.6） |
+| `assignedOnly` | 默认 false | true = 只接 `targetWorkerId`/`renderWorkerId` 等于自己的任务，不接没指定机器的；第二台机器配 true。`FACTORY_WORKER_ASSIGNED_ONLY` |
+| `label` | 空 | 建任务页下拉里显示的名字，`FACTORY_WORKER_LABEL` |
 | `pollMs` | 60000 | 空闲时 claim 间隔 |
 | `syncMs` | 300000 | 库存同步间隔 |
 | `renderConcurrency` | 默认 2（1–8） | `FACTORY_WORKER_RENDER_CONCURRENCY` |
@@ -92,13 +94,17 @@
 
 ### 2.6 多台工人
 
-队列是共享的：所有工人都从同一张 `factory_jobs` 拉单，渲染任务谁先 claim 谁做。约束和坑：
+模型：**每台机器有自己的素材和音频，任务在创建时指定给哪台跑**；机器之间不需要互通，只要都连得上工厂云。搭建步骤见 `docs/WORKER-SETUP.md`。
 
-- **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道 claim 时只拿 `renderWorkerId` 为空或等于自己的任务；管理员「重试发布」也带上上一次任务的 `worker_id`。所以一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
-- **素材与音频每台机器都要有一份**。任务 payload 只带 `assetGroupId` 和 `audioItems`（id / fileName），工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败（错误信息「本机音频目录里找不到这些小说音频」）。两台机器 `assetLibraryRoot` / `audioLibraryRoot` 下的目录名要一致，并各自跑过素材索引；新生成的小说音频只会落在生成它的那台上，另一台要同步。
-- **`work/` 下每台各一份**：`publish-records.json`、`scheduled-tasks/`、`asset-library/usage.json`（素材使用去重是按机器算的，两台可能各自抽到同一段素材）、`caption-cache/`（可以从老机器拷过去省 ElevenLabs 识别费）。不要把老机器的 `publish-records.json` 拷到新机器，两份都会往云端 sync。
+- **机器登记**：hello 和 sync 都会往 kv `factory-workers` 写一行 `{workerId, label, hostname, assignedOnly, renderConcurrency, publishConcurrency, renderJobTypes, lastSeenAt}`；`GET /api/workers`（admin）返回列表，`lastSeenAt` 10 分钟内算在线。
+- **指定机器**：`POST /api/auto-tasks` 接受 `workerId`（必须是已登记的机器），存在 `task.workerId`，渲染任务 payload 带 `targetWorkerId`；resume 沿用；「重试发布」的 `renderWorkerId` 取上次任务的 `worker_id`，没有就用 `task.workerId`。不传 = 不指定，谁先 claim 谁做。
+- **claim 亲和**：`COALESCE(NULLIF(targetWorkerId,''), NULLIF(renderWorkerId,''), '') IN ('', 本工人)`；工人带 `assignedOnly: true` 时改为 `= 本工人`，即不接没指定机器的任务。第二台机器必须配 `assignedOnly`，否则它会抢到主机素材组的任务然后报找不到素材。
+- **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道只会拿到自己渲染的；一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
+- **素材组 / 音频文件夹按机器合并**：`/api/worker/sync` 里的 `assetGroups` / `audioGroups` 会打上 `workerId`，`mergeWorkerCatalog` 只替换同一机器的旧条目（以及 id 相同的未打标旧条目），不同机器的并存；`/api/asset-groups`、`/api/audio-groups` 返回带 `workerId`，建任务页选了机器就只显示那台的。同名素材组在两台机器上是两条不同记录，各自用各自的路径。
+- **任务 payload 只带 `assetGroupId` 和音频 id/文件名**，工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败。所以任务必须指给拥有那些素材的机器——UI 的过滤只是帮你别选错，云端不校验。
+- **`work/` 下每台各一份**：`publish-records.json`、`scheduled-tasks/`、`asset-library/usage.json`、`caption-cache/`。不要把老机器的 `publish-records.json` 拷到新机器。种子（`npm run worker:seed`）只带 `config.json`、token 和 `*-settings.json`。
 - 云端 `reddit-mix-settings` 由工人 sync 上传；没有本地文件的新工人不发这个字段，云端也忽略空对象，不会互相清空。新工人本地小说库为空时也不触发导入。
-- 云端 `factory-worker-status` 只记最后一次 sync 的 `workerId`，页面上「本机工人在线」只反映一台，是已知的显示局限。
+- 已知显示局限：`factory-worker-status`、`asset-usage`、`asset-usage-dashboard` 都只记最后一次推送的机器（数据总览的素材使用率多机下只看主机的）；建任务页的「排队等待中，前方 N 个」按同机器算，但没区分不指定机器的任务。
 - 日规划上限（`config.autoTasks.dailyPlannedLimit`）只在本机 3010 页面建任务时校验，按每台机器自己的任务算；云端页面建的任务不经过它。两台机器都从 `config.json` 读，各配各的。
 
 ---
@@ -117,7 +123,7 @@
 
 ### 3.2 任务表 `factory_jobs`
 
-状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] [AND renderWorkerId IN ('', 本工人)] ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。发布通道的工人亲和条件走 `json_extract(payload_json, '$.renderWorkerId')`，只作用在 queued 行上，量很小。hello 把该 `worker_id` 下的 `running` 改回 `queued`（`LIMIT 200`，单工人同时在跑的不过几条）。终态 30 天后 cron 删除。
+状态 `queued → running → done | failed | cancelled`。claim：`status='queued' [AND type IN/NOT IN …] AND 目标机器 IN ('', 本工人)`（`assignedOnly` 时 `= 本工人`）`ORDER BY created_at LIMIT 1`，再 `UPDATE … WHERE status='queued'` 乐观锁。目标机器 = `COALESCE(NULLIF(json_extract(payload_json,'$.targetWorkerId'),''), NULLIF(json_extract(payload_json,'$.renderWorkerId'),''), '')`，只作用在 queued 行上，量很小。hello 把该 `worker_id` 下的 `running` 改回 `queued`（`LIMIT 200`，单工人同时在跑的不过几条）。终态 30 天后 cron 删除。
 
 `complete` 时 `done && publishPending` 且 `publish.provider=official`、`autoPublish!==false` → 入队 `official-publish`（`publishOnly: true`），同时把 auto-task 的 `generationJobId` 指到新任务、`phase=publish-queued`。
 

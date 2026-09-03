@@ -12,6 +12,7 @@ let officialTikTokAccounts = [];
 let currentUserRole = "member";
 let assetGroups = [];
 let audioGroups = [];
+let workers = [];
 let sharedLibrariesConfigured = false;
 let lastTaskRenderKey = "";
 let captionPresets = [];
@@ -45,6 +46,7 @@ $("#addCaptionPresetBtn")?.addEventListener("click", addCaptionPreset);
 $("#updateCaptionPresetBtn")?.addEventListener("click", updateCaptionPreset);
 $("#deleteCaptionPresetBtn")?.addEventListener("click", deleteCaptionPreset);
 $("#assetGroupSelect").addEventListener("change", updateVideoSourceVisibility);
+$("#workerSelect")?.addEventListener("change", applyWorkerSelection);
 $("#videoTemplateSelect")?.addEventListener("change", updateVideoSourceVisibility);
 $("#syncAudioGroupsBtn")?.addEventListener("click", syncAudioGroupsToFactory);
 $("#syncAssetGroupsBtn")?.addEventListener("click", syncAssetGroupsToFactory);
@@ -66,8 +68,10 @@ loadSavedSettings();
 applyIncomingAudioBatch();
 loadCaptionPresets();
 setDefaultSchedule();
-loadAssetGroups();
-loadAudioGroups();
+loadWorkers().then(() => {
+  loadAssetGroups();
+  loadAudioGroups();
+});
 loadSharedLibraries();
 initializePublishProvider();
 updatePublishPlanHint();
@@ -115,6 +119,7 @@ async function createTask(options = {}) {
   if (autoPublish && schedule < Math.floor(Date.now() / 1000) + 300) return setCreateStatus("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
   const payload = {
     name: $("#taskName").value.trim(),
+    workerId: selectedWorkerId(),
     generation: {
       videoTemplate,
       assetGroupId,
@@ -200,9 +205,11 @@ function renderTasks(tasks, allTasks = tasks) {
     return scheduleDifference || Number(a.createdAt) - Number(b.createdAt);
   });
   const queuedPositions = new Map(queuedTasks.map((task, index) => [task.id, index]));
-  const blocking = (allTasks || []).find((task) => task.status === "running" || ["generating", "publishing", "checking", "retrying"].includes(task.phase));
-  const activeCount = blocking ? 1 : (tasks.some((task) => task.status === "running") ? 1 : 0);
+  const runningTasks = (allTasks || []).filter((task) => task.status === "running" || ["generating", "publishing", "checking", "retrying"].includes(task.phase));
+  const sameWorker = (left, right) => !left.workerId || !right.workerId || left.workerId === right.workerId;
   taskList.innerHTML = tasks.map((task) => {
+    const blocking = runningTasks.find((item) => sameWorker(item, task));
+    const activeCount = blocking ? 1 : (tasks.some((item) => item.status === "running" && sameWorker(item, task)) ? 1 : 0);
     const progress = task.phase === "publishing" || task.phase === "retrying" ? task.publishProgress : task.progress;
     const current = Number(progress?.current) || 0;
     const total = Number(progress?.total) || 0;
@@ -217,9 +224,10 @@ function renderTasks(tasks, allTasks = tasks) {
           : account?.groupName || "").trim())
         .filter(Boolean)
     ));
-    const groupHtml = accountLabels.length
+    const workerHtml = task.workerId ? `<div class="task-groups"><span>执行机器</span><b>${escapeHtml(task.workerId)}</b></div>` : "";
+    const groupHtml = (accountLabels.length
       ? `<div class="task-groups"><span>${isOfficial ? "TikTok \u5b98\u65b9\u8d26\u53f7" : "\u8d26\u53f7\u5206\u7ec4"}</span>${accountLabels.map((name) => `<b>${escapeHtml(name)}</b>`).join("")}</div>`
-      : "";
+      : "") + workerHtml;
     const scheduleLines = buildTaskScheduleLines(task);
     const scheduleHtml = scheduleLines.length
       ? `<div class="task-schedule"><strong>具体排期</strong>${scheduleLines.map((item) => `<span><b>${escapeHtml(formatScheduleAt(item.scheduleAt))}</b><em>${item.count} 条</em></span>`).join("")}</div>`
@@ -413,11 +421,79 @@ function isTopLevelAudioFolder(group) {
   return group.kind === "platform" || group.kind === "batch" || group.kind === "legacy";
 }
 
+// Catalogs pushed by several worker machines live side by side, each entry
+// tagged with its workerId. Once a machine is picked, only its entries (plus
+// untagged ones from before multi-worker) are offered.
+function belongsToSelectedWorker(item) {
+  const workerId = selectedWorkerId();
+  const owner = String(item?.workerId || "");
+  return !owner || !workerId || owner === workerId;
+}
+
+function visibleAssetGroups() {
+  return assetGroups.filter(belongsToSelectedWorker);
+}
+
+function visibleAudioGroups() {
+  return audioGroups.filter(belongsToSelectedWorker);
+}
+
+function selectedWorkerId() {
+  return $("#workerSelect")?.value || "";
+}
+
+async function loadWorkers() {
+  const field = $("#workerField");
+  const select = $("#workerSelect");
+  if (!field || !select || isLocalWorkerPage) return;
+  try {
+    const response = await fetch(`/api/workers?t=${Date.now()}`);
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    workers = Array.isArray(data.workers) ? data.workers : [];
+  } catch {
+    workers = [];
+  }
+  // A single worker (or a non-admin view) keeps the old behaviour: no field,
+  // job goes to whoever polls.
+  if (workers.length < 2) {
+    field.hidden = true;
+    select.innerHTML = "";
+    return;
+  }
+  const previous = select.value || localStorage.getItem("reddit-task-worker") || "";
+  select.innerHTML = workers.map((worker) => {
+    const name = worker.label ? `${worker.label}（${worker.workerId}）` : worker.workerId;
+    return `<option value="${escapeAttr(worker.workerId)}">${escapeHtml(name)}${worker.online ? "" : " · 离线"}</option>`;
+  }).join("");
+  const fallback = (workers.find((worker) => worker.online) || workers[0]).workerId;
+  select.value = workers.some((worker) => worker.workerId === previous) ? previous : fallback;
+  field.hidden = false;
+  updateWorkerHint();
+}
+
+function updateWorkerHint() {
+  const hint = $("#workerHint");
+  const worker = workers.find((item) => item.workerId === selectedWorkerId());
+  if (!hint || !worker) return;
+  hint.textContent = worker.online
+    ? `任务只会下发给 ${worker.workerId}${worker.hostname ? `（${worker.hostname}）` : ""}。素材组和音频文件夹只显示这台机器上的。`
+    : `${worker.workerId} 已离线超过 10 分钟，任务会排队等它上线。`;
+}
+
+function applyWorkerSelection() {
+  localStorage.setItem("reddit-task-worker", selectedWorkerId());
+  updateWorkerHint();
+  renderAssetGroupOptions();
+  renderAudioGroupOptions();
+}
+
 function mixableAudioFolders() {
-  const typed = audioGroups.some((group) => group.kind);
+  const groups = visibleAudioGroups();
+  const typed = groups.some((group) => group.kind);
   const folders = typed
-    ? audioGroups.filter(isTopLevelAudioFolder)
-    : audioGroups.filter((group) => !group.rootOnly && group.kind !== "legacy-bundle");
+    ? groups.filter(isTopLevelAudioFolder)
+    : groups.filter((group) => !group.rootOnly && group.kind !== "legacy-bundle");
   return folders.filter((group) => Number(group.totalAssets) > 0);
 }
 
@@ -463,8 +539,9 @@ function renderAudioFolderPicker() {
 }
 
 function getSelectedAudioFolders() {
+  const groups = visibleAudioGroups();
   return Array.from(document.querySelectorAll("#novelAudioPicker [data-audio-folder]:checked"))
-    .map((input) => audioGroups.find((item) => item.id === input.dataset.audioFolder || item.path === input.dataset.audioPath))
+    .map((input) => groups.find((item) => item.id === input.dataset.audioFolder || item.path === input.dataset.audioPath))
     .filter(Boolean);
 }
 
@@ -619,25 +696,32 @@ async function loadAudioGroups() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取音频目录失败。");
     audioGroups = Array.isArray(data.groups) ? data.groups : [];
-    const current = select.value || $("#audioDir")?.value || "";
-    const folders = selectableAudioFolders();
-    select.innerHTML = `<option value="">请选择音频文件夹</option>${folders.map((group) => `<option value="${escapeAttr(group.id)}" data-path="${escapeAttr(group.path)}">${escapeHtml(formatAudioGroupOption(group))}</option>`).join("")}`;
-    const matched = folders.find((group) => group.id === current || group.path === current);
-    if (matched) select.value = matched.id;
-    applyAudioGroupSelection({ keepFolders: true });
-    renderAudioFolderPicker();
-    if (hint) hint.textContent = folders.length
-      ? `固定读取 ${data.libraryRoot || "F:\\音频目录"}，已列出 ${folders.length} 个文件夹。`
-      : "本机 F:\\音频目录 下还没有可勾选的文件夹。";
+    renderAudioGroupOptions(data.libraryRoot);
   } catch (error) {
     select.innerHTML = '<option value="">音频目录读取失败</option>';
     if (hint) hint.textContent = error.message || "读取音频目录失败。";
   }
 }
 
+function renderAudioGroupOptions(libraryRoot = "") {
+  const select = $("#audioGroupSelect");
+  const hint = $("#audioGroupHint");
+  if (!select) return;
+  const current = select.value || $("#audioDir")?.value || "";
+  const folders = selectableAudioFolders();
+  select.innerHTML = `<option value="">请选择音频文件夹</option>${folders.map((group) => `<option value="${escapeAttr(group.id)}" data-path="${escapeAttr(group.path)}">${escapeHtml(formatAudioGroupOption(group))}</option>`).join("")}`;
+  const matched = folders.find((group) => group.id === current || group.path === current);
+  if (matched) select.value = matched.id;
+  applyAudioGroupSelection({ keepFolders: true });
+  renderAudioFolderPicker();
+  if (hint) hint.textContent = folders.length
+    ? `固定读取 ${libraryRoot || "F:\\音频目录"}，已列出 ${folders.length} 个文件夹。`
+    : "本机 F:\\音频目录 下还没有可勾选的文件夹。";
+}
+
 function applyAudioGroupSelection({ keepFolders = false } = {}) {
   const select = $("#audioGroupSelect");
-  const group = audioGroups.find((item) => item.id === select?.value);
+  const group = visibleAudioGroups().find((item) => item.id === select?.value);
   if ($("#audioDir")) $("#audioDir").value = group?.path || "";
   if (group?.path && !keepFolders) clearSelectedAudioFolders();
 }
@@ -670,14 +754,31 @@ async function loadAssetGroups() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取素材组失败。");
     assetGroups = Array.isArray(data.groups) ? data.groups : [];
-    select.innerHTML = `<option value="">请选择一个素材组</option>${assetGroups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${assetCount(group)} 条）</option>`).join("")}`;
-    if (hint) hint.textContent = assetGroups.length ? `已读取 ${assetGroups.length} 个素材组。` : "暂无已建立索引的素材组，请使用共享素材库。";
-    updateVideoSourceVisibility();
+    renderAssetGroupOptions();
   } catch (error) {
     select.innerHTML = '<option value="">素材组读取失败</option>';
     if (hint) hint.textContent = error.message || "读取素材组失败，请使用共享素材库。";
     updateVideoSourceVisibility();
   }
+}
+
+function renderAssetGroupOptions() {
+  const select = $("#assetGroupSelect");
+  const hint = $("#assetGroupHint");
+  if (!select) return;
+  const current = select.value;
+  const groups = visibleAssetGroups();
+  select.innerHTML = `<option value="">请选择一个素材组</option>${groups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${assetCount(group)} 条）</option>`).join("")}`;
+  if (groups.some((group) => group.id === current)) select.value = current;
+  if (hint) {
+    const worker = selectedWorkerId();
+    hint.textContent = groups.length
+      ? `已读取 ${groups.length} 个素材组${worker ? `（${worker}）` : ""}。`
+      : worker && assetGroups.length
+        ? `${worker} 还没有推送过素材组，先在那台机器上点「刷新并推送」。`
+        : "暂无已建立索引的素材组，请使用共享素材库。";
+  }
+  updateVideoSourceVisibility();
 }
 
 async function loadSharedLibraries() {

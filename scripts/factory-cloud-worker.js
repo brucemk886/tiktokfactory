@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -64,8 +65,21 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
   return { running: true, workerId, lanes: lanes.map((lane) => ({ name: lane.name, concurrency: lane.concurrency })) };
 }
 
+export function helloPayload(context) {
+  const lanes = workerLanes(context.settings || {});
+  return {
+    workerId: context.workerId,
+    label: String(context.settings?.label || ""),
+    hostname: os.hostname(),
+    assignedOnly: context.settings?.assignedOnly === true,
+    renderConcurrency: lanes[0].concurrency,
+    publishConcurrency: lanes[1].concurrency,
+    renderJobTypes: normalizeJobTypes(context.settings?.renderJobTypes)
+  };
+}
+
 async function helloWorker(context) {
-  const data = await request(context, "/api/worker/hello", { method: "POST", body: { workerId: context.workerId } });
+  const data = await request(context, "/api/worker/hello", { method: "POST", body: helloPayload(context) });
   context.cloudSplitPublish = Boolean(data?.splitPublish);
   if (Number(data?.requeued || 0) > 0) {
     console.log(`工人重启，已把 ${data.requeued} 条中断任务重新排队。`);
@@ -121,7 +135,7 @@ async function laneLoop(context, lane) {
     try {
       claimed = await request(context, "/api/worker/claim", {
         method: "POST",
-        body: { workerId: context.workerId, lane: lane.name, ...lane.claim }
+        body: { workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
       });
     } catch (error) {
       console.error(`拉单失败（${lane.name}）：`, error.message || error);
@@ -1108,8 +1122,18 @@ export function loadSettings(workDir) {
     syncMs: Number(process.env.FACTORY_WORKER_SYNC_MS || file.syncMs || DEFAULT_SYNC_MS),
     renderConcurrency: Number(process.env.FACTORY_WORKER_RENDER_CONCURRENCY || file.renderConcurrency || DEFAULT_RENDER_CONCURRENCY),
     publishConcurrency: Number(process.env.FACTORY_WORKER_PUBLISH_CONCURRENCY || file.publishConcurrency || DEFAULT_PUBLISH_CONCURRENCY),
-    renderJobTypes: normalizeJobTypes(process.env.FACTORY_WORKER_RENDER_JOB_TYPES || file.renderJobTypes || [])
+    renderJobTypes: normalizeJobTypes(process.env.FACTORY_WORKER_RENDER_JOB_TYPES || file.renderJobTypes || []),
+    // assignedOnly: only run jobs the task creator pinned to this worker; a
+    // second machine with its own asset library must not grab unpinned jobs.
+    assignedOnly: parseBoolean(process.env.FACTORY_WORKER_ASSIGNED_ONLY, file.assignedOnly === true),
+    label: String(process.env.FACTORY_WORKER_LABEL || file.label || "").trim()
   };
+}
+
+export function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
 function writeLocalJob(filePath, value) {

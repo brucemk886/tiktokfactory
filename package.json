@@ -9,6 +9,8 @@
     "watchdog": "node scripts/factory-watchdog.js",
     "watchdog:install": "node scripts/factory-watchdog.js --install",
     "factory-worker": "node scripts/factory-cloud-worker.js",
+    "worker:seed": "node scripts/worker-setup/export-seed.mjs",
+    "worker:index": "node scripts/worker-setup/index-and-push.mjs",
     "remotion:studio": "remotion studio remotion/index.jsx"
   },
   "dependencies": {

@@ -314,8 +314,13 @@ async function handleWorkerApi(request, env, url, ctx) {
   if (method === "POST" && pathname === "/api/worker/sync") {
     const body = await readJson(request);
     const stamp = now();
-    if (Array.isArray(body.assetGroups)) await kvSet(env.DB, "asset-groups", body.assetGroups);
-    if (Array.isArray(body.audioGroups)) await kvSet(env.DB, "audio-groups", body.audioGroups);
+    const syncWorkerId = String(body.workerId || request.headers.get("x-factory-worker") || "worker").slice(0, 80);
+    if (Array.isArray(body.assetGroups)) {
+      await kvSet(env.DB, "asset-groups", mergeWorkerCatalog(await kvGet(env.DB, "asset-groups", []), body.assetGroups, syncWorkerId));
+    }
+    if (Array.isArray(body.audioGroups)) {
+      await kvSet(env.DB, "audio-groups", mergeWorkerCatalog(await kvGet(env.DB, "audio-groups", []), body.audioGroups, syncWorkerId));
+    }
     if (body.usage) await kvSet(env.DB, "asset-usage", body.usage);
     if (body.assetUsageDashboard && typeof body.assetUsageDashboard === "object") {
       const existingDashboard = await kvGet(env.DB, "asset-usage-dashboard", null);
@@ -345,11 +350,12 @@ async function handleWorkerApi(request, env, url, ctx) {
     await kvSet(env.DB, "factory-worker-status", {
       running: true,
       cloud: false,
-      workerId: String(body.workerId || "worker").slice(0, 80),
+      workerId: syncWorkerId,
       retentionHours: Number(body.retentionHours || 48),
       lastSeenAt: stamp,
       message: "本机工人在线，混剪任务会在 Local Factory 执行。"
     });
+    await upsertWorkerRecord(env.DB, syncWorkerId, {});
     return json({ ok: true, novelImport, archive });
   }
 
@@ -440,6 +446,15 @@ async function handleWorkerApi(request, env, url, ctx) {
       workerId,
       lastSeenAt: stamp,
       message: requeued ? `本机工人已上线，${requeued} 条中断任务已重新排队。` : "本机工人在线，混剪任务会在 Local Factory 执行。"
+    });
+    await upsertWorkerRecord(env.DB, workerId, {
+      label: String(payload.label || "").slice(0, 80),
+      hostname: String(payload.hostname || "").slice(0, 80),
+      assignedOnly: payload.assignedOnly === true,
+      renderConcurrency: Math.max(0, Number(payload.renderConcurrency) || 0),
+      publishConcurrency: Math.max(0, Number(payload.publishConcurrency) || 0),
+      renderJobTypes: Array.isArray(payload.renderJobTypes) ? payload.renderJobTypes.map((item) => String(item || "").slice(0, 40)).filter(Boolean).slice(0, 20) : [],
+      lastHelloAt: stamp
     });
     // splitPublish tells the worker it may finish a render job with
     // publishPending and let the cloud enqueue the official-publish follow-up.
@@ -620,10 +635,15 @@ const OFFICIAL_PUBLISH_TYPE = "official-publish";
 // Workers run separate lanes (render vs. publish); each lane claims only its
 // own job types so a long upload never blocks a render slot and vice versa.
 //
-// official-publish jobs upload files that live on the disk of whichever worker
-// rendered them, so when several workers share the queue a publish job is only
-// handed to the worker named in payload.renderWorkerId. Jobs without that field
-// (manual publishes, jobs created before multi-worker) stay claimable by anyone.
+// Jobs can be pinned to one machine: payload.targetWorkerId is set when the
+// task is created for a specific worker (its assets live only there), and
+// payload.renderWorkerId is set on official-publish follow-ups (the files sit
+// on the disk of the worker that rendered them). A worker only claims jobs
+// pinned to itself or not pinned at all; with assignedOnly it skips the
+// unpinned ones too, which is how a secondary machine avoids grabbing tasks
+// whose material it does not have.
+const JOB_WORKER_SQL = "COALESCE(NULLIF(json_extract(payload_json, '$.targetWorkerId'), ''), NULLIF(json_extract(payload_json, '$.renderWorkerId'), ''), '')";
+
 export function claimTypeFilter(payload = {}) {
   const clean = (list) => [...new Set((Array.isArray(list) ? list : [])
     .map((value) => String(value || "").trim().slice(0, 40))
@@ -641,11 +661,54 @@ export function claimTypeFilter(payload = {}) {
     sql += ` AND type NOT IN (${excludeTypes.map(() => "?").join(", ")})`;
     binds.push(...excludeTypes);
   }
-  if (workerId && types.includes(OFFICIAL_PUBLISH_TYPE)) {
-    sql += " AND COALESCE(json_extract(payload_json, '$.renderWorkerId'), '') IN ('', ?)";
+  if (workerId) {
+    sql += payload.assignedOnly ? ` AND ${JOB_WORKER_SQL} = ?` : ` AND ${JOB_WORKER_SQL} IN ('', ?)`;
     binds.push(workerId);
   }
   return { sql, binds, types, excludeTypes };
+}
+
+const WORKERS_KEY = "factory-workers";
+export const WORKER_ONLINE_WINDOW_MS = 10 * 60 * 1000;
+
+// One row per worker machine, kept in kv so the task form can offer "run on
+// which machine" and show who is online. hello writes the static bits, every
+// sync bumps lastSeenAt.
+export async function upsertWorkerRecord(db, workerId, patch = {}) {
+  const id = String(workerId || "").trim().slice(0, 80);
+  if (!id) return null;
+  const all = await kvGet(db, WORKERS_KEY, {});
+  const current = all && typeof all === "object" && all[id] && typeof all[id] === "object" ? all[id] : {};
+  const next = { ...current, ...patch, workerId: id, lastSeenAt: now() };
+  await kvSet(db, WORKERS_KEY, { ...(all && typeof all === "object" ? all : {}), [id]: next });
+  return next;
+}
+
+export async function listWorkerRecords(db, at = now()) {
+  const all = await kvGet(db, WORKERS_KEY, {});
+  return Object.values(all && typeof all === "object" ? all : {})
+    .filter((item) => item && item.workerId)
+    .map((item) => ({ ...item, online: at - Number(item.lastSeenAt || 0) <= WORKER_ONLINE_WINDOW_MS }))
+    .sort((left, right) => String(left.workerId).localeCompare(String(right.workerId)));
+}
+
+// Asset/audio catalogs are pushed per machine; keep every machine's entries
+// side by side (tagged with workerId) instead of letting the last push win.
+// Untagged entries predate multi-worker and are replaced once a push carries
+// the same id.
+export function mergeWorkerCatalog(existing, incoming, workerId) {
+  const id = String(workerId || "").trim();
+  const list = Array.isArray(incoming) ? incoming.filter((item) => item && typeof item === "object") : [];
+  const tagged = list.map((item) => ({ ...item, workerId: id }));
+  const incomingIds = new Set(tagged.map((item) => String(item.id || "")));
+  const kept = (Array.isArray(existing) ? existing : []).filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const owner = String(item.workerId || "");
+    if (owner === id) return false;
+    if (!owner && incomingIds.has(String(item.id || ""))) return false;
+    return true;
+  });
+  return [...kept, ...tagged];
 }
 
 export function officialPublishFollowupPayload(job, rawResult = {}) {

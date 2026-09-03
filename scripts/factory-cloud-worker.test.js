@@ -8,10 +8,12 @@ import {
   DEFAULT_POLL_MS,
   DEFAULT_SYNC_MS,
   dailyViewDataAlreadyPushed,
+  helloPayload,
   isOfficialPublishProgressMessage,
   loadSettings,
   localJobCancelled,
   mirrorCloudTask,
+  parseBoolean,
   pushAssetGroups,
   pushAudioGroups,
   pushDailyViewData,
@@ -46,6 +48,33 @@ test("a secondary worker can narrow its render lane to a job-type whitelist", ()
     renderJobTypes: "auto-task, reddit-mix"
   }));
   assert.deepEqual(loadSettings(dir).renderJobTypes, ["auto-task", "reddit-mix"]);
+});
+
+test("a secondary worker can be pinned-only and announces itself on hello", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-lanes-"));
+  fs.writeFileSync(path.join(dir, "factory-cloud-worker.json"), JSON.stringify({
+    url: "https://factory.example.com",
+    token: "t",
+    workerId: "worker-2",
+    label: "老家那台",
+    assignedOnly: true,
+    renderConcurrency: 1
+  }));
+  const settings = loadSettings(dir);
+  assert.equal(settings.assignedOnly, true);
+  assert.equal(settings.label, "老家那台");
+  const hello = helloPayload({ workerId: "worker-2", settings });
+  assert.equal(hello.workerId, "worker-2");
+  assert.equal(hello.assignedOnly, true);
+  assert.equal(hello.label, "老家那台");
+  assert.equal(hello.renderConcurrency, 1);
+  assert.equal(hello.publishConcurrency, 1);
+  assert.ok(hello.hostname);
+  // Default (primary) worker: not pinned-only.
+  assert.equal(loadSettings(fs.mkdtempSync(path.join(os.tmpdir(), "factory-lanes-"))).assignedOnly, false);
+  assert.equal(parseBoolean("1"), true);
+  assert.equal(parseBoolean("no", true), false);
+  assert.equal(parseBoolean(undefined, true), true);
 });
 
 test("inventory sync only re-sends publish records touched since the last sync", () => {

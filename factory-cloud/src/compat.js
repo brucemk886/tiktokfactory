@@ -2,7 +2,7 @@ import { applyArchiveViewsToSnapshot, collectSnapshotVideoIds, dashboardFromSnap
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
 import { errorJson, json, now, readJson, redirect, safeId } from "./http.js";
-import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, getJobsByIds, publicJob, videosForOfficialRetry } from "./jobs.js";
+import { applyJobToTask, cancelJob, enqueueJob, findLatestOpeningVariantsJob, getJob, getJobsByIds, listWorkerRecords, publicJob, videosForOfficialRetry } from "./jobs.js";
 import { getAutoTask, listAutoTasks, saveAutoTask } from "./auto-tasks-store.js";
 import { kvGet, kvSet } from "./kv.js";
 import { serveNovelAudio } from "./novel-audio-archive.js";
@@ -41,6 +41,10 @@ export async function handleCompat(request, env, url, session) {
   }
   if (method === "GET" && pathname === "/api/asset-library-root") {
     return json({ libraryRoot: "", cloud: true, message: "素材目录在工人机本地。" });
+  }
+  if (method === "GET" && pathname === "/api/workers") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以查看。", 403);
+    return json({ workers: await listWorkerRecords(db) });
   }
 
   if (pathname === "/api/reddit-mix/settings") {
@@ -144,13 +148,19 @@ export async function handleCompat(request, env, url, session) {
         Number(generation.totalVideos) || 0,
         Array.isArray(generation.audioItems) ? generation.audioItems.length : 0
       );
+      const workerId = String(payload.workerId || "").trim().slice(0, 80);
+      if (workerId) {
+        const known = await listWorkerRecords(db);
+        if (!known.some((item) => item.workerId === workerId)) return errorJson(`没有叫「${workerId}」的工人机。`, 400);
+      }
       const task = {
         id: safeId(`task-${now()}`),
         name: String(payload.name || payload.taskType || "云端任务"),
         taskType,
+        workerId,
         status: "queued",
         phase: "queued",
-        message: "已下发本机混剪队列，等待 Local Factory 拉单。",
+        message: workerId ? `已下发给工人机 ${workerId}，等待拉单。` : "已下发本机混剪队列，等待 Local Factory 拉单。",
         expectedVideoCount,
         progress: { current: 0, total: expectedVideoCount, percent: 1 },
         generation,
@@ -169,6 +179,7 @@ export async function handleCompat(request, env, url, session) {
           taskId: task.id,
           taskName: task.name,
           taskType,
+          targetWorkerId: workerId,
           publish,
           burnNovelBadge: publish.provider === "official"
         },
@@ -221,6 +232,7 @@ export async function handleCompat(request, env, url, session) {
           taskId: task.id,
           taskName: task.name,
           taskType: normalizeTaskType(task.taskType),
+          targetWorkerId: String(task.workerId || ""),
           publish: task.publish || {},
           burnNovelBadge: task.publish?.provider === "official"
         },
@@ -250,7 +262,7 @@ export async function handleCompat(request, env, url, session) {
           videos,
           generatedVideos: videos,
           // The files sit on whichever worker ran the previous job for this task.
-          renderWorkerId: String(currentJob?.worker_id || "")
+          renderWorkerId: String(currentJob?.worker_id || task.workerId || "")
         },
         createdBy: session.user.username
       });
@@ -623,7 +635,8 @@ function publicAudioGroups(groups) {
       novelId: String(group.novelId || "").trim(),
       platform: String(group.platform || "").trim(),
       promotionCode: String(group.promotionCode || "").trim(),
-      promotionCopy: String(group.promotionCopy || "").trim()
+      promotionCopy: String(group.promotionCopy || "").trim(),
+      workerId: String(group.workerId || "").trim()
     };
   }).filter((group) => group.id && (group.path || group.paths.length));
 }
