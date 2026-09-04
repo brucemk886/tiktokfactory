@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
+import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, summarizeAssetGroupFolders, VIDEO_EXTENSIONS } from "./asset-library.js";
 import { runAudioImportJob } from "./audio-import-job.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { createAudioLibraryService } from "./audio-library.js";
@@ -937,7 +937,10 @@ function publicAssetGroupRows(groups) {
       clipCount: totalAssets,
       totalDuration: Number(group.totalDuration || 0),
       usedAssets: Number(group.usedAssets || 0),
-      generatedVideos: Number(group.generatedVideos || 0)
+      generatedVideos: Number(group.generatedVideos || 0),
+      folders: Array.isArray(group.folders) && group.folders.length
+        ? group.folders
+        : summarizeAssetGroupFolders(group)
     };
   });
 }

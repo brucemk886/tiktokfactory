@@ -571,6 +571,11 @@ function normalizeRedditGeneration(value = {}) {
   if (generation.videoTemplate === "parkour") {
     generation.videoDir = resolveParkourVideoDir(generation.videoDir);
     generation.assetGroupId = "";
+    generation.assetFolders = [];
+  } else {
+    generation.assetFolders = (Array.isArray(generation.assetFolders) ? generation.assetFolders : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
   }
   generation.audioDirs = (Array.isArray(generation.audioDirs) ? generation.audioDirs : [])
     .map((item) => String(item || "").trim())

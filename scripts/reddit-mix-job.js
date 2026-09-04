@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import {
   VIDEO_EXTENSIONS,
+  filterAssetsByFolders,
   getAssetGroup,
   importExistingAssets,
   listMediaFiles,
@@ -81,14 +82,21 @@ async function main() {
   ensureDir(captionCacheDir);
 
   const group = resolveAssetGroup(payload, groupId);
-  const videoMeta = (group.assets || [])
+  const selectedAssets = isParkourVideoTemplate(payload)
+    ? (group.assets || [])
+    : filterAssetsByFolders(group.assets || [], group.sourceDir || group.path || "", payload.assetFolders);
+  const videoMeta = selectedAssets
     .map((asset) => ({
       ...asset,
       file: asset.file,
       duration: Number(asset.duration) > 0 ? Number(asset.duration) : probeDuration(asset.file, 0)
     }))
     .filter((asset) => asset.file && fs.existsSync(asset.file) && asset.duration > 1);
-  if (!videoMeta.length) throw new Error("No usable videos found in the video material folder.");
+  if (!videoMeta.length) {
+    throw new Error(Array.isArray(payload.assetFolders) && payload.assetFolders.length && !isParkourVideoTemplate(payload)
+      ? "勾选的素材子文件夹里没有可用视频。"
+      : "No usable videos found in the video material folder.");
+  }
 
   const results = [];
   const audioContexts = new Map();

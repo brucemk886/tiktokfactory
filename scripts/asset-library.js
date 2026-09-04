@@ -14,6 +14,7 @@ import {
 import { resolveStorageDirs } from "./storage-paths.js";
 
 export const VIDEO_EXTENSIONS = [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"];
+export const ASSET_ROOT_FOLDER = "根目录";
 const bucketSeconds = 5;
 
 export function getAssetStore(root) {
@@ -46,7 +47,8 @@ export function listAssetGroups(root) {
       totalAssets: assets.length,
       totalDuration: round2(assets.reduce((sum, asset) => sum + (Number(asset.duration) || 0), 0)),
       usedAssets,
-      generatedVideos: (usage.generated || []).filter((item) => item.groupId === group.id).length
+      generatedVideos: (usage.generated || []).filter((item) => item.groupId === group.id).length,
+      folders: summarizeAssetGroupFolders({ ...group, assets })
     };
   });
 }
@@ -523,8 +525,69 @@ function buildUsageRow(asset, usageEntry = {}, sourceDir = "") {
 
 function topLevelFolder(filePath, sourceDir) {
   const relative = sourceDir ? path.relative(sourceDir, filePath || "") : "";
-  if (!relative || relative.startsWith("..") || path.dirname(relative) === ".") return "根目录";
-  return relative.split(/[\\/]/)[0] || "根目录";
+  if (!relative || relative.startsWith("..") || path.dirname(relative) === ".") return ASSET_ROOT_FOLDER;
+  return relative.split(/[\\/]/)[0] || ASSET_ROOT_FOLDER;
+}
+
+export function assetTopLevelFolder(filePath, sourceDir) {
+  return topLevelFolder(filePath, sourceDir);
+}
+
+export function normalizeAssetFolders(value) {
+  const folders = [];
+  const seen = new Set();
+  for (const item of Array.isArray(value) ? value : []) {
+    const name = String(item || "").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    folders.push(name);
+  }
+  return folders;
+}
+
+// First-level children inside a material group. Template 1 can check these
+// so a grouped library is not always mixed as one pool. "_" / "." folders
+// (review dumps, leftovers) stay out of the picker.
+export function summarizeAssetGroupFolders(group = {}) {
+  const sourceDir = String(group.sourceDir || group.path || "").trim();
+  const counts = new Map();
+  for (const asset of Array.isArray(group.assets) ? group.assets : []) {
+    const folder = topLevelFolder(asset?.file, sourceDir);
+    if (isHiddenAssetFolder(folder)) continue;
+    counts.set(folder, (counts.get(folder) || 0) + 1);
+  }
+  if (!counts.size) addDiskAssetFolders(sourceDir, counts);
+  return [...counts.entries()]
+    .map(([name, totalAssets]) => ({ name, totalAssets }))
+    .sort((left, right) => folderSortKey(left.name) - folderSortKey(right.name) || left.name.localeCompare(right.name, "zh-Hans-CN"));
+}
+
+export function filterAssetsByFolders(assets = [], sourceDir = "", folders = []) {
+  const wanted = new Set(normalizeAssetFolders(folders));
+  const list = Array.isArray(assets) ? assets : [];
+  if (!wanted.size) return list;
+  return list.filter((asset) => wanted.has(topLevelFolder(asset?.file, sourceDir)));
+}
+
+function addDiskAssetFolders(sourceDir, counts) {
+  const dir = String(sourceDir || "").trim();
+  if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || isHiddenAssetFolder(entry.name)) continue;
+    const files = listMediaFiles(path.join(dir, entry.name), VIDEO_EXTENSIONS, { recursive: true });
+    if (files.length) counts.set(entry.name, files.length);
+  }
+  const rootFiles = listMediaFiles(dir, VIDEO_EXTENSIONS, { recursive: false });
+  if (rootFiles.length) counts.set(ASSET_ROOT_FOLDER, rootFiles.length);
+}
+
+function isHiddenAssetFolder(name = "") {
+  const folder = String(name || "").trim();
+  return folder.startsWith("_") || folder.startsWith(".");
+}
+
+function folderSortKey(name) {
+  return name === ASSET_ROOT_FOLDER ? 1 : 0;
 }
 
 function createUsageAggregate(folder) {

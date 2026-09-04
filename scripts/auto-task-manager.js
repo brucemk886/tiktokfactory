@@ -5,6 +5,7 @@ import { getPublishAccountIds, normalizePublishProvider, PUBLISH_PROVIDER_OFFICI
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { mergeOfficialPublishRecords } from "./official-publish-records.js";
 import { isOfficialPublishAbort } from "./official-publish-abort.js";
+import { normalizeAssetFolders } from "./asset-library.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
 import { normalizeAudioDirs } from "./audio-library-groups.js";
 import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
@@ -809,6 +810,7 @@ function normalizeGenerationPayload(value = {}) {
     backgroundMusicVolume: Number(value.backgroundMusicVolume) || 0.12,
     saveDir: String(value.saveDir || ""),
     assetGroupId: String(value.assetGroupId || ""),
+    assetFolders: videoTemplate === "parkour" ? [] : normalizeAssetFolders(value.assetFolders),
     segmentMode: value.segmentMode === "ratio" ? "ratio" : "fixed",
     segmentSeconds: Number(value.segmentSeconds) || 5,
     segmentRatio: Number(value.segmentRatio) || 10,

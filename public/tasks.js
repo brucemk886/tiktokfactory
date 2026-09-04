@@ -106,8 +106,12 @@ async function createTask(options = {}) {
   if (parkour) $("#videoDir").value = ($("#parkourVideoDir")?.value || "").trim() || "D:\\方块跑酷模拟器视频\\0819";
   const materialSource = $("#assetGroupSelect")?.value || "";
   const assetGroupId = parkour ? "" : (materialSource === "__manual__" ? "" : materialSource);
+  const assetFolders = parkour ? [] : selectedAssetFoldersForTask();
   if (parkour && !$("#videoDir").value.trim()) return setCreateStatus("请选择跑酷视频目录。");
   if (!parkour && !assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
+  if (!parkour && mixableAssetFolders(selectedAssetGroup()).length && !getSelectedAssetFolders().length) {
+    return setCreateStatus("请至少勾选一个素材子文件夹。");
+  }
   const audioDir = audioDirs[0] || (provider === "official" ? "" : $("#audioDir").value.trim());
   if (provider !== "official" && !audioDir) return setCreateStatus("请选择音频目录。");
   if (provider === "official" && !audioDirs.length) return setCreateStatus("请勾选音频文件夹。");
@@ -128,6 +132,7 @@ async function createTask(options = {}) {
     generation: {
       videoTemplate,
       assetGroupId,
+      assetFolders,
       // Parkour renders live flat in one folder; its _visual-review / _failed-review
       // subfolders hold rejects and must never be picked as a bed.
       videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: !parkour,
@@ -870,6 +875,79 @@ function updateAudioSourceMode() {
   if (sharedAudio) sharedAudio.hidden = useFolders || !sharedLibrariesConfigured;
 }
 
+function selectedAssetGroup() {
+  const id = $("#assetGroupSelect")?.value || "";
+  return visibleAssetGroups().find((group) => group.id === id) || null;
+}
+
+function mixableAssetFolders(group) {
+  const folders = Array.isArray(group?.folders) ? group.folders : [];
+  const named = folders.filter((folder) => folder?.name && folder.name !== "根目录");
+  if (!named.length) return [];
+  return folders.filter((folder) => folder?.name);
+}
+
+function getSelectedAssetFolders() {
+  return Array.from(document.querySelectorAll("#assetFolderPicker [data-asset-folder]:checked"))
+    .map((input) => String(input.dataset.assetFolder || "").trim())
+    .filter(Boolean);
+}
+
+function selectedAssetFoldersForTask() {
+  const folders = mixableAssetFolders(selectedAssetGroup());
+  const selected = getSelectedAssetFolders();
+  if (!folders.length || !selected.length || selected.length === folders.length) return [];
+  return selected;
+}
+
+function renderAssetFolderPicker() {
+  const field = $("#assetFolderField");
+  const root = $("#assetFolderPicker");
+  const hint = $("#assetFolderHint");
+  if (!field || !root) return;
+  const parkour = selectedVideoTemplate() === "parkour";
+  const group = selectedAssetGroup();
+  const folders = parkour ? [] : mixableAssetFolders(group);
+  field.hidden = !folders.length;
+  if (!folders.length) {
+    root.replaceChildren();
+    return;
+  }
+  const previousGroup = root.dataset.groupId || "";
+  const keepSelection = previousGroup === group.id;
+  const previous = new Set(keepSelection ? getSelectedAssetFolders() : []);
+  root.dataset.groupId = group.id;
+  root.innerHTML = folders.map((folder) => {
+    const checked = keepSelection ? previous.has(folder.name) : true;
+    return `<label class="novel-audio-novel">
+        <input type="checkbox" data-asset-folder="${escapeAttr(folder.name)}" ${checked ? "checked" : ""} />
+        <strong>${escapeHtml(folder.name)}</strong>
+        <small>${Number(folder.totalAssets) || 0} 条视频</small>
+      </label>`;
+  }).join("");
+  root.querySelectorAll("[data-asset-folder]").forEach((input) => {
+    input.addEventListener("change", updateAssetFolderHint);
+  });
+  updateAssetFolderHint();
+}
+
+function updateAssetFolderHint() {
+  const hint = $("#assetFolderHint");
+  if (!hint) return;
+  const folders = mixableAssetFolders(selectedAssetGroup());
+  const selected = getSelectedAssetFolders();
+  if (!selected.length) {
+    hint.textContent = "请至少勾选一个子文件夹。不勾的夹不会被抽到。";
+    return;
+  }
+  const count = folders
+    .filter((folder) => selected.includes(folder.name))
+    .reduce((sum, folder) => sum + (Number(folder.totalAssets) || 0), 0);
+  hint.textContent = selected.length === folders.length
+    ? `已勾全部 ${folders.length} 个子文件夹，共 ${count} 条视频。`
+    : `已勾 ${selected.length}/${folders.length} 个子文件夹，共 ${count} 条视频。`;
+}
+
 // Template 2 (parkour beds) is admin-only and only on the official channel.
 function selectedVideoTemplate() {
   if (currentUserRole !== "admin" || publishChannel !== "official") return "mix";
@@ -887,7 +965,8 @@ function updateVideoSourceVisibility() {
   const hint = $("#videoTemplateHint");
   if (hint) hint.textContent = parkour
     ? "模板2 每条跑酷成片只用一次：单条够长就用单条，不够就拼接几条，多出的裁掉；不再循环同一条。"
-    : "模板1 从素材组抽片段拼接；模板2 直接用整条跑酷成片当底片。";
+    : "模板1 从素材组抽片段拼接；素材组有子文件夹时可以勾选，只抽勾中的夹。";
+  renderAssetFolderPicker();
 }
 
 function clearAccountSelection() {
