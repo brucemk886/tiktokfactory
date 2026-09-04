@@ -88,7 +88,7 @@
               <div id="assetFolderField" class="field mix-only" hidden>
                 <span>素材子文件夹</span>
                 <div id="assetFolderPicker" class="novel-audio-picker"></div>
-                <small id="assetFolderHint">这个素材组按子文件夹分组。勾选模板1要抽的夹，可多选。</small>
+                <small id="assetFolderHint">点文件夹展开子夹。勾选父夹等于全选下面的夹，也可以只勾某一个。</small>
               </div>
               <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0819" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">只读这个目录本层的视频，不进子文件夹（_visual-review、_failed-review 不会被抽到）。每条成片只用一次：单条够长就用单条，不够就拼接几条，多出的部分裁掉。</small></label>
               <input id="videoDir" type="hidden" />
@@ -215,7 +215,14 @@
         </aside>
       </main>
     </div>
+    <dialog id="assetPreviewDialog" class="asset-preview-dialog">
+      <div class="asset-preview-head">
+        <strong id="assetPreviewName">素材预览</strong>
+        <button id="assetPreviewClose" type="button">关闭</button>
+      </div>
+      <video id="assetPreviewVideo" controls playsinline preload="metadata"></video>
+    </dialog>
     <script src="/access.js"></script>
-    <script src="/tasks.js?v=20260831-4"></script>
+    <script src="/tasks.js?v=20260904-1"></script>
   </body>
 </html>

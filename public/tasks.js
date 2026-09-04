@@ -14,6 +14,7 @@ let assetGroups = [];
 let audioGroups = [];
 let workers = [];
 let sharedLibrariesConfigured = false;
+let assetFolderUi = { groupId: "", expanded: new Set(), checked: new Set() };
 let lastTaskRenderKey = "";
 let captionPresets = [];
 const captionPresetStorageKey = "reddit-publish-caption-presets";
@@ -53,6 +54,8 @@ $("#workerSelect")?.addEventListener("change", applyWorkerSelection);
 $("#videoTemplateSelect")?.addEventListener("change", updateVideoSourceVisibility);
 $("#syncAudioGroupsBtn")?.addEventListener("click", syncAudioGroupsToFactory);
 $("#syncAssetGroupsBtn")?.addEventListener("click", syncAssetGroupsToFactory);
+$("#assetPreviewClose")?.addEventListener("click", closeAssetPreview);
+$("#assetPreviewDialog")?.addEventListener("close", stopAssetPreview);
 $("#refreshSharedLibrariesBtn")?.addEventListener("click", () => {
   loadSharedLibraries();
   loadAudioGroups();
@@ -882,28 +885,105 @@ function selectedAssetGroup() {
 
 function mixableAssetFolders(group) {
   const folders = Array.isArray(group?.folders) ? group.folders : [];
-  const named = folders.filter((folder) => folder?.name && folder.name !== "根目录");
+  const named = folders.filter((folder) => folderPathOf(folder) && folderPathOf(folder) !== "根目录");
   if (!named.length) return [];
-  return folders.filter((folder) => folder?.name);
+  return folders.filter((folder) => folderPathOf(folder));
+}
+
+function folderPathOf(folder) {
+  return String(folder?.path || folder?.name || "").trim();
+}
+
+function walkAssetFolders(folders, visit) {
+  for (const folder of Array.isArray(folders) ? folders : []) {
+    visit(folder);
+    walkAssetFolders(folder.children, visit);
+  }
+}
+
+function allAssetFolderPaths(folders) {
+  const paths = [];
+  walkAssetFolders(folders, (folder) => {
+    const folderPath = folderPathOf(folder);
+    if (folderPath) paths.push(folderPath);
+  });
+  return paths;
+}
+
+function descendantAssetPaths(folder) {
+  const paths = [];
+  walkAssetFolders(folder?.children, (child) => {
+    const folderPath = folderPathOf(child);
+    if (folderPath) paths.push(folderPath);
+  });
+  return paths;
+}
+
+function firstAssetFileRel(folder) {
+  if (folder?.files?.[0]?.rel) return folder.files[0].rel;
+  for (const child of Array.isArray(folder?.children) ? folder.children : []) {
+    const rel = firstAssetFileRel(child);
+    if (rel) return rel;
+  }
+  return "";
+}
+
+function findAssetFolder(folders, folderPath) {
+  let found = null;
+  walkAssetFolders(folders, (folder) => {
+    if (!found && folderPathOf(folder) === folderPath) found = folder;
+  });
+  return found;
+}
+
+function isAssetFolderFullyChecked(folder) {
+  const folderPath = folderPathOf(folder);
+  if (!folderPath || !assetFolderUi.checked.has(folderPath)) return false;
+  return descendantAssetPaths(folder).every((item) => assetFolderUi.checked.has(item));
+}
+
+function isAssetFolderPartiallyChecked(folder) {
+  const paths = [folderPathOf(folder), ...descendantAssetPaths(folder)].filter(Boolean);
+  return paths.some((item) => assetFolderUi.checked.has(item)) && !isAssetFolderFullyChecked(folder);
+}
+
+function compactCheckedAssetFolders(folders) {
+  const selected = [];
+  const walk = (nodes) => {
+    for (const folder of Array.isArray(nodes) ? nodes : []) {
+      const folderPath = folderPathOf(folder);
+      if (isAssetFolderFullyChecked(folder)) selected.push(folderPath);
+      else walk(folder.children);
+    }
+  };
+  walk(folders);
+  return selected;
 }
 
 function getSelectedAssetFolders() {
-  return Array.from(document.querySelectorAll("#assetFolderPicker [data-asset-folder]:checked"))
-    .map((input) => String(input.dataset.assetFolder || "").trim())
-    .filter(Boolean);
+  return compactCheckedAssetFolders(mixableAssetFolders(selectedAssetGroup()));
 }
 
 function selectedAssetFoldersForTask() {
   const folders = mixableAssetFolders(selectedAssetGroup());
   const selected = getSelectedAssetFolders();
-  if (!folders.length || !selected.length || selected.length === folders.length) return [];
+  const topLevel = folders.map(folderPathOf).filter(Boolean);
+  if (!folders.length || !selected.length) return [];
+  if (topLevel.length && topLevel.every((item) => selected.includes(item))) return [];
   return selected;
+}
+
+function setAssetFolderChecked(folder, checked) {
+  const paths = [folderPathOf(folder), ...descendantAssetPaths(folder)].filter(Boolean);
+  for (const item of paths) {
+    if (checked) assetFolderUi.checked.add(item);
+    else assetFolderUi.checked.delete(item);
+  }
 }
 
 function renderAssetFolderPicker() {
   const field = $("#assetFolderField");
   const root = $("#assetFolderPicker");
-  const hint = $("#assetFolderHint");
   if (!field || !root) return;
   const parkour = selectedVideoTemplate() === "parkour";
   const group = selectedAssetGroup();
@@ -911,24 +991,67 @@ function renderAssetFolderPicker() {
   field.hidden = !folders.length;
   if (!folders.length) {
     root.replaceChildren();
+    assetFolderUi = { groupId: "", expanded: new Set(), checked: new Set() };
     return;
   }
-  const previousGroup = root.dataset.groupId || "";
-  const keepSelection = previousGroup === group.id;
-  const previous = new Set(keepSelection ? getSelectedAssetFolders() : []);
-  root.dataset.groupId = group.id;
-  root.innerHTML = folders.map((folder) => {
-    const checked = keepSelection ? previous.has(folder.name) : true;
-    return `<label class="novel-audio-novel">
-        <input type="checkbox" data-asset-folder="${escapeAttr(folder.name)}" ${checked ? "checked" : ""} />
-        <strong>${escapeHtml(folder.name)}</strong>
-        <small>${Number(folder.totalAssets) || 0} 条视频</small>
-      </label>`;
-  }).join("");
+  if (assetFolderUi.groupId !== group.id) {
+    assetFolderUi = {
+      groupId: group.id,
+      expanded: new Set(),
+      checked: new Set(allAssetFolderPaths(folders))
+    };
+  }
+  root.innerHTML = folders.map((folder) => renderAssetFolderNode(folder)).join("");
   root.querySelectorAll("[data-asset-folder]").forEach((input) => {
-    input.addEventListener("change", updateAssetFolderHint);
+    const folder = findAssetFolder(folders, input.dataset.assetFolder);
+    input.indeterminate = isAssetFolderPartiallyChecked(folder);
+    input.addEventListener("change", () => {
+      setAssetFolderChecked(folder, input.checked);
+      renderAssetFolderPicker();
+    });
+  });
+  root.querySelectorAll("[data-asset-expand]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const folderPath = button.dataset.assetExpand;
+      if (assetFolderUi.expanded.has(folderPath)) assetFolderUi.expanded.delete(folderPath);
+      else assetFolderUi.expanded.add(folderPath);
+      renderAssetFolderPicker();
+    });
+  });
+  root.querySelectorAll("[data-asset-play]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      previewAssetFile(button.dataset.assetPlay, button.dataset.assetPlayName || "");
+    });
   });
   updateAssetFolderHint();
+}
+
+function renderAssetFolderNode(folder) {
+  const folderPath = folderPathOf(folder);
+  const children = Array.isArray(folder.children) ? folder.children : [];
+  const files = Array.isArray(folder.files) ? folder.files : [];
+  const expandable = children.length > 0 || files.length > 0;
+  const expanded = assetFolderUi.expanded.has(folderPath);
+  const playRel = firstAssetFileRel(folder);
+  const playName = files[0]?.fileName || folder.name || folderPath;
+  return `<div class="asset-folder-node">
+      <div class="asset-folder-row">
+        <input type="checkbox" data-asset-folder="${escapeAttr(folderPath)}" ${isAssetFolderFullyChecked(folder) ? "checked" : ""} />
+        <button type="button" class="asset-folder-toggle" data-asset-expand="${escapeAttr(folderPath)}" ${expandable ? "" : "hidden"}>${expanded ? "▾" : "▸"}</button>
+        <strong data-asset-expand="${escapeAttr(folderPath)}">${escapeHtml(folder.name || folderPath)}</strong>
+        <small>${Number(folder.totalAssets) || 0} 条视频</small>
+        ${playRel ? `<button type="button" class="quiet-button asset-folder-play" data-asset-play="${escapeAttr(playRel)}" data-asset-play-name="${escapeAttr(playName)}">播放</button>` : ""}
+      </div>
+      ${expanded ? children.map((child) => renderAssetFolderNode(child)).join("") : ""}
+      ${expanded ? files.map((file) => `<div class="asset-folder-file">
+        <span>${escapeHtml(file.fileName || file.rel)}</span>
+        <button type="button" class="quiet-button asset-folder-play" data-asset-play="${escapeAttr(file.rel)}" data-asset-play-name="${escapeAttr(file.fileName || "")}">播放</button>
+      </div>`).join("") : ""}
+    </div>`;
 }
 
 function updateAssetFolderHint() {
@@ -937,15 +1060,47 @@ function updateAssetFolderHint() {
   const folders = mixableAssetFolders(selectedAssetGroup());
   const selected = getSelectedAssetFolders();
   if (!selected.length) {
-    hint.textContent = "请至少勾选一个子文件夹。不勾的夹不会被抽到。";
+    hint.textContent = "请至少勾选一个文件夹。点名称展开子夹；勾父夹会全选下面的夹。";
     return;
   }
-  const count = folders
-    .filter((folder) => selected.includes(folder.name))
-    .reduce((sum, folder) => sum + (Number(folder.totalAssets) || 0), 0);
+  const count = selected.reduce((sum, folderPath) => {
+    const folder = findAssetFolder(folders, folderPath);
+    return sum + (Number(folder?.totalAssets) || 0);
+  }, 0);
   hint.textContent = selected.length === folders.length
-    ? `已勾全部 ${folders.length} 个子文件夹，共 ${count} 条视频。`
-    : `已勾 ${selected.length}/${folders.length} 个子文件夹，共 ${count} 条视频。`;
+    ? `已勾全部一级文件夹，共 ${count} 条视频。点名称可展开子夹。`
+    : `已勾 ${selected.length} 个文件夹，共 ${count} 条视频。`;
+}
+
+function stopAssetPreview() {
+  const video = $("#assetPreviewVideo");
+  if (!video) return;
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+}
+
+function closeAssetPreview() {
+  stopAssetPreview();
+  const dialog = $("#assetPreviewDialog");
+  if (dialog?.open) dialog.close();
+}
+
+function previewAssetFile(rel, fileName) {
+  const dialog = $("#assetPreviewDialog");
+  const video = $("#assetPreviewVideo");
+  const title = $("#assetPreviewName");
+  if (!rel || !dialog || !video) return;
+  if (!isLocalWorkerPage) {
+    setCreateStatus("素材在工人机上，预览请打开本机 Local Factory（端口 3010）。");
+    return;
+  }
+  const group = selectedAssetGroup();
+  if (!group?.id) return;
+  if (title) title.textContent = fileName || rel;
+  video.src = `/api/asset-library/file?groupId=${encodeURIComponent(group.id)}&rel=${encodeURIComponent(rel)}`;
+  dialog.showModal();
+  video.play().catch(() => {});
 }
 
 // Template 2 (parkour beds) is admin-only and only on the official channel.

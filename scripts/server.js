@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { ensureProject, readConfig, renderPodcastVideo } from "./video-core.js";
 import { createGeeLarkClient } from "./geelark-client.js";
-import { discoverAssetLibraryGroups, getAssetUsageDashboard, getAssetGroup, getGeneratedVideoReuseDetail, listAssetGroups, readUsage } from "./asset-library.js";
+import { discoverAssetLibraryGroups, getAssetUsageDashboard, getAssetGroup, getGeneratedVideoReuseDetail, listAssetGroups, readUsage, resolveAssetLibraryFile } from "./asset-library.js";
 import { discoverAudioLibraryGroups, resolveAudioLibraryRoot, resolveTargetAudioDir } from "./audio-library-groups.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { resolveStorageDirs } from "./storage-paths.js";
@@ -1955,6 +1955,19 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (req.method === "GET" && url.pathname === "/api/asset-library/file") {
+      if (session.user.role !== "admin") return sendJson(res, 403, { error: "仅管理员可以预览素材。" });
+      const groupId = String(url.searchParams.get("groupId") || "").trim();
+      const rel = String(url.searchParams.get("rel") || "").trim();
+      try {
+        const group = getAssetGroup(root, groupId);
+        return sendMediaFile(req, res, resolveAssetLibraryFile(group, rel), publishContentType(rel));
+      } catch (error) {
+        const message = String(error?.message || "无法预览素材。");
+        return sendJson(res, message.includes("不存在") ? 404 : 400, { error: message });
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/api/asset-groups") {
       const groups = getConfiguredAssetGroups();
       return sendJson(res, 200, { groups, usage: readUsage(root) });
@@ -3270,6 +3283,32 @@ function sendFile(res, filePath, contentType) {
     "Cache-Control": "no-store, max-age=0"
   });
   fs.createReadStream(filePath).pipe(res);
+}
+
+function sendMediaFile(req, res, filePath, contentType) {
+  if (!fs.existsSync(filePath)) return sendJson(res, 404, { error: "File not found" });
+  const size = fs.statSync(filePath).size;
+  const match = /^bytes=(\d+)-(\d*)$/i.exec(String(req.headers.range || "").trim());
+  if (!match) {
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Content-Length": size,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store, max-age=0"
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+  const start = Math.min(size - 1, Math.max(0, Number(match[1]) || 0));
+  const end = match[2] ? Math.min(size - 1, Number(match[2])) : size - 1;
+  res.writeHead(206, {
+    "Content-Type": contentType,
+    "Content-Length": Math.max(0, end - start + 1),
+    "Content-Range": `bytes ${start}-${end}/${size}`,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "no-store, max-age=0"
+  });
+  fs.createReadStream(filePath, { start, end }).pipe(res);
 }
 
 function sendJson(res, status, value, headers = {}) {

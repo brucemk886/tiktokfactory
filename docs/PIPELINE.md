@@ -82,7 +82,7 @@
 - 调度（`planOfficialPublishJobs`）：轮询分账号，但在「当前条数最少的账号」里优先挑**没发过这条音频**的那个，同一账号只在所有账号都发过这本书时才重复；账号 k 的时间是 `scheduleAt + 本账号第几条 * interval + floor(interval * k / n)`，即同一波的 n 个账号在间隔内错开（interval=0 不错开）。`schedulePlan` 的展示仍按波次起点归并。自动发布起点至少 now+300s；磁盘剩余 <20GB 拒绝。
 - 音频轮转（`scripts/audio-rotation.js`）：按音频文件夹勾选的任务，工人在 `work/audio-rotation.json` 里按「文件夹组合」记游标，每个任务从上次停下的位置接着走完整个文件夹再回头；领窗口时就推进游标，两条渲染道并跑也不撞。传了 `audioOffset`、`audioPriority`、`audioItems` 或 `audioRotation:false` 的任务不走游标。
 - 推广码门禁（`reddit-mix-job.js`）：`burnNovelBadge !== false` 的任务，某条音频解析不出 `promotionCode`（小说库 → 文件夹 `novel.json` → 任务兜底）就跳过不出片，warning 写「没有推广码，已跳过」，全部没码则任务失败。勾了多个音频文件夹时任务 payload 里那份（只来自第一个文件夹）的 platform/推广码不再兜底给其它文件夹的音频，避免 A 书的码印到 B 书上。`requirePromotionCode:false` 可关。
-- 模板1 素材子文件夹（`generation.assetFolders`）：素材组仍是 `assetLibraryRoot` 下的一级目录，组内按一级子夹分组。建任务页选了组之后，若有子文件夹就出现勾选（默认同组全勾）；只勾一部分时 payload 带这些夹名，混剪只从这些夹抽。全勾或不传 = 整组（和以前一样）。`_visual-review` 这类下划线/点开头的夹不出现在勾选里。模板2 不走这套，仍然只读跑酷目录本层。
+- 模板1 素材子文件夹（`generation.assetFolders`）：素材组仍是 `assetLibraryRoot` 下的一级目录。组里按真实目录树勾选：点名称展开子夹，勾父夹等于全选其下所有夹，也可以只勾某一层。全勾或不传 = 整组。混剪按路径前缀过滤（勾 `minecraft/town` 不会抽到 `minecraft` 根下的片子）。点开头 / 下划线夹（`.meowload`、`_visual-review`）既不当素材组也不进勾选。本机 3010 可点「播放」预览（`GET /api/asset-library/file`）；云端页面读不到工人磁盘，预览会提示去本机。模板2 不走这套。
 - 模板2 跑酷成片（`videoTemplate: "parkour"`，仅 admin、仅官方通道；`scripts/video-template.js` 的 `planParkourSources`）：底片直接用「自动跑酷软件」生成的整条视频，目录只读本层（`includeVideoSubfolders:false`，`_visual-review`/`_failed-review` 不会被抽到），默认 `D:\方块跑酷模拟器视频\0819`。每条成片只用一次（任务内 `usedParkourIds` + 跨任务 `asset-usage.json` 的 `usedCount`），选片按「浪费最少」：优先能覆盖音频时长的最短单条；没有单条够长、或单条裁掉的比拼接多，就把未用的短视频先长后短拼起来，最后一段挑刚好盖住剩余时长的；浪费相同优先单条。不再 `-stream_loop` 循环同一条。剩余未用素材加起来都不够长时这条音频跳过；素材全部用完时任务直接结束（`PARKOUR_EXHAUSTED`），不再空转。
 - 容量校验（`validateScheduleCapacity`）：已完成任务算 `submitted` 条数，`queued`/`running` 任务算整份 `schedulePlan`，两者相加不能超日上限；`paused`/`failed`/软删任务不占位，resume 时排除自身。
 - 日切统一用 `scripts/schedule-date.js` 的 `scheduleDateKey`，固定 `Asia/Shanghai`，与中台补拉一致，不再跟系统时区走。
@@ -316,7 +316,7 @@
 
 ### 已修（2026-09-04 下午，模板1 素材子文件夹）
 
-29. 模板1 建任务：素材组仍是一级目录，组里若有子文件夹就出现勾选，混剪只抽勾中的夹（`generation.assetFolders`）。全勾或不传仍抽整组。模板2 不出现这组勾选。
+29. 模板1 建任务：素材组仍是一级目录，组里按目录树勾选（展开子夹、父夹全选、可单选），混剪只抽勾中的路径（`generation.assetFolders`）。全勾或不传仍抽整组。点开头 / 下划线夹不当素材组。本机可预览素材。模板2 不出现这组勾选。
 
 ### 未修（评估后不需要，或超出本阶段）
 

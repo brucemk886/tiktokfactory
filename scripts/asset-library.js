@@ -168,7 +168,7 @@ export function reindexAssetGroup(root, groupId, options = {}) {
 export function syncAssetLibraryRoot(root, libraryRoot, options = {}) {
   const rootDir = mustBeDirectory(libraryRoot, "素材总库目录");
   const childDirs = fs.readdirSync(rootDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !isHiddenAssetFolder(entry.name))
     .map((entry) => path.join(rootDir, entry.name))
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b), "zh-Hans-CN"));
   if (!childDirs.length) throw new Error("素材总库下没有可作为素材组的二级文件夹。");
@@ -220,7 +220,7 @@ export function discoverAssetLibraryGroups(root, libraryRoot) {
   const existingGroups = listAssetGroups(root);
   const discovered = [];
   for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || isHiddenAssetFolder(entry.name)) continue;
     const groupDir = path.join(rootDir, entry.name);
     const resolvedDir = path.resolve(groupDir);
     const existing = existingGroups.find((group) => path.resolve(String(group.sourceDir || "")) === resolvedDir);
@@ -548,37 +548,160 @@ export function normalizeAssetFolders(value) {
 // First-level children inside a material group. Template 1 can check these
 // so a grouped library is not always mixed as one pool. "_" / "." folders
 // (review dumps, leftovers) stay out of the picker.
+const MAX_FOLDER_PREVIEW_FILES = 30;
+
 export function summarizeAssetGroupFolders(group = {}) {
-  const sourceDir = String(group.sourceDir || group.path || "").trim();
-  const counts = new Map();
-  for (const asset of Array.isArray(group.assets) ? group.assets : []) {
-    const folder = topLevelFolder(asset?.file, sourceDir);
-    if (isHiddenAssetFolder(folder)) continue;
-    counts.set(folder, (counts.get(folder) || 0) + 1);
+  const tree = buildAssetFolderTree(group);
+  const folders = [...tree.children];
+  if (tree.files.length) {
+    folders.push({
+      name: ASSET_ROOT_FOLDER,
+      path: ASSET_ROOT_FOLDER,
+      totalAssets: tree.files.length,
+      children: [],
+      files: tree.files
+    });
   }
-  if (!counts.size) addDiskAssetFolders(sourceDir, counts);
-  return [...counts.entries()]
-    .map(([name, totalAssets]) => ({ name, totalAssets }))
-    .sort((left, right) => folderSortKey(left.name) - folderSortKey(right.name) || left.name.localeCompare(right.name, "zh-Hans-CN"));
+  return folders.sort((left, right) => folderSortKey(left.name) - folderSortKey(right.name) || left.name.localeCompare(right.name, "zh-Hans-CN"));
+}
+
+export function buildAssetFolderTree(group = {}) {
+  const sourceDir = String(group.sourceDir || group.path || "").trim();
+  const root = createFolderNode("", "");
+  const byPath = new Map([["", root]]);
+
+  const addFile = (filePath, extra = {}) => {
+    const rel = relativeAssetPath(filePath, sourceDir);
+    if (!rel) return;
+    const parts = rel.split("/").filter(Boolean);
+    const fileName = parts.pop();
+    if (!fileName || parts.some((part) => isHiddenAssetFolder(part))) return;
+    const node = ensureFolderNode(byPath, root, parts.join("/"));
+    if (!node) return;
+    if (node.files.length < MAX_FOLDER_PREVIEW_FILES) {
+      node.files.push({ fileName, rel, id: extra.id || "" });
+    }
+    bumpFolderCounts(byPath, parts.join("/"));
+  };
+
+  for (const asset of Array.isArray(group.assets) ? group.assets : []) {
+    addFile(asset?.file, { id: asset?.id });
+  }
+  if (!root.totalAssets) addDiskAssetTree(sourceDir, addFile);
+  sortFolderTree(root);
+  return root;
+}
+
+export function flattenAssetFolderNodes(folders = []) {
+  const out = [];
+  const walk = (node) => {
+    if (!node?.name && !node?.path) return;
+    out.push(node);
+    (Array.isArray(node.children) ? node.children : []).forEach(walk);
+  };
+  (Array.isArray(folders) ? folders : []).forEach(walk);
+  return out;
 }
 
 export function filterAssetsByFolders(assets = [], sourceDir = "", folders = []) {
-  const wanted = new Set(normalizeAssetFolders(folders));
+  const wanted = normalizeAssetFolders(folders);
   const list = Array.isArray(assets) ? assets : [];
-  if (!wanted.size) return list;
-  return list.filter((asset) => wanted.has(topLevelFolder(asset?.file, sourceDir)));
+  if (!wanted.length) return list;
+  return list.filter((asset) => assetMatchesFolders(asset?.file, sourceDir, wanted));
 }
 
-function addDiskAssetFolders(sourceDir, counts) {
+export function resolveAssetLibraryFile(group, rel) {
+  const sourceDir = path.resolve(String(group?.sourceDir || group?.path || "").trim());
+  const safeRel = String(rel || "").replace(/\\/g, "/").replace(/^\/+/, "").trim();
+  if (!sourceDir || !safeRel || safeRel.includes("..") || safeRel.split("/").some((part) => isHiddenAssetFolder(part))) {
+    throw new Error("无效的素材路径。");
+  }
+  if (!VIDEO_EXTENSIONS.includes(path.extname(safeRel).toLowerCase())) {
+    throw new Error("只能预览视频文件。");
+  }
+  const target = path.resolve(sourceDir, safeRel);
+  const prefix = sourceDir.endsWith(path.sep) ? sourceDir : `${sourceDir}${path.sep}`;
+  if (target !== sourceDir && !target.startsWith(prefix)) throw new Error("无效的素材路径。");
+  if (!fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error("素材文件不存在。");
+  return target;
+}
+
+function createFolderNode(name, folderPath) {
+  return { name, path: folderPath, totalAssets: 0, children: [], files: [] };
+}
+
+function ensureFolderNode(byPath, root, folderPath) {
+  if (!folderPath) return root;
+  if (byPath.has(folderPath)) return byPath.get(folderPath);
+  const parts = folderPath.split("/").filter(Boolean);
+  let current = "";
+  let node = root;
+  for (const part of parts) {
+    if (isHiddenAssetFolder(part)) return null;
+    current = current ? `${current}/${part}` : part;
+    let next = byPath.get(current);
+    if (!next) {
+      next = createFolderNode(part, current);
+      node.children.push(next);
+      byPath.set(current, next);
+    }
+    node = next;
+  }
+  return node;
+}
+
+function bumpFolderCounts(byPath, folderPath) {
+  let cursor = folderPath;
+  while (true) {
+    const node = byPath.get(cursor);
+    if (node) node.totalAssets += 1;
+    if (!cursor) break;
+    const index = cursor.lastIndexOf("/");
+    cursor = index >= 0 ? cursor.slice(0, index) : "";
+  }
+}
+
+function addDiskAssetTree(sourceDir, addFile) {
   const dir = String(sourceDir || "").trim();
   if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || isHiddenAssetFolder(entry.name)) continue;
-    const files = listMediaFiles(path.join(dir, entry.name), VIDEO_EXTENSIONS, { recursive: true });
-    if (files.length) counts.set(entry.name, files.length);
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (isHiddenAssetFolder(entry.name)) continue;
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) stack.push(fullPath);
+      else if (entry.isFile() && VIDEO_EXTENSIONS.includes(path.extname(entry.name).toLowerCase())) addFile(fullPath);
+    }
   }
-  const rootFiles = listMediaFiles(dir, VIDEO_EXTENSIONS, { recursive: false });
-  if (rootFiles.length) counts.set(ASSET_ROOT_FOLDER, rootFiles.length);
+}
+
+function sortFolderTree(node) {
+  node.children.sort((left, right) => left.name.localeCompare(right.name, "zh-Hans-CN"));
+  node.files.sort((left, right) => left.fileName.localeCompare(right.fileName, "zh-Hans-CN"));
+  node.children.forEach(sortFolderTree);
+}
+
+function relativeAssetPath(filePath, sourceDir) {
+  if (!sourceDir || !filePath) return "";
+  const relative = path.relative(sourceDir, filePath);
+  if (!relative || relative.startsWith("..")) return "";
+  return relative.replace(/\\/g, "/");
+}
+
+function assetMatchesFolders(filePath, sourceDir, folders) {
+  const folder = assetFolderPath(filePath, sourceDir);
+  return folders.some((wanted) => {
+    if (wanted === ASSET_ROOT_FOLDER) return folder === ASSET_ROOT_FOLDER;
+    return folder === wanted || folder.startsWith(`${wanted}/`);
+  });
+}
+
+function assetFolderPath(filePath, sourceDir) {
+  const rel = relativeAssetPath(filePath, sourceDir);
+  if (!rel) return "";
+  const folder = rel.split("/").slice(0, -1).join("/");
+  return folder || ASSET_ROOT_FOLDER;
 }
 
 function isHiddenAssetFolder(name = "") {

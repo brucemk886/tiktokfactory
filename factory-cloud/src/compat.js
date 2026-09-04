@@ -20,6 +20,10 @@ export async function handleCompat(request, env, url, session) {
     return errorJson("云端不支持弹出本机文件夹。请直接填写工人机上的路径，或在本机工人配置里指定素材目录。", 400);
   }
 
+  if (method === "GET" && pathname === "/api/asset-library/file") {
+    return errorJson("云端读不到工人机上的素材。预览请打开本机 Local Factory（3010）。", 400);
+  }
+
   if (method === "GET" && pathname === "/api/asset-groups") {
     return json({ groups: publicAssetGroups(await kvGet(db, "asset-groups", [])), usage: {} });
   }

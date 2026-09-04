@@ -214,6 +214,51 @@ body.tasks-page {
 .tasks-page .novel-audio-novel input { width: 16px; min-width: 16px; height: 16px; padding: 0; margin: 0; accent-color: #5c6a14; }
 .novel-audio-novel strong { color: var(--task-text, #1d1a14); font-size: 12px; }
 .novel-audio-novel small { color: var(--task-muted, #6d6758); font-size: 11px; }
+.asset-folder-node { display: grid; gap: 2px; }
+.asset-folder-node .asset-folder-node { padding-left: 18px; }
+.asset-folder-row,
+.asset-folder-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.asset-folder-row:hover,
+.asset-folder-file:hover { background: var(--lf-surface-2, #f6f0e4); }
+.asset-folder-row input { width: 16px; min-width: 16px; height: 16px; margin: 0; accent-color: #5c6a14; }
+.asset-folder-toggle {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--task-muted, #6d6758);
+  cursor: pointer;
+}
+.asset-folder-row strong { flex: 1; min-width: 0; color: var(--task-text, #1d1a14); font-size: 12px; cursor: pointer; }
+.asset-folder-row small,
+.asset-folder-file span { color: var(--task-muted, #6d6758); font-size: 11px; }
+.asset-folder-file { padding-left: 42px; }
+.asset-folder-file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-folder-play {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.asset-preview-dialog {
+  width: min(420px, 92vw);
+  padding: 12px;
+  border: 1px solid var(--task-line-soft, #d8d0c0);
+  border-radius: 8px;
+  background: #fff;
+}
+.asset-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.asset-preview-head strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-preview-dialog video { width: 100%; max-height: 70vh; background: #111; }
 .manual-video-source { padding: 14px; border: 1px solid var(--task-line-soft); border-radius: 6px; background: var(--lf-surface-2, #f6f0e4); }
 .manual-video-source[hidden] { display: none; }
 .retention-note { margin: 14px 0 0; color: #727b85; font-size: 10px; line-height: 1.5; }
