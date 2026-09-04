@@ -73,7 +73,7 @@
 
 ### 2.3 库存同步 `syncInventory`
 
-每 5 分钟 `POST /api/worker/sync`，body 里 `officialPublishRecords` 只含 `max(updatedAt, createdAt, publishedAt) >= 上次同步时间 - 60s` 的官方记录，最多 800 条；首次启动传全量。另带 `redditMixSettings`、`retentionHours: 48`，首次还会上传小说库。GeeLark 记录不上传。
+每 5 分钟 `POST /api/worker/sync`，body 里 `officialPublishRecords` 只含 `max(updatedAt, createdAt, publishedAt) >= 上次同步时间 - 60s` 的官方记录，最多 800 条；首次启动传全量。另带 `redditMixSettings`、`retentionHours: 48`，首次还会上传小说库。GeeLark 记录不上传。素材组 / 音频目录 / 素材使用率不走这条定时同步：目录变化在本机 Reddit 混剪页点「刷新并推送」，使用率页点「同步到线上」。曾经每个北京日自动推最近 8 个目录，已删，避免半量覆盖线上清单。
 
 ### 2.4 排产与日上限（`scripts/auto-task-manager.js`）
 
@@ -82,6 +82,7 @@
 - 调度（`planOfficialPublishJobs`）：轮询分账号，但在「当前条数最少的账号」里优先挑**没发过这条音频**的那个，同一账号只在所有账号都发过这本书时才重复；账号 k 的时间是 `scheduleAt + 本账号第几条 * interval + floor(interval * k / n)`，即同一波的 n 个账号在间隔内错开（interval=0 不错开）。`schedulePlan` 的展示仍按波次起点归并。自动发布起点至少 now+300s；磁盘剩余 <20GB 拒绝。
 - 音频轮转（`scripts/audio-rotation.js`）：按音频文件夹勾选的任务，工人在 `work/audio-rotation.json` 里按「文件夹组合」记游标，每个任务从上次停下的位置接着走完整个文件夹再回头；领窗口时就推进游标，两条渲染道并跑也不撞。传了 `audioOffset`、`audioPriority`、`audioItems` 或 `audioRotation:false` 的任务不走游标。
 - 推广码门禁（`reddit-mix-job.js`）：`burnNovelBadge !== false` 的任务，某条音频解析不出 `promotionCode`（小说库 → 文件夹 `novel.json` → 任务兜底）就跳过不出片，warning 写「没有推广码，已跳过」，全部没码则任务失败。勾了多个音频文件夹时任务 payload 里那份（只来自第一个文件夹）的 platform/推广码不再兜底给其它文件夹的音频，避免 A 书的码印到 B 书上。`requirePromotionCode:false` 可关。
+- 模板2 跑酷成片（`videoTemplate: "parkour"`，仅 admin、仅官方通道；`scripts/video-template.js` 的 `planParkourSources`）：底片直接用「自动跑酷软件」生成的整条视频，目录只读本层（`includeVideoSubfolders:false`，`_visual-review`/`_failed-review` 不会被抽到），默认 `D:\方块跑酷模拟器视频\0819`。每条成片只用一次（任务内 `usedParkourIds` + 跨任务 `asset-usage.json` 的 `usedCount`），选片按「浪费最少」：优先能覆盖音频时长的最短单条；没有单条够长、或单条裁掉的比拼接多，就把未用的短视频先长后短拼起来，最后一段挑刚好盖住剩余时长的；浪费相同优先单条。不再 `-stream_loop` 循环同一条。剩余未用素材加起来都不够长时这条音频跳过；素材全部用完时任务直接结束（`PARKOUR_EXHAUSTED`），不再空转。
 - 容量校验（`validateScheduleCapacity`）：已完成任务算 `submitted` 条数，`queued`/`running` 任务算整份 `schedulePlan`，两者相加不能超日上限；`paused`/`failed`/软删任务不占位，resume 时排除自身。
 - 日切统一用 `scripts/schedule-date.js` 的 `scheduleDateKey`，固定 `Asia/Shanghai`，与中台补拉一致，不再跟系统时区走。
 - 本地任务队列串行一条（`source=factory-cloud` 的镜像任务跳过）。成片默认保留 48h，每 6h 清理。
@@ -102,7 +103,7 @@
 - **指定机器**：`POST /api/auto-tasks` 接受 `workerId`（必须是已登记的机器），存在 `task.workerId`，渲染任务 payload 带 `targetWorkerId`；resume 沿用；「重试发布」的 `renderWorkerId` 取上次任务的 `worker_id`，没有就用 `task.workerId`。不传 = 不指定，谁先 claim 谁做。
 - **claim 亲和**：`COALESCE(NULLIF(targetWorkerId,''), NULLIF(renderWorkerId,''), '') IN ('', 本工人)`；工人带 `assignedOnly: true` 时改为 `= 本工人`，即不接没指定机器的任务。第二台机器必须配 `assignedOnly`，否则它会抢到主机素材组的任务然后报找不到素材。
 - **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道只会拿到自己渲染的；一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
-- **素材组 / 音频文件夹按机器合并**：`/api/worker/sync` 里的 `assetGroups` / `audioGroups` 会打上 `workerId`，`mergeWorkerCatalog` 只替换同一机器的旧条目（以及 id 相同的未打标旧条目），不同机器的并存；`/api/asset-groups`、`/api/audio-groups` 返回带 `workerId`，建任务页选了机器就只显示那台的。同名素材组在两台机器上是两条不同记录，各自用各自的路径。
+- **素材组 / 音频文件夹按机器合并**：本机 Reddit 混剪页「刷新并推送」才会把全量 `assetGroups` / `audioGroups` 送到 `/api/worker/sync`；`mergeWorkerCatalog` 打上 `workerId`，只替换同一机器的旧条目（以及 id 相同的未打标旧条目），不同机器的并存。`/api/asset-groups`、`/api/audio-groups` 返回带 `workerId`，建任务页选了机器就只显示那台的。同名素材组在两台机器上是两条不同记录，各自用各自的路径。工人不再每日自动推最近 8 个目录。
 - **任务 payload 只带 `assetGroupId` 和音频 id/文件名**，工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败。所以任务必须指给拥有那些素材的机器——UI 的过滤只是帮你别选错，云端不校验。
 - **机器之间不传任何东西**。新机器只需要工厂的 `WORKER_TOKEN`；`GET /api/worker/bootstrap`（worker token 鉴权）下发中台地址 + bridge key（`official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`）、ElevenLabs key（`ELEVENLABS_API_KEY` 或 `psychology-settings`）、`reddit-mix-settings`；`scripts/worker-setup/bootstrap-worker.mjs` 用它加仓库里的 `config.example.json` 生成本机全部配置。`work/` 下每台各一份，谁也不拷谁的。
 - 云端 `reddit-mix-settings` 由工人 sync 上传；没有本地文件的新工人不发这个字段，云端也忽略空对象，不会互相清空。新工人本地小说库为空时也不触发导入。
@@ -302,6 +303,14 @@
 23. 改写去重（`script-similarity.js`）：`createScript` 对同一本书的已有版本做词级编辑距离相似度，≥90% 视为同一版本拒绝保存（409 `DUPLICATE_SCRIPT`，`allowDuplicate:true` 可强制）；批量出版本时被拦的版本跳过不整本失败；大脑的 `materializeScriptOptimizations` 改写稿和原稿/兄弟版本几乎一样时不生成音频。同时校验文案里的引导语：搜索码或 App 名和这本书的 `promotionCode`/`platform` 不一致直接拒（400 `CTA_MISMATCH`）。
 24. 配音回读校验（`tts-readback.js`）：混剪渲染本来就要用 ElevenLabs 转字幕，现在把转出来的文本和送去 TTS 的原文案（音频记录的 `script`，或库里的 script）算词错率，超过 `ttsReadbackMaxWer`（默认 15%，实测正常 Kokoro 出片在 0.3–3%）就跳过这条音频并写入 `work/tts-readback.json`；没有原文案的音频（同行导入的）不校验。`payload.ttsReadback:false` 可关。
 25. 描述多样化（`buildTikTokCaption`）：正文从 12 个模板里按 seed 选（seed = 账号 + 文件名，官方发布、GeeLark 发布、发布记录三处一致），优先用文案第一句 hook 而不是文件名；话题池 10 → 28 个，每条 3–5 个随机。同一本书发 50 个号，描述和话题不再全一样。
+
+### 已修（2026-09-04 下午，模板2 跑酷成片回归）
+
+26. 模板2 在 8 月 28 日（`94ba8b7`）从建任务页藏掉了，后端一直在。现在建任务页（admin + 官方通道）重新出现「选择视频模板」和「跑酷视频目录」；选片从「随机一条、不够就循环」改成 2.4 里描述的「每条只用一次、优先单条、不够拼接、按浪费最少选」，只读目录本层。素材用完任务直接结束而不是把剩余尝试次数耗完。
+
+### 已修（2026-09-04，目录同步）
+
+27. 工人每 5 分钟试一次、每个北京日只推最近 8 个素材/音频目录的定时任务已删。目录清单只认本机「刷新并推送」的全量；5 分钟 `syncInventory` 仍只传发布记录。
 
 ### 未修（评估后不需要，或超出本阶段）
 

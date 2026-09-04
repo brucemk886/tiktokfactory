@@ -18,7 +18,7 @@ import { findAudioInLibrary, listAudioLibraryFiles, normalizeAudioDirs } from ".
 import { resolveStorageDirs } from "./storage-paths.js";
 import { planMixAudioOrder } from "./mix-audio-pick.js";
 import { reserveAudioRotation } from "./audio-rotation.js";
-import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
+import { isParkourVideoTemplate, listUnusedParkourSources, planParkourSources } from "./video-template.js";
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelScriptText, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 import { checkTtsReadback, recordTtsReadbackFailure } from "./tts-readback.js";
 import { makeWordPopSubtitles, normalizeSubtitleAnimationMode, subtitleNeedsWordTimestamps } from "./subtitle-animation.js";
@@ -245,8 +245,14 @@ async function main() {
       });
       clips = bed.clips;
       concatVideo = bed.concatVideo;
-      if (clips[0]?.assetId) usedParkourIds.add(clips[0].assetId);
-      if (clips[0]?.file) usedParkourIds.add(clips[0].file);
+      for (const clip of clips) {
+        if (clip?.assetId) usedParkourIds.add(clip.assetId);
+        if (clip?.file) usedParkourIds.add(clip.file);
+      }
+      patchJob({
+        message: `跑酷底片：${bed.plan.mode === "single" ? "单条成片" : `${bed.plan.sources} 条拼接`}，裁掉 ${bed.plan.waste}s，${path.basename(audioPath)}`,
+        updatedAt: Date.now()
+      });
     } else {
       const segmentSeconds = resolveSegmentSeconds(payload, audioDuration);
       clips = pickClips({ videoMeta, audioDuration, segmentSeconds, usage });
@@ -420,6 +426,8 @@ async function main() {
         updatedAt: Date.now()
       });
       if (runDir) cleanupRunDir(runDir);
+      // No unused parkour footage left: every further audio would fail the same way.
+      if (error?.code === PARKOUR_EXHAUSTED) break;
     }
   }
 
@@ -634,25 +642,48 @@ function resolveSegmentSeconds(payload, audioDuration) {
   return clampNumber(payload.segmentSeconds, 2, 18, 5);
 }
 
+const PARKOUR_EXHAUSTED = "PARKOUR_EXHAUSTED";
+
+// Template 2: whole parkour renders as the bed, each used once. A single
+// video long enough for the audio is preferred; otherwise unused shorter
+// videos are stitched in sequence. Whatever exceeds the audio is cut off.
 function renderParkourBed({ videoMeta, audioDuration, usage, usedIds, runDir, width, height, fps, quality }) {
-  const source = pickUnusedParkourSource(videoMeta, { usedIds, usage });
-  if (!source) throw new Error("跑酷视频都已抽过，没有未使用的成片了。");
+  // The group index keeps files that were since moved to _failed-review etc.
+  const present = (Array.isArray(videoMeta) ? videoMeta : []).filter((source) => source?.file && fs.existsSync(source.file));
+  const plan = planParkourSources(present, audioDuration, { usedIds, usage });
+  if (!plan) {
+    const left = listUnusedParkourSources(present, { usedIds, usage });
+    const error = new Error(left.length
+      ? `剩下 ${left.length} 条未用的跑酷视频加起来也不够 ${Math.round(audioDuration)} 秒，这条音频先跳过。`
+      : "跑酷视频都已抽过，没有未使用的成片了。");
+    if (!left.length) error.code = PARKOUR_EXHAUSTED;
+    throw error;
+  }
   const concatVideo = path.join(runDir, "parkour-bed.mp4");
-  const filter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=${fps},format=yuv420p`;
+  const normalize = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=${fps},format=yuv420p`;
   const args = ["-y", "-hide_banner"];
-  if (parkourNeedsLoop(source.duration, audioDuration)) args.push("-stream_loop", "-1");
-  args.push("-i", source.file, "-t", String(audioDuration), "-vf", filter, "-an", ...clipVideoEncodeArgs(quality), concatVideo);
+  if (plan.mode === "single") {
+    args.push("-i", plan.sources[0].file, "-t", String(audioDuration), "-vf", normalize, "-an", ...clipVideoEncodeArgs(quality), concatVideo);
+  } else {
+    for (const source of plan.sources) args.push("-i", source.file);
+    const chains = plan.sources.map((_, index) => `[${index}:v]${normalize},setpts=PTS-STARTPTS[v${index}]`);
+    const concat = `${plan.sources.map((_, index) => `[v${index}]`).join("")}concat=n=${plan.sources.length}:v=1:a=0[bed]`;
+    args.push("-filter_complex", `${chains.join(";")};${concat}`, "-map", "[bed]", "-t", String(audioDuration), "-an", ...clipVideoEncodeArgs(quality), concatVideo);
+  }
   run("ffmpeg", args);
-  return {
-    concatVideo,
-    clips: [{
+  let offset = 0;
+  const clips = plan.sources.map((source) => {
+    const duration = Math.max(0, Math.min(source.duration, audioDuration - offset));
+    offset += duration;
+    return {
       assetId: source.id,
       file: source.file,
       fileName: source.fileName || path.basename(source.file),
       start: 0,
-      duration: audioDuration
-    }]
-  };
+      duration: round2(duration)
+    };
+  });
+  return { concatVideo, clips, plan: { mode: plan.mode, waste: plan.waste, sources: plan.sources.length } };
 }
 
 function pickClips({ videoMeta, audioDuration, segmentSeconds, usage }) {

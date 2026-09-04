@@ -71,7 +71,7 @@
                   <label class="field"><span>背景音乐库 <em>可选</em></span><select id="sharedMusicLibrary"><option value="">不使用背景音乐</option></select></label>
                 </div>
               </section>
-              <label class="field" id="videoTemplateField" data-admin-only hidden><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix" selected>模板1 · 混剪</option></select><small id="videoTemplateHint">从素材组抽片段拼接混剪。</small></label>
+              <label class="field" id="videoTemplateField" hidden><span>选择视频模板</span><select id="videoTemplateSelect"><option value="mix" selected>模板1 · 混剪</option><option value="parkour">模板2 · 跑酷成片</option></select><small id="videoTemplateHint">模板1 从素材组抽片段拼接；模板2 直接用整条跑酷成片当底片。</small></label>
               <label data-admin-only id="workerField" class="field" hidden>
                 <span>执行机器</span>
                 <select id="workerSelect"></select>
@@ -85,7 +85,7 @@
                 <select id="assetGroupSelect"><option value="">正在读取素材组...</option></select>
                 <small id="assetGroupHint">本地混剪读本机索引。线上素材组只认本机点「刷新并推送」后的目录。</small>
               </label>
-              <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0818" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">默认读取 0818 这批已生成的跑酷视频。</small></label>
+              <label id="parkourDirField" class="field" hidden><span>跑酷视频目录</span><div class="path-picker"><input id="parkourVideoDir" type="text" value="D:\方块跑酷模拟器视频\0819" /><button type="button" data-pick-directory="parkourVideoDir">选择</button></div><small id="parkourDirHint">只读这个目录本层的视频，不进子文件夹（_visual-review、_failed-review 不会被抽到）。每条成片只用一次：单条够长就用单条，不够就拼接几条，多出的部分裁掉。</small></label>
               <input id="videoDir" type="hidden" />
               <label id="directAudioSource" class="field"><span>音频目录</span><select id="audioGroupSelect"><option value="">正在读取本机音频目录...</option></select><input id="audioDir" type="hidden" /><small id="audioGroupHint">固定读取工人机 F:\音频目录 下的文件夹。</small></label>
               <label id="directMusicSource" class="field"><span>背景音乐目录 <em>可选</em></span><div class="path-picker"><input id="musicDir" type="text" placeholder="不使用可留空" /><button type="button" data-pick-directory="musicDir">选择</button></div></label>

@@ -98,11 +98,13 @@ async function createTask(options = {}) {
     ? Array.from($("#officialAccountList").querySelectorAll(".official-tiktok-account-check:checked"))
     : Array.from(phoneList.querySelectorAll(".geelark-phone-check:checked"));
   const autoPublish = generateOnly ? false : $("#autoPublish").checked;
-  const videoTemplate = "mix";
-  if ($("#videoTemplateSelect")) $("#videoTemplateSelect").value = "mix";
+  const videoTemplate = selectedVideoTemplate();
+  const parkour = videoTemplate === "parkour";
+  if (parkour) $("#videoDir").value = ($("#parkourVideoDir")?.value || "").trim() || "D:\\方块跑酷模拟器视频\\0819";
   const materialSource = $("#assetGroupSelect")?.value || "";
-  const assetGroupId = materialSource === "__manual__" ? "" : materialSource;
-  if (!assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
+  const assetGroupId = parkour ? "" : (materialSource === "__manual__" ? "" : materialSource);
+  if (parkour && !$("#videoDir").value.trim()) return setCreateStatus("请选择跑酷视频目录。");
+  if (!parkour && !assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
   const audioDir = audioDirs[0] || (provider === "official" ? "" : $("#audioDir").value.trim());
   if (provider !== "official" && !audioDir) return setCreateStatus("请选择音频目录。");
   if (provider === "official" && !audioDirs.length) return setCreateStatus("请勾选音频文件夹。");
@@ -123,7 +125,9 @@ async function createTask(options = {}) {
     generation: {
       videoTemplate,
       assetGroupId,
-      videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: true,
+      // Parkour renders live flat in one folder; its _visual-review / _failed-review
+      // subfolders hold rejects and must never be picked as a bed.
+      videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: !parkour,
       audioDir, audioDirs, audioItems: [], backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
       segmentMode: "fixed", segmentSeconds: number("#segmentSeconds", 5), totalVideos: number("#totalVideos", 40),
       subtitleYPercent: number("#subtitleY", 66), subtitleFontSize: number("#subtitleSize", 62), subtitleAnimationMode: $("#subtitleMode").value,
@@ -858,14 +862,24 @@ function updateAudioSourceMode() {
   if (sharedAudio) sharedAudio.hidden = useFolders || !sharedLibrariesConfigured;
 }
 
+// Template 2 (parkour beds) is admin-only and only on the official channel.
+function selectedVideoTemplate() {
+  if (currentUserRole !== "admin" || publishChannel !== "official") return "mix";
+  return $("#videoTemplateSelect")?.value === "parkour" ? "parkour" : "mix";
+}
+
 function updateVideoSourceVisibility() {
-  if ($("#videoTemplateSelect")) $("#videoTemplateSelect").value = "mix";
-  if ($("#videoTemplateField")) $("#videoTemplateField").hidden = true;
-  document.querySelectorAll(".mix-only").forEach((item) => { item.hidden = false; });
-  if ($("#parkourDirField")) $("#parkourDirField").hidden = true;
-  if ($("#sharedVideoLibrary")?.closest("label")) $("#sharedVideoLibrary").closest("label").hidden = false;
+  const allowTemplates = currentUserRole === "admin" && publishChannel === "official";
+  if (!allowTemplates && $("#videoTemplateSelect")) $("#videoTemplateSelect").value = "mix";
+  if ($("#videoTemplateField")) $("#videoTemplateField").hidden = !allowTemplates;
+  const parkour = selectedVideoTemplate() === "parkour";
+  document.querySelectorAll(".mix-only").forEach((item) => { item.hidden = parkour; });
+  if ($("#parkourDirField")) $("#parkourDirField").hidden = !parkour;
+  if ($("#sharedVideoLibrary")?.closest("label")) $("#sharedVideoLibrary").closest("label").hidden = parkour;
   const hint = $("#videoTemplateHint");
-  if (hint) hint.textContent = "从素材组抽片段拼接混剪。";
+  if (hint) hint.textContent = parkour
+    ? "模板2 每条跑酷成片只用一次：单条够长就用单条，不够就拼接几条，多出的裁掉；不再循环同一条。"
+    : "模板1 从素材组抽片段拼接；模板2 直接用整条跑酷成片当底片。";
 }
 
 function clearAccountSelection() {
