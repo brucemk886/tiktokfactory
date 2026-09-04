@@ -3,11 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { buildAssetUsageSnapshot, discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
+import { discoverAssetLibraryGroups, listAssetGroups, listMediaFiles, VIDEO_EXTENSIONS } from "./asset-library.js";
 import { runAudioImportJob } from "./audio-import-job.js";
 import { runAudioGenerateJob } from "./audio-generate-job.js";
 import { createAudioLibraryService } from "./audio-library.js";
-import { discoverAudioLibraryGroups, latestAudioCatalog, resolveAudioLibraryRoot, resolveTargetAudioDir } from "./audio-library-groups.js";
+import { discoverAudioLibraryGroups, resolveAudioLibraryRoot, resolveTargetAudioDir } from "./audio-library-groups.js";
 import { resolveLocalAudioUploadPath } from "./novel-audio-upload.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
@@ -52,10 +52,8 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}  渲染并发=${lanes[0].concurrency} 发布并发=${lanes[1].concurrency}`);
   helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
   syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
-  syncDailyViewData(context);
   setInterval(() => {
     syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
-    syncDailyViewData(context);
   }, settings.syncMs || DEFAULT_SYNC_MS);
   for (const lane of lanes) {
     laneLoop(context, lane).catch((error) => {
@@ -746,17 +744,6 @@ async function syncInventory(context) {
   }
 }
 
-async function syncDailyViewData(context) {
-  try {
-    const result = await pushDailyViewData({ root: context.root, workDir: context.workDir });
-    if (!result.skipped) {
-      console.log(`已把 ${result.dateKey} 的最新目录数量、素材使用率和发布记录推到线上。`);
-    }
-  } catch (error) {
-    console.error("每日数据推送失败：", error.message || error);
-  }
-}
-
 function countGroupAssets(group) {
   const indexed = Number(group.totalAssets || (group.assets || []).length || 0);
   if (indexed > 0) return indexed;
@@ -927,55 +914,15 @@ async function request(context, pathname, { method = "GET", body } = {}) {
 export const DEFAULT_POLL_MS = 60_000;
 export const DEFAULT_SYNC_MS = 300_000;
 export const LOCAL_WATCH_MS = 2_000;
-export const DAILY_VIEW_DATA_FILE = "factory-daily-data-sync.json";
-
-export function beijingDateKey(now = Date.now()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(now));
-}
-
-export function dailyViewDataAlreadyPushed(workDir, now = Date.now()) {
-  try {
-    const marker = JSON.parse(fs.readFileSync(path.join(workDir, DAILY_VIEW_DATA_FILE), "utf8"));
-    return String(marker.dateKey || "") === beijingDateKey(now);
-  } catch {
-    return false;
-  }
-}
 
 function collectIndexedAssetGroups(root, config) {
   const libraryRoot = String(config.assetLibraryRoot || "").trim();
+  if (!libraryRoot) return listAssetGroups(root);
+  const rootDir = path.resolve(libraryRoot);
+  if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) return listAssetGroups(root);
   const discovered = discoverAssetLibraryGroups(root, libraryRoot);
-  return discovered.length
-    ? listAssetGroups(root).filter((group) => discovered.some((item) => item.id === group.id))
-    : listAssetGroups(root);
-}
-
-function slimAssetCatalogRow(group) {
-  return {
-    id: group.id,
-    name: group.name,
-    path: group.path,
-    sourceDir: group.sourceDir,
-    totalAssets: group.totalAssets,
-    clipCount: group.clipCount
-  };
-}
-
-function latestAssetCatalog(root, config, { limit = 8 } = {}) {
-  return publicAssetGroupRows(collectIndexedAssetGroups(root, config))
-    .map((group) => {
-      let mtime = 0;
-      const dir = String(group.sourceDir || group.path || "").trim();
-      try {
-        if (dir && fs.existsSync(dir)) mtime = fs.statSync(dir).mtimeMs;
-      } catch {
-        mtime = 0;
-      }
-      return { group: slimAssetCatalogRow(group), mtime };
-    })
-    .sort((left, right) => right.mtime - left.mtime || String(left.group.name).localeCompare(String(right.group.name), "zh-Hans-CN"))
-    .slice(0, Math.max(1, Number(limit) || 8))
-    .map((item) => item.group);
+  const allowedIds = new Set(discovered.map((group) => group.id));
+  return listAssetGroups(root).filter((group) => allowedIds.has(group.id));
 }
 
 function publicAssetGroupRows(groups) {
@@ -1010,49 +957,6 @@ export async function pushAssetGroups({ root = process.cwd(), workDir } = {}) {
   return { ok: true, groups, folders: groups.length };
 }
 
-export async function pushDailyViewData({ root = process.cwd(), workDir, force = false, now = Date.now() } = {}) {
-  const config = readConfig(root);
-  const storage = resolveStorageDirs(root, config);
-  const resolvedWorkDir = workDir || storage.workDir;
-  const dateKey = beijingDateKey(now);
-  if (!force && dailyViewDataAlreadyPushed(resolvedWorkDir, now)) return { ok: true, skipped: true, dateKey };
-  const settings = loadSettings(resolvedWorkDir);
-  if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把今日数据同步到线上。");
-  const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
-  const records = readOfficialPublishRecords(resolvedWorkDir);
-  const groups = collectIndexedAssetGroups(root, config);
-  const assetUsageDashboard = buildAssetUsageSnapshot(root, {
-    groupIds: groups.map((group) => group.id),
-    publishRecords: records
-  });
-  const audioGroups = latestAudioCatalog(config);
-  const assetGroups = latestAssetCatalog(root, config);
-  await request({ settings, workerId }, "/api/worker/sync", {
-    method: "POST",
-    body: {
-      workerId,
-      audioGroups,
-      assetGroups,
-      assetUsageDashboard,
-      officialPublishRecords: records
-    }
-  });
-  const result = {
-    ok: true,
-    skipped: false,
-    dateKey,
-    groups: assetUsageDashboard.groups?.length || 0,
-    audioFolders: audioGroups.length,
-    assetFolders: assetGroups.length,
-    sampledAt: assetUsageDashboard.sampledAt
-  };
-  fs.writeFileSync(path.join(resolvedWorkDir, DAILY_VIEW_DATA_FILE), JSON.stringify({
-    ...result,
-    pushedAt: now
-  }, null, 2), "utf8");
-  return result;
-}
-
 export async function pushAudioGroups({ root = process.cwd(), workDir } = {}) {
   const config = readConfig(root);
   const storage = resolveStorageDirs(root, config);
@@ -1071,39 +975,6 @@ export async function pushAudioGroups({ root = process.cwd(), workDir } = {}) {
     groups,
     platforms: groups.filter((group) => group.kind === "platform").length,
     folders: groups.length
-  };
-}
-
-export async function pushAssetUsageDashboard({ root = process.cwd(), workDir, publishRecords } = {}) {
-  const config = readConfig(root);
-  const storage = resolveStorageDirs(root, config);
-  const resolvedWorkDir = workDir || storage.workDir;
-  const settings = loadSettings(resolvedWorkDir);
-  if (!settings.url || !settings.token) throw new Error("未配置工厂云工人，无法把素材使用率同步到线上。");
-  const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
-  const groups = collectIndexedAssetGroups(root, config);
-  const records = Array.isArray(publishRecords) ? publishRecords : readOfficialPublishRecords(resolvedWorkDir);
-  const assetUsageDashboard = buildAssetUsageSnapshot(root, {
-    groupIds: groups.map((group) => group.id),
-    publishRecords: records
-  });
-  await request({ settings, workerId }, "/api/worker/sync", {
-    method: "POST",
-    body: { workerId, assetUsageDashboard }
-  });
-  const impact = Object.values(assetUsageDashboard.dashboards || {}).reduce((sum, dash) => {
-    const item = dash.impact || {};
-    return {
-      publishedMatched: sum.publishedMatched + Number(item.publishedMatched || 0),
-      withVideoId: sum.withVideoId + Number(item.withVideoId || 0),
-      withViews: sum.withViews + Number(item.withViews || 0)
-    };
-  }, { publishedMatched: 0, withVideoId: 0, withViews: 0 });
-  return {
-    ok: true,
-    sampledAt: assetUsageDashboard.sampledAt,
-    groups: assetUsageDashboard.groups?.length || 0,
-    ...impact
   };
 }
 

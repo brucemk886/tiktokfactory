@@ -14,7 +14,6 @@ const PAGE_FILES = {
   "/psychology-narrative": "psychology-narrative.html",
   "/quiz": "quiz.html",
   "/ai": "ai.html",
-  "/asset-usage": "asset-usage.html",
   "/novel-strategy": "novel-strategy.html",
   "/novel-library": "novel-library.html",
   "/novel-peer-hits": "novel-peer-hits.html",

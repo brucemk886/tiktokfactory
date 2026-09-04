@@ -56,6 +56,9 @@ export default {
         }
       }
 
+      if (url.pathname === "/asset-usage" || url.pathname === "/asset-usage.html") {
+        return redirect("/tasks");
+      }
       if (!env.ASSETS) return errorJson("静态资源未绑定。", 500);
       const page = pageFileFor(url.pathname);
       if (page) return env.ASSETS.fetch(rewriteAssetRequest(request, url, page));

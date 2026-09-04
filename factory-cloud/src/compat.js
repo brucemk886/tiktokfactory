@@ -1,4 +1,3 @@
-import { applyArchiveViewsToSnapshot, collectSnapshotVideoIds, dashboardFromSnapshot } from "../../scripts/asset-usage-impact.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
 import { errorJson, json, now, readJson, redirect, safeId } from "./http.js";
@@ -8,7 +7,6 @@ import { kvGet, kvSet } from "./kv.js";
 import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 import { peerRewriteOpeningPayload } from "../../scripts/novel-rewrite-source.js";
-import { loadArchiveViewsByVideoIds } from "./official-archive-store.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
 
@@ -23,7 +21,7 @@ export async function handleCompat(request, env, url, session) {
   }
 
   if (method === "GET" && pathname === "/api/asset-groups") {
-    return json({ groups: publicAssetGroups(await kvGet(db, "asset-groups", [])), usage: await kvGet(db, "asset-usage", {}) });
+    return json({ groups: publicAssetGroups(await kvGet(db, "asset-groups", [])), usage: {} });
   }
   if (method === "GET" && pathname === "/api/audio-groups") {
     return json({
@@ -33,11 +31,6 @@ export async function handleCompat(request, env, url, session) {
   }
   if (method === "GET" && pathname === "/api/shared-libraries") {
     return json({ libraries: await kvGet(db, "shared-libraries", []) });
-  }
-  if (method === "GET" && pathname === "/api/asset-usage") {
-    const snapshot = await kvGet(db, "asset-usage-dashboard", null);
-    const views = await loadArchiveViewsByVideoIds(db, collectSnapshotVideoIds(snapshot));
-    return json(dashboardFromSnapshot(applyArchiveViewsToSnapshot(snapshot, views), String(url.searchParams.get("groupId") || "")));
   }
   if (method === "GET" && pathname === "/api/asset-library-root") {
     return json({ libraryRoot: "", cloud: true, message: "素材目录在工人机本地。" });

@@ -134,13 +134,16 @@ test("local reddit mix can refresh audio folders and push them to the factory", 
   assert.match(server, /pushAssetGroups/);
 });
 
-test("asset usage stays local and only syncs from the worker machine", () => {
+test("asset usage stays on the local worker and is not a factory page", () => {
   const html = fs.readFileSync(path.join(publicDir, "asset-usage.html"), "utf8");
   const js = fs.readFileSync(path.join(publicDir, "asset-usage.js"), "utf8");
-  assert.match(html, /id="syncUsageBtn"/);
-  assert.match(html, /data-local-only/);
-  assert.match(js, /\/api\/asset-usage\/sync/);
-  assert.match(js, /item\.hidden = !isLocalWorkerPage/);
+  const server = fs.readFileSync(path.join(root, "scripts", "server.js"), "utf8");
+  assert.match(html, /id="reindexUsageBtn"/);
+  assert.doesNotMatch(html, /id="syncUsageBtn"/);
+  assert.doesNotMatch(js, /\/api\/asset-usage\/sync/);
+  assert.doesNotMatch(server, /\/api\/asset-usage\/sync/);
+  assert.equal(shouldRedirectLocalPageToFactory("/asset-usage"), false);
+  assert.equal(CLOUD_SIDEBAR_MODULES.some((entry) => entry.id === "asset-usage"), false);
 });
 
 test("every authenticated HTML sidebar loads the canonical renderer", () => {
@@ -203,8 +206,7 @@ test("factory cloud keeps peer hits under novel promotion", () => {
   assert.deepEqual(item?.roles, ["admin", "operator"]);
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-ops-report")?.label, "数据概览");
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-effects")?.label, "小说数据统计");
-  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage")?.group?.id, "novel-promotion");
-  assert.deepEqual(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage")?.roles, ["admin"]);
+  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "asset-usage"), undefined);
   assert.deepEqual(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "ai")?.roles, ["admin"]);
   assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "ai")?.href, "/ai");
   assert.ok(

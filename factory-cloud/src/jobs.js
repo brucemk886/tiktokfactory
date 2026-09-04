@@ -1,4 +1,3 @@
-import { collectSnapshotVideoIds } from "../../scripts/asset-usage-impact.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -19,7 +18,6 @@ const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/asset-groups\/preprocess\/start$/, type: "asset-preprocess", title: "素材预处理" },
   { method: "POST", pattern: /^\/api\/folder-classify\/start$/, type: "folder-classify", title: "文件夹分类" },
   { method: "POST", pattern: /^\/api\/images\/unsplash\/start$/, type: "unsplash", title: "Unsplash 拉图" },
-  { method: "POST", pattern: /^\/api\/asset-usage\/reindex\/start$/, type: "asset-reindex", title: "素材使用率重扫" },
   { method: "POST", pattern: /^\/api\/official-tiktok\/publish$/, type: "official-publish", title: "官方发布上传" },
   { method: "POST", pattern: /^\/api\/geelark\/publish$/, type: "geelark-publish", title: "GeeLark 发布" }
 ];
@@ -33,8 +31,7 @@ const PROGRESS_ROUTES = [
   { pattern: /^\/api\/quiz\/progress\/([^/]+)$/, type: "quiz" },
   { pattern: /^\/api\/asset-groups\/preprocess\/progress\/([^/]+)$/, type: "asset-preprocess" },
   { pattern: /^\/api\/folder-classify\/progress\/([^/]+)$/, type: "folder-classify" },
-  { pattern: /^\/api\/images\/unsplash\/progress\/([^/]+)$/, type: "unsplash" },
-  { pattern: /^\/api\/asset-usage\/reindex\/progress\/([^/]+)$/, type: "asset-reindex" }
+  { pattern: /^\/api\/images\/unsplash\/progress\/([^/]+)$/, type: "unsplash" }
 ];
 
 const CANCEL_ROUTES = [
@@ -320,15 +317,6 @@ async function handleWorkerApi(request, env, url, ctx) {
     }
     if (Array.isArray(body.audioGroups)) {
       await kvSet(env.DB, "audio-groups", mergeWorkerCatalog(await kvGet(env.DB, "audio-groups", []), body.audioGroups, syncWorkerId));
-    }
-    if (body.usage) await kvSet(env.DB, "asset-usage", body.usage);
-    if (body.assetUsageDashboard && typeof body.assetUsageDashboard === "object") {
-      const existingDashboard = await kvGet(env.DB, "asset-usage-dashboard", null);
-      const incomingIds = collectSnapshotVideoIds(body.assetUsageDashboard).length;
-      const existingIds = collectSnapshotVideoIds(existingDashboard).length;
-      if (incomingIds || !existingIds) {
-        await kvSet(env.DB, "asset-usage-dashboard", body.assetUsageDashboard);
-      }
     }
     // A freshly set-up worker has no local reddit-mix-settings.json and sends {};
     // that must not wipe the settings another worker already synced.

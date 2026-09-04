@@ -371,7 +371,7 @@ function withOpsReportModules(value, role) {
   if (!modules.length) return value;
   const midVideoIds = ["mid-video", "schulte", "psychology-narrative", "quiz", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
   const psychologyIds = ["psychology-topics", "psychology", "psychology-effects", "psychology-ops-report", "psychology-publish"];
-  const novelIds = ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "asset-usage"];
+  const novelIds = ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks"];
   if (modules.some((moduleId) => midVideoIds.includes(moduleId))) {
     insertModuleAfter(modules, "mid-video-effects", "mid-video-ops-report");
     insertModuleAfter(modules, "mid-video-ops-report", "mid-video-publish");
@@ -385,7 +385,6 @@ function withOpsReportModules(value, role) {
     insertModuleAfter(modules, "novel-library", "novel-peer-hits");
     insertModuleAfter(modules, "novel-peer-hits", "novel-ops-report");
     insertModuleAfter(modules, "novel-ops-report", "novel-effects");
-    if (role === "admin") insertModuleAfter(modules, "tasks", "asset-usage");
   }
   if (role === "admin") {
     insertModuleAfter(modules, "schulte", "psychology-narrative");

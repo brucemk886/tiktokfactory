@@ -208,47 +208,6 @@ function sortAudioLibraryGroups(groups) {
   });
 }
 
-export function slimAudioCatalogRow(group = {}) {
-  const paths = Array.isArray(group.paths)
-    ? group.paths.map((item) => String(item || "").trim()).filter(Boolean)
-    : [];
-  return {
-    id: String(group.id || group.name || "").trim(),
-    kind: String(group.kind || "").trim(),
-    name: String(group.name || group.id || "").trim(),
-    path: String(group.path || paths[0] || "").trim(),
-    paths,
-    totalAssets: Number(group.totalAssets) || 0,
-    bookCount: Number(group.bookCount) || 0,
-    platform: String(group.platform || "").trim(),
-    rootOnly: group.rootOnly === true
-  };
-}
-
-export function latestAudioCatalog(config = {}, { limit = 8 } = {}) {
-  const groups = discoverAudioLibraryGroups(config);
-  const platforms = groups.filter((group) => group.kind === "platform").map(slimAudioCatalogRow);
-  const recent = groups
-    .filter((group) => group.kind === "batch" || group.kind === "legacy")
-    .map((group) => {
-      let mtime = 0;
-      try {
-        if (group.path) mtime = fs.statSync(group.path).mtimeMs;
-      } catch {
-        mtime = 0;
-      }
-      return { row: slimAudioCatalogRow(group), mtime };
-    })
-    .sort((left, right) => right.mtime - left.mtime || left.row.name.localeCompare(right.row.name, "zh-Hans-CN"))
-    .slice(0, Math.max(1, Number(limit) || 8))
-    .map((item) => item.row);
-  const byId = new Map();
-  for (const row of [...platforms, ...recent]) {
-    if (row.id) byId.set(row.id, row);
-  }
-  return [...byId.values()];
-}
-
 export function listAudioLibraryFiles(config = {}) {
   const rootDir = resolveAudioLibraryRoot(config);
   if (!fs.existsSync(rootDir) || !fs.statSync(rootDir).isDirectory()) return [];

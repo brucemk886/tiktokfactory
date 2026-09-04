@@ -1,7 +1,6 @@
 const groupSelect = document.querySelector("#groupSelect");
 const refreshButton = document.querySelector("#refreshUsageBtn");
 const reindexButton = document.querySelector("#reindexUsageBtn");
-const syncButton = document.querySelector("#syncUsageBtn");
 const usageStatus = document.querySelector("#usageStatus");
 const folderRows = document.querySelector("#folderRows");
 const assetRows = document.querySelector("#assetRows");
@@ -14,7 +13,6 @@ document.querySelectorAll("[data-local-only]").forEach((item) => {
 
 refreshButton?.addEventListener("click", loadUsage);
 reindexButton?.addEventListener("click", startReindex);
-syncButton?.addEventListener("click", syncToFactory);
 groupSelect?.addEventListener("change", loadUsage);
 loadUsage();
 
@@ -34,26 +32,6 @@ async function loadUsage() {
     assetRows.innerHTML = `<tr><td colspan="10">暂无数据。</td></tr>`;
     if (reuseTierRows) reuseTierRows.innerHTML = `<tr><td colspan="5">暂无对照数据。</td></tr>`;
   } finally {
-    refreshButton.disabled = false;
-  }
-}
-
-async function syncToFactory() {
-  if (!isLocalWorkerPage) return;
-  syncButton.disabled = true;
-  refreshButton.disabled = true;
-  usageStatus.textContent = "正在回拉官方视频 ID，并同步盘点到线上...";
-  try {
-    const response = await fetch("/api/asset-usage/sync", { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "同步到线上失败。");
-    const pulled = data.videoIds || {};
-    usageStatus.textContent = `已同步到线上：对上 ${data.publishedMatched || 0} 条发布，回传 ${pulled.withVideoId || data.withVideoId || 0} 个视频 ID。`;
-    await loadUsage();
-  } catch (error) {
-    usageStatus.textContent = error.message || "同步到线上失败。";
-  } finally {
-    syncButton.disabled = false;
     refreshButton.disabled = false;
   }
 }
@@ -117,17 +95,15 @@ function renderDashboard(data) {
   setText("#avgViews", formatCount(impact.avgViews));
   usageStatus.textContent = data.group
     ? `${data.group.name} · 对上 ${impact.publishedMatched || 0} 条官方发布 · ${impact.withVideoId || 0} 条已有视频 ID${formatImpactHint(data, impact)}${formatSampledAt(data.sampledAt)}`
-    : (isLocalWorkerPage
-      ? "还没有素材使用率数据。混剪记账后点「同步到线上」传到工厂。"
-      : "本机工人还没有把素材使用率同步上来。混剪仍会记账，本地点同步后会传到工厂。");
+    : "还没有素材使用率数据。混剪记账后刷新本页即可。";
   renderReuseTiers(impact.reuseTiers || []);
   renderFolders(data.folders || []);
   renderAssets(data.highReuseAssets || []);
 }
 
 function formatImpactHint(data, impact) {
-  if (data.viewsEnriched) return " · 播放来自工厂官方归档";
-  if (impact.withVideoId && !impact.withViews) return isLocalWorkerPage ? " · 播放量同步到线上后对照归档" : " · 归档里还没有这些视频的播放";
+  if (data.viewsEnriched) return " · 播放来自本机发布记录";
+  if (impact.withVideoId && !impact.withViews) return " · 已有视频 ID，还没有对照到播放";
   return "";
 }
 

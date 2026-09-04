@@ -46,11 +46,18 @@ test("archive ingest upserts batches and only deletes named accounts", async () 
   assert.match(official, /listPublishRecords/);
 });
 
-test("factory asset-usage reads archive views without importing the local asset library", async () => {
-  const compat = await readFile(new URL("compat.js", root), "utf8");
-  assert.match(compat, /applyArchiveViewsToSnapshot/);
-  assert.match(compat, /loadArchiveViewsByVideoIds/);
-  assert.match(compat, /asset-usage-impact\.js/);
+test("factory cloud no longer serves an online asset-usage dashboard", async () => {
+  const { pageFileFor } = await import("./pages.js");
+  const [compat, index] = await Promise.all([
+    readFile(new URL("compat.js", root), "utf8"),
+    readFile(new URL("index.js", root), "utf8")
+  ]);
+  assert.equal(pageFileFor("/asset-usage"), "");
+  assert.match(index, /pathname === "\/asset-usage"/);
+  assert.doesNotMatch(compat, /applyArchiveViewsToSnapshot/);
+  assert.doesNotMatch(compat, /asset-usage-impact\.js/);
+  assert.doesNotMatch(compat, /\/api\/asset-usage/);
+  assert.doesNotMatch(compat, /kvGet\(db, "asset-usage"/);
   assert.doesNotMatch(compat, /asset-library\.js/);
 });
 

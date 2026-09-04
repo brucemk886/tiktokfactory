@@ -73,7 +73,7 @@
 
 ### 2.3 库存同步 `syncInventory`
 
-每 5 分钟 `POST /api/worker/sync`，body 里 `officialPublishRecords` 只含 `max(updatedAt, createdAt, publishedAt) >= 上次同步时间 - 60s` 的官方记录，最多 800 条；首次启动传全量。另带 `redditMixSettings`、`retentionHours: 48`，首次还会上传小说库。GeeLark 记录不上传。素材组 / 音频目录 / 素材使用率不走这条定时同步：目录变化在本机 Reddit 混剪页点「刷新并推送」，使用率页点「同步到线上」。曾经每个北京日自动推最近 8 个目录，已删，避免半量覆盖线上清单。
+每 5 分钟 `POST /api/worker/sync`，body 里 `officialPublishRecords` 只含 `max(updatedAt, createdAt, publishedAt) >= 上次同步时间 - 60s` 的官方记录，最多 800 条；首次启动传全量。另带 `redditMixSettings`、`retentionHours: 48`，首次还会上传小说库。GeeLark 记录不上传。素材组 / 音频目录不走这条定时同步：目录变化在本机 Reddit 混剪页点「刷新并推送」。素材使用率只在各台本机 `localhost:3010/asset-usage` 查看，不再上传工厂。曾经每个北京日自动推最近 8 个目录，已删，避免半量覆盖线上清单。
 
 ### 2.4 排产与日上限（`scripts/auto-task-manager.js`）
 
@@ -107,7 +107,7 @@
 - **任务 payload 只带 `assetGroupId` 和音频 id/文件名**，工人在本机按素材组 id（= `assetLibraryRoot` 下的文件夹名）和音频文件名找文件；找不到就任务失败。所以任务必须指给拥有那些素材的机器——UI 的过滤只是帮你别选错，云端不校验。
 - **机器之间不传任何东西**。新机器只需要工厂的 `WORKER_TOKEN`；`GET /api/worker/bootstrap`（worker token 鉴权）下发中台地址 + bridge key（`official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`）、ElevenLabs key（`ELEVENLABS_API_KEY` 或 `psychology-settings`）、`reddit-mix-settings`；`scripts/worker-setup/bootstrap-worker.mjs` 用它加仓库里的 `config.example.json` 生成本机全部配置。`work/` 下每台各一份，谁也不拷谁的。
 - 云端 `reddit-mix-settings` 由工人 sync 上传；没有本地文件的新工人不发这个字段，云端也忽略空对象，不会互相清空。新工人本地小说库为空时也不触发导入。
-- 已知显示局限：`factory-worker-status`、`asset-usage`、`asset-usage-dashboard` 都只记最后一次推送的机器（数据总览的素材使用率多机下只看主机的）；建任务页的「排队等待中，前方 N 个」按同机器算，但没区分不指定机器的任务。
+- 已知显示局限：`factory-worker-status` 只记最后一次推送的机器；建任务页的「排队等待中，前方 N 个」按同机器算，但没区分不指定机器的任务。素材使用率只在各台本机看，工厂云不再提供该页。
 - 日规划上限（`config.autoTasks.dailyPlannedLimit`）只在本机 3010 页面建任务时校验，按每台机器自己的任务算；云端页面建的任务不经过它。两台机器都从 `config.json` 读，各配各的。
 
 ---
@@ -311,6 +311,7 @@
 ### 已修（2026-09-04，目录同步）
 
 27. 工人每 5 分钟试一次、每个北京日只推最近 8 个素材/音频目录的定时任务已删。目录清单只认本机「刷新并推送」的全量；5 分钟 `syncInventory` 仍只传发布记录。
+28. 工厂云素材使用率页、侧栏、`GET /api/asset-usage` 和工人上传的 `assetUsageDashboard` 已删。使用率只在各台本机查看；多机素材不同，线上无法正确合并。`factory_kv` 里的 `asset-usage` / `asset-usage-dashboard` 由迁移 `0019` 删除。
 
 ### 未修（评估后不需要，或超出本阶段）
 

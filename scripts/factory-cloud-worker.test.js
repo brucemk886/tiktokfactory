@@ -7,7 +7,6 @@ import { createAutoTaskManager, normalizeOfficialAutoPublishResult } from "./aut
 import {
   DEFAULT_POLL_MS,
   DEFAULT_SYNC_MS,
-  dailyViewDataAlreadyPushed,
   helloPayload,
   isOfficialPublishProgressMessage,
   loadSettings,
@@ -16,7 +15,6 @@ import {
   parseBoolean,
   pushAssetGroups,
   pushAudioGroups,
-  pushDailyViewData,
   recordsChangedSince,
   workerLanes
 } from "./factory-cloud-worker.js";
@@ -93,18 +91,18 @@ test("factory worker requeues its own interrupted jobs on hello", () => {
   assert.match(source, /\/api\/worker\/hello/);
   assert.match(source, /工人重启，已把/);
   assert.match(source, /mirrorCloudTask\(context, job, outcomeLocal\)/);
-  assert.match(source, /assetUsageDashboard = buildAssetUsageSnapshot/);
   assert.match(source, /officialPublishRecords: recordsChangedSince\(readOfficialPublishRecords\(context\.workDir\), context\.publishRecordsSyncedAt\)/);
   assert.match(source, /if \(result\?\.ok\) context\.publishRecordsSyncedAt = startedAt;/);
-  assert.match(source, /export async function pushAssetUsageDashboard/);
+  assert.doesNotMatch(source, /pushAssetUsageDashboard/);
+  assert.doesNotMatch(source, /assetUsageDashboard/);
   assert.match(source, /export async function pushAudioGroups/);
   assert.match(source, /export async function pushAssetGroups/);
-  assert.match(source, /export async function pushDailyViewData/);
+  assert.doesNotMatch(source, /pushDailyViewData/);
+  assert.doesNotMatch(source, /syncDailyViewData/);
+  assert.doesNotMatch(source, /latestAudioCatalog/);
+  assert.doesNotMatch(source, /latestAssetCatalog/);
   assert.match(source, /audioGroups: groups/);
-  assert.match(source, /latestAudioCatalog/);
-  assert.match(source, /latestAssetCatalog/);
   assert.doesNotMatch(source, /audioGroups: discoverAudioLibraryGroups/);
-  assert.doesNotMatch(source, /assetUsageDashboard: buildAssetUsageSnapshot\(context/);
   assert.match(source, /checkpoint: existing\?\.officialPublishCheckpoint/);
   assert.match(source, /onCheckpoint:/);
   assert.match(source, /officialPublishCheckpoint: next/);
@@ -118,19 +116,10 @@ test("official publish progress messages do not treat failure copy as uploading"
   assert.equal(isOfficialPublishProgressMessage("出片 40 条，并已提交官方发布。"), false);
 });
 
-test("daily view data is marked once per Beijing day", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-daily-view-"));
-  assert.equal(dailyViewDataAlreadyPushed(dir), false);
-  fs.writeFileSync(path.join(dir, "factory-daily-data-sync.json"), JSON.stringify({ dateKey: "2026-08-29" }));
-  assert.equal(dailyViewDataAlreadyPushed(dir, Date.parse("2026-08-29T23:00:00+08:00")), true);
-  assert.equal(dailyViewDataAlreadyPushed(dir, Date.parse("2026-08-30T00:30:00+08:00")), false);
-});
-
 test("catalog pushes refuse to upload when the factory worker is not configured", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-catalog-sync-"));
   await assert.rejects(() => pushAssetGroups({ root: process.cwd(), workDir: dir }), /未配置工厂云工人/);
   await assert.rejects(() => pushAudioGroups({ root: process.cwd(), workDir: dir }), /未配置工厂云工人/);
-  await assert.rejects(() => pushDailyViewData({ root: process.cwd(), workDir: dir, force: true }), /未配置工厂云工人/);
 });
 
 test("factory worker claims once a minute and does not poll cloud cancel", () => {
