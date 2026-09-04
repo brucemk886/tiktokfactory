@@ -100,7 +100,7 @@
 模型：**每台机器有自己的素材和音频，任务在创建时指定给哪台跑**；机器之间不需要互通，只要都连得上工厂云。搭建步骤见 `docs/WORKER-SETUP.md`。
 
 - **机器登记**：hello 和 sync 都会往 kv `factory-workers` 写一行 `{workerId, label, hostname, assignedOnly, renderConcurrency, publishConcurrency, renderJobTypes, lastSeenAt}`；`GET /api/workers`（admin）返回列表，`lastSeenAt` 10 分钟内算在线。
-- **指定机器**：`POST /api/auto-tasks` 接受 `workerId`（必须是已登记的机器），存在 `task.workerId`，渲染任务 payload 带 `targetWorkerId`；resume 沿用；「重试发布」的 `renderWorkerId` 取上次任务的 `worker_id`，没有就用 `task.workerId`。不传 = 不指定，谁先 claim 谁做。
+- **指定机器**：`POST /api/auto-tasks` 接受 `workerId`（必须是已登记的机器），存在 `task.workerId`，渲染任务 payload 带 `targetWorkerId`；resume 沿用；「重试发布」的 `renderWorkerId` 取上次任务的 `worker_id`，没有就用 `task.workerId`。不传 = 不指定，谁先 claim 谁做。建任务页「执行机器」只在工厂云、且已登记 ≥2 台时显示；本机 3010 不显示，任务默认就是这台机器。
 - **claim 亲和**：`COALESCE(NULLIF(targetWorkerId,''), NULLIF(renderWorkerId,''), '') IN ('', 本工人)`；工人带 `assignedOnly: true` 时改为 `= 本工人`，即不接没指定机器的任务。第二台机器必须配 `assignedOnly`，否则它会抢到主机素材组的任务然后报找不到素材。
 - **成片只在渲染它的那台机器上**。渲染完成时云端起的 `official-publish` 任务带 `payload.renderWorkerId`（= 渲染任务的 `worker_id`），发布通道只会拿到自己渲染的；一台工人下线，它渲染完但还没发布的任务会一直排队等它回来，不会被别的机器抢走然后报「视频文件不存在」。
 - **素材组 / 音频文件夹按机器合并**：本机 Reddit 混剪页「刷新并推送」才会把全量 `assetGroups` / `audioGroups` 送到 `/api/worker/sync`；`mergeWorkerCatalog` 打上 `workerId`，只替换同一机器的旧条目（以及 id 相同的未打标旧条目），不同机器的并存。`/api/asset-groups`、`/api/audio-groups` 返回带 `workerId`，建任务页选了机器就只显示那台的。同名素材组在两台机器上是两条不同记录，各自用各自的路径。工人不再每日自动推最近 8 个目录。

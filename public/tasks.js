@@ -22,6 +22,9 @@ const isLocalWorkerPage = ["localhost", "127.0.0.1"].includes(location.hostname)
 document.querySelectorAll("[data-local-only]").forEach((item) => {
   item.hidden = !isLocalWorkerPage;
 });
+document.querySelectorAll("[data-cloud-only]").forEach((item) => {
+  item.hidden = isLocalWorkerPage;
+});
 applyPublishChannelChrome();
 
 $("#createTaskBtn").addEventListener("click", () => createTask());
@@ -449,7 +452,12 @@ function selectedWorkerId() {
 async function loadWorkers() {
   const field = $("#workerField");
   const select = $("#workerSelect");
-  if (!field || !select || isLocalWorkerPage) return;
+  if (!field || !select) return;
+  if (isLocalWorkerPage) {
+    field.hidden = true;
+    select.innerHTML = "";
+    return;
+  }
   try {
     const response = await fetch(`/api/workers?t=${Date.now()}`);
     if (!response.ok) throw new Error();

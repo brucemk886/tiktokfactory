@@ -128,6 +128,9 @@ test("local reddit mix can refresh audio folders and push them to the factory", 
   assert.match(html, /音频文件夹/);
   assert.match(js, /\/api\/asset-groups\/sync/);
   assert.match(js, /item\.hidden = !isLocalWorkerPage/);
+  assert.match(html, /id="workerField"[^>]*data-cloud-only|data-cloud-only[^>]*id="workerField"/);
+  assert.match(js, /\[data-cloud-only\]/);
+  assert.match(js, /isLocalWorkerPage\) \{\s*field\.hidden = true;/);
   assert.match(server, /\/api\/audio-groups\/sync/);
   assert.match(server, /\/api\/asset-groups\/sync/);
   assert.match(server, /pushAudioGroups/);
@@ -161,6 +164,12 @@ test("browser modules do not duplicate the sidebar catalog", () => {
     const source = fs.readFileSync(path.join(publicDir, name), "utf8");
     assert.doesNotMatch(source, /const\s+SIDEBAR_(?:ITEMS|MODULES)\s*=/);
   }
+});
+
+test("admin visibility does not force-show fields that the page hid", () => {
+  const access = fs.readFileSync(path.join(publicDir, "access.js"), "utf8");
+  assert.match(access, /if \(user\.role !== "admin"\) item\.hidden = true/);
+  assert.doesNotMatch(access, /item\.hidden = user\.role !== "admin"/);
 });
 
 test("novel effects keep official and GeeLark data on separate pages", () => {

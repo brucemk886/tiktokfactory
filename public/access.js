@@ -165,6 +165,6 @@ function sidebarPath(pathname) {
 
 function applyRoleVisibility(user) {
   document.querySelectorAll("[data-admin-only]").forEach((item) => {
-    item.hidden = user.role !== "admin";
+    if (user.role !== "admin") item.hidden = true;
   });
 }
