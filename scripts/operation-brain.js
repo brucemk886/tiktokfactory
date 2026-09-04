@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { listMediaFiles } from "./asset-library.js";
 import { buildContentRuleDiagnostics } from "./content-diagnosis-rules.js";
+import { findNearDuplicateScript } from "./script-similarity.js";
 
 const ANALYSIS_WINDOW_DAYS = 10;
 const OFFICIAL_ANALYSIS_WINDOW_DAYS = 30;
@@ -1493,6 +1494,22 @@ async function materializeScriptOptimizations({ strategy = {}, audioLibrary, pla
     const source = available.get(sourceAudioId);
     if (!source) {
       results.push({ ...request, status: "skipped", error: "对应的本地原文与音频不存在，未生成新音频。" });
+      continue;
+    }
+    // A "rewrite" that is essentially the original (or a version already in
+    // the library) would register as a new experiment and burn a TTS run
+    // without testing anything.
+    const siblings = [...available.values()]
+      .filter((item) => item.id === sourceAudioId || String(item.source?.sourceAudioId || "") === sourceAudioId)
+      .map((item) => ({ id: item.id, title: item.title, text: item.script || "" }));
+    const duplicate = findNearDuplicateScript(request.rewrittenScript, siblings);
+    if (duplicate) {
+      results.push({
+        ...request,
+        status: "skipped",
+        originalScript: source.script || "",
+        error: `改写稿和「${duplicate.script.title || duplicate.script.id}」几乎一样（相似度 ${Math.round(duplicate.similarity * 100)}%），没有生成音频。`
+      });
       continue;
     }
     try {

@@ -295,6 +295,14 @@
 19. 没推广码的音频照样出片照样发 → 渲染前先解析推广码，没有就跳过该音频；多文件夹任务不再把第一个文件夹的码兜底给其它文件夹。
 20. 视频→账号 `i % n` 与音频周期相撞、同一波所有账号同一秒齐发 → 账号分配改成「最少条数里优先没发过这条音频的」，同一波账号在间隔内按 `k/n` 错开。
 
+### 已修（2026-09-04 上午，小说推文业务逻辑第二批）
+
+21. 学习闭环证据门槛（`novel-learning-loop.js`）：以前一个实验的 24h/72h/7d 三次评估就凑够「3 条证据」，100 播放置信度就过线。现在每个实验只投一票（取最成熟的一个窗口），模式要 `confidenceMinTests`（默认 3）个**独立实验**才能晋升/降级；候选视频播放低于 `evaluation.minViews`（默认 1000）的评估记为 `insufficient`，不算证据。策略页「评估与学习」多了「单次评估最少播放」「最低置信度」。
+22. 账号归一化：`novel-effect-service.getDecisionContext` 多返回 `accountBaselines`（每个账号近期所有视频的播放/3 秒留存/完播/平均观看比中位数，≥3 条样本才算）。评估时候选和基线的每条视频先除以自己账号的中位数再比，大号发的改写不再天然是「赢」。没有基线的账号回落原始值，评估里有 `normalized` 标记。
+23. 改写去重（`script-similarity.js`）：`createScript` 对同一本书的已有版本做词级编辑距离相似度，≥90% 视为同一版本拒绝保存（409 `DUPLICATE_SCRIPT`，`allowDuplicate:true` 可强制）；批量出版本时被拦的版本跳过不整本失败；大脑的 `materializeScriptOptimizations` 改写稿和原稿/兄弟版本几乎一样时不生成音频。同时校验文案里的引导语：搜索码或 App 名和这本书的 `promotionCode`/`platform` 不一致直接拒（400 `CTA_MISMATCH`）。
+24. 配音回读校验（`tts-readback.js`）：混剪渲染本来就要用 ElevenLabs 转字幕，现在把转出来的文本和送去 TTS 的原文案（音频记录的 `script`，或库里的 script）算词错率，超过 `ttsReadbackMaxWer`（默认 15%，实测正常 Kokoro 出片在 0.3–3%）就跳过这条音频并写入 `work/tts-readback.json`；没有原文案的音频（同行导入的）不校验。`payload.ttsReadback:false` 可关。
+25. 描述多样化（`buildTikTokCaption`）：正文从 12 个模板里按 seed 选（seed = 账号 + 文件名，官方发布、GeeLark 发布、发布记录三处一致），优先用文案第一句 hook 而不是文件名；话题池 10 → 28 个，每条 3–5 个随机。同一本书发 50 个号，描述和话题不再全一样。
+
 ### 未修（评估后不需要，或超出本阶段）
 
 - 工厂早期迁移 `0004/0005/0008/0009/0011-0013` 的 `ADD COLUMN` 没 `IF NOT EXISTS`：SQLite 语法不支持，wrangler 用 `d1_migrations` 表记录已跑过的文件，线上不会重跑，不用改。

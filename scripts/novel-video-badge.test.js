@@ -284,45 +284,37 @@ test("opening title duration follows spoken title words and hides overlapping ca
   assert.equal(hidden.words[0].text, "The");
 });
 
-test("TikTok captions join audio title, promotion copy, and a compact platform hashtag", () => {
+test("TikTok captions vary body template and hashtags per post seed", () => {
   assert.equal(novelPlatformHashtag("NovelMaster"), "#NovelMaster");
   assert.equal(novelPlatformHashtag("Novel Master"), "#NovelMaster");
   assert.equal(novelPlatformHashtag("GoodNovel"), "#GoodNovel");
   assert.equal(novelPlatformHashtag("MotoNovel"), "#MotoNovel");
-  const novelMasterPromo = "Search 『479093』 on Novel Master APP to get the following";
-  assert.equal(buildTikTokCaption({
-    openingTitle: "She married my uncle",
-    promotionCopy: novelMasterPromo,
-    platform: "NovelMaster",
-    audioTitle: "3 Years in Prison for Her Lies 同行爆款-457-0f67a2a8.mp3"
-  }), [
-    novelMasterPromo,
-    pickVariedHashtags({ seed: novelMasterPromo, platform: "NovelMaster" }).join(" ")
-  ].join("\n\n"));
-  assert.match(buildTikTokCaption({
-    promotionCopy: novelMasterPromo,
-    platform: "NovelMaster"
-  }), /^Search 『479093』 on Novel Master APP to get the following\n\n#NovelMaster /);
-  assert.match(buildTikTokCaption({
-    promotionCopy: "Continue on GoodNovel.",
-    platform: "GoodNovel"
-  }), /^Continue on GoodNovel\.\n\n#GoodNovel /);
-  assert.match(buildTikTokCaption({
-    promotionCopy: "Read more on MotoNovel.",
-    platform: "MotoNovel"
-  }), /^Read more on MotoNovel\.\n\n#MotoNovel /);
-  assert.equal(buildTikTokCaption({
-    audioTitle: "conflict-first",
-    platform: "GoodNovel"
-  }), [
-    "conflict first",
-    pickVariedHashtags({ seed: "conflict first", platform: "GoodNovel" }).join(" ")
-  ].join("\n\n"));
+  const promo = "Search 479093 on Novel Master APP to get the following";
+  const base = { promotionCopy: promo, platform: "NovelMaster", hookLine: "She married my uncle.", audioTitle: "3 Years in Prison for Her Lies.mp3" };
+
+  const captions = ["acct-1:v.mp4", "acct-2:v.mp4", "acct-3:v.mp4", "acct-4:v.mp4", "acct-5:v.mp4", "acct-6:v.mp4"]
+    .map((seed) => buildTikTokCaption({ ...base, seed }));
+  // Same story, six accounts: not all identical.
+  assert.ok(new Set(captions).size >= 3, captions.join("\n---\n"));
+  for (const caption of captions) {
+    assert.ok(caption.includes("#NovelMaster"), caption);
+    const tags = caption.split("\n").pop().split(" ").filter((tag) => tag.startsWith("#"));
+    assert.ok(tags.length >= 4 && tags.length <= 6, caption);
+    assert.ok(/She married my uncle|Search 479093|3 Years in Prison/.test(caption), caption);
+  }
+  // Deterministic for a given seed.
+  assert.equal(buildTikTokCaption({ ...base, seed: "acct-1:v.mp4" }), buildTikTokCaption({ ...base, seed: "acct-1:v.mp4" }));
+
+  // Templates needing a missing field are skipped: promo only still works.
+  assert.match(buildTikTokCaption({ promotionCopy: "Continue on GoodNovel.", platform: "GoodNovel", seed: "x" }), /^Continue on GoodNovel\.\n\n#GoodNovel /);
+  assert.match(buildTikTokCaption({ promotionCopy: "Read more on MotoNovel.", platform: "MotoNovel", seed: "y" }), /^Read more on MotoNovel\.\n\n#MotoNovel /);
+  // Nothing but a file name still yields a usable body.
+  assert.match(buildTikTokCaption({ audioTitle: "conflict-first", platform: "GoodNovel" }), /^conflict first\n\n#GoodNovel /);
   assert.equal(extractAudioCaptionText("[music]20240203_reddit_stories_viral7_7331240398574112002_This is messes up.mp3"), "This is messes up");
   assert.equal(extractAudioCaptionText("plain.mp3", "He found the letter under the door. Then he ran."), "plain");
   const firstTags = pickVariedHashtags({ seed: "This is messes up" }).join(" ");
   const secondTags = pickVariedHashtags({ seed: "She married my uncle" }).join(" ");
-  assert.match(firstTags, /#reddit|#storytime|#aita/);
+  assert.match(firstTags, /#/);
   assert.notEqual(firstTags, secondTags);
 });
 
@@ -336,33 +328,41 @@ test("auto TikTok captions prefer the video fields and look up the book list whe
   }]));
   fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({
     novels: [{ id: "novel-1", platform: "NovelMaster", promotionCopy: "Unlock the rest with code 454311." }],
-    scripts: [{ id: "script-1", novelId: "novel-1", audioId: "audio-caption-1", openingTitle: "She married my uncle" }]
+    scripts: [{ id: "script-1", novelId: "novel-1", audioId: "audio-caption-1", openingTitle: "She married my uncle", text: "She married my uncle at the funeral. Nobody stopped her." }]
   }));
 
   assert.equal(resolveTikTokCaption({
     captionMode: "manual",
     manualCaption: "custom #tag"
   }), "custom #tag");
-  assert.equal(resolveTikTokCaption({
+  const fromVideo = resolveTikTokCaption({
     captionMode: "auto",
     video: {
       openingTitle: "The invitation was a trap",
       promotionCopy: "Continue on GoodNovel.",
       novelPlatform: "GoodNovel"
     },
-    manualCaption: "should not be used"
-  }), [
-    "Continue on GoodNovel.",
-    pickVariedHashtags({ seed: "Continue on GoodNovel.", platform: "GoodNovel" }).join(" ")
-  ].join("\n\n"));
-  assert.equal(resolveTikTokCaption({
+    manualCaption: "should not be used",
+    seed: "acct:a.mp4"
+  });
+  assert.match(fromVideo, /The invitation was a trap|Continue on GoodNovel\./);
+  assert.match(fromVideo, /#GoodNovel/);
+  assert.ok(!fromVideo.includes("should not be used"));
+
+  const lookedUp = resolveTikTokCaption({
     workDir,
     captionMode: "auto",
-    video: { audioName: "audio-caption-1.mp3", novelId: "novel-1" }
-  }), [
-    "Unlock the rest with code 454311.",
-    pickVariedHashtags({ seed: "Unlock the rest with code 454311.", platform: "NovelMaster" }).join(" ")
-  ].join("\n\n"));
+    video: { audioName: "audio-caption-1.mp3", novelId: "novel-1" },
+    seed: "acct:b.mp4"
+  });
+  assert.match(lookedUp, /She married my uncle at the funeral\.|Unlock the rest with code 454311\./);
+  assert.match(lookedUp, /#NovelMaster/);
+  // Two accounts posting the same file get different descriptions.
+  const seeds = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => resolveTikTokCaption({
+    workDir, captionMode: "auto", video: { audioName: "audio-caption-1.mp3", fileName: "same.mp4" }, seed: `${id}:same.mp4`
+  }));
+  assert.ok(new Set(seeds).size >= 3, seeds.join("\n---\n"));
+
   const redditCaption = resolveTikTokCaption({
     captionMode: "auto",
     video: { audioName: "plain.mp3" },

@@ -180,11 +180,12 @@ const novelEffectService = createNovelEffectService({
   officialAnalyticsService: privateTikTokAnalytics,
   readPublishRecords,
 });
-const novelLearningService = createNovelLearningService({
-  statePath: path.join(workDir, "official-novel-learning.json")
-});
 const novelStrategyService = createNovelStrategyService({
   statePath: path.join(workDir, "official-novel-strategy.json")
+});
+const novelLearningService = createNovelLearningService({
+  statePath: path.join(workDir, "official-novel-learning.json"),
+  policyProvider: () => novelStrategyService.getActivePolicy()
 });
 const operationBrain = createOperationBrainService({
   workDir,
@@ -2963,6 +2964,7 @@ async function publishThroughOfficialTikTok(payload = {}) {
             caption: resolveTikTokCaption({
               workDir,
               video: item.job.video,
+              seed: `${item.job.connectionId}:${item.job.fileName}`,
               captionMode: payload.captionMode,
               manualCaption: payload.videoDesc,
               fallback: {

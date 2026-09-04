@@ -1213,6 +1213,7 @@ export function buildOfficialPublishRecords(task, results, now = Date.now(), rec
       videoDesc: resolveTikTokCaption({
         workDir: recordsWorkDir,
         video,
+        seed: `${connectionId}:${String(result?.fileName || video?.fileName || "")}`,
         captionMode: task?.publish?.captionMode,
         manualCaption: task?.publish?.videoDesc,
         fallback: {

@@ -62,10 +62,23 @@ export async function runLocalBatchAudioVersions({
         model,
         reasoningEffort
       });
-      const scripts = openingVariantScriptPayloads(novel, generated.variants, { speakOpeningTitle }).map((payload) => (
-        novelContentLibrary.createScript(novel.id, payload)
-      ));
-      if (!scripts.length) throw new Error("生成了开头，但没有可保存的文案。");
+      const scripts = [];
+      const rejected = [];
+      for (const payload of openingVariantScriptPayloads(novel, generated.variants, { speakOpeningTitle })) {
+        try {
+          scripts.push(novelContentLibrary.createScript(novel.id, payload));
+        } catch (error) {
+          // Near-duplicates of an existing version and CTAs pointing at the
+          // wrong code/app are dropped; the remaining variants still ship.
+          if (error?.code !== "DUPLICATE_SCRIPT" && error?.code !== "CTA_MISMATCH") throw error;
+          rejected.push({ reason: error.code, message: String(error.message || "") });
+        }
+      }
+      if (!scripts.length) {
+        throw new Error(rejected.length
+          ? `生成的版本全部被拦下（${rejected.map((item) => item.message).join("；")}）。`
+          : "生成了开头，但没有可保存的文案。");
+      }
       let audioCount = 0;
       if (typeof generateAudio === "function") {
         const audio = await generateAudio({
@@ -91,6 +104,8 @@ export async function runLocalBatchAudioVersions({
         novelId: novel.id,
         title: novel.title,
         scriptCount: scripts.length,
+        rejectedCount: rejected.length,
+        rejected,
         audioCount
       });
     } catch (error) {

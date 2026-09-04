@@ -214,7 +214,8 @@ test("official publish results map to the shared publish-record schema", () => {
     scheduleAt: 2_000,
   });
   assert.deepEqual(records[0].taskIds, ["official-batch-1"]);
-  assert.equal(records[0].videoDesc, buildTikTokCaption({ audioTitle: "story-1.mp3" }));
+  // Caption is seeded per account + file so it matches what the publisher sends.
+  assert.equal(records[0].videoDesc, buildTikTokCaption({ audioTitle: "story-1.mp3", seed: "connection-1:video-1.mp4" }));
 });
 
 test("official publish records keep the per-video auto caption", () => {
@@ -241,8 +242,11 @@ test("official publish records keep the per-video auto caption", () => {
   assert.equal(records[0].videoDesc, buildTikTokCaption({
     openingTitle: "She married my uncle",
     promotionCopy: "Read the rest on Novel Master.",
-    platform: "NovelMaster"
+    platform: "NovelMaster",
+    seed: "connection-1:video-1.mp4"
   }));
+  assert.match(records[0].videoDesc, /#NovelMaster/);
+  assert.ok(!records[0].videoDesc.includes("should not be used"));
 });
 
 test("official publish record persistence is idempotent", () => {

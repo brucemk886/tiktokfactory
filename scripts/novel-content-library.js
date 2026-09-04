@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { buildOverview, dropDraftScripts, removeDraftScriptsById, removeScriptsById } from "./novel-overview.js";
+import { findNearDuplicateScript, promotionCtaMismatch } from "./script-similarity.js";
 
 const STORE_VERSION = 1;
 const NOVEL_PLATFORMS = ["GoodNovel", "MotoNovel", "NovelMaster"];
@@ -204,6 +205,19 @@ export function createNovelContentLibraryService({
     const parentId = safeId(payload.parentScriptId);
     if (parentId && !store.scripts.some((item) => item.id === parentId && item.novelId === novel.id)) {
       throw statusError(400, "原文案不属于这本小说。");
+    }
+    const ctaProblem = promotionCtaMismatch(text, { promotionCode: novel.promotionCode, platform: novel.platform });
+    if (ctaProblem) {
+      throw Object.assign(statusError(400, `文案的引导语和这本书不一致：${ctaProblem}`), { code: "CTA_MISMATCH" });
+    }
+    if (payload.allowDuplicate !== true) {
+      const duplicate = findNearDuplicateScript(text, store.scripts.filter((item) => item.novelId === novel.id));
+      if (duplicate) {
+        throw Object.assign(
+          statusError(409, `这段文案和已有版本「${duplicate.script.title || duplicate.script.id}」几乎一样（相似度 ${Math.round(duplicate.similarity * 100)}%），没有保存。`),
+          { code: "DUPLICATE_SCRIPT", duplicateScriptId: duplicate.script.id, similarity: duplicate.similarity }
+        );
+      }
     }
     const createdAt = new Date(now()).toISOString();
     const script = {

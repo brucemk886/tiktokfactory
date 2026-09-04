@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  DEFAULT_EVIDENCE_POLICY,
   EVALUATION_WINDOWS,
   aggregatePatternEvaluations,
   buildPatternKey,
@@ -10,8 +11,18 @@ import {
 
 const STATE_VERSION = 1;
 
-export function createNovelLearningService({ statePath, now = () => Date.now() }) {
+export function createNovelLearningService({ statePath, now = () => Date.now(), policyProvider = null }) {
   if (!statePath) throw new Error("novel learning statePath is required");
+
+  function evidencePolicy() {
+    const policy = typeof policyProvider === "function" ? policyProvider() : null;
+    const evaluation = policy?.evaluation && typeof policy.evaluation === "object" ? policy.evaluation : policy || {};
+    return {
+      minTests: Number(evaluation.confidenceMinTests ?? evaluation.minTests) || DEFAULT_EVIDENCE_POLICY.minTests,
+      minViews: Number.isFinite(Number(evaluation.minViews)) ? Number(evaluation.minViews) : DEFAULT_EVIDENCE_POLICY.minViews,
+      minConfidence: Number.isFinite(Number(evaluation.minConfidence)) ? Number(evaluation.minConfidence) : DEFAULT_EVIDENCE_POLICY.minConfidence
+    };
+  }
 
   function getState() {
     return normalizeState(readJson(statePath, null));
@@ -55,34 +66,48 @@ export function createNovelLearningService({ statePath, now = () => Date.now() }
 
   function refreshFromAnalysis({ analysis = {}, evaluatedAt = now() } = {}) {
     const state = getState();
+    const policy = evidencePolicy();
     const scripts = (analysis?.novels || []).flatMap((novel) => Array.isArray(novel?.scripts) ? novel.scripts : []);
+    const accountBaselines = analysis?.accountBaselines && typeof analysis.accountBaselines === "object"
+      ? analysis.accountBaselines
+      : null;
     let evaluationCount = 0;
     for (const experiment of state.experiments) {
-      const candidate = scripts.find((script) => String(script?.audioId || "") === experiment.generatedAudioId);
+      const candidate = scripts.find((script) => String(script?.audioId || script?.audio?.id || "") === experiment.generatedAudioId);
       if (!candidate) continue;
       const baseline = scripts.find((script) =>
-        String(script?.audioId || "") === experiment.sourceAudioId ||
+        String(script?.audioId || script?.audio?.id || "") === experiment.sourceAudioId ||
         (experiment.sourceVideoId && String(script?.videoId || script?.id || "") === experiment.sourceVideoId)
       );
-      const publishedAt = Number(candidate?.performance?.publishedAt || candidate?.publishedAt || experiment.createdAt) || experiment.createdAt;
+      const publishedAt = Number(candidate?.performance?.publishedAt || candidate?.publishedAt || earliestPublishedAt(candidate) || experiment.createdAt) || experiment.createdAt;
       const ageMs = Math.max(0, Number(evaluatedAt) - publishedAt);
       for (const window of EVALUATION_WINDOWS) {
         if (ageMs < window.minAgeMs || experiment.evaluations.some((item) => item.windowId === window.id)) continue;
         experiment.evaluations.push(evaluateExperimentWindow({
           experiment,
           windowId: window.id,
-          candidate: candidate.performance || candidate,
-          baseline: baseline?.performance || baseline || {},
-          evaluatedAt
+          candidate,
+          baseline: baseline || {},
+          accountBaselines,
+          evaluatedAt,
+          minViews: policy.minViews
         }));
         evaluationCount += 1;
       }
       experiment.status = experiment.evaluations.some((item) => item.windowId === "7d") ? "evaluated" : "monitoring";
       experiment.updatedAt = Number(evaluatedAt) || now();
     }
-    state.patterns = aggregatePatternEvaluations(state.experiments);
+    state.patterns = aggregatePatternEvaluations(state.experiments, policy);
     if (evaluationCount || state.patterns.length) saveState(state);
     return { evaluationCount, patternCount: state.patterns.length };
+  }
+
+  function earliestPublishedAt(script) {
+    const times = (Array.isArray(script?.videos) ? script.videos : [])
+      .map((video) => Number(video?.publishedAt) || 0)
+      .filter((value) => value > 0)
+      .map((value) => (value < 1e12 ? value * 1000 : value));
+    return times.length ? Math.min(...times) : 0;
   }
 
   function getStrategyContext() {
@@ -92,7 +117,9 @@ export function createNovelLearningService({ statePath, now = () => Date.now() }
       status: pattern.status,
       confidence: pattern.confidence,
       score: pattern.score,
-      evaluationCount: pattern.evaluationCount
+      evaluationCount: pattern.evaluationCount,
+      experimentCount: pattern.experimentCount ?? 0,
+      insufficientExperiments: pattern.insufficientExperiments ?? 0
     });
     return {
       promotedPatterns: state.patterns.filter((item) => item.status === "promoted").map(compact),

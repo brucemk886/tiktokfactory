@@ -1,4 +1,5 @@
 import { decorate, flattenOfficialVideos, normalizeRecords } from "./novel-effect-core.js";
+import { buildAccountBaselines } from "./novel-learning-loop.js";
 import { effectsLookbackDays, periodWindow, resolveEffectsPeriod } from "./official-group-report.js";
 
 const SOURCES = new Set(["official_api", "third_party"]);
@@ -69,6 +70,7 @@ export function createNovelEffectService({
           days: safeDays,
           period: resolvedPeriod,
         }, { videos }),
+        accountBaselines: buildAccountBaselines(videos),
         videoMappings: videos.map((video) => ({
           videoId: clean(video.videoId || video.itemId || video.id),
           username: clean(video.username),

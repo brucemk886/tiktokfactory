@@ -295,6 +295,7 @@ export function createPublishService({ root, workDir, outputDir, readConfig, res
         videoDesc: resolveTikTokCaption({
           workDir,
           video: item.video,
+          seed: `${item.envId}:${item.fileName || item.video?.fileName || ""}`,
           captionMode: payload.captionMode,
           manualCaption: payload.videoDesc
         }),
@@ -424,6 +425,7 @@ function makeRecord({ item, index, payload, account, batchId, resourceUrl = "", 
     videoDesc: resolveTikTokCaption({
       workDir,
       video,
+      seed: `${item.envId}:${item.fileName || video.fileName || ""}`,
       captionMode: payload.captionMode,
       manualCaption: payload.videoDesc
     }),

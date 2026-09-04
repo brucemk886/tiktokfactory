@@ -209,6 +209,37 @@ test("saves a manual rewrite as a derived script under the selected novel", () =
   assert.throws(() => service.createScript(novel.id, { parentScriptId: "missing", text: "A rewritten narration that is long enough for validation." }), /原文案不属于这本小说/);
 });
 
+test("near-duplicate versions and CTAs for the wrong code are not saved", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-dedupe-"));
+  const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });
+  const novel = service.createNovel({
+    title: "Dedupe target",
+    platform: "GoodNovel",
+    promotionCode: "G123",
+    sourceContent: "This free chapter is long enough to become the source for a rewrite."
+  });
+  const text = "My sister stole my wedding date and my parents took her side. I found out from a group chat, not from her. Nobody in my family understood why I was upset. Search G123 on the GoodNovel app to read the full story.";
+  service.createScript(novel.id, { title: "v1", text });
+  assert.throws(
+    () => service.createScript(novel.id, { title: "v2", text: text.replace("upset", "hurt") }),
+    (error) => error.statusCode === 409 && error.code === "DUPLICATE_SCRIPT" && /几乎一样/.test(error.message)
+  );
+  // Explicit override still works.
+  const forced = service.createScript(novel.id, { title: "v2 forced", text: text.replace("upset", "hurt"), allowDuplicate: true });
+  assert.ok(forced.id);
+  assert.throws(
+    () => service.createScript(novel.id, { title: "wrong code", text: "A totally new opening about a stolen inheritance and a locked room. Search 999999 on the GoodNovel app to read the full story." }),
+    (error) => error.statusCode === 400 && error.code === "CTA_MISMATCH" && /999999/.test(error.message)
+  );
+  assert.throws(
+    () => service.createScript(novel.id, { title: "wrong app", text: "A totally new opening about a stolen inheritance and a locked room. Search G123 on the Novel Master app to read the full story." }),
+    (error) => error.code === "CTA_MISMATCH"
+  );
+  const fine = service.createScript(novel.id, { title: "ok", text: "A totally new opening about a stolen inheritance and a locked room. Search G123 on the GoodNovel app to read the full story." });
+  assert.ok(fine.id);
+  assert.equal(service.getNovel(novel.id).scripts.length, 3);
+});
+
 test("updates a saved script text without creating another version", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-content-edit-"));
   const service = createNovelContentLibraryService({ workDir, audioLibrary: { list: () => [] } });

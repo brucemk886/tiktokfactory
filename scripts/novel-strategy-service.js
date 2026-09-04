@@ -36,6 +36,8 @@ export const DEFAULT_NOVEL_STRATEGY = Object.freeze({
     checkpointsHours: [24, 72, 168],
     baselineDays: 30,
     confidenceMinTests: 3,
+    minViews: 1000,
+    minConfidence: 0.6,
     autoPromoteEnabled: true,
     autoDemoteEnabled: true
   },
@@ -156,6 +158,8 @@ function sanitizePolicy(policy) {
       checkpointsHours: [...new Set((Array.isArray(merged.evaluation.checkpointsHours) ? merged.evaluation.checkpointsHours : [24, 72, 168]).map((value) => number(value, 24, 1, 8760)))].sort((a, b) => a - b),
       baselineDays: number(merged.evaluation.baselineDays, 30, 1, 365),
       confidenceMinTests: number(merged.evaluation.confidenceMinTests, 3, 1, 100),
+      minViews: number(merged.evaluation.minViews, 1000, 0, 10_000_000),
+      minConfidence: number(merged.evaluation.minConfidence, 0.6, 0, 1),
       autoPromoteEnabled: bool(merged.evaluation.autoPromoteEnabled, true),
       autoDemoteEnabled: bool(merged.evaluation.autoDemoteEnabled, true)
     },

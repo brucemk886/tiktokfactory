@@ -32,36 +32,89 @@ const STORY_HASHTAGS = Object.freeze([
   "#storytok",
   "#dailystory",
   "#realtalk",
-  "#relationshipstories"
+  "#relationshipstories",
+  "#redditreadings",
+  "#storiesfromreddit",
+  "#askreddit",
+  "#redditstorytime",
+  "#fyp",
+  "#foryou",
+  "#booktok",
+  "#novel",
+  "#webnovel",
+  "#readingtok",
+  "#plottwist",
+  "#drama",
+  "#familydrama",
+  "#revenge",
+  "#cheatingstories",
+  "#relationshipadvice",
+  "#minutestory",
+  "#shortstory"
+]);
+
+// Body templates. `{hook}` is the story's first line, `{promo}` the novel's
+// promotion copy, `{title}` the humanized audio title. A template that needs a
+// field the post does not have is skipped.
+const CAPTION_TEMPLATES = Object.freeze([
+  "{hook}",
+  "{hook}\n\n{promo}",
+  "{promo}\n\n{hook}",
+  "{hook} 👀",
+  "Part 1. {hook}",
+  "Wait for the ending. {hook}",
+  "{hook}\n\nFull story in the app 📖",
+  "{hook}\n\nWould you have done the same?",
+  "Storytime: {hook}",
+  "{promo}",
+  "{title}",
+  "{title}\n\n{promo}"
 ]);
 
 export function extractAudioCaptionText(audioName = "") {
   return humanizeAudioTitle(audioName);
 }
 
-export function pickVariedHashtags({ seed = "", platform = "", count = 3 } = {}) {
+export function pickVariedHashtags({ seed = "", platform = "", count = 0 } = {}) {
   const platformTag = novelPlatformHashtag(platform);
-  const wanted = Math.max(1, Math.min(4, Number(count) || 3));
   const pool = STORY_HASHTAGS.filter((tag) => tag !== platformTag);
   let hash = hashSeed(seed || platformTag || "caption");
-  for (let index = pool.length - 1; index > 0; index -= 1) {
+  const next = () => {
     hash = (Math.imul(hash, 1664525) + 1013904223) >>> 0;
-    const swap = hash % (index + 1);
+    return hash;
+  };
+  // 3–5 tags unless the caller pins a count.
+  const wanted = Math.max(1, Math.min(6, Number(count) || 3 + (next() % 3)));
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swap = next() % (index + 1);
     [pool[index], pool[swap]] = [pool[swap], pool[index]];
   }
   return [platformTag, ...pool.slice(0, wanted)].filter(Boolean);
 }
 
+// Every post gets its own body template and hashtag set, chosen from `seed`
+// (account + file), so fifty accounts posting the same story do not carry
+// fifty identical descriptions.
 export function buildTikTokCaption({
   openingTitle = "",
   promotionCopy = "",
   platform = "",
-  audioTitle = ""
+  audioTitle = "",
+  hookLine = "",
+  seed = ""
 } = {}) {
-  const promo = String(promotionCopy || "").trim();
-  const title = String(extractAudioCaptionText(audioTitle) || openingTitle || "").replace(/\s+/g, " ").trim();
-  const body = promo || title;
-  const tags = pickVariedHashtags({ seed: body || audioTitle, platform }).join(" ");
+  const promo = String(promotionCopy || "").replace(/\s+/g, " ").trim();
+  const hook = String(hookLine || openingTitle || "").replace(/\s+/g, " ").trim();
+  const title = String(extractAudioCaptionText(audioTitle) || "").replace(/\s+/g, " ").trim();
+  const fields = { hook, promo, title };
+  const usable = CAPTION_TEMPLATES.filter((template) => [...template.matchAll(/\{(\w+)\}/g)].every((match) => fields[match[1]]));
+  const seedText = String(seed || "").trim() || `${hook || promo || title}:${audioTitle}`;
+  const template = usable.length ? usable[hashSeed(`${seedText}:template`) % usable.length] : "";
+  const body = template
+    .replace(/\{(\w+)\}/g, (_, key) => fields[key] || "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  const tags = pickVariedHashtags({ seed: `${seedText}:tags`, platform }).join(" ");
   return [body, tags].filter(Boolean).join("\n\n").slice(0, 2200);
 }
 
@@ -70,7 +123,8 @@ export function resolveTikTokCaption({
   video = {},
   fallback = {},
   captionMode = "",
-  manualCaption = ""
+  manualCaption = "",
+  seed = ""
 } = {}) {
   const mode = String(captionMode || "").trim().toLowerCase();
   const shared = String(manualCaption || "").slice(0, 2200);
@@ -84,9 +138,26 @@ export function resolveTikTokCaption({
     openingTitle,
     promotionCopy,
     platform,
-    audioTitle: video?.audioName || video?.title || ""
+    hookLine: lookedUp.hookLine || "",
+    audioTitle: video?.audioName || video?.title || "",
+    seed: seed || `${video?.fileName || video?.audioName || ""}`
   });
   return generated || String(video?.videoDesc || "").trim().slice(0, 2200) || shared;
+}
+
+// The text that was actually sent to TTS for this audio (audio record first,
+// then the library script it belongs to). Empty when the audio is not one we
+// synthesized, e.g. an imported peer clip.
+export function resolveNovelScriptText({ workDir, audioPath = "" } = {}) {
+  if (!workDir) return "";
+  const audioItems = readAudioIndex(workDir);
+  const audio = matchAudioRecord(audioItems, audioPath, workDir);
+  if (!audio) return "";
+  const spoken = String(audio.script || "").trim();
+  if (spoken) return spoken;
+  const script = findScriptForAudio(readNovelStore(workDir), audio);
+  if (!script?.text) return "";
+  return buildSpokenNarration(script.speakOpeningTitle === true ? script.openingTitle : "", script.text);
 }
 
 export function resolveOpeningHookTitle({
@@ -573,6 +644,7 @@ function lookupCaptionFields(workDir, video = {}, fallback = {}) {
   const novel = findNovelForAudio(store, audio) || findNovelById(store, video.novelId || fallback.novelId);
   return {
     openingTitle: String(script?.openingTitle || firstHookLine(script?.text) || "").trim(),
+    hookLine: String(firstHookLine(script?.text || audio?.script) || "").trim(),
     promotionCopy: String(novel?.promotionCopy || "").trim(),
     platform: String(novel?.platform || "").trim()
   };

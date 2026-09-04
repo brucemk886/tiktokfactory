@@ -19,7 +19,8 @@ import { resolveStorageDirs } from "./storage-paths.js";
 import { planMixAudioOrder } from "./mix-audio-pick.js";
 import { reserveAudioRotation } from "./audio-rotation.js";
 import { isParkourVideoTemplate, parkourNeedsLoop, pickUnusedParkourSource } from "./video-template.js";
-import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelScriptText, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { checkTtsReadback, recordTtsReadbackFailure } from "./tts-readback.js";
 import { makeWordPopSubtitles, normalizeSubtitleAnimationMode, subtitleNeedsWordTimestamps } from "./subtitle-animation.js";
 
 const payloadPath = process.argv[2];
@@ -182,6 +183,26 @@ async function main() {
           if (skippedAudios.size >= audios.length) throw new Error("所有音频都没有返回可用字幕，任务无法继续。");
           continue;
         }
+        if (payload.ttsReadback !== false) {
+          // The transcript we just paid for doubles as a TTS proof-read: if it
+          // drifts too far from the script we synthesized, the voice mangled
+          // it (names, numbers, the app name) and the video should not ship.
+          const readback = checkTtsReadback({
+            scriptText: resolveNovelScriptText({ workDir: storageDirs.workDir, audioPath }),
+            transcript: captions,
+            maxWordErrorRate: payload.ttsReadbackMaxWer ?? config.ttsReadbackMaxWer
+          });
+          if (readback.checked && !readback.ok) {
+            const warning = `配音回读不一致（字错率 ${Math.round(readback.wer * 100)}%，上限 ${Math.round(readback.limit * 100)}%），已跳过：${path.basename(audioPath)}`;
+            recordTtsReadbackFailure(storageDirs.workDir, { audioPath, wer: readback.wer, limit: readback.limit, referenceWords: readback.referenceWords, hypothesisWords: readback.hypothesisWords, taskName: payload.name || "" });
+            skippedAudios.add(audioPath);
+            warnings.push(warning);
+            patchJob({ status: "running", message: warning, warnings, progressCurrent: done, progressTotal: total, updatedAt: Date.now() });
+            if (skippedAudios.size >= audios.length) throw new Error("所有音频的配音回读都不一致，任务无法继续。去 work/tts-readback.json 看是哪些音频，重新配音或修文案。");
+            attempts -= 1;
+            continue;
+          }
+        }
       }
       audioContext = { audioDuration, captions };
       audioContexts.set(audioPath, audioContext);
@@ -273,7 +294,9 @@ async function main() {
     const tiktokCaption = buildTikTokCaption({
       promotionCopy: novelBadge?.promotionCopy || audioFallback.promotionCopy || "",
       platform: novelBadge?.platform || audioFallback.platform || "",
-      audioTitle: path.basename(audioPath)
+      hookLine: captionTitle,
+      audioTitle: path.basename(audioPath),
+      seed: id
     });
 
     const muxOptions = {
