@@ -169,7 +169,9 @@ export function resolveOpeningHookTitle({
   const audioItems = readAudioIndex(workDir);
   const audio = matchAudioRecord(audioItems, audioPath, workDir);
   const script = findScriptForAudio(store, audio);
-  return sanitizeDrawtext(script?.openingTitle || firstHookLine(script?.text) || fallbackTitle).slice(0, 80);
+  return sanitizeDrawtext(
+    firstHookLine(audio?.script) || firstHookLine(script?.text) || firstHookLine(fallbackTitle)
+  );
 }
 
 export function buildOpeningTitleDrawtext({
@@ -572,7 +574,7 @@ function tokensMatch(left, right) {
 function clampTitleSeconds(value, fallback = 3) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
-  return Math.max(1.2, Math.min(6, number));
+  return Math.max(1.2, Math.min(8, number));
 }
 
 export function estimateDrawtextWidth(text, fontSize) {
@@ -589,7 +591,7 @@ export function estimateDrawtextWidth(text, fontSize) {
 }
 
 export function wrapTitleToWidth(title, maxWidth, fontSize, maxLines = 3) {
-  const words = sanitizeDrawtext(title).slice(0, 80).split(/\s+/).filter(Boolean);
+  const words = sanitizeDrawtext(title).slice(0, 220).split(/\s+/).filter(Boolean);
   if (!words.length) return "";
   const limit = Math.max(120, Number(maxWidth) || 0);
   const size = Math.max(1, Number(fontSize) || 72);
@@ -611,28 +613,150 @@ export function wrapTitleToWidth(title, maxWidth, fontSize, maxLines = 3) {
   return lines.slice(0, maxLines).join("\n");
 }
 
-export function fitOpeningTitle(title, { width = 1080, fontSize = 72 } = {}) {
-  const maxWidth = Math.max(240, Math.round((Number(width) || 1080) * 0.72));
-  let size = Math.max(36, Math.min(96, Number(fontSize) || 72));
-  let text = wrapTitleToWidth(title, maxWidth, size);
-  while (size > 36 && text.split("\n").some((line) => estimateDrawtextWidth(line, size) > maxWidth)) {
-    size -= 4;
-    text = wrapTitleToWidth(title, maxWidth, size);
+export function fitOpeningTitle(title, { width = 1080, fontSize = 72, maxLines = 3, maxWidthRatio = 0.72, minSize = 36 } = {}) {
+  const maxWidth = Math.max(240, Math.round((Number(width) || 1080) * (Number(maxWidthRatio) || 0.72)));
+  const floor = Math.max(24, Number(minSize) || 36);
+  let size = Math.max(floor, Math.min(96, Number(fontSize) || 72));
+  let text = wrapTitleToWidth(title, maxWidth, size, maxLines);
+  while (size > floor && text.split("\n").some((line) => estimateDrawtextWidth(line, size) > maxWidth)) {
+    size -= 2;
+    text = wrapTitleToWidth(title, maxWidth, size, maxLines);
   }
   return { text, fontSize: size };
 }
 
 export function wrapHookTitle(value, maxLine = 22) {
-  const text = sanitizeDrawtext(value).slice(0, 80);
+  const text = sanitizeDrawtext(value).slice(0, 220);
   if (!text) return "";
-  return wrapTitleToWidth(text, Math.max(8, Number(maxLine) || 22) * 16, 28);
+  return wrapTitleToWidth(text, Math.max(8, Number(maxLine) || 22) * 16, 28, 5);
 }
 
-function firstHookLine(value) {
+export function firstHookLine(value) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
-  const match = text.match(/^(.{8,72}?[.!?。！？])(?:\s|$)/);
-  return (match?.[1] || text).slice(0, 72);
+  const match = text.match(/^(.{8,220}?[.!?。！？])(?:\s|$)/);
+  return (match?.[1] || text).slice(0, 220);
+}
+
+export function formatHookCardCode(code) {
+  const value = sanitizeDrawtext(code).replace(/\s+/g, "");
+  return value ? `code：${value}` : "";
+}
+
+export function renderRedditHookCard({
+  title,
+  destPath,
+  fontFile,
+  platform = "",
+  promotionCode = ""
+} = {}) {
+  const output = String(destPath || "").trim();
+  const hook = sanitizeDrawtext(title);
+  if (!output || !hook) return "";
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  const latinFont = pickExistingFont(fontFile, "C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/msyhbd.ttc");
+  const displayName = displayNovelPlatform(platform) || "Novel Master";
+  const codeLabel = formatHookCardCode(promotionCode);
+  const logoPath = renderNovelAppIcon({
+    platform,
+    destPath: path.join(path.dirname(output), `hook-card-logo-${novelAppIconSpec(platform).key}.png`),
+    fontFile: latinFont
+  });
+  const cardW = 920;
+  const fitted = fitOpeningTitle(hook, { width: 820, fontSize: 40, maxLines: 5, maxWidthRatio: 1, minSize: 30 });
+  const lines = fitted.text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const lineH = Math.round(fitted.fontSize * 1.28);
+  const headerH = 76;
+  const footerH = 52;
+  const cardH = 20 + headerH + lines.length * lineH + footerH;
+  const radius = 28;
+  const shadowPad = 10;
+  const canvasW = cardW + shadowPad * 2;
+  const canvasH = cardH + shadowPad + 8;
+  const ox = shadowPad;
+  const oy = shadowPad;
+  const titleY0 = oy + headerH + 8;
+  const nameX = ox + 108;
+  const nameSize = displayName.length > 28 ? 24 : 28;
+  const draws = [
+    `drawtext=fontfile='${filterPath(latinFont)}':text='${escapeDrawtext(displayName)}':fontsize=${nameSize}:fontcolor=0x1A1A1B:x=${nameX}:y=${oy + 38}:expansion=none`,
+    ...(codeLabel ? [
+      `drawtext=fontfile='${filterPath(latinFont)}':text='${escapeDrawtext(codeLabel)}':fontsize=24:fontcolor=0x787C7E:x=${ox + cardW - 36}-text_w:y=${oy + 42}:expansion=none`
+    ] : []),
+    ...lines.map((line, index) => (
+      `drawtext=fontfile='${filterPath(latinFont)}':text='${escapeDrawtext(line)}':fontsize=${fitted.fontSize}:fontcolor=0x1A1A1B:x=${ox + 40}:y=${titleY0 + index * lineH}:expansion=none`
+    )),
+    `drawtext=fontfile='${filterPath(latinFont)}':text='99+':fontsize=22:fontcolor=0x787C7E:x=${ox + 72}:y=${oy + cardH - 40}:expansion=none`,
+    `drawtext=fontfile='${filterPath(latinFont)}':text='99+':fontsize=22:fontcolor=0x787C7E:x=${ox + 196}:y=${oy + cardH - 40}:expansion=none`
+  ];
+  const cardAlpha = roundedRectAlpha(cardW, cardH, radius);
+  const badgeAlpha = `if(gt(pow(X-11\\,2)+pow(Y-11\\,2),11*11),0,255)`;
+  const inputs = [
+    "-y", "-hide_banner", "-loglevel", "error",
+    "-f", "lavfi", "-i", `color=c=black@0.0:s=${canvasW}x${canvasH}:d=1,format=rgba`,
+    "-f", "lavfi", "-i", `color=c=black@0.20:s=${cardW}x${cardH}:d=1,format=rgba`,
+    "-f", "lavfi", "-i", `color=c=white:s=${cardW}x${cardH}:d=1,format=rgba`
+  ];
+  let logoIndex = -1;
+  if (logoPath) {
+    inputs.push("-i", logoPath);
+    logoIndex = 3;
+  }
+  const heartIndex = logoIndex >= 0 ? 4 : 3;
+  const chatIndex = heartIndex + 1;
+  inputs.push(
+    "-f", "lavfi", "-i", "color=c=0xFF4500:s=22x22:d=1,format=rgba",
+    "-f", "lavfi", "-i", "color=c=0x878A8C:s=22x22:d=1,format=rgba"
+  );
+  const chain = [
+    `[1:v]geq=r='0':g='0':b='0':a='${cardAlpha.replace(",255)", ",90)")}'[shadow]`,
+    `[2:v]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${cardAlpha}'[card]`,
+    `[${heartIndex}:v]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${badgeAlpha}'[heart]`,
+    `[${chatIndex}:v]geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='${badgeAlpha}'[chat]`,
+    `[0:v][shadow]overlay=${ox + 4}:${oy + 6}[shade]`,
+    `[shade][card]overlay=${ox}:${oy}[sheet]`
+  ];
+  let current = "sheet";
+  if (logoIndex >= 0) {
+    chain.push(`[${logoIndex}:v]scale=52:52:force_original_aspect_ratio=increase,crop=52:52,format=rgba[logo]`);
+    chain.push(`[${current}][logo]overlay=${ox + 40}:${oy + 26}[headed]`);
+    current = "headed";
+  }
+  chain.push(`[${current}]${draws.join(",")}[texted]`);
+  chain.push(`[texted][heart]overlay=${ox + 42}:${oy + cardH - 42}[h1]`);
+  chain.push(`[h1][chat]overlay=${ox + 166}:${oy + cardH - 42}`);
+  const args = [
+    ...inputs,
+    "-filter_complex",
+    chain.join(";"),
+    "-frames:v", "1",
+    output
+  ];
+  if (runFfmpeg(args) && fs.existsSync(output)) return output;
+  return "";
+}
+
+export function fitHookCardName(value, maxChars = 36) {
+  const text = sanitizeDrawtext(value).replace(/\s+/g, " ").trim();
+  if (!text) return "Novel Master";
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(8, maxChars - 1)).trim()}…`;
+}
+
+function pickExistingFont(...candidates) {
+  for (const value of candidates) {
+    const file = String(value || "").trim();
+    if (file && fs.existsSync(file)) return file;
+  }
+  return "C:/Windows/Fonts/arial.ttf";
+}
+
+function roundedRectAlpha(width, height, radius) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const innerX = width / 2 - radius;
+  const innerY = height / 2 - radius;
+  return `if(gt(abs(X-${cx}),${innerX})*gt(abs(Y-${cy}),${innerY})*gt(pow(abs(X-${cx})-${innerX}\\,2)+pow(abs(Y-${cy})-${innerY}\\,2),${radius * radius}),0,255)`;
 }
 
 function lookupCaptionFields(workDir, video = {}, fallback = {}) {
@@ -644,7 +768,7 @@ function lookupCaptionFields(workDir, video = {}, fallback = {}) {
   const novel = findNovelForAudio(store, audio) || findNovelById(store, video.novelId || fallback.novelId);
   return {
     openingTitle: String(script?.openingTitle || firstHookLine(script?.text) || "").trim(),
-    hookLine: String(firstHookLine(script?.text || audio?.script) || "").trim(),
+    hookLine: String(firstHookLine(audio?.script || script?.text) || "").trim(),
     promotionCopy: String(novel?.promotionCopy || "").trim(),
     platform: String(novel?.platform || "").trim()
   };

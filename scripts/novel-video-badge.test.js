@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, fitOpeningTitle, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, resolveEndCardStart, resolveNovelAppIconFile, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildSpokenNarration, buildTikTokCaption, displayNovelPlatform, endCardNameParts, endCardStartAt, extractAudioCaptionText, firstHookLine, fitOpeningTitle, formatHookCardCode, hideCaptionsAfter, hideCaptionsUntil, novelAppIconSpec, novelPlatformHashtag, pickVariedHashtags, renderRedditHookCard, resolveEndCardStart, resolveNovelAppIconFile, resolveNovelEndCard, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration, resolveTikTokCaption } from "./novel-video-badge.js";
 
 test("end card uses each novel's promotion code and platform icon", () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "novel-end-card-"));
@@ -211,7 +211,7 @@ test("resolves the opening hook title from the matched script", () => {
     }]
   }));
 
-  assert.equal(resolveOpeningHookTitle({ workDir, audioPath }), "She married my uncle");
+  assert.equal(resolveOpeningHookTitle({ workDir, audioPath }), "She married my uncle after I found the letter he hid in the church pew.");
   fs.rmSync(workDir, { recursive: true, force: true });
 });
 
@@ -282,6 +282,48 @@ test("opening title duration follows spoken title words and hides overlapping ca
   assert.equal(hidden.cues.length, 1);
   assert.equal(hidden.cues[0].text, "The church went silent");
   assert.equal(hidden.words[0].text, "The");
+  const overlapping = hideCaptionsUntil({
+    cues: [
+      { text: "hook still speaking", start: 0, end: 6 },
+      { text: "after the card", start: 6, end: 8 }
+    ],
+    words: [
+      { text: "hook", start: 0, end: 0.5 },
+      { text: "after", start: 6, end: 6.4 }
+    ]
+  }, 4.5);
+  assert.equal(overlapping.cues.length, 2);
+  assert.equal(overlapping.cues[0].start, 4.5);
+  assert.equal(overlapping.cues[0].end, 6);
+  assert.equal(overlapping.cues[1].start, 6);
+  assert.equal(overlapping.words.length, 1);
+  assert.equal(overlapping.words[0].text, "after");
+});
+
+test("hook card uses the spoken first sentence and writes a Reddit-style PNG", () => {
+  assert.equal(
+    firstHookLine("Mom said she wished she had never had me, so I swallowed the gold locket she once gave me. The engraving still promised a hundred years."),
+    "Mom said she wished she had never had me, so I swallowed the gold locket she once gave me."
+  );
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "reddit-hook-card-"));
+  const destPath = path.join(workDir, "hook-card.png");
+  assert.equal(formatHookCardCode("479166"), "code：479166");
+  assert.equal(formatHookCardCode(""), "");
+  const made = renderRedditHookCard({
+    title: "Mom said she wished she had never had me, so I swallowed the gold locket she once gave me.",
+    destPath,
+    fontFile: "C:/Windows/Fonts/arialbd.ttf",
+    platform: "NovelMaster",
+    promotionCode: "479166"
+  });
+  assert.equal(made, destPath);
+  assert.ok(fs.existsSync(destPath));
+  assert.ok(fs.statSync(destPath).size > 2000);
+  assert.ok(fs.existsSync(path.join(workDir, "hook-card-logo-novelmaster.png")));
+  assert.equal(displayNovelPlatform("NovelMaster"), "Novel Master");
+  assert.equal(displayNovelPlatform("GoodNovel"), "GoodNovel");
+  assert.equal(displayNovelPlatform("MotoNovel"), "MotoNovel");
+  fs.rmSync(workDir, { recursive: true, force: true });
 });
 
 test("TikTok captions vary body template and hashtags per post seed", () => {

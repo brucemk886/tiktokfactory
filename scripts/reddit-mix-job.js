@@ -20,7 +20,7 @@ import { resolveStorageDirs } from "./storage-paths.js";
 import { planMixAudioOrder } from "./mix-audio-pick.js";
 import { reserveAudioRotation } from "./audio-rotation.js";
 import { isParkourVideoTemplate, listUnusedParkourSources, planParkourSources } from "./video-template.js";
-import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, resolveEndCardStart, resolveNovelEndCard, resolveNovelScriptText, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
+import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, renderRedditHookCard, resolveEndCardStart, resolveNovelEndCard, resolveNovelScriptText, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 import { checkTtsReadback, recordTtsReadbackFailure } from "./tts-readback.js";
 import { makeWordPopSubtitles, normalizeSubtitleAnimationMode, subtitleNeedsWordTimestamps } from "./subtitle-animation.js";
 
@@ -289,11 +289,11 @@ async function main() {
     const captionTitle = resolveOpeningHookTitle({
       workDir: storageDirs.workDir,
       audioPath,
-      fallbackTitle: audioFallback.openingTitle || payload.openingTitle || ""
+      fallbackTitle: audioFallback.openingTitle || payload.openingTitle || resolveNovelScriptText({ workDir: storageDirs.workDir, audioPath })
     });
-    const openingTitle = payload.openingTitleEnabled ? captionTitle : "";
-    if (payload.openingTitleEnabled && !openingTitle) {
-      warnings.push(`未找到开头标题，已跳过前3秒标题：${path.basename(audioPath)}`);
+    const openingTitle = captionTitle;
+    if (!openingTitle) {
+      warnings.push(`未找到第一句钩子，已跳过文案框：${path.basename(audioPath)}`);
     }
     const endCard = payload.endCardEnabled === false
       ? null
@@ -327,6 +327,8 @@ async function main() {
       novelBadge,
       openingTitle,
       endCard,
+      platform: novelBadge?.platform || endCard?.platform || audioFallback.platform || "",
+      promotionCode: novelBadge?.promotionCode || endCard?.promotionCode || audioFallback.promotionCode || "",
       quality
     };
 
@@ -747,7 +749,9 @@ function renderMixOnePass({
   duration,
   novelBadge,
   openingTitle,
-  endCard
+  endCard,
+  platform = "",
+  promotionCode = ""
 }) {
   if (!Array.isArray(clips) || !clips.length) throw new Error("没有可合成的素材片段。");
   const overlayIndexes = pickOverlayIndexes(clips.length, dedup.overlayCount, overlayFiles.length);
@@ -799,20 +803,22 @@ function renderMixOnePass({
       duration,
       novelBadge,
       openingTitle,
-      endCard
+      endCard,
+      platform,
+      promotionCode
     });
     const audioIndex = clips.length + overlayInputs.length;
-    const iconIndex = finish.iconPath ? audioIndex + 1 : -1;
+    let nextIndex = audioIndex + 1;
+    const cardIndex = finish.hookCardPath ? nextIndex++ : -1;
+    const iconIndex = finish.iconPath ? nextIndex : -1;
     const sourceLabel = clips.length === 1 ? "v0" : "vcat";
-    if (iconIndex >= 0) {
-      const pre = finish.filters.length ? finish.filters.join(",") : "format=yuv420p";
-      const iconY = Math.round((Number(height) || 1920) * 0.22);
-      chains.push(`[${sourceLabel}]${pre}[dec];[${iconIndex}:v]scale=220:220,format=rgba[icon];[dec][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${finish.endStart.toFixed(2)})'[vout]`);
-    } else if (finish.filters.length) {
-      chains.push(`[${sourceLabel}]${finish.filters.join(",")}[vout]`);
-    } else {
-      chains.push(`[${sourceLabel}]format=yuv420p[vout]`);
-    }
+    chains.push(buildOverlayFinishChain({
+      sourceLabel,
+      finish,
+      cardIndex,
+      iconIndex,
+      height
+    }));
     const scriptPath = path.join(runDir, "one-pass.txt");
     fs.writeFileSync(scriptPath, `${chains.join(";\n")}\n`, "utf8");
     writeClipPlan(path.join(runDir, "clip-plan.json"), clips);
@@ -828,6 +834,7 @@ function renderMixOnePass({
       else args.push("-stream_loop", "-1", "-t", String(clipDuration), "-i", overlayPath);
     });
     args.push("-i", audioPath);
+    if (finish.hookCardPath) args.push("-loop", "1", "-t", String(duration), "-i", finish.hookCardPath);
     if (finish.iconPath) args.push("-i", finish.iconPath);
     args.push(
       "-t", String(duration),
@@ -890,22 +897,37 @@ function buildFinishVideoFilters({
   duration,
   novelBadge,
   openingTitle = "",
-  endCard = null
+  endCard = null,
+  platform = "",
+  promotionCode = ""
 }) {
   const endStart = endCard ? resolveEndCardStart(duration, captions, 3) : 0;
-  const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 3) : 0;
+  const titleDuration = openingTitle ? resolveOpeningTitleDuration(openingTitle, captions, 4.5) : 0;
+  const hookCardUntil = openingTitle ? Number((titleDuration || 4.5).toFixed(2)) : 0;
   let visibleCaptions = captions;
-  if (openingTitle) visibleCaptions = hideCaptionsUntil(visibleCaptions, titleDuration);
+  if (hookCardUntil > 0) visibleCaptions = hideCaptionsUntil(visibleCaptions, hookCardUntil);
   if (endCard) visibleCaptions = hideCaptionsAfter(visibleCaptions, endStart);
   const filters = [];
-  const titleFilter = buildOpeningTitleDrawtext({
-    title: openingTitle,
-    fontFile,
-    textFile: path.join(workFolder, "opening-title.txt"),
-    durationSeconds: titleDuration || 3,
-    width
-  });
-  if (titleFilter) filters.push(titleFilter);
+  const hookCardPath = openingTitle
+    ? renderRedditHookCard({
+      title: openingTitle,
+      destPath: path.join(workFolder, "hook-card.png"),
+      fontFile,
+      platform: platform || novelBadge?.platform || endCard?.platform || "",
+      promotionCode: promotionCode || novelBadge?.promotionCode || endCard?.promotionCode || ""
+    })
+    : "";
+  if (openingTitle && !hookCardPath) {
+    const titleFilter = buildOpeningTitleDrawtext({
+      title: openingTitle,
+      fontFile,
+      textFile: path.join(workFolder, "opening-title.txt"),
+      durationSeconds: hookCardUntil || 4.5,
+      width
+    });
+    if (titleFilter) filters.push(titleFilter);
+  }
+  const hookCardY = "(H-h)/2";
   if (Array.isArray(visibleCaptions?.cues) && visibleCaptions.cues.length) {
     const assPath = path.join(workFolder, "captions.ass");
     const ass = subtitleAnimationMode === "word-pop" && Array.isArray(visibleCaptions?.words) && visibleCaptions.words.length
@@ -940,7 +962,28 @@ function buildFinishVideoFilters({
       height
     }));
   }
-  return { filters, iconPath, endStart };
+  return { filters, iconPath, hookCardPath, hookCardY, hookCardUntil, endStart };
+}
+
+function buildOverlayFinishChain({ sourceLabel, finish, cardIndex, iconIndex, height }) {
+  const pre = finish.filters.length ? finish.filters.join(",") : "format=yuv420p";
+  const parts = [`[${sourceLabel}]${pre}[dec]`];
+  let current = "dec";
+  if (cardIndex >= 0 && finish.hookCardPath) {
+    const until = Number(finish.hookCardUntil || 4.5).toFixed(2);
+    const y = String(finish.hookCardY || "").trim() || "(H-h)/2";
+    parts.push(`[${cardIndex}:v]format=rgba[card]`);
+    parts.push(`[${current}][card]overlay=x=(W-w)/2:y=${y}:enable='lt(t,${until})'[titled]`);
+    current = "titled";
+  }
+  if (iconIndex >= 0 && finish.iconPath) {
+    const iconY = Math.round((Number(height) || 1920) * 0.22);
+    parts.push(`[${iconIndex}:v]scale=220:220,format=rgba[icon]`);
+    parts.push(`[${current}][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${Number(finish.endStart || 0).toFixed(2)})'[vout]`);
+    current = "vout";
+  }
+  if (current !== "vout") parts.push(`[${current}]format=yuv420p[vout]`);
+  return parts.join(";");
 }
 
 async function renderClips({ clips, videoMeta, usage, runDir, concatVideo, width, height, fps, quality, dedup, overlayFiles, warnings = [] }) {
@@ -1173,7 +1216,7 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", endCard = null, quality = "fast" }) {
+function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, width, height, fontFile, subtitleFontSize, subtitleYPercent, subtitleAnimationMode, duration, novelBadge, openingTitle = "", endCard = null, platform = "", promotionCode = "", quality = "fast" }) {
   const workFolder = path.dirname(inputVideo);
   const finish = buildFinishVideoFilters({
     workFolder,
@@ -1187,18 +1230,28 @@ function muxAudioAndCaptions({ inputVideo, audioPath, outputPath, captions, widt
     duration,
     novelBadge,
     openingTitle,
-    endCard
+    endCard,
+    platform,
+    promotionCode
   });
   const encode = resolveFinalEncode(quality);
   const args = ["-y", "-hide_banner", "-i", inputVideo, "-i", audioPath];
+  let nextIndex = 2;
+  const cardIndex = finish.hookCardPath ? nextIndex++ : -1;
+  const iconIndex = finish.iconPath ? nextIndex : -1;
+  if (finish.hookCardPath) args.push("-loop", "1", "-t", String(duration), "-i", finish.hookCardPath);
   if (finish.iconPath) args.push("-i", finish.iconPath);
   args.push("-t", String(duration));
-  if (finish.iconPath) {
-    const pre = finish.filters.length ? finish.filters.join(",") : "format=yuv420p";
-    const iconY = Math.round((Number(height) || 1920) * 0.22);
+  if (finish.hookCardPath || finish.iconPath) {
     args.push(
       "-filter_complex",
-      `[0:v]${pre}[dec];[2:v]scale=220:220,format=rgba[icon];[dec][icon]overlay=x=(W-w)/2:y=${iconY}:enable='gte(t,${finish.endStart.toFixed(2)})'[vout]`,
+      buildOverlayFinishChain({
+        sourceLabel: "0:v",
+        finish,
+        cardIndex,
+        iconIndex,
+        height
+      }),
       "-map", "[vout]",
       "-map", "1:a:0",
       ...finalVideoEncodeArgs(quality)

@@ -821,7 +821,7 @@ function normalizeGenerationPayload(value = {}) {
     subtitleAnimationMode: normalizeSubtitleAnimationMode(value.subtitleAnimationMode),
     quality: value.quality === "quality" ? "quality" : "fast",
     autoCaptions: value.autoCaptions !== false,
-    openingTitleEnabled: value.openingTitleEnabled === true,
+    openingTitleEnabled: value.openingTitleEnabled !== false,
     endCardEnabled: value.endCardEnabled !== false,
     novelId: String(value.novelId || "").trim(),
     novelPlatform: String(value.novelPlatform || value.platform || "").trim(),

@@ -25,6 +25,14 @@ test("final mux locks video bitrate at 2000k", () => {
   assert.match(mixJob, /resolveNovelEndCard/);
   assert.match(mixJob, /normalizeAudioDirs/);
   assert.match(mixJob, /renderNovelAppIcon/);
+  assert.match(mixJob, /renderRedditHookCard/);
+  assert.match(mixJob, /hook-card.png/);
+  assert.match(mixJob, /platform: novelBadge\?\.platform \|\| endCard\?\.platform \|\| audioFallback\.platform/);
+  assert.match(mixJob, /promotionCode: novelBadge\?\.promotionCode \|\| endCard\?\.promotionCode \|\| audioFallback\.promotionCode/);
+  assert.match(mixJob, /hideCaptionsUntil\(visibleCaptions, hookCardUntil\)/);
+  assert.match(mixJob, /hookCardY = "\(H-h\)\/2"/);
+  assert.match(mixJob, /overlay=x=\(W-w\)\/2:y=\$\{y\}:enable='lt\(t,\$\{until\}\)\'/);
+  assert.doesNotMatch(mixJob, /\* 0\.13/);
   assert.match(mixJob, /planMixAudioOrder/);
   assert.doesNotMatch(mixJob, /refreshAudioHitWeights/);
 });
