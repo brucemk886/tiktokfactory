@@ -10,6 +10,7 @@ import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir 
 import { normalizeAudioDirs } from "./audio-library-groups.js";
 import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 import { scheduleDateKey } from "./schedule-date.js";
+import { listRecordsForOutputCleanup, upsertOfficialRuntimeRecords } from "./publish-record-runtime.js";
 
 export { mergeOfficialPublishRecords };
 
@@ -622,7 +623,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
         if (taskDeleted > 0) patchTask(task.id, { generatedVideos, outputCleanedAt: now, outputCleanupCount: (Number(task.outputCleanupCount) || 0) + taskDeleted, updatedAt: now });
       }
 
-      const records = readJson(path.join(workDir, "publish-records.json"), []);
+      const records = listRecordsForOutputCleanup(workDir);
       const recordsByFile = new Map();
       for (const record of Array.isArray(records) ? records : []) {
         const fileName = path.basename(String(record.fileName || ""));
@@ -1239,18 +1240,8 @@ export function buildOfficialPublishRecords(task, results, now = Date.now(), rec
 }
 
 export function persistOfficialPublishRecords(workDir, task, results) {
-  const recordsPath = path.join(workDir, "publish-records.json");
-  const current = readJson(recordsPath, []);
   const incoming = buildOfficialPublishRecords(task, results, Date.now(), workDir);
-  const incomingIds = new Set(incoming.map((record) => record.id));
-  const previousById = new Map(current.map((record) => [String(record?.id || ""), record]));
-  const mergedIncoming = incoming.map((record) => ({
-    ...previousById.get(record.id),
-    ...record,
-    createdAt: Number(previousById.get(record.id)?.createdAt) || record.createdAt
-  }));
-  writeJson(recordsPath, [...mergedIncoming, ...current.filter((record) => !incomingIds.has(String(record?.id || "")))]);
-  return mergedIncoming;
+  return upsertOfficialRuntimeRecords(workDir, incoming);
 }
 
 function normalizeAudioItems(value) {

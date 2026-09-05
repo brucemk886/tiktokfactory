@@ -123,6 +123,16 @@ test("hydrate pulls live batch tasks and maps TikTok handles", async () => {
   assert.equal(records[0].status, "failed");
 });
 
+test("merge can keep more than 3000 official records when asked", () => {
+  const incoming = Array.from({ length: 3010 }, (_, index) => ({
+    id: `r-${index}`,
+    status: "submitted",
+    createdAt: 1_700_000_000_000 + index,
+  }));
+  assert.equal(mergeOfficialPublishRecords([], incoming).length, 3000);
+  assert.equal(mergeOfficialPublishRecords([], incoming, { limit: 0 }).length, 3010);
+});
+
 test("skips already resolved publish batches when hydrating overview records", () => {
   assert.deepEqual(collectOfficialLiveBatchIds([
     { videoId: "v1", batchId: "a9bf8e63-4607-4281-9582-42c6cb763cea" },

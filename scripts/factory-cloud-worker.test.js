@@ -91,8 +91,12 @@ test("factory worker requeues its own interrupted jobs on hello", () => {
   assert.match(source, /\/api\/worker\/hello/);
   assert.match(source, /工人重启，已把/);
   assert.match(source, /mirrorCloudTask\(context, job, outcomeLocal\)/);
-  assert.match(source, /officialPublishRecords: recordsChangedSince\(readOfficialPublishRecords\(context\.workDir\), context\.publishRecordsSyncedAt\)/);
+  assert.match(source, /body\.officialPublishRecords = recordsChangedSince\(readOfficialPublishRecords\(context\.workDir\), context\.publishRecordsSyncedAt\)/);
   assert.match(source, /if \(result\?\.ok\) context\.publishRecordsSyncedAt = startedAt;/);
+  assert.match(source, /syncOfficialPublishRecordsIfEnabled/);
+  assert.match(source, /officialPublishStoreEnabled/);
+  assert.match(source, /context\.workerStateSyncing/);
+  assert.doesNotMatch(source, /\.slice\(0, 800\)/);
   assert.doesNotMatch(source, /pushAssetUsageDashboard/);
   assert.doesNotMatch(source, /assetUsageDashboard/);
   assert.match(source, /export async function pushAudioGroups/);

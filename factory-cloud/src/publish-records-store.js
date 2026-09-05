@@ -167,11 +167,11 @@ export async function listPublishRecords(db, { from = 0, limit = 800 } = {}) {
 // few minutes, so most calls end with zero rows written.
 export async function mergeAndStorePublishRecords(db, incoming = [], { limit = STORE_LIMIT } = {}) {
   await migratePublishRecordsFromKv(db);
-  const items = mergeOfficialPublishRecords([], incoming);
+  const items = mergeOfficialPublishRecords([], incoming, { limit: 0 });
   if (!items.length) return { received: 0, written: 0, inserted: 0, trimmed: 0, receiptsApplied: 0 };
   if (!await hasPublishTable(db)) {
     const stored = await kvGet(db, KV_KEY, []);
-    const merged = mergeOfficialPublishRecords(stored, items).slice(0, Math.max(1, Number(limit) || STORE_LIMIT));
+    const merged = mergeOfficialPublishRecords(stored, items, { limit: Math.max(1, Number(limit) || STORE_LIMIT) });
     await kvSet(db, KV_KEY, merged);
     return { received: items.length, written: merged.length, inserted: 0, trimmed: 0, receiptsApplied: 0 };
   }
@@ -386,6 +386,144 @@ export async function prunePublishReceipts(db, now = Date.now()) {
   const cutoff = now - RECEIPT_RETENTION_MS;
   const receipts = await db.prepare(`DELETE FROM ${RECEIPTS_TABLE} WHERE received_at < ?`).bind(cutoff).run();
   return { deletedReceipts: Number(receipts?.meta?.changes || 0) };
+}
+
+const REVISION_TABLE = "factory_publish_source_revisions";
+let revisionTableChecked = null;
+
+export function resetPublishRevisionTableCache() {
+  revisionTableChecked = null;
+}
+
+export async function hasPublishRevisionTable(db) {
+  if (revisionTableChecked !== null) return revisionTableChecked;
+  try {
+    await db.prepare(`SELECT 1 FROM ${REVISION_TABLE} LIMIT 1`).first();
+    revisionTableChecked = true;
+  } catch {
+    revisionTableChecked = false;
+  }
+  return revisionTableChecked;
+}
+
+export async function applySourcedPublishRecordEvents(db, { sourceStoreId, events = [], now = Date.now() } = {}) {
+  if (!await hasPublishRevisionTable(db)) {
+    throw Object.assign(new Error("factory_publish_source_revisions is missing."), {
+      statusCode: 503,
+      code: "REVISION_TABLE_MISSING",
+    });
+  }
+  if (!await hasPublishTable(db)) {
+    throw Object.assign(new Error("factory_publish_records is missing."), {
+      statusCode: 503,
+      code: "PUBLISH_TABLE_MISSING",
+    });
+  }
+  const source = String(sourceStoreId || "").trim();
+  const incoming = Array.isArray(events) ? events : [];
+  if (!source) throw Object.assign(new Error("sourceStoreId is required."), { statusCode: 400 });
+  const collapsed = collapseSourceEvents(incoming);
+  const recordIds = collapsed.map((event) => String(event.record?.id || event.recordKey || "")).filter(Boolean);
+  const existing = await loadPublishRecordRowsByIds(db, recordIds);
+  const revisions = await loadSourceRevisions(db, source, recordIds);
+  const pendingReceipts = await loadPendingReceiptsForRecords(db, collapsed.map((event) => event.record));
+  const statements = [];
+  const appliedReceiptRefs = [];
+  let written = 0;
+  let inserted = 0;
+  let ignored = 0;
+  const recordStatement = db.prepare(`
+    INSERT INTO ${TABLE} (id, created_at, value_json)
+    VALUES (?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      created_at = excluded.created_at,
+      value_json = excluded.value_json
+  `);
+  const withRefs = await hasReceiptTables(db);
+  const refStatement = withRefs ? db.prepare(`
+    INSERT INTO ${REFS_TABLE} (ref, record_id, created_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(ref) DO UPDATE SET record_id = excluded.record_id
+  `) : null;
+  const revisionStatement = db.prepare(`
+    INSERT INTO ${REVISION_TABLE} (source_store_id, record_key, applied_revision, applied_seq, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(source_store_id, record_key) DO UPDATE SET
+      applied_revision = excluded.applied_revision,
+      applied_seq = excluded.applied_seq,
+      updated_at = excluded.updated_at
+  `);
+  for (const event of collapsed) {
+    const recordKey = String(event.record?.id || event.recordKey || "").trim();
+    const revision = Number(event.recordRevision) || 0;
+    if (!recordKey) throw Object.assign(new Error("Sync event is missing record.id."), { statusCode: 400 });
+    const previousRevision = revisions.get(recordKey);
+    if (previousRevision && revision <= previousRevision.revision) {
+      ignored += 1;
+      continue;
+    }
+    const item = normalizeOfficialPublishRecord(event.record);
+    if (!item?.id) throw Object.assign(new Error("Sync event record is invalid."), { statusCode: 400 });
+    const row = existing.get(item.id);
+    const previous = row ? recordFromRow(row) : null;
+    let merged = previous ? mergeOfficialPublishRecords([previous], [item], { limit: 0 })[0] : item;
+    if (!merged) continue;
+    if (previous) merged = keepReceiptOutcome(previous, item, merged);
+    const receipt = pendingReceipts.get(taskRef(merged.remoteTaskId)) || pendingReceipts.get(externalRefKey(merged.externalRef));
+    if (receipt) {
+      merged = applyReceiptToRecord(merged, receipt);
+      appliedReceiptRefs.push({ ref: receipt.ref, recordId: merged.id });
+    }
+    const createdAt = officialRecordTime(merged);
+    statements.push(recordStatement.bind(merged.id, createdAt, JSON.stringify(merged)));
+    if (refStatement) {
+      for (const ref of publishRecordRefs(merged)) statements.push(refStatement.bind(ref, merged.id, createdAt));
+    }
+    statements.push(revisionStatement.bind(source, recordKey, revision, Number(event.seq) || 0, now));
+    written += 1;
+    if (!row) inserted += 1;
+  }
+  if (appliedReceiptRefs.length) {
+    const mark = db.prepare(`UPDATE ${RECEIPTS_TABLE} SET applied_at = ?, record_id = ? WHERE ref = ?`);
+    for (const entry of appliedReceiptRefs) statements.push(mark.bind(now, entry.recordId, entry.ref));
+  }
+  if (statements.length) await db.batch(statements);
+  return {
+    received: incoming.length,
+    applied: written,
+    ignored,
+    inserted,
+    receiptsApplied: appliedReceiptRefs.length,
+  };
+}
+
+function collapseSourceEvents(events) {
+  const byKey = new Map();
+  for (const event of events) {
+    const recordKey = String(event?.record?.id || event?.recordKey || "").trim();
+    const revision = Number(event?.recordRevision) || 0;
+    const seq = Number(event?.seq) || 0;
+    if (!recordKey) continue;
+    const previous = byKey.get(recordKey);
+    if (!previous || revision > previous.recordRevision || (revision === previous.recordRevision && seq > previous.seq)) {
+      byKey.set(recordKey, { ...event, recordKey, recordRevision: revision, seq });
+    }
+  }
+  return [...byKey.values()].sort((left, right) => (left.recordRevision - right.recordRevision) || (left.seq - right.seq));
+}
+
+async function loadSourceRevisions(db, sourceStoreId, recordKeys) {
+  const found = new Map();
+  for (let index = 0; index < recordKeys.length; index += ID_CHUNK) {
+    const slice = recordKeys.slice(index, index + ID_CHUNK);
+    const { results } = await db.prepare(
+      `SELECT record_key, applied_revision, applied_seq FROM ${REVISION_TABLE} WHERE source_store_id = ? AND record_key IN (${slice.map(() => "?").join(", ")})`
+    ).bind(sourceStoreId, ...slice).all();
+    for (const row of results || []) {
+      found.set(String(row.record_key), { revision: Number(row.applied_revision) || 0, seq: Number(row.applied_seq) || 0 });
+    }
+  }
+  return found;
 }
 
 function sameRecord(left, right) {

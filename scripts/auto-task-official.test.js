@@ -12,6 +12,7 @@ import {
   planOfficialPublishJobs,
   resolveOfficialAccountAssignment,
 } from "./auto-task-manager.js";
+import { closePublishRecordStore, getPublishRecordStore } from "./publish-record-runtime.js";
 
 test("missing official assignment stays one video per account, not every account", () => {
   assert.equal(resolveOfficialAccountAssignment(""), "round-robin");
@@ -269,6 +270,33 @@ test("official publish record persistence is idempotent", () => {
     assert.equal(records.length, 1);
     assert.equal(records[0].id, "task-idempotent:official:0:connection-1");
     assert.equal(records[0].accountName, "Creator One");
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("official publish persistence can write SQLite without touching the JSON file", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "official-publish-sqlite-"));
+  try {
+    fs.writeFileSync(path.join(workDir, "official-publish-store.json"), JSON.stringify({ enabled: true }), "utf8");
+    const task = {
+      id: "task-sqlite",
+      publish: {
+        connectionIds: ["connection-1"],
+        officialAccounts: [{ connectionId: "connection-1", name: "Creator One" }],
+        scheduleAt: 3_000,
+      },
+      generatedVideos: [{ fileName: "video-1.mp4" }],
+    };
+    const normalized = normalizeOfficialAutoPublishResult(task, { batches: [{ id: "batch-1" }] });
+    persistOfficialPublishRecords(workDir, task, normalized.results);
+    persistOfficialPublishRecords(workDir, task, normalized.results);
+    assert.equal(fs.existsSync(path.join(workDir, "publish-records.json")), false);
+    const store = getPublishRecordStore(workDir);
+    const record = store.getRecord("task-sqlite:official:0:connection-1");
+    assert.equal(record.accountName, "Creator One");
+    assert.equal(store.listRecords().records.length, 1);
+    closePublishRecordStore(workDir);
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }

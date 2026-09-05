@@ -12,7 +12,9 @@ import { resolveLocalAudioUploadPath } from "./novel-audio-upload.js";
 import { createCodexBrainService } from "./codex-brain.js";
 import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persistOfficialPublishRecords } from "./auto-task-manager.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
-import { normalizeOfficialPublishRecord } from "./official-publish-records.js";
+import { compactOfficialPublishRecord } from "./official-publish-records.js";
+import { officialPublishStoreEnabled } from "./publish-record-runtime.js";
+import { syncOfficialPublishRecordsIfEnabled } from "./publish-record-sync.js";
 import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { readConfig } from "./video-core.js";
@@ -51,9 +53,9 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
   const lanes = workerLanes(settings);
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}  渲染并发=${lanes[0].concurrency} 发布并发=${lanes[1].concurrency}`);
   helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
-  syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
+  syncWorkerState(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
   setInterval(() => {
-    syncInventory(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
+    syncWorkerState(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
   }, settings.syncMs || DEFAULT_SYNC_MS);
   for (const lane of lanes) {
     laneLoop(context, lane).catch((error) => {
@@ -708,6 +710,21 @@ function buildLocalPayload(job) {
   return merged;
 }
 
+async function syncWorkerState(context) {
+  if (context.workerStateSyncing) return;
+  context.workerStateSyncing = true;
+  try {
+    await syncInventory(context);
+    try {
+      await syncOfficialPublishRecordsIfEnabled(context);
+    } catch (error) {
+      console.error("同步官方发布记录失败：", error.message || error);
+    }
+  } finally {
+    context.workerStateSyncing = false;
+  }
+}
+
 async function syncInventory(context) {
   let redditMixSettings = {};
   try {
@@ -719,9 +736,11 @@ async function syncInventory(context) {
   const startedAt = Date.now();
   const body = {
     workerId: context.workerId,
-    retentionHours: 48,
-    officialPublishRecords: recordsChangedSince(readOfficialPublishRecords(context.workDir), context.publishRecordsSyncedAt)
+    retentionHours: 48
   };
+  if (!officialPublishStoreEnabled(context.workDir)) {
+    body.officialPublishRecords = recordsChangedSince(readOfficialPublishRecords(context.workDir), context.publishRecordsSyncedAt);
+  }
   // A second worker without a local settings file must not blank the cloud copy.
   if (Object.keys(redditMixSettings).length) body.redditMixSettings = redditMixSettings;
   if (!fs.existsSync(importMarker)) {
@@ -773,8 +792,7 @@ function readOfficialPublishRecords(workDir) {
     const records = JSON.parse(fs.readFileSync(path.join(workDir, "publish-records.json"), "utf8"));
     return filterPublishRecordsBySource(records, "official")
       .map((record) => compactOfficialPublishRecord(record))
-      .filter((record) => record.id)
-      .slice(0, 800);
+      .filter((record) => record.id);
   } catch {
     return [];
   }
@@ -791,44 +809,6 @@ export function recordsChangedSince(records, syncedAt = 0) {
     const touched = Math.max(Number(record?.updatedAt) || 0, Number(record?.createdAt) || 0, (Number(record?.publishedAt) || 0));
     return touched >= cutoff;
   });
-}
-
-function compactOfficialPublishRecord(record) {
-  const item = normalizeOfficialPublishRecord(record) || {};
-  return {
-    id: item.id,
-    dedupeKey: item.dedupeKey,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    publishedAt: item.publishedAt,
-    scheduleAt: item.scheduleAt,
-    username: item.username,
-    accountName: item.accountName,
-    accountUsername: item.accountUsername,
-    connectionId: item.connectionId,
-    assignedEnvId: item.assignedEnvId,
-    fileName: item.fileName,
-    title: item.title,
-    audioName: item.audioName,
-    videoId: item.videoId,
-    status: item.status,
-    officialBatchIds: item.officialBatchIds,
-    taskIds: item.taskIds,
-    batchId: item.batchId,
-    autoTaskId: item.autoTaskId,
-    remoteTaskId: item.remoteTaskId || "",
-    externalRef: item.externalRef || "",
-    publishError: item.publishError || "",
-    note: String(item.note || "").slice(0, 180),
-    source: item.source || "official-tiktok",
-    provider: item.provider || "official",
-    audioLibraryId: item.audioLibraryId || "",
-    sourceAudioId: item.sourceAudioId || "",
-    scriptId: item.scriptId || "",
-    novelId: item.novelId || "",
-    shareLink: item.shareLink || "",
-    videoUrl: item.videoUrl || ""
-  };
 }
 
 export function isCancelStatus(value) {

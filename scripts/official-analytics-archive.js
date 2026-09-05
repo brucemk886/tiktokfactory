@@ -1,12 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { closeOfficialHistoryDatabase, officialHistoryArchiveDir, officialHistoryDatabasePath, openOfficialHistoryDatabase } from "./official-history-db.js";
 import { summarizeOperationSignals } from "./private-tiktok-signals.js";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_SYNC_HOUR = 8;
 const DEFAULT_SYNC_MINUTE = 30;
-const DATABASE_NAME = "official-history.sqlite";
 
 export function createOfficialAnalyticsArchive({
   workDir,
@@ -19,10 +18,10 @@ export function createOfficialAnalyticsArchive({
   logger = console,
 } = {}) {
   if (!workDir || !service) throw new Error("Official analytics archive is not configured.");
-  const archiveDir = path.join(workDir, "official-tiktok-history");
-  const databasePath = path.join(archiveDir, DATABASE_NAME);
+  const archiveDir = officialHistoryArchiveDir(workDir);
+  const databasePath = officialHistoryDatabasePath(workDir);
   fs.mkdirSync(archiveDir, { recursive: true });
-  const database = openDatabase(databasePath);
+  const database = openOfficialHistoryDatabase(databasePath);
   migrateLegacyJsonFiles(database, archiveDir, logger);
   let timer = null;
   let running = null;
@@ -125,7 +124,7 @@ export function createOfficialAnalyticsArchive({
 
   function close() {
     stop();
-    database.close();
+    closeOfficialHistoryDatabase(databasePath);
   }
 
   function scheduleNext() {
@@ -219,119 +218,6 @@ export function createOfficialAnalyticsArchive({
   }
 
   return { run, start, stop, close, getStatus, getDashboard, getOperationSignals };
-}
-
-function openDatabase(databasePath) {
-  const database = new DatabaseSync(databasePath);
-  database.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE IF NOT EXISTS archive_runs (
-      date_key TEXT PRIMARY KEY,
-      started_at INTEGER NOT NULL,
-      completed_at INTEGER NOT NULL,
-      account_count INTEGER NOT NULL DEFAULT 0,
-      video_count INTEGER NOT NULL DEFAULT 0,
-      error_count INTEGER NOT NULL DEFAULT 0,
-      errors_json TEXT NOT NULL DEFAULT '[]',
-      source TEXT NOT NULL DEFAULT 'sqlite'
-    );
-    CREATE TABLE IF NOT EXISTS account_daily_snapshots (
-      account_key TEXT NOT NULL,
-      snapshot_date TEXT NOT NULL,
-      synced_at INTEGER NOT NULL,
-      label TEXT NOT NULL DEFAULT '',
-      followers INTEGER NOT NULL DEFAULT 0,
-      following INTEGER NOT NULL DEFAULT 0,
-      total_likes INTEGER NOT NULL DEFAULT 0,
-      reported_videos INTEGER NOT NULL DEFAULT 0,
-      profile_json TEXT NOT NULL DEFAULT '{}',
-      error TEXT NOT NULL DEFAULT '',
-      PRIMARY KEY (account_key, snapshot_date)
-    );
-    CREATE INDEX IF NOT EXISTS idx_account_daily_date ON account_daily_snapshots(snapshot_date, account_key);
-    CREATE TABLE IF NOT EXISTS video_daily_snapshots (
-      video_id TEXT NOT NULL,
-      account_key TEXT NOT NULL,
-      snapshot_date TEXT NOT NULL,
-      synced_at INTEGER NOT NULL,
-      create_time INTEGER NOT NULL DEFAULT 0,
-      title TEXT NOT NULL DEFAULT '',
-      views INTEGER NOT NULL DEFAULT 0,
-      likes INTEGER NOT NULL DEFAULT 0,
-      comments INTEGER NOT NULL DEFAULT 0,
-      shares INTEGER NOT NULL DEFAULT 0,
-      reach INTEGER NOT NULL DEFAULT 0,
-      video_json TEXT NOT NULL DEFAULT '{}',
-      PRIMARY KEY (video_id, account_key, snapshot_date)
-    );
-    CREATE INDEX IF NOT EXISTS idx_video_daily_history ON video_daily_snapshots(video_id, account_key, snapshot_date);
-    CREATE INDEX IF NOT EXISTS idx_video_daily_account ON video_daily_snapshots(account_key, snapshot_date, create_time DESC);
-    CREATE TABLE IF NOT EXISTS accounts_latest (
-      account_key TEXT PRIMARY KEY,
-      snapshot_date TEXT NOT NULL,
-      synced_at INTEGER NOT NULL,
-      label TEXT NOT NULL DEFAULT '',
-      followers INTEGER NOT NULL DEFAULT 0,
-      following INTEGER NOT NULL DEFAULT 0,
-      total_likes INTEGER NOT NULL DEFAULT 0,
-      reported_videos INTEGER NOT NULL DEFAULT 0,
-      profile_json TEXT NOT NULL DEFAULT '{}',
-      error TEXT NOT NULL DEFAULT ''
-    );
-    CREATE TABLE IF NOT EXISTS videos_latest (
-      video_id TEXT NOT NULL,
-      account_key TEXT NOT NULL,
-      snapshot_date TEXT NOT NULL,
-      synced_at INTEGER NOT NULL,
-      create_time INTEGER NOT NULL DEFAULT 0,
-      title TEXT NOT NULL DEFAULT '',
-      views INTEGER NOT NULL DEFAULT 0,
-      likes INTEGER NOT NULL DEFAULT 0,
-      comments INTEGER NOT NULL DEFAULT 0,
-      shares INTEGER NOT NULL DEFAULT 0,
-      reach INTEGER NOT NULL DEFAULT 0,
-      video_json TEXT NOT NULL DEFAULT '{}',
-      PRIMARY KEY (video_id, account_key)
-    );
-    CREATE INDEX IF NOT EXISTS idx_videos_latest_account ON videos_latest(account_key, create_time DESC);
-    CREATE TABLE IF NOT EXISTS archive_sync_checkpoints (
-      date_key TEXT PRIMARY KEY,
-      cursor TEXT NOT NULL DEFAULT '',
-      account_count INTEGER NOT NULL DEFAULT 0,
-      video_count INTEGER NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'running',
-      updated_at INTEGER NOT NULL DEFAULT 0
-    );
-  `);
-  repairLegacyVideoCreateTimes(database);
-  return database;
-}
-
-function repairLegacyVideoCreateTimes(database) {
-  const tables = ["videos_latest", "video_daily_snapshots"];
-  database.exec("BEGIN IMMEDIATE");
-  try {
-    for (const table of tables) {
-      const rows = database.prepare(`SELECT rowid, video_id, video_json FROM ${table} WHERE create_time IS NULL OR create_time <= 0`).all();
-      const update = database.prepare(`UPDATE ${table} SET create_time = ? WHERE rowid = ?`);
-      for (const row of rows) {
-        const raw = parseJson(row.video_json, {});
-        const analytics = raw?.analytics && typeof raw.analytics === "object" ? raw.analytics : {};
-        const corrected = timestamp(
-          raw?.createTime, raw?.createdAt, raw?.create_time, raw?.publishTime, raw?.publish_time, raw?.publishedAt, raw?.published_at,
-          analytics?.createTime, analytics?.createdAt, analytics?.create_time, analytics?.publishTime, analytics?.publish_time,
-          analytics?.publishedAt, analytics?.published_at,
-        ) || timestampFromTikTokId(row.video_id);
-        if (corrected > 0) update.run(corrected, row.rowid);
-      }
-    }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
 }
 
 function writeArchiveRun(database, snapshot, { source = "sqlite", replaceVideosForDate = true } = {}) {

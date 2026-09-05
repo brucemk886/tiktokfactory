@@ -5,6 +5,7 @@ import { acceptTranscriptQueueTick, attachAudioGenerateResults, backfillMissingA
 import { putNovelAudio, serveNovelAudio } from "./novel-audio-archive.js";
 import { refreshOfficialArchive } from "./official-archive-store.js";
 import { mergeAndStorePublishRecords } from "./publish-records-store.js";
+import { handlePublishRecordsSyncV2 } from "./publish-records-sync-v2.js";
 import { ensurePublishWebhookLazily } from "./publish-webhook.js";
 import { getAutoTask, saveAutoTask, saveAutoTasks } from "./auto-tasks-store.js";
 
@@ -306,6 +307,10 @@ async function handleWorkerApi(request, env, url, ctx) {
     }
     if (changed.length) await saveAutoTasks(env.DB, changed);
     return json({ ok: true, updated: changed.length });
+  }
+
+  if (method === "POST" && pathname === "/api/worker/publish-records/sync") {
+    return handlePublishRecordsSyncV2(env, await readJson(request), ctx, request);
   }
 
   if (method === "POST" && pathname === "/api/worker/sync") {

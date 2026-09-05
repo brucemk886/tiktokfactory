@@ -13,6 +13,8 @@ export function createOfficialPublishResultSync({
   service,
   readRecords,
   writeRecords,
+  patchRecords,
+  hasVideoSnapshot,
   now = () => Date.now(),
   syncHour = DEFAULT_SYNC_HOUR,
   syncMinute = DEFAULT_SYNC_MINUTE,
@@ -49,7 +51,7 @@ export function createOfficialPublishResultSync({
     }
 
     const records = readRecords();
-    const due = selectDueOfficialPublishRecords(records, startedAt);
+    const due = selectDueOfficialPublishRecords(records, startedAt, { hasVideoSnapshot });
     const unresolved = due.filter((record) => String(record.status || "").toLowerCase() !== "published");
     const dueByBatch = groupByBatch(unresolved);
     const updates = new Map();
@@ -125,8 +127,13 @@ export function createOfficialPublishResultSync({
       updates.set(record.id, unresolvedUpdate(record, "本地记录缺少线上批次 ID", startedAt, summary));
     }
     await hydrateVideoDetailsByAccount(due, updates, service, startedAt, summary, callBridge);
-    const latest = readRecords();
-    writeRecords(latest.map((record) => updates.has(record.id) ? { ...record, ...updates.get(record.id) } : record));
+    const patches = [...updates.entries()].map(([id, update]) => ({ id, ...update }));
+    if (typeof patchRecords === "function") {
+      patchRecords(patches);
+    } else {
+      const latest = readRecords();
+      writeRecords(latest.map((record) => updates.has(record.id) ? { ...record, ...updates.get(record.id) } : record));
+    }
     const result = { ...summary, completedAt: now() };
     writeJson(statePath, { lastRunDate: dateKey, lastRunAt: startedAt, lastResult: result });
     return result;
@@ -220,7 +227,7 @@ async function hydrateVideoDetailsByAccount(records, updates, service, currentTi
   }
 }
 
-export function selectDueOfficialPublishRecords(records, currentTime = Date.now()) {
+export function selectDueOfficialPublishRecords(records, currentTime = Date.now(), { hasVideoSnapshot } = {}) {
   return (Array.isArray(records) ? records : []).filter((record) => {
     if (!isOfficial(record) || TERMINAL_FAILURES.has(String(record.status || "").toLowerCase())) return false;
     const scheduledAt = Math.max(0, Number(record.scheduleAt || 0) * 1000 || Number(record.createdAt || 0));
@@ -233,7 +240,9 @@ export function selectDueOfficialPublishRecords(records, currentTime = Date.now(
     if (String(record.status || "").toLowerCase() !== "published") return true;
     const publishedAt = Math.max(0, Number(record.publishedAt || record.completedAt || scheduledAt));
     if (currentTime - publishedAt > SNAPSHOT_TRACKING_DAYS * DAY_MS) return false;
-    return !hasSnapshotForDate(record.officialVideoSnapshots, beijingDateKey(currentTime));
+    const dateKey = beijingDateKey(currentTime);
+    if (typeof hasVideoSnapshot === "function") return !hasVideoSnapshot(record, dateKey);
+    return !hasSnapshotForDate(record.officialVideoSnapshots, dateKey);
   });
 }
 

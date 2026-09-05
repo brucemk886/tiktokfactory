@@ -36,6 +36,14 @@ import { factoryCloudPageUrl, homePathForUser, publicSidebarModules, shouldRedir
 import { assertPublishProviderAccess, filterOfficialPublishAccounts, PUBLISH_PROVIDER_GEELARK, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { filterOfficialPublishRecordsByRange, hydrateOfficialPublishRecords, summarizeOfficialPublishRecords } from "./official-publish-records.js";
+import {
+  getPublishRecordStore,
+  officialPublishStoreEnabled,
+  patchOfficialRuntimeRecords,
+  readAllPublishRecords,
+  readOfficialRuntimeRecords,
+  writeOfficialRuntimeRecords,
+} from "./publish-record-runtime.js";
 import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { createOfficialPublishResultSync } from "./official-publish-result-sync.js";
 import { createOfficialAnalyticsArchive } from "./official-analytics-archive.js";
@@ -51,7 +59,6 @@ const publicDir = path.join(root, "public");
 const bootConfig = readConfig(root);
 const { outputDir, workDir } = resolveStorageDirs(root, bootConfig);
 const jobsDir = path.join(workDir, "jobs");
-const publishRecordsPath = path.join(workDir, "publish-records.json");
 const redditMixSettingsPath = path.join(workDir, "reddit-mix-settings.json");
 const psychologySettingsPath = path.join(workDir, "psychology-video-settings.json");
 
@@ -115,8 +122,14 @@ const officialTikTokAccountGroups = createOfficialTikTokAccountGroups({ workDir 
 const officialPublishResultSync = createOfficialPublishResultSync({
   workDir,
   service: privateTikTokAnalytics,
-  readRecords: readPublishRecords,
-  writeRecords: writePublishRecords,
+  readRecords: () => officialPublishStoreEnabled(workDir)
+    ? getPublishRecordStore(workDir).listDueOfficialRecords()
+    : readOfficialRuntimeRecords(workDir),
+  writeRecords: (records) => writeOfficialRuntimeRecords(workDir, records),
+  patchRecords: (patches) => patchOfficialRuntimeRecords(workDir, patches),
+  hasVideoSnapshot: (record, dateKey) => officialPublishStoreEnabled(workDir)
+    ? getPublishRecordStore(workDir).hasVideoSnapshot(record, dateKey)
+    : (Array.isArray(record?.officialVideoSnapshots) ? record.officialVideoSnapshots : []).some((item) => String(item?.snapshotDate || "") === dateKey),
   syncHour: Number(process.env.OFFICIAL_PUBLISH_RESULT_SYNC_HOUR || 8),
   syncMinute: Number(process.env.OFFICIAL_PUBLISH_RESULT_SYNC_MINUTE || 30),
   requestIntervalMs: Number(process.env.OFFICIAL_PUBLISH_RESULT_REQUEST_INTERVAL_MS || 650),
@@ -3702,24 +3715,16 @@ async function attachLocalPublishOutcome(report, accounts, fromKey, toKey, perio
 }
 
 function readPublishRecords() {
-  if (!fs.existsSync(publishRecordsPath)) return [];
-  try {
-    const value = JSON.parse(fs.readFileSync(publishRecordsPath, "utf8"));
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
+  return readAllPublishRecords(workDir);
 }
 
 function writePublishRecords(records) {
-  fs.mkdirSync(path.dirname(publishRecordsPath), { recursive: true });
-  fs.writeFileSync(publishRecordsPath, JSON.stringify(records, null, 2), "utf8");
+  writeOfficialRuntimeRecords(workDir, records);
 }
 
 function appendPublishRecords(records) {
   if (!records.length) return;
-  const current = readPublishRecords();
-  writePublishRecords([...records, ...current]);
+  writeOfficialRuntimeRecords(workDir, [...records, ...readPublishRecords()]);
 }
 
 function getPublishRecordsSummary(searchParams, user = null) {
@@ -3775,7 +3780,13 @@ function getPublishRecordsSummary(searchParams, user = null) {
 async function getOfficialPublishRecordsSummary(searchParams) {
   const range = String(searchParams.get("range") || "7d");
   const query = String(searchParams.get("query") || "");
-  const stored = filterOfficialPublishRecordsByRange(filterPublishRecordsBySource(readPublishRecords(), "official"), range);
+  const stored = officialPublishStoreEnabled(workDir)
+    ? getPublishRecordStore(workDir).listRecords({
+      from: resolveStatsFrom(range),
+      query,
+      attachLatest: true,
+    }).records
+    : filterOfficialPublishRecordsByRange(filterPublishRecordsBySource(readPublishRecords(), "official"), range);
   const records = await hydrateOfficialPublishRecords(stored, (batchId) => privateTikTokAnalytics.getPublishBatch(batchId)).catch(() => stored);
   return summarizeOfficialPublishRecords(records, { range: "all", query });
 }

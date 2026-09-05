@@ -177,4 +177,6 @@ test("cloud routes no longer touch the auto-tasks kv blob", async () => {
   assert.match(jobs, /saveAutoTasks\(env\.DB, changed\)/);
   assert.doesNotMatch(jobs, /mergeAndStorePublishRecords\(env\.DB, incoming, \{ limit/);
   assert.match(worker, /recordsChangedSince\(readOfficialPublishRecords/);
+  assert.match(worker, /syncOfficialPublishRecordsIfEnabled/);
+  assert.match(jobs, /publish-records\/sync/);
 });

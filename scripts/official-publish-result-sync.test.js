@@ -120,6 +120,41 @@ test("daily sync writes TikTok handle and fail_reason onto failed records", asyn
   assert.equal(records[0].note, "TikTok 拒绝：spam_risk");
 });
 
+test("daily sync can patch records and honor an external video snapshot check", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "official-result-patch-"));
+  const records = [
+    officialRecord("record-1", "2026-08-11T10:00:00+08:00", { externalRef: "video-1:connection-1:0" }),
+  ];
+  const patches = [];
+  const sync = createOfficialPublishResultSync({
+    workDir,
+    service: {
+      async getPublishBatch() {
+        return { batch: { tasks: [remoteTask("task-1", "video-1:connection-1:0", "700000000000000001")] } };
+      },
+      async listVideos() {
+        return { videos: [{ id: "700000000000000001", views: 9 }], profile: { username: "creator" } };
+      },
+    },
+    readRecords: () => records,
+    writeRecords: () => { throw new Error("legacy full rewrite should not run"); },
+    patchRecords: (incoming) => { patches.push(...incoming); },
+    now: () => SHANGHAI_MORNING,
+    requestIntervalMs: 0,
+  });
+  await sync.run();
+  assert.equal(patches.length, 1);
+  assert.equal(patches[0].videoId, "700000000000000001");
+  const published = officialRecord("published", "2026-08-10T10:00:00+08:00", {
+    status: "published",
+    videoId: "700000000000000003",
+  });
+  assert.equal(selectDueOfficialPublishRecords([published], SHANGHAI_MORNING).length, 1);
+  assert.equal(selectDueOfficialPublishRecords([published], SHANGHAI_MORNING, {
+    hasVideoSnapshot: () => true,
+  }).length, 0);
+});
+
 test("published records without stored video detail are retried on a later daily run", () => {
   const record = officialRecord("published", "2026-08-10T10:00:00+08:00", { status: "published", videoId: "700000000000000003", officialVideoDetailStatus: "pending" });
   assert.deepEqual(selectDueOfficialPublishRecords([record], SHANGHAI_MORNING).map((item) => item.id), ["published"]);

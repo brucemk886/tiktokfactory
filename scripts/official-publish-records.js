@@ -1,19 +1,19 @@
 import { collectOfficialBatchIdsFromRecords, isOfficialTikTokPublishRecord } from "./publish-record-sources.js";
 
-export function mergeOfficialPublishRecords(existing, incoming) {
+export function mergeOfficialPublishRecords(existing, incoming, { limit = 3000 } = {}) {
   const byId = new Map();
   for (const record of [...(Array.isArray(existing) ? existing : []), ...(Array.isArray(incoming) ? incoming : [])]) {
     if (!record || typeof record !== "object") continue;
     const id = String(record.id || record.dedupeKey || record.taskId || record.jobId || "").trim();
     if (!id) continue;
     const prev = byId.get(id);
-    byId.set(id, prev ? mergeRecordFields(prev, record) : { ...record, id });
+    byId.set(id, prev ? mergeOfficialRecordFields(prev, record) : { ...record, id });
   }
-  return Array.from(byId.values())
+  const merged = Array.from(byId.values())
     .map((item) => normalizeOfficialPublishRecord(item))
     .filter(Boolean)
-    .sort((a, b) => officialRecordTime(b) - officialRecordTime(a))
-    .slice(0, 3000);
+    .sort((a, b) => officialRecordTime(b) - officialRecordTime(a));
+  return Number(limit) > 0 ? merged.slice(0, Number(limit)) : merged;
 }
 
 export function isMatchableOfficialRecord(record) {
@@ -230,7 +230,49 @@ export function officialRecordTime(record) {
     || (toSeconds(record?.scheduleAt) ? toSeconds(record.scheduleAt) * 1000 : 0);
 }
 
-function mergeRecordFields(prev, next) {
+export function officialRecordKey(record) {
+  return String(record?.id || record?.dedupeKey || record?.taskId || record?.jobId || "").trim();
+}
+
+export function compactOfficialPublishRecord(record) {
+  const item = normalizeOfficialPublishRecord(record) || {};
+  return {
+    id: item.id,
+    dedupeKey: item.dedupeKey,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    publishedAt: item.publishedAt,
+    scheduleAt: item.scheduleAt,
+    username: item.username,
+    accountName: item.accountName,
+    accountUsername: item.accountUsername,
+    connectionId: item.connectionId,
+    assignedEnvId: item.assignedEnvId,
+    fileName: item.fileName,
+    title: item.title,
+    audioName: item.audioName,
+    videoId: item.videoId,
+    status: item.status,
+    officialBatchIds: item.officialBatchIds,
+    taskIds: item.taskIds,
+    batchId: item.batchId,
+    autoTaskId: item.autoTaskId,
+    remoteTaskId: item.remoteTaskId || "",
+    externalRef: item.externalRef || "",
+    publishError: item.publishError || "",
+    note: String(item.note || "").slice(0, 180),
+    source: item.source || "official-tiktok",
+    provider: item.provider || "official",
+    audioLibraryId: item.audioLibraryId || "",
+    sourceAudioId: item.sourceAudioId || "",
+    scriptId: item.scriptId || "",
+    novelId: item.novelId || "",
+    shareLink: item.shareLink || "",
+    videoUrl: item.videoUrl || "",
+  };
+}
+
+export function mergeOfficialRecordFields(prev, next) {
   const merged = { ...prev };
   for (const [key, value] of Object.entries(next)) {
     if (value == null) continue;
