@@ -73,9 +73,7 @@
 
 ### 2.3 库存同步 `syncInventory`
 
-每 5 分钟跑 `syncWorkerState`：库存设置仍走 `POST /api/worker/sync`（`redditMixSettings`、`retentionHours: 48`，首次还会上传小说库）。**当前生产仍读 `publish-records.json`**：官方记录先按变化筛选再上传，已去掉「先截 800 条再筛选」；进度仍是内存里的 `publishRecordsSyncedAt`。GeeLark 记录不上传。
-
-官方记录的 SQLite + `POST /api/worker/publish-records/sync`（protocolVersion=2，按 outbox `seq` 分页确认）代码已就绪，但**生产尚未切换**。只有 `work/official-publish-store.json` 写了 `enabled: true` 之后，工人才走 v2，并不再把官方记录塞进旧 `/api/worker/sync`。切换步骤见 `docs/publish-records-sqlite-cutover.md`。
+每 5 分钟跑 `syncWorkerState`：库存设置仍走 `POST /api/worker/sync`（`redditMixSettings`、`retentionHours: 48`，首次还会上传小说库）。**本机工人 `windows-local` 已切 SQLite**：官方记录读写 `official-history.sqlite` 的 `publishing_*` 表，同步走 `POST /api/worker/publish-records/sync`（protocolVersion=2，按 outbox `seq` 分页确认）。旧 `/api/worker/sync` 不再带官方记录。GeeLark 仍只在 `publish-records.json`，不上传。开关文件是 `work/official-publish-store.json`。回滚与备份见 `docs/publish-records-sqlite-cutover.md`。
 
 素材组 / 音频目录不走这条定时同步：目录变化在本机 Reddit 混剪页点「刷新并推送」。素材使用率只在各台本机 `localhost:3010/asset-usage` 查看，不再上传工厂。曾经每个北京日自动推最近 8 个目录，已删，避免半量覆盖线上清单。
 
@@ -323,9 +321,9 @@
 
 29. 模板1 建任务：素材组仍是一级目录，组里按目录树勾选（展开子夹、父夹全选、可单选），混剪只抽勾中的路径（`generation.assetFolders`）。全勾或不传仍抽整组。点开头 / 下划线夹不当素材组。本机可预览素材。模板2 不出现这组勾选。
 
-### 已修（2026-09-05，发布记录 SQLite 与增量同步 — 代码完成，生产未切）
+### 已修（2026-09-06，发布记录 SQLite 已切生产）
 
-30. 官方发布记录运行时读写可迁到 `official-history.sqlite`（`publishing_records` / outbox / sync_state），账号/视频快照复用归档表，不再把 30 天账号历史嵌进每条记录。工人 v2 按单调 `seq` 分页确认，云端 `factory_publish_source_revisions` 按 `(sourceStoreId, recordKey)` 去重，回执终态仍优先。`mergeOfficialPublishRecords` 的 3000 条限制只用于展示；持久化传 `{ limit: 0 }`。默认仍走旧 JSON。生产导入、enable、部署、重启都还没做。
+30. 官方发布记录读写 `official-history.sqlite`（`publishing_records` / outbox / sync_state），账号/视频快照复用归档表，不再把 30 天账号历史嵌进每条记录。工人 v2 按单调 `seq` 分页确认，云端 `factory_publish_source_revisions` 按 `(sourceStoreId, recordKey)` 去重，回执终态仍优先。`mergeOfficialPublishRecords` 的 3000 条限制只用于展示；持久化传 `{ limit: 0 }`。2026-09-06 已部署工厂云（迁移 `0020`，版本 `abddcc08-fe36-494b-8fc5-6909387a44c7`），本机导入 488 条官方记录、enable、重启 `windows-local`；首次 v2 已 ACK 到 seq 488。GeeLark 3274 条仍在原 JSON，旧文件未删。
 
 ### 未修（评估后不需要，或超出本阶段）
 

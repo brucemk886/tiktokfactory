@@ -7,7 +7,7 @@
 ## Decisions
 
 - 发布表做进现有 `workDir/official-tiktok-history/official-history.sqlite`，复用 `account_daily_snapshots` / `video_daily_snapshots`，同一事务写记录、快照、outbox。
-- 默认仍走 `publish-records.json`。只有 `official-publish-store.json` 的 `enabled: true` 或环境变量 `OFFICIAL_PUBLISH_STORE=sqlite` 才切 SQLite。本次没有 enable、没有重启、没有部署。
+- 默认仍走 `publish-records.json`。只有 `official-publish-store.json` 的 `enabled: true` 或环境变量 `OFFICIAL_PUBLISH_STORE=sqlite` 才切 SQLite。2026-09-06 已在本机 enable、重启工人，并部署工厂云。
 - `mergeOfficialPublishRecords` 默认仍 slice(3000) 给展示；持久化/迁移/云端 v2 传入 `{ limit: 0 }`。
 - 游标用 outbox 单调 `seq`，不用 `updatedAt`。普通 `{ok:true}` 不能确认 v2。
 - 复制数据库到另一台机器必须换 `source_store_id` 并清空 ACK。
@@ -44,7 +44,7 @@
 - `factory-cloud/src/publish-records-store.js`
 - `docs/PIPELINE.md`
 
-未改：`publish-service.js`、Minecraft、素材策略、渲染、排期、TikTok/GeeLark 发布动作、账号授权、页面风格、`CURRENT_STATE.md`、他人未提交文件。
+未改：`publish-service.js`、Minecraft、素材策略、渲染、排期、TikTok/GeeLark 发布动作、账号授权、页面风格、他人未提交文件。生产切换后补了 `PIPELINE.md` / cutover 状态。
 
 ## Tests performed
 
@@ -56,8 +56,11 @@
 
 ## Unfinished work
 
-生产切换未做：未 backup 真库、未 import 真 `publish-records.json`、未 enable、未部署工厂云、未重启工人、未删旧文件。内置浏览器未验证页面。90000 条基准的 DB 体积含全量 outbox，比「仅记录+去重快照」大。
+旧 `publish-records.json` 仍保留（含官方历史副本和 GeeLark）。不要删。90000 条基准的 DB 体积含全量 outbox，比「仅记录+去重快照」大。内置浏览器未登录官方发布记录页。
 
-## Recommended next step
+## Production cutover (2026-09-06)
 
-按 `docs/publish-records-sqlite-cutover.md`：先部署工厂云（迁移 0020），再在无渲染/发布窗口 dry-run → backup → import → verify → enable → 重启工人。确认多页 ACK 后再考虑删 JSON 官方部分；GeeLark 历史继续留在原文件。
+- 提交 `a62f78a`，push `main`，工厂云 `npm run deploy`：D1 `0020` 成功，Worker `abddcc08-fe36-494b-8fc5-6909387a44c7`。
+- 本机 dry-run / backup / import 488 / verify lossless / enable。
+- 重启 `windows-local`；v2 已 ACK seq 488。GeeLark 3274 条仍在 JSON。
+- `backup-sqlite` CLI 已修：同时接受 `{ workDir }`，避免写成 `[object Object]` 目录。

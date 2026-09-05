@@ -305,9 +305,11 @@ export function exportOfficialRecordsForRollback({ workDir, outputPath, includeS
 }
 
 export function backupSqliteConsistent(workDir, outputPath) {
-  const databasePath = officialHistoryDatabasePath(workDir);
+  const options = workDir && typeof workDir === "object" ? workDir : { workDir, outputPath };
+  const dir = options.workDir;
+  const databasePath = officialHistoryDatabasePath(dir);
   const database = openOfficialHistoryDatabase(databasePath);
-  const target = outputPath || path.join(String(workDir), "official-tiktok-history", `official-history.backup.${Date.now()}.sqlite`);
+  const target = options.outputPath || outputPath || path.join(String(dir), "official-tiktok-history", `official-history.backup.${Date.now()}.sqlite`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   database.exec(`VACUUM INTO ${sqlLiteral(target)}`);
   return { outputPath: target, sourcePath: databasePath };

@@ -4,12 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  backupSqliteConsistent,
   classifyPublishRecords,
   dryRunOfficialPublishMigration,
   importOfficialPublishRecords,
   readPublishRecordsJsonStrict,
   verifyOfficialPublishMigration,
 } from "./publish-record-migrate.js";
+import { closeOfficialHistoryDatabase, officialHistoryDatabasePath } from "./official-history-db.js";
 import { officialPublishJsonPath } from "./publish-record-runtime.js";
 import { createPublishRecordStore } from "./publish-record-store.js";
 
@@ -95,5 +97,21 @@ test("import 0 and 488 official records and verify lossless when no unknowns", (
   assert.equal(verified.geelarkUnchanged, true);
   assert.equal(verified.lossless, true);
   fs.rmSync(emptyDir, { recursive: true, force: true });
+  fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test("backup-sqlite CLI options object writes beside the real work dir", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-backup-"));
+  writeMixed(workDir, 1);
+  importOfficialPublishRecords({ workDir, batchId: "backup-cli" });
+  const first = backupSqliteConsistent({ workDir });
+  assert.match(first.outputPath, /official-history\.backup\.\d+\.sqlite$/);
+  assert.ok(first.outputPath.startsWith(workDir));
+  assert.ok(fs.existsSync(first.outputPath));
+  const named = path.join(workDir, "official-tiktok-history", "named-backup.sqlite");
+  const second = backupSqliteConsistent({ workDir, outputPath: named });
+  assert.equal(second.outputPath, named);
+  assert.ok(fs.existsSync(named));
+  closeOfficialHistoryDatabase(officialHistoryDatabasePath(workDir));
   fs.rmSync(workDir, { recursive: true, force: true });
 });

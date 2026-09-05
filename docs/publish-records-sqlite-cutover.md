@@ -1,18 +1,17 @@
-# 官方发布记录 SQLite 切换（尚未执行）
+# 官方发布记录 SQLite 切换
 
-代码和离线测试已完成。**生产仍在读写真 `work/publish-records.json`。** 不要把「测试通过」当成已经切库。
-
-默认完成定义：
+2026-09-06 已在生产执行。工厂云已部署 v2 接口和迁移 `0020`。本机工人 `windows-local` 已 enable 并重启，官方记录走 SQLite，GeeLark 仍在原 JSON。
 
 | 状态 | 现在 |
 |---|---|
 | 代码完成 | 是 |
 | 离线测试通过 | 是 |
 | 迁移工具就绪 | 是 |
-| 生产导入 | 否 |
-| 生产 enable | 否 |
-| 工厂云部署 v2 接口 | 否 |
-| 工人重启切 SQLite | 否 |
+| 生产导入 | 是（488 官方，0 异常） |
+| 生产 enable | 是（`work/official-publish-store.json`） |
+| 工厂云部署 v2 接口 | 是（`abddcc08-fe36-494b-8fc5-6909387a44c7`，D1 `0020`） |
+| 工人重启切 SQLite | 是（pid 以 watchdog 为准） |
+| 首次 v2 ACK | 是（acked_seq = 488） |
 | 旧 JSON 删除 | 否，也不要删 |
 
 ## 调用方
@@ -37,11 +36,9 @@
 
 切换后 JSON 里的 GeeLark 历史必须原样保留；官方新记录不得再写回该文件。
 
-## 安全切换（人工执行，需停发布窗口）
+## 已执行的生产步骤（2026-09-06）
 
-先部署工厂云（含迁移 `0020_publish_source_revisions.sql`），再开本机开关。旧工人打到只支持旧协议的云端时，v2 不会把 `{ok:true}` 当成确认。
-
-在 `D:/cursor/localfactory`：
+工作区先只提交本任务后 push `main`，工厂云 `npm run deploy`。本机 `workDir=D:/localfactory-data/work`：
 
 ```text
 node scripts/publish-record-migrate.js dry-run --work-dir D:/localfactory-data/work
@@ -49,15 +46,17 @@ node scripts/publish-record-migrate.js backup-sqlite --work-dir D:/localfactory-
 copy D:\localfactory-data\work\publish-records.json D:\localfactory-data\work\publish-records.json.bak
 node scripts/publish-record-migrate.js import --work-dir D:/localfactory-data/work
 node scripts/publish-record-migrate.js verify --work-dir D:/localfactory-data/work
-```
-
-校验无损、无未处理异常、原 JSON hash 未变之后：
-
-```text
 node scripts/publish-record-migrate.js enable --work-dir D:/localfactory-data/work
 ```
 
-然后等当前渲染/发布结束，再重启本机工人。不要在有 `official-publish` 运行时 enable。
+dry-run：3762 条里 488 官方 / 3274 GeeLark，无重复、无未知、无缺 id。import 无损，源 JSON hash 未变。然后停 `server.js`，守护 `LocalFactoryWatchdog` 拉起新进程。
+
+`backup-sqlite` 必须把 `--work-dir` 传进函数；CLI 若把整个 options 对象当路径，会写到错误目录。`backupSqliteConsistent` 同时接受字符串和 `{ workDir, outputPath }`。
+
+备份文件：
+
+- `D:/localfactory-data/work/publish-records.json.bak`
+- `D:/localfactory-data/work/official-tiktok-history/official-history.backup.1788625219181.sqlite`
 
 ## 回滚
 
