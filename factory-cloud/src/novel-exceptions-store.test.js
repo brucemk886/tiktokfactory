@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import {
+  deleteUnresolvedNovelExceptions,
   listNovelExceptions,
   patchNovelException,
   projectNovelException,
@@ -116,6 +117,61 @@ test("patch ignore does not look recovered and requestId is idempotent", async (
   assert.equal(first.row.workflowState, "ignored");
   assert.equal(first.row.conditionState, "active");
   assert.equal(again.replayed, true);
+});
+
+test("delete removes from default list and does not change condition", async () => {
+  const db = d1Sqlite();
+  const created = await projectNovelException(db, {
+    kind: "production_failed",
+    fingerprint: "production_failed|task|old-1",
+    entityType: "task",
+    entityId: "old-1",
+    eventId: "old-event",
+    sourceRevision: "7",
+    title: "混剪失败",
+    severity: "critical",
+    stage: "produce",
+    observedAt: 1,
+  }, 1);
+  const deleted = await patchNovelException(db, created.row.id, {
+    action: "delete",
+    version: 1,
+    requestId: "del-1",
+  }, "admin", 2);
+  assert.equal(deleted.row.workflowState, "deleted");
+  assert.equal(deleted.row.conditionState, "active");
+  const listed = await listNovelExceptions(db, { unresolved: true });
+  assert.equal(listed.items.length, 0);
+  const again = await projectNovelException(db, {
+    kind: "production_failed",
+    fingerprint: "production_failed|task|old-1",
+    entityType: "task",
+    entityId: "old-1",
+    eventId: "old-event",
+    sourceRevision: "7",
+    title: "混剪失败",
+    observedAt: 3,
+  }, 3);
+  assert.equal(again.row.workflowState, "deleted");
+});
+
+test("bulk delete clears current unresolved only", async () => {
+  const db = d1Sqlite();
+  await projectNovelException(db, {
+    kind: "production_failed",
+    fingerprint: "production_failed|task|a",
+    entityType: "task",
+    entityId: "a",
+    eventId: "a1",
+    title: "失败",
+    severity: "critical",
+    stage: "produce",
+    observedAt: 1,
+  }, 1);
+  const result = await deleteUnresolvedNovelExceptions(db, { reason: "clear-unresolved" }, "admin", 9);
+  assert.equal(result.deleted, 1);
+  const listed = await listNovelExceptions(db, { unresolved: true });
+  assert.equal(listed.items.length, 0);
 });
 
 test("admin without the module and missing session cannot read exceptions", async () => {

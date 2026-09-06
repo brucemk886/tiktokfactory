@@ -16,6 +16,7 @@ import {
   getNovelException,
   listExceptionActions,
   listNovelExceptions,
+  deleteUnresolvedNovelExceptions,
   patchNovelException,
   projectNovelException,
   pruneResolvedNovelExceptions,
@@ -47,6 +48,22 @@ export async function handleNovelExceptions(request, env, url, session) {
     const query = Object.fromEntries(url.searchParams.entries());
     return json({
       ...(await summarizeNovelExceptions(env.DB, query)),
+      sourceFreshness: await readSourceFreshness(env.DB),
+    });
+  }
+  if (method === "POST" && pathname === "/api/novel-exceptions/bulk-delete") {
+    const body = await readJson(request);
+    const result = await deleteUnresolvedNovelExceptions(
+      env.DB,
+      {
+        kind: body.kind || url.searchParams.get("kind") || "",
+        stage: body.stage || url.searchParams.get("stage") || "",
+        reason: body.reason || "clear-unresolved",
+      },
+      session.user?.id || session.user?.username || ""
+    );
+    return json({
+      ...result,
       sourceFreshness: await readSourceFreshness(env.DB),
     });
   }

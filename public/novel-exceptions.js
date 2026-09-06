@@ -15,6 +15,7 @@ const WORKFLOW_LABELS = {
   in_progress: "处理中",
   ignored: "忽略中",
   resolved: "已解决",
+  deleted: "已删除",
 };
 
 const cursorStack = [""];
@@ -128,7 +129,10 @@ function renderRows(items) {
       <td>${escapeHtml(KIND_LABELS[item.kind] || item.kind)} · ${escapeHtml(item.sourceStatus || "")}</td>
       <td>${escapeHtml(formatTime(item.firstSeenAt))}<div class="field-help">${escapeHtml(formatTime(item.lastSeenAt))}</div></td>
       <td>${escapeHtml(item.occurrenceCount)}</td>
-      <td>${action}<div class="field-help"><button type="button" data-open="${escapeHtml(item.id)}">详情</button></div></td>
+      <td>${action}<div class="field-help">
+        <button type="button" data-open="${escapeHtml(item.id)}">详情</button>
+        ${item.workflowState === "deleted" ? "" : `<button type="button" data-delete="${escapeHtml(item.id)}" data-version="${escapeHtml(item.version)}">删除</button>`}
+      </div></td>
     </tr>`;
   }).join("");
 }
@@ -162,8 +166,9 @@ async function openDrawer(id) {
       <button type="button" data-action="ignore">忽略</button>
       <button type="button" data-action="resolve_manual">人工结案</button>
       <button type="button" data-action="reopen">恢复处理</button>
+      ${item.workflowState === "deleted" ? "" : '<button type="button" data-action="delete">删除</button>'}
     </div>
-    <p class="field-help">忽略和人工结案必须写原因，不会改业务任务或发视频。</p>
+    <p class="field-help">删除只从异常列表拿走，不改任务、不发视频。同一条旧失败不会再出现；之后的新失败仍会进来。</p>
     <h3>处理记录</h3>
     <ul>${(data.actions || []).map((row) => `<li>${escapeHtml(formatTime(row.createdAt))} ${escapeHtml(row.action)} ${escapeHtml(row.reason)}</li>`).join("") || "<li>暂无</li>"}</ul>
   `;
@@ -192,6 +197,9 @@ async function runAction(item, action) {
   if (action === "resolve_manual") {
     reason = window.prompt("人工结案原因（必填，不会伪装成自动恢复）", "") || "";
   }
+  if (action === "delete") {
+    if (!window.confirm("从异常列表删除这条？不会改原任务，同一条旧失败不会再出现。")) return;
+  }
   const requestId = `${action}-${item.id}-${Date.now()}`;
   const response = await fetch(`/api/novel-exceptions/${encodeURIComponent(item.id)}`, {
     method: "PATCH",
@@ -204,6 +212,10 @@ async function runAction(item, action) {
     return;
   }
   await Promise.all([loadSummary(), loadList()]);
+  if (action === "delete") {
+    $("exceptionDrawer").hidden = true;
+    return;
+  }
   if (data.item?.id) openDrawer(data.item.id);
 }
 
@@ -234,8 +246,38 @@ function bind() {
     $("exceptionDrawer").hidden = true;
   });
   $("exceptionRows").addEventListener("click", (event) => {
-    const id = event.target?.dataset?.open;
-    if (id) openDrawer(id);
+    const openId = event.target?.dataset?.open;
+    if (openId) {
+      openDrawer(openId);
+      return;
+    }
+    const deleteId = event.target?.dataset?.delete;
+    if (deleteId) {
+      runAction({ id: deleteId, version: Number(event.target.dataset.version) || 1 }, "delete");
+    }
+  });
+  $("deleteUnresolvedBtn").addEventListener("click", async () => {
+    if (!window.confirm("删除当前未解决的全部异常？只清异常列表，不改任务。同一条旧失败不会再出现，之后的新失败仍会进来。")) return;
+    const response = await fetch("/api/novel-exceptions/bulk-delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        kind: $("filterKind").value,
+        stage: $("filterStage").value,
+        reason: "clear-unresolved",
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      $("exceptionsStatus").textContent = data.error || "批量删除失败。";
+      return;
+    }
+    $("exceptionDrawer").hidden = true;
+    cursorStack.splice(0, cursorStack.length, "");
+    await Promise.all([loadSummary(), loadList()]);
+    $("exceptionsStatus").textContent = data.truncated
+      ? `已删除 ${data.deleted} 条，还有剩余，请再点一次。`
+      : `已删除 ${data.deleted} 条旧异常。`;
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") Promise.all([loadSummary(), loadList()]);

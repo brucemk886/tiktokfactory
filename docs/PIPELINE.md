@@ -178,7 +178,7 @@
 - 禁止封装 `POST .../retry-publish` 或 `resume`。页面只有「查看任务 / 复制 ID / 前往中台」。
 - 工人在线窗口仍是 10 分钟（`sync` 写 `lastSeenAt`，`poll` 不写）。
 - 导航：云端 `withOpsReportModules` 只给 admin 插 `novel-exceptions`；catalog `["admin"]`。本地 `migrateStore` v29 给 admin 插入同模块，`/novel-exceptions` 走 `shouldRedirectLocalPageToFactory`。
-- 页面 GET 只读异常表。对账挂在每日 cron 多一步，不触发重建。
+- 页面 GET 只读异常表。对账挂在每日 cron 多一步，不触发重建。删除是软删除（`workflow_state=deleted`），默认列表不显示；同一 event 不会再出现，新 attempt / 新 revision 会重新打开。不改业务任务。
 
 ---
 

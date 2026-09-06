@@ -38,6 +38,7 @@
               <option value="in_progress">处理中</option>
               <option value="ignored">忽略中</option>
               <option value="resolved">已解决</option>
+              <option value="deleted">已删除</option>
             </select>
           </label>
           <label class="field"><span>类型</span>
@@ -66,6 +67,7 @@
             </select>
           </label>
           <button id="refreshExceptionsBtn" type="button">刷新</button>
+          <button id="deleteUnresolvedBtn" type="button">删除当前未解决</button>
         </div>
         <div id="exceptionsStatus" class="publish-status">正在读取异常…</div>
         <div class="stats-table-wrap">

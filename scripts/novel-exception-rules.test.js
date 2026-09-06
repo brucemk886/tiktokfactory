@@ -145,6 +145,44 @@ test("unreachable source stays unknown and does not recover", () => {
   assert.equal(next.row.workflowState, "open");
 });
 
+test("delete hides the episode; same event stays gone, new attempt comes back", () => {
+  const existing = {
+    id: "x",
+    version: 1,
+    workflowState: "open",
+    conditionState: "active",
+    eventId: "e1",
+    sourceRevision: "1",
+    attemptId: "a1",
+    fingerprint: "production_failed|task|t1",
+    occurrenceCount: 1,
+  };
+  const deleted = applyWorkflowAction(existing, { action: "delete", version: 1 }, 10);
+  assert.equal(deleted.workflowState, "deleted");
+  assert.equal(deleted.conditionState, "active");
+  const replay = applyProjectionEvent(deleted, {
+    ...deleted,
+    kind: "production_failed",
+    eventId: "e1",
+    sourceRevision: "1",
+    observedAt: 20,
+  }, 20);
+  assert.equal(replay.row.workflowState, "deleted");
+  const later = applyProjectionEvent(deleted, {
+    kind: "production_failed",
+    fingerprint: "production_failed|task|t1",
+    entityType: "task",
+    entityId: "t1",
+    eventId: "e-new",
+    sourceRevision: "9",
+    attemptId: "a2",
+    title: "混剪失败",
+    observedAt: 30,
+  }, 30);
+  assert.equal(later.row.workflowState, "open");
+  assert.equal(later.row.occurrenceCount, 2);
+});
+
 test("trusted links reject javascript urls", () => {
   const task = trustedFactoryTaskUrl("javascript:alert(1)", "task-1");
   assert.equal(task.href, "https://factory.tiktokaitool.com/tasks");

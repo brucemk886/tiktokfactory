@@ -26,7 +26,7 @@ export const NOVEL_EXCEPTION_STAGES = Object.freeze({
   account: "account",
 });
 
-export const WORKFLOW_STATES = Object.freeze(["open", "in_progress", "resolved", "ignored"]);
+export const WORKFLOW_STATES = Object.freeze(["open", "in_progress", "resolved", "ignored", "deleted"]);
 export const CONDITION_STATES = Object.freeze(["active", "recovered", "unknown"]);
 
 export const DEFAULT_WORKER_ONLINE_WINDOW_MS = 10 * 60 * 1000;
@@ -262,7 +262,9 @@ export function applyProjectionEvent(existing, event, now = Date.now()) {
       row: {
         ...existing,
         conditionState: "recovered",
-        workflowState: existing.workflowState === "ignored" ? "ignored" : "resolved",
+        workflowState: existing.workflowState === "ignored" || existing.workflowState === "deleted"
+          ? existing.workflowState
+          : "resolved",
         resolvedAt: existing.resolvedAt || incoming.observedAt,
         resolvedReason: existing.resolvedReason || "source_recovered",
         lastCheckedAt: incoming.observedAt,
@@ -280,14 +282,16 @@ export function applyProjectionEvent(existing, event, now = Date.now()) {
   }
 
   const newAttempt = incoming.attemptId && incoming.attemptId !== existing.attemptId;
-  const reopen = existing.conditionState === "recovered" || existing.workflowState === "resolved";
+  const reopen = existing.conditionState === "recovered"
+    || existing.workflowState === "resolved"
+    || existing.workflowState === "deleted";
   return {
     changed: true,
     row: {
       ...existing,
       ...pickProjectionFields(incoming),
       conditionState: "active",
-      workflowState: reopen || existing.workflowState === "resolved" ? "open" : existing.workflowState,
+      workflowState: reopen ? "open" : existing.workflowState,
       lastSeenAt: incoming.observedAt,
       lastCheckedAt: incoming.observedAt,
       occurrenceCount: newAttempt || reopen ? Number(existing.occurrenceCount || 1) + 1 : Number(existing.occurrenceCount || 1),
@@ -318,6 +322,12 @@ export function applyWorkflowAction(existing, action = {}, now = Date.now()) {
     next.ignoredUntil = resolveIgnoreUntil(action.ignoreFor, now);
   } else if (name === "reopen" || name === "unignore") {
     next.workflowState = "open";
+    next.ignoredUntil = 0;
+  } else if (name === "delete") {
+    if (existing.workflowState === "deleted") return existing;
+    next.workflowState = "deleted";
+    next.resolvedAt = now;
+    next.resolvedReason = reason ? `deleted:${reason}` : "deleted";
     next.ignoredUntil = 0;
   } else if (name === "resolve_manual") {
     if (!reason) throw Object.assign(new Error("人工结案必须填写原因。"), { statusCode: 400 });

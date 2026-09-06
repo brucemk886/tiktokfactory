@@ -36,6 +36,7 @@ export async function listNovelExceptions(db, query = {}) {
     binds.push(workflow);
   } else if (unresolved) {
     filters.push("workflow_state IN ('open', 'in_progress', 'ignored')");
+    // deleted is hidden from the default list so old backfill can be cleared.
   }
   addEquals(filters, binds, "kind", query.kind);
   addEquals(filters, binds, "stage", query.stage);
@@ -92,16 +93,18 @@ export async function summarizeNovelExceptions(db, query = {}) {
     ${where}
     GROUP BY workflow_state, severity
   `).bind(...binds).all();
-  const summary = { open: 0, inProgress: 0, ignored: 0, resolved: 0, critical: 0, warning: 0, info: 0 };
+  const summary = { open: 0, inProgress: 0, ignored: 0, resolved: 0, deleted: 0, critical: 0, warning: 0, info: 0 };
   for (const row of results || []) {
     const count = Number(row.n) || 0;
     if (row.workflow_state === "open") summary.open += count;
     if (row.workflow_state === "in_progress") summary.inProgress += count;
     if (row.workflow_state === "ignored") summary.ignored += count;
     if (row.workflow_state === "resolved") summary.resolved += count;
-    if (row.workflow_state !== "resolved" && row.severity === "critical") summary.critical += count;
-    if (row.workflow_state !== "resolved" && row.severity === "warning") summary.warning += count;
-    if (row.workflow_state !== "resolved" && row.severity === "info") summary.info += count;
+    if (row.workflow_state === "deleted") summary.deleted += count;
+    const visible = row.workflow_state !== "resolved" && row.workflow_state !== "deleted";
+    if (visible && row.severity === "critical") summary.critical += count;
+    if (visible && row.severity === "warning") summary.warning += count;
+    if (visible && row.severity === "info") summary.info += count;
   }
   return summary;
 }
@@ -157,6 +160,34 @@ export async function patchNovelException(db, id, action, actorId, now = Date.no
     now,
   ).run();
   return { replayed: false, row: next };
+}
+
+export async function deleteUnresolvedNovelExceptions(db, query = {}, actorId = "", now = Date.now()) {
+  const listed = await listNovelExceptions(db, { ...query, unresolved: true, limit: 50, cursor: "" });
+  let deleted = 0;
+  let scanned = listed.items.length;
+  let cursor = listed.nextCursor;
+  const firstPage = listed.items;
+  const pages = [firstPage];
+  while (cursor && pages.length < 20) {
+    const next = await listNovelExceptions(db, { ...query, unresolved: true, limit: 50, cursor });
+    pages.push(next.items);
+    scanned += next.items.length;
+    cursor = next.nextCursor;
+  }
+  for (const items of pages) {
+    for (const row of items) {
+      if (row.workflowState === "deleted") continue;
+      const result = await patchNovelException(db, row.id, {
+        action: "delete",
+        reason: query.reason || "clear-unresolved",
+        version: row.version,
+        requestId: `bulk-delete-${row.id}-${now}`,
+      }, actorId, now);
+      if (!result.replayed && result.row?.workflowState === "deleted") deleted += 1;
+    }
+  }
+  return { deleted, scanned, truncated: Boolean(cursor) };
 }
 
 export async function expireIgnoredExceptions(db, now = Date.now()) {
