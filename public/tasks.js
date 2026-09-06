@@ -54,8 +54,6 @@ $("#workerSelect")?.addEventListener("change", applyWorkerSelection);
 $("#videoTemplateSelect")?.addEventListener("change", updateVideoSourceVisibility);
 $("#syncAudioGroupsBtn")?.addEventListener("click", syncAudioGroupsToFactory);
 $("#syncAssetGroupsBtn")?.addEventListener("click", syncAssetGroupsToFactory);
-$("#assetPreviewClose")?.addEventListener("click", closeAssetPreview);
-$("#assetPreviewDialog")?.addEventListener("close", stopAssetPreview);
 $("#refreshSharedLibrariesBtn")?.addEventListener("click", () => {
   loadSharedLibraries();
   loadAudioGroups();
@@ -919,15 +917,6 @@ function descendantAssetPaths(folder) {
   return paths;
 }
 
-function firstAssetFileRel(folder) {
-  if (folder?.files?.[0]?.rel) return folder.files[0].rel;
-  for (const child of Array.isArray(folder?.children) ? folder.children : []) {
-    const rel = firstAssetFileRel(child);
-    if (rel) return rel;
-  }
-  return "";
-}
-
 function findAssetFolder(folders, folderPath) {
   let found = null;
   walkAssetFolders(folders, (folder) => {
@@ -1020,37 +1009,22 @@ function renderAssetFolderPicker() {
       renderAssetFolderPicker();
     });
   });
-  root.querySelectorAll("[data-asset-play]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      previewAssetFile(button.dataset.assetPlay, button.dataset.assetPlayName || "");
-    });
-  });
   updateAssetFolderHint();
 }
 
 function renderAssetFolderNode(folder) {
   const folderPath = folderPathOf(folder);
   const children = Array.isArray(folder.children) ? folder.children : [];
-  const files = Array.isArray(folder.files) ? folder.files : [];
-  const expandable = children.length > 0 || files.length > 0;
+  const expandable = children.length > 0;
   const expanded = assetFolderUi.expanded.has(folderPath);
-  const playRel = firstAssetFileRel(folder);
-  const playName = files[0]?.fileName || folder.name || folderPath;
   return `<div class="asset-folder-node">
       <div class="asset-folder-row">
         <input type="checkbox" data-asset-folder="${escapeAttr(folderPath)}" ${isAssetFolderFullyChecked(folder) ? "checked" : ""} />
         <button type="button" class="asset-folder-toggle" data-asset-expand="${escapeAttr(folderPath)}" ${expandable ? "" : "hidden"}>${expanded ? "▾" : "▸"}</button>
         <strong data-asset-expand="${escapeAttr(folderPath)}">${escapeHtml(folder.name || folderPath)}</strong>
         <small>${Number(folder.totalAssets) || 0} 条视频</small>
-        ${playRel ? `<button type="button" class="quiet-button asset-folder-play" data-asset-play="${escapeAttr(playRel)}" data-asset-play-name="${escapeAttr(playName)}">播放</button>` : ""}
       </div>
-      ${expanded ? children.map((child) => renderAssetFolderNode(child)).join("") : ""}
-      ${expanded ? files.map((file) => `<div class="asset-folder-file">
-        <span>${escapeHtml(file.fileName || file.rel)}</span>
-        <button type="button" class="quiet-button asset-folder-play" data-asset-play="${escapeAttr(file.rel)}" data-asset-play-name="${escapeAttr(file.fileName || "")}">播放</button>
-      </div>`).join("") : ""}
+      ${expanded && expandable ? children.map((child) => renderAssetFolderNode(child)).join("") : ""}
     </div>`;
 }
 
@@ -1070,37 +1044,6 @@ function updateAssetFolderHint() {
   hint.textContent = selected.length === folders.length
     ? `已勾全部一级文件夹，共 ${count} 条视频。点名称可展开子夹。`
     : `已勾 ${selected.length} 个文件夹，共 ${count} 条视频。`;
-}
-
-function stopAssetPreview() {
-  const video = $("#assetPreviewVideo");
-  if (!video) return;
-  video.pause();
-  video.removeAttribute("src");
-  video.load();
-}
-
-function closeAssetPreview() {
-  stopAssetPreview();
-  const dialog = $("#assetPreviewDialog");
-  if (dialog?.open) dialog.close();
-}
-
-function previewAssetFile(rel, fileName) {
-  const dialog = $("#assetPreviewDialog");
-  const video = $("#assetPreviewVideo");
-  const title = $("#assetPreviewName");
-  if (!rel || !dialog || !video) return;
-  if (!isLocalWorkerPage) {
-    setCreateStatus("素材在工人机上，预览请打开本机 Local Factory（端口 3010）。");
-    return;
-  }
-  const group = selectedAssetGroup();
-  if (!group?.id) return;
-  if (title) title.textContent = fileName || rel;
-  video.src = `/api/asset-library/file?groupId=${encodeURIComponent(group.id)}&rel=${encodeURIComponent(rel)}`;
-  dialog.showModal();
-  video.play().catch(() => {});
 }
 
 // Template 2 (parkour beds) is admin-only and only on the official channel.
