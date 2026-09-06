@@ -51,8 +51,8 @@
 
 ## Dry-run
 
-开发 + 离线验证。不自动部署，不重启在跑的任务，不打真实发布 API。上线前先看异常分布再 enable 回填（工人启动写 `work/novel-exception-backfill.json` 标记，只回填当前未解决官方小说任务）。
+2026-09-06 已部署工厂云：D1 `0021` 已打，Worker `c906c536-0957-400d-bd40-b11504262615`。回填只处理当前未解决官方小说任务，工人启动写 `work/novel-exception-backfill.json` 标记。
 
 ## Unfinished
 
-生产未 deploy，D1 `0021` 未打。疑似无进展、内容关联、中台 attention API、任务遥测仍推迟。别人未提交的 `public/tasks.js|css` 未覆盖。
+疑似无进展、内容关联、中台 attention API、任务遥测仍推迟。别人未提交的 `public/tasks.js|css` 未覆盖。

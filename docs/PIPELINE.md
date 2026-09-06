@@ -336,9 +336,9 @@
 
 30. 官方发布记录读写 `official-history.sqlite`（`publishing_records` / outbox / sync_state），账号/视频快照复用归档表，不再把 30 天账号历史嵌进每条记录。工人 v2 按单调 `seq` 分页确认，云端 `factory_publish_source_revisions` 按 `(sourceStoreId, recordKey)` 去重，回执终态仍优先。`mergeOfficialPublishRecords` 的 3000 条限制只用于展示；持久化传 `{ limit: 0 }`。2026-09-06 已部署工厂云（迁移 `0020`，版本 `abddcc08-fe36-494b-8fc5-6909387a44c7`），本机导入 488 条官方记录、enable、重启 `windows-local`；首次 v2 已 ACK 到 seq 488。GeeLark 3274 条仍在原 JSON，旧文件未删。
 
-### 已实现未上线（2026-09-06，小说推文异常中心首版）
+### 已上线（2026-09-06，小说推文异常中心首版）
 
-31. 工厂异常投影 + 人工工作流：D1 `0021_novel_exceptions`、本机独立上报队列、每日 cron 对账一步、管理员页 `/novel-exceptions`。不接 `retry-publish` / `resume`，不扫 auto-tasks 列表，不改 10 分钟心跳窗口，不放宽 `VIDEO_LIST_CAP`。生产未 deploy、未打 D1 `0021`、未重启工人。细节见 `docs/handoffs/2026-09-06-novel-exceptions.md`。
+31. 工厂异常投影 + 人工工作流：D1 `0021_novel_exceptions`、本机独立上报队列、每日 cron 对账一步、管理员页 `/novel-exceptions`。不接 `retry-publish` / `resume`，不扫 auto-tasks 列表，不改 10 分钟心跳窗口，不放宽 `VIDEO_LIST_CAP`。2026-09-06 已部署工厂云（迁移 `0021`，版本 `c906c536-0957-400d-bd40-b11504262615`）。细节见 `docs/handoffs/2026-09-06-novel-exceptions.md`。
 
 ### 未修（评估后不需要，或超出本阶段）
 
