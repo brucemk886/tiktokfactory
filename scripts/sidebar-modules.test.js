@@ -145,6 +145,9 @@ test("asset usage stays on the local worker and is not a factory page", () => {
   const js = fs.readFileSync(path.join(publicDir, "asset-usage.js"), "utf8");
   const server = fs.readFileSync(path.join(root, "scripts", "server.js"), "utf8");
   assert.match(html, /id="reindexUsageBtn"/);
+  assert.match(html, /id="reindexAllUsageBtn"/);
+  assert.match(js, /\/api\/asset-usage\/reindex\/all/);
+  assert.match(server, /\/api\/asset-usage\/reindex\/all/);
   assert.doesNotMatch(html, /id="syncUsageBtn"/);
   assert.doesNotMatch(js, /\/api\/asset-usage\/sync/);
   assert.doesNotMatch(server, /\/api\/asset-usage\/sync/);

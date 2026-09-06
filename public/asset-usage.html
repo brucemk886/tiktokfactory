@@ -35,11 +35,20 @@
         <div class="usage-actions">
           <label class="usage-group-picker"><span>素材组</span><select id="groupSelect"></select></label>
           <button data-local-only id="reindexUsageBtn" type="button" title="重新扫描当前素材组磁盘上的视频：补时长、子文件夹和新文件。加了片子或改了目录才要点，会排队跑一会儿。">更新当前账号组</button>
+          <button data-local-only id="reindexAllUsageBtn" type="button" title="一次扫描素材总库下所有一级文件夹，建立或更新索引。空目录会跳过，不用一个个点。片子多时会跑较久。">更新全部文件夹</button>
           <button id="refreshUsageBtn" type="button" title="只重新读取已经记好的使用率，刷新本页数字。不扫磁盘、不改文件。">刷新素材组</button>
         </div>
       </header>
 
       <div id="usageStatus" class="usage-status">正在读取素材使用记录...</div>
+      <div id="reindexProgress" class="usage-reindex-progress" hidden>
+        <div class="usage-reindex-copy">
+          <strong id="reindexProgressTitle">正在更新素材索引</strong>
+          <span id="reindexProgressText">排队中…</span>
+        </div>
+        <div class="usage-reindex-bar" aria-hidden="true"><i id="reindexProgressBar"></i></div>
+        <b id="reindexProgressPercent">0%</b>
+      </div>
       <section class="usage-summary-grid" aria-label="素材组概览">
         <article><span>视频素材</span><strong id="totalAssets">0</strong><small>条</small></article>
         <article><span>素材总时长</span><strong id="totalDuration">0m</strong><small>可用库存</small></article>

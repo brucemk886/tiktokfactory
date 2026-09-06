@@ -4,11 +4,19 @@ body.usage-page { min-height: 100vh; background: var(--lf-surface); color: var(-
 .usage-kicker { margin: 0 0 5px; color: #d9f26a; font-size: 10px; font-weight: 800; letter-spacing: 1.2px; }
 .usage-header h1 { margin: 0; font-size: 25px; }
 .usage-header p:not(.usage-kicker) { margin: 6px 0 0; color: #9098a2; font-size: 12px; }
-.usage-actions { display: flex; align-items: end; gap: 8px; }
+.usage-actions { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
 .usage-group-picker { display: grid; gap: 5px; color: #9ea6ae; font-size: 10px; }
 .usage-group-picker select { width: 260px; height: 36px; padding: 0 10px; border: 1px solid #30363e; border-radius: 5px; color: var(--lf-text); background: var(--lf-surface); font-size: 12px; }
 .usage-actions button { height: 36px; padding: 0 12px; border: 1px solid #3b434d; border-radius: 5px; color: var(--lf-text); background: var(--lf-surface); font-size: 12px; font-weight: 700; cursor: pointer; }
 .usage-status { margin: 14px 0; color: #98a1aa; font-size: 12px; }
+.usage-reindex-progress { display: grid; grid-template-columns: minmax(0, 1fr) 220px auto; gap: 12px; align-items: center; margin: 0 0 16px; padding: 12px 14px; border: 1px solid #3a4a28; border-radius: 6px; background: #1c2216; }
+.usage-reindex-progress[hidden] { display: none; }
+.usage-reindex-copy { display: grid; gap: 3px; min-width: 0; }
+.usage-reindex-copy strong { color: #d9f26a; font-size: 12px; }
+.usage-reindex-copy span { color: #c5cdd4; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-reindex-bar { height: 8px; overflow: hidden; border-radius: 99px; background: #2a3124; }
+.usage-reindex-bar i { display: block; height: 100%; width: 0; background: #d9f26a; transition: width 0.2s ease; }
+.usage-reindex-progress b { color: #d9f26a; font-size: 13px; font-weight: 800; }
 .usage-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
 .usage-impact-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .usage-summary-grid article { min-height: 92px; padding: 15px; border: 1px solid #292f36; border-radius: 6px; background: var(--lf-surface); }

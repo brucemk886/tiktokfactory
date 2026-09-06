@@ -12,7 +12,10 @@ main().catch((error) => {
 
 function main() {
   const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
+  const skipEmpty = payload.skipEmpty === true;
+  const action = skipEmpty ? "更新索引" : "同步素材组";
   const result = syncAssetLibraryRoot(root, String(payload.libraryRoot || ""), {
+    skipEmpty,
     onProgress: ({ groupName, completedGroups, totalGroups, processed, total, fileName }) => {
       const withinGroup = total ? processed / total : 0;
       const percent = Math.min(99, Math.max(1, Math.round(((completedGroups + withinGroup) / Math.max(1, totalGroups)) * 100)));
@@ -20,15 +23,19 @@ function main() {
       patchJob({
         status: "running",
         percent,
-        message: `同步素材组 ${groupName}（${progress}）${fileName ? `：${fileName}` : ""}`,
+        message: `${action} ${groupName}（${progress}）${fileName ? `：${fileName}` : ""}`,
         updatedAt: Date.now()
       });
     }
   });
+  const skipped = (result.groups || []).filter((item) => item.skipped).length;
+  const indexed = (result.groups || []).filter((item) => !item.skipped).length;
   patchJob({
     status: "done",
     percent: 100,
-    message: `素材总库同步完成：${result.groupCount} 个账号组。`,
+    message: skipEmpty
+      ? `全部文件夹索引完成：${indexed} 个素材组${skipped ? `，跳过 ${skipped} 个空目录` : ""}。`
+      : `素材总库同步完成：${result.groupCount} 个账号组。`,
     result,
     updatedAt: Date.now()
   });

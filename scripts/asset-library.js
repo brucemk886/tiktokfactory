@@ -190,17 +190,27 @@ export function syncAssetLibraryRoot(root, libraryRoot, options = {}) {
         assets: []
       });
     }
-    const result = reindexAssetGroup(root, groupId, {
-      onProgress: ({ processed, total, fileName }) => options.onProgress?.({
+    try {
+      const result = reindexAssetGroup(root, groupId, {
+        onProgress: ({ processed, total, fileName }) => options.onProgress?.({
+          groupName: path.basename(groupDir),
+          completedGroups: completed,
+          totalGroups: childDirs.length,
+          processed,
+          total,
+          fileName
+        })
+      });
+      results.push({ groupId, groupName: path.basename(groupDir), ...result });
+    } catch (error) {
+      if (!options.skipEmpty) throw error;
+      results.push({
+        groupId,
         groupName: path.basename(groupDir),
-        completedGroups: completed,
-        totalGroups: childDirs.length,
-        processed,
-        total,
-        fileName
-      })
-    });
-    results.push({ groupId, groupName: path.basename(groupDir), ...result });
+        skipped: true,
+        error: String(error?.message || error)
+      });
+    }
     completed += 1;
     options.onProgress?.({
       groupName: path.basename(groupDir),

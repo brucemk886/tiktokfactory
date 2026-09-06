@@ -1,22 +1,31 @@
 const groupSelect = document.querySelector("#groupSelect");
 const refreshButton = document.querySelector("#refreshUsageBtn");
 const reindexButton = document.querySelector("#reindexUsageBtn");
+const reindexAllButton = document.querySelector("#reindexAllUsageBtn");
 const usageStatus = document.querySelector("#usageStatus");
+const reindexProgress = document.querySelector("#reindexProgress");
+const reindexProgressTitle = document.querySelector("#reindexProgressTitle");
+const reindexProgressText = document.querySelector("#reindexProgressText");
+const reindexProgressBar = document.querySelector("#reindexProgressBar");
+const reindexProgressPercent = document.querySelector("#reindexProgressPercent");
 const folderRows = document.querySelector("#folderRows");
 const assetRows = document.querySelector("#assetRows");
 const reuseTierRows = document.querySelector("#reuseTierRows");
 const isLocalWorkerPage = ["localhost", "127.0.0.1"].includes(location.hostname);
+let reindexBusy = false;
 
 document.querySelectorAll("[data-local-only]").forEach((item) => {
   item.hidden = !isLocalWorkerPage;
 });
 
 refreshButton?.addEventListener("click", loadUsage);
-reindexButton?.addEventListener("click", startReindex);
+reindexButton?.addEventListener("click", () => startReindex("one"));
+reindexAllButton?.addEventListener("click", () => startReindex("all"));
 groupSelect?.addEventListener("change", loadUsage);
 loadUsage();
 
 async function loadUsage() {
+  if (reindexBusy) return;
   usageStatus.textContent = "正在读取素材使用记录...";
   refreshButton.disabled = true;
   try {
@@ -24,6 +33,7 @@ async function loadUsage() {
     const response = await fetch(`/api/asset-usage?groupId=${encodeURIComponent(groupId)}&t=${Date.now()}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取素材使用率失败。");
+    if (reindexBusy) return;
     updateGroups(data.groups || [], data.group?.id || "");
     renderDashboard(data);
   } catch (error) {
@@ -32,44 +42,83 @@ async function loadUsage() {
     assetRows.innerHTML = `<tr><td colspan="10">暂无数据。</td></tr>`;
     if (reuseTierRows) reuseTierRows.innerHTML = `<tr><td colspan="5">暂无对照数据。</td></tr>`;
   } finally {
-    refreshButton.disabled = false;
+    if (!reindexBusy) setReindexControlsDisabled(false);
   }
 }
 
-async function startReindex() {
+function setReindexControlsDisabled(disabled) {
+  if (reindexButton) reindexButton.disabled = disabled;
+  if (reindexAllButton) reindexAllButton.disabled = disabled;
+  if (refreshButton) refreshButton.disabled = disabled;
+  if (groupSelect) groupSelect.disabled = disabled;
+}
+
+async function startReindex(mode) {
   const groupId = groupSelect.value || "";
-  if (!groupId) return;
-  reindexButton.disabled = true;
-  refreshButton.disabled = true;
-  usageStatus.textContent = "正在创建素材索引任务...";
+  const groupName = groupSelect.selectedOptions[0]?.textContent || groupId;
+  const allFolders = mode === "all";
+  if (!allFolders && !groupId) {
+    usageStatus.textContent = "请先选择一个素材组，再点「更新当前账号组」。";
+    return;
+  }
+  const title = allFolders ? "正在更新全部文件夹" : `正在更新 ${groupName}`;
+  reindexBusy = true;
+  setReindexControlsDisabled(true);
+  setReindexProgress({
+    title,
+    message: allFolders ? "正在创建全部文件夹索引任务…" : "正在创建素材索引任务…",
+    percent: 1
+  });
   try {
-    const response = await fetch("/api/asset-usage/reindex/start", {
+    const response = await fetch(allFolders ? "/api/asset-usage/reindex/all" : "/api/asset-usage/reindex/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ groupId })
+      body: allFolders ? "{}" : JSON.stringify({ groupId })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "创建素材索引任务失败。");
-    await pollReindex(data.jobId);
+    const done = await pollReindex(data.jobId, title);
+    hideReindexProgress();
+    reindexBusy = false;
     await loadUsage();
+    usageStatus.textContent = done?.message || (allFolders ? "全部文件夹索引已更新。" : `${groupName} 索引已更新。`);
   } catch (error) {
+    hideReindexProgress();
     usageStatus.textContent = error.message || "更新素材索引失败。";
   } finally {
-    reindexButton.disabled = false;
-    refreshButton.disabled = false;
+    reindexBusy = false;
+    setReindexControlsDisabled(false);
   }
 }
 
-async function pollReindex(jobId) {
+async function pollReindex(jobId, title) {
   while (true) {
     const response = await fetch(`/api/asset-usage/reindex/progress/${encodeURIComponent(jobId)}?t=${Date.now()}`);
     const job = await response.json();
     if (!response.ok) throw new Error(job.error || "读取索引进度失败。");
-    usageStatus.textContent = `${job.message || "正在更新素材索引"} ${job.percent || 0}%`;
-    if (job.status === "done") return;
+    setReindexProgress({
+      title,
+      message: job.message || "正在更新素材索引",
+      percent: Number(job.percent) || 0
+    });
+    if (job.status === "done") return job;
     if (job.status === "failed" || job.status === "canceled") throw new Error(job.message || "更新素材索引失败。");
     await new Promise((resolve) => setTimeout(resolve, 800));
   }
+}
+
+function setReindexProgress({ title, message, percent }) {
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  if (reindexProgress) reindexProgress.hidden = false;
+  if (reindexProgressTitle) reindexProgressTitle.textContent = title || "正在更新素材索引";
+  if (reindexProgressText) reindexProgressText.textContent = message || "排队中…";
+  if (reindexProgressBar) reindexProgressBar.style.width = `${safePercent}%`;
+  if (reindexProgressPercent) reindexProgressPercent.textContent = `${Math.round(safePercent)}%`;
+  if (usageStatus) usageStatus.textContent = `${message || "正在更新素材索引"} ${Math.round(safePercent)}%`;
+}
+
+function hideReindexProgress() {
+  if (reindexProgress) reindexProgress.hidden = true;
 }
 
 function updateGroups(groups, selectedId) {

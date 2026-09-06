@@ -8,6 +8,7 @@ import {
   assetTopLevelFolder,
   discoverAssetLibraryGroups,
   filterAssetsByFolders,
+  syncAssetLibraryRoot,
   flattenAssetFolderNodes,
   normalizeAssetFolders,
   resolveAssetLibraryFile,
@@ -70,6 +71,22 @@ test("does not register hidden downloader folders as material groups", () => {
   fs.writeFileSync(path.join(repo, "config.json"), JSON.stringify({ workDir }));
   const groups = discoverAssetLibraryGroups(repo, library);
   assert.deepEqual(groups.map((item) => item.name), ["0904"]);
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
+test("skipEmpty keeps indexing other folders when one group has no videos", () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "asset-sync-all-"));
+  const library = path.join(repo, "videos");
+  const workDir = path.join(repo, "work");
+  fs.mkdirSync(path.join(library, "empty"), { recursive: true });
+  fs.mkdirSync(path.join(library, "has-files"), { recursive: true });
+  fs.writeFileSync(path.join(library, "has-files", "a.mp4"), "x");
+  fs.writeFileSync(path.join(repo, "config.json"), JSON.stringify({ workDir }));
+  assert.throws(() => syncAssetLibraryRoot(repo, library), /没有找到视频文件/);
+  const result = syncAssetLibraryRoot(repo, library, { skipEmpty: true });
+  assert.equal(result.groupCount, 2);
+  assert.equal(result.groups.find((item) => item.groupName === "empty")?.skipped, true);
+  assert.equal(result.groups.find((item) => item.groupName === "has-files")?.scanned, 1);
   fs.rmSync(repo, { recursive: true, force: true });
 });
 

@@ -2042,6 +2042,31 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, readJob(jobPath));
     }
 
+    if (req.method === "POST" && url.pathname === "/api/asset-usage/reindex/all") {
+      const libraryRoot = String(readConfig(root).assetLibraryRoot || "").trim();
+      if (!libraryRoot) return sendJson(res, 400, { error: "config.json 里没有素材总库目录。" });
+      const jobId = safeId(`asset-index-all-${Date.now()}`);
+      const payloadPath = path.join(jobsDir, `${jobId}.payload.json`);
+      const jobPath = path.join(jobsDir, `${jobId}.json`);
+      fs.writeFileSync(payloadPath, JSON.stringify({ jobId, libraryRoot, skipEmpty: true }, null, 2), "utf8");
+      writeJob(jobPath, {
+        jobId,
+        status: "queued",
+        percent: 1,
+        message: "全部文件夹索引任务已加入队列。",
+        createdAt: Date.now()
+      });
+      const child = spawn(process.execPath, [path.join(root, "scripts", "asset-root-sync-job.js"), payloadPath, jobPath], {
+        cwd: root,
+        detached: false,
+        stdio: "ignore",
+        windowsHide: true
+      });
+      patchJob(jobPath, { workerPid: child.pid, status: "running", message: "正在扫描全部素材文件夹...", updatedAt: Date.now() });
+      child.unref();
+      return sendJson(res, 200, { jobId });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/asset-usage/reindex/start") {
       const payload = await readJsonBody(req);
       const groupId = String(payload.groupId || "").trim();
