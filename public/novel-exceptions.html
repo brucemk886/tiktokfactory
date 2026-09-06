@@ -6,9 +6,9 @@
     <title>异常处理 · 小说推文</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
-    <link rel="stylesheet" href="/novel-exceptions.css" />
+    <link rel="stylesheet" href="/novel-exceptions.css?v=20260906-2" />
   </head>
-  <body class="work-page novel-exceptions-page">
+  <body class="work-page stats-page novel-exceptions-page">
     <nav class="side-tabs">
       <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
       <button class="nav-logout" type="button" data-logout>退出登录</button>
@@ -21,7 +21,11 @@
             <h1>异常处理</h1>
             <p>聚合小说官方生产、交接和发布异常。处理仍在原系统完成，这里只记录状态。</p>
           </div>
-          <a class="stats-back-link" href="/tasks">返回混剪任务</a>
+          <div class="exception-top-actions">
+            <a class="quiet-button" href="/tasks">返回混剪任务</a>
+            <button id="refreshExceptionsBtn" class="quiet-button" type="button">刷新</button>
+            <button id="deleteUnresolvedBtn" class="danger-button" type="button">删除当前未解决</button>
+          </div>
         </div>
         <div class="stats-cards" id="exceptionSummary">
           <div class="stats-card"><span>待处理</span><strong id="sumOpen">—</strong></div>
@@ -66,8 +70,6 @@
               <option value="account">账号</option>
             </select>
           </label>
-          <button id="refreshExceptionsBtn" type="button">刷新</button>
-          <button id="deleteUnresolvedBtn" type="button">删除当前未解决</button>
         </div>
         <div id="exceptionsStatus" class="publish-status">正在读取异常…</div>
         <div class="stats-table-wrap">
@@ -89,18 +91,21 @@
           </table>
         </div>
         <div class="exception-pager">
-          <button id="prevPageBtn" type="button" disabled>上一页</button>
-          <button id="nextPageBtn" type="button" disabled>下一页</button>
+          <button id="prevPageBtn" class="quiet-button" type="button" disabled>上一页</button>
+          <button id="nextPageBtn" class="quiet-button" type="button" disabled>下一页</button>
         </div>
       </section>
     </main>
     <aside id="exceptionDrawer" class="exception-drawer" hidden>
       <div class="exception-drawer-inner">
-        <button id="closeDrawerBtn" type="button">关闭</button>
+        <div class="exception-drawer-head">
+          <strong>异常详情</strong>
+          <button id="closeDrawerBtn" class="quiet-button" type="button">关闭</button>
+        </div>
         <div id="drawerBody"></div>
       </div>
     </aside>
     <script src="/access.js"></script>
-    <script src="/novel-exceptions.js"></script>
+    <script src="/novel-exceptions.js?v=20260906-2"></script>
   </body>
 </html>

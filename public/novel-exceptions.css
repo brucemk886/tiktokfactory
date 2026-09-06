@@ -1,39 +1,205 @@
-.novel-exceptions-page .stats-table-wrap {
-  overflow-x: auto;
+.novel-exceptions-page .stats-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.novel-exceptions-page .exception-top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.novel-exceptions-page .exception-top-actions .quiet-button,
+.novel-exceptions-page .exception-top-actions .danger-button,
+.novel-exceptions-page .exception-pager .quiet-button {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.novel-exceptions-page .danger-button {
+  background: #f3d5d0 !important;
+  color: #5a2218 !important;
+  border-color: #e0b4ad !important;
+}
+
+.novel-exceptions-page.stats-page .stats-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  grid-template-columns: none;
+}
+
+.novel-exceptions-page.stats-page .stats-filters .field {
+  min-width: 180px;
+  flex: 1 1 180px;
+}
+
+.novel-exceptions-page.stats-page .stats-table {
+  min-width: 1180px;
+  table-layout: auto;
+}
+
+.novel-exceptions-page.stats-page .stats-table td {
+  height: auto;
+  min-height: 64px;
+  vertical-align: top;
+  padding: 12px;
+}
+
+.novel-exceptions-page .exception-title {
+  font-weight: 700;
+}
+
+.novel-exceptions-page .exception-message {
+  margin-top: 4px;
+  color: var(--lf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.novel-exceptions-page .exception-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.novel-exceptions-page .exception-badge.critical,
+.novel-exceptions-page .exception-sev-critical {
+  background: #f8d7d5;
+  color: #8a2b24;
+}
+
+.novel-exceptions-page .exception-badge.warning,
+.novel-exceptions-page .exception-sev-warning {
+  background: #f6e5bf;
+  color: #7a5710;
+}
+
+.novel-exceptions-page .exception-badge.info,
+.novel-exceptions-page .exception-sev-info {
+  background: #dde8c8;
+  color: #3d5316;
+}
+
+.novel-exceptions-page .exception-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.novel-exceptions-page .exception-row-actions a,
+.novel-exceptions-page .exception-row-actions button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lf-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 30px;
+  text-decoration: none;
+}
+
+.novel-exceptions-page .exception-row-actions button[data-delete] {
+  background: #f3d5d0;
+  border-color: #e0b4ad;
+  color: #5a2218;
 }
 
 .exception-pager {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   margin-top: 16px;
 }
 
 .exception-drawer {
   position: fixed;
-  inset: 0 0 0 auto;
-  width: min(420px, 100vw);
-  background: rgba(20, 18, 14, 0.28);
-  z-index: 20;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(29, 26, 20, 0.28);
+}
+
+.exception-drawer[hidden] {
+  display: none;
 }
 
 .exception-drawer-inner {
+  width: min(460px, 100vw);
   height: 100%;
   overflow: auto;
-  background: #f6f1e6;
+  background: var(--lf-surface);
   padding: 20px 22px 32px;
-  box-shadow: -12px 0 30px rgba(40, 32, 18, 0.12);
+  box-shadow: -16px 0 40px rgba(40, 32, 18, 0.16);
+}
+
+.exception-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.exception-drawer-head .quiet-button {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.exception-meta {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 16px;
+  color: var(--lf-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .exception-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin: 16px 0 12px;
 }
 
-.exception-sev-critical { color: #9b2c2c; }
-.exception-sev-warning { color: #9a6700; }
-.exception-sev-info { color: #3d5a3d; }
+.exception-actions button,
+.exception-actions a {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--lf-line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--lf-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 34px;
+  text-decoration: none;
+}
+
+.exception-actions button[data-action="delete"] {
+  background: #f3d5d0;
+  border-color: #e0b4ad;
+  color: #5a2218;
+}
 
 #novelExceptionBadge {
   display: inline-flex;

@@ -52,6 +52,7 @@ body.accounts-page,
 body.rewrite-page,
 body.novel-rewrite-page,
 body.stats-page,
+body.novel-exceptions-page,
 body.work-journal-page {
   background-color: var(--lf-bg) !important;
   color: var(--lf-text) !important;

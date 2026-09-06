@@ -117,19 +117,20 @@ function renderRows(items) {
     const novel = item.associated
       ? `${escapeHtml(item.details?.novelName || item.novelId || "已关联")} / ${escapeHtml(item.audioName || item.details?.audioName || "待关联")}`
       : "待关联";
-    const action = item.kind === "official_publish_failed" || item.kind === "publish_needs_review"
+    const jump = item.kind === "official_publish_failed" || item.kind === "publish_needs_review"
       ? `<a href="${escapeHtml(item.hubLink?.href || "https://tiktokaitool.com")}" target="_blank" rel="noreferrer">前往中台</a>`
       : `<a href="${escapeHtml(item.taskLink?.href || "/tasks")}">查看任务</a>`;
     return `<tr data-id="${escapeHtml(item.id)}">
-      <td class="exception-sev-${escapeHtml(item.severity)}">${escapeHtml(item.severity)}</td>
-      <td>${escapeHtml(item.title)}<div class="field-help">${escapeHtml(item.message)}</div></td>
+      <td><span class="exception-badge ${escapeHtml(item.severity)}">${escapeHtml(item.severity === "critical" ? "严重" : item.severity === "warning" ? "警告" : "提示")}</span></td>
+      <td><div class="exception-title">${escapeHtml(item.title)}</div><div class="exception-message">${escapeHtml(item.message)}</div></td>
       <td>${escapeHtml(WORKFLOW_LABELS[item.workflowState] || item.workflowState)}</td>
       <td>${novel}</td>
       <td>${escapeHtml(item.connectionId || "—")} / ${escapeHtml(item.workerId || "—")}</td>
-      <td>${escapeHtml(KIND_LABELS[item.kind] || item.kind)} · ${escapeHtml(item.sourceStatus || "")}</td>
-      <td>${escapeHtml(formatTime(item.firstSeenAt))}<div class="field-help">${escapeHtml(formatTime(item.lastSeenAt))}</div></td>
+      <td>${escapeHtml(KIND_LABELS[item.kind] || item.kind)}<div class="exception-message">${escapeHtml(item.sourceStatus || "")}</div></td>
+      <td>${escapeHtml(formatTime(item.firstSeenAt))}<div class="exception-message">${escapeHtml(formatTime(item.lastSeenAt))}</div></td>
       <td>${escapeHtml(item.occurrenceCount)}</td>
-      <td>${action}<div class="field-help">
+      <td><div class="exception-row-actions">
+        ${jump}
         <button type="button" data-open="${escapeHtml(item.id)}">详情</button>
         ${item.workflowState === "deleted" ? "" : `<button type="button" data-delete="${escapeHtml(item.id)}" data-version="${escapeHtml(item.version)}">删除</button>`}
       </div></td>
@@ -149,18 +150,18 @@ async function openDrawer(id) {
   $("drawerBody").innerHTML = `
     <h2>${escapeHtml(item.title)}</h2>
     <p>${escapeHtml(item.message)}</p>
-    <p>状态 ${escapeHtml(WORKFLOW_LABELS[item.workflowState] || "")} · 条件 ${escapeHtml(item.conditionState)} · 版本 ${escapeHtml(item.version)}</p>
-    <p>任务 ${escapeHtml(item.localTaskId || item.cloudJobId || "—")} · 批次 ${escapeHtml(item.remoteBatchId || "—")}</p>
-    <p>
+    <div class="exception-meta">
+      <div>状态 ${escapeHtml(WORKFLOW_LABELS[item.workflowState] || "")} · 条件 ${escapeHtml(item.conditionState)} · 版本 ${escapeHtml(item.version)}</div>
+      <div>任务 ${escapeHtml(item.localTaskId || item.cloudJobId || "—")} · 批次 ${escapeHtml(item.remoteBatchId || "—")}</div>
+      <div>首次 ${escapeHtml(formatTime(item.firstSeenAt))} · 最近 ${escapeHtml(formatTime(item.lastSeenAt))} · 发生 ${escapeHtml(item.occurrenceCount)} 次</div>
+    </div>
+    <div class="exception-actions">
       <a href="${escapeHtml(item.taskLink?.href || "/tasks")}">查看任务列表</a>
       ${item.taskLink?.copyId ? `<button type="button" data-copy="${escapeHtml(item.taskLink.copyId)}">复制任务 ID</button>` : ""}
       ${item.kind === "official_publish_failed" || item.kind === "publish_needs_review"
         ? `<a href="${escapeHtml(item.hubLink?.href || "https://tiktokaitool.com")}" target="_blank" rel="noreferrer">前往中台</a>`
         : ""}
       ${item.hubLink?.copyId ? `<button type="button" data-copy="${escapeHtml(item.hubLink.copyId)}">复制批次 ID</button>` : ""}
-    </p>
-    <p>首次 ${escapeHtml(formatTime(item.firstSeenAt))} · 最近 ${escapeHtml(formatTime(item.lastSeenAt))} · 发生 ${escapeHtml(item.occurrenceCount)} 次</p>
-    <div class="exception-actions">
       <button type="button" data-action="start">开始处理</button>
       <button type="button" data-action="review">复核</button>
       <button type="button" data-action="ignore">忽略</button>
