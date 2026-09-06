@@ -1,5 +1,6 @@
 import { kvGet, kvSet } from "./kv.js";
 import { applyOfficialRemoteOutcome, mergeOfficialPublishRecords, normalizeOfficialPublishRecord, officialRecordTime } from "../../scripts/official-publish-records.js";
+import { projectPublishRecordException } from "./novel-exceptions.js";
 
 const TABLE = "factory_publish_records";
 const REFS_TABLE = "factory_publish_record_refs";
@@ -279,6 +280,9 @@ export async function applyPublishReceipt(db, receipt) {
   const merged = applyReceiptToRecord(previous, receipt);
   await upsertPublishRecordRows(db, [merged]);
   await markReceiptsApplied(db, [{ ref: receipt.ref, recordId }]);
+  await projectPublishRecordException(db, merged).catch((error) => {
+    console.error("novel-exception-project-receipt", error?.message || error);
+  });
   return { stored: true, applied: true, recordId, status: merged.status };
 }
 
@@ -432,6 +436,7 @@ export async function applySourcedPublishRecordEvents(db, { sourceStoreId, event
   let written = 0;
   let inserted = 0;
   let ignored = 0;
+  const projected = [];
   const recordStatement = db.prepare(`
     INSERT INTO ${TABLE} (id, created_at, value_json)
     VALUES (?, ?, ?)
@@ -482,12 +487,18 @@ export async function applySourcedPublishRecordEvents(db, { sourceStoreId, event
     statements.push(revisionStatement.bind(source, recordKey, revision, Number(event.seq) || 0, now));
     written += 1;
     if (!row) inserted += 1;
+    projected.push(merged);
   }
   if (appliedReceiptRefs.length) {
     const mark = db.prepare(`UPDATE ${RECEIPTS_TABLE} SET applied_at = ?, record_id = ? WHERE ref = ?`);
     for (const entry of appliedReceiptRefs) statements.push(mark.bind(now, entry.recordId, entry.ref));
   }
   if (statements.length) await db.batch(statements);
+  for (const record of projected) {
+    await projectPublishRecordException(db, record, now).catch((error) => {
+      console.error("novel-exception-project-record", error?.message || error);
+    });
+  }
   return {
     received: incoming.length,
     applied: written,

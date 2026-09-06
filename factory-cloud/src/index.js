@@ -14,6 +14,7 @@ import { collectFactoryStorageSample, handleSignalDeskIntegration } from "./fact
 import { persistOpsSnapshots, pruneOfficialOpsReports } from "./ops-report-store.js";
 import { prunePublishReceipts, prunePublishRecords } from "./publish-records-store.js";
 import { ensurePublishWebhook } from "./publish-webhook.js";
+import { handleNovelExceptions, reconcileNovelExceptions } from "./novel-exceptions.js";
 import { isPublicPath, pageFileFor, rewriteAssetRequest } from "./pages.js";
 import { canAccessPath, homePathForUser } from "./sidebar.js";
 
@@ -37,7 +38,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleCompat];
+        const handlers = [handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
@@ -82,6 +83,7 @@ export default {
       // endpoint deactivated by the hub after a long outage).
       ["publish-webhook-register", () => ensurePublishWebhook(env, env.DB, { verify: true })],
       ["factory-storage-sample", () => collectFactoryStorageSample(env, env.DB)],
+      ["novel-exceptions-reconcile", () => reconcileNovelExceptions(env.DB)],
     ]);
     console.info(JSON.stringify({ event: "scheduled-steps-completed", cron: controller.cron, ...results }));
     ctx?.waitUntil?.(backfillMissingAudioDurations(env, env.DB, { limit: 40 }).catch(() => {}));

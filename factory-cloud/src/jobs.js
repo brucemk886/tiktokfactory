@@ -8,6 +8,7 @@ import { mergeAndStorePublishRecords } from "./publish-records-store.js";
 import { handlePublishRecordsSyncV2 } from "./publish-records-sync-v2.js";
 import { ensurePublishWebhookLazily } from "./publish-webhook.js";
 import { getAutoTask, saveAutoTask, saveAutoTasks } from "./auto-tasks-store.js";
+import { ingestWorkerNovelExceptionEvents, projectJobException } from "./novel-exceptions.js";
 
 const FFMPEG_START_ROUTES = [
   { method: "POST", pattern: /^\/api\/generate\/start$/, type: "generate", title: "生成视频" },
@@ -555,6 +556,9 @@ async function handleWorkerApi(request, env, url, ctx) {
       await syncAutoTaskFromJob(env.DB, job).catch((error) => {
         console.error("syncAutoTaskFromJob", error?.message || error);
       });
+      await projectJobException(env.DB, job).catch((error) => {
+        console.error("novel-exception-project-job", error?.message || error);
+      });
     }
     const result = persistableJobResult(rawResult);
     if (job && nextStatus === "done" && rawResult.publishPending) {
@@ -590,6 +594,19 @@ async function handleWorkerApi(request, env, url, ctx) {
 
   if (method === "GET" && pathname === "/api/worker/audio-hit-weights") {
     return json(await buildWorkerAudioHitWeights(env.DB));
+  }
+
+  if (method === "POST" && pathname === "/api/worker/novel-exceptions/events") {
+    try {
+      return json(await ingestWorkerNovelExceptionEvents(
+        env.DB,
+        await readJson(request),
+        request.headers.get("x-factory-worker") || "",
+        env
+      ));
+    } catch (error) {
+      return errorJson(error.message || "上报异常失败。", error.statusCode || 400);
+    }
   }
 
   return errorJson("未知工人接口。", 404);

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>异常处理 · 小说推文</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+    <link rel="stylesheet" href="/novel-exceptions.css" />
+  </head>
+  <body class="work-page novel-exceptions-page">
+    <nav class="side-tabs">
+      <a class="app-brand" href="/tasks" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a>
+      <button class="nav-logout" type="button" data-logout>退出登录</button>
+    </nav>
+    <main class="stats-shell">
+      <section class="stats-panel">
+        <div class="stats-topbar">
+          <div>
+            <p class="toolbar-kicker">NOVEL EXCEPTIONS</p>
+            <h1>异常处理</h1>
+            <p>聚合小说官方生产、交接和发布异常。处理仍在原系统完成，这里只记录状态。</p>
+          </div>
+          <a class="stats-back-link" href="/tasks">返回混剪任务</a>
+        </div>
+        <div class="stats-cards" id="exceptionSummary">
+          <div class="stats-card"><span>待处理</span><strong id="sumOpen">—</strong></div>
+          <div class="stats-card"><span>处理中</span><strong id="sumProgress">—</strong></div>
+          <div class="stats-card"><span>严重异常</span><strong id="sumCritical">—</strong></div>
+          <div class="stats-card"><span>忽略中</span><strong id="sumIgnored">—</strong></div>
+        </div>
+        <p id="sourceFreshness" class="field-help">正在读取来源新鲜度…</p>
+        <div class="stats-filters">
+          <label class="field"><span>处理状态</span>
+            <select id="filterWorkflow">
+              <option value="">未解决</option>
+              <option value="open">待处理</option>
+              <option value="in_progress">处理中</option>
+              <option value="ignored">忽略中</option>
+              <option value="resolved">已解决</option>
+            </select>
+          </label>
+          <label class="field"><span>类型</span>
+            <select id="filterKind">
+              <option value="">全部</option>
+              <option value="production_failed">混剪/生成失败</option>
+              <option value="awaiting_review">待人工确认</option>
+              <option value="upload_handoff_failed">上传交接失败</option>
+              <option value="worker_heartbeat_timeout">心跳超时</option>
+              <option value="official_publish_failed">官方发布失败</option>
+              <option value="publish_needs_review">需中台核查</option>
+              <option value="result_sync_failed">同步异常</option>
+              <option value="account_auth_failed">账号授权</option>
+              <option value="other_production">其他生产异常</option>
+            </select>
+          </label>
+          <label class="field"><span>阶段</span>
+            <select id="filterStage">
+              <option value="">全部</option>
+              <option value="produce">生产</option>
+              <option value="upload">上传</option>
+              <option value="publish">发布</option>
+              <option value="sync">同步</option>
+              <option value="worker">工人</option>
+              <option value="account">账号</option>
+            </select>
+          </label>
+          <button id="refreshExceptionsBtn" type="button">刷新</button>
+        </div>
+        <div id="exceptionsStatus" class="publish-status">正在读取异常…</div>
+        <div class="stats-table-wrap">
+          <table class="stats-table" id="exceptionsTable">
+            <thead>
+              <tr>
+                <th>严重度</th>
+                <th>标题</th>
+                <th>状态</th>
+                <th>小说 / 音频</th>
+                <th>账号 / 工人</th>
+                <th>阶段</th>
+                <th>首次 / 最近</th>
+                <th>次数</th>
+                <th>下一步</th>
+              </tr>
+            </thead>
+            <tbody id="exceptionRows"></tbody>
+          </table>
+        </div>
+        <div class="exception-pager">
+          <button id="prevPageBtn" type="button" disabled>上一页</button>
+          <button id="nextPageBtn" type="button" disabled>下一页</button>
+        </div>
+      </section>
+    </main>
+    <aside id="exceptionDrawer" class="exception-drawer" hidden>
+      <div class="exception-drawer-inner">
+        <button id="closeDrawerBtn" type="button">关闭</button>
+        <div id="drawerBody"></div>
+      </div>
+    </aside>
+    <script src="/access.js"></script>
+    <script src="/novel-exceptions.js"></script>
+  </body>
+</html>

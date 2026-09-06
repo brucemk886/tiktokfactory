@@ -1,0 +1,48 @@
+.novel-exceptions-page .stats-table-wrap {
+  overflow-x: auto;
+}
+
+.exception-pager {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.exception-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(420px, 100vw);
+  background: rgba(20, 18, 14, 0.28);
+  z-index: 20;
+}
+
+.exception-drawer-inner {
+  height: 100%;
+  overflow: auto;
+  background: #f6f1e6;
+  padding: 20px 22px 32px;
+  box-shadow: -12px 0 30px rgba(40, 32, 18, 0.12);
+}
+
+.exception-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.exception-sev-critical { color: #9b2c2c; }
+.exception-sev-warning { color: #9a6700; }
+.exception-sev-info { color: #3d5a3d; }
+
+#novelExceptionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 12px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+#novelExceptionBadge[data-count="0"] { opacity: 0.65; }

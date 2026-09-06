@@ -14,6 +14,7 @@ import { buildOfficialPublishRecords, normalizeOfficialAutoPublishResult, persis
 import { filterPublishRecordsBySource } from "./publish-record-sources.js";
 import { compactOfficialPublishRecord } from "./official-publish-records.js";
 import { officialPublishStoreEnabled } from "./publish-record-runtime.js";
+import { backfillUnresolvedNovelTasks, flushNovelExceptionQueue } from "./novel-exception-reporter.js";
 import { syncOfficialPublishRecordsIfEnabled } from "./publish-record-sync.js";
 import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { normalizePublishProvider, PUBLISH_PROVIDER_OFFICIAL } from "./publish-provider.js";
@@ -53,6 +54,7 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
   const lanes = workerLanes(settings);
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}  渲染并发=${lanes[0].concurrency} 发布并发=${lanes[1].concurrency}`);
   helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
+  backfillNovelExceptionsOnce(context);
   syncWorkerState(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
   setInterval(() => {
     syncWorkerState(context).catch((error) => console.error("同步发布记录失败：", error.message || error));
@@ -720,6 +722,11 @@ async function syncWorkerState(context) {
     } catch (error) {
       console.error("同步官方发布记录失败：", error.message || error);
     }
+    try {
+      await flushNovelExceptionQueue(context.workDir, (body) => request(context, "/api/worker/novel-exceptions/events", { method: "POST", body }));
+    } catch (error) {
+      console.error("上报小说异常失败：", error.message || error);
+    }
   } finally {
     context.workerStateSyncing = false;
   }
@@ -988,6 +995,23 @@ export function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value === "boolean") return value;
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function backfillNovelExceptionsOnce(context) {
+  const marker = path.join(context.workDir, "novel-exception-backfill.json");
+  if (fs.existsSync(marker)) return;
+  try {
+    const dir = path.join(context.workDir, "scheduled-tasks");
+    const tasks = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((name) => name.endsWith(".json")).map((name) => {
+        try { return JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { return null; }
+      }).filter(Boolean)
+      : [];
+    const result = backfillUnresolvedNovelTasks(context.workDir, tasks);
+    fs.writeFileSync(marker, JSON.stringify({ at: Date.now(), ...result }, null, 2), "utf8");
+  } catch (error) {
+    console.error("小说异常回填失败：", error.message || error);
+  }
 }
 
 function writeLocalJob(filePath, value) {

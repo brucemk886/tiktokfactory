@@ -9,6 +9,7 @@ export const LOCAL_SIDEBAR_MODULE_IDS = Object.freeze([
   "podcast",
   "ai",
   "tasks",
+  "novel-exceptions",
   "asset-usage",
   "operator-third-party",
   "geelark-profiles",
@@ -39,6 +40,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("novel-effects", "/novel-effects", "小说数据统计", ["admin"], novelPromotionGroup()),
   moduleItem("operator-official", "/operator/official", "小说自运营", ["admin"], novelPromotionGroup()),
   moduleItem("tasks", "/tasks", "Reddit 混剪", ["admin"], novelPromotionGroup()),
+  moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
   moduleItem("asset-usage", "/asset-usage", "素材使用率", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ["admin"], psychologyGroup()),
   moduleItem("psychology", "/psychology", "心理学视频自动化", ["admin"], psychologyGroup()),
@@ -120,7 +122,8 @@ export function shouldRedirectLocalPageToFactory(pathname) {
       "/psychology-publish",
       "/reddit",
       "/asset-cutter",
-      "/work-journal-mindmap"
+      "/work-journal-mindmap",
+      "/novel-exceptions"
     ].includes(clean);
 }
 

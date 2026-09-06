@@ -11,6 +11,7 @@ import { normalizeAudioDirs } from "./audio-library-groups.js";
 import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 import { scheduleDateKey } from "./schedule-date.js";
 import { listRecordsForOutputCleanup, upsertOfficialRuntimeRecords } from "./publish-record-runtime.js";
+import { reportOfficialNovelTask } from "./novel-exception-reporter.js";
 
 export { mergeOfficialPublishRecords };
 
@@ -559,7 +560,9 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
     if (task.status === "canceled" && patch.status !== "queued" && patch.status !== "canceled") {
       return task;
     }
-    writeTask({ ...task, ...patch });
+    const next = { ...task, ...patch };
+    writeTask(next);
+    try { reportOfficialNovelTask(workDir, next); } catch { /* reporting must not block production */ }
   }
 
   function mirrorExternalTask(patch = {}) {
@@ -579,6 +582,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       updatedAt: Date.now()
     };
     writeTask(next);
+    try { reportOfficialNovelTask(workDir, next); } catch { /* reporting must not block production */ }
     return next;
   }
 

@@ -125,7 +125,7 @@
 | `/api/worker/*` | `WORKER_TOKEN`（Bearer 或 `x-factory-worker-token`），无 session。`GET /api/worker/bootstrap` 用它下发共享密钥给新机器，所以这个 token 等同于拿到中台 bridge key 和 ElevenLabs key |
 | `/api/integrations/signal-desk/publish-events` | HMAC-SHA256：`x-signal-timestamp` + `x-signal-signature: v1=…`，密钥 `official-settings.webhookSecret`，时钟偏差 ≤10min |
 | `/api/integrations/signal-desk/storage`、`archive-accounts` | Bearer = 桥接密钥 |
-| 其余 `/api/*` | Cookie session；仅 admin：`official-publish-records/sync`、`/webhook`、`POST private-tiktok/settings`、项目/分组的所有写操作（POST/PATCH/DELETE，读仍对所有登录用户开放） |
+| 其余 `/api/*` | Cookie session；仅 admin：`official-publish-records/sync`、`/webhook`、`POST private-tiktok/settings`、`/api/novel-exceptions*`（还要 `sidebarModules` 含 `novel-exceptions`）、项目/分组的所有写操作（POST/PATCH/DELETE，读仍对所有登录用户开放） |
 | 出站到中台 | `signalDesk()`：Bearer = `official-settings.apiKey` 或 `SIGNAL_DESK_BRIDGE_KEY`（线上用后者）。`GET /api/private-tiktok/settings` 返回 `apiKeySource: settings|env|none`，`GET /api/official-publish-records/webhook` 返回 `secretSource`，排障先看这两个字段 |
 
 ### 3.2 任务表 `factory_jobs`
@@ -167,7 +167,18 @@
 ### 3.7 cron
 
 `wrangler.jsonc`：`0 0 * * *` 与 `0 16 * * *`（UTC，即北京 08:00 / 00:00），两档跑同一段，每步独立 try（`runScheduledSteps`）：
-`persistOpsSnapshots → pruneOfficialOpsReports(90d) → pruneFactoryJobs(30d) → pruneAutoTasks → prunePublishReceipts(30d) → prunePublishRecords(90d) → recomputeArchiveMeta → ensurePublishWebhook → collectFactoryStorageSample`，`backfillMissingAudioDurations` 走 waitUntil。
+`persistOpsSnapshots → pruneOfficialOpsReports(90d) → pruneFactoryJobs(30d) → pruneAutoTasks → prunePublishReceipts(30d) → prunePublishRecords(90d) → recomputeArchiveMeta → ensurePublishWebhook → collectFactoryStorageSample → reconcileNovelExceptions`，`backfillMissingAudioDurations` 走 waitUntil。不要另开 `*/5` cron：现有两档不按 `controller.cron` 分支，新 trigger 会把每日清理跑 288 次/天。
+
+### 3.8 小说推文异常中心
+
+工厂 D1 `factory_novel_exceptions` 是异常状态和审计的唯一存储；本机只上报，中台仍负责发布终态 / 核查 / 重试。异常中心不是第二套发布队列。
+
+- 首版种类：混剪/生成失败、`awaiting_review`、上传交接失败、工人心跳超时（文案不是「机器已死」）、官方 `failed/rejected/status_timeout`、`needs_review`（看 `officialRemoteStatus` / 回执 `task.status`）、同步失败/到期无终态、账号授权失效（只认结构化 `errorCode`）。推迟：疑似无进展、内容关联缺失、中台 attention API、任务遥测。
+- 投影来源：云任务终态、官方记录 v2 / 回执、本机独立队列 `work/novel-exceptions.sqlite`（`POST /api/worker/novel-exceptions/events`，`WORKER_TOKEN`）。不扫 `auto-tasks` 列表（默认 200 / 上限 1000），也不放宽 `VIDEO_LIST_CAP=80`。第 81 条失败从本机产物或官方记录一行上报；对账扫任务 JSON 时承认看不到第 81 条，不能据此标恢复。
+- 禁止封装 `POST .../retry-publish` 或 `resume`。页面只有「查看任务 / 复制 ID / 前往中台」。
+- 工人在线窗口仍是 10 分钟（`sync` 写 `lastSeenAt`，`poll` 不写）。
+- 导航：云端 `withOpsReportModules` 只给 admin 插 `novel-exceptions`；catalog `["admin"]`。本地 `migrateStore` v29 给 admin 插入同模块，`/novel-exceptions` 走 `shouldRedirectLocalPageToFactory`。
+- 页面 GET 只读异常表。对账挂在每日 cron 多一步，不触发重建。
 
 ---
 
@@ -324,6 +335,10 @@
 ### 已修（2026-09-06，发布记录 SQLite 已切生产）
 
 30. 官方发布记录读写 `official-history.sqlite`（`publishing_records` / outbox / sync_state），账号/视频快照复用归档表，不再把 30 天账号历史嵌进每条记录。工人 v2 按单调 `seq` 分页确认，云端 `factory_publish_source_revisions` 按 `(sourceStoreId, recordKey)` 去重，回执终态仍优先。`mergeOfficialPublishRecords` 的 3000 条限制只用于展示；持久化传 `{ limit: 0 }`。2026-09-06 已部署工厂云（迁移 `0020`，版本 `abddcc08-fe36-494b-8fc5-6909387a44c7`），本机导入 488 条官方记录、enable、重启 `windows-local`；首次 v2 已 ACK 到 seq 488。GeeLark 3274 条仍在原 JSON，旧文件未删。
+
+### 已实现未上线（2026-09-06，小说推文异常中心首版）
+
+31. 工厂异常投影 + 人工工作流：D1 `0021_novel_exceptions`、本机独立上报队列、每日 cron 对账一步、管理员页 `/novel-exceptions`。不接 `retry-publish` / `resume`，不扫 auto-tasks 列表，不改 10 分钟心跳窗口，不放宽 `VIDEO_LIST_CAP`。生产未 deploy、未打 D1 `0021`、未重启工人。细节见 `docs/handoffs/2026-09-06-novel-exceptions.md`。
 
 ### 未修（评估后不需要，或超出本阶段）
 

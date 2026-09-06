@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createPublishRecordStore } from "./publish-record-store.js";
 import { filterPublishRecordsBySource, isOfficialTikTokPublishRecord } from "./publish-record-sources.js";
+import { reportOfficialPublishRecord } from "./novel-exception-reporter.js";
 
 const STORE_STATE_NAME = "official-publish-store.json";
 const stores = new Map();
@@ -101,7 +102,9 @@ export function upsertOfficialRuntimeRecords(workDir, records) {
   const incoming = Array.isArray(records) ? records : [];
   if (!incoming.length) return [];
   if (officialPublishStoreEnabled(workDir)) {
-    return getPublishRecordStore(workDir).upsertRecords(incoming);
+    const saved = getPublishRecordStore(workDir).upsertRecords(incoming);
+    reportOfficialRecordsSafe(workDir, saved);
+    return saved;
   }
   const current = readJsonPublishRecords(workDir);
   const incomingIds = new Set(incoming.map((record) => String(record?.id || "")));
@@ -112,6 +115,7 @@ export function upsertOfficialRuntimeRecords(workDir, records) {
     createdAt: Number(previousById.get(String(record.id || ""))?.createdAt) || record.createdAt,
   }));
   writeJsonPublishRecords(workDir, [...mergedIncoming, ...current.filter((record) => !incomingIds.has(String(record?.id || "")))]);
+  reportOfficialRecordsSafe(workDir, mergedIncoming);
   return mergedIncoming;
 }
 
@@ -119,7 +123,9 @@ export function patchOfficialRuntimeRecords(workDir, patches) {
   const incoming = Array.isArray(patches) ? patches : [];
   if (!incoming.length) return [];
   if (officialPublishStoreEnabled(workDir)) {
-    return getPublishRecordStore(workDir).patchRecords(incoming);
+    const saved = getPublishRecordStore(workDir).patchRecords(incoming);
+    reportOfficialRecordsSafe(workDir, saved);
+    return saved;
   }
   const current = readJsonPublishRecords(workDir);
   const byId = new Map(incoming.map((item) => [String(item.id || ""), item]));
@@ -135,7 +141,10 @@ export function writeOfficialRuntimeRecords(workDir, records) {
   if (officialPublishStoreEnabled(workDir)) {
     const official = incoming.filter((record) => isOfficialTikTokPublishRecord(record));
     const geelark = incoming.filter((record) => !isOfficialTikTokPublishRecord(record));
-    if (official.length) getPublishRecordStore(workDir).upsertRecords(official);
+    if (official.length) {
+      const saved = getPublishRecordStore(workDir).upsertRecords(official);
+      reportOfficialRecordsSafe(workDir, saved);
+    }
     if (geelark.length) {
       const existingGeelark = filterPublishRecordsBySource(readJsonPublishRecords(workDir), "geelark");
       const incomingIds = new Set(geelark.map((record) => String(record?.id || "")));
@@ -147,7 +156,14 @@ export function writeOfficialRuntimeRecords(workDir, records) {
     return incoming;
   }
   writeJsonPublishRecords(workDir, incoming);
+  reportOfficialRecordsSafe(workDir, incoming);
   return incoming;
+}
+
+function reportOfficialRecordsSafe(workDir, records) {
+  for (const record of Array.isArray(records) ? records : []) {
+    try { reportOfficialPublishRecord(workDir, record); } catch { /* reporting must not block production */ }
+  }
 }
 
 export function listRecordsForOutputCleanup(workDir) {

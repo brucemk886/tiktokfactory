@@ -25,6 +25,7 @@ const PAGE_FILES = {
   "/operator/official": "operator.html",
   "/operator/third-party": "operator.html",
   "/tasks": "tasks.html",
+  "/novel-exceptions": "novel-exceptions.html",
   "/geelark-tasks": "tasks.html",
   "/psychology": "psychology.html",
   "/psychology-topics": "psychology-topics.html",

@@ -38,7 +38,9 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-publish-records"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("official-analytics"));
   assert.ok(sidebarModuleIdsForRole("admin").includes("asset-usage"));
+  assert.ok(sidebarModuleIdsForRole("admin").includes("novel-exceptions"));
   assert.ok(!sidebarModuleIdsForRole("operator").includes("asset-usage"));
+  assert.ok(!sidebarModuleIdsForRole("operator").includes("novel-exceptions"));
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-library")?.href, "/novel-library");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.href, "/novel-peer-hits");
   assert.equal(SIDEBAR_MODULES.find((item) => item.id === "novel-peer-hits")?.label, "同行爆款");
@@ -60,7 +62,7 @@ test("role defaults are derived from the canonical sidebar catalog", () => {
 test("business lines keep official and GeeLark navigation apart", () => {
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "novel-promotion").map((item) => item.id),
-    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "asset-usage"]
+    ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "novel-exceptions", "asset-usage"]
   );
   assert.deepEqual(
     SIDEBAR_MODULES.filter((item) => item.group?.id === "mid-video").map((item) => item.id),
@@ -113,6 +115,7 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/geelark-profiles"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/accounts"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/local-queue"), false);
+  assert.equal(shouldRedirectLocalPageToFactory("/novel-exceptions"), true);
 });
 
 test("local reddit mix can refresh audio folders and push them to the factory", () => {
@@ -222,4 +225,6 @@ test("factory cloud keeps peer hits under novel promotion", () => {
     CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-ops-report")
     < CLOUD_SIDEBAR_MODULES.findIndex((entry) => entry.id === "novel-effects")
   );
+  assert.deepEqual(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-exceptions")?.roles, ["admin"]);
+  assert.equal(CLOUD_SIDEBAR_MODULES.find((entry) => entry.id === "novel-exceptions")?.href, "/novel-exceptions");
 });
