@@ -214,36 +214,66 @@ body.tasks-page {
 .tasks-page .novel-audio-novel input { width: 16px; min-width: 16px; height: 16px; padding: 0; margin: 0; accent-color: #5c6a14; }
 .novel-audio-novel strong { color: var(--task-text, #1d1a14); font-size: 12px; }
 .novel-audio-novel small { color: var(--task-muted, #6d6758); font-size: 11px; }
-.asset-folder-node { display: grid; gap: 2px; }
+.asset-folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #30363e;
+  border-radius: 6px;
+  background: #fff;
+}
+.asset-folder-node { display: grid; gap: 2px; min-width: 0; }
 .asset-folder-node .asset-folder-node { padding-left: 18px; }
 .asset-folder-row,
 .asset-folder-file {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px 18px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   min-height: 34px;
-  padding: 4px 6px;
+  height: 34px;
+  padding: 0 6px;
   border-radius: 6px;
+}
+.asset-folder-file {
+  display: flex;
+  grid-template-columns: unset;
+  padding-left: 42px;
 }
 .asset-folder-row:hover,
 .asset-folder-file:hover { background: var(--lf-surface-2, #f6f0e4); }
-.asset-folder-row input { width: 16px; min-width: 16px; height: 16px; margin: 0; accent-color: #5c6a14; }
 .asset-folder-toggle {
   width: 18px;
-  min-width: 18px;
   height: 18px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--task-muted, #6d6758);
+  line-height: 1;
   cursor: pointer;
 }
-.asset-folder-row strong { flex: 1; min-width: 0; color: var(--task-text, #1d1a14); font-size: 12px; cursor: pointer; }
-.asset-folder-row small,
-.asset-folder-file span { color: var(--task-muted, #6d6758); font-size: 11px; }
-.asset-folder-file { padding-left: 42px; }
-.asset-folder-file span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-folder-row strong,
+.asset-folder-file span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--task-text, #1d1a14);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.asset-folder-file span { flex: 1; cursor: default; }
+.asset-folder-row small {
+  color: var(--task-muted, #6d6758);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .asset-folder-play {
+  min-width: 44px;
   min-height: 26px;
   height: 26px;
   padding: 0 8px;
@@ -266,7 +296,7 @@ body.tasks-page {
 .tasks-page .field { display: grid; gap: 6px; min-width: 0; }
 .tasks-page .field > span { color: var(--lf-muted); font-size: 11px; font-weight: 600; }
 .tasks-page .field em { color: #69717b; font-style: normal; font-weight: 400; }
-.tasks-page input,
+.tasks-page input:not([type="checkbox"]):not([type="radio"]),
 .tasks-page select,
 .tasks-page textarea {
   width: 100%;
@@ -279,10 +309,27 @@ body.tasks-page {
   font: inherit;
   font-size: 12px;
 }
-.tasks-page input, .tasks-page select { height: 38px; padding: 0 11px; }
+.tasks-page input:not([type="checkbox"]):not([type="radio"]),
+.tasks-page select { height: 38px; padding: 0 11px; }
 .tasks-page textarea { min-height: 72px; height: 72px; padding: 10px 11px; resize: vertical; line-height: 1.5; }
-.tasks-page input:focus, .tasks-page select:focus, .tasks-page textarea:focus { border-color: #727d89; box-shadow: 0 0 0 2px rgba(114,125,137,.12); }
+.tasks-page input:not([type="checkbox"]):not([type="radio"]):focus,
+.tasks-page select:focus,
+.tasks-page textarea:focus { border-color: #727d89; box-shadow: 0 0 0 2px rgba(114,125,137,.12); }
 .tasks-page input::placeholder, .tasks-page textarea::placeholder { color: #555d66; }
+.tasks-page input[type="checkbox"],
+.tasks-page input[type="radio"] {
+  width: 16px;
+  min-width: 16px;
+  max-width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  box-shadow: none;
+  accent-color: #5c6a14;
+  flex: 0 0 16px;
+}
 .caption-editor { max-width: 760px; margin-top: 14px; overflow: hidden; border: 1px solid var(--task-line); border-radius: 10px; background: #fff; }
 .caption-mode-bar { min-height: 45px; padding: 7px 11px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--task-line-soft); background: var(--lf-surface-2, #f6f0e4); }
 .caption-mode-bar strong { margin-right: auto; color: var(--lf-text); font-size: 11px; white-space: nowrap; }

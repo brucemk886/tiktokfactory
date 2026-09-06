@@ -129,6 +129,11 @@ test("local reddit mix can refresh audio folders and push them to the factory", 
   assert.match(js, /kind === "legacy"/);
   assert.doesNotMatch(js, /kind === "legacy-bundle"/);
   assert.match(html, /音频文件夹/);
+  assert.match(html, /id="assetFolderField"/);
+  assert.match(html, /class="asset-folder-picker"/);
+  const css = fs.readFileSync(path.join(publicDir, "tasks.css"), "utf8");
+  assert.match(css, /input:not\(\[type="checkbox"\]\)/);
+  assert.match(js, /asset-folder-row/);
   assert.match(js, /\/api\/asset-groups\/sync/);
   assert.match(js, /item\.hidden = !isLocalWorkerPage/);
   assert.match(html, /id="workerField"[^>]*data-cloud-only|data-cloud-only[^>]*id="workerField"/);
