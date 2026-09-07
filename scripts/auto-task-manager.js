@@ -1226,6 +1226,7 @@ export function buildOfficialPublishRecords(task, results, now = Date.now(), rec
         fallback: {
           novelId: video?.novelId || task?.generation?.novelId,
           platform: video?.novelPlatform || task?.generation?.novelPlatform,
+          promotionCode: video?.novelPromotionCode || task?.generation?.novelPromotionCode,
           promotionCopy: video?.promotionCopy
         }
       }),

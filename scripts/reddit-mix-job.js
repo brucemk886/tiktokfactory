@@ -306,6 +306,7 @@ async function main() {
       warnings.push(`未找到推广码/平台，已跳过片尾搜书引导：${path.basename(audioPath)}`);
     }
     const tiktokCaption = buildTikTokCaption({
+      promotionCode: novelBadge?.promotionCode || endCard?.promotionCode || audioFallback.promotionCode || "",
       promotionCopy: novelBadge?.promotionCopy || audioFallback.promotionCopy || "",
       platform: novelBadge?.platform || audioFallback.platform || "",
       hookLine: captionTitle,

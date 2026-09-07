@@ -98,24 +98,35 @@ export function pickVariedHashtags({ seed = "", platform = "", count = 0 } = {})
 export function buildTikTokCaption({
   openingTitle = "",
   promotionCopy = "",
+  promotionCode = "",
   platform = "",
   audioTitle = "",
   hookLine = "",
   seed = ""
 } = {}) {
-  const promo = String(promotionCopy || "").replace(/\s+/g, " ").trim();
+  const code = String(promotionCode || "").trim();
+  const platformName = displayNovelPlatform(platform);
+  const promo = code && platformName
+    ? `Read the full story on ${platformName}. Search code: ${code}.`
+    : String(promotionCopy || "").replace(/\s+/g, " ").trim();
   const hook = String(hookLine || openingTitle || "").replace(/\s+/g, " ").trim();
   const title = String(extractAudioCaptionText(audioTitle) || "").replace(/\s+/g, " ").trim();
   const fields = { hook, promo, title };
   const usable = CAPTION_TEMPLATES.filter((template) => [...template.matchAll(/\{(\w+)\}/g)].every((match) => fields[match[1]]));
   const seedText = String(seed || "").trim() || `${hook || promo || title}:${audioTitle}`;
   const template = usable.length ? usable[hashSeed(`${seedText}:template`) % usable.length] : "";
-  const body = template
+  let body = template
     .replace(/\{(\w+)\}/g, (_, key) => fields[key] || "")
     .replace(/[ \t]+\n/g, "\n")
     .trim();
   const tags = pickVariedHashtags({ seed: `${seedText}:tags`, platform }).join(" ");
-  return [body, tags].filter(Boolean).join("\n\n").slice(0, 2200);
+  // Promotion is mandatory whenever available, regardless of the selected
+  // body template. Reserve its space before shortening a long story hook.
+  if (promo) body = body.split(promo).join("").trim() || hook || title;
+  const tail = [promo, tags].filter(Boolean).join("\n\n");
+  const budget = Math.max(0, 2200 - tail.length - (body && tail ? 2 : 0));
+  body = Array.from(body.slice(0, budget)).join("").replace(/[\uD800-\uDBFF]$/, "").trimEnd();
+  return [body, tail].filter(Boolean).join("\n\n").slice(0, 2200);
 }
 
 export function resolveTikTokCaption({
@@ -134,9 +145,12 @@ export function resolveTikTokCaption({
   const openingTitle = String(video?.openingTitle || lookedUp.openingTitle || "").trim();
   const promotionCopy = String(video?.promotionCopy || lookedUp.promotionCopy || fallback.promotionCopy || "").trim();
   const platform = String(video?.novelPlatform || video?.platform || lookedUp.platform || fallback.platform || "").trim();
+  const promotionCode = firstText(video?.novelPromotionCode, video?.promotionCode,
+    lookedUp.promotionCode, fallback.novelPromotionCode, fallback.promotionCode);
   const generated = buildTikTokCaption({
     openingTitle,
     promotionCopy,
+    promotionCode,
     platform,
     hookLine: lookedUp.hookLine || "",
     audioTitle: video?.audioName || video?.title || "",
@@ -770,6 +784,7 @@ function lookupCaptionFields(workDir, video = {}, fallback = {}) {
     openingTitle: String(script?.openingTitle || firstHookLine(script?.text) || "").trim(),
     hookLine: String(firstHookLine(audio?.script || script?.text) || "").trim(),
     promotionCopy: String(novel?.promotionCopy || "").trim(),
+    promotionCode: firstText(novel?.promotionCode, audio?.promotionCode, audio?.source?.promotionCode),
     platform: String(novel?.platform || "").trim()
   };
 }
@@ -790,11 +805,14 @@ function stripAudioExtension(value) {
 }
 
 function humanizeAudioTitle(value) {
-  const raw = stripAudioExtension(path.basename(String(value || "")));
+  const raw = stripAudioExtension(String(value || "").split(/[\\/]/).pop());
   if (!raw) return "";
   const afterId = raw.match(/_(\d{8,})_(.+)$/);
   const source = afterId ? afterId[2] : raw.replace(/^\[music\]/i, "");
-  return source.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  // Peer import filenames carry a source marker, sequence and hash. Strip
+  // only that known trailing structure; keep meaningful numbers in titles.
+  const clean = source.replace(/(?:[\s_-]+)同行爆款(?:[\s_-]+\d+)?(?:[\s_-]+[a-f0-9]{8,64})?\s*$/i, "");
+  return clean.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function hashSeed(value) {

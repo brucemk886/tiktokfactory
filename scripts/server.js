@@ -2994,6 +2994,7 @@ async function publishThroughOfficialTikTok(payload = {}) {
               fallback: {
                 novelId: item.job.video?.novelId || payload.novelId,
                 platform: item.job.video?.novelPlatform || payload.novelPlatform,
+                promotionCode: item.job.video?.novelPromotionCode || payload.novelPromotionCode,
                 promotionCopy: item.job.video?.promotionCopy
               }
             }),

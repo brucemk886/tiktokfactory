@@ -414,3 +414,51 @@ test("auto TikTok captions prefer the video fields and look up the book list whe
   assert.notEqual(redditCaption, "#reddit");
   fs.rmSync(workDir, { recursive: true, force: true });
 });
+
+
+test("auto captions always retain the video promotion code across templates", () => {
+  const audioName = "My Ex-Fiancée Cheated, So I Found A New One 同行爆款-009-8f8b9ecc.mp3";
+  for (let i = 0; i < 100; i++) {
+    const caption = resolveTikTokCaption({
+      video: { audioName, novelPlatform: "NovelMaster", novelPromotionCode: "479138",
+        promotionCopy: "Search 000000 on WrongApp", openingTitle: i % 2 ? "The letter changed everything." : "" },
+      seed: `account-${i}:video.mp4`
+    });
+    assert.match(caption, /Read the full story on Novel Master\. Search code: 479138\./);
+    assert.match(caption, /The letter changed everything|My Ex Fiancée Cheated/);
+    assert.doesNotMatch(caption, /同行爆款|8f8b9ecc|009|000000|WrongApp/);
+    assert.equal(caption.split("Search code: 479138.").length, 2);
+  }
+  assert.equal(extractAudioCaptionText(audioName), "My Ex Fiancée Cheated, So I Found A New One");
+  assert.equal(extractAudioCaptionText("3 Years in Prison 同行爆款-012-1234abcd.mp3"), "3 Years in Prison");
+  assert.equal(extractAudioCaptionText("1984.mp3"), "1984");
+  assert.equal(extractAudioCaptionText("Chapter 009.mp3"), "Chapter 009");
+});
+
+test("long auto captions reserve space for promotion and preserve manual text", () => {
+  for (let i = 0; i < 50; i++) {
+    const caption = buildTikTokCaption({ hookLine: "A very long story. ".repeat(400),
+      platform: "GoodNovel", promotionCode: "ABC123", seed: String(i) });
+    assert.ok(caption.length <= 2200);
+    assert.match(caption, /Search code: ABC123\./);
+    assert.match(caption, /#GoodNovel/);
+  }
+  assert.equal(resolveTikTokCaption({ captionMode: "manual", manualCaption: "My own text",
+    video: { novelPlatform: "NovelMaster", novelPromotionCode: "479138" } }), "My own text");
+});
+
+test("caption code lookup uses the matched novel and prefers the video snapshot", () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "caption-code-"));
+  try {
+    fs.writeFileSync(path.join(workDir, "novel-content-library.json"), JSON.stringify({
+      novels: [{ id: "n1", platform: "NovelMaster", promotionCode: "479138" },
+        { id: "n2", platform: "GoodNovel", promotionCode: "222222" }], scripts: []
+    }));
+    assert.match(resolveTikTokCaption({ workDir, video: { novelId: "n1", audioName: "Story.mp3" } }), /Search code: 479138\./);
+    const snapshot = resolveTikTokCaption({ workDir, video: { novelId: "n1", novelPromotionCode: "111111", audioName: "Story.mp3" } });
+    assert.match(snapshot, /Search code: 111111\./);
+    assert.doesNotMatch(snapshot, /479138|222222/);
+    assert.match(resolveTikTokCaption({ video: { audioName: "Story.mp3" },
+      fallback: { platform: "MotoNovel", promotionCode: "333333" } }), /Search code: 333333\./);
+  } finally { fs.rmSync(workDir, { recursive: true, force: true }); }
+});
