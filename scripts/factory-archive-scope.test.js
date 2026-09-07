@@ -32,3 +32,11 @@ test("receiver stores nothing for a customer without a factory assignment", asyn
   assert.equal(result.upserted,0);
   assert.equal(writes.length,0);
 });
+
+
+test("worker converts scope authentication rejection into a 401 response", async () => {
+  const {default:worker}=await import("../factory-cloud/src/index.js");
+  const db={prepare(){return {bind(){return this;},async first(){return null;}};}};
+  const response=await worker.fetch(new Request("https://factory.test/api/integrations/signal-desk/archive-scope"),{DB:db},{});
+  assert.equal(response.status,401);
+});

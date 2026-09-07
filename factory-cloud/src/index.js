@@ -30,7 +30,7 @@ export default {
       if (authResponse) return authResponse;
 
       if (url.pathname.startsWith("/api/integrations/signal-desk/")) {
-        return handleSignalDeskIntegration(request, env, url);
+        return await handleSignalDeskIntegration(request, env, url);
       }
 
       if (url.pathname.startsWith("/api/")) {
