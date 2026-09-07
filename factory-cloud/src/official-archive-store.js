@@ -1,3 +1,5 @@
+import { loadFactoryArchiveScope } from "./factory-archive-scope.js";
+import { filterFactoryArchiveAccounts } from "../../scripts/factory-archive-scope.js";
 import {
   accountVideoObjectKey,
   buildAccountRow,
@@ -28,7 +30,7 @@ export async function refreshOfficialArchive(env, db, { pagesPerRun = ARCHIVE_RE
     const params = new URLSearchParams({ limit: "20", videosPerAccount: "100" });
     if (cursor) params.set("cursor", cursor);
     const data = await signalDesk(env, db, `/api/integrations/local-factory/archive?${params}`);
-    const accounts = data.accounts || [];
+    const accounts = filterFactoryArchiveAccounts(data.accounts, await loadFactoryArchiveScope(db));
     if (accounts.length) {
       await upsertOfficialAccounts(env, db, accounts);
       pulled += accounts.length;
@@ -58,11 +60,11 @@ export async function refreshOfficialArchive(env, db, { pagesPerRun = ARCHIVE_RE
 }
 
 export async function applyOfficialArchivePush(env, db, payload = {}) {
-  const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+  const accounts = filterFactoryArchiveAccounts(payload.accounts, await loadFactoryArchiveScope(db));
   const deleteAccountKeys = uniqueAccountKeys(payload.deleteAccountKeys);
   if (accounts.length) await upsertOfficialAccounts(env, db, accounts);
   if (deleteAccountKeys.length) await deleteOfficialAccounts(env, db, deleteAccountKeys);
-  return readArchiveMeta(db);
+  return { ...(await readArchiveMeta(db)), upserted: accounts.length };
 }
 
 export async function getOfficialOperationSignals(env, db, options = {}) {
@@ -113,16 +115,19 @@ export async function loadArchiveViewsByVideoIds(db, videoIds = []) {
 export const LATEST_ACCOUNTS_LIMIT = 5000;
 
 export async function listLatestArchiveAccounts(db) {
-  return (await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE LIMIT ?").bind(LATEST_ACCOUNTS_LIMIT).all()).results || [];
+  const allowed = new Set(await loadFactoryArchiveScope(db));
+  return ((await db.prepare("SELECT * FROM official_accounts_latest ORDER BY label COLLATE NOCASE LIMIT ?").bind(LATEST_ACCOUNTS_LIMIT).all()).results || []).filter(row => allowed.has(row.account_key));
 }
 
 export async function listAccountDirectory(db) {
-  return (await db.prepare(`
+  const allowed = new Set(await loadFactoryArchiveScope(db));
+  const rows = (await db.prepare(`
     SELECT account_key, label, synced_at, video_count, views
     FROM official_accounts_latest
     ORDER BY label COLLATE NOCASE
     LIMIT ?
   `).bind(LATEST_ACCOUNTS_LIMIT).all()).results || [];
+  return rows.filter(row => allowed.has(row.account_key));
 }
 
 export function directoryUsername(row = {}) {
@@ -161,7 +166,8 @@ export async function loadLatestArchiveVideosByAccount(env, db, videosPerAccount
 }
 
 export async function loadVideosForAccounts(env, db, accountKeys = [], videosPerAccount = 80) {
-  const keys = Array.from(new Set((accountKeys || []).map((key) => String(key || "").trim()).filter(Boolean)));
+  const allowed = new Set(await loadFactoryArchiveScope(db));
+  const keys = Array.from(new Set((accountKeys || []).map((key) => String(key || "").trim()).filter(key => allowed.has(key))));
   const videosByAccount = new Map();
   const missing = [];
   for (const batch of chunk(keys, R2_CONCURRENCY)) {

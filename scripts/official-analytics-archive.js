@@ -3,6 +3,7 @@ import path from "node:path";
 import { closeOfficialHistoryDatabase, officialHistoryArchiveDir, officialHistoryDatabasePath, openOfficialHistoryDatabase } from "./official-history-db.js";
 import { summarizeOperationSignals } from "./private-tiktok-signals.js";
 
+const REFRESH_MS = 2 * 60 * 60 * 1000;
 const DAY_MS = 86_400_000;
 const DEFAULT_SYNC_HOUR = 8;
 const DEFAULT_SYNC_MINUTE = 30;
@@ -46,8 +47,8 @@ export function createOfficialAnalyticsArchive({
     const dateKey = beijingDateKey(startedAt);
     const previousRun = getRun(database, dateKey);
     const checkpoint = getSyncCheckpoint(database, dateKey);
-    if (!ignoreDailyGuard && previousRun && checkpoint?.status === "completed") {
-      return { skipped: true, reason: "already_archived_today", ...runResult(previousRun, archiveDir, databasePath) };
+    if (!ignoreDailyGuard && previousRun && checkpoint?.status === "completed" && startedAt - Number(previousRun.completed_at || previousRun.started_at || 0) < REFRESH_MS) {
+      return { skipped: true, reason: "already_archived_recently", ...runResult(previousRun, archiveDir, databasePath) };
     }
 
     let cursor = checkpoint?.status === "running" ? String(checkpoint.cursor || "") : "";
@@ -131,12 +132,8 @@ export function createOfficialAnalyticsArchive({
     if (timer) clearTimeout(timer);
     const current = now();
     const lastRun = getLatestRun(database);
-    const todayTarget = beijingTimeForDate(current, syncHour, syncMinute);
-    const todayKey = beijingDateKey(current);
-    const todayCheckpoint = getSyncCheckpoint(database, todayKey);
-    const shouldCatchUp = current >= todayTarget
-      && (lastRun?.date_key !== todayKey || todayCheckpoint?.status !== "completed");
-    const target = shouldCatchUp ? current + 15_000 : nextBeijingRun(current, syncHour, syncMinute);
+    const target = lastRun?.completed_at && current - Number(lastRun.completed_at) < REFRESH_MS
+      ? Number(lastRun.completed_at) + REFRESH_MS : current + 15_000;
     timer = setTimeout(async () => {
       try { await run(); } catch (error) { logger.error("Official analytics archive failed:", error); }
       scheduleNext();
@@ -148,6 +145,7 @@ export function createOfficialAnalyticsArchive({
     const lastRun = getLatestRun(database);
     return {
       running: Boolean(running),
+      refreshIntervalMs: REFRESH_MS,
       syncHour,
       syncMinute,
       archiveDir,

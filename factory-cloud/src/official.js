@@ -343,6 +343,18 @@ async function listAllAccounts(env, db, refresh = false) {
   }
   const store = await loadGroupStore(db);
   const accounts = directoryAccountsFromRows(await listAccountDirectory(db));
+  // Only identifiers of factory-owner accounts are discoverable before assignment.
+  if (refresh || !accounts.length) {
+    const known = new Set(accounts.map(account => account.schema));
+    let cursor = "";
+    for (let page = 0; page < 100; page++) {
+      const params = new URLSearchParams({limit:"100", cursor});
+      const data = await signalDesk(env, db, `/api/integrations/local-factory/accounts?${params}`);
+      for (const account of data.accounts || []) if (!known.has(account.schema)) { accounts.push(account); known.add(account.schema); }
+      if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
+      cursor = data.nextCursor;
+    }
+  }
   return attachAccounts({ connected: true, source: refresh ? "archive-refresh" : "archive", accounts }, store);
 }
 

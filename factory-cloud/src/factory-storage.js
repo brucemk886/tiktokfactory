@@ -1,3 +1,4 @@
+import { loadFactoryArchiveScope } from "./factory-archive-scope.js";
 import { buildFactoryStorageReport } from "../../scripts/factory-storage-report.js";
 import { errorJson, json, readJson } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -20,6 +21,10 @@ export async function handleSignalDeskIntegration(request, env, url) {
     const force = url.searchParams.get("refresh") === "1";
     return json(await getFactoryStorageReport(env, env.DB, { force }));
   }
+  if (request.method === "GET" && url.pathname === "/api/integrations/signal-desk/archive-scope") {
+    await requireSignalDeskCaller(request, env);
+    return json({ accountKeys: await loadFactoryArchiveScope(env.DB) });
+  }
   if (request.method === "POST" && url.pathname === "/api/integrations/signal-desk/archive-accounts") {
     await requireSignalDeskCaller(request, env);
     const payload = await readJson(request);
@@ -31,7 +36,7 @@ export async function handleSignalDeskIntegration(request, env, url) {
       throw Object.assign(new Error("缺少要写入或删除的账号。"), { statusCode: 400 });
     }
     const meta = await applyOfficialArchivePush(env, env.DB, { accounts, deleteAccountKeys });
-    return json({ ok: true, ...meta, upserted: accounts.length, deleted: deleteAccountKeys.length });
+    return json({ ok: true, ...meta, deleted: deleteAccountKeys.length });
   }
   return errorJson("未知的中台对接接口。", 404);
 }

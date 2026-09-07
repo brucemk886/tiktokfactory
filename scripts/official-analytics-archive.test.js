@@ -54,3 +54,19 @@ test("imports legacy daily JSON once and keeps the source file", (context) => {
   assert.equal(dashboard.videoHistory.length, 1);
   assert.equal(fs.existsSync(legacyPath), true);
 });
+
+
+test("local archive refreshes within the same day only after two hours", async context => {
+  const workDir=fs.mkdtempSync(path.join(os.tmpdir(),"official-cadence-"));
+  let now=Date.parse("2026-09-07T08:30:00+08:00"), calls=0;
+  const service={listArchivePage:async()=>{calls++;return {accounts:[],hasMore:false,nextCursor:""};}};
+  const archive=createOfficialAnalyticsArchive({workDir,service,now:()=>now,requestIntervalMs:0});
+  context.after(()=>{archive.close();fs.rmSync(workDir,{recursive:true,force:true});});
+  await archive.run();
+  now+=60*60*1000;
+  assert.equal((await archive.run()).skipped,true);
+  assert.equal(calls,1);
+  now+=60*60*1000;
+  await archive.run();
+  assert.equal(calls,2);
+});
