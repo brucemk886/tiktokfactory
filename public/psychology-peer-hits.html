@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>同行爆款 · 心理学</title>
+  <link rel="stylesheet" href="/app.css" /><link rel="stylesheet" href="/module-pages.css" />
+  <link rel="stylesheet" href="/theme-ops.css" /><link rel="stylesheet" href="/psychology-peer-hits.css" />
+</head>
+<body class="work-page module-page psy-hits-page">
+  <nav class="side-tabs" aria-label="主导航"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a></nav>
+  <main class="module-main">
+    <header class="module-header"><div><p class="module-kicker">PSYCHOLOGY · PEER HITS</p><h1>同行爆款</h1><p>收集心理学视频与表现数据。grokbot 写入后，同一视频的数据会更新到已有记录。</p></div><button id="refreshBtn" type="button">刷新列表</button></header>
+    <details class="hits-panel" id="apiPanel"><summary>grokbot 写入接口</summary>
+      <p>专用密钥只能写入心理学同行爆款。密钥生成后仅显示一次，请复制给 grokbot。</p>
+      <label>接口地址<input id="endpoint" readonly /></label>
+      <div class="hits-actions"><button id="createKeyBtn" type="button">生成 API Key</button><button id="revokeKeyBtn" type="button" hidden>停用密钥</button><span id="keyStatus" role="status">正在读取接口配置…</span></div>
+      <div id="newKeyPanel" hidden><label>新密钥<input id="newApiKey" readonly autocomplete="off" /></label><button id="copyKeyBtn" type="button">复制密钥</button></div>
+      <p>POST · Authorization: Bearer YOUR_API_KEY · Content-Type: application/json</p>
+      <p>支持单条对象或 { "items": [...] } 批量提交，每次最多 100 条、1 MB。视频链接必填；其余字段可分次补充。相同视频不重复添加，未提供或为 null 的字段保留原值。collectedAt 较旧的记录会被忽略。</p>
+      <pre id="apiExample"></pre><button id="copyExampleBtn" type="button">复制请求示例</button>
+      <p>播放等数量可写整数或 12.8万、128K。时间使用带时区的 ISO 格式或 Unix 时间戳。videoId 使用字符串；videoData 可保留其他视频数据。</p>
+    </details>
+    <details class="hits-panel"><summary>手动添加视频</summary>
+      <form id="importForm">
+        <div class="hits-form-grid">
+          <label class="wide">视频链接<input name="videoUrl" type="url" required maxlength="2000" placeholder="https://www.tiktok.com/@creator/video/..." /></label>
+          <label class="wide">标题<input name="title" maxlength="2000" placeholder="视频标题或文案" /></label>
+          <label>账号名称<input name="accountName" maxlength="160" /></label><label>账号用户名<input name="accountUsername" maxlength="160" placeholder="@username" /></label>
+          <label>播放量<input name="playCount" placeholder="例如 128000 / 12.8万" /></label><label>点赞<input name="likeCount" /></label>
+          <label>评论<input name="commentCount" /></label><label>收藏<input name="favoriteCount" /></label><label>分享<input name="shareCount" /></label><label>时长（秒）<input name="durationSeconds" type="number" min="0" max="86400" step="0.01" /></label>
+          <label class="wide">其他视频数据（选填 JSON）<textarea name="videoData" rows="3" placeholder='{"language":"en","hashtags":["psychology"]}'></textarea></label>
+        </div>
+        <div class="hits-actions"><button id="importBtn" type="submit">保存视频</button><span id="importStatus" role="status"></span></div>
+      </form>
+    </details>
+    <section class="hits-panel">
+      <div class="hits-toolbar"><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、账号名称、用户名或视频链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="collected">最新采集</option><option value="published">最新发布</option></select></label></div>
+      <p id="listStatus" role="status">正在读取…</p>
+      <div class="hits-table-wrap"><table><thead><tr><th>视频 / 账号</th><th>播放</th><th>点赞</th><th>评论</th><th>收藏</th><th>分享</th><th>时长</th><th>发布时间 / 采集时间<br /><small>北京时间</small></th><th>其他数据</th></tr></thead><tbody id="hitRows"></tbody></table></div>
+      <div class="hits-pagination"><button id="previousBtn" type="button" disabled>上一页</button><span id="pageInfo"></span><button id="nextBtn" type="button" disabled>下一页</button></div>
+    </section>
+  </main>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js"></script>
+</body>
+</html>

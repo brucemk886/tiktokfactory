@@ -1,3 +1,4 @@
+import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -19,7 +20,7 @@ const root = process.cwd();
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
 if (!payloadPath || !jobPath) throw new Error("Missing psychology collage payload or job path.");
-const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
+const payload = psychologyImagePayload("psychology-collage", JSON.parse(fs.readFileSync(payloadPath, "utf8")));
 const config = readConfig(root);
 const { outputDir, workDir } = resolveStorageDirs(root, config);
 const settings = readJson(path.join(workDir, "psychology-video-settings.json"));

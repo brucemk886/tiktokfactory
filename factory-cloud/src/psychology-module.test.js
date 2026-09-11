@@ -1,8 +1,10 @@
+import { psychologyImagePayload } from "../../scripts/psychology-image-policy.js";
+import { buildKieImageTaskInput } from "../../scripts/kie-image-models.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { publicPsychologySettings } from "./compat.js";
-import { persistableJobResult, publicJob } from "./jobs.js";
+import { handleCompat, publicPsychologySettings } from "./compat.js";
+import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
@@ -114,5 +116,54 @@ test("mid-video cards no longer link psychology templates and titles match their
   for (const [file,title] of [["psychology.html","四图测试模板"],["psychology-collage.html","纸张拼贴模板"],["psychology-narrative.html","互动测试模板"]]) {
     assert.ok(html(file).includes("<h1>"+title+"</h1>"));
     assert.ok(html(file).includes('src="/access.js"'));
+  }
+});
+
+
+test("all psychology jobs override stale image choices at enqueue and worker delivery", async () => {
+  for (const type of ["psychology", "psychology-collage", "psychology-target-2", "psychology-narrative"]) {
+    const original={imageModel:"grok",imageModels:["nano-banana","grok"],topic:"A test",totalVideos:3,generation:{question:"Choose a picture",imageModels:["grok"]}};
+    const normalized=psychologyImagePayload(type,original);
+    assert.equal(normalized.imageModel,"z-image");assert.deepEqual(normalized.imageModels,["z-image"]);
+    assert.deepEqual(normalized.generation.imageModels,["z-image"]);assert.equal(normalized.totalVideos,3);
+    assert.equal(original.imageModel,"grok");
+    assert.equal(buildKieImageTaskInput({imageModel:normalized.imageModel,prompt:"Photo",aspectRatio:"16:9"}).model,"z-image");
+    let inserted;
+    const db={prepare(){return {bind(...args){inserted=args;return this;},async run(){return {meta:{changes:1}};}};}};
+    await enqueueJob(db,{type,payload:original,createdBy:"test"});
+    assert.equal(JSON.parse(inserted[4]).imageModel,"z-image");
+    const row={id:"old-job",type,status:"queued",payload_json:JSON.stringify(original)};
+    const readDb={prepare(){return {bind(){return this;},async first(){return row;}};}};
+    const req=new Request("https://example.test/api/worker/jobs/old-job",{headers:{authorization:"Bearer test-worker"}});
+    const response=await handleJobs(req,{DB:readDb,WORKER_TOKEN:"test-worker"},new URL(req.url),null,{});
+    assert.equal(response.status,200);assert.equal((await response.json()).job.payload.imageModel,"z-image");
+  }
+  const other={imageModel:"grok"};assert.equal(psychologyImagePayload("quiz",other),other);
+});
+
+test("saved psychology settings cannot restore a retired model", async () => {
+  const stale={kieApiKey:"test-key",elevenLabsApiKey:"test-voice-key",elevenLabsVoiceId:"voice",imageModel:"grok",imageModels:["nano-banana"],totalVideos:3};
+  assert.deepEqual(publicPsychologySettings(stale).imageModels,["z-image"]);
+  let saved;
+  const db={prepare(){return {bind(...args){this.args=args;return this;},async first(){return {value_json:JSON.stringify(stale)};},async run(){saved=JSON.parse(this.args[1]);return {};}};}};
+  const req=new Request("https://example.test/api/psychology/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({imageModel:"nano-banana",imageModels:["grok"]})});
+  const response=await handleCompat(req,{DB:db},new URL(req.url),{user:{role:"admin"}});
+  assert.equal(response.status,200);assert.equal(saved.imageModel,"z-image");assert.deepEqual(saved.imageModels,["z-image"]);assert.equal(saved.elevenLabsVoiceId,"voice");assert.equal(saved.totalVideos,3);
+});
+
+test("retired psychology topic UI and APIs are no longer used", async () => {
+  assert.equal(SIDEBAR_MODULES.some(item=>item.id==="psychology-topics"),false);
+  assert.equal(sidebarModuleIdsForRole("admin").includes("psychology-topics"),false);
+  assert.equal(pageFileFor("/psychology-topics"),"");
+  for(const suffix of ["", "/settings", "/sync", "/old-topic"]){
+    const req=new Request("https://example.test/api/psychology-topics"+suffix,{method:suffix==="/sync"?"POST":"GET"});
+    const res=await handleCompat(req,{DB:{}},new URL(req.url),{user:{role:"admin"}});assert.equal(res.status,410);
+  }
+  const source=fs.readFileSync(new URL("../../public/psychology.js",import.meta.url),"utf8");
+  assert.doesNotMatch(source,/psychology-topics|selectedBatchTopicIds|initTopicSelection/);
+  for(const name of ["psychology.html","psychology-collage.html","psychology-narrative.html"]){
+    const html=fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
+    assert.doesNotMatch(html,/value="(?:nano-banana|grok)"|href="\/psychology-topics"/);
+    assert.match(html,/value="z-image" checked disabled/);
   }
 });

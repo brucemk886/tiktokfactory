@@ -1,3 +1,4 @@
+import { psychologyImagePayload } from "../../scripts/psychology-image-policy.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
 import { kvGet, kvSet } from "./kv.js";
@@ -201,6 +202,7 @@ export function isJobInModule(type, moduleKey = "") {
 }
 
 export async function enqueueJob(db, { type, title, payload, createdBy }) {
+  payload = psychologyImagePayload(type, payload);
   const id = safeId(`${type}-${Date.now()}-${randomToken(4)}`);
   const stamp = now();
   await db.prepare(`
@@ -633,7 +635,7 @@ export function publicJob(job) {
 function workerJob(job) {
   return {
     ...publicJob(job),
-    payload: parseJson(job.payload_json, {})
+    payload: psychologyImagePayload(job.type, parseJson(job.payload_json, {}))
   };
 }
 

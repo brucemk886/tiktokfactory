@@ -1,3 +1,4 @@
+import { handlePsychologyPeerHits, PSYCHOLOGY_PEER_API } from "./psychology-peer-hits.js";
 import { handleAi } from "./ai.js";
 import { handleAccounts, handleAuth, getSession, hasUsers } from "./auth.js";
 import { handleCompat } from "./compat.js";
@@ -29,6 +30,8 @@ export default {
       const authResponse = await handleAuth(request, env, url);
       if (authResponse) return authResponse;
 
+      if (url.pathname === PSYCHOLOGY_PEER_API) return await handlePsychologyPeerHits(request, env, url, null);
+
       if (url.pathname.startsWith("/api/integrations/signal-desk/")) {
         return await handleSignalDeskIntegration(request, env, url);
       }
@@ -38,7 +41,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyPeerHits, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
@@ -57,6 +60,8 @@ export default {
         }
       }
 
+      if (url.pathname === "/psychology-topics" || url.pathname === "/psychology-topics.html") return redirect("/psychology");
+      if (url.pathname === "/psychology-topics.js" || url.pathname === "/psychology-topics.css") return errorJson("心理学题库已移除。", 410);
       if (url.pathname === "/asset-usage" || url.pathname === "/asset-usage.html") {
         return redirect("/tasks");
       }

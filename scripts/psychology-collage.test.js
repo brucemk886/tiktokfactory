@@ -57,8 +57,8 @@ test("prompts enforce 4:3 paper collage, three hooks, bilingual captions and no 
   assert.doesNotMatch(zImageVisual, /Marais|balustrade/);
 });
 
-test("middle-video workbench names the long-form template psychology", () => {
+test("psychology templates have moved out of the middle-video workbench", () => {
   const html = fs.readFileSync(new URL("../public/mid-video.html", import.meta.url), "utf8");
-  assert.match(html, /href="\/psychology-collage"[\s\S]*?<strong>心理学 · 目标1<\/strong>/);
-  assert.match(html, /href="\/psychology-target-2"[\s\S]*?<strong>心理学 · 目标2<\/strong>/);
+  assert.doesNotMatch(html, /href="\/psychology-collage"/);
+  assert.doesNotMatch(html, /href="\/psychology-target-2"/);
 });

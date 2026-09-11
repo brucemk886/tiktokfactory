@@ -1,3 +1,4 @@
+import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,7 +13,7 @@ const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
 if (!payloadPath || !jobPath) throw new Error("Missing psychology task payload or job path.");
 
-const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
+const payload = psychologyImagePayload("psychology", JSON.parse(fs.readFileSync(payloadPath, "utf8")));
 const aspectRatio = payload.aspectRatio === "9:16" ? "9:16" : "16:9";
 const creativeVariant = Math.max(1, Number(payload.creativeVariant) || 1);
 const config = readConfig(root);

@@ -16,7 +16,6 @@
         <span><strong>Local Factory</strong><small>内容自动化</small></span>
       </a>
       <nav class="tasks-nav" aria-label="主导航">
-        <a data-admin-only href="/psychology-topics">心理学题目</a>
         <a data-admin-only class="is-active" href="/psychology">四图测试模板</a>
         <a data-admin-only href="/schulte">舒尔特训练</a>
         <a data-admin-only href="/ai">AI 创作</a>
@@ -36,8 +35,8 @@
 
     <main class="psy-main">
       <header class="psy-header">
-        <div><p class="eyebrow">PSYCHOLOGY · FOUR-IMAGE TEST</p><h1>四图测试模板</h1><p>从题库选择或输入题目，自动完成生图、配音、合成与 GeeLark 发布。</p></div>
-        <div class="header-actions"><a class="quiet-link" href="/psychology-topics">从题库选择</a><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
+        <div><p class="eyebrow">PSYCHOLOGY · FOUR-IMAGE TEST</p><h1>四图测试模板</h1><p>输入测试题目，自动完成生图、配音、合成与 GeeLark 发布。</p></div>
+        <div class="header-actions"><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
       </header>
 
       <div class="psy-grid">
@@ -48,7 +47,7 @@
             <label class="field"><span>心理测试题目</span><textarea id="question" rows="3" placeholder="例如：你在压力大的时候，会下意识选择哪种方式缓解？"></textarea></label>
             <label class="field"><span>选项含义或结果提示 <em>可选</em></span><textarea id="answerGuide" rows="3" placeholder="可以填写四个选项及含义；留空时由 AI 设计"></textarea></label>
             <label class="field"><span>视频顶部钩子标题</span><input id="hookTitle" type="text" placeholder="一句简短钩子，默认使用测试题目" /></label>
-            <label class="field"><span>题库参考图地址 <em>默认由 Nano Banana 重新生图，仅在生图失败时备用</em></span><input id="sourceImageUrl" type="url" placeholder="https://example.com/psychology-test.png" /></label>
+            <label class="field"><span>参考图地址 <em>默认由 Z-Image 重新生图，仅在生图失败时备用</em></span><input id="sourceImageUrl" type="url" placeholder="https://example.com/psychology-test.png" /></label>
 <div class="aspect-prompt-row">
               <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="16:9" selected>横版 16:9（四图横排）</option><option value="9:16">竖版 9:16</option></select></label>
               <div class="aspect-prompt-note"><strong id="aspectPromptTitle">当前：横版 16:9</strong><span id="aspectPromptHint">AI 将生成 A/B/C/D 四图横排描述，视频使用 Remotion 横版模板。</span></div>
@@ -60,11 +59,9 @@
           </article>
 
           <article class="psy-section">
-            <div class="section-head"><span>02</span><div><h2>生成设置</h2><p>每个模型会生成独立图片；配音只生成一次并在同一任务内复用。</p></div></div>
+            <div class="section-head"><span>02</span><div><h2>生成设置</h2><p>使用 Z-Image 生成图片；配音只生成一次并在同一任务内复用。</p></div></div>
             <div class="model-row">
-              <label class="model-option"><input type="checkbox" name="imageModel" value="nano-banana" checked /><span><strong>Nano Banana</strong><small>指令遵循稳定，适合正式成片</small></span></label>
-              <label class="model-option"><input type="checkbox" name="imageModel" value="z-image" /><span><strong>Z-Image</strong><small>按官方写实摄影出图，适合中视频和心理测试</small></span></label>
-              <label class="model-option"><input type="checkbox" name="imageModel" value="grok" /><span><strong>Grok Imagine</strong><small>成本较低，适合批量测试</small></span></label>
+              <label class="model-option"><input type="checkbox" name="imageModel" value="z-image" checked disabled /><span><strong>Z-Image</strong><small>按官方写实摄影出图，适合中视频和心理测试</small></span></label>
             </div>
             <div class="four-column">
               <label class="field"><span>生成视频总数</span><input id="totalVideos" type="number" min="1" max="300" value="1" /></label>

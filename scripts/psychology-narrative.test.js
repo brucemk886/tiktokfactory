@@ -174,7 +174,7 @@ test("clinical-looking image tests are blocked until rewritten as non-diagnostic
   assert.ok(score.failedDimensions.includes("safety"));
 });
 
-test("middle-video workbench keeps the short psychology quiz separate from long-form collage", async () => {
+test("psychology keeps interactive test distinct from paper collage", async () => {
   const fs = await import("node:fs");
   const html = fs.readFileSync(new URL("../public/mid-video.html", import.meta.url), "utf8");
   const page = fs.readFileSync(new URL("../public/psychology-narrative.html", import.meta.url), "utf8");
@@ -182,10 +182,10 @@ test("middle-video workbench keeps the short psychology quiz separate from long-
   const server = fs.readFileSync(new URL("./server.js", import.meta.url), "utf8");
   const worker = fs.readFileSync(new URL("./psychology-narrative-job.js", import.meta.url), "utf8");
   const composition = fs.readFileSync(new URL("../remotion/psychology-landscape.jsx", import.meta.url), "utf8");
-  assert.match(html, /href="\/psychology-target-2"[\s\S]*?<strong>心理学 · 目标2<\/strong>/);
-  assert.match(html, /href="\/psychology-collage"[\s\S]*?<strong>心理学 · 目标1<\/strong>/);
-  assert.match(html, /简笔人动作/);
-  assert.match(page, /<h1>心理学 · 目标2<\/h1>/);
+  assert.doesNotMatch(html, /href="\/psychology-target-2"/);
+  assert.doesNotMatch(html, /href="\/psychology-collage"/);
+  assert.match(page, /SVG 动作/);
+  assert.match(page, /<h1>互动测试模板<\/h1>/);
   assert.match(page, /data-quiz-type="hidden-number"/);
   assert.match(page, /data-quiz-type="position-choice"/);
   assert.match(page, /data-quiz-type="character-choice"/);

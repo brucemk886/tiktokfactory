@@ -1,3 +1,4 @@
+import { psychologyImagePayload, PSYCHOLOGY_IMAGE_MODEL } from "../../scripts/psychology-image-policy.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
 import { errorJson, json, now, readJson, redirect, safeId } from "./http.js";
@@ -63,6 +64,8 @@ export async function handleCompat(request, env, url, session) {
         ...defaultPsychology(),
         ...current,
         ...incoming,
+        imageModel: PSYCHOLOGY_IMAGE_MODEL,
+        imageModels: [PSYCHOLOGY_IMAGE_MODEL],
         kieApiKey: String(incoming.kieApiKey || current.kieApiKey || "").trim(),
         elevenLabsApiKey: String(incoming.elevenLabsApiKey || current.elevenLabsApiKey || "").trim(),
         elevenLabsVoiceId: String(incoming.elevenLabsVoiceId ?? current.elevenLabsVoiceId ?? "").trim(),
@@ -73,16 +76,8 @@ export async function handleCompat(request, env, url, session) {
     }
   }
 
-  if (method === "GET" && pathname === "/api/psychology-topics") {
-    const items = await kvGet(db, "psychology-topics", []);
-    return json({ items, total: items.length, page: 1, pageSize: items.length });
-  }
-  const topicMatch = pathname.match(/^\/api\/psychology-topics\/([^/]+)$/);
-  if (method === "GET" && topicMatch) {
-    const items = await kvGet(db, "psychology-topics", []);
-    const topic = items.find((item) => item.id === decodeURIComponent(topicMatch[1]));
-    if (!topic) return errorJson("题目不存在。", 404);
-    return json({ topic });
+  if (pathname === "/api/psychology-topics" || pathname.startsWith("/api/psychology-topics/")) {
+    return errorJson("心理学题库已移除，请在模板中输入测试题目。", 410);
   }
 
   if (pathname === "/api/auto-tasks") {
@@ -103,7 +98,7 @@ export async function handleCompat(request, env, url, session) {
     if (method === "POST") {
       const payload = await readJson(request);
       const taskType = normalizeTaskType(payload.taskType);
-      const generation = normalizeRedditGeneration(payload.generation);
+      const generation = psychologyImagePayload(taskType, normalizeRedditGeneration(payload.generation));
       const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
       if (taskType === "schulte") {
         payload.module = "mid-video";
@@ -533,7 +528,7 @@ function defaultPsychology() {
     elevenLabsApiKey: "",
     elevenLabsVoiceId: "",
     elevenLabsModelId: "eleven_multilingual_v2",
-    imageModels: ["nano-banana"],
+    imageModels: [PSYCHOLOGY_IMAGE_MODEL],
     totalVideos: 1,
     aspectRatio: "16:9",
     titlePosition: 14,
@@ -552,7 +547,7 @@ export function publicPsychologySettings(settings = {}) {
     elevenLabsConfigured: Boolean(value.elevenLabsApiKey),
     elevenLabsVoiceId: String(value.elevenLabsVoiceId || ""),
     elevenLabsModelId: String(value.elevenLabsModelId || "eleven_multilingual_v2"),
-    imageModels: Array.isArray(value.imageModels) ? value.imageModels : ["nano-banana"],
+    imageModels: [PSYCHOLOGY_IMAGE_MODEL],
     totalVideos: Math.max(1, Number(value.totalVideos) || 1),
     aspectRatio: value.aspectRatio === "9:16" ? "9:16" : "16:9",
     titlePosition: Number(value.titlePosition) || 14,

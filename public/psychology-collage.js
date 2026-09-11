@@ -72,7 +72,7 @@ async function start() {
         sceneCount: scenes,
         totalVideos: videos,
         credit: $("#credit").value.trim() || "@心理学",
-        imageModel: document.querySelector('[name="imageModel"]:checked')?.value || "nano-banana",
+        imageModel: "z-image",
         backgroundMusicDir: $("#backgroundMusicDir").value.trim(),
         backgroundMusicVolume: clamp(number("#backgroundMusicVolume", .10), 0, .5),
         elevenLabsVoiceId: $("#voiceId").value.trim(),
