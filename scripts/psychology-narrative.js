@@ -1,3 +1,5 @@
+import { isZImageModel, zImageWriterInstructions } from "./z-image-style.js";
+
 const ALLOWED_LAYOUTS = new Set(["single", "choices-4", "choices-6"]);
 const QUIZ_TYPE_CONFIG = Object.freeze({
   "hidden-number": { label: "隐藏数字", layout: "single", choiceCount: 0, aspectRatio: "4:3" },
@@ -144,7 +146,7 @@ export function scoreNarrativePlan(plan, { targetDuration = 16 } = {}) {
   };
 }
 
-export function buildNarrativePlanPrompt({ topic, angle = "", script = "", targetDuration = 16, credit = "PSYCHOLOGY LAB", layout = "auto", quizType = "auto", language = DEFAULT_NARRATIVE_LANGUAGE } = {}) {
+export function buildNarrativePlanPrompt({ topic, angle = "", script = "", targetDuration = 16, credit = "PSYCHOLOGY LAB", layout = "auto", quizType = "auto", language = DEFAULT_NARRATIVE_LANGUAGE, imageModel = "" } = {}) {
   const duration = clamp(Math.round(Number(targetDuration) || 16), 12, 20);
   const normalizedQuizType = normalizeQuizType(quizType);
   const typeHint = quizTypePrompt(normalizedQuizType, layout);
@@ -164,7 +166,9 @@ export function buildNarrativePlanPrompt({ topic, angle = "", script = "", targe
       "Safety: this is entertainment and self-observation, not diagnosis. Never claim an image can measure depression, anxiety, a personality disorder, or disease severity. Rewrite those ideas as emotional fatigue, stress, guardedness, relationship preferences, or another non-clinical tendency. Do not cite unnamed research as proof.",
       "captions must match narration sentence by sentence in exactly the same order. Store the exact spoken English sentence in captions[i].zh (legacy primary-caption field) and set captions[i].en to an empty string. Do not summarize or rewrite it. Each caption should stay under 16 words. Audio timing and SVG changes will follow the measured duration of each sentence.",
       typeHint,
-      "visualPrompt must be written in English and describe only the test asset: a clear subject, flat composition, and generous negative space for a white information board. Do not generate a video title, explanatory text, captions, logo, watermark, play button, or UI frame. Only hidden-number and position-choice quizzes may contain test-required digits or A-F markers.",
+      isZImageModel(imageModel)
+        ? zImageWriterInstructions({ purpose: "test-asset" })
+        : "visualPrompt must be written in English and describe only the test asset: a clear subject, flat composition, and generous negative space for a white information board. Do not generate a video title, explanatory text, captions, logo, watermark, play button, or UI frame. Only hidden-number and position-choice quizzes may contain test-required digits or A-F markers.",
       "quizType must be hidden-number, position-choice, character-choice, or embrace-choice. layout must match the quiz type: single, choices-6, or choices-4.",
       "choiceLabels: use an empty array for hidden-number, A-F for position-choice, and A-D for character-choice or embrace-choice.",
       "Return exactly one JSON object and no Markdown. Use exactly these fields:",
@@ -183,7 +187,9 @@ export function buildNarrativePlanPrompt({ topic, angle = "", script = "", targe
     "安全规则：这是娱乐和自我观察内容。不要声称一张图能测出抑郁、焦虑、人格障碍或疾病程度；若选题含这类说法，改写为情绪疲惫、压力状态、防备方式或关系偏好。不要使用『心理研究已经证明』等无来源权威话术。",
     "captions 必须和 narration 逐句一一对应，数量完全相同；captions[i].zh 必须原样等于 narration 的第 i 句，不允许摘要或改写。英文每条不超过 12 个单词。后期会按每句真实配音时长同步字幕和 SVG。",
     typeHint,
-    "visualPrompt 只用英文描述测试素材本身：主体清楚、构图平直、四周留白，适合嵌入白色信息板。不要生成视频标题、解释字幕、logo、水印、播放按钮或 UI 边框。只有隐藏数字和位置选择题允许出现测试必需的数字或 A-F 标记。",
+    isZImageModel(imageModel)
+      ? zImageWriterInstructions({ purpose: "test-asset" })
+      : "visualPrompt 只用英文描述测试素材本身：主体清楚、构图平直、四周留白，适合嵌入白色信息板。不要生成视频标题、解释字幕、logo、水印、播放按钮或 UI 边框。只有隐藏数字和位置选择题允许出现测试必需的数字或 A-F 标记。",
     "quizType 只能是 hidden-number、position-choice、character-choice、embrace-choice；layout 必须与题型对应：single、choices-6 或 choices-4。",
     "choiceLabels：隐藏数字题返回空数组；位置题返回 A-F；人物或拥抱题返回 A-D。",
     "只返回一个 JSON 对象，不要 Markdown。字段必须严格为：",
@@ -191,8 +197,11 @@ export function buildNarrativePlanPrompt({ topic, angle = "", script = "", targe
   ].join("\n");
 }
 
-export function buildNarrativeRevisionPrompt({ plan, score, targetDuration = 16 } = {}) {
+export function buildNarrativeRevisionPrompt({ plan, score, targetDuration = 16, imageModel = "" } = {}) {
   const language = detectNarrationLanguage(plan?.narration || "");
+  const visualRule = isZImageModel(imageModel)
+    ? zImageWriterInstructions({ purpose: "test-asset" })
+    : "";
   if (language === "en") {
     return [
       "Fix only the failed scoring dimensions in this English psychology image-and-narration quiz. Keep the topic unchanged.",
@@ -201,10 +210,11 @@ export function buildNarrativeRevisionPrompt({ plan, score, targetDuration = 16 
       `Failed dimensions: ${(score?.failedDimensions || []).join(", ") || "overall pacing"}.`,
       `Dimension scores: ${JSON.stringify(score?.dimensions || {})}`,
       "Keep the original quiz type, 3 hooks, one 32-50 word English narration in 3-4 sentences, exact sentence-matched primary captions in captions[i].zh with captions[i].en empty, one clean test image prompt, a closing question, and a comment action.",
+      visualRule,
       "If safety failed, remove clinical diagnosis, disease-severity claims, and unsupported research claims. Reframe them as entertainment and non-clinical self-observation.",
       "Return the complete revised JSON object only, without Markdown.",
       JSON.stringify(plan)
-    ].join("\n");
+    ].filter(Boolean).join("\n");
   }
   return [
     "请只修复下面心理学图片+解说测试评分未达标的维度，不要改变选题。",
@@ -213,21 +223,28 @@ export function buildNarrativeRevisionPrompt({ plan, score, targetDuration = 16 
     `未达标维度：${(score?.failedDimensions || []).join(", ") || "整体节奏"}。`,
     `各维度：${JSON.stringify(score?.dimensions || {})}`,
     "保持原题型、3 个钩子、1 段完整中文口播、3-4 条逐句一一对应的双语字幕、一张无片头文字的测试图、结尾问题和评论动作。captions[i].zh 必须原样等于 narration 第 i 句。",
+    visualRule,
     "若未达标维度含 safety，必须删除临床诊断、疾病程度和无来源的『研究证明』断言，改成娱乐性自我观察表达。",
     "只返回修订后的完整 JSON 对象，不要 Markdown。",
     JSON.stringify(plan)
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
-export function narrativeStylePrompt(plan, { variant = 1 } = {}) {
+export function narrativeStylePrompt(plan, { variant = 1, imageModel = "" } = {}) {
   const quizType = PSYCHOLOGY_TARGET2_QUIZ_TYPES.includes(plan?.quizType) ? plan.quizType : inferQuizType(plan?.title, plan?.visualPrompt, plan?.narration);
-  return [
-    `Premium standalone test asset for an ${detectNarrationLanguage(plan?.narration || "") === "en" ? "English-language" : "Chinese-language"} psychology quiz video, clean commercial illustration, high-contrast focal subject, flat front-facing composition, social-media ready.`,
+  const metaphor = [
     quizTypeImagePrompt(quizType),
     `Visual metaphor: ${clean(plan?.visualPrompt)}`,
-    `Creative render variant ${Math.max(1, Number(variant) || 1)}: change art direction, lighting, palette, and character or object design while keeping the same test meaning.`,
+    `Creative render variant ${Math.max(1, Number(variant) || 1)}: keep the same test meaning.`,
     "The asset will be placed inside a warm-white information board with a separately animated stick-figure companion. Do not render that companion.",
     "Do not render video titles, explanations, captions, logos, watermarks, frames, play buttons, or UI. Test-relevant hidden digits or A-F position markers are allowed only when required by the selected quiz type."
+  ].join(" ");
+  if (isZImageModel(imageModel)) {
+    return metaphor;
+  }
+  return [
+    `Premium standalone test asset for an ${detectNarrationLanguage(plan?.narration || "") === "en" ? "English-language" : "Chinese-language"} psychology quiz video, clean commercial illustration, high-contrast focal subject, flat front-facing composition, social-media ready.`,
+    metaphor
   ].join("\n");
 }
 

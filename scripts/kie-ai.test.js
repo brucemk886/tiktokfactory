@@ -40,6 +40,9 @@ test("creates a z-image task through the local Kie service", async () => {
   assert.equal(created.model, "z-image");
   assert.equal(calls[0].body.model, "z-image");
   assert.equal(calls[0].body.input.aspect_ratio, "16:9");
+  assert.match(calls[0].body.input.prompt, /A quiet lake/);
+  assert.match(calls[0].body.input.prompt, /Visuals only/);
+  assert.doesNotMatch(calls[0].body.input.prompt, /Marais|official Z-Image/);
 });
 
 test("stores a synchronous Kie chat response", async () => {

@@ -121,6 +121,7 @@ async function main() {
     layout: requestedLayout,
     quizType: requestedQuizType,
     language: requestedLanguage,
+    imageModel,
   }), { layout: requestedLayout, quizType: requestedQuizType, language: requestedLanguage });
   let score = scoreNarrativePlan(plan, { targetDuration });
   let attempt = 1;
@@ -133,7 +134,7 @@ async function main() {
       score,
       plan,
     });
-    plan = await requestPlan(kie, buildNarrativeRevisionPrompt({ plan, score, targetDuration }), {
+    plan = await requestPlan(kie, buildNarrativeRevisionPrompt({ plan, score, targetDuration, imageModel }), {
       layout: requestedLayout,
       quizType: requestedQuizType,
       language: requestedLanguage,
@@ -194,7 +195,7 @@ async function main() {
     await generateSceneImage({
       kie,
       model: imageModel,
-      prompt: narrativeStylePrompt(plan, { variant }),
+      prompt: narrativeStylePrompt(plan, { variant, imageModel }),
       outputPath: imagePath,
       layout: plan.layout,
       quizType: plan.quizType,

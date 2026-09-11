@@ -145,6 +145,14 @@ test("prompts default to English, switch to Chinese for supplied Chinese copy, a
   const visual = narrativeStylePrompt(embrace, { variant: 2 });
   assert.match(visual, /four distinct pairs/);
   assert.match(visual, /variant 2/);
+  assert.match(visual, /commercial illustration/);
+  const zImagePlan = buildNarrativePlanPrompt({ topic: "拥抱偏好", targetDuration: 16, quizType: "embrace-choice", imageModel: "z-image" });
+  assert.match(zImagePlan, /REFERENCE ONLY/);
+  assert.match(zImagePlan, /Marais district of Paris/);
+  const zImageVisual = narrativeStylePrompt(embrace, { variant: 2, imageModel: "z-image" });
+  assert.match(zImageVisual, /four distinct pairs/);
+  assert.doesNotMatch(zImageVisual, /commercial illustration/);
+  assert.doesNotMatch(zImageVisual, /Marais|balustrade/);
   assert.equal(imageAspectRatioForQuizType("hidden-number"), "4:3");
   assert.equal(imageAspectRatioForQuizType("character-choice"), "16:9");
   assert.equal(quizTypeAllowsGeneratedMarks("hidden-number"), true);

@@ -43,9 +43,18 @@ test("scores a complete long-form collage plan above the production gate", () =>
 
 test("prompts enforce 4:3 paper collage, three hooks, bilingual captions and no image text", () => {
   assert.match(buildCollagePrompt({ topic: "情绪成长", targetDuration: 90, sceneCount: 10 }), /3 个明显不同的开头钩子/);
+  assert.match(buildCollagePrompt({ topic: "情绪成长", targetDuration: 90, sceneCount: 10 }), /超现实纸张拼贴/);
   const visual = collageImagePrompt(fixture().scenes[0], { variant: 2, sceneNumber: 1 });
   assert.match(visual, /landscape 4:3/);
   assert.match(visual, /No words/);
+  const zImagePlan = buildCollagePrompt({ topic: "情绪成长", targetDuration: 90, sceneCount: 10, imageModel: "z-image" });
+  assert.match(zImagePlan, /REFERENCE ONLY/);
+  assert.match(zImagePlan, /Marais district of Paris/);
+  assert.doesNotMatch(zImagePlan, /超现实纸张拼贴/);
+  const zImageVisual = collageImagePrompt(fixture().scenes[0], { variant: 2, sceneNumber: 1, imageModel: "z-image" });
+  assert.match(zImageVisual, /Scene 1 visual metaphor/);
+  assert.doesNotMatch(zImageVisual, /cut-paper collage/);
+  assert.doesNotMatch(zImageVisual, /Marais|balustrade/);
 });
 
 test("middle-video workbench names the long-form template psychology", () => {

@@ -169,6 +169,19 @@ function normalizeHookNarration(value) {
   if (words.length > 36) return `${words.slice(0, 36).join(" ").replace(/[,:;.!?]+$/g, "")}.`;
   return /[.!?。！？]$/.test(concise) ? concise : `${concise}.`;
 }
+const Z_IMAGE_WRITER_REFERENCE = "Generate a photorealistic image of a cafe terrace in the Marais district of Paris on a Wednesday morning in March 2025. It is a crisp, cool spring morning with clear skies. Locals are drinking coffee. In sharp focus should be a young woman with a pixie cut wearing a scarf, stirring a cappuccino and looking thoughtfully to the side; the waiter and street traffic behind her are blurred. The photo should have the candid, natural morning light feel of an iPhone image.";
+
+function zImageWriterInstructionsFront() {
+  return [
+    "This official Z-Image prompt is REFERENCE ONLY for writing style. Do not copy its cafe, people, clothes, or location. Do not paste it into the image-generation prompt.",
+    `Reference: ${Z_IMAGE_WRITER_REFERENCE}`,
+    "Write a new English image prompt for the current topic, matching only this rhythm: photorealistic camera photograph; specific place and time; weather or ambient light; who is in frame; hair, clothes, pose, and expression; what is sharp vs blurred; candid iPhone daylight or, for night scenes, direct flash against a dark out-of-focus background.",
+    "One continuous English paragraph. Concrete nouns and camera language. No illustration, 3D, cartoon, poster, or paper collage.",
+    "Keep the required choice layout, but photograph real people, objects, and places instead of drawing a quiz board.",
+    "Do not request readable text, logos, captions, watermarks, or UI unless the quiz type explicitly needs digits or A-F markers."
+  ].join("\n");
+}
+
 function psychologyPrompt(mode) {
   const question = $("#question").value.trim();
   const answerGuide = $("#answerGuide").value.trim();
@@ -184,6 +197,19 @@ function psychologyPrompt(mode) {
     "Do not explain the result, list choice meanings, greet the viewer, add headings, labels, quotation marks, or markdown.",
     "Return only the exact voiceover ready for text-to-speech."
   ].join("\n");
+  if (selectedModels().includes("z-image")) {
+    return [
+      zImageWriterInstructionsFront(),
+      `Create one production-ready English Z-Image prompt for a visual psychology test in ${aspectRatio}.`,
+      `Test topic: ${question}`,
+      answerGuide ? `Choice guidance: ${answerGuide}` : "Design four visually distinct real-world choices.",
+      landscape
+        ? "Arrange exactly four equal choices in one horizontal row from left to right. Keep each subject centered inside its own quarter of the canvas. Photograph a real location and do not leave a large title area."
+        : "Arrange exactly four choices in a clean balanced 2x2 composition and leave clear space near the top for a title added later.",
+      "The four choices must be instantly understandable from imagery alone. Photograph real people, objects, and places.",
+      "Return only the image prompt."
+    ].join("\n");
+  }
   return [
     `Create one production-ready English image-generation prompt for a visual psychology test in ${aspectRatio}.`,
     `Test topic: ${question}`,

@@ -1,3 +1,5 @@
+import { isZImageModel, zImageWriterInstructions } from "./z-image-style.js";
+
 const LAYOUTS = new Set(["full-bleed", "paper-collage", "split-collage"]);
 export const COLLAGE_SCORE_THRESHOLD = 85;
 
@@ -48,7 +50,7 @@ export function scoreCollagePlan(plan, { targetDuration = 90 } = {}) {
   return { score, dimensions, failedDimensions, totalZhCharacters: totalZh, passed: score >= COLLAGE_SCORE_THRESHOLD };
 }
 
-export function buildCollagePrompt({ topic, angle = "", script = "", targetDuration = 90, sceneCount = 10, credit = "@心理学" } = {}) {
+export function buildCollagePrompt({ topic, angle = "", script = "", targetDuration = 90, sceneCount = 10, credit = "@心理学", imageModel = "" } = {}) {
   const duration = clamp(Math.round(Number(targetDuration) || 90), 60, 120);
   const count = clamp(Math.round(Number(sceneCount) || 10), 8, 12);
   return [
@@ -61,7 +63,9 @@ export function buildCollagePrompt({ topic, angle = "", script = "", targetDurat
     "先写 3 个明显不同的开头钩子并选择最强的一个。第一场解说自然包含钩子。",
     "递进结构：反常识钩子 → 具体处境 → 内在冲突 → 代价 → 重新理解 → 可执行收束。不要堆砌空泛金句。",
     "每场中文解说 18-62 个汉字；英文是自然短译，最多 24 个单词。",
-    "每个 visualPrompt 用英文描述不同的超现实纸张拼贴隐喻：米白纤维纸、撕边剪纸、旧照片与绘画混合、留白、低饱和土色加一个强调色。",
+    isZImageModel(imageModel)
+      ? zImageWriterInstructions({ purpose: "scene" })
+      : "每个 visualPrompt 用英文描述不同的超现实纸张拼贴隐喻：米白纤维纸、撕边剪纸、旧照片与绘画混合、留白、低饱和土色加一个强调色。",
     "layout 只能是 full-bleed、paper-collage、split-collage，至少交替使用两种。",
     "避免绝对化、羞辱化、制造焦虑、疾病诊断和未经证实的统计。结尾给问题并要求观众评论经历。",
     "只返回 JSON，不要 Markdown：",
@@ -69,22 +73,27 @@ export function buildCollagePrompt({ topic, angle = "", script = "", targetDurat
   ].join("\n").slice(0, 7900);
 }
 
-export function buildCollageRevisionPrompt({ plan, score, targetDuration = 90 } = {}) {
+export function buildCollageRevisionPrompt({ plan, score, targetDuration = 90, imageModel = "" } = {}) {
   return [
     "只修复心理学拼贴分镜未达标的维度，不改变选题和核心观点。",
     `目标 ${clamp(Math.round(Number(targetDuration) || 90), 60, 120)} 秒；当前 ${Number(score?.score) || 0}/100。`,
     `未达标：${(score?.failedDimensions || []).join("、") || "整体节奏"}；各维度：${JSON.stringify(score?.dimensions || {})}`,
-    "保持 3 个钩子、8-12 个完整双语场景、独特纸张拼贴视觉、结尾问题与评论动作。只返回完整 JSON。",
+    isZImageModel(imageModel)
+      ? `${zImageWriterInstructions({ purpose: "scene" })}\n保持 3 个钩子、8-12 个完整双语场景、结尾问题与评论动作。只返回完整 JSON。`
+      : "保持 3 个钩子、8-12 个完整双语场景、独特纸张拼贴视觉、结尾问题与评论动作。只返回完整 JSON。",
     JSON.stringify(plan),
   ].join("\n").slice(0, 7900);
 }
 
-export function collageImagePrompt(scene, { variant = 1, sceneNumber = 1 } = {}) {
+export function collageImagePrompt(scene, { variant = 1, sceneNumber = 1, imageModel = "" } = {}) {
+  const metaphor = `Scene ${sceneNumber} visual metaphor: ${clean(scene?.visualPrompt)}. Layout: ${clean(scene?.layout || "paper-collage")}. Creative render variant ${Math.max(1, Number(variant) || 1)}.`;
+  if (isZImageModel(imageModel)) {
+    return metaphor;
+  }
   return [
     "Editorial surreal cut-paper collage for a thoughtful psychology philosophy video, landscape 4:3 composition.",
     "Warm off-white recycled paper with visible fibers, torn edges, archival photo fragments mixed with painterly landscapes, film grain, tactile shadows, earth tones with one vivid accent color, symbolic focal point and negative space.",
-    `Scene ${sceneNumber} visual metaphor: ${clean(scene?.visualPrompt)}`,
-    `Layout: ${clean(scene?.layout || "paper-collage")}. Creative render variant ${Math.max(1, Number(variant) || 1)}.`,
+    metaphor,
     "Imagery only. No words, letters, numbers, captions, labels, logos, watermarks, signs, UI, frames, or typography.",
   ].join("\n");
 }

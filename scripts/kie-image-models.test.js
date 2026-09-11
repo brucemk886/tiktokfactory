@@ -29,4 +29,17 @@ test("builds a z-image task within the 1000-character prompt limit", () => {
   assert.equal(created.input.output_format, undefined);
   assert.ok(created.input.prompt.length <= Z_IMAGE_PROMPT_LIMIT);
   assert.match(created.input.prompt, /Visuals only/);
+  assert.doesNotMatch(created.input.prompt, /Marais|balustrade|official Z-Image/);
+});
+
+test("does not inject official Z-Image reference examples into the generation prompt", () => {
+  const created = buildKieImageTaskInput({
+    imageModel: "z-image",
+    prompt: "Four real coffee cups on a marble cafe table",
+    aspectRatio: "9:16"
+  });
+  assert.match(created.input.prompt, /Four real coffee cups on a marble cafe table/);
+  assert.doesNotMatch(created.input.prompt, /Marais district of Paris/);
+  assert.doesNotMatch(created.input.prompt, /white balustrade/);
+  assert.doesNotMatch(created.input.prompt, /official Z-Image examples/);
 });

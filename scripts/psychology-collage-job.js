@@ -69,7 +69,7 @@ async function main() {
   while (!score.passed && attempt < 3) {
     attempt += 1;
     patchJob({ status: "running", percent: 7 + attempt * 3, message: `分镜 ${score.score}/100，正在定向修订第 ${attempt} 版...`, score, plan });
-    plan = await requestPlan(kie, buildCollageRevisionPrompt({ plan, score, targetDuration }), { sceneCount });
+    plan = await requestPlan(kie, buildCollageRevisionPrompt({ plan, score, targetDuration, imageModel }), { sceneCount });
     score = scoreCollagePlan(plan, { targetDuration });
   }
   fs.writeFileSync(path.join(jobDir, "plan.json"), JSON.stringify({ plan, score, attempt }, null, 2), "utf8");
@@ -103,7 +103,7 @@ async function main() {
       const totalImages = totalVideos * timedScenes.length;
       patchJob({ status: "running", percent: Math.round(35 + ((completed + 1) / totalImages) * 40), progressCurrent: completed, progressTotal: totalImages, message: `正在生成拼贴画面 ${completed + 1}/${totalImages}...`, score, plan, results });
       const imagePath = path.join(jobDir, `variant-${variant}-scene-${String(index + 1).padStart(2, "0")}.png`);
-      await generateImage(kie, imageModel, collageImagePrompt(timedScenes[index], { variant, sceneNumber: index + 1 }), imagePath);
+      await generateImage(kie, imageModel, collageImagePrompt(timedScenes[index], { variant, sceneNumber: index + 1, imageModel }), imagePath);
       imagePaths.push(imagePath);
     }
     const outputId = uniqueOutputId(safeName(`心理学-${plan.title}-${variant}`));

@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { readConfig } from "./video-core.js";
 import { resolveStorageDirs } from "./storage-paths.js";
 import { buildKieImageTaskInput, kieImageModelLabel, normalizeKieImageModel } from "./kie-image-models.js";
+import { selectedModelsUseZImage, zImageWriterInstructions } from "./z-image-style.js";
 
 const root = process.cwd();
 const payloadPath = process.argv[2];
@@ -71,7 +72,9 @@ async function main() {
     let imageUrl = sourceImageUrl;
     let imagePath = downloadedSourceImage;
     if (!sourceImageUrl) {
-      const variedPrompt = `${imagePrompt}\n\nCreative variation ${creativeVariant}, render ${variant}: Change the visual art direction, character appearance, environment, camera angle, lighting, and color palette substantially while preserving the same test choices. The result must be compositionally distinct from previous variants.\n\nMANDATORY: visuals only. Do not render any visible words, letters, numbers, captions, labels, logos, watermarks, signs, UI, or typography.`;
+      const variedPrompt = normalizeKieImageModel(model) === "z-image"
+        ? `${imagePrompt} Creative variation ${creativeVariant}, render ${variant}: keep the same test choices, but change the real location, time of day, wardrobe, and camera angle.`
+        : `${imagePrompt}\n\nCreative variation ${creativeVariant}, render ${variant}: Change the visual art direction, character appearance, environment, camera angle, lighting, and color palette substantially while preserving the same test choices. The result must be compositionally distinct from previous variants.\n\nMANDATORY: visuals only. Do not render any visible words, letters, numbers, captions, labels, logos, watermarks, signs, UI, or typography.`;
       const taskId = await createImageTask({ apiKey: kieApiKey, model, prompt: variedPrompt });
       imageUrl = await waitForImage({ apiKey: kieApiKey, taskId });
       imagePath = path.join(jobDir, `image-${String(index + 1).padStart(3, "0")}.png`);
@@ -129,16 +132,26 @@ async function generateImagePrompt(apiKey) {
   const layoutInstruction = aspectRatio === "16:9"
     ? "Arrange exactly four equal visual choices in one horizontal row from left to right. Each choice must stay centered inside its own quarter of the canvas. Use a clean light neutral background and do not leave a large title area."
     : "Arrange exactly four visual choices in a clean balanced 2x2 composition. Leave clear space near the top for a title added in post-production.";
-  const prompt = [
-    `Create one production-ready English image-generation prompt for a TikTok visual psychology test in ${aspectRatio === "16:9" ? "landscape 16:9" : "vertical 9:16"}.`,
-    `Test topic: ${payload.question}`,
-    `Creative variation ${creativeVariant}: choose a substantially different art direction, composition, lighting, color palette, and character or object treatment from other versions of this same topic.`,
-    payload.answerGuide ? `Choice guidance: ${payload.answerGuide}` : "Design four visually distinct choices.",
-    layoutInstruction,
-    "The four choices must be instantly understandable from imagery alone, visually balanced, premium, high contrast, and suitable for a viral psychology quiz.",
-    "Do not request text, letters, numbers, labels, logos, watermarks, captions, UI, borders, or typography inside the image.",
-    "Return only the prompt."
-  ].join("\n");
+  const prompt = selectedModelsUseZImage(payload.imageModels)
+    ? [
+      zImageWriterInstructions({ purpose: "quiz-grid" }),
+      `Create one production-ready English Z-Image prompt for a TikTok visual psychology test in ${aspectRatio === "16:9" ? "landscape 16:9" : "vertical 9:16"}.`,
+      `Test topic: ${payload.question}`,
+      `Creative variation ${creativeVariant}: change the real location, time of day, wardrobe, and camera angle while keeping the same test choices.`,
+      payload.answerGuide ? `Choice guidance: ${payload.answerGuide}` : "Design four visually distinct real-world choices.",
+      layoutInstruction,
+      "Return only the image prompt."
+    ].join("\n")
+    : [
+      `Create one production-ready English image-generation prompt for a TikTok visual psychology test in ${aspectRatio === "16:9" ? "landscape 16:9" : "vertical 9:16"}.`,
+      `Test topic: ${payload.question}`,
+      `Creative variation ${creativeVariant}: choose a substantially different art direction, composition, lighting, color palette, and character or object treatment from other versions of this same topic.`,
+      payload.answerGuide ? `Choice guidance: ${payload.answerGuide}` : "Design four visually distinct choices.",
+      layoutInstruction,
+      "The four choices must be instantly understandable from imagery alone, visually balanced, premium, high contrast, and suitable for a viral psychology quiz.",
+      "Do not request text, letters, numbers, labels, logos, watermarks, captions, UI, borders, or typography inside the image.",
+      "Return only the prompt."
+    ].join("\n");
   return kieChat(apiKey, prompt);
 }
 async function kieChat(apiKey, prompt) {

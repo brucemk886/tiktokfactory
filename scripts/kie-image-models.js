@@ -49,12 +49,13 @@ export function buildKieImageTaskInput({ imageModel, prompt, aspectRatio, noImag
 }
 
 function composeImagePrompt(prompt, { imageModel, noImageText }) {
+  const source = String(prompt || "");
   if (noImageText === false) {
-    return imageModel === "z-image" ? clipPrompt(prompt, Z_IMAGE_PROMPT_LIMIT) : prompt;
+    return imageModel === "z-image" ? clipPrompt(source, Z_IMAGE_PROMPT_LIMIT) : source;
   }
-  if (imageModel !== "z-image") return `${prompt}${LONG_NO_TEXT_RULE}`;
+  if (imageModel !== "z-image") return `${source}${LONG_NO_TEXT_RULE}`;
   const budget = Math.max(0, Z_IMAGE_PROMPT_LIMIT - SHORT_NO_TEXT_RULE.length);
-  return `${clipPrompt(prompt, budget)}${SHORT_NO_TEXT_RULE}`;
+  return `${clipPrompt(source, budget)}${SHORT_NO_TEXT_RULE}`;
 }
 
 function clipPrompt(value, limit) {

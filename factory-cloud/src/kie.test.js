@@ -42,6 +42,8 @@ test("creates a z-image task with the short no-text rule", async () => {
   assert.equal(calls[0].body.input.aspect_ratio, "9:16");
   assert.equal(calls[0].body.input.output_format, undefined);
   assert.match(calls[0].body.input.prompt, /Visuals only/);
+  assert.match(calls[0].body.input.prompt, /A quiet lake/);
+  assert.doesNotMatch(calls[0].body.input.prompt, /Marais|official Z-Image/);
 });
 
 test("creates a grok video task without rewriting the prompt", async () => {
