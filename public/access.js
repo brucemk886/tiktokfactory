@@ -10,6 +10,14 @@ ensureThemeStylesheet();
 
     renderCanonicalSidebars(user, sidebarModules);
     applyRoleVisibility(user);
+    const psychologyHome = sidebarModules.find(item => item.id === "psychology");
+    if (psychologyHome) {
+      document.documentElement.dataset.psychologyHome = psychologyHome.href;
+      document.querySelectorAll('[data-business="psychology"]').forEach(card => { card.href = psychologyHome.href; });
+    }
+    document.querySelectorAll("[data-template-module]").forEach(card => {
+      card.hidden = !(user.sidebarModules || []).includes(card.dataset.templateModule);
+    });
     const homePath = home || (user.role === "admin" ? "/" : "");
     document.querySelectorAll(".app-brand, .tasks-brand").forEach((item) => {
       item.href = homePath || "#";
@@ -42,6 +50,7 @@ function renderCanonicalSidebars(user, sidebarModules) {
     const insertionPoint = nav.querySelector("[data-logout]");
     const fragment = document.createDocumentFragment();
     const available = sidebarModules.filter((item) => {
+      if (item.navigationParent) return false;
       if (!Array.isArray(item.roles) || !item.roles.includes(user.role)) return false;
       return !visibleModules || visibleModules.has(item.id);
     });
@@ -112,12 +121,18 @@ function createSidebarUser(user) {
   return box;
 }
 
+function isSidebarActive(item) {
+  const current = sidebarPath(location.pathname);
+  if (item.href === "/psychology-templates" && ["/psychology", "/psychology-collage", "/psychology-target-2"].includes(current)) return true;
+  return current === item.href;
+}
+
 function createSidebarLink(item) {
   const link = document.createElement("a");
   link.href = item.href;
   link.textContent = item.label;
   link.dataset.sidebarModule = item.id;
-  if (sidebarPath(location.pathname) === item.href) {
+  if (isSidebarActive(item)) {
     link.className = "is-active";
     link.setAttribute("aria-current", "page");
   }
@@ -125,8 +140,7 @@ function createSidebarLink(item) {
 }
 
 function createSidebarGroup(group, items) {
-  const currentPath = sidebarPath(location.pathname);
-  const active = items.some((item) => item.href === currentPath);
+  const active = items.some(isSidebarActive);
   const wrapper = document.createElement("div");
   wrapper.className = `sidebar-group${active ? " is-open" : ""}`;
   wrapper.dataset.sidebarGroup = group.id;

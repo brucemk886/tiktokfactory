@@ -20,9 +20,9 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
   moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-peer-hits", "/psychology-peer-hits", "同行爆款", ["admin"], psychologyGroup()),
-  moduleItem("psychology", "/psychology", "四图测试模板", ALL, psychologyGroup()),
-  moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup()),
-  moduleItem("psychology-narrative", "/psychology-target-2", "互动测试模板", ["admin"], psychologyGroup()),
+  moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
+  moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
+  moduleItem("psychology-narrative", "/psychology-target-2", "互动测试模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
   moduleItem("psychology-publish", "/psychology-publish", "视频发布", ALL, psychologyGroup()),
@@ -45,12 +45,13 @@ export function sidebarModuleIdsForRole(role) {
 }
 
 export function publicSidebarModules() {
-  return SIDEBAR_MODULES.map(({ id, href, label, roles, group }) => ({
+  return SIDEBAR_MODULES.map(({ id, href, label, roles, group, navigationParent }) => ({
     id,
     href,
     label,
     roles: [...roles],
-    group: group ? { ...group } : null
+    group: group ? { ...group } : null,
+    ...(navigationParent ? { navigationParent } : {})
   }));
 }
 
@@ -78,6 +79,7 @@ export function moduleIdForPath(pathname) {
     "/ops-report": "novel-ops-report",
     "/official-group-report": "novel-ops-report",
     "/work-journal-mindmap": "work-journal",
+    "/psychology": "psychology",
     "/psychology-narrative": "psychology-narrative",
   };
   if (aliases[clean]) return aliases[clean];
@@ -99,8 +101,8 @@ export function canAccessPath(user, pathname) {
   return (user.sidebarModules || []).includes(moduleId);
 }
 
-function moduleItem(id, href, label, roles, group = null) {
-  return Object.freeze({ id, href, label, roles: Object.freeze([...roles]), group });
+function moduleItem(id, href, label, roles, group = null, navigationParent = null) {
+  return Object.freeze({ id, href, label, roles: Object.freeze([...roles]), group, ...(navigationParent ? { navigationParent } : {}) });
 }
 
 function midVideoGroup() {

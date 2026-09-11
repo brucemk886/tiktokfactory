@@ -9,7 +9,7 @@ import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
-test("psychology templates have independent entries in the psychology group", () => {
+test("psychology workbench groups template navigation while preserving child permissions", () => {
   assert.equal(pageFileFor("/psychology-collage"), "psychology-collage.html");
   assert.equal(pageFileFor("/psychology-target-2"), "psychology-narrative.html");
   assert.equal(pageFileFor("/psychology-narrative"), "psychology-narrative.html");
@@ -20,8 +20,14 @@ test("psychology templates have independent entries in the psychology group", ()
   assert.equal(module?.group?.id, "psychology");
   assert.deepEqual(module?.roles, ["admin"]);
   const templates = SIDEBAR_MODULES.filter(item => ["psychology", "psychology-collage", "psychology-narrative"].includes(item.id));
-  assert.deepEqual(templates.map(item => item.label), ["四图测试模板", "纸张拼贴模板", "互动测试模板"]);
+  assert.deepEqual(templates.map(item => item.label), ["模板工作台", "纸张拼贴模板", "互动测试模板"]);
   assert.ok(templates.every(item => item.group.id === "psychology"));
+  assert.equal(pageFileFor("/psychology-templates"), "psychology-templates.html");
+  assert.equal(moduleIdForPath("/psychology-templates"), "psychology");
+  assert.equal(moduleIdForPath("/psychology"), "psychology");
+  assert.equal(canAccessPath({role:"operator",sidebarModules:[]}, "/psychology-templates"), false);
+  assert.deepEqual(templates.filter(item => !item.navigationParent).map(item => item.label), ["模板工作台"]);
+  assert.ok(templates.slice(1).every(item => item.navigationParent === "psychology"));
   assert.equal(SIDEBAR_MODULES.some(item => item.group?.id === "mid-video" && item.id.startsWith("psychology")), false);
   assert.equal(moduleIdForPath("/psychology-narrative"), "psychology-narrative");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-collage"), false);

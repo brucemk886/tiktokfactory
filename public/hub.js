@@ -21,7 +21,7 @@ const BUSINESSES = [
   },
   {
     id: "psychology",
-    href: "/psychology",
+    href: document.documentElement.dataset.psychologyHome || "/psychology",
     index: "03",
     mark: "心",
     tone: "psy",

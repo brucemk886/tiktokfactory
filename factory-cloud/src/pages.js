@@ -28,6 +28,7 @@ const PAGE_FILES = {
   "/novel-exceptions": "novel-exceptions.html",
   "/geelark-tasks": "tasks.html",
   "/psychology": "psychology.html",
+  "/psychology-templates": "psychology-templates.html",
   "/psychology-peer-hits": "psychology-peer-hits.html",
   "/tiktok-connections": "tiktok-connections.html",
   "/official-group-report": "official-group-report.html",
