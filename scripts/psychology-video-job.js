@@ -14,7 +14,7 @@ const jobPath = process.argv[3];
 if (!payloadPath || !jobPath) throw new Error("Missing psychology task payload or job path.");
 
 const payload = psychologyImagePayload("psychology", JSON.parse(fs.readFileSync(payloadPath, "utf8")));
-const aspectRatio = payload.aspectRatio === "9:16" ? "9:16" : "16:9";
+const aspectRatio = payload.aspectRatio === "16:9" ? "16:9" : "9:16";
 const creativeVariant = Math.max(1, Number(payload.creativeVariant) || 1);
 const config = readConfig(root);
 const { outputDir, workDir } = resolveStorageDirs(root, config);

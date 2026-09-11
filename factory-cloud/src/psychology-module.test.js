@@ -1,3 +1,4 @@
+import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
 import { psychologyImagePayload } from "../../scripts/psychology-image-policy.js";
 import { buildKieImageTaskInput } from "../../scripts/kie-image-models.js";
 import assert from "node:assert/strict";
@@ -172,4 +173,54 @@ test("retired psychology topic UI and APIs are no longer used", async () => {
     assert.doesNotMatch(html,/value="(?:nano-banana|grok)"|href="\/psychology-topics"/);
     assert.match(html,/value="z-image" checked disabled/);
   }
+});
+
+
+test("psychology defaults to portrait once, and preserves newly saved landscape preference", async () => {
+  assert.equal(publicPsychologySettings({}).aspectRatio, "9:16");
+  assert.equal(publicPsychologySettings({aspectRatio:"16:9"}).aspectRatio, "9:16");
+  let saved={aspectRatio:"16:9"};
+  const db={prepare(){return {bind(...args){this.args=args;return this;},async first(){return {value_json:JSON.stringify(saved)};},async run(){saved=JSON.parse(this.args[1]);return {};}};}};
+  for (const aspectRatio of ["16:9", "9:16"]) {
+    const req=new Request("https://example.test/api/psychology/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({aspectRatio})});
+    const response=await handleCompat(req,{DB:db},new URL(req.url),{user:{role:"admin"}});
+    assert.equal(response.status,200);assert.equal(saved.aspectRatioPreferenceVersion,1);
+    assert.equal(publicPsychologySettings(saved).aspectRatio,aspectRatio);
+  }
+});
+
+test("psychology queue and old worker delivery disable legacy publishing without reusing accounts", async () => {
+  for (const type of ["psychology","psychology-collage","psychology-target-2","psychology-narrative"]) {
+    const old={module:"mid-video",publish:{autoPublish:true,provider:"geelark",envIds:["old-phone"],accounts:[{id:"old-phone"}],connectionIds:["wrong"],officialAccounts:[{id:"wrong"}]}};
+    const normalized=psychologyPublishPayload(type,old);
+    assert.equal(normalized.module,"psychology");assert.equal(normalized.publish.provider,"official");assert.equal(normalized.publish.autoPublish,false);
+    for (const key of ["envIds","accounts","connectionIds","officialAccounts"]) assert.deepEqual(normalized.publish[key],[]);
+    assert.equal(old.publish.provider,"geelark");
+    let inserted;
+    const db={prepare(){return {bind(...args){inserted=args;return this;},async run(){return {};}};}};
+    await enqueueJob(db,{type,payload:old,createdBy:"test"});assert.equal(JSON.parse(inserted[4]).publish.autoPublish,false);
+    const row={id:"old-job",type,status:"queued",payload_json:JSON.stringify(old)};
+    const readDb={prepare(){return {bind(){return this;},async first(){return row;}};}};
+    const req=new Request("https://example.test/api/worker/jobs/old-job",{headers:{authorization:"Bearer test-worker"}});
+    const response=await handleJobs(req,{DB:readDb,WORKER_TOKEN:"test-worker"},new URL(req.url),null,{});
+    const delivered=(await response.json()).job.payload;assert.equal(delivered.publish.autoPublish,false);assert.deepEqual(delivered.publish.envIds,[]);
+    const official=psychologyPublishPayload(type,{publish:{provider:"official",autoPublish:true,connectionIds:["allowed"],envIds:["legacy"]}});
+    assert.equal(official.publish.autoPublish,true);assert.deepEqual(official.publish.connectionIds,["allowed"]);assert.deepEqual(official.publish.envIds,[]);
+  }
+  const other={publish:{provider:"geelark",autoPublish:true}};
+  assert.equal(psychologyPublishPayload("reddit-mix",other),other);
+});
+
+test("psychology API records generation-only official tasks and rejects legacy publish retry", async () => {
+  const statements=[];
+  const db={prepare(sql){return {bind(...args){this.args=args;return this;},async first(){return null;},async run(){statements.push({sql,args:this.args});return {};}};}};
+  const request=new Request("https://example.test/api/auto-tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({taskType:"psychology",module:"mid-video",generation:{question:"Choose",totalVideos:1},publish:{provider:"geelark",autoPublish:true,envIds:["phone"]}})});
+  const response=await handleCompat(request,{DB:db},new URL(request.url),{user:{role:"admin",username:"test"}});
+  assert.equal(response.status,201);const task=(await response.json()).task;
+  assert.equal(task.publish.provider,"official");assert.equal(task.publish.autoPublish,false);
+  const job=statements.find(row=>row.sql.includes("INSERT INTO factory_jobs"));assert.equal(JSON.parse(job.args[4]).module,"psychology");
+  const oldTask={id:"old",taskType:"psychology",publish:{provider:"geelark",envIds:["phone"]}};
+  const retryDb={prepare(){return {bind(){return this;},async first(){return {value_json:JSON.stringify(oldTask)};}};}};
+  const retry=new Request("https://example.test/api/auto-tasks/old/retry-publish",{method:"POST"});
+  const result=await handleCompat(retry,{DB:retryDb},new URL(retry.url),{user:{role:"admin"}});assert.equal(result.status,400);
 });

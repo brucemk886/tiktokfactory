@@ -97,7 +97,7 @@ button.quiet,.icon-button { border:1px solid #39444c; background:var(--lf-surfac
 .task-links a,.task-links button { border:1px solid #37434b; background:var(--lf-surface); color:var(--lf-text); padding:6px 8px; border-radius:3px; text-decoration:none; font-size:9px; }
 @media(max-width:1300px){.psy-main{margin-left:176px}.psy-grid{grid-template-columns:minmax(0,1fr) 320px}.phone-list{grid-template-columns:repeat(2,1fr)}.four-column,.five-column{grid-template-columns:repeat(2,1fr)}.preview-section{grid-template-columns:minmax(0,1fr) 180px}}
 
-.aspect-prompt-row { display:grid; grid-template-columns:minmax(220px,320px) 1fr; gap:14px; align-items:end; margin-top:15px; padding:13px; border:1px solid #364149; background:var(--lf-surface); border-radius:5px; }
+.aspect-prompt-row { display:grid; grid-template-columns:minmax(0,320px); gap:14px; align-items:end; margin-top:15px; padding:13px; border:1px solid #364149; background:var(--lf-surface); border-radius:5px; }
 .aspect-prompt-row .field { margin:0; }
 .aspect-prompt-note { min-height:42px; display:flex; flex-direction:column; justify-content:center; gap:4px; padding:0 4px; }
 .aspect-prompt-note strong { color:#d8ff4f; font-size:12px; }

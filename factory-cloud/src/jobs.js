@@ -1,3 +1,4 @@
+import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
 import { psychologyImagePayload } from "../../scripts/psychology-image-policy.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
@@ -61,7 +62,7 @@ export async function handleJobs(request, env, url, session, ctx) {
 
   for (const route of FFMPEG_START_ROUTES) {
     if (method === route.method && route.pattern.test(pathname)) {
-      const payload = await readJson(request);
+      const payload = psychologyPublishPayload(route.type, await readJson(request));
       const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
       const automaticOfficialPublish = publish.provider === "official" && publish.autoPublish !== false;
       if (route.type === "official-publish" || automaticOfficialPublish) {
@@ -202,7 +203,7 @@ export function isJobInModule(type, moduleKey = "") {
 }
 
 export async function enqueueJob(db, { type, title, payload, createdBy }) {
-  payload = psychologyImagePayload(type, payload);
+  payload = psychologyPublishPayload(type, psychologyImagePayload(type, payload));
   const id = safeId(`${type}-${Date.now()}-${randomToken(4)}`);
   const stamp = now();
   await db.prepare(`
@@ -635,7 +636,7 @@ export function publicJob(job) {
 function workerJob(job) {
   return {
     ...publicJob(job),
-    payload: psychologyImagePayload(job.type, parseJson(job.payload_json, {}))
+    payload: psychologyPublishPayload(job.type, psychologyImagePayload(job.type, parseJson(job.payload_json, {})))
   };
 }
 

@@ -1,5 +1,4 @@
 const $ = (selector) => document.querySelector(selector);
-let phones = [];
 let settingsConfigured = false;
 let previewTaskId = "";
 
@@ -8,18 +7,11 @@ attachDirectoryPickers();
 
 $("#createBtn").addEventListener("click", createTask);
 $("#saveSettingsBtn").addEventListener("click", () => saveSettings(true));
-$("#refreshPhonesBtn").addEventListener("click", loadPhones);
 $("#refreshTasksBtn").addEventListener("click", loadTasks);
-$("#groupFilter").addEventListener("change", renderPhones);
-$("#nameFilter").addEventListener("input", renderPhones);
-$("#selectVisibleBtn").addEventListener("click", selectVisible);
-$("#phoneList").addEventListener("change", updateSelectedCount);
 $("#taskList").addEventListener("click", handleTaskAction);
 $("#aspectRatio").addEventListener("change", handleAspectChange);
 
-setDefaultSchedule();
 loadSettings();
-loadPhones();
 loadTasks();
 loadPreparedContent();
 
@@ -40,7 +32,7 @@ function initAiPreviewControls() {
     <div class="preview-copy">
       <p class="eyebrow">PREVIEW</p>
       <h2>生成效果预览</h2>
-      <p>固定生成 1 条本地视频，不选择账号、不提交 GeeLark。预览统一使用 Z-Image 生图。</p>
+      <p>使用 Z-Image 生成 1 条本地预览视频。</p>
       <div class="preview-actions">
         <button id="previewBtn" type="button">生成一条预览视频</button>
         <span id="previewStatus">尚未生成预览</span>
@@ -62,12 +54,6 @@ function updatePreviewAspect() {
   const player = $(".preview-player-wrap");
   const landscape = $("#aspectRatio").value === "16:9";
   if (player) player.classList.toggle("is-landscape", landscape);
-  const title = $("#aspectPromptTitle");
-  const hint = $("#aspectPromptHint");
-  if (title) title.textContent = landscape ? "当前：横版 16:9" : "当前：竖版 9:16";
-  if (hint) hint.textContent = landscape
-    ? "AI 将生成 A/B/C/D 四图横排描述，视频使用 Remotion 横版模板。"
-    : "AI 将生成四宫格竖版描述。";
   const prompt = $("#imagePrompt");
   if (prompt) {
     prompt.placeholder = landscape
@@ -253,14 +239,14 @@ async function createPreview() {
         elevenLabsVoiceId: $("#voiceId").value.trim(),
         elevenLabsModelId: $("#voiceModel").value
       },
-      publish: { autoPublish: false, envIds: [], accounts: [], videoDesc: "", scheduleAt: 0, intervalMinutes: 0, batchPublishLimit: 1, dailyPublishLimit: 300 }
+      publish: { provider: "official", autoPublish: false, envIds: [], accounts: [], videoDesc: "", scheduleAt: 0, intervalMinutes: 0, batchPublishLimit: 1, dailyPublishLimit: 300 }
     };
     const response = await fetch("/api/auto-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "预览任务创建失败");
     previewTaskId = data.task.id;
     $("#previewStatus").textContent = "已加入本地生成队列...";
-    setStatus("预览任务已创建，不会发布到 GeeLark。");
+    setStatus("预览任务已创建。");
     loadTasks();
     await watchPreview(previewTaskId);
   } catch (error) {
@@ -326,7 +312,7 @@ $("#voiceId").value = data.elevenLabsVoiceId || "";
     $("#titlePosition").value = data.titlePosition || 14;
     $("#titleFontSize").value = data.titleFontSize || 68;
     $("#motion").value = data.motion || "test-motion";
-    $("#aspectRatio").value = data.aspectRatio === "9:16" ? "9:16" : "16:9";
+    $("#aspectRatio").value = data.aspectRatio === "16:9" ? "16:9" : "9:16";
     updatePreviewAspect();
     $("#backgroundMusicDir").value = data.backgroundMusicDir || "";
     $("#backgroundMusicVolume").value = data.backgroundMusicVolume ?? 0.10;
@@ -368,21 +354,11 @@ async function createTask() {
   const models = selectedModels();
   if (!question) return setStatus("请先输入心理测试题目。", true);
   if (!models.length) return setStatus("至少选择一个生图模型。", true);
-  const selected = Array.from(document.querySelectorAll(".phone-check:checked"));
-  const autoPublish = $("#autoPublish").checked;
-  if (autoPublish && !selected.length) return setStatus("自动发布至少需要选择一个 GeeLark 账号。", true);
-  const scheduleAt = Math.floor(new Date($("#scheduleAt").value).getTime() / 1000);
-  if (autoPublish && (!scheduleAt || scheduleAt < Math.floor(Date.now() / 1000) + 300)) return setStatus("起始发布时间至少要晚于当前时间 5 分钟。", true);
-
   $("#createBtn").disabled = true;
   setStatus("正在保存配置并创建任务...");
   try {
     const configured = await saveSettings(false);
     if (!configured) throw new Error("请展开接口配置，填写 ElevenLabs Voice ID；Kie 和 ElevenLabs 密钥需要处于已配置状态。");
-    const accounts = selected.map((input) => {
-      const phone = phones.find((item) => String(item.id) === input.value) || {};
-      return { id: input.value, name: phone.serialName || "", serialNo: phone.serialNo || "", groupName: phone.groupName || "", remark: phone.remark || "" };
-    });
     const payload = {
       taskType: "psychology",
       name: $("#taskName").value.trim() || `心理学测试 · ${question.slice(0, 24)}`,
@@ -405,16 +381,8 @@ async function createTask() {
         elevenLabsVoiceId: $("#voiceId").value.trim(),
         elevenLabsModelId: $("#voiceModel").value
       },
-      publish: {
-        autoPublish,
-        envIds: selected.map((input) => input.value),
-        accounts,
-        videoDesc: $("#videoDesc").value.trim(),
-        scheduleAt,
-        intervalMinutes: numberValue("#intervalMinutes", 15),
-        batchPublishLimit: numberValue("#batchLimit", 300),
-        dailyPublishLimit: 300
-      }
+      module: "psychology",
+      publish: { provider: "official", autoPublish: false, connectionIds: [] }
     };
     const response = await fetch("/api/auto-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await response.json();
@@ -426,53 +394,6 @@ async function createTask() {
   } finally {
     $("#createBtn").disabled = false;
   }
-}
-
-async function loadPhones() {
-  $("#phoneList").innerHTML = '<div class="empty">正在读取 GeeLark 账号...</div>';
-  try {
-    const response = await fetch(`/api/geelark/phones?t=${Date.now()}`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "读取账号失败");
-    phones = data.phones || [];
-    const groups = Array.from(new Set(phones.map((item) => item.groupName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"));
-    const previous = $("#groupFilter").value;
-    $("#groupFilter").innerHTML = '<option value="">全部分组</option>' + groups.map((group) => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join("");
-    if (groups.includes(previous)) $("#groupFilter").value = previous;
-    renderPhones();
-  } catch (error) {
-    $("#phoneList").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
-  }
-}
-
-function visiblePhones() {
-  const group = $("#groupFilter").value;
-  const query = $("#nameFilter").value.trim().toLowerCase();
-  return phones.filter((phone) => {
-    if (group && phone.groupName !== group) return false;
-    return !query || [phone.serialName, phone.serialNo, phone.remark, phone.groupName].some((value) => String(value || "").toLowerCase().includes(query));
-  });
-}
-
-function renderPhones() {
-  const selected = new Set(Array.from(document.querySelectorAll(".phone-check:checked")).map((input) => input.value));
-  const list = visiblePhones();
-  $("#phoneList").innerHTML = list.length ? list.map((phone) => `
-    <label class="phone-card"><input class="phone-check" type="checkbox" value="${escapeHtml(phone.id)}" ${selected.has(String(phone.id)) ? "checked" : ""} />
-      <span><strong>${escapeHtml(phone.serialName || phone.serialNo || phone.id)}</strong><small>${escapeHtml(phone.groupName || "未分组")}</small></span>
-    </label>`).join("") : '<div class="empty">当前筛选没有账号。</div>';
-  updateSelectedCount();
-}
-
-function selectVisible() {
-  const inputs = Array.from(document.querySelectorAll(".phone-check"));
-  const shouldCheck = inputs.some((input) => !input.checked);
-  inputs.forEach((input) => { input.checked = shouldCheck; });
-  updateSelectedCount();
-}
-
-function updateSelectedCount() {
-  $("#selectedCount").textContent = `已选 ${document.querySelectorAll(".phone-check:checked").length} 个`;
 }
 
 async function loadTasks() {
@@ -514,13 +435,6 @@ async function handleTaskAction(event) {
 
 function selectedModels() {
   return ["z-image"];
-}
-
-function setDefaultSchedule() {
-  const date = new Date(Date.now() + 15 * 60 * 1000);
-  date.setSeconds(0, 0);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  $("#scheduleAt").value = local;
 }
 
 function setStatus(message, error = false) {

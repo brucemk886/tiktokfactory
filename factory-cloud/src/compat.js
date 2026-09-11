@@ -1,3 +1,4 @@
+import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
 import { psychologyImagePayload, PSYCHOLOGY_IMAGE_MODEL } from "../../scripts/psychology-image-policy.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
 import { isKokoroVoiceId, listKokoroVoices } from "../../scripts/kokoro-voices.js";
@@ -66,6 +67,8 @@ export async function handleCompat(request, env, url, session) {
         ...incoming,
         imageModel: PSYCHOLOGY_IMAGE_MODEL,
         imageModels: [PSYCHOLOGY_IMAGE_MODEL],
+        aspectRatio: incoming.aspectRatio === "16:9" || incoming.aspectRatio === "9:16" ? incoming.aspectRatio : publicPsychologySettings(current).aspectRatio,
+        aspectRatioPreferenceVersion: 1,
         kieApiKey: String(incoming.kieApiKey || current.kieApiKey || "").trim(),
         elevenLabsApiKey: String(incoming.elevenLabsApiKey || current.elevenLabsApiKey || "").trim(),
         elevenLabsVoiceId: String(incoming.elevenLabsVoiceId ?? current.elevenLabsVoiceId ?? "").trim(),
@@ -99,7 +102,8 @@ export async function handleCompat(request, env, url, session) {
       const payload = await readJson(request);
       const taskType = normalizeTaskType(payload.taskType);
       const generation = psychologyImagePayload(taskType, normalizeRedditGeneration(payload.generation));
-      const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
+      const publish = psychologyPublishPayload(taskType, payload).publish || {};
+      if (taskType === "psychology") payload.module = "psychology";
       if (taskType === "schulte") {
         payload.module = "mid-video";
         publish.provider = "official";
@@ -239,6 +243,16 @@ export async function handleCompat(request, env, url, session) {
       return json({ task });
     }
     if (method === "POST" && taskMatch[2] === "retry-publish") {
+      if (task.taskType === "psychology") {
+        if (task.publish?.provider !== "official" || !task.publish?.connectionIds?.length) {
+          return errorJson("请前往心理学视频发布页面，选择官方授权账号发布成片。", 400);
+        }
+        try {
+          await assertOfficialPublishAccess(env, session.user, { module: "psychology", connectionIds: task.publish.connectionIds });
+        } catch (error) {
+          return errorJson(error.message || "没有这些账号的发布权限。", error.statusCode || 403);
+        }
+      }
       const currentJob = task.generationJobId ? await getJob(db, task.generationJobId) : null;
       const videos = videosForOfficialRetry(task, currentJob);
       if (!videos.length) return errorJson("没有已生成的成片，无法重试发布。", 400);
@@ -530,7 +544,7 @@ function defaultPsychology() {
     elevenLabsModelId: "eleven_multilingual_v2",
     imageModels: [PSYCHOLOGY_IMAGE_MODEL],
     totalVideos: 1,
-    aspectRatio: "16:9",
+    aspectRatio: "9:16",
     titlePosition: 14,
     titleFontSize: 68,
     motion: "test-motion",
@@ -549,7 +563,7 @@ export function publicPsychologySettings(settings = {}) {
     elevenLabsModelId: String(value.elevenLabsModelId || "eleven_multilingual_v2"),
     imageModels: [PSYCHOLOGY_IMAGE_MODEL],
     totalVideos: Math.max(1, Number(value.totalVideos) || 1),
-    aspectRatio: value.aspectRatio === "9:16" ? "9:16" : "16:9",
+    aspectRatio: value.aspectRatioPreferenceVersion === 1 && value.aspectRatio === "16:9" ? "16:9" : "9:16",
     titlePosition: Number(value.titlePosition) || 14,
     titleFontSize: Number(value.titleFontSize) || 68,
     motion: String(value.motion || "test-motion"),

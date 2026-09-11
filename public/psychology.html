@@ -35,7 +35,7 @@
 
     <main class="psy-main">
       <header class="psy-header">
-        <div><p class="eyebrow">PSYCHOLOGY · FOUR-IMAGE TEST</p><h1>四图测试模板</h1><p>输入测试题目，自动完成生图、配音、合成与 GeeLark 发布。</p></div>
+        <div><p class="eyebrow">PSYCHOLOGY · FOUR-IMAGE TEST</p><h1>四图测试模板</h1><p>输入测试题目，完成生图、配音与合成；成片通过官方接口发布。</p></div>
         <div class="header-actions"><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
       </header>
 
@@ -49,8 +49,7 @@
             <label class="field"><span>视频顶部钩子标题</span><input id="hookTitle" type="text" placeholder="一句简短钩子，默认使用测试题目" /></label>
             <label class="field"><span>参考图地址 <em>默认由 Z-Image 重新生图，仅在生图失败时备用</em></span><input id="sourceImageUrl" type="url" placeholder="https://example.com/psychology-test.png" /></label>
 <div class="aspect-prompt-row">
-              <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="16:9" selected>横版 16:9（四图横排）</option><option value="9:16">竖版 9:16</option></select></label>
-              <div class="aspect-prompt-note"><strong id="aspectPromptTitle">当前：横版 16:9</strong><span id="aspectPromptHint">AI 将生成 A/B/C/D 四图横排描述，视频使用 Remotion 横版模板。</span></div>
+              <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="9:16" selected>竖版 9:16</option><option value="16:9">横版 16:9（四图横排）</option></select></label>
             </div>
             <div class="two-column">
               <label class="field"><span>钩子配音文案 <em>留空自动生成钩子 + 互动引导</em></span><textarea id="narration" rows="3" placeholder="建议 16–30 个英文单词：先引导选择，再加入链接、主页或评论区 CTA"></textarea></label>
@@ -86,23 +85,7 @@
             </details>
           </article>
 
-          <article class="psy-section">
-            <div class="section-head section-with-action"><span>03</span><div><h2>GeeLark 发布</h2><p>先筛选分组，再勾选账号；不自动发布时只生成本地视频。</p></div><button id="refreshPhonesBtn" class="quiet" type="button">刷新账号</button></div>
-            <label class="publish-toggle"><input id="autoPublish" type="checkbox" checked /><i></i><span>生成完成后自动发布</span></label>
-            <div class="account-tools">
-              <label class="field"><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
-              <label class="field search"><span>搜索账号</span><input id="nameFilter" type="search" placeholder="账号名称、编号或备注" /></label>
-              <button id="selectVisibleBtn" class="quiet" type="button">全选筛选结果</button>
-              <b id="selectedCount">已选 0 个</b>
-            </div>
-            <div id="phoneList" class="phone-list"><div class="empty">正在读取 GeeLark 账号...</div></div>
-            <label class="field"><span>TikTok 发布文案</span><textarea id="videoDesc" rows="2" placeholder="#psychology #personalitytest #selfdiscovery"></textarea></label>
-            <div class="three-column">
-              <label class="field"><span>起始发布时间</span><input id="scheduleAt" type="datetime-local" /></label>
-              <label class="field"><span>同账号发布间隔</span><div class="input-suffix"><input id="intervalMinutes" type="number" min="0" value="15" /><b>分钟</b></div></label>
-              <label class="field"><span>单批调用上限</span><input id="batchLimit" type="number" min="1" max="300" value="300" /></label>
-            </div>
-          </article>
+          <p class="official-publish-note">成片生成后，前往 <a href="/psychology-publish">心理学视频发布</a>，选择官方授权账号发布。</p>
         </section>
 
         <aside class="psy-queue">
