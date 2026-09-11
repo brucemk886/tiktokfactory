@@ -13,5 +13,9 @@ Default the four-image template to 9:16, remove the yellow aspect text and GeeLa
 ## Verification
 All 264 factory tests passed. Tests cover old queue payload delivery, sparse defaults/preference save, psychology API generation-only storage, legacy retry rejection and unaffected other providers. Actual frontend test `work/check-psychology-official.mjs` verified 9:16 from legacy defaults, no yellow note/third-party controls/requests, generation-only payload, saved landscape, and actual official publishing page payload with mocked APIs. Screenshot inspected. No real generation, TTS or publishing APIs were called.
 
-## Status / next step
-Changes are uncommitted in `D:/cursor/localfactory/work/psychology-directory-release`, not deployed. Production is still workbench runtime 2a98fca / Cloudflare 9fbe5054-0b16-4355-816b-f8a0cf2b9db0 (main includes docs commit 887b8fe). On user deployment instruction: commit/push main, clean HEAD == origin/main, factory-cloud `npm run deploy`, live read-only verification. Original dirty checkout/workers remain untouched. No database migration or worker restart is required for cloud payload enforcement.
+## Release outcome
+User requested 上线. Runtime commit `ee52765` was pushed to main; deployment used factory-cloud `npm run deploy` after clean HEAD == origin/main verification. No migrations required. Cloudflare version: `14c63c06-c46f-41d7-a95a-3543c7144811`.
+
+264 tests passed. Live authenticated page verification returned aspect 9:16, no aspectPromptTitle, no phoneList, official link `/psychology-publish`, and zero `/api/geelark/` resource requests. Health returned 200. No real generation or publishing was triggered; browser session closed. Original dirty checkout and running workers remain untouched.
+
+Release checkout: `D:/cursor/localfactory/work/psychology-directory-release`. No remaining work for this request.
