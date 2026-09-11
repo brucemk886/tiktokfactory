@@ -23,6 +23,27 @@ test("creates a nano-banana image task with the no-text rule", async () => {
   assert.match(calls[0].body.input.prompt, /Do not render any visible text/);
 });
 
+test("creates a z-image task with the short no-text rule", async () => {
+  const calls = [];
+  const kie = createKieClient({
+    apiKey: "test-key",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
+      return json({ code: 200, data: { taskId: "z-1" } });
+    }
+  });
+  const created = await kie.createKieMediaTask("image", "A quiet lake", {
+    imageModel: "z-image",
+    aspectRatio: "9:16",
+    noImageText: true
+  });
+  assert.equal(created.model, "z-image");
+  assert.equal(calls[0].body.model, "z-image");
+  assert.equal(calls[0].body.input.aspect_ratio, "9:16");
+  assert.equal(calls[0].body.input.output_format, undefined);
+  assert.match(calls[0].body.input.prompt, /Visuals only/);
+});
+
 test("creates a grok video task without rewriting the prompt", async () => {
   const calls = [];
   const kie = createKieClient({

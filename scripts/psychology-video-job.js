@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readConfig } from "./video-core.js";
 import { resolveStorageDirs } from "./storage-paths.js";
+import { buildKieImageTaskInput, kieImageModelLabel, normalizeKieImageModel } from "./kie-image-models.js";
 
 const root = process.cwd();
 const payloadPath = process.argv[2];
@@ -46,7 +47,9 @@ async function main() {
   const targetDuration = Math.max(1, narrationDuration || Number(payload.durationSeconds) || 8);
   const audioPath = prepareAudioTrack({ narrationPath: narrationAudioPath, duration: targetDuration });
   const duration = probeDuration(audioPath) || targetDuration;
-  const models = Array.isArray(payload.imageModels) && payload.imageModels.length ? payload.imageModels : ["nano-banana"];
+  const models = Array.isArray(payload.imageModels) && payload.imageModels.length
+    ? payload.imageModels.map((model) => normalizeKieImageModel(model))
+    : ["nano-banana"];
   const target = Math.max(1, Math.min(300, Number(payload.totalVideos) || models.length));
   let downloadedSourceImage = "";
 
@@ -152,10 +155,12 @@ async function kieChat(apiKey, prompt) {
 }
 
 async function createImageTask({ apiKey, model, prompt }) {
-  const modelId = model === "grok" ? "grok-imagine/text-to-image" : "google/nano-banana";
-  const input = model === "grok"
-    ? { prompt, aspect_ratio: aspectRatio }
-    : { prompt, aspect_ratio: aspectRatio, output_format: "png" };
+  const { model: modelId, input } = buildKieImageTaskInput({
+    imageModel: model,
+    prompt,
+    aspectRatio,
+    noImageText: normalizeKieImageModel(model) === "z-image"
+  });
   const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -419,7 +424,7 @@ function parseResultJson(value) {
 }
 
 function modelLabel(model) {
-  return model === "grok" ? "Grok Imagine" : "Nano Banana";
+  return kieImageModelLabel(model);
 }
 
 function safeName(value) {

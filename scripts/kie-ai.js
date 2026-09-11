@@ -1,12 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { buildKieImageTaskInput, isKieImageModel } from "./kie-image-models.js";
 
 const BASE_URL = "https://api.kie.ai";
-const IMAGE_MODELS = {
-  grok: "grok-imagine/text-to-image",
-  "nano-banana": "google/nano-banana"
-};
 const FINAL_STATES = new Set(["success", "fail"]);
 
 export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now = Date.now }) {
@@ -38,7 +35,7 @@ export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now
     }
 
     const imageModel = String(input.imageModel || "grok");
-    if (kind === "image" && !IMAGE_MODELS[imageModel]) throw requestError("不支持这个生图模型。", 400);
+    if (kind === "image" && !isKieImageModel(imageModel)) throw requestError("不支持这个生图模型。", 400);
     const remote = await createMediaTask(kind, prompt, { ...input, imageModel });
     return saveTask({
       id, kind, prompt, model: remote.model, status: "waiting", taskId: remote.taskId,
@@ -83,21 +80,22 @@ export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now
   }
 
   async function createMediaTask(kind, prompt, options) {
-    const model = kind === "image"
-      ? IMAGE_MODELS[options.imageModel] || IMAGE_MODELS.grok
-      : "grok-imagine/text-to-video";
-    const imagePrompt = options.noImageText === false ? prompt : `${prompt}\n\nMANDATORY OUTPUT RULE: Create visuals only. Do not render any visible text, captions, titles, labels, letters, numbers, logos, watermarks, subtitles, signs, interface elements, or typography anywhere in the image. If the concept mentions words or labels, express them only through imagery. Leave clean visual space so text can be added later in post-production.`;
-    const input = kind === "image"
-      ? model === IMAGE_MODELS["nano-banana"]
-        ? { prompt: imagePrompt, aspect_ratio: String(options.aspectRatio || "9:16"), output_format: "png" }
-        : { prompt: imagePrompt, aspect_ratio: String(options.aspectRatio || "9:16") }
-      : {
-          prompt,
-          aspect_ratio: String(options.aspectRatio || "9:16"),
-          mode: "normal",
-          duration: String(options.duration || "6"),
-          resolution: String(options.resolution || "480p")
-        };
+    const imageTask = kind === "image"
+      ? buildKieImageTaskInput({
+        imageModel: options.imageModel || "grok",
+        prompt,
+        aspectRatio: options.aspectRatio,
+        noImageText: options.noImageText
+      })
+      : null;
+    const model = imageTask?.model || "grok-imagine/text-to-video";
+    const input = imageTask?.input || {
+      prompt,
+      aspect_ratio: String(options.aspectRatio || "9:16"),
+      mode: "normal",
+      duration: String(options.duration || "6"),
+      resolution: String(options.resolution || "480p")
+    };
     const data = await kieRequest("/api/v1/jobs/createTask", {
       method: "POST",
       body: JSON.stringify({ model, input })

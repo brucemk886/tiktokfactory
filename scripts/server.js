@@ -28,6 +28,7 @@ import { peerRewriteOpeningPayload, resolveBatchPeerRewriteJobs, uniqueRewriteNo
 import { createLocalAuthService } from "./local-auth.js";
 import { createPsychologyTopicsService } from "./psychology-topics.js";
 import { createKieAiService } from "./kie-ai.js";
+import { filterKieImageModels, normalizeKieImageModel } from "./kie-image-models.js";
 import { createOperationBrainService } from "./operation-brain.js";
 import { createOfficialTikTokAnalyticsService } from "./official-tiktok-analytics.js";
 import { createOfficialTikTokAccountGroups } from "./official-tiktok-account-groups.js";
@@ -2189,7 +2190,7 @@ const server = http.createServer(async (req, res) => {
       payload.layout = ["single", "choices-4", "choices-6"].includes(payload.layout) ? payload.layout : "auto";
       payload.targetDuration = Math.max(12, Math.min(20, Math.round(Number(payload.targetDuration) || 16)));
       payload.totalVideos = Math.max(1, Math.min(3, Math.round(Number(payload.totalVideos) || 1)));
-      payload.imageModel = payload.imageModel === "grok" ? "grok" : "nano-banana";
+      payload.imageModel = normalizeKieImageModel(payload.imageModel);
       const defaultPsychologyCredit = payload.language === "zh-CN" ? "一知心理课 一场心灵旅" : "PSYCHOLOGY LAB";
       payload.credit = String(payload.credit || defaultPsychologyCredit).trim().slice(0, 24) || defaultPsychologyCredit;
       payload.backgroundMusicDir = String(payload.backgroundMusicDir || "").trim();
@@ -2239,7 +2240,7 @@ const server = http.createServer(async (req, res) => {
       payload.targetDuration = Math.max(60, Math.min(120, Math.round(Number(payload.targetDuration) || 90)));
       payload.sceneCount = Math.max(8, Math.min(12, Math.round(Number(payload.sceneCount) || 10)));
       payload.totalVideos = Math.max(1, Math.min(3, Math.round(Number(payload.totalVideos) || 1)));
-      payload.imageModel = payload.imageModel === "grok" ? "grok" : "nano-banana";
+      payload.imageModel = normalizeKieImageModel(payload.imageModel);
       payload.credit = String(payload.credit || "@心理学").trim().slice(0, 32) || "@心理学";
       payload.backgroundMusicDir = String(payload.backgroundMusicDir || "").trim();
       payload.backgroundMusicVolume = Math.max(0, Math.min(0.5, Number.isFinite(Number(payload.backgroundMusicVolume)) ? Number(payload.backgroundMusicVolume) : 0.10));
@@ -3432,7 +3433,7 @@ function readPsychologySettings() {
 function savePsychologySettings(payload = {}) {
   const current = readPsychologySettings();
   const imageModels = Array.isArray(payload.imageModels)
-    ? payload.imageModels.filter((model) => model === "grok" || model === "nano-banana")
+    ? filterKieImageModels(payload.imageModels)
     : current.imageModels;
   const next = {
     ...current,

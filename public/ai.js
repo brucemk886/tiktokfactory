@@ -126,6 +126,7 @@ function taskCard(task) {
 function kindLabel(task) {
   if (task.model === "google/nano-banana") return "图片 · Nano Banana 标准版";
   if (task.model === "grok-imagine/text-to-image") return "图片 · Grok Imagine";
+  if (task.model === "z-image") return "图片 · Z-Image";
   if (task.kind === "video") return "视频 · Grok Imagine Video";
   return "图片";
 }

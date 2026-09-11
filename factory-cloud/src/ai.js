@@ -1,8 +1,8 @@
+import { isKieImageModel } from "../../scripts/kie-image-models.js";
 import { errorJson, json, now, readJson } from "./http.js";
 import { createKieClient } from "./kie.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const IMAGE_MODEL_IDS = new Set(["grok", "nano-banana"]);
 
 export async function handleAi(request, env, url, session) {
   if (!session) return null;
@@ -53,7 +53,7 @@ async function createGeneration(db, kie, ownerUsername, input = {}) {
   if (prompt.length < 2) throw Object.assign(new Error("请输入生成描述。"), { statusCode: 400 });
   if (prompt.length > 8000) throw Object.assign(new Error("输入内容不能超过 8000 个字符。"), { statusCode: 400 });
   const imageModel = String(input.imageModel || "grok");
-  if (kind === "image" && !IMAGE_MODEL_IDS.has(imageModel)) {
+  if (kind === "image" && !isKieImageModel(imageModel)) {
     throw Object.assign(new Error("不支持这个生图模型。"), { statusCode: 400 });
   }
 

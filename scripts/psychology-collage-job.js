@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createKieAiService } from "./kie-ai.js";
+import { normalizeKieImageModel } from "./kie-image-models.js";
 import {
   COLLAGE_SCORE_THRESHOLD,
   buildCollagePrompt,
@@ -45,7 +46,7 @@ async function main() {
   const targetDuration = clamp(Math.round(Number(payload.targetDuration) || 90), 60, 120);
   const sceneCount = clamp(Math.round(Number(payload.sceneCount) || 10), 8, 12);
   const totalVideos = clamp(Math.floor(Number(payload.totalVideos) || 1), 1, 3);
-  const imageModel = payload.imageModel === "grok" ? "grok" : "nano-banana";
+  const imageModel = normalizeKieImageModel(payload.imageModel);
   const credit = String(payload.credit || "@心理学").trim().slice(0, 32) || "@心理学";
   const kie = createKieAiService({ workDir, readApiKey: () => kieApiKey });
 

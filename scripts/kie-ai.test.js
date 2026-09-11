@@ -26,6 +26,22 @@ test("creates and refreshes a Kie image task", async () => {
   assert.equal((await service.getOverview()).tasks.length, 1);
 });
 
+test("creates a z-image task through the local Kie service", async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "kie-z-image-"));
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), body: init.body ? JSON.parse(init.body) : null });
+    if (String(url).includes("createTask")) return json({ code: 200, data: { taskId: "z-1" } });
+    throw new Error(`Unexpected URL ${url}`);
+  };
+  const service = createKieAiService({ workDir, readApiKey: () => "test-key", fetchImpl, now: () => 3000 });
+  const created = await service.createTask({ kind: "image", prompt: "A quiet lake", imageModel: "z-image", aspectRatio: "16:9" });
+  assert.equal(created.status, "waiting");
+  assert.equal(created.model, "z-image");
+  assert.equal(calls[0].body.model, "z-image");
+  assert.equal(calls[0].body.input.aspect_ratio, "16:9");
+});
+
 test("stores a synchronous Kie chat response", async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "kie-chat-"));
   const fetchImpl = async (url) => {

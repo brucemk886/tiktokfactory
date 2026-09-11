@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createKieAiService } from "./kie-ai.js";
+import { normalizeKieImageModel } from "./kie-image-models.js";
 import {
   NARRATIVE_SCORE_THRESHOLD,
   buildNarrationSegments,
@@ -69,7 +70,7 @@ async function main() {
   const elevenLabsModelId = String(payload.elevenLabsModelId || settings.elevenLabsModelId || config.elevenLabsModelId || "eleven_multilingual_v2").trim();
 
   const targetDuration = clamp(Math.round(Number(payload.targetDuration) || 16), 12, 20);
-  const imageModel = payload.imageModel === "grok" ? "grok" : "nano-banana";
+  const imageModel = normalizeKieImageModel(payload.imageModel);
   const totalVideos = clamp(Math.floor(Number(payload.totalVideos) || 1), 1, 3);
   const defaultCredit = requestedLanguage === "zh-CN" ? "一知心理课 一场心灵旅" : "PSYCHOLOGY LAB";
   const credit = String(payload.credit || defaultCredit).trim().slice(0, 24) || defaultCredit;

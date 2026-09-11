@@ -12,6 +12,7 @@ import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 import { scheduleDateKey } from "./schedule-date.js";
 import { listRecordsForOutputCleanup, upsertOfficialRuntimeRecords } from "./publish-record-runtime.js";
 import { reportOfficialNovelTask } from "./novel-exception-reporter.js";
+import { filterKieImageModels } from "./kie-image-models.js";
 
 export { mergeOfficialPublishRecords };
 
@@ -696,9 +697,7 @@ function normalizeTaskType(value) {
 }
 
 function normalizePsychologyGenerationPayload(value = {}) {
-  const imageModels = Array.isArray(value.imageModels)
-    ? value.imageModels.filter((model) => model === "grok" || model === "nano-banana")
-    : [];
+  const imageModels = filterKieImageModels(value.imageModels);
   return {
     question: String(value.question || "").trim(),
     hookTitle: String(value.hookTitle || value.question || "").trim().slice(0, 160),
