@@ -12,5 +12,9 @@ Replace the three psychology template sidebar links with one 模板工作台, ma
 ## Verification
 261 factory tests passed. Local actual-browser test `work/check-psychology-workbench.mjs` passed: one workbench link, three admin cards, clicking every card reaches the right template, child-page active navigation, homepage entry, and operator sees only the authorized four-image card. Screenshot inspected; syntax/diff checks passed. All APIs mocked, no real generation/publishing.
 
-## Status / next step
-Implemented in `D:/cursor/localfactory/work/psychology-directory-release`, uncommitted and not deployed. Current production remains runtime commit 270716a / Cloudflare version 2d3ad1c2-9739-46e9-8c29-be4115c750b7; remote main 951c168 also includes release documentation. On the next deployment instruction, commit/push main, verify clean HEAD == origin/main, use factory-cloud `npm run deploy`, and check the workbench live. Preserve the dirty original checkout and active worker jobs.
+## Release outcome
+User explicitly requested deployment. Committed/pushed runtime `2a98fca` to main and deployed with factory-cloud `npm run deploy` after the clean HEAD == origin/main guard. No migrations were pending. Cloudflare version: `9fbe5054-0b16-4355-816b-f8a0cf2b9db0`.
+
+Live authenticated browser confirmed `/psychology-templates`, all three template cards and the single workbench sidebar entry. Workbench active state was confirmed. Native live card-click verification was limited by the tiny agent browser viewport (no visible geometry); local actual-browser card/navigation checks already passed. Browser sessions were closed. No production generation or publishing jobs were started.
+
+Release checkout remains `D:/cursor/localfactory/work/psychology-directory-release`. Original checkout and running workers were preserved.
