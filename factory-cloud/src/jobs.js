@@ -191,7 +191,7 @@ async function listRecentVideos(db, user, moduleKey = "") {
 export function moduleForJobType(type) {
   const value = String(type || "").trim();
   if (["generate", "schulte", "quiz"].includes(value)) return "mid-video";
-  if (["psychology", "psychology-narrative", "psychology-collage"].includes(value)) return "psychology";
+  if (["psychology", "psychology-narrative", "psychology-collage", "psychology-target-2"].includes(value)) return "psychology";
   return "";
 }
 

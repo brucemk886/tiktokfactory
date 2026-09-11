@@ -5,7 +5,6 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("hub", "/", "业务总览", ALL),
   moduleItem("mid-video", "/mid-video", "模板工作台", ALL, midVideoGroup()),
   moduleItem("schulte", "/schulte", "舒尔特训练", ALL, midVideoGroup()),
-  moduleItem("psychology-narrative", "/psychology-target-2", "心理学模板", ["admin"], midVideoGroup()),
   moduleItem("quiz", "/quiz", "测试题", ["admin"], midVideoGroup()),
   moduleItem("podcast", "/podcast", "播客模板", ALL, midVideoGroup()),
   moduleItem("ai", "/ai", "AI 创作", ["admin"], midVideoGroup()),
@@ -21,7 +20,9 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
   moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-topics", "/psychology-topics", "心理学题目", ALL, psychologyGroup()),
-  moduleItem("psychology", "/psychology", "心理学视频自动化", ALL, psychologyGroup()),
+  moduleItem("psychology", "/psychology", "四图测试模板", ALL, psychologyGroup()),
+  moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup()),
+  moduleItem("psychology-narrative", "/psychology-target-2", "互动测试模板", ["admin"], psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
   moduleItem("psychology-publish", "/psychology-publish", "视频发布", ALL, psychologyGroup()),
@@ -78,7 +79,6 @@ export function moduleIdForPath(pathname) {
     "/official-group-report": "novel-ops-report",
     "/work-journal-mindmap": "work-journal",
     "/psychology-narrative": "psychology-narrative",
-    "/psychology-collage": "psychology-narrative",
   };
   if (aliases[clean]) return aliases[clean];
   return SIDEBAR_MODULES.find((item) => item.href === clean)?.id || "";

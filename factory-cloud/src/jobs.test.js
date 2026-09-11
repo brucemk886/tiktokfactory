@@ -6,7 +6,11 @@ test("recent-video module scope keeps mid-video renders separate", () => {
   assert.equal(moduleForJobType("generate"), "mid-video");
   assert.equal(moduleForJobType("schulte"), "mid-video");
   assert.equal(moduleForJobType("quiz"), "mid-video");
-  assert.equal(moduleForJobType("psychology"), "psychology");
+  for (const type of ["psychology", "psychology-narrative", "psychology-target-2", "psychology-collage"]) {
+    assert.equal(moduleForJobType(type), "psychology");
+    assert.equal(isJobInModule(type, "mid-video"), false);
+    assert.equal(isJobInModule(type, "psychology"), true);
+  }
   assert.equal(isJobInModule("quiz", "mid-video"), true);
   assert.equal(isJobInModule("psychology", "mid-video"), false);
   assert.equal(isJobInModule("reddit-mix", "mid-video"), false);

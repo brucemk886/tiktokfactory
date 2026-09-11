@@ -4,18 +4,27 @@ import test from "node:test";
 import { publicPsychologySettings } from "./compat.js";
 import { persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
-import { SIDEBAR_MODULES, moduleIdForPath } from "./sidebar.js";
+import { getSession } from "./auth.js";
+import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
-test("psychology target pages are routed and protected by one admin sidebar module", () => {
+test("psychology templates have independent entries in the psychology group", () => {
   assert.equal(pageFileFor("/psychology-collage"), "psychology-collage.html");
   assert.equal(pageFileFor("/psychology-target-2"), "psychology-narrative.html");
   assert.equal(pageFileFor("/psychology-narrative"), "psychology-narrative.html");
-  assert.equal(moduleIdForPath("/psychology-collage"), "psychology-narrative");
+  assert.equal(moduleIdForPath("/psychology-collage"), "psychology-collage");
   assert.equal(moduleIdForPath("/psychology-target-2"), "psychology-narrative");
   const module = SIDEBAR_MODULES.find((item) => item.id === "psychology-narrative");
   assert.equal(module?.href, "/psychology-target-2");
-  assert.equal(module?.group?.id, "mid-video");
+  assert.equal(module?.group?.id, "psychology");
   assert.deepEqual(module?.roles, ["admin"]);
+  const templates = SIDEBAR_MODULES.filter(item => ["psychology", "psychology-collage", "psychology-narrative"].includes(item.id));
+  assert.deepEqual(templates.map(item => item.label), ["四图测试模板", "纸张拼贴模板", "互动测试模板"]);
+  assert.ok(templates.every(item => item.group.id === "psychology"));
+  assert.equal(SIDEBAR_MODULES.some(item => item.group?.id === "mid-video" && item.id.startsWith("psychology")), false);
+  assert.equal(moduleIdForPath("/psychology-narrative"), "psychology-narrative");
+  assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-collage"), false);
+  assert.equal(canAccessPath({role:"operator",sidebarModules:["psychology"]}, "/psychology-collage"), false);
+  assert.equal(canAccessPath({role:"operator",sidebarModules:["psychology"]}, "/psychology"), true);
 });
 
 test("psychology settings expose readiness without returning API keys", () => {
@@ -43,7 +52,7 @@ test("cloud queue and local worker dispatch both psychology target types", () =>
   assert.match(jobs, /type: "psychology-target-2"/);
   assert.match(worker, /"psychology-collage": "psychology-collage-job\.js"/);
   assert.match(worker, /"psychology-target-2": "psychology-narrative-job\.js"/);
-  assert.match(auth, /insertModuleAfter\(modules, "schulte", "psychology-narrative"\)/);
+  assert.match(auth, /insertModuleAfter\(modules, "psychology-collage", "psychology-narrative"\)/);
 });
 
 test("psychology result metadata remains available to the existing progress pages", () => {
@@ -81,4 +90,29 @@ test("psychology result metadata remains available to the existing progress page
   assert.equal(job.results[0].duration, 15.1);
   assert.equal(job.score.score, 96);
   assert.equal(job.captionTimings[0].end, 1.2);
+});
+
+
+test("existing sessions get the separated template entries without a database rewrite", async () => {
+  const readUser = async (role, modules) => {
+    const row = {id:"test-user",username:"tester",role,active:1,sidebar_modules_json:JSON.stringify(modules)};
+    const db = {prepare(sql){return {bind(){return this;},async first(){return sql.includes("factory_sessions") ? {user_id:row.id,expires_at:Date.now()+60000} : row;}};}};
+    return (await getSession(new Request("https://example.test/",{headers:{cookie:"lf_session=test-session"}}),db)).user;
+  };
+  const admin = await readUser("admin",["psychology","psychology-narrative","schulte"]);
+  for (const path of ["/psychology","/psychology-collage","/psychology-target-2","/psychology-narrative"]) assert.equal(canAccessPath(admin,path),true);
+  assert.equal(admin.sidebarModules.filter(id=>id==="psychology-collage").length,1);
+  const operator = await readUser("operator",["psychology"]);
+  assert.equal(canAccessPath(operator,"/psychology"),true);
+  assert.equal(canAccessPath(operator,"/psychology-collage"),false);
+  assert.equal(canAccessPath(operator,"/psychology-target-2"),false);
+});
+
+test("mid-video cards no longer link psychology templates and titles match their entries", () => {
+  const html = name => fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
+  assert.doesNotMatch(html("mid-video.html"), /href="\/psychology/);
+  for (const [file,title] of [["psychology.html","四图测试模板"],["psychology-collage.html","纸张拼贴模板"],["psychology-narrative.html","互动测试模板"]]) {
+    assert.ok(html(file).includes("<h1>"+title+"</h1>"));
+    assert.ok(html(file).includes('src="/access.js"'));
+  }
 });
