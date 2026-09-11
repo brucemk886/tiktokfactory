@@ -5,7 +5,7 @@ Add a peer viral-video module in the psychology group with an external write API
 
 ## Decisions
 - Online module `/psychology-peer-hits`, available to admins, separate from the existing novel peer-hit module. Existing admin sessions acquire its sidebar permission through the normal module normalization.
-- Additive D1 migration `0022_psychology_peer_hits.sql`: video records with unique identity and sorted-list indexes; per-admin API key hashes and masked prefixes. Records are shared among authorized admins; full keys are returned only when generated. No production migration has run.
+- Additive D1 migration `0022_psychology_peer_hits.sql`: video records with unique identity and sorted-list indexes; per-admin API key hashes and masked prefixes. Records are shared among authorized admins; full keys are returned only when generated. Migration 0022 was applied successfully to production on 2026-09-11.
 - Dedicated external POST `/api/integrations/psychology/peer-hits` authenticates a module-only Bearer token without a login cookie. It checks that the owner remains an active admin. Tokens cannot read records, change other modules or publish videos. UI key rotation/revocation uses authenticated same-origin admin endpoints.
 - Up to 100 records / 1 MiB per request. Validate all before transactional batch write. Video IDs stay strings; URLs and numeric/time fields are validated. TikTok URL IDs deduplicate account-renamed/tracking-link variants; unresolved short URLs need a stable identity supplied by the bot.
 - One latest row per video. Omitted/null fields retain current values, zero values are valid, `videoData` uses JSON Merge Patch, and older `collectedAt` inputs are ignored. No history snapshots or remote scraping.
@@ -24,9 +24,14 @@ Add a peer viral-video module in the psychology group with an external write API
 - `node work/check-psychology-peer-hits.mjs`: actual frontend with actual HTTP handler backed by in-memory SQLite and mock admin session. Verified bot inserts/updates, manual imports, pagination, search, zero/null metrics, XSS escaping, key one-time display/revocation and layout at 1600 and 900 pixels. Screenshots inspected. No production API, image generation, TTS or publishing requests were made.
 - Script syntax checks and `git diff --check` passed.
 
-## Unfinished / recommended next step
-Code is in `D:/cursor/localfactory/work/psychology-directory-release` on main, based on `528da09`. On 2026-09-11 the user explicitly requested “上线”, authorizing this module and the preceding Z-Image/topic-library changes to be committed, pushed and deployed together. The earlier approval block is resolved by that instruction. At preparation of this release commit, deployment and live verification are still pending.
+## Release outcome
+- User authorized the combined release with “上线” on 2026-09-11.
+- Runtime commit: `270716a391700e2635b3aafac2db22b377dacdcb`, pushed to GitHub main before deployment. The deploy check confirmed a clean worktree and HEAD == origin/main.
+- Deployed using `npm run deploy` from factory-cloud. Migration 0022 succeeded; Cloudflare Worker version is `2d3ad1c2-9739-46e9-8c29-be4115c750b7`.
+- Production health returned 200. External import without a key returned the expected 401. The authenticated peer-hit page loaded the empty D1 list and key metadata successfully. Live browser checks confirmed all three template pages show Z-Image and the sidebar shows peer hits with the topic-library entry removed. Browser session was closed after verification.
+- No real video generation or publishing tasks were submitted, and no bot key or sample record was created in production.
 
-Release steps: fetch/reconcile origin/main while preserving these changes, commit and push main, verify clean worktree and exact HEAD == origin/main, then use `npm run deploy` in factory-cloud (which applies the migration). Verify live sidebar/page and unauthenticated API rejection. Let the user generate their bot key in the UI; do not put it in Git or a handoff.
+## Next step
+The user can open `https://factory.tiktokaitool.com/psychology-peer-hits`, generate a dedicated API key, and configure grokbot using `docs/psychology-peer-hits-api.md`.
 
-Original `D:/cursor/localfactory` has unrelated pending changes and running workers. Do not overwrite that checkout or interrupt existing jobs. The previously deployed navigation release remains 528da09 / Cloudflare version 537e28b9-f6ab-43a9-ab52-cccb5fba7d44 until a later authorized release.
+The release checkout is `D:/cursor/localfactory/work/psychology-directory-release`. The original `D:/cursor/localfactory` still contains unrelated pending changes and running workers; it was not reset, pulled or restarted. New cloud jobs and older queued payloads enforce Z-Image when delivered to workers.

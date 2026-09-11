@@ -15,5 +15,5 @@ scripts/psychology-image-policy.js; the three psychology job entry points and re
 ## Verification
 254 full factory tests passed. Browser test ran actual frontend scripts with mocked APIs: all three submit Z-Image despite old model settings; manual four-image topic/count submission works; no topic-library API requests or browser exceptions. Tests did not call real image generation, TTS or publishing APIs.
 
-## Remaining / next step
-The user explicitly authorized the combined deployment with “上线” on 2026-09-11, resolving the prior main-push authorization block. Commit/push main, verify a clean checkout with HEAD == origin/main, deploy using factory-cloud/npm run deploy and check the live sidebar and model controls. See the psychology-peer-hits handoff for the combined release. Original localfactory checkout contains unrelated pending work; do not overwrite it or restart workers as part of this release.
+## Release outcome
+Released together with the psychology peer-hit module on 2026-09-11 after the user explicitly requested “上线”. Runtime commit `270716a391700e2635b3aafac2db22b377dacdcb`; Cloudflare version `2d3ad1c2-9739-46e9-8c29-be4115c750b7`. The combined test suite passed all 261 tests. Live browser verification confirmed Z-Image on all three psychology templates and no topic-library sidebar entry. Original checkout and running workers were preserved. See `2026-09-11-psychology-peer-hits.md` for release details.
