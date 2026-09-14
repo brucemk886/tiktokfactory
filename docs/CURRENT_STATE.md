@@ -1,8 +1,12 @@
 # Current State
 
-Updated: 2026-09-02
+Updated: 2026-09-04
 
 ## Platform
+
+- Novel video storage is configured under `H:/小说推文视频`: raw recordings in `原始录制/YYYY-MM-DD`, final videos in `成片/YYYY-MM-DD`, and render intermediates in `临时合成/YYYY-MM-DD` (Asia/Shanghai). Existing D-drive outputs remain readable via registered legacy roots. Local factory restarted while idle on 2026-09-06 and HTTP 3010 returned 200, loading the new code/config; no cloud deployment was performed. See `docs/handoffs/2026-09-06-novel-video-h-drive-daily-storage.md`.
+
+- Template 2 final choice is sequential recording and composition (implemented locally, not deployed): finish one independent fresh-footage video before recording the next, with no cross-video tail reuse. Item recording failures can be skipped; simulator/game/disk failures stop the task. Related tests 56/56 and sequential failure-handling smoke pass; actual game recording is still pending. See `docs/handoffs/2026-09-06-template2-sequential-final.md`.
 
 - Local Factory serves its authenticated UI on port 3010 by default. Logged-in admins land on `/` business hub.
 - The workspace UI is now a light paper studio: warm cream background, ink text, olive/lime accents, 236px sidebar. Operational pages load `theme-ops.css` last so hardcoded dark panels, forms, and tables flip to the same light surfaces.
@@ -13,6 +17,7 @@ Updated: 2026-09-02
 - The mid-video workbench now includes two psychology templates: `/psychology-collage` for 60–120 second paper-collage narratives and `/psychology-target-2` for 12–20 second interactive tests. Target 2 defaults to one-shot local Kokoro English narration, routes Chinese narration to one ElevenLabs timestamp request, and drives sentence captions plus SVG entrance/exit timing from measured audio. Generated MP4 and contact sheets remain in local `outputs` for review and are not uploaded to cloud storage.
 - Runtime output and queue data use configured work and output directories.
 - TikTok AI Tool is maintained as a separate hosted subproject.
+- TikTok App QR authorization is live on tiktokaitool.com (2026-09-07): mobile OAuth callback automatically binds the authorized account to the initiating workspace, and the desktop refreshes without a second confirmation. Existing browser OAuth remains available. Automatic-binding release 8a83112; see docs/handoffs/2026-09-07-tiktok-app-qr-authorization.md.
 - Official TikTok authorization is hosted by TikTok AI Tool. Local Factory's `/tiktok-connections` page stores only the hosted bridge URL/API key and lists accounts that completed authorization successfully.
 - Local Factory contains no legacy connector, destination PostgreSQL, or fallback path. It reads authorized accounts, videos, and private metrics only through the hosted bridge API.
 - Official novel operations no longer send full second-by-second curves to DeepSeek. Local rules score every video; the model only receives rewrite-eligible losers plus a compact scoreboard, then SOL reviews that slim packet. GeeLark/third-party operations keep the previous backup path.
@@ -22,6 +27,7 @@ Updated: 2026-09-02
 - `/novel-library` now defaults to the book catalog. Create and edit are separate pages. Each platform keeps its own featured list (set when creating/editing) and historical-hit list (auto-ranked from matched video plays, top 50 with at least 200 views).
 - Novel effects are split by channel. `/novel-effects` is official API only. GeeLark third-party novel effects live at `/geelark-novel-effects` under the GeeLark backup group. The two sources are never mixed.
 - `/novel-rewrite` is the manual rewrite workspace. The book list has a 改写 button that opens that novel. Saved versions stay under the novel, show up in novel effects, and appear in `/rewrite-records` next to official-operation rewrites.
+- Peer-hit narration now has an operations batch path for 3–5 minute TikTok novel rewrites. Each source produces three auto-selected, materially different English scripts; hook, pacing, 780–880 word length, CTA, repetition, and pairwise-similarity gates run before save. Failed quality checks regenerate at most twice. Narrator gender is reviewed before queueing so Kokoro uses the default female or male voice, and generated MP3 duration/completeness is checked with at most two speed-adjusted regenerations.
 - Cloud novel-opening jobs persist their full bilingual variants and the rewrite page automatically resumes the current user's latest job for that novel for 24 hours, so a timeout or page refresh does not force duplicate generation.
 - `/novel-library` and `/novel-effects` paginate book/result cards in groups of 20. Official effect reads omit full source chapters, fetch independent datasets in parallel, and return only the current or viewed result rows to keep the hosted pages responsive.
 - The sidebar module is now `小说内容`: the first-level entity is the canonical novel source, and its child records are generated script/opening variants, paired local audio, and matched TikTok video performance. Existing audio records are imported as unassigned scripts until an operator links them to a novel; AI rewrites inherit their parent script's novel relationship.
@@ -61,3 +67,13 @@ Updated: 2026-09-02
 - 同一天手动重跑覆盖当天快照，不同日期永久保留，支持账号与单视频历史变化查询。
 - 管理员侧边栏的官方数据入口现为 `授权账号`，并拆分为账号列表、账号详情与播放历史、所选账号视频、单视频历史变化四个页面；四个页面继续读取同一份本地 SQLite 归档并支持手动同步。
 - 线上 Signal Desk 的官方日快照只保留 30 天；长期历史以本地 D 盘归档为准。
+
+# 官方发布记录 SQLite（2026-09-06 已切生产）
+
+- 本机 `windows-local` 官方 API 发布记录读写 `official-history.sqlite`，开关在 `work/official-publish-store.json`。
+- 工人同步走 `POST /api/worker/publish-records/sync`（protocolVersion=2）。GeeLark 仍只在 `publish-records.json`。
+- 旧 JSON 和 `.bak` 都还在，不要删。细节见 `docs/publish-records-sqlite-cutover.md`。
+
+- 2026-09-07 cloud release: factory archives now accept only explicitly business-linked accounts; desk refreshes videos younger than 24 hours every two hours (even Beijing hours :15), retaining daily 07:00 full sync. Factory ee83f4b / desk 231fde6. Local timer code pulled, running local process awaits a safe restart. See docs/handoffs/2026-09-07-scoped-factory-sync-release.md.
+
+- Customer publishing API is live (2026-09-07): workspace API 接入 provides owner-scoped keys and upload/batch documentation. Website main 8319dd8, deployed version 40e5e889-3809-4951-9e81-179e81468470; 120 tests pass. Existing user quotas apply; paid subscription enforcement remains pending. See docs/handoffs/2026-09-07-customer-api-deployed.md.

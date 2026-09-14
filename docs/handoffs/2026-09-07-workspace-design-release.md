@@ -1,0 +1,3 @@
+# Workspace design release — 2026-09-07
+Production commit 4d28b69; version702d26bb-8a8a-4316-ae84-c5dafee09db3. Main pushed, clean exact origin/main, official npm run cloudflare:deploy passed. 134 tests passed.
+Live customer history screenshot inspected: table enabled, date labels160px, account220px, size96px, blue primary rgb37,99,235; page1905px within1920 viewport. No live publication performed. Local visual QA covered other customer views and729px responsive layout. Browser session hoyd closed, local mock server86204 stopped. Main-repository handoff documents detailed fixes and reference. Previous raw-error/internal-info audit findings remain separate except empty metrics card and comments copy cleaned during this visual pass.

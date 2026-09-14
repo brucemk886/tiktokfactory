@@ -8,7 +8,7 @@ import { serveNovelAudio } from "./novel-audio-archive.js";
 import { buildAudioGeneratePayload, hydrateNovel, resolveNovelTitle } from "./novels.js";
 import { peerRewriteOpeningPayload } from "../../scripts/novel-rewrite-source.js";
 import { assertOfficialPublishAccess } from "./official.js";
-import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
+import { usesMinecraftSimulator, isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "../../scripts/video-template.js";
 
 export async function handleCompat(request, env, url, session) {
   if (!session) return null;
@@ -136,7 +136,7 @@ export async function handleCompat(request, env, url, session) {
           return errorJson("请勾选小说平台。", 400);
         }
         if (isParkourVideoTemplate(generation)) {
-          if (!String(generation.videoDir || "").trim()) return errorJson("请填写工人机上的跑酷视频目录。", 400);
+          if (!usesMinecraftSimulator(generation) && !String(generation.videoDir || "").trim()) return errorJson("请填写工人机上的跑酷视频目录。", 400);
         } else if (!String(generation.videoDir || "").trim() && !String(generation.assetGroupId || "").trim()) {
           return errorJson("请选择素材组，或填写工人机上的视频素材目录。", 400);
         }
@@ -569,11 +569,12 @@ function normalizeTaskType(value) {
   return "reddit-mix";
 }
 
-function normalizeRedditGeneration(value = {}) {
+export function normalizeRedditGeneration(value = {}) {
   const generation = value && typeof value === "object" ? { ...value } : {};
   generation.videoTemplate = normalizeVideoTemplate(generation.videoTemplate);
   if (generation.videoTemplate === "parkour") {
-    generation.videoDir = resolveParkourVideoDir(generation.videoDir);
+    generation.parkourSource = usesMinecraftSimulator(generation) ? "simulator" : "directory";
+    generation.videoDir = usesMinecraftSimulator(generation) ? "" : resolveParkourVideoDir(generation.videoDir);
     generation.assetGroupId = "";
     generation.assetFolders = [];
   } else {

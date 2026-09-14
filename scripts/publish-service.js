@@ -1,3 +1,4 @@
+import { resolveStoredOutput, isStoredOutputPath } from "./output-storage.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -490,8 +491,8 @@ function buildAccountMap(accounts) {
 }
 
 function resolveOutputPath(outputDir, fileName, expectedDuration = 0) {
-  const resolved = path.resolve(outputDir, fileName);
-  if (!resolved.startsWith(path.resolve(outputDir) + path.sep) || !fs.existsSync(resolved)) throw new Error(`视频文件不存在：${fileName}`);
+  const resolved = resolveStoredOutput(outputDir, fileName);
+  if (!isStoredOutputPath(outputDir, resolved) || !fs.existsSync(resolved)) throw new Error(`视频文件不存在：${fileName}`);
   const stat = fs.statSync(resolved);
   if (!stat.isFile() || stat.size < 10 * 1024) throw new Error(`视频文件无效或体积异常：${fileName}`);
   const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-show_entries", "stream=codec_type", "-of", "json", resolved], {

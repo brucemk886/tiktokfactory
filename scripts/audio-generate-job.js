@@ -1,12 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createAudioLibraryService } from "./audio-library.js";
+import { createAudioLibraryService, normalizeSpeechSpeed } from "./audio-library.js";
 import { findAudioInLibrary, resolveTargetAudioDir } from "./audio-library-groups.js";
 import { writeCaptionCacheForFiles } from "./caption-cache.js";
 import { normalizeTtsProvider, resolveVoiceForProvider } from "./kokoro-voices.js";
 import { novelAudioMetaFrom, writeNovelAudioMeta } from "./novel-audio-meta.js";
 import { createNovelContentLibraryService } from "./novel-content-library.js";
 import { readConfig } from "./video-core.js";
+
+export const LONGFORM_AUDIO_LABEL = "3-5分钟版";
+export const LONGFORM_AUDIO_MIN_SECONDS = 180;
+export const LONGFORM_AUDIO_MAX_SECONDS = 300;
+export const LONGFORM_AUDIO_MAX_REGENERATIONS = 2;
 
 export async function runAudioGenerateJob({
   root = process.cwd(),
@@ -36,7 +41,7 @@ export async function runAudioGenerateJob({
       message: `正在生成第 ${index + 1}/${items.length} 条到 ${path.basename(targetAudioDir)}...`
     });
     try {
-      const record = await generateOne(library, item, targetAudioDir, bootConfig, payload, workDir);
+      const record = await generateOneWithQuality(library, item, targetAudioDir, bootConfig, payload, workDir);
       stampNovelAudioMeta(record.targetAudioPath, targetAudioDir, item, payload);
       if (novels && item.scriptId && record.id) {
         try { novels.attachScriptAudio(item.scriptId, record.id); } catch {}
@@ -46,7 +51,8 @@ export async function runAudioGenerateJob({
       failed.push({
         scriptId: String(item.scriptId || "").trim(),
         title: String(item.title || "").trim(),
-        error: error.message || "生成失败"
+        error: error.message || "生成失败",
+        qualityAudit: error.qualityAudit || null
       });
     }
   }
@@ -69,6 +75,90 @@ export function resolveItemAudioDir(config, payload = {}, item = {}) {
   });
 }
 
+async function generateOneWithQuality(library, item, targetAudioDir, config, payload = {}, workDir = "") {
+  if (!isLongformAudioItem(item)) return generateOne(library, item, targetAudioDir, config, payload, workDir);
+  const attempts = [];
+  let speed = normalizeSpeechSpeed(item.speechSpeed ?? payload.speechSpeed);
+  let lastError = null;
+  for (let attempt = 0; attempt <= LONGFORM_AUDIO_MAX_REGENERATIONS; attempt += 1) {
+    try {
+      const tunedItem = { ...item, speechSpeed: speed };
+      const record = await generateOne(library, tunedItem, targetAudioDir, config, { ...payload, speechSpeed: speed }, workDir);
+      const audit = auditLongformAudioRecord(record, { speed, attempt });
+      attempts.push({ ...audit, audioId: record.id || "" });
+      if (audit.passed) {
+        cleanupSupersededTargetCopies(attempts, record.targetAudioPath, targetAudioDir);
+        return {
+          ...record,
+          qualityAudit: {
+            passed: true,
+            regenerationCount: attempt,
+            maxRegenerations: LONGFORM_AUDIO_MAX_REGENERATIONS,
+            attempts
+          }
+        };
+      }
+      lastError = new Error(audit.issue);
+      speed = nextDurationTuningSpeed(speed, audit.duration);
+    } catch (error) {
+      lastError = error;
+      attempts.push({ passed: false, duration: 0, speed, issue: String(error?.message || error) });
+    }
+  }
+  cleanupSupersededTargetCopies(attempts, "", targetAudioDir);
+  const error = new Error(`3–5 分钟音频最多重生成 ${LONGFORM_AUDIO_MAX_REGENERATIONS} 次后仍未达标：${lastError?.message || "未知问题"}`);
+  error.code = "AUDIO_QUALITY_REJECTED";
+  error.qualityAudit = { passed: false, maxRegenerations: LONGFORM_AUDIO_MAX_REGENERATIONS, attempts };
+  throw error;
+}
+
+export function isLongformAudioItem(item = {}) {
+  return String(item.title || item.versionLabel || "").includes(LONGFORM_AUDIO_LABEL);
+}
+
+export function auditLongformAudioRecord(record = {}, { speed = 1, attempt = 0 } = {}) {
+  const duration = Math.max(0, Number(record.duration) || 0);
+  const size = Math.max(0, Number(record.size) || 0);
+  let issue = "";
+  if (!duration) issue = "音频无法解码或没有有效时长";
+  else if (duration < LONGFORM_AUDIO_MIN_SECONDS) issue = `实际 ${duration.toFixed(1)} 秒，短于 3 分钟`;
+  else if (duration > LONGFORM_AUDIO_MAX_SECONDS) issue = `实际 ${duration.toFixed(1)} 秒，长于 5 分钟`;
+  else if (size < 32_000) issue = `音频文件只有 ${size} 字节，疑似不完整`;
+  return {
+    passed: !issue,
+    duration,
+    size,
+    speed: normalizeSpeechSpeed(speed),
+    attempt: Number(attempt) || 0,
+    targetSeconds: { min: LONGFORM_AUDIO_MIN_SECONDS, max: LONGFORM_AUDIO_MAX_SECONDS },
+    issue
+  };
+}
+
+function nextDurationTuningSpeed(currentSpeed, duration) {
+  const current = normalizeSpeechSpeed(currentSpeed);
+  const target = duration < LONGFORM_AUDIO_MIN_SECONDS ? 215 : 270;
+  return normalizeSpeechSpeed(current * Math.max(1, Number(duration) || target) / target);
+}
+
+function cleanupSupersededTargetCopies(attempts, keepPath, targetAudioDir) {
+  if (!String(targetAudioDir || "").trim()) return;
+  const root = path.resolve(String(targetAudioDir || ""));
+  const keep = keepPath ? path.resolve(keepPath) : "";
+  for (const attempt of attempts) {
+    const audioId = String(attempt.audioId || "").trim();
+    if (!audioId) continue;
+    const matches = fs.existsSync(root)
+      ? fs.readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.includes(audioId.slice(-12)))
+      : [];
+    for (const entry of matches) {
+      const candidate = path.resolve(root, entry.name);
+      const relative = path.relative(root, candidate);
+      if (!relative || relative.startsWith("..") || path.isAbsolute(relative) || candidate === keep) continue;
+      try { fs.rmSync(candidate, { force: true }); } catch {}
+    }
+  }
+}
 async function generateOne(library, item, targetAudioDir, config, payload = {}, workDir = "") {
   const existingPath = findExistingAudio(library, item, config);
   if (existingPath) {
@@ -161,7 +251,8 @@ function publicAudioResult(item, record, targetAudioDir) {
     duration: Number(record.duration) || 0,
     size: Number(record.size) || 0,
     createdAt: record.createdAt || new Date().toISOString(),
-    cacheHit: Boolean(record.cacheHit)
+    cacheHit: Boolean(record.cacheHit),
+    qualityAudit: record.qualityAudit || null
   };
 }
 

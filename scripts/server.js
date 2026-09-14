@@ -1,3 +1,4 @@
+import { resolveStoredOutput, isStoredOutputPath } from "./output-storage.js";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -731,7 +732,7 @@ const server = http.createServer(async (req, res) => {
         : extension === ".png"
           ? "image/png"
           : "video/mp4";
-      return sendFile(res, path.join(outputDir, fileName), contentType);
+      return sendFile(res, resolveStoredOutput(outputDir, fileName), contentType);
     }
 
     if (req.method === "GET" && url.pathname === "/api/private-tiktok/settings") {
@@ -2567,7 +2568,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/reddit-mix/start") {
       const payload = await readJsonBody(req);
       if (!String(payload.audioDir || "").trim()) return sendJson(res, 400, { error: "请输入音频文件夹路径。" });
-      if (!String(payload.videoDir || "").trim() && !String(payload.assetGroupId || "").trim()) {
+      if (!(payload.videoTemplate === "parkour" && payload.parkourSource === "simulator") && !String(payload.videoDir || "").trim() && !String(payload.assetGroupId || "").trim()) {
         return sendJson(res, 400, { error: payload.videoTemplate === "parkour" ? "请选择跑酷视频目录。" : "请选择素材组或视频素材目录。" });
       }
 
@@ -2877,8 +2878,8 @@ async function publishThroughOfficialTikTok(payload = {}) {
   }
   const jobs = planned.map((job) => {
     const fileName = path.basename(String(job.video?.fileName || "video.mp4"));
-    const filePath = path.resolve(outputDir, fileName);
-    if (!isPathInside(filePath, outputDir)) {
+    const filePath = resolveStoredOutput(outputDir, fileName);
+    if (!isStoredOutputPath(outputDir, filePath)) {
       throw Object.assign(new Error(`找不到待发布视频：${fileName}`), { statusCode: 404 });
     }
     return { ...job, fileName, filePath };
@@ -3843,9 +3844,9 @@ function resolveOutputVideoPath(value) {
   if (!fileName || path.extname(fileName).toLowerCase() !== ".mp4") {
     throw new Error("只能发布 outputs 目录下的 mp4 视频。");
   }
-  const filePath = path.join(outputDir, fileName);
+  const filePath = resolveStoredOutput(outputDir, fileName);
   const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(outputDir) + path.sep) || !fs.existsSync(resolved)) {
+  if (!isStoredOutputPath(outputDir, resolved) || !fs.existsSync(resolved)) {
     throw new Error(`视频文件不存在：${fileName}`);
   }
   return resolved;

@@ -89,7 +89,7 @@ async function helloWorker(context) {
 }
 
 export const PUBLISH_JOB_TYPES = ["official-publish"];
-export const DEFAULT_RENDER_CONCURRENCY = 2;
+export const DEFAULT_RENDER_CONCURRENCY = 1;
 export const DEFAULT_PUBLISH_CONCURRENCY = 1;
 
 // Render jobs (ffmpeg, TTS) and publish jobs (uploads to the desk) have very
@@ -1015,7 +1015,8 @@ function backfillNovelExceptionsOnce(context) {
 }
 
 function writeLocalJob(filePath, value) {
-  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+  const current = fs.existsSync(filePath) ? readLocalJob(filePath) : {};
+  fs.writeFileSync(filePath, JSON.stringify({ ...current, ...value }, null, 2), "utf8");
 }
 
 function readLocalJob(filePath) {

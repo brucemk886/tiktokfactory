@@ -1,3 +1,4 @@
+import { resolveStoredOutput } from "./output-storage.js";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -6,7 +7,7 @@ import { resolveTikTokCaption } from "./novel-video-badge.js";
 import { mergeOfficialPublishRecords } from "./official-publish-records.js";
 import { isOfficialPublishAbort } from "./official-publish-abort.js";
 import { normalizeAssetFolders } from "./asset-library.js";
-import { isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
+import { usesMinecraftSimulator, isParkourVideoTemplate, normalizeVideoTemplate, resolveParkourVideoDir } from "./video-template.js";
 import { normalizeAudioDirs } from "./audio-library-groups.js";
 import { normalizeSubtitleAnimationMode } from "./subtitle-animation.js";
 import { scheduleDateKey } from "./schedule-date.js";
@@ -396,6 +397,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
       const jobPath = path.join(generationJobsDir, `${jobId}.json`);
       fs.writeFileSync(payloadPath, JSON.stringify({
         ...task.generation,
+        taskId: task.id,
         jobId,
         burnNovelBadge: normalizePublishProvider(task.publish?.provider) === PUBLISH_PROVIDER_OFFICIAL
       }, null, 2), "utf8");
@@ -614,7 +616,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
         const generatedVideos = (task.generatedVideos || []).map((video) => {
           const fileName = path.basename(String(video.fileName || ""));
           if (!fileName || protectedNames.has(fileName) || video.outputDeletedAt) return video;
-          const filePath = path.resolve(outputRoot, fileName);
+          const filePath = resolveStoredOutput(outputRoot, fileName);
           if (!filePath.startsWith(`${outputRoot}${path.sep}`)) return video;
           if (fs.existsSync(filePath)) {
             const stat = fs.statSync(filePath);
@@ -641,7 +643,7 @@ export function createAutoTaskManager({ root, workDir, outputDir, publishService
         const safelyPublished = fileRecords.length > 0 && fileRecords.every((record) => record.status === "submitted" || record.status === "retried");
         const retentionStart = Math.max(0, ...fileRecords.map((record) => Math.max(Number(record.updatedAt) || 0, (Number(record.scheduleAt) || 0) * 1000)));
         if (!safelyPublished || !retentionStart || retentionStart > cutoff) continue;
-        const filePath = path.resolve(outputRoot, fileName);
+        const filePath = resolveStoredOutput(outputRoot, fileName);
         if (!filePath.startsWith(`${outputRoot}${path.sep}`) || !fs.existsSync(filePath)) continue;
         const stat = fs.statSync(filePath);
         fs.rmSync(filePath);
@@ -678,7 +680,7 @@ function validateTaskPayload(payload) {
     return;
   }
   if (isParkourVideoTemplate(generation)) {
-    if (!String(generation.videoDir || "").trim()) throw new Error("请选择跑酷视频目录。");
+    if (!usesMinecraftSimulator(generation) && !String(generation.videoDir || "").trim()) throw new Error("请选择跑酷视频目录。");
   } else if (!String(generation.assetGroupId || "").trim() && !String(generation.videoDir || "").trim()) {
     throw new Error("请选择素材组或视频素材目录。");
   }
@@ -793,13 +795,14 @@ function normalizeSchulteGenerationPayload(value = {}) {
   };
 }
 
-function normalizeGenerationPayload(value = {}) {
+export function normalizeGenerationPayload(value = {}) {
   const videoTemplate = normalizeVideoTemplate(value.videoTemplate);
-  const videoDir = videoTemplate === "parkour"
+  const videoDir = usesMinecraftSimulator(value) ? "" : videoTemplate === "parkour"
     ? resolveParkourVideoDir(value.videoDir)
     : String(value.videoDir || "");
   return {
     videoTemplate,
+    parkourSource: usesMinecraftSimulator(value) ? "simulator" : "directory",
     videoDir,
     includeVideoSubfolders: value.includeVideoSubfolders !== false,
     audioDir: String(value.audioDir || ""),
@@ -965,7 +968,7 @@ export function missingOfficialPublishFiles({ videos = [], outputDir, savedAsset
   for (const video of Array.isArray(videos) ? videos : []) {
     const fileName = path.basename(String(video?.fileName || "").trim());
     if (!fileName) continue;
-    const filePath = path.resolve(outputDir, fileName);
+    const filePath = resolveStoredOutput(outputDir, fileName);
     if (savedAssets[filePath]?.assetKey) continue;
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) missing.push(fileName);
   }

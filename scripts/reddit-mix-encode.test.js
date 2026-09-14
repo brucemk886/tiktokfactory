@@ -34,6 +34,8 @@ test("final mux locks video bitrate at 2000k", () => {
   assert.match(mixJob, /overlay=x=\(W-w\)\/2:y=\$\{y\}:enable='lt\(t,\$\{until\}\)\'/);
   assert.doesNotMatch(mixJob, /\* 0\.13/);
   assert.match(mixJob, /planMixAudioOrder/);
+  assert.match(mixJob, /resolveMixVideoConcurrency/);
+  assert.match(mixJob, /videoConcurrency/);
   assert.doesNotMatch(mixJob, /refreshAudioHitWeights/);
 });
 

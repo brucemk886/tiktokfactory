@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File $env:TEMP\setup-worker.ps1 `
   -AudioRoot E:\音频目录
 ```
 
-可选参数：`-DataDir D:\localfactory-data`、`-RepoDir D:\cursor\localfactory`、`-RenderConcurrency 2`（有 NVENC 可以 3–4）、`-ElevenLabsKey` / `-DeskApiKey`（想用别的 key 时覆盖云端下发的）、`-SkipInstallWatchdog`。
+可选参数：`-DataDir D:\localfactory-data`、`-RepoDir D:\cursor\localfactory`、`-RenderConcurrency 1`（同时只跑一条任务；任务内默认 2 路过片）、`-ElevenLabsKey` / `-DeskApiKey`（想用别的 key 时覆盖云端下发的）、`-SkipInstallWatchdog`。
 
 脚本做的事：
 

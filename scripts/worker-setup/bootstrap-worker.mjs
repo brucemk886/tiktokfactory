@@ -58,12 +58,12 @@ export function buildWorkerConfig(example, { dataDir, assetLibraryRoot, audioLib
   };
 }
 
-export function buildWorkerSettings({ factoryUrl, token, workerId, label = "", renderConcurrency = 2 }) {
+export function buildWorkerSettings({ factoryUrl, token, workerId, label = "", renderConcurrency = 1 }) {
   const id = String(workerId || "").trim();
   if (!id) throw new Error("--worker-id 不能为空。");
   if (id === "windows-local") throw new Error("windows-local 已经是另一台机器的 workerId，换一个（例如 worker-2）。");
   if (!String(token || "").trim()) throw new Error("--token 不能为空（工厂的 WORKER_TOKEN）。");
-  const concurrency = Math.min(8, Math.max(1, Math.floor(Number(renderConcurrency) || 2)));
+  const concurrency = Math.min(8, Math.max(1, Math.floor(Number(renderConcurrency) || 1)));
   return {
     url: String(factoryUrl || DEFAULT_FACTORY_URL).replace(/\/+$/, ""),
     token: String(token).trim(),

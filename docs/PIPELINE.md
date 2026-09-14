@@ -18,8 +18,8 @@
  本机工人 (windows-local)                 工厂云 factory.tiktokaitool.com                中台 tiktokaitool.com                 TikTok
  ─────────────────────                    ────────────────────────────                 ───────────────────────               ──────
  hello ───────────────────────────────▶  /api/worker/hello  重排本机中断 running
- render lane ×2  claim ───────────────▶  /api/worker/claim  LIMIT 1, 排除 official-publish
-   ffmpeg/TTS 渲染成片
+ render lane ×1  claim ───────────────▶  /api/worker/claim  LIMIT 1, 排除 official-publish
+   一个混剪任务内同时出 2 条片；先创建的任务整单跑完再接下一条
    complete{publishPending} ──────────▶  /api/worker/jobs/:id/complete
                                           └─ enqueue official-publish (publishOnly)
  publish lane ×1  claim ──────────────▶  /api/worker/claim  仅 official-publish
@@ -61,11 +61,11 @@
 | `label` | 空 | 建任务页下拉里显示的名字，`FACTORY_WORKER_LABEL` |
 | `pollMs` | 60000 | 空闲时 claim 间隔 |
 | `syncMs` | 300000 | 库存同步间隔 |
-| `renderConcurrency` | 默认 2（1–8） | `FACTORY_WORKER_RENDER_CONCURRENCY` |
+| `renderConcurrency` | 默认 1（1–8） | 同时只跑一条渲染任务，先创建的先跑完；`FACTORY_WORKER_RENDER_CONCURRENCY` |
 | `publishConcurrency` | 默认 1（1–8） | `FACTORY_WORKER_PUBLISH_CONCURRENCY` |
 | `renderJobTypes` | 默认空 = 除 `official-publish` 外都接 | 渲染通道白名单（数组或逗号分隔），`FACTORY_WORKER_RENDER_JOB_TYPES`；第二台机器配 `["auto-task","reddit-mix"]` 只接混剪 |
 
-两条通道各自循环：`render` 通道 claim 除 `official-publish` 外的所有类型；`publish` 通道只 claim `official-publish`。每次 claim 最多 1 条，通道内用 `active` 集合顶到并发上限。claim 失败固定睡 5s 重试；任务失败只打日志、释放槽位。
+两条通道各自循环：`render` 通道 claim 除 `official-publish` 外的所有类型；`publish` 通道只 claim `official-publish`。每次 claim 最多 1 条，按 `created_at` 先创建的先领。通道内用 `active` 集合顶到并发上限。混剪任务内部默认同时合成 2 条视频（跑酷/我的世界录制仍为 1 路）。claim 失败固定睡 5s 重试；任务失败只打日志、释放槽位。
 
 渲染完成后 `complete` 带 `publishPending: true`，云端另起一条 `official-publish` 任务给 publish 通道，渲染和发布互不阻塞。
 
@@ -268,7 +268,7 @@
 | 环节 | 当前上限 | 结论 |
 |---|---|---|
 | 本机日规划 | 3000（`config.json` 已配） | 够；容量校验已把排队任务算进去 |
-| 本机渲染 | 2 并发，约 20s/条 | 3000 条约 8.3h，紧；可提 `renderConcurrency`（看 CPU）或加第二台工人 |
+| 本机渲染 | 同时 1 个任务，任务内 2 路过片，约 20s/条 | 3000 条约 8.3h，紧；要再快可提任务内 `videoConcurrency`（看 GPU）或加第二台工人 |
 | 本机上传 | 1 发布通道 × 10 并行上传 | 够 |
 | 中台派发 | 100 条/分钟 | 够（3000 条打散在全天） |
 | 中台提交 | 并发 4，限流 16 rps | 够 |

@@ -12,6 +12,10 @@ export function isParkourVideoTemplate(value) {
   return normalizeVideoTemplate(value?.videoTemplate ?? value) === VIDEO_TEMPLATE_PARKOUR;
 }
 
+export function usesMinecraftSimulator(value) {
+  return isParkourVideoTemplate(value) && value?.parkourSource === "simulator";
+}
+
 export function resolveParkourVideoDir(value) {
   const dir = String(value || "").trim();
   return dir || DEFAULT_PARKOUR_VIDEO_DIR;

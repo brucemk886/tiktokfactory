@@ -104,11 +104,9 @@ async function createTask(options = {}) {
   const autoPublish = generateOnly ? false : $("#autoPublish").checked;
   const videoTemplate = selectedVideoTemplate();
   const parkour = videoTemplate === "parkour";
-  if (parkour) $("#videoDir").value = ($("#parkourVideoDir")?.value || "").trim() || "D:\\方块跑酷模拟器视频\\0819";
   const materialSource = $("#assetGroupSelect")?.value || "";
   const assetGroupId = parkour ? "" : (materialSource === "__manual__" ? "" : materialSource);
   const assetFolders = parkour ? [] : selectedAssetFoldersForTask();
-  if (parkour && !$("#videoDir").value.trim()) return setCreateStatus("请选择跑酷视频目录。");
   if (!parkour && !assetGroupId && !$("#videoDir").value.trim()) return setCreateStatus("请选择素材组或视频素材目录。");
   if (!parkour && mixableAssetFolders(selectedAssetGroup()).length && !getSelectedAssetFolders().length) {
     return setCreateStatus("请至少勾选一个素材子文件夹。");
@@ -132,11 +130,11 @@ async function createTask(options = {}) {
     workerId: selectedWorkerId(),
     generation: {
       videoTemplate,
+      parkourSource: parkour ? "simulator" : "directory",
       assetGroupId,
       assetFolders,
-      // Parkour renders live flat in one folder; its _visual-review / _failed-review
-      // subfolders hold rejects and must never be picked as a bed.
-      videoDir: $("#videoDir").value.trim(), includeVideoSubfolders: !parkour,
+      // Template 2 obtains fresh, QA-approved footage from the selected local worker.
+      videoDir: parkour ? "" : $("#videoDir").value.trim(), includeVideoSubfolders: !parkour,
       audioDir, audioDirs, audioItems: [], backgroundMusicDir: $("#musicDir").value.trim(), saveDir: "",
       segmentMode: "fixed", segmentSeconds: number("#segmentSeconds", 5), totalVideos: number("#totalVideos", 40),
       subtitleYPercent: number("#subtitleY", 66), subtitleFontSize: number("#subtitleSize", 62), subtitleAnimationMode: $("#subtitleMode").value,
@@ -747,17 +745,17 @@ function applyAudioGroupSelection({ keepFolders = false } = {}) {
 async function syncAssetGroupsToFactory() {
   if (!isLocalWorkerPage) return;
   const button = $("#syncAssetGroupsBtn");
-  const hint = $("#assetGroupHint");
+  const status = $("#assetGroupStatus");
   if (button) button.disabled = true;
-  if (hint) hint.textContent = "正在刷新本机素材组，并推送到线上...";
+  if (status) status.textContent = "正在推送…";
   try {
     const response = await fetch("/api/asset-groups/sync", { method: "POST" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "刷新并推送失败。");
     await loadAssetGroups();
-    if (hint) hint.textContent = `已刷新并推送到线上：${Number(data.folders ?? data.groups?.length) || 0} 个素材组。${hint.textContent}`;
+    if (status) status.textContent = `已推送 ${Number(data.folders ?? data.groups?.length) || 0} 组`;
   } catch (error) {
-    if (hint) hint.textContent = error.message || "刷新并推送失败。";
+    if (status) status.textContent = error.message || "推送失败";
   } finally {
     if (button) button.disabled = false;
   }
@@ -765,7 +763,6 @@ async function syncAssetGroupsToFactory() {
 
 async function loadAssetGroups() {
   const select = $("#assetGroupSelect");
-  const hint = $("#assetGroupHint");
   if (!select) return;
   try {
     const response = await fetch(`/api/asset-groups?t=${Date.now()}`);
@@ -775,27 +772,20 @@ async function loadAssetGroups() {
     renderAssetGroupOptions();
   } catch (error) {
     select.innerHTML = '<option value="">素材组读取失败</option>';
-    if (hint) hint.textContent = error.message || "读取素材组失败，请使用共享素材库。";
+    const status = $("#assetGroupStatus");
+    if (status) status.textContent = error.message || "读取失败";
     updateVideoSourceVisibility();
   }
 }
 
 function renderAssetGroupOptions() {
   const select = $("#assetGroupSelect");
-  const hint = $("#assetGroupHint");
   if (!select) return;
   const current = select.value;
   const groups = visibleAssetGroups();
   select.innerHTML = `<option value="">请选择一个素材组</option>${groups.map((group) => `<option value="${escapeAttr(group.id)}">${escapeHtml(group.name || group.id)}（${assetCount(group)} 条）</option>`).join("")}`;
   if (groups.some((group) => group.id === current)) select.value = current;
-  if (hint) {
-    const worker = selectedWorkerId();
-    hint.textContent = groups.length
-      ? `已读取 ${groups.length} 个素材组${worker ? `（${worker}）` : ""}。`
-      : worker && assetGroups.length
-        ? `${worker} 还没有推送过素材组，先在那台机器上点「刷新并推送」。`
-        : "暂无已建立索引的素材组，请使用共享素材库。";
-  }
+  else if (groups[0]) select.value = groups[0].id;
   updateVideoSourceVisibility();
 }
 
@@ -1058,12 +1048,12 @@ function updateVideoSourceVisibility() {
   if ($("#videoTemplateField")) $("#videoTemplateField").hidden = !allowTemplates;
   const parkour = selectedVideoTemplate() === "parkour";
   document.querySelectorAll(".mix-only").forEach((item) => { item.hidden = parkour; });
-  if ($("#parkourDirField")) $("#parkourDirField").hidden = !parkour;
+  if ($("#parkourDirField")) $("#parkourDirField").hidden = true;
   if ($("#sharedVideoLibrary")?.closest("label")) $("#sharedVideoLibrary").closest("label").hidden = parkour;
   const hint = $("#videoTemplateHint");
   if (hint) hint.textContent = parkour
-    ? "模板2 每条跑酷成片只用一次：单条够长就用单条，不够就拼接几条，多出的裁掉；不再循环同一条。"
-    : "模板1 从素材组抽片段拼接；素材组有子文件夹时可以勾选，只抽勾中的夹。";
+    ? "模板2 逐条录制、逐条合成：每条使用独立新画面，添加音频、字幕、推广码和已启用的开头、结尾后，再处理下一条。请先进入 Minecraft 单人世界。"
+    : "模板1 从素材组抽片段。点文件夹展开下面的子夹；勾父夹全选，也可以只勾其中一个。";
   renderAssetFolderPicker();
 }
 

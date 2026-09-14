@@ -1,3 +1,6 @@
+import { dailyOutputDirectory, resolveStoredOutput } from "./output-storage.js";
+import { recordMinecraftFootage, isFatalMinecraftRecordingError } from "./minecraft-recording-client.js";
+import { usesMinecraftSimulator } from "./video-template.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -23,6 +26,7 @@ import { isParkourVideoTemplate, listUnusedParkourSources, planParkourSources } 
 import { buildEndCardDimFilter, buildNovelBadgeDrawtext, buildNovelEndCardDrawtext, buildOpeningTitleDrawtext, buildTikTokCaption, hideCaptionsAfter, hideCaptionsUntil, renderNovelAppIcon, renderRedditHookCard, resolveEndCardStart, resolveNovelEndCard, resolveNovelScriptText, resolveNovelVideoBadge, resolveOpeningHookTitle, resolveOpeningTitleDuration } from "./novel-video-badge.js";
 import { checkTtsReadback, recordTtsReadbackFailure } from "./tts-readback.js";
 import { makeWordPopSubtitles, normalizeSubtitleAnimationMode, subtitleNeedsWordTimestamps } from "./subtitle-animation.js";
+import { createLock, resolveMixVideoConcurrency } from "./mix-video-concurrency.js";
 
 const payloadPath = process.argv[2];
 const jobPath = process.argv[3];
@@ -30,14 +34,15 @@ const root = process.cwd();
 const bootConfig = readJson(path.join(root, "config.json"), {});
 const storageDirs = resolveStorageDirs(root, bootConfig);
 const defaultOutputDir = storageDirs.outputDir;
-const workDir = path.join(storageDirs.workDir, "reddit-mix");
+const workDir = bootConfig.novelRenderWorkDir ? dailyOutputDirectory(path.resolve(root, bootConfig.novelRenderWorkDir)) : path.join(storageDirs.workDir, "reddit-mix");
+const recordingRunId = crypto.randomUUID();
 const captionCacheDir = path.join(storageDirs.workDir, "caption-cache");
 const AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".opus", ".webm", ".ogg"];
 const OVERLAY_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".mov", ".mp4", ".webm"];
 
 main().catch((error) => {
   patchJob({
-    status: "failed",
+    status: error.code === "MINECRAFT_CANCELLED" ? "canceled" : "failed",
     percent: 100,
     message: error.message || "Reddit 混剪失败。",
     updatedAt: Date.now()
@@ -48,7 +53,9 @@ main().catch((error) => {
 async function main() {
   const payload = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
   const config = readJson(path.join(root, "config.json"));
+  if (["canceled", "cancelled"].includes(String(readJson(jobPath, {}).status || "").toLowerCase())) return;
   const legacyVariants = clampInt(payload.variants, 1, 20, 1);
+  const simulator = usesMinecraftSimulator(payload);
   const audioFiles = resolveMixAudios(payload);
   const total = clampInt(payload.totalVideos, 1, 300, audioFiles.length * legacyVariants);
   const { audios, rotation } = orderMixAudios(payload, audioFiles, total);
@@ -81,7 +88,7 @@ async function main() {
   ensureDir(workDir);
   ensureDir(captionCacheDir);
 
-  const group = resolveAssetGroup(payload, groupId);
+  const group = simulator ? { id: "minecraft-simulator", name: "我的世界自动录制", assets: [] } : resolveAssetGroup(payload, groupId);
   const selectedAssets = isParkourVideoTemplate(payload)
     ? (group.assets || [])
     : filterAssetsByFolders(group.assets || [], group.sourceDir || group.path || "", payload.assetFolders);
@@ -92,7 +99,7 @@ async function main() {
       duration: Number(asset.duration) > 0 ? Number(asset.duration) : probeDuration(asset.file, 0)
     }))
     .filter((asset) => asset.file && fs.existsSync(asset.file) && asset.duration > 1);
-  if (!videoMeta.length) {
+  if (!simulator && !videoMeta.length) {
     throw new Error(Array.isArray(payload.assetFolders) && payload.assetFolders.length && !isParkourVideoTemplate(payload)
       ? "勾选的素材子文件夹里没有可用视频。"
       : "No usable videos found in the video material folder.");
@@ -108,30 +115,55 @@ async function main() {
   let failedVideos = 0;
   let attempts = 0;
   const maxAttempts = total + Math.max(20, Math.ceil(total * 0.5));
+  const prior = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
+  if (Array.isArray(prior.results) && prior.results.length) {
+    results.push(...prior.results.filter((item) => item && (item.outputPath || item.fileName)));
+    done = results.length;
+    candidateIndex = Math.max(Number(prior.attempts) || 0, done);
+    failedVideos = Number(prior.failedVideoCount) || 0;
+    if (Array.isArray(prior.warnings) && prior.warnings.length) warnings.push(...prior.warnings);
+  }
+  const videoConcurrency = resolveMixVideoConcurrency(payload, {
+    parkour: isParkourVideoTemplate(payload),
+    simulator
+  });
+  const lock = createLock();
+  let fatalError = null;
+  let stopped = false;
 
-  while (done < total && attempts < maxAttempts) {
-    attempts += 1;
+  async function nextCandidate() {
+    return lock(() => {
+      if (stopped || fatalError) return null;
+      while (done < total && attempts < maxAttempts) {
+        attempts += 1;
+        const latest = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
+        if (["canceled", "cancelled"].includes(String(latest.status || "").toLowerCase())) {
+          stopped = true;
+          patchJob({
+            status: "canceled",
+            message: "任务已停止。",
+            percent: Number(latest.percent || 0),
+            updatedAt: Date.now()
+          });
+          return null;
+        }
+        const audioIndex = candidateIndex % audios.length;
+        const audioPath = audios[audioIndex];
+        const variant = Math.floor(candidateIndex / audios.length) + 1;
+        candidateIndex += 1;
+        if (skippedAudios.has(audioPath)) {
+          attempts -= 1;
+          continue;
+        }
+        return { audioIndex, audioPath, variant, attemptNo: attempts };
+      }
+      return null;
+    });
+  }
+
+  async function renderCandidate({ audioIndex, audioPath, variant, attemptNo }) {
     let runDir = "";
     try {
-    const latest = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
-    if (["canceled", "cancelled"].includes(String(latest.status || "").toLowerCase())) {
-      patchJob({
-        status: "canceled",
-        message: "任务已停止。",
-        percent: Number(latest.percent || 0),
-        updatedAt: Date.now()
-      });
-      break;
-    }
-    const audioIndex = candidateIndex % audios.length;
-    const audioPath = audios[audioIndex];
-    const variant = Math.floor(candidateIndex / audios.length) + 1;
-    candidateIndex += 1;
-    if (skippedAudios.has(audioPath)) {
-      // Walking past an already-skipped audio is not a render attempt.
-      attempts -= 1;
-      continue;
-    }
     const audioFallback = fallbackForAudio(payload, audioPath);
     if (requirePromotionCode && !audioContexts.has(audioPath)) {
       // A video the viewer cannot act on (no promo code to search) still burns a
@@ -139,19 +171,21 @@ async function main() {
       const identity = resolveNovelEndCard({ workDir: storageDirs.workDir, audioPath, fallback: audioFallback });
       if (!identity?.promotionCode) {
         const warning = `没有推广码，已跳过：${path.basename(audioPath)}（在音频文件夹的 novel.json 或小说库里补推广码）`;
-        skippedAudios.add(audioPath);
-        warnings.push(warning);
-        patchJob({
-          status: "running",
-          message: warning,
-          warnings,
-          progressCurrent: done,
-          progressTotal: total,
-          updatedAt: Date.now()
+        await lock(() => {
+          skippedAudios.add(audioPath);
+          warnings.push(warning);
+          patchJob({
+            status: "running",
+            message: warning,
+            warnings,
+            progressCurrent: done,
+            progressTotal: total,
+            updatedAt: Date.now()
+          });
         });
         if (skippedAudios.size >= audios.length) throw new Error("所有音频都没有推广码，任务无法继续。请先在音频文件夹里补 novel.json（platform + promotionCode）。");
         attempts -= 1;
-        continue;
+        return;
       }
     }
     let audioContext = audioContexts.get(audioPath);
@@ -178,7 +212,7 @@ async function main() {
         } catch (error) {
           if (error?.code !== "EMPTY_TRANSCRIPT") throw error;
           const warning = `跳过无可用字幕的音频：${path.basename(audioPath)}`;
-          skippedAudios.add(audioPath);
+            skippedAudios.add(audioPath);
           warnings.push(warning);
           patchJob({
             status: "running",
@@ -189,7 +223,7 @@ async function main() {
             updatedAt: Date.now()
           });
           if (skippedAudios.size >= audios.length) throw new Error("所有音频都没有返回可用字幕，任务无法继续。");
-          continue;
+          return;
         }
         if (payload.ttsReadback !== false) {
           // The transcript we just paid for doubles as a TTS proof-read: if it
@@ -203,12 +237,12 @@ async function main() {
           if (readback.checked && !readback.ok) {
             const warning = `配音回读不一致（字错率 ${Math.round(readback.wer * 100)}%，上限 ${Math.round(readback.limit * 100)}%），已跳过：${path.basename(audioPath)}`;
             recordTtsReadbackFailure(storageDirs.workDir, { audioPath, wer: readback.wer, limit: readback.limit, referenceWords: readback.referenceWords, hypothesisWords: readback.hypothesisWords, taskName: payload.name || "" });
-            skippedAudios.add(audioPath);
+                skippedAudios.add(audioPath);
             warnings.push(warning);
             patchJob({ status: "running", message: warning, warnings, progressCurrent: done, progressTotal: total, updatedAt: Date.now() });
             if (skippedAudios.size >= audios.length) throw new Error("所有音频的配音回读都不一致，任务无法继续。去 work/tts-readback.json 看是哪些音频，重新配音或修文案。");
             attempts -= 1;
-            continue;
+            return;
           }
         }
       }
@@ -218,7 +252,7 @@ async function main() {
     const { audioDuration, captions } = audioContext;
 
     const baseId = safeFileName(`${path.basename(audioPath, path.extname(audioPath)).slice(0, 24)}-reddit-${variant}`);
-    const id = uniqueOutputId(baseId);
+    const id = await lock(() => uniqueOutputId(baseId));
     runDir = path.join(workDir, `${id}-${Date.now()}`);
     ensureDir(runDir);
 
@@ -233,37 +267,57 @@ async function main() {
       updatedAt: Date.now()
     });
 
-    const usage = readUsage(root);
-    const outputPath = path.join(defaultOutputDir, `${id}.mp4`);
+    const videoOutputDir = config.novelOutputDailyFolders === true ? dailyOutputDirectory(defaultOutputDir) : defaultOutputDir;
+    ensureDir(videoOutputDir);
+    const outputPath = path.join(videoOutputDir, `${id}.mp4`);
     const quality = payload.quality || "fast";
     const fontFile = resolveBadgeFont(config.fontFile);
     let clips;
     let concatVideo = "";
     if (isParkourVideoTemplate(payload)) {
-      const bed = renderParkourBed({
-        videoMeta,
-        audioDuration,
-        usage,
-        usedIds: usedParkourIds,
-        runDir,
-        width,
-        height,
-        fps,
-        quality
+      let freshMeta = videoMeta;
+      if (simulator) {
+        try {
+          freshMeta = await recordMinecraftFootage({
+            root, workDir: storageDirs.workDir, config,
+            key: `${payload.taskId || payload.jobId || jobPath}:${recordingRunId}:${candidateIndex}`, seconds: audioDuration,
+            isCancelled: () => ["canceled", "cancelled"].includes(String(readJson(jobPath, {}).status || "").toLowerCase()),
+            onProgress: message => patchJob({ phase: "recording", message: `第 ${done + 1}/${total} 条：${message}`, updatedAt: Date.now() })
+          });
+          freshMeta = freshMeta.map(clip => ({ ...clip, duration: probeDuration(clip.file, 0) }));
+          if (freshMeta.some(clip => !(clip.duration > 0)) || freshMeta.reduce((n, clip) => n + clip.duration, 0) + 0.05 < audioDuration) {
+            const error = new Error("本条录制视频实测时长不足，已跳过。"); error.code = "MINECRAFT_ITEM_FAILED"; throw error;
+          }
+        } catch (error) { if (!String(error.code || "").startsWith("MINECRAFT_")) error.code = "MINECRAFT_SYSTEM_ERROR"; throw error; }
+        patchJob({ phase: "composing", message: `第 ${done + 1}/${total} 条录制完成，正在合成音频、字幕和小说推广元素`, updatedAt: Date.now() });
+      }
+      const bed = await lock(() => {
+        const planned = renderParkourBed({
+          videoMeta: freshMeta,
+          audioDuration,
+          usage: readUsage(root),
+          usedIds: usedParkourIds,
+          runDir,
+          width,
+          height,
+          fps,
+          quality
+        });
+        for (const clip of planned.clips || []) {
+          if (clip?.assetId) usedParkourIds.add(clip.assetId);
+          if (clip?.file) usedParkourIds.add(clip.file);
+        }
+        return planned;
       });
       clips = bed.clips;
       concatVideo = bed.concatVideo;
-      for (const clip of clips) {
-        if (clip?.assetId) usedParkourIds.add(clip.assetId);
-        if (clip?.file) usedParkourIds.add(clip.file);
-      }
       patchJob({
         message: `跑酷底片：${bed.plan.mode === "single" ? "单条成片" : `${bed.plan.sources} 条拼接`}，裁掉 ${bed.plan.waste}s，${path.basename(audioPath)}`,
         updatedAt: Date.now()
       });
     } else {
       const segmentSeconds = resolveSegmentSeconds(payload, audioDuration);
-      clips = pickClips({ videoMeta, audioDuration, segmentSeconds, usage });
+      clips = await lock(() => pickClips({ videoMeta, audioDuration, segmentSeconds, usage: readUsage(root) }));
       concatVideo = path.join(runDir, "mixed-video.mp4");
     }
 
@@ -371,6 +425,9 @@ async function main() {
 
     const savedPath = saveDir ? copyToSaveDir(outputPath, saveDir) : "";
 
+    await lock(() => {
+    const latest = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
+    if (["canceled", "cancelled"].includes(String(latest.status || "").toLowerCase())) return;
     recordAssetUsage(root, {
       groupId: group.id,
       outputId: id,
@@ -397,8 +454,10 @@ async function main() {
       duration: audioDuration,
       encodeSeconds,
       encodeMode,
+      parkourSource: simulator ? "simulator" : (isParkourVideoTemplate(payload) ? "directory" : ""),
       videoUrl: `/outputs/${encodeURIComponent(path.basename(outputPath))}`,
       fileName: path.basename(outputPath),
+      outputPath,
       savedPath,
       clips: clips.map((clip) => ({
         assetId: clip.assetId,
@@ -418,28 +477,51 @@ async function main() {
       warnings,
       updatedAt: Date.now()
     });
+    });
     cleanupRunDir(runDir);
     } catch (error) {
-      failedVideos += 1;
-      const reason = String(error?.message || error || "未知错误").replace(/\s+/g, " ").slice(0, 1200);
-      const warning = `第 ${attempts} 条合成失败，已跳过：${reason}`;
-      warnings.push(warning);
-      patchJob({
-        status: "running",
-        percent: progress(done, total, 0),
-        message: `${warning} 继续下一条。`,
-        progressCurrent: done,
-        progressTotal: total,
-        failedVideoCount: failedVideos,
-        attempts,
-        results,
-        warnings,
-        updatedAt: Date.now()
+      if (isFatalMinecraftRecordingError(error)) {
+        if (runDir) cleanupRunDir(runDir);
+        fatalError = error;
+        stopped = true;
+        throw error;
+      }
+      await lock(() => {
+        failedVideos += 1;
+        const reason = String(error?.message || error || "未知错误").replace(/\s+/g, " ").slice(0, 1200);
+        const warning = `第 ${attemptNo} 条合成失败，已跳过：${reason}`;
+        warnings.push(warning);
+        patchJob({
+          status: "running",
+          percent: progress(done, total, 0),
+          message: `${warning} 继续下一条。`,
+          progressCurrent: done,
+          progressTotal: total,
+          failedVideoCount: failedVideos,
+          attempts,
+          results,
+          warnings,
+          updatedAt: Date.now()
+        });
+        if (error?.code === PARKOUR_EXHAUSTED) stopped = true;
       });
       if (runDir) cleanupRunDir(runDir);
-      // No unused parkour footage left: every further audio would fail the same way.
-      if (error?.code === PARKOUR_EXHAUSTED) break;
     }
+  }
+
+  async function pump() {
+    while (!stopped && !fatalError) {
+      const slot = await nextCandidate();
+      if (!slot) return;
+      await renderCandidate(slot);
+    }
+  }
+
+  await Promise.all(Array.from({ length: videoConcurrency }, () => pump()));
+  if (fatalError) throw fatalError;
+  if (stopped) {
+    const latest = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
+    if (["canceled", "cancelled"].includes(String(latest.status || "").toLowerCase())) return;
   }
 
   if (!results.length && failedVideos > 0) {
@@ -453,6 +535,7 @@ async function main() {
     status: "done",
     percent: 100,
     message: `Reddit 混剪完成：${results.length} 条视频。`,
+    ...(simulator ? { phase: "done" } : {}),
     progressCurrent: results.length,
     progressTotal: total,
     results,
@@ -1518,7 +1601,7 @@ function patchJob(patch) {
 function uniqueOutputId(baseId) {
   let id = safeFileName(baseId);
   let index = 2;
-  while (fs.existsSync(path.join(defaultOutputDir, `${id}.mp4`))) {
+  while (fs.existsSync(resolveStoredOutput(defaultOutputDir, `${id}.mp4`))) {
     id = safeFileName(`${baseId}-${index}`);
     index += 1;
   }
