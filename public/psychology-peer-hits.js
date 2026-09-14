@@ -22,11 +22,11 @@ async function loadList() {
     if(current.signal.aborted)return;
     state.page=data.page;state.totalPages=data.totalPages;
     $("#hitRows").innerHTML=data.items.length?data.items.map(item=>`<tr>
-      <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:"打开视频"}</a></td>
-      <td class="hits-title">${escape(titleOf(item))}</td>
-      <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
       <td>${metric(item.playCount)}</td><td>${metric(item.likeCount)}</td><td>${metric(item.commentCount)}</td><td>${metric(item.favoriteCount)}</td><td>${metric(item.shareCount)}</td><td>${item.durationSeconds==null?"—":metric(item.durationSeconds)+" 秒"}</td>
-      <td class="hits-time">${time(item.publishedAt)}<small>采集 ${time(item.collectedAt)}</small></td>
+      <td class="hits-time">${time(item.publishedAt)}</td>
+      <td class="hits-title" title="${escape(titleOf(item))}"><span>${escape(titleOf(item))}</span></td>
+      <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
+      <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:"打开视频"}</a></td>
     </tr>`).join(""):'<tr><td colspan="10">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
     message("#listStatus",`共 ${data.total} 条视频 · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;

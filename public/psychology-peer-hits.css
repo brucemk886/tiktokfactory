@@ -19,13 +19,12 @@ body.module-page.psy-hits-page { min-width: 0; }
 .hits-table-wrap table { width: 100%; min-width: 1180px; border-collapse: collapse; font-size: 13px; }
 .hits-table-wrap th { text-align: left; color: var(--lf-muted, #766e60); font-weight: 500; white-space: nowrap; }
 .hits-table-wrap td, .hits-table-wrap th { padding: 14px 10px; border-bottom: 1px solid var(--lf-line, #e4ded2); vertical-align: top; }
-.hits-table-wrap td:not(:first-child) { font-variant-numeric: tabular-nums; }
+.hits-table-wrap td:not(.hits-title):not(.hits-copy):not(.hits-video) { font-variant-numeric: tabular-nums; }
 .hits-video { width: 92px; }
 .hits-video a { color: var(--lf-accent, #617320); font-weight: 600; }
 .hits-video img { display: block; width: 72px; height: 96px; object-fit: cover; border-radius: 8px; background: #ece7dc; }
-.hits-title { min-width: 180px; max-width: 280px; overflow-wrap: anywhere; line-height: 1.5; }
-.hits-copy { min-width: 220px; max-width: 340px; }
-.hits-copy span {
+.hits-title, .hits-copy { min-width: 200px; max-width: 320px; }
+.hits-title span, .hits-copy span {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -35,7 +34,6 @@ body.module-page.psy-hits-page { min-width: 0; }
   white-space: pre-wrap;
 }
 .hits-time { white-space: nowrap; }
-.hits-time small { display: block; margin-top: 7px; }
 .hits-pagination { justify-content: flex-end; font-size: 13px; }
 .is-error { color: #b84136 !important; }
 #newKeyPanel { margin-top: 16px; }
