@@ -1,5 +1,5 @@
 export const PSYCHOLOGY_IMAGE_MODEL = "z-image";
-const TYPES = new Set(["psychology", "psychology-collage", "psychology-target-2", "psychology-narrative", "psychology-photo-story"]);
+const TYPES = new Set(["psychology", "psychology-collage", "psychology-target-2", "psychology-narrative"]);
 
 // Apply at queue creation and delivery so saved browser settings and older
 // queued jobs cannot select a different image provider for psychology.

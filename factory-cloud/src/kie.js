@@ -13,6 +13,7 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
   async function kieRequest(path, init = {}) {
     const response = await fetchImpl(`${BASE_URL}${path}`, {
       ...init,
+      signal: init.signal || AbortSignal.timeout(90000),
       headers: {
         Authorization: `Bearer ${requireKey()}`,
         ...(init.body ? { "Content-Type": "application/json" } : {}),
@@ -72,7 +73,18 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     };
   }
 
-  return { getKieCredits, createKieMediaTask, getKieTask };
+  async function createChat(prompt) {
+    const data = await kieRequest('/gemini-3-5-flash-openai/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({ messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }], stream: false, include_thoughts: false, reasoning_effort: 'medium' })
+    });
+    const content = data.choices?.[0]?.message?.content;
+    const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map(part => part.text || '').join('') : '';
+    if (!text.trim()) throw new Error('AI 文案服务没有返回内容。');
+    return text;
+  }
+
+  return { getKieCredits, createKieMediaTask, getKieTask, createChat };
 }
 
 export { IMAGE_MODELS };

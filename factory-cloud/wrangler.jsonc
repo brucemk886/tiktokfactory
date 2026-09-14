@@ -1,6 +1,7 @@
 {
   "name": "tiktok-factory",
-  "main": "src/index.js",
+  "main": "src/entry.js",
+  "workflows": [{ "binding": "PEER_PHOTO_WORKFLOW", "name": "factory-peer-photo", "class_name": "PeerPhotoWorkflow" }],
   "compatibility_date": "2026-08-03",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,

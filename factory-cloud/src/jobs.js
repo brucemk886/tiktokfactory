@@ -679,6 +679,8 @@ export function claimTypeFilter(payload = {}) {
     .filter(Boolean))].slice(0, CLAIM_TYPE_LIMIT);
   const types = clean(payload.types);
   const excludeTypes = clean(payload.excludeTypes);
+  // Photo stories belong exclusively to Cloudflare Workflows, never local workers.
+  if ((!types.length || types.includes('psychology-photo-story')) && !excludeTypes.includes('psychology-photo-story')) excludeTypes.push('psychology-photo-story');
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = "";
   const binds = [];

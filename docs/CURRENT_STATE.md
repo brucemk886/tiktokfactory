@@ -4,6 +4,8 @@ Updated: 2026-09-14
 
 ## Platform
 
+- Psychology peer hits support selecting 1–5 saved sources and generating English interactive-test videos, Chinese bilingual collage videos, or six-slide English photo stories. Videos reuse the local worker; photo stories run entirely in the `factory-peer-photo` Cloudflare Workflow using the cloud Kie key. Source copy, scene prompts, output images and failures remain in production records. Photo output can be loaded into the existing hosted photo publishing page; publishing is still explicit.
+
 - Local Factory serves its authenticated UI on port 3010 by default. Logged-in admins land on `/` business hub.
 - The workspace UI is now a light paper studio: warm cream background, ink text, olive/lime accents, 236px sidebar. Operational pages load `theme-ops.css` last so hardcoded dark panels, forms, and tables flip to the same light surfaces.
 - The product is split into three business lines: mid-form video templates, novel promotion, and psychology. Official TikTok API is the primary publish/data channel; GeeLark pages remain as an explicit backup group.

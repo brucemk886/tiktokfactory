@@ -34,7 +34,7 @@
     busy = true; requestId ||= crypto.randomUUID(); sync(); notify('正在创建制作任务…');
     try {
       const data = await api({ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ids:[...selected], template:$('#productionTemplate').value, requestId }) });
-      notify(`已创建 ${data.jobIds.length} 个任务。可以关闭页面，工人机将继续制作。`);
+      notify(`已创建 ${data.jobIds.length} 个任务。可以关闭页面，${data.execution === 'cloud' ? '云端' : '视频工人机'}将继续制作。`);
       selected.clear(); requestId = ''; await refresh();
     } catch (error) { notify(error.message, true); }
     finally { busy = false; sync(); }

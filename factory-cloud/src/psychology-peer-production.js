@@ -5,6 +5,19 @@ import { peerProductionPayload, PEER_TEMPLATES } from '../../scripts/psychology-
 
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 
+async function dispatchPhotos(env, jobs) {
+  // createBatch is idempotent by instance ID; a lost response can be retried.
+  // Only queued rows are eligible, so completed jobs cannot run again after retention.
+  const ids = jobs.map(job => job.id);
+  const pending = await env.DB.prepare(`SELECT id FROM factory_jobs WHERE id IN (${ids.map(() => '?').join(',')}) AND type='psychology-photo-story' AND status='queued'`).bind(...ids).all();
+  if (!pending.results.length) return;
+  try {
+    await env.PEER_PHOTO_WORKFLOW.createBatch(pending.results.map(row => ({ id: row.id, params: { jobId: row.id } })));
+  } catch {
+    fail('云端任务启动暂时失败，请点击生成内容重试；不会重复创建任务。', 503);
+  }
+}
+
 export async function handlePeerProduction(request, env, url, user) {
   const base = '/api/psychology-peer-hits/production';
   if (url.pathname !== base) return null;
@@ -26,10 +39,13 @@ export async function handlePeerProduction(request, env, url, user) {
     const item = psychologyPeerHitFromRow(rows.results.find(row => row.id === id));
     return { id: `peer-${key.slice(0, 32)}-${index}`, payload: peerProductionPayload(item, input.template) };
   });
+  const photo = input.template === 'psychology-photo-story';
+  if (photo && (!env.PEER_PHOTO_WORKFLOW || !String(env.KIE_API_KEY || '').trim())) fail('云端图文服务尚未配置完成。', 503);
   const existing = await env.DB.prepare("SELECT id, type, payload_json FROM factory_jobs WHERE id LIKE ? AND created_by = ?").bind(`peer-${key.slice(0, 32)}-%`, user.username).all();
   if (existing.results.length) {
     if (existing.results.length !== jobs.length || existing.results.some(row => row.type !== input.template || !jobs.some(job => job.id === row.id && job.payload.peerSource.id === JSON.parse(row.payload_json).peerSource.id))) fail('这个提交编号已用于其他选题，请重新选择后提交。', 409);
-    return json({ accepted: true, duplicate: true, jobIds: jobs.map(job => job.id) }, 200);
+    if (photo) await dispatchPhotos(env, jobs);
+    return json({ accepted: true, duplicate: true, execution: photo ? 'cloud' : 'worker', jobIds: jobs.map(job => job.id) }, 200);
   }
   // Validate all sources before atomically enqueuing the batch. A repeated
   // request id cannot create another paid generation job after a network retry.
@@ -37,5 +53,6 @@ export async function handlePeerProduction(request, env, url, user) {
     id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at
     ) VALUES (?,?,'queued',?,1,?,?,'{}','',?,'',0,0,?,?) ON CONFLICT(id) DO NOTHING`)
     .bind(job.id, input.template, job.payload.topic, '等待制作：文案 → 分镜 → 生图 → 成品', JSON.stringify(job.payload), user.username, stamp, stamp)));
-  return json({ accepted: true, jobIds: jobs.map(job => job.id) }, 202);
+  if (photo) await dispatchPhotos(env, jobs);
+  return json({ accepted: true, execution: photo ? 'cloud' : 'worker', jobIds: jobs.map(job => job.id) }, 202);
 }

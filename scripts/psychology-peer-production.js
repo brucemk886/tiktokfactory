@@ -58,30 +58,3 @@ export function parsePhotoStory(value) {
   if (new Set(scenes.map(scene => scene.visualPrompt.toLowerCase())).size !== 6) throw new Error('六页分镜不能重复使用同一个画面描述。');
   return { title: source.title.trim().slice(0, 90), caption: String(source.caption || '').slice(0, 4000), sourceAngle: String(source.sourceAngle || '').slice(0, 1000), hooks, scenes };
 }
-
-export async function runPhotoStoryProduction(payload, { kie, update, sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)), now = Date.now }) {
-  let plan, lastError = '';
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const task = await kie.createTask({ kind: 'chat', prompt: buildPhotoStoryPrompt(payload) + (lastError ? `\nPrevious validation failed: ${lastError}. Correct it.` : '') });
-    try { plan = parsePhotoStory(task.resultText); break; } catch (error) { lastError = error.message; }
-  }
-  if (!plan) throw new Error(lastError);
-  const results = [];
-  await update({ status: 'running', percent: 15, message: '分镜已生成，开始逐页生图…', plan, results });
-  for (let index = 0; index < plan.scenes.length; index++) {
-    const scene = plan.scenes[index];
-    let task = await kie.createTask({ kind: 'image', imageModel: 'z-image', aspectRatio: '9:16', noImageText: true, prompt: scene.visualPrompt });
-    await update({ status: 'running', percent: 15 + index * 13, message: `第 ${index + 1}/6 页生图中…`, plan, results });
-    const deadline = now() + 10 * 60 * 1000;
-    while (!['success', 'fail'].includes(task.status)) {
-      if (now() > deadline) throw new Error(`第 ${index + 1} 页生图超时，已保留已完成的图片。`);
-      await sleep(4000);
-      task = await kie.refreshTask(task.id);
-    }
-    if (task.status !== 'success' || !task.resultUrls?.[0]?.startsWith('https://')) throw new Error(task.error || `第 ${index + 1} 页未返回有效图片。`);
-    results.push({ title: scene.text, imageUrl: task.resultUrls[0], imageModel: 'z-image', template: 'psychology-photo-story', sceneIndex: index, visualPrompt: scene.visualPrompt });
-    await update({ plan, results, progressCurrent: results.length, progressTotal: 6 });
-  }
-  await update({ status: 'done', percent: 100, message: '六页图片和对应文案已生成。', plan, results });
-  return { plan, results };
-}
