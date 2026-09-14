@@ -1,0 +1,37 @@
+.psychology-photo-shell { max-width: 1460px; }
+.psychology-photo-page .data-section { display: grid; gap: 18px; }
+.section-help { margin: -8px 0 0; color: var(--lf-muted); font-size: 13px; line-height: 1.6; }
+.photo-generate-row { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; }
+.photo-generate-row .compact-field { flex: 0 1 180px; }
+.photo-generate-row button { margin-left: auto; }
+.photo-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; color: var(--lf-muted); font-size: 13px; }
+.generated-photo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.generated-photo-card { position: relative; overflow: hidden; padding: 0; border: 1px solid var(--lf-line); border-radius: 16px; background: var(--lf-surface-2); text-align: left; }
+.generated-photo-card img { width: 100%; aspect-ratio: 4 / 5; display: block; object-fit: cover; background: #ece9df; }
+.generated-photo-card span { display: block; padding: 11px 12px; color: var(--lf-muted); font-size: 12px; }
+.generated-photo-card.is-selected { border-color: var(--lf-accent); box-shadow: 0 0 0 2px rgba(111, 123, 30, 0.16); }
+.generated-photo-card.is-selected::after { content: "已选择"; position: absolute; top: 10px; right: 10px; padding: 5px 8px; border-radius: 999px; color: #1d2a08; background: var(--lf-accent); font-size: 11px; font-weight: 800; }
+.generated-photo-empty { grid-column: 1 / -1; padding: 36px 20px; border: 1px dashed var(--lf-line-strong); border-radius: 14px; color: var(--lf-muted); text-align: center; }
+.selected-photo-list { display: grid; gap: 8px; }
+.selected-photo-row { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; padding: 9px 10px; border: 1px solid var(--lf-line); border-radius: 12px; background: var(--lf-surface); }
+.selected-photo-row img { width: 44px; height: 56px; border-radius: 8px; object-fit: cover; }
+.selected-photo-row strong { min-width: 0; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.selected-photo-actions { display: flex; gap: 6px; }
+.selected-photo-actions button { min-width: 36px; padding: 7px 9px; font-size: 12px; }
+.selected-photo-actions .is-cover { color: #1d2a08; background: var(--lf-accent); }
+.photo-title-field { width: 100%; }
+.photo-settings-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.photo-options { display: flex; flex-wrap: wrap; gap: 18px; }
+.photo-options label { display: inline-flex; align-items: center; gap: 8px; color: var(--lf-muted); font-size: 13px; }
+.photo-submit-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.photo-submit-row .sync-state { flex: 1; margin: 0; }
+.photo-submit-row button { flex: 0 0 auto; }
+@media (max-width: 900px) {
+  .photo-settings-grid { grid-template-columns: 1fr; }
+  .photo-generate-row { align-items: stretch; flex-direction: column; }
+  .photo-generate-row .compact-field { flex-basis: auto; }
+  .photo-generate-row button { margin-left: 0; }
+  .photo-submit-row { align-items: stretch; flex-direction: column; }
+  .selected-photo-row { grid-template-columns: 44px minmax(0, 1fr); }
+  .selected-photo-actions { grid-column: 1 / -1; }
+}

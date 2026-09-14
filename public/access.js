@@ -123,7 +123,7 @@ function createSidebarUser(user) {
 
 function isSidebarActive(item) {
   const current = sidebarPath(location.pathname);
-  if (item.href === "/psychology-templates" && ["/psychology", "/psychology-collage", "/psychology-target-2"].includes(current)) return true;
+  if (item.href === "/psychology-templates" && ["/psychology", "/psychology-collage", "/psychology-target-2", "/psychology-photo"].includes(current)) return true;
   return current === item.href;
 }
 

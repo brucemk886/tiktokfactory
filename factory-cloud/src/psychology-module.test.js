@@ -8,20 +8,23 @@ import { handleCompat, publicPsychologySettings } from "./compat.js";
 import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
+import { buildPhotoBatchRequest, normalizePhotoPublishPayload } from "./photo-publishing.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
   assert.equal(pageFileFor("/psychology-collage"), "psychology-collage.html");
   assert.equal(pageFileFor("/psychology-target-2"), "psychology-narrative.html");
   assert.equal(pageFileFor("/psychology-narrative"), "psychology-narrative.html");
+  assert.equal(pageFileFor("/psychology-photo"), "psychology-photo.html");
   assert.equal(moduleIdForPath("/psychology-collage"), "psychology-collage");
   assert.equal(moduleIdForPath("/psychology-target-2"), "psychology-narrative");
+  assert.equal(moduleIdForPath("/psychology-photo"), "psychology-photo");
   const module = SIDEBAR_MODULES.find((item) => item.id === "psychology-narrative");
   assert.equal(module?.href, "/psychology-target-2");
   assert.equal(module?.group?.id, "psychology");
   assert.deepEqual(module?.roles, ["admin"]);
-  const templates = SIDEBAR_MODULES.filter(item => ["psychology", "psychology-collage", "psychology-narrative"].includes(item.id));
-  assert.deepEqual(templates.map(item => item.label), ["模板工作台", "纸张拼贴模板", "互动测试模板"]);
+  const templates = SIDEBAR_MODULES.filter(item => ["psychology", "psychology-collage", "psychology-narrative", "psychology-photo"].includes(item.id));
+  assert.deepEqual(templates.map(item => item.label), ["模板工作台", "纸张拼贴模板", "互动测试模板", "图文发布模板"]);
   assert.ok(templates.every(item => item.group.id === "psychology"));
   assert.equal(pageFileFor("/psychology-templates"), "psychology-templates.html");
   assert.equal(moduleIdForPath("/psychology-templates"), "psychology");
@@ -62,6 +65,7 @@ test("cloud queue and local worker dispatch both psychology target types", () =>
   assert.match(worker, /"psychology-collage": "psychology-collage-job\.js"/);
   assert.match(worker, /"psychology-target-2": "psychology-narrative-job\.js"/);
   assert.match(auth, /insertModuleAfter\(modules, "psychology-collage", "psychology-narrative"\)/);
+  assert.match(auth, /insertModuleAfter\(modules, "psychology-narrative", "psychology-photo"\)/);
 });
 
 test("psychology result metadata remains available to the existing progress pages", () => {
@@ -109,18 +113,19 @@ test("existing sessions get the separated template entries without a database re
     return (await getSession(new Request("https://example.test/",{headers:{cookie:"lf_session=test-session"}}),db)).user;
   };
   const admin = await readUser("admin",["psychology","psychology-narrative","schulte"]);
-  for (const path of ["/psychology","/psychology-collage","/psychology-target-2","/psychology-narrative"]) assert.equal(canAccessPath(admin,path),true);
+  for (const path of ["/psychology","/psychology-collage","/psychology-target-2","/psychology-narrative","/psychology-photo"]) assert.equal(canAccessPath(admin,path),true);
   assert.equal(admin.sidebarModules.filter(id=>id==="psychology-collage").length,1);
   const operator = await readUser("operator",["psychology"]);
   assert.equal(canAccessPath(operator,"/psychology"),true);
   assert.equal(canAccessPath(operator,"/psychology-collage"),false);
   assert.equal(canAccessPath(operator,"/psychology-target-2"),false);
+  assert.equal(canAccessPath(operator,"/psychology-photo"),false);
 });
 
 test("mid-video cards no longer link psychology templates and titles match their entries", () => {
   const html = name => fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
   assert.doesNotMatch(html("mid-video.html"), /href="\/psychology/);
-  for (const [file,title] of [["psychology.html","四图测试模板"],["psychology-collage.html","纸张拼贴模板"],["psychology-narrative.html","互动测试模板"]]) {
+  for (const [file,title] of [["psychology.html","四图测试模板"],["psychology-collage.html","纸张拼贴模板"],["psychology-narrative.html","互动测试模板"],["psychology-photo.html","图文发布模板"]]) {
     assert.ok(html(file).includes("<h1>"+title+"</h1>"));
     assert.ok(html(file).includes('src="/access.js"'));
   }
@@ -223,4 +228,48 @@ test("psychology API records generation-only official tasks and rejects legacy p
   const retryDb={prepare(){return {bind(){return this;},async first(){return {value_json:JSON.stringify(oldTask)};}};}};
   const retry=new Request("https://example.test/api/auto-tasks/old/retry-publish",{method:"POST"});
   const result=await handleCompat(retry,{DB:retryDb},new URL(retry.url),{user:{role:"admin"}});assert.equal(result.status,400);
+});
+
+test("psychology photo publishing preserves image order, cover and TikTok settings", () => {
+  const now = Date.now();
+  const first = {assetKey:"temporary--11111111-1111-1111-1111-111111111111.jpg",fileName:"one.jpg",contentType:"image/jpeg",fileSize:1200};
+  const second = {assetKey:"temporary--22222222-2222-2222-2222-222222222222.webp",fileName:"two.webp",contentType:"image/webp",fileSize:3400};
+  const payload = normalizePhotoPublishPayload({
+    requestId:"33333333-3333-4333-8333-333333333333",
+    module:"psychology",
+    connectionId:"account-1",
+    assets:[first,second],
+    title:"Attachment styles",
+    caption:"Choose the image that feels safest.",
+    privacyLevel:"PUBLIC_TO_EVERYONE",
+    photoCoverIndex:1,
+    musicSoundId:"7450012345678901234",
+    autoAddMusic:true,
+    disableComment:false,
+    scheduleAt:now+60_000,
+  }, now);
+  const batch = buildPhotoBatchRequest(payload);
+  assert.equal(batch.items.length,1);
+  assert.deepEqual(batch.items[0].photoAssetKeys,[first.assetKey,second.assetKey]);
+  assert.equal(batch.items[0].assetKey,first.assetKey);
+  assert.equal(batch.items[0].postInfo.photoCoverIndex,1);
+  assert.equal(batch.items[0].postInfo.musicSoundId,"7450012345678901234");
+  assert.equal(batch.items[0].postInfo.autoAddMusic,false);
+  assert.equal(batch.items[0].postInfo.privacyLevel,"PUBLIC_TO_EVERYONE");
+  assert.equal(batch.items[0].fileSize,4600);
+  assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[first,first]},now),/不能重复/);
+  assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[{...first,assetKey:first.assetKey.replace(".jpg",".png"),contentType:"image/png"}]},now),/1–35/);
+});
+
+test("psychology photo template is an online Z-Image to official photo publishing flow", () => {
+  const html=fs.readFileSync(new URL("../../public/psychology-photo.html",import.meta.url),"utf8");
+  const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
+  const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
+  assert.match(html,/图文发布模板/);
+  assert.match(browser,/imageModel: "z-image"/);
+  assert.match(browser,/\/api\/official-tiktok\/photo-assets\/import/);
+  assert.match(browser,/\/api\/official-tiktok\/photo-publish/);
+  assert.match(cloud,/\/api\/v1\/publish\/assets/);
+  assert.match(cloud,/photoAssetKeys/);
+  assert.doesNotMatch(browser,/local-worker|localhost|127\.0\.0\.1/);
 });

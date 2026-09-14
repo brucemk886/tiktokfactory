@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>图文发布模板 · Local Factory</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/official-analytics.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+    <link rel="stylesheet" href="/psychology-photo.css" />
+  </head>
+  <body class="work-page official-data-page psychology-photo-page">
+    <nav class="side-tabs"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
+    <main class="official-data-shell psychology-photo-shell">
+      <header class="official-data-header">
+        <div>
+          <p class="toolbar-kicker">PSYCHOLOGY · PHOTO POST</p>
+          <h1>图文发布模板</h1>
+          <p>在线调用 Z-Image 生成图片，整理图集后直接提交 TikTok 官方图文发布接口。</p>
+        </div>
+        <button id="refreshBtn" type="button">刷新</button>
+      </header>
+
+      <section class="panel data-section photo-generate-panel">
+        <div class="section-title"><div><p>01 · Z-IMAGE</p><h2>生成图片</h2></div><span id="generationState">等待生成</span></div>
+        <label class="field"><span>画面描述</span><textarea id="imagePrompt" rows="5" maxlength="1000" placeholder="例如：竖版写实摄影，一名年轻女性独自坐在雨夜公交站，神情克制，冷色环境光，人物清晰、背景虚化，画面不出现文字……"></textarea></label>
+        <div class="photo-generate-row">
+          <label class="field compact-field"><span>生成数量</span><select id="imageCount"><option>1</option><option>2</option><option selected>4</option><option>6</option><option>8</option></select></label>
+          <label class="field compact-field"><span>画面比例</span><select id="aspectRatio"><option value="9:16" selected>9:16 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option><option value="4:3">4:3 横图</option><option value="16:9">16:9 横图</option></select></label>
+          <label class="photo-toggle"><input id="noImageText" type="checkbox" checked /> 图片内不生成文字</label>
+          <button id="generateBtn" type="button">生成图片</button>
+        </div>
+        <p id="generateMessage" class="sync-state" aria-live="polite"></p>
+      </section>
+
+      <section class="panel data-section">
+        <div class="section-title"><div><p>02 · ALBUM</p><h2>选择图片与封面</h2></div><span id="photoCount">已选 0 / 35 张</span></div>
+        <p class="section-help">点击图片加入图集；按选择顺序发布，可调整顺序并指定封面。这里也会显示本账号最近生成的 Z-Image 图片。</p>
+        <div id="photoList" class="generated-photo-list"></div>
+        <div id="selectedPhotos" class="selected-photo-list"></div>
+      </section>
+
+      <section class="panel data-section">
+        <div class="section-title"><div><p>03 · ACCOUNT</p><h2>选择发布账号</h2></div><span id="accountCount">0 个账号</span></div>
+        <p class="section-help">每次提交一个账号。账号必须属于心理学项目分组，并保持 TikTok 官方发布授权有效。</p>
+        <div id="groupPanel" class="group-chips"></div>
+        <div id="accountList" class="publish-check-list"></div>
+      </section>
+
+      <section class="panel data-section publish-form">
+        <div class="section-title"><div><p>04 · SETTINGS</p><h2>发布设置</h2></div></div>
+        <label class="field photo-title-field"><span>图片标题</span><input id="photoTitle" maxlength="90" placeholder="最多 90 个字符" /></label>
+        <div class="photo-settings-grid">
+          <label class="field"><span>可见范围</span><select id="privacyLevel"><option value="PUBLIC_TO_EVERYONE" selected>所有人</option><option value="MUTUAL_FOLLOW_FRIENDS">互相关注的朋友</option><option value="FOLLOWER_OF_CREATOR">粉丝（私密账号）</option><option value="SELF_ONLY">仅自己</option></select></label>
+          <label class="field"><span>发布时间（北京时间）</span><input id="publishTime" type="datetime-local" /></label>
+          <label class="field"><span>音乐 ID（选填）</span><input id="musicSoundId" inputmode="numeric" maxlength="30" placeholder="商用音乐 ID" /></label>
+        </div>
+        <div class="photo-options">
+          <label><input id="autoAddMusic" type="checkbox" checked /> 自动添加推荐音乐</label>
+          <label><input id="allowComments" type="checkbox" checked /> 允许评论</label>
+        </div>
+        <label class="field"><span>统一文案</span><textarea id="publishCaption" rows="5" maxlength="4000" placeholder="图片帖子的文案，支持 #tag"></textarea></label>
+        <div class="photo-submit-row">
+          <p id="publishResult" class="sync-state" aria-live="polite"></p>
+          <button id="publishBtn" type="button">发布图片帖子</button>
+        </div>
+      </section>
+      <div id="pageStatus" class="page-status"></div>
+    </main>
+    <script src="/access.js"></script>
+    <script src="/psychology-photo.js"></script>
+  </body>
+</html>

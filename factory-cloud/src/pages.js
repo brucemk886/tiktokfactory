@@ -12,6 +12,7 @@ const PAGE_FILES = {
   "/psychology-collage": "psychology-collage.html",
   "/psychology-target-2": "psychology-narrative.html",
   "/psychology-narrative": "psychology-narrative.html",
+  "/psychology-photo": "psychology-photo.html",
   "/quiz": "quiz.html",
   "/ai": "ai.html",
   "/novel-strategy": "novel-strategy.html",

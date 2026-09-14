@@ -90,6 +90,7 @@
 .hub-card.tone-novel { --hub-glow: rgba(232, 184, 109, 0.2); }
 .hub-card.tone-psy { --hub-glow: rgba(176, 156, 232, 0.2); }
 .hub-card.tone-tool { --hub-glow: rgba(214, 232, 106, 0.16); }
+.hub-card.tone-photo { --hub-glow: rgba(240, 194, 122, 0.22); }
 
 .hub-card-top {
   display: flex;
@@ -121,6 +122,7 @@
 .hub-card.tone-video .hub-card-mark { background: #8fe0c4; }
 .hub-card.tone-novel .hub-card-mark { background: #f0c27a; }
 .hub-card.tone-psy .hub-card-mark { background: #c7b6f0; }
+.hub-card.tone-photo .hub-card-mark { background: #f0c27a; }
 
 .hub-card strong {
   position: relative;

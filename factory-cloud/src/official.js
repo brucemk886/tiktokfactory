@@ -43,12 +43,16 @@ import {
   readOpsSnapshot,
 } from "./ops-report-store.js";
 import { signalDesk, signalDeskAllAccounts } from "./signal-desk.js";
+import { handlePhotoPublishing } from "./photo-publishing.js";
 
 export async function handleOfficial(request, env, url, session) {
   if (!session) return null;
   const method = request.method;
   const pathname = url.pathname;
   const db = env.DB;
+
+  const photoResponse = await handlePhotoPublishing(request, env, url, session, assertOfficialPublishAccess);
+  if (photoResponse) return photoResponse;
 
   if (pathname === "/api/private-tiktok/settings") {
     if (method === "GET") return json(await publicOfficialSettings(db, env));
