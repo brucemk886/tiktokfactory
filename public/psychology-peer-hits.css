@@ -40,4 +40,13 @@ body.module-page.psy-hits-page { min-width: 0; }
 .is-error { color: #b84136 !important; }
 #newKeyPanel { margin-top: 16px; }
 #copyKeyBtn { margin-top: 8px; }
+.hits-panel .peer-select { width: 18px; height: 18px; }
+#produceBtn { background: var(--lf-accent-fill, #dce59d); font-weight: 700; }
+.peer-job { padding: 18px 0; border-bottom: 1px solid var(--lf-line, #e4ded2); }
+.peer-job details { margin: 12px 0; }
+.peer-job details p { white-space: pre-wrap; }
+.peer-output-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.peer-output-grid figure { margin: 0; }
+.peer-output-grid img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; }
+.peer-output-grid figcaption { padding: 10px 0; font-size: 13px; line-height: 1.5; }
 @media (max-width: 700px) { .hits-panel { padding: 14px; } .hits-form-grid { grid-template-columns: 1fr; } .hits-form-grid .wide { grid-column: auto; } .module-header { flex-wrap: wrap; } }

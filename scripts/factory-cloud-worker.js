@@ -28,6 +28,7 @@ const SCRIPT_BY_TYPE = {
   schulte: "schulte-render-job.js",
   "schulte-batch": "schulte-batch-job.js",
   "psychology-collage": "psychology-collage-job.js",
+  "psychology-photo-story": "psychology-photo-story-job.js",
   "psychology-target-2": "psychology-narrative-job.js",
   quiz: "quiz-render-job.js",
   "asset-preprocess": "asset-preprocess-job.js",

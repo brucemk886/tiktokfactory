@@ -1,5 +1,6 @@
 import { errorJson, json, randomToken, sha256Hex } from "./http.js";
 import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit } from "./psychology-peer-hits-store.js";
+import { handlePeerProduction } from './psychology-peer-production.js';
 
 export const PSYCHOLOGY_PEER_API = "/api/integrations/psychology/peer-hits";
 const INTERNAL = "/api/psychology-peer-hits";
@@ -43,6 +44,8 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
     const user = session.user;
     if (user?.role !== "admin" || !user.sidebarModules?.includes("psychology-peer-hits")) return errorJson("没有心理学同行爆款权限。", 403);
     if (request.method !== "GET" && request.headers.get("origin") && request.headers.get("origin") !== url.origin) return errorJson("不允许跨站修改。", 403);
+    const production = await handlePeerProduction(request, env, url, user);
+    if (production) return production;
     if (url.pathname === INTERNAL + "/api-key") {
       if (request.method === "GET") {
         const key = await db.prepare("SELECT token_prefix, created_at FROM psychology_peer_hit_keys WHERE owner_id = ?").bind(user.id).first();

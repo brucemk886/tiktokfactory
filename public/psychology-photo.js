@@ -1,5 +1,6 @@
 const FINAL_STATES = new Set(["success", "fail"]);
 const state = { accounts: [], groups: [], project: null, tasks: [], selected: [], coverKey: "", pollTimer: 0, busy: false };
+let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
 $("#refreshBtn")?.addEventListener("click", loadPage);
@@ -21,6 +22,18 @@ async function loadPage() {
     state.project = accounts.project || null;
     state.groups = accounts.groups || [];
     state.accounts = accounts.accounts || [];
+    const peerJobId = new URLSearchParams(location.search).get('peerJob');
+    if (peerJobId && !peerJobPhotos.length) {
+      const { jobs } = await requestJson('/api/psychology-peer-hits/production');
+      const job = jobs.find(item => item.jobId === peerJobId && item.type === 'psychology-photo-story');
+      if (!job) throw new Error('未找到这组同行爆款图文。');
+      const plan = job.result?.plan || job.plan || {};
+      peerJobPhotos = (job.result?.results || job.results || []).filter(item => item.imageModel === 'z-image' && /^https:\/\//i.test(item.imageUrl || '')).map((item, index) => ({ key: `${peerJobId}:${index}`, peerJobId, resultIndex: index, url: item.imageUrl, prompt: item.title, createdAt: job.createdAt }));
+      state.selected = peerJobPhotos.map(photo => photo.key);
+      state.coverKey = state.selected[0] || '';
+      $('#photoTitle').value = plan.title || '';
+      $('#publishCaption').value = plan.caption || '';
+    }
     renderAll();
     watchPending();
     hideStatus();
@@ -73,7 +86,7 @@ function watchPending() {
 }
 
 function generatedPhotos() {
-  return state.tasks.flatMap((task) => (task.status === "success" ? (task.resultUrls || []).map((url, index) => ({ key: `${task.id}:${index}`, generationId: task.id, resultIndex: index, url, prompt: task.prompt, createdAt: task.createdAt })) : []));
+  return [...peerJobPhotos, ...state.tasks.flatMap((task) => (task.status === "success" ? (task.resultUrls || []).map((url, index) => ({ key: `${task.id}:${index}`, generationId: task.id, resultIndex: index, url, prompt: task.prompt, createdAt: task.createdAt })) : []))];
 }
 
 function renderAll() {
@@ -165,7 +178,7 @@ async function publishPhotoPost() {
       setPublishResult(`正在导入第 ${index + 1} / ${selections.length} 张 Z-Image 图片…`);
       assets.push(await requestJson("/api/official-tiktok/photo-assets/import", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generationId: photo.generationId, resultIndex: photo.resultIndex }),
+        body: JSON.stringify({ generationId: photo.generationId, peerJobId: photo.peerJobId, resultIndex: photo.resultIndex }),
       }));
     }
     setPublishResult("图片已导入，正在创建 TikTok 图文发布任务…");

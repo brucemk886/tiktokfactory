@@ -193,7 +193,7 @@ async function listRecentVideos(db, user, moduleKey = "") {
 export function moduleForJobType(type) {
   const value = String(type || "").trim();
   if (["generate", "schulte", "quiz"].includes(value)) return "mid-video";
-  if (["psychology", "psychology-narrative", "psychology-collage", "psychology-target-2"].includes(value)) return "psychology";
+  if (["psychology", "psychology-narrative", "psychology-collage", "psychology-target-2", "psychology-photo-story"].includes(value)) return "psychology";
   return "";
 }
 
@@ -913,6 +913,10 @@ function slimJobResult(value) {
       fileName: String(video?.fileName || ""),
       outputPath: String(video?.outputPath || video?.path || ""),
       videoUrl: String(video?.videoUrl || "").slice(0, 500),
+      ...(video?.template === 'psychology-photo-story' ? {
+        imageUrl: /^https:\/\//i.test(String(video.imageUrl || '')) ? String(video.imageUrl).slice(0, 4000) : '',
+        imageModel: 'z-image', sceneIndex: Number(video.sceneIndex), visualPrompt: String(video.visualPrompt || '').slice(0, 2000),
+      } : {}),
       contactSheetFileName: String(video?.contactSheetFileName || ""),
       contactSheetUrl: String(video?.contactSheetUrl || "").slice(0, 500),
       title: String(video?.title || "").slice(0, 160),

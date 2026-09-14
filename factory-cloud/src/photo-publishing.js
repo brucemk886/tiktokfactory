@@ -36,16 +36,27 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
 
 export async function importGeneratedPhoto(env, db, user, input = {}) {
   const generationId = String(input.generationId || "").trim();
+  const peerJobId = String(input.peerJobId || '').trim();
   const resultIndex = Number(input.resultIndex || 0);
-  if (!generationId || !Number.isInteger(resultIndex) || resultIndex < 0) throw statusError("生成图片编号无效。", 400);
-  const row = await db.prepare(`
-    SELECT id, model, status, result_urls_json
-    FROM factory_ai_generations
-    WHERE id = ? AND owner_username = ?
-  `).bind(generationId, user.username).first();
-  if (!row || row.model !== "z-image" || row.status !== "success") throw statusError("这张 Z-Image 图片不存在或尚未生成完成。", 404);
-  const urls = parseStringArray(row.result_urls_json);
-  const sourceUrl = urls[resultIndex] || "";
+  if ((!generationId && !peerJobId) || (generationId && peerJobId) || !Number.isInteger(resultIndex) || resultIndex < 0) throw statusError("生成图片编号无效。", 400);
+  let sourceUrl;
+  if (peerJobId) {
+    if (!user.sidebarModules?.includes('psychology-peer-hits') || !user.sidebarModules?.includes('psychology-photo')) throw statusError('没有这组图文的访问权限。', 403);
+    const job = await db.prepare("SELECT result_json FROM factory_jobs WHERE id = ? AND created_by = ? AND type = 'psychology-photo-story' AND status = 'done'").bind(peerJobId, user.username).first();
+    if (!job) throw statusError('图文任务不存在或尚未全部生成完成。', 404);
+    const result = JSON.parse(job.result_json || '{}').results?.[resultIndex];
+    if (!result || result.imageModel !== 'z-image') throw statusError('这页生成图片不存在。', 404);
+    sourceUrl = result.imageUrl;
+  } else {
+    const row = await db.prepare(`
+      SELECT id, model, status, result_urls_json
+      FROM factory_ai_generations
+      WHERE id = ? AND owner_username = ?
+    `).bind(generationId, user.username).first();
+    if (!row || row.model !== "z-image" || row.status !== "success") throw statusError("这张 Z-Image 图片不存在或尚未生成完成。", 404);
+    const urls = parseStringArray(row.result_urls_json);
+    sourceUrl = urls[resultIndex] || "";
+  }
   if (!/^https:\/\//i.test(sourceUrl)) throw statusError("生成图片地址无效。", 400);
   const response = await (env.fetch || fetch)(sourceUrl, { signal: AbortSignal.timeout(30000), redirect: "follow" });
   if (!response.ok) throw statusError(`读取生成图片失败：HTTP ${response.status}`, 502);
@@ -59,7 +70,7 @@ export async function importGeneratedPhoto(env, db, user, input = {}) {
   return signalDeskBinary(env, db, "/api/v1/publish/assets", {
     body: bytes,
     contentType,
-    fileName: `psychology-z-image-${generationId}-${resultIndex}.${extension}`,
+    fileName: `psychology-z-image-${generationId || peerJobId}-${resultIndex}.${extension}`,
     fileSize: bytes.byteLength
   });
 }
