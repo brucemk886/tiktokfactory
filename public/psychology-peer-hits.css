@@ -1,12 +1,12 @@
 body.module-page.psy-hits-page { min-width: 0; }
-.psy-hits-page .module-main { max-width: none; margin-left: 0; }
+.psy-hits-page .module-main { max-width: none; }
 .hits-panel { margin: 18px 0; padding: 22px; border: 1px solid var(--lf-line, #e4ded2); border-radius: 12px; background: var(--lf-surface, #fffdf8); }
 .hits-panel summary { cursor: pointer; font-weight: 700; }
 .hits-panel p, .hits-panel small { color: var(--lf-muted, #766e60); line-height: 1.6; }
 .hits-panel label { display: grid; gap: 7px; font-size: 13px; }
 .hits-panel input, .hits-panel select, .hits-panel textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--lf-line-strong, #d8d0c3); border-radius: 6px; background: var(--lf-surface, #fff); color: inherit; font: inherit; }
-.psy-hits-page button { padding: 9px 15px; border: 1px solid var(--lf-line-strong, #d8d0c3); border-radius: 6px; background: var(--lf-surface, #fffdf8); color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
-.psy-hits-page button:disabled { opacity: .5; cursor: default; }
+.psy-hits-page .module-main button { padding: 9px 15px; border: 1px solid var(--lf-line-strong, #d8d0c3); border-radius: 6px; background: var(--lf-surface, #fffdf8); color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
+.psy-hits-page .module-main button:disabled { opacity: .5; cursor: default; }
 #refreshBtn, #importBtn, #createKeyBtn { background: var(--lf-accent-fill, #dce59d); }
 .hits-actions, .hits-toolbar, .hits-pagination { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
 .hits-toolbar { margin-top: 0; align-items: end; }
