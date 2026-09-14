@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-09-11
+Updated: 2026-09-14
 
 ## Platform
 
@@ -10,8 +10,9 @@ Updated: 2026-09-11
 - Reddit, psychology, Schulte, quiz, analytics, GeeLark publishing, and operations-brain modules are present.
 - The mid-video workbench now includes `/quiz`: a configurable 6–9 question, three-choice paper quiz with dense multi-question framing, single-line auto-fit question titles, a red-marker underline followed by a hand exit, a hand-free 5-to-1 countdown, green answer ticks, built-in marker/tick/reveal sound effects, fast viewport scrolling, Chinese/English starter banks, local Remotion rendering, and Cloudflare-to-local-worker queue support. Missing built-in background music automatically falls back to sound-effects-only rendering instead of failing the job.
 - Shipped mid-video publishing is official-only: Schulte batch jobs and quiz jobs select accounts from the `mid-video` Signal Desk project and can auto-submit after rendering; podcast results publish manually through the same official endpoint. The shared `/mid-video-publish` page lists only mid-video render jobs. Cloud queue creation validates account-group access and `video.publish` scope before a job can be claimed; GeeLark remains available only in its explicitly separate backup business modules.
-- Online psychology now uses one `/psychology-templates` workbench entry with three template cards, matching the mid-video workbench. Existing template URLs and module permissions remain; child navigation highlights the workbench.
+- Online psychology now uses one `/psychology-templates` workbench entry with four template cards, matching the mid-video workbench. Existing template URLs and module permissions remain; child navigation highlights the workbench.
 - All three online psychology templates enforce Z-Image for image generation, including queued payload delivery and stale saved model settings. The psychology topic-library entry/API is retired; the four-image template accepts manual topics and keeps its video-count setting.
+- The admin-only `/psychology-photo` template generates images through the hosted Z-Image API, lets an operator order 1–35 images and choose a cover, then uploads them directly to the hosted publishing Hub for TikTok Business photo publishing. It does not use the local worker or local files.
 - Online four-image psychology defaults to portrait 9:16, removes the aspect hint and GeeLark publishing form, and sends generation-only jobs to the existing official psychology publish page. Cloud queue creation/delivery disables legacy psychology auto-publishing and clears third-party account IDs; explicit official auto-publishing keeps its scoped authorization checks.
 - Online psychology has a standalone peer-hit library at `/psychology-peer-hits`, with an admin-managed write-only grokbot API at `/api/integrations/psychology/peer-hits`. Video identity, metrics and optional data are persisted in D1; imports support 100-item batches, sparse updates and stale-observation protection. The UI supports search, sorting, 20-row pagination and key rotation/revocation. See `docs/psychology-peer-hits-api.md`.
 - Psychology generation includes two newer templates: `/psychology-collage` for 60–120 second paper-collage narratives and `/psychology-target-2` for 12–20 second interactive tests. Target 2 defaults to one-shot local Kokoro English narration, routes Chinese narration to one ElevenLabs timestamp request, and drives sentence captions plus SVG entrance/exit timing from measured audio. Generated MP4 and contact sheets remain in local `outputs` for review and are not uploaded to cloud storage.
