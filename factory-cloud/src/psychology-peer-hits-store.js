@@ -119,3 +119,14 @@ export async function listPsychologyPeerHits(db, params) {
   const rows = await db.prepare(`SELECT * FROM ${TABLE}${filter} ORDER BY ${sorts[sort]} DESC, id DESC LIMIT ? OFFSET ?`).bind(...binds, pageSize, (page - 1) * pageSize).all();
   return { items: (rows.results || []).map(psychologyPeerHitFromRow), total, page, pageSize, totalPages };
 }
+
+export async function deletePsychologyPeerHit(db, id) {
+  const value = String(id || "").trim().toLowerCase();
+  if (!/^psy-[a-f0-9]{32}$/.test(value)) fail("视频编号无效。");
+  const result = await db.prepare(`DELETE FROM ${TABLE} WHERE id = ?`).bind(value).run();
+  if (!Number(result.meta?.changes)) {
+    const error = new Error("没有找到这条视频。");
+    error.statusCode = 404;
+    throw error;
+  }
+}

@@ -27,9 +27,11 @@ async function loadList() {
       <td class="hits-title" title="${escape(titleOf(item))}"><span>${escape(titleOf(item))}</span></td>
       <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
       <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:"打开视频"}</a></td>
-    </tr>`).join(""):'<tr><td colspan="10">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
+      <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
+    </tr>`).join(""):'<tr><td colspan="11">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
     message("#listStatus",`共 ${data.total} 条视频 · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;
+    $("#hitRows").querySelectorAll("[data-id]").forEach(button => button.addEventListener("click", () => deleteHit(button.dataset.id)));
   } catch(error) { if(error.name!=="AbortError")message("#listStatus",error.message,true); }
   finally { if(controller===current){state.loading=false;pager();} }
 }
@@ -40,6 +42,15 @@ async function loadKey() {
 $("#query").addEventListener("input",()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.page=1;loadList();},250);});
 $("#sort").addEventListener("change",()=>{state.page=1;loadList();});
 $("#refreshBtn").addEventListener("click",loadList);
+async function deleteHit(id) {
+  if (!id || !confirm("确定删除这条视频？删除后无法恢复。")) return;
+  try {
+    await api(`${API}/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadList();
+  } catch (error) {
+    message("#listStatus", error.message, true);
+  }
+}
 $("#previousBtn").addEventListener("click",()=>{state.page--;loadList();});
 $("#nextBtn").addEventListener("click",()=>{state.page++;loadList();});
 $("#importForm").addEventListener("submit",async event=>{

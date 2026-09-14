@@ -63,6 +63,20 @@ test("batch validates before writing, handles repeats, and paginates all records
   await assert.rejects(listPsychologyPeerHits(db,new URLSearchParams("sort=toString")),error=>error.statusCode===400);
 });
 
+test("admins can delete a saved video and invalid ids are rejected",async t=>{
+  const {db}=fixture(t);
+  await importPsychologyPeerHits(db,{videoUrl:url(1),title:"Keep"},"admin");
+  await importPsychologyPeerHits(db,{videoUrl:url(2),title:"Drop"},"admin");
+  const drop=(await listPsychologyPeerHits(db,new URLSearchParams())).items.find(item=>item.title==="Drop");
+  assert.equal((await call(db,`/api/psychology-peer-hits/${drop.id}`,"DELETE",undefined,{},null)).status,401);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${drop.id}`,"GET")).status,405);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${drop.id}`,"DELETE")).status,200);
+  const remaining=await listPsychologyPeerHits(db,new URLSearchParams());
+  assert.equal(remaining.total,1);assert.equal(remaining.items[0].title,"Keep");
+  assert.equal((await call(db,`/api/psychology-peer-hits/${drop.id}`,"DELETE")).status,404);
+  assert.equal((await call(db,"/api/psychology-peer-hits/not-valid","DELETE")).status,404);
+});
+
 test("API keys are hashed, write-only, isolated by owner, rotatable and revocable",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);
   const stored=sqlite.prepare("SELECT * FROM psychology_peer_hit_keys").get();assert.notEqual(stored.token_hash,token);assert.equal(stored.token_hash.length,64);
@@ -102,7 +116,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.equal(pageFileFor("/psychology-peer-hits"),"psychology-peer-hits.html");
   const page=fs.readFileSync(new URL("../../public/psychology-peer-hits.html",import.meta.url),"utf8");
   assert.match(page,/<th>播放<\/th><th>点赞<\/th>/);
-  assert.match(page,/<th>文案<\/th><th>视频<\/th>/);
+  assert.match(page,/<th>文案<\/th><th>视频<\/th><th>操作<\/th>/);
   assert.match(page,/<th>发布时间<br \/><small>北京时间<\/small><\/th>/);
   assert.doesNotMatch(page,/采集时间/);
   assert.doesNotMatch(page,/最新采集/);
@@ -112,6 +126,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(script,/hits-title" title=/);
   assert.match(script,/hits-copy" title=/);
   assert.doesNotMatch(script,/collectedAt/);
+  assert.match(script,/hits-delete/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
 });

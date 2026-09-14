@@ -34,6 +34,8 @@ body.module-page.psy-hits-page { min-width: 0; }
   white-space: pre-wrap;
 }
 .hits-time { white-space: nowrap; }
+.hits-delete { background: #fff5f3; border-color: #d9a29a; color: #8a2f28; white-space: nowrap; }
+.hits-delete:hover { background: #fbe9e6; }
 .hits-pagination { justify-content: flex-end; font-size: 13px; }
 .is-error { color: #b84136 !important; }
 #newKeyPanel { margin-top: 16px; }
