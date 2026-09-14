@@ -1,3 +1,4 @@
+import { withProductionPatch } from './production-timeline.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -40,15 +41,17 @@ async function main() {
   if (!elevenLabsApiKey) throw new Error("ElevenLabs API Key 未配置。");
   if (!voiceId) throw new Error("ElevenLabs Voice ID 未配置。");
 
-  patchJob({ status: "running", percent: 3, message: "正在准备短钩子配音与测试画面..." });
+  patchJob({ productionStage: "script", status: "running", percent: 3, message: "正在准备短钩子配音与测试画面..." });
   const sourceImageUrl = String(payload.sourceImageUrl || "").trim();
   const narration = String(payload.narration || "").trim() || normalizeHookNarration(await generateNarration(kieApiKey));
   const imagePrompt = sourceImageUrl ? String(payload.imagePrompt || "").trim() : (String(payload.imagePrompt || "").trim() || await generateImagePrompt(kieApiKey));
+  patchJob({productionStage:'audio', message:'文案和画面描述已完成，正在生成解说音频…', productionScene:{index:0,text:narration,imagePrompt,audioText:narration,audioStatus:'running',videoDescription:'四图保持同屏，添加标题、A/B/C/D 选项标签与缓慢镜头运动。'}, productionAudio:{text:narration,provider:'elevenlabs',voice:voiceId,description:'按模板生成短钩子解说，混合已有背景音乐。',status:'running'}});
   const narrationAudioPath = await synthesizeSpeech({ text: narration, apiKey: elevenLabsApiKey, voiceId });
   const narrationDuration = probeDuration(narrationAudioPath);
   const targetDuration = Math.max(1, narrationDuration || Number(payload.durationSeconds) || 8);
   const audioPath = prepareAudioTrack({ narrationPath: narrationAudioPath, duration: targetDuration });
   const duration = probeDuration(audioPath) || targetDuration;
+  patchJob({productionStage:'images',message:'解说音频完成，正在生成四图画面…',productionAudio:{duration,status:'done'},productionScene:{index:0,audioStatus:'done',duration,start:0,end:duration},productionVideo:{description:'四图同屏、选项标签、标题及镜头动效与解说音频合成。',aspectRatio,duration}});
   const models = Array.isArray(payload.imageModels) && payload.imageModels.length
     ? payload.imageModels.map((model) => normalizeKieImageModel(model))
     : ["nano-banana"];
@@ -76,6 +79,7 @@ async function main() {
       const variedPrompt = normalizeKieImageModel(model) === "z-image"
         ? `${imagePrompt} Creative variation ${creativeVariant}, render ${variant}: keep the same test choices, but change the real location, time of day, wardrobe, and camera angle.`
         : `${imagePrompt}\n\nCreative variation ${creativeVariant}, render ${variant}: Change the visual art direction, character appearance, environment, camera angle, lighting, and color palette substantially while preserving the same test choices. The result must be compositionally distinct from previous variants.\n\nMANDATORY: visuals only. Do not render any visible words, letters, numbers, captions, labels, logos, watermarks, signs, UI, or typography.`;
+      patchJob({productionStage:'images',message:'正在生成四图画面…',productionScene:{index:0,imagePrompt:variedPrompt,imageStatus:'running'}});
       const taskId = await createImageTask({ apiKey: kieApiKey, model, prompt: variedPrompt });
       imageUrl = await waitForImage({ apiKey: kieApiKey, taskId });
       imagePath = path.join(jobDir, `image-${String(index + 1).padStart(3, "0")}.png`);
@@ -88,6 +92,7 @@ async function main() {
 
     const outputId = uniqueOutputId(safeName(`${payload.question.slice(0, 20)}-psychology-${sourceImageUrl ? "source" : model}-${variant}`));
     const outputPath = path.join(outputDir, `${outputId}.mp4`);
+    patchJob({productionStage:'render',message:'正在合成四图测试视频…',productionScene:{index:0,imageUrl,imageStatus:'done'}});
     renderVideo({ imagePath, audioPath, outputPath, duration, title: payload.hookTitle || payload.question, subtitle: narration, sourceStyle: Boolean(sourceImageUrl) });
     results.push({
       id: outputId,
@@ -420,7 +425,7 @@ function run(command, args) {
 
 function patchJob(patch) {
   const current = fs.existsSync(jobPath) ? JSON.parse(fs.readFileSync(jobPath, "utf8")) : {};
-  fs.writeFileSync(jobPath, JSON.stringify({ ...current, ...patch, updatedAt: Date.now() }, null, 2), "utf8");
+  fs.writeFileSync(jobPath, JSON.stringify(withProductionPatch(current, patch), null, 2), "utf8");
 }
 
 function uniqueOutputId(baseId) {

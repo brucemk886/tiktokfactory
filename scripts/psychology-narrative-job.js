@@ -1,3 +1,4 @@
+import { withProductionPatch } from './production-timeline.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -107,6 +108,7 @@ async function main() {
     status: "running",
     error: null,
     results: [],
+    productionStage: "script",
     percent: 5,
     message: suppliedPlan
       ? "正在复用已审核的心理学目标2脚本..."
@@ -156,6 +158,7 @@ async function main() {
   writeManifest({ status: "scored", attempt, score, plan, language, provider, voice, model: provider === "elevenlabs" ? elevenLabsModelId : "kokoro-82m" });
   patchJob({
     status: "running",
+    productionStage:'audio', productionAudio:{text:plan.narration,provider,voice,description:'一次生成整段解说，使用实测语音时间戳驱动字幕和动效。',status:'running'},
     percent: 22,
     message: provider === "elevenlabs"
       ? `脚本已通过：${score.score}/100。检测到中文，正在通过 ElevenLabs 一次生成整段配音和时间戳...`
@@ -181,6 +184,7 @@ async function main() {
   writeManifest({ status: "voiced", attempt, score, plan, language, provider, voice, duration, captionTimings: timedCaptions });
   patchJob({ status: "running", percent: 42, message: `整段解说完成（${duration.toFixed(1)} 秒），字幕时间已按真实语音时间戳对齐，开始生成测试图...`, score, plan, language, ttsProvider: provider, captionTimings: timedCaptions });
 
+  patchJob({productionStage:'images',productionAudio:{duration,status:'done'},productionScene:{index:0,text:plan.narration,audioText:plan.narration,audioStatus:'done',duration,start:0,end:duration,videoDescription:'测试图持续展示，字幕及揭晓动画按真实语音时间戳播放。'},productionVideo:{description:'测试画面、解说、逐句字幕与选项动效同步合成。',aspectRatio:'16:9',duration}});
   for (let variant = 1; variant <= totalVideos; variant += 1) {
     patchJob({
       status: "running",
@@ -193,7 +197,8 @@ async function main() {
       results,
     });
     const imagePath = path.join(jobDir, `variant-${variant}.png`);
-    await generateSceneImage({
+    patchJob({productionStage:'images',productionScene:{index:0,imagePrompt:narrativeStylePrompt(plan, {variant,imageModel}),imageStatus:'running'}});
+    const generatedImageUrl = await generateSceneImage({
       kie,
       model: imageModel,
       prompt: narrativeStylePrompt(plan, { variant, imageModel }),
@@ -203,7 +208,8 @@ async function main() {
       aspectRatio: imageAspectRatioForQuizType(plan.quizType),
     });
 
-    patchJob({ status: "running", percent: Math.round(78 + ((variant - 0.4) / totalVideos) * 16), message: `正在合成第 ${variant}/${totalVideos} 条心理学中视频...`, score, plan, results });
+    patchJob({productionScene:{index:0,imageUrl:generatedImageUrl,imageStatus:'done'}});
+    patchJob({ productionStage:'render', status: "running", percent: Math.round(78 + ((variant - 0.4) / totalVideos) * 16), message: `正在合成第 ${variant}/${totalVideos} 条心理学中视频...`, score, plan, results });
     const outputId = uniqueOutputId(safeName(`心理学-目标2-${plan.title}-${variant}`));
     const outputPath = path.join(outputDir, `${outputId}.mp4`);
     renderQuizVideo({
@@ -218,6 +224,7 @@ async function main() {
       captions: timedCaptions,
       duration,
     });
+    patchJob({productionStage:'verify',message:'视频合成完成，正在检查画面、音轨和解码…'});
     const verification = verifyVideo(outputPath);
     const contactSheetPath = path.join(outputDir, `${outputId}-contact-sheet.jpg`);
     makeContactSheet(outputPath, contactSheetPath, verification.duration);
@@ -438,6 +445,7 @@ async function generateSceneImage({ kie, model, prompt, outputPath, layout, quiz
   let lastError;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
+      patchJob({productionScene:{index:0,imagePrompt:attempt === 1 ? prompt : `${prompt}\nRetry with a clearer focal subject, stricter option count, and stronger ${aspectRatio || "16:9"} composition.`,imageStatus:'running'}});
       let task = await kie.createTask({
         kind: "image",
         prompt: attempt === 1 ? prompt : `${prompt}\nRetry with a clearer focal subject, stricter option count, and stronger ${aspectRatio || "16:9"} composition.`,
@@ -451,7 +459,7 @@ async function generateSceneImage({ kie, model, prompt, outputPath, layout, quiz
           const imageUrl = task.resultUrls?.[0];
           if (!imageUrl) throw new Error("Kie 生图完成，但没有返回图片地址。");
           await downloadFile(imageUrl, outputPath);
-          return;
+          return imageUrl;
         }
         if (task.status === "fail") throw new Error(task.error || "Kie 心理学测试生图失败。");
         await sleep(3000);
@@ -627,11 +635,7 @@ function writeManifest(patch) {
 
 function patchJob(patch) {
   const current = readOptionalJson(jobPath);
-  fs.writeFileSync(jobPath, JSON.stringify({
-    ...current,
-    ...patch,
-    updatedAt: Date.now(),
-  }, null, 2), "utf8");
+  fs.writeFileSync(jobPath, JSON.stringify(withProductionPatch(current, patch), null, 2), "utf8");
 }
 
 function readOptionalJson(filePath) {

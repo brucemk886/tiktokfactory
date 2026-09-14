@@ -31,6 +31,7 @@ const PAGE_FILES = {
   "/psychology": "psychology.html",
   "/psychology-templates": "psychology-templates.html",
   "/psychology-peer-hits": "psychology-peer-hits.html",
+  "/psychology-production": "psychology-production.html",
   "/tiktok-connections": "tiktok-connections.html",
   "/official-group-report": "official-group-report.html",
   "/ops-report": "official-group-report.html",

@@ -8,6 +8,8 @@ import { peerCopy, parsePhotoStory, peerProductionPayload } from '../../scripts/
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
+import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
+import { syncPeerArtboardProgress } from '../../scripts/peer-progress-sync.js';
 
 test('photo submission dispatches cloud workflow with stable IDs and retries failed dispatch without duplicate rows', async t => {
   const batches = []; let unavailable = true;
@@ -33,7 +35,7 @@ function cloudFixture(t, failSecond = false) {
   sqlite.prepare("INSERT INTO factory_jobs(id,type,status,created_by,payload_json,result_json) VALUES('cloud-test','psychology-photo-story','queued','admin',?,'{}')").run(JSON.stringify({topic:'Silence',script:'Reflect on the assumptions you make when a friend goes quiet.'}));
   const plan = storyPlan(), submissions = [], cache = new Map(), sleeps = [];
   const step = {
-    async do(name, config, action) { if(cache.has(name))return structuredClone(cache.get(name)); const result=await action();cache.set(name,structuredClone(result));return result; },
+    async do(name, config, action) { if(cache.has(name))return structuredClone(cache.get(name)); const result=await (action || config)();cache.set(name,structuredClone(result));return result; },
     async sleep(name) { sleeps.push(name); }
   };
   let reads=0;
@@ -87,9 +89,9 @@ function fixture(t, overrides = {}) {
       catch (error) { sqlite.exec('ROLLBACK'); throw error; }
     },
   };
-  const user = { id:'admin', username:'admin', role:'admin', sidebarModules:['psychology-peer-hits','psychology-narrative','psychology-collage','psychology-photo'] };
-  const call = async (method, body, actor=user, origin='https://factory.test') => {
-    const request = new Request('https://factory.test/api/psychology-peer-hits/production', {method,headers:{origin,'Content-Type':'application/json'},...(body ? {body:JSON.stringify(body)} : {})});
+  const user = { id:'admin', username:'admin', role:'admin', sidebarModules:['psychology-peer-hits','psychology','psychology-narrative','psychology-collage','psychology-photo'] };
+  const call = async (method, body, actor=user, origin='https://factory.test', query='') => {
+    const request = new Request('https://factory.test/api/psychology-peer-hits/production'+query, {method,headers:{origin,'Content-Type':'application/json'},...(body ? {body:JSON.stringify(body)} : {})});
     return handlePsychologyPeerHits(request,{DB:db, KIE_API_KEY:'test-key', PEER_PHOTO_WORKFLOW:{createBatch:async()=>[]}, ...overrides},new URL(request.url),actor ? {user:actor} : null);
   };
   return { db, sqlite, user, call };
@@ -150,4 +152,50 @@ test('photo import rejects other owners or unfinished production without fetchin
   await assert.rejects(importGeneratedPhoto(env,db,user,{peerJobId:'peer-test'}),error=>error.statusCode===404);
   sqlite.prepare("UPDATE factory_jobs SET created_by='admin',status='running'").run();
   await assert.rejects(importGeneratedPhoto(env,db,user,{peerJobId:'peer-test'}),error=>error.statusCode===404);
+});
+
+test('four-image template queues a complete worker payload and is still deduplicated', async t => {
+  const {db,sqlite,user,call}=fixture(t);
+  const imported=await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/999',title:'What do you need after an argument?',videoData:{copy:'Notice whether you seek closeness or need space after an argument, before assuming what your partner feels.'}}],user.id);
+  const input={ids:[imported.items[0].id],template:'psychology',requestId:crypto.randomUUID()};
+  const response=await call('POST',input);assert.equal(response.status,202);assert.equal((await response.json()).execution,'worker');
+  await call('POST',input);
+  const row=sqlite.prepare('SELECT * FROM factory_jobs').get(),payload=JSON.parse(row.payload_json);
+  assert.equal(row.status,'queued');assert.equal(payload.aspectRatio,'9:16');assert.ok(payload.question);assert.equal(payload.answerGuide,payload.peerSource.copy);assert.equal(payload.totalVideos,1);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n,1);
+});
+
+test('artboard pagination and individual detail remain scoped to the owner', async t => {
+  const {sqlite,user,call}=fixture(t);
+  const insert=sqlite.prepare('INSERT INTO factory_jobs(id,type,status,title,created_by,payload_json,result_json,created_at) VALUES(?,?,?,?,?,?,?,?)');
+  for(let i=0;i<32;i++)insert.run('board-'+i,'psychology',i===0?'running':'queued','Topic '+i,user.username,JSON.stringify({peerSource:{id:'source',copy:'Example source'}}),'{}',i);
+  insert.run('private-board','psychology','done','Private','other',JSON.stringify({peerSource:{id:'source'}}),'{}',99);
+  const first=await (await call('GET')).json();assert.equal(first.jobs.length,30);assert.equal(first.hasMore,true);assert.equal(first.counts.reduce((n,s)=>n+s.count,0),32);
+  const second=await (await call('GET',undefined,user,'https://factory.test','?offset=30')).json();assert.equal(second.jobs.length,2);
+  const detail=await (await call('GET',undefined,user,'https://factory.test','?jobId=board-0')).json();assert.equal(detail.jobs.length,1);assert.equal(detail.jobs[0].status,'running');
+  assert.equal((await call('GET',undefined,user,'https://factory.test','?jobId=private-board')).status,404);
+});
+
+test('production timeline records actual transitions, retains completed scenes on failure and strips private fields', () => {
+  let state=withProductionPatch({}, {productionStage:'script',message:'Draft'},100);
+  state=withProductionPatch(state,{productionStage:'audio',productionAudio:{text:'A calm narration',provider:'test',apiKey:'must-not-persist'},productionScene:{index:0,audioText:'A calm narration',audioStatus:'running'}},200);
+  state=withProductionPatch(state,{productionStage:'audio',productionScene:{index:0,audioStatus:'done',start:0,end:3.25,duration:3.25}},300);
+  state=withProductionPatch(state,{productionStage:'images',productionScene:{index:0,imagePrompt:'A person looking out of a window',imageUrl:'https://images.example/1.png',imageStatus:'done',localPath:'D:/private/audio.mp3'}},400);
+  state=withProductionPatch(state,{status:'failed',message:'Next image failed'},500);
+  const production=compactProduction(state.production);
+  assert.deepEqual(production.events.map(e=>e.stage),['script','audio','images','images']);
+  assert.equal(production.events.at(-1).status,'failed');assert.equal(production.scenes[0].duration,3.25);assert.equal(production.scenes[0].audioText,'A calm narration');
+  const persisted=persistableJobResult(state);assert.deepEqual(persisted.production,production);assert.ok(!JSON.stringify(persisted).includes('must-not-persist'));assert.ok(!JSON.stringify(persisted).includes('D:/private'));
+});
+
+test('worker progress retries transient failures, throttles writes, preserves metadata and skips unrelated or completed jobs', async () => {
+  const job={id:'peer-test',payload:{peerSource:{id:'source'}}},state={at:0,version:0};
+  const local={status:'running',updatedAt:100,percent:20,message:'Audio',production:{stage:'audio'}};
+  let calls=0;const send=async(_,url,options)=>{calls++;assert.equal(url,'/api/worker/jobs/peer-test/progress');assert.deepEqual(options.body.result.production,local.production);if(calls===1)throw Error('temporary outage');};
+  assert.equal(await syncPeerArtboardProgress({},job,local,state,send,10000),false);assert.equal(state.version,0);
+  assert.equal(await syncPeerArtboardProgress({},job,local,state,send,11000),false);assert.equal(calls,1);
+  assert.equal(await syncPeerArtboardProgress({},job,local,state,send,16000),true);assert.equal(state.version,100);
+  await syncPeerArtboardProgress({},job,local,state,send,22000);assert.equal(calls,2);
+  await syncPeerArtboardProgress({},job,{...local,status:'done',updatedAt:200},state,send,28000);assert.equal(calls,2);
+  await syncPeerArtboardProgress({},{id:'unrelated',payload:{}},{...local,updatedAt:200},state,send,34000);assert.equal(calls,2);
 });

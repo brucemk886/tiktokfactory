@@ -31,11 +31,11 @@
   $('#productionTemplate').addEventListener('change', () => { requestId = ''; });
   $('#produceBtn').addEventListener('click', async () => {
     if (busy || !selected.size) return;
-    busy = true; requestId ||= crypto.randomUUID(); sync(); notify('正在创建制作任务…');
+    busy = true; requestId ||= crypto.randomUUID(); sync(); notify('正在加入画板队列…');
     try {
       const data = await api({ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ids:[...selected], template:$('#productionTemplate').value, requestId }) });
       notify(`已创建 ${data.jobIds.length} 个任务。可以关闭页面，${data.execution === 'cloud' ? '云端' : '视频工人机'}将继续制作。`);
-      selected.clear(); requestId = ''; await refresh();
+      selected.clear(); requestId = ''; location.href = '/psychology-production?job=' + encodeURIComponent(data.jobIds[0]);
     } catch (error) { notify(error.message, true); }
     finally { busy = false; sync(); }
   });
@@ -50,7 +50,7 @@
         const plan = result.plan || job.plan || {};
         const scenes = plan.scenes || (plan.visualPrompt ? [{ text:plan.narration, visualPrompt:plan.visualPrompt }] : []);
         const images = (result.results || job.results || []).filter(item => safeImage(item.imageUrl));
-        return `<article class="peer-job"><h3>${escape(job.title || job.source?.title)}</h3><p>${escape(job.message || job.status)} · ${Number(job.percent) || 0}%</p>${job.error ? `<p class="is-error">${escape(job.error)}</p>` : ''}
+        return `<article class="peer-job"><h3><a href="/psychology-production?job=${encodeURIComponent(job.jobId)}">${escape(job.title || job.source?.title)}</a></h3><p>${escape(job.message || job.status)} · ${Number(job.percent) || 0}%</p>${job.error ? `<p class="is-error">${escape(job.error)}</p>` : ''}
           <details><summary>来源文案</summary><p>${escape(job.source?.copy)}</p></details>
           ${scenes.length ? `<details><summary>改编文案、分镜与生图提示词 · ${scenes.length} 镜</summary>${scenes.map((scene,index) => `<section><h4>分镜 ${index+1}</h4><p>${escape(scene.text || scene.zh)}</p>${scene.en ? `<p>${escape(scene.en)}</p>` : ''}<pre>${escape(scene.visualPrompt)}</pre></section>`).join('')}</details>` : ''}
           ${images.length ? `<div class="peer-output-grid">${images.map(image => `<figure><a href="${safeImage(image.imageUrl)}" target="_blank" rel="noopener noreferrer"><img src="${safeImage(image.imageUrl)}" alt="分镜 ${Number(image.sceneIndex)+1}" loading="lazy"></a><figcaption>${escape(image.title)}</figcaption></figure>`).join('')}</div><a href="/psychology-photo?peerJob=${encodeURIComponent(job.jobId)}">使用这组图片和文案 →</a>` : ''}</article>`;

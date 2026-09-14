@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { syncPeerArtboardProgress } from './peer-progress-sync.js';
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -204,8 +205,12 @@ async function runJob(context, job) {
   });
 
   let lastFingerprint = "";
+  const peerProgress = { at: 0, version: 0 };
   while (true) {
     const local = readLocalJob(jobPath);
+    // Artboard progress is independent of mirrored local task summaries.
+    // A temporary cloud outage must not interrupt rendering.
+    await syncPeerArtboardProgress(context, job, local, peerProgress, request);
     const fingerprint = `${local.status}|${local.percent}|${local.message}`;
     if (fingerprint !== lastFingerprint) {
       lastFingerprint = fingerprint;

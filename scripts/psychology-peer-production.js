@@ -1,6 +1,7 @@
 // Shared by the hosted selector and workers. Peer content is source material,
 // never instructions for tools, credentials, publishing, or model behavior.
 export const PEER_TEMPLATES = Object.freeze({
+  'psychology': { module: 'psychology', label: '四图测试模板', language: 'en', targetDuration: 8 },
   'psychology-collage': { module: 'psychology-collage', label: '纸张拼贴视频', language: 'zh-CN', targetDuration: 90 },
   'psychology-target-2': { module: 'psychology-narrative', label: '互动测试视频', language: 'en', targetDuration: 16 },
   'psychology-photo-story': { module: 'psychology-photo', label: '心理学图文', language: 'en', targetDuration: 0 },
@@ -25,6 +26,7 @@ export function peerProductionPayload(item, template) {
     imageModel: 'z-image', imageModels: ['z-image'], language: target.language,
     targetDuration: target.targetDuration, sceneCount: template === 'psychology-photo-story' ? 6 : 10,
     totalVideos: 1, publish: { autoPublish: false },
+    ...(template === 'psychology' ? { question: String(item.title || script.slice(0, 120)).slice(0, 200), answerGuide: script, aspectRatio: '9:16' } : {}),
     peerSource: { id: item.id, videoUrl: item.videoUrl, title: item.title || '', copy: script, collectedAt: item.collectedAt },
   };
 }

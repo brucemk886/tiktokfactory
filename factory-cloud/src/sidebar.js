@@ -20,6 +20,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
   moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-peer-hits", "/psychology-peer-hits", "同行爆款", ["admin"], psychologyGroup()),
+  moduleItem("psychology-production", "/psychology-production", "画板队列", ["admin"], psychologyGroup()),
   moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
   moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-narrative", "/psychology-target-2", "互动测试模板", ["admin"], psychologyGroup(), "psychology"),

@@ -1,4 +1,5 @@
 import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
+import { compactProduction } from '../../scripts/production-timeline.js';
 import { psychologyImagePayload } from "../../scripts/psychology-image-policy.js";
 import { assertOfficialPublishAccess } from "./official.js";
 import { errorJson, json, now, randomToken, readJson, safeId } from "./http.js";
@@ -934,6 +935,7 @@ function slimJobResult(value) {
   };
   if (result.score && typeof result.score === "object") slim.score = result.score;
   if (result.plan && typeof result.plan === "object") slim.plan = result.plan;
+  if (result.production) slim.production = compactProduction(result.production);
   if (Array.isArray(result.captionTimings)) slim.captionTimings = result.captionTimings.slice(0, 12);
   return slim;
 }

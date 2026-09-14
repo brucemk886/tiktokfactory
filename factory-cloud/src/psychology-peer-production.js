@@ -22,8 +22,14 @@ export async function handlePeerProduction(request, env, url, user) {
   const base = '/api/psychology-peer-hits/production';
   if (url.pathname !== base) return null;
   if (request.method === 'GET') {
-    const rows = await env.DB.prepare("SELECT * FROM factory_jobs WHERE created_by = ? AND json_extract(payload_json, '$.peerSource.id') IS NOT NULL ORDER BY created_at DESC LIMIT 30").bind(user.username).all();
-    return json({ jobs: (rows.results || []).map(row => ({ ...publicJob(row), source: JSON.parse(row.payload_json).peerSource })) });
+    const jobId = url.searchParams.get('jobId');
+    const offset = Math.max(0, Math.min(100000, Number.parseInt(url.searchParams.get('offset'),10) || 0));
+    const rows = jobId
+      ? await env.DB.prepare("SELECT * FROM factory_jobs WHERE created_by = ? AND id = ? AND json_extract(payload_json, '$.peerSource.id') IS NOT NULL").bind(user.username,jobId).all()
+      : await env.DB.prepare("SELECT * FROM factory_jobs WHERE created_by = ? AND json_extract(payload_json, '$.peerSource.id') IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT 31 OFFSET ?").bind(user.username,offset).all();
+    if (jobId && !rows.results.length) return errorJson('找不到这张画板。',404);
+    const counts = await env.DB.prepare("SELECT status, COUNT(*) AS count FROM factory_jobs WHERE created_by = ? AND json_extract(payload_json, '$.peerSource.id') IS NOT NULL GROUP BY status").bind(user.username).all();
+    return json({ jobs: (rows.results || []).slice(0,30).map(row => ({ ...publicJob(row), title:row.title, source: JSON.parse(row.payload_json).peerSource })), counts:counts.results, hasMore:rows.results.length>30, offset });
   }
   if (request.method !== 'POST') return errorJson('不支持此请求方法。', 405);
   const input = await request.json().catch(() => fail('请提交有效 JSON。'));

@@ -24,7 +24,7 @@ async function loadPage() {
     state.accounts = accounts.accounts || [];
     const peerJobId = new URLSearchParams(location.search).get('peerJob');
     if (peerJobId && !peerJobPhotos.length) {
-      const { jobs } = await requestJson('/api/psychology-peer-hits/production');
+      const { jobs } = await requestJson('/api/psychology-peer-hits/production?jobId=' + encodeURIComponent(peerJobId));
       const job = jobs.find(item => item.jobId === peerJobId && item.type === 'psychology-photo-story');
       if (!job) throw new Error('未找到这组同行爆款图文。');
       const plan = job.result?.plan || job.plan || {};

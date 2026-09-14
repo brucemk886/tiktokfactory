@@ -389,6 +389,7 @@ function withOpsReportModules(value, role) {
   }
   if (role === "admin") {
     insertModuleAfter(modules, "psychology", "psychology-peer-hits");
+    insertModuleAfter(modules, "psychology-peer-hits", "psychology-production");
     insertModuleAfter(modules, "psychology", "psychology-collage");
     insertModuleAfter(modules, "psychology-collage", "psychology-narrative");
     insertModuleAfter(modules, "psychology-narrative", "psychology-photo");

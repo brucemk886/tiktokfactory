@@ -1,3 +1,4 @@
+import { withProductionPatch } from './production-timeline.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -63,7 +64,7 @@ async function main() {
     score: null,
     outputs: [],
   });
-  patchJob({ status: "running", percent: 4, message: "正在生成 3 个钩子和 4:3 双语拼贴分镜..." });
+  patchJob({ productionStage: "script", status: "running", percent: 4, message: "正在生成 3 个钩子和 4:3 双语拼贴分镜..." });
   let plan = await requestPlan(kie, buildCollagePrompt({ ...payload, targetDuration, sceneCount, credit }), { sceneCount });
   let score = scoreCollagePlan(plan, { targetDuration });
   let attempt = 1;
@@ -77,16 +78,20 @@ async function main() {
   if (score.score < COLLAGE_SCORE_THRESHOLD) throw new Error(`两次修订后仍为 ${score.score}/100，未达到 ${COLLAGE_SCORE_THRESHOLD} 分生产门槛。`);
 
   writeManifest({ status: "scored", attempt, score, plan });
-  patchJob({ status: "running", percent: 16, message: `分镜已通过：${score.score}/100，开始分段中文配音...`, score, plan });
+  patchJob({ productionStage: "audio", productionAudio:{provider:"elevenlabs",voice:voiceId,text:plan.scenes.map(s=>s.zh).join("\n"),description:"按分镜逐段配音，再根据实测时长对齐双语字幕。",status:"running"}, status: "running", percent: 16, message: `分镜已通过：${score.score}/100，开始分段中文配音...`, score, plan });
   const voiceSegments = [];
   for (let index = 0; index < plan.scenes.length; index += 1) {
     patchJob({ status: "running", percent: Math.round(16 + ((index + 1) / plan.scenes.length) * 18), message: `正在配音 ${index + 1}/${plan.scenes.length}...`, score, plan });
+    patchJob({productionScene:{index,text:plan.scenes[index].zh,translation:plan.scenes[index].en,audioText:plan.scenes[index].zh,audioStatus:'running',imagePrompt:plan.scenes[index].visualPrompt},message:'正在生成第 '+(index+1)+' 镜解说音频…'});
     const audioPath = await synthesizeSpeech({
       text: plan.scenes[index].zh,
       apiKey: elevenLabsApiKey,
       voiceId,
       modelId: payload.elevenLabsModelId || settings.elevenLabsModelId || "eleven_multilingual_v2",
     });
+    const segmentDuration = probeDuration(audioPath) || targetDuration / plan.scenes.length;
+    const segmentStart = voiceSegments.reduce((sum,scene)=>sum+scene.duration,0);
+    patchJob({productionScene:{index,audioStatus:'done',duration:segmentDuration,start:segmentStart,end:segmentStart+segmentDuration}});
     voiceSegments.push({ ...plan.scenes[index], audioPath, duration: probeDuration(audioPath) || targetDuration / plan.scenes.length });
   }
   const narrationPath = concatenateNarration(voiceSegments);
@@ -95,8 +100,14 @@ async function main() {
   const duration = probeDuration(audioPath) || rawDuration;
   const scale = duration / Math.max(.1, voiceSegments.reduce((sum, scene) => sum + scene.duration, 0));
   const timedScenes = voiceSegments.map((scene) => ({ ...scene, duration: Math.max(1, scene.duration * scale) }));
+  let timelineStart = 0;
+  for (const [index, scene] of timedScenes.entries()) {
+    patchJob({productionScene:{index,duration:scene.duration,start:timelineStart,end:timelineStart+scene.duration}});
+    timelineStart += scene.duration;
+  }
   writeManifest({ status: "voiced", attempt, score, plan: { ...plan, scenes: timedScenes }, duration });
 
+  patchJob({productionStage:'images',message:'分段解说完成，开始生成拼贴画面…',productionAudio:{status:'done',duration},productionVideo:{description:'按分镜顺序剪辑拼贴画面、逐段解说、双语字幕和背景音乐。',aspectRatio:'4:3',duration}});
   for (let variant = 1; variant <= totalVideos; variant += 1) {
     const imagePaths = [];
     for (let index = 0; index < timedScenes.length; index += 1) {
@@ -104,13 +115,17 @@ async function main() {
       const totalImages = totalVideos * timedScenes.length;
       patchJob({ status: "running", percent: Math.round(35 + ((completed + 1) / totalImages) * 40), progressCurrent: completed, progressTotal: totalImages, message: `正在生成拼贴画面 ${completed + 1}/${totalImages}...`, score, plan, results });
       const imagePath = path.join(jobDir, `variant-${variant}-scene-${String(index + 1).padStart(2, "0")}.png`);
-      await generateImage(kie, imageModel, collageImagePrompt(timedScenes[index], { variant, sceneNumber: index + 1, imageModel }), imagePath);
+      const visualPrompt = collageImagePrompt(timedScenes[index], { variant, sceneNumber: index + 1, imageModel });
+      patchJob({productionStage:'images',productionScene:{index,imagePrompt:visualPrompt,imageStatus:'running',videoDescription:'拼贴画面按真实配音时长展示，叠加本镜双语字幕。'}});
+      const imageUrl = await generateImage(kie, imageModel, visualPrompt, imagePath, index);
+      patchJob({productionScene:{index,imageUrl,imageStatus:'done'}});
       imagePaths.push(imagePath);
     }
     const outputId = uniqueOutputId(safeName(`心理学-${plan.title}-${variant}`));
     const outputPath = path.join(outputDir, `${outputId}.mp4`);
-    patchJob({ status: "running", percent: 80, message: `正在合成第 ${variant}/${totalVideos} 条 4:3 成片...`, score, plan, results });
+    patchJob({ productionStage: "render", status: "running", percent: 80, message: `正在合成第 ${variant}/${totalVideos} 条 4:3 成片...`, score, plan, results });
     renderVideo({ outputPath, audioPath, title: plan.title, credit, scenes: timedScenes.map((scene, index) => ({ ...scene, imagePath: imagePaths[index] })) });
+    patchJob({productionStage:'verify',message:'成片合成完成，正在检查视频音轨和解码…'});
     const verification = verifyVideo(outputPath);
     const contactSheetPath = path.join(outputDir, `${outputId}-contact-sheet.jpg`);
     makeContactSheet(outputPath, contactSheetPath, verification.duration);
@@ -177,11 +192,13 @@ function prepareAudio({ narrationPath, duration }) {
   return outputPath;
 }
 
-async function generateImage(kie, model, prompt, outputPath) {
+async function generateImage(kie, model, prompt, outputPath, sceneIndex) {
   let lastError;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      let task = await kie.createTask({ kind: "image", prompt: attempt === 1 ? prompt : `${prompt}\nRetry with clearer silhouettes and stronger negative space.`, imageModel: model, aspectRatio: "4:3" });
+      const actualPrompt = attempt === 1 ? prompt : `${prompt}\nRetry with clearer silhouettes and stronger negative space.`;
+      patchJob({productionScene:{index:sceneIndex,imagePrompt:actualPrompt,imageStatus:'running'}});
+      let task = await kie.createTask({ kind: "image", prompt: actualPrompt, imageModel: model, aspectRatio: "4:3" });
       const deadline = Date.now() + 12 * 60 * 1000;
       while (Date.now() < deadline) {
         if (task.status === "success") {
@@ -192,7 +209,7 @@ async function generateImage(kie, model, prompt, outputPath) {
           const bytes = Buffer.from(await response.arrayBuffer());
           if (bytes.length < 1024) throw new Error("下载的拼贴图无效。");
           fs.writeFileSync(outputPath, bytes);
-          return;
+          return url;
         }
         if (task.status === "fail") throw new Error(task.error || "Kie 拼贴生图失败。");
         await sleep(3000);
@@ -283,7 +300,7 @@ function run(command, args) {
 }
 function label(command, args) { return [command, ...args].map((part) => /\s/.test(String(part)) ? JSON.stringify(String(part)) : String(part)).join(" "); }
 function writeManifest(patch) { fs.writeFileSync(manifestPath, JSON.stringify({ ...readJson(manifestPath), ...patch, updatedAt: new Date().toISOString() }, null, 2), "utf8"); }
-function patchJob(patch) { fs.writeFileSync(jobPath, JSON.stringify({ ...readJson(jobPath), ...patch, updatedAt: Date.now() }, null, 2), "utf8"); }
+function patchJob(patch) { fs.writeFileSync(jobPath, JSON.stringify(withProductionPatch(readJson(jobPath), patch), null, 2), "utf8"); }
 function readJson(filePath) { try { return JSON.parse(fs.readFileSync(filePath, "utf8")); } catch { return {}; } }
 function uniqueOutputId(base) { return `${base}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}-${crypto.randomBytes(2).toString("hex")}`; }
 function safeName(value) { return String(value || "psychology").trim().replace(/[<>:"/\\|?*\x00-\x1F]/g, "-").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "psychology"; }
