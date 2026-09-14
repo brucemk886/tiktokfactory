@@ -100,6 +100,12 @@ test("public integration dispatch works without a login cookie and stays separat
   const req=new Request(BASE+PSYCHOLOGY_PEER_API,{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({videoUrl:url(100),playCount:100})});
   const response=await worker.fetch(req,{DB:db},{});assert.equal(response.status,200);assert.equal((await response.json()).accepted,1);
   assert.equal(pageFileFor("/psychology-peer-hits"),"psychology-peer-hits.html");
+  const page=fs.readFileSync(new URL("../../public/psychology-peer-hits.html",import.meta.url),"utf8");
+  assert.match(page,/<th>标题<\/th>/);
+  assert.match(page,/<th>文案<\/th>/);
+  const script=fs.readFileSync(new URL("../../public/psychology-peer-hits.js",import.meta.url),"utf8");
+  assert.match(script,/videoData\?\.标题/);
+  assert.match(script,/videoData\?\.文案/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
 });
