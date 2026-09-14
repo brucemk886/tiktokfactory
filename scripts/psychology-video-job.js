@@ -1,4 +1,5 @@
 import { withProductionPatch } from './production-timeline.js';
+import { preparePsychologyRenderAssets } from './psychology-render-assets.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -264,6 +265,7 @@ function renderLandscapeRemotion({ imagePath, audioPath, outputPath, duration, t
   const assetId = `${safeName(path.basename(outputPath, path.extname(outputPath)))}-${Date.now()}`;
   const assetDir = path.join(jobDir, `${assetId}-public`);
   fs.mkdirSync(assetDir, { recursive: true });
+  preparePsychologyRenderAssets(root, assetDir);
   const imageAssetName = `${assetId}.image${path.extname(imagePath) || ".png"}`;
   const audioAssetName = `${assetId}.audio${path.extname(audioPath) || ".m4a"}`;
   const imageAssetPath = path.join(assetDir, imageAssetName);

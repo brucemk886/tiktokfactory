@@ -1,4 +1,5 @@
 import { withProductionPatch } from './production-timeline.js';
+import { preparePsychologyRenderAssets } from './psychology-render-assets.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -501,6 +502,7 @@ function renderQuizVideo({ outputPath, audioPath, imagePath, title, credit, layo
   const assetDir = path.join(jobDir, `${assetId}-public`);
   const propsPath = path.join(jobDir, `${assetId}.remotion-props.json`);
   fs.mkdirSync(assetDir, { recursive: true });
+  preparePsychologyRenderAssets(root, assetDir);
 
   const audioName = `${assetId}.audio${path.extname(audioPath) || ".m4a"}`;
   const imageName = `${assetId}.image${path.extname(imagePath) || ".png"}`;

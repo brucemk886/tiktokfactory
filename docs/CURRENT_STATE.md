@@ -2,6 +2,8 @@
 
 Updated: 2026-09-14
 
+- Psychology landscape renders stage all eight `psychology-poses` SVG companions into each isolated Remotion public directory, avoiding missing-asset failures in interactive and landscape four-image videos.
+
 ## Platform
 
 - Psychology peer hits support selecting 1–5 saved sources with all four templates: four-image tests, paper collage, interactive tests and photo posts. Submissions enter the execution queue and open `/psychology-production` (画板队列). Artboards retain explicit stage events, source copy, exact image prompts, narration/provider details, measured media timelines, assets and failures. Video jobs run on the local worker with live progress sync; photo stories run entirely in the `factory-peer-photo` Cloudflare Workflow. Publishing remains explicit.
