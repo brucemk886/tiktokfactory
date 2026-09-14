@@ -1,5 +1,5 @@
 body.module-page.psy-hits-page { min-width: 0; }
-.psy-hits-page .module-main { max-width: none; }
+.psy-hits-page .module-main { max-width: none; margin-left: 0; }
 .hits-panel { margin: 18px 0; padding: 22px; border: 1px solid var(--lf-line, #e4ded2); border-radius: 12px; background: var(--lf-surface, #fffdf8); }
 .hits-panel summary { cursor: pointer; font-weight: 700; }
 .hits-panel p, .hits-panel small { color: var(--lf-muted, #766e60); line-height: 1.6; }
