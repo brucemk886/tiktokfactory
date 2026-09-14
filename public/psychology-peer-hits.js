@@ -8,11 +8,6 @@ const escape = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp
 const text = value => typeof value === "string" && value.trim() ? value.trim() : "";
 const titleOf = item => text(item.title) || text(item.videoData?.标题) || "—";
 const copyOf = item => text(item.videoData?.文案) || text(item.videoData?.caption) || text(item.videoData?.copy) || "—";
-function extraOf(item) {
-  const data = item.videoData && typeof item.videoData === "object" ? item.videoData : {};
-  const { 标题, 文案, caption, copy, ...rest } = data;
-  return { source: item.source, accountUrl: item.accountUrl, coverUrl: item.coverUrl, ...rest };
-}
 const message = (id, text, error=false) => { $(id).textContent=text; $(id).classList.toggle("is-error",error); };
 async function api(url, options={}) {
   const res = await fetch(url, {cache:"no-store",...options}); const data=await res.json();
@@ -27,13 +22,12 @@ async function loadList() {
     if(current.signal.aborted)return;
     state.page=data.page;state.totalPages=data.totalPages;
     $("#hitRows").innerHTML=data.items.length?data.items.map(item=>`<tr>
-      <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">打开视频</a><small>${escape(item.accountName||item.accountUsername||"未填写账号")}${item.accountName&&item.accountUsername?" · "+escape(item.accountUsername):""}</small><small>${escape(item.platform)}${item.videoId?" · "+escape(item.videoId):""}</small></td>
+      <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:"打开视频"}</a></td>
       <td class="hits-title">${escape(titleOf(item))}</td>
-      <td class="hits-copy">${escape(copyOf(item))}</td>
+      <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
       <td>${metric(item.playCount)}</td><td>${metric(item.likeCount)}</td><td>${metric(item.commentCount)}</td><td>${metric(item.favoriteCount)}</td><td>${metric(item.shareCount)}</td><td>${item.durationSeconds==null?"—":metric(item.durationSeconds)+" 秒"}</td>
       <td class="hits-time">${time(item.publishedAt)}<small>采集 ${time(item.collectedAt)}</small></td>
-      <td class="hits-extra"><details><summary>查看</summary><pre>${escape(JSON.stringify(extraOf(item),null,2))}</pre></details></td>
-    </tr>`).join(""):'<tr><td colspan="11">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
+    </tr>`).join(""):'<tr><td colspan="10">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
     message("#listStatus",`共 ${data.total} 条视频 · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;
   } catch(error) { if(error.name!=="AbortError")message("#listStatus",error.message,true); }

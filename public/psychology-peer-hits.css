@@ -16,18 +16,26 @@ body.module-page.psy-hits-page { min-width: 0; }
 .hits-form-grid .wide { grid-column: span 2; }
 .hits-panel pre { max-width: 100%; overflow: auto; background: #f3f0e8; padding: 15px; border-radius: 7px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .hits-table-wrap { overflow-x: auto; }
-.hits-table-wrap table { width: 100%; min-width: 1480px; border-collapse: collapse; font-size: 13px; }
+.hits-table-wrap table { width: 100%; min-width: 1180px; border-collapse: collapse; font-size: 13px; }
 .hits-table-wrap th { text-align: left; color: var(--lf-muted, #766e60); font-weight: 500; white-space: nowrap; }
 .hits-table-wrap td, .hits-table-wrap th { padding: 14px 10px; border-bottom: 1px solid var(--lf-line, #e4ded2); vertical-align: top; }
 .hits-table-wrap td:not(:first-child) { font-variant-numeric: tabular-nums; }
-.hits-video { min-width: 140px; max-width: 180px; overflow-wrap: anywhere; }
+.hits-video { width: 92px; }
 .hits-video a { color: var(--lf-accent, #617320); font-weight: 600; }
-.hits-video small, .hits-time small { display: block; margin-top: 7px; }
-.hits-title, .hits-copy { overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.5; }
-.hits-title { min-width: 220px; max-width: 320px; }
-.hits-copy { min-width: 280px; max-width: 420px; }
+.hits-video img { display: block; width: 72px; height: 96px; object-fit: cover; border-radius: 8px; background: #ece7dc; }
+.hits-title { min-width: 180px; max-width: 280px; overflow-wrap: anywhere; line-height: 1.5; }
+.hits-copy { min-width: 220px; max-width: 340px; }
+.hits-copy span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .hits-time { white-space: nowrap; }
-.hits-extra { min-width: 65px; max-width: 280px; }
+.hits-time small { display: block; margin-top: 7px; }
 .hits-pagination { justify-content: flex-end; font-size: 13px; }
 .is-error { color: #b84136 !important; }
 #newKeyPanel { margin-top: 16px; }

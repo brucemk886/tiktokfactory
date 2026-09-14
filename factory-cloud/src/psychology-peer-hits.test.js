@@ -103,9 +103,13 @@ test("public integration dispatch works without a login cookie and stays separat
   const page=fs.readFileSync(new URL("../../public/psychology-peer-hits.html",import.meta.url),"utf8");
   assert.match(page,/<th>标题<\/th>/);
   assert.match(page,/<th>文案<\/th>/);
+  assert.match(page,/<th>视频<\/th>/);
+  assert.doesNotMatch(page,/<th>其他数据<\/th>/);
   const script=fs.readFileSync(new URL("../../public/psychology-peer-hits.js",import.meta.url),"utf8");
   assert.match(script,/videoData\?\.标题/);
   assert.match(script,/videoData\?\.文案/);
+  assert.match(script,/hits-copy" title=/);
+  assert.doesNotMatch(script,/hits-extra/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
 });
