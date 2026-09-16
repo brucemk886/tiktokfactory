@@ -36,8 +36,7 @@
 
 ## Unfinished work
 
-- Production currently has no `GEMINI_API_KEY` Cloudflare Secret. The UI reports the service as unavailable until the secret is added.
-- A real paid-provider smoke test must run after that secret is configured.
+- None. Production secret is configured and the paid-provider smoke test passed.
 
 ## Recommended next step
 
