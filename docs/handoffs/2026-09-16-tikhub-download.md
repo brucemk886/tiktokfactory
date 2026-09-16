@@ -32,5 +32,13 @@ Resolve TikTok page/share URLs through TikHub and download the actual MP4 inside
 - Production health check returned HTTP 200. Workflow `factory-psychology-recreation` is registered.
 - Test task: `peer-tikhub-check-256bd1d1b9924515`; only this explicitly labeled test task was retried. No user publishing job was changed.
 
+## Final online verification
+- HTTP-status fix `3f9f50c` was pushed and fully deployed (version `4980e70f-d085-47db-8d0c-75afc3b83596`). A transient partial workflow-binding update was resolved by rerunning the standard deploy command.
+- Final instance `peer-tikhub-check-256bd1d1b9924515-v3` downloaded the full 2,586,843-byte MP4 again. Production steps verified both Google retries and the switch to Kie.
+- Google returned HTTP 524; Kie then returned no usable answer text. The test finished failed with zero scenes. Generated storyboard/images/audio are therefore NOT claimed as verified.
+- Final database result confirms `sourceDeleted: true` and zero remaining temporary analysis rows. The failed verification record remains visible for inspection.
+- Kie request endpoint/media shape matches its current official documentation (`https://docs.kie.ai/42969115e0`). Root cause of the empty analysis response is not yet established; do not label it a TikHub download failure.
+- Removed this task's temporary remote-preview folder. No Docker/VPS was introduced. Original untracked `artifacts/` remains untouched.
+
 ## Unfinished work / next step
-Download and cleanup are verified in production. Deploy the HTTP-status fallback fix and verify a final recreation attempt; do not claim generated image/audio completion until that attempt finishes. Use `/psychology-peer-hits` -> select video -> choose narration voice -> recreation, then review `/psychology-production`.
+TikHub cloud download and cleanup are implemented, deployed and verified. A separate remaining video-analysis issue needs inspection of sanitized Kie response metadata/upstream task logs before claiming full recreation success. No further paid retries were started. Entry: `/psychology-peer-hits` -> select video -> choose narration voice -> recreation, then review `/psychology-production`.
