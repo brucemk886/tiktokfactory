@@ -78,7 +78,7 @@ for (const failure of [
   const kieCall = calls.find((call) => call.url.includes("gemini-3-8-flash-openai"));
   const body = JSON.parse(kieCall.init.body);
   const videoUrl = body.messages[0].content[1].image_url.url;
-  assert.match(videoUrl, /^https:\/\/factory\.test\/api\/integrations\/gemini-video-source\/analysis-1\?/);
+  assert.match(videoUrl, /^https:\/\/factory\.test\/api\/integrations\/gemini-video-source\/analysis-1\/source\.mp4\?/);
   assert.match(videoUrl, /signature=[0-9a-f]{64}/);
 });
 

@@ -24,4 +24,4 @@ Switch the recreation pipeline directly to paid Kie Gemini 3.8 Flash as requeste
 - Signed source endpoint treated R2 full-object range metadata as a partial response even without a client Range header. Fix requires the request Range header before returning 206; full downloads return 200. Tests cover both cases.
 
 ## Remaining work
-Deploy the full-download status fix and verify a fresh direct-Kie attempt. Do not claim generated assets until verified.
+Full-download fix was deployed (`ff86efe`); the next Kie call no longer failed with HTTP 206 but returned upstream HTTP 400. Signed video URLs now include `/source.mp4` to make the media format explicit; legacy signed URLs remain valid. Deploy and verify this compatibility adjustment; do not claim generated assets until verified.

@@ -9,13 +9,13 @@ export async function createGeminiVideoSourceUrl({ baseUrl, analysisId, secret, 
   const expires = Math.floor(Number(expiresAt || 0) / 1000);
   if (!id || !key || !Number.isSafeInteger(expires)) throw new Error("无法创建 Kie 视频读取地址。");
   const signature = await hmacHex(key, `${id}.${expires}`);
-  return `${String(baseUrl || "").replace(/\/$/, "")}${GEMINI_VIDEO_SOURCE_PATH}${encodeURIComponent(id)}?expires=${expires}&signature=${signature}`;
+  return `${String(baseUrl || "").replace(/\/$/, "")}${GEMINI_VIDEO_SOURCE_PATH}${encodeURIComponent(id)}/source.mp4?expires=${expires}&signature=${signature}`;
 }
 
 export async function handleGeminiVideoSource(request, env, url, now = Date.now()) {
   if (!url.pathname.startsWith(GEMINI_VIDEO_SOURCE_PATH)) return null;
   if (!["GET", "HEAD"].includes(request.method)) return errorJson("仅支持读取视频。", 405);
-  const id = decodeURIComponent(url.pathname.slice(GEMINI_VIDEO_SOURCE_PATH.length));
+  const id = decodeURIComponent(url.pathname.slice(GEMINI_VIDEO_SOURCE_PATH.length).replace(/\/source\.mp4$/, ""));
   const expires = Number(url.searchParams.get("expires") || 0);
   const signature = String(url.searchParams.get("signature") || "").toLowerCase();
   const nowSeconds = Math.floor(now / 1000);
