@@ -19,8 +19,9 @@ Switch the recreation pipeline directly to paid Kie Gemini 3.8 Flash as requeste
 
 ## Verification
 - Automated coverage: direct Kie recreation with no Google key, direct failure cleanup/no image billing, submission without Google, provider errors and JSON envelopes.
-- Prior full suite before final cleanup regression: 318 passed.
-- Live verification pending after committed/main deployment. Reuse only the explicitly labeled test job, never a user's active job.
+- Full suite after direct-provider and cleanup regressions: 319 passed.
+- Direct-Kie commit `872f7c9` deployed successfully. Live request identified the actual error: `Failed to download fileData.fileUri: HTTP 206`.
+- Signed source endpoint treated R2 full-object range metadata as a partial response even without a client Range header. Fix requires the request Range header before returning 206; full downloads return 200. Tests cover both cases.
 
 ## Remaining work
-Deploy and test the direct-Kie request. The previous Kie empty response is not yet explained; improved errors must identify the actual failure before claiming the complete recreation pipeline works.
+Deploy the full-download status fix and verify a fresh direct-Kie attempt. Do not claim generated assets until verified.

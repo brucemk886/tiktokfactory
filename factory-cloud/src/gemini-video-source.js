@@ -37,7 +37,8 @@ export async function handleGeminiVideoSource(request, env, url, now = Date.now(
   if (!object?.body) return errorJson("视频已不存在。", 404);
   const headers = sourceHeaders(row.mime_type, Number(object.size || row.file_size || 0));
   if (object.httpEtag) headers.set("etag", object.httpEtag);
-  if (object.range) {
+  // R2 may include full-object range metadata even without a Range request.
+  if (range && object.range) {
     const offset = Number(object.range.offset || 0);
     const length = Number(object.range.length || 0);
     const total = Number(object.size || row.file_size || offset + length);
