@@ -36,9 +36,12 @@ export async function resolveTikTokVideoSource(env, { url, videoFileUrl }) {
   try {
     response = await (env.fetch || fetch)(apiUrl.href, {
       headers: { authorization: `Bearer ${key}`, accept: 'application/json', 'user-agent': TIKTOK_USER_AGENT },
-      redirect: 'error', signal: AbortSignal.timeout(90000)
+      redirect: 'manual', signal: AbortSignal.timeout(90000)
     });
-  } catch { fail('TikHub 视频解析请求失败或超时，请稍后重试。'); }
+  } catch (error) {
+    console.warn(JSON.stringify({ event: 'tikhub-fetch-failed', type: error?.name, message: String(error?.message || '').replaceAll(key, '[redacted]').slice(0, 300) }));
+    fail('TikHub 视频解析请求失败或超时，请稍后重试。');
+  }
   if (!response.ok) {
     await response.body?.cancel();
     if (response.status === 401) fail('TikHub API Key 无效，请检查服务器配置。');

@@ -37,7 +37,7 @@ test('share link resolution uses the configured key only at TikHub and prefers s
     assert.equal(new URL(url).searchParams.get('share_url'), page);
     assert.equal(init.headers.authorization, 'Bearer private-test');
     assert.match(init.headers['user-agent'], /Mozilla/);
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
     return api({ play_addr_h264: { url_list: ['https://127.0.0.1/private', cdn, cdn] }, play_addr: { url_list: ['https://v16.tiktokcdn.com/other.mp4'] } });
   } }, { url: page });
   assert.equal(calls, 1);
@@ -146,4 +146,15 @@ test('interrupted downloads abort multipart uploads and remove partial objects',
   assert.deepEqual(ARCHIVE.aborted, [args.r2Key]);
   assert.ok(ARCHIVE.deletes.includes(args.r2Key));
   assert.equal(ARCHIVE.writes.length, 0);
+});
+
+
+test('TikHub API redirects are rejected without forwarding the credential', async () => {
+  let requests = 0;
+  await assert.rejects(resolveTikTokVideoSource({ TIKHUB_API_KEY: 'private-test', fetch: async (_, init) => {
+    requests++;
+    assert.equal(init.redirect, 'manual');
+    return new Response(null, { status: 302, headers: { location: 'https://other.example/' } });
+  } }, { url: page }), /HTTP 302/);
+  assert.equal(requests, 1);
 });
