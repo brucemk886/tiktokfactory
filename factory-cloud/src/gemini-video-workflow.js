@@ -94,9 +94,12 @@ export async function runGeminiVideoWorkflow(env, event, step) {
 const RETRY_DELAYS = ["10 seconds", "20 seconds"];
 
 export function isTransientGeminiError(error) {
-  const status = Number(error?.statusCode || error?.status || 0);
   const message = String(error?.message || error || "");
-  return status === 429 || status >= 500 || /high demand|temporar(?:y|ily)|try again later|rate limit|overloaded|unavailable/i.test(message);
+  // Workflow step errors can lose custom properties across the durable boundary.
+  // The provider's HTTP marker preserves classification without relying on them.
+  const status = Number(error?.statusCode || error?.status || message.match(/\bHTTP\s+(\d{3})\b/i)?.[1] || 0);
+  if (status) return status === 429 || (status >= 500 && status <= 599);
+  return /high demand|temporar(?:y|ily)|try again later|rate limit|overloaded|unavailable/i.test(message);
 }
 
 export async function analyzeVideoWithRetry(client, input, step) {

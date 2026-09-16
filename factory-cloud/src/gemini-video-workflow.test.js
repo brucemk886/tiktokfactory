@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runGeminiVideoWorkflow } from "./gemini-video-workflow.js";
+import { runGeminiVideoWorkflow, isTransientGeminiError } from "./gemini-video-workflow.js";
 
-test("video workflow falls back to Kie after Google high-demand retries", async () => {
+for (const failure of [
+  { name: "high demand", status: 503, body: { error: { message: "This model is currently experiencing high demand. Please try again later." } } },
+  { name: "HTML 524 timeout", status: 524, body: null },
+  { name: "generic 503 with lost error properties", status: 503, body: { error: { message: "Backend error" } } }
+]) test(`video workflow falls back to Kie after ${failure.name} across serialized steps`, async () => {
   const row = {
     id: "analysis-1", owner_username: "admin", model: "gemini-3.8-flash", file_name: "demo.mp4",
     mime_type: "video/mp4", file_size: 3, prompt: "拆解脚本和分镜", status: "queued", progress: 5,
@@ -36,7 +40,9 @@ test("video workflow falls back to Kie after Google high-demand retries", async 
       }
       if (target.includes(":generateContent")) {
         googleAnalysisCalls += 1;
-        return Response.json({ error: { message: "This model is currently experiencing high demand. Please try again later." } }, { status: 503 });
+        return failure.body
+          ? Response.json(failure.body, { status: failure.status })
+          : new Response("<html>Timeout</html>", { status: failure.status });
       }
       if (target.includes("/gemini-3-8-flash-openai/v1/chat/completions")) {
         return Response.json({
@@ -52,7 +58,8 @@ test("video workflow falls back to Kie after Google high-demand retries", async 
   const step = {
     async do(_name, options, run) {
       const action = typeof options === "function" ? options : run;
-      return action();
+      try { return await action(); }
+      catch (error) { throw new Error(error.message); }
     },
     async sleep(name, duration) { sleeps.push({ name, duration }); }
   };
@@ -96,3 +103,13 @@ function memoryWorkflowDb(row) {
     }
   };
 }
+
+
+test("permanent HTTP failures do not trigger paid fallback after serialization", () => {
+  for (const status of [400, 401, 403, 404, 422]) {
+    assert.equal(isTransientGeminiError(new Error(`Gemini failure (HTTP ${status}): Please try again later`)), false);
+  }
+  assert.equal(isTransientGeminiError(new Error("Gemini failure (HTTP 429): quota")), true);
+  assert.equal(isTransientGeminiError(new Error("Gemini failure (HTTP 524): timeout")), true);
+  assert.equal(isTransientGeminiError(new Error("Invalid video")), false);
+});
