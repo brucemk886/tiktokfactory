@@ -3,7 +3,23 @@
   "main": "src/entry.js",
   "workflows": [
     { "binding": "PEER_PHOTO_WORKFLOW", "name": "factory-peer-photo", "class_name": "PeerPhotoWorkflow" },
-    { "binding": "GEMINI_VIDEO_WORKFLOW", "name": "factory-gemini-video-analysis", "class_name": "GeminiVideoWorkflow" }
+    { "binding": "GEMINI_VIDEO_WORKFLOW", "name": "factory-gemini-video-analysis", "class_name": "GeminiVideoWorkflow" },
+    { "binding": "PSYCHOLOGY_RECREATION_WORKFLOW", "name": "factory-psychology-recreation", "class_name": "PsychologyRecreationWorkflow" }
+  ],
+  "containers": [
+    {
+      "max_instances": 3,
+      "class_name": "TikTokDownloaderContainer",
+      "image": "./tiktok-downloader/Dockerfile"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "TIKTOK_DOWNLOADER", "class_name": "TikTokDownloaderContainer" }
+    ]
+  },
+  "migrations": [
+    { "tag": "tiktok-downloader-v1", "new_sqlite_classes": ["TikTokDownloaderContainer"] }
   ],
   "compatibility_date": "2026-08-03",
   "compatibility_flags": ["nodejs_compat"],

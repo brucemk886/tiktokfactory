@@ -680,8 +680,9 @@ export function claimTypeFilter(payload = {}) {
     .filter(Boolean))].slice(0, CLAIM_TYPE_LIMIT);
   const types = clean(payload.types);
   const excludeTypes = clean(payload.excludeTypes);
-  // Photo stories belong exclusively to Cloudflare Workflows, never local workers.
+  // These job types belong exclusively to Cloudflare Workflows, never local workers.
   if ((!types.length || types.includes('psychology-photo-story')) && !excludeTypes.includes('psychology-photo-story')) excludeTypes.push('psychology-photo-story');
+  if ((!types.length || types.includes('psychology-recreation')) && !excludeTypes.includes('psychology-recreation')) excludeTypes.push('psychology-recreation');
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = "";
   const binds = [];

@@ -4,13 +4,13 @@ import test from "node:test";
 import { claimTypeFilter, handleJobs, hasOwnKeys, mergeWorkerCatalog, officialPublishFollowupPayload } from "./jobs.js";
 
 test("claim filter lets a lane pick only its own job types", () => {
-  assert.deepEqual(claimTypeFilter({}), { sql: " AND type NOT IN (?)", binds: ['psychology-photo-story'], types: [], excludeTypes: ['psychology-photo-story'] });
+  assert.deepEqual(claimTypeFilter({}), { sql: " AND type NOT IN (?, ?)", binds: ['psychology-photo-story', 'psychology-recreation'], types: [], excludeTypes: ['psychology-photo-story', 'psychology-recreation'] });
   const publish = claimTypeFilter({ types: ["official-publish"] });
   assert.equal(publish.sql, " AND type IN (?)");
   assert.deepEqual(publish.binds, ["official-publish"]);
   const render = claimTypeFilter({ excludeTypes: ["official-publish", "official-publish", ""] });
-  assert.equal(render.sql, " AND type NOT IN (?, ?)");
-  assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story']);
+  assert.equal(render.sql, " AND type NOT IN (?, ?, ?)");
+  assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation']);
   const capped = claimTypeFilter({ types: Array.from({ length: 40 }, (_, i) => `t${i}`) });
   assert.equal(capped.binds.length, 20);
 });
@@ -22,12 +22,12 @@ test("a worker only claims jobs pinned to itself or to nobody", () => {
   assert.equal(publish.sql, ` AND type IN (?) AND ${WORKER_SQL} IN ('', ?)`);
   assert.deepEqual(publish.binds, ["official-publish", "windows-local"]);
   const render = claimTypeFilter({ workerId: "windows-local", excludeTypes: ["official-publish"] });
-  assert.equal(render.sql, ` AND type NOT IN (?, ?) AND ${WORKER_SQL} IN ('', ?)`);
-  assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', "windows-local"]);
+  assert.equal(render.sql, ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} IN ('', ?)`);
+  assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation', "windows-local"]);
   // assignedOnly: a secondary machine skips unpinned jobs entirely.
   const pinned = claimTypeFilter({ workerId: "worker-2", assignedOnly: true, excludeTypes: ["official-publish"] });
-  assert.equal(pinned.sql, ` AND type NOT IN (?, ?) AND ${WORKER_SQL} = ?`);
-  assert.deepEqual(pinned.binds, ["official-publish", 'psychology-photo-story', "worker-2"]);
+  assert.equal(pinned.sql, ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} = ?`);
+  assert.deepEqual(pinned.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation', "worker-2"]);
 });
 
 test("a new worker can pull the shared service keys with just the factory token", async () => {

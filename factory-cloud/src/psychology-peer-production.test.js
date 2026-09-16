@@ -11,11 +11,11 @@ import { importGeneratedPhoto } from './photo-publishing.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 import { syncPeerArtboardProgress } from '../../scripts/peer-progress-sync.js';
 
-test('photo submission dispatches cloud workflow with stable IDs and retries failed dispatch without duplicate rows', async t => {
+test('recreation submission dispatches cloud workflow with stable IDs and retries failed dispatch without duplicate rows', async t => {
   const batches = []; let unavailable = true;
-  const { db, sqlite, call, user } = fixture(t, { PEER_PHOTO_WORKFLOW: { async createBatch(items) { batches.push(items); if(unavailable) throw new Error('unavailable'); return []; } } });
-  const imported = await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/10',videoData:{copy:'A complete source about how silence changes the stories people tell themselves.'}}],user.id);
-  const input = {ids:imported.items.map(item=>item.id),template:'psychology-photo-story',requestId:crypto.randomUUID()};
+  const { db, sqlite, call, user } = fixture(t, { PSYCHOLOGY_RECREATION_WORKFLOW: { async createBatch(items) { batches.push(items); if(unavailable) throw new Error('unavailable'); return []; } } });
+  const imported = await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/10',title:'Source video'}],user.id);
+  const input = {ids:imported.items.map(item=>item.id),voiceId:'21m00Tcm4TlvDq8ikWAM',requestId:crypto.randomUUID()};
   assert.equal((await call('POST',input)).status,503);
   unavailable = false;
   const response = await call('POST',input);
@@ -92,7 +92,7 @@ function fixture(t, overrides = {}) {
   const user = { id:'admin', username:'admin', role:'admin', sidebarModules:['psychology-peer-hits','psychology','psychology-narrative','psychology-collage','psychology-photo'] };
   const call = async (method, body, actor=user, origin='https://factory.test', query='') => {
     const request = new Request('https://factory.test/api/psychology-peer-hits/production'+query, {method,headers:{origin,'Content-Type':'application/json'},...(body ? {body:JSON.stringify(body)} : {})});
-    return handlePsychologyPeerHits(request,{DB:db, KIE_API_KEY:'test-key', PEER_PHOTO_WORKFLOW:{createBatch:async()=>[]}, ...overrides},new URL(request.url),actor ? {user:actor} : null);
+    return handlePsychologyPeerHits(request,{DB:db, GEMINI_API_KEY:'gemini-test', KIE_API_KEY:'kie-test', ELEVENLABS_API_KEY:'eleven-test', ARCHIVE:{}, TIKTOK_DOWNLOADER:{}, PSYCHOLOGY_RECREATION_WORKFLOW:{createBatch:async()=>[]}, ...overrides},new URL(request.url),actor ? {user:actor} : null);
   };
   return { db, sqlite, user, call };
 }
@@ -100,36 +100,59 @@ function fixture(t, overrides = {}) {
 test('local workers cannot claim cloud photo jobs even if they request the type explicitly', () => {
   assert.ok(claimTypeFilter({workerId:'old-worker'}).excludeTypes.includes('psychology-photo-story'));
   assert.ok(claimTypeFilter({workerId:'updated-worker',types:['psychology-photo-story'],psychologyPhotoStory:true}).excludeTypes.includes('psychology-photo-story'));
+  assert.ok(claimTypeFilter({workerId:'updated-worker',types:['psychology-recreation']}).excludeTypes.includes('psychology-recreation'));
 });
 
-test('peer production uses saved full copy and enqueues one source-linked job per selection, once', async t => {
+test('peer recreation enqueues one source-linked cloud job per selection without requiring saved copy', async t => {
   const { db, sqlite, call, user } = fixture(t);
-  const imported = await importPsychologyPeerHits(db, [1,2].map(id => ({videoUrl:`https://www.tiktok.com/@example/video/${id}`,title:`Topic ${id}`,videoData:{文案:'When a friend goes quiet, notice what you assume before asking what happened.'}})),user.id);
-  const input = { ids:imported.items.map(item=>item.id),template:'psychology-target-2',requestId:crypto.randomUUID() };
+  const imported = await importPsychologyPeerHits(db, [1,2].map(id => ({videoUrl:`https://www.tiktok.com/@example/video/${id}`,title:`Topic ${id}`})),user.id);
+  const input = { ids:imported.items.map(item=>item.id),voiceId:'21m00Tcm4TlvDq8ikWAM',requestId:crypto.randomUUID() };
   assert.equal((await call('POST',input)).status,202);
   assert.equal((await call('POST',input)).status,200);
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n,2);
   const row=sqlite.prepare('SELECT * FROM factory_jobs LIMIT 1').get();
   const payload=JSON.parse(row.payload_json);
-  assert.equal(payload.script,payload.peerSource.copy);
-  assert.equal(payload.imageModel,'z-image'); assert.equal(payload.publish.autoPublish,false);
-  assert.equal((await call('POST',{...input,template:'psychology-collage'})).status,409);
+  assert.equal(row.type,'psychology-recreation');
+  assert.equal(payload.voiceId,input.voiceId);
+  assert.match(payload.peerSource.videoUrl,/tiktok\.com/);
+  assert.equal(payload.peerSource.copy,undefined);
+  assert.equal((await call('POST',{...input,voiceId:'differentVoice123'})).status,409);
   const own=await (await call('GET')).json(); assert.equal(own.jobs.length,2);
   const other=await (await call('GET',undefined,{...user,username:'other'})).json(); assert.equal(other.jobs.length,0);
 });
 
-test('batch rejects absent copy, missing sources and unauthorized targets before creating jobs', async t => {
+test('recreation batch rejects missing sources, invalid voices and unauthorized targets before creating jobs', async t => {
   const {db,sqlite,user,call}=fixture(t);
-  const imported=await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/5',title:'Only a title'},{videoUrl:'https://www.tiktok.com/@example/video/6',videoData:{transcript:'A complete reference transcript with specific relationship examples and a reflective ending.'}}],user.id);
-  const input={ids:imported.items.map(item=>item.id),template:'psychology-photo-story',requestId:crypto.randomUUID()};
-  assert.equal((await call('POST',input)).status,400);
+  const imported=await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/5',title:'Only a title'}],user.id);
+  const input={ids:imported.items.map(item=>item.id),voiceId:'21m00Tcm4TlvDq8ikWAM',requestId:crypto.randomUUID()};
+  assert.equal((await call('POST',{...input,voiceId:'bad'})).status,400);
   assert.equal((await call('POST',{...input,ids:['psy-'+'a'.repeat(32)]})).status,409);
   assert.equal((await call('POST',input,null)).status,401);
   assert.equal((await call('POST',input,{...user,role:'operator'})).status,403);
-  assert.equal((await call('POST',input,{...user,sidebarModules:['psychology-peer-hits']})).status,403);
+  assert.equal((await call('POST',input,{...user,sidebarModules:[]})).status,403);
   assert.equal((await call('POST',input,user,'https://other.test')).status,403);
   assert.equal((await call('POST',{...input,ids:[]})).status,400);
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n,0);
+});
+
+test('recreation assets are same-origin, owner-scoped and support audio range reads', async t => {
+  const {db,sqlite,user}=fixture(t);
+  sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,created_by,payload_json,result_json) VALUES('asset-job','psychology-recreation','done','Asset test','admin','{}','{}')").run();
+  const bytes=new TextEncoder().encode('0123456789');
+  const ARCHIVE={
+    async get(key,options){
+      assert.equal(key,'psychology-recreation/asset-job/scene-0.mp3');
+      assert.ok(options?.range);
+      return {body:bytes.slice(2,6),size:10,range:{offset:2,length:4},httpMetadata:{contentType:'audio/mpeg'},httpEtag:'etag'};
+    }
+  };
+  const request=new Request('https://factory.test/api/psychology-peer-hits/production/asset-job/assets/audio/0',{headers:{range:'bytes=2-5'}});
+  const response=await handlePsychologyPeerHits(request,{DB:db,ARCHIVE},new URL(request.url),{user});
+  assert.equal(response.status,206);
+  assert.equal(response.headers.get('content-range'),'bytes 2-5/10');
+  assert.equal(await response.text(),'2345');
+  const denied=await handlePsychologyPeerHits(request,{DB:db,ARCHIVE},new URL(request.url),{user:{...user,username:'other'}});
+  assert.equal(denied.status,404);
 });
 
 test('photo storyboard requires distinct paired scene descriptions and persists generated images', () => {
@@ -152,17 +175,6 @@ test('photo import rejects other owners or unfinished production without fetchin
   await assert.rejects(importGeneratedPhoto(env,db,user,{peerJobId:'peer-test'}),error=>error.statusCode===404);
   sqlite.prepare("UPDATE factory_jobs SET created_by='admin',status='running'").run();
   await assert.rejects(importGeneratedPhoto(env,db,user,{peerJobId:'peer-test'}),error=>error.statusCode===404);
-});
-
-test('four-image template queues a complete worker payload and is still deduplicated', async t => {
-  const {db,sqlite,user,call}=fixture(t);
-  const imported=await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/999',title:'What do you need after an argument?',videoData:{copy:'Notice whether you seek closeness or need space after an argument, before assuming what your partner feels.'}}],user.id);
-  const input={ids:[imported.items[0].id],template:'psychology',requestId:crypto.randomUUID()};
-  const response=await call('POST',input);assert.equal(response.status,202);assert.equal((await response.json()).execution,'worker');
-  await call('POST',input);
-  const row=sqlite.prepare('SELECT * FROM factory_jobs').get(),payload=JSON.parse(row.payload_json);
-  assert.equal(row.status,'queued');assert.equal(payload.aspectRatio,'9:16');assert.ok(payload.question);assert.equal(payload.answerGuide,payload.peerSource.copy);assert.equal(payload.totalVideos,1);
-  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n,1);
 });
 
 test('artboard pagination and individual detail remain scoped to the owner', async t => {

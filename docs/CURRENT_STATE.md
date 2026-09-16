@@ -8,7 +8,7 @@ Updated: 2026-09-16
 
 ## Platform
 
-- Psychology peer hits support selecting 1–5 saved sources with all four templates: four-image tests, paper collage, interactive tests and photo posts. Submissions enter the execution queue and open `/psychology-production` (画板队列). Artboards retain explicit stage events, source copy, exact image prompts, narration/provider details, measured media timelines, assets and failures. Video jobs run on the local worker with live progress sync; photo stories run entirely in the `factory-peer-photo` Cloudflare Workflow. Publishing remains explicit.
+- Psychology peer hits now submit 1–5 public TikTok links to the cloud-only `psychology-recreation` workflow. A Cloudflare Container runs yt-dlp, streams the source into temporary R2, and the existing Gemini 3.8 Flash analysis path extracts chronological scenes and original narration; Google remains primary with Kie fallback. The analysis workflow deletes the temporary source immediately after analysis. Each scene then receives a Z-Image illustration and ElevenLabs audio, retained in private R2 and exposed only through owner-scoped same-origin asset routes. `/psychology-production` is now the 爆款复刻 review board and stops before composition or publishing so operators can inspect scene timing, observed visuals, prompts, images and audio. Legacy source-linked jobs remain readable.
 
 - Local Factory serves its authenticated UI on port 3010 by default. Logged-in admins land on `/` business hub.
 - The workspace UI is now a light paper studio: warm cream background, ink text, olive/lime accents, 236px sidebar. Operational pages load `theme-ops.css` last so hardcoded dark panels, forms, and tables flip to the same light surfaces.
