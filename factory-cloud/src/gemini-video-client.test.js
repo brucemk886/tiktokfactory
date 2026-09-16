@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createGeminiVideoClient, extractGeminiText, GEMINI_VIDEO_MODEL, usageFromGemini } from "./gemini-video-client.js";
+import { analyzeVideoWithRetry, isTransientGeminiError } from "./gemini-video-workflow.js";
 
 test("Gemini video client uploads through Files API and analyzes with gemini-3.8-flash", async () => {
   const calls = [];
@@ -45,4 +46,37 @@ test("Gemini video client uploads through Files API and analyzes with gemini-3.8
 
 test("Gemini result extraction reports blocked or empty responses", () => {
   assert.throws(() => extractGeminiText({ promptFeedback: { blockReason: "SAFETY" } }), /SAFETY/);
+});
+
+test("video analysis retries temporary high-demand failures with durable backoff", async () => {
+  let calls = 0;
+  const sleeps = [];
+  const client = {
+    async analyze() {
+      calls += 1;
+      if (calls < 3) throw Object.assign(new Error("This model is currently experiencing high demand. Please try again later."), { statusCode: 503 });
+      return { candidates: [{ content: { parts: [{ text: "ok" }] } }] };
+    }
+  };
+  const step = {
+    async do(_name, _options, run) { return run(); },
+    async sleep(name, duration) { sleeps.push({ name, duration }); }
+  };
+  const result = await analyzeVideoWithRetry(client, { fileUri: "file", mimeType: "video/mp4", prompt: "analyze" }, step);
+  assert.equal(extractGeminiText(result), "ok");
+  assert.equal(calls, 3);
+  assert.deepEqual(sleeps.map((item) => item.duration), ["15 seconds", "30 seconds"]);
+});
+
+test("video analysis does not retry permanent request failures", async () => {
+  let calls = 0;
+  const error = Object.assign(new Error("Invalid argument"), { statusCode: 400 });
+  const client = { async analyze() { calls += 1; throw error; } };
+  const step = {
+    async do(_name, _options, run) { return run(); },
+    async sleep() { throw new Error("should not sleep"); }
+  };
+  await assert.rejects(() => analyzeVideoWithRetry(client, {}, step), /Invalid argument/);
+  assert.equal(calls, 1);
+  assert.equal(isTransientGeminiError(error), false);
 });

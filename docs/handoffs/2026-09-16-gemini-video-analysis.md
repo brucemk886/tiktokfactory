@@ -34,6 +34,8 @@
 - JavaScript syntax and `git diff --check` passed.
 - Production smoke test: a two-second MP4 returned the expected blue-frame description with 140 input and 10 output tokens; Workflow completed in 21 seconds and deleted both temporary files.
 
+- Production high-demand retry regression: transient 503 responses back off durably and succeed; permanent 400 responses fail without retry. Full Factory suite: 285 passed.
+
 ## Unfinished work
 
 - None. Production secret is configured and the paid-provider smoke test passed.

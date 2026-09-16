@@ -34,11 +34,11 @@ export async function runGeminiVideoWorkflow(env, event, step) {
     }
     if (googleFile?.state !== "ACTIVE") throw new Error("Google 视频处理超时，请稍后重新上传。");
     await update("mark-analyzing", "processing", 58, { googleFileName: googleFile.name });
-    const payload = await step.do("analyze-video", WRITE, () => client.analyze({
+    const payload = await analyzeVideoWithRetry(client, {
       fileUri: googleFile.uri,
       mimeType: googleFile.mimeType || row.mime_type,
       prompt: row.prompt
-    }));
+    }, step);
     const resultText = extractGeminiText(payload);
     const usage = usageFromGemini(payload);
     await update("save-analysis", "success", 100, { resultText, ...usage, googleFileName: googleFile.name });
@@ -55,4 +55,26 @@ export async function runGeminiVideoWorkflow(env, event, step) {
     }
     await step.do("delete-r2-video", READ, () => env.ARCHIVE.delete(row.r2_key));
   }
+}
+
+const RETRY_DELAYS = ["15 seconds", "30 seconds", "1 minute", "2 minutes"];
+
+export function isTransientGeminiError(error) {
+  const status = Number(error?.statusCode || error?.status || 0);
+  const message = String(error?.message || error || "");
+  return status === 429 || status >= 500 || /high demand|temporar(?:y|ily)|try again later|rate limit|overloaded|unavailable/i.test(message);
+}
+
+export async function analyzeVideoWithRetry(client, input, step) {
+  let lastError;
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt += 1) {
+    try {
+      return await step.do(`analyze-video-${attempt + 1}`, WRITE, () => client.analyze(input));
+    } catch (error) {
+      lastError = error;
+      if (!isTransientGeminiError(error) || attempt === RETRY_DELAYS.length) throw error;
+      await step.sleep(`wait-analysis-retry-${attempt + 1}`, RETRY_DELAYS[attempt]);
+    }
+  }
+  throw lastError;
 }
