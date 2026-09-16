@@ -1,0 +1,54 @@
+name: Deploy Factory
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "factory-cloud/**"
+      - "public/**"
+      - ".github/workflows/deploy-factory.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: factory-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Test and deploy factory
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: factory-cloud/package-lock.json
+
+      - name: Confirm Docker
+        run: docker version
+
+      - name: Install Cloudflare dependencies
+        working-directory: factory-cloud
+        run: npm ci
+
+      - name: Run factory tests
+        working-directory: factory-cloud
+        run: npm test
+
+      - name: Deploy factory production
+        working-directory: factory-cloud
+        run: npm run deploy
