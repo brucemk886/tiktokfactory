@@ -1,5 +1,6 @@
 import { handlePsychologyPeerHits, PSYCHOLOGY_PEER_API } from "./psychology-peer-hits.js";
 import { handleAi } from "./ai.js";
+import { handleGeminiVideoAnalysis } from "./gemini-video-analysis.js";
 import { handleAccounts, handleAuth, getSession, hasUsers } from "./auth.js";
 import { handleCompat } from "./compat.js";
 import { handleGeeLark } from "./geelark.js";
@@ -41,7 +42,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyPeerHits, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;

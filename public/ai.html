@@ -29,7 +29,7 @@
 
     <main class="module-main">
       <header class="module-header ai-page-header">
-        <div><p class="module-kicker">CONTENT INTELLIGENCE</p><h1>AI 创作</h1><p>调用 Kie.ai 完成生图和生视频，结果会留在线上记录里。</p></div>
+        <div><p class="module-kicker">CONTENT INTELLIGENCE</p><h1>AI 创作</h1><p>调用 Kie.ai 完成生图、生视频，并用 Google Gemini 分析视频内容。结果会留在线上记录里。</p></div>
         <button id="refreshBtn" class="module-button" type="button">刷新记录</button>
       </header>
 
@@ -38,12 +38,13 @@
           <div class="ai-mode-grid" role="tablist" aria-label="AI 创作类型">
             <button class="ai-mode active" type="button" data-kind="image"><span class="ai-mode-icon">▧</span><span><strong>AI 生图</strong><small>Grok / Nano Banana / Z-Image</small></span></button>
             <button class="ai-mode" type="button" data-kind="video"><span class="ai-mode-icon">▶</span><span><strong>AI 生视频</strong><small>Grok Imagine Video</small></span></button>
+            <button class="ai-mode" type="button" data-kind="analysis"><span class="ai-mode-icon">⌕</span><span><strong>视频分析</strong><small>Google Gemini 3.8 Flash</small></span></button>
           </div>
 
           <form id="aiForm" class="ai-compose">
             <div class="ai-compose-heading">
-              <div><p class="module-kicker">CREATE WITH KIE.AI</p><h2 id="modeTitle">AI 生图</h2></div>
-              <div class="ai-credit"><span>可用积分</span><strong id="credits">--</strong></div>
+              <div><p id="providerKicker" class="module-kicker">AI CREATION</p><h2 id="modeTitle">AI 生图</h2></div>
+              <div class="ai-credit"><span id="creditLabel">可用积分</span><strong id="credits">--</strong></div>
             </div>
 
             <label class="ai-prompt"><span id="promptLabel">画面描述</span><textarea id="prompt" maxlength="8000" placeholder="例如：竖版电影海报，一名女性坐在复古唱片机旁，暖色灯光，细腻胶片颗粒，画面上方留出标题空间……"></textarea></label>
@@ -59,6 +60,11 @@
 
             <label id="noTextPanel" class="ai-image-rule"><input id="noImageText" type="checkbox" checked /><span><strong>禁止图片中出现文字</strong><small>自动追加无标题、无标签、无字母数字、无水印约束</small></span></label>
 
+            <div id="analysisUploadPanel" class="ai-analysis-upload" hidden>
+              <label><span>上传视频</span><input id="analysisFile" type="file" accept="video/mp4,video/mpeg,video/quicktime,video/x-msvideo,video/x-flv,video/webm,video/x-ms-wmv,video/3gpp" /><small>支持 MP4、MPEG、MOV、AVI、FLV、WebM、WMV、3GP，单个不超过 500 MB。视频仅用于本次分析，完成后自动清理。</small></label>
+              <div class="ai-analysis-model"><span>分析模型</span><strong>Google Gemini 3.8 Flash</strong><small>官方视频理解 · 异步处理长视频</small></div>
+            </div>
+
             <div id="mediaOptions" class="ai-options">
               <label><span>画幅</span><select id="aspectRatio"><option value="9:16">竖版 9:16</option><option value="16:9">横版 16:9</option><option value="1:1">方形 1:1</option><option value="3:2">横图 3:2</option><option value="2:3">竖图 2:3</option></select></label>
               <label id="durationField" hidden><span>时长</span><select id="duration"><option value="6">6 秒</option><option value="10">10 秒</option></select></label>
@@ -66,7 +72,7 @@
             </div>
 
             <div id="aiMessage" class="module-status"></div>
-            <div class="ai-submit-row"><p>提交会消耗 Kie.ai 积分；多选模型会分别创建任务。</p><button id="submitBtn" class="module-button primary" type="submit">开始生成</button></div>
+            <div class="ai-submit-row"><p id="submitHint">提交会消耗 Kie.ai 积分；多选模型会分别创建任务。</p><button id="submitBtn" class="module-button primary" type="submit">开始生成</button></div>
           </form>
         </section>
 
@@ -78,6 +84,6 @@
     </main>
 
     <script src="/access.js"></script>
-    <script src="/ai.js?v=20260901-7"></script>
+    <script src="/ai.js?v=20260916-1"></script>
   </body>
 </html>

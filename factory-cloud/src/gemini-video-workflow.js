@@ -1,0 +1,58 @@
+import { createGeminiVideoClient, extractGeminiText, usageFromGemini } from "./gemini-video-client.js";
+
+const READ = { retries: { limit: 3, delay: "5 seconds", backoff: "exponential" }, timeout: "2 minutes" };
+const WRITE = { retries: { limit: 0, delay: "1 second" }, timeout: "15 minutes" };
+
+export async function runGeminiVideoWorkflow(env, event, step) {
+  const id = event.payload.analysisId;
+  const client = createGeminiVideoClient({ apiKey: env.GEMINI_API_KEY, fetchImpl: env.fetch || fetch });
+  let row = await step.do("load-analysis", READ, () => env.DB.prepare("SELECT * FROM factory_video_analyses WHERE id=?").bind(id).first());
+  if (!row || ["success", "fail"].includes(row.status)) return { skipped: true };
+  let googleFile = null;
+  const update = async (name, status, progress, patch = {}) => {
+    const stamp = await step.do(`${name}-time`, () => Date.now());
+    await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_video_analyses SET status=?,progress=?,result_text=?,error=?,google_file_name=?,input_tokens=?,output_tokens=?,updated_at=?,completed_at=? WHERE id=?`).bind(
+      status, progress, patch.resultText || "", patch.error || "", patch.googleFileName || row.google_file_name || "",
+      Number(patch.inputTokens || 0), Number(patch.outputTokens || 0), stamp, ["success", "fail"].includes(status) ? stamp : 0, id
+    ).run());
+    row = { ...row, status, progress, ...patch, updated_at: stamp };
+  };
+  try {
+    await update("mark-uploading-to-google", "processing", 12);
+    googleFile = await step.do("upload-video-to-google", WRITE, async () => {
+      const object = await env.ARCHIVE.get(row.r2_key);
+      if (!object?.body) throw new Error("临时视频已丢失，请重新上传。");
+      return client.upload({ body: object.body, size: row.file_size, mimeType: row.mime_type, displayName: row.file_name });
+    });
+    await update("save-google-file", "processing", 35, { googleFileName: googleFile.name });
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const file = await step.do(`poll-google-file-${attempt}`, READ, () => client.getFile(googleFile.name));
+      googleFile = file;
+      if (file.state === "ACTIVE") break;
+      if (file.state === "FAILED") throw new Error("Google 无法处理该视频，请检查文件编码后重试。");
+      await step.sleep(`wait-google-file-${attempt}`, "10 seconds");
+    }
+    if (googleFile?.state !== "ACTIVE") throw new Error("Google 视频处理超时，请稍后重新上传。");
+    await update("mark-analyzing", "processing", 58, { googleFileName: googleFile.name });
+    const payload = await step.do("analyze-video", WRITE, () => client.analyze({
+      fileUri: googleFile.uri,
+      mimeType: googleFile.mimeType || row.mime_type,
+      prompt: row.prompt
+    }));
+    const resultText = extractGeminiText(payload);
+    const usage = usageFromGemini(payload);
+    await update("save-analysis", "success", 100, { resultText, ...usage, googleFileName: googleFile.name });
+    return { analysisId: id, ...usage };
+  } catch (error) {
+    await update("save-failure", "fail", Math.max(12, Number(row.progress || 0)), {
+      error: String(error?.message || error).slice(0, 1500),
+      googleFileName: googleFile?.name || row.google_file_name || ""
+    });
+    throw error;
+  } finally {
+    if (googleFile?.name) {
+      await step.do("delete-google-file", READ, () => client.removeFile(googleFile.name).catch(() => null));
+    }
+    await step.do("delete-r2-video", READ, () => env.ARCHIVE.delete(row.r2_key));
+  }
+}

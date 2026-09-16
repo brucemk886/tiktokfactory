@@ -1,6 +1,8 @@
 # Current State
 
-Updated: 2026-09-14
+Updated: 2026-09-16
+
+- The online AI workbench now includes an admin-only Google video-analysis mode using `gemini-3.8-flash`. Uploads stream to R2, a Cloudflare Workflow uses Google Files API asynchronously, D1 stores the result and token usage, and temporary provider/storage files are removed after completion. Production requires the `GEMINI_API_KEY` Worker secret.
 
 - Psychology landscape renders stage all eight `psychology-poses` SVG companions into each isolated Remotion public directory, avoiding missing-asset failures in interactive and landscape four-image videos.
 

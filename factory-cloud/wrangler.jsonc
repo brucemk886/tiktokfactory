@@ -1,7 +1,10 @@
 {
   "name": "tiktok-factory",
   "main": "src/entry.js",
-  "workflows": [{ "binding": "PEER_PHOTO_WORKFLOW", "name": "factory-peer-photo", "class_name": "PeerPhotoWorkflow" }],
+  "workflows": [
+    { "binding": "PEER_PHOTO_WORKFLOW", "name": "factory-peer-photo", "class_name": "PeerPhotoWorkflow" },
+    { "binding": "GEMINI_VIDEO_WORKFLOW", "name": "factory-gemini-video-analysis", "class_name": "GeminiVideoWorkflow" }
+  ],
   "compatibility_date": "2026-08-03",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
