@@ -162,3 +162,43 @@ function memoryAiDb() {
     }
   };
 }
+
+
+test("MiniMax video is submitted once, persisted, polled and listed with the actual model", async () => {
+  const calls = [];
+  const env = { DB: memoryAiDb(), KIE_API_KEY: "test-key", fetch: async (url, init = {}) => {
+    calls.push({ url: String(url), body: init.body && JSON.parse(init.body) });
+    if (String(url).includes("createTask")) return json({ code: 200, data: { taskId: "minimax-1" } });
+    if (String(url).includes("recordInfo")) return json({ code: 200, data: { state: "success", resultJson: JSON.stringify({ resultUrls: ["https://cdn.example/minimax.mp4"] }), creditsConsumed: 12.5 } });
+    return json({ code: 200, data: 100 });
+  } };
+  const request = jsonRequest("POST", "/api/kie-ai", { kind: "video", videoModel: "minimax-h3", prompt: "A quiet lake", duration: "4", aspectRatio: "9:16", resolution: "768P" });
+  const response = await handleAi(request, env, new URL(request.url), adminSession());
+  assert.equal(response.status, 201);
+  const { task } = await response.json();
+  assert.equal(task.model, "minimax-h3/text-to-video");
+  assert.deepEqual(calls[0].body, { model: "minimax-h3/text-to-video", input: { prompt: "A quiet lake", duration: 4, aspect_ratio: "9:16", resolution: "768P" } });
+  const poll = jsonRequest("GET", `/api/kie-ai?id=${task.id}`);
+  const completed = await (await handleAi(poll, env, new URL(poll.url), adminSession())).json();
+  assert.equal(completed.task.status, "success");
+  assert.equal(completed.task.model, "minimax-h3/text-to-video");
+  assert.deepEqual(completed.task.resultUrls, ["https://cdn.example/minimax.mp4"]);
+  assert.equal(completed.task.creditsConsumed, 12.5);
+  await handleAi(poll, env, new URL(poll.url), adminSession());
+  assert.equal(calls.filter(({ url }) => url.includes("recordInfo")).length, 1);
+  const overview = jsonRequest("GET", "/api/kie-ai");
+  const listed = await (await handleAi(overview, env, new URL(overview.url), adminSession())).json();
+  assert.equal(listed.tasks[0].model, "minimax-h3/text-to-video");
+  assert.equal(calls.filter(({ url }) => url.includes("createTask")).length, 1);
+});
+
+test("invalid video model or MiniMax settings return 400 without upstream billing", async () => {
+  let requests = 0;
+  const env = { DB: memoryAiDb(), KIE_API_KEY: "test-key", fetch: async () => { requests++; throw new Error("must not call"); } };
+  for (const overrides of [{ videoModel: "typo" }, { duration: 16 }, { resolution: "480p" }, { aspectRatio: "2:3" }, { prompt: "a".repeat(7001) }]) {
+    const request = jsonRequest("POST", "/api/kie-ai", { kind: "video", videoModel: "minimax-h3", prompt: "A quiet lake", ...overrides });
+    const response = await handleAi(request, env, new URL(request.url), adminSession());
+    assert.equal(response.status, 400);
+  }
+  assert.equal(requests, 0);
+});

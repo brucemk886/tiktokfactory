@@ -59,6 +59,7 @@ async function createGeneration(db, kie, ownerUsername, input = {}) {
 
   const remote = await kie.createKieMediaTask(kind, prompt, {
     imageModel,
+    videoModel: input.videoModel,
     noImageText: input.noImageText,
     aspectRatio: input.aspectRatio,
     duration: input.duration,

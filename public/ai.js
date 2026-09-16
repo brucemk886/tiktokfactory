@@ -8,6 +8,7 @@ let overviewSequence = 0;
 
 $$("[data-kind]").forEach((button) => button.addEventListener("click", () => setKind(button.dataset.kind, true)));
 $$('input[name="imageModel"]').forEach((input) => input.addEventListener("change", () => input.closest("label").classList.toggle("selected", input.checked)));
+$("#videoModel").addEventListener("change", updateMediaOptions);
 $("#aiForm").addEventListener("submit", submit);
 $("#refreshBtn").addEventListener("click", loadOverview);
 $("#taskList").addEventListener("click", handleTaskAction);
@@ -25,6 +26,7 @@ function setKind(nextKind, reload) {
   $("#promptLabel").textContent = analysis ? "分析要求" : "画面描述";
   $("#prompt").placeholder = placeholderFor(kind);
   $("#imageModelPanel").hidden = kind !== "image";
+  $("#videoModelPanel").hidden = kind !== "video";
   $("#noTextPanel").hidden = kind !== "image";
   $("#analysisUploadPanel").hidden = !analysis;
   $("#mediaOptions").hidden = analysis;
@@ -36,7 +38,28 @@ function setKind(nextKind, reload) {
     ? "视频会安全上传并异步分析；临时文件会在任务结束后自动清理。"
     : "提交会消耗 Kie.ai 积分；多选模型会分别创建任务。";
   $("#submitBtn").textContent = analysis ? "上传并分析" : "开始生成";
+  updateMediaOptions();
   if (reload) loadOverview();
+}
+
+function updateMediaOptions() {
+  const minimax = kind === "video" && $("#videoModel").value === "minimax-h3";
+  setOptions("#aspectRatio", minimax
+    ? [["9:16", "竖版 9:16"], ["16:9", "横版 16:9"], ["1:1", "方形 1:1"], ["4:3", "横版 4:3"], ["3:4", "竖版 3:4"], ["21:9", "宽屏 21:9"]]
+    : [["9:16", "竖版 9:16"], ["16:9", "横版 16:9"], ["1:1", "方形 1:1"], ["3:2", "横图 3:2"], ["2:3", "竖图 2:3"]], "9:16");
+  setOptions("#duration", (minimax ? Array.from({ length: 12 }, (_, i) => i + 4) : [6, 10]).map((seconds) => [String(seconds), `${seconds} 秒`]), "6");
+  setOptions("#resolution", minimax ? [["768P", "768P"], ["2K", "2K"]] : [["480p", "480p · 更快"], ["720p", "720p · 更清晰"]], minimax ? "768P" : "480p");
+  $("#prompt").maxLength = minimax ? 7000 : 8000;
+  if (kind === "video") $("#submitHint").textContent = minimax
+    ? "MiniMax H3 文生视频 · 4–15 秒 · 768P / 2K；提交会消耗 Kie.ai 积分。"
+    : "Grok Imagine 文生视频；提交会消耗 Kie.ai 积分。";
+}
+
+function setOptions(selector, options, fallback) {
+  const select = $(selector);
+  const previous = select.value;
+  select.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+  select.value = options.some(([value]) => value === previous) ? previous : fallback;
 }
 
 async function loadOverview() {
@@ -81,7 +104,7 @@ async function submit(event) {
     const results = await Promise.allSettled(modelRequests.map((imageModel) => requestJson("/api/kie-ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, prompt, imageModel, noImageText: $("#noImageText").checked, aspectRatio: $("#aspectRatio").value, duration: $("#duration").value, resolution: $("#resolution").value })
+      body: JSON.stringify({ kind, prompt, imageModel, videoModel: $("#videoModel").value, noImageText: $("#noImageText").checked, aspectRatio: $("#aspectRatio").value, duration: $("#duration").value, resolution: $("#resolution").value })
     })));
     const created = results.flatMap((result) => result.status === "fulfilled" ? [result.value.task] : []);
     const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason?.message || String(result.reason)] : []);
@@ -211,6 +234,7 @@ function kindLabel(task) {
   if (task.model === "google/nano-banana") return "图片 · Nano Banana 标准版";
   if (task.model === "grok-imagine/text-to-image") return "图片 · Grok Imagine";
   if (task.model === "z-image") return "图片 · Z-Image";
+  if (task.model === "minimax-h3/text-to-video") return "视频 · MiniMax H3";
   if (task.kind === "video") return "视频 · Grok Imagine Video";
   return "图片";
 }

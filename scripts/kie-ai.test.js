@@ -62,3 +62,21 @@ test("stores a synchronous Kie chat response", async () => {
 function json(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
+
+
+test("local video creation shares the MiniMax contract and stores the model", async (t) => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "kie-minimax-"));
+  t.after(() => fs.rmSync(workDir, { recursive: true, force: true }));
+  const calls = [];
+  const service = createKieAiService({ workDir, readApiKey: () => "test-key", fetchImpl: async (url, init = {}) => {
+    calls.push(JSON.parse(init.body));
+    return json({ code: 200, data: { taskId: "minimax-1" } });
+  } });
+  const task = await service.createTask({ kind: "video", videoModel: "minimax-h3", prompt: "A quiet lake", duration: "15", resolution: "2K" });
+  assert.equal(task.model, "minimax-h3/text-to-video");
+  assert.equal(calls[0].input.duration, 15);
+  assert.equal(calls[0].input.resolution, "2K");
+  assert.equal(calls[0].input.mode, undefined);
+  await assert.rejects(service.createTask({ kind: "video", videoModel: "minimax-h3", prompt: "A quiet lake", duration: 100 }), { statusCode: 400 });
+  assert.equal(calls.length, 1);
+});

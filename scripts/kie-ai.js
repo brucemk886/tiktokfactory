@@ -1,3 +1,4 @@
+import { buildKieVideoTaskInput } from "./kie-video-models.js";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -88,14 +89,7 @@ export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now
         noImageText: options.noImageText
       })
       : null;
-    const model = imageTask?.model || "grok-imagine/text-to-video";
-    const input = imageTask?.input || {
-      prompt,
-      aspect_ratio: String(options.aspectRatio || "9:16"),
-      mode: "normal",
-      duration: String(options.duration || "6"),
-      resolution: String(options.resolution || "480p")
-    };
+    const { model, input } = imageTask || buildKieVideoTaskInput({ ...options, prompt });
     const data = await kieRequest("/api/v1/jobs/createTask", {
       method: "POST",
       body: JSON.stringify({ model, input })
