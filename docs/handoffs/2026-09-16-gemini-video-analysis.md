@@ -32,6 +32,7 @@
 - Full Factory suite: 281 passed.
 - Wrangler deployment dry-run: Worker, assets, D1, R2 and both Workflow bindings packaged successfully.
 - JavaScript syntax and `git diff --check` passed.
+- Production smoke test: a two-second MP4 returned the expected blue-frame description with 140 input and 10 output tokens; Workflow completed in 21 seconds and deleted both temporary files.
 
 ## Unfinished work
 
@@ -40,4 +41,4 @@
 
 ## Recommended next step
 
-Set `GEMINI_API_KEY` with Wrangler, then upload a short MP4 in AI 工作台 → 视频分析 and verify the returned text and token counts.
+Use AI 工作台 → 视频分析 with a real source video and a production analysis prompt.
