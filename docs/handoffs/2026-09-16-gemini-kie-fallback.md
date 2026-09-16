@@ -34,11 +34,12 @@
 - Google 400 responses remain permanent and do not become transient fallback errors.
 - Full Factory suite: 291 passed.
 - git diff --check passed.
+- Production migration 0024 applied; health check passed; the signed video route rejected an invalid signature with 401. Deployed Worker version: 8740fae8-a9bd-41cc-969a-e543cf6227d0.
 
 ## Unfinished work
 
-- Production deployment and a user-submitted real-video fallback event still need verification after merge.
+- Production deployment is complete. A naturally triggered real-video Kie fallback will be visible on the record as “Kie 兜底”; automated workflow coverage already verifies the failover path.
 
 ## Recommended next step
 
-Commit and push to GitHub main, deploy with npm run deploy, then submit a real video from AI 工作台. The record label will show whether Google completed it or Kie handled the fallback.
+Submit a real video from AI 工作台. The record label shows whether Google completed it or Kie handled the fallback.
