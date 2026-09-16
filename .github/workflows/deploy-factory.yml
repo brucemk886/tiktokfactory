@@ -46,7 +46,7 @@ jobs:
         working-directory: factory-cloud
         run: npm ci
 
-      - name: Run factory tests
+      - name: Run the complete factory test suite
         working-directory: factory-cloud
         run: npm test
 
