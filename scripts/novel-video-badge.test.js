@@ -312,7 +312,11 @@ test("hook card uses the spoken first sentence and writes a Reddit-style PNG", (
   const made = renderRedditHookCard({
     title: "Mom said she wished she had never had me, so I swallowed the gold locket she once gave me.",
     destPath,
-    fontFile: "C:/Windows/Fonts/arialbd.ttf",
+    fontFile: [
+      "C:/Windows/Fonts/arialbd.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+      "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"
+    ].find((candidate) => fs.existsSync(candidate)),
     platform: "NovelMaster",
     promotionCode: "479166"
   });
