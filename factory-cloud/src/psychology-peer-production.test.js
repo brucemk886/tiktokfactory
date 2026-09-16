@@ -234,3 +234,11 @@ test('TikHub configured page-only records queue without resolving or billing in 
   assert.equal(paidRequests, 0);
   assert.equal(JSON.parse(sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json).peerSource.videoFileUrl, '');
 });
+
+
+test('recreation submission uses Kie without requiring a Google key', async t => {
+  const { db, call, user } = fixture(t, { GEMINI_API_KEY: '', TIKHUB_API_KEY: 'tikhub-test' });
+  const imported = await importPsychologyPeerHits(db, [{ videoUrl: 'https://www.tiktok.com/@example/video/777', title: 'Kie direct' }], user.id);
+  const response = await call('POST', { ids: imported.items.map(item => item.id), voiceId: 'voice-test-123', requestId: crypto.randomUUID() });
+  assert.equal(response.status, 202);
+});

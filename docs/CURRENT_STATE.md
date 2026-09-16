@@ -8,7 +8,7 @@ Updated: 2026-09-16
 
 ## Platform
 
-- Psychology recreation resolves public TikTok page/share links through TikHub using the server-only TIKHUB_API_KEY, then validates and downloads MP4 files into private temporary R2 storage. Resolution is a separate durable step, so CDN/download retries do not repeat paid parsing. Downloads enforce a 300 MB limit and use 8 MB multipart writes for large files. Google analysis with Kie fallback, Z-Image images, ElevenLabs narration and the review board remain the pipeline; temporary originals are deleted after analysis. No Docker or separate download server is used. See docs/handoffs/2026-09-16-tikhub-download.md for verification.
+- Psychology recreation resolves public TikTok page/share links through TikHub using the server-only TIKHUB_API_KEY, then validates and downloads MP4 files into private temporary R2 storage. Resolution is a separate durable step, so CDN/download retries do not repeat paid parsing. Downloads enforce a 300 MB limit and use 8 MB multipart writes for large files. Recreation video analysis now goes directly to Kie Gemini 3.8 Flash, without Google uploads or retries, followed by Z-Image images, ElevenLabs narration and the review board; temporary originals are deleted after analysis. No Docker or separate download server is used. See docs/handoffs/2026-09-16-tikhub-download.md for verification.
 
 - Local Factory serves its authenticated UI on port 3010 by default. Logged-in admins land on `/` business hub.
 - The workspace UI is now a light paper studio: warm cream background, ink text, olive/lime accents, 236px sidebar. Operational pages load `theme-ops.css` last so hardcoded dark panels, forms, and tables flip to the same light surfaces.

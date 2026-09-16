@@ -55,8 +55,7 @@ export async function handlePeerProduction(request, env, url, user) {
   const voiceId = String(input.voiceId || '').trim();
   if (!/^[a-zA-Z0-9_-]{8,100}$/.test(voiceId)) fail('请选择有效的 ElevenLabs 配音声音。');
   if (!env.PSYCHOLOGY_RECREATION_WORKFLOW || !env.ARCHIVE) fail('线上爆款复刻服务尚未配置完成。', 503);
-  if (!String(env.GEMINI_API_KEY || '').trim()) fail('Google 视频分析服务尚未配置。', 503);
-  if (!String(env.KIE_API_KEY || '').trim()) fail('Z-Image 服务尚未配置。', 503);
+  if (!String(env.KIE_API_KEY || '').trim()) fail('Kie 视频分析与 Z-Image 服务尚未配置。', 503);
   if (!String(env.ELEVENLABS_API_KEY || '').trim()) fail('ElevenLabs 配音服务尚未配置。', 503);
 
   const key = await sha256Hex(JSON.stringify({ username: user.username, requestId: input.requestId }));

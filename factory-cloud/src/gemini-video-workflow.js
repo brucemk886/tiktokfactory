@@ -7,7 +7,8 @@ const WRITE = { retries: { limit: 0, delay: "1 second" }, timeout: "15 minutes" 
 
 export async function runGeminiVideoWorkflow(env, event, step) {
   const id = event.payload.analysisId;
-  const client = createGeminiVideoClient({ apiKey: env.GEMINI_API_KEY, fetchImpl: env.fetch || fetch });
+  let client = null;
+  const directKie = event.payload.provider === "kie";
   const kieClient = String(env.KIE_API_KEY || "").trim()
     ? createKieGeminiVideoClient({ apiKey: env.KIE_API_KEY, fetchImpl: env.fetch || fetch })
     : null;
@@ -30,49 +31,58 @@ export async function runGeminiVideoWorkflow(env, event, step) {
     let usage = { inputTokens: 0, outputTokens: 0 };
     let provider = "google";
     let creditsConsumed = 0;
-    try {
-      await update("mark-uploading-to-google", "processing", 12);
-      googleFile = await step.do("upload-video-to-google", WRITE, async () => {
-        const object = await env.ARCHIVE.get(row.r2_key);
-        if (!object?.body) throw new Error("临时视频已丢失，请重新上传。");
-        return client.upload({ body: object.body, size: row.file_size, mimeType: row.mime_type, displayName: row.file_name });
-      });
-      await update("save-google-file", "processing", 35, { googleFileName: googleFile.name });
-      for (let attempt = 0; attempt < 120; attempt += 1) {
-        const file = await step.do(`poll-google-file-${attempt}`, READ, () => client.getFile(googleFile.name));
-        googleFile = file;
-        if (file.state === "ACTIVE") break;
-        if (file.state === "FAILED") throw new Error("Google 无法处理该视频，请检查文件编码后重试。");
-        await step.sleep(`wait-google-file-${attempt}`, "10 seconds");
-      }
-      if (googleFile?.state !== "ACTIVE") throw new Error("Google 视频处理超时，请稍后重新上传。");
-      await update("mark-analyzing", "processing", 58, { googleFileName: googleFile.name });
-      const payload = await analyzeVideoWithRetry(client, {
-        fileUri: googleFile.uri,
-        mimeType: googleFile.mimeType || row.mime_type,
-        prompt: row.prompt
-      }, step);
-      resultText = extractGeminiText(payload);
-      usage = usageFromGemini(payload);
-    } catch (googleError) {
-      if (!isTransientGeminiError(googleError) || !kieClient) throw googleError;
+    const analyzeKie = async (name) => {
+      if (!kieClient) throw new Error("Kie 视频分析服务尚未配置。");
       provider = "kie";
-      await update("mark-kie-fallback", "processing", 72, { provider });
+      await update(name, "processing", 72, { provider });
       const sourceUrl = await step.do("create-kie-source-url", () => createGeminiVideoSourceUrl({
         baseUrl: env.FACTORY_PUBLIC_BASE_URL || "https://factory.tiktokaitool.com",
         analysisId: id,
         secret: env.KIE_API_KEY,
         expiresAt: Date.now() + 60 * 60 * 1000
       }));
+      const result = await step.do("analyze-video-with-kie", WRITE, () => kieClient.analyze({ videoUrl: sourceUrl, prompt: row.prompt }));
+      resultText = result.text;
+      usage = { inputTokens: result.inputTokens, outputTokens: result.outputTokens };
+      creditsConsumed = result.creditsConsumed;
+    };
+    if (directKie) {
+      await analyzeKie("mark-kie-analysis");
+    } else {
       try {
-        const result = await step.do("analyze-video-with-kie", WRITE, () => kieClient.analyze({ videoUrl: sourceUrl, prompt: row.prompt }));
-        resultText = result.text;
-        usage = { inputTokens: result.inputTokens, outputTokens: result.outputTokens };
-        creditsConsumed = result.creditsConsumed;
-      } catch (kieError) {
-        const error = new Error(`Google 官方服务暂时不可用，Kie 兜底也失败：${kieError?.message || kieError}`);
-        error.statusCode = Number(kieError?.statusCode || 502);
-        throw error;
+        client = createGeminiVideoClient({ apiKey: env.GEMINI_API_KEY, fetchImpl: env.fetch || fetch });
+        await update("mark-uploading-to-google", "processing", 12);
+        googleFile = await step.do("upload-video-to-google", WRITE, async () => {
+          const object = await env.ARCHIVE.get(row.r2_key);
+          if (!object?.body) throw new Error("临时视频已丢失，请重新上传。");
+          return client.upload({ body: object.body, size: row.file_size, mimeType: row.mime_type, displayName: row.file_name });
+        });
+        await update("save-google-file", "processing", 35, { googleFileName: googleFile.name });
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const file = await step.do(`poll-google-file-${attempt}`, READ, () => client.getFile(googleFile.name));
+          googleFile = file;
+          if (file.state === "ACTIVE") break;
+          if (file.state === "FAILED") throw new Error("Google 无法处理该视频，请检查文件编码后重试。");
+          await step.sleep(`wait-google-file-${attempt}`, "10 seconds");
+        }
+        if (googleFile?.state !== "ACTIVE") throw new Error("Google 视频处理超时，请稍后重新上传。");
+        await update("mark-analyzing", "processing", 58, { googleFileName: googleFile.name });
+        const payload = await analyzeVideoWithRetry(client, {
+          fileUri: googleFile.uri,
+          mimeType: googleFile.mimeType || row.mime_type,
+          prompt: row.prompt
+        }, step);
+        resultText = extractGeminiText(payload);
+        usage = usageFromGemini(payload);
+      } catch (googleError) {
+        if (!isTransientGeminiError(googleError) || !kieClient) throw googleError;
+        try {
+          await analyzeKie("mark-kie-fallback");
+        } catch (kieError) {
+          const error = new Error(`Google 官方服务暂时不可用，Kie 兜底也失败：${kieError?.message || kieError}`);
+          error.statusCode = Number(kieError?.statusCode || 502);
+          throw error;
+        }
       }
     }
     await update("save-analysis", "success", 100, { resultText, ...usage, provider, creditsConsumed, googleFileName: googleFile?.name || "" });

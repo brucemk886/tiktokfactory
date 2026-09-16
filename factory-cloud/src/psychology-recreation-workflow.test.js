@@ -48,7 +48,7 @@ test('TikTok download rejects non-TikTok hosts and invalid download bodies', asy
   assert.deepEqual(ARCHIVE.deletes, ['x']);
 });
 
-test('recreation workflow downloads, analyzes, generates review assets and deletes the source', async () => {
+for (const failAnalysis of [false, true]) test(`direct Kie recreation ${failAnalysis ? 'stops and cleans up on analysis failure' : 'generates review assets'} without Google`, async () => {
   const job={
     id:'job-full',type:'psychology-recreation',status:'queued',title:'Full flow',created_by:'admin',
     payload_json:JSON.stringify({peerSource:{videoUrl:'https://www.tiktok.com/@creator/video/456',title:'Full flow',durationSeconds:5},voiceId:'voice-test-123'})
@@ -63,7 +63,7 @@ test('recreation workflow downloads, analyzes, generates review assets and delet
   },async run(){
     if(/INSERT INTO factory_video_analyses/.test(sql)){
       const [id,owner_username,model,file_name,mime_type,file_size,prompt,r2_key,created_at,updated_at]=this.args;
-      analysis={id,owner_username,model,file_name,mime_type,file_size,prompt,r2_key,created_at,updated_at,status:'queued',progress:5,result_text:'',error:'',google_file_name:'',input_tokens:0,output_tokens:0,provider:'google',provider_credits:0};
+      analysis={id,owner_username,model,file_name,mime_type,file_size,prompt,r2_key,created_at,updated_at,status:'queued',progress:5,result_text:'',error:'',google_file_name:'',input_tokens:0,output_tokens:0,provider:'kie',provider_credits:0};
     }else if(/UPDATE factory_video_analyses SET/.test(sql)){
       const [status,progress,result_text,error,google_file_name,input_tokens,output_tokens,provider,provider_credits,updated_at,completed_at]=this.args;
       Object.assign(analysis,{status,progress,result_text,error,google_file_name,input_tokens,output_tokens,provider,provider_credits,updated_at,completed_at});
@@ -81,29 +81,39 @@ test('recreation workflow downloads, analyzes, generates review assets and delet
   };
   const generatedPlan={title:'A safer pause',language:'en',creativeDirection:'Warm cinematic realism with a recurring adult character in gentle window light.',scenes:[{startSeconds:0,endSeconds:4.5,observedVisual:'An adult studies a quiet phone while sitting beside a softly lit window.',narration:'A pause can feel personal before you know what actually happened.',visualPrompt:'Vertical 9:16 cinematic portrait of an adult beside a window holding a quiet phone, warm natural light, reflective mood, no text or logo.'}]};
   const audio=Buffer.alloc(1200,7).toString('base64');
+  let analysisCalls=0, imageCalls=0;
   const fetchImpl=async (url,init={})=>{
     const value=String(url);
     if(value.startsWith('https://api.tikhub.io/')) return Response.json({code:200,request_id:'test-resolve',data:{aweme_detail:{aweme_id:'456',video:{play_addr:{url_list:['https://v16.tiktokcdn.com/source.mp4']}}}}});
     if(value==='https://v16.tiktokcdn.com/source.mp4')return new Response(mp4(),{headers:{'content-type':'video/mp4','content-length':'2048'}});
-    if(value.endsWith('/upload/v1beta/files'))return new Response('{}',{status:200,headers:{'x-goog-upload-url':'https://upload.test/video'}});
-    if(value==='https://upload.test/video')return Response.json({file:{name:'files/1',uri:'https://google.test/files/1',mimeType:'video/mp4',state:'PROCESSING'}});
-    if(value.endsWith('/v1beta/files/1')&&init.method==='DELETE')return new Response(null,{status:204});
-    if(value.endsWith('/v1beta/files/1'))return Response.json({name:'files/1',uri:'https://google.test/files/1',mimeType:'video/mp4',state:'ACTIVE'});
-    if(value.includes(':generateContent'))return Response.json({candidates:[{content:{parts:[{text:JSON.stringify(generatedPlan)}]}}],usageMetadata:{promptTokenCount:100,candidatesTokenCount:50}});
-    if(value.includes('/api/v1/jobs/createTask'))return Response.json({code:200,data:{taskId:'image-1'}});
+    if(value.includes('/gemini-3-8-flash-openai/v1/chat/completions')) { analysisCalls++; return failAnalysis ? Response.json({code:422,msg:'Unsupported media'}) : Response.json({choices:[{message:{content:JSON.stringify(generatedPlan)}}],usage:{prompt_tokens:100,completion_tokens:50},credits_consumed:0.3}); }
+    if(value.includes('/api/v1/jobs/createTask')) { imageCalls++; return Response.json({code:200,data:{taskId:'image-1'}}); }
     if(value.includes('/api/v1/jobs/recordInfo'))return Response.json({code:200,data:{taskId:'image-1',state:'success',resultJson:JSON.stringify({resultUrls:['https://images.test/1.webp']})}});
     if(value==='https://images.test/1.webp')return new Response(new Uint8Array(512),{headers:{'content-type':'image/webp','content-length':'512'}});
     if(value.includes('api.elevenlabs.io'))return Response.json({audio_base64:audio,normalized_alignment:{character_end_times_seconds:[3.2]}});
     throw new Error(`Unexpected request ${value}`);
   };
-  const env={DB,ARCHIVE,TIKHUB_API_KEY:'tikhub-test',GEMINI_API_KEY:'gemini',KIE_API_KEY:'kie',ELEVENLABS_API_KEY:'eleven',fetch:fetchImpl};
+  const env={DB,ARCHIVE,TIKHUB_API_KEY:'tikhub-test',KIE_API_KEY:'kie',ELEVENLABS_API_KEY:'eleven',fetch:fetchImpl};
   const step={async do(name,options,run){return (typeof options==='function'?options:run)();},async sleep(){}};
+  if(failAnalysis) {
+    await assert.rejects(runPsychologyRecreationWorkflow(env,{payload:{jobId:'job-full'}},step), /Unsupported media/);
+    assert.equal(analysisCalls,1);
+    assert.equal(imageCalls,0);
+    assert.equal(job.status,'failed');
+    assert.equal(JSON.parse(job.result_json).sourceDeleted,true);
+    assert.equal(objects.size,0);
+    assert.equal(analysis,null);
+    return;
+  }
   const result=await runPsychologyRecreationWorkflow(env,{payload:{jobId:'job-full'}},step);
+  assert.equal(analysisCalls,1);
   assert.equal(result.scenes,1);
   assert.equal(job.status,'done');
   const saved=JSON.parse(job.result_json);
   assert.equal(saved.materialStatus,'ready-for-review');
   assert.equal(saved.sourceDeleted,true);
+  assert.equal(saved.analysis.provider,'kie');
+  assert.equal(saved.analysis.creditsConsumed,0.3);
   assert.equal(saved.sourceDownload.provider,'tikhub');
   assert.equal(saved.sourceDownload.size,2048);
   assert.equal(saved.scenes[0].imageStatus,'done');

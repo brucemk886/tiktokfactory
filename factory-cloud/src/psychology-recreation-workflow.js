@@ -63,21 +63,21 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
       jobId: id
     }));
     sourceDownload = downloaded;
-    await save('mark-analyzing', 'running', 18, '原视频已临时保存，正在分析镜头、画面和口播…');
+    await save('mark-analyzing', 'running', 18, '原视频已临时保存，正在通过 Kie 分析镜头、画面和口播…');
 
     const stamp = await step.do('analysis-created-time', () => Date.now());
     await step.do('create-analysis-row', READ, () => env.DB.prepare(`INSERT INTO factory_video_analyses (
       id,owner_username,model,file_name,mime_type,file_size,prompt,status,progress,result_text,error,r2_key,
       google_file_name,input_tokens,output_tokens,provider,provider_credits,created_at,updated_at,completed_at
-    ) VALUES (?,?,?,?,?,?,?,'queued',5,'','',?,'',0,0,'google',0,?,?,0)
+    ) VALUES (?,?,?,?,?,?,?,'queued',5,'','',?,'',0,0,'kie',0,?,?,0)
     ON CONFLICT(id) DO UPDATE SET file_size=excluded.file_size,prompt=excluded.prompt,status='queued',progress=5,
       result_text='',error='',r2_key=excluded.r2_key,google_file_name='',input_tokens=0,output_tokens=0,
-      provider='google',provider_credits=0,updated_at=excluded.updated_at,completed_at=0`).bind(
+      provider='kie',provider_credits=0,updated_at=excluded.updated_at,completed_at=0`).bind(
       analysisId, row.created_by, 'gemini-3.8-flash', 'source.mp4', 'video/mp4', downloaded.size,
       buildRecreationAnalysisPrompt(payload), sourceKey, stamp, stamp
     ).run());
 
-    await runGeminiVideoWorkflow(env, { payload: { analysisId } }, prefixedStep(step, 'video'));
+    await runGeminiVideoWorkflow(env, { payload: { analysisId, provider: 'kie' } }, prefixedStep(step, 'video'));
     await deleteSource();
     const analyzed = await step.do('load-analysis-result', READ, () => env.DB.prepare(
       "SELECT status,result_text,error,provider,provider_credits,input_tokens,output_tokens FROM factory_video_analyses WHERE id=?"
@@ -85,7 +85,7 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
     if (!analyzed || analyzed.status !== 'success') throw new Error(analyzed?.error || '视频分析没有完成。');
     plan = parseRecreationPlan(analyzed.result_text, { durationSeconds: payload.peerSource.durationSeconds });
     analysis = {
-      provider: String(analyzed.provider || 'google'),
+      provider: String(analyzed.provider || 'kie'),
       creditsConsumed: Number(analyzed.provider_credits || 0),
       inputTokens: Number(analyzed.input_tokens || 0),
       outputTokens: Number(analyzed.output_tokens || 0)

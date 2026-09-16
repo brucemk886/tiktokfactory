@@ -40,3 +40,24 @@ test("Kie Gemini video client preserves provider errors", async () => {
     (error) => error.statusCode === 429 && /rate limited/.test(error.message)
   );
 });
+
+
+test("Kie HTTP 200 error envelopes retain their reason without leaking keys or signed URLs", async () => {
+  const client = createKieGeminiVideoClient({ apiKey: "test-secret", fetchImpl: async () => Response.json({code:422,msg:"Unsupported media https://factory.test/video?signature=private test-secret"}) });
+  await assert.rejects(client.analyze({videoUrl:"https://factory.test/video",prompt:"analyze"}), error => {
+    assert.equal(error.statusCode,422);
+    assert.match(error.message,/Unsupported media/);
+    assert.doesNotMatch(error.message,/test-secret|signature=private/);
+    return true;
+  });
+});
+
+test("Kie invalid JSON does not silently become an empty answer", async () => {
+  const client = createKieGeminiVideoClient({ apiKey: "key", fetchImpl: async () => new Response("<html>bad gateway</html>", {status:502,headers:{"content-type":"text/html"}}) });
+  await assert.rejects(client.analyze({videoUrl:"https://factory.test/video",prompt:"analyze"}), /HTTP 502.*text\/html/);
+});
+
+test("Kie wrapped responses preserve answer text and usage", async () => {
+  const client = createKieGeminiVideoClient({ apiKey: "key", fetchImpl: async () => Response.json({code:200,data:{choices:[{message:{content:"plan"}}],usage:{prompt_tokens:5,completion_tokens:7}},credits_consumed:0.01}) });
+  assert.deepEqual(await client.analyze({videoUrl:"https://factory.test/video",prompt:"analyze"}), {text:"plan",inputTokens:5,outputTokens:7,creditsConsumed:0.01});
+});
