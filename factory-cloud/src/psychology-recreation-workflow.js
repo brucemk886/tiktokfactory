@@ -1,11 +1,14 @@
 import { runGeminiVideoWorkflow } from './gemini-video-workflow.js';
 import { createKieClient } from './kie.js';
+import { resolveTikTokVideoSource } from './tikhub-video-source.js';
+import { downloadTikTokToR2 } from './tiktok-video-download.js';
+export { downloadTikTokToR2 } from './tiktok-video-download.js';
+export { validateTikTokVideoFileUrl } from './tikhub-video-source.js';
 import { buildRecreationAnalysisPrompt, parseRecreationPlan } from '../../scripts/psychology-recreation.js';
 
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const DOWNLOAD = { retries: { limit: 1, delay: '15 seconds' }, timeout: '15 minutes' };
 const PAID_SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' };
-const MAX_VIDEO_BYTES = 300 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export async function runPsychologyRecreationWorkflow(env, event, step) {
@@ -22,6 +25,12 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
   const failures = [];
   let plan = null;
   let analysis = null;
+  let sourceDeleted = false;
+  let sourceDownload = null;
+  async function deleteSource() {
+    await step.do('delete-source-video', READ, () => env.ARCHIVE.delete(sourceKey));
+    sourceDeleted = true;
+  }
 
   async function save(name, status, percent, message, error = '') {
     const stamp = await step.do(`${name}-time`, () => Date.now());
@@ -29,9 +38,10 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
       plan,
       scenes,
       analysis,
+      sourceDownload,
       execution: 'cloud',
       materialStatus: status === 'done' ? 'ready-for-review' : status === 'failed' ? 'partial' : 'generating',
-      sourceDeleted: status === 'done' || status === 'failed'
+      sourceDeleted
     };
     await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_jobs
       SET status=?,percent=?,message=?,result_json=?,error=?,worker_id='cloud-recreation',updated_at=?,completed_at=?
@@ -42,13 +52,17 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
   }
 
   try {
-    await save('mark-downloading', 'running', 5, '正在下载 TikTok 原视频…');
+    await save('mark-downloading', 'running', 5, '正在解析并下载 TikTok 原视频…');
+    const source = await step.do('resolve-tiktok-video', PAID_SUBMIT, () => resolveTikTokVideoSource(env, {
+      url: payload.peerSource.videoUrl, videoFileUrl: payload.peerSource.videoFileUrl
+    }));
     const downloaded = await step.do('download-tiktok-video', DOWNLOAD, () => downloadTikTokToR2(env, {
       url: payload.peerSource.videoUrl,
-      videoFileUrl: payload.peerSource.videoFileUrl,
+      source,
       r2Key: sourceKey,
       jobId: id
     }));
+    sourceDownload = downloaded;
     await save('mark-analyzing', 'running', 18, '原视频已临时保存，正在分析镜头、画面和口播…');
 
     const stamp = await step.do('analysis-created-time', () => Date.now());
@@ -64,6 +78,7 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
     ).run());
 
     await runGeminiVideoWorkflow(env, { payload: { analysisId } }, prefixedStep(step, 'video'));
+    await deleteSource();
     const analyzed = await step.do('load-analysis-result', READ, () => env.DB.prepare(
       "SELECT status,result_text,error,provider,provider_credits,input_tokens,output_tokens FROM factory_video_analyses WHERE id=?"
     ).bind(analysisId).first());
@@ -146,11 +161,12 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
     await save('complete', 'done', 100, '分镜、图片和配音已就绪，请检查后再合成。');
     return { jobId: id, scenes: scenes.length, provider: analysis.provider };
   } catch (error) {
-    const message = String(error?.message || error).slice(0, 1500);
+    let message = String(error?.message || error).slice(0, 1300);
+    try { await deleteSource(); } catch { message += '；临时原视频清理失败，正在重试。'; }
     await save('fail', 'failed', Math.max(5, plan ? 40 : 12), '复刻素材生成未全部完成，已保留可用结果。', message);
     throw error;
   } finally {
-    await step.do('delete-source-video', READ, () => env.ARCHIVE.delete(sourceKey).catch(() => null));
+    await deleteSource();
     await step.do('delete-analysis-row', READ, () => env.DB.prepare(
       'DELETE FROM factory_video_analyses WHERE id=?'
     ).bind(analysisId).run().catch(() => null));
@@ -168,52 +184,6 @@ function prefixedStep(step, prefix) {
       return step.sleep(`${prefix}-${name}`, duration);
     }
   };
-}
-
-export function validateTikTokVideoFileUrl(value) {
-  if (!String(value || '').trim()) {
-    throw Object.assign(new Error('此记录只有 TikTok 网页链接，尚未获取可下载的视频文件地址。'), { statusCode: 422 });
-  }
-  let parsed;
-  try { parsed = new URL(value); } catch {
-    throw Object.assign(new Error('TikTok 视频文件地址无效。'), { statusCode: 400 });
-  }
-  const domains = ['tiktok.com', 'tiktokv.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com'];
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
-      !domains.some(domain => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`))) {
-    throw Object.assign(new Error('只支持 TikTok CDN 的 HTTPS 视频文件地址。'), { statusCode: 400 });
-  }
-  return parsed.href;
-}
-
-export async function downloadTikTokToR2(env, { url, videoFileUrl, r2Key, jobId }) {
-  const parsed = new URL(String(url || ''));
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
-      !['tiktok.com', 'www.tiktok.com', 'm.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'].includes(parsed.hostname)) {
-    throw Object.assign(new Error('只支持公开的 TikTok 视频链接。'), { statusCode: 400 });
-  }
-  const directUrl = validateTikTokVideoFileUrl(videoFileUrl);
-  const response = await (env.fetch || fetch)(directUrl, {
-    redirect: 'error',
-    signal: AbortSignal.timeout(120000)
-  });
-  if (!response.ok || !response.body) throw new Error(`TikTok 视频下载失败：HTTP ${response.status}`);
-  const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-  if (!['video/mp4', 'video/x-m4v', 'application/octet-stream'].includes(contentType)) {
-    throw new Error('TikTok 视频下载内容无效：返回的不是视频文件。');
-  }
-  const declared = Number(response.headers.get('content-length') || 0);
-  if (declared > MAX_VIDEO_BYTES) throw new Error('TikTok 原视频超过 300 MB。');
-  const stored = await env.ARCHIVE.put(r2Key, response.body, {
-    httpMetadata: { contentType: 'video/mp4' },
-    customMetadata: { kind: 'psychology-recreation-source', jobId: String(jobId) }
-  });
-  const size = Number(stored?.size || declared || 0);
-  if (size < 1024 || size > MAX_VIDEO_BYTES) {
-    await env.ARCHIVE.delete(r2Key);
-    throw new Error(size > MAX_VIDEO_BYTES ? 'TikTok 原视频超过 300 MB。' : 'TikTok 视频下载内容无效。');
-  }
-  return { size, mimeType: 'video/mp4' };
 }
 
 async function archiveRemoteImage(env, url, key) {

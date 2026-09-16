@@ -1,7 +1,7 @@
 import { json, errorJson, sha256Hex } from './http.js';
 import { psychologyPeerHitFromRow } from './psychology-peer-hits-store.js';
 import { publicJob } from './jobs.js';
-import { validateTikTokVideoFileUrl } from './psychology-recreation-workflow.js';
+import { validateTikTokPageUrl, validateTikTokVideoFileUrl } from './tikhub-video-source.js';
 
 const TYPE = 'psychology-recreation';
 const BASE = '/api/psychology-peer-hits/production';
@@ -67,13 +67,17 @@ export async function handlePeerProduction(request, env, url, user) {
   const jobs = input.ids.map((id, index) => {
     const item = psychologyPeerHitFromRow(rows.results.find(row => row.id === id));
     if (item.platform !== 'tiktok') fail('爆款复刻目前只支持 TikTok 视频链接。');
+    validateTikTokPageUrl(item.videoUrl);
+    if (!String(env.TIKHUB_API_KEY || '').trim() && !item.videoData?.videoFileUrl) {
+      fail('TikTok 视频解析服务尚未配置，请配置 TikHub API Key。', 503);
+    }
     return {
       id: `peer-${key.slice(0, 32)}-${index}`,
       payload: {
         peerSource: {
           id: item.id,
           videoUrl: item.videoUrl,
-          videoFileUrl: validateTikTokVideoFileUrl(item.videoData?.videoFileUrl),
+          videoFileUrl: item.videoData?.videoFileUrl ? validateTikTokVideoFileUrl(item.videoData.videoFileUrl) : '',
           videoId: item.videoId || '',
           title: item.title || 'TikTok 爆款复刻',
           accountName: item.accountName || '',

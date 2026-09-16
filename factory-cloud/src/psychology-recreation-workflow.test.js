@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { downloadTikTokToR2, runPsychologyRecreationWorkflow } from './psychology-recreation-workflow.js';
 
+function mp4(size = 2048) {
+  const bytes = new Uint8Array(size);
+  bytes.set([0, 0, 0, 24, 102, 116, 121, 112, 105, 115, 111, 109]);
+  return bytes;
+}
+
 function archive() {
   const writes = [], deletes = [];
   return {
@@ -22,8 +28,8 @@ test('TikTok download fetches an existing CDN video URL and archives it temporar
     ARCHIVE,
     fetch: async (url, init) => {
       assert.equal(url, 'https://v16.tiktokcdn.com/source.mp4');
-      assert.equal(init.redirect, 'error');
-      return new Response(new Uint8Array(2048), { headers: { 'content-type': 'video/mp4', 'content-length': '2048' } });
+      assert.equal(init.redirect, 'manual');
+      return new Response(mp4(), { headers: { 'content-type': 'video/mp4', 'content-length': '2048' } });
     }
   };
   const result = await downloadTikTokToR2(env, { url: 'https://www.tiktok.com/@creator/video/123', videoFileUrl: 'https://v16.tiktokcdn.com/source.mp4', r2Key: 'temp/source.mp4', jobId: 'job-1' });
@@ -45,7 +51,7 @@ test('TikTok download rejects non-TikTok hosts and invalid download bodies', asy
 test('recreation workflow downloads, analyzes, generates review assets and deletes the source', async () => {
   const job={
     id:'job-full',type:'psychology-recreation',status:'queued',title:'Full flow',created_by:'admin',
-    payload_json:JSON.stringify({peerSource:{videoUrl:'https://www.tiktok.com/@creator/video/456',videoFileUrl:'https://v16.tiktokcdn.com/source.mp4',title:'Full flow',durationSeconds:5},voiceId:'voice-test-123'})
+    payload_json:JSON.stringify({peerSource:{videoUrl:'https://www.tiktok.com/@creator/video/456',title:'Full flow',durationSeconds:5},voiceId:'voice-test-123'})
   };
   let analysis=null;
   const objects=new Map(), deleted=[];
@@ -77,7 +83,8 @@ test('recreation workflow downloads, analyzes, generates review assets and delet
   const audio=Buffer.alloc(1200,7).toString('base64');
   const fetchImpl=async (url,init={})=>{
     const value=String(url);
-    if(value==='https://v16.tiktokcdn.com/source.mp4')return new Response(new Uint8Array(2048),{headers:{'content-type':'video/mp4','content-length':'2048'}});
+    if(value.startsWith('https://api.tikhub.io/')) return Response.json({code:200,request_id:'test-resolve',data:{aweme_detail:{aweme_id:'456',video:{play_addr:{url_list:['https://v16.tiktokcdn.com/source.mp4']}}}}});
+    if(value==='https://v16.tiktokcdn.com/source.mp4')return new Response(mp4(),{headers:{'content-type':'video/mp4','content-length':'2048'}});
     if(value.endsWith('/upload/v1beta/files'))return new Response('{}',{status:200,headers:{'x-goog-upload-url':'https://upload.test/video'}});
     if(value==='https://upload.test/video')return Response.json({file:{name:'files/1',uri:'https://google.test/files/1',mimeType:'video/mp4',state:'PROCESSING'}});
     if(value.endsWith('/v1beta/files/1')&&init.method==='DELETE')return new Response(null,{status:204});
@@ -89,13 +96,16 @@ test('recreation workflow downloads, analyzes, generates review assets and delet
     if(value.includes('api.elevenlabs.io'))return Response.json({audio_base64:audio,normalized_alignment:{character_end_times_seconds:[3.2]}});
     throw new Error(`Unexpected request ${value}`);
   };
-  const env={DB,ARCHIVE,GEMINI_API_KEY:'gemini',KIE_API_KEY:'kie',ELEVENLABS_API_KEY:'eleven',fetch:fetchImpl};
+  const env={DB,ARCHIVE,TIKHUB_API_KEY:'tikhub-test',GEMINI_API_KEY:'gemini',KIE_API_KEY:'kie',ELEVENLABS_API_KEY:'eleven',fetch:fetchImpl};
   const step={async do(name,options,run){return (typeof options==='function'?options:run)();},async sleep(){}};
   const result=await runPsychologyRecreationWorkflow(env,{payload:{jobId:'job-full'}},step);
   assert.equal(result.scenes,1);
   assert.equal(job.status,'done');
   const saved=JSON.parse(job.result_json);
   assert.equal(saved.materialStatus,'ready-for-review');
+  assert.equal(saved.sourceDeleted,true);
+  assert.equal(saved.sourceDownload.provider,'tikhub');
+  assert.equal(saved.sourceDownload.size,2048);
   assert.equal(saved.scenes[0].imageStatus,'done');
   assert.equal(saved.scenes[0].audioStatus,'done');
   assert.equal(saved.scenes[0].audioDuration,3.2);
@@ -109,7 +119,7 @@ test('recreation workflow downloads, analyzes, generates review assets and delet
 test('download rejects missing file URLs and unsafe hosts before making any request', async () => {
   const env = { ARCHIVE: archive(), fetch() { throw new Error('Must not request an unsafe URL'); } };
   for (const videoFileUrl of [undefined, 'http://v16.tiktokcdn.com/video.mp4', 'https://127.0.0.1/video.mp4', 'https://tiktokcdn.com.example.org/video.mp4', 'https://user:pass@v16.tiktokcdn.com/video.mp4', 'https://v16.tiktokcdn.com:444/video.mp4']) {
-    await assert.rejects(downloadTikTokToR2(env, { url: 'https://www.tiktok.com/@creator/video/123', videoFileUrl, r2Key: 'temp', jobId: '1' }), /网页链接|HTTPS 视频文件地址/);
+    await assert.rejects(downloadTikTokToR2(env, { url: 'https://www.tiktok.com/@creator/video/123', videoFileUrl, r2Key: 'temp', jobId: '1' }), /尚未配置|HTTPS 视频文件地址/);
   }
   assert.equal(env.ARCHIVE.writes.length, 0);
 });

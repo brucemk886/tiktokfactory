@@ -213,11 +213,24 @@ test('worker progress retries transient failures, throttles writes, preserves me
 });
 
 
-test('page-only peer records are rejected before queueing or billing after removing the container', async t => {
+test('page-only peer records require TikHub configuration before queueing or billing', async t => {
   const { db, sqlite, call, user } = fixture(t);
   const imported = await importPsychologyPeerHits(db, [{ videoUrl: 'https://www.tiktok.com/@example/video/70' }], user.id);
   const response = await call('POST', { ids: imported.items.map(item => item.id), voiceId: '21m00Tcm4TlvDq8ikWAM', requestId: crypto.randomUUID() });
-  assert.equal(response.status, 422);
-  assert.match((await response.json()).error, /尚未获取可下载/);
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /TikHub API Key/);
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n, 0);
+});
+
+
+test('TikHub configured page-only records queue without resolving or billing in the HTTP request', async t => {
+  let paidRequests = 0;
+  const { db, sqlite, call, user } = fixture(t, { TIKHUB_API_KEY: 'test', fetch: async () => { paidRequests++; throw new Error('Not in submission'); } });
+  const imported = await importPsychologyPeerHits(db, [{ videoUrl: 'https://www.tiktok.com/@example/video/70' }], user.id);
+  const input = { ids: imported.items.map(item => item.id), voiceId: '21m00Tcm4TlvDq8ikWAM', requestId: crypto.randomUUID() };
+  assert.equal((await call('POST', input)).status, 202);
+  assert.equal((await call('POST', input)).status, 200);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n, 1);
+  assert.equal(paidRequests, 0);
+  assert.equal(JSON.parse(sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json).peerSource.videoFileUrl, '');
 });
