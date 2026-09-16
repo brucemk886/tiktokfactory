@@ -23,8 +23,18 @@ Add Kie MiniMax H3 to the factory AI creation video page with a model selector.
 - Covers exact MiniMax request payload, numeric duration, unsupported model/settings rejection before billing, persistence, polling, result URL, credits, terminal-state polling, and existing Grok defaults.
 - git diff --check passed.
 
+## Production verification
+- Code commit `a481ffb` pushed to GitHub main; deployed using `npm run deploy` from the clean release checkout matching origin/main.
+- Production version: `152abe4f-e9a9-4f15-9705-56d038e5c372`.
+- Authenticated browser verification on `/ai`: MiniMax selector works, 4 seconds/2K are selectable, switching back to Grok resets incompatible settings to 6 seconds/480p.
+- Submitted exactly one test through the live AI video form: MiniMax H3, 4 seconds, 768P, 9:16; orange cat beside a window, prompt prefixed `MiniMax H3 integration check`.
+- The task completed; history displayed MiniMax H3, completed state, video player, open/download links and 32 returned Kie credits.
+- ffprobe read the generated remote file successfully: H.264 video at 768x1344, AAC audio, duration 4.458333 seconds.
+- Browser media playback did not finish loading within the bounded check in the automation window. The returned file itself was verified via ffprobe; no claim of browser playback verification.
+- Browser automation session closed. No other user jobs or publishing calls were made.
+
 ## Unfinished work
-Production deployment and browser generation verification follow this commit.
+No remaining integration or deployment changes. Optional: check in-browser playback under the user's normal browser/network if the player takes time to load.
 
 ## Recommended next step
-Deploy only from a clean checkout matching GitHub main using factory-cloud npm run deploy, then check model switching and one short MiniMax generation online.
+Open AI creation → AI video → MiniMax H3 and enter a prompt. Existing Grok remains selectable. No new API key is required.
