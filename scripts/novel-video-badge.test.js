@@ -309,20 +309,10 @@ test("hook card uses the spoken first sentence and writes a Reddit-style PNG", (
   const destPath = path.join(workDir, "hook-card.png");
   assert.equal(formatHookCardCode("479166"), "code：479166");
   assert.equal(formatHookCardCode(""), "");
-  // The production hook-card renderer runs on the Windows factory workers.
-  // Linux CI still verifies the platform-independent title and code helpers.
-  if (process.platform !== "win32") {
-    fs.rmSync(workDir, { recursive: true, force: true });
-    return;
-  }
   const made = renderRedditHookCard({
     title: "Mom said she wished she had never had me, so I swallowed the gold locket she once gave me.",
     destPath,
-    fontFile: [
-      "C:/Windows/Fonts/arialbd.ttf",
-      "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-      "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"
-    ].find((candidate) => fs.existsSync(candidate)),
+    fontFile: "C:/Windows/Fonts/arialbd.ttf",
     platform: "NovelMaster",
     promotionCode: "479166"
   });

@@ -2,7 +2,6 @@ import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
 import { runGeminiVideoWorkflow } from './gemini-video-workflow.js';
 import { runPsychologyRecreationWorkflow } from './psychology-recreation-workflow.js';
-export { TikTokDownloaderContainer } from './tiktok-downloader-container.js';
 export { default } from './index.js';
 
 export class PeerPhotoWorkflow extends WorkflowEntrypoint {

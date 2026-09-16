@@ -14,7 +14,7 @@ import { syncPeerArtboardProgress } from '../../scripts/peer-progress-sync.js';
 test('recreation submission dispatches cloud workflow with stable IDs and retries failed dispatch without duplicate rows', async t => {
   const batches = []; let unavailable = true;
   const { db, sqlite, call, user } = fixture(t, { PSYCHOLOGY_RECREATION_WORKFLOW: { async createBatch(items) { batches.push(items); if(unavailable) throw new Error('unavailable'); return []; } } });
-  const imported = await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/10',title:'Source video'}],user.id);
+  const imported = await importPsychologyPeerHits(db,[{videoUrl:'https://www.tiktok.com/@example/video/10',title:'Source video',videoData:{videoFileUrl:'https://v16.tiktokcdn.com/source.mp4'}}],user.id);
   const input = {ids:imported.items.map(item=>item.id),voiceId:'21m00Tcm4TlvDq8ikWAM',requestId:crypto.randomUUID()};
   assert.equal((await call('POST',input)).status,503);
   unavailable = false;
@@ -92,7 +92,7 @@ function fixture(t, overrides = {}) {
   const user = { id:'admin', username:'admin', role:'admin', sidebarModules:['psychology-peer-hits','psychology','psychology-narrative','psychology-collage','psychology-photo'] };
   const call = async (method, body, actor=user, origin='https://factory.test', query='') => {
     const request = new Request('https://factory.test/api/psychology-peer-hits/production'+query, {method,headers:{origin,'Content-Type':'application/json'},...(body ? {body:JSON.stringify(body)} : {})});
-    return handlePsychologyPeerHits(request,{DB:db, GEMINI_API_KEY:'gemini-test', KIE_API_KEY:'kie-test', ELEVENLABS_API_KEY:'eleven-test', ARCHIVE:{}, TIKTOK_DOWNLOADER:{}, PSYCHOLOGY_RECREATION_WORKFLOW:{createBatch:async()=>[]}, ...overrides},new URL(request.url),actor ? {user:actor} : null);
+    return handlePsychologyPeerHits(request,{DB:db, GEMINI_API_KEY:'gemini-test', KIE_API_KEY:'kie-test', ELEVENLABS_API_KEY:'eleven-test', ARCHIVE:{}, PSYCHOLOGY_RECREATION_WORKFLOW:{createBatch:async()=>[]}, ...overrides},new URL(request.url),actor ? {user:actor} : null);
   };
   return { db, sqlite, user, call };
 }
@@ -105,7 +105,7 @@ test('local workers cannot claim cloud photo jobs even if they request the type 
 
 test('peer recreation enqueues one source-linked cloud job per selection without requiring saved copy', async t => {
   const { db, sqlite, call, user } = fixture(t);
-  const imported = await importPsychologyPeerHits(db, [1,2].map(id => ({videoUrl:`https://www.tiktok.com/@example/video/${id}`,title:`Topic ${id}`})),user.id);
+  const imported = await importPsychologyPeerHits(db, [1,2].map(id => ({videoUrl:`https://www.tiktok.com/@example/video/${id}`,title:`Topic ${id}`,videoData:{videoFileUrl:`https://v16.tiktokcdn.com/${id}.mp4`}})),user.id);
   const input = { ids:imported.items.map(item=>item.id),voiceId:'21m00Tcm4TlvDq8ikWAM',requestId:crypto.randomUUID() };
   assert.equal((await call('POST',input)).status,202);
   assert.equal((await call('POST',input)).status,200);
@@ -210,4 +210,14 @@ test('worker progress retries transient failures, throttles writes, preserves me
   await syncPeerArtboardProgress({},job,local,state,send,22000);assert.equal(calls,2);
   await syncPeerArtboardProgress({},job,{...local,status:'done',updatedAt:200},state,send,28000);assert.equal(calls,2);
   await syncPeerArtboardProgress({},{id:'unrelated',payload:{}},{...local,updatedAt:200},state,send,34000);assert.equal(calls,2);
+});
+
+
+test('page-only peer records are rejected before queueing or billing after removing the container', async t => {
+  const { db, sqlite, call, user } = fixture(t);
+  const imported = await importPsychologyPeerHits(db, [{ videoUrl: 'https://www.tiktok.com/@example/video/70' }], user.id);
+  const response = await call('POST', { ids: imported.items.map(item => item.id), voiceId: '21m00Tcm4TlvDq8ikWAM', requestId: crypto.randomUUID() });
+  assert.equal(response.status, 422);
+  assert.match((await response.json()).error, /尚未获取可下载/);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n, 0);
 });

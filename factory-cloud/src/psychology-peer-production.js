@@ -1,6 +1,7 @@
 import { json, errorJson, sha256Hex } from './http.js';
 import { psychologyPeerHitFromRow } from './psychology-peer-hits-store.js';
 import { publicJob } from './jobs.js';
+import { validateTikTokVideoFileUrl } from './psychology-recreation-workflow.js';
 
 const TYPE = 'psychology-recreation';
 const BASE = '/api/psychology-peer-hits/production';
@@ -53,7 +54,7 @@ export async function handlePeerProduction(request, env, url, user) {
   }
   const voiceId = String(input.voiceId || '').trim();
   if (!/^[a-zA-Z0-9_-]{8,100}$/.test(voiceId)) fail('请选择有效的 ElevenLabs 配音声音。');
-  if (!env.PSYCHOLOGY_RECREATION_WORKFLOW || !env.TIKTOK_DOWNLOADER || !env.ARCHIVE) fail('线上爆款复刻下载服务尚未配置完成。', 503);
+  if (!env.PSYCHOLOGY_RECREATION_WORKFLOW || !env.ARCHIVE) fail('线上爆款复刻服务尚未配置完成。', 503);
   if (!String(env.GEMINI_API_KEY || '').trim()) fail('Google 视频分析服务尚未配置。', 503);
   if (!String(env.KIE_API_KEY || '').trim()) fail('Z-Image 服务尚未配置。', 503);
   if (!String(env.ELEVENLABS_API_KEY || '').trim()) fail('ElevenLabs 配音服务尚未配置。', 503);
@@ -72,6 +73,7 @@ export async function handlePeerProduction(request, env, url, user) {
         peerSource: {
           id: item.id,
           videoUrl: item.videoUrl,
+          videoFileUrl: validateTikTokVideoFileUrl(item.videoData?.videoFileUrl),
           videoId: item.videoId || '',
           title: item.title || 'TikTok 爆款复刻',
           accountName: item.accountName || '',

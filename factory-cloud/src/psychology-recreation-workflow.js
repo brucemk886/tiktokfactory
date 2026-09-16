@@ -45,6 +45,7 @@ export async function runPsychologyRecreationWorkflow(env, event, step) {
     await save('mark-downloading', 'running', 5, '正在下载 TikTok 原视频…');
     const downloaded = await step.do('download-tiktok-video', DOWNLOAD, () => downloadTikTokToR2(env, {
       url: payload.peerSource.videoUrl,
+      videoFileUrl: payload.peerSource.videoFileUrl,
       r2Key: sourceKey,
       jobId: id
     }));
@@ -169,27 +170,37 @@ function prefixedStep(step, prefix) {
   };
 }
 
-export async function downloadTikTokToR2(env, { url, r2Key, jobId }) {
+export function validateTikTokVideoFileUrl(value) {
+  if (!String(value || '').trim()) {
+    throw Object.assign(new Error('此记录只有 TikTok 网页链接，尚未获取可下载的视频文件地址。'), { statusCode: 422 });
+  }
+  let parsed;
+  try { parsed = new URL(value); } catch {
+    throw Object.assign(new Error('TikTok 视频文件地址无效。'), { statusCode: 400 });
+  }
+  const domains = ['tiktok.com', 'tiktokv.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokcdn-eu.com'];
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
+      !domains.some(domain => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`))) {
+    throw Object.assign(new Error('只支持 TikTok CDN 的 HTTPS 视频文件地址。'), { statusCode: 400 });
+  }
+  return parsed.href;
+}
+
+export async function downloadTikTokToR2(env, { url, videoFileUrl, r2Key, jobId }) {
   const parsed = new URL(String(url || ''));
-  if (parsed.protocol !== 'https:' || !['tiktok.com', 'www.tiktok.com', 'm.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'].includes(parsed.hostname)) {
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
+      !['tiktok.com', 'www.tiktok.com', 'm.tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'].includes(parsed.hostname)) {
     throw Object.assign(new Error('只支持公开的 TikTok 视频链接。'), { statusCode: 400 });
   }
-  let response;
-  if (typeof env.DOWNLOAD_TIKTOK_FOR_TEST === 'function') {
-    response = await env.DOWNLOAD_TIKTOK_FOR_TEST(url);
-  } else {
-    if (!env.TIKTOK_DOWNLOADER) throw Object.assign(new Error('TikTok 下载容器尚未配置。'), { statusCode: 503 });
-    const { getRandom } = await import('@cloudflare/containers');
-    const container = await getRandom(env.TIKTOK_DOWNLOADER, 3);
-    response = await container.fetch(new Request('http://container/download', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ url })
-    }));
-  }
-  if (!response.ok || !response.body) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(`TikTok 视频下载失败：${body.error || `HTTP ${response.status}`}`);
+  const directUrl = validateTikTokVideoFileUrl(videoFileUrl);
+  const response = await (env.fetch || fetch)(directUrl, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(120000)
+  });
+  if (!response.ok || !response.body) throw new Error(`TikTok 视频下载失败：HTTP ${response.status}`);
+  const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (!['video/mp4', 'video/x-m4v', 'application/octet-stream'].includes(contentType)) {
+    throw new Error('TikTok 视频下载内容无效：返回的不是视频文件。');
   }
   const declared = Number(response.headers.get('content-length') || 0);
   if (declared > MAX_VIDEO_BYTES) throw new Error('TikTok 原视频超过 300 MB。');
