@@ -1,6 +1,7 @@
 import { handlePsychologyPeerHits, PSYCHOLOGY_PEER_API } from "./psychology-peer-hits.js";
 import { handleAi } from "./ai.js";
 import { handleGeminiVideoAnalysis } from "./gemini-video-analysis.js";
+import { GEMINI_VIDEO_SOURCE_PATH, handleGeminiVideoSource } from "./gemini-video-source.js";
 import { handleAccounts, handleAuth, getSession, hasUsers } from "./auth.js";
 import { handleCompat } from "./compat.js";
 import { handleGeeLark } from "./geelark.js";
@@ -32,6 +33,8 @@ export default {
       if (authResponse) return authResponse;
 
       if (url.pathname === PSYCHOLOGY_PEER_API) return await handlePsychologyPeerHits(request, env, url, null);
+
+      if (url.pathname.startsWith(GEMINI_VIDEO_SOURCE_PATH)) return await handleGeminiVideoSource(request, env, url);
 
       if (url.pathname.startsWith("/api/integrations/signal-desk/")) {
         return await handleSignalDeskIntegration(request, env, url);

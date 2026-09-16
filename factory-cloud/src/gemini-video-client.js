@@ -9,7 +9,7 @@ async function providerJson(response, action) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = body?.error?.message || body?.message || `HTTP ${response.status}`;
-    const status = response.status === 429 || response.status >= 500 ? response.status : 502;
+    const status = Number(response.status) || 502;
     throw providerError(`${action}失败：${detail}`, status);
   }
   return body;

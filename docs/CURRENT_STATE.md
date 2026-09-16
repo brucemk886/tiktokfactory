@@ -2,7 +2,7 @@
 
 Updated: 2026-09-16
 
-- The online AI workbench now includes an admin-only Google video-analysis mode using `gemini-3.8-flash`. Temporary Google 429/5xx overload responses retry up to five total attempts with durable 15/30/60/120-second backoff. Uploads stream to R2, a Cloudflare Workflow uses Google Files API asynchronously, D1 stores the result and token usage, and temporary provider/storage files are removed after completion. The production `GEMINI_API_KEY` secret is configured, and a real two-second MP4 smoke test completed through Google Files API and the full Workflow with temporary-file cleanup.
+- The online AI workbench includes admin-only video analysis with Google official gemini-3.8-flash as the free primary provider. Google 429/5xx/high-demand failures retry twice with durable 10/20-second backoff, then automatically fall back to Kie gemini-3-8-flash-openai; permanent 4xx/content errors do not spend paid credits. Kie reads the private R2 upload through a one-hour HMAC-signed URL, and each record stores the actual provider, token usage, and returned Kie credits. Google and R2 temporary files are removed after completion. The production Google and Kie secrets are configured.
 
 - Psychology landscape renders stage all eight `psychology-poses` SVG companions into each isolated Remotion public directory, avoiding missing-asset failures in interactive and landscape four-image videos.
 

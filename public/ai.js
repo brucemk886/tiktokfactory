@@ -31,7 +31,7 @@ function setKind(nextKind, reload) {
   $("#durationField").hidden = kind !== "video";
   $("#resolutionField").hidden = kind !== "video";
   $("#creditLabel").textContent = analysis ? "分析服务" : "可用积分";
-  $("#credits").textContent = analysis ? "Google 官方" : "--";
+  $("#credits").textContent = analysis ? "Google 官方优先" : "--";
   $("#submitHint").textContent = analysis
     ? "视频会安全上传并异步分析；临时文件会在任务结束后自动清理。"
     : "提交会消耗 Kie.ai 积分；多选模型会分别创建任务。";
@@ -48,7 +48,7 @@ async function loadOverview() {
     if (sequence !== overviewSequence) return;
     tasks = data.tasks || [];
     if (kind === "analysis") {
-      $("#credits").textContent = data.configured === false ? "未配置" : "Google 官方";
+      $("#credits").textContent = data.configured === false ? "未配置" : data.fallbackConfigured ? "Google 官方 → Kie 兜底" : "Google 官方";
       $("#historyState").textContent = data.configured === false ? "视频分析服务未配置" : `${tasks.length} 条分析记录`;
     } else {
       $("#credits").textContent = data.credits === null || data.credits === undefined ? "--" : Number(data.credits).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
@@ -124,7 +124,7 @@ async function submitAnalysis(prompt) {
     $("#analysisFile").value = "";
     renderTasks();
     watchPending();
-    setMessage("视频已上传，Gemini 3.8 Flash 正在分析。可以离开页面，任务会继续运行。", false);
+    setMessage("视频已上传，Google 官方 Gemini 3.8 Flash 正在分析；遇到限流或高负载会自动切换 Kie。可以离开页面，任务会继续运行。", false);
   } catch (error) {
     setMessage(error.message || "视频上传或分析任务启动失败。", true);
     loadOverview();
@@ -207,7 +207,7 @@ async function handleTaskAction(event) {
 }
 
 function kindLabel(task) {
-  if (task.kind === "analysis") return "视频分析 · Gemini 3.8 Flash";
+  if (task.kind === "analysis") return `视频分析 · Gemini 3.8 Flash · ${task.provider === "kie" ? "Kie 兜底" : "Google 官方"}`;
   if (task.model === "google/nano-banana") return "图片 · Nano Banana 标准版";
   if (task.model === "grok-imagine/text-to-image") return "图片 · Grok Imagine";
   if (task.model === "z-image") return "图片 · Z-Image";

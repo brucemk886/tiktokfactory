@@ -19,7 +19,12 @@ export async function handleGeminiVideoAnalysis(request, env, url, session) {
     const [id, action] = suffix.split("/");
     if (request.method === "GET" && !id) {
       const rows = (await env.DB.prepare("SELECT * FROM factory_video_analyses WHERE owner_username=? ORDER BY created_at DESC LIMIT 50").bind(session.user.username).all()).results || [];
-      return json({ tasks: rows.map(publicAnalysis), configured: configured(env), model: GEMINI_VIDEO_MODEL });
+      return json({
+        tasks: rows.map(publicAnalysis),
+        configured: configured(env),
+        fallbackConfigured: Boolean(String(env.KIE_API_KEY || "").trim()),
+        model: GEMINI_VIDEO_MODEL
+      });
     }
     if (request.method === "GET" && id) {
       const row = await ownedRow(env.DB, id, session.user.username);
@@ -40,8 +45,8 @@ export async function handleGeminiVideoAnalysis(request, env, url, session) {
       const taskId = crypto.randomUUID();
       const r2Key = `gemini-video/${safeId(session.user.username)}/${taskId}/${safeId(fileName)}`;
       await env.DB.prepare(`INSERT INTO factory_video_analyses (
-        id,owner_username,model,file_name,mime_type,file_size,prompt,status,progress,result_text,error,r2_key,google_file_name,input_tokens,output_tokens,created_at,updated_at,completed_at
-      ) VALUES (?,?,?,?,?,?,?,'uploading',0,'','',?,'',0,0,?,?,0)`).bind(
+        id,owner_username,model,file_name,mime_type,file_size,prompt,status,progress,result_text,error,r2_key,google_file_name,input_tokens,output_tokens,provider,provider_credits,created_at,updated_at,completed_at
+      ) VALUES (?,?,?,?,?,?,?,'uploading',0,'','',?,'',0,0,'google',0,?,?,0)`).bind(
         taskId, session.user.username, GEMINI_VIDEO_MODEL, fileName, mimeType, fileSize, prompt, r2Key, stamp, stamp
       ).run();
       return json({ task: publicAnalysis(await ownedRow(env.DB, taskId, session.user.username)), uploadUrl: `${BASE}/${taskId}/upload` }, 201);
@@ -105,6 +110,7 @@ export function publicAnalysis(row) {
     id: row.id,
     kind: "analysis",
     model: row.model,
+    provider: String(row.provider || "google"),
     fileName: row.file_name,
     fileSize: Number(row.file_size || 0),
     prompt: row.prompt,
@@ -114,6 +120,7 @@ export function publicAnalysis(row) {
     error: String(row.error || ""),
     inputTokens: Number(row.input_tokens || 0),
     outputTokens: Number(row.output_tokens || 0),
+    creditsConsumed: Number(row.provider_credits || 0),
     createdAt: Number(row.created_at || 0),
     updatedAt: Number(row.updated_at || 0)
   };
@@ -125,7 +132,8 @@ export async function ensureGeminiVideoTable(db) {
     mime_type TEXT NOT NULL, file_size INTEGER NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL,
     progress INTEGER NOT NULL DEFAULT 0, result_text TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
     r2_key TEXT NOT NULL, google_file_name TEXT NOT NULL DEFAULT '', input_tokens INTEGER NOT NULL DEFAULT 0,
-    output_tokens INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL DEFAULT 0, provider TEXT NOT NULL DEFAULT 'google',
+    provider_credits REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
     completed_at INTEGER NOT NULL DEFAULT 0
   )`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_factory_video_analyses_owner ON factory_video_analyses(owner_username,created_at DESC)").run();

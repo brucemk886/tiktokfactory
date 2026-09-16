@@ -65,7 +65,7 @@ test("video analysis retries temporary high-demand failures with durable backoff
   const result = await analyzeVideoWithRetry(client, { fileUri: "file", mimeType: "video/mp4", prompt: "analyze" }, step);
   assert.equal(extractGeminiText(result), "ok");
   assert.equal(calls, 3);
-  assert.deepEqual(sleeps.map((item) => item.duration), ["15 seconds", "30 seconds"]);
+  assert.deepEqual(sleeps.map((item) => item.duration), ["10 seconds", "20 seconds"]);
 });
 
 test("video analysis does not retry permanent request failures", async () => {
@@ -79,4 +79,14 @@ test("video analysis does not retry permanent request failures", async () => {
   await assert.rejects(() => analyzeVideoWithRetry(client, {}, step), /Invalid argument/);
   assert.equal(calls, 1);
   assert.equal(isTransientGeminiError(error), false);
+});
+test("Google client preserves permanent 4xx errors", async () => {
+  const client = createGeminiVideoClient({
+    apiKey: "test-google-key",
+    fetchImpl: async () => Response.json({ error: { message: "Invalid argument" } }, { status: 400 })
+  });
+  await assert.rejects(
+    () => client.analyze({ fileUri: "file", mimeType: "video/mp4", prompt: "analyze" }),
+    (error) => error.statusCode === 400 && /Invalid argument/.test(error.message)
+  );
 });
