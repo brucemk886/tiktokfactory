@@ -7,6 +7,7 @@ Replace the peer-hit template selector and local canvas queue with a cloud-only 
 ## Decisions
 
 - Public TikTok page URLs are downloaded by a dedicated Cloudflare Container running yt-dlp; no undocumented SnapTik endpoint is used.
+- The downloader uses a fixed pool of three `basic` instances and sleeps after five idle minutes.
 - Source video exists in R2 only while Gemini analyzes it. The shared Gemini workflow removes it immediately after analysis, and the recreation workflow repeats cleanup defensively on every exit.
 - Google official Gemini 3.8 Flash remains primary and the existing Kie Gemini 3.8 Flash path remains the transient-error fallback.
 - Parsed scene JSON is validated before any Z-Image or ElevenLabs charge.
