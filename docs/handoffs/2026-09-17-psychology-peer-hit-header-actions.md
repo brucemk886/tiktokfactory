@@ -18,11 +18,14 @@ Move the write and manual-add controls into the top-right header and simplify th
 ## Tests performed
 
 - `node --test src/psychology-peer-hits.test.js` — 10 passed.
+- `node --check public/psychology-peer-hits.js` passed.
 - `git diff --check` passed.
+- Production deployment from commit `fed13e7` succeeded as Worker version `8af8abd3-a597-423b-9d00-1dce74278035`; all three changed static assets uploaded.
+- Automated visual screenshot verification was unavailable because the local browser-skill CLI and extension protocols are mismatched; both bounded sessions were stopped and no production data was changed.
 
 ## Unfinished work
 
-- Commit, push, deploy, and verify the header controls online.
+- None in code or deployment. A human visual check can confirm spacing until the browser-skill versions are aligned.
 
 ## Recommended next step
 
