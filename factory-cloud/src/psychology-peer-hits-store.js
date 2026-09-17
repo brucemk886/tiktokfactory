@@ -2,7 +2,7 @@ import { sha256Hex } from "./http.js";
 
 const TABLE = "psychology_peer_hits";
 const FIELDS = {
-  videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
+  mediaType: "media_type", videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
   commentCount: "comment_count", favoriteCount: "favorite_count", shareCount: "share_count",
   durationSeconds: "duration_seconds", publishedAt: "published_at", videoData: "video_data_json", source: "source"
@@ -45,12 +45,13 @@ function timestamp(value, field) {
   return result;
 }
 export async function normalizePsychologyPeerHit(raw, now = Date.now()) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail("每条视频必须是 JSON 对象。");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail("每条内容必须是 JSON 对象。");
   const url = safeUrl(raw.videoUrl, "videoUrl"); if (!url) fail("videoUrl 是必填字段。");
   const tiktok = /(^|\.)tiktok\.com$/i.test(url.hostname);
-  const urlId = tiktok ? url.pathname.match(/\/video\/(\d+)(?:\/|$)/)?.[1] : null;
+  const urlType = tiktok ? url.pathname.match(/\/(video|photo)\/(\d+)(?:\/|$)/) : null;
+  const urlId = urlType?.[2] || null;
   const videoId = optionalText(raw.videoId, 100, "videoId") || urlId || null;
-  if (raw.videoId && urlId && raw.videoId !== urlId) fail("videoId 与视频链接中的 ID 不一致。");
+  if (raw.videoId && urlId && String(raw.videoId) !== urlId) fail("videoId 与内容链接中的 ID 不一致。");
   const platform = tiktok ? "tiktok" : optionalText(raw.platform, 40, "platform")?.toLowerCase() || url.hostname.toLowerCase();
   for (const key of [...url.searchParams.keys()]) if (/^utm_/i.test(key) || ["_t", "_r", "is_from_webapp", "sender_device", "share_app_id"].includes(key)) url.searchParams.delete(key);
   const videoUrl = url.toString();
@@ -61,8 +62,12 @@ export async function normalizePsychologyPeerHit(raw, now = Date.now()) {
   if (raw.durationSeconds != null && !["number", "string"].includes(typeof raw.durationSeconds)) fail("durationSeconds 必须是秒数。");
   const duration = raw.durationSeconds == null || raw.durationSeconds === "" ? null : Number(raw.durationSeconds);
   if (duration != null && (!Number.isFinite(duration) || duration < 0 || duration > 86400)) fail("durationSeconds 必须是 0–86400 秒。");
+  const rawMediaType = String(raw.mediaType || raw.postType || data?.mediaType || data?.postType || urlType?.[1] || "video").trim().toLowerCase();
+  const mediaType = rawMediaType === "image" || rawMediaType === "carousel" ? "photo" : rawMediaType;
+  if (!["video", "photo"].includes(mediaType)) fail("mediaType 只能是 video 或 photo。");
+  if (urlType?.[1] && urlType[1] !== mediaType) fail("mediaType 与 TikTok 链接类型不一致。");
   return {
-    id: "psy-" + (await sha256Hex(videoKey)).slice(0, 32), videoKey, videoUrl, platform, videoId,
+    id: "psy-" + (await sha256Hex(videoKey)).slice(0, 32), videoKey, videoUrl, platform, mediaType, videoId,
     title: optionalText(raw.title, 2000, "title"), accountName: optionalText(raw.accountName, 160, "accountName"),
     accountUsername: optionalText(raw.accountUsername, 160, "accountUsername"),
     accountUrl: safeUrl(raw.accountUrl, "accountUrl")?.toString() || null,
@@ -83,7 +88,7 @@ export function psychologyPeerHitFromRow(row) {
 }
 export async function importPsychologyPeerHits(db, payload, actor) {
   const rawItems = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [payload];
-  if (!rawItems.length || rawItems.length > 100) fail("每次提交 1–100 条视频。");
+  if (!rawItems.length || rawItems.length > 100) fail("每次提交 1–100 条内容。");
   const now = Date.now();
   const items = await Promise.all(rawItems.map(async (raw, index) => {
     try { return await normalizePsychologyPeerHit(raw, now); } catch (error) { error.message = `第 ${index + 1} 条：${error.message}`; throw error; }
@@ -110,10 +115,12 @@ export async function listPsychologyPeerHits(db, params) {
   if (!Number.isSafeInteger(requested) || requested < 1) fail("页码无效。");
   const query = String(params.get("query") || "").trim().slice(0, 200);
   const sort = params.get("sort") || "plays";
+  const mediaType = String(params.get("mediaType") || "video").trim().toLowerCase();
+  if (!["video", "photo"].includes(mediaType)) fail("内容类型无效。");
   const sorts = { plays: "play_count", collected: "collected_at", published: "published_at" };
   if (!Object.hasOwn(sorts, sort)) fail("排序方式无效。");
-  const filter = query ? " WHERE title LIKE ? OR account_name LIKE ? OR account_username LIKE ? OR video_url LIKE ?" : "";
-  const binds = query ? Array(4).fill("%" + query + "%") : [];
+  const filter = query ? " WHERE media_type = ? AND (title LIKE ? OR account_name LIKE ? OR account_username LIKE ? OR video_url LIKE ?)" : " WHERE media_type = ?";
+  const binds = query ? [mediaType, ...Array(4).fill("%" + query + "%")] : [mediaType];
   const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM ${TABLE}${filter}`).bind(...binds).first())?.total || 0);
   const pageSize = 20, totalPages = Math.max(1, Math.ceil(total / pageSize)), page = Math.min(requested, totalPages);
   const rows = await db.prepare(`SELECT * FROM ${TABLE}${filter} ORDER BY ${sorts[sort]} DESC, id DESC LIMIT ? OFFSET ?`).bind(...binds, pageSize, (page - 1) * pageSize).all();

@@ -9,36 +9,40 @@
 <body class="work-page module-page psy-hits-page">
   <nav class="side-tabs" aria-label="主导航"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a></nav>
   <main class="module-main">
-    <header class="module-header"><div><p class="module-kicker">PSYCHOLOGY · PEER HITS</p><h1>同行爆款</h1><p>收集心理学视频与表现数据。grokbot 写入后，同一视频的数据会更新到已有记录。</p></div><button id="refreshBtn" type="button">刷新列表</button></header>
+    <header class="module-header"><div><p class="module-kicker">PSYCHOLOGY · PEER HITS</p><h1>同行爆款</h1><p>分开管理心理学视频与图文爆款；grokbot 再次写入同一内容时会更新已有记录。</p></div><button id="refreshBtn" type="button">刷新列表</button></header>
+    <div class="hits-tabs" role="tablist" aria-label="爆款内容类型">
+      <button class="hits-tab is-active" id="videoHitsTab" type="button" role="tab" aria-selected="true" data-media-type="video">视频爆款</button>
+      <button class="hits-tab" id="photoHitsTab" type="button" role="tab" aria-selected="false" data-media-type="photo">图文爆款</button>
+    </div>
     <details class="hits-panel" id="apiPanel"><summary>grokbot 写入接口</summary>
       <p>专用密钥只能写入心理学同行爆款。密钥生成后仅显示一次，请复制给 grokbot。</p>
       <label>接口地址<input id="endpoint" readonly /></label>
       <div class="hits-actions"><button id="createKeyBtn" type="button">生成 API Key</button><button id="revokeKeyBtn" type="button" hidden>停用密钥</button><span id="keyStatus" role="status">正在读取接口配置…</span></div>
       <div id="newKeyPanel" hidden><label>新密钥<input id="newApiKey" readonly autocomplete="off" /></label><button id="copyKeyBtn" type="button">复制密钥</button></div>
       <p>POST · Authorization: Bearer YOUR_API_KEY · Content-Type: application/json</p>
-      <p>支持单条对象或 { "items": [...] } 批量提交，每次最多 100 条、1 MB。视频链接必填；其余字段可分次补充。相同视频不重复添加，未提供或为 null 的字段保留原值。collectedAt 较旧的记录会被忽略。</p>
+      <p>支持单条对象或 { "items": [...] } 批量提交，每次最多 100 条、1 MB。TikTok 帖子链接必填；mediaType 使用 video 或 photo。其余字段可分次补充，相同内容不会重复添加，collectedAt 较旧的记录会被忽略。</p>
       <pre id="apiExample"></pre><button id="copyExampleBtn" type="button">复制请求示例</button>
-      <p>播放等数量可写整数或 12.8万、128K。时间使用带时区的 ISO 格式或 Unix 时间戳。videoId 使用字符串；videoData 可保留其他视频数据。</p>
+      <p>播放等数量可写整数或 12.8万、128K。时间使用带时区的 ISO 格式或 Unix 时间戳。videoId 使用字符串；videoData 可保留其他内容数据。</p>
     </details>
-    <details class="hits-panel"><summary>手动添加视频</summary>
+    <details class="hits-panel"><summary id="manualSummary">手动添加视频</summary>
       <form id="importForm">
         <div class="hits-form-grid">
-          <label class="wide">视频链接<input name="videoUrl" type="url" required maxlength="2000" placeholder="https://www.tiktok.com/@creator/video/..." /></label>
-          <label class="wide">标题<input name="title" maxlength="2000" placeholder="视频标题或文案" /></label>
+          <label class="wide"><span id="sourceUrlLabel">视频链接</span><input id="sourceUrlInput" name="videoUrl" type="url" required maxlength="2000" placeholder="https://www.tiktok.com/@creator/video/..." /></label>
+          <label class="wide">标题<input name="title" maxlength="2000" placeholder="帖子标题或文案" /></label>
           <label>账号名称<input name="accountName" maxlength="160" /></label><label>账号用户名<input name="accountUsername" maxlength="160" placeholder="@username" /></label>
           <label>播放量<input name="playCount" placeholder="例如 128000 / 12.8万" /></label><label>点赞<input name="likeCount" /></label>
-          <label>评论<input name="commentCount" /></label><label>收藏<input name="favoriteCount" /></label><label>分享<input name="shareCount" /></label><label>时长（秒）<input name="durationSeconds" type="number" min="0" max="86400" step="0.01" /></label>
-          <label class="wide">其他视频数据（选填 JSON）<textarea name="videoData" rows="3" placeholder='{"language":"en","hashtags":["psychology"]}'></textarea></label>
+          <label>评论<input name="commentCount" /></label><label>收藏<input name="favoriteCount" /></label><label>分享<input name="shareCount" /></label><label id="durationField">时长（秒）<input name="durationSeconds" type="number" min="0" max="86400" step="0.01" /></label>
+          <label class="wide">其他内容数据（选填 JSON）<textarea name="videoData" rows="3" placeholder='{"language":"en","hashtags":["psychology"]}'></textarea></label>
         </div>
         <div class="hits-actions"><button id="importBtn" type="submit">保存视频</button><span id="importStatus" role="status"></span></div>
       </form>
     </details>
     <section class="hits-panel">
-      <div class="hits-toolbar"><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、账号名称、用户名或视频链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option></select></label></div>
+      <div class="hits-toolbar"><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、账号名称、用户名或帖子链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option></select></label></div>
       <p id="listStatus" role="status">正在读取…</p>
-      <div class="hits-actions"><span id="selectionCount">已选 0 条</span><label>配音声音<select id="recreationVoice"><option value="">正在读取 ElevenLabs 声音…</option></select></label><button id="produceBtn" type="button" disabled>爆款复刻</button><button id="clearSelectionBtn" type="button">清空选择</button></div>
+      <div class="hits-actions"><span id="selectionCount">已选 0 条</span><button id="produceBtn" type="button" disabled>爆款复刻</button><button id="clearSelectionBtn" type="button">清空选择</button></div>
       <p id="productionStatus" role="status">每次最多选择 5 条；云端会自动解析视频链接、下载原视频、拆解分镜并生成图片和配音，原视频在分析结束后立即删除。</p>
-      <div class="hits-table-wrap"><table><thead><tr><th>选择</th><th>播放</th><th>点赞</th><th>评论</th><th>收藏</th><th>分享</th><th>时长</th><th>发布时间<br /><small>北京时间</small></th><th>标题</th><th>文案</th><th>视频</th><th>操作</th></tr></thead><tbody id="hitRows"></tbody></table></div>
+      <div class="hits-table-wrap"><table><thead><tr><th>选择</th><th>播放</th><th>点赞</th><th>评论</th><th>收藏</th><th>分享</th><th>时长</th><th>发布时间<br /><small>北京时间</small></th><th>标题</th><th>文案</th><th id="mediaColumnLabel">视频</th><th>操作</th></tr></thead><tbody id="hitRows"></tbody></table></div>
       <div class="hits-pagination"><button id="previousBtn" type="button" disabled>上一页</button><span id="pageInfo"></span><button id="nextBtn" type="button" disabled>下一页</button></div>
     </section>
     <section class="hits-panel"><div class="hits-actions"><h2>爆款复刻</h2><a href="/psychology-production">打开复刻工作台 →</a><button id="refreshProductionBtn" type="button">刷新记录</button></div><p id="jobsStatus" role="status"></p><div id="productionJobs"></div></section>

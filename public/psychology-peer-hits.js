@@ -1,6 +1,6 @@
 const $ = selector => document.querySelector(selector);
 const API = "/api/psychology-peer-hits";
-const state = { page: 1, totalPages: 1, keyConfigured: false, loading: false };
+const state = { page: 1, totalPages: 1, keyConfigured: false, loading: false, mediaType: "video" };
 let controller, searchTimer;
 const time = value => value ? new Date(value).toLocaleString("zh-CN", {timeZone:"Asia/Shanghai",hour12:false}) : "—";
 const metric = value => value == null ? "—" : Number(value).toLocaleString("zh-CN");
@@ -17,7 +17,7 @@ function pager() { $("#previousBtn").disabled=state.loading||state.page<=1; $("#
 async function loadList() {
   controller?.abort(); const current=new AbortController();controller=current;state.loading=true;pager();message("#listStatus","正在读取…");
   try {
-    const query=new URLSearchParams({page:String(state.page),query:$("#query").value.trim(),sort:$("#sort").value});
+    const query=new URLSearchParams({page:String(state.page),query:$("#query").value.trim(),sort:$("#sort").value,mediaType:state.mediaType});
     const data=await api(API+"?"+query,{signal:current.signal});
     if(current.signal.aborted)return;
     state.page=data.page;state.totalPages=data.totalPages;
@@ -27,11 +27,11 @@ async function loadList() {
       <td class="hits-time">${time(item.publishedAt)}</td>
       <td class="hits-title" title="${escape(titleOf(item))}"><span>${escape(titleOf(item))}</span></td>
       <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
-      <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:"打开视频"}</a></td>
+      <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:`打开${item.mediaType === "photo" ? "图文" : "视频"}`}</a></td>
       <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
     </tr>`).join(""):'<tr><td colspan="12">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
     document.dispatchEvent(new CustomEvent('peer-list-loaded'));
-    message("#listStatus",`共 ${data.total} 条视频 · 未采集的数据以 — 显示`);
+    message("#listStatus",`共 ${data.total} 条${state.mediaType === "photo" ? "图文" : "视频"} · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;
     $("#hitRows").querySelectorAll("button[data-id]").forEach(button => button.addEventListener("click", () => deleteHit(button.dataset.id)));
   } catch(error) { if(error.name!=="AbortError")message("#listStatus",error.message,true); }
@@ -44,8 +44,30 @@ async function loadKey() {
 $("#query").addEventListener("input",()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.page=1;loadList();},250);});
 $("#sort").addEventListener("change",()=>{state.page=1;loadList();});
 $("#refreshBtn").addEventListener("click",loadList);
+function applyMediaType(mediaType) {
+  state.mediaType=mediaType;
+  state.page=1;
+  document.body.dataset.mediaType=mediaType;
+  document.querySelectorAll(".hits-tab").forEach(tab=>{
+    const active=tab.dataset.mediaType===mediaType;
+    tab.classList.toggle("is-active",active);
+    tab.setAttribute("aria-selected",String(active));
+  });
+  const photo=mediaType==="photo";
+  $("#manualSummary").textContent=photo?"手动添加图文":"手动添加视频";
+  $("#sourceUrlLabel").textContent=photo?"图文链接":"视频链接";
+  $("#sourceUrlInput").placeholder=photo?"https://www.tiktok.com/@creator/photo/...":"https://www.tiktok.com/@creator/video/...";
+  $("#importBtn").textContent=photo?"保存图文":"保存视频";
+  $("#durationField").hidden=photo;
+  $("#mediaColumnLabel").textContent=photo?"图文":"视频";
+  document.dispatchEvent(new CustomEvent("peer-media-type-changed",{detail:{mediaType}}));
+  loadList();
+}
+document.querySelectorAll(".hits-tab").forEach(tab=>tab.addEventListener("click",()=>{
+  if(tab.dataset.mediaType!==state.mediaType)applyMediaType(tab.dataset.mediaType);
+}));
 async function deleteHit(id) {
-  if (!id || !confirm("确定删除这条视频？删除后无法恢复。")) return;
+  if (!id || !confirm("确定删除这条内容？删除后无法恢复。")) return;
   try {
     await api(`${API}/${encodeURIComponent(id)}`, { method: "DELETE" });
     await loadList();
@@ -57,7 +79,7 @@ $("#previousBtn").addEventListener("click",()=>{state.page--;loadList();});
 $("#nextBtn").addEventListener("click",()=>{state.page++;loadList();});
 $("#importForm").addEventListener("submit",async event=>{
   event.preventDefault();const data=Object.fromEntries(new FormData(event.target));
-  try { data.videoData=data.videoData.trim()?JSON.parse(data.videoData):undefined;data.source="manual";$("#importBtn").disabled=true;
+  try { data.videoData=data.videoData.trim()?JSON.parse(data.videoData):undefined;data.mediaType=state.mediaType;data.source="manual";$("#importBtn").disabled=true;
     const result=await api(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
     message("#importStatus",`已保存 ${result.accepted} 条`);event.target.reset();state.page=1;await loadList();
   } catch(error){message("#importStatus",error.message,true);}finally{$("#importBtn").disabled=false;}
@@ -77,7 +99,7 @@ $("#revokeKeyBtn").addEventListener("click",async()=>{
 async function copy(value){try{await navigator.clipboard.writeText(value);message("#keyStatus","已复制");}catch{message("#keyStatus","自动复制失败，请选中文本手动复制。",true);}}
 $("#copyKeyBtn").addEventListener("click",()=>copy($("#newApiKey").value));
 const endpoint=location.origin+"/api/integrations/psychology/peer-hits";$("#endpoint").value=endpoint;
-const sample={items:[{videoUrl:"https://www.tiktok.com/@example/video/1234567890123456789",title:"Which picture did you notice first?",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,durationSeconds:18.5,videoData:{language:"en",hashtags:["psychology","test"]},source:"grokbot"}]};
+const sample={items:[{mediaType:"video",videoUrl:"https://www.tiktok.com/@example/video/1234567890123456789",title:"Which picture did you notice first?",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,durationSeconds:18.5,videoData:{language:"en",hashtags:["psychology","test"]},source:"grokbot"}]};
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
-loadList();loadKey();
+applyMediaType("video");loadKey();

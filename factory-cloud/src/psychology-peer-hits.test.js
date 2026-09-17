@@ -14,6 +14,7 @@ function fixture(t) {
   const sqlite=new DatabaseSync(":memory:");t.after(()=>sqlite.close());
   sqlite.exec("PRAGMA foreign_keys=ON; CREATE TABLE factory_users(id TEXT PRIMARY KEY,role TEXT,active INTEGER); INSERT INTO factory_users VALUES('admin','admin',1),('second','admin',1),('operator','operator',1);");
   sqlite.exec(fs.readFileSync(new URL("../migrations/0022_psychology_peer_hits.sql",import.meta.url),"utf8"));
+  sqlite.exec(fs.readFileSync(new URL("../migrations/0025_psychology_peer_hit_media_type.sql",import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
   return {db,sqlite};
@@ -27,8 +28,11 @@ async function key(db,who=session){const response=await call(db,"/api/psychology
 test("normalizes video identity, full metrics, aliases and timestamp units",async()=>{
   const now=Date.now();const item=await normalizePsychologyPeerHit({videoUrl:url("1234567890123456789")+"?utm_source=test",title:"<script>alert(1)</script>",accountName:"Example",views:"12.8万",likes:"1.2K",comments:0,favorites:30,shares:"50",durationSeconds:18.5,publishedAt:Math.floor((now-86400000)/1000),videoData:{language:"en"}});
   assert.equal(item.videoId,"1234567890123456789");assert.equal(item.platform,"tiktok");assert.equal(item.playCount,128000);assert.equal(item.likeCount,1200);assert.equal(item.commentCount,0);assert.equal(item.favoriteCount,30);assert.equal(item.shareCount,50);assert.ok(item.publishedAt>1e12);
+  assert.equal(item.mediaType,"video");
   assert.equal(item.id,(await normalizePsychologyPeerHit({videoUrl:url("1234567890123456789").replace('@example','@renamed')})).id);
   assert.equal(item.title,"<script>alert(1)</script>");
+  const photo=await normalizePsychologyPeerHit({videoUrl:"https://www.tiktok.com/@example/photo/987654321",videoData:{postType:"photo"}});
+  assert.equal(photo.mediaType,"photo");assert.equal(photo.videoId,"987654321");
 });
 
 test("rejects unsafe URLs, invalid counts, unsafe IDs and invalid extended data",async()=>{
@@ -61,6 +65,20 @@ test("batch validates before writing, handles repeats, and paginates all records
   assert.equal(duplicate.accepted,2);assert.equal((await listPsychologyPeerHits(db,new URLSearchParams())).total,41);
   assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("query=Batch last"))).total,1);
   await assert.rejects(listPsychologyPeerHits(db,new URLSearchParams("sort=toString")),error=>error.statusCode===400);
+});
+
+test("video and photo tabs return separate records",async t=>{
+  const {db}=fixture(t);
+  await importPsychologyPeerHits(db,[
+    {videoUrl:url(501),mediaType:"video",title:"Video hit"},
+    {videoUrl:"https://www.tiktok.com/@example/photo/502",mediaType:"photo",title:"Photo hit",videoData:{copy:"A complete psychology carousel source with enough detail to recreate."}}
+  ],"admin");
+  const videos=await listPsychologyPeerHits(db,new URLSearchParams("mediaType=video"));
+  const photos=await listPsychologyPeerHits(db,new URLSearchParams("mediaType=photo"));
+  assert.equal(videos.total,1);assert.equal(videos.items[0].title,"Video hit");
+  assert.equal(photos.total,1);assert.equal(photos.items[0].title,"Photo hit");
+  await assert.rejects(listPsychologyPeerHits(db,new URLSearchParams("mediaType=audio")),error=>error.statusCode===400);
+  await assert.rejects(normalizePsychologyPeerHit({videoUrl:"https://www.tiktok.com/@example/photo/503",mediaType:"video"}),error=>error.statusCode===400);
 });
 
 test("admins can delete a saved video and invalid ids are rejected",async t=>{
@@ -116,7 +134,10 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.equal(pageFileFor("/psychology-peer-hits"),"psychology-peer-hits.html");
   const page=fs.readFileSync(new URL("../../public/psychology-peer-hits.html",import.meta.url),"utf8");
   assert.match(page,/<th>播放<\/th><th>点赞<\/th>/);
-  assert.match(page,/<th>文案<\/th><th>视频<\/th><th>操作<\/th>/);
+  assert.match(page,/data-media-type="video">视频爆款<\/button>/);
+  assert.match(page,/data-media-type="photo">图文爆款<\/button>/);
+  assert.match(page,/<th>文案<\/th><th id="mediaColumnLabel">视频<\/th><th>操作<\/th>/);
+  assert.doesNotMatch(page,/recreationVoice|配音声音/);
   assert.match(page,/<th>发布时间<br \/><small>北京时间<\/small><\/th>/);
   assert.doesNotMatch(page,/采集时间/);
   assert.doesNotMatch(page,/最新采集/);
