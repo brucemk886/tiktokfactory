@@ -74,8 +74,7 @@ function orderedSafeUrls(values) {
       if (!urls.includes(safe)) urls.push(safe);
     } catch { /* Ignore unsafe alternatives returned by the provider. */ }
   }
-  if (urls.length > 35) fail('TikTok 图文最多支持 35 张图片。', 400);
-  return urls;
+  return urls.slice(0, 6);
 }
 
 async function readBoundedJson(response) {

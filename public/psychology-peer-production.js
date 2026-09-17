@@ -26,12 +26,13 @@
   }
   document.addEventListener('peer-list-loaded', sync);
   document.addEventListener('peer-voice-gender-changed', () => { requestId = ''; });
+  document.addEventListener('peer-hit-moved', () => { selected.clear(); requestId = ''; sync(); });
   document.addEventListener('peer-media-type-changed', event => {
     selected.clear();
     requestId = '';
     const photo = event.detail?.mediaType === 'photo';
     notify(photo
-      ? '每次最多选择 5 条；云端会按原帖图片数量和顺序，用 Gemini 3.8 Flash 改写文案并分析画面，再由 Z-Image 逐张生成新图片。'
+      ? '每次最多选择 5 条；每条图文按原帖顺序处理，最多 6 张。Gemini 3.8 Flash 改写文案并分析画面，再由 Z-Image 逐张生成新图片。'
       : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，按每条记录的音色性别使用默认男声或女声，原视频在分析结束后立即删除。');
     sync();
     refresh();

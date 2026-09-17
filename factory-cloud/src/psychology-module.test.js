@@ -258,7 +258,8 @@ test("psychology photo publishing preserves image order, cover and TikTok settin
   assert.equal(batch.items[0].postInfo.privacyLevel,"PUBLIC_TO_EVERYONE");
   assert.equal(batch.items[0].fileSize,4600);
   assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[first,first]},now),/不能重复/);
-  assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[{...first,assetKey:first.assetKey.replace(".jpg",".png"),contentType:"image/png"}]},now),/1–35/);
+  assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[{...first,assetKey:first.assetKey.replace(".jpg",".png"),contentType:"image/png"}]},now),/1–6/);
+  assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:Array.from({length:7},(_,index)=>({...first,assetKey:`temporary--11111111-1111-1111-1111-11111111111${index}.jpg`}))},now),/1–6/);
 });
 
 test("psychology photo template is an online Z-Image to official photo publishing flow", () => {

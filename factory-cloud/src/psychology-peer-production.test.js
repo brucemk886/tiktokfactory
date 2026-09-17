@@ -93,6 +93,7 @@ function fixture(t, overrides = {}) {
   sqlite.exec(fs.readFileSync(new URL('../migrations/0022_psychology_peer_hits.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0025_psychology_peer_hit_media_type.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0026_psychology_peer_hit_voice_gender.sql', import.meta.url), 'utf8'));
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0027_psychology_peer_hit_media_type_lock.sql', import.meta.url), 'utf8'));
   sqlite.exec('CREATE TABLE factory_jobs(id TEXT PRIMARY KEY,type TEXT,status TEXT,title TEXT,percent INTEGER,message TEXT,payload_json TEXT,result_json TEXT,error TEXT,created_by TEXT,worker_id TEXT,claimed_at INTEGER,completed_at INTEGER,created_at INTEGER,updated_at INTEGER);');
   const db = {
     prepare(sql) {

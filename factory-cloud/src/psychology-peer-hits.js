@@ -1,5 +1,5 @@
 import { errorJson, json, randomToken, sha256Hex } from "./http.js";
-import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender } from "./psychology-peer-hits-store.js";
+import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender, updatePsychologyPeerHitMediaType } from "./psychology-peer-hits-store.js";
 import { handlePeerProduction } from './psychology-peer-production.js';
 
 export const PSYCHOLOGY_PEER_API = "/api/integrations/psychology/peer-hits";
@@ -71,7 +71,15 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
     }
     const match = url.pathname.match(/^\/api\/psychology-peer-hits\/(psy-[a-f0-9]{32})$/i);
     if (match) {
-      if (request.method === "PATCH") return json({ ok: true, ...(await updatePsychologyPeerHitVoiceGender(db, match[1], (await readImport(request))?.voiceGender)) });
+      if (request.method === "PATCH") {
+        const input = await readImport(request);
+        const voice = Object.hasOwn(input || {}, "voiceGender"), media = Object.hasOwn(input || {}, "mediaType");
+        if (voice === media) return errorJson("每次只能修改音色性别或内容类型其中一项。", 400);
+        const result = voice
+          ? await updatePsychologyPeerHitVoiceGender(db, match[1], input.voiceGender)
+          : await updatePsychologyPeerHitMediaType(db, match[1], input.mediaType);
+        return json({ ok: true, ...result });
+      }
       if (request.method === "DELETE") {
         await deletePsychologyPeerHit(db, match[1]);
         return json({ ok: true });

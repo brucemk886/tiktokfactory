@@ -108,8 +108,8 @@ function toggleGeneratedPhoto(event) {
   const key = card.dataset.photoKey;
   const index = state.selected.indexOf(key);
   if (index >= 0) state.selected.splice(index, 1);
-  else if (state.selected.length < 35) state.selected.push(key);
-  else return setPublishResult("每条图片帖子最多 35 张图片。");
+  else if (state.selected.length < 6) state.selected.push(key);
+  else return setPublishResult("每条图片帖子最多 6 张图片。");
   if (!state.coverKey || !state.selected.includes(state.coverKey)) state.coverKey = state.selected[0] || "";
   renderGeneratedPhotos();
   renderSelectedPhotos();
@@ -119,7 +119,7 @@ function renderSelectedPhotos() {
   const lookup = new Map(generatedPhotos().map((photo) => [photo.key, photo]));
   state.selected = state.selected.filter((key) => lookup.has(key));
   if (!state.selected.includes(state.coverKey)) state.coverKey = state.selected[0] || "";
-  $("#photoCount").textContent = `已选 ${state.selected.length} / 35 张`;
+  $("#photoCount").textContent = `已选 ${state.selected.length} / 6 张`;
   $("#selectedPhotos").innerHTML = state.selected.map((key, index) => {
     const photo = lookup.get(key);
     return `<article class="selected-photo-row" data-selected-key="${escapeAttr(key)}"><img src="${escapeAttr(photo.url)}" alt="图集第 ${index + 1} 张"><strong>${index + 1}. ${escapeHtml(shorten(photo.prompt, 72))}</strong><div class="selected-photo-actions"><button type="button" data-action="left" ${index === 0 ? "disabled" : ""}>←</button><button type="button" data-action="right" ${index === state.selected.length - 1 ? "disabled" : ""}>→</button><button class="${key === state.coverKey ? "is-cover" : ""}" type="button" data-action="cover">${key === state.coverKey ? "封面" : "设为封面"}</button><button type="button" data-action="remove">删除</button></div></article>`;
@@ -162,7 +162,7 @@ function syncMusicMode() {
 async function publishPhotoPost() {
   if (state.busy) return;
   const connectionId = document.querySelector(".publish-account:checked")?.value || "";
-  if (!state.selected.length) return setPublishResult("请先选择 1–35 张生成图片。");
+  if (!state.selected.length) return setPublishResult("请先选择 1–6 张生成图片。");
   if (!connectionId) return setPublishResult("请先选择发布账号。");
   const musicSoundId = $("#musicSoundId").value.trim();
   if (musicSoundId && !/^\d{1,30}$/.test(musicSoundId)) return setPublishResult("音乐 ID 只能包含数字。");

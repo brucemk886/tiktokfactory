@@ -86,7 +86,7 @@ export function normalizePhotoPublishPayload(input = {}, now = Date.now()) {
     contentType: String(asset?.contentType || "").split(";")[0].toLowerCase(),
     fileSize: Math.max(0, Number(asset?.fileSize || 0) || 0)
   })) : [];
-  if (!assets.length || assets.length > 35 || assets.some((asset) => !PHOTO_ASSET_KEY.test(asset.assetKey) || !PHOTO_CONTENT_TYPES.has(asset.contentType) || !asset.fileSize || asset.fileSize > PHOTO_MAX_BYTES)) throw statusError("每条图片帖子需要 1–35 张已导入的 JPG 或 WebP 图片。", 400);
+  if (!assets.length || assets.length > 6 || assets.some((asset) => !PHOTO_ASSET_KEY.test(asset.assetKey) || !PHOTO_CONTENT_TYPES.has(asset.contentType) || !asset.fileSize || asset.fileSize > PHOTO_MAX_BYTES)) throw statusError("每条图片帖子需要 1–6 张已导入的 JPG 或 WebP 图片。", 400);
   if (new Set(assets.map((asset) => asset.assetKey)).size !== assets.length) throw statusError("图集中不能重复使用同一张图片。", 400);
   const title = String(input.title || "");
   const caption = String(input.caption || "");

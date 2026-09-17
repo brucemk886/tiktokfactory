@@ -16,6 +16,7 @@ function fixture(t) {
   sqlite.exec(fs.readFileSync(new URL("../migrations/0022_psychology_peer_hits.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0025_psychology_peer_hit_media_type.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0026_psychology_peer_hit_voice_gender.sql",import.meta.url),"utf8"));
+  sqlite.exec(fs.readFileSync(new URL("../migrations/0027_psychology_peer_hit_media_type_lock.sql",import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
   return {db,sqlite};
@@ -110,6 +111,24 @@ test("admins can update voice gender and request guards protect the field",async
   assert.equal((await listPsychologyPeerHits(db,new URLSearchParams())).items[0].voiceGender,"female");
 });
 
+test("admins can move records between video and photo tabs and later imports preserve the manual type",async t=>{
+  const {db}=fixture(t);
+  await importPsychologyPeerHits(db,{videoUrl:url(10),title:"Wrong tab"},"admin");
+  const item=(await listPsychologyPeerHits(db,new URLSearchParams("mediaType=video"))).items[0];
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"audio"})).status,400);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"photo"}, {}, null)).status,401);
+  const moved=await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"photo"});
+  assert.equal(moved.status,200);assert.equal((await moved.json()).mediaType,"photo");
+  assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("mediaType=video"))).total,0);
+  assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("mediaType=photo"))).total,1);
+  await importPsychologyPeerHits(db,{videoUrl:url(10),playCount:999},"admin");
+  const preserved=(await listPsychologyPeerHits(db,new URLSearchParams("mediaType=photo"))).items[0];
+  assert.equal(preserved.mediaType,"photo");assert.equal(preserved.playCount,999);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"video"})).status,200);
+  assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("mediaType=video"))).total,1);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"photo",voiceGender:"female"})).status,400);
+});
+
 test("API keys are hashed, write-only, isolated by owner, rotatable and revocable",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);
   const stored=sqlite.prepare("SELECT * FROM psychology_peer_hit_keys").get();assert.notEqual(stored.token_hash,token);assert.equal(stored.token_hash.length,64);
@@ -154,9 +173,10 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/class="hits-header-tools"/);
   assert.match(page,/<summary>写入接口<\/summary>/);
   assert.doesNotMatch(page,/<summary>grokbot 写入接口<\/summary>/);
-  assert.match(page,/<th>文案<\/th><th class="hits-voice">音色性别<\/th><th id="mediaColumnLabel">视频<\/th><th>操作<\/th>/);
+  assert.match(page,/<th class="hits-copy">文案<\/th><th class="hits-voice">音色<\/th><th id="mediaColumnLabel">视频<\/th><th>操作<\/th>/);
   assert.doesNotMatch(page,/recreationVoice|配音声音/);
-  assert.match(page,/<th>发布时间<br \/><small>北京时间<\/small><\/th>/);
+  assert.match(page,/<th>发布时间<\/th><th>导入时间<\/th>/);
+  assert.doesNotMatch(page,/北京时间/);
   assert.doesNotMatch(page,/采集时间/);
   assert.doesNotMatch(page,/最新采集/);
   const script=fs.readFileSync(new URL("../../public/psychology-peer-hits.js",import.meta.url),"utf8");
@@ -165,7 +185,11 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(script,/hits-title" title=/);
   assert.match(script,/hits-copy" title=/);
   assert.doesNotMatch(script,/collectedAt/);
+  assert.match(script,/time\(item\.createdAt\)/);
   assert.match(script,/hits-delete/);
+  assert.match(script,/hits-move/);
+  assert.match(script,/移到图文爆款/);
+  assert.match(script,/移到视频爆款/);
   assert.match(script,/voice-gender-select/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);

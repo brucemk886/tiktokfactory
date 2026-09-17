@@ -107,7 +107,7 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
-      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
+      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
       collected_at = excluded.collected_at, updated_at = excluded.updated_at
     WHERE excluded.collected_at >= ${TABLE}.collected_at
     RETURNING id, video_url, collected_at
@@ -158,4 +158,18 @@ export async function updatePsychologyPeerHitVoiceGender(db, id, voiceGender) {
     throw error;
   }
   return { id: value, voiceGender: gender };
+}
+
+export async function updatePsychologyPeerHitMediaType(db, id, mediaType) {
+  const value = String(id || "").trim().toLowerCase();
+  if (!/^psy-[a-f0-9]{32}$/.test(value)) fail("内容编号无效。");
+  const type = String(mediaType || "").trim().toLowerCase();
+  if (!["video", "photo"].includes(type)) fail("mediaType 只能是 video 或 photo。");
+  const result = await db.prepare(`UPDATE ${TABLE} SET media_type = ?, media_type_locked = 1, updated_at = ? WHERE id = ?`).bind(type, Date.now(), value).run();
+  if (!Number(result.meta?.changes)) {
+    const error = new Error("没有找到这条内容。");
+    error.statusCode = 404;
+    throw error;
+  }
+  return { id: value, mediaType: type };
 }

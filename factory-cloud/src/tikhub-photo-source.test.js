@@ -28,6 +28,12 @@ test('TikHub photo response extracts every original image in order', async () =>
   assert.ok(!JSON.stringify(source).includes('private-test'));
 });
 
+test('photo resolver keeps source order and caps a post at six images', async () => {
+  const images=Array.from({length:8},(_,index)=>`https://p16-sign.tiktokcdn-us.com/${index+1}.webp`);
+  const source=await resolveTikTokPhotoSource({}, {url:page,imageUrls:images});
+  assert.deepEqual(source.urls,images.slice(0,6));
+});
+
 test('photo resolver rejects unsafe URLs, missing configuration and empty provider images', async () => {
   for (const value of ['http://p16.tiktokcdn.com/a.webp', 'https://127.0.0.1/a.webp', 'https://tiktokcdn.com.evil.test/a.webp']) {
     assert.throws(() => validateTikTokPhotoFileUrl(value), /TikTok/);
