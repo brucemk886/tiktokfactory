@@ -90,6 +90,18 @@ test("reads a finished Kie task", async () => {
   assert.equal(remote.creditsConsumed, 3000);
 });
 
+test("Gemini 3.8 Flash chat receives ordered reference images", async () => {
+  const calls = [];
+  const kie = createKieClient({ apiKey: "test-key", fetchImpl: async (url, init = {}) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    return json({ data: { choices: [{ message: { content: "rewritten" } }] } });
+  } });
+  const images = ["https://p16.tiktokcdn-us.com/1.webp", "https://p16.tiktokcdn-us.com/2.webp"];
+  assert.equal(await kie.createChat("Analyze in order", { model: "gemini-3-8-flash", imageUrls: images }), "rewritten");
+  assert.match(calls[0].url, /gemini-3-8-flash-openai/);
+  assert.deepEqual(calls[0].body.messages[0].content.slice(1).map(part => part.image_url.url), images);
+});
+
 function json(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }

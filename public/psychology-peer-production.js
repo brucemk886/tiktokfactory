@@ -31,7 +31,7 @@
     requestId = '';
     const photo = event.detail?.mediaType === 'photo';
     notify(photo
-      ? '每次最多选择 5 条；云端会根据原文案生成六页分镜与 Z-Image 图片，完成后可检查并发布。'
+      ? '每次最多选择 5 条；云端会按原帖图片数量和顺序，用 Gemini 3.8 Flash 改写文案并分析画面，再由 Z-Image 逐张生成新图片。'
       : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，按每条记录的音色性别使用默认男声或女声，原视频在分析结束后立即删除。');
     sync();
     refresh();

@@ -2,7 +2,7 @@ import { json, errorJson, sha256Hex } from './http.js';
 import { psychologyPeerHitFromRow } from './psychology-peer-hits-store.js';
 import { publicJob } from './jobs.js';
 import { validateTikTokPageUrl, validateTikTokVideoFileUrl } from './tikhub-video-source.js';
-import { peerProductionPayload } from '../../scripts/psychology-peer-production.js';
+import { peerPhotoImageUrls, peerProductionPayload } from '../../scripts/psychology-peer-production.js';
 
 const VIDEO_TYPE = 'psychology-recreation';
 const PHOTO_TYPE = 'psychology-photo-story';
@@ -83,6 +83,11 @@ export async function handlePeerProduction(request, env, url, user) {
     const item = psychologyPeerHitFromRow(rows.results.find(row => row.id === id));
     if (item.mediaType !== mediaType) fail('所选内容类型已经变化，请刷新列表。', 409);
     if (mediaType === 'photo') {
+      if (item.platform !== 'tiktok') fail('图文爆款复刻目前只支持 TikTok 图文链接。');
+      validateTikTokPageUrl(item.videoUrl);
+      if (!peerPhotoImageUrls(item).length && !String(env.TIKHUB_API_KEY || '').trim()) {
+        fail('TikTok 图文解析服务尚未配置，请配置 TikHub API Key。', 503);
+      }
       return {
         id: `peer-${key.slice(0, 32)}-${index}`,
         payload: { ...peerProductionPayload(item, PHOTO_TYPE), createdFrom: 'psychology-peer-hits' }
@@ -131,7 +136,7 @@ export async function handlePeerProduction(request, env, url, user) {
   ) VALUES (?,?,'queued',?,?,?,?,'{}','',?,'',0,0,?,?) ON CONFLICT(id) DO NOTHING`)
     .bind(
       job.id, type, job.payload.peerSource.title, 1,
-      mediaType === 'photo' ? '等待云端改编文案并生成图文分镜' : '等待云端下载原视频并拆解分镜', JSON.stringify(job.payload),
+       mediaType === 'photo' ? '等待云端获取原帖图片并按原顺序改编' : '等待云端下载原视频并拆解分镜', JSON.stringify(job.payload),
       user.username, stamp, stamp
     )));
   await dispatchJobs(env, jobs, type);
