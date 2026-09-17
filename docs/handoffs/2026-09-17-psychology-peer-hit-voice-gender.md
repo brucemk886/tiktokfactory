@@ -21,10 +21,12 @@ Store an editable voice gender on every psychology peer-hit and use a server-own
 - `node --test src/psychology-peer-hits.test.js src/psychology-peer-production.test.js` — 27 passed.
 - `npm test` in `factory-cloud` — 330 passed.
 - `node --check` passed for both changed browser scripts; `git diff --check` passed.
+- Remote migration `0026_psychology_peer_hit_voice_gender.sql` applied successfully.
+- Production Worker version `a21a01c7-bee1-45e9-afc3-230c4de1d34a` deployed; authenticated read-only browser verification confirmed the gender column, editable selectors, and male defaults on existing records.
 
 ## Unfinished work
 
-- Apply migration 0026, deploy from a clean `origin/main` release checkout, and verify production.
+- None.
 
 ## Recommended next step
 
