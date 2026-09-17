@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { handlePsychologyPeerHits } from './psychology-peer-hits.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { PSYCHOLOGY_RECREATION_VOICE_ID } from './psychology-peer-production.js';
+import { PSYCHOLOGY_RECREATION_VOICE_ID, PSYCHOLOGY_RECREATION_VOICE_IDS } from './psychology-peer-production.js';
 import { peerCopy, parsePhotoStory, peerProductionPayload } from '../../scripts/psychology-peer-production.js';
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
@@ -74,6 +74,7 @@ function fixture(t, overrides = {}) {
   sqlite.exec('CREATE TABLE factory_users(id TEXT PRIMARY KEY, role TEXT, active INTEGER);');
   sqlite.exec(fs.readFileSync(new URL('../migrations/0022_psychology_peer_hits.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0025_psychology_peer_hit_media_type.sql', import.meta.url), 'utf8'));
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0026_psychology_peer_hit_voice_gender.sql', import.meta.url), 'utf8'));
   sqlite.exec('CREATE TABLE factory_jobs(id TEXT PRIMARY KEY,type TEXT,status TEXT,title TEXT,percent INTEGER,message TEXT,payload_json TEXT,result_json TEXT,error TEXT,created_by TEXT,worker_id TEXT,claimed_at INTEGER,completed_at INTEGER,created_at INTEGER,updated_at INTEGER);');
   const db = {
     prepare(sql) {
@@ -121,6 +122,20 @@ test('peer recreation enqueues one source-linked cloud job per selection without
   assert.equal((await call('POST',{...input,voiceId:'differentVoice123'})).status,200);
   const own=await (await call('GET')).json(); assert.equal(own.jobs.length,2);
   const other=await (await call('GET',undefined,{...user,username:'other'})).json(); assert.equal(other.jobs.length,0);
+});
+
+test('peer recreation selects server-owned male and Lara female voices from each record', async t => {
+  const {db,sqlite,call,user}=fixture(t);
+  const imported=await importPsychologyPeerHits(db,[
+    {videoUrl:'https://www.tiktok.com/@example/video/801',voiceGender:'male',videoData:{videoFileUrl:'https://v16.tiktokcdn.com/801.mp4'}},
+    {videoUrl:'https://www.tiktok.com/@example/video/802',voiceGender:'female',videoData:{videoFileUrl:'https://v16.tiktokcdn.com/802.mp4'}}
+  ],user.id);
+  const response=await call('POST',{ids:imported.items.map(item=>item.id),mediaType:'video',requestId:crypto.randomUUID(),voiceId:'browser-supplied'});
+  assert.equal(response.status,202);
+  const payloads=sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all().map(row=>JSON.parse(row.payload_json));
+  assert.deepEqual(payloads.map(payload=>payload.voiceGender).sort(),['female','male']);
+  assert.deepEqual(payloads.map(payload=>payload.voiceId).sort(),Object.values(PSYCHOLOGY_RECREATION_VOICE_IDS).sort());
+  assert.ok(payloads.every(payload=>payload.voiceId!=='browser-supplied'));
 });
 
 test('photo hit recreation creates a cloud photo-story job without video download or voice selection', async t => {

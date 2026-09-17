@@ -25,13 +25,14 @@
     return data;
   }
   document.addEventListener('peer-list-loaded', sync);
+  document.addEventListener('peer-voice-gender-changed', () => { requestId = ''; });
   document.addEventListener('peer-media-type-changed', event => {
     selected.clear();
     requestId = '';
     const photo = event.detail?.mediaType === 'photo';
     notify(photo
       ? '每次最多选择 5 条；云端会根据原文案生成六页分镜与 Z-Image 图片，完成后可检查并发布。'
-      : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，原视频在分析结束后立即删除。');
+      : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，按每条记录的音色性别使用默认男声或女声，原视频在分析结束后立即删除。');
     sync();
     refresh();
   });

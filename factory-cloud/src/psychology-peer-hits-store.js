@@ -2,12 +2,18 @@ import { sha256Hex } from "./http.js";
 
 const TABLE = "psychology_peer_hits";
 const FIELDS = {
-  mediaType: "media_type", videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
+  mediaType: "media_type", voiceGender: "voice_gender", videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
   commentCount: "comment_count", favoriteCount: "favorite_count", shareCount: "share_count",
   durationSeconds: "duration_seconds", publishedAt: "published_at", videoData: "video_data_json", source: "source"
 };
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
+export function normalizeVoiceGender(value, fallback = "male") {
+  if (value == null || value === "") return fallback;
+  const gender = String(value).trim().toLowerCase();
+  if (!["male", "female"].includes(gender)) fail("voiceGender 只能是 male 或 female。");
+  return gender;
+}
 const optionalText = (value, limit, field) => {
   if (value == null || value === "") return null;
   if (typeof value !== "string" || value.length > limit) fail(`${field} 必须是最多 ${limit} 字符的文本。`);
@@ -66,8 +72,10 @@ export async function normalizePsychologyPeerHit(raw, now = Date.now()) {
   const mediaType = rawMediaType === "image" || rawMediaType === "carousel" ? "photo" : rawMediaType;
   if (!["video", "photo"].includes(mediaType)) fail("mediaType 只能是 video 或 photo。");
   if (urlType?.[1] && urlType[1] !== mediaType) fail("mediaType 与 TikTok 链接类型不一致。");
+  const voiceGenderProvided = raw.voiceGender != null && raw.voiceGender !== "";
+  const voiceGender = normalizeVoiceGender(raw.voiceGender);
   return {
-    id: "psy-" + (await sha256Hex(videoKey)).slice(0, 32), videoKey, videoUrl, platform, mediaType, videoId,
+    id: "psy-" + (await sha256Hex(videoKey)).slice(0, 32), videoKey, videoUrl, platform, mediaType, voiceGender, voiceGenderProvided, videoId,
     title: optionalText(raw.title, 2000, "title"), accountName: optionalText(raw.accountName, 160, "accountName"),
     accountUsername: optionalText(raw.accountUsername, 160, "accountUsername"),
     accountUrl: safeUrl(raw.accountUrl, "accountUrl")?.toString() || null,
@@ -99,13 +107,13 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
-      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
+      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
       collected_at = excluded.collected_at, updated_at = excluded.updated_at
     WHERE excluded.collected_at >= ${TABLE}.collected_at
     RETURNING id, video_url, collected_at
   `).bind(item.id, item.videoKey, item.videoUrl, item.platform,
     ...Object.keys(FIELDS).map(key => key === "videoData" && item[key] !== null ? JSON.stringify(item[key]) : item[key]),
-    item.collectedAt, actor, now, now));
+    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0));
   const results = await db.batch(statements);
   return { accepted: results.filter(result => result.results?.length).length, ignoredOlder: results.filter(result => !result.results?.length).length,
     items: items.map((item, i) => ({ id: item.id, videoUrl: item.videoUrl, status: results[i].results?.length ? "saved" : "ignored_older" })) };
@@ -136,4 +144,18 @@ export async function deletePsychologyPeerHit(db, id) {
     error.statusCode = 404;
     throw error;
   }
+}
+
+export async function updatePsychologyPeerHitVoiceGender(db, id, voiceGender) {
+  const value = String(id || "").trim().toLowerCase();
+  if (!/^psy-[a-f0-9]{32}$/.test(value)) fail("内容编号无效。");
+  const gender = normalizeVoiceGender(voiceGender, null);
+  if (!gender) fail("voiceGender 是必填字段。");
+  const result = await db.prepare(`UPDATE ${TABLE} SET voice_gender = ?, updated_at = ? WHERE id = ?`).bind(gender, Date.now(), value).run();
+  if (!Number(result.meta?.changes)) {
+    const error = new Error("没有找到这条内容。");
+    error.statusCode = 404;
+    throw error;
+  }
+  return { id: value, voiceGender: gender };
 }

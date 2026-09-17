@@ -15,6 +15,7 @@ function fixture(t) {
   sqlite.exec("PRAGMA foreign_keys=ON; CREATE TABLE factory_users(id TEXT PRIMARY KEY,role TEXT,active INTEGER); INSERT INTO factory_users VALUES('admin','admin',1),('second','admin',1),('operator','operator',1);");
   sqlite.exec(fs.readFileSync(new URL("../migrations/0022_psychology_peer_hits.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0025_psychology_peer_hit_media_type.sql",import.meta.url),"utf8"));
+  sqlite.exec(fs.readFileSync(new URL("../migrations/0026_psychology_peer_hit_voice_gender.sql",import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
   return {db,sqlite};
@@ -29,27 +30,29 @@ test("normalizes video identity, full metrics, aliases and timestamp units",asyn
   const now=Date.now();const item=await normalizePsychologyPeerHit({videoUrl:url("1234567890123456789")+"?utm_source=test",title:"<script>alert(1)</script>",accountName:"Example",views:"12.8万",likes:"1.2K",comments:0,favorites:30,shares:"50",durationSeconds:18.5,publishedAt:Math.floor((now-86400000)/1000),videoData:{language:"en"}});
   assert.equal(item.videoId,"1234567890123456789");assert.equal(item.platform,"tiktok");assert.equal(item.playCount,128000);assert.equal(item.likeCount,1200);assert.equal(item.commentCount,0);assert.equal(item.favoriteCount,30);assert.equal(item.shareCount,50);assert.ok(item.publishedAt>1e12);
   assert.equal(item.mediaType,"video");
+  assert.equal(item.voiceGender,"male");
   assert.equal(item.id,(await normalizePsychologyPeerHit({videoUrl:url("1234567890123456789").replace('@example','@renamed')})).id);
   assert.equal(item.title,"<script>alert(1)</script>");
   const photo=await normalizePsychologyPeerHit({videoUrl:"https://www.tiktok.com/@example/photo/987654321",videoData:{postType:"photo"}});
   assert.equal(photo.mediaType,"photo");assert.equal(photo.videoId,"987654321");
+  assert.equal((await normalizePsychologyPeerHit({videoUrl:url(7),voiceGender:"FEMALE"})).voiceGender,"female");
 });
 
 test("rejects unsafe URLs, invalid counts, unsafe IDs and invalid extended data",async()=>{
-  for(const bad of [{videoUrl:"javascript:alert(1)"},{videoUrl:"https://user:pass@example.com/video"},{videoId:1234567890123456789},{playCount:-1},{likeCount:"many"},{shareCount:1e20},{durationSeconds:true},{videoData:[]},{collectedAt:"2026-01-01"},{videoId:"different"}]){
+  for(const bad of [{videoUrl:"javascript:alert(1)"},{videoUrl:"https://user:pass@example.com/video"},{videoId:1234567890123456789},{playCount:-1},{likeCount:"many"},{shareCount:1e20},{durationSeconds:true},{videoData:[]},{collectedAt:"2026-01-01"},{videoId:"different"},{voiceGender:"other"}]){
     await assert.rejects(normalizePsychologyPeerHit({videoUrl:url(123),...bad}),error=>error.statusCode===400);
   }
 });
 
 test("upsert is idempotent, preserves omitted values and ignores older observations",async t=>{
   const {db}=fixture(t);const stamp=Date.now()-60000;
-  const first={videoUrl:url(123),title:"First title",source:"original",accountName:"Creator",playCount:100,likeCount:10,favoriteCount:8,collectedAt:stamp,videoData:{language:"en",hashtags:["psychology"]}};
+  const first={videoUrl:url(123),voiceGender:"female",title:"First title",source:"original",accountName:"Creator",playCount:100,likeCount:10,favoriteCount:8,collectedAt:stamp,videoData:{language:"en",hashtags:["psychology"]}};
   await importPsychologyPeerHits(db,first,"admin");
   const result=await importPsychologyPeerHits(db,{...first,playCount:200,likeCount:undefined,favoriteCount:0,collectedAt:stamp+10000,videoData:{retention:0.5}},"admin");
   assert.equal(result.accepted,1);assert.equal(result.items[0].status,"saved");
   const stale=await importPsychologyPeerHits(db,{videoUrl:url(123),playCount:3,title:"Old",collectedAt:stamp},"admin");assert.equal(stale.ignoredOlder,1);
   await importPsychologyPeerHits(db,{videoUrl:url(123),playCount:200,collectedAt:stamp+20000},"admin");
-  const data=await listPsychologyPeerHits(db,new URLSearchParams());assert.equal(data.items[0].source,"original");assert.equal(data.total,1);const item=data.items[0];assert.equal(item.playCount,200);assert.equal(item.likeCount,10);assert.equal(item.favoriteCount,0);assert.equal(item.shareCount,null);assert.equal(item.title,"First title");assert.equal(item.videoData.language,"en");assert.equal(item.videoData.retention,0.5);
+  const data=await listPsychologyPeerHits(db,new URLSearchParams());assert.equal(data.items[0].source,"original");assert.equal(data.total,1);const item=data.items[0];assert.equal(item.playCount,200);assert.equal(item.likeCount,10);assert.equal(item.favoriteCount,0);assert.equal(item.shareCount,null);assert.equal(item.title,"First title");assert.equal(item.voiceGender,"female");assert.equal(item.videoData.language,"en");assert.equal(item.videoData.retention,0.5);
 });
 
 test("batch validates before writing, handles repeats, and paginates all records",async t=>{
@@ -95,6 +98,18 @@ test("admins can delete a saved video and invalid ids are rejected",async t=>{
   assert.equal((await call(db,"/api/psychology-peer-hits/not-valid","DELETE")).status,404);
 });
 
+test("admins can update voice gender and request guards protect the field",async t=>{
+  const {db}=fixture(t);
+  await importPsychologyPeerHits(db,{videoUrl:url(9),title:"Voice"},"admin");
+  const item=(await listPsychologyPeerHits(db,new URLSearchParams())).items[0];
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{voiceGender:"female"}, {}, null)).status,401);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{voiceGender:"female"},{Origin:"https://evil.test"})).status,403);
+  assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{voiceGender:"other"})).status,400);
+  const changed=await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{voiceGender:"female"});
+  assert.equal(changed.status,200);assert.equal((await changed.json()).voiceGender,"female");
+  assert.equal((await listPsychologyPeerHits(db,new URLSearchParams())).items[0].voiceGender,"female");
+});
+
 test("API keys are hashed, write-only, isolated by owner, rotatable and revocable",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);
   const stored=sqlite.prepare("SELECT * FROM psychology_peer_hit_keys").get();assert.notEqual(stored.token_hash,token);assert.equal(stored.token_hash.length,64);
@@ -136,7 +151,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/<th>播放<\/th><th>点赞<\/th>/);
   assert.match(page,/data-media-type="video">视频爆款<\/button>/);
   assert.match(page,/data-media-type="photo">图文爆款<\/button>/);
-  assert.match(page,/<th>文案<\/th><th id="mediaColumnLabel">视频<\/th><th>操作<\/th>/);
+  assert.match(page,/<th>文案<\/th><th>音色性别<\/th><th id="mediaColumnLabel">视频<\/th><th>操作<\/th>/);
   assert.doesNotMatch(page,/recreationVoice|配音声音/);
   assert.match(page,/<th>发布时间<br \/><small>北京时间<\/small><\/th>/);
   assert.doesNotMatch(page,/采集时间/);
@@ -148,6 +163,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(script,/hits-copy" title=/);
   assert.doesNotMatch(script,/collectedAt/);
   assert.match(script,/hits-delete/);
+  assert.match(script,/voice-gender-select/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
 });

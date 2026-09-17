@@ -27,9 +27,10 @@ async function loadList() {
       <td class="hits-time">${time(item.publishedAt)}</td>
       <td class="hits-title" title="${escape(titleOf(item))}"><span>${escape(titleOf(item))}</span></td>
       <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
+      <td><select class="voice-gender-select" data-id="${escape(item.id)}" data-current="${escape(item.voiceGender || "male")}" aria-label="修改 ${escape(titleOf(item))} 的音色性别"><option value="male"${item.voiceGender !== "female" ? " selected" : ""}>男</option><option value="female"${item.voiceGender === "female" ? " selected" : ""}>女 · Lara</option></select></td>
       <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:`打开${item.mediaType === "photo" ? "图文" : "视频"}`}</a></td>
       <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
-    </tr>`).join(""):'<tr><td colspan="12">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
+    </tr>`).join(""):'<tr><td colspan="13">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
     document.dispatchEvent(new CustomEvent('peer-list-loaded'));
     message("#listStatus",`共 ${data.total} 条${state.mediaType === "photo" ? "图文" : "视频"} · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;
@@ -75,6 +76,22 @@ async function deleteHit(id) {
     message("#listStatus", error.message, true);
   }
 }
+async function updateVoiceGender(select) {
+  const previous = select.dataset.current || "male";
+  select.disabled = true;
+  try {
+    const result = await api(`${API}/${encodeURIComponent(select.dataset.id)}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({voiceGender:select.value})});
+    select.dataset.current = result.voiceGender;
+    message("#listStatus",result.voiceGender === "female" ? "已改为女性音色 Lara。" : "已改为默认男性音色。");
+    document.dispatchEvent(new CustomEvent("peer-voice-gender-changed",{detail:result}));
+  } catch (error) {
+    select.value = previous;
+    message("#listStatus",error.message,true);
+  } finally {
+    select.disabled = false;
+  }
+}
+$("#hitRows").addEventListener("change",event=>{if(event.target.matches(".voice-gender-select"))updateVoiceGender(event.target);});
 $("#previousBtn").addEventListener("click",()=>{state.page--;loadList();});
 $("#nextBtn").addEventListener("click",()=>{state.page++;loadList();});
 $("#importForm").addEventListener("submit",async event=>{
@@ -99,7 +116,7 @@ $("#revokeKeyBtn").addEventListener("click",async()=>{
 async function copy(value){try{await navigator.clipboard.writeText(value);message("#keyStatus","已复制");}catch{message("#keyStatus","自动复制失败，请选中文本手动复制。",true);}}
 $("#copyKeyBtn").addEventListener("click",()=>copy($("#newApiKey").value));
 const endpoint=location.origin+"/api/integrations/psychology/peer-hits";$("#endpoint").value=endpoint;
-const sample={items:[{mediaType:"video",videoUrl:"https://www.tiktok.com/@example/video/1234567890123456789",title:"Which picture did you notice first?",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,durationSeconds:18.5,videoData:{language:"en",hashtags:["psychology","test"]},source:"grokbot"}]};
+const sample={items:[{mediaType:"video",voiceGender:"female",videoUrl:"https://www.tiktok.com/@example/video/1234567890123456789",title:"Which picture did you notice first?",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,durationSeconds:18.5,videoData:{language:"en",hashtags:["psychology","test"]},source:"grokbot"}]};
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
 applyMediaType("video");loadKey();

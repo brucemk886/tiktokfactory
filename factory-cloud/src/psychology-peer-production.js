@@ -6,7 +6,11 @@ import { peerProductionPayload } from '../../scripts/psychology-peer-production.
 
 const VIDEO_TYPE = 'psychology-recreation';
 const PHOTO_TYPE = 'psychology-photo-story';
-export const PSYCHOLOGY_RECREATION_VOICE_ID = 'Gubgw9l4dtIoQA9YZHgx';
+export const PSYCHOLOGY_RECREATION_VOICE_IDS = Object.freeze({
+  male: 'Gubgw9l4dtIoQA9YZHgx',
+  female: 'vChnJZ1Cu89g2XXumPfT'
+});
+export const PSYCHOLOGY_RECREATION_VOICE_ID = PSYCHOLOGY_RECREATION_VOICE_IDS.male;
 const BASE = '/api/psychology-peer-hits/production';
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 
@@ -103,7 +107,8 @@ export async function handlePeerProduction(request, env, url, user) {
           durationSeconds: Number(item.durationSeconds || 0),
           collectedAt: item.collectedAt
         },
-        voiceId: PSYCHOLOGY_RECREATION_VOICE_ID,
+        voiceGender: item.voiceGender,
+        voiceId: PSYCHOLOGY_RECREATION_VOICE_IDS[item.voiceGender] || PSYCHOLOGY_RECREATION_VOICE_IDS.male,
         createdFrom: 'psychology-peer-hits'
       }
     };

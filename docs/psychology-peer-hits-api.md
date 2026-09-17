@@ -25,6 +25,7 @@ Content-Type: application/json
   "items": [
     {
       "mediaType": "video",
+      "voiceGender": "female",
       "videoUrl": "https://www.tiktok.com/@example/video/1234567890123456789",
       "title": "Which picture did you notice first?",
       "accountName": "Psychology Example",
@@ -56,6 +57,7 @@ Content-Type: application/json
 | 字段 | 含义 / 格式 |
 | --- | --- |
 | `mediaType` | 内容类型：`video` 或 `photo`。省略时根据 TikTok `/video/`、`/photo/` 路径识别，无法识别时默认 `video`。也接受 `image` / `carousel` 作为 `photo`。 |
+| `voiceGender` | 配音性别：`male` 或 `female`，省略时新记录默认 `male`。视频复刻时 `male` 使用男声 `Gubgw9l4dtIoQA9YZHgx`，`female` 使用 Lara `vChnJZ1Cu89g2XXumPfT`。后续更新省略此字段会保留已保存的选择。 |
 | `videoUrl` | 必填，完整 HTTP/HTTPS 帖子链接，最多 2000 字符。优先提供展开后的 TikTok 视频或图文地址。字段名为兼容现有客户端继续保留。 |
 | `videoId` | 可选字符串，最多 100 字符；TikTok 完整链接可自动解析。不接受数字，避免长 ID 精度丢失。与链接中的 ID 不同会报错。 |
 | `platform` | 非 TikTok 链接可填平台名称，最多 40 字符，默认取域名；TikTok 域名自动记为 `tiktok`。 |
@@ -116,4 +118,4 @@ Content-Type: application/json
 | 415 | 设置 `Content-Type: application/json`。 |
 | 500 / 网络超时 | 稍后指数退避重试，保留原视频身份和采集时间。 |
 
-页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接。视频复刻固定使用 ElevenLabs 音色 `Gubgw9l4dtIoQA9YZHgx`；图文复刻生成六页分镜与 Z-Image 图片，不调用配音。
+页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接，并可逐条修改音色性别。视频复刻按记录选择男声 `Gubgw9l4dtIoQA9YZHgx` 或女性 Lara `vChnJZ1Cu89g2XXumPfT`；图文复刻生成六页分镜与 Z-Image 图片，不调用配音。

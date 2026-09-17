@@ -1,5 +1,5 @@
 import { errorJson, json, randomToken, sha256Hex } from "./http.js";
-import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit } from "./psychology-peer-hits-store.js";
+import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender } from "./psychology-peer-hits-store.js";
 import { handlePeerProduction } from './psychology-peer-production.js';
 
 export const PSYCHOLOGY_PEER_API = "/api/integrations/psychology/peer-hits";
@@ -71,9 +71,12 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
     }
     const match = url.pathname.match(/^\/api\/psychology-peer-hits\/(psy-[a-f0-9]{32})$/i);
     if (match) {
-      if (request.method !== "DELETE") return errorJson("不支持此请求方法。", 405);
-      await deletePsychologyPeerHit(db, match[1]);
-      return json({ ok: true });
+      if (request.method === "PATCH") return json({ ok: true, ...(await updatePsychologyPeerHitVoiceGender(db, match[1], (await readImport(request))?.voiceGender)) });
+      if (request.method === "DELETE") {
+        await deletePsychologyPeerHit(db, match[1]);
+        return json({ ok: true });
+      }
+      return errorJson("不支持此请求方法。", 405);
     }
     return errorJson("没有找到该接口。", 404);
   } catch (error) {
