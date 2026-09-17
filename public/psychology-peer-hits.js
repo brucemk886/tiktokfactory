@@ -9,6 +9,12 @@ const text = value => typeof value === "string" && value.trim() ? value.trim() :
 const titleOf = item => text(item.title) || text(item.videoData?.标题) || "—";
 const copyOf = item => text(item.videoData?.文案) || text(item.videoData?.caption) || text(item.videoData?.copy) || "—";
 const message = (id, text, error=false) => { $(id).textContent=text; $(id).classList.toggle("is-error",error); };
+const headerPanels = [...document.querySelectorAll(".hits-header-panel")];
+headerPanels.forEach(panel=>panel.addEventListener("toggle",()=>{
+  if(panel.open)headerPanels.forEach(other=>{if(other!==panel)other.open=false;});
+}));
+document.addEventListener("click",event=>{if(!event.target.closest(".hits-header-panel"))headerPanels.forEach(panel=>{panel.open=false;});});
+document.addEventListener("keydown",event=>{if(event.key==="Escape")headerPanels.forEach(panel=>{panel.open=false;});});
 async function api(url, options={}) {
   const res = await fetch(url, {cache:"no-store",...options}); const data=await res.json();
   if(!res.ok) throw new Error(data.error || "请求失败，请稍后重试。"); return data;
