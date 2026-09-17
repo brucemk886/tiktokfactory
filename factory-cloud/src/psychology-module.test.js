@@ -269,7 +269,14 @@ test("psychology photo template is an online Z-Image to official photo publishin
   const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
   const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
   assert.match(html,/图文发布模板/);
+  assert.doesNotMatch(html,/选择图片与封面|selectedPhotos|photoCount|<option>8<\/option>/);
+  assert.match(html,/id="publishTime"[\s\S]*id="musicSoundId"[\s\S]*id="privacyLevel"/);
+  assert.match(html,/id="imagePrompt" class="photo-compact-textarea" rows="3"/);
+  assert.match(html,/id="publishCaption" class="photo-compact-textarea" rows="3"/);
   assert.match(browser,/imageModel: "z-image"/);
+  assert.match(browser,/function publicationPhotos\(\)/);
+  assert.match(browser,/photoCoverIndex: 0/);
+  assert.doesNotMatch(browser,/state\.selected|coverKey|toggleGeneratedPhoto|changeSelectedPhoto/);
   assert.match(browser,/\/api\/official-tiktok\/photo-assets\/import/);
   assert.match(browser,/\/api\/official-tiktok\/photo-publish/);
   assert.match(cloud,/\/api\/v1\/publish\/assets/);

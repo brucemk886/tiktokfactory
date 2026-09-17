@@ -1,12 +1,10 @@
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { accounts: [], groups: [], project: null, tasks: [], selected: [], coverKey: "", pollTimer: 0, busy: false };
+const state = { accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
 $("#refreshBtn")?.addEventListener("click", loadPage);
 $("#generateBtn")?.addEventListener("click", generateImages);
-$("#photoList")?.addEventListener("click", toggleGeneratedPhoto);
-$("#selectedPhotos")?.addEventListener("click", changeSelectedPhoto);
 $("#musicSoundId")?.addEventListener("input", syncMusicMode);
 $("#publishBtn")?.addEventListener("click", publishPhotoPost);
 loadPage();
@@ -29,8 +27,6 @@ async function loadPage() {
       if (!job) throw new Error('未找到这组同行爆款图文。');
       const plan = job.result?.plan || job.plan || {};
       peerJobPhotos = (job.result?.results || job.results || []).filter(item => item.imageModel === 'z-image' && /^https:\/\//i.test(item.imageUrl || '')).map((item, index) => ({ key: `${peerJobId}:${index}`, peerJobId, resultIndex: index, url: item.imageUrl, prompt: item.title, createdAt: job.createdAt }));
-      state.selected = peerJobPhotos.map(photo => photo.key);
-      state.coverKey = state.selected[0] || '';
       $('#photoTitle').value = plan.title || '';
       $('#publishCaption').value = plan.caption || '';
     }
@@ -45,7 +41,7 @@ async function loadPage() {
 async function generateImages() {
   const prompt = $("#imagePrompt").value.trim();
   if (prompt.length < 2) return setGenerateMessage("请先填写画面描述。", true);
-  const count = Math.max(1, Math.min(8, Number($("#imageCount").value) || 1));
+  const count = Math.max(1, Math.min(6, Number($("#imageCount").value) || 1));
   const button = $("#generateBtn");
   button.disabled = true;
   button.textContent = "正在提交…";
@@ -59,6 +55,8 @@ async function generateImages() {
     const created = results.flatMap((result) => result.status === "fulfilled" ? [result.value.task] : []);
     const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason?.message || String(result.reason)] : []);
     if (!created.length) throw new Error(failures[0] || "Z-Image 任务提交失败。");
+    peerJobPhotos = [];
+    state.currentTaskIds = created.map((task) => task.id);
     state.tasks = [...created, ...state.tasks];
     renderGeneratedPhotos();
     watchPending();
@@ -89,60 +87,24 @@ function generatedPhotos() {
   return [...peerJobPhotos, ...state.tasks.flatMap((task) => (task.status === "success" ? (task.resultUrls || []).map((url, index) => ({ key: `${task.id}:${index}`, generationId: task.id, resultIndex: index, url, prompt: task.prompt, createdAt: task.createdAt })) : []))];
 }
 
+function publicationPhotos() {
+  if (peerJobPhotos.length) return peerJobPhotos.slice(0, 6);
+  if (state.currentTaskIds.length) {
+    const current = new Set(state.currentTaskIds);
+    return generatedPhotos().filter((photo) => current.has(photo.generationId)).slice(0, 6);
+  }
+  return generatedPhotos().slice(0, 6);
+}
+
 function renderAll() {
   renderGeneratedPhotos();
-  renderSelectedPhotos();
   renderAccounts();
 }
 
 function renderGeneratedPhotos() {
-  const photos = generatedPhotos();
-  const selected = new Set(state.selected);
-  $("#photoList").innerHTML = photos.length ? photos.map((photo) => `<button class="generated-photo-card${selected.has(photo.key) ? " is-selected" : ""}" type="button" data-photo-key="${escapeAttr(photo.key)}"><img src="${escapeAttr(photo.url)}" alt="Z-Image 生成结果" loading="lazy"><span title="${escapeAttr(photo.prompt)}">${escapeHtml(shorten(photo.prompt, 56))}</span></button>`).join("") : '<div class="generated-photo-empty">还没有可用图片。先在上方输入描述并生成。</div>';
+  const photos = publicationPhotos();
+  $("#photoList").innerHTML = photos.length ? photos.map((photo, index) => `<article class="generated-photo-card"><img src="${escapeAttr(photo.url)}" alt="图集第 ${index + 1} 张" loading="lazy"><span>${index + 1}${index === 0 ? " · 默认封面" : ""}</span></article>`).join("") : '<div class="generated-photo-empty">还没有可用图片。生成完成后会按顺序自动加入图集，第一张作为封面。</div>';
   updateGenerationState();
-}
-
-function toggleGeneratedPhoto(event) {
-  const card = event.target.closest("[data-photo-key]");
-  if (!card) return;
-  const key = card.dataset.photoKey;
-  const index = state.selected.indexOf(key);
-  if (index >= 0) state.selected.splice(index, 1);
-  else if (state.selected.length < 6) state.selected.push(key);
-  else return setPublishResult("每条图片帖子最多 6 张图片。");
-  if (!state.coverKey || !state.selected.includes(state.coverKey)) state.coverKey = state.selected[0] || "";
-  renderGeneratedPhotos();
-  renderSelectedPhotos();
-}
-
-function renderSelectedPhotos() {
-  const lookup = new Map(generatedPhotos().map((photo) => [photo.key, photo]));
-  state.selected = state.selected.filter((key) => lookup.has(key));
-  if (!state.selected.includes(state.coverKey)) state.coverKey = state.selected[0] || "";
-  $("#photoCount").textContent = `已选 ${state.selected.length} / 6 张`;
-  $("#selectedPhotos").innerHTML = state.selected.map((key, index) => {
-    const photo = lookup.get(key);
-    return `<article class="selected-photo-row" data-selected-key="${escapeAttr(key)}"><img src="${escapeAttr(photo.url)}" alt="图集第 ${index + 1} 张"><strong>${index + 1}. ${escapeHtml(shorten(photo.prompt, 72))}</strong><div class="selected-photo-actions"><button type="button" data-action="left" ${index === 0 ? "disabled" : ""}>←</button><button type="button" data-action="right" ${index === state.selected.length - 1 ? "disabled" : ""}>→</button><button class="${key === state.coverKey ? "is-cover" : ""}" type="button" data-action="cover">${key === state.coverKey ? "封面" : "设为封面"}</button><button type="button" data-action="remove">删除</button></div></article>`;
-  }).join("");
-}
-
-function changeSelectedPhoto(event) {
-  const button = event.target.closest("[data-action]");
-  const row = event.target.closest("[data-selected-key]");
-  if (!button || !row) return;
-  const key = row.dataset.selectedKey;
-  const index = state.selected.indexOf(key);
-  const action = button.dataset.action;
-  if (action === "remove") state.selected.splice(index, 1);
-  else if (action === "cover") state.coverKey = key;
-  else {
-    const next = action === "left" ? index - 1 : index + 1;
-    if (next < 0 || next >= state.selected.length) return;
-    [state.selected[index], state.selected[next]] = [state.selected[next], state.selected[index]];
-  }
-  if (!state.selected.includes(state.coverKey)) state.coverKey = state.selected[0] || "";
-  renderGeneratedPhotos();
-  renderSelectedPhotos();
 }
 
 function renderAccounts() {
@@ -162,12 +124,12 @@ function syncMusicMode() {
 async function publishPhotoPost() {
   if (state.busy) return;
   const connectionId = document.querySelector(".publish-account:checked")?.value || "";
-  if (!state.selected.length) return setPublishResult("请先选择 1–6 张生成图片。");
+  const selections = publicationPhotos();
+  if (!selections.length) return setPublishResult("请先生成 1–6 张图片。");
+  if (state.currentTaskIds.some((id) => !FINAL_STATES.has(state.tasks.find((task) => task.id === id)?.status))) return setPublishResult("本批图片仍在生成，请等待全部完成后发布。");
   if (!connectionId) return setPublishResult("请先选择发布账号。");
   const musicSoundId = $("#musicSoundId").value.trim();
   if (musicSoundId && !/^\d{1,30}$/.test(musicSoundId)) return setPublishResult("音乐 ID 只能包含数字。");
-  const lookup = new Map(generatedPhotos().map((photo) => [photo.key, photo]));
-  const selections = state.selected.map((key) => lookup.get(key)).filter(Boolean);
   const scheduleAt = $("#publishTime").value ? new Date($("#publishTime").value).getTime() : 0;
   state.busy = true;
   $("#publishBtn").disabled = true;
@@ -189,7 +151,7 @@ async function publishPhotoPost() {
         title: $("#photoTitle").value.trim(), caption: $("#publishCaption").value,
         privacyLevel: $("#privacyLevel").value, disableComment: !$("#allowComments").checked,
         autoAddMusic: !musicSoundId && $("#autoAddMusic").checked, ...(musicSoundId ? { musicSoundId } : {}),
-        photoCoverIndex: Math.max(0, state.selected.indexOf(state.coverKey)), scheduleAt,
+        photoCoverIndex: 0, scheduleAt,
       }),
     });
     setPublishResult(data.message || `图片帖子已提交，批次 ${data.batchId || ""}`);
@@ -203,7 +165,7 @@ async function publishPhotoPost() {
 
 function updateGenerationState() {
   const active = state.tasks.filter((task) => !FINAL_STATES.has(task.status)).length;
-  const complete = generatedPhotos().length;
+  const complete = publicationPhotos().length;
   $("#generationState").textContent = active ? `${active} 个任务生成中 · ${complete} 张可用` : `${complete} 张可用`;
 }
 async function requestJson(url, options = {}) { const response = await fetch(url, { ...options, cache: "no-store" }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || `请求失败：HTTP ${response.status}`); return data; }
@@ -211,6 +173,5 @@ function setGenerateMessage(message, error = false) { $("#generateMessage").text
 function setPublishResult(message) { $("#publishResult").textContent = message; }
 function showStatus(message) { const node = $("#pageStatus"); node.textContent = message; node.classList.add("is-visible"); }
 function hideStatus() { $("#pageStatus")?.classList.remove("is-visible"); }
-function shorten(value, limit) { const text = String(value || "").replace(/\s+/g, " ").trim(); return text.length > limit ? `${text.slice(0, limit)}…` : text; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]); }
 function escapeAttr(value) { return escapeHtml(value); }
