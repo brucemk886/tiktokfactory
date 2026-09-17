@@ -76,3 +76,20 @@ test("directory rows keep list fields without shipping full profile json", async
   assert.equal(account.profile.username, "demo");
   assert.equal(account.syncedVideoCount, 12);
 });
+
+test("account directory keeps live authorized accounts after a normal page reload", async () => {
+  const { mergeOfficialAccountDirectory } = await import("./official.js");
+  const archived = Array.from({ length: 45 }, (_, index) => ({
+    schema: `tiktok:account-${index + 1}`,
+    label: `Archived ${index + 1}`,
+  }));
+  const live = Array.from({ length: 65 }, (_, index) => ({
+    schema: `tiktok:account-${index + 1}`,
+    connectionId: `account-${index + 1}`,
+    label: `Live ${index + 1}`,
+  }));
+  const merged = mergeOfficialAccountDirectory(archived, live);
+  assert.equal(merged.length, 65);
+  assert.equal(merged.filter((account) => account.schema === "tiktok:account-1").length, 1);
+  assert.equal(merged.at(-1).connectionId, "account-65");
+});

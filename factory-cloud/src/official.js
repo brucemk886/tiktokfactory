@@ -346,20 +346,56 @@ async function listAllAccounts(env, db, refresh = false) {
     await refreshOfficialArchive(env, db);
   }
   const store = await loadGroupStore(db);
-  const accounts = directoryAccountsFromRows(await listAccountDirectory(db));
-  // Only identifiers of factory-owner accounts are discoverable before assignment.
-  if (refresh || !accounts.length) {
-    const known = new Set(accounts.map(account => account.schema));
+  const archivedAccounts = directoryAccountsFromRows(await listAccountDirectory(db));
+  let liveAccounts = [];
+  let liveError = null;
+  // The analytics archive can legitimately lag behind newly authorized
+  // accounts. Always merge the current Signal Desk directory so a normal page
+  // reload does not shrink the account list that a manual refresh just showed.
+  try {
     let cursor = "";
     for (let page = 0; page < 100; page++) {
       const params = new URLSearchParams({limit:"100", cursor});
       const data = await signalDesk(env, db, `/api/integrations/local-factory/accounts?${params}`);
-      for (const account of data.accounts || []) if (!known.has(account.schema)) { accounts.push(account); known.add(account.schema); }
+      liveAccounts.push(...(Array.isArray(data.accounts) ? data.accounts : []));
       if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
       cursor = data.nextCursor;
     }
+  } catch (error) {
+    liveError = error;
   }
-  return attachAccounts({ connected: true, source: refresh ? "archive-refresh" : "archive", accounts }, store);
+  if (liveError && !archivedAccounts.length) throw liveError;
+  const accounts = mergeOfficialAccountDirectory(archivedAccounts, liveAccounts);
+  return attachAccounts({
+    connected: true,
+    source: liveAccounts.length ? (refresh ? "archive-refresh+live" : "archive+live") : "archive-fallback",
+    accounts
+  }, store);
+}
+
+export function mergeOfficialAccountDirectory(archivedAccounts = [], liveAccounts = []) {
+  const merged = [];
+  const known = new Set();
+  for (const account of [...archivedAccounts, ...liveAccounts]) {
+    const keys = officialDirectoryKeys(account);
+    if (keys.some((key) => known.has(key))) continue;
+    merged.push(account);
+    keys.forEach((key) => known.add(key));
+  }
+  return merged;
+}
+
+function officialDirectoryKeys(account = {}) {
+  return Array.from(new Set([
+    account.schema,
+    account.accountKey,
+    account.connectionId,
+    account.id,
+    account.username,
+    account.profile?.username
+  ].map((value) => String(value || "").trim().replace(/^@/, "")).filter(Boolean).flatMap((value) => (
+    value.toLowerCase().startsWith("tiktok:") ? [value, value.slice(7)] : [value, `tiktok:${value}`]
+  ))));
 }
 
 async function publicOfficialSettings(db, env) {
