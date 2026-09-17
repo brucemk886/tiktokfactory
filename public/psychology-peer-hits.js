@@ -36,7 +36,7 @@ async function loadList() {
       <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
       <td class="hits-voice"><select class="voice-gender-select" data-id="${escape(item.id)}" data-current="${escape(item.voiceGender || "male")}" aria-label="修改 ${escape(titleOf(item))} 的音色性别"><option value="male"${item.voiceGender !== "female" ? " selected" : ""}>男</option><option value="female"${item.voiceGender === "female" ? " selected" : ""}>女</option></select></td>
       <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:`打开${item.mediaType === "photo" ? "图文" : "视频"}`}</a></td>
-      <td class="hits-actions-cell"><div><button class="hits-move" type="button" data-id="${escape(item.id)}" data-target-type="${item.mediaType === "photo" ? "video" : "photo"}">${item.mediaType === "photo" ? "移到视频爆款" : "移到图文爆款"}</button><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></div></td>
+      <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
     </tr>`).join(""):'<tr><td colspan="14">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
     document.dispatchEvent(new CustomEvent('peer-list-loaded'));
     message("#listStatus",`共 ${data.total} 条${state.mediaType === "photo" ? "图文" : "视频"} · 未采集的数据以 — 显示`);
@@ -97,25 +97,12 @@ async function updateVoiceGender(select) {
     select.disabled = false;
   }
 }
-async function moveHit(button) {
-  const targetType = button.dataset.targetType;
-  if (!button.dataset.id || !["video","photo"].includes(targetType)) return;
-  button.disabled = true;
-  try {
-    const result = await api(`${API}/${encodeURIComponent(button.dataset.id)}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({mediaType:targetType})});
-    message("#listStatus",result.mediaType === "photo" ? "已移动到图文爆款。" : "已移动到视频爆款。");
-    document.dispatchEvent(new CustomEvent("peer-hit-moved",{detail:result}));
-    await loadList();
-  } catch (error) {
-    message("#listStatus",error.message,true);
-    button.disabled = false;
-  }
-}
 $("#hitRows").addEventListener("change",event=>{if(event.target.matches(".voice-gender-select"))updateVoiceGender(event.target);});
 $("#hitRows").addEventListener("click",event=>{
-  const move=event.target.closest(".hits-move"), remove=event.target.closest(".hits-delete");
-  if(move)moveHit(move);else if(remove)deleteHit(remove.dataset.id);
+  const remove=event.target.closest(".hits-delete");
+  if(remove)deleteHit(remove.dataset.id);
 });
+document.addEventListener("peer-list-refresh-request",loadList);
 $("#previousBtn").addEventListener("click",()=>{state.page--;loadList();});
 $("#nextBtn").addEventListener("click",()=>{state.page++;loadList();});
 $("#importForm").addEventListener("submit",async event=>{

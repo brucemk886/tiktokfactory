@@ -7,7 +7,7 @@ Make the psychology peer-hit table easier to scan, allow administrators to corre
 ## Decisions
 
 - The table keeps publish time, removes the redundant Beijing label, and adds first import time. Both are rendered in `Asia/Shanghai`.
-- Each row can move to the opposite media tab. A database lock preserves the administrator's manual type when later grokbot imports update the same record.
+- Selected rows can be moved together with the toolbar button beside `爆款复刻`; the target follows the active tab. A database lock preserves the administrator's manual type when later grokbot imports update the same record.
 - Photo source resolution, AI story parsing, manual photo selection and official publish validation all use a six-image maximum.
 - Source posts with more than six images retain the first six in their original order.
 - Copy and voice columns use narrower controls; the female option remains mapped to Lara server-side.

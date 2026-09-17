@@ -16,6 +16,10 @@
     });
     $('#selectionCount').textContent = `已选 ${selected.size} 条`;
     $('#produceBtn').disabled = busy || !selected.size;
+    const moveButton = $('#moveSelectedBtn');
+    const targetPhoto = (document.body.dataset.mediaType || 'video') === 'video';
+    moveButton.textContent = targetPhoto ? '移动到图文爆款' : '移动到视频爆款';
+    moveButton.disabled = busy || !selected.size;
     $('#clearSelectionBtn').disabled = busy;
   }
   async function api(url = endpoint, options = {}) {
@@ -26,7 +30,6 @@
   }
   document.addEventListener('peer-list-loaded', sync);
   document.addEventListener('peer-voice-gender-changed', () => { requestId = ''; });
-  document.addEventListener('peer-hit-moved', () => { selected.clear(); requestId = ''; sync(); });
   document.addEventListener('peer-media-type-changed', event => {
     selected.clear();
     requestId = '';
@@ -52,6 +55,30 @@
     selected.clear();
     requestId = '';
     sync();
+  });
+  $('#moveSelectedBtn').addEventListener('click', async () => {
+    if (busy || !selected.size) return;
+    const ids = [...selected];
+    const currentType = document.body.dataset.mediaType || 'video';
+    const targetType = currentType === 'photo' ? 'video' : 'photo';
+    busy = true;
+    sync();
+    notify(`正在移动 ${ids.length} 条内容…`);
+    const results = await Promise.allSettled(ids.map(id => api(`/api/psychology-peer-hits/${encodeURIComponent(id)}`, {
+      method:'PATCH',
+      headers:{ 'Content-Type':'application/json' },
+      body:JSON.stringify({ mediaType:targetType })
+    }).then(() => id)));
+    const moved = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+    moved.forEach(id => selected.delete(id));
+    requestId = '';
+    const failed = results.length - moved.length;
+    notify(failed
+      ? `已移动 ${moved.length} 条，${failed} 条移动失败，请重试。`
+      : `已移动 ${moved.length} 条到${targetType === 'photo' ? '图文' : '视频'}爆款。`, failed > 0);
+    busy = false;
+    sync();
+    document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
   });
   $('#produceBtn').addEventListener('click', async () => {
     if (busy || !selected.size) return;

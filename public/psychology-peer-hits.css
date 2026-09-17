@@ -55,10 +55,9 @@ body.module-page.psy-hits-page { min-width: 0; }
 .hits-panel .peer-select { width: 18px; height: 18px; }
 .hits-table-wrap .hits-voice { width: 66px; min-width: 66px; text-align: center; }
 .hits-table-wrap .voice-gender-select { width: 58px; min-width: 58px; margin: 0 auto; padding: 7px 5px; text-align: center; text-align-last: center; }
-.hits-actions-cell { width: 118px; min-width: 118px; }
-.hits-actions-cell > div { display: grid; gap: 7px; }
+.hits-actions-cell { width: 72px; min-width: 72px; }
 .hits-actions-cell button { width: 100%; padding: 7px 8px !important; white-space: nowrap; }
-.hits-move { background: #f2f5d6 !important; border-color: #bac56f !important; color: #46530d !important; }
+#moveSelectedBtn { background: #f2f5d6; border-color: #bac56f; color: #46530d; }
 #produceBtn { background: var(--lf-accent-fill, #dce59d); font-weight: 700; }
 .peer-job { padding: 18px 0; border-bottom: 1px solid var(--lf-line, #e4ded2); }
 .peer-job details { margin: 12px 0; }
