@@ -273,6 +273,9 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="publishTime"[\s\S]*id="musicSoundId"[\s\S]*id="privacyLevel"/);
   assert.match(html,/id="imagePrompt" class="photo-compact-textarea" rows="3"/);
   assert.match(html,/id="publishCaption" class="photo-compact-textarea" rows="3"/);
+  assert.match(html,/id="noImageText" type="checkbox"/);
+  assert.doesNotMatch(html,/id="noImageText"[^>]*checked/);
+  assert.match(html,/class="photo-layout"/);
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/photoCoverIndex: 0/);

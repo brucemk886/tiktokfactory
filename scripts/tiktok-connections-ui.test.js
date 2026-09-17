@@ -17,11 +17,15 @@ test("authorized account list is a view page with 20-account pagination", () => 
   assert.match(html, /新建项目 \/ 分组/);
   assert.match(html, /每页 20 个账号/);
   assert.match(html, /id="accountPager"/);
+  assert.match(html, /id="assignGroupBtn"/);
+  assert.match(html, /id="selectVisibleBtn"/);
+  assert.match(html, /id="moveGroupToProjectBtn"/);
   assert.doesNotMatch(html, /id="createProjectBtn"/);
   assert.doesNotMatch(html, /id="createGroupBtn"/);
   assert.doesNotMatch(html, /id="newProjectName"/);
   assert.match(script, /const PAGE_SIZE = 20/);
-  assert.match(script, /is-readonly/);
+  assert.match(script, /canSelectAccounts/);
+  assert.match(script, /account-check/);
 });
 
 test("creating projects and groups happens on a separate organize page", () => {
@@ -31,8 +35,13 @@ test("creating projects and groups happens on a separate organize page", () => {
   assert.match(html, /<h1>新建项目与分组<\/h1>/);
   assert.match(html, /id="createProjectBtn"/);
   assert.match(html, /id="createGroupBtn"/);
+  assert.match(html, /id="deleteProjectSelect"/);
+  assert.match(html, /id="deleteGroupSelect"/);
   assert.match(html, /href="\/tiktok-connections"/);
-  assert.match(html, /id="accountPager"/);
+  assert.doesNotMatch(html, /<h3>移动账号<\/h3>/);
+  assert.doesNotMatch(html, /id="assignGroupBtn"/);
+  assert.doesNotMatch(html, /id="accountList"/);
+  assert.doesNotMatch(html, /id="accountPager"/);
   assert.equal(pageFileFor("/tiktok-connections-organize"), "tiktok-connections-organize.html");
   assert.equal(moduleIdForPath("/tiktok-connections-organize"), "tiktok-connections");
   assert.equal(canAccessPath({ role: "admin", sidebarModules: ["tiktok-connections"] }, "/tiktok-connections-organize"), true);

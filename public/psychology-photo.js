@@ -34,6 +34,7 @@ async function loadPage() {
     watchPending();
     hideStatus();
   } catch (error) {
+    renderGeneratedPhotos();
     showStatus(error.message || "页面数据读取失败");
   }
 }

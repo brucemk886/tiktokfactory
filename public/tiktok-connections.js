@@ -12,6 +12,7 @@ const elements = {
   newProjectName: document.querySelector("#newProjectName"),
   createProjectBtn: document.querySelector("#createProjectBtn"),
   deleteProjectBtn: document.querySelector("#deleteProjectBtn"),
+  deleteProjectSelect: document.querySelector("#deleteProjectSelect"),
   groupFilter: document.querySelector("#groupFilter"),
   accountSearch: document.querySelector("#accountSearch"),
   newGroupName: document.querySelector("#newGroupName"),
@@ -27,12 +28,14 @@ const elements = {
   assignGroupSelect: document.querySelector("#assignGroupSelect"),
   assignGroupBtn: document.querySelector("#assignGroupBtn"),
   deleteGroupBtn: document.querySelector("#deleteGroupBtn"),
+  deleteGroupSelect: document.querySelector("#deleteGroupSelect"),
   selectedCount: document.querySelector("#selectedCount"),
   accountPager: document.querySelector("#accountPager"),
 };
 
 const PAGE_SIZE = 20;
 const isOrganizePage = document.body.dataset.connectionsPage === "organize";
+const canSelectAccounts = Boolean(document.querySelector("#assignGroupSelect") && document.querySelector("#accountList"));
 const state = { accounts: [], groups: [], projects: [], page: 1 };
 
 elements.saveButton?.addEventListener("click", saveSettings);
@@ -48,6 +51,7 @@ elements.projectFilter?.addEventListener("change", () => {
 });
 elements.groupFilter?.addEventListener("change", () => { state.page = 1; renderAccounts(); syncGroupReportBar(); });
 elements.accountSearch?.addEventListener("input", () => { state.page = 1; renderAccounts(); });
+elements.deleteProjectSelect?.addEventListener("change", fillDeleteGroupSelect);
 elements.createProjectBtn?.addEventListener("click", createProject);
 elements.deleteProjectBtn?.addEventListener("click", deleteCurrentProject);
 elements.createGroupBtn?.addEventListener("click", createGroup);
@@ -106,7 +110,7 @@ async function testConnection() {
 
 async function loadAccounts({ refresh = false } = {}) {
   setBusy(elements.refreshButton, true, refresh ? "正在从主站同步..." : "刷新中...");
-  elements.accountList.innerHTML = '<div class="empty-state">正在读取已授权账号...</div>';
+  if (elements.accountList) elements.accountList.innerHTML = '<div class="empty-state">正在读取已授权账号...</div>';
   try {
     const [result, hub] = await Promise.all([
       requestJson(`/api/private-tiktok/accounts${refresh ? "?refresh=1" : ""}`),
@@ -124,7 +128,7 @@ async function loadAccounts({ refresh = false } = {}) {
     showStatus(`已读取 ${state.accounts.length} 个已授权账号，${state.projects.length} 个项目，${state.groups.length} 个分组。`);
   } catch (error) {
     state.accounts = [];
-    elements.accountList.innerHTML = '<div class="empty-state">暂时无法读取账号。</div>';
+    if (elements.accountList) elements.accountList.innerHTML = '<div class="empty-state">暂时无法读取账号。</div>';
     showStatus(error.message || "读取已授权账号失败。", true);
   } finally {
     setBusy(elements.refreshButton, false, "刷新账号");
@@ -132,10 +136,17 @@ async function loadAccounts({ refresh = false } = {}) {
 }
 
 function fillProjectSelects() {
-  const current = elements.projectFilter.value;
+  const current = elements.projectFilter?.value || "";
   const options = state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}（${project.groupCount || 0} 组）</option>`).join("");
-  elements.projectFilter.innerHTML = `<option value="">全部项目</option><option value="unassigned">未分配项目</option>${options}`;
-  if ([...elements.projectFilter.options].some((item) => item.value === current)) elements.projectFilter.value = current;
+  if (elements.projectFilter) {
+    elements.projectFilter.innerHTML = `<option value="">全部项目</option><option value="unassigned">未分配项目</option>${options}`;
+    if ([...elements.projectFilter.options].some((item) => item.value === current)) elements.projectFilter.value = current;
+  }
+  if (elements.deleteProjectSelect) {
+    const selected = elements.deleteProjectSelect.value;
+    elements.deleteProjectSelect.innerHTML = `<option value="">请选择项目</option>${state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`).join("")}`;
+    if ([...elements.deleteProjectSelect.options].some((item) => item.value === selected)) elements.deleteProjectSelect.value = selected;
+  }
   if (elements.groupProjectSelect) {
     const selected = elements.groupProjectSelect.value;
     elements.groupProjectSelect.innerHTML = `<option value="">未分配项目</option>${state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`).join("")}`;
@@ -162,7 +173,7 @@ function syncNewGroupProjectFromFilter() {
 }
 
 function visibleGroups() {
-  const projectId = elements.projectFilter.value;
+  const projectId = elements.projectFilter?.value || "";
   return state.groups.filter((group) => {
     if (projectId === "unassigned") return !group.projectId;
     if (projectId) return group.projectId === projectId;
@@ -192,12 +203,22 @@ function fillGroupSelects() {
     elements.moveGroupSelect.innerHTML = `<option value="">请选择分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
     if ([...elements.moveGroupSelect.options].some((item) => item.value === currentMove)) elements.moveGroupSelect.value = currentMove;
   }
+  fillDeleteGroupSelect();
+}
+
+function fillDeleteGroupSelect() {
+  if (!elements.deleteGroupSelect) return;
+  const projectId = elements.deleteProjectSelect?.value || "";
+  const groups = state.groups.filter((group) => !projectId || group.projectId === projectId);
+  const current = elements.deleteGroupSelect.value;
+  elements.deleteGroupSelect.innerHTML = `<option value="">请选择分组</option>${groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
+  if ([...elements.deleteGroupSelect.options].some((item) => item.value === current)) elements.deleteGroupSelect.value = current;
 }
 
 function visibleAccounts() {
-  const projectId = elements.projectFilter.value;
-  const groupId = elements.groupFilter.value;
-  const query = String(elements.accountSearch.value || "").trim().toLowerCase();
+  const projectId = elements.projectFilter?.value || "";
+  const groupId = elements.groupFilter?.value || "";
+  const query = String(elements.accountSearch?.value || "").trim().toLowerCase();
   return state.accounts.filter((account) => {
     if (projectId === "unassigned" && account.projectId) return false;
     if (projectId && projectId !== "unassigned" && account.projectId !== projectId) return false;
@@ -222,6 +243,7 @@ function pagedAccounts() {
 }
 
 function renderAccounts() {
+  if (!elements.accountList) return;
   const paged = pagedAccounts();
   if (!state.accounts.length) {
     elements.accountList.innerHTML = '<div class="empty-state">暂无已授权账号。请先前往 TikTok AI Tool 完成授权。</div>';
@@ -244,10 +266,10 @@ function renderAccounts() {
     const key = accountKey(account);
     const risk = account.publishRisk;
     const riskTitle = risk?.flagged ? `${risk.label || "官方接口风控"}（${risk.reason || "spam_risk"}）${Number(risk.count || 0) > 1 ? ` · ${risk.count} 次` : ""}` : "";
-    const checkbox = isOrganizePage
+    const checkbox = canSelectAccounts
       ? `<input class="account-check" type="checkbox" value="${escapeHtml(key)}" data-schema="${escapeHtml(account.schema || "")}" data-username="${escapeHtml(profile.username || "")}" />`
       : "";
-    return `<article class="account-row${isOrganizePage ? "" : " is-readonly"}${risk?.flagged ? " is-risk" : ""}">
+    return `<article class="account-row${canSelectAccounts ? "" : " is-readonly"}${risk?.flagged ? " is-risk" : ""}">
       ${checkbox}
       <div><strong>${escapeHtml(username)}${risk?.flagged ? `<span class="risk-pill" title="${escapeHtml(riskTitle)}">风控</span>` : ""}</strong><span>${escapeHtml(displayName)}</span></div>
       <div><small>项目 / 分组</small><b class="group-chip${account.groupName ? "" : " is-empty"}">${escapeHtml([account.projectName, account.groupName || "未分组"].filter(Boolean).join(" / "))}</b></div>
@@ -256,7 +278,10 @@ function renderAccounts() {
       <div><small>状态</small><b class="${risk?.flagged ? "risk-pill" : "ready-pill"}" title="${escapeHtml(riskTitle)}">${risk?.flagged ? "风控" : "已授权"}</b></div>
     </article>`;
   }).join("");
-  elements.accountList.querySelectorAll(".account-check").forEach((input) => input.addEventListener("change", updateSelectedCount));
+  elements.accountList.querySelectorAll(".account-check").forEach((input) => input.addEventListener("change", () => {
+    input.closest(".account-row")?.classList.toggle("is-checked", input.checked);
+    updateSelectedCount();
+  }));
   renderPager(paged.total, paged.pageCount);
   updateSelectedCount();
 }
@@ -309,14 +334,17 @@ function applyOrganizeQuery() {
 }
 
 function selectVisible() {
-  const inputs = Array.from(elements.accountList.querySelectorAll(".account-check"));
+  const inputs = Array.from(elements.accountList?.querySelectorAll(".account-check") || []);
   const shouldCheck = inputs.some((input) => !input.checked);
-  inputs.forEach((input) => { input.checked = shouldCheck; });
+  inputs.forEach((input) => {
+    input.checked = shouldCheck;
+    input.closest(".account-row")?.classList.toggle("is-checked", shouldCheck);
+  });
   updateSelectedCount();
 }
 
 function selectedAccounts() {
-  return Array.from(elements.accountList.querySelectorAll(".account-check:checked")).map((input) => ({
+  return Array.from(elements.accountList?.querySelectorAll(".account-check:checked") || []).map((input) => ({
     accountKey: input.value,
     schema: input.dataset.schema || "",
     username: input.dataset.username || ""
@@ -336,7 +364,8 @@ async function createProject() {
     elements.newProjectName.value = "";
     applyGroupState(result);
     const created = result.projects?.find((item) => item.name === name);
-    if (created) elements.projectFilter.value = created.id;
+    if (created && elements.projectFilter) elements.projectFilter.value = created.id;
+    if (created && elements.deleteProjectSelect) elements.deleteProjectSelect.value = created.id;
     fillGroupSelects();
     showStatus(`已创建项目「${name}」。`);
   } catch (error) {
@@ -347,22 +376,23 @@ async function createProject() {
 }
 
 async function deleteCurrentProject() {
-  const projectId = elements.projectFilter.value;
-  if (!projectId || projectId === "unassigned") return showStatus("请先在筛选里选中要删除的项目。", true);
+  const projectId = elements.deleteProjectSelect?.value || elements.projectFilter?.value || "";
+  if (!projectId || projectId === "unassigned") return showStatus("请先选择要删除的项目。", true);
   const project = state.projects.find((item) => item.id === projectId);
   if (!window.confirm(`删除项目「${project?.name || projectId}」后，组还会在，只是不再属于这个项目。确定删除吗？`)) return;
   setBusy(elements.deleteProjectBtn, true, "删除中...");
   try {
     const result = await requestJson(`/api/official-tiktok/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
     applyGroupState(result);
-    elements.projectFilter.value = "";
+    if (elements.projectFilter) elements.projectFilter.value = "";
+    if (elements.deleteProjectSelect) elements.deleteProjectSelect.value = "";
     fillGroupSelects();
     renderAccounts();
     showStatus("项目已删除。");
   } catch (error) {
     showStatus(error.message || "删除项目失败。", true);
   } finally {
-    setBusy(elements.deleteProjectBtn, false, "删除当前项目");
+    setBusy(elements.deleteProjectBtn, false, "删除所选项目");
   }
 }
 
@@ -381,7 +411,8 @@ async function createGroup() {
     });
     elements.newGroupName.value = "";
     applyGroupState(result);
-    if (project) elements.projectFilter.value = project.id;
+    if (project && elements.projectFilter) elements.projectFilter.value = project.id;
+    if (project && elements.deleteProjectSelect) elements.deleteProjectSelect.value = project.id;
     fillGroupSelects();
     showStatus(`已在「${project?.name || "项目"}」下创建分组「${name}」。`);
   } catch (error) {
@@ -418,7 +449,7 @@ async function applyGroupProject(groupId, projectId, button) {
       body: JSON.stringify({ projectId })
     });
     applyGroupState(result);
-    elements.projectFilter.value = projectId;
+    if (elements.projectFilter) elements.projectFilter.value = projectId;
     if (elements.groupFilter) elements.groupFilter.value = groupId;
     fillGroupSelects();
     renderAccounts();
@@ -452,21 +483,22 @@ async function assignSelected() {
 }
 
 async function deleteCurrentGroup() {
-  const groupId = elements.groupFilter.value;
-  if (!groupId || groupId === "ungrouped") return showStatus("请先在筛选里选中要删除的分组。", true);
+  const groupId = elements.deleteGroupSelect?.value || elements.groupFilter?.value || "";
+  if (!groupId || groupId === "ungrouped") return showStatus("请先选择要删除的分组。", true);
   const group = state.groups.find((item) => item.id === groupId);
   if (!window.confirm(`删除分组「${group?.name || groupId}」后，组内账号会回到未分组。确定删除吗？`)) return;
   setBusy(elements.deleteGroupBtn, true, "删除中...");
   try {
     const result = await requestJson(`/api/official-tiktok/account-groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
     applyGroupState(result);
-    elements.groupFilter.value = "";
+    if (elements.groupFilter) elements.groupFilter.value = "";
+    if (elements.deleteGroupSelect) elements.deleteGroupSelect.value = "";
     renderAccounts();
     showStatus("分组已删除，账号已回到未分组。");
   } catch (error) {
     showStatus(error.message || "删除分组失败。", true);
   } finally {
-    setBusy(elements.deleteGroupBtn, false, "删除当前分组");
+    setBusy(elements.deleteGroupBtn, false, "删除所选分组");
   }
 }
 
@@ -495,7 +527,7 @@ function applyGroupState(result) {
 }
 
 function currentGroupId() {
-  const groupId = elements.groupFilter.value;
+  const groupId = elements.groupFilter?.value || "";
   return groupId && groupId !== "ungrouped" ? groupId : "";
 }
 
@@ -530,7 +562,7 @@ function normalizeAccountKey(value) {
 }
 
 function updateSelectedCount() {
-  const count = elements.accountList.querySelectorAll(".account-check:checked").length;
+  const count = elements.accountList?.querySelectorAll(".account-check:checked").length || 0;
   if (elements.selectedCount) elements.selectedCount.textContent = `已选 ${count} 个`;
 }
 
@@ -540,6 +572,7 @@ function updateAuthorizeLink() {
 }
 
 function showStatus(message, isError = false) {
+  if (!elements.statusMessage) return;
   elements.statusMessage.hidden = false;
   elements.statusMessage.textContent = message;
   elements.statusMessage.classList.toggle("is-error", isError);

@@ -26,7 +26,7 @@
         <div>
           <p class="eyebrow">OFFICIAL TIKTOK DATA</p>
           <h1>新建项目与分组</h1>
-          <p>先建项目，再在项目下建分组，然后把账号移进去。</p>
+          <p>先建项目，再在项目下建分组。账号勾选与移入请回列表页操作。</p>
         </div>
         <a class="secondary-button link-button" href="/tiktok-connections">返回账号列表</a>
       </header>
@@ -56,55 +56,23 @@
       <section class="workflow-section">
         <div class="section-head">
           <span>02</span>
-          <div><h2>移动与删除</h2><p>勾选账号移入分组，或把整个分组换到另一个项目。</p></div>
+          <div><h2>删除</h2><p>删除项目后，分组仍在，只是不再属于该项目。删除分组后，组内账号回到未分组。</p></div>
         </div>
         <div class="account-panels">
           <section class="account-panel">
-            <h3>筛选账号</h3>
-            <div class="account-toolbar filter-toolbar">
-              <label><span>项目</span><select id="projectFilter"><option value="">全部项目</option></select></label>
-              <label><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
-              <label class="account-search"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="用户名或显示名" /></label>
-            </div>
-          </section>
-          <section class="account-panel">
-            <h3>移动账号</h3>
-            <div class="account-toolbar assign-toolbar">
-              <button id="selectVisibleBtn" class="secondary-button" type="button">全选本页</button>
-              <label><span>将已选移入</span><select id="assignGroupSelect"><option value="">未分组</option></select></label>
-              <button id="assignGroupBtn" class="primary-button" type="button">移入分组</button>
-              <span id="selectedCount" class="selected-count">已选 0 个</span>
-            </div>
-          </section>
-          <section class="account-panel">
-            <h3>移动分组</h3>
-            <div class="account-toolbar move-group-toolbar">
-              <label><span>将分组</span><select id="moveGroupSelect"><option value="">请选择分组</option></select></label>
-              <label><span>移入项目</span><select id="moveGroupProjectSelect"><option value="">请选择项目</option></select></label>
-              <button id="moveGroupToProjectBtn" class="primary-button" type="button">移入项目</button>
-            </div>
-          </section>
-          <section class="account-panel">
-            <h3>删除</h3>
+            <h3>删除项目或分组</h3>
             <div class="account-toolbar manage-toolbar">
-              <button id="deleteProjectBtn" class="secondary-button" type="button">删除当前筛选项目</button>
-              <button id="deleteGroupBtn" class="secondary-button" type="button">删除当前筛选分组</button>
-            </div>
-          </section>
-          <section class="account-panel group-report-toolbar" id="groupReportBar" hidden>
-            <h3>当前分组</h3>
-            <div class="account-toolbar report-toolbar">
-              <label><span>所属项目</span><select id="groupProjectSelect"><option value="">未分配项目</option></select></label>
-              <button id="saveGroupProjectBtn" class="primary-button" type="button">移入项目</button>
+              <label><span>项目</span><select id="deleteProjectSelect"><option value="">请选择项目</option></select></label>
+              <button id="deleteProjectBtn" class="secondary-button" type="button">删除所选项目</button>
+              <label><span>分组</span><select id="deleteGroupSelect"><option value="">请选择分组</option></select></label>
+              <button id="deleteGroupBtn" class="secondary-button" type="button">删除所选分组</button>
             </div>
           </section>
         </div>
         <div id="statusMessage" class="status-message" hidden></div>
-        <div id="accountList" class="account-list"><div class="empty-state">正在读取已授权账号...</div></div>
-        <div id="accountPager" class="account-pager" hidden></div>
       </section>
     </main>
     <script src="/access.js"></script>
-    <script type="module" src="/tiktok-connections.js?v=20260917-1"></script>
+    <script type="module" src="/tiktok-connections.js?v=20260917-2"></script>
   </body>
 </html>
