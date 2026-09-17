@@ -52,7 +52,8 @@ body.module-page.psy-hits-page { min-width: 0; }
 #newKeyPanel { margin-top: 16px; }
 #copyKeyBtn { margin-top: 8px; }
 .hits-panel .peer-select { width: 18px; height: 18px; }
-.hits-table-wrap .voice-gender-select { width: 112px; min-width: 112px; padding: 7px 9px; }
+.hits-table-wrap .hits-voice { text-align: center; }
+.hits-table-wrap .voice-gender-select { width: 112px; min-width: 112px; margin: 0 auto; padding: 7px 9px; text-align: center; text-align-last: center; }
 #produceBtn { background: var(--lf-accent-fill, #dce59d); font-weight: 700; }
 .peer-job { padding: 18px 0; border-bottom: 1px solid var(--lf-line, #e4ded2); }
 .peer-job details { margin: 12px 0; }

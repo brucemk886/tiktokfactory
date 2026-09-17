@@ -33,7 +33,7 @@ async function loadList() {
       <td class="hits-time">${time(item.publishedAt)}</td>
       <td class="hits-title" title="${escape(titleOf(item))}"><span>${escape(titleOf(item))}</span></td>
       <td class="hits-copy" title="${escape(copyOf(item))}"><span>${escape(copyOf(item))}</span></td>
-      <td><select class="voice-gender-select" data-id="${escape(item.id)}" data-current="${escape(item.voiceGender || "male")}" aria-label="修改 ${escape(titleOf(item))} 的音色性别"><option value="male"${item.voiceGender !== "female" ? " selected" : ""}>男</option><option value="female"${item.voiceGender === "female" ? " selected" : ""}>女 · Lara</option></select></td>
+      <td class="hits-voice"><select class="voice-gender-select" data-id="${escape(item.id)}" data-current="${escape(item.voiceGender || "male")}" aria-label="修改 ${escape(titleOf(item))} 的音色性别"><option value="male"${item.voiceGender !== "female" ? " selected" : ""}>男</option><option value="female"${item.voiceGender === "female" ? " selected" : ""}>女 · Lara</option></select></td>
       <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:`打开${item.mediaType === "photo" ? "图文" : "视频"}`}</a></td>
       <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
     </tr>`).join(""):'<tr><td colspan="13">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
