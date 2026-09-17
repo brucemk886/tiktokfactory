@@ -509,6 +509,10 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "tiktok-connections.html"), "text/html; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/tiktok-connections-organize") {
+      return sendFile(res, path.join(publicDir, "tiktok-connections-organize.html"), "text/html; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/tiktok-connections.js") {
       return sendFile(res, path.join(publicDir, "tiktok-connections.js"), "text/javascript; charset=utf-8");
     }

@@ -171,6 +171,7 @@ function createSidebarGroup(group, items) {
 
 function sidebarPath(pathname) {
   const normalized = pathname.replace(/\/$/, "") || "/";
+  if (normalized === "/tiktok-connections-organize") return "/tiktok-connections";
   if (["/official-account-detail", "/official-account-videos", "/official-video-detail"].includes(normalized)) return "/official-analytics";
   if (["/novel-rewrite", "/novel-audio", "/rewrite-records"].includes(normalized)) return "/novel-library";
   if (normalized === "/psychology-narrative") return "/psychology-target-2";

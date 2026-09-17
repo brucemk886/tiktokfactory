@@ -28,22 +28,26 @@ const elements = {
   assignGroupBtn: document.querySelector("#assignGroupBtn"),
   deleteGroupBtn: document.querySelector("#deleteGroupBtn"),
   selectedCount: document.querySelector("#selectedCount"),
+  accountPager: document.querySelector("#accountPager"),
 };
 
-const state = { accounts: [], groups: [], projects: [] };
+const PAGE_SIZE = 20;
+const isOrganizePage = document.body.dataset.connectionsPage === "organize";
+const state = { accounts: [], groups: [], projects: [], page: 1 };
 
 elements.saveButton?.addEventListener("click", saveSettings);
 elements.testButton?.addEventListener("click", testConnection);
 elements.refreshButton?.addEventListener("click", () => loadAccounts({ refresh: true }));
 elements.bridgeUrl?.addEventListener("input", updateAuthorizeLink);
 elements.projectFilter?.addEventListener("change", () => {
+  state.page = 1;
   syncNewGroupProjectFromFilter();
   fillGroupSelects();
   renderAccounts();
   syncGroupReportBar();
 });
-elements.groupFilter?.addEventListener("change", () => { renderAccounts(); syncGroupReportBar(); });
-elements.accountSearch?.addEventListener("input", renderAccounts);
+elements.groupFilter?.addEventListener("change", () => { state.page = 1; renderAccounts(); syncGroupReportBar(); });
+elements.accountSearch?.addEventListener("input", () => { state.page = 1; renderAccounts(); });
 elements.createProjectBtn?.addEventListener("click", createProject);
 elements.deleteProjectBtn?.addEventListener("click", deleteCurrentProject);
 elements.createGroupBtn?.addEventListener("click", createGroup);
@@ -57,14 +61,15 @@ await loadSettings();
 await loadAccounts();
 
 async function loadSettings() {
+  if (!elements.bridgeUrl) return;
   try {
     const result = await requestJson("/api/private-tiktok/settings");
     const settings = result.settings || {};
     elements.bridgeUrl.value = settings.baseUrl || "https://tiktokaitool.com";
-    elements.settingsSummary.textContent = settings.configured ? `已连接 · ${settings.baseUrl}` : "尚未配置桥接 API Key。";
+    if (elements.settingsSummary) elements.settingsSummary.textContent = settings.configured ? `已连接 · ${settings.baseUrl}` : "尚未配置桥接 API Key。";
     updateAuthorizeLink();
   } catch (error) {
-    elements.settingsSummary.textContent = error.message || "读取配置失败。";
+    if (elements.settingsSummary) elements.settingsSummary.textContent = error.message || "读取配置失败。";
   }
 }
 
@@ -111,7 +116,9 @@ async function loadAccounts({ refresh = false } = {}) {
     state.groups = Array.isArray(result.groups) ? result.groups : [];
     state.projects = Array.isArray(result.projects) ? result.projects : [];
     fillProjectSelects();
+    applyOrganizeQuery();
     fillGroupSelects();
+    state.page = 1;
     renderAccounts();
     syncGroupReportBar();
     showStatus(`已读取 ${state.accounts.length} 个已授权账号，${state.projects.length} 个项目，${state.groups.length} 个分组。`);
@@ -170,12 +177,16 @@ function fillGroupSelects() {
   }
   const groups = visibleGroups();
   const options = groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}（${counts[group.id] || group.accountCount || 0}）</option>`).join("");
-  const currentFilter = elements.groupFilter.value;
-  const currentAssign = elements.assignGroupSelect.value;
-  elements.groupFilter.innerHTML = `<option value="">全部分组</option><option value="ungrouped">未分组</option>${options}`;
-  elements.assignGroupSelect.innerHTML = `<option value="">未分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
-  if ([...elements.groupFilter.options].some((item) => item.value === currentFilter)) elements.groupFilter.value = currentFilter;
-  if ([...elements.assignGroupSelect.options].some((item) => item.value === currentAssign)) elements.assignGroupSelect.value = currentAssign;
+  const currentFilter = elements.groupFilter?.value || "";
+  const currentAssign = elements.assignGroupSelect?.value || "";
+  if (elements.groupFilter) {
+    elements.groupFilter.innerHTML = `<option value="">全部分组</option><option value="ungrouped">未分组</option>${options}`;
+    if ([...elements.groupFilter.options].some((item) => item.value === currentFilter)) elements.groupFilter.value = currentFilter;
+  }
+  if (elements.assignGroupSelect) {
+    elements.assignGroupSelect.innerHTML = `<option value="">未分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
+    if ([...elements.assignGroupSelect.options].some((item) => item.value === currentAssign)) elements.assignGroupSelect.value = currentAssign;
+  }
   if (elements.moveGroupSelect) {
     const currentMove = elements.moveGroupSelect.value || (currentFilter && currentFilter !== "ungrouped" ? currentFilter : "");
     elements.moveGroupSelect.innerHTML = `<option value="">请选择分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
@@ -201,19 +212,30 @@ function visibleAccounts() {
   }).sort((left, right) => Number(Boolean(right.publishRisk?.flagged)) - Number(Boolean(left.publishRisk?.flagged)));
 }
 
-function renderAccounts() {
+function pagedAccounts() {
   const accounts = visibleAccounts();
+  const total = accounts.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE) || 1);
+  state.page = Math.min(Math.max(1, state.page), pageCount);
+  const start = (state.page - 1) * PAGE_SIZE;
+  return { accounts: accounts.slice(start, start + PAGE_SIZE), total, pageCount };
+}
+
+function renderAccounts() {
+  const paged = pagedAccounts();
   if (!state.accounts.length) {
     elements.accountList.innerHTML = '<div class="empty-state">暂无已授权账号。请先前往 TikTok AI Tool 完成授权。</div>';
+    renderPager(0, 1);
     updateSelectedCount();
     return;
   }
-  if (!accounts.length) {
+  if (!paged.total) {
     elements.accountList.innerHTML = '<div class="empty-state">当前筛选下没有账号。</div>';
+    renderPager(0, 1);
     updateSelectedCount();
     return;
   }
-  elements.accountList.innerHTML = accounts.map((account) => {
+  elements.accountList.innerHTML = paged.accounts.map((account) => {
     const profile = account.profile || {};
     const username = profile.username ? `@${profile.username}` : profile.displayName || account.label || "TikTok 账号";
     const displayName = profile.displayName && profile.displayName !== profile.username ? profile.displayName : "官方授权账号";
@@ -222,8 +244,11 @@ function renderAccounts() {
     const key = accountKey(account);
     const risk = account.publishRisk;
     const riskTitle = risk?.flagged ? `${risk.label || "官方接口风控"}（${risk.reason || "spam_risk"}）${Number(risk.count || 0) > 1 ? ` · ${risk.count} 次` : ""}` : "";
-    return `<article class="account-row${risk?.flagged ? " is-risk" : ""}">
-      <input class="account-check" type="checkbox" value="${escapeHtml(key)}" data-schema="${escapeHtml(account.schema || "")}" data-username="${escapeHtml(profile.username || "")}" />
+    const checkbox = isOrganizePage
+      ? `<input class="account-check" type="checkbox" value="${escapeHtml(key)}" data-schema="${escapeHtml(account.schema || "")}" data-username="${escapeHtml(profile.username || "")}" />`
+      : "";
+    return `<article class="account-row${isOrganizePage ? "" : " is-readonly"}${risk?.flagged ? " is-risk" : ""}">
+      ${checkbox}
       <div><strong>${escapeHtml(username)}${risk?.flagged ? `<span class="risk-pill" title="${escapeHtml(riskTitle)}">风控</span>` : ""}</strong><span>${escapeHtml(displayName)}</span></div>
       <div><small>项目 / 分组</small><b class="group-chip${account.groupName ? "" : " is-empty"}">${escapeHtml([account.projectName, account.groupName || "未分组"].filter(Boolean).join(" / "))}</b></div>
       <div><small>视频</small><b>${formatNumber(videoCount)}</b></div>
@@ -232,7 +257,55 @@ function renderAccounts() {
     </article>`;
   }).join("");
   elements.accountList.querySelectorAll(".account-check").forEach((input) => input.addEventListener("change", updateSelectedCount));
+  renderPager(paged.total, paged.pageCount);
   updateSelectedCount();
+}
+
+function renderPager(total, pageCount) {
+  if (!elements.accountPager) return;
+  if (total <= PAGE_SIZE) {
+    elements.accountPager.hidden = true;
+    elements.accountPager.innerHTML = "";
+    return;
+  }
+  elements.accountPager.hidden = false;
+  const buttons = [
+    `<button type="button" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一页</button>`
+  ];
+  for (let page = 1; page <= pageCount; page += 1) {
+    if (pageCount > 9 && page !== 1 && page !== pageCount && Math.abs(page - state.page) > 2) {
+      if (buttons[buttons.length - 1] !== "<span>…</span>") buttons.push("<span>…</span>");
+      continue;
+    }
+    buttons.push(`<button type="button" data-page="${page}" class="${page === state.page ? "is-active" : ""}">${page}</button>`);
+  }
+  buttons.push(`<button type="button" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`);
+  elements.accountPager.innerHTML = `<span>每页 ${PAGE_SIZE} 个 · 第 ${state.page} / ${pageCount} 页 · 共 ${total} 个</span>${buttons.join("")}`;
+  elements.accountPager.querySelectorAll("[data-page]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = Number(button.dataset.page);
+      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.page) return;
+      state.page = next;
+      renderAccounts();
+    });
+  });
+}
+
+function applyOrganizeQuery() {
+  if (!isOrganizePage) return;
+  const params = new URLSearchParams(location.search);
+  const projectId = params.get("project") || "";
+  const groupId = params.get("group") || "";
+  if (projectId && elements.projectFilter && [...elements.projectFilter.options].some((item) => item.value === projectId)) {
+    elements.projectFilter.value = projectId;
+  }
+  syncNewGroupProjectFromFilter();
+  if (groupId) {
+    fillGroupSelects();
+    if (elements.groupFilter && [...elements.groupFilter.options].some((item) => item.value === groupId)) {
+      elements.groupFilter.value = groupId;
+    }
+  }
 }
 
 function selectVisible() {

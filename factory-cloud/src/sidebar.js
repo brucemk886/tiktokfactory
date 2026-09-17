@@ -71,6 +71,7 @@ export function homePathForUser(user) {
 export function moduleIdForPath(pathname) {
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
   const aliases = {
+    "/tiktok-connections-organize": "tiktok-connections",
     "/official-account-detail": "official-analytics",
     "/official-account-videos": "official-analytics",
     "/official-video-detail": "official-analytics",

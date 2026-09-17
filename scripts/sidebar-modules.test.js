@@ -116,6 +116,8 @@ test("retired local pages redirect to the online factory", () => {
   assert.equal(shouldRedirectLocalPageToFactory("/accounts"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/local-queue"), false);
   assert.equal(shouldRedirectLocalPageToFactory("/novel-exceptions"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/tiktok-connections"), true);
+  assert.equal(shouldRedirectLocalPageToFactory("/tiktok-connections-organize"), true);
 });
 
 test("local reddit mix can refresh audio folders and push them to the factory", () => {

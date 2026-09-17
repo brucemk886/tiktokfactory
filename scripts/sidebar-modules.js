@@ -108,6 +108,7 @@ export function shouldRedirectLocalPageToFactory(pathname) {
       "/novel-peer-hits",
       "/novel-rewrite",
       "/rewrite-records",
+      "/tiktok-connections-organize",
       "/official-account-detail",
       "/official-account-videos",
       "/official-video-detail",
