@@ -67,7 +67,7 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     };
   }
 
-  async function createChat(prompt, { model = 'gemini-3-5-flash', imageUrls = [] } = {}) {
+  async function createChatCompletion(prompt, { model = 'gemini-3-8-flash', imageUrls = [] } = {}) {
     const paths = {
       'gemini-3-5-flash': '/gemini-3-5-flash-openai/v1/chat/completions',
       'gemini-3-8-flash': '/gemini-3-8-flash-openai/v1/chat/completions'
@@ -87,10 +87,18 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     const content = payload.choices?.[0]?.message?.content;
     const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map(part => part.text || '').join('') : '';
     if (!text.trim()) throw new Error('AI 文案服务没有返回内容。');
-    return text;
+    return {
+      text,
+      model,
+      creditsConsumed: Number(data?.credits_consumed ?? payload?.credits_consumed ?? 0) || 0
+    };
   }
 
-  return { getKieCredits, createKieMediaTask, getKieTask, createChat };
+  async function createChat(prompt, options = {}) {
+    return (await createChatCompletion(prompt, options)).text;
+  }
+
+  return { getKieCredits, createKieMediaTask, getKieTask, createChat, createChatCompletion };
 }
 
 export { IMAGE_MODELS };

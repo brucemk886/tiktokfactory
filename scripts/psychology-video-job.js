@@ -162,7 +162,7 @@ async function generateImagePrompt(apiKey) {
   return kieChat(apiKey, prompt);
 }
 async function kieChat(apiKey, prompt) {
-  const response = await fetch("https://api.kie.ai/gemini-3-5-flash-openai/v1/chat/completions", {
+  const response = await fetch("https://api.kie.ai/gemini-3-8-flash-openai/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ messages: [{ role: "user", content: [{ type: "text", text: prompt }] }], stream: false, include_thoughts: false, reasoning_effort: "medium" })

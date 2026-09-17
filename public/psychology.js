@@ -89,7 +89,7 @@ async function generateAiField(mode) {
   const originalText = button.textContent;
   button.disabled = true;
   button.textContent = "AI 生成中...";
-  cost.textContent = "正在调用 Gemini 3.5 Flash";
+  cost.textContent = "正在调用 Gemini 3.8 Flash";
   try {
     const response = await fetch("/api/kie-ai", {
       method: "POST",
@@ -102,7 +102,7 @@ async function generateAiField(mode) {
     if (mode !== "narration") target.dataset.generatedAspect = $("#aspectRatio").value;
     if (!target.value) throw new Error("AI 没有返回可用内容");
     const credits = Number(data.task?.creditsConsumed || 0);
-    cost.textContent = `Gemini 3.5 Flash · 本次 ${formatCredits(credits)} 积分 · 可继续修改`;
+    cost.textContent = `Gemini 3.8 Flash · 本次 ${formatCredits(credits)} 积分 · 可继续修改`;
     setStatus(mode === "narration" ? "解说文案已生成，可以修改后再预览。" : "生图描述已生成，可以修改后再预览。");
     return target.value;
   } catch (error) {

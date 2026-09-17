@@ -47,8 +47,8 @@ export async function handleAi(request, env, url, session) {
 }
 
 async function createGeneration(db, kie, ownerUsername, input = {}) {
-  const kind = input.kind === "video" ? "video" : input.kind === "image" ? "image" : "";
-  if (!kind) throw Object.assign(new Error("云端 AI 创作只支持生图和生视频。"), { statusCode: 400 });
+  const kind = input.kind === "video" ? "video" : input.kind === "image" ? "image" : input.kind === "chat" ? "chat" : "";
+  if (!kind) throw Object.assign(new Error("云端 AI 创作只支持文本、生图和生视频。"), { statusCode: 400 });
   const prompt = String(input.prompt || "").trim();
   if (prompt.length < 2) throw Object.assign(new Error("请输入生成描述。"), { statusCode: 400 });
   if (prompt.length > 8000) throw Object.assign(new Error("输入内容不能超过 8000 个字符。"), { statusCode: 400 });
@@ -57,7 +57,10 @@ async function createGeneration(db, kie, ownerUsername, input = {}) {
     throw Object.assign(new Error("不支持这个生图模型。"), { statusCode: 400 });
   }
 
-  const remote = await kie.createKieMediaTask(kind, prompt, {
+  const chat = kind === "chat"
+    ? await kie.createChatCompletion(prompt, { model: "gemini-3-8-flash" })
+    : null;
+  const remote = chat ? null : await kie.createKieMediaTask(kind, prompt, {
     imageModel,
     videoModel: input.videoModel,
     noImageText: input.noImageText,
@@ -70,18 +73,18 @@ async function createGeneration(db, kie, ownerUsername, input = {}) {
     id: crypto.randomUUID(),
     owner_username: ownerUsername,
     kind,
-    model: remote.model,
+    model: chat?.model || remote.model,
     prompt,
-    status: "waiting",
-    task_id: remote.taskId,
+    status: chat ? "success" : "waiting",
+    task_id: remote?.taskId || "",
     result_urls_json: "[]",
-    result_text: "",
+    result_text: chat?.text || "",
     error: "",
-    progress: 0,
-    credits_consumed: 0,
+    progress: chat ? 100 : 0,
+    credits_consumed: chat ? Math.round(chat.creditsConsumed * 1000) : 0,
     created_at: stamp,
     updated_at: stamp,
-    completed_at: 0
+    completed_at: chat ? stamp : 0
   };
   await db.prepare(`
     INSERT INTO factory_ai_generations (

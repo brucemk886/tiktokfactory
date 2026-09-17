@@ -113,7 +113,7 @@ export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now
   }
 
   async function createChat(prompt) {
-    const data = await kieRequest("/gemini-3-5-flash-openai/v1/chat/completions", {
+    const data = await kieRequest("/gemini-3-8-flash-openai/v1/chat/completions", {
       method: "POST",
       body: JSON.stringify({
         messages: [{ role: "user", content: [{ type: "text", text: prompt }] }],
@@ -124,7 +124,7 @@ export function createKieAiService({ workDir, readApiKey, fetchImpl = fetch, now
     });
     const text = extractChatText(data);
     if (!text) throw new Error("AI 对话没有返回文本内容。");
-    return { text, model: "gemini-3.5-flash", creditsConsumed: Number(data.credits_consumed || 0) };
+    return { text, model: "gemini-3.8-flash", creditsConsumed: Number(data.credits_consumed || 0) };
   }
 
   async function kieRequest(apiPath, init = {}) {

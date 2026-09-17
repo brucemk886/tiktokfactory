@@ -173,6 +173,8 @@ test("retired psychology topic UI and APIs are no longer used", async () => {
   }
   const source=fs.readFileSync(new URL("../../public/psychology.js",import.meta.url),"utf8");
   assert.doesNotMatch(source,/psychology-topics|selectedBatchTopicIds|initTopicSelection/);
+  assert.match(source,/Gemini 3\.8 Flash/);
+  assert.doesNotMatch(source,/Gemini 3\.5 Flash/);
   for(const name of ["psychology.html","psychology-collage.html","psychology-narrative.html"]){
     const html=fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
     assert.doesNotMatch(html,/value="(?:nano-banana|grok)"|href="\/psychology-topics"/);

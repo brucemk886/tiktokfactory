@@ -56,7 +56,7 @@ test("stores a synchronous Kie chat response", async () => {
   const task = await service.createTask({ kind: "chat", prompt: "Improve this hook" });
   assert.equal(task.status, "success");
   assert.equal(task.resultText, "A useful answer");
-  assert.equal(task.model, "gemini-3.5-flash");
+  assert.equal(task.model, "gemini-3.8-flash");
 });
 
 function json(body, status = 200) {

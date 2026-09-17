@@ -66,16 +66,24 @@ test("operators cannot use the cloud AI studio", async () => {
   assert.equal(response.status, 403);
 });
 
-test("cloud AI rejects chat requests", async () => {
+test("cloud AI runs Gemini 3.8 Flash chat synchronously", async () => {
+  const calls = [];
   const response = await handleAi(
     jsonRequest("POST", "/api/kie-ai", { kind: "chat", prompt: "hello" }),
-    { DB: memoryAiDb(), KIE_API_KEY: "test-key", fetch: async () => json({ code: 200, data: 1 }) },
+    { DB: memoryAiDb(), KIE_API_KEY: "test-key", fetch: async (url, init = {}) => {
+      calls.push({ url:String(url), body:JSON.parse(init.body) });
+      return json({ choices:[{message:{content:"Hello from 3.8"}}], credits_consumed:0.12 });
+    } },
     new URL("https://factory.tiktokaitool.com/api/kie-ai"),
     adminSession()
   );
   const body = await response.json();
-  assert.equal(response.status, 400);
-  assert.match(body.error, /生图和生视频/);
+  assert.equal(response.status, 201);
+  assert.equal(body.task.status, "success");
+  assert.equal(body.task.model, "gemini-3-8-flash");
+  assert.equal(body.task.resultText, "Hello from 3.8");
+  assert.equal(body.task.creditsConsumed, 0.12);
+  assert.match(calls[0].url, /gemini-3-8-flash-openai\/v1\/chat\/completions$/);
 });
 
 function adminSession() {
