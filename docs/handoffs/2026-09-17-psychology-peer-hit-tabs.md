@@ -36,8 +36,17 @@ Align the peer-hit page header with its panels, split video and photo hits into 
 
 ## Unfinished work
 
-- Production deployment and live smoke test remain to be completed after commit and push.
+- None for this change. The photo tab will remain empty until grokbot or an administrator imports records identified as `photo`.
+
+## Deployment
+
+- Commit `a5c7a54` was pushed to GitHub `main` before deployment.
+- The clean release checkout matched `origin/main` exactly.
+- Migration `0025_psychology_peer_hit_media_type.sql` applied successfully.
+- The first Worker upload hit a transient Cloudflare `fetch failed`; the standard deploy command was rerun and completed without reapplying the migration.
+- Production Worker version: `85c53b37-52ea-43c7-9d4e-60fa6e4feb17`.
+- Authenticated production smoke test confirmed both tabs, 36 migrated video records, updated copy, and no narration selector.
 
 ## Recommended next step
 
-Commit and push `main`, deploy from a clean release checkout with `factory-cloud/npm run deploy`, then verify both tabs on the authenticated production page.
+Have grokbot send `mediaType: "photo"` with a TikTok `/photo/{id}` URL and complete source copy when the first photo-hit records are ready.

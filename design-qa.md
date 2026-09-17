@@ -23,6 +23,7 @@ Implementation captures, both at 1917 × 915:
 - Browser interaction selected `图文爆款`; `document.body.dataset.mediaType` became `photo`, the active tab text was `图文爆款`, `#durationField.hidden` was `true`, and the table heading became `图文`.
 - Full Factory Cloud test suite passed: 328 tests.
 - Focused peer-hit and production tests passed: 25 tests.
+- Authenticated production smoke test confirmed the deployed tabs, existing video records, updated labels, and absence of the narration selector.
 
 ## Result
 
