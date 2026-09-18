@@ -167,6 +167,7 @@ export function computeGroupReport({
     const keys = officialAccountKeys(account);
     const username = account.profile?.username || account.username || account.label || keys[0] || "";
     accountStats.set(keys[0] || username, {
+      account: keys[0] || username,
       username,
       label: account.profile?.displayName || account.label || username,
       published: 0,
@@ -184,6 +185,7 @@ export function computeGroupReport({
     })[0] || video.username || video.account;
     if (!accountStats.has(key)) {
       accountStats.set(key, {
+        account: key,
         username: video.username || key,
         label: video.username || key,
         published: 0,

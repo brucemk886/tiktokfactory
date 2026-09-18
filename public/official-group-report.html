@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/official-analytics.css">
   <link rel="stylesheet" href="/theme-ops.css">
+  <link rel="stylesheet" href="/official-group-report.css?v=20260918-2">
 </head>
 <body class="work-page official-data-page">
   <nav class="side-tabs" aria-label="主导航"></nav>
@@ -42,13 +43,19 @@
     </section>
     <section class="data-section panel" id="groupPanel"></section>
     <section class="overview-grid" id="summaryGrid"></section>
-    <section class="data-section panel" id="anomalySection"></section>
-    <section class="data-section panel" id="zeroSection"></section>
-    <section class="data-section panel" id="highSection"></section>
-    <section class="data-section panel" id="lowSection"></section>
+    <section class="data-section panel report-results" aria-label="视频表现与异常账号">
+      <div class="segmented report-tabs" id="resultTabs" role="tablist" aria-label="统计分类">
+        <button type="button" id="highTab" role="tab" data-result-tab="high" aria-controls="highSection" aria-selected="true">高播视频</button>
+        <button type="button" id="lowTab" role="tab" data-result-tab="low" aria-controls="lowSection" aria-selected="false" tabindex="-1">低播视频</button>
+        <button type="button" id="anomalyTab" role="tab" data-result-tab="anomaly" aria-controls="anomalySection" aria-selected="false" tabindex="-1">异常账号</button>
+      </div>
+      <div id="highSection" role="tabpanel" aria-labelledby="highTab"></div>
+      <div id="lowSection" role="tabpanel" aria-labelledby="lowTab" hidden></div>
+      <div id="anomalySection" role="tabpanel" aria-labelledby="anomalyTab" hidden></div>
+    </section>
     <div id="pageStatus" class="page-status"></div>
   </main>
   <script src="/access.js"></script>
-  <script src="/official-group-report.js?v=20260918-1"></script>
+  <script src="/official-group-report.js?v=20260918-2"></script>
 </body>
 </html>

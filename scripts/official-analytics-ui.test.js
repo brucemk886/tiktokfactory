@@ -52,10 +52,10 @@ test("account videos and video analytics are separate rich pages", () => {
   assert.match(videosHtml, /data-sort="createTime"/);
   assert.match(videosHtml, /data-sort="views"/);
   assert.match(videoHtml, /<h1>视频留存分析<\/h1>/);
-  for (const id of ["retentionChart", "sourceDistribution", "videoCountryDistribution", "videoComments"]) {
+  for (const id of ["retentionChart", "sourceDistribution", "videoCountryDistribution", "videoComments", "videoMetrics"]) {
     assert.match(videoHtml, new RegExp(`id="${id}"`));
   }
-  for (const id of ["videoChart", "videoMetrics", "videoGenderDistribution", "videoCityDistribution", "audienceTypeDistribution", "otherAnalytics"]) {
+  for (const id of ["videoChart", "videoGenderDistribution", "videoCityDistribution", "audienceTypeDistribution", "otherAnalytics"]) {
     assert.doesNotMatch(videoHtml, new RegExp(`id="${id}"`));
   }
   assert.match(videoScript, /renderComments/);

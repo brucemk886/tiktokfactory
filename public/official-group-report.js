@@ -45,6 +45,7 @@ const state = {
   toKey: params.get("to") || params.get("date") || "",
   data: null,
   pages: { high: 1, low: 1 },
+  activeTab: ["high", "low", "anomaly"].includes(params.get("tab")) ? params.get("tab") : "high",
 };
 
 if (PRESET_PERIODS.includes(state.period) || !state.fromKey || !state.toKey) {
@@ -57,6 +58,19 @@ bindToolbar();
 loadReport();
 
 function bindToolbar() {
+  document.querySelectorAll("[data-result-tab]").forEach((button, index, buttons) => {
+    button.addEventListener("click", () => selectResultTab(button.dataset.resultTab));
+    button.addEventListener("keydown", (event) => {
+      const next = event.key === "ArrowRight" ? (index + 1) % buttons.length
+        : event.key === "ArrowLeft" ? (index + buttons.length - 1) % buttons.length
+        : event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      buttons[next].focus();
+      selectResultTab(buttons[next].dataset.resultTab);
+    });
+  });
+  updateResultTabs();
   document.querySelectorAll("#periodTabs [data-period]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.period === state.period);
     button.addEventListener("click", () => {
@@ -161,8 +175,8 @@ function render() {
     ["均播", formatNumber(summary.avgView ?? averageViews(summary))],
     ["异常账号", formatNumber(summary.anomalyAccountCount)],
   ].map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-  renderAnomalies(report.anomalyAccounts || []);
-  renderBucket("zeroSection", "0 播 / 账号异常", "发布后还是 0 播放，优先检查账号或审核。", report.buckets?.zeroView || []);
+  renderAnomalies(report.anomalyAccounts || [], report.buckets?.zeroView || []);
+  updateResultTabs();
   renderBucket("highSection", "高播视频", `播放达到 ${report.thresholds?.highView || 1000} 以上。`, report.buckets?.highView || [], "high");
   renderBucket("lowSection", "低播视频", `播放低于 ${report.thresholds?.lowView || 200}。`, report.buckets?.lowView || [], "low");
 }
@@ -225,28 +239,23 @@ async function toggleProjectReport(projectId, enabled) {
 }
 
 function renderEmpty(message) {
+  updateResultTabs();
   document.querySelector("#summaryGrid").innerHTML = "";
-  ["anomalySection", "zeroSection", "lowSection", "highSection"].forEach((id) => {
+  ["anomalySection", "lowSection", "highSection"].forEach((id) => {
     document.querySelector(`#${id}`).innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
   });
 }
 
-function renderAnomalies(rows) {
+function renderAnomalies(rows, zeroVideos = []) {
   const node = document.querySelector("#anomalySection");
   if (!rows.length) {
     node.innerHTML = `<div class="section-title"><div><p>ACCOUNT ALERT</p><h2>异常账号</h2></div></div><div class="empty">这一时段没有 0 播账号。</div>`;
     return;
   }
-  node.innerHTML = `<div class="section-title"><div><p>ACCOUNT ALERT</p><h2>异常账号</h2></div></div>
-    <div class="table-wrap"><table><thead><tr><th>账号</th><th>发布</th><th>0 播</th><th>低播</th><th>高播</th><th>总播放</th></tr></thead>
-    <tbody>${rows.map((item) => `<tr>
-      <td>@${escapeHtml(item.username || item.label || "-")}</td>
-      <td>${formatNumber(item.published)}</td>
-      <td>${formatNumber(item.zero)}</td>
-      <td>${formatNumber(item.low)}</td>
-      <td>${formatNumber(item.high)}</td>
-      <td>${formatNumber(item.views)}</td>
-    </tr>`).join("")}</tbody></table></div>`;
+  node.innerHTML = `<p class="section-hint">该时段有 0 播视频的账号，展开查看对应视频。</p><div class="report-anomalies">${rows.map((item) => {
+    const videos = zeroVideos.filter((video) => item.account ? video.account === item.account : video.username === item.username);
+    return `<details class="report-anomaly"><summary><strong>@${escapeHtml(item.username || item.label || "-")}</strong><span>0 播 ${formatNumber(item.zero)} 条 · 发布 ${formatNumber(item.published)} 条 · 总播放 ${formatNumber(item.views)}</span></summary>${videos.length ? videoTable(videos, "anomaly") : '<div class="empty">该快照暂无对应视频明细。</div>'}</details>`;
+  }).join("")}</div>`;
 }
 
 function renderBucket(id, title, hint, rows, pageKey = "") {
@@ -257,17 +266,7 @@ function renderBucket(id, title, hint, rows, pageKey = "") {
   }
   const paged = pageKey ? paginateItems(rows, state.pages[pageKey] || 1) : { items: rows, page: 1, pageCount: 1, total: rows.length };
   if (pageKey) state.pages[pageKey] = paged.page;
-  node.innerHTML = `<div class="section-title"><div><p>VIDEO</p><h2>${escapeHtml(title)}</h2></div><span>${paged.total} 条</span></div>
-    <div class="table-wrap"><table><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>跳转</th></tr></thead>
-    <tbody>${paged.items.map((item) => `<tr>
-      <td>${videoTitleCell(item)}</td>
-      <td>@${escapeHtml(item.username || "-")}</td>
-      <td>${formatNumber(item.views)}</td>
-      <td>${formatNumber(item.likes)}</td>
-      <td>${formatTime(item.createdAt)}</td>
-      <td>${videoJumpCell(item)}</td>
-    </tr>`).join("")}</tbody></table></div>
-    ${pageKey ? renderPager(pageKey, paged) : ""}`;
+  node.innerHTML = `<p class="section-hint">${escapeHtml(hint)} · ${paged.total} 条</p>${videoTable(paged.items, pageKey)}${pageKey ? renderPager(pageKey, paged) : ""}`;
   if (pageKey) bindPager(node, pageKey);
 }
 
@@ -375,6 +374,7 @@ function syncPeriodFromDates() {
 function syncQuery() {
   const next = new URL(location.href);
   next.searchParams.set("period", state.period);
+  next.searchParams.set("tab", state.activeTab);
   if (state.groupId) next.searchParams.set("group", state.groupId);
   else next.searchParams.delete("group");
   if (state.fromKey) next.searchParams.set("from", state.fromKey);
@@ -432,4 +432,51 @@ function escapeHtml(value) {
     '"': "&quot;",
     "'": "&#39;",
   })[character]);
+}
+
+function selectResultTab(tab) {
+  if (!["high", "low", "anomaly"].includes(tab)) return;
+  state.activeTab = tab;
+  updateResultTabs();
+  syncQuery();
+}
+function updateResultTabs() {
+  const report = state.data?.report;
+  const counts = report?.enabled && !report.missing ? {
+    high: report.buckets?.highView?.length || 0,
+    low: report.buckets?.lowView?.length || 0,
+    anomaly: report.anomalyAccounts?.length || 0,
+  } : null;
+  const labels = { high: "高播视频", low: "低播视频", anomaly: "异常账号" };
+  document.querySelectorAll("[data-result-tab]").forEach((button) => {
+    const tab = button.dataset.resultTab;
+    const active = tab === state.activeTab;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    button.textContent = labels[tab] + (counts ? " (" + counts[tab] + ")" : "");
+  });
+  for (const tab of Object.keys(labels)) {
+    document.querySelector("#" + tab + "Section").hidden = tab !== state.activeTab;
+  }
+}
+function videoDetailHref(item, tab = state.activeTab) {
+  if (!item.account || !item.id) return "";
+  const back = new URL(location.href);
+  back.searchParams.set("tab", tab);
+  const query = new URLSearchParams({
+    account: item.account, video: item.id, module: state.module,
+    returnTo: back.pathname + back.search,
+  });
+  return "/official-video-detail?" + query;
+}
+function videoTable(items, tab) {
+  return '<div class="table-wrap"><table class="report-video-table"><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>操作</th></tr></thead><tbody>' +
+    items.map((item) => {
+      const detail = videoDetailHref(item, tab);
+      return '<tr><td class="report-video-title">' + videoTitleCell(item) + '</td><td>@' + escapeHtml(item.username || "-") +
+        '</td><td>' + formatNumber(item.views) + '</td><td>' + formatNumber(item.likes) + '</td><td>' + formatTime(item.createdAt) +
+        '</td><td><div class="report-video-actions">' + (detail ? '<a class="table-action primary-table-action" href="' + escapeHtml(detail) + '">视频详情</a>' : '<span>暂无详情</span>') +
+        videoJumpCell(item) + '</div></td></tr>';
+    }).join("") + '</tbody></table></div>';
 }

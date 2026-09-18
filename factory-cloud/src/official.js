@@ -133,6 +133,10 @@ export async function handleOfficial(request, env, url, session) {
     const videoId = String(url.searchParams.get("video") || "").trim();
     if (!accountId || !videoId) return errorJson("缺少账号 ID 或视频 ID。", 400);
     try {
+      const store = await loadGroupStore(db);
+      const accounts = accountsFromLatestArchive(await listLatestArchiveAccounts(db));
+      const allowed = scopedAnalyticsAccounts(accounts, store, session.user, url.searchParams.get("module") || "");
+      if (!allowed.some((account) => account.schema === accountId)) return errorJson("无权查看该账号的视频数据。", 403);
       return json(await signalDesk(env, db, `/api/integrations/local-factory/videos/${encodeURIComponent(videoId)}?accountId=${encodeURIComponent(accountId)}`));
     } catch (error) {
       return errorJson(error.message || "读取 TikTok 视频详情失败。", error.statusCode || 502);
@@ -253,6 +257,16 @@ async function handleAccountGroups(request, env, db, url, session) {
   return null;
 }
 
+export function scopedAnalyticsAccounts(accounts, store, user, moduleKey = "") {
+  const project = moduleKey ? findProjectForModule(store, moduleKey) : null;
+  const allowedIds = userAllowedGroupIds(user);
+  const scoped = moduleKey
+    ? accounts.filter((account) => project && accountMatchesProject(account, store, project.id))
+    : accounts;
+  return (attachAccounts({ accounts: scoped }, store).accounts || [])
+    .filter((account) => !allowedIds || allowedIds.has(account.groupId));
+}
+
 async function officialDashboard(env, db, searchParams, user) {
   const search = String(searchParams.get("search") || "").trim().toLowerCase();
   const accountFilter = String(searchParams.get("account") || "").trim();
@@ -261,13 +275,11 @@ async function officialDashboard(env, db, searchParams, user) {
   const accounts = accountsFromLatestArchive(accountRows);
   const store = await loadGroupStore(db);
   const project = moduleKey ? findProjectForModule(store, moduleKey) : null;
-  const scoped = moduleKey
-    ? accounts.filter((account) => project && accountMatchesProject(account, store, project.id))
-    : accounts;
-  const allowedIds = userAllowedGroupIds(user);
-  const attached = attachAccounts({ accounts: scoped }, store).accounts || [];
+  const attached = scopedAnalyticsAccounts(accounts, store, user, moduleKey);
+  if (accountFilter && !attached.some((account) => account.schema === accountFilter)) {
+    throw Object.assign(new Error("无权查看该账号的视频数据。"), { statusCode: 403 });
+  }
   const rows = attached.map(archiveAccountRow).filter((item) => {
-    if (allowedIds && !allowedIds.has(item.groupId)) return false;
     if (search && !`${item.label} ${item.schema} ${item.groupName}`.toLowerCase().includes(search)) return false;
     return true;
   });
