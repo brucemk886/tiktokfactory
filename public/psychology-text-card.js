@@ -150,10 +150,28 @@ export function buildStockOverlaySlides({ title, body, subtitle, count, smash } 
   return slides.filter((slide) => slide.title || slide.subtitle || slide.lines.length);
 }
 
+export function splitContentCardBodies(body, count, smash = false) {
+  const clean = (line) => {
+    const text = String(line || "").replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim();
+    return smash ? smashCardWords(text) : text;
+  };
+  const blocks = parseOverlayBlocks(body).map((block) => block.map(clean).filter(Boolean)).filter((block) => block.length);
+  const limit = Math.max(1, Math.min(6, Number(count) || 1));
+  if (blocks.length > 1) return blocks.slice(0, limit);
+  const bullets = parseCardBullets(body).map((line) => smash ? smashCardWords(line) : line);
+  if (!bullets.length) return [];
+  const sizes = splitEven(bullets.length, limit);
+  let offset = 0;
+  return sizes.map((size) => {
+    const slice = bullets.slice(offset, offset + size);
+    offset += size;
+    return slice;
+  }).filter((slice) => slice.length);
+}
+
 export function buildTextCardSlides({ title, body, accent, count, smash, template } = {}) {
   const heading = String(title || "").trim();
   const mark = String(accent || "").trim();
-  const bullets = parseCardBullets(body).map((line) => smash ? smashCardWords(line) : line);
   const kind = normalizeTextCardTemplate(template);
   if (kind === "cover") {
     const quote = smash ? smashCardWords(heading) : heading;
@@ -165,17 +183,20 @@ export function buildTextCardSlides({ title, body, accent, count, smash, templat
       bullets: [],
     }];
   }
-  if (!heading && !bullets.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
-  const sizes = bullets.length ? splitEven(bullets.length, count) : [0];
-  let offset = 0;
-  return sizes.map((size, index) => {
-    const slide = {
+  const groups = splitContentCardBodies(body, count, smash);
+  if (!heading && !groups.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
+  if (!groups.length) {
+    return [{
       kind: "content",
-      title: index === 0 ? (smash ? smashCardWords(heading) : heading) : "",
-      accent: index === 0 ? mark : "",
-      bullets: bullets.slice(offset, offset + size),
-    };
-    offset += size;
-    return slide;
-  }).filter((slide) => slide.title || slide.bullets.length);
+      title: smash ? smashCardWords(heading) : heading,
+      accent: mark,
+      bullets: [],
+    }].filter((slide) => slide.title);
+  }
+  return groups.map((bullets, index) => ({
+    kind: "content",
+    title: index === 0 ? (smash ? smashCardWords(heading) : heading) : "",
+    accent: index === 0 ? mark : "",
+    bullets,
+  }));
 }

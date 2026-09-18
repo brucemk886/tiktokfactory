@@ -76,7 +76,7 @@ function setPhotoMode(mode) {
   if ($("#zimagePane")) $("#zimagePane").hidden = state.mode !== "zimage";
   if ($("#createLead")) {
     $("#createLead").textContent = isText
-      ? (state.textTemplate === "cover" ? "封面只排一句文案，生成后会留在图集里。" : "内容页排标题和文案，不会清掉已生成的封面。")
+      ? (state.textTemplate === "cover" ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页数量不含封面。文案空一行就是下一张；标题只出现在第一张内容页。")
       : isStock
         ? "从素材库取竖版空镜，再把标题和题目叠上去。"
         : "描述画面后由 AI 出图；完成后按生成顺序加入图集。";
@@ -99,7 +99,7 @@ function setTextTemplate(template) {
   if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
   const countField = $("#cardCount")?.closest(".compact-field");
   if (countField) countField.hidden = isCover;
-  if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只排一句文案，生成后会留在图集里。" : "内容页排标题和文案，不会清掉已生成的封面。";
+  if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页数量不含封面。文案空一行就是下一张；标题只出现在第一张内容页。";
 }
 
 async function generateTextCards() {
@@ -546,7 +546,7 @@ function renderGeneratedPhotos() {
   const selectedSet = new Set(selected.map((photo) => photo.key));
   const ratio = state.mode === "zimage" ? "9 / 16" : ((state.mode === "stock" ? $("#stockAspect")?.value : $("#cardAspect")?.value) || "1:1").replace(":", " / ");
   const empty = state.mode === "text"
-    ? "还没有文案图片。先生成封面，再生成内容页，两张都会留在图集里。"
+    ? "还没有文案图片。先用封面模板出 1 张，再切到内容模板；空一行就是下一张内容页。"
     : state.mode === "stock"
       ? "还没有素材库图片。搜好素材或贴上链接后点生成素材图。"
       : "还没有可用图片。生成完成后会按顺序自动加入图集，第一张作为封面。";

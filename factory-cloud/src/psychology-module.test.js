@@ -314,7 +314,9 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
   assert.match(html,/>内容模板</);
   assert.match(html,/>内容标题</);
-  assert.match(html,/文案（一行一条）/);
+  assert.match(html,/内容文案（空一行换下一张）/);
+  assert.match(html,/内容页数量/);
+  assert.match(html,/不含封面/);
   assert.doesNotMatch(html,/点缀词|去掉空格|smashWords|stockSmash|cardAccent/);
   assert.match(workbench,/AI生图、素材库图片或文案图片/);
   assert.match(html,/id="renderCardBtn"/);
@@ -328,7 +330,19 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/mergeTextCardSets/);
-  assert.match(browser,/不会清掉已生成的封面/);
+  assert.match(browser,/内容页数量不含封面/);
+  const paged = buildTextCardSlides({
+    title: "Signs",
+    body: "card one\n\ncard two line\nmore\n\ncard three",
+    count: 3,
+    template: "content",
+  });
+  assert.equal(paged.length, 3);
+  assert.equal(paged[0].title, "Signs");
+  assert.deepEqual(paged[0].bullets, ["card one"]);
+  assert.equal(paged[1].title, "");
+  assert.deepEqual(paged[1].bullets, ["card two line", "more"]);
+  assert.deepEqual(paged[2].bullets, ["card three"]);
   assert.match(browser,/pickCoverBackdrop/);
   assert.match(browser,/paintCoverBackdrop/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);

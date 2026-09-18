@@ -11,6 +11,7 @@
 .photo-toolbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
 .photo-toolbar .compact-field { flex: 0 1 148px; margin-bottom: 0; }
 .photo-toolbar .compact-field span { font-size: 12px; color: var(--lf-muted); }
+.photo-toolbar .compact-field small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--lf-muted); }
 .photo-switch { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 2px auto; padding: 0; border: 0; background: none; color: var(--lf-text); font-size: 13px; line-height: 1.3; cursor: pointer; }
 .photo-switch input { width: 16px; height: 16px; accent-color: var(--lf-accent); }
 .photo-mode-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
