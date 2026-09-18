@@ -1,8 +1,16 @@
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-12";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-13";
 import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
+const COPY_PLACEHOLDERS = [
+  "这张图上要出现的文字",
+  "第二张图上的文字",
+  "第三张图上的文字",
+  "第四张图上的文字",
+  "第五张图上的文字",
+  "第六张图上的文字",
+];
+const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false, copies: { zimage: ["", "", "", ""], stock: [""], text: [""] }, stockTitle: "", stockSubtitle: "" };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -18,6 +26,13 @@ $("#stockModeTab")?.addEventListener("click", () => setPhotoMode("stock"));
 $("#zimageModeTab")?.addEventListener("click", () => setPhotoMode("zimage"));
 $("#coverTemplateTab")?.addEventListener("click", () => setTextTemplate("cover"));
 $("#contentTemplateTab")?.addEventListener("click", () => setTextTemplate("content"));
+$("#imageCount")?.addEventListener("change", () => renderCopyFields("zimage"));
+$("#stockCount")?.addEventListener("change", () => {
+  renderCopyFields("stock");
+  trimStockSelection();
+  renderStockResults();
+});
+$("#cardCount")?.addEventListener("change", () => renderCopyFields("text"));
 $("#photoLightboxClose")?.addEventListener("click", closePhotoPreview);
 $("#photoLightbox")?.addEventListener("click", (event) => {
   if (event.target === $("#photoLightbox")) closePhotoPreview();
@@ -25,6 +40,9 @@ $("#photoLightbox")?.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePhotoPreview();
 });
+renderCopyFields("zimage");
+renderCopyFields("stock");
+renderCopyFields("text");
 loadPage();
 
 async function loadPage() {
@@ -76,12 +94,13 @@ function setPhotoMode(mode) {
   if ($("#zimagePane")) $("#zimagePane").hidden = state.mode !== "zimage";
   if ($("#createLead")) {
     $("#createLead").textContent = isText
-      ? (state.textTemplate === "cover" ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页数量不含封面。文案空一行就是下一张；标题只出现在第一张内容页。")
+      ? (state.textTemplate === "cover" ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页有几张，下面就有几个文案框。标题只出现在第一张内容页。")
       : isStock
-        ? "素材图和叠字一一对应。空一行就是下一张的文案；第一张标题只叠在第一张上。"
-        : "生成几张就叠几段文案，空一行换下一张。不填叠字则只出图。";
+        ? "图片数量有几张，就选几张素材、填几个文案框。标题只叠在第一张上。"
+        : "生成几张图，下面就有几个文案框。不填则只出图。";
   }
   if (isText) setTextTemplate(state.textTemplate);
+  else renderCopyFields(state.mode);
   renderGeneratedPhotos();
 }
 
@@ -96,10 +115,11 @@ function setTextTemplate(template) {
   const titleInput = $("#cardTitle");
   if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
   if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
-  if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
+  if ($("#cardCopyList")) $("#cardCopyList").hidden = isCover;
   const countField = $("#cardCount")?.closest(".compact-field");
   if (countField) countField.hidden = isCover;
-  if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页数量不含封面。文案空一行就是下一张；标题只出现在第一张内容页。";
+  if (!isCover) renderCopyFields("text");
+  if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页有几张，下面就有几个文案框。标题只出现在第一张内容页。";
 }
 
 async function generateTextCards() {
@@ -107,9 +127,10 @@ async function generateTextCards() {
   button.disabled = true;
   button.textContent = "正在出图…";
   try {
+    persistCopyFields("text");
     const slides = buildTextCardSlides({
       title: $("#cardTitle").value,
-      body: $("#cardBody").value,
+      copies: state.copies.text,
       count: $("#cardCount").value,
       smash: false,
       template: state.textTemplate,
@@ -247,7 +268,8 @@ function renderContentCard(slide, aspectRatio) {
 }
 
 async function searchStockPhotos() {
-  const query = $("#stockQuery").value.trim() || $("#stockTitle").value.trim();
+  persistCopyFields("stock");
+  const query = $("#stockQuery").value.trim() || state.stockTitle.trim();
   const button = $("#searchStockBtn");
   button.disabled = true;
   button.textContent = "搜索中…";
@@ -278,7 +300,7 @@ function renderStockResults(emptyMessage = "") {
   node.querySelectorAll(".stock-thumb").forEach((button) => button.addEventListener("click", () => {
     const url = button.dataset.fileUrl;
     if (state.selectedStock.includes(url)) state.selectedStock = state.selectedStock.filter((item) => item !== url);
-    else if (state.selectedStock.length < 6) state.selectedStock.push(url);
+    else if (state.selectedStock.length < copyCount("stock")) state.selectedStock.push(url);
     renderStockResults();
   }));
 }
@@ -292,16 +314,17 @@ async function generateStockCards() {
   button.disabled = true;
   button.textContent = "正在出图…";
   try {
+    persistCopyFields("stock");
     const slides = buildStockOverlaySlides({
-      title: $("#stockTitle").value,
-      subtitle: $("#stockSubtitle").value,
-      body: $("#stockBody").value,
+      title: $("#stockTitle")?.value || "",
+      subtitle: $("#stockSubtitle")?.value || "",
+      copies: state.copies.stock,
       count: $("#stockCount").value,
       smash: false,
     });
     let images = state.selectedStock.length ? state.selectedStock : pastedStockUrls();
     if (!images.length) {
-      const query = $("#stockQuery").value.trim() || $("#stockTitle").value.trim();
+      const query = $("#stockQuery").value.trim() || state.stockTitle.trim();
       if (query) await searchStockPhotos();
       images = state.selectedStock.length ? state.selectedStock : pastedStockUrls();
     }
@@ -331,7 +354,7 @@ async function generateStockCards() {
     state.textCards = merged.cards;
     peerJobPhotos = [];
     state.currentTaskIds = [];
-    if (!$("#photoTitle").value.trim() && $("#stockTitle").value.trim()) $("#photoTitle").value = $("#stockTitle").value.trim().slice(0, 90);
+    if (!$("#photoTitle").value.trim() && $("#stockTitle")?.value?.trim()) $("#photoTitle").value = $("#stockTitle").value.trim().slice(0, 90);
     renderGeneratedPhotos();
     setGenerateMessage(`已生成 ${cards.length} 张素材库图片，可勾选后发布。`);
   } catch (error) {
@@ -342,10 +365,59 @@ async function generateStockCards() {
   }
 }
 
+function copyCount(kind) {
+  const selected = { zimage: "#imageCount", stock: "#stockCount", text: "#cardCount" }[kind];
+  return Math.max(1, Math.min(6, Number($(selected)?.value) || 1));
+}
+
+function persistCopyFields(kind) {
+  const node = copyListNode(kind);
+  if (!node) return;
+  state.copies[kind] = [...node.querySelectorAll("[data-copy-index]")].map((field) => field.value);
+  if (kind === "stock") {
+    if ($("#stockTitle")) state.stockTitle = $("#stockTitle").value;
+    if ($("#stockSubtitle")) state.stockSubtitle = $("#stockSubtitle").value;
+  }
+}
+
+function copyListNode(kind) {
+  return $(kind === "stock" ? "#stockCopyList" : kind === "text" ? "#cardCopyList" : "#imageCopyList");
+}
+
+function renderCopyFields(kind) {
+  persistCopyFields(kind);
+  const node = copyListNode(kind);
+  if (!node) return;
+  const count = copyCount(kind);
+  const values = Array.from({ length: count }, (_, index) => state.copies[kind][index] || "");
+  state.copies[kind] = values;
+  const heading = kind === "text" ? "内容" : "文案";
+  node.innerHTML = values.map((value, index) => {
+    const extras = kind === "stock" && index === 0
+      ? `<label class="field"><span>标题（选填，只叠在这张）</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds" value="${escapeAttr(state.stockTitle || "")}" /></label>
+        <label class="field"><span>副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)" value="${escapeAttr(state.stockSubtitle || "")}" /></label>`
+      : "";
+    return `<article class="photo-copy-card">
+      <strong>第 ${index + 1} 张${heading}</strong>
+      ${extras}
+      <label class="field"><span>${kind === "text" ? "这页正文" : "这张图上的文字"}</span><textarea data-copy-index="${index}" class="photo-compact-textarea" rows="3" maxlength="800" placeholder="${escapeAttr(COPY_PLACEHOLDERS[index])}">${escapeHtml(value)}</textarea></label>
+    </article>`;
+  }).join("");
+  node.querySelectorAll("[data-copy-index], #stockTitle, #stockSubtitle").forEach((field) => {
+    field.addEventListener("input", () => persistCopyFields(kind));
+  });
+}
+
+function trimStockSelection() {
+  const limit = copyCount("stock");
+  state.selectedStock = state.selectedStock.slice(0, limit);
+}
+
 function copySlidesForCount(count) {
-  const body = $("#imageCopy")?.value || "";
-  if (!String(body).trim()) return [];
-  return buildPerImageCopySlides({ body, count, smash: false });
+  persistCopyFields("zimage");
+  const copies = state.copies.zimage;
+  if (!copies.some((value) => String(value || "").trim())) return [];
+  return buildPerImageCopySlides({ copies, count, smash: false });
 }
 
 async function overlayGeneratedPhotos() {
@@ -626,10 +698,10 @@ function renderGeneratedPhotos() {
   const selectedSet = new Set(selected.map((photo) => photo.key));
   const ratio = state.mode === "zimage" ? "9 / 16" : ((state.mode === "stock" ? $("#stockAspect")?.value : $("#cardAspect")?.value) || "1:1").replace(":", " / ");
   const empty = state.mode === "text"
-    ? "还没有文案图片。先用封面模板出 1 张，再切到内容模板；空一行就是下一张内容页。"
+    ? "还没有文案图片。先用封面模板出 1 张，再切到内容模板；内容页有几张就填几个文案框。"
     : state.mode === "stock"
-      ? "还没有素材库图片。搜好素材后，按张写文案，空一行换下一张。"
-      : "还没有可用图片。生成数量对应文案段数；空一行换下一张。";
+      ? "还没有素材库图片。图片数量有几张，就选几张素材、填几个文案框。"
+      : "还没有可用图片。生成数量有几张，下面就有几个文案框。";
   $("#photoList").innerHTML = photos.length ? photos.map((photo) => {
     const order = selected.findIndex((item) => item.key === photo.key);
     const checked = order >= 0;

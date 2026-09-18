@@ -122,24 +122,39 @@ export function parseOverlayBlocks(value) {
   return blocks;
 }
 
-export function buildPerImageCopySlides({ title, subtitle, body, count, smash } = {}) {
+export function linesFromCopyField(value, smash = false) {
+  return String(value || "").split(/\r?\n/).map((line) => {
+    const text = line.trim();
+    return smash ? smashCardWords(text) : text;
+  }).filter(Boolean);
+}
+
+export function normalizeCopyFields(copies, count) {
+  const list = Array.isArray(copies) ? copies.map((value) => String(value ?? "")) : [];
+  const limit = Math.max(1, Math.min(6, Number(count) || list.length || 1));
+  return Array.from({ length: limit }, (_, index) => list[index] || "");
+}
+
+export function buildPerImageCopySlides({ title, subtitle, copies, body, count, smash } = {}) {
   const heading = String(title || "").trim();
   const caption = String(subtitle || "").trim();
   const applySmash = (line) => smash ? smashCardWords(line) : line;
-  const limit = Math.max(1, Math.min(6, Number(count) || 1));
-  const groups = splitContentCardBodies(body, limit, smash);
-  return Array.from({ length: limit }, (_, index) => ({
+  const fields = Array.isArray(copies)
+    ? normalizeCopyFields(copies, count)
+    : splitContentCardBodies(body, count, smash).map((lines) => lines.join("\n"));
+  const slides = normalizeCopyFields(fields, count).map((field, index) => ({
     kind: index === 0 ? "cover" : "block",
     title: index === 0 ? applySmash(heading) : "",
     subtitle: index === 0 ? applySmash(caption) : "",
-    lines: groups[index] || [],
+    lines: linesFromCopyField(field, smash),
   }));
+  return slides;
 }
 
 export function buildStockOverlaySlides(options = {}) {
   const slides = buildPerImageCopySlides(options);
   if (!slides.some((slide) => slide.title || slide.subtitle || slide.lines.length)) {
-    throw Object.assign(new Error("请填写叠字标题或每张图片的文案。"), { statusCode: 400 });
+    throw Object.assign(new Error("请填写每张图片的文案。"), { statusCode: 400 });
   }
   return slides;
 }
@@ -163,7 +178,7 @@ export function splitContentCardBodies(body, count, smash = false) {
   }).filter((slice) => slice.length);
 }
 
-export function buildTextCardSlides({ title, body, accent, count, smash, template } = {}) {
+export function buildTextCardSlides({ title, body, copies, accent, count, smash, template } = {}) {
   const heading = String(title || "").trim();
   const mark = String(accent || "").trim();
   const kind = normalizeTextCardTemplate(template);
@@ -177,8 +192,10 @@ export function buildTextCardSlides({ title, body, accent, count, smash, templat
       bullets: [],
     }];
   }
-  const groups = splitContentCardBodies(body, count, smash);
-  if (!heading && !groups.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
+  const groups = Array.isArray(copies)
+    ? normalizeCopyFields(copies, count).map((field) => linesFromCopyField(field, smash))
+    : splitContentCardBodies(body, count, smash);
+  if (!heading && !groups.some((group) => group.length)) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
   if (!groups.length) {
     return [{
       kind: "content",

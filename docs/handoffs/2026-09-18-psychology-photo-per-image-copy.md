@@ -1,20 +1,20 @@
 # Goal
 
-Make AI generation and stock photos use the same per-image overlay copy as text cards: N images, N copy blocks, blank line starts the next image.
+Replace blank-line copy splitting with one labeled input per image, so later 图文爆款 recreation can fill those fields directly.
 
 # Decisions
 
-- Count is the number of images. Each index maps to one copy block from `splitContentCardBodies`.
-- Stock may still overlay an optional title/subtitle on the first image only.
-- AI overlay is optional: empty copy publishes the raw Z-Image results. Filled copy composites through a same-origin `/api/official-tiktok/generated-photos/file` proxy so canvas is not tainted by the Z-Image CDN.
-- Stock requires at least as many selected/pasted photos as the chosen count; it no longer reuses one photo across slides.
+- Count controls how many copy boxes appear. Newlines stay on that image.
+- Stock still has optional title/subtitle on the first image only.
+- Text content pages use the same one-box-per-page pattern; cover stays a single quote.
+- Recreation routing across AI / stock / text templates is not implemented yet.
 
 # Files changed
 
 - `public/psychology-photo.html`
 - `public/psychology-photo.js`
+- `public/psychology-photo.css`
 - `public/psychology-text-card.js`
-- `factory-cloud/src/photo-publishing.js`
 - `factory-cloud/src/psychology-module.test.js`
 - `docs/CURRENT_STATE.md`
 
@@ -24,8 +24,8 @@ Make AI generation and stock photos use the same per-image overlay copy as text 
 
 # Unfinished work
 
-- Not deployed until this change is committed and `factory-cloud` `npm run deploy` is run.
+- 图文爆款 复刻: detect which of the three templates to use, then fill per-image copy boxes and recreate image plus copy.
 
 # Recommended next step
 
-Generate 3 AI images with 3 copy blocks and 3 stock photos with 3 copy blocks, then publish one of each.
+Use the live photo template with count=3 and confirm three separate copy boxes appear in all three modes.

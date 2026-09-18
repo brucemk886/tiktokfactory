@@ -300,9 +300,11 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.doesNotMatch(html,/选择图片与封面|selectedPhotos|photoCount|<option>8<\/option>/);
   assert.match(html,/id="publishTime"[\s\S]*id="musicSoundId"[\s\S]*id="privacyLevel"/);
   assert.match(html,/id="imagePrompt" class="photo-compact-textarea" rows="3"/);
-  assert.match(html,/id="imageCopy"/);
-  assert.match(html,/每张叠字文案（空一行换下一张）/);
-  assert.match(html,/一张图一段文案/);
+  assert.match(html,/id="imageCopyList"/);
+  assert.match(html,/id="stockCopyList"/);
+  assert.match(html,/id="cardCopyList"/);
+  assert.match(html,/几张图几个文案框/);
+  assert.doesNotMatch(html,/空一行换下一张|id="stockBody"|id="cardBody"/);
   assert.match(html,/id="publishCaption" class="photo-compact-textarea" rows="3"/);
   assert.match(html,/id="noImageText" type="checkbox"/);
   assert.doesNotMatch(html,/id="noImageText"[^>]*checked/);
@@ -317,7 +319,6 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
   assert.match(html,/>内容模板</);
   assert.match(html,/>内容标题</);
-  assert.match(html,/内容文案（空一行换下一张）/);
   assert.match(html,/内容页数量/);
   assert.match(html,/不含封面/);
   assert.doesNotMatch(html,/点缀词|去掉空格|smashWords|stockSmash|cardAccent/);
@@ -333,10 +334,13 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/mergeTextCardSets/);
-  assert.match(browser,/内容页数量不含封面/);
+  assert.match(styles,/\.photo-copy-list/);
+  assert.match(browser,/function renderCopyFields\(/);
+  assert.match(browser,/data-copy-index/);
+  assert.match(browser,/内容页有几张/);
   const paged = buildTextCardSlides({
     title: "Signs",
-    body: "card one\n\ncard two line\nmore\n\ncard three",
+    copies: ["card one", "card two line\nmore", "card three"],
     count: 3,
     template: "content",
   });
@@ -399,19 +403,23 @@ test("psychology text cards and stock overlays do not need generated images", ()
   const overlays = buildStockOverlaySlides({
     title: "how to know your attachment style",
     subtitle: "(this explains 90%)",
-    body: "2. they text\nA) search for meaning\nB) enjoy distance\n\n3. they go quiet\nA) panic\nB) wait",
+    copies: [
+      "2. they text\nA) search for meaning\nB) enjoy distance",
+      "3. they go quiet\nA) panic\nB) wait",
+      "",
+    ],
     count: 3,
     smash: true,
   });
   assert.equal(overlays.length, 3);
   assert.equal(overlays[0].kind, "cover");
   assert.equal(overlays[0].title, "howtoknowyourattachmentstyle");
-  assert.equal(overlays[0].lines[0], "theytext");
+  assert.equal(overlays[0].lines[0], "2.theytext");
   assert.equal(overlays[0].lines[1], "A)searchformeaning");
-  assert.equal(overlays[1].lines[0], "theygoquiet");
+  assert.equal(overlays[1].lines[0], "3.theygoquiet");
   assert.deepEqual(overlays[2].lines, []);
   const perImage = buildPerImageCopySlides({
-    body: "first card\nmore on first\n\nsecond card\n\nthird card",
+    copies: ["first card\nmore on first", "second card", "third card"],
     count: 3,
   });
   assert.equal(perImage.length, 3);
