@@ -15,17 +15,31 @@ test("authorized account list is a view page with 20-account pagination", () => 
   assert.match(html, /data-connections-page="view"/);
   assert.match(html, /href="\/tiktok-connections-organize"/);
   assert.match(html, /新建项目 \/ 分组/);
-  assert.match(html, /每页 20 个账号/);
   assert.match(html, /id="accountPager"/);
   assert.match(html, /id="assignGroupBtn"/);
   assert.match(html, /id="selectVisibleBtn"/);
   assert.match(html, /id="moveGroupToProjectBtn"/);
+  assert.match(html, /data-workspace-tab="groups"/);
+  assert.match(html, /data-workspace-tab="projects"/);
+  assert.match(html, /id="groupsPane"/);
+  assert.match(html, /id="projectsPane"/);
+  assert.match(html, /id="groupList"/);
+  assert.match(html, /id="projectsPane"[^>]*hidden/);
+  const groupsChunk = html.split('id="projectsPane"')[0];
+  const projectsChunk = html.split('id="projectsPane"')[1] || "";
+  assert.match(groupsChunk, /id="assignGroupBtn"/);
+  assert.doesNotMatch(groupsChunk, /id="moveGroupToProjectBtn"/);
+  assert.match(projectsChunk, /id="moveGroupToProjectBtn"/);
+  assert.doesNotMatch(projectsChunk, /id="assignGroupBtn"/);
   assert.doesNotMatch(html, /id="createProjectBtn"/);
   assert.doesNotMatch(html, /id="createGroupBtn"/);
   assert.doesNotMatch(html, /id="newProjectName"/);
   assert.match(script, /const PAGE_SIZE = 20/);
   assert.match(script, /canSelectAccounts/);
   assert.match(script, /account-check/);
+  assert.match(script, /function renderGroups/);
+  assert.match(script, /function moveSelectedGroups/);
+  assert.match(script, /setWorkspaceTab\("groups"\)/);
 });
 
 test("creating projects and groups happens on a separate organize page", () => {

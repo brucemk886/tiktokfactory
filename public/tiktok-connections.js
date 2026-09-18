@@ -25,41 +25,55 @@ const elements = {
   moveGroupProjectSelect: document.querySelector("#moveGroupProjectSelect"),
   moveGroupToProjectBtn: document.querySelector("#moveGroupToProjectBtn"),
   selectVisibleBtn: document.querySelector("#selectVisibleBtn"),
+  selectVisibleGroupsBtn: document.querySelector("#selectVisibleGroupsBtn"),
   assignGroupSelect: document.querySelector("#assignGroupSelect"),
   assignGroupBtn: document.querySelector("#assignGroupBtn"),
   deleteGroupBtn: document.querySelector("#deleteGroupBtn"),
   deleteGroupSelect: document.querySelector("#deleteGroupSelect"),
   selectedCount: document.querySelector("#selectedCount"),
+  selectedGroupCount: document.querySelector("#selectedGroupCount"),
   accountPager: document.querySelector("#accountPager"),
+  groupSearch: document.querySelector("#groupSearch"),
+  groupList: document.querySelector("#groupList"),
+  groupPager: document.querySelector("#groupPager"),
+  groupsTab: document.querySelector("#groupsTab"),
+  projectsTab: document.querySelector("#projectsTab"),
+  groupsPane: document.querySelector("#groupsPane"),
+  projectsPane: document.querySelector("#projectsPane"),
+  workspaceTitle: document.querySelector("#workspaceTitle"),
+  workspaceCopy: document.querySelector("#workspaceCopy"),
 };
 
 const PAGE_SIZE = 20;
 const isOrganizePage = document.body.dataset.connectionsPage === "organize";
 const canSelectAccounts = Boolean(document.querySelector("#assignGroupSelect") && document.querySelector("#accountList"));
-const state = { accounts: [], groups: [], projects: [], page: 1 };
+const state = { accounts: [], groups: [], projects: [], page: 1, groupPage: 1, tab: "groups" };
 
 elements.saveButton?.addEventListener("click", saveSettings);
 elements.testButton?.addEventListener("click", testConnection);
 elements.refreshButton?.addEventListener("click", () => loadAccounts({ refresh: true }));
 elements.bridgeUrl?.addEventListener("input", updateAuthorizeLink);
 elements.projectFilter?.addEventListener("change", () => {
-  state.page = 1;
+  state.groupPage = 1;
   syncNewGroupProjectFromFilter();
   fillGroupSelects();
-  renderAccounts();
-  syncGroupReportBar();
+  renderGroups();
 });
 elements.groupFilter?.addEventListener("change", () => { state.page = 1; renderAccounts(); syncGroupReportBar(); });
 elements.accountSearch?.addEventListener("input", () => { state.page = 1; renderAccounts(); });
+elements.groupSearch?.addEventListener("input", () => { state.groupPage = 1; renderGroups(); });
 elements.deleteProjectSelect?.addEventListener("change", fillDeleteGroupSelect);
 elements.createProjectBtn?.addEventListener("click", createProject);
 elements.deleteProjectBtn?.addEventListener("click", deleteCurrentProject);
 elements.createGroupBtn?.addEventListener("click", createGroup);
 elements.saveGroupProjectBtn?.addEventListener("click", saveCurrentGroupProject);
-elements.moveGroupToProjectBtn?.addEventListener("click", moveGroupToProject);
+elements.moveGroupToProjectBtn?.addEventListener("click", moveSelectedGroups);
 elements.selectVisibleBtn?.addEventListener("click", selectVisible);
+elements.selectVisibleGroupsBtn?.addEventListener("click", selectVisibleGroups);
 elements.assignGroupBtn?.addEventListener("click", assignSelected);
 elements.deleteGroupBtn?.addEventListener("click", deleteCurrentGroup);
+elements.groupsTab?.addEventListener("click", () => setWorkspaceTab("groups"));
+elements.projectsTab?.addEventListener("click", () => setWorkspaceTab("projects"));
 
 await loadSettings();
 await loadAccounts();
@@ -123,7 +137,8 @@ async function loadAccounts({ refresh = false } = {}) {
     applyOrganizeQuery();
     fillGroupSelects();
     state.page = 1;
-    renderAccounts();
+    state.groupPage = 1;
+    renderWorkspace();
     syncGroupReportBar();
     showStatus(`已读取 ${state.accounts.length} 个已授权账号，${state.projects.length} 个项目，${state.groups.length} 个分组。`);
   } catch (error) {
@@ -186,8 +201,7 @@ function fillGroupSelects() {
   for (const account of state.accounts) {
     if (account.groupId) counts[account.groupId] = (counts[account.groupId] || 0) + 1;
   }
-  const groups = visibleGroups();
-  const options = groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}（${counts[group.id] || group.accountCount || 0}）</option>`).join("");
+  const options = state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}（${counts[group.id] || group.accountCount || 0}）</option>`).join("");
   const currentFilter = elements.groupFilter?.value || "";
   const currentAssign = elements.assignGroupSelect?.value || "";
   if (elements.groupFilter) {
@@ -216,12 +230,9 @@ function fillDeleteGroupSelect() {
 }
 
 function visibleAccounts() {
-  const projectId = elements.projectFilter?.value || "";
   const groupId = elements.groupFilter?.value || "";
   const query = String(elements.accountSearch?.value || "").trim().toLowerCase();
   return state.accounts.filter((account) => {
-    if (projectId === "unassigned" && account.projectId) return false;
-    if (projectId && projectId !== "unassigned" && account.projectId !== projectId) return false;
     if (groupId === "ungrouped" && account.groupId) return false;
     if (groupId && groupId !== "ungrouped" && account.groupId !== groupId) return false;
     if (query) {
@@ -231,6 +242,20 @@ function visibleAccounts() {
     }
     return true;
   }).sort((left, right) => Number(Boolean(right.publishRisk?.flagged)) - Number(Boolean(left.publishRisk?.flagged)));
+}
+
+function listedGroups() {
+  const projectId = elements.projectFilter?.value || "";
+  const query = String(elements.groupSearch?.value || "").trim().toLowerCase();
+  return state.groups.filter((group) => {
+    if (projectId === "unassigned" && group.projectId) return false;
+    if (projectId && projectId !== "unassigned" && group.projectId !== projectId) return false;
+    if (query) {
+      const haystack = [group.name, group.projectName, group.id];
+      if (!haystack.some((value) => String(value || "").toLowerCase().includes(query))) return false;
+    }
+    return true;
+  }).sort((left, right) => String(left.projectName || "未分配项目").localeCompare(String(right.projectName || "未分配项目"), "zh-CN") || String(left.name || "").localeCompare(String(right.name || ""), "zh-CN"));
 }
 
 function pagedAccounts() {
@@ -247,13 +272,13 @@ function renderAccounts() {
   const paged = pagedAccounts();
   if (!state.accounts.length) {
     elements.accountList.innerHTML = '<div class="empty-state">暂无已授权账号。请先前往 TikTok AI Tool 完成授权。</div>';
-    renderPager(0, 1);
+    renderPager(elements.accountPager, state.page, 0, 1);
     updateSelectedCount();
     return;
   }
   if (!paged.total) {
     elements.accountList.innerHTML = '<div class="empty-state">当前筛选下没有账号。</div>';
-    renderPager(0, 1);
+    renderPager(elements.accountPager, state.page, 0, 1);
     updateSelectedCount();
     return;
   }
@@ -282,36 +307,105 @@ function renderAccounts() {
     input.closest(".account-row")?.classList.toggle("is-checked", input.checked);
     updateSelectedCount();
   }));
-  renderPager(paged.total, paged.pageCount);
+  renderPager(elements.accountPager, state.page, paged.total, paged.pageCount, (page) => {
+    state.page = page;
+    renderAccounts();
+  });
   updateSelectedCount();
 }
 
-function renderPager(total, pageCount) {
-  if (!elements.accountPager) return;
-  if (total <= PAGE_SIZE) {
-    elements.accountPager.hidden = true;
-    elements.accountPager.innerHTML = "";
+function pagedGroups() {
+  const groups = listedGroups();
+  const total = groups.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE) || 1);
+  state.groupPage = Math.min(Math.max(1, state.groupPage), pageCount);
+  const start = (state.groupPage - 1) * PAGE_SIZE;
+  return { groups: groups.slice(start, start + PAGE_SIZE), total, pageCount };
+}
+
+function groupAccountCount(groupId) {
+  return state.accounts.filter((account) => account.groupId === groupId).length;
+}
+
+function renderGroups() {
+  if (!elements.groupList) return;
+  const paged = pagedGroups();
+  if (!state.groups.length) {
+    elements.groupList.innerHTML = '<div class="empty-state">暂无分组。请先到管理页新建分组。</div>';
+    renderPager(elements.groupPager, state.groupPage, 0, 1);
+    updateSelectedGroupCount();
     return;
   }
-  elements.accountPager.hidden = false;
+  if (!paged.total) {
+    elements.groupList.innerHTML = '<div class="empty-state">当前筛选下没有分组。</div>';
+    renderPager(elements.groupPager, state.groupPage, 0, 1);
+    updateSelectedGroupCount();
+    return;
+  }
+  elements.groupList.innerHTML = paged.groups.map((group) => {
+    const count = groupAccountCount(group.id) || Number(group.accountCount || 0);
+    return `<article class="account-row group-row">
+      <input class="group-check" type="checkbox" value="${escapeHtml(group.id)}" />
+      <div><strong>${escapeHtml(group.name)}</strong><span>${escapeHtml(group.projectName ? "已分配项目" : "尚未分配项目")}</span></div>
+      <div><small>所属项目</small><b class="group-chip${group.projectName ? "" : " is-empty"}">${escapeHtml(group.projectName || "未分配项目")}</b></div>
+      <div><small>账号</small><b>${formatNumber(count)}</b></div>
+    </article>`;
+  }).join("");
+  elements.groupList.querySelectorAll(".group-check").forEach((input) => input.addEventListener("change", () => {
+    input.closest(".account-row")?.classList.toggle("is-checked", input.checked);
+    updateSelectedGroupCount();
+  }));
+  renderPager(elements.groupPager, state.groupPage, paged.total, paged.pageCount, (page) => {
+    state.groupPage = page;
+    renderGroups();
+  });
+  updateSelectedGroupCount();
+}
+
+function setWorkspaceTab(tab) {
+  state.tab = tab === "projects" ? "projects" : "groups";
+  const isProjects = state.tab === "projects";
+  elements.groupsTab?.classList.toggle("is-active", !isProjects);
+  elements.projectsTab?.classList.toggle("is-active", isProjects);
+  if (elements.groupsTab) elements.groupsTab.setAttribute("aria-selected", String(!isProjects));
+  if (elements.projectsTab) elements.projectsTab.setAttribute("aria-selected", String(isProjects));
+  if (elements.groupsPane) elements.groupsPane.hidden = isProjects;
+  if (elements.projectsPane) elements.projectsPane.hidden = !isProjects;
+  if (elements.workspaceTitle) elements.workspaceTitle.textContent = isProjects ? "项目" : "分组";
+  if (elements.workspaceCopy) elements.workspaceCopy.textContent = isProjects ? "只展示分组。勾选后移入项目，每页 20 个。" : "只展示账号。勾选后移入分组，每页 20 个。";
+  renderWorkspace();
+}
+
+function renderWorkspace() {
+  if (state.tab === "projects") renderGroups();
+  else renderAccounts();
+}
+
+function renderPager(pager, currentPage, total, pageCount, onPage) {
+  if (!pager) return;
+  if (total <= PAGE_SIZE) {
+    pager.hidden = true;
+    pager.innerHTML = "";
+    return;
+  }
+  pager.hidden = false;
   const buttons = [
-    `<button type="button" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一页</button>`
+    `<button type="button" data-page="${currentPage - 1}" ${currentPage <= 1 ? "disabled" : ""}>上一页</button>`
   ];
   for (let page = 1; page <= pageCount; page += 1) {
-    if (pageCount > 9 && page !== 1 && page !== pageCount && Math.abs(page - state.page) > 2) {
+    if (pageCount > 9 && page !== 1 && page !== pageCount && Math.abs(page - currentPage) > 2) {
       if (buttons[buttons.length - 1] !== "<span>…</span>") buttons.push("<span>…</span>");
       continue;
     }
-    buttons.push(`<button type="button" data-page="${page}" class="${page === state.page ? "is-active" : ""}">${page}</button>`);
+    buttons.push(`<button type="button" data-page="${page}" class="${page === currentPage ? "is-active" : ""}">${page}</button>`);
   }
-  buttons.push(`<button type="button" data-page="${state.page + 1}" ${state.page >= pageCount ? "disabled" : ""}>下一页</button>`);
-  elements.accountPager.innerHTML = `<span>每页 ${PAGE_SIZE} 个 · 第 ${state.page} / ${pageCount} 页 · 共 ${total} 个</span>${buttons.join("")}`;
-  elements.accountPager.querySelectorAll("[data-page]").forEach((button) => {
+  buttons.push(`<button type="button" data-page="${currentPage + 1}" ${currentPage >= pageCount ? "disabled" : ""}>下一页</button>`);
+  pager.innerHTML = `<span>每页 ${PAGE_SIZE} 个 · 第 ${currentPage} / ${pageCount} 页 · 共 ${total} 个</span>${buttons.join("")}`;
+  pager.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => {
       const next = Number(button.dataset.page);
-      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.page) return;
-      state.page = next;
-      renderAccounts();
+      if (!Number.isFinite(next) || next < 1 || next > pageCount || next === currentPage || !onPage) return;
+      onPage(next);
     });
   });
 }
@@ -341,6 +435,20 @@ function selectVisible() {
     input.closest(".account-row")?.classList.toggle("is-checked", shouldCheck);
   });
   updateSelectedCount();
+}
+
+function selectVisibleGroups() {
+  const inputs = Array.from(elements.groupList?.querySelectorAll(".group-check") || []);
+  const shouldCheck = inputs.some((input) => !input.checked);
+  inputs.forEach((input) => {
+    input.checked = shouldCheck;
+    input.closest(".account-row")?.classList.toggle("is-checked", shouldCheck);
+  });
+  updateSelectedGroupCount();
+}
+
+function selectedGroups() {
+  return Array.from(elements.groupList?.querySelectorAll(".group-check:checked") || []).map((input) => input.value).filter(Boolean);
 }
 
 function selectedAccounts() {
@@ -387,7 +495,7 @@ async function deleteCurrentProject() {
     if (elements.projectFilter) elements.projectFilter.value = "";
     if (elements.deleteProjectSelect) elements.deleteProjectSelect.value = "";
     fillGroupSelects();
-    renderAccounts();
+    renderWorkspace();
     showStatus("项目已删除。");
   } catch (error) {
     showStatus(error.message || "删除项目失败。", true);
@@ -430,12 +538,32 @@ async function saveCurrentGroupProject() {
   await applyGroupProject(groupId, projectId, elements.saveGroupProjectBtn);
 }
 
-async function moveGroupToProject() {
-  const groupId = elements.moveGroupSelect?.value || "";
+async function moveSelectedGroups() {
+  const groupIds = selectedGroups();
   const projectId = elements.moveGroupProjectSelect?.value || "";
-  if (!groupId) return showStatus("请选择要移动的分组。", true);
+  if (!groupIds.length) return showStatus("请先勾选要移动的分组。", true);
   if (!projectId) return showStatus("请选择要移入的项目。", true);
-  await applyGroupProject(groupId, projectId, elements.moveGroupToProjectBtn);
+  const project = state.projects.find((item) => item.id === projectId);
+  setBusy(elements.moveGroupToProjectBtn, true, "移动中...");
+  try {
+    let result = null;
+    for (const groupId of groupIds) {
+      result = await requestJson(`/api/official-tiktok/account-groups/${encodeURIComponent(groupId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId })
+      });
+    }
+    applyGroupState(result || {});
+    if (elements.projectFilter) elements.projectFilter.value = projectId;
+    fillGroupSelects();
+    renderWorkspace();
+    showStatus(`已将 ${groupIds.length} 个分组移入「${project?.name || "项目"}」。`);
+  } catch (error) {
+    showStatus(error.message || "分组移入项目失败。", true);
+  } finally {
+    setBusy(elements.moveGroupToProjectBtn, false, "移入项目");
+  }
 }
 
 async function applyGroupProject(groupId, projectId, button) {
@@ -452,7 +580,7 @@ async function applyGroupProject(groupId, projectId, button) {
     if (elements.projectFilter) elements.projectFilter.value = projectId;
     if (elements.groupFilter) elements.groupFilter.value = groupId;
     fillGroupSelects();
-    renderAccounts();
+    renderWorkspace();
     syncGroupReportBar();
     showStatus(`已将分组「${group?.name || groupId}」移入「${project?.name || "项目"}」。`);
   } catch (error) {
@@ -493,7 +621,7 @@ async function deleteCurrentGroup() {
     applyGroupState(result);
     if (elements.groupFilter) elements.groupFilter.value = "";
     if (elements.deleteGroupSelect) elements.deleteGroupSelect.value = "";
-    renderAccounts();
+    renderWorkspace();
     showStatus("分组已删除，账号已回到未分组。");
   } catch (error) {
     showStatus(error.message || "删除分组失败。", true);
@@ -522,7 +650,7 @@ function applyGroupState(result) {
   });
   fillProjectSelects();
   fillGroupSelects();
-  renderAccounts();
+  renderWorkspace();
   syncGroupReportBar();
 }
 
@@ -564,6 +692,11 @@ function normalizeAccountKey(value) {
 function updateSelectedCount() {
   const count = elements.accountList?.querySelectorAll(".account-check:checked").length || 0;
   if (elements.selectedCount) elements.selectedCount.textContent = `已选 ${count} 个`;
+}
+
+function updateSelectedGroupCount() {
+  const count = elements.groupList?.querySelectorAll(".group-check:checked").length || 0;
+  if (elements.selectedGroupCount) elements.selectedGroupCount.textContent = `已选 ${count} 个`;
 }
 
 function updateAuthorizeLink() {
