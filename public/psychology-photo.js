@@ -538,7 +538,7 @@ function renderGeneratedPhotos() {
     const checked = order >= 0;
     const label = checked ? `${order + 1}${order === 0 ? " · 封面" : ""}` : "未选";
     return `<article class="generated-photo-card${checked ? " is-selected" : ""}">
-      <label class="photo-pick"><input type="checkbox" data-photo-key="${escapeAttr(photo.key)}" ${checked ? "checked" : ""}><span>选用</span></label>
+      <label class="photo-pick"><input type="checkbox" data-photo-key="${escapeAttr(photo.key)}" ${checked ? "checked" : ""} aria-label="选用这张图"></label>
       <button type="button" class="photo-zoom" data-photo-url="${escapeAttr(photo.url)}" aria-label="放大查看">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>

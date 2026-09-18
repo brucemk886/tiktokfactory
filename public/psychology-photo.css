@@ -37,9 +37,9 @@
 .generated-photo-card.is-selected { border-color: #8a9a32; box-shadow: inset 0 0 0 2px #c5d48a; }
 .generated-photo-card img { width: 100%; aspect-ratio: 9 / 16; display: block; object-fit: cover; background: #ece9df; }
 .generated-photo-card > span { display: block; padding: 8px 10px; color: var(--lf-muted); font-size: 12px; }
-.photo-pick { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; align-items: center; gap: 5px; margin: 0; padding: 4px 7px; border-radius: 999px; background: rgba(255,255,255,.92); color: var(--lf-text); font-size: 11px; font-weight: 700; cursor: pointer; }
-.photo-pick input { appearance: none; width: 14px; height: 14px; margin: 0; border: 1.5px solid #b7b09f; border-radius: 4px; background: #fff; }
-.photo-pick input:checked { border-color: #6d7c28; background: #8a9a32; box-shadow: inset 0 0 0 2px #fff; }
+.photo-pick { position: absolute; top: 8px; left: 8px; z-index: 2; width: 32px; height: 32px; margin: 0; display: grid; place-items: center; border-radius: 999px; background: rgba(255,255,255,.94); box-shadow: 0 1px 4px rgba(0,0,0,.14); cursor: pointer; }
+.photo-pick input { appearance: none; width: 16px; height: 16px; margin: 0; border: 1.5px solid #8d8778; border-radius: 4px; background: #fff; }
+.photo-pick input:checked { border-color: #1d1a14; background: #1d1a14 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.2 6.6 11.2 12.5 4.8'/%3E%3C/svg%3E") center / 12px no-repeat; }
 .photo-zoom { position: absolute; top: 8px; right: 8px; z-index: 2; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,.92); color: #1d1a14; cursor: pointer; }
 .photo-zoom svg { width: 16px; height: 16px; }
 .photo-lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 32px; background: rgba(20, 16, 10, .72); }
