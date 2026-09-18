@@ -103,6 +103,14 @@ test("Gemini 3.8 Flash is the default chat model and receives ordered reference 
   assert.deepEqual(calls[0].body.messages[0].content.slice(1).map(part => part.image_url.url), images);
 });
 
+test("accepts inline data URLs and surfaces nested Kie error messages", async () => {
+  const kie = createKieClient({ apiKey: "test-key", fetchImpl: async () => json({
+    code: 422,
+    error: { message: "The image url cannot be fetched" }
+  }, 422) });
+  await assert.rejects(kie.createChat("Look", { imageUrls: ["data:image/jpeg;base64,/9j/4AAQ"] }), /cannot be fetched/);
+});
+
 function json(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }

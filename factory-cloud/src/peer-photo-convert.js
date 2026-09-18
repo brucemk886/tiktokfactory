@@ -82,6 +82,9 @@ export async function createKiePhotoSourceUrl({ baseUrl, jobId, index, ext, secr
 
 export async function handleKiePhotoSource(request, env, url, now = Date.now()) {
   if (!url.pathname.startsWith(KIE_PHOTO_SOURCE_PATH)) return null;
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
   if (!['GET', 'HEAD'].includes(request.method)) return errorJson('仅支持读取图片。', 405);
   const match = url.pathname.slice(KIE_PHOTO_SOURCE_PATH.length).match(/^([^/]+)\/(\d+)\.(jpeg|jpg|png|webp|gif)$/i);
   if (!match) return errorJson('图片读取地址无效。', 400);
@@ -130,15 +133,59 @@ export async function loadKiePhoto(env, sourceUrl, options = {}) {
   throw lastError || new Error('无法下载原帖图片并转成 Gemini 可识别的格式。');
 }
 
+const MAX_INLINE_PHOTO_BYTES = 8 * 1024 * 1024;
+
+export async function loadPeerPhotoChatImages(env, prepared = {}) {
+  const keys = Array.isArray(prepared.keys) ? prepared.keys : [];
+  const urls = Array.isArray(prepared.urls) ? prepared.urls.filter((value) => /^https:\/\//i.test(String(value || ''))) : [];
+  if (!keys.length) return urls;
+  try {
+    const inline = [];
+    let total = 0;
+    for (const key of keys) {
+      const bytes = await readArchiveBytes(await env.ARCHIVE.get(key));
+      const format = sniffImageFormat(bytes);
+      if (!bytes?.byteLength || !KIE_FORMATS.has(format)) return urls;
+      total += bytes.byteLength;
+      if (total > MAX_INLINE_PHOTO_BYTES) return urls;
+      inline.push(`data:${MIME[format]};base64,${bytesToBase64(bytes)}`);
+    }
+    return inline.length === keys.length ? inline : urls;
+  } catch {
+    return urls;
+  }
+}
+
+export async function readArchiveBytes(object) {
+  if (!object) return null;
+  if (object.body instanceof Uint8Array) return object.body;
+  if (typeof object.arrayBuffer === 'function') return new Uint8Array(await object.arrayBuffer());
+  if (object.body) return new Uint8Array(await new Response(object.body).arrayBuffer());
+  return null;
+}
+
+function bytesToBase64(bytes) {
+  return Buffer.from(bytes).toString('base64');
+}
+
 function photoObjectKey(jobId, index, format) {
   return `psychology-photo-story-sources/${jobId}/${index}.${format}`;
+}
+
+function corsHeaders() {
+  return {
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, HEAD, OPTIONS',
+    'access-control-max-age': '86400'
+  };
 }
 
 function photoHeaders(mimeType, size) {
   const headers = new Headers({
     'content-type': String(mimeType || 'application/octet-stream'),
     'cache-control': 'private, no-store',
-    'x-content-type-options': 'nosniff'
+    'x-content-type-options': 'nosniff',
+    ...corsHeaders()
   });
   if (size > 0) headers.set('content-length', String(size));
   return headers;

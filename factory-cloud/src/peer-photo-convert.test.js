@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { convertImageBytes, createKiePhotoSourceUrl, handleKiePhotoSource, preparePeerPhotosForKie, sniffImageFormat } from './peer-photo-convert.js';
+import { convertImageBytes, createKiePhotoSourceUrl, handleKiePhotoSource, loadPeerPhotoChatImages, preparePeerPhotosForKie, sniffImageFormat } from './peer-photo-convert.js';
 
 function jpegBytes() {
   const bytes = new Uint8Array(16);
@@ -92,4 +92,27 @@ test('signed photo source rejects a tampered signature', async () => {
   const tampered = new URL(url);
   tampered.searchParams.set('signature', '00');
   assert.equal((await handleKiePhotoSource(new Request(tampered), env, tampered, now)).status, 401);
+});
+
+test('loads converted R2 photos as inline Gemini data URLs', async () => {
+  const store = archive();
+  await store.put('psychology-photo-story-sources/job-4/0.jpeg', jpegBytes());
+  const env = { ARCHIVE: store };
+  const images = await loadPeerPhotoChatImages(env, {
+    keys: ['psychology-photo-story-sources/job-4/0.jpeg'],
+    urls: ['https://factory.test/api/integrations/kie-photo-source/job-4/0.jpeg']
+  });
+  assert.equal(images.length, 1);
+  assert.match(images[0], /^data:image\/jpeg;base64,/);
+  assert.equal(Buffer.from(images[0].slice(images[0].indexOf(',') + 1), 'base64').equals(Buffer.from(jpegBytes())), true);
+});
+
+test('photo source answers CORS preflight', async () => {
+  const response = await handleKiePhotoSource(
+    new Request('https://factory.test/api/integrations/kie-photo-source/job-5/0.jpeg', { method: 'OPTIONS' }),
+    { KIE_API_KEY: 'kie-secret', ARCHIVE: archive() },
+    new URL('https://factory.test/api/integrations/kie-photo-source/job-5/0.jpeg')
+  );
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
 });

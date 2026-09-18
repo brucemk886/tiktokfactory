@@ -117,7 +117,7 @@ test('single-image photo post uses Gemini 3.8 Flash once and renders a text card
   assert.match(chatCalls[0].url,/gemini-3-8-flash-openai/);
   const imageParts=chatCalls[0].body.messages[0].content.filter(part=>part.type==='image_url');
   assert.equal(imageParts.length,1);
-  assert.match(imageParts[0].image_url.url,/https:\/\/factory\.test\/api\/integrations\/kie-photo-source\/cloud-test\/0\.jpeg/);
+  assert.match(imageParts[0].image_url.url, /^data:image\/jpeg;base64,/);
   assert.equal(f.objects.size,0);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.equal(saved.progressTotal,1);assert.equal(saved.results.length,1);assert.equal(saved.results[0].imageModel,'text-card');
@@ -129,6 +129,22 @@ test('cloud provider failure is recorded and keeps completed pages without claim
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'failed');assert.match(row.error,/Pexels 搜索失败/);
   assert.equal(JSON.parse(row.result_json).results.length,1);assert.equal(f.submissions.length,0);
+});
+
+test('Gemini analysis failure keeps the provider error instead of a workflow retry wrapper', async t => {
+  const f = cloudFixture(t);
+  const originalFetch = f.env.fetch;
+  f.env.fetch = async (url, init) => {
+    if (String(url).includes('/chat/completions')) {
+      return Response.json({ code: 500, msg: 'The image url cannot be fetched from factory host' }, { status: 500 });
+    }
+    return originalFetch(url, init);
+  };
+  await assert.rejects(runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step), /cannot be fetched/);
+  const row = f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
+  assert.equal(row.status, 'failed');
+  assert.match(row.error, /cannot be fetched from factory host/);
+  assert.doesNotMatch(row.error, /retry fail/);
 });
 
 function fixture(t, overrides = {}) {

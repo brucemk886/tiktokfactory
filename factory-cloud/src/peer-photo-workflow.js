@@ -1,7 +1,7 @@
 import { buildPhotoStoryPrompt, buildStockPickPrompt, parsePhotoStory, parseStockPick } from '../../scripts/psychology-peer-production.js';
 import { createKieClient } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
-import { preparePeerPhotosForKie, deletePeerPhotoSources } from './peer-photo-convert.js';
+import { preparePeerPhotosForKie, deletePeerPhotoSources, loadPeerPhotoChatImages } from './peer-photo-convert.js';
 import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 
@@ -37,14 +37,14 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     payload.sceneCount = total;
     if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
     await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成 Gemini 可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
-    kiePhotos = await step.do('prepare-kie-images', CONVERT, () => preparePeerPhotosForKie(env, id, source.urls));
+    kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
     const rewrite = payload.rewriteCopy !== false;
     await save('source-ready', 'running', 8, `原图已转码，Gemini 3.8 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
     let validationError = '';
     for (let attempt = 0; attempt < 3; attempt++) {
-      const text = await step.do(`story-${attempt}`, SUBMIT, () => kie.createChat(
+      const text = await paidCall(step, `story-${attempt}`, async () => kie.createChat(
         buildPhotoStoryPrompt(payload, { sceneCount: total }) + (validationError ? `\nCorrect this validation error: ${validationError}` : ''),
-        { model: 'gemini-3-8-flash', imageUrls: kiePhotos.urls }
+        { model: 'gemini-3-8-flash', imageUrls: await loadPeerPhotoChatImages(env, kiePhotos) }
       ));
       try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
     }
@@ -54,7 +54,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       const scene = plan.scenes[index];
       if (scene.template === 'stock') {
         await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页搜索相近底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
-        const photo = await matchStockPhoto(env, kie, step, scene, kiePhotos.urls[index], index);
+        const photo = await matchStockPhoto(env, kie, step, scene, kiePhotos, index);
         results.push(photoPage(scene, index, photo));
         await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页。`, '', {productionScene:{index,imageUrl:photo.fileUrl || photo.imageUrl,imagePrompt:scene.stockQuery,imageStatus:'done'}});
       } else {
@@ -74,7 +74,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   }
 }
 
-async function matchStockPhoto(env, kie, step, scene, sourceUrl, index) {
+async function matchStockPhoto(env, kie, step, scene, kiePhotos, index) {
   const found = await step.do(`stock-search-${index}`, READ, () => searchStockPhotos(env, new URLSearchParams({ q: scene.stockQuery, count: '8' })));
   if (!found.configured) throw new Error('还没有配置 Pexels，无法为有底图的页面匹配素材。');
   let photos = found.photos || [];
@@ -87,12 +87,19 @@ async function matchStockPhoto(env, kie, step, scene, sourceUrl, index) {
   }
   if (!photos.length) throw new Error(`第 ${index + 1} 页没有搜到相近素材。`);
   const candidates = photos.slice(0, 4);
-  if (candidates.length === 1 || !/^https:\/\//i.test(String(sourceUrl || ''))) return candidates[0];
+  const sourceUrl = kiePhotos.urls[index];
+  if (candidates.length === 1 || !sourceUrl) return candidates[0];
   try {
-    const text = await step.do(`stock-pick-${index}`, SUBMIT, () => kie.createChat(buildStockPickPrompt(scene, candidates), {
-      model: 'gemini-3-8-flash',
-      imageUrls: [sourceUrl, ...candidates.map((photo) => photo.imageUrl)].filter((url) => /^https:\/\//i.test(url)).slice(0, 6)
-    }));
+    const text = await paidCall(step, `stock-pick-${index}`, async () => {
+      const sourceImages = await loadPeerPhotoChatImages(env, {
+        keys: Array.isArray(kiePhotos.keys) ? kiePhotos.keys.slice(index, index + 1) : [],
+        urls: [sourceUrl]
+      });
+      return kie.createChat(buildStockPickPrompt(scene, candidates), {
+        model: 'gemini-3-8-flash',
+        imageUrls: [...sourceImages, ...candidates.map((photo) => photo.imageUrl)].filter((url) => isChatImage(url)).slice(0, 6)
+      });
+    });
     return candidates[parseStockPick(text, candidates.length)];
   } catch {
     return candidates[0];
@@ -139,4 +146,20 @@ function photoPage(scene, index, photo) {
 
 function progress(total, completed) {
   return Math.min(95, Math.round(15 + (Math.max(0, completed) * 80) / Math.max(1, total)));
+}
+
+async function paidCall(step, name, action, config = SUBMIT, fallback = 'Gemini 分析原图失败。') {
+  const outcome = await step.do(name, config, async () => {
+    try {
+      return { ok: true, value: await action() };
+    } catch (error) {
+      return { ok: false, error: String(error?.message || error).slice(0, 1000) };
+    }
+  });
+  if (!outcome?.ok) throw new Error(outcome?.error || fallback);
+  return outcome.value;
+}
+
+function isChatImage(url) {
+  return /^https:\/\//i.test(String(url || '')) || /^data:image\//i.test(String(url || ''));
 }

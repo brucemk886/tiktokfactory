@@ -74,7 +74,7 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     };
     if (!paths[model]) throw new Error('不支持的 Kie 对话模型。');
     const images = imageUrls.map(value => String(value || '').trim());
-    if (images.length > 35 || images.some(value => !/^https:\/\/[^\s]+$/i.test(value))) throw new Error('多模态图片地址无效。');
+    if (images.length > 35 || images.some(value => !isKieChatImageUrl(value))) throw new Error('多模态图片地址无效。');
     const data = await kieRequest(paths[model], {
       method: 'POST',
       signal: AbortSignal.timeout(15 * 60 * 1000),
@@ -84,9 +84,11 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
       ] }], stream: false, include_thoughts: false, reasoning_effort: 'medium' })
     });
     const payload = Array.isArray(data?.choices) ? data : data?.data || data;
-    const content = payload.choices?.[0]?.message?.content;
-    const text = typeof content === 'string' ? content : Array.isArray(content) ? content.map(part => part.text || '').join('') : '';
-    if (!text.trim()) throw new Error('AI 文案服务没有返回内容。');
+    const text = chatText(payload);
+    if (!text.trim()) {
+      const reason = payload?.choices?.[0]?.finish_reason || data?.msg || data?.message || '空响应';
+      throw new Error(`AI 文案服务没有返回内容：${String(reason).slice(0, 180)}。`);
+    }
     return {
       text,
       model,
@@ -113,6 +115,27 @@ function parseResultUrls(value) {
   }
 }
 
+function chatText(payload) {
+  const message = payload?.choices?.[0]?.message || {};
+  const content = message.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => part && part.thought !== true && part.type !== 'thought')
+      .map((part) => part.text || '')
+      .join('');
+  }
+  return String(message.reasoning_content || message.text || payload?.text || '');
+}
+
+export function isKieChatImageUrl(value) {
+  const text = String(value || '').trim();
+  if (/^https:\/\/[^\s]+$/i.test(text)) return true;
+  return /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(text);
+}
+
 function kieError(data, fallback) {
-  return String(data?.msg || data?.message || data?.error || fallback);
+  const error = data?.error;
+  const detail = data?.msg || data?.message || (typeof error === 'string' ? error : error?.message) || fallback;
+  return String(detail);
 }

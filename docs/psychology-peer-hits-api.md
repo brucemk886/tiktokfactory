@@ -118,4 +118,4 @@ Content-Type: application/json
 | 415 | 设置 `Content-Type: application/json`。 |
 | 500 / 网络超时 | 稍后指数退避重试，保留原视频身份和采集时间。 |
 
-页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接，并可逐条修改音色性别。视频复刻按记录选择男声 `Gubgw9l4dtIoQA9YZHgx` 或女性 Lara `vChnJZ1Cu89g2XXumPfT`；图文复刻由 Gemini 3.8 Flash 判断每页走文案卡片还是素材库底图；原帖图会先下载，HEIC 等 Gemini 不认的格式转成 JPEG 后再传入，不丢原图；改写时帖子标题/文案和图片叠字分开处理，不调用 Z-Image 和配音。
+页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接，并可逐条修改音色性别。视频复刻按记录选择男声 `Gubgw9l4dtIoQA9YZHgx` 或女性 Lara `vChnJZ1Cu89g2XXumPfT`；图文复刻由 Gemini 3.8 Flash 判断每页走文案卡片还是素材库底图；原帖图会先下载，HEIC 等 Gemini 不认的格式转成 JPEG 后以内嵌字节传给模型，不丢原图，也不再让 Kie 回拉工厂临时地址；改写时帖子标题/文案和图片叠字分开处理，不调用 Z-Image 和配音。
