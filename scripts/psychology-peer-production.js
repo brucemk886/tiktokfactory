@@ -133,7 +133,7 @@ export function buildPhotoStoryPrompt(payload, { sceneCount = payload.sceneCount
       : 'rewriteCopy is false: copy the post title and caption from REFERENCE_JSON without paraphrasing. Extract each image\'s visible overlay words into that page\'s title, subtitle and body without paraphrasing. Do not invent new ideas.',
     'For template "text": textKind is "cover" when the original is a single large quote or headline card, otherwise "content". Cover uses title only. Content uses title plus body.',
     'For template "stock": put the main overlay heading in title, a short second line in subtitle, remaining overlay copy in body. Keep normal English spaces. Put each body section on its own line, with a blank line between sections. stockQuery must be 8-120 English characters.',
-    `Return exactly ${count} scene${count === 1 ? '' : 's'} in source order. Write three different overall hooks and a publishable caption only from the post title/copy. Return JSON only: {"title":"...","hooks":["...","...","..."],"caption":"...","sourceAngle":"...","scenes":[{"sourceIndex":1,"template":"text|stock","textKind":"cover|content","sourceImageAnalysis":{"subject":"...","composition":"...","colors":"...","style":"...","textLayout":"...","background":"..."},"originalText":"...","title":"...","subtitle":"...","body":"...","text":"...","stockQuery":"..."}]}`,
+    `Return exactly ${count} scene${count === 1 ? '' : 's'} in source order. Write three different overall hooks and a publishable caption only from the post title/copy. The top-level title is a short scroll-stopping hook of at most 60 characters; the caption is 1-3 full sentences and must not repeat or start with the title. Return JSON only: {"title":"...","hooks":["...","...","..."],"caption":"...","sourceAngle":"...","scenes":[{"sourceIndex":1,"template":"text|stock","textKind":"cover|content","sourceImageAnalysis":{"subject":"...","composition":"...","colors":"...","style":"...","textLayout":"...","background":"..."},"originalText":"...","title":"...","subtitle":"...","body":"...","text":"...","stockQuery":"..."}]}`,
     'Scene text is the combined overlay copy for that page, taken only from that image. stockQuery is required for stock scenes and must be empty for text scenes.',
     'REFERENCE_JSON: ' + JSON.stringify({ title: payload.topic, copy: payload.script, rewriteCopy: rewrite }),
   ].join('\n');
@@ -198,7 +198,16 @@ export function parsePhotoStory(value, { sceneCount } = {}) {
       originalText, title: pageTitle || text.slice(0, 200), subtitle, body: textKind === 'cover' ? '' : (pageBody || text), text, stockQuery: '',
     };
   });
-  return { title: source.title.trim().slice(0, 90), caption: String(source.caption || '').slice(0, 4000), sourceAngle: String(source.sourceAngle || '').slice(0, 1000), hooks, scenes };
+  let title = source.title.trim().slice(0, 90);
+  const caption = String(source.caption || '').slice(0, 4000);
+  // TikTok source posts often use the caption's first sentence as the title,
+  // so a rewrite can come back duplicated. Swap in a distinct hook instead.
+  const captionNorm = caption.trim().toLowerCase();
+  if (captionNorm && captionNorm.startsWith(title.toLowerCase())) {
+    const distinct = hooks.find((hook) => !captionNorm.startsWith(hook.trim().toLowerCase()));
+    if (distinct) title = distinct.slice(0, 90);
+  }
+  return { title, caption, sourceAngle: String(source.sourceAngle || '').slice(0, 1000), hooks, scenes };
 }
 
 export function buildStockPickPrompt(scene, candidates = []) {

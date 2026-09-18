@@ -147,9 +147,26 @@ function contentStockQuery(scenes) {
   return dominant[0].slice(0, 160);
 }
 
+// Busy texture close-ups (sand, grass, rocks…) read as noise behind captions
+// even when they match the search words, so the content pool skips them
+// whenever enough clean photos remain.
+const BUSY_TEXTURE_PATTERN = /\b(sand|sandy|dune|dunes|grass|grasses|desert|rock|rocks|stone|stones|pebble|plant|plants|flower|flowers|leaf|leaves|foliage|macro|texture|fabric|foam)\b|close-?up/i;
+
+function rankContentPhotos(photos, query, needed) {
+  const clean = photos.filter((photo) => !BUSY_TEXTURE_PATTERN.test(String(photo.alt || '')));
+  const pool = clean.length >= needed ? clean : photos;
+  const style = CONTENT_STYLES[contentStyleIndex(query)];
+  if (!style) return pool;
+  const styled = pool.filter((photo) => style.test(String(photo.alt || '')));
+  const rest = pool.filter((photo) => !style.test(String(photo.alt || '')));
+  return [...styled, ...rest];
+}
+
 async function loadStockPhotos(env, step, role, scenes) {
   const needed = scenes.filter((scene, index) => scene.template === 'stock' && stockRole(scene, index) === role).length;
-  const count = String(Math.max(needed, role === 'cover' ? 4 : 6));
+  // Content over-fetches so the busy-texture and style filters below still
+  // leave one bright photo per page; it stays a single Pexels request.
+  const count = String(role === 'cover' ? Math.max(needed, 4) : Math.min(30, Math.max(needed * 3, 12)));
   const query = role === 'cover' ? coverStockQuery(scenes) : contentStockQuery(scenes);
   const params = { q: query, count, role };
   if (role === 'cover') params.allowPeople = '1';
@@ -169,7 +186,7 @@ async function loadStockPhotos(env, step, role, scenes) {
     photos.push(...(fallback.photos || []));
   }
   if (!photos.length) throw new Error(role === 'cover' ? '没有搜到可用的封面底图。' : '没有搜到可用的详情底图。');
-  return photos;
+  return role === 'content' ? rankContentPhotos(photos, query, needed) : photos;
 }
 
 function textPage(scene, index) {

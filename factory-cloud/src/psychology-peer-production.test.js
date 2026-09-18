@@ -131,6 +131,35 @@ test('cover and content stock pages search Pexels twice and content unifies on t
   assert.equal(saved.results[0].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
 });
 
+test('content pool skips busy texture close-ups and hands out bright majority-style photos', async t => {
+  const f=cloudFixture(t);
+  f.plan.scenes=[
+    {template:'text', textKind:'cover', title:'Cover quote', body:'', text:'Cover quote'},
+    {template:'stock', textKind:'content', title:'2. page', body:'first line', text:'2. page', stockQuery:'bright pastel sky over calm ocean horizon'},
+    {template:'stock', textKind:'content', title:'3. page', body:'second line', text:'3. page', stockQuery:'soft waves on a bright sea shore'},
+  ];
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'Quiet',script:'Reflect on what silence brings up for you.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:f.imageUrls.slice(0,3)}}));
+  const originalFetch=f.env.fetch;
+  f.env.fetch=async(url,init)=>{
+    if(String(url).includes('api.pexels.com')) return Response.json({photos:[
+      {id:300, alt:'golden sand dunes glowing in bright light', avg_color:'#efe3c8', photographer:'Pexels', url:'https://www.pexels.com/photo/dunes', src:{portrait:'https://images.pexels.com/photos/300/portrait.jpeg'}},
+      {id:301, alt:'bright pastel sky over calm ocean horizon', avg_color:'#c8d4e0', photographer:'Pexels', url:'https://www.pexels.com/photo/sky', src:{portrait:'https://images.pexels.com/photos/301/portrait.jpeg'}},
+      {id:302, alt:'green grass meadow in sunshine', avg_color:'#e0e8d0', photographer:'Pexels', url:'https://www.pexels.com/photo/meadow', src:{portrait:'https://images.pexels.com/photos/302/portrait.jpeg'}},
+      {id:303, alt:'soft clouds over the sea at dawn', avg_color:'#d0d8de', photographer:'Pexels', url:'https://www.pexels.com/photo/sea', src:{portrait:'https://images.pexels.com/photos/303/portrait.jpeg'}},
+    ]});
+    return originalFetch(url,init);
+  };
+  const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+  assert.equal(result.count,3);
+  const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
+  // Sand dunes and grass meadow are brighter but read as busy textures, so
+  // the two content pages take the clean sea/sky photos, brightest first.
+  assert.deepEqual(saved.results.slice(1).map(item=>item.imageUrl),[
+    'https://images.pexels.com/photos/303/portrait.jpeg',
+    'https://images.pexels.com/photos/301/portrait.jpeg',
+  ]);
+});
+
 test('single-image photo post uses DeepSeek V4.1 Flash once and renders a text card without Z-Image', async t => {
   const f=cloudFixture(t);
   const one=storyPlan(1), chatCalls=[];
@@ -424,6 +453,9 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   assert.equal(pickTikTokPhotoUrl(['https://p16-common-sign.tiktokcdn-us.com/photo/abc',heic]),heic);
   assert.deepEqual(photoTranscodeCandidates(heic),[heic,jpeg]);
   assert.deepEqual(peerPhotoImageUrls({videoData:{imageUrls:[heic]}}),[heic]);
+  const duplicated=parsePhotoStory({title:'knowing your style makes it easier to navigate relationships',hooks:['What your reply speed says about you','Second hook','Third hook'],caption:'Knowing your style makes it easier to navigate relationships because you know your needs <3',scenes:[scenes[0]]},{sceneCount:1});
+  assert.equal(duplicated.title,'What your reply speed says about you');
+  assert.match(buildPhotoStoryPrompt({topic:'Silence',script:'copy',rewriteCopy:true},{sceneCount:1}),/must not repeat or start with the title/);
   const emptyOverlay=parsePhotoStory({title:'Post title only',hooks:['First','Second','Third'],caption:'Post caption',scenes:[{template:'stock',stockQuery:'empty misty forest hallway cinematic still'}]},{sceneCount:1});
   assert.equal(emptyOverlay.scenes[0].text,'');
   assert.equal(emptyOverlay.scenes[0].textKind,'cover');
