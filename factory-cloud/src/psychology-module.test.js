@@ -565,6 +565,38 @@ test("pexels stock search stays portrait and drops photos that look like people"
   assert.deepEqual(content.photos.map((photo) => photo.id), ["22", "23", "21"]);
 });
 
+test("pexels search falls back to the backup key on rate limits but not on other errors", async () => {
+  const photos = { photos: [{ id: 7, alt: "Bright empty sea", photographer: "Lee", url: "https://www.pexels.com/photo/sea", src: { portrait: "https://images.pexels.com/photos/7.jpeg" } }] };
+  const auths = [];
+  const limited = await searchStockPhotos({
+    PEXELS_API_KEY: "primary-key",
+    PEXELS_API_KEY_2: "backup-key",
+    fetch: async (url, init) => {
+      auths.push(init.headers.Authorization);
+      if (init.headers.Authorization === "primary-key") return { ok: false, status: 429 };
+      return { ok: true, status: 200, json: async () => photos };
+    },
+  }, new URLSearchParams("q=calm ocean&count=3"));
+  assert.deepEqual(auths, ["primary-key", "backup-key"]);
+  assert.equal(limited.photos[0].id, "7");
+
+  // A plain server error is not a quota problem, so the backup key is not spent.
+  const attempts = [];
+  await assert.rejects(searchStockPhotos({
+    PEXELS_API_KEY: "primary-key",
+    PEXELS_API_KEY_2: "backup-key",
+    fetch: async (url, init) => { attempts.push(init.headers.Authorization); return { ok: false, status: 502 }; },
+  }, new URLSearchParams("q=calm ocean")), /HTTP 502/);
+  assert.deepEqual(attempts, ["primary-key"]);
+
+  // Both keys exhausted surfaces the rate limit instead of looping.
+  await assert.rejects(searchStockPhotos({
+    PEXELS_API_KEY: "primary-key",
+    PEXELS_API_KEY_2: "backup-key",
+    fetch: async () => ({ ok: false, status: 429 }),
+  }, new URLSearchParams("q=calm ocean")), /HTTP 429/);
+});
+
 test("psychology overview uses the novel report page without changing navigation permissions", () => {
   assert.equal(pageFileFor("/psychology-effects"), "official-group-report.html");
   assert.equal(pageFileFor("/psychology-effects"), pageFileFor("/novel-ops-report"));

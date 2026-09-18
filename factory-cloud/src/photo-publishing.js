@@ -234,8 +234,8 @@ export async function searchStockPhotos(env, searchParams) {
   const role = stockSearchRole(searchParams.get("role"));
   const allowPeople = searchParams.get("allowPeople") === "1" || role === "cover";
   const builtQuery = buildPexelsSearchQuery(query, { role, allowPeople });
-  const accessKey = String(env.PEXELS_API_KEY || "").trim();
-  if (!accessKey) {
+  const accessKeys = [env.PEXELS_API_KEY, env.PEXELS_API_KEY_2].map((key) => String(key || "").trim()).filter(Boolean);
+  if (!accessKeys.length) {
     return { configured: false, photos: [], error: "还没有配置 Pexels。可以先粘贴 Pexels 图片链接。" };
   }
   const page = Math.max(1, Math.min(5, Number(searchParams.get("page") || 1) || 1));
@@ -245,10 +245,17 @@ export async function searchStockPhotos(env, searchParams) {
   endpoint.searchParams.set("size", "large");
   endpoint.searchParams.set("per_page", String(Math.min(80, Math.max(20, count * 4))));
   if (page > 1) endpoint.searchParams.set("page", String(page));
-  const response = await (env.fetch || fetch)(endpoint, {
-    headers: { Authorization: accessKey },
-    signal: AbortSignal.timeout(20000),
-  });
+  // The primary key covers the normal load; when Pexels answers 429 (hourly/
+  // monthly limit) or 401/403 (revoked key), the same request retries once on
+  // the backup key so publishing keeps flowing until the quota resets.
+  let response = null;
+  for (const accessKey of accessKeys) {
+    response = await (env.fetch || fetch)(endpoint, {
+      headers: { Authorization: accessKey },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (![401, 403, 429].includes(response.status)) break;
+  }
   if (!response.ok) throw statusError(`Pexels 搜索失败：HTTP ${response.status}`, 502);
   const data = await response.json();
   let photos = (Array.isArray(data.photos) ? data.photos : []).map((photo) => {
