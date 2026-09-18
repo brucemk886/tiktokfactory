@@ -7,7 +7,7 @@ import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { PSYCHOLOGY_RECREATION_VOICE_ID, PSYCHOLOGY_RECREATION_VOICE_IDS } from './psychology-peer-production.js';
 import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, buildPhotoStoryPrompt, pickTikTokPhotoUrl, peerPhotoImageUrls, photoTranscodeCandidates } from '../../scripts/psychology-peer-production.js';
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
-import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
+import { runPeerPhotoWorkflow, jobSeed, CONTENT_STOCK_QUERIES } from './peer-photo-workflow.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 import { syncPeerArtboardProgress } from '../../scripts/peer-progress-sync.js';
@@ -96,19 +96,22 @@ test('cloud workflow classifies six pages, matches stock photos, and replay does
   const f=cloudFixture(t);
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(result.count,6);assert.equal(f.submissions.length,0);assert.equal(f.sleeps.length,0);assert.equal(f.pexelsCalls(),1);
-  assert.match(f.pexelsQueries[0],/misty forest hallway/);
+  // Content pads use a fixed bright direction, not the peer image descriptions.
+  assert.doesNotMatch(f.pexelsQueries[0],/misty forest hallway/);
+  const fixedQuery=CONTENT_STOCK_QUERIES[jobSeed('cloud-test')%CONTENT_STOCK_QUERIES.length];
+  assert.ok(f.pexelsQueries[0].includes(fixedQuery.replace(/ /g,' ')));
   assert.match(f.pexelsQueries[0],/no people/);
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'done');assert.equal(row.worker_id,'cloud-photo');
   const saved=JSON.parse(row.result_json);
   assert.deepEqual(saved.results.map(item=>item.imageModel),['text-card','stock','text-card','stock','text-card','stock']);
   assert.equal(saved.results[1].textKind,'content');
-  assert.equal(saved.results[1].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
+  assert.match(saved.results[1].imageUrl,/^https:\/\/images\.pexels\.com\/photos\/20\d\/portrait\.jpeg$/);
   await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(f.pexelsCalls(),1);assert.equal(f.submissions.length,0);
 });
 
-test('cover and content stock pages search Pexels twice and content unifies on the majority style', async t => {
+test('cover matches the source scene while content uses a fixed bright direction', async t => {
   const f=cloudFixture(t);
   f.plan.scenes=[
     {template:'stock', textKind:'cover', title:'5 flirting mistakes', subtitle:'from a girl', body:'', text:'5 flirting mistakes', stockQuery:'couple kissing sunset desert mountains', sourceImageAnalysis:{subject:'couple kissing',background:'sunset desert mountains',colors:'warm dusk'}},
@@ -123,41 +126,30 @@ test('cover and content stock pages search Pexels twice and content unifies on t
   assert.match(f.pexelsQueries[0],/couple kissing sunset/);
   assert.match(f.pexelsQueries[0],/couple people/);
   assert.doesNotMatch(f.pexelsQueries[0],/no people/);
-  assert.match(f.pexelsQueries[1],/calm ocean horizon/);
+  assert.ok(CONTENT_STOCK_QUERIES.some(query=>f.pexelsQueries[1].includes(query)));
   assert.doesNotMatch(f.pexelsQueries[1],/starry/);
+  assert.doesNotMatch(f.pexelsQueries[1],/soft waves on a bright calm sea shore/);
   assert.match(f.pexelsQueries[1],/no people/);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.deepEqual(saved.results.map(item=>item.textKind),['cover','content','content','content']);
   assert.equal(saved.results[0].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
 });
 
-test('content pool skips busy texture close-ups and hands out bright majority-style photos', async t => {
+test('content pads vary by job seed so repeated recreations of one hit differ', async t => {
+  assert.equal(jobSeed('peer-abc-0'), jobSeed('peer-abc-0'));
+  assert.notEqual(jobSeed('peer-abc-0'), jobSeed('peer-def-0'));
   const f=cloudFixture(t);
-  f.plan.scenes=[
-    {template:'text', textKind:'cover', title:'Cover quote', body:'', text:'Cover quote'},
-    {template:'stock', textKind:'content', title:'2. page', body:'first line', text:'2. page', stockQuery:'bright pastel sky over calm ocean horizon'},
-    {template:'stock', textKind:'content', title:'3. page', body:'second line', text:'3. page', stockQuery:'soft waves on a bright sea shore'},
-  ];
-  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'Quiet',script:'Reflect on what silence brings up for you.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:f.imageUrls.slice(0,3)}}));
-  const originalFetch=f.env.fetch;
-  f.env.fetch=async(url,init)=>{
-    if(String(url).includes('api.pexels.com')) return Response.json({photos:[
-      {id:300, alt:'golden sand dunes glowing in bright light', avg_color:'#efe3c8', photographer:'Pexels', url:'https://www.pexels.com/photo/dunes', src:{portrait:'https://images.pexels.com/photos/300/portrait.jpeg'}},
-      {id:301, alt:'bright pastel sky over calm ocean horizon', avg_color:'#c8d4e0', photographer:'Pexels', url:'https://www.pexels.com/photo/sky', src:{portrait:'https://images.pexels.com/photos/301/portrait.jpeg'}},
-      {id:302, alt:'green grass meadow in sunshine', avg_color:'#e0e8d0', photographer:'Pexels', url:'https://www.pexels.com/photo/meadow', src:{portrait:'https://images.pexels.com/photos/302/portrait.jpeg'}},
-      {id:303, alt:'soft clouds over the sea at dawn', avg_color:'#d0d8de', photographer:'Pexels', url:'https://www.pexels.com/photo/sea', src:{portrait:'https://images.pexels.com/photos/303/portrait.jpeg'}},
-    ]});
-    return originalFetch(url,init);
-  };
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(result.count,3);
+  assert.equal(result.count,6);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  // Sand dunes and grass meadow are brighter but read as busy textures, so
-  // the two content pages take the clean sea/sky photos, brightest first.
-  assert.deepEqual(saved.results.slice(1).map(item=>item.imageUrl),[
-    'https://images.pexels.com/photos/303/portrait.jpeg',
-    'https://images.pexels.com/photos/301/portrait.jpeg',
-  ]);
+  const stockUrls=saved.results.filter(item=>item.imageModel==='stock').map(item=>item.imageUrl);
+  const fixtureUrls=new Set(pexelsPhotos().photos.map(photo=>photo.src.portrait));
+  assert.equal(stockUrls.length,3);
+  assert.equal(new Set(stockUrls).size,3);
+  assert.ok(stockUrls.every(url=>fixtureUrls.has(url)));
+  const expectedPage=1+((jobSeed('cloud-test')>>3)%2);
+  if(expectedPage>1) assert.match(f.pexelsQueries[0],/page=2/);
+  else assert.doesNotMatch(f.pexelsQueries[0],/page=/);
 });
 
 test('single-image photo post uses DeepSeek V4.1 Flash once and renders a text card without Z-Image', async t => {

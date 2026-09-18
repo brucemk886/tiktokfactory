@@ -68,7 +68,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       if (scene.template === 'stock') {
         const role = stockRole(scene, index);
         await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页匹配${role === 'cover' ? '封面' : '详情'}底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
-        if (!stockPools[role]) stockPools[role] = await loadStockPhotos(env, step, role, plan.scenes);
+        if (!stockPools[role]) stockPools[role] = await loadStockPhotos(env, step, role, plan.scenes, id);
         const photo = stockPools[role].shift();
         if (!photo) throw new Error(`第 ${index + 1} 页没有可用的${role === 'cover' ? '封面' : '详情'}底图。`);
         results.push(photoPage(scene, index, photo, role));
@@ -106,77 +106,54 @@ function coverStockQuery(scenes) {
   return text || 'couple sunset landscape portrait';
 }
 
-// Content pages unify on one style: group each page's background description
-// into a scenery bucket, keep the majority bucket, and search once with its
-// first description. Minority styles (e.g. 2 starry pages among 3 ocean
-// pages) reuse the majority pool instead of pulling in stray results.
-const CONTENT_STYLES = [
-  /ocean|sea\b|seaside|beach|coast|shore|wave|bay|harbor/i,
-  /night|star|starry|moon|milky way|galaxy/i,
-  /forest|tree|wood|jungle|misty/i,
-  /mountain|hill|cliff|valley|canyon/i,
-  /desert|dune|sand\b/i,
-  /field|meadow|grass|flower/i,
-  /interior|room|hallway|window|indoor|cafe/i,
-  /sky|cloud|sunset|sunrise|dawn|dusk|horizon|pastel/i,
+// Content pads no longer follow the peer post's imagery. They rotate through
+// a few fixed bright directions that stay clean behind captions; the job seed
+// picks the direction so repeated recreations vary.
+export const CONTENT_STOCK_QUERIES = [
+  'bright pastel sky over a calm ocean horizon',
+  'soft white clouds in a bright blue sky',
+  'calm sea at sunrise with a pastel sky',
+  'light morning mist over a calm lake',
 ];
 
-function contentStyleIndex(query) {
-  for (let index = 0; index < CONTENT_STYLES.length; index += 1) {
-    if (CONTENT_STYLES[index].test(query)) return index;
-  }
-  return -1;
+// Pexels ranks results deterministically, so two recreations of the same
+// peer hit would keep landing on the same photos. Each job derives a seed
+// from its id: the seed picks the Pexels result page and shuffles the pool,
+// so repeated runs hand out different backgrounds without extra requests.
+export function jobSeed(value) {
+  let seed = 5381;
+  for (const character of String(value || '')) seed = ((seed * 33) ^ character.charCodeAt(0)) >>> 0;
+  return seed;
 }
 
-function contentStockQuery(scenes) {
-  const queries = scenes
-    .filter((item, index) => item.template === 'stock' && stockRole(item, index) === 'content')
-    .map((item) => String(item.stockQuery || '').trim().replace(/\s+/g, ' '))
-    .filter(Boolean);
-  if (!queries.length) return 'bright airy daylight sky pastel horizon';
-  const buckets = new Map();
-  for (const query of queries) {
-    const style = contentStyleIndex(query);
-    if (!buckets.has(style)) buckets.set(style, []);
-    buckets.get(style).push(query);
+function seededShuffle(list, seed) {
+  const items = [...list];
+  let state = (seed >>> 0) || 1;
+  for (let index = items.length - 1; index > 0; index -= 1) {
+    state = (state * 1103515245 + 12345) >>> 0;
+    const pick = state % (index + 1);
+    [items[index], items[pick]] = [items[pick], items[index]];
   }
-  let dominant = null;
-  for (const list of buckets.values()) {
-    if (!dominant || list.length > dominant.length) dominant = list;
-  }
-  return dominant[0].slice(0, 160);
+  return items;
 }
 
-// Busy texture close-ups (sand, grass, rocks…) read as noise behind captions
-// even when they match the search words, so the content pool skips them
-// whenever enough clean photos remain.
-const BUSY_TEXTURE_PATTERN = /\b(sand|sandy|dune|dunes|grass|grasses|desert|rock|rocks|stone|stones|pebble|plant|plants|flower|flowers|leaf|leaves|foliage|macro|texture|fabric|foam)\b|close-?up/i;
-
-function rankContentPhotos(photos, query, needed) {
-  const clean = photos.filter((photo) => !BUSY_TEXTURE_PATTERN.test(String(photo.alt || '')));
-  const pool = clean.length >= needed ? clean : photos;
-  const style = CONTENT_STYLES[contentStyleIndex(query)];
-  if (!style) return pool;
-  const styled = pool.filter((photo) => style.test(String(photo.alt || '')));
-  const rest = pool.filter((photo) => !style.test(String(photo.alt || '')));
-  return [...styled, ...rest];
-}
-
-async function loadStockPhotos(env, step, role, scenes) {
+async function loadStockPhotos(env, step, role, scenes, jobId) {
   const needed = scenes.filter((scene, index) => scene.template === 'stock' && stockRole(scene, index) === role).length;
-  // Content over-fetches so the busy-texture and style filters below still
-  // leave one bright photo per page; it stays a single Pexels request.
+  // Content over-fetches within the same single request so the shuffle below
+  // still leaves one bright photo per page.
   const count = String(role === 'cover' ? Math.max(needed, 4) : Math.min(30, Math.max(needed * 3, 12)));
-  const query = role === 'cover' ? coverStockQuery(scenes) : contentStockQuery(scenes);
+  const seed = jobSeed(jobId);
+  const query = role === 'cover' ? coverStockQuery(scenes) : CONTENT_STOCK_QUERIES[seed % CONTENT_STOCK_QUERIES.length];
   const params = { q: query, count, role };
   if (role === 'cover') params.allowPeople = '1';
+  if (role === 'content') params.page = String(1 + ((seed >> 3) % 2));
   const found = await step.do(`stock-search-${role}`, READ, () => searchStockPhotos(env, new URLSearchParams(params)));
   if (!found.configured) throw new Error('还没有配置 Pexels，无法为有底图的页面匹配素材。');
-  const photos = [...(found.photos || [])];
+  let photos = [...(found.photos || [])];
   if (!photos.length) {
     const fallbackQuery = role === 'cover'
       ? 'couple kissing sunset desert mountains landscape'
-      : 'bright airy daylight sky pastel horizon ocean';
+      : 'bright pastel sky over a calm ocean horizon';
     const fallback = await step.do(`stock-search-${role}-fallback`, READ, () => searchStockPhotos(env, new URLSearchParams({
       q: fallbackQuery,
       count,
@@ -186,7 +163,7 @@ async function loadStockPhotos(env, step, role, scenes) {
     photos.push(...(fallback.photos || []));
   }
   if (!photos.length) throw new Error(role === 'cover' ? '没有搜到可用的封面底图。' : '没有搜到可用的详情底图。');
-  return role === 'content' ? rankContentPhotos(photos, query, needed) : photos;
+  return role === 'content' ? seededShuffle(photos, seed) : photos;
 }
 
 function textPage(scene, index) {

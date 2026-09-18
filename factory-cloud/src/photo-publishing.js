@@ -238,11 +238,13 @@ export async function searchStockPhotos(env, searchParams) {
   if (!accessKey) {
     return { configured: false, photos: [], error: "还没有配置 Pexels。可以先粘贴 Pexels 图片链接。" };
   }
+  const page = Math.max(1, Math.min(5, Number(searchParams.get("page") || 1) || 1));
   const endpoint = new URL("https://api.pexels.com/v1/search");
   endpoint.searchParams.set("query", builtQuery);
   endpoint.searchParams.set("orientation", "portrait");
   endpoint.searchParams.set("size", "large");
   endpoint.searchParams.set("per_page", String(Math.min(80, Math.max(20, count * 4))));
+  if (page > 1) endpoint.searchParams.set("page", String(page));
   const response = await (env.fetch || fetch)(endpoint, {
     headers: { Authorization: accessKey },
     signal: AbortSignal.timeout(20000),
