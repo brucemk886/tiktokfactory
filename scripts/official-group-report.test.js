@@ -154,3 +154,18 @@ test("yesterday, 7d and 30d windows use Shanghai calendar days", () => {
   assert.equal(resolveEffectsPeriod({ days: "1" }), "today");
   assert.equal(effectsLookbackDays("yesterday"), 2);
 });
+
+test("normal-view bucket includes both boundary values without overlapping low/high videos", () => {
+  const now = Date.parse("2026-09-18T12:00:00+08:00");
+  const report = computeGroupReport({
+    now, videos: [0, 199, 200, 403, 999, 1000].map(views => ({
+      id: String(views), account: "a", username: "tester", views, createdAt: now - 1000,
+    })),
+  });
+  assert.deepEqual(report.buckets.midView.map(video => video.views), [999, 403, 200]);
+  assert.equal(report.summary.midView, 3);
+  const ids = Object.values(report.buckets).flat().map(video => video.id);
+  assert.equal(ids.length, 6);
+  assert.equal(new Set(ids).size, 6);
+  assert.ok(report.buckets.midView.every(video => video.account === "a"));
+});

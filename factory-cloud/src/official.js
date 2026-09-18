@@ -635,7 +635,7 @@ function emptySnapshotReport(project, period, dateKey, groupId, groups, toKey = 
       publishFailed: 0,
       riskAccountCount: 0,
     },
-    buckets: { zeroView: [], lowView: [], highView: [] },
+    buckets: { zeroView: [], lowView: [], midView: [], highView: [] },
     anomalyAccounts: [],
   };
 }

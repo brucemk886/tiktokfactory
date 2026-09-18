@@ -8,7 +8,7 @@ Updated: 2026-09-18
 
 ## Platform
 
-- Psychology 数据概览 at /psychology-effects now shares the novel promotion report layout: date/group filters, 11 publishing/playback metrics and one high-view / low-view / anomalous-account tab module. Anomalous accounts expand to their zero-view videos; video details include completion/watch-time metrics and official retention curves with scoped account authorization. Requests remain scoped to the psychology project; existing navigation permissions and the separate operations-report route are preserved.
+- Psychology 数据概览 at /psychology-effects now shares the novel promotion report layout: date/group filters, 11 publishing/playback metrics and one high-view / low-view / anomalous-account tab module. Normal-view videos appear below the tabs with independent ten-item pagination and video/detail links. Anomalous accounts expand to their zero-view videos; video details include completion/watch-time metrics and official retention curves with scoped account authorization. Requests remain scoped to the psychology project; existing navigation permissions and the separate operations-report route are preserved.
 
 - Online psychology now has administrator-only automatic publishing at /psychology-publish: choose photo/video, a corresponding template, 1–50 total posts, peer-hit selection/filter, official psychology accounts and schedule. Distinct matching hits are assigned round-robin; video renders feed the official upload queue, while photo workflows feed a background Chrome card renderer with upload checkpoints and idempotent official batch submission. See docs/handoffs/2026-09-18-psychology-auto-publish.md.
 

@@ -236,6 +236,7 @@ export function computeGroupReport({
     buckets: {
       zeroView: sortVideos(zeroView),
       lowView: sortVideos(lowViewVideos),
+      midView: sortVideos(midViewVideos, true),
       highView: sortVideos(highViewVideos, true),
     },
     anomalyAccounts,

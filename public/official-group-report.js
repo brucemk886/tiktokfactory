@@ -34,6 +34,7 @@ function reportCopy(project = {}) {
 }
 
 const PAGE_SIZE = 10;
+const PAGE_BUCKETS = { high: "highView", low: "lowView", normal: "midView" };
 const PRESET_PERIODS = ["today", "yesterday", "7d", "30d"];
 const params = new URLSearchParams(location.search);
 const todayKey = shanghaiDateKey();
@@ -44,7 +45,7 @@ const state = {
   fromKey: params.get("from") || params.get("date") || "",
   toKey: params.get("to") || params.get("date") || "",
   data: null,
-  pages: { high: 1, low: 1 },
+  pages: { high: 1, low: 1, normal: 1 },
   activeTab: ["high", "low", "anomaly"].includes(params.get("tab")) ? params.get("tab") : "high",
 };
 
@@ -130,7 +131,7 @@ async function loadReport() {
       if (data.report?.toKey) state.toKey = data.report.toKey;
       if (data.report?.period) state.period = normalizePeriodParam(data.report.period);
     }
-    state.pages = { high: 1, low: 1 };
+    state.pages = { high: 1, low: 1, normal: 1 };
     render();
   } catch (error) {
     meta.textContent = error.message || "读取报表失败。";
@@ -179,6 +180,11 @@ function render() {
   updateResultTabs();
   renderBucket("highSection", "高播视频", `播放达到 ${report.thresholds?.highView || 1000} 以上。`, report.buckets?.highView || [], "high");
   renderBucket("lowSection", "低播视频", `播放低于 ${report.thresholds?.lowView || 200}。`, report.buckets?.lowView || [], "low");
+  if (!Array.isArray(report.buckets?.midView) && Number(summary.midView) > 0) {
+    document.querySelector("#normalSection").innerHTML = '<div class="empty">该历史快照未保存正常播放视频明细，请选择今天、昨天、近7天或最近30天查询。</div>';
+  } else {
+    renderBucket("normalSection", "正常播放视频", `播放 ≥ ${report.thresholds?.lowView || 200} 且 < ${report.thresholds?.highView || 1000}。`, report.buckets?.midView || [], "normal");
+  }
 }
 
 function fillSelects(data) {
@@ -241,7 +247,7 @@ async function toggleProjectReport(projectId, enabled) {
 function renderEmpty(message) {
   updateResultTabs();
   document.querySelector("#summaryGrid").innerHTML = "";
-  ["anomalySection", "lowSection", "highSection"].forEach((id) => {
+  ["anomalySection", "lowSection", "highSection", "normalSection"].forEach((id) => {
     document.querySelector(`#${id}`).innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
   });
 }
@@ -261,12 +267,12 @@ function renderAnomalies(rows, zeroVideos = []) {
 function renderBucket(id, title, hint, rows, pageKey = "") {
   const node = document.querySelector(`#${id}`);
   if (!rows.length) {
-    node.innerHTML = `<div class="section-title"><div><p>VIDEO</p><h2>${escapeHtml(title)}</h2></div></div><div class="empty">${escapeHtml(hint)} 这一时段没有这类视频。</div>`;
+    node.innerHTML = `${pageKey === "normal" ? "" : `<div class="section-title"><div><p>VIDEO</p><h2>${escapeHtml(title)}</h2></div></div>`}<div class="empty">${escapeHtml(hint)} 这一时段没有这类视频。</div>`;
     return;
   }
   const paged = pageKey ? paginateItems(rows, state.pages[pageKey] || 1) : { items: rows, page: 1, pageCount: 1, total: rows.length };
   if (pageKey) state.pages[pageKey] = paged.page;
-  node.innerHTML = `<p class="section-hint">${escapeHtml(hint)} · ${paged.total} 条</p>${videoTable(paged.items, pageKey)}${pageKey ? renderPager(pageKey, paged) : ""}`;
+  node.innerHTML = `<p class="section-hint">${escapeHtml(hint)} · ${paged.total} 条</p>${videoTable(paged.items, pageKey === "normal" ? state.activeTab : pageKey)}${pageKey ? renderPager(pageKey, paged) : ""}`;
   if (pageKey) bindPager(node, pageKey);
 }
 
@@ -302,11 +308,11 @@ function bindPager(node, pageKey) {
   node.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => {
       const next = Number(button.dataset.page);
-      const pageCount = Math.max(1, Math.ceil((state.data?.report?.buckets?.[pageKey === "high" ? "highView" : "lowView"] || []).length / PAGE_SIZE) || 1);
+      const pageCount = Math.max(1, Math.ceil((state.data?.report?.buckets?.[PAGE_BUCKETS[pageKey]] || []).length / PAGE_SIZE) || 1);
       if (!Number.isFinite(next) || next < 1 || next > pageCount || next === state.pages[pageKey]) return;
       state.pages[pageKey] = next;
       render();
-      document.querySelector(`#${pageKey === "high" ? "highSection" : "lowSection"}`)?.scrollIntoView({ block: "start" });
+      document.querySelector(`#${pageKey}Section`)?.scrollIntoView({ block: "start" });
     });
   });
 }

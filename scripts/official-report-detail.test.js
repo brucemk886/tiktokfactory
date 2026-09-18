@@ -127,3 +127,53 @@ test("analytics account scope rejects cross-project and unassigned operator acco
   assert.deepEqual(scopedAnalyticsAccounts(accounts,store,operator,"novel-promotion"), []);
   assert.deepEqual(scopedAnalyticsAccounts(accounts,store,admin,"invalid-module"), []);
 });
+
+test("normal videos remain below tabs, paginate by ten independently and expose detail/open links", async () => {
+  const videos = Array.from({ length: 21 }, (_, i) => ({
+    account: "acct", id: String(12345678901 + i), username: "tester", title: "Normal " + i, views: 403,
+  }));
+  const report = { enabled: true, summary: { midView: 21 }, buckets: { midView: videos } };
+  const b = browser("https://factory.test/psychology-effects?tab=anomaly", async () => reply({
+    project: { id: "p", reportEnabled: true }, report,
+  }));
+  const buttons = [2, 3].map(page => Object.assign(b.node("normal-page-" + page), { dataset: { page: String(page) } }));
+  b.node("#normalSection").querySelectorAll = () => buttons;
+  vm.runInContext(read("official-group-report.js"), b.context);
+  await flush();
+  const table = () => b.node("#normalSection").innerHTML;
+  assert.equal((table().match(/class="report-video-title"/g) || []).length, 10);
+  assert.match(table(), /每页 10 条 · 共 3 页 · 21 条/);
+  assert.match(table(), /视频详情/);
+  assert.match(table(), /打开/);
+  assert.match(table(), /module=psychology/);
+  assert.match(table(), /tab%3Danomaly/);
+  assert.equal(b.node("#normalSection").hidden, false);
+  buttons[0].events.click();
+  assert.equal(vm.runInContext("state.pages.normal", b.context), 2);
+  assert.equal(vm.runInContext("state.pages.high", b.context), 1);
+  assert.match(table(), /Normal 10</);
+  buttons[1].events.click();
+  assert.equal((table().match(/class="report-video-title"/g) || []).length, 1);
+  assert.match(table(), /Normal 20</);
+  b.tabs[0].events.click();
+  assert.equal(b.node("#normalSection").hidden, false);
+  await vm.runInContext("loadReport()", b.context);
+  assert.equal(vm.runInContext("state.pages.normal", b.context), 1);
+  report.enabled = false;
+  await vm.runInContext("loadReport()", b.context);
+  assert.doesNotMatch(table(), /Normal 0</);
+  assert.match(table(), /打开最上方的开关/);
+  const html = read("official-group-report.html");
+  assert.ok(html.indexOf('id="normalSection"') > html.indexOf('id="anomalySection"'));
+});
+
+test("legacy snapshots distinguish missing normal-video details from a genuinely empty bucket", async () => {
+  const b = browser("https://factory.test/psychology-effects", async () => reply({
+    project: { id: "p", reportEnabled: true },
+    report: { enabled: true, summary: { midView: 2 }, buckets: {} },
+  }));
+  vm.runInContext(read("official-group-report.js"), b.context);
+  await flush();
+  assert.match(b.node("#normalSection").innerHTML, /历史快照未保存/);
+  assert.doesNotMatch(b.node("#normalSection").innerHTML, /这一时段没有/);
+});
