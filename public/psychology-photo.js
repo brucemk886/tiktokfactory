@@ -1,10 +1,7 @@
-import { renderTextCard, renderOverlayCard, renderCoverPreview } from "./psychology-card-renderer.js?v=20260918-18";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-18";
-import { COVER_BACKDROPS, enabledCoverBackdropIds, pickCoverBackdrop } from "./psychology-cover-backdrops.js?v=20260918-18";
-
-const COVER_BACKDROP_KEY = "psychology-cover-backdrops";
+import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260918-19";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260918-19";
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
+const state = { mode: "zimage", textTemplate: "content", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -21,7 +18,6 @@ $("#stockModeTab")?.addEventListener("click", () => setPhotoMode("stock"));
 $("#zimageModeTab")?.addEventListener("click", () => setPhotoMode("zimage"));
 $("#coverTemplateTab")?.addEventListener("click", () => setTextTemplate("cover"));
 $("#contentTemplateTab")?.addEventListener("click", () => setTextTemplate("content"));
-$("#coverBackdropAllBtn")?.addEventListener("click", enableAllCoverBackdrops);
 $("#photoLightboxClose")?.addEventListener("click", closePhotoPreview);
 $("#photoLightbox")?.addEventListener("click", (event) => {
   if (event.target === $("#photoLightbox")) closePhotoPreview();
@@ -63,7 +59,6 @@ async function loadPage() {
       setPhotoMode(state.mode);
     }
     renderAll();
-    renderCoverBackdropPicker();
     watchPending();
     hideStatus();
   } catch (error) {
@@ -87,7 +82,7 @@ function setPhotoMode(mode) {
   if ($("#zimagePane")) $("#zimagePane").hidden = state.mode !== "zimage";
   if ($("#createLead")) {
     $("#createLead").textContent = isText
-      ? (state.textTemplate === "cover" ? "每次只生成 1 张封面。要下一张就改文案再点一次。" : "每次只生成 1 张内容页，标题和正文都只属于这一张。")
+      ? (state.textTemplate === "cover" ? "封面统一黑底白字。每次只生成 1 张，改文案后再点一次。" : "每次只生成 1 张内容页，标题和正文都只属于这一张。")
       : isStock
         ? "每次只选 1 张素材、填这一张的文案，生成 1 张。"
         : "每次只生成 1 张。画面和叠字都只属于这一张。";
@@ -108,99 +103,11 @@ function setTextTemplate(template) {
   if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
   if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
   if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
-  if ($("#coverBackdropPicker")) $("#coverBackdropPicker").hidden = !isCover;
-  if (isCover) renderCoverBackdropPicker();
   if ($("#createLead") && state.mode === "text") {
     $("#createLead").textContent = isCover
-      ? "每次只生成 1 张封面。要下一张就改文案再点一次。"
+      ? "封面统一黑底白字。每次只生成 1 张，改文案后再点一次。"
       : "每次只生成 1 张内容页，标题和正文都只属于这一张。";
   }
-}
-
-function savedCoverBackdropIds() {
-  try {
-    return JSON.parse(localStorage.getItem(COVER_BACKDROP_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function persistCoverBackdropIds(ids) {
-  const known = COVER_BACKDROPS.map((item) => item.id);
-  const unique = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => known.includes(id)))];
-  localStorage.setItem(COVER_BACKDROP_KEY, unique.length === known.length ? "[]" : JSON.stringify(unique));
-}
-
-function selectedCoverBackdropIds() {
-  return enabledCoverBackdropIds(savedCoverBackdropIds());
-}
-
-function enableAllCoverBackdrops() {
-  persistCoverBackdropIds([]);
-  renderCoverBackdropPicker(true);
-}
-
-function deleteCoverBackdrop(id) {
-  const selected = selectedCoverBackdropIds();
-  if (selected.length <= 1) {
-    const hint = $("#coverBackdropHint");
-    if (hint) hint.textContent = "至少保留 1 套封面底图。";
-    return;
-  }
-  persistCoverBackdropIds(selected.filter((item) => item !== id));
-  renderCoverBackdropPicker(true);
-}
-
-function previewCoverBackdrop(id) {
-  const theme = COVER_BACKDROPS.find((item) => item.id === id);
-  if (!theme) return;
-  openPhotoPreview(renderCoverPreview(theme, "A quiet thought", { width: 1080, height: 1920 }).toDataURL("image/jpeg", 0.9));
-}
-
-function renderCoverBackdropPicker(refresh = false) {
-  const grid = $("#coverBackdropGrid");
-  if (!grid) return;
-  const selected = new Set(selectedCoverBackdropIds());
-  if (!grid.childElementCount) {
-    for (const theme of COVER_BACKDROPS) {
-      const card = document.createElement("article");
-      card.className = "cover-backdrop-thumb";
-      card.dataset.id = theme.id;
-      const actions = document.createElement("div");
-      actions.className = "cover-backdrop-actions";
-      const zoom = document.createElement("button");
-      zoom.type = "button";
-      zoom.className = "photo-zoom";
-      zoom.setAttribute("aria-label", "放大查看");
-      zoom.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-      zoom.addEventListener("click", (event) => {
-        event.stopPropagation();
-        previewCoverBackdrop(theme.id);
-      });
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "photo-delete";
-      remove.setAttribute("aria-label", "删除这套底图");
-      remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12M10 7V5h4v2m-7 0l1 14h8l1-14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      remove.addEventListener("click", (event) => {
-        event.stopPropagation();
-        deleteCoverBackdrop(theme.id);
-      });
-      actions.append(zoom, remove);
-      const image = document.createElement("img");
-      image.alt = theme.name;
-      image.src = renderCoverPreview(theme).toDataURL("image/jpeg", 0.82);
-      const label = document.createElement("span");
-      label.textContent = theme.name;
-      card.append(actions, image, label);
-      grid.append(card);
-    }
-  }
-  for (const card of grid.querySelectorAll("[data-id]")) {
-    card.hidden = !selected.has(card.dataset.id);
-  }
-  const hint = $("#coverBackdropHint");
-  if (hint) hint.textContent = `封面底图共 ${COVER_BACKDROPS.length} 套，已保留 ${selected.size} 套。放大可看清竖版效果，删除后不会再随机抽到。`;
 }
 
 async function generateTextCards() {
@@ -216,11 +123,9 @@ async function generateTextCards() {
       template: state.textTemplate,
     });
     const aspectRatio = $("#cardAspect").value;
-    const backdrop = state.textTemplate === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId, allowedIds: savedCoverBackdropIds() }) : null;
-    if (backdrop) state.lastCoverBackdropId = backdrop.id;
     const cards = [];
     for (const [index, slide] of slides.entries()) {
-      const blob = await canvasToJpeg(renderTextCard(slide, aspectRatio, backdrop));
+      const blob = await canvasToJpeg(renderTextCard(slide, aspectRatio));
       const url = URL.createObjectURL(blob);
       cards.push({
         key: `text:${slide.kind}:${Date.now()}:${index}`,
@@ -523,9 +428,7 @@ async function renderRecreationPage(page, index) {
     smash: false,
     template: kind,
   });
-  const backdrop = kind === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId, allowedIds: savedCoverBackdropIds() }) : null;
-  if (backdrop) state.lastCoverBackdropId = backdrop.id;
-  const blob = await canvasToJpeg(renderTextCard(slides[0], "9:16", backdrop));
+  const blob = await canvasToJpeg(renderTextCard(slides[0], "9:16"));
   const url = URL.createObjectURL(blob);
   return {
     key: `recreate:${kind}:${index}`,

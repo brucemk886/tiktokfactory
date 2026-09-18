@@ -10,7 +10,6 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
-import { COVER_BACKDROPS, enabledCoverBackdropIds, formatBackdropDate, pickCoverBackdrop } from "../../public/psychology-cover-backdrops.js";
 import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
@@ -294,6 +293,7 @@ test("psychology photo template is an online Z-Image to official photo publishin
   const styles=fs.readFileSync(new URL("../../public/psychology-photo.css",import.meta.url),"utf8");
   const workbench=fs.readFileSync(new URL("../../public/psychology-templates.html",import.meta.url),"utf8");
   const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
+  const renderer=fs.readFileSync(new URL("../../public/psychology-card-renderer.js",import.meta.url),"utf8");
   const records=fs.readFileSync(new URL("../../public/official-publish-records.js",import.meta.url),"utf8");
   const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
   assert.match(html,/图文发布模板/);
@@ -320,10 +320,13 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="cardAspect"><option value="9:16" selected>/);
   assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
   assert.match(html,/>内容模板</);
-  assert.match(html,/id="coverBackdropGrid"/);
-  assert.match(html,/>全部保留</);
-  assert.match(styles,/\.cover-backdrop-thumb img[^}]*aspect-ratio: 9 \/ 16/);
-  assert.match(styles,/\.cover-backdrop-actions/);
+  assert.match(html,/>封面模板</);
+  assert.doesNotMatch(html,/id="coverBackdropGrid"|全部保留|coverBackdropPicker/);
+  assert.doesNotMatch(styles,/\.cover-backdrop/);
+  assert.match(browser,/封面统一黑底白字/);
+  assert.match(renderer,/COVER_BG = "#111111"/);
+  assert.match(renderer,/COVER_INK = "#f4f1ea"/);
+  assert.doesNotMatch(renderer,/pickCoverBackdrop|paintCoverBackdrop|psychology-cover-backdrops/);
   assert.match(html,/>内容标题</);
   assert.match(html,/>这张正文</);
   assert.doesNotMatch(html,/内容页数量|不含封面/);
@@ -362,9 +365,6 @@ test("psychology photo template is an online Z-Image to official photo publishin
     "Changing your personality depending on who you're with",
   ]);
   assert.equal(stripListMarker("• • Thriving in chaos"), "Thriving in chaos");
-  assert.equal(COVER_BACKDROPS.length, 30);
-  assert.deepEqual(enabledCoverBackdropIds(["cream-marks", "missing"]), ["cream-marks"]);
-  assert.equal(pickCoverBackdrop({ allowedIds: ["cream-marks"], random: 0.9 }).id, "cream-marks");
   const nextPage = buildTextCardSlides({
     title: "Another",
     copies: ["only this page"],
@@ -372,12 +372,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   });
   assert.equal(nextPage[0].title, "Another");
   assert.deepEqual(nextPage[0].bullets, ["only this page"]);
-  assert.match(browser,/pickCoverBackdrop/);
-  assert.match(browser,/renderCoverBackdropPicker/);
-  assert.match(browser,/function deleteCoverBackdrop\(/);
-  assert.match(browser,/function previewCoverBackdrop\(/);
-  assert.match(browser,/photo-delete/);
-  assert.match(browser,/allowedIds: savedCoverBackdropIds/);
+  assert.doesNotMatch(browser,/pickCoverBackdrop|renderCoverBackdropPicker|deleteCoverBackdrop|previewCoverBackdrop|savedCoverBackdropIds/);
+  assert.match(browser,/photo-zoom/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
   assert.match(browser,/smash: false/);
   assert.doesNotMatch(browser,/smashWords|stockSmash|cardAccent/);
@@ -466,20 +462,15 @@ test("psychology text cards and stock overlays do not need generated images", ()
   assert.throws(() => decodeRenderedPhoto({ imageBase64: "not-an-image", contentType: "image/jpeg" }), /损坏|无效/);
 });
 
-test("cover backdrops are a 30-template English pool that can be picked at random", () => {
-  assert.equal(COVER_BACKDROPS.length, 30);
-  assert.equal(new Set(COVER_BACKDROPS.map((item) => item.id)).size, 30);
-  const chinese = /[\u4e00-\u9fff]/;
-  for (const item of COVER_BACKDROPS) {
-    assert.equal(chinese.test(JSON.stringify(item)), false);
-    assert.ok(item.ink && item.bg && item.kind);
-  }
-  assert.equal(pickCoverBackdrop({ random: 0 }).id, COVER_BACKDROPS[0].id);
-  assert.notEqual(pickCoverBackdrop({ excludeId: COVER_BACKDROPS[0].id, random: 0 }).id, COVER_BACKDROPS[0].id);
-  assert.equal(pickCoverBackdrop({ allowedIds: ["cream-marks", "ink-navy"], random: 0.9 }).id, "ink-navy");
-  const date = formatBackdropDate(new Date("2026-09-18T12:00:00+08:00"));
-  assert.equal(chinese.test(date.weekday + date.monthDay), false);
-  assert.match(date.monthDay, /September/);
+test("psychology cover cards use a single black background", () => {
+  const renderer = fs.readFileSync(new URL("../../public/psychology-card-renderer.js", import.meta.url), "utf8");
+  const autoPhoto = fs.readFileSync(new URL("../../scripts/psychology-auto-photo-job.js", import.meta.url), "utf8");
+  assert.match(renderer, /COVER_BG = "#111111"/);
+  assert.match(renderer, /COVER_INK = "#f4f1ea"/);
+  assert.doesNotMatch(renderer, /pickCoverBackdrop|paintCoverBackdrop|psychology-cover-backdrops/);
+  assert.equal(fs.existsSync(new URL("../../public/psychology-cover-backdrops.js", import.meta.url)), false);
+  assert.match(autoPhoto, /psychology-card-renderer\.js','psychology-text-card\.js'/);
+  assert.doesNotMatch(autoPhoto, /psychology-cover-backdrops/);
 });
 
 test("pexels stock search stays portrait and drops photos that look like people", async () => {

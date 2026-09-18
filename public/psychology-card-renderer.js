@@ -1,18 +1,20 @@
 import { cardCanvasSize, wrapLines, planCenteredBlock, stripListMarker } from "./psychology-text-card.js";
-import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
-export function renderTextCard(slide, aspectRatio, backdrop) {
-  return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio, backdrop) : renderContentCard(slide, aspectRatio);
+const COVER_BG = "#111111";
+const COVER_INK = "#f4f1ea";
+
+export function renderTextCard(slide, aspectRatio) {
+  return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio) : renderContentCard(slide, aspectRatio);
 }
 
-function renderCoverCard(slide, aspectRatio, backdrop) {
+function renderCoverCard(slide, aspectRatio) {
   const { width, height } = cardCanvasSize(aspectRatio);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  const theme = backdrop || pickCoverBackdrop({ excludeId: undefined });
-  paintCoverBackdrop(ctx, width, height, theme);
+  ctx.fillStyle = COVER_BG;
+  ctx.fillRect(0, 0, width, height);
   const pad = Math.round(width * 0.12);
   const family = '"Iowan Old Style","Palatino Linotype",Georgia,"Times New Roman",serif';
   let size = Math.round(width * 0.078);
@@ -23,31 +25,10 @@ function renderCoverCard(slide, aspectRatio, backdrop) {
     if (lines.length * size * 1.18 <= height - pad * 2 || attempt === 7) break;
     size = Math.max(28, Math.round(size * 0.9));
   }
-  ctx.fillStyle = theme.ink;
+  ctx.fillStyle = COVER_INK;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.font = `600 ${size}px ${family}`;
-  let y = planCenteredBlock(lines.length * size * 1.18, height, pad);
-  for (const line of lines) {
-    ctx.fillText(line, width / 2, y);
-    y += size * 1.18;
-  }
-  return canvas;
-}
-
-export function renderCoverPreview(theme, quote = "A quiet thought", { width = 270, height = 480 } = {}) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  paintCoverBackdrop(ctx, width, height, theme);
-  const pad = Math.round(width * 0.12);
-  const size = Math.round(width * 0.09);
-  ctx.fillStyle = theme.ink;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = `600 ${size}px "Iowan Old Style","Palatino Linotype",Georgia,"Times New Roman",serif`;
-  const lines = wrapLines(quote, (text) => ctx.measureText(text).width, width - pad * 2);
   let y = planCenteredBlock(lines.length * size * 1.18, height, pad);
   for (const line of lines) {
     ctx.fillText(line, width / 2, y);

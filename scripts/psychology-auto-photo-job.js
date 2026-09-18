@@ -4,7 +4,7 @@ import http from 'node:http';
 import puppeteer from 'puppeteer-core';
 
 export async function openCardRenderer(root) {
-  const allowed = new Set(['psychology-card-renderer.js','psychology-text-card.js','psychology-cover-backdrops.js']);
+  const allowed = new Set(['psychology-card-renderer.js','psychology-text-card.js']);
   const server = http.createServer((req, res) => {
     const name = new URL(req.url, 'http://localhost').pathname.slice(1);
     if (!name) { res.setHeader('Content-Type','text/html'); return res.end('<!doctype html><html><body></body></html>'); }

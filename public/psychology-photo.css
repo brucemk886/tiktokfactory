@@ -21,22 +21,6 @@
 .photo-note { margin: 0; color: var(--lf-muted); font-size: 12px; line-height: 1.5; }
 .photo-album-row { display: flex; justify-content: flex-end; }
 .photo-album-row .secondary-photo-btn { min-height: 34px; }
-.cover-backdrop-picker { display: grid; gap: 10px; }
-.cover-backdrop-picker[hidden] { display: none; }
-.cover-backdrop-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.cover-backdrop-head p { margin: 0; color: var(--lf-muted); font-size: 12px; line-height: 1.5; }
-.cover-backdrop-head .secondary-photo-btn { min-height: 32px; padding: 0 10px; font-size: 12px; }
-.cover-backdrop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; max-height: 560px; overflow: auto; padding: 2px; }
-.cover-backdrop-thumb { position: relative; display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; text-align: left; }
-.cover-backdrop-thumb[hidden] { display: none; }
-.cover-backdrop-thumb img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; display: block; background: #ece9df; }
-.cover-backdrop-thumb span { padding: 4px 7px 6px; color: var(--lf-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cover-backdrop-actions { position: absolute; top: 6px; right: 6px; z-index: 2; display: grid; gap: 4px; }
-.cover-backdrop-actions .photo-zoom,
-.cover-backdrop-actions .photo-delete { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,.94); color: #1d1a14; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
-.cover-backdrop-actions .photo-zoom svg,
-.cover-backdrop-actions .photo-delete svg { width: 13px; height: 13px; }
-.cover-backdrop-actions .photo-delete { color: #9a2f28; }
 .stock-search-field { flex: 1 1 220px; margin-bottom: 0; }
 .stock-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
 .stock-thumb { display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; cursor: pointer; text-align: left; }
