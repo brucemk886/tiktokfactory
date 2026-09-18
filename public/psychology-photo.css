@@ -1,7 +1,7 @@
 .psychology-photo-page { min-width: 0; }
-.psychology-photo-page .module-header { max-width: none; width: 100%; margin: 0 0 16px; }
+.psychology-photo-page .module-header { max-width: 1180px; width: 100%; margin: 0 0 16px; }
 .photo-main { max-width: none; width: 100%; box-sizing: border-box; padding: 24px 24px 40px; }
-.photo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.photo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; max-width: 1180px; width: 100%; margin: 0; }
 .photo-card { padding: 22px 22px 20px; border: 1px solid var(--lf-line-strong); border-radius: 16px; background: var(--lf-surface); display: grid; gap: 14px; }
 .photo-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .photo-card-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.03em; }

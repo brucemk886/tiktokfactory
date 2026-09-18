@@ -267,6 +267,7 @@ test("psychology photo publishing preserves image order, cover and TikTok settin
 
 test("psychology photo template is an online Z-Image to official photo publishing flow", () => {
   const html=fs.readFileSync(new URL("../../public/psychology-photo.html",import.meta.url),"utf8");
+  const styles=fs.readFileSync(new URL("../../public/psychology-photo.css",import.meta.url),"utf8");
   const workbench=fs.readFileSync(new URL("../../public/psychology-templates.html",import.meta.url),"utf8");
   const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
   const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
@@ -279,6 +280,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="noImageText" type="checkbox"/);
   assert.doesNotMatch(html,/id="noImageText"[^>]*checked/);
   assert.match(html,/class="photo-layout"/);
+  assert.match(styles,/max-width: 1180px/);
+  assert.match(styles,/\.photo-layout[^}]*margin: 0/);
   assert.match(html,/data-photo-mode="zimage"[\s\S]*data-photo-mode="stock"[\s\S]*data-photo-mode="text"/);
   assert.match(html,/>AI生图</);
   assert.match(html,/>素材库图片</);
