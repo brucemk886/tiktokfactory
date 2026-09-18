@@ -73,7 +73,7 @@
       const counts=Object.fromEntries((data.counts||[]).map(item=>[item.status,item.count]));
       $('#boardCounts').innerHTML=['queued','running','done','failed'].map(s=>`<div class="board-count"><span>${labels[s]}</span><strong>${counts[s]||0}</strong></div>`).join('');
       if(!selected&&jobs.length)selected=jobs[0].jobId;
-      $('#boardQueue').innerHTML=jobs.length?jobs.map(job=>`<button type="button" class="queue-item" data-job="${esc(job.jobId)}" aria-pressed="${selected===job.jobId}"><span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span><strong>${esc(job.title)}</strong><small>${esc(types[job.type]||job.type)}</small><small>${stamp(job.createdAt)}</small></button>`).join(''):'<p class="muted">还没有复刻任务，先从同行爆款选择视频。</p>';
+      $('#boardQueue').innerHTML=jobs.length?jobs.map(job=>`<button type="button" class="queue-item" data-job="${esc(job.jobId)}" aria-pressed="${selected===job.jobId}" title="${esc(job.title)}"><span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span><strong>${esc(job.title)}</strong><small>${esc(types[job.type]||job.type)}</small><small>${stamp(job.createdAt)}</small></button>`).join(''):'<p class="muted">还没有复刻任务，先从同行爆款选择视频。</p>';
       let job=jobs.find(j=>j.jobId===selected);if(!job&&selected)job=(await api('?jobId='+encodeURIComponent(selected))).jobs[0];if(job)detail(job);
       $('#boardPrev').disabled=offset===0;$('#boardNext').disabled=!data.hasMore;$('#boardPage').textContent=`第 ${offset/30+1} 页`;
       $('#boardStatus').textContent='任务每 5 秒更新 · 原视频分析完成后立即删除临时文件';
