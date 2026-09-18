@@ -16,6 +16,30 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
       return errorJson(error.message || "导入生成图片失败。", error.statusCode || 400);
     }
   }
+  if (request.method === "POST" && url.pathname === "/api/official-tiktok/photo-assets/upload") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以上传图片卡片。", 403);
+    try {
+      return json(await importRenderedPhoto(env, env.DB, await readJson(request)), 201);
+    } catch (error) {
+      return errorJson(error.message || "上传文字卡片失败。", error.statusCode || 400);
+    }
+  }
+  if (request.method === "GET" && url.pathname === "/api/official-tiktok/stock-photos") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以搜索素材图。", 403);
+    try {
+      return json(await searchStockPhotos(env, url.searchParams));
+    } catch (error) {
+      return errorJson(error.message || "搜索素材图失败。", error.statusCode || 400);
+    }
+  }
+  if (request.method === "GET" && url.pathname === "/api/official-tiktok/stock-photos/file") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以读取素材图。", 403);
+    try {
+      return proxyStockPhoto(env, url.searchParams.get("url"));
+    } catch (error) {
+      return errorJson(error.message || "读取素材图失败。", error.statusCode || 400);
+    }
+  }
   if (request.method === "POST" && url.pathname === "/api/official-tiktok/photo-publish") {
     try {
       const payload = normalizePhotoPublishPayload(await readJson(request));
@@ -72,6 +96,126 @@ export async function importGeneratedPhoto(env, db, user, input = {}) {
     contentType,
     fileName: `psychology-z-image-${generationId || peerJobId}-${resultIndex}.${extension}`,
     fileSize: bytes.byteLength
+  });
+}
+
+export async function importRenderedPhoto(env, db, input = {}) {
+  const { bytes, contentType } = decodeRenderedPhoto(input);
+  const extension = contentType === "image/webp" ? "webp" : "jpg";
+  const fileName = String(input.fileName || `psychology-text-card.${extension}`).replace(/[^\w.-]+/g, "-").slice(0, 180);
+  return signalDeskBinary(env, db, "/api/v1/publish/assets", {
+    body: bytes,
+    contentType,
+    fileName: fileName.endsWith(`.${extension}`) ? fileName : `${fileName}.${extension}`,
+    fileSize: bytes.byteLength
+  });
+}
+
+export function decodeRenderedPhoto(input = {}) {
+  const raw = String(input.imageBase64 || input.dataUrl || "").trim();
+  if (!raw) throw statusError("请先生成文字卡片。", 400);
+  const dataUrl = raw.match(/^data:(image\/(?:jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  const declared = String(input.contentType || "").split(";")[0].trim().toLowerCase();
+  const contentType = dataUrl ? dataUrl[1].toLowerCase() : declared;
+  if (!PHOTO_CONTENT_TYPES.has(contentType)) throw statusError("文字卡片必须是 TikTok 支持的 JPG 或 WebP。", 415);
+  const bytes = decodeBase64(dataUrl ? dataUrl[2] : raw);
+  if (!bytes.byteLength || bytes.byteLength > PHOTO_MAX_BYTES) throw statusError("文字卡片为空或超过 TikTok 20 MB 限制。", 413);
+  if (!looksLikePhotoBytes(bytes, contentType)) throw statusError("文字卡片文件损坏，请重新生成。", 400);
+  return { bytes, contentType };
+}
+
+function decodeBase64(value) {
+  const clean = String(value || "").replace(/\s+/g, "");
+  if (!clean || clean.length > Math.ceil(PHOTO_MAX_BYTES * 4 / 3) + 128) throw statusError("文字卡片过大。", 413);
+  try {
+    const binary = atob(clean);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } catch {
+    throw statusError("文字卡片编码无效。", 400);
+  }
+}
+
+function looksLikePhotoBytes(bytes, contentType) {
+  if (contentType === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8;
+  return bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+}
+
+const STOCK_PHOTO_HOSTS = new Set(["images.pexels.com", "images.unsplash.com", "plus.unsplash.com", "cdn.pixabay.com"]);
+const PEOPLE_PATTERN = /\b(people|person|man|men|woman|women|girl|boy|child|children|baby|couple|family|human|portrait|selfie|face|faces|crowd|hand|hands|silhouette|someone|lady|gentleman|teen|kid|kids|model|dancer|tourist|worker|friend|friends|人|男人|女人|男女|情侣|人物|肖像)\b/i;
+
+export function isAllowedStockPhotoUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    return parsed.protocol === "https:" && STOCK_PHOTO_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function buildPexelsSearchQuery(value) {
+  const cleaned = String(value || "").replace(PEOPLE_PATTERN, " ").replace(/\s+/g, " ").trim();
+  const base = cleaned || "cinematic empty landscape fog forest interior hallway";
+  return `${base} cinematic establishing shot empty scene still life no people`;
+}
+
+export function photoLooksLikePeople(...values) {
+  return PEOPLE_PATTERN.test(values.map((value) => String(value || "")).join(" "));
+}
+
+export async function searchStockPhotos(env, searchParams) {
+  const query = String(searchParams.get("q") || searchParams.get("query") || "").trim();
+  const count = Math.max(1, Math.min(30, Number(searchParams.get("count") || 12) || 12));
+  const accessKey = String(env.PEXELS_API_KEY || "").trim();
+  if (!accessKey) {
+    return { configured: false, photos: [], error: "还没有配置 Pexels。可以先粘贴 Pexels 图片链接。" };
+  }
+  const endpoint = new URL("https://api.pexels.com/v1/search");
+  endpoint.searchParams.set("query", buildPexelsSearchQuery(query));
+  endpoint.searchParams.set("orientation", "portrait");
+  endpoint.searchParams.set("size", "large");
+  endpoint.searchParams.set("per_page", String(Math.min(80, Math.max(20, count * 4))));
+  const response = await (env.fetch || fetch)(endpoint, {
+    headers: { Authorization: accessKey },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw statusError(`Pexels 搜索失败：HTTP ${response.status}`, 502);
+  const data = await response.json();
+  const photos = (Array.isArray(data.photos) ? data.photos : []).map((photo) => {
+    const alt = String(photo.alt || "");
+    if (photoLooksLikePeople(alt, photo.url)) return null;
+    const imageUrl = photo.src?.portrait || photo.src?.large2x || photo.src?.large || photo.src?.original || "";
+    const thumbUrl = photo.src?.medium || photo.src?.small || imageUrl;
+    if (!isAllowedStockPhotoUrl(imageUrl)) return null;
+    return {
+      id: String(photo.id || ""),
+      author: String(photo.photographer || "Pexels"),
+      pageUrl: String(photo.url || ""),
+      alt,
+      imageUrl,
+      thumbUrl: `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(thumbUrl)}`,
+      fileUrl: `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(imageUrl)}`,
+    };
+  }).filter(Boolean).slice(0, count);
+  return { configured: true, photos, query: buildPexelsSearchQuery(query) };
+}
+
+export async function proxyStockPhoto(env, rawUrl) {
+  if (!isAllowedStockPhotoUrl(rawUrl)) throw statusError("只支持 Pexels、Unsplash、Pixabay 的图片链接。", 400);
+  const response = await (env.fetch || fetch)(rawUrl, { signal: AbortSignal.timeout(30000), redirect: "follow" });
+  if (!response.ok) throw statusError(`读取素材图失败：HTTP ${response.status}`, 502);
+  const contentType = String(response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!contentType.startsWith("image/")) throw statusError("素材链接不是图片。", 415);
+  const bytes = await response.arrayBuffer();
+  if (!bytes.byteLength || bytes.byteLength > PHOTO_MAX_BYTES) throw statusError("素材图为空或超过 20 MB。", 413);
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      "content-type": contentType,
+      "cache-control": "public, max-age=3600",
+    },
   });
 }
 

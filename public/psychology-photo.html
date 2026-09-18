@@ -16,7 +16,7 @@
         <div>
           <p class="module-kicker">心理学</p>
           <h1>图文发布模板</h1>
-          <p>用 Z-Image 生成 1–6 张图，按顺序提交 TikTok 官方图文接口，第一张作为封面。</p>
+          <p>三种出图方式：AI 生图、素材库图片、文案图片。都按顺序提交官方图文接口，第一张作为封面。</p>
         </div>
         <button id="refreshBtn" type="button">刷新</button>
       </header>
@@ -26,16 +26,53 @@
           <div class="photo-card-head">
             <div>
               <h2>生成图片</h2>
-              <p>描述画面后一次出图；完成后按生成顺序加入图集。</p>
+              <p id="createLead">描述画面后一次出图；完成后按生成顺序加入图集。</p>
             </div>
             <span id="generationState">等待生成</span>
           </div>
-          <label class="field photo-prompt-field"><span>画面描述</span><textarea id="imagePrompt" class="photo-compact-textarea" rows="3" maxlength="1000" placeholder="例如：竖版写实摄影，一名年轻女性独自坐在雨夜公交站，神情克制，冷色环境光，人物清晰、背景虚化。"></textarea></label>
-          <div class="photo-toolbar">
-            <label class="field compact-field"><span>生成数量</span><select id="imageCount"><option>1</option><option>2</option><option selected>4</option><option>6</option></select></label>
-            <label class="field compact-field"><span>画面比例</span><select id="aspectRatio"><option value="9:16" selected>9:16 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option><option value="4:3">4:3 横图</option><option value="16:9">16:9 横图</option></select></label>
-            <label class="photo-switch"><input id="noImageText" type="checkbox" />图片内不生成文字</label>
-            <button id="generateBtn" type="button">生成图片</button>
+          <div class="catalog-tabs photo-mode-tabs" role="tablist" aria-label="出图方式">
+            <button class="catalog-tab is-active" id="zimageModeTab" type="button" role="tab" aria-selected="true" data-photo-mode="zimage">AI生图</button>
+            <button class="catalog-tab" id="stockModeTab" type="button" role="tab" aria-selected="false" data-photo-mode="stock">素材库图片</button>
+            <button class="catalog-tab" id="textModeTab" type="button" role="tab" aria-selected="false" data-photo-mode="text">文案图片</button>
+          </div>
+          <div id="zimagePane" data-photo-pane="zimage">
+            <label class="field photo-prompt-field"><span>画面描述</span><textarea id="imagePrompt" class="photo-compact-textarea" rows="3" maxlength="1000" placeholder="例如：竖版写实摄影，一名年轻女性独自坐在雨夜公交站，神情克制，冷色环境光，人物清晰、背景虚化。"></textarea></label>
+            <div class="photo-toolbar">
+              <label class="field compact-field"><span>生成数量</span><select id="imageCount"><option>1</option><option>2</option><option selected>4</option><option>6</option></select></label>
+              <label class="field compact-field"><span>画面比例</span><select id="aspectRatio"><option value="9:16" selected>9:16 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option><option value="4:3">4:3 横图</option><option value="16:9">16:9 横图</option></select></label>
+              <label class="photo-switch"><input id="noImageText" type="checkbox" />图片内不生成文字</label>
+              <button id="generateBtn" type="button">生成图片</button>
+            </div>
+          </div>
+          <div id="stockPane" data-photo-pane="stock" hidden>
+            <label class="field"><span>叠字标题</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds" /></label>
+            <label class="field"><span>副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)" /></label>
+            <label class="field photo-prompt-field"><span>正文（空行分页，同一题的 A/B/C 连着写）</span><textarea id="stockBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="2. they text, “i’m gonna take a night to myself.”&#10;A) your brain instantly starts searching for hidden meaning.&#10;B) you feel relieved and enjoy having some distance.&#10;C) you trust that needing space doesn’t threaten the connection."></textarea></label>
+            <div class="photo-toolbar">
+              <label class="field stock-search-field"><span>素材搜索</span><input id="stockQuery" maxlength="80" placeholder="fog forest / empty hallway / night road" /></label>
+              <button id="searchStockBtn" class="secondary-photo-btn" type="button">搜索素材</button>
+            </div>
+            <p class="photo-note">从 Pexels 只取竖版、偏分镜的空镜，并过滤人物。也可以粘贴 Pexels 图片链接。</p>
+            <div id="stockResults" class="stock-results"></div>
+            <label class="field photo-prompt-field"><span>或粘贴图片链接</span><textarea id="stockUrls" class="photo-compact-textarea" rows="3" maxlength="4000" placeholder="https://images.pexels.com/photos/..."></textarea></label>
+            <div class="photo-toolbar">
+              <label class="field compact-field"><span>卡片数量</span><select id="stockCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+              <label class="field compact-field"><span>画面比例</span><select id="stockAspect"><option value="4:5" selected>4:5 竖图</option><option value="1:1">1:1 方图</option><option value="3:4">3:4 竖图</option><option value="9:16">9:16 竖图</option></select></label>
+              <label class="photo-switch"><input id="stockSmash" type="checkbox" checked />去掉空格</label>
+              <label class="photo-switch"><input id="stockGray" type="checkbox" />黑白照片</label>
+              <button id="renderStockBtn" type="button">生成素材图</button>
+            </div>
+          </div>
+          <div id="textPane" data-photo-pane="text" hidden>
+            <label class="field"><span>卡片标题</span><input id="cardTitle" maxlength="120" placeholder="例如：Signs of a Disorganized Attachment Style" /></label>
+            <label class="field photo-prompt-field"><span>条目（一行一条）</span><textarea id="cardBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="Always wanting alone time, but then feeling lonely&#10;Changing your personality depending on who you're with"></textarea></label>
+            <label class="field"><span>点缀词（选填）</span><input id="cardAccent" maxlength="24" placeholder="例如：herher" /></label>
+            <div class="photo-toolbar">
+              <label class="field compact-field"><span>卡片数量</span><select id="cardCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="1:1" selected>1:1 方图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="9:16">9:16 竖图</option></select></label>
+              <label class="photo-switch"><input id="smashWords" type="checkbox" />条目去掉空格</label>
+              <button id="renderCardBtn" type="button">生成文案图片</button>
+            </div>
           </div>
           <p id="generateMessage" class="photo-status" aria-live="polite"></p>
           <div id="photoList" class="generated-photo-list"><div class="generated-photo-empty">还没有可用图片。生成完成后会按顺序自动加入图集，第一张作为封面。</div></div>
@@ -71,6 +108,6 @@
       <div id="pageStatus" class="page-status"></div>
     </main>
     <script src="/access.js"></script>
-    <script src="/psychology-photo.js"></script>
+    <script type="module" src="/psychology-photo.js?v=20260918-3"></script>
   </body>
 </html>

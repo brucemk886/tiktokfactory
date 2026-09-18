@@ -8,7 +8,8 @@ import { handleCompat, publicPsychologySettings } from "./compat.js";
 import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
-import { buildPhotoBatchRequest, normalizePhotoPublishPayload } from "./photo-publishing.js";
+import { buildPexelsSearchQuery, buildPhotoBatchRequest, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
+import { buildStockOverlaySlides, buildTextCardSlides, smashCardWords } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -266,6 +267,7 @@ test("psychology photo publishing preserves image order, cover and TikTok settin
 
 test("psychology photo template is an online Z-Image to official photo publishing flow", () => {
   const html=fs.readFileSync(new URL("../../public/psychology-photo.html",import.meta.url),"utf8");
+  const workbench=fs.readFileSync(new URL("../../public/psychology-templates.html",import.meta.url),"utf8");
   const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
   const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
   assert.match(html,/图文发布模板/);
@@ -276,13 +278,97 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="noImageText" type="checkbox"/);
   assert.doesNotMatch(html,/id="noImageText"[^>]*checked/);
   assert.match(html,/class="photo-layout"/);
+  assert.match(html,/data-photo-mode="zimage"[\s\S]*data-photo-mode="stock"[\s\S]*data-photo-mode="text"/);
+  assert.match(html,/>AI生图</);
+  assert.match(html,/>素材库图片</);
+  assert.match(html,/>文案图片</);
+  assert.match(workbench,/AI生图、素材库图片或文案图片/);
+  assert.match(html,/id="renderCardBtn"/);
+  assert.match(html,/id="renderStockBtn"/);
+  assert.match(html,/从 Pexels 只取竖版/);
+  assert.doesNotMatch(html,/从 Unsplash/);
+  assert.match(cloud,/api\.pexels\.com/);
+  assert.match(cloud,/PEXELS_API_KEY/);
+  assert.match(cloud,/orientation", "portrait"/);
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/photoCoverIndex: 0/);
-  assert.doesNotMatch(browser,/state\.selected|coverKey|toggleGeneratedPhoto|changeSelectedPhoto/);
+  assert.doesNotMatch(browser,/coverKey|toggleGeneratedPhoto|changeSelectedPhoto|state\.selectedPhotos/);
   assert.match(browser,/\/api\/official-tiktok\/photo-assets\/import/);
+  assert.match(browser,/\/api\/official-tiktok\/photo-assets\/upload/);
   assert.match(browser,/\/api\/official-tiktok\/photo-publish/);
+  assert.match(cloud,/\/api\/official-tiktok\/stock-photos/);
   assert.match(cloud,/\/api\/v1\/publish\/assets/);
   assert.match(cloud,/photoAssetKeys/);
   assert.doesNotMatch(browser,/local-worker|localhost|127\.0\.0\.1/);
+});
+
+test("psychology text cards and stock overlays do not need generated images", () => {
+  assert.equal(smashCardWords("Always wanting alone time"), "Alwayswantingalonetime");
+  const cards = buildTextCardSlides({ title: "Signs of a Disorganized Attachment Style", body: "- Always wanting alone time\n- Thriving in chaos", count: 1, smash: true, accent: "herher" });
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].accent, "herher");
+  assert.equal(cards[0].bullets[0], "Alwayswantingalonetime");
+  const overlays = buildStockOverlaySlides({
+    title: "how to know your attachment style",
+    subtitle: "(this explains 90%)",
+    body: "2. they text\nA) search for meaning\nB) enjoy distance\n\n3. they go quiet\nA) panic\nB) wait",
+    count: 3,
+    smash: true,
+  });
+  assert.equal(overlays.length, 3);
+  assert.equal(overlays[0].kind, "cover");
+  assert.equal(overlays[1].lines[0], "2.theytext");
+  assert.equal(overlays[1].lines[1], "A)searchformeaning");
+  assert.equal(isAllowedStockPhotoUrl("https://images.pexels.com/photos/1.jpeg"), true);
+  assert.equal(isAllowedStockPhotoUrl("https://images.unsplash.com/photo-abc"), true);
+  assert.equal(isAllowedStockPhotoUrl("https://evil.example/photo.jpg"), false);
+  assert.match(buildPexelsSearchQuery("couple beach"), /cinematic establishing shot empty scene/);
+  assert.doesNotMatch(buildPexelsSearchQuery("couple beach"), /\bcouple\b/);
+  assert.equal(photoLooksLikePeople("A couple walking on the beach"), true);
+  assert.equal(photoLooksLikePeople("Empty foggy forest road at dawn"), false);
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xdb, 0x00]);
+  const encoded = Buffer.from(jpeg).toString("base64");
+  const decoded = decodeRenderedPhoto({ imageBase64: `data:image/jpeg;base64,${encoded}`, contentType: "image/jpeg" });
+  assert.equal(decoded.contentType, "image/jpeg");
+  assert.throws(() => decodeRenderedPhoto({ imageBase64: "not-an-image", contentType: "image/jpeg" }), /损坏|无效/);
+});
+
+test("pexels stock search stays portrait and drops photos that look like people", async () => {
+  const missing = await searchStockPhotos({}, new URLSearchParams("q=fog"));
+  assert.equal(missing.configured, false);
+  const requested = [];
+  const result = await searchStockPhotos({
+    PEXELS_API_KEY: "test-pexels-key",
+    fetch: async (url, init) => {
+      requested.push({ href: String(url), auth: init.headers.Authorization });
+      return {
+        ok: true,
+        json: async () => ({
+          photos: [
+            {
+              id: 1,
+              alt: "A couple walking on the beach",
+              photographer: "Ada",
+              url: "https://www.pexels.com/photo/couple",
+              src: { portrait: "https://images.pexels.com/photos/1.jpeg" },
+            },
+            {
+              id: 2,
+              alt: "Empty foggy forest road at dawn",
+              photographer: "Lee",
+              url: "https://www.pexels.com/photo/forest-road",
+              src: { portrait: "https://images.pexels.com/photos/2.jpeg", medium: "https://images.pexels.com/photos/2-m.jpeg" },
+            },
+          ],
+        }),
+      };
+    },
+  }, new URLSearchParams("q=couple beach&count=12"));
+  assert.equal(result.configured, true);
+  assert.equal(result.photos.length, 1);
+  assert.equal(result.photos[0].id, "2");
+  assert.match(requested[0].href, /orientation=portrait/);
+  assert.match(requested[0].href, /no(\+|%20)people/);
+  assert.equal(requested[0].auth, "test-pexels-key");
 });
