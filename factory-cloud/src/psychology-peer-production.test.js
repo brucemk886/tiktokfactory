@@ -248,6 +248,28 @@ test('recreation batch rejects missing sources, invalid media types and unauthor
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM factory_jobs').get().n,0);
 });
 
+test('owner can delete a recreation job and its stored assets', async t => {
+  const listed=[], deleted=[];
+  const {sqlite,call,user}=fixture(t,{
+    ARCHIVE:{
+      async list({prefix}){ listed.push(prefix); return {objects:[{key:`${prefix}scene.image`}],truncated:false}; },
+      async delete(key){ deleted.push(key); }
+    }
+  });
+  sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at) VALUES('peer-del-1','psychology-photo-story','failed','Hashtags',15,'','{\"peerSource\":{\"id\":\"psy-abc\"}}','{}','heic','admin','',0,0,1,1)").run();
+  const response=await call('DELETE',undefined,user,'https://factory.test','/peer-del-1');
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).jobId,'peer-del-1');
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM factory_jobs").get().n,0);
+  assert.ok(listed.includes('psychology-photo-story-sources/peer-del-1/'));
+  assert.ok(deleted.includes('psychology-photo-story-sources/peer-del-1/scene.image'));
+  assert.equal((await call('DELETE',undefined,user,'https://factory.test','/peer-del-1')).status,404);
+  sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at) VALUES('peer-del-2','psychology-recreation','done','Keep',100,'','{\"peerSource\":{\"id\":\"psy-abc\"}}','{}','','admin','',0,0,1,1)").run();
+  assert.equal((await call('DELETE',undefined,{...user,username:'other'},'https://factory.test','/peer-del-2')).status,404);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM factory_jobs").get().n,1);
+  assert.equal((await call('DELETE',undefined,user,'https://other.test','/peer-del-2')).status,403);
+});
+
 test('recreation assets are same-origin, owner-scoped and support audio range reads', async t => {
   const {db,sqlite,user}=fixture(t);
   sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,created_by,payload_json,result_json) VALUES('asset-job','psychology-recreation','done','Asset test','admin','{}','{}')").run();

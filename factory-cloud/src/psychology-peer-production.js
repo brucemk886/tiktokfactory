@@ -32,6 +32,11 @@ async function dispatchJobs(env, jobs, type) {
 export async function handlePeerProduction(request, env, url, user) {
   const assetMatch = url.pathname.match(/^\/api\/psychology-peer-hits\/production\/([^/]+)\/assets\/(image|audio)\/(\d+)$/);
   if (assetMatch) return serveAsset(request, env, user, assetMatch);
+  const jobMatch = url.pathname.match(/^\/api\/psychology-peer-hits\/production\/([^/]+)$/);
+  if (jobMatch) {
+    if (request.method !== 'DELETE') return errorJson('不支持此请求方法。', 405);
+    return deleteProductionJob(env, user, decodeURIComponent(jobMatch[1]));
+  }
   if (url.pathname !== BASE) return null;
 
   if (request.method === 'GET') {
@@ -141,6 +146,33 @@ export async function handlePeerProduction(request, env, url, user) {
     )));
   await dispatchJobs(env, jobs, type);
   return json({ accepted: true, execution: 'cloud', mediaType, jobIds: jobs.map(job => job.id) }, 202);
+}
+
+async function deleteProductionJob(env, user, jobId) {
+  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(jobId)) fail('任务编号无效。');
+  const row = await env.DB.prepare("SELECT id,type FROM factory_jobs WHERE created_by=? AND id=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL")
+    .bind(user.username, jobId).first();
+  if (!row) fail('找不到这条爆款复刻任务。', 404);
+  await deleteStoredObjects(env.ARCHIVE, [
+    `psychology-recreation/${jobId}/`,
+    `psychology-recreation-sources/${jobId}/`,
+    `psychology-photo-story-sources/${jobId}/`
+  ]);
+  await env.DB.prepare('DELETE FROM factory_video_analyses WHERE id=?').bind(`recreation-${jobId}`).run().catch(() => {});
+  await env.DB.prepare('DELETE FROM factory_jobs WHERE created_by=? AND id=?').bind(user.username, jobId).run();
+  return json({ ok: true, jobId });
+}
+
+async function deleteStoredObjects(archive, prefixes) {
+  if (!archive?.list || !archive?.delete) return;
+  for (const prefix of prefixes) {
+    let cursor;
+    do {
+      const listed = await archive.list({ prefix, cursor, limit: 1000 });
+      for (const object of listed.objects || []) await archive.delete(object.key).catch(() => {});
+      cursor = listed.truncated ? listed.cursor : '';
+    } while (cursor);
+  }
 }
 
 async function serveAsset(request, env, user, match) {

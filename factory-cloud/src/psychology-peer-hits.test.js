@@ -195,7 +195,10 @@ test("public integration dispatch works without a login cookie and stays separat
   const boardScript=fs.readFileSync(new URL("../../public/psychology-production.js",import.meta.url),"utf8");
   const boardStyles=fs.readFileSync(new URL("../../public/psychology-production.css",import.meta.url),"utf8");
   assert.match(boardScript,/title="\$\{esc\(job\.title\)\}"/);
+  assert.match(boardScript,/data-delete-job/);
+  assert.match(boardScript,/method:'DELETE'/);
   assert.match(boardStyles,/-webkit-line-clamp:2/);
+  assert.match(boardStyles,/\.queue-delete/);
   assert.match(productionScript,/moveSelectedBtn/);
   assert.match(productionScript,/移动到图文爆款/);
   assert.match(productionScript,/移动到视频爆款/);
