@@ -1,4 +1,4 @@
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-15";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-16";
 import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
@@ -549,13 +549,14 @@ async function renderRecreationAlbum(pages = []) {
 
 async function renderRecreationPage(page, index) {
   if (page.imageModel === "stock" || page.template === "stock") {
-    const slides = buildStockOverlaySlides({
+    const hasCopy = Boolean(String(page.title || page.subtitle || page.body || "").trim());
+    const slides = hasCopy ? buildStockOverlaySlides({
       title: page.title || "",
       subtitle: page.subtitle || "",
       copies: [page.body || ""],
       count: 1,
       smash: false,
-    });
+    }) : [{ title: "", subtitle: "", lines: [] }];
     const src = page.fileUrl || `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(page.imageUrl || "")}`;
     const image = await loadImage(src);
     const blob = await canvasToJpeg(renderOverlayCard(slides[0], image, "9:16"));
