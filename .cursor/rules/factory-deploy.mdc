@@ -14,3 +14,5 @@ npm run deploy
 不要直接跑 `npx wrangler deploy` 或 `wrangler deploy`。`npm run deploy` 会先核对 GitHub `main`：本地落后或分叉就拒绝发布。
 
 中台 `tiktokaitool.com` 的代码在 `D:\cursor\tiktokaitool`，用 `npm run cloudflare:deploy` 发布。
+
+改完工厂相关功能后默认上线，不要等用户再说「上线」：跑测试 → commit → push `main` → `factory-cloud` 里 `npm run deploy`。只动中台时同样默认 `npm run cloudflare:deploy`。密钥、未完成或用户明确说先不要发时除外。

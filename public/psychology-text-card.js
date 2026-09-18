@@ -17,6 +17,17 @@ export function smashCardWords(value) {
   return String(value || "").replace(/\s+/g, "").trim();
 }
 
+export function normalizeTextCardTemplate(value) {
+  return value === "cover" ? "cover" : "content";
+}
+
+export function formatCoverQuote(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^[“"'][\s\S]*[”"']$/.test(text)) return text;
+  return `“${text}”`;
+}
+
 export function parseCardBullets(value) {
   return String(value || "").split(/\r?\n/).map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean);
 }
@@ -116,16 +127,28 @@ export function buildStockOverlaySlides({ title, body, subtitle, count, smash } 
   return slides.filter((slide) => slide.title || slide.subtitle || slide.lines.length);
 }
 
-export function buildTextCardSlides({ title, body, accent, count, smash } = {}) {
+export function buildTextCardSlides({ title, body, accent, count, smash, template } = {}) {
   const heading = String(title || "").trim();
   const mark = String(accent || "").trim();
   const bullets = parseCardBullets(body).map((line) => smash ? smashCardWords(line) : line);
-  if (!heading && !bullets.length) throw Object.assign(new Error("请填写卡片标题或条目。"), { statusCode: 400 });
+  const kind = normalizeTextCardTemplate(template);
+  if (kind === "cover") {
+    const quote = smash ? smashCardWords(heading) : heading;
+    if (!quote) throw Object.assign(new Error("请填写封面文案。"), { statusCode: 400 });
+    return [{
+      kind: "cover",
+      title: formatCoverQuote(quote),
+      accent: "",
+      bullets: [],
+    }];
+  }
+  if (!heading && !bullets.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
   const sizes = bullets.length ? splitEven(bullets.length, count) : [0];
   let offset = 0;
   return sizes.map((size, index) => {
     const slide = {
-      title: index === 0 ? heading : "",
+      kind: "content",
+      title: index === 0 ? (smash ? smashCardWords(heading) : heading) : "",
       accent: index === 0 ? mark : "",
       bullets: bullets.slice(offset, offset + size),
     };

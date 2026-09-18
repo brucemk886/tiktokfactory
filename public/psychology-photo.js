@@ -1,7 +1,7 @@
 import { buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, planCenteredBlock, wrapLines } from "./psychology-text-card.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), pollTimer: 0, busy: false };
+const state = { mode: "zimage", textTemplate: "content", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -15,6 +15,8 @@ $("#publishBtn")?.addEventListener("click", publishPhotoPost);
 $("#textModeTab")?.addEventListener("click", () => setPhotoMode("text"));
 $("#stockModeTab")?.addEventListener("click", () => setPhotoMode("stock"));
 $("#zimageModeTab")?.addEventListener("click", () => setPhotoMode("zimage"));
+$("#coverTemplateTab")?.addEventListener("click", () => setTextTemplate("cover"));
+$("#contentTemplateTab")?.addEventListener("click", () => setTextTemplate("content"));
 $("#photoLightboxClose")?.addEventListener("click", closePhotoPreview);
 $("#photoLightbox")?.addEventListener("click", (event) => {
   if (event.target === $("#photoLightbox")) closePhotoPreview();
@@ -73,12 +75,31 @@ function setPhotoMode(mode) {
   if ($("#zimagePane")) $("#zimagePane").hidden = state.mode !== "zimage";
   if ($("#createLead")) {
     $("#createLead").textContent = isText
-      ? "用标题和条目排成文案图片，不走生图模型。"
+      ? (state.textTemplate === "cover" ? "封面只排一句文案。" : "内容页排标题和文案。")
       : isStock
         ? "从素材库取竖版空镜，再把标题和题目叠上去。"
         : "描述画面后由 AI 出图；完成后按生成顺序加入图集。";
   }
+  if (isText) setTextTemplate(state.textTemplate);
   renderGeneratedPhotos();
+}
+
+function setTextTemplate(template) {
+  state.textTemplate = template === "cover" ? "cover" : "content";
+  const isCover = state.textTemplate === "cover";
+  $("#coverTemplateTab")?.classList.toggle("is-active", isCover);
+  $("#contentTemplateTab")?.classList.toggle("is-active", !isCover);
+  if ($("#coverTemplateTab")) $("#coverTemplateTab").setAttribute("aria-selected", String(isCover));
+  if ($("#contentTemplateTab")) $("#contentTemplateTab").setAttribute("aria-selected", String(!isCover));
+  const titleLabel = $("#cardTitleField span");
+  const titleInput = $("#cardTitle");
+  if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
+  if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
+  if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
+  if ($("#cardAccentField")) $("#cardAccentField").hidden = isCover;
+  const countField = $("#cardCount")?.closest(".compact-field");
+  if (countField) countField.hidden = isCover;
+  if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只排一句文案。" : "内容页排标题和文案。";
 }
 
 async function generateTextCards() {
@@ -92,6 +113,7 @@ async function generateTextCards() {
       accent: $("#cardAccent").value,
       count: $("#cardCount").value,
       smash: $("#smashWords").checked,
+      template: state.textTemplate,
     });
     const aspectRatio = $("#cardAspect").value;
     clearTextCards();
@@ -126,58 +148,96 @@ async function generateTextCards() {
 }
 
 function renderTextCard(slide, aspectRatio) {
+  return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio) : renderContentCard(slide, aspectRatio);
+}
+
+function renderCoverCard(slide, aspectRatio) {
   const { width, height } = cardCanvasSize(aspectRatio);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  const pad = Math.round(width * 0.1);
-  const maxWidth = width - pad * 2;
+  const pad = Math.round(width * 0.12);
   const family = '"Avenir Next","Segoe UI",Helvetica,Arial,sans-serif';
-  let titleSize = Math.round(width * 0.068);
-  let bodySize = Math.round(width * 0.038);
-  let pack = { items: [], total: 0 };
+  let size = Math.round(width * 0.07);
+  let lines = [];
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const items = [];
-    if (slide.title) {
-      ctx.font = `700 ${titleSize}px ${family}`;
-      for (const line of wrapLines(slide.title, (text) => ctx.measureText(text).width, maxWidth)) {
-        items.push({ text: line, size: titleSize, weight: 700, color: "#111111", gap: titleSize * 1.18 });
-      }
-      items.push({ spacer: titleSize * 0.28 });
-    }
-    if (slide.accent) {
-      const accentSize = Math.max(22, Math.round(width * 0.034));
-      items.push({ text: slide.accent, size: accentSize, weight: 600, color: "#c0392b", gap: accentSize * 1.7 });
-    }
-    ctx.font = `400 ${bodySize}px ${family}`;
-    for (const bullet of slide.bullets) {
-      const lines = wrapLines(bullet, (text) => ctx.measureText(text).width, maxWidth);
-      lines.forEach((line, index) => {
-        items.push({ text: index === 0 ? `•  ${line}` : line, size: bodySize, weight: 400, color: "#111111", gap: bodySize * 1.38 });
-      });
-      items.push({ spacer: bodySize * 0.22 });
-    }
-    const total = items.reduce((sum, item) => sum + (item.gap || item.spacer || 0), 0);
-    pack = { items, total };
-    if (total <= height - pad * 2 || attempt === 7) break;
-    titleSize = Math.max(32, Math.round(titleSize * 0.9));
-    bodySize = Math.max(20, Math.round(bodySize * 0.9));
+    ctx.font = `600 ${size}px ${family}`;
+    lines = wrapLines(slide.title, (text) => ctx.measureText(text).width, width - pad * 2);
+    if (lines.length * size * 1.2 <= height - pad * 2 || attempt === 7) break;
+    size = Math.max(28, Math.round(size * 0.9));
   }
-  ctx.fillStyle = "#f4efe8";
+  ctx.fillStyle = "#1e1e1e";
   ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#f5f5f5";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  let y = planCenteredBlock(pack.total, height, pad);
-  for (const item of pack.items) {
-    if (item.spacer) {
-      y += item.spacer;
-      continue;
+  ctx.font = `600 ${size}px ${family}`;
+  let y = planCenteredBlock(lines.length * size * 1.2, height, pad);
+  for (const line of lines) {
+    ctx.fillText(line, width / 2, y);
+    y += size * 1.2;
+  }
+  return canvas;
+}
+
+function renderContentCard(slide, aspectRatio) {
+  const { width, height } = cardCanvasSize(aspectRatio);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const pad = Math.round(width * 0.085);
+  const maxWidth = width - pad * 2;
+  const family = '"Avenir Next","Segoe UI",Helvetica,Arial,sans-serif';
+  let titleSize = Math.round(width * 0.082);
+  let bodySize = Math.round(width * 0.042);
+  let pack = { titleLines: [], bullets: [], total: 0 };
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    ctx.font = `800 ${titleSize}px ${family}`;
+    const titleLines = slide.title ? wrapLines(slide.title, (text) => ctx.measureText(text).width, maxWidth) : [];
+    ctx.font = `400 ${bodySize}px ${family}`;
+    const mark = "•  ";
+    const markWidth = ctx.measureText(mark).width;
+    const bullets = [];
+    for (const bullet of slide.bullets) {
+      const lines = wrapLines(bullet, (text) => ctx.measureText(text).width, maxWidth - markWidth);
+      bullets.push(lines);
     }
-    ctx.fillStyle = item.color;
-    ctx.font = `${item.weight} ${item.size}px ${family}`;
-    ctx.fillText(item.text, width / 2, y);
-    y += item.gap;
+    const titleHeight = titleLines.length ? titleLines.length * titleSize * 1.08 + titleSize * 0.55 : 0;
+    const bodyHeight = bullets.reduce((sum, lines) => sum + lines.length * bodySize * 1.42 + bodySize * 0.28, 0);
+    pack = { titleLines, bullets, mark, markWidth, titleHeight, total: titleHeight + bodyHeight };
+    if (pack.total <= height - pad * 2 || attempt === 7) break;
+    titleSize = Math.max(36, Math.round(titleSize * 0.9));
+    bodySize = Math.max(22, Math.round(bodySize * 0.9));
+  }
+  ctx.fillStyle = "#f6f3ee";
+  ctx.fillRect(0, 0, width, height);
+  ctx.textBaseline = "top";
+  let y = pad;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#111111";
+  ctx.font = `800 ${titleSize}px ${family}`;
+  for (const line of pack.titleLines) {
+    ctx.fillText(line, pad, y);
+    y += titleSize * 1.08;
+  }
+  if (pack.titleLines.length) y += titleSize * 0.55;
+  const listTop = y;
+  ctx.font = `400 ${bodySize}px ${family}`;
+  for (const lines of pack.bullets) {
+    lines.forEach((line, index) => {
+      ctx.fillText(index === 0 ? `${pack.mark}${line}` : line, pad + (index === 0 ? 0 : pack.markWidth), y);
+      y += bodySize * 1.42;
+    });
+    y += bodySize * 0.28;
+  }
+  if (slide.accent) {
+    const accentSize = Math.max(24, Math.round(width * 0.038));
+    ctx.fillStyle = "#e23b2e";
+    ctx.font = `600 ${accentSize}px ${family}`;
+    ctx.textAlign = "right";
+    ctx.fillText(slide.accent, width - pad, listTop + bodySize * 1.2);
   }
   return canvas;
 }

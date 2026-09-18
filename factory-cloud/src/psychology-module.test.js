@@ -9,7 +9,7 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
-import { buildStockOverlaySlides, buildTextCardSlides, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
+import { buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -286,6 +286,10 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/>AI生图</);
   assert.match(html,/>素材库图片</);
   assert.match(html,/>文案图片</);
+  assert.match(html,/>封面模板</);
+  assert.match(html,/>内容模板</);
+  assert.match(html,/>内容标题</);
+  assert.match(html,/文案（一行一条）/);
   assert.match(workbench,/AI生图、素材库图片或文案图片/);
   assert.match(html,/id="renderCardBtn"/);
   assert.match(html,/id="renderStockBtn"/);
@@ -314,8 +318,16 @@ test("psychology text cards and stock overlays do not need generated images", ()
   assert.equal(smashCardWords("Always wanting alone time"), "Alwayswantingalonetime");
   const cards = buildTextCardSlides({ title: "Signs of a Disorganized Attachment Style", body: "- Always wanting alone time\n- Thriving in chaos", count: 1, smash: true, accent: "herher" });
   assert.equal(cards.length, 1);
+  assert.equal(cards[0].kind, "content");
+  assert.equal(cards[0].title, "SignsofaDisorganizedAttachmentStyle");
   assert.equal(cards[0].accent, "herher");
   assert.equal(cards[0].bullets[0], "Alwayswantingalonetime");
+  assert.equal(formatCoverQuote("i can fix her"), "“i can fix her”");
+  const cover = buildTextCardSlides({ title: "i can fix her", smash: true, template: "cover" });
+  assert.equal(cover.length, 1);
+  assert.equal(cover[0].kind, "cover");
+  assert.equal(cover[0].title, "“icanfixher”");
+  assert.throws(() => buildTextCardSlides({ template: "cover" }), /封面文案/);
   assert.equal(planCenteredBlock(200, 1080, 80) > 300, true);
   assert.equal(planCenteredBlock(200, 1080, 80) < 500, true);
   assert.equal(planCenteredBlock(1000, 1080, 80), 80);

@@ -63,13 +63,17 @@
             </div>
           </div>
           <div id="textPane" data-photo-pane="text" hidden>
-            <label class="field"><span>卡片标题</span><input id="cardTitle" maxlength="120" placeholder="例如：Signs of a Disorganized Attachment Style" /></label>
-            <label class="field photo-prompt-field"><span>条目（一行一条）</span><textarea id="cardBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="Always wanting alone time, but then feeling lonely&#10;Changing your personality depending on who you're with"></textarea></label>
-            <label class="field"><span>点缀词（选填）</span><input id="cardAccent" maxlength="24" placeholder="例如：herher" /></label>
+            <div class="catalog-tabs photo-text-templates" role="tablist" aria-label="文案模板">
+              <button class="catalog-tab" id="coverTemplateTab" type="button" role="tab" aria-selected="false" data-text-template="cover">封面模板</button>
+              <button class="catalog-tab is-active" id="contentTemplateTab" type="button" role="tab" aria-selected="true" data-text-template="content">内容模板</button>
+            </div>
+            <label class="field" id="cardTitleField"><span>内容标题</span><input id="cardTitle" maxlength="120" placeholder="例如：Signs of an Avoidant Attachment Style" /></label>
+            <label class="field photo-prompt-field" id="cardBodyField"><span>文案（一行一条）</span><textarea id="cardBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="Freaking out at the sign of too much intimacy&#10;Craving alone time"></textarea></label>
+            <label class="field" id="cardAccentField"><span>点缀词（选填）</span><input id="cardAccent" maxlength="24" placeholder="例如：her." /></label>
             <div class="photo-toolbar">
               <label class="field compact-field"><span>卡片数量</span><select id="cardCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
-              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="1:1" selected>1:1 方图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="9:16">9:16 竖图</option></select></label>
-              <label class="photo-switch"><input id="smashWords" type="checkbox" />条目去掉空格</label>
+              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="4:5" selected>4:5 竖图</option><option value="1:1">1:1 方图</option><option value="3:4">3:4 竖图</option><option value="9:16">9:16 竖图</option></select></label>
+              <label class="photo-switch"><input id="smashWords" type="checkbox" checked />去掉空格</label>
               <button id="renderCardBtn" type="button">生成文案图片</button>
             </div>
           </div>
@@ -111,6 +115,6 @@
       </div>
     </main>
     <script src="/access.js"></script>
-    <script type="module" src="/psychology-photo.js?v=20260918-5"></script>
+    <script type="module" src="/psychology-photo.js?v=20260918-6"></script>
   </body>
 </html>

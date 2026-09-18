@@ -21,6 +21,7 @@ Before working on this repository:
 - Require a clean worktree and an exact `HEAD == origin/main` match before deploying; never publish uncommitted or merely local commits.
 - Deploy factory.tiktokaitool.com only with `npm run deploy` from `factory-cloud`. Do not run `wrangler deploy` directly.
 - Deploy tiktokaitool.com with `npm run cloudflare:deploy` from the sibling repository at `D:/cursor/tiktokaitool`.
+- After finishing factory or hosted UI work, ship it: test, commit, push `main`, then deploy. Do not wait for another “上线” unless the change is incomplete, contains secrets, or the user said not to publish yet.
 
 ## Handoff
 
