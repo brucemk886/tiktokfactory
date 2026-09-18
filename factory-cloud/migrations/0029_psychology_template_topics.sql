@@ -20,13 +20,13 @@ CREATE TABLE IF NOT EXISTS psychology_topic_usage (
   created_at INTEGER NOT NULL, PRIMARY KEY(topic_id,batch_id)
 );
 CREATE TRIGGER IF NOT EXISTS psychology_topic_usage_validate BEFORE INSERT ON psychology_topic_usage BEGIN
-  SELECT CASE WHEN NOT EXISTS (
+  SELECT RAISE(ABORT,'TOPIC_CHANGED') WHERE NOT EXISTS (
     SELECT 1 FROM psychology_template_topics WHERE id=NEW.topic_id AND template=NEW.template
       AND revision=NEW.revision AND enabled=1 AND deleted_at=0
-  ) THEN RAISE(ABORT,'TOPIC_CHANGED') END;
-  SELECT CASE WHEN NEW.only_unused=1 AND EXISTS (
+  );
+  SELECT RAISE(ABORT,'TOPIC_ALREADY_USED') WHERE NEW.only_unused=1 AND EXISTS (
     SELECT 1 FROM psychology_template_topics WHERE id=NEW.topic_id AND usage_count>0
-  ) THEN RAISE(ABORT,'TOPIC_ALREADY_USED') END;
+  );
 END;
 CREATE TRIGGER IF NOT EXISTS psychology_topic_usage_count AFTER INSERT ON psychology_topic_usage BEGIN
   UPDATE psychology_template_topics SET usage_count=usage_count+1,last_used_at=NEW.created_at WHERE id=NEW.topic_id;

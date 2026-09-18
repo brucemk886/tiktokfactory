@@ -26,3 +26,6 @@ Add an independent 目标题库 sidebar page for user-managed topics for video t
 
 ## Unfinished work / next step
 User supplies topics through the empty banks. Production deployment and read-only smoke verification are performed after this commit through factory-cloud npm run deploy.
+
+## Deployment compatibility
+The first remote migration was rejected by D1 with incomplete input. Replaced CASE/END trigger guards with SELECT RAISE(...) WHERE predicates to avoid the remote SQL splitter ambiguity (workers-sdk issue https://github.com/cloudflare/workers-sdk/issues/4727). Local transaction/concurrency tests were rerun after this change; no previous data is modified by migration 0029.
