@@ -14,9 +14,28 @@ function message(text,error=false) { $('#message').textContent=text; $('#message
 function renderTemplates() {
   $('#template').innerHTML=(state.templates[state.mediaType]||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
   $('#sourceHint').textContent=`选题来源：同行${state.mediaType==='photo'?'图文':'视频'}爆款库，共 ${state.counts[state.mediaType]||0} 条。每条爆款生成一条新内容。`;
+  renderSources();
   if($('#rewriteCopyField')) $('#rewriteCopyField').hidden=state.mediaType!=='photo';
   if($('#musicPoolField')) $('#musicPoolField').hidden=state.mediaType!=='photo';
 }
+
+function sourceType(){return state.mediaType==='video'&&$('#sourceType').value==='topic-bank'?'topic-bank':'peer';}
+function renderSources(){
+  $('#sourceTypeField').hidden=state.mediaType!=='video';
+  if(!state.canUseTopics)$('#sourceType').value='peer';
+  $('#sourceType option[value="topic-bank"]').disabled=!state.canUseTopics;
+  const bank=sourceType()==='topic-bank',previous=$('#selection').value;
+  const choices=bank?[['random','随机抽取'],['priority','优先级优先'],['recent','最近入库优先'],['least-used','最少使用优先']]:[['random','随机抽取'],['popular','播放量优先'],['recent','最近入库优先']];
+  $('#selection').innerHTML=choices.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('');
+  if(choices.some(([v])=>v===previous))$('#selection').value=previous;
+  $('#unusedField').hidden=!bank;
+  $('#query').placeholder=bank?'筛选题目、内容或分类，不填则从当前模板题库抽取':'筛选爆款标题或同行账号';
+  const c=state.topicCounts?.[$('#template').value]||{};
+  $('#sourceHint').textContent=bank?'当前模板题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从当前模板抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
+}
+$('#sourceType').addEventListener('change',renderSources);
+$('#template').addEventListener('change',renderSources);
+
 async function loadAccounts() {
   const ids=new Set(selected());
   const data=await api('/api/official-tiktok/publish-accounts?module=psychology&media='+state.mediaType);
@@ -40,7 +59,7 @@ async function loadBatches() {
   $('#batches').innerHTML=state.batches.length?state.batches.map(b=>{
     const done=b.items.filter(i=>i.status==='submitted').length;
     const failures=b.items.filter(i=>i.status==='failed').length;
-    return `<details class="batch-card" data-id="${esc(b.id)}" ${open.has(b.id)?'open':''}><summary><span>${esc(b.config.name)} <small>· ${b.config.mediaType==='photo'?'图文':'视频'} ${b.config.count} 条</small></span><small>已提交 ${done} / ${b.config.count}${failures?' · 失败 '+failures:''}</small></summary><p class="batch-meta">${esc(time(b.createdAt/1000))} 创建 · ${esc((state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template)}${b.config.mediaType==='photo'?` · ${b.config.rewriteCopy?'改写文案':'保留原文'} · ${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首随机':'自动推荐配乐'}`:''} · 同账号间隔 ${b.config.intervalMinutes} 分钟</p><div class="queue-wrap"><table class="queue-table"><thead><tr><th>选题</th><th>发布账号</th><th>计划时间</th><th>进度</th><th></th></tr></thead><tbody>${b.items.map(i=>`<tr><td>${esc(i.title||i.sourceId)}</td><td>${esc(accountName(i.connectionId))}</td><td>${esc(time(i.scheduleAt))}</td><td>${esc(labels[i.status]||i.status)}<progress max="100" value="${Number(i.percent)||0}"></progress><small class="${i.error?'error':''}">${esc(i.error||i.message)}</small></td><td>${['failed','handoff'].includes(i.status)?`<button type="button" data-retry="${esc(i.id)}">重试</button>`:''}</td></tr>`).join('')}</tbody></table></div></details>`;
+    return `<details class="batch-card" data-id="${esc(b.id)}" ${open.has(b.id)?'open':''}><summary><span>${esc(b.config.name)} <small>· ${b.config.mediaType==='photo'?'图文':'视频'} ${b.config.count} 条</small></span><small>已提交 ${done} / ${b.config.count}${failures?' · 失败 '+failures:''}</small></summary><p class="batch-meta">${esc(time(b.createdAt/1000))} 创建 · ${esc((state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template)}${b.config.mediaType==='photo'?` · ${b.config.rewriteCopy?'改写文案':'保留原文'} · ${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首随机':'自动推荐配乐'}`:''} · ${b.config.sourceType==='topic-bank'?'目标题库':'同行爆款'} · 同账号间隔 ${b.config.intervalMinutes} 分钟</p><div class="queue-wrap"><table class="queue-table"><thead><tr><th>选题</th><th>发布账号</th><th>计划时间</th><th>进度</th><th></th></tr></thead><tbody>${b.items.map(i=>`<tr><td>${esc(i.title||i.sourceId)}</td><td>${esc(accountName(i.connectionId))}</td><td>${esc(time(i.scheduleAt))}</td><td>${esc(labels[i.status]||i.status)}<progress max="100" value="${Number(i.percent)||0}"></progress><small class="${i.error?'error':''}">${esc(i.error||i.message)}</small></td><td>${['failed','handoff'].includes(i.status)?`<button type="button" data-retry="${esc(i.id)}">重试</button>`:''}</td></tr>`).join('')}</tbody></table></div></details>`;
   }).join(''):'<div class="empty-state">还没有自动发布批次。配置内容和账号后，创建第一批任务。</div>';
 }
 $('#batchForm').addEventListener('input',()=>{ if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
@@ -63,7 +82,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
-  const body=state.submittedInput||{requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  const body=state.submittedInput||{requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   state.submittedInput=body;state.busy=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,button')];controls.forEach(n=>n.disabled=true);
   message('正在抽取选题并创建自动发布任务…');
@@ -71,13 +90,16 @@ $('#batchForm').addEventListener('submit',async event=>{
     const data=await api('/api/psychology-auto-publish',body);
     state.requestId=crypto.randomUUID();state.submittedInput=null;
     message(data.duplicate?'该批次已创建，已恢复任务状态。':'批次已加入队列，生成完成后自动发布。');
-    await loadBatches();
+    try {
+      const options=await api('/api/psychology-auto-publish/options');state.topicCounts=options.topicCounts;renderSources();
+      await loadBatches();
+    } catch(error) { message('批次已创建，刷新状态失败：'+error.message+'。请使用刷新进度查看。',true); }
   } catch(e){message(e.message+'；若是网络错误，直接再次提交会恢复同一批次。',true);}
   finally{state.busy=false;controls.forEach(n=>n.disabled=false);}
 });
 const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
 try {
-  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts});
+  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
   if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
   renderTemplates();
   await Promise.all([loadAccounts(),loadBatches()]);

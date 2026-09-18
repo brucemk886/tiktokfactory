@@ -1,3 +1,6 @@
+import { handlePsychologyTopicBank, topicCounts, selectTopicSources, topicUsageStatement } from './psychology-topic-bank.js';
+import { normalizeTopic } from '../../scripts/psychology-topic-bank.js';
+import { parseTopicImport } from '../../public/psychology-topic-import.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -19,7 +22,7 @@ async function fixture(t) {
   for(const file of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')).sort()) sqlite.exec(fs.readFileSync(new URL(file,dir),'utf8'));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},
     async first(){return sqlite.prepare(sql).get(...this.args)||null;},
-    async all(){return {results:sqlite.prepare(sql).all(...this.args)};},
+    async all(){const before=sqlite.prepare('SELECT total_changes() n').get().n;const results=sqlite.prepare(sql).all(...this.args);return {results,meta:{changes:sqlite.prepare('SELECT total_changes() n').get().n-before}};},
     async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(...this.args).changes)}};}};},
     async batch(items){sqlite.exec('BEGIN');try{const rows=[];for(const item of items)rows.push(await item.all());sqlite.exec('COMMIT');return rows;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   sqlite.prepare("INSERT INTO factory_users(id,username,role,password_hash,password_salt,sidebar_modules_json,created_at,updated_at) VALUES ('admin','admin','admin','','',?,0,0)").run(JSON.stringify(user.sidebarModules));
@@ -179,4 +182,99 @@ test('music pool is saved as reusable config and posts without a pool keep auto 
   assert.equal(pooled.length,2);
   assert.ok(pooled.every(row=>['111','222','333'].includes(JSON.parse(row.payload_json).psychologyAutomation.musicSoundId)));
   assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,['111','222','333']);
+});
+
+test('topic bank permissions, template isolation, validation, deduplication and import replay',async t=>{
+  const {env,db,sqlite}=await fixture(t),actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
+  const call=async(method,body,path='/api/psychology-template-topics',who=actor)=>{
+    const req=new Request(BASE+path,{method,...(body?{body:JSON.stringify(body)}:{})});
+    return handlePsychologyTopicBank(req,env,new URL(req.url),{user:who});
+  };
+  assert.equal((await call('GET',null,undefined,user)).status,403);
+  const body={requestId:crypto.randomUUID(),template:'psychology',items:[{title:'Question',content:'Answer',priority:80},{title:'Question',content:'Answer',priority:70}]};
+  const result=await(await call('POST',body,'/api/psychology-template-topics/import')).json();
+  assert.deepEqual(result,{received:2,created:1,skipped:1});
+  assert.equal((await(await call('POST',body,'/api/psychology-template-topics/import')).json()).duplicate,true);
+  assert.equal((await call('POST',{...body,items:[{title:'Changed'}]},'/api/psychology-template-topics/import')).status,409);
+  const bad={...body,requestId:crypto.randomUUID(),items:[{title:'Valid'},{title:''}]};
+  assert.equal((await call('POST',bad,'/api/psychology-template-topics/import')).status,400);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,1);
+  for(const template of ['psychology-collage','psychology-target-2'])assert.equal((await call('POST',{...body,template,requestId:crypto.randomUUID()},'/api/psychology-template-topics/import')).status,201);
+  const page=await(await call('GET')).json();assert.equal(page.total,1);assert.equal(page.counts['psychology-collage'].total,1);
+  const topic=page.items[0];
+  assert.equal((await call('PATCH',{title:'Edited',revision:topic.revision},'/api/psychology-template-topics/'+topic.id)).status,200);
+  assert.equal((await call('DELETE',{revision:topic.revision},'/api/psychology-template-topics/'+topic.id)).status,409);
+  assert.equal((await call('DELETE',{revision:topic.revision+1},'/api/psychology-template-topics/'+topic.id)).status,200);
+  assert.equal((await(await call('GET')).json()).total,0);
+  assert.equal((await topicCounts(db))['psychology-collage'].total,1);
+});
+async function seedBank(env,template,items){
+  const req=new Request(BASE+'/api/psychology-template-topics/import',{method:'POST',body:JSON.stringify({requestId:crypto.randomUUID(),template,items})});
+  const r=await handlePsychologyTopicBank(req,env,new URL(req.url),{user:{...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']}});
+  assert.equal(r.status,201);
+}
+test('template batches draw exact template, freeze content, count once and refuse shortages',async t=>{
+  const{env,sqlite,call}=await fixture(t),actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
+  await seedBank(env,'psychology',[{title:'Low',priority:10},{title:'High',content:'Interpretation',priority:90},{title:'Disabled',enabled:false}]);
+  await seedBank(env,'psychology-collage',[{title:'Other',priority:100}]);
+  const body=input({count:2,sourceType:'topic-bank',selection:'priority'});
+  await assert.rejects(call('POST',body,undefined,user),e=>e.statusCode===403);
+  assert.equal((await call('POST',body,undefined,actor)).status,202);
+  assert.equal((await call('POST',body,undefined,actor)).status,200);
+  const jobs=sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id').all();
+  assert.deepEqual(jobs.map(j=>j.title),['High','Low']);
+  const payload=JSON.parse(jobs[0].payload_json);assert.equal(payload.script,'Interpretation');assert.equal(payload.answerGuide,'Interpretation');
+  assert.equal(payload.peerSource,undefined);assert.equal(payload.topicSource.template,'psychology');
+  assert.equal(sqlite.prepare('SELECT SUM(usage_count) n FROM psychology_template_topics').get().n,2);
+  await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID()},undefined,actor),/只有 0/);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,2);
+  sqlite.prepare("UPDATE psychology_template_topics SET title='Edited',content='Different' WHERE id=?").run(payload.topicSource.id);
+  assert.equal(JSON.parse(sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(jobs[0].id).payload_json).topicSource.title,'High');
+  assert.equal((await call('POST',{...body,onlyUnused:false,requestId:crypto.randomUUID(),selection:'least-used'},undefined,actor)).status,202);
+});
+test('topic rules exclude disabled/deleted sources and support category search',async t=>{
+  const{env,db,sqlite}=await fixture(t);
+  await seedBank(env,'psychology-target-2',[{title:'Old',category:'Relationship',priority:99},{title:'New',priority:1},{title:'Off',enabled:false}]);
+  sqlite.prepare("UPDATE psychology_template_topics SET created_at=100,usage_count=3,last_used_at=200 WHERE title='Old'").run();
+  sqlite.prepare("UPDATE psychology_template_topics SET created_at=300 WHERE title='New'").run();
+  const config={template:'psychology-target-2',query:'',count:10,onlyUnused:false,selection:'recent'};
+  assert.deepEqual((await selectTopicSources(db,config)).map(t=>t.title),['New','Old']);
+  assert.deepEqual((await selectTopicSources(db,{...config,selection:'priority'})).map(t=>t.title),['Old','New']);
+  assert.deepEqual((await selectTopicSources(db,{...config,selection:'least-used'})).map(t=>t.title),['New','Old']);
+  assert.deepEqual((await selectTopicSources(db,{...config,query:'Relationship'})).map(t=>t.title),['Old']);
+  assert.equal((await selectTopicSources(db,{...config,onlyUnused:true})).length,1);
+  sqlite.prepare("UPDATE psychology_template_topics SET deleted_at=1 WHERE title='New'").run();
+  assert.equal((await selectTopicSources(db,{...config,onlyUnused:true})).length,0);
+});
+test('concurrent unused draws and stale topic revisions roll back the complete batch',async t=>{
+  const{env,db,sqlite}=await fixture(t);
+  await seedBank(env,'psychology',[{title:'One'},{title:'Two'}]);
+  const config={template:'psychology',query:'',count:2,onlyUnused:true,selection:'priority'};
+  const topics=await selectTopicSources(db,config);
+  await db.batch([topicUsageStatement(db,topics[1],'winner','winner-item',config,1)]);
+  await assert.rejects(db.batch([
+    db.prepare("INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES ('loser','admin','{}',0)"),
+    topicUsageStatement(db,topics[0],'loser','loser-0',config,2),
+    topicUsageStatement(db,topics[1],'loser','loser-1',config,2),
+  ]),/TOPIC_ALREADY_USED/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_batches WHERE id='loser'").get().n,0);
+  assert.equal(sqlite.prepare('SELECT usage_count FROM psychology_template_topics WHERE id=?').get(topics[0].id).usage_count,0);
+  sqlite.prepare('UPDATE psychology_template_topics SET revision=revision+1 WHERE id=?').run(topics[0].id);
+  await assert.rejects(db.batch([topicUsageStatement(db,topics[0],'stale','stale-0',config,2)]),/TOPIC_CHANGED/);
+});
+test('legacy batch configs remain replayable without topic or music fields',async t=>{
+  const{call,sqlite}=await fixture(t),body=input();await call('POST',body);
+  const row=sqlite.prepare('SELECT * FROM psychology_publish_batches').get(),old=JSON.parse(row.config_json);
+  delete old.sourceType;delete old.onlyUnused;delete old.musicIds;
+  sqlite.prepare('UPDATE psychology_publish_batches SET config_json=? WHERE id=?').run(JSON.stringify(old),row.id);
+  assert.equal((await call('POST',body)).status,200);
+});
+test('CSV/JSON import preserves quoted multiline text and rejects malformed input',()=>{
+  assert.deepEqual(parseTopicImport('\uFEFF题目,内容,分类,优先级,启用\r\n"题,目","第一行\n第二行 ""引用""",关系,,是'),[{title:'题,目',content:'第一行\n第二行 "引用"',category:'关系',priority:'',enabled:'是'}]);
+  assert.equal(normalizeTopic(parseTopicImport('题目,优先级\n问题,')[0],'psychology').priority,50);
+  assert.equal(parseTopicImport('[{"title":"Test"}]')[0].title,'Test');
+  for(const text of ['','{}','题目\n"unclosed','题目,题目\na,b','题目,内容\nx','未知\nx'])assert.throws(()=>parseTopicImport(text));
+  assert.throws(()=>normalizeTopic({title:'Test',template:'psychology-collage'},'psychology'));
+  assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',selection:'popular'})));
+  assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',mediaType:'photo',template:'photo-text'})));
 });

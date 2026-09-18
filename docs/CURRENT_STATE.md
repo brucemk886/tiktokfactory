@@ -6,6 +6,8 @@ Updated: 2026-09-18
 
 - Psychology landscape renders stage all eight `psychology-poses` SVG companions into each isolated Remotion public directory, avoiding missing-asset failures in interactive and landscape four-image videos.
 
+- Psychology has an admin-only 目标题库 at /psychology-topic-bank: independent empty banks for templates 01/02/03, manual create/edit/disable/delete and CSV/JSON import. Automatic video publishing can draw only from the matching template using random/priority/recent/least-used rules and an only-unused filter; usage and immutable job snapshots are committed atomically (migration 0029).
+
 ## Platform
 
 - Psychology /psychology-ops-report is now a separate operations review: equal-period trend comparisons, account performance/drilldown, and automatic-batch generation/submission/publication funnel. It supports 7/30-day or custom date windows, media/group filters, existing scoped permissions, and explicit archive coverage. Performance rates exclude works younger than 24 hours; pending submissions never count as confirmed publication.

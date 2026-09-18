@@ -6,12 +6,14 @@
 </head><body class="work-page official-data-page psychology-auto-page">
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
-<header class="official-data-header"><div><p class="toolbar-kicker">PSYCHOLOGY / AUTOMATION</p><h1>心理学自动发布</h1><p>从同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><a class="quiet-link" href="/official-publish-records">官方发布记录 ↗</a></header>
+<header class="official-data-header"><div><p class="toolbar-kicker">PSYCHOLOGY / AUTOMATION</p><h1>心理学自动发布</h1><p>从目标题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><a class="quiet-link" href="/official-publish-records">官方发布记录 ↗</a></header>
 <form id="batchForm">
-<section class="panel auto-section"><div class="section-title"><div><p>01 / CONTENT</p><h2>内容与选题</h2></div><a href="/psychology-peer-hits">查看同行爆款 ↗</a></div>
+<section class="panel auto-section"><div class="section-title"><div><p>01 / CONTENT</p><h2>内容与选题</h2></div><div><a href="/psychology-topic-bank">管理目标题库 ↗</a> · <a href="/psychology-peer-hits">查看同行爆款 ↗</a></div></div>
 <div class="media-tabs" role="group" aria-label="内容类型"><button type="button" data-media="video" class="active" aria-pressed="true">视频<span>AI 画面与配音</span></button><button type="button" data-media="photo" aria-pressed="false">图文<span>卡片与素材底图</span></button></div>
 <p class="field-hint" id="sourceHint">正在读取同行爆款…</p>
 <div class="auto-grid">
+<label class="field" id="sourceTypeField"><span>选题来源</span><select id="sourceType"><option value="topic-bank">当前模板的目标题库</option><option value="peer">同行视频爆款</option></select></label>
+<div class="field" id="unusedField"><span>抽取范围</span><label class="auto-check"><input type="checkbox" id="onlyUnused" checked>仅抽取未使用题目</label><small>取消后允许跨批次复用，同一批次仍不重复。</small></div>
 <label class="field"><span>批次名称</span><input id="batchName" maxlength="100" placeholder="例如：心理学晚间发布"></label>
 <label class="field"><span>生成模板</span><select id="template" required></select></label>
 <div class="field" id="rewriteCopyField" hidden><span>改写文案</span><label class="auto-check"><input id="rewriteCopy" type="checkbox"> 改写标题、文案和叠字</label><small>默认不勾选，保留原帖文字测矩阵效果。勾选后才走模型改写。</small></div>

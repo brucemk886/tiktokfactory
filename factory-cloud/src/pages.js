@@ -40,6 +40,7 @@ const PAGE_FILES = {
   "/mid-video-ops-report": "official-group-report.html",
   "/psychology-ops-report": "psychology-operations.html",
   "/mid-video-publish": "module-publish.html",
+  "/psychology-topic-bank": "psychology-topic-bank.html",
   "/psychology-publish": "psychology-auto-publish.html",
   "/mid-video-effects": "official-analytics.html",
   "/psychology-effects": "official-group-report.html",

@@ -25,6 +25,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-narrative", "/psychology-target-2", "互动测试模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-photo", "/psychology-photo", "图文发布模板", ["admin"], psychologyGroup(), "psychology"),
+  moduleItem("psychology-topic-bank", "/psychology-topic-bank", "目标题库", ["admin"], psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
   moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ["admin"], psychologyGroup()),
