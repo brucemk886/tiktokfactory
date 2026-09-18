@@ -181,6 +181,15 @@ test("browser modules do not duplicate the sidebar catalog", () => {
   }
 });
 
+test("account management lists GeeLark backup as a toggleable module group", () => {
+  const accounts = fs.readFileSync(path.join(publicDir, "accounts.js"), "utf8");
+  const html = fs.readFileSync(path.join(publicDir, "accounts.html"), "utf8");
+  assert.match(accounts, /function editorModules/);
+  assert.doesNotMatch(accounts, /keptGeeLark|!isGeeLarkModule/);
+  assert.match(accounts, /关掉「GeeLark 备用」/);
+  assert.match(html, /GeeLark 备用也可在这里关掉/);
+});
+
 test("admin visibility does not force-show fields that the page hid", () => {
   const access = fs.readFileSync(path.join(publicDir, "access.js"), "utf8");
   assert.match(access, /if \(user\.role !== "admin"\) item\.hidden = true/);

@@ -158,25 +158,17 @@ function togglePasswordVisible() {
   $("#togglePasswordBtn").textContent = hidden ? "隐藏" : "显示";
 }
 
-function isGeeLarkModule(item) {
-  return item?.group?.id === "geelark-backup";
-}
-
 function roleSidebarModules(role = $("#userRole").value) {
   return state.sidebarModules.filter((item) => Array.isArray(item.roles) && item.roles.includes(role));
 }
 
-function businessModules(role) {
-  return roleSidebarModules(role).filter((item) => !isGeeLarkModule(item) && item.id !== "accounts");
-}
-
-function geelarkModules(role) {
-  return roleSidebarModules(role).filter(isGeeLarkModule);
+function editorModules(role) {
+  return roleSidebarModules(role).filter((item) => item.id !== "accounts");
 }
 
 function businessGroups(role = $("#userRole").value) {
   const groups = [];
-  for (const item of businessModules(role)) {
+  for (const item of editorModules(role)) {
     const id = item.group?.id || item.id;
     const label = item.group?.label || item.label;
     let group = groups.find((entry) => entry.id === id);
@@ -191,14 +183,12 @@ function businessGroups(role = $("#userRole").value) {
 
 function defaultBusinessModules(role) {
   if (role === "operator") return [];
-  return businessModules(role).map((item) => item.id);
+  return editorModules(role).map((item) => item.id);
 }
 
-function mergeSidebarModules(user, role) {
-  const geelarkIds = new Set(geelarkModules(role).map((item) => item.id));
-  const keptGeeLark = (user?.sidebarModules || []).filter((moduleId) => geelarkIds.has(moduleId));
+function mergeSidebarModules(_user, role) {
   const pinned = role === "admin" ? ["accounts"] : [];
-  return [...new Set([...selectedSidebarModules(), ...keptGeeLark, ...pinned])];
+  return [...new Set([...selectedSidebarModules(), ...pinned])];
 }
 
 function renderSidebarOptions(selected) {
@@ -231,7 +221,7 @@ function renderSidebarOptions(selected) {
       </div>
     `;
   }).join("");
-  $("#userSidebarHint").textContent = "打开大模块后，可去掉不想展示的子页面。同行爆款在「小说推文」下面。";
+  $("#userSidebarHint").textContent = "打开大模块后，可去掉不想展示的子页面。关掉「GeeLark 备用」后侧栏不再显示这一组。";
   bindModuleCards();
 }
 

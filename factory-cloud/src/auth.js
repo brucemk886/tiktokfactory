@@ -395,7 +395,10 @@ function withOpsReportModules(value, role) {
     insertModuleAfter(modules, "psychology-narrative", "psychology-photo");
     insertModuleAfter(modules, "schulte", "quiz");
     insertModuleAfter(modules, "podcast", "ai");
-    insertModuleAfter(modules, "analytics-settings", "geelark-profiles");
+    const geelarkIds = ["operator-third-party", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "analytics", "stats", "analytics-settings"];
+    if (modules.some((moduleId) => geelarkIds.includes(moduleId))) {
+      insertModuleAfter(modules, "analytics-settings", "geelark-profiles");
+    }
   }
   return modules;
 }

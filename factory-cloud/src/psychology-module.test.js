@@ -123,6 +123,19 @@ test("existing sessions get the separated template entries without a database re
   assert.equal(canAccessPath(operator,"/psychology-photo"),false);
 });
 
+test("admins can hide GeeLark backup without the session rewriting it back", async () => {
+  const readUser = async (modules) => {
+    const row = {id:"test-user",username:"tester",role:"admin",active:1,sidebar_modules_json:JSON.stringify(modules)};
+    const db = {prepare(sql){return {bind(){return this;},async first(){return sql.includes("factory_sessions") ? {user_id:row.id,expires_at:Date.now()+60000} : row;}};}};
+    return (await getSession(new Request("https://example.test/",{headers:{cookie:"lf_session=test-session"}}),db)).user;
+  };
+  const hidden = await readUser(["hub","accounts"]);
+  assert.equal(hidden.sidebarModules.includes("geelark-profiles"), false);
+  assert.equal(hidden.sidebarModules.includes("geelark-tasks"), false);
+  const kept = await readUser(["analytics-settings","accounts"]);
+  assert.equal(kept.sidebarModules.includes("geelark-profiles"), true);
+});
+
 test("mid-video cards no longer link psychology templates and titles match their entries", () => {
   const html = name => fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
   assert.doesNotMatch(html("mid-video.html"), /href="\/psychology/);
