@@ -28,13 +28,20 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   const last = scheduleAt + Math.floor((count - 1) / connectionIds.length) * intervalMinutes * 60;
   if (validateSchedule && last * 1000 > now + 14 * 86400000) fail('整批排期需在未来 14 天内。');
   if (!/^[0-9a-f-]{36}$/i.test(String(input.requestId || ''))) fail('提交编号无效，请刷新页面。');
+  const sourceType = input.sourceType || 'peer';
+  if (!['peer','topic-bank'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
+  const onlyUnused = sourceType === 'topic-bank' && input.onlyUnused !== false;
   const selection = input.selection || 'random';
-  if (!['random', 'popular', 'recent'].includes(selection)) fail('选题抽取方式无效。');
-  return { requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true };
+  if (!(sourceType === 'topic-bank' ? ['random','priority','recent','least-used'] : ['random','popular','recent']).includes(selection)) fail('选题抽取方式无效。');
+  const musicIds = mediaType === 'photo'
+    ? [...new Set((Array.isArray(input.musicIds) ? input.musicIds : []).map(id => String(id).trim()).filter(Boolean))]
+    : [];
+  if (musicIds.length > 100 || musicIds.some(id => !/^\d{1,30}$/.test(id))) fail('配乐池最多 100 个纯数字音乐 ID。');
+  return { requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {
-  if (sources.length < config.count) fail(`符合条件的同行爆款只有 ${sources.length} 条，请减少生成条数或调整筛选。`);
+  if (sources.length < config.count) fail(`符合条件的选题只有 ${sources.length} 条，请减少生成条数或调整筛选。`);
   return sources.slice(0, config.count).map((source, index) => ({
     source,
     connectionId: config.connectionIds[index % config.connectionIds.length],

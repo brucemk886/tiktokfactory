@@ -48,6 +48,12 @@ test('strict type/template/count/account and complete schedule validation',()=>{
   assert.equal(config.count,3);
   assert.equal(config.rewriteCopy,false);
   assert.equal(normalizeAutoPublish({...raw,rewriteCopy:true}).rewriteCopy,true);
+  assert.deepEqual(config.musicIds,[]);
+  // Music pools only apply to photo batches and must be plain numeric IDs.
+  assert.deepEqual(normalizeAutoPublish({...raw,musicIds:['123','123',' 456 ']}).musicIds,[]);
+  assert.deepEqual(normalizeAutoPublish({...raw,mediaType:'photo',template:'photo-text',musicIds:['123','123',' 456 ']}).musicIds,['123','456']);
+  assert.throws(()=>normalizeAutoPublish({...raw,mediaType:'photo',template:'photo-text',musicIds:['12a']}),/音乐 ID/);
+  assert.throws(()=>normalizeAutoPublish({...raw,mediaType:'photo',template:'photo-text',musicIds:Array.from({length:101},(_,i)=>String(i+1))}),/音乐 ID/);
   const plan=assignments(config,[{id:1},{id:2},{id:3}]);
   assert.deepEqual(plan.map(p=>p.connectionId),['a','b','a']);
   assert.deepEqual(plan.map(p=>p.scheduleAt),[raw.scheduleAt,raw.scheduleAt,raw.scheduleAt+3600]);
@@ -113,7 +119,7 @@ test('video follow-up is deterministic and revoked permissions stop a queued pub
   await assert.rejects(assertAutoJobAccess(env,publish),e=>e.statusCode===403);
 });
 test('photo publishes only complete ordered images, refuses wrong worker and records stable receipt',async t=>{
-  const {call,env,sqlite,requests}=await fixture(t);await call('POST',input({mediaType:'photo',template:'photo-original',count:2}));
+  const {call,env,sqlite,requests}=await fixture(t);await call('POST',input({mediaType:'photo',template:'photo-original',count:2,musicIds:['7488400397962508280','7363314575675541521']}));
   const source=sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id LIMIT 1').get();
   sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({plan:{title:'Slow down',caption:'Listen to yourself'},results:[{template:'cover',title:'Listen'},{template:'content',title:'Notice',body:'Pause first'}]}),source.id);
   const {jobId}=await enqueueAutoPhotoRender(env,source.id);
@@ -133,6 +139,11 @@ test('photo publishes only complete ordered images, refuses wrong worker and rec
   assert.equal(receipt.batchId,'remote-batch');assert.equal(requests.length,1);
   assert.deepEqual(requests[0].items[0].photoAssetKeys,[assets[0].assetKey,assets[1].assetKey]);
   assert.equal(requests[0].items[0].scheduleAt,JSON.parse(source.payload_json).psychologyAutomation.scheduleAt*1000);
+  // The song drawn at batch creation rides the payload into the middle platform and disables auto music.
+  const drawn=JSON.parse(source.payload_json).psychologyAutomation.musicSoundId;
+  assert.ok(['7488400397962508280','7363314575675541521'].includes(drawn));
+  assert.equal(requests[0].items[0].postInfo.musicSoundId,drawn);
+  assert.equal(requests[0].items[0].postInfo.autoAddMusic,false);
   const again=request('POST','publish');
   await handleAutoPhotoWorker(again,env,new URL(again.url));
   assert.equal(requests.length,1);
@@ -154,4 +165,18 @@ test('photo batches keep original copy unless rewrite is explicitly enabled',asy
   const all=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE type='psychology-photo-story'").all().map(row=>JSON.parse(row.payload_json).rewriteCopy);
   assert.equal(all.filter(value=>value===false).length,2);
   assert.equal(all.filter(value=>value===true).length,2);
+});
+test('music pool is saved as reusable config and posts without a pool keep auto music',async t=>{
+  const {call,sqlite}=await fixture(t);
+  const page=fs.readFileSync(new URL('../../public/psychology-auto-publish.html',import.meta.url),'utf8');
+  assert.match(page,/id="musicIds"/);
+  await call('POST',input({mediaType:'photo',template:'photo-original',count:2}));
+  const plain=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE type='psychology-photo-story'").all();
+  assert.ok(plain.every(row=>JSON.parse(row.payload_json).psychologyAutomation.musicSoundId===undefined));
+  assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,[]);
+  await call('POST',input({mediaType:'photo',template:'photo-text',count:2,musicIds:['111','222','333']}));
+  const pooled=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE json_extract(payload_json,'$.psychologyAutomation.musicSoundId') IS NOT NULL").all();
+  assert.equal(pooled.length,2);
+  assert.ok(pooled.every(row=>['111','222','333'].includes(JSON.parse(row.payload_json).psychologyAutomation.musicSoundId)));
+  assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,['111','222','333']);
 });

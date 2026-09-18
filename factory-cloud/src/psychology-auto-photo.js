@@ -50,7 +50,9 @@ export async function handleAutoPhotoWorker(request, env, url) {
   const publish = normalizePhotoPublishPayload({
     requestId, module: 'psychology', connectionId: item.connection_id, assets: photos,
     title: String(payload.plan?.title || job.title).slice(0,90), caption: String(payload.plan?.caption || '').slice(0,4000),
+    // An explicit pool song disables TikTok's auto recommendation for this post.
     scheduleAt: item.schedule_at * 1000, photoCoverIndex: 0, autoAddMusic: true,
+    musicSoundId: String(payload.psychologyAutomation.musicSoundId || ''),
   });
   const batch = await signalDesk(env, env.DB, '/api/v1/publish/batches', { method:'POST', body: buildPhotoBatchRequest(publish) });
   const record = buildPhotoPublishRecord(publish, batch);
