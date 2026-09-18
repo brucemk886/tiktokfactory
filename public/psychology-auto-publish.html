@@ -7,7 +7,8 @@
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
 <header class="official-data-header"><div><p class="toolbar-kicker">PSYCHOLOGY / AUTOMATION</p><h1>心理学自动发布</h1><p>从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><a class="quiet-link" href="/official-publish-records">官方发布记录 ↗</a></header>
-<form id="batchForm">
+<div class="task-layout">
+<form id="batchForm" class="task-create-panel">
 <section class="panel auto-section"><div class="section-title"><div><p>01 / CONTENT</p><h2>内容与选题</h2></div><div><a href="/psychology-topic-bank">管理模板题库 ↗</a> · <a href="/psychology-peer-hits">查看同行爆款 ↗</a></div></div>
 <div class="media-tabs" role="group" aria-label="内容类型"><button type="button" data-media="video" class="active" aria-pressed="true">视频<span>AI 画面与配音</span></button><button type="button" data-media="photo" aria-pressed="false">图文<span>卡片与素材底图</span></button></div>
 <p class="field-hint" id="sourceHint">正在读取同行爆款…</p>
@@ -35,5 +36,15 @@
 <p class="field-hint">生成完成后自动提交官方发布中台；若生成完成时排期已过，中台按可用时间发布。关闭页面不影响已入队任务。</p>
 <div class="submit-row"><p id="message" role="status" aria-live="polite"></p><button type="submit" id="submitBatch" class="primary-action">创建并自动发布</button></div>
 </section></form>
-<section class="panel auto-section"><div class="section-title"><div><p>QUEUE</p><h2>批次任务</h2></div><button type="button" id="refreshBatches">刷新进度</button></div><div id="batches">正在读取任务…</div></section>
+<aside class="task-list-panel" aria-label="任务队列">
+<div class="queue-header"><div><p class="toolbar-kicker">QUEUE</p><h2>执行队列</h2><p id="safetySummary">生成完成后自动提交官方发布中台</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
+<div class="queue-metrics">
+<div><span id="queuedCount">0</span><small>排队</small></div>
+<div><span id="runningCount">0</span><small>执行中</small></div>
+<div><span id="attentionCount">0</span><small>待处理</small></div>
+<div><span id="doneCount">0</span><small>已完成</small></div>
+</div>
+<div id="batches" class="auto-task-list"><div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div></div>
+</aside>
+</div>
 </main><script src="/access.js"></script><script type="module" src="/psychology-auto-publish.js"></script></body></html>

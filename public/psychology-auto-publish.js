@@ -52,15 +52,47 @@ function summary() {
   $('#summary').textContent=ids.length ? `本批共生成 ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
 }
+function batchStatus(items){
+  if(!items.length)return 'queued';
+  if(items.some(i=>i.status==='failed'))return 'failed';
+  if(items.some(i=>['running','handoff'].includes(i.status)))return 'running';
+  if(items.every(i=>i.status==='submitted'||i.status==='cancelled'))return items.every(i=>i.status==='cancelled')?'cancelled':'done';
+  return 'queued';
+}
+function statusLabel(status){
+  return {queued:'排队中',running:'执行中',done:'已完成',failed:'待处理',cancelled:'已取消'}[status]||status;
+}
 async function loadBatches() {
-  const open=new Set([...document.querySelectorAll('details[open]')].map(n=>n.dataset.id));
   const data=await api('/api/psychology-auto-publish'); state.batches=data.batches||[];
   const labels={queued:'等待执行',running:'执行中',done:'生成完成',submitted:'已提交中台',failed:'失败',cancelled:'已取消',missing:'任务已清理',handoff:'等待卡片渲染'};
+  const tones=state.batches.map(b=>batchStatus(b.items||[]));
+  $('#queuedCount').textContent=tones.filter(s=>s==='queued').length;
+  $('#runningCount').textContent=tones.filter(s=>s==='running').length;
+  $('#attentionCount').textContent=tones.filter(s=>s==='failed').length;
+  $('#doneCount').textContent=tones.filter(s=>s==='done'||s==='cancelled').length;
+  $('#safetySummary').textContent=state.batches.length?`共 ${state.batches.length} 个批次，关闭页面不影响已入队任务。`:'生成完成后自动提交官方发布中台';
   $('#batches').innerHTML=state.batches.length?state.batches.map(b=>{
-    const done=b.items.filter(i=>i.status==='submitted').length;
-    const failures=b.items.filter(i=>i.status==='failed').length;
-    return `<details class="batch-card" data-id="${esc(b.id)}" ${open.has(b.id)?'open':''}><summary><span>${esc(b.config.name)} <small>· ${b.config.mediaType==='photo'?'图文':'视频'} ${b.config.count} 条</small></span><small>已提交 ${done} / ${b.config.count}${failures?' · 失败 '+failures:''}</small></summary><p class="batch-meta">${esc(time(b.createdAt/1000))} 创建 · ${esc((state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template)}${b.config.mediaType==='photo'?` · ${b.config.rewriteCopy?'改写文案':'保留原文'} · ${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首随机':'自动推荐配乐'}`:''} · ${b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'} · 同账号间隔 ${b.config.intervalMinutes} 分钟</p><div class="queue-wrap"><table class="queue-table"><thead><tr><th>选题</th><th>发布账号</th><th>计划时间</th><th>进度</th><th></th></tr></thead><tbody>${b.items.map(i=>`<tr><td>${esc(i.title||i.sourceId)}</td><td>${esc(accountName(i.connectionId))}</td><td>${esc(time(i.scheduleAt))}</td><td>${esc(labels[i.status]||i.status)}<progress max="100" value="${Number(i.percent)||0}"></progress><small class="${i.error?'error':''}">${esc(i.error||i.message)}</small></td><td>${['failed','handoff'].includes(i.status)?`<button type="button" data-retry="${esc(i.id)}">重试</button>`:''}</td></tr>`).join('')}</tbody></table></div></details>`;
-  }).join(''):'<div class="empty-state">还没有自动发布批次。配置内容和账号后，创建第一批任务。</div>';
+    const items=b.items||[];
+    const status=batchStatus(items);
+    const submitted=items.filter(i=>i.status==='submitted').length;
+    const running=items.filter(i=>['running','handoff','done'].includes(i.status)).length;
+    const failed=items.filter(i=>i.status==='failed');
+    const retryItems=items.filter(i=>['failed','handoff'].includes(i.status));
+    const percent=items.length?Math.round(items.reduce((sum,i)=>sum+(i.status==='submitted'?100:Number(i.percent)||0),0)/items.length):0;
+    const template=(state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template;
+    const accounts=[...new Set(items.map(i=>accountName(i.connectionId)).filter(Boolean))];
+    const schedule=Object.entries(items.reduce((map,i)=>{const key=time(i.scheduleAt);map[key]=(map[key]||0)+1;return map;},{})).map(([when,count])=>`<span><b>${esc(when)}</b><em>${count} 条</em></span>`).join('');
+    const message=failed[0]?.error||items.find(i=>i.message)?.message||(submitted===b.config.count?'已全部提交官方发布中台。':`${labels[items[0]?.status]||'等待执行'} · ${submitted} / ${b.config.count} 已提交`);
+    return `<article class="auto-task-item" data-status="${esc(status)}">
+      <div class="task-item-head"><div><strong>${esc(b.config.name||'心理学自动发布')}</strong><small>${esc(time(b.createdAt/1000))} · ${b.config.mediaType==='photo'?'图文':'视频'} · ${esc(template)}</small></div><div class="task-head-actions"><span class="task-status-badge">${esc(statusLabel(status))}</span></div></div>
+      ${accounts.length?`<div class="task-groups"><span>TikTok 官方账号</span>${accounts.map(name=>`<b>${esc(name)}</b>`).join('')}</div>`:''}
+      <div class="task-progress"><div style="width:${Math.max(0,Math.min(100,percent))}%"></div></div>
+      <p>${esc(message)}</p>
+      <div class="task-counts"><span>预计 ${b.config.count} 条</span><span>执行中 ${running}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      ${schedule?`<div class="task-schedule"><strong>具体排期</strong>${schedule}</div>`:''}
+      ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><button type="button" data-retry="${esc(i.id)}">重试</button></div>`).join('')}</div>`:''}
+    </article>`;
+  }).join(''):'<div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div>';
 }
 $('#batchForm').addEventListener('input',()=>{ if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
 document.querySelectorAll('[data-media]').forEach(button=>button.addEventListener('click',async()=>{

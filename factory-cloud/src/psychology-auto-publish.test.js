@@ -157,6 +157,9 @@ test('photo batches keep original copy unless rewrite is explicitly enabled',asy
   const page=fs.readFileSync(new URL('../../public/psychology-auto-publish.html',import.meta.url),'utf8');
   const browser=fs.readFileSync(new URL('../../public/psychology-auto-publish.js',import.meta.url),'utf8');
   assert.match(page,/id="rewriteCopy"/);
+  assert.match(page,/task-list-panel/);
+  assert.match(page,/id="queuedCount"/);
+  assert.match(browser,/class="auto-task-item"/);
   assert.doesNotMatch(page,/id="rewriteCopy"[^>]*checked/);
   assert.match(browser,/rewriteCopy:state\.mediaType==='photo'&&\$\('#rewriteCopy'\)\?\.checked===true/);
   await call('POST',input({mediaType:'photo',template:'photo-original',count:2}));
