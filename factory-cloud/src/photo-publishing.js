@@ -1,4 +1,5 @@
 import { errorJson, json, readJson } from "./http.js";
+import { mergeAndStorePublishRecords } from "./publish-records-store.js";
 import { signalDesk, signalDeskBinary } from "./signal-desk.js";
 
 const PHOTO_MAX_BYTES = 20 * 1024 * 1024;
@@ -45,11 +46,18 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
       const payload = normalizePhotoPublishPayload(await readJson(request));
       await assertAccess(env, session.user, { module: payload.module, connectionIds: [payload.connectionId] });
       const batch = await signalDesk(env, env.DB, "/api/v1/publish/batches", { method: "POST", body: buildPhotoBatchRequest(payload) });
+      const record = buildPhotoPublishRecord(payload, batch);
+      try {
+        await mergeAndStorePublishRecords(env.DB, [record]);
+      } catch (error) {
+        console.error("photo-publish-record", error?.message || error);
+      }
       return json({
         accepted: true,
-        batchId: batch.batch?.id || "",
+        batchId: batch.batch?.id || record.batchId || "",
+        recordId: record.id,
         duplicate: batch.duplicate === true,
-        message: batch.duplicate ? "这组图片已经提交，请到官方发布记录查看。" : "图片帖子已提交，主站会按排期调用 TikTok 官方图文接口。"
+        message: batch.duplicate ? "这组图片已经提交，请到官方发布记录查看。" : "图片帖子已提交，请到官方发布记录查看进度。"
       }, batch.duplicate ? 200 : 202);
     } catch (error) {
       return errorJson(error.message || "创建图文发布任务失败。", error.statusCode || 400);
@@ -267,6 +275,39 @@ export function buildPhotoBatchRequest(payload) {
         ...(payload.musicSoundId ? { musicSoundId: payload.musicSoundId } : {})
       }
     }]
+  };
+}
+
+export function buildPhotoPublishRecord(payload, batch, now = Date.now()) {
+  const batchRow = batch?.batch && typeof batch.batch === "object" ? batch.batch : (batch && typeof batch === "object" ? batch : {});
+  const task = Array.isArray(batchRow.tasks) ? batchRow.tasks[0] || {} : {};
+  const batchId = String(batchRow.id || "").trim();
+  const taskId = String(task.id || "").trim();
+  const photoCount = Array.isArray(payload.assets) ? payload.assets.length : 0;
+  const title = String(payload.title || "").trim() || `心理学图文 · ${photoCount} 张`;
+  return {
+    id: `photo:${payload.requestId}`,
+    createdAt: now,
+    updatedAt: now,
+    publishedAt: now,
+    scheduleAt: payload.scheduleAt || now,
+    status: "submitted",
+    fileName: title,
+    title,
+    connectionId: payload.connectionId,
+    accountName: String(task.accountDisplayName || "").trim(),
+    accountUsername: String(task.username || "").replace(/^@/, "").trim(),
+    officialBatchIds: batchId ? [batchId] : [],
+    batchId,
+    taskIds: taskId ? [taskId] : [],
+    remoteTaskId: taskId,
+    externalRef: `${payload.requestId}:0`,
+    autoTaskId: "psychology-photo",
+    provider: "official",
+    source: "official-tiktok",
+    mediaType: "photo",
+    photoCount,
+    note: `图文发布模板已提交中台，${photoCount} 张图片`,
   };
 }
 

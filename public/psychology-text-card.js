@@ -21,6 +21,29 @@ export function normalizeTextCardTemplate(value) {
   return value === "cover" ? "cover" : "content";
 }
 
+export function normalizeCardGroup(value) {
+  if (value === "cover" || value === "stock") return value;
+  return "content";
+}
+
+export function mergeTextCardSets(existing = [], incoming = [], group, limit = 6) {
+  const kind = normalizeCardGroup(group);
+  const taggedIncoming = (Array.isArray(incoming) ? incoming : []).map((card) => ({ ...card, template: card.template || kind }));
+  const keep = (Array.isArray(existing) ? existing : []).filter((card) => normalizeCardGroup(card.template || card.kind) !== kind);
+  const merged = [...keep, ...taggedIncoming];
+  const ordered = [
+    ...merged.filter((card) => normalizeCardGroup(card.template || card.kind) === "cover"),
+    ...merged.filter((card) => normalizeCardGroup(card.template || card.kind) !== "cover"),
+  ];
+  const cap = Math.max(1, Math.min(6, Number(limit) || 6));
+  const cards = ordered.slice(0, cap);
+  const nextKeys = new Set(cards.map((card) => card.key));
+  return {
+    cards,
+    removed: (Array.isArray(existing) ? existing : []).filter((card) => !nextKeys.has(card.key)),
+  };
+}
+
 export function formatCoverQuote(value) {
   const text = String(value || "").trim();
   if (!text) return "";

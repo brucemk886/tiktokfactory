@@ -8,8 +8,8 @@ import { handleCompat, publicPsychologySettings } from "./compat.js";
 import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
-import { buildPexelsSearchQuery, buildPhotoBatchRequest, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
-import { buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
+import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
+import { buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -265,6 +265,7 @@ test("psychology photo publishing preserves image order, cover and TikTok settin
     scheduleAt:now+60_000,
   }, now);
   const batch = buildPhotoBatchRequest(payload);
+  const record = buildPhotoPublishRecord(payload, { batch: { id: "batch-photo-1", tasks: [{ id: "task-photo-1", accountDisplayName: "bchquyn485", username: "bchquyn485" }] } }, now);
   assert.equal(batch.items.length,1);
   assert.deepEqual(batch.items[0].photoAssetKeys,[first.assetKey,second.assetKey]);
   assert.equal(batch.items[0].assetKey,first.assetKey);
@@ -273,6 +274,14 @@ test("psychology photo publishing preserves image order, cover and TikTok settin
   assert.equal(batch.items[0].postInfo.autoAddMusic,false);
   assert.equal(batch.items[0].postInfo.privacyLevel,"PUBLIC_TO_EVERYONE");
   assert.equal(batch.items[0].fileSize,4600);
+  assert.equal(record.id, "photo:33333333-3333-4333-8333-333333333333");
+  assert.equal(record.externalRef, "33333333-3333-4333-8333-333333333333:0");
+  assert.equal(record.remoteTaskId, "task-photo-1");
+  assert.equal(record.batchId, "batch-photo-1");
+  assert.equal(record.mediaType, "photo");
+  assert.equal(record.photoCount, 2);
+  assert.equal(record.autoTaskId, "psychology-photo");
+  assert.equal(record.status, "submitted");
   assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[first,first]},now),/不能重复/);
   assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:[{...first,assetKey:first.assetKey.replace(".jpg",".png"),contentType:"image/png"}]},now),/1–6/);
   assert.throws(()=>normalizePhotoPublishPayload({requestId:"33333333-3333-4333-8333-333333333333",connectionId:"account-1",assets:Array.from({length:7},(_,index)=>({...first,assetKey:`temporary--11111111-1111-1111-1111-11111111111${index}.jpg`}))},now),/1–6/);
@@ -283,6 +292,7 @@ test("psychology photo template is an online Z-Image to official photo publishin
   const styles=fs.readFileSync(new URL("../../public/psychology-photo.css",import.meta.url),"utf8");
   const workbench=fs.readFileSync(new URL("../../public/psychology-templates.html",import.meta.url),"utf8");
   const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
+  const records=fs.readFileSync(new URL("../../public/official-publish-records.js",import.meta.url),"utf8");
   const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
   assert.match(html,/图文发布模板/);
   assert.doesNotMatch(html,/三种出图方式|用 Z-Image 生成|官方图文接口，第一张作为封面/);
@@ -314,6 +324,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(cloud,/orientation", "portrait"/);
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
+  assert.match(browser,/mergeTextCardSets/);
+  assert.match(browser,/不会清掉已生成的封面/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
   assert.match(browser,/function openPhotoPreview\(/);
   assert.match(browser,/photoCoverIndex: 0/);
@@ -324,6 +336,10 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(cloud,/\/api\/official-tiktok\/stock-photos/);
   assert.match(cloud,/\/api\/v1\/publish\/assets/);
   assert.match(cloud,/photoAssetKeys/);
+  assert.match(cloud,/mergeAndStorePublishRecords/);
+  assert.match(cloud,/buildPhotoPublishRecord/);
+  assert.match(records,/打开图文/);
+  assert.match(records,/\(\?:video\|photo\)/);
   assert.doesNotMatch(browser,/local-worker|localhost|127\.0\.0\.1/);
 });
 
@@ -341,6 +357,13 @@ test("psychology text cards and stock overlays do not need generated images", ()
   assert.equal(cover[0].kind, "cover");
   assert.equal(cover[0].title, "“icanfixher”");
   assert.throws(() => buildTextCardSlides({ template: "cover" }), /封面文案/);
+  const kept = mergeTextCardSets(
+    [{ key: "cover-1", template: "cover" }, { key: "old-content", template: "content" }],
+    [{ key: "new-content", template: "content" }],
+    "content"
+  );
+  assert.deepEqual(kept.cards.map((card) => card.key), ["cover-1", "new-content"]);
+  assert.deepEqual(kept.removed.map((card) => card.key), ["old-content"]);
   assert.equal(planCenteredBlock(200, 1080, 80) > 300, true);
   assert.equal(planCenteredBlock(200, 1080, 80) < 500, true);
   assert.equal(planCenteredBlock(1000, 1080, 80), 80);

@@ -40,9 +40,10 @@ function renderRows(records) {
   rows.innerHTML = records.map((record) => {
     const batchIds = unique([...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []), ...(Array.isArray(record.taskIds) ? record.taskIds : []), record.batchId]);
     const openUrl = record.shareLink || record.videoUrl || "";
-    const canOpen = /tiktok\.com\/@[\w.]+\/video\/\d{10,}/i.test(openUrl);
+    const canOpen = /tiktok\.com\/@[\w.]+\/(?:video|photo)\/\d{10,}/i.test(openUrl);
     const note = escapeHtml(recordNote(record));
-    const openLink = canOpen ? `<a href="${escapeHtml(openUrl)}" target="_blank" rel="noreferrer">打开视频</a><br><span class="muted">${note}</span>` : note;
+    const openLabel = record.mediaType === "photo" || /\/photo\//i.test(openUrl) ? "打开图文" : "打开视频";
+    const openLink = canOpen ? `<a href="${escapeHtml(openUrl)}" target="_blank" rel="noreferrer">${openLabel}</a><br><span class="muted">${note}</span>` : note;
     return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td>${accountCell(record)}</td><td>${escapeHtml(record.fileName || record.title || "-")}</td><td>${escapeHtml(record.autoTaskId || "手动提交")}</td><td>${escapeHtml(batchIds.join(", ") || "-")}</td><td>${escapeHtml(statusLabel(record.status))}</td><td>${openLink}</td></tr>`;
   }).join("");
   status.textContent = `已读取 ${records.length} 条官方 API 本地发布记录。`;

@@ -140,7 +140,7 @@
 
 ### 3.4 发布记录与回执
 
-- `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行。表按时间保留 90 天（`prunePublishRecords`，每晚 cron），不按条数裁剪。
+- `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行。表按时间保留 90 天（`prunePublishRecords`，每晚 cron），不按条数裁剪。心理学图文发布在工厂云创建中台批次后立刻写一条 `photo:{requestId}` 记录（`externalRef={requestId}:0`），回执按 refs 回写，不再等本机工人同步。
 - `factory_publish_record_refs`：`task:{remoteTaskId}`、`ref:{externalRef}` → record id。
 - `factory_publish_receipts`：每条 webhook 一行；找不到记录（回执先于本机上传）保持 `applied_at=0`，下次 sync 合并时补上。页面上的回执统计 `publishReceiptStats` 拆成两条索引查询（`applied_at=0` 计数 + 24h 窗口），迁移 `0018` 加了 `received_at` 索引，不再扫 7 天。
 - `official_accounts_latest` 的几处读取（归档列表、分组别名）统一 `LIMIT 5000`（`LATEST_ACCOUNTS_LIMIT`），一行一账号，1000 号远不到顶。
