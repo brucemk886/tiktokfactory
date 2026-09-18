@@ -35,6 +35,10 @@ main().catch((error) => {
 });
 
 async function main() {
+  if (payload.photoAutomation) {
+    const { runAutoPhotoJob } = await import('./psychology-auto-photo-job.js');
+    return runAutoPhotoJob({ root, workDir, payload, patchJob });
+  }
   const kieApiKey = String(process.env.KIE_API_KEY || savedSettings.kieApiKey || config.kieApiKey || "").trim();
   const elevenLabsApiKey = String(process.env.ELEVENLABS_API_KEY || savedSettings.elevenLabsApiKey || config.elevenLabsApiKey || "").trim();
   const voiceId = String(payload.elevenLabsVoiceId || savedSettings.elevenLabsVoiceId || config.elevenLabsVoiceId || "").trim();

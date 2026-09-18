@@ -1,4 +1,5 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
+import { enqueueAutoPhotoRender } from './psychology-auto-publish.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
 import { runGeminiVideoWorkflow } from './gemini-video-workflow.js';
 import { runPsychologyRecreationWorkflow } from './psychology-recreation-workflow.js';
@@ -6,7 +7,9 @@ export { default } from './index.js';
 
 export class PeerPhotoWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
-    return runPeerPhotoWorkflow(this.env, event, step);
+    const result = await runPeerPhotoWorkflow(this.env, event, step);
+    await step.do('enqueue-auto-photo-render', () => enqueueAutoPhotoRender(this.env, event.payload.jobId));
+    return result;
   }
 }
 

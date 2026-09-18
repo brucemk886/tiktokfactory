@@ -8,6 +8,8 @@ Updated: 2026-09-18
 
 ## Platform
 
+- Online psychology now has administrator-only automatic publishing at /psychology-publish: choose photo/video, a corresponding template, 1–50 total posts, peer-hit selection/filter, official psychology accounts and schedule. Distinct matching hits are assigned round-robin; video renders feed the official upload queue, while photo workflows feed a background Chrome card renderer with upload checkpoints and idempotent official batch submission. See docs/handoffs/2026-09-18-psychology-auto-publish.md.
+
 - AI creation video generation supports switching between Grok Imagine and Kie MiniMax H3 text-to-video. MiniMax accepts 4–15 seconds, 768P/2K and six aspect ratios; the model and result remain in creation history. Both use the existing server-only KIE_API_KEY.
 
 - Psychology recreation resolves public TikTok page/share links through TikHub using the server-only TIKHUB_API_KEY, then validates and downloads MP4 files into private temporary R2 storage. Resolution is a separate durable step, so CDN/download retries do not repeat paid parsing. Downloads enforce a 300 MB limit and use 8 MB multipart writes for large files. Recreation video analysis now goes directly to Kie Gemini 3.8 Flash, without Google uploads or retries, followed by Z-Image images, ElevenLabs narration and the review board; temporary originals are deleted after analysis. No Docker or separate download server is used. The complete direct-Kie workflow was verified online with 4 scenes, 4 generated images and 4 narration clips; see docs/handoffs/2026-09-16-kie-direct-recreation.md.

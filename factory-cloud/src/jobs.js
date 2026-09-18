@@ -1,3 +1,5 @@
+import { assertAutoJobAccess, enqueueAutoVideoPublish } from './psychology-auto-publish.js';
+import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
 import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
 import { compactProduction } from '../../scripts/production-timeline.js';
 import { psychologyImagePayload } from "../../scripts/psychology-image-policy.js";
@@ -256,6 +258,8 @@ async function handleWorkerApi(request, env, url, ctx) {
   if (!expected) return errorJson("工人密钥未配置。", 501);
   const supplied = bearer(request);
   if (supplied !== expected) return errorJson("工人密钥不正确。", 401);
+  const autoPhoto = await handleAutoPhotoWorker(request, env, url);
+  if (autoPhoto) return autoPhoto;
 
   const method = request.method;
   const pathname = url.pathname;
@@ -483,6 +487,11 @@ async function handleWorkerApi(request, env, url, ctx) {
       SELECT * FROM factory_jobs WHERE status = 'queued'${filter.sql} ORDER BY created_at LIMIT 1
     `).bind(...filter.binds).first();
     if (!job) return json({ job: null });
+    try { await assertAutoJobAccess(env, job); }
+    catch (error) {
+      await env.DB.prepare("UPDATE factory_jobs SET status='failed',error=?,message='发布权限已变更',updated_at=? WHERE id=? AND status='queued'").bind(error.message, now(), job.id).run();
+      return json({ job: null });
+    }
     const stamp = now();
     const changed = await env.DB.prepare(`
       UPDATE factory_jobs
@@ -566,8 +575,11 @@ async function handleWorkerApi(request, env, url, ctx) {
     }
     const result = persistableJobResult(rawResult);
     if (job && nextStatus === "done" && rawResult.publishPending) {
-      await enqueueOfficialPublishFollowup(env.DB, job, rawResult).catch((error) => {
+      await enqueueOfficialPublishFollowup(env.DB, job, rawResult).catch(async (error) => {
         console.error("official-publish-followup", error?.message || error);
+        if (JSON.parse(job.payload_json || '{}').psychologyAutomation) {
+          await env.DB.prepare("UPDATE factory_jobs SET status='failed',error=?,message='自动发布排队失败，请重试' WHERE id=?").bind(error.message || '自动发布排队失败',job.id).run();
+        }
       });
     }
     const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
@@ -768,6 +780,8 @@ export function officialPublishFollowupPayload(job, rawResult = {}) {
 async function enqueueOfficialPublishFollowup(db, job, rawResult) {
   const payload = officialPublishFollowupPayload(job, rawResult);
   if (!payload) return null;
+  const automated = await enqueueAutoVideoPublish(db, job, payload);
+  if (automated) return automated;
   const publishJob = await enqueueJob(db, {
     type: "official-publish",
     title: `${payload.taskName || job.title || "任务"} · 官方发布`,

@@ -308,7 +308,7 @@ async function createSession(db, userId) {
   return { token };
 }
 
-function toPublicUser(row) {
+export function toPublicUser(row) {
   const role = row.role === "operator" ? "operator" : "admin";
   return {
     id: row.id,

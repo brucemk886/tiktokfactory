@@ -50,6 +50,13 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
     }
     if (!plan) throw new Error(validationError);
+    if (payload.psychologyAutomation?.template === 'photo-text') {
+      plan.scenes = plan.scenes.map((scene,index) => ({
+        ...scene, template:'text', textKind:index === 0 ? 'cover' : 'content',
+        title:index === 0 ? [scene.title,scene.subtitle,scene.body].filter(Boolean).join(' ') : scene.title,
+        body:index === 0 ? '' : [scene.subtitle,scene.body].filter(Boolean).join('\n'), subtitle:'', stockQuery:'',
+      }));
+    }
     await save('story-ready', 'running', 15, `${total} 页已分类，开始匹配文案模板或素材库底图…`, '', {productionStage:'images'});
     for (let index = 0; index < plan.scenes.length; index++) {
       const scene = plan.scenes[index];

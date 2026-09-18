@@ -458,3 +458,17 @@ test('recreation submission uses Kie without requiring a Google key', async t =>
   const response = await call('POST', { ids: imported.items.map(item => item.id), voiceId: 'voice-test-123', requestId: crypto.randomUUID() });
   assert.equal(response.status, 202);
 });
+
+test('automatic text-card template bypasses stock search and preserves every source page', async t => {
+  const f=cloudFixture(t);
+  const row=f.sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE id='cloud-test'").get();
+  const payload=JSON.parse(row.payload_json);
+  payload.psychologyAutomation={template:'photo-text'};
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify(payload));
+  const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+  assert.equal(result.count,6);assert.equal(f.pexelsCalls(),0);
+  const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
+  assert.equal(saved.results[0].template,'cover');
+  assert.ok(saved.results.slice(1).every(page=>page.template==='content'));
+  assert.ok(saved.results.every(page=>page.imageModel==='text-card'));
+});
