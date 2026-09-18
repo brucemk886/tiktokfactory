@@ -93,14 +93,14 @@ function cloudFixture(t, failSecond = false) {
 test('cloud workflow classifies six pages, matches stock photos, and replay does not search again', async t => {
   const f=cloudFixture(t);
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(result.count,6);assert.equal(f.submissions.length,0);assert.equal(f.sleeps.length,0);assert.equal(f.pexelsCalls(),3);
+  assert.equal(result.count,6);assert.equal(f.submissions.length,0);assert.equal(f.sleeps.length,0);assert.equal(f.pexelsCalls(),1);
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'done');assert.equal(row.worker_id,'cloud-photo');
   const saved=JSON.parse(row.result_json);
   assert.deepEqual(saved.results.map(item=>item.imageModel),['text-card','stock','text-card','stock','text-card','stock']);
   assert.equal(saved.results[1].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
   await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(f.pexelsCalls(),3);assert.equal(f.submissions.length,0);
+  assert.equal(f.pexelsCalls(),1);assert.equal(f.submissions.length,0);
 });
 
 test('single-image photo post uses DeepSeek V4.1 Flash once and renders a text card without Z-Image', async t => {

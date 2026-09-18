@@ -1,4 +1,4 @@
-import { buildPhotoStoryPrompt, buildStockPickPrompt, parsePhotoStory, parseStockPick } from '../../scripts/psychology-peer-production.js';
+import { buildPhotoStoryPrompt, parsePhotoStory } from '../../scripts/psychology-peer-production.js';
 import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
 import { createKieClient } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
@@ -62,11 +62,14 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       }));
     }
     await save('story-ready', 'running', 15, `${total} 页已分类，开始匹配文案模板或素材库底图…`, '', {productionStage:'images'});
+    let stockPhotos = null;
     for (let index = 0; index < plan.scenes.length; index++) {
       const scene = plan.scenes[index];
       if (scene.template === 'stock') {
-        await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页搜索相近底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
-        const photo = await matchStockPhoto(env, kie, deepseek, step, scene, kiePhotos, index, chat);
+        await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页垫底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
+        if (!stockPhotos) stockPhotos = await loadStockPhotos(env, step, plan.scenes);
+        const photo = stockPhotos.shift();
+        if (!photo) throw new Error(`第 ${index + 1} 页没有可用的素材库底图。`);
         results.push(photoPage(scene, index, photo));
         await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页。`, '', {productionScene:{index,imageUrl:photo.fileUrl || photo.imageUrl,imagePrompt:scene.stockQuery,imageStatus:'done'}});
       } else {
@@ -86,32 +89,24 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   }
 }
 
-async function matchStockPhoto(env, kie, deepseek, step, scene, kiePhotos, index, chat) {
-  const found = await step.do(`stock-search-${index}`, READ, () => searchStockPhotos(env, new URLSearchParams({ q: scene.stockQuery, count: '8' })));
+async function loadStockPhotos(env, step, scenes) {
+  const needed = scenes.filter((scene) => scene.template === 'stock').length;
+  const count = String(Math.max(needed, 6));
+  const found = await step.do('stock-search', READ, () => searchStockPhotos(env, new URLSearchParams({
+    q: 'cinematic empty landscape fog forest interior hallway',
+    count
+  })));
   if (!found.configured) throw new Error('还没有配置 Pexels，无法为有底图的页面匹配素材。');
-  let photos = found.photos || [];
+  const photos = [...(found.photos || [])];
   if (!photos.length) {
-    const fallback = await step.do(`stock-search-fallback-${index}`, READ, () => searchStockPhotos(env, new URLSearchParams({
-      q: 'cinematic empty landscape fog forest interior hallway',
-      count: '8'
+    const fallback = await step.do('stock-search-fallback', READ, () => searchStockPhotos(env, new URLSearchParams({
+      q: 'empty fog forest interior hallway still life',
+      count
     })));
-    photos = fallback.photos || [];
+    photos.push(...(fallback.photos || []));
   }
-  if (!photos.length) throw new Error(`第 ${index + 1} 页没有搜到相近素材。`);
-  const candidates = photos.slice(0, 4);
-  const sourceUrl = kiePhotos.urls[index];
-  if (candidates.length === 1 || !sourceUrl) return candidates[0];
-  try {
-    const sourceImages = await loadPeerPhotoChatImages(env, {
-      keys: Array.isArray(kiePhotos.keys) ? kiePhotos.keys.slice(index, index + 1) : [],
-      urls: [sourceUrl]
-    });
-    const imageUrls = [...sourceImages, ...candidates.map((photo) => photo.imageUrl)].filter((url) => isChatImage(url)).slice(0, 6);
-    const text = await lookAtImages(kie, deepseek, step, `stock-pick-${index}`, buildStockPickPrompt(scene, candidates), imageUrls, chat);
-    return candidates[parseStockPick(text, candidates.length)];
-  } catch {
-    return candidates[0];
-  }
+  if (!photos.length) throw new Error('没有搜到可用的素材库底图。');
+  return photos;
 }
 
 function textPage(scene, index) {
@@ -194,8 +189,4 @@ async function paidCall(step, name, action, config = SUBMIT, fallback = '看图�
   });
   if (!outcome?.ok) throw new Error(outcome?.error || fallback);
   return outcome.value;
-}
-
-function isChatImage(url) {
-  return /^https:\/\//i.test(String(url || '')) || /^data:image\//i.test(String(url || ''));
 }
