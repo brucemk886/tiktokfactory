@@ -475,6 +475,8 @@ test("psychology cover cards use a single black background", () => {
   const autoPhoto = fs.readFileSync(new URL("../../scripts/psychology-auto-photo-job.js", import.meta.url), "utf8");
   assert.match(renderer, /COVER_BG = "#111111"/);
   assert.match(renderer, /COVER_INK = "#f4f1ea"/);
+  assert.match(renderer, /paintOverlayScrim/);
+  assert.match(renderer, /height \* 0\.12/);
   assert.doesNotMatch(renderer, /pickCoverBackdrop|paintCoverBackdrop|psychology-cover-backdrops/);
   assert.equal(fs.existsSync(new URL("../../public/psychology-cover-backdrops.js", import.meta.url)), false);
   assert.match(autoPhoto, /psychology-card-renderer\.js','psychology-text-card\.js'/);

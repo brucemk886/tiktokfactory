@@ -114,19 +114,19 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
   const drawHeight = image.naturalHeight * scale;
   ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
   ctx.restore();
-  const pad = Math.round(width * 0.1);
+  const pad = Math.round(width * 0.08);
   const smash = slide.smash === true;
+  const isCover = slide.kind === "cover";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.fillStyle = "#111111";
-  let titleSize = Math.round(width * (slide.kind === "cover" ? 0.068 : 0.046));
-  let bodySize = Math.round(width * 0.038);
+  let titleSize = Math.round(width * (isCover ? 0.092 : 0.062));
+  let bodySize = Math.round(width * 0.052);
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const lines = [];
     if (slide.title) {
       ctx.font = `700 ${titleSize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
       wrapOverlayLines(slide.title, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((line, index, packed) => {
-        lines.push({ text: line, size: titleSize, weight: 700, gap: titleSize * 1.12 + (index === packed.length - 1 ? titleSize * 0.28 : 0) });
+        lines.push({ text: line, size: titleSize, weight: 700, gap: titleSize * 1.12 + (index === packed.length - 1 ? titleSize * 0.32 : 0) });
       });
     }
     if (slide.subtitle) {
@@ -142,8 +142,13 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
       });
     }
     const total = lines.reduce((sum, line) => sum + line.gap, 0);
-    if (total <= height - pad * 2 || attempt === 7) {
-      let y = planCenteredBlock(total, height, pad);
+    const budget = isCover ? Math.round(height * 0.44) : height - pad * 2;
+    if (total <= budget || attempt === 7) {
+      // Covers sit on the upper part of the photo like the reference posts;
+      // content pages stay centered on their bright empty backgrounds.
+      let y = isCover ? Math.round(height * 0.12) : planCenteredBlock(total, height, pad);
+      paintOverlayScrim(ctx, width, y, total);
+      ctx.fillStyle = "#111111";
       for (const line of lines) {
         ctx.font = `${line.weight} ${line.size}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
         ctx.fillText(line.text, width / 2, y);
@@ -151,9 +156,25 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
       }
       return canvas;
     }
-    titleSize = Math.max(28, Math.round(titleSize * 0.9));
-    bodySize = Math.max(20, Math.round(bodySize * 0.9));
+    titleSize = Math.max(40, Math.round(titleSize * 0.9));
+    bodySize = Math.max(30, Math.round(bodySize * 0.9));
   }
   return canvas;
+}
+
+// A soft white band behind the copy keeps dark text readable even when the
+// matched photo is dark where the text lands.
+function paintOverlayScrim(ctx, width, top, total) {
+  if (!total) return;
+  const margin = Math.round(total * 0.3) + 24;
+  const start = Math.max(0, top - margin);
+  const end = top + total + margin;
+  const gradient = ctx.createLinearGradient(0, start, 0, end);
+  gradient.addColorStop(0, "rgba(255,255,255,0)");
+  gradient.addColorStop(0.25, "rgba(255,255,255,0.62)");
+  gradient.addColorStop(0.75, "rgba(255,255,255,0.62)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, start, width, end - start);
 }
 
