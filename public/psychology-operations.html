@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 运营报表</title>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260918-1"></head>
+<body class="work-page official-data-page"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
+<header class="official-data-header"><div><p class="toolbar-kicker">PSYCHOLOGY OPERATIONS</p><h1>运营报表</h1><p>复盘运营趋势、账号表现和自动发布批次，找到下一步的改进方向。</p></div><a href="/psychology-effects" class="back-link">查看数据概览</a></header>
+<form id="filters" class="panel ops-filters">
+<label>统计周期<select id="period"><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
+<label id="fromLabel" hidden>开始日期<input id="from" type="date"></label><label id="toLabel" hidden>结束日期<input id="to" type="date"></label>
+<label>内容类型<select id="media"><option value="all">全部内容</option><option value="video">视频</option><option value="photo">图文</option></select></label>
+<label>账号分组<select id="group"><option value="">全部授权分组</option></select></label><button class="primary-link" type="submit" id="query">查询</button>
+</form>
+<p id="status" role="status" class="section-hint">正在读取运营报表…</p>
+<div id="report" hidden>
+<section id="metrics" class="overview-grid" aria-label="核心表现"></section>
+<div class="panel ops-method"><strong>统计口径</strong><p>发布成功率 = 已确认成功 ÷（已确认成功 + 已确认失败），不包含等待回执的任务。高播率、0播率、平均及中位播放仅统计发布满24小时的作品；样本少于5条时请继续观察。</p><p id="coverage"></p><p id="unknown"></p></div>
+<div class="segmented ops-tabs" role="tablist" aria-label="运营分析">
+<button type="button" role="tab" id="trendTab" data-tab="trend" aria-controls="trend" aria-selected="true">运营趋势</button>
+<button type="button" role="tab" id="accountsTab" data-tab="accounts" aria-controls="accounts" aria-selected="false" tabindex="-1">账号分析</button>
+<button type="button" role="tab" id="batchesTab" data-tab="batches" aria-controls="batches" aria-selected="false" tabindex="-1">批次复盘</button></div>
+<section id="trend" class="panel data-section" role="tabpanel" aria-labelledby="trendTab">
+<div class="section-title"><div><p>DAILY TREND</p><h2>作品表现趋势</h2></div><label>查看指标 <select id="trendMetric"><option value="views">作品累计播放</option><option value="count">发布作品数</option><option value="successRate">发布成功率</option><option value="highRate">高播率（满24小时）</option></select></label></div>
+<p class="section-hint">横轴为作品发布日期。播放量会随已发布作品的后续表现持续更新。</p><div id="trendChart" class="ops-chart"></div>
+<details class="ops-daily"><summary>每日明细</summary><div id="dailyTable" class="table-wrap"></div></details>
+</section>
+<section id="accounts" class="panel data-section" role="tabpanel" aria-labelledby="accountsTab" hidden>
+<div class="section-title"><div><p>ACCOUNT PERFORMANCE</p><h2>账号表现</h2></div><label>排序 <select id="accountSort"><option value="medianViews">中位播放</option><option value="views">总播放</option><option value="highRate">高播率</option><option value="failureRate">发布失败率</option></select></label></div>
+<div id="accountTable" class="table-wrap"></div><div id="accountPager" class="ops-pager"></div>
+</section>
+<section id="batches" class="panel data-section" role="tabpanel" aria-labelledby="batchesTab" hidden>
+<div class="section-title"><div><p>AUTOMATION REVIEW</p><h2>自动发布批次复盘</h2></div></div>
+<p class="section-hint">按批次创建时间筛选，仅统计当前授权分组中的任务。已提交中台不等于发布成功；最终结果以已同步回执为准。</p>
+<div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div>
+</section></div>
+<dialog id="videoDialog"><div class="ops-dialog-head"><h2 id="dialogTitle">账号作品</h2><button id="closeDialog" type="button" class="table-action">关闭</button></div><p class="section-hint">未满24小时的作品标为“观察中”，不参与高播率和播放中位数计算。</p><div id="dialogTable" class="table-wrap"></div><div id="videoPager" class="ops-pager"></div></dialog>
+</main><script src="/access.js"></script><script src="/psychology-operations.js?v=20260918-1"></script></body></html>
