@@ -7,7 +7,8 @@ Match peer photo covers more closely and keep content pages readable.
 - Cover and content use two separate Pexels searches.
 - Cover queries keep people/couples and use the original cover scene.
 - Content queries prefer bright airy empty skies.
-- Overlay text wraps on words, then smashes spaces for the psychology look.
+- Overlay text keeps normal spaces and wraps on words; paragraph spacing sits after each sentence.
+- Covers anchor near the top with larger type over a soft white scrim.
 
 # Files changed
 

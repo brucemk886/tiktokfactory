@@ -132,13 +132,15 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
     if (slide.subtitle) {
       ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
       wrapOverlayLines(slide.subtitle, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((line, index, packed) => {
-        lines.push({ text: line, size: bodySize, weight: 400, gap: bodySize * 1.35 + (index === packed.length - 1 ? bodySize * 0.7 : 0) });
+        lines.push({ text: line, size: bodySize, weight: 400, gap: bodySize * 1.35 + (index === packed.length - 1 ? bodySize * 0.5 : 0) });
       });
     }
     ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
     for (const line of slide.lines || []) {
-      wrapOverlayLines(line, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((part, index) => {
-        lines.push({ text: part, size: bodySize, weight: 400, gap: bodySize * 1.38 + (index === 0 ? bodySize * 0.7 : 0) });
+      // Paragraph spacing goes after the LAST wrapped part of each logical
+      // line; wrapped continuations keep the normal line height.
+      wrapOverlayLines(line, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((part, index, packed) => {
+        lines.push({ text: part, size: bodySize, weight: 400, gap: bodySize * 1.38 + (index === packed.length - 1 ? bodySize * 0.42 : 0) });
       });
     }
     const total = lines.reduce((sum, line) => sum + line.gap, 0);
