@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/module-pages.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
-    <link rel="stylesheet" href="/psychology-photo.css?v=20260918-11" />
+    <link rel="stylesheet" href="/psychology-photo.css?v=20260918-12" />
   </head>
   <body class="work-page module-page psychology-photo-page">
     <nav class="side-tabs"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
@@ -36,17 +36,18 @@
           </div>
           <div id="zimagePane" data-photo-pane="zimage">
             <label class="field photo-prompt-field"><span>画面描述</span><textarea id="imagePrompt" class="photo-compact-textarea" rows="3" maxlength="1000" placeholder="例如：竖版写实摄影，一名年轻女性独自坐在雨夜公交站，神情克制，冷色环境光，人物清晰、背景虚化。"></textarea></label>
+            <label class="field photo-prompt-field"><span>每张叠字文案（空一行换下一张）</span><textarea id="imageCopy" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="第一张文案&#10;&#10;第二张文案&#10;&#10;第三张文案"></textarea></label>
             <div class="photo-toolbar">
-              <label class="field compact-field"><span>生成数量</span><select id="imageCount"><option>1</option><option>2</option><option selected>4</option><option>6</option></select></label>
+              <label class="field compact-field"><span>生成数量<small>一张图一段文案</small></span><select id="imageCount"><option>1</option><option>2</option><option selected>4</option><option>6</option></select></label>
               <label class="field compact-field"><span>画面比例</span><select id="aspectRatio"><option value="9:16" selected>9:16 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option><option value="4:3">4:3 横图</option><option value="16:9">16:9 横图</option></select></label>
               <label class="photo-switch"><input id="noImageText" type="checkbox" />图片内不生成文字</label>
               <button id="generateBtn" type="button">生成图片</button>
             </div>
           </div>
           <div id="stockPane" data-photo-pane="stock" hidden>
-            <label class="field"><span>叠字标题</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds" /></label>
-            <label class="field"><span>副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)" /></label>
-            <label class="field photo-prompt-field"><span>正文（空行分页，同一题的 A/B/C 连着写）</span><textarea id="stockBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="2. they text, “i’m gonna take a night to myself.”&#10;A) your brain instantly starts searching for hidden meaning.&#10;B) you feel relieved and enjoy having some distance.&#10;C) you trust that needing space doesn’t threaten the connection."></textarea></label>
+            <label class="field"><span>第一张标题（选填）</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds" /></label>
+            <label class="field"><span>第一张副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)" /></label>
+            <label class="field photo-prompt-field"><span>每张叠字文案（空一行换下一张）</span><textarea id="stockBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="第一张文案&#10;&#10;第二张文案&#10;&#10;第三张文案"></textarea></label>
             <div class="photo-toolbar">
               <label class="field stock-search-field"><span>素材搜索</span><input id="stockQuery" maxlength="80" placeholder="fog forest / empty hallway / night road" /></label>
               <button id="searchStockBtn" class="secondary-photo-btn" type="button">搜索素材</button>
@@ -55,7 +56,7 @@
             <div id="stockResults" class="stock-results"></div>
             <label class="field photo-prompt-field"><span>或粘贴图片链接</span><textarea id="stockUrls" class="photo-compact-textarea" rows="3" maxlength="4000" placeholder="https://images.pexels.com/photos/..."></textarea></label>
             <div class="photo-toolbar">
-              <label class="field compact-field"><span>卡片数量</span><select id="stockCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+              <label class="field compact-field"><span>图片数量<small>一张图一段文案</small></span><select id="stockCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
               <label class="field compact-field"><span>画面比例</span><select id="stockAspect"><option value="9:16" selected>9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
               <label class="photo-switch"><input id="stockGray" type="checkbox" />黑白照片</label>
               <button id="renderStockBtn" type="button">生成素材图</button>
@@ -112,6 +113,6 @@
       </div>
     </main>
     <script src="/access.js"></script>
-    <script type="module" src="/psychology-photo.js?v=20260918-11"></script>
+    <script type="module" src="/psychology-photo.js?v=20260918-12"></script>
   </body>
 </html>

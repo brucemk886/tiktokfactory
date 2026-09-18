@@ -1,8 +1,8 @@
-import { buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-12";
 import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), pollTimer: 0, busy: false };
+const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -78,8 +78,8 @@ function setPhotoMode(mode) {
     $("#createLead").textContent = isText
       ? (state.textTemplate === "cover" ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页数量不含封面。文案空一行就是下一张；标题只出现在第一张内容页。")
       : isStock
-        ? "从素材库取竖版空镜，再把标题和题目叠上去。"
-        : "描述画面后由 AI 出图；完成后按生成顺序加入图集。";
+        ? "素材图和叠字一一对应。空一行就是下一张的文案；第一张标题只叠在第一张上。"
+        : "生成几张就叠几段文案，空一行换下一张。不填叠字则只出图。";
   }
   if (isText) setTextTemplate(state.textTemplate);
   renderGeneratedPhotos();
@@ -306,11 +306,12 @@ async function generateStockCards() {
       images = state.selectedStock.length ? state.selectedStock : pastedStockUrls();
     }
     if (!images.length) throw new Error("请先搜索素材，或粘贴素材站图片链接。");
+    if (images.length < slides.length) throw new Error(`图片数量是 ${slides.length}，请先选够 ${slides.length} 张素材图。`);
     const aspectRatio = $("#stockAspect").value;
     const grayscale = $("#stockGray").checked;
     const cards = [];
     for (const [index, slide] of slides.entries()) {
-      const image = await loadImage(images[index % images.length]);
+      const image = await loadImage(images[index]);
       const blob = await canvasToJpeg(renderOverlayCard(slide, image, aspectRatio, { grayscale }));
       const url = URL.createObjectURL(blob);
       cards.push({
@@ -341,13 +342,85 @@ async function generateStockCards() {
   }
 }
 
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("素材图读取失败。请确认链接来自 Pexels。"));
-    image.src = src;
+function copySlidesForCount(count) {
+  const body = $("#imageCopy")?.value || "";
+  if (!String(body).trim()) return [];
+  return buildPerImageCopySlides({ body, count, smash: false });
+}
+
+async function overlayGeneratedPhotos() {
+  if (state.overlaying || !state.overlaySlides.length || !state.currentTaskIds.length) return;
+  const photos = currentGeneratedPhotos();
+  if (!photos.length) return;
+  state.overlaying = true;
+  setGenerateMessage("图片已生成，正在按张叠字…");
+  try {
+    const aspectRatio = $("#aspectRatio").value;
+    const cards = [];
+    for (const photo of photos) {
+      const slide = state.overlaySlides[photo.slideIndex] || { title: "", subtitle: "", lines: [] };
+      const src = `/api/official-tiktok/generated-photos/file?generationId=${encodeURIComponent(photo.generationId)}&resultIndex=${encodeURIComponent(photo.resultIndex)}`;
+      const image = await loadImage(src);
+      const blob = await canvasToJpeg(renderOverlayCard(slide, image, aspectRatio));
+      const url = URL.createObjectURL(blob);
+      cards.push({
+        key: `zimage-copy:${photo.generationId}:${photo.slideIndex}:${photo.resultIndex}`,
+        kind: "text-card",
+        template: "zimage",
+        generationId: photo.generationId,
+        resultIndex: photo.resultIndex,
+        url,
+        blob,
+        contentType: "image/jpeg",
+        prompt: slide.lines[0] || slide.title || photo.prompt,
+        createdAt: Date.now(),
+      });
+    }
+    forgetRemovedCards(state.zimageCards);
+    state.zimageCards = cards;
+    resetPhotoSelection();
+    renderGeneratedPhotos();
+    setGenerateMessage(`已生成 ${cards.length} 张图，并按顺序叠上每张文案。`);
+  } catch (error) {
+    setGenerateMessage(error.message || "叠字失败，仍可发布未叠字的原图。", true);
+  } finally {
+    state.overlaying = false;
+  }
+}
+
+function currentGeneratedPhotos() {
+  return state.currentTaskIds.flatMap((id, slideIndex) => {
+    const task = state.tasks.find((item) => item.id === id);
+    if (!task || task.status !== "success") return [];
+    return (task.resultUrls || []).map((url, index) => ({
+      key: `${task.id}:${index}`,
+      generationId: task.id,
+      resultIndex: index,
+      slideIndex,
+      url,
+      prompt: task.prompt,
+      createdAt: task.createdAt,
+    }));
   });
+}
+
+async function loadImage(src) {
+  const response = await fetch(src, { cache: "no-store", credentials: "same-origin" });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "图片读取失败。");
+  }
+  const url = URL.createObjectURL(await response.blob());
+  try {
+    return await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("图片读取失败。"));
+      image.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function renderOverlayCard(slide, image, aspectRatio, { grayscale = false } = {}) {
@@ -447,6 +520,9 @@ async function generateImages() {
     resetPhotoSelection();
     peerJobPhotos = [];
     clearTextCards();
+    forgetRemovedCards(state.zimageCards);
+    state.zimageCards = [];
+    state.overlaySlides = copySlidesForCount(count);
     state.currentTaskIds = created.map((task) => task.id);
     state.tasks = [...created, ...state.tasks];
     renderGeneratedPhotos();
@@ -470,7 +546,10 @@ function watchPending() {
     state.tasks = state.tasks.map((task) => refreshed.find((item) => item?.id === task.id) || task);
     renderGeneratedPhotos();
     updateGenerationState();
-    if (state.tasks.every((task) => FINAL_STATES.has(task.status) || !activeIds.includes(task.id))) clearInterval(state.pollTimer);
+    if (state.tasks.every((task) => FINAL_STATES.has(task.status) || !activeIds.includes(task.id))) {
+      clearInterval(state.pollTimer);
+      overlayGeneratedPhotos();
+    }
   }, 4000);
 }
 
@@ -479,8 +558,9 @@ function generatedPhotos() {
 }
 
 function availablePhotos() {
-  if (state.mode === "text") return state.textCards.filter((photo) => photo.template !== "stock").slice(0, 6);
+  if (state.mode === "text") return state.textCards.filter((photo) => photo.template !== "stock" && photo.template !== "zimage").slice(0, 6);
   if (state.mode === "stock") return state.textCards.filter((photo) => photo.template === "stock").slice(0, 6);
+  if (state.zimageCards.length) return state.zimageCards.slice(0, 6);
   if (peerJobPhotos.length) return peerJobPhotos.slice(0, 6);
   if (state.currentTaskIds.length) {
     const current = new Set(state.currentTaskIds);
@@ -548,8 +628,8 @@ function renderGeneratedPhotos() {
   const empty = state.mode === "text"
     ? "还没有文案图片。先用封面模板出 1 张，再切到内容模板；空一行就是下一张内容页。"
     : state.mode === "stock"
-      ? "还没有素材库图片。搜好素材或贴上链接后点生成素材图。"
-      : "还没有可用图片。生成完成后会按顺序自动加入图集，第一张作为封面。";
+      ? "还没有素材库图片。搜好素材后，按张写文案，空一行换下一张。"
+      : "还没有可用图片。生成数量对应文案段数；空一行换下一张。";
   $("#photoList").innerHTML = photos.length ? photos.map((photo) => {
     const order = selected.findIndex((item) => item.key === photo.key);
     const checked = order >= 0;
@@ -587,6 +667,7 @@ async function publishPhotoPost() {
   const selections = publicationPhotos();
   if (!availablePhotos().length) return setPublishResult(state.mode === "zimage" ? "请先生成 1–6 张图片。" : "请先生成 1–6 张卡片。");
   if (!selections.length) return setPublishResult("请先勾选 1–6 张要发布的图片。");
+  if (state.overlaying) return setPublishResult("正在按张叠字，请稍候。");
   if (state.mode === "zimage" && state.currentTaskIds.some((id) => !FINAL_STATES.has(state.tasks.find((task) => task.id === id)?.status))) return setPublishResult("本批图片仍在生成，请等待全部完成后发布。");
   if (!connectionId) return setPublishResult("请先选择发布账号。");
   const musicSoundId = $("#musicSoundId").value.trim();

@@ -10,7 +10,7 @@ import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
 import { COVER_BACKDROPS, formatBackdropDate, pickCoverBackdrop } from "../../public/psychology-cover-backdrops.js";
-import { buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -300,6 +300,9 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.doesNotMatch(html,/选择图片与封面|selectedPhotos|photoCount|<option>8<\/option>/);
   assert.match(html,/id="publishTime"[\s\S]*id="musicSoundId"[\s\S]*id="privacyLevel"/);
   assert.match(html,/id="imagePrompt" class="photo-compact-textarea" rows="3"/);
+  assert.match(html,/id="imageCopy"/);
+  assert.match(html,/每张叠字文案（空一行换下一张）/);
+  assert.match(html,/一张图一段文案/);
   assert.match(html,/id="publishCaption" class="photo-compact-textarea" rows="3"/);
   assert.match(html,/id="noImageText" type="checkbox"/);
   assert.doesNotMatch(html,/id="noImageText"[^>]*checked/);
@@ -354,7 +357,12 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/\/api\/official-tiktok\/photo-assets\/import/);
   assert.match(browser,/\/api\/official-tiktok\/photo-assets\/upload/);
   assert.match(browser,/\/api\/official-tiktok\/photo-publish/);
+  assert.match(browser,/overlayGeneratedPhotos/);
+  assert.match(browser,/generated-photos\/file/);
+  assert.match(browser,/zimage-copy:\$\{photo\.generationId\}:\$\{photo\.slideIndex\}:\$\{photo\.resultIndex\}/);
   assert.match(cloud,/\/api\/official-tiktok\/stock-photos/);
+  assert.match(cloud,/generated-photos\/file/);
+  assert.match(cloud,/loadGeneratedPhoto/);
   assert.match(cloud,/\/api\/v1\/publish\/assets/);
   assert.match(cloud,/photoAssetKeys/);
   assert.match(cloud,/mergeAndStorePublishRecords/);
@@ -397,8 +405,19 @@ test("psychology text cards and stock overlays do not need generated images", ()
   });
   assert.equal(overlays.length, 3);
   assert.equal(overlays[0].kind, "cover");
-  assert.equal(overlays[1].lines[0], "2.theytext");
-  assert.equal(overlays[1].lines[1], "A)searchformeaning");
+  assert.equal(overlays[0].title, "howtoknowyourattachmentstyle");
+  assert.equal(overlays[0].lines[0], "theytext");
+  assert.equal(overlays[0].lines[1], "A)searchformeaning");
+  assert.equal(overlays[1].lines[0], "theygoquiet");
+  assert.deepEqual(overlays[2].lines, []);
+  const perImage = buildPerImageCopySlides({
+    body: "first card\nmore on first\n\nsecond card\n\nthird card",
+    count: 3,
+  });
+  assert.equal(perImage.length, 3);
+  assert.deepEqual(perImage[0].lines, ["first card", "more on first"]);
+  assert.deepEqual(perImage[1].lines, ["second card"]);
+  assert.deepEqual(perImage[2].lines, ["third card"]);
   assert.equal(isAllowedStockPhotoUrl("https://images.pexels.com/photos/1.jpeg"), true);
   assert.equal(isAllowedStockPhotoUrl("https://images.unsplash.com/photo-abc"), true);
   assert.equal(isAllowedStockPhotoUrl("https://evil.example/photo.jpg"), false);

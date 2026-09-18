@@ -33,6 +33,14 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
       return errorJson(error.message || "搜索素材图失败。", error.statusCode || 400);
     }
   }
+  if (request.method === "GET" && url.pathname === "/api/official-tiktok/generated-photos/file") {
+    if (session.user?.role !== "admin") return errorJson("仅管理员可以读取生成图片。", 403);
+    try {
+      return await proxyGeneratedPhoto(env, env.DB, session.user, url.searchParams);
+    } catch (error) {
+      return errorJson(error.message || "读取生成图片失败。", error.statusCode || 400);
+    }
+  }
   if (request.method === "GET" && url.pathname === "/api/official-tiktok/stock-photos/file") {
     if (session.user?.role !== "admin") return errorJson("仅管理员可以读取素材图。", 403);
     try {
@@ -66,7 +74,7 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
   return null;
 }
 
-export async function importGeneratedPhoto(env, db, user, input = {}) {
+export async function loadGeneratedPhoto(env, db, user, input = {}) {
   const generationId = String(input.generationId || "").trim();
   const peerJobId = String(input.peerJobId || '').trim();
   const resultIndex = Number(input.resultIndex || 0);
@@ -98,12 +106,31 @@ export async function importGeneratedPhoto(env, db, user, input = {}) {
   if (declaredSize > PHOTO_MAX_BYTES) throw statusError("生成图片超过 TikTok 20 MB 限制。", 413);
   const bytes = await response.arrayBuffer();
   if (!bytes.byteLength || bytes.byteLength > PHOTO_MAX_BYTES) throw statusError("生成图片为空或超过 TikTok 20 MB 限制。", 413);
-  const extension = contentType === "image/webp" ? "webp" : "jpg";
+  return { bytes, contentType, generationId, peerJobId, resultIndex };
+}
+
+export async function importGeneratedPhoto(env, db, user, input = {}) {
+  const photo = await loadGeneratedPhoto(env, db, user, input);
+  const extension = photo.contentType === "image/webp" ? "webp" : "jpg";
   return signalDeskBinary(env, db, "/api/v1/publish/assets", {
-    body: bytes,
-    contentType,
-    fileName: `psychology-z-image-${generationId || peerJobId}-${resultIndex}.${extension}`,
-    fileSize: bytes.byteLength
+    body: photo.bytes,
+    contentType: photo.contentType,
+    fileName: `psychology-z-image-${photo.generationId || photo.peerJobId}-${photo.resultIndex}.${extension}`,
+    fileSize: photo.bytes.byteLength
+  });
+}
+
+export async function proxyGeneratedPhoto(env, db, user, params) {
+  const photo = await loadGeneratedPhoto(env, db, user, {
+    generationId: params.get("generationId"),
+    resultIndex: params.get("resultIndex"),
+  });
+  return new Response(photo.bytes, {
+    status: 200,
+    headers: {
+      "content-type": photo.contentType,
+      "cache-control": "private, max-age=60",
+    },
   });
 }
 

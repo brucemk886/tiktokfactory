@@ -122,32 +122,26 @@ export function parseOverlayBlocks(value) {
   return blocks;
 }
 
-export function buildStockOverlaySlides({ title, body, subtitle, count, smash } = {}) {
+export function buildPerImageCopySlides({ title, subtitle, body, count, smash } = {}) {
   const heading = String(title || "").trim();
   const caption = String(subtitle || "").trim();
   const applySmash = (line) => smash ? smashCardWords(line) : line;
-  const blocks = parseOverlayBlocks(body).map((block) => block.map(applySmash).filter(Boolean)).filter((block) => block.length);
-  if (!heading && !caption && !blocks.length) throw Object.assign(new Error("请填写叠字标题或正文。"), { statusCode: 400 });
   const limit = Math.max(1, Math.min(6, Number(count) || 1));
-  if (limit === 1) {
-    return [{
-      kind: "cover",
-      title: applySmash(heading),
-      subtitle: applySmash(caption),
-      lines: blocks.flat(),
-    }];
+  const groups = splitContentCardBodies(body, limit, smash);
+  return Array.from({ length: limit }, (_, index) => ({
+    kind: index === 0 ? "cover" : "block",
+    title: index === 0 ? applySmash(heading) : "",
+    subtitle: index === 0 ? applySmash(caption) : "",
+    lines: groups[index] || [],
+  }));
+}
+
+export function buildStockOverlaySlides(options = {}) {
+  const slides = buildPerImageCopySlides(options);
+  if (!slides.some((slide) => slide.title || slide.subtitle || slide.lines.length)) {
+    throw Object.assign(new Error("请填写叠字标题或每张图片的文案。"), { statusCode: 400 });
   }
-  const slides = [{
-    kind: "cover",
-    title: applySmash(heading),
-    subtitle: applySmash(caption),
-    lines: [],
-  }];
-  for (const block of blocks) {
-    if (slides.length >= limit) break;
-    slides.push({ kind: "block", title: "", subtitle: "", lines: block });
-  }
-  return slides.filter((slide) => slide.title || slide.subtitle || slide.lines.length);
+  return slides;
 }
 
 export function splitContentCardBodies(body, count, smash = false) {
