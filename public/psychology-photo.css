@@ -21,6 +21,17 @@
 .photo-note { margin: 0; color: var(--lf-muted); font-size: 12px; line-height: 1.5; }
 .photo-album-row { display: flex; justify-content: flex-end; }
 .photo-album-row .secondary-photo-btn { min-height: 34px; }
+.cover-backdrop-picker { display: grid; gap: 10px; }
+.cover-backdrop-picker[hidden] { display: none; }
+.cover-backdrop-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cover-backdrop-head p { margin: 0; color: var(--lf-muted); font-size: 12px; line-height: 1.5; }
+.cover-backdrop-head .secondary-photo-btn { min-height: 32px; padding: 0 10px; font-size: 12px; }
+.cover-backdrop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 8px; max-height: 420px; overflow: auto; padding: 2px; }
+.cover-backdrop-thumb { display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; cursor: pointer; text-align: left; }
+.cover-backdrop-thumb img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; display: block; background: #ece9df; }
+.cover-backdrop-thumb span { padding: 4px 7px 6px; color: var(--lf-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-backdrop-thumb.is-selected { border-color: #8a9a32; box-shadow: inset 0 0 0 2px #c5d48a; }
+.cover-backdrop-thumb:not(.is-selected) { opacity: 0.46; }
 .stock-search-field { flex: 1 1 220px; margin-bottom: 0; }
 .stock-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
 .stock-thumb { display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; cursor: pointer; text-align: left; }

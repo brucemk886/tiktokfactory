@@ -53,8 +53,20 @@ export function formatCoverQuote(value) {
   return `“${text}”`;
 }
 
+const LIST_PREFIX = /^(?:[\s\u00a0]*)(?:[-*–—•●◦‣⁃∙·▪▫]|[0-9]{1,2}[.)])+\s*/u;
+
+export function stripListMarker(value) {
+  let text = String(value || "").trim();
+  for (let index = 0; index < 4; index += 1) {
+    const next = text.replace(LIST_PREFIX, "").trim();
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
 export function parseCardBullets(value) {
-  return String(value || "").split(/\r?\n/).map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim()).filter(Boolean);
+  return String(value || "").split(/\r?\n/).map((line) => stripListMarker(line)).filter(Boolean);
 }
 
 export function wrapLines(text, measure, maxWidth) {
@@ -163,7 +175,7 @@ export function buildStockOverlaySlides(options = {}) {
 
 export function splitContentCardBodies(body, count, smash = false) {
   const clean = (line) => {
-    const text = String(line || "").replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim();
+    const text = stripListMarker(line);
     return smash ? smashCardWords(text) : text;
   };
   const blocks = parseOverlayBlocks(body).map((block) => block.map(clean).filter(Boolean)).filter((block) => block.length);
@@ -194,9 +206,7 @@ export function buildTextCardSlides({ title, body, copies, accent, count, smash,
       bullets: [],
     }];
   }
-  const bullets = Array.isArray(copies)
-    ? linesFromCopyField(copies[0], smash)
-    : parseCardBullets(body).map((line) => smash ? smashCardWords(line) : line);
+  const bullets = parseCardBullets(Array.isArray(copies) ? copies[0] : body).map((line) => smash ? smashCardWords(line) : line);
   if (!heading && !bullets.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
   return [{
     kind: "content",

@@ -1,7 +1,8 @@
-import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-16";
-import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
+import { renderTextCard, renderOverlayCard, renderCoverPreview } from "./psychology-card-renderer.js?v=20260918-17";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-17";
+import { COVER_BACKDROPS, enabledCoverBackdropIds, pickCoverBackdrop } from "./psychology-cover-backdrops.js?v=20260918-17";
 
+const COVER_BACKDROP_KEY = "psychology-cover-backdrops";
 const FINAL_STATES = new Set(["success", "fail"]);
 const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
@@ -20,6 +21,7 @@ $("#stockModeTab")?.addEventListener("click", () => setPhotoMode("stock"));
 $("#zimageModeTab")?.addEventListener("click", () => setPhotoMode("zimage"));
 $("#coverTemplateTab")?.addEventListener("click", () => setTextTemplate("cover"));
 $("#contentTemplateTab")?.addEventListener("click", () => setTextTemplate("content"));
+$("#coverBackdropAllBtn")?.addEventListener("click", enableAllCoverBackdrops);
 $("#photoLightboxClose")?.addEventListener("click", closePhotoPreview);
 $("#photoLightbox")?.addEventListener("click", (event) => {
   if (event.target === $("#photoLightbox")) closePhotoPreview();
@@ -61,6 +63,7 @@ async function loadPage() {
       setPhotoMode(state.mode);
     }
     renderAll();
+    renderCoverBackdropPicker();
     watchPending();
     hideStatus();
   } catch (error) {
@@ -105,11 +108,73 @@ function setTextTemplate(template) {
   if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
   if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
   if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
+  if ($("#coverBackdropPicker")) $("#coverBackdropPicker").hidden = !isCover;
+  if (isCover) renderCoverBackdropPicker();
   if ($("#createLead") && state.mode === "text") {
     $("#createLead").textContent = isCover
       ? "每次只生成 1 张封面。要下一张就改文案再点一次。"
       : "每次只生成 1 张内容页，标题和正文都只属于这一张。";
   }
+}
+
+function savedCoverBackdropIds() {
+  try {
+    return JSON.parse(localStorage.getItem(COVER_BACKDROP_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function persistCoverBackdropIds(ids) {
+  const known = COVER_BACKDROPS.map((item) => item.id);
+  const unique = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => known.includes(id)))];
+  localStorage.setItem(COVER_BACKDROP_KEY, unique.length === known.length ? "[]" : JSON.stringify(unique));
+}
+
+function selectedCoverBackdropIds() {
+  return enabledCoverBackdropIds(savedCoverBackdropIds());
+}
+
+function enableAllCoverBackdrops() {
+  persistCoverBackdropIds([]);
+  renderCoverBackdropPicker(true);
+}
+
+function toggleCoverBackdrop(id) {
+  const selected = new Set(selectedCoverBackdropIds());
+  if (selected.has(id) && selected.size > 1) selected.delete(id);
+  else selected.add(id);
+  persistCoverBackdropIds([...selected]);
+  renderCoverBackdropPicker(true);
+}
+
+function renderCoverBackdropPicker(refresh = false) {
+  const grid = $("#coverBackdropGrid");
+  if (!grid) return;
+  const selected = new Set(selectedCoverBackdropIds());
+  if (!grid.childElementCount) {
+    for (const theme of COVER_BACKDROPS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cover-backdrop-thumb";
+      button.dataset.id = theme.id;
+      const image = document.createElement("img");
+      image.alt = theme.name;
+      image.src = renderCoverPreview(theme).toDataURL("image/jpeg", 0.82);
+      const label = document.createElement("span");
+      label.textContent = theme.name;
+      button.append(image, label);
+      button.addEventListener("click", () => toggleCoverBackdrop(theme.id));
+      grid.append(button);
+    }
+  }
+  if (refresh || grid.childElementCount) {
+    for (const button of grid.querySelectorAll("[data-id]")) {
+      button.classList.toggle("is-selected", selected.has(button.dataset.id));
+    }
+  }
+  const hint = $("#coverBackdropHint");
+  if (hint) hint.textContent = `封面底图共 ${COVER_BACKDROPS.length} 套，已保留 ${selected.size} 套。点选取消难看的，随机生成和复刻封面只会用勾上的。`;
 }
 
 async function generateTextCards() {
@@ -125,7 +190,7 @@ async function generateTextCards() {
       template: state.textTemplate,
     });
     const aspectRatio = $("#cardAspect").value;
-    const backdrop = state.textTemplate === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId }) : null;
+    const backdrop = state.textTemplate === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId, allowedIds: savedCoverBackdropIds() }) : null;
     if (backdrop) state.lastCoverBackdropId = backdrop.id;
     const cards = [];
     for (const [index, slide] of slides.entries()) {
@@ -432,7 +497,7 @@ async function renderRecreationPage(page, index) {
     smash: false,
     template: kind,
   });
-  const backdrop = kind === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId }) : null;
+  const backdrop = kind === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId, allowedIds: savedCoverBackdropIds() }) : null;
   if (backdrop) state.lastCoverBackdropId = backdrop.id;
   const blob = await canvasToJpeg(renderTextCard(slides[0], "9:16", backdrop));
   const url = URL.createObjectURL(blob);

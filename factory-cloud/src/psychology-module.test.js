@@ -9,8 +9,8 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
-import { COVER_BACKDROPS, formatBackdropDate, pickCoverBackdrop } from "../../public/psychology-cover-backdrops.js";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
+import { COVER_BACKDROPS, enabledCoverBackdropIds, formatBackdropDate, pickCoverBackdrop } from "../../public/psychology-cover-backdrops.js";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -319,6 +319,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="cardAspect"><option value="9:16" selected>/);
   assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
   assert.match(html,/>内容模板</);
+  assert.match(html,/id="coverBackdropGrid"/);
+  assert.match(html,/>全部保留</);
   assert.match(html,/>内容标题</);
   assert.match(html,/>这张正文</);
   assert.doesNotMatch(html,/内容页数量|不含封面/);
@@ -348,6 +350,18 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.equal(page.length, 1);
   assert.equal(page[0].title, "Signs");
   assert.deepEqual(page[0].bullets, ["card one", "more"]);
+  assert.deepEqual(buildTextCardSlides({
+    title: "Signs of a Disorganized Attachment Style",
+    copies: ["• Always wanting alone time, but then feeling lonely\n• Changing your personality depending on who you're with"],
+    template: "content",
+  })[0].bullets, [
+    "Always wanting alone time, but then feeling lonely",
+    "Changing your personality depending on who you're with",
+  ]);
+  assert.equal(stripListMarker("• • Thriving in chaos"), "Thriving in chaos");
+  assert.equal(COVER_BACKDROPS.length, 30);
+  assert.deepEqual(enabledCoverBackdropIds(["cream-marks", "missing"]), ["cream-marks"]);
+  assert.equal(pickCoverBackdrop({ allowedIds: ["cream-marks"], random: 0.9 }).id, "cream-marks");
   const nextPage = buildTextCardSlides({
     title: "Another",
     copies: ["only this page"],
@@ -356,7 +370,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.equal(nextPage[0].title, "Another");
   assert.deepEqual(nextPage[0].bullets, ["only this page"]);
   assert.match(browser,/pickCoverBackdrop/);
-  assert.match(browser,/paintCoverBackdrop/);
+  assert.match(browser,/renderCoverBackdropPicker/);
+  assert.match(browser,/allowedIds: savedCoverBackdropIds/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
   assert.match(browser,/smash: false/);
   assert.doesNotMatch(browser,/smashWords|stockSmash|cardAccent/);
@@ -455,6 +470,7 @@ test("cover backdrops are a 30-template English pool that can be picked at rando
   }
   assert.equal(pickCoverBackdrop({ random: 0 }).id, COVER_BACKDROPS[0].id);
   assert.notEqual(pickCoverBackdrop({ excludeId: COVER_BACKDROPS[0].id, random: 0 }).id, COVER_BACKDROPS[0].id);
+  assert.equal(pickCoverBackdrop({ allowedIds: ["cream-marks", "ink-navy"], random: 0.9 }).id, "ink-navy");
   const date = formatBackdropDate(new Date("2026-09-18T12:00:00+08:00"));
   assert.equal(chinese.test(date.weekday + date.monthDay), false);
   assert.match(date.monthDay, /September/);

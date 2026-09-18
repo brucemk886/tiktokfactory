@@ -1,4 +1,4 @@
-import { cardCanvasSize, wrapLines, planCenteredBlock } from "./psychology-text-card.js";
+import { cardCanvasSize, wrapLines, planCenteredBlock, stripListMarker } from "./psychology-text-card.js";
 import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 export function renderTextCard(slide, aspectRatio, backdrop) {
@@ -35,6 +35,29 @@ function renderCoverCard(slide, aspectRatio, backdrop) {
   return canvas;
 }
 
+export function renderCoverPreview(theme, quote = "A quiet thought") {
+  const width = 270;
+  const height = 360;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  paintCoverBackdrop(ctx, width, height, theme);
+  const pad = Math.round(width * 0.12);
+  const size = Math.round(width * 0.09);
+  ctx.fillStyle = theme.ink;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = `600 ${size}px "Iowan Old Style","Palatino Linotype",Georgia,"Times New Roman",serif`;
+  const lines = wrapLines(quote, (text) => ctx.measureText(text).width, width - pad * 2);
+  let y = planCenteredBlock(lines.length * size * 1.18, height, pad);
+  for (const line of lines) {
+    ctx.fillText(line, width / 2, y);
+    y += size * 1.18;
+  }
+  return canvas;
+}
+
 function renderContentCard(slide, aspectRatio) {
   const { width, height } = cardCanvasSize(aspectRatio);
   const canvas = document.createElement("canvas");
@@ -55,8 +78,9 @@ function renderContentCard(slide, aspectRatio) {
     const markWidth = ctx.measureText(mark).width;
     const bullets = [];
     for (const bullet of slide.bullets) {
-      const lines = wrapLines(bullet, (text) => ctx.measureText(text).width, maxWidth - markWidth);
-      bullets.push(lines);
+      const text = stripListMarker(bullet);
+      const lines = wrapLines(text, (t) => ctx.measureText(t).width, maxWidth - markWidth);
+      if (lines.length) bullets.push(lines);
     }
     const titleHeight = titleLines.length ? titleLines.length * titleSize * 1.08 + titleSize * 0.55 : 0;
     const bodyHeight = bullets.reduce((sum, lines) => sum + lines.length * bodySize * 1.42 + bodySize * 0.28, 0);

@@ -35,11 +35,19 @@ export function coverBackdropById(id) {
   return COVER_BACKDROPS.find((item) => item.id === id) || COVER_BACKDROPS[0];
 }
 
-export function pickCoverBackdrop({ excludeId, random } = {}) {
-  const pool = COVER_BACKDROPS.filter((item) => item.id !== excludeId);
-  const list = pool.length ? pool : COVER_BACKDROPS;
+export function enabledCoverBackdropIds(saved) {
+  const known = new Set(COVER_BACKDROPS.map((item) => item.id));
+  const wanted = (Array.isArray(saved) ? saved : []).map((id) => String(id || "")).filter((id) => known.has(id));
+  return wanted.length ? wanted : COVER_BACKDROPS.map((item) => item.id);
+}
+
+export function pickCoverBackdrop({ excludeId, random, allowedIds } = {}) {
+  const allowed = new Set(enabledCoverBackdropIds(allowedIds));
+  const pool = COVER_BACKDROPS.filter((item) => allowed.has(item.id) && item.id !== excludeId);
+  const list = pool.length ? pool : COVER_BACKDROPS.filter((item) => allowed.has(item.id));
+  const choices = list.length ? list : COVER_BACKDROPS;
   const roll = Number.isFinite(random) ? random : Math.random();
-  return list[Math.abs(Math.floor(roll * list.length)) % list.length];
+  return choices[Math.abs(Math.floor(roll * choices.length)) % choices.length];
 }
 
 export function formatBackdropDate(date = new Date()) {
