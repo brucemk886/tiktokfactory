@@ -130,17 +130,17 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
       });
     }
     if (slide.subtitle) {
-      ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
+      ctx.font = `600 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
       wrapOverlayLines(slide.subtitle, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((line, index, packed) => {
-        lines.push({ text: line, size: bodySize, weight: 400, gap: bodySize * 1.35 + (index === packed.length - 1 ? bodySize * 0.5 : 0) });
+        lines.push({ text: line, size: bodySize, weight: 600, gap: bodySize * 1.35 + (index === packed.length - 1 ? bodySize * 0.5 : 0) });
       });
     }
-    ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
+    ctx.font = `600 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
     for (const line of slide.lines || []) {
       // Paragraph spacing goes after the LAST wrapped part of each logical
       // line; wrapped continuations keep the normal line height.
       wrapOverlayLines(line, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((part, index, packed) => {
-        lines.push({ text: part, size: bodySize, weight: 400, gap: bodySize * 1.38 + (index === packed.length - 1 ? bodySize * 0.42 : 0) });
+        lines.push({ text: part, size: bodySize, weight: 600, gap: bodySize * 1.38 + (index === packed.length - 1 ? bodySize * 0.42 : 0) });
       });
     }
     const total = lines.reduce((sum, line) => sum + line.gap, 0);
@@ -150,7 +150,7 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
       // content pages stay centered on their bright empty backgrounds.
       let y = isCover ? Math.round(height * 0.12) : planCenteredBlock(total, height, pad);
       paintOverlayScrim(ctx, width, y, total);
-      ctx.fillStyle = "#111111";
+      ctx.fillStyle = "#0a0a0a";
       for (const line of lines) {
         ctx.font = `${line.weight} ${line.size}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
         ctx.fillText(line.text, width / 2, y);
