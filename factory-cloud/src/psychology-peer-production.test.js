@@ -66,7 +66,7 @@ function cloudFixture(t, failSecond = false) {
   };
   let pexelsCalls=0;
   const env = {
-    DB:db,KIE_API_KEY:'test-key',PEXELS_API_KEY:'pexels-test',FACTORY_PUBLIC_BASE_URL:'https://factory.test',
+    DB:db,KIE_API_KEY:'test-key',DEEPSEEK_API_KEY:'deepseek-test',PEXELS_API_KEY:'pexels-test',FACTORY_PUBLIC_BASE_URL:'https://factory.test',
     ARCHIVE:{
       async put(key,value){objects.set(key,value instanceof Uint8Array?value:new Uint8Array(value));},
       async get(key){const bytes=objects.get(key);return bytes?{body:bytes,size:bytes.length}:null;},
@@ -103,7 +103,7 @@ test('cloud workflow classifies six pages, matches stock photos, and replay does
   assert.equal(f.pexelsCalls(),3);assert.equal(f.submissions.length,0);
 });
 
-test('single-image photo post uses Gemini 3.5 Flash once and renders a text card without Z-Image', async t => {
+test('single-image photo post uses DeepSeek V4.1 Flash once and renders a text card without Z-Image', async t => {
   const f=cloudFixture(t);
   const one=storyPlan(1), chatCalls=[];
   f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
@@ -114,14 +114,15 @@ test('single-image photo post uses Gemini 3.5 Flash once and renders a text card
   };
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(result.count,1);assert.equal(f.submissions.length,0);assert.equal(f.pexelsCalls(),0);
-  assert.match(chatCalls[0].url,/gemini-3-5-flash-openai/);
-  assert.equal(chatCalls[0].body.reasoning_effort, 'low');
+  assert.match(chatCalls[0].url,/api\.deepseek\.com\/chat\/completions/);
+  assert.equal(chatCalls[0].body.model,'deepseek-flash');
+  assert.equal(chatCalls[0].body.thinking.type,'disabled');
   const imageParts=chatCalls[0].body.messages[0].content.filter(part=>part.type==='image_url');
   assert.equal(imageParts.length,1);
   assert.match(imageParts[0].image_url.url, /^data:image\/jpeg;base64,/);
   assert.equal(f.objects.size,0);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.analysisModel,'gemini-3-5-flash');
+  assert.equal(saved.analysisModel,'deepseek-flash');
   assert.equal(saved.progressTotal,1);assert.equal(saved.results.length,1);assert.equal(saved.results[0].imageModel,'text-card');
 });
 
@@ -137,6 +138,9 @@ test('Gemini analysis failure keeps the provider error instead of a workflow ret
   const f = cloudFixture(t);
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
+    if (String(url).includes('api.deepseek.com')) {
+      return Response.json({ error: { message: 'DeepSeek overloaded' } }, { status: 503 });
+    }
     if (String(url).includes('/chat/completions')) {
       return Response.json({ code: 500, msg: 'The image url cannot be fetched from factory host' }, { status: 500 });
     }
@@ -149,7 +153,7 @@ test('Gemini analysis failure keeps the provider error instead of a workflow ret
   assert.doesNotMatch(row.error, /retry fail/);
 });
 
-test('photo story falls back to Gemini 3.8 Flash when 3.5 Flash fails', async t => {
+test('photo story falls back to Gemini 3.8 Flash when DeepSeek V4.1 Flash fails', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);
   const chatCalls = [];
@@ -158,8 +162,8 @@ test('photo story falls back to Gemini 3.8 Flash when 3.5 Flash fails', async t 
   f.env.fetch = async (url, init) => {
     if (String(url).includes('/chat/completions')) {
       chatCalls.push(String(url));
-      if (String(url).includes('gemini-3-5-flash-openai')) {
-        return Response.json({ code: 500, msg: 'internal error, please try again later.' }, { status: 500 });
+      if (String(url).includes('api.deepseek.com')) {
+        return Response.json({ error: { message: 'internal error, please try again later.' } }, { status: 500 });
       }
       return Response.json({ choices: [{ message: { content: JSON.stringify(one) } }] });
     }
@@ -167,8 +171,30 @@ test('photo story falls back to Gemini 3.8 Flash when 3.5 Flash fails', async t 
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
   assert.equal(result.count, 1);
-  assert.match(chatCalls[0], /gemini-3-5-flash-openai/);
+  assert.match(chatCalls[0], /api\.deepseek\.com/);
   assert.match(chatCalls[1], /gemini-3-8-flash-openai/);
+  const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
+  assert.equal(saved.analysisModel, 'gemini-3-8-flash');
+});
+
+test('photo story uses Gemini 3.8 Flash directly when DeepSeek is not configured', async t => {
+  const f = cloudFixture(t);
+  const one = storyPlan(1);
+  const chatCalls = [];
+  f.env.DEEPSEEK_API_KEY = '';
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
+  const originalFetch = f.env.fetch;
+  f.env.fetch = async (url, init) => {
+    if (String(url).includes('/chat/completions')) {
+      chatCalls.push(String(url));
+      return Response.json({ choices: [{ message: { content: JSON.stringify(one) } }] });
+    }
+    return originalFetch(url, init);
+  };
+  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
+  assert.equal(result.count, 1);
+  assert.equal(chatCalls.length, 1);
+  assert.match(chatCalls[0], /gemini-3-8-flash-openai/);
   const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.equal(saved.analysisModel, 'gemini-3-8-flash');
 });

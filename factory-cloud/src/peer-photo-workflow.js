@@ -1,4 +1,5 @@
 import { buildPhotoStoryPrompt, buildStockPickPrompt, parsePhotoStory, parseStockPick } from '../../scripts/psychology-peer-production.js';
+import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
 import { createKieClient } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
 import { preparePeerPhotosForKie, deletePeerPhotoSources, loadPeerPhotoChatImages } from './peer-photo-convert.js';
@@ -9,7 +10,7 @@ import { withProductionPatch, compactProduction } from '../../scripts/production
 const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' };
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
-const PHOTO_STORY_MODEL = 'gemini-3-5-flash';
+const PHOTO_STORY_MODEL = DEEPSEEK_PHOTO_MODEL;
 const PHOTO_STORY_FALLBACK_MODEL = 'gemini-3-8-flash';
 
 export async function runPeerPhotoWorkflow(env, event, step) {
@@ -18,12 +19,15 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   if (!row || ['done', 'failed', 'canceled', 'cancelled'].includes(row.status)) return { skipped: true };
   const payload = JSON.parse(row.payload_json);
   const kie = createKieClient({ apiKey: env.KIE_API_KEY, fetchImpl: env.fetch || fetch });
+  const deepseek = String(env.DEEPSEEK_API_KEY || '').trim()
+    ? createDeepSeekClient({ apiKey: env.DEEPSEEK_API_KEY, fetchImpl: env.fetch || fetch })
+    : null;
   let plan = null;
   const results = [];
   let total = 0;
   let state = {};
   let kiePhotos = { urls: [], keys: [] };
-  const chat = { model: PHOTO_STORY_MODEL, primaryFailed: false };
+  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, primaryFailed: !deepseek };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
@@ -39,14 +43,14 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     total = source.urls.length;
     payload.sceneCount = total;
     if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
-    await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成 Gemini 可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
+    await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成模型可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
     kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
     const rewrite = payload.rewriteCopy !== false;
-    await save('source-ready', 'running', 8, `原图已转码，Gemini 3.5 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
+    await save('source-ready', 'running', 8, `原图已转码，${deepseek ? 'DeepSeek V4.1 Flash' : 'Gemini 3.8 Flash'} 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
     let validationError = '';
     for (let attempt = 0; attempt < 3; attempt++) {
       const prompt = buildPhotoStoryPrompt(payload, { sceneCount: total }) + (validationError ? `\nCorrect this validation error: ${validationError}` : '');
-      const text = await photoChat(env, kie, step, `story-${attempt}`, prompt, kiePhotos, chat);
+      const text = await photoChat(env, kie, deepseek, step, `story-${attempt}`, prompt, kiePhotos, chat);
       try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
     }
     if (!plan) throw new Error(validationError);
@@ -62,7 +66,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       const scene = plan.scenes[index];
       if (scene.template === 'stock') {
         await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页搜索相近底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
-        const photo = await matchStockPhoto(env, kie, step, scene, kiePhotos, index);
+        const photo = await matchStockPhoto(env, kie, deepseek, step, scene, kiePhotos, index, chat);
         results.push(photoPage(scene, index, photo));
         await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页。`, '', {productionScene:{index,imageUrl:photo.fileUrl || photo.imageUrl,imagePrompt:scene.stockQuery,imageStatus:'done'}});
       } else {
@@ -82,7 +86,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   }
 }
 
-async function matchStockPhoto(env, kie, step, scene, kiePhotos, index) {
+async function matchStockPhoto(env, kie, deepseek, step, scene, kiePhotos, index, chat) {
   const found = await step.do(`stock-search-${index}`, READ, () => searchStockPhotos(env, new URLSearchParams({ q: scene.stockQuery, count: '8' })));
   if (!found.configured) throw new Error('还没有配置 Pexels，无法为有底图的页面匹配素材。');
   let photos = found.photos || [];
@@ -98,22 +102,12 @@ async function matchStockPhoto(env, kie, step, scene, kiePhotos, index) {
   const sourceUrl = kiePhotos.urls[index];
   if (candidates.length === 1 || !sourceUrl) return candidates[0];
   try {
-    const text = await paidCall(step, `stock-pick-${index}`, async () => {
-      const sourceImages = await loadPeerPhotoChatImages(env, {
-        keys: Array.isArray(kiePhotos.keys) ? kiePhotos.keys.slice(index, index + 1) : [],
-        urls: [sourceUrl]
-      });
-      const imageUrls = [...sourceImages, ...candidates.map((photo) => photo.imageUrl)].filter((url) => isChatImage(url)).slice(0, 6);
-      try {
-        return await kie.createChat(buildStockPickPrompt(scene, candidates), {
-          model: PHOTO_STORY_MODEL, reasoningEffort: 'low', imageUrls
-        });
-      } catch {
-        return await kie.createChat(buildStockPickPrompt(scene, candidates), {
-          model: PHOTO_STORY_FALLBACK_MODEL, reasoningEffort: 'low', imageUrls
-        });
-      }
+    const sourceImages = await loadPeerPhotoChatImages(env, {
+      keys: Array.isArray(kiePhotos.keys) ? kiePhotos.keys.slice(index, index + 1) : [],
+      urls: [sourceUrl]
     });
+    const imageUrls = [...sourceImages, ...candidates.map((photo) => photo.imageUrl)].filter((url) => isChatImage(url)).slice(0, 6);
+    const text = await lookAtImages(kie, deepseek, step, `stock-pick-${index}`, buildStockPickPrompt(scene, candidates), imageUrls, chat);
     return candidates[parseStockPick(text, candidates.length)];
   } catch {
     return candidates[0];
@@ -162,29 +156,35 @@ function progress(total, completed) {
   return Math.min(95, Math.round(15 + (Math.max(0, completed) * 80) / Math.max(1, total)));
 }
 
-async function photoChat(env, kie, step, name, prompt, kiePhotos, chat) {
-  const imageUrls = await loadPeerPhotoChatImages(env, kiePhotos);
-  const models = chat.primaryFailed ? [PHOTO_STORY_FALLBACK_MODEL] : [PHOTO_STORY_MODEL, PHOTO_STORY_FALLBACK_MODEL];
-  let lastError = 'Gemini 分析原图失败。';
-  for (const model of models) {
+async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat) {
+  return lookAtImages(kie, deepseek, step, name, prompt, await loadPeerPhotoChatImages(env, kiePhotos), chat);
+}
+
+async function lookAtImages(kie, deepseek, step, name, prompt, imageUrls, chat) {
+  const attempts = [];
+  if (!chat.primaryFailed && deepseek) {
+    attempts.push({ model: PHOTO_STORY_MODEL, run: () => deepseek.createChat(prompt, { imageUrls }) });
+  }
+  attempts.push({
+    model: PHOTO_STORY_FALLBACK_MODEL,
+    run: () => kie.createChat(prompt, { model: PHOTO_STORY_FALLBACK_MODEL, reasoningEffort: 'low', imageUrls })
+  });
+  let lastError = '看图分析失败。';
+  for (const attempt of attempts) {
     try {
-      const text = await paidCall(step, `${name}-${model}`, () => kie.createChat(prompt, {
-        model,
-        reasoningEffort: 'low',
-        imageUrls
-      }));
-      chat.model = model;
-      if (model === PHOTO_STORY_FALLBACK_MODEL) chat.primaryFailed = true;
+      const text = await paidCall(step, `${name}-${attempt.model}`, attempt.run);
+      chat.model = attempt.model;
+      if (attempt.model === PHOTO_STORY_FALLBACK_MODEL) chat.primaryFailed = true;
       return text;
     } catch (error) {
       lastError = String(error?.message || error).slice(0, 1000);
-      if (model === PHOTO_STORY_MODEL) chat.primaryFailed = true;
+      if (attempt.model === PHOTO_STORY_MODEL) chat.primaryFailed = true;
     }
   }
   throw new Error(lastError);
 }
 
-async function paidCall(step, name, action, config = SUBMIT, fallback = 'Gemini 分析原图失败。') {
+async function paidCall(step, name, action, config = SUBMIT, fallback = '看图分析失败。') {
   const outcome = await step.do(name, config, async () => {
     try {
       return { ok: true, value: await action() };
