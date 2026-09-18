@@ -8,6 +8,8 @@ Updated: 2026-09-18
 
 ## Platform
 
+- Psychology 数据概览 at /psychology-effects now shares the novel promotion report layout: date/group filters, 11 publishing/playback metrics, account alerts and high/low video lists. Requests remain scoped to the psychology project; existing navigation permissions and the separate operations-report route are preserved.
+
 - Online psychology now has administrator-only automatic publishing at /psychology-publish: choose photo/video, a corresponding template, 1–50 total posts, peer-hit selection/filter, official psychology accounts and schedule. Distinct matching hits are assigned round-robin; video renders feed the official upload queue, while photo workflows feed a background Chrome card renderer with upload checkpoints and idempotent official batch submission. See docs/handoffs/2026-09-18-psychology-auto-publish.md.
 
 - AI creation video generation supports switching between Grok Imagine and Kie MiniMax H3 text-to-video. MiniMax accepts 4–15 seconds, 768P/2K and six aspect ratios; the model and result remain in creation history. Both use the existing server-only KIE_API_KEY.

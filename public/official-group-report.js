@@ -2,6 +2,7 @@ const MODULE_FROM_PATH = {
   "/novel-ops-report": "novel-promotion",
   "/mid-video-ops-report": "mid-video",
   "/psychology-ops-report": "psychology",
+  "/psychology-effects": "psychology",
 };
 
 const MODULE_LABEL = {
@@ -11,11 +12,12 @@ const MODULE_LABEL = {
 };
 
 function reportNoun() {
+  if (location.pathname === "/psychology-effects") return "数据概览";
   return state.module === "novel-promotion" ? "数据概览" : "运营报表";
 }
 
 function reportTitle() {
-  return state.module === "novel-promotion"
+  return reportNoun() === "数据概览"
     ? "数据概览"
     : `${MODULE_LABEL[state.module] || "项目"} · 运营报表`;
 }
