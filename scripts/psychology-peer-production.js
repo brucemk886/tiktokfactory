@@ -28,11 +28,50 @@ export function peerPhotoImageUrls(item = {}) {
         ...(Array.isArray(image?.origin_image?.url_list) ? image.origin_image.url_list : []),
         ...(Array.isArray(image?.image?.url_list) ? image.image.url_list : [])
       ];
-      const value = candidates.find(isTikTokPhotoUrl);
+      const value = pickTikTokPhotoUrl(candidates);
       if (value && !urls.includes(value)) urls.push(value);
     }
   }
   return urls.slice(0, 6);
+}
+
+function photoPath(value) {
+  try { return new URL(value).pathname; } catch { return String(value || ''); }
+}
+
+export function photoUrlFormatScore(value) {
+  const path = photoPath(value).toLowerCase();
+  if (path.endsWith('.jpeg') || path.endsWith('.jpg')) return 100;
+  if (path.endsWith('.webp')) return 90;
+  if (path.endsWith('.png')) return 80;
+  if (path.endsWith('.gif')) return 70;
+  if (path.endsWith('.image')) return 40;
+  if (path.endsWith('.heic') || path.endsWith('.heif')) return 1;
+  return 50;
+}
+
+export function toKieCompatiblePhotoUrl(value) {
+  if (!isTikTokPhotoUrl(value)) return '';
+  try {
+    const url = new URL(value);
+    if (/\.(png|jpe?g|webp|gif)$/i.test(url.pathname)) return url.href;
+    url.pathname = url.pathname.replace(/\.(hei[cf]|image)$/i, '.jpeg');
+    return /\.(png|jpe?g|webp|gif)$/i.test(url.pathname) ? url.href : '';
+  } catch { return ''; }
+}
+
+export function pickTikTokPhotoUrl(candidates = []) {
+  const urls = [];
+  for (const value of Array.isArray(candidates) ? candidates : []) {
+    if (!isTikTokPhotoUrl(value) || urls.includes(value)) continue;
+    urls.push(value);
+  }
+  urls.sort((left, right) => photoUrlFormatScore(right) - photoUrlFormatScore(left));
+  for (const url of urls) {
+    const compatible = toKieCompatiblePhotoUrl(url);
+    if (compatible) return compatible;
+  }
+  return '';
 }
 
 function isTikTokPhotoUrl(value) {

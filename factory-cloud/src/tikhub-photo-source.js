@@ -1,3 +1,4 @@
+import { pickTikTokPhotoUrl } from '../../scripts/psychology-peer-production.js';
 import { TIKTOK_USER_AGENT, validateTikTokPageUrl } from './tikhub-video-source.js';
 
 const ENDPOINT = 'https://api.tikhub.io/api/v1/tiktok/app/v3/fetch_one_video_by_share_url';
@@ -50,29 +51,22 @@ export async function resolveTikTokPhotoSource(env, { url, imageUrls = [] }) {
 }
 
 function firstImageUrl(image) {
-  if (typeof image === 'string') return image;
+  if (typeof image === 'string') return pickTikTokPhotoUrl([image]);
+  const candidates = [];
   const nested = [image?.display_image, image?.displayImage, image?.origin_image, image?.originImage, image?.image, image?.download_addr, image?.downloadAddr, image];
   for (const value of nested) {
     const urls = value?.url_list || value?.urlList || value?.download_url_list || value?.downloadUrlList;
-    if (Array.isArray(urls)) {
-      for (const candidate of urls) {
-        try { return validateTikTokPhotoFileUrl(candidate); } catch { /* Try the provider's next CDN alternative. */ }
-      }
-    }
-    for (const candidate of [value?.url, value?.image_url, value?.imageUrl, value?.src]) {
-      try { return validateTikTokPhotoFileUrl(candidate); } catch { /* Try another field. */ }
-    }
+    if (Array.isArray(urls)) candidates.push(...urls);
+    candidates.push(value?.url, value?.image_url, value?.imageUrl, value?.src);
   }
-  return '';
+  return pickTikTokPhotoUrl(candidates);
 }
 
 function orderedSafeUrls(values) {
   const urls = [];
   for (const value of Array.isArray(values) ? values : []) {
-    try {
-      const safe = validateTikTokPhotoFileUrl(value);
-      if (!urls.includes(safe)) urls.push(safe);
-    } catch { /* Ignore unsafe alternatives returned by the provider. */ }
+    const picked = pickTikTokPhotoUrl([value]);
+    if (picked && !urls.includes(picked)) urls.push(picked);
   }
   return urls.slice(0, 6);
 }
