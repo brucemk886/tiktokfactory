@@ -107,6 +107,27 @@ export function wrapLines(text, measure, maxWidth) {
   return lines;
 }
 
+export function wrapOverlayLines(text, measure, maxWidth, smash = false) {
+  if (!smash) return wrapLines(text, measure, maxWidth);
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const words = raw.includes(" ") ? raw.split(/\s+/).filter(Boolean) : [raw];
+  const lines = [];
+  let current = [];
+  const widthOf = (parts) => measure(smashCardWords(parts.join(" ")));
+  for (const word of words) {
+    const next = [...current, word];
+    if (current.length && widthOf(next) > maxWidth) {
+      lines.push(smashCardWords(current.join(" ")));
+      current = [word];
+    } else {
+      current = next;
+    }
+  }
+  if (current.length) lines.push(smashCardWords(current.join(" ")));
+  return lines.flatMap((line) => (measure(line) <= maxWidth ? [line] : wrapLines(line, measure, maxWidth)));
+}
+
 export function splitEven(total, count) {
   const safeCount = Math.max(1, Math.min(6, Number(count) || 1));
   const size = Math.max(0, Number(total) || 0);
@@ -149,19 +170,22 @@ export function normalizeCopyFields(copies, count) {
   return Array.from({ length: limit }, (_, index) => list[index] || "");
 }
 
-export function buildPerImageCopySlides({ title, subtitle, copies, body, count, smash } = {}) {
+export function buildPerImageCopySlides({ title, subtitle, copies, body, count, smash, kind } = {}) {
   const heading = String(title || "").trim();
   const caption = String(subtitle || "").trim();
-  const applySmash = (line) => smash ? smashCardWords(line) : line;
   const fields = Array.isArray(copies)
     ? normalizeCopyFields(copies, count)
-    : splitContentCardBodies(body, count, smash).map((lines) => lines.join("\n"));
-  const slides = normalizeCopyFields(fields, count).map((field, index) => ({
-    kind: index === 0 ? "cover" : "block",
-    title: index === 0 ? applySmash(heading) : "",
-    subtitle: index === 0 ? applySmash(caption) : "",
-    lines: linesFromCopyField(field, smash),
-  }));
+    : splitContentCardBodies(body, count, false).map((lines) => lines.join("\n"));
+  const slides = normalizeCopyFields(fields, count).map((field, index) => {
+    const headingPage = Boolean(kind) || index === 0;
+    return {
+      kind: kind || (index === 0 ? "cover" : "block"),
+      smash: Boolean(smash),
+      title: headingPage ? heading : "",
+      subtitle: headingPage ? caption : "",
+      lines: linesFromCopyField(field, false),
+    };
+  });
   return slides;
 }
 

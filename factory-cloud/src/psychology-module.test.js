@@ -10,7 +10,7 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker } from "../../public/psychology-text-card.js";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker, wrapOverlayLines } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -435,11 +435,17 @@ test("psychology text cards and stock overlays do not need generated images", ()
   });
   assert.equal(overlays.length, 3);
   assert.equal(overlays[0].kind, "cover");
-  assert.equal(overlays[0].title, "howtoknowyourattachmentstyle");
-  assert.equal(overlays[0].lines[0], "2.theytext");
-  assert.equal(overlays[0].lines[1], "A)searchformeaning");
-  assert.equal(overlays[1].lines[0], "3.theygoquiet");
+  assert.equal(overlays[0].smash, true);
+  assert.equal(overlays[0].title, "how to know your attachment style");
+  assert.equal(overlays[0].lines[0], "2. they text");
+  assert.equal(overlays[0].lines[1], "A) search for meaning");
+  assert.equal(overlays[1].lines[0], "3. they go quiet");
   assert.deepEqual(overlays[2].lines, []);
+  assert.deepEqual(wrapOverlayLines("how to know your attachment style in 30 seconds", (text) => text.length * 10, 220, true), [
+    "howtoknowyour",
+    "attachmentstylein30",
+    "seconds",
+  ]);
   const perImage = buildPerImageCopySlides({
     copies: ["first card\nmore on first", "second card", "third card"],
     count: 3,
@@ -453,6 +459,8 @@ test("psychology text cards and stock overlays do not need generated images", ()
   assert.equal(isAllowedStockPhotoUrl("https://evil.example/photo.jpg"), false);
   assert.match(buildPexelsSearchQuery("couple beach"), /cinematic establishing shot empty scene/);
   assert.doesNotMatch(buildPexelsSearchQuery("couple beach"), /\bcouple\b/);
+  assert.match(buildPexelsSearchQuery("couple kissing sunset", { role: "cover" }), /\bcouple\b/);
+  assert.match(buildPexelsSearchQuery("fog forest", { role: "content" }), /bright airy daylight/);
   assert.equal(photoLooksLikePeople("A couple walking on the beach"), true);
   assert.equal(photoLooksLikePeople("Empty foggy forest road at dawn"), false);
   const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xdb, 0x00]);
@@ -510,6 +518,31 @@ test("pexels stock search stays portrait and drops photos that look like people"
   assert.match(requested[0].href, /orientation=portrait/);
   assert.match(requested[0].href, /no(\+|%20)people/);
   assert.equal(requested[0].auth, "test-pexels-key");
+
+  const cover = await searchStockPhotos({
+    PEXELS_API_KEY: "test-pexels-key",
+    fetch: async (url) => {
+      requested.push({ href: String(url) });
+      return {
+        ok: true,
+        json: async () => ({
+          photos: [
+            {
+              id: 9,
+              alt: "A couple kissing at sunset in the desert",
+              photographer: "Ada",
+              url: "https://www.pexels.com/photo/couple-sunset",
+              src: { portrait: "https://images.pexels.com/photos/9.jpeg" },
+            },
+          ],
+        }),
+      };
+    },
+  }, new URLSearchParams("q=couple kissing sunset&count=4&role=cover&allowPeople=1"));
+  assert.equal(cover.photos.length, 1);
+  assert.equal(cover.photos[0].id, "9");
+  assert.match(requested.at(-1).href, /couple/);
+  assert.doesNotMatch(requested.at(-1).href, /no(\+|%20)people/);
 });
 
 test("psychology overview uses the novel report page without changing navigation permissions", () => {

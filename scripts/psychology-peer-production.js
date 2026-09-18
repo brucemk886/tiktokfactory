@@ -122,7 +122,9 @@ export function buildPhotoStoryPrompt(payload, { sceneCount = payload.sceneCount
     'Classify each image independently as one of two templates. Do not generate AI images.',
     '- "text": the original is a typography or paper text card. Background is solid color, paper, gradient, or graphic lettering with no photographic scene to recreate. Recreate with the text-card module.',
     '- "stock": the original is a photograph or cinematic still with overlaid copy. Recreate only the photographic background from a stock library.',
-    'For stock scenes, stockQuery describes the BACKGROUND ONLY: empty cinematic interiors, landscapes, objects, weather, lighting and palette. Never mention people, faces, crowds, portraits, body parts, hands, or visible text.',
+    'Page 1 is the cover. Remaining pages are content. Set textKind to "cover" or "content" on every scene.',
+    'For stock cover scenes, stockQuery must closely match the original cover photograph 1:1: setting, time of day, palette, and subjects. Couples, people and visible faces are allowed on the cover. Do not invent a different location.',
+    'For stock content scenes, stockQuery describes a BRIGHT airy empty background only: daylight sky, pastel horizon, beach, soft overcast light. Never use dark fog, night forest, or people on content pages.',
     'Keep two copy streams strictly separate. Never mix them.',
     '- Post title, hooks and caption come ONLY from REFERENCE_JSON title/copy (the TikTok post title and caption). Do not use text visible on the images.',
     '- Each scene originalText, title, subtitle, body and text come ONLY from the visible overlay words on that one source image. Do not use the post title or caption, and do not copy words from another page.',
@@ -130,7 +132,7 @@ export function buildPhotoStoryPrompt(payload, { sceneCount = payload.sceneCount
       ? 'rewriteCopy is true: rewrite the post title/hooks/caption from the post fields only, and rewrite each page overlay from that image\'s visible words only. Keep the useful idea and concrete situation. Use fresh natural English psychology copy. Do not copy sentences, names, logos, faces, statistics, research claims, or diagnostic claims. If the post has no copy, leave caption empty rather than inventing it from images. If an image has no overlay words, leave that page\'s title/subtitle/body empty rather than filling them from the post.'
       : 'rewriteCopy is false: copy the post title and caption from REFERENCE_JSON without paraphrasing. Extract each image\'s visible overlay words into that page\'s title, subtitle and body without paraphrasing. Do not invent new ideas.',
     'For template "text": textKind is "cover" when the original is a single large quote or headline card, otherwise "content". Cover uses title only. Content uses title plus body.',
-    'For template "stock": put the main overlay heading in title, a short second line in subtitle, remaining overlay copy in body. stockQuery must be 8-120 English characters.',
+    'For template "stock": put the main overlay heading in title, a short second line in subtitle, remaining overlay copy in body. Keep normal English spaces. Put each body section on its own line, with a blank line between sections. stockQuery must be 8-120 English characters.',
     `Return exactly ${count} scene${count === 1 ? '' : 's'} in source order. Write three different overall hooks and a publishable caption only from the post title/copy. Return JSON only: {"title":"...","hooks":["...","...","..."],"caption":"...","sourceAngle":"...","scenes":[{"sourceIndex":1,"template":"text|stock","textKind":"cover|content","sourceImageAnalysis":{"subject":"...","composition":"...","colors":"...","style":"...","textLayout":"...","background":"..."},"originalText":"...","title":"...","subtitle":"...","body":"...","text":"...","stockQuery":"..."}]}`,
     'Scene text is the combined overlay copy for that page, taken only from that image. stockQuery is required for stock scenes and must be empty for text scenes.',
     'REFERENCE_JSON: ' + JSON.stringify({ title: payload.topic, copy: payload.script, rewriteCopy: rewrite }),
@@ -179,7 +181,8 @@ export function parsePhotoStory(value, { sceneCount } = {}) {
       const stockQuery = String(scene?.stockQuery || '').trim().replace(/\s+/g, ' ');
       if (stockQuery.length < 8 || stockQuery.length > 200) throw new Error(`第 ${index + 1} 页缺少可搜索的底图描述。`);
       return {
-        sourceIndex: index + 1, template: 'stock', textKind: 'stock',
+        sourceIndex: index + 1, template: 'stock',
+        textKind: index === 0 || String(scene?.textKind || '').trim().toLowerCase() === 'cover' ? 'cover' : 'content',
         sourceImageAnalysis: sceneAnalysis(scene?.sourceImageAnalysis),
         originalText, title: pageTitle, subtitle, body: pageBody, text, stockQuery,
       };

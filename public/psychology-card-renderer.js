@@ -1,4 +1,4 @@
-import { cardCanvasSize, wrapLines, planCenteredBlock, stripListMarker } from "./psychology-text-card.js";
+import { cardCanvasSize, wrapLines, wrapOverlayLines, planCenteredBlock, stripListMarker } from "./psychology-text-card.js";
 
 const COVER_BG = "#111111";
 const COVER_INK = "#f4f1ea";
@@ -115,6 +115,7 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
   ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
   ctx.restore();
   const pad = Math.round(width * 0.1);
+  const smash = slide.smash === true;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillStyle = "#111111";
@@ -124,16 +125,20 @@ export function renderOverlayCard(slide, image, aspectRatio, { grayscale = false
     const lines = [];
     if (slide.title) {
       ctx.font = `700 ${titleSize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
-      wrapLines(slide.title, (text) => ctx.measureText(text).width, width - pad * 2).forEach((line) => lines.push({ text: line, size: titleSize, weight: 700, gap: titleSize * 1.12 }));
+      wrapOverlayLines(slide.title, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((line, index, packed) => {
+        lines.push({ text: line, size: titleSize, weight: 700, gap: titleSize * 1.12 + (index === packed.length - 1 ? titleSize * 0.28 : 0) });
+      });
     }
     if (slide.subtitle) {
       ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
-      wrapLines(slide.subtitle, (text) => ctx.measureText(text).width, width - pad * 2).forEach((line) => lines.push({ text: line, size: bodySize, weight: 400, gap: bodySize * 1.35 }));
+      wrapOverlayLines(slide.subtitle, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((line, index, packed) => {
+        lines.push({ text: line, size: bodySize, weight: 400, gap: bodySize * 1.35 + (index === packed.length - 1 ? bodySize * 0.7 : 0) });
+      });
     }
     ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
     for (const line of slide.lines || []) {
-      wrapLines(line, (text) => ctx.measureText(text).width, width - pad * 2).forEach((part, index) => {
-        lines.push({ text: part, size: bodySize, weight: 400, gap: bodySize * 1.38 + (index === 0 ? bodySize * 0.18 : 0) });
+      wrapOverlayLines(line, (text) => ctx.measureText(text).width, width - pad * 2, smash).forEach((part, index) => {
+        lines.push({ text: part, size: bodySize, weight: 400, gap: bodySize * 1.38 + (index === 0 ? bodySize * 0.7 : 0) });
       });
     }
     const total = lines.reduce((sum, line) => sum + line.gap, 0);

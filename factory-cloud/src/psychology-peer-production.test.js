@@ -65,6 +65,7 @@ function cloudFixture(t, failSecond = false) {
     async sleep(name) { sleeps.push(name); }
   };
   let pexelsCalls=0;
+  const pexelsQueries=[];
   const env = {
     DB:db,KIE_API_KEY:'test-key',DEEPSEEK_API_KEY:'deepseek-test',PEXELS_API_KEY:'pexels-test',FACTORY_PUBLIC_BASE_URL:'https://factory.test',
     ARCHIVE:{
@@ -80,6 +81,7 @@ function cloudFixture(t, failSecond = false) {
     }
     if(String(url).includes('api.pexels.com')) {
       pexelsCalls++;
+      pexelsQueries.push(decodeURIComponent(String(url).replace(/\+/g,' ')));
       if(failSecond) return new Response('no', {status:502});
       return Response.json(pexelsPhotos());
     }
@@ -87,20 +89,44 @@ function cloudFixture(t, failSecond = false) {
     if(String(url).includes('/createTask')) {const input=JSON.parse(init.body);submissions.push(input);throw new Error('photo recreation must not submit Z-Image');}
     throw new Error('unexpected fetch '+url);
   }};
-  return {env,step,plan,submissions,sqlite,sleeps,imageUrls,pexelsCalls:()=>pexelsCalls,objects};
+  return {env,step,plan,submissions,sqlite,sleeps,imageUrls,pexelsCalls:()=>pexelsCalls,pexelsQueries,objects};
 }
 
 test('cloud workflow classifies six pages, matches stock photos, and replay does not search again', async t => {
   const f=cloudFixture(t);
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(result.count,6);assert.equal(f.submissions.length,0);assert.equal(f.sleeps.length,0);assert.equal(f.pexelsCalls(),1);
+  assert.match(f.pexelsQueries[0],/bright airy daylight/);
+  assert.match(f.pexelsQueries[0],/no people/);
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'done');assert.equal(row.worker_id,'cloud-photo');
   const saved=JSON.parse(row.result_json);
   assert.deepEqual(saved.results.map(item=>item.imageModel),['text-card','stock','text-card','stock','text-card','stock']);
+  assert.equal(saved.results[1].textKind,'content');
   assert.equal(saved.results[1].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
   await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(f.pexelsCalls(),1);assert.equal(f.submissions.length,0);
+});
+
+test('cover and content stock pages search Pexels twice with different queries', async t => {
+  const f=cloudFixture(t);
+  f.plan.scenes=[
+    {template:'stock', textKind:'cover', title:'5 flirting mistakes', subtitle:'from a girl', body:'', text:'5 flirting mistakes', stockQuery:'couple kissing sunset desert mountains', sourceImageAnalysis:{subject:'couple kissing',background:'sunset desert mountains',colors:'warm dusk'}},
+    {template:'stock', textKind:'content', title:'2. you become their therapist', body:'example: every conversation turns into advice\n\nwhat to do instead: stay playful', text:'2. you become their therapist', stockQuery:'bright airy daylight sky pastel horizon'},
+    {template:'stock', textKind:'content', title:'4. you respond like a friend', body:'what to do instead: match their energy', text:'4. you respond like a friend', stockQuery:'soft overcast beach horizon'},
+  ];
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'Flirting mistakes',script:'Five flirting mistakes that friendzone you.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:f.imageUrls.slice(0,3)}}));
+  const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+  assert.equal(result.count,3);
+  assert.equal(f.pexelsCalls(),2);
+  assert.match(f.pexelsQueries[0],/couple kissing sunset/);
+  assert.match(f.pexelsQueries[0],/couple people/);
+  assert.doesNotMatch(f.pexelsQueries[0],/no people/);
+  assert.match(f.pexelsQueries[1],/bright airy daylight/);
+  assert.match(f.pexelsQueries[1],/no people/);
+  const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
+  assert.deepEqual(saved.results.map(item=>item.textKind),['cover','content','content']);
+  assert.equal(saved.results[0].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
 });
 
 test('single-image photo post uses DeepSeek V4.1 Flash once and renders a text card without Z-Image', async t => {
@@ -368,6 +394,7 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   assert.equal(plan.scenes[0].template,'text');
   assert.equal(plan.scenes[0].textKind,'cover');
   assert.equal(plan.scenes[1].template,'stock');
+  assert.equal(plan.scenes[1].textKind,'content');
   assert.throws(()=>parsePhotoStory({title:'test',scenes:[scenes[0]]}));
   assert.throws(()=>parsePhotoStory({title:'One',hooks:['First','Second','Third'],scenes:[{template:'stock',title:'Hi',stockQuery:'fog'}]}));
   const single=parsePhotoStory({title:'One fresh thought',hooks:['First','Second','Third'],scenes:[scenes[0]]},{sceneCount:1});
@@ -379,6 +406,10 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   const rewriteOff=buildPhotoStoryPrompt({topic:'Silence',script:'copy',rewriteCopy:false},{sceneCount:1});
   assert.doesNotMatch(rewriteOn,/Z-Image/);
   assert.match(rewriteOn,/Keep two copy streams strictly separate/);
+  assert.match(rewriteOn,/Page 1 is the cover/);
+  assert.match(rewriteOn,/Couples, people and visible faces are allowed on the cover/);
+  assert.match(rewriteOn,/BRIGHT airy empty background/);
+  assert.match(rewriteOn,/Keep normal English spaces/);
   assert.match(rewriteOn,/come ONLY from the visible overlay words on that one source image/);
   assert.match(rewriteOn,/Do not use the post title or caption/);
   assert.match(rewriteOff,/rewriteCopy is false/);
@@ -393,6 +424,7 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   assert.deepEqual(peerPhotoImageUrls({videoData:{imageUrls:[heic]}}),[heic]);
   const emptyOverlay=parsePhotoStory({title:'Post title only',hooks:['First','Second','Third'],caption:'Post caption',scenes:[{template:'stock',stockQuery:'empty misty forest hallway cinematic still'}]},{sceneCount:1});
   assert.equal(emptyOverlay.scenes[0].text,'');
+  assert.equal(emptyOverlay.scenes[0].textKind,'cover');
   assert.equal(emptyOverlay.caption,'Post caption');
   const result={plan,results:[{template:'stock',imageUrl:'https://images.pexels.com/photos/1/portrait.jpeg',fileUrl:'/api/official-tiktok/stock-photos/file?url=https%3A%2F%2Fimages.pexels.com%2Fphotos%2F1%2Fportrait.jpeg',imageModel:'stock',sceneIndex:0,title:scenes[1].title,stockQuery:scenes[1].stockQuery}]};
   const persisted=persistableJobResult(result);

@@ -190,8 +190,24 @@ export function isAllowedStockPhotoUrl(value) {
   }
 }
 
-export function buildPexelsSearchQuery(value) {
-  const cleaned = String(value || "").replace(PEOPLE_PATTERN, " ").replace(/\s+/g, " ").trim();
+export function stockSearchRole(value) {
+  const role = String(value || "").trim().toLowerCase();
+  return role === "cover" || role === "content" ? role : "";
+}
+
+export function buildPexelsSearchQuery(value, options = {}) {
+  const role = stockSearchRole(options.role);
+  const allowPeople = options.allowPeople === true || role === "cover";
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (allowPeople) {
+    const base = raw || "couple sunset landscape portrait";
+    return `${base} portrait cinematic couple people`;
+  }
+  const cleaned = raw.replace(PEOPLE_PATTERN, " ").replace(/\s+/g, " ").trim();
+  if (role === "content") {
+    const base = cleaned || "bright airy daylight sky pastel horizon";
+    return `${base} bright airy daylight soft light empty scene no people`;
+  }
   const base = cleaned || "cinematic empty landscape fog forest interior hallway";
   return `${base} cinematic establishing shot empty scene still life no people`;
 }
@@ -203,12 +219,15 @@ export function photoLooksLikePeople(...values) {
 export async function searchStockPhotos(env, searchParams) {
   const query = String(searchParams.get("q") || searchParams.get("query") || "").trim();
   const count = Math.max(1, Math.min(30, Number(searchParams.get("count") || 12) || 12));
+  const role = stockSearchRole(searchParams.get("role"));
+  const allowPeople = searchParams.get("allowPeople") === "1" || role === "cover";
+  const builtQuery = buildPexelsSearchQuery(query, { role, allowPeople });
   const accessKey = String(env.PEXELS_API_KEY || "").trim();
   if (!accessKey) {
     return { configured: false, photos: [], error: "还没有配置 Pexels。可以先粘贴 Pexels 图片链接。" };
   }
   const endpoint = new URL("https://api.pexels.com/v1/search");
-  endpoint.searchParams.set("query", buildPexelsSearchQuery(query));
+  endpoint.searchParams.set("query", builtQuery);
   endpoint.searchParams.set("orientation", "portrait");
   endpoint.searchParams.set("size", "large");
   endpoint.searchParams.set("per_page", String(Math.min(80, Math.max(20, count * 4))));
@@ -220,7 +239,7 @@ export async function searchStockPhotos(env, searchParams) {
   const data = await response.json();
   const photos = (Array.isArray(data.photos) ? data.photos : []).map((photo) => {
     const alt = String(photo.alt || "");
-    if (photoLooksLikePeople(alt, photo.url)) return null;
+    if (!allowPeople && photoLooksLikePeople(alt, photo.url)) return null;
     const imageUrl = photo.src?.portrait || photo.src?.large2x || photo.src?.large || photo.src?.original || "";
     const thumbUrl = photo.src?.medium || photo.src?.small || imageUrl;
     if (!isAllowedStockPhotoUrl(imageUrl)) return null;
@@ -234,7 +253,7 @@ export async function searchStockPhotos(env, searchParams) {
       fileUrl: `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(imageUrl)}`,
     };
   }).filter(Boolean).slice(0, count);
-  return { configured: true, photos, query: buildPexelsSearchQuery(query) };
+  return { configured: true, photos, query: builtQuery };
 }
 
 export async function proxyStockPhoto(env, rawUrl) {

@@ -61,16 +61,17 @@ export async function runPeerPhotoWorkflow(env, event, step) {
         body:index === 0 ? '' : [scene.subtitle,scene.body].filter(Boolean).join('\n'), subtitle:'', stockQuery:'',
       }));
     }
-    await save('story-ready', 'running', 15, `${total} 页已分类，开始匹配文案模板或素材库底图…`, '', {productionStage:'images'});
-    let stockPhotos = null;
+    await save('story-ready', 'running', 15, `${total} 页已分类，封面和详情底图分开搜索…`, '', {productionStage:'images'});
+    const stockPools = { cover: null, content: null };
     for (let index = 0; index < plan.scenes.length; index++) {
       const scene = plan.scenes[index];
       if (scene.template === 'stock') {
-        await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页垫底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
-        if (!stockPhotos) stockPhotos = await loadStockPhotos(env, step, plan.scenes);
-        const photo = stockPhotos.shift();
-        if (!photo) throw new Error(`第 ${index + 1} 页没有可用的素材库底图。`);
-        results.push(photoPage(scene, index, photo));
+        const role = stockRole(scene, index);
+        await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页匹配${role === 'cover' ? '封面' : '详情'}底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
+        if (!stockPools[role]) stockPools[role] = await loadStockPhotos(env, step, role, plan.scenes);
+        const photo = stockPools[role].shift();
+        if (!photo) throw new Error(`第 ${index + 1} 页没有可用的${role === 'cover' ? '封面' : '详情'}底图。`);
+        results.push(photoPage(scene, index, photo, role));
         await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页。`, '', {productionScene:{index,imageUrl:photo.fileUrl || photo.imageUrl,imagePrompt:scene.stockQuery,imageStatus:'done'}});
       } else {
         results.push(textPage(scene, index));
@@ -89,23 +90,52 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   }
 }
 
-async function loadStockPhotos(env, step, scenes) {
-  const needed = scenes.filter((scene) => scene.template === 'stock').length;
-  const count = String(Math.max(needed, 6));
-  const found = await step.do('stock-search', READ, () => searchStockPhotos(env, new URLSearchParams({
-    q: 'cinematic empty landscape fog forest interior hallway',
-    count
-  })));
+function stockRole(scene, index) {
+  return scene.textKind === 'cover' || index === 0 ? 'cover' : 'content';
+}
+
+function coverStockQuery(scenes) {
+  const scene = scenes.find((item, index) => item.template === 'stock' && stockRole(item, index) === 'cover');
+  const analysis = scene?.sourceImageAnalysis || {};
+  const text = [scene?.stockQuery, analysis.subject, analysis.background, analysis.composition, analysis.colors]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 160);
+  return text || 'couple sunset landscape portrait';
+}
+
+function contentStockQuery(scenes) {
+  const preferred = scenes
+    .filter((item, index) => item.template === 'stock' && stockRole(item, index) === 'content')
+    .map((item) => String(item.stockQuery || '').trim())
+    .find((query) => /bright|sky|daylight|pastel|airy|horizon|beach|soft light/i.test(query));
+  return String(preferred || 'bright airy daylight sky pastel horizon').replace(/\s+/g, ' ').slice(0, 160);
+}
+
+async function loadStockPhotos(env, step, role, scenes) {
+  const needed = scenes.filter((scene, index) => scene.template === 'stock' && stockRole(scene, index) === role).length;
+  const count = String(Math.max(needed, role === 'cover' ? 4 : 6));
+  const query = role === 'cover' ? coverStockQuery(scenes) : contentStockQuery(scenes);
+  const params = { q: query, count, role };
+  if (role === 'cover') params.allowPeople = '1';
+  const found = await step.do(`stock-search-${role}`, READ, () => searchStockPhotos(env, new URLSearchParams(params)));
   if (!found.configured) throw new Error('还没有配置 Pexels，无法为有底图的页面匹配素材。');
   const photos = [...(found.photos || [])];
   if (!photos.length) {
-    const fallback = await step.do('stock-search-fallback', READ, () => searchStockPhotos(env, new URLSearchParams({
-      q: 'empty fog forest interior hallway still life',
-      count
+    const fallbackQuery = role === 'cover'
+      ? 'couple kissing sunset desert mountains landscape'
+      : 'bright airy daylight sky pastel horizon ocean';
+    const fallback = await step.do(`stock-search-${role}-fallback`, READ, () => searchStockPhotos(env, new URLSearchParams({
+      q: fallbackQuery,
+      count,
+      role,
+      ...(role === 'cover' ? { allowPeople: '1' } : {})
     })));
     photos.push(...(fallback.photos || []));
   }
-  if (!photos.length) throw new Error('没有搜到可用的素材库底图。');
+  if (!photos.length) throw new Error(role === 'cover' ? '没有搜到可用的封面底图。' : '没有搜到可用的详情底图。');
   return photos;
 }
 
@@ -127,12 +157,12 @@ function textPage(scene, index) {
   };
 }
 
-function photoPage(scene, index, photo) {
+function photoPage(scene, index, photo, role = 'content') {
   return {
     sceneIndex: index,
     sourceIndex: scene.sourceIndex,
     template: 'stock',
-    textKind: 'stock',
+    textKind: role === 'cover' ? 'cover' : 'content',
     title: scene.title,
     subtitle: scene.subtitle,
     body: scene.body,
