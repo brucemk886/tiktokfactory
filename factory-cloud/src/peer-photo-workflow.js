@@ -9,6 +9,8 @@ import { withProductionPatch, compactProduction } from '../../scripts/production
 const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' };
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
+const PHOTO_STORY_MODEL = 'gemini-3-5-flash';
+const PHOTO_STORY_FALLBACK_MODEL = 'gemini-3-8-flash';
 
 export async function runPeerPhotoWorkflow(env, event, step) {
   const id = event.payload.jobId;
@@ -21,11 +23,12 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   let total = 0;
   let state = {};
   let kiePhotos = { urls: [], keys: [] };
+  const chat = { model: PHOTO_STORY_MODEL, primaryFailed: false };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
     await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_jobs SET status=?, percent=?, message=?, result_json=?, error=?, worker_id='cloud-photo', updated_at=?, completed_at=? WHERE id=?`)
-      .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: 'gemini-3-8-flash', progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
+      .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: chat.model, progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
   }
   try {
     await save('starting', 'running', 3, '云端正在获取原帖全部图片…', '', {productionStage:'script'});
@@ -39,13 +42,11 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成 Gemini 可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
     kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
     const rewrite = payload.rewriteCopy !== false;
-    await save('source-ready', 'running', 8, `原图已转码，Gemini 3.8 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
+    await save('source-ready', 'running', 8, `原图已转码，Gemini 3.5 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
     let validationError = '';
     for (let attempt = 0; attempt < 3; attempt++) {
-      const text = await paidCall(step, `story-${attempt}`, async () => kie.createChat(
-        buildPhotoStoryPrompt(payload, { sceneCount: total }) + (validationError ? `\nCorrect this validation error: ${validationError}` : ''),
-        { model: 'gemini-3-8-flash', imageUrls: await loadPeerPhotoChatImages(env, kiePhotos) }
-      ));
+      const prompt = buildPhotoStoryPrompt(payload, { sceneCount: total }) + (validationError ? `\nCorrect this validation error: ${validationError}` : '');
+      const text = await photoChat(env, kie, step, `story-${attempt}`, prompt, kiePhotos, chat);
       try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
     }
     if (!plan) throw new Error(validationError);
@@ -95,10 +96,16 @@ async function matchStockPhoto(env, kie, step, scene, kiePhotos, index) {
         keys: Array.isArray(kiePhotos.keys) ? kiePhotos.keys.slice(index, index + 1) : [],
         urls: [sourceUrl]
       });
-      return kie.createChat(buildStockPickPrompt(scene, candidates), {
-        model: 'gemini-3-8-flash',
-        imageUrls: [...sourceImages, ...candidates.map((photo) => photo.imageUrl)].filter((url) => isChatImage(url)).slice(0, 6)
-      });
+      const imageUrls = [...sourceImages, ...candidates.map((photo) => photo.imageUrl)].filter((url) => isChatImage(url)).slice(0, 6);
+      try {
+        return await kie.createChat(buildStockPickPrompt(scene, candidates), {
+          model: PHOTO_STORY_MODEL, reasoningEffort: 'low', imageUrls
+        });
+      } catch {
+        return await kie.createChat(buildStockPickPrompt(scene, candidates), {
+          model: PHOTO_STORY_FALLBACK_MODEL, reasoningEffort: 'low', imageUrls
+        });
+      }
     });
     return candidates[parseStockPick(text, candidates.length)];
   } catch {
@@ -146,6 +153,28 @@ function photoPage(scene, index, photo) {
 
 function progress(total, completed) {
   return Math.min(95, Math.round(15 + (Math.max(0, completed) * 80) / Math.max(1, total)));
+}
+
+async function photoChat(env, kie, step, name, prompt, kiePhotos, chat) {
+  const imageUrls = await loadPeerPhotoChatImages(env, kiePhotos);
+  const models = chat.primaryFailed ? [PHOTO_STORY_FALLBACK_MODEL] : [PHOTO_STORY_MODEL, PHOTO_STORY_FALLBACK_MODEL];
+  let lastError = 'Gemini 分析原图失败。';
+  for (const model of models) {
+    try {
+      const text = await paidCall(step, `${name}-${model}`, () => kie.createChat(prompt, {
+        model,
+        reasoningEffort: 'low',
+        imageUrls
+      }));
+      chat.model = model;
+      if (model === PHOTO_STORY_FALLBACK_MODEL) chat.primaryFailed = true;
+      return text;
+    } catch (error) {
+      lastError = String(error?.message || error).slice(0, 1000);
+      if (model === PHOTO_STORY_MODEL) chat.primaryFailed = true;
+    }
+  }
+  throw new Error(lastError);
 }
 
 async function paidCall(step, name, action, config = SUBMIT, fallback = 'Gemini 分析原图失败。') {

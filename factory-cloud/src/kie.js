@@ -67,7 +67,7 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     };
   }
 
-  async function createChatCompletion(prompt, { model = 'gemini-3-8-flash', imageUrls = [] } = {}) {
+  async function createChatCompletion(prompt, { model = 'gemini-3-8-flash', imageUrls = [], reasoningEffort } = {}) {
     const paths = {
       'gemini-3-5-flash': '/gemini-3-5-flash-openai/v1/chat/completions',
       'gemini-3-8-flash': '/gemini-3-8-flash-openai/v1/chat/completions'
@@ -75,13 +75,14 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     if (!paths[model]) throw new Error('不支持的 Kie 对话模型。');
     const images = imageUrls.map(value => String(value || '').trim());
     if (images.length > 35 || images.some(value => !isKieChatImageUrl(value))) throw new Error('多模态图片地址无效。');
+    const thinking = reasoningEffort === 'low' || reasoningEffort === 'high' ? reasoningEffort : 'medium';
     const data = await kieRequest(paths[model], {
       method: 'POST',
       signal: AbortSignal.timeout(15 * 60 * 1000),
       body: JSON.stringify({ messages: [{ role: 'user', content: [
         { type: 'text', text: prompt },
         ...images.map(url => ({ type: 'image_url', image_url: { url } }))
-      ] }], stream: false, include_thoughts: false, reasoning_effort: 'medium' })
+      ] }], stream: false, include_thoughts: false, reasoning_effort: thinking })
     });
     const payload = Array.isArray(data?.choices) ? data : data?.data || data;
     const text = chatText(payload);

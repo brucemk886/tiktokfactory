@@ -100,7 +100,19 @@ test("Gemini 3.8 Flash is the default chat model and receives ordered reference 
   const result = await kie.createChatCompletion("Analyze in order", { imageUrls: images });
   assert.deepEqual(result, { text:"rewritten", model:"gemini-3-8-flash", creditsConsumed:0.4 });
   assert.match(calls[0].url, /gemini-3-8-flash-openai/);
+  assert.equal(calls[0].body.reasoning_effort, "medium");
   assert.deepEqual(calls[0].body.messages[0].content.slice(1).map(part => part.image_url.url), images);
+});
+
+test("photo classification can request Gemini 3.5 Flash with low reasoning", async () => {
+  const calls = [];
+  const kie = createKieClient({ apiKey: "test-key", fetchImpl: async (url, init = {}) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    return json({ choices: [{ message: { content: "ok" } }] });
+  } });
+  await kie.createChat("Classify", { model: "gemini-3-5-flash", reasoningEffort: "low", imageUrls: ["https://p16.tiktokcdn-us.com/1.webp"] });
+  assert.match(calls[0].url, /gemini-3-5-flash-openai/);
+  assert.equal(calls[0].body.reasoning_effort, "low");
 });
 
 test("accepts inline data URLs and surfaces nested Kie error messages", async () => {
