@@ -9,6 +9,7 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
+import { COVER_BACKDROPS, formatBackdropDate, pickCoverBackdrop } from "../../public/psychology-cover-backdrops.js";
 import { buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
@@ -309,7 +310,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/>AI生图</);
   assert.match(html,/>素材库图片</);
   assert.match(html,/>文案图片</);
-  assert.match(html,/>封面模板</);
+  assert.match(html,/id="cardAspect"><option value="9:16" selected>/);
+  assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
   assert.match(html,/>内容模板</);
   assert.match(html,/>内容标题</);
   assert.match(html,/文案（一行一条）/);
@@ -327,6 +329,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/mergeTextCardSets/);
   assert.match(browser,/不会清掉已生成的封面/);
+  assert.match(browser,/pickCoverBackdrop/);
+  assert.match(browser,/paintCoverBackdrop/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
   assert.match(browser,/smash: false/);
   assert.doesNotMatch(browser,/smashWords|stockSmash|cardAccent/);
@@ -393,6 +397,21 @@ test("psychology text cards and stock overlays do not need generated images", ()
   const decoded = decodeRenderedPhoto({ imageBase64: `data:image/jpeg;base64,${encoded}`, contentType: "image/jpeg" });
   assert.equal(decoded.contentType, "image/jpeg");
   assert.throws(() => decodeRenderedPhoto({ imageBase64: "not-an-image", contentType: "image/jpeg" }), /损坏|无效/);
+});
+
+test("cover backdrops are a 30-template English pool that can be picked at random", () => {
+  assert.equal(COVER_BACKDROPS.length, 30);
+  assert.equal(new Set(COVER_BACKDROPS.map((item) => item.id)).size, 30);
+  const chinese = /[\u4e00-\u9fff]/;
+  for (const item of COVER_BACKDROPS) {
+    assert.equal(chinese.test(JSON.stringify(item)), false);
+    assert.ok(item.ink && item.bg && item.kind);
+  }
+  assert.equal(pickCoverBackdrop({ random: 0 }).id, COVER_BACKDROPS[0].id);
+  assert.notEqual(pickCoverBackdrop({ excludeId: COVER_BACKDROPS[0].id, random: 0 }).id, COVER_BACKDROPS[0].id);
+  const date = formatBackdropDate(new Date("2026-09-18T12:00:00+08:00"));
+  assert.equal(chinese.test(date.weekday + date.monthDay), false);
+  assert.match(date.monthDay, /September/);
 });
 
 test("pexels stock search stays portrait and drops photos that look like people", async () => {

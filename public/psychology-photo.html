@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/module-pages.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
-    <link rel="stylesheet" href="/psychology-photo.css?v=20260918-9" />
+    <link rel="stylesheet" href="/psychology-photo.css?v=20260918-10" />
   </head>
   <body class="work-page module-page psychology-photo-page">
     <nav class="side-tabs"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
@@ -56,7 +56,7 @@
             <label class="field photo-prompt-field"><span>或粘贴图片链接</span><textarea id="stockUrls" class="photo-compact-textarea" rows="3" maxlength="4000" placeholder="https://images.pexels.com/photos/..."></textarea></label>
             <div class="photo-toolbar">
               <label class="field compact-field"><span>卡片数量</span><select id="stockCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
-              <label class="field compact-field"><span>画面比例</span><select id="stockAspect"><option value="4:5" selected>4:5 竖图</option><option value="1:1">1:1 方图</option><option value="3:4">3:4 竖图</option><option value="9:16">9:16 竖图</option></select></label>
+              <label class="field compact-field"><span>画面比例</span><select id="stockAspect"><option value="9:16" selected>9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
               <label class="photo-switch"><input id="stockGray" type="checkbox" />黑白照片</label>
               <button id="renderStockBtn" type="button">生成素材图</button>
             </div>
@@ -70,7 +70,7 @@
             <label class="field photo-prompt-field" id="cardBodyField"><span>文案（一行一条）</span><textarea id="cardBody" class="photo-compact-textarea" rows="6" maxlength="2000" placeholder="Freaking out at the sign of too much intimacy&#10;Craving alone time"></textarea></label>
             <div class="photo-toolbar">
               <label class="field compact-field"><span>卡片数量</span><select id="cardCount"><option selected>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
-              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="4:5" selected>4:5 竖图</option><option value="1:1">1:1 方图</option><option value="3:4">3:4 竖图</option><option value="9:16">9:16 竖图</option></select></label>
+              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="9:16" selected>9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
               <button id="renderCardBtn" type="button">生成文案图片</button>
             </div>
           </div>
@@ -112,6 +112,6 @@
       </div>
     </main>
     <script src="/access.js"></script>
-    <script type="module" src="/psychology-photo.js?v=20260918-9"></script>
+    <script type="module" src="/psychology-photo.js?v=20260918-10"></script>
   </body>
 </html>

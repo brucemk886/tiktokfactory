@@ -1,7 +1,8 @@
 import { buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js";
+import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", textTemplate: "content", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), pollTimer: 0, busy: false };
+const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -114,9 +115,11 @@ async function generateTextCards() {
       template: state.textTemplate,
     });
     const aspectRatio = $("#cardAspect").value;
+    const backdrop = state.textTemplate === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId }) : null;
+    if (backdrop) state.lastCoverBackdropId = backdrop.id;
     const cards = [];
     for (const [index, slide] of slides.entries()) {
-      const blob = await canvasToJpeg(renderTextCard(slide, aspectRatio));
+      const blob = await canvasToJpeg(renderTextCard(slide, aspectRatio, backdrop));
       const url = URL.createObjectURL(blob);
       cards.push({
         key: `text:${slide.kind}:${Date.now()}:${index}`,
@@ -147,36 +150,37 @@ async function generateTextCards() {
   }
 }
 
-function renderTextCard(slide, aspectRatio) {
-  return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio) : renderContentCard(slide, aspectRatio);
+function renderTextCard(slide, aspectRatio, backdrop) {
+  return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio, backdrop) : renderContentCard(slide, aspectRatio);
 }
 
-function renderCoverCard(slide, aspectRatio) {
+function renderCoverCard(slide, aspectRatio, backdrop) {
   const { width, height } = cardCanvasSize(aspectRatio);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
+  const theme = backdrop || pickCoverBackdrop({ excludeId: state.lastCoverBackdropId });
+  state.lastCoverBackdropId = theme.id;
+  paintCoverBackdrop(ctx, width, height, theme);
   const pad = Math.round(width * 0.12);
-  const family = '"Avenir Next","Segoe UI",Helvetica,Arial,sans-serif';
-  let size = Math.round(width * 0.07);
+  const family = '"Iowan Old Style","Palatino Linotype",Georgia,"Times New Roman",serif';
+  let size = Math.round(width * 0.078);
   let lines = [];
   for (let attempt = 0; attempt < 8; attempt += 1) {
     ctx.font = `600 ${size}px ${family}`;
     lines = wrapLines(slide.title, (text) => ctx.measureText(text).width, width - pad * 2);
-    if (lines.length * size * 1.2 <= height - pad * 2 || attempt === 7) break;
+    if (lines.length * size * 1.18 <= height - pad * 2 || attempt === 7) break;
     size = Math.max(28, Math.round(size * 0.9));
   }
-  ctx.fillStyle = "#1e1e1e";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#f5f5f5";
+  ctx.fillStyle = theme.ink;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.font = `600 ${size}px ${family}`;
-  let y = planCenteredBlock(lines.length * size * 1.2, height, pad);
+  let y = planCenteredBlock(lines.length * size * 1.18, height, pad);
   for (const line of lines) {
     ctx.fillText(line, width / 2, y);
-    y += size * 1.2;
+    y += size * 1.18;
   }
   return canvas;
 }
