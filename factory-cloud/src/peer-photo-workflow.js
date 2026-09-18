@@ -106,12 +106,45 @@ function coverStockQuery(scenes) {
   return text || 'couple sunset landscape portrait';
 }
 
+// Content pages unify on one style: group each page's background description
+// into a scenery bucket, keep the majority bucket, and search once with its
+// first description. Minority styles (e.g. 2 starry pages among 3 ocean
+// pages) reuse the majority pool instead of pulling in stray results.
+const CONTENT_STYLES = [
+  /ocean|sea\b|seaside|beach|coast|shore|wave|bay|harbor/i,
+  /night|star|starry|moon|milky way|galaxy/i,
+  /forest|tree|wood|jungle|misty/i,
+  /mountain|hill|cliff|valley|canyon/i,
+  /desert|dune|sand\b/i,
+  /field|meadow|grass|flower/i,
+  /interior|room|hallway|window|indoor|cafe/i,
+  /sky|cloud|sunset|sunrise|dawn|dusk|horizon|pastel/i,
+];
+
+function contentStyleIndex(query) {
+  for (let index = 0; index < CONTENT_STYLES.length; index += 1) {
+    if (CONTENT_STYLES[index].test(query)) return index;
+  }
+  return -1;
+}
+
 function contentStockQuery(scenes) {
-  const preferred = scenes
+  const queries = scenes
     .filter((item, index) => item.template === 'stock' && stockRole(item, index) === 'content')
-    .map((item) => String(item.stockQuery || '').trim())
-    .find((query) => /bright|sky|daylight|pastel|airy|horizon|beach|soft light/i.test(query));
-  return String(preferred || 'bright airy daylight sky pastel horizon').replace(/\s+/g, ' ').slice(0, 160);
+    .map((item) => String(item.stockQuery || '').trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+  if (!queries.length) return 'bright airy daylight sky pastel horizon';
+  const buckets = new Map();
+  for (const query of queries) {
+    const style = contentStyleIndex(query);
+    if (!buckets.has(style)) buckets.set(style, []);
+    buckets.get(style).push(query);
+  }
+  let dominant = null;
+  for (const list of buckets.values()) {
+    if (!dominant || list.length > dominant.length) dominant = list;
+  }
+  return dominant[0].slice(0, 160);
 }
 
 async function loadStockPhotos(env, step, role, scenes) {

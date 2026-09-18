@@ -216,6 +216,18 @@ export function photoLooksLikePeople(...values) {
   return PEOPLE_PATTERN.test(values.map((value) => String(value || "")).join(" "));
 }
 
+// Relative luminance (0..1) of a Pexels avg_color like "#aabbcc"; photos
+// without the field land in the middle so sorting stays stable.
+export function photoLuminance(avgColor) {
+  const match = String(avgColor || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  if (!match) return 0.5;
+  const value = parseInt(match[1], 16);
+  const r = (value >> 16) & 0xff;
+  const g = (value >> 8) & 0xff;
+  const b = value & 0xff;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
 export async function searchStockPhotos(env, searchParams) {
   const query = String(searchParams.get("q") || searchParams.get("query") || "").trim();
   const count = Math.max(1, Math.min(30, Number(searchParams.get("count") || 12) || 12));
@@ -237,7 +249,7 @@ export async function searchStockPhotos(env, searchParams) {
   });
   if (!response.ok) throw statusError(`Pexels 搜索失败：HTTP ${response.status}`, 502);
   const data = await response.json();
-  const photos = (Array.isArray(data.photos) ? data.photos : []).map((photo) => {
+  let photos = (Array.isArray(data.photos) ? data.photos : []).map((photo) => {
     const alt = String(photo.alt || "");
     if (!allowPeople && photoLooksLikePeople(alt, photo.url)) return null;
     const imageUrl = photo.src?.portrait || photo.src?.large2x || photo.src?.large || photo.src?.original || "";
@@ -248,11 +260,16 @@ export async function searchStockPhotos(env, searchParams) {
       author: String(photo.photographer || "Pexels"),
       pageUrl: String(photo.url || ""),
       alt,
+      avgColor: String(photo.avg_color || ""),
+      luminance: photoLuminance(photo.avg_color),
       imageUrl,
       thumbUrl: `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(thumbUrl)}`,
       fileUrl: `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(imageUrl)}`,
     };
-  }).filter(Boolean).slice(0, count);
+  }).filter(Boolean);
+  // Content pads carry dark text, so hand out the brightest results first.
+  if (role === "content") photos = photos.slice().sort((a, b) => b.luminance - a.luminance);
+  photos = photos.slice(0, count);
   return { configured: true, photos, query: builtQuery };
 }
 

@@ -9,7 +9,7 @@ import { handleCompat, publicPsychologySettings } from "./compat.js";
 import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
-import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
+import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, photoLuminance, searchStockPhotos } from "./photo-publishing.js";
 import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker, wrapOverlayLines } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
@@ -545,6 +545,24 @@ test("pexels stock search stays portrait and drops photos that look like people"
   assert.equal(cover.photos[0].id, "9");
   assert.match(requested.at(-1).href, /couple/);
   assert.doesNotMatch(requested.at(-1).href, /no(\+|%20)people/);
+
+  assert.equal(photoLuminance("#ffffff") > 0.99, true);
+  assert.equal(photoLuminance("#000000"), 0);
+  assert.equal(photoLuminance(""), 0.5);
+  const content = await searchStockPhotos({
+    PEXELS_API_KEY: "test-pexels-key",
+    fetch: async () => ({
+      ok: true,
+      json: async () => ({
+        photos: [
+          { id: 21, alt: "Dark stormy sea at night", avg_color: "#1a2430", photographer: "Lee", url: "https://www.pexels.com/photo/a", src: { portrait: "https://images.pexels.com/photos/21.jpeg" } },
+          { id: 22, alt: "Bright pastel sky over calm water", avg_color: "#cfd8e6", photographer: "Lee", url: "https://www.pexels.com/photo/b", src: { portrait: "https://images.pexels.com/photos/22.jpeg" } },
+          { id: 23, alt: "Soft morning haze over the bay", avg_color: "#8896a4", photographer: "Lee", url: "https://www.pexels.com/photo/c", src: { portrait: "https://images.pexels.com/photos/23.jpeg" } },
+        ],
+      }),
+    }),
+  }, new URLSearchParams("q=calm ocean&count=3&role=content"));
+  assert.deepEqual(content.photos.map((photo) => photo.id), ["22", "23", "21"]);
 });
 
 test("psychology overview uses the novel report page without changing navigation permissions", () => {

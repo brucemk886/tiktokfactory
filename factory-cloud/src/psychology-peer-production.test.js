@@ -96,7 +96,7 @@ test('cloud workflow classifies six pages, matches stock photos, and replay does
   const f=cloudFixture(t);
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(result.count,6);assert.equal(f.submissions.length,0);assert.equal(f.sleeps.length,0);assert.equal(f.pexelsCalls(),1);
-  assert.match(f.pexelsQueries[0],/bright airy daylight/);
+  assert.match(f.pexelsQueries[0],/misty forest hallway/);
   assert.match(f.pexelsQueries[0],/no people/);
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'done');assert.equal(row.worker_id,'cloud-photo');
@@ -108,24 +108,26 @@ test('cloud workflow classifies six pages, matches stock photos, and replay does
   assert.equal(f.pexelsCalls(),1);assert.equal(f.submissions.length,0);
 });
 
-test('cover and content stock pages search Pexels twice with different queries', async t => {
+test('cover and content stock pages search Pexels twice and content unifies on the majority style', async t => {
   const f=cloudFixture(t);
   f.plan.scenes=[
     {template:'stock', textKind:'cover', title:'5 flirting mistakes', subtitle:'from a girl', body:'', text:'5 flirting mistakes', stockQuery:'couple kissing sunset desert mountains', sourceImageAnalysis:{subject:'couple kissing',background:'sunset desert mountains',colors:'warm dusk'}},
-    {template:'stock', textKind:'content', title:'2. you become their therapist', body:'example: every conversation turns into advice\n\nwhat to do instead: stay playful', text:'2. you become their therapist', stockQuery:'bright airy daylight sky pastel horizon'},
-    {template:'stock', textKind:'content', title:'4. you respond like a friend', body:'what to do instead: match their energy', text:'4. you respond like a friend', stockQuery:'soft overcast beach horizon'},
+    {template:'stock', textKind:'content', title:'2. you become their therapist', body:'example: every conversation turns into advice\n\nwhat to do instead: stay playful', text:'2. you become their therapist', stockQuery:'bright pastel sunset over a calm ocean horizon'},
+    {template:'stock', textKind:'content', title:'3. you hide your interest', body:'what to do instead: say it plainly', text:'3. you hide your interest', stockQuery:'starry night sky over the mountains'},
+    {template:'stock', textKind:'content', title:'4. you respond like a friend', body:'what to do instead: match their energy', text:'4. you respond like a friend', stockQuery:'soft waves on a bright calm sea shore'},
   ];
-  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'Flirting mistakes',script:'Five flirting mistakes that friendzone you.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:f.imageUrls.slice(0,3)}}));
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'Flirting mistakes',script:'Five flirting mistakes that friendzone you.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:f.imageUrls.slice(0,4)}}));
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(result.count,3);
+  assert.equal(result.count,4);
   assert.equal(f.pexelsCalls(),2);
   assert.match(f.pexelsQueries[0],/couple kissing sunset/);
   assert.match(f.pexelsQueries[0],/couple people/);
   assert.doesNotMatch(f.pexelsQueries[0],/no people/);
-  assert.match(f.pexelsQueries[1],/bright airy daylight/);
+  assert.match(f.pexelsQueries[1],/calm ocean horizon/);
+  assert.doesNotMatch(f.pexelsQueries[1],/starry/);
   assert.match(f.pexelsQueries[1],/no people/);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.deepEqual(saved.results.map(item=>item.textKind),['cover','content','content']);
+  assert.deepEqual(saved.results.map(item=>item.textKind),['cover','content','content','content']);
   assert.equal(saved.results[0].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
 });
 
