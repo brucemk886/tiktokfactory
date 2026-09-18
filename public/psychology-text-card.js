@@ -9,6 +9,10 @@ export function cardCanvasSize(aspectRatio) {
   return TEXT_CARD_ASPECTS[aspectRatio] || TEXT_CARD_ASPECTS["1:1"];
 }
 
+export function planCenteredBlock(totalHeight, canvasHeight, pad) {
+  return Math.max(pad, Math.round((canvasHeight - totalHeight) / 2));
+}
+
 export function smashCardWords(value) {
   return String(value || "").replace(/\s+/g, "").trim();
 }

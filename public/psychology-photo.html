@@ -16,7 +16,6 @@
         <div>
           <p class="module-kicker">心理学</p>
           <h1>图文发布模板</h1>
-          <p>三种出图方式：AI 生图、素材库图片、文案图片。都按顺序提交官方图文接口，第一张作为封面。</p>
         </div>
         <button id="refreshBtn" type="button">刷新</button>
       </header>
@@ -106,8 +105,12 @@
         </aside>
       </div>
       <div id="pageStatus" class="page-status"></div>
+      <div id="photoLightbox" class="photo-lightbox" hidden>
+        <button id="photoLightboxClose" type="button" class="photo-lightbox-close" aria-label="关闭预览">关闭</button>
+        <img id="photoLightboxImage" alt="放大预览">
+      </div>
     </main>
     <script src="/access.js"></script>
-    <script type="module" src="/psychology-photo.js?v=20260918-3"></script>
+    <script type="module" src="/psychology-photo.js?v=20260918-5"></script>
   </body>
 </html>

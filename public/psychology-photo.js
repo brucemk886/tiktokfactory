@@ -1,7 +1,7 @@
-import { buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, wrapLines } from "./psychology-text-card.js";
+import { buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, planCenteredBlock, wrapLines } from "./psychology-text-card.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], pollTimer: 0, busy: false };
+const state = { mode: "zimage", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -15,6 +15,13 @@ $("#publishBtn")?.addEventListener("click", publishPhotoPost);
 $("#textModeTab")?.addEventListener("click", () => setPhotoMode("text"));
 $("#stockModeTab")?.addEventListener("click", () => setPhotoMode("stock"));
 $("#zimageModeTab")?.addEventListener("click", () => setPhotoMode("zimage"));
+$("#photoLightboxClose")?.addEventListener("click", closePhotoPreview);
+$("#photoLightbox")?.addEventListener("click", (event) => {
+  if (event.target === $("#photoLightbox")) closePhotoPreview();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePhotoPreview();
+});
 loadPage();
 
 async function loadPage() {
@@ -35,6 +42,7 @@ async function loadPage() {
       if (!job) throw new Error("未找到这组同行爆款图文。");
       const plan = job.result?.plan || job.plan || {};
       peerJobPhotos = (job.result?.results || job.results || []).filter((item) => item.imageModel === "z-image" && /^https:\/\//i.test(item.imageUrl || "")).map((item, index) => ({ key: `${peerJobId}:${index}`, peerJobId, resultIndex: index, url: item.imageUrl, prompt: item.title, createdAt: job.createdAt }));
+      resetPhotoSelection();
       $("#photoTitle").value = plan.title || "";
       $("#publishCaption").value = plan.caption || "";
       setPhotoMode("zimage");
@@ -102,12 +110,13 @@ async function generateTextCards() {
         createdAt: Date.now(),
       });
     }
+    resetPhotoSelection();
     state.textCards = cards;
     peerJobPhotos = [];
     state.currentTaskIds = [];
     if (!$("#photoTitle").value.trim() && $("#cardTitle").value.trim()) $("#photoTitle").value = $("#cardTitle").value.trim().slice(0, 90);
     renderGeneratedPhotos();
-    setGenerateMessage(`已生成 ${cards.length} 张文案图片。`);
+    setGenerateMessage(`已生成 ${cards.length} 张文案图片，可勾选后发布。`);
   } catch (error) {
     setGenerateMessage(error.message || "生成文案图片失败。", true);
   } finally {
@@ -122,47 +131,53 @@ function renderTextCard(slide, aspectRatio) {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
-  const pad = Math.round(width * 0.09);
-  let titleSize = Math.round(width * 0.078);
+  const pad = Math.round(width * 0.1);
+  const maxWidth = width - pad * 2;
+  const family = '"Avenir Next","Segoe UI",Helvetica,Arial,sans-serif';
+  let titleSize = Math.round(width * 0.068);
   let bodySize = Math.round(width * 0.038);
+  let pack = { items: [], total: 0 };
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    ctx.fillStyle = "#f4efe8";
-    ctx.fillRect(0, 0, width, height);
-    ctx.textBaseline = "top";
-    let y = pad;
+    const items = [];
     if (slide.title) {
-      ctx.fillStyle = "#111111";
-      ctx.font = `700 ${titleSize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
-      const titleLines = wrapLines(slide.title, (text) => ctx.measureText(text).width, width - pad * 2);
-      for (const line of titleLines) {
-        ctx.fillText(line, pad, y);
-        y += titleSize * 1.12;
+      ctx.font = `700 ${titleSize}px ${family}`;
+      for (const line of wrapLines(slide.title, (text) => ctx.measureText(text).width, maxWidth)) {
+        items.push({ text: line, size: titleSize, weight: 700, color: "#111111", gap: titleSize * 1.18 });
       }
-      y += titleSize * 0.32;
+      items.push({ spacer: titleSize * 0.28 });
     }
     if (slide.accent) {
       const accentSize = Math.max(22, Math.round(width * 0.034));
-      ctx.font = `600 ${accentSize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
-      ctx.fillStyle = "#c0392b";
-      const label = slide.accent;
-      ctx.fillText(label, width - pad - ctx.measureText(label).width, y);
-      y += accentSize * 1.75;
+      items.push({ text: slide.accent, size: accentSize, weight: 600, color: "#c0392b", gap: accentSize * 1.7 });
     }
-    ctx.fillStyle = "#111111";
-    ctx.font = `400 ${bodySize}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
-    const mark = "•  ";
-    const markWidth = ctx.measureText(mark).width;
+    ctx.font = `400 ${bodySize}px ${family}`;
     for (const bullet of slide.bullets) {
-      const lines = wrapLines(bullet, (text) => ctx.measureText(text).width, width - pad * 2 - markWidth);
+      const lines = wrapLines(bullet, (text) => ctx.measureText(text).width, maxWidth);
       lines.forEach((line, index) => {
-        ctx.fillText(index === 0 ? mark + line : line, pad + (index === 0 ? 0 : markWidth), y);
-        y += bodySize * 1.38;
+        items.push({ text: index === 0 ? `•  ${line}` : line, size: bodySize, weight: 400, color: "#111111", gap: bodySize * 1.38 });
       });
-      y += bodySize * 0.28;
+      items.push({ spacer: bodySize * 0.22 });
     }
-    if (y <= height - pad || attempt === 7) return canvas;
-    titleSize = Math.max(36, Math.round(titleSize * 0.9));
-    bodySize = Math.max(22, Math.round(bodySize * 0.9));
+    const total = items.reduce((sum, item) => sum + (item.gap || item.spacer || 0), 0);
+    pack = { items, total };
+    if (total <= height - pad * 2 || attempt === 7) break;
+    titleSize = Math.max(32, Math.round(titleSize * 0.9));
+    bodySize = Math.max(20, Math.round(bodySize * 0.9));
+  }
+  ctx.fillStyle = "#f4efe8";
+  ctx.fillRect(0, 0, width, height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  let y = planCenteredBlock(pack.total, height, pad);
+  for (const item of pack.items) {
+    if (item.spacer) {
+      y += item.spacer;
+      continue;
+    }
+    ctx.fillStyle = item.color;
+    ctx.font = `${item.weight} ${item.size}px ${family}`;
+    ctx.fillText(item.text, width / 2, y);
+    y += item.gap;
   }
   return canvas;
 }
@@ -229,6 +244,7 @@ async function generateStockCards() {
     if (!images.length) throw new Error("请先搜索素材，或粘贴素材站图片链接。");
     const aspectRatio = $("#stockAspect").value;
     const grayscale = $("#stockGray").checked;
+    resetPhotoSelection();
     clearTextCards();
     const cards = [];
     for (const [index, slide] of slides.entries()) {
@@ -251,7 +267,7 @@ async function generateStockCards() {
     state.currentTaskIds = [];
     if (!$("#photoTitle").value.trim() && $("#stockTitle").value.trim()) $("#photoTitle").value = $("#stockTitle").value.trim().slice(0, 90);
     renderGeneratedPhotos();
-    setGenerateMessage(`已生成 ${cards.length} 张素材库图片。`);
+    setGenerateMessage(`已生成 ${cards.length} 张素材库图片，可勾选后发布。`);
   } catch (error) {
     setGenerateMessage(error.message || "生成素材图失败。", true);
   } finally {
@@ -308,7 +324,7 @@ function renderOverlayCard(slide, image, aspectRatio, { grayscale = false } = {}
     }
     const total = lines.reduce((sum, line) => sum + line.gap, 0);
     if (total <= height - pad * 2 || attempt === 7) {
-      let y = Math.max(pad, Math.round((height - total) / 2));
+      let y = planCenteredBlock(total, height, pad);
       for (const line of lines) {
         ctx.font = `${line.weight} ${line.size}px "Avenir Next","Segoe UI",Helvetica,Arial,sans-serif`;
         ctx.fillText(line.text, width / 2, y);
@@ -352,6 +368,7 @@ async function generateImages() {
     const created = results.flatMap((result) => result.status === "fulfilled" ? [result.value.task] : []);
     const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason?.message || String(result.reason)] : []);
     if (!created.length) throw new Error(failures[0] || "Z-Image 任务提交失败。");
+    resetPhotoSelection();
     peerJobPhotos = [];
     clearTextCards();
     state.currentTaskIds = created.map((task) => task.id);
@@ -385,7 +402,7 @@ function generatedPhotos() {
   return [...peerJobPhotos, ...state.tasks.flatMap((task) => (task.status === "success" ? (task.resultUrls || []).map((url, index) => ({ key: `${task.id}:${index}`, generationId: task.id, resultIndex: index, url, prompt: task.prompt, createdAt: task.createdAt })) : []))];
 }
 
-function publicationPhotos() {
+function availablePhotos() {
   if (state.mode === "text" || state.mode === "stock") return state.textCards.slice(0, 6);
   if (peerJobPhotos.length) return peerJobPhotos.slice(0, 6);
   if (state.currentTaskIds.length) {
@@ -395,20 +412,82 @@ function publicationPhotos() {
   return generatedPhotos().slice(0, 6);
 }
 
+function resetPhotoSelection() {
+  state.selectedKeys = [];
+  state.seenKeys = new Set();
+}
+
+function syncPhotoSelection(photos) {
+  let selectedHere = photos.filter((photo) => state.selectedKeys.includes(photo.key)).length;
+  for (const photo of photos) {
+    if (state.seenKeys.has(photo.key)) continue;
+    state.seenKeys.add(photo.key);
+    if (selectedHere >= 6 || state.selectedKeys.includes(photo.key)) continue;
+    state.selectedKeys.push(photo.key);
+    selectedHere += 1;
+  }
+}
+
+function toggleGeneratedPhoto(key) {
+  if (state.selectedKeys.includes(key)) {
+    state.selectedKeys = state.selectedKeys.filter((item) => item !== key);
+  } else {
+    const selectedHere = availablePhotos().filter((photo) => state.selectedKeys.includes(photo.key)).length;
+    if (selectedHere < 6) state.selectedKeys.push(key);
+  }
+  renderGeneratedPhotos();
+}
+
+function openPhotoPreview(url) {
+  const box = $("#photoLightbox");
+  const image = $("#photoLightboxImage");
+  if (!box || !image || !url) return;
+  image.src = url;
+  box.hidden = false;
+}
+
+function closePhotoPreview() {
+  const box = $("#photoLightbox");
+  const image = $("#photoLightboxImage");
+  if (image) image.src = "";
+  if (box) box.hidden = true;
+}
+
+function publicationPhotos() {
+  return availablePhotos().filter((photo) => state.selectedKeys.includes(photo.key)).slice(0, 6);
+}
+
 function renderAll() {
   renderGeneratedPhotos();
   renderAccounts();
 }
 
 function renderGeneratedPhotos() {
-  const photos = publicationPhotos();
+  const photos = availablePhotos();
+  syncPhotoSelection(photos);
+  const selected = publicationPhotos();
+  const selectedSet = new Set(selected.map((photo) => photo.key));
   const ratio = state.mode === "zimage" ? "9 / 16" : ((state.mode === "stock" ? $("#stockAspect")?.value : $("#cardAspect")?.value) || "1:1").replace(":", " / ");
   const empty = state.mode === "text"
     ? "还没有文案图片。填好标题或条目后点生成文案图片。"
     : state.mode === "stock"
       ? "还没有素材库图片。搜好素材或贴上链接后点生成素材图。"
       : "还没有可用图片。生成完成后会按顺序自动加入图集，第一张作为封面。";
-  $("#photoList").innerHTML = photos.length ? photos.map((photo, index) => `<article class="generated-photo-card"><img src="${escapeAttr(photo.url)}" alt="图集第 ${index + 1} 张" loading="lazy" style="aspect-ratio:${ratio}"><span>${index + 1}${index === 0 ? " · 默认封面" : ""}</span></article>`).join("") : `<div class="generated-photo-empty">${empty}</div>`;
+  $("#photoList").innerHTML = photos.length ? photos.map((photo) => {
+    const order = selected.findIndex((item) => item.key === photo.key);
+    const checked = order >= 0;
+    const label = checked ? `${order + 1}${order === 0 ? " · 封面" : ""}` : "未选";
+    return `<article class="generated-photo-card${checked ? " is-selected" : ""}">
+      <label class="photo-pick"><input type="checkbox" data-photo-key="${escapeAttr(photo.key)}" ${checked ? "checked" : ""}><span>选用</span></label>
+      <button type="button" class="photo-zoom" data-photo-url="${escapeAttr(photo.url)}" aria-label="放大查看">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <img src="${escapeAttr(photo.url)}" alt="${escapeAttr(photo.prompt || "生成图片")}" loading="lazy" style="aspect-ratio:${ratio}">
+      <span>${label}</span>
+    </article>`;
+  }).join("") : `<div class="generated-photo-empty">${empty}</div>`;
+  $("#photoList").querySelectorAll(".photo-pick input").forEach((input) => input.addEventListener("change", () => toggleGeneratedPhoto(input.dataset.photoKey)));
+  $("#photoList").querySelectorAll(".photo-zoom").forEach((button) => button.addEventListener("click", () => openPhotoPreview(button.dataset.photoUrl)));
   updateGenerationState();
 }
 
@@ -430,7 +509,8 @@ async function publishPhotoPost() {
   if (state.busy) return;
   const connectionId = document.querySelector(".publish-account:checked")?.value || "";
   const selections = publicationPhotos();
-  if (!selections.length) return setPublishResult(state.mode === "zimage" ? "请先生成 1–6 张图片。" : "请先生成 1–6 张卡片。");
+  if (!availablePhotos().length) return setPublishResult(state.mode === "zimage" ? "请先生成 1–6 张图片。" : "请先生成 1–6 张卡片。");
+  if (!selections.length) return setPublishResult("请先勾选 1–6 张要发布的图片。");
   if (state.mode === "zimage" && state.currentTaskIds.some((id) => !FINAL_STATES.has(state.tasks.find((task) => task.id === id)?.status))) return setPublishResult("本批图片仍在生成，请等待全部完成后发布。");
   if (!connectionId) return setPublishResult("请先选择发布账号。");
   const musicSoundId = $("#musicSoundId").value.trim();

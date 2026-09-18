@@ -9,7 +9,7 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, searchStockPhotos } from "./photo-publishing.js";
-import { buildStockOverlaySlides, buildTextCardSlides, smashCardWords } from "../../public/psychology-text-card.js";
+import { buildStockOverlaySlides, buildTextCardSlides, planCenteredBlock, smashCardWords } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -271,6 +271,7 @@ test("psychology photo template is an online Z-Image to official photo publishin
   const browser=fs.readFileSync(new URL("../../public/psychology-photo.js",import.meta.url),"utf8");
   const cloud=fs.readFileSync(new URL("./photo-publishing.js",import.meta.url),"utf8");
   assert.match(html,/图文发布模板/);
+  assert.doesNotMatch(html,/三种出图方式|用 Z-Image 生成|官方图文接口，第一张作为封面/);
   assert.doesNotMatch(html,/选择图片与封面|selectedPhotos|photoCount|<option>8<\/option>/);
   assert.match(html,/id="publishTime"[\s\S]*id="musicSoundId"[\s\S]*id="privacyLevel"/);
   assert.match(html,/id="imagePrompt" class="photo-compact-textarea" rows="3"/);
@@ -285,6 +286,7 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(workbench,/AI生图、素材库图片或文案图片/);
   assert.match(html,/id="renderCardBtn"/);
   assert.match(html,/id="renderStockBtn"/);
+  assert.match(html,/id="photoLightbox"/);
   assert.match(html,/从 Pexels 只取竖版/);
   assert.doesNotMatch(html,/从 Unsplash/);
   assert.match(cloud,/api\.pexels\.com/);
@@ -292,8 +294,10 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(cloud,/orientation", "portrait"/);
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
+  assert.match(browser,/function toggleGeneratedPhoto\(/);
+  assert.match(browser,/function openPhotoPreview\(/);
   assert.match(browser,/photoCoverIndex: 0/);
-  assert.doesNotMatch(browser,/coverKey|toggleGeneratedPhoto|changeSelectedPhoto|state\.selectedPhotos/);
+  assert.doesNotMatch(browser,/coverKey|changeSelectedPhoto|state\.selectedPhotos/);
   assert.match(browser,/\/api\/official-tiktok\/photo-assets\/import/);
   assert.match(browser,/\/api\/official-tiktok\/photo-assets\/upload/);
   assert.match(browser,/\/api\/official-tiktok\/photo-publish/);
@@ -309,6 +313,9 @@ test("psychology text cards and stock overlays do not need generated images", ()
   assert.equal(cards.length, 1);
   assert.equal(cards[0].accent, "herher");
   assert.equal(cards[0].bullets[0], "Alwayswantingalonetime");
+  assert.equal(planCenteredBlock(200, 1080, 80) > 300, true);
+  assert.equal(planCenteredBlock(200, 1080, 80) < 500, true);
+  assert.equal(planCenteredBlock(1000, 1080, 80), 80);
   const overlays = buildStockOverlaySlides({
     title: "how to know your attachment style",
     subtitle: "(this explains 90%)",

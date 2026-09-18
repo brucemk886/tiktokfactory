@@ -6,7 +6,7 @@ Let the psychology photo template make carousel slides without generating images
 
 - Text cards are HTML/canvas typesetting exported as JPEG.
 - Stock overlays search Pexels with the server-only `PEXELS_API_KEY`, always in portrait, and drop photos that look like they contain people.
-- The photo template exposes three options in this order: AI generation, Pexels stock, then text cards. Publish still uses the official photo batch, first slide as cover.
+- The photo template exposes three options in this order: AI generation, Pexels stock, then text cards. Generated images can be previewed, multi-selected, and published; text cards are vertically centered. Publish still uses the official photo batch, first selected slide as cover.
 - New slides upload through `/api/official-tiktok/photo-assets/upload` because they are not Z-Image generation records.
 
 # Files changed
