@@ -8,7 +8,7 @@ Replace the online psychology video-publish picker with a peer-hit-driven automa
 - Each batch selects 1–50 distinct peer hits of the chosen media type, optionally filtered by title/account keyword; selection can be random, popularity-first or newest-first.
 - Count means total posts in the batch. Selected official psychology accounts receive posts round-robin. Each account has a first scheduled time and an interval; the complete schedule must fit within 14 days.
 - Video templates reuse psychology, psychology-collage and psychology-target-2 workers, with Z-Image and explicit official auto-publishing. Follow-up publish jobs have deterministic IDs.
-- Photo templates reuse the cloud peer-photo workflow (including the separately shipped Gemini 3.5 → 3.8 fallback). The text-only choice bypasses Pexels. Completed plans enqueue a psychology job with photoAutomation; the existing freshly spawned psychology script dispatches the new JPEG renderer without restarting active workers.
+- Photo templates reuse the cloud peer-photo workflow. A 改写文案 checkbox on /psychology-publish is off by default so batches keep original title, caption and overlay text; checking it sets rewriteCopy and the model rewrites both streams.
 - Shared browser card renderers serve both the manual photo page and headless Chrome on the worker. All pages must be uploaded before publishing; asset checkpoints and official receipts live in D1.
 - Stable batch/item IDs prevent duplicate queue creation and repeat photo publication after lost responses. Failed jobs can be retried; photo analysis retries restart that failed analysis, while completed photo uploads are reused.
 - Account scope is checked at creation, worker claim and photo submission. Disabled users and revoked account assignments cannot publish queued automatic jobs.
@@ -39,4 +39,4 @@ Replace the online psychology video-publish picker with a peer-hit-driven automa
 
 # Recommended next step
 
-Open /psychology-publish, select media/template/count and official psychology accounts, then create a batch with enough lead time for generation. Follow final TikTok outcomes from 官方发布记录 after items show 已提交中台.
+Open /psychology-publish, switch to 图文, leave 改写文案 unchecked to test original-copy matrix posts, or check it to rewrite. Select template/count and official psychology accounts, then create a batch with enough lead time for generation. Follow final TikTok outcomes from 官方发布记录 after items show 已提交中台.

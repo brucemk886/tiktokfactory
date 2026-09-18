@@ -14,6 +14,7 @@
 <div class="auto-grid">
 <label class="field"><span>批次名称</span><input id="batchName" maxlength="100" placeholder="例如：心理学晚间发布"></label>
 <label class="field"><span>生成模板</span><select id="template" required></select></label>
+<div class="field" id="rewriteCopyField" hidden><span>改写文案</span><label class="auto-check"><input id="rewriteCopy" type="checkbox"> 改写标题、文案和叠字</label><small>默认不勾选，保留原帖文字测矩阵效果。勾选后才走模型改写。</small></div>
 <label class="field"><span>生成总条数</span><input id="count" type="number" min="1" max="50" value="3" required><small>整批共 1–50 条，同批选题不重复。</small></label>
 <label class="field"><span>选题抽取方式</span><select id="selection"><option value="random">随机抽取</option><option value="popular">播放量优先</option><option value="recent">最近入库优先</option></select></label>
 <label class="field wide"><span>选题关键词 <em>可选</em></span><input id="query" maxlength="100" placeholder="筛选爆款标题或同行账号，不填则从全部对应类型抽取"></label>

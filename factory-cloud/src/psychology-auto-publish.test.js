@@ -46,6 +46,8 @@ async function fixture(t) {
 test('strict type/template/count/account and complete schedule validation',()=>{
   const raw=input(); const config=normalizeAutoPublish(raw);
   assert.equal(config.count,3);
+  assert.equal(config.rewriteCopy,false);
+  assert.equal(normalizeAutoPublish({...raw,rewriteCopy:true}).rewriteCopy,true);
   const plan=assignments(config,[{id:1},{id:2},{id:3}]);
   assert.deepEqual(plan.map(p=>p.connectionId),['a','b','a']);
   assert.deepEqual(plan.map(p=>p.scheduleAt),[raw.scheduleAt,raw.scheduleAt,raw.scheduleAt+3600]);
@@ -135,4 +137,21 @@ test('photo publishes only complete ordered images, refuses wrong worker and rec
   await handleAutoPhotoWorker(again,env,new URL(again.url));
   assert.equal(requests.length,1);
   const listing=await (await call()).json();assert.equal(listing.batches[0].items[0].status,'submitted');
+});
+test('photo batches keep original copy unless rewrite is explicitly enabled',async t=>{
+  const {call,sqlite}=await fixture(t);
+  const page=fs.readFileSync(new URL('../../public/psychology-auto-publish.html',import.meta.url),'utf8');
+  const browser=fs.readFileSync(new URL('../../public/psychology-auto-publish.js',import.meta.url),'utf8');
+  assert.match(page,/id="rewriteCopy"/);
+  assert.doesNotMatch(page,/id="rewriteCopy"[^>]*checked/);
+  assert.match(browser,/rewriteCopy:state\.mediaType==='photo'&&\$\('#rewriteCopy'\)\?\.checked===true/);
+  await call('POST',input({mediaType:'photo',template:'photo-original',count:2}));
+  const jobs=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE type='psychology-photo-story'").all();
+  assert.equal(jobs.length,2);
+  assert.ok(jobs.every(row=>JSON.parse(row.payload_json).rewriteCopy===false));
+  const rewrite=input({mediaType:'photo',template:'photo-original',count:2,rewriteCopy:true});
+  await call('POST',rewrite);
+  const all=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE type='psychology-photo-story'").all().map(row=>JSON.parse(row.payload_json).rewriteCopy);
+  assert.equal(all.filter(value=>value===false).length,2);
+  assert.equal(all.filter(value=>value===true).length,2);
 });

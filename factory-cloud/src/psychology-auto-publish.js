@@ -141,7 +141,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const item = { id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
-      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story'), psychologyAutomation: item }
+      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: item }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')

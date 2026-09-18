@@ -13,6 +13,7 @@ function message(text,error=false) { $('#message').textContent=text; $('#message
 function renderTemplates() {
   $('#template').innerHTML=(state.templates[state.mediaType]||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
   $('#sourceHint').textContent=`选题来源：同行${state.mediaType==='photo'?'图文':'视频'}爆款库，共 ${state.counts[state.mediaType]||0} 条。每条爆款生成一条新内容。`;
+  if($('#rewriteCopyField')) $('#rewriteCopyField').hidden=state.mediaType!=='photo';
 }
 async function loadAccounts() {
   const ids=new Set(selected());
@@ -37,7 +38,7 @@ async function loadBatches() {
   $('#batches').innerHTML=state.batches.length?state.batches.map(b=>{
     const done=b.items.filter(i=>i.status==='submitted').length;
     const failures=b.items.filter(i=>i.status==='failed').length;
-    return `<details class="batch-card" data-id="${esc(b.id)}" ${open.has(b.id)?'open':''}><summary><span>${esc(b.config.name)} <small>· ${b.config.mediaType==='photo'?'图文':'视频'} ${b.config.count} 条</small></span><small>已提交 ${done} / ${b.config.count}${failures?' · 失败 '+failures:''}</small></summary><p class="batch-meta">${esc(time(b.createdAt/1000))} 创建 · ${esc((state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template)} · 同账号间隔 ${b.config.intervalMinutes} 分钟</p><div class="queue-wrap"><table class="queue-table"><thead><tr><th>选题</th><th>发布账号</th><th>计划时间</th><th>进度</th><th></th></tr></thead><tbody>${b.items.map(i=>`<tr><td>${esc(i.title||i.sourceId)}</td><td>${esc(accountName(i.connectionId))}</td><td>${esc(time(i.scheduleAt))}</td><td>${esc(labels[i.status]||i.status)}<progress max="100" value="${Number(i.percent)||0}"></progress><small class="${i.error?'error':''}">${esc(i.error||i.message)}</small></td><td>${['failed','handoff'].includes(i.status)?`<button type="button" data-retry="${esc(i.id)}">重试</button>`:''}</td></tr>`).join('')}</tbody></table></div></details>`;
+    return `<details class="batch-card" data-id="${esc(b.id)}" ${open.has(b.id)?'open':''}><summary><span>${esc(b.config.name)} <small>· ${b.config.mediaType==='photo'?'图文':'视频'} ${b.config.count} 条</small></span><small>已提交 ${done} / ${b.config.count}${failures?' · 失败 '+failures:''}</small></summary><p class="batch-meta">${esc(time(b.createdAt/1000))} 创建 · ${esc((state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template)}${b.config.mediaType==='photo'?` · ${b.config.rewriteCopy?'改写文案':'保留原文'}`:''} · 同账号间隔 ${b.config.intervalMinutes} 分钟</p><div class="queue-wrap"><table class="queue-table"><thead><tr><th>选题</th><th>发布账号</th><th>计划时间</th><th>进度</th><th></th></tr></thead><tbody>${b.items.map(i=>`<tr><td>${esc(i.title||i.sourceId)}</td><td>${esc(accountName(i.connectionId))}</td><td>${esc(time(i.scheduleAt))}</td><td>${esc(labels[i.status]||i.status)}<progress max="100" value="${Number(i.percent)||0}"></progress><small class="${i.error?'error':''}">${esc(i.error||i.message)}</small></td><td>${['failed','handoff'].includes(i.status)?`<button type="button" data-retry="${esc(i.id)}">重试</button>`:''}</td></tr>`).join('')}</tbody></table></div></details>`;
   }).join(''):'<div class="empty-state">还没有自动发布批次。配置内容和账号后，创建第一批任务。</div>';
 }
 $('#batchForm').addEventListener('input',()=>{ if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
@@ -60,7 +61,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
-  const body=state.submittedInput||{requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value)};
+  const body=state.submittedInput||{requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true};
   state.submittedInput=body;state.busy=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,button')];controls.forEach(n=>n.disabled=true);
   message('正在抽取选题并创建自动发布任务…');

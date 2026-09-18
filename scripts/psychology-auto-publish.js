@@ -30,7 +30,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if (!/^[0-9a-f-]{36}$/i.test(String(input.requestId || ''))) fail('提交编号无效，请刷新页面。');
   const selection = input.selection || 'random';
   if (!['random', 'popular', 'recent'].includes(selection)) fail('选题抽取方式无效。');
-  return { requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100) };
+  return { requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true };
 }
 
 export function assignments(config, sources) {
