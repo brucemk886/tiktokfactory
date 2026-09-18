@@ -5,7 +5,7 @@
 # Decisions
 
 - 内容模板会自己画 `•`。复刻走 `copies` 时原先不剥原文圆点，所以会出现两个点。现在 `copies`/`body` 都走 `parseCardBullets`/`stripListMarker`，绘制前再剥一次。
-- 封面底图一共 30 套，不是 50。入口在 `/psychology-photo` → 文案图片 → 封面模板。点选取消难看的，随机生成和复刻封面只用保留的；选择存在浏览器 localStorage。
+- 封面底图一共 30 套，不是 50。入口在 `/psychology-photo` → 文案图片 → 封面模板。缩略图为 9:16 竖版，每张有放大和删除；删除后随机生成和复刻封面不会再用。选择存在浏览器 localStorage。
 
 # Files changed
 

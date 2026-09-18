@@ -35,9 +35,7 @@ function renderCoverCard(slide, aspectRatio, backdrop) {
   return canvas;
 }
 
-export function renderCoverPreview(theme, quote = "A quiet thought") {
-  const width = 270;
-  const height = 360;
+export function renderCoverPreview(theme, quote = "A quiet thought", { width = 270, height = 480 } = {}) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;

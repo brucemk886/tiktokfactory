@@ -1,6 +1,6 @@
-import { renderTextCard, renderOverlayCard, renderCoverPreview } from "./psychology-card-renderer.js?v=20260918-17";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-17";
-import { COVER_BACKDROPS, enabledCoverBackdropIds, pickCoverBackdrop } from "./psychology-cover-backdrops.js?v=20260918-17";
+import { renderTextCard, renderOverlayCard, renderCoverPreview } from "./psychology-card-renderer.js?v=20260918-18";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-18";
+import { COVER_BACKDROPS, enabledCoverBackdropIds, pickCoverBackdrop } from "./psychology-cover-backdrops.js?v=20260918-18";
 
 const COVER_BACKDROP_KEY = "psychology-cover-backdrops";
 const FINAL_STATES = new Set(["success", "fail"]);
@@ -140,12 +140,21 @@ function enableAllCoverBackdrops() {
   renderCoverBackdropPicker(true);
 }
 
-function toggleCoverBackdrop(id) {
-  const selected = new Set(selectedCoverBackdropIds());
-  if (selected.has(id) && selected.size > 1) selected.delete(id);
-  else selected.add(id);
-  persistCoverBackdropIds([...selected]);
+function deleteCoverBackdrop(id) {
+  const selected = selectedCoverBackdropIds();
+  if (selected.length <= 1) {
+    const hint = $("#coverBackdropHint");
+    if (hint) hint.textContent = "至少保留 1 套封面底图。";
+    return;
+  }
+  persistCoverBackdropIds(selected.filter((item) => item !== id));
   renderCoverBackdropPicker(true);
+}
+
+function previewCoverBackdrop(id) {
+  const theme = COVER_BACKDROPS.find((item) => item.id === id);
+  if (!theme) return;
+  openPhotoPreview(renderCoverPreview(theme, "A quiet thought", { width: 1080, height: 1920 }).toDataURL("image/jpeg", 0.9));
 }
 
 function renderCoverBackdropPicker(refresh = false) {
@@ -154,27 +163,44 @@ function renderCoverBackdropPicker(refresh = false) {
   const selected = new Set(selectedCoverBackdropIds());
   if (!grid.childElementCount) {
     for (const theme of COVER_BACKDROPS) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "cover-backdrop-thumb";
-      button.dataset.id = theme.id;
+      const card = document.createElement("article");
+      card.className = "cover-backdrop-thumb";
+      card.dataset.id = theme.id;
+      const actions = document.createElement("div");
+      actions.className = "cover-backdrop-actions";
+      const zoom = document.createElement("button");
+      zoom.type = "button";
+      zoom.className = "photo-zoom";
+      zoom.setAttribute("aria-label", "放大查看");
+      zoom.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+      zoom.addEventListener("click", (event) => {
+        event.stopPropagation();
+        previewCoverBackdrop(theme.id);
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "photo-delete";
+      remove.setAttribute("aria-label", "删除这套底图");
+      remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12M10 7V5h4v2m-7 0l1 14h8l1-14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteCoverBackdrop(theme.id);
+      });
+      actions.append(zoom, remove);
       const image = document.createElement("img");
       image.alt = theme.name;
       image.src = renderCoverPreview(theme).toDataURL("image/jpeg", 0.82);
       const label = document.createElement("span");
       label.textContent = theme.name;
-      button.append(image, label);
-      button.addEventListener("click", () => toggleCoverBackdrop(theme.id));
-      grid.append(button);
+      card.append(actions, image, label);
+      grid.append(card);
     }
   }
-  if (refresh || grid.childElementCount) {
-    for (const button of grid.querySelectorAll("[data-id]")) {
-      button.classList.toggle("is-selected", selected.has(button.dataset.id));
-    }
+  for (const card of grid.querySelectorAll("[data-id]")) {
+    card.hidden = !selected.has(card.dataset.id);
   }
   const hint = $("#coverBackdropHint");
-  if (hint) hint.textContent = `封面底图共 ${COVER_BACKDROPS.length} 套，已保留 ${selected.size} 套。点选取消难看的，随机生成和复刻封面只会用勾上的。`;
+  if (hint) hint.textContent = `封面底图共 ${COVER_BACKDROPS.length} 套，已保留 ${selected.size} 套。放大可看清竖版效果，删除后不会再随机抽到。`;
 }
 
 async function generateTextCards() {

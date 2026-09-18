@@ -4,6 +4,7 @@ import { buildKieImageTaskInput } from "../../scripts/kie-image-models.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 import { handleCompat, publicPsychologySettings } from "./compat.js";
 import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.js";
 import { pageFileFor } from "./pages.js";
@@ -321,6 +322,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/>内容模板</);
   assert.match(html,/id="coverBackdropGrid"/);
   assert.match(html,/>全部保留</);
+  assert.match(styles,/\.cover-backdrop-thumb img[^}]*aspect-ratio: 9 \/ 16/);
+  assert.match(styles,/\.cover-backdrop-actions/);
   assert.match(html,/>内容标题</);
   assert.match(html,/>这张正文</);
   assert.doesNotMatch(html,/内容页数量|不含封面/);
@@ -371,6 +374,9 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.deepEqual(nextPage[0].bullets, ["only this page"]);
   assert.match(browser,/pickCoverBackdrop/);
   assert.match(browser,/renderCoverBackdropPicker/);
+  assert.match(browser,/function deleteCoverBackdrop\(/);
+  assert.match(browser,/function previewCoverBackdrop\(/);
+  assert.match(browser,/photo-delete/);
   assert.match(browser,/allowedIds: savedCoverBackdropIds/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
   assert.match(browser,/smash: false/);
@@ -513,4 +519,67 @@ test("pexels stock search stays portrait and drops photos that look like people"
   assert.match(requested[0].href, /orientation=portrait/);
   assert.match(requested[0].href, /no(\+|%20)people/);
   assert.equal(requested[0].auth, "test-pexels-key");
+});
+
+test("psychology overview uses the novel report page without changing navigation permissions", () => {
+  assert.equal(pageFileFor("/psychology-effects"), "official-group-report.html");
+  assert.equal(pageFileFor("/psychology-effects"), pageFileFor("/novel-ops-report"));
+  assert.equal(pageFileFor("/mid-video-effects"), "official-analytics.html");
+  assert.equal(moduleIdForPath("/psychology-effects"), "psychology-effects");
+  assert.equal(canAccessPath({ role: "operator", sidebarModules: [] }, "/psychology-effects"), false);
+  assert.equal(canAccessPath({ role: "operator", sidebarModules: ["psychology-effects"] }, "/psychology-effects"), true);
+});
+
+test("psychology overview renders project metrics and keeps filtered queries scoped to psychology", async () => {
+  const source = fs.readFileSync(new URL("../../public/official-group-report.js", import.meta.url), "utf8");
+  const nodes = new Map();
+  const requests = [];
+  const document = {
+    querySelector(selector) {
+      if (!nodes.has(selector)) nodes.set(selector, { value: "", innerHTML: "", textContent: "", addEventListener() {} });
+      return nodes.get(selector);
+    },
+    querySelectorAll() { return []; },
+  };
+  const context = vm.createContext({
+    document, URLSearchParams, URL,
+    location: new URL("https://factory.test/psychology-effects?module=novel-promotion&period=7d&group=psych-group"),
+    fetch: async (path, options) => {
+      assert.equal(options?.method || "GET", "GET");
+      const query = new URL(path, "https://factory.test").searchParams;
+      requests.push(query);
+      return { ok: true, json: async () => ({
+        project: { id: "psych-project", name: "心理学", reportEnabled: true },
+        groups: [{ id: "psych-group", name: "心理学测试组" }],
+        report: {
+          enabled: true, period: query.get("period"), groupId: query.get("group"),
+          summary: { publishTotal: 5, published: 3, publishSuccess: 4, publishFailed: 1, views: 900, avgView: 300 },
+        },
+      }) };
+    },
+  });
+  vm.runInContext(source, context);
+  await new Promise(setImmediate);
+  assert.equal(requests[0].get("module"), "psychology");
+  assert.equal(requests[0].get("period"), "7d");
+  assert.equal(requests[0].get("group"), "psych-group");
+  assert.equal(Date.parse(requests[0].get("to")) - Date.parse(requests[0].get("from")), 6 * 86400000);
+  assert.equal(document.title, "数据概览");
+  assert.match(nodes.get("#groupPanel").innerHTML, /心理学测试组/);
+  assert.match(nodes.get("#pageCopy").textContent, /心理学/);
+  assert.doesNotMatch(nodes.get("#pageCopy").textContent, /小说/);
+  const metrics = nodes.get("#summaryGrid").innerHTML;
+  assert.equal((metrics.match(/class="metric"/g) || []).length, 11);
+  assert.match(metrics, /发布总数<\/span><strong>5</);
+  assert.match(metrics, /均播<\/span><strong>300</);
+  nodes.get("#groupSelect").value = "psych-second-group";
+  await vm.runInContext('readFilters(); applyPeriodRange("30d"); loadReport()', context);
+  assert.equal(requests[1].get("module"), "psychology");
+  assert.equal(requests[1].get("group"), "psych-second-group");
+  assert.equal(requests[1].get("period"), "30d");
+  assert.equal(Date.parse(requests[1].get("to")) - Date.parse(requests[1].get("from")), 29 * 86400000);
+  vm.runInContext('location.pathname = "/psychology-ops-report"', context);
+  assert.equal(vm.runInContext("reportTitle()", context), "心理学 · 运营报表");
+  vm.runInContext('location.pathname = "/novel-ops-report"; state.module = "novel-promotion"', context);
+  assert.equal(vm.runInContext("reportTitle()", context), "数据概览");
 });

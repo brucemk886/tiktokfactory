@@ -26,12 +26,17 @@
 .cover-backdrop-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .cover-backdrop-head p { margin: 0; color: var(--lf-muted); font-size: 12px; line-height: 1.5; }
 .cover-backdrop-head .secondary-photo-btn { min-height: 32px; padding: 0 10px; font-size: 12px; }
-.cover-backdrop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 8px; max-height: 420px; overflow: auto; padding: 2px; }
-.cover-backdrop-thumb { display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; cursor: pointer; text-align: left; }
-.cover-backdrop-thumb img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; display: block; background: #ece9df; }
+.cover-backdrop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; max-height: 560px; overflow: auto; padding: 2px; }
+.cover-backdrop-thumb { position: relative; display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; text-align: left; }
+.cover-backdrop-thumb[hidden] { display: none; }
+.cover-backdrop-thumb img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; display: block; background: #ece9df; }
 .cover-backdrop-thumb span { padding: 4px 7px 6px; color: var(--lf-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cover-backdrop-thumb.is-selected { border-color: #8a9a32; box-shadow: inset 0 0 0 2px #c5d48a; }
-.cover-backdrop-thumb:not(.is-selected) { opacity: 0.46; }
+.cover-backdrop-actions { position: absolute; top: 6px; right: 6px; z-index: 2; display: grid; gap: 4px; }
+.cover-backdrop-actions .photo-zoom,
+.cover-backdrop-actions .photo-delete { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 999px; background: rgba(255,255,255,.94); color: #1d1a14; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.cover-backdrop-actions .photo-zoom svg,
+.cover-backdrop-actions .photo-delete svg { width: 13px; height: 13px; }
+.cover-backdrop-actions .photo-delete { color: #9a2f28; }
 .stock-search-field { flex: 1 1 220px; margin-bottom: 0; }
 .stock-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
 .stock-thumb { display: grid; gap: 4px; padding: 0; overflow: hidden; border: 1px solid var(--lf-line); border-radius: 10px; background: #fff; cursor: pointer; text-align: left; }
@@ -56,7 +61,7 @@
 .photo-zoom svg { width: 16px; height: 16px; }
 .photo-lightbox { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 32px; background: rgba(20, 16, 10, .72); }
 .photo-lightbox[hidden] { display: none; }
-.photo-lightbox img { max-width: min(92vw, 720px); max-height: 86vh; border-radius: 12px; background: #f4efe8; box-shadow: 0 18px 60px rgba(0,0,0,.35); }
+.photo-lightbox img { max-width: min(92vw, 420px); max-height: 86vh; border-radius: 12px; background: #f4efe8; box-shadow: 0 18px 60px rgba(0,0,0,.35); }
 .photo-lightbox-close { position: absolute; top: 18px; right: 18px; min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: #fff; color: #1d1a14; font-weight: 700; cursor: pointer; }
 .generated-photo-empty { grid-column: 1 / -1; min-height: 168px; display: grid; place-items: center; padding: 24px; border: 1px dashed var(--lf-line-strong); border-radius: 14px; color: var(--lf-muted); text-align: center; font-size: 13px; line-height: 1.6; background: var(--lf-surface-2); }
 .photo-publish { position: sticky; top: 20px; }
