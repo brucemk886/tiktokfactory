@@ -96,7 +96,6 @@ function setTextTemplate(template) {
   if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
   if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
   if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
-  if ($("#cardAccentField")) $("#cardAccentField").hidden = isCover;
   const countField = $("#cardCount")?.closest(".compact-field");
   if (countField) countField.hidden = isCover;
   if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只排一句文案，生成后会留在图集里。" : "内容页排标题和文案，不会清掉已生成的封面。";
@@ -110,9 +109,8 @@ async function generateTextCards() {
     const slides = buildTextCardSlides({
       title: $("#cardTitle").value,
       body: $("#cardBody").value,
-      accent: $("#cardAccent").value,
       count: $("#cardCount").value,
-      smash: $("#smashWords").checked,
+      smash: false,
       template: state.textTemplate,
     });
     const aspectRatio = $("#cardAspect").value;
@@ -295,7 +293,7 @@ async function generateStockCards() {
       subtitle: $("#stockSubtitle").value,
       body: $("#stockBody").value,
       count: $("#stockCount").value,
-      smash: $("#stockSmash").checked,
+      smash: false,
     });
     let images = state.selectedStock.length ? state.selectedStock : pastedStockUrls();
     if (!images.length) {
@@ -553,12 +551,11 @@ function renderGeneratedPhotos() {
     const checked = order >= 0;
     const label = checked ? `${order + 1}${order === 0 ? " · 封面" : ""}` : "未选";
     return `<article class="generated-photo-card${checked ? " is-selected" : ""}">
-      <label class="photo-pick"><input type="checkbox" data-photo-key="${escapeAttr(photo.key)}" ${checked ? "checked" : ""} aria-label="选用这张图"></label>
       <button type="button" class="photo-zoom" data-photo-url="${escapeAttr(photo.url)}" aria-label="放大查看">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <img src="${escapeAttr(photo.url)}" alt="${escapeAttr(photo.prompt || "生成图片")}" loading="lazy" style="aspect-ratio:${ratio}">
-      <span>${label}</span>
+      <label class="photo-pick"><input type="checkbox" data-photo-key="${escapeAttr(photo.key)}" ${checked ? "checked" : ""}> ${label}</label>
     </article>`;
   }).join("") : `<div class="generated-photo-empty">${empty}</div>`;
   $("#photoList").querySelectorAll(".photo-pick input").forEach((input) => input.addEventListener("change", () => toggleGeneratedPhoto(input.dataset.photoKey)));

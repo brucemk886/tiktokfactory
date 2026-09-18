@@ -313,6 +313,7 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/>内容模板</);
   assert.match(html,/>内容标题</);
   assert.match(html,/文案（一行一条）/);
+  assert.doesNotMatch(html,/点缀词|去掉空格|smashWords|stockSmash|cardAccent/);
   assert.match(workbench,/AI生图、素材库图片或文案图片/);
   assert.match(html,/id="renderCardBtn"/);
   assert.match(html,/id="renderStockBtn"/);
@@ -327,6 +328,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/mergeTextCardSets/);
   assert.match(browser,/不会清掉已生成的封面/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
+  assert.match(browser,/smash: false/);
+  assert.doesNotMatch(browser,/smashWords|stockSmash|cardAccent/);
   assert.match(browser,/function openPhotoPreview\(/);
   assert.match(browser,/photoCoverIndex: 0/);
   assert.doesNotMatch(browser,/coverKey|changeSelectedPhoto|state\.selectedPhotos/);
