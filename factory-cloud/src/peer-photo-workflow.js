@@ -1,12 +1,14 @@
 import { buildPhotoStoryPrompt, buildStockPickPrompt, parsePhotoStory, parseStockPick } from '../../scripts/psychology-peer-production.js';
 import { createKieClient } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
+import { preparePeerPhotosForKie, deletePeerPhotoSources } from './peer-photo-convert.js';
 import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 
 // Paid submissions are never blindly retried after an ambiguous provider error.
 const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' };
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
+const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
 
 export async function runPeerPhotoWorkflow(env, event, step) {
   const id = event.payload.jobId;
@@ -18,6 +20,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   const results = [];
   let total = 0;
   let state = {};
+  let kiePhotos = { urls: [], keys: [] };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
@@ -33,13 +36,15 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     total = source.urls.length;
     payload.sceneCount = total;
     if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
+    await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成 Gemini 可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
+    kiePhotos = await step.do('prepare-kie-images', CONVERT, () => preparePeerPhotosForKie(env, id, source.urls));
     const rewrite = payload.rewriteCopy !== false;
-    await save('source-ready', 'running', 8, `已获取原帖 ${total} 张图片，Gemini 3.8 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
+    await save('source-ready', 'running', 8, `原图已转码，Gemini 3.8 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
     let validationError = '';
     for (let attempt = 0; attempt < 3; attempt++) {
       const text = await step.do(`story-${attempt}`, SUBMIT, () => kie.createChat(
         buildPhotoStoryPrompt(payload, { sceneCount: total }) + (validationError ? `\nCorrect this validation error: ${validationError}` : ''),
-        { model: 'gemini-3-8-flash', imageUrls: source.urls }
+        { model: 'gemini-3-8-flash', imageUrls: kiePhotos.urls }
       ));
       try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
     }
@@ -49,7 +54,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       const scene = plan.scenes[index];
       if (scene.template === 'stock') {
         await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页搜索相近底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
-        const photo = await matchStockPhoto(env, kie, step, scene, source.urls[index], index);
+        const photo = await matchStockPhoto(env, kie, step, scene, kiePhotos.urls[index], index);
         results.push(photoPage(scene, index, photo));
         await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页。`, '', {productionScene:{index,imageUrl:photo.fileUrl || photo.imageUrl,imagePrompt:scene.stockQuery,imageStatus:'done'}});
       } else {
@@ -62,6 +67,10 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   } catch (error) {
     await save('failed', 'failed', progress(total, results.length), '图文复刻失败，已保留完成的页面。', String(error.message || error).slice(0, 1000));
     throw error;
+  } finally {
+    if (kiePhotos.keys.length) {
+      await step.do('delete-kie-photos', READ, () => deletePeerPhotoSources(env, kiePhotos.keys)).catch(() => {});
+    }
   }
 }
 

@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { handlePsychologyPeerHits } from './psychology-peer-hits.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { PSYCHOLOGY_RECREATION_VOICE_ID, PSYCHOLOGY_RECREATION_VOICE_IDS } from './psychology-peer-production.js';
-import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, buildPhotoStoryPrompt, pickTikTokPhotoUrl, peerPhotoImageUrls } from '../../scripts/psychology-peer-production.js';
+import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, buildPhotoStoryPrompt, pickTikTokPhotoUrl, peerPhotoImageUrls, photoTranscodeCandidates } from '../../scripts/psychology-peer-production.js';
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
@@ -49,17 +49,30 @@ function chatPrompt(init) {
   } catch { return ''; }
 }
 
+function jpegBytes() {
+  const bytes = new Uint8Array(16);
+  bytes.set([0xFF, 0xD8, 0xFF, 0xE0]);
+  return bytes;
+}
+
 function cloudFixture(t, failSecond = false) {
   const {db,sqlite} = fixture(t);
   const imageUrls=Array.from({length:6},(_,i)=>`https://p16-sign.tiktokcdn-us.com/${i+1}.webp`);
   sqlite.prepare("INSERT INTO factory_jobs(id,type,status,created_by,payload_json,result_json) VALUES('cloud-test','psychology-photo-story','queued','admin',?,'{}')").run(JSON.stringify({topic:'Silence',script:'Reflect on the assumptions you make when a friend goes quiet.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls}}));
-  const plan = storyPlan(), submissions = [], cache = new Map(), sleeps = [];
+  const plan = storyPlan(), submissions = [], cache = new Map(), sleeps = [], objects = new Map();
   const step = {
     async do(name, config, action) { if(cache.has(name))return structuredClone(cache.get(name)); const result=await (action || config)();cache.set(name,structuredClone(result));return result; },
     async sleep(name) { sleeps.push(name); }
   };
   let pexelsCalls=0;
-  const env = {DB:db,KIE_API_KEY:'test-key',PEXELS_API_KEY:'pexels-test',async fetch(url,init) {
+  const env = {
+    DB:db,KIE_API_KEY:'test-key',PEXELS_API_KEY:'pexels-test',FACTORY_PUBLIC_BASE_URL:'https://factory.test',
+    ARCHIVE:{
+      async put(key,value){objects.set(key,value instanceof Uint8Array?value:new Uint8Array(value));},
+      async get(key){const bytes=objects.get(key);return bytes?{body:bytes,size:bytes.length}:null;},
+      async delete(key){objects.delete(key);}
+    },
+    async fetch(url,init) {
     if(String(url).includes('/chat/completions')) {
       const prompt=chatPrompt(init);
       if(/Pick the closest empty cinematic background/i.test(prompt)) return Response.json({choices:[{message:{content:JSON.stringify({index:0})}}]});
@@ -70,10 +83,11 @@ function cloudFixture(t, failSecond = false) {
       if(failSecond) return new Response('no', {status:502});
       return Response.json(pexelsPhotos());
     }
+    if(/tiktokcdn/i.test(String(url))) return new Response(jpegBytes(), { headers: { 'content-type': 'image/jpeg' } });
     if(String(url).includes('/createTask')) {const input=JSON.parse(init.body);submissions.push(input);throw new Error('photo recreation must not submit Z-Image');}
     throw new Error('unexpected fetch '+url);
   }};
-  return {env,step,plan,submissions,sqlite,sleeps,imageUrls,pexelsCalls:()=>pexelsCalls};
+  return {env,step,plan,submissions,sqlite,sleeps,imageUrls,pexelsCalls:()=>pexelsCalls,objects};
 }
 
 test('cloud workflow classifies six pages, matches stock photos, and replay does not search again', async t => {
@@ -101,7 +115,10 @@ test('single-image photo post uses Gemini 3.8 Flash once and renders a text card
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
   assert.equal(result.count,1);assert.equal(f.submissions.length,0);assert.equal(f.pexelsCalls(),0);
   assert.match(chatCalls[0].url,/gemini-3-8-flash-openai/);
-  assert.equal(chatCalls[0].body.messages[0].content.filter(part=>part.type==='image_url').length,1);
+  const imageParts=chatCalls[0].body.messages[0].content.filter(part=>part.type==='image_url');
+  assert.equal(imageParts.length,1);
+  assert.match(imageParts[0].image_url.url,/https:\/\/factory\.test\/api\/integrations\/kie-photo-source\/cloud-test\/0\.jpeg/);
+  assert.equal(f.objects.size,0);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.equal(saved.progressTotal,1);assert.equal(saved.results.length,1);assert.equal(saved.results[0].imageModel,'text-card');
 });
@@ -280,9 +297,10 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   const heic='https://p16-common-sign.tiktokcdn-us.com/photo~tplv-photomode-shrink-v1:1080:0:q80.heic';
   const jpeg='https://p16-common-sign.tiktokcdn-us.com/photo~tplv-photomode-shrink-v1:1080:0:q80.jpeg';
   assert.equal(pickTikTokPhotoUrl([heic,jpeg]),jpeg);
-  assert.equal(pickTikTokPhotoUrl([heic]),jpeg);
-  assert.equal(pickTikTokPhotoUrl(['https://p16-common-sign.tiktokcdn-us.com/photo/abc',heic]),jpeg);
-  assert.deepEqual(peerPhotoImageUrls({videoData:{imageUrls:[heic]}}),[jpeg]);
+  assert.equal(pickTikTokPhotoUrl([heic]),heic);
+  assert.equal(pickTikTokPhotoUrl(['https://p16-common-sign.tiktokcdn-us.com/photo/abc',heic]),heic);
+  assert.deepEqual(photoTranscodeCandidates(heic),[heic,jpeg]);
+  assert.deepEqual(peerPhotoImageUrls({videoData:{imageUrls:[heic]}}),[heic]);
   const emptyOverlay=parsePhotoStory({title:'Post title only',hooks:['First','Second','Third'],caption:'Post caption',scenes:[{template:'stock',stockQuery:'empty misty forest hallway cinematic still'}]},{sceneCount:1});
   assert.equal(emptyOverlay.scenes[0].text,'');
   assert.equal(emptyOverlay.caption,'Post caption');

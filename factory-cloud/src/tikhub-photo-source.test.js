@@ -35,14 +35,13 @@ test('photo resolver keeps source order and caps a post at six images', async ()
   assert.deepEqual(source.urls,images.slice(0,6));
 });
 
-test('photo resolver prefers jpeg over heic and rewrites heic-only URLs for Kie', async () => {
+test('photo resolver keeps original HEIC URLs and prefers jpeg of the same image when both exist', async () => {
   const heic = 'https://p16-common-sign.tiktokcdn-us.com/tos-useast2a-i-photomode-euttp/abc~tplv-photomode-shrink-v1:1080:0:q80.heic?dr=10956';
   const jpeg = 'https://p16-common-sign.tiktokcdn-us.com/tos-useast2a-i-photomode-euttp/abc~tplv-photomode-shrink-v1:1080:0:q80.jpeg?dr=10956';
   assert.equal(pickTikTokPhotoUrl([heic, jpeg]), jpeg);
-  assert.equal(pickTikTokPhotoUrl([heic]), jpeg);
-  assert.equal(pickTikTokPhotoUrl(['https://p16-common-sign.tiktokcdn-us.com/tos-useast2a-i-photomode-euttp/abc', heic]), jpeg);
+  assert.equal(pickTikTokPhotoUrl([heic]), heic);
   const stored = await resolveTikTokPhotoSource({ fetch() { throw new Error('unexpected'); } }, { url: page, imageUrls: [heic] });
-  assert.deepEqual(stored.urls, [jpeg]);
+  assert.deepEqual(stored.urls, [heic]);
   const source = await resolveTikTokPhotoSource({ TIKHUB_API_KEY: 'private-test', fetch: async () => Response.json({ code: 200, data: { status_code: 0, aweme_detail: {
     aweme_id: '1', images: [{ display_image: { url_list: [heic, jpeg] } }]
   } } }) }, { url: page });
