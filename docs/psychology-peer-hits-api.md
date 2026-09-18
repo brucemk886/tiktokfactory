@@ -118,4 +118,4 @@ Content-Type: application/json
 | 415 | 设置 `Content-Type: application/json`。 |
 | 500 / 网络超时 | 稍后指数退避重试，保留原视频身份和采集时间。 |
 
-页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接，并可逐条修改音色性别。视频复刻按记录选择男声 `Gubgw9l4dtIoQA9YZHgx` 或女性 Lara `vChnJZ1Cu89g2XXumPfT`；图文复刻生成六页分镜与 Z-Image 图片，不调用配音。
+页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接，并可逐条修改音色性别。视频复刻按记录选择男声 `Gubgw9l4dtIoQA9YZHgx` 或女性 Lara `vChnJZ1Cu89g2XXumPfT`；图文复刻由 Gemini 3.8 Flash 判断每页走文案卡片还是素材库底图，可选改写文案，不调用 Z-Image 和配音。

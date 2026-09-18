@@ -176,7 +176,9 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/<th class="hits-copy">文案<\/th><th class="hits-voice">音色<\/th><th id="mediaColumnLabel">视频<\/th><th>操作<\/th>/);
   assert.doesNotMatch(page,/recreationVoice|配音声音/);
   assert.match(page,/<th>发布时间<\/th><th>导入时间<\/th>/);
-  assert.match(page,/id="produceBtn"[^>]*>爆款复刻<\/button><button id="moveSelectedBtn"[^>]*>移动到图文爆款<\/button>/);
+  assert.match(page,/id="produceBtn"[^>]*>爆款复刻<\/button>/);
+  assert.match(page,/id="rewriteCopy"/);
+  assert.match(page,/id="moveSelectedBtn"[^>]*>移动到图文爆款<\/button>/);
   assert.doesNotMatch(page,/北京时间/);
   assert.doesNotMatch(page,/采集时间/);
   assert.doesNotMatch(page,/最新采集/);
@@ -193,6 +195,8 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(productionScript,/moveSelectedBtn/);
   assert.match(productionScript,/移动到图文爆款/);
   assert.match(productionScript,/移动到视频爆款/);
+  assert.match(productionScript,/rewriteCopy/);
+  assert.doesNotMatch(productionScript,/Z-Image 逐张/);
   assert.match(productionScript,/Promise\.allSettled/);
   assert.match(script,/voice-gender-select/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");

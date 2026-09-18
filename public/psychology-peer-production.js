@@ -34,8 +34,10 @@
     selected.clear();
     requestId = '';
     const photo = event.detail?.mediaType === 'photo';
+    const rewriteField = $('#rewriteCopyField');
+    if (rewriteField) rewriteField.hidden = !photo;
     notify(photo
-      ? '每次最多选择 5 条；每条图文按原帖顺序处理，最多 6 张。Gemini 3.8 Flash 改写文案并分析画面，再由 Z-Image 逐张生成新图片。'
+      ? '每次最多选择 5 条；每条图文按原帖顺序处理，最多 6 张。Gemini 3.8 Flash 判断每张是文案卡片还是有底图，有底图就去素材库匹配最相近的画面。可选择改写或不改写文案，不走 AI 生图。'
       : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，按每条记录的音色性别使用默认男声或女声，原视频在分析结束后立即删除。');
     sync();
     refresh();
@@ -90,7 +92,12 @@
       const data = await api(endpoint, {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({ ids:[...selected], mediaType:document.body.dataset.mediaType || 'video', requestId })
+        body:JSON.stringify({
+          ids:[...selected],
+          mediaType:document.body.dataset.mediaType || 'video',
+          requestId,
+          ...((document.body.dataset.mediaType || 'video') === 'photo' ? { rewriteCopy: $('#rewriteCopy')?.checked !== false } : {})
+        })
       });
       notify(`已创建 ${data.jobIds.length} 个云端复刻任务，可以关闭页面继续运行。`);
       selected.clear();
@@ -116,13 +123,13 @@
         const scenes = Array.isArray(result.scenes) ? result.scenes : Array.isArray(plan.scenes) ? plan.scenes : [];
         const photo = job.type === 'psychology-photo-story';
         const ready = photo
-          ? (result.results || []).filter(item => item.imageUrl).length
+          ? (result.results || []).length
           : scenes.filter(scene => scene.imageStatus === 'done' && scene.audioStatus === 'done').length;
         return `<article class="peer-job">
           <h3><a href="/psychology-production?job=${encodeURIComponent(job.jobId)}">${escape(job.title || job.source?.title)}</a></h3>
           <p>${escape(job.message || job.status)} · ${Number(job.percent) || 0}%</p>
           ${job.error ? `<p class="is-error">${escape(job.error)}</p>` : ''}
-          <p>分镜 ${scenes.length || '等待分析'}${scenes.length ? ` · ${photo ? '图片' : '图片与配音'}完成 ${ready}/${scenes.length}` : ''}</p>
+          <p>分镜 ${scenes.length || '等待分析'}${scenes.length ? ` · ${photo ? '页面' : '图片与配音'}完成 ${ready}/${scenes.length}` : ''}</p>
           <a href="/psychology-production?job=${encodeURIComponent(job.jobId)}">查看分镜和素材 →</a>
         </article>`;
       }).join('');

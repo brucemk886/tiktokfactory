@@ -1,8 +1,8 @@
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-14";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-15";
 import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
+const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -40,16 +40,22 @@ async function loadPage() {
     state.groups = accounts.groups || [];
     state.accounts = accounts.accounts || [];
     const peerJobId = new URLSearchParams(location.search).get("peerJob");
-    if (peerJobId && !peerJobPhotos.length) {
+    if (peerJobId && !peerJobPhotos.length && !state.recreationCards.length) {
       const { jobs } = await requestJson("/api/psychology-peer-hits/production?jobId=" + encodeURIComponent(peerJobId));
       const job = jobs.find((item) => item.jobId === peerJobId && item.type === "psychology-photo-story");
       if (!job) throw new Error("未找到这组同行爆款图文。");
       const plan = job.result?.plan || job.plan || {};
-      peerJobPhotos = (job.result?.results || job.results || []).filter((item) => item.imageModel === "z-image" && /^https:\/\//i.test(item.imageUrl || "")).map((item, index) => ({ key: `${peerJobId}:${index}`, peerJobId, resultIndex: index, url: item.imageUrl, prompt: item.title, createdAt: job.createdAt }));
-      resetPhotoSelection();
+      const results = job.result?.results || job.results || [];
       $("#photoTitle").value = plan.title || "";
       $("#publishCaption").value = plan.caption || "";
-      setPhotoMode("zimage");
+      resetPhotoSelection();
+      const legacy = results.filter((item) => item.imageModel === "z-image" && /^https:\/\//i.test(item.imageUrl || ""));
+      if (legacy.length && results.every((item) => item.imageModel === "z-image")) {
+        peerJobPhotos = legacy.map((item, index) => ({ key: `${peerJobId}:${index}`, peerJobId, resultIndex: index, url: item.imageUrl, prompt: item.title, createdAt: job.createdAt }));
+        setPhotoMode("zimage");
+      } else {
+        await renderRecreationAlbum(results);
+      }
     } else {
       setPhotoMode(state.mode);
     }
@@ -139,6 +145,7 @@ async function generateTextCards() {
     const merged = mergeTextCardSets(state.textCards, cards, state.textTemplate);
     forgetRemovedCards(merged.removed);
     state.textCards = merged.cards;
+    clearRecreationCards();
     peerJobPhotos = [];
     state.currentTaskIds = [];
     if (!$("#photoTitle").value.trim() && $("#cardTitle").value.trim()) $("#photoTitle").value = $("#cardTitle").value.trim().slice(0, 90);
@@ -331,6 +338,7 @@ async function generateStockCards() {
     const merged = mergeTextCardSets(state.textCards, cards, "stock");
     forgetRemovedCards(merged.removed);
     state.textCards = merged.cards;
+    clearRecreationCards();
     peerJobPhotos = [];
     state.currentTaskIds = [];
     if (!$("#photoTitle").value.trim() && $("#stockTitle")?.value?.trim()) $("#photoTitle").value = $("#stockTitle").value.trim().slice(0, 90);
@@ -510,7 +518,92 @@ function clearTextCards() {
   state.textCards = [];
 }
 
+function clearRecreationCards() {
+  if (!state.recreationCards.length) return;
+  forgetRemovedCards(state.recreationCards);
+  state.recreationCards = [];
+}
+
+async function renderRecreationAlbum(pages = []) {
+  clearRecreationCards();
+  peerJobPhotos = [];
+  state.currentTaskIds = [];
+  const cards = [];
+  try {
+    for (const [index, page] of (Array.isArray(pages) ? pages : []).slice(0, 6).entries()) {
+      cards.push(await renderRecreationPage(page, index));
+    }
+    if (!cards.length) throw new Error("这组复刻还没有可渲染的页面。");
+    state.recreationCards = cards;
+    const first = cards[0];
+    setPhotoMode(first.template === "stock" ? "stock" : first.template === "zimage" ? "zimage" : "text");
+    if (first.template === "cover" || first.template === "content") setTextTemplate(first.template);
+    const textCount = cards.filter((card) => card.template === "cover" || card.template === "content").length;
+    const stockCount = cards.filter((card) => card.template === "stock").length;
+    setGenerateMessage(`已按对标图文复刻 ${cards.length} 张：${textCount ? `${textCount} 张文案图片` : ""}${textCount && stockCount ? "，" : ""}${stockCount ? `${stockCount} 张素材库图片` : ""}。`);
+  } catch (error) {
+    forgetRemovedCards(cards);
+    throw error;
+  }
+}
+
+async function renderRecreationPage(page, index) {
+  if (page.imageModel === "stock" || page.template === "stock") {
+    const slides = buildStockOverlaySlides({
+      title: page.title || "",
+      subtitle: page.subtitle || "",
+      copies: [page.body || ""],
+      count: 1,
+      smash: false,
+    });
+    const src = page.fileUrl || `/api/official-tiktok/stock-photos/file?url=${encodeURIComponent(page.imageUrl || "")}`;
+    const image = await loadImage(src);
+    const blob = await canvasToJpeg(renderOverlayCard(slides[0], image, "9:16"));
+    const url = URL.createObjectURL(blob);
+    return {
+      key: `recreate:stock:${index}`,
+      kind: "text-card",
+      template: "stock",
+      resultIndex: index,
+      url,
+      blob,
+      contentType: "image/jpeg",
+      prompt: page.title || page.text || "素材库图片",
+      createdAt: Date.now(),
+    };
+  }
+  const kind = page.textKind === "cover" || page.template === "cover" ? "cover" : "content";
+  const slides = buildTextCardSlides({
+    title: page.title || page.text || "",
+    copies: [page.body || ""],
+    smash: false,
+    template: kind,
+  });
+  const backdrop = kind === "cover" ? pickCoverBackdrop({ excludeId: state.lastCoverBackdropId }) : null;
+  if (backdrop) state.lastCoverBackdropId = backdrop.id;
+  const blob = await canvasToJpeg(renderTextCard(slides[0], "9:16", backdrop));
+  const url = URL.createObjectURL(blob);
+  return {
+    key: `recreate:${kind}:${index}`,
+    kind: "text-card",
+    template: kind,
+    resultIndex: index,
+    url,
+    blob,
+    contentType: "image/jpeg",
+    prompt: slides[0].title || page.text || "文案图片",
+    createdAt: Date.now(),
+  };
+}
+
 function clearCurrentAlbum() {
+  if (state.recreationCards.length) {
+    clearRecreationCards();
+    resetPhotoSelection();
+    renderGeneratedPhotos();
+    setGenerateMessage("已清空当前图集。");
+    return;
+  }
   if (state.mode === "zimage") {
     forgetRemovedCards(state.zimageCards);
     state.zimageCards = [];
@@ -546,6 +639,7 @@ async function generateImages() {
     });
     const task = created.task;
     if (!task?.id) throw new Error("Z-Image 任务提交失败。");
+    clearRecreationCards();
     peerJobPhotos = [];
     state.overlaySlides = thisImageCopySlide();
     state.currentTaskIds = [task.id];
@@ -597,6 +691,7 @@ function finishGeneratedPhoto() {
 }
 
 function availablePhotos() {
+  if (state.recreationCards.length) return state.recreationCards.slice(0, 6);
   if (state.mode === "text") return state.textCards.filter((photo) => photo.template !== "stock" && photo.template !== "zimage").slice(0, 6);
   if (state.mode === "stock") return state.textCards.filter((photo) => photo.template === "stock").slice(0, 6);
   if (state.zimageCards.length) return state.zimageCards.slice(0, 6);
@@ -659,7 +754,7 @@ function renderGeneratedPhotos() {
   syncPhotoSelection(photos);
   const selected = publicationPhotos();
   const selectedSet = new Set(selected.map((photo) => photo.key));
-  const ratio = state.mode === "zimage" ? "9 / 16" : ((state.mode === "stock" ? $("#stockAspect")?.value : $("#cardAspect")?.value) || "1:1").replace(":", " / ");
+  const ratio = state.recreationCards.length || state.mode === "zimage" ? "9 / 16" : ((state.mode === "stock" ? $("#stockAspect")?.value : $("#cardAspect")?.value) || "1:1").replace(":", " / ");
   const empty = state.mode === "text"
     ? "还没有文案图片。每次生成 1 张，改文案后再点可加下一张。"
     : state.mode === "stock"
@@ -763,7 +858,7 @@ function blobToDataUrl(blob) {
 }
 
 function updateGenerationState() {
-  if (state.mode === "text" || state.mode === "stock") {
+  if (state.recreationCards.length || state.mode === "text" || state.mode === "stock") {
     $("#generationState").textContent = `${publicationPhotos().length} 张可用`;
     return;
   }

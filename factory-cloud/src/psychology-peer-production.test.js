@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { handlePsychologyPeerHits } from './psychology-peer-hits.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { PSYCHOLOGY_RECREATION_VOICE_ID, PSYCHOLOGY_RECREATION_VOICE_IDS } from './psychology-peer-production.js';
-import { peerCopy, parsePhotoStory, peerProductionPayload } from '../../scripts/psychology-peer-production.js';
+import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, buildPhotoStoryPrompt } from '../../scripts/psychology-peer-production.js';
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
@@ -29,62 +29,89 @@ test('recreation submission dispatches cloud workflow with stable IDs and retrie
   assert.equal(batches.length,2);
 });
 
-const storyPlan = (count=6) => ({title:'A thoughtful pause', hooks:['Notice the pause','Space before another message','What are you assuming?'],scenes:Array.from({length:count},(_,i)=>({text:`Scene ${i}: Pause and notice what you need before sending another message.`,visualPrompt:`Scene ${i}: A person walks through a softly lit garden and considers a message on their phone.`}))});
+const storyPlan = (count=6) => ({title:'A thoughtful pause', hooks:['Notice the pause','Space before another message','What are you assuming?'], caption:'Pause before you fill the silence.', scenes:Array.from({length:count},(_,i)=> i % 2 === 0
+  ? {template:'text', textKind: i===0?'cover':'content', title:`Scene ${i} pause`, body: i===0?'':`Scene ${i}: Pause and notice what you need before sending another message.`, text:`Scene ${i}: Pause and notice what you need before sending another message.`}
+  : {template:'stock', title:`Scene ${i} overlay`, body:'Notice the story you create in the quiet.', text:'Notice the story you create in the quiet.', stockQuery:`empty misty forest hallway cinematic still ${i}`}
+)});
+
+function pexelsPhotos() {
+  return {photos:Array.from({length:4},(_,i)=>({
+    id:200+i, photographer:'Pexels', url:'https://www.pexels.com/photo/empty-forest-hallway', alt:'empty misty forest hallway fog interior',
+    src:{portrait:`https://images.pexels.com/photos/${200+i}/portrait.jpeg`, large:`https://images.pexels.com/photos/${200+i}/large.jpeg`, medium:`https://images.pexels.com/photos/${200+i}/medium.jpeg`}
+  }))};
+}
+
+function chatPrompt(init) {
+  try {
+    const body=JSON.parse(init.body);
+    const parts=body.messages?.[0]?.content;
+    return String((Array.isArray(parts)?parts.find(part=>part.type==='text')?.text:'') || '');
+  } catch { return ''; }
+}
 
 function cloudFixture(t, failSecond = false) {
   const {db,sqlite} = fixture(t);
   const imageUrls=Array.from({length:6},(_,i)=>`https://p16-sign.tiktokcdn-us.com/${i+1}.webp`);
-  sqlite.prepare("INSERT INTO factory_jobs(id,type,status,created_by,payload_json,result_json) VALUES('cloud-test','psychology-photo-story','queued','admin',?,'{}')").run(JSON.stringify({topic:'Silence',script:'Reflect on the assumptions you make when a friend goes quiet.',peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls}}));
+  sqlite.prepare("INSERT INTO factory_jobs(id,type,status,created_by,payload_json,result_json) VALUES('cloud-test','psychology-photo-story','queued','admin',?,'{}')").run(JSON.stringify({topic:'Silence',script:'Reflect on the assumptions you make when a friend goes quiet.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls}}));
   const plan = storyPlan(), submissions = [], cache = new Map(), sleeps = [];
   const step = {
     async do(name, config, action) { if(cache.has(name))return structuredClone(cache.get(name)); const result=await (action || config)();cache.set(name,structuredClone(result));return result; },
     async sleep(name) { sleeps.push(name); }
   };
-  let reads=0;
-  const env = {DB:db,KIE_API_KEY:'test-key',async fetch(url,init) {
-    if(String(url).includes('/chat/completions')) return Response.json({choices:[{message:{content:JSON.stringify(plan)}}]});
-    if(String(url).includes('/createTask')) {const input=JSON.parse(init.body);submissions.push(input);return Response.json({code:200,data:{taskId:String(submissions.length)}});}
-    const id=new URL(url).searchParams.get('taskId'); reads++;
-    return Response.json({code:200,data:{taskId:id,state:failSecond&&id==='2'?'fail':reads===1?'waiting':'success',failMsg:failSecond&&id==='2'?'Provider rejected second image':'',resultJson:JSON.stringify({resultUrls:[`https://images.example/${id}.webp`]})}});
+  let pexelsCalls=0;
+  const env = {DB:db,KIE_API_KEY:'test-key',PEXELS_API_KEY:'pexels-test',async fetch(url,init) {
+    if(String(url).includes('/chat/completions')) {
+      const prompt=chatPrompt(init);
+      if(/Pick the closest empty cinematic background/i.test(prompt)) return Response.json({choices:[{message:{content:JSON.stringify({index:0})}}]});
+      return Response.json({choices:[{message:{content:JSON.stringify(plan)}}]});
+    }
+    if(String(url).includes('api.pexels.com')) {
+      pexelsCalls++;
+      if(failSecond) return new Response('no', {status:502});
+      return Response.json(pexelsPhotos());
+    }
+    if(String(url).includes('/createTask')) {const input=JSON.parse(init.body);submissions.push(input);throw new Error('photo recreation must not submit Z-Image');}
+    throw new Error('unexpected fetch '+url);
   }};
-  return {env,step,plan,submissions,sqlite,sleeps,imageUrls};
+  return {env,step,plan,submissions,sqlite,sleeps,imageUrls,pexelsCalls:()=>pexelsCalls};
 }
 
-test('cloud workflow saves six paired captions and images, durably sleeps and replay does not submit images again', async t => {
+test('cloud workflow classifies six pages, matches stock photos, and replay does not search again', async t => {
   const f=cloudFixture(t);
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(result.count,6);assert.equal(f.submissions.length,6);assert.equal(f.sleeps.length,1);
-  assert.ok(f.submissions.every(item=>item.model==='z-image'));
+  assert.equal(result.count,6);assert.equal(f.submissions.length,0);assert.equal(f.sleeps.length,0);assert.equal(f.pexelsCalls(),3);
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'done');assert.equal(row.worker_id,'cloud-photo');
-  assert.deepEqual(JSON.parse(row.result_json).results.map(item=>item.title),f.plan.scenes.map(item=>item.text));
+  const saved=JSON.parse(row.result_json);
+  assert.deepEqual(saved.results.map(item=>item.imageModel),['text-card','stock','text-card','stock','text-card','stock']);
+  assert.equal(saved.results[1].imageUrl,'https://images.pexels.com/photos/200/portrait.jpeg');
   await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(f.submissions.length,6);
+  assert.equal(f.pexelsCalls(),3);assert.equal(f.submissions.length,0);
 });
 
-test('single-image photo post uses Gemini 3.8 Flash once and generates exactly one replacement image', async t => {
+test('single-image photo post uses Gemini 3.8 Flash once and renders a text card without Z-Image', async t => {
   const f=cloudFixture(t);
   const one=storyPlan(1), chatCalls=[];
-  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
   const originalFetch=f.env.fetch;
   f.env.fetch=async(url,init)=>{
     if(String(url).includes('/chat/completions')) { chatCalls.push({url:String(url),body:JSON.parse(init.body)}); return Response.json({choices:[{message:{content:JSON.stringify(one)}}]}); }
     return originalFetch(url,init);
   };
   const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
-  assert.equal(result.count,1);assert.equal(f.submissions.length,1);
+  assert.equal(result.count,1);assert.equal(f.submissions.length,0);assert.equal(f.pexelsCalls(),0);
   assert.match(chatCalls[0].url,/gemini-3-8-flash-openai/);
   assert.equal(chatCalls[0].body.messages[0].content.filter(part=>part.type==='image_url').length,1);
   const saved=JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.progressTotal,1);assert.equal(saved.results.length,1);
+  assert.equal(saved.progressTotal,1);assert.equal(saved.results.length,1);assert.equal(saved.results[0].imageModel,'text-card');
 });
 
 test('cloud provider failure is recorded and keeps completed pages without claiming success', async t => {
   const f=cloudFixture(t,true);
-  await assert.rejects(runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step),/Provider rejected/);
+  await assert.rejects(runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step),/Pexels 搜索失败/);
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
-  assert.equal(row.status,'failed');assert.match(row.error,/Provider rejected/);
-  assert.equal(JSON.parse(row.result_json).results.length,1);assert.equal(f.submissions.length,2);
+  assert.equal(row.status,'failed');assert.match(row.error,/Pexels 搜索失败/);
+  assert.equal(JSON.parse(row.result_json).results.length,1);assert.equal(f.submissions.length,0);
 });
 
 function fixture(t, overrides = {}) {
@@ -177,12 +204,17 @@ test('photo hit recreation creates a cloud photo-story job without video downloa
   assert.equal(payload.voiceId,undefined);
   assert.equal(payload.script,copy);
   assert.equal(payload.sceneCount,1);
+  assert.equal(payload.rewriteCopy,true);
+  assert.equal(payload.imageModel,undefined);
   assert.deepEqual(payload.peerSource.imageUrls,['https://p16-sign.tiktokcdn-us.com/source.webp']);
   assert.equal(payload.peerSource.id,imported.items[0].id);
   const listed=await (await call('GET',undefined,user,'https://factory.test','?mediaType=photo')).json();
   assert.equal(listed.jobs.length,1);assert.equal(listed.jobs[0].type,'psychology-photo-story');
   const videos=await (await call('GET',undefined,user,'https://factory.test','?mediaType=video')).json();
   assert.equal(videos.jobs.length,0);
+  assert.equal((await call('POST',{ids:imported.items.map(item=>item.id),mediaType:'photo',requestId:crypto.randomUUID(),rewriteCopy:false})).status,202);
+  const rewriteOff=sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY created_at DESC,id DESC').all().map(row=>JSON.parse(row.payload_json)).find(payload=>payload.rewriteCopy===false);
+  assert.equal(rewriteOff.rewriteCopy,false);
 });
 
 test('recreation batch rejects missing sources, invalid media types and unauthorized targets before creating jobs', async t => {
@@ -219,19 +251,30 @@ test('recreation assets are same-origin, owner-scoped and support audio range re
   assert.equal(denied.status,404);
 });
 
-test('photo storyboard requires distinct paired scene descriptions and persists generated images', () => {
-  const scenes=Array.from({length:6},(_,index)=>({text:`Slide ${index}: reflect on your response when a friend goes quiet.`,visualPrompt:`Scene ${index}: An adult sits beside a window holding a phone in warm morning light, portrait composition.`}));
+test('photo storyboard classifies text vs stock pages and does not require Z-Image prompts', () => {
+  const scenes=Array.from({length:6},(_,index)=> index % 2 === 0
+    ? {template:'text', textKind:index===0?'cover':'content', title:`Slide ${index} quote`, body:index===0?'':`Slide ${index}: reflect on your response when a friend goes quiet.`, text:`Slide ${index}: reflect on your response when a friend goes quiet.`}
+    : {template:'stock', title:`Slide ${index} overlay`, body:'Notice the story you create in the quiet.', text:'Notice the story you create in the quiet.', stockQuery:`empty misty forest hallway cinematic still ${index}`}
+  );
   const plan=parsePhotoStory(JSON.stringify({title:'What silence brings up',hooks:['What silence brings up','What does a late reply mean to you?','The story you tell yourself while waiting'],scenes}));
   assert.equal(plan.scenes.length,6);
+  assert.equal(plan.scenes[0].template,'text');
+  assert.equal(plan.scenes[0].textKind,'cover');
+  assert.equal(plan.scenes[1].template,'stock');
   assert.throws(()=>parsePhotoStory({title:'test',scenes:[scenes[0]]}));
-  assert.throws(()=>parsePhotoStory({title:'test',scenes:Array(6).fill(scenes[0])}));
+  assert.throws(()=>parsePhotoStory({title:'One',hooks:['First','Second','Third'],scenes:[{template:'stock',title:'Hi',stockQuery:'fog'}]}));
   const single=parsePhotoStory({title:'One fresh thought',hooks:['First','Second','Third'],scenes:[scenes[0]]},{sceneCount:1});
   assert.equal(single.scenes.length,1);
   assert.equal(peerCopy({title:'Do not use a title as the complete source'}),'');
   assert.throws(()=>peerProductionPayload({videoData:{copy:'short'}},'psychology-collage'));
-  const result={plan,results:[{template:'psychology-photo-story',imageUrl:'https://images.example/1.webp',imageModel:'z-image',sceneIndex:0,visualPrompt:scenes[0].visualPrompt,title:scenes[0].text}]};
+  assert.equal(peerProductionPayload({title:'Silence',videoData:{copy:'When someone goes quiet, notice the story you create before deciding what their silence means.'}},'psychology-photo-story',{rewriteCopy:false}).rewriteCopy,false);
+  assert.doesNotMatch(buildPhotoStoryPrompt({topic:'Silence',script:'copy',rewriteCopy:true},{sceneCount:1}),/Z-Image/);
+  assert.match(buildPhotoStoryPrompt({topic:'Silence',script:'copy',rewriteCopy:false},{sceneCount:1}),/rewriteCopy is false/);
+  assert.equal(parseStockPick('{"index":2}',4),2);
+  const result={plan,results:[{template:'stock',imageUrl:'https://images.pexels.com/photos/1/portrait.jpeg',fileUrl:'/api/official-tiktok/stock-photos/file?url=https%3A%2F%2Fimages.pexels.com%2Fphotos%2F1%2Fportrait.jpeg',imageModel:'stock',sceneIndex:0,title:scenes[1].title,stockQuery:scenes[1].stockQuery}]};
   const persisted=persistableJobResult(result);
-  assert.ok(JSON.stringify(persisted).includes('https://images.example/1.webp'));
+  assert.ok(JSON.stringify(persisted).includes('https://images.pexels.com/photos/1/portrait.jpeg'));
+  assert.equal(persisted.results[0].imageModel,'stock');
 });
 
 test('photo import rejects other owners or unfinished production without fetching media', async t => {

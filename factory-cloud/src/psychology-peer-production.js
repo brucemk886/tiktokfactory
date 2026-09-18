@@ -71,7 +71,7 @@ export async function handlePeerProduction(request, env, url, user) {
   const type = mediaType === 'photo' ? PHOTO_TYPE : VIDEO_TYPE;
   if (mediaType === 'video' && (!env.PSYCHOLOGY_RECREATION_WORKFLOW || !env.ARCHIVE)) fail('线上视频复刻服务尚未配置完成。', 503);
   if (mediaType === 'photo' && !env.PEER_PHOTO_WORKFLOW) fail('线上图文复刻服务尚未配置完成。', 503);
-  if (!String(env.KIE_API_KEY || '').trim()) fail('Kie 与 Z-Image 服务尚未配置。', 503);
+  if (!String(env.KIE_API_KEY || '').trim()) fail('Kie Gemini 服务尚未配置。', 503);
   if (mediaType === 'video' && !String(env.ELEVENLABS_API_KEY || '').trim()) fail('ElevenLabs 配音服务尚未配置。', 503);
 
   const key = await sha256Hex(JSON.stringify({ username: user.username, requestId: input.requestId, mediaType }));
@@ -90,7 +90,7 @@ export async function handlePeerProduction(request, env, url, user) {
       }
       return {
         id: `peer-${key.slice(0, 32)}-${index}`,
-        payload: { ...peerProductionPayload(item, PHOTO_TYPE), createdFrom: 'psychology-peer-hits' }
+        payload: { ...peerProductionPayload(item, PHOTO_TYPE, { rewriteCopy: input.rewriteCopy !== false }), createdFrom: 'psychology-peer-hits' }
       };
     }
     if (item.platform !== 'tiktok') fail('爆款复刻目前只支持 TikTok 视频链接。');
@@ -136,7 +136,7 @@ export async function handlePeerProduction(request, env, url, user) {
   ) VALUES (?,?,'queued',?,?,?,?,'{}','',?,'',0,0,?,?) ON CONFLICT(id) DO NOTHING`)
     .bind(
       job.id, type, job.payload.peerSource.title, 1,
-       mediaType === 'photo' ? '等待云端获取原帖图片并按原顺序改编' : '等待云端下载原视频并拆解分镜', JSON.stringify(job.payload),
+       mediaType === 'photo' ? '等待云端分析原图并匹配文案卡片或素材库底图' : '等待云端下载原视频并拆解分镜', JSON.stringify(job.payload),
       user.username, stamp, stamp
     )));
   await dispatchJobs(env, jobs, type);

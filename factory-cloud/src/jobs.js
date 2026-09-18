@@ -903,6 +903,27 @@ async function syncAutoTaskFromJob(db, job) {
   await saveAutoTask(db, applyJobToTask(task, job));
 }
 
+function publicPhotoPage(video) {
+  const imageModel = String(video?.imageModel || "").slice(0, 40);
+  const template = String(video?.template || "").slice(0, 80);
+  const isPhoto = template === "psychology-photo-story" || ["z-image", "stock", "text-card"].includes(imageModel);
+  if (!isPhoto) return {};
+  const imageUrl = String(video.imageUrl || "");
+  const fileUrl = String(video.fileUrl || "");
+  return {
+    imageUrl: /^https:\/\//i.test(imageUrl) || imageUrl.startsWith("/api/") ? imageUrl.slice(0, 4000) : "",
+    fileUrl: fileUrl.startsWith("/api/") || /^https:\/\//i.test(fileUrl) ? fileUrl.slice(0, 4000) : "",
+    imageModel: imageModel || (template === "psychology-photo-story" ? "z-image" : ""),
+    sceneIndex: Number(video.sceneIndex),
+    visualPrompt: String(video.visualPrompt || "").slice(0, 2000),
+    subtitle: String(video.subtitle || "").slice(0, 200),
+    body: String(video.body || "").slice(0, 800),
+    text: String(video.text || "").slice(0, 800),
+    textKind: String(video.textKind || "").slice(0, 20),
+    stockQuery: String(video.stockQuery || "").slice(0, 200),
+  };
+}
+
 function slimJobResult(value) {
   const result = value && typeof value === "object" ? value : {};
   const videos = Array.isArray(result.results) ? result.results : [];
@@ -917,10 +938,7 @@ function slimJobResult(value) {
       fileName: String(video?.fileName || ""),
       outputPath: String(video?.outputPath || video?.path || ""),
       videoUrl: String(video?.videoUrl || "").slice(0, 500),
-      ...(video?.template === 'psychology-photo-story' ? {
-        imageUrl: /^https:\/\//i.test(String(video.imageUrl || '')) ? String(video.imageUrl).slice(0, 4000) : '',
-        imageModel: 'z-image', sceneIndex: Number(video.sceneIndex), visualPrompt: String(video.visualPrompt || '').slice(0, 2000),
-      } : {}),
+      ...publicPhotoPage(video),
       contactSheetFileName: String(video?.contactSheetFileName || ""),
       contactSheetUrl: String(video?.contactSheetUrl || "").slice(0, 500),
       title: String(video?.title || "").slice(0, 160),

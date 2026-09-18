@@ -335,7 +335,9 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/mergeTextCardSets/);
-  assert.match(browser,/function finishGeneratedPhoto\(/);
+  assert.match(browser,/function renderRecreationAlbum\(/);
+  assert.match(browser,/recreationCards/);
+  assert.match(browser,/imageModel === "stock"/);
   assert.match(browser,/function clearCurrentAlbum\(/);
   assert.match(browser,/每次只生成 1 张/);
   const page = buildTextCardSlides({

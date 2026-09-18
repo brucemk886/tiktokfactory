@@ -50,7 +50,7 @@
     <section class="hits-panel">
       <div class="hits-toolbar"><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、账号名称、用户名或帖子链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option></select></label></div>
       <p id="listStatus" role="status">正在读取…</p>
-      <div class="hits-actions"><span id="selectionCount">已选 0 条</span><button id="produceBtn" type="button" disabled>爆款复刻</button><button id="moveSelectedBtn" type="button" disabled>移动到图文爆款</button><button id="clearSelectionBtn" type="button">清空选择</button></div>
+      <div class="hits-actions"><span id="selectionCount">已选 0 条</span><button id="produceBtn" type="button" disabled>爆款复刻</button><label class="hits-rewrite" id="rewriteCopyField" hidden><input id="rewriteCopy" type="checkbox" checked /> 改写文案</label><button id="moveSelectedBtn" type="button" disabled>移动到图文爆款</button><button id="clearSelectionBtn" type="button">清空选择</button></div>
       <p id="productionStatus" role="status">每次最多选择 5 条；云端会自动解析视频链接、下载原视频、拆解分镜并生成图片和配音；男声和女声会使用各自的默认音色，原视频在分析结束后立即删除。</p>
       <div class="hits-table-wrap"><table><thead><tr><th>选择</th><th>播放</th><th>点赞</th><th>评论</th><th>收藏</th><th>分享</th><th>时长</th><th>发布时间</th><th>导入时间</th><th>标题</th><th class="hits-copy">文案</th><th class="hits-voice">音色</th><th id="mediaColumnLabel">视频</th><th>操作</th></tr></thead><tbody id="hitRows"></tbody></table></div>
       <div class="hits-pagination"><button id="previousBtn" type="button" disabled>上一页</button><span id="pageInfo"></span><button id="nextBtn" type="button" disabled>下一页</button></div>

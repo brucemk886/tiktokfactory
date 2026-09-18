@@ -1,5 +1,6 @@
-import { buildPhotoStoryPrompt, parsePhotoStory } from '../../scripts/psychology-peer-production.js';
+import { buildPhotoStoryPrompt, buildStockPickPrompt, parsePhotoStory, parseStockPick } from '../../scripts/psychology-peer-production.js';
 import { createKieClient } from './kie.js';
+import { searchStockPhotos } from './photo-publishing.js';
 import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 
@@ -32,7 +33,8 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     total = source.urls.length;
     payload.sceneCount = total;
     if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
-    await save('source-ready', 'running', 8, `已获取原帖 ${total} 张图片，Gemini 3.8 Flash 正在逐张分析并改写文案…`, '', {productionStage:'script'});
+    const rewrite = payload.rewriteCopy !== false;
+    await save('source-ready', 'running', 8, `已获取原帖 ${total} 张图片，Gemini 3.8 Flash 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
     let validationError = '';
     for (let attempt = 0; attempt < 3; attempt++) {
       const text = await step.do(`story-${attempt}`, SUBMIT, () => kie.createChat(
@@ -42,29 +44,88 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
     }
     if (!plan) throw new Error(validationError);
-    await save('story-ready', 'running', 15, `${total} 页改写文案和分镜已完成，云端开始生图…`, '', {productionStage:'images'});
+    await save('story-ready', 'running', 15, `${total} 页已分类，开始匹配文案模板或素材库底图…`, '', {productionStage:'images'});
     for (let index = 0; index < plan.scenes.length; index++) {
       const scene = plan.scenes[index];
-      await save(`image-${index}-starting`, 'running', progress(total, results.length), `云端正在生成第 ${index+1}/${total} 页…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.visualPrompt,imageStatus:'running'}});
-      const task = await step.do(`image-${index}-submit`, SUBMIT, () => kie.createKieMediaTask('image', scene.visualPrompt, { imageModel: 'z-image', aspectRatio: '9:16', noImageText: true }));
-      let remote;
-      for (let poll = 0; poll < 60; poll++) {
-        remote = await step.do(`image-${index}-poll-${poll}`, READ, () => kie.getKieTask(task.taskId));
-        if (['success', 'fail'].includes(remote.state)) break;
-        await step.sleep(`image-${index}-wait-${poll}`, '10 seconds');
+      if (scene.template === 'stock') {
+        await save(`image-${index}-starting`, 'running', progress(total, results.length), `正在为第 ${index+1}/${total} 页搜索相近底图…`, '', {productionScene:{index,text:scene.text,imagePrompt:scene.stockQuery,imageStatus:'running'}});
+        const photo = await matchStockPhoto(env, kie, step, scene, source.urls[index], index);
+        results.push(photoPage(scene, index, photo));
+        await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页。`, '', {productionScene:{index,imageUrl:photo.fileUrl || photo.imageUrl,imagePrompt:scene.stockQuery,imageStatus:'done'}});
+      } else {
+        results.push(textPage(scene, index));
+        await save(`image-${index}-saved`, 'running', progress(total, results.length), `第 ${index+1}/${total} 页走文案卡片。`, '', {productionScene:{index,text:scene.text,imagePrompt:'',imageStatus:'done'}});
       }
-      if (remote?.state !== 'success' || !remote.resultUrls?.[0]?.startsWith('https://')) {
-        throw new Error(remote?.error || `第 ${index + 1} 页生图失败或超时，已保留已完成的内容。`);
-      }
-      results.push({ title: scene.text, imageUrl: remote.resultUrls[0], imageModel: 'z-image', template: 'psychology-photo-story', sceneIndex: index, sourceIndex: index + 1, visualPrompt: scene.visualPrompt });
-      await save(`image-${index}-saved`, 'running', progress(total, results.length), `云端已完成 ${results.length}/${total} 页图片。`, '', {productionScene:{index,imageUrl:remote.resultUrls[0],imageStatus:'done'}});
     }
-    await save('completed', 'done', 100, `云端已按原帖顺序生成 ${total} 张新图片和对应文案。`);
+    await save('completed', 'done', 100, `已按原帖顺序完成 ${total} 页：文案卡片或素材库底图，不经过 AI 生图。`);
     return { jobId: id, count: results.length };
   } catch (error) {
-    await save('failed', 'failed', progress(total, results.length), '图文生成失败，已保留完成的分镜和图片。', String(error.message || error).slice(0, 1000));
+    await save('failed', 'failed', progress(total, results.length), '图文复刻失败，已保留完成的页面。', String(error.message || error).slice(0, 1000));
     throw error;
   }
+}
+
+async function matchStockPhoto(env, kie, step, scene, sourceUrl, index) {
+  const found = await step.do(`stock-search-${index}`, READ, () => searchStockPhotos(env, new URLSearchParams({ q: scene.stockQuery, count: '8' })));
+  if (!found.configured) throw new Error('还没有配置 Pexels，无法为有底图的页面匹配素材。');
+  let photos = found.photos || [];
+  if (!photos.length) {
+    const fallback = await step.do(`stock-search-fallback-${index}`, READ, () => searchStockPhotos(env, new URLSearchParams({
+      q: 'cinematic empty landscape fog forest interior hallway',
+      count: '8'
+    })));
+    photos = fallback.photos || [];
+  }
+  if (!photos.length) throw new Error(`第 ${index + 1} 页没有搜到相近素材。`);
+  const candidates = photos.slice(0, 4);
+  if (candidates.length === 1 || !/^https:\/\//i.test(String(sourceUrl || ''))) return candidates[0];
+  try {
+    const text = await step.do(`stock-pick-${index}`, SUBMIT, () => kie.createChat(buildStockPickPrompt(scene, candidates), {
+      model: 'gemini-3-8-flash',
+      imageUrls: [sourceUrl, ...candidates.map((photo) => photo.imageUrl)].filter((url) => /^https:\/\//i.test(url)).slice(0, 6)
+    }));
+    return candidates[parseStockPick(text, candidates.length)];
+  } catch {
+    return candidates[0];
+  }
+}
+
+function textPage(scene, index) {
+  return {
+    sceneIndex: index,
+    sourceIndex: scene.sourceIndex,
+    template: scene.textKind === 'cover' ? 'cover' : 'content',
+    textKind: scene.textKind,
+    title: scene.title,
+    subtitle: scene.subtitle,
+    body: scene.body,
+    text: scene.text,
+    originalText: scene.originalText,
+    stockQuery: '',
+    imageUrl: '',
+    fileUrl: '',
+    imageModel: 'text-card',
+  };
+}
+
+function photoPage(scene, index, photo) {
+  return {
+    sceneIndex: index,
+    sourceIndex: scene.sourceIndex,
+    template: 'stock',
+    textKind: 'stock',
+    title: scene.title,
+    subtitle: scene.subtitle,
+    body: scene.body,
+    text: scene.text,
+    originalText: scene.originalText,
+    stockQuery: scene.stockQuery,
+    imageUrl: photo.imageUrl,
+    fileUrl: photo.fileUrl,
+    thumbUrl: photo.thumbUrl,
+    author: photo.author,
+    imageModel: 'stock',
+  };
 }
 
 function progress(total, completed) {
