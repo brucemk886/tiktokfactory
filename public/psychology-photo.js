@@ -1,16 +1,8 @@
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-13";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, cardCanvasSize, mergeTextCardSets, planCenteredBlock, wrapLines } from "./psychology-text-card.js?v=20260918-14";
 import { pickCoverBackdrop, paintCoverBackdrop } from "./psychology-cover-backdrops.js";
 
 const FINAL_STATES = new Set(["success", "fail"]);
-const COPY_PLACEHOLDERS = [
-  "这张图上要出现的文字",
-  "第二张图上的文字",
-  "第三张图上的文字",
-  "第四张图上的文字",
-  "第五张图上的文字",
-  "第六张图上的文字",
-];
-const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false, copies: { zimage: ["", "", "", ""], stock: [""], text: [""] }, stockTitle: "", stockSubtitle: "" };
+const state = { mode: "zimage", textTemplate: "content", lastCoverBackdropId: "", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
 const $ = (selector) => document.querySelector(selector);
 
@@ -19,6 +11,7 @@ $("#generateBtn")?.addEventListener("click", generateImages);
 $("#renderCardBtn")?.addEventListener("click", generateTextCards);
 $("#renderStockBtn")?.addEventListener("click", generateStockCards);
 $("#searchStockBtn")?.addEventListener("click", searchStockPhotos);
+$("#clearAlbumBtn")?.addEventListener("click", clearCurrentAlbum);
 $("#musicSoundId")?.addEventListener("input", syncMusicMode);
 $("#publishBtn")?.addEventListener("click", publishPhotoPost);
 $("#textModeTab")?.addEventListener("click", () => setPhotoMode("text"));
@@ -26,13 +19,6 @@ $("#stockModeTab")?.addEventListener("click", () => setPhotoMode("stock"));
 $("#zimageModeTab")?.addEventListener("click", () => setPhotoMode("zimage"));
 $("#coverTemplateTab")?.addEventListener("click", () => setTextTemplate("cover"));
 $("#contentTemplateTab")?.addEventListener("click", () => setTextTemplate("content"));
-$("#imageCount")?.addEventListener("change", () => renderCopyFields("zimage"));
-$("#stockCount")?.addEventListener("change", () => {
-  renderCopyFields("stock");
-  trimStockSelection();
-  renderStockResults();
-});
-$("#cardCount")?.addEventListener("change", () => renderCopyFields("text"));
 $("#photoLightboxClose")?.addEventListener("click", closePhotoPreview);
 $("#photoLightbox")?.addEventListener("click", (event) => {
   if (event.target === $("#photoLightbox")) closePhotoPreview();
@@ -40,9 +26,6 @@ $("#photoLightbox")?.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePhotoPreview();
 });
-renderCopyFields("zimage");
-renderCopyFields("stock");
-renderCopyFields("text");
 loadPage();
 
 async function loadPage() {
@@ -94,13 +77,12 @@ function setPhotoMode(mode) {
   if ($("#zimagePane")) $("#zimagePane").hidden = state.mode !== "zimage";
   if ($("#createLead")) {
     $("#createLead").textContent = isText
-      ? (state.textTemplate === "cover" ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页有几张，下面就有几个文案框。标题只出现在第一张内容页。")
+      ? (state.textTemplate === "cover" ? "每次只生成 1 张封面。要下一张就改文案再点一次。" : "每次只生成 1 张内容页，标题和正文都只属于这一张。")
       : isStock
-        ? "图片数量有几张，就选几张素材、填几个文案框。标题只叠在第一张上。"
-        : "生成几张图，下面就有几个文案框。不填则只出图。";
+        ? "每次只选 1 张素材、填这一张的文案，生成 1 张。"
+        : "每次只生成 1 张。画面和叠字都只属于这一张。";
   }
   if (isText) setTextTemplate(state.textTemplate);
-  else renderCopyFields(state.mode);
   renderGeneratedPhotos();
 }
 
@@ -115,11 +97,12 @@ function setTextTemplate(template) {
   const titleInput = $("#cardTitle");
   if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
   if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
-  if ($("#cardCopyList")) $("#cardCopyList").hidden = isCover;
-  const countField = $("#cardCount")?.closest(".compact-field");
-  if (countField) countField.hidden = isCover;
-  if (!isCover) renderCopyFields("text");
-  if ($("#createLead") && state.mode === "text") $("#createLead").textContent = isCover ? "封面只生成 1 张，文案写在上面那一句里。" : "内容页有几张，下面就有几个文案框。标题只出现在第一张内容页。";
+  if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
+  if ($("#createLead") && state.mode === "text") {
+    $("#createLead").textContent = isCover
+      ? "每次只生成 1 张封面。要下一张就改文案再点一次。"
+      : "每次只生成 1 张内容页，标题和正文都只属于这一张。";
+  }
 }
 
 async function generateTextCards() {
@@ -127,11 +110,10 @@ async function generateTextCards() {
   button.disabled = true;
   button.textContent = "正在出图…";
   try {
-    persistCopyFields("text");
+    assertAlbumRoom(state.textCards.filter((photo) => photo.template !== "stock" && photo.template !== "zimage"));
     const slides = buildTextCardSlides({
       title: $("#cardTitle").value,
-      copies: state.copies.text,
-      count: $("#cardCount").value,
+      copies: [$("#cardBody")?.value || ""],
       smash: false,
       template: state.textTemplate,
     });
@@ -162,12 +144,12 @@ async function generateTextCards() {
     if (!$("#photoTitle").value.trim() && $("#cardTitle").value.trim()) $("#photoTitle").value = $("#cardTitle").value.trim().slice(0, 90);
     renderGeneratedPhotos();
     const label = state.textTemplate === "cover" ? "封面" : "内容";
-    setGenerateMessage(`已生成 ${cards.length} 张${label}图片，图集共 ${state.textCards.length} 张，可勾选后发布。`);
+    setGenerateMessage(`已生成 1 张${label}图片，图集共 ${state.textCards.filter((photo) => photo.template !== "stock" && photo.template !== "zimage").length} 张。改文案后再点，可继续加下一张。`);
   } catch (error) {
     setGenerateMessage(error.message || "生成文案图片失败。", true);
   } finally {
     button.disabled = false;
-    button.textContent = "生成文案图片";
+    button.textContent = "生成这张";
   }
 }
 
@@ -268,18 +250,17 @@ function renderContentCard(slide, aspectRatio) {
 }
 
 async function searchStockPhotos() {
-  persistCopyFields("stock");
-  const query = $("#stockQuery").value.trim() || state.stockTitle.trim();
+  const query = $("#stockQuery").value.trim() || $("#stockTitle")?.value.trim() || "";
   const button = $("#searchStockBtn");
   button.disabled = true;
   button.textContent = "搜索中…";
   try {
     const data = await requestJson(`/api/official-tiktok/stock-photos?q=${encodeURIComponent(query)}&count=12`);
     state.stockPhotos = data.photos || [];
-    state.selectedStock = state.stockPhotos.slice(0, Math.max(1, Math.min(6, Number($("#stockCount").value) || 1))).map((photo) => photo.fileUrl);
+    state.selectedStock = state.stockPhotos.slice(0, 1).map((photo) => photo.fileUrl);
     renderStockResults(data.configured === false ? (data.error || "还没有配置 Pexels，请改用图片链接。") : (state.stockPhotos.length ? "" : "没有搜到素材。换个词再试。"));
     if (data.configured === false) setGenerateMessage(data.error, true);
-    else setGenerateMessage(state.stockPhotos.length ? `找到 ${state.stockPhotos.length} 张素材，已预选 ${state.selectedStock.length} 张。` : "没有搜到素材。");
+    else setGenerateMessage(state.stockPhotos.length ? `找到 ${state.stockPhotos.length} 张素材，已预选 1 张。` : "没有搜到素材。");
   } catch (error) {
     setGenerateMessage(error.message || "搜索素材失败。", true);
   } finally {
@@ -299,8 +280,8 @@ function renderStockResults(emptyMessage = "") {
   node.innerHTML = state.stockPhotos.map((photo) => `<button type="button" class="stock-thumb${selected.has(photo.fileUrl) ? " is-selected" : ""}" data-file-url="${escapeAttr(photo.fileUrl)}"><img src="${escapeAttr(photo.thumbUrl)}" alt="${escapeAttr(photo.author)}" loading="lazy"><span>${escapeHtml(photo.author)}</span></button>`).join("");
   node.querySelectorAll(".stock-thumb").forEach((button) => button.addEventListener("click", () => {
     const url = button.dataset.fileUrl;
-    if (state.selectedStock.includes(url)) state.selectedStock = state.selectedStock.filter((item) => item !== url);
-    else if (state.selectedStock.length < copyCount("stock")) state.selectedStock.push(url);
+    if (state.selectedStock.includes(url)) state.selectedStock = [];
+    else state.selectedStock = [url];
     renderStockResults();
   }));
 }
@@ -314,41 +295,39 @@ async function generateStockCards() {
   button.disabled = true;
   button.textContent = "正在出图…";
   try {
-    persistCopyFields("stock");
+    assertAlbumRoom(state.textCards.filter((photo) => photo.template === "stock"));
     const slides = buildStockOverlaySlides({
       title: $("#stockTitle")?.value || "",
       subtitle: $("#stockSubtitle")?.value || "",
-      copies: state.copies.stock,
-      count: $("#stockCount").value,
+      copies: [$("#stockBody")?.value || ""],
+      count: 1,
       smash: false,
     });
-    let images = state.selectedStock.length ? state.selectedStock : pastedStockUrls();
+    let images = state.selectedStock.length ? state.selectedStock.slice(0, 1) : pastedStockUrls().slice(0, 1);
     if (!images.length) {
-      const query = $("#stockQuery").value.trim() || state.stockTitle.trim();
+      const query = $("#stockQuery").value.trim() || $("#stockTitle")?.value.trim() || "";
       if (query) await searchStockPhotos();
-      images = state.selectedStock.length ? state.selectedStock : pastedStockUrls();
+      images = state.selectedStock.length ? state.selectedStock.slice(0, 1) : pastedStockUrls().slice(0, 1);
     }
-    if (!images.length) throw new Error("请先搜索素材，或粘贴素材站图片链接。");
-    if (images.length < slides.length) throw new Error(`图片数量是 ${slides.length}，请先选够 ${slides.length} 张素材图。`);
+    if (!images.length) throw new Error("请先选 1 张素材，或粘贴一张图片链接。");
     const aspectRatio = $("#stockAspect").value;
     const grayscale = $("#stockGray").checked;
     const cards = [];
-    for (const [index, slide] of slides.entries()) {
-      const image = await loadImage(images[index]);
-      const blob = await canvasToJpeg(renderOverlayCard(slide, image, aspectRatio, { grayscale }));
-      const url = URL.createObjectURL(blob);
-      cards.push({
-        key: `stock:${Date.now()}:${index}`,
-        kind: "text-card",
-        template: "stock",
-        resultIndex: index,
-        url,
-        blob,
-        contentType: "image/jpeg",
-        prompt: slide.title || slide.lines[0] || "素材库图片",
-        createdAt: Date.now(),
-      });
-    }
+    const slide = slides[0];
+    const image = await loadImage(images[0]);
+    const blob = await canvasToJpeg(renderOverlayCard(slide, image, aspectRatio, { grayscale }));
+    const url = URL.createObjectURL(blob);
+    cards.push({
+      key: `stock:${Date.now()}:0`,
+      kind: "text-card",
+      template: "stock",
+      resultIndex: 0,
+      url,
+      blob,
+      contentType: "image/jpeg",
+      prompt: slide.title || slide.lines[0] || "素材库图片",
+      createdAt: Date.now(),
+    });
     const merged = mergeTextCardSets(state.textCards, cards, "stock");
     forgetRemovedCards(merged.removed);
     state.textCards = merged.cards;
@@ -356,68 +335,23 @@ async function generateStockCards() {
     state.currentTaskIds = [];
     if (!$("#photoTitle").value.trim() && $("#stockTitle")?.value?.trim()) $("#photoTitle").value = $("#stockTitle").value.trim().slice(0, 90);
     renderGeneratedPhotos();
-    setGenerateMessage(`已生成 ${cards.length} 张素材库图片，可勾选后发布。`);
+    setGenerateMessage(`已生成 1 张素材图，图集共 ${state.textCards.filter((photo) => photo.template === "stock").length} 张。改文案后再点，可继续加下一张。`);
   } catch (error) {
     setGenerateMessage(error.message || "生成素材图失败。", true);
   } finally {
     button.disabled = false;
-    button.textContent = "生成素材图";
+    button.textContent = "生成这张";
   }
 }
 
-function copyCount(kind) {
-  const selected = { zimage: "#imageCount", stock: "#stockCount", text: "#cardCount" }[kind];
-  return Math.max(1, Math.min(6, Number($(selected)?.value) || 1));
+function assertAlbumRoom(photos = []) {
+  if ((photos || []).length >= 6) throw new Error("图集最多 6 张。先点清空图集，或去掉已生成的图后再出下一张。");
 }
 
-function persistCopyFields(kind) {
-  const node = copyListNode(kind);
-  if (!node) return;
-  state.copies[kind] = [...node.querySelectorAll("[data-copy-index]")].map((field) => field.value);
-  if (kind === "stock") {
-    if ($("#stockTitle")) state.stockTitle = $("#stockTitle").value;
-    if ($("#stockSubtitle")) state.stockSubtitle = $("#stockSubtitle").value;
-  }
-}
-
-function copyListNode(kind) {
-  return $(kind === "stock" ? "#stockCopyList" : kind === "text" ? "#cardCopyList" : "#imageCopyList");
-}
-
-function renderCopyFields(kind) {
-  persistCopyFields(kind);
-  const node = copyListNode(kind);
-  if (!node) return;
-  const count = copyCount(kind);
-  const values = Array.from({ length: count }, (_, index) => state.copies[kind][index] || "");
-  state.copies[kind] = values;
-  const heading = kind === "text" ? "内容" : "文案";
-  node.innerHTML = values.map((value, index) => {
-    const extras = kind === "stock" && index === 0
-      ? `<label class="field"><span>标题（选填，只叠在这张）</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds" value="${escapeAttr(state.stockTitle || "")}" /></label>
-        <label class="field"><span>副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)" value="${escapeAttr(state.stockSubtitle || "")}" /></label>`
-      : "";
-    return `<article class="photo-copy-card">
-      <strong>第 ${index + 1} 张${heading}</strong>
-      ${extras}
-      <label class="field"><span>${kind === "text" ? "这页正文" : "这张图上的文字"}</span><textarea data-copy-index="${index}" class="photo-compact-textarea" rows="3" maxlength="800" placeholder="${escapeAttr(COPY_PLACEHOLDERS[index])}">${escapeHtml(value)}</textarea></label>
-    </article>`;
-  }).join("");
-  node.querySelectorAll("[data-copy-index], #stockTitle, #stockSubtitle").forEach((field) => {
-    field.addEventListener("input", () => persistCopyFields(kind));
-  });
-}
-
-function trimStockSelection() {
-  const limit = copyCount("stock");
-  state.selectedStock = state.selectedStock.slice(0, limit);
-}
-
-function copySlidesForCount(count) {
-  persistCopyFields("zimage");
-  const copies = state.copies.zimage;
-  if (!copies.some((value) => String(value || "").trim())) return [];
-  return buildPerImageCopySlides({ copies, count, smash: false });
+function thisImageCopySlide() {
+  const body = $("#imageCopy")?.value || "";
+  if (!String(body).trim()) return [];
+  return buildPerImageCopySlides({ copies: [body], count: 1, smash: false });
 }
 
 async function overlayGeneratedPhotos() {
@@ -425,18 +359,18 @@ async function overlayGeneratedPhotos() {
   const photos = currentGeneratedPhotos();
   if (!photos.length) return;
   state.overlaying = true;
-  setGenerateMessage("图片已生成，正在按张叠字…");
+  setGenerateMessage("图片已生成，正在叠字…");
   try {
     const aspectRatio = $("#aspectRatio").value;
     const cards = [];
     for (const photo of photos) {
-      const slide = state.overlaySlides[photo.slideIndex] || { title: "", subtitle: "", lines: [] };
+      const slide = state.overlaySlides[0] || { title: "", subtitle: "", lines: [] };
       const src = `/api/official-tiktok/generated-photos/file?generationId=${encodeURIComponent(photo.generationId)}&resultIndex=${encodeURIComponent(photo.resultIndex)}`;
       const image = await loadImage(src);
       const blob = await canvasToJpeg(renderOverlayCard(slide, image, aspectRatio));
       const url = URL.createObjectURL(blob);
       cards.push({
-        key: `zimage-copy:${photo.generationId}:${photo.slideIndex}:${photo.resultIndex}`,
+        key: `zimage-copy:${photo.generationId}:${photo.resultIndex}`,
         kind: "text-card",
         template: "zimage",
         generationId: photo.generationId,
@@ -448,13 +382,17 @@ async function overlayGeneratedPhotos() {
         createdAt: Date.now(),
       });
     }
-    forgetRemovedCards(state.zimageCards);
-    state.zimageCards = cards;
-    resetPhotoSelection();
+    const merged = [...state.zimageCards.filter((card) => !cards.some((item) => item.generationId === card.generationId && item.resultIndex === card.resultIndex)), ...cards].slice(0, 6);
+    forgetRemovedCards(state.zimageCards.filter((card) => !merged.some((item) => item.key === card.key)));
+    state.zimageCards = merged;
     renderGeneratedPhotos();
-    setGenerateMessage(`已生成 ${cards.length} 张图，并按顺序叠上每张文案。`);
+    setGenerateMessage("已生成 1 张图并叠上这张文案。改内容后再点，可继续加下一张。");
   } catch (error) {
-    setGenerateMessage(error.message || "叠字失败，仍可发布未叠字的原图。", true);
+    const photos = currentGeneratedPhotos();
+    const existingKeys = new Set(state.zimageCards.map((card) => card.key));
+    state.zimageCards = [...state.zimageCards, ...photos.filter((photo) => !existingKeys.has(photo.key))].slice(0, 6);
+    renderGeneratedPhotos();
+    setGenerateMessage(error.message || "叠字失败，已加入未叠字的原图。", true);
   } finally {
     state.overlaying = false;
   }
@@ -572,39 +510,54 @@ function clearTextCards() {
   state.textCards = [];
 }
 
+function clearCurrentAlbum() {
+  if (state.mode === "zimage") {
+    forgetRemovedCards(state.zimageCards);
+    state.zimageCards = [];
+    peerJobPhotos = [];
+    state.currentTaskIds = [];
+  } else if (state.mode === "stock") {
+    const removed = state.textCards.filter((card) => card.template === "stock");
+    forgetRemovedCards(removed);
+    state.textCards = state.textCards.filter((card) => card.template !== "stock");
+  } else {
+    const removed = state.textCards.filter((card) => card.template !== "stock" && card.template !== "zimage");
+    forgetRemovedCards(removed);
+    state.textCards = state.textCards.filter((card) => card.template === "stock" || card.template === "zimage");
+  }
+  resetPhotoSelection();
+  renderGeneratedPhotos();
+  setGenerateMessage("已清空当前图集。");
+}
+
 async function generateImages() {
   const prompt = $("#imagePrompt").value.trim();
   if (prompt.length < 2) return setGenerateMessage("请先填写画面描述。", true);
-  const count = Math.max(1, Math.min(6, Number($("#imageCount").value) || 1));
   const button = $("#generateBtn");
   button.disabled = true;
   button.textContent = "正在提交…";
-  setGenerateMessage(`正在提交 ${count} 个 Z-Image 任务…`);
+  setGenerateMessage("正在提交 1 个 Z-Image 任务…");
   try {
-    const results = await Promise.allSettled(Array.from({ length: count }, () => requestJson("/api/kie-ai", {
+    assertAlbumRoom(state.zimageCards);
+    const created = await requestJson("/api/kie-ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "image", prompt, imageModel: "z-image", aspectRatio: $("#aspectRatio").value, noImageText: $("#noImageText").checked }),
-    })));
-    const created = results.flatMap((result) => result.status === "fulfilled" ? [result.value.task] : []);
-    const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason?.message || String(result.reason)] : []);
-    if (!created.length) throw new Error(failures[0] || "Z-Image 任务提交失败。");
-    resetPhotoSelection();
+    });
+    const task = created.task;
+    if (!task?.id) throw new Error("Z-Image 任务提交失败。");
     peerJobPhotos = [];
-    clearTextCards();
-    forgetRemovedCards(state.zimageCards);
-    state.zimageCards = [];
-    state.overlaySlides = copySlidesForCount(count);
-    state.currentTaskIds = created.map((task) => task.id);
-    state.tasks = [...created, ...state.tasks];
+    state.overlaySlides = thisImageCopySlide();
+    state.currentTaskIds = [task.id];
+    state.tasks = [task, ...state.tasks];
     renderGeneratedPhotos();
     watchPending();
-    setGenerateMessage(failures.length ? `已提交 ${created.length} 个任务，${failures.length} 个失败：${failures.join("；")}` : `已提交 ${created.length} 个任务，完成后会自动显示。`, failures.length > 0);
+    setGenerateMessage("已提交 1 张，完成后会加入图集。");
   } catch (error) {
     setGenerateMessage(error.message || "生成失败。", true);
   } finally {
     button.disabled = false;
-    button.textContent = "生成图片";
+    button.textContent = "生成这张";
   }
 }
 
@@ -620,7 +573,7 @@ function watchPending() {
     updateGenerationState();
     if (state.tasks.every((task) => FINAL_STATES.has(task.status) || !activeIds.includes(task.id))) {
       clearInterval(state.pollTimer);
-      overlayGeneratedPhotos();
+      finishGeneratedPhoto();
     }
   }, 4000);
 }
@@ -629,16 +582,26 @@ function generatedPhotos() {
   return [...peerJobPhotos, ...state.tasks.flatMap((task) => (task.status === "success" ? (task.resultUrls || []).map((url, index) => ({ key: `${task.id}:${index}`, generationId: task.id, resultIndex: index, url, prompt: task.prompt, createdAt: task.createdAt })) : []))];
 }
 
+function finishGeneratedPhoto() {
+  if (state.overlaySlides.length) {
+    overlayGeneratedPhotos();
+    return;
+  }
+  const photos = currentGeneratedPhotos();
+  if (!photos.length) return;
+  const existingKeys = new Set(state.zimageCards.map((card) => card.key));
+  const incoming = photos.filter((photo) => !existingKeys.has(photo.key));
+  state.zimageCards = [...state.zimageCards, ...incoming].slice(0, 6);
+  renderGeneratedPhotos();
+  setGenerateMessage("已生成 1 张图。改内容后再点，可继续加下一张。");
+}
+
 function availablePhotos() {
   if (state.mode === "text") return state.textCards.filter((photo) => photo.template !== "stock" && photo.template !== "zimage").slice(0, 6);
   if (state.mode === "stock") return state.textCards.filter((photo) => photo.template === "stock").slice(0, 6);
   if (state.zimageCards.length) return state.zimageCards.slice(0, 6);
   if (peerJobPhotos.length) return peerJobPhotos.slice(0, 6);
-  if (state.currentTaskIds.length) {
-    const current = new Set(state.currentTaskIds);
-    return generatedPhotos().filter((photo) => current.has(photo.generationId)).slice(0, 6);
-  }
-  return generatedPhotos().slice(0, 6);
+  return [];
 }
 
 function resetPhotoSelection() {
@@ -698,10 +661,10 @@ function renderGeneratedPhotos() {
   const selectedSet = new Set(selected.map((photo) => photo.key));
   const ratio = state.mode === "zimage" ? "9 / 16" : ((state.mode === "stock" ? $("#stockAspect")?.value : $("#cardAspect")?.value) || "1:1").replace(":", " / ");
   const empty = state.mode === "text"
-    ? "还没有文案图片。先用封面模板出 1 张，再切到内容模板；内容页有几张就填几个文案框。"
+    ? "还没有文案图片。每次生成 1 张，改文案后再点可加下一张。"
     : state.mode === "stock"
-      ? "还没有素材库图片。图片数量有几张，就选几张素材、填几个文案框。"
-      : "还没有可用图片。生成数量有几张，下面就有几个文案框。";
+      ? "还没有素材库图片。选 1 张素材，填这一张的文案，点生成这张。"
+      : "还没有可用图片。填这一张的画面和叠字，点生成这张。";
   $("#photoList").innerHTML = photos.length ? photos.map((photo) => {
     const order = selected.findIndex((item) => item.key === photo.key);
     const checked = order >= 0;

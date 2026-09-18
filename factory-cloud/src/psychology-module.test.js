@@ -300,11 +300,12 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.doesNotMatch(html,/选择图片与封面|selectedPhotos|photoCount|<option>8<\/option>/);
   assert.match(html,/id="publishTime"[\s\S]*id="musicSoundId"[\s\S]*id="privacyLevel"/);
   assert.match(html,/id="imagePrompt" class="photo-compact-textarea" rows="3"/);
-  assert.match(html,/id="imageCopyList"/);
-  assert.match(html,/id="stockCopyList"/);
-  assert.match(html,/id="cardCopyList"/);
-  assert.match(html,/几张图几个文案框/);
-  assert.doesNotMatch(html,/空一行换下一张|id="stockBody"|id="cardBody"/);
+  assert.match(html,/id="imageCopy"/);
+  assert.match(html,/id="stockBody"/);
+  assert.match(html,/id="cardBody"/);
+  assert.match(html,/>生成这张</);
+  assert.match(html,/id="clearAlbumBtn"/);
+  assert.doesNotMatch(html,/空一行换下一张|imageCopyList|stockCopyList|cardCopyList|imageCount|stockCount|cardCount|几张图几个文案框/);
   assert.match(html,/id="publishCaption" class="photo-compact-textarea" rows="3"/);
   assert.match(html,/id="noImageText" type="checkbox"/);
   assert.doesNotMatch(html,/id="noImageText"[^>]*checked/);
@@ -319,8 +320,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
   assert.match(html,/>内容模板</);
   assert.match(html,/>内容标题</);
-  assert.match(html,/内容页数量/);
-  assert.match(html,/不含封面/);
+  assert.match(html,/>这张正文</);
+  assert.doesNotMatch(html,/内容页数量|不含封面/);
   assert.doesNotMatch(html,/点缀词|去掉空格|smashWords|stockSmash|cardAccent/);
   assert.match(workbench,/AI生图、素材库图片或文案图片/);
   assert.match(html,/id="renderCardBtn"/);
@@ -334,22 +335,24 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/imageModel: "z-image"/);
   assert.match(browser,/function publicationPhotos\(\)/);
   assert.match(browser,/mergeTextCardSets/);
-  assert.match(styles,/\.photo-copy-list/);
-  assert.match(browser,/function renderCopyFields\(/);
-  assert.match(browser,/data-copy-index/);
-  assert.match(browser,/内容页有几张/);
-  const paged = buildTextCardSlides({
+  assert.match(browser,/function finishGeneratedPhoto\(/);
+  assert.match(browser,/function clearCurrentAlbum\(/);
+  assert.match(browser,/每次只生成 1 张/);
+  const page = buildTextCardSlides({
     title: "Signs",
-    copies: ["card one", "card two line\nmore", "card three"],
-    count: 3,
+    copies: ["card one\nmore"],
     template: "content",
   });
-  assert.equal(paged.length, 3);
-  assert.equal(paged[0].title, "Signs");
-  assert.deepEqual(paged[0].bullets, ["card one"]);
-  assert.equal(paged[1].title, "");
-  assert.deepEqual(paged[1].bullets, ["card two line", "more"]);
-  assert.deepEqual(paged[2].bullets, ["card three"]);
+  assert.equal(page.length, 1);
+  assert.equal(page[0].title, "Signs");
+  assert.deepEqual(page[0].bullets, ["card one", "more"]);
+  const nextPage = buildTextCardSlides({
+    title: "Another",
+    copies: ["only this page"],
+    template: "content",
+  });
+  assert.equal(nextPage[0].title, "Another");
+  assert.deepEqual(nextPage[0].bullets, ["only this page"]);
   assert.match(browser,/pickCoverBackdrop/);
   assert.match(browser,/paintCoverBackdrop/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
@@ -363,7 +366,7 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(browser,/\/api\/official-tiktok\/photo-publish/);
   assert.match(browser,/overlayGeneratedPhotos/);
   assert.match(browser,/generated-photos\/file/);
-  assert.match(browser,/zimage-copy:\$\{photo\.generationId\}:\$\{photo\.slideIndex\}:\$\{photo\.resultIndex\}/);
+  assert.match(browser,/zimage-copy:\$\{photo\.generationId\}:\$\{photo\.resultIndex\}/);
   assert.match(cloud,/\/api\/official-tiktok\/stock-photos/);
   assert.match(cloud,/generated-photos\/file/);
   assert.match(cloud,/loadGeneratedPhoto/);
@@ -395,8 +398,8 @@ test("psychology text cards and stock overlays do not need generated images", ()
     [{ key: "new-content", template: "content" }],
     "content"
   );
-  assert.deepEqual(kept.cards.map((card) => card.key), ["cover-1", "new-content"]);
-  assert.deepEqual(kept.removed.map((card) => card.key), ["old-content"]);
+  assert.deepEqual(kept.cards.map((card) => card.key), ["cover-1", "old-content", "new-content"]);
+  assert.deepEqual(kept.removed.map((card) => card.key), []);
   assert.equal(planCenteredBlock(200, 1080, 80) > 300, true);
   assert.equal(planCenteredBlock(200, 1080, 80) < 500, true);
   assert.equal(planCenteredBlock(1000, 1080, 80), 80);

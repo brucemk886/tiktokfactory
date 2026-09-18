@@ -29,18 +29,20 @@ export function normalizeCardGroup(value) {
 export function mergeTextCardSets(existing = [], incoming = [], group, limit = 6) {
   const kind = normalizeCardGroup(group);
   const taggedIncoming = (Array.isArray(incoming) ? incoming : []).map((card) => ({ ...card, template: card.template || kind }));
-  const keep = (Array.isArray(existing) ? existing : []).filter((card) => normalizeCardGroup(card.template || card.kind) !== kind);
-  const merged = [...keep, ...taggedIncoming];
+  const current = Array.isArray(existing) ? existing : [];
+  const others = current.filter((card) => normalizeCardGroup(card.template || card.kind) !== kind);
+  const same = current.filter((card) => normalizeCardGroup(card.template || card.kind) === kind);
+  const cap = Math.max(1, Math.min(6, Number(limit) || 6));
+  const sameNext = [...same, ...taggedIncoming].slice(0, cap);
+  const merged = [...others, ...sameNext];
   const ordered = [
     ...merged.filter((card) => normalizeCardGroup(card.template || card.kind) === "cover"),
     ...merged.filter((card) => normalizeCardGroup(card.template || card.kind) !== "cover"),
   ];
-  const cap = Math.max(1, Math.min(6, Number(limit) || 6));
-  const cards = ordered.slice(0, cap);
-  const nextKeys = new Set(cards.map((card) => card.key));
+  const nextKeys = new Set(ordered.map((card) => card.key));
   return {
-    cards,
-    removed: (Array.isArray(existing) ? existing : []).filter((card) => !nextKeys.has(card.key)),
+    cards: ordered,
+    removed: current.filter((card) => !nextKeys.has(card.key)),
   };
 }
 
@@ -192,22 +194,14 @@ export function buildTextCardSlides({ title, body, copies, accent, count, smash,
       bullets: [],
     }];
   }
-  const groups = Array.isArray(copies)
-    ? normalizeCopyFields(copies, count).map((field) => linesFromCopyField(field, smash))
-    : splitContentCardBodies(body, count, smash);
-  if (!heading && !groups.some((group) => group.length)) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
-  if (!groups.length) {
-    return [{
-      kind: "content",
-      title: smash ? smashCardWords(heading) : heading,
-      accent: mark,
-      bullets: [],
-    }].filter((slide) => slide.title);
-  }
-  return groups.map((bullets, index) => ({
+  const bullets = Array.isArray(copies)
+    ? linesFromCopyField(copies[0], smash)
+    : parseCardBullets(body).map((line) => smash ? smashCardWords(line) : line);
+  if (!heading && !bullets.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
+  return [{
     kind: "content",
-    title: index === 0 ? (smash ? smashCardWords(heading) : heading) : "",
-    accent: index === 0 ? mark : "",
+    title: smash ? smashCardWords(heading) : heading,
+    accent: mark,
     bullets,
-  }));
+  }];
 }

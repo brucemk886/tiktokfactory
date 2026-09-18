@@ -1,13 +1,13 @@
 # Goal
 
-Replace blank-line copy splitting with one labeled input per image, so later 图文爆款 recreation can fill those fields directly.
+Generate one independent photo per click. Copy, title, and image are not shared across a batch.
 
 # Decisions
 
-- Count controls how many copy boxes appear. Newlines stay on that image.
-- Stock still has optional title/subtitle on the first image only.
-- Text content pages use the same one-box-per-page pattern; cover stays a single quote.
-- Recreation routing across AI / stock / text templates is not implemented yet.
+- Removed count selectors and per-image field lists.
+- Each mode is a single form: fill this image, click 生成这张, it appends to the album.
+- Content title belongs to that one page. A later generate does not replace earlier cards.
+- Album cap is 6 per mode, with a 清空图集 control.
 
 # Files changed
 
@@ -24,8 +24,8 @@ Replace blank-line copy splitting with one labeled input per image, so later 图
 
 # Unfinished work
 
-- 图文爆款 复刻: detect which of the three templates to use, then fill per-image copy boxes and recreate image plus copy.
+- 图文爆款 recreation still needs to pick a template and fill this single-image form repeatedly.
 
 # Recommended next step
 
-Use the live photo template with count=3 and confirm three separate copy boxes appear in all three modes.
+On the live photo template, generate two content cards with different titles and confirm both stay in the album.
