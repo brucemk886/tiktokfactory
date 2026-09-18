@@ -15,8 +15,8 @@ function renderTemplates() {
   $('#template').innerHTML=(state.templates[state.mediaType]||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
   $('#sourceHint').textContent=`选题来源：同行${state.mediaType==='photo'?'图文':'视频'}爆款库，共 ${state.counts[state.mediaType]||0} 条。每条爆款生成一条新内容。`;
   renderSources();
-  if($('#rewriteCopyField')) $('#rewriteCopyField').hidden=state.mediaType!=='photo';
-  if($('#musicPoolField')) $('#musicPoolField').hidden=state.mediaType!=='photo';
+  const extras=$('#photoOptions');
+  if(extras){extras.hidden=state.mediaType!=='photo';if(extras.hidden)extras.open=false;}
 }
 
 function sourceType(){return state.mediaType==='video'&&$('#sourceType').value==='topic-bank'?'topic-bank':'peer';}

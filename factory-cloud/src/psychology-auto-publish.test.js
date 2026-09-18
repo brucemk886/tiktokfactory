@@ -173,6 +173,9 @@ test('music pool is saved as reusable config and posts without a pool keep auto 
   const {call,sqlite}=await fixture(t);
   const page=fs.readFileSync(new URL('../../public/psychology-auto-publish.html',import.meta.url),'utf8');
   assert.match(page,/id="musicIds"/);
+  // Rewrite/music live in a collapsible panel that starts hidden and collapsed.
+  assert.match(page,/<details[^>]*id="photoOptions"[^>]*hidden>/);
+  assert.doesNotMatch(page,/<details[^>]*id="photoOptions"[^>]*open/);
   await call('POST',input({mediaType:'photo',template:'photo-original',count:2}));
   const plain=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE type='psychology-photo-story'").all();
   assert.ok(plain.every(row=>JSON.parse(row.payload_json).psychologyAutomation.musicSoundId===undefined));
