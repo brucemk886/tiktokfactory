@@ -3,7 +3,7 @@ import { TOPIC_TEMPLATES,validateTopicTemplate,normalizeTopic,topicFingerprintTe
 const BASE="/api/psychology-template-topics";
 export function assertTopicBankUser(user){
   if(!user || user.role!=="admin" || !(user.sidebarModules||[]).includes("psychology-topic-bank"))
-    throw Object.assign(new Error("没有目标题库管理权限。"),{statusCode:403});
+    throw Object.assign(new Error("没有模板题库管理权限。"),{statusCode:403});
 }
 const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at});
 export async function topicCounts(db){

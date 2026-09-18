@@ -1,7 +1,7 @@
 # Psychology template topic banks
 
 ## Goal
-Add an independent 目标题库 sidebar page for user-managed topics for video templates 01/02/03, and draw from the selected bank during psychology automatic publishing.
+Add an independent 模板题库 sidebar page for user-managed topics for video templates 01/02/03, and draw from the selected bank during psychology automatic publishing.
 
 ## Decisions
 - /psychology-topic-bank is admin-only, separate from the workbench; all three banks start empty.
@@ -29,3 +29,6 @@ User supplies topics through the empty banks. Production deployment and read-onl
 
 ## Deployment compatibility
 The first remote migration was rejected by D1 with incomplete input. Replaced CASE/END trigger guards with SELECT RAISE(...) WHERE predicates to avoid the remote SQL splitter ambiguity (workers-sdk issue https://github.com/cloudflare/workers-sdk/issues/4727). Local transaction/concurrency tests were rerun after this change; no previous data is modified by migration 0029.
+
+## Naming correction
+User corrected the display name to 模板题库. Updated sidebar, page title, automatic-publishing labels and permission message; routes and data stay the same. Validation: existing browser QA and focused automation tests.
