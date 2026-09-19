@@ -1,3 +1,4 @@
+import { stagePublishItem } from './psychology-publish-groups.js';
 import { assertAutoJobAccess, loadAutoUser } from './psychology-auto-publish.js';
 import { assertOfficialPublishAccess } from './official.js';
 import { importRenderedPhoto, normalizePhotoPublishPayload, buildPhotoBatchRequest, buildPhotoPublishRecord, proxyStockPhoto } from './photo-publishing.js';
@@ -54,6 +55,10 @@ export async function handleAutoPhotoWorker(request, env, url) {
     scheduleAt: item.schedule_at * 1000, photoCoverIndex: 0, autoAddMusic: true,
     musicSoundId: String(payload.psychologyAutomation.musicSoundId || ''),
   });
+  if(item.publish_group_id){
+    const remoteItem=buildPhotoBatchRequest(publish).items[0];
+    return json(await stagePublishItem(env,item,{mediaType:'photo',title:publish.title,item:remoteItem}),202);
+  }
   const batch = await signalDesk(env, env.DB, '/api/v1/publish/batches', { method:'POST', body: buildPhotoBatchRequest(publish) });
   const record = buildPhotoPublishRecord(publish, batch);
   if (!record.batchId) fail('发布中台未返回批次编号，请重试确认提交状态。', 502);

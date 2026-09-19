@@ -105,3 +105,10 @@ test("psychology operations has a separate page and overview remains unchanged",
   assert.equal(pageFileFor("/psychology-effects"),"official-group-report.html");
   assert.equal(pageFileFor("/novel-ops-report"),"official-group-report.html");
 });
+
+test("grouped video upload completion waits for an actual remote receipt",()=>{
+  const base={batch_id:"b",connection_id:"a",created_at:now,publish_group_id:"g",config_json:JSON.stringify({mediaType:"video"})};
+  const r=report({items:[{...base,id:"ready",type:"official-publish",status:"done"},{...base,id:"sent",type:"official-publish",status:"done",receipt_json:JSON.stringify({batchId:"remote"})}]});
+  assert.equal(r.funnel.generated,2);assert.equal(r.funnel.submitted,1);
+  assert.equal(r.batches[0].items.find(i=>i.id==="ready").state,"generated");
+});

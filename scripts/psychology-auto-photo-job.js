@@ -93,8 +93,8 @@ export async function runAutoPhotoJob({ root, workDir, payload, patchJob }) {
       await call(api + '/upload', {index,dataUrl});
       patchJob({status:'running',percent:Math.round(20+65*(index+1)/payload.pages.length),message:`已上传 ${index+1}/${payload.pages.length} 张图片`});
     }
-    patchJob({status:'running',percent:92,message:'正在提交官方图文发布…'});
+    patchJob({status:'running',percent:92,message:'图片上传完成，正在确认发布分组…'});
     const receipt = await call(api + '/publish', {});
-    patchJob({status:'done',percent:100,message:'图文已提交官方发布中台',results:[],publishSummary:receipt});
+    patchJob({status:'done',percent:100,message:receipt.batchId?'图文已提交官方发布中台':'图文已上传，等待同组内容就绪',results:[],groupReady:!receipt.batchId,publishSummary:receipt});
   } finally { await renderer.close(); }
 }

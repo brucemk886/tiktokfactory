@@ -20,7 +20,7 @@ export async function handlePsychologyOperations(request, env, url, session) {
     const [videosByAccount,recordRows,itemRows]=await Promise.all([
       loadVideosForAccounts(env,env.DB,accounts.map(a=>a.schema),100),
       env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE created_at>=? AND created_at<? ORDER BY created_at DESC LIMIT 10001").bind(window.previousStart,Date.now()+1).all(),
-      env.DB.prepare(`SELECT i.id,i.batch_id,i.job_id,i.connection_id,i.receipt_json,b.config_json,b.created_at,
+      env.DB.prepare(`SELECT i.id,i.batch_id,i.job_id,i.connection_id,i.receipt_json,i.publish_group_id,b.config_json,b.created_at,
         j.type,j.status,j.title,j.error,json_extract(j.result_json,'$.publishFailed') AS publish_failed,
         json_extract(j.result_json,'$.publishError') AS publish_error
         FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id

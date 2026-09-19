@@ -17,7 +17,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   const template = String(input.template || '');
   if (!AUTO_TEMPLATES[mediaType].some(item => item.id === template)) fail('模板与内容类型不匹配。');
   const count = Number(input.count);
-  if (!Number.isInteger(count) || count < 1 || count > 50) fail('每批生成总数应为 1–50 条。');
+  if (!Number.isInteger(count) || count < 1 || count > 100) fail('每次生成总数应为 1–100 条，每20条合并提交。');
   const connectionIds = [...new Set((Array.isArray(input.connectionIds) ? input.connectionIds : []).map(id => String(id).trim()).filter(Boolean))];
   if (!connectionIds.length || connectionIds.length > 50) fail('请选择 1–50 个账号。');
   if (count < connectionIds.length) fail('生成总数不能少于所选账号数。');

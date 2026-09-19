@@ -1,3 +1,4 @@
+import { PSYCHOLOGY_GROUP_SIZE, dispatchPublishGroup } from './psychology-publish-groups.js';
 import { toPublicUser } from './auth.js';
 import { AUTO_TEMPLATES, normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 import { peerCopy, peerProductionPayload } from '../../scripts/psychology-peer-production.js';
@@ -72,25 +73,33 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     for (const batch of batches.results) {
       const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json
         FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=? ORDER BY i.id`).bind(batch.id).all();
-      result.push({ id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json),
+      const groups=await env.DB.prepare('SELECT id,ordinal,expected_count,status,error,updated_at,response_json FROM psychology_publish_groups WHERE batch_id=? ORDER BY ordinal').bind(batch.id).all();
+      result.push({ groups:groups.results.map(g=>({id:g.id,number:g.ordinal+1,count:g.expected_count,status:g.status,error:g.error,canRetry:g.status==='failed'||(g.status==='submitting'&&g.updated_at<Date.now()-180000),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''})), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json),
         items: rows.results.map(row => {
           const receipt = JSON.parse(row.receipt_json || '{}');
           const result = JSON.parse(row.result_json || '{}');
-          const submitted = Boolean(receipt.batchId || (row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
+          const submitted = Boolean(receipt.batchId || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
           return { id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
-            scheduleAt: row.schedule_at, status: submitted ? 'submitted' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
-            percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.message, error: row.error || result.publishError || '', type: row.type };
+            groupId:row.publish_group_id, scheduleAt: row.schedule_at, status: submitted ? 'submitted' : row.ready_json!=='{}' && row.publish_group_id ? 'ready' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
+            percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: row.error || result.publishError || '', type: row.type };
         }) });
     }
     return json({ batches: result });
   }
+  const groupRetry=url.pathname.match(/^\/api\/psychology-auto-publish\/groups\/([^/]+)\/retry$/);
+  if(groupRetry && request.method==='POST'){
+    const group=await env.DB.prepare('SELECT g.id FROM psychology_publish_groups g JOIN psychology_publish_batches b ON b.id=g.batch_id WHERE g.id=? AND b.created_by=?').bind(groupRetry[1],user.username).first();
+    if(!group)fail('发布分组不存在。',404);
+    return json(await dispatchPublishGroup(env,group.id));
+  }
   const retry = url.pathname.match(/^\/api\/psychology-auto-publish\/([^/]+)\/retry$/);
   if (retry && request.method === 'POST') {
-    const row = await env.DB.prepare(`SELECT j.*,i.receipt_json FROM psychology_publish_items i
+    const row = await env.DB.prepare(`SELECT j.*,i.receipt_json,i.ready_json,i.publish_group_id FROM psychology_publish_items i
       JOIN psychology_publish_batches b ON b.id=i.batch_id JOIN factory_jobs j ON j.id=i.job_id
       WHERE i.id=? AND b.created_by=?`).bind(retry[1], user.username).first();
     if (!row) fail('任务不存在。', 404);
     if (JSON.parse(row.receipt_json || '{}').batchId) return json({ ok: true, message: '任务已经提交发布。' });
+    if(row.publish_group_id && row.ready_json!=='{}')return json(await dispatchPublishGroup(env,row.publish_group_id));
     const result = JSON.parse(row.result_json || '{}');
     if (row.type === 'psychology-photo-story' && row.status === 'done') {
       await assertAutoJobAccess(env,row);
@@ -148,20 +157,26 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];
+  for(let offset=0;offset<selected.length;offset+=PSYCHOLOGY_GROUP_SIZE){
+    const ordinal=Math.floor(offset/PSYCHOLOGY_GROUP_SIZE);
+    statements.push(env.DB.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES (?,?,?,?)')
+      .bind(batchId+'-group-'+ordinal,batchId,ordinal,Math.min(PSYCHOLOGY_GROUP_SIZE,selected.length-offset)));
+  }
   for (const [index, entry] of selected.entries()) {
     const id = batchId + '-' + String(index).padStart(3, '0');
     // Music is drawn once at creation and frozen inside the job payload, so
     // retries of the same item republish with the same song.
     const musicSoundId = config.musicIds.length ? config.musicIds[Math.floor(Math.random() * config.musicIds.length)] : '';
-    const item = { id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const groupId=batchId+'-group-'+Math.floor(index/PSYCHOLOGY_GROUP_SIZE);
+    const item = { submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: item }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));
-    statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
-      .bind(id, batchId, entry.source.id, id, entry.connectionId, entry.scheduleAt));
+    statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
+      .bind(id, batchId, entry.source.id, id, entry.connectionId, entry.scheduleAt, groupId));
   }
   try { await env.DB.batch(statements); }
   catch (error) {

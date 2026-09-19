@@ -1,3 +1,4 @@
+import { runGroupedVideoUpload } from "./psychology-batch-upload.js";
 import fs from "node:fs";
 import { syncPeerArtboardProgress } from './peer-progress-sync.js';
 import os from "node:os";
@@ -38,7 +39,7 @@ const SCRIPT_BY_TYPE = {
   psychology: "psychology-video-job.js"
 };
 
-export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorTask, publishOfficial } = {}) {
+export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorTask, publishOfficial, uploadOfficialAsset } = {}) {
   const config = readConfig(root);
   const storage = resolveStorageDirs(root, config);
   const resolvedWorkDir = workDir || storage.workDir;
@@ -51,7 +52,7 @@ export function startFactoryCloudWorker({ root = process.cwd(), workDir, mirrorT
 
   fs.mkdirSync(jobsDir, { recursive: true });
   const workerId = settings.workerId || `local-${process.platform}-${process.pid}`;
-  const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial, cloudSplitPublish: false };
+  const context = { root, workDir: resolvedWorkDir, jobsDir, settings, workerId, config, mirrorTask, publishOfficial, uploadOfficialAsset, cloudSplitPublish: false };
   const lanes = workerLanes(settings);
   console.log(`工厂云工人已接入：${settings.url}  worker=${workerId}  渲染并发=${lanes[0].concurrency} 发布并发=${lanes[1].concurrency}`);
   helloWorker(context).catch((error) => console.error("工人报到失败：", error.message || error));
@@ -72,6 +73,7 @@ export function helloPayload(context) {
   const lanes = workerLanes(context.settings || {});
   return {
     workerId: context.workerId,
+    psychologyBatchUpload: typeof context.uploadOfficialAsset === 'function',
     label: String(context.settings?.label || ""),
     hostname: os.hostname(),
     assignedOnly: context.settings?.assignedOnly === true,
@@ -138,7 +140,7 @@ async function laneLoop(context, lane) {
     try {
       claimed = await request(context, "/api/worker/claim", {
         method: "POST",
-        body: { workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
+        body: { psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
       });
     } catch (error) {
       console.error(`拉单失败（${lane.name}）：`, error.message || error);
@@ -414,6 +416,16 @@ async function runOfficialPublishJob(context, job) {
     return;
   }
   try {
+    if(job.payload?.psychologyAutomation?.submissionMode==='grouped'){
+      if(localJobCancelled(context,job,jobId)){await completeCancelled(context,jobId,local);return;}
+      await request(context,'/api/worker/jobs/'+encodeURIComponent(jobId)+'/progress',{method:'POST',body:{percent:85,message:'正在上传视频，等待整组提交',result:local}});
+      const receipt=await runGroupedVideoUpload({job,workDir:context.workDir,
+        call:(endpoint,body)=>request(context,endpoint,{method:body?'POST':'GET',...(body?{body}:{})}),
+        uploadAsset:context.uploadOfficialAsset});
+      await complete(context,jobId,{error:'',percent:100,message:receipt.batchId?'已整批提交官方发布中台':'视频已上传，等待同组内容就绪',
+        result:{...local,groupReady:true,publishSummary:receipt}});
+      return;
+    }
     if (localJobCancelled(context, job, jobId)) {
       await completeCancelled(context, jobId, local);
       return;
@@ -428,6 +440,9 @@ async function runOfficialPublishJob(context, job) {
     if (isOfficialPublishAbort(error) || localJobCancelled(context, job, jobId)) {
       await completeCancelled(context, jobId, local);
       return;
+    }
+    if(job.payload?.psychologyAutomation?.submissionMode==='grouped'){
+      await complete(context,jobId,{error:error.message||"视频上传或整批提交失败",result:local,percent:85});return;
     }
     await completeOfficialOutcome(context, job, jobId, local, { publishError: error.message || "官方发布失败" });
   }
@@ -458,7 +473,7 @@ async function finishCloudJob(context, job, jobId, local, failed) {
     return;
   }
   if (shouldOfficialPublish(job.payload) && typeof context.publishOfficial === "function") {
-    if (context.cloudSplitPublish) {
+    if (context.cloudSplitPublish || job.payload?.psychologyAutomation?.submissionMode === 'grouped') {
       // Free the render slot now; the cloud enqueues an official-publish job
       // that the publish lane picks up with these videos.
       await complete(context, jobId, {

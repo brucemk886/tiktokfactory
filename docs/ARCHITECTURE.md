@@ -42,3 +42,9 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - D1 psychology_template_topics owns user-managed topics scoped by template; psychology_topic_imports owns idempotent import receipts; psychology_topic_usage owns allocation history.
 - A single D1 batch commits the publishing batch, immutable topic snapshots in factory_jobs, publish items, and usage counters. Triggers guard stale revisions and concurrent only-unused selection; no external publishing call occurs in this transaction.
 - The admin-only /psychology-topic-bank page and /api/psychology-template-topics manage banks independently of the peer-hit library. Automatic publishing retains peer sources for video/photo and uses topicSource for template-bank jobs.
+
+## Psychology grouped publication
+
+- psychology_publish_groups owns immutable groups of up to 20 posts, submission leases, frozen requests and remote receipts. psychology_publish_items.ready_json contains upload-ready media metadata and publish_group_id assigns fixed membership.
+- Local video publish workers only upload assets and report readiness; photo workers reuse per-page uploads. The cloud coordinator submits a ready group once with a stable externalId and maps every task by externalRef. Existing ungrouped jobs retain their previous pipeline.
+- Updated workers advertise psychologyBatchUpload; older workers cannot claim new grouped jobs. The publish lane remains tied to the render worker for local-file upload, but group submission no longer depends on files being on the same machine.

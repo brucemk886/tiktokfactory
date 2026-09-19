@@ -1,3 +1,5 @@
+import { stagePublishItem, dispatchPublishGroup, handleAutoVideoStage } from './psychology-publish-groups.js';
+import { claimTypeFilter } from './jobs.js';
 import { handlePsychologyTopicBank, topicCounts, selectTopicSources, topicUsageStatement } from './psychology-topic-bank.js';
 import { normalizeTopic } from '../../scripts/psychology-topic-bank.js';
 import { parseTopicImport } from '../../public/psychology-topic-import.js';
@@ -20,7 +22,7 @@ async function fixture(t) {
   const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());
   const dir=new URL('../migrations/',import.meta.url);
   for(const file of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')).sort()) sqlite.exec(fs.readFileSync(new URL(file,dir),'utf8'));
-  const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},
+  const db={prepare(sql){return {args:[],bind(...args){return {...this,args};},
     async first(){return sqlite.prepare(sql).get(...this.args)||null;},
     async all(){const before=sqlite.prepare('SELECT total_changes() n').get().n;const results=sqlite.prepare(sql).all(...this.args);return {results,meta:{changes:sqlite.prepare('SELECT total_changes() n').get().n-before}};},
     async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(...this.args).changes)}};}};},
@@ -32,7 +34,7 @@ async function fixture(t) {
   t.mock.method(globalThis,'fetch',async (url,init={})=>{
     const address=String(url);
     if(address.includes('/api/v1/accounts')) return Response.json({accounts:[{id:'a',username:'alpha',scopes:['video.publish']},{id:'b',scopes:['video.publish']},{id:'outside',scopes:['video.publish']},{id:'read-only',scopes:['user.info.basic']}]});
-    if(address.endsWith('/api/v1/publish/batches')) { requests.push(JSON.parse(init.body)); return Response.json({batch:{id:'remote-batch',tasks:[{id:'remote-task'}]}}); }
+    if(address.endsWith('/api/v1/publish/batches')) { requests.push(JSON.parse(init.body)); const request=JSON.parse(init.body),batchId=request.externalId.includes('-group-')?'remote-'+request.externalId:'remote-batch';return Response.json({batch:{id:batchId,tasks:request.items.map((item,index)=>({id:batchId+'-task-'+index,externalRef:item.externalRef}))}}); }
     throw new Error('Unexpected network call '+address);
   });
   const env={DB:db,SIGNAL_DESK_BRIDGE_KEY:'test',WORKER_TOKEN:'test-worker',KIE_API_KEY:'test',ARCHIVE:{},
@@ -60,7 +62,7 @@ test('strict type/template/count/account and complete schedule validation',()=>{
   const plan=assignments(config,[{id:1},{id:2},{id:3}]);
   assert.deepEqual(plan.map(p=>p.connectionId),['a','b','a']);
   assert.deepEqual(plan.map(p=>p.scheduleAt),[raw.scheduleAt,raw.scheduleAt,raw.scheduleAt+3600]);
-  for(const changes of [{mediaType:'toString'},{mediaType:'photo'},{count:0},{count:2.2},{count:51},{count:1},{connectionIds:[]},{scheduleAt:1},{intervalMinutes:0},{selection:'sql;drop'}])
+  for(const changes of [{mediaType:'toString'},{mediaType:'photo'},{count:0},{count:2.2},{count:101},{count:1},{connectionIds:[]},{scheduleAt:1},{intervalMinutes:0},{selection:'sql;drop'}])
     assert.throws(()=>normalizeAutoPublish({...raw,...changes}),e=>e.statusCode===400);
   assert.throws(()=>normalizeAutoPublish({...raw,count:50,connectionIds:['a'],intervalMinutes:10080}),/14 天/);
   assert.throws(()=>assignments(config,[{id:1}]),/只有 1/);
@@ -121,8 +123,9 @@ test('video follow-up is deterministic and revoked permissions stop a queued pub
   sqlite.prepare("UPDATE factory_users SET active=0 WHERE username='admin'").run();
   await assert.rejects(assertAutoJobAccess(env,publish),e=>e.statusCode===403);
 });
-test('photo publishes only complete ordered images, refuses wrong worker and records stable receipt',async t=>{
+test('legacy photo publishes only complete ordered images, refuses wrong worker and records stable receipt',async t=>{
   const {call,env,sqlite,requests}=await fixture(t);await call('POST',input({mediaType:'photo',template:'photo-original',count:2,musicIds:['7488400397962508280','7363314575675541521']}));
+  sqlite.prepare("UPDATE psychology_publish_items SET publish_group_id=''").run();
   const source=sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id LIMIT 1').get();
   sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({plan:{title:'Slow down',caption:'Listen to yourself'},results:[{template:'cover',title:'Listen'},{template:'content',title:'Notice',body:'Pause first'}]}),source.id);
   const {jobId}=await enqueueAutoPhotoRender(env,source.id);
@@ -283,4 +286,117 @@ test('CSV/JSON import preserves quoted multiline text and rejects malformed inpu
   assert.throws(()=>normalizeTopic({title:'Test',template:'psychology-collage'},'psychology'));
   assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',selection:'popular'})));
   assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',mediaType:'photo',template:'photo-text'})));
+});
+
+const groupedUser={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
+async function groupedFixture(t,count){
+  const f=await fixture(t);
+  await seedBank(f.env,'psychology',Array.from({length:count},(_,i)=>({title:'Group topic '+i})));
+  await f.call('POST',input({count,sourceType:'topic-bank',selection:'priority'}),undefined,groupedUser);
+  f.items=()=>f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all();
+  return f;
+}
+function readyVideo(item){return{mediaType:'video',title:item.id,item:{assetKey:'temporary--'+crypto.randomUUID()+'.mp4',fileName:item.id+'.mp4',contentType:'video/mp4',fileSize:1000,postInfo:{caption:item.id}}};}
+test('100 items create five fixed groups; account and schedule remain attached to each item',async t=>{
+  const f=await groupedFixture(t,100),groups=f.sqlite.prepare('SELECT * FROM psychology_publish_groups ORDER BY ordinal').all();
+  assert.equal(groups.length,5);assert.ok(groups.every(g=>g.expected_count===20));
+  assert.equal(f.items().length,100);assert.equal(f.requests.length,0);
+  const jobs=f.sqlite.prepare('SELECT payload_json FROM factory_jobs').all().map(r=>JSON.parse(r.payload_json));
+  assert.ok(jobs.every(p=>p.psychologyAutomation.submissionMode==='grouped'));
+  const old=claimTypeFilter({workerId:'w'}),updated=claimTypeFilter({workerId:'w',psychologyBatchUpload:true});
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE status='queued'"+old.sql).get(...old.binds).n,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE status='queued'"+updated.sql).get(...updated.binds).n,100);
+});
+test('50 videos submit as 20 + 20 + 10, independent groups, one receipt per item and no duplicate submit',async t=>{
+  const f=await groupedFixture(t,50),items=f.items();
+  for(const item of items.slice(0,19))await stagePublishItem(f.env,item,readyVideo(item));
+  for(const item of items.slice(20,39))await stagePublishItem(f.env,item,readyVideo(item));
+  assert.equal(f.requests.length,0);
+  // Another group's failed/unfinished member never blocks a complete group.
+  for(const item of items.slice(40))await stagePublishItem(f.env,item,readyVideo(item));
+  assert.deepEqual(f.requests.map(r=>r.items.length),[10]);
+  await stagePublishItem(f.env,items[19],readyVideo(items[19]));
+  await stagePublishItem(f.env,items[39],readyVideo(items[39]));
+  assert.deepEqual(f.requests.map(r=>r.items.length),[10,20,20]);
+  assert.equal(new Set(f.requests.map(r=>r.externalId)).size,3);
+  assert.equal(new Set(f.requests.flatMap(r=>r.items.map(i=>i.externalRef))).size,50);
+  for(const request of f.requests)for(const item of request.items){
+    const original=items.find(i=>i.id===item.externalRef);
+    assert.equal(item.connectionId,original.connection_id);assert.equal(item.scheduleAt,original.schedule_at*1000);
+  }
+  await dispatchPublishGroup(f.env,items[0].publish_group_id);
+  await stagePublishItem(f.env,items[0],readyVideo(items[0]));
+  assert.equal(f.requests.length,3);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_publish_records').get().n,50);
+  const listing=await(await f.call()).json();assert.equal(listing.batches[0].groups.length,3);
+  assert.ok(listing.batches[0].items.every(i=>i.status==='submitted'));
+});
+test('group submission retries a lost response with identical frozen body and preserves uploaded assets',async t=>{
+  const f=await groupedFixture(t,3),items=f.items(),bodies=[];
+  const originalFetch=globalThis.fetch;
+  t.mock.method(globalThis,'fetch',async(url,init)=>{
+    if(String(url).endsWith('/api/v1/publish/batches')){
+      bodies.push(init.body);
+      if(bodies.length===1)throw new Error('lost response after remote accepted');
+    }
+    return originalFetch(url,init);
+  });
+  await stagePublishItem(f.env,items[0],readyVideo(items[0]));
+  await stagePublishItem(f.env,items[1],readyVideo(items[1]));
+  await assert.rejects(stagePublishItem(f.env,items[2],readyVideo(items[2])),/lost response/);
+  assert.equal(f.sqlite.prepare('SELECT status FROM psychology_publish_groups').get().status,'failed');
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE ready_json<>'{}'").get().n,3);
+  const retryPath='/api/psychology-auto-publish/groups/'+items[0].publish_group_id+'/retry';
+  await assert.rejects(f.call('POST',{},retryPath,{...user,username:'other'}),e=>e.statusCode===404);
+  await f.call('POST',{},retryPath);
+  assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);
+  await f.call('POST',{},retryPath);assert.equal(bodies.length,2);
+});
+test('group lease excludes concurrent submit and cached remote receipt recovers local write failure',async t=>{
+  const f=await groupedFixture(t,2),items=f.items();
+  for(const item of items)f.sqlite.prepare('UPDATE psychology_publish_items SET ready_json=? WHERE id=?').run(JSON.stringify(readyVideo(item)),item.id);
+  f.sqlite.prepare("UPDATE psychology_publish_groups SET status='submitting',updated_at=?").run(Date.now());
+  await dispatchPublishGroup(f.env,items[0].publish_group_id);assert.equal(f.requests.length,0);
+  f.sqlite.prepare("UPDATE psychology_publish_groups SET updated_at=0").run();
+  const originalBatch=f.db.batch;let failOnce=true;
+  f.db.batch=async statements=>{
+    if(failOnce){failOnce=false;throw new Error('record write outage');}
+    return originalBatch(statements);
+  };
+  await assert.rejects(dispatchPublishGroup(f.env,items[0].publish_group_id),/outage/);
+  assert.equal(f.requests.length,1);
+  await dispatchPublishGroup(f.env,items[0].publish_group_id);
+  assert.equal(f.requests.length,1);assert.equal(f.sqlite.prepare('SELECT status FROM psychology_publish_groups').get().status,'submitted');
+});
+test('video readiness validates worker ownership; done uploads are not counted as submitted',async t=>{
+  const f=await groupedFixture(t,2),item=f.items()[0],job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(item.job_id);
+  await enqueueAutoVideoPublish(f.db,job,officialPublishFollowupPayload(job,{results:[{fileName:'one.mp4'}]}));
+  const publishId=item.id+'-publish';f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='w' WHERE id=?").run(publishId);
+  const call=async(worker,body)=>{const req=new Request(BASE+'/api/worker/psychology-video/'+publishId+'/ready',{method:'POST',headers:{'x-factory-worker':worker},body:JSON.stringify(body)});return handleAutoVideoStage(req,f.env,new URL(req.url));};
+  await assert.rejects(call('wrong',{asset:{}}),e=>e.statusCode===409);
+  await assert.rejects(call('w',{asset:{}}),/素材无效/);
+  const staged=await(await call('w',{asset:{assetKey:'temporary--'+crypto.randomUUID()+'.mp4',contentType:'video/mp4',fileSize:123}})).json();
+  assert.equal(staged.waiting,true);assert.equal(f.requests.length,0);
+  f.sqlite.prepare("UPDATE factory_jobs SET status='done' WHERE id=?").run(publishId);
+  const listing=await(await f.call()).json();assert.equal(listing.batches[0].items[0].status,'ready');
+  f.sqlite.prepare("UPDATE factory_users SET active=0").run();
+  const second=f.items()[1];await assert.rejects(stagePublishItem(f.env,second,readyVideo(second)),e=>e.statusCode===403);
+  assert.equal(f.requests.length,0);
+});
+test('three complete photo posts submit one remote batch with music, cover and schedule intact',async t=>{
+  const f=await fixture(t);await f.call('POST',input({count:3,mediaType:'photo',template:'photo-text',musicIds:['12345']}));
+  const jobs=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE type='psychology-photo-story' ORDER BY id").all();
+  for(const [index,source]of jobs.entries()){
+    f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({plan:{title:'Post '+index,caption:'Copy '+index},results:[{template:'cover',title:'Cover'},{template:'content',title:'Content'}]}),source.id);
+    const {jobId}=await enqueueAutoPhotoRender(f.env,source.id);
+    f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='w' WHERE id=?").run(jobId);
+    const assets=Object.fromEntries([0,1].map(i=>[i,{assetKey:'temporary--'+crypto.randomUUID()+'.jpg',fileName:i+'.jpg',fileSize:2000,contentType:'image/jpeg'}]));
+    f.sqlite.prepare('UPDATE psychology_publish_items SET photo_assets_json=? WHERE id=?').run(JSON.stringify(assets),source.id);
+    const req=new Request(BASE+'/api/worker/psychology-auto/'+jobId+'/publish',{method:'POST',headers:{'x-factory-worker':'w'},body:'{}'});
+    const response=await(await handleAutoPhotoWorker(req,f.env,new URL(req.url))).json();
+    if(index<2){assert.equal(response.waiting,true);assert.equal(f.requests.length,0);}
+    else assert.ok(response.batchId);
+  }
+  assert.equal(f.requests.length,1);assert.equal(f.requests[0].items.length,3);
+  assert.ok(f.requests[0].items.every(i=>i.photoAssetKeys.length===2&&i.postInfo.musicSoundId==='12345'&&i.postInfo.autoAddMusic===false&&i.postInfo.photoCoverIndex===0));
 });

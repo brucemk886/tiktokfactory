@@ -17,7 +17,7 @@
 <div class="field" id="unusedField"><span>抽取范围</span><label class="auto-check"><input type="checkbox" id="onlyUnused" checked>仅抽取未使用题目</label><small>取消后允许跨批次复用，同一批次仍不重复。</small></div>
 <label class="field"><span>批次名称</span><input id="batchName" maxlength="100" placeholder="例如：心理学晚间发布"></label>
 <label class="field"><span>生成模板</span><select id="template" required></select></label>
-<label class="field"><span>生成总条数</span><input id="count" type="number" min="1" max="50" value="3" required><small>整批共 1–50 条，同批选题不重复。</small></label>
+<label class="field"><span>生成总条数</span><input id="count" type="number" min="1" max="100" value="3" required><small>每次 1–100 条，每20条合并为一个中台批次，余数单独成批。</small></label>
 <label class="field"><span>选题抽取方式</span><select id="selection"><option value="random">随机抽取</option><option value="popular">播放量优先</option><option value="recent">最近入库优先</option></select></label>
 <label class="field wide"><span>选题关键词 <em>可选</em></span><input id="query" maxlength="100" placeholder="筛选爆款标题或同行账号，不填则从全部对应类型抽取"></label>
 <details class="photo-extras wide" id="photoOptions" hidden><summary><span>图文可选设置</span><small>改写文案、配乐；默认保留原文 · 自动推荐配乐</small></summary>
@@ -33,11 +33,11 @@
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>
 <label class="field"><span>同账号发布间隔（分钟）</span><input id="intervalMinutes" type="number" min="1" max="10080" value="60" required></label></div>
 <div id="summary" class="batch-summary" aria-live="polite"></div>
-<p class="field-hint">生成完成后自动提交官方发布中台；若生成完成时排期已过，中台按可用时间发布。关闭页面不影响已入队任务。</p>
+<p class="field-hint">每组内容全部生成并上传后统一提交中台；组内失败项重试后继续，其他组不受影响。若生成完成时排期已过，中台按可用时间发布。关闭页面不影响已入队任务。</p>
 <div class="submit-row"><p id="message" role="status" aria-live="polite"></p><button type="submit" id="submitBatch" class="primary-action">创建并自动发布</button></div>
 </section></form>
 <aside class="task-list-panel" aria-label="任务队列">
-<div class="queue-header"><div><p class="toolbar-kicker">QUEUE</p><h2>执行队列</h2><p id="safetySummary">生成完成后自动提交官方发布中台</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
+<div class="queue-header"><div><p class="toolbar-kicker">QUEUE</p><h2>执行队列</h2><p id="safetySummary">每20条合并提交，一个创建任务统一管理</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
 <div class="queue-metrics">
 <div><span id="queuedCount">0</span><small>排队</small></div>
 <div><span id="runningCount">0</span><small>执行中</small></div>

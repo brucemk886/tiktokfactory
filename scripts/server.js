@@ -1,3 +1,4 @@
+import { uploadPsychologyVideoAsset } from "./psychology-batch-upload.js";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -2847,6 +2848,7 @@ server.listen(port, () => {
     root,
     workDir,
     mirrorTask: (task) => autoTaskManager.mirrorExternalTask(task),
+    uploadOfficialAsset: (video) => uploadPsychologyVideoAsset({video,outputDir,upload:args=>privateTikTokAnalytics.uploadPublishAsset(args)}),
     publishOfficial: (payload) => publishThroughOfficialTikTok(payload)
   });
 });

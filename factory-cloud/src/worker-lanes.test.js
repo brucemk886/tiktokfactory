@@ -4,28 +4,28 @@ import test from "node:test";
 import { claimTypeFilter, handleJobs, hasOwnKeys, mergeWorkerCatalog, officialPublishFollowupPayload } from "./jobs.js";
 
 test("claim filter lets a lane pick only its own job types", () => {
-  assert.deepEqual(claimTypeFilter({}), { sql: " AND type NOT IN (?, ?)", binds: ['psychology-photo-story', 'psychology-recreation'], types: [], excludeTypes: ['psychology-photo-story', 'psychology-recreation'] });
-  const publish = claimTypeFilter({ types: ["official-publish"] });
+  assert.deepEqual(claimTypeFilter({ psychologyBatchUpload:true,}), { sql: " AND type NOT IN (?, ?)", binds: ['psychology-photo-story', 'psychology-recreation'], types: [], excludeTypes: ['psychology-photo-story', 'psychology-recreation'] });
+  const publish = claimTypeFilter({ psychologyBatchUpload:true, types: ["official-publish"] });
   assert.equal(publish.sql, " AND type IN (?)");
   assert.deepEqual(publish.binds, ["official-publish"]);
-  const render = claimTypeFilter({ excludeTypes: ["official-publish", "official-publish", ""] });
+  const render = claimTypeFilter({ psychologyBatchUpload:true, excludeTypes: ["official-publish", "official-publish", ""] });
   assert.equal(render.sql, " AND type NOT IN (?, ?, ?)");
   assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation']);
-  const capped = claimTypeFilter({ types: Array.from({ length: 40 }, (_, i) => `t${i}`) });
+  const capped = claimTypeFilter({ psychologyBatchUpload:true, types: Array.from({ length: 40 }, (_, i) => `t${i}`) });
   assert.equal(capped.binds.length, 20);
 });
 
 const WORKER_SQL = "COALESCE(NULLIF(json_extract(payload_json, '$.targetWorkerId'), ''), NULLIF(json_extract(payload_json, '$.renderWorkerId'), ''), '')";
 
 test("a worker only claims jobs pinned to itself or to nobody", () => {
-  const publish = claimTypeFilter({ workerId: "windows-local", types: ["official-publish"] });
+  const publish = claimTypeFilter({ psychologyBatchUpload:true, workerId: "windows-local", types: ["official-publish"] });
   assert.equal(publish.sql, ` AND type IN (?) AND ${WORKER_SQL} IN ('', ?)`);
   assert.deepEqual(publish.binds, ["official-publish", "windows-local"]);
-  const render = claimTypeFilter({ workerId: "windows-local", excludeTypes: ["official-publish"] });
+  const render = claimTypeFilter({ psychologyBatchUpload:true, workerId: "windows-local", excludeTypes: ["official-publish"] });
   assert.equal(render.sql, ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} IN ('', ?)`);
   assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation', "windows-local"]);
   // assignedOnly: a secondary machine skips unpinned jobs entirely.
-  const pinned = claimTypeFilter({ workerId: "worker-2", assignedOnly: true, excludeTypes: ["official-publish"] });
+  const pinned = claimTypeFilter({ psychologyBatchUpload:true, workerId: "worker-2", assignedOnly: true, excludeTypes: ["official-publish"] });
   assert.equal(pinned.sql, ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} = ?`);
   assert.deepEqual(pinned.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation', "worker-2"]);
 });
@@ -120,5 +120,5 @@ test("cloud and worker agree on the split render/publish protocol", async () => 
   assert.match(jobs, /WHERE status = 'queued'\$\{filter\.sql\}/);
   assert.match(worker, /context\.cloudSplitPublish = Boolean\(data\?\.splitPublish\)/);
   assert.match(worker, /result: \{ \.\.\.local, publishPending: true \}/);
-  assert.match(worker, /body: \{ workerId: context\.workerId, lane: lane\.name, assignedOnly: context\.settings\.assignedOnly === true, \.\.\.lane\.claim \}/);
+  assert.match(worker, /body: \{ psychologyBatchUpload: typeof context\.uploadOfficialAsset === "function", workerId: context\.workerId, lane: lane\.name, assignedOnly: context\.settings\.assignedOnly === true, \.\.\.lane\.claim \}/);
 });

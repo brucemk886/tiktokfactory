@@ -104,7 +104,7 @@ export function buildOperationsReport({ window, accounts = [], videosByAccount =
       (item.id && [r.autoTaskId,r.taskId,r.jobId].includes(item.id)) || (item.job_id && [r.autoTaskId,r.taskId,r.jobId].includes(item.job_id))
     ));
     const outcome=record?.outcome;
-    const submitted=Boolean(record || receipt.batchId || (item.type==="official-publish" && item.status==="done" && !item.publish_failed));
+    const submitted=Boolean(record || receipt.batchId || (!item.publish_group_id && item.type==="official-publish" && item.status==="done" && !item.publish_failed));
     const generated=submitted || item.type==="official-publish" || (kind==="video" && item.status==="done") || (kind==="photo" && item.type==="psychology" && item.status==="done");
     const failed=Boolean(outcome==="failed" || (!submitted && (item.status==="failed" || item.publish_failed)));
     const state=outcome==="published" ? "published" : failed ? "failed" : submitted ? "submitted" : generated ? "generated" : ["running","queued"].includes(item.status) ? item.status : "pending";

@@ -1,3 +1,4 @@
+import { handleAutoVideoStage } from './psychology-publish-groups.js';
 import { assertAutoJobAccess, enqueueAutoVideoPublish } from './psychology-auto-publish.js';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
 import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
@@ -258,6 +259,8 @@ async function handleWorkerApi(request, env, url, ctx) {
   if (!expected) return errorJson("工人密钥未配置。", 501);
   const supplied = bearer(request);
   if (supplied !== expected) return errorJson("工人密钥不正确。", 401);
+  const autoVideo=await handleAutoVideoStage(request,env,url);
+  if(autoVideo)return autoVideo;
   const autoPhoto = await handleAutoPhotoWorker(request, env, url);
   if (autoPhoto) return autoPhoto;
 
@@ -466,6 +469,7 @@ async function handleWorkerApi(request, env, url, ctx) {
       message: requeued ? `本机工人已上线，${requeued} 条中断任务已重新排队。` : "本机工人在线，混剪任务会在 Local Factory 执行。"
     });
     await upsertWorkerRecord(env.DB, workerId, {
+      psychologyBatchUpload: payload.psychologyBatchUpload === true,
       label: String(payload.label || "").slice(0, 80),
       hostname: String(payload.hostname || "").slice(0, 80),
       assignedOnly: payload.assignedOnly === true,
@@ -697,6 +701,7 @@ export function claimTypeFilter(payload = {}) {
   if ((!types.length || types.includes('psychology-recreation')) && !excludeTypes.includes('psychology-recreation')) excludeTypes.push('psychology-recreation');
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = "";
+  if(payload.psychologyBatchUpload!==true)sql += " AND COALESCE(json_extract(payload_json, '$.psychologyAutomation.submissionMode'), '')<>'grouped'";
   const binds = [];
   if (types.length) {
     sql += ` AND type IN (${types.map(() => "?").join(", ")})`;
