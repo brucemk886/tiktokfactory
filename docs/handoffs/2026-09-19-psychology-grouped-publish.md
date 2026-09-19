@@ -30,3 +30,6 @@ Make psychology automatic photo/video publishing submit groups of up to 20 posts
 
 ## Release / next step
 Commit and push main, deploy via factory-cloud npm run deploy, then reload the local worker only while idle so it picks up the upload-only callback. Other worker machines must update/restart before claiming new grouped jobs. Live smoke checks are read-only; user can create the next actual batch.
+
+## Batch-count display
+Grouped records carry autoBatchId. Their official batch totals, hydration and displayed batch column use the actual remote batchId, excluding child task IDs that legacy records also keep in reference arrays. A 50-post 20/20/10 case asserts exactly three displayed batch IDs.

@@ -12,7 +12,7 @@ export function filterPublishRecordsBySource(records, source) {
 }
 
 export function collectOfficialBatchIdsFromRecords(records) {
-  const ids = (Array.isArray(records) ? records : []).flatMap((record) => [
+  const ids = (Array.isArray(records) ? records : []).flatMap((record) => record?.autoBatchId ? [record.batchId] : [
     ...(Array.isArray(record?.officialBatchIds) ? record.officialBatchIds : []),
     ...(Array.isArray(record?.taskIds) ? record.taskIds : []),
     record?.batchId

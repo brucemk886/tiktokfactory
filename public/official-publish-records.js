@@ -38,7 +38,7 @@ function renderRows(records) {
     return;
   }
   rows.innerHTML = records.map((record) => {
-    const batchIds = unique([...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []), ...(Array.isArray(record.taskIds) ? record.taskIds : []), record.batchId]);
+    const batchIds = record.autoBatchId ? unique([record.batchId]) : unique([...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []), ...(Array.isArray(record.taskIds) ? record.taskIds : []), record.batchId]);
     const openUrl = record.shareLink || record.videoUrl || "";
     const canOpen = /tiktok\.com\/@[\w.]+\/(?:video|photo)\/\d{10,}/i.test(openUrl);
     const note = escapeHtml(recordNote(record));

@@ -138,7 +138,7 @@ export function collectOfficialLiveBatchIds(records, limit = 20, { skipResolved 
   const seen = new Set();
   for (const record of Array.isArray(records) ? records : []) {
     if (skipResolved && String(record?.videoId || record?.tiktokVideoId || "").trim()) continue;
-    const candidates = [
+    const candidates = record?.autoBatchId ? [record.batchId] : [
       record?.batchId,
       ...(Array.isArray(record?.officialBatchIds) ? record.officialBatchIds : []),
       ...(Array.isArray(record?.taskIds) ? record.taskIds : [])

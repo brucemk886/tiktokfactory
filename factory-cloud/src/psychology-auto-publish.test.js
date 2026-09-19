@@ -1,3 +1,4 @@
+import { summarizeOfficialPublishRecords, collectOfficialLiveBatchIds } from '../../scripts/official-publish-records.js';
 import { stagePublishItem, dispatchPublishGroup, handleAutoVideoStage } from './psychology-publish-groups.js';
 import { claimTypeFilter } from './jobs.js';
 import { handlePsychologyTopicBank, topicCounts, selectTopicSources, topicUsageStatement } from './psychology-topic-bank.js';
@@ -328,6 +329,9 @@ test('50 videos submit as 20 + 20 + 10, independent groups, one receipt per item
   await stagePublishItem(f.env,items[0],readyVideo(items[0]));
   assert.equal(f.requests.length,3);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_publish_records').get().n,50);
+  const records=f.sqlite.prepare('SELECT value_json FROM factory_publish_records').all().map(r=>JSON.parse(r.value_json));
+  assert.equal(summarizeOfficialPublishRecords(records,{range:'all'}).summary.batchCount,3);
+  assert.equal(collectOfficialLiveBatchIds([{...records[0],batchId:'11111111-1111-4111-8111-111111111111',officialBatchIds:['22222222-2222-4222-8222-222222222222']}]).length,1);
   const listing=await(await f.call()).json();assert.equal(listing.batches[0].groups.length,3);
   assert.ok(listing.batches[0].items.every(i=>i.status==='submitted'));
 });
