@@ -36,3 +36,11 @@ test('photo worker resumes completed uploads, renders remaining JPEG and submits
   assert.equal(calls.filter(c=>c.url.endsWith('/publish')).length,1);
   assert.equal(patches.at(-1).status,'done');assert.equal(patches.at(-1).publishSummary.batchId,'batch-1');
 });
+
+import { publishErrorMessage } from './publish-error-message.js';
+test('publication diagnostics include HTTP and nested network codes without leaking credentials',()=>{
+ const error=Object.assign(new Error('fetch failed'),{cause:Object.assign(new Error('socket closed'),{code:'ECONNRESET'})});
+ assert.match(publishErrorMessage(error,'图片上传'),/图片上传失败（ECONNRESET）/);
+ assert.match(publishErrorMessage(Object.assign(new Error('rejected'),{statusCode:400}),'提交中台'),/HTTP 400/);
+ assert.doesNotMatch(publishErrorMessage(new Error('Bearer fake-secret https://test/?token=other-secret')),/fake-secret|other-secret/);
+});

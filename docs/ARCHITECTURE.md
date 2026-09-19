@@ -48,3 +48,8 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - psychology_publish_groups owns immutable groups of up to 20 posts, submission leases, frozen requests and remote receipts. psychology_publish_items.ready_json contains upload-ready media metadata and publish_group_id assigns fixed membership.
 - Local video publish workers only upload assets and report readiness; photo workers reuse per-page uploads. The cloud coordinator submits a ready group once with a stable externalId and maps every task by externalRef. Existing ungrouped jobs retain their previous pipeline.
 - Updated workers advertise psychologyBatchUpload; older workers cannot claim new grouped jobs. The publish lane remains tied to the render worker for local-file upload, but group submission no longer depends on files being on the same machine.
+
+## Psychology publishing retry ownership
+
+- factory_jobs owns available_at, auto_retry_count and retry_history_json. Workers release their lane after a failed attempt; claims skip delayed jobs. Photo uploads/video upload jobs retry at most twice; grouped submission retries are dedicated psychology-publish-submit jobs requiring the psychologyPublishRetry capability.
+- Factory official records use a stable per-item ID for submission failures and later successful receipts. Historical missing failures are backfilled without resubmission. Signal Desk continues to own remote TikTok publication/review outcomes.

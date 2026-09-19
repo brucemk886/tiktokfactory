@@ -1,3 +1,4 @@
+import { finishPsychologyPublishAttempt, isPsychologyPublishAttempt } from './psychology-publish-retries.js';
 import { handleAutoVideoStage } from './psychology-publish-groups.js';
 import { assertAutoJobAccess, enqueueAutoVideoPublish } from './psychology-auto-publish.js';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
@@ -470,6 +471,7 @@ async function handleWorkerApi(request, env, url, ctx) {
     });
     await upsertWorkerRecord(env.DB, workerId, {
       psychologyBatchUpload: payload.psychologyBatchUpload === true,
+      psychologyPublishRetry: payload.psychologyPublishRetry === true,
       label: String(payload.label || "").slice(0, 80),
       hostname: String(payload.hostname || "").slice(0, 80),
       assignedOnly: payload.assignedOnly === true,
@@ -488,8 +490,8 @@ async function handleWorkerApi(request, env, url, ctx) {
     const workerId = String(payload.workerId || request.headers.get("x-factory-worker") || "worker").slice(0, 80);
     const filter = claimTypeFilter(payload);
     const job = await env.DB.prepare(`
-      SELECT * FROM factory_jobs WHERE status = 'queued'${filter.sql} ORDER BY created_at LIMIT 1
-    `).bind(...filter.binds).first();
+      SELECT * FROM factory_jobs WHERE status = 'queued' AND available_at <= ?${filter.sql} ORDER BY created_at LIMIT 1
+    `).bind(now(),...filter.binds).first();
     if (!job) return json({ job: null });
     try { await assertAutoJobAccess(env, job); }
     catch (error) {
@@ -545,6 +547,9 @@ async function handleWorkerApi(request, env, url, ctx) {
     const jobId = safeId(decodeURIComponent(completeMatch[1]));
     const current = await getJob(env.DB, jobId);
     if (!current) return errorJson("任务不存在。", 404);
+    const psychologyAttempt=isPsychologyPublishAttempt(current);
+    if(psychologyAttempt && current.status!=='running')return json({ok:true,duplicate:true});
+    if(psychologyAttempt && current.worker_id!==request.headers.get('x-factory-worker'))return errorJson('只能由接单工人完成任务。',409);
     const body = await readJson(request);
     const stamp = now();
     const rawResult = body.result && typeof body.result === "object" ? body.result : {};
@@ -554,10 +559,10 @@ async function handleWorkerApi(request, env, url, ctx) {
       cancelled,
       failed: Boolean(body.error)
     });
-    await env.DB.prepare(`
+    const completed=await env.DB.prepare(`
       UPDATE factory_jobs
       SET status = ?, percent = ?, message = ?, result_json = ?, error = ?, completed_at = ?, updated_at = ?
-      WHERE id = ?
+      WHERE id = ? AND (?=0 OR status='running')
     `).bind(
       nextStatus,
       nextStatus === "cancelled" ? Number(current.percent || body.percent || 0) : (Boolean(body.error) ? Number(body.percent || 0) : 100),
@@ -566,8 +571,9 @@ async function handleWorkerApi(request, env, url, ctx) {
       nextStatus === "cancelled" ? "" : String(body.error || ""),
       stamp,
       stamp,
-      jobId
+      jobId,psychologyAttempt?1:0
     ).run();
+    if(psychologyAttempt&&!completed.meta?.changes)return json({ok:true,duplicate:true});
     const job = await getJob(env.DB, jobId);
     if (job) {
       await syncAutoTaskFromJob(env.DB, job).catch((error) => {
@@ -577,6 +583,7 @@ async function handleWorkerApi(request, env, url, ctx) {
         console.error("novel-exception-project-job", error?.message || error);
       });
     }
+    if(job && !cancelled)await finishPsychologyPublishAttempt(env.DB,job,body.error||rawResult.publishError);
     const result = persistableJobResult(rawResult);
     if (job && nextStatus === "done" && rawResult.publishPending) {
       await enqueueOfficialPublishFollowup(env.DB, job, rawResult).catch(async (error) => {
@@ -586,7 +593,9 @@ async function handleWorkerApi(request, env, url, ctx) {
         }
       });
     }
-    const incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
+    let incoming = Array.isArray(rawResult.officialPublishRecords) ? rawResult.officialPublishRecords : [];
+    const automation=parseJson(current.payload_json,{}).psychologyAutomation;
+    if(automation&&incoming.length===1)incoming=incoming.map(r=>({...r,id:'psychology:'+automation.id,autoTaskId:automation.id,autoBatchId:automation.batchId}));
     if (shouldWriteOfficialPublishRecords({ existingStatus: nextStatus, cancelled, records: incoming })) {
       try {
         await mergeAndStorePublishRecords(env.DB, incoming);
@@ -702,6 +711,7 @@ export function claimTypeFilter(payload = {}) {
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = "";
   if(payload.psychologyBatchUpload!==true)sql += " AND COALESCE(json_extract(payload_json, '$.psychologyAutomation.submissionMode'), '')<>'grouped'";
+  if(payload.psychologyPublishRetry!==true)sql += " AND type<>'psychology-publish-submit'";
   const binds = [];
   if (types.length) {
     sql += ` AND type IN (${types.map(() => "?").join(", ")})`;

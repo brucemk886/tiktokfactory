@@ -53,6 +53,7 @@ test("apply retries 7500 then continues when there is no newer migration", () =>
       attempts += 1;
       return { status: 1, stdout: "", stderr: "internal error; reference = e_1 [code: 7500]" };
     },
+    readGit: (_repo,args) => args[0] === "rev-parse" ? "new-head" : args[0] === "log" ? "old-migration" : "",
     wait: () => {}
   });
   assert.equal(result.ok, true);

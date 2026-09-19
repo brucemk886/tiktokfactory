@@ -63,7 +63,8 @@ function runMigrationApply() {
 export function applyRemoteMigrations({
   repo = findGitRoot(),
   apply = runMigrationApply,
-  wait = sleep
+  wait = sleep,
+  readGit = git
 } = {}) {
   let last = { status: 1, stdout: "", stderr: "未执行远程迁移。" };
   for (let attempt = 1; attempt <= APPLY_ATTEMPTS; attempt += 1) {
@@ -81,9 +82,9 @@ export function applyRemoteMigrations({
   }
 
   const output = `${last.stdout || ""}\n${last.stderr || ""}`;
-  const head = git(repo, ["rev-parse", "HEAD"]);
-  const lastMigrationCommit = git(repo, ["log", "-1", "--format=%H", "--", "factory-cloud/migrations"]);
-  const migrationDiff = git(repo, ["diff", "--name-only", lastMigrationCommit, "HEAD", "--", "factory-cloud/migrations"]);
+  const head = readGit(repo, ["rev-parse", "HEAD"]);
+  const lastMigrationCommit = readGit(repo, ["log", "-1", "--format=%H", "--", "factory-cloud/migrations"]);
+  const migrationDiff = readGit(repo, ["diff", "--name-only", lastMigrationCommit, "HEAD", "--", "factory-cloud/migrations"]);
   if (shouldContinueDeployAfterMigrationFailure({
     errorText: output,
     head,

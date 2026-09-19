@@ -1,3 +1,4 @@
+import { publishErrorMessage } from './publish-error-message.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -61,12 +62,15 @@ export async function runAutoPhotoJob({ root, workDir, payload, patchJob }) {
   let workerId = '';
   const headers = () => ({ Authorization:'Bearer ' + token, 'x-factory-worker':workerId });
   async function call(endpoint, body) {
+    const phase=endpoint.endsWith('/upload')?'图片上传':endpoint.endsWith('/publish')?'提交中台':'读取任务状态';
+    try {
     const response = await fetch(base + endpoint, { method: body ? 'POST':'GET',
       headers:{ ...headers(), ...(body ? {'Content-Type':'application/json'} : {}) },
       ...(body ? {body:JSON.stringify(body)} : {}), signal:AbortSignal.timeout(180000) });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || '工厂云图文请求失败');
+    if (!response.ok) throw Object.assign(new Error(data.error || '工厂云图文请求失败'),{statusCode:response.status});
     return data;
+    }catch(error){throw new Error(publishErrorMessage(error,phase),{cause:error});}
   }
   const current = await call('/api/worker/jobs/' + encodeURIComponent(payload.jobId));
   if (current.cancelled) throw new Error('任务已取消。');

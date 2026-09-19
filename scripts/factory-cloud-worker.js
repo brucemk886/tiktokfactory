@@ -1,3 +1,4 @@
+import { publishErrorMessage } from './publish-error-message.js';
 import { runGroupedVideoUpload } from "./psychology-batch-upload.js";
 import fs from "node:fs";
 import { syncPeerArtboardProgress } from './peer-progress-sync.js';
@@ -74,6 +75,7 @@ export function helloPayload(context) {
   return {
     workerId: context.workerId,
     psychologyBatchUpload: typeof context.uploadOfficialAsset === 'function',
+    psychologyPublishRetry: true,
     label: String(context.settings?.label || ""),
     hostname: os.hostname(),
     assignedOnly: context.settings?.assignedOnly === true,
@@ -91,7 +93,7 @@ async function helloWorker(context) {
   }
 }
 
-export const PUBLISH_JOB_TYPES = ["official-publish"];
+export const PUBLISH_JOB_TYPES = ["official-publish", "psychology-publish-submit"];
 export const DEFAULT_RENDER_CONCURRENCY = 2;
 export const DEFAULT_PUBLISH_CONCURRENCY = 1;
 
@@ -140,7 +142,7 @@ async function laneLoop(context, lane) {
     try {
       claimed = await request(context, "/api/worker/claim", {
         method: "POST",
-        body: { psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
+        body: { psychologyPublishRetry: true, psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
       });
     } catch (error) {
       console.error(`拉单失败（${lane.name}）：`, error.message || error);
@@ -163,6 +165,13 @@ async function runJob(context, job) {
   const jobId = job.id || job.jobId;
   const type = resolveJobType(job);
   console.log(`接到工厂云任务 ${jobId} (${type})`);
+  if(type==='psychology-publish-submit'){
+    try{
+      const result=await request(context,'/api/worker/psychology-publish-groups/'+encodeURIComponent(jobId)+'/submit',{method:'POST',body:{},timeoutMs:150000});
+      await complete(context,jobId,{result,percent:100,message:'整批提交完成'});
+    }catch(error){await complete(context,jobId,{error:publishErrorMessage(error,'整批提交'),percent:0});}
+    return;
+  }
   if (type === "official-publish") {
     await runOfficialPublishJob(context, job);
     return;
@@ -442,7 +451,7 @@ async function runOfficialPublishJob(context, job) {
       return;
     }
     if(job.payload?.psychologyAutomation?.submissionMode==='grouped'){
-      await complete(context,jobId,{error:error.message||"视频上传或整批提交失败",result:local,percent:85});return;
+      await complete(context,jobId,{error:publishErrorMessage(error,'视频上传或整批提交'),result:local,percent:85});return;
     }
     await completeOfficialOutcome(context, job, jobId, local, { publishError: error.message || "官方发布失败" });
   }
@@ -903,7 +912,7 @@ async function complete(context, jobId, body) {
   await request(context, `/api/worker/jobs/${encodeURIComponent(jobId)}/complete`, { method: "POST", body });
 }
 
-async function request(context, pathname, { method = "GET", body } = {}) {
+async function request(context, pathname, { method = "GET", body, timeoutMs } = {}) {
   const response = await fetch(`${context.settings.url}${pathname}`, {
     method,
     headers: {
@@ -911,10 +920,11 @@ async function request(context, pathname, { method = "GET", body } = {}) {
       "content-type": "application/json",
       "x-factory-worker": context.workerId
     },
-    body: body ? JSON.stringify(body) : undefined
+    body: body ? JSON.stringify(body) : undefined,
+    ...(timeoutMs?{signal:AbortSignal.timeout(timeoutMs)}:{})
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  if (!response.ok) throw Object.assign(new Error(data.error || `HTTP ${response.status}`),{statusCode:response.status});
   return data;
 }
 

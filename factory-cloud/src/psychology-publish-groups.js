@@ -1,3 +1,4 @@
+import { enqueueGroupRetry } from './psychology-publish-retries.js';
 import { json, readJson } from './http.js';
 import { signalDesk } from './signal-desk.js';
 import { assertAutoJobAccess, loadAutoUser } from './psychology-auto-publish.js';
@@ -13,7 +14,8 @@ const fail = (message, statusCode=400) => { throw Object.assign(new Error(messag
 export async function stagePublishItem(env, item, ready) {
   await env.DB.prepare("UPDATE psychology_publish_items SET ready_json=? WHERE id=? AND ready_json='{}'")
     .bind(JSON.stringify(ready),item.id).run();
-  await dispatchPublishGroup(env,item.publish_group_id);
+  const retry=await env.DB.prepare('SELECT id FROM factory_jobs WHERE id=?').bind(item.publish_group_id+'-submit').first();
+  if(!retry)await dispatchPublishGroup(env,item.publish_group_id);
   const current=await env.DB.prepare('SELECT receipt_json FROM psychology_publish_items WHERE id=?').bind(item.id).first();
   const receipt=parse(current?.receipt_json);
   return receipt.batchId ? receipt : {waiting:true,groupId:item.publish_group_id};
@@ -82,12 +84,19 @@ export async function dispatchPublishGroup(env,groupId) {
   } catch(error) {
     await db.prepare("UPDATE psychology_publish_groups SET status='failed',error=?,updated_at=? WHERE id=? AND status<>'submitted'")
       .bind(error.message||'整批提交失败',Date.now(),groupId).run();
+    await enqueueGroupRetry(db,group,error);
     throw error;
   }
 }
 
 // Worker token is checked by handleWorkerApi before entering this route.
 export async function handleAutoVideoStage(request,env,url) {
+  const submit=url.pathname.match(/^\/api\/worker\/psychology-publish-groups\/([^/]+)\/submit$/);
+  if(submit && request.method==='POST'){
+    const job=await env.DB.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(submit[1]).first();
+    if(!job||job.type!=='psychology-publish-submit'||job.status!=='running'||job.worker_id!==request.headers.get('x-factory-worker'))fail('只能由接单工人提交当前分组。',409);
+    return json(await dispatchPublishGroup(env,parse(job.payload_json).psychologySubmission.groupId));
+  }
   const match=url.pathname.match(/^\/api\/worker\/psychology-video\/([^/]+)\/(state|ready)$/);
   if(!match)return null;
   const job=await env.DB.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(match[1]).first();

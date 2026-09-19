@@ -353,6 +353,7 @@ test('group submission retries a lost response with identical frozen body and pr
   const retryPath='/api/psychology-auto-publish/groups/'+items[0].publish_group_id+'/retry';
   await assert.rejects(f.call('POST',{},retryPath,{...user,username:'other'}),e=>e.statusCode===404);
   await f.call('POST',{},retryPath);
+  await dispatchPublishGroup(f.env,items[0].publish_group_id);
   assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);
   await f.call('POST',{},retryPath);assert.equal(bodies.length,2);
 });
@@ -464,4 +465,85 @@ test('removing every failure leaves a cancelled empty group and no remote submis
   const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(items[0].job_id);
   await enqueueAutoVideoPublish(f.db,job,officialPublishFollowupPayload(job,{results:[{fileName:'old.mp4'}]}));
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE type='official-publish'").get().n,0);
+});
+
+async function workerCall(f,path,body,worker='w'){
+ const req=new Request(BASE+path,{method:'POST',headers:{Authorization:'Bearer test-worker','x-factory-worker':worker},body:JSON.stringify(body)});
+ return handleJobs(req,f.env,new URL(req.url),null);
+}
+test('publish failures retry twice off the lane, skip delayed work, retain one failure record and diagnose each attempt',async t=>{
+ const f=await groupedFixture(t,2),[item,other]=f.items();
+ const original=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(item.job_id),p=JSON.parse(original.payload_json);
+ p.photoAutomation=true;
+ f.sqlite.prepare("UPDATE factory_jobs SET payload_json=?,status='running',worker_id='w' WHERE id=?").run(JSON.stringify(p),item.job_id);
+ const complete='/api/worker/jobs/'+item.job_id+'/complete';
+ for(let attempt=0;attempt<3;attempt++){
+   const before=Date.now();
+   await workerCall(f,complete,{error:'图片上传失败（ECONNRESET）：fetch failed',result:{},percent:85});
+   const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(item.job_id);
+   assert.equal(job.status,attempt<2?'queued':'failed');
+   assert.equal(job.auto_retry_count,Math.min(attempt+1,2));
+   assert.equal(JSON.parse(job.retry_history_json).length,attempt+1);
+   if(attempt<2)assert.ok(job.available_at>=before+(attempt===0?30000:60000));
+   else assert.equal(job.available_at,0);
+   // Duplicate completion after requeue must not consume another retry.
+   await workerCall(f,complete,{error:'duplicate'});
+   assert.equal(JSON.parse(f.sqlite.prepare('SELECT retry_history_json FROM factory_jobs WHERE id=?').get(item.job_id).retry_history_json).length,attempt+1);
+   if(attempt===0){
+     const claimed=await(await workerCall(f,'/api/worker/claim',{workerId:'w',psychologyBatchUpload:true,psychologyPublishRetry:true,types:['psychology']})).json();
+     assert.equal(claimed.job.id,other.job_id,'the next task runs while this one waits');
+   }
+   if(attempt<2)f.sqlite.prepare("UPDATE factory_jobs SET status='running' WHERE id=?").run(item.job_id);
+ }
+ const records=f.sqlite.prepare('SELECT value_json FROM factory_publish_records').all().map(r=>JSON.parse(r.value_json));
+ assert.equal(records.length,1);assert.equal(records[0].status,'failed');assert.equal(records[0].autoRetryCount,2);
+ assert.match(records[0].error,/ECONNRESET/);assert.equal(records[0].nextRetryAt,0);
+ assert.equal(records[0].batchId||'','');assert.equal(f.requests.length,0);
+});
+
+test('group failures use a separate submission job with exactly two retries and identical remote request',async t=>{
+ const f=await groupedFixture(t,2),items=f.items(),native=globalThis.fetch,bodies=[];
+ let fail=true;
+ t.mock.method(globalThis,'fetch',async(url,init)=>{
+  if(String(url).endsWith('/api/v1/publish/batches')){bodies.push(init.body);if(fail)throw new Error('remote unavailable');}
+  return native(url,init);
+ });
+ await stagePublishItem(f.env,items[0],readyVideo(items[0]));
+ await assert.rejects(stagePublishItem(f.env,items[1],readyVideo(items[1])),/remote unavailable/);
+ const id=items[0].publish_group_id+'-submit';
+ let job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(id);
+ assert.equal(job.status,'queued');assert.equal(job.auto_retry_count,1);assert.ok(job.available_at>Date.now());
+ // Another uploader cannot bypass the group's scheduled retry.
+ await stagePublishItem(f.env,items[0],readyVideo(items[0]));assert.equal(bodies.length,1);
+ for(let retry=1;retry<=2;retry++){
+  f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='w' WHERE id=?").run(id);
+  await assert.rejects(workerCall(f,'/api/worker/psychology-publish-groups/'+id+'/submit',{}),/remote unavailable/);
+  await workerCall(f,'/api/worker/jobs/'+id+'/complete',{error:'remote unavailable'});
+  job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(id);
+  assert.equal(job.status,retry===1?'queued':'failed');
+ }
+ assert.equal(bodies.length,3);assert.ok(bodies.every(b=>b===bodies[0]));
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_publish_records').get().n,2);
+ // A subsequent explicit manual retry can succeed and updates those same records.
+ fail=false;await f.call('POST',{},'/api/psychology-auto-publish/groups/'+items[0].publish_group_id+'/retry');
+ f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='w' WHERE id=?").run(id);
+ await workerCall(f,'/api/worker/psychology-publish-groups/'+id+'/submit',{});
+ await workerCall(f,'/api/worker/jobs/'+id+'/complete',{result:{},percent:100});
+ const records=f.sqlite.prepare('SELECT value_json FROM factory_publish_records').all().map(r=>JSON.parse(r.value_json));
+ assert.equal(records.length,2);assert.ok(records.every(r=>r.status!=='failed'&&r.batchId&&r.error===''&&r.nextRetryAt===0));
+});
+
+test('migration backfills missing legacy submission failures without requeueing or duplicating records',async t=>{
+ const f=await groupedFixture(t,2),items=f.items();
+ for(const item of items){
+  const p=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(item.job_id).payload_json);p.photoAutomation=true;
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=?,status='failed',error='historical failure' WHERE id=?").run(JSON.stringify(p),item.job_id);
+ }
+ f.sqlite.prepare('UPDATE psychology_publish_items SET receipt_json=? WHERE id=?').run('{"batchId":"existing"}',items[1].id);
+ const sql=fs.readFileSync(new URL('../migrations/0032_psychology_publish_retries.sql',import.meta.url),'utf8').split('-- Backfill')[1];
+ const insert=sql.slice(sql.indexOf('INSERT OR IGNORE'));
+ f.sqlite.exec(insert);f.sqlite.exec(insert);
+ const records=f.sqlite.prepare('SELECT value_json FROM factory_publish_records').all().map(r=>JSON.parse(r.value_json));
+ assert.equal(records.length,1);assert.equal(records[0].autoTaskId,items[0].id);assert.equal(records[0].status,'failed');
+ assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE status='queued'").get().n,0);
 });

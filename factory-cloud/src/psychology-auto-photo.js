@@ -60,7 +60,7 @@ export async function handleAutoPhotoWorker(request, env, url) {
     return json(await stagePublishItem(env,item,{mediaType:'photo',title:publish.title,item:remoteItem}),202);
   }
   const batch = await signalDesk(env, env.DB, '/api/v1/publish/batches', { method:'POST', body: buildPhotoBatchRequest(publish) });
-  const record = buildPhotoPublishRecord(publish, batch);
+  const record = {...buildPhotoPublishRecord(publish, batch),id:'psychology:'+item.id,autoBatchId:item.batch_id,nextRetryAt:0};
   if (!record.batchId) fail('发布中台未返回批次编号，请重试确认提交状态。', 502);
   await mergeAndStorePublishRecords(env.DB, [{ ...record, autoTaskId: item.id }]);
   const next = { batchId: record.batchId, recordId: record.id, submittedAt: Date.now() };

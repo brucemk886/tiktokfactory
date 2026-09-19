@@ -10,6 +10,8 @@ Updated: 2026-09-19
 
 - Psychology automatic publishing now accepts 1–100 posts per creation and submits fixed groups of up to 20 (50 = 20/20/10). Video/photo assets upload individually, then the cloud submits each complete group with stable idempotency and per-item receipts. The queue distinguishes ready assets from submitted posts and supports group retries. New grouped jobs require an updated worker; existing jobs keep their original behavior. See docs/handoffs/2026-09-19-psychology-grouped-publish.md.
 
+- Psychology upload/submission failures now retry twice through durable delayed jobs (30/60 seconds) without reserving a worker slot between attempts. Official API records include pre-submission failures and update the same row on success. Migration 0032 backfills missed historical failure records without requeueing old jobs. Updated workers advertise psychologyPublishRetry. See docs/handoffs/2026-09-19-psychology-publish-retries.md.
+
 ## Platform
 
 - Psychology /psychology-ops-report is now a separate operations review: equal-period trend comparisons, account performance/drilldown, and automatic-batch generation/submission/publication funnel. It supports 7/30-day or custom date windows, media/group filters, existing scoped permissions, and explicit archive coverage. Performance rates exclude works younger than 24 hours; pending submissions never count as confirmed publication.

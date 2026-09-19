@@ -281,6 +281,10 @@ export function mergeOfficialRecordFields(prev, next) {
     if (typeof value === "number" && !Number.isFinite(value)) continue;
     merged[key] = value;
   }
+  if(String(next.autoTaskId||'').startsWith('psy-auto-') && next.batchId && next.status!=='failed'){
+    for(const key of ['error','errorMessage','publishError'])merged[key]='';
+    merged.nextRetryAt=0;
+  }
   return merged;
 }
 

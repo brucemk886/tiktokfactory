@@ -44,7 +44,7 @@ function renderRows(records) {
     const note = escapeHtml(recordNote(record));
     const openLabel = record.mediaType === "photo" || /\/photo\//i.test(openUrl) ? "打开图文" : "打开视频";
     const openLink = canOpen ? `<a href="${escapeHtml(openUrl)}" target="_blank" rel="noreferrer">${openLabel}</a><br><span class="muted">${note}</span>` : note;
-    return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td>${accountCell(record)}</td><td>${escapeHtml(record.fileName || record.title || "-")}</td><td>${escapeHtml(record.autoTaskId || "手动提交")}</td><td>${escapeHtml(batchIds.join(", ") || "-")}</td><td>${escapeHtml(statusLabel(record.status))}</td><td>${openLink}</td></tr>`;
+    return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td>${accountCell(record)}</td><td>${escapeHtml(record.fileName || record.title || "-")}</td><td>${escapeHtml(record.autoTaskId || "手动提交")}</td><td>${escapeHtml(batchIds.join(", ") || "-")}</td><td>${escapeHtml(record.nextRetryAt?`等待自动重试 ${record.autoRetryCount}/2`:statusLabel(record.status))}</td><td>${openLink}</td></tr>`;
   }).join("");
   status.textContent = `已读取 ${records.length} 条官方 API 本地发布记录。`;
 }
@@ -59,7 +59,7 @@ function accountCell(record) {
 
 function recordNote(record) {
   const reason = failReasonLabel(record.publishError || "");
-  if (reason) return `失败原因：${reason}`;
+  if (reason) return `${record.nextRetryAt?`已安排自动重试 ${record.autoRetryCount}/2；`:""}失败原因：${reason}`;
   return record.note || "已由 Signal Desk 接管后续发布";
 }
 

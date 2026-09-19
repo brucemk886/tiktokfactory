@@ -22,8 +22,8 @@ import {
 test("worker runs a render lane and a publish lane with configurable concurrency", () => {
   const lanes = workerLanes({});
   assert.deepEqual(lanes.map((lane) => [lane.name, lane.concurrency]), [["render", 2], ["publish", 1]]);
-  assert.deepEqual(lanes[0].claim, { excludeTypes: ["official-publish"] });
-  assert.deepEqual(lanes[1].claim, { types: ["official-publish"] });
+  assert.deepEqual(lanes[0].claim, { excludeTypes: ["official-publish", "psychology-publish-submit"] });
+  assert.deepEqual(lanes[1].claim, { types: ["official-publish", "psychology-publish-submit"] });
   const tuned = workerLanes({ renderConcurrency: 4, publishConcurrency: 99 });
   assert.deepEqual(tuned.map((lane) => lane.concurrency), [4, 8]);
   const bad = workerLanes({ renderConcurrency: "x", publishConcurrency: 0 });
@@ -37,7 +37,7 @@ test("worker runs a render lane and a publish lane with configurable concurrency
 test("a secondary worker can narrow its render lane to a job-type whitelist", () => {
   const lanes = workerLanes({ renderJobTypes: ["auto-task", "reddit-mix", "official-publish", " auto-task ", ""] });
   assert.deepEqual(lanes[0].claim, { types: ["auto-task", "reddit-mix"] });
-  assert.deepEqual(lanes[1].claim, { types: ["official-publish"] });
+  assert.deepEqual(lanes[1].claim, { types: ["official-publish", "psychology-publish-submit"] });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "factory-lanes-"));
   fs.writeFileSync(path.join(dir, "factory-cloud-worker.json"), JSON.stringify({
     url: "https://factory.example.com",

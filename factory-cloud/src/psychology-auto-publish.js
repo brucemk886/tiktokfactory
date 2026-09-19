@@ -71,16 +71,16 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const batches = await env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE created_by=? ORDER BY created_at DESC LIMIT 30').bind(user.username).all();
     const result = [];
     for (const batch of batches.results) {
-      const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json
+      const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at
         FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=? AND i.deleted_at=0 ORDER BY i.id`).bind(batch.id).all();
-      const groups=await env.DB.prepare('SELECT id,ordinal,expected_count,status,error,updated_at,response_json FROM psychology_publish_groups WHERE batch_id=? ORDER BY ordinal').bind(batch.id).all();
-      result.push({ groups:groups.results.map(g=>{const members=rows.results.filter(i=>i.publish_group_id===g.id);return {id:g.id,number:g.ordinal+1,count:members.length,status:members.length?g.status:'cancelled',error:members.length?g.error:'',canRetry:members.length>0&&(g.status==='failed'||(g.status==='waiting'&&members.every(i=>i.ready_json!=='{}'))||(g.status==='submitting'&&g.updated_at<Date.now()-180000)),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''};}), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json), deletedCount:JSON.parse(batch.config_json).count-rows.results.length,
+      const groups=await env.DB.prepare("SELECT g.*,j.status AS retry_status,j.auto_retry_count,j.available_at FROM psychology_publish_groups g LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id=? ORDER BY g.ordinal").bind(batch.id).all();
+      result.push({ groups:groups.results.map(g=>{const members=rows.results.filter(i=>i.publish_group_id===g.id);return {id:g.id,retryCount:g.auto_retry_count||0,retryAt:g.retry_status==='queued'?g.available_at:0,retrying:['queued','running'].includes(g.retry_status),number:g.ordinal+1,count:members.length,status:members.length?g.status:'cancelled',error:members.length?g.error:'',canRetry:!['queued','running'].includes(g.retry_status)&&members.length>0&&(g.status==='failed'||(g.status==='waiting'&&members.every(i=>i.ready_json!=='{}'))||(g.status==='submitting'&&g.updated_at<Date.now()-180000)),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''};}), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json), deletedCount:JSON.parse(batch.config_json).count-rows.results.length,
         items: rows.results.map(row => {
           const receipt = JSON.parse(row.receipt_json || '{}');
           const result = JSON.parse(row.result_json || '{}');
           const submitted = Boolean(receipt.batchId || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
-          return { id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
-            groupId:row.publish_group_id, scheduleAt: row.schedule_at, status: submitted ? 'submitted' : row.ready_json!=='{}' && row.publish_group_id ? 'ready' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
+          return { retryCount:row.auto_retry_count||0,retryAt:row.status==='queued'?row.available_at:0,id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
+            groupId:row.publish_group_id, scheduleAt: row.schedule_at, status: submitted ? 'submitted' : row.ready_json!=='{}' && row.publish_group_id ? 'ready' : row.status==='queued'&&row.available_at ? 'queued' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
             percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: row.error || result.publishError || '', type: row.type };
         }) });
     }
@@ -112,6 +112,12 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if(groupRetry && request.method==='POST'){
     const group=await env.DB.prepare('SELECT g.id FROM psychology_publish_groups g JOIN psychology_publish_batches b ON b.id=g.batch_id WHERE g.id=? AND b.created_by=?').bind(groupRetry[1],user.username).first();
     if(!group)fail('发布分组不存在。',404);
+    const retryJob=await env.DB.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(group.id+'-submit').first();
+    if(retryJob){
+      if(retryJob.status==='running')return json({queued:true});
+      await env.DB.prepare("UPDATE factory_jobs SET status='queued',auto_retry_count=0,available_at=0,error='',message='等待整批提交',updated_at=? WHERE id=? AND status<>'running'").bind(Date.now(),retryJob.id).run();
+      return json({queued:true});
+    }
     return json(await dispatchPublishGroup(env,group.id));
   }
   const retry = url.pathname.match(/^\/api\/psychology-auto-publish\/([^/]+)\/retry$/);
@@ -130,6 +136,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     }
     if (row.status !== 'failed' && !result.publishFailed) fail('只能重试失败任务。', 409);
     await assertAutoJobAccess(env, row);
+    await env.DB.prepare("UPDATE factory_jobs SET auto_retry_count=0,available_at=0 WHERE id=? AND status IN ('failed','done')").bind(row.id).run();
     if (row.type !== 'official-publish' && result.results?.some(video => video.fileName) && JSON.parse(row.payload_json).publish?.autoPublish) {
       const next = officialPublishFollowupPayload(row,result);
       if(next) { await enqueueAutoVideoPublish(env.DB,row,next); return json({ok:true}); }
