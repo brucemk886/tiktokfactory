@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], batches:[], requestId:crypto.randomUUID(), busy:false, submittedInput:null };
+const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], accountsLoaded:false, batches:[], requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
 async function api(path, body) {
@@ -40,13 +40,19 @@ async function loadAccounts() {
   const ids=new Set(selected());
   const data=await api('/api/official-tiktok/publish-accounts?module=psychology&media='+state.mediaType);
   state.accounts=data.accounts||[];
+  state.accountsLoaded=true;
   $('#accounts').innerHTML=state.accounts.length ? state.accounts.map(a=>{
     const id=String(a.connectionId||a.id);
     return `<label class="account-choice"><input type="checkbox" value="${esc(id)}" ${ids.has(id)?'checked':''}><span><strong>${esc(a.displayName||a.label||a.username||id)}</strong><small>${esc(a.username?'@'+a.username:'')} · ${esc(a.groupName||'未分组')}</small></span></label>`;
   }).join('') : '<div class="empty-state">心理学项目还没有可发布账号，请先在 TikTok 账号页分配分组。</div>';
   summary();
+  renderBatches();
 }
-function accountName(id) { const a=state.accounts.find(a=>String(a.connectionId||a.id)===id); return a?.displayName||a?.label||a?.username||id; }
+function accountName(id) {
+  const a=state.accounts.find(a=>String(a.connectionId||a.id)===String(id));
+  const username=String(a?.username||'').trim().replace(/^@+/, '');
+  return username?'@'+username:a?.displayName||a?.label||(state.accountsLoaded?'账号信息不可用':'账号加载中…');
+}
 function summary() {
   const ids=selected(), count=Number($('#count').value)||0;
   $('#summary').textContent=ids.length ? `本批共生成 ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
@@ -65,6 +71,9 @@ function statusLabel(status){
 }
 async function loadBatches() {
   const data=await api('/api/psychology-auto-publish'); state.batches=data.batches||[];
+  renderBatches();
+}
+function renderBatches() {
   const labels={queued:'等待执行',running:'执行中',done:'生成完成',submitted:'已提交中台',failed:'失败',cancelled:'已取消',missing:'任务已清理',handoff:'等待卡片渲染'};
   const tones=state.batches.map(b=>batchStatus(b.items||[],b.groups||[]));
   $('#queuedCount').textContent=tones.filter(s=>s==='queued').length;
@@ -82,7 +91,7 @@ async function loadBatches() {
     const retryItems=items.filter(i=>['failed','handoff'].includes(i.status));
     const percent=items.length?Math.round(items.reduce((sum,i)=>sum+(i.status==='submitted'?100:Number(i.percent)||0),0)/items.length):0;
     const template=(state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template;
-    const accounts=[...new Set(items.map(i=>accountName(i.connectionId)).filter(Boolean))];
+    const accounts=[...new Set(items.map(i=>i.connectionId).filter(Boolean))].map(accountName);
     const schedule=Object.entries(items.reduce((map,i)=>{const key=time(i.scheduleAt);map[key]=(map[key]||0)+1;return map;},{})).map(([when,count])=>`<span><b>${esc(when)}</b><em>${count} 条</em></span>`).join('');
     const message=(b.groups||[]).find(g=>g.error)?.error||failed[0]?.error||items.find(i=>i.message)?.message||(submitted===b.config.count?'已全部提交官方发布中台。':`${labels[items[0]?.status]||'等待执行'} · ${submitted} / ${b.config.count} 已提交`);
     return `<article class="auto-task-item" data-status="${esc(status)}">
