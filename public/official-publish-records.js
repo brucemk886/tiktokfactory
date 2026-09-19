@@ -41,12 +41,17 @@ function renderRows(records) {
     const batchIds = record.autoBatchId ? unique([record.batchId]) : unique([...(Array.isArray(record.officialBatchIds) ? record.officialBatchIds : []), ...(Array.isArray(record.taskIds) ? record.taskIds : []), record.batchId]);
     const openUrl = record.shareLink || record.videoUrl || "";
     const canOpen = /tiktok\.com\/@[\w.]+\/(?:video|photo)\/\d{10,}/i.test(openUrl);
-    const note = escapeHtml(recordNote(record));
+    const note = clippedText(recordNote(record));
     const openLabel = record.mediaType === "photo" || /\/photo\//i.test(openUrl) ? "打开图文" : "打开视频";
-    const openLink = canOpen ? `<a href="${escapeHtml(openUrl)}" target="_blank" rel="noreferrer">${openLabel}</a><br><span class="muted">${note}</span>` : note;
-    return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td>${accountCell(record)}</td><td>${escapeHtml(record.fileName || record.title || "-")}</td><td>${escapeHtml(record.autoTaskId || "手动提交")}</td><td>${escapeHtml(batchIds.join(", ") || "-")}</td><td>${escapeHtml(record.nextRetryAt?`等待自动重试 ${record.autoRetryCount}/2`:statusLabel(record.status))}</td><td>${openLink}</td></tr>`;
+    const openLink = canOpen ? `<a href="${escapeHtml(openUrl)}" target="_blank" rel="noreferrer">${openLabel}</a><br><div class="muted">${note}</div>` : note;
+    return `<tr><td>${escapeHtml(formatMilliseconds(record.createdAt))}</td><td>${escapeHtml(formatSeconds(record.scheduleAt))}</td><td>${accountCell(record)}</td><td>${clippedText(record.fileName || record.title || "-")}</td><td>${clippedText(record.autoTaskId || "手动提交")}</td><td>${clippedText(batchIds.join(", ") || "-")}</td><td>${escapeHtml(record.nextRetryAt?`等待自动重试 ${record.autoRetryCount}/2`:statusLabel(record.status))}</td><td>${openLink}</td></tr>`;
   }).join("");
   status.textContent = `已读取 ${records.length} 条官方 API 本地发布记录。`;
+}
+
+function clippedText(value) {
+  const text=escapeHtml(String(value ?? '-'));
+  return `<span class="record-truncate" title="${text}" tabindex="0">${text}</span>`;
 }
 
 function accountCell(record) {

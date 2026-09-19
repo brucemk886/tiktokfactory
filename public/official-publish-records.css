@@ -1,0 +1,20 @@
+.official-records-page .stats-table { min-width: 1080px; table-layout: fixed; }
+.official-records-page .stats-table th:nth-child(1),
+.official-records-page .stats-table td:nth-child(1),
+.official-records-page .stats-table th:nth-child(2),
+.official-records-page .stats-table td:nth-child(2) { width: 11%; }
+.official-records-page .stats-table th:nth-child(3),
+.official-records-page .stats-table td:nth-child(3) { width: 13%; overflow-wrap: anywhere; }
+.official-records-page .stats-table th:nth-child(4),
+.official-records-page .stats-table td:nth-child(4) { width: 18%; }
+.official-records-page .stats-table th:nth-child(5),
+.official-records-page .stats-table td:nth-child(5),
+.official-records-page .stats-table th:nth-child(6),
+.official-records-page .stats-table td:nth-child(6) { width: 12%; }
+.official-records-page .stats-table th:nth-child(7),
+.official-records-page .stats-table td:nth-child(7) { width: 11%; }
+.official-records-page .stats-table th:nth-child(8),
+.official-records-page .stats-table td:nth-child(8) { width: 12%; }
+.official-records-page .stats-table td { height: auto; vertical-align: middle; padding-top: 14px; padding-bottom: 14px; }
+.official-records-page .record-truncate { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.official-records-page .record-truncate:focus-visible { outline: 2px solid #7e941b; outline-offset: 2px; }
