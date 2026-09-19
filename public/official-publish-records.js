@@ -7,9 +7,11 @@ const rows = document.querySelector("#officialRecordRows");
 refreshButton?.addEventListener("click", loadRecords);
 rangeInput?.addEventListener("change", loadRecords);
 queryInput?.addEventListener("input", debounce(loadRecords, 300));
+installRecordTooltip();
 loadRecords();
 
 async function loadRecords() {
+  document.dispatchEvent(new Event("dismiss-record-tooltip"));
   status.textContent = "正在读取官方 API 发布记录...";
   const params = new URLSearchParams({ range: rangeInput?.value || "7d", query: queryInput?.value.trim() || "", t: String(Date.now()) });
   try {
@@ -51,7 +53,74 @@ function renderRows(records) {
 
 function clippedText(value) {
   const text=escapeHtml(String(value ?? '-'));
-  return `<span class="record-truncate" title="${text}" tabindex="0">${text}</span>`;
+  return `<span class="record-truncate" tabindex="0">${text}</span>`;
+}
+
+// Render outside the scrolling table so long details are never clipped by its edges.
+function installRecordTooltip() {
+  const tooltip = document.createElement("div");
+  tooltip.id = "record-detail-tooltip";
+  tooltip.className = "record-detail-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.append(tooltip);
+  let active = null;
+  let hideTimer;
+  const cancelHide = () => clearTimeout(hideTimer);
+  const hide = () => {
+    cancelHide();
+    active?.removeAttribute("aria-describedby");
+    active = null;
+    tooltip.hidden = true;
+  };
+  const scheduleHide = () => { cancelHide(); hideTimer = setTimeout(hide, 180); };
+  const show = (target) => {
+    cancelHide();
+    if (active === target && !tooltip.hidden) return;
+    active?.removeAttribute("aria-describedby");
+    active = target;
+    tooltip.textContent = target.textContent;
+    target.setAttribute("aria-describedby", tooltip.id);
+    tooltip.hidden = false;
+    tooltip.scrollTop = 0;
+    const rect = target.getBoundingClientRect();
+    const margin = 12;
+    const gap = 6;
+    const below = window.innerHeight - rect.bottom - margin - gap;
+    const above = rect.top - margin - gap;
+    const useBelow = below >= Math.min(260, above);
+    tooltip.style.maxHeight = `${Math.max(40, Math.min(360, useBelow ? below : above))}px`;
+    const width = tooltip.offsetWidth;
+    const height = tooltip.offsetHeight;
+    tooltip.style.left = `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))}px`;
+    tooltip.style.top = `${Math.max(margin, Math.min(useBelow ? rect.bottom + gap : rect.top - height - gap, window.innerHeight - height - margin))}px`;
+  };
+  const targetInCell = (element) => element instanceof Element && element.closest("td")?.querySelector(".record-truncate");
+  rows.addEventListener("mouseover", (event) => {
+    const target = targetInCell(event.target);
+    if (target) show(target);
+  });
+  rows.addEventListener("mouseout", (event) => {
+    if (targetInCell(event.relatedTarget) !== active) scheduleHide();
+  });
+  rows.addEventListener("focusin", (event) => {
+    const target = targetInCell(event.target);
+    if (target) show(target);
+  });
+  rows.addEventListener("focusout", scheduleHide);
+  rows.addEventListener("click", (event) => {
+    const target = targetInCell(event.target);
+    if (target && !event.target.closest("a")) show(target);
+  });
+  tooltip.addEventListener("mouseenter", cancelHide);
+  tooltip.addEventListener("mouseleave", scheduleHide);
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") hide(); });
+  document.addEventListener("pointerdown", (event) => {
+    if (!tooltip.contains(event.target) && targetInCell(event.target) !== active) hide();
+  });
+  document.addEventListener("scroll", (event) => { if (event.target !== tooltip) hide(); }, true);
+  window.addEventListener("resize", hide);
+  document.addEventListener("dismiss-record-tooltip", hide);
 }
 
 function accountCell(record) {

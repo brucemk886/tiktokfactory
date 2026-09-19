@@ -18,3 +18,25 @@
 .official-records-page .stats-table td { height: auto; vertical-align: middle; padding-top: 14px; padding-bottom: 14px; }
 .official-records-page .record-truncate { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .official-records-page .record-truncate:focus-visible { outline: 2px solid #7e941b; outline-offset: 2px; }
+
+.official-records-page .record-truncate { cursor: help; }
+.official-records-page .record-detail-tooltip {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 24px));
+  padding: 14px 16px;
+  border: 1px solid #c8c0b0;
+  border-radius: 10px;
+  background: #fffdf7;
+  color: #26251f;
+  box-shadow: 0 8px 28px #302a2429;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+  overscroll-behavior: contain;
+  user-select: text;
+}
+.official-records-page .record-detail-tooltip[hidden] { display: none; }
