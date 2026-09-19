@@ -404,3 +404,64 @@ test('three complete photo posts submit one remote batch with music, cover and s
   assert.equal(f.requests.length,1);assert.equal(f.requests[0].items.length,3);
   assert.ok(f.requests[0].items.every(i=>i.photoAssetKeys.length===2&&i.postInfo.musicSoundId==='12345'&&i.postInfo.autoAddMusic===false&&i.postInfo.photoCoverIndex===0));
 });
+
+test('deleting a legacy failed item hides it, blocks retry, and preserves successful siblings',async t=>{
+  const f=await groupedFixture(t,3),items=f.items(),item=items[0];
+  f.sqlite.prepare("UPDATE psychology_publish_items SET publish_group_id=''").run();
+  f.sqlite.prepare("UPDATE factory_jobs SET status='failed' WHERE id=?").run(item.job_id);
+  f.sqlite.prepare('UPDATE psychology_publish_items SET receipt_json=? WHERE id=?').run('{"batchId":"already-published"}',items[1].id);
+  const path='/api/psychology-auto-publish/'+item.id;
+  await assert.rejects(f.call('DELETE',undefined,path,{...user,username:'another'}),e=>e.statusCode===404);
+  await assert.rejects(f.call('DELETE',undefined,path,{...user,role:'operator'}),e=>e.statusCode===403);
+  assert.equal((await f.call('DELETE',undefined,path)).status,200);
+  assert.equal((await f.call('DELETE',undefined,path)).status,200);
+  const batch=(await(await f.call()).json()).batches[0];
+  assert.equal(batch.items.length,2);assert.equal(batch.deletedCount,1);
+  assert.equal(batch.items[0].status,'submitted');
+  assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(item.job_id).status,'cancelled');
+  await assert.rejects(f.call('POST',{},path+'/retry'),e=>e.statusCode===404);
+  assert.equal(f.requests.length,0);
+});
+
+test('deleting a failed group member leaves ready siblings available for one smaller submission',async t=>{
+  const f=await groupedFixture(t,3),items=f.items(),item=items[0];
+  f.sqlite.prepare("UPDATE factory_jobs SET status='failed' WHERE id=?").run(item.job_id);
+  for(const sibling of items.slice(1))await stagePublishItem(f.env,sibling,readyVideo(sibling));
+  assert.equal(f.requests.length,0);
+  await f.call('DELETE',undefined,'/api/psychology-auto-publish/'+item.id);
+  const batch=(await(await f.call()).json()).batches[0];
+  assert.equal(batch.groups[0].count,2);assert.equal(batch.groups[0].canRetry,true);
+  assert.equal(f.requests.length,0,'deletion itself does not publish');
+  await f.call('POST',{},'/api/psychology-auto-publish/groups/'+item.publish_group_id+'/retry');
+  assert.equal(f.requests.length,1);assert.equal(f.requests[0].items.length,2);
+  assert.deepEqual(f.requests[0].items.map(i=>i.externalRef),items.slice(1).map(i=>i.id));
+});
+
+test('active, staged, submitted and frozen-request members cannot be deleted',async t=>{
+  const f=await groupedFixture(t,2),item=f.items()[0],path='/api/psychology-auto-publish/'+item.id;
+  for(const status of ['queued','running','done']){
+    f.sqlite.prepare('UPDATE factory_jobs SET status=? WHERE id=?').run(status,item.job_id);
+    await assert.rejects(f.call('DELETE',undefined,path),e=>e.statusCode===409);
+  }
+  f.sqlite.prepare("UPDATE factory_jobs SET status='failed' WHERE id=?").run(item.job_id);
+  for(const field of ['ready_json','receipt_json']){
+    f.sqlite.prepare('UPDATE psychology_publish_items SET '+field+'=? WHERE id=?').run('{"batchId":"existing"}',item.id);
+    await assert.rejects(f.call('DELETE',undefined,path),e=>e.statusCode===409);
+    f.sqlite.prepare('UPDATE psychology_publish_items SET '+field+"='{}' WHERE id=?").run(item.id);
+  }
+  f.sqlite.prepare("UPDATE psychology_publish_groups SET status='failed',request_json=?").run('{"items":[]}');
+  await assert.rejects(f.call('DELETE',undefined,path),e=>e.statusCode===409);
+  assert.equal(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items WHERE id=?').get(item.id).deleted_at,0);
+});
+
+test('removing every failure leaves a cancelled empty group and no remote submission',async t=>{
+  const f=await groupedFixture(t,2),items=f.items();
+  f.sqlite.prepare("UPDATE factory_jobs SET status='failed'").run();
+  for(const item of items)await f.call('DELETE',undefined,'/api/psychology-auto-publish/'+item.id);
+  const batch=(await(await f.call()).json()).batches[0];
+  assert.equal(batch.items.length,0);assert.equal(batch.groups[0].status,'cancelled');assert.equal(batch.groups[0].canRetry,false);
+  await dispatchPublishGroup(f.env,items[0].publish_group_id);assert.equal(f.requests.length,0);
+  const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(items[0].job_id);
+  await enqueueAutoVideoPublish(f.db,job,officialPublishFollowupPayload(job,{results:[{fileName:'old.mp4'}]}));
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE type='official-publish'").get().n,0);
+});

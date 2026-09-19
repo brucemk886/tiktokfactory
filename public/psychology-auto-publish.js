@@ -2,8 +2,8 @@ const $ = s => document.querySelector(s);
 const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], accountsLoaded:false, batches:[], requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
-async function api(path, body) {
-  const response = await fetch(path,{...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
+async function api(path, body, method) {
+  const response = await fetch(path,{...(method?{method}:{}),...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
   const data = await response.json();
   if(!response.ok) throw new Error(data.error || '请求失败');
   return data;
@@ -60,7 +60,7 @@ function summary() {
 }
 function batchStatus(items,groups=[]){
   if(groups.some(g=>g.status==='failed'))return 'failed';
-  if(!items.length)return 'queued';
+  if(!items.length)return 'cancelled';
   if(items.some(i=>i.status==='failed'))return 'failed';
   if(items.some(i=>['running','handoff','ready'].includes(i.status)))return 'running';
   if(items.every(i=>i.status==='submitted'||i.status==='cancelled'))return items.every(i=>i.status==='cancelled')?'cancelled':'done';
@@ -93,16 +93,16 @@ function renderBatches() {
     const template=(state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template;
     const accounts=[...new Set(items.map(i=>i.connectionId).filter(Boolean))].map(accountName);
     const schedule=Object.entries(items.reduce((map,i)=>{const key=time(i.scheduleAt);map[key]=(map[key]||0)+1;return map;},{})).map(([when,count])=>`<span><b>${esc(when)}</b><em>${count} 条</em></span>`).join('');
-    const message=(b.groups||[]).find(g=>g.error)?.error||failed[0]?.error||items.find(i=>i.message)?.message||(submitted===b.config.count?'已全部提交官方发布中台。':`${labels[items[0]?.status]||'等待执行'} · ${submitted} / ${b.config.count} 已提交`);
+    const message=(b.groups||[]).find(g=>g.error)?.error||failed[0]?.error||items.find(i=>i.message)?.message||(!items.length?'该批次内容已全部删除。':submitted===items.length?'已全部提交官方发布中台。':`${labels[items[0]?.status]||'等待执行'} · ${submitted} / ${items.length} 已提交`);
     return `<article class="auto-task-item" data-status="${esc(status)}">
       <div class="task-item-head"><div><strong>${esc(b.config.name||'心理学自动发布')}</strong><small>${esc(time(b.createdAt/1000))} · ${b.config.mediaType==='photo'?'图文':'视频'} · ${esc(template)}</small></div><div class="task-head-actions"><span class="task-status-badge">${esc(statusLabel(status))}</span></div></div>
       ${accounts.length?`<div class="task-groups"><span>TikTok 官方账号</span>${accounts.map(name=>`<b>${esc(name)}</b>`).join('')}</div>`:''}
       <div class="task-progress"><div style="width:${Math.max(0,Math.min(100,percent))}%"></div></div>
       <p>${esc(message)}</p>
-      <div class="task-counts"><span>预计 ${b.config.count} 条</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
-      ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${g.status==='submitted'?'已提交':g.status==='submitting'?'提交中':g.status==='failed'?'提交失败':'已就绪 '+n+'/'+g.count}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">重试整批提交</button>`:''}</div>`;}).join('')}</div>`:''}
+      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${g.status==='cancelled'?'已删除全部内容':g.status==='submitted'?'已提交':g.status==='submitting'?'提交中':g.status==='failed'?'提交失败':'已就绪 '+n+'/'+g.count}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       ${schedule?`<div class="task-schedule"><strong>具体排期</strong>${schedule}</div>`:''}
-      ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><button type="button" data-retry="${esc(i.id)}">重试</button></div>`).join('')}</div>`:''}
+      ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}
     </article>`;
   }).join(''):'<div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div>';
 }
@@ -117,6 +117,14 @@ document.querySelectorAll('[data-media]').forEach(button=>button.addEventListene
 $('#refreshAccounts').addEventListener('click',()=>loadAccounts().catch(e=>message(e.message,true)));
 $('#refreshBatches').addEventListener('click',()=>loadBatches().catch(e=>message(e.message,true)));
 $('#batches').addEventListener('click',async event=>{
+  const deleteButton=event.target.closest('[data-delete]');
+  if(deleteButton){
+    if(!confirm('删除这条失败内容？删除后将不再重试，其他内容保留。'))return;
+    deleteButton.disabled=true;
+    try{await api('/api/psychology-auto-publish/'+encodeURIComponent(deleteButton.dataset.delete),undefined,'DELETE');await loadBatches();}
+    catch(e){message(e.message,true);deleteButton.disabled=false;}
+    return;
+  }
   const groupButton=event.target.closest('[data-group-retry]');
   if(groupButton){groupButton.disabled=true;try{await api('/api/psychology-auto-publish/groups/'+encodeURIComponent(groupButton.dataset.groupRetry)+'/retry',{});await loadBatches();}catch(e){message(e.message,true);groupButton.disabled=false;}return;}
   const button=event.target.closest('[data-retry]');if(!button)return;button.disabled=true;

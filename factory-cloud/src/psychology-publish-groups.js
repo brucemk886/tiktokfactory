@@ -24,8 +24,11 @@ export async function dispatchPublishGroup(env,groupId) {
   let group=await db.prepare('SELECT g.*,b.created_by,b.config_json FROM psychology_publish_groups g JOIN psychology_publish_batches b ON b.id=g.batch_id WHERE g.id=?').bind(groupId).first();
   if(!group)fail('发布分组不存在。',404);
   if(group.status==='submitted')return parse(group.response_json);
-  const {results:rows}=await db.prepare('SELECT i.*,j.status AS job_status FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.publish_group_id=? ORDER BY i.id').bind(groupId).all();
-  if(rows.length!==group.expected_count || rows.some(r=>r.ready_json==='{}'))return {waiting:true};
+  let {results:rows}=await db.prepare('SELECT i.*,j.status AS job_status FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.publish_group_id=? ORDER BY i.id').bind(groupId).all();
+  if(rows.length!==group.expected_count)return {waiting:true};
+  rows=rows.filter(r=>!r.deleted_at);
+  if(!rows.length)return {cancelled:true};
+  if(rows.some(r=>r.ready_json==='{}'))return {waiting:true};
   if(rows.some(r=>r.job_status==='cancelled'))fail('组内有已取消内容，请先处理后再提交。',409);
   const stamp=Date.now();
   // A short lease prevents concurrent last-item callbacks from sending the same group.
@@ -33,6 +36,9 @@ export async function dispatchPublishGroup(env,groupId) {
     .bind(stamp,groupId,stamp-LEASE_MS).run();
   if(!changed.meta?.changes)return {waiting:true};
   try {
+    // Refresh membership after the lease; deletion may have won before it.
+    rows=(await db.prepare('SELECT i.*,j.status AS job_status FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.publish_group_id=? AND i.deleted_at=0 ORDER BY i.id').bind(groupId).all()).results;
+    if(!rows.length){await db.prepare("UPDATE psychology_publish_groups SET status='cancelled',error='' WHERE id=?").bind(groupId).run();return {cancelled:true};}
     const user=await loadAutoUser(db,group.created_by);
     await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:[...new Set(rows.map(r=>r.connection_id))]});
     let request=parse(group.request_json);

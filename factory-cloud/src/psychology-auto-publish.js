@@ -32,8 +32,8 @@ export async function assertAutoJobAccess(env, job) {
 export function insertAutoJob(db, { id, type, title, payload, createdBy }, stamp = Date.now()) {
   return db.prepare(`INSERT INTO factory_jobs
     (id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at)
-    VALUES (?,?,'queued',?,0,'等待自动生成',?,'{}','',?,'',0,0,?,?) ON CONFLICT(id) DO NOTHING`)
-    .bind(id, type, title, JSON.stringify(payload), createdBy, stamp, stamp);
+    SELECT ?,?,'queued',?,0,'等待自动生成',?,'{}','',?,'',0,0,?,? WHERE NOT EXISTS (SELECT 1 FROM psychology_publish_items WHERE id=? AND deleted_at>0) ON CONFLICT(id) DO NOTHING`)
+    .bind(id, type, title, JSON.stringify(payload), createdBy, stamp, stamp, payload.psychologyAutomation?.id || id);
 }
 export function autoVideoPayload(source, config, item, accounts) {
   const copy = peerCopy(source);
@@ -72,9 +72,9 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const result = [];
     for (const batch of batches.results) {
       const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json
-        FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=? ORDER BY i.id`).bind(batch.id).all();
+        FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=? AND i.deleted_at=0 ORDER BY i.id`).bind(batch.id).all();
       const groups=await env.DB.prepare('SELECT id,ordinal,expected_count,status,error,updated_at,response_json FROM psychology_publish_groups WHERE batch_id=? ORDER BY ordinal').bind(batch.id).all();
-      result.push({ groups:groups.results.map(g=>({id:g.id,number:g.ordinal+1,count:g.expected_count,status:g.status,error:g.error,canRetry:g.status==='failed'||(g.status==='submitting'&&g.updated_at<Date.now()-180000),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''})), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json),
+      result.push({ groups:groups.results.map(g=>{const members=rows.results.filter(i=>i.publish_group_id===g.id);return {id:g.id,number:g.ordinal+1,count:members.length,status:members.length?g.status:'cancelled',error:members.length?g.error:'',canRetry:members.length>0&&(g.status==='failed'||(g.status==='waiting'&&members.every(i=>i.ready_json!=='{}'))||(g.status==='submitting'&&g.updated_at<Date.now()-180000)),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''};}), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json), deletedCount:JSON.parse(batch.config_json).count-rows.results.length,
         items: rows.results.map(row => {
           const receipt = JSON.parse(row.receipt_json || '{}');
           const result = JSON.parse(row.result_json || '{}');
@@ -86,6 +86,28 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     }
     return json({ batches: result });
   }
+  const remove=url.pathname.match(/^\/api\/psychology-auto-publish\/([^/]+)$/);
+  if(remove && request.method==='DELETE'){
+    const row=await env.DB.prepare(`SELECT i.*,j.status,j.result_json FROM psychology_publish_items i
+      JOIN psychology_publish_batches b ON b.id=i.batch_id JOIN factory_jobs j ON j.id=i.job_id
+      WHERE i.id=? AND b.created_by=?`).bind(remove[1],user.username).first();
+    if(!row)fail('任务不存在。',404);
+    if(row.deleted_at)return json({ok:true});
+    // Tombstone only idle failures. Frozen remote requests retain their membership.
+    const stamp=Date.now();
+    const result=await env.DB.batch([
+      env.DB.prepare(`UPDATE psychology_publish_items SET deleted_at=? WHERE id=? AND deleted_at=0
+        AND receipt_json='{}' AND ready_json='{}'
+        AND EXISTS (SELECT 1 FROM factory_jobs j WHERE j.id=psychology_publish_items.job_id
+          AND (j.status='failed' OR (j.status='done' AND json_extract(j.result_json,'$.publishFailed')=1)))
+        AND (publish_group_id='' OR EXISTS (SELECT 1 FROM psychology_publish_groups g WHERE g.id=publish_group_id
+          AND g.status IN ('waiting','failed') AND g.request_json='{}' AND g.response_json='{}'))`).bind(stamp,row.id),
+      env.DB.prepare(`UPDATE factory_jobs SET status='cancelled',message='已删除失败内容',updated_at=?
+        WHERE id=? AND EXISTS (SELECT 1 FROM psychology_publish_items WHERE id=? AND deleted_at=?)`).bind(stamp,row.job_id,row.id,stamp),
+    ]);
+    if(!result[0].meta?.changes)fail('只能删除尚未提交的失败内容；执行中或已进入整批提交的内容不能删除。',409);
+    return json({ok:true});
+  }
   const groupRetry=url.pathname.match(/^\/api\/psychology-auto-publish\/groups\/([^/]+)\/retry$/);
   if(groupRetry && request.method==='POST'){
     const group=await env.DB.prepare('SELECT g.id FROM psychology_publish_groups g JOIN psychology_publish_batches b ON b.id=g.batch_id WHERE g.id=? AND b.created_by=?').bind(groupRetry[1],user.username).first();
@@ -96,7 +118,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (retry && request.method === 'POST') {
     const row = await env.DB.prepare(`SELECT j.*,i.receipt_json,i.ready_json,i.publish_group_id FROM psychology_publish_items i
       JOIN psychology_publish_batches b ON b.id=i.batch_id JOIN factory_jobs j ON j.id=i.job_id
-      WHERE i.id=? AND b.created_by=?`).bind(retry[1], user.username).first();
+      WHERE i.id=? AND i.deleted_at=0 AND b.created_by=?`).bind(retry[1], user.username).first();
     if (!row) fail('任务不存在。', 404);
     if (JSON.parse(row.receipt_json || '{}').batchId) return json({ ok: true, message: '任务已经提交发布。' });
     if(row.publish_group_id && row.ready_json!=='{}')return json(await dispatchPublishGroup(env,row.publish_group_id));
@@ -121,7 +143,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
       catch(error) { await env.DB.prepare("UPDATE factory_jobs SET status='failed',error=? WHERE id=? AND status='queued'").bind(error.message,row.id).run(); throw error; }
       return json({ ok: true });
     }
-    await env.DB.prepare("UPDATE factory_jobs SET status='queued',error='',message='等待重试',worker_id='',claimed_at=0,completed_at=0,updated_at=? WHERE id=? AND (status='failed' OR json_extract(result_json,'$.publishFailed')=1)")
+    await env.DB.prepare("UPDATE factory_jobs SET status='queued',error='',message='等待重试',worker_id='',claimed_at=0,completed_at=0,updated_at=? WHERE id=? AND (status='failed' OR (status='done' AND json_extract(result_json,'$.publishFailed')=1))")
       .bind(Date.now(), row.id).run();
     return json({ ok: true });
   }
@@ -223,7 +245,7 @@ export async function enqueueAutoPhotoRender(env, sourceId) {
   };
   await env.DB.batch([
     insertAutoJob(env.DB, { id, type: 'psychology', title: row.title, payload: renderPayload, createdBy: row.created_by }),
-    env.DB.prepare('UPDATE psychology_publish_items SET job_id=? WHERE id=? AND job_id=?').bind(id, sourceId, sourceId),
+    env.DB.prepare('UPDATE psychology_publish_items SET job_id=? WHERE id=? AND job_id=? AND deleted_at=0').bind(id, sourceId, sourceId),
   ]);
   return { jobId: id };
 }
@@ -236,7 +258,7 @@ export async function enqueueAutoVideoPublish(db, job, payload) {
   payload.module = 'psychology';
   await db.batch([
     insertAutoJob(db, { id, type: 'official-publish', title: job.title + ' · 官方发布', payload, createdBy: job.created_by }),
-    db.prepare('UPDATE psychology_publish_items SET job_id=? WHERE id=?').bind(id, original.psychologyAutomation.id),
+    db.prepare('UPDATE psychology_publish_items SET job_id=? WHERE id=? AND deleted_at=0').bind(id, original.psychologyAutomation.id),
   ]);
   return { id };
 }
