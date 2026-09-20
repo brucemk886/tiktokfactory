@@ -1,4 +1,4 @@
-import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260918-23";
+import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260920-1";
 import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260918-23";
 const FINAL_STATES = new Set(["success", "fail"]);
 const state = { mode: "zimage", textTemplate: "content", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };

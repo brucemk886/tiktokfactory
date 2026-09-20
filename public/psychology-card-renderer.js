@@ -49,21 +49,20 @@ function renderContentCard(slide, aspectRatio) {
   let titleSize = Math.round(width * 0.082);
   let bodySize = Math.round(width * 0.042);
   let pack = { titleLines: [], bullets: [], total: 0 };
+  const useMarks = (slide.bullets || []).length > 1;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     ctx.font = `800 ${titleSize}px ${family}`;
     const titleLines = slide.title ? wrapLines(slide.title, (text) => ctx.measureText(text).width, maxWidth) : [];
     ctx.font = `400 ${bodySize}px ${family}`;
-    const mark = "•  ";
-    const markWidth = ctx.measureText(mark).width;
     const bullets = [];
     for (const bullet of slide.bullets) {
       const text = stripListMarker(bullet);
-      const lines = wrapLines(text, (t) => ctx.measureText(t).width, maxWidth - markWidth);
+      const lines = wrapLines(useMarks ? `•  ${text}` : text, (t) => ctx.measureText(t).width, maxWidth);
       if (lines.length) bullets.push(lines);
     }
     const titleHeight = titleLines.length ? titleLines.length * titleSize * 1.08 + titleSize * 0.55 : 0;
     const bodyHeight = bullets.reduce((sum, lines) => sum + lines.length * bodySize * 1.42 + bodySize * 0.28, 0);
-    pack = { titleLines, bullets, mark, markWidth, titleHeight, total: titleHeight + bodyHeight };
+    pack = { titleLines, bullets, titleHeight, total: titleHeight + bodyHeight };
     if (pack.total <= height - pad * 2 || attempt === 7) break;
     titleSize = Math.max(36, Math.round(titleSize * 0.9));
     bodySize = Math.max(22, Math.round(bodySize * 0.9));
@@ -71,22 +70,22 @@ function renderContentCard(slide, aspectRatio) {
   ctx.fillStyle = "#f6f3ee";
   ctx.fillRect(0, 0, width, height);
   ctx.textBaseline = "top";
-  let y = pad;
-  ctx.textAlign = "left";
+  ctx.textAlign = "center";
+  let y = planCenteredBlock(pack.total, height, pad);
   ctx.fillStyle = "#111111";
   ctx.font = `800 ${titleSize}px ${family}`;
   for (const line of pack.titleLines) {
-    ctx.fillText(line, pad, y);
+    ctx.fillText(line, width / 2, y);
     y += titleSize * 1.08;
   }
   if (pack.titleLines.length) y += titleSize * 0.55;
   const listTop = y;
   ctx.font = `400 ${bodySize}px ${family}`;
   for (const lines of pack.bullets) {
-    lines.forEach((line, index) => {
-      ctx.fillText(index === 0 ? `${pack.mark}${line}` : line, pad + (index === 0 ? 0 : pack.markWidth), y);
+    for (const line of lines) {
+      ctx.fillText(line, width / 2, y);
       y += bodySize * 1.42;
-    });
+    }
     y += bodySize * 0.28;
   }
   if (slide.accent) {

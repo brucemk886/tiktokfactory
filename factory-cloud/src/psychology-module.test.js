@@ -482,6 +482,10 @@ test("psychology cover cards use a single black background", () => {
   assert.match(renderer, /COVER_INK = "#f4f1ea"/);
   assert.match(renderer, /paintOverlayScrim/);
   assert.match(renderer, /height \* 0\.12/);
+  const contentFn = renderer.slice(renderer.indexOf("function renderContentCard"), renderer.indexOf("export function renderOverlayCard"));
+  assert.match(contentFn, /planCenteredBlock\(pack\.total/);
+  assert.match(contentFn, /textAlign = "center"/);
+  assert.doesNotMatch(contentFn, /let y = pad/);
   assert.doesNotMatch(renderer, /pickCoverBackdrop|paintCoverBackdrop|psychology-cover-backdrops/);
   assert.equal(fs.existsSync(new URL("../../public/psychology-cover-backdrops.js", import.meta.url)), false);
   assert.match(autoPhoto, /psychology-card-renderer\.js','psychology-text-card\.js'/);
