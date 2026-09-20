@@ -6,7 +6,7 @@ Updated: 2026-09-20
 
 - Psychology landscape renders stage all eight `psychology-poses` SVG companions into each isolated Remotion public directory, avoiding missing-asset failures in interactive and landscape four-image videos.
 
-- Psychology has an admin-only 模板题库 at /psychology-topic-bank: independent empty banks for templates 01/02/03, manual create/edit/disable/delete and CSV/JSON import. Automatic video publishing can draw only from the matching template using random/priority/recent/least-used rules and an only-unused filter; usage and immutable job snapshots are committed atomically (migration 0029).
+- Psychology has an admin-only 模板题库 at /psychology-topic-bank: independent empty banks for templates 01/02/03, manual create/edit/disable/delete, CSV/JSON import, and a write-only grokbot API at `/api/integrations/psychology/template-topics`. Automatic video publishing can draw only from the matching template using random/priority/recent/least-used rules and an only-unused filter; usage and immutable job snapshots are committed atomically (migration 0029; grokbot keys in 0033). See `docs/psychology-template-topics-api.md`.
 
 - Psychology automatic publishing now accepts 1–100 posts per creation and submits fixed groups of up to 20 (50 = 20/20/10). Video/photo assets upload individually, then the cloud submits each complete group with stable idempotency and per-item receipts. The queue distinguishes ready assets from submitted posts and supports group retries. New grouped jobs require an updated worker; existing jobs keep their original behavior. See docs/handoffs/2026-09-19-psychology-grouped-publish.md.
 

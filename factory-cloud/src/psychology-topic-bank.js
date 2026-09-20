@@ -1,5 +1,6 @@
-import { json,errorJson,readJson,sha256Hex } from "./http.js";
-import { TOPIC_TEMPLATES,validateTopicTemplate,normalizeTopic,topicFingerprintText,topicSource } from "../../scripts/psychology-topic-bank.js";
+import { json,errorJson,readJson,sha256Hex,randomToken } from "./http.js";
+import { TOPIC_TEMPLATES,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource } from "../../scripts/psychology-topic-bank.js";
+export const PSYCHOLOGY_TOPIC_API="/api/integrations/psychology/template-topics";
 const BASE="/api/psychology-template-topics";
 export function assertTopicBankUser(user){
   if(!user || user.role!=="admin" || !(user.sidebarModules||[]).includes("psychology-topic-bank"))
@@ -23,11 +24,79 @@ export function topicUsageStatement(db,source,batchId,itemId,config,stamp){
   return db.prepare("INSERT INTO psychology_topic_usage(topic_id,batch_id,item_id,template,revision,only_unused,created_at) VALUES (?,?,?,?,?,?,?)")
     .bind(source.id,batchId,itemId,config.template,source.revision,config.onlyUnused?1:0,stamp);
 }
+const reject=(message,statusCode)=>{throw Object.assign(new Error(message),{statusCode});};
+async function readImport(request){
+  if(!/^application\/json(?:;|$)/i.test(request.headers.get("content-type")||""))reject("请使用 Content-Type: application/json。",415);
+  const limit=1024*1024;
+  if(Number(request.headers.get("content-length"))>limit)reject("请求最多 1 MB。",413);
+  if(!request.body)reject("请提交 JSON 题目数据。",400);
+  const reader=request.body.getReader(),chunks=[];let size=0;
+  while(true){
+    const{value,done}=await reader.read();if(done)break;
+    size+=value.byteLength;
+    if(size>limit){await reader.cancel();reject("请求最多 1 MB。",413);}
+    chunks.push(value);
+  }
+  const body=new Uint8Array(size);let offset=0;
+  for(const chunk of chunks){body.set(chunk,offset);offset+=chunk.byteLength;}
+  try{return JSON.parse(new TextDecoder().decode(body));}catch{reject("请求体不是有效 JSON。",400);}
+}
+async function externalActor(request,db){
+  const token=(request.headers.get("authorization")||"").match(/^Bearer (\S+)$/i)?.[1];
+  if(!token||!token.startsWith("psy_topics_")||token.length>200)reject("请提供模板题库专用 Bearer API Key。",401);
+  const key=await db.prepare(`SELECT k.owner_id FROM psychology_template_topic_keys k
+    JOIN factory_users u ON u.id = k.owner_id WHERE k.token_hash = ? AND u.active = 1 AND u.role = 'admin'`)
+    .bind(await sha256Hex(token)).first();
+  if(!key)reject("API Key 无效、已停用或所属账号不可用。",401);
+  return key.owner_id;
+}
+export async function writeIntegrationTopics(db,input,actor){
+  const topics=collectTopicWriteItems(input);
+  const stamp=Date.now(),statements=[],planned=[];
+  for(const topic of topics){
+    const fingerprint=await sha256Hex(topicFingerprintText(topic));
+    const id="topic-"+fingerprint;
+    planned.push({id,topic});
+    statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id,topic.template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,fingerprint,actor,stamp,stamp));
+  }
+  const result=await db.batch(statements);
+  const items=planned.map((row,index)=>({id:row.id,template:row.topic.template,title:row.topic.title,status:Number(result[index].meta?.changes||0)?"created":"skipped"}));
+  const created=items.filter(item=>item.status==="created").length;
+  return {accepted:topics.length,created,skipped:topics.length-created,items};
+}
 export async function handlePsychologyTopicBank(request,env,url,session){
-  if(!url.pathname.startsWith(BASE))return null;
+  const external=url.pathname===PSYCHOLOGY_TOPIC_API;
+  if(!external && !url.pathname.startsWith(BASE))return null;
   try{
-    assertTopicBankUser(session?.user);
-    const db=env.DB,user=session.user;
+    const db=env.DB;
+    if(external){
+      const actor=await externalActor(request,db);
+      if(request.method!=="POST")return errorJson("此密钥仅支持 POST 写入模板题库。",405);
+      return json(await writeIntegrationTopics(db,await readImport(request),actor));
+    }
+    if(!session)return errorJson("请先登录。",401);
+    assertTopicBankUser(session.user);
+    const user=session.user;
+    if(url.pathname===BASE+"/api-key"){
+      if(request.method!=="GET" && request.headers.get("origin") && request.headers.get("origin")!==url.origin)return errorJson("不允许跨站修改。",403);
+      if(request.method==="GET"){
+        const key=await db.prepare("SELECT token_prefix, created_at FROM psychology_template_topic_keys WHERE owner_id = ?").bind(user.id).first();
+        return json({configured:Boolean(key),prefix:key?.token_prefix||"",createdAt:key?.created_at||null,endpoint:PSYCHOLOGY_TOPIC_API});
+      }
+      if(request.method==="POST"){
+        const apiKey="psy_topics_"+randomToken(32),createdAt=Date.now();
+        await db.prepare(`INSERT INTO psychology_template_topic_keys(owner_id,token_hash,token_prefix,created_at) VALUES(?,?,?,?)
+          ON CONFLICT(owner_id) DO UPDATE SET token_hash=excluded.token_hash,token_prefix=excluded.token_prefix,created_at=excluded.created_at`)
+          .bind(user.id,await sha256Hex(apiKey),apiKey.slice(0,18),createdAt).run();
+        return json({apiKey,createdAt,endpoint:PSYCHOLOGY_TOPIC_API},201);
+      }
+      if(request.method==="DELETE"){
+        await db.prepare("DELETE FROM psychology_template_topic_keys WHERE owner_id = ?").bind(user.id).run();
+        return json({ok:true});
+      }
+      return errorJson("不支持此请求方法。",405);
+    }
     if(url.pathname===BASE && request.method==="GET"){
       const template=validateTopicTemplate(url.searchParams.get("template")||"psychology"),query=(url.searchParams.get("query")||"").slice(0,100);
       const enabled=url.searchParams.get("enabled")||"all";

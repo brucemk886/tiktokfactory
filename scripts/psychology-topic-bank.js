@@ -23,6 +23,25 @@ export function normalizeTopic(input,template){
   const enabled=![false,0,"0","false","否","停用"].includes(raw);
   return {template,title,content,category,priority,enabled};
 }
+export function collectTopicWriteItems(input){
+  if(Array.isArray(input))return normalizeWriteList(input,undefined);
+  if(!input||typeof input!=="object")fail("题目格式无效。");
+  if(Object.hasOwn(input,"items")){
+    if(!Array.isArray(input.items))fail("items 须为题目数组。");
+    return normalizeWriteList(input.items,input.template);
+  }
+  return normalizeWriteList([input],input.template);
+}
+function normalizeWriteList(items,fallbackTemplate){
+  if(!items.length||items.length>100)fail("每次可导入1–100条题目。");
+  return items.map((item,index)=>{
+    try{
+      const template=(item&&typeof item==="object"&&!Array.isArray(item)&&item.template)||fallbackTemplate;
+      if(!template)fail("请指定题目所属模板：psychology、psychology-collage 或 psychology-target-2。");
+      return normalizeTopic(item,template);
+    }catch(error){throw Object.assign(error,{message:"第"+(index+1)+"条："+error.message});}
+  });
+}
 export function topicFingerprintText(topic){return [topic.template,topic.title.normalize("NFKC").toLowerCase().replace(/\s+/g," "),topic.content.normalize("NFKC").replace(/\s+/g," ")].join("\n");}
 export function topicSource(row){return {
   id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,

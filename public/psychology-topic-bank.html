@@ -5,7 +5,17 @@
 <link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-auto-publish.css"><link rel="stylesheet" href="/psychology-topic-bank.css">
 </head>
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
-<main class="official-data-shell auto-shell"><header class="page-head"><div><h1>模板题库</h1><p class="page-lead">为 1、2、3 号模板分别管理题目，自动发布按对应模板抽取。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-publish">心理学自动发布</a><a href="/psychology-publish-sources">发布对标</a></nav></header>
+<main class="official-data-shell auto-shell"><header class="page-head"><div><h1>模板题库</h1><p class="page-lead">为 1、2、3 号模板分别管理题目，自动发布按对应模板抽取。也可给 grokbot 生成专用写入密钥。</p></div><div class="bank-header-tools"><nav class="page-links" aria-label="相关页面"><a href="/psychology-publish">心理学自动发布</a><a href="/psychology-publish-sources">发布对标</a></nav>
+<details class="bank-api-panel" id="apiPanel"><summary>写入接口</summary>
+<div class="bank-api-popover">
+<p>专用密钥只能写入心理学模板题库。密钥生成后仅显示一次，请复制给 grokbot。</p>
+<label>接口地址<input id="endpoint" readonly></label>
+<div class="bank-actions"><button id="createKeyBtn" type="button">生成 API Key</button><button id="revokeKeyBtn" type="button" hidden>停用密钥</button><span id="keyStatus" role="status">正在读取接口配置…</span></div>
+<div id="newKeyPanel" hidden><label>新密钥<input id="newApiKey" readonly autocomplete="off"></label><button id="copyKeyBtn" type="button">复制密钥</button></div>
+<p>POST · Authorization: Bearer YOUR_API_KEY · Content-Type: application/json</p>
+<p>支持单条对象或 { "items": [...] }，每次 1–100 条、最多 1 MB。每条必须带 template：psychology（01 四图）、psychology-collage（02 拼贴）、psychology-target-2（03 互动）；也可在请求顶层指定 template 后只提交题目。相同题目和内容自动跳过，不会覆盖已有解读。</p>
+<pre id="apiExample"></pre><button id="copyExampleBtn" type="button">复制请求示例</button>
+</div></details></div></header>
 <section class="panel auto-section"><div id="bankTabs" class="bank-tabs" role="group" aria-label="选择模板题库"></div><p id="bankHint" class="field-hint"></p><div id="bankCounts" class="bank-counts"></div>
 <div class="bank-toolbar"><form id="searchForm"><input id="search" aria-label="搜索题目" maxlength="100" placeholder="搜索题目、内容或分类"><select id="enabledFilter" aria-label="启用状态"><option value="all">全部状态</option><option value="active">已启用</option><option value="inactive">已停用</option></select><button type="submit">查询</button></form><div class="bank-actions"><button id="importTopics" type="button">批量导入</button><button id="newTopic" type="button" class="primary-action">新增题目</button></div></div>
 <p id="message" role="status" aria-live="polite"></p><div id="topicList" class="queue-wrap"></div><div class="bank-pagination"><span id="pageInfo"></span><button id="prevPage" type="button">上一页</button><button id="nextPage" type="button">下一页</button></div>

@@ -1,4 +1,4 @@
-import { handlePsychologyTopicBank } from './psychology-topic-bank.js';
+import { handlePsychologyTopicBank, PSYCHOLOGY_TOPIC_API } from './psychology-topic-bank.js';
 import { handlePsychologyOperations } from "./psychology-operations.js";
 import { handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { handlePsychologyPeerHits, PSYCHOLOGY_PEER_API } from "./psychology-peer-hits.js";
@@ -37,6 +37,7 @@ export default {
       if (authResponse) return authResponse;
 
       if (url.pathname === PSYCHOLOGY_PEER_API) return await handlePsychologyPeerHits(request, env, url, null);
+      if (url.pathname === PSYCHOLOGY_TOPIC_API) return await handlePsychologyTopicBank(request, env, url, null);
 
       if (url.pathname.startsWith(GEMINI_VIDEO_SOURCE_PATH)) return await handleGeminiVideoSource(request, env, url);
       if (url.pathname.startsWith(KIE_PHOTO_SOURCE_PATH)) return await handleKiePhotoSource(request, env, url);

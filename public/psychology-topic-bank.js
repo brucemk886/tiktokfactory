@@ -79,3 +79,41 @@ $("#importForm").onsubmit=async e=>{
   }catch(error){$("#importError").textContent=error.message;}finally{lock(e.target,false);}
 };
 await load().catch(e=>message(e.message,true));
+const endpoint=location.origin+"/api/integrations/psychology/template-topics";
+if($("#endpoint"))$("#endpoint").value=endpoint;
+const sample={items:[{template:"psychology",title:"Which picture did you notice first?",content:"A: eyes\nB: hands\nC: mouth\nD: background",category:"attention",priority:80,enabled:true,source:"grokbot"}]};
+if($("#apiExample"))$("#apiExample").textContent=["curl -X POST '"+endpoint+"'","  -H 'Authorization: Bearer YOUR_API_KEY'","  -H 'Content-Type: application/json'","  --data '"+JSON.stringify(sample,null,2)+"'"].join(" \\\n");
+async function loadKey(){
+  if(!$("#keyStatus"))return;
+  try{
+    const data=await api(BASE+"/api-key");
+    $("#createKeyBtn").textContent=data.configured?"重新生成密钥":"生成 API Key";
+    $("#revokeKeyBtn").hidden=!data.configured;
+    $("#keyStatus").textContent=data.configured?"已启用 "+data.prefix+"… · 创建于 "+new Date(data.createdAt).toLocaleString("zh-CN"):"尚未生成密钥";
+    $("#keyStatus").classList.remove("is-error");
+  }catch(error){$("#keyStatus").textContent=error.message;$("#keyStatus").classList.add("is-error");}
+}
+async function copyText(value,ok){
+  try{await navigator.clipboard.writeText(value);$("#keyStatus").textContent=ok;$("#keyStatus").classList.remove("is-error");}
+  catch{$("#keyStatus").textContent="自动复制失败，请选中文本手动复制。";$("#keyStatus").classList.add("is-error");}
+}
+$("#apiPanel")?.addEventListener("toggle",()=>{if($("#apiPanel").open)loadKey();});
+document.addEventListener("click",event=>{if($("#apiPanel")&&!$("#apiPanel").contains(event.target))$("#apiPanel").open=false;});
+document.addEventListener("keydown",event=>{if(event.key==="Escape"&&$("#apiPanel"))$("#apiPanel").open=false;});
+$("#createKeyBtn")?.addEventListener("click",async()=>{
+  if($("#createKeyBtn").textContent.includes("重新")&&!confirm("重新生成后旧密钥会立即失效，需要更新 grokbot 配置。继续吗？"))return;
+  $("#createKeyBtn").disabled=true;
+  try{const data=await api(BASE+"/api-key","POST");$("#newApiKey").value=data.apiKey;$("#newKeyPanel").hidden=false;await loadKey();}
+  catch(error){$("#keyStatus").textContent=error.message;$("#keyStatus").classList.add("is-error");}
+  finally{$("#createKeyBtn").disabled=false;}
+});
+$("#revokeKeyBtn")?.addEventListener("click",async()=>{
+  if(!confirm("停用后 grokbot 将无法继续写入题库。确定停用吗？"))return;
+  $("#revokeKeyBtn").disabled=true;
+  try{await api(BASE+"/api-key","DELETE");$("#newApiKey").value="";$("#newKeyPanel").hidden=true;await loadKey();}
+  catch(error){$("#keyStatus").textContent=error.message;$("#keyStatus").classList.add("is-error");}
+  finally{$("#revokeKeyBtn").disabled=false;}
+});
+$("#copyKeyBtn")?.addEventListener("click",()=>copyText($("#newApiKey").value,"已复制密钥"));
+$("#copyExampleBtn")?.addEventListener("click",()=>copyText($("#apiExample").textContent,"已复制请求示例"));
+loadKey();
