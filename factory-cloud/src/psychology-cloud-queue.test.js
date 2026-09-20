@@ -95,11 +95,11 @@ test('browser closes on failed backup and no partial album is published',async t
     openRenderer:async()=>({renderBatch:async entries=>entries.map(()=>''),close:async()=>{closed++;return 0;}}),backup:async()=>{throw new Error('R2 down');}
   }),/R2 down/);assert.equal(closed,1);
 });
-test('probe requires worker authentication and queue config caps concurrency at two',async t=>{
+test('probe requires worker authentication and queue config caps concurrency at five',async t=>{
   const f=await fixture(t),url=new URL('https://factory.test/api/worker/psychology-cloud-photo/probe');
   assert.equal((await handleJobs(new Request(url,{method:'POST'}),f.env,url,null)).status,401);
   const cfg=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url)));
-  assert.equal(cfg.queues.consumers[0].max_concurrency,2);assert.equal(cfg.queues.consumers[0].max_batch_size,1);
+  assert.equal(cfg.queues.consumers[0].max_concurrency,5);assert.equal(cfg.queues.consumers[0].max_batch_size,1);
 });
 
 test('six checkpointed images traverse real cloud upload and grouped submission with mocked hub',async t=>{

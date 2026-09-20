@@ -28,7 +28,7 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 ## Hosted psychology automation
 
 - D1 psychology_publish_batches/items own immutable selection/account/schedule snapshots, current job links, photo asset checkpoints and submission receipts. Existing factory_jobs own execution state.
-- Cloud peer-photo workflows generate page plans. New automatic photo source snapshots mark cloudPhotoRender and enqueue a dedicated Cloudflare Queue (one message/job, two consumers); old source snapshots keep existing local workers. Video generation keeps the existing render/publish lanes. Signal Desk owns final publication.
+- Cloud peer-photo workflows generate page plans. New automatic photo source snapshots mark cloudPhotoRender and enqueue a dedicated Cloudflare Queue (one message/job, at most five concurrent consumers); old source snapshots keep existing local workers. Video generation keeps the existing render/publish lanes. Signal Desk owns final publication.
 - public/psychology-card-renderer.js is shared by the manual photo page and the background photo renderer; automatic publication revalidates account access before execution.
 
 ## Psychology operations review
