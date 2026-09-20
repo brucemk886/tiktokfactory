@@ -5,6 +5,9 @@ import { peerCopy, peerProductionPayload } from '../../scripts/psychology-peer-p
 import { psychologyPeerHitFromRow } from './psychology-peer-hits-store.js';
 import { officialPublishFollowupPayload } from './jobs.js';
 import { assertOfficialPublishAccess } from './official.js';
+import { attachOfficialRemoteOutcomes, officialBatchUuid } from '../../scripts/official-publish-records.js';
+import { mergeAndStorePublishRecords } from './publish-records-store.js';
+import { signalDesk } from './signal-desk.js';
 import { json, errorJson, readJson, sha256Hex } from './http.js';
 import { kvGet, kvSet } from './kv.js';
 
@@ -76,7 +79,27 @@ function publishedPostUrl(record, username, mediaType) {
   if (!id || !handle) return '';
   return `https://www.tiktok.com/@${encodeURIComponent(handle)}/${mediaType === 'photo' ? 'photo' : 'video'}/${id}`;
 }
-export async function listAutoPublishSources(db, user, input = {}) {
+function hasPublishedPost(record) {
+  return Boolean(tiktokUrl(record?.shareLink || record?.videoUrl) || String(record?.videoId || record?.itemId || '').replace(/\D/g, ''));
+}
+async function fillMissingPublishedPosts(env, db, records) {
+  const missing = [...records.values()].filter(record => !hasPublishedPost(record));
+  const batchIds = [...new Set(missing.map(record => String(record.batchId || '').trim()).filter(officialBatchUuid))].slice(0, 12);
+  if (!env || !missing.length || !batchIds.length) return records;
+  try {
+    const settled = await Promise.allSettled(batchIds.map(id => signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(id)}`)));
+    const batches = settled.flatMap(result => (result.status === 'fulfilled' && result.value ? [result.value.batch || result.value] : []));
+    if (!batches.length) return records;
+    const filled = [];
+    for (const next of attachOfficialRemoteOutcomes(missing, batches)) {
+      if (next.autoTaskId) records.set(next.autoTaskId, next);
+      if (hasPublishedPost(next)) filled.push(next);
+    }
+    if (filled.length) await mergeAndStorePublishRecords(db, filled);
+  } catch { /* listing still works from the stored record */ }
+  return records;
+}
+export async function listAutoPublishSources(db, user, input = {}, env = null) {
   const query = String(input.query || '').trim().slice(0, 100);
   const mediaType = input.mediaType === 'photo' || input.mediaType === 'video' ? input.mediaType : '';
   const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
@@ -98,6 +121,7 @@ export async function listAutoPublishSources(db, user, input = {}) {
       const record = readJsonValue(row.value_json);
       if (record.autoTaskId) records.set(record.autoTaskId, record);
     }
+    await fillMissingPublishedPosts(env, db, records);
   }
   const handles = await lookupAccountHandles(db, page.map(row => row.connection_id));
   return {
@@ -173,7 +197,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (url.pathname === BASE + '/sources' && request.method === 'GET') {
     return json(await listAutoPublishSources(env.DB, user, {
       offset: url.searchParams.get('offset'), query: url.searchParams.get('query'), mediaType: url.searchParams.get('mediaType'),
-    }));
+    }, env));
   }
   if (url.pathname === BASE + '/options' && request.method === 'GET') {
     const counts = await env.DB.prepare('SELECT media_type, COUNT(*) AS total FROM psychology_peer_hits GROUP BY media_type').all();

@@ -153,7 +153,7 @@
 2. admin `POST /api/official-publish-records/sync`（同样 verify；`?force=1` 强制重注册）。
 3. 本机每 5 分钟带记录 sync 时 `ensurePublishWebhookLazily`：未注册就注册，失败后 1 小时内不重试；不做远端核对，保持便宜。
 
-当前状态：endpoint `a33292c6-…`，URL `https://factory.tiktokaitool.com/api/integrations/signal-desk/publish-events`，事件 `publish.completed` / `publish.failed`，中台侧 `active=1`。
+当前状态：endpoint `a33292c6-…`，URL `https://factory.tiktokaitool.com/api/integrations/signal-desk/publish-events`，事件 `publish.completed` / `publish.failed` / `publish.updated`。事件列表变化时工厂会重注册端点。
 
 ### 3.6 从中台拉什么
 
@@ -214,7 +214,8 @@
 ### 4.4 回执 webhook（`lib/hub-webhooks.ts`）
 
 - 任务到终态时 `recordPublishTaskOutcome` 写 `hub_webhook_deliveries`（`(endpoint, event, task)` 唯一）；每分钟 cron 取 100 条入队。
-- 事件：`published → publish.completed`，其它终态 → `publish.failed`。
+- 事件：`published → publish.completed`，其它终态 → `publish.failed`。图文常会先完成、后补 `item_id`；补到后另发 `publish.updated`（同一 task 的 completed 不能重发）。
+- 工厂「发布对标」对缺 `videoId` 的记录会按 `batchId` 向中台补拉并回写 `factory_publish_records`。
 - 签名头 `X-Signal-Event / X-Signal-Delivery / X-Signal-Timestamp / X-Signal-Signature: v1=hmac(timestamp.body)`；fetch 超时 10s。
 - 失败退避 `[30s,1m,2m,5m,10m,30m,1h,2h,4h,6h]`，10 次后 `exhausted`。
 - 自动停用（`deactivateDeadWebhookEndpoint`，规则在 `lib/hub-webhook-policy.ts`）：某条投递 `exhausted` 时，取该端点最近 20 条已结束投递（delivered/exhausted，按 `updated_at` 倒序，走 `0029` 的 `(endpoint_id, updated_at)` 索引），全是 `exhausted` 才置 `active=0`，日志 `hub-webhook-endpoint-deactivated`。之后新终态不再给它写投递；工厂靠每日 verify 重注册，中间漏掉的回执由工厂 08:30 结果同步和页面 hydrate 补。

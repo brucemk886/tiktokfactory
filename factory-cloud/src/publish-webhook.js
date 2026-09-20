@@ -3,7 +3,7 @@ import { signalDesk } from "./signal-desk.js";
 import { applyPublishReceipt, publishReceiptStats, receiptFromWebhookPayload } from "./publish-records-store.js";
 
 export const PUBLISH_WEBHOOK_PATH = "/api/integrations/signal-desk/publish-events";
-const WEBHOOK_EVENTS = ["publish.completed", "publish.failed"];
+export const WEBHOOK_EVENTS = ["publish.completed", "publish.failed", "publish.updated"];
 // Signed timestamps older than this are replays.
 const MAX_SIGNATURE_SKEW_MS = 10 * 60 * 1000;
 const SETTINGS_KEY = "official-settings";
@@ -41,7 +41,8 @@ export async function ensurePublishWebhook(env, db, { force = false, verify = fa
   const baseUrl = factoryPublicBaseUrl(env, requestUrl);
   if (!baseUrl) return { ok: false, registered: false, reason: "factory-base-url-missing" };
   const url = `${baseUrl}${PUBLISH_WEBHOOK_PATH}`;
-  const alreadyCurrent = settings.webhookSecret && settings.webhookEndpointId && settings.webhookUrl === url;
+  const eventsKey = WEBHOOK_EVENTS.join(",");
+  const alreadyCurrent = settings.webhookSecret && settings.webhookEndpointId && settings.webhookUrl === url && settings.webhookEvents === eventsKey;
   if (alreadyCurrent && !force) {
     // The hub switches an endpoint off after a long run of failed deliveries
     // (e.g. a factory outage). Local settings would still look current, so the
@@ -63,6 +64,7 @@ export async function ensurePublishWebhook(env, db, { force = false, verify = fa
     webhookEndpointId: String(result.id),
     webhookSecret: String(result.secret),
     webhookRegisteredAt: now,
+    webhookEvents: eventsKey,
   });
   return { ok: true, registered: true, url, endpointId: String(result.id), changed: true, replaced: Number(result.replaced || 0) };
 }

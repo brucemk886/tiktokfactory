@@ -126,6 +126,18 @@ test("a signed publish.completed receipt marks the record published in one pass"
   assert.equal(db.kv.get("official-settings").webhookLastReceiptAt > 0, true);
 });
 
+test("a later publish.updated receipt fills in the missing item_id", async () => {
+  resetPublishReceiptTableCache();
+  const db = fakeDb();
+  await mergeAndStorePublishRecords(db, [record({ status: "published", videoId: "" })]);
+  const first = receiptFromWebhookPayload({ type: "publish.completed", batchId: "batch-1", task: { id: "task-1", externalRef: "clip.mp4:conn-1:0", status: "published", videoId: "" } });
+  assert.equal((await applyPublishReceipt(db, first)).applied, true);
+  const updated = receiptFromWebhookPayload({ type: "publish.updated", batchId: "batch-1", task: { id: "task-1", externalRef: "clip.mp4:conn-1:0", status: "published", videoId: "7686895626340076807" } });
+  assert.equal((await applyPublishReceipt(db, updated)).applied, true);
+  const stored = JSON.parse(db.records.get("task-records:official:0:conn-1").value_json);
+  assert.equal(stored.videoId, "7686895626340076807");
+});
+
 test("bad signatures, stale timestamps and missing secrets are rejected", async () => {
   resetPublishReceiptTableCache();
   const db = fakeDb();
@@ -186,7 +198,7 @@ test("factory registers itself with the hub and keeps the secret in settings", a
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, "https://desk.test/api/v1/webhooks");
     assert.equal(calls[0].init.headers.Authorization, "Bearer bridge-key");
-    assert.deepEqual(JSON.parse(calls[0].init.body), { name: "tiktok-factory", url: "https://factory.test/api/integrations/signal-desk/publish-events", events: ["publish.completed", "publish.failed"] });
+    assert.deepEqual(JSON.parse(calls[0].init.body), { name: "tiktok-factory", url: "https://factory.test/api/integrations/signal-desk/publish-events", events: ["publish.completed", "publish.failed", "publish.updated"] });
     const settings = db.kv.get("official-settings");
     assert.equal(settings.webhookSecret, "whsec_new");
     assert.equal(settings.webhookEndpointId, "ep-1");
@@ -204,6 +216,7 @@ test("daily verification re-registers when the hub has switched the endpoint off
   db.kv.set("official-settings", {
     baseUrl: "https://desk.test", apiKey: "bridge-key",
     webhookSecret: "whsec_old", webhookEndpointId: "ep-old", webhookUrl: "https://factory.test/api/integrations/signal-desk/publish-events",
+    webhookEvents: "publish.completed,publish.failed,publish.updated",
   });
   const env = { FACTORY_PUBLIC_BASE_URL: "https://factory.test" };
   let activeIds = ["ep-old"];
