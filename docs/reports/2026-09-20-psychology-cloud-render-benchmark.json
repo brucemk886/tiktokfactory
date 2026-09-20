@@ -1,153 +1,174 @@
 {
   "scope": "Real Cloudflare browser rendering, synthetic text/stock fixtures; no AI, R2 upload, hub submission or TikTok publication",
-  "at": "2026-09-20T08:34:31.817Z",
+  "at": "2026-09-20T08:40:32.853Z",
   "posts": 20,
   "images": 120,
   "concurrency": 2,
-  "wallSeconds": 54.363,
-  "browserSeconds": 92.08,
-  "meanPostBrowserSeconds": 4.604,
-  "p95PostBrowserSeconds": 7.227,
-  "projected600BrowserMinutes": 46.04,
+  "wallSeconds": 53.582,
+  "browserSeconds": 83.923,
+  "meanPostBrowserSeconds": 4.196149999999999,
+  "p95PostBrowserSeconds": 5.854,
+  "projected600BrowserMinutes": 41.9615,
+  "meteredBrowserSeconds": null,
   "samples": [
     {
       "index": 0,
       "mode": "text",
-      "browserMs": 3530,
+      "browserMs": 2739,
       "imageBytes": 345132,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 1,
       "mode": "mixed",
-      "browserMs": 7227,
+      "browserMs": 5612,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 2,
       "mode": "text",
-      "browserMs": 6226,
+      "browserMs": 4226,
       "imageBytes": 345132,
+      "meteredBrowserMs": 3305,
       "maxConcurrentSessions": 200
     },
     {
       "index": 3,
       "mode": "mixed",
-      "browserMs": 3756,
+      "browserMs": 4397,
       "imageBytes": 551064,
+      "meteredBrowserMs": 3571,
       "maxConcurrentSessions": 200
     },
     {
       "index": 4,
       "mode": "text",
-      "browserMs": 6323,
+      "browserMs": 3990,
       "imageBytes": 345132,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 5,
       "mode": "mixed",
-      "browserMs": 2412,
+      "browserMs": 6207,
       "imageBytes": 551064,
+      "meteredBrowserMs": 5186,
       "maxConcurrentSessions": 200
     },
     {
       "index": 6,
       "mode": "text",
-      "browserMs": 1836,
+      "browserMs": 4153,
       "imageBytes": 345132,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 7,
       "mode": "mixed",
-      "browserMs": 6970,
+      "browserMs": 2917,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 8,
       "mode": "text",
-      "browserMs": 5700,
+      "browserMs": 3056,
       "imageBytes": 345132,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 9,
       "mode": "mixed",
-      "browserMs": 4287,
+      "browserMs": 4234,
       "imageBytes": 551064,
+      "meteredBrowserMs": 3046,
       "maxConcurrentSessions": 200
     },
     {
       "index": 10,
       "mode": "text",
-      "browserMs": 4273,
+      "browserMs": 4369,
       "imageBytes": 345132,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 11,
       "mode": "mixed",
-      "browserMs": 7561,
+      "browserMs": 2361,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 12,
       "mode": "text",
-      "browserMs": 3653,
+      "browserMs": 4157,
       "imageBytes": 345132,
+      "meteredBrowserMs": 3333,
       "maxConcurrentSessions": 200
     },
     {
       "index": 13,
       "mode": "mixed",
-      "browserMs": 2570,
+      "browserMs": 5854,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 14,
       "mode": "text",
-      "browserMs": 5701,
+      "browserMs": 3304,
       "imageBytes": 345132,
+      "meteredBrowserMs": 2350,
       "maxConcurrentSessions": 200
     },
     {
       "index": 15,
       "mode": "mixed",
-      "browserMs": 5130,
+      "browserMs": 3270,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 16,
       "mode": "text",
-      "browserMs": 3978,
+      "browserMs": 5074,
       "imageBytes": 345132,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 17,
       "mode": "mixed",
-      "browserMs": 2616,
+      "browserMs": 5523,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     },
     {
       "index": 18,
       "mode": "text",
-      "browserMs": 2101,
+      "browserMs": 4266,
       "imageBytes": 345132,
+      "meteredBrowserMs": 3429,
       "maxConcurrentSessions": 200
     },
     {
       "index": 19,
       "mode": "mixed",
-      "browserMs": 6230,
+      "browserMs": 4214,
       "imageBytes": 551064,
+      "meteredBrowserMs": null,
       "maxConcurrentSessions": 200
     }
   ]

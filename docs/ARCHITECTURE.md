@@ -28,7 +28,7 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 ## Hosted psychology automation
 
 - D1 psychology_publish_batches/items own immutable selection/account/schedule snapshots, current job links, photo asset checkpoints and submission receipts. Existing factory_jobs own execution state.
-- Cloud peer-photo workflows generate page plans, then enqueue existing psychology workers for headless card rendering. Video generation keeps the existing render/publish lanes. Signal Desk owns final publication.
+- Cloud peer-photo workflows generate page plans. New automatic photo source snapshots mark cloudPhotoRender and enqueue a dedicated Cloudflare Queue (one message/job, two consumers); old source snapshots keep existing local workers. Video generation keeps the existing render/publish lanes. Signal Desk owns final publication.
 - public/psychology-card-renderer.js is shared by the manual photo page and the background photo renderer; automatic publication revalidates account access before execution.
 
 ## Psychology operations review
@@ -61,3 +61,10 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - Photo bytes are copied to private ARCHIVE objects before hub upload; per-item photo_backups_json stores references. Recovery requeues the existing card jobs and state restores saved bytes through the hub upload API, with durable per-page checkpoints. Previously deployed workers need no protocol change or restart. Old items without backups regenerate from their stored plan. Two automatic recovery cycles bound repeated expiration.
 - A short per-D1-binding account directory cache reduces repeated reads; local user/group permissions are still read on each check and final group authorization is fresh. Transient claim failures share durable delayed retries and official failure records.
 - psychology_peer_account_usage reserves source/account pairs in the same D1 transaction as parent jobs; uniqueness rejects conflicting concurrent allocations. Explicit operator reuse bypasses the unique allocation insert via INSERT OR IGNORE. Existing item history backfills reservations; peer ranking favors less-used sources.
+
+## Cloud psychology photo rendering
+
+- PHOTO_BROWSER runs the shared public card runtime in isolated Chromium. Workers load trusted template source through ASSETS, render at most six pages per call, close Chromium, then persist each JPEG in private R2 and upload via existing restoration checkpoints. Source backgrounds are prepared before browser launch, with per-image and total buffer caps.
+- PHOTO_QUEUE transports IDs only. factory_jobs remains authoritative for status, cloud_dispatch_at, cloud_lease_until, available_at, and business retry history. A dedicated minute cron dispatches due/unacknowledged jobs and recovers leases older than the consumer maximum runtime. SQL compare-and-set ownership prevents duplicate execution and stale completion.
+- New source payloads freeze execution mode at creation; PSYCHOLOGY_CLOUD_PHOTO controls only future photo batches. Cloud-marked group retry jobs use the same queue. Changing the default back to false does not move in-flight jobs or stop the existing cloud queue.
+- The authenticated worker render probe creates synthetic images only; it does not enqueue production jobs, generate AI content, or call the publishing hub. Runtime browserMs measures launch-to-close elapsed time and is not a billing API total.

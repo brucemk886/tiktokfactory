@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
 import { assertAutoJobAccess } from './psychology-auto-publish.js';
 import { backupPhoto } from './psychology-photo-recovery.js';

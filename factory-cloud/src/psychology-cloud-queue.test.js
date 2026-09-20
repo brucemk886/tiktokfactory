@@ -125,3 +125,14 @@ test('a temporarily leased submission stays queued instead of being marked done'
   const msg=message(id);await processCloudMessage(f.env,msg,{dispatchGroup:async()=>({waiting:true})});
   assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(id).status,'queued');assert.equal(msg.retried.length,1);
 });
+
+test('stock backgrounds load before Chrome and a render error closes the browser',async t=>{
+  const f=await prepared(t),row=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id),payload=JSON.parse(row.payload_json);
+  payload.pages[0].template='stock';row.payload_json=JSON.stringify(payload);row.worker_id='test';
+  const events=[];
+  await assert.rejects(runCloudPhoto(f.env,row,{
+    call:async action=>{events.push(action);return action.startsWith('image/')?new Response(new Uint8Array([1,2,3]),{headers:{'content-type':'image/jpeg'}}):{assets:{},receipt:{}};},loadModules:async()=>[],
+    openRenderer:async()=>{events.push('open');return {renderBatch:async entries=>{assert.match(entries[0].imageData,/^data:image\/jpeg;base64,/);throw new Error('synthetic browser error');},close:async()=>{events.push('close');return 1;}};}
+  }),/synthetic browser error/);
+  assert.ok(events.indexOf('image/0')<events.indexOf('open'));assert.equal(events.at(-1),'close');assert.equal(events.includes('publish'),false);
+});
