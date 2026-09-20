@@ -96,7 +96,7 @@
           ids:[...selected],
           mediaType:document.body.dataset.mediaType || 'video',
           requestId,
-          ...((document.body.dataset.mediaType || 'video') === 'photo' ? { rewriteCopy: $('#rewriteCopy')?.checked !== false } : {})
+          ...((document.body.dataset.mediaType || 'video') === 'photo' ? { rewriteCopy: $('#rewriteCopy')?.checked === true } : {})
         })
       });
       notify(`已创建 ${data.jobIds.length} 个云端复刻任务，可以关闭页面继续运行。`);

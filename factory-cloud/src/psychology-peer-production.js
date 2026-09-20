@@ -95,7 +95,7 @@ export async function handlePeerProduction(request, env, url, user) {
       }
       return {
         id: `peer-${key.slice(0, 32)}-${index}`,
-        payload: { ...peerProductionPayload(item, PHOTO_TYPE, { rewriteCopy: input.rewriteCopy !== false }), createdFrom: 'psychology-peer-hits' }
+        payload: { ...peerProductionPayload(item, PHOTO_TYPE, { rewriteCopy: input.rewriteCopy === true }), createdFrom: 'psychology-peer-hits' }
       };
     }
     if (item.platform !== 'tiktok') fail('爆款复刻目前只支持 TikTok 视频链接。');

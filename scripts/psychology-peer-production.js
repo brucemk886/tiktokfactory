@@ -90,10 +90,10 @@ function isTikTokPhotoUrl(value) {
 }
 
 export function rewriteCopyEnabled(value) {
-  return value !== false;
+  return value === true;
 }
 
-export function peerProductionPayload(item, template, { rewriteCopy = true } = {}) {
+export function peerProductionPayload(item, template, { rewriteCopy = false } = {}) {
   const target = PEER_TEMPLATES[template];
   if (!target) throw Object.assign(new Error('请选择支持的心理学模板。'), { statusCode: 400 });
   const script = peerCopy(item);

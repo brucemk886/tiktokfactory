@@ -178,6 +178,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/<th>发布时间<\/th><th>导入时间<\/th>/);
   assert.match(page,/id="produceBtn"[^>]*>爆款复刻<\/button>/);
   assert.match(page,/id="rewriteCopy"/);
+  assert.doesNotMatch(page,/id="rewriteCopy"[^>]*checked/);
   assert.match(page,/id="moveSelectedBtn"[^>]*>移动到图文爆款<\/button>/);
   assert.doesNotMatch(page,/北京时间/);
   assert.doesNotMatch(page,/采集时间/);
@@ -205,7 +206,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(productionScript,/moveSelectedBtn/);
   assert.match(productionScript,/移动到图文爆款/);
   assert.match(productionScript,/移动到视频爆款/);
-  assert.match(productionScript,/rewriteCopy/);
+  assert.match(productionScript,/rewriteCopy: \$\('#rewriteCopy'\)\?\.checked === true/);
   assert.doesNotMatch(productionScript,/Z-Image 逐张/);
   assert.match(productionScript,/Promise\.allSettled/);
   assert.match(script,/voice-gender-select/);

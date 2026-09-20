@@ -45,7 +45,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
     await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成模型可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
     kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
-    const rewrite = payload.rewriteCopy !== false;
+    const rewrite = payload.rewriteCopy === true;
     await save('source-ready', 'running', 8, `原图已转码，${deepseek ? 'DeepSeek V4.1 Flash' : 'Gemini 3.8 Flash'} 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
     let validationError = '';
     for (let attempt = 0; attempt < 3; attempt++) {

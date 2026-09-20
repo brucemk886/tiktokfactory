@@ -338,7 +338,7 @@ test('photo hit recreation creates a cloud photo-story job without video downloa
   assert.equal(payload.voiceId,undefined);
   assert.equal(payload.script,copy);
   assert.equal(payload.sceneCount,1);
-  assert.equal(payload.rewriteCopy,true);
+  assert.equal(payload.rewriteCopy,false);
   assert.equal(payload.imageModel,undefined);
   assert.deepEqual(payload.peerSource.imageUrls,['https://p16-sign.tiktokcdn-us.com/source.webp']);
   assert.equal(payload.peerSource.id,imported.items[0].id);
@@ -346,9 +346,9 @@ test('photo hit recreation creates a cloud photo-story job without video downloa
   assert.equal(listed.jobs.length,1);assert.equal(listed.jobs[0].type,'psychology-photo-story');
   const videos=await (await call('GET',undefined,user,'https://factory.test','?mediaType=video')).json();
   assert.equal(videos.jobs.length,0);
-  assert.equal((await call('POST',{ids:imported.items.map(item=>item.id),mediaType:'photo',requestId:crypto.randomUUID(),rewriteCopy:false})).status,202);
-  const rewriteOff=sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY created_at DESC,id DESC').all().map(row=>JSON.parse(row.payload_json)).find(payload=>payload.rewriteCopy===false);
-  assert.equal(rewriteOff.rewriteCopy,false);
+  assert.equal((await call('POST',{ids:imported.items.map(item=>item.id),mediaType:'photo',requestId:crypto.randomUUID(),rewriteCopy:true})).status,202);
+  const rewriteOn=sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY created_at DESC,id DESC').all().map(row=>JSON.parse(row.payload_json)).find(payload=>payload.rewriteCopy===true);
+  assert.equal(rewriteOn.rewriteCopy,true);
 });
 
 test('recreation batch rejects missing sources, invalid media types and unauthorized targets before creating jobs', async t => {
@@ -424,7 +424,8 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   assert.equal(single.scenes.length,1);
   assert.equal(peerCopy({title:'Do not use a title as the complete source'}),'');
   assert.throws(()=>peerProductionPayload({videoData:{copy:'short'}},'psychology-collage'));
-  assert.equal(peerProductionPayload({title:'Silence',videoData:{copy:'When someone goes quiet, notice the story you create before deciding what their silence means.'}},'psychology-photo-story',{rewriteCopy:false}).rewriteCopy,false);
+  assert.equal(peerProductionPayload({title:'Silence',videoData:{copy:'When someone goes quiet, notice the story you create before deciding what their silence means.'}},'psychology-photo-story').rewriteCopy,false);
+  assert.equal(peerProductionPayload({title:'Silence',videoData:{copy:'When someone goes quiet, notice the story you create before deciding what their silence means.'}},'psychology-photo-story',{rewriteCopy:true}).rewriteCopy,true);
   const rewriteOn=buildPhotoStoryPrompt({topic:'Silence',script:'copy',rewriteCopy:true},{sceneCount:1});
   const rewriteOff=buildPhotoStoryPrompt({topic:'Silence',script:'copy',rewriteCopy:false},{sceneCount:1});
   assert.doesNotMatch(rewriteOn,/Z-Image/);
