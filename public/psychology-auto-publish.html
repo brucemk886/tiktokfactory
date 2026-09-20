@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>心理学自动发布 · Local Factory</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css">
-<link rel="stylesheet" href="/psychology-auto-publish.css">
-</head><body class="work-page official-data-page psychology-auto-page">
-<nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>内容自动化</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/theme-ops.css">
+<link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-auto-publish.css">
+</head><body class="work-page official-data-page psychology-ops-page psychology-auto-page">
+<nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
-<header class="official-data-header"><div><p class="toolbar-kicker">PSYCHOLOGY / AUTOMATION</p><h1>心理学自动发布</h1><p>从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><div><a class="quiet-link" href="/psychology-publish-sources">发布对标 ↗</a> · <a class="quiet-link" href="/official-publish-records">官方发布记录 ↗</a></div></header>
+<header class="page-head"><div><h1>心理学自动发布</h1><p class="page-lead">从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-publish-sources">发布对标</a><a href="/official-publish-records">官方发布记录</a></nav></header>
 <div class="task-layout">
 <form id="batchForm" class="task-create-panel">
-<section class="panel auto-section"><div class="section-title"><div><p>01 / CONTENT</p><h2>内容与选题</h2></div><div><a href="/psychology-topic-bank">管理模板题库 ↗</a> · <a href="/psychology-peer-hits">查看同行爆款 ↗</a></div></div>
+<section class="panel auto-section"><div class="section-title"><h2>内容与选题</h2><nav class="page-links" aria-label="选题来源"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-peer-hits">同行爆款</a></nav></div>
 <div class="media-tabs" role="group" aria-label="内容类型"><button type="button" data-media="video" class="active" aria-pressed="true">视频<span>AI 画面与配音</span></button><button type="button" data-media="photo" aria-pressed="false">图文<span>卡片与素材底图</span></button></div>
 <p class="field-hint" id="sourceHint">正在读取同行爆款…</p>
 <div class="auto-grid">
@@ -26,10 +26,10 @@
 <label class="field" id="musicPoolField"><span>配乐 <em>可选</em></span><textarea id="musicIds" rows="2" placeholder="粘贴中台音乐库的商业音乐 ID，用逗号、空格或换行分隔；留空则由 TikTok 自动推荐配乐"></textarea><small>每条帖子从池子里随机抽一首，重试同一条会复用同一首。池子会保存，下次打开自动带出。</small></label>
 </div></details>
 </div></section>
-<section class="panel auto-section"><div class="section-title"><div><p>02 / ACCOUNTS</p><h2>对应发布账号</h2></div><button type="button" id="refreshAccounts">刷新账号</button></div>
+<section class="panel auto-section"><div class="section-title"><h2>发布账号</h2><button type="button" id="refreshAccounts">刷新账号</button></div>
 <p class="field-hint">内容按勾选账号轮流分配，每条内容发布到一个账号。</p>
 <div id="accounts" class="account-grid" aria-live="polite">正在读取心理学项目账号…</div></section>
-<section class="panel auto-section"><div class="section-title"><div><p>03 / SCHEDULE</p><h2>发布时间</h2></div></div>
+<section class="panel auto-section"><div class="section-title"><h2>发布计划</h2></div>
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>
 <label class="field"><span>同账号发布间隔（分钟）</span><input id="intervalMinutes" type="number" min="1" max="10080" value="60" required></label></div>
 <div id="summary" class="batch-summary" aria-live="polite"></div>
@@ -37,7 +37,7 @@
 <div class="submit-row"><p id="message" role="status" aria-live="polite"></p><button type="submit" id="submitBatch" class="primary-action">创建并自动发布</button></div>
 </section></form>
 <aside class="task-list-panel" aria-label="任务队列">
-<div class="queue-header"><div><p class="toolbar-kicker">QUEUE</p><h2>执行队列</h2><p id="safetySummary">每20条合并提交，一个创建任务统一管理</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
+<div class="queue-header"><div><h2>执行队列</h2><p id="safetySummary">每20条合并提交，一个创建任务统一管理</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
 <div class="queue-metrics">
 <div><span id="queuedCount">0</span><small>排队</small></div>
 <div><span id="runningCount">0</span><small>执行中</small></div>

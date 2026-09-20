@@ -199,6 +199,21 @@ test('music pool is saved as reusable config and posts without a pool keep auto 
   assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,['111','222','333']);
 });
 
+test('psychology ops pages share one chinese page shell', () => {
+  const names = ['psychology-auto-publish.html', 'psychology-topic-bank.html', 'psychology-publish-sources.html'];
+  for (const name of names) {
+    const page = fs.readFileSync(new URL('../../public/' + name, import.meta.url), 'utf8');
+    assert.match(page, /psychology-pages\.css/);
+    assert.match(page, /class="page-head"/);
+    assert.match(page, /psychology-ops-page/);
+    assert.doesNotMatch(page, /toolbar-kicker|PSYCHOLOGY \/|official-analytics\.css| ↗|01 \/ CONTENT/);
+  }
+  const css = fs.readFileSync(new URL('../../public/psychology-pages.css', import.meta.url), 'utf8');
+  assert.match(css, /\.page-head/);
+  assert.match(css, /\.page-lead/);
+  assert.match(css, /\.page-links/);
+});
+
 test('topic bank permissions, template isolation, validation, deduplication and import replay',async t=>{
   const {env,db,sqlite}=await fixture(t),actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
   const call=async(method,body,path='/api/psychology-template-topics',who=actor)=>{
