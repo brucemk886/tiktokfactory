@@ -336,7 +336,6 @@ export function composeContentCopy({ title, bullets = [], pageNumber = 0 } = {})
   return {
     pageNumber: number > 0 ? number : 0,
     blocks,
-    doodle: blocks.length === 1 && String(blocks[0] || "").replace(/\*\*/g, "").length < 180,
   };
 }
 
@@ -363,6 +362,5 @@ export function buildTextCardSlides({ title, body, copies, accent, count, smash,
     accent: mark,
     bullets: composed.blocks,
     pageNumber: composed.pageNumber,
-    doodle: composed.doodle,
   }];
 }

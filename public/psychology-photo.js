@@ -1,5 +1,5 @@
-import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260920-3";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260920-3";
+import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260920-4";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260920-4";
 const FINAL_STATES = new Set(["success", "fail"]);
 const state = { mode: "zimage", textTemplate: "content", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
@@ -106,7 +106,7 @@ function setTextTemplate(template) {
   if ($("#createLead") && state.mode === "text") {
     $("#createLead").textContent = isCover
       ? "封面统一黑底白字。每次只生成 1 张，改文案后再点一次。"
-      : "内容页按对标列表排：顶部页码、一句加粗、底部简笔。标题和正文相同只会印一次。";
+      : "内容页按对标列表排：顶部页码、一句加粗。标题和正文相同只会印一次。";
   }
 }
 

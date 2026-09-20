@@ -360,7 +360,6 @@ test("psychology photo template is an online Z-Image to official photo publishin
   });
   assert.equal(page.length, 1);
   assert.equal(page[0].kind, "content");
-  assert.equal(page[0].doodle, false);
   assert.equal(page[0].bullets.length, 2);
   assert.deepEqual(buildTextCardSlides({
     title: "Signs of a Disorganized Attachment Style",
@@ -376,7 +375,6 @@ test("psychology photo template is an online Z-Image to official photo publishin
     copies: ["only this page"],
     template: "content",
   });
-  assert.equal(nextPage[0].doodle, true);
   assert.equal(nextPage[0].bullets.length, 1);
   assert.match(nextPage[0].bullets[0], /only this page/);
   assert.doesNotMatch(browser,/pickCoverBackdrop|renderCoverBackdropPicker|deleteCoverBackdrop|previewCoverBackdrop|savedCoverBackdropIds/);
@@ -411,7 +409,6 @@ test("psychology text cards and stock overlays do not need generated images", ()
   assert.equal(cards.length, 1);
   assert.equal(cards[0].kind, "content");
   assert.equal(cards[0].accent, "herher");
-  assert.equal(cards[0].doodle, false);
   assert.equal(cards[0].bullets.length, 2);
   const delayed = composeContentCopy({
     title: "They Start To Delay Text Responses To Create Emotional Distance",
@@ -419,7 +416,6 @@ test("psychology text cards and stock overlays do not need generated images", ()
     pageNumber: 3,
   });
   assert.equal(delayed.pageNumber, 3);
-  assert.equal(delayed.doodle, true);
   assert.equal(delayed.blocks.length, 1);
   assert.match(delayed.blocks[0], /\*\*delay text responses\*\*/);
   assert.doesNotMatch(delayed.blocks[0], /They Start To Delay/);
@@ -497,7 +493,7 @@ test("psychology cover cards use a single black background", () => {
   assert.match(renderer, /paintOverlayScrim/);
   assert.match(renderer, /height \* 0\.12/);
   const contentFn = renderer.slice(renderer.indexOf("function renderContentCard"), renderer.indexOf("export function renderOverlayCard"));
-  assert.match(contentFn, /drawContentDoodle/);
+  assert.doesNotMatch(contentFn, /drawContentDoodle|doodleYoga/);
   assert.match(contentFn, /Iowan Old Style/);
   assert.match(contentFn, /layoutEmphasisBlocks/);
   assert.doesNotMatch(contentFn, /Avenir Next/);
