@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>发布对标 · 心理学</title>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css">
+<link rel="stylesheet" href="/psychology-auto-publish.css"><link rel="stylesheet" href="/psychology-publish-sources.css">
+</head>
+<body class="work-page official-data-page psychology-auto-page psychology-sources-page">
+<nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
+<main class="official-data-shell auto-shell">
+<header class="official-data-header"><div><p class="toolbar-kicker">PSYCHOLOGY / SOURCE TRACE</p><h1>发布对标</h1><p>查看自动发布到各账号的内容，分别对应哪条同行爆款原帖。</p></div><a class="quiet-link" href="/psychology-publish">心理学自动发布 ↗</a></header>
+<section class="panel auto-section">
+<div class="sources-toolbar">
+<label class="field"><span>搜索</span><input id="query" maxlength="100" placeholder="批次、账号、标题或爆款链接"></label>
+<label class="field"><span>内容类型</span><select id="mediaType"><option value="">全部</option><option value="photo">图文</option><option value="video">视频</option></select></label>
+<button type="button" id="searchBtn">查询</button>
+</div>
+<p id="listStatus" class="field-hint" role="status">正在读取自动发布对标…</p>
+<div class="queue-wrap"><table class="queue-table sources-table"><thead><tr>
+<th>批次</th><th>类型</th><th>发布账号</th><th>我方帖子</th><th>爆款原链接</th><th>对标标题</th><th>状态</th>
+</tr></thead><tbody id="rows"></tbody></table></div>
+<div class="sources-pagination"><button id="prevPage" type="button">上一页</button><span id="pageInfo"></span><button id="nextPage" type="button">下一页</button></div>
+</section>
+</main>
+<script src="/access.js"></script><script src="/psychology-publish-sources.js"></script>
+</body></html>

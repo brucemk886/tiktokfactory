@@ -42,6 +42,7 @@ const PAGE_FILES = {
   "/mid-video-publish": "module-publish.html",
   "/psychology-topic-bank": "psychology-topic-bank.html",
   "/psychology-publish": "psychology-auto-publish.html",
+  "/psychology-publish-sources": "psychology-publish-sources.html",
   "/mid-video-effects": "official-analytics.html",
   "/psychology-effects": "official-group-report.html",
   "/official-analytics": "official-analytics.html",

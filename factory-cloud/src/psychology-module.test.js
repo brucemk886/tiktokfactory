@@ -18,6 +18,8 @@ test("psychology workbench groups template navigation while preserving child per
   assert.equal(pageFileFor("/psychology-target-2"), "psychology-narrative.html");
   assert.equal(pageFileFor("/psychology-narrative"), "psychology-narrative.html");
   assert.equal(pageFileFor("/psychology-photo"), "psychology-photo.html");
+  assert.equal(pageFileFor("/psychology-publish-sources"), "psychology-publish-sources.html");
+  assert.equal(moduleIdForPath("/psychology-publish-sources"), "psychology-publish-sources");
   assert.equal(moduleIdForPath("/psychology-collage"), "psychology-collage");
   assert.equal(moduleIdForPath("/psychology-target-2"), "psychology-narrative");
   assert.equal(moduleIdForPath("/psychology-photo"), "psychology-photo");
@@ -116,12 +118,15 @@ test("existing sessions get the separated template entries without a database re
   };
   const admin = await readUser("admin",["psychology","psychology-narrative","schulte"]);
   for (const path of ["/psychology","/psychology-collage","/psychology-target-2","/psychology-narrative","/psychology-photo"]) assert.equal(canAccessPath(admin,path),true);
+  assert.equal(canAccessPath(admin,"/psychology-publish-sources"),true);
+  assert.equal(admin.sidebarModules.includes("psychology-publish-sources"),true);
   assert.equal(admin.sidebarModules.filter(id=>id==="psychology-collage").length,1);
   const operator = await readUser("operator",["psychology"]);
   assert.equal(canAccessPath(operator,"/psychology"),true);
   assert.equal(canAccessPath(operator,"/psychology-collage"),false);
   assert.equal(canAccessPath(operator,"/psychology-target-2"),false);
   assert.equal(canAccessPath(operator,"/psychology-photo"),false);
+  assert.equal(canAccessPath(operator,"/psychology-publish-sources"),false);
 });
 
 test("admins can hide GeeLark backup without the session rewriting it back", async () => {

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 import { handlePsychologyAutoPublish, enqueueAutoPhotoRender, enqueueAutoVideoPublish, assertAutoJobAccess } from './psychology-auto-publish.js';
+import { pageFileFor } from './pages.js';
 import { handleJobs, officialPublishFollowupPayload } from './jobs.js';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
@@ -580,4 +581,54 @@ test('historical failure listing resolves a handle before search without requeue
   assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n, before);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n, 0);
   assert.equal(f.requests.length, 0);
+});
+
+test('source trace lists account posts against peer urls and published links', async t => {
+  const {call,sqlite}=await fixture(t);
+  const page=fs.readFileSync(new URL('../../public/psychology-publish-sources.html',import.meta.url),'utf8');
+  const browser=fs.readFileSync(new URL('../../public/psychology-publish-sources.js',import.meta.url),'utf8');
+  assert.equal(pageFileFor('/psychology-publish-sources'),'psychology-publish-sources.html');
+  assert.match(page,/打开爆款原帖|爆款原链接/);
+  assert.match(page,/id="mediaType"/);
+  assert.match(browser,/\/api\/psychology-auto-publish\/sources/);
+  assert.match(fs.readFileSync(new URL('../../public/psychology-publish-sources.css',import.meta.url),'utf8'),/cursor:not-allowed/);
+  await call('POST',input());
+  const listed=await (await call('GET',undefined,'/api/psychology-auto-publish/sources')).json();
+  assert.equal(listed.items.length,3);
+  assert.equal(listed.hasMore,false);
+  assert.deepEqual(listed.items.map(item=>item.peerUrl),[
+    'https://www.tiktok.com/@example/video/104',
+    'https://www.tiktok.com/@example/video/103',
+    'https://www.tiktok.com/@example/video/102',
+  ]);
+  assert.equal(listed.items[0].accountUsername,'alpha');
+  assert.equal(listed.items[0].publishedUrl,'');
+  assert.equal(listed.items[0].sourceType,'peer');
+  sqlite.prepare('INSERT INTO factory_publish_records(id,created_at,value_json) VALUES (?,?,?)')
+    .run('rec-1',Date.now(),JSON.stringify({autoTaskId:listed.items[0].id,shareLink:'https://www.tiktok.com/@alpha/video/999',videoId:'999'}));
+  const linked=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?query=Video+idea+4')).json();
+  assert.equal(linked.items.length,1);
+  assert.equal(linked.items[0].publishedUrl,'https://www.tiktok.com/@alpha/video/999');
+  const photos=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?mediaType=photo')).json();
+  assert.equal(photos.items.length,0);
+  await assert.rejects(call('GET',undefined,'/api/psychology-auto-publish/sources',{...user,role:'operator'}),e=>e.statusCode===403);
+});
+
+test('source trace paginates and leaves topic-bank rows without a peer url', async t => {
+  const {call,env}=await fixture(t);
+  const actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
+  await seedBank(env,'psychology',[{title:'Bank A',content:'One'},{title:'Bank B',content:'Two'}]);
+  await call('POST',input({count:2,sourceType:'topic-bank',selection:'priority'}),undefined,actor);
+  await importPsychologyPeerHits(env.DB,Array.from({length:21},(_,n)=>({videoUrl:'https://www.tiktok.com/@example/photo/'+(900+n),title:'Paged photo '+n,playCount:n+1})),user.id);
+  await call('POST',input({mediaType:'photo',template:'photo-original',count:21,connectionIds:['a']}));
+  const topics=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?mediaType=video')).json();
+  assert.equal(topics.items.length,2);
+  assert.ok(topics.items.every(item=>item.sourceType==='topic-bank'&&item.peerUrl===''));
+  const first=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?mediaType=photo')).json();
+  assert.equal(first.items.length,20);
+  assert.equal(first.hasMore,true);
+  assert.match(first.items[0].peerUrl,/tiktok\.com\/@example\/photo\//);
+  const second=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?mediaType=photo&offset=20')).json();
+  assert.equal(second.items.length,1);
+  assert.equal(second.hasMore,false);
 });

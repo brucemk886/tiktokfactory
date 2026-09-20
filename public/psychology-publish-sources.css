@@ -1,0 +1,12 @@
+.psychology-sources-page .sources-toolbar{display:grid;grid-template-columns:minmax(220px,1.4fr) 160px auto;gap:14px;align-items:end;margin-bottom:8px}
+.psychology-sources-page .sources-toolbar button{min-height:42px;padding:0 18px;border:1px solid #c5d08a;border-radius:8px;background:#f4f7e4;color:#31372a;font:inherit;font-weight:700;cursor:pointer}
+.psychology-sources-page .sources-table{min-width:1080px}
+.psychology-sources-page .sources-table a{color:#53622c;font-weight:650;text-decoration:none;overflow-wrap:anywhere}
+.psychology-sources-page .sources-table a:hover{text-decoration:underline}
+.psychology-sources-page .sources-table td{max-width:280px;overflow-wrap:anywhere}
+.psychology-sources-page .sources-empty{color:#777e6a}
+.psychology-sources-page .sources-pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:16px;font-size:13px;color:#6e7764}
+.psychology-sources-page .sources-pagination button{min-height:36px;padding:0 14px;border:1px solid #dcded0;border-radius:8px;background:#fff;color:#31372a;cursor:pointer}
+.psychology-sources-page .sources-pagination button:disabled{cursor:not-allowed}
+.psychology-sources-page .handle{font-weight:700}
+@media(max-width:760px){.psychology-sources-page .sources-toolbar{grid-template-columns:1fr}}

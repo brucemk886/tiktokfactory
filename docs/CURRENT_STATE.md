@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-09-19
+Updated: 2026-09-20
 
 - The online AI workbench includes admin-only video analysis with Google official gemini-3.8-flash as the free primary provider. Google 429/5xx/high-demand failures retry twice with durable 10/20-second backoff, then automatically fall back to Kie gemini-3-8-flash-openai; permanent 4xx/content errors do not spend paid credits. Kie reads the private R2 upload through a one-hour HMAC-signed URL, and each record stores the actual provider, token usage, and returned Kie credits. Google and R2 temporary files are removed after completion. The production Google and Kie secrets are configured.
 
@@ -17,6 +17,8 @@ Updated: 2026-09-19
 - Psychology /psychology-ops-report is now a separate operations review: equal-period trend comparisons, account performance/drilldown, and automatic-batch generation/submission/publication funnel. It supports 7/30-day or custom date windows, media/group filters, existing scoped permissions, and explicit archive coverage. Performance rates exclude works younger than 24 hours; pending submissions never count as confirmed publication.
 
 - Psychology 数据概览 at /psychology-effects now shares the novel promotion report layout: date/group filters, 11 publishing/playback metrics and one high-view / low-view / anomalous-account tab module. Normal-view videos appear below the tabs with independent ten-item pagination and video/detail links. Anomalous accounts expand to their zero-view videos; video details include completion/watch-time metrics and official retention curves with scoped account authorization. Requests remain scoped to the psychology project; existing navigation permissions and the separate operations-report route are preserved.
+
+- Psychology automatic publishing has an admin-only 发布对标 page at /psychology-publish-sources: each generated post shows the receiving TikTok account, the published post link when Signal Desk has returned one, and the original peer-hit URL (topic-bank rows have no peer link). The recreation board pagination no longer uses a wait cursor on disabled prev/next buttons.
 
 - Online psychology now has administrator-only automatic publishing at /psychology-publish: choose photo/video, a corresponding template, 1–100 total posts, peer-hit selection/filter, official psychology accounts and schedule. Photo batches include an off-by-default 改写文案 checkbox so original title/caption/overlay can be tested as a matrix; checking it turns on rewriteCopy. Photo batches also take an optional music pool of up to 100 commercial music IDs (copied from the Signal Desk music library); each post draws one song at batch creation, frozen in the job payload so retries reuse it, and an explicit song disables TikTok auto music. The pool is saved in factory_kv and pre-fills the page; leaving it empty keeps TikTok's auto-recommended music. Distinct matching hits are assigned round-robin; video renders feed the official upload queue, while photo workflows feed a background Chrome card renderer with upload checkpoints and idempotent official batch submission. See docs/handoffs/2026-09-18-psychology-auto-publish.md.
 

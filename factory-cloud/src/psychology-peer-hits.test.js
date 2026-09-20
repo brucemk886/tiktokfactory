@@ -199,6 +199,9 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(boardScript,/method:'DELETE'/);
   assert.match(boardStyles,/-webkit-line-clamp:2/);
   assert.match(boardStyles,/\.queue-delete/);
+  assert.match(boardStyles,/board-pagination button:disabled\{cursor:not-allowed\}/);
+  const appStyles=fs.readFileSync(new URL("../../public/app.css",import.meta.url),"utf8");
+  assert.match(appStyles,/button:disabled \{\s*opacity: 0.55;\s*cursor: not-allowed;/);
   assert.match(productionScript,/moveSelectedBtn/);
   assert.match(productionScript,/移动到图文爆款/);
   assert.match(productionScript,/移动到视频爆款/);

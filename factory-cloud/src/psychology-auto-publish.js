@@ -9,11 +9,86 @@ import { json, errorJson, readJson, sha256Hex } from './http.js';
 import { kvGet, kvSet } from './kv.js';
 
 const MUSIC_POOL_KEY = 'psychology-auto-music-pool';
+const SOURCE_PAGE = 20;
 
 import { assertTopicBankUser, topicCounts, selectTopicSources, topicUsageStatement } from './psychology-topic-bank.js';
 
 const BASE = '/api/psychology-auto-publish';
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
+function readJsonValue(value, fallback = {}) {
+  try { return JSON.parse(value || '') ?? fallback; } catch { return fallback; }
+}
+function tiktokUrl(value) {
+  try {
+    const parsed = new URL(String(value || ''));
+    if (parsed.protocol !== 'https:' || !/(^|\.)tiktok\.com$/i.test(parsed.hostname)) return '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch { return ''; }
+}
+function sourceStatus(row) {
+  const receipt = readJsonValue(row.receipt_json);
+  const result = readJsonValue(row.result_json);
+  if (receipt.batchId || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed)) return 'submitted';
+  if (row.ready_json && row.ready_json !== '{}' && row.publish_group_id) return 'ready';
+  if (row.status === 'queued' && row.available_at) return 'queued';
+  if (result.publishFailed) return 'failed';
+  if (row.type === 'psychology-photo-story' && row.status === 'done') return 'handoff';
+  return row.status || 'missing';
+}
+function publishedPostUrl(record, username, mediaType) {
+  const direct = tiktokUrl(record.shareLink || record.videoUrl);
+  if (direct) return direct;
+  const id = String(record.videoId || record.itemId || '').replace(/\D/g, '');
+  const handle = String(username || record.accountUsername || '').replace(/^@/, '').trim();
+  if (!id || !handle) return '';
+  return `https://www.tiktok.com/@${encodeURIComponent(handle)}/${mediaType === 'photo' ? 'photo' : 'video'}/${id}`;
+}
+export async function listAutoPublishSources(db, user, input = {}) {
+  const query = String(input.query || '').trim().slice(0, 100);
+  const mediaType = input.mediaType === 'photo' || input.mediaType === 'video' ? input.mediaType : '';
+  const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
+  const like = '%' + query.replace(/[%_]/g, '') + '%';
+  const rows = await db.prepare(`SELECT i.id,i.source_id,i.connection_id,i.schedule_at,i.receipt_json,i.ready_json,i.publish_group_id,
+      b.id AS batch_id,b.created_at,b.config_json,j.title,j.status,j.type,j.payload_json,j.result_json,j.available_at
+    FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
+    LEFT JOIN factory_jobs j ON j.id=i.job_id
+    WHERE b.created_by=? AND i.deleted_at=0 AND (?='' OR json_extract(b.config_json,'$.mediaType')=?)
+      AND (?=0 OR b.config_json LIKE ? OR IFNULL(j.payload_json,'') LIKE ? OR IFNULL(j.title,'') LIKE ?)
+    ORDER BY b.created_at DESC, i.id LIMIT ? OFFSET ?`)
+    .bind(user.username, mediaType, mediaType, query ? 1 : 0, like, like, like, SOURCE_PAGE + 1, offset).all();
+  const page = rows.results.slice(0, SOURCE_PAGE);
+  const records = new Map();
+  if (page.length) {
+    const found = await db.prepare(`SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN (${page.map(() => '?').join(',')})`)
+      .bind(...page.map(row => row.id)).all();
+    for (const row of found.results) {
+      const record = readJsonValue(row.value_json);
+      if (record.autoTaskId) records.set(record.autoTaskId, record);
+    }
+  }
+  return {
+    offset, hasMore: rows.results.length > SOURCE_PAGE,
+    items: page.map(row => {
+      const config = readJsonValue(row.config_json);
+      const payload = readJsonValue(row.payload_json);
+      const auto = payload.psychologyAutomation || {};
+      const account = auto.account || {};
+      const username = String(account.username || '').replace(/^@/, '').trim();
+      const record = records.get(row.id) || {};
+      const media = config.mediaType === 'photo' ? 'photo' : 'video';
+      return {
+        id: row.id, batchId: row.batch_id, batchName: String(config.name || ''), createdAt: row.created_at,
+        mediaType: media, sourceType: payload.topicSource ? 'topic-bank' : 'peer',
+        accountUsername: username, connectionId: row.connection_id, scheduleAt: row.schedule_at,
+        status: sourceStatus(row), title: String(row.title || payload.peerSource?.title || payload.topicSource?.title || ''),
+        peerUrl: tiktokUrl(payload.peerSource?.videoUrl), peerTitle: String(payload.peerSource?.title || ''),
+        topicTitle: String(payload.topicSource?.title || ''),
+        publishedUrl: publishedPostUrl(record, username, media), publishedId: String(record.videoId || record.itemId || ''),
+      };
+    }),
+  };
+}
 export function assertAutoUser(user) {
   if (!user || user.role !== 'admin' || !(user.sidebarModules || []).includes('psychology-publish')) fail('没有心理学自动发布权限。', 403);
 }
@@ -62,6 +137,11 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (!url.pathname.startsWith(BASE)) return null;
   assertAutoUser(session?.user);
   const user = session.user;
+  if (url.pathname === BASE + '/sources' && request.method === 'GET') {
+    return json(await listAutoPublishSources(env.DB, user, {
+      offset: url.searchParams.get('offset'), query: url.searchParams.get('query'), mediaType: url.searchParams.get('mediaType'),
+    }));
+  }
   if (url.pathname === BASE + '/options' && request.method === 'GET') {
     const counts = await env.DB.prepare('SELECT media_type, COUNT(*) AS total FROM psychology_peer_hits GROUP BY media_type').all();
     const musicPool = await kvGet(env.DB, MUSIC_POOL_KEY, []);

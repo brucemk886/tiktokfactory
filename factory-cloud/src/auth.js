@@ -370,7 +370,7 @@ function withOpsReportModules(value, role) {
   const modules = Array.isArray(value) ? [...value] : [];
   if (!modules.length) return value;
   const midVideoIds = ["mid-video", "schulte", "quiz", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
-  const psychologyIds = ["psychology-peer-hits", "psychology", "psychology-collage", "psychology-narrative", "psychology-photo", "psychology-effects", "psychology-ops-report", "psychology-publish"];
+  const psychologyIds = ["psychology-peer-hits", "psychology", "psychology-collage", "psychology-narrative", "psychology-photo", "psychology-effects", "psychology-ops-report", "psychology-publish", "psychology-publish-sources"];
   const novelIds = ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "novel-exceptions"];
   if (modules.some((moduleId) => midVideoIds.includes(moduleId))) {
     insertModuleAfter(modules, "mid-video-effects", "mid-video-ops-report");
@@ -380,6 +380,7 @@ function withOpsReportModules(value, role) {
     insertModuleAfter(modules, "psychology", "psychology-effects");
     insertModuleAfter(modules, "psychology-effects", "psychology-ops-report");
     insertModuleAfter(modules, "psychology-ops-report", "psychology-publish");
+    insertModuleAfter(modules, "psychology-publish", "psychology-publish-sources");
   }
   if (modules.some((moduleId) => novelIds.includes(moduleId))) {
     insertModuleAfter(modules, "novel-library", "novel-peer-hits");

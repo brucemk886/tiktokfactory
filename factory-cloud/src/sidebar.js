@@ -29,6 +29,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
   moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ["admin"], psychologyGroup()),
+  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "发布对标", ["admin"], psychologyGroup()),
   moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ALL, officialChannelGroup()),
   moduleItem("official-analytics", "/official-analytics", "授权账号数据", ALL, officialChannelGroup()),
   moduleItem("official-publish-records", "/official-publish-records", "官方发布记录", ALL, officialChannelGroup()),
