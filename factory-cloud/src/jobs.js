@@ -1,3 +1,4 @@
+import { serveTopicImage, topicImageObjectKey } from './psychology-topic-bank.js';
 import { finishPsychologyPublishAttempt, isPsychologyPublishAttempt } from './psychology-publish-retries.js';
 import { handleAutoVideoStage } from './psychology-publish-groups.js';
 import { assertAutoJobAccess, enqueueAutoVideoPublish } from './psychology-auto-publish.js';
@@ -267,6 +268,11 @@ async function handleWorkerApi(request, env, url, ctx) {
 
   const method = request.method;
   const pathname = url.pathname;
+  const topicImage = pathname.match(/^\/api\/worker\/psychology-topic-images\/([0-9a-f-]{36})\.(jpe?g|png|webp)$/i);
+  if (method === "GET" && topicImage) {
+    const ext = topicImage[2].toLowerCase() === "jpeg" ? "jpg" : topicImage[2].toLowerCase();
+    return serveTopicImage(env, topicImageObjectKey(topicImage[1], ext));
+  }
 
   const audioUpload = pathname.match(/^\/api\/worker\/audio\/([^/]+)$/);
   if (method === "GET" && audioUpload) {

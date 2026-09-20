@@ -1,12 +1,83 @@
 import { json,errorJson,readJson,sha256Hex,randomToken } from "./http.js";
-import { TOPIC_TEMPLATES,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource } from "../../scripts/psychology-topic-bank.js";
+import { TOPIC_TEMPLATES,TOPIC_IMAGE_KEY,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource,parseFourImageChoices } from "../../scripts/psychology-topic-bank.js";
 export const PSYCHOLOGY_TOPIC_API="/api/integrations/psychology/template-topics";
 const BASE="/api/psychology-template-topics";
+const TOPIC_IMAGE_MAX=8*1024*1024;
+const TOPIC_IMAGE_TYPES={
+  "image/jpeg":"jpg",
+  "image/png":"png",
+  "image/webp":"webp",
+};
 export function assertTopicBankUser(user){
   if(!user || user.role!=="admin" || !(user.sidebarModules||[]).includes("psychology-topic-bank"))
     throw Object.assign(new Error("没有模板题库管理权限。"),{statusCode:403});
 }
-const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at});
+function publicChoices(content){
+  const choices=parseFourImageChoices(content);
+  if(!choices)return null;
+  return choices.map(item=>({
+    label:item.label,
+    copy:item.copy||"",
+    imageKey:item.imageKey||"",
+    imageUrl:item.imageUrl||"",
+    previewUrl:item.imageKey?`${BASE}/assets?key=${encodeURIComponent(item.imageKey)}`:item.imageUrl||"",
+  }));
+}
+const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"?publicChoices(row.content):null});
+export function topicImageObjectKey(id,ext){
+  const suffix=ext==="jpeg"?"jpg":ext;
+  return `psychology-topics/${id}.${suffix}`;
+}
+export function parseTopicImageKey(value){
+  const key=String(value||"").trim();
+  const match=key.match(TOPIC_IMAGE_KEY);
+  if(!match)return null;
+  return {key,id:key.slice("psychology-topics/".length,key.lastIndexOf(".")),ext:match[1].toLowerCase()==="jpeg"?"jpg":match[1].toLowerCase()};
+}
+function sniffTopicImage(bytes){
+  if(!bytes||bytes.length<3)return "";
+  if(bytes[0]===0xFF&&bytes[1]===0xD8&&bytes[2]===0xFF)return "image/jpeg";
+  if(bytes.length>=4&&bytes[0]===0x89&&bytes[1]===0x50&&bytes[2]===0x4E&&bytes[3]===0x47)return "image/png";
+  if(bytes.length>=12&&bytes[0]===0x52&&bytes[1]===0x49&&bytes[2]===0x46&&bytes[3]===0x46&&bytes[8]===0x57&&bytes[9]===0x45&&bytes[10]===0x42&&bytes[11]===0x50)return "image/webp";
+  return "";
+}
+function decodeTopicImage(input={}){
+  const raw=String(input.imageBase64||input.dataUrl||"").trim();
+  if(!raw)throw Object.assign(new Error("请先选择图片。"),{statusCode:400});
+  const dataUrl=raw.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  const declared=String(input.contentType||"").split(";")[0].trim().toLowerCase();
+  const contentType=(dataUrl?dataUrl[1]:declared).toLowerCase();
+  if(!TOPIC_IMAGE_TYPES[contentType])throw Object.assign(new Error("图片须为 JPG、PNG 或 WebP。"),{statusCode:415});
+  const encoded=dataUrl?dataUrl[2]:raw.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/i,"");
+  const clean=encoded.replace(/\s+/g,"");
+  if(!clean||clean.length>Math.ceil(TOPIC_IMAGE_MAX*4/3)+128)throw Object.assign(new Error("图片过大，单张不超过 8 MB。"),{statusCode:413});
+  let bytes;
+  try{
+    const binary=atob(clean);
+    bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i+=1)bytes[i]=binary.charCodeAt(i);
+  }catch{throw Object.assign(new Error("图片编码无效。"),{statusCode:400});}
+  if(!bytes.byteLength||bytes.byteLength>TOPIC_IMAGE_MAX)throw Object.assign(new Error("图片为空或超过 8 MB。"),{statusCode:413});
+  const sniffed=sniffTopicImage(bytes);
+  if(sniffed!==contentType)throw Object.assign(new Error("图片文件损坏，请重新选择。"),{statusCode:400});
+  return {bytes,contentType,ext:TOPIC_IMAGE_TYPES[contentType]};
+}
+export async function storeTopicImage(env,input){
+  if(!env?.ARCHIVE)throw Object.assign(new Error("图片存储尚未配置。"),{statusCode:503});
+  const image=decodeTopicImage(input);
+  const key=topicImageObjectKey(crypto.randomUUID(),image.ext);
+  await env.ARCHIVE.put(key,image.bytes,{httpMetadata:{contentType:image.contentType},customMetadata:{kind:"psychology-topic-choice"}});
+  return {key,contentType:image.contentType,url:`${BASE}/assets?key=${encodeURIComponent(key)}`};
+}
+export async function serveTopicImage(env,key){
+  const parsed=parseTopicImageKey(key);
+  if(!parsed)return errorJson("图片地址无效。",400);
+  if(!env?.ARCHIVE)return errorJson("图片存储尚未配置。",503);
+  const object=await env.ARCHIVE.get(parsed.key);
+  if(!object)return errorJson("图片不存在。",404);
+  const type=parsed.ext==="png"?"image/png":parsed.ext==="webp"?"image/webp":"image/jpeg";
+  return new Response(object.body||object,{status:200,headers:{"content-type":type,"cache-control":"private, max-age=3600"}});
+}
 export async function topicCounts(db){
   const{results}=await db.prepare("SELECT template,COUNT(*) AS total,SUM(enabled) AS enabled,SUM(CASE WHEN enabled=1 AND usage_count=0 THEN 1 ELSE 0 END) AS unused FROM psychology_template_topics WHERE deleted_at=0 GROUP BY template").all();
   return Object.fromEntries(TOPIC_TEMPLATES.map(t=>[t.id,results.find(r=>r.template===t.id)||{total:0,enabled:0,unused:0}]));
@@ -78,6 +149,11 @@ export async function handlePsychologyTopicBank(request,env,url,session){
     if(!session)return errorJson("请先登录。",401);
     assertTopicBankUser(session.user);
     const user=session.user;
+    if(url.pathname===BASE+"/assets"){
+      if(request.method==="POST")return json(await storeTopicImage(env,await readJson(request)),201);
+      if(request.method==="GET")return serveTopicImage(env,url.searchParams.get("key"));
+      return errorJson("不支持此请求方法。",405);
+    }
     if(url.pathname===BASE+"/api-key"){
       if(request.method!=="GET" && request.headers.get("origin") && request.headers.get("origin")!==url.origin)return errorJson("不允许跨站修改。",403);
       if(request.method==="GET"){

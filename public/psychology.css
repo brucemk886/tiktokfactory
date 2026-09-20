@@ -138,3 +138,9 @@ button.quiet,.icon-button { border:1px solid #39444c; background:var(--lf-surfac
 .batch-ai-auto span { display:grid; gap:3px; }
 .batch-ai-auto strong { font-size:12px; color:var(--lf-text); }
 .batch-ai-auto small { color:#a9b898; font-size:11px; line-height:1.4; }
+.choice-upload-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:15px; }
+.choice-upload { display:grid; gap:8px; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--panel2); }
+.choice-upload strong { font-size:14px; }
+.choice-preview { width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; background:#ece8db; display:none; }
+.choice-preview.is-on { display:block; }
+@media(max-width:900px){.choice-upload-grid{grid-template-columns:1fr}}

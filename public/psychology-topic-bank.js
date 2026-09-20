@@ -1,6 +1,6 @@
 import {parseTopicImport} from "/psychology-topic-import.js";
 const $=s=>document.querySelector(s),BASE="/api/psychology-template-topics";
-const state={template:"psychology",page:1,items:[],templates:[],editing:null,requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0};
+const state={template:"psychology",page:1,items:[],templates:[],editing:null,choiceDraft:[],requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function api(path,method="GET",body){
   const r=await fetch(path,{method,...(body?{headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});
@@ -20,16 +20,68 @@ async function load(){
   $("#bankHint").textContent=bank().hint;
   const c=data.counts[state.template];
   $("#bankCounts").innerHTML="<span>全部题目 <b>"+c.total+"</b></span><span>已启用 <b>"+c.enabled+"</b></span><span>未使用且启用 <b>"+c.unused+"</b></span>";
-  $("#topicList").innerHTML=data.items.length?'<table class="queue-table"><thead><tr><th>题目与内容</th><th>分类</th><th>优先级</th><th>状态</th><th>已抽取</th><th>操作</th></tr></thead><tbody>'+data.items.map(t=>'<tr><td><div class="topic-title">'+esc(t.title)+'</div><div class="topic-copy">'+esc(t.content||"未填写内容，将根据题目生成")+'</div></td><td>'+esc(t.category||"—")+'</td><td>'+t.priority+'</td><td>'+(t.enabled?"已启用":"已停用")+'</td><td>'+t.usageCount+' 次<small>'+(t.lastUsedAt?esc(new Date(t.lastUsedAt).toLocaleString("zh-CN")):"尚未抽取")+'</small></td><td><div class="bank-actions"><button data-edit="'+t.id+'">编辑</button><button data-toggle="'+t.id+'">'+(t.enabled?"停用":"启用")+'</button><button data-delete="'+t.id+'">删除</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">'+(c.total?"没有符合筛选条件的题目。":"此模板题库还是空的。新增题目或批量导入后，即可用于自动发布。")+"</div>";
+  $("#topicList").innerHTML=data.items.length?'<table class="queue-table"><thead><tr><th>题目与内容</th><th>分类</th><th>优先级</th><th>状态</th><th>已抽取</th><th>操作</th></tr></thead><tbody>'+data.items.map(t=>'<tr><td><div class="topic-title">'+esc(t.title)+'</div>'+topicPreview(t)+'</td><td>'+esc(t.category||"—")+'</td><td>'+t.priority+'</td><td>'+(t.enabled?"已启用":"已停用")+'</td><td>'+t.usageCount+' 次<small>'+(t.lastUsedAt?esc(new Date(t.lastUsedAt).toLocaleString("zh-CN")):"尚未抽取")+'</small></td><td><div class="bank-actions"><button data-edit="'+t.id+'">编辑</button><button data-toggle="'+t.id+'">'+(t.enabled?"停用":"启用")+'</button><button data-delete="'+t.id+'">删除</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">'+(c.total?"没有符合筛选条件的题目。":"此模板题库还是空的。新增题目或批量导入后，即可用于自动发布。")+"</div>";
   $("#pageInfo").textContent="共 "+data.total+" 条 · 第 "+state.page+" / "+Math.max(1,Math.ceil(data.total/20))+" 页";
   $("#prevPage").disabled=state.page<=1;$("#nextPage").disabled=state.page*20>=data.total;
+}
+function topicPreview(topic){
+  if(topic.choices?.length===4){
+    return '<div class="topic-copy">'+topic.choices.map(c=>esc(c.label+": "+(c.copy||""))).join(" · ")+'</div><div class="topic-choices">'+topic.choices.map(c=>c.previewUrl?`<img src="${esc(c.previewUrl)}" alt="${esc(c.label)}" loading="lazy">`:"<span>"+esc(c.label)+"</span>").join("")+"</div>";
+  }
+  return '<div class="topic-copy">'+esc(topic.content||"未填写内容，将根据题目生成")+"</div>";
+}
+function isFour(){return state.template==="psychology";}
+function choiceState(topic){
+  const current=topic?.choices||[{},{},{},{}];
+  return ["A","B","C","D"].map((label,index)=>({
+    label,
+    copy:current[index]?.copy||"",
+    imageKey:current[index]?.imageKey||"",
+    imageUrl:current[index]?.imageUrl||"",
+    previewUrl:current[index]?.previewUrl||current[index]?.imageUrl||"",
+  }));
+}
+function renderChoiceGrid(topic){
+  const choices=choiceState(topic);
+  $("#choiceGrid").innerHTML=choices.map((choice,index)=>`<article class="choice-card"><strong>${choice.label}</strong><img class="choice-preview${choice.previewUrl?" is-on":""}" id="choicePreview${index}" alt="${choice.label} 预览" ${choice.previewUrl?`src="${esc(choice.previewUrl)}"`:""}><label>对应文案<input id="choiceCopy${index}" maxlength="80" placeholder="例如：Moon / 独自离开" value="${esc(choice.copy)}"></label><label>图片<input id="choiceFile${index}" type="file" accept="image/jpeg,image/png,image/webp"></label></article>`).join("");
+  state.choiceDraft=choices;
+  choices.forEach((_,index)=>{
+    $(`#choiceFile${index}`).onchange=()=>{
+      const file=$(`#choiceFile${index}`).files[0];
+      const preview=$(`#choicePreview${index}`);
+      if(!file){if(state.choiceDraft[index].previewUrl){preview.src=state.choiceDraft[index].previewUrl;preview.classList.add("is-on");}else{preview.removeAttribute("src");preview.classList.remove("is-on");}return;}
+      preview.src=URL.createObjectURL(file);preview.classList.add("is-on");
+    };
+  });
 }
 function showEditor(topic=null){
   state.editing=topic;state.requestId=crypto.randomUUID();
   $("#editTitle").textContent=topic?"编辑题目":"新增题目";$("#editBank").textContent=bank().label;
   $("#topicTitle").value=topic?.title||"";$("#topicContent").value=topic?.content||"";$("#topicCategory").value=topic?.category||"";
   $("#topicPriority").value=topic?.priority??50;$("#topicEnabled").checked=topic?.enabled??true;$("#editError").textContent="";
+  $("#topicContentField").hidden=isFour();$("#fourChoiceFields").hidden=!isFour();
+  if(isFour())renderChoiceGrid(topic);
   $("#editDialog").showModal();
+}
+async function fileDataUrl(file){
+  if(file.size>8*1024*1024)throw new Error("单张图片不超过 8 MB。");
+  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("读取图片失败。"));reader.readAsDataURL(file);});
+}
+async function collectChoices(){
+  const choices=[];
+  for(const [index,draft] of (state.choiceDraft||choiceState()).entries()){
+    const copy=$(`#choiceCopy${index}`).value.trim();
+    const file=$(`#choiceFile${index}`).files[0];
+    let imageKey=draft.imageKey,imageUrl=draft.imageUrl;
+    if(file){
+      const uploaded=await api(BASE+"/assets","POST",{imageBase64:await fileDataUrl(file),fileName:file.name,contentType:file.type});
+      imageKey=uploaded.key;imageUrl="";
+    }
+    if(!copy)throw new Error("请填写 "+draft.label+" 选项文案。");
+    if(!imageKey&&!imageUrl)throw new Error("请上传 "+draft.label+" 选项图片。");
+    choices.push({label:draft.label,copy,imageKey,imageUrl});
+  }
+  return choices;
 }
 function lock(form,busy){state.busy=busy;form.querySelectorAll("input,textarea,button").forEach(n=>n.disabled=busy);}
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{if(!state.busy)$("#"+b.dataset.close).close();});
@@ -42,9 +94,11 @@ $("#newTopic").onclick=()=>{if(bank())showEditor();};
 $("#editForm").oninput=()=>state.requestId=crypto.randomUUID();
 $("#editForm").onsubmit=async e=>{
   e.preventDefault();if(state.busy)return;
-  const body={title:$("#topicTitle").value,content:$("#topicContent").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked};
-  lock(e.target,true);
+  lock(e.target,true);$("#editError").textContent="";
   try{
+    const body=isFour()
+      ?{title:$("#topicTitle").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked,choices:await collectChoices()}
+      :{title:$("#topicTitle").value,content:$("#topicContent").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked};
     if(state.editing)await api(BASE+"/"+state.editing.id,"PATCH",{...body,revision:state.editing.revision});
     else await api(BASE+"/import","POST",{requestId:state.requestId,template:state.template,items:[body]});
     $("#editDialog").close();message("题目已保存。");await load();
@@ -67,7 +121,8 @@ $("#importFile").onchange=async()=>{
   catch(error){$("#importError").textContent=error.message;}
 };
 $("#downloadTemplate").onclick=()=>{
-  const url=URL.createObjectURL(new Blob(["\uFEFF题目,内容,分类,优先级,启用\r\n"],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
+  const header=isFour()?"题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片,分类,优先级,启用\r\n":"题目,内容,分类,优先级,启用\r\n";
+  const url=URL.createObjectURL(new Blob(["\uFEFF"+header],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
   a.href=url;a.download=state.template+"-题库模板.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 $("#importForm").onsubmit=async e=>{
@@ -81,7 +136,7 @@ $("#importForm").onsubmit=async e=>{
 await load().catch(e=>message(e.message,true));
 const endpoint=location.origin+"/api/integrations/psychology/template-topics";
 if($("#endpoint"))$("#endpoint").value=endpoint;
-const sample={items:[{template:"psychology",title:"Which picture did you notice first?",content:"A: eyes\nB: hands\nC: mouth\nD: background",category:"attention",priority:80,enabled:true,source:"grokbot"}]};
+const sample={items:[{template:"psychology",title:"Which picture did you notice first?",choices:[{copy:"eyes",imageUrl:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1"},{copy:"hands",imageUrl:"https://images.unsplash.com/photo-1524502397800-2eeaad7c3fe5"},{copy:"mouth",imageUrl:"https://images.unsplash.com/photo-1494790108377-be9c29b29330"},{copy:"background",imageUrl:"https://images.unsplash.com/photo-1500530855697-b586d89ba3ee"}],category:"attention",priority:80,enabled:true}]};
 if($("#apiExample"))$("#apiExample").textContent=["curl -X POST '"+endpoint+"'","  -H 'Authorization: Bearer YOUR_API_KEY'","  -H 'Content-Type: application/json'","  --data '"+JSON.stringify(sample,null,2)+"'"].join(" \\\n");
 async function loadKey(){
   if(!$("#keyStatus"))return;

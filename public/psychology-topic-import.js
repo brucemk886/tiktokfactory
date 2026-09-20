@@ -19,7 +19,9 @@ export function parseTopicImport(text){
   }
   if(quoted)throw new Error("CSV 存在未闭合的引号。");
   push();if(row.some(v=>v.trim()))rows.push(row);
-  const aliases={题目:"title",内容:"content",分类:"category",优先级:"priority",启用:"enabled",title:"title",content:"content",category:"category",priority:"priority",enabled:"enabled",template:"template"};
+  const aliases={题目:"title",内容:"content",分类:"category",优先级:"priority",启用:"enabled",title:"title",content:"content",category:"category",priority:"priority",enabled:"enabled",template:"template",
+    A文案:"copyA",B文案:"copyB",C文案:"copyC",D文案:"copyD",A图片:"imageA",B图片:"imageB",C图片:"imageC",D图片:"imageD",
+    copyA:"copyA",copyB:"copyB",copyC:"copyC",copyD:"copyD",imageA:"imageA",imageB:"imageB",imageC:"imageC",imageD:"imageD"};
   const headers=(rows.shift()||[]).map(h=>aliases[h.trim()]);
   if(!headers.includes("title"))throw new Error("CSV 第一行需要「题目」或 title 列。");
   if(headers.some(h=>!h)||new Set(headers).size!==headers.length)throw new Error("CSV 表头含未知或重复字段，请使用空白模板。");

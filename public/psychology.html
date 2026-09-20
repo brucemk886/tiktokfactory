@@ -17,31 +17,35 @@
 
     <main class="psy-main">
       <header class="page-head">
-        <div><h1>四图测试模板</h1><p class="page-lead">输入测试题目，完成生图、配音与合成；成片通过官方接口发布。</p></div>
+        <div><h1>四图测试模板</h1><p class="page-lead">上传 A/B/C/D 四张图片和对应文案，完成配音与合成；成片通过官方接口发布。</p></div>
         <div class="header-actions"><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
       </header>
 
       <div class="psy-grid">
         <section class="psy-form">
           <article class="psy-section">
-            <div class="section-head"><span>01</span><div><h2>测试内容</h2><p>输入一个选题；解说和生图描述可以交给 AI 自动完成。</p></div></div>
+            <div class="section-head"><span>01</span><div><h2>测试内容</h2><p>填写题目，上传 A/B/C/D 四张图片和对应文案；解说可以交给 AI。</p></div></div>
             <label class="field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：压力应对方式测试 A" /></label>
             <label class="field"><span>心理测试题目</span><textarea id="question" rows="3" placeholder="例如：你在压力大的时候，会下意识选择哪种方式缓解？"></textarea></label>
-            <label class="field"><span>选项含义或结果提示 <em>可选</em></span><textarea id="answerGuide" rows="3" placeholder="可以填写四个选项及含义；留空时由 AI 设计"></textarea></label>
+            <div id="choiceFields" class="choice-upload-grid">
+              <article class="choice-upload"><strong>A</strong><img class="choice-preview" id="choicePreview0" alt="A 预览"><label>对应文案<input id="choiceCopy0" maxlength="80" placeholder="例如：独自离开"></label><label>图片<input id="choiceFile0" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
+              <article class="choice-upload"><strong>B</strong><img class="choice-preview" id="choicePreview1" alt="B 预览"><label>对应文案<input id="choiceCopy1" maxlength="80" placeholder="例如：找人倾诉"></label><label>图片<input id="choiceFile1" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
+              <article class="choice-upload"><strong>C</strong><img class="choice-preview" id="choicePreview2" alt="C 预览"><label>对应文案<input id="choiceCopy2" maxlength="80" placeholder="例如：继续工作"></label><label>图片<input id="choiceFile2" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
+              <article class="choice-upload"><strong>D</strong><img class="choice-preview" id="choicePreview3" alt="D 预览"><label>对应文案<input id="choiceCopy3" maxlength="80" placeholder="例如：睡觉逃避"></label><label>图片<input id="choiceFile3" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
+            </div>
             <label class="field"><span>视频顶部钩子标题</span><input id="hookTitle" type="text" placeholder="一句简短钩子，默认使用测试题目" /></label>
-            <label class="field"><span>参考图地址 <em>默认由 Z-Image 重新生图，仅在生图失败时备用</em></span><input id="sourceImageUrl" type="url" placeholder="https://example.com/psychology-test.png" /></label>
 <div class="aspect-prompt-row">
               <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="9:16" selected>竖版 9:16</option><option value="16:9">横版 16:9（四图横排）</option></select></label>
             </div>
-            <div class="two-column">
-              <label class="field"><span>钩子配音文案 <em>留空自动生成钩子 + 互动引导</em></span><textarea id="narration" rows="3" placeholder="建议 16–30 个英文单词：先引导选择，再加入链接、主页或评论区 CTA"></textarea></label>
-              <label class="field"><span>生图描述 <em>留空自动生成</em></span><textarea id="imagePrompt" rows="6" placeholder="AI 会生成无文字、四宫格心理测试图片描述"></textarea></label>
-            </div>
+            <label class="field"><span>钩子配音文案 <em>留空自动生成钩子 + 互动引导</em></span><textarea id="narration" rows="3" placeholder="建议 16–30 个英文单词：先引导选择，再加入链接、主页或评论区 CTA"></textarea></label>
+            <input id="answerGuide" type="hidden" />
+            <input id="sourceImageUrl" type="hidden" />
+            <textarea id="imagePrompt" hidden></textarea>
           </article>
 
           <article class="psy-section">
-            <div class="section-head"><span>02</span><div><h2>生成设置</h2><p>使用 Z-Image 生成图片；配音只生成一次并在同一任务内复用。</p></div></div>
-            <div class="model-row">
+            <div class="section-head"><span>02</span><div><h2>生成设置</h2><p>使用上传的四张图片拼成测试画面；配音只生成一次并在同一任务内复用。</p></div></div>
+            <div class="model-row" hidden>
               <label class="model-option"><input type="checkbox" name="imageModel" value="z-image" checked disabled /><span><strong>Z-Image</strong><small>按官方写实摄影出图，适合中视频和心理测试</small></span></label>
             </div>
             <div class="four-column">
@@ -77,6 +81,6 @@
       </div>
     </main>
     <script src="/access.js"></script>
-    <script src="/psychology.js?v=20260828-2"></script>
+    <script src="/psychology.js?v=20260920-3"></script>
   </body>
 </html>

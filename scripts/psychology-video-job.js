@@ -1,6 +1,8 @@
 import { withProductionPatch } from './production-timeline.js';
 import { preparePsychologyRenderAssets } from './psychology-render-assets.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
+import { composeFourChoiceImage, normalizeChoiceImages, workerTopicImagePath, writeDataUrlFile } from "./psychology-four-image.js";
+import { fourImageCopyText, hasCompleteFourImages } from "./psychology-topic-bank.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -47,9 +49,13 @@ async function main() {
   if (!voiceId) throw new Error("ElevenLabs Voice ID 未配置。");
 
   patchJob({ productionStage: "script", status: "running", percent: 3, message: "正在准备短钩子配音与测试画面..." });
-  const sourceImageUrl = String(payload.sourceImageUrl || "").trim();
+  const choiceImages = normalizeChoiceImages(payload.choiceImages || payload.topicSource?.choices);
+  const useChoiceImages = hasCompleteFourImages(choiceImages);
+  const sourceImageUrl = useChoiceImages ? "" : String(payload.sourceImageUrl || "").trim();
   const narration = String(payload.narration || "").trim() || normalizeHookNarration(await generateNarration(kieApiKey));
-  const imagePrompt = sourceImageUrl ? String(payload.imagePrompt || "").trim() : (String(payload.imagePrompt || "").trim() || await generateImagePrompt(kieApiKey));
+  const imagePrompt = useChoiceImages || sourceImageUrl
+    ? String(payload.imagePrompt || fourImageCopyText(choiceImages) || "").trim()
+    : (String(payload.imagePrompt || "").trim() || await generateImagePrompt(kieApiKey));
   patchJob({productionStage:'audio', message:'文案和画面描述已完成，正在生成解说音频…', productionScene:{index:0,text:narration,imagePrompt,audioText:narration,audioStatus:'running',videoDescription:'四图保持同屏，添加标题、A/B/C/D 选项标签与缓慢镜头运动。'}, productionAudio:{text:narration,provider:'elevenlabs',voice:voiceId,description:'按模板生成短钩子解说，混合已有背景音乐。',status:'running'}});
   const narrationAudioPath = await synthesizeSpeech({ text: narration, apiKey: elevenLabsApiKey, voiceId });
   const narrationDuration = probeDuration(narrationAudioPath);
@@ -62,11 +68,12 @@ async function main() {
     : ["nano-banana"];
   const target = Math.max(1, Math.min(300, Number(payload.totalVideos) || models.length));
   let downloadedSourceImage = "";
+  let composedChoiceImage = "";
 
   for (let index = 0; index < target; index += 1) {
     const model = models[index % models.length];
     const variant = Math.floor(index / models.length) + 1;
-    const imageSourceLabel = sourceImageUrl ? "题库原图" : modelLabel(model);
+    const imageSourceLabel = useChoiceImages ? "题库四图" : sourceImageUrl ? "题库原图" : modelLabel(model);
     patchJob({
       status: "running",
       progressCurrent: index,
@@ -80,7 +87,14 @@ async function main() {
 
     let imageUrl = sourceImageUrl;
     let imagePath = downloadedSourceImage;
-    if (!sourceImageUrl) {
+    if (useChoiceImages) {
+      if (!composedChoiceImage) {
+        patchJob({productionStage:'images',message:'正在拼合 A/B/C/D 四图…',productionScene:{index:0,imagePrompt,imageStatus:'running'}});
+        composedChoiceImage = await composeChoiceBoard(choiceImages);
+      }
+      imagePath = composedChoiceImage;
+      imageUrl = composedChoiceImage;
+    } else if (!sourceImageUrl) {
       const variedPrompt = normalizeKieImageModel(model) === "z-image"
         ? `${imagePrompt} Creative variation ${creativeVariant}, render ${variant}: keep the same test choices, but change the real location, time of day, wardrobe, and camera angle.`
         : `${imagePrompt}\n\nCreative variation ${creativeVariant}, render ${variant}: Change the visual art direction, character appearance, environment, camera angle, lighting, and color palette substantially while preserving the same test choices. The result must be compositionally distinct from previous variants.\n\nMANDATORY: visuals only. Do not render any visible words, letters, numbers, captions, labels, logos, watermarks, signs, UI, or typography.`;
@@ -95,17 +109,17 @@ async function main() {
       imagePath = downloadedSourceImage;
     }
 
-    const outputId = uniqueOutputId(safeName(`${payload.question.slice(0, 20)}-psychology-${sourceImageUrl ? "source" : model}-${variant}`));
+    const outputId = uniqueOutputId(safeName(`${payload.question.slice(0, 20)}-psychology-${useChoiceImages || sourceImageUrl ? "source" : model}-${variant}`));
     const outputPath = path.join(outputDir, `${outputId}.mp4`);
     patchJob({productionStage:'render',message:'正在合成四图测试视频…',productionScene:{index:0,imageUrl,imageStatus:'done'}});
-    renderVideo({ imagePath, audioPath, outputPath, duration, title: payload.hookTitle || payload.question, subtitle: narration, sourceStyle: Boolean(sourceImageUrl) });
+    renderVideo({ imagePath, audioPath, outputPath, duration, title: payload.hookTitle || payload.question, subtitle: narration, sourceStyle: useChoiceImages || Boolean(sourceImageUrl) });
     results.push({
       id: outputId,
       fileName: path.basename(outputPath),
       videoUrl: `/outputs/${encodeURIComponent(path.basename(outputPath))}`,
       template: "psychology-motion",
       templateLabel: `心理学测试 · ${imageSourceLabel}`,
-      imageModel: sourceImageUrl ? "source-image" : model,
+      imageModel: useChoiceImages || sourceImageUrl ? "source-image" : model,
       imageUrl,
       narration,
       imagePrompt,
@@ -317,7 +331,7 @@ function cliPath(value) {
 }
 
 function renderVideo({ imagePath, audioPath, outputPath, duration, title, subtitle = "", sourceStyle = false }) {
-  if (aspectRatio === "16:9") {
+  if (aspectRatio === "16:9" && !sourceStyle) {
     renderLandscapeRemotion({ imagePath, audioPath, outputPath, duration, title, subtitle });
     return;
   }
@@ -346,7 +360,7 @@ function renderVideo({ imagePath, audioPath, outputPath, duration, title, subtit
   const filters = [
     motion,
     "format=yuv420p",
-    `drawbox=x=45:y=${Math.max(35, titleY - 34)}:w=990:h=${titleBoxHeight}:color=${titleBackground}:t=fill`,
+    `drawbox=x=45:y=${Math.max(35, titleY - 34)}:w=${width - 90}:h=${titleBoxHeight}:color=${titleBackground}:t=fill`,
     `drawtext=fontfile='${fontFile}':textfile='${textFile}':reload=0:x=(w-text_w)/2:y=${titleY}:fontsize=${fontSize}:fontcolor=${titleColor}:borderw=4:bordercolor=${titleBorder}:line_spacing=10`
   ].join(",");
   const codec = String(config.psychologyVideoCodec || config.videoCodec || "libx264");
@@ -378,6 +392,45 @@ function wrapTitle(value, maxWidth = 28) {
   }
   if (line.trim() && lines.length < 3) lines.push(line.trim());
   return lines.join("\n");
+}
+
+async function composeChoiceBoard(choices) {
+  const prepared = [];
+  for (const choice of choices) {
+    const ext = guessImageExt(choice);
+    const imagePath = path.join(jobDir, `choice-${choice.label}.${ext}`);
+    if (choice.imagePath && fs.existsSync(choice.imagePath)) fs.copyFileSync(choice.imagePath, imagePath);
+    else if (choice.dataUrl) writeDataUrlFile(choice.dataUrl, imagePath);
+    else if (choice.imageUrl) await downloadFile(choice.imageUrl, imagePath);
+    else await downloadWorkerTopicImage(choice, imagePath);
+    prepared.push({ ...choice, imagePath });
+  }
+  const outputPath = path.join(jobDir, "choice-board.png");
+  composeFourChoiceImage({ choices: prepared, outputPath, aspectRatio, fontFile: config.fontFile });
+  return outputPath;
+}
+
+function guessImageExt(choice) {
+  const source = `${choice.imagePath || ""} ${choice.imageUrl || ""} ${choice.imageKey || ""}`.toLowerCase();
+  if (source.includes(".png")) return "png";
+  if (source.includes(".webp")) return "webp";
+  return "jpg";
+}
+
+async function downloadWorkerTopicImage(choice, imagePath) {
+  const workerPath = workerTopicImagePath(choice);
+  if (!workerPath) throw new Error(`${choice.label} 选项缺少图片。`);
+  let settings = {};
+  try { settings = JSON.parse(fs.readFileSync(path.join(workDir, "factory-cloud-worker.json"), "utf8")); } catch { settings = {}; }
+  const base = String(process.env.FACTORY_CLOUD_URL || settings.url || "").replace(/\/+$/, "");
+  const token = String(process.env.FACTORY_WORKER_TOKEN || settings.token || "");
+  if (!base || !token) throw new Error("工厂云连接尚未配置，无法读取题库图片。");
+  const response = await fetch(base + workerPath, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!response.ok) throw new Error(`读取 ${choice.label} 选项图片失败：HTTP ${response.status}`);
+  fs.writeFileSync(imagePath, Buffer.from(await response.arrayBuffer()));
 }
 
 async function downloadFile(url, filePath) {

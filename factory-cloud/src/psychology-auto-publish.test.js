@@ -258,9 +258,14 @@ async function seedBank(env,template,items){
   const r=await handlePsychologyTopicBank(req,env,new URL(req.url),{user:{...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']}});
   assert.equal(r.status,201);
 }
+function fourTopic(title,extra={}){
+  const copies=extra.copies||['Moon','Flame','River','Forest'];
+  return {title,priority:extra.priority??50,enabled:extra.enabled??true,category:extra.category||'',
+    choices:['A','B','C','D'].map((label,index)=>({label,copy:copies[index],imageUrl:'https://images.unsplash.com/photo-'+(1530000+index)}))};
+}
 test('template batches draw exact template, freeze content, count once and refuse shortages',async t=>{
   const{env,sqlite,call}=await fixture(t),actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
-  await seedBank(env,'psychology',[{title:'Low',priority:10},{title:'High',content:'Interpretation',priority:90},{title:'Disabled',enabled:false}]);
+  await seedBank(env,'psychology',[fourTopic('Low',{priority:10}),fourTopic('High',{priority:90,copies:['Interpretation','B','C','D']}),fourTopic('Disabled',{enabled:false})]);
   await seedBank(env,'psychology-collage',[{title:'Other',priority:100}]);
   const body=input({count:2,sourceType:'topic-bank',selection:'priority'});
   await assert.rejects(call('POST',body,undefined,user),e=>e.statusCode===403);
@@ -268,12 +273,12 @@ test('template batches draw exact template, freeze content, count once and refus
   assert.equal((await call('POST',body,undefined,actor)).status,200);
   const jobs=sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id').all();
   assert.deepEqual(jobs.map(j=>j.title),['High','Low']);
-  const payload=JSON.parse(jobs[0].payload_json);assert.equal(payload.script,'Interpretation');assert.equal(payload.answerGuide,'Interpretation');
+  const payload=JSON.parse(jobs[0].payload_json);assert.match(payload.script,/Interpretation/);assert.equal(payload.choiceImages.length,4);
   assert.equal(payload.peerSource,undefined);assert.equal(payload.topicSource.template,'psychology');
   assert.equal(sqlite.prepare('SELECT SUM(usage_count) n FROM psychology_template_topics').get().n,2);
   await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID()},undefined,actor),/只有 0/);
   assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,2);
-  sqlite.prepare("UPDATE psychology_template_topics SET title='Edited',content='Different' WHERE id=?").run(payload.topicSource.id);
+  sqlite.prepare("UPDATE psychology_template_topics SET title='Edited' WHERE id=?").run(payload.topicSource.id);
   assert.equal(JSON.parse(sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(jobs[0].id).payload_json).topicSource.title,'High');
   assert.equal((await call('POST',{...body,onlyUnused:false,requestId:crypto.randomUUID(),selection:'least-used'},undefined,actor)).status,202);
 });
@@ -293,7 +298,7 @@ test('topic rules exclude disabled/deleted sources and support category search',
 });
 test('concurrent unused draws and stale topic revisions roll back the complete batch',async t=>{
   const{env,db,sqlite}=await fixture(t);
-  await seedBank(env,'psychology',[{title:'One'},{title:'Two'}]);
+  await seedBank(env,'psychology',[fourTopic('One'),fourTopic('Two')]);
   const config={template:'psychology',query:'',count:2,onlyUnused:true,selection:'priority'};
   const topics=await selectTopicSources(db,config);
   await db.batch([topicUsageStatement(db,topics[1],'winner','winner-item',config,1)]);
@@ -320,6 +325,9 @@ test('CSV/JSON import preserves quoted multiline text and rejects malformed inpu
   assert.equal(parseTopicImport('[{"title":"Test"}]')[0].title,'Test');
   for(const text of ['','{}','题目\n"unclosed','题目,题目\na,b','题目,内容\nx','未知\nx'])assert.throws(()=>parseTopicImport(text));
   assert.throws(()=>normalizeTopic({title:'Test',template:'psychology-collage'},'psychology'));
+  const four=normalizeTopic(parseTopicImport('题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片\n题,Moon,https://images.unsplash.com/photo-1,Flame,https://images.unsplash.com/photo-2,River,https://images.unsplash.com/photo-3,Forest,https://images.unsplash.com/photo-4')[0],'psychology');
+  assert.equal(four.choices[0].copy,'Moon');
+  assert.equal(four.choices[3].copy,'Forest');
   assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',selection:'popular'})));
   assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',mediaType:'photo',template:'photo-text'})));
 });
@@ -327,7 +335,7 @@ test('CSV/JSON import preserves quoted multiline text and rejects malformed inpu
 const groupedUser={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
 async function groupedFixture(t,count){
   const f=await fixture(t);
-  await seedBank(f.env,'psychology',Array.from({length:count},(_,i)=>({title:'Group topic '+i})));
+  await seedBank(f.env,'psychology',Array.from({length:count},(_,i)=>fourTopic('Group topic '+i)));
   await f.call('POST',input({count,sourceType:'topic-bank',selection:'priority'}),undefined,groupedUser);
   f.items=()=>f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all();
   return f;
@@ -683,7 +691,7 @@ test('source trace hydrates a published photo link after the first receipt omitt
 test('source trace paginates and leaves topic-bank rows without a peer url', async t => {
   const {call,env}=await fixture(t);
   const actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
-  await seedBank(env,'psychology',[{title:'Bank A',content:'One'},{title:'Bank B',content:'Two'}]);
+  await seedBank(env,'psychology',[fourTopic('Bank A'),fourTopic('Bank B')]);
   await call('POST',input({count:2,sourceType:'topic-bank',selection:'priority'}),undefined,actor);
   await importPsychologyPeerHits(env.DB,Array.from({length:21},(_,n)=>({videoUrl:'https://www.tiktok.com/@example/photo/'+(900+n),title:'Paged photo '+n,playCount:n+1})),user.id);
   await call('POST',input({mediaType:'photo',template:'photo-original',count:21,connectionIds:['a']}));

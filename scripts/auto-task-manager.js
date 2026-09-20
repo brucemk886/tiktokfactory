@@ -664,6 +664,10 @@ function validateTaskPayload(payload) {
   if (payload?.taskType === "psychology") {
     if (!String(generation.question || "").trim()) throw new Error("请输入心理学测试题目。");
     if (!String(generation.elevenLabsVoiceId || "").trim()) throw new Error("请配置 ElevenLabs Voice ID。");
+    const choices = Array.isArray(generation.choiceImages) ? generation.choiceImages : [];
+    if (choices.length !== 4 || choices.some((item) => !String(item?.copy || "").trim() || !(item.imageUrl || item.imagePath || item.dataUrl || item.imageKey))) {
+      throw new Error("请上传 A/B/C/D 四张图片并填写对应文案。");
+    }
     if (publish.autoPublish !== false && !getPublishAccountIds(publish).length) throw new Error("请选择至少一个发布账号。");
     const scheduleAt = Number(publish.scheduleAt);
     if (publish.autoPublish !== false && (!Number.isFinite(scheduleAt) || scheduleAt < Math.floor(Date.now() / 1000) + 300)) throw new Error("自动发布的起始时间至少需要晚于当前时间 5 分钟。");
@@ -706,6 +710,14 @@ function normalizePsychologyGenerationPayload(value = {}) {
     answerGuide: String(value.answerGuide || "").trim(),
     narration: String(value.narration || "").trim(),
     imagePrompt: String(value.imagePrompt || "").trim(),
+    choiceImages: Array.isArray(value.choiceImages) ? value.choiceImages.slice(0, 4).map((item) => ({
+      label: String(item?.label || "").trim(),
+      copy: String(item?.copy || item?.text || "").trim().slice(0, 80),
+      imageKey: String(item?.imageKey || "").trim(),
+      imageUrl: String(item?.imageUrl || item?.url || "").trim(),
+      imagePath: String(item?.imagePath || "").trim(),
+      dataUrl: String(item?.dataUrl || item?.imageBase64 || "").trim(),
+    })) : [],
     creativeVariant: Math.max(1, Math.min(100000, Math.floor(Number(value.creativeVariant) || 1))),
     imageModels: imageModels.length ? imageModels : ["nano-banana"],
     variantsPerModel: Math.max(1, Math.min(10, Math.floor(Number(value.variantsPerModel) || 1))),

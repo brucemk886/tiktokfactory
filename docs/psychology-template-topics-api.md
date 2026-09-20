@@ -26,7 +26,12 @@ Content-Type: application/json
     {
       "template": "psychology",
       "title": "Which picture did you notice first?",
-      "content": "A: eyes\nB: hands\nC: mouth\nD: background",
+      "choices": [
+        { "copy": "eyes", "imageUrl": "https://images.unsplash.com/photo-1524504388940-b1c1722653e1" },
+        { "copy": "hands", "imageUrl": "https://images.unsplash.com/photo-1524502397800-2eeaad7c3fe5" },
+        { "copy": "mouth", "imageUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330" },
+        { "copy": "background", "imageUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee" }
+      ],
       "category": "attention",
       "priority": 80,
       "enabled": true
@@ -57,7 +62,8 @@ Content-Type: application/json
 | --- | --- |
 | `template` | 必填（条目或请求顶层）。`psychology` = 01 四图测试，`psychology-collage` = 02 纸张拼贴，`psychology-target-2` = 03 互动测试。 |
 | `title` | 必填，题目 1–200 字符。也接受 `题目`。 |
-| `content` | 选填，解读 / 选项 / 脚本，最多 5000 字符。也接受 `内容`。留空时自动发布会按题目生成。 |
+| `choices` | 01 四图推荐。长度为 4 的数组，按 A/B/C/D。每项 `copy` 1–80 字符，并带 `imageUrl`（https）或页面上传后的 `imageKey`。也接受 `A文案`/`A图片` 至 `D文案`/`D图片`。 |
+| `content` | 02/03 选填，解读 / 脚本，最多 5000 字符。也接受 `内容`。四图若未传 `choices`，仍可把 `A: 文案 \| https://...` 四行写在这里。 |
 | `category` | 选填，最多 60 字符。也接受 `分类`。 |
 | `priority` | 0–100 整数，越大越优先抽取；省略为 50。也接受 `优先级`。 |
 | `enabled` | 是否允许自动发布抽取。默认启用。可写 `true`/`false`、`1`/`0`、`是`/`否`、`启用`/`停用`。 |

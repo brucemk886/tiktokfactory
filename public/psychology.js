@@ -4,6 +4,7 @@ let previewTaskId = "";
 
 initAiPreviewControls();
 attachDirectoryPickers();
+bindChoicePreviews();
 
 $("#createBtn").addEventListener("click", createTask);
 $("#saveSettingsBtn").addEventListener("click", () => saveSettings(true));
@@ -21,18 +22,13 @@ function initAiPreviewControls() {
   narrationActions.innerHTML = '<button id="generateNarrationBtn" class="ai-generate-button" type="button">AI 生成解说文案</button><span id="narrationCost">生成后可直接修改</span>';
   $("#narration").parentElement.append(narrationActions);
 
-  const promptActions = document.createElement("div");
-  promptActions.className = "ai-field-actions";
-  promptActions.innerHTML = '<button id="generateImagePromptBtn" class="ai-generate-button" type="button">AI 生成生图描述</button><span id="imagePromptCost">生成后可直接修改</span>';
-  $("#imagePrompt").parentElement.append(promptActions);
-
   const previewSection = document.createElement("article");
   previewSection.className = "psy-section preview-section";
   previewSection.innerHTML = `
     <div class="preview-copy">
       <p class="eyebrow">预览</p>
       <h2>生成效果预览</h2>
-      <p>使用 Z-Image 生成 1 条本地预览视频。</p>
+      <p>用上传的 A/B/C/D 四张图拼成 1 条本地预览视频。</p>
       <div class="preview-actions">
         <button id="previewBtn" type="button">生成一条预览视频</button>
         <span id="previewStatus">尚未生成预览</span>
@@ -45,36 +41,52 @@ function initAiPreviewControls() {
   document.querySelectorAll(".psy-section")[1].insertAdjacentElement("afterend", previewSection);
 
   $("#generateNarrationBtn").addEventListener("click", () => generateAiField("narration"));
-  $("#generateImagePromptBtn").addEventListener("click", () => generateAiField("image-prompt"));
   $("#previewBtn").addEventListener("click", createPreview);
   updatePreviewAspect();
 }
 
-function updatePreviewAspect() {
-  const player = $(".preview-player-wrap");
-  const landscape = $("#aspectRatio").value === "16:9";
-  if (player) player.classList.toggle("is-landscape", landscape);
-  const prompt = $("#imagePrompt");
-  if (prompt) {
-    prompt.placeholder = landscape
-      ? "AI 会生成无文字、A/B/C/D 四图横向排列的心理测试图片描述"
-      : "AI 会生成无文字、四宫格心理测试图片描述";
+function bindChoicePreviews() {
+  for (let index = 0; index < 4; index += 1) {
+    $(`#choiceFile${index}`)?.addEventListener("change", () => {
+      const file = $(`#choiceFile${index}`).files[0];
+      const preview = $(`#choicePreview${index}`);
+      if (!preview) return;
+      if (!file) { preview.removeAttribute("src"); preview.classList.remove("is-on"); return; }
+      preview.src = URL.createObjectURL(file);
+      preview.classList.add("is-on");
+    });
   }
 }
 
-function handleAspectChange() {
-  const prompt = $("#imagePrompt");
-  const landscape = $("#aspectRatio").value === "16:9";
-  const generatedAspect = prompt?.dataset.generatedAspect || "";
-  const incompatible = landscape
-    ? /(9:16|vertical|2\s*[x×]\s*2|top third|space near the top)/i.test(prompt?.value || "")
-    : /(16:9|landscape|horizontal row|left to right|each quarter)/i.test(prompt?.value || "");
-  if (prompt?.value.trim() && ((generatedAspect && generatedAspect !== $("#aspectRatio").value) || incompatible)) {
-    prompt.value = "";
-    delete prompt.dataset.generatedAspect;
-    const cost = $("#imagePromptCost");
-    if (cost) cost.textContent = `已切换为${landscape ? "横版" : "竖版"}，请重新生成描述`;
+function fileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("读取图片失败。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function collectChoiceImages() {
+  const labels = ["A", "B", "C", "D"];
+  const choices = [];
+  for (const [index, label] of labels.entries()) {
+    const copy = $(`#choiceCopy${index}`).value.trim();
+    const file = $(`#choiceFile${index}`).files[0];
+    if (!copy) throw new Error(`请填写 ${label} 选项文案。`);
+    if (!file) throw new Error(`请上传 ${label} 选项图片。`);
+    if (file.size > 8 * 1024 * 1024) throw new Error(`${label} 图片不超过 8 MB。`);
+    choices.push({ label, copy, dataUrl: await fileDataUrl(file) });
   }
+  return choices;
+}
+
+function updatePreviewAspect() {
+  const player = $(".preview-player-wrap");
+  if (player) player.classList.toggle("is-landscape", $("#aspectRatio").value === "16:9");
+}
+
+function handleAspectChange() {
   updatePreviewAspect();
 }
 async function generateAiField(mode) {
@@ -166,7 +178,7 @@ function zImageWriterInstructionsFront() {
 
 function psychologyPrompt(mode) {
   const question = $("#question").value.trim();
-  const answerGuide = $("#answerGuide").value.trim();
+  const answerGuide = ["A","B","C","D"].map((label,index)=>`${label}: ${$(`#choiceCopy${index}`)?.value.trim()||""}`).filter(line=>line.length>3).join("\n") || $("#answerGuide").value.trim();
   const landscape = $("#aspectRatio").value === "16:9";
   const aspectRatio = landscape ? "16:9 landscape" : "9:16 vertical";
   if (mode === "narration") return [
@@ -213,8 +225,8 @@ async function createPreview() {
   button.disabled = true;
   $("#previewStatus").textContent = "正在准备预览内容...";
   try {
+    const choiceImages = await collectChoiceImages();
     if (!$("#narration").value.trim()) await generateAiField("narration");
-    if (!$("#imagePrompt").value.trim()) await generateAiField("image-prompt");
     const configured = await saveSettings(false);
     if (!configured) throw new Error("请先在接口配置中保存 Kie、ElevenLabs 和 Voice ID。");
     const payload = {
@@ -224,10 +236,11 @@ async function createPreview() {
         question,
         hookTitle: $("#hookTitle").value.trim() || question,
         sourceImageUrl: "",
-        fallbackImageUrl: $("#sourceImageUrl").value.trim(),
-        answerGuide: $("#answerGuide").value.trim(),
+        fallbackImageUrl: "",
+        answerGuide: choiceImages.map((item) => `${item.label}: ${item.copy}`).join("\n"),
         narration: $("#narration").value.trim(),
-        imagePrompt: $("#imagePrompt").value.trim(),
+        imagePrompt: "",
+        choiceImages,
         imageModels: [model],
         totalVideos: 1,
         aspectRatio: $("#aspectRatio").value,
@@ -359,6 +372,8 @@ async function createTask() {
   try {
     const configured = await saveSettings(false);
     if (!configured) throw new Error("请展开接口配置，填写 ElevenLabs Voice ID；Kie 和 ElevenLabs 密钥需要处于已配置状态。");
+    const choiceImages = await collectChoiceImages();
+    $("#answerGuide").value = choiceImages.map((item) => `${item.label}: ${item.copy}`).join("\n");
     const payload = {
       taskType: "psychology",
       name: $("#taskName").value.trim() || `心理学测试 · ${question.slice(0, 24)}`,
@@ -366,10 +381,11 @@ async function createTask() {
         question,
         hookTitle: $("#hookTitle").value.trim() || question,
         sourceImageUrl: "",
-        fallbackImageUrl: $("#sourceImageUrl").value.trim(),
+        fallbackImageUrl: "",
         answerGuide: $("#answerGuide").value.trim(),
         narration: $("#narration").value.trim(),
-        imagePrompt: $("#imagePrompt").value.trim(),
+        imagePrompt: "",
+        choiceImages,
         imageModels: models,
         totalVideos: Math.max(1, Math.min(300, Math.floor(numberValue("#totalVideos", 1)))),
         aspectRatio: $("#aspectRatio").value,

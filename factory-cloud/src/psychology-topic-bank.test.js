@@ -4,6 +4,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { collectTopicWriteItems } from "../../scripts/psychology-topic-bank.js";
 import { handlePsychologyTopicBank, PSYCHOLOGY_TOPIC_API, writeIntegrationTopics } from "./psychology-topic-bank.js";
+import { handleJobs } from "./jobs.js";
 import worker from "./index.js";
 import { pageFileFor } from "./pages.js";
 
@@ -119,4 +120,41 @@ test("public integration dispatch works without a login cookie and stays on the 
   assert.match(page,/psychology-collage（02 拼贴）/);
   assert.match(script,/\/api\/integrations\/psychology\/template-topics/);
   assert.match(script,/function loadKey\(/);
+  assert.match(page,/id="fourChoiceFields"/);
+  assert.match(script,/collectChoices/);
+});
+
+test("four-image topics upload to archive and serve admin plus worker reads", async t => {
+  const {db}=fixture(t);
+  const store=new Map();
+  const env={DB:db,WORKER_TOKEN:"test-worker",ARCHIVE:{
+    async put(key,bytes){const data=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);store.set(key,{body:data,size:data.byteLength});},
+    async get(key){return store.get(key)||null;},
+  }};
+  const uploaded=await handlePsychologyTopicBank(new Request(BASE+"/api/psychology-template-topics/assets",{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageBase64:"data:image/jpeg;base64,/9j/2Q=="}),
+  }),env,new URL(BASE+"/api/psychology-template-topics/assets"),session);
+  assert.equal(uploaded.status,201);
+  const asset=await uploaded.json();
+  assert.match(asset.key,/^psychology-topics\/[0-9a-f-]{36}\.jpg$/);
+  const preview=await handlePsychologyTopicBank(new Request(BASE+asset.url),env,new URL(BASE+asset.url),session);
+  assert.equal(preview.status,200);
+  assert.equal(preview.headers.get("content-type"),"image/jpeg");
+  const choices=["Moon","Flame","River","Forest"].map((copy,index)=>({
+    copy,
+    ...(index?{imageUrl:"https://images.unsplash.com/photo-"+index}:{imageKey:asset.key}),
+  }));
+  const saved=await handlePsychologyTopicBank(new Request(BASE+"/api/psychology-template-topics/import",{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:crypto.randomUUID(),template:"psychology",items:[{title:"Which symbol",choices}]}),
+  }),env,new URL(BASE+"/api/psychology-template-topics/import"),session);
+  assert.equal(saved.status,201);
+  const page=await (await handlePsychologyTopicBank(new Request(BASE+"/api/psychology-template-topics?template=psychology"),env,new URL(BASE+"/api/psychology-template-topics?template=psychology"),session)).json();
+  assert.equal(page.items[0].choices[0].copy,"Moon");
+  assert.match(page.items[0].choices[0].previewUrl,/assets\?key=/);
+  const workerReq=new Request(BASE+"/api/worker/psychology-topic-images/"+asset.key.slice("psychology-topics/".length),{headers:{Authorization:"Bearer test-worker"}});
+  const workerRes=await handleJobs(workerReq,env,new URL(workerReq.url),null,{});
+  assert.equal(workerRes.status,200);
+  assert.equal((await handlePsychologyTopicBank(new Request(BASE+"/api/psychology-template-topics/import",{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:crypto.randomUUID(),template:"psychology",items:[{title:"Missing",choices:[{copy:"A"},{copy:"B"},{copy:"C"},{copy:"D"}]}]}),
+  }),env,new URL(BASE+"/api/psychology-template-topics/import"),session)).status,400);
 });
