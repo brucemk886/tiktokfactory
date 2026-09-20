@@ -86,7 +86,12 @@ export default {
     }
   },
 
+  async queue(batch,env) {
+    return (await import('./psychology-cloud-queue.js')).consumeCloudPhotos(batch,env);
+  },
+
   async scheduled(controller, env, ctx) {
+    if(controller.cron==='* * * * *'){await (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env);return;}
     if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],

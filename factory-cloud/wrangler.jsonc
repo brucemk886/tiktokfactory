@@ -2,12 +2,26 @@
   "name": "tiktok-factory",
   "main": "src/entry.js",
   "workflows": [
-    { "binding": "PEER_PHOTO_WORKFLOW", "name": "factory-peer-photo", "class_name": "PeerPhotoWorkflow" },
-    { "binding": "GEMINI_VIDEO_WORKFLOW", "name": "factory-gemini-video-analysis", "class_name": "GeminiVideoWorkflow" },
-    { "binding": "PSYCHOLOGY_RECREATION_WORKFLOW", "name": "factory-psychology-recreation", "class_name": "PsychologyRecreationWorkflow" }
+    {
+      "binding": "PEER_PHOTO_WORKFLOW",
+      "name": "factory-peer-photo",
+      "class_name": "PeerPhotoWorkflow"
+    },
+    {
+      "binding": "GEMINI_VIDEO_WORKFLOW",
+      "name": "factory-gemini-video-analysis",
+      "class_name": "GeminiVideoWorkflow"
+    },
+    {
+      "binding": "PSYCHOLOGY_RECREATION_WORKFLOW",
+      "name": "factory-psychology-recreation",
+      "class_name": "PsychologyRecreationWorkflow"
+    }
   ],
   "compatibility_date": "2026-08-03",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "preview_urls": false,
   "routes": [
@@ -38,11 +52,38 @@
     }
   ],
   "triggers": {
-    "crons": ["*/5 * * * *", "0 0 * * *", "0 16 * * *"]
+    "crons": [
+      "* * * * *",
+      "*/5 * * * *",
+      "0 0 * * *",
+      "0 16 * * *"
+    ]
   },
   "vars": {
     "SIGNAL_DESK_BASE_URL": "https://tiktokaitool.com",
     "FACTORY_PUBLIC_BASE_URL": "https://factory.tiktokaitool.com",
-    "FEISHU_WIKI_URL": "https://my.feishu.cn/wiki/DMPvw98Wri5WCfk9wkScDrV1nce?sheet=acDhJT"
+    "FEISHU_WIKI_URL": "https://my.feishu.cn/wiki/DMPvw98Wri5WCfk9wkScDrV1nce?sheet=acDhJT",
+    "PSYCHOLOGY_CLOUD_PHOTO": "false"
+  },
+  "browser": {
+    "binding": "PHOTO_BROWSER"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "PHOTO_QUEUE",
+        "queue": "factory-psychology-photo"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "factory-psychology-photo",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 2,
+        "max_retries": 3,
+        "retry_delay": 60
+      }
+    ]
   }
 }

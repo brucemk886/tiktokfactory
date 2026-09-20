@@ -333,6 +333,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (config.sourceType === 'topic-bank') assertTopicBankUser(user);
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || !env.KIE_API_KEY || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
+  if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
   let sources;
   if (config.sourceType === 'topic-bank') sources = await selectTopicSources(env.DB, config);
   else {
@@ -373,7 +374,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const item = { account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
-      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: item }
+      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
     if(config.sourceType==='peer')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
@@ -421,7 +422,7 @@ export async function enqueueAutoPhotoRender(env, sourceId) {
   if (!Array.isArray(result.results) || !result.results.length) fail('图文没有生成完整页面。');
   const id = sourceId + '-render';
   const renderPayload = {
-    module: 'psychology', photoAutomation: true, sourceJobId: sourceId, peerSource: payload.peerSource,
+    module: 'psychology', photoAutomation: true, cloudPhotoRender: payload.psychologyAutomation.cloudPhotoRender === true, sourceJobId: sourceId, peerSource: payload.peerSource,
     psychologyAutomation: payload.psychologyAutomation, plan: result.plan, pages: result.results,
     publish: { provider: 'official', autoPublish: false },
   };
@@ -429,6 +430,7 @@ export async function enqueueAutoPhotoRender(env, sourceId) {
     insertAutoJob(env.DB, { id, type: 'psychology', title: row.title, payload: renderPayload, createdBy: row.created_by }),
     env.DB.prepare('UPDATE psychology_publish_items SET job_id=? WHERE id=? AND job_id=? AND deleted_at=0').bind(id, sourceId, sourceId),
   ]);
+  if(renderPayload.cloudPhotoRender)await (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env);
   return { jobId: id };
 }
 

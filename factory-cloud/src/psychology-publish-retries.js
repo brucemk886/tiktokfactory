@@ -31,7 +31,8 @@ export async function storePsychologyFailures(db,items,diagnostic,retryCount,nex
 }
 export async function enqueueGroupRetry(db,group,error){
   const stamp=Date.now(),id=group.id+'-submit',diagnostic=publishDiagnostic(error,'batch-submit');
-  const payload={module:'psychology',psychologySubmission:{groupId:group.id}};
+  const cloud=await db.prepare("SELECT j.id FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.publish_group_id=? AND json_extract(j.payload_json,'$.cloudPhotoRender')=1 LIMIT 1").bind(group.id).first();
+  const payload={module:'psychology',...(cloud?{cloudPhotoRender:true}:{}),psychologySubmission:{groupId:group.id}};
   // Initial submission happened in the last upload callback; this job is retry 1 of 2.
   await db.prepare(`INSERT INTO factory_jobs (id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at,available_at,auto_retry_count,retry_history_json)
     VALUES (?,'psychology-publish-submit','queued',?,0,'等待自动重试 1/2',?,'{}',?,?,'',0,0,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='queued',auto_retry_count=1,available_at=excluded.available_at,error=excluded.error,message=excluded.message,retry_history_json=excluded.retry_history_json WHERE factory_jobs.status='cancelled'`)

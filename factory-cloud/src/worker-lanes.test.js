@@ -3,13 +3,15 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { claimTypeFilter, handleJobs, hasOwnKeys, mergeWorkerCatalog, officialPublishFollowupPayload } from "./jobs.js";
 
+const CLOUD_SQL = " AND COALESCE(json_extract(payload_json, '$.cloudPhotoRender'),0)<>1";
+
 test("claim filter lets a lane pick only its own job types", () => {
-  assert.deepEqual(claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true,}), { sql: " AND type NOT IN (?, ?)", binds: ['psychology-photo-story', 'psychology-recreation'], types: [], excludeTypes: ['psychology-photo-story', 'psychology-recreation'] });
+  assert.deepEqual(claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true,}), { sql: CLOUD_SQL + " AND type NOT IN (?, ?)", binds: ['psychology-photo-story', 'psychology-recreation'], types: [], excludeTypes: ['psychology-photo-story', 'psychology-recreation'] });
   const publish = claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true, types: ["official-publish"] });
-  assert.equal(publish.sql, " AND type IN (?)");
+  assert.equal(publish.sql, CLOUD_SQL + " AND type IN (?)");
   assert.deepEqual(publish.binds, ["official-publish"]);
   const render = claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true, excludeTypes: ["official-publish", "official-publish", ""] });
-  assert.equal(render.sql, " AND type NOT IN (?, ?, ?)");
+  assert.equal(render.sql, CLOUD_SQL + " AND type NOT IN (?, ?, ?)");
   assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation']);
   const capped = claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true, types: Array.from({ length: 40 }, (_, i) => `t${i}`) });
   assert.equal(capped.binds.length, 20);
@@ -19,14 +21,14 @@ const WORKER_SQL = "COALESCE(NULLIF(json_extract(payload_json, '$.targetWorkerId
 
 test("a worker only claims jobs pinned to itself or to nobody", () => {
   const publish = claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true, workerId: "windows-local", types: ["official-publish"] });
-  assert.equal(publish.sql, ` AND type IN (?) AND ${WORKER_SQL} IN ('', ?)`);
+  assert.equal(publish.sql, CLOUD_SQL + ` AND type IN (?) AND ${WORKER_SQL} IN ('', ?)`);
   assert.deepEqual(publish.binds, ["official-publish", "windows-local"]);
   const render = claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true, workerId: "windows-local", excludeTypes: ["official-publish"] });
-  assert.equal(render.sql, ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} IN ('', ?)`);
+  assert.equal(render.sql, CLOUD_SQL + ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} IN ('', ?)`);
   assert.deepEqual(render.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation', "windows-local"]);
   // assignedOnly: a secondary machine skips unpinned jobs entirely.
   const pinned = claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true, workerId: "worker-2", assignedOnly: true, excludeTypes: ["official-publish"] });
-  assert.equal(pinned.sql, ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} = ?`);
+  assert.equal(pinned.sql, CLOUD_SQL + ` AND type NOT IN (?, ?, ?) AND ${WORKER_SQL} = ?`);
   assert.deepEqual(pinned.binds, ["official-publish", 'psychology-photo-story', 'psychology-recreation', "worker-2"]);
 });
 

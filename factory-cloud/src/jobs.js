@@ -263,6 +263,7 @@ async function handleWorkerApi(request, env, url, ctx) {
   if (!expected) return errorJson("工人密钥未配置。", 501);
   const supplied = bearer(request);
   if (supplied !== expected) return errorJson("工人密钥不正确。", 401);
+  if(url.pathname==='/api/worker/psychology-cloud-photo/probe')return (await import('./psychology-cloud-probe.js')).handleCloudPhotoProbe(request,env,url);
   const autoVideo=await handleAutoVideoStage(request,env,url);
   if(autoVideo)return autoVideo;
   const autoPhoto = await handleAutoPhotoWorker(request, env, url);
@@ -722,7 +723,7 @@ export function claimTypeFilter(payload = {}) {
   if ((!types.length || types.includes('psychology-photo-story')) && !excludeTypes.includes('psychology-photo-story')) excludeTypes.push('psychology-photo-story');
   if ((!types.length || types.includes('psychology-recreation')) && !excludeTypes.includes('psychology-recreation')) excludeTypes.push('psychology-recreation');
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
-  let sql = "";
+  let sql = " AND COALESCE(json_extract(payload_json, '$.cloudPhotoRender'),0)<>1";
   if(payload.psychologyBatchUpload!==true)sql += " AND COALESCE(json_extract(payload_json, '$.psychologyAutomation.submissionMode'), '')<>'grouped'";
   if(payload.psychologyPublishRetry!==true)sql += " AND type<>'psychology-publish-submit'";
   const binds = [];
