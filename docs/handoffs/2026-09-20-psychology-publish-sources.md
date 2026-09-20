@@ -5,7 +5,7 @@ Let operators open a dedicated page that maps each automatic-publish account pos
 
 ## Decisions
 - `/psychology-publish-sources` is admin-only under 心理学, labeled 发布对标. Existing psychology-publish sessions receive it on the next load.
-- GET `/api/psychology-auto-publish/sources` pages 20 rows from `psychology_publish_items` plus frozen `peerSource` / `topicSource` payloads, then attaches official `shareLink` via `autoTaskId`.
+- GET `/api/psychology-auto-publish/sources` pages 20 rows from `psychology_publish_items` plus frozen `peerSource` / `topicSource` payloads, then attaches official `shareLink` via `autoTaskId`. Historical photo jobs created before account snapshots still resolve `@handle` from publish records and `official_accounts_latest`.
 - Disabled buttons use `cursor: not-allowed` instead of `wait`, so first/last-page controls no longer look like they are loading.
 
 ## Files changed

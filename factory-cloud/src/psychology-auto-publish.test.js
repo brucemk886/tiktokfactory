@@ -614,6 +614,19 @@ test('source trace lists account posts against peer urls and published links', a
   await assert.rejects(call('GET',undefined,'/api/psychology-auto-publish/sources',{...user,role:'operator'}),e=>e.statusCode===403);
 });
 
+test('source trace fills historical handles from publish records and account archive', async t => {
+  const {call,sqlite}=await fixture(t);
+  await call('POST',input({count:2,connectionIds:['a','b']}));
+  sqlite.prepare("UPDATE factory_jobs SET payload_json=json_remove(payload_json,'$.psychologyAutomation.account')").run();
+  const items=sqlite.prepare('SELECT id FROM psychology_publish_items ORDER BY id').all();
+  sqlite.prepare("INSERT INTO official_accounts_latest(account_key,snapshot_date,synced_at,label,profile_json,error) VALUES ('tiktok:a','',1,'@from-archive','{}','')").run();
+  sqlite.prepare('INSERT INTO factory_publish_records(id,created_at,value_json) VALUES (?,?,?)')
+    .run('rec-b',Date.now(),JSON.stringify({autoTaskId:items[1].id,accountUsername:'from-record'}));
+  const listed=await (await call('GET',undefined,'/api/psychology-auto-publish/sources')).json();
+  assert.equal(listed.items.find(item=>item.connectionId==='a').accountUsername,'from-archive');
+  assert.equal(listed.items.find(item=>item.connectionId==='b').accountUsername,'from-record');
+});
+
 test('source trace paginates and leaves topic-bank rows without a peer url', async t => {
   const {call,env}=await fixture(t);
   const actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};

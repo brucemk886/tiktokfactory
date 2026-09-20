@@ -26,6 +26,38 @@ function tiktokUrl(value) {
     return parsed.toString();
   } catch { return ''; }
 }
+function accountHandle(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim().replace(/^@+/, '');
+    if (text && !/^[0-9a-f-]{36}$/i.test(text)) return text;
+  }
+  return '';
+}
+function handleFromPost(url) {
+  try {
+    const match = new URL(tiktokUrl(url) || 'https://invalid.invalid/').pathname.match(/^\/@([^/]+)\//);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch { return ''; }
+}
+async function lookupAccountHandles(db, connectionIds) {
+  const ids = [...new Set((connectionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const keys = [...new Set(ids.flatMap(id => {
+    const bare = id.replace(/^tiktok:/i, '');
+    return [bare, `tiktok:${bare}`];
+  }))];
+  const rows = await db.prepare(`SELECT account_key, label, profile_json FROM official_accounts_latest WHERE account_key IN (${keys.map(() => '?').join(',')})`)
+    .bind(...keys).all();
+  const handles = new Map();
+  for (const row of rows.results) {
+    const handle = accountHandle(readJsonValue(row.profile_json).username, row.label);
+    if (!handle) continue;
+    const bare = String(row.account_key || '').replace(/^tiktok:/i, '');
+    handles.set(bare, handle);
+    handles.set(row.account_key, handle);
+  }
+  return handles;
+}
 function sourceStatus(row) {
   const receipt = readJsonValue(row.receipt_json);
   const result = readJsonValue(row.result_json);
@@ -40,7 +72,7 @@ function publishedPostUrl(record, username, mediaType) {
   const direct = tiktokUrl(record.shareLink || record.videoUrl);
   if (direct) return direct;
   const id = String(record.videoId || record.itemId || '').replace(/\D/g, '');
-  const handle = String(username || record.accountUsername || '').replace(/^@/, '').trim();
+  const handle = accountHandle(username, record.accountUsername, record.username);
   if (!id || !handle) return '';
   return `https://www.tiktok.com/@${encodeURIComponent(handle)}/${mediaType === 'photo' ? 'photo' : 'video'}/${id}`;
 }
@@ -67,16 +99,17 @@ export async function listAutoPublishSources(db, user, input = {}) {
       if (record.autoTaskId) records.set(record.autoTaskId, record);
     }
   }
+  const handles = await lookupAccountHandles(db, page.map(row => row.connection_id));
   return {
     offset, hasMore: rows.results.length > SOURCE_PAGE,
     items: page.map(row => {
       const config = readJsonValue(row.config_json);
       const payload = readJsonValue(row.payload_json);
       const auto = payload.psychologyAutomation || {};
-      const account = auto.account || {};
-      const username = String(account.username || '').replace(/^@/, '').trim();
       const record = records.get(row.id) || {};
       const media = config.mediaType === 'photo' ? 'photo' : 'video';
+      const publishedUrl = publishedPostUrl(record, auto.account?.username, media);
+      const username = accountHandle(auto.account?.username, record.accountUsername, record.username, handleFromPost(publishedUrl), handles.get(row.connection_id));
       return {
         id: row.id, batchId: row.batch_id, batchName: String(config.name || ''), createdAt: row.created_at,
         mediaType: media, sourceType: payload.topicSource ? 'topic-bank' : 'peer',
