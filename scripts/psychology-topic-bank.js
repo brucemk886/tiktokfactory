@@ -224,7 +224,9 @@ export function normalizeTopic(input,template){
     }
   }
   if(content.length>5000)fail("题目内容不能超过5000个字符。");
-  return {template,title,content,category,priority,enabled,choices,sourceImage};
+  const revealComment=String(input.revealComment??input.reveal_comment??input["揭晓评论"]??"").trim();
+  if(revealComment.length>2000)fail("揭晓评论不能超过2000个字符。");
+  return {template,title,content,category,priority,enabled,choices,sourceImage,revealComment};
 }
 export function collectTopicWriteItems(input){
   if(Array.isArray(input))return normalizeWriteList(input,undefined);
@@ -261,7 +263,7 @@ export function topicSource(row){
   const choices=single?.choices||parseFourImageChoices(row.content);
   const script=hasCompleteSingleImageQuiz(single)?singleImageCopyText(single):hasCompleteFourImages(choices)?fourImageCopyText(choices):row.content;
   return {
-    id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,
+    id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,revealComment:row.reveal_comment||"",
     choices,sourceImage:single?{imageKey:single.imageKey||"",imageUrl:single.imageUrl||""}:null,
     videoData:{script},voiceGender:"male",
   };

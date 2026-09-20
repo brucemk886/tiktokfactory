@@ -1,3 +1,4 @@
+import { commentTemplate, freezeComment, insertScheduledComment } from './psychology-comments.js';
 import { PSYCHOLOGY_GROUP_SIZE, dispatchPublishGroup } from './psychology-publish-groups.js';
 import { toPublicUser } from './auth.js';
 import { AUTO_TEMPLATES, normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
@@ -354,6 +355,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
       if(!source)fail('所选账号的未使用爆款不足，请补充题目、减少数量或允许重复选题。',400);
       chosen.add(source.id);return {...entry,source};});
   }
+  const commentSetting = config.mediaType==='video' ? await commentTemplate(env.DB,config.template) : {enabled:0};
+  if(commentSetting.enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list.manage')))fail('定时评论需要目标账号授予评论管理权限，请重新授权。',403);
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];
@@ -376,6 +379,11 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
+    const comment=freezeComment(entry.source,config,commentSetting);
+    if(comment){
+      payload.publish.videoDesc=[payload.publish.videoDesc.slice(0,Math.max(0,2199-comment.caption.length)),comment.caption].filter(Boolean).join('\n');
+      statements.push(insertScheduledComment(env.DB,item,entry.source,comment,user.username,stamp));
+    }
     if(config.sourceType==='peer')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));

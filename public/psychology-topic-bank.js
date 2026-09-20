@@ -75,6 +75,7 @@ function renderSingleImage(topic){
   $("#optionGrid").innerHTML=choices.map((choice,index)=>`<article class="choice-card"><strong>${choice.label}</strong><label>选项文案<input id="optionCopy${index}" maxlength="80" placeholder="例如：独自离开 / stay close" value="${esc(choice.copy)}"></label></article>`).join("");
 }
 function showEditor(topic=null){
+  $("#revealComment").value=topic?.revealComment||"";
   state.editing=topic;state.requestId=crypto.randomUUID();
   $("#editTitle").textContent=topic?"编辑题目":"新增题目";$("#editBank").textContent=bank().label;
   $("#topicTitle").value=topic?.title||"";$("#topicContent").value=isFour()||isSingle()?"":topic?.content||"";$("#topicCategory").value=topic?.category||"";
@@ -137,6 +138,7 @@ $("#editForm").onsubmit=async e=>{
       :isSingle()
       ?{title:$("#topicTitle").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked,...await collectSingleImage()}
       :{title:$("#topicTitle").value,content:$("#topicContent").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked};
+    body.revealComment=$("#revealComment").value;
     if(state.editing)await api(BASE+"/"+state.editing.id,"PATCH",{...body,revision:state.editing.revision});
     else await api(BASE+"/import","POST",{requestId:state.requestId,template:state.template,items:[body]});
     $("#editDialog").close();message("题目已保存。");await load();
@@ -159,7 +161,7 @@ $("#importFile").onchange=async()=>{
   catch(error){$("#importError").textContent=error.message;}
 };
 $("#downloadTemplate").onclick=()=>{
-  const header=isFour()?"题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片,分类,优先级,启用\r\n":isSingle()?"题目,图片,A文案,B文案,C文案,D文案,分类,优先级,启用\r\n":"题目,内容,分类,优先级,启用\r\n";
+  const header=isFour()?"题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片,分类,优先级,启用,揭晓评论\r\n":isSingle()?"题目,图片,A文案,B文案,C文案,D文案,分类,优先级,启用,揭晓评论\r\n":"题目,内容,分类,优先级,启用,揭晓评论\r\n";
   const url=URL.createObjectURL(new Blob(["\uFEFF"+header],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
   a.href=url;a.download=state.template+"-题库模板.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };

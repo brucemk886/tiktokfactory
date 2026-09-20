@@ -71,6 +71,6 @@ test("factory no longer wakes every minute to drain transcripts", async () => {
   const wrangler = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   const source = await readFile(new URL('./index.js', import.meta.url), 'utf8');
   // Minute ticks are now exclusively the small photo-queue watchdog, never transcript work.
-  assert.match(source, /if\(controller\.cron==='\* \* \* \* \*'\)\{await .*dispatchCloudPhotos\(env\);return;\}/);
+  assert.match(source, /if\(controller\.cron==='\* \* \* \* \*'\)\{await .*dispatchCloudPhotos\(env\).*runScheduledComments\(env\).*return;\}/);
   assert.doesNotMatch(source, /drainScriptTranscripts/);
 });

@@ -16,6 +16,7 @@ function fixture(t){
   sqlite.exec("PRAGMA foreign_keys=ON; CREATE TABLE factory_users(id TEXT PRIMARY KEY,role TEXT,active INTEGER); INSERT INTO factory_users VALUES('admin','admin',1),('second','admin',1),('operator','operator',1);");
   sqlite.exec(fs.readFileSync(new URL("../migrations/0029_psychology_template_topics.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0033_psychology_template_topic_keys.sql",import.meta.url),"utf8"));
+  sqlite.exec(fs.readFileSync(new URL("../migrations/0036_psychology_scheduled_comments.sql",import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},
     async first(){return sqlite.prepare(sql).get(...this.args)||null;},
     async all(){

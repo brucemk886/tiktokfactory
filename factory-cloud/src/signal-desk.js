@@ -51,7 +51,7 @@ async function readSignalDeskResponse(response) {
     data = { raw: text };
   }
   if (!response.ok) {
-    throw Object.assign(new Error(data.error || `主站返回 ${response.status}`), { statusCode: response.status });
+    throw Object.assign(new Error(data.error || `主站返回 ${response.status}`), { statusCode: response.status, responseData: data });
   }
   return data;
 }

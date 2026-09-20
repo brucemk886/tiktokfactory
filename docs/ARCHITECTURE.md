@@ -68,3 +68,10 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - PHOTO_QUEUE transports IDs only. factory_jobs remains authoritative for status, cloud_dispatch_at, cloud_lease_until, available_at, and business retry history. A dedicated minute cron dispatches due/unacknowledged jobs and recovers leases older than the consumer maximum runtime. SQL compare-and-set ownership prevents duplicate execution and stale completion.
 - New source payloads freeze execution mode at creation; PSYCHOLOGY_CLOUD_PHOTO controls only future photo batches. Cloud-marked group retry jobs use the same queue. Changing the default back to false does not move in-flight jobs or stop the existing cloud queue.
 - The authenticated worker render probe creates synthetic images only; it does not enqueue production jobs, generate AI content, or call the publishing hub. Runtime browserMs measures launch-to-close elapsed time and is not a billing API total.
+
+## Psychology scheduled reveal comments
+
+- psychology_comment_templates stores future-batch defaults; psychology_template_topics.reveal_comment stores the per-question answer independently of the public video script.
+- psychology_scheduled_comments freezes each item's answer, delay and teaser atomically with generation/usage. No automatic enrollment of old jobs; disabled defaults create no comment records.
+- Minute maintenance isolates comment processing from photo dispatch failures. Bounded claims use leases and cached hub batch receipts. Confirmed published status plus video ID and actual publishedAt (or conservative completedAt) establishes due_at.
+- Revalidate originating user, assigned psychology account and comment.list.manage before sending. Hub externalId is psychology-reveal:<itemId>. Recover lost POST replies by GET before repeating the same ID. Unknown outcomes require review; manual checks cannot create a missing request. Unsent tasks can be cancelled.
