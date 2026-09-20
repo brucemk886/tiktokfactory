@@ -34,7 +34,7 @@ export async function enqueueGroupRetry(db,group,error){
   const payload={module:'psychology',psychologySubmission:{groupId:group.id}};
   // Initial submission happened in the last upload callback; this job is retry 1 of 2.
   await db.prepare(`INSERT INTO factory_jobs (id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at,available_at,auto_retry_count,retry_history_json)
-    VALUES (?,'psychology-publish-submit','queued',?,0,'等待自动重试 1/2',?,'{}',?,?,'',0,0,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`)
+    VALUES (?,'psychology-publish-submit','queued',?,0,'等待自动重试 1/2',?,'{}',?,?,'',0,0,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='queued',auto_retry_count=1,available_at=excluded.available_at,error=excluded.error,message=excluded.message,retry_history_json=excluded.retry_history_json WHERE factory_jobs.status='cancelled'`)
     .bind(id,parse(group.config_json).name+' · 整批提交',JSON.stringify(payload),diagnostic.message,group.created_by,stamp,stamp,stamp+PSYCHOLOGY_RETRY_DELAYS[0],1,JSON.stringify([diagnostic])).run();
   const job=await db.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(id).first();
   await storePsychologyFailures(db,await failureItems(db,job),diagnostic,job.auto_retry_count,job.status==='queued'?job.available_at:0);

@@ -1,0 +1,17 @@
+[
+  {
+    "accounts": 20,
+    "repeats": 10,
+    "meanMilliseconds": 1.5697200000000002
+  },
+  {
+    "accounts": 200,
+    "repeats": 10,
+    "meanMilliseconds": 60.66001
+  },
+  {
+    "accounts": 400,
+    "repeats": 10,
+    "meanMilliseconds": 250.12640000000002
+  }
+]

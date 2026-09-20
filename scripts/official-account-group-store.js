@@ -360,11 +360,10 @@ export function scopeOfficialAccess(payload = {}, store, user, moduleKey = "") {
   if (project) groups = groups.filter((group) => group.projectId === project.id);
   if (allowedIds) groups = groups.filter((group) => allowedIds.has(group.id));
   const groupIdSet = new Set(groups.map((group) => group.id));
-  const accounts = (attached.accounts || []).filter((account) => {
-    if (project && !accountMatchesProject(account, next, project.id)) return false;
-    if (allowedIds && !accountMatchesAnyGroup(account, next, groupIdSet)) return false;
-    return true;
-  });
+  // Build scope keys once instead of normalizing the whole store per account.
+  const scopeKeys = new Set(Object.entries(next.assignments).filter(([, id]) => groupIdSet.has(id)).map(([key]) => key));
+  const accounts = (attached.accounts || []).filter(account =>
+    (!project && !allowedIds) || officialAccountKeys(account).some(key => scopeKeys.has(key)));
   return {
     module: moduleKey || "",
     project: project ? publicState(next).projects.find((item) => item.id === project.id) || project : null,

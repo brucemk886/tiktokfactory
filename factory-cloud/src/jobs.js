@@ -1,3 +1,5 @@
+import { temporaryAccessError } from './psychology-account-access.js';
+import { failureItems, storePsychologyFailures, publishDiagnostic } from './psychology-publish-retries.js';
 import { serveTopicImage, topicImageObjectKey } from './psychology-topic-bank.js';
 import { finishPsychologyPublishAttempt, isPsychologyPublishAttempt } from './psychology-publish-retries.js';
 import { handleAutoVideoStage } from './psychology-publish-groups.js';
@@ -499,9 +501,14 @@ async function handleWorkerApi(request, env, url, ctx) {
       SELECT * FROM factory_jobs WHERE status = 'queued' AND available_at <= ?${filter.sql} ORDER BY created_at LIMIT 1
     `).bind(now(),...filter.binds).first();
     if (!job) return json({ job: null });
-    try { await assertAutoJobAccess(env, job); }
+    try { await assertAutoJobAccess(env, job, {fresh:false}); }
     catch (error) {
-      await env.DB.prepare("UPDATE factory_jobs SET status='failed',error=?,message='发布权限已变更',updated_at=? WHERE id=? AND status='queued'").bind(error.message, now(), job.id).run();
+      const transient=temporaryAccessError(error), count=Number(job.auto_retry_count)||0;
+      const retry=transient&&count<2, nextAt=retry?now()+[30000,60000][count]:0;
+      const diagnostic=publishDiagnostic(error,'account-access');
+      const changed=await env.DB.prepare("UPDATE factory_jobs SET status=?,error=?,message=?,updated_at=?,available_at=?,auto_retry_count=?,retry_history_json=? WHERE id=? AND status='queued'")
+        .bind(retry?'queued':'failed',diagnostic.message,retry?'账号服务暂不可用，等待自动重试':transient?'账号查询失败，已重试 2 次':'发布权限已变更',now(),nextAt,retry?count+1:count,JSON.stringify([...JSON.parse(job.retry_history_json||'[]'),diagnostic].slice(-10)),job.id).run();
+      if(changed.meta?.changes)await storePsychologyFailures(env.DB,await failureItems(env.DB,job),diagnostic,retry?count+1:count,nextAt);
       return json({ job: null });
     }
     const stamp = now();

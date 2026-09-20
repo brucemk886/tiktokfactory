@@ -1,0 +1,11 @@
+{
+  "scope": "12 fresh Chrome lifecycles, 6 text cards each; no AI/network/upload; overlay photos not measured",
+  "posts": 12,
+  "images": 72,
+  "totalSeconds": 10.245672399999998,
+  "meanPostSeconds": 0.8538060333333332,
+  "p95PostSeconds": 1.0323388000000004,
+  "totalJpegBytes": 5679312,
+  "meanJpegBytes": 78879,
+  "projected600LocalRenderHours": 0.14230100555555553
+}

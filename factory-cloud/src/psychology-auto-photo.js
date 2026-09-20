@@ -1,3 +1,4 @@
+import { backupPhoto, restorePhotoCheckpoints } from './psychology-photo-recovery.js';
 import { stagePublishItem } from './psychology-publish-groups.js';
 import { assertAutoJobAccess, loadAutoUser } from './psychology-auto-publish.js';
 import { assertOfficialPublishAccess } from './official.js';
@@ -18,10 +19,10 @@ export async function handleAutoPhotoWorker(request, env, url) {
   const item = await env.DB.prepare('SELECT * FROM psychology_publish_items WHERE id=? AND job_id=?')
     .bind(payload.psychologyAutomation.id, job.id).first();
   if (!item) fail('自动发布任务不存在。', 404);
-  await assertAutoJobAccess(env, job);
+  await assertAutoJobAccess(env, job, {fresh:false});
   const assets = JSON.parse(item.photo_assets_json || '{}');
   const receipt = JSON.parse(item.receipt_json || '{}');
-  if (match[2] === 'state' && request.method === 'GET') return json({ assets, receipt });
+  if (match[2] === 'state' && request.method === 'GET') return json({ assets:receipt.batchId?assets:await restorePhotoCheckpoints(env,item,assets), receipt });
   if (match[2].startsWith('image/') && request.method === 'GET') {
     const page = payload.pages?.[Number(match[2].split('/')[1])];
     if (!page || page.template !== 'stock') fail('没有该素材图片。', 404);
@@ -34,6 +35,7 @@ export async function handleAutoPhotoWorker(request, env, url) {
     if (!Number.isInteger(index) || index < 0 || index >= payload.pages.length || index > 5) fail('图片序号无效。');
     if (assets[index]) return json(assets[index]);
     if (receipt.batchId) fail('图文已提交，不能替换图片。', 409);
+    await backupPhoto(env,item,index,{dataUrl:input.dataUrl});
     const asset = await importRenderedPhoto(env, env.DB, { dataUrl: input.dataUrl, fileName: item.id + '-' + index + '.jpg' });
     // JSON_SET updates only this page, preserving concurrent uploads.
     await env.DB.prepare("UPDATE psychology_publish_items SET photo_assets_json=json_set(photo_assets_json,?,json(?)) WHERE id=?")
@@ -43,7 +45,7 @@ export async function handleAutoPhotoWorker(request, env, url) {
   if (match[2] !== 'publish') fail('接口不存在。', 404);
   if (receipt.batchId) return json(receipt);
   const user = await loadAutoUser(env.DB, job.created_by);
-  await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: [item.connection_id] });
+  if(!item.publish_group_id)await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: [item.connection_id] });
   const photos = payload.pages.map((_, index) => assets[index]);
   if (photos.some(photo => !photo)) fail('图片尚未全部上传，不会提交部分图集。', 409);
   const hash = await sha256Hex(item.id);

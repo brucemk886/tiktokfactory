@@ -1,0 +1,42 @@
+{
+  "scope": "In-memory real factory handlers; synthetic AI plans, 4-byte JPEG markers, mocked hub. No real network/AI/media throughput claims.",
+  "scenarios": {
+    "single600Request": "rejected",
+    "daily600": {
+      "queries": 52058,
+      "accounts": 200,
+      "uploads": 3600,
+      "submissions": 30,
+      "maxBindings": 26,
+      "accountDirectoryRequests": 40,
+      "milliseconds": 20785,
+      "posts": 600,
+      "images": 3600,
+      "remoteBatches": 30,
+      "uniqueSources": 216,
+      "listQueries": 22,
+      "listBytes": 279356
+    },
+    "oneFailedMember": {
+      "submittedHealthy": 19,
+      "isolatedFailures": 1,
+      "remoteBatches": 1
+    },
+    "expiredAssets": {
+      "recoveryUploads": 120,
+      "totalUploads": 240,
+      "remoteBatches": 1,
+      "submittedPosts": 20
+    },
+    "lostResponse": {
+      "submitCalls": 2,
+      "uniqueRemoteBatches": 1
+    },
+    "accountDirectory503": {
+      "delayedJobs": 1,
+      "status": "queued",
+      "auto_retry_count": 1,
+      "message": "账号服务暂不可用，等待自动重试"
+    }
+  }
+}

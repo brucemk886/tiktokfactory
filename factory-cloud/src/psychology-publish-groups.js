@@ -1,3 +1,4 @@
+import { recoverMissingPhotos, removePhotoBackups } from './psychology-photo-recovery.js';
 import { enqueueGroupRetry } from './psychology-publish-retries.js';
 import { json, readJson } from './http.js';
 import { signalDesk } from './signal-desk.js';
@@ -10,11 +11,13 @@ const LEASE_MS = 180000;
 const parse = value => JSON.parse(value || '{}');
 const fail = (message, statusCode=400) => { throw Object.assign(new Error(message),{statusCode}); };
 
-// Group membership is fixed at creation. Ready assets may come from different workers.
+// Groups start at 20 items; unfinished members may be isolated before the remote request is frozen.
 export async function stagePublishItem(env, item, ready) {
   await env.DB.prepare("UPDATE psychology_publish_items SET ready_json=? WHERE id=? AND ready_json='{}'")
     .bind(JSON.stringify(ready),item.id).run();
-  const retry=await env.DB.prepare('SELECT id FROM factory_jobs WHERE id=?').bind(item.publish_group_id+'-submit').first();
+  item=await env.DB.prepare('SELECT * FROM psychology_publish_items WHERE id=?').bind(item.id).first();
+  await env.DB.prepare('UPDATE psychology_publish_groups SET ready_at=? WHERE id=? AND ready_at=0').bind(Date.now(),item.publish_group_id).run();
+  const retry=await env.DB.prepare("SELECT id FROM factory_jobs WHERE id=? AND status IN ('queued','running')").bind(item.publish_group_id+'-submit').first();
   if(!retry)await dispatchPublishGroup(env,item.publish_group_id);
   const current=await env.DB.prepare('SELECT receipt_json FROM psychology_publish_items WHERE id=?').bind(item.id).first();
   const receipt=parse(current?.receipt_json);
@@ -30,8 +33,11 @@ export async function dispatchPublishGroup(env,groupId) {
   if(rows.length!==group.expected_count)return {waiting:true};
   rows=rows.filter(r=>!r.deleted_at);
   if(!rows.length)return {cancelled:true};
-  if(rows.some(r=>r.ready_json==='{}'))return {waiting:true};
-  if(rows.some(r=>r.job_status==='cancelled'))fail('组内有已取消内容，请先处理后再提交。',409);
+  const pending=rows.filter(r=>r.ready_json==='{}');
+  const expired=group.ready_at>0&&Date.now()-group.ready_at>=20*60000;
+  if(pending.length && (!rows.some(r=>r.ready_json!=='{}') || (!expired&&pending.some(r=>!['failed','cancelled'].includes(r.job_status)))))return {waiting:true};
+  if(pending.length&&group.request_json!=='{}')return {waiting:true};
+  if(rows.some(r=>r.job_status==='cancelled'&&r.ready_json!=='{}'))fail('组内有已取消内容，请先处理后再提交。',409);
   const stamp=Date.now();
   // A short lease prevents concurrent last-item callbacks from sending the same group.
   const changed=await db.prepare("UPDATE psychology_publish_groups SET status='submitting',error='',updated_at=? WHERE id=? AND status<>'submitted' AND (status<>'submitting' OR updated_at<?)")
@@ -41,6 +47,19 @@ export async function dispatchPublishGroup(env,groupId) {
     // Refresh membership after the lease; deletion may have won before it.
     rows=(await db.prepare('SELECT i.*,j.status AS job_status FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.publish_group_id=? AND i.deleted_at=0 ORDER BY i.id').bind(groupId).all()).results;
     if(!rows.length){await db.prepare("UPDATE psychology_publish_groups SET status='cancelled',error='' WHERE id=?").bind(groupId).run();return {cancelled:true};}
+    if(group.request_json==='{}'&&rows.some(r=>r.ready_json==='{}')){
+      // Under the submission lease, move unfinished members to their own groups.
+      // Completed members retain their original externalId. No submitted request is changed.
+      const statements=[];
+      for(const row of rows.filter(r=>r.ready_json==='{}')){
+        const id=row.id+'-isolated';
+        statements.push(db.prepare("INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) SELECT ?,?,COALESCE(MAX(ordinal),-1)+1,1 FROM psychology_publish_groups WHERE batch_id=? ON CONFLICT(id) DO NOTHING").bind(id,group.batch_id,group.batch_id));
+        statements.push(db.prepare('UPDATE psychology_publish_items SET publish_group_id=? WHERE id=? AND publish_group_id=?').bind(id,row.id,group.id));
+      }
+      statements.push(db.prepare('UPDATE psychology_publish_groups SET expected_count=(SELECT COUNT(*) FROM psychology_publish_items WHERE publish_group_id=?) WHERE id=?').bind(group.id,group.id));
+      await db.batch(statements);
+      rows=rows.filter(r=>r.ready_json!=='{}');
+    }
     const user=await loadAutoUser(db,group.created_by);
     await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:[...new Set(rows.map(r=>r.connection_id))]});
     let request=parse(group.request_json);
@@ -80,8 +99,10 @@ export async function dispatchPublishGroup(env,groupId) {
         .bind(JSON.stringify({batchId:r.batchId,recordId:r.id,remoteTaskId:r.remoteTaskId,submittedAt:stamp}),r.externalRef)),
       db.prepare("UPDATE psychology_publish_groups SET status='submitted',error='',updated_at=? WHERE id=?").bind(stamp,groupId),
     ]);
+    await removePhotoBackups(env,rows).catch(error=>console.error('photo-backup-cleanup',error.message));
     return response;
   } catch(error) {
+    if(await recoverMissingPhotos(env,group,rows,error))return {waiting:true,recovering:true,groupId};
     await db.prepare("UPDATE psychology_publish_groups SET status='failed',error=?,updated_at=? WHERE id=? AND status<>'submitted'")
       .bind(error.message||'整批提交失败',Date.now(),groupId).run();
     await enqueueGroupRetry(db,group,error);
@@ -121,4 +142,12 @@ export async function handleAutoVideoStage(request,env,url) {
     postInfo:{caption:String(payload.publish?.videoDesc||job.title).slice(0,2200),privacy_level:'PUBLIC_TO_EVERYONE',
       disable_comment:false,disable_duet:false,disable_stitch:false,video_cover_timestamp_ms:1000},
   }}),202);
+}
+
+export async function reconcilePsychologyGroups(env){
+ const completed=await env.DB.prepare("SELECT * FROM psychology_publish_items WHERE photo_backups_json<>'{}' AND (receipt_json<>'{}' OR deleted_at>0) LIMIT 20").all();
+ await removePhotoBackups(env,completed.results).catch(e=>console.error('photo-backup-cleanup',e.message));
+ const groups=await env.DB.prepare("SELECT g.id FROM psychology_publish_groups g WHERE g.status='waiting' AND g.request_json='{}' AND g.ready_at>0 AND (g.ready_at<? OR EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.publish_group_id=g.id AND i.ready_json='{}' AND j.status IN ('failed','cancelled'))) ORDER BY g.ready_at LIMIT 10").bind(Date.now()-20*60000).all();
+ for(const group of groups.results){try{await dispatchPublishGroup(env,group.id);}catch(error){console.error('psychology-group-reconcile',group.id,error.message);}}
+ return {checked:groups.results.length};
 }

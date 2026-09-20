@@ -1,3 +1,5 @@
+import { pagePublishRecords } from './publish-records-store.js';
+import { publishAccountDirectory } from './psychology-account-access.js';
 import {
   accountMatchesProject,
   assignAccounts,
@@ -146,7 +148,17 @@ export async function handleOfficial(request, env, url, session) {
   if (method === "GET" && pathname === "/api/official-publish-records") {
     const range = url.searchParams.get("range") || "7d";
     const query = url.searchParams.get("query") || "";
-    const stored = await listPublishRecords(db, { from: publishRecordsSince(range), limit: 800 });
+    let connectionIds=[];
+    if(query.trim()){
+      const term=query.trim().replace(/^@/,'').toLowerCase();
+      const directory=await publishAccountDirectory(env,{fresh:false}).catch(()=>({accounts:[]}));
+      const archived=await listAccountDirectory(db).catch(()=>[]);
+      connectionIds=[...new Set([...directory.accounts,...archived.map(r=>({id:String(r.account_key||'').replace(/^tiktok:/,''),username:r.label}))]
+        .filter(a=>[a.username,a.displayName,a.profile?.username].some(v=>String(v||'').replace(/^@/,'').toLowerCase().includes(term)))
+        .map(a=>String(a.connectionId||a.id)).filter(Boolean))];
+    }
+    const paged = await pagePublishRecords(db, {from:publishRecordsSince(range),query,connectionIds,page:url.searchParams.get('page'),pageSize:50});
+    const stored=paged.records;
     const webhook = await readPublishWebhookState(db, env).catch(() => null);
     // With receipts flowing, hub batch hydration is only a fallback for the
     // handful of records that never got one; without receipts keep the old
@@ -167,7 +179,7 @@ export async function handleOfficial(request, env, url, session) {
         records = attachOfficialAccountNames(records, directory.accounts);
       }
     }
-    return json({ ...summarizeOfficialPublishRecords(records, { range: "all", query }), webhook });
+    return json({ ...summarizeOfficialPublishRecords(records, { range: "all" }), pagination:paged.pagination, webhook });
   }
 
   if (method === "POST" && pathname === "/api/official-publish-records/sync") {
@@ -188,9 +200,9 @@ export async function handleOfficial(request, env, url, session) {
   return null;
 }
 
-export async function assertOfficialPublishAccess(env, user, payload = {}) {
+export async function assertOfficialPublishAccess(env, user, payload = {}, options = {}) {
   const store = await loadGroupStore(env.DB);
-  const data = await signalDeskAllAccounts(env, env.DB);
+  const data = await publishAccountDirectory(env, options);
   const scoped = scopeOfficialAccess(data, store, user, payload.module || "");
   const publishableAccounts = (scoped.accounts || []).filter((account) => !Array.isArray(account.scopes) || account.scopes.includes("video.publish"));
   const allowed = new Set(publishableAccounts.map((account) => account.connectionId || account.id).filter(Boolean));

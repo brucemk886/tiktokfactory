@@ -29,6 +29,7 @@ function renderSources(){
   $('#selection').innerHTML=choices.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('');
   if(choices.some(([v])=>v===previous))$('#selection').value=previous;
   $('#unusedField').hidden=!bank;
+  $('#peerReuseField').hidden=bank;
   $('#query').placeholder=bank?'筛选题目、内容或分类，不填则从当前模板题库抽取':'筛选爆款标题或同行账号';
   const c=state.topicCounts?.[$('#template').value]||{};
   $('#sourceHint').textContent=bank?'当前模板题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从当前模板抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
@@ -70,8 +71,17 @@ function batchStatus(items,groups=[]){
 function statusLabel(status){
   return {queued:'排队中',running:'执行中',done:'已完成',failed:'待处理',cancelled:'已取消'}[status]||status;
 }
+let batchPage=1,batchLoadVersion=0;
+$('#batchPrev').addEventListener('click',()=>{batchPage=Math.max(1,batchPage-1);loadBatches().catch(e=>message(e.message,true));});
+$('#batchNext').addEventListener('click',()=>{batchPage++;loadBatches().catch(e=>message(e.message,true));});
+$('#batchFilter').addEventListener('change',()=>{batchPage=1;loadBatches().catch(e=>message(e.message,true));});
 async function loadBatches() {
-  const data=await api('/api/psychology-auto-publish'); state.batches=data.batches||[];
+  const version=++batchLoadVersion;
+  const data=await api('/api/psychology-auto-publish?page='+batchPage+'&attention='+($('#batchFilter').value==='attention'?'1':'0'));
+  if(version!==batchLoadVersion)return;
+  state.batches=data.batches||[];
+  $('#batchPrev').disabled=batchPage<=1;$('#batchNext').disabled=!data.pagination?.hasMore;
+  $('#batchPage').textContent='第 '+batchPage+' 页 / 共 '+(data.pagination?.total||0)+' 个任务';
   renderBatches();
 }
 function renderBatches() {
@@ -81,7 +91,7 @@ function renderBatches() {
   $('#runningCount').textContent=tones.filter(s=>s==='running').length;
   $('#attentionCount').textContent=tones.filter(s=>s==='failed').length;
   $('#doneCount').textContent=tones.filter(s=>s==='done'||s==='cancelled').length;
-  $('#safetySummary').textContent=state.batches.length?`共 ${state.batches.length} 个批次，关闭页面不影响已入队任务。`:'生成完成后自动提交官方发布中台';
+  $('#safetySummary').textContent=state.batches.length?`本页 ${state.batches.length} 个任务，关闭页面不影响已入队任务。`:'生成完成后自动提交官方发布中台';
   $('#batches').innerHTML=state.batches.length?state.batches.map(b=>{
     const items=b.items||[];
     const status=batchStatus(items,b.groups||[]);
@@ -137,7 +147,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
-  const body=state.submittedInput||{requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  const body=state.submittedInput||{allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   state.submittedInput=body;state.busy=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
   message('正在抽取选题并创建自动发布任务…');

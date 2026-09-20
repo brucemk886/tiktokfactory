@@ -1,3 +1,4 @@
+import { reconcilePsychologyGroups } from './psychology-publish-groups.js';
 import { handlePsychologyTopicBank, PSYCHOLOGY_TOPIC_API } from './psychology-topic-bank.js';
 import { handlePsychologyOperations } from "./psychology-operations.js";
 import { handlePsychologyAutoPublish } from './psychology-auto-publish.js';
@@ -86,6 +87,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
+    if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
       ["prune-ops-reports", () => pruneOfficialOpsReports(env.DB)],

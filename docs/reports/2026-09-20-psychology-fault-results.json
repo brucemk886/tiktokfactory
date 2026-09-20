@@ -1,0 +1,26 @@
+{
+  "scope": "In-memory real factory handlers; synthetic AI plans, 4-byte JPEG markers, mocked hub. No real network/AI/media throughput claims.",
+  "scenarios": {
+    "oneFailedMember": {
+      "readyButBlocked": 19,
+      "remoteBatches": 0
+    },
+    "expiredAssets": {
+      "attempts": 3,
+      "uploads": 120,
+      "remoteBatches": 0,
+      "status": "failed",
+      "auto_retry_count": 2
+    },
+    "lostResponse": {
+      "submitCalls": 2,
+      "uniqueRemoteBatches": 1
+    },
+    "accountDirectory503": {
+      "failedJobs": 1,
+      "status": "failed",
+      "auto_retry_count": 0,
+      "message": "发布权限已变更"
+    }
+  }
+}

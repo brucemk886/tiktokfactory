@@ -4,23 +4,33 @@ const refreshButton = document.querySelector("#refreshOfficialRecordsBtn");
 const status = document.querySelector("#officialRecordsStatus");
 const rows = document.querySelector("#officialRecordRows");
 
+let recordPage=1,loadVersion=0;
+function resetRecords(){recordPage=1;return loadRecords();}
+document.querySelector('#recordsPrev').addEventListener('click',()=>{recordPage=Math.max(1,recordPage-1);loadRecords();});
+document.querySelector('#recordsNext').addEventListener('click',()=>{recordPage++;loadRecords();});
 refreshButton?.addEventListener("click", loadRecords);
-rangeInput?.addEventListener("change", loadRecords);
-queryInput?.addEventListener("input", debounce(loadRecords, 300));
+rangeInput?.addEventListener("change", resetRecords);
+queryInput?.addEventListener("input", debounce(resetRecords, 300));
 installRecordTooltip();
 loadRecords();
 
 async function loadRecords() {
+  const version=++loadVersion;
+  document.querySelector('#recordsPrev').disabled=true;document.querySelector('#recordsNext').disabled=true;
   document.dispatchEvent(new Event("dismiss-record-tooltip"));
   status.textContent = "正在读取官方 API 发布记录...";
-  const params = new URLSearchParams({ range: rangeInput?.value || "7d", query: queryInput?.value.trim() || "", t: String(Date.now()) });
+  const params = new URLSearchParams({ page:String(recordPage), range: rangeInput?.value || "7d", query: queryInput?.value.trim() || "", t: String(Date.now()) });
   try {
     const response = await fetch(`/api/official-publish-records?${params}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "读取官方 API 发布记录失败。");
+    if(version!==loadVersion)return;
+    document.querySelector('#recordsPrev').disabled=recordPage<=1;document.querySelector('#recordsNext').disabled=!data.pagination?.hasMore;
+    document.querySelector('#recordsPage').textContent='第 '+recordPage+' 页 · 共 '+(data.pagination?.total??data.records?.length??0)+' 条'+(data.pagination?' · 每页 50 条':'');
     renderSummary(data.summary || {});
     renderRows(data.records || []);
   } catch (error) {
+    if(version!==loadVersion)return;
     status.textContent = error.message || "读取官方 API 发布记录失败。";
     rows.innerHTML = '<tr><td colspan="8">暂时无法读取记录。</td></tr>';
   }

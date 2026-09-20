@@ -548,3 +548,16 @@ function stableStringify(value) {
   }
   return JSON.stringify(value === undefined ? null : value);
 }
+
+// Filter before LIMIT so old matches remain reachable beyond the former 800-row cap.
+export async function pagePublishRecords(db,{from=0,query='',connectionIds=[],page=1,pageSize=50}={}){
+ await migratePublishRecordsFromKv(db);
+ page=Math.max(1,Math.floor(Number(page)||1));pageSize=Math.max(1,Math.min(100,Math.floor(Number(pageSize)||50)));
+ const term=String(query).trim().replace(/^@/,'').toLowerCase();
+ const pattern='%'+term.replace(/[\\%_]/g,'\\$&')+'%';
+ const where="created_at>=? AND (?='' OR LOWER(value_json) LIKE ? ESCAPE '\\' OR json_extract(value_json,'$.connectionId') IN (SELECT value FROM json_each(?)))";
+ const ids=JSON.stringify(connectionIds);
+ const total=await db.prepare('SELECT COUNT(*) n FROM factory_publish_records WHERE '+where).bind(from,term,pattern,ids).first();
+ const {results}=await db.prepare('SELECT value_json FROM factory_publish_records WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(from,term,pattern,ids,pageSize,(page-1)*pageSize).all();
+ return {records:results.map(recordFromRow).filter(Boolean),pagination:{page,pageSize,total:total.n,hasMore:page*pageSize<total.n}};
+}

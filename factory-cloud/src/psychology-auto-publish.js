@@ -156,11 +156,11 @@ export async function loadAutoUser(db, username) {
   assertAutoUser(user);
   return user;
 }
-export async function assertAutoJobAccess(env, job) {
+export async function assertAutoJobAccess(env, job, options = {}) {
   const payload = JSON.parse(job.payload_json || '{}');
   if (!payload.psychologyAutomation) return;
   const user = await loadAutoUser(env.DB, job.created_by);
-  await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: [payload.psychologyAutomation.connectionId] });
+  await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: [payload.psychologyAutomation.connectionId] }, options);
 }
 export function insertAutoJob(db, { id, type, title, payload, createdBy }, stamp = Date.now()) {
   return db.prepare(`INSERT INTO factory_jobs
@@ -225,7 +225,11 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     return json({ topicCounts: await topicCounts(env.DB), canUseTopics: (user.sidebarModules || []).includes('psychology-topic-bank'), templates: AUTO_TEMPLATES, counts: Object.fromEntries(counts.results.map(r => [r.media_type, r.total])), musicPool });
   }
   if (url.pathname === BASE && request.method === 'GET') {
-    const batches = await env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE created_by=? ORDER BY created_at DESC LIMIT 30').bind(user.username).all();
+    const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
+    const attention=url.searchParams.get('attention')==='1';
+    const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed'))":"");
+    const total=(await env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(user.username).first()).n;
+    const batches = await env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(user.username,pageSize,(page-1)*pageSize).all();
     const result = [];
     for (const batch of batches.results) {
       const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at
@@ -241,7 +245,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
             percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: row.error || result.publishError || '', type: row.type };
         }) });
     }
-    return json({ batches: result });
+    return json({ batches: result, pagination:{page,pageSize,total,hasMore:page*pageSize<total} });
   }
   const remove=url.pathname.match(/^\/api\/psychology-auto-publish\/([^/]+)$/);
   if(remove && request.method==='DELETE'){
@@ -270,8 +274,9 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const group=await env.DB.prepare('SELECT g.id FROM psychology_publish_groups g JOIN psychology_publish_batches b ON b.id=g.batch_id WHERE g.id=? AND b.created_by=?').bind(groupRetry[1],user.username).first();
     if(!group)fail('发布分组不存在。',404);
     const retryJob=await env.DB.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(group.id+'-submit').first();
+    if(retryJob?.status==='running')return json({queued:true});
+    await env.DB.prepare("UPDATE psychology_publish_groups SET asset_recovery_count=0 WHERE id=? AND status='failed'").bind(group.id).run();
     if(retryJob){
-      if(retryJob.status==='running')return json({queued:true});
       await env.DB.prepare("UPDATE factory_jobs SET status='queued',auto_retry_count=0,available_at=0,error='',message='等待整批提交',updated_at=? WHERE id=? AND status<>'running'").bind(Date.now(),retryJob.id).run();
       return json({queued:true});
     }
@@ -331,15 +336,23 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   let sources;
   if (config.sourceType === 'topic-bank') sources = await selectTopicSources(env.DB, config);
   else {
-  const order = { random: 'RANDOM()', popular: 'play_count DESC,id DESC', recent: 'created_at DESC,id DESC' }[config.selection];
+  const order = "(SELECT COUNT(*) FROM psychology_publish_items u WHERE u.source_id=psychology_peer_hits.id) ASC," + { random: 'RANDOM()', popular: 'play_count DESC,id DESC', recent: 'created_at DESC,id DESC' }[config.selection];
   const rows = await env.DB.prepare(`SELECT * FROM psychology_peer_hits WHERE media_type=?
     AND (COALESCE(title,'')<>'' OR COALESCE(video_data_json,'{}')<>'{}')
     ${config.mediaType === 'photo' ? "AND platform='tiktok'" : ''}
     AND (?='' OR title LIKE ? OR account_name LIKE ?) ORDER BY ${order} LIMIT ?`)
-    .bind(config.mediaType, config.query, '%' + config.query + '%', '%' + config.query + '%', config.count).all();
+    .bind(config.mediaType, config.query, '%' + config.query + '%', '%' + config.query + '%', 1000).all();
   sources = rows.results.map(psychologyPeerHitFromRow);
   }
-  const selected = assignments(config, sources);
+  let selected = assignments(config, sources);
+  if(config.sourceType==='peer'&&!config.allowPeerReuse){
+    const used=await env.DB.prepare('SELECT source_id,connection_id FROM psychology_peer_account_usage WHERE connection_id IN (SELECT value FROM json_each(?)) AND source_id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(config.connectionIds),JSON.stringify(sources.map(s=>s.id))).all();
+    const pairs=new Set(used.results.map(r=>r.connection_id+':'+r.source_id)),chosen=new Set();
+    selected=selected.map(entry=>{const source=sources.find(s=>!chosen.has(s.id)&&!pairs.has(entry.connectionId+':'+s.id));
+      if(!source)fail('所选账号的未使用爆款不足，请补充题目、减少数量或允许重复选题。',400);
+      chosen.add(source.id);return {...entry,source};});
+  }
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];
@@ -362,6 +375,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: item }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
+    if(config.sourceType==='peer')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
@@ -371,6 +385,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   catch (error) {
     const winner = await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();
     if (!winner) {
+      if(/psychology_peer_account_usage/.test(error.message))fail('题目刚被其他任务分配给同一账号，请重新提交。',409);
       if (/TOPIC_CHANGED|TOPIC_ALREADY_USED/.test(error.message)) fail('题目刚被修改或已被其他批次抽取，请重新提交。',409);
       throw error;
     }

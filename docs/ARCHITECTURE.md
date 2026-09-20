@@ -53,3 +53,11 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 
 - factory_jobs owns available_at, auto_retry_count and retry_history_json. Workers release their lane after a failed attempt; claims skip delayed jobs. Photo uploads/video upload jobs retry at most twice; grouped submission retries are dedicated psychology-publish-submit jobs requiring the psychologyPublishRetry capability.
 - Factory official records use a stable per-item ID for submission failures and later successful receipts. Historical missing failures are backfilled without resubmission. Signal Desk continues to own remote TikTok publication/review outcomes.
+
+
+## Psychology recovery and capacity
+
+- Unfrozen publication groups can move failed/overdue unfinished items into isolated groups under the existing submission lease. Frozen requests remain immutable except after the hub explicitly rejects missing/expired photo assets before batch creation; recovery preserves externalId and item references. The dedicated five-minute cron only reconciles psychology groups and deletes completed/deleted backup objects, never runs the heavier daily maintenance steps.
+- Photo bytes are copied to private ARCHIVE objects before hub upload; per-item photo_backups_json stores references. Recovery requeues the existing card jobs and state restores saved bytes through the hub upload API, with durable per-page checkpoints. Previously deployed workers need no protocol change or restart. Old items without backups regenerate from their stored plan. Two automatic recovery cycles bound repeated expiration.
+- A short per-D1-binding account directory cache reduces repeated reads; local user/group permissions are still read on each check and final group authorization is fresh. Transient claim failures share durable delayed retries and official failure records.
+- psychology_peer_account_usage reserves source/account pairs in the same D1 transaction as parent jobs; uniqueness rejects conflicting concurrent allocations. Explicit operator reuse bypasses the unique allocation insert via INSERT OR IGNORE. Existing item history backfills reservations; peer ranking favors less-used sources.

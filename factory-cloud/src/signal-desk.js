@@ -11,7 +11,7 @@ export async function signalDesk(env, db, endpoint, options = {}) {
       ...(options.headers || {})
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal
+    signal: options.signal || AbortSignal.timeout(15000)
   });
   return readSignalDeskResponse(response);
 }

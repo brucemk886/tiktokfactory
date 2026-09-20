@@ -38,7 +38,7 @@
     }
   ],
   "triggers": {
-    "crons": ["0 0 * * *", "0 16 * * *"]
+    "crons": ["*/5 * * * *", "0 0 * * *", "0 16 * * *"]
   },
   "vars": {
     "SIGNAL_DESK_BASE_URL": "https://tiktokaitool.com",

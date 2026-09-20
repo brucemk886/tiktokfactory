@@ -483,18 +483,16 @@ test('deleting a legacy failed item hides it, blocks retry, and preserves succes
   assert.equal(f.requests.length,0);
 });
 
-test('deleting a failed group member leaves ready siblings available for one smaller submission',async t=>{
-  const f=await groupedFixture(t,3),items=f.items(),item=items[0];
-  f.sqlite.prepare("UPDATE factory_jobs SET status='failed' WHERE id=?").run(item.job_id);
-  for(const sibling of items.slice(1))await stagePublishItem(f.env,sibling,readyVideo(sibling));
-  assert.equal(f.requests.length,0);
-  await f.call('DELETE',undefined,'/api/psychology-auto-publish/'+item.id);
-  const batch=(await(await f.call()).json()).batches[0];
-  assert.equal(batch.groups[0].count,2);assert.equal(batch.groups[0].canRetry,true);
-  assert.equal(f.requests.length,0,'deletion itself does not publish');
-  await f.call('POST',{},'/api/psychology-auto-publish/groups/'+item.publish_group_id+'/retry');
-  assert.equal(f.requests.length,1);assert.equal(f.requests[0].items.length,2);
-  assert.deepEqual(f.requests[0].items.map(i=>i.externalRef),items.slice(1).map(i=>i.id));
+test('failed members are isolated and ready siblings submit without deletion',async t=>{
+ const f=await groupedFixture(t,3),items=f.items(),item=items[0];
+ f.sqlite.prepare("UPDATE factory_jobs SET status='failed' WHERE id=?").run(item.job_id);
+ for(const sibling of items.slice(1))await stagePublishItem(f.env,sibling,readyVideo(sibling));
+ assert.equal(f.requests.length,1);assert.equal(f.requests[0].items.length,2);
+ assert.deepEqual(f.requests[0].items.map(i=>i.externalRef),items.slice(1).map(i=>i.id));
+ const isolated=f.sqlite.prepare('SELECT publish_group_id FROM psychology_publish_items WHERE id=?').get(item.id).publish_group_id;
+ assert.notEqual(isolated,item.publish_group_id);
+ await f.call('DELETE',undefined,'/api/psychology-auto-publish/'+item.id);
+ assert.equal(f.requests.length,1,'deleting an isolated failure never resubmits successful siblings');
 });
 
 test('active, staged, submitted and frozen-request members cannot be deleted',async t=>{
@@ -721,4 +719,99 @@ test('source trace paginates and leaves topic-bank rows without a peer url', asy
   const second=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?mediaType=photo&offset=20')).json();
   assert.equal(second.items.length,1);
   assert.equal(second.hasMore,false);
+});
+
+
+test('account service failures defer twice, retain diagnostics and never consume the worker lane',async t=>{
+ const f=await groupedFixture(t,2),[item,other]=f.items();
+ const {clearPublishAccountDirectory}=await import('./psychology-account-access.js');clearPublishAccountDirectory(f.db);
+ const native=globalThis.fetch;let unavailable=true;
+ t.mock.method(globalThis,'fetch',(url,init)=>String(url).includes('/api/v1/accounts')&&unavailable?Promise.resolve(Response.json({error:'directory unavailable'},{status:503})):native(url,init));
+ for(let attempt=0;attempt<3;attempt++){
+  f.sqlite.prepare('UPDATE factory_jobs SET available_at=0 WHERE id=?').run(item.job_id);
+  const response=await(await workerCall(f,'/api/worker/claim',{types:['psychology'],workerId:'w',psychologyBatchUpload:true,psychologyPublishRetry:true})).json();assert.equal(response.job,null);
+  const row=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(item.job_id);
+  assert.equal(row.status,attempt<2?'queued':'failed');assert.equal(row.auto_retry_count,Math.min(attempt+1,2));assert.equal(JSON.parse(row.retry_history_json).length,attempt+1);
+ }
+ unavailable=false;
+ const response=await(await workerCall(f,'/api/worker/claim',{types:['psychology'],workerId:'w',psychologyBatchUpload:true,psychologyPublishRetry:true})).json();assert.equal(response.job.id,other.job_id);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_publish_records').get().n,1);
+});
+
+test('group commit refreshes cached account authorization before publication',async t=>{
+ const f=await groupedFixture(t,2),items=f.items(),native=globalThis.fetch;
+ t.mock.method(globalThis,'fetch',(url,init)=>String(url).includes('/api/v1/accounts')?Promise.resolve(Response.json({accounts:[]})):native(url,init));
+ await stagePublishItem(f.env,items[0],readyVideo(items[0]));
+ await assert.rejects(stagePublishItem(f.env,items[1],readyVideo(items[1])),e=>e.statusCode===403);
+ assert.equal(f.requests.length,0);
+});
+
+test('slow pending member is isolated at deadline while frozen requests stay immutable',async t=>{
+ const f=await groupedFixture(t,2),items=f.items();
+ await stagePublishItem(f.env,items[0],readyVideo(items[0]));
+ assert.equal(f.requests.length,0);
+ f.sqlite.prepare('UPDATE psychology_publish_groups SET ready_at=?').run(Date.now()-21*60000);
+ await dispatchPublishGroup(f.env,items[0].publish_group_id);assert.equal(f.requests.length,1);assert.equal(f.requests[0].items.length,1);
+ await stagePublishItem(f.env,items[1],readyVideo(items[1]));assert.equal(f.requests.length,2);assert.notEqual(f.requests[0].externalId,f.requests[1].externalId);
+});
+
+test('missing-photo repair never changes an ambiguous request and stale completion cannot undo requeue',async t=>{
+ const f=await groupedFixture(t,2),items=f.items();
+ const {recoverMissingPhotos}=await import('./psychology-photo-recovery.js');
+ for(const item of items){f.sqlite.prepare("UPDATE psychology_publish_items SET ready_json=? WHERE id=?").run(JSON.stringify({mediaType:'photo',item:{photoAssetKeys:['old']}}),item.id);}
+ const rows=f.items(),group=f.sqlite.prepare('SELECT * FROM psychology_publish_groups').get();
+ const request=JSON.stringify({externalId:'fixed',items:[{externalRef:items[0].id}]});f.sqlite.prepare("UPDATE psychology_publish_groups SET request_json=?,status='submitting'").run(request);group.request_json=request;
+ assert.equal(await recoverMissingPhotos(f.env,group,rows,new Error('fetch failed')),false);
+ assert.equal(f.sqlite.prepare('SELECT request_json FROM psychology_publish_groups').get().request_json,request);
+ const err=Object.assign(new Error('One or more photo assets are missing or expired.'),{statusCode:400});
+ assert.equal(await recoverMissingPhotos(f.env,group,rows,err),true);
+ const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(items[0].job_id),payload=JSON.parse(job.payload_json);payload.photoAutomation=true;
+ f.sqlite.prepare('UPDATE factory_jobs SET payload_json=? WHERE id=?').run(JSON.stringify(payload),job.id);
+ const response=await(await workerCall(f,'/api/worker/jobs/'+job.id+'/complete',{result:{groupReady:true}})).json();assert.equal(response.duplicate,true);
+ assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(job.id).status,'queued');
+ assert.equal(await recoverMissingPhotos(f.env,{...group,asset_recovery_count:2},rows,err),false);
+ assert.equal(await recoverMissingPhotos(f.env,{...group,response_json:JSON.stringify({batch:{id:'accepted'}})},rows,err),false);
+});
+
+test('peer allocation avoids reuse by account and insufficient inventory writes no partial batch',async t=>{
+ const f=await fixture(t);await f.call('POST',input({connectionIds:['a'],count:3,selection:'popular'}));
+ await assert.rejects(f.call('POST',input({connectionIds:['a'],count:3,selection:'popular'})),/未使用爆款不足/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,1);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_peer_account_usage').get().n,3);
+ await f.call('POST',input({connectionIds:['a'],count:3,selection:'popular',allowPeerReuse:true}));
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,2);
+});
+
+test('record filtering and pagination reach older matches beyond 800 and escape LIKE wildcards',async t=>{
+ const f=await fixture(t);const {pagePublishRecords}=await import('./publish-records-store.js');
+ const insert=f.sqlite.prepare('INSERT INTO factory_publish_records(id,created_at,value_json) VALUES (?,?,?)');
+ for(let i=0;i<1001;i++)insert.run('page-'+i,i+1,JSON.stringify({id:'page-'+i,createdAt:i+1,provider:'official',title:i===0?'rare 100%_title':'ordinary',connectionId:'a'}));
+ const last=await pagePublishRecords(f.db,{page:21});assert.equal(last.records.length,1);assert.equal(last.records[0].id,'page-0');assert.equal(last.pagination.total,1001);
+ const searched=await pagePublishRecords(f.db,{query:'100%_title'});assert.equal(searched.records.length,1);
+ const absent=await pagePublishRecords(f.db,{query:'100X_title'});assert.equal(absent.records.length,0);
+});
+
+test('automatic batches remain reachable beyond 30 and attention filtering happens before pagination',async t=>{
+ const f=await fixture(t);for(let i=0;i<31;i++)f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run('page-'+i,user.username,'{}',i);
+ const response=await(await f.call('GET',undefined,'/api/psychology-auto-publish?page=4')).json();assert.equal(response.batches.length,1);assert.equal(response.batches[0].id,'page-0');assert.equal(response.pagination.total,31);
+ const attention=await(await f.call('GET',undefined,'/api/psychology-auto-publish?attention=1')).json();assert.equal(attention.batches.length,0);
+});
+
+
+test('permanent access revocation fails once instead of pretending to be a transient outage',async t=>{
+ const f=await groupedFixture(t,2),item=f.items()[0];
+ f.sqlite.prepare("UPDATE factory_users SET active=0 WHERE username='admin'").run();
+ await workerCall(f,'/api/worker/claim',{types:['psychology'],workerId:'w',psychologyBatchUpload:true,psychologyPublishRetry:true});
+ const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(item.job_id);
+ assert.equal(job.status,'failed');assert.equal(job.auto_retry_count,0);assert.equal(JSON.parse(job.retry_history_json)[0].httpStatus,403);assert.equal(f.requests.length,0);
+});
+
+test('a conflicting peer reservation rolls back all writes in the losing transaction',async t=>{
+ const f=await fixture(t);await f.call('POST',input({count:2}));
+ const used=f.sqlite.prepare('SELECT * FROM psychology_peer_account_usage LIMIT 1').get();
+ await assert.rejects(f.db.batch([
+  f.db.prepare("INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES ('losing','admin','{}',0)"),
+  f.db.prepare('INSERT INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(used.source_id,used.connection_id,'losing-item'),
+ ]),/UNIQUE/);
+ assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_batches WHERE id='losing'").get().n,0);
 });
