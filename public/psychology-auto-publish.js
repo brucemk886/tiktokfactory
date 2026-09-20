@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], accountsLoaded:false, batches:[], requestId:crypto.randomUUID(), busy:false, submittedInput:null };
+const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
 async function api(path, body, method) {
@@ -8,7 +8,8 @@ async function api(path, body, method) {
   if(!response.ok) throw new Error(data.error || '请求失败');
   return data;
 }
-function selected() { return [...document.querySelectorAll('#accounts input:checked')].map(n=>n.value); }
+const accountId=a=>String(a.connectionId||a.id);
+function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
 function message(text,error=false) { $('#message').textContent=text; $('#message').classList.toggle('error',error); }
 function renderTemplates() {
@@ -37,17 +38,69 @@ function renderSources(){
 $('#sourceType').addEventListener('change',renderSources);
 $('#template').addEventListener('change',renderSources);
 
+function visibleAccounts() {
+  const query=state.accountQuery.trim().replace(/^@/,'').toLowerCase();
+  return state.accounts.filter(a=>(!state.accountGroup||(state.accountGroup==='__ungrouped__'?!a.groupId:a.groupId===state.accountGroup))&&(!query||[a.username,a.displayName,a.label].some(v=>String(v||'').toLowerCase().includes(query))));
+}
+function resetAccountInput() { state.requestId=crypto.randomUUID();state.submittedInput=null; }
+function renderAccountGroups() {
+  const groups=new Map(state.groups.map(g=>[g.id,g.name]));
+  for(const a of state.accounts)if(a.groupId&&!groups.has(a.groupId))groups.set(a.groupId,a.groupName||'未命名分组');
+  const choices=[['',`全部分组（${state.accounts.length}）`],...[...groups].map(([id,name])=>[id,`${name}（${state.accounts.filter(a=>a.groupId===id).length}）`])];
+  if(state.accounts.some(a=>!a.groupId))choices.push(['__ungrouped__','未分组']);
+  if(!choices.some(([id])=>id===state.accountGroup))state.accountGroup='';
+  $('#accountGroup').innerHTML=choices.map(([id,label])=>`<option value="${esc(id)}">${esc(label)}</option>`).join('');
+  $('#accountGroup').value=state.accountGroup;
+}
+function renderAccountControls() {
+  const rows=visibleAccounts(),ids=selected(),visibleSelected=rows.filter(a=>state.selectedAccounts.has(accountId(a))).length;
+  const locked=state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType;
+  $('#accountGroup').disabled=locked;$('#accountSearch').disabled=locked;
+  $('#selectVisibleAccounts').disabled=locked||rows.length===visibleSelected;
+  $('#clearVisibleAccounts').disabled=locked||!visibleSelected;
+  $('#clearAllAccounts').disabled=locked||!ids.length;
+  $('#accountSelectionStatus').textContent=`当前显示 ${rows.length} / ${state.accounts.length} 个账号 · 已选 ${ids.length} 个`+(ids.length>visibleSelected?`（其中 ${ids.length-visibleSelected} 个在其他分组或不符合当前搜索）`:'');
+}
+function renderAccounts() {
+  const rows=visibleAccounts();
+  $('#accounts').innerHTML=rows.length ? rows.map(a=>{
+    const id=accountId(a),username=String(a.username||'').replace(/^@+/,'');
+    return `<label class="account-choice"><input type="checkbox" value="${esc(id)}" ${state.selectedAccounts.has(id)?'checked':''} ${state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType?'disabled':''}><span><strong>${esc(a.displayName||a.label||username||id)}</strong><small>${esc(username?'@'+username:'')} · ${esc(a.groupName||'未分组')}</small></span></label>`;
+  }).join('') : '<div class="empty-state">'+(state.accounts.length?'当前分组或搜索条件下没有可发布账号。':'心理学项目还没有可发布账号，请先在 TikTok 账号页分配分组。')+'</div>';
+  renderAccountControls();summary();
+}
 async function loadAccounts() {
-  const ids=new Set(selected());
-  const data=await api('/api/official-tiktok/publish-accounts?module=psychology&media='+state.mediaType);
-  state.accounts=data.accounts||[];
-  state.accountsLoaded=true;
-  $('#accounts').innerHTML=state.accounts.length ? state.accounts.map(a=>{
-    const id=String(a.connectionId||a.id);
-    return `<label class="account-choice"><input type="checkbox" value="${esc(id)}" ${ids.has(id)?'checked':''}><span><strong>${esc(a.displayName||a.label||a.username||id)}</strong><small>${esc(a.username?'@'+a.username:'')} · ${esc(a.groupName||'未分组')}</small></span></label>`;
-  }).join('') : '<div class="empty-state">心理学项目还没有可发布账号，请先在 TikTok 账号页分配分组。</div>';
-  summary();
-  renderBatches();
+  const loadId=++state.accountsLoadId,media=state.mediaType;
+  state.accountsLoading=true;renderAccounts();
+  try {
+    const data=await api('/api/official-tiktok/publish-accounts?module=psychology&media='+media);
+    if(loadId!==state.accountsLoadId)return;
+    const before=selected().join('|');
+    state.accounts=data.accounts||[];state.groups=data.groups||[];
+    const valid=new Set(state.accounts.map(accountId));
+    state.selectedAccounts=new Set([...state.selectedAccounts].filter(id=>valid.has(id)));
+    if(before!==selected().join('|'))resetAccountInput();
+    state.accountsLoaded=true;state.accountsMedia=media;
+    renderAccountGroups();renderBatches();
+  } finally {
+    if(loadId===state.accountsLoadId){state.accountsLoading=false;renderAccounts();}
+  }
+}
+$('#accountGroup').addEventListener('change',()=>{state.accountGroup=$('#accountGroup').value;renderAccounts();});
+$('#accountSearch').addEventListener('input',()=>{state.accountQuery=$('#accountSearch').value;renderAccounts();});
+$('#accounts').addEventListener('input',event=>{
+  const input=event.target;
+  if(state.busy||state.accountsLoading||input.type!=='checkbox'||!state.accounts.some(a=>accountId(a)===input.value))return;
+  if(input.checked)state.selectedAccounts.add(input.value);else state.selectedAccounts.delete(input.value);
+  resetAccountInput();renderAccountControls();summary();
+});
+for(const [selector,action] of [['#selectVisibleAccounts','select'],['#clearVisibleAccounts','clear'],['#clearAllAccounts','all']]){
+  $(selector).addEventListener('click',()=>{
+    if(state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType)return;
+    if(action==='all')state.selectedAccounts.clear();
+    else for(const a of visibleAccounts()){if(action==='select')state.selectedAccounts.add(accountId(a));else state.selectedAccounts.delete(accountId(a));}
+    resetAccountInput();renderAccounts();
+  });
 }
 function accountName(id) {
   const a=state.accounts.find(a=>String(a.connectionId||a.id)===String(id));
@@ -117,7 +170,7 @@ function renderBatches() {
     </article>`;
   }).join(''):'<div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div>';
 }
-$('#batchForm').addEventListener('input',()=>{ if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
+$('#batchForm').addEventListener('input',event=>{ if(['accountGroup','accountSearch'].includes(event.target?.id))return; if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
 document.querySelectorAll('[data-media]').forEach(button=>button.addEventListener('click',async()=>{
   if(state.busy||state.mediaType===button.dataset.media)return;
   state.mediaType=button.dataset.media;state.requestId=crypto.randomUUID();state.submittedInput=null;
@@ -144,6 +197,7 @@ $('#batches').addEventListener('click',async event=>{
 });
 $('#batchForm').addEventListener('submit',async event=>{
   event.preventDefault();if(state.busy)return;
+  if(state.accountsLoading||state.accountsMedia!==state.mediaType)return message('请等待当前内容类型的发布账号加载完成，或点击刷新账号重试。',true);
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
@@ -160,7 +214,7 @@ $('#batchForm').addEventListener('submit',async event=>{
       await loadBatches();
     } catch(error) { message('批次已创建，刷新状态失败：'+error.message+'。请使用刷新进度查看。',true); }
   } catch(e){message(e.message+'；若是网络错误，直接再次提交会恢复同一批次。',true);}
-  finally{state.busy=false;controls.forEach(n=>n.disabled=false);}
+  finally{state.busy=false;controls.forEach(n=>n.disabled=false);renderAccountControls();}
 });
 const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
 try {

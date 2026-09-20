@@ -28,7 +28,10 @@
 </div></details>
 </div></section>
 <section class="panel auto-section"><div class="section-title"><h2>发布账号</h2><button type="button" id="refreshAccounts">刷新账号</button></div>
-<p class="field-hint">内容按勾选账号轮流分配，每条内容发布到一个账号。</p>
+<p class="field-hint">先筛选分组，再勾选账号或全选筛选结果。切换分组会保留已选账号，可跨组选择；内容按已选账号轮流分配。</p>
+<div class="account-filters"><label class="field"><span>账号分组</span><select id="accountGroup" disabled><option value="">全部分组</option></select></label><label class="field"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="搜索 @用户名或昵称" maxlength="100" disabled></label></div>
+<div class="account-selection-actions"><button id="selectVisibleAccounts" type="button" disabled>全选筛选结果</button><button id="clearVisibleAccounts" type="button" disabled>取消当前筛选内选择</button><button id="clearAllAccounts" type="button" disabled>清空全部选择</button></div>
+<p id="accountSelectionStatus" class="field-hint" role="status" aria-live="polite"></p>
 <div id="accounts" class="account-grid" aria-live="polite">正在读取心理学项目账号…</div></section>
 <section class="panel auto-section"><div class="section-title"><h2>发布计划</h2></div>
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>
