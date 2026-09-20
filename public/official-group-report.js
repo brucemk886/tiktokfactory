@@ -56,6 +56,7 @@ if (PRESET_PERIODS.includes(state.period) || !state.fromKey || !state.toKey) {
 }
 
 bindToolbar();
+if (document.documentElement?.classList.contains("psychology-module")) document.body?.classList.add("psychology-module");
 loadReport();
 
 function bindToolbar() {

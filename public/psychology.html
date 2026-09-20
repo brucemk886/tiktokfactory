@@ -5,37 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>四图测试模板 · Local Factory</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/tasks.css" />
     <link rel="stylesheet" href="/psychology.css" />
-      <link rel="stylesheet" href="/theme-ops.css" />
+    <link rel="stylesheet" href="/theme-ops.css" />
+    <link rel="stylesheet" href="/psychology-pages.css" />
   </head>
-  <body class="psychology-page">
-    <aside class="tasks-sidebar">
-      <a class="tasks-brand" href="/tasks" aria-label="Local Factory">
-        <span class="brand-mark">LF</span>
-        <span><strong>Local Factory</strong><small>内容自动化</small></span>
-      </a>
-      <nav class="tasks-nav" aria-label="主导航">
-        <a data-admin-only class="is-active" href="/psychology">四图测试模板</a>
-        <a data-admin-only href="/schulte">舒尔特训练</a>
-        <a data-admin-only href="/ai">AI 创作</a>
-        <a data-admin-only href="/asset-usage">素材使用率</a>
-        <a href="/tasks">Reddit 自动发布</a>
-        <a href="/stats">发布记录</a>
-        <a href="/analytics">数据总览</a>
-        <a data-admin-only href="/analytics-settings">抓取配置</a>
-        <a data-admin-only href="/accounts">账户管理</a>
-      </nav>
-      <div class="sidebar-safety">
-        <span class="live-dot"></span>
-        <div><strong>安全发布已开启</strong><small>查重、熔断、单次重试</small></div>
-      </div>
+  <body class="work-page psychology-page psychology-module">
+    <nav class="side-tabs" aria-label="主导航">
+      <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a>
       <button class="nav-logout" type="button" data-logout>退出登录</button>
-    </aside>
+    </nav>
 
     <main class="psy-main">
-      <header class="psy-header">
-        <div><p class="eyebrow">PSYCHOLOGY · FOUR-IMAGE TEST</p><h1>四图测试模板</h1><p>输入测试题目，完成生图、配音与合成；成片通过官方接口发布。</p></div>
+      <header class="page-head">
+        <div><h1>四图测试模板</h1><p class="page-lead">输入测试题目，完成生图、配音与合成；成片通过官方接口发布。</p></div>
         <div class="header-actions"><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
       </header>
 
@@ -89,7 +71,7 @@
         </section>
 
         <aside class="psy-queue">
-          <div class="queue-head"><div><p class="eyebrow">LIVE QUEUE</p><h2>心理学任务</h2></div><button id="refreshTasksBtn" class="icon-button" type="button" title="刷新">↻</button></div>
+          <div class="queue-head"><div><h2>心理学任务</h2></div><button id="refreshTasksBtn" class="icon-button" type="button" title="刷新">↻</button></div>
           <div id="taskList" class="task-list"><div class="empty">暂时没有心理学任务。</div></div>
         </aside>
       </div>

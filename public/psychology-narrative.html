@@ -5,25 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>互动测试模板</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/tasks.css" />
     <link rel="stylesheet" href="/module-pages.css" />
     <link rel="stylesheet" href="/psychology-narrative.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
+    <link rel="stylesheet" href="/psychology-pages.css" />
   </head>
-  <body class="module-page psychology-mid-page">
-    <aside class="tasks-sidebar">
-      <a class="tasks-brand" href="/" aria-label="Local Factory"><span class="brand-mark">LF</span><span><strong>Local Factory</strong><small>心理学</small></span></a>
-      <nav class="tasks-nav" aria-label="主导航"><a class="is-active" href="/psychology-target-2">互动测试模板</a></nav>
-      <div class="sidebar-safety"><span class="live-dot"></span><div><strong>互动测试型</strong><small>默认英文 · 中文走 ElevenLabs</small></div></div>
+  <body class="work-page module-page psychology-mid-page psychology-module">
+    <nav class="side-tabs" aria-label="主导航">
+      <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a>
       <button class="nav-logout" type="button" data-logout>退出登录</button>
-    </aside>
+    </nav>
 
     <main class="module-main">
-      <header class="module-header">
+      <header class="page-head">
         <div>
-          <p class="module-kicker">PSYCHOLOGY · INTERACTIVE TEST</p>
           <h1>互动测试模板</h1>
-          <p>12–20 秒互动测试型：默认生成全英文内容；英文由本机 Kokoro 一次配完整段，中文文案自动改走 ElevenLabs。每句话仍按真实时间戳同步字幕和 SVG 动作。</p>
+          <p class="page-lead">12–20 秒互动测试型：默认英文 · 中文走 ElevenLabs。英文由本机 Kokoro 一次配完整段，中文文案自动改走 ElevenLabs。每句话仍按真实时间戳同步字幕和 SVG 动作。</p>
         </div>
         <span class="psy-render-note">1920 × 1080 · 12–20 秒 · 本地 Remotion</span>
       </header>
@@ -102,7 +99,7 @@
       </div>
 
       <section class="module-panel psy-results-panel">
-        <div class="module-panel-head"><div><p class="module-kicker">TARGET 02 OUTPUTS</p><h2>本次生成结果</h2><p>每条都是目标2互动测试型，不会混入目标1长叙事或其他模板。</p></div></div>
+        <div class="module-panel-head"><div><h2>本次生成结果</h2><p>每条都是目标2互动测试型，不会混入目标1长叙事或其他模板。</p></div></div>
         <div id="resultList" class="psy-result-list"><div class="psy-empty">还没有生成结果。</div></div>
       </section>
     </main>

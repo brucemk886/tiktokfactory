@@ -1,6 +1,6 @@
 .collage-page { background: #eeece2; color: #202118; }
 .collage-header { align-items: flex-end; }
-.collage-header > div:last-child { display: flex; align-items: center; gap: 14px; }
+.collage-header .header-actions { display: flex; align-items: center; gap: 14px; }
 .collage-header #statusText { max-width: 260px; color: #747468; font-size: 13px; text-align: right; }
 .collage-grid { display: grid; grid-template-columns: minmax(600px, 1fr) 410px; gap: 22px; align-items: start; }
 .collage-form { display: grid; gap: 18px; }

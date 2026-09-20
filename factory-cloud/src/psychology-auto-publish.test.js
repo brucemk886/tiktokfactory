@@ -199,19 +199,34 @@ test('music pool is saved as reusable config and posts without a pool keep auto 
   assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,['111','222','333']);
 });
 
-test('psychology ops pages share one chinese page shell', () => {
-  const names = ['psychology-auto-publish.html', 'psychology-topic-bank.html', 'psychology-publish-sources.html'];
+test('psychology module pages share one chinese page shell', () => {
+  const names = [
+    'psychology-auto-publish.html',
+    'psychology-topic-bank.html',
+    'psychology-publish-sources.html',
+    'psychology-peer-hits.html',
+    'psychology-production.html',
+    'psychology-templates.html',
+    'psychology.html',
+    'psychology-collage.html',
+    'psychology-narrative.html',
+    'psychology-photo.html',
+    'psychology-operations.html',
+  ];
   for (const name of names) {
     const page = fs.readFileSync(new URL('../../public/' + name, import.meta.url), 'utf8');
     assert.match(page, /psychology-pages\.css/);
-    assert.match(page, /class="page-head"/);
-    assert.match(page, /psychology-ops-page/);
-    assert.doesNotMatch(page, /toolbar-kicker|PSYCHOLOGY \/|official-analytics\.css| ↗|01 \/ CONTENT/);
+    assert.match(page, /psychology-module/);
+    assert.match(page, /class="(?:page-head|side-tabs)/);
+    assert.doesNotMatch(page, /toolbar-kicker|PSYCHOLOGY ·|FOUR-IMAGE|PAPER COLLAGE|VIRAL RECREATION|INTERACTIVE TEST|TARGET 02|01 · CONTENT|tasks-sidebar/);
   }
+  const effects = fs.readFileSync(new URL('../../public/official-group-report.html', import.meta.url), 'utf8');
+  assert.match(effects, /psychology-pages\.css/);
+  assert.match(effects, /\/psychology-effects/);
   const css = fs.readFileSync(new URL('../../public/psychology-pages.css', import.meta.url), 'utf8');
   assert.match(css, /\.page-head/);
   assert.match(css, /\.page-lead/);
-  assert.match(css, /\.page-links/);
+  assert.match(css, /\.psychology-module/);
 });
 
 test('topic bank permissions, template isolation, validation, deduplication and import replay',async t=>{

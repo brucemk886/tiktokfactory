@@ -407,6 +407,10 @@ const server = http.createServer(async (req, res) => {
       return sendFile(res, path.join(publicDir, "index.html"), "text/html; charset=utf-8");
     }
 
+    if (req.method === "GET" && url.pathname === "/psychology-pages.css") {
+      return sendFile(res, path.join(publicDir, "psychology-pages.css"), "text/css; charset=utf-8");
+    }
+
     if (req.method === "GET" && url.pathname === "/app.css") {
       return sendFile(res, path.join(publicDir, "app.css"), "text/css; charset=utf-8");
     }

@@ -1,35 +1,34 @@
-# Psychology ops page shell
+# Psychology module page shell
 
 ## Goal
 
-Give 心理学自动发布, 模板题库, and 发布对标 one shared page chrome so they stop looking like three unrelated analytics copies.
+Give every psychology sidebar page the same chrome, not only auto-publish / 题库 / 对标.
 
 ## Decisions
 
-- New `public/psychology-pages.css` is the ops-page shell: header, column padding against the 236px sidebar, panels, related-page chips, pagination buttons.
-- Header is Chinese `h1` + `page-lead` + `page-links`. English kickers (`PSYCHOLOGY / AUTOMATION`, `SOURCE TRACE`, `01 / CONTENT`, `QUEUE`) are gone.
-- Those three pages no longer load `official-analytics.css`. Auto-publish keeps its two-column queue.
-- 运营报表 and the photo/collage workbench stay on their existing shells.
+- `public/psychology-pages.css` is the module shell. Body class is `psychology-module`.
+- Header is Chinese `h1` + lead. English kickers are removed from psychology HTML.
+- Four-image, collage, and interactive templates switch from `tasks-sidebar` to the canonical `side-tabs`.
+- `/psychology-effects` (shared `official-group-report.html`) adds `psychology-module` on that path only, so novel/mid-video reports stay unchanged.
+- Account/video drilldowns with `?module=psychology` load the same shell via `official-analytics-shared.js`. Sidebar then highlights 数据概览.
 
 ## Files changed
 
-- `public/psychology-pages.css`
-- `public/psychology-auto-publish.html` / `.css`
-- `public/psychology-topic-bank.html`
-- `public/psychology-publish-sources.html`
-- `public/theme-ops.css`
+- `public/psychology-pages.css` and psychology HTML/CSS listed in git
+- `public/access.js`, `public/official-analytics-shared.js`, `public/official-group-report.html` / `.js`
+- `scripts/server.js` serves `/psychology-pages.css`
 - `factory-cloud/src/psychology-auto-publish.test.js`
 - `docs/CURRENT_STATE.md`
 
 ## Tests performed
 
-- `factory-cloud` `npm test` after the HTML/CSS change.
+- `factory-cloud` `npm test`
 
 ## Unfinished work
 
-- `/psychology-ops-report` still uses the official-data-header kicker.
-- Template workbench pages still use `module-pages.css`.
+- Retired `psychology-topics.html` is unchanged (410).
+- Novel / mid-video / official-analytics chrome is unchanged.
 
 ## Recommended next step
 
-Ship with `factory-cloud` `npm run deploy`, then open the three live pages and confirm the header/links match.
+Ship with `factory-cloud` `npm run deploy`, then open the psychology sidebar pages and confirm the header/sidebar match.

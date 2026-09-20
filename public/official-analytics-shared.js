@@ -11,6 +11,21 @@
     return MODULE_PAGES[path]?.module || String(new URLSearchParams(location.search).get("module") || "").trim();
   }
 
+  function applyPsychologyChrome() {
+    if (currentModule() !== "psychology") return;
+    document.documentElement?.classList.add("psychology-module");
+    document.body?.classList.add("psychology-module");
+    if (!document.querySelector?.('link[href*="psychology-pages.css"]')) {
+      const link = document.createElement?.("link");
+      if (!link || !document.head) return;
+      link.rel = "stylesheet";
+      link.href = "/psychology-pages.css";
+      document.head.appendChild(link);
+    }
+  }
+
+  applyPsychologyChrome();
+
   function listHref(module = currentModule()) {
     if (module === "mid-video") return "/mid-video-effects";
     if (module === "psychology") return "/psychology-effects";

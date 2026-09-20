@@ -1,6 +1,6 @@
 body.module-page.psy-hits-page { min-width: 0; }
 .psy-hits-page .module-main { max-width: none; margin-left: 0; }
-.psy-hits-page .module-header { box-sizing: border-box; width: 100%; max-width: none; margin-left: 0; margin-right: 0; position: relative; z-index: 5; overflow: visible; align-items: flex-start; }
+.psy-hits-page .page-head { box-sizing: border-box; width: 100%; max-width: none; margin-left: 0; margin-right: 0; position: relative; z-index: 5; overflow: visible; align-items: flex-start; }
 .hits-header-tools { display: flex; align-items: flex-start; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .hits-header-panel { position: relative; margin: 0; }
 .hits-header-panel > summary { display: inline-flex; align-items: center; min-height: 38px; box-sizing: border-box; padding: 9px 15px; border: 1px solid var(--lf-line-strong, #d8d0c3); border-radius: 6px; background: var(--lf-surface, #fffdf8); cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; white-space: nowrap; }
@@ -69,4 +69,4 @@ body.module-page.psy-hits-page { min-width: 0; }
 .peer-output-grid figure { margin: 0; }
 .peer-output-grid img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; }
 .peer-output-grid figcaption { padding: 10px 0; font-size: 13px; line-height: 1.5; }
-@media (max-width: 700px) { .hits-header-tools { width: 100%; justify-content: flex-start; } .hits-header-panel { position: static; } .hits-header-popover { left: 0; right: auto; width: calc(100vw - 28px); } .hits-tabs { width: 100%; } .psy-hits-page .module-main .hits-tab { flex: 1; min-width: 0; } .hits-panel { padding: 14px; } .hits-form-grid { grid-template-columns: 1fr; } .hits-form-grid .wide { grid-column: auto; } .module-header { flex-wrap: wrap; } }
+@media (max-width: 700px) { .hits-header-tools { width: 100%; justify-content: flex-start; } .hits-header-panel { position: static; } .hits-header-popover { left: 0; right: auto; width: calc(100vw - 28px); } .hits-tabs { width: 100%; } .psy-hits-page .module-main .hits-tab { flex: 1; min-width: 0; } .hits-panel { padding: 14px; } .hits-form-grid { grid-template-columns: 1fr; } .hits-form-grid .wide { grid-column: auto; } .page-head { flex-wrap: wrap; } }

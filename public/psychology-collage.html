@@ -5,33 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>纸张拼贴模板 · 心理学</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/tasks.css" />
     <link rel="stylesheet" href="/module-pages.css" />
     <link rel="stylesheet" href="/psychology-collage.css" />
     <link rel="stylesheet" href="/theme-ops.css" />
+    <link rel="stylesheet" href="/psychology-pages.css" />
   </head>
-  <body class="module-page collage-page">
-    <aside class="tasks-sidebar">
-      <a class="tasks-brand" href="/" aria-label="Local Factory"><span class="brand-mark">LF</span><span><strong>Local Factory</strong><small>心理学</small></span></a>
-      <nav class="tasks-nav"><a href="/psychology">四图测试模板</a><a class="is-active" href="/psychology-collage">纸张拼贴模板</a><a href="/psychology-target-2">互动测试模板</a></nav>
-      <div class="sidebar-safety"><span class="live-dot"></span><div><strong>长版叙事</strong><small>4:3 纸张拼贴</small></div></div>
+  <body class="work-page module-page collage-page psychology-module">
+    <nav class="side-tabs" aria-label="主导航">
+      <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a>
       <button class="nav-logout" type="button" data-logout>退出登录</button>
-    </aside>
+    </nav>
     <main class="module-main">
-      <header class="module-header collage-header">
-        <div><p class="module-kicker">4:3 PAPER COLLAGE</p><h1>纸张拼贴模板</h1><p>按参考片实现：约 90 秒、纸张拼贴隐喻、中文解说与中英双语字幕。</p></div>
-        <div><span id="statusText">准备生成</span><button id="startBtn" class="module-button primary" type="button">生成心理学视频</button></div>
+      <header class="page-head collage-header">
+        <div><h1>纸张拼贴模板</h1><p class="page-lead">按参考片实现：约 90 秒、纸张拼贴隐喻、中文解说与中英双语字幕。</p></div>
+        <div class="header-actions"><span id="statusText">准备生成</span><button id="startBtn" class="module-button primary" type="button">生成心理学视频</button></div>
       </header>
       <div class="collage-grid">
         <section class="collage-form">
           <article class="module-panel collage-panel">
-            <div class="module-panel-head"><div><p class="module-kicker">01 · CONTENT</p><h2>选题与观点</h2><p>没有完整文案也可以，AI 会先生成三个开头钩子并评分。</p></div></div>
+            <div class="module-panel-head"><div><h2>选题与观点</h2><p>没有完整文案也可以，AI 会先生成三个开头钩子并评分。</p></div></div>
             <label class="module-field"><span>选题</span><input id="topic" maxlength="160" value="为什么不断进步的人，反而更容易陷入情绪问题？" /></label>
             <label class="module-field"><span>核心观点 <em>可选</em></span><textarea id="angle" rows="3" maxlength="1000" placeholder="成长抬高内在标准，旧的自我保护方式开始失效。"></textarea></label>
             <label class="module-field"><span>已有文案 <em>可选</em></span><textarea id="script" rows="5" maxlength="8000" placeholder="AI 会保留观点并重组为 8–12 个双语分镜。"></textarea></label>
           </article>
           <article class="module-panel collage-panel">
-            <div class="module-panel-head"><div><p class="module-kicker">02 · FORMAT</p><h2>成片规格</h2><p>每个场景单独生图，默认 10 景 × 1 条。</p></div></div>
+            <div class="module-panel-head"><div><h2>成片规格</h2><p>每个场景单独生图，默认 10 景 × 1 条。</p></div></div>
             <div class="collage-fields">
               <label class="module-field"><span>目标时长</span><div class="collage-suffix"><input id="targetDuration" type="number" min="60" max="120" value="90" /><b>秒</b></div></label>
               <label class="module-field"><span>分镜数量</span><input id="sceneCount" type="number" min="8" max="12" value="10" /></label>
@@ -48,7 +46,7 @@
             </div>
           </article>
           <article class="module-panel collage-panel">
-            <div class="module-panel-head"><div><p class="module-kicker">03 · PROVIDERS</p><h2>接口配置</h2><p>复用本机心理学配置，密钥不会进入任务记录。</p></div><button id="saveSettingsBtn" class="module-button" type="button">保存</button></div>
+            <div class="module-panel-head"><div><h2>接口配置</h2><p>复用本机心理学配置，密钥不会进入任务记录。</p></div><button id="saveSettingsBtn" class="module-button" type="button">保存</button></div>
             <div class="collage-fields two">
               <label class="module-field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
               <label class="module-field"><span>ElevenLabs API Key</span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>

@@ -30,7 +30,7 @@ function initAiPreviewControls() {
   previewSection.className = "psy-section preview-section";
   previewSection.innerHTML = `
     <div class="preview-copy">
-      <p class="eyebrow">PREVIEW</p>
+      <p class="eyebrow">预览</p>
       <h2>生成效果预览</h2>
       <p>使用 Z-Image 生成 1 条本地预览视频。</p>
       <div class="preview-actions">
