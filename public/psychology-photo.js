@@ -1,5 +1,5 @@
-import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260920-1";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260918-23";
+import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260920-3";
+import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260920-3";
 const FINAL_STATES = new Set(["success", "fail"]);
 const state = { mode: "zimage", textTemplate: "content", accounts: [], groups: [], project: null, tasks: [], currentTaskIds: [], textCards: [], zimageCards: [], recreationCards: [], stockPhotos: [], selectedStock: [], selectedKeys: [], seenKeys: new Set(), overlaySlides: [], overlaying: false, pollTimer: 0, busy: false };
 let peerJobPhotos = [];
@@ -100,13 +100,13 @@ function setTextTemplate(template) {
   if ($("#contentTemplateTab")) $("#contentTemplateTab").setAttribute("aria-selected", String(!isCover));
   const titleLabel = $("#cardTitleField span");
   const titleInput = $("#cardTitle");
-  if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "内容标题";
-  if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "例如：Signs of an Avoidant Attachment Style";
+  if (titleLabel) titleLabel.textContent = isCover ? "封面文案" : "这一句";
+  if (titleInput) titleInput.placeholder = isCover ? "例如：i can fix her" : "you cancel the gym the week you were finally seeing results";
   if ($("#cardBodyField")) $("#cardBodyField").hidden = isCover;
   if ($("#createLead") && state.mode === "text") {
     $("#createLead").textContent = isCover
       ? "封面统一黑底白字。每次只生成 1 张，改文案后再点一次。"
-      : "每次只生成 1 张内容页，标题和正文都只属于这一张。";
+      : "内容页按对标列表排：顶部页码、一句加粗、底部简笔。标题和正文相同只会印一次。";
   }
 }
 
@@ -121,6 +121,7 @@ async function generateTextCards() {
       copies: [$("#cardBody")?.value || ""],
       smash: false,
       template: state.textTemplate,
+      pageNumber: state.textCards.length + 1,
     });
     const aspectRatio = $("#cardAspect").value;
     const cards = [];
@@ -425,9 +426,10 @@ async function renderRecreationPage(page, index) {
   const kind = page.textKind === "cover" || page.template === "cover" ? "cover" : "content";
   const slides = buildTextCardSlides({
     title: page.title || page.text || "",
-    copies: [page.body || ""],
+    copies: [[page.subtitle, page.body].filter(Boolean).join("\n")],
     smash: false,
     template: kind,
+    pageNumber: index + 1,
   });
   const blob = await canvasToJpeg(renderTextCard(slides[0], "9:16"));
   const url = URL.createObjectURL(blob);

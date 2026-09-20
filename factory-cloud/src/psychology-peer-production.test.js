@@ -436,6 +436,7 @@ test('photo storyboard classifies text vs stock pages and does not require Z-Ima
   assert.match(rewriteOn,/Keep normal English spaces/);
   assert.match(rewriteOn,/come ONLY from the visible overlay words on that one source image/);
   assert.match(rewriteOn,/Do not use the post title or caption/);
+  assert.match(rewriteOn,/Never Title Case every word/);
   assert.match(rewriteOff,/rewriteCopy is false/);
   assert.match(rewriteOff,/Extract each image's visible overlay words/);
   assert.equal(parseStockPick('{"index":2}',4),2);

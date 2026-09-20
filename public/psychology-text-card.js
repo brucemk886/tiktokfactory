@@ -216,7 +216,131 @@ export function splitContentCardBodies(body, count, smash = false) {
   }).filter((slice) => slice.length);
 }
 
-export function buildTextCardSlides({ title, body, copies, accent, count, smash, template } = {}) {
+const STOP_WORDS = new Set("a an the and or but of to for in on at as is was are were be been being you your they them their it its this that with from into over after before about not just really very so if when while".split(" "));
+const LIGHT_VERBS = new Set("start make feel get go take give keep let come seem begin try want need".split(" "));
+
+export function normalizeCardCopy(value) {
+  return String(value || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+export function sameCardCopy(left, right) {
+  const a = normalizeCardCopy(left);
+  const b = normalizeCardCopy(right);
+  return Boolean(a) && a === b;
+}
+
+export function stripPageNumber(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/^(?:page\s*)?(\d{1,2})[.)]\s+(.+)$/i);
+  if (!match) return { pageNumber: 0, text };
+  return { pageNumber: Number(match[1]), text: match[2].trim() };
+}
+
+function contentWord(value) {
+  const bare = String(value || "").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "");
+  return bare.length > 2 && !STOP_WORDS.has(bare.toLowerCase());
+}
+
+export function toEditorialCase(value) {
+  const text = String(value || "").trim();
+  if (!text || /[\u4e00-\u9fff]/.test(text)) return text;
+  const words = text.split(/\s+/);
+  const caps = words.filter((word) => /^[A-Z]/.test(word.replace(/^[^A-Za-z]+/, ""))).length;
+  if (words.length >= 3 && caps >= Math.ceil(words.length * 0.6)) {
+    return text.replace(/\bI\b/g, "§I§").toLowerCase().replace(/§i§/gi, "I");
+  }
+  return text;
+}
+
+export function parseEmphasisRuns(value) {
+  const text = String(value || "");
+  const runs = [];
+  const re = /\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let match;
+  while ((match = re.exec(text))) {
+    if (match.index > last) runs.push({ text: text.slice(last, match.index), bold: false });
+    runs.push({ text: match[1], bold: true });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last), bold: false });
+  return runs.filter((run) => run.text);
+}
+
+export function autoEmphasize(value) {
+  const text = String(value || "").trim();
+  if (!text || /\*\*[^*]+\*\*/.test(text)) return text;
+  const labeled = text.match(/^([^:]{2,32}):\s+(\S[\s\S]*)$/);
+  if (labeled && !/\s/.test(labeled[1])) return `**${labeled[1]}**: ${labeled[2]}`;
+  const words = text.split(/\s+/);
+  let start = words.findIndex((word) => {
+    const bare = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "");
+    return contentWord(word) && bare.length >= 4 && !LIGHT_VERBS.has(bare.toLowerCase());
+  });
+  if (start < 0) {
+    start = words.findIndex((word) => {
+      const bare = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "");
+      return contentWord(word) && !LIGHT_VERBS.has(bare.toLowerCase());
+    });
+  }
+  if (start < 0) start = words.findIndex((word) => contentWord(word));
+  if (start < 0) return text;
+  let end = start + 1;
+  let includedStop = false;
+  for (let index = start + 1; index < words.length && end - start < 4; index += 1) {
+    const bare = words[index].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "").toLowerCase();
+    if (!bare) continue;
+    if (STOP_WORDS.has(bare) || bare.length <= 2) {
+      if (includedStop || end - start >= 2) break;
+      includedStop = true;
+      end = index + 1;
+      continue;
+    }
+    end = index + 1;
+    if (end - start >= 3) break;
+  }
+  while (end > start + 1 && STOP_WORDS.has(words[end - 1].replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu, "").toLowerCase())) end -= 1;
+  const phrase = words.slice(start, end).join(" ");
+  if (!phrase) return text;
+  return [...words.slice(0, start), `**${phrase}**`, ...words.slice(end)].join(" ");
+}
+
+function headingLike(value) {
+  const text = String(value || "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 6 && !/[.!?]$/.test(text);
+}
+
+export function composeContentCopy({ title, bullets = [], pageNumber = 0 } = {}) {
+  let number = Number(pageNumber) || 0;
+  const take = (value) => {
+    const parsed = stripPageNumber(value);
+    if (parsed.pageNumber) number = number || parsed.pageNumber;
+    return parsed.text;
+  };
+  const heading = take(title);
+  const lines = (Array.isArray(bullets) ? bullets : []).map((item) => take(stripListMarker(item))).filter(Boolean);
+  const unique = [];
+  for (const line of [heading, ...lines]) {
+    if (!line || unique.some((item) => sameCardCopy(item, line))) continue;
+    unique.push(line);
+  }
+  if (unique.length >= 2 && headingLike(unique[0])) {
+    const rest = unique.slice(1).join(" ");
+    if (normalizeCardCopy(rest).includes(normalizeCardCopy(unique[0])) || rest.length > unique[0].length) unique.shift();
+  }
+  const definition = unique.length >= 2 && unique.every((line) => /^[^:]{2,32}:\s+\S/.test(line));
+  const blocks = (definition || unique.length > 1 ? unique : [unique.join(" ").replace(/\s+/g, " ").trim()])
+    .filter(Boolean)
+    .map((line) => autoEmphasize(toEditorialCase(line)));
+  return {
+    pageNumber: number > 0 ? number : 0,
+    blocks,
+    doodle: blocks.length === 1 && String(blocks[0] || "").replace(/\*\*/g, "").length < 180,
+  };
+}
+
+export function buildTextCardSlides({ title, body, copies, accent, count, smash, template, pageNumber } = {}) {
   const heading = String(title || "").trim();
   const mark = String(accent || "").trim();
   const kind = normalizeTextCardTemplate(template);
@@ -230,12 +354,15 @@ export function buildTextCardSlides({ title, body, copies, accent, count, smash,
       bullets: [],
     }];
   }
-  const bullets = parseCardBullets(Array.isArray(copies) ? copies[0] : body).map((line) => smash ? smashCardWords(line) : line);
+  const bullets = parseCardBullets(Array.isArray(copies) ? copies[0] : body);
   if (!heading && !bullets.length) throw Object.assign(new Error("请填写内容标题或文案。"), { statusCode: 400 });
+  const composed = composeContentCopy({ title: heading, bullets, pageNumber });
   return [{
     kind: "content",
-    title: smash ? smashCardWords(heading) : heading,
+    title: composed.blocks[0] || heading,
     accent: mark,
-    bullets,
+    bullets: composed.blocks,
+    pageNumber: composed.pageNumber,
+    doodle: composed.doodle,
   }];
 }

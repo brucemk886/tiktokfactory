@@ -10,7 +10,7 @@ import { enqueueJob, handleJobs, persistableJobResult, publicJob } from "./jobs.
 import { pageFileFor } from "./pages.js";
 import { getSession } from "./auth.js";
 import { buildPexelsSearchQuery, buildPhotoBatchRequest, buildPhotoPublishRecord, decodeRenderedPhoto, isAllowedStockPhotoUrl, normalizePhotoPublishPayload, photoLooksLikePeople, photoLuminance, searchStockPhotos } from "./photo-publishing.js";
-import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker, wrapOverlayLines } from "../../public/psychology-text-card.js";
+import { autoEmphasize, buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, composeContentCopy, formatCoverQuote, mergeTextCardSets, planCenteredBlock, smashCardWords, stripListMarker, toEditorialCase, wrapOverlayLines } from "../../public/psychology-text-card.js";
 import { SIDEBAR_MODULES, moduleIdForPath, canAccessPath, sidebarModuleIdsForRole } from "./sidebar.js";
 
 test("psychology workbench groups template navigation while preserving child permissions", () => {
@@ -332,8 +332,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(renderer,/COVER_BG = "#111111"/);
   assert.match(renderer,/COVER_INK = "#f4f1ea"/);
   assert.doesNotMatch(renderer,/pickCoverBackdrop|paintCoverBackdrop|psychology-cover-backdrops/);
-  assert.match(html,/>内容标题</);
-  assert.match(html,/>这张正文</);
+  assert.match(html,/>这一句</);
+  assert.match(html,/>补充句子（选填）</);
   assert.doesNotMatch(html,/内容页数量|不含封面/);
   assert.doesNotMatch(html,/点缀词|去掉空格|smashWords|stockSmash|cardAccent/);
   assert.match(workbench,/AI生图、素材库图片或文案图片/);
@@ -359,13 +359,14 @@ test("psychology photo template is an online Z-Image to official photo publishin
     template: "content",
   });
   assert.equal(page.length, 1);
-  assert.equal(page[0].title, "Signs");
-  assert.deepEqual(page[0].bullets, ["card one", "more"]);
+  assert.equal(page[0].kind, "content");
+  assert.equal(page[0].doodle, false);
+  assert.equal(page[0].bullets.length, 2);
   assert.deepEqual(buildTextCardSlides({
     title: "Signs of a Disorganized Attachment Style",
     copies: ["• Always wanting alone time, but then feeling lonely\n• Changing your personality depending on who you're with"],
     template: "content",
-  })[0].bullets, [
+  })[0].bullets.map((line) => line.replace(/\*\*/g, "")), [
     "Always wanting alone time, but then feeling lonely",
     "Changing your personality depending on who you're with",
   ]);
@@ -375,8 +376,9 @@ test("psychology photo template is an online Z-Image to official photo publishin
     copies: ["only this page"],
     template: "content",
   });
-  assert.equal(nextPage[0].title, "Another");
-  assert.deepEqual(nextPage[0].bullets, ["only this page"]);
+  assert.equal(nextPage[0].doodle, true);
+  assert.equal(nextPage[0].bullets.length, 1);
+  assert.match(nextPage[0].bullets[0], /only this page/);
   assert.doesNotMatch(browser,/pickCoverBackdrop|renderCoverBackdropPicker|deleteCoverBackdrop|previewCoverBackdrop|savedCoverBackdropIds/);
   assert.match(browser,/photo-zoom/);
   assert.match(browser,/function toggleGeneratedPhoto\(/);
@@ -408,9 +410,21 @@ test("psychology text cards and stock overlays do not need generated images", ()
   const cards = buildTextCardSlides({ title: "Signs of a Disorganized Attachment Style", body: "- Always wanting alone time\n- Thriving in chaos", count: 1, smash: true, accent: "herher" });
   assert.equal(cards.length, 1);
   assert.equal(cards[0].kind, "content");
-  assert.equal(cards[0].title, "SignsofaDisorganizedAttachmentStyle");
   assert.equal(cards[0].accent, "herher");
-  assert.equal(cards[0].bullets[0], "Alwayswantingalonetime");
+  assert.equal(cards[0].doodle, false);
+  assert.equal(cards[0].bullets.length, 2);
+  const delayed = composeContentCopy({
+    title: "They Start To Delay Text Responses To Create Emotional Distance",
+    bullets: ["They Start To Delay Text Responses To Create Emotional Distance"],
+    pageNumber: 3,
+  });
+  assert.equal(delayed.pageNumber, 3);
+  assert.equal(delayed.doodle, true);
+  assert.equal(delayed.blocks.length, 1);
+  assert.match(delayed.blocks[0], /\*\*delay text responses\*\*/);
+  assert.doesNotMatch(delayed.blocks[0], /They Start To Delay/);
+  assert.match(toEditorialCase("They Start To Delay Text Responses To Create Emotional Distance"), /they start to delay/);
+  assert.match(autoEmphasize("you cancel the gym the week you were finally seeing results"), /\*\*cancel the gym\*\*/);
   assert.equal(formatCoverQuote("i can fix her"), "“i can fix her”");
   const cover = buildTextCardSlides({ title: "i can fix her", smash: true, template: "cover" });
   assert.equal(cover.length, 1);
@@ -483,8 +497,11 @@ test("psychology cover cards use a single black background", () => {
   assert.match(renderer, /paintOverlayScrim/);
   assert.match(renderer, /height \* 0\.12/);
   const contentFn = renderer.slice(renderer.indexOf("function renderContentCard"), renderer.indexOf("export function renderOverlayCard"));
-  assert.match(contentFn, /planCenteredBlock\(pack\.total/);
-  assert.match(contentFn, /textAlign = "center"/);
+  assert.match(contentFn, /drawContentDoodle/);
+  assert.match(contentFn, /Iowan Old Style/);
+  assert.match(contentFn, /layoutEmphasisBlocks/);
+  assert.doesNotMatch(contentFn, /Avenir Next/);
+  assert.doesNotMatch(contentFn, /font = `800/);
   assert.doesNotMatch(contentFn, /let y = pad/);
   assert.doesNotMatch(renderer, /pickCoverBackdrop|paintCoverBackdrop|psychology-cover-backdrops/);
   assert.equal(fs.existsSync(new URL("../../public/psychology-cover-backdrops.js", import.meta.url)), false);
