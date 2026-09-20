@@ -815,3 +815,11 @@ test('a conflicting peer reservation rolls back all writes in the losing transac
  ]),/UNIQUE/);
  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_batches WHERE id='losing'").get().n,0);
 });
+
+test('accepted group clears old local submit errors from the automation listing',async t=>{
+ const f=await groupedFixture(t,2),items=f.items();
+ f.sqlite.prepare("UPDATE factory_jobs SET status='failed',error='old batch submit error' WHERE id=?").run(items[0].job_id);
+ for(const item of items)await stagePublishItem(f.env,item,readyVideo(item));
+ const batch=(await (await f.call()).json()).batches[0];
+ assert.ok(batch.items.every(i=>i.status==='submitted'&&i.error===''));
+});

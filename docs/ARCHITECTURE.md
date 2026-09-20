@@ -75,3 +75,7 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - psychology_scheduled_comments freezes each item's answer, delay and teaser atomically with generation/usage. No automatic enrollment of old jobs; disabled defaults create no comment records.
 - Minute maintenance isolates comment processing from photo dispatch failures. Bounded claims use leases and cached hub batch receipts. Confirmed published status plus video ID and actual publishedAt (or conservative completedAt) establishes due_at.
 - Revalidate originating user, assigned psychology account and comment.list.manage before sending. Hub externalId is psychology-reveal:<itemId>. Recover lost POST replies by GET before repeating the same ID. Unknown outcomes require review; manual checks cannot create a missing request. Unsent tasks can be cancelled.
+
+## Per-account publication readiness
+
+Signal Desk accepts structurally valid hub batches before contacting TikTok for account publishing settings. Each durable preparation task checks the original owner/account, privacy and comment constraints independently for photo and video posts. Permanent account errors fail that task; transient errors use the existing bounded preparation retry queue. Batch external IDs and item references remain unchanged. Asset validation and customer ownership checks still occur before acceptance.

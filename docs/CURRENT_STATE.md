@@ -1,6 +1,6 @@
 # Current State
 
-Updated: 2026-09-20
+Updated: 2026-09-21
 
 - The online AI workbench includes admin-only video analysis with Google official gemini-3.8-flash as the free primary provider. Google 429/5xx/high-demand failures retry twice with durable 10/20-second backoff, then automatically fall back to Kie gemini-3-8-flash-openai; permanent 4xx/content errors do not spend paid credits. Kie reads the private R2 upload through a one-hour HMAC-signed URL, and each record stores the actual provider, token usage, and returned Kie credits. Google and R2 temporary files are removed after completion. The production Google and Kie secrets are configured.
 
@@ -20,6 +20,8 @@ Updated: 2026-09-20
 - New psychology automatic photo batches now use Cloudflare Browser Run with an independent Queues consumer capped at five concurrent jobs. The source snapshot fixes execution ownership, so existing local jobs stay local. Six pages render in one browser call; Chrome closes before private R2 checkpoints and hub uploads. Group submission retries also run in the cloud, and local workers exclude cloud-marked jobs. Migration 0035 and a dedicated minute watchdog recover missed messages/expired leases. Real cloud validation: 20 synthetic posts / 120 images passed, ~54 s wall time at concurrency two and ~4.2 s measured browser lifecycle per post (not an AI/upload/publication SLA or exact billable-time measurement). See docs/handoffs/2026-09-20-psychology-cloud-photo.md.
 
 - Psychology has an admin-only 定时评论 page at /psychology-comments. Templates 01/02/03 can opt into per-topic reveal comments with a default 120-minute delay and optional caption teaser. Topic revealComment is separate from rendering scripts and frozen atomically with new automatic video batches. A minute cron waits for confirmed publication and item ID, then calls the hub with a stable per-item idempotency key. Defaults are off; existing jobs are not enrolled. See docs/handoffs/2026-09-20-psychology-scheduled-comments.md.
+
+- Signal Desk now checks account publication readiness per durable preparation task for both photos and videos. One revoked/unavailable account or unsupported visibility no longer aborts the hub batch. TikTok business errors cannot escape as successful HTTP responses; factory also rejects error envelopes in HTTP 200 and clears stale local submission errors after a receipt. See `docs/handoffs/2026-09-21-publish-account-isolation.md`.
 
 ## Platform
 

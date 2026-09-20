@@ -50,8 +50,9 @@ async function readSignalDeskResponse(response) {
   } catch {
     data = { raw: text };
   }
-  if (!response.ok) {
-    throw Object.assign(new Error(data.error || `主站返回 ${response.status}`), { statusCode: response.status, responseData: data });
+  if (!response.ok || data?.error) {
+    const message = typeof data?.error === "string" ? data.error : data?.error?.message || `主站返回 ${response.status}`;
+    throw Object.assign(new Error(message), { statusCode: response.ok ? 502 : response.status, responseData: data });
   }
   return data;
 }

@@ -243,7 +243,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
           const submitted = Boolean(receipt.batchId || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
           return { retryCount:row.auto_retry_count||0,retryAt:row.status==='queued'?row.available_at:0,id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
             groupId:row.publish_group_id, scheduleAt: row.schedule_at, status: submitted ? 'submitted' : row.ready_json!=='{}' && row.publish_group_id ? 'ready' : row.status==='queued'&&row.available_at ? 'queued' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
-            percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: row.error || result.publishError || '', type: row.type };
+            percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: submitted ? '' : row.error || result.publishError || '', type: row.type };
         }) });
     }
     return json({ batches: result, pagination:{page,pageSize,total,hasMore:page*pageSize<total} });
