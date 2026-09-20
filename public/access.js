@@ -17,6 +17,11 @@ ensureThemeStylesheet();
     }
     document.querySelectorAll("[data-template-module]").forEach(card => {
       card.hidden = !(user.sidebarModules || []).includes(card.dataset.templateModule);
+      if (card.dataset.topicBankHref && user.role === "admin" && (user.sidebarModules || []).includes("psychology-topic-bank")) {
+        card.href = card.dataset.topicBankHref;
+        const action = card.querySelector("b");
+        if (action) action.textContent = "进入题目列表 →";
+      }
     });
     const homePath = home || (user.role === "admin" ? "/" : "");
     document.querySelectorAll(".app-brand, .tasks-brand").forEach((item) => {

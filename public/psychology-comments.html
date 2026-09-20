@@ -4,6 +4,7 @@
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell"><header class="page-head"><div><h1>定时评论</h1><p class="page-lead">视频发布成功后，按模板设置的时间，在评论区揭晓对应题目的答案。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-publish">心理学自动发布</a></nav></header>
 <section class="panel auto-section"><h2>模板设置</h2><p class="field-hint">先在模板题库填写每道题的「揭晓评论」，再开启对应模板。设置仅作用于之后创建的自动发布批次。</p>
+<p><a id="manageTopics" href="/psychology-topic-bank">管理此模板的题目与揭晓评论 →</a></p>
 <form id="settingsForm"><div class="auto-grid"><label>模板<select id="template" required></select></label><label>发布成功后延迟（分钟）<input id="delay" type="number" min="1" max="10080" value="120" required></label></div>
 <label class="comment-check"><input id="enabled" type="checkbox">开启此模板的定时揭晓评论</label>
 <label>视频发布文案末尾追加的引导语<textarea id="caption" rows="3" maxlength="500" placeholder="关注引导与揭晓时间，可按视频语言填写"></textarea></label><p class="field-hint">可用 {hours} 或 {minutes} 自动带入延迟时间；留空则不追加。这里修改发布文案，不修改视频画面或配音。</p>
