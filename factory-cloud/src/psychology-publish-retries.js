@@ -19,7 +19,7 @@ export async function failureItems(db,job){
 }
 export async function storePsychologyFailures(db,items,diagnostic,retryCount,nextRetryAt){
   const records=items.map(i=>{
-    const cfg=parse(i.config_json),p=parse(i.payload_json),account=(p.publish?.officialAccounts||[]).find(a=>a.connectionId===i.connection_id)||{};
+    const cfg=parse(i.config_json),p=parse(i.payload_json),account=p.psychologyAutomation?.account || (p.publish?.officialAccounts||[]).find(a=>a.connectionId===i.connection_id)||{};
     return {id:'psychology:'+i.id,autoTaskId:i.id,autoBatchId:i.batch_id,connectionId:i.connection_id,
       accountName:account.name||'',accountUsername:account.username||'',title:i.title||cfg.name,fileName:i.title||cfg.name,
       createdAt:diagnostic.at,updatedAt:diagnostic.at,scheduleAt:i.schedule_at*1000,status:'failed',

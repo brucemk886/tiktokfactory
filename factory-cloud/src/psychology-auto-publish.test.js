@@ -547,3 +547,37 @@ test('migration backfills missing legacy submission failures without requeueing 
  assert.equal(records.length,1);assert.equal(records[0].autoTaskId,items[0].id);assert.equal(records[0].status,'failed');
  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE status='queued'").get().n,0);
 });
+
+
+test('photo upload failure keeps the assigned handle through the render handoff', async t => {
+  const f = await fixture(t);
+  await f.call('POST', input({ mediaType: 'photo', template: 'photo-text', connectionIds: ['a'], count: 1 }));
+  const source = f.sqlite.prepare('SELECT * FROM factory_jobs LIMIT 1').get();
+  assert.equal(JSON.parse(source.payload_json).psychologyAutomation.account.username, 'alpha');
+  f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({ plan: { title: 'Example' }, results: [{ template: 'cover', title: 'Example' }] }), source.id);
+  const { jobId } = await enqueueAutoPhotoRender(f.env, source.id);
+  f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='w' WHERE id=?").run(jobId);
+  await workerCall(f, '/api/worker/jobs/' + jobId + '/complete', { error: 'upload failed' });
+  const record = JSON.parse(f.sqlite.prepare('SELECT value_json FROM factory_publish_records').get().value_json);
+  assert.equal(record.accountUsername, 'alpha');
+  assert.equal(record.connectionId, 'a');
+  assert.equal(record.status, 'failed');
+  assert.equal(f.requests.length, 0);
+});
+
+test('historical failure listing resolves a handle before search without requeue or writes', async t => {
+  const f = await fixture(t);
+  const { handleOfficial } = await import('./official.js');
+  const { mergeAndStorePublishRecords } = await import('./publish-records-store.js');
+  await mergeAndStorePublishRecords(f.db, [{ id: 'historic', connectionId: 'a', accountName: 'a', status: 'failed', createdAt: Date.now(), provider: 'official' }]);
+  const before = f.sqlite.prepare('SELECT total_changes() n').get().n;
+  const request = new Request(BASE + '/api/official-publish-records?query=alpha');
+  const response = await handleOfficial(request, f.env, new URL(request.url), { user });
+  const data = await response.json();
+  assert.equal(data.records.length, 1);
+  assert.equal(data.records[0].accountUsername, 'alpha');
+  assert.equal(data.records[0].status, 'failed');
+  assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n, before);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n, 0);
+  assert.equal(f.requests.length, 0);
+});

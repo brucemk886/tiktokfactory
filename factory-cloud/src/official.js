@@ -20,7 +20,7 @@ import {
   userAllowedGroupIds,
 } from "../../scripts/official-account-group-store.js";
 import { attachPublishOutcome, chunkList, connectionIdsFromArchiveRows, mergePublishStats, parseShanghaiDate, resolveReportWindow } from "../../scripts/official-group-report.js";
-import { hydrateOfficialPublishRecords, publishRecordsSince, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
+import { attachOfficialAccountNames, hydrateOfficialPublishRecords, publishRecordsSince, summarizeOfficialPublishRecords } from "../../scripts/official-publish-records.js";
 import { listPublishRecords } from "./publish-records-store.js";
 import { ensurePublishWebhook, readPublishWebhookState } from "./publish-webhook.js";
 import { errorJson, json, readJson } from "./http.js";
@@ -152,9 +152,21 @@ export async function handleOfficial(request, env, url, session) {
     // handful of records that never got one; without receipts keep the old
     // per-request hydration.
     const hydrateLimit = webhook?.registered ? 2 : 8;
-    const records = await hydrateOfficialPublishRecords(stored, (batchId) => (
+    let records = await hydrateOfficialPublishRecords(stored, (batchId) => (
       signalDesk(env, db, `/api/v1/publish/batches/${encodeURIComponent(batchId)}`)
     ), { skipResolved: true, limit: hydrateLimit }).catch(() => stored);
+    if (records.some(record => !record.accountUsername && !record.username)) {
+      // Historical upload failures have no remote batch to hydrate. A directory
+      // failure must not hide their publishing records or change their state.
+      const archived = await listAccountDirectory(db).catch(() => []);
+      records = attachOfficialAccountNames(records, archived.map(row => ({
+        accountKey: row.account_key, username: row.label?.startsWith('@') ? row.label.slice(1) : ''
+      })));
+      if (records.some(record => !record.accountUsername && !record.username)) {
+        const directory = await signalDeskAllAccounts(env, db).catch(() => ({ accounts: [] }));
+        records = attachOfficialAccountNames(records, directory.accounts);
+      }
+    }
     return json({ ...summarizeOfficialPublishRecords(records, { range: "all", query }), webhook });
   }
 

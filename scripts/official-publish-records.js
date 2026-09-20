@@ -99,6 +99,27 @@ export function summarizeOfficialPublishRecords(records, { range = "7d", query =
   };
 }
 
+// Resolve only stable connection keys; nicknames are not account identities.
+export function attachOfficialAccountNames(records, accounts) {
+  const key = value => String(value || '').trim().replace(/^tiktok:/, '');
+  const byId = new Map();
+  for (const account of accounts || []) {
+    const username = String(account.username || account.profile?.username || '').trim().replace(/^@/, '');
+    if (!username) continue;
+    for (const id of [account.connectionId, account.id, account.accountKey, account.schema]) {
+      if (key(id)) byId.set(key(id), { username, name: account.displayName || account.profile?.displayName || username });
+    }
+  }
+  return (records || []).map(record => {
+    if (record.accountUsername || record.username) return record;
+    const id = key(record.connectionId || record.assignedEnvId);
+    const account = byId.get(id);
+    if (!account) return record;
+    return { ...record, username: account.username, accountUsername: account.username,
+      accountName: !record.accountName || key(record.accountName) === id ? account.name : record.accountName };
+  });
+}
+
 const TERMINAL_REMOTE_FAILURES = new Set(["failed", "rejected", "status_timeout", "needs_review", "canceled", "enqueue_failed"]);
 const FAIL_REASON_LABELS = {
   spam_risk: "TikTok 审核判定这次发布有风险，没有更细原因，官方要求不要重试",

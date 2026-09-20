@@ -197,7 +197,10 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     // retries of the same item republish with the same song.
     const musicSoundId = config.musicIds.length ? config.musicIds[Math.floor(Math.random() * config.musicIds.length)] : '';
     const groupId=batchId+'-group-'+Math.floor(index/PSYCHOLOGY_GROUP_SIZE);
-    const item = { submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const account = scoped.accounts.find(a => String(a.connectionId || a.id) === entry.connectionId) || {};
+    const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
+      username: String(account.username || '').trim().replace(/^@/, '') };
+    const item = { account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: item }

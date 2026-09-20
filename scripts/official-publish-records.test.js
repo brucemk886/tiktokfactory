@@ -139,3 +139,24 @@ test("skips already resolved publish batches when hydrating overview records", (
     { batchId: "b9bf8e63-4607-4281-9582-42c6cb763ceb" },
   ], 20, { skipResolved: true }), ["b9bf8e63-4607-4281-9582-42c6cb763ceb"]);
 });
+
+
+test('directory handles resolve prefixed keys without guessing nicknames or changing outcomes', async () => {
+  const { attachOfficialAccountNames } = await import('./official-publish-records.js');
+  const records = [
+    { id: 'missing', connectionId: 'a', accountName: 'a', status: 'failed', publishError: 'upload failed' },
+    { id: 'confirmed', connectionId: 'a', accountUsername: 'confirmed', accountName: 'Existing' },
+    { id: 'unknown', connectionId: 'b', accountName: 'Nickname' }
+  ];
+  const result = attachOfficialAccountNames(records, [
+    { schema: 'tiktok:a', username: '@alpha' },
+    { connectionId: 'b', displayName: 'Nickname' }
+  ]);
+  assert.equal(result[0].accountUsername, 'alpha');
+  assert.equal(result[0].accountName, 'alpha');
+  assert.equal(result[0].publishError, 'upload failed');
+  assert.equal(result[0].status, 'failed');
+  assert.equal(result[1], records[1]);
+  assert.equal(result[2], records[2]);
+  assert.equal(records[0].accountUsername, undefined);
+});
