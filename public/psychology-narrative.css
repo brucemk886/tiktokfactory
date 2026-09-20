@@ -1,11 +1,7 @@
 .psychology-mid-page { --psy-ink:#e8efe3; }
 .psy-render-note { color:var(--module-muted); font-size:11px; }
 .psy-shell { grid-template-columns:minmax(540px,1fr) minmax(420px,.92fr); align-items:start; }
-.psy-layout-picker { margin-bottom:16px; display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; }
-.psy-layout { min-height:78px; padding:12px 13px; display:grid; gap:4px; text-align:left; border:1px solid var(--module-line); border-radius:7px; color:var(--lf-text); background:var(--lf-surface); cursor:pointer; }
-.psy-layout strong { font-size:13px; }
-.psy-layout small { color:var(--module-muted); font-size:10px; line-height:1.4; }
-.psy-layout.is-active { border-color:var(--module-accent); box-shadow:inset 3px 0 0 var(--module-accent); }
+.psy-source-image{display:grid;gap:12px}.psy-option-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.psy-upload-card{display:grid;gap:8px;padding:12px;border:1px solid var(--module-line);border-radius:8px;background:var(--lf-surface)}.psy-upload-card strong{font-size:13px}.psy-upload-preview{width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:#ece8db;display:none}.psy-upload-preview.is-on{display:block}
 .psy-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
 .psy-wide { grid-column:1/-1; }
 .psy-fields textarea { min-height:78px; }

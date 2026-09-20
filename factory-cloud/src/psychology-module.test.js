@@ -28,7 +28,7 @@ test("psychology workbench groups template navigation while preserving child per
   assert.equal(module?.group?.id, "psychology");
   assert.deepEqual(module?.roles, ["admin"]);
   const templates = SIDEBAR_MODULES.filter(item => ["psychology", "psychology-collage", "psychology-narrative", "psychology-photo"].includes(item.id));
-  assert.deepEqual(templates.map(item => item.label), ["模板工作台", "纸张拼贴模板", "互动测试模板", "图文发布模板"]);
+  assert.deepEqual(templates.map(item => item.label), ["模板工作台", "纸张拼贴模板", "单图互动测试模板", "图文发布模板"]);
   assert.ok(templates.every(item => item.group.id === "psychology"));
   assert.equal(pageFileFor("/psychology-templates"), "psychology-templates.html");
   assert.equal(moduleIdForPath("/psychology-templates"), "psychology");
@@ -145,7 +145,7 @@ test("admins can hide GeeLark backup without the session rewriting it back", asy
 test("mid-video cards no longer link psychology templates and titles match their entries", () => {
   const html = name => fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
   assert.doesNotMatch(html("mid-video.html"), /href="\/psychology/);
-  for (const [file,title] of [["psychology.html","四图测试模板"],["psychology-collage.html","纸张拼贴模板"],["psychology-narrative.html","互动测试模板"],["psychology-photo.html","图文发布模板"]]) {
+  for (const [file,title] of [["psychology.html","四图测试模板"],["psychology-collage.html","纸张拼贴模板"],["psychology-narrative.html","单图互动测试模板"],["psychology-photo.html","图文发布模板"]]) {
     assert.ok(html(file).includes("<h1>"+title+"</h1>"));
     assert.ok(html(file).includes('src="/access.js"'));
   }

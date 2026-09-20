@@ -1,37 +1,45 @@
 const $ = (selector) => document.querySelector(selector);
 const STORAGE_KEY = "lf_psychology_mid_settings";
 const JOB_KEY = "lf_psychology_mid_job";
-const QUIZ_TYPES = ["auto", "hidden-number", "position-choice", "character-choice", "embrace-choice"];
-let selectedQuizType = "auto";
+const CHOICE_LABELS = ["A", "B", "C", "D"];
 let settingsConfigured = false;
 let elevenLabsConfigured = false;
 let elevenLabsVoiceConfigured = false;
 let pollTimer = null;
+let sourceImageDraft = { dataUrl: "", name: "" };
 
 initialize();
 
 async function initialize() {
   restoreLocalSettings();
-  selectQuizType(selectedQuizType);
-  updateGenerateLabel();
   bindEvents();
+  updateGenerateLabel();
   await loadSettings();
   const jobId = localStorage.getItem(JOB_KEY);
   if (jobId) pollJob(jobId);
 }
 
 function bindEvents() {
-  document.querySelectorAll("[data-quiz-type]").forEach((button) => {
-    button.addEventListener("click", () => selectQuizType(button.dataset.quizType));
-  });
   $("#startBtn").addEventListener("click", startJob);
   $("#saveSettingsBtn").addEventListener("click", () => saveSettings(true));
   $("#pickMusicBtn").addEventListener("click", pickMusicDirectory);
   $("#totalVideos").addEventListener("input", updateGenerateLabel);
-  ["#topic", "#angle", "#script", "#targetDuration", "#totalVideos", "#credit", "#backgroundMusicDir", "#backgroundMusicVolume"].forEach((selector) => {
+  $("#sourceImageFile").addEventListener("change", () => {
+    const file = $("#sourceImageFile").files[0];
+    const preview = $("#sourceImagePreview");
+    if (!file) {
+      sourceImageDraft = { dataUrl: "", name: "" };
+      preview.removeAttribute("src");
+      preview.classList.remove("is-on");
+      return;
+    }
+    sourceImageDraft = { dataUrl: "", name: file.name };
+    preview.src = URL.createObjectURL(file);
+    preview.classList.add("is-on");
+  });
+  ["#topic", "#angle", "#script", "#targetDuration", "#totalVideos", "#credit", "#backgroundMusicDir", "#backgroundMusicVolume", "#choiceCopy0", "#choiceCopy1", "#choiceCopy2", "#choiceCopy3"].forEach((selector) => {
     $(selector).addEventListener("change", saveLocalSettings);
   });
-  document.querySelectorAll('[name="imageModel"]').forEach((input) => input.addEventListener("change", saveLocalSettings));
 }
 
 async function loadSettings() {
@@ -74,7 +82,7 @@ async function saveSettings(showMessage = false) {
   $("#kieApiKey").value = "";
   $("#elevenLabsApiKey").value = "";
   if (showMessage) {
-    setStatus(settingsConfigured ? "生成配置已保存在本机。英文走 Kokoro，中文走 ElevenLabs。" : "已保存，但仍缺少 Kie.ai API Key。");
+    setStatus(settingsConfigured ? "生成配置已保存在本机。英文走 Kokoro，中文走 ElevenLabs。测试图使用上传图片。" : "已保存，但仍缺少 Kie.ai API Key（写脚本仍需要）。");
     renderSettingsStatus();
   }
   saveLocalSettings();
@@ -246,14 +254,32 @@ async function pickMusicDirectory() {
   }
 }
 
-function selectQuizType(quizType) {
-  selectedQuizType = QUIZ_TYPES.includes(quizType) ? quizType : "auto";
-  document.querySelectorAll("[data-quiz-type]").forEach((button) => {
-    const active = button.dataset.quizType === selectedQuizType;
-    button.classList.toggle("is-active", active);
-    button.setAttribute("aria-checked", String(active));
+function collectChoiceCopies() {
+  return CHOICE_LABELS.map((label, index) => ({
+    label,
+    copy: String($(`#choiceCopy${index}`)?.value || "").trim().slice(0, 80),
+  }));
+}
+
+function fileDataUrl(file) {
+  if (file.size > 8 * 1024 * 1024) throw new Error("单张图片不超过 8 MB。");
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("读取图片失败。"));
+    reader.readAsDataURL(file);
   });
-  saveLocalSettings();
+}
+
+async function collectSourceImage() {
+  const file = $("#sourceImageFile").files[0];
+  if (file) {
+    const dataUrl = await fileDataUrl(file);
+    sourceImageDraft = { dataUrl, name: file.name };
+    return { dataUrl };
+  }
+  if (sourceImageDraft.dataUrl) return { dataUrl: sourceImageDraft.dataUrl };
+  throw new Error("请上传一张测试图片。");
 }
 
 function updateGenerateLabel() {
@@ -264,7 +290,8 @@ function updateGenerateLabel() {
 function saveLocalSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     topic: $("#topic").value,
-    quizType: selectedQuizType,
+    quizType: "character-choice",
+    choiceCopies: collectChoiceCopies().map((item) => item.copy),
     targetDuration: numberValue("#targetDuration", 16),
     totalVideos: numberValue("#totalVideos", 1),
     imageModel: "z-image",
@@ -288,22 +315,21 @@ function restoreLocalSettings() {
     }
     $("#backgroundMusicDir").value = saved.backgroundMusicDir || "";
     $("#backgroundMusicVolume").value = saved.backgroundMusicVolume ?? 0.10;
-    if (QUIZ_TYPES.includes(saved.quizType)) selectedQuizType = saved.quizType;
-    else if (saved.layout === "single") selectedQuizType = "hidden-number";
-    else if (saved.layout === "choices-4") selectedQuizType = "character-choice";
-    const model = document.querySelector(`[name="imageModel"][value="${saved.imageModel}"]`);
-    if (model) model.checked = true;
+    const copies = Array.isArray(saved.choiceCopies) ? saved.choiceCopies : [];
+    CHOICE_LABELS.forEach((_, index) => {
+      if (copies[index]) $(`#choiceCopy${index}`).value = copies[index];
+    });
   } catch {}
 }
 
 function quizTypeLabel(value) {
   return ({
-    auto: "自动识别",
-    "hidden-number": "隐藏数字",
-    "position-choice": "位置选择",
-    "character-choice": "人物选择",
-    "embrace-choice": "拥抱偏好",
-  })[value] || "互动测试";
+    auto: "单图互动",
+    "hidden-number": "单图互动",
+    "position-choice": "单图互动",
+    "character-choice": "单图互动",
+    "embrace-choice": "单图互动",
+  })[value] || "单图互动";
 }
 
 function dimensionLabel(name) {
@@ -312,12 +338,12 @@ function dimensionLabel(name) {
 
 function renderSettingsStatus() {
   if (!settingsConfigured) {
-    $("#settingsStatus").textContent = "请补充 Kie.ai API Key。英文口播仍可使用本机 Kokoro。";
+    $("#settingsStatus").textContent = "请补充 Kie.ai API Key。写解说仍需要；测试图使用上传图片。";
     return;
   }
   $("#settingsStatus").textContent = elevenLabsConfigured && elevenLabsVoiceConfigured
-    ? "已就绪：英文走本机 Kokoro；检测到中文时自动走 ElevenLabs；生图走 Kie.ai。"
-    : "英文生成已就绪：本机 Kokoro + Kie.ai。中文文案还需配置 ElevenLabs API Key 和 Voice ID。";
+    ? "已就绪：英文走本机 Kokoro；检测到中文时自动走 ElevenLabs；测试图使用上传图片。"
+    : "英文生成已就绪：本机 Kokoro。中文文案还需配置 ElevenLabs API Key 和 Voice ID。测试图使用上传图片。";
 }
 
 function hasChineseText(value) {

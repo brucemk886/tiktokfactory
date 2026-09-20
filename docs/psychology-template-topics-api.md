@@ -38,8 +38,14 @@ Content-Type: application/json
     },
     {
       "template": "psychology-target-2",
-      "title": "What your reaction says about your attachment style",
-      "content": "Keep the question, four choices and the reveal in content."
+      "title": "What this scene says about your attachment style",
+      "imageUrl": "https://images.unsplash.com/photo-1524504388940-b1c1722653e1",
+      "choices": [
+        { "copy": "stay close" },
+        { "copy": "need space" },
+        { "copy": "overthink it" },
+        { "copy": "walk away" }
+      ]
     }
   ]
 }
@@ -60,10 +66,11 @@ Content-Type: application/json
 
 | 字段 | 含义 / 格式 |
 | --- | --- |
-| `template` | 必填（条目或请求顶层）。`psychology` = 01 四图测试，`psychology-collage` = 02 纸张拼贴，`psychology-target-2` = 03 互动测试。 |
+| `template` | 必填（条目或请求顶层）。`psychology` = 01 四图测试，`psychology-collage` = 02 纸张拼贴，`psychology-target-2` = 03 单图互动测试。 |
 | `title` | 必填，题目 1–200 字符。也接受 `题目`。 |
-| `choices` | 01 四图推荐。长度为 4 的数组，按 A/B/C/D。每项 `copy` 1–80 字符，并带 `imageUrl`（https）或页面上传后的 `imageKey`。也接受 `A文案`/`A图片` 至 `D文案`/`D图片`。 |
-| `content` | 02/03 选填，解读 / 脚本，最多 5000 字符。也接受 `内容`。四图若未传 `choices`，仍可把 `A: 文案 \| https://...` 四行写在这里。 |
+| `choices` | 01 四图：长度为 4 的数组，按 A/B/C/D。每项 `copy` 1–80 字符，并带 `imageUrl`（https）或页面上传后的 `imageKey`。03 单图互动：同样 4 项，但只填 `copy`，图片用下面的 `imageUrl`/`imageKey`。也接受 `A文案` 至 `D文案`；01 另可 `A图片` 至 `D图片`。 |
+| `imageUrl` / `imageKey` / `图片` | 03 单图互动的一张测试图。`imageUrl` 须为 https；页面上传后用 `imageKey`。 |
+| `content` | 02 选填，解读 / 脚本，最多 5000 字符。也接受 `内容`。03 也可只交题目，但自动发布需要一张图和四个选项。四图若未传 `choices`，仍可把 `A: 文案 \| https://...` 四行写在这里。 |
 | `category` | 选填，最多 60 字符。也接受 `分类`。 |
 | `priority` | 0–100 整数，越大越优先抽取；省略为 50。也接受 `优先级`。 |
 | `enabled` | 是否允许自动发布抽取。默认启用。可写 `true`/`false`、`1`/`0`、`是`/`否`、`启用`/`停用`。 |

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { CHOICE_LABELS, hasCompleteFourImages } from "./psychology-topic-bank.js";
 
@@ -42,6 +43,43 @@ export function writeDataUrlFile(dataUrl, filePath) {
   const match = String(dataUrl || "").match(/^data:image\/(?:jpeg|jpg|png|webp);base64,([A-Za-z0-9+/=\s]+)$/i);
   if (!match) throw new Error("选项图片编码无效。");
   fs.writeFileSync(filePath, Buffer.from(match[1].replace(/\s+/g, ""), "base64"));
+}
+
+export async function materializeTopicImage(source, outputPath, { workDir } = {}) {
+  const image = source && typeof source === "object" ? source : {};
+  if (image.imagePath && fs.existsSync(image.imagePath)) {
+    if (path.resolve(image.imagePath) !== path.resolve(outputPath)) fs.copyFileSync(image.imagePath, outputPath);
+    return outputPath;
+  }
+  if (image.dataUrl) {
+    writeDataUrlFile(image.dataUrl, outputPath);
+    return outputPath;
+  }
+  if (image.imageUrl) {
+    const response = await fetch(image.imageUrl, {
+      signal: AbortSignal.timeout(45_000),
+      headers: { accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8", "user-agent": "Mozilla/5.0 LocalFactory/1.0" },
+    });
+    if (!response.ok) throw new Error(`下载测试图失败：HTTP ${response.status}`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 1024) throw new Error("下载的测试图文件无效。");
+    fs.writeFileSync(outputPath, bytes);
+    return outputPath;
+  }
+  const workerPath = workerTopicImagePath(image);
+  if (!workerPath) throw new Error("请上传一张测试图片。");
+  let settings = {};
+  try { settings = JSON.parse(fs.readFileSync(path.join(workDir || "", "factory-cloud-worker.json"), "utf8")); } catch { settings = {}; }
+  const base = String(process.env.FACTORY_CLOUD_URL || settings.url || "").replace(/\/+$/, "");
+  const token = String(process.env.FACTORY_WORKER_TOKEN || settings.token || "");
+  if (!base || !token) throw new Error("工厂云连接尚未配置，无法读取题库图片。");
+  const response = await fetch(base + workerPath, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!response.ok) throw new Error(`读取测试图失败：HTTP ${response.status}`);
+  fs.writeFileSync(outputPath, Buffer.from(await response.arrayBuffer()));
+  return outputPath;
 }
 
 export function buildFourChoiceFilter({ layout, fontFile, titleFile, copyFiles }) {

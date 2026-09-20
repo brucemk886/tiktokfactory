@@ -23,7 +23,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup()),
   moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
   moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
-  moduleItem("psychology-narrative", "/psychology-target-2", "互动测试模板", ["admin"], psychologyGroup(), "psychology"),
+  moduleItem("psychology-narrative", "/psychology-target-2", "单图互动测试模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-photo", "/psychology-photo", "图文发布模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-topic-bank", "/psychology-topic-bank", "模板题库", ["admin"], psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),

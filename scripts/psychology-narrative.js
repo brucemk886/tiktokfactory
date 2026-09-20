@@ -34,16 +34,23 @@ export function parseNarrativePlan(value, options = {}) {
   const narration = clean(source.narration || source.zh || source.voiceover || "");
   const language = detectNarrationLanguage(narration);
   const captions = normalizeCaptions(source, narration, language);
-  const visualPrompt = clean(source.visualPrompt || source.imagePrompt || source.visual || "");
-  const requestedQuizType = normalizeQuizType(options.quizType);
+  const visualPrompt = clean(source.visualPrompt || source.imagePrompt || source.visual || "")
+    || (options.sourceImage ? "Operator-uploaded test photograph. Keep the original scene unchanged and leave clear space along the bottom for A B C D labels plus the operator-written option copy." : "");
+  const operatorChoices = normalizeOperatorChoices(options.choiceCopies || options.choices || source.choiceCopies);
+  const requestedQuizType = operatorChoices || options.sourceImage ? "character-choice" : normalizeQuizType(options.quizType);
   const sourceQuizType = normalizeQuizType(source.quizType);
   const quizType = requestedQuizType !== "auto"
     ? requestedQuizType
     : sourceQuizType !== "auto"
       ? sourceQuizType
       : inferQuizType(topic, visualPrompt, narration);
-  const layout = forcedLayout || (ALLOWED_LAYOUTS.has(source.layout) ? source.layout : quizTypeConfig(quizType).layout);
-  const choiceLabels = normalizeChoiceLabels(source.choiceLabels, quizTypeConfig(quizType).choiceCount);
+  const layout = operatorChoices || options.sourceImage
+    ? "choices-4"
+    : (forcedLayout || (ALLOWED_LAYOUTS.has(source.layout) ? source.layout : quizTypeConfig(quizType).layout));
+  const choiceLabels = operatorChoices
+    ? operatorChoices.map((item) => item.label)
+    : normalizeChoiceLabels(source.choiceLabels, quizTypeConfig(quizType).choiceCount);
+  const choiceCopies = operatorChoices ? operatorChoices.map((item) => item.copy) : [];
 
   const hooks = Array.from(new Set(
     (Array.isArray(source.hooks) ? source.hooks : [source.selectedHook || source.hook || source.title])
@@ -70,6 +77,7 @@ export function parseNarrativePlan(value, options = {}) {
     quizType,
     layout,
     choiceLabels,
+    choiceCopies,
     closingQuestion: clean(source.closingQuestion || source.question || captions.at(-1)?.zh || ""),
     responseAction: clean(source.responseAction || source.cta || (language === "zh-CN" ? "把你的选择扣在评论区" : "Comment your choice below")),
   };
@@ -313,6 +321,17 @@ function normalizeChoiceLabels(value, count) {
   if (!count) return [];
   const supplied = Array.isArray(value) ? value.map(clean).filter(Boolean).slice(0, count) : [];
   return Array.from({ length: count }, (_, index) => supplied[index] || String.fromCharCode(65 + index));
+}
+
+function normalizeOperatorChoices(value) {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const choices = value.map((item, index) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      return { label: String.fromCharCode(65 + index), copy: clean(item.copy || item.text || item.文案 || "").slice(0, 80) };
+    }
+    return { label: String.fromCharCode(65 + index), copy: clean(item).slice(0, 80) };
+  });
+  return choices.every((item) => item.copy) ? choices : null;
 }
 
 function quizTypePrompt(value, legacyLayout) {

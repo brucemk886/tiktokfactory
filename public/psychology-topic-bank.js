@@ -1,6 +1,6 @@
 import {parseTopicImport} from "/psychology-topic-import.js";
 const $=s=>document.querySelector(s),BASE="/api/psychology-template-topics";
-const state={template:"psychology",page:1,items:[],templates:[],editing:null,choiceDraft:[],requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0};
+const state={template:"psychology",page:1,items:[],templates:[],editing:null,choiceDraft:[],imageDraft:{imageKey:"",imageUrl:"",previewUrl:""},requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function api(path,method="GET",body){
   const r=await fetch(path,{method,...(body?{headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});
@@ -25,12 +25,17 @@ async function load(){
   $("#prevPage").disabled=state.page<=1;$("#nextPage").disabled=state.page*20>=data.total;
 }
 function topicPreview(topic){
+  if(topic.template==="psychology-target-2"&&topic.choices?.length===4){
+    const img=topic.image?.previewUrl;
+    return '<div class="topic-copy">'+topic.choices.map(c=>esc(c.label+": "+(c.copy||""))).join(" · ")+'</div>'+(img?`<div class="topic-choices"><img src="${esc(img)}" alt="测试图" loading="lazy"></div>`:"");
+  }
   if(topic.choices?.length===4){
     return '<div class="topic-copy">'+topic.choices.map(c=>esc(c.label+": "+(c.copy||""))).join(" · ")+'</div><div class="topic-choices">'+topic.choices.map(c=>c.previewUrl?`<img src="${esc(c.previewUrl)}" alt="${esc(c.label)}" loading="lazy">`:"<span>"+esc(c.label)+"</span>").join("")+"</div>";
   }
   return '<div class="topic-copy">'+esc(topic.content||"未填写内容，将根据题目生成")+"</div>";
 }
 function isFour(){return state.template==="psychology";}
+function isSingle(){return state.template==="psychology-target-2";}
 function choiceState(topic){
   const current=topic?.choices||[{},{},{},{}];
   return ["A","B","C","D"].map((label,index)=>({
@@ -54,13 +59,29 @@ function renderChoiceGrid(topic){
     };
   });
 }
+function renderSingleImage(topic){
+  const previewUrl=topic?.image?.previewUrl||topic?.image?.imageUrl||"";
+  state.imageDraft={imageKey:topic?.image?.imageKey||"",imageUrl:topic?.image?.imageUrl||"",previewUrl};
+  const preview=$("#singleImagePreview");
+  if(previewUrl){preview.src=previewUrl;preview.classList.add("is-on");}
+  else{preview.removeAttribute("src");preview.classList.remove("is-on");}
+  $("#singleImageFile").value="";
+  $("#singleImageFile").onchange=()=>{
+    const file=$("#singleImageFile").files[0];
+    if(!file){if(state.imageDraft.previewUrl){preview.src=state.imageDraft.previewUrl;preview.classList.add("is-on");}else{preview.removeAttribute("src");preview.classList.remove("is-on");}return;}
+    preview.src=URL.createObjectURL(file);preview.classList.add("is-on");
+  };
+  const choices=choiceState(topic);
+  $("#optionGrid").innerHTML=choices.map((choice,index)=>`<article class="choice-card"><strong>${choice.label}</strong><label>选项文案<input id="optionCopy${index}" maxlength="80" placeholder="例如：独自离开 / stay close" value="${esc(choice.copy)}"></label></article>`).join("");
+}
 function showEditor(topic=null){
   state.editing=topic;state.requestId=crypto.randomUUID();
   $("#editTitle").textContent=topic?"编辑题目":"新增题目";$("#editBank").textContent=bank().label;
-  $("#topicTitle").value=topic?.title||"";$("#topicContent").value=topic?.content||"";$("#topicCategory").value=topic?.category||"";
+  $("#topicTitle").value=topic?.title||"";$("#topicContent").value=isFour()||isSingle()?"":topic?.content||"";$("#topicCategory").value=topic?.category||"";
   $("#topicPriority").value=topic?.priority??50;$("#topicEnabled").checked=topic?.enabled??true;$("#editError").textContent="";
-  $("#topicContentField").hidden=isFour();$("#fourChoiceFields").hidden=!isFour();
+  $("#topicContentField").hidden=isFour()||isSingle();$("#fourChoiceFields").hidden=!isFour();$("#singleImageFields").hidden=!isSingle();
   if(isFour())renderChoiceGrid(topic);
+  if(isSingle())renderSingleImage(topic);
   $("#editDialog").showModal();
 }
 async function fileDataUrl(file){
@@ -83,6 +104,21 @@ async function collectChoices(){
   }
   return choices;
 }
+async function collectSingleImage(){
+  const file=$("#singleImageFile").files[0];
+  let imageKey=state.imageDraft?.imageKey||"",imageUrl=state.imageDraft?.imageUrl||"";
+  if(file){
+    const uploaded=await api(BASE+"/assets","POST",{imageBase64:await fileDataUrl(file),fileName:file.name,contentType:file.type});
+    imageKey=uploaded.key;imageUrl="";
+  }
+  if(!imageKey&&!imageUrl)throw new Error("请上传一张测试图片。");
+  const choices=["A","B","C","D"].map((label,index)=>{
+    const copy=$(`#optionCopy${index}`).value.trim();
+    if(!copy)throw new Error("请填写 "+label+" 选项。");
+    return {label,copy};
+  });
+  return {imageKey,imageUrl,choices};
+}
 function lock(form,busy){state.busy=busy;form.querySelectorAll("input,textarea,button").forEach(n=>n.disabled=busy);}
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{if(!state.busy)$("#"+b.dataset.close).close();});
 document.querySelectorAll("dialog").forEach(d=>d.addEventListener("cancel",e=>{if(state.busy)e.preventDefault();}));
@@ -98,6 +134,8 @@ $("#editForm").onsubmit=async e=>{
   try{
     const body=isFour()
       ?{title:$("#topicTitle").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked,choices:await collectChoices()}
+      :isSingle()
+      ?{title:$("#topicTitle").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked,...await collectSingleImage()}
       :{title:$("#topicTitle").value,content:$("#topicContent").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked};
     if(state.editing)await api(BASE+"/"+state.editing.id,"PATCH",{...body,revision:state.editing.revision});
     else await api(BASE+"/import","POST",{requestId:state.requestId,template:state.template,items:[body]});
@@ -121,7 +159,7 @@ $("#importFile").onchange=async()=>{
   catch(error){$("#importError").textContent=error.message;}
 };
 $("#downloadTemplate").onclick=()=>{
-  const header=isFour()?"题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片,分类,优先级,启用\r\n":"题目,内容,分类,优先级,启用\r\n";
+  const header=isFour()?"题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片,分类,优先级,启用\r\n":isSingle()?"题目,图片,A文案,B文案,C文案,D文案,分类,优先级,启用\r\n":"题目,内容,分类,优先级,启用\r\n";
   const url=URL.createObjectURL(new Blob(["\uFEFF"+header],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
   a.href=url;a.download=state.template+"-题库模板.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
@@ -136,7 +174,7 @@ $("#importForm").onsubmit=async e=>{
 await load().catch(e=>message(e.message,true));
 const endpoint=location.origin+"/api/integrations/psychology/template-topics";
 if($("#endpoint"))$("#endpoint").value=endpoint;
-const sample={items:[{template:"psychology",title:"Which picture did you notice first?",choices:[{copy:"eyes",imageUrl:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1"},{copy:"hands",imageUrl:"https://images.unsplash.com/photo-1524502397800-2eeaad7c3fe5"},{copy:"mouth",imageUrl:"https://images.unsplash.com/photo-1494790108377-be9c29b29330"},{copy:"background",imageUrl:"https://images.unsplash.com/photo-1500530855697-b586d89ba3ee"}],category:"attention",priority:80,enabled:true}]};
+const sample={items:[{template:"psychology",title:"Which picture did you notice first?",choices:[{copy:"eyes",imageUrl:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1"},{copy:"hands",imageUrl:"https://images.unsplash.com/photo-1524502397800-2eeaad7c3fe5"},{copy:"mouth",imageUrl:"https://images.unsplash.com/photo-1494790108377-be9c29b29330"},{copy:"background",imageUrl:"https://images.unsplash.com/photo-1500530855697-b586d89ba3ee"}],category:"attention",priority:80,enabled:true},{template:"psychology-target-2",title:"What this scene says about your attachment style",imageUrl:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1",choices:[{copy:"stay close"},{copy:"need space"},{copy:"overthink it"},{copy:"walk away"}],category:"attachment",priority:70,enabled:true}]};
 if($("#apiExample"))$("#apiExample").textContent=["curl -X POST '"+endpoint+"'","  -H 'Authorization: Bearer YOUR_API_KEY'","  -H 'Content-Type: application/json'","  --data '"+JSON.stringify(sample,null,2)+"'"].join(" \\\n");
 async function loadKey(){
   if(!$("#keyStatus"))return;

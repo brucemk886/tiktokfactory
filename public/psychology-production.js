@@ -1,6 +1,6 @@
 (() => {
   const $ = s=>document.querySelector(s), esc = v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const types={psychology:'四图测试模板','psychology-collage':'纸张拼贴模板','psychology-target-2':'互动测试模板','psychology-photo-story':'图文发布模板','psychology-recreation':'爆款复刻'};
+  const types={psychology:'四图测试模板','psychology-collage':'纸张拼贴模板','psychology-target-2':'单图互动测试模板','psychology-photo-story':'图文发布模板','psychology-recreation':'爆款复刻'};
   const labels={queued:'等待执行',running:'执行中',done:'已完成',failed:'失败',canceled:'已取消',cancelled:'已取消'};
   const stages={queued:'队列等待',download:'下载原视频',analyze:'视频分析',script:'文案与分镜',audio:'解说音频',images:'生成图片',review:'素材检查',render:'合成视频',verify:'成片检查',done:'成品'};
   let offset=0, selected=new URLSearchParams(location.search).get('job')||'', timer, refreshing=false, jobs=[], notice='';

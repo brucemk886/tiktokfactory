@@ -1,7 +1,7 @@
 export const TOPIC_TEMPLATES=Object.freeze([
   {id:"psychology",label:"01 · 四图测试模板",hint:"题目作为测试问题；上传 A/B/C/D 四张图片并填写每张对应的文案。"},
   {id:"psychology-collage",label:"02 · 纸张拼贴模板",hint:"题目作为视频主题；内容填写观点、故事线或解说稿。"},
-  {id:"psychology-target-2",label:"03 · 互动测试模板",hint:"题目作为互动主题；内容填写问题、选项、揭晓结果或解读。"},
+  {id:"psychology-target-2",label:"03 · 单图互动测试模板",hint:"题目作为测试问题；上传一张图片，并自行填写 A/B/C/D 四个选项。"},
 ]);
 export const CHOICE_LABELS=Object.freeze(["A","B","C","D"]);
 export const TOPIC_IMAGE_KEY=/^psychology-topics\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpe?g|png|webp)$/i;
@@ -21,12 +21,16 @@ export function isHttpsImageUrl(value){
     return String(value).length<=2000;
   }catch{return false;}
 }
+function isSingleImageQuizValue(value){
+  return Boolean(value&&typeof value==="object"&&!Array.isArray(value)&&(value.kind==="single-image-quiz"||value.imageKey||value.imageUrl||value.image||value["图片"]));
+}
 export function parseFourImageChoices(content){
   const raw=String(content||"").trim();
   if(!raw)return null;
   if(raw.startsWith("{")||raw.startsWith("[")){
     try{
       const value=JSON.parse(raw);
+      if(isSingleImageQuizValue(value))return null;
       const items=Array.isArray(value)?value:value.choices;
       const parsed=readChoiceList(items,false);
       if(parsed)return parsed;
@@ -94,6 +98,101 @@ export function fourImageCopyText(choices){
 export function hasCompleteFourImages(choices){
   return Array.isArray(choices)&&choices.length===4&&choices.every(item=>item.copy&&(item.imageKey||item.imageUrl||item.imagePath||item.dataUrl));
 }
+function readTextChoices(items,required){
+  if(!Array.isArray(items)||items.length!==4)return required?fail("单图互动题目需要 A/B/C/D 四个选项。"):null;
+  const choices=[];
+  for(const [index,label] of CHOICE_LABELS.entries()){
+    const item=items[index]&&typeof items[index]==="object"&&!Array.isArray(items[index])?items[index]:{};
+    const text=String(item.copy??item.text??item.文案??"").trim();
+    if(required&&(!text||text.length>80))fail(`${label} 选项须为1–80个字符。`);
+    choices.push({label,copy:text.slice(0,80)});
+  }
+  return choices;
+}
+function sourceImageFromInput(input,required){
+  const imageKey=String(input.imageKey||"").trim();
+  const imageUrl=String(input.imageUrl||input.image||input["图片"]||"").trim();
+  if(required){
+    if(imageKey&&!TOPIC_IMAGE_KEY.test(imageKey))fail("测试图片无效，请重新上传。");
+    if(imageUrl&&!isHttpsImageUrl(imageUrl))fail("测试图片地址须为 https 链接。");
+    if(!imageKey&&!imageUrl)fail("请上传一张测试图片。");
+  }
+  return {
+    ...(imageKey?{imageKey}:{}),
+    ...(!imageKey&&imageUrl?{imageUrl}:{}),
+  };
+}
+export function serializeSingleImageQuiz(quiz){
+  return JSON.stringify({
+    kind:"single-image-quiz",
+    ...(quiz.imageKey?{imageKey:quiz.imageKey}:{}),
+    ...(quiz.imageUrl?{imageUrl:quiz.imageUrl}:{}),
+    choices:(quiz.choices||[]).map(item=>({label:item.label,copy:item.copy||""})),
+  });
+}
+export function parseSingleImageQuiz(content){
+  const raw=String(content||"").trim();
+  if(!raw)return null;
+  if(raw.startsWith("{")){
+    try{
+      const value=JSON.parse(raw);
+      if(!isSingleImageQuizValue(value))return null;
+      const choices=readTextChoices(value.choices,false);
+      if(!choices)return null;
+      return {
+        kind:"single-image-quiz",
+        imageKey:String(value.imageKey||"").trim(),
+        imageUrl:String(value.imageUrl||value.image||"").trim(),
+        dataUrl:String(value.dataUrl||value.imageBase64||"").trim(),
+        imagePath:String(value.imagePath||"").trim(),
+        choices,
+      };
+    }catch{return null;}
+  }
+  return null;
+}
+export function singleImageCopyText(quiz){
+  return fourImageCopyText(quiz?.choices);
+}
+export function hasCompleteSingleImageQuiz(quiz){
+  return Boolean(quiz&&(quiz.imageKey||quiz.imageUrl||quiz.imagePath||quiz.dataUrl)&&Array.isArray(quiz.choices)&&quiz.choices.length===4&&quiz.choices.every(item=>item.copy));
+}
+export function operatorQuizFromPayload(payload={}){
+  const parsed=parseSingleImageQuiz(payload.topicSource?.content||payload.content);
+  const source=payload.sourceImage&&typeof payload.sourceImage==="object"?payload.sourceImage:{};
+  const topicImage=payload.topicSource?.sourceImage&&typeof payload.topicSource.sourceImage==="object"?payload.topicSource.sourceImage:{};
+  const rawChoices=Array.isArray(payload.choiceCopies)&&payload.choiceCopies.length===4
+    ?payload.choiceCopies
+    :Array.isArray(payload.choices)&&payload.choices.length===4
+      ?payload.choices
+      :parsed?.choices;
+  const quiz={
+    imageKey:String(source.imageKey||topicImage.imageKey||parsed?.imageKey||"").trim(),
+    imageUrl:String(source.imageUrl||payload.sourceImageUrl||topicImage.imageUrl||parsed?.imageUrl||"").trim(),
+    dataUrl:String(source.dataUrl||parsed?.dataUrl||"").trim(),
+    imagePath:String(source.imagePath||parsed?.imagePath||"").trim(),
+    choices:Array.isArray(rawChoices)?CHOICE_LABELS.map((label,index)=>{
+      const item=rawChoices[index];
+      const copy=item&&typeof item==="object"?String(item.copy||item.text||"").trim():String(item||"").trim();
+      return {label,copy:copy.slice(0,80)};
+    }):[],
+  };
+  return hasCompleteSingleImageQuiz(quiz)?quiz:null;
+}
+function hasSingleImageFields(input){
+  return Boolean(input.imageKey||input.imageUrl||input.image||input["图片"]||CHOICE_LABELS.some(label=>input[`copy${label}`]||input[`${label}文案`]));
+}
+function singleImageFromFields(input){
+  const copies=CHOICE_LABELS.map(label=>({
+    label,
+    copy:String(input[`copy${label}`]??input[`${label}文案`]??"").trim(),
+  }));
+  const hasCopies=copies.some(item=>item.copy)||Array.isArray(input.choices);
+  const hasImage=Boolean(String(input.imageKey||input.imageUrl||input.image||input["图片"]||"").trim());
+  if(!hasCopies&&!hasImage)return null;
+  const choices=Array.isArray(input.choices)?readTextChoices(input.choices,true):readTextChoices(copies,true);
+  return {...sourceImageFromInput(input,true),choices};
+}
 export function normalizeTopic(input,template){
   validateTopicTemplate(template);
   if(!input || typeof input!=="object" || Array.isArray(input))fail("题目格式无效。");
@@ -108,13 +207,24 @@ export function normalizeTopic(input,template){
   const enabled=![false,0,"0","false","否","停用"].includes(raw);
   let content=String(input.content??input["内容"]??"").trim();
   let choices=null;
+  let sourceImage=null;
   if(template==="psychology"){
     if(Array.isArray(input.choices))choices=readChoiceList(input.choices,true);
     else choices=choicesFromFlatFields(input)||parseFourImageChoices(content);
     if(choices&&hasCompleteFourImages(choices))content=serializeFourImageChoices(choices);
   }
+  if(template==="psychology-target-2"){
+    const quiz=Array.isArray(input.choices)||hasSingleImageFields(input)
+      ?singleImageFromFields(input)
+      :parseSingleImageQuiz(content);
+    if(quiz&&hasCompleteSingleImageQuiz(quiz)){
+      content=serializeSingleImageQuiz(quiz);
+      choices=quiz.choices;
+      sourceImage={imageKey:quiz.imageKey||"",imageUrl:quiz.imageUrl||""};
+    }
+  }
   if(content.length>5000)fail("题目内容不能超过5000个字符。");
-  return {template,title,content,category,priority,enabled,choices};
+  return {template,title,content,category,priority,enabled,choices,sourceImage};
 }
 export function collectTopicWriteItems(input){
   if(Array.isArray(input))return normalizeWriteList(input,undefined);
@@ -136,6 +246,10 @@ function normalizeWriteList(items,fallbackTemplate){
   });
 }
 export function topicFingerprintText(topic){
+  const single=topic.sourceImage&&topic.choices?{...topic.sourceImage,choices:topic.choices}:parseSingleImageQuiz(topic.content);
+  if(hasCompleteSingleImageQuiz(single)){
+    return [topic.template,topic.title.normalize("NFKC").toLowerCase().replace(/\s+/g," "),[single.imageKey||single.imageUrl||"",...single.choices.map(item=>item.copy)].join("|")].join("\n");
+  }
   const choices=topic.choices||parseFourImageChoices(topic.content);
   const body=hasCompleteFourImages(choices)
     ?choices.map(item=>[item.label,item.copy,item.imageKey||item.imageUrl||""].join(":")).join("|")
@@ -143,10 +257,12 @@ export function topicFingerprintText(topic){
   return [topic.template,topic.title.normalize("NFKC").toLowerCase().replace(/\s+/g," "),body].join("\n");
 }
 export function topicSource(row){
-  const choices=parseFourImageChoices(row.content);
-  const script=hasCompleteFourImages(choices)?fourImageCopyText(choices):row.content;
+  const single=parseSingleImageQuiz(row.content);
+  const choices=single?.choices||parseFourImageChoices(row.content);
+  const script=hasCompleteSingleImageQuiz(single)?singleImageCopyText(single):hasCompleteFourImages(choices)?fourImageCopyText(choices):row.content;
   return {
     id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,
-    choices,videoData:{script},voiceGender:"male",
+    choices,sourceImage:single?{imageKey:single.imageKey||"",imageUrl:single.imageUrl||""}:null,
+    videoData:{script},voiceGender:"male",
   };
 }

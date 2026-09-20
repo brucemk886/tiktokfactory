@@ -2,7 +2,7 @@ export const AUTO_TEMPLATES = Object.freeze({
   video: [
     { id: 'psychology', label: '四图测试' },
     { id: 'psychology-collage', label: '纸张拼贴' },
-    { id: 'psychology-target-2', label: '互动测试' },
+    { id: 'psychology-target-2', label: '单图互动测试' },
   ],
   photo: [
     { id: 'photo-original', label: '跟随原帖 · 文案卡片 / 素材底图' },

@@ -282,6 +282,19 @@ test('template batches draw exact template, freeze content, count once and refus
   assert.equal(JSON.parse(sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(jobs[0].id).payload_json).topicSource.title,'High');
   assert.equal((await call('POST',{...body,onlyUnused:false,requestId:crypto.randomUUID(),selection:'least-used'},undefined,actor)).status,202);
 });
+test('single-image quiz batches freeze the source image and refuse incomplete topics',async t=>{
+  const{env,sqlite,call}=await fixture(t),actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
+  await seedBank(env,'psychology-target-2',[{title:'Ready',imageUrl:'https://images.unsplash.com/photo-1524504388940-b1c1722653e1',choices:[{copy:'Stay'},{copy:'Space'},{copy:'Think'},{copy:'Leave'}]}]);
+  const body=input({count:1,connectionIds:['a'],template:'psychology-target-2',sourceType:'topic-bank',selection:'priority'});
+  assert.equal((await call('POST',body,undefined,actor)).status,202);
+  const payload=JSON.parse(sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json);
+  assert.equal(payload.quizType,'character-choice');
+  assert.match(payload.sourceImage.imageUrl,/unsplash/);
+  assert.equal(payload.choiceCopies[0].copy,'Stay');
+  assert.equal(payload.choiceImages,undefined);
+  await seedBank(env,'psychology-target-2',[{title:'Incomplete only'}]);
+  await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID(),onlyUnused:true},undefined,actor),/单图互动题目需要一张图片/);
+});
 test('topic rules exclude disabled/deleted sources and support category search',async t=>{
   const{env,db,sqlite}=await fixture(t);
   await seedBank(env,'psychology-target-2',[{title:'Old',category:'Relationship',priority:99},{title:'New',priority:1},{title:'Off',enabled:false}]);
@@ -328,6 +341,9 @@ test('CSV/JSON import preserves quoted multiline text and rejects malformed inpu
   const four=normalizeTopic(parseTopicImport('题目,A文案,A图片,B文案,B图片,C文案,C图片,D文案,D图片\n题,Moon,https://images.unsplash.com/photo-1,Flame,https://images.unsplash.com/photo-2,River,https://images.unsplash.com/photo-3,Forest,https://images.unsplash.com/photo-4')[0],'psychology');
   assert.equal(four.choices[0].copy,'Moon');
   assert.equal(four.choices[3].copy,'Forest');
+  const single=normalizeTopic(parseTopicImport('题目,图片,A文案,B文案,C文案,D文案\n题,https://images.unsplash.com/photo-1,Stay,Space,Think,Leave')[0],'psychology-target-2');
+  assert.equal(single.choices[0].copy,'Stay');
+  assert.match(single.sourceImage.imageUrl,/unsplash/);
   assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',selection:'popular'})));
   assert.throws(()=>normalizeAutoPublish(input({sourceType:'topic-bank',mediaType:'photo',template:'photo-text'})));
 });

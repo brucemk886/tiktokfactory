@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildFourChoiceFilter, fourChoiceLayout, normalizeChoiceImages, workerTopicImagePath } from "./psychology-four-image.js";
-import { hasCompleteFourImages, normalizeTopic, parseFourImageChoices, serializeFourImageChoices } from "./psychology-topic-bank.js";
+import { hasCompleteFourImages, hasCompleteSingleImageQuiz, normalizeTopic, parseFourImageChoices, parseSingleImageQuiz, serializeFourImageChoices, serializeSingleImageQuiz } from "./psychology-topic-bank.js";
 
 test("parses uploaded JSON and grokbot A/B/C/D url lines", () => {
   const fromJson = parseFourImageChoices(serializeFourImageChoices([
@@ -21,6 +21,24 @@ test("parses uploaded JSON and grokbot A/B/C/D url lines", () => {
   assert.equal(fromText[0].copy, "Moon");
   assert.match(fromText[3].imageUrl, /unsplash/);
   assert.equal(parseFourImageChoices("just a script"), null);
+  assert.equal(parseFourImageChoices(serializeSingleImageQuiz({
+    imageUrl:"https://images.unsplash.com/photo-1",
+    choices:["A","B","C","D"].map(label=>({label,copy:label+" copy"})),
+  })), null);
+});
+
+test("single-image quiz topics require one image and four option copies", () => {
+  assert.throws(() => normalizeTopic({title:"Q",choices:[{copy:"A"},{copy:"B"},{copy:"C"},{copy:"D"}]},"psychology-target-2"), /测试图片/);
+  const topic = normalizeTopic({
+    title:"What this scene says",
+    imageUrl:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1",
+    choices:["stay close","need space","overthink it","walk away"].map(copy=>({copy})),
+  },"psychology-target-2");
+  assert.equal(hasCompleteSingleImageQuiz(topic.sourceImage?{...topic.sourceImage,choices:topic.choices}:null), true);
+  assert.match(topic.content, /single-image-quiz/);
+  const parsed=parseSingleImageQuiz(topic.content);
+  assert.equal(parsed.choices[3].copy, "walk away");
+  assert.equal(normalizeTopic({title:"Title only"},"psychology-target-2").content, "");
 });
 
 test("psychology topics require four copies and images when choices are sent", () => {

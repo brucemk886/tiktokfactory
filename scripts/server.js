@@ -54,6 +54,7 @@ import { readWatchdogSummary } from "./factory-watchdog.js";
 import { isOfficialPublishAbort, throwIfOfficialPublishAborted } from "./official-publish-abort.js";
 import { createWorkJournalService } from "./work-journal-local.js";
 import { normalizeQuizPayload } from "./quiz-content.js";
+import { operatorQuizFromPayload } from "./psychology-topic-bank.js";
 
 const root = process.cwd();
 const port = Number(process.env.PORT || 3010);
@@ -2193,10 +2194,17 @@ const server = http.createServer(async (req, res) => {
       payload.angle = String(payload.angle || "").trim().slice(0, 1000);
       payload.script = String(payload.script || "").trim().slice(0, 8000);
       payload.language = /[\u3400-\u9fff]/u.test(payload.script) ? "zh-CN" : "en";
-      payload.quizType = ["hidden-number", "position-choice", "character-choice", "embrace-choice"].includes(payload.quizType)
-        ? payload.quizType
-        : "auto";
-      payload.layout = ["single", "choices-4", "choices-6"].includes(payload.layout) ? payload.layout : "auto";
+      const operatorQuiz = operatorQuizFromPayload(payload);
+      if (!operatorQuiz) return sendJson(res, 400, { error: "单图互动题目需要一张图片和 A/B/C/D 四个选项。" });
+      payload.sourceImage = {
+        imageKey: operatorQuiz.imageKey,
+        imageUrl: operatorQuiz.imageUrl,
+        dataUrl: operatorQuiz.dataUrl,
+        imagePath: operatorQuiz.imagePath,
+      };
+      payload.choiceCopies = operatorQuiz.choices;
+      payload.quizType = "character-choice";
+      payload.layout = "choices-4";
       payload.targetDuration = Math.max(12, Math.min(20, Math.round(Number(payload.targetDuration) || 16)));
       payload.totalVideos = Math.max(1, Math.min(3, Math.round(Number(payload.totalVideos) || 1)));
       payload.imageModel = normalizeKieImageModel(payload.imageModel);

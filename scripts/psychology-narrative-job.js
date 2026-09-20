@@ -1,6 +1,8 @@
 import { withProductionPatch } from './production-timeline.js';
 import { preparePsychologyRenderAssets } from './psychology-render-assets.js';
 import { psychologyImagePayload } from "./psychology-image-policy.js";
+import { materializeTopicImage } from "./psychology-four-image.js";
+import { operatorQuizFromPayload } from "./psychology-topic-bank.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -77,8 +79,9 @@ async function main() {
   const totalVideos = clamp(Math.floor(Number(payload.totalVideos) || 1), 1, 3);
   const defaultCredit = requestedLanguage === "zh-CN" ? "一知心理课 一场心灵旅" : "PSYCHOLOGY LAB";
   const credit = String(payload.credit || defaultCredit).trim().slice(0, 24) || defaultCredit;
-  const requestedLayout = ["single", "choices-4", "choices-6"].includes(payload.layout) ? payload.layout : "auto";
-  const requestedQuizType = PSYCHOLOGY_TARGET2_QUIZ_TYPES.includes(payload.quizType) ? payload.quizType : "auto";
+  const operatorQuiz = operatorQuizFromPayload(payload);
+  const requestedLayout = operatorQuiz ? "choices-4" : (["single", "choices-4", "choices-6"].includes(payload.layout) ? payload.layout : "auto");
+  const requestedQuizType = operatorQuiz ? "character-choice" : (PSYCHOLOGY_TARGET2_QUIZ_TYPES.includes(payload.quizType) ? payload.quizType : "auto");
   const suppliedPlan = payload.plan && typeof payload.plan === "object"
     ? parseNarrativePlan(payload.plan, {
       topic: payload.topic,
@@ -86,6 +89,8 @@ async function main() {
       layout: requestedLayout,
       quizType: requestedQuizType,
       language: requestedLanguage,
+      sourceImage: Boolean(operatorQuiz),
+      choiceCopies: operatorQuiz?.choices,
     })
     : null;
   const kie = createKieAiService({ workDir, readApiKey: () => kieApiKey });
@@ -126,7 +131,7 @@ async function main() {
     quizType: requestedQuizType,
     language: requestedLanguage,
     imageModel,
-  }), { layout: requestedLayout, quizType: requestedQuizType, language: requestedLanguage });
+  }), { layout: requestedLayout, quizType: requestedQuizType, language: requestedLanguage, sourceImage: Boolean(operatorQuiz), choiceCopies: operatorQuiz?.choices });
   let score = scoreNarrativePlan(plan, { targetDuration });
   let attempt = 1;
   while (!score.passed && attempt < 3) {
@@ -142,6 +147,8 @@ async function main() {
       layout: requestedLayout,
       quizType: requestedQuizType,
       language: requestedLanguage,
+      sourceImage: Boolean(operatorQuiz),
+      choiceCopies: operatorQuiz?.choices,
     });
     score = scoreNarrativePlan(plan, { targetDuration });
   }
@@ -183,7 +190,9 @@ async function main() {
   const timedCaptions = scaleTimedCaptions(timedNarration.captions, rawDuration > 0 ? duration / rawDuration : 1);
 
   writeManifest({ status: "voiced", attempt, score, plan, language, provider, voice, duration, captionTimings: timedCaptions });
-  patchJob({ status: "running", percent: 42, message: `整段解说完成（${duration.toFixed(1)} 秒），字幕时间已按真实语音时间戳对齐，开始生成测试图...`, score, plan, language, ttsProvider: provider, captionTimings: timedCaptions });
+  patchJob({ status: "running", percent: 42, message: operatorQuiz
+    ? `整段解说完成（${duration.toFixed(1)} 秒），字幕时间已按真实语音时间戳对齐，开始使用上传的测试图...`
+    : `整段解说完成（${duration.toFixed(1)} 秒），字幕时间已按真实语音时间戳对齐，开始生成测试图...`, score, plan, language, ttsProvider: provider, captionTimings: timedCaptions });
 
   patchJob({productionStage:'images',productionAudio:{duration,status:'done'},productionScene:{index:0,text:plan.narration,audioText:plan.narration,audioStatus:'done',duration,start:0,end:duration,videoDescription:'测试图持续展示，字幕及揭晓动画按真实语音时间戳播放。'},productionVideo:{description:'测试画面、解说、逐句字幕与选项动效同步合成。',aspectRatio:'16:9',duration}});
   for (let variant = 1; variant <= totalVideos; variant += 1) {
@@ -198,16 +207,23 @@ async function main() {
       results,
     });
     const imagePath = path.join(jobDir, `variant-${variant}.png`);
-    patchJob({productionStage:'images',productionScene:{index:0,imagePrompt:narrativeStylePrompt(plan, {variant,imageModel}),imageStatus:'running'}});
-    const generatedImageUrl = await generateSceneImage({
-      kie,
-      model: imageModel,
-      prompt: narrativeStylePrompt(plan, { variant, imageModel }),
-      outputPath: imagePath,
-      layout: plan.layout,
-      quizType: plan.quizType,
-      aspectRatio: imageAspectRatioForQuizType(plan.quizType),
-    });
+    patchJob({productionStage:'images',productionScene:{index:0,imagePrompt:operatorQuiz ? "operator-uploaded test image" : narrativeStylePrompt(plan, {variant,imageModel}),imageStatus:'running'}});
+    let generatedImageUrl = "";
+    if (operatorQuiz) {
+      if (variant === 1) await materializeTopicImage(operatorQuiz, imagePath, { workDir });
+      else fs.copyFileSync(path.join(jobDir, "variant-1.png"), imagePath);
+      generatedImageUrl = imagePath;
+    } else {
+      generatedImageUrl = await generateSceneImage({
+        kie,
+        model: imageModel,
+        prompt: narrativeStylePrompt(plan, { variant, imageModel }),
+        outputPath: imagePath,
+        layout: plan.layout,
+        quizType: plan.quizType,
+        aspectRatio: imageAspectRatioForQuizType(plan.quizType),
+      });
+    }
 
     patchJob({productionScene:{index:0,imageUrl:generatedImageUrl,imageStatus:'done'}});
     patchJob({ productionStage:'render', status: "running", percent: Math.round(78 + ((variant - 0.4) / totalVideos) * 16), message: `正在合成第 ${variant}/${totalVideos} 条心理学中视频...`, score, plan, results });
@@ -222,6 +238,7 @@ async function main() {
       layout: plan.layout,
       quizType: plan.quizType,
       choiceLabels: plan.choiceLabels,
+      choiceCopies: plan.choiceCopies || operatorQuiz?.choices?.map((item) => item.copy) || [],
       captions: timedCaptions,
       duration,
     });
@@ -236,7 +253,8 @@ async function main() {
       contactSheetFileName: path.basename(contactSheetPath),
       contactSheetUrl: `/outputs/${encodeURIComponent(path.basename(contactSheetPath))}`,
       template: "psychology-target-2",
-      templateLabel: "心理学 · 目标2",
+      templateLabel: "心理学 · 单图互动",
+      imageModel: operatorQuiz ? "source-image" : imageModel,
       imageModel,
       title: plan.title,
       quizType: plan.quizType,
@@ -268,9 +286,9 @@ async function main() {
   });
 }
 
-async function requestPlan(kie, prompt, { layout, quizType, language }) {
+async function requestPlan(kie, prompt, { layout, quizType, language, sourceImage, choiceCopies }) {
   const task = await kie.createTask({ kind: "chat", prompt });
-  return parseNarrativePlan(task.resultText, { topic: payload.topic, credit: payload.credit, layout, quizType, language });
+  return parseNarrativePlan(task.resultText, { topic: payload.topic, credit: payload.credit, layout, quizType, language, sourceImage, choiceCopies });
 }
 
 async function synthesizeTimedNarration({ plan, provider, voice, apiKey, modelId }) {
@@ -497,7 +515,7 @@ function listAudioFiles(directory) {
   return files.sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
-function renderQuizVideo({ outputPath, audioPath, imagePath, title, credit, layout, quizType, choiceLabels, captions, duration }) {
+function renderQuizVideo({ outputPath, audioPath, imagePath, title, credit, layout, quizType, choiceLabels, choiceCopies, captions, duration }) {
   const assetId = `${safeName(path.basename(outputPath, path.extname(outputPath)))}-${Date.now()}`;
   const assetDir = path.join(jobDir, `${assetId}-public`);
   const propsPath = path.join(jobDir, `${assetId}.remotion-props.json`);
@@ -514,6 +532,7 @@ function renderQuizVideo({ outputPath, audioPath, imagePath, title, credit, layo
     layout,
     quizType,
     choiceLabels,
+    choiceCopies: Array.isArray(choiceCopies) ? choiceCopies : [],
     captions,
     imageSrc: imageName,
     audioSrc: audioName,

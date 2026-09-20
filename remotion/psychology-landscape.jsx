@@ -11,10 +11,10 @@ import {
 import { Audio } from "@remotion/media";
 
 const TYPE_LABELS = {
-  "hidden-number": "隐藏数字",
-  "position-choice": "位置选择",
-  "character-choice": "人物选择",
-  "embrace-choice": "拥抱偏好",
+  "hidden-number": "单图互动",
+  "position-choice": "单图互动",
+  "character-choice": "单图互动",
+  "embrace-choice": "单图互动",
 };
 
 const resolveAsset = (value) => {
@@ -103,26 +103,46 @@ const StickCompanion = ({ frame, fps, beatIndex, startFrame, endFrame }) => {
   );
 };
 
-const ChoiceLabels = ({ labels, quizType }) => {
+const ChoiceLabels = ({ labels, copies, quizType }) => {
   if (!["character-choice", "embrace-choice"].includes(quizType)) return null;
   const values = Array.isArray(labels) && labels.length === 4 ? labels : ["A", "B", "C", "D"];
+  const texts = Array.isArray(copies) && copies.length === 4 ? copies.map((item) => String(item || "").trim()) : ["", "", "", ""];
+  const hasCopy = texts.some(Boolean);
   return (
     <div style={{
       position: "absolute",
       left: 10,
       right: 10,
-      bottom: 4,
+      bottom: hasCopy ? 8 : 4,
       display: "grid",
       gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
       gap: 8,
       color: "#5aa0d4",
-      fontSize: 48,
+      fontSize: hasCopy ? 28 : 48,
       fontWeight: 850,
       textAlign: "center",
       lineHeight: 1,
       textShadow: "0 2px 0 white, 0 0 8px white",
     }}>
-      {values.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+      {values.map((label, index) => (
+        <span key={`${label}-${index}`} style={{ display: "grid", gap: hasCopy ? 6 : 0, justifyItems: "center" }}>
+          <b style={{ fontSize: hasCopy ? 36 : 48, fontWeight: 850 }}>{label}</b>
+          {hasCopy ? (
+            <small style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              maxWidth: "100%",
+              color: "#1a1a1a",
+              fontSize: 18,
+              fontWeight: 700,
+              lineHeight: 1.2,
+              textShadow: "0 1px 0 white, 0 0 6px white",
+            }}>{texts[index]}</small>
+          ) : null}
+        </span>
+      ))}
     </div>
   );
 };
@@ -133,6 +153,7 @@ export const PsychologyLandscape = ({
   layout = "choices-6",
   quizType = "position-choice",
   choiceLabels = ["A", "B", "C", "D", "E", "F"],
+  choiceCopies = ["", "", "", ""],
   captions = [],
   subtitle = "",
   subtitleZh = "",
@@ -213,7 +234,7 @@ export const PsychologyLandscape = ({
               }}
             />
           ) : null}
-          <ChoiceLabels labels={choiceLabels} quizType={resolvedQuizType} />
+          <ChoiceLabels labels={choiceLabels} copies={choiceCopies} quizType={resolvedQuizType} />
         </div>
 
         <div style={{

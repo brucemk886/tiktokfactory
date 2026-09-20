@@ -121,7 +121,9 @@ test("public integration dispatch works without a login cookie and stays on the 
   assert.match(script,/\/api\/integrations\/psychology\/template-topics/);
   assert.match(script,/function loadKey\(/);
   assert.match(page,/id="fourChoiceFields"/);
+  assert.match(page,/id="singleImageFields"/);
   assert.match(script,/collectChoices/);
+  assert.match(script,/collectSingleImage/);
 });
 
 test("four-image topics upload to archive and serve admin plus worker reads", async t => {
@@ -157,4 +159,28 @@ test("four-image topics upload to archive and serve admin plus worker reads", as
   assert.equal((await handlePsychologyTopicBank(new Request(BASE+"/api/psychology-template-topics/import",{
     method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:crypto.randomUUID(),template:"psychology",items:[{title:"Missing",choices:[{copy:"A"},{copy:"B"},{copy:"C"},{copy:"D"}]}]}),
   }),env,new URL(BASE+"/api/psychology-template-topics/import"),session)).status,400);
+});
+
+test("single-image quiz topics store one image and four option copies", async t => {
+  const {db}=fixture(t);
+  const saved=await call(db,"/api/psychology-template-topics/import","POST",{
+    requestId:crypto.randomUUID(),
+    template:"psychology-target-2",
+    items:[{
+      title:"What this scene says",
+      imageUrl:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1",
+      choices:[{copy:"stay close"},{copy:"need space"},{copy:"overthink it"},{copy:"walk away"}],
+    }],
+  });
+  assert.equal(saved.status,201);
+  const page=await (await call(db,"/api/psychology-template-topics?template=psychology-target-2")).json();
+  assert.equal(page.items[0].choices[0].copy,"stay close");
+  assert.match(page.items[0].image.imageUrl,/unsplash/);
+  assert.equal((await call(db,"/api/psychology-template-topics/import","POST",{
+    requestId:crypto.randomUUID(),
+    template:"psychology-target-2",
+    items:[{title:"Incomplete",choices:[{copy:"A"},{copy:"B"},{copy:"C"},{copy:"D"}]}],
+  })).status,400);
+  const titleOnly=await call(db,PSYCHOLOGY_TOPIC_API,"POST",{template:"psychology-target-2",title:"Grokbot title only"},{Authorization:"Bearer "+await key(db)},null);
+  assert.equal(titleOnly.status,200);
 });

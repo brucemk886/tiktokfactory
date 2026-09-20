@@ -86,6 +86,21 @@ test("rejects a quiz plan that has no usable narration", () => {
   );
 });
 
+test("operator-uploaded quiz image does not require a visual prompt", () => {
+  const plan = parseNarrativePlan({
+    ...englishFixturePlan(),
+    visualPrompt: "",
+  }, {
+    topic: "attachment",
+    sourceImage: true,
+    choiceCopies: [{ copy: "stay close" }, { copy: "need space" }, { copy: "overthink it" }, { copy: "walk away" }],
+  });
+  assert.equal(plan.quizType, "character-choice");
+  assert.equal(plan.layout, "choices-4");
+  assert.deepEqual(plan.choiceCopies, ["stay close", "need space", "overthink it", "walk away"]);
+  assert.match(plan.visualPrompt, /Operator-uploaded/);
+});
+
 test("scores a complete short quiz above the production gate", () => {
   const plan = parseNarrativePlan(fixturePlan(), { topic: "防备心" });
   const score = scoreNarrativePlan(plan, { targetDuration: 16 });
@@ -185,11 +200,11 @@ test("psychology keeps interactive test distinct from paper collage", async () =
   assert.doesNotMatch(html, /href="\/psychology-target-2"/);
   assert.doesNotMatch(html, /href="\/psychology-collage"/);
   assert.match(page, /SVG 动作/);
-  assert.match(page, /<h1>互动测试模板<\/h1>/);
-  assert.match(page, /data-quiz-type="hidden-number"/);
-  assert.match(page, /data-quiz-type="position-choice"/);
-  assert.match(page, /data-quiz-type="character-choice"/);
-  assert.match(page, /data-quiz-type="embrace-choice"/);
+  assert.match(page, /<h1>单图互动测试模板<\/h1>/);
+  assert.match(page, /id="sourceImageFile"/);
+  assert.match(page, /id="choiceCopy0"/);
+  assert.doesNotMatch(page, /data-quiz-type="hidden-number"/);
+  assert.doesNotMatch(page, /data-quiz-type="position-choice"/);
   assert.match(page, /默认英文 · 中文走 ElevenLabs/);
   assert.match(page, /id="elevenLabsApiKey"/);
   assert.match(page, /id="elevenLabsVoiceId"/);
@@ -212,6 +227,10 @@ test("psychology keeps interactive test distinct from paper collage", async () =
   assert.match(worker, /captionsFromCharacterAlignment/);
   assert.match(worker, /\/with-timestamps\?output_format=/);
   assert.match(worker, /narrativeTtsProviderForText\(plan\.narration\)/);
+  assert.match(worker, /operatorQuizFromPayload/);
+  assert.match(worker, /choiceCopies/);
+  assert.match(composition, /choiceCopies/);
+  assert.match(browser, /collectSourceImage/);
   assert.doesNotMatch(worker, /speech-segment-/);
   assert.doesNotMatch(worker, /DEFAULT_KOKORO_CHINESE_VOICE/);
   assert.doesNotMatch(composition, /Math\.floor\(frame \/ Math\.max\(1, fps\)\)/);

@@ -1,5 +1,5 @@
 import { json,errorJson,readJson,sha256Hex,randomToken } from "./http.js";
-import { TOPIC_TEMPLATES,TOPIC_IMAGE_KEY,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource,parseFourImageChoices } from "../../scripts/psychology-topic-bank.js";
+import { TOPIC_TEMPLATES,TOPIC_IMAGE_KEY,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource,parseFourImageChoices,parseSingleImageQuiz } from "../../scripts/psychology-topic-bank.js";
 export const PSYCHOLOGY_TOPIC_API="/api/integrations/psychology/template-topics";
 const BASE="/api/psychology-template-topics";
 const TOPIC_IMAGE_MAX=8*1024*1024;
@@ -13,7 +13,8 @@ export function assertTopicBankUser(user){
     throw Object.assign(new Error("没有模板题库管理权限。"),{statusCode:403});
 }
 function publicChoices(content){
-  const choices=parseFourImageChoices(content);
+  const single=parseSingleImageQuiz(content);
+  const choices=single?.choices||parseFourImageChoices(content);
   if(!choices)return null;
   return choices.map(item=>({
     label:item.label,
@@ -23,7 +24,16 @@ function publicChoices(content){
     previewUrl:item.imageKey?`${BASE}/assets?key=${encodeURIComponent(item.imageKey)}`:item.imageUrl||"",
   }));
 }
-const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"?publicChoices(row.content):null});
+function publicSourceImage(content){
+  const single=parseSingleImageQuiz(content);
+  if(!single)return null;
+  return {
+    imageKey:single.imageKey||"",
+    imageUrl:single.imageUrl||"",
+    previewUrl:single.imageKey?`${BASE}/assets?key=${encodeURIComponent(single.imageKey)}`:single.imageUrl||"",
+  };
+}
+const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"||row.template==="psychology-target-2"?publicChoices(row.content):null,image:row.template==="psychology-target-2"?publicSourceImage(row.content):null});
 export function topicImageObjectKey(id,ext){
   const suffix=ext==="jpeg"?"jpg":ext;
   return `psychology-topics/${id}.${suffix}`;

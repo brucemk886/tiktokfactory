@@ -44,8 +44,9 @@ export const RemotionRoot = () => {
           title: "你下意识选择的位置，藏着你的防备心有多强",
           credit: "一知心理课 一场心灵旅",
           layout: "choices-6",
-          quizType: "position-choice",
-          choiceLabels: ["A", "B", "C", "D", "E", "F"],
+          quizType: "character-choice",
+          choiceLabels: ["A", "B", "C", "D"],
+          choiceCopies: ["", "", "", ""],
           captions: [
             { zh: "你会下意识站在哪", en: "Where would you stand first?" },
             { zh: "把选项扣在评论区", en: "Comment your choice below." },
