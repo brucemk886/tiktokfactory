@@ -5,7 +5,7 @@ Move newly created psychology automatic photo posts from local Chrome to Cloudfl
 - Freeze cloudPhotoRender on each newly created source payload; old queued/running sources stay local. Initially deploy with PSYCHOLOGY_CLOUD_PHOTO=false for real-browser verification.
 - Cloudflare Queues uses one job/message, two consumers. D1 owns execution leases, retry availability and checkpoints; a dedicated minute watchdog dispatches missed messages and recovers expired cloud leases. Local claims exclude cloud-marked jobs.
 - Shared card runtime preserves existing layout logic. Cloud Chromium uses the template font fallbacks (Georgia/Helvetica where Windows-specific faces are unavailable); verify exported images before activation.
-- Download backgrounds before opening Chrome; cap buffered inputs. Back up each rendered image in private R2, close Chrome, then restore/upload through the existing photo checkpoint path. Group retry jobs inherit cloud ownership. No local worker restart.
+- Download backgrounds before opening Chrome; cap buffered inputs. Render six pages in one browser call, close Chrome, back up each rendered image in private R2, then restore/upload through the existing photo checkpoint path. Group retry jobs inherit cloud ownership. No local worker restart.
 - Two existing business retries, stable group externalId and frozen requests remain. Queue delivery retries do not reset business retry counts. No real TikTok/AI calls in tests or render probe.
 - Worker-token-protected /api/worker/psychology-cloud-photo/probe accepts exactly six synthetic pages and only renders; it cannot publish.
 
@@ -13,7 +13,7 @@ Move newly created psychology automatic photo posts from local Chrome to Cloudfl
 Cloud renderer/queue/probe, shared public card runtime, automatic task creation/local claim/group retries, Wrangler bindings and migration 0035, focused tests and benchmark script.
 
 # Tests performed
-- Full suite previously 478 passing; final suite including integrated upload/submission tests pending final rerun.
+- Full suite 480/480 passing including integrated upload/submission tests.
 - Local cloud-adapter verification: 12 images, same cover bytes as the existing local renderer, two concurrent sessions, ~1 second/post including local launch/close.
 - 14 queue tests cover duplicate delivery, delayed retries, cancellation, watchdog, send failures, local isolation, old task snapshots, checkpoints, failed backup cleanup and real service orchestration with mocked hub.
 - Build validation passed. Official @cloudflare/puppeteer includes an extract-zip advisory through its local browser-installer dependency; that installer is absent from the Worker bundle and this implementation never downloads browser archives.
@@ -23,3 +23,6 @@ Deploy with switch disabled, run real cloud 20-post/120-image benchmark and visu
 
 # Recommended next step
 Complete live rendering validation and record actual browser time before activating the default.
+
+## First live probe
+20 posts / 120 synthetic images passed on Cloudflare with two concurrent requests: 54.363 s wall time, 92.08 s measured browser lifecycle, mean 4.604 s/post. Browser binding reports maxConcurrentSessions=200. Cover, content and stock-overlay JPEGs visually checked: readable, no clipping. Batched rendering optimization now pending second live probe; default remains disabled.

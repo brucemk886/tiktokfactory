@@ -10,10 +10,13 @@ export async function handleCloudPhotoProbe(request,env,url) {
   if(body.pages.some(p=>['title','subtitle','body'].some(k=>String(p[k]||'').length>5000)||p.template==='stock'&&!/^data:image\/(jpeg|png|webp);base64,/.test(p.imageData||'')))return json({error:'测试图片或文案无效'},400);
   const driver=(await import('@cloudflare/puppeteer')).default;
   const limits=await driver.limits(env.PHOTO_BROWSER);
-  const started=Date.now(),sources=await loadCardModules(env),images=[];
+  const started=Date.now(),sources=await loadCardModules(env);let images=[];
   const renderer=await openCloudCardRenderer(env,sources,driver);
   let browserMs=0;
-  try {for(const [index,source] of body.pages.entries())images.push(await renderer.render(source,index,'photo-original',source.imageData||''));}
+  try {images=await renderer.renderBatch(body.pages.map((source,index)=>({source,index,template:'photo-original',imageData:source.imageData||''})));}
   finally {browserMs=await renderer.close();}
-  return json({images,browserMs,elapsedMs:Date.now()-started,maxConcurrentSessions:limits.maxConcurrentSessions});
+  const history=await driver.history(env.PHOTO_BROWSER).catch(()=>[]);
+  const session=history.find(item=>item.sessionId===renderer.sessionId);
+  const meteredBrowserMs=session?.endTime&&session?.startTime?session.endTime-session.startTime:null;
+  return json({images,browserMs,meteredBrowserMs,elapsedMs:Date.now()-started,maxConcurrentSessions:limits.maxConcurrentSessions});
 }

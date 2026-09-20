@@ -1,25 +1,25 @@
 {
   "scope": "Local compatibility test of cloud adapter",
-  "at": "2026-09-20T08:30:48.848Z",
+  "at": "2026-09-20T08:36:31.186Z",
   "posts": 2,
   "images": 12,
   "concurrency": 2,
-  "wallSeconds": 1.73,
-  "browserSeconds": 1.999,
-  "meanPostBrowserSeconds": 0.9995,
-  "p95PostBrowserSeconds": 1.01,
-  "projected600BrowserMinutes": 9.995,
+  "wallSeconds": 1.785,
+  "browserSeconds": 2.042,
+  "meanPostBrowserSeconds": 1.021,
+  "p95PostBrowserSeconds": 1.031,
+  "projected600BrowserMinutes": 10.21,
   "samples": [
     {
       "index": 0,
       "mode": "text",
-      "browserMs": 1010,
+      "browserMs": 1011,
       "imageBytes": 379735
     },
     {
       "index": 1,
       "mode": "mixed",
-      "browserMs": 989,
+      "browserMs": 1031,
       "imageBytes": 565145
     }
   ]

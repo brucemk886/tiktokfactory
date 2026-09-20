@@ -82,17 +82,17 @@ test('rendering checkpoints close Chrome before upload and resume without rerend
   const f=await prepared(t);f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='test' WHERE id=?").run(f.id);
   const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id),events=[];
   await runCloudPhoto(f.env,job,{call:async action=>{events.push(action);return action==='state'?{assets:{0:{}},receipt:{}}:{waiting:true};},
-    loadModules:async()=>[],openRenderer:async()=>({render:async(s,i)=>{events.push('render-'+i);return 'jpeg';},close:async()=>{events.push('close');return 20;}}),
+    loadModules:async()=>[],openRenderer:async()=>({renderBatch:async entries=>entries.map(({index})=>{events.push('render-'+index);return 'jpeg';}),close:async()=>{events.push('close');return 20;}}),
     backup:async(e,item,i)=>events.push('backup-'+i)});
   assert.equal(events.filter(e=>e.startsWith('render')).length,5);assert.equal(events.includes('render-0'),false);
-  assert.ok(events.lastIndexOf('state')>events.indexOf('close'));assert.ok(events.indexOf('publish')>events.indexOf('close'));
+  assert.ok(events.indexOf('backup-1')>events.indexOf('close'));assert.ok(events.lastIndexOf('state')>events.indexOf('close'));assert.ok(events.indexOf('publish')>events.indexOf('close'));
   await runCloudPhoto(f.env,job,{call:async action=>action==='state'?{assets:Object.fromEntries(pages.map((_,i)=>[i,{}])),receipt:{}}:{waiting:true},openRenderer:()=>assert.fail('already checkpointed')});
 });
 test('browser closes on failed backup and no partial album is published',async t=>{
   const f=await prepared(t);f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='test' WHERE id=?").run(f.id);
   let closed=0;await assert.rejects(runCloudPhoto(f.env,f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id),{
     call:async action=>{assert.notEqual(action,'publish');return {assets:{},receipt:{}};},loadModules:async()=>[],
-    openRenderer:async()=>({render:async()=>'',close:async()=>{closed++;return 0;}}),backup:async()=>{throw new Error('R2 down');}
+    openRenderer:async()=>({renderBatch:async entries=>entries.map(()=>''),close:async()=>{closed++;return 0;}}),backup:async()=>{throw new Error('R2 down');}
   }),/R2 down/);assert.equal(closed,1);
 });
 test('probe requires worker authentication and queue config caps concurrency at two',async t=>{
@@ -111,7 +111,7 @@ test('six checkpointed images traverse real cloud upload and grouped submission 
     return previous(url,init);
   });
   await processCloudMessage(f.env,message(f.id),{runPhoto:(env,job)=>runCloudPhoto(env,job,{
-    loadModules:async()=>[],openRenderer:async()=>({render:async()=> 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2Q==',close:async()=>{closed=true;return 99;}})
+    loadModules:async()=>[],openRenderer:async()=>({renderBatch:async entries=>entries.map(()=> 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2Q=='),close:async()=>{closed=true;return 99;}})
   })});
   const row=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id);
   assert.equal(row.status,'done',row.error);assert.equal(uploads,6);assert.equal(f.requests.length,1);

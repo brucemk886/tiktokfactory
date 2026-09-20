@@ -1,0 +1,154 @@
+{
+  "scope": "Real Cloudflare browser rendering, synthetic text/stock fixtures; no AI, R2 upload, hub submission or TikTok publication",
+  "at": "2026-09-20T08:34:31.817Z",
+  "posts": 20,
+  "images": 120,
+  "concurrency": 2,
+  "wallSeconds": 54.363,
+  "browserSeconds": 92.08,
+  "meanPostBrowserSeconds": 4.604,
+  "p95PostBrowserSeconds": 7.227,
+  "projected600BrowserMinutes": 46.04,
+  "samples": [
+    {
+      "index": 0,
+      "mode": "text",
+      "browserMs": 3530,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 1,
+      "mode": "mixed",
+      "browserMs": 7227,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 2,
+      "mode": "text",
+      "browserMs": 6226,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 3,
+      "mode": "mixed",
+      "browserMs": 3756,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 4,
+      "mode": "text",
+      "browserMs": 6323,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 5,
+      "mode": "mixed",
+      "browserMs": 2412,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 6,
+      "mode": "text",
+      "browserMs": 1836,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 7,
+      "mode": "mixed",
+      "browserMs": 6970,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 8,
+      "mode": "text",
+      "browserMs": 5700,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 9,
+      "mode": "mixed",
+      "browserMs": 4287,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 10,
+      "mode": "text",
+      "browserMs": 4273,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 11,
+      "mode": "mixed",
+      "browserMs": 7561,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 12,
+      "mode": "text",
+      "browserMs": 3653,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 13,
+      "mode": "mixed",
+      "browserMs": 2570,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 14,
+      "mode": "text",
+      "browserMs": 5701,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 15,
+      "mode": "mixed",
+      "browserMs": 5130,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 16,
+      "mode": "text",
+      "browserMs": 3978,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 17,
+      "mode": "mixed",
+      "browserMs": 2616,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 18,
+      "mode": "text",
+      "browserMs": 2101,
+      "imageBytes": 345132,
+      "maxConcurrentSessions": 200
+    },
+    {
+      "index": 19,
+      "mode": "mixed",
+      "browserMs": 6230,
+      "imageBytes": 551064,
+      "maxConcurrentSessions": 200
+    }
+  ]
+}

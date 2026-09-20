@@ -32,8 +32,8 @@ async function worker(){
     const pages=Array.from({length:6},(_,i)=>({template:i?'content':'cover',title:i?'Notice the pattern':'Why you pull away when someone gets close',body:i?'Taking a pause can help you understand what you feel. **Name the feeling**, ask for space, and agree on when to reconnect.':'',...(mode==='mixed'&&i%2?{template:'stock',imageData,title:'Take a moment to breathe',body:'Pelan-pelan. Pahami perasaanmu, lalu bicarakan dengan tenang.'}:{})}));
     let result;
     if(local){
-      const renderer=await openCloudCardRenderer(env,modules,{launch:()=>puppeteer.launch({executablePath,headless:true})}),images=[];
-      let browserMs;try{for(const [i,source] of pages.entries())images.push(await renderer.render(source,i,'photo-original',source.imageData||''));}finally{browserMs=await renderer.close();}
+      const renderer=await openCloudCardRenderer(env,modules,{launch:()=>puppeteer.launch({executablePath,headless:true})});let images=[];
+      let browserMs;try{images=await renderer.renderBatch(pages.map((source,index)=>({source,index,template:'photo-original',imageData:source.imageData||''})));}finally{browserMs=await renderer.close();}
       // Exact shared rendering behavior on the same engine/fonts.
       if(index===0){const old=await openCardRenderer(root);try{if(await old.render(pages[0],0,'photo-original')!==images[0])throw new Error('local/cloud adapter rendering differs');}finally{await old.close();}}
       result={images,browserMs};
@@ -44,11 +44,11 @@ async function worker(){
     if(result.images?.length!==6)throw new Error('Incomplete photo set');
     const imageBytes=result.images.reduce((sum,data)=>sum+Buffer.from(data.split(',')[1],'base64').length,0);
     if(index<2)for(const [i,data] of result.images.entries())fs.writeFileSync(path.join(output,(local?'local':'cloud')+'-'+mode+'-'+i+'.jpg'),Buffer.from(data.split(',')[1],'base64'));
-    samples.push({index,mode,browserMs:result.browserMs,imageBytes,maxConcurrentSessions:result.maxConcurrentSessions});
+    samples.push({index,mode,browserMs:result.browserMs,imageBytes,meteredBrowserMs:result.meteredBrowserMs,maxConcurrentSessions:result.maxConcurrentSessions});
     console.log(JSON.stringify({completed:samples.length,total:count,mode,browserMs:result.browserMs}));
   }
 }
 const started=Date.now();await Promise.all([worker(),worker()]);samples.sort((a,b)=>a.index-b.index);
 const browserMs=samples.reduce((sum,s)=>sum+s.browserMs,0),sorted=samples.map(s=>s.browserMs).sort((a,b)=>a-b);
-const report={scope:local?'Local compatibility test of cloud adapter':'Real Cloudflare browser rendering, synthetic text/stock fixtures; no AI, R2 upload, hub submission or TikTok publication',at:new Date().toISOString(),posts:count,images:count*6,concurrency:2,wallSeconds:(Date.now()-started)/1000,browserSeconds:browserMs/1000,meanPostBrowserSeconds:browserMs/count/1000,p95PostBrowserSeconds:sorted[Math.ceil(count*.95)-1]/1000,projected600BrowserMinutes:browserMs/count*600/60000,samples};
+const report={scope:local?'Local compatibility test of cloud adapter':'Real Cloudflare browser rendering, synthetic text/stock fixtures; no AI, R2 upload, hub submission or TikTok publication',at:new Date().toISOString(),posts:count,images:count*6,concurrency:2,wallSeconds:(Date.now()-started)/1000,browserSeconds:browserMs/1000,meanPostBrowserSeconds:browserMs/count/1000,p95PostBrowserSeconds:sorted[Math.ceil(count*.95)-1]/1000,projected600BrowserMinutes:browserMs/count*600/60000,meteredBrowserSeconds:samples.every(s=>Number.isFinite(s.meteredBrowserMs))?samples.reduce((sum,s)=>sum+s.meteredBrowserMs,0)/1000:null,samples};
 fs.writeFileSync(path.join(root,'docs/reports/2026-09-20-psychology-'+(local?'cloud-adapter-local':'cloud-render-benchmark')+'.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));
