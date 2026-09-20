@@ -61,3 +61,14 @@ test("creating projects and groups happens on a separate organize page", () => {
   assert.equal(canAccessPath({ role: "admin", sidebarModules: ["tiktok-connections"] }, "/tiktok-connections-organize"), true);
   assert.match(access, /tiktok-connections-organize/);
 });
+
+test('renaming projects and groups keeps module scopes, memberships and account IDs stable',async()=>{
+  const {ensureModuleProjects,updateProject,updateGroup,scopeOfficialAccess}=await import('./official-account-group-store.js');
+  const before=ensureModuleProjects({projects:[{id:'proj-psych',name:'心理学',moduleKey:'psychology'}],groups:[{id:'group-a',name:'旧分组',projectId:'proj-psych'}],assignments:{account1:'group-a'}});
+  const renamed=ensureModuleProjects(updateGroup(updateProject(before,'proj-psych',{name:'新的项目名称'}),'group-a',{name:'新的分组名称'}));
+  assert.deepEqual(renamed.assignments,before.assignments);assert.deepEqual(renamed.projects.map(p=>p.id),before.projects.map(p=>p.id));
+  assert.equal(renamed.groups[0].projectId,'proj-psych');assert.equal(renamed.projects.find(p=>p.id==='proj-psych').moduleKey,'psychology');
+  const scoped=scopeOfficialAccess({accounts:[{connectionId:'account1'}]},renamed,{role:'admin'},'psychology');
+  assert.equal(scoped.accounts.length,1);assert.equal(scoped.accounts[0].groupName,'新的分组名称');assert.equal(scoped.accounts[0].projectName,'新的项目名称');
+  assert.throws(()=>updateGroup(renamed,'group-a',{name:'  '}),/填写名称/);
+});

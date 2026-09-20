@@ -1,4 +1,13 @@
 const elements = {
+  renameGroupBtn: document.querySelector("#renameGroupBtn"),
+  renameProjectBtn: document.querySelector("#renameProjectBtn"),
+  renameDialog: document.querySelector("#renameDialog"),
+  renameForm: document.querySelector("#renameForm"),
+  renameName: document.querySelector("#renameName"),
+  renameTitle: document.querySelector("#renameTitle"),
+  renameError: document.querySelector("#renameError"),
+  cancelRename: document.querySelector("#cancelRename"),
+  saveRename: document.querySelector("#saveRename"),
   bridgeUrl: document.querySelector("#bridgeUrl"),
   bridgeApiKey: document.querySelector("#bridgeApiKey"),
   authorizeLink: document.querySelector("#authorizeLink"),
@@ -47,7 +56,7 @@ const elements = {
 const PAGE_SIZE = 20;
 const isOrganizePage = document.body.dataset.connectionsPage === "organize";
 const canSelectAccounts = Boolean(document.querySelector("#assignGroupSelect") && document.querySelector("#accountList"));
-const state = { accounts: [], groups: [], projects: [], page: 1, groupPage: 1, tab: "groups" };
+const state = { accounts: [], groups: [], projects: [], page: 1, groupPage: 1, tab: "groups", renameTarget: null, renaming: false };
 
 elements.saveButton?.addEventListener("click", saveSettings);
 elements.testButton?.addEventListener("click", testConnection);
@@ -58,6 +67,7 @@ elements.projectFilter?.addEventListener("change", () => {
   syncNewGroupProjectFromFilter();
   fillGroupSelects();
   renderGroups();
+  syncRenameButtons();
 });
 elements.groupFilter?.addEventListener("change", () => { state.page = 1; renderAccounts(); syncGroupReportBar(); });
 elements.accountSearch?.addEventListener("input", () => { state.page = 1; renderAccounts(); });
@@ -74,6 +84,13 @@ elements.assignGroupBtn?.addEventListener("click", assignSelected);
 elements.deleteGroupBtn?.addEventListener("click", deleteCurrentGroup);
 elements.groupsTab?.addEventListener("click", () => setWorkspaceTab("groups"));
 elements.projectsTab?.addEventListener("click", () => setWorkspaceTab("projects"));
+
+elements.renameGroupBtn?.addEventListener("click", () => openRename("group", currentGroupId()));
+elements.renameProjectBtn?.addEventListener("click", () => openRename("project", elements.projectFilter?.value));
+elements.groupList?.addEventListener("click", event => {const button=event.target.closest("[data-rename-group]");if(button)openRename("group",button.dataset.renameGroup);});
+elements.cancelRename?.addEventListener("click", () => {if(!state.renaming)elements.renameDialog.close();});
+elements.renameDialog?.addEventListener("cancel", event => {if(state.renaming)event.preventDefault();});
+elements.renameForm?.addEventListener("submit", saveRename);
 
 await loadSettings();
 await loadAccounts();
@@ -349,7 +366,7 @@ function renderGroups() {
     const count = groupAccountCount(group.id) || Number(group.accountCount || 0);
     return `<article class="account-row group-row">
       <input class="group-check" type="checkbox" value="${escapeHtml(group.id)}" />
-      <div><strong>${escapeHtml(group.name)}</strong><span>${escapeHtml(group.projectName ? "已分配项目" : "尚未分配项目")}</span></div>
+      <div><strong>${escapeHtml(group.name)}</strong><button type="button" class="secondary-button group-rename-action" data-rename-group="${escapeHtml(group.id)}">修改名称</button><span>${escapeHtml(group.projectName ? "已分配项目" : "尚未分配项目")}</span></div>
       <div><small>所属项目</small><b class="group-chip${group.projectName ? "" : " is-empty"}">${escapeHtml(group.projectName || "未分配项目")}</b></div>
       <div><small>账号</small><b>${formatNumber(count)}</b></div>
     </article>`;
@@ -380,6 +397,7 @@ function setWorkspaceTab(tab) {
 }
 
 function renderWorkspace() {
+  syncRenameButtons();
   if (state.tab === "projects") renderGroups();
   else renderAccounts();
 }
@@ -460,6 +478,42 @@ function selectedAccounts() {
     schema: input.dataset.schema || "",
     username: input.dataset.username || ""
   }));
+}
+
+function syncRenameButtons() {
+  if(elements.renameGroupBtn)elements.renameGroupBtn.disabled=!state.groups.some(g=>g.id===currentGroupId());
+  if(elements.renameProjectBtn)elements.renameProjectBtn.disabled=!state.projects.some(p=>p.id===elements.projectFilter?.value);
+}
+function openRename(kind, id) {
+  if(state.renaming||!elements.renameDialog)return;
+  const item=(kind==='group'?state.groups:state.projects).find(item=>item.id===id);
+  if(!item)return;
+  state.renameTarget={kind,id};
+  elements.renameTitle.textContent=kind==='group'?'修改分组名称':'修改项目名称';
+  elements.renameName.value=item.name;elements.renameError.textContent='';
+  elements.renameDialog.showModal();elements.renameName.focus();elements.renameName.select();
+}
+async function saveRename(event) {
+  event.preventDefault();if(state.renaming||!state.renameTarget)return;
+  const name=elements.renameName.value.trim();
+  if(!name||name.length>40){elements.renameError.textContent='请填写 1–40 个字符的名称。';return;}
+  const {kind,id}=state.renameTarget;
+  const items=kind==='group'?state.groups:state.projects;
+  const current=items.find(item=>item.id===id);
+  if(items.some(item=>item.id!==id&&item.name.toLowerCase()===name.toLowerCase())){elements.renameError.textContent='名称已存在，请换一个名称。';return;}
+  if(current?.name===name){elements.renameDialog.close();return;}
+  state.renaming=true;elements.renameError.textContent='';
+  elements.renameName.disabled=true;elements.cancelRename.disabled=true;setBusy(elements.saveRename,true,'保存中...');
+  try {
+    const result=await requestJson(`/api/official-tiktok/${kind==='group'?'account-groups':'projects'}/${encodeURIComponent(id)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const accountChecks=new Set(selectedAccounts().map(a=>a.accountKey)),groupChecks=new Set(selectedGroups());
+    applyGroupState(result);
+    elements.accountList?.querySelectorAll('.account-check').forEach(input=>{input.checked=accountChecks.has(input.value);input.closest('.account-row')?.classList.toggle('is-checked',input.checked);});
+    elements.groupList?.querySelectorAll('.group-check').forEach(input=>{input.checked=groupChecks.has(input.value);input.closest('.account-row')?.classList.toggle('is-checked',input.checked);});
+    updateSelectedCount();updateSelectedGroupCount();
+    elements.renameDialog.close();showStatus(`已将${kind==='group'?'分组':'项目'}名称修改为「${name}」。`);
+  } catch(error) {elements.renameError.textContent=error.message||'修改名称失败，请重试。';}
+  finally {state.renaming=false;elements.renameName.disabled=false;elements.cancelRename.disabled=false;setBusy(elements.saveRename,false,'保存名称');}
 }
 
 async function createProject() {
@@ -663,6 +717,7 @@ function currentGroupId() {
 }
 
 function syncGroupReportBar() {
+  syncRenameButtons();
   const groupId = currentGroupId();
   const group = state.groups.find((item) => item.id === groupId);
   if (!elements.groupReportBar) return;

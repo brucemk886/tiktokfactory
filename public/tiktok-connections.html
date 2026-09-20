@@ -67,7 +67,7 @@
             <section class="account-panel">
               <h3>筛选账号</h3>
               <div class="account-toolbar filter-toolbar group-filter-toolbar">
-                <label><span>分组</span><select id="groupFilter"><option value="">全部分组</option></select></label>
+                <div class="rename-filter"><label for="groupFilter">分组</label><div class="rename-picker"><select id="groupFilter"><option value="">全部分组</option></select><button id="renameGroupBtn" class="secondary-button" type="button" disabled>修改分组名称</button></div></div>
                 <label class="account-search"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="用户名或显示名" /></label>
               </div>
             </section>
@@ -89,7 +89,7 @@
             <section class="account-panel">
               <h3>筛选分组</h3>
               <div class="account-toolbar filter-toolbar group-filter-toolbar">
-                <label><span>项目</span><select id="projectFilter"><option value="">全部项目</option></select></label>
+                <div class="rename-filter"><label for="projectFilter">项目</label><div class="rename-picker"><select id="projectFilter"><option value="">全部项目</option></select><button id="renameProjectBtn" class="secondary-button" type="button" disabled>修改项目名称</button></div></div>
                 <label class="account-search"><span>搜索分组</span><input id="groupSearch" type="search" placeholder="分组或项目名" /></label>
               </div>
             </section>
@@ -109,7 +109,13 @@
         <div id="statusMessage" class="status-message" hidden></div>
       </section>
     </main>
+    <dialog id="renameDialog" class="rename-dialog" aria-labelledby="renameTitle">
+      <form id="renameForm"><h2 id="renameTitle">修改名称</h2><p>修改名称后，账号归属及项目关联保持不变。</p>
+        <label for="renameName">新名称</label><input id="renameName" maxlength="40" required autocomplete="off"><small>最多 40 个字符，同类名称不能重复。</small>
+        <p id="renameError" class="rename-error" role="alert"></p><div class="button-row"><button id="cancelRename" type="button" class="secondary-button">取消</button><button id="saveRename" type="submit" class="primary-button">保存名称</button></div>
+      </form>
+    </dialog>
     <script src="/access.js"></script>
-    <script type="module" src="/tiktok-connections.js?v=20260917-3"></script>
+    <script type="module" src="/tiktok-connections.js?v=20260920-rename"></script>
   </body>
 </html>
