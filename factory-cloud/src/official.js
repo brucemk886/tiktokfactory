@@ -377,7 +377,7 @@ function archiveAccountRow(account) {
   };
 }
 
-async function listAllAccounts(env, db, refresh = false) {
+export async function listAllAccounts(env, db, refresh = false) {
   if (refresh) {
     await refreshOfficialArchive(env, db);
   }
@@ -393,18 +393,23 @@ async function listAllAccounts(env, db, refresh = false) {
     for (let page = 0; page < 100; page++) {
       const params = new URLSearchParams({limit:"100", cursor});
       const data = await signalDesk(env, db, `/api/integrations/local-factory/accounts?${params}`);
-      liveAccounts.push(...(Array.isArray(data.accounts) ? data.accounts : []));
-      if (!data.hasMore || !data.nextCursor || data.nextCursor === cursor) break;
+      if (!Array.isArray(data.accounts)) throw Object.assign(new Error("账号目录响应无效。"), {statusCode:502});
+      liveAccounts.push(...data.accounts);
+      if (!data.hasMore) break;
+      if (!data.nextCursor || data.nextCursor <= cursor || page === 99) throw Object.assign(new Error("账号目录分页未完成。"), {statusCode:502});
       cursor = data.nextCursor;
     }
   } catch (error) {
     liveError = error;
+    console.warn("official-directory-fallback", JSON.stringify({status:Number(error.statusCode)||502,received:liveAccounts.length,archived:archivedAccounts.length}));
   }
   if (liveError && !archivedAccounts.length) throw liveError;
   const accounts = mergeOfficialAccountDirectory(archivedAccounts, liveAccounts);
   return attachAccounts({
     connected: true,
-    source: liveAccounts.length ? (refresh ? "archive-refresh+live" : "archive+live") : "archive-fallback",
+    source: liveError ? (liveAccounts.length ? "archive+partial-live" : "archive-fallback") : (refresh ? "archive-refresh+live" : "archive+live"),
+    directoryComplete: !liveError,
+    directoryWarning: liveError ? "实时授权目录读取失败，当前仅显示已有归档或部分结果，数量不代表中台授权总数。请稍后刷新。" : "",
     accounts
   }, store);
 }

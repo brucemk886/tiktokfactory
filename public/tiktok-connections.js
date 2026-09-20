@@ -140,7 +140,10 @@ async function loadAccounts({ refresh = false } = {}) {
     state.groupPage = 1;
     renderWorkspace();
     syncGroupReportBar();
-    showStatus(`已读取 ${state.accounts.length} 个已授权账号，${state.projects.length} 个项目，${state.groups.length} 个分组。`);
+    const incomplete = result.directoryComplete === false || result.source === "archive-fallback" || result.source === "archive+partial-live";
+    showStatus(incomplete
+      ? `实时授权目录读取失败：当前仅显示 ${state.accounts.length} 个归档或部分账号，不代表中台授权总数。请稍后刷新。`
+      : `已读取 ${state.accounts.length} 个已授权账号，${state.projects.length} 个项目，${state.groups.length} 个分组。`, incomplete);
   } catch (error) {
     state.accounts = [];
     if (elements.accountList) elements.accountList.innerHTML = '<div class="empty-state">暂时无法读取账号。</div>';

@@ -93,3 +93,36 @@ test("account directory keeps live authorized accounts after a normal page reloa
   assert.equal(merged.filter((account) => account.schema === "tiktok:account-1").length, 1);
   assert.equal(merged.at(-1).connectionId, "account-65");
 });
+
+async function directoryFixture(t) {
+  const {DatabaseSync}=await import('node:sqlite');
+  const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());
+  sqlite.exec('CREATE TABLE factory_kv(key TEXT PRIMARY KEY,value_json TEXT); CREATE TABLE official_account_assignments(account_key TEXT,group_id TEXT); CREATE TABLE official_accounts_latest(account_key TEXT,label TEXT,synced_at INTEGER,video_count INTEGER,views INTEGER);');
+  const store={projects:[{id:'proj',name:'Psychology',moduleKey:'psychology'}],groups:[{id:'group',name:'Test',projectId:'proj'}]};
+  sqlite.prepare('INSERT INTO factory_kv VALUES(?,?)').run('official-account-groups',JSON.stringify(store));
+  for(let i=0;i<65;i++){sqlite.prepare('INSERT INTO official_accounts_latest VALUES(?,?,0,0,0)').run('tiktok:acc-'+i,'@account'+i);sqlite.prepare('INSERT INTO official_account_assignments VALUES(?,?)').run('acc-'+i,'group');}
+  const db={prepare(sql){let args=[];return{bind(...values){args=values;return this;},async first(){return sqlite.prepare(sql).get(...args);},async all(){return{results:sqlite.prepare(sql).all(...args)};}};}};
+  const env={DB:db,SIGNAL_DESK_BASE_URL:'https://hub.test',SIGNAL_DESK_BRIDGE_KEY:'synthetic-key'};
+  const live=Array.from({length:115},(_,i)=>({schema:'tiktok:acc-'+i,profile:{username:'account'+i}}));
+  return {db,env,live};
+}
+
+test('directory reads every page to return 115 accounts over the 65 archived accounts',async t=>{
+  const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);let requests=0;
+  t.mock.method(globalThis,'fetch',async url=>{const u=new URL(url);requests++;assert.equal(u.searchParams.get('limit'),'100');return Response.json(u.searchParams.get('cursor')?{accounts:f.live.slice(100),hasMore:false}:{accounts:f.live.slice(0,100),hasMore:true,nextCursor:'page-2'});});
+  const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,115);assert.equal(result.directoryComplete,true);assert.equal(result.directoryWarning,'');assert.equal(requests,2);
+});
+
+test('bridge failure clearly labels the 65-row archive fallback and logs no upstream body',async t=>{
+  const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t),logs=[];
+  t.mock.method(console,'warn',(...args)=>logs.push(args.join(' ')));
+  t.mock.method(globalThis,'fetch',async()=>Response.json({error:'private upstream diagnostic'},{status:500}));
+  const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,65);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive-fallback');assert.match(result.directoryWarning,/不代表中台授权总数/);assert.doesNotMatch(JSON.stringify(result)+logs.join(''),/private upstream diagnostic/);assert.match(logs.join(''),/official-directory-fallback/);
+});
+
+test('later page failures and invalid cursors never report a complete live directory',async t=>{
+  const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);t.mock.method(console,'warn',()=>{});
+  let brokenCursor=false;
+  t.mock.method(globalThis,'fetch',async url=>new URL(url).searchParams.get('cursor')?Response.json({error:'unavailable'},{status:503}):Response.json({accounts:f.live.slice(0,100),hasMore:true,nextCursor:brokenCursor?'':'next'}));
+  for(const invalid of [false,true]){brokenCursor=invalid;const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,100);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive+partial-live');}
+});
