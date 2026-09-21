@@ -7,6 +7,7 @@ import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { PSYCHOLOGY_RECREATION_VOICE_ID, PSYCHOLOGY_RECREATION_VOICE_IDS } from './psychology-peer-production.js';
 import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, buildPhotoStoryPrompt, pickTikTokPhotoUrl, peerPhotoImageUrls, photoTranscodeCandidates } from '../../scripts/psychology-peer-production.js';
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
+import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, parseCachedCopyRewrite, COPY_LEASE_MS } from './peer-photo-copy-cache.js';
 import { runPeerPhotoWorkflow, jobSeed, CONTENT_STOCK_QUERIES } from './peer-photo-workflow.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
@@ -181,6 +182,7 @@ test('cloud provider failure is recorded and keeps completed pages without claim
   const row=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status,'failed');assert.match(row.error,/Pexels 搜索失败/);
   assert.equal(JSON.parse(row.result_json).results.length,1);assert.equal(f.submissions.length,0);
+  assert.ok(f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json); // downstream failure keeps successful extraction
 });
 
 test('Gemini analysis failure keeps the provider error instead of a workflow retry wrapper', async t => {
@@ -242,7 +244,7 @@ test('photo story uses Gemini 3.8 Flash directly when DeepSeek is not configured
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
   assert.equal(result.count, 1);
-  assert.equal(chatCalls.length, 1);
+  assert.equal(chatCalls.length, 2); // extract once, then rewrite without images
   assert.match(chatCalls[0], /gemini-3-8-flash-openai/);
   const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.equal(saved.analysisModel, 'gemini-3-8-flash');
@@ -250,6 +252,7 @@ test('photo story uses Gemini 3.8 Flash directly when DeepSeek is not configured
 
 function fixture(t, overrides = {}) {
   const sqlite = new DatabaseSync(':memory:'); t.after(() => sqlite.close());
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0037_psychology_photo_copy_cache.sql', import.meta.url), 'utf8'));
   sqlite.exec('CREATE TABLE factory_users(id TEXT PRIMARY KEY, role TEXT, active INTEGER);');
   sqlite.exec(fs.readFileSync(new URL('../migrations/0022_psychology_peer_hits.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0025_psychology_peer_hit_media_type.sql', import.meta.url), 'utf8'));
@@ -557,4 +560,127 @@ test('automatic text-card template bypasses stock search and preserves every sou
   assert.equal(saved.results[0].template,'cover');
   assert.ok(saved.results.slice(1).every(page=>page.template==='content'));
   assert.ok(saved.results.every(page=>page.imageModel==='text-card'));
+});
+
+function freshPhotoSteps(onSleep = async()=>{}) {
+  const saved = new Map();
+  return {
+    async do(name, config, action) { if(saved.has(name)) return structuredClone(saved.get(name)); const value=await (action||config)(); saved.set(name,structuredClone(value)); return value; },
+    async sleep(name) { await onSleep(name); },
+  };
+}
+function clonePhotoJob(f,id,changes={}) {
+  const original=f.sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE id='cloud-test'").get();
+  const payload={...JSON.parse(original.payload_json),...changes};
+  f.sqlite.prepare("INSERT INTO factory_jobs(id,type,status,created_by,payload_json,result_json) VALUES(?,'psychology-photo-story','queued','admin',?,'{}')").run(id,JSON.stringify(payload));
+  return payload;
+}
+function savedPhotoJob(f,id) { return JSON.parse(f.sqlite.prepare('SELECT result_json FROM factory_jobs WHERE id=?').get(id).result_json); }
+
+test('new jobs reuse complete original copy by post ID without TikHub, image downloads or vision calls',async t=>{
+  const f=cloudFixture(t), calls={resolve:0,images:0,chat:0};
+  f.env.TIKHUB_API_KEY='test';
+  const payload={topic:'Original post title',script:'Original caption',rewriteCopy:false,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55'}};
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify(payload));
+  f.plan.scenes.forEach((scene,i)=>{scene.sourceIndex=i+1;scene.originalText='full original page '+(i+1);});
+  const fetch=f.env.fetch;
+  f.env.fetch=async(url,init)=>{
+    if(String(url).includes('api.tikhub.io')) {calls.resolve++;return Response.json({code:200,data:{aweme_detail:{aweme_id:'55',images:f.imageUrls,desc:'Original caption'}}});}
+    if(/tiktokcdn/.test(String(url))) calls.images++;
+    if(String(url).includes('/chat/completions')) {calls.chat++;assert.match(chatPrompt(init),/rewriteCopy is false/);}
+    return fetch(url,init);
+  };
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+  assert.deepEqual(calls,{resolve:1,images:6,chat:1});
+  assert.equal(f.objects.size,0);
+  const cached=f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json;
+  assert.doesNotMatch(cached,/tiktokcdn|data:image|imageUrls|signature=/);
+  assert.deepEqual(JSON.parse(cached).plan.scenes.map(s=>s.sourceIndex),[1,2,3,4,5,6]);
+  clonePhotoJob(f,'second',{peerSource:{videoUrl:'https://m.tiktok.com/@different/photo/55?tracking=1'}});
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'second'}},freshPhotoSteps());
+  assert.deepEqual(calls,{resolve:1,images:6,chat:1});
+  const result=savedPhotoJob(f,'second');
+  assert.equal(result.sourceCopyCache,'hit');assert.equal(result.analysisModel,'source-copy-cache');
+  assert.equal(result.plan.title,'Original post title');assert.equal(result.plan.caption,'Original caption');
+  assert.deepEqual(result.plan.scenes,savedPhotoJob(f,'cloud-test').plan.scenes);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_copy_cache').get().n,1);
+});
+
+test('rewrite is text-only and never poisons the cached original or template mapping',async t=>{
+  const f=cloudFixture(t), fetch=f.env.fetch, chats=[];
+  f.env.fetch=async(url,init)=>{
+    if(String(url).includes('/chat/completions')) {
+      const prompt=chatPrompt(init);const rewrite=prompt.includes('CACHED_ORIGINAL_JSON');
+      chats.push({rewrite,images:JSON.parse(init.body).messages[0].content.filter(p=>p.type==='image_url').length});
+      const value=structuredClone(f.plan);
+      value.scenes.forEach((s,i)=>{s.originalText='original '+i;if(rewrite){s.title='rewritten '+i;s.body='fresh words '+i;s.originalText='must not overwrite original';}});
+      return Response.json({choices:[{message:{content:JSON.stringify(value)}}]});
+    }
+    return fetch(url,init);
+  };
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+  assert.deepEqual(chats,[{rewrite:false,images:6},{rewrite:true,images:0}]);
+  assert.equal(savedPhotoJob(f,'cloud-test').plan.scenes[0].title,'rewritten 0');
+  const firstCache=f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json;
+  clonePhotoJob(f,'plain',{rewriteCopy:false,psychologyAutomation:{template:'photo-text'}});
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'plain'}},freshPhotoSteps());
+  assert.equal(chats.length,2);
+  assert.equal(savedPhotoJob(f,'plain').plan.scenes[0].originalText,'original 0');
+  assert.ok(savedPhotoJob(f,'plain').plan.scenes.every(s=>s.template==='text'));
+  clonePhotoJob(f,'rewrite-again');
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'rewrite-again'}},freshPhotoSteps());
+  assert.deepEqual(chats[2],{rewrite:true,images:0});
+  assert.equal(f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json,firstCache);
+  assert.equal(JSON.parse(firstCache).plan.scenes[1].template,'stock');
+});
+
+test('concurrent draws wait for one extraction and then use the shared text cache',async t=>{
+  const f=cloudFixture(t), fetch=f.env.fetch;
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=json_set(payload_json,'$.rewriteCopy',json('false'))").run();
+  clonePhotoJob(f,'concurrent');
+  let openGate, arrived, chatCalls=0, waits=0;
+  const gate=new Promise(resolve=>{openGate=resolve;});const started=new Promise(resolve=>{arrived=resolve;});
+  f.env.fetch=async(url,init)=>{if(String(url).includes('/chat/completions')){chatCalls++;arrived();await gate;}return fetch(url,init);};
+  const first=runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+  await started;
+  const second=runPeerPhotoWorkflow(f.env,{payload:{jobId:'concurrent'}},freshPhotoSteps(async()=>{waits++;openGate();await first;}));
+  await Promise.all([first,second]);
+  assert.equal(chatCalls,1);assert.equal(waits,1);
+  assert.equal(savedPhotoJob(f,'concurrent').sourceCopyCache,'hit');
+});
+
+test('invalid extraction is not cached and releases the lease so the next job can recover',async t=>{
+  const f=cloudFixture(t), fetch=f.env.fetch;
+  f.env.fetch=async(url,init)=>String(url).includes('/chat/completions')?Response.json({choices:[{message:{content:'{}'}}]}):fetch(url,init);
+  await assert.rejects(runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step),/完整/);
+  const failed=f.sqlite.prepare('SELECT * FROM psychology_photo_copy_cache').get();
+  assert.equal(failed.copy_json,'');assert.equal(failed.lease_owner,'');assert.equal(f.objects.size,0);
+  f.env.fetch=fetch;clonePhotoJob(f,'recover',{rewriteCopy:false});
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'recover'}},freshPhotoSteps());
+  assert.equal(savedPhotoJob(f,'recover').sourceCopyCache,'miss');
+  assert.ok(f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json);
+});
+
+test('copy lease expires safely, owner scope is isolated and corrupted entries are rebuilt',async t=>{
+  const {db,sqlite}=fixture(t);const key=photoCopyKey('https://www.tiktok.com/@a/photo/55?x=1');
+  assert.equal(key,photoCopyKey('https://m.tiktok.com/@b/video/55'));
+  assert.notEqual(photoCopyKey('https://vm.tiktok.com/ABC/'),photoCopyKey('https://vm.tiktok.com/abc/'));
+  assert.equal((await claimPhotoCopy(db,'a',key,'one',100)).acquired,true);
+  assert.equal((await claimPhotoCopy(db,'a',key,'two',101)).acquired,false);
+  assert.equal((await claimPhotoCopy(db,'b',key,'other',101)).acquired,true);
+  assert.equal((await claimPhotoCopy(db,'a',key,'two',101+COPY_LEASE_MS)).acquired,true);
+  const copy=photoCopySnapshot(storyPlan(1),{topic:'Source',script:'Caption'},1);
+  await assert.rejects(storePhotoCopy(db,'a',key,'one',copy),/锁已过期/);
+  await releasePhotoCopy(db,'a',key,'one');
+  assert.equal(sqlite.prepare("SELECT lease_owner FROM psychology_photo_copy_cache WHERE owner='a'").get().lease_owner,'two');
+  await storePhotoCopy(db,'a',key,'two',copy);
+  assert.equal((await claimPhotoCopy(db,'a',key,'three')).copy.sourceTitle,'Source');
+  assert.equal((await claimPhotoCopy(db,'b',key,'other')).copy,null);
+  sqlite.prepare("UPDATE psychology_photo_copy_cache SET copy_json='broken' WHERE owner='a'").run();
+  assert.equal((await claimPhotoCopy(db,'a',key,'three')).copy,null);
+  assert.equal((await claimPhotoCopy(db,'a',key,'three')).acquired,true);
+  assert.throws(()=>photoCopySnapshot({...storyPlan(1),scenes:[{...storyPlan(1).scenes[0],sourceIndex:2}]},{},1),/编号/);
+  const long=storyPlan(1);long.scenes[0].originalText='full text '.repeat(150);
+  assert.equal(photoCopySnapshot(long,{topic:'Source',script:'Caption'},1).plan.scenes[0].originalText.length,1500);
+  assert.throws(()=>parseCachedCopyRewrite(JSON.stringify({...storyPlan(1),scenes:[{...storyPlan(1).scenes[0],sourceIndex:2}]}),copy),/编号/);
 });

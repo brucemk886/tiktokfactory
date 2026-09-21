@@ -1,8 +1,9 @@
-import { buildPhotoStoryPrompt, parsePhotoStory } from '../../scripts/psychology-peer-production.js';
+import { buildPhotoStoryPrompt } from '../../scripts/psychology-peer-production.js';
 import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
 import { createKieClient } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
 import { preparePeerPhotosForKie, deletePeerPhotoSources, loadPeerPhotoChatImages } from './peer-photo-convert.js';
+import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, buildCachedCopyRewritePrompt, parseCachedCopyRewrite } from './peer-photo-copy-cache.js';
 import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 
@@ -22,6 +23,9 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   const deepseek = String(env.DEEPSEEK_API_KEY || '').trim()
     ? createDeepSeekClient({ apiKey: env.DEEPSEEK_API_KEY, fetchImpl: env.fetch || fetch })
     : null;
+  const copyKey = photoCopyKey(payload.peerSource?.videoUrl);
+  const copyOwner = String(row.created_by || '');
+  let copyCache = 'miss';
   let plan = null;
   const results = [];
   let total = 0;
@@ -32,28 +36,62 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
     await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_jobs SET status=?, percent=?, message=?, result_json=?, error=?, worker_id='cloud-photo', updated_at=?, completed_at=? WHERE id=?`)
-      .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: chat.model, progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
+      .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: chat.model, sourceCopyCache: copyCache, progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
   }
   try {
-    await save('starting', 'running', 3, '云端正在获取原帖全部图片…', '', {productionStage:'script'});
-    const source = await step.do('resolve-source-images', READ, () => resolveTikTokPhotoSource(env, {
-      url: payload.peerSource?.videoUrl,
-      imageUrls: payload.peerSource?.imageUrls
-    }));
-    total = source.urls.length;
-    payload.sceneCount = total;
-    if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
-    await save('converting', 'running', 6, `已获取原帖 ${total} 张图片，正在转成模型可识别的 JPEG/PNG/WebP…`, '', {productionStage:'script'});
-    kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
-    const rewrite = payload.rewriteCopy === true;
-    await save('source-ready', 'running', 8, `原图已转码，${deepseek ? 'DeepSeek V4.1 Flash' : 'Gemini 3.8 Flash'} 正在逐张判断文案卡片或素材底图${rewrite ? '并改写文案' : '并提取原文'}…`, '', {productionStage:'script'});
-    let validationError = '';
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const prompt = buildPhotoStoryPrompt(payload, { sceneCount: total }) + (validationError ? `\nCorrect this validation error: ${validationError}` : '');
-      const text = await photoChat(env, kie, deepseek, step, `story-${attempt}`, prompt, kiePhotos, chat);
-      try { plan = parsePhotoStory(text, { sceneCount: total }); break; } catch (error) { validationError = error.message; }
+    await save('starting', 'running', 3, '正在读取原帖逐页文案缓存…', '', {productionStage:'script'});
+    let sourceCopy = null;
+    let acquired = false;
+    for (let attempt = 0; attempt < 48; attempt++) {
+      const cached = await step.do(`copy-cache-claim-${attempt}`, READ, () => claimPhotoCopy(env.DB, copyOwner, copyKey, id));
+      if (cached.copy) { sourceCopy = cached.copy; copyCache = 'hit'; break; }
+      if (cached.acquired) { acquired = true; break; }
+      if (attempt === 0) await save('waiting-copy', 'running', 4, '同一原帖正在提取文案，等待共用结果…', '', {productionStage:'script'});
+      await step.sleep(`copy-cache-wait-${attempt}`, '15 seconds');
     }
-    if (!plan) throw new Error(validationError);
+    if (!sourceCopy && !acquired) throw new Error('原帖文案仍在提取中，请稍后重试此任务。');
+    if (!sourceCopy) {
+      const source = await step.do('resolve-source-images', READ, () => resolveTikTokPhotoSource(env, {
+        url: payload.peerSource?.videoUrl,
+        imageUrls: payload.peerSource?.imageUrls
+      }));
+      total = source.urls.length;
+      payload.sceneCount = total;
+      if (!payload.script && source.sourceCopy) payload.script = source.sourceCopy.slice(0, 5000);
+      await save('converting', 'running', 6, `首次提取原帖 ${total} 张图片，正在准备识别原文…`, '', {productionStage:'script'});
+      kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
+      await save('source-ready', 'running', 8, '正在按图片编号提取原文和页面类型…', '', {productionStage:'script'});
+      let validationError = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await step.do(`copy-cache-renew-${attempt}`, READ, async () => {
+          const lease = await claimPhotoCopy(env.DB, copyOwner, copyKey, id);
+          if (!lease.acquired) throw new Error('原帖文案提取锁已变更，请重试任务。');
+        });
+        const prompt = buildPhotoStoryPrompt({...payload,rewriteCopy:false}, { sceneCount: total }) +
+          '\nExtraction only: originalText must contain the COMPLETE verbatim visible text on each page, without shortening or rewriting. sourceIndex must equal its 1-based image position. Preserve original post wording.' +
+          (validationError ? `\nCorrect this validation error: ${validationError}` : '');
+        const text = await photoChat(env, kie, deepseek, step, `extract-copy-v1-${attempt}`, prompt, kiePhotos, chat);
+        try { sourceCopy = photoCopySnapshot(text, payload, total); break; } catch (error) { validationError = error.message; }
+      }
+      if (!sourceCopy) throw new Error(validationError);
+      await step.do('store-source-copy-v1', READ, () => storePhotoCopy(env.DB, copyOwner, copyKey, id, sourceCopy));
+      // Source images are temporary inputs only, never part of the shared cache.
+      await step.do('delete-extracted-photos', READ, () => deletePeerPhotoSources(env, kiePhotos.keys));
+    }
+    total = sourceCopy.pageCount;
+    plan = structuredClone(sourceCopy.plan);
+    if (copyCache === 'hit') chat.model = 'source-copy-cache';
+    if (payload.rewriteCopy === true) {
+      await save('rewriting-copy', 'running', 10, '已读取原始逐页文案，正在进行纯文字改写…', '', {productionStage:'script'});
+      let rewritten = null, validationError = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const prompt = buildCachedCopyRewritePrompt(sourceCopy) + (validationError ? `\nCorrect this validation error: ${validationError}` : '');
+        const text = await lookAtImages(kie, deepseek, step, `rewrite-copy-v1-${attempt}`, prompt, [], chat);
+        try { rewritten = parseCachedCopyRewrite(text, sourceCopy); break; } catch(error) { validationError = error.message; }
+      }
+      if (!rewritten) throw new Error(validationError);
+      plan = rewritten;
+    }
     if (payload.psychologyAutomation?.template === 'photo-text') {
       plan.scenes = plan.scenes.map((scene,index) => ({
         ...scene, template:'text', textKind:index === 0 ? 'cover' : 'content',
@@ -78,12 +116,13 @@ export async function runPeerPhotoWorkflow(env, event, step) {
         await save(`image-${index}-saved`, 'running', progress(total, results.length), `第 ${index+1}/${total} 页走文案卡片。`, '', {productionScene:{index,text:scene.text,imagePrompt:'',imageStatus:'done'}});
       }
     }
-    await save('completed', 'done', 100, `已按原帖顺序完成 ${total} 页：文案卡片或素材库底图，不经过 AI 生图。`);
+    await save('completed', 'done', 100, `已按原帖顺序完成 ${total} 页（${copyCache === 'hit' ? '复用文案缓存' : '原帖文案已缓存'}）：文案卡片或素材库底图。`);
     return { jobId: id, count: results.length };
   } catch (error) {
     await save('failed', 'failed', progress(total, results.length), '图文复刻失败，已保留完成的页面。', String(error.message || error).slice(0, 1000));
     throw error;
   } finally {
+    await step.do('release-copy-cache', READ, () => releasePhotoCopy(env.DB, copyOwner, copyKey, id)).catch(() => {});
     if (kiePhotos.keys.length) {
       await step.do('delete-kie-photos', READ, () => deletePeerPhotoSources(env, kiePhotos.keys)).catch(() => {});
     }

@@ -79,3 +79,9 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 ## Per-account publication readiness
 
 Signal Desk accepts structurally valid hub batches before contacting TikTok for account publishing settings. Each durable preparation task checks the original owner/account, privacy and comment constraints independently for photo and video posts. Permanent account errors fail that task; transient errors use the existing bounded preparation retry queue. Batch external IDs and item references remain unchanged. Asset validation and customer ownership checks still occur before acceptance.
+
+## Psychology source-copy cache
+
+- `peer-photo-copy-cache.js` stores only validated original text plans in D1 `psychology_photo_copy_cache`, keyed by operator and versioned TikTok post identity (canonical numeric ID, otherwise share-link path). Each page keeps its original text, 1-based position, layout type and background description; no source images or signed URLs are stored in this shared cache. Entries are bounded to 128 KiB.
+- `peer-photo-workflow.js` first reads/claims the shared entry using an atomic expiring lease. Other workflows sleep durably and reuse the completed extraction; failures release the lease, expired leases can be reclaimed, and malformed cache records are invalidated with compare-and-clear.
+- First extraction always disables rewriting. Only after the validated original is saved does a requested rewrite run using text alone. Template overrides and generated backgrounds remain per-job. Temporary source R2 images are deleted after extraction and again on cleanup if needed. Historical jobs are not inferred into the cache because prior results may have been rewritten.
