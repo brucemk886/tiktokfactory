@@ -86,6 +86,7 @@ Content-Type: application/json
 - `videoData` 按 JSON Merge Patch 合并：保留未提交的键；数组整体替换；对象内的 `null` 会删除对应键。
 - `collectedAt` 小于已保存记录时，整条输入忽略；时间相同允许幂等重试或补齐数据。更新时请提交本次实际采集到的全部指标。
 - 批量请求会先校验所有记录；任一记录无效时整批不写入，并返回第几条及具体原因。全部有效后使用数据库事务写入。
+- 只保留英语内容。`videoData.language` 为非英语（如 `id` / `th`），或标题/文案主体是印尼语、马来语、菲律宾语、泰语、中文等时，该条 `status` 为 `skipped_non_english`，不影响同批英语记录。标签里的 `#fypシ` 以及标题末尾 grokbot 中文译注不算非英语。
 
 ## 成功与错误
 
@@ -105,7 +106,7 @@ Content-Type: application/json
 }
 ```
 
-`accepted` 是已保存的输入条数（含更新），不是新视频数量；同一批重复提交也分别计数。`ignoredOlder` 表示因采集时间较旧忽略的输入条数，其 `status` 为 `ignored_older`。不要对 `ignored_older` 无限重试。
+`accepted` 是已保存的输入条数（含更新），不是新视频数量；同一批重复提交也分别计数。`ignoredOlder` 表示因采集时间较旧忽略的输入条数，其 `status` 为 `ignored_older`。`skippedNonEnglish` 表示因不是英语跳过的条数。不要对 `ignored_older` 或 `skipped_non_english` 无限重试。
 
 错误格式：`{ "error": "具体原因" }`。
 

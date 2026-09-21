@@ -71,6 +71,20 @@ test("batch validates before writing, handles repeats, and paginates all records
   await assert.rejects(listPsychologyPeerHits(db,new URLSearchParams("sort=toString")),error=>error.statusCode===400);
 });
 
+test("skips non-English records without failing the rest of the batch",async t=>{
+  const {db}=fixture(t);
+  const result=await importPsychologyPeerHits(db,[
+    {videoUrl:url(601),title:"Why do i always get attached so easy."},
+    {videoUrl:url(602),title:"kadang kangen dia yang dulu #avoidant",videoData:{language:"id"}},
+    {videoUrl:"https://www.tiktok.com/@example/photo/603",mediaType:"photo",title:"Keep English photo",videoData:{copy:"A complete psychology carousel source with enough detail to recreate."}}
+  ],"admin");
+  assert.equal(result.accepted,2);
+  assert.equal(result.skippedNonEnglish,1);
+  assert.equal(result.items.filter(item=>item.status==="skipped_non_english").length,1);
+  assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("mediaType=video"))).total,1);
+  assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("mediaType=photo"))).total,1);
+});
+
 test("video and photo tabs return separate records",async t=>{
   const {db}=fixture(t);
   await importPsychologyPeerHits(db,[

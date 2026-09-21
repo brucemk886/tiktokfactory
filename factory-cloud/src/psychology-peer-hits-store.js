@@ -1,4 +1,5 @@
 import { sha256Hex } from "./http.js";
+import { isEnglishPsychologyPeerHit } from "../../scripts/psychology-peer-language.js";
 
 const TABLE = "psychology_peer_hits";
 const FIELDS = {
@@ -101,8 +102,16 @@ export async function importPsychologyPeerHits(db, payload, actor) {
   const items = await Promise.all(rawItems.map(async (raw, index) => {
     try { return await normalizePsychologyPeerHit(raw, now); } catch (error) { error.message = `第 ${index + 1} 条：${error.message}`; throw error; }
   }));
+  const english = items.filter(item => isEnglishPsychologyPeerHit(item));
+  const skipped = items.filter(item => !isEnglishPsychologyPeerHit(item));
+  if (!english.length) {
+    return {
+      accepted: 0, ignoredOlder: 0, skippedNonEnglish: skipped.length,
+      items: skipped.map(item => ({ id: item.id, videoUrl: item.videoUrl, status: "skipped_non_english" })),
+    };
+  }
   const columns = Object.values(FIELDS);
-  const statements = items.map(item => db.prepare(`
+  const statements = english.map(item => db.prepare(`
     INSERT INTO ${TABLE} (id, video_key, video_url, platform, ${columns.join(",")}, collected_at, created_by, created_at, updated_at)
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
@@ -115,8 +124,16 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     ...Object.keys(FIELDS).map(key => key === "videoData" && item[key] !== null ? JSON.stringify(item[key]) : item[key]),
     item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0));
   const results = await db.batch(statements);
-  return { accepted: results.filter(result => result.results?.length).length, ignoredOlder: results.filter(result => !result.results?.length).length,
-    items: items.map((item, i) => ({ id: item.id, videoUrl: item.videoUrl, status: results[i].results?.length ? "saved" : "ignored_older" })) };
+  const byId = new Map(english.map((item, i) => [item.id, results[i].results?.length ? "saved" : "ignored_older"]));
+  return {
+    accepted: results.filter(result => result.results?.length).length,
+    ignoredOlder: results.filter(result => !result.results?.length).length,
+    skippedNonEnglish: skipped.length,
+    items: items.map(item => ({
+      id: item.id, videoUrl: item.videoUrl,
+      status: byId.get(item.id) || "skipped_non_english",
+    })),
+  };
 }
 export async function listPsychologyPeerHits(db, params) {
   const requested = Number(params.get("page") || 1);
