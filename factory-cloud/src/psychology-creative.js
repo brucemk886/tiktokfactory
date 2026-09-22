@@ -2,7 +2,7 @@ import { json,readJson,sha256Hex,errorJson } from './http.js';
 import { loadGroupStore } from './official.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
 import { scopeOfficialAccess } from '../../scripts/official-account-group-store.js';
-import { VISUAL_STYLES,styleById } from '../../public/psychology-visual-styles.js';
+import { VISUAL_STYLES,styleById,currentStyleId,currentStyleBindings } from '../../public/psychology-visual-styles.js';
 const BASE='/api/psychology-creative';
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 export function contentText(plan){return {title:String(plan.title||'').trim(),caption:String(plan.caption||'').trim(),pages:(plan.scenes||[]).map(p=>[p.title,p.subtitle,p.body].filter(Boolean).join('\n').trim()||String(p.text||'').trim())};}
@@ -26,10 +26,10 @@ export async function handlePsychologyCreative(request,env,url,session){
   const groups=(scoped.groups||[]).map(g=>({id:g.id,name:g.name}));
   for(const a of accounts)if(a.groupId&&!groups.some(g=>g.id===a.groupId))groups.push({id:a.groupId,name:a.groupName});
   const allowed=(kind,id)=>kind==='group'?groups.some(g=>g.id===id):kind==='account'&&accounts.some(a=>a.id===id);
-  if(request.method==='GET'){const rows=(await db.prepare('SELECT * FROM psychology_style_bindings WHERE owner=?').bind(owner).all()).results;return json({styles:VISUAL_STYLES,accounts,groups,bindings:rows.filter(b=>allowed(b.kind,b.target_id))});}
+  if(request.method==='GET'){const rows=(await db.prepare('SELECT * FROM psychology_style_bindings WHERE owner=?').bind(owner).all()).results;return json({styles:VISUAL_STYLES,accounts,groups,bindings:currentStyleBindings(rows.filter(b=>allowed(b.kind,b.target_id)))});}
   if(request.method==='PUT'){
    const b=await readJson(request);if(!allowed(b.kind,b.targetId))fail('只能设置当前有权限的心理学账号或分组。',403);
-   const styles=[...new Set(Array.isArray(b.styles)?b.styles:[])];if(styles.length>20||styles.some(id=>!styleById(id))||(b.kind==='account'&&styles.length>1))fail('选择有效样式；单账号最多指定一种。');
+   const styles=[...new Set(Array.isArray(b.styles)?b.styles.map(currentStyleId):[])];if(styles.length>20||styles.some(id=>!styleById(id))||(b.kind==='account'&&styles.length>1))fail('选择有效样式；单账号最多指定一种。');
    if(!styles.length)await db.prepare('DELETE FROM psychology_style_bindings WHERE owner=? AND kind=? AND target_id=?').bind(owner,b.kind,b.targetId).run();
    else await db.prepare('INSERT INTO psychology_style_bindings(owner,kind,target_id,styles_json,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(owner,kind,target_id) DO UPDATE SET styles_json=excluded.styles_json,updated_at=excluded.updated_at').bind(owner,b.kind,b.targetId,JSON.stringify(styles),Date.now()).run();
    return json({ok:true});

@@ -29,9 +29,72 @@ export function renderStyledCard(slide,aspectRatio,styleId){
  if(l==='split'){rect(0,0,w,h*.11,accent);rect(0,h*.9,w,h*.1,accent);top=h*.21;bottom=h*.82;}
  if(l==='minimal'){left=w*.17;right=w*.83;top=h*.23;bottom=h*.77;rect(w*.48,h*.87,w*.04,4,accent);}
  if(l==='timeline'){line(w*.1,h*.15,w*.1,h*.86);c.fillStyle=accent;for(let i=0;i<3;i++){c.beginPath();c.arc(w*.1,h*(.15+i*.35),w*.01,0,Math.PI*2);c.fill();}left=w*.17;}
- const family=['editorial','letter','quote','frame','chapter','center'].includes(l)?'Georgia,"Times New Roman",serif':'"Segoe UI",Arial,sans-serif';
+
+ // Relationship-focused collection. Decorations remain outside the text-safe rectangle.
+ const circle=(x,y,r,color,fill=false)=>{c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.strokeStyle=color;c.fillStyle=color;c.lineWidth=2;fill?c.fill():c.stroke();};
+ const round=(x,y,width,height,r,color)=>{c.fillStyle=color;c.beginPath();c.roundRect(x,y,width,height,r);c.fill();};
+ if(l==='unsent'){
+  rect(w*.055,h*.045,w*.89,h*.91,cover?'#f8f1e5':'#fff9ef');
+  line(w*.12,h*.89,w*.5,h*.94);line(w*.5,h*.94,w*.88,h*.89);line(w*.12,h*.12,w*.3,h*.12);
+  left=w*.15;right=w*.85;top=h*.24;bottom=h*.79;
+ }
+ if(l==='inner-voice'){
+  circle(w*.86,h*.12,w*.11,accent);circle(w*.9,h*.09,w*.04,accent);
+  rect(w*.08,h*.23,w*.012,h*.5,accent);left=w*.15;right=w*.86;top=h*.29;bottom=h*.77;
+ }
+ if(l==='soft-space'){
+  circle(w*.08,h*.04,w*.22,'#e4d2cd',true);circle(w*.94,h*.96,w*.2,'#e8dbd6',true);
+  align='center';left=w*.16;right=w*.84;top=h*.24;bottom=h*.76;
+ }
+ if(l==='midnight-letter'){
+  circle(w*.8,h*.13,w*.038,accent);rect(w*.803,h*.089,w*.045,h*.08,cover?s.coverBg:s.bg);
+  line(w*.15,h*.87,w*.45,h*.87);left=w*.15;right=w*.85;top=h*.31;bottom=h*.8;
+ }
+ if(l==='soft-boundary'){
+  c.strokeStyle=accent;c.lineWidth=w*.008;c.beginPath();c.roundRect(w*.065,h*.07,w*.87,h*.86,w*.16);c.stroke();
+  rect(w*.065,h*.38,w*.009,h*.16,cover?s.coverBg:s.bg);
+  align='center';left=w*.16;right=w*.84;top=h*.25;bottom=h*.76;
+ }
+ if(l==='reassurance'){
+  round(w*.09,h*.21,w*.82,h*.57,w*.045,cover?'#f7faf2':'#e1ebe0');
+  circle(w*.76,h*.817,w*.012,accent,true);circle(w*.8,h*.817,w*.012,accent,true);circle(w*.84,h*.817,w*.012,accent,true);
+  left=w*.16;right=w*.84;top=h*.29;bottom=h*.71;
+ }
+ if(l==='relationship-journal'){
+  rect(w*.045,h*.04,w*.91,h*.92,cover?'#faf0e5':'#fff8ef');line(w*.115,h*.06,w*.115,h*.94,'#dcc9bc');
+  line(w*.18,h*.17,w*.46,h*.17);line(w*.18,h*.87,w*.82,h*.87);
+  left=w*.19;right=w*.82;top=h*.25;bottom=h*.8;
+ }
+ if(l==='confession'){
+  c.strokeStyle=accent;c.lineWidth=2;c.beginPath();c.arc(w*.5,h*.47,w*.43,Math.PI*1.07,Math.PI*1.93);c.stroke();
+  circle(w*.5,h*.86,w*.008,accent,true);align='center';left=w*.17;right=w*.83;top=h*.33;bottom=h*.79;
+ }
+ if(l==='emotional-echo'){
+  for(let i=0;i<3;i++){c.strokeStyle=accent;c.lineWidth=2;c.beginPath();c.arc(w*1.02,h*.92,w*(.13+i*.08),Math.PI,Math.PI*1.5);c.stroke();}
+  c.font=`${w*.19}px Georgia`;c.fillStyle=accent;c.fillText('“',w*.1,h*.19);
+  left=w*.16;right=w*.84;top=h*.28;bottom=h*.77;
+ }
+ if(l==='after-talk'){
+  round(w*.12,h*.11,w*.34,h*.055,w*.022,'#c3d5dd');round(w*.56,h*.18,w*.26,h*.045,w*.018,'#b0c8d1');
+  line(w*.18,h*.83,w*.82,h*.83);align='center';left=w*.16;right=w*.84;top=h*.33;bottom=h*.76;
+ }
+ if(l==='intimacy-distance'){
+  circle(w*.24,h*.15,w*.055,accent);circle(w*.76,h*.15,w*.055,accent);line(w*.34,h*.15,w*.66,h*.15,'#c4beaf');
+  line(w*.08,h*.36,w*.08,h*.67);line(w*.92,h*.36,w*.92,h*.67);align='center';left=w*.16;right=w*.84;top=h*.29;bottom=h*.78;
+ }
+ if(l==='reconnection'){
+  const gradient=c.createLinearGradient(0,0,0,h);gradient.addColorStop(0,cover?s.coverBg:s.bg);gradient.addColorStop(1,'#f7e9ce');c.fillStyle=gradient;c.fillRect(0,0,w,h);
+  c.strokeStyle=accent;c.lineWidth=3;c.beginPath();c.moveTo(w*.15,h*.86);c.quadraticCurveTo(w*.5,h*.7,w*.85,h*.86);c.stroke();
+  left=w*.14;right=w*.86;top=h*.23;bottom=h*.72;
+ }
+ if(l==='slow-closeness'){
+  for(let i=0;i<3;i++)circle(w*(.36+i*.14),h*.83,w*(.012+i*.006),accent);
+  c.strokeStyle=accent;c.lineWidth=2;c.beginPath();c.arc(w*.5,h*.12,w*.19,0,Math.PI);c.stroke();
+  align='center';left=w*.18;right=w*.82;top=h*.28;bottom=h*.73;
+ }
+ const family=['editorial','letter','quote','frame','chapter','center','unsent','midnight-letter','relationship-journal','confession','emotional-echo'].includes(l)?'Georgia,"Times New Roman",serif':'"Segoe UI",Arial,sans-serif';
  const blocks=(cover?[slide.title]:slide.bullets?.length?slide.bullets:[slide.title]).filter(Boolean).map(t=>String(t).replace(/\*\*/g,''));
- const coverScale=['poster','sidebar','index'].includes(l)?.12:['editorial','split','minimal'].includes(l)?.105:.092;
+ const coverScale=['poster','sidebar','index'].includes(l)?.12:['editorial','split','minimal','inner-voice','after-talk','reconnection'].includes(l)?.105:.092;
  let size=Math.round(w*(cover?coverScale:.05)),lines=[];
  for(;size>=16;size--){c.font=`${cover?700:450} ${size}px ${family}`;lines=blocks.flatMap((b,i)=>[...(i?['']:[]),...wrapLines(b,t=>c.measureText(t).width,right-left)]);if(lines.length*size*1.32<=bottom-top&&lines.every(t=>c.measureText(t).width<=right-left+1))break;}
  if(size<16)throw new Error('单页文案过长，请缩短或拆页');

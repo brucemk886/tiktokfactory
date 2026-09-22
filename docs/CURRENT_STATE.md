@@ -114,3 +114,5 @@ Updated: 2026-09-22
 - Psychology automatic replies can be enabled per scheduled-comment template; future video batches freeze question replies and automatically enroll confirmed video IDs at the planned reveal time. Manual enrollment UI removed; see handoff `2026-09-22-template-linked-auto-replies.md`.
 
 - Psychology photo publishing now offers 20 visual styles with varied covers, administrator-scoped group pools and individual account overrides at `/psychology-publish-designs`. Reviewed Grokbot JSON variants can be imported and used without per-task AI rewriting. Operations report adds exact-copy/source/style comparisons across accounts; new tasks persist creative snapshots and historical unknown styles remain explicit. See `docs/psychology-photo-creative.md`.
+
+- The photo style pool is now twenty emotion/relationship-oriented designs: seven preferred originals retained, thirteen replaced. Archived IDs preserve historical jobs; existing account/group bindings resolve to the replacement styles for future batches. See `docs/handoffs/2026-09-22-emotional-photo-styles.md`.

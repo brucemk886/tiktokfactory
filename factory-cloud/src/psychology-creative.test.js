@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,input} from './psychology-cloud-test-fixture.js';
 import {handlePsychologyCreative,normalizeVariant,copyIdentity} from './psychology-creative.js';
-import {VISUAL_STYLES,chooseVisualStyle} from '../../public/psychology-visual-styles.js';
+import {VISUAL_STYLES,chooseVisualStyle,styleById,STYLE_REPLACEMENTS,currentStyleBindings} from '../../public/psychology-visual-styles.js';
 import {runPeerPhotoWorkflow} from './peer-photo-workflow.js';
 import {enqueueAutoPhotoRender} from './psychology-auto-publish.js';
 import {buildContentPerformance} from '../../scripts/psychology-content-performance.js';
@@ -14,7 +14,7 @@ test('twenty unique layouts and stable group assignment with account override',(
  assert.equal(VISUAL_STYLES.length,20);assert.equal(new Set(VISUAL_STYLES.map(s=>s.layout)).size,20);
  const a={id:'a',groupId:'g'},group={kind:'group',target_id:'g',styles_json:'["night","letter"]'};
  assert.equal(chooseVisualStyle(a,[group]),chooseVisualStyle(a,[group]));assert.ok(['night','letter'].includes(chooseVisualStyle(a,[group])));
- assert.equal(chooseVisualStyle(a,[group,{kind:'account',target_id:'a',styles_json:'["memo"]'}]),'memo');assert.equal(chooseVisualStyle(a,[group],'legacy'),'');
+ assert.equal(chooseVisualStyle(a,[group,{kind:'account',target_id:'a',styles_json:'["memo"]'}]),'reassurance');assert.equal(chooseVisualStyle(a,[group],'legacy'),'');
 });
 test('copy import validates before writes and is immutable, idempotent and owner scoped',async t=>{
  const f=await fixture(t);assert.throws(()=>normalizeVariant({...variant(1),pages:['']}));
@@ -60,4 +60,18 @@ test('operations endpoint reads creative joins with existing scope and reports e
  const f=await fixture(t),url=new URL('https://factory.test/api/psychology-operations?period=7d');
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{...user,sidebarModules:['psychology-ops-report']}});
  const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content.coverage.total,0);
+});
+
+test('replacement pool retains seven originals and archives old layouts for frozen jobs',()=>{
+ const retained=['classic','editorial','night','letter','dialogue','quote','minimal'];
+ assert.equal(Object.keys(STYLE_REPLACEMENTS).length,13);
+ for(const id of retained)assert.ok(VISUAL_STYLES.some(s=>s.id===id));
+ for(const [oldId,newId] of Object.entries(STYLE_REPLACEMENTS)){
+  assert.ok(!VISUAL_STYLES.some(s=>s.id===oldId));assert.ok(VISUAL_STYLES.some(s=>s.id===newId));
+  assert.equal(styleById(oldId).id,oldId);assert.notEqual(styleById(oldId).layout,styleById(newId).layout);
+  assert.equal(chooseVisualStyle({id:'a'},[],'fixed',oldId),newId);
+  const oldBinding={kind:'account',target_id:'a',styles_json:JSON.stringify([oldId])};
+  assert.equal(chooseVisualStyle({id:'a'},[oldBinding]),newId);
+  assert.deepEqual(JSON.parse(currentStyleBindings([oldBinding])[0].styles_json),[newId]);
+ }
 });
