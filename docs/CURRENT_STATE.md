@@ -25,6 +25,8 @@ Updated: 2026-09-22
 
 - Psychology photo recreation caches validated original per-page copy, source image positions/types and background descriptions in D1 (migration 0037), scoped by operator and canonical TikTok post ID/share link. Repeat draws skip TikHub and vision; optional rewriting is text-only and never mutates cached originals. Expiring extraction leases coordinate concurrent draws; transient source images remain temporary and are deleted after extraction. Existing historical jobs are not backfilled.
 
+- Psychology 定时评论 now includes explicit per-video automatic A/B/C/D replies. Topics store separate replyOptions; watch creation freezes answer text, start/end window and reply cap. A dedicated factory-psychology-replies queue (five consumers) pages comments through the hub, deduplicates by account/video/comment and limits each account to one reply attempt per minute. Existing videos are enrolled only through the operator form; unknown outcomes require receipt checks.
+
 ## Platform
 
 - Psychology /psychology-ops-report is now a separate operations review: equal-period trend comparisons, account performance/drilldown, and automatic-batch generation/submission/publication funnel. It supports 7/30-day or custom date windows, media/group filters, existing scoped permissions, and explicit archive coverage. Performance rates exclude works younger than 24 hours; pending submissions never count as confirmed publication.

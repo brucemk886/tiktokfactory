@@ -73,6 +73,10 @@
       {
         "binding": "PHOTO_QUEUE",
         "queue": "factory-psychology-photo"
+      },
+      {
+        "binding": "REPLY_QUEUE",
+        "queue": "factory-psychology-replies"
       }
     ],
     "consumers": [
@@ -81,6 +85,14 @@
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_concurrency": 20,
+        "max_retries": 3,
+        "retry_delay": 60
+      },
+      {
+        "queue": "factory-psychology-replies",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 5,
         "max_retries": 3,
         "retry_delay": 60
       }

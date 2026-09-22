@@ -89,7 +89,7 @@ function renderSingleImage(topic){
   $("#optionGrid").innerHTML=choices.map((choice,index)=>`<article class="choice-card"><strong>${choice.label}</strong><label>选项文案<input id="optionCopy${index}" maxlength="80" placeholder="例如：独自离开 / stay close" value="${esc(choice.copy)}"></label></article>`).join("");
 }
 function showEditor(topic=null){
-  $("#revealComment").value=topic?.revealComment||"";
+  $("#revealComment").value=topic?.revealComment||"";for(const label of ["A","B","C","D"])$("#reply"+label).value=topic?.replyOptions?.[label]||"";
   state.editing=topic;state.requestId=crypto.randomUUID();
   $("#editTitle").textContent=topic?"编辑题目":"新增题目";$("#editBank").textContent=bank().label;
   $("#topicTitle").value=topic?.title||"";$("#topicContent").value=isFour()||isSingle()?"":topic?.content||"";$("#topicCategory").value=topic?.category||"";
@@ -156,7 +156,7 @@ $("#editForm").onsubmit=async e=>{
       :isSingle()
       ?{title:$("#topicTitle").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked,...await collectSingleImage()}
       :{title:$("#topicTitle").value,content:$("#topicContent").value,category:$("#topicCategory").value,priority:Number($("#topicPriority").value),enabled:$("#topicEnabled").checked};
-    body.revealComment=$("#revealComment").value;
+    body.revealComment=$("#revealComment").value;body.replyOptions=Object.fromEntries(["A","B","C","D"].map(label=>[label,$("#reply"+label).value]));
     if(state.editing)await api(BASE+"/"+state.editing.id,"PATCH",{...body,revision:state.editing.revision});
     else await api(BASE+"/import","POST",{requestId:state.requestId,template:state.template,items:[body]});
     $("#editDialog").close();message("题目已保存。");if(!state.editing){state.page=1;$("#search").value="";$("#enabledFilter").value="all";}await load();

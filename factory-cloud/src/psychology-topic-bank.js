@@ -33,7 +33,7 @@ function publicSourceImage(content){
     previewUrl:single.imageKey?`${BASE}/assets?key=${encodeURIComponent(single.imageKey)}`:single.imageUrl||"",
   };
 }
-const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,revealComment:row.reveal_comment||"",category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"||row.template==="psychology-target-2"?publicChoices(row.content):null,image:row.template==="psychology-target-2"?publicSourceImage(row.content):null});
+const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,revealComment:row.reveal_comment||"",replyOptions:JSON.parse(row.reply_options_json||"{}"),category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"||row.template==="psychology-target-2"?publicChoices(row.content):null,image:row.template==="psychology-target-2"?publicSourceImage(row.content):null});
 export function topicImageObjectKey(id,ext){
   const suffix=ext==="jpeg"?"jpg":ext;
   return `psychology-topics/${id}.${suffix}`;
@@ -138,8 +138,8 @@ export async function writeIntegrationTopics(db,input,actor){
     const fingerprint=await sha256Hex(topicFingerprintText(topic));
     const id="topic-"+fingerprint;
     planned.push({id,topic});
-    statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-      .bind(id,topic.template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,fingerprint,actor,stamp,stamp,topic.revealComment));
+    statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment,reply_options_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id,topic.template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,fingerprint,actor,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions)));
   }
   const result=await db.batch(statements);
   const items=planned.map((row,index)=>({id:row.id,template:row.topic.template,title:row.topic.title,status:Number(result[index].meta?.changes||0)?"created":"skipped"}));
@@ -205,8 +205,8 @@ export async function handlePsychologyTopicBank(request,env,url,session){
       if(prior){if(prior.payload_hash!==hash)return errorJson("该提交编号对应的内容已改变，请重新提交。",409);return json({duplicate:true,received:topics.length});}
       const stamp=Date.now(),statements=[db.prepare("INSERT INTO psychology_topic_imports(id,payload_hash,created_by,created_at) VALUES (?,?,?,?)").bind(id,hash,user.username,stamp)];
       for(const[index,topic]of topics.entries()){
-        statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-          .bind("topic-"+id.slice(0,32)+"-"+index,template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,await sha256Hex(topicFingerprintText(topic)),user.username,stamp,stamp,topic.revealComment));
+        statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment,reply_options_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+          .bind("topic-"+id.slice(0,32)+"-"+index,template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,await sha256Hex(topicFingerprintText(topic)),user.username,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions)));
       }
       try{
         const result=await db.batch(statements);const created=result.slice(1).reduce((n,r)=>n+Number(r.meta?.changes||0),0);
@@ -226,9 +226,9 @@ export async function handlePsychologyTopicBank(request,env,url,session){
       let statement;
       if(request.method==="DELETE")statement=db.prepare("UPDATE psychology_template_topics SET deleted_at=?,enabled=0,revision=revision+1 WHERE id=? AND revision=? AND deleted_at=0").bind(Date.now(),row.id,row.revision);
       else{
-        const topic=normalizeTopic({...row,...input},row.template);
-        statement=db.prepare("UPDATE psychology_template_topics SET title=?,content=?,category=?,priority=?,enabled=?,reveal_comment=?,fingerprint=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND deleted_at=0")
-          .bind(topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,topic.revealComment,await sha256Hex(topicFingerprintText(topic)),Date.now(),row.id,row.revision);
+        const topic=normalizeTopic({...row,replyOptions:JSON.parse(row.reply_options_json||"{}"),...input},row.template);
+        statement=db.prepare("UPDATE psychology_template_topics SET title=?,content=?,category=?,priority=?,enabled=?,reveal_comment=?,reply_options_json=?,fingerprint=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND deleted_at=0")
+          .bind(topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,topic.revealComment,JSON.stringify(topic.replyOptions),await sha256Hex(topicFingerprintText(topic)),Date.now(),row.id,row.revision);
       }
       try{const result=await statement.run();if(!result.meta?.changes)return errorJson("题目已变化，请刷新重试。",409);}
       catch(error){if(String(error.message).includes("UNIQUE"))return errorJson("当前题库已存在相同题目和内容。",409);throw error;}

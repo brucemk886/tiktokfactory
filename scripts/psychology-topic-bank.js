@@ -226,7 +226,13 @@ export function normalizeTopic(input,template){
   if(content.length>5000)fail("题目内容不能超过5000个字符。");
   const revealComment=String(input.revealComment??input.reveal_comment??input["揭晓评论"]??"").trim();
   if(revealComment.length>2000)fail("揭晓评论不能超过2000个字符。");
-  return {template,title,content,category,priority,enabled,choices,sourceImage,revealComment};
+  const replyOptions={};
+  for(const label of CHOICE_LABELS){
+    const value=input.replyOptions?.[label]??'';
+    if(typeof value!=='string'||[...value.trim()].length>150)fail(`${label} 自动回复最多150个字符。`);
+    replyOptions[label]=value.trim();
+  }
+  return {template,title,content,category,priority,enabled,choices,sourceImage,revealComment,replyOptions};
 }
 export function collectTopicWriteItems(input){
   if(Array.isArray(input))return normalizeWriteList(input,undefined);

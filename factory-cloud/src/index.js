@@ -1,3 +1,4 @@
+import {handlePsychologyAutoReplies,dispatchAutoReplies,consumeAutoReplies} from './psychology-auto-replies.js';
 import { handlePsychologyComments, runScheduledComments } from './psychology-comments.js';
 import { reconcilePsychologyGroups } from './psychology-publish-groups.js';
 import { handlePsychologyTopicBank, PSYCHOLOGY_TOPIC_API } from './psychology-topic-bank.js';
@@ -53,7 +54,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
@@ -88,11 +89,12 @@ export default {
   },
 
   async queue(batch,env) {
+    if(batch.queue==='factory-psychology-replies')return consumeAutoReplies(batch,env);
     return (await import('./psychology-cloud-queue.js')).consumeCloudPhotos(batch,env);
   },
 
   async scheduled(controller, env, ctx) {
-    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)]]);return;}
+    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)]]);return;}
     if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],

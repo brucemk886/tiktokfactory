@@ -85,3 +85,11 @@ Signal Desk accepts structurally valid hub batches before contacting TikTok for 
 - `peer-photo-copy-cache.js` stores only validated original text plans in D1 `psychology_photo_copy_cache`, keyed by operator and versioned TikTok post identity (canonical numeric ID, otherwise share-link path). Each page keeps its original text, 1-based position, layout type and background description; no source images or signed URLs are stored in this shared cache. Entries are bounded to 128 KiB.
 - `peer-photo-workflow.js` first reads/claims the shared entry using an atomic expiring lease. Other workflows sleep durably and reuse the completed extraction; failures release the lease, expired leases can be reclaimed, and malformed cache records are invalidated with compare-and-clear.
 - First extraction always disables rewriting. Only after the validated original is saved does a requested rewrite run using text alone. Template overrides and generated backgrounds remain per-job. Temporary source R2 images are deleted after extraction and again on cleanup if needed. Historical jobs are not inferred into the cache because prior results may have been rewritten.
+
+
+## Psychology per-video automatic replies
+
+- psychology_reply_watches freezes owner/account/video/topic, four answers and time window; psychology_reply_items owns durable per-comment decisions and stable hub external IDs. The unique account/video/comment key survives repeated scans and pause/resume.
+- The minute scheduler dispatches up to 120 due watches to REPLY_QUEUE; separate consumers process one watch/page per invocation. Topic edit stores reply_options_json independently of reveal comments and rendering content.
+- Hub /api/v1/publish/comments/scan checks account scopes and indexed video ownership, fetches one official cursor page and stores comments before returning them. Factory stores continuation cursors; a completed traversal starts again after five minutes. Pending sends run by minute without repulling a completed page.
+- Lease claims, account pacing and hub receipts protect concurrent processing; ambiguous choices, own comments and nested replies are skipped. Pause prevents subsequent sends; an in-flight request may complete. No AI interpretation or implicit enrollment of old/new publishing batches.

@@ -3,6 +3,26 @@
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-auto-publish.css"><link rel="stylesheet" href="/psychology-comments.css"></head>
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell"><header class="page-head"><div><h1>定时评论</h1><p class="page-lead">视频发布成功后，按模板设置的时间，在评论区揭晓对应题目的答案。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-publish">心理学自动发布</a></nav></header>
+
+<section class="panel auto-section" id="autoReplies"><h2>自动回复用户评论</h2>
+<p class="field-hint">指定已发布视频，选择对应题目并确认 A/B/C/D 答案。开始后每5分钟安排扫描，分页和待回复队列继续按分钟处理；每账号每分钟最多回复1条，繁忙时会排队。暂停时正在发送的回复仍可能完成。</p>
+<form id="replyForm"><div class="auto-grid">
+<label>发布账号<select id="replyAccount" required><option value="">正在读取账号…</option></select></label>
+<label>视频 ID<input id="replyVideo" required pattern="[0-9]{5,30}" placeholder="填写此账号已发布的视频 ID"><small>可在视频链接 /video/ 后或视频详情中找到。</small></label>
+<label>模板题库<select id="replyBank"><option value="psychology">01 · 四图测试</option><option value="psychology-collage">02 · 纸张拼贴</option><option value="psychology-target-2">03 · 单图互动测试</option></select></label>
+<label>搜索题目<input id="replyTopicSearch" type="search" placeholder="输入题目关键词"><button id="replyFind" type="button">查询题目</button></label>
+<label>对应题目<select id="replyTopic" required></select><small id="replyTopicPage"></small><button type="button" id="replyTopicPrev">上一页题目</button><button type="button" id="replyTopicNext">下一页题目</button></label>
+<label>开始回复时间（设备时区）<input id="replyStart" type="datetime-local" required><small>如20:00发布、延迟2小时，填写22:00。</small></label>
+<label>持续回复（小时）<input id="replyHours" type="number" min="1" max="168" value="48" required></label>
+<label>本视频最多回复<input id="replyMax" type="number" min="1" max="500" value="100" required></label>
+<label>A 选项回复<textarea id="replyAnswerA" rows="3" maxlength="150" required></textarea></label><label>B 选项回复<textarea id="replyAnswerB" rows="3" maxlength="150" required></textarea></label><label>C 选项回复<textarea id="replyAnswerC" rows="3" maxlength="150" required></textarea></label><label>D 选项回复<textarea id="replyAnswerD" rows="3" maxlength="150" required></textarea></label>
+</div><p class="field-hint">自动带入题库保存的选项回复，也可修改本次内容。每条最多150字符；只回复明确的单个选项，如“A”“选B”“I choose C”。已存在的评论也会检查。任务创建后答案固定，不随题库修改。</p>
+<button type="submit" class="primary-action" id="replyCreate">开启此视频自动回复</button><span id="replyMessage" role="status"></span></form>
+<div class="section-title"><h3>视频回复任务</h3><button type="button" id="replyRefresh">刷新任务</button></div><div id="replyWatches"></div>
+<div class="comment-pagination"><button id="replyPrev" type="button">上一页</button><span id="replyPageInfo"></span><button id="replyNext" type="button">下一页</button></div>
+<h3 id="replyRecordsTitle">评论处理记录</h3><div class="queue-wrap"><table class="queue-table comments-table"><thead><tr><th>用户评论</th><th>选项 / 回复</th><th>状态 / 原因</th><th>操作</th></tr></thead><tbody id="replyRecords"><tr><td colspan="4">点击视频任务的“查看记录”。</td></tr></tbody></table></div>
+<div class="comment-pagination"><button id="recordPrev" type="button" disabled>上一页记录</button><span id="recordPageInfo"></span><button id="recordNext" type="button" disabled>下一页记录</button></div>
+</section>
 <section class="panel auto-section"><h2>模板设置</h2><p class="field-hint">先在模板题库填写每道题的「揭晓评论」，再开启对应模板。设置仅作用于之后创建的自动发布批次。</p>
 <p><a id="manageTopics" href="/psychology-topic-bank">管理此模板的题目与揭晓评论 →</a></p>
 <form id="settingsForm"><div class="auto-grid"><label>模板<select id="template" required></select></label><label>发布成功后延迟（分钟）<input id="delay" type="number" min="1" max="10080" value="120" required></label></div>
@@ -13,4 +33,4 @@
 <p class="field-hint">每分钟检查到期任务。以实际发布时间起算；尚未取得实际时间时，以发布成功确认时间起算。已经开始提交的评论不能取消。</p><p id="listStatus" role="status"></p>
 <div class="queue-wrap"><table class="queue-table comments-table"><thead><tr><th>题目 / 账号</th><th>揭晓评论</th><th>发布时间</th><th>计划评论</th><th>状态 / 结果</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div>
 <div class="comment-pagination"><button id="prev" type="button">上一页</button><span id="pageInfo"></span><button id="next" type="button">下一页</button></div></section></main>
-<script src="/access.js"></script><script src="/psychology-comments.js"></script></body></html>
+<script src="/access.js"></script><script src="/psychology-comments.js"></script><script src="/psychology-auto-replies.js"></script></body></html>
