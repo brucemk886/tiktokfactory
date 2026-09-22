@@ -16,3 +16,6 @@ public/psychology-auto-publish.html; public/psychology-auto-publish.js; scripts/
 # Next step
 Push main and deploy from a clean main checkout, then verify live selector transitions without submitting a batch. Deployment outcome is reported in the task response.
 
+
+# Follow-up: remove duplicate template control
+The template-bank source now hides the redundant generation-template field; the selected bank still supplies the matching renderer. Peer video and photo sources retain the template field. Existing switching regression covers visibility in both modes.

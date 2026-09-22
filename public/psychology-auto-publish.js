@@ -30,6 +30,7 @@ function renderSources(){
   $('#selection').innerHTML=choices.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('');
   if(choices.some(([v])=>v===previous))$('#selection').value=previous;
   $('#topicBankField').hidden=!bank;
+  $('#templateField').hidden=bank;
   const banks=state.templates.video||[];
   $('#topicBank').innerHTML=banks.map((t,index)=>{
     const c=state.topicCounts?.[t.id]||{};

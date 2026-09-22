@@ -119,7 +119,7 @@ function chooseBank(h,bank){h.node('#topicBank').value=bank;h.node('#topicBank')
 test('concrete topic banks display counts, synchronize renderer both ways and submit selected bank',async()=>{
  const h=harness(Promise.resolve(grouped),false,topicOptions);await h.ready;
  h.node('#template').value='psychology';chooseSource(h,'topic-bank');
- assert.equal(h.node('#topicBankField').hidden,false);
+ assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#templateField').hidden,true);
  assert.match(h.node('#topicBank').innerHTML,/四图测试题库（已启用 0 \/ 共 3 题）/);
  assert.match(h.node('#topicBank').innerHTML,/纸张拼贴题库（已启用 4 \/ 共 18 题）/);
  filterGroup(h,'g2');h.node('#selectVisibleAccounts').listeners.click();
@@ -139,10 +139,10 @@ test('concrete topic banks display counts, synchronize renderer both ways and su
 test('peer source, photo mode and missing topic permission hide the bank selector',async()=>{
  const h=harness(Promise.resolve([]),false,topicOptions);await h.ready;
  h.node('#template').value='psychology';chooseSource(h,'topic-bank');
- chooseSource(h,'peer');assert.equal(h.node('#topicBankField').hidden,true);
+ chooseSource(h,'peer');assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#templateField').hidden,false);
  chooseSource(h,'topic-bank');await h.mediaButtons[1].click();
- assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#unusedField').hidden,true);
- await h.mediaButtons[0].click();assert.equal(h.node('#topicBankField').hidden,false);
+ assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#templateField').hidden,false);assert.equal(h.node('#unusedField').hidden,true);
+ await h.mediaButtons[0].click();assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#templateField').hidden,true);
  const denied=harness(Promise.resolve([]));await denied.ready;chooseSource(denied,'topic-bank');
  assert.equal(denied.node('#topicBankField').hidden,true);assert.equal(denied.node('#sourceType').value,'peer');
 });

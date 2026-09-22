@@ -17,7 +17,7 @@
 <label class="field" id="topicBankField" hidden><span>具体题库</span><select id="topicBank"></select><small>选择题库后自动匹配生成模板。<a id="topicBankLink" href="/psychology-topic-bank">查看 / 管理题目</a></small></label>
 <div class="field" id="unusedField"><span>抽取范围</span><label class="auto-check"><input type="checkbox" id="onlyUnused" checked>仅抽取未使用题目</label><small>取消后允许跨批次复用，同一批次仍不重复。</small></div>
 <label class="field"><span>批次名称</span><input id="batchName" maxlength="100" placeholder="例如：心理学晚间发布"></label>
-<label class="field"><span>生成模板</span><select id="template" required></select></label>
+<label class="field" id="templateField"><span>生成模板</span><select id="template" required></select></label>
 <label class="field"><span>生成总条数</span><input id="count" type="number" min="1" max="100" value="3" required><small>每次 1–100 条，每20条合并为一个中台批次，余数单独成批。</small></label>
 <label class="field" id="peerReuseField"><span>同账号选题</span><select id="allowPeerReuse"><option value="no">避开已使用题目</option><option value="yes">允许重复使用</option></select></label>
 <label class="field"><span>选题抽取方式</span><select id="selection"><option value="random">随机抽取</option><option value="popular">播放量优先</option><option value="recent">最近入库优先</option></select></label>
