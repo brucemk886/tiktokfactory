@@ -14,5 +14,5 @@ See docs/psychology-photo-creative.md. New creative handler/migration/tests, sha
 # Tests
 549 factory tests passed; new coverage for owner scoping, immutable/idempotent imports, invalid binding rejection, stable frozen assignment, no-provider imported workflow, exact task/account metric joins, missing/null metrics and report SQL. Production module loader rendered 40 cover/content images plus 20 long-copy images in local headless Chromium. Contact sheet: work/creative-style-contact-sheet.png (ignored runtime artifact).
 
-# Next step
-Commit/push main then normal factory deployment and hosted UI/read-only API checks. No live publishing jobs, account bindings or content imports were created during testing. Operators choose pools and import reviewed copies for future batches.
+# Deployment and next step
+Feature commit dbb57b8 was pushed to main and deployed through npm run deploy; version 5e9673c9-03a6-4057-b301-e71f32a96da1. Hosted checks confirmed all twenty previews, authorized group/account assignments, copy-library empty state, automatic-publish photo controls, historical content joins and per-account interaction/watch metrics. Browser sessions closed. No live publishing jobs, account bindings or content imports were created during testing. Operators choose pools and import reviewed copies for future batches.
