@@ -298,6 +298,17 @@ test('photo analysis waits for a free slot and hands it back when the job is don
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_analysis_slots').get().n, 0);
 });
 
+test('the extraction lease is renewed after the slot is won, not before the queue wait', async t => {
+  const f = cloudFixture(t);
+  const order = [];
+  const step = { ...f.step, async do(name, config, action) { order.push(name); return f.step.do(name, config, action); } };
+  await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, step);
+  const slot = order.findIndex(name => name.startsWith('extract-copy-v1-0-slot-0'));
+  const hold = order.findIndex(name => name.startsWith('copy-cache-hold-'));
+  const chat = order.findIndex(name => name.startsWith('extract-copy-v1-0-deepseek-flash'));
+  assert.ok(slot >= 0 && hold > slot && chat > hold, order.join(',')); // slot, then renew, then spend money
+});
+
 test('a queue that never frees a slot goes to the fallback instead of crowding DeepSeek', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);

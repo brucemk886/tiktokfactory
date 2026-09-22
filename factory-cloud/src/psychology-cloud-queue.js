@@ -83,11 +83,16 @@ export async function runCloudPhoto(env, job, deps={}) {
       const current=await env.DB.prepare('SELECT status,worker_id FROM factory_jobs WHERE id=?').bind(job.id).first();
       if(current?.status!=='running'||current.worker_id!==job.worker_id)throw new Error('任务已取消或执行权已变更。');
       if(!await env.DB.prepare('SELECT id FROM psychology_publish_items WHERE job_id=? AND deleted_at=0').bind(job.id).first())throw new Error('自动发布任务已删除。');
-      await Promise.all(wave.map(async ({index},offset)=>{
+      // allSettled, not all: a sibling rejecting after the first failure would
+      // otherwise surface as an unhandled rejection and kill the invocation
+      // before the job status is written.
+      const settled=await Promise.allSettled(wave.map(async ({index},offset)=>{
         const position=start+offset;
         await call('upload',{index,dataUrl:images[position]});
         images[position]='';
       }));
+      const failed=settled.find(result=>result.status==='rejected');
+      if(failed)throw failed.reason;
       rendered+=wave.length;
       await env.DB.prepare("UPDATE factory_jobs SET percent=?,message=?,updated_at=? WHERE id=? AND status='running' AND worker_id=?")
         .bind(Math.round(20+60*rendered/payload.pages.length),`云端已生成并上传 ${rendered}/${payload.pages.length} 张图片`,Date.now(),job.id,job.worker_id).run();

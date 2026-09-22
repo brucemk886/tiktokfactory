@@ -67,6 +67,9 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       kiePhotos = await paidCall(step, 'prepare-kie-images', () => preparePeerPhotosForKie(env, id, source.urls), CONVERT, '原图转码失败。');
       await save('source-ready', 'running', 8, '正在按图片编号提取原文和页面类型…', '', {productionStage:'script'});
       let validationError = '';
+      // The extraction lease lasts ten minutes but the analysis queue can hold a
+      // job for an hour, so the lease is renewed again once the slot is won.
+      chat.onSlot = label => step.do(`copy-cache-hold-${label}`, READ, () => claimPhotoCopy(env.DB, copyOwner, copyKey, id));
       for (let attempt = 0; attempt < 3; attempt++) {
         await step.do(`copy-cache-renew-${attempt}`, READ, async () => {
           const lease = await claimPhotoCopy(env.DB, copyOwner, copyKey, id);
@@ -290,6 +293,7 @@ async function lookAtImages(env, kie, deepseek, step, name, prompt, imageUrls, c
         primaryError = '排队等待模型名额超过 60 分钟。';
         break;
       }
+      await chat.onSlot?.(`${name}-${attempt}`);
       try {
         const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
           () => deepseek.createChat(prompt, { imageUrls }));
