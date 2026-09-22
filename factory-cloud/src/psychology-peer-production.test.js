@@ -225,31 +225,18 @@ test('three DeepSeek V4.1 Flash failures stop the job instead of paying for Grok
   assert.match(row.error, /internal error, please try again later/);
 });
 
-test('Grok still carries the job when no DeepSeek key is configured', async t => {
+test('a missing DeepSeek key stops the job instead of reaching for another model', async t => {
   const f = cloudFixture(t);
-  const one = storyPlan(1);
-  const grokBodies = [];
   f.env.DEEPSEEK_API_KEY = '';
-  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Original caption',rewriteCopy:false,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
-    if (String(url).includes('/grok/v1/responses')) {
-      grokBodies.push(JSON.parse(init.body));
-      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(one) }] }] });
-    }
+    if (String(url).includes('/chat/completions') || String(url).includes('/grok/')) assert.fail('called a model without a primary key');
     return originalFetch(url, init);
   };
-  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
-  assert.equal(result.count, 1);
-  assert.equal(grokBodies[0].model, 'grok-4-6');
-  assert.equal(grokBodies[0].stream, false); // the endpoint streams unless told not to
-  assert.equal(grokBodies[0].reasoning.effort, 'low');
-  const parts = grokBodies[0].input[0].content;
-  assert.equal(parts[0].type, 'input_text');
-  assert.equal(parts[1].type, 'input_image');
-  assert.match(parts[1].image_url, /^data:image\/jpeg;base64,/); // bare string, not an object
-  const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.analysisModel, 'grok-4-6');
+  await assert.rejects(runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step), /密钥未配置/);
+  const row = f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
+  assert.equal(row.status, 'failed');
+  assert.match(row.error, /密钥未配置或已失效/);
 });
 
 test('three jobs run at a time and the freed slot goes to the oldest waiter', async t => {
@@ -353,27 +340,6 @@ test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid 
   assert.ok(chatCalls.every(url => url.includes('api.deepseek.com')));
   const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.equal(saved.analysisModel, 'deepseek-flash');
-});
-
-test('photo story uses Grok 4.6 directly when DeepSeek is not configured', async t => {
-  const f = cloudFixture(t);
-  const one = storyPlan(1);
-  const chatCalls = [];
-  f.env.DEEPSEEK_API_KEY = '';
-  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
-  const originalFetch = f.env.fetch;
-  f.env.fetch = async (url, init) => {
-    if (String(url).includes('/grok/v1/responses')) {
-      chatCalls.push(String(url));
-      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(one) }] }] });
-    }
-    return originalFetch(url, init);
-  };
-  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
-  assert.equal(result.count, 1);
-  assert.equal(chatCalls.length, 2); // extract once, then rewrite without images
-  const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.analysisModel, 'grok-4-6');
 });
 
 function fixture(t, overrides = {}) {

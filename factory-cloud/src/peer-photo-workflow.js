@@ -1,6 +1,5 @@
 import { buildPhotoStoryPrompt } from '../../scripts/psychology-peer-production.js';
 import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
-import { createKieClient, KIE_GROK_CHAT_MODEL } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
 import { preparePeerPhotosForKie, deletePeerPhotoSources, loadPeerPhotoChatImages } from './peer-photo-convert.js';
 import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, buildCachedCopyRewritePrompt, parseCachedCopyRewrite } from './peer-photo-copy-cache.js';
@@ -15,14 +14,12 @@ const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' 
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
 const PHOTO_STORY_MODEL = DEEPSEEK_PHOTO_MODEL;
-const PHOTO_STORY_FALLBACK_MODEL = KIE_GROK_CHAT_MODEL;
 
 export async function runPeerPhotoWorkflow(env, event, step) {
   const id = event.payload.jobId;
   const row = await step.do('load-source', READ, () => env.DB.prepare("SELECT * FROM factory_jobs WHERE id = ? AND type = 'psychology-photo-story'").bind(id).first());
   if (!row || ['done', 'failed', 'canceled', 'cancelled'].includes(row.status)) return { skipped: true };
   const payload = JSON.parse(row.payload_json);
-  const kie = createKieClient({ apiKey: env.KIE_API_KEY, fetchImpl: env.fetch || fetch });
   const deepseek = String(env.DEEPSEEK_API_KEY || '').trim()
     ? createDeepSeekClient({ apiKey: env.DEEPSEEK_API_KEY, fetchImpl: env.fetch || fetch })
     : null;
@@ -36,7 +33,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   let kiePhotos = { urls: [], keys: [] };
   // Queue position follows creation order: batch timestamp first, then the
   // item's own id, which already carries its position inside the batch.
-  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, holder: id, rank: Number(row.created_at) || 0 };
+  const chat = { model: PHOTO_STORY_MODEL, holder: id, rank: Number(row.created_at) || 0 };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
@@ -44,6 +41,9 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: chat.model, sourceCopyCache: copyCache, progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
   }
   try {
+    // No paid stand-in for the primary model: a missing key stops the job here
+    // with a message an operator can act on.
+    if (!deepseek) throw new Error('DeepSeek 密钥未配置或已失效，图文分析已停止。');
     await save('starting', 'running', 3, '正在读取原帖逐页文案缓存…', '', {productionStage:'script'});
     let sourceCopy = null;
     let acquired = false;
@@ -78,7 +78,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
         const prompt = buildPhotoStoryPrompt({...payload,rewriteCopy:false}, { sceneCount: total }) +
           '\nExtraction only: originalText must contain the COMPLETE verbatim visible text on each page, without shortening or rewriting. sourceIndex must equal its 1-based image position. Preserve original post wording.' +
           (validationError ? `\nCorrect this validation error: ${validationError}` : '');
-        const text = await photoChat(env, kie, deepseek, step, `extract-copy-v1-${attempt}`, prompt, kiePhotos, chat);
+        const text = await photoChat(env, deepseek, step, `extract-copy-v1-${attempt}`, prompt, kiePhotos, chat);
         try { sourceCopy = photoCopySnapshot(text, payload, total); break; } catch (error) { validationError = error.message; }
       }
       if (!sourceCopy) throw new Error(validationError);
@@ -94,7 +94,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       let rewritten = null, validationError = '';
       for (let attempt = 0; attempt < 3; attempt++) {
         const prompt = buildCachedCopyRewritePrompt(sourceCopy) + (validationError ? `\nCorrect this validation error: ${validationError}` : '');
-        const text = await lookAtImages(env, kie, deepseek, step, `rewrite-copy-v1-${attempt}`, prompt, [], chat);
+        const text = await lookAtImages(env, deepseek, step, `rewrite-copy-v1-${attempt}`, prompt, [], chat);
         try { rewritten = parseCachedCopyRewrite(text, sourceCopy); break; } catch(error) { validationError = error.message; }
       }
       if (!rewritten) throw new Error(validationError);
@@ -255,8 +255,8 @@ function progress(total, completed) {
   return Math.min(95, Math.round(15 + (Math.max(0, completed) * 80) / Math.max(1, total)));
 }
 
-async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat) {
-  return lookAtImages(env, kie, deepseek, step, name, prompt, await loadPeerPhotoChatImages(env, kiePhotos), chat);
+async function photoChat(env, deepseek, step, name, prompt, kiePhotos, chat) {
+  return lookAtImages(env, deepseek, step, name, prompt, await loadPeerPhotoChatImages(env, kiePhotos), chat);
 }
 
 // A burst of photo jobs can leave DeepSeek queued past the client timeout, and
@@ -280,17 +280,9 @@ async function waitForAnalysisSlot(env, step, name, chat) {
   return false;
 }
 
-async function lookAtImages(env, kie, deepseek, step, name, prompt, imageUrls, chat) {
-  // Grok only covers a missing primary key, never a primary that answered
-  // badly: three failures stop the job instead of spending on the fallback.
-  if (!deepseek) {
-    // Higher reasoning efforts spend most of their output tokens thinking and
-    // run six-image jobs into Kie's own gateway timeout around 130 seconds.
-    const text = await paidCall(step, `${name}-${PHOTO_STORY_FALLBACK_MODEL}`,
-      () => kie.createGrokChat(prompt, { reasoningEffort: 'low', imageUrls }));
-    chat.model = PHOTO_STORY_FALLBACK_MODEL;
-    return text;
-  }
+// There is no second model: three failures stop the job with the upstream's
+// own words rather than spending on a stand-in.
+async function lookAtImages(env, deepseek, step, name, prompt, imageUrls, chat) {
   let primaryError = '看图分析失败。';
   for (let attempt = 0; attempt < PRIMARY_ATTEMPTS; attempt += 1) {
     // The slot is released between attempts so a backing-off job never holds

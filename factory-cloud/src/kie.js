@@ -101,47 +101,7 @@ export function createKieClient({ apiKey, fetchImpl = fetch } = {}) {
     return (await createChatCompletion(prompt, options)).text;
   }
 
-  // Grok is not served through the OpenAI-compatible chat path: it takes a
-  // responses-style input array, streams unless told not to, and answers with
-  // an output array instead of choices.
-  async function createGrokChat(prompt, { imageUrls = [], reasoningEffort = 'medium' } = {}) {
-    const images = imageUrls.map(value => String(value || '').trim());
-    if (images.length > 35 || images.some(value => !isKieChatImageUrl(value))) throw new Error('多模态图片地址无效。');
-    const effort = GROK_REASONING_EFFORTS.includes(reasoningEffort) ? reasoningEffort : 'medium';
-    const data = await kieRequest(KIE_GROK_CHAT_PATH, {
-      method: 'POST',
-      signal: AbortSignal.timeout(15 * 60 * 1000),
-      body: JSON.stringify({
-        model: KIE_GROK_CHAT_MODEL,
-        stream: false,
-        reasoning: { effort },
-        input: [{ role: 'user', content: [
-          { type: 'input_text', text: String(prompt || '') },
-          // image_url must stay a bare string; the object form is rejected.
-          ...images.map(url => ({ type: 'input_image', image_url: url }))
-        ] }]
-      })
-    });
-    const text = grokText(data);
-    if (!text.trim()) throw new Error(`AI 文案服务没有返回内容：${String(data?.status || data?.msg || '空响应').slice(0, 180)}。`);
-    return text;
-  }
-
-  return { getKieCredits, createKieMediaTask, getKieTask, createChat, createChatCompletion, createGrokChat };
-}
-
-export const KIE_GROK_CHAT_MODEL = 'grok-4-6';
-const KIE_GROK_CHAT_PATH = '/grok/v1/responses';
-const GROK_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
-
-function grokText(payload) {
-  const output = Array.isArray(payload?.output) ? payload.output : [];
-  return output
-    .filter(item => item?.type === 'message')
-    .flatMap(item => (Array.isArray(item.content) ? item.content : []))
-    .filter(part => part?.type === 'output_text')
-    .map(part => String(part.text || ''))
-    .join('');
+  return { getKieCredits, createKieMediaTask, getKieTask, createChat, createChatCompletion };
 }
 
 export { IMAGE_MODELS };

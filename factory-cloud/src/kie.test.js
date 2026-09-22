@@ -115,34 +115,6 @@ test("photo classification can request Gemini 3.5 Flash with low reasoning", asy
   assert.equal(calls[0].body.reasoning_effort, "low");
 });
 
-test("Grok 4.6 posts a non-streaming responses request and reads the output array", async () => {
-  const calls = [];
-  const kie = createKieClient({ apiKey: "test-key", fetchImpl: async (url, init = {}) => {
-    calls.push({ url: String(url), body: JSON.parse(init.body) });
-    return json({ status: "completed", credits_consumed: 3.86, output: [
-      { type: "reasoning", summary: [] },
-      { type: "message", role: "assistant", content: [{ type: "output_text", text: "classified" }] }
-    ] });
-  } });
-  const images = ["data:image/jpeg;base64,/9j/4AAQ", "https://p16.tiktokcdn-us.com/2.webp"];
-  assert.equal(await kie.createGrokChat("Classify", { imageUrls: images }), "classified");
-  assert.match(calls[0].url, /\/grok\/v1\/responses$/);
-  assert.equal(calls[0].body.model, "grok-4-6");
-  assert.equal(calls[0].body.stream, false);
-  assert.equal(calls[0].body.reasoning.effort, "medium");
-  assert.deepEqual(calls[0].body.input[0].content.slice(1), images.map(image_url => ({ type: "input_image", image_url })));
-  await kie.createGrokChat("Classify", { reasoningEffort: "xhigh" });
-  assert.equal(calls[1].body.reasoning.effort, "xhigh");
-  await kie.createGrokChat("Classify", { reasoningEffort: "turbo" });
-  assert.equal(calls[2].body.reasoning.effort, "medium");
-});
-
-test("Grok 4.6 rejects unusable images and empty output instead of returning nothing", async () => {
-  const kie = createKieClient({ apiKey: "test-key", fetchImpl: async () => json({ status: "incomplete", output: [{ type: "reasoning", summary: [] }] }) });
-  await assert.rejects(kie.createGrokChat("Look", { imageUrls: ["ftp://example.com/1.jpg"] }), /图片地址无效/);
-  await assert.rejects(kie.createGrokChat("Look"), /incomplete/);
-});
-
 test("accepts inline data URLs and surfaces nested Kie error messages", async () => {
   const kie = createKieClient({ apiKey: "test-key", fetchImpl: async () => json({
     code: 422,
