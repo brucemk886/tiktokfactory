@@ -162,7 +162,7 @@ test('mismatched bank and renderer cannot submit an unintended topic bank',async
 test('photo UI defaults to random per post and creative page no longer assigns account styles',()=>{
  const publish=fs.readFileSync(new URL('../public/psychology-auto-publish.html',import.meta.url),'utf8');
  assert.match(publish,/<select id="styleMode"><option value="random" selected>/);
- assert.doesNotMatch(publish,/<option value="group">/);
+ assert.doesNotMatch(publish,/<option value="group">|设置分组/);
  const creative=fs.readFileSync(new URL('../public/psychology-creative.html',import.meta.url),'utf8');
  assert.match(creative,/随机样式测试/);assert.doesNotMatch(creative,/id="bindingForm"|当前账号主样式/);
  assert.match(creative,/psychology-ops-report\?tab=content/);
