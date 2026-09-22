@@ -9,7 +9,7 @@ Separate visual styles from copy management and automatically archive original c
 - Sidebar entries are now `图文样式` and `文案库`.
 - Original peer content and reviewed Grokbot photo rewrites are separate tabs. Extraction does not enable, generate or publish content.
 - Video records keep the source caption, original-language speech transcript and ordered visible text. Photo records keep the source caption and indexed text for the first six imported images, matching the existing photo-production limit.
-- Existing peer hits are backfilled. Reimports update the same record; completed text is preserved unless the media type changes.
+- Existing peer hits are backfilled. Accepted imports mirror the source and original-copy row in one D1 batch; reimports update the same record, and completed text is preserved unless the media type changes.
 - Dispatch is bounded to three durable workflows. Stable workflow IDs and attempt guards prevent duplicate paid work; row failures do not block the lane. Timed-out paid work waits for manual retry.
 - Supplied transcript/page text and the existing photo copy cache are reused. Temporary photos/videos are deleted after extraction.
 

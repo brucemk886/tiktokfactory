@@ -2,6 +2,19 @@ import { sha256Hex } from "./http.js";
 import { isEnglishPsychologyPeerHit } from "../../scripts/psychology-peer-language.js";
 
 const TABLE = "psychology_peer_hits";
+const COPY_SYNC = `INSERT INTO psychology_copy_library(id,owner,media_type,title,source_url,source_json,created_at,updated_at)
+  SELECT p.id,COALESCE((SELECT username FROM factory_users WHERE id=p.created_by),p.created_by),p.media_type,COALESCE(p.title,''),p.video_url,
+    json_object('id',p.id,'videoUrl',p.video_url,'title',COALESCE(p.title,''),'mediaType',p.media_type,'platform',p.platform,'videoData',json(COALESCE(p.video_data_json,'{}')),'durationSeconds',p.duration_seconds),p.created_at,p.updated_at
+  FROM psychology_peer_hits p WHERE p.id=? AND p.collected_at=?
+  ON CONFLICT(id) DO UPDATE SET title=excluded.title,source_url=excluded.source_url,source_json=excluded.source_json,
+    status=CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN 'queued' ELSE psychology_copy_library.status END,
+    attempt=psychology_copy_library.attempt+CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN 1 ELSE 0 END,
+    content_json=CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN '{}' ELSE psychology_copy_library.content_json END,
+    error=CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN '' ELSE psychology_copy_library.error END,
+    workflow_id=CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN '' ELSE psychology_copy_library.workflow_id END,
+    completed_at=CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN 0 ELSE psychology_copy_library.completed_at END,
+    media_type=excluded.media_type,updated_at=excluded.updated_at`;
+const COPY_SYNC_BY_ID=COPY_SYNC.replace('p.id=? AND p.collected_at=?','p.id=?');
 const FIELDS = {
   mediaType: "media_type", voiceGender: "voice_gender", videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
@@ -111,7 +124,7 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     };
   }
   const columns = Object.values(FIELDS);
-  const statements = english.map(item => db.prepare(`
+  const statements = english.flatMap(item => [db.prepare(`
     INSERT INTO ${TABLE} (id, video_key, video_url, platform, ${columns.join(",")}, collected_at, created_by, created_at, updated_at)
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
@@ -122,12 +135,14 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     RETURNING id, video_url, collected_at
   `).bind(item.id, item.videoKey, item.videoUrl, item.platform,
     ...Object.keys(FIELDS).map(key => key === "videoData" && item[key] !== null ? JSON.stringify(item[key]) : item[key]),
-    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0));
+    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0),
+    db.prepare(COPY_SYNC).bind(item.id,item.collectedAt)]);
   const results = await db.batch(statements);
-  const byId = new Map(english.map((item, i) => [item.id, results[i].results?.length ? "saved" : "ignored_older"]));
+  const saved = english.map((item,index) => ({item,result:results[index*2]}));
+  const byId = new Map(saved.map(({item,result}) => [item.id, result.results?.length ? "saved" : "ignored_older"]));
   return {
-    accepted: results.filter(result => result.results?.length).length,
-    ignoredOlder: results.filter(result => !result.results?.length).length,
+    accepted: saved.filter(({result}) => result.results?.length).length,
+    ignoredOlder: saved.filter(({result}) => !result.results?.length).length,
     skippedNonEnglish: skipped.length,
     items: items.map(item => ({
       id: item.id, videoUrl: item.videoUrl,
@@ -182,8 +197,12 @@ export async function updatePsychologyPeerHitMediaType(db, id, mediaType) {
   if (!/^psy-[a-f0-9]{32}$/.test(value)) fail("内容编号无效。");
   const type = String(mediaType || "").trim().toLowerCase();
   if (!["video", "photo"].includes(type)) fail("mediaType 只能是 video 或 photo。");
-  const result = await db.prepare(`UPDATE ${TABLE} SET media_type = ?, media_type_locked = 1, updated_at = ? WHERE id = ?`).bind(type, Date.now(), value).run();
-  if (!Number(result.meta?.changes)) {
+  const now=Date.now();
+  const [result]=await db.batch([
+    db.prepare(`UPDATE ${TABLE} SET media_type = ?, media_type_locked = 1, updated_at = ? WHERE id = ? RETURNING id`).bind(type,now,value),
+    db.prepare(COPY_SYNC_BY_ID).bind(value)
+  ]);
+  if (!result.results?.length) {
     const error = new Error("没有找到这条内容。");
     error.statusCode = 404;
     throw error;
