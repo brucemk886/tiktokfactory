@@ -34,7 +34,9 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   let total = 0;
   let state = {};
   let kiePhotos = { urls: [], keys: [] };
-  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, primaryFailed: !deepseek, holder: id };
+  // Queue position follows creation order: batch timestamp first, then the
+  // item's own id, which already carries its position inside the batch.
+  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, primaryFailed: !deepseek, holder: id, rank: Number(row.created_at) || 0 };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
@@ -259,14 +261,14 @@ async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat
 // abandoned after three consecutive failures.
 const PRIMARY_ATTEMPTS = 3;
 const PRIMARY_RETRY_DELAYS = ['10 seconds', '30 seconds'];
-const SLOT_WAIT_ATTEMPTS = 60;
+const SLOT_WAIT_ATTEMPTS = 90;
 
 // A job never fails because the queue stayed full; after the last wait it goes
 // ahead, since blocking a whole batch is worse than briefly exceeding the cap.
-async function waitForAnalysisSlot(env, step, name, holder) {
+async function waitForAnalysisSlot(env, step, name, chat) {
   for (let wait = 0; wait < SLOT_WAIT_ATTEMPTS; wait += 1) {
-    if (await step.do(`${name}-${wait}`, READ, () => claimAnalysisSlot(env.DB, holder))) return true;
-    await step.sleep(`${name}-wait-${wait}`, '15 seconds');
+    if (await step.do(`${name}-${wait}`, READ, () => claimAnalysisSlot(env.DB, chat.holder, chat.rank))) return true;
+    await step.sleep(`${name}-wait-${wait}`, '10 seconds');
   }
   return false;
 }
@@ -278,7 +280,7 @@ async function lookAtImages(env, kie, deepseek, step, name, prompt, imageUrls, c
       // The slot is released between attempts so a backing-off job never holds
       // the queue while it waits.
       if (attempt) await step.sleep(`${name}-${PHOTO_STORY_MODEL}-wait-${attempt}`, PRIMARY_RETRY_DELAYS[attempt - 1]);
-      await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat.holder);
+      await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat);
       try {
         const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
           () => deepseek.createChat(prompt, { imageUrls }));

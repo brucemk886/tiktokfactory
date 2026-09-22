@@ -9,7 +9,7 @@ import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, build
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
 import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, parseCachedCopyRewrite, COPY_LEASE_MS } from './peer-photo-copy-cache.js';
 import { runPeerPhotoWorkflow, jobSeed, CONTENT_STOCK_QUERIES } from './peer-photo-workflow.js';
-import { claimAnalysisSlot, releaseAnalysisSlot, ANALYSIS_CONCURRENCY, ANALYSIS_LEASE_MS } from './photo-analysis-gate.js';
+import { claimAnalysisSlot, releaseAnalysisSlot, ANALYSIS_CONCURRENCY, ANALYSIS_LEASE_MS, ANALYSIS_WAIT_LEASE_MS } from './photo-analysis-gate.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 import { syncPeerArtboardProgress } from '../../scripts/peer-progress-sync.js';
@@ -244,16 +244,34 @@ test('photo story falls back to Grok 4.6 only after three DeepSeek V4.1 Flash fa
   assert.equal(saved.analysisModel, 'grok-4-6');
 });
 
-test('only three jobs may hold an analysis slot, and expiry frees an abandoned one', async t => {
+test('three jobs run at a time and the freed slot goes to the oldest waiter', async t => {
   const { db, sqlite } = fixture(t);
-  const holders = Array.from({ length: ANALYSIS_CONCURRENCY }, (_, i) => 'job-' + i);
-  for (const holder of holders) assert.equal(await claimAnalysisSlot(db, holder, 1000), true);
-  assert.equal(await claimAnalysisSlot(db, 'job-extra', 1000), false);
-  assert.equal(await claimAnalysisSlot(db, holders[0], 1000), true); // renewing is not a new slot
-  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_analysis_slots').get().n, ANALYSIS_CONCURRENCY);
-  await releaseAnalysisSlot(db, holders[0]);
-  assert.equal(await claimAnalysisSlot(db, 'job-extra', 1000), true);
-  assert.equal(await claimAnalysisSlot(db, 'job-later', 1000 + ANALYSIS_LEASE_MS + 1), true); // dead holders expire
+  for (let i = 0; i < ANALYSIS_CONCURRENCY; i++) assert.equal(await claimAnalysisSlot(db, 'run-' + i, 100 + i, 1000), true);
+  assert.equal(await claimAnalysisSlot(db, 'late', 900, 1000), false);
+  assert.equal(await claimAnalysisSlot(db, 'early', 500, 1000), false);
+  assert.equal(await claimAnalysisSlot(db, 'run-0', 100, 1000), true); // renewing is not a new slot
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_analysis_slots WHERE running=1').get().n, ANALYSIS_CONCURRENCY);
+  await releaseAnalysisSlot(db, 'run-0');
+  assert.equal(await claimAnalysisSlot(db, 'late', 900, 1100), false); // the later job keeps waiting
+  assert.equal(await claimAnalysisSlot(db, 'early', 500, 1100), true);
+  await releaseAnalysisSlot(db, 'early');
+  assert.equal(await claimAnalysisSlot(db, 'late', 900, 1200), true);
+});
+
+test('same-batch jobs queue by item order and stalled waiters stop blocking the line', async t => {
+  const { db } = fixture(t);
+  const batch = 1790000000000;
+  for (let i = 0; i < ANALYSIS_CONCURRENCY; i++) assert.equal(await claimAnalysisSlot(db, 'busy-' + i, batch - 1, 1000), true);
+  assert.equal(await claimAnalysisSlot(db, 'psy-007', batch, 1000), false);
+  assert.equal(await claimAnalysisSlot(db, 'psy-003', batch, 1000), false);
+  await releaseAnalysisSlot(db, 'busy-0');
+  assert.equal(await claimAnalysisSlot(db, 'psy-007', batch, 1100), false); // 003 was created first
+  assert.equal(await claimAnalysisSlot(db, 'psy-003', batch, 1100), true);
+  // 003 now holds a slot; a waiter that stops polling expires and frees the queue.
+  await releaseAnalysisSlot(db, 'busy-1');
+  const stalled = 1100 + ANALYSIS_WAIT_LEASE_MS + 1;
+  assert.equal(await claimAnalysisSlot(db, 'psy-009', batch + 1, stalled), true);
+  assert.equal(await claimAnalysisSlot(db, 'psy-003', batch, stalled + ANALYSIS_LEASE_MS + 1), true); // expired runners release too
 });
 
 test('photo analysis waits for a free slot and hands it back when the job is done', async t => {
@@ -326,6 +344,7 @@ function fixture(t, overrides = {}) {
   const sqlite = new DatabaseSync(':memory:'); t.after(() => sqlite.close());
   sqlite.exec(fs.readFileSync(new URL('../migrations/0037_psychology_photo_copy_cache.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0038_psychology_photo_analysis_slots.sql', import.meta.url), 'utf8'));
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0039_psychology_photo_analysis_order.sql', import.meta.url), 'utf8'));
   sqlite.exec('CREATE TABLE factory_users(id TEXT PRIMARY KEY, role TEXT, active INTEGER);');
   sqlite.exec(fs.readFileSync(new URL('../migrations/0022_psychology_peer_hits.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0025_psychology_peer_hit_media_type.sql', import.meta.url), 'utf8'));
