@@ -201,10 +201,11 @@ test('Gemini analysis failure keeps the provider error instead of a workflow ret
   const row = f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status, 'failed');
   assert.match(row.error, /cannot be fetched from factory host/);
+  assert.match(row.error, /DeepSeek overloaded/); // the primary reason is no longer overwritten
   assert.doesNotMatch(row.error, /retry fail/);
 });
 
-test('photo story falls back to Gemini 3.8 Flash when DeepSeek V4.1 Flash fails', async t => {
+test('photo story falls back to Gemini 3.8 Flash only after three DeepSeek V4.1 Flash failures', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);
   const chatCalls = [];
@@ -222,10 +223,33 @@ test('photo story falls back to Gemini 3.8 Flash when DeepSeek V4.1 Flash fails'
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
   assert.equal(result.count, 1);
-  assert.match(chatCalls[0], /api\.deepseek\.com/);
-  assert.match(chatCalls[1], /gemini-3-8-flash-openai/);
+  assert.equal(chatCalls.filter(url => url.includes('api.deepseek.com')).length, 3);
+  assert.match(chatCalls[3], /gemini-3-8-flash-openai/);
+  assert.deepEqual(f.sleeps.filter(name => name.includes('deepseek-flash-wait')).length, 2);
   const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
   assert.equal(saved.analysisModel, 'gemini-3-8-flash');
+});
+
+test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid fallback', async t => {
+  const f = cloudFixture(t);
+  const one = storyPlan(1);
+  const chatCalls = [];
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:false,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
+  const originalFetch = f.env.fetch;
+  f.env.fetch = async (url, init) => {
+    if (String(url).includes('/chat/completions')) {
+      chatCalls.push(String(url));
+      if (chatCalls.length < 3) throw new Error('The operation was aborted due to timeout');
+      return Response.json({ choices: [{ message: { content: JSON.stringify(one) } }] });
+    }
+    return originalFetch(url, init);
+  };
+  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
+  assert.equal(result.count, 1);
+  assert.equal(chatCalls.length, 3);
+  assert.ok(chatCalls.every(url => url.includes('api.deepseek.com')));
+  const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
+  assert.equal(saved.analysisModel, 'deepseek-flash');
 });
 
 test('photo story uses Gemini 3.8 Flash directly when DeepSeek is not configured', async t => {

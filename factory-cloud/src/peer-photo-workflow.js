@@ -8,7 +8,9 @@ import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 
 // Paid submissions are never blindly retried after an ambiguous provider error.
-const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '2 minutes' };
+// The budget stays above the DeepSeek client timeout so an unanswered request
+// reports the abort instead of an opaque step timeout.
+const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' };
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
 const PHOTO_STORY_MODEL = DEEPSEEK_PHOTO_MODEL;
@@ -251,28 +253,40 @@ async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat
   return lookAtImages(kie, deepseek, step, name, prompt, await loadPeerPhotoChatImages(env, kiePhotos), chat);
 }
 
+// A burst of photo jobs can leave DeepSeek queued past the client timeout, and
+// those requests answer normally on a later try, so the primary model is only
+// abandoned after three consecutive failures.
+const PRIMARY_ATTEMPTS = 3;
+const PRIMARY_RETRY_DELAYS = ['10 seconds', '30 seconds'];
+
 async function lookAtImages(kie, deepseek, step, name, prompt, imageUrls, chat) {
-  const attempts = [];
+  let primaryError = '';
   if (!chat.primaryFailed && deepseek) {
-    attempts.push({ model: PHOTO_STORY_MODEL, run: () => deepseek.createChat(prompt, { imageUrls }) });
-  }
-  attempts.push({
-    model: PHOTO_STORY_FALLBACK_MODEL,
-    run: () => kie.createChat(prompt, { model: PHOTO_STORY_FALLBACK_MODEL, reasoningEffort: 'low', imageUrls })
-  });
-  let lastError = '看图分析失败。';
-  for (const attempt of attempts) {
-    try {
-      const text = await paidCall(step, `${name}-${attempt.model}`, attempt.run);
-      chat.model = attempt.model;
-      if (attempt.model === PHOTO_STORY_FALLBACK_MODEL) chat.primaryFailed = true;
-      return text;
-    } catch (error) {
-      lastError = String(error?.message || error).slice(0, 1000);
-      if (attempt.model === PHOTO_STORY_MODEL) chat.primaryFailed = true;
+    for (let attempt = 0; attempt < PRIMARY_ATTEMPTS; attempt += 1) {
+      if (attempt) await step.sleep(`${name}-${PHOTO_STORY_MODEL}-wait-${attempt}`, PRIMARY_RETRY_DELAYS[attempt - 1]);
+      try {
+        const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
+          () => deepseek.createChat(prompt, { imageUrls }));
+        chat.model = PHOTO_STORY_MODEL;
+        return text;
+      } catch (error) {
+        primaryError = String(error?.message || error).slice(0, 500);
+      }
     }
+    chat.primaryFailed = true;
   }
-  throw new Error(lastError);
+  try {
+    const text = await paidCall(step, `${name}-${PHOTO_STORY_FALLBACK_MODEL}`,
+      () => kie.createChat(prompt, { model: PHOTO_STORY_FALLBACK_MODEL, reasoningEffort: 'low', imageUrls }));
+    chat.model = PHOTO_STORY_FALLBACK_MODEL;
+    chat.primaryFailed = true;
+    return text;
+  } catch (error) {
+    // Both reasons are kept; the stored job error used to show only the fallback's.
+    const fallbackError = String(error?.message || error).slice(0, 500);
+    if (!primaryError) throw new Error(fallbackError);
+    throw new Error(`${PHOTO_STORY_MODEL}：${primaryError}；${PHOTO_STORY_FALLBACK_MODEL}：${fallbackError}`);
+  }
 }
 
 async function paidCall(step, name, action, config = SUBMIT, fallback = '看图分析失败。') {
