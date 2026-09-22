@@ -6,6 +6,7 @@ import {enqueueAutoPhotoRender} from './psychology-auto-publish.js';
 import {claimTypeFilter,handleJobs} from './jobs.js';
 import {dispatchCloudPhotos,processCloudMessage,runCloudPhoto} from './psychology-cloud-queue.js';
 import {enqueueGroupRetry} from './psychology-publish-retries.js';
+import {openCloudCardRenderer} from './psychology-cloud-renderer.js';
 const pages=Array.from({length:6},(_,i)=>({template:i?'content':'cover',title:'A small pause',body:'Notice your feelings.'}));
 const message=id=>({body:{jobId:id},acked:0,retried:[],ack(){this.acked++;},retry(options){this.retried.push(options);}});
 async function prepared(t,cloud=true){
@@ -18,6 +19,17 @@ async function prepared(t,cloud=true){
   await enqueueAutoPhotoRender(f.env,source.id);
   return {...f,sent,id:source.id+'-render',sourceId:source.id};
 }
+test('a browser turned away by the launch rate limit is retried before the job fails',async()=>{
+  const waits=[];let attempts=0;
+  const page={setDefaultTimeout(){},async evaluate(){}};
+  const browser={async newPage(){return page;},sessionId(){return 'session-1';},async close(){}};
+  const driver={async launch(){attempts++;if(attempts<3)throw new Error('Browser Run: too many new browsers');return browser;}};
+  const renderer=await openCloudCardRenderer({PHOTO_BROWSER:{}},['a','b','c'],driver,async ms=>{waits.push(ms);});
+  assert.equal(attempts,3);assert.deepEqual(waits,[2000,5000]);assert.equal(renderer.sessionId,'session-1');
+  const failing={async launch(){attempts++;throw new Error('Browser Run unavailable');}};
+  await assert.rejects(openCloudCardRenderer({PHOTO_BROWSER:{}},[],failing,async()=>{}),/unavailable/);
+  assert.equal(attempts,6); // three tries, then the real error reaches the queue
+});
 test('new cloud photos are dispatched once and are never claimable by local workers',async t=>{
   const f=await prepared(t);assert.equal(f.sent.length,1);
   await enqueueAutoPhotoRender(f.env,f.sourceId);assert.equal(f.sent.length,1);
@@ -95,11 +107,12 @@ test('browser closes on failed backup and no partial album is published',async t
     openRenderer:async()=>({renderBatch:async entries=>entries.map(()=>''),close:async()=>{closed++;return 0;}}),backup:async()=>{throw new Error('R2 down');}
   }),/R2 down/);assert.equal(closed,1);
 });
-test('probe requires worker authentication and queue config caps concurrency at five',async t=>{
+test('probe requires worker authentication and queue concurrency stays inside the browser limit',async t=>{
   const f=await fixture(t),url=new URL('https://factory.test/api/worker/psychology-cloud-photo/probe');
   assert.equal((await handleJobs(new Request(url,{method:'POST'}),f.env,url,null)).status,401);
   const cfg=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url)));
-  assert.equal(cfg.queues.consumers[0].max_concurrency,5);assert.equal(cfg.queues.consumers[0].max_batch_size,1);
+  assert.equal(cfg.queues.consumers[0].max_concurrency,20);assert.equal(cfg.queues.consumers[0].max_batch_size,1);
+  assert.ok(cfg.queues.consumers[0].max_concurrency<=200); // Browser Run allows 200 concurrent sessions per account
 });
 
 test('six checkpointed images traverse real cloud upload and grouped submission with mocked hub',async t=>{

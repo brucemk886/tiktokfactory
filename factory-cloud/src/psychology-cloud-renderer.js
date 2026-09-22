@@ -9,10 +9,16 @@ export async function loadCardModules(env) {
   }));
 }
 
-export async function openCloudCardRenderer(env, sources, driver) {
+// Browser Run only allows a few new browsers per second per account, and the
+// render queue now runs twenty consumers, so a cold start can be turned away.
+// Launching is free to repeat: nothing is billed until a browser exists.
+const LAUNCH_ATTEMPTS = 3;
+const LAUNCH_BACKOFF_MS = [2000, 5000];
+
+export async function openCloudCardRenderer(env, sources, driver, sleep = ms => new Promise(done => setTimeout(done, ms))) {
   driver ||= (await import('@cloudflare/puppeteer')).default;
   const started = Date.now();
-  const browser = await driver.launch(env.PHOTO_BROWSER);
+  const browser = await launchBrowser(env, driver, sleep);
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(60000);
@@ -43,4 +49,16 @@ export async function openCloudCardRenderer(env, sources, driver) {
       async close() { await browser.close(); return Date.now() - started; },
     };
   } catch (error) { await browser.close().catch(() => {}); throw error; }
+}
+
+async function launchBrowser(env, driver, sleep) {
+  let lastError = null;
+  for (let attempt = 0; attempt < LAUNCH_ATTEMPTS; attempt += 1) {
+    try { return await driver.launch(env.PHOTO_BROWSER); }
+    catch (error) {
+      lastError = error;
+      if (attempt < LAUNCH_ATTEMPTS - 1) await sleep(LAUNCH_BACKOFF_MS[attempt]);
+    }
+  }
+  throw lastError;
 }
