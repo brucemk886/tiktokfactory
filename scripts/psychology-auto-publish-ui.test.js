@@ -4,18 +4,19 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8');
-function harness(accountsPromise, failed=false) {
+function harness(accountsPromise, failed=false, options={}) {
   const nodes=new Map();
   function node(selector) {
     if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'peer':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},addEventListener(type,fn){this.listeners[type]=fn;}});
     return nodes.get(selector);
   }
+  const mediaButtons=['video','photo'].map(media=>({dataset:{media},classList:{toggle(){}},setAttribute(){},addEventListener(type,fn){this[type]=fn;}}));
   let accounts=accountsPromise;
   const batch={createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:()=>[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false}:path.includes('publish-accounts')?{accounts:await accounts}:{batches:[batch]}};}});
+  const context=vm.createContext({confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:{batches:[batch]}};}});
   const ready=vm.runInContext('(async()=>{'+source+'})()',context);
-  return {node,ready,requests,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
+  return {node,ready,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
@@ -109,4 +110,49 @@ test('late refresh responses cannot replace the newest account directory',async(
  h.setAccounts(new Promise(r=>release=r));const old=h.refresh();await tick();
  h.setAccounts([grouped[2]]);await h.refresh();release(grouped);await old;
  assert.match(h.node('#accounts').innerHTML,/@charlie/);assert.doesNotMatch(h.node('#accounts').innerHTML,/@alpha/);
+});
+
+const topicOptions={canUseTopics:true,templates:{video:[{id:'psychology',label:'四图测试'},{id:'psychology-collage',label:'纸张拼贴'},{id:'psychology-target-2',label:'单图互动测试'}],photo:[{id:'photo-original',label:'跟随原帖'}]},topicCounts:{psychology:{total:3,enabled:0,unused:0},'psychology-collage':{total:18,enabled:4,unused:2},'psychology-target-2':{total:28,enabled:11,unused:8}}};
+function chooseSource(h,source){h.node('#sourceType').value=source;h.node('#sourceType').listeners.change();}
+function chooseBank(h,bank){h.node('#topicBank').value=bank;h.node('#topicBank').listeners.change();}
+
+test('concrete topic banks display counts, synchronize renderer both ways and submit selected bank',async()=>{
+ const h=harness(Promise.resolve(grouped),false,topicOptions);await h.ready;
+ h.node('#template').value='psychology';chooseSource(h,'topic-bank');
+ assert.equal(h.node('#topicBankField').hidden,false);
+ assert.match(h.node('#topicBank').innerHTML,/四图测试题库（已启用 0 \/ 共 3 题）/);
+ assert.match(h.node('#topicBank').innerHTML,/纸张拼贴题库（已启用 4 \/ 共 18 题）/);
+ filterGroup(h,'g2');h.node('#selectVisibleAccounts').listeners.click();
+ for(const template of ['psychology-collage','psychology-target-2','psychology']){
+   chooseBank(h,template);
+   assert.equal(h.node('#template').value,template);
+   assert.equal(h.node('#topicBankLink').href,'/psychology-topic-bank?template='+template);
+   await h.node('#batchForm').listeners.submit({preventDefault(){}});
+   const post=h.requests.filter(r=>r.path==='/api/psychology-auto-publish'&&r.method==='POST').at(-1);
+   assert.equal(post.body.sourceType,'topic-bank');assert.equal(post.body.template,template);
+ }
+ h.node('#template').value='psychology-target-2';h.node('#template').listeners.change();
+ assert.equal(h.node('#topicBank').value,'psychology-target-2');
+ assert.match(h.node('#sourceHint').textContent,/已启用 11 条，未使用 8 条/);
+});
+
+test('peer source, photo mode and missing topic permission hide the bank selector',async()=>{
+ const h=harness(Promise.resolve([]),false,topicOptions);await h.ready;
+ h.node('#template').value='psychology';chooseSource(h,'topic-bank');
+ chooseSource(h,'peer');assert.equal(h.node('#topicBankField').hidden,true);
+ chooseSource(h,'topic-bank');await h.mediaButtons[1].click();
+ assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#unusedField').hidden,true);
+ await h.mediaButtons[0].click();assert.equal(h.node('#topicBankField').hidden,false);
+ const denied=harness(Promise.resolve([]));await denied.ready;chooseSource(denied,'topic-bank');
+ assert.equal(denied.node('#topicBankField').hidden,true);assert.equal(denied.node('#sourceType').value,'peer');
+});
+
+test('mismatched bank and renderer cannot submit an unintended topic bank',async()=>{
+ const h=harness(Promise.resolve(grouped),false,topicOptions);await h.ready;
+ h.node('#template').value='psychology';chooseSource(h,'topic-bank');
+ filterGroup(h,'g2');h.node('#selectVisibleAccounts').listeners.click();
+ h.node('#topicBank').value='psychology-collage';
+ await h.node('#batchForm').listeners.submit({preventDefault(){}});
+ assert.match(h.node('#message').textContent,/对应的具体题库/);
+ assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
 });

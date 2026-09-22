@@ -29,14 +29,28 @@ function renderSources(){
   const choices=bank?[['random','随机抽取'],['priority','优先级优先'],['recent','最近入库优先'],['least-used','最少使用优先']]:[['random','随机抽取'],['popular','播放量优先'],['recent','最近入库优先']];
   $('#selection').innerHTML=choices.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('');
   if(choices.some(([v])=>v===previous))$('#selection').value=previous;
+  $('#topicBankField').hidden=!bank;
+  const banks=state.templates.video||[];
+  $('#topicBank').innerHTML=banks.map((t,index)=>{
+    const c=state.topicCounts?.[t.id]||{};
+    return `<option value="${esc(t.id)}">${String(index+1).padStart(2,'0')} · ${esc(t.label)}题库（已启用 ${c.enabled||0} / 共 ${c.total||0} 题）</option>`;
+  }).join('');
+  $('#topicBank').value=bank?$('#template').value:'';
+  $('#topicBankLink').href='/psychology-topic-bank?template='+encodeURIComponent($('#topicBank').value);
   $('#unusedField').hidden=!bank;
   $('#peerReuseField').hidden=bank;
-  $('#query').placeholder=bank?'筛选题目、内容或分类，不填则从当前模板题库抽取':'筛选爆款标题或同行账号';
+  $('#query').placeholder=bank?'筛选题目、内容或分类，不填则从所选题库抽取':'筛选爆款标题或同行账号';
   const c=state.topicCounts?.[$('#template').value]||{};
-  $('#sourceHint').textContent=bank?'当前模板题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从当前模板抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
+  const label=banks.find(t=>t.id===$('#topicBank').value)?.label||'';
+  $('#sourceHint').textContent=bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
 }
 $('#sourceType').addEventListener('change',renderSources);
 $('#template').addEventListener('change',renderSources);
+$('#topicBank').addEventListener('change',()=>{
+  if(state.busy||sourceType()!=='topic-bank')return;
+  $('#template').value=$('#topicBank').value;
+  resetAccountInput();renderSources();summary();
+});
 
 function visibleAccounts() {
   const query=state.accountQuery.trim().replace(/^@/,'').toLowerCase();
@@ -201,6 +215,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
+  if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
   const body=state.submittedInput||{allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   state.submittedInput=body;state.busy=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
