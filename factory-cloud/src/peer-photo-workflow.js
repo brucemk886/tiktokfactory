@@ -1,6 +1,6 @@
 import { buildPhotoStoryPrompt } from '../../scripts/psychology-peer-production.js';
 import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
-import { createKieClient } from './kie.js';
+import { createKieClient, KIE_GROK_CHAT_MODEL } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
 import { preparePeerPhotosForKie, deletePeerPhotoSources, loadPeerPhotoChatImages } from './peer-photo-convert.js';
 import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, buildCachedCopyRewritePrompt, parseCachedCopyRewrite } from './peer-photo-copy-cache.js';
@@ -11,10 +11,12 @@ import { withProductionPatch, compactProduction } from '../../scripts/production
 // The budget stays above the DeepSeek client timeout so an unanswered request
 // reports the abort instead of an opaque step timeout.
 const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' };
+// Grok reasons over every page before answering: six images measured ~114s.
+const FALLBACK_SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '6 minutes' };
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
 const PHOTO_STORY_MODEL = DEEPSEEK_PHOTO_MODEL;
-const PHOTO_STORY_FALLBACK_MODEL = 'gemini-3-8-flash';
+const PHOTO_STORY_FALLBACK_MODEL = KIE_GROK_CHAT_MODEL;
 
 export async function runPeerPhotoWorkflow(env, event, step) {
   const id = event.payload.jobId;
@@ -277,7 +279,7 @@ async function lookAtImages(kie, deepseek, step, name, prompt, imageUrls, chat) 
   }
   try {
     const text = await paidCall(step, `${name}-${PHOTO_STORY_FALLBACK_MODEL}`,
-      () => kie.createChat(prompt, { model: PHOTO_STORY_FALLBACK_MODEL, reasoningEffort: 'low', imageUrls }));
+      () => kie.createGrokChat(prompt, { reasoningEffort: 'medium', imageUrls }), FALLBACK_SUBMIT);
     chat.model = PHOTO_STORY_FALLBACK_MODEL;
     chat.primaryFailed = true;
     return text;

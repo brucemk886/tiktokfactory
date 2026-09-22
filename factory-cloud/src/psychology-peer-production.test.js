@@ -185,15 +185,15 @@ test('cloud provider failure is recorded and keeps completed pages without claim
   assert.ok(f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json); // downstream failure keeps successful extraction
 });
 
-test('Gemini analysis failure keeps the provider error instead of a workflow retry wrapper', async t => {
+test('fallback analysis failure keeps the provider error instead of a workflow retry wrapper', async t => {
   const f = cloudFixture(t);
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
     if (String(url).includes('api.deepseek.com')) {
       return Response.json({ error: { message: 'DeepSeek overloaded' } }, { status: 503 });
     }
-    if (String(url).includes('/chat/completions')) {
-      return Response.json({ code: 500, msg: 'The image url cannot be fetched from factory host' }, { status: 500 });
+    if (String(url).includes('/grok/v1/responses')) {
+      return Response.json({ error: { message: 'The image url cannot be fetched from factory host' } }, { status: 500 });
     }
     return originalFetch(url, init);
   };
@@ -205,29 +205,42 @@ test('Gemini analysis failure keeps the provider error instead of a workflow ret
   assert.doesNotMatch(row.error, /retry fail/);
 });
 
-test('photo story falls back to Gemini 3.8 Flash only after three DeepSeek V4.1 Flash failures', async t => {
+test('photo story falls back to Grok 4.6 only after three DeepSeek V4.1 Flash failures', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);
   const chatCalls = [];
+  const grokBodies = [];
   f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
-    if (String(url).includes('/chat/completions')) {
+    if (String(url).includes('api.deepseek.com')) {
       chatCalls.push(String(url));
-      if (String(url).includes('api.deepseek.com')) {
-        return Response.json({ error: { message: 'internal error, please try again later.' } }, { status: 500 });
-      }
-      return Response.json({ choices: [{ message: { content: JSON.stringify(one) } }] });
+      return Response.json({ error: { message: 'internal error, please try again later.' } }, { status: 500 });
+    }
+    if (String(url).includes('/grok/v1/responses')) {
+      chatCalls.push(String(url));
+      grokBodies.push(JSON.parse(init.body));
+      return Response.json({ status: 'completed', output: [
+        { type: 'reasoning', summary: [] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(one) }] }
+      ] });
     }
     return originalFetch(url, init);
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
   assert.equal(result.count, 1);
   assert.equal(chatCalls.filter(url => url.includes('api.deepseek.com')).length, 3);
-  assert.match(chatCalls[3], /gemini-3-8-flash-openai/);
-  assert.deepEqual(f.sleeps.filter(name => name.includes('deepseek-flash-wait')).length, 2);
+  assert.match(chatCalls[3], /\/grok\/v1\/responses/);
+  assert.equal(f.sleeps.filter(name => name.includes('deepseek-flash-wait')).length, 2);
+  assert.equal(grokBodies[0].model, 'grok-4-6');
+  assert.equal(grokBodies[0].stream, false); // the endpoint streams unless told not to
+  assert.equal(grokBodies[0].reasoning.effort, 'medium');
+  const parts = grokBodies[0].input[0].content;
+  assert.equal(parts[0].type, 'input_text');
+  assert.equal(parts[1].type, 'input_image');
+  assert.match(parts[1].image_url, /^data:image\/jpeg;base64,/); // bare string, not an object
   const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.analysisModel, 'gemini-3-8-flash');
+  assert.equal(saved.analysisModel, 'grok-4-6');
 });
 
 test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid fallback', async t => {
@@ -252,7 +265,7 @@ test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid 
   assert.equal(saved.analysisModel, 'deepseek-flash');
 });
 
-test('photo story uses Gemini 3.8 Flash directly when DeepSeek is not configured', async t => {
+test('photo story uses Grok 4.6 directly when DeepSeek is not configured', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);
   const chatCalls = [];
@@ -260,18 +273,17 @@ test('photo story uses Gemini 3.8 Flash directly when DeepSeek is not configured
   f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
-    if (String(url).includes('/chat/completions')) {
+    if (String(url).includes('/grok/v1/responses')) {
       chatCalls.push(String(url));
-      return Response.json({ choices: [{ message: { content: JSON.stringify(one) } }] });
+      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(one) }] }] });
     }
     return originalFetch(url, init);
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
   assert.equal(result.count, 1);
   assert.equal(chatCalls.length, 2); // extract once, then rewrite without images
-  assert.match(chatCalls[0], /gemini-3-8-flash-openai/);
   const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.analysisModel, 'gemini-3-8-flash');
+  assert.equal(saved.analysisModel, 'grok-4-6');
 });
 
 function fixture(t, overrides = {}) {
