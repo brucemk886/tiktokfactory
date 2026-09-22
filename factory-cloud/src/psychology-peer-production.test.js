@@ -276,7 +276,8 @@ test('same-batch jobs queue by item order and stalled waiters stop blocking the 
 
 test('photo analysis waits for a free slot and hands it back when the job is done', async t => {
   const f = cloudFixture(t);
-  for (const holder of ['other-a', 'other-b', 'other-c']) await claimAnalysisSlot(f.env.DB, holder);
+  const busy = Array.from({ length: ANALYSIS_CONCURRENCY }, (_, i) => 'other-' + i);
+  for (const holder of busy) await claimAnalysisSlot(f.env.DB, holder, 1);
   let released = false;
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
@@ -288,7 +289,7 @@ test('photo analysis waits for a free slot and hands it back when the job is don
     ...f.step,
     async sleep(name) {
       waits.push(name);
-      if (!released) { released = true; for (const holder of ['other-a', 'other-b', 'other-c']) await releaseAnalysisSlot(f.env.DB, holder); }
+      if (!released) { released = true; for (const holder of busy) await releaseAnalysisSlot(f.env.DB, holder); }
     },
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, step);

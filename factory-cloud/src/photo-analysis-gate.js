@@ -2,7 +2,7 @@
 // 70-post batch used to put 23 concurrent requests on DeepSeek and it answered
 // none of them. Slots cap how many jobs may talk to the primary model at once,
 // and the queue is served oldest job first rather than whoever polls in time.
-export const ANALYSIS_CONCURRENCY = 3;
+export const ANALYSIS_CONCURRENCY = 10;
 export const ANALYSIS_LEASE_MS = 4 * 60000;
 // A waiter that stops polling must not hold up every job created after it.
 export const ANALYSIS_WAIT_LEASE_MS = 60000;

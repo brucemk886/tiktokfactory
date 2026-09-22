@@ -261,14 +261,17 @@ async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat
 // abandoned after three consecutive failures.
 const PRIMARY_ATTEMPTS = 3;
 const PRIMARY_RETRY_DELAYS = ['10 seconds', '30 seconds'];
-const SLOT_WAIT_ATTEMPTS = 90;
+// Polls stay tight while the queue is short, then slow down: every poll costs
+// workflow steps, and an instance only gets so many.
+const SLOT_WAIT_ATTEMPTS = 42;
+const slotWaitDelay = wait => (wait < 12 ? '5 seconds' : '20 seconds');
 
 // A job never fails because the queue stayed full; after the last wait it goes
 // ahead, since blocking a whole batch is worse than briefly exceeding the cap.
 async function waitForAnalysisSlot(env, step, name, chat) {
   for (let wait = 0; wait < SLOT_WAIT_ATTEMPTS; wait += 1) {
     if (await step.do(`${name}-${wait}`, READ, () => claimAnalysisSlot(env.DB, chat.holder, chat.rank))) return true;
-    await step.sleep(`${name}-wait-${wait}`, '10 seconds');
+    await step.sleep(`${name}-wait-${wait}`, slotWaitDelay(wait));
   }
   return false;
 }
