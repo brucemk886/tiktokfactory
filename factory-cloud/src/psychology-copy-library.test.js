@@ -101,10 +101,11 @@ test('video parser rejects malformed extraction and separate pages keep reviewed
  assert.throws(()=>parseVideoCopy('{"transcript":null,"onScreenText":[]}',{}));
  const read=name=>fs.readFileSync(new URL('../../public/'+name,import.meta.url),'utf8');
  assert.doesNotMatch(read('psychology-creative.html'),/id="copies"|copyFile|importForm/);
- assert.match(read('psychology-copy-library.html'),/originalMedia/);assert.match(read('psychology-copy-library.html'),/id="copies"/);
- assert.match(read('psychology-copy-library.html'),/id="originalRows"/);assert.match(read('psychology-copy-library.html'),/id="copyPreviewDialog"/);
- assert.match(read('psychology-copy-library.js'),/data-view-original/);assert.match(read('psychology-copy-library.css'),/copy-table-wrap/);
- assert.doesNotMatch(read('psychology-copy-library.html'),/originalStatus|待提取|提取失败/);
+ assert.match(read('psychology-copy-library.html'),/videoHitsTab/);assert.match(read('psychology-copy-library.html'),/id="copies"/);
+ assert.match(read('psychology-copy-library.html'),/id="hitRows"/);assert.match(read('psychology-copy-library.html'),/id="copyPreviewDialog"/);
+ assert.match(read('psychology-peer-hits.js'),/data-view-original/);assert.match(read('psychology-copy-library.css'),/copy-table-wrap/);
+ assert.match(read('psychology-copy-library.html'),/id="libraryStatus"><option value="done">已提取文案/);
+ assert.match(read('psychology-copy-library.html'),/id="bulkImportButton"/);
  assert.match(read('psychology-auto-publish.html'),/psychology-copy-library/);
 });
 
@@ -135,4 +136,47 @@ test('first photo extraction preserves indexed originals, shares its cache and c
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);
  const cache=JSON.parse(f.sqlite.prepare('SELECT copy_json FROM psychology_photo_copy_cache').get().copy_json);
  assert.deepEqual(cache.plan.scenes.map(s=>s.originalText),words);
+});
+
+
+test('unified records join exact source metrics, sort/filter/search, and retain copy after source removal',async t=>{
+ const f=await setup(t);
+ await importPsychologyPeerHits(f.db,[{...post(900,'photo',{pageTexts:['First original']}),playCount:80,accountUsername:'@alpha'},{...post(901,'photo',{pageTexts:['Second original']}),playCount:1000,accountUsername:'@beta'},post(902,'video'),post(903,'photo'),post(904,'video')],'admin');
+ await dispatchCopyExtractions(f.env);
+ f.sqlite.prepare("UPDATE psychology_copy_library SET status='failed',error='Provider declined' WHERE source_url LIKE '%/903'").run();
+ f.sqlite.prepare("UPDATE psychology_copy_library SET auto_extract=0,status='queued' WHERE source_url LIKE '%/904'").run();
+ const ready=await (await api(f,'?mediaType=photo&sort=plays')).json();assert.equal(ready.total,2);assert.equal(ready.items[0].peer.playCount,1000);assert.equal(ready.items[0].content.pages[0].text,'Second original');assert.equal(ready.canManageSources,false);
+ const all=await (await api(f,'?status=all')).json();assert.equal(all.total,5);assert.equal(new Set(all.items.map(r=>r.id)).size,5);
+ assert.equal((await (await api(f,'?q=@beta')).json()).total,1);
+ assert.equal((await (await api(f,'?status=failed')).json()).items[0].error,'Provider declined');
+ assert.equal((await (await api(f,'?status=historical')).json()).total,1);
+ assert.equal((await (await api(f,'?status=queued')).json()).total,0);
+ assert.equal((await api(f,'?sort=invalid')).status,400);assert.equal((await api(f,'?status=invalid')).status,400);
+ const row=ready.items[0];f.sqlite.prepare('DELETE FROM psychology_peer_hits WHERE id=?').run(row.id);
+ const retained=(await (await api(f,'?mediaType=photo')).json()).items.find(r=>r.id===row.id);assert.equal(retained.peer,null);assert.equal(retained.content.pages[0].text,'Second original');
+ assert.equal(f.requests.length,0);
+});
+
+test('unified copy access preserves source-management permissions and admin-only boundaries',async t=>{
+ const f=await setup(t);const peerUser={...actor,id:'admin',sidebarModules:['psychology-peer-hits']};
+ assert.equal((await (await api(f,'?status=all','GET',peerUser)).json()).canManageSources,true);
+ assert.equal((await api(f,'?status=all','GET',{...peerUser,role:'operator'})).status,403);
+ const {handlePsychologyPeerHits}=await import('./psychology-peer-hits.js');const url=new URL('https://factory.test/api/psychology-peer-hits/api-key');
+ assert.equal((await handlePsychologyPeerHits(new Request(url),f.env,url,{user:actor})).status,403);
+ const {SIDEBAR_MODULES,canAccessPath}=await import('./sidebar.js');
+ assert.equal(SIDEBAR_MODULES.find(r=>r.id==='psychology-peer-hits').navigationParent,'psychology-copy-library');
+ assert.equal(SIDEBAR_MODULES.filter(r=>r.group?.id==='psychology'&&!r.navigationParent&&r.label==='文案库').length,1);
+ assert.equal(canAccessPath(peerUser,'/psychology-copy-library'),true);assert.equal(canAccessPath({...peerUser,role:'operator'},'/psychology-copy-library'),false);
+ const {handlePsychologyCreative}=await import('./psychology-creative.js');const copies=new URL('https://factory.test/api/psychology-creative/copies');
+ assert.equal((await handlePsychologyCreative(new Request(copies),f.env,copies,{user:peerUser})).status,200);
+});
+
+test('old peer URLs redirect to the unified page preserving media selection after authentication',async t=>{
+ const f=await setup(t);const {sha256Hex}=await import('./http.js');const {default:worker}=await import('./index.js');
+ f.sqlite.prepare('INSERT INTO factory_sessions(token_hash,user_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?)').run(await sha256Hex('test-session'),'admin',Date.now()+60000,Date.now(),Date.now());
+ for(const path of ['/psychology-peer-hits','/psychology-peer-hits.html']){
+  const response=await worker.fetch(new Request('https://factory.test'+path+'?mediaType=photo',{headers:{cookie:'lf_session=test-session'}}),f.env,{});
+  assert.equal(response.status,302);assert.equal(response.headers.get('location'),'/psychology-copy-library?mediaType=photo');
+ }
+ const guest=await worker.fetch(new Request('https://factory.test/psychology-peer-hits'),f.env,{});assert.equal(guest.headers.get('location'),'/login');
 });

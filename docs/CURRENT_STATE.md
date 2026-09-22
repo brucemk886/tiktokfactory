@@ -1,8 +1,10 @@
 # Current State
 
+- Psychology source hits and extracted copy now share one 文案库 at `/psychology-copy-library`, separated into video/photo tabs with source metrics, extraction text/status and per-original rewrites. Completed text is the default; operators can inspect all imports, active failures or historical opted-out records. Old peer page URLs redirect here; Grokbot API and keys are unchanged. Source-management permissions and original-source recreation remain distinct from copy-based auto-production.
+
 - Psychology copy library is the shared source for photo and video auto-production. Both modes default to completed original copy and also offer enabled owned rewrite variants. Original media filtering is independent of output format; immutable copySource snapshots retain exact provenance. Stored-copy photo plans skip external extraction and rewriting, while video templates still compose scripts/scenes/narration. Tags remain deferred. See docs/handoffs/2026-09-22-copy-production-source.md.
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 - The online AI workbench includes admin-only video analysis with Google official gemini-3.8-flash as the free primary provider. Google 429/5xx/high-demand failures retry twice with durable 10/20-second backoff, then automatically fall back to Kie gemini-3-8-flash-openai; permanent 4xx/content errors do not spend paid credits. Kie reads the private R2 upload through a one-hour HMAC-signed URL, and each record stores the actual provider, token usage, and returned Kie credits. Google and R2 temporary files are removed after completion. The production Google and Kie secrets are configured.
 

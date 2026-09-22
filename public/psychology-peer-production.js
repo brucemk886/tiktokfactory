@@ -28,7 +28,10 @@
     if (!response.ok) throw new Error(data.error || '请求失败');
     return data;
   }
-  document.addEventListener('peer-list-loaded', sync);
+  document.addEventListener('peer-list-loaded', () => {const visible=new Set([...document.querySelectorAll('.peer-select')].map(n=>n.dataset.peerId));for(const id of selected)if(!visible.has(id)){selected.delete(id);requestId='';}sync();});
+  document.addEventListener('peer-selection-clear',()=>{selected.clear();requestId='';sync();});
+  let accessLoaded=false;
+  document.addEventListener('library-source-access',event=>{if(event.detail.canManage&&!accessLoaded){accessLoaded=true;refresh();}});
   document.addEventListener('peer-voice-gender-changed', () => { requestId = ''; });
   document.addEventListener('peer-media-type-changed', event => {
     selected.clear();
@@ -36,7 +39,9 @@
     const photo = event.detail?.mediaType === 'photo';
     const rewriteField = $('#rewriteCopyField');
     if (rewriteField) rewriteField.hidden = !photo;
-    notify(photo
+    notify(document.body.classList.contains('copy-library-page')
+      ? '原帖复刻每次最多选择5条，按原素材生成。使用已提取文案批量生成，请进入右上角的自动发布。'
+      : photo
       ? '每次最多选择 5 条；每条图文按原帖顺序处理，最多 6 张。封面尽量 1:1 对上原图，可以有情侣和人脸；详情固定用海景/云彩这类明亮空镜，每次生成自动换一批，越亮的图越先用。叠字保留空格、按词换行。不走 AI 生图。'
       : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，按每条记录的音色性别使用默认男声或女声，原视频在分析结束后立即删除。');
     sync();
@@ -112,6 +117,7 @@
   });
 
   async function refresh() {
+    if(document.body.classList.contains('copy-library-page')&&document.body.dataset.sourceAccess!=='true')return;
     clearTimeout(timer);
     try {
       const mediaType = document.body.dataset.mediaType || 'video';

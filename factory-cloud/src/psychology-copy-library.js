@@ -1,3 +1,4 @@
+import {psychologyPeerHitFromRow} from './psychology-peer-hits-store.js';
 import {json,errorJson} from './http.js';
 import {peerProductionPayload} from '../../scripts/psychology-peer-production.js';
 import {photoCopyKey,validatePhotoCopy} from './peer-photo-copy-cache.js';
@@ -21,23 +22,31 @@ export function importedCopy(source){
 export async function handlePsychologyCopyLibrary(request,env,url,session){
  if(!url.pathname.startsWith(BASE))return null;
  const user=session?.user;
- if(user?.role!=='admin'||!user.sidebarModules?.includes('psychology-copy-library'))return errorJson('没有文案库权限。',403);
+ if(user?.role!=='admin'||!['psychology-copy-library','psychology-peer-hits'].some(id=>user.sidebarModules?.includes(id)))return errorJson('没有文案库权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
  if(url.pathname===BASE&&request.method==='GET'){
   const media=url.searchParams.get('mediaType')||'all';
   if(!['all','video','photo'].includes(media))return errorJson('筛选条件无效。',400);
+  const status=url.searchParams.get('status')||'done',sort=url.searchParams.get('sort')||'recent';
+  if(!['all','done','queued','running','failed','historical'].includes(status)||!['recent','plays','published'].includes(sort))return errorJson('筛选条件无效。',400);
   const query='%'+String(url.searchParams.get('q')||'').slice(0,200)+'%';
-  const where="status='done' AND (?='all' OR media_type=?) AND (title LIKE ? OR source_url LIKE ? OR content_json LIKE ?)";
-  const args=[media,media,query,query,query];
-  const total=Number((await env.DB.prepare('SELECT COUNT(*) n FROM psychology_copy_library WHERE '+where).bind(...args).first()).n);
+  const statusWhere=status==='all'?'1=1':status==='historical'?"c.auto_extract=0 AND c.status<>'done'":status==='done'?"c.status='done'":"c.status=? AND c.auto_extract=1";
+  const where=statusWhere+" AND (?='all' OR c.media_type=?) AND (c.title LIKE ? OR c.source_url LIKE ? OR c.content_json LIKE ? OR p.account_name LIKE ? OR p.account_username LIKE ?)";
+  const args=[...(['queued','running','failed'].includes(status)?[status]:[]),media,media,query,query,query,query,query];
+  const from=' FROM psychology_copy_library c LEFT JOIN psychology_peer_hits p ON p.id=c.id WHERE ';
+  const total=Number((await env.DB.prepare('SELECT COUNT(*) n'+from+where).bind(...args).first()).n);
   const pages=Math.max(1,Math.ceil(total/20)),page=Math.min(pages,Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)));
-  const items=(await env.DB.prepare('SELECT id,media_type,title,source_url,status,content_json,error,provider,created_at,completed_at FROM psychology_copy_library WHERE '+where+' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()).results;
+  const order={recent:'c.created_at DESC,c.id',plays:'p.play_count DESC,c.created_at DESC,c.id',published:'p.published_at DESC,c.created_at DESC,c.id'}[sort];
+  const items=(await env.DB.prepare('SELECT c.id,c.media_type,c.title,c.source_url,c.status,c.content_json,c.error,c.provider,c.created_at,c.completed_at,c.auto_extract'+from+where+' ORDER BY '+order+' LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()).results;
   const counts=(await env.DB.prepare("SELECT media_type,COUNT(*) n FROM psychology_copy_library WHERE status='done' GROUP BY media_type").all()).results;
+  const ids=items.map(r=>r.id);
+  const peers=ids.length?(await env.DB.prepare('SELECT * FROM psychology_peer_hits WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)).all()).results.map(psychologyPeerHitFromRow):[];
+  const byId=new Map(peers.map(r=>[r.id,r]));
   const originals=items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)}));
   const keys=[...new Set(originals.map(r=>r.sourceKey))];
   const variants=keys.length?(await env.DB.prepare('SELECT source_key,COUNT(*) total,SUM(enabled) enabled FROM psychology_copy_variants WHERE owner=? AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key').bind(user.username,...keys).all()).results:[];
   const bySource=new Map(variants.map(r=>[r.source_key,r]));
-  return json({items:originals.map(r=>({...r,variantCount:Number(bySource.get(r.sourceKey)?.total||0),enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
+  return json({canManageSources:user.sidebarModules?.includes('psychology-peer-hits')===true,items:originals.map(r=>({...r,peer:byId.get(r.id)||null,variantCount:Number(bySource.get(r.sourceKey)?.total||0),enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
  }
  const match=url.pathname.match(/^\/api\/psychology-copy-library\/(psy-[a-f0-9]{32})\/retry$/);
  if(match&&request.method==='POST'){

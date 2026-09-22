@@ -19,7 +19,7 @@ export function variantPlan(v){return {title:v.title,caption:v.caption,hooks:[],
 export async function handlePsychologyCreative(request,env,url,session){
  if(!url.pathname.startsWith(BASE))return null;
  const user=session?.user;const copyRoute=url.pathname===BASE+'/copies'||url.pathname.startsWith(BASE+'/copies/');
- if(!user||user.role!=='admin'||!(user.sidebarModules?.includes('psychology-publish')||(copyRoute&&user.sidebarModules?.includes('psychology-copy-library'))))return errorJson('没有心理学自动发布权限。',403);
+ if(!user||user.role!=='admin'||!(user.sidebarModules?.includes('psychology-publish')||(copyRoute&&['psychology-copy-library','psychology-peer-hits'].some(id=>user.sidebarModules?.includes(id)))))return errorJson('没有心理学自动发布权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
  const db=env.DB,owner=user.username;
  const sourceId=url.searchParams.get('sourceId');

@@ -1,4 +1,5 @@
 const $ = selector => document.querySelector(selector);
+const integrated = document.body.classList.contains("copy-library-page");
 const API = "/api/psychology-peer-hits";
 const state = { page: 1, totalPages: 1, keyConfigured: false, loading: false, mediaType: "video" };
 let controller, searchTimer;
@@ -20,14 +21,40 @@ async function api(url, options={}) {
   if(!res.ok) throw new Error(data.error || "请求失败，请稍后重试。"); return data;
 }
 function pager() { $("#previousBtn").disabled=state.loading||state.page<=1; $("#nextBtn").disabled=state.loading||state.page>=state.totalPages; }
+
+function libraryRow(item){
+ const row=item.library,content=row.content||{},done=row.status==='done',manage=document.body.dataset.sourceAccess==='true',hasPeer=!!row.peer;
+ const words=row.media_type==='photo'?(content.pages||[]).map(p=>p.text).filter(Boolean).join(' · '):content.transcript||(content.onScreenText||[]).join(' · ');
+ const status=done?'已提取':!row.auto_extract?'历史待补全':({queued:'等待提取',running:'提取中',failed:'提取失败'}[row.status]||'未提取');
+ const caption=content.caption||copyOf(item),title=content.title||titleOf(item);
+ const cell=(v,cls='')=>'<td class="'+cls+'" title="'+escape(v)+'"><span>'+escape(v)+'</span></td>';
+ return '<tr>'+cell('','library-select').replace('<span></span>',manage&&hasPeer?'<input type="checkbox" class="peer-select" data-peer-id="'+escape(item.id)+'" aria-label="选择 '+escape(title)+'" />':'—')+
+ '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+'</small></td>'+
+ '<td class="library-metrics"><strong>'+metric(item.playCount)+' 播放</strong><small>赞 '+metric(item.likeCount)+' · 评 '+metric(item.commentCount)+'</small><small>藏 '+metric(item.favoriteCount)+' · 分享 '+metric(item.shareCount)+'</small><small>时长 '+(item.durationSeconds==null?'—':metric(item.durationSeconds)+' 秒')+'</small></td>'+
+ '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+cell(caption,'hits-copy')+cell(done?(words||'无可识别文字'):'完成提取后可查看正文','hits-copy')+
+ '<td class="library-status"><span class="copy-status'+(done?'':' is-off')+'" title="'+escape(row.error||status)+'">'+status+'</span>'+(row.error?'<details><summary>原因</summary><p>'+escape(row.error)+'</p></details>':'')+(!done&&row.auto_extract&&row.status==='failed'?'<button type="button" data-retry-copy="'+escape(row.id)+'">重试提取</button>':'')+'</td>'+
+ '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small></td>'+
+ '<td class="hits-voice">'+(manage&&hasPeer?'<select class="voice-gender-select" data-id="'+escape(item.id)+'" data-current="'+escape(item.voiceGender||'male')+'" aria-label="音色性别"><option value="male"'+(item.voiceGender!=='female'?' selected':'')+'>男</option><option value="female"'+(item.voiceGender==='female'?' selected':'')+'>女</option></select>':'—')+'</td>'+
+ '<td class="hits-video"><a href="'+escape(item.videoUrl)+'" target="_blank" rel="noopener noreferrer">打开原帖</a></td>'+
+ '<td class="library-actions">'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-copy-original="'+escape(item.id)+'">复制</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage&&hasPeer?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除来源</button>':'')+'</td></tr>';
+}
+
 async function loadList() {
   controller?.abort(); const current=new AbortController();controller=current;state.loading=true;pager();message("#listStatus","正在读取…");
   try {
     const query=new URLSearchParams({page:String(state.page),query:$("#query").value.trim(),sort:$("#sort").value,mediaType:state.mediaType});
-    const data=await api(API+"?"+query,{signal:current.signal});
+    if(integrated){query.set('q',$('#query').value.trim());query.set('status',$('#libraryStatus').value);}
+    let data=await api((integrated?'/api/psychology-copy-library':API)+"?"+query,{signal:current.signal});
     if(current.signal.aborted)return;
+    if(integrated){
+      const canManage=data.canManageSources===true;document.body.dataset.sourceAccess=String(canManage);
+      for(const id of ['apiPanel','manualPanel','produceBtn','moveSelectedBtn','clearSelectionBtn','selectionCount','productionStatus','productionPanel','rewriteCopyField'])if($('#'+id))$('#'+id).hidden=!canManage||(id==='rewriteCopyField'&&state.mediaType!=='photo');
+      if(canManage&&!state.keyLoaded){state.keyLoaded=true;loadKey();}
+      document.dispatchEvent(new CustomEvent('library-source-access',{detail:{canManage}}));
+      const rows=data.items;data={...data,totalPages:data.pages,pageSize:20,items:rows.map(row=>({...row.peer,id:row.id,mediaType:row.media_type,title:row.title,videoUrl:row.source_url,createdAt:row.created_at,library:row}))};
+    }
     state.page=data.page;state.totalPages=data.totalPages;
-    $("#hitRows").innerHTML=data.items.length?data.items.map(item=>`<tr>
+    $("#hitRows").innerHTML=data.items.length?data.items.map(item=>integrated?libraryRow(item):`<tr>
       <td><input type="checkbox" class="peer-select" data-peer-id="${escape(item.id)}" aria-label="选择 ${escape(titleOf(item))}" /></td>
       <td>${metric(item.playCount)}</td><td>${metric(item.likeCount)}</td><td>${metric(item.commentCount)}</td><td>${metric(item.favoriteCount)}</td><td>${metric(item.shareCount)}</td><td>${item.durationSeconds==null?"—":metric(item.durationSeconds)+" 秒"}</td>
       <td class="hits-time">${time(item.publishedAt)}</td>
@@ -37,8 +64,8 @@ async function loadList() {
       <td class="hits-voice"><select class="voice-gender-select" data-id="${escape(item.id)}" data-current="${escape(item.voiceGender || "male")}" aria-label="修改 ${escape(titleOf(item))} 的音色性别"><option value="male"${item.voiceGender !== "female" ? " selected" : ""}>男</option><option value="female"${item.voiceGender === "female" ? " selected" : ""}>女</option></select></td>
       <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:`打开${item.mediaType === "photo" ? "图文" : "视频"}`}</a></td>
       <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
-    </tr>`).join(""):'<tr><td colspan="14">暂无记录，可手动添加或通过 grokbot 接口写入。</td></tr>';
-    document.dispatchEvent(new CustomEvent('peer-list-loaded'));
+    </tr>`).join(""):'<tr><td colspan="'+(integrated?11:14)+'">'+(integrated?'当前分类没有符合条件的文案，可切换图文/视频或展示范围。':'暂无记录，可手动添加或通过 grokbot 接口写入。')+'</td></tr>';
+    document.dispatchEvent(new CustomEvent('peer-list-loaded',{detail:{items:data.items.map(item=>item.library).filter(Boolean)}}));
     message("#listStatus",`共 ${data.total} 条${state.mediaType === "photo" ? "图文" : "视频"} · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;
   } catch(error) { if(error.name!=="AbortError")message("#listStatus",error.message,true); }
@@ -53,6 +80,7 @@ $("#sort").addEventListener("change",()=>{state.page=1;loadList();});
 $("#refreshBtn").addEventListener("click",loadList);
 function applyMediaType(mediaType) {
   state.mediaType=mediaType;
+  if(integrated){const url=new URL(location.href);url.searchParams.set('mediaType',mediaType);history.replaceState(null,'',url);}
   state.page=1;
   document.body.dataset.mediaType=mediaType;
   document.querySelectorAll(".hits-tab").forEach(tab=>{
@@ -74,7 +102,7 @@ document.querySelectorAll(".hits-tab").forEach(tab=>tab.addEventListener("click"
   if(tab.dataset.mediaType!==state.mediaType)applyMediaType(tab.dataset.mediaType);
 }));
 async function deleteHit(id) {
-  if (!id || !confirm("确定删除这条内容？删除后无法恢复。")) return;
+  if (!id || !confirm(integrated?"删除这条同行来源记录？已提取文案、改写版本和已创建任务会保留。":"确定删除这条内容？删除后无法恢复。")) return;
   try {
     await api(`${API}/${encodeURIComponent(id)}`, { method: "DELETE" });
     await loadList();
@@ -105,11 +133,11 @@ $("#hitRows").addEventListener("click",event=>{
 document.addEventListener("peer-list-refresh-request",loadList);
 $("#previousBtn").addEventListener("click",()=>{state.page--;loadList();});
 $("#nextBtn").addEventListener("click",()=>{state.page++;loadList();});
-$("#importForm").addEventListener("submit",async event=>{
+($("#sourceImportForm")||$("#importForm")).addEventListener("submit",async event=>{
   event.preventDefault();const data=Object.fromEntries(new FormData(event.target));
   try { data.videoData=data.videoData.trim()?JSON.parse(data.videoData):undefined;data.mediaType=state.mediaType;data.source="manual";$("#importBtn").disabled=true;
     const result=await api(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-    message("#importStatus",`已保存 ${result.accepted} 条`);event.target.reset();state.page=1;await loadList();
+    message("#importStatus",`已保存 ${result.accepted} 条`);event.target.reset();state.page=1;if(integrated)$("#libraryStatus").value="all";await loadList();
   } catch(error){message("#importStatus",error.message,true);}finally{$("#importBtn").disabled=false;}
 });
 $("#createKeyBtn").addEventListener("click",async()=>{
@@ -130,4 +158,5 @@ const endpoint=location.origin+"/api/integrations/psychology/peer-hits";$("#endp
 const sample={items:[{mediaType:"video",voiceGender:"female",videoUrl:"https://www.tiktok.com/@example/video/1234567890123456789",title:"Which picture did you notice first?",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,durationSeconds:18.5,videoData:{language:"en",hashtags:["psychology","test"]},source:"grokbot"}]};
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
-applyMediaType("video");loadKey();
+if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
+applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();

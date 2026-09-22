@@ -19,7 +19,8 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("operator-official", "/operator/official", "小说自运营", ALL, novelPromotionGroup()),
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
   moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
-  moduleItem("psychology-peer-hits", "/psychology-peer-hits", "同行爆款", ["admin"], psychologyGroup()),
+  moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ["admin"], psychologyGroup()),
+  moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ["admin"], psychologyGroup(), "psychology-copy-library"),
   moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup()),
   moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
   moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
@@ -30,7 +31,6 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
   moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ["admin"], psychologyGroup()),
   moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ["admin"], psychologyGroup()),
-  moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ["admin"], psychologyGroup()),
   moduleItem("psychology-comments", "/psychology-comments", "定时评论", ["admin"], psychologyGroup()),
   moduleItem("psychology-publish-sources", "/psychology-publish-sources", "发布对标", ["admin"], psychologyGroup()),
   moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ALL, officialChannelGroup()),
@@ -107,6 +107,7 @@ export function canAccessPath(user, pathname) {
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
   }
+  if(['/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
   const moduleId = moduleIdForPath(pathname);
   if (!moduleId) return true;
   if (moduleId === "accounts" || moduleId === "geelark-profiles") return user.role === "admin";

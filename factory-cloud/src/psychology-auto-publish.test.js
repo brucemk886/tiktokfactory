@@ -204,7 +204,7 @@ test('psychology module pages share one chinese page shell', () => {
     'psychology-auto-publish.html',
     'psychology-topic-bank.html',
     'psychology-publish-sources.html',
-    'psychology-peer-hits.html',
+    'psychology-copy-library.html',
     'psychology-production.html',
     'psychology-templates.html',
     'psychology.html',

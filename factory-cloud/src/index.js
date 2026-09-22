@@ -75,6 +75,7 @@ export default {
         }
       }
 
+      if (url.pathname === '/psychology-peer-hits' || url.pathname === '/psychology-peer-hits.html') return redirect('/psychology-copy-library'+url.search);
       if (url.pathname === "/psychology-topics" || url.pathname === "/psychology-topics.html") return redirect("/psychology");
       if (url.pathname === "/psychology-topics.js" || url.pathname === "/psychology-topics.css") return errorJson("心理学题库已移除。", 410);
       if (url.pathname === "/asset-usage" || url.pathname === "/asset-usage.html") {
