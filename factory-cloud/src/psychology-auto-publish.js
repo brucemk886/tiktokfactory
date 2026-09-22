@@ -364,7 +364,6 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   const commentSetting = config.mediaType==='video' ? await commentTemplate(env.DB,config.template) : {enabled:0};
   if(commentSetting.enabled && commentSetting.auto_reply_enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list')))fail('自动回复需要目标账号授予评论读取权限，请重新授权。',403);
   if(commentSetting.enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list.manage')))fail('定时评论需要目标账号授予评论管理权限，请重新授权。',403);
-  const bindings=config.mediaType==='photo'?(await env.DB.prepare('SELECT * FROM psychology_style_bindings WHERE owner=?').bind(user.username).all()).results:[];
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];
@@ -382,7 +381,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const account = scoped.accounts.find(a => String(a.connectionId || a.id) === entry.connectionId) || {};
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
       username: String(account.username || '').trim().replace(/^@/, '') };
-    const item = { styleId:config.mediaType==='photo'?chooseVisualStyle(account,bindings,config.styleMode,config.styleId):'',account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const item = { styleId:config.mediaType==='photo'?chooseVisualStyle(account,[],config.styleMode,config.styleId):'',account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }

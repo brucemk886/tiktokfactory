@@ -24,15 +24,44 @@ test('copy import validates before writes and is immutable, idempotent and owner
  assert.equal((await (await api(f,'/copies','GET',undefined,{...user,username:'other'})).json()).total,0);
  await assert.rejects(api(f,'/bindings','PUT',{kind:'account',targetId:'outside',styles:['night']}),e=>e.statusCode===403);
 });
-test('batch freezes group styles and imported copy; repeated source-account is reserved',async t=>{
- const f=await fixture(t);await api(f,'/copies','POST',[variant(1),variant(2)]);await api(f,'/bindings','PUT',{kind:'group',targetId:'g',styles:['night']});
- const body=input({mediaType:'photo',template:'photo-text',sourceType:'copy-bank',count:2,styleMode:'group'});
+test('random batches ignore account/group bindings, freeze styles and replay without redrawing',async t=>{
+ const f=await fixture(t);await api(f,'/copies','POST',Array.from({length:20},(_,n)=>variant(n)));
+ await api(f,'/bindings','PUT',{kind:'group',targetId:'g',styles:['night']});
+ await api(f,'/bindings','PUT',{kind:'account',targetId:'a',styles:['letter']});
+ let draws=0;t.mock.method(Math,'random',()=>draws++/20);
+ // Old open pages send group mode; creation must also use the new random policy.
+ const body=input({mediaType:'photo',template:'photo-text',sourceType:'copy-bank',count:20,connectionIds:['a'],styleMode:'group'});
  assert.equal((await f.call('POST',body)).status,202);
- const rows=f.sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all().map(r=>JSON.parse(r.payload_json));assert.equal(rows.length,2);assert.ok(rows.every(r=>r.psychologyAutomation.styleId==='night'&&r.copyVariant.scenes.length===2));
- await api(f,'/bindings','PUT',{kind:'group',targetId:'g',styles:['memo']});assert.equal(JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs LIMIT 1').get().payload_json).psychologyAutomation.styleId,'night');
- assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_creative_snapshots').get().n,2);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_peer_account_usage').get().n,2);
- assert.equal((await f.call('POST',body)).status,200);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,2);
+ const jobs=f.sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id').all();
+ const styles=jobs.map(r=>JSON.parse(r.payload_json).psychologyAutomation.styleId);
+ assert.deepEqual(styles,VISUAL_STYLES.map(s=>s.id));assert.equal(draws,20);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT config_json FROM psychology_publish_batches').get().config_json).styleMode,'random');
+ assert.deepEqual(f.sqlite.prepare('SELECT style_id FROM psychology_creative_snapshots ORDER BY item_id').all().map(r=>r.style_id),styles);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_peer_account_usage').get().n,20);
+ await api(f,'/bindings','PUT',{kind:'account',targetId:'a',styles:['memo']});
+ t.mock.method(Math,'random',()=>{throw new Error('Must not redraw a saved job');});
+ assert.equal((await f.call('POST',body)).status,200);
+ const step={async do(name,config,fn){return (typeof config==='function'?config:fn)();},async sleep(){throw new Error('Unexpected wait');}};
+ await runPeerPhotoWorkflow(f.env,{payload:{jobId:jobs[0].id}},step);
+ await enqueueAutoPhotoRender(f.env,jobs[0].id);
+ const render=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(jobs[0].id+'-render').payload_json);
+ assert.equal(render.psychologyAutomation.styleId,styles[0]);
+ assert.deepEqual(f.sqlite.prepare('SELECT style_id FROM psychology_creative_snapshots ORDER BY item_id').all().map(r=>r.style_id),styles);
 });
+
+test('an old group-assigned batch keeps its frozen style on a repeated submission',async t=>{
+ const f=await fixture(t);await api(f,'/copies','POST',[variant(1)]);
+ const body=input({mediaType:'photo',template:'photo-text',sourceType:'copy-bank',count:1,connectionIds:['a'],styleMode:'fixed',styleId:'night'});
+ assert.equal((await f.call('POST',body)).status,202);
+ const saved=JSON.parse(f.sqlite.prepare('SELECT config_json FROM psychology_publish_batches').get().config_json);
+ saved.styleMode='group';
+ f.sqlite.prepare('UPDATE psychology_publish_batches SET config_json=?').run(JSON.stringify(saved));
+ t.mock.method(Math,'random',()=>{throw new Error('Historical batch must not be redrawn');});
+ assert.equal((await f.call('POST',{...body,styleMode:'group'})).status,200);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,1);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json).psychologyAutomation.styleId,'night');
+});
+
 test('imported copy bypasses external extraction and rewriting and persists exact comparison text',async t=>{
  const f=await fixture(t);await api(f,'/copies','POST',[variant(1)]);await f.call('POST',input({mediaType:'photo',template:'photo-text',sourceType:'copy-bank',count:1,connectionIds:['a'],styleMode:'fixed',styleId:'letter'}));
  const job=f.sqlite.prepare('SELECT * FROM factory_jobs LIMIT 1').get();delete f.env.DEEPSEEK_API_KEY;
@@ -74,4 +103,17 @@ test('replacement pool retains seven originals and archives old layouts for froz
   assert.equal(chooseVisualStyle({id:'a'},[oldBinding]),newId);
   assert.deepEqual(JSON.parse(currentStyleBindings([oldBinding])[0].styles_json),[newId]);
  }
+});
+
+
+test('new photo submissions default to random while explicit fixed/legacy and video stay supported',async()=>{
+ const {normalizeAutoPublish}=await import('../../scripts/psychology-auto-publish.js');
+ const photo=input({mediaType:'photo',template:'photo-text'});
+ assert.equal(normalizeAutoPublish(photo).styleMode,'random');
+ assert.equal(normalizeAutoPublish({...photo,styleMode:'random'}).styleMode,'random');
+ assert.equal(normalizeAutoPublish({...photo,styleMode:'group'}).styleMode,'random');
+ assert.equal(normalizeAutoPublish({...photo,styleMode:'fixed',styleId:'night'}).styleMode,'fixed');
+ assert.equal(normalizeAutoPublish({...photo,styleMode:'legacy'}).styleMode,'legacy');
+ assert.equal(normalizeAutoPublish(input({styleMode:'random'})).styleMode,'legacy');
+ assert.throws(()=>normalizeAutoPublish({...photo,styleMode:'unknown'}));
 });

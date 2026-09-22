@@ -38,8 +38,10 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
     ? [...new Set((Array.isArray(input.musicIds) ? input.musicIds : []).map(id => String(id).trim()).filter(Boolean))]
     : [];
   if (musicIds.length > 100 || musicIds.some(id => !/^\d{1,30}$/.test(id))) fail('配乐池最多 100 个纯数字音乐 ID。');
-  const styleMode=mediaType==='photo'?String(input.styleMode||'legacy'):'legacy',styleId=String(input.styleId||'classic');
-  if(!['legacy','fixed','group'].includes(styleMode)||!styleById(styleId))fail('图文视觉样式配置无效。');
+  const requestedStyleMode=String(input.styleMode||'random');
+  // Older open pages may still submit group mode; new tasks now draw per post.
+  const styleMode=mediaType==='photo'?(requestedStyleMode==='group'?'random':requestedStyleMode):'legacy',styleId=String(input.styleId||'classic');
+  if(!['legacy','fixed','random'].includes(styleMode)||!styleById(styleId))fail('图文视觉样式配置无效。');
   if(sourceType==='copy-bank'&&input.rewriteCopy===true)fail('导入文案不再实时改写。');
   return { styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }

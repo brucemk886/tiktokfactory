@@ -47,6 +47,8 @@ export const currentStyleId=id=>STYLE_REPLACEMENTS[id]||id;
 export function currentStyleBindings(bindings){return bindings.map(b=>({...b,styles_json:JSON.stringify([...new Set(JSON.parse(b.styles_json).map(currentStyleId))])}));}
 export function stableIndex(text,size){let n=2166136261;for(const c of String(text)){n^=c.codePointAt(0);n=Math.imul(n,16777619);}return (n>>>0)%size;}
 export function chooseVisualStyle(account,bindings=[],mode='group',fixed='classic'){
+ // Draw once at task creation; callers persist the result for rendering and retries.
+ if(mode==='random')return VISUAL_STYLES[Math.floor(Math.random()*VISUAL_STYLES.length)].id;
  if(mode==='legacy')return '';
  if(mode==='fixed')return styleById(currentStyleId(fixed))?.id||'classic';
  const id=String(account.connectionId||account.id),direct=bindings.find(b=>b.kind==='account'&&b.target_id===id),group=bindings.find(b=>b.kind==='group'&&b.target_id===account.groupId);
