@@ -1,7 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
 import { assertAutoJobAccess } from './psychology-auto-publish.js';
-import { backupPhoto } from './psychology-photo-recovery.js';
 import { finishPsychologyPublishAttempt } from './psychology-publish-retries.js';
 import { dispatchPublishGroup } from './psychology-publish-groups.js';
 import { loadCardModules, openCloudCardRenderer } from './psychology-cloud-renderer.js';
@@ -9,6 +8,8 @@ import { loadCardModules, openCloudCardRenderer } from './psychology-cloud-rende
 const parse = value => JSON.parse(value || '{}');
 const CLOUD = "json_extract(payload_json,'$.cloudPhotoRender')=1";
 const LEASE_MS = 20 * 60000; // Longer than Queues' maximum consumer wall time.
+// Uploading the pages, not drawing them, dominates this stage.
+const UPLOAD_CONCURRENCY = 3;
 
 export async function dispatchCloudPhotos(env) {
   if (!env.PHOTO_QUEUE) return {sent:0};
@@ -75,18 +76,24 @@ export async function runCloudPhoto(env, job, deps={}) {
       images=await renderer.renderBatch(pending.map(({source,index})=>({source,index,template:payload.psychologyAutomation.template,imageData:backgrounds.get(index)||''})));
     } finally { browserMs=await renderer.close();backgrounds.clear(); }
     if(images.length!==pending.length)throw new Error('云端图片生成不完整。');
-    for(const [position,{index}] of pending.entries()) {
+    // Pages go up a few at a time. Chrome is already closed, so the hub round
+    // trips never extend billable browser time.
+    for(let start=0;start<pending.length;start+=UPLOAD_CONCURRENCY) {
+      const wave=pending.slice(start,start+UPLOAD_CONCURRENCY);
       const current=await env.DB.prepare('SELECT status,worker_id FROM factory_jobs WHERE id=?').bind(job.id).first();
       if(current?.status!=='running'||current.worker_id!==job.worker_id)throw new Error('任务已取消或执行权已变更。');
-      const item=await env.DB.prepare('SELECT * FROM psychology_publish_items WHERE job_id=? AND deleted_at=0').bind(job.id).first();
-      if(!item)throw new Error('自动发布任务已删除。');
-      await (deps.backup || backupPhoto)(env,item,index,{dataUrl:images[position]});images[position]='';
-      rendered++;
+      if(!await env.DB.prepare('SELECT id FROM psychology_publish_items WHERE job_id=? AND deleted_at=0').bind(job.id).first())throw new Error('自动发布任务已删除。');
+      await Promise.all(wave.map(async ({index},offset)=>{
+        const position=start+offset;
+        await call('upload',{index,dataUrl:images[position]});
+        images[position]='';
+      }));
+      rendered+=wave.length;
       await env.DB.prepare("UPDATE factory_jobs SET percent=?,message=?,updated_at=? WHERE id=? AND status='running' AND worker_id=?")
-        .bind(Math.round(20+60*(index+1)/payload.pages.length),`云端已生成并保存 ${index+1}/${payload.pages.length} 张图片`,Date.now(),job.id,job.worker_id).run();
+        .bind(Math.round(20+60*rendered/payload.pages.length),`云端已生成并上传 ${rendered}/${payload.pages.length} 张图片`,Date.now(),job.id,job.worker_id).run();
     }
   }
-  // Reuse backup restoration to upload. Chrome is already closed during hub IO.
+  // A resumed job can still hold backups with no asset yet; state uploads those.
   await call('state');
   const receipt=await call('publish',{});
   return {execution:'cloud-browser',browserMs,renderedImages:rendered,elapsedMs:Date.now()-started,

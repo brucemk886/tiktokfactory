@@ -298,6 +298,28 @@ test('photo analysis waits for a free slot and hands it back when the job is don
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_analysis_slots').get().n, 0);
 });
 
+test('a queue that never frees a slot goes to the fallback instead of crowding DeepSeek', async t => {
+  const f = cloudFixture(t);
+  const one = storyPlan(1);
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Original caption',rewriteCopy:false,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
+  for (let i = 0; i < ANALYSIS_CONCURRENCY; i++) await claimAnalysisSlot(f.env.DB, 'busy-' + i, 1);
+  const originalFetch = f.env.fetch;
+  f.env.fetch = async (url, init) => {
+    if (String(url).includes('api.deepseek.com')) assert.fail('crowded the primary model past the cap');
+    if (String(url).includes('/grok/v1/responses')) {
+      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(one) }] }] });
+    }
+    return originalFetch(url, init);
+  };
+  // Holders keep renewing, so the queue never opens up for this job.
+  const step = { ...f.step, async sleep(name) { f.sleeps.push(name); for (let i = 0; i < ANALYSIS_CONCURRENCY; i++) await claimAnalysisSlot(f.env.DB, 'busy-' + i, 1); } };
+  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, step);
+  assert.equal(result.count, 1);
+  assert.equal(f.sleeps.filter(name => name.includes('slot') && name.includes('wait')).length, 189); // ~60 minutes
+  const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
+  assert.equal(saved.analysisModel, 'grok-4-6');
+});
+
 test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid fallback', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);

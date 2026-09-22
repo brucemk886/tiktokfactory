@@ -93,18 +93,17 @@ test('cloud group submission retries inherit cloud ownership and run without loc
 test('rendering checkpoints close Chrome before upload and resume without rerender',async t=>{
   const f=await prepared(t);f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='test' WHERE id=?").run(f.id);
   const job=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id),events=[];
-  await runCloudPhoto(f.env,job,{call:async action=>{events.push(action);return action==='state'?{assets:{0:{}},receipt:{}}:{waiting:true};},
-    loadModules:async()=>[],openRenderer:async()=>({renderBatch:async entries=>entries.map(({index})=>{events.push('render-'+index);return 'jpeg';}),close:async()=>{events.push('close');return 20;}}),
-    backup:async(e,item,i)=>events.push('backup-'+i)});
+  await runCloudPhoto(f.env,job,{call:async(action,body)=>{events.push(body?.index===undefined?action:action+'-'+body.index);return action==='state'?{assets:{0:{}},receipt:{}}:{waiting:true};},
+    loadModules:async()=>[],openRenderer:async()=>({renderBatch:async entries=>entries.map(({index})=>{events.push('render-'+index);return 'jpeg';}),close:async()=>{events.push('close');return 20;}})});
   assert.equal(events.filter(e=>e.startsWith('render')).length,5);assert.equal(events.includes('render-0'),false);
-  assert.ok(events.indexOf('backup-1')>events.indexOf('close'));assert.ok(events.lastIndexOf('state')>events.indexOf('close'));assert.ok(events.indexOf('publish')>events.indexOf('close'));
+  assert.ok(events.indexOf('upload-1')>events.indexOf('close'));assert.ok(events.lastIndexOf('state')>events.indexOf('close'));assert.ok(events.indexOf('publish')>events.indexOf('close'));
   await runCloudPhoto(f.env,job,{call:async action=>action==='state'?{assets:Object.fromEntries(pages.map((_,i)=>[i,{}])),receipt:{}}:{waiting:true},openRenderer:()=>assert.fail('already checkpointed')});
 });
-test('browser closes on failed backup and no partial album is published',async t=>{
+test('browser closes on failed upload and no partial album is published',async t=>{
   const f=await prepared(t);f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='test' WHERE id=?").run(f.id);
   let closed=0;await assert.rejects(runCloudPhoto(f.env,f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id),{
-    call:async action=>{assert.notEqual(action,'publish');return {assets:{},receipt:{}};},loadModules:async()=>[],
-    openRenderer:async()=>({renderBatch:async entries=>entries.map(()=>''),close:async()=>{closed++;return 0;}}),backup:async()=>{throw new Error('R2 down');}
+    call:async action=>{assert.notEqual(action,'publish');if(action==='upload')throw new Error('R2 down');return {assets:{},receipt:{}};},loadModules:async()=>[],
+    openRenderer:async()=>({renderBatch:async entries=>entries.map(()=>''),close:async()=>{closed++;return 0;}})
   }),/R2 down/);assert.equal(closed,1);
 });
 test('probe requires worker authentication and queue concurrency stays inside the browser limit',async t=>{
@@ -118,9 +117,13 @@ test('probe requires worker authentication and queue concurrency stays inside th
 test('six checkpointed images traverse real cloud upload and grouped submission with mocked hub',async t=>{
   const f=await prepared(t),objects=new Map();let uploads=0,closed=false;
   f.env.ARCHIVE={async put(k,b){objects.set(k,Uint8Array.from(b));},async get(k){const b=objects.get(k);return b?{arrayBuffer:async()=>b.buffer}:null;},async delete(keys){for(const k of Array.isArray(keys)?keys:[keys])objects.delete(k);}};
-  const previous=globalThis.fetch;
+  const previous=globalThis.fetch;let inFlight=0,peakInFlight=0;
   t.mock.method(globalThis,'fetch',async(url,init)=>{
-    if(String(url).endsWith('/api/v1/publish/assets')){assert.equal(closed,true);uploads++;return Response.json({assetKey:crypto.randomUUID()+'.jpg',contentType:'image/jpeg',fileSize:100});}
+    if(String(url).endsWith('/api/v1/publish/assets')){
+      assert.equal(closed,true);uploads++;inFlight++;peakInFlight=Math.max(peakInFlight,inFlight);
+      await new Promise(done=>setTimeout(done,1));inFlight--;
+      return Response.json({assetKey:crypto.randomUUID()+'.jpg',contentType:'image/jpeg',fileSize:100});
+    }
     return previous(url,init);
   });
   await processCloudMessage(f.env,message(f.id),{runPhoto:(env,job)=>runCloudPhoto(env,job,{
@@ -128,6 +131,7 @@ test('six checkpointed images traverse real cloud upload and grouped submission 
   })});
   const row=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(f.id);
   assert.equal(row.status,'done',row.error);assert.equal(uploads,6);assert.equal(f.requests.length,1);
+  assert.equal(peakInFlight,3); // six pages upload in two waves, not one at a time
   assert.equal(f.requests[0].items[0].photoAssetKeys.length,6);assert.equal(objects.size,0);
   await processCloudMessage(f.env,message(f.id));assert.equal(uploads,6);assert.equal(f.requests.length,1);
 });

@@ -262,12 +262,13 @@ async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat
 const PRIMARY_ATTEMPTS = 3;
 const PRIMARY_RETRY_DELAYS = ['10 seconds', '30 seconds'];
 // Polls stay tight while the queue is short, then slow down: every poll costs
-// workflow steps, and an instance only gets so many.
-const SLOT_WAIT_ATTEMPTS = 42;
+// workflow steps, and an instance only gets so many. 12 × 5s + 177 × 20s is
+// roughly an hour of queueing.
+const SLOT_WAIT_ATTEMPTS = 189;
 const slotWaitDelay = wait => (wait < 12 ? '5 seconds' : '20 seconds');
 
-// A job never fails because the queue stayed full; after the last wait it goes
-// ahead, since blocking a whole batch is worse than briefly exceeding the cap.
+// The cap is never bypassed. Waiting out a full queue is correct behaviour, and
+// letting everyone through on a timer is exactly the stampede it prevents.
 async function waitForAnalysisSlot(env, step, name, chat) {
   for (let wait = 0; wait < SLOT_WAIT_ATTEMPTS; wait += 1) {
     if (await step.do(`${name}-${wait}`, READ, () => claimAnalysisSlot(env.DB, chat.holder, chat.rank))) return true;
@@ -283,7 +284,12 @@ async function lookAtImages(env, kie, deepseek, step, name, prompt, imageUrls, c
       // The slot is released between attempts so a backing-off job never holds
       // the queue while it waits.
       if (attempt) await step.sleep(`${name}-${PHOTO_STORY_MODEL}-wait-${attempt}`, PRIMARY_RETRY_DELAYS[attempt - 1]);
-      await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat);
+      if (!await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat)) {
+        // An hour-long queue hands the page to the fallback model rather than
+        // failing the job or crowding the primary one.
+        primaryError = '排队等待模型名额超过 60 分钟。';
+        break;
+      }
       try {
         const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
           () => deepseek.createChat(prompt, { imageUrls }));
