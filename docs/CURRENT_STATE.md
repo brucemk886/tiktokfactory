@@ -110,3 +110,5 @@ Updated: 2026-09-22
 - 同一天手动重跑覆盖当天快照，不同日期永久保留，支持账号与单视频历史变化查询。
 - 管理员侧边栏的官方数据入口现为 `授权账号`，并拆分为账号列表、账号详情与播放历史、所选账号视频、单视频历史变化四个页面；四个页面继续读取同一份本地 SQLite 归档并支持手动同步。
 - 线上 Signal Desk 的官方日快照只保留 30 天；长期历史以本地 D 盘归档为准。
+
+- Psychology automatic replies can be enabled per scheduled-comment template; future video batches freeze question replies and automatically enroll confirmed video IDs at the planned reveal time. Manual enrollment UI removed; see handoff `2026-09-22-template-linked-auto-replies.md`.

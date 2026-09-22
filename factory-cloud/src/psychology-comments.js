@@ -1,3 +1,4 @@
+import { validateReplyAnswers } from './psychology-auto-replies.js';
 import { json, readJson, errorJson } from './http.js';
 import { TOPIC_TEMPLATES, validateTopicTemplate } from '../../scripts/psychology-topic-bank.js';
 import { signalDesk } from './signal-desk.js';
@@ -16,13 +17,14 @@ export function freezeComment(source,config,setting) {
   if(config.sourceType!=='topic-bank')fail('此模板已开启定时揭晓，请从模板题库抽题并填写揭晓评论。');
   const text=String(source.revealComment||'').trim();
   if(!text||text.length>2000)fail('题目「'+source.title+'」缺少有效揭晓评论，请先在模板题库填写。');
-  return {text,delayMinutes:setting.delay_minutes,caption:String(setting.caption||'').replaceAll('{hours}',String(setting.delay_minutes/60)).replaceAll('{minutes}',String(setting.delay_minutes))};
+  const replyConfig=setting.auto_reply_enabled?{topicId:source.id,answers:validateReplyAnswers(source.replyOptions),hours:setting.reply_hours||48,maxReplies:setting.reply_max||100}:null;
+  return {...(replyConfig?{replyConfig}:{}),text,delayMinutes:setting.delay_minutes,caption:String(setting.caption||'').replaceAll('{hours}',String(setting.delay_minutes/60)).replaceAll('{minutes}',String(setting.delay_minutes))};
 }
 export function insertScheduledComment(db,item,source,snapshot,createdBy,stamp) {
   return db.prepare(`INSERT INTO psychology_scheduled_comments
-    (id,batch_id,created_by,template,connection_id,account_name,title,text,delay_minutes,caption,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(item.id,item.batchId,createdBy,item.template,item.connectionId,
-      item.account?.username||item.account?.name||item.connectionId,source.title,snapshot.text,snapshot.delayMinutes,snapshot.caption,stamp,stamp);
+    (id,batch_id,created_by,template,connection_id,account_name,title,text,delay_minutes,caption,created_at,updated_at,reply_config_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(item.id,item.batchId,createdBy,item.template,item.connectionId,
+      item.account?.username||item.account?.name||item.connectionId,source.title,snapshot.text,snapshot.delayMinutes,snapshot.caption,stamp,stamp,JSON.stringify(snapshot.replyConfig||{}));
 }
 function assertUser(user) {if(!user||user.role!=='admin'||!user.sidebarModules?.includes('psychology-comments'))fail('没有定时评论管理权限。',403);}
 export async function handlePsychologyComments(request,env,url,session) {
@@ -34,9 +36,13 @@ export async function handlePsychologyComments(request,env,url,session) {
     if(request.method==='PUT') {
       const body=await readJson(request),template=validateTopicTemplate(body.template),minutes=Number(body.delayMinutes),caption=String(body.caption||'').trim();
       if(typeof body.enabled!=='boolean'||!Number.isInteger(minutes)||minutes<1||minutes>10080||caption.length>500)fail('延迟须为1–10080分钟，引导文案最多500字符。');
-      await db.prepare(`INSERT INTO psychology_comment_templates(template,enabled,delay_minutes,caption,updated_at) VALUES(?,?,?,?,?)
-        ON CONFLICT(template) DO UPDATE SET enabled=excluded.enabled,delay_minutes=excluded.delay_minutes,caption=excluded.caption,updated_at=excluded.updated_at`)
-        .bind(template,body.enabled?1:0,minutes,caption,Date.now()).run();return json({ok:true});
+      const previous=await commentTemplate(db,template);
+      const replyEnabled=body.autoReplyEnabled??Boolean(previous.auto_reply_enabled),hours=Number(body.replyHours??previous.reply_hours??48),max=Number(body.replyMax??previous.reply_max??100);
+      if(typeof replyEnabled!=='boolean'||!Number.isInteger(hours)||hours<1||hours>168||!Number.isInteger(max)||max<1||max>500)fail('自动回复持续时间须为1–168小时，每视频上限1–500条。');
+      if(replyEnabled&&!body.enabled)fail('自动回复须同时开启定时揭晓评论。');
+      await db.prepare(`INSERT INTO psychology_comment_templates(template,enabled,delay_minutes,caption,updated_at,auto_reply_enabled,reply_hours,reply_max) VALUES(?,?,?,?,?,?,?,?)
+        ON CONFLICT(template) DO UPDATE SET enabled=excluded.enabled,delay_minutes=excluded.delay_minutes,caption=excluded.caption,updated_at=excluded.updated_at,auto_reply_enabled=excluded.auto_reply_enabled,reply_hours=excluded.reply_hours,reply_max=excluded.reply_max`)
+        .bind(template,body.enabled?1:0,minutes,caption,Date.now(),replyEnabled?1:0,hours,max).run();return json({ok:true});
     }
   }
   if(url.pathname===BASE&&request.method==='GET') {
@@ -90,7 +96,14 @@ export async function runScheduledComments(env,deps={}) {
         if(remote?.status!=='published'||!/^\d{5,30}$/.test(videoId)||!Number.isFinite(publishedAt)||publishedAt<=0){await update(row.id,'waiting_publish','等待作品发布成功及作品编号。',{next_check_at:now+300000});return;}
         const due=publishedAt+row.delay_minutes*60000;
         const videoUrl=/^https:\/\/(www\.)?tiktok\.com\//i.test(remote.videoUrl||'')?remote.videoUrl:'';
-        await update(row.id,'pending','',{video_id:videoId,video_url:videoUrl,published_at:publishedAt,time_basis:remote.publishedAt?'published':'confirmed',due_at:due,next_check_at:due});return;
+        const statements=[db.prepare("UPDATE psychology_scheduled_comments SET status='pending',error='',lease_until=0,updated_at=?,video_id=?,video_url=?,published_at=?,time_basis=?,due_at=?,next_check_at=? WHERE id=?")
+          .bind(now,videoId,videoUrl,publishedAt,remote.publishedAt?'published':'confirmed',due,due,row.id)];
+        const reply=parse(row.reply_config_json);
+        if(reply.answers)statements.push(db.prepare(`INSERT INTO psychology_reply_watches
+          (id,created_by,connection_id,account_name,video_id,topic_id,title,answers_json,start_at,end_at,max_replies,next_scan_at,created_at,updated_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,video_id) DO NOTHING`)
+          .bind('reveal:'+row.id,row.created_by,row.connection_id,row.account_name,videoId,reply.topicId,row.title,JSON.stringify(validateReplyAnswers(reply.answers)),due,due+reply.hours*3600000,reply.maxReplies,due,now,now));
+        await db.batch(statements);return;
       }
       if(row.due_at>now){await update(row.id,'pending','',{next_check_at:row.due_at});return;}
       const externalId='psychology-reveal:'+row.id;

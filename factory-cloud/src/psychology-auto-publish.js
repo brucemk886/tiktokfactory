@@ -356,6 +356,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
       chosen.add(source.id);return {...entry,source};});
   }
   const commentSetting = config.mediaType==='video' ? await commentTemplate(env.DB,config.template) : {enabled:0};
+  if(commentSetting.enabled && commentSetting.auto_reply_enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list')))fail('自动回复需要目标账号授予评论读取权限，请重新授权。',403);
   if(commentSetting.enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list.manage')))fail('定时评论需要目标账号授予评论管理权限，请重新授权。',403);
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')

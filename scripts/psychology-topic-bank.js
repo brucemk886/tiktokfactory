@@ -269,7 +269,7 @@ export function topicSource(row){
   const choices=single?.choices||parseFourImageChoices(row.content);
   const script=hasCompleteSingleImageQuiz(single)?singleImageCopyText(single):hasCompleteFourImages(choices)?fourImageCopyText(choices):row.content;
   return {
-    id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,revealComment:row.reveal_comment||"",
+    id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,revealComment:row.reveal_comment||"",replyOptions:JSON.parse(row.reply_options_json||"{}"),
     choices,sourceImage:single?{imageKey:single.imageKey||"",imageUrl:single.imageUrl||""}:null,
     videoData:{script},voiceGender:"male",
   };

@@ -72,16 +72,16 @@ test('template settings API enforces permissions, valid delay and preserves pend
 });
 test('CSV/API/edit keep reveal answers and batches snapshot without exposing them in video script',async t=>{
  const f=await fixture(t);assert.equal(parseTopicImport('题目,揭晓评论\nQuestion,Answer')[0].revealComment,'Answer');
- await writeIntegrationTopics(f.db,{template:'psychology-collage',title:'Question',content:'Public script',revealComment:'Private answer'},'admin');
+ await writeIntegrationTopics(f.db,{template:'psychology-collage',title:'Question',content:'Public script',revealComment:'Private answer',replyOptions:{A:'A answer',B:'B answer',C:'C answer',D:'D answer'}},'admin');
  const topic=f.sqlite.prepare('SELECT * FROM psychology_template_topics').get();assert.equal(topic.reveal_comment,'Private answer');
  const url=new URL('https://factory.test/api/psychology-template-topics/'+topic.id);
  const res=await handlePsychologyTopicBank(new Request(url,{method:'PATCH',body:JSON.stringify({revision:topic.revision,priority:40})}),f.env,url,{user:admin});assert.equal(res.status,200);assert.equal(f.sqlite.prepare('SELECT reveal_comment FROM psychology_template_topics').get().reveal_comment,'Private answer');
- f.sqlite.prepare("INSERT INTO psychology_comment_templates(template,enabled,delay_minutes,caption) VALUES('psychology-collage',1,120,'Answer in {hours} hours')").run();
- const previous=globalThis.fetch;t.mock.method(globalThis,'fetch',async(url,init)=>{const result=await previous(url,init);if(String(url).includes('/accounts')){const data=await result.json();data.accounts.forEach(a=>a.scopes.push('comment.list.manage'));return Response.json(data);}return result;});
+ f.sqlite.prepare("INSERT INTO psychology_comment_templates(template,enabled,delay_minutes,caption,auto_reply_enabled) VALUES('psychology-collage',1,120,'Answer in {hours} hours',1)").run();
+ const previous=globalThis.fetch;t.mock.method(globalThis,'fetch',async(url,init)=>{const result=await previous(url,init);if(String(url).includes('/accounts')){const data=await result.json();data.accounts.forEach(a=>a.scopes.push('comment.list.manage','comment.list'));return Response.json(data);}return result;});
  const body=input({template:'psychology-collage',sourceType:'topic-bank',count:1,connectionIds:['a'],selection:'priority'});
  assert.equal((await f.call('POST',body,undefined,admin)).status,202);
  const job=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json);
- assert.ok(!JSON.stringify(job).includes('Private answer'));assert.match(job.publish.videoDesc,/Answer in 2 hours/);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT reply_config_json FROM psychology_scheduled_comments').get().reply_config_json).answers.A,'A answer');assert.ok(!JSON.stringify(job).includes('A answer'));assert.ok(!JSON.stringify(job).includes('Private answer'));assert.match(job.publish.videoDesc,/Answer in 2 hours/);
  f.sqlite.prepare("UPDATE psychology_template_topics SET reveal_comment='Changed'").run();assert.equal(f.sqlite.prepare('SELECT text FROM psychology_scheduled_comments').get().text,'Private answer');
  assert.equal((await f.call('POST',body,undefined,admin)).status,200);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_scheduled_comments').get().n,1);
 });
@@ -101,7 +101,37 @@ test('manual verification remains read-only across transport failures and missin
 test('a missing answer rejects the whole batch without jobs or usage writes',async t=>{
  const f=await fixture(t);await writeIntegrationTopics(f.db,{template:'psychology-collage',title:'No answer'},'admin');
  f.sqlite.prepare("INSERT INTO psychology_comment_templates(template,enabled) VALUES('psychology-collage',1)").run();
- const old=globalThis.fetch;t.mock.method(globalThis,'fetch',async(url,init)=>{const r=await old(url,init);if(String(url).includes('/accounts')){const d=await r.json();d.accounts.forEach(a=>a.scopes.push('comment.list.manage'));return Response.json(d);}return r;});
+ const old=globalThis.fetch;t.mock.method(globalThis,'fetch',async(url,init)=>{const r=await old(url,init);if(String(url).includes('/accounts')){const d=await r.json();d.accounts.forEach(a=>a.scopes.push('comment.list.manage','comment.list'));return Response.json(d);}return r;});
  await assert.rejects(f.call('POST',input({template:'psychology-collage',sourceType:'topic-bank',count:1,connectionIds:['a'],selection:'priority'}),undefined,admin),/揭晓评论/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);assert.equal(f.sqlite.prepare('SELECT SUM(usage_count) n FROM psychology_template_topics').get().n,0);
+});
+
+const replies={A:'Answer A',B:'Answer B',C:'Answer C',D:'Answer D'};
+test('template replies freeze per-topic answers and require complete options',()=>{
+ const setting={enabled:1,delay_minutes:120,auto_reply_enabled:1,reply_hours:48,reply_max:80};
+ const source={id:'question-1',title:'Question',revealComment:'Reveal',replyOptions:replies};
+ const snapshot=freezeComment(source,{mediaType:'video',sourceType:'topic-bank'},setting);
+ assert.deepEqual(snapshot.replyConfig,{topicId:'question-1',answers:replies,hours:48,maxReplies:80});
+ assert.throws(()=>freezeComment({...source,replyOptions:{}},{mediaType:'video',sourceType:'topic-bank'},setting));
+ assert.equal(freezeComment(source,{mediaType:'photo',sourceType:'topic-bank'},setting),null);
+});
+test('confirmed receipt automatically enrolls the correct video and frozen question once',async t=>{
+ const f=await ready(t),config={topicId:'question-1',answers:replies,hours:48,maxReplies:80};
+ f.sqlite.prepare('UPDATE psychology_scheduled_comments SET reply_config_json=?').run(JSON.stringify(config));
+ f.remote.status='failed';await f.run();assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_reply_watches').get().n,0);
+ f.remote.status='published';await f.run(f.now+300000);
+ const w=f.sqlite.prepare('SELECT * FROM psychology_reply_watches').get();
+ assert.equal(w.connection_id,'a');assert.equal(w.video_id,f.videoId);assert.equal(w.topic_id,'question-1');assert.deepEqual(JSON.parse(w.answers_json),replies);
+ assert.equal(w.start_at,f.now+7200000);assert.equal(w.end_at,w.start_at+48*3600000);assert.equal(w.max_replies,80);assert.equal(f.sends(),0);
+ f.sqlite.prepare("UPDATE psychology_scheduled_comments SET status='waiting_publish',next_check_at=0").run();await f.run(f.now+400000);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_reply_watches').get().n,1);
+});
+test('legacy scheduled comments do not silently enroll replies',async t=>{
+ const f=await ready(t);await f.run();assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_reply_watches').get().n,0);
+});
+test('linked reply template settings require reveals and bounded duration',async t=>{
+ const f=await ready(t),url=new URL('https://factory.test/api/psychology-comments/templates');
+ const put=b=>handlePsychologyComments(new Request(url,{method:'PUT',body:JSON.stringify({template:'psychology',enabled:true,delayMinutes:120,autoReplyEnabled:true,replyHours:48,replyMax:80,...b})}),f.env,url,{user:admin});
+ await assert.rejects(put({enabled:false}));await assert.rejects(put({replyHours:169}));await put({});
+ const row=await commentTemplate(f.db,'psychology');assert.equal(row.auto_reply_enabled,1);assert.equal(row.reply_max,80);
 });
