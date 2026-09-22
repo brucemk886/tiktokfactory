@@ -9,6 +9,7 @@ import { peerCopy, parsePhotoStory, parseStockPick, peerProductionPayload, build
 import { persistableJobResult, claimTypeFilter } from './jobs.js';
 import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, parseCachedCopyRewrite, COPY_LEASE_MS } from './peer-photo-copy-cache.js';
 import { runPeerPhotoWorkflow, jobSeed, CONTENT_STOCK_QUERIES } from './peer-photo-workflow.js';
+import { claimAnalysisSlot, releaseAnalysisSlot, ANALYSIS_CONCURRENCY, ANALYSIS_LEASE_MS } from './photo-analysis-gate.js';
 import { importGeneratedPhoto } from './photo-publishing.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 import { syncPeerArtboardProgress } from '../../scripts/peer-progress-sync.js';
@@ -243,6 +244,41 @@ test('photo story falls back to Grok 4.6 only after three DeepSeek V4.1 Flash fa
   assert.equal(saved.analysisModel, 'grok-4-6');
 });
 
+test('only three jobs may hold an analysis slot, and expiry frees an abandoned one', async t => {
+  const { db, sqlite } = fixture(t);
+  const holders = Array.from({ length: ANALYSIS_CONCURRENCY }, (_, i) => 'job-' + i);
+  for (const holder of holders) assert.equal(await claimAnalysisSlot(db, holder, 1000), true);
+  assert.equal(await claimAnalysisSlot(db, 'job-extra', 1000), false);
+  assert.equal(await claimAnalysisSlot(db, holders[0], 1000), true); // renewing is not a new slot
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_analysis_slots').get().n, ANALYSIS_CONCURRENCY);
+  await releaseAnalysisSlot(db, holders[0]);
+  assert.equal(await claimAnalysisSlot(db, 'job-extra', 1000), true);
+  assert.equal(await claimAnalysisSlot(db, 'job-later', 1000 + ANALYSIS_LEASE_MS + 1), true); // dead holders expire
+});
+
+test('photo analysis waits for a free slot and hands it back when the job is done', async t => {
+  const f = cloudFixture(t);
+  for (const holder of ['other-a', 'other-b', 'other-c']) await claimAnalysisSlot(f.env.DB, holder);
+  let released = false;
+  const originalFetch = f.env.fetch;
+  f.env.fetch = async (url, init) => {
+    if (String(url).includes('/chat/completions') && !released) assert.fail('called the model while the queue was full');
+    return originalFetch(url, init);
+  };
+  const waits = [];
+  const step = {
+    ...f.step,
+    async sleep(name) {
+      waits.push(name);
+      if (!released) { released = true; for (const holder of ['other-a', 'other-b', 'other-c']) await releaseAnalysisSlot(f.env.DB, holder); }
+    },
+  };
+  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, step);
+  assert.equal(result.count, 6);
+  assert.ok(waits.some(name => name.includes('slot') && name.includes('wait')));
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_photo_analysis_slots').get().n, 0);
+});
+
 test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid fallback', async t => {
   const f = cloudFixture(t);
   const one = storyPlan(1);
@@ -289,6 +325,7 @@ test('photo story uses Grok 4.6 directly when DeepSeek is not configured', async
 function fixture(t, overrides = {}) {
   const sqlite = new DatabaseSync(':memory:'); t.after(() => sqlite.close());
   sqlite.exec(fs.readFileSync(new URL('../migrations/0037_psychology_photo_copy_cache.sql', import.meta.url), 'utf8'));
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0038_psychology_photo_analysis_slots.sql', import.meta.url), 'utf8'));
   sqlite.exec('CREATE TABLE factory_users(id TEXT PRIMARY KEY, role TEXT, active INTEGER);');
   sqlite.exec(fs.readFileSync(new URL('../migrations/0022_psychology_peer_hits.sql', import.meta.url), 'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0025_psychology_peer_hit_media_type.sql', import.meta.url), 'utf8'));

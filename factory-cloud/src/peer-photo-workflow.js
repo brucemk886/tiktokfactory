@@ -4,6 +4,7 @@ import { createKieClient, KIE_GROK_CHAT_MODEL } from './kie.js';
 import { searchStockPhotos } from './photo-publishing.js';
 import { preparePeerPhotosForKie, deletePeerPhotoSources, loadPeerPhotoChatImages } from './peer-photo-convert.js';
 import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCopySnapshot, buildCachedCopyRewritePrompt, parseCachedCopyRewrite } from './peer-photo-copy-cache.js';
+import { claimAnalysisSlot, releaseAnalysisSlot } from './photo-analysis-gate.js';
 import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
 
@@ -33,7 +34,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   let total = 0;
   let state = {};
   let kiePhotos = { urls: [], keys: [] };
-  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, primaryFailed: !deepseek };
+  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, primaryFailed: !deepseek, holder: id };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
@@ -88,7 +89,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       let rewritten = null, validationError = '';
       for (let attempt = 0; attempt < 3; attempt++) {
         const prompt = buildCachedCopyRewritePrompt(sourceCopy) + (validationError ? `\nCorrect this validation error: ${validationError}` : '');
-        const text = await lookAtImages(kie, deepseek, step, `rewrite-copy-v1-${attempt}`, prompt, [], chat);
+        const text = await lookAtImages(env, kie, deepseek, step, `rewrite-copy-v1-${attempt}`, prompt, [], chat);
         try { rewritten = parseCachedCopyRewrite(text, sourceCopy); break; } catch(error) { validationError = error.message; }
       }
       if (!rewritten) throw new Error(validationError);
@@ -250,7 +251,7 @@ function progress(total, completed) {
 }
 
 async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat) {
-  return lookAtImages(kie, deepseek, step, name, prompt, await loadPeerPhotoChatImages(env, kiePhotos), chat);
+  return lookAtImages(env, kie, deepseek, step, name, prompt, await loadPeerPhotoChatImages(env, kiePhotos), chat);
 }
 
 // A burst of photo jobs can leave DeepSeek queued past the client timeout, and
@@ -258,12 +259,26 @@ async function photoChat(env, kie, deepseek, step, name, prompt, kiePhotos, chat
 // abandoned after three consecutive failures.
 const PRIMARY_ATTEMPTS = 3;
 const PRIMARY_RETRY_DELAYS = ['10 seconds', '30 seconds'];
+const SLOT_WAIT_ATTEMPTS = 60;
 
-async function lookAtImages(kie, deepseek, step, name, prompt, imageUrls, chat) {
+// A job never fails because the queue stayed full; after the last wait it goes
+// ahead, since blocking a whole batch is worse than briefly exceeding the cap.
+async function waitForAnalysisSlot(env, step, name, holder) {
+  for (let wait = 0; wait < SLOT_WAIT_ATTEMPTS; wait += 1) {
+    if (await step.do(`${name}-${wait}`, READ, () => claimAnalysisSlot(env.DB, holder))) return true;
+    await step.sleep(`${name}-wait-${wait}`, '15 seconds');
+  }
+  return false;
+}
+
+async function lookAtImages(env, kie, deepseek, step, name, prompt, imageUrls, chat) {
   let primaryError = '';
   if (!chat.primaryFailed && deepseek) {
     for (let attempt = 0; attempt < PRIMARY_ATTEMPTS; attempt += 1) {
+      // The slot is released between attempts so a backing-off job never holds
+      // the queue while it waits.
       if (attempt) await step.sleep(`${name}-${PHOTO_STORY_MODEL}-wait-${attempt}`, PRIMARY_RETRY_DELAYS[attempt - 1]);
+      await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat.holder);
       try {
         const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
           () => deepseek.createChat(prompt, { imageUrls }));
@@ -271,6 +286,8 @@ async function lookAtImages(kie, deepseek, step, name, prompt, imageUrls, chat) 
         return text;
       } catch (error) {
         primaryError = String(error?.message || error).slice(0, 500);
+      } finally {
+        await step.do(`${name}-slot-release-${attempt}`, READ, () => releaseAnalysisSlot(env.DB, chat.holder));
       }
     }
     chat.primaryFailed = true;
