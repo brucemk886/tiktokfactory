@@ -1,29 +1,27 @@
 const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let copyPage=1,originalPage=1,originalItems=[],requestVersion=0;
 async function api(path,method='GET',body){const r=await fetch('/api/psychology-creative'+path,{method,cache:'no-store',...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw new Error(d.error||'请求失败');return d;}
-const statuses={queued:'待提取',running:'提取中',done:'已提取',failed:'提取失败'};
 const typeLabel=t=>t==='video'?'视频':'图文';
 function exportRow(r){const c=r.content||{};return {sourceKey:r.sourceKey,mediaType:r.media_type,title:c.title||r.title,caption:c.caption||'',pages:(c.pages||[]).map(p=>p.text),transcript:c.transcript||'',onScreenText:c.onScreenText||[],sourceUrl:r.source_url};}
 function fullText(r){const c=r.content||{};return ['标题：'+(c.title||r.title),'发布文案：'+(c.caption||'（无）'),r.media_type==='photo'?(c.pages||[]).map(p=>'第'+p.index+'张\n'+(p.text||'（无可识别文字）')).join('\n\n'):'口播：\n'+(c.transcript||'（无可识别口播）')+'\n\n画面文字：\n'+((c.onScreenText||[]).join('\n')||'（无可识别文字）'),c.notes?'识别说明：'+c.notes:''].filter(Boolean).join('\n\n');}
 async function loadOriginals(){
  const version=++requestVersion;$('#originalMessage').textContent='正在读取…';
  try{
-  const params=new URLSearchParams({page:originalPage,mediaType:$('#originalMedia').value,status:$('#originalStatus').value,q:$('#originalQuery').value});
+  const params=new URLSearchParams({page:originalPage,mediaType:$('#originalMedia').value,q:$('#originalQuery').value});
   const r=await fetch('/api/psychology-copy-library?'+params,{cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error||'读取失败');if(version!==requestVersion)return;
   originalPage=d.page;originalItems=d.items;
-  const counts={video:0,photo:0,done:0,failed:0};for(const row of d.counts){counts[row.media_type]+=row.n;if(row.status==='done'||row.status==='failed')counts[row.status]+=row.n;}
-  $('#originalSummary').textContent=`视频 ${counts.video} 篇 · 图文 ${counts.photo} 篇 · 已提取 ${counts.done} 篇 · 提取失败 ${counts.failed} 篇`;
-  $('#originalList').innerHTML=d.items.map(r=>`<article class="copy-record"><div class="copy-record-head"><span class="copy-kind">${typeLabel(r.media_type)}</span><strong>${esc(r.title||'未命名内容')}</strong><span>${statuses[r.status]||esc(r.status)}</span></div><p><a href="${esc(r.source_url)}" target="_blank" rel="noopener noreferrer">打开原帖</a></p>${r.error?`<p class="copy-error">${esc(r.error)}</p>`:''}${r.status==='done'?`<details><summary>查看完整文案</summary><pre>${esc(fullText(r))}</pre><button type="button" data-copy="${r.id}">复制全文</button></details>`:`<p>${r.status==='queued'?'已入库，等待后台提取。':r.status==='running'?'正在提取原文，稍后刷新查看。':'原帖信息已保留，可重试提取。'}</p>`}${r.status==='failed'?`<button type="button" data-retry="${r.id}">重试提取</button>`:''}</article>`).join('')||'<p>没有符合条件的文案。导入同行爆款后会自动进入这里。</p>';
+  const counts={video:0,photo:0};for(const row of d.counts)counts[row.media_type]+=row.n;
+  $('#originalSummary').textContent=`已提取视频 ${counts.video} 篇 · 图文 ${counts.photo} 篇`;
+  $('#originalList').innerHTML=d.items.map(r=>`<article class="copy-record"><div class="copy-record-head"><span class="copy-kind">${typeLabel(r.media_type)}</span><strong>${esc(r.title||'未命名内容')}</strong></div><p><a href="${esc(r.source_url)}" target="_blank" rel="noopener noreferrer">打开原帖</a></p><details><summary>查看完整文案</summary><pre>${esc(fullText(r))}</pre><button type="button" data-copy="${r.id}">复制全文</button></details></article>`).join('')||'<p>暂无已提取的同行原文。后续新导入的同行爆款提取完成后会自动显示在这里。</p>';
   $('#originalPage').textContent=`共 ${d.total} 篇 · 第 ${d.page} / ${d.pages} 页 · 每页20篇`;$('#originalPrev').disabled=d.page<=1;$('#originalNext').disabled=d.page>=d.pages;$('#originalMessage').textContent='';
  }catch(e){if(version===requestVersion)$('#originalMessage').textContent=e.message;}
 }
 $('#originalSearchForm').onsubmit=e=>{e.preventDefault();originalPage=1;loadOriginals();};
-$('#originalMedia').onchange=$('#originalStatus').onchange=()=>{originalPage=1;loadOriginals();};
+$('#originalMedia').onchange=()=>{originalPage=1;loadOriginals();};
 $('#originalRefresh').onclick=loadOriginals;$('#originalPrev').onclick=()=>{originalPage--;loadOriginals();};$('#originalNext').onclick=()=>{originalPage++;loadOriginals();};
 $('#exportOriginalPage').onclick=()=>download('psychology-originals-'+originalPage+'.json',originalItems.filter(r=>r.status==='done').map(exportRow));
 $('#originalList').onclick=async e=>{const b=e.target.closest('button');if(!b)return;b.disabled=true;try{
  if(b.dataset.copy){await navigator.clipboard.writeText(fullText(originalItems.find(r=>r.id===b.dataset.copy)));$('#originalMessage').textContent='已复制完整文案。';}
- if(b.dataset.retry){const r=await fetch('/api/psychology-copy-library/'+b.dataset.retry+'/retry',{method:'POST'});if(!r.ok)throw new Error((await r.json()).error);await loadOriginals();}
  }catch(error){$('#originalMessage').textContent=error.message;}finally{b.disabled=false;}};
 function tab(reviewed){$('#originals').hidden=reviewed;$('#copies').hidden=!reviewed;$('#originalTab').setAttribute('aria-pressed',String(!reviewed));$('#reviewedTab').setAttribute('aria-pressed',String(reviewed));}
 $('#originalTab').onclick=()=>tab(false);$('#reviewedTab').onclick=()=>tab(true);tab(location.hash==='#copies');

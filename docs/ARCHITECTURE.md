@@ -88,10 +88,10 @@ Signal Desk accepts structurally valid hub batches before contacting TikTok for 
 
 ## Psychology copy library
 
-- `psychology_copy_library` is the durable original-copy inbox. The peer-hit store mirrors accepted imports and type corrections in the same D1 batch, and migration 0043 backfills existing hits. Metric refreshes update source metadata without replacing completed text; media-type corrections invalidate the old extraction with an incremented attempt.
-- A minute dispatcher claims at most three running rows across both media types. Stable workflow IDs and attempt-guarded writes reconcile uncertain dispatch outcomes without duplicating paid extraction. One malformed source is failed independently and cannot block later rows. A two-hour timeout requires an explicit retry instead of blindly repeating paid analysis.
+- `psychology_copy_library` is the durable original-copy inbox. The peer-hit store mirrors accepted imports and type corrections in the same D1 batch. Migration 0043 recorded existing hits; migration 0044 sets their unfinished rows to `auto_extract=0`, leaving historical processing to Grokbot. Metric refreshes update source metadata without replacing completed text; media-type corrections invalidate the old extraction with an incremented attempt.
+- A minute dispatcher claims at most three `auto_extract=1` rows across both media types. Stable workflow IDs and attempt-guarded writes reconcile uncertain dispatch outcomes without duplicating paid extraction. One malformed source is failed independently and cannot block later rows. A two-hour timeout requires an explicit retry instead of blindly repeating paid analysis.
 - Photo extraction shares `psychology_photo_copy_cache`, records indexed original text for up to six source images and exits before rewriting, stock search, rendering or publication. Video extraction temporarily downloads the source to private R2, stores Kie usage in the existing analysis table, extracts the original-language transcript plus ordered on-screen text, and deletes the temporary source in all outcomes.
-- `/psychology-copy-library` keeps original peer text separate from owner-scoped reviewed photo variants. Original rows can be filtered by video/photo and extraction state, searched, viewed in full, exported or retried. Extraction never creates a publish batch.
+- `/psychology-copy-library` keeps original peer text separate from owner-scoped reviewed photo variants. The original tab returns completed rows only; they can be filtered by video/photo, searched, viewed in full and exported. Extraction never creates a publish batch.
 
 
 ## Psychology per-video automatic replies

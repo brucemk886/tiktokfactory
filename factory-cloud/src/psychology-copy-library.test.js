@@ -26,14 +26,26 @@ test('imports atomically create typed originals, metric refreshes preserve extra
  await assert.rejects(importPsychologyPeerHits(f.db,[post(124),{videoUrl:'invalid'}],'admin'));assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_library').get().n,1);
 });
 
-test('library pagination, type/status/search and permissions do not label captions as extracted content',async t=>{
+test('library only returns completed originals with type/search pagination and permissions',async t=>{
  const f=await setup(t);await importPsychologyPeerHits(f.db,Array.from({length:25},(_,n)=>post(100+n,n%2?'photo':'video',{caption:'caption only'})),'admin');
- const all=await (await api(f)).json();assert.equal(all.items.length,20);assert.equal(all.total,25);assert.ok(all.items.every(r=>r.status==='queued'&&!r.content.transcript&&!r.content.pages));
+ const pending=await (await api(f)).json();assert.equal(pending.total,0);assert.deepEqual(pending.items,[]);
+ f.sqlite.prepare("UPDATE psychology_copy_library SET status='done',content_json=?").run(JSON.stringify({mediaType:'video',title:'Extracted',caption:'caption',pages:[],transcript:'Original words',onScreenText:[]}));
+ const all=await (await api(f)).json();assert.equal(all.items.length,20);assert.equal(all.total,25);assert.ok(all.items.every(r=>r.status==='done'&&r.content.transcript==='Original words'));
  assert.equal((await (await api(f,'?page=2')).json()).items.length,5);
- const photos=await (await api(f,'?mediaType=photo&status=queued')).json();assert.equal(photos.total,12);assert.ok(photos.items.every(r=>r.media_type==='photo'));
+ const photos=await (await api(f,'?mediaType=photo')).json();assert.equal(photos.total,12);assert.ok(photos.items.every(r=>r.media_type==='photo'));
  assert.equal((await (await api(f,'?q=missing')).json()).total,0);
  assert.equal((await api(f,'','GET',{...actor,role:'operator'})).status,403);
  assert.equal((await api(f,'','GET',{...actor,sidebarModules:[]})).status,403);
+});
+
+test('historical rows opted out of extraction stay hidden and cannot occupy the future-import lane',async t=>{
+ const f=await setup(t);await importPsychologyPeerHits(f.db,post(801),'admin');
+ f.sqlite.prepare("UPDATE psychology_copy_library SET auto_extract=0,status='running'").run();
+ await importPsychologyPeerHits(f.db,post(802),'admin');await dispatchCopyExtractions(f.env);
+ assert.equal(f.created.length,1);
+ const old=f.sqlite.prepare("SELECT status FROM psychology_copy_library WHERE source_url LIKE '%/801'").get();assert.equal(old.status,'running');
+ const active=f.sqlite.prepare("SELECT source_url FROM psychology_copy_library WHERE status='running' AND auto_extract=1").get();assert.match(active.source_url,/\/802$/);
+ assert.equal((await (await api(f)).json()).total,0);
 });
 
 test('cache and supplied original text avoid providers; three durable workers cap dispatch across concurrent ticks',async t=>{
@@ -90,6 +102,7 @@ test('video parser rejects malformed extraction and separate pages keep reviewed
  const read=name=>fs.readFileSync(new URL('../../public/'+name,import.meta.url),'utf8');
  assert.doesNotMatch(read('psychology-creative.html'),/id="copies"|copyFile|importForm/);
  assert.match(read('psychology-copy-library.html'),/originalMedia/);assert.match(read('psychology-copy-library.html'),/id="copies"/);
+ assert.doesNotMatch(read('psychology-copy-library.html'),/originalStatus|待提取|提取失败/);
  assert.match(read('psychology-auto-publish.html'),/psychology-copy-library#copies/);
 });
 
