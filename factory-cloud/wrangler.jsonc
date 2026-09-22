@@ -2,6 +2,7 @@
   "name": "tiktok-factory",
   "main": "src/entry.js",
   "workflows": [
+    {"binding":"PSYCHOLOGY_COPY_WORKFLOW","name":"factory-psychology-copy","class_name":"PsychologyCopyWorkflow"},
     {
       "binding": "PEER_PHOTO_WORKFLOW",
       "name": "factory-peer-photo",

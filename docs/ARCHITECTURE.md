@@ -86,6 +86,13 @@ Signal Desk accepts structurally valid hub batches before contacting TikTok for 
 - `peer-photo-workflow.js` first reads/claims the shared entry using an atomic expiring lease. Other workflows sleep durably and reuse the completed extraction; failures release the lease, expired leases can be reclaimed, and malformed cache records are invalidated with compare-and-clear.
 - First extraction always disables rewriting. Only after the validated original is saved does a requested rewrite run using text alone. Template overrides and generated backgrounds remain per-job. Temporary source R2 images are deleted after extraction and again on cleanup if needed. Historical jobs are not inferred into the cache because prior results may have been rewritten.
 
+## Psychology copy library
+
+- `psychology_copy_library` is the durable original-copy inbox. Database triggers mirror every peer-hit insert/update inside the same transaction, and migration 0043 backfills existing hits. Metric refreshes update source metadata without replacing completed text; media-type corrections invalidate the old extraction with an incremented attempt.
+- A minute dispatcher claims at most three running rows across both media types. Stable workflow IDs and attempt-guarded writes reconcile uncertain dispatch outcomes without duplicating paid extraction. One malformed source is failed independently and cannot block later rows. A two-hour timeout requires an explicit retry instead of blindly repeating paid analysis.
+- Photo extraction shares `psychology_photo_copy_cache`, records indexed original text for up to six source images and exits before rewriting, stock search, rendering or publication. Video extraction temporarily downloads the source to private R2, stores Kie usage in the existing analysis table, extracts the original-language transcript plus ordered on-screen text, and deletes the temporary source in all outcomes.
+- `/psychology-copy-library` keeps original peer text separate from owner-scoped reviewed photo variants. Original rows can be filtered by video/photo and extraction state, searched, viewed in full, exported or retried. Extraction never creates a publish batch.
+
 
 ## Psychology per-video automatic replies
 

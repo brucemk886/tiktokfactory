@@ -6,7 +6,7 @@
 </head><body class="work-page official-data-page psychology-module psychology-auto-page">
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
-<header class="page-head"><div><h1>心理学自动发布</h1><p class="page-lead">从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-publish-designs">图文样式与文案</a><a href="/psychology-ops-report?tab=content">内容效果</a><a href="/psychology-publish-sources">发布对标</a><a href="/official-publish-records">官方发布记录</a></nav></header>
+<header class="page-head"><div><h1>心理学自动发布</h1><p class="page-lead">从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-ops-report?tab=content">内容效果</a><a href="/psychology-publish-sources">发布对标</a><a href="/official-publish-records">官方发布记录</a></nav></header>
 <div class="task-layout">
 <form id="batchForm" class="task-create-panel">
 <section class="panel auto-section"><div class="section-title"><h2>内容与选题</h2><nav class="page-links" aria-label="选题来源"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-peer-hits">同行爆款</a></nav></div>
@@ -24,7 +24,7 @@
 <label class="field wide"><span>选题关键词 <em>可选</em></span><input id="query" maxlength="100" placeholder="筛选爆款标题或同行账号，不填则从全部对应类型抽取"></label>
 <details class="photo-extras wide" id="photoOptions" hidden><summary><span>图文可选设置</span><small>文案来源、20套样式、配乐</small></summary>
 <div class="photo-extras-body">
-<label class="field">图文文案来源<select id="photoSource"><option value="peer">同行爆款（提取原帖）</option><option value="copy-bank">已审核文案库（Grokbot 导入）</option></select><small><a href="/psychology-publish-designs#copies">导入 / 管理文案</a></small></label>
+<label class="field">图文文案来源<select id="photoSource"><option value="peer">同行爆款（提取原帖）</option><option value="copy-bank">已审核文案库（Grokbot 导入）</option></select><small><a href="/psychology-copy-library#copies">导入 / 管理文案</a></small></label>
 <label class="field">视觉样式分配<select id="styleMode"><option value="random" selected>每条随机抽取 · 全部20套</option><option value="fixed">本批统一指定样式</option><option value="legacy">沿用原帖页面类型</option></select><small>每条图文独立抽取一种样式，同一账号可使用不同样式。任务创建后固定，重试不重抽，可在运营报表比较效果。</small></label>
 <label class="field">指定样式<select id="styleId"></select><small><a href="/psychology-publish-designs">查看20套首图与内页</a></small></label>
 <div class="field" id="rewriteCopyField"><span>改写文案</span><label class="auto-check"><input id="rewriteCopy" type="checkbox"> 改写标题、文案和叠字</label><small>默认不勾选，保留原帖文字测矩阵效果。勾选后才走模型改写。</small></div>

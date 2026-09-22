@@ -122,6 +122,7 @@ export function shouldRedirectLocalPageToFactory(pathname) {
       "/psychology-ops-report",
       "/psychology-publish",
       "/psychology-publish-designs",
+      "/psychology-copy-library",
       "/psychology-publish-sources",
       "/psychology-comments",
       "/reddit",

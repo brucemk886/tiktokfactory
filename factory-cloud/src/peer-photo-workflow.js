@@ -17,7 +17,10 @@ const PHOTO_STORY_MODEL = DEEPSEEK_PHOTO_MODEL;
 
 export async function runPeerPhotoWorkflow(env, event, step) {
   const id = event.payload.jobId;
-  const row = await step.do('load-source', READ, () => env.DB.prepare("SELECT * FROM factory_jobs WHERE id = ? AND type = 'psychology-photo-story'").bind(id).first());
+  const extraction = event.payload.copyExtraction === true;
+  const row = await step.do('load-source', READ, () => extraction
+    ? env.DB.prepare('SELECT id,owner AS created_by,payload_json,status,created_at FROM psychology_copy_library WHERE id=? AND attempt=?').bind(event.payload.copyId,event.payload.attempt).first()
+    : env.DB.prepare("SELECT * FROM factory_jobs WHERE id = ? AND type = 'psychology-photo-story'").bind(id).first());
   if (!row || ['done', 'failed', 'canceled', 'cancelled'].includes(row.status)) return { skipped: true };
   const payload = JSON.parse(row.payload_json);
   const deepseek = String(env.DEEPSEEK_API_KEY || '').trim()
@@ -37,6 +40,14 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
+    if(extraction){
+      const content=plan?{mediaType:'photo',title:payload.peerSource?.title||payload.topic||'',caption:payload.script||'',
+        pages:plan.scenes.map((s,i)=>({index:i+1,text:s.originalText})),transcript:'',onScreenText:[]}:null;
+      const changed=await step.do(name,READ,()=>env.DB.prepare("UPDATE psychology_copy_library SET status=?,content_json=COALESCE(?,content_json),error=?,provider=?,updated_at=?,completed_at=? WHERE id=? AND attempt=? AND status='running'")
+        .bind(status,content?JSON.stringify(content):null,error,copyCache==='hit'?'source-copy-cache':chat.model,at,['done','failed'].includes(status)?at:0,event.payload.copyId,event.payload.attempt).run());
+      if(!changed.meta?.changes)throw new Error('文案提取任务已变更。');
+      return;
+    }
     await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_jobs SET status=?, percent=?, message=?, result_json=?, error=?, worker_id='cloud-photo', updated_at=?, completed_at=? WHERE id=?`)
       .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: chat.model, sourceCopyCache: copyCache, progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
   }
@@ -90,6 +101,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     total = sourceCopy.pageCount;
     plan = structuredClone(sourceCopy.plan);
     if (copyCache === 'hit') chat.model = 'source-copy-cache';
+    if(extraction){await save('copy-completed','done',100,'原帖逐页文案已提取。');return {copyId:event.payload.copyId,count:total};}
     if (payload.rewriteCopy === true) {
       await save('rewriting-copy', 'running', 10, '已读取原始逐页文案，正在进行纯文字改写…', '', {productionStage:'script'});
       let rewritten = null, validationError = '';

@@ -1,0 +1,82 @@
+import {json,errorJson} from './http.js';
+import {peerProductionPayload} from '../../scripts/psychology-peer-production.js';
+import {photoCopyKey,validatePhotoCopy} from './peer-photo-copy-cache.js';
+
+const BASE='/api/psychology-copy-library';
+export const COPY_EXTRACTION_CONCURRENCY=3;
+const safeParse=value=>{try{return JSON.parse(value||'{}');}catch{return {};}};
+export function originalPhotoContent(copy){
+ return {mediaType:'photo',title:copy.sourceTitle,caption:copy.sourceCopy,
+  pages:copy.plan.scenes.map((s,i)=>({index:i+1,text:s.originalText})),transcript:'',onScreenText:[]};
+}
+export function importedCopy(source){
+ const d=source.videoData||{},caption=String(d.copy||d.caption||d.description||source.title||'');
+ if(source.mediaType==='photo'&&Array.isArray(d.pageTexts)&&d.pageTexts.length>0&&d.pageTexts.length<=6&&d.pageTexts.every(t=>typeof t==='string'&&t.length<=10000))
+  return {mediaType:'photo',title:source.title||'',caption,pages:d.pageTexts.map((text,i)=>({index:i+1,text})),transcript:'',onScreenText:[]};
+ if(source.mediaType==='video'&&typeof d.transcript==='string'&&d.transcript.trim()&&d.transcript.length<=12000)
+  return {mediaType:'video',title:source.title||'',caption,pages:[],transcript:d.transcript,
+   onScreenText:Array.isArray(d.onScreenText)?d.onScreenText.filter(t=>typeof t==='string').slice(0,100):[]};
+ return null;
+}
+export async function handlePsychologyCopyLibrary(request,env,url,session){
+ if(!url.pathname.startsWith(BASE))return null;
+ const user=session?.user;
+ if(user?.role!=='admin'||!user.sidebarModules?.includes('psychology-copy-library'))return errorJson('没有文案库权限。',403);
+ if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
+ if(url.pathname===BASE&&request.method==='GET'){
+  const media=url.searchParams.get('mediaType')||'all',status=url.searchParams.get('status')||'all';
+  if(!['all','video','photo'].includes(media)||!['all','queued','running','done','failed'].includes(status))return errorJson('筛选条件无效。',400);
+  const query='%'+String(url.searchParams.get('q')||'').slice(0,200)+'%';
+  const where="(?='all' OR media_type=?) AND (?='all' OR status=?) AND (title LIKE ? OR source_url LIKE ? OR content_json LIKE ?)";
+  const args=[media,media,status,status,query,query,query];
+  const total=Number((await env.DB.prepare('SELECT COUNT(*) n FROM psychology_copy_library WHERE '+where).bind(...args).first()).n);
+  const pages=Math.max(1,Math.ceil(total/20)),page=Math.min(pages,Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)));
+  const items=(await env.DB.prepare('SELECT id,media_type,title,source_url,status,content_json,error,provider,created_at,completed_at FROM psychology_copy_library WHERE '+where+' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()).results;
+  const counts=(await env.DB.prepare('SELECT media_type,status,COUNT(*) n FROM psychology_copy_library GROUP BY media_type,status').all()).results;
+  return json({items:items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)})),total,page,pages,counts});
+ }
+ const match=url.pathname.match(/^\/api\/psychology-copy-library\/(psy-[a-f0-9]{32})\/retry$/);
+ if(match&&request.method==='POST'){
+  const changed=await env.DB.prepare("UPDATE psychology_copy_library SET status='queued',attempt=attempt+1,error='',workflow_id='',payload_json='{}',started_at=0,dispatch_at=0,updated_at=? WHERE id=? AND status='failed'").bind(Date.now(),match[1]).run();
+  return changed.meta?.changes?json({ok:true}):errorJson('仅可重试提取失败的文案。',409);
+ }
+ return errorJson('不支持此请求。',405);
+}
+
+export async function dispatchCopyExtractions(env,now=Date.now()){
+ if(!env.PSYCHOLOGY_COPY_WORKFLOW)return {configured:false};
+ const db=env.DB;
+ // Do not blindly repeat a timed-out paid analysis. Operators can review/retry it.
+ await db.prepare("UPDATE psychology_copy_library SET status='failed',error='文案提取超过2小时，请查看后重试。',updated_at=? WHERE status='running' AND started_at<?").bind(now,now-2*3600000).run();
+ const pending=(await db.prepare("SELECT * FROM psychology_copy_library WHERE status='queued' ORDER BY created_at,id LIMIT 30").all()).results;
+ for(const row of pending){
+  try{
+  const source=safeParse(row.source_json);let content=importedCopy(source),provider='imported-text';
+  if(!content&&row.media_type==='photo'){
+   try{const cached=await db.prepare("SELECT copy_json FROM psychology_photo_copy_cache WHERE owner=? AND source_key=? AND copy_json<>''").bind(row.owner,photoCopyKey(row.source_url)).first();
+    if(cached){content=originalPhotoContent(validatePhotoCopy(JSON.parse(cached.copy_json)));provider='source-copy-cache';}
+   }catch{/* Invalid cache is repaired by the normal extraction path. */}
+  }
+  if(content){await db.prepare("UPDATE psychology_copy_library SET status='done',content_json=?,provider=?,error='',completed_at=?,updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(JSON.stringify(content),provider,now,now,row.id,row.attempt).run();continue;}
+  const actor=await db.prepare("SELECT active,role FROM factory_users WHERE username=?").bind(row.owner).first();
+  if(!actor?.active||actor.role!=='admin'){await db.prepare("UPDATE psychology_copy_library SET status='failed',error='原导入账号已停用或无管理员权限。',updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(now,row.id,row.attempt).run();continue;}
+  const workflowId='copy-'+row.id+'-'+row.attempt;
+  const payload=row.media_type==='photo'?peerProductionPayload(source,'psychology-photo-story',{rewriteCopy:false}):source;
+  await db.prepare("UPDATE psychology_copy_library SET status='running',workflow_id=?,payload_json=?,started_at=?,dispatch_at=0,updated_at=? WHERE id=? AND status='queued' AND attempt=? AND (SELECT COUNT(*) FROM psychology_copy_library WHERE status='running')<?")
+   .bind(workflowId,JSON.stringify(payload),now,now,row.id,row.attempt,COPY_EXTRACTION_CONCURRENCY).run();
+  }catch(error){await db.prepare("UPDATE psychology_copy_library SET status='failed',error=?,updated_at=? WHERE id=? AND attempt=? AND status='queued'").bind(String(error.message||error).slice(0,1000),now,row.id,row.attempt).run();}
+ }
+ const active=(await db.prepare("SELECT id,attempt,workflow_id,dispatch_at FROM psychology_copy_library WHERE status='running' ORDER BY started_at LIMIT ?").bind(COPY_EXTRACTION_CONCURRENCY).all()).results;
+ for(const row of active){
+  if(row.dispatch_at&&now-row.dispatch_at<120000)continue;
+  try{
+   let instance,state;try{instance=await env.PSYCHOLOGY_COPY_WORKFLOW.get(row.workflow_id);state=await instance.status();}catch{instance=null;}
+   if(!instance)await env.PSYCHOLOGY_COPY_WORKFLOW.create({id:row.workflow_id,params:{jobId:row.workflow_id,copyId:row.id,attempt:row.attempt,copyExtraction:true}});
+   else {if(['errored','terminated','complete'].includes(state.status)){
+    await db.prepare("UPDATE psychology_copy_library SET status='failed',error='提取工作流已结束但未返回完整文案，请查看后重试。',updated_at=? WHERE id=? AND attempt=? AND status='running'").bind(now,row.id,row.attempt).run();continue;
+   }}
+   await db.prepare("UPDATE psychology_copy_library SET dispatch_at=?,error='' WHERE id=? AND attempt=? AND status='running'").bind(now,row.id,row.attempt).run();
+  }catch(error){await db.prepare("UPDATE psychology_copy_library SET error=?,updated_at=? WHERE id=? AND attempt=? AND status='running'").bind('等待工作流派发：'+String(error.message||error).slice(0,800),now,row.id,row.attempt).run();}
+ }
+ return {active:active.length};
+}

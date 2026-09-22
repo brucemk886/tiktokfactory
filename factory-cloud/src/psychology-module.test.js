@@ -121,6 +121,8 @@ test("existing sessions get the separated template entries without a database re
   assert.equal(canAccessPath(admin,"/psychology-publish-sources"),true);
   assert.equal(admin.sidebarModules.includes("psychology-publish-sources"),true);
   assert.equal(admin.sidebarModules.includes("psychology-publish-designs"),true);
+  assert.equal(admin.sidebarModules.includes("psychology-copy-library"),true);
+  assert.equal(canAccessPath(admin,"/psychology-copy-library"),true);
   assert.equal(canAccessPath(admin,"/psychology-publish-designs"),true);
   assert.equal(admin.sidebarModules.filter(id=>id==="psychology-collage").length,1);
   const operator = await readUser("operator",["psychology"]);
@@ -130,6 +132,7 @@ test("existing sessions get the separated template entries without a database re
   assert.equal(canAccessPath(operator,"/psychology-photo"),false);
   assert.equal(canAccessPath(operator,"/psychology-publish-sources"),false);
   assert.equal(operator.sidebarModules.includes("psychology-publish-designs"),false);
+  assert.equal(canAccessPath(operator,"/psychology-copy-library"),false);
   assert.equal(canAccessPath(operator,"/psychology-publish-designs"),false);
 });
 

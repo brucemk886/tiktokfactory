@@ -1,3 +1,4 @@
+import {runCopyExtraction} from './psychology-copy-workflow.js';
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { enqueueAutoPhotoRender } from './psychology-auto-publish.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
@@ -23,4 +24,8 @@ export class PsychologyRecreationWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
     return runPsychologyRecreationWorkflow(this.env, event, step);
   }
+}
+
+export class PsychologyCopyWorkflow extends WorkflowEntrypoint {
+  async run(event,step){return runCopyExtraction(this.env,event,step);}
 }
