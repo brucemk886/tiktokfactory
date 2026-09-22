@@ -102,6 +102,8 @@ test('video parser rejects malformed extraction and separate pages keep reviewed
  const read=name=>fs.readFileSync(new URL('../../public/'+name,import.meta.url),'utf8');
  assert.doesNotMatch(read('psychology-creative.html'),/id="copies"|copyFile|importForm/);
  assert.match(read('psychology-copy-library.html'),/originalMedia/);assert.match(read('psychology-copy-library.html'),/id="copies"/);
+ assert.match(read('psychology-copy-library.html'),/id="originalRows"/);assert.match(read('psychology-copy-library.html'),/id="copyPreviewDialog"/);
+ assert.match(read('psychology-copy-library.js'),/data-view-original/);assert.match(read('psychology-copy-library.css'),/copy-table-wrap/);
  assert.doesNotMatch(read('psychology-copy-library.html'),/originalStatus|待提取|提取失败/);
  assert.match(read('psychology-auto-publish.html'),/psychology-copy-library#copies/);
 });

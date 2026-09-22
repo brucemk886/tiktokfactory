@@ -17,7 +17,7 @@ Separate visual styles from copy management and automatically archive original c
 
 - Migration 0043, copy-library API/dispatcher/workflow, workflow binding and minute scheduling.
 - Photo workflow extraction-only adapter.
-- New `/psychology-copy-library` UI, sidebar/permission/page routing, and simplified `/psychology-publish-designs` UI.
+- New `/psychology-copy-library` UI, sidebar/permission/page routing, and simplified `/psychology-publish-designs` UI. Both original and reviewed-copy lists now use the peer-hit table pattern with two-line previews and a shared full-copy dialog; the Grokbot import form is collapsed by default.
 - Focused tests and operator/API documentation.
 
 ## Tests performed
