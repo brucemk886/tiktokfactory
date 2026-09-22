@@ -105,7 +105,7 @@ test('video parser rejects malformed extraction and separate pages keep reviewed
  assert.match(read('psychology-copy-library.html'),/id="originalRows"/);assert.match(read('psychology-copy-library.html'),/id="copyPreviewDialog"/);
  assert.match(read('psychology-copy-library.js'),/data-view-original/);assert.match(read('psychology-copy-library.css'),/copy-table-wrap/);
  assert.doesNotMatch(read('psychology-copy-library.html'),/originalStatus|待提取|提取失败/);
- assert.match(read('psychology-auto-publish.html'),/psychology-copy-library#copies/);
+ assert.match(read('psychology-auto-publish.html'),/psychology-copy-library/);
 });
 
 

@@ -21,21 +21,28 @@ function renderTemplates() {
   if(extras){extras.hidden=state.mediaType!=='photo';extras.open=!extras.hidden;}
 }
 
-function sourceType(){if(state.mediaType==='photo'&&$('#photoSource').value==='copy-bank')return 'copy-bank';return state.mediaType==='video'&&$('#sourceType').value==='topic-bank'?'topic-bank':'peer';}
+function sourceType(){return (state.mediaType==='photo'?$('#photoSource').value:$('#sourceType').value)||'peer';}
 function renderSources(){
   $('#sourceTypeField').hidden=state.mediaType!=='video';
-  if(!state.canUseTopics)$('#sourceType').value='peer';
+  $('#photoSourceField').hidden=state.mediaType!=='photo';
+  if(!state.canUseTopics&&$('#sourceType').value==='topic-bank')$('#sourceType').value='copy-library';
   $('#sourceType option[value="topic-bank"]').disabled=!state.canUseTopics;
-  const bank=sourceType()==='topic-bank',previous=$('#selection').value;
-  const choices=bank?[['random','随机抽取'],['priority','优先级优先'],['recent','最近入库优先'],['least-used','最少使用优先']]:sourceType()==='copy-bank'?[['random','随机抽取'],['recent','最近导入优先']]:[['random','随机抽取'],['popular','播放量优先'],['recent','最近入库优先']];
+  const bank=sourceType()==='topic-bank',fromLibrary=['copy-bank','copy-library'].includes(sourceType()),previous=$('#selection').value;
+  $('#libraryMediaField').hidden=sourceType()!=='copy-library';
+  if(fromLibrary)$('#rewriteCopy').checked=false;
+  $('#rewriteCopy').disabled=fromLibrary;
+  $('#rewriteCopyField').hidden=fromLibrary;
+  const originalPhoto=$('#template option[value="photo-original"]');
+  if(originalPhoto)originalPhoto.disabled=fromLibrary;
+  if(state.mediaType==='photo'&&fromLibrary)$('#template').value='photo-text';
+  const choices=bank?[['random','随机抽取'],['priority','优先级优先'],['recent','最近入库优先'],['least-used','最少使用优先']]:fromLibrary?[['random','随机抽取'],['recent','最近导入优先']]:[['random','随机抽取'],['popular','播放量优先'],['recent','最近入库优先']];
   $('#selection').innerHTML=choices.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('');
   if(choices.some(([v])=>v===previous))$('#selection').value=previous;
   $('#topicBankField').hidden=!bank;
   $('#templateField').hidden=bank;
   const banks=state.templates.video||[];
   $('#topicBank').innerHTML=banks.map((t,index)=>{
-    if(sourceType()==='copy-bank')$('#query').placeholder='筛选文案标题或来源编号';
-  const c=state.topicCounts?.[t.id]||{};
+    const c=state.topicCounts?.[t.id]||{};
     return `<option value="${esc(t.id)}">${String(index+1).padStart(2,'0')} · ${esc(t.label)}题库（已启用 ${c.enabled||0} / 共 ${c.total||0} 题）</option>`;
   }).join('');
   $('#topicBank').value=bank?$('#template').value:'';
@@ -44,14 +51,16 @@ function renderSources(){
   $('#peerReuseField').hidden=bank;
   $('#query').placeholder=bank?'筛选题目、内容或分类，不填则从所选题库抽取':'筛选爆款标题或同行账号';
   if(sourceType()==='copy-bank')$('#query').placeholder='筛选文案标题或来源编号';
+  if(sourceType()==='copy-library')$('#query').placeholder='搜索文案标题、正文或原帖链接';
   const c=state.topicCounts?.[$('#template').value]||{};
   const label=banks.find(t=>t.id===$('#topicBank').value)?.label||'';
-  $('#sourceHint').textContent=sourceType()==='copy-bank'?'从已启用的导入文案库抽取，直接使用分页原文，不额外调用 AI。':bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
+  $('#sourceHint').textContent=sourceType()==='copy-library'?'复用已提取文字（图文 '+(state.libraryCounts?.photo||0)+' 篇 / 视频 '+(state.libraryCounts?.video||0)+' 篇），不重复获取原素材。图文优先按原分页或视频口播生成，最多6页；视频以正文编排模板，最多5000字符。题目揭晓评论仍需选择模板题库。':sourceType()==='copy-bank'?'从已启用的改写版本抽取。图文直接使用已保存分页；视频以版本正文为依据生成。':bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
 }
 $('#sourceType').addEventListener('change',renderSources);
 $('#styleId').innerHTML=VISUAL_STYLES.map(s=>`<option value="${s.id}">${s.label}</option>`).join('');
 $('#styleId').disabled=true;$('#styleMode').onchange=()=>{$('#styleId').disabled=$('#styleMode').value!=='fixed';};
-$('#photoSource').onchange=()=>{if($('#photoSource').value==='copy-bank')$('#rewriteCopy').checked=false;$('#rewriteCopy').disabled=$('#photoSource').value==='copy-bank';renderSources();};
+$('#photoSource').onchange=renderSources;
+$('#libraryMediaType').onchange=renderSources;
 $('#template').addEventListener('change',renderSources);
 $('#topicBank').addEventListener('change',()=>{
   if(state.busy||sourceType()!=='topic-bank')return;
@@ -184,7 +193,7 @@ function renderBatches() {
       ${accounts.length?`<div class="task-groups"><span>TikTok 官方账号</span>${accounts.map(name=>`<b>${esc(name)}</b>`).join('')}</div>`:''}
       <div class="task-progress"><div style="width:${Math.max(0,Math.min(100,percent))}%"></div></div>
       <p>${esc(message)}</p>
-      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
       ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${g.retrying?'自动重试 '+g.retryCount+'/2 · '+(g.retryAt?'等待排队':'执行中'):g.status==='cancelled'?'已删除全部内容':g.status==='submitted'?'已提交':g.status==='submitting'?'提交中':g.status==='failed'?'提交失败':'已就绪 '+n+'/'+g.count}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       ${schedule?`<div class="task-schedule"><strong>具体排期</strong>${schedule}</div>`:''}
       ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}
@@ -223,7 +232,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
-  const body=state.submittedInput||{styleMode:$('#styleMode').value,styleId:$('#styleId').value,allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  const body=state.submittedInput||{styleMode:$('#styleMode').value,styleId:$('#styleId').value,allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   state.submittedInput=body;state.busy=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
   message('正在抽取选题并创建自动发布任务…');
@@ -232,15 +241,15 @@ $('#batchForm').addEventListener('submit',async event=>{
     state.requestId=crypto.randomUUID();state.submittedInput=null;
     message(data.duplicate?'该批次已创建，已恢复任务状态。':'任务已加入队列，每20条素材就绪后整批提交。');
     try {
-      const options=await api('/api/psychology-auto-publish/options');state.topicCounts=options.topicCounts;renderSources();
+      const options=await api('/api/psychology-auto-publish/options');state.topicCounts=options.topicCounts;state.libraryCounts=options.libraryCounts;renderSources();
       await loadBatches();
     } catch(error) { message('批次已创建，刷新状态失败：'+error.message+'。请使用刷新进度查看。',true); }
   } catch(e){message(e.message+'；若是网络错误，直接再次提交会恢复同一批次。',true);}
-  finally{state.busy=false;controls.forEach(n=>n.disabled=false);renderAccountControls();}
+  finally{state.busy=false;controls.forEach(n=>n.disabled=false);renderSources();$('#styleId').disabled=$('#styleMode').value!=='fixed';renderAccountControls();}
 });
 const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
 try {
-  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
+  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
   if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
   renderTemplates();
   await Promise.all([loadAccounts(),loadBatches()]);

@@ -62,7 +62,7 @@ function reviewedFullText(row) {
   return [
     "标题：" + (row.title || "未命名文案"),
     "发布文案：" + (row.caption || "（无）"),
-    row.pages.map((page, index) => "第" + (index + 1) + "页：\n" + page).join("\n\n")
+    row.pages.map((page, index) => "第" + (index + 1) + "段：\n" + page).join("\n\n")
   ].join("\n\n");
 }
 
@@ -252,7 +252,7 @@ $("#copyList").onclick = async event => {
   if (button.dataset.viewReviewed) {
     const row = reviewedItems.find(item => String(item.id) === button.dataset.viewReviewed);
     if (row) openPreview({
-      kind: "图文改写",
+      kind: "文案改写",
       title: row.title,
       meta: `来源 ${row.source_key} · 版本 ${row.external_id} · ${row.pages.length} 页`,
       text: reviewedFullText(row)
@@ -288,7 +288,7 @@ $("#copyPreviewText").onclick = async () => {
   }
 };
 
-$("#variantPages").innerHTML = Array.from({ length: 6 }, (_, i) => '<label>第 ' + (i + 1) + ' 页' + (i ? '（选填）' : '（首图，必填）') + '<textarea data-variant-page maxlength="1500" rows="3" ' + (i ? '' : 'required') + '></textarea></label>').join('');
+$("#variantPages").innerHTML = Array.from({ length: 6 }, (_, i) => '<label>第 ' + (i + 1) + ' 段 / 页' + (i ? '（选填）' : '（首图，必填）') + '<textarea data-variant-page maxlength="1500" rows="3" ' + (i ? '' : 'required') + '></textarea></label>').join('');
 $("#variantForm").onsubmit = async event => {
   event.preventDefault();
   if (!selectedSource || !$("#variantReviewed").checked) return;

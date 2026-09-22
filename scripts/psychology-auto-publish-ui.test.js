@@ -145,7 +145,7 @@ test('peer source, photo mode and missing topic permission hide the bank selecto
  assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#templateField').hidden,false);assert.equal(h.node('#unusedField').hidden,true);
  await h.mediaButtons[0].click();assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#templateField').hidden,true);
  const denied=harness(Promise.resolve([]));await denied.ready;chooseSource(denied,'topic-bank');
- assert.equal(denied.node('#topicBankField').hidden,true);assert.equal(denied.node('#sourceType').value,'peer');
+ assert.equal(denied.node('#topicBankField').hidden,true);assert.equal(denied.node('#sourceType').value,'copy-library');
 });
 
 test('mismatched bank and renderer cannot submit an unintended topic bank',async()=>{
@@ -166,4 +166,21 @@ test('photo UI defaults to random per post and creative page no longer assigns a
  const creative=fs.readFileSync(new URL('../public/psychology-creative.html',import.meta.url),'utf8');
  assert.match(creative,/随机样式测试/);assert.doesNotMatch(creative,/id="bindingForm"|当前账号主样式/);
  assert.match(creative,/psychology-ops-report\?tab=content/);
+});
+
+for(const media of ['photo','video'])for(const source of ['copy-library','copy-bank'])test(media+' submits library source and preserves copy reuse controls after submission: '+source,async()=>{
+ const h=harness(Promise.resolve(grouped),false,{libraryCounts:{photo:8,video:3}});await h.ready;
+ if(media==='photo')await h.mediaButtons[1].click();
+ h.node('#rewriteCopy').checked=true;
+ if(media==='photo'){h.node('#photoSource').value=source;h.node('#photoSource').onchange();}else chooseSource(h,source);
+ h.node('#libraryMediaType').value='video';
+ assert.equal(h.node('#libraryMediaField').hidden,source!=='copy-library');
+ assert.equal(h.node('#rewriteCopy').checked,false);assert.equal(h.node('#rewriteCopy').disabled,true);
+ assert.doesNotMatch(h.node('#selection').innerHTML,/popular/);
+ h.node('#selectVisibleAccounts').listeners.click();h.node('#count').value='4';
+ await h.node('#batchForm').listeners.submit({preventDefault(){}});
+ const body=h.requests.find(r=>r.method==='POST'&&r.path==='/api/psychology-auto-publish').body;
+ assert.equal(body.mediaType,media);assert.equal(body.sourceType,source);assert.equal(body.rewriteCopy,false);
+ assert.equal(body.libraryMediaType,source==='copy-library'?'video':undefined);
+ assert.equal(h.node('#rewriteCopy').disabled,true);
 });

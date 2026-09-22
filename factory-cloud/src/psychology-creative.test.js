@@ -28,7 +28,7 @@ test('random batches ignore account/group bindings, freeze styles and replay wit
  const f=await fixture(t);await api(f,'/copies','POST',Array.from({length:20},(_,n)=>variant(n)));
  await api(f,'/bindings','PUT',{kind:'group',targetId:'g',styles:['night']});
  await api(f,'/bindings','PUT',{kind:'account',targetId:'a',styles:['letter']});
- let draws=0;t.mock.method(Math,'random',()=>draws++/20);
+ let draws=0,forbidRedraw=false;t.mock.method(Math,'random',()=>{if(forbidRedraw)throw new Error('Must not redraw a saved job');return draws++/20;});
  // Old open pages send group mode; creation must also use the new random policy.
  const body=input({mediaType:'photo',template:'photo-text',sourceType:'copy-bank',count:20,connectionIds:['a'],styleMode:'group'});
  assert.equal((await f.call('POST',body)).status,202);
@@ -39,7 +39,7 @@ test('random batches ignore account/group bindings, freeze styles and replay wit
  assert.deepEqual(f.sqlite.prepare('SELECT style_id FROM psychology_creative_snapshots ORDER BY item_id').all().map(r=>r.style_id),styles);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_peer_account_usage').get().n,20);
  await api(f,'/bindings','PUT',{kind:'account',targetId:'a',styles:['memo']});
- t.mock.method(Math,'random',()=>{throw new Error('Must not redraw a saved job');});
+ forbidRedraw=true;
  assert.equal((await f.call('POST',body)).status,200);
  const step={async do(name,config,fn){return (typeof config==='function'?config:fn)();},async sleep(){throw new Error('Unexpected wait');}};
  await runPeerPhotoWorkflow(f.env,{payload:{jobId:jobs[0].id}},step);
@@ -152,4 +152,51 @@ test('source-bound imports reject mismatched sources and incomplete originals be
  await assert.rejects(api(f,'/copies?sourceId=missing','POST',[variant(1)]),e=>e.statusCode===404);
  f.sqlite.exec("UPDATE psychology_copy_library SET status='queued'");
  await assert.rejects(api(f,path,'GET'),e=>e.statusCode===404);
+});
+
+
+for(const origin of ['photo','video'])for(const output of ['photo','video'])test('completed '+origin+' copy feeds '+output+' production with frozen text and no repeated media extraction',async t=>{
+ const f=await fixture(t),source=f.sqlite.prepare('SELECT id FROM psychology_copy_library WHERE media_type=? LIMIT 1').get(origin);
+ const content={title:'Unique source idea',caption:'Source caption',pages:origin==='photo'?[{index:1,text:'First original page'},{index:2,text:'Second original page'}]:[],transcript:origin==='video'?'Original spoken words about asking for connection.':'',onScreenText:origin==='video'?['Visible original words']:[]};
+ f.sqlite.prepare("UPDATE psychology_copy_library SET status='done',title='Unique source idea',content_json=? WHERE id=?").run(JSON.stringify(content),source.id);
+ const body=input({sourceType:'copy-library',selection:'recent',libraryMediaType:origin,mediaType:output,template:output==='photo'?'photo-text':'psychology-collage',count:1,connectionIds:['a'],query:'Unique source idea'});
+ if(output==='photo')delete f.env.KIE_API_KEY;
+ assert.equal((await f.call('POST',body)).status,202);
+ const job=f.sqlite.prepare('SELECT * FROM factory_jobs').get(),payload=JSON.parse(job.payload_json);
+ assert.deepEqual(payload.copySource.content,content);assert.equal(payload.copySource.mediaType,origin);
+ if(output==='video'){assert.match(payload.script,origin==='photo'?/First original page\n\nSecond original page/:/Original spoken words/);assert.equal(payload.copySource.kind,'original');}
+ else {
+  assert.ok(payload.copyVariant.scenes.length);t.mock.method(globalThis,'fetch',async()=>{throw new Error('Stored copy must not fetch media or call AI');});
+  const step={async do(name,config,fn){return (typeof config==='function'?config:fn)();},async sleep(){throw new Error('Unexpected wait');}};
+  await runPeerPhotoWorkflow(f.env,{payload:{jobId:job.id}},step);
+  const result=JSON.parse(f.sqlite.prepare('SELECT result_json FROM factory_jobs WHERE id=?').get(job.id).result_json);assert.equal(result.sourceCopyCache,'imported');
+  assert.deepEqual(result.results.map(r=>r.originalText),payload.copyVariant.scenes.map(r=>r.originalText));
+ }
+ f.sqlite.prepare("UPDATE psychology_copy_library SET content_json='{}' WHERE id=?").run(source.id);
+ assert.equal((await f.call('POST',body)).status,200);assert.deepEqual(JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(job.id).payload_json).copySource.content,content);
+ assert.equal(f.requests.length,0);
+});
+
+test('video production draws only enabled own rewrites and freezes the exact selected version',async t=>{
+ const f=await fixture(t);await api(f,'/copies','POST',[variant(1),variant(2)]);
+ const disabled=f.sqlite.prepare("SELECT id FROM psychology_copy_variants WHERE external_id='v2'").get();await api(f,'/copies/'+disabled.id,'PATCH',{enabled:false});
+ await api(f,'/copies','POST',[variant(3)],{...user,username:'other'});
+ const body=input({sourceType:'copy-bank',mediaType:'video',template:'psychology-collage',count:1,connectionIds:['a']});
+ assert.equal((await f.call('POST',body)).status,202);const saved=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json);
+ assert.equal(saved.copySource.variantId,'v1');assert.equal(saved.script,'Cover 1\n\nA body paragraph 1');assert.equal(f.requests.length,0);
+ await assert.rejects(f.call('POST',{...body,requestId:crypto.randomUUID()}),/未使用爆款不足/);
+});
+
+test('original selection excludes unfinished rows, respects origin filter, and rejects oversized text before creating jobs',async t=>{
+ const f=await fixture(t),source=f.sqlite.prepare("SELECT id FROM psychology_copy_library WHERE media_type='video' LIMIT 1").get();
+ const body=input({sourceType:'copy-library',selection:'recent',libraryMediaType:'video',mediaType:'video',template:'psychology-collage',count:1,connectionIds:['a']});
+ await assert.rejects(f.call('POST',body),/只有 0 条/);
+ f.sqlite.prepare("UPDATE psychology_copy_library SET status='done',content_json=? WHERE id=?").run(JSON.stringify({title:'Long',transcript:'x'.repeat(5001)}),source.id);
+ await assert.rejects(f.call('POST',body),/5000字符/);
+ await assert.rejects(f.call('POST',{...body,libraryMediaType:'photo'}),/只有 0 条/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);
+ const {textPages}=await import('./psychology-copy-source.js');const text='Every word stays. '.repeat(110);
+ assert.equal(textPages([text]).join(' ').replace(/\s+/g,' ').trim(),text.trim());
+ assert.throws(()=>textPages(['x'.repeat(9001)]),/超过6页/);
 });

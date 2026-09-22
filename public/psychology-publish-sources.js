@@ -19,7 +19,7 @@
       const items = data.items || [];
       $("#rows").innerHTML = items.length ? items.map((item) => `<tr>
         <td>${esc(item.batchName || "未命名批次")}<small>${esc(stamp(item.createdAt))}</small></td>
-        <td>${item.mediaType === "photo" ? "图文" : "视频"}<small>${item.sourceType === "topic-bank" ? "模板题库" : "同行爆款"}</small></td>
+        <td>${item.mediaType === "photo" ? "图文" : "视频"}<small>${item.sourceType === "copy-library" ? "文案库原文" : item.sourceType === "copy-bank" ? "文案库改写" : item.sourceType === "topic-bank" ? "模板题库" : "同行爆款"}</small></td>
         <td>${item.accountUsername ? `<span class="handle">@${esc(item.accountUsername)}</span>` : "—"}</td>
         <td>${link(item.publishedUrl, item.publishedId ? `打开我方帖子` : "打开我方帖子")}</td>
         <td>${item.peerUrl ? link(item.peerUrl, "打开爆款原帖") : (item.sourceType === "topic-bank" ? "题库题目，无爆款链接" : "—")}</td>
