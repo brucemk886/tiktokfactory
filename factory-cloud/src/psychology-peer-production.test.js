@@ -234,7 +234,7 @@ test('photo story falls back to Grok 4.6 only after three DeepSeek V4.1 Flash fa
   assert.equal(f.sleeps.filter(name => name.includes('deepseek-flash-wait')).length, 2);
   assert.equal(grokBodies[0].model, 'grok-4-6');
   assert.equal(grokBodies[0].stream, false); // the endpoint streams unless told not to
-  assert.equal(grokBodies[0].reasoning.effort, 'medium');
+  assert.equal(grokBodies[0].reasoning.effort, 'low');
   const parts = grokBodies[0].input[0].content;
   assert.equal(parts[0].type, 'input_text');
   assert.equal(parts[1].type, 'input_image');

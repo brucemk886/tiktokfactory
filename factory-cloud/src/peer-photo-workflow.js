@@ -11,8 +11,6 @@ import { withProductionPatch, compactProduction } from '../../scripts/production
 // The budget stays above the DeepSeek client timeout so an unanswered request
 // reports the abort instead of an opaque step timeout.
 const SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '3 minutes' };
-// Grok reasons over every page before answering: six images measured ~114s.
-const FALLBACK_SUBMIT = { retries: { limit: 0, delay: '1 second' }, timeout: '6 minutes' };
 const READ = { retries: { limit: 3, delay: '5 seconds', backoff: 'exponential' }, timeout: '2 minutes' };
 const CONVERT = { retries: { limit: 1, delay: '3 seconds' }, timeout: '3 minutes' };
 const PHOTO_STORY_MODEL = DEEPSEEK_PHOTO_MODEL;
@@ -278,8 +276,10 @@ async function lookAtImages(kie, deepseek, step, name, prompt, imageUrls, chat) 
     chat.primaryFailed = true;
   }
   try {
+    // Higher reasoning efforts spend most of their output tokens thinking and
+    // run six-image jobs into Kie's own gateway timeout around 130 seconds.
     const text = await paidCall(step, `${name}-${PHOTO_STORY_FALLBACK_MODEL}`,
-      () => kie.createGrokChat(prompt, { reasoningEffort: 'medium', imageUrls }), FALLBACK_SUBMIT);
+      () => kie.createGrokChat(prompt, { reasoningEffort: 'low', imageUrls }));
     chat.model = PHOTO_STORY_FALLBACK_MODEL;
     chat.primaryFailed = true;
     return text;
