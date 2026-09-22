@@ -16,3 +16,6 @@ See docs/psychology-photo-creative.md. New creative handler/migration/tests, sha
 
 # Deployment and next step
 Feature commit dbb57b8 was pushed to main and deployed through npm run deploy; version 5e9673c9-03a6-4057-b301-e71f32a96da1. Hosted checks confirmed all twenty previews, authorized group/account assignments, copy-library empty state, automatic-publish photo controls, historical content joins and per-account interaction/watch metrics. Browser sessions closed. No live publishing jobs, account bindings or content imports were created during testing. Operators choose pools and import reviewed copies for future batches.
+
+## Sidebar entry follow-up
+User requested a visible psychology sidebar link. Added 图文样式与文案 immediately after 心理学自动发布; existing administrator sessions inherit the link through publishing access without a database rewrite. Operator access remains excluded. Changed sidebar.js/auth.js and extended existing session-permission regression assertions.

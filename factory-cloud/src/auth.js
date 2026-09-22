@@ -396,6 +396,7 @@ function withOpsReportModules(value, role) {
     insertModuleAfter(modules, "psychology-narrative", "psychology-photo");
     insertModuleAfter(modules, "psychology-photo", "psychology-topic-bank");
     insertModuleAfter(modules, "psychology-publish", "psychology-comments");
+    insertModuleAfter(modules, "psychology-publish", "psychology-publish-designs");
     insertModuleAfter(modules, "schulte", "quiz");
     insertModuleAfter(modules, "podcast", "ai");
     const geelarkIds = ["operator-third-party", "geelark-profiles", "geelark-tasks", "geelark-novel-effects", "analytics", "stats", "analytics-settings"];

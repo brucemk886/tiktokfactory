@@ -120,6 +120,8 @@ test("existing sessions get the separated template entries without a database re
   for (const path of ["/psychology","/psychology-collage","/psychology-target-2","/psychology-narrative","/psychology-photo"]) assert.equal(canAccessPath(admin,path),true);
   assert.equal(canAccessPath(admin,"/psychology-publish-sources"),true);
   assert.equal(admin.sidebarModules.includes("psychology-publish-sources"),true);
+  assert.equal(admin.sidebarModules.includes("psychology-publish-designs"),true);
+  assert.equal(canAccessPath(admin,"/psychology-publish-designs"),true);
   assert.equal(admin.sidebarModules.filter(id=>id==="psychology-collage").length,1);
   const operator = await readUser("operator",["psychology"]);
   assert.equal(canAccessPath(operator,"/psychology"),true);
@@ -127,6 +129,8 @@ test("existing sessions get the separated template entries without a database re
   assert.equal(canAccessPath(operator,"/psychology-target-2"),false);
   assert.equal(canAccessPath(operator,"/psychology-photo"),false);
   assert.equal(canAccessPath(operator,"/psychology-publish-sources"),false);
+  assert.equal(operator.sidebarModules.includes("psychology-publish-designs"),false);
+  assert.equal(canAccessPath(operator,"/psychology-publish-designs"),false);
 });
 
 test("admins can hide GeeLark backup without the session rewriting it back", async () => {
