@@ -16,13 +16,8 @@
   <main class="official-data-shell auto-shell">
     <header class="page-head">
       <div><h1>文案库</h1><p class="page-lead">心理学内容底库：图文与视频提取后统一沉淀文案，积累选题与改写版本，复用于后续图文、视频生产。</p></div>
-      <nav class="page-links"><a href="/psychology-peer-hits">同行爆款</a><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-publish">自动发布</a></nav>
+      <nav class="page-links"><a href="/psychology-peer-hits">同行爆款</a><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-publish">自动发布</a><button id="bulkImportButton" type="button" aria-haspopup="dialog" aria-controls="rewriteDialog">批量导入</button></nav>
     </header>
-
-    <nav class="copy-tabs" aria-label="文案类型">
-      <button id="originalTab" type="button" aria-pressed="true">爆款文案</button>
-      <button id="reviewedTab" type="button">批量导入 / 全部改写</button>
-    </nav>
 
     <section id="originals" class="copy-panel">
       <div class="copy-section-head"><div><h2>爆款文案</h2><p>只展示已提取完成的爆款文案。点击每篇文案的“改写详情”，查看与管理它的多个改写版本。</p></div></div>
@@ -61,7 +56,7 @@
           </form>
         </div>
       </details>
-      <details class="copy-import-panel">
+      <details id="bulkImportPanel" class="copy-import-panel">
         <summary>导入 Grokbot 文案</summary>
         <div class="copy-import-body">
           <p>从改写详情导入时自动关联当前爆款文案；跨文案批量导入请保留导出的 sourceKey。不同版本使用不同 externalId；pages 第一项为首图，每篇 1–6 页，每次最多 100 篇。请审核后再导入，导入即启用。</p>

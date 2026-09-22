@@ -163,6 +163,7 @@ function openRewrites(source = null) {
   $("#variantStatus").textContent = "";
   $("#variantForm").reset();
   $("#manualVariantPanel").open = false;
+  $("#bulkImportPanel").open = !source;
   $("#manualVariantPanel").hidden = !source;
   $("#rewriteTitle").textContent = source ? "改写详情" : "批量导入 / 全部改写";
   $("#rewriteContext").textContent = source ? typeLabel(source.media_type) + "爆款 · " + (source.content?.title || source.title) : "全部改写版本（含历史导入）。按来源编号关联的版本也会显示在对应爆款文案下。";
@@ -177,8 +178,7 @@ function openRewrites(source = null) {
   $("#rewriteDialog").showModal();
   loadCopies().catch(error => $("#copyStatus").textContent = error.message);
 }
-$("#originalTab").onclick = () => $("#originals").scrollIntoView({ behavior: "smooth" });
-$("#reviewedTab").onclick = () => openRewrites();
+$("#bulkImportButton").onclick = () => openRewrites();
 $("#closeRewrites").onclick = () => $("#rewriteDialog").close();
 $("#rewriteDialog").addEventListener("close", () => { variantRequestVersion++; });
 if (location.hash === "#copies") openRewrites();
