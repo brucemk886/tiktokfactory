@@ -1,9 +1,11 @@
+import { renderStyledCard } from "./psychology-styled-card.js";
 import { cardCanvasSize, wrapLines, wrapOverlayLines, planCenteredBlock, parseEmphasisRuns } from "./psychology-text-card.js";
 
 const COVER_BG = "#111111";
 const COVER_INK = "#f4f1ea";
 
-export function renderTextCard(slide, aspectRatio) {
+export function renderTextCard(slide, aspectRatio, styleId = '') {
+  if(styleId)return renderStyledCard(slide,aspectRatio,styleId);
   return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio) : renderContentCard(slide, aspectRatio);
 }
 

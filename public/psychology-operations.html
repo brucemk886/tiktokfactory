@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 运营报表</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260918-1"></head>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260918-1"></head>
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
-<header class="page-head"><div><h1>运营报表</h1><p class="page-lead">复盘运营趋势、账号表现和自动发布批次，找到下一步的改进方向。</p></div><nav class="page-links"><a href="/psychology-effects">数据概览</a></nav></header>
+<header class="page-head"><div><h1>运营报表</h1><p class="page-lead">复盘运营趋势、账号表现和自动发布批次，找到下一步的改进方向。</p></div><nav class="page-links"><a href="/psychology-publish-designs">图文样式与文案</a><a href="/psychology-effects">数据概览</a></nav></header>
 <form id="filters" class="panel ops-filters">
 <label>统计周期<select id="period"><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
 <label id="fromLabel" hidden>开始日期<input id="from" type="date"></label><label id="toLabel" hidden>结束日期<input id="to" type="date"></label>
@@ -16,7 +16,8 @@
 <div class="segmented ops-tabs" role="tablist" aria-label="运营分析">
 <button type="button" role="tab" id="trendTab" data-tab="trend" aria-controls="trend" aria-selected="true">运营趋势</button>
 <button type="button" role="tab" id="accountsTab" data-tab="accounts" aria-controls="accounts" aria-selected="false" tabindex="-1">账号分析</button>
-<button type="button" role="tab" id="batchesTab" data-tab="batches" aria-controls="batches" aria-selected="false" tabindex="-1">批次复盘</button></div>
+<button type="button" role="tab" id="batchesTab" data-tab="batches" aria-controls="batches" aria-selected="false" tabindex="-1">批次复盘</button><button type="button" role="tab" id="contentTab" data-tab="content" aria-controls="content" aria-selected="false" tabindex="-1">文案 / 样式对比</button></div>
+<section id="content" class="panel data-section" role="tabpanel" aria-labelledby="contentTab" hidden><h2>图文内容效果对比</h2><p>按自动发布批次创建时间筛选。相同文案按标题、发布文案和逐页文字匹配；同一来源可以包含多个改写版本。指标是已同步的当前累计值，不代表样式导致了流量差异。</p><div class="content-controls"><label>对比维度<select id="contentMode"><option value="copy">相同文案 · 跨账号</option><option value="source">同一来源 · 不同改写版本</option><option value="style">视觉样式</option></select></label><label>搜索<input id="contentSearch" type="search" placeholder="文案 / @账号 / 版本编号"></label><label><input id="contentMature" type="checkbox" checked>只用满24小时作品计算均播与高播率</label></div><p id="contentCoverage"></p><div id="contentTable" class="table-wrap"></div><div id="contentPager" class="ops-pager"></div><div id="contentBreakdown"></div><div id="contentDetailPager" class="ops-pager"></div></section>
 <section id="trend" class="panel data-section" role="tabpanel" aria-labelledby="trendTab">
 <div class="section-title"><div><p>DAILY TREND</p><h2>作品表现趋势</h2></div><label>查看指标 <select id="trendMetric"><option value="views">作品累计播放</option><option value="count">发布作品数</option><option value="successRate">发布成功率</option><option value="highRate">高播率（满24小时）</option></select></label></div>
 <p class="section-hint">横轴为作品发布日期。播放量会随已发布作品的后续表现持续更新。</p><div id="trendChart" class="ops-chart"></div>
@@ -32,4 +33,4 @@
 <div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div>
 </section></div>
 <dialog id="videoDialog"><div class="ops-dialog-head"><h2 id="dialogTitle">账号作品</h2><button id="closeDialog" type="button" class="table-action">关闭</button></div><p class="section-hint">未满24小时的作品标为“观察中”，不参与高播率和播放中位数计算。</p><div id="dialogTable" class="table-wrap"></div><div id="videoPager" class="ops-pager"></div></dialog>
-</main><script src="/access.js"></script><script src="/psychology-operations.js?v=20260918-1"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260922-2"></script></body></html>

@@ -1,9 +1,10 @@
+import { VISUAL_STYLES } from '../public/psychology-visual-styles.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 
-const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8');
+const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 function harness(accountsPromise, failed=false, options={}) {
   const nodes=new Map();
   function node(selector) {
@@ -14,7 +15,7 @@ function harness(accountsPromise, failed=false, options={}) {
   let accounts=accountsPromise;
   const batch={createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:{batches:[batch]}};}});
+  const context=vm.createContext({VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:{batches:[batch]}};}});
   const ready=vm.runInContext('(async()=>{'+source+'})()',context);
   return {node,ready,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
 }

@@ -6,7 +6,7 @@ import http from 'node:http';
 import puppeteer from 'puppeteer-core';
 
 export async function openCardRenderer(root) {
-  const allowed = new Set(['psychology-card-renderer.js','psychology-text-card.js']);
+  const allowed = new Set(['psychology-card-renderer.js','psychology-text-card.js','psychology-styled-card.js','psychology-visual-styles.js']);
   const server = http.createServer((req, res) => {
     const name = new URL(req.url, 'http://localhost').pathname.slice(1);
     if (!name) { res.setHeader('Content-Type','text/html'); return res.end('<!doctype html><html><body></body></html>'); }
@@ -29,8 +29,8 @@ export async function openCardRenderer(root) {
       window.cards = await import('/psychology-text-card.js');
     });
     return {
-      async render(source, index, template, imageData = '') {
-        return page.evaluate(renderAutomationCard, { source, index, template, imageData });
+      async render(source, index, template, imageData = '', styleId = '') {
+        return page.evaluate(renderAutomationCard, { source, index, template, imageData, styleId });
       },
       async close() { await browser.close(); await new Promise(resolve => server.close(resolve)); },
     };
@@ -77,7 +77,7 @@ export async function runAutoPhotoJob({ root, workDir, payload, patchJob }) {
         if (!response.ok) throw new Error('素材底图读取失败：' + response.status);
         imageData = 'data:' + response.headers.get('content-type') + ';base64,' + Buffer.from(await response.arrayBuffer()).toString('base64');
       }
-      const dataUrl = await renderer.render(source,index,payload.psychologyAutomation.template,imageData);
+      const dataUrl = await renderer.render(source,index,payload.psychologyAutomation.template,imageData,payload.psychologyAutomation.styleId||'');
       await call(api + '/upload', {index,dataUrl});
       patchJob({status:'running',percent:Math.round(20+65*(index+1)/payload.pages.length),message:`已上传 ${index+1}/${payload.pages.length} 张图片`});
     }

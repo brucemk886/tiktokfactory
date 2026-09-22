@@ -1,3 +1,4 @@
+import { styleById } from '../public/psychology-visual-styles.js';
 export const AUTO_TEMPLATES = Object.freeze({
   video: [
     { id: 'psychology', label: '四图测试' },
@@ -6,7 +7,7 @@ export const AUTO_TEMPLATES = Object.freeze({
   ],
   photo: [
     { id: 'photo-original', label: '跟随原帖 · 文案卡片 / 素材底图' },
-    { id: 'photo-text', label: '文案卡片 · 深色封面 + 浅色内容' },
+    { id: 'photo-text', label: '文案卡片 · 可选20套视觉样式' },
   ],
 });
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
@@ -29,7 +30,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if (validateSchedule && last * 1000 > now + 14 * 86400000) fail('整批排期需在未来 14 天内。');
   if (!/^[0-9a-f-]{36}$/i.test(String(input.requestId || ''))) fail('提交编号无效，请刷新页面。');
   const sourceType = input.sourceType || 'peer';
-  if (!['peer','topic-bank'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
+  if (!['peer','topic-bank','copy-bank'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video') || (sourceType === 'copy-bank' && mediaType !== 'photo')) fail('题库仅支持 1、2、3 号视频模板。');
   const onlyUnused = sourceType === 'topic-bank' && input.onlyUnused !== false;
   const selection = input.selection || 'random';
   if (!(sourceType === 'topic-bank' ? ['random','priority','recent','least-used'] : ['random','popular','recent']).includes(selection)) fail('选题抽取方式无效。');
@@ -37,7 +38,10 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
     ? [...new Set((Array.isArray(input.musicIds) ? input.musicIds : []).map(id => String(id).trim()).filter(Boolean))]
     : [];
   if (musicIds.length > 100 || musicIds.some(id => !/^\d{1,30}$/.test(id))) fail('配乐池最多 100 个纯数字音乐 ID。');
-  return { allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  const styleMode=mediaType==='photo'?String(input.styleMode||'legacy'):'legacy',styleId=String(input.styleId||'classic');
+  if(!['legacy','fixed','group'].includes(styleMode)||!styleById(styleId))fail('图文视觉样式配置无效。');
+  if(sourceType==='copy-bank'&&input.rewriteCopy===true)fail('导入文案不再实时改写。');
+  return { styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {

@@ -73,7 +73,7 @@ export async function runCloudPhoto(env, job, deps={}) {
     const renderer=await (deps.openRenderer || openCloudCardRenderer)(env,sources);
     let images;
     try {
-      images=await renderer.renderBatch(pending.map(({source,index})=>({source,index,template:payload.psychologyAutomation.template,imageData:backgrounds.get(index)||''})));
+      images=await renderer.renderBatch(pending.map(({source,index})=>({source,index,styleId:payload.psychologyAutomation.styleId||'',template:payload.psychologyAutomation.template,imageData:backgrounds.get(index)||''})));
     } finally { browserMs=await renderer.close();backgrounds.clear(); }
     if(images.length!==pending.length)throw new Error('云端图片生成不完整。');
     // Pages go up a few at a time. Chrome is already closed, so the hub round

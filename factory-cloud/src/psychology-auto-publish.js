@@ -1,3 +1,6 @@
+import { photoCopyKey } from './peer-photo-copy-cache.js';
+import { chooseVisualStyle } from '../../public/psychology-visual-styles.js';
+import { variantPlan,copyIdentity } from './psychology-creative.js';
 import { commentTemplate, freezeComment, insertScheduledComment } from './psychology-comments.js';
 import { PSYCHOLOGY_GROUP_SIZE, dispatchPublishGroup } from './psychology-publish-groups.js';
 import { toPublicUser } from './auth.js';
@@ -337,7 +340,10 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
   let sources;
   if (config.sourceType === 'topic-bank') sources = await selectTopicSources(env.DB, config);
-  else {
+  else if(config.sourceType==='copy-bank'){
+    const rows=await env.DB.prepare('SELECT * FROM psychology_copy_variants WHERE owner=? AND enabled=1 AND (title LIKE ? OR source_key LIKE ?) ORDER BY '+(config.selection==='random'?'RANDOM()':'created_at DESC')+' LIMIT 1000').bind(user.username,'%'+config.query+'%','%'+config.query+'%').all();
+    sources=rows.results.map(r=>({id:r.id,title:r.title,videoUrl:'',copyVariant:variantPlan(r),sourceKey:r.source_key,variantId:r.external_id}));
+  } else {
   const order = "(SELECT COUNT(*) FROM psychology_publish_items u WHERE u.source_id=psychology_peer_hits.id) ASC," + { random: 'RANDOM()', popular: 'play_count DESC,id DESC', recent: 'created_at DESC,id DESC' }[config.selection];
   const rows = await env.DB.prepare(`SELECT * FROM psychology_peer_hits WHERE media_type=?
     AND (COALESCE(title,'')<>'' OR COALESCE(video_data_json,'{}')<>'{}')
@@ -347,7 +353,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   sources = rows.results.map(psychologyPeerHitFromRow);
   }
   let selected = assignments(config, sources);
-  if(config.sourceType==='peer'&&!config.allowPeerReuse){
+  if(config.sourceType!=='topic-bank'&&!config.allowPeerReuse){
     const used=await env.DB.prepare('SELECT source_id,connection_id FROM psychology_peer_account_usage WHERE connection_id IN (SELECT value FROM json_each(?)) AND source_id IN (SELECT value FROM json_each(?))')
       .bind(JSON.stringify(config.connectionIds),JSON.stringify(sources.map(s=>s.id))).all();
     const pairs=new Set(used.results.map(r=>r.connection_id+':'+r.source_id)),chosen=new Set();
@@ -358,6 +364,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   const commentSetting = config.mediaType==='video' ? await commentTemplate(env.DB,config.template) : {enabled:0};
   if(commentSetting.enabled && commentSetting.auto_reply_enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list')))fail('自动回复需要目标账号授予评论读取权限，请重新授权。',403);
   if(commentSetting.enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list.manage')))fail('定时评论需要目标账号授予评论管理权限，请重新授权。',403);
+  const bindings=config.mediaType==='photo'?(await env.DB.prepare('SELECT * FROM psychology_style_bindings WHERE owner=?').bind(user.username).all()).results:[];
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];
@@ -375,17 +382,20 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const account = scoped.accounts.find(a => String(a.connectionId || a.id) === entry.connectionId) || {};
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
       username: String(account.username || '').trim().replace(/^@/, '') };
-    const item = { account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const item = { styleId:config.mediaType==='photo'?chooseVisualStyle(account,bindings,config.styleMode,config.styleId):'',account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
-      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
+      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
     const comment=freezeComment(entry.source,config,commentSetting);
     if(comment){
       payload.publish.videoDesc=[payload.publish.videoDesc.slice(0,Math.max(0,2199-comment.caption.length)),comment.caption].filter(Boolean).join('\n');
       statements.push(insertScheduledComment(env.DB,item,entry.source,comment,user.username,stamp));
     }
-    if(config.sourceType==='peer')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.id,entry.connectionId,id));
+    if(config.mediaType==='photo'){
+      statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id) VALUES(?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId));
+    }
+    if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
@@ -429,6 +439,8 @@ export async function enqueueAutoPhotoRender(env, sourceId) {
   if (!payload.psychologyAutomation || row.status !== 'done') return { skipped: true };
   const result = JSON.parse(row.result_json || '{}');
   if (!Array.isArray(result.results) || !result.results.length) fail('图文没有生成完整页面。');
+  const identity=await copyIdentity(result.plan||{});
+  await env.DB.prepare('UPDATE psychology_creative_snapshots SET copy_hash=?,copy_json=? WHERE item_id=?').bind(identity.hash,JSON.stringify(identity.copy),sourceId).run();
   const id = sourceId + '-render';
   const renderPayload = {
     module: 'psychology', photoAutomation: true, cloudPhotoRender: payload.psychologyAutomation.cloudPhotoRender === true, sourceJobId: sourceId, peerSource: payload.peerSource,

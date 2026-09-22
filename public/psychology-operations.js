@@ -1,10 +1,11 @@
+import { renderContentPerformance } from './psychology-content-performance.js';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = value => value === null || value === undefined ? "—" : Number(value).toLocaleString("zh-CN",{maximumFractionDigits:1});
 const pct = value => value === null || value === undefined ? "—" : (value*100).toFixed(1)+"%";
 const time = value => new Date(value).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false});
 const params = new URLSearchParams(location.search);
-const state = { data:null,tab:["trend","accounts","batches"].includes(params.get("tab"))?params.get("tab"):"trend",accountPage:1,batchPage:1,videoPage:1,selectedAccount:"",request:0 };
+const state = { data:null,tab:["trend","accounts","batches","content"].includes(params.get("tab"))?params.get("tab"):"trend",accountPage:1,batchPage:1,videoPage:1,selectedAccount:"",request:0 };
 for(const key of ["period","media","group","from","to"]) if(params.has(key) && key!=="group") $("#"+key).value=params.get(key);
 if(!$("#period").value)$("#period").value="7d";
 if(!$("#media").value)$("#media").value="all";
@@ -51,7 +52,7 @@ function render(){
   $("#metrics").innerHTML=cards.map(([label,value,previous,format,note])=>'<div class="metric"><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+(value!==null&&previous!==null?" · "+(value>=previous?"+":"")+(format===pct?((value-previous)*100).toFixed(1)+" 个百分点":fmt(value-previous)):"")+'<br>'+esc(note)+'</small></div>').join("");
   $("#coverage").textContent=data.coverage;
   $("#unknown").textContent=(data.unknownMedia||data.unknownRecordMedia)?"有 "+data.unknownMedia+" 条作品、"+data.unknownRecordMedia+" 条发布记录缺少内容类型，仅计入“全部内容”，不猜测为图文或视频。":"";
-  renderTrend();renderAccounts();renderBatches();
+  renderTrend();renderAccounts();renderBatches();renderContentPerformance(data.content);
 }
 function renderTrend(){
   if(!state.data)return;

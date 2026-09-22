@@ -6,7 +6,7 @@
 </head><body class="work-page official-data-page psychology-module psychology-auto-page">
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
-<header class="page-head"><div><h1>心理学自动发布</h1><p class="page-lead">从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-publish-sources">发布对标</a><a href="/official-publish-records">官方发布记录</a></nav></header>
+<header class="page-head"><div><h1>心理学自动发布</h1><p class="page-lead">从模板题库或同行爆款抽取选题，批量生成图文或视频，按账号排期自动发布。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-publish-designs">图文样式与文案</a><a href="/psychology-ops-report?tab=content">内容效果</a><a href="/psychology-publish-sources">发布对标</a><a href="/official-publish-records">官方发布记录</a></nav></header>
 <div class="task-layout">
 <form id="batchForm" class="task-create-panel">
 <section class="panel auto-section"><div class="section-title"><h2>内容与选题</h2><nav class="page-links" aria-label="选题来源"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-peer-hits">同行爆款</a></nav></div>
@@ -22,8 +22,11 @@
 <label class="field" id="peerReuseField"><span>同账号选题</span><select id="allowPeerReuse"><option value="no">避开已使用题目</option><option value="yes">允许重复使用</option></select></label>
 <label class="field"><span>选题抽取方式</span><select id="selection"><option value="random">随机抽取</option><option value="popular">播放量优先</option><option value="recent">最近入库优先</option></select></label>
 <label class="field wide"><span>选题关键词 <em>可选</em></span><input id="query" maxlength="100" placeholder="筛选爆款标题或同行账号，不填则从全部对应类型抽取"></label>
-<details class="photo-extras wide" id="photoOptions" hidden><summary><span>图文可选设置</span><small>改写文案、配乐；默认保留原文 · 自动推荐配乐</small></summary>
+<details class="photo-extras wide" id="photoOptions" hidden><summary><span>图文可选设置</span><small>文案来源、20套样式、配乐</small></summary>
 <div class="photo-extras-body">
+<label class="field">图文文案来源<select id="photoSource"><option value="peer">同行爆款（提取原帖）</option><option value="copy-bank">已审核文案库（Grokbot 导入）</option></select><small><a href="/psychology-publish-designs#copies">导入 / 管理文案</a></small></label>
+<label class="field">视觉样式分配<select id="styleMode"><option value="group">跟随账号 / 分组绑定</option><option value="fixed">本批统一指定样式</option><option value="legacy">沿用原帖页面类型</option></select><small>账号单独设置优先；未配置的分组从20套中为每个账号稳定分配。设置仅影响新任务。</small></label>
+<label class="field">指定样式<select id="styleId"></select><small><a href="/psychology-publish-designs">查看20套首图与内页 / 设置分组</a></small></label>
 <div class="field" id="rewriteCopyField"><span>改写文案</span><label class="auto-check"><input id="rewriteCopy" type="checkbox"> 改写标题、文案和叠字</label><small>默认不勾选，保留原帖文字测矩阵效果。勾选后才走模型改写。</small></div>
 <label class="field" id="musicPoolField"><span>配乐 <em>可选</em></span><textarea id="musicIds" rows="2" placeholder="粘贴中台音乐库的商业音乐 ID，用逗号、空格或换行分隔；留空则由 TikTok 自动推荐配乐"></textarea><small>每条帖子从池子里随机抽一首，重试同一条会复用同一首。池子会保存，下次打开自动带出。</small></label>
 </div></details>

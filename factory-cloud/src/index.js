@@ -1,3 +1,4 @@
+import { handlePsychologyCreative } from './psychology-creative.js';
 import {handlePsychologyAutoReplies,dispatchAutoReplies,consumeAutoReplies} from './psychology-auto-replies.js';
 import { handlePsychologyComments, runScheduledComments } from './psychology-comments.js';
 import { reconcilePsychologyGroups } from './psychology-publish-groups.js';
@@ -54,7 +55,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;

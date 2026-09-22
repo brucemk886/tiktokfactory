@@ -23,7 +23,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   const deepseek = String(env.DEEPSEEK_API_KEY || '').trim()
     ? createDeepSeekClient({ apiKey: env.DEEPSEEK_API_KEY, fetchImpl: env.fetch || fetch })
     : null;
-  const copyKey = photoCopyKey(payload.peerSource?.videoUrl);
+  const copyKey = payload.copyVariant?'':photoCopyKey(payload.peerSource?.videoUrl);
   const copyOwner = String(row.created_by || '');
   let copyCache = 'miss';
   let plan = null;
@@ -43,11 +43,12 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   try {
     // No paid stand-in for the primary model: a missing key stops the job here
     // with a message an operator can act on.
-    if (!deepseek) throw new Error('DeepSeek 密钥未配置或已失效，图文分析已停止。');
+    if (!deepseek && !payload.copyVariant) throw new Error('DeepSeek 密钥未配置或已失效，图文分析已停止。');
     await save('starting', 'running', 3, '正在读取原帖逐页文案缓存…', '', {productionStage:'script'});
-    let sourceCopy = null;
+    let sourceCopy = payload.copyVariant?{pageCount:payload.copyVariant.scenes.length,plan:payload.copyVariant}:null;
+    if(sourceCopy)copyCache='imported';
     let acquired = false;
-    for (let attempt = 0; attempt < 48; attempt++) {
+    for (let attempt = 0; !sourceCopy && attempt < 48; attempt++) {
       const cached = await step.do(`copy-cache-claim-${attempt}`, READ, () => claimPhotoCopy(env.DB, copyOwner, copyKey, id));
       if (cached.copy) { sourceCopy = cached.copy; copyCache = 'hit'; break; }
       if (cached.acquired) { acquired = true; break; }
@@ -100,7 +101,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       if (!rewritten) throw new Error(validationError);
       plan = rewritten;
     }
-    if (payload.psychologyAutomation?.template === 'photo-text') {
+    if (payload.psychologyAutomation?.styleId || payload.psychologyAutomation?.template === 'photo-text') {
       plan.scenes = plan.scenes.map((scene,index) => ({
         ...scene, template:'text', textKind:index === 0 ? 'cover' : 'content',
         title:index === 0 ? [scene.title,scene.subtitle,scene.body].filter(Boolean).join(' ') : scene.title,

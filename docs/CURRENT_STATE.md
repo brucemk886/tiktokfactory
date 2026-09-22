@@ -25,7 +25,7 @@ Updated: 2026-09-22
 
 - Psychology photo recreation caches validated original per-page copy, source image positions/types and background descriptions in D1 (migration 0037), scoped by operator and canonical TikTok post ID/share link. Repeat draws skip TikHub and vision; optional rewriting is text-only and never mutates cached originals. Expiring extraction leases coordinate concurrent draws; transient source images remain temporary and are deleted after extraction. Existing historical jobs are not backfilled.
 
-- Psychology 定时评论 now includes explicit per-video automatic A/B/C/D replies. Topics store separate replyOptions; watch creation freezes answer text, start/end window and reply cap. A dedicated factory-psychology-replies queue (five consumers) pages comments through the hub, deduplicates by account/video/comment and limits each account to one reply attempt per minute. Existing videos are enrolled only through the operator form; unknown outcomes require receipt checks.
+- Psychology automatic A/B/C/D replies use a dedicated queue with five consumers, per-account pacing and receipt recovery. Templates can opt in alongside scheduled reveals; new batches freeze per-question answers and confirmed video IDs enroll automatically. Unknown outcomes require receipt checks.
 
 ## Platform
 
@@ -112,3 +112,5 @@ Updated: 2026-09-22
 - 线上 Signal Desk 的官方日快照只保留 30 天；长期历史以本地 D 盘归档为准。
 
 - Psychology automatic replies can be enabled per scheduled-comment template; future video batches freeze question replies and automatically enroll confirmed video IDs at the planned reveal time. Manual enrollment UI removed; see handoff `2026-09-22-template-linked-auto-replies.md`.
+
+- Psychology photo publishing now offers 20 visual styles with varied covers, administrator-scoped group pools and individual account overrides at `/psychology-publish-designs`. Reviewed Grokbot JSON variants can be imported and used without per-task AI rewriting. Operations report adds exact-copy/source/style comparisons across accounts; new tasks persist creative snapshots and historical unknown styles remain explicit. See `docs/psychology-photo-creative.md`.
