@@ -193,24 +193,20 @@ test('fallback analysis failure keeps the provider error instead of a workflow r
     if (String(url).includes('api.deepseek.com')) {
       return Response.json({ error: { message: 'DeepSeek overloaded' } }, { status: 503 });
     }
-    if (String(url).includes('/grok/v1/responses')) {
-      return Response.json({ error: { message: 'The image url cannot be fetched from factory host' } }, { status: 500 });
-    }
+    if (String(url).includes('/grok/v1/responses')) assert.fail('paid fallback ran after a primary failure');
     return originalFetch(url, init);
   };
-  await assert.rejects(runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step), /cannot be fetched/);
+  await assert.rejects(runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step), /DeepSeek overloaded/);
   const row = f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
   assert.equal(row.status, 'failed');
-  assert.match(row.error, /cannot be fetched from factory host/);
-  assert.match(row.error, /DeepSeek overloaded/); // the primary reason is no longer overwritten
+  assert.match(row.error, /连续 3 次失败/);
+  assert.match(row.error, /DeepSeek overloaded/); // the provider's own reason is kept
   assert.doesNotMatch(row.error, /retry fail/);
 });
 
-test('photo story falls back to Grok 4.6 only after three DeepSeek V4.1 Flash failures', async t => {
+test('three DeepSeek V4.1 Flash failures stop the job instead of paying for Grok', async t => {
   const f = cloudFixture(t);
-  const one = storyPlan(1);
   const chatCalls = [];
-  const grokBodies = [];
   f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Rewrite this psychology thought as fresh copy for one image.',rewriteCopy:true,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
@@ -218,21 +214,33 @@ test('photo story falls back to Grok 4.6 only after three DeepSeek V4.1 Flash fa
       chatCalls.push(String(url));
       return Response.json({ error: { message: 'internal error, please try again later.' } }, { status: 500 });
     }
+    if (String(url).includes('/grok/v1/responses')) assert.fail('paid fallback ran after a primary failure');
+    return originalFetch(url, init);
+  };
+  await assert.rejects(runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step), /连续 3 次失败/);
+  assert.equal(chatCalls.length, 3);
+  assert.equal(f.sleeps.filter(name => name.includes('deepseek-flash-wait')).length, 2);
+  const row = f.sqlite.prepare("SELECT * FROM factory_jobs WHERE id='cloud-test'").get();
+  assert.equal(row.status, 'failed');
+  assert.match(row.error, /internal error, please try again later/);
+});
+
+test('Grok still carries the job when no DeepSeek key is configured', async t => {
+  const f = cloudFixture(t);
+  const one = storyPlan(1);
+  const grokBodies = [];
+  f.env.DEEPSEEK_API_KEY = '';
+  f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Original caption',rewriteCopy:false,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
+  const originalFetch = f.env.fetch;
+  f.env.fetch = async (url, init) => {
     if (String(url).includes('/grok/v1/responses')) {
-      chatCalls.push(String(url));
       grokBodies.push(JSON.parse(init.body));
-      return Response.json({ status: 'completed', output: [
-        { type: 'reasoning', summary: [] },
-        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(one) }] }
-      ] });
+      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(one) }] }] });
     }
     return originalFetch(url, init);
   };
   const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, f.step);
   assert.equal(result.count, 1);
-  assert.equal(chatCalls.filter(url => url.includes('api.deepseek.com')).length, 3);
-  assert.match(chatCalls[3], /\/grok\/v1\/responses/);
-  assert.equal(f.sleeps.filter(name => name.includes('deepseek-flash-wait')).length, 2);
   assert.equal(grokBodies[0].model, 'grok-4-6');
   assert.equal(grokBodies[0].stream, false); // the endpoint streams unless told not to
   assert.equal(grokBodies[0].reasoning.effort, 'low');
@@ -309,26 +317,20 @@ test('the extraction lease is renewed after the slot is won, not before the queu
   assert.ok(slot >= 0 && hold > slot && chat > hold, order.join(',')); // slot, then renew, then spend money
 });
 
-test('a queue that never frees a slot goes to the fallback instead of crowding DeepSeek', async t => {
+test('a queue that never frees a slot fails the job rather than crowding DeepSeek', async t => {
   const f = cloudFixture(t);
-  const one = storyPlan(1);
   f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({topic:'One image',script:'Original caption',rewriteCopy:false,peerSource:{videoUrl:'https://www.tiktok.com/@example/photo/55',imageUrls:[f.imageUrls[0]]}}));
   for (let i = 0; i < ANALYSIS_CONCURRENCY; i++) await claimAnalysisSlot(f.env.DB, 'busy-' + i, 1);
   const originalFetch = f.env.fetch;
   f.env.fetch = async (url, init) => {
     if (String(url).includes('api.deepseek.com')) assert.fail('crowded the primary model past the cap');
-    if (String(url).includes('/grok/v1/responses')) {
-      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(one) }] }] });
-    }
+    if (String(url).includes('/grok/v1/responses')) assert.fail('paid fallback ran for a queueing timeout');
     return originalFetch(url, init);
   };
   // Holders keep renewing, so the queue never opens up for this job.
   const step = { ...f.step, async sleep(name) { f.sleeps.push(name); for (let i = 0; i < ANALYSIS_CONCURRENCY; i++) await claimAnalysisSlot(f.env.DB, 'busy-' + i, 1); } };
-  const result = await runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, step);
-  assert.equal(result.count, 1);
+  await assert.rejects(runPeerPhotoWorkflow(f.env, { payload: { jobId: 'cloud-test' } }, step), /超过 60 分钟/);
   assert.equal(f.sleeps.filter(name => name.includes('slot') && name.includes('wait')).length, 189); // ~60 minutes
-  const saved = JSON.parse(f.sqlite.prepare("SELECT result_json FROM factory_jobs WHERE id='cloud-test'").get().result_json);
-  assert.equal(saved.analysisModel, 'grok-4-6');
 });
 
 test('a DeepSeek V4.1 Flash timeout that clears on retry never reaches the paid fallback', async t => {

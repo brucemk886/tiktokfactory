@@ -36,7 +36,7 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   let kiePhotos = { urls: [], keys: [] };
   // Queue position follows creation order: batch timestamp first, then the
   // item's own id, which already carries its position inside the batch.
-  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, primaryFailed: !deepseek, holder: id, rank: Number(row.created_at) || 0 };
+  const chat = { model: deepseek ? PHOTO_STORY_MODEL : PHOTO_STORY_FALLBACK_MODEL, holder: id, rank: Number(row.created_at) || 0 };
   async function save(name, status, percent, message, error = '', patch = {}) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
@@ -281,46 +281,37 @@ async function waitForAnalysisSlot(env, step, name, chat) {
 }
 
 async function lookAtImages(env, kie, deepseek, step, name, prompt, imageUrls, chat) {
-  let primaryError = '';
-  if (!chat.primaryFailed && deepseek) {
-    for (let attempt = 0; attempt < PRIMARY_ATTEMPTS; attempt += 1) {
-      // The slot is released between attempts so a backing-off job never holds
-      // the queue while it waits.
-      if (attempt) await step.sleep(`${name}-${PHOTO_STORY_MODEL}-wait-${attempt}`, PRIMARY_RETRY_DELAYS[attempt - 1]);
-      if (!await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat)) {
-        // An hour-long queue hands the page to the fallback model rather than
-        // failing the job or crowding the primary one.
-        primaryError = '排队等待模型名额超过 60 分钟。';
-        break;
-      }
-      await chat.onSlot?.(`${name}-${attempt}`);
-      try {
-        const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
-          () => deepseek.createChat(prompt, { imageUrls }));
-        chat.model = PHOTO_STORY_MODEL;
-        return text;
-      } catch (error) {
-        primaryError = String(error?.message || error).slice(0, 500);
-      } finally {
-        await step.do(`${name}-slot-release-${attempt}`, READ, () => releaseAnalysisSlot(env.DB, chat.holder));
-      }
-    }
-    chat.primaryFailed = true;
-  }
-  try {
+  // Grok only covers a missing primary key, never a primary that answered
+  // badly: three failures stop the job instead of spending on the fallback.
+  if (!deepseek) {
     // Higher reasoning efforts spend most of their output tokens thinking and
     // run six-image jobs into Kie's own gateway timeout around 130 seconds.
     const text = await paidCall(step, `${name}-${PHOTO_STORY_FALLBACK_MODEL}`,
       () => kie.createGrokChat(prompt, { reasoningEffort: 'low', imageUrls }));
     chat.model = PHOTO_STORY_FALLBACK_MODEL;
-    chat.primaryFailed = true;
     return text;
-  } catch (error) {
-    // Both reasons are kept; the stored job error used to show only the fallback's.
-    const fallbackError = String(error?.message || error).slice(0, 500);
-    if (!primaryError) throw new Error(fallbackError);
-    throw new Error(`${PHOTO_STORY_MODEL}：${primaryError}；${PHOTO_STORY_FALLBACK_MODEL}：${fallbackError}`);
   }
+  let primaryError = '看图分析失败。';
+  for (let attempt = 0; attempt < PRIMARY_ATTEMPTS; attempt += 1) {
+    // The slot is released between attempts so a backing-off job never holds
+    // the queue while it waits.
+    if (attempt) await step.sleep(`${name}-${PHOTO_STORY_MODEL}-wait-${attempt}`, PRIMARY_RETRY_DELAYS[attempt - 1]);
+    if (!await waitForAnalysisSlot(env, step, `${name}-slot-${attempt}`, chat)) {
+      throw new Error('排队等待模型名额超过 60 分钟，已停止等待；请减少同时创建的批次后重试此任务。');
+    }
+    await chat.onSlot?.(`${name}-${attempt}`);
+    try {
+      const text = await paidCall(step, `${name}-${PHOTO_STORY_MODEL}${attempt ? `-retry-${attempt}` : ''}`,
+        () => deepseek.createChat(prompt, { imageUrls }));
+      chat.model = PHOTO_STORY_MODEL;
+      return text;
+    } catch (error) {
+      primaryError = String(error?.message || error).slice(0, 500);
+    } finally {
+      await step.do(`${name}-slot-release-${attempt}`, READ, () => releaseAnalysisSlot(env.DB, chat.holder));
+    }
+  }
+  throw new Error(`${PHOTO_STORY_MODEL} 连续 ${PRIMARY_ATTEMPTS} 次失败：${primaryError}`);
 }
 
 async function paidCall(step, name, action, config = SUBMIT, fallback = '看图分析失败。') {
