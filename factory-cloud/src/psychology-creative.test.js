@@ -117,3 +117,39 @@ test('new photo submissions default to random while explicit fixed/legacy and vi
  assert.equal(normalizeAutoPublish(input({styleMode:'random'})).styleMode,'legacy');
  assert.throws(()=>normalizeAutoPublish({...photo,styleMode:'unknown'}));
 });
+
+
+test('source details isolate exact originals and owners, paginate versions and allow library-only administrators',async t=>{
+ const f=await fixture(t),actor={...user,sidebarModules:['psychology-copy-library']};
+ f.sqlite.exec("UPDATE psychology_copy_library SET status='done'");
+ const source=f.sqlite.prepare("SELECT id FROM psychology_copy_library WHERE source_url LIKE '%/photo/200'").get();
+ const path='/copies?sourceId='+source.id;
+ const variants=Array.from({length:23},(_,n)=>({...variant(n),sourceKey:undefined}));
+ assert.equal((await (await api(f,path,'POST',variants,actor)).json()).created,23);
+ await api(f,'/copies','POST',[{...variant('other'),sourceKey:'v1:tiktok:2000'}]);
+ await api(f,path,'POST',[{...variant('foreign'),sourceKey:undefined}],{...actor,username:'other'});
+ const first=await (await api(f,path,'GET',undefined,actor)).json();
+ assert.equal(first.total,23);assert.equal(first.items.length,20);assert.ok(first.items.every(r=>r.source_key==='v1:tiktok:200'&&r.owner==='admin'));
+ assert.equal((await (await api(f,path+'&page=2','GET',undefined,actor)).json()).items.length,3);
+ assert.equal((await (await api(f,path+'&q=missing','GET',undefined,actor)).json()).total,0);
+ const disabled=first.items[0];await api(f,'/copies/'+disabled.id,'PATCH',{enabled:false},actor);
+ const {handlePsychologyCopyLibrary}=await import('./psychology-copy-library.js');
+ const url=new URL('https://factory.test/api/psychology-copy-library');
+ const library=await (await handlePsychologyCopyLibrary(new Request(url),f.env,url,{user:actor})).json();
+ const row=library.items.find(r=>r.id===source.id);assert.equal(row.variantCount,23);assert.equal(row.enabledVariantCount,22);
+ assert.equal(library.items.find(r=>r.source_url.endsWith('/201')).variantCount,0);
+ await assert.rejects(api(f,'/copies/'+disabled.id,'PATCH',{enabled:true},{...actor,username:'other'}),e=>e.statusCode===404);
+ assert.equal((await api(f,path,'GET',undefined,{...actor,role:'operator'})).status,403);
+ assert.equal((await api(f,'/bindings','GET',undefined,actor)).status,403);
+ assert.equal(f.requests.length,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);
+});
+
+test('source-bound imports reject mismatched sources and incomplete originals before writing',async t=>{
+ const f=await fixture(t);f.sqlite.exec("UPDATE psychology_copy_library SET status='done'");
+ const source=f.sqlite.prepare('SELECT id FROM psychology_copy_library LIMIT 1').get(),path='/copies?sourceId='+source.id;
+ await assert.rejects(api(f,path,'POST',[{...variant(1),sourceKey:undefined},variant(2)]),/来源与当前爆款文案不一致/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,0);
+ await assert.rejects(api(f,'/copies?sourceId=missing','POST',[variant(1)]),e=>e.statusCode===404);
+ f.sqlite.exec("UPDATE psychology_copy_library SET status='queued'");
+ await assert.rejects(api(f,path,'GET'),e=>e.statusCode===404);
+});

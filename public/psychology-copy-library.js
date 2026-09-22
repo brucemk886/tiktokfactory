@@ -11,6 +11,9 @@ let originalItems = [];
 let reviewedItems = [];
 let requestVersion = 0;
 let previewText = "";
+let selectedSource = null;
+let variantRequestVersion = 0;
+let draftVersionId = crypto.randomUUID();
 
 async function api(path, method = "GET", body) {
   const response = await fetch("/api/psychology-creative" + path, {
@@ -103,11 +106,12 @@ async function loadOriginals() {
         <td class="copy-cell-title copy-cell-text" title="${esc(title)}"><span>${esc(title)}</span></td>
         <td class="copy-cell-caption copy-cell-text" title="${esc(caption)}"><span>${esc(caption)}</span></td>
         <td class="copy-cell-extract copy-cell-text" title="${esc(extracted)}"><span>${esc(extracted)}</span></td>
+        <td><strong>${row.variantCount || 0} 个版本</strong><small class="copy-count-hint">已启用 ${row.enabledVariantCount || 0} 个</small></td>
         <td class="copy-cell-time">${displayTime(row.completed_at)}</td>
         <td class="copy-cell-source"><a href="${esc(row.source_url)}" target="_blank" rel="noopener noreferrer">打开原帖</a></td>
-        <td class="copy-cell-actions"><button type="button" data-view-original="${row.id}">查看</button><button type="button" data-copy-original="${row.id}">复制</button></td>
+        <td class="copy-cell-actions"><button type="button" data-view-original="${row.id}">查看</button><button type="button" data-copy-original="${row.id}">复制</button><button type="button" data-rewrite-original="${row.id}">改写详情</button></td>
       </tr>`;
-    }).join("") : '<tr><td colspan="7">暂无已提取的同行原文。新导入的同行爆款提取完成后会自动显示在这里。</td></tr>';
+    }).join("") : '<tr><td colspan="8">暂无已提取的爆款文案。新导入的同行爆款提取完成后会自动显示在这里。</td></tr>';
     $("#originalPage").textContent = `第 ${data.page} / ${data.pages} 页 · 每页 20 篇`;
     $("#originalPrev").disabled = data.page <= 1;
     $("#originalNext").disabled = data.page >= data.pages;
@@ -126,9 +130,10 @@ $("#exportOriginalPage").onclick = () => download("psychology-originals-" + orig
 $("#originalRows").onclick = async event => {
   const button = event.target.closest("button");
   if (!button) return;
-  const id = button.dataset.viewOriginal || button.dataset.copyOriginal;
+  const id = button.dataset.viewOriginal || button.dataset.copyOriginal || button.dataset.rewriteOriginal;
   const row = originalItems.find(item => item.id === id);
   if (!row) return;
+  if (button.dataset.rewriteOriginal) { openRewrites(row); return; }
   if (button.dataset.viewOriginal) {
     openPreview({
       kind: typeLabel(row.media_type),
@@ -147,15 +152,36 @@ $("#originalRows").onclick = async event => {
   }
 };
 
-function tab(reviewed) {
-  $("#originals").hidden = reviewed;
-  $("#copies").hidden = !reviewed;
-  $("#originalTab").setAttribute("aria-pressed", String(!reviewed));
-  $("#reviewedTab").setAttribute("aria-pressed", String(reviewed));
+function openRewrites(source = null) {
+  selectedSource = source;
+  draftVersionId = crypto.randomUUID();
+  copyPage = 1;
+  $("#copySearch").value = "";
+  $("#copyJson").value = "";
+  $("#copyFile").value = "";
+  $("#copyStatus").textContent = "";
+  $("#variantStatus").textContent = "";
+  $("#variantForm").reset();
+  $("#manualVariantPanel").open = false;
+  $("#manualVariantPanel").hidden = !source;
+  $("#rewriteTitle").textContent = source ? "改写详情" : "批量导入 / 全部改写";
+  $("#rewriteContext").textContent = source ? typeLabel(source.media_type) + "爆款 · " + (source.content?.title || source.title) : "全部改写版本（含历史导入）。按来源编号关联的版本也会显示在对应爆款文案下。";
+  $("#rewriteOriginal").hidden = !source;
+  $("#rewriteOriginal").open = false;
+  $("#rewriteOriginalText").textContent = source ? fullText(source) : "";
+  $("#copyList").innerHTML = '<tr><td colspan="7">正在读取改写版本…</td></tr>';
+  $("#copyPrev").disabled = true;
+  $("#copyNext").disabled = true;
+  $("#copyPage").textContent = "";
+  reviewedItems = [];
+  $("#rewriteDialog").showModal();
+  loadCopies().catch(error => $("#copyStatus").textContent = error.message);
 }
-$("#originalTab").onclick = () => tab(false);
-$("#reviewedTab").onclick = () => tab(true);
-tab(location.hash === "#copies");
+$("#originalTab").onclick = () => $("#originals").scrollIntoView({ behavior: "smooth" });
+$("#reviewedTab").onclick = () => openRewrites();
+$("#closeRewrites").onclick = () => $("#rewriteDialog").close();
+$("#rewriteDialog").addEventListener("close", () => { variantRequestVersion++; });
+if (location.hash === "#copies") openRewrites();
 
 function download(name, data) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
@@ -168,7 +194,7 @@ function download(name, data) {
 
 $("#downloadExample").onclick = () => download("grok-photo-copy-example.json", [{
   externalId: "attachment-001-v1",
-  sourceKey: "attachment-001",
+  sourceKey: selectedSource?.sourceKey || "attachment-001",
   title: "When closeness feels overwhelming",
   caption: "A reflection on asking for space and staying connected.",
   pages: ["When closeness feels overwhelming", "You can need space and still care about someone.", "Try saying: I need a quiet evening. Can we talk tomorrow?"]
@@ -186,10 +212,11 @@ $("#importForm").onsubmit = async event => {
   event.preventDefault();
   event.submitter.disabled = true;
   try {
-    const data = await api("/copies", "POST", JSON.parse($("#copyJson").value));
+    const data = await api("/copies" + (selectedSource ? "?sourceId=" + encodeURIComponent(selectedSource.id) : ""), "POST", JSON.parse($("#copyJson").value));
     $("#copyStatus").textContent = `已导入 ${data.created} 篇，跳过 ${data.duplicates} 篇重复编号。`;
     copyPage = 1;
     await loadCopies();
+    await loadOriginals();
   } catch (error) {
     $("#copyStatus").textContent = error.message;
   } finally {
@@ -198,7 +225,12 @@ $("#importForm").onsubmit = async event => {
 };
 
 async function loadCopies() {
-  const data = await api("/copies?" + new URLSearchParams({ page: copyPage, q: $("#copySearch").value }));
+  const version = ++variantRequestVersion;
+  const params = new URLSearchParams({ page: copyPage, q: $("#copySearch").value });
+  if (selectedSource) params.set("sourceId", selectedSource.id);
+  const data = await api("/copies?" + params);
+  if (version !== variantRequestVersion) return;
+  copyPage = data.page;
   reviewedItems = data.items;
   $("#copyList").innerHTML = data.items.length ? data.items.map(row => `<tr>
     <td><span class="copy-status${row.enabled ? "" : " is-off"}">${row.enabled ? "已启用" : "已停用"}</span></td>
@@ -208,7 +240,7 @@ async function loadCopies() {
     <td class="copy-cell-text" title="${esc(row.external_id)}"><span>${esc(row.external_id)}</span></td>
     <td>${row.pages.length} 页</td>
     <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button></td>
-  </tr>`).join("") : '<tr><td colspan="7">尚无文案。可展开“导入 Grokbot 文案”添加已审核的改写结果。</td></tr>';
+  </tr>`).join("") : '<tr><td colspan="7">暂无改写版本。可新增版本，或展开“导入 Grokbot 文案”导入审核后的结果。</td></tr>';
   $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
   $("#copyPrev").disabled = copyPage === 1;
   $("#copyNext").disabled = copyPage * 20 >= data.total;
@@ -232,14 +264,15 @@ $("#copyList").onclick = async event => {
   try {
     await api("/copies/" + button.dataset.toggleCopy, "PATCH", { enabled: button.dataset.enabled === "1" });
     await loadCopies();
+    await loadOriginals();
   } catch (error) {
     $("#copyStatus").textContent = error.message;
     button.disabled = false;
   }
 };
 $("#copySearchForm").onsubmit = event => { event.preventDefault(); copyPage = 1; loadCopies().catch(error => $("#copyStatus").textContent = error.message); };
-$("#copyPrev").onclick = () => { copyPage--; loadCopies(); };
-$("#copyNext").onclick = () => { copyPage++; loadCopies(); };
+$("#copyPrev").onclick = () => { copyPage--; loadCopies().catch(error => $("#copyStatus").textContent = error.message); };
+$("#copyNext").onclick = () => { copyPage++; loadCopies().catch(error => $("#copyStatus").textContent = error.message); };
 
 $("#closePreview").onclick = () => $("#copyPreviewDialog").close();
 $("#copyPreviewDialog").addEventListener("click", event => {
@@ -255,5 +288,26 @@ $("#copyPreviewText").onclick = async () => {
   }
 };
 
+$("#variantPages").innerHTML = Array.from({ length: 6 }, (_, i) => '<label>第 ' + (i + 1) + ' 页' + (i ? '（选填）' : '（首图，必填）') + '<textarea data-variant-page maxlength="1500" rows="3" ' + (i ? '' : 'required') + '></textarea></label>').join('');
+$("#variantForm").onsubmit = async event => {
+  event.preventDefault();
+  if (!selectedSource || !$("#variantReviewed").checked) return;
+  event.submitter.disabled = true;
+  try {
+    const pages = [...document.querySelectorAll('[data-variant-page]')].map(el => el.value.trim());
+    while (pages.length && !pages.at(-1)) pages.pop();
+    if (pages.some(page => !page)) throw new Error('请按顺序填写页面，中间不能留空。');
+    const data = await api('/copies?sourceId=' + encodeURIComponent(selectedSource.id), 'POST', [{
+      externalId: $("#variantName").value.trim().slice(0, 70) + '-' + draftVersionId,
+      title: $("#variantTitle").value.trim(), caption: $("#variantCaption").value.trim(), pages
+    }]);
+    $("#variantStatus").textContent = '已保存并启用 ' + data.created + ' 个新版本。';
+    $("#variantForm").reset();
+    draftVersionId = crypto.randomUUID();
+    copyPage = 1;
+    await loadCopies();
+    await loadOriginals();
+  } catch (error) { $("#variantStatus").textContent = error.message; }
+  finally { event.submitter.disabled = false; }
+};
 loadOriginals();
-loadCopies().catch(error => $("#copyStatus").textContent = error.message);

@@ -1,4 +1,5 @@
 import { json,readJson,sha256Hex,errorJson } from './http.js';
+import { photoCopyKey } from './peer-photo-copy-cache.js';
 import { loadGroupStore } from './official.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
 import { scopeOfficialAccess } from '../../scripts/official-account-group-store.js';
@@ -17,9 +18,17 @@ export function normalizeVariant(input){
 export function variantPlan(v){return {title:v.title,caption:v.caption,hooks:[],scenes:JSON.parse(v.pages_json).map((text,index)=>({sourceIndex:index+1,template:'text',textKind:index?'content':'cover',originalText:text,title:text,subtitle:'',body:'',text,stockQuery:''}))};}
 export async function handlePsychologyCreative(request,env,url,session){
  if(!url.pathname.startsWith(BASE))return null;
- const user=session?.user;if(!user||user.role!=='admin'||!user.sidebarModules?.includes('psychology-publish'))return errorJson('没有心理学自动发布权限。',403);
+ const user=session?.user;const copyRoute=url.pathname===BASE+'/copies'||url.pathname.startsWith(BASE+'/copies/');
+ if(!user||user.role!=='admin'||!(user.sidebarModules?.includes('psychology-publish')||(copyRoute&&user.sidebarModules?.includes('psychology-copy-library'))))return errorJson('没有心理学自动发布权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
  const db=env.DB,owner=user.username;
+ const sourceId=url.searchParams.get('sourceId');
+ let sourceKey='';
+ if(sourceId&&url.pathname===BASE+'/copies'){
+  const source=await db.prepare("SELECT id,source_url FROM psychology_copy_library WHERE id=? AND status='done'").bind(sourceId).first();
+  if(!source)fail('爆款文案不存在或尚未提取完成。',404);
+  try{sourceKey=photoCopyKey(source.source_url);}catch{sourceKey=source.id;}
+ }
  if(url.pathname===BASE+'/bindings'){
   const scoped=scopeOfficialAccess(await publishAccountDirectory(env),await loadGroupStore(db),user,'psychology');
   const accounts=scoped.accounts.map(a=>({id:String(a.connectionId||a.id),username:a.username||a.displayName||'',groupId:a.groupId||'',groupName:a.groupName||''}));
@@ -37,14 +46,16 @@ export async function handlePsychologyCreative(request,env,url,session){
  }
  if(url.pathname===BASE+'/copies'&&request.method==='GET'){
   const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1))),q='%'+String(url.searchParams.get('q')||'').slice(0,100)+'%';
-  const args=[owner,q,q];const where='owner=? AND (title LIKE ? OR source_key LIKE ?)';
+  const args=[owner,q,q];let where='owner=? AND (title LIKE ? OR source_key LIKE ?)';
+  if(sourceId){where+=' AND source_key=?';args.push(sourceKey);}
   const [rows,total]=await Promise.all([db.prepare('SELECT * FROM psychology_copy_variants WHERE '+where+' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
   return json({items:rows.results.map(r=>({...r,pages:JSON.parse(r.pages_json)})),page,total:total.n});
  }
  if(url.pathname===BASE+'/copies'&&request.method==='POST'){
   const raw=await request.text();if(raw.length>1500000)fail('导入内容过大。');let body;try{body=JSON.parse(raw);}catch{fail('请输入有效 JSON。');}
   const rows=Array.isArray(body)?body:body.items;if(!Array.isArray(rows)||!rows.length||rows.length>100)fail('每次导入1–100条文案。');
-  const normalized=rows.map(normalizeVariant);if(new Set(normalized.map(r=>r.externalId)).size!==rows.length)fail('同次导入的 externalId 不可重复。');
+  if(sourceId&&rows.some(r=>r.sourceKey&&r.sourceKey!==sourceKey))fail('导入版本的来源与当前爆款文案不一致，请核对 sourceKey。');
+  const normalized=rows.map(r=>normalizeVariant(sourceId?{...r,sourceKey}:r));if(new Set(normalized.map(r=>r.externalId)).size!==rows.length)fail('同次导入的 externalId 不可重复。');
   const statements=[];let created=0;
   for(const r of normalized){const id=await sha256Hex(owner+':'+r.externalId),fingerprint=await sha256Hex(JSON.stringify([r.sourceKey,r.title,r.caption,r.pages]));
    const old=await db.prepare('SELECT fingerprint FROM psychology_copy_variants WHERE id=?').bind(id).first();if(old&&old.fingerprint!==fingerprint)fail('文案编号 '+r.externalId+' 已存在且内容不同，请使用新的编号保留版本。',409);

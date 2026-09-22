@@ -20,12 +20,12 @@
     </header>
 
     <nav class="copy-tabs" aria-label="文案类型">
-      <button id="originalTab" type="button" aria-pressed="true">同行原文</button>
-      <button id="reviewedTab" type="button" aria-pressed="false">已审核图文改写</button>
+      <button id="originalTab" type="button" aria-pressed="true">爆款文案</button>
+      <button id="reviewedTab" type="button">批量导入 / 全部改写</button>
     </nav>
 
     <section id="originals" class="copy-panel">
-      <div class="copy-section-head"><div><h2>同行原文</h2><p>这里只展示已提取完成的内容。视频保存口播与画面文字；图文按图片编号保存前 6 张文字。</p></div></div>
+      <div class="copy-section-head"><div><h2>爆款文案</h2><p>只展示已提取完成的爆款文案。点击每篇文案的“改写详情”，查看与管理它的多个改写版本。</p></div></div>
       <form id="originalSearchForm" class="copy-toolbar">
         <label>内容类型<select id="originalMedia"><option value="all">全部</option><option value="video">视频</option><option value="photo">图文</option></select></label>
         <label class="copy-search">搜索<input id="originalQuery" type="search" placeholder="标题、原文或来源链接" /></label>
@@ -34,27 +34,46 @@
       <p id="originalSummary" class="copy-list-status" role="status"></p><p id="originalMessage" class="copy-list-message" role="status"></p>
       <div class="copy-table-wrap">
         <table>
-          <thead><tr><th>类型</th><th>标题</th><th>发布文案</th><th>提取内容</th><th>完成时间</th><th>原帖</th><th>操作</th></tr></thead>
-          <tbody id="originalRows"><tr><td colspan="7">正在读取已提取文案…</td></tr></tbody>
+          <thead><tr><th>类型</th><th>标题</th><th>发布文案</th><th>提取内容</th><th>改写版本</th><th>完成时间</th><th>原帖</th><th>操作</th></tr></thead>
+          <tbody id="originalRows"><tr><td colspan="8">正在读取已提取文案…</td></tr></tbody>
         </table>
       </div>
       <div class="copy-pagination"><button id="originalPrev" type="button">上一页</button><span id="originalPage"></span><button id="originalNext" type="button">下一页</button></div>
     </section>
 
-    <section class="copy-panel" id="copies" hidden>
-      <div class="copy-section-head"><div><h2>已审核图文改写</h2><p>展示 Grokbot 已改写并审核通过的图文文案，可直接用于自动发布。</p></div></div>
+  </main>
+
+  <dialog id="rewriteDialog" class="copy-preview-dialog copy-rewrite-dialog" aria-labelledby="rewriteTitle">
+    <div class="copy-dialog-head"><div><h2 id="rewriteTitle">改写详情</h2></div><button id="closeRewrites" type="button">关闭</button></div>
+    <section class="copy-panel" id="copies">
+      <p id="rewriteContext" class="copy-dialog-meta"></p>
+      <details id="rewriteOriginal"><summary>查看对应爆款文案</summary><pre id="rewriteOriginalText"></pre></details>
+      <p>改写版本审核后保存，启用的版本可供图文自动发布抽取。保存版本不会立即发布；当前版本格式为 1–6 页图文文案，也可由视频爆款改编。</p>
+      <details id="manualVariantPanel" class="copy-import-panel" hidden>
+        <summary>新增改写版本</summary><div class="copy-import-body">
+          <form id="variantForm">
+            <label>版本名称<input id="variantName" maxlength="120" placeholder="例如：情绪共鸣版" required /></label>
+            <label>标题<input id="variantTitle" maxlength="200" required /></label>
+            <label>发布文案<textarea id="variantCaption" maxlength="2200" rows="3"></textarea></label>
+            <div id="variantPages"></div>
+            <label class="copy-review-confirm"><input type="checkbox" id="variantReviewed" required />我已审核此版本，保存后启用</label>
+            <button class="primary-action" type="submit">保存新版本</button><p id="variantStatus" role="status"></p>
+          </form>
+        </div>
+      </details>
       <details class="copy-import-panel">
         <summary>导入 Grokbot 文案</summary>
         <div class="copy-import-body">
-          <p>相同来源使用同一个 sourceKey，不同改写版本使用不同 externalId；pages 按图片顺序填写，第一项就是首图。每篇 1–6 页，每次最多 100 篇。</p>
+          <p>从改写详情导入时自动关联当前爆款文案；跨文案批量导入请保留导出的 sourceKey。不同版本使用不同 externalId；pages 第一项为首图，每篇 1–6 页，每次最多 100 篇。请审核后再导入，导入即启用。</p>
           <button id="downloadExample" type="button">下载导入示例</button>
           <form id="importForm">
             <label>选择 JSON 文件<input id="copyFile" type="file" accept=".json,application/json" /></label>
             <label>或粘贴 JSON<textarea id="copyJson" rows="8" required placeholder='[{"externalId":"avoidant-v1","sourceKey":"attachment-001","title":"Post title","caption":"Post caption","pages":["Cover copy","Page 2 copy"]}]'></textarea></label>
-            <button type="submit" class="primary-action">导入已审核文案</button><p id="copyStatus" role="status"></p>
+            <button type="submit" class="primary-action">导入已审核文案</button>
           </form>
         </div>
       </details>
+      <p id="copyStatus" class="copy-list-message" role="status"></p>
       <form id="copySearchForm" class="copy-toolbar"><label class="copy-search">搜索<input id="copySearch" type="search" placeholder="标题或来源编号" /></label><button>查询</button></form>
       <div class="copy-table-wrap">
         <table>
@@ -64,7 +83,7 @@
       </div>
       <div class="copy-pagination"><button id="copyPrev" type="button">上一页</button><span id="copyPage"></span><button id="copyNext" type="button">下一页</button></div>
     </section>
-  </main>
+  </dialog>
 
   <dialog id="copyPreviewDialog" class="copy-preview-dialog">
     <div class="copy-dialog-head"><div><span id="previewKind" class="copy-kind"></span><h2 id="previewTitle"></h2></div><button id="closePreview" type="button" aria-label="关闭">关闭</button></div>

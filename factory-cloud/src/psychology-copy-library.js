@@ -33,7 +33,11 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   const pages=Math.max(1,Math.ceil(total/20)),page=Math.min(pages,Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)));
   const items=(await env.DB.prepare('SELECT id,media_type,title,source_url,status,content_json,error,provider,created_at,completed_at FROM psychology_copy_library WHERE '+where+' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()).results;
   const counts=(await env.DB.prepare("SELECT media_type,COUNT(*) n FROM psychology_copy_library WHERE status='done' GROUP BY media_type").all()).results;
-  return json({items:items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)})),total,page,pages,counts});
+  const originals=items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)}));
+  const keys=[...new Set(originals.map(r=>r.sourceKey))];
+  const variants=keys.length?(await env.DB.prepare('SELECT source_key,COUNT(*) total,SUM(enabled) enabled FROM psychology_copy_variants WHERE owner=? AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key').bind(user.username,...keys).all()).results:[];
+  const bySource=new Map(variants.map(r=>[r.source_key,r]));
+  return json({items:originals.map(r=>({...r,variantCount:Number(bySource.get(r.sourceKey)?.total||0),enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
  }
  const match=url.pathname.match(/^\/api\/psychology-copy-library\/(psy-[a-f0-9]{32})\/retry$/);
  if(match&&request.method==='POST'){
