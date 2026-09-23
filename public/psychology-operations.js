@@ -25,6 +25,11 @@ document.querySelectorAll("[data-tab]").forEach((button,index,buttons)=>{
     if(next>=0){event.preventDefault();buttons[next].focus();selectTab(buttons[next].dataset.tab);}
   });
 });
+const methodToggle=$("#methodToggle"),methodPanel=$("#methodPanel");
+const showMethod=open=>{methodPanel.hidden=!open;methodToggle.setAttribute("aria-expanded",String(open));};
+methodToggle.addEventListener("click",event=>{event.stopPropagation();showMethod(methodPanel.hidden);});
+document.addEventListener("click",event=>{if(!methodPanel.hidden&&!methodPanel.contains(event.target))showMethod(false);});
+document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!methodPanel.hidden){showMethod(false);methodToggle.focus();}});
 toggleDates();selectTab(state.tab,false);load();
 function toggleDates(){const custom=$("#period").value==="custom";$("#fromLabel").hidden=!custom;$("#toLabel").hidden=!custom;$("#from").required=custom;$("#to").required=custom;}
 function selectTab(tab,save=true){
