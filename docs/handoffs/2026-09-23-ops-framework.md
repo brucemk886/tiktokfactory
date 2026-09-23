@@ -11,6 +11,8 @@ The report mixed scopes (all content vs. auto photo), time bases (batch creation
 - Data: `loadResolvedItems` now returns light columns (media type, title) ordered newest first, LIMIT 20000, loaded from previous-period start − 30 days; framework rows are items from previous start − 7 days. The detailed comparison keeps the heavy query but widens it by 7 days and filters rows by publish time.
 - `scripts/psychology-copy-insights.js` is replaced by `scripts/psychology-ops-framework.js`.
 
+- Follow-up: photo and video are analysed separately (`media=photo|video`, default photo; `all` is no longer accepted). `buildContentPerformance` takes `media` and adds `duration` and `retention3` for video rows (`retentionAt` interpolates TikTok's per-second curve, 0-1 or 0-100). Video shows 3秒留存 in cards, tables and trend; the detailed comparison is photo-only; the rules tab notes video is not on the evolution draw yet.
+
 ## Tests
 Factory suite 602/602 (framework: tiers, stages, reuse drop, version/style/rewrite, quadrants, transitions/issues/previous period; endpoint shape).
 

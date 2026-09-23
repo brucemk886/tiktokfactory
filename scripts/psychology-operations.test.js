@@ -95,8 +95,8 @@ test("operations API applies project and assigned-group scope before reading vid
   const user={role:"operator",sidebarModules:["psychology-ops-report"],allowedAccountGroups:["g1"]};
   const response=await handlePsychologyOperations(new Request(url),env,url,{user});
   const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));
-  assert.deepEqual(body.groups.map(g=>g.id),["g1"]);assert.deepEqual(body.accounts.map(a=>a.id),["tiktok:a"]);
-  assert.equal(body.summary.published,1);assert.equal(reads.length,1);assert.match(reads[0],/tiktok%3Aa/);
+  assert.deepEqual(body.groups.map(g=>g.id),["g1"]);assert.equal(body.framework.media,"photo");
+  assert.equal(reads.length,1);assert.match(reads[0],/tiktok%3Aa/);
   url.searchParams.set("group","g2");
   assert.equal((await handlePsychologyOperations(new Request(url),env,url,{user})).status,403);
 });

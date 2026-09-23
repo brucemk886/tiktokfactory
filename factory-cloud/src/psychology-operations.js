@@ -21,8 +21,8 @@ export async function handlePsychologyOperations(request, env, url, session) {
   if(!user || !(user.sidebarModules||[]).includes("psychology-ops-report"))return errorJson("没有心理学运营报表权限。",403);
   try {
     const window=operationsWindow(url.searchParams);
-    const media=url.searchParams.get("media")||"all",group=url.searchParams.get("group")||"";
-    if(!["all","video","photo"].includes(media))return errorJson("内容类型无效。",400);
+    const media=url.searchParams.get("media")||"photo",group=url.searchParams.get("group")||"";
+    if(!["video","photo"].includes(media))return errorJson("内容类型无效。",400);
     const store=await loadGroupStore(env.DB), project=findProjectForModule(store,"psychology"), allowed=userAllowedGroupIds(user);
     const groups=publicState(store).groups.filter(g=>g.projectId===project?.id && (!allowed || allowed.has(g.id)));
     if(group && !groups.some(g=>g.id===group))return errorJson("没有这个分组的权限。",403);
@@ -45,12 +45,12 @@ export async function handlePsychologyOperations(request, env, url, session) {
       if(!item.source_key&&item.original_url){try{item.source_key=photoCopyKey(item.original_url);}catch{item.source_key=item.source_id;}}
     }
     const inWindow=row=>row.time>=window.start&&row.time<window.end;
-    const detail=buildContentPerformance({items:media==='video'?[]:items,records,accounts,videosByAccount});
+    const detail=buildContentPerformance({items,records,accounts,videosByAccount,media});
     const content={...detail,rows:detail.rows.filter(inWindow)};
     const report=buildOperationsReport({window,accounts,videosByAccount,records,items,media});
     const history=await loadResolvedItems(env.DB,window.previousStart-HISTORY_MS);
-    const framework=buildOpsFramework({rows:buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount}).rows,
-      history,videosByAccount,accounts,window});
+    const framework=buildOpsFramework({rows:buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount,media}).rows,
+      history,videosByAccount,accounts,window,media});
     return json({...report,content,framework,evolution:EVOLUTION,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
       archiveAt:accounts.length?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0)):0,
       limited:(recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000 || history.length>=20000,

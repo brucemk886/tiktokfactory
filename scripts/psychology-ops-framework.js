@@ -1,5 +1,5 @@
-// One analysis frame for psychology photo auto-publishing: every number comes
-// from auto-published photo posts, bucketed by TikTok publish time, counted
+// One analysis frame for psychology auto-publishing, photo and video analysed
+// separately: every number comes from auto-published posts of one media type, bucketed by TikTok publish time, counted
 // once they are 24h old. Account stages alone use the account's whole history.
 const DAY = 86400000;
 const ms = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? (n < 1e12 ? n * 1000 : n) : Date.parse(v || '') || 0; };
@@ -49,16 +49,17 @@ function summarize(rows, rules = RULES) {
   const share = test => rows.length ? rows.filter(test).length / rows.length : null;
   return { n: rows.length, avgViews: mean(rows.map(r => r.views)), medianViews: median(rows.map(r => r.views)), tiers, quadrants,
     potentialRate: share(r => r.views >= rules.potentialViews), hitRate: share(r => r.views >= rules.hitViews),
-    averageWatch: mean(positive(rows, 'averageWatch')), completion: mean(positive(rows, 'completion')),
+    averageWatch: mean(positive(rows, 'averageWatch')), completion: mean(positive(rows, 'completion')), retention3: mean(positive(rows, 'retention3')),
     likes: mean(positive(rows, 'likes')), comments: mean(positive(rows, 'comments')), shares: mean(positive(rows, 'shares')), saves: mean(positive(rows, 'saves')) };
 }
 const enough = (s, rules) => s.n >= rules.minSample;
 const inBucket = ([lo, hi], v) => v >= lo && v <= hi;
 const dominant = counts => Object.entries(counts).filter(([k]) => k !== 'unknown').sort((a, b) => b[1] - a[1]).find(([, n]) => n > 0)?.[0] || 'unknown';
 
-// rows: buildContentPerformance rows for auto photo items (any batch window).
+// rows: buildContentPerformance rows for auto items of one media type (any batch window).
 // history: resolved items (earlier uses of the same post), oldest may predate the window.
-export function buildOpsFramework({ rows = [], history = [], videosByAccount = new Map(), accounts = [], window, now = Date.now(), rules = RULES }) {
+export function buildOpsFramework({ rows = [], history = [], videosByAccount = new Map(), accounts = [], window, media = 'photo', now = Date.now(), rules = RULES }) {
+  const noun = media === 'video' ? '视频' : '图文';
   const uses = new Map(), perSource = new Map(), perVersion = new Map();
   for (const item of [...history].sort((a, b) => (a.schedule_at - b.schedule_at) || String(a.id).localeCompare(String(b.id)))) {
     const key = item.source_key, versionKey = key + '\u0000' + (item.variant_id || ''), prev = perSource.get(key);
@@ -103,7 +104,7 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
     transitions.set(move, (transitions.get(move) || 0) + 1);
     const own = current.filter(s => s.account === account), stats = summarize(own, rules), main = dominant(stats.quadrants);
     const rank = { launch: 0, normal: 1, potential: 2, burst: 3 };
-    const issue = !own.length ? '本期没有满24小时的自动发布图文'
+    const issue = !own.length ? '本期没有满24小时的自动发布' + noun
       : stats.n >= rules.minSample && stats.medianViews < rules.lowViews ? '持续低播放，先查账号状态'
       : startStage && rank[endStage] < rank[startStage] ? '阶段下滑，查最近内容'
       : endStage === 'potential' || endStage === 'burst' ? '潜力号，可以加码'
@@ -142,9 +143,9 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
       best: ready.length > 1 ? ready.sort((a, b) => b[1].medianViews - a[1].medianViews)[0][0] : null };
   });
   const findings = [], pct = v => Math.round(v * 100) + '%', ratio = (a, b) => b.medianViews > 0 ? a.medianViews / b.medianViews : null, o = overview.current;
-  if (!enough(o, rules)) findings.push(`样本不足：本期满24小时的自动发布图文只有 ${o.n} 条（需≥${rules.minSample}），先继续跑。`);
+  if (!enough(o, rules)) findings.push(`样本不足：本期满24小时的自动发布${noun}只有 ${o.n} 条（需≥${rules.minSample}），先继续跑。`);
   else {
-    findings.push(`本期 ${o.n} 条，中位播放 ${Math.round(o.medianViews)}，破千 ${pct(o.potentialRate)}，破万 ${pct(o.hitRate)}` + (enough(overview.previous, rules) ? `；上期破千 ${pct(overview.previous.potentialRate)}。` : '。'));
+    findings.push(`本期${noun} ${o.n} 条，中位播放 ${Math.round(o.medianViews)}，破千 ${pct(o.potentialRate)}，破万 ${pct(o.hitRate)}` + (o.retention3 != null ? `，3秒留存 ${pct(o.retention3)}` : '') + (enough(overview.previous, rules) ? `；上期破千 ${pct(overview.previous.potentialRate)}。` : '。'));
     const q = o.quadrants, known = o.n - q.unknown;
     if (known >= rules.minSample) {
       const top = Object.entries(q).filter(([k]) => k !== 'unknown').sort((a, b) => b[1] - a[1])[0];
@@ -161,7 +162,8 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
   const moved = [...transitions].filter(([k]) => /^(launch|normal)>(potential|burst)$/.test(k)).reduce((n, [, c]) => n + c, 0);
   if (moved) findings.push(`本期有 ${moved} 个号升到潜力账号或爆发期。`);
 
-  return { rules, tiers: VIEW_TIERS, quadrants: QUADRANTS, stageNames: STAGES, kinds: KINDS, overview,
+  const quadrants = media === 'video' ? { ...QUADRANTS, hook: { ...QUADRANTS.hook, action: '开头有效、后段弱：改脚本和节奏' } } : QUADRANTS;
+  return { media, rules, tiers: VIEW_TIERS, quadrants, stageNames: STAGES, kinds: KINDS, overview,
     accounts: { stages: stageCounts, transitions: [...transitions].map(([k, n]) => { const [from, to] = k.split('>'); return { from, to, n }; }), rows: accountRows },
     content, strategy: { stages, findings } };
 }

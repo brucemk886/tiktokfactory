@@ -1,10 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOpsFramework, accountStage, viewTier } from './psychology-ops-framework.js';
+import { buildContentPerformance, retentionAt } from './psychology-content-performance.js';
 
 const DAY = 86400000, now = Date.UTC(2026, 8, 23);
 const at = d => now - d * DAY;
 const win = (days = 14) => ({ start: at(days), end: now, previousStart: at(days * 2), days });
+
+test('3-second retention reads the per-second curve in either scale and needs 3 seconds of data', () => {
+  assert.equal(retentionAt([{ second: 0, percentage: 100 }, { second: 3, percentage: 42 }]), 0.42);
+  assert.equal(retentionAt([{ second: 2, percentage: 0.6 }, { second: 4, percentage: 0.4 }]), 0.5);
+  assert.equal(retentionAt('[{"second":0,"percentage":1},{"second":5,"percentage":0.5}]'), 0.7);
+  assert.equal(retentionAt([{ second: 0, percentage: 100 }, { second: 2, percentage: 50 }]), null);
+  assert.equal(retentionAt([]), null);
+});
+
+test('video auto posts are analysed on their own with 3-second retention', () => {
+  const account = 'tiktok:v', videos = [], items = [], records = [];
+  for (let k = 0; k < 6; k++) {
+    const time = at(5 - k * 0.2);
+    videos.push({ id: 'vid' + k, createTime: time / 1000, views: 2000, fullWatchRate: 0.3, averageTimeWatched: 9, duration: 20, retention: [{ second: 0, percentage: 100 }, { second: 3, percentage: 60 }] });
+    items.push({ id: 'i' + k, connection_id: 'v', config_json: JSON.stringify({ mediaType: k === 5 ? 'photo' : 'video' }), source_key: 'topic' + k, title: 'T' + k });
+    records.push({ autoTaskId: 'i' + k, connectionId: 'v', videoId: 'vid' + k });
+  }
+  const accounts = [{ schema: account, connectionId: 'v' }], videosByAccount = new Map([[account, videos]]);
+  const rows = buildContentPerformance({ items, records, accounts, videosByAccount, now, media: 'video' }).rows;
+  assert.equal(rows.length, 5);
+  assert.equal(rows[0].retention3, 0.6);
+  assert.equal(buildContentPerformance({ items, records, accounts, videosByAccount, now }).rows[0].retention3, null); // photo rows skip it
+  const r = buildOpsFramework({ rows, history: items.map((i, k) => ({ id: i.id, source_key: i.source_key, schedule_at: at(5 - k * 0.2) / 1000 })), videosByAccount, window: win(), now, media: 'video' });
+  assert.equal(r.media, 'video');
+  assert.equal(r.overview.current.n, 5);
+  assert.ok(Math.abs(r.overview.current.retention3 - 0.6) < 1e-9);
+  assert.match(r.strategy.findings[0], /本期视频 5 条.*3秒留存 60%/);
+  assert.match(r.quadrants.hook.action, /脚本/);
+});
 
 test('view tiers follow the traffic-pool thresholds', () => {
   assert.deepEqual([0, 199, 200, 999, 1000, 9999, 10000, 99999, 100000, 499999, 500000, 1999999, 2000000].map(viewTier),

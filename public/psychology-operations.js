@@ -8,8 +8,9 @@ const time = value => new Date(value).toLocaleString("zh-CN",{timeZone:"Asia/Sha
 const TABS=["overview","accounts","content","strategy"];
 const params = new URLSearchParams(location.search);
 const state = { data:null,tab:TABS.includes(params.get("tab"))?params.get("tab"):"overview",accountPage:1,batchPage:1,sourcePage:1,request:0 };
-for(const key of ["period","from","to"]) if(params.has(key)) $("#"+key).value=params.get(key);
+for(const key of ["period","from","to","media"]) if(params.has(key)) $("#"+key).value=params.get(key);
 if(!$("#period").value)$("#period").value="7d";
+if(!$("#media").value)$("#media").value="photo";
 $("#period").addEventListener("change",toggleDates);
 $("#filters").addEventListener("submit",event=>{event.preventDefault();load();});
 $("#trendMetric").addEventListener("change",renderTrend);
@@ -30,7 +31,7 @@ function selectTab(tab,save=true){
 }
 async function load(){
   const request=++state.request;$("#query").disabled=true;$("#report").hidden=true;$("#status").textContent="正在读取运营报表…";
-  const query=new URLSearchParams({period:$("#period").value,group:state.data?$("#group").value:(params.get("group")||"")});
+  const query=new URLSearchParams({period:$("#period").value,media:$("#media").value,group:state.data?$("#group").value:(params.get("group")||"")});
   if(query.get("period")==="custom"){query.set("from",$("#from").value);query.set("to",$("#to").value);}
   try{
     const response=await fetch("/api/psychology-operations?"+query,{cache:"no-store"});const data=await response.json();
@@ -53,12 +54,15 @@ function page(items,key,id,render){
   $("#"+id).querySelectorAll("[data-step]").forEach(button=>button.addEventListener("click",()=>{state[key]+=Number(button.dataset.step);render();}));
   return items.slice((current-1)*10,current*10);
 }
-const summaryCells=s=>[fmt(s.n),fmt(s.medianViews)+"<small>平均 "+fmt(s.avgViews)+"</small>",pct(s.potentialRate),pct(s.hitRate),sec(s.averageWatch),pct(s.completion),fmt(s.likes)+" / "+fmt(s.comments)+" / "+fmt(s.shares)];
-const SUMMARY=["作品数","中位播放","破千率","破万率","平均播放时长","完播率","平均 赞 / 评 / 转"];
-const summaryTable=(first,rows)=>table([first,...SUMMARY],rows.map(([label,s])=>[label,...summaryCells(s)]));
+const isVideo=()=>state.data?.framework?.media==="video";
+const summaryCells=s=>[fmt(s.n),fmt(s.medianViews)+"<small>平均 "+fmt(s.avgViews)+"</small>",pct(s.potentialRate),pct(s.hitRate),sec(s.averageWatch),pct(s.completion),...(isVideo()?[pct(s.retention3)]:[]),fmt(s.likes)+" / "+fmt(s.comments)+" / "+fmt(s.shares)];
+const summaryHeaders=()=>["作品数","中位播放","破千率","破万率","平均播放时长","完播率",...(isVideo()?["3秒留存"]:[]),"平均 赞 / 评 / 转"];
+const summaryTable=(first,rows)=>table([first,...summaryHeaders()],rows.map(([label,s])=>[label,...summaryCells(s)]));
 
 function render(){
   const f=state.data.framework;
+  $("#contentDetail").hidden=f.media==="video";
+  const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="potentialRate";
   $("#coverage").textContent=state.data.coverage;$("#completionLine").textContent=f.overview.completionLine==null?"暂无完播数据":pct(f.overview.completionLine);
   renderOverview(f);renderAccounts();renderContent(f);renderStrategy(f);renderBatches();renderContentPerformance(state.data.content);
 }
@@ -67,17 +71,17 @@ function renderOverview(f){
   $("#findings").innerHTML='<ul>'+f.strategy.findings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
   const delta=(a,b,format,points)=>a===null||b===null||a===undefined||b===undefined?"":" · "+(a>=b?"+":"")+(points?((a-b)*100).toFixed(1)+" 个百分点":format(a-b));
   const cards=[["满24小时作品",c.n,p.n,fmt,f.overview.observing+" 条观察中"],["破千率",c.potentialRate,p.potentialRate,pct,"潜力及以上",true],["破万率",c.hitRate,p.hitRate,pct,"待爆及以上",true],
-    ["中位播放",c.medianViews,p.medianViews,fmt,"平均 "+fmt(c.avgViews)],["完播率",c.completion,p.completion,pct,"平均值",true],["平均播放时长",c.averageWatch,p.averageWatch,sec,"秒"]];
+    ["中位播放",c.medianViews,p.medianViews,fmt,"平均 "+fmt(c.avgViews)],["完播率",c.completion,p.completion,pct,"平均值",true],["平均播放时长",c.averageWatch,p.averageWatch,sec,"秒"],...(isVideo()?[["3秒留存",c.retention3,p.retention3,pct,"第3秒还在看的比例",true]]:[])];
   $("#metrics").innerHTML=cards.map(([label,value,previous,format,note,points])=>'<div class="metric"><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+delta(value,previous,format,points)+'<br>'+esc(note)+'</small></div>').join("");
   $("#tierTable").innerHTML=table(["流量池","播放区间","本期作品","占比","上期占比"],f.tiers.map((t,i)=>{const next=f.tiers[i+1];return [esc(t.label),fmt(t.min)+(next?" – "+fmt(next.min):" 以上"),fmt(c.tiers[t.id]),c.n?pct(c.tiers[t.id]/c.n):"—",p.n?pct(p.tiers[t.id]/p.n):"—"];}));
   $("#quadrantTable").innerHTML=table(["象限","怎么处理","本期作品","占比","上期占比"],Object.entries(f.quadrants).map(([k,q])=>[esc(q.label),esc(q.action),fmt(c.quadrants[k]),c.n?pct(c.quadrants[k]/c.n):"—",p.n?pct(p.quadrants[k]/p.n):"—"]));
   renderTrend();
-  $("#dailyTable").innerHTML=table(["日期",...SUMMARY],f.overview.daily.map(d=>[d.date,...summaryCells(d)]));
+  $("#dailyTable").innerHTML=table(["日期",...summaryHeaders()],f.overview.daily.map(d=>[d.date,...summaryCells(d)]));
 }
 function renderTrend(){
   if(!state.data)return;
-  const key=$("#trendMetric").value,rows=state.data.framework.overview.daily,format=key==="potentialRate"||key==="completion"?pct:key==="averageWatch"?sec:fmt;
-  const values=rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined),max=Math.max(...values,key==="potentialRate"||key==="completion"?0.01:1);
+  const key=$("#trendMetric").value,rows=state.data.framework.overview.daily,format=["potentialRate","completion","retention3"].includes(key)?pct:key==="averageWatch"?sec:fmt;
+  const values=rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined),max=Math.max(...values,["potentialRate","completion","retention3"].includes(key)?0.01:1);
   if(!values.length){$("#trendChart").innerHTML='<div class="empty">当前周期暂无满24小时的作品。</div>';return;}
   const x=i=>50+i*900/Math.max(1,rows.length-1),y=v=>235-v/max*190,has=v=>v!==null&&v!==undefined;
   const segments=rows.slice(1).map((r,i)=>has(r[key])&&has(rows[i][key])?'<line class="line" x1="'+x(i)+'" y1="'+y(rows[i][key])+'" x2="'+x(i+1)+'" y2="'+y(r[key])+'"/>':"").join("");
@@ -101,8 +105,8 @@ function renderAccounts(){
 function renderContent(f){
   const c=f.content;
   const rows=page(c.sources,"sourcePage","sourcePager",()=>renderContent(state.data.framework));
-  $("#sourceTable").innerHTML=rows.length?table(["爆款","累计使用","本期账号 / 版本",...SUMMARY.slice(1),"主要象限"],rows.map(s=>['<div class="title">'+esc(s.title||s.source)+'</div>',fmt(s.totalUses),fmt(s.accounts)+" / "+fmt(s.versions),...summaryCells(s.stats).slice(1),esc(f.quadrants[s.quadrant].label)])):'<div class="empty">本期没有满24小时的作品。</div>';
-  $("#reuseTable").innerHTML=table(["这篇爆款第几次使用",...SUMMARY],c.reuse.map(r=>[esc(r.label)+(r.label===c.dropAt?' <span class="ops-chip">明显下滑</span>':""),...summaryCells(r)]));
+  $("#sourceTable").innerHTML=rows.length?table(["爆款","累计使用","本期账号 / 版本",...summaryHeaders().slice(1),"主要象限"],rows.map(s=>['<div class="title">'+esc(s.title||s.source)+'</div>',fmt(s.totalUses),fmt(s.accounts)+" / "+fmt(s.versions),...summaryCells(s.stats).slice(1),esc(f.quadrants[s.quadrant].label)])):'<div class="empty">本期没有满24小时的作品。</div>';
+  $("#reuseTable").innerHTML=table(["这篇爆款第几次使用",...summaryHeaders()],c.reuse.map(r=>[esc(r.label)+(r.label===c.dropAt?' <span class="ops-chip">明显下滑</span>':""),...summaryCells(r)]));
   $("#variationTable").innerHTML=summaryTable("重复使用时",[["换一个没用过的版本",c.version.fresh],["沿用已经用过的版本",c.version.same],["换了图文样式",c.style.changed],["和上次同样式",c.style.same]]);
   const w=c.rewrite;
   $("#rewriteTable").innerHTML=summaryTable("内容",[["全部原版",w.original],["全部改写版",w.rewrite],["破万爆款 · 原版（"+w.hitSources+" 篇）",w.hitOriginal],["破万爆款 · 改写版",w.hitRewrite]]);
@@ -110,7 +114,8 @@ function renderContent(f){
 }
 function renderStrategy(f){
   const e=state.data.evolution;
-  $("#evolutionRules").innerHTML='<ul><li>同一账号不会重复发同一篇爆款（原版或任一改写都算同一篇）。</li><li>原版优先：原版满 '+e.matureNeeded+' 条满24小时作品后才开始试改写版。</li><li>之后约 '+Math.round(e.exploitShare*100)+'% 用表现最好的版本 / 爆款，'+Math.round((1-e.exploitShare)*100)+'% 试没数据的。</li><li>改写版平均播放低于原版的 '+Math.round(e.retireRatio*100)+'% 不再抽。</li><li>表现数据按近 '+e.windowDays+' 天计算，每天北京时间 0 点、8 点更新。</li></ul>';
+  if(isVideo())$("#evolutionRules").innerHTML='<ul><li>视频自动发布目前按创建批次时选的来源抽取，还没有接入“按表现进化”；等视频开始发、数据够了再接入。</li><li>下面的阶段对照照常统计视频数据。</li></ul>';
+  else $("#evolutionRules").innerHTML='<ul><li>同一账号不会重复发同一篇爆款（原版或任一改写都算同一篇）。</li><li>原版优先：原版满 '+e.matureNeeded+' 条满24小时作品后才开始试改写版。</li><li>之后约 '+Math.round(e.exploitShare*100)+'% 用表现最好的版本 / 爆款，'+Math.round((1-e.exploitShare)*100)+'% 试没数据的。</li><li>改写版平均播放低于原版的 '+Math.round(e.retireRatio*100)+'% 不再抽。</li><li>表现数据按近 '+e.windowDays+' 天计算，每天北京时间 0 点、8 点更新。</li></ul>';
   const kinds=f.kinds;
   $("#stageTable").innerHTML=table(["阶段","当前打法（假设）",...Object.values(kinds),"数据显示最好"],f.strategy.stages.map(st=>[esc(st.label),esc(st.playbook),
     ...Object.keys(kinds).map(k=>{const x=st.kinds[k];return fmt(x.medianViews)+"<small>"+x.n+" 条 · 破千 "+pct(x.potentialRate)+" · 完播 "+pct(x.completion)+"</small>";}),st.best?esc(kinds[st.best]):"样本不足"]));
