@@ -6,8 +6,8 @@ Let admins delete unsatisfying rewrites, and add a data view that shows whether 
 ## Decisions
 - Delete is a soft delete (`deleted_at`, migration 0047): the row stays so Grokbot re-imports of the same externalId/fingerprint are counted as duplicates instead of reappearing. Deleted rows are hidden from lists and counts, cannot be re-enabled, and are never drawn (they are also `enabled=0`).
 - Insights are computed on request inside `/api/psychology-operations` (photo only; `insights: null` for the video filter). Earlier uses of a post are looked up 90 days before the window via `loadResolvedItems` (shared with the evolution rollup).
-- Views are normalised by the account's prior matured median (≥3 posts) to remove account strength; launch-stage accounts rarely have a baseline, so that stage compares raw views.
-- Thresholds live in `INSIGHT_RULES` (min 5 samples, drop = ≤70% of first use, hit = ≥2×, launch <10 matured posts, burst ≥2× / decline ≤0.5× of recent 5 vs earlier).
+- Per the operator, views are judged on absolute TikTok traffic-pool tiers (`VIEW_TIERS`: <200 低播放, 200 正常, 1000 潜力, 1万 待爆, 10万 小爆, 50万 爆款, 200万 大爆), not relative to the account. Core metrics per group: median/average views, ≥1000 and ≥1万 rates, average watch time, completion rate, likes/comments/shares. Saves are not synced by the hub's TikTok field list, so they show as missing.
+- Stages from matured posts before each post: 起号期 <10; 爆发期 a 10万+ in the last 10; 潜力账号 10+ averaging ≥1000; else 普通账号. Thresholds live in `INSIGHT_RULES` (min 5 samples, drop = median ≤70% of first use).
 - Nothing in the draw changes automatically yet; findings are advisory.
 
 ## Files changed

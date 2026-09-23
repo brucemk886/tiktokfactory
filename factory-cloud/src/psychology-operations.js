@@ -44,7 +44,7 @@ export async function handlePsychologyOperations(request, env, url, session) {
     }
     const content=buildContentPerformance({items:media==='video'?[]:items,records,accounts,videosByAccount});
     const report=buildOperationsReport({window,accounts,videosByAccount,records,items,media});
-    const insights=media==='video'?null:buildCopyInsights({rows:content.rows,history:await loadResolvedItems(env.DB,window.start-HISTORY_MS),videosByAccount});
+    const insights=media==='video'?null:buildCopyInsights({rows:content.rows,accounts,history:await loadResolvedItems(env.DB,window.start-HISTORY_MS),videosByAccount});
     return json({...report,content,insights,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
       archiveAt:accounts.length?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0)):0,
       limited:(recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000,
