@@ -1,6 +1,7 @@
 import { photoCopyKey } from './peer-photo-copy-cache.js';
 import { chooseVisualStyle } from '../../public/psychology-visual-styles.js';
 import { librarySource,reviewedSource } from './psychology-copy-source.js';
+import { planLibraryDraw, loadLibraryPosts, loadCopyStats, loadUsedPosts } from './psychology-copy-evolution.js';
 import { copyIdentity } from './psychology-creative.js';
 import { commentTemplate, freezeComment, insertScheduledComment } from './psychology-comments.js';
 import { PSYCHOLOGY_GROUP_SIZE, dispatchPublishGroup } from './psychology-publish-groups.js';
@@ -269,7 +270,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const counts = await env.DB.prepare('SELECT media_type, COUNT(*) AS total FROM psychology_peer_hits GROUP BY media_type').all();
     const musicPool = await kvGet(env.DB, MUSIC_POOL_KEY, []);
     const libraryCounts=await env.DB.prepare("SELECT media_type,COUNT(*) total FROM psychology_copy_library WHERE status='done' GROUP BY media_type").all();
-    return json({ libraryCounts:Object.fromEntries(libraryCounts.results.map(r=>[r.media_type,r.total])), topicCounts: await topicCounts(env.DB), canUseTopics: (user.sidebarModules || []).includes('psychology-topic-bank'), templates: AUTO_TEMPLATES, counts: Object.fromEntries(counts.results.map(r => [r.media_type, r.total])), musicPool });
+    const rewrites=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE owner=? AND enabled=1').bind(user.username).first();
+    return json({ libraryCounts:Object.fromEntries(libraryCounts.results.map(r=>[r.media_type,r.total])), libraryRewrites:Number(rewrites?.n||0), topicCounts: await topicCounts(env.DB), canUseTopics: (user.sidebarModules || []).includes('psychology-topic-bank'), templates: AUTO_TEMPLATES, counts: Object.fromEntries(counts.results.map(r => [r.media_type, r.total])), musicPool });
   }
   if (url.pathname === BASE && request.method === 'GET') {
     const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
@@ -386,6 +388,13 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   else if(config.sourceType==='copy-bank'){
     const rows=await env.DB.prepare('SELECT * FROM psychology_copy_variants WHERE owner=? AND enabled=1 AND (title LIKE ? OR source_key LIKE ?) ORDER BY '+(config.selection==='random'?'RANDOM()':'created_at DESC')+' LIMIT 1000').bind(user.username,'%'+config.query+'%','%'+config.query+'%').all();
     sources=rows.results.map(r=>({...r,id:r.id,sourceRow:r,sourceKind:'rewrite'}));
+  } else if(config.sourceType==='library'){
+    const usable=row=>{try{librarySource(row,config.mediaType);return true;}catch{return false;}};
+    const posts=await loadLibraryPosts(env.DB,user.username,config.mediaType,config.query,usable);
+    const [stats,used]=await Promise.all([loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
+    const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
+    sources=planLibraryDraw({posts,stats,slots,used,reuse:config.allowPeerReuse}).map(pick=>({...pick,source:{
+      ...(pick.variantId?reviewedSource(pick.row,config.mediaType):librarySource(pick.row,config.mediaType)),usageKey:pick.post.sourceKey}}));
   } else if(config.sourceType==='copy-library'){
     const rows=await env.DB.prepare("SELECT * FROM psychology_copy_library WHERE status='done' AND (?='all' OR media_type=?) AND (title LIKE ? OR source_url LIKE ? OR content_json LIKE ?) ORDER BY "+(config.selection==='random'?'RANDOM()':'completed_at DESC,id')+' LIMIT 1000')
       .bind(config.libraryMediaType,config.libraryMediaType,'%'+config.query+'%','%'+config.query+'%','%'+config.query+'%').all();
@@ -399,8 +408,9 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     .bind(config.mediaType, config.query, '%' + config.query + '%', '%' + config.query + '%', 1000).all();
   sources = rows.results.map(psychologyPeerHitFromRow);
   }
-  let selected = assignments(config, sources);
-  if(config.sourceType!=='topic-bank'&&!config.allowPeerReuse){
+  // The library draw already placed every slot and applied per-account reuse rules.
+  let selected = config.sourceType==='library' ? sources.map(({connectionId,scheduleAt,source})=>({connectionId,scheduleAt,source})) : assignments(config, sources);
+  if(!['topic-bank','library'].includes(config.sourceType)&&!config.allowPeerReuse){
     const used=await env.DB.prepare('SELECT source_id,connection_id FROM psychology_peer_account_usage WHERE connection_id IN (SELECT value FROM json_each(?)) AND source_id IN (SELECT value FROM json_each(?))')
       .bind(JSON.stringify(config.connectionIds),JSON.stringify(sources.map(s=>s.id))).all();
     const pairs=new Set(used.results.map(r=>r.connection_id+':'+r.source_id)),chosen=new Set();
@@ -443,7 +453,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     if(config.mediaType==='photo'){
       statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id) VALUES(?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId));
     }
-    if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.id,entry.connectionId,id));
+    // Library draws reserve the viral post itself, so no later version of it reaches the same account.
+    if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.usageKey||entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')

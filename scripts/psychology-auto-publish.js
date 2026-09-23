@@ -30,10 +30,12 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if (validateSchedule && last * 1000 > now + 14 * 86400000) fail('整批排期需在未来 14 天内。');
   if (!/^[0-9a-f-]{36}$/i.test(String(input.requestId || ''))) fail('提交编号无效，请刷新页面。');
   const sourceType = input.sourceType || 'peer';
-  if (!['peer','topic-bank','copy-bank','copy-library'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
+  if (!['peer','topic-bank','copy-bank','copy-library','library'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
+  if (sourceType === 'library' && mediaType !== 'photo') fail('文案库进化抽取目前只用于图文。');
   const onlyUnused = sourceType === 'topic-bank' && input.onlyUnused !== false;
-  const selection = input.selection || 'random';
-  if (!(sourceType === 'topic-bank' ? ['random','priority','recent','least-used'] : sourceType==='copy-library' ? ['random','recent'] : ['random','popular','recent']).includes(selection)) fail('选题抽取方式无效。');
+  // The library source has one fixed, data-driven order; nothing to choose.
+  const selection = sourceType === 'library' ? 'evolve' : input.selection || 'random';
+  if (!(sourceType === 'topic-bank' ? ['random','priority','recent','least-used'] : sourceType==='library' ? ['evolve'] : sourceType==='copy-library' ? ['random','recent'] : ['random','popular','recent']).includes(selection)) fail('选题抽取方式无效。');
   const musicIds = mediaType === 'photo'
     ? [...new Set((Array.isArray(input.musicIds) ? input.musicIds : []).map(id => String(id).trim()).filter(Boolean))]
     : [];
@@ -42,7 +44,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   // Older open pages may still submit group mode; new tasks now draw per post.
   const styleMode=mediaType==='photo'?(requestedStyleMode==='group'?'random':requestedStyleMode):'legacy',styleId=String(input.styleId||'classic');
   if(!['legacy','fixed','random'].includes(styleMode)||!styleById(styleId))fail('图文视觉样式配置无效。');
-  if(['copy-bank','copy-library'].includes(sourceType)&&input.rewriteCopy===true)fail('文案库内容直接复用，请在改写详情保存新版本后使用。');
+  if(['copy-bank','copy-library','library'].includes(sourceType)&&input.rewriteCopy===true)fail('文案库内容直接复用，请在改写详情保存新版本后使用。');
   const libraryMediaType=String(input.libraryMediaType||'all');
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
   return { ...(sourceType==='copy-library'?{libraryMediaType}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };

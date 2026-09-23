@@ -34,7 +34,7 @@
       const items = data.items || [];
       $("#rows").innerHTML = items.length ? items.map((item) => `<tr>
         <td>${esc(item.batchName || "未命名批次")}<small>发布 ${esc(stamp(Number(item.scheduleAt) * 1000))}</small></td>
-        <td>${item.mediaType === "photo" ? "图文" : "视频"}<small>${esc(sources[item.sourceType] || "同行爆款")}${item.variantId ? " · " + esc(item.variantId) : ""}</small></td>
+        <td>${item.mediaType === "photo" ? "图文" : "视频"}<small>${esc(item.sourceType === "library" ? (item.variantId ? "文案库改写" : "文案库原文") : sources[item.sourceType] || "同行爆款")}${item.variantId ? " · " + esc(item.variantId) : ""}</small></td>
         <td>${item.accountUsername ? `<span class="handle">@${esc(item.accountUsername)}</span>` : "—"}</td>
         <td>${link(item.publishedUrl, "打开我方帖子")}</td>
         <td>${item.peerUrl ? link(item.peerUrl, "打开爆款原帖") : (item.sourceType === "topic-bank" ? "题库题目，无爆款链接" : "—")}<small>${esc(item.peerTitle || "")}</small></td>

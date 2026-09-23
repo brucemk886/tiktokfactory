@@ -117,6 +117,7 @@ export default {
       ["publish-webhook-register", () => ensurePublishWebhook(env, env.DB, { verify: true })],
       ["factory-storage-sample", () => collectFactoryStorageSample(env, env.DB)],
       ["novel-exceptions-reconcile", () => reconcileNovelExceptions(env.DB)],
+      ["psychology-copy-performance", async () => (await import("./psychology-copy-evolution.js")).refreshCopyPerformance(env)],
     ]);
     console.info(JSON.stringify({ event: "scheduled-steps-completed", cron: controller.cron, ...results }));
     ctx?.waitUntil?.(backfillMissingAudioDurations(env, env.DB, { limit: 40 }).catch(() => {}));

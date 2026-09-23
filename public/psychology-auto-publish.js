@@ -27,7 +27,7 @@ function renderSources(){
   $('#photoSourceField').hidden=state.mediaType!=='photo';
   if(!state.canUseTopics&&$('#sourceType').value==='topic-bank')$('#sourceType').value='copy-library';
   $('#sourceType option[value="topic-bank"]').disabled=!state.canUseTopics;
-  const bank=sourceType()==='topic-bank',fromLibrary=['copy-bank','copy-library'].includes(sourceType()),previous=$('#selection').value;
+  const bank=sourceType()==='topic-bank',evolving=sourceType()==='library',fromLibrary=['copy-bank','copy-library','library'].includes(sourceType()),previous=$('#selection').value;
   $('#libraryMediaField').hidden=sourceType()!=='copy-library';
   if(fromLibrary)$('#rewriteCopy').checked=false;
   $('#rewriteCopy').disabled=fromLibrary;
@@ -35,7 +35,7 @@ function renderSources(){
   const originalPhoto=$('#template option[value="photo-original"]');
   if(originalPhoto)originalPhoto.disabled=fromLibrary;
   if(state.mediaType==='photo'&&fromLibrary)$('#template').value='photo-text';
-  const choices=bank?[['random','随机抽取'],['priority','优先级优先'],['recent','最近入库优先'],['least-used','最少使用优先']]:fromLibrary?[['random','随机抽取'],['recent','最近导入优先']]:[['random','随机抽取'],['popular','播放量优先'],['recent','最近入库优先']];
+  const choices=bank?[['random','随机抽取'],['priority','优先级优先'],['recent','最近入库优先'],['least-used','最少使用优先']]:evolving?[['evolve','按表现进化 · 原版优先']]:fromLibrary?[['random','随机抽取'],['recent','最近导入优先']]:[['random','随机抽取'],['popular','播放量优先'],['recent','最近入库优先']];
   $('#selection').innerHTML=choices.map(([v,label])=>'<option value="'+v+'">'+label+'</option>').join('');
   if(choices.some(([v])=>v===previous))$('#selection').value=previous;
   $('#topicBankField').hidden=!bank;
@@ -51,10 +51,10 @@ function renderSources(){
   $('#peerReuseField').hidden=bank;
   $('#query').placeholder=bank?'筛选题目、内容或分类，不填则从所选题库抽取':'筛选爆款标题或同行账号';
   if(sourceType()==='copy-bank')$('#query').placeholder='筛选文案标题或来源编号';
-  if(sourceType()==='copy-library')$('#query').placeholder='搜索文案标题、正文或原帖链接';
+  if(sourceType()==='copy-library'||evolving)$('#query').placeholder='搜索文案标题、正文或原帖链接，不填则从整个文案库抽取';
   const c=state.topicCounts?.[$('#template').value]||{};
   const label=banks.find(t=>t.id===$('#topicBank').value)?.label||'';
-  $('#sourceHint').textContent=sourceType()==='copy-library'?'复用已提取文字（图文 '+(state.libraryCounts?.photo||0)+' 篇 / 视频 '+(state.libraryCounts?.video||0)+' 篇），不重复获取原素材。图文优先按原分页或视频口播生成，最多6页；视频以正文编排模板，最多5000字符。题目揭晓评论仍需选择模板题库。':sourceType()==='copy-bank'?'从已启用的改写版本抽取。图文直接使用已保存分页；视频以版本正文为依据生成。':bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
+  $('#sourceHint').textContent=evolving?'从文案库图文爆款抽取：已提取原文 '+(state.libraryCounts?.photo||0)+' 篇，启用的改写版本 '+(state.libraryRewrites||0)+' 个。每篇先用原版，原版攒够 3 条满 24 小时的数据后开始试改写版本；表现最好的版本拿约 70%，其余继续试新版本；平均播放低于原版一半的改写不再抽。同一账号不会重复发同一篇爆款（原版或任一改写）。数据每天 0 点、8 点更新。':sourceType()==='copy-library'?'复用已提取文字（图文 '+(state.libraryCounts?.photo||0)+' 篇 / 视频 '+(state.libraryCounts?.video||0)+' 篇），不重复获取原素材。图文优先按原分页或视频口播生成，最多6页；视频以正文编排模板，最多5000字符。题目揭晓评论仍需选择模板题库。':sourceType()==='copy-bank'?'从已启用的改写版本抽取。图文直接使用已保存分页；视频以版本正文为依据生成。':bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
 }
 $('#sourceType').addEventListener('change',renderSources);
 $('#styleId').innerHTML=VISUAL_STYLES.map(s=>`<option value="${s.id}">${s.label}</option>`).join('');
@@ -193,7 +193,7 @@ function renderBatches() {
       ${accounts.length?`<div class="task-groups"><span>TikTok 官方账号</span>${accounts.map(name=>`<b>${esc(name)}</b>`).join('')}</div>`:''}
       <div class="task-progress"><div style="width:${Math.max(0,Math.min(100,percent))}%"></div></div>
       <p>${esc(message)}</p>
-      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
       ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${g.retrying?'自动重试 '+g.retryCount+'/2 · '+(g.retryAt?'等待排队':'执行中'):g.status==='cancelled'?'已删除全部内容':g.status==='submitted'?'已提交':g.status==='submitting'?'提交中':g.status==='failed'?'提交失败':'已就绪 '+n+'/'+g.count}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       ${schedule?`<div class="task-schedule"><strong>具体排期</strong>${schedule}</div>`:''}
       ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}
@@ -249,7 +249,7 @@ $('#batchForm').addEventListener('submit',async event=>{
 });
 const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
 try {
-  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
+  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,libraryRewrites:data.libraryRewrites,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
   if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
   renderTemplates();
   await Promise.all([loadAccounts(),loadBatches()]);

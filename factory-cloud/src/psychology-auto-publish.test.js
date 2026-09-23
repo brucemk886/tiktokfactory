@@ -701,6 +701,28 @@ test('source trace hydrates a published photo link after the first receipt omitt
   assert.equal(stored.videoId,'7686895626340076807');
 });
 
+test('library source draws originals first, reserves the post per account and never repeats it in any version', async t => {
+  const {call,sqlite,env}=await fixture(t);
+  const photo=n=>'https://www.tiktok.com/@example/photo/'+n;
+  await importPsychologyPeerHits(env.DB,[
+    {videoUrl:photo(300),title:'Post A',videoData:{pageTexts:['A cover','A page']},rewrites:[{title:'A v1',caption:'c',pages:['A1 cover']}]},
+    {videoUrl:photo(301),title:'Post B',videoData:{pageTexts:['B cover']}},
+  ],user.id);
+  const batch=()=>call('POST',input({mediaType:'photo',template:'photo-text',sourceType:'library',count:2,connectionIds:['a','b']}));
+  assert.equal((await batch()).status,202);
+  const first=sqlite.prepare("SELECT i.connection_id,c.source_key,c.variant_id FROM psychology_publish_items i JOIN psychology_creative_snapshots c ON c.item_id=i.id ORDER BY i.id").all();
+  assert.deepEqual(first.map(r=>r.variant_id),['','']); // no data yet, so both are originals
+  assert.equal(new Set(first.map(r=>r.source_key)).size,2);
+  assert.deepEqual(sqlite.prepare('SELECT source_id FROM psychology_peer_account_usage ORDER BY source_id').all().map(r=>r.source_id),['v1:tiktok:300','v1:tiktok:301']);
+  const config=JSON.parse(sqlite.prepare('SELECT config_json FROM psychology_publish_batches').get().config_json);
+  assert.equal(config.selection,'evolve');
+  assert.equal((await batch()).status,202);
+  const pairs=sqlite.prepare("SELECT i.connection_id||'|'||c.source_key p FROM psychology_publish_items i JOIN psychology_creative_snapshots c ON c.item_id=i.id").all().map(r=>r.p);
+  assert.equal(new Set(pairs).size,4); // each account got each post exactly once
+  await assert.rejects(batch(),e=>e.statusCode===400&&/不够/.test(e.message)); // A's rewrite is the same post, so it cannot refill
+  await assert.rejects(call('POST',input({mediaType:'video',sourceType:'library'})),e=>e.statusCode===400);
+});
+
 test('publish time filter uses Beijing calendar days over the scheduled time', async t => {
   const {publishTimeWindow}=await import('./psychology-auto-publish.js');
   const now=Date.parse('2026-09-23T01:30:00+08:00'); // still "today" in Beijing though UTC is the 22nd
