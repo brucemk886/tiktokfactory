@@ -141,7 +141,7 @@
 ### 3.3.1 心理学自动运营（autopilot）
 
 - `/psychology-autopilot`（admin + `psychology-publish`）：把一个心理学分组交给系统。表 `psychology_autopilots` / `_accounts` / `_slots` / `_log`（迁移 `0048`），一个分组同时只能有一个未结束的自动运营。
-- 每日 cron（北京 0 点、8 点，在 `psychology-copy-performance` 之后）跑 `runAutopilots`：停发问题号（开始后连续 5 条满24小时 <200 播放，或连续 3 次发布失败）→ 每天一次近 7 天分析（和运营报表同一 `frameworkFor`）→ 给 2–26 小时内的北京 08:00 / 12:00 / 21:00 每个时段建一个 `library` 图文批次（`libraryStrategy` = evolve / original / rewrite，`staggerSeconds=45`，以启动人身份走 `handlePsychologyAutoPublish`）。时段按 `(autopilot_id, slot_at)` 认领，失败的时段下次重试，重复运行不会重复建批次。
+- 每日 cron（北京 0 点、8 点，在 `psychology-copy-performance` 之后）跑 `runAutopilots`：停发问题号（开始后连续 5 条满24小时 <200 播放，或连续 3 次发布失败）→ 每天一次近 7 天分析（和运营报表同一 `frameworkFor`）→ 给 2–26 小时内的北京 08:00 / 12:00 / 21:00 每个时段建一个 `library` 图文批次（`libraryStrategy` = evolve / original / rewrite，`staggerSeconds=45`，`pairSeed=启动人:时段` 让同一启动人的各组在同一时段共用一份爆款顺序、只差版本，以启动人身份走 `handlePsychologyAutoPublish`）。时段按 `(autopilot_id, slot_at)` 认领，失败的时段下次重试，重复运行不会重复建批次。
 - 容量：每个号每天 3 条，每组 ≤50 号一批；同号不重复同一篇爆款，所以一周每号需要 21 篇不同爆款。
 
 ### 3.4 发布记录与回执

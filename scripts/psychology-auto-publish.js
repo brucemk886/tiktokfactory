@@ -47,11 +47,12 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(['copy-bank','copy-library','library'].includes(sourceType)&&input.rewriteCopy===true)fail('文案库内容直接复用，请在改写详情保存新版本后使用。');
   const libraryStrategy=String(input.libraryStrategy||'evolve');
   if(sourceType==='library'&&!['evolve','original','rewrite'].includes(libraryStrategy))fail('文案库抽取策略无效。');
+  const pairSeed=sourceType==='library'?String(input.pairSeed||'').slice(0,120):'';
   const staggerSeconds=Number(input.staggerSeconds||0);
   if(!Number.isInteger(staggerSeconds)||staggerSeconds<0||staggerSeconds>600)fail('账号错开秒数应为 0–600。');
   const libraryMediaType=String(input.libraryMediaType||'all');
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
-  return { ...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  return { ...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {

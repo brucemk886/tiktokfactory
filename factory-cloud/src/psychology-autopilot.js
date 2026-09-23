@@ -135,7 +135,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
     for (let offset = 0; offset < active.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = active.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch);
       const body = { requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${beijingLabel(slot)}`,
-        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: pilot.strategy, count: connectionIds.length, connectionIds,
+        // Every group of this owner at this slot shares one post order.
+        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: pilot.strategy, pairSeed: pilot.owner + ':' + slot, count: connectionIds.length, connectionIds,
         scheduleAt: Math.floor(slot / 1000), intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),

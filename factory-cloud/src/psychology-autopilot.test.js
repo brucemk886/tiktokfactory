@@ -45,6 +45,25 @@ test('library draw strategies: original only never uses rewrites, rewrite-first 
   assert.deepEqual(rewrite.filter(p => p.post.sourceKey === 'p2').map(p => p.variantId), ['']);
 });
 
+test('paired draws with the same seed give different groups the same posts, differing only in version', () => {
+  const posts = Array.from({ length: 12 }, (_, n) => ({ sourceKey: 'p' + n, createdAt: n, original: { id: 'p' + n }, rewrites: [{ external_id: 'p' + n + '-r' }] }));
+  const stats = new Map(posts.slice(0, 6).map((p, n) => [p.sourceKey + '|', { posts: 5, mature: 5, avgViews: 1000 + n }]));
+  const slots = group => Array.from({ length: 5 }, (_, i) => ({ connectionId: group + i }));
+  const draw = (group, strategy, seed) => planLibraryDraw({ posts, stats, slots: slots(group), strategy, pairSeed: seed });
+  const a = draw('a', 'evolve', 'owner:1'), b = draw('b', 'original', 'owner:1'), c = draw('c', 'rewrite', 'owner:1');
+  const keys = plan => plan.map(p => p.post.sourceKey);
+  assert.deepEqual(keys(b), keys(a));
+  assert.deepEqual(keys(c), keys(a));
+  assert.ok(b.every(p => p.variantId === ''));
+  assert.ok(c.every(p => p.variantId.endsWith('-r')));
+  assert.notDeepEqual(keys(draw('a', 'evolve', 'owner:2')), keys(a)); // another slot, another order
+  // Accounts that already used the first posts in the order stay aligned across groups.
+  const used = group => new Map(slots(group).map(s => [s.connectionId, new Set(keys(a))]));
+  const next = group => planLibraryDraw({ posts, stats, slots: slots(group), used: used(group), strategy: 'original', pairSeed: 'owner:3' });
+  assert.deepEqual(keys(next('x')), keys(next('y')));
+  assert.ok(keys(next('x')).every(k => !keys(a).includes(k)));
+});
+
 test('stagger spreads each slot across accounts and only appears in configs that use it', () => {
   const base = { requestId: crypto.randomUUID(), mediaType: 'photo', template: 'photo-text', sourceType: 'library', count: 3, connectionIds: ['a', 'b', 'c'], scheduleAt: Math.floor(Date.now() / 1000) + 7200, intervalMinutes: 60 };
   const plain = normalizeAutoPublish(base);
@@ -80,6 +99,7 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   const config = JSON.parse(batches[0].config_json);
   assert.equal(batches[0].created_by, 'admin');
   assert.deepEqual([config.sourceType, config.libraryStrategy, config.staggerSeconds, config.template, config.count], ['library', 'original', 45, 'photo-text', 2]);
+  assert.equal(config.pairSeed, 'admin:' + config.scheduleAt * 1000);
   const items = f.sqlite.prepare('SELECT i.connection_id,i.schedule_at,c.variant_id FROM psychology_publish_items i JOIN psychology_creative_snapshots c ON c.item_id=i.id ORDER BY i.schedule_at').all();
   assert.equal(items.length, expected * 2);
   assert.ok(items.every(i => i.variant_id === ''));

@@ -16,9 +16,19 @@ const judged = stat => stat.mature >= EVOLUTION.matureNeeded && stat.avgViews !=
 // stats: Map statKey -> { posts, mature, avgViews }
 // slots: [{ connectionId, scheduleAt }] in batch order
 // used: Map connectionId -> Set of sourceKeys that account already posted
+// Deterministic 0–1 generator, so paired draws agree on one post order.
+export function seededRandom(seed) {
+  let h = 2166136261;
+  for (const ch of String(seed)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return () => { h += 0x6D2B79F5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
 // strategy: 'evolve' (original first, then data-driven), 'original' (never
 // rewrites) or 'rewrite' (rewrites first, original only when a post has none).
-export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Map(), reuse = false, random = Math.random, strategy = 'evolve' }) {
+// pairSeed: batches with the same seed walk one shared post order (70/30
+// proven/fresh, drawn from the seed), so paired groups get the same viral
+// posts and differ only in the version their strategy picks.
+export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Map(), reuse = false, random = Math.random, strategy = 'evolve', pairSeed = '' }) {
   const batchUses = new Map();
   const stat = (post, variantId) => {
     const saved = stats.get(statKey(post.sourceKey, variantId)) || blank;
@@ -47,11 +57,17 @@ export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Ma
   };
   const proven = posts.filter(p => score(p) != null).sort((a, b) => score(b) - score(a));
   const fresh = posts.filter(p => score(p) == null).sort((a, b) => a.createdAt - b.createdAt);
+  let shared = null;
+  if (pairSeed) {
+    const rnd = seededRandom(pairSeed), p = [...proven], f = [...fresh];
+    shared = [];
+    while (p.length || f.length) shared.push(((rnd() < EVOLUTION.exploitShare && p.length) || !f.length ? p : f).shift());
+  }
   const taken = new Set();
   const plan = [];
   for (const slot of slots) {
     const seen = used.get(slot.connectionId) || new Set();
-    const buckets = random() < EVOLUTION.exploitShare ? [proven, fresh] : [fresh, proven];
+    const buckets = shared ? [shared] : random() < EVOLUTION.exploitShare ? [proven, fresh] : [fresh, proven];
     let pick = null;
     for (const bucket of buckets) {
       for (let index = 0; index < bucket.length && !pick; index++) {
