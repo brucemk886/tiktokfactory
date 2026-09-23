@@ -89,9 +89,8 @@ test('operations endpoint reads creative joins with existing scope and reports e
  const f=await fixture(t),url=new URL('https://factory.test/api/psychology-operations?period=7d');
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{...user,sidebarModules:['psychology-ops-report']}});
  const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content.coverage.total,0);
- assert.equal(result.insights.sample.mature,0);assert.match(result.insights.findings[0],/样本不足/);
- const videoUrl=new URL('https://factory.test/api/psychology-operations?period=7d&media=video');
- assert.equal((await (await handlePsychologyOperations(new Request(videoUrl),f.env,videoUrl,{user:{...user,sidebarModules:['psychology-ops-report']}})).json()).insights,null);
+ assert.equal(result.framework.overview.current.n,0);assert.equal(result.framework.overview.daily.length,7);assert.match(result.framework.strategy.findings[0],/样本不足/);
+ assert.equal(result.evolution.exploitShare,0.7);
 });
 
 test('replacement pool retains seven originals and archives old layouts for frozen jobs',()=>{

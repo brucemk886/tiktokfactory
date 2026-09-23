@@ -6,11 +6,13 @@ import { loadGroupStore, scopedAnalyticsAccounts } from "./official.js";
 import { publicState, findProjectForModule, userAllowedGroupIds } from "../../scripts/official-account-group-store.js";
 import { listLatestArchiveAccounts, accountsFromLatestArchive, loadVideosForAccounts } from "./official-archive-store.js";
 import { buildOperationsReport, operationsWindow, parseObject } from "../../scripts/psychology-operations.js";
-import { buildCopyInsights } from "../../scripts/psychology-copy-insights.js";
-import { loadResolvedItems } from "./psychology-copy-evolution.js";
+import { buildOpsFramework } from "../../scripts/psychology-ops-framework.js";
+import { loadResolvedItems, EVOLUTION } from "./psychology-copy-evolution.js";
 
-// Earlier uses of a post can predate the report window.
-const HISTORY_MS=90*86400000;
+const DAY=86400000;
+// Posts published in a period can come from batches created a few days earlier,
+// and earlier uses of the same viral post can be older still.
+const SCHEDULE_LEAD_MS=7*DAY,HISTORY_MS=30*DAY;
 
 export async function handlePsychologyOperations(request, env, url, session) {
   if(url.pathname!=="/api/psychology-operations")return null;
@@ -34,7 +36,7 @@ export async function handlePsychologyOperations(request, env, url, session) {
         json_extract(j.result_json,'$.publishError') AS publish_error
         FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
         LEFT JOIN factory_jobs j ON j.id=i.job_id LEFT JOIN factory_jobs original ON original.id=i.id LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id WHERE b.created_at>=? AND b.created_at<?
-        ORDER BY b.created_at DESC,i.id LIMIT 5001`).bind(window.start,window.end).all(),
+        ORDER BY b.created_at DESC,i.id LIMIT 5001`).bind(window.start-SCHEDULE_LEAD_MS,window.end).all(),
     ]);
     const records=(recordRows.results||[]).slice(0,10000).map(row=>parseObject(row.value_json));
     const items=(itemRows.results||[]).slice(0,5000);
@@ -42,12 +44,16 @@ export async function handlePsychologyOperations(request, env, url, session) {
       if(!item.copy_hash&&item.original_plan){const identity=await copyIdentity(parseObject(item.original_plan));item.copy_hash=identity.hash;item.copy_json=JSON.stringify(identity.copy);}
       if(!item.source_key&&item.original_url){try{item.source_key=photoCopyKey(item.original_url);}catch{item.source_key=item.source_id;}}
     }
-    const content=buildContentPerformance({items:media==='video'?[]:items,records,accounts,videosByAccount});
+    const inWindow=row=>row.time>=window.start&&row.time<window.end;
+    const detail=buildContentPerformance({items:media==='video'?[]:items,records,accounts,videosByAccount});
+    const content={...detail,rows:detail.rows.filter(inWindow)};
     const report=buildOperationsReport({window,accounts,videosByAccount,records,items,media});
-    const insights=media==='video'?null:buildCopyInsights({rows:content.rows,accounts,window,history:await loadResolvedItems(env.DB,window.start-HISTORY_MS),videosByAccount});
-    return json({...report,content,insights,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
+    const history=await loadResolvedItems(env.DB,window.previousStart-HISTORY_MS);
+    const framework=buildOpsFramework({rows:buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount}).rows,
+      history,videosByAccount,accounts,window});
+    return json({...report,content,framework,evolution:EVOLUTION,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
       archiveAt:accounts.length?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0)):0,
-      limited:(recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000,
+      limited:(recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000 || history.length>=20000,
       coverage:"播放分析基于每个账号最近100条已同步作品的当前累计播放，按作品发布日期汇总，并非每日新增播放。历史较多时，上期数据可能不完整。"});
   }catch(error){return errorJson(error.message||"读取运营报表失败。",400);}
 }

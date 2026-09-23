@@ -1,50 +1,61 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 运营报表</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-1"></head>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-2"></head>
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
-<header class="page-head"><div><h1>运营报表</h1><p class="page-lead">复盘运营趋势、账号表现和自动发布批次，找到下一步的改进方向。</p></div><nav class="page-links"><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-effects">数据概览</a></nav></header>
+<header class="page-head"><div><h1>运营报表</h1><p class="page-lead">心理学图文自动发布：整体在变好吗 → 哪些号要养、加码或放弃 → 抽什么内容、用几次 → 抽取规则要不要调。</p></div><nav class="page-links"><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-effects">数据概览</a></nav></header>
 <form id="filters" class="panel ops-filters">
 <label>统计周期<select id="period"><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
 <label id="fromLabel" hidden>开始日期<input id="from" type="date"></label><label id="toLabel" hidden>结束日期<input id="to" type="date"></label>
-<label>内容类型<select id="media"><option value="all">全部内容</option><option value="video">视频</option><option value="photo">图文</option></select></label>
 <label>账号分组<select id="group"><option value="">全部授权分组</option></select></label><button class="primary-link" type="submit" id="query">查询</button>
 </form>
 <p id="status" role="status" class="section-hint">正在读取运营报表…</p>
 <div id="report" hidden>
-<section id="metrics" class="overview-grid" aria-label="核心表现"></section>
-<div class="panel ops-method"><strong>统计口径</strong><p>发布成功率 = 已确认成功 ÷（已确认成功 + 已确认失败），不包含等待回执的任务。高播率、0播率、平均及中位播放仅统计发布满24小时的作品；样本少于5条时请继续观察。</p><p id="coverage"></p><p id="unknown"></p></div>
+<details class="panel ops-method"><summary><strong>统计口径</strong>（全页统一）</summary>
+<p><strong>作品</strong>：心理学图文自动发布的作品，按 TikTok 发布时间归入周期；满24小时才参与计算，未满的算“观察中”。上期 = 紧挨着的前一个同样长度的周期。</p>
+<p><strong>流量池</strong>（播放绝对值，粗定后续按数据调）：低播放 &lt;200 · 正常 200–1000 · 潜力 1000–1万 · 待爆 1万–10万 · 小爆 10万–50万 · 爆款 50万–200万 · 大爆 200万+。破千率 = 潜力及以上占比，破万率 = 待爆及以上占比。</p>
+<p><strong>四象限</strong>：播放以 1000 为界；完播率以本期作品完播率的中位数为界（<span id="completionLine">—</span>）。</p>
+<p><strong>账号阶段</strong>按账号累计已同步作品（全部类型，满24小时）：起号期 不足10条；爆发期 最近10条出过10万+；潜力账号 满10条且平均播放破千；其余普通账号。</p>
+<p>平均播放时长、完播率、点赞、评论、分享取已同步且大于0的作品平均；收藏官方接口未同步。每组样本满5条才下结论。</p><p id="coverage"></p></details>
 <div class="segmented ops-tabs" role="tablist" aria-label="运营分析">
-<button type="button" role="tab" id="trendTab" data-tab="trend" aria-controls="trend" aria-selected="true">运营趋势</button>
-<button type="button" role="tab" id="accountsTab" data-tab="accounts" aria-controls="accounts" aria-selected="false" tabindex="-1">账号分析</button>
-<button type="button" role="tab" id="batchesTab" data-tab="batches" aria-controls="batches" aria-selected="false" tabindex="-1">批次复盘</button><button type="button" role="tab" id="contentTab" data-tab="content" aria-controls="content" aria-selected="false" tabindex="-1">文案 / 样式对比</button><button type="button" role="tab" id="insightsTab" data-tab="insights" aria-controls="insights" aria-selected="false" tabindex="-1">运营规律</button></div>
-<section id="insights" class="panel data-section" role="tabpanel" aria-labelledby="insightsTab" hidden>
-<div class="section-title"><div><p>COPY &amp; ACCOUNT RULES</p><h2>文案使用与账号阶段</h2></div></div>
-<p class="section-hint">只看图文自动发布、满24小时的作品，按播放绝对值对标 TikTok 流量池（粗定，后续按数据调整）：<strong>低播放</strong> &lt;200 · <strong>正常</strong> 200–1000 · <strong>潜力</strong> 1000–1万 · <strong>待爆</strong> 1万–10万 · <strong>小爆</strong> 10万–50万 · <strong>爆款</strong> 50万–200万 · <strong>大爆</strong> 200万+。每组样本满5条才下结论。使用次数按排产顺序计算，同一篇爆款的原版和改写都算。</p>
-<p class="section-hint">账号阶段按发这条作品之前满24小时的作品划分：<strong>起号期</strong>不足10条；<strong>爆发期</strong>最近10条出过10万+；<strong>潜力账号</strong>满10条且平均播放破千；其余为<strong>普通账号</strong>。平均播放时长、完播率、点赞、评论、分享取已同步且大于0的作品平均；收藏目前官方接口未同步。</p>
-<div id="insightFindings" class="ops-findings"></div>
-<div id="insightStages" class="overview-grid"></div>
-<h3>流量池分布</h3><div id="insightTiers" class="table-wrap"></div>
-<h3>潜力账号</h3><div id="insightPotential" class="table-wrap"></div>
-<h3>文案使用次数对流量的影响</h3><div id="insightReuse" class="table-wrap"></div>
-<h3>重复使用时，换版本 / 换样式有没有用</h3><div id="insightVariation" class="table-wrap"></div>
-<h3>爆款改写后再发，还能不能爆</h3><div id="insightRewrite" class="table-wrap"></div>
-<h3>新号起号曲线</h3><div id="insightPosts" class="table-wrap"></div>
-<h3>各阶段哪种内容表现最好</h3><div id="insightStageTable" class="table-wrap"></div>
-</section>
-<section id="content" class="panel data-section" role="tabpanel" aria-labelledby="contentTab" hidden><h2>图文内容效果对比</h2><p>按自动发布批次创建时间筛选。相同文案按标题、发布文案和逐页文字匹配；同一来源可以包含多个改写版本。指标是已同步的当前累计值，不代表样式导致了流量差异。</p><div class="content-controls"><label>对比维度<select id="contentMode"><option value="copy">相同文案 · 跨账号</option><option value="source">同一来源 · 不同改写版本</option><option value="style">视觉样式</option></select></label><label>搜索<input id="contentSearch" type="search" placeholder="文案 / @账号 / 版本编号"></label><label><input id="contentMature" type="checkbox" checked>只用满24小时作品计算均播与高播率</label></div><p id="contentCoverage"></p><div id="contentTable" class="table-wrap"></div><div id="contentPager" class="ops-pager"></div><div id="contentBreakdown"></div><div id="contentDetailPager" class="ops-pager"></div></section>
-<section id="trend" class="panel data-section" role="tabpanel" aria-labelledby="trendTab">
-<div class="section-title"><div><p>DAILY TREND</p><h2>作品表现趋势</h2></div><label>查看指标 <select id="trendMetric"><option value="views">作品累计播放</option><option value="count">发布作品数</option><option value="successRate">发布成功率</option><option value="highRate">高播率（满24小时）</option></select></label></div>
-<p class="section-hint">横轴为作品发布日期。播放量会随已发布作品的后续表现持续更新。</p><div id="trendChart" class="ops-chart"></div>
+<button type="button" role="tab" id="overviewTab" data-tab="overview" aria-controls="overview" aria-selected="true">总览</button>
+<button type="button" role="tab" id="accountsTab" data-tab="accounts" aria-controls="accounts" aria-selected="false" tabindex="-1">账号</button>
+<button type="button" role="tab" id="contentTab" data-tab="content" aria-controls="content" aria-selected="false" tabindex="-1">内容</button>
+<button type="button" role="tab" id="strategyTab" data-tab="strategy" aria-controls="strategy" aria-selected="false" tabindex="-1">规则</button></div>
+
+<section id="overview" class="panel data-section" role="tabpanel" aria-labelledby="overviewTab">
+<div class="section-title"><div><p>OVERVIEW</p><h2>整体在变好还是变坏</h2></div></div>
+<div id="findings" class="ops-findings"></div>
+<section id="metrics" class="overview-grid" aria-label="核心表现"></section>
+<h3>流量池分布</h3><div id="tierTable" class="table-wrap"></div>
+<h3>播放 × 完播 四象限</h3><p class="section-hint">把“播放低”拆开：是号没被推，还是内容留不住人，处理方法不同。</p><div id="quadrantTable" class="table-wrap"></div>
+<div class="section-title"><div><h3>每日趋势</h3></div><label>查看指标 <select id="trendMetric"><option value="potentialRate">破千率</option><option value="medianViews">中位播放</option><option value="n">满24小时作品</option><option value="completion">完播率</option><option value="averageWatch">平均播放时长</option></select></label></div>
+<div id="trendChart" class="ops-chart"></div>
 <details class="ops-daily"><summary>每日明细</summary><div id="dailyTable" class="table-wrap"></div></details>
+<details class="ops-daily"><summary>发布执行（按批次创建时间，含失败原因）</summary><div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div></details>
 </section>
+
 <section id="accounts" class="panel data-section" role="tabpanel" aria-labelledby="accountsTab" hidden>
-<div class="section-title"><div><p>ACCOUNT PERFORMANCE</p><h2>账号表现</h2></div><label>排序 <select id="accountSort"><option value="medianViews">中位播放</option><option value="views">总播放</option><option value="highRate">高播率</option><option value="failureRate">发布失败率</option></select></label></div>
+<div class="section-title"><div><p>ACCOUNTS</p><h2>哪些号要养、加码或放弃</h2></div></div>
+<div id="stageCards" class="overview-grid"></div>
+<h3>本期阶段流转</h3><p class="section-hint">期初 = 周期开始前的阶段，期末 = 现在的阶段。</p><div id="transitionTable" class="table-wrap"></div>
+<div class="section-title"><div><h3>账号明细</h3></div><div class="ops-inline"><label>筛选 <select id="accountFilter"><option value="all">全部账号</option><option value="issue">需要处理</option><option value="potential">潜力 / 爆发</option><option value="launch">起号期</option></select></label><label>排序 <select id="accountSort"><option value="medianViews">中位播放</option><option value="potentialRate">破千率</option><option value="completion">完播率</option><option value="n">本期作品</option></select></label></div></div>
 <div id="accountTable" class="table-wrap"></div><div id="accountPager" class="ops-pager"></div>
 </section>
-<section id="batches" class="panel data-section" role="tabpanel" aria-labelledby="batchesTab" hidden>
-<div class="section-title"><div><p>AUTOMATION REVIEW</p><h2>自动发布批次复盘</h2></div></div>
-<p class="section-hint">按批次创建时间筛选，仅统计当前授权分组中的任务。已提交中台不等于发布成功；最终结果以已同步回执为准。</p>
-<div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div>
+
+<section id="content" class="panel data-section" role="tabpanel" aria-labelledby="contentTab" hidden>
+<div class="section-title"><div><p>CONTENT</p><h2>抽什么、用几次、要不要改写</h2></div></div>
+<h3>爆款排行（本期）</h3><div id="sourceTable" class="table-wrap"></div><div id="sourcePager" class="ops-pager"></div>
+<h3>同一篇爆款第几次使用</h3><p class="section-hint">使用次数按排产顺序计算，原版和改写合计。</p><div id="reuseTable" class="table-wrap"></div>
+<h3>重复使用时，换版本 / 换样式有没有用</h3><div id="variationTable" class="table-wrap"></div>
+<h3>爆款改写后再发，还能不能爆</h3><div id="rewriteTable" class="table-wrap"></div>
+<h3>新号前几条的表现</h3><div id="postIndexTable" class="table-wrap"></div>
+<details class="ops-daily"><summary>明细对比：相同文案 / 同一来源 / 视觉样式</summary>
+<div class="content-controls"><label>对比维度<select id="contentMode"><option value="copy">相同文案 · 跨账号</option><option value="source">同一来源 · 不同改写版本</option><option value="style">视觉样式</option></select></label><label>搜索<input id="contentSearch" type="search" placeholder="文案 / @账号 / 版本编号"></label><label><input id="contentMature" type="checkbox" checked>只用满24小时作品计算均播与高播率</label></div><p id="contentCoverage"></p><div id="contentTable" class="table-wrap"></div><div id="contentPager" class="ops-pager"></div><div id="contentBreakdown"></div><div id="contentDetailPager" class="ops-pager"></div></details>
+</section>
+
+<section id="strategy" class="panel data-section" role="tabpanel" aria-labelledby="strategyTab" hidden>
+<div class="section-title"><div><p>RULES</p><h2>抽取规则要不要调</h2></div></div>
+<h3>当前生效的抽取规则</h3><div id="evolutionRules" class="ops-rules"></div>
+<h3>各阶段打法 vs 实际数据</h3><p class="section-hint">打法是先定的假设；右边是本期该阶段账号发各类内容的实际中位播放，满5条才比较。</p><div id="stageTable" class="table-wrap"></div>
 </section></div>
-<dialog id="videoDialog"><div class="ops-dialog-head"><h2 id="dialogTitle">账号作品</h2><button id="closeDialog" type="button" class="table-action">关闭</button></div><p class="section-hint">未满24小时的作品标为“观察中”，不参与高播率和播放中位数计算。</p><div id="dialogTable" class="table-wrap"></div><div id="videoPager" class="ops-pager"></div></dialog>
-</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260923-3"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260923-4"></script></body></html>
