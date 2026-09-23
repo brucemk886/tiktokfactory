@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 运营报表</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-2"></head>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-3"></head>
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
 <header class="page-head"><div><h1>运营报表</h1><p class="page-lead">心理学自动发布（图文、视频分开看）：整体在变好吗 → 哪些号要养、加码或放弃 → 抽什么内容、用几次 → 抽取规则要不要调。</p></div><nav class="page-links"><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-effects">数据概览</a></nav></header>
+<div class="ops-media-tabs" role="tablist" aria-label="内容类型"><button type="button" role="tab" class="ops-media-tab" data-media="photo" aria-selected="true">图文</button><button type="button" role="tab" class="ops-media-tab" data-media="video" aria-selected="false">视频</button></div>
 <form id="filters" class="panel ops-filters">
 <label>统计周期<select id="period"><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
 <label id="fromLabel" hidden>开始日期<input id="from" type="date"></label><label id="toLabel" hidden>结束日期<input id="to" type="date"></label>
-<label>内容类型<select id="media"><option value="photo">图文</option><option value="video">视频</option></select></label>
 <label>账号分组<select id="group"><option value="">全部授权分组</option></select></label><button class="primary-link" type="submit" id="query">查询</button>
 </form>
 <p id="status" role="status" class="section-hint">正在读取运营报表…</p>
@@ -59,4 +59,4 @@
 <h3>当前生效的抽取规则</h3><div id="evolutionRules" class="ops-rules"></div>
 <h3>各阶段打法 vs 实际数据</h3><p class="section-hint">打法是先定的假设；右边是本期该阶段账号发各类内容的实际中位播放，满5条才比较。</p><div id="stageTable" class="table-wrap"></div>
 </section></div>
-</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260923-5"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260923-6"></script></body></html>

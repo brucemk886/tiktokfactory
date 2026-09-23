@@ -8,9 +8,12 @@ const time = value => new Date(value).toLocaleString("zh-CN",{timeZone:"Asia/Sha
 const TABS=["overview","accounts","content","strategy"];
 const params = new URLSearchParams(location.search);
 const state = { data:null,tab:TABS.includes(params.get("tab"))?params.get("tab"):"overview",accountPage:1,batchPage:1,sourcePage:1,request:0 };
-for(const key of ["period","from","to","media"]) if(params.has(key)) $("#"+key).value=params.get(key);
+for(const key of ["period","from","to"]) if(params.has(key)) $("#"+key).value=params.get(key);
 if(!$("#period").value)$("#period").value="7d";
-if(!$("#media").value)$("#media").value="photo";
+state.media=params.get("media")==="video"?"video":"photo";
+function renderMediaTabs(){document.querySelectorAll("[data-media]").forEach(b=>{const on=b.dataset.media===state.media;b.classList.toggle("is-active",on);b.setAttribute("aria-selected",String(on));});}
+document.querySelectorAll("[data-media]").forEach(b=>b.addEventListener("click",()=>{if(b.dataset.media===state.media)return;state.media=b.dataset.media;renderMediaTabs();load();}));
+renderMediaTabs();
 $("#period").addEventListener("change",toggleDates);
 $("#filters").addEventListener("submit",event=>{event.preventDefault();load();});
 $("#trendMetric").addEventListener("change",renderTrend);
@@ -31,7 +34,7 @@ function selectTab(tab,save=true){
 }
 async function load(){
   const request=++state.request;$("#query").disabled=true;$("#report").hidden=true;$("#status").textContent="正在读取运营报表…";
-  const query=new URLSearchParams({period:$("#period").value,media:$("#media").value,group:state.data?$("#group").value:(params.get("group")||"")});
+  const query=new URLSearchParams({period:$("#period").value,media:state.media,group:state.data?$("#group").value:(params.get("group")||"")});
   if(query.get("period")==="custom"){query.set("from",$("#from").value);query.set("to",$("#to").value);}
   try{
     const response=await fetch("/api/psychology-operations?"+query,{cache:"no-store"});const data=await response.json();
