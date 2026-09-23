@@ -393,7 +393,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const posts=await loadLibraryPosts(env.DB,user.username,config.mediaType,config.query,usable);
     const [stats,used]=await Promise.all([loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
     const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
-    sources=planLibraryDraw({posts,stats,slots,used,reuse:config.allowPeerReuse}).map(pick=>({...pick,source:{
+    sources=planLibraryDraw({posts,stats,slots,used,reuse:config.allowPeerReuse,strategy:config.libraryStrategy||'evolve'}).map(pick=>({...pick,source:{
       ...(pick.variantId?reviewedSource(pick.row,config.mediaType):librarySource(pick.row,config.mediaType)),usageKey:pick.post.sourceKey}}));
   } else if(config.sourceType==='copy-library'){
     const rows=await env.DB.prepare("SELECT * FROM psychology_copy_library WHERE status='done' AND (?='all' OR media_type=?) AND (title LIKE ? OR source_url LIKE ? OR content_json LIKE ?) ORDER BY "+(config.selection==='random'?'RANDOM()':'completed_at DESC,id')+' LIMIT 1000')

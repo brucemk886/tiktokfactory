@@ -138,6 +138,12 @@
 
 一行一任务表 `factory_auto_tasks`（`value_json`），`generatedVideos`/`publishResults` 各截 80。软删 30 天、终态 90 天后 prune。旧 KV `auto-tasks` 整包只在表为空时迁移一次。
 
+### 3.3.1 心理学自动运营（autopilot）
+
+- `/psychology-autopilot`（admin + `psychology-publish`）：把一个心理学分组交给系统。表 `psychology_autopilots` / `_accounts` / `_slots` / `_log`（迁移 `0048`），一个分组同时只能有一个未结束的自动运营。
+- 每日 cron（北京 0 点、8 点，在 `psychology-copy-performance` 之后）跑 `runAutopilots`：停发问题号（开始后连续 5 条满24小时 <200 播放，或连续 3 次发布失败）→ 每天一次近 7 天分析（和运营报表同一 `frameworkFor`）→ 给 2–26 小时内的北京 08:00 / 12:00 / 21:00 每个时段建一个 `library` 图文批次（`libraryStrategy` = evolve / original / rewrite，`staggerSeconds=45`，以启动人身份走 `handlePsychologyAutoPublish`）。时段按 `(autopilot_id, slot_at)` 认领，失败的时段下次重试，重复运行不会重复建批次。
+- 容量：每个号每天 3 条，每组 ≤50 号一批；同号不重复同一篇爆款，所以一周每号需要 21 篇不同爆款。
+
 ### 3.4 发布记录与回执
 
 - `factory_publish_records`：`mergeAndStorePublishRecords` 只读相关 id、跳过未变行、只 upsert 变化行。表按时间保留 90 天（`prunePublishRecords`，每晚 cron），不按条数裁剪。心理学图文发布在工厂云创建中台批次后立刻写一条 `photo:{requestId}` 记录（`externalRef={requestId}:0`），回执按 refs 回写，不再等本机工人同步。

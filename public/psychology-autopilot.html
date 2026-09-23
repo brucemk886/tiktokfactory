@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 自动运营</title>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-4"><link rel="stylesheet" href="/psychology-autopilot.css?v=20260923-1"></head>
+<body class="work-page official-data-page psychology-module"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
+<header class="page-head"><div><h1>自动运营</h1><p class="page-lead">把一个账号分组交给系统：每天自动从文案库抽内容、排发布、分析数据、停掉有问题的号。多个分组用不同策略跑，对比哪种打法更好。</p></div><div class="ops-head-tools"><nav class="page-links"><a href="/psychology-publish">自动发布</a><a href="/psychology-ops-report">运营报表</a><a href="/psychology-copy-library">文案库</a></nav></div></header>
+
+<section class="panel data-section">
+<h2>新建自动运营</h2>
+<form id="createForm" class="ops-filters pilot-form">
+<label>账号分组<select id="groupId" required></select></label>
+<label>运营策略<select id="strategy"></select></label>
+<label>运行天数<input id="days" type="number" min="1" max="30" value="7" required></label>
+<button class="primary-link" type="submit" id="createButton">启动</button>
+</form>
+<ul class="pilot-rules" id="rules"></ul>
+<p id="createStatus" role="status" class="section-hint"></p>
+</section>
+
+<section class="panel data-section">
+<div class="section-title"><div><p>COMPARISON</p><h2>各组效果对比</h2></div><button type="button" class="table-action" id="reload">刷新</button></div>
+<p class="section-hint">每组每天分析一次近7天满24小时的作品，和运营报表同一套口径。</p>
+<p id="status" role="status" class="section-hint">正在读取…</p>
+<div id="compare" class="table-wrap"></div>
+</section>
+
+<div id="pilots"></div>
+</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260923-1"></script></body></html>

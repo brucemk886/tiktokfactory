@@ -110,6 +110,7 @@ export function canAccessPath(user, pathname) {
   if(['/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
   // 爆款复刻 merged into the publish records page; either saved grant still opens it.
   if(['/psychology-production','/psychology-production.html','/psychology-publish-sources','/psychology-publish-sources.html'].includes(clean))return user.role==='admin'&&['psychology-production','psychology-publish-sources'].some(id=>(user.sidebarModules||[]).includes(id));
+  if(['/psychology-autopilot','/psychology-autopilot.html'].includes(clean))return user.role==='admin'&&(user.sidebarModules||[]).includes('psychology-publish');
   const moduleId = moduleIdForPath(pathname);
   if (!moduleId) return true;
   if (moduleId === "accounts" || moduleId === "geelark-profiles") return user.role === "admin";

@@ -5,6 +5,7 @@ import { handlePsychologyComments, runScheduledComments } from './psychology-com
 import { reconcilePsychologyGroups } from './psychology-publish-groups.js';
 import { handlePsychologyTopicBank, PSYCHOLOGY_TOPIC_API } from './psychology-topic-bank.js';
 import { handlePsychologyOperations } from "./psychology-operations.js";
+import { handlePsychologyAutopilot } from "./psychology-autopilot.js";
 import { handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { handlePsychologyPeerHits, PSYCHOLOGY_PEER_API } from "./psychology-peer-hits.js";
 import { handleAi } from "./ai.js";
@@ -56,7 +57,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
@@ -118,6 +119,8 @@ export default {
       ["factory-storage-sample", () => collectFactoryStorageSample(env, env.DB)],
       ["novel-exceptions-reconcile", () => reconcileNovelExceptions(env.DB)],
       ["psychology-copy-performance", async () => (await import("./psychology-copy-evolution.js")).refreshCopyPerformance(env)],
+      // After the rollup, so each day's draws use fresh performance data.
+      ["psychology-autopilot", async () => (await import("./psychology-autopilot.js")).runAutopilots(env)],
     ]);
     console.info(JSON.stringify({ event: "scheduled-steps-completed", cron: controller.cron, ...results }));
     ctx?.waitUntil?.(backfillMissingAudioDurations(env, env.DB, { limit: 40 }).catch(() => {}));

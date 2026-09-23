@@ -16,7 +16,9 @@ const judged = stat => stat.mature >= EVOLUTION.matureNeeded && stat.avgViews !=
 // stats: Map statKey -> { posts, mature, avgViews }
 // slots: [{ connectionId, scheduleAt }] in batch order
 // used: Map connectionId -> Set of sourceKeys that account already posted
-export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Map(), reuse = false, random = Math.random }) {
+// strategy: 'evolve' (original first, then data-driven), 'original' (never
+// rewrites) or 'rewrite' (rewrites first, original only when a post has none).
+export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Map(), reuse = false, random = Math.random, strategy = 'evolve' }) {
   const batchUses = new Map();
   const stat = (post, variantId) => {
     const saved = stats.get(statKey(post.sourceKey, variantId)) || blank;
@@ -27,6 +29,8 @@ export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Ma
   function preference(post) {
     const original = post.original ? { id: '', row: post.original, stat: stat(post, '') } : null;
     const rewrites = post.rewrites.map(row => ({ id: row.external_id, row, stat: stat(post, row.external_id) }));
+    if (strategy === 'original') return original ? [original] : [];
+    if (strategy === 'rewrite') return [...fewestFirst(rewrites), ...(original ? [original] : [])];
     // The original always goes first until it has a baseline of its own.
     if (original && !judged(original.stat)) return [original, ...fewestFirst(rewrites)];
     const baseline = original ? original.stat.avgViews : null;

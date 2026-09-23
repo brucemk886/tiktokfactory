@@ -14,6 +14,16 @@ const DAY=86400000;
 // and earlier uses of the same viral post can be older still.
 const SCHEDULE_LEAD_MS=7*DAY,HISTORY_MS=30*DAY;
 
+// The same framework numbers the report shows, for a given set of accounts.
+export async function frameworkFor(env,{accounts,window,media="photo",videosByAccount,records}){
+  videosByAccount=videosByAccount||await loadVideosForAccounts(env,env.DB,accounts.map(a=>a.schema),100);
+  records=records||(await env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE created_at>=? ORDER BY created_at DESC LIMIT 10000").bind(window.previousStart).all()).results.map(row=>parseObject(row.value_json));
+  const history=await loadResolvedItems(env.DB,window.previousStart-HISTORY_MS);
+  const framework=buildOpsFramework({rows:buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount,media}).rows,
+    history,videosByAccount,accounts,window,media});
+  return {framework,history,videosByAccount,records};
+}
+
 export async function handlePsychologyOperations(request, env, url, session) {
   if(url.pathname!=="/api/psychology-operations")return null;
   if(request.method!=="GET")return errorJson("仅支持读取报表。",405);
@@ -48,9 +58,7 @@ export async function handlePsychologyOperations(request, env, url, session) {
     const detail=buildContentPerformance({items,records,accounts,videosByAccount,media});
     const content={...detail,rows:detail.rows.filter(inWindow)};
     const report=buildOperationsReport({window,accounts,videosByAccount,records,items,media});
-    const history=await loadResolvedItems(env.DB,window.previousStart-HISTORY_MS);
-    const framework=buildOpsFramework({rows:buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount,media}).rows,
-      history,videosByAccount,accounts,window,media});
+    const {framework,history}=await frameworkFor(env,{accounts,window,media,videosByAccount,records});
     return json({...report,content,framework,evolution:EVOLUTION,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
       archiveAt:accounts.length?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0)):0,
       limited:(recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000 || history.length>=20000,
