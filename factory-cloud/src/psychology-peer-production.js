@@ -45,15 +45,18 @@ export async function handlePeerProduction(request, env, url, user) {
     if (requestedMediaType && !['video','photo'].includes(requestedMediaType)) return errorJson('内容类型无效。', 400);
     const requestedJobType = requestedMediaType === 'photo' ? PHOTO_TYPE : requestedMediaType === 'video' ? VIDEO_TYPE : '';
     const offset = Math.max(0, Math.min(100000, Number.parseInt(url.searchParams.get('offset'), 10) || 0));
+    // Auto-publish jobs are listed per post on the publish records page, so the
+    // manual view leaves them out instead of showing each one twice.
+    const manualOnly = url.searchParams.get('origin') === 'manual';
+    const where = "created_by=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL"
+      + (requestedJobType ? ' AND type=?' : '')
+      + (manualOnly ? " AND json_extract(payload_json,'$.psychologyAutomation') IS NULL" : '');
+    const args = [user.username, ...(requestedJobType ? [requestedJobType] : [])];
     const rows = jobId
       ? await env.DB.prepare("SELECT * FROM factory_jobs WHERE created_by=? AND id=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL").bind(user.username, jobId).all()
-      : requestedJobType
-        ? await env.DB.prepare("SELECT * FROM factory_jobs WHERE created_by=? AND type=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL ORDER BY created_at DESC,id DESC LIMIT 31 OFFSET ?").bind(user.username, requestedJobType, offset).all()
-        : await env.DB.prepare("SELECT * FROM factory_jobs WHERE created_by=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL ORDER BY created_at DESC,id DESC LIMIT 31 OFFSET ?").bind(user.username, offset).all();
+      : await env.DB.prepare(`SELECT * FROM factory_jobs WHERE ${where} ORDER BY created_at DESC,id DESC LIMIT 31 OFFSET ?`).bind(...args, offset).all();
     if (jobId && !rows.results.length) return errorJson('找不到这条爆款复刻任务。', 404);
-    const counts = requestedJobType
-      ? await env.DB.prepare("SELECT status,COUNT(*) AS count FROM factory_jobs WHERE created_by=? AND type=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL GROUP BY status").bind(user.username, requestedJobType).all()
-      : await env.DB.prepare("SELECT status,COUNT(*) AS count FROM factory_jobs WHERE created_by=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL GROUP BY status").bind(user.username).all();
+    const counts = await env.DB.prepare(`SELECT status,COUNT(*) AS count FROM factory_jobs WHERE ${where} GROUP BY status`).bind(...args).all();
     return json({
       jobs: (rows.results || []).slice(0, 30).map(row => {
         const payload = JSON.parse(row.payload_json || '{}');
@@ -150,9 +153,11 @@ export async function handlePeerProduction(request, env, url, user) {
 
 async function deleteProductionJob(env, user, jobId) {
   if (!/^[A-Za-z0-9._:-]{1,120}$/.test(jobId)) fail('任务编号无效。');
-  const row = await env.DB.prepare("SELECT id,type FROM factory_jobs WHERE created_by=? AND id=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL")
+  const row = await env.DB.prepare("SELECT id,type,json_extract(payload_json,'$.psychologyAutomation.id') AS auto_item FROM factory_jobs WHERE created_by=? AND id=? AND json_extract(payload_json,'$.peerSource.id') IS NOT NULL")
     .bind(user.username, jobId).first();
   if (!row) fail('找不到这条爆款复刻任务。', 404);
+  // Removing an auto-publish job here would strand its batch mid-flight.
+  if (row.auto_item) fail('自动发布的内容请在心理学自动发布页处理，这里只能删除手动复刻任务。', 409);
   await deleteStoredObjects(env.ARCHIVE, [
     `psychology-recreation/${jobId}/`,
     `psychology-recreation-sources/${jobId}/`,

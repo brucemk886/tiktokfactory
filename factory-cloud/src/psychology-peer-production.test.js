@@ -403,6 +403,21 @@ test('peer recreation enqueues one source-linked cloud job per selection without
   const other=await (await call('GET',undefined,{...user,username:'other'})).json(); assert.equal(other.jobs.length,0);
 });
 
+test('manual view leaves auto-publish jobs out and the board refuses to delete them', async t => {
+  const { db, sqlite, call, user } = fixture(t);
+  const imported = await importPsychologyPeerHits(db, [{videoUrl:'https://www.tiktok.com/@example/video/31',title:'Manual',videoData:{videoFileUrl:'https://v16.tiktokcdn.com/31.mp4'}}], user.id);
+  assert.equal((await call('POST',{ids:imported.items.map(i=>i.id),mediaType:'video',requestId:crypto.randomUUID()})).status,202);
+  sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,payload_json,result_json,created_by,created_at,updated_at) VALUES('auto-1','psychology-photo-story','done','Auto',?,'{}',?,1,1)")
+    .run(JSON.stringify({peerSource:{id:'psy-x'},psychologyAutomation:{id:'auto-1'}}), user.username);
+  assert.equal((await (await call('GET')).json()).jobs.length,2);
+  const manual=await (await call('GET',undefined,user,'https://factory.test','?origin=manual')).json();
+  assert.deepEqual(manual.jobs.map(j=>j.title),['Manual']);
+  assert.equal(manual.counts.reduce((sum,c)=>sum+c.count,0),1);
+  assert.equal((await (await call('GET',undefined,user,'https://factory.test','?jobId=auto-1')).json()).jobs[0].title,'Auto'); // the records dialog still reads it
+  assert.equal((await call('DELETE',undefined,user,'https://factory.test','/auto-1')).status,409);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE id='auto-1'").get().n,1);
+});
+
 test('peer recreation selects server-owned male and Lara female voices from each record', async t => {
   const {db,sqlite,call,user}=fixture(t);
   const imported=await importPsychologyPeerHits(db,[

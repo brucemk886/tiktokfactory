@@ -21,7 +21,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
   moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ["admin"], psychologyGroup()),
   moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ["admin"], psychologyGroup(), "psychology-copy-library"),
-  moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup()),
+  moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup(), "psychology-publish-sources"),
   moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
   moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
   moduleItem("psychology-narrative", "/psychology-target-2", "单图互动测试模板", ["admin"], psychologyGroup(), "psychology"),
@@ -32,7 +32,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ["admin"], psychologyGroup()),
   moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ["admin"], psychologyGroup()),
   moduleItem("psychology-comments", "/psychology-comments", "定时评论", ["admin"], psychologyGroup()),
-  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "发布对标", ["admin"], psychologyGroup()),
+  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "心理学发布记录", ["admin"], psychologyGroup()),
   moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ALL, officialChannelGroup()),
   moduleItem("official-analytics", "/official-analytics", "授权账号数据", ALL, officialChannelGroup()),
   moduleItem("official-publish-records", "/official-publish-records", "官方发布记录", ALL, officialChannelGroup()),
@@ -108,6 +108,8 @@ export function canAccessPath(user, pathname) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
   }
   if(['/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
+  // 爆款复刻 merged into the publish records page; either saved grant still opens it.
+  if(['/psychology-production','/psychology-production.html','/psychology-publish-sources','/psychology-publish-sources.html'].includes(clean))return user.role==='admin'&&['psychology-production','psychology-publish-sources'].some(id=>(user.sidebarModules||[]).includes(id));
   const moduleId = moduleIdForPath(pathname);
   if (!moduleId) return true;
   if (moduleId === "accounts" || moduleId === "geelark-profiles") return user.role === "admin";

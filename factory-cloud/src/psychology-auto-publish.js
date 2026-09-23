@@ -12,6 +12,7 @@ import { psychologyPeerHitFromRow } from './psychology-peer-hits-store.js';
 import { officialPublishFollowupPayload } from './jobs.js';
 import { assertOfficialPublishAccess } from './official.js';
 import { attachOfficialRemoteOutcomes, officialBatchUuid } from '../../scripts/official-publish-records.js';
+import { publishOutcome } from '../../scripts/psychology-operations.js';
 import { mergeAndStorePublishRecords } from './publish-records-store.js';
 import { signalDesk } from './signal-desk.js';
 import { json, errorJson, readJson, sha256Hex } from './http.js';
@@ -77,6 +78,17 @@ function sourceStatus(row) {
   if (row.type === 'psychology-photo-story' && row.status === 'done') return 'handoff';
   return row.status || 'missing';
 }
+// The official record is the durable truth once a post reaches the hub; job
+// state only fills in the steps before that and may already be pruned.
+function recordStatus(row, record) {
+  if (record?.autoTaskId) {
+    const outcome = publishOutcome(record);
+    if (outcome === 'published') return 'published';
+    if (outcome === 'failed') return 'publish_failed';
+  }
+  const status = sourceStatus(row);
+  return status === 'missing' && !row.job_row ? 'cleaned' : status;
+}
 function publishedPostUrl(record, username, mediaType) {
   const direct = tiktokUrl(record.shareLink || record.videoUrl);
   if (direct) return direct;
@@ -110,14 +122,24 @@ export async function listAutoPublishSources(db, user, input = {}, env = null) {
   const mediaType = input.mediaType === 'photo' || input.mediaType === 'video' ? input.mediaType : '';
   const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
   const like = '%' + query.replace(/[%_]/g, '') + '%';
+  // factory_jobs is routinely pruned, so titles, source links and the source
+  // kind also come from the durable source tables and the batch config.
   const rows = await db.prepare(`SELECT i.id,i.source_id,i.connection_id,i.schedule_at,i.receipt_json,i.ready_json,i.publish_group_id,
-      b.id AS batch_id,b.created_at,b.config_json,j.title,j.status,j.type,j.payload_json,j.result_json,j.available_at
+      b.id AS batch_id,b.created_at,b.config_json,j.id AS job_row,j.title,j.status,j.type,j.payload_json,j.result_json,j.available_at,
+      story.id AS story_row,p.title AS peer_title,p.video_url AS peer_url,
+      v.title AS variant_title,v.external_id AS variant_external,vp.title AS variant_peer_title,vp.video_url AS variant_peer_url,t.title AS topic_title
     FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
     LEFT JOIN factory_jobs j ON j.id=i.job_id
+    LEFT JOIN factory_jobs story ON story.id=i.id
+    LEFT JOIN psychology_peer_hits p ON p.id=i.source_id
+    LEFT JOIN psychology_copy_variants v ON v.id=i.source_id
+    LEFT JOIN psychology_peer_hits vp ON v.source_key LIKE 'v1:tiktok:%' AND vp.video_id=substr(v.source_key,11)
+    LEFT JOIN psychology_template_topics t ON t.id=i.source_id
     WHERE b.created_by=? AND i.deleted_at=0 AND (?='' OR json_extract(b.config_json,'$.mediaType')=?)
-      AND (?=0 OR b.config_json LIKE ? OR IFNULL(j.payload_json,'') LIKE ? OR IFNULL(j.title,'') LIKE ?)
+      AND (?=0 OR b.config_json LIKE ? OR IFNULL(j.payload_json,'') LIKE ? OR IFNULL(j.title,'') LIKE ?
+        OR IFNULL(p.title,'') LIKE ? OR IFNULL(p.video_url,'') LIKE ? OR IFNULL(v.title,'') LIKE ? OR IFNULL(t.title,'') LIKE ?)
     ORDER BY b.created_at DESC, i.id LIMIT ? OFFSET ?`)
-    .bind(user.username, mediaType, mediaType, query ? 1 : 0, like, like, like, SOURCE_PAGE + 1, offset).all();
+    .bind(user.username, mediaType, mediaType, query ? 1 : 0, like, like, like, like, like, like, like, SOURCE_PAGE + 1, offset).all();
   const page = rows.results.slice(0, SOURCE_PAGE);
   const records = new Map();
   if (page.length) {
@@ -140,14 +162,19 @@ export async function listAutoPublishSources(db, user, input = {}, env = null) {
       const media = config.mediaType === 'photo' ? 'photo' : 'video';
       const publishedUrl = publishedPostUrl(record, auto.account?.username, media);
       const username = accountHandle(auto.account?.username, record.accountUsername, record.username, handleFromPost(publishedUrl), handles.get(row.connection_id));
+      const sourceType = config.sourceType || (payload.copySource ? (payload.copySource.kind==='rewrite'?'copy-bank':'copy-library') : payload.topicSource ? 'topic-bank' : 'peer');
       return {
         id: row.id, batchId: row.batch_id, batchName: String(config.name || ''), createdAt: row.created_at,
-        mediaType: media, sourceType: payload.copySource ? (payload.copySource.kind==='rewrite'?'copy-bank':'copy-library') : payload.topicSource ? 'topic-bank' : 'peer',
+        mediaType: media, sourceType, variantId: String(row.variant_external || ''),
         accountUsername: username, connectionId: row.connection_id, scheduleAt: row.schedule_at,
-        status: sourceStatus(row), title: String(row.title || payload.peerSource?.title || payload.topicSource?.title || ''),
-        peerUrl: tiktokUrl(payload.peerSource?.videoUrl), peerTitle: String(payload.copySource?.content?.title || payload.peerSource?.title || ''),
-        topicTitle: String(payload.topicSource?.title || ''),
+        status: recordStatus(row, record),
+        title: String(row.title || payload.peerSource?.title || payload.topicSource?.title || row.variant_title || row.topic_title || row.peer_title || ''),
+        peerUrl: tiktokUrl(payload.peerSource?.videoUrl) || tiktokUrl(row.peer_url) || tiktokUrl(row.variant_peer_url),
+        peerTitle: String(payload.copySource?.content?.title || payload.peerSource?.title || row.peer_title || row.variant_peer_title || ''),
+        topicTitle: String(payload.topicSource?.title || row.topic_title || ''),
         publishedUrl: publishedPostUrl(record, username, media), publishedId: String(record.videoId || record.itemId || ''),
+        // The production board reads the analysis job, which keeps the item's own id.
+        detailJobId: row.story_row && sourceType !== 'topic-bank' ? row.id : '',
       };
     }),
   };

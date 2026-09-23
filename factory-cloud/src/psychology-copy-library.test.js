@@ -180,3 +180,17 @@ test('old peer URLs redirect to the unified page preserving media selection afte
  }
  const guest=await worker.fetch(new Request('https://factory.test/psychology-peer-hits'),f.env,{});assert.equal(guest.headers.get('location'),'/login');
 });
+
+test('the old recreation board redirects into the manual view of publish records keeping the job',async t=>{
+ const f=await setup(t);const {sha256Hex}=await import('./http.js');const {default:worker}=await import('./index.js');
+ const {canAccessPath}=await import('./sidebar.js');
+ f.sqlite.prepare('INSERT INTO factory_sessions(token_hash,user_id,expires_at,created_at,last_seen_at) VALUES (?,?,?,?,?)').run(await sha256Hex('board-session'),'admin',Date.now()+60000,Date.now(),Date.now());
+ f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json=? WHERE id='admin'").run(JSON.stringify(['psychology-production','psychology-peer-hits']));
+ for(const path of ['/psychology-production','/psychology-production.html']){
+  const response=await worker.fetch(new Request('https://factory.test'+path+'?job=psy-1',{headers:{cookie:'lf_session=board-session'}}),f.env,{});
+  assert.equal(response.status,302);assert.equal(response.headers.get('location'),'/psychology-publish-sources?job=psy-1&view=manual');
+ }
+ // A grant for only the old board still opens the merged page; operators stay out.
+ assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-production']},'/psychology-publish-sources'),true);
+ assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-production','psychology-publish-sources']},'/psychology-publish-sources'),false);
+});

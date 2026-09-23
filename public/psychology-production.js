@@ -20,11 +20,11 @@
     const count=Math.max(base.length,...(p.scenes||[]).map(s=>s.index+1),0);
     return Array.from({length:count},(_,index)=>{const b=base[index]||{},saved=(p.scenes||[]).find(s=>s.index===index)||{};const image=(r.results||[]).find(s=>s.sceneIndex===index);return {index,text:b.text||[b.title,b.subtitle,b.body].filter(Boolean).join('\n')||b.zh||'',translation:b.en||'',imagePrompt:b.stockQuery||b.visualPrompt||'',template:b.template||image?.template||'',imageModel:image?.imageModel||b.template||'',...saved,imageUrl:saved.imageUrl||image?.fileUrl||image?.imageUrl||''};});
   }
-  function recreationDetail(job) {
+  function recreationDetail(job, host=$('#boardDetail')) {
     const result=job.result||{}, plan=result.plan||{}, scenes=Array.isArray(result.scenes)?result.scenes:[], sourceUrl=/^https:\/\/([a-z0-9-]+\.)*tiktok\.com\//i.test(String(job.source?.videoUrl||''))?esc(job.source.videoUrl):'';
     const ready=scenes.length&&scenes.every(scene=>scene.imageStatus==='done'&&scene.audioStatus==='done');
     const provider=result.analysis?.provider==='kie'?'Kie Gemini 3.8 Flash':'Google Gemini 3.8 Flash';
-    $('#boardDetail').innerHTML=`<span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span> <span class="muted">爆款复刻 · 云端执行</span> <button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除任务</button>
+    host.innerHTML=`<span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span> <span class="muted">爆款复刻 · 云端执行</span> <button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除任务</button>
       <h2>${esc(plan.title||job.title||job.source?.title||'TikTok 爆款复刻')}</h2>
       <p class="muted">提交 ${stamp(job.createdAt)} · 更新 ${stamp(job.updatedAt)} · 进度 ${Math.max(0,Math.min(100,Number(job.percent)||0))}%</p>
       <div class="recreation-progress" aria-label="任务进度"><span style="width:${Math.max(0,Math.min(100,Number(job.percent)||0))}%"></span></div>
@@ -53,16 +53,16 @@
         ${scene.imageError?`<p class="material-error">图片：${esc(scene.imageError)}</p>`:''}${scene.audioError?`<p class="material-error">配音：${esc(scene.audioError)}</p>`:''}
       </div></article>`;
   }
-  function detail(job) {
-    if(job.type==='psychology-recreation') return recreationDetail(job);
+  function detail(job, host=$('#boardDetail')) {
+    if(job.type==='psychology-recreation') return recreationDetail(job, host);
     const r=job.result||{},p=r.production||{},photo=job.type==='psychology-photo-story',scenes=scenesFor(job),events=p.events||[];
     const sequence=photo?['script','images','done']:job.type==='psychology'?['script','audio','images','render','done']:['script','audio','images','render','verify','done'];
     const visited=new Set(events.map(e=>e.stage));
     const stageHtml=['queued',...sequence].map(stage=>{const active=stage==='queued'?job.status==='queued':p.stage===stage;const cls=active?(job.status==='failed'?'failed':'active'):(stage==='queued'||visited.has(stage)?'visited':'');return `<li class="${cls}">${esc(stages[stage])}</li>`;}).join('');
     const duration=p.audio?.duration||p.video?.duration||0;
     const tracks=!photo&&scenes.some(s=>s.duration>0)?`<div class="timeline-tracks">${['画面','解说'].map((name,n)=>`<div class="timeline-track ${n?'audio':''}"><b>${name}</b><div>${scenes.map(s=>`<span style="flex:${Math.max(.1,Number(s.duration)||.1)}" title="${esc(s.start?.toFixed?.(1)||'0')}–${esc(s.end?.toFixed?.(1)||'?')} 秒">${s.index+1} · ${seconds(s.duration)}</span>`).join('')}</div><small>${seconds(duration)}</small></div>`).join('')}</div>`:'';
-    const savedOpen=new Map([...$('#boardDetail').querySelectorAll('details')].map(e=>[e.dataset.section,e.open]));
-    $('#boardDetail').innerHTML=`<span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span> <span class="muted">${esc(types[job.type]||job.type)} · ${photo?'云端分析匹配':'视频工人执行'}</span> <button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除任务</button><h2>${esc(job.title||job.source?.title)}</h2><p class="muted">提交 ${stamp(job.createdAt)} · 更新 ${stamp(job.updatedAt)}</p><ol class="board-steps">${stageHtml}</ol><p>${esc(job.message||'已进入队列，等待执行。')}</p>${job.error?`<p class="board-error">${esc(job.error)}</p>`:''}
+    const savedOpen=new Map([...host.querySelectorAll('details')].map(e=>[e.dataset.section,e.open]));
+    host.innerHTML=`<span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span> <span class="muted">${esc(types[job.type]||job.type)} · ${photo?'云端分析匹配':'视频工人执行'}</span> <button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除任务</button><h2>${esc(job.title||job.source?.title)}</h2><p class="muted">提交 ${stamp(job.createdAt)} · 更新 ${stamp(job.updatedAt)}</p><ol class="board-steps">${stageHtml}</ol><p>${esc(job.message||'已进入队列，等待执行。')}</p>${job.error?`<p class="board-error">${esc(job.error)}</p>`:''}
     <details data-section="source"><summary>来源文案</summary><p class="board-source">${esc(job.source?.copy)}</p></details>
     ${!photo&&p.audio?`<section class="board-section"><h3>解说音频</h3><div class="board-audio"><p class="muted">${esc(p.audio.provider||'待生成')} · ${esc(p.audio.voice||'模板音色')} · ${seconds(p.audio.duration)}</p><p>${esc(p.audio.description)}</p><p class="board-source">${esc(p.audio.text)}</p></div></section>`:''}
     <section class="board-section"><h3>${photo?'图文分镜':'分镜与视频时间线'}</h3>${tracks}${scenes.length?`<div class="scene-grid">${scenes.map(s=>`<article class="scene-card"><div class="scene-title"><h4>${photo?'第':'分镜 '}${s.index+1}${photo?' 页':''}</h4><span class="muted">${photo?(s.imageModel==='stock'||s.template==='stock'?'素材库底图':'文案卡片'):s.duration>0?`${Number(s.start||0).toFixed(1)}–${Number(s.end||s.duration).toFixed(1)} 秒`:'等待实测时长'}</span></div>${imageUrl(s.imageUrl)?`<img class="scene-image" src="${imageUrl(s.imageUrl)}" alt="分镜 ${s.index+1}" loading="lazy">`:`<div class="scene-placeholder">${photo?(s.imageStatus==='failed'?'素材匹配失败':s.imageStatus==='running'?'正在匹配素材…':'文案卡片，打开图文页后渲染'):(s.imageStatus==='failed'?'生图失败，查看执行记录':s.imageStatus==='running'?'正在生成图片…':'等待生图')}</div>`}<div class="scene-body"><span class="scene-label">${photo?'本页文案':'分镜解说'}</span><p>${esc(s.audioText||s.text||'等待文案')}</p>${s.translation?`<p class="muted">${esc(s.translation)}</p>`:''}<details data-section="prompt-${s.index}" open><summary>${photo?(s.imagePrompt?'底图搜索词':'页面类型'):'生图描述词'}</summary><pre>${esc(photo?(s.imagePrompt||(s.template==='cover'||s.textKind==='cover'?'封面文案卡片':'文案卡片')):(s.imagePrompt||'文案与分镜完成后显示'))}</pre></details>${!photo?`<span class="scene-label">音频 / 视频安排</span><p>${esc(s.audioDescription||p.audio?.description||'等待配音安排')}</p><p>${esc(s.videoDescription||p.video?.description||'等待合成安排')}</p>`:''}</div></article>`).join('')}</div>`:'<p class="muted">执行后将逐步显示改编文案、分镜及描述词。</p>'}</section>
@@ -70,15 +70,24 @@
     ${!photo&&p.video?`<section class="board-section"><h3>视频合成</h3><p>${esc(p.video.description)}</p><p class="muted">画幅 ${esc(p.video.aspectRatio)} · ${seconds(p.video.duration)}</p></section>`:''}
     <section class="board-section"><h3>执行记录</h3><ol class="board-events"><li><time>${stamp(job.createdAt)}</time>加入队列</li>${events.map(e=>`<li><time>${stamp(e.at)}</time>${esc(stages[e.stage]||e.stage)}${e.status==='failed'?' · 失败':''} — ${esc(e.message)}</li>`).join('')}</ol>${!events.length&&job.status!=='queued'?'<p class="muted">这条历史任务未记录分步骤事件。</p>':''}</section>
     ${job.status==='done'?`<section class="board-section"><h3>成品</h3><a class="board-output-link" href="${photo?'/psychology-photo?peerJob='+encodeURIComponent(job.jobId):'/psychology-publish'}">${photo?'使用这组图片和文案':'前往视频发布查看成片'} →</a>${(r.results||[]).filter(v=>v.fileName).map(v=>`<p class="muted">${esc(v.fileName)} · ${seconds(v.duration)}</p>`).join('')}</section>`:''}`;
-    $('#boardDetail').querySelectorAll('details').forEach(e=>{if(savedOpen.has(e.dataset.section))e.open=savedOpen.get(e.dataset.section);});
+    host.querySelectorAll('details').forEach(e=>{if(savedOpen.has(e.dataset.section))e.open=savedOpen.get(e.dataset.section);});
   }
+  // Publish records open one post's production detail in a dialog. Auto-publish
+  // jobs are managed from 自动发布, so the dialog never offers deletion.
+  window.psychologyProductionDetail=async(jobId,host)=>{
+    const job=(await api('?jobId='+encodeURIComponent(jobId))).jobs[0];
+    detail(job,host);
+    host.querySelectorAll('[data-delete-job]').forEach(el=>el.remove());
+  };
   async function refresh() {
-    if(refreshing)return; refreshing=true;clearTimeout(timer);
-    try {const data=await api('?offset='+offset);jobs=data.jobs;
+    if(refreshing)return; clearTimeout(timer);
+    if($('#manualView')?.hidden){timer=setTimeout(refresh,5000);return;}
+    refreshing=true;
+    try {const data=await api('?origin=manual&offset='+offset);jobs=data.jobs;
       const counts=Object.fromEntries((data.counts||[]).map(item=>[item.status,item.count]));
       $('#boardCounts').innerHTML=['queued','running','done','failed'].map(s=>`<div class="board-count"><span>${labels[s]}</span><strong>${counts[s]||0}</strong></div>`).join('');
       if(!selected&&jobs.length)selected=jobs[0].jobId;
-      $('#boardQueue').innerHTML=jobs.length?jobs.map(job=>`<article class="queue-item-wrap"><button type="button" class="queue-item" data-job="${esc(job.jobId)}" aria-pressed="${selected===job.jobId}" title="${esc(job.title)}"><span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span><strong>${esc(job.title)}</strong><small>${esc(types[job.type]||job.type)}</small><small>${stamp(job.createdAt)}</small></button><button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除</button></article>`).join(''):'<p class="muted">还没有复刻任务，先从同行爆款选择视频。</p>';
+      $('#boardQueue').innerHTML=jobs.length?jobs.map(job=>`<article class="queue-item-wrap"><button type="button" class="queue-item" data-job="${esc(job.jobId)}" aria-pressed="${selected===job.jobId}" title="${esc(job.title)}"><span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span><strong>${esc(job.title)}</strong><small>${esc(types[job.type]||job.type)}</small><small>${stamp(job.createdAt)}</small></button><button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除</button></article>`).join(''):'<p class="muted">没有手动复刻任务。在文案库勾选爆款后点「原帖复刻」生成；自动发布的内容在「自动发布」视图里逐条查看。</p>';
       let job=jobs.find(j=>j.jobId===selected);
       if(!job&&selected){
         try{job=(await api('?jobId='+encodeURIComponent(selected))).jobs[0];}
@@ -96,7 +105,7 @@
     clearTimeout(timer);
     try {
       await api('/'+encodeURIComponent(jobId),{method:'DELETE'});
-      if(selected===jobId){selected='';history.replaceState(null,'',location.pathname);}
+      if(selected===jobId){selected='';const params=new URLSearchParams(location.search);params.delete('job');history.replaceState(null,'','?'+params);}
       notice='已删除这条复刻任务。';
     } catch(error) {
       notice=error.message;
@@ -104,10 +113,12 @@
     refreshing=false;
     refresh();
   }
+  if(!$('#boardQueue'))return;
   $('#boardQueue').addEventListener('click',event=>{
     const del=event.target.closest('[data-delete-job]');
     if(del){event.preventDefault();removeJob(del.dataset.deleteJob);return;}
-    const button=event.target.closest('[data-job]');if(!button)return;selected=button.dataset.job;history.replaceState(null,'','?job='+encodeURIComponent(selected));refresh();
+    const button=event.target.closest('[data-job]');if(!button)return;selected=button.dataset.job;
+    const params=new URLSearchParams(location.search);params.set('job',selected);history.replaceState(null,'','?'+params);refresh();
   });
   $('#boardDetail').addEventListener('click',event=>{
     const del=event.target.closest('[data-delete-job]');

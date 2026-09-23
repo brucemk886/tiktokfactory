@@ -205,7 +205,6 @@ test('psychology module pages share one chinese page shell', () => {
     'psychology-topic-bank.html',
     'psychology-publish-sources.html',
     'psychology-copy-library.html',
-    'psychology-production.html',
     'psychology-templates.html',
     'psychology.html',
     'psychology-collage.html',
@@ -644,7 +643,7 @@ test('source trace lists account posts against peer urls and published links', a
   const page=fs.readFileSync(new URL('../../public/psychology-publish-sources.html',import.meta.url),'utf8');
   const browser=fs.readFileSync(new URL('../../public/psychology-publish-sources.js',import.meta.url),'utf8');
   assert.equal(pageFileFor('/psychology-publish-sources'),'psychology-publish-sources.html');
-  assert.match(page,/打开爆款原帖|爆款原链接/);
+  assert.match(page,/心理学发布记录/);assert.match(page,/对标爆款/);assert.match(browser,/打开爆款原帖/);
   assert.match(page,/id="mediaType"/);
   assert.match(browser,/\/api\/psychology-auto-publish\/sources/);
   assert.match(fs.readFileSync(new URL('../../public/psychology-publish-sources.css',import.meta.url),'utf8'),/cursor:not-allowed/);
@@ -700,6 +699,23 @@ test('source trace hydrates a published photo link after the first receipt omitt
   assert.equal(listed.items[0].publishedId,'7686895626340076807');
   const stored=JSON.parse(sqlite.prepare('SELECT value_json FROM factory_publish_records WHERE id=?').get('photo:missing').value_json);
   assert.equal(stored.videoId,'7686895626340076807');
+});
+
+test('publish records keep source links, titles and outcomes after the job table is cleared', async t => {
+  const {call,sqlite}=await fixture(t);
+  await call('POST',input());
+  const before=(await (await call('GET',undefined,'/api/psychology-auto-publish/sources')).json()).items;
+  assert.ok(before.every(item=>item.detailJobId===item.id));
+  sqlite.prepare('DELETE FROM factory_jobs').run();
+  sqlite.prepare('INSERT INTO factory_publish_records(id,created_at,value_json) VALUES (?,?,?)')
+    .run('rec-published',Date.now(),JSON.stringify({autoTaskId:before[0].id,status:'published',shareLink:'https://www.tiktok.com/@alpha/video/555'}));
+  const after=(await (await call('GET',undefined,'/api/psychology-auto-publish/sources')).json()).items;
+  assert.deepEqual(after.map(item=>item.peerUrl),before.map(item=>item.peerUrl));
+  assert.ok(after.every(item=>item.title&&item.sourceType==='peer'&&item.detailJobId===''));
+  assert.equal(after[0].status,'published');assert.equal(after[0].publishedUrl,'https://www.tiktok.com/@alpha/video/555');
+  assert.ok(after.slice(1).every(item=>item.status==='cleaned'));
+  const searched=(await (await call('GET',undefined,'/api/psychology-auto-publish/sources?query='+encodeURIComponent(before[1].title))).json()).items;
+  assert.equal(searched.length,1); // search no longer needs the pruned job row
 });
 
 test('source trace paginates and leaves topic-bank rows without a peer url', async t => {

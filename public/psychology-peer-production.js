@@ -107,7 +107,7 @@
       notify(`已创建 ${data.jobIds.length} 个云端复刻任务，可以关闭页面继续运行。`);
       selected.clear();
       requestId = '';
-      location.href = '/psychology-production?job=' + encodeURIComponent(data.jobIds[0]);
+      location.href = '/psychology-publish-sources?view=manual&job=' + encodeURIComponent(data.jobIds[0]);
     } catch (error) {
       notify(error.message, true);
     } finally {
@@ -132,11 +132,11 @@
           ? (result.results || []).length
           : scenes.filter(scene => scene.imageStatus === 'done' && scene.audioStatus === 'done').length;
         return `<article class="peer-job">
-          <h3><a href="/psychology-production?job=${encodeURIComponent(job.jobId)}">${escape(job.title || job.source?.title)}</a></h3>
+          <h3><a href="/psychology-publish-sources?view=manual&job=${encodeURIComponent(job.jobId)}">${escape(job.title || job.source?.title)}</a></h3>
           <p>${escape(job.message || job.status)} · ${Number(job.percent) || 0}%</p>
           ${job.error ? `<p class="is-error">${escape(job.error)}</p>` : ''}
           <p>分镜 ${scenes.length || '等待分析'}${scenes.length ? ` · ${photo ? '页面' : '图片与配音'}完成 ${ready}/${scenes.length}` : ''}</p>
-          <a href="/psychology-production?job=${encodeURIComponent(job.jobId)}">查看分镜和素材 →</a>
+          <a href="/psychology-publish-sources?view=manual&job=${encodeURIComponent(job.jobId)}">查看分镜和素材 →</a>
         </article>`;
       }).join('');
       if (jobs.some(job => !['done','failed','cancelled','canceled'].includes(job.status))) timer = setTimeout(refresh, 10000);
