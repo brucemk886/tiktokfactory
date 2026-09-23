@@ -15,12 +15,13 @@
 <section class="panel auto-section" id="autoView">
 <div class="sources-toolbar">
 <label class="field"><span>搜索</span><input id="query" maxlength="100" placeholder="批次、标题、爆款标题或链接"></label>
+<label class="field"><span>发布时间</span><select id="range"><option value="all">全部</option><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label>
 <label class="field"><span>内容类型</span><select id="mediaType"><option value="">全部</option><option value="photo">图文</option><option value="video">视频</option></select></label>
 <button type="button" id="searchBtn">查询</button>
 </div>
 <p id="listStatus" class="field-hint" role="status">正在读取发布记录…</p>
 <div class="queue-wrap"><table class="queue-table sources-table"><thead><tr>
-<th>批次</th><th>类型</th><th>发布账号</th><th>我方帖子</th><th>对标爆款</th><th>标题</th><th>状态</th><th>操作</th>
+<th>批次 / 发布时间</th><th>类型</th><th>发布账号</th><th>我方帖子</th><th>对标爆款</th><th>标题</th><th>状态</th><th>操作</th>
 </tr></thead><tbody id="rows"></tbody></table></div>
 <div class="sources-pagination"><button id="prevPage" type="button">上一页</button><span id="pageInfo"></span><button id="nextPage" type="button">下一页</button></div>
 </section>

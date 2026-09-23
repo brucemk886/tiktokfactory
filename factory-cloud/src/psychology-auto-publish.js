@@ -117,9 +117,20 @@ async function fillMissingPublishedPosts(env, db, records) {
   } catch { /* listing still works from the stored record */ }
   return records;
 }
+// Beijing calendar days over the scheduled publish time (seconds), so a batch
+// built before midnight counts on the day it actually goes out.
+export function publishTimeWindow(range, now = Date.now()) {
+  const days = { today: [0, 1], yesterday: [-1, 0], '7d': [-6, 1], '30d': [-29, 1] }[range];
+  if (!range || range === 'all') return null;
+  if (!days) fail('时间范围无效。');
+  const day = 86400, offset = 8 * 3600, current = Math.floor(now / 1000);
+  const todayStart = Math.floor((current + offset) / day) * day - offset;
+  return { start: todayStart + days[0] * day, end: todayStart + days[1] * day };
+}
 export async function listAutoPublishSources(db, user, input = {}, env = null) {
   const query = String(input.query || '').trim().slice(0, 100);
   const mediaType = input.mediaType === 'photo' || input.mediaType === 'video' ? input.mediaType : '';
+  const window = publishTimeWindow(input.range);
   const offset = Math.max(0, Math.floor(Number(input.offset) || 0));
   const like = '%' + query.replace(/[%_]/g, '') + '%';
   // factory_jobs is routinely pruned, so titles, source links and the source
@@ -136,10 +147,12 @@ export async function listAutoPublishSources(db, user, input = {}, env = null) {
     LEFT JOIN psychology_peer_hits vp ON v.source_key LIKE 'v1:tiktok:%' AND vp.video_id=substr(v.source_key,11)
     LEFT JOIN psychology_template_topics t ON t.id=i.source_id
     WHERE b.created_by=? AND i.deleted_at=0 AND (?='' OR json_extract(b.config_json,'$.mediaType')=?)
+      AND (?=0 OR (i.schedule_at>=? AND i.schedule_at<?))
       AND (?=0 OR b.config_json LIKE ? OR IFNULL(j.payload_json,'') LIKE ? OR IFNULL(j.title,'') LIKE ?
         OR IFNULL(p.title,'') LIKE ? OR IFNULL(p.video_url,'') LIKE ? OR IFNULL(v.title,'') LIKE ? OR IFNULL(t.title,'') LIKE ?)
     ORDER BY b.created_at DESC, i.id LIMIT ? OFFSET ?`)
-    .bind(user.username, mediaType, mediaType, query ? 1 : 0, like, like, like, like, like, like, like, SOURCE_PAGE + 1, offset).all();
+    .bind(user.username, mediaType, mediaType, window ? 1 : 0, window?.start || 0, window?.end || 0,
+      query ? 1 : 0, like, like, like, like, like, like, like, SOURCE_PAGE + 1, offset).all();
   const page = rows.results.slice(0, SOURCE_PAGE);
   const records = new Map();
   if (page.length) {
@@ -249,6 +262,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (url.pathname === BASE + '/sources' && request.method === 'GET') {
     return json(await listAutoPublishSources(env.DB, user, {
       offset: url.searchParams.get('offset'), query: url.searchParams.get('query'), mediaType: url.searchParams.get('mediaType'),
+      range: url.searchParams.get('range'),
     }, env));
   }
   if (url.pathname === BASE + '/options' && request.method === 'GET') {

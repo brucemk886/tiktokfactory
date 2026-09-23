@@ -22,17 +22,18 @@
   async function load() {
     const query = encodeURIComponent($("#query").value.trim());
     const mediaType = encodeURIComponent($("#mediaType").value);
+    const range = encodeURIComponent($("#range").value);
     $("#listStatus").textContent = "正在读取发布记录…";
     $("#prevPage").disabled = true;
     $("#nextPage").disabled = true;
     try {
-      const response = await fetch(`/api/psychology-auto-publish/sources?offset=${offset}&query=${query}&mediaType=${mediaType}`, { cache: "no-store" });
+      const response = await fetch(`/api/psychology-auto-publish/sources?offset=${offset}&query=${query}&mediaType=${mediaType}&range=${range}`, { cache: "no-store" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw Error(data.error || "读取失败");
       hasMore = Boolean(data.hasMore);
       const items = data.items || [];
       $("#rows").innerHTML = items.length ? items.map((item) => `<tr>
-        <td>${esc(item.batchName || "未命名批次")}<small>${esc(stamp(item.createdAt))}</small></td>
+        <td>${esc(item.batchName || "未命名批次")}<small>发布 ${esc(stamp(Number(item.scheduleAt) * 1000))}</small></td>
         <td>${item.mediaType === "photo" ? "图文" : "视频"}<small>${esc(sources[item.sourceType] || "同行爆款")}${item.variantId ? " · " + esc(item.variantId) : ""}</small></td>
         <td>${item.accountUsername ? `<span class="handle">@${esc(item.accountUsername)}</span>` : "—"}</td>
         <td>${link(item.publishedUrl, "打开我方帖子")}</td>
@@ -69,6 +70,7 @@
   $("#searchBtn").addEventListener("click", () => { offset = 0; load(); });
   $("#query").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); offset = 0; load(); } });
   $("#mediaType").addEventListener("change", () => { offset = 0; load(); });
+  $("#range").addEventListener("change", () => { offset = 0; load(); });
   $("#prevPage").addEventListener("click", () => { offset = Math.max(0, offset - 20); load(); });
   $("#nextPage").addEventListener("click", () => { offset += 20; load(); });
   const initial = new URLSearchParams(location.search).get("view") === "manual" ? "manual" : "auto";

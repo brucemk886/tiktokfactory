@@ -701,6 +701,27 @@ test('source trace hydrates a published photo link after the first receipt omitt
   assert.equal(stored.videoId,'7686895626340076807');
 });
 
+test('publish time filter uses Beijing calendar days over the scheduled time', async t => {
+  const {publishTimeWindow}=await import('./psychology-auto-publish.js');
+  const now=Date.parse('2026-09-23T01:30:00+08:00'); // still "today" in Beijing though UTC is the 22nd
+  const midnight=Date.parse('2026-09-23T00:00:00+08:00')/1000;
+  assert.deepEqual(publishTimeWindow('today',now),{start:midnight,end:midnight+86400});
+  assert.deepEqual(publishTimeWindow('yesterday',now),{start:midnight-86400,end:midnight});
+  assert.deepEqual(publishTimeWindow('7d',now),{start:midnight-6*86400,end:midnight+86400});
+  assert.deepEqual(publishTimeWindow('30d',now),{start:midnight-29*86400,end:midnight+86400});
+  assert.equal(publishTimeWindow('all',now),null);assert.equal(publishTimeWindow(undefined,now),null);
+  assert.throws(()=>publishTimeWindow('90d',now),e=>e.statusCode===400);
+  const {call,sqlite}=await fixture(t);
+  await call('POST',input());
+  const ids=sqlite.prepare('SELECT id FROM psychology_publish_items ORDER BY id').all().map(r=>r.id);
+  const today=publishTimeWindow('today').start;
+  sqlite.prepare('UPDATE psychology_publish_items SET schedule_at=? WHERE id=?').run(today+3600,ids[0]);
+  sqlite.prepare('UPDATE psychology_publish_items SET schedule_at=? WHERE id=?').run(today-3600,ids[1]);
+  sqlite.prepare('UPDATE psychology_publish_items SET schedule_at=? WHERE id=?').run(today-20*86400,ids[2]);
+  const count=async range=>(await (await call('GET',undefined,'/api/psychology-auto-publish/sources?range='+range)).json()).items.length;
+  assert.deepEqual([await count('today'),await count('yesterday'),await count('7d'),await count('30d'),await count('all')],[1,1,2,3,3]);
+});
+
 test('publish records keep source links, titles and outcomes after the job table is cleared', async t => {
   const {call,sqlite}=await fixture(t);
   await call('POST',input());

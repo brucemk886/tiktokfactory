@@ -1,4 +1,4 @@
-.psychology-sources-page .sources-toolbar{display:grid;grid-template-columns:minmax(220px,1.4fr) 160px auto;gap:14px;align-items:end;margin-bottom:8px}
+.psychology-sources-page .sources-toolbar{display:grid;grid-template-columns:minmax(220px,1.4fr) 140px 140px auto;gap:14px;align-items:end;margin-bottom:8px}
 .psychology-sources-page .sources-toolbar button{min-height:42px;padding:0 18px;border:1px solid #c5d08a;border-radius:8px;background:#f4f7e4;color:#31372a;font:inherit;font-weight:700;cursor:pointer}
 .psychology-sources-page .sources-table{min-width:1080px}
 .psychology-sources-page .sources-table a{color:#53622c;font-weight:650;text-decoration:none;overflow-wrap:anywhere}
