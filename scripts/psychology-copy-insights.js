@@ -39,7 +39,7 @@ const bucketOf = (list, value) => list.find(([lo, hi]) => value >= lo && value <
 
 // rows: photo rows from buildContentPerformance (window-limited).
 // history: every resolved item that could be an earlier use of the same post, any window.
-export function buildCopyInsights({ rows = [], history = [], videosByAccount = new Map(), accounts = [], now = Date.now(), rules = INSIGHT_RULES }) {
+export function buildCopyInsights({ rows = [], history = [], videosByAccount = new Map(), accounts = [], window = null, now = Date.now(), rules = INSIGHT_RULES }) {
   const uses = new Map(), perSource = new Map(), perVersion = new Map();
   for (const item of [...history].sort((a, b) => (a.schedule_at - b.schedule_at) || String(a.id).localeCompare(String(b.id)))) {
     const key = item.source_key, versionKey = key + '\u0000' + (item.variant_id || '');
@@ -56,8 +56,11 @@ export function buildCopyInsights({ rows = [], history = [], videosByAccount = n
   }
   const names = new Map(accounts.map(a => [a.schema, a.profile?.username || a.username || a.label || a.schema]));
   const currentStages = Object.fromEntries(Object.keys(STAGES).map(k => [k, 0])), potentialAccounts = [];
+  // Account stages for the report period: only posts published inside the window.
   for (const [account, list] of timelines) {
-    const views = list.filter(v => now - v.t >= DAY).map(v => v.views), stage = accountStage(views, rules);
+    const views = list.filter(v => now - v.t >= DAY && (!window || (v.t >= window.start && v.t < window.end))).map(v => v.views);
+    if (window && !views.length) continue;
+    const stage = accountStage(views, rules);
     currentStages[stage]++;
     if (stage === 'potential' || stage === 'burst') potentialAccounts.push({ account, name: names.get(account) || account, stage, posts: views.length, avgViews: mean(views), best: Math.max(...views) });
   }

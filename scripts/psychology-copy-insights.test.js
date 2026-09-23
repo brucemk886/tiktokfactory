@@ -76,4 +76,8 @@ test('stages, new-account curve and potential accounts', () => {
   assert.deepEqual(r.potentialAccounts.map(a => [a.name, a.posts, a.avgViews]), [['pro', 10, 1500]]);
   assert.equal(r.postIndex[0].n, 6);
   assert.equal(r.overall.tiers.normal, 6);
+  // A 7-day report window excludes the potential account's older posts.
+  const week = buildCopyInsights({ rows, history, videosByAccount, now, window: { start: at(7), end: now } });
+  assert.deepEqual(week.currentStages, { launch: 6, normal: 0, potential: 0, burst: 0 });
+  assert.equal(week.potentialAccounts.length, 0);
 });

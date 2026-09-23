@@ -62,11 +62,11 @@ function renderInsights(data){
   if(!data){ids.forEach(id=>$("#"+id).innerHTML="");$("#insightFindings").innerHTML='<div class="empty">运营规律只分析图文，请把内容类型切到“全部内容”或“图文”。</div>';return;}
   $("#insightFindings").innerHTML='<ul>'+data.findings.map(f=>'<li>'+esc(f)+'</li>').join("")+'</ul><p class="section-hint">本期 '+data.sample.rows+' 条图文，满24小时 '+data.sample.mature+' 条，其中重复使用 '+data.sample.repeats+' 条。</p>';
   const stageNames={launch:"起号期",normal:"普通账号",potential:"潜力账号",burst:"爆发期"};
-  $("#insightStages").innerHTML=Object.entries(stageNames).map(([key,label])=>'<div class="metric"><span>'+label+'</span><strong>'+fmt(data.currentStages[key])+'</strong><small>按当前已同步作品判断</small></div>').join("");
+  $("#insightStages").innerHTML=Object.entries(stageNames).map(([key,label])=>'<div class="metric"><span>'+label+'</span><strong>'+fmt(data.currentStages[key])+'</strong><small>按本期发布、满24小时的作品判断（全部类型）</small></div>').join("");
   const o=data.overall;
   $("#insightTiers").innerHTML=table(["流量池","播放区间","作品数","占比"],data.tiers.map((t,i)=>{const next=data.tiers[i+1];return [esc(t.label),fmt(t.min)+(next?" – "+fmt(next.min):" 以上"),fmt(o.tiers[t.id]),o.n?pct(o.tiers[t.id]/o.n):"—"];}))+
     table(["整体",...SUMMARY_HEADERS],[["本期满24小时图文",...summaryCells(o)]]);
-  $("#insightPotential").innerHTML=data.potentialAccounts.length?table(["账号","阶段","满24小时作品","平均播放","最高播放"],data.potentialAccounts.map(a=>["@"+esc(a.name),stageNames[a.stage],fmt(a.posts),fmt(a.avgViews),fmt(a.best)])):'<div class="empty">还没有潜力账号（满10条且平均播放破千，或近10条出过10万+）。</div>';
+  $("#insightPotential").innerHTML=data.potentialAccounts.length?table(["账号","阶段","本期满24小时作品（全部类型）","本期平均播放","本期最高播放"],data.potentialAccounts.map(a=>["@"+esc(a.name),stageNames[a.stage],fmt(a.posts),fmt(a.avgViews),fmt(a.best)])):'<div class="empty">本期还没有潜力账号：需要本期发布满10条且平均播放破千，或近10条出过10万+。</div>';
   $("#insightReuse").innerHTML=table(["这篇爆款第几次使用",...SUMMARY_HEADERS],data.reuse.map(r=>[esc(r.label)+(r.label===data.dropAt?' <span class="ops-chip">明显下滑</span>':""),...summaryCells(r)]));
   const v=data.version,s=data.style;
   $("#insightVariation").innerHTML=table(["重复使用时",...SUMMARY_HEADERS],[["换一个没用过的版本",v.fresh],["沿用已经用过的版本",v.same],["换了图文样式",s.changed],["和上次同样式",s.same]].map(([label,row])=>[label,...summaryCells(row)]));
