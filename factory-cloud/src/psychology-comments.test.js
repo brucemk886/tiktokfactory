@@ -21,11 +21,11 @@ async function ready(t) {
  const run=(time=now,extra={})=>runScheduledComments(f.env,{now:time,call,assertAccess:async()=>{},...extra});
  return {...f,id:item.id,now,remote,videoId,run,read,call,receipts,sends:()=>sends};
 }
-test('default is off and answer/teaser are frozen independently from rendering script',async t=>{
+test('default is off and reveal snapshot excludes retired caption',async t=>{
  const f=await fixture(t),cfg=await commentTemplate(f.db,'psychology');assert.equal(cfg.enabled,0);assert.equal(cfg.delay_minutes,120);
  assert.equal(freezeComment({},{mediaType:'video'},cfg),null);
  assert.throws(()=>freezeComment({title:'missing'},{mediaType:'video',sourceType:'topic-bank'},{...cfg,enabled:1}),/揭晓评论/);
- assert.deepEqual(freezeComment({revealComment:'Answer'},{mediaType:'video',sourceType:'topic-bank'},{...cfg,enabled:1}),{text:'Answer',delayMinutes:120,caption:"Follow for the answer — I'll reveal it in the comments in 2 hours."});
+ assert.deepEqual(freezeComment({revealComment:'Answer'},{mediaType:'video',sourceType:'topic-bank'},{...cfg,enabled:1}),{text:'Answer',delayMinutes:120});
 });
 test('actual publication time starts delay; schedule and creation times do not',async t=>{
  const f=await ready(t);f.remote.publishedAt=f.now+3600000;await f.run();assert.equal(f.read().due_at,f.now+10800000);assert.equal(f.sends(),0);
@@ -69,6 +69,11 @@ test('template settings API enforces permissions, valid delay and preserves pend
  await assert.rejects(handlePsychologyComments(req({template:'psychology',enabled:true,delayMinutes:0}),f.env,url,{user:admin}),/延迟/);
  assert.equal((await handlePsychologyComments(req({template:'psychology',enabled:true,delayMinutes:60,caption:'Later {hours}'}),f.env,url,{user:admin})).status,200);
  assert.equal(f.read().delay_minutes,120);
+ assert.equal(f.sqlite.prepare('SELECT caption FROM psychology_comment_templates').get().caption,'');
+ f.sqlite.prepare("UPDATE psychology_comment_templates SET caption='Old saved teaser'").run();
+ const settings=await (await handlePsychologyComments(new Request(url),f.env,url,{user:admin})).json();
+ assert.equal(settings.templates.find(t=>t.template==='psychology').caption,'');
+ assert.deepEqual(freezeComment({revealComment:'Per-topic answer'},{mediaType:'video',sourceType:'topic-bank'},await commentTemplate(f.db,'psychology')),{text:'Per-topic answer',delayMinutes:60});
 });
 test('CSV/API/edit keep reveal answers and batches snapshot without exposing them in video script',async t=>{
  const f=await fixture(t);assert.equal(parseTopicImport('题目,揭晓评论\nQuestion,Answer')[0].revealComment,'Answer');
@@ -81,7 +86,8 @@ test('CSV/API/edit keep reveal answers and batches snapshot without exposing the
  const body=input({template:'psychology-collage',sourceType:'topic-bank',count:1,connectionIds:['a'],selection:'priority'});
  assert.equal((await f.call('POST',body,undefined,admin)).status,202);
  const job=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json);
- assert.equal(JSON.parse(f.sqlite.prepare('SELECT reply_config_json FROM psychology_scheduled_comments').get().reply_config_json).answers.A,'A answer');assert.ok(!JSON.stringify(job).includes('A answer'));assert.ok(!JSON.stringify(job).includes('Private answer'));assert.match(job.publish.videoDesc,/Answer in 2 hours/);
+ assert.equal(JSON.parse(f.sqlite.prepare('SELECT reply_config_json FROM psychology_scheduled_comments').get().reply_config_json).answers.A,'A answer');assert.ok(!JSON.stringify(job).includes('A answer'));assert.ok(!JSON.stringify(job).includes('Private answer'));assert.ok(!job.publish.videoDesc.includes('Answer in 2 hours'));
+ assert.equal(f.sqlite.prepare('SELECT caption FROM psychology_scheduled_comments').get().caption,'');
  f.sqlite.prepare("UPDATE psychology_template_topics SET reveal_comment='Changed'").run();assert.equal(f.sqlite.prepare('SELECT text FROM psychology_scheduled_comments').get().text,'Private answer');
  assert.equal((await f.call('POST',body,undefined,admin)).status,200);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_scheduled_comments').get().n,1);
 });

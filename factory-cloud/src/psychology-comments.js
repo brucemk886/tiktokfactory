@@ -9,8 +9,10 @@ const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{st
 const parse=value=>{try{return JSON.parse(value||'{}');}catch{return {};}};
 const active=['waiting_publish','pending','sending','checking'];
 export async function commentTemplate(db,template) {
-  return await db.prepare('SELECT * FROM psychology_comment_templates WHERE template=?').bind(template).first()
-    || {template,enabled:0,delay_minutes:120,caption:"Follow for the answer — I'll reveal it in the comments in {hours} hours."};
+  const setting=await db.prepare('SELECT * FROM psychology_comment_templates WHERE template=?').bind(template).first()
+    || {template,enabled:0,delay_minutes:120};
+  // Keep the legacy column inert for older clients and saved settings.
+  return {...setting,caption:''};
 }
 export function freezeComment(source,config,setting) {
   if(!setting.enabled || config.mediaType!=='video')return null;
@@ -18,13 +20,13 @@ export function freezeComment(source,config,setting) {
   const text=String(source.revealComment||'').trim();
   if(!text||text.length>2000)fail('题目「'+source.title+'」缺少有效揭晓评论，请先在模板题库填写。');
   const replyConfig=setting.auto_reply_enabled?{topicId:source.id,answers:validateReplyAnswers(source.replyOptions),hours:setting.reply_hours||48,maxReplies:setting.reply_max||100}:null;
-  return {...(replyConfig?{replyConfig}:{}),text,delayMinutes:setting.delay_minutes,caption:String(setting.caption||'').replaceAll('{hours}',String(setting.delay_minutes/60)).replaceAll('{minutes}',String(setting.delay_minutes))};
+  return {...(replyConfig?{replyConfig}:{}),text,delayMinutes:setting.delay_minutes};
 }
 export function insertScheduledComment(db,item,source,snapshot,createdBy,stamp) {
   return db.prepare(`INSERT INTO psychology_scheduled_comments
     (id,batch_id,created_by,template,connection_id,account_name,title,text,delay_minutes,caption,created_at,updated_at,reply_config_json)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(item.id,item.batchId,createdBy,item.template,item.connectionId,
-      item.account?.username||item.account?.name||item.connectionId,source.title,snapshot.text,snapshot.delayMinutes,snapshot.caption,stamp,stamp,JSON.stringify(snapshot.replyConfig||{}));
+      item.account?.username||item.account?.name||item.connectionId,source.title,snapshot.text,snapshot.delayMinutes,'',stamp,stamp,JSON.stringify(snapshot.replyConfig||{}));
 }
 function assertUser(user) {if(!user||user.role!=='admin'||!user.sidebarModules?.includes('psychology-comments'))fail('没有定时评论管理权限。',403);}
 export async function handlePsychologyComments(request,env,url,session) {
@@ -34,15 +36,15 @@ export async function handlePsychologyComments(request,env,url,session) {
   if(url.pathname===BASE+'/templates') {
     if(request.method==='GET')return json({templates:await Promise.all(TOPIC_TEMPLATES.map(async t=>({...t,...await commentTemplate(db,t.id)})))});
     if(request.method==='PUT') {
-      const body=await readJson(request),template=validateTopicTemplate(body.template),minutes=Number(body.delayMinutes),caption=String(body.caption||'').trim();
-      if(typeof body.enabled!=='boolean'||!Number.isInteger(minutes)||minutes<1||minutes>10080||caption.length>500)fail('延迟须为1–10080分钟，引导文案最多500字符。');
+      const body=await readJson(request),template=validateTopicTemplate(body.template),minutes=Number(body.delayMinutes);
+      if(typeof body.enabled!=='boolean'||!Number.isInteger(minutes)||minutes<1||minutes>10080)fail('延迟须为1–10080分钟。');
       const previous=await commentTemplate(db,template);
       const replyEnabled=body.autoReplyEnabled??Boolean(previous.auto_reply_enabled),hours=Number(body.replyHours??previous.reply_hours??48),max=Number(body.replyMax??previous.reply_max??100);
       if(typeof replyEnabled!=='boolean'||!Number.isInteger(hours)||hours<1||hours>168||!Number.isInteger(max)||max<1||max>500)fail('自动回复持续时间须为1–168小时，每视频上限1–500条。');
       if(replyEnabled&&!body.enabled)fail('自动回复须同时开启定时揭晓评论。');
       await db.prepare(`INSERT INTO psychology_comment_templates(template,enabled,delay_minutes,caption,updated_at,auto_reply_enabled,reply_hours,reply_max) VALUES(?,?,?,?,?,?,?,?)
         ON CONFLICT(template) DO UPDATE SET enabled=excluded.enabled,delay_minutes=excluded.delay_minutes,caption=excluded.caption,updated_at=excluded.updated_at,auto_reply_enabled=excluded.auto_reply_enabled,reply_hours=excluded.reply_hours,reply_max=excluded.reply_max`)
-        .bind(template,body.enabled?1:0,minutes,caption,Date.now(),replyEnabled?1:0,hours,max).run();return json({ok:true});
+        .bind(template,body.enabled?1:0,minutes,'',Date.now(),replyEnabled?1:0,hours,max).run();return json({ok:true});
     }
   }
   if(url.pathname===BASE&&request.method==='GET') {

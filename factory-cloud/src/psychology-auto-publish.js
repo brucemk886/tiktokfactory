@@ -447,7 +447,6 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     if(entry.source.copySource)payload.copySource=entry.source.copySource;
     const comment=freezeComment(entry.source,config,commentSetting);
     if(comment){
-      payload.publish.videoDesc=[payload.publish.videoDesc.slice(0,Math.max(0,2199-comment.caption.length)),comment.caption].filter(Boolean).join('\n');
       statements.push(insertScheduledComment(env.DB,item,entry.source,comment,user.username,stamp));
     }
     if(config.mediaType==='photo'){
