@@ -190,7 +190,7 @@ async function loadCopies() {
     <td class="copy-cell-text" title="${esc(row.source_key)}"><span>${esc(row.source_key)}</span></td>
     <td class="copy-cell-text" title="${esc(row.external_id)}"><span>${esc(row.external_id)}</span></td>
     <td>${row.pages.length} 页</td>
-    <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button></td>
+    <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button><button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
   </tr>`).join("") : '<tr><td colspan="7">暂无改写版本。可新增版本，或展开“导入 Grokbot 文案”导入审核后的结果。</td></tr>';
   $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
   $("#copyPrev").disabled = copyPage === 1;
@@ -210,10 +210,16 @@ $("#copyList").onclick = async event => {
     });
     return;
   }
-  if (!button.dataset.toggleCopy) return;
+  const removing = button.dataset.deleteCopy;
+  if (!button.dataset.toggleCopy && !removing) return;
+  if (removing) {
+    const row = reviewedItems.find(item => String(item.id) === removing);
+    if (!confirm("删除改写版本「" + (row?.title || "未命名") + "」？删除后不会再被抽取，Grokbot 重新导入同一版本也会跳过。已发布的作品和数据不受影响。")) return;
+  }
   button.disabled = true;
   try {
-    await api("/copies/" + button.dataset.toggleCopy, "PATCH", { enabled: button.dataset.enabled === "1" });
+    if (removing) await api("/copies/" + removing, "DELETE");
+    else await api("/copies/" + button.dataset.toggleCopy, "PATCH", { enabled: button.dataset.enabled === "1" });
     await loadCopies();
     await loadOriginals();
   } catch (error) {

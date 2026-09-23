@@ -6,6 +6,11 @@ import { loadGroupStore, scopedAnalyticsAccounts } from "./official.js";
 import { publicState, findProjectForModule, userAllowedGroupIds } from "../../scripts/official-account-group-store.js";
 import { listLatestArchiveAccounts, accountsFromLatestArchive, loadVideosForAccounts } from "./official-archive-store.js";
 import { buildOperationsReport, operationsWindow, parseObject } from "../../scripts/psychology-operations.js";
+import { buildCopyInsights } from "../../scripts/psychology-copy-insights.js";
+import { loadResolvedItems } from "./psychology-copy-evolution.js";
+
+// Earlier uses of a post can predate the report window.
+const HISTORY_MS=90*86400000;
 
 export async function handlePsychologyOperations(request, env, url, session) {
   if(url.pathname!=="/api/psychology-operations")return null;
@@ -39,7 +44,8 @@ export async function handlePsychologyOperations(request, env, url, session) {
     }
     const content=buildContentPerformance({items:media==='video'?[]:items,records,accounts,videosByAccount});
     const report=buildOperationsReport({window,accounts,videosByAccount,records,items,media});
-    return json({...report,content,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
+    const insights=media==='video'?null:buildCopyInsights({rows:content.rows,history:await loadResolvedItems(env.DB,window.start-HISTORY_MS),videosByAccount});
+    return json({...report,content,insights,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
       archiveAt:accounts.length?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0)):0,
       limited:(recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000,
       coverage:"播放分析基于每个账号最近100条已同步作品的当前累计播放，按作品发布日期汇总，并非每日新增播放。历史较多时，上期数据可能不完整。"});

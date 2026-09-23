@@ -89,6 +89,9 @@ test('operations endpoint reads creative joins with existing scope and reports e
  const f=await fixture(t),url=new URL('https://factory.test/api/psychology-operations?period=7d');
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{...user,sidebarModules:['psychology-ops-report']}});
  const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content.coverage.total,0);
+ assert.equal(result.insights.sample.mature,0);assert.match(result.insights.findings[0],/样本不足/);
+ const videoUrl=new URL('https://factory.test/api/psychology-operations?period=7d&media=video');
+ assert.equal((await (await handlePsychologyOperations(new Request(videoUrl),f.env,videoUrl,{user:{...user,sidebarModules:['psychology-ops-report']}})).json()).insights,null);
 });
 
 test('replacement pool retains seven originals and archives old layouts for frozen jobs',()=>{
@@ -175,6 +178,17 @@ for(const origin of ['photo','video'])for(const output of ['photo','video'])test
  f.sqlite.prepare("UPDATE psychology_copy_library SET content_json='{}' WHERE id=?").run(source.id);
  assert.equal((await f.call('POST',body)).status,200);assert.deepEqual(JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(job.id).payload_json).copySource.content,content);
  assert.equal(f.requests.length,0);
+});
+
+test('deleted rewrites disappear from the list, cannot be re-enabled and are not re-imported',async t=>{
+ const f=await fixture(t);await api(f,'/copies','POST',[variant(1),variant(2)]);
+ const row=f.sqlite.prepare("SELECT id FROM psychology_copy_variants WHERE external_id='v1'").get();
+ await assert.rejects(api(f,'/copies/'+row.id,'DELETE',undefined,{...user,username:'other'}),/文案不存在/);
+ assert.equal((await api(f,'/copies/'+row.id,'DELETE')).status,200);
+ assert.deepEqual((await (await api(f,'/copies')).json()).items.map(r=>r.external_id),['v2']);
+ await assert.rejects(api(f,'/copies/'+row.id,'PATCH',{enabled:true}),/文案不存在/);
+ assert.equal((await (await api(f,'/copies','POST',[variant(1)])).json()).duplicates,1);
+ assert.deepEqual({...f.sqlite.prepare("SELECT enabled,deleted_at>0 d FROM psychology_copy_variants WHERE id=?").get(row.id)},{enabled:0,d:1});
 });
 
 test('video production draws only enabled own rewrites and freezes the exact selected version',async t=>{

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 运营报表</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260918-1"></head>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/theme-ops.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-1"></head>
 <body class="work-page official-data-page psychology-module"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
 <header class="page-head"><div><h1>运营报表</h1><p class="page-lead">复盘运营趋势、账号表现和自动发布批次，找到下一步的改进方向。</p></div><nav class="page-links"><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-effects">数据概览</a></nav></header>
 <form id="filters" class="panel ops-filters">
@@ -16,7 +16,19 @@
 <div class="segmented ops-tabs" role="tablist" aria-label="运营分析">
 <button type="button" role="tab" id="trendTab" data-tab="trend" aria-controls="trend" aria-selected="true">运营趋势</button>
 <button type="button" role="tab" id="accountsTab" data-tab="accounts" aria-controls="accounts" aria-selected="false" tabindex="-1">账号分析</button>
-<button type="button" role="tab" id="batchesTab" data-tab="batches" aria-controls="batches" aria-selected="false" tabindex="-1">批次复盘</button><button type="button" role="tab" id="contentTab" data-tab="content" aria-controls="content" aria-selected="false" tabindex="-1">文案 / 样式对比</button></div>
+<button type="button" role="tab" id="batchesTab" data-tab="batches" aria-controls="batches" aria-selected="false" tabindex="-1">批次复盘</button><button type="button" role="tab" id="contentTab" data-tab="content" aria-controls="content" aria-selected="false" tabindex="-1">文案 / 样式对比</button><button type="button" role="tab" id="insightsTab" data-tab="insights" aria-controls="insights" aria-selected="false" tabindex="-1">运营规律</button></div>
+<section id="insights" class="panel data-section" role="tabpanel" aria-labelledby="insightsTab" hidden>
+<div class="section-title"><div><p>COPY &amp; ACCOUNT RULES</p><h2>文案使用与账号阶段</h2></div></div>
+<p class="section-hint">只看图文自动发布、满24小时的作品。为排除账号强弱的影响，主要看<strong>相对账号基线</strong>：这条作品的播放 ÷ 这个号发它之前已满24小时作品的中位播放（至少3条才有基线）；≥2 倍记为爆款。每组样本满5条才下结论。使用次数按排产顺序计算，同一篇爆款的原版和改写都算。</p>
+<p class="section-hint">账号阶段按发这条作品之前的表现划分：<strong>起号期</strong>满24小时作品不足10条；<strong>爆发期</strong>最近5条中位播放 ≥ 之前的2倍；<strong>下滑期</strong> ≤ 之前的一半；其余为<strong>稳定期</strong>。</p>
+<div id="insightFindings" class="ops-findings"></div>
+<div id="insightStages" class="overview-grid"></div>
+<h3>文案使用次数对流量的影响</h3><div id="insightReuse" class="table-wrap"></div>
+<h3>重复使用时，换版本 / 换样式有没有用</h3><div id="insightVariation" class="table-wrap"></div>
+<h3>爆款改写后再发，还能不能爆</h3><div id="insightRewrite" class="table-wrap"></div>
+<h3>新号起号曲线</h3><div id="insightPosts" class="table-wrap"></div>
+<h3>各阶段哪种内容表现最好</h3><div id="insightStageTable" class="table-wrap"></div>
+</section>
 <section id="content" class="panel data-section" role="tabpanel" aria-labelledby="contentTab" hidden><h2>图文内容效果对比</h2><p>按自动发布批次创建时间筛选。相同文案按标题、发布文案和逐页文字匹配；同一来源可以包含多个改写版本。指标是已同步的当前累计值，不代表样式导致了流量差异。</p><div class="content-controls"><label>对比维度<select id="contentMode"><option value="copy">相同文案 · 跨账号</option><option value="source">同一来源 · 不同改写版本</option><option value="style">视觉样式</option></select></label><label>搜索<input id="contentSearch" type="search" placeholder="文案 / @账号 / 版本编号"></label><label><input id="contentMature" type="checkbox" checked>只用满24小时作品计算均播与高播率</label></div><p id="contentCoverage"></p><div id="contentTable" class="table-wrap"></div><div id="contentPager" class="ops-pager"></div><div id="contentBreakdown"></div><div id="contentDetailPager" class="ops-pager"></div></section>
 <section id="trend" class="panel data-section" role="tabpanel" aria-labelledby="trendTab">
 <div class="section-title"><div><p>DAILY TREND</p><h2>作品表现趋势</h2></div><label>查看指标 <select id="trendMetric"><option value="views">作品累计播放</option><option value="count">发布作品数</option><option value="successRate">发布成功率</option><option value="highRate">高播率（满24小时）</option></select></label></div>
@@ -33,4 +45,4 @@
 <div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div>
 </section></div>
 <dialog id="videoDialog"><div class="ops-dialog-head"><h2 id="dialogTitle">账号作品</h2><button id="closeDialog" type="button" class="table-action">关闭</button></div><p class="section-hint">未满24小时的作品标为“观察中”，不参与高播率和播放中位数计算。</p><div id="dialogTable" class="table-wrap"></div><div id="videoPager" class="ops-pager"></div></dialog>
-</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260922-2"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260923-1"></script></body></html>

@@ -123,10 +123,11 @@ export async function loadUsedPosts(db, connectionIds, posts) {
 // Rebuilds the rollup from the last 30 days of auto-published items. Views
 // come from each account's archived videos, matched exactly like the content
 // performance report.
-export async function refreshCopyPerformance(env, now = Date.now(), deps = {}) {
-  const db = env.DB, since = now - EVOLUTION.windowDays * 86400000;
-  const items = (await db.prepare(`SELECT i.id,i.connection_id,i.source_id,b.created_by AS owner,b.config_json,b.created_at,
-      c.source_key AS snap_key,c.variant_id AS snap_variant,p.video_url AS peer_url,v.source_key AS var_key,v.external_id AS var_external
+// Auto-published items with the viral post and version they used. Newer items
+// carry a creative snapshot; older ones fall back to the rewrite row or peer URL.
+export async function loadResolvedItems(db, since) {
+  const items = (await db.prepare(`SELECT i.id,i.connection_id,i.source_id,i.schedule_at,b.created_by AS owner,b.config_json,b.created_at,
+      c.source_key AS snap_key,c.variant_id AS snap_variant,c.style_id,p.video_url AS peer_url,v.source_key AS var_key,v.external_id AS var_external
     FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
     LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id
     LEFT JOIN psychology_peer_hits p ON p.id=i.source_id
@@ -137,8 +138,14 @@ export async function refreshCopyPerformance(env, now = Date.now(), deps = {}) {
     let sourceKey = item.snap_key, variant = item.snap_variant || '';
     if (!sourceKey && item.var_key) { sourceKey = item.var_key; variant = item.var_external; }
     if (!sourceKey && item.peer_url) { try { sourceKey = photoCopyKey(item.peer_url); } catch { sourceKey = item.source_id; } variant = ''; }
-    if (sourceKey) mapped.push({ ...item, source_key: sourceKey, variant_id: variant });
+    if (sourceKey) mapped.push({ ...item, source_key: sourceKey, variant_id: variant, style_id: item.style_id || '' });
   }
+  return mapped;
+}
+
+export async function refreshCopyPerformance(env, now = Date.now(), deps = {}) {
+  const db = env.DB, since = now - EVOLUTION.windowDays * 86400000;
+  const mapped = await loadResolvedItems(db, since);
   const records = mapped.length ? (await db.prepare(`SELECT value_json FROM factory_publish_records
     WHERE json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(mapped.map(i => i.id))).all()).results.map(r => parseObject(r.value_json)) : [];
   const accounts = deps.accounts || scopedAnalyticsAccounts(accountsFromLatestArchive(await listLatestArchiveAccounts(db)), await loadGroupStore(db), null, 'psychology');

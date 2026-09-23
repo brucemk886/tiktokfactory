@@ -44,7 +44,7 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   const byId=new Map(peers.map(r=>[r.id,r]));
   const originals=items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)}));
   const keys=[...new Set(originals.map(r=>r.sourceKey))];
-  const variants=keys.length?(await env.DB.prepare('SELECT source_key,COUNT(*) total,SUM(enabled) enabled FROM psychology_copy_variants WHERE owner=? AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key').bind(user.username,...keys).all()).results:[];
+  const variants=keys.length?(await env.DB.prepare('SELECT source_key,COUNT(*) total,SUM(enabled) enabled FROM psychology_copy_variants WHERE owner=? AND deleted_at=0 AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key').bind(user.username,...keys).all()).results:[];
   const bySource=new Map(variants.map(r=>[r.source_key,r]));
   return json({canManageSources:user.sidebarModules?.includes('psychology-peer-hits')===true,items:originals.map(r=>({...r,peer:byId.get(r.id)||null,variantCount:Number(bySource.get(r.sourceKey)?.total||0),enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
  }

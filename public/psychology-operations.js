@@ -5,7 +5,7 @@ const fmt = value => value === null || value === undefined ? "—" : Number(valu
 const pct = value => value === null || value === undefined ? "—" : (value*100).toFixed(1)+"%";
 const time = value => new Date(value).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false});
 const params = new URLSearchParams(location.search);
-const state = { data:null,tab:["trend","accounts","batches","content"].includes(params.get("tab"))?params.get("tab"):"trend",accountPage:1,batchPage:1,videoPage:1,selectedAccount:"",request:0 };
+const state = { data:null,tab:["trend","accounts","batches","content","insights"].includes(params.get("tab"))?params.get("tab"):"trend",accountPage:1,batchPage:1,videoPage:1,selectedAccount:"",request:0 };
 for(const key of ["period","media","group","from","to"]) if(params.has(key) && key!=="group") $("#"+key).value=params.get(key);
 if(!$("#period").value)$("#period").value="7d";
 if(!$("#media").value)$("#media").value="all";
@@ -52,7 +52,26 @@ function render(){
   $("#metrics").innerHTML=cards.map(([label,value,previous,format,note])=>'<div class="metric"><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+(value!==null&&previous!==null?" · "+(value>=previous?"+":"")+(format===pct?((value-previous)*100).toFixed(1)+" 个百分点":fmt(value-previous)):"")+'<br>'+esc(note)+'</small></div>').join("");
   $("#coverage").textContent=data.coverage;
   $("#unknown").textContent=(data.unknownMedia||data.unknownRecordMedia)?"有 "+data.unknownMedia+" 条作品、"+data.unknownRecordMedia+" 条发布记录缺少内容类型，仅计入“全部内容”，不猜测为图文或视频。":"";
-  renderTrend();renderAccounts();renderBatches();renderContentPerformance(data.content);
+  renderTrend();renderAccounts();renderBatches();renderContentPerformance(data.content);renderInsights(data.insights);
+}
+const lift=value=>value===null||value===undefined?"—":Number(value).toFixed(2)+"×";
+const summaryCells=s=>[fmt(s.n),fmt(s.medianViews),lift(s.medianLift)+(s.liftN<s.n?"<small>基线样本 "+s.liftN+"</small>":""),pct(s.hitRate)];
+const SUMMARY_HEADERS=["作品数","中位播放","相对账号基线","爆款率（≥2×）"];
+function renderInsights(data){
+  const ids=["insightFindings","insightStages","insightReuse","insightVariation","insightRewrite","insightPosts","insightStageTable"];
+  if(!data){ids.forEach(id=>$("#"+id).innerHTML="");$("#insightFindings").innerHTML='<div class="empty">运营规律只分析图文，请把内容类型切到“全部内容”或“图文”。</div>';return;}
+  $("#insightFindings").innerHTML='<ul>'+data.findings.map(f=>'<li>'+esc(f)+'</li>').join("")+'</ul><p class="section-hint">本期 '+data.sample.rows+' 条图文，满24小时 '+data.sample.mature+' 条（有账号基线 '+data.sample.withLift+' 条，其中重复使用 '+data.sample.repeats+' 条）。</p>';
+  const stageNames={launch:"起号期",stable:"稳定期",burst:"爆发期",decline:"下滑期"};
+  $("#insightStages").innerHTML=Object.entries(stageNames).map(([key,label])=>'<div class="metric"><span>'+label+'账号</span><strong>'+fmt(data.currentStages[key])+'</strong><small>按当前已同步作品判断</small></div>').join("");
+  $("#insightReuse").innerHTML=table(["这篇爆款第几次使用",...SUMMARY_HEADERS],data.reuse.map(r=>[esc(r.label)+(r.label===data.dropAt?' <span class="ops-chip">明显下滑</span>':""),...summaryCells(r)]));
+  const v=data.version,s=data.style;
+  $("#insightVariation").innerHTML=table(["重复使用时",...SUMMARY_HEADERS],[["换一个没用过的版本",v.fresh],["沿用已经用过的版本",v.same],["换了图文样式",s.changed],["和上次同样式",s.same]].map(([label,row])=>[label,...summaryCells(row)]));
+  const w=data.rewrite;
+  $("#insightRewrite").innerHTML=table(["内容",...SUMMARY_HEADERS],[["全部原版",w.original],["全部改写版",w.rewrite],["在我们号上爆过的爆款 · 原版（"+w.hitSources+" 篇）",w.hitOriginal],["在我们号上爆过的爆款 · 改写版",w.hitRewrite]].map(([label,row])=>[esc(label),...summaryCells(row)]));
+  $("#insightPosts").innerHTML=table(["账号第几条作品",...SUMMARY_HEADERS],data.postIndex.map(r=>[esc(r.label),...summaryCells(r)]));
+  const kinds={first:"爆款首发",repeatOriginal:"重复 · 原版",rewrite:"改写版本"};
+  $("#insightStageTable").innerHTML=table(["发布时账号阶段","对比口径",...Object.values(kinds),"目前最好"],data.stages.map(st=>[esc(st.label),st.metric==="medianViews"?"中位播放":"相对基线",
+    ...Object.keys(kinds).map(k=>{const x=st.kinds[k];return (st.metric==="medianViews"?fmt(x.medianViews):lift(x.medianLift))+"<small>"+x.n+" 条</small>";}),st.best?esc(kinds[st.best]):"样本不足"]));
 }
 function renderTrend(){
   if(!state.data)return;

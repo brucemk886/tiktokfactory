@@ -46,7 +46,7 @@ export async function handlePsychologyCreative(request,env,url,session){
  }
  if(url.pathname===BASE+'/copies'&&request.method==='GET'){
   const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1))),q='%'+String(url.searchParams.get('q')||'').slice(0,100)+'%';
-  const args=[owner,q,q];let where='owner=? AND (title LIKE ? OR source_key LIKE ?)';
+  const args=[owner,q,q];let where='owner=? AND deleted_at=0 AND (title LIKE ? OR source_key LIKE ?)';
   if(sourceId){where+=' AND source_key=?';args.push(sourceKey);}
   const [rows,total]=await Promise.all([db.prepare('SELECT * FROM psychology_copy_variants WHERE '+where+' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
   return json({items:rows.results.map(r=>({...r,pages:JSON.parse(r.pages_json)})),page,total:total.n});
@@ -64,7 +64,9 @@ export async function handlePsychologyCreative(request,env,url,session){
   await db.batch(statements);return json({ok:true,created,duplicates:rows.length-created});
  }
  const match=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})$/);
- if(match&&request.method==='PATCH'){const b=await readJson(request);if(typeof b.enabled!=='boolean')fail('启用状态无效。');const result=await db.prepare('UPDATE psychology_copy_variants SET enabled=? WHERE id=? AND owner=?').bind(b.enabled?1:0,match[1],owner).run();if(!result.meta.changes)fail('文案不存在。',404);return json({ok:true});}
+ if(match&&request.method==='PATCH'){const b=await readJson(request);if(typeof b.enabled!=='boolean')fail('启用状态无效。');const result=await db.prepare('UPDATE psychology_copy_variants SET enabled=? WHERE id=? AND owner=? AND deleted_at=0').bind(b.enabled?1:0,match[1],owner).run();if(!result.meta.changes)fail('文案不存在。',404);return json({ok:true});}
+ // Deleted rows stay as tombstones so Grokbot re-imports of the same version are skipped as duplicates.
+ if(match&&request.method==='DELETE'){const result=await db.prepare('UPDATE psychology_copy_variants SET enabled=0,deleted_at=? WHERE id=? AND owner=? AND deleted_at=0').bind(Date.now(),match[1],owner).run();if(!result.meta.changes)fail('文案不存在。',404);return json({ok:true});}
  if(url.pathname===BASE+'/export'&&request.method==='GET'){
   const offset=Math.max(0,Math.floor(Number(url.searchParams.get('offset'))||0));
   const rows=(await db.prepare("SELECT source_key,copy_json FROM psychology_photo_copy_cache WHERE owner=? AND copy_json<>'' ORDER BY source_key LIMIT 51 OFFSET ?").bind(owner,offset).all()).results;
