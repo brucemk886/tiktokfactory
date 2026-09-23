@@ -155,7 +155,12 @@ $("#revokeKeyBtn").addEventListener("click",async()=>{
 async function copy(value){try{await navigator.clipboard.writeText(value);message("#keyStatus","已复制");}catch{message("#keyStatus","自动复制失败，请选中文本手动复制。",true);}}
 $("#copyKeyBtn").addEventListener("click",()=>copy($("#newApiKey").value));
 const endpoint=location.origin+"/api/integrations/psychology/peer-hits";$("#endpoint").value=endpoint;
-const sample={items:[{mediaType:"video",voiceGender:"female",videoUrl:"https://www.tiktok.com/@example/video/1234567890123456789",title:"Which picture did you notice first?",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,durationSeconds:18.5,videoData:{language:"en",hashtags:["psychology","test"]},source:"grokbot"}]};
+const sample={items:[{mediaType:"photo",videoUrl:"https://www.tiktok.com/@example/photo/1234567890123456789",title:"Signs you are anxiously attached",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,source:"grokbot",
+  videoData:{language:"en",caption:"which one is you? #anxiousattachment",pageTexts:["Signs you are anxiously attached","You reread their texts looking for hidden meaning","You apologise even when you did nothing wrong"]},
+  rewrites:[
+    {title:"When silence feels like rejection",caption:"You are not too much. #anxiousattachment",pages:["When silence feels like rejection","A slow reply is not a verdict on you","Try naming the feeling before you react"]},
+    {title:"Why you over-explain",caption:"Soft reminder for anxious hearts",pages:["Why you over-explain","Clarity is not the same as defending yourself","Say it once. Let it land."]}
+  ]}]};
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});

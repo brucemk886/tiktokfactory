@@ -1,5 +1,8 @@
 import { sha256Hex } from "./http.js";
 import { isEnglishPsychologyPeerHit } from "../../scripts/psychology-peer-language.js";
+import { photoCopyKey } from "./peer-photo-copy-cache.js";
+import { importedCopy } from "./psychology-copy-library.js";
+import { normalizeVariant } from "./psychology-creative.js";
 
 const TABLE = "psychology_peer_hits";
 const COPY_SYNC = `INSERT INTO psychology_copy_library(id,owner,media_type,title,source_url,source_json,created_at,updated_at)
@@ -15,6 +18,40 @@ const COPY_SYNC = `INSERT INTO psychology_copy_library(id,owner,media_type,title
     completed_at=CASE WHEN psychology_copy_library.media_type<>excluded.media_type THEN 0 ELSE psychology_copy_library.completed_at END,
     media_type=excluded.media_type,updated_at=excluded.updated_at`;
 const COPY_SYNC_BY_ID=COPY_SYNC.replace('p.id=? AND p.collected_at=?','p.id=?');
+// Text grokbot already read completes the copy on the spot, historical rows
+// included. Bumping attempt stops any extraction still running from
+// overwriting it; finished copy is never replaced.
+const COPY_SUPPLIED = `UPDATE psychology_copy_library SET status='done',content_json=?,provider='imported-text',error='',
+  attempt=attempt+1,workflow_id='',completed_at=?,updated_at=?
+  WHERE id=? AND status<>'done' AND media_type=? AND EXISTS (SELECT 1 FROM psychology_peer_hits WHERE id=? AND collected_at=?)`;
+// One statement for every rewrite in the request keeps a 100-post batch far
+// below D1's per-invocation query limit.
+const REWRITE_INSERT = `INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at)
+  SELECT json_extract(value,'$.id'),json_extract(value,'$.owner'),json_extract(value,'$.externalId'),json_extract(value,'$.sourceKey'),
+    json_extract(value,'$.title'),json_extract(value,'$.caption'),json_extract(value,'$.pagesJson'),json_extract(value,'$.fingerprint'),?
+  FROM json_each(?) WHERE true ON CONFLICT(id) DO NOTHING`;
+const MAX_REWRITES_PER_ITEM = 10;
+const MAX_REWRITES_PER_REQUEST = 500;
+// Must match librarySource so rewrites land under the same original.
+export function copySourceKey(item) {
+  try { return photoCopyKey(item.videoUrl); } catch { return item.id; }
+}
+async function normalizeRewrites(raw, item) {
+  if (raw.rewrites == null) return [];
+  if (!Array.isArray(raw.rewrites) || raw.rewrites.length > MAX_REWRITES_PER_ITEM) fail(`rewrites 须为最多 ${MAX_REWRITES_PER_ITEM} 个改写版本的数组。`);
+  const sourceKey = copySourceKey(item);
+  return Promise.all(raw.rewrites.map(async (rewrite, index) => {
+    if (!rewrite || typeof rewrite !== "object" || Array.isArray(rewrite)) fail(`rewrites 第 ${index + 1} 项必须是对象。`);
+    const provided = typeof rewrite.externalId === "string" ? rewrite.externalId.trim() : "";
+    let variant;
+    try { variant = normalizeVariant({ ...rewrite, sourceKey, externalId: provided || "derived" }); }
+    catch (error) { error.message = `rewrites 第 ${index + 1} 项：${error.message}`; throw error; }
+    const fingerprint = await sha256Hex(JSON.stringify([variant.sourceKey, variant.title, variant.caption, variant.pages]));
+    // An omitted ID follows the content, so resending identical rewrites is a no-op.
+    variant.externalId = provided || "grok-" + fingerprint.slice(0, 32);
+    return { ...variant, fingerprint };
+  }));
+}
 const FIELDS = {
   mediaType: "media_type", voiceGender: "voice_gender", videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
@@ -113,13 +150,18 @@ export async function importPsychologyPeerHits(db, payload, actor) {
   if (!rawItems.length || rawItems.length > 100) fail("每次提交 1–100 条内容。");
   const now = Date.now();
   const items = await Promise.all(rawItems.map(async (raw, index) => {
-    try { return await normalizePsychologyPeerHit(raw, now); } catch (error) { error.message = `第 ${index + 1} 条：${error.message}`; throw error; }
+    try {
+      const item = await normalizePsychologyPeerHit(raw, now);
+      item.rewrites = await normalizeRewrites(raw, item);
+      return item;
+    } catch (error) { error.message = `第 ${index + 1} 条：${error.message}`; throw error; }
   }));
+  if (items.reduce((sum, item) => sum + item.rewrites.length, 0) > MAX_REWRITES_PER_REQUEST) fail(`每次请求最多 ${MAX_REWRITES_PER_REQUEST} 个改写版本，请拆小批次。`);
   const english = items.filter(item => isEnglishPsychologyPeerHit(item));
   const skipped = items.filter(item => !isEnglishPsychologyPeerHit(item));
   if (!english.length) {
     return {
-      accepted: 0, ignoredOlder: 0, skippedNonEnglish: skipped.length,
+      accepted: 0, ignoredOlder: 0, skippedNonEnglish: skipped.length, rewrites: { created: 0, duplicates: 0, conflicts: 0 },
       items: skipped.map(item => ({ id: item.id, videoUrl: item.videoUrl, status: "skipped_non_english" })),
     };
   }
@@ -137,18 +179,69 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     ...Object.keys(FIELDS).map(key => key === "videoData" && item[key] !== null ? JSON.stringify(item[key]) : item[key]),
     item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0),
     db.prepare(COPY_SYNC).bind(item.id,item.collectedAt)]);
+  // Runs after every copy row exists, so a brand-new post completes in the same batch.
+  const supplied = new Map();
+  for (const item of english) {
+    const content = importedCopy({ mediaType: item.mediaType, title: item.title || "", videoData: item.videoData || {} });
+    if (!content) continue;
+    supplied.set(item.id, content);
+    statements.push(db.prepare(COPY_SUPPLIED).bind(JSON.stringify(content), now, now, item.id, item.mediaType, item.id, item.collectedAt));
+  }
+  const rewriteState = await planRewrites(db, english, actor);
+  if (rewriteState.rows.length) statements.push(db.prepare(REWRITE_INSERT).bind(now, JSON.stringify(rewriteState.rows)));
   const results = await db.batch(statements);
   const saved = english.map((item,index) => ({item,result:results[index*2]}));
   const byId = new Map(saved.map(({item,result}) => [item.id, result.results?.length ? "saved" : "ignored_older"]));
+  const copyRows = (await db.prepare("SELECT id,status,auto_extract FROM psychology_copy_library WHERE id IN (SELECT value FROM json_each(?))")
+    .bind(JSON.stringify(english.map(item => item.id))).all()).results;
+  const copyById = new Map(copyRows.map(row => [row.id, row]));
   return {
     accepted: saved.filter(({result}) => result.results?.length).length,
     ignoredOlder: saved.filter(({result}) => !result.results?.length).length,
     skippedNonEnglish: skipped.length,
-    items: items.map(item => ({
-      id: item.id, videoUrl: item.videoUrl,
-      status: byId.get(item.id) || "skipped_non_english",
-    })),
+    rewrites: rewriteState.totals,
+    items: items.map(item => {
+      const status = byId.get(item.id) || "skipped_non_english";
+      if (status === "skipped_non_english") return { id: item.id, videoUrl: item.videoUrl, status };
+      return { id: item.id, videoUrl: item.videoUrl, status, ...copyReport(item, copyById.get(item.id), supplied.has(item.id)), rewrites: rewriteState.byItem.get(item.id) };
+    }),
   };
+}
+// Tells grokbot, per post, whether the factory still needs anything from it.
+function copyReport(item, row, textSupplied) {
+  if (row?.status === "done") return { copy: "ready" };
+  if (row?.auto_extract === 0 || row?.auto_extract === "0") {
+    return { copy: "needs_text", copyNote: item.mediaType === "photo" ? "历史爆款不会自动提取，请提交 videoData.pageTexts（按图片顺序 1–6 页）。" : "历史爆款不会自动提取，请提交 videoData.transcript。" };
+  }
+  const pageTexts = item.videoData?.pageTexts;
+  const invalidText = item.mediaType === "photo" && pageTexts != null && !textSupplied;
+  return { copy: row?.status === "failed" ? "failed" : "extracting",
+    ...(invalidText ? { copyNote: "pageTexts 须为 1–6 页文字，已改由工厂自动识图。" } : {}) };
+}
+async function planRewrites(db, items, actor) {
+  const totals = { created: 0, duplicates: 0, conflicts: 0 };
+  const byItem = new Map(items.map(item => [item.id, { created: 0, duplicates: 0, conflicts: 0 }]));
+  const wanted = items.flatMap(item => item.rewrites.map(rewrite => ({ item, rewrite })));
+  if (!wanted.length) return { rows: [], totals, byItem };
+  const owner = (await db.prepare("SELECT username FROM factory_users WHERE id=?").bind(actor).first())?.username;
+  if (!owner) fail("写入账号不存在，无法保存改写版本。");
+  for (const entry of wanted) entry.id = await sha256Hex(owner + ":" + entry.rewrite.externalId);
+  const existing = new Map((await db.prepare("SELECT id,fingerprint FROM psychology_copy_variants WHERE id IN (SELECT value FROM json_each(?))")
+    .bind(JSON.stringify(wanted.map(entry => entry.id))).all()).results.map(row => [row.id, row.fingerprint]));
+  const rows = [], queued = new Set();
+  for (const { item, rewrite, id } of wanted) {
+    const counts = byItem.get(item.id);
+    // Versions are immutable snapshots: a changed body under a reused ID is refused, never overwritten.
+    const outcome = existing.has(id) || queued.has(id)
+      ? (existing.get(id) ?? rows.find(row => row.id === id)?.fingerprint) === rewrite.fingerprint ? "duplicates" : "conflicts"
+      : "created";
+    counts[outcome]++; totals[outcome]++;
+    if (outcome !== "created") continue;
+    queued.add(id);
+    rows.push({ id, owner, externalId: rewrite.externalId, sourceKey: rewrite.sourceKey, title: rewrite.title, caption: rewrite.caption,
+      pagesJson: JSON.stringify(rewrite.pages), fingerprint: rewrite.fingerprint });
+  }
+  return { rows, totals, byItem };
 }
 export async function listPsychologyPeerHits(db, params) {
   const requested = Number(params.get("page") || 1);

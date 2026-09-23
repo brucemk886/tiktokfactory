@@ -17,7 +17,8 @@ function fixture(t) {
   sqlite.exec(fs.readFileSync(new URL("../migrations/0025_psychology_peer_hit_media_type.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0026_psychology_peer_hit_voice_gender.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0027_psychology_peer_hit_media_type_lock.sql",import.meta.url),"utf8"));
-  sqlite.exec(fs.readFileSync(new URL("../migrations/0043_psychology_copy_library.sql",import.meta.url),"utf8"));
+  for(const name of ["0042_psychology_creative","0043_psychology_copy_library","0044_psychology_copy_library_future_only","0045_psychology_copy_variant_source"])
+    sqlite.exec(fs.readFileSync(new URL(`../migrations/${name}.sql`,import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
   return {db,sqlite};
@@ -142,6 +143,64 @@ test("admins can move records between video and photo tabs and later imports pre
   assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"video"})).status,200);
   assert.equal((await listPsychologyPeerHits(db,new URLSearchParams("mediaType=video"))).total,1);
   assert.equal((await call(db,`/api/psychology-peer-hits/${item.id}`,"PATCH",{mediaType:"photo",voiceGender:"female"})).status,400);
+});
+
+const photoUrl=n=>`https://www.tiktok.com/@example/photo/${n}`;
+const rewrite=n=>({title:`Rewrite ${n}`,caption:`Caption ${n}`,pages:[`Cover ${n}`,`Page two ${n}`]});
+
+test("grokbot page text completes a historical photo copy that auto-extraction skips",async t=>{
+  const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
+  await importPsychologyPeerHits(db,{videoUrl:photoUrl(501),title:"Old post",collectedAt:Date.now()-60000},"admin");
+  sqlite.prepare("UPDATE psychology_copy_library SET auto_extract=0").run(); // what migration 0044 did to the 09-18 backlog
+  const before=await (await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photoUrl(501)},auth,null)).json();
+  assert.equal(before.items[0].copy,"needs_text");assert.match(before.items[0].copyNote,/pageTexts/);
+  const response=await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photoUrl(501),videoData:{pageTexts:["Signs you feel too much","You replay every text"]}},auth,null);
+  const body=await response.json();assert.equal(response.status,200);assert.equal(body.items[0].copy,"ready");
+  const row=sqlite.prepare("SELECT status,provider,content_json,attempt FROM psychology_copy_library").get();
+  assert.equal(row.status,"done");assert.equal(row.provider,"imported-text");
+  assert.deepEqual(JSON.parse(row.content_json).pages.map(p=>p.text),["Signs you feel too much","You replay every text"]);
+  // Later text never replaces a finished copy.
+  await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photoUrl(501),videoData:{pageTexts:["Different"]}},auth,null);
+  assert.equal(JSON.parse(sqlite.prepare("SELECT content_json FROM psychology_copy_library").get().content_json).pages.length,2);
+});
+
+test("new posts with text are ready at once; without text they queue, and bad page text is reported",async t=>{
+  const {db}=fixture(t);
+  const result=await importPsychologyPeerHits(db,[
+    {videoUrl:photoUrl(601),videoData:{pageTexts:["One page"]}},
+    {videoUrl:photoUrl(602)},
+    {videoUrl:photoUrl(603),videoData:{pageTexts:Array(7).fill("Too many")}},
+  ],"admin");
+  assert.deepEqual(result.items.map(i=>i.copy),["ready","extracting","extracting"]);
+  assert.match(result.items[2].copyNote,/1–6/);
+});
+
+test("rewrites in the same import become enabled versions under the original and resends are no-ops",async t=>{
+  const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
+  const payload={videoUrl:photoUrl(701),videoData:{pageTexts:["Original cover","Original page"]},rewrites:[1,2,3,4,5].map(rewrite)};
+  const first=await (await call(db,PSYCHOLOGY_PEER_API,"POST",payload,auth,null)).json();
+  assert.deepEqual(first.rewrites,{created:5,duplicates:0,conflicts:0});assert.deepEqual(first.items[0].rewrites,{created:5,duplicates:0,conflicts:0});
+  const rows=sqlite.prepare("SELECT * FROM psychology_copy_variants ORDER BY title").all();
+  assert.equal(rows.length,5);assert.ok(rows.every(r=>r.enabled===1&&r.owner==="admin"&&r.source_key==="v1:tiktok:701"));
+  assert.deepEqual(JSON.parse(rows[0].pages_json),["Cover 1","Page two 1"]);
+  const again=await (await call(db,PSYCHOLOGY_PEER_API,"POST",payload,auth,null)).json();
+  assert.deepEqual(again.rewrites,{created:0,duplicates:5,conflicts:0});
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_copy_variants").get().n,5);
+  // A reused explicit ID with new text is refused per version without dropping the rest of the batch.
+  await importPsychologyPeerHits(db,{videoUrl:photoUrl(702),rewrites:[{...rewrite(9),externalId:"fixed-v1"}]},"admin");
+  const conflict=await importPsychologyPeerHits(db,[{videoUrl:photoUrl(702),rewrites:[{...rewrite(10),externalId:"fixed-v1"}]},{videoUrl:photoUrl(703),rewrites:[rewrite(11)]}],"admin");
+  assert.deepEqual(conflict.rewrites,{created:1,duplicates:0,conflicts:1});
+  assert.equal(sqlite.prepare("SELECT title FROM psychology_copy_variants WHERE external_id='fixed-v1'").get().title,"Rewrite 9");
+});
+
+test("invalid or oversized rewrites reject the whole batch before any write; non-English posts keep none",async t=>{
+  const {db,sqlite}=fixture(t);
+  await assert.rejects(importPsychologyPeerHits(db,[{videoUrl:photoUrl(801)},{videoUrl:photoUrl(802),rewrites:[{title:"Seven",pages:Array(7).fill("x")}]}],"admin"),/第 2 条：rewrites 第 1 项/);
+  await assert.rejects(importPsychologyPeerHits(db,{videoUrl:photoUrl(803),rewrites:Array(11).fill(rewrite(1))},"admin"),/最多 10/);
+  await assert.rejects(importPsychologyPeerHits(db,{items:Array.from({length:51},(_,n)=>({videoUrl:photoUrl(900+n),rewrites:Array.from({length:10},(_,v)=>rewrite(n*10+v))}))},"admin"),/最多 500/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_peer_hits").get().n,0);
+  const skipped=await importPsychologyPeerHits(db,{videoUrl:photoUrl(804),videoData:{language:"id"},rewrites:[rewrite(1)]},"admin");
+  assert.equal(skipped.items[0].status,"skipped_non_english");assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_copy_variants").get().n,0);
 });
 
 test("API keys are hashed, write-only, isolated by owner, rotatable and revocable",async t=>{

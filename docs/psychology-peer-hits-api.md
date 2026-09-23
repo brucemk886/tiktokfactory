@@ -75,7 +75,41 @@ Content-Type: application/json
 | `source` | 数据来源，例如 `grokbot`，最多 80 字符。 |
 | `videoData` | 其他内容数据的 JSON 对象，序列化后最多 16000 字符；可保存标签、语言、文案、其他指标等。图文复刻可提供完整 `copy`、`caption`、`script`、`transcript` 或 `文案`。若已采集原文，图文可同时提供 `pageTexts`（按图片顺序，最多6项），视频可提供 `transcript` 和可选 `onScreenText`；文案库会直接归档这些字段，避免再次识别。仅有标题或发布文案不视为已完成逐页/逐帧提取。 |
 
+| `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符，`caption` 最多 2200 字符，`pages` 为 1–6 页、每页 1–1500 字符、第一项是首图。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
+
 数量字段支持非负安全整数，也接受 `"128K"`、`"12.8万"`、`"1.2M"` 等字符串，存储为整数。标准字段优先于别名。时间可用带时区的 ISO 字符串，或 Unix 秒 / 毫秒时间戳；不接受无时区日期、负值和超过服务器时间一天的未来时间。接口列表返回时间统一为 Unix 毫秒，页面显示北京时间。
+
+## 图文：grokbot 一次提交原文与 5 个改写版本
+
+图文生产只需要原文逐页文字和改写版本，推荐 grokbot 每篇图文一次提交全部内容：
+
+```json
+{
+  "items": [
+    {
+      "mediaType": "photo",
+      "videoUrl": "https://www.tiktok.com/@example/photo/1234567890123456789",
+      "title": "Signs you are anxiously attached",
+      "playCount": 128000,
+      "collectedAt": "2026-09-23T06:00:00Z",
+      "source": "grokbot",
+      "videoData": {
+        "language": "en",
+        "caption": "which one is you? #anxiousattachment",
+        "pageTexts": ["Signs you are anxiously attached", "You reread their texts looking for hidden meaning"]
+      },
+      "rewrites": [
+        { "title": "When silence feels like rejection", "caption": "You are not too much.", "pages": ["When silence feels like rejection", "A slow reply is not a verdict on you"] }
+      ]
+    }
+  ]
+}
+```
+
+- 附带 `pageTexts`（按图片顺序 1–6 页）的图文，原文在写入时立即完成，返回 `copy: "ready"`，不再调用工厂识图，历史记录同样适用。原帖超过 6 张图时请先整理成 6 页以内再提交，否则工厂会退回自动识图（仅取前 6 张）。已完成的原文不会被后续提交覆盖。
+- `title` 建议写原帖首图的钩子句，而不是一串话题标签；话题标签放进 `videoData.caption`。
+- 改写版本请去掉原帖的引流页（书单、LINK IN BIO、原作者口头禅），不虚构研究和统计数据，改变表达角度和具体情境，不只替换同义词。
+- 处理历史数据：对 `copy` 为 `needs_text` 的链接重新提交一次（附 `pageTexts` 和 `rewrites`）即可，指标字段可省略，已保存的值会保留。`collectedAt` 请省略或填本次处理时间；沿用比已保存记录更早的采集时间会被当作旧数据忽略（`ignored_older`），原文也不会补上。
 
 ## 去重与更新
 
@@ -86,7 +120,7 @@ Content-Type: application/json
 - 未提供、空文本或为 `null` 的顶层字段保留原值。数量 `0` 会覆盖旧值；较新的播放量降低时也照实保存。
 - `videoData` 按 JSON Merge Patch 合并：保留未提交的键；数组整体替换；对象内的 `null` 会删除对应键。
 - `collectedAt` 小于已保存记录时，整条输入忽略；时间相同允许幂等重试或补齐数据。更新时请提交本次实际采集到的全部指标。
-- 批量请求会先校验所有记录；任一记录无效时整批不写入，并返回第几条及具体原因。全部有效后使用数据库事务写入。
+- 批量请求会先校验所有记录（含 `rewrites` 的格式）；任一记录无效时整批不写入，并返回第几条及具体原因。全部有效后使用数据库事务写入。
 - 只保留英语内容。`videoData.language` 为非英语（如 `id` / `th`），或标题/文案主体是印尼语、马来语、菲律宾语、泰语、中文等时，该条 `status` 为 `skipped_non_english`，不影响同批英语记录。标签里的 `#fypシ` 以及标题末尾 grokbot 中文译注不算非英语。
 
 ## 成功与错误
@@ -106,6 +140,12 @@ Content-Type: application/json
   ]
 }
 ```
+
+每条已保存内容的返回还带：
+
+- `copy`：这条爆款在文案库的原文状态。`ready` 已可用于生产；`extracting` 工厂正在自动识图/识视频；`failed` 自动提取失败；`needs_text` 属于历史记录（2026-09-22 文案库上线前导入的），工厂不会自动提取，需要 grokbot 重新提交这条链接并附上 `videoData.pageTexts`（图文）或 `videoData.transcript`（视频）。
+- `copyNote`：需要处理时的原因说明。
+- `rewrites`：本条改写版本写入结果 `{ created, duplicates, conflicts }`；顶层 `rewrites` 是整批合计。
 
 `accepted` 是已保存的输入条数（含更新），不是新视频数量；同一批重复提交也分别计数。`ignoredOlder` 表示因采集时间较旧忽略的输入条数，其 `status` 为 `ignored_older`。`skippedNonEnglish` 表示因不是英语跳过的条数。不要对 `ignored_older` 或 `skipped_non_english` 无限重试。
 
