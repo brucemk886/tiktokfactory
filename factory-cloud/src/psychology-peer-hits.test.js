@@ -247,7 +247,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/class="hits-header-tools"/);
   assert.match(page,/<summary>写入接口<\/summary>/);
   assert.doesNotMatch(page,/<summary>grokbot 写入接口<\/summary>/);
-  assert.match(page,/<th>提取内容<\/th><th>文案状态<\/th><th>改写版本<\/th>/);
+  assert.match(page,/<th>发布 \/ 导入时间<\/th><th>文案状态<\/th><th>改写版本<\/th>/);
   assert.doesNotMatch(page,/recreationVoice|配音声音/);
   assert.match(page,/<th>发布 \/ 导入时间<\/th>/);
   assert.match(page,/id="produceBtn"[^>]*>原帖复刻<\/button>/);

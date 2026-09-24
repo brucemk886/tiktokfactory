@@ -26,3 +26,8 @@ Simplify both video/photo copy-library tabs per the user's screenshots.
 
 ## Remaining / next step
 Ship through the required commit/push/main-clean deployment gate and verify live read-only controls. No DB migration or publishing queue changes.
+
+## Follow-up: compact list columns
+- User requested removing 发布文案 and 提取内容 from both media lists. Removed the two header/data cells, changed empty-state colspan to 9, and remapped widths to the nine-column layout (minimum 1210px). Full originals remain accessible through 查看文案; stored data and rewrite detail columns are unchanged.
+- Changed public/psychology-copy-library.html, public/psychology-peer-hits.js, public/psychology-copy-library.css, public/admin-ui.css and the existing table assertion in factory-cloud/src/psychology-peer-hits.test.js.
+- Validation: syntax check, git diff --check and 621/621 tests pass. Deploy through main gate; no migrations required.

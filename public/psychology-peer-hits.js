@@ -24,14 +24,13 @@ function pager() { $("#previousBtn").disabled=state.loading||state.page<=1; $("#
 
 function libraryRow(item){
  const row=item.library,content=row.content||{},done=row.status==='done',manage=document.body.dataset.sourceAccess==='true',hasPeer=!!row.peer;
- const words=row.media_type==='photo'?(content.pages||[]).map(p=>p.text).filter(Boolean).join(' · '):content.transcript||(content.onScreenText||[]).join(' · ');
  const status=done?'已提取':!row.auto_extract?'历史待补全':({queued:'等待提取',running:'提取中',failed:'提取失败'}[row.status]||'未提取');
- const caption=content.caption||copyOf(item),title=content.title||titleOf(item);
+ const title=content.title||titleOf(item);
  const cell=(v,cls='')=>'<td class="'+cls+'" title="'+escape(v)+'"><span>'+escape(v)+'</span></td>';
  return '<tr>'+cell('','library-select').replace('<span></span>',manage&&hasPeer?'<input type="checkbox" class="peer-select" data-peer-id="'+escape(item.id)+'" aria-label="选择 '+escape(title)+'" />':'—')+
  '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+'</small></td>'+
  '<td class="library-metrics"><strong>'+metric(item.playCount)+' 播放</strong><small>赞 '+metric(item.likeCount)+' · 评 '+metric(item.commentCount)+'</small><small>藏 '+metric(item.favoriteCount)+' · 分享 '+metric(item.shareCount)+'</small><small>时长 '+(item.durationSeconds==null?'—':metric(item.durationSeconds)+' 秒')+'</small></td>'+
- '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+cell(caption,'hits-copy')+cell(done?(words||'无可识别文字'):'完成提取后可查看正文','hits-copy')+
+ '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+
  '<td class="library-status"><span class="copy-status'+(done?'':' is-off')+'" title="'+escape(row.error||status)+'">'+status+'</span>'+(row.error?'<details><summary>原因</summary><p>'+escape(row.error)+'</p></details>':'')+(!done&&row.auto_extract&&row.status==='failed'?'<button type="button" data-retry-copy="'+escape(row.id)+'">重试提取</button>':'')+'</td>'+
  '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small></td>'+
  '<td class="hits-voice">'+(manage&&hasPeer?'<select class="voice-gender-select" data-id="'+escape(item.id)+'" data-current="'+escape(item.voiceGender||'male')+'" aria-label="音色性别"><option value="male"'+(item.voiceGender!=='female'?' selected':'')+'>男</option><option value="female"'+(item.voiceGender==='female'?' selected':'')+'>女</option></select>':'—')+'</td>'+
@@ -64,7 +63,7 @@ async function loadList() {
       <td class="hits-voice"><select class="voice-gender-select" data-id="${escape(item.id)}" data-current="${escape(item.voiceGender || "male")}" aria-label="修改 ${escape(titleOf(item))} 的音色性别"><option value="male"${item.voiceGender !== "female" ? " selected" : ""}>男</option><option value="female"${item.voiceGender === "female" ? " selected" : ""}>女</option></select></td>
       <td class="hits-video"><a href="${escape(item.videoUrl)}" target="_blank" rel="noopener noreferrer">${item.coverUrl?`<img alt="" src="${escape(item.coverUrl)}" />`:`打开${item.mediaType === "photo" ? "图文" : "视频"}`}</a></td>
       <td class="hits-actions-cell"><button class="hits-delete" type="button" data-id="${escape(item.id)}">删除</button></td>
-    </tr>`).join(""):'<tr><td colspan="'+(integrated?11:14)+'">'+(integrated?'当前分类没有符合条件的文案，可切换图文/视频或展示范围。':'暂无记录，可手动添加或通过 grokbot 接口写入。')+'</td></tr>';
+    </tr>`).join(""):'<tr><td colspan="'+(integrated?9:14)+'">'+(integrated?'当前分类没有符合条件的文案，可切换图文/视频或展示范围。':'暂无记录，可手动添加或通过 grokbot 接口写入。')+'</td></tr>';
     document.dispatchEvent(new CustomEvent('peer-list-loaded',{detail:{items:data.items.map(item=>item.library).filter(Boolean)}}));
     message("#listStatus",`共 ${data.total} 条${state.mediaType === "photo" ? "图文" : "视频"} · 未采集的数据以 — 显示`);
     $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;

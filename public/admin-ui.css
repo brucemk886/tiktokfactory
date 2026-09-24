@@ -65,16 +65,15 @@ html:has(dialog[open]){overflow:hidden}
 .lf-console .detail-tabs button{padding:14px 12px!important}.lf-console .batch-detail-dialog :is(.task-counts,.auto-task-item>p){color:var(--lf-muted)!important}.lf-console .batch-detail-dialog .task-progress{margin-top:10px}
 
 /* Give eleven-column copy records real widths; keep row actions reachable. */
-.lf-console.copy-library-page .hits-table-wrap table{min-width:1610px}
+.lf-console.copy-library-page .hits-table-wrap table{min-width:1210px}
 .lf-console.copy-library-page .hits-table-wrap th:nth-child(1){width:50px}
 .lf-console.copy-library-page .hits-table-wrap th:nth-child(2){width:220px}
 .lf-console.copy-library-page .hits-table-wrap th:nth-child(3){width:190px}
 .lf-console.copy-library-page .hits-table-wrap th:nth-child(4){width:165px}
-.lf-console.copy-library-page .hits-table-wrap th:nth-child(5),.lf-console.copy-library-page .hits-table-wrap th:nth-child(6){width:200px}
-.lf-console.copy-library-page .hits-table-wrap th:nth-child(7){width:100px}
-.lf-console.copy-library-page .hits-table-wrap th:nth-child(8){width:95px}
-.lf-console.copy-library-page .hits-table-wrap th:nth-child(9){width:80px}
-.lf-console.copy-library-page .hits-table-wrap th:nth-child(10){width:100px}
+.lf-console.copy-library-page .hits-table-wrap th:nth-child(5){width:100px}
+.lf-console.copy-library-page .hits-table-wrap th:nth-child(6){width:95px}
+.lf-console.copy-library-page .hits-table-wrap th:nth-child(7){width:80px}
+.lf-console.copy-library-page .hits-table-wrap th:nth-child(8){width:100px}
 .lf-console.copy-library-page .hits-table-wrap th:last-child{width:210px}
 .lf-console.copy-library-page .library-actions button{width:82px;min-height:32px;padding:6px!important}
 .lf-console.copy-library-page .hits-time{white-space:normal;overflow-wrap:normal}
