@@ -1,4 +1,5 @@
 ensureThemeStylesheet();
+ensureConsoleAssets();
 
 (async function guard() {
   try {
@@ -32,6 +33,7 @@ ensureThemeStylesheet();
       if (small) small.textContent = activeGroup?.textContent || (user.role === "admin" ? (localWorker ? "本地执行" : "业务总览") : "GeeLark 备用");
     });
     document.documentElement.dataset.sidebarReady = "true";
+    window.dispatchEvent(new Event("lf:sidebar-ready"));
 
     document.querySelectorAll("[data-account-name]").forEach((item) => {
       item.textContent = user.username;
@@ -193,4 +195,10 @@ function applyRoleVisibility(user) {
   document.querySelectorAll("[data-admin-only]").forEach((item) => {
     if (user.role !== "admin") item.hidden = true;
   });
+}
+
+function ensureConsoleAssets() {
+  if (document.querySelector('link[data-lf-console]')) return;
+  const link=document.createElement('link');link.rel='stylesheet';link.href='/admin-ui.css';link.dataset.lfConsole='true';document.head.append(link);
+  const script=document.createElement('script');script.src='/admin-ui.js';script.defer=true;document.head.append(script);
 }

@@ -6,12 +6,13 @@
 </head><body class="work-page official-data-page psychology-module psychology-auto-page">
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
-<header class="page-head"><div><h1>心理学自动发布</h1><p class="page-lead">从文案库、模板题库或同行爆款抽取内容，批量生成图文或视频，按账号排期自动发布。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-autopilot">自动运营</a><a href="/psychology-copy-library">文案库</a><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-ops-report?tab=content">内容效果</a><a href="/psychology-publish-sources">心理学发布记录</a><a href="/official-publish-records">官方发布记录</a></nav></header>
+<header class="page-head"><div><h1>自动发布</h1><p class="page-lead">批量生成与排期，集中查看任务进度和需要处理的内容。</p></div><div class="page-links"><a href="/psychology-publish-sources">发布记录</a><button type="button" id="newBatch" class="primary-action"><img class="lf-icon" src="/vendor/bootstrap-icons/plus-lg.svg" alt=""> 新建发布任务</button></div></header>
+<p id="queueMessage" role="status" aria-live="polite"></p>
 <div class="task-layout">
-<form id="batchForm" class="task-create-panel">
-<section class="panel auto-section"><div class="section-title"><h2>内容与选题</h2><nav class="page-links" aria-label="选题来源"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-comments">定时评论</a><a href="/psychology-copy-library">文案库</a></nav></div>
+<dialog id="createBatchDialog" class="create-batch-dialog" aria-labelledby="createBatchTitle"><div class="lf-dialog-head"><div><h2 id="createBatchTitle">新建发布任务</h2><p class="field-hint">配置内容、发布账号和排期</p></div><button type="button" id="closeCreateBatch" class="lf-icon-button" aria-label="关闭新建任务"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><form id="batchForm" class="task-create-panel">
+<section class="panel auto-section"><div class="section-title"><h2>内容与选题</h2></div>
 <div class="media-tabs" role="group" aria-label="内容类型"><button type="button" data-media="video" class="active" aria-pressed="true">视频<span>AI 画面与配音</span></button><button type="button" data-media="photo" aria-pressed="false">图文<span>卡片与素材底图</span></button></div>
-<p class="field-hint" id="sourceHint">正在读取文案库…</p>
+<details class="source-explanation"><summary>选题规则与可用内容</summary><p class="field-hint" id="sourceHint">正在读取文案库…</p></details>
 <div class="auto-grid">
 <label class="field" id="sourceTypeField"><span>选题来源</span><select id="sourceType"><option value="copy-library">文案库 · 爆款原文</option><option value="copy-bank">文案库 · 改写版本</option><option value="topic-bank">模板题库</option><option value="peer">同行视频爆款</option></select></label>
 <label class="field" id="photoSourceField" hidden>内容来源<select id="photoSource"><option value="library">文案库 · 原文 + 改写（按表现进化）</option></select><small><a href="/psychology-copy-library">导入 / 管理文案</a></small></label>
@@ -45,17 +46,18 @@
 <div id="summary" class="batch-summary" aria-live="polite"></div>
 <p class="field-hint">每组最多20条；失败项单独保留，已准备好的内容继续提交。等待超过20分钟后会分离未完成项。若生成完成时排期已过，中台按可用时间发布。关闭页面不影响已入队任务。</p>
 <div class="submit-row"><p id="message" role="status" aria-live="polite"></p><button type="submit" id="submitBatch" class="primary-action">创建并自动发布</button></div>
-</section></form>
+</section></form></dialog>
 <aside class="task-list-panel" aria-label="任务队列">
-<div class="queue-header"><div><h2>执行队列</h2><p id="safetySummary">每20条合并提交，一个创建任务统一管理</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
-<div class="queue-metrics">
+<div class="queue-header"><div><h2>发布任务</h2><p id="safetySummary">每20条合并提交，一个创建任务统一管理</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
+<div class="queue-metrics"><div class="queue-total"><span id="pageTotalCount">0</span><small>本页任务</small></div>
 <div><span id="queuedCount">0</span><small>排队</small></div>
 <div><span id="runningCount">0</span><small>执行中</small></div>
 <div><span id="attentionCount">0</span><small>待处理</small></div>
-<div><span id="doneCount">0</span><small>已完成</small></div>
+<div><span id="doneCount">0</span><small>已提交 / 已取消</small></div>
 </div>
-<div class="queue-header"><select id="batchFilter" aria-label="任务筛选"><option value="all">全部任务</option><option value="attention">待处理任务</option></select><button type="button" id="batchPrev">上一页</button><span id="batchPage" aria-live="polite"></span><button type="button" id="batchNext">下一页</button></div>
+<div class="queue-filters"><label class="queue-search">搜索本页<input id="batchSearch" type="search" placeholder="批次名称或账号"></label><label>内容类型<select id="batchMedia"><option value="all">全部类型</option><option value="photo">图文</option><option value="video">视频</option></select></label><label>任务筛选<select id="batchFilter" aria-label="任务筛选"><option value="all">全部任务</option><option value="attention">待处理任务</option></select></label></div>
 <div id="batches" class="auto-task-list"><div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div></div>
+<div class="queue-pagination"><button type="button" id="batchPrev">上一页</button><span id="batchPage" aria-live="polite"></span><button type="button" id="batchNext">下一页</button></div>
 </aside>
 </div>
-</main><script src="/access.js"></script><script type="module" src="/psychology-auto-publish.js"></script></body></html>
+</main><dialog id="batchDetail" class="batch-detail-dialog" aria-labelledby="batchDetailTitle"><div class="lf-dialog-head"><h2 id="batchDetailTitle">批次详情</h2><button type="button" id="closeBatchDetail" class="lf-icon-button" aria-label="关闭批次详情"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><div class="detail-tabs" role="tablist" aria-label="批次详情内容"><button type="button" id="detailOverviewTab" role="tab" aria-selected="true" aria-controls="batchDetailBody">概览</button><button type="button" id="detailItemsTab" role="tab" aria-selected="false" aria-controls="batchDetailItems" tabindex="-1">任务明细</button></div><div id="batchDetailBody" role="tabpanel" aria-labelledby="detailOverviewTab"></div><div id="batchDetailItems" role="tabpanel" aria-labelledby="detailItemsTab" hidden></div><div class="detail-footer"><a href="/psychology-publish-sources">查看发布记录</a><small>已提交表示已交接中台，实际发布结果请查看发布记录。</small></div></dialog><script src="/access.js"></script><script type="module" src="/psychology-auto-publish.js"></script></body></html>

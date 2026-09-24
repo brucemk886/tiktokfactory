@@ -8,12 +8,12 @@ const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',impo
 function harness(accountsPromise, failed=false, options={}) {
   const nodes=new Map();
   function node(selector) {
-    if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'peer':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},addEventListener(type,fn){this.listeners[type]=fn;}});
+    if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'peer':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},setAttribute(name,value){this[name]=value;},focus(){},showModal(){this.open=true;},close(){this.open=false;},addEventListener(type,fn){this.listeners[type]=fn;}});
     return nodes.get(selector);
   }
   const mediaButtons=['video','photo'].map(media=>({dataset:{media},classList:{toggle(){}},setAttribute(){},addEventListener(type,fn){this[type]=fn;}}));
   let accounts=accountsPromise;
-  const batch={createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
+  const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
   const context=vm.createContext({VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:{batches:[batch]}};}});
   const ready=vm.runInContext('(async()=>{'+source+'})()',context);
@@ -32,7 +32,7 @@ test('a fast batch response is rerendered with @handles when slow account data a
   const html=h.node('#batches').innerHTML;
   for(const handle of ['@first','@second','@third'])assert.ok(html.includes(handle));
   assert.doesNotMatch(html,/Nickname|@@second|internal-[abc]|账号加载中/);
-  assert.equal((html.match(/<article /g)||[]).length,1);
+  assert.equal((html.match(/<tr data-batch-row=/g)||[]).length,1);
 });
 
 test('account refresh immediately updates existing photo batch labels',async()=>{
@@ -54,16 +54,18 @@ test('missing account data uses a readable fallback and account text is escaped'
 
 test('failed rows offer deletion; confirmation sends DELETE and refreshes without touching siblings',async()=>{
   const h=harness(Promise.resolve([]),true);await h.ready;
-  assert.match(h.node('#batches').innerHTML,/data-delete="internal-c"/);
-  assert.doesNotMatch(h.node('#batches').innerHTML,/data-delete="internal-[ab]"/);
+  await h.node('#batches').listeners.click({target:{closest:selector=>selector==='[data-batch-open]'?{dataset:{batchOpen:'batch-1'}}:null}});
+  assert.equal(h.node('#batchDetail').open,true);
+  assert.match(h.node('#batchDetailBody').innerHTML,/data-delete="internal-c"/);
+  assert.doesNotMatch(h.node('#batchDetailBody').innerHTML,/data-delete="internal-[ab]"/);
   const button={dataset:{delete:'internal-c'},disabled:false};
   const event={target:{closest:selector=>selector==='[data-delete]'?button:null}};
-  h.setConfirmed(false);await h.node('#batches').listeners.click(event);
+  h.setConfirmed(false);await h.node('#batchDetailBody').listeners.click(event);
   assert.equal(h.requests.filter(r=>r.method==='DELETE').length,0);
-  h.setConfirmed(true);await h.node('#batches').listeners.click(event);
+  h.setConfirmed(true);await h.node('#batchDetailBody').listeners.click(event);
   assert.equal(h.requests.filter(r=>r.method==='DELETE').length,1);
-  assert.doesNotMatch(h.node('#batches').innerHTML,/data-delete|待人工处理/);
-  assert.match(h.node('#batches').innerHTML,/已提交中台 2/);
+  assert.doesNotMatch(h.node('#batchDetailBody').innerHTML,/data-delete|待人工处理/);
+  assert.match(h.node('#batchDetailBody').innerHTML,/已提交中台 2/);
 });
 
 const grouped=[
@@ -184,3 +186,25 @@ for(const media of ['photo','video'])for(const source of ['copy-library','copy-b
  assert.equal(body.libraryMediaType,source==='copy-library'?'video':undefined);
  assert.equal(h.node('#rewriteCopy').disabled,true);
 });
+
+ test('list filters never enqueue, detail tabs expose records and creation retains its draft',async()=>{
+ const h=harness(Promise.resolve(grouped),true);await h.ready;
+ h.node('#batchSearch').value='missing';h.node('#batchSearch').listeners.input();assert.match(h.node('#batches').innerHTML,/本页没有匹配/);
+ h.node('#batchSearch').value='';h.node('#batchMedia').value='video';h.node('#batchMedia').listeners.change();assert.match(h.node('#batches').innerHTML,/本页没有匹配/);
+ h.node('#batchMedia').value='all';h.node('#batchMedia').listeners.change();
+ await h.node('#batches').listeners.click({target:{closest:()=>({dataset:{batchOpen:'batch-1'}})}});
+ assert.equal(h.node('#batchDetail').open,true);assert.match(h.node('#batchDetailItems').innerHTML,/失败/);
+ h.node('#detailItemsTab').listeners.click();assert.equal(h.node('#batchDetailBody').hidden,true);assert.equal(h.node('#detailItemsTab')['aria-selected'],'true');
+ h.node('#closeBatchDetail').listeners.click();assert.equal(h.node('#batchDetail').open,false);
+ h.node('#newBatch').listeners.click();h.node('#batchName').value='saved draft';h.node('#closeCreateBatch').listeners.click();h.node('#newBatch').listeners.click();assert.equal(h.node('#batchName').value,'saved draft');
+ assert.equal(h.requests.filter(r=>r.method==='POST'||r.method==='DELETE').length,0);
+ });
+
+ test('unchanged polling preserves the rendered list and open detail state',async()=>{
+ const h=harness(Promise.resolve(grouped),true);await h.ready;
+ await h.node('#batches').listeners.click({target:{closest:()=>({dataset:{batchOpen:'batch-1'}})}});
+ let listWrites=0,detailWrites=0;
+ for(const [selector,record] of [['#batches',()=>listWrites++],['#batchDetailBody',()=>detailWrites++]]){let value=h.node(selector).innerHTML;Object.defineProperty(h.node(selector),'innerHTML',{get:()=>value,set:next=>{value=next;record();}});}
+ await h.node('#refreshBatches').listeners.click();
+ assert.equal(listWrites,0);assert.equal(detailWrites,0);assert.equal(h.node('#batchDetail').open,true);
+ });
