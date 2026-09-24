@@ -215,3 +215,19 @@ test('rejected review uses selected source and preview reflects approval edits w
  const before=h.requests.length;h.nodes.get('#qualityReviewForm').listeners.input();
  assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Edited title/);assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Edited sentence/);assert.equal(h.requests.length,before);
 });
+
+
+test('recoverable historical output opens split versions and switching binds approval to that version',async()=>{
+ const h=harness();
+ const children=[1,2,3].map(n=>({id:'child'+n,title:'Version '+n,caption:'Caption',pages:['Version '+n+' first','Version '+n+' second'],review_status:'pending',recoverableVersions:0}));
+ h.respond(url=>url.endsWith('/recover')?{items:children}:{items:children,page:1,total:3});
+ await h.context.openQualityReview({id:'parent',title:'未通过质检的模型返回',pages:[],recoverableVersions:3,raw_response:'raw'});
+ assert.equal(h.requests.filter(r=>r.url.endsWith('/recover')).length,1);
+ assert.equal(h.nodes.get('#qualityReviewVersionField').hidden,false);
+ assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Version 1 second/);
+ h.nodes.get('#qualityReviewVersion').value='1';h.nodes.get('#qualityReviewVersion').onchange();
+ assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Version 2 second/);
+ await h.nodes.get('#qualityReviewForm').onsubmit({preventDefault(){}});
+ assert.ok(h.requests.some(r=>r.url==='/api/psychology-creative/copies/child2/approve'));
+ assert.ok(!h.requests.some(r=>r.url.endsWith('parent/approve')));
+});

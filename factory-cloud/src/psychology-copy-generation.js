@@ -4,6 +4,29 @@ const fail=(message,statusCode=502)=>{throw Object.assign(new Error(message),{st
 // Models sometimes wrap the JSON in a code fence or a sentence; keep the outermost object.
 export function jsonBody(text){const value=String(text??'').trim(),start=value.indexOf('{'),end=value.lastIndexOf('}');return start>=0&&end>start?value.slice(start,end+1):value;}
 
+// Repair only trailing commas outside quoted strings; never evaluate model text.
+export function parseCopyModelJson(text){
+ const body=jsonBody(text);
+ if(body.length>256000)throw new Error('Model JSON too large');
+ try{return {value:JSON.parse(body),repaired:false};}catch{}
+ let result='',quoted=false,escaped=false;
+ for(let i=0;i<body.length;i++){
+  const c=body[i];
+  if(quoted){result+=c;if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"')quoted=false;continue;}
+  if(c==='"')quoted=true;
+  if(c===','){let j=i+1;while(/\s/.test(body[j]||'')&&j<body.length)j++;if(body[j]===']'||body[j]==='}')continue;}
+  result+=c;
+ }
+ return {value:JSON.parse(result),repaired:true};
+}
+export function recoverableCopyVersions(row){
+ if(row.review_status!=='pending'||(JSON.parse(row.pages_json||'[]')).length)return [];
+ try{
+  const versions=parseCopyModelJson(row.raw_response).value?.versions;
+  return Array.isArray(versions)&&versions.length>0&&versions.length<=10&&versions.every(v=>v&&typeof v==='object'&&!Array.isArray(v)&&Array.isArray(v.pages)&&v.pages.every(p=>typeof p==='string'))?versions:[];
+ }catch{return [];}
+}
+
 // Models the copy library may use for AI rewrites. Replicate models are billed
 // per token on the Replicate account; DeepSeek uses the existing key.
 export const COPY_MODELS=Object.freeze({
@@ -63,10 +86,11 @@ export async function generateCopyDrafts(env,source,{model:modelId,count=5}={}){
  const prompt=`Create ${count} distinct psychology/relationship social-media rewrites of ORIGINAL_JSON. Each version must take a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action) and open with a different hook style; no sentence may repeat across versions. ${RULES(photo,pages)} Return JSON ONLY: {"versions":[${DRAFT_FIELDS}, ...]} with exactly ${count} items. Do not include review state, IDs, scores or commentary. ORIGINAL_JSON:
 ${input}`;
  const text=await callModel(env,model,prompt,Math.min(16000,2000*count));
- let versions;
- try{versions=JSON.parse(jsonBody(text)).versions;}catch{}
+ let versions,repaired=false;
+ try{const parsed=parseCopyModelJson(text);versions=parsed.value?.versions;repaired=parsed.repaired;}catch{}
  if(!Array.isArray(versions)||!versions.length)return {drafts:[],rejected:[{raw:text,reason:'AI 返回格式无效，未得到可用版本数组。'}],model:model.id};
  const drafts=[],rejected=[];
+ if(repaired)return {drafts,rejected:versions.slice(0,count).map(version=>({raw:JSON.stringify(version),reason:'模型 JSON 含多余尾逗号，已恢复分页；请人工审核后通过。'})),model:model.id};
  for(const version of versions.slice(0,count)){try{drafts.push(validateCopyDraft(JSON.stringify(version),photo?pages.length:null));}catch(error){rejected.push({raw:JSON.stringify(version),reason:error.message});}}
 
  return {drafts,rejected,model:model.id};
@@ -74,7 +98,7 @@ ${input}`;
 
 export function validateCopyDraft(text,pageCount=null){
  let draft;
- try{if(typeof text!=='string'||text.length>20000)throw new Error();draft=JSON.parse(jsonBody(text));}catch{fail('AI 返回格式无效，请重新生成。');}
+ try{if(typeof text!=='string'||text.length>20000)throw new Error();draft=parseCopyModelJson(text).value;}catch{fail('AI 返回格式无效，请重新生成。');}
  const valid=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.trim().length<=max;
  if(!draft||!valid(draft.name,70))fail('版本名称 name 缺失或超过 70 字符。');
  if(!valid(draft.title,200))fail('标题 title 缺失或超过 200 字符。');

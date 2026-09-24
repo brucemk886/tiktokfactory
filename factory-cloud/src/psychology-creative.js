@@ -1,5 +1,5 @@
 import {normalizeRewriteModel,rewriteModelLabel} from './psychology-rewrite-model.js';
-import {generateCopyDraft,generateCopyDrafts} from './psychology-copy-generation.js';
+import {generateCopyDraft,generateCopyDrafts,recoverableCopyVersions} from './psychology-copy-generation.js';
 import {checkRewrite,checkSharedLines} from './psychology-rewrite-quality.js';
 import {normalizeCopyReview} from './psychology-copy-review.js';
 import {handleCopyComparison} from './psychology-copy-comparison.js';
@@ -10,6 +10,7 @@ import { publishAccountDirectory } from './psychology-account-access.js';
 import { scopeOfficialAccess } from '../../scripts/official-account-group-store.js';
 import { VISUAL_STYLES,styleById,currentStyleId,currentStyleBindings } from '../../public/psychology-visual-styles.js';
 const BASE='/api/psychology-creative';
+const copyRow=r=>({...r,rewriteModel:r.rewrite_model,rewriteModelLabel:rewriteModelLabel(r.rewrite_model),pages:JSON.parse(r.pages_json),recoverableVersions:recoverableCopyVersions(r).length});
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 export function contentText(plan){return {title:String(plan.title||'').trim(),caption:String(plan.caption||'').trim(),pages:(plan.scenes||[]).map(p=>[p.title,p.subtitle,p.body].filter(Boolean).join('\n').trim()||String(p.text||'').trim())};}
 export async function copyIdentity(plan){const copy=contentText(plan);const canonical=JSON.stringify(copy).normalize('NFKC').replace(/\s+/g,' ');return {hash:await sha256Hex(canonical),copy};}
@@ -116,7 +117,7 @@ export async function handlePsychologyCreative(request,env,url,session){
   const total=await db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first();
   const pages=Math.max(1,Math.ceil(total.n/20)),page=Math.min(requestedPage,pages);
   const rows=await db.prepare('SELECT id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,deleted_at,quality_score,score_reason,rewrite_model,review_status,review_reason,raw_response,reviewed_at FROM psychology_copy_variants WHERE '+where+' ORDER BY quality_score DESC,created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all();
-  return json({items:rows.results.map(r=>({...r,rewriteModel:r.rewrite_model,rewriteModelLabel:rewriteModelLabel(r.rewrite_model),pages:JSON.parse(r.pages_json)})),page,pages,pageSize:20,total:total.n});
+  return json({items:rows.results.map(copyRow),page,pages,pageSize:20,total:total.n});
  }
  if(url.pathname===BASE+'/copies'&&request.method==='POST'){
   const raw=await request.text();if(raw.length>1500000)fail('导入内容过大。');let body;try{body=JSON.parse(raw);}catch{fail('请输入有效 JSON。');}
@@ -130,11 +131,32 @@ export async function handlePsychologyCreative(request,env,url,session){
   }
   await db.batch(statements);return json({ok:true,created,duplicates:rows.length-created});
  }
+ const recover=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})\/recover$/);
+ if(recover&&request.method==='POST'){
+  const row=await db.prepare('SELECT * FROM psychology_copy_variants WHERE id=? AND owner=?').bind(recover[1],owner).first();
+  if(!row)fail('文案不存在。',404);
+  const versions=recoverableCopyVersions(row);
+  if(!versions.length)fail('该返回无法安全拆分，请保留原始返回并手动修正。',409);
+  const statements=[],ids=[];
+  for(const [index,draft] of versions.entries()){
+   const raw=JSON.stringify(draft),fingerprint=await sha256Hex(JSON.stringify([row.id,index,raw]));
+   const externalId='ai-recovered-'+fingerprint.slice(0,32),id=await sha256Hex(owner+':'+externalId);ids.push(id);
+   statements.push(db.prepare("INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,rewrite_model,enabled,review_status,review_reason,raw_response) SELECT ?,?,?,?,?,?,?,?,?,?,0,'pending',?,? WHERE EXISTS (SELECT 1 FROM psychology_copy_variants WHERE id=? AND owner=? AND review_status='pending' AND deleted_at=0) ON CONFLICT(id) DO NOTHING")
+    .bind(id,owner,externalId,row.source_key,typeof draft.title==='string'?draft.title:'',typeof draft.caption==='string'?draft.caption:'',JSON.stringify(draft.pages),fingerprint,row.created_at,row.rewrite_model,'从格式异常返回恢复的第 '+(index+1)+' 个版本，请人工审核。原失败原因：'+row.review_reason,raw,row.id,owner));
+  }
+  statements.push(db.prepare("UPDATE psychology_copy_variants SET enabled=0,deleted_at=? WHERE id=? AND owner=? AND review_status='pending' AND deleted_at=0").bind(Date.now(),row.id,owner));
+  await db.batch(statements);
+  const children=(await db.prepare('SELECT * FROM psychology_copy_variants WHERE owner=? AND deleted_at=0 AND id IN (SELECT value FROM json_each(?))').bind(owner,JSON.stringify(ids)).all()).results;
+  if(!children.length)fail('版本状态已变化，请刷新列表。',409);
+  const byId=new Map(children.map(r=>[r.id,r]));
+  return json({items:ids.map(id=>byId.get(id)).filter(Boolean).map(copyRow)});
+ }
  const approve=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})\/approve$/);
  if(approve&&request.method==='POST'){
   const row=await db.prepare('SELECT * FROM psychology_copy_variants WHERE id=? AND owner=? AND deleted_at=0').bind(approve[1],owner).first();
   if(!row)fail('文案不存在。',404);
   if(row.review_status!=='pending')return json({ok:true,alreadyApproved:true});
+  if(recoverableCopyVersions(row).length)fail('请先拆分模型返回，再逐个审核版本。',409);
   const input=await readJson(request);
   if(!input||typeof input!=='object'||Array.isArray(input))fail('请提交有效的审核内容。');
   const variant=normalizeVariant({externalId:row.external_id,sourceKey:row.source_key,title:input.title??row.title,caption:input.caption??row.caption,pages:input.pages??JSON.parse(row.pages_json)});

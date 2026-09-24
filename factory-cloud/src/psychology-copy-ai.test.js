@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { handlePsychologyCreative } from './psychology-creative.js';
 import { replicateText } from './replicate.js';
+import {parseCopyModelJson} from './psychology-copy-generation.js';
 
 const user = { id: 'admin', username: 'admin', role: 'admin', sidebarModules: ['psychology-publish'] };
 const api = (f, path, method = 'POST') => { const url = new URL('https://factory.test/api/psychology-creative' + path); return handlePsychologyCreative(new Request(url, { method }), f.env, url, { user }); };
@@ -160,4 +161,48 @@ test('batch provider failures remain filterable and later completed attempts cle
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,0);
  f.env.fetch=goodFetch;await api(f,'/copies/generate-batch?model=claude-sonnet-5&sourceId='+f.row.id);
  row=f.sqlite.prepare('SELECT * FROM psychology_rewrite_attempts WHERE source_id=?').get(f.row.id);assert.equal(row.status,'done');assert.equal(row.error,'');
+});
+
+
+test('model JSON repair removes only structural trailing commas, preserving quoted content',()=>{
+ const raw='Reasoning before JSON. ```json\n{"versions":[{"title":"literal ,] and ,} and \\"quote\\"", "pages":["first","second",],},]}\n```';
+ const parsed=parseCopyModelJson(raw);assert.equal(parsed.repaired,true);
+ assert.equal(parsed.value.versions[0].title,'literal ,] and ,} and "quote"');
+ assert.deepEqual(parsed.value.versions[0].pages,['first','second']);
+ assert.throws(()=>parseCopyModelJson('{"pages":["unfinished"'));
+ assert.throws(()=>parseCopyModelJson('{"pages":[doSomething()]}'));
+});
+
+test('future malformed batch JSON is recovered into individually reviewable pages, not auto enabled',async t=>{
+ const versions=[version(1),version(2),version(3)];
+ const raw='Explanation\n```json\n'+JSON.stringify({versions}).replaceAll(']}',',]}')+'\n```';
+ const f=await aiFixture(t,raw);
+ const result=await(await api(f,'/copies/generate-batch?sourceId='+f.row.id+'&model=claude-sonnet-5&count=3')).json();
+ assert.equal(result.created,0);assert.equal(result.pending,3);
+ const rows=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').all();
+ assert.ok(rows.every(row=>row.enabled===0&&row.review_status==='pending'&&JSON.parse(row.pages_json).length===2));
+});
+
+test('historical malformed multi-version output splits atomically, remains pending and replays without duplication',async t=>{
+ const f=await aiFixture(t,'not json');
+ await api(f,'/copies/generate-batch?sourceId='+f.row.id+'&model=claude-sonnet-5&count=3');
+ const parent=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();
+ const versions=[1,2,3].map(n=>({...version(n),pages:Array.from({length:6},(_,p)=>'Version '+n+' page '+(p+1))}));
+ const raw='Core meaning explanation\n```json\n'+JSON.stringify({versions}).replaceAll(']}',',]}')+'\n```';
+ f.sqlite.prepare('UPDATE psychology_copy_variants SET raw_response=? WHERE id=?').run(raw,parent.id);
+ const listed=await(await api(f,'/copies?sourceId='+f.row.id,'GET')).json();assert.equal(listed.items[0].recoverableVersions,3);
+ const request=(suffix,actor=user)=>{const url=new URL('https://factory.test/api/psychology-creative/copies/'+parent.id+suffix);return handlePsychologyCreative(new Request(url,{method:'POST',body:'{}'}),f.env,url,{user:actor});};
+ await assert.rejects(request('/recover',{...user,username:'other'}),e=>e.statusCode===404);
+ assert.equal((await request('/recover',{...user,role:'operator'})).status,403);
+ await assert.rejects(request('/approve'),e=>e.statusCode===409);
+ const split=await(await request('/recover')).json();assert.equal(split.items.length,3);
+ split.items.forEach((row,i)=>{assert.deepEqual(row.pages,versions[i].pages);assert.equal(row.enabled,0);assert.equal(row.review_status,'pending');assert.equal(row.recoverableVersions,0);});
+ assert.equal(f.sqlite.prepare('SELECT raw_response FROM psychology_copy_variants WHERE id=?').get(parent.id).raw_response,raw);
+ assert.ok(f.sqlite.prepare('SELECT deleted_at FROM psychology_copy_variants WHERE id=?').get(parent.id).deleted_at>0);
+ assert.equal((await(await request('/recover')).json()).items.length,3);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,4);
+ const url=new URL('https://factory.test/api/psychology-creative/copies/'+split.items[1].id+'/approve');
+ await handlePsychologyCreative(new Request(url,{method:'POST',body:'{}'}),f.env,url,{user});
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE enabled=1').get().n,1);
+ assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_copy_variants WHERE review_status='pending' AND deleted_at=0").get().n,2);
 });

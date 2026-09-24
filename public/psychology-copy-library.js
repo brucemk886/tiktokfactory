@@ -381,11 +381,15 @@ function qualityReviewMarkup(row, source) {
  if(!pages.some(usable))markup+=card('模型返回',block('','模型返回未形成有效正文，请参照上方原文人工检查。'),'<pre class="quality-review-raw">'+esc(row.raw_response||'（无原始返回）')+'</pre>');
  return markup;
 }
-let qualityReviewSource=null;
+let qualityReviewSource=null,qualityReviewVersions=[];
 let qualityReviewSelection=null,qualityReviewSaving=false;
-function openQualityReview(row){
+async function openQualityReview(row, versions=[]){
  if(qualityReviewSaving)return;
  qualityReviewSelection=row;
+ qualityReviewVersions=versions;
+ $('#qualityReviewVersionField').hidden=versions.length<2;
+ $('#qualityReviewVersion').innerHTML=versions.map((item,i)=>'<option value="'+i+'">版本 '+(i+1)+' · '+esc(item.title||'未命名')+'</option>').join('');
+ $('#qualityReviewVersion').value=String(Math.max(0,versions.findIndex(item=>item.id===row.id)));
  qualityReviewSource=selectedSource||originalItems.find(source=>source.sourceKey===row.source_key)||null;
  $('#qualityReviewComparison').innerHTML=qualityReviewMarkup(row,qualityReviewSource);
  $('#qualityReviewEditor').open=!(row.pages?.length&&row.title&&row.title!=='未通过质检的模型返回');
@@ -396,7 +400,24 @@ function openQualityReview(row){
  $('#qualityReviewCaption').value=row.caption||'';
  $('#qualityReviewPages').value=JSON.stringify(row.pages||[],null,2);
  $('#qualityReviewStatus').textContent='';$('#qualityReviewDialog').showModal();
+ if(row.recoverableVersions){
+  qualityReviewSaving=true;$('#qualityReviewFields').disabled=true;$('#closeQualityReview').disabled=true;
+  $('#qualityReviewStatus').textContent='正在恢复模型返回并拆分 '+row.recoverableVersions+' 个版本…';
+  try{
+   const data=await api('/copies/'+encodeURIComponent(row.id)+'/recover','POST');
+   qualityReviewSaving=false;
+   await openQualityReview(data.items[0],data.items);
+   $('#qualityReviewStatus').textContent='已拆分 '+data.items.length+' 个待审核版本，可切换版本逐页查看并分别通过。';
+   await loadCopies();await loadOriginals();
+  }catch(error){$('#qualityReviewStatus').textContent=error.message;}
+  finally{qualityReviewSaving=false;$('#qualityReviewFields').disabled=false;$('#closeQualityReview').disabled=false;}
+ }
 }
+$('#qualityReviewVersion').onchange=()=>{
+ if(qualityReviewSaving)return;
+ const row=qualityReviewVersions[Number($('#qualityReviewVersion').value)];
+ if(row)openQualityReview(row,qualityReviewVersions);
+};
 $('#closeQualityReview').onclick=()=>{if(!qualityReviewSaving)$('#qualityReviewDialog').close();};
 $('#qualityReviewDialog').addEventListener('cancel',event=>{if(qualityReviewSaving)event.preventDefault();});
 $('#qualityReviewForm').addEventListener('input',()=>{
