@@ -20,7 +20,7 @@ public/access.js; public/admin-ui.css/js; public/vendor/bootstrap-icons/*; publi
 - Desktop 1440px and mobile 390px; selected design and drawer compared in the same input. Shared copy library, TikTok accounts, psychology overview, comments, novel library and home checked. Evidence paths in design-qa.md.
 
 ## Release
-Commit and push main, then factory-cloud npm run deploy with clean exact origin/main gate. Follow with read-only live page verification.
+Deployed through factory-cloud npm run deploy after clean exact origin/main validation. Read-only live verification confirmed 7 real publishing batches, opening batch details, and 382 photo originals with correct 20-page pagination. Real-data review led to explicit copy-table column widths and fixed desktop actions, verified with a long-copy synthetic fixture at 1440px and 1100px before the follow-up release. No production task was created, cancelled, deleted or retried.
 
 ## Unfinished / recommended next step
 No known implementation blocker. Specialized editors retain their existing composition and workflow. Collect user feedback on task density and the list/detail interaction; no backend load-testing or scheduling change is included.

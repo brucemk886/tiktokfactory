@@ -18,6 +18,8 @@ final result: passed
 4. [P2, fixed] Fifteen-second polling replaced unchanged DOM and interrupted interaction. Skip unchanged data renders; regressions cover both list and open drawer. Mobile navigation has inert hidden content, keyboard cycling and Escape return; dialogs use native modal focus handling and busy-close protection.
 5. [P2, fixed] Legacy olive selection and low-contrast refresh-button styles remained on shared pages. Unified active controls to blue, corrected button colors and drawer text. Sticky dialog header and icon assets verified.
 
+6. [P2, fixed after real-data check] Eleven equally sized copy columns cramped numeric metrics and dates. Added explicit 1610px table tracks, two-column action buttons and a sticky desktop action column. At 1100px, all four actions remain visible; only the table scrolls horizontally. Evidence: factory-copy-width-fix.png and factory-copy-actions-fix.png in the evidence directory. Full-page capture suppresses sticky positioning during stitching, so the action column was also verified with a normal viewport screenshot.
+
 Post-fix full-view and focused comparison found no remaining P0/P1/P2 issue in the checked surfaces.
 
 ## Required fidelity surfaces
@@ -30,7 +32,7 @@ Post-fix full-view and focused comparison found no remaining P0/P1/P2 issue in t
 ## Validation
 - Browser: group g1 filters to 20 accounts, select-all yields 20, 60 photo posts divide to 3 per account and 3 hub groups. Mock-only POST preserves all 20 IDs, count=60, source=library, random style and schedule. No production publishing/comment APIs invoked.
 - Drawer overview/detail tabs, arrow-key switching, Escape close, search/media filtering, creation draft preservation, native selection states and mobile menu checked.
-- Shared layouts checked on copy library, TikTok accounts, psychology overview, comments, novel library and home. Local empty-copy mock does not provide pagination.totalPages (hence its undefined label); production payload is unchanged and will be checked read-only after deploy.
+- Shared layouts checked on copy library, TikTok accounts, psychology overview, comments, novel library and home. Production was verified read-only after deployment: 7 real batches load, detail drawer opens, and the photo copy library reports 382 items with page 1 / 20. Its document width is 1425px in a 1440px viewport.
 - Full repository test command in factory-cloud: 613/613 tests pass after the added polling regression. Focused publish UI: 18/18. JS syntax and diff checks pass.
 - Browser console messages observed during local QA were from installed Chrome extensions, not application script exceptions.
 
