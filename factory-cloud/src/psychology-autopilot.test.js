@@ -226,3 +226,47 @@ test('multi-batch slot membership and daily schedule boundaries are exact',async
   assert.equal(nextAutopilotCheck(at('2026-09-24','00:00')),at('2026-09-24','08:00'));
   assert.equal(nextAutopilotCheck(at('2026-09-24','08:00')),at('2026-09-25','00:00'));
 });
+
+import { kvSet } from './kv.js';
+test('ten groups use all 200 authorized members even when analytics only knows first four; polling stays local', async t => {
+  const f=await pilotFixture(t), originalFetch=globalThis.fetch;
+  const accounts=Array.from({length:200},(_,n)=>({id:'member-'+n,username:'user'+n,scopes:['video.publish']}));
+  const groups=Array.from({length:10},(_,n)=>({id:'g'+n,name:'Group '+n,projectId:'psych'}));
+  const assignments=Object.fromEntries(accounts.map((a,n)=>[a.id,'g'+Math.floor(n/20)]));
+  await kvSet(f.db,'official-account-groups',{projects:[{id:'psych',name:'心理学',moduleKey:'psychology'}],groups,assignments});
+  for(const a of accounts.slice(0,80))f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,label,profile_json,synced_at) VALUES(?,?,?,?)').run('tiktok:'+a.id,a.username,JSON.stringify({username:a.username}),Date.now());
+  let reads=0,unavailable=false;
+  t.mock.method(globalThis,'fetch',async(url,init)=>{
+    if(String(url).includes('/api/v1/accounts')){
+      reads++;if(unavailable)throw Error('directory offline');
+      const second=new URL(String(url)).searchParams.has('cursor');
+      return Response.json({accounts:second?accounts.slice(100):accounts.slice(0,100),hasMore:!second,nextCursor:second?'':'next'});
+    }
+    return originalFetch(url,init);
+  });
+  const initial=await (await f.api('GET','?refreshGroups=1')).json();
+  assert.equal(initial.groups.length,10);assert.ok(initial.groups.every(g=>g.accounts===20));assert.equal(reads,2);
+  await f.api('GET');await f.api('GET');assert.equal(reads,2);
+  // Membership edits affect cached directory counts immediately, without analytics or network.
+  await f.db.prepare('UPDATE official_account_assignments SET group_id=? WHERE account_key=?').bind('g8','member-199').run();
+  const moved=await (await f.api('GET')).json();assert.equal(moved.groups.find(g=>g.id==='g9').accounts,19);assert.equal(moved.groups.find(g=>g.id==='g8').accounts,21);
+  // No cache erasure on failed explicit refresh.
+  unavailable=true;await assert.rejects(f.api('GET','?refreshGroups=1'),/offline/);
+  const retained=await (await f.api('GET')).json();assert.equal(retained.groups.find(g=>g.id==='g9').accounts,19);unavailable=false;
+  await importPsychologyPeerHits(f.db,Array.from({length:25},(_,n)=>({videoUrl:'https://www.tiktok.com/@example/photo/'+(900+n),title:'New '+n,videoData:{pageTexts:['Cover '+n,'Body']}})),admin.id);
+  const created=await (await f.api('POST','',{groupId:'g9',strategy:'original',days:3})).json();
+  assert.ok(created.run.batches.length>0,JSON.stringify(created.run.errors));
+  const selected=f.sqlite.prepare('SELECT DISTINCT connection_id FROM psychology_autopilot_accounts WHERE autopilot_id=?').all(created.id);
+  assert.equal(selected.length,19);assert.ok(selected.every(a=>Number(a.connection_id.replace('member-',''))>=180));
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM official_accounts_latest WHERE account_key='tiktok:member-180'").get().n,0);
+});
+
+test('autopilot directory excludes read-only, outside-project, duplicates and revoked accounts after explicit refresh', async t=>{
+ const f=await pilotFixture(t);
+ let accounts=[{id:'a',username:'a',scopes:['video.publish']},{id:'a',scopes:['video.publish']},{id:'b',scopes:['user.info.basic']},{id:'outside',scopes:['video.publish']}];
+ t.mock.method(globalThis,'fetch',async()=>Response.json({accounts}));
+ const first=await (await f.api('GET','?refreshGroups=1')).json();assert.equal(first.groups.find(g=>g.id==='g').accounts,1);assert.ok(!first.groups.some(g=>g.id==='other'));
+ accounts=[];const refreshed=await (await f.api('GET','?refreshGroups=1')).json();assert.equal(refreshed.groups.find(g=>g.id==='g').accounts,0);
+ await assert.rejects(f.api('POST','',{groupId:'g',strategy:'original',days:7}),/发布权限/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_autopilots').get().n,0);
+});

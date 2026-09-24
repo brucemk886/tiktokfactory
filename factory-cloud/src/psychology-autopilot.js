@@ -2,13 +2,14 @@
 // pauses accounts that keep failing or stay under 200 views, logs a 7-day
 // analysis, and creates library batches for the next day's slots as the owner.
 import { json, errorJson, readJson, sha256Hex } from './http.js';
-import { kvGet } from './kv.js';
-import { loadGroupStore, scopedAnalyticsAccounts } from './official.js';
+import { kvGet, kvSet } from './kv.js';
+import { loadGroupStore } from './official.js';
 import { listLatestArchiveAccounts, accountsFromLatestArchive, loadVideosForAccounts } from './official-archive-store.js';
-import { publicState, findProjectForModule, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
+import { scopeOfficialAccess } from '../../scripts/official-account-group-store.js';
 import { operationsWindow, publishOutcome, parseObject } from '../../scripts/psychology-operations.js';
 import { loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { executionCounts, slotExecution, stopImpact, stopPending, nextAutopilotCheck } from './psychology-autopilot-execution.js';
+import { publishAccountDirectory } from './psychology-account-access.js';
 import { frameworkFor } from './psychology-operations.js';
 
 const BASE = '/api/psychology-autopilot';
@@ -58,9 +59,32 @@ async function log(db, pilotId, kind, message, detail = {}, now = Date.now()) {
   await db.prepare('INSERT INTO psychology_autopilot_log(autopilot_id,kind,message,detail_json,created_at) VALUES(?,?,?,?,?)').bind(pilotId, kind, message, JSON.stringify(detail), now).run();
 }
 
+// Group membership is operational data, independent of whether analytics has synced.
+// Polls reuse the local directory; explicit refresh/start/scheduled runs refresh from the hub.
+const DIRECTORY_KEY = 'psychology-autopilot-account-directory-v1';
+async function autopilotDirectory(env, user, fresh = false) {
+  let directory = await kvGet(env.DB, DIRECTORY_KEY, null);
+  if (fresh || !Array.isArray(directory?.accounts)) {
+    const live = await publishAccountDirectory(env, { fresh:true });
+    if (!Array.isArray(live.accounts)) fail('授权账号目录返回无效，请重新刷新。', 502);
+    directory = { updatedAt:Date.now(), accounts:live.accounts.map(a => ({
+      id:String(a.connectionId || a.id || ''), connectionId:String(a.connectionId || a.id || ''),
+      username:String(a.username || ''), displayName:String(a.displayName || a.label || ''),
+      ...(Array.isArray(a.scopes) ? { scopes:a.scopes } : {}),
+    })).filter(a => a.id) };
+    await kvSet(env.DB, DIRECTORY_KEY, directory);
+  }
+  const scoped = scopeOfficialAccess(directory, await loadGroupStore(env.DB), user, 'psychology');
+  const seen = new Set();
+  const accounts = scoped.accounts.filter(a => {
+    if (seen.has(a.connectionId) || (Array.isArray(a.scopes) && !a.scopes.includes('video.publish'))) return false;
+    seen.add(a.connectionId); return true;
+  }).map(a => ({ ...a, schema:'tiktok:'+a.connectionId, profile:{ username:a.username }, label:a.displayName || a.username }));
+  return { accounts, updatedAt:directory.updatedAt,
+    groups:scoped.groups.map(g => ({ id:g.id, name:g.name, accounts:accounts.filter(a => a.groupId === g.id).length })) };
+}
 async function groupAccounts(env, user, groupId) {
-  const store = await loadGroupStore(env.DB);
-  return scopedAnalyticsAccounts(accountsFromLatestArchive(await listLatestArchiveAccounts(env.DB)), store, user, 'psychology').filter(a => a.groupId === groupId);
+  return (await autopilotDirectory(env, user, true)).accounts.filter(a => a.groupId === groupId);
 }
 
 // Latest-first publish outcomes of this pilot's items that should have gone out by now.
@@ -178,13 +202,6 @@ export async function runAutopilots(env, now = Date.now()) {
   return results;
 }
 
-async function psychologyGroups(env, user) {
-  const store = await loadGroupStore(env.DB), project = findProjectForModule(store, 'psychology'), allowed = userAllowedGroupIds(user);
-  const groups = publicState(store).groups.filter(g => g.projectId === project?.id && (!allowed || allowed.has(g.id)));
-  const accounts = scopedAnalyticsAccounts(accountsFromLatestArchive(await listLatestArchiveAccounts(env.DB)), store, user, 'psychology');
-  return groups.map(g => ({ id: g.id, name: g.name, accounts: accounts.filter(a => a.groupId === g.id).length }));
-}
-
 export async function handlePsychologyAutopilot(request, env, url, session) {
   if (!url.pathname.startsWith(BASE)) return null;
   const user = session?.user;
@@ -192,8 +209,9 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
   const db = env.DB;
   if (url.pathname === BASE && request.method === 'GET') {
-    const [pilots, groups] = await Promise.all([db.prepare('SELECT * FROM psychology_autopilots WHERE owner=? ORDER BY created_at DESC LIMIT 20').bind(user.username).all(), psychologyGroups(env, user)]);
-    const labels = new Map(accountsFromLatestArchive(await listLatestArchiveAccounts(db)).map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
+    const [pilots, directory] = await Promise.all([db.prepare('SELECT * FROM psychology_autopilots WHERE owner=? ORDER BY created_at DESC LIMIT 20').bind(user.username).all(), autopilotDirectory(env, user, url.searchParams.get('refreshGroups') === '1')]);
+    const groups = directory.groups;
+    const labels = new Map([...accountsFromLatestArchive(await listLatestArchiveAccounts(db)), ...directory.accounts].map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
     const out = [];
     for (const p of pilots.results) {
       const [accounts, slots, logs, daily] = await Promise.all([
@@ -213,15 +231,15 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ pilots: out, groups, strategies: STRATEGIES, rules: AUTOPILOT, fetchedAt:Date.now() });
+    return json({ pilots: out, groups, strategies: STRATEGIES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7);
     if (!Object.hasOwn(STRATEGIES, body.strategy)) fail('请选择运营策略。');
     if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
-    const group = (await psychologyGroups(env, user)).find(g => g.id === body.groupId);
+    const group = (await autopilotDirectory(env, user, true)).groups.find(g => g.id === body.groupId);
     if (!group) fail('没有这个心理学分组的权限。', 403);
-    if (!group.accounts) fail('这个分组里还没有已授权的账号。');
+    if (!group.accounts) fail('这个分组里还没有已授权且有发布权限的账号，请检查分组成员和账号授权。');
     if (await db.prepare("SELECT 1 FROM psychology_autopilots WHERE group_id=? AND status<>'ended'").bind(group.id).first()) fail('这个分组已经在自动运营中。', 409);
     const now = Date.now(), id = 'pilot-' + crypto.randomUUID();
     await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,?,'active',?,?,?)`)
@@ -239,7 +257,8 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
   if (one[3] && request.method === 'GET') {
     const slot = await db.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').bind(pilot.id, Number(one[3])).first();
     if (!slot) fail('排期不存在。', 404);
-    const labels = new Map(accountsFromLatestArchive(await listLatestArchiveAccounts(db)).map(a => [connectionOf(a), a.profile?.username || a.username || a.label || connectionOf(a)]));
+    const currentAccounts = (await autopilotDirectory(env, user)).accounts;
+    const labels = new Map([...accountsFromLatestArchive(await listLatestArchiveAccounts(db)), ...currentAccounts].map(a => [connectionOf(a), a.profile?.username || a.username || a.label || connectionOf(a)]));
     return json({ items:await slotExecution(db, [slot], labels) });
   }
   if (!one[2] && request.method === 'PATCH') {

@@ -16,13 +16,14 @@ async function api(path = '', method = 'GET', body) {
 function table(headers, rows) { return '<div class="table-wrap"><table class="ops-table"><thead><tr>' + headers.map(h => '<th scope="col">' + h + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>'; }
 function notice(text, error = false) { $('#status').textContent = text; $('#status').classList.toggle('pilot-error', error); }
 function totals(c = {}) { return `计划 ${c.planned||0} · 已发布 ${c.published||0} · 制作 ${Number(c.queued||0)+Number(c.producing||0)} · 待发布 ${c.pending||0} · 失败 ${c.failed||0} · 已停止 ${c.stopped||0}${c.unknown ? ' · 待核对 '+c.unknown : ''}`; }
-async function load(quiet = false) {
+async function load(quiet = false, refreshGroups = false) {
   if (loading) return;
-  loading = true; $('#reload').disabled = true;
-  if (!quiet) notice('正在读取本地发布回执…');
-  try { const next = await api(); data = next; render(); if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
-  catch (error) { notice('更新失败，保留上次数据：'+error.message, true); }
-  finally { loading = false; $('#reload').disabled = false; }
+  loading = true; $('#reload').disabled = true; $('#refreshGroups').disabled = true;
+  if (!quiet) notice(refreshGroups ? '正在更新账号分组与发布状态…' : '正在读取本地发布回执…');
+  if (refreshGroups) { $('#groupDirectoryStatus').textContent='正在同步授权账号目录…'; $('#createButton').disabled=true; }
+  try { const next = await api(refreshGroups ? '?refreshGroups=1' : ''); data = next; render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
+  catch (error) { notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
+  finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; if(refreshGroups) $('#createButton').disabled=false; }
 }
 function render() {
   const pilots = data.pilots, live = new Set(pilots.filter(p => p.status !== 'ended').map(p => p.groupId));
@@ -98,13 +99,14 @@ $('#confirmPause').onclick=async()=>{
   try{const r=await api('/'+pilot+(account?'/accounts/'+encodeURIComponent(account):''),'PATCH',{status:'paused',stopPending:account?true:document.querySelector('[name="pauseMode"]:checked').value==='pending'});$('#pauseDialog').close();notice(`已暂停，实际停止本地未提交任务 ${r.stopped||0} 条。已进入提交的任务仍会继续。`);await load(true);}
   catch(e){$('#pauseImpact').textContent=e.message;$('#confirmPause').disabled=false;}
 };
-$('#openCreate').onclick=()=>$('#createDialog').showModal();
+$('#openCreate').onclick=()=>{$('#createDialog').showModal();load(true,true);};
+$('#refreshGroups').onclick=()=>load(false,true);
 $('#createForm').addEventListener('submit',async event=>{
   event.preventDefault();$('#createButton').disabled=true;$('#createStatus').textContent='正在启动并排期…';
   try{const r=await api('','POST',{groupId:$('#groupId').value,strategy:$('#strategy').value,days:Number($('#days').value)});$('#createDialog').close();notice(`已启动：创建 ${r.run.batches.length} 个批次${r.run.errors.length?'；'+r.run.errors.join('；'):''}`,Boolean(r.run.errors.length));await load(true);}
   catch(e){$('#createStatus').textContent=e.message;}
   finally{$('#createButton').disabled=false;}
 });
-$('#reload').onclick=()=>load();
+$('#reload').onclick=()=>load(false,true);
 setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load(true);},30000);
-load();
+load(false,true);
