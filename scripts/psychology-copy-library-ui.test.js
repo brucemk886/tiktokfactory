@@ -94,3 +94,16 @@ test('batch delete confirms exact count, prevents duplicate clicks, retains sele
  const req=h.requests.at(-1);assert.equal(req.method,'DELETE');assert.equal(req.url,'/api/psychology-copy-library');assert.deepEqual(req.body.ids,['a','b']);assert.equal(refreshed,true);assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
  h.document.body.dataset.sourceAccess='false';h.nodes.get('#selectPageBtn').listeners.click();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
 });
+
+
+test('original recreation submits no rewrite option in either media tab',async()=>{
+ assert.doesNotMatch(html,/rewriteCopy/);
+ for(const mediaType of ['photo','video']){
+  const h=harness('psychology-peer-production.js');h.document.body.dataset.mediaType=mediaType;
+  h.setRows(['source-1']);h.events.get('peer-list-loaded')();h.nodes.get('#selectPageBtn').listeners.click();
+  h.respond(()=>({jobIds:['job-1']}));await h.nodes.get('#produceBtn').listeners.click();
+  assert.equal(h.requests.length,1);assert.equal(h.requests[0].body.mediaType,mediaType);
+  assert.equal(Object.hasOwn(h.requests[0].body,'rewriteCopy'),false);
+  assert.match(h.context.location.href,/psychology-publish-sources/);
+ }
+});

@@ -47,8 +47,6 @@
     selected.clear();
     requestId = '';
     const photo = event.detail?.mediaType === 'photo';
-    const rewriteField = $('#rewriteCopyField');
-    if (rewriteField) rewriteField.hidden = !photo;
     notify(document.body.classList.contains('copy-library-page')
       ? '原帖复刻每次最多选择5条，按原素材生成。使用已提取文案批量生成，请进入右上角的自动发布。'
       : photo
@@ -130,8 +128,7 @@
         body:JSON.stringify({
           ids:[...selected],
           mediaType:document.body.dataset.mediaType || 'video',
-          requestId,
-          ...((document.body.dataset.mediaType || 'video') === 'photo' ? { rewriteCopy: $('#rewriteCopy')?.checked === true } : {})
+          requestId
         })
       });
       notify(`已创建 ${data.jobIds.length} 个云端复刻任务，可以关闭页面继续运行。`);

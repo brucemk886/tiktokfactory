@@ -317,8 +317,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.doesNotMatch(page,/recreationVoice|配音声音/);
   assert.match(page,/<th>发布 \/ 导入时间<\/th>/);
   assert.match(page,/id="produceBtn"[^>]*>原帖复刻<\/button>/);
-  assert.match(page,/id="rewriteCopy"/);
-  assert.doesNotMatch(page,/id="rewriteCopy"[^>]*checked/);
+  assert.doesNotMatch(page,/rewriteCopy/);
   assert.doesNotMatch(page,/id="moveSelectedBtn"/);
   assert.doesNotMatch(page,/北京时间/);
   assert.doesNotMatch(page,/采集时间/);
@@ -346,7 +345,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(productionScript,/moveSelectedBtn/);
   assert.match(productionScript,/移动到图文爆款/);
   assert.match(productionScript,/移动到视频爆款/);
-  assert.match(productionScript,/rewriteCopy: \$\('#rewriteCopy'\)\?\.checked === true/);
+  assert.doesNotMatch(productionScript,/rewriteCopy/);
   assert.doesNotMatch(productionScript,/Z-Image 逐张/);
   assert.match(productionScript,/Promise\.allSettled/);
   assert.match(script,/voice-gender-select/);

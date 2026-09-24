@@ -461,8 +461,9 @@ test('photo hit recreation creates a cloud photo-story job without video downloa
   const videos=await (await call('GET',undefined,user,'https://factory.test','?mediaType=video')).json();
   assert.equal(videos.jobs.length,0);
   assert.equal((await call('POST',{ids:imported.items.map(item=>item.id),mediaType:'photo',requestId:crypto.randomUUID(),rewriteCopy:true})).status,202);
-  const rewriteOn=sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY created_at DESC,id DESC').all().map(row=>JSON.parse(row.payload_json)).find(payload=>payload.rewriteCopy===true);
-  assert.equal(rewriteOn.rewriteCopy,true);
+  const recreated=sqlite.prepare('SELECT payload_json FROM factory_jobs').all().map(row=>JSON.parse(row.payload_json));
+  assert.equal(recreated.length,2);
+  assert.ok(recreated.every(payload=>payload.rewriteCopy===false),'legacy rewriteCopy input cannot enable rewriting for new original recreations');
 });
 
 test('recreation batch rejects missing sources, invalid media types and unauthorized targets before creating jobs', async t => {
