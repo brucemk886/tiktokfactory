@@ -6,7 +6,8 @@ const time = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone
 const STATUS = { active:'运行中', paused:'已暂停', ended:'已结束' };
 const SLOT = { creating:'创建中', created:'已创建排期', failed:'创建失败', skipped:'已跳过' };
 const ITEM = { queued:'等待制作', producing:'制作中', publishing:'提交 / 处理中', scheduled:'等待官方发布', published:'已发布', production_failed:'制作失败', publish_failed:'发布失败', cancelled:'已停止', missing:'结果待核对' };
-let data = null, loading = false, pendingPause = null;
+let data = null, loading = false, pendingPause = null, creating = false;
+const selectedGroups = new Set(), createdGroups = new Set();
 async function api(path = '', method = 'GET', body) {
   const response = await fetch('/api/psychology-autopilot' + path, { method, cache:'no-store', ...(body ? { headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(body) } : {}) });
   const result = await response.json();
@@ -17,13 +18,13 @@ function table(headers, rows) { return '<div class="table-wrap"><table class="op
 function notice(text, error = false) { $('#status').textContent = text; $('#status').classList.toggle('pilot-error', error); }
 function totals(c = {}) { return `计划 ${c.planned||0} · 已发布 ${c.published||0} · 制作 ${Number(c.queued||0)+Number(c.producing||0)} · 待发布 ${c.pending||0} · 失败 ${c.failed||0} · 已停止 ${c.stopped||0}${c.unknown ? ' · 待核对 '+c.unknown : ''}`; }
 async function load(quiet = false, refreshGroups = false) {
-  if (loading) return;
+  if (loading || creating) return;
   loading = true; $('#reload').disabled = true; $('#refreshGroups').disabled = true;
   if (!quiet) notice(refreshGroups ? '正在更新账号分组与发布状态…' : '正在读取本地发布回执…');
   if (refreshGroups) { $('#groupDirectoryStatus').textContent='正在同步授权账号目录…'; $('#createButton').disabled=true; }
-  try { const next = await api(refreshGroups ? '?refreshGroups=1' : ''); data = next; render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
+  try { const next = await api(refreshGroups ? '?refreshGroups=1' : ''); data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
   catch (error) { notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
-  finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; if(refreshGroups) $('#createButton').disabled=false; }
+  finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); }
 }
 function renderStrategyRules() {
   const strategy = $('#strategy').value || 'evolve', selected = data?.strategyRules?.[strategy];
@@ -32,11 +33,37 @@ function renderStrategyRules() {
   $('#strategyRules').innerHTML = (selected?.rules || []).map(rule => '<li>' + esc(rule) + '</li>').join('');
 }
 $('#strategy').addEventListener('change', renderStrategyRules);
+function availableGroups() {
+  const live = new Set((data?.pilots || []).filter(p => p.status !== 'ended').map(p => p.groupId));
+  return (data?.groups || []).filter(g => g.accounts > 0 && !live.has(g.id) && !createdGroups.has(g.id));
+}
+function updateCreateControls() {
+  const count = selectedGroups.size;
+  $('#groupSelectionCount').textContent = `已选 ${count} 个分组 · ${availableGroups().filter(g=>selectedGroups.has(g.id)).reduce((sum,g)=>sum+g.accounts,0)} 个账号`;
+  $('#createButton').textContent = creating ? '正在批量启动…' : `启动所选 ${count} 个分组`;
+  $('#createButton').disabled = creating || loading || !count;
+  for (const id of ['selectAllGroups','clearGroups','strategy','days','refreshGroups']) $('#'+id).disabled = creating || loading;
+  for (const input of document.querySelectorAll('[data-create-group]')) input.disabled = creating || !availableGroups().some(g=>g.id===input.value);
+}
+function renderGroupChoices() {
+  const allowed = new Set(availableGroups().map(g=>g.id));
+  for (const id of selectedGroups) if (!allowed.has(id)) selectedGroups.delete(id);
+  $('#groupChoices').innerHTML = (data?.groups || []).map(g => `<label class="pilot-group-choice"><input type="checkbox" data-create-group value="${esc(g.id)}" ${selectedGroups.has(g.id)?'checked':''} ${allowed.has(g.id)?'':'disabled'}><span>${esc(g.name)}<small>${g.accounts} 个账号${allowed.has(g.id)?'':g.accounts?' · 已托管':' · 无可发布账号'}</small></span></label>`).join('') || '<p class="section-hint">暂无可用账号分组。</p>';
+  updateCreateControls();
+}
+$('#groupChoices').addEventListener('change', event => {
+  const input = event.target;
+  if (creating || !input.matches('[data-create-group]')) return;
+  if (input.checked && availableGroups().some(g=>g.id===input.value)) selectedGroups.add(input.value);
+  else selectedGroups.delete(input.value);
+  updateCreateControls();
+});
+$('#selectAllGroups').onclick = () => { if(creating || loading)return; for(const g of availableGroups())selectedGroups.add(g.id); renderGroupChoices(); };
+$('#clearGroups').onclick = () => { if(creating || loading)return; selectedGroups.clear(); renderGroupChoices(); };
+$('#createDialog').addEventListener('cancel', event => { if(creating)event.preventDefault(); });
 function render() {
-  const pilots = data.pilots, live = new Set(pilots.filter(p => p.status !== 'ended').map(p => p.groupId));
-  const oldGroup = $('#groupId').value;
-  $('#groupId').innerHTML = '<option value="">请选择账号分组</option>' + data.groups.map(g => `<option value="${esc(g.id)}" ${live.has(g.id)||!g.accounts?'disabled':''}>${esc(g.name)}（${g.accounts} 个号）${live.has(g.id)?' · 已托管':''}</option>`).join('');
-  if (data.groups.some(g=>g.id===oldGroup&&!live.has(g.id))) $('#groupId').value = oldGroup;
+  const pilots = data.pilots;
+  renderGroupChoices();
   if (!$('#strategy').options.length) $('#strategy').innerHTML = Object.entries(data.strategies).map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('');
   renderStrategyRules();
   const r = data.rules, evolution = data.evolutionRules;
@@ -92,7 +119,7 @@ async function openPause(pilot,account=''){
 }
 document.addEventListener('click',async event=>{
   const b=event.target.closest('button');if(!b)return;
-  if(b.dataset.close){$('#'+b.dataset.close).close();return;}
+  if(b.dataset.close){if(b.dataset.close==='createDialog' && creating)return;$('#'+b.dataset.close).close();return;}
   if(b.dataset.detail){await detail(b.dataset.detail,b.dataset.slot);return;}
   if(b.dataset.pause){await openPause(b.dataset.pause,b.dataset.account);return;}
   const pilot=b.dataset.pilot||b.dataset.run;if(!pilot)return;
@@ -113,10 +140,35 @@ $('#confirmPause').onclick=async()=>{
 $('#openCreate').onclick=()=>{$('#createDialog').showModal();load(true,true);};
 $('#refreshGroups').onclick=()=>load(false,true);
 $('#createForm').addEventListener('submit',async event=>{
-  event.preventDefault();$('#createButton').disabled=true;$('#createStatus').textContent='正在启动并排期…';
-  try{const r=await api('','POST',{groupId:$('#groupId').value,strategy:$('#strategy').value,days:Number($('#days').value)});$('#createDialog').close();notice(`已启动：创建 ${r.run.batches.length} 个批次${r.run.errors.length?'；'+r.run.errors.join('；'):''}`,Boolean(r.run.errors.length));await load(true);}
-  catch(e){$('#createStatus').textContent=e.message;}
-  finally{$('#createButton').disabled=false;}
+  event.preventDefault();
+  if (creating || loading) return;
+  const groups = availableGroups().filter(g=>selectedGroups.has(g.id));
+  const strategy = $('#strategy').value, days = Number($('#days').value);
+  if (!groups.length) { $('#createStatus').textContent='请至少选择一个可用分组。'; return; }
+  if (!data.strategies[strategy] || !Number.isInteger(days) || days<1 || days>30) { $('#createStatus').textContent='请选择策略，并填写 1–30 天。'; return; }
+  creating = true; updateCreateControls();
+  const closeButton = document.querySelector('[data-close="createDialog"]'); closeButton.disabled=true;
+  const results = []; let succeeded=0, warnings=0;
+  $('#createResults').innerHTML='';
+  try {
+    for (const [index,group] of groups.entries()) {
+      $('#createStatus').textContent=`正在启动 ${index+1}/${groups.length}：${group.name}，请保持页面打开…`;
+      try {
+        const r=await api('','POST',{groupId:group.id,strategy,days});
+        succeeded++; createdGroups.add(group.id); selectedGroups.delete(group.id);
+        const errors=r.run?.errors || []; if(errors.length)warnings++;
+        results.push({name:group.name,error:errors.length>0,message:`已创建，新增 ${r.run?.batches?.length || 0} 个批次${errors.length?'；排期需处理：'+errors.join('；'):''}`});
+      } catch(e) {
+        results.push({name:group.name,error:true,message:'未确认创建成功：'+e.message+'；请核对下方运营分组后再重试。'});
+      }
+      $('#createResults').innerHTML=results.map(r=>`<li class="${r.error?'pilot-error':''}"><strong>${esc(r.name)}</strong>：${esc(r.message)}</li>`).join('');
+    }
+    const summary=`已创建 ${succeeded}/${groups.length} 个分组${groups.length-succeeded?'，'+(groups.length-succeeded)+' 个未确认成功':''}${warnings?'，'+warnings+' 个排期需处理':''}。`;
+    $('#createStatus').textContent=summary; notice(summary,succeeded<groups.length || warnings>0);
+  } finally {
+    creating=false; closeButton.disabled=false;
+    renderGroupChoices(); await load(true); updateCreateControls();
+  }
 });
 $('#reload').onclick=()=>load(false,true);
 setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load(true);},30000);

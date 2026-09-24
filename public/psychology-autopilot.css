@@ -3,3 +3,7 @@
 .lf-console .pilot .section-title .section-hint{color:#667085;letter-spacing:normal;font-weight:400;font-size:13px}
 
 .pilot-strategy-rules{margin:18px 0;padding:16px 18px;border:1px solid #dbe5f5;background:#f8faff;border-radius:8px}.pilot-strategy-rules h3{margin:0 0 8px;font-size:15px}.pilot-strategy-rules p{margin:0;color:#475467;font-size:13px;line-height:1.7}.pilot-dialog .pilot-rules{color:#475467}.pilot-dialog details>summary{cursor:pointer;font-weight:600}
+
+.pilot-group-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.pilot-group-tools span{margin-right:auto;font-size:13px;color:#475467}.pilot-group-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px;max-height:240px;overflow:auto}.pilot-dialog .pilot-group-choice{margin:0;padding:10px 12px;border:1px solid #e4e7ec;border-radius:6px;cursor:pointer}.pilot-group-choice:has(input:checked){background:#eff6ff;border-color:#93b4f0}.pilot-group-choice:has(input:disabled){opacity:.55;cursor:default}.pilot-dialog .pilot-group-choice input{width:16px;min-height:16px;height:16px;flex-shrink:0}.pilot-group-choice small{display:block;color:#667085;margin-top:4px}.pilot-create-results{padding-left:20px;font-size:13px;line-height:1.8}.pilot-create-results li{margin:6px 0}@media(max-width:520px){.pilot-group-choices{grid-template-columns:1fr}}
+
+.pilot-group-picker>.section-hint{margin-top:12px}
