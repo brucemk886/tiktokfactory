@@ -11,9 +11,17 @@ Explicit startNow=true persists start_now via0059. First Beijing date accepts >1
 # Validation
 727 tests passed. Covers10-minute strict boundary, expired slots, unchanged normal/later-day lead, persisted flag, immediate generation timestamp, future generation and duplicate rerun protection. No real publishing during tests.
 
-# Remaining / next step
-Commit/push main, deploy via npm run deploy, then create9 pilots via authenticated application API using the verified group IDs and startNow=true. Confirm initial 360 items schedule and generation; monitor first group before01:45. Do not claim started until records and queues have been verified. User has already authorized real generation and publication; no further approval needed.
+# Live activation
+All nine pilots were created successfully through the authenticated application API on 2026-09-25 Beijing time. Verified active status, 20 accounts each, seven-day duration, exact A/B/C assignments and the slots above. Each creation produced four stable batches (today and tomorrow, two rounds/day), 720 reserved items total; today's plan is 360 items. Tomorrow's workflows sleep until the normal two-hour preparation boundary. No duplicate pilot or batch creation.
 
+# Recovery
+The initial 80 today-items in groups 1 and 2 failed before production on the expired sleepUntil boundary. One was verified/restarted manually and 79 by a bounded script that checked the exact error and Errored status before restart. Stable workflow/item IDs were retained; healthy or sleeping jobs were never restarted. Verified group 3 first round subsequently completed preparation normally. Rendering and upload queues continued during recovery.
+
+# Remaining / next step
+Before 01:45, verified first-round group status submitted, 20/20 assets ready and 20/20 per-item remote receipts; frozen schedules span 01:45:00–01:59:15 Beijing. No group error. Latest aggregate snapshot: 360 planned today, 287 pending publication, 14 producing, 59 queued, zero failed (counts continue changing). Creation succeeded for all nine groups. Later publication and analytics continue through the existing application schedules; remote receipt is not proof of TikTok publication. No further manual startup needed.
 
 # Startup correction
 The first live immediate-deadline workflow failed before production: Cloudflare rejects sleepUntil dates in the past. Replaced with a persisted remaining duration and relative sleep, skipping sleep when already due. Future replay remains deterministic. Workflow dispatch now uses the documented idempotent createBatch API instead of serial get/create requests; stable task IDs are unchanged. Final suite729 passing. Recover only verified errored pre-production instances; do not interrupt healthy/sleeping work or duplicate tasks.
+
+# Release evidence
+Immediate-start feature 0017979, corrective code c0d89fd; Worker deployment 6c48053e-3d77-48ac-aa61-3bf089881931. Migration0059 applied. Both deployments followed committed/pushed main and clean-tree gates. Final code suite729 passing. Activation follow-up changes documentation only.

@@ -1,5 +1,7 @@
 # Current State
 
+- On 2026-09-25 (Beijing), the authorized seven-day nine-group test was activated: 180 accounts, 2 posts/account/day; groups 1–3 A, 4–6 B, 7–9 C. First group starts 01:45, groups offset 10 minutes, second daily round +30 minutes, accounts offset 45 seconds. See the immediate-start handoff for activation and recovery evidence.
+
 - Autopilot creation can explicitly opt into immediate first-day preparation (0059 start_now). That Beijing day accepts slots >10 minutes ahead; later days/default mode keep the two-hour lead. Generation timestamps remain max(now, publication minus two hours). See docs/handoffs/2026-09-25-autopilot-immediate-start.md.
 
 - Autopilot new batches use balanced-v1: A tests originals/rewrites together then 70/30 proven/exploration; B originals only; C rewrites only. Shared live occupancy caps unjudged versions at three samples and two active rewrite variants/source; confirmed failures release samples, ambiguous results retain them. Owner revision allocation (0058) commits with batches. Staggered groups pair by Beijing date/daily round. Existing manual library draws remain legacy. Test startup is now user-authorized (see immediate-start handoff); see docs/handoffs/2026-09-25-autopilot-balanced-testing.md.
