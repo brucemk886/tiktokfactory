@@ -55,3 +55,21 @@ test('comparison renders escaped source and rewrite text with Chinese and explic
  const h=harness();const html=h.context.comparisonMarkup({sourceFound:true,status:'done',original:[{id:'o0',label:'原句',text:'<img src=x onerror=alert(1)>',zh:'原文中文'}],rewrite:[{id:'r0',kind:'body',label:'第 1 句',text:'Rewritten',zh:'改写中文',originalIds:['o0']},{id:'r1',kind:'body',label:'第 2 句',text:'New thought',zh:'新内容',originalIds:[]}]});
  assert.match(html,/&lt;img/);assert.doesNotMatch(html,/<img/);assert.match(html,/原文中文/);assert.match(html,/改写中文/);assert.match(html,/新增内容 \/ 未匹配到对应原句/);
 });
+
+test('comparison removes duplicate labels, tag-only pages and unused originals; same-page references win',()=>{
+ const h=harness();const original=[
+  {id:'o0',kind:'title',label:'标题',text:'Title #Tag',zh:'标题 #标签'},
+  {id:'o1',kind:'caption',label:'发布文案',text:'Title #Tag',zh:'标题'},
+  {id:'o3',kind:'body',label:'第 3 页 · 第 1 句',text:'They pull away',zh:'他们抽离'},
+  {id:'o4',kind:'body',label:'第 4 页 · 第 1 句',text:'They need space',zh:'他们需要空间'},
+  {id:'o6',kind:'body',label:'第 6 页 · 第 1 句',text:'Save this',zh:'收藏'}];
+ const rewrite=[{id:'r0',kind:'title',label:'标题',text:'New title',zh:'新标题',originalIds:['o0']},
+ {id:'r3',kind:'body',label:'第 3 页 · 第 1 句',text:'Distance is safety',zh:'距离带来安全',originalIds:['o3','o4']},
+ {id:'r4',kind:'body',label:'第 4 页 · 第 1 句',text:'Give room',zh:'给予空间',originalIds:['o4']},
+ {id:'r6',kind:'body',label:'第 6 页 · 第 1 句',text:'#AvoidantAttachment #MentalHealth #3',zh:'#回避型依恋 #3',originalIds:[]}];
+ const html=h.context.comparisonMarkup({sourceFound:true,status:'done',original,rewrite});
+ assert.equal((html.match(/They need space/g)||[]).length,1);
+ assert.ok(html.indexOf('They need space')>html.indexOf('<h3>第 4 页'));
+ assert.doesNotMatch(html,/<small>|#Tag|#标签|#Avoidant|其余原文|第 6 页|Save this/);
+ assert.equal((html.match(/第 3 页 · 第 1 句/g)||[]).length,1);
+});

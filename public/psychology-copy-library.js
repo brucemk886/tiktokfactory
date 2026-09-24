@@ -251,16 +251,32 @@ loadOriginals();
 let comparisonVersion = 0;
 let comparisonSelection = null;
 function comparisonMarkup(data) {
-  const originals = new Map(data.original.map(row => [row.id, row]));
-  const used = new Set(data.rewrite.flatMap(row => row.originalIds || []));
-  const textBlock = row => '<p class="comparison-text">' + esc(row.text) + '</p><div class="comparison-translation"><span>中文翻译</span><p>' + esc(row.zh || '等待翻译…') + '</p></div>';
-  const cards = data.rewrite.map(row => {
-    const refs = (row.originalIds || []).map(id => originals.get(id)).filter(Boolean);
-    const empty = !data.sourceFound ? '未找到已提取的来源原文' : row.kind !== 'body' ? '原文未填写此字段' : data.status !== 'done' ? '正在匹配对应原句…' : '新增内容 / 未匹配到对应原句';
-    return '<article class="comparison-card"><h3>' + esc(row.label) + '</h3><div class="comparison-columns"><section><h4>对应原文</h4>' + (refs.length ? refs.map(ref => '<small>' + esc(ref.label) + '</small>' + textBlock(ref)).join('') : '<p class="comparison-empty">' + esc(empty) + '</p>') + '</section><section><h4>改写文案</h4>' + textBlock(row) + '</section></div></article>';
+  const clean = value => String(value || '').replace(/(^|\s)[#＃][\p{L}\p{N}_]+/gu, '$1').trim();
+  const prepare = rows => {
+    const title = clean(rows.find(row => row.kind === 'title')?.text);
+    return rows.map(row => ({ ...row, text: clean(row.text), zh: row.zh ? clean(row.zh) : '' }))
+      .filter(row => /[\p{L}\p{N}]/u.test(row.text) && !(row.kind === 'caption' && row.text === title));
+  };
+  const originals = new Map(prepare(data.original).map(row => [row.id, row]));
+  const rows = prepare(data.rewrite);
+  const key = ref => (ref.kind || 'body') + ':' + ref.text.replace(/\s+/g, ' ');
+  const owner = new Map();
+  // Keep genuine semantic references, but show each original only once. A matching
+  // page/sentence takes priority over an earlier cross-page reference.
+  for (const row of rows) for (const id of row.originalIds || []) {
+    const ref = originals.get(id);
+    if (!ref) continue;
+    const previous = owner.get(key(ref));
+    if (!previous || (row.label === ref.label && previous.label !== ref.label)) owner.set(key(ref), row);
+  }
+  const textBlock = row => '<p class="comparison-text">' + esc(row.text) + '</p><div class="comparison-translation"><span>中文翻译</span><p>' + esc(row.zh || (data.status === 'done' ? '—' : '等待翻译…')) + '</p></div>';
+  return rows.map(row => {
+    const allRefs = [...new Map((row.originalIds || []).map(id => originals.get(id)).filter(Boolean).map(ref => [key(ref), ref])).values()];
+    const refs = allRefs.filter(ref => owner.get(key(ref)) === row);
+    const elsewhere = [...new Set(allRefs.filter(ref => owner.get(key(ref)) !== row).map(ref => owner.get(key(ref))?.label).filter(Boolean))];
+    const empty = elsewhere.length ? '对应原文已在“' + elsewhere.join('”、“') + '”展示' : !data.sourceFound ? '未找到已提取的来源原文' : row.kind !== 'body' ? '原文未填写此字段' : data.status !== 'done' ? '正在匹配对应原句…' : '新增内容 / 未匹配到对应原句';
+    return '<article class="comparison-card"><h3>' + esc(row.label) + '</h3><div class="comparison-columns"><section><h4>对应原文</h4>' + (refs.length ? refs.map(textBlock).join('') : '<p class="comparison-empty">' + esc(empty) + '</p>') + '</section><section><h4>改写文案</h4>' + textBlock(row) + '</section></div></article>';
   }).join('');
-  const unused = data.original.filter(row => !used.has(row.id));
-  return cards + (unused.length ? '<details class="comparison-unused"><summary>其余原文及翻译（' + unused.length + ' 项）</summary>' + unused.map(row => '<article><h4>' + esc(row.label) + '</h4>' + textBlock(row) + '</article>').join('') + '</details>' : '');
 }
 async function loadComparison() {
   const selection = comparisonSelection;

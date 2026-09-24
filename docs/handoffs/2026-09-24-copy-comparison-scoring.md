@@ -26,3 +26,10 @@ Show original text for rewrite titles/every sentence, with Chinese translations 
 
 ## Follow-up
 For new content, give Grokbot the API schema/instructions or the updated writing-interface example. Historical versions translate lazily on view; no bulk translation or invented historical scores.
+
+## Follow-up: remove comparison clutter
+- Remove the repeated original page/sentence label inside each card.
+- Strip hashtags from comparison text/translations and omit tag-only rows, including tag-only sixth pages. Suppress caption rows identical to titles after tag removal.
+- Deduplicate original references by kind/text, preferring the rewrite card with the same page/sentence label. Shared references displayed elsewhere are labeled accurately instead of falsely called unmatched.
+- Remove the trailing unused-originals section. Stored content, translation cache and publishing data stay intact; cached historical views use the new display immediately.
+- Validation: 7/7 UI regression tests, including the user's page-3/page-4 duplicate and tag-only sixth-page case; git diff --check.
