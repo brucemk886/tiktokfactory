@@ -170,7 +170,7 @@ const sample={
       "source": "grokbot",
       "videoData": {
         "language": "en",
-        "caption": "Signs you are anxiously attached",
+        "caption": "Small texting habits can reveal what makes you feel safe.",
         "pageTexts": [
           "Signs you are anxiously attached",
           "You reread their texts looking for hidden meaning"
@@ -189,6 +189,7 @@ const sample={
           "scoreReason": "钩子清晰，情境具体，表达温和。",
           "comparison": {
             "original": [
+              {"text":"Small texting habits can reveal what makes you feel safe.","zh":"发消息的小习惯能透露什么让你感到安心。"},
               {
                 "text": "Signs you are anxiously attached",
                 "zh": "焦虑型依恋的表现"
@@ -242,7 +243,10 @@ const rewriteRules=`For every psychology photo post, call the language model onc
    - Before submitting each version, check: would someone in this situation stop scrolling, feel seen, and want to save or send it? If not, rewrite it.
 5. Format: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first; caption is required.
 6. English only, no invented statistics, no diagnoses, no links.
-7. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.`;
+7. Every rewrite must include comparison.original and comparison.rewrite with complete Simplified Chinese translations. comparison.original must cover the ORIGINAL title, ORIGINAL post caption (videoData.copy / caption / description; not the rewrite caption), and every original body sentence. comparison.rewrite must cover the REWRITTEN title, caption and every rewritten body sentence. Never omit the original post caption just because the image text has already been translated. Each entry is {"text":"exact source-language text","zh":"complete Chinese translation"}; rewritten entries also include "originalTexts":["exact matching original BODY sentences"], or [] for genuinely new content. Do not invent a match.
+8. Preserve exact text, punctuation, emoji and hashtags in text values. Title and caption are each one complete entry; split body text by line breaks and sentence endings. Repeated identical text may share one translation. Do not strip hashtags from the submitted caption/translation merely because the UI hides them. All generated post copy remains English; zh and scoreReason are Chinese.
+9. Before submitting, compare all original and rewritten text units against comparison: none may be missing or have an empty zh; every originalTexts reference must exist in the original body. Include a truthful score (0–100) and short Chinese scoreReason for each rewrite. Finish missing translations before submitting; do not rely on the factory's DeepSeek fallback.
+10. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit. To supplement translations or scores for an existing version, keep its externalId and original-language copy unchanged and resend the COMPLETE comparison. Do not submit only the missing sentence: comparison replaces the stored comparison object; do not create a duplicate version.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();

@@ -177,7 +177,10 @@ For every psychology photo post, call the language model once per post. Never us
    - Before submitting each version, check: would someone in this situation stop scrolling, feel seen, and want to save or send it? If not, rewrite it.
 5. Format: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first; caption is required.
 6. English only, no invented statistics, no diagnoses, no links.
-7. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.
+7. Every rewrite must include comparison.original and comparison.rewrite with complete Simplified Chinese translations. comparison.original must cover the ORIGINAL title, ORIGINAL post caption (videoData.copy / caption / description; not the rewrite caption), and every original body sentence. comparison.rewrite must cover the REWRITTEN title, caption and every rewritten body sentence. Never omit the original post caption just because the image text has already been translated. Each entry is {"text":"exact source-language text","zh":"complete Chinese translation"}; rewritten entries also include "originalTexts":["exact matching original BODY sentences"], or [] for genuinely new content. Do not invent a match.
+8. Preserve exact text, punctuation, emoji and hashtags in text values. Title and caption are each one complete entry; split body text by line breaks and sentence endings. Repeated identical text may share one translation. Do not strip hashtags from the submitted caption/translation merely because the UI hides them. All generated post copy remains English; zh and scoreReason are Chinese.
+9. Before submitting, compare all original and rewritten text units against comparison: none may be missing or have an empty zh; every originalTexts reference must exist in the original body. Include a truthful score (0–100) and short Chinese scoreReason for each rewrite. Finish missing translations before submitting; do not rely on the factory's DeepSeek fallback.
+10. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit. To supplement translations or scores for an existing version, keep its externalId and original-language copy unchanged and resend the COMPLETE comparison. Do not submit only the missing sentence: comparison replaces the stored comparison object; do not create a duplicate version.
 ```
 
 ## 去重与更新
@@ -242,7 +245,9 @@ For every psychology photo post, call the language model once per post. Never us
 
 `text` 必须与提交的实际文案一致，不可缩写、改标点或省略后半句。正文按换行和句末标点拆句；标题与发布文案各作为完整一项，不拆句。同样文本重复出现时可复用同一项。正文的 `originalTexts` 只引用原文正文句子，不引用仅出现在标题/发布文案的句子。原文标题、发布文案与改写标题、发布文案按字段直接对应。
 
-示例（一个 rewrites 项）：
+提交前检查：原文和改写的标题、发布文案、每句正文都须有非空中文翻译。原帖发布文案单独核对，不能被图片文字或改写 caption 代替。补写旧版本时保留 externalId 和原语言文案，重传完整 comparison；该对象会整体更新，不能只传缺少的一句。此处是 Grokbot 提交规范，接口对原文翻译的完整性强校验仍待完善。
+
+示例（一个 rewrites 项，原帖发布文案为 Small texting habits can reveal what makes you feel safe.）：
 
 ```json
 {
@@ -254,6 +259,7 @@ For every psychology photo post, call the language model once per post. Never us
   "scoreReason": "钩子清晰，情境具体，表达温和。",
   "comparison": {
     "original": [
+      {"text": "Small texting habits can reveal what makes you feel safe.", "zh": "发消息的小习惯能透露什么让你感到安心。"},
       {"text": "Signs you are anxiously attached", "zh": "焦虑型依恋的表现"},
       {"text": "You reread their texts looking for hidden meaning", "zh": "你反复读对方的消息，试图寻找隐藏的含义"}
     ],
