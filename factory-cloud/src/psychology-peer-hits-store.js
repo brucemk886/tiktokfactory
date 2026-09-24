@@ -67,7 +67,7 @@ const FIELDS = {
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
   commentCount: "comment_count", favoriteCount: "favorite_count", shareCount: "share_count",
   durationSeconds: "duration_seconds", publishedAt: "published_at", videoData: "video_data_json", source: "source",
-  topics: "topics_json", topComments: "comments_json", metricsAt: "metrics_at"
+  topics: "topics_json", topComments: "comments_json"
 };
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
 export function normalizeVoiceGender(value, fallback = "male") {
@@ -148,8 +148,7 @@ export async function normalizePsychologyPeerHit(raw, now = Date.now()) {
     shareCount: count(raw.shareCount ?? raw.shares, "shareCount"), durationSeconds: duration,
     publishedAt: timestamp(raw.publishedAt, "publishedAt"), collectedAt: timestamp(raw.collectedAt, "collectedAt") || now,
     videoData: data || null, source: optionalText(raw.source, 80, "source"),
-    topics: topicsOf(raw.topics ?? data?.topics), topComments: parseComments(raw.topComments ?? data?.topComments),
-    metricsAt: [raw.playCount, raw.views, raw.likeCount, raw.likes, raw.commentCount, raw.comments, raw.favoriteCount, raw.favorites, raw.saves, raw.shareCount, raw.shares].some(value => value != null && value !== "") ? now : 0
+    topics: topicsOf(raw.topics ?? data?.topics), topComments: parseComments(raw.topComments ?? data?.topComments)
   };
 }
 function topicsOf(value) { try { return parseTopics(value); } catch (error) { fail(error.message); } }
@@ -167,9 +166,6 @@ export function psychologyPeerHitFromRow(row) {
   if (!row) return null;
   const item = { id: row.id, videoUrl: row.video_url, platform: row.platform, collectedAt: row.collected_at, createdAt: row.created_at, updatedAt: row.updated_at };
   for (const [key, column] of Object.entries(FIELDS)) item[key] = ["videoData", "topics", "topComments"].includes(key) ? JSON.parse(row[column] || (key === "videoData" ? "{}" : "[]")) : row[column] ?? null;
-  item.prevPlayCount = row.prev_play_count ?? null;
-  item.playDelta = item.prevPlayCount == null || item.playCount == null ? null : item.playCount - item.prevPlayCount;
-  item.rising = item.playDelta > 0 && item.metricsAt > Date.now() - 14 * 86400000;
   return item;
 }
 // Grokbot must send the post's metrics, publish time and account (operator
@@ -223,8 +219,7 @@ export async function importPsychologyPeerHits(db, payload, actor, { requireMetr
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
-      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : ["topics_json", "comments_json"].includes(column) ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : column === "metrics_at" ? `${column} = CASE WHEN excluded.${column} > 0 THEN excluded.${column} ELSE ${TABLE}.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
-      prev_play_count = CASE WHEN excluded.play_count IS NOT NULL AND ${TABLE}.play_count IS NOT NULL AND excluded.play_count != ${TABLE}.play_count THEN ${TABLE}.play_count ELSE ${TABLE}.prev_play_count END,
+      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : ["topics_json", "comments_json"].includes(column) ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
       collected_at = excluded.collected_at, updated_at = excluded.updated_at
     WHERE excluded.collected_at >= ${TABLE}.collected_at
     RETURNING id, video_url, collected_at
@@ -384,16 +379,13 @@ export async function deleteWatchAccount(db, username) {
   if (!Number(result.meta?.changes)) { const error = new Error("没有这个对标账号。"); error.statusCode = 404; throw error; }
   return { ok: true };
 }
-const WEEK = 7 * 86400000;
-export async function peerWorklist(db, now = Date.now()) {
-  const [watch, refresh, enrich] = await Promise.all([
+export async function peerWorklist(db) {
+  const [watch, enrich] = await Promise.all([
     db.prepare("SELECT username, note FROM psychology_peer_watch_accounts WHERE enabled=1 ORDER BY username").all(),
-    db.prepare(`SELECT video_url, account_username, play_count, metrics_at FROM ${TABLE} WHERE media_type='photo' AND (metrics_at=0 OR metrics_at<?) ORDER BY COALESCE(play_count,0) DESC, id LIMIT 40`).bind(now - WEEK).all(),
     db.prepare(`SELECT video_url, account_username, topics_json, comments_json, comment_count FROM ${TABLE} WHERE media_type='photo' AND (topics_json='[]' OR (COALESCE(comment_count,0)>0 AND comments_json='[]')) ORDER BY COALESCE(play_count,0) DESC, id LIMIT 40`).all(),
   ]);
   return {
     watchAccounts: (watch.results || []).map(row => ({ username: row.username, note: row.note })),
-    refresh: (refresh.results || []).map(row => ({ videoUrl: row.video_url, accountUsername: row.account_username, playCount: row.play_count, metricsAt: row.metrics_at })),
     enrich: (enrich.results || []).map(row => ({ videoUrl: row.video_url, accountUsername: row.account_username, missing: [row.topics_json === "[]" ? "topics" : null, Number(row.comment_count) > 0 && row.comments_json === "[]" ? "topComments" : null].filter(Boolean) })),
   };
 }

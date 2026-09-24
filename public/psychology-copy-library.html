@@ -25,7 +25,7 @@
             <p>POST · Authorization: Bearer YOUR_API_KEY · Content-Type: application/json</p>
             <p>支持单条对象或 { "items": [...] } 批量提交，每次最多 100 条、1 MB。TikTok 帖子链接必填；播放、点赞、评论、收藏、分享（没有的数量填 0）、原帖发布时间 publishedAt 和账号 accountUsername 也必填，已保存过的可省略；mediaType 使用 video 或 photo，voiceGender 使用 male 或 female。其余字段可分次补充，相同内容不会重复添加，collectedAt 较旧的记录会被忽略。</p>
             <pre id="apiExample"></pre><button id="copyExampleBtn" type="button">复制请求示例</button>
-            <p><strong>写入规则</strong>：改写由工厂生成。grokbot 提交原帖、题材标签、点赞最高的评论，并每周按任务清单回填播放、盯对标账号的新帖。如果仍提交 rewrites，会按改写规则检查。</p>
+            <p><strong>写入规则</strong>：改写由工厂生成。grokbot 提交原帖、题材标签、点赞最高的评论，关注对标账号的新帖，并补全历史帖子缺失的题材和热门评论。如果仍提交 rewrites，会按改写规则检查。</p>
             <button id="copyRulesBtn" type="button">复制给 grokbot 的写入规则</button>
             <form id="watchForm"><label>对标账号<input id="watchUsername" maxlength="64" placeholder="@username" required /></label><label>备注<input id="watchNote" maxlength="200" placeholder="为什么盯这个号" /></label><button type="submit">加入盯盘</button></form>
             <ul id="watchList"></ul>
@@ -56,7 +56,7 @@
       <button class="hits-tab" id="photoHitsTab" type="button" role="tab" aria-selected="false" data-media-type="photo">图文爆款</button>
     </div>
     <section class="hits-panel">
-      <div class="hits-toolbar"><label>展示范围<select id="libraryStatus"><option value="done">已提取文案</option><option value="all">全部导入记录</option><option value="queued">等待提取</option><option value="running">提取中</option><option value="failed">提取失败</option><option value="historical">历史待补全文案</option></select></label><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、正文、账号或原帖链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="rising">还在涨的优先</option><option value="published">最新发布</option><option value="recent">最近导入</option></select></label></div>
+      <div class="hits-toolbar"><label>展示范围<select id="libraryStatus"><option value="done">已提取文案</option><option value="all">全部导入记录</option><option value="queued">等待提取</option><option value="running">提取中</option><option value="failed">提取失败</option><option value="historical">历史待补全文案</option></select></label><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、正文、账号或原帖链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option><option value="recent">最近导入</option></select></label></div>
       <p class="library-help">默认只显示已提取文案；切换“全部导入记录”可管理尚未完成提取的素材。Grokbot 写入接口与密钥沿用原配置。</p><p id="listStatus" role="status">正在读取…</p>
       <div class="hits-actions" id="sourceActions"><span id="selectionCount">已选 0 条</span><button id="selectPageBtn" type="button" disabled>全选本页</button><button id="deleteSelectedBtn" type="button" disabled>批量删除</button><span class="batch-rewrite"><label>模型<select id="batchModel"><option value="claude-sonnet-5" selected>Claude Sonnet 5（推荐）</option><option value="claude-opus-4.7">Claude Opus 4.7（更贵）</option><option value="claude-haiku-4.5">Claude Haiku 4.5（更便宜）</option><option value="deepseek-flash">DeepSeek Flash</option></select></label><label>每篇<select id="batchCount"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option></select>个</label><button id="batchRewriteBtn" type="button" disabled>批量新增改写</button></span><button id="clearSelectionBtn" type="button">清空选择</button></div>
       <p id="productionStatus" role="status">使用已提取文案批量生成，请进入右上角的自动发布。</p>
@@ -130,7 +130,7 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-enrich"></script><script src="/psychology-peer-production.js?v=20260924-batch-ai"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-no-weekly-refresh"></script><script src="/psychology-peer-production.js?v=20260924-batch-ai"></script>
 <script type="module" src="/psychology-copy-library.js?v=20260924-batch-ai"></script>
 </body>
 </html>

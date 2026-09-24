@@ -28,7 +28,7 @@ function libraryRow(item){
  const title=content.title||titleOf(item);
  const cell=(v,cls='')=>'<td class="'+cls+'" title="'+escape(v)+'"><span>'+escape(v)+'</span></td>';
  return '<tr>'+cell('','library-select').replace('<span></span>',manage?'<input type="checkbox" data-can-produce="'+hasPeer+'" class="peer-select" data-peer-id="'+escape(item.id)+'" aria-label="选择 '+escape(title)+'" />':'—')+
- '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+(item.rising?' · 还在涨':'')+'</small><small>'+escape((item.topics||[]).map(id=>({anxious:'焦虑型依恋',avoidant:'回避型依恋',breakup:'分手',situationship:'暧昧',boundaries:'边界感','self-worth':'自我价值'}[id]||id)).join('、')||'未打题材')+'</small><small class="library-copy-id">文案 ID：<code>'+escape(row.id)+'</code></small></td>'+
+ '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+'</small><small>'+escape((item.topics||[]).map(id=>({anxious:'焦虑型依恋',avoidant:'回避型依恋',breakup:'分手',situationship:'暧昧',boundaries:'边界感','self-worth':'自我价值'}[id]||id)).join('、')||'未打题材')+'</small><small class="library-copy-id">文案 ID：<code>'+escape(row.id)+'</code></small></td>'+
  '<td class="library-metrics"><strong>'+metric(item.playCount)+' 播放</strong><small>赞 '+metric(item.likeCount)+' · 评 '+metric(item.commentCount)+'</small><small>藏 '+metric(item.favoriteCount)+' · 分享 '+metric(item.shareCount)+'</small></td>'+
  '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+
  '<td class="library-status"><span class="copy-status'+(done?'':' is-off')+'" title="'+escape(row.error||status)+'">'+status+'</span>'+(row.error?'<details><summary>原因</summary><p>'+escape(row.error)+'</p></details>':'')+(!done&&row.auto_extract&&row.status==='failed'?'<button type="button" data-retry-copy="'+escape(row.id)+'">重试提取</button>':'')+'</td>'+
@@ -194,11 +194,10 @@ const rewriteRules=`You find and submit English psychology photo posts (TikTok p
 4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
 5. topics: 1 to 3 labels, using these ids only: anxious (焦虑型依恋), avoidant (回避型依恋), breakup (分手), situationship (暧昧), boundaries (边界感), self-worth (自我价值).
 6. topComments: the 10 to 20 comments with the most likes, as {"text","likes"}. Keep the commenter's original wording. If the post has fewer than 10 visible comments, send every one you can see. If commentCount is 0, send an empty array. These comments are reference for the factory's rewrite model.
-7. Once a week, GET this same endpoint with the Bearer key. It returns three lists:
+7. Before each sourcing task, GET this same endpoint with the Bearer key. It returns two lists:
    - watchAccounts: accounts to check for new posts. Submit new performing photo posts the same way as any other post.
-   - refresh: posts whose play numbers are older than 7 days. Resubmit the same videoUrl with the current playCount, likeCount, commentCount, favoriteCount and shareCount only. Leave out pageTexts, topics, topComments and any timestamp of when you collected it.
    - enrich: posts still missing topics or topComments. Resubmit the same videoUrl with just those fields.
-8. Do not resubmit posts that are already in the library except for the refresh and enrich lists above.
+8. Do not resubmit posts that are already in the library except to complete missing topics or topComments from enrich. Do not schedule weekly metric refreshes for existing posts.
 9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
 async function loadWatch(){

@@ -51,7 +51,7 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   const media=url.searchParams.get('mediaType')||'all';
   if(!['all','video','photo'].includes(media))return errorJson('筛选条件无效。',400);
   const status=url.searchParams.get('status')||'done',sort=url.searchParams.get('sort')||'recent';
-  if(!['all','done','queued','running','failed','historical'].includes(status)||!['recent','plays','published','rising'].includes(sort))return errorJson('筛选条件无效。',400);
+  if(!['all','done','queued','running','failed','historical'].includes(status)||!['recent','plays','published'].includes(sort))return errorJson('筛选条件无效。',400);
   const query='%'+String(url.searchParams.get('q')||'').slice(0,200)+'%';
   const statusWhere=status==='all'?'1=1':status==='historical'?"c.auto_extract=0 AND c.status<>'done'":status==='done'?"c.status='done'":"c.status=? AND c.auto_extract=1";
   const where=statusWhere+" AND (?='all' OR c.media_type=?) AND (c.title LIKE ? OR c.source_url LIKE ? OR c.content_json LIKE ? OR p.account_name LIKE ? OR p.account_username LIKE ?)";
@@ -59,7 +59,7 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   const from=' FROM psychology_copy_library c LEFT JOIN psychology_peer_hits p ON p.id=c.id WHERE ';
   const total=Number((await env.DB.prepare('SELECT COUNT(*) n'+from+where).bind(...args).first()).n);
   const pages=Math.max(1,Math.ceil(total/20)),page=Math.min(pages,Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)));
-  const order={recent:'c.created_at DESC,c.id',plays:'p.play_count DESC,c.created_at DESC,c.id',published:'p.published_at DESC,c.created_at DESC,c.id',rising:'CASE WHEN p.prev_play_count IS NOT NULL AND p.play_count>p.prev_play_count AND p.metrics_at>'+(Date.now()-14*86400000)+' THEN p.play_count-p.prev_play_count ELSE 0 END DESC,c.created_at DESC,c.id'}[sort];
+  const order={recent:'c.created_at DESC,c.id',plays:'p.play_count DESC,c.created_at DESC,c.id',published:'p.published_at DESC,c.created_at DESC,c.id'}[sort];
   const items=(await env.DB.prepare('SELECT c.id,c.media_type,c.title,c.source_url,c.status,c.content_json,c.error,c.provider,c.created_at,c.completed_at,c.auto_extract'+from+where+' ORDER BY '+order+' LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()).results;
   const counts=(await env.DB.prepare("SELECT media_type,COUNT(*) n FROM psychology_copy_library WHERE status='done' GROUP BY media_type").all()).results;
   const ids=items.map(r=>r.id);

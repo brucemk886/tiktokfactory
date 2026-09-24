@@ -56,7 +56,7 @@ export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Ma
     return best.length ? Math.max(...best) : null;
   };
   const proven = posts.filter(p => score(p) != null).sort((a, b) => score(b) - score(a));
-  const fresh = posts.filter(p => score(p) == null).sort((a, b) => Number(b.rising) - Number(a.rising) || (b.playDelta || 0) - (a.playDelta || 0) || a.createdAt - b.createdAt);
+  const fresh = posts.filter(p => score(p) == null).sort((a, b) => a.createdAt - b.createdAt);
   let shared = null;
   if (pairSeed) {
     const rnd = seededRandom(pairSeed), p = [...proven], f = [...fresh];
@@ -95,7 +95,7 @@ export function planLibraryDraw({ posts, stats = new Map(), slots, used = new Ma
 export async function loadLibraryPosts(db, owner, mediaType, query = '', validOriginal = () => true) {
   const like = '%' + String(query || '') + '%';
   const [originals, rewrites] = await Promise.all([
-    db.prepare("SELECT c.*, p.play_count AS peer_play, p.prev_play_count AS peer_prev, p.metrics_at AS peer_metrics_at FROM psychology_copy_library c LEFT JOIN psychology_peer_hits p ON p.id=c.id WHERE c.status='done' AND c.media_type=? AND (c.title LIKE ? OR c.source_url LIKE ? OR c.content_json LIKE ?) ORDER BY c.completed_at,c.id LIMIT 2000")
+    db.prepare("SELECT c.* FROM psychology_copy_library c WHERE c.status='done' AND c.media_type=? AND (c.title LIKE ? OR c.source_url LIKE ? OR c.content_json LIKE ?) ORDER BY c.completed_at,c.id LIMIT 2000")
       .bind(mediaType, like, like, like).all(),
     db.prepare('SELECT * FROM psychology_copy_variants WHERE owner=? AND enabled=1 ORDER BY created_at,id LIMIT 10000').bind(owner).all(),
   ]);
@@ -103,8 +103,7 @@ export async function loadLibraryPosts(db, owner, mediaType, query = '', validOr
   for (const row of originals.results) {
     if (!validOriginal(row)) continue;
     let sourceKey; try { sourceKey = photoCopyKey(row.source_url); } catch { sourceKey = row.id; }
-    const rising = row.peer_prev != null && Number(row.peer_play) > Number(row.peer_prev) && Number(row.peer_metrics_at) > Date.now() - 14 * 86400000;
-    posts.set(sourceKey, { sourceKey, createdAt: row.completed_at || row.created_at, original: row, rewrites: [], rising, playDelta: rising ? Number(row.peer_play) - Number(row.peer_prev) : 0 });
+    posts.set(sourceKey, { sourceKey, createdAt: row.completed_at || row.created_at, original: row, rewrites: [] });
   }
   const searching = String(query || '').trim().toLowerCase();
   for (const row of rewrites.results) {

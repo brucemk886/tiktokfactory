@@ -353,7 +353,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
 });
 
-test("grokbot stores topics and liked comments, and the key can read the watch and refresh lists",async t=>{
+test("grokbot stores topics and liked comments, and the key reads watch/enrichment lists without weekly refresh",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
   const photo="https://www.tiktok.com/@example/photo/8801";
   const saved=await call(db,PSYCHOLOGY_PEER_API,"POST",{...M,commentCount:2,videoUrl:photo,topics:["焦虑型依恋","breakup"],topComments:[{text:"why do I always apologize first",likes:12},{text:"this is literally me with my ex",likes:40}]},auth,null);
@@ -365,13 +365,21 @@ test("grokbot stores topics and liked comments, and the key can read the watch a
   const again=await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photo,playCount:5000,likeCount:80,commentCount:2,favoriteCount:5,shareCount:0},auth,null);
   assert.equal(again.status,200);
   const risen=sqlite.prepare("SELECT play_count,prev_play_count FROM psychology_peer_hits").get();
-  assert.equal(risen.play_count,5000);assert.equal(risen.prev_play_count,1200);
+  assert.equal(risen.play_count,5000);assert.equal(risen.prev_play_count,null);
   sqlite.prepare("UPDATE psychology_peer_hits SET metrics_at=1").run();
   const added=await call(db,"/api/psychology-peer-hits/watch-accounts","POST",{username:"@Peer.Account",note:"附件"});
   assert.equal(added.status,201);
   const list=await (await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).json();
   assert.deepEqual(list.watchAccounts,[{username:"peer.account",note:"附件"}]);
-  assert.equal(list.refresh[0].videoUrl,photo);
+  assert.deepEqual(Object.keys(list).sort(),['enrich','watchAccounts']);
   assert.equal(list.enrich.length,0);
+  const legacyPhoto="https://www.tiktok.com/@example/photo/8802";
+  await importPsychologyPeerHits(db,{...M,videoUrl:legacyPhoto,topics:undefined,topComments:undefined,commentCount:1},"admin");
+  const pending=await (await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).json();
+  assert.deepEqual(pending.enrich,[{videoUrl:legacyPhoto,accountUsername:M.accountUsername,missing:["topics","topComments"]}]);
+  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:legacyPhoto,topics:["avoidant"],topComments:[{text:"I go quiet",likes:3}]},auth,null)).status,200);
+  assert.equal((await (await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).json()).enrich.length,0);
+  const listed=await listPsychologyPeerHits(db,new URLSearchParams("mediaType=photo"));
+  for(const item of listed.items)for(const field of ["rising","playDelta","prevPlayCount","metricsAt"])assert.equal(Object.hasOwn(item,field),false);
   assert.equal((await call(db,"/api/psychology-peer-hits/watch-accounts?username=peer.account","DELETE")).status,200);
 });

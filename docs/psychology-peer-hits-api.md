@@ -176,15 +176,14 @@ You find and submit English psychology photo posts (TikTok photo carousels) to o
 4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
 5. topics: 1 to 3 labels, using these ids only: anxious (焦虑型依恋), avoidant (回避型依恋), breakup (分手), situationship (暧昧), boundaries (边界感), self-worth (自我价值).
 6. topComments: the 10 to 20 comments with the most likes, as {"text","likes"}. Keep the commenter's original wording. If the post has fewer than 10 visible comments, send every one you can see. If commentCount is 0, send an empty array. These comments are reference for the factory's rewrite model.
-7. Once a week, GET this same endpoint with the Bearer key. It returns three lists:
+7. Before each sourcing task, GET this same endpoint with the Bearer key. It returns two lists:
    - watchAccounts: accounts to check for new posts. Submit new performing photo posts the same way as any other post.
-   - refresh: posts whose play numbers are older than 7 days. Resubmit the same videoUrl with the current playCount, likeCount, commentCount, favoriteCount and shareCount only. Leave out pageTexts, topics, topComments and any timestamp of when you collected it.
    - enrich: posts still missing topics or topComments. Resubmit the same videoUrl with just those fields.
-8. Do not resubmit posts that are already in the library except for the refresh and enrich lists above.
+8. Do not resubmit posts that are already in the library except to complete missing topics or topComments from enrich. Do not schedule weekly metric refreshes for existing posts.
 9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.
 ```
 
-同一接口的 `GET`（同一个 Bearer 密钥）返回 `{ watchAccounts, refresh, enrich }`。对标账号由文案库「写入接口」面板维护，最多 100 个。播放量回填会记下上一次播放；近 14 天内播放仍在涨的图文，文案库可按「还在涨的优先」排序，自动发布抽取未判定的爆款时也会先抽这些。运营报表「内容」页按题材汇总本期满 24 小时作品的破千率。
+同一接口的 `GET`（同一个 Bearer 密钥）返回 `{ watchAccounts, enrich }`。对标账号由文案库「写入接口」面板维护，最多 100 个；enrich 保留缺失题材或热门评论的补全清单。每周播放数据回填已取消，自动发布不使用同行播放增量调整选题顺序。运营报表「内容」页按题材汇总本期满 24 小时作品的破千率。
 
 ## 去重与更新
 
