@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology autopilot console v1 (0054): Beijing-day execution overview, recent-slot receipt counts and lazy content/version details, exception/retry list, last/next checks, and explicit pause scope with impact preview. Stop-unsent uses guarded local tombstones; submission leases/frozen requests/remote receipts are protected, running renders finish, resumes do not recreate stopped items. Account guards stop eligible pending items too. Page polls local records every 30 seconds without TikTok reads. See docs/handoffs/2026-09-24-autopilot-console-v1.md.
+
 - Rewrite versions persist `rewrite_model` (migration 0052). The library shows per-model counts and rewrite details show each model; single/batch generation and optional imports retain attribution. Exact factory `ai-<model>-<hash>` historical IDs are backfilled; unknown imports remain unknown. Photo/video rewrite publication freezes the model in creative snapshots and copySource, exposed on content-performance rows for later model comparisons.
 
 - Copy-library top-right 对标账号 is an independent bulk-entry dialog: handles/profile URLs are deduplicated, max 100, all pending and excluded from Grokbot assignments. Row 查看热门评论 shows original text and descending likes. Imports keep 10–20 distinct positive-liked comments (up to 100 candidates); genuine shortfalls use topCommentsNote. Migration 0053. See docs/handoffs/2026-09-24-peer-watch-comments-ui.md.

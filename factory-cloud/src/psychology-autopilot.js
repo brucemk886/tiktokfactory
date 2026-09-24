@@ -8,6 +8,7 @@ import { listLatestArchiveAccounts, accountsFromLatestArchive, loadVideosForAcco
 import { publicState, findProjectForModule, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
 import { operationsWindow, publishOutcome, parseObject } from '../../scripts/psychology-operations.js';
 import { loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
+import { executionCounts, slotExecution, stopImpact, stopPending, nextAutopilotCheck } from './psychology-autopilot-execution.js';
 import { frameworkFor } from './psychology-operations.js';
 
 const BASE = '/api/psychology-autopilot';
@@ -64,9 +65,9 @@ async function groupAccounts(env, user, groupId) {
 
 // Latest-first publish outcomes of this pilot's items that should have gone out by now.
 async function pilotOutcomes(db, pilotId, now) {
-  const items = (await db.prepare(`SELECT i.id,i.connection_id,j.status,json_extract(j.result_json,'$.publishFailed') AS publish_failed
+  const items = (await db.prepare(`SELECT i.id,i.connection_id,COALESCE(j.status,i.execution_status) status,json_extract(j.result_json,'$.publishFailed') AS publish_failed
     FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id
-    WHERE i.deleted_at=0 AND i.schedule_at<? AND i.batch_id IN (SELECT batch_id FROM psychology_autopilot_slots WHERE autopilot_id=? AND batch_id<>'')
+    WHERE i.deleted_at=0 AND i.schedule_at<? AND EXISTS (SELECT 1 FROM psychology_autopilot_slots s WHERE s.autopilot_id=? AND instr(','||s.batch_id||',', ','||i.batch_id||',')>0)
     ORDER BY i.schedule_at DESC LIMIT 2000`).bind(Math.floor((now - 2 * HOUR) / 1000), pilotId).all()).results;
   const records = items.length ? (await db.prepare(`SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))`)
     .bind(JSON.stringify(items.map(i => i.id))).all()).results.map(r => parseObject(r.value_json)) : [];
@@ -82,6 +83,9 @@ async function pilotOutcomes(db, pilotId, now) {
 
 export async function runAutopilot(env, pilot, now = Date.now()) {
   const db = env.DB, summary = { paused: [], batches: [], errors: [] };
+  pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
+  if (!pilot || pilot.status !== 'active') return summary;
+  await db.prepare('UPDATE psychology_autopilots SET last_run_at=? WHERE id=?').bind(now, pilot.id).run();
   if (now >= pilot.ends_at) {
     await db.prepare("UPDATE psychology_autopilots SET status='ended',updated_at=? WHERE id=? AND status='active'").bind(now, pilot.id).run();
     await log(db, pilot.id, 'status', '运行期结束，自动运营已停止。', {}, now);
@@ -104,8 +108,10 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   const pauses = guardAccounts({ pilot, connectionIds: ids.filter(id => states.get(id) === 'active'), videosByConnection, outcomesByConnection: await pilotOutcomes(db, pilot.id, now), now });
   const names = new Map(accounts.map(a => [connectionOf(a), a.profile?.username || a.username || a.label || connectionOf(a)]));
   for (const p of pauses) {
-    await db.prepare("UPDATE psychology_autopilot_accounts SET status='paused',reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=? AND status='active'").bind(p.reason, now, pilot.id, p.id).run();
+    await db.prepare("UPDATE psychology_autopilot_accounts SET status='paused',stop_pending=1,reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=? AND status='active'").bind(p.reason, now, pilot.id, p.id).run();
     states.set(p.id, 'paused'); summary.paused.push(p.id);
+    const stopped = await stopPending(db, pilot.id, p.id);
+    await log(db, pilot.id, 'status', `已停止 @${names.get(p.id)} 尚未提交的 ${stopped} 条任务；进入提交的任务继续核对回执。`, {}, now);
     await log(db, pilot.id, 'pause', `@${names.get(p.id)} 已自动停发：${p.reason}`, { connectionId: p.id }, now);
   }
 
@@ -124,6 +130,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   const active = ids.filter(id => states.get(id) === 'active');
   const musicIds = (await kvGet(db, 'psychology-auto-music-pool', [])).filter(id => /^\d{1,30}$/.test(String(id))).slice(0, 100);
   for (const slot of dueSlots(pilot, now)) {
+    const current = await db.prepare('SELECT status FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
+    if (current?.status !== 'active') break;
     const claim = await db.prepare(`INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)
       ON CONFLICT(autopilot_id,slot_at) DO UPDATE SET status='creating',detail='',updated_at=excluded.updated_at WHERE status='failed'`).bind(pilot.id, slot, now).run();
     if (!claim.meta?.changes) continue;
@@ -144,6 +152,12 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');
         batchIds.push(data.batchId);
+        await db.prepare('UPDATE psychology_autopilot_slots SET batch_id=? WHERE autopilot_id=? AND slot_at=?').bind(batchIds.join(','), pilot.id, slot).run();
+        const fresh = await db.prepare('SELECT status,stop_pending FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
+        if (fresh?.status !== 'active' && fresh?.stop_pending) await stopPending(db, pilot.id);
+        const stoppedAccounts = await db.prepare("SELECT connection_id FROM psychology_autopilot_accounts WHERE autopilot_id=? AND status='paused' AND stop_pending=1").bind(pilot.id).all();
+        for (const a of stoppedAccounts.results) await stopPending(db, pilot.id, a.connection_id);
+        if (fresh?.status !== 'active') break;
       } catch (error) { errors.push(String(error.message || error).slice(0, 300)); }
     }
     const status = batchIds.length ? 'created' : 'failed', detail = errors.join('；');
@@ -182,19 +196,24 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     const labels = new Map(accountsFromLatestArchive(await listLatestArchiveAccounts(db)).map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
     const out = [];
     for (const p of pilots.results) {
-      const [accounts, slots, logs] = await Promise.all([
-        db.prepare('SELECT connection_id,status,reason,updated_at FROM psychology_autopilot_accounts WHERE autopilot_id=? ORDER BY status DESC,connection_id').bind(p.id).all(),
+      const [accounts, slots, logs, daily] = await Promise.all([
+        db.prepare('SELECT connection_id,status,reason,updated_at,stop_pending FROM psychology_autopilot_accounts WHERE autopilot_id=? ORDER BY status DESC,connection_id').bind(p.id).all(),
         db.prepare('SELECT slot_at,status,batch_id,detail FROM psychology_autopilot_slots WHERE autopilot_id=? ORDER BY slot_at DESC LIMIT 12').bind(p.id).all(),
         db.prepare('SELECT kind,message,detail_json,created_at FROM psychology_autopilot_log WHERE autopilot_id=? ORDER BY created_at DESC,id DESC LIMIT 60').bind(p.id).all(),
+        db.prepare("SELECT * FROM psychology_autopilot_log WHERE autopilot_id=? AND kind='daily' ORDER BY created_at DESC,id DESC LIMIT 1").bind(p.id).first(),
       ]);
-      const daily = logs.results.find(l => l.kind === 'daily');
+      const items = await slotExecution(db, slots.results, labels);
+      const dayStart = Date.parse(beijingDate(Date.now()) + 'T00:00:00+08:00');
+      const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
+      const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
       out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at,
-        slots: JSON.parse(p.slots_json), accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at })),
-        schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail })),
+        today, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
+        slots: JSON.parse(p.slots_json), accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, stopPending:Boolean(a.stop_pending) })),
+        schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ pilots: out, groups, strategies: STRATEGIES, rules: AUTOPILOT });
+    return json({ pilots: out, groups, strategies: STRATEGIES, rules: AUTOPILOT, fetchedAt:Date.now() });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7);
@@ -211,31 +230,43 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
   }
-  const one = url.pathname.match(/^\/api\/psychology-autopilot\/(pilot-[0-9a-f-]{36})(?:\/(run|accounts\/([^/]+)))?$/);
+  const one = url.pathname.match(/^\/api\/psychology-autopilot\/(pilot-[0-9a-f-]{36})(?:\/(run|impact|slots\/(\d+)|accounts\/([^/]+)))?$/);
   if (!one) fail('不支持此请求。', 405);
   const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=? AND owner=?').bind(one[1], user.username).first();
   if (!pilot) fail('自动运营不存在。', 404);
   const now = Date.now();
+  if (one[2] === 'impact' && request.method === 'GET') return json(await stopImpact(db, pilot.id, url.searchParams.get('account') || ''));
+  if (one[3] && request.method === 'GET') {
+    const slot = await db.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').bind(pilot.id, Number(one[3])).first();
+    if (!slot) fail('排期不存在。', 404);
+    const labels = new Map(accountsFromLatestArchive(await listLatestArchiveAccounts(db)).map(a => [connectionOf(a), a.profile?.username || a.username || a.label || connectionOf(a)]));
+    return json({ items:await slotExecution(db, [slot], labels) });
+  }
   if (!one[2] && request.method === 'PATCH') {
-    const status = (await readJson(request)).status;
+    const body = await readJson(request), status = body.status;
+    if (body.stopPending !== undefined && typeof body.stopPending !== 'boolean') fail('暂停范围无效。');
     if (!['active', 'paused', 'ended'].includes(status)) fail('状态无效。');
     if (pilot.status === 'ended') fail('已结束的自动运营不能再修改。', 409);
-    await db.prepare('UPDATE psychology_autopilots SET status=?,updated_at=? WHERE id=?').bind(status, now, pilot.id).run();
-    await log(db, pilot.id, 'status', { active: '已恢复自动运营。', paused: '已暂停自动运营：不再创建新的发布，已排好的发布照常进行。', ended: '已结束自动运营。' }[status], {}, now);
-    return json({ ok: true });
+    await db.prepare('UPDATE psychology_autopilots SET status=?,stop_pending=?,updated_at=? WHERE id=?').bind(status, status === 'active' ? 0 : Number(Boolean(body.stopPending)), now, pilot.id).run();
+    const stopped = status !== 'active' && body.stopPending ? await stopPending(db, pilot.id) : 0;
+    await log(db, pilot.id, 'status', { active: '已恢复自动运营。', paused: body.stopPending ? '已暂停自动运营并停止本地尚未提交的任务。' : '已暂停新增排期，已排好的发布照常进行。', ended: '已结束自动运营。' }[status], {}, now);
+    if (body.stopPending) await log(db, pilot.id, 'status', `已停止本地尚未提交的 ${stopped} 条任务；已进入提交的任务仍会继续。恢复不重新创建已停止任务。`, {}, now);
+    return json({ ok: true, stopped });
   }
   if (one[2] === 'run' && request.method === 'POST') {
     if (pilot.status !== 'active') fail('请先恢复自动运营。', 409);
     return json(await runAutopilot(env, pilot, now));
   }
-  if (one[3] && request.method === 'PATCH') {
-    const status = (await readJson(request)).status, connectionId = decodeURIComponent(one[3]);
+  if (one[4] && request.method === 'PATCH') {
+    const body = await readJson(request), status = body.status, connectionId = decodeURIComponent(one[4]);
+    if (pilot.status === 'ended') fail('已结束的自动运营不能再修改。', 409);
     if (!['active', 'paused'].includes(status)) fail('状态无效。');
-    const result = await db.prepare('UPDATE psychology_autopilot_accounts SET status=?,reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=?')
-      .bind(status, status === 'paused' ? '手动停发' : '', now, pilot.id, connectionId).run();
+    const result = await db.prepare('UPDATE psychology_autopilot_accounts SET status=?,stop_pending=?,reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=?')
+      .bind(status, status === 'paused' ? 1 : 0, status === 'paused' ? '手动停发' : '', now, pilot.id, connectionId).run();
     if (!result.meta?.changes) fail('账号不在这个自动运营里。', 404);
+    const stopped = status === 'paused' ? await stopPending(db, pilot.id, connectionId) : 0;
     await log(db, pilot.id, status === 'paused' ? 'pause' : 'resume', (status === 'paused' ? '手动停发账号 ' : '已恢复账号 ') + connectionId, { connectionId }, now);
-    return json({ ok: true });
+    return json({ ok: true, stopped });
   }
   fail('不支持此请求。', 405);
 }

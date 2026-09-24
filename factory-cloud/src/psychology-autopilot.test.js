@@ -138,3 +138,91 @@ test('paused accounts are skipped, a paused pilot creates nothing, and ended pil
   assert.ok(restarted.run.errors.some(e => /不够/.test(e)));
   assert.ok(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilot_log WHERE autopilot_id=? AND kind='error'").get(restarted.id).n > 0);
 });
+
+import { stopPending, stopImpact, slotExecution, executionCounts, nextAutopilotCheck } from './psychology-autopilot-execution.js';
+import { mergeAndStorePublishRecords } from './publish-records-store.js';
+import { dispatchPublishGroup, stagePublishItem } from './psychology-publish-groups.js';
+
+test('execution reports durable receipts, cleaned failures, retries and Beijing day without querying TikTok', async t => {
+  const f = await pilotFixture(t);
+  const {id} = await (await f.api('POST', '', {groupId:'g', strategy:'original', days:7})).json();
+  const slots = f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? ORDER BY slot_at').all(id);
+  const items = f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY schedule_at,id').all();
+  await mergeAndStorePublishRecords(f.db, [{id:'receipt',autoTaskId:items[0].id,autoBatchId:items[0].batch_id,batchId:'remote',status:'published',videoId:'1234567890123',createdAt:Date.now(),updatedAt:Date.now()}]);
+  f.sqlite.prepare("UPDATE factory_jobs SET status='failed',error='render unavailable' WHERE id=?").run(items[1].job_id);
+  f.sqlite.prepare('DELETE FROM factory_jobs WHERE id=?').run(items[1].job_id);
+  f.sqlite.prepare("UPDATE factory_jobs SET status='queued',auto_retry_count=1,available_at=? WHERE id=?").run(Date.now()+30000,items[2].job_id);
+  const result = await slotExecution(f.db, slots);
+  assert.equal(result.find(i=>i.id===items[0].id).state,'published');
+  assert.equal(result.find(i=>i.id===items[0].id).videoId,'1234567890123');
+  assert.equal(result.find(i=>i.id===items[1].id).state,'production_failed');
+  assert.equal(result.find(i=>i.id===items[1].id).error,'render unavailable');
+  assert.equal(result.find(i=>i.id===items[2].id).retrying,true);
+  const counts = executionCounts(result);
+  assert.equal(counts.published,1); assert.equal(counts.failed,1);
+  assert.equal(Object.values(counts).slice(1).reduce((a,b)=>a+b,0),counts.planned);
+  const list = await (await f.api('GET')).json();
+  const pilot = list.pilots[0];
+  const today = new Date(Date.now()+8*HOUR).toISOString().slice(0,10),start=at(today,'00:00');
+  assert.equal(pilot.today.planned,items.filter(i=>i.schedule_at*1000>=start&&i.schedule_at*1000<start+DAY).length);
+  assert.ok(pilot.lastRunAt>0);
+  const detail = await (await f.api('GET',`/${id}/slots/${slots[0].slot_at}`)).json();
+  assert.equal(detail.items.length,2); assert.equal(detail.items[0].version,'原版');
+  assert.equal(f.requests.length,0);
+  await assert.rejects(f.api('GET',`/pilot-${crypto.randomUUID()}/slots/${slots[0].slot_at}`),/不存在/);
+});
+
+test('pause planning leaves existing work; stop pending protects frozen/inflight/submitted requests and is idempotent',async t=>{
+  const f=await pilotFixture(t);
+  const {id}=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+  const items=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY schedule_at,id').all();
+  const groups=[...new Set(items.map(i=>i.publish_group_id))];
+  await f.api('PATCH',`/${id}`,{status:'paused'});
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items WHERE deleted_at>0').get().n,0);
+  f.sqlite.prepare("UPDATE psychology_publish_groups SET status='submitting' WHERE id=?").run(groups[0]);
+  // Second group is safe to stop even while generation is running.
+  const local=items.find(i=>i.publish_group_id===groups[1]);
+  f.sqlite.prepare("UPDATE factory_jobs SET status='running' WHERE id=?").run(local.job_id);
+  const impact=await stopImpact(f.db,id);
+  assert.equal(impact.protected,items.filter(i=>i.publish_group_id===groups[0]).length);
+  const stopped=await (await f.api('PATCH',`/${id}`,{status:'paused',stopPending:true})).json();
+  assert.equal(stopped.stopped,impact.stoppable);
+  assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(local.job_id).status,'running');
+  assert.ok(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items WHERE id=?').get(local.id).deleted_at>0);
+  assert.ok(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items WHERE publish_group_id=?').all(groups[0]).every(i=>i.deleted_at===0));
+  assert.equal(await stopPending(f.db,id),0);
+  // A late render callback cannot send stopped content.
+  await stagePublishItem(f.env,local,{item:{fileName:'stopped.png'},title:'Stopped'});
+  assert.equal(f.requests.length,0);
+  await f.api('PATCH',`/${id}`,{status:'active'});
+  assert.ok(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items WHERE id=?').get(local.id).deleted_at>0);
+});
+
+test('account stop is scoped and does not alter frozen failed requests or durable submitted items',async t=>{
+  const f=await pilotFixture(t);
+  const {id}=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+  const items=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY schedule_at,id').all();
+  const frozen=items[0];
+  f.sqlite.prepare("UPDATE psychology_publish_groups SET status='failed',request_json=? WHERE id=?").run('{"items":[]}',frozen.publish_group_id);
+  const receipt=items.find(i=>i.connection_id==='a'&&i.publish_group_id!==frozen.publish_group_id);
+  await mergeAndStorePublishRecords(f.db,[{id:'r2',autoTaskId:receipt.id,autoBatchId:receipt.batch_id,batchId:'accepted',status:'submitted',createdAt:Date.now()}]);
+  await f.api('PATCH',`/${id}/accounts/a`,{status:'paused'});
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id=? AND deleted_at>0').get('b').n,0);
+  assert.equal(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items WHERE id=?').get(frozen.id).deleted_at,0);
+  assert.equal(f.sqlite.prepare('SELECT deleted_at FROM psychology_publish_items WHERE id=?').get(receipt.id).deleted_at,0);
+  assert.equal(f.requests.length,0);
+});
+
+test('multi-batch slot membership and daily schedule boundaries are exact',async t=>{
+  const f=await pilotFixture(t);
+  const {id}=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+  const slots=f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots ORDER BY slot_at').all();
+  f.sqlite.prepare('UPDATE psychology_autopilot_slots SET batch_id=? WHERE autopilot_id=? AND slot_at=?').run(slots[0].batch_id+','+slots[1].batch_id,id,slots[0].slot_at);
+  f.sqlite.prepare('DELETE FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').run(id,slots[1].slot_at);
+  const impact=await stopImpact(f.db,id);
+  const total=f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n;
+  assert.equal(impact.stoppable,total);
+  assert.equal(await stopPending(f.db,id),total);
+  assert.equal(nextAutopilotCheck(at('2026-09-24','00:00')),at('2026-09-24','08:00'));
+  assert.equal(nextAutopilotCheck(at('2026-09-24','08:00')),at('2026-09-25','00:00'));
+});

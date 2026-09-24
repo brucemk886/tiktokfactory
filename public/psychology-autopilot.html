@@ -1,30 +1,20 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 自动运营</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-4"><link rel="stylesheet" href="/psychology-autopilot.css?v=20260923-1"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-4"><link rel="stylesheet" href="/psychology-autopilot.css?v=20260924-2"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
 </head>
 <body class="work-page official-data-page psychology-module lf-console"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
 <header class="page-head"><div><h1>自动运营</h1><p class="page-lead">把一个账号分组交给系统：每天自动从文案库抽内容、排发布、分析数据、停掉有问题的号。多个分组用不同策略跑，对比哪种打法更好。</p></div><div class="ops-head-tools"><nav class="page-links"><a href="/psychology-publish">自动发布</a><a href="/psychology-ops-report">运营报表</a><a href="/psychology-copy-library">文案库</a></nav></div></header>
 
-<section class="panel data-section">
-<h2>新建自动运营</h2>
-<form id="createForm" class="ops-filters pilot-form">
-<label>账号分组<select id="groupId" required></select></label>
-<label>运营策略<select id="strategy"></select></label>
-<label>运行天数<input id="days" type="number" min="1" max="30" value="7" required></label>
-<button class="primary-link" type="submit" id="createButton">启动</button>
-</form>
-<ul class="pilot-rules" id="rules"></ul>
-<p id="createStatus" role="status" class="section-hint"></p>
-</section>
-
-<section class="panel data-section">
-<div class="section-title"><div><p>COMPARISON</p><h2>各组效果对比</h2></div><button type="button" class="table-action" id="reload">刷新</button></div>
-<p class="section-hint">每组每天分析一次近7天满24小时的作品，和运营报表同一套口径。</p>
-<p id="status" role="status" class="section-hint">正在读取…</p>
-<div id="compare" class="table-wrap"></div>
-</section>
-
+<div class="pilot-toolbar"><p id="status" role="status">正在读取…</p><div class="pilot-actions"><button type="button" id="reload">刷新状态</button><button type="button" id="openCreate" class="primary-link">新建自动运营</button></div></div>
+<section aria-label="今日运营总览" id="overview" class="pilot-overview"></section>
+<p class="section-hint" id="freshness"></p>
+<section class="panel data-section"><h2>待处理与自动恢复</h2><p class="section-hint">汇总各组最近 12 个排期的异常；已停止的任务不计为失败。历史明细可查看发布记录。</p><div id="attention"></div></section>
+<section class="panel data-section"><h2>运营分组</h2><p class="section-hint">效果基于近 7 天满 24 小时的作品；执行数量按北京时间的计划发布时间统计。</p><div id="compare" class="table-wrap"></div></section>
 <div id="pilots"></div>
-</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260923-1"></script></body></html>
+<dialog id="createDialog" class="pilot-dialog"><div class="section-title"><h2>新建自动运营</h2><button type="button" data-close="createDialog" aria-label="关闭新建窗口">关闭</button></div>
+<form id="createForm" class="ops-filters pilot-form"><label>账号分组<select id="groupId" required></select></label><label>运营策略<select id="strategy"></select></label><label>运行天数<input id="days" type="number" min="1" max="30" value="7" required></label><button class="primary-link" type="submit" id="createButton">启动</button></form>
+<details><summary>查看运营规则</summary><ul class="pilot-rules" id="rules"></ul></details><p id="createStatus" role="status"></p></dialog>
+<dialog id="pauseDialog" class="pilot-dialog"><h2 id="pauseTitle">暂停自动运营</h2><p id="pauseImpact" role="status"></p><fieldset id="pauseChoices"><legend>暂停范围</legend><label><input type="radio" name="pauseMode" value="planning" checked>只暂停新增排期，已排任务继续</label><label><input type="radio" name="pauseMode" value="pending">同时停止本地尚未提交的任务</label></fieldset><p class="section-hint">已进入提交或已交给官方中台的任务无法在这里撤回，仍可能发布。恢复后不会重新创建已停止的任务。</p><div class="pilot-actions"><button type="button" data-close="pauseDialog">返回</button><button type="button" id="confirmPause">确认暂停</button></div></dialog>
+</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260924-2"></script></body></html>
