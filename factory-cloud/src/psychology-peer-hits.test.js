@@ -316,7 +316,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/<th>发布 \/ 导入时间<\/th><th>文案状态<\/th><th>改写版本<\/th>/);
   assert.doesNotMatch(page,/recreationVoice|配音声音/);
   assert.match(page,/<th>发布 \/ 导入时间<\/th>/);
-  assert.match(page,/id="produceBtn"[^>]*>原帖复刻<\/button>/);
+  assert.doesNotMatch(page,/produceBtn|原帖复刻/);
   assert.doesNotMatch(page,/rewriteCopy/);
   assert.doesNotMatch(page,/id="moveSelectedBtn"/);
   assert.doesNotMatch(page,/北京时间/);

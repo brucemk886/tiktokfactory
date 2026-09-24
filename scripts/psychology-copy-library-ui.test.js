@@ -49,7 +49,7 @@ test('top-level import does not inherit the last viewed source',async()=>{
 test('removed jobs panel makes no polling requests and both media tabs still initialize selection',async()=>{
  const h=harness('psychology-peer-production.js');h.events.get('library-source-access')({detail:{canManage:true}});
  for(const mediaType of ['photo','video']){h.document.body.dataset.mediaType=mediaType;h.events.get('peer-media-type-changed')({detail:{mediaType}});h.events.get('peer-list-loaded')();}
- assert.equal(h.requests.length,0);assert.equal(h.nodes.get('#produceBtn').disabled,true);
+ assert.equal(h.requests.length,0);assert.doesNotMatch(html,/produceBtn|原帖复刻/);
 });
 
 test('comparison renders escaped source and rewrite text with Chinese and explicit unmatched state',()=>{
@@ -76,10 +76,9 @@ test('comparison removes duplicate labels, tag-only pages and unused originals; 
 });
 
 
-test('select page covers twenty rows, supports indeterminate state and preserves five-item recreation limit',async()=>{
+test('select page covers twenty rows and supports indeterminate state',async()=>{
  const h=harness('psychology-peer-production.js');h.setRows(Array.from({length:20},(_,i)=>'id-'+i));h.events.get('peer-list-loaded')();
- h.nodes.get('#selectPageBtn').listeners.click();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 20 条');assert.equal(h.nodes.get('#selectPageCheckbox').checked,true);assert.equal(h.nodes.get('#produceBtn').disabled,true);assert.equal(h.nodes.get('#deleteSelectedBtn').disabled,false);
- await h.nodes.get('#produceBtn').listeners.click();assert.equal(h.requests.length,0);
+ h.nodes.get('#selectPageBtn').listeners.click();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 20 条');assert.equal(h.nodes.get('#selectPageCheckbox').checked,true);assert.equal(h.nodes.get('#deleteSelectedBtn').disabled,false);
  const first=h.rows()[0];first.checked=false;h.nodes.get('#hitRows').listeners.change({target:first});assert.equal(h.nodes.get('#selectPageCheckbox').indeterminate,true);
  h.nodes.get('#selectPageCheckbox').listeners.change({target:{checked:false}});assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
  h.nodes.get('#selectPageBtn').listeners.click();h.setRows(['next-page']);h.events.get('peer-list-loaded')();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
@@ -96,16 +95,9 @@ test('batch delete confirms exact count, prevents duplicate clicks, retains sele
 });
 
 
-test('original recreation submits no rewrite option in either media tab',async()=>{
- assert.doesNotMatch(html,/rewriteCopy/);
- for(const mediaType of ['photo','video']){
-  const h=harness('psychology-peer-production.js');h.document.body.dataset.mediaType=mediaType;
-  h.setRows(['source-1']);h.events.get('peer-list-loaded')();h.nodes.get('#selectPageBtn').listeners.click();
-  h.respond(()=>({jobIds:['job-1']}));await h.nodes.get('#produceBtn').listeners.click();
-  assert.equal(h.requests.length,1);assert.equal(h.requests[0].body.mediaType,mediaType);
-  assert.equal(Object.hasOwn(h.requests[0].body,'rewriteCopy'),false);
-  assert.match(h.context.location.href,/psychology-publish-sources/);
- }
+test('original recreation is removed from the copy library',()=>{
+ assert.doesNotMatch(html,/rewriteCopy|produceBtn|原帖复刻/);
+ assert.doesNotMatch(read('psychology-peer-production.js'),/produceBtn|原帖复刻/);
 });
 
 

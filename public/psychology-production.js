@@ -87,7 +87,7 @@
       const counts=Object.fromEntries((data.counts||[]).map(item=>[item.status,item.count]));
       $('#boardCounts').innerHTML=['queued','running','done','failed'].map(s=>`<div class="board-count"><span>${labels[s]}</span><strong>${counts[s]||0}</strong></div>`).join('');
       if(!selected&&jobs.length)selected=jobs[0].jobId;
-      $('#boardQueue').innerHTML=jobs.length?jobs.map(job=>`<article class="queue-item-wrap"><button type="button" class="queue-item" data-job="${esc(job.jobId)}" aria-pressed="${selected===job.jobId}" title="${esc(job.title)}"><span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span><strong>${esc(job.title)}</strong><small>${esc(types[job.type]||job.type)}</small><small>${stamp(job.createdAt)}</small></button><button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除</button></article>`).join(''):'<p class="muted">没有手动复刻任务。在文案库勾选爆款后点「原帖复刻」生成；自动发布的内容在「自动发布」视图里逐条查看。</p>';
+      $('#boardQueue').innerHTML=jobs.length?jobs.map(job=>`<article class="queue-item-wrap"><button type="button" class="queue-item" data-job="${esc(job.jobId)}" aria-pressed="${selected===job.jobId}" title="${esc(job.title)}"><span class="board-badge ${esc(job.status)}">${esc(labels[job.status]||job.status)}</span><strong>${esc(job.title)}</strong><small>${esc(types[job.type]||job.type)}</small><small>${stamp(job.createdAt)}</small></button><button type="button" class="queue-delete" data-delete-job="${esc(job.jobId)}">删除</button></article>`).join(''):'<p class="muted">没有手动复刻任务。原帖复刻入口已下线，这里只保留历史任务；自动发布的内容在「自动发布」视图里逐条查看。</p>';
       let job=jobs.find(j=>j.jobId===selected);
       if(!job&&selected){
         try{job=(await api('?jobId='+encodeURIComponent(selected))).jobs[0];}

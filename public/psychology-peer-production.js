@@ -18,8 +18,6 @@
     $('#selectionCount').textContent = `已选 ${selected.size} 条`;
     const visible=[...document.querySelectorAll('.peer-select')];
     const canManage=!library||document.body.dataset.sourceAccess==='true';
-    $('#produceBtn').disabled = busy || !selected.size || selected.size>5 || visible.some(input=>selected.has(input.dataset.peerId)&&input.dataset.canProduce==='false');
-    $('#produceBtn').title=selected.size>5?'原帖复刻每次最多5条；批量删除可选择整页。':'';
     const selectPage=$('#selectPageCheckbox');
     if(selectPage){selectPage.disabled=busy||!canManage||!visible.length;selectPage.checked=visible.length>0&&visible.every(input=>selected.has(input.dataset.peerId));selectPage.indeterminate=selected.size>0&&!selectPage.checked;}
     if($('#selectPageBtn'))$('#selectPageBtn').disabled=busy||!canManage||!visible.length;
@@ -48,7 +46,7 @@
     requestId = '';
     const photo = event.detail?.mediaType === 'photo';
     notify(document.body.classList.contains('copy-library-page')
-      ? '原帖复刻每次最多选择5条，按原素材生成。使用已提取文案批量生成，请进入右上角的自动发布。'
+      ? '使用已提取文案批量生成，请进入右上角的自动发布。'
       : photo
       ? '每次最多选择 5 条；每条图文按原帖顺序处理，最多 6 张。封面尽量 1:1 对上原图，可以有情侣和人脸；详情固定用海景/云彩这类明亮空镜，每次生成自动换一批，越亮的图越先用。叠字保留空格、按词换行。不走 AI 生图。'
       : '每次最多选择 5 条；云端会自动解析视频、拆解分镜并生成图片和配音，按每条记录的音色性别使用默认男声或女声，原视频在分析结束后立即删除。');
@@ -115,34 +113,6 @@
     sync();
     document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
   });
-  $('#produceBtn').addEventListener('click', async () => {
-    if (busy || !selected.size || selected.size>5 || $('#produceBtn').disabled) return;
-    busy = true;
-    requestId ||= crypto.randomUUID();
-    sync();
-    notify('正在创建爆款复刻任务…');
-    try {
-      const data = await api(endpoint, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({
-          ids:[...selected],
-          mediaType:document.body.dataset.mediaType || 'video',
-          requestId
-        })
-      });
-      notify(`已创建 ${data.jobIds.length} 个云端复刻任务，可以关闭页面继续运行。`);
-      selected.clear();
-      requestId = '';
-      location.href = '/psychology-publish-sources?view=manual&job=' + encodeURIComponent(data.jobIds[0]);
-    } catch (error) {
-      notify(error.message, true);
-    } finally {
-      busy = false;
-      sync();
-    }
-  });
-
   async function refresh() {
     if (!$('#productionPanel')) return;
     if(document.body.classList.contains('copy-library-page')&&document.body.dataset.sourceAccess!=='true')return;

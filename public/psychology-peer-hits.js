@@ -47,7 +47,7 @@ async function loadList() {
     if(current.signal.aborted)return;
     if(integrated){
       const canManage=data.canManageSources===true;document.body.dataset.sourceAccess=String(canManage);
-      for(const id of ['apiPanel','manualPanel','produceBtn','moveSelectedBtn','clearSelectionBtn','selectPageBtn','selectPageCheckbox','deleteSelectedBtn','selectionCount','productionStatus','productionPanel'])if($('#'+id))$('#'+id).hidden=!canManage;
+      for(const id of ['apiPanel','manualPanel','moveSelectedBtn','clearSelectionBtn','selectPageBtn','selectPageCheckbox','deleteSelectedBtn','selectionCount','productionStatus','productionPanel'])if($('#'+id))$('#'+id).hidden=!canManage;
       if(canManage&&!state.keyLoaded){state.keyLoaded=true;loadKey();}
       document.dispatchEvent(new CustomEvent('library-source-access',{detail:{canManage}}));
       const rows=data.items;data={...data,totalPages:data.pages,pageSize:20,items:rows.map(row=>({...row.peer,id:row.id,mediaType:row.media_type,title:row.title,videoUrl:row.source_url,createdAt:row.created_at,library:row}))};

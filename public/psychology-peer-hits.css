@@ -58,7 +58,6 @@ body.module-page.psy-hits-page { min-width: 0; }
 .hits-actions-cell { width: 72px; min-width: 72px; }
 .hits-actions-cell button { width: 100%; padding: 7px 8px !important; white-space: nowrap; }
 #moveSelectedBtn { background: #f2f5d6; border-color: #bac56f; color: #46530d; }
-#produceBtn { background: var(--lf-accent-fill, #dce59d); font-weight: 700; }
 .hits-rewrite { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; color: inherit; }
 .hits-rewrite[hidden] { display: none; }
 .hits-rewrite input { width: 16px; height: 16px; margin: 0; }
