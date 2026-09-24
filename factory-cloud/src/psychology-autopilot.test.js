@@ -330,3 +330,28 @@ test('staggered midnight groups pair by Beijing date and daily round', () => {
   assert.notEqual(pilotPairSeed(first,at('2026-09-26','00:15')),pilotPairSeed(first,at('2026-09-26','00:45')));
   assert.notEqual(pilotPairSeed(first,at('2026-09-26','00:15')),pilotPairSeed(first,at('2026-09-27','00:15')));
 });
+
+
+test('explicit immediate start includes first-day slots above ten minutes, while later days retain two hours',()=>{
+  const pilot={start_now:1,created_at:at('2026-09-25','01:20'),ends_at:at('2026-10-02','01:20'),slots_json:JSON.stringify([{hour:1,minute:25},{hour:1,minute:30},{hour:1,minute:45},{hour:2,minute:15}])};
+  const immediate=dueSlots(pilot,pilot.created_at);
+  assert.ok(immediate.includes(at('2026-09-25','01:45')));assert.ok(immediate.includes(at('2026-09-25','02:15')));
+  assert.ok(!immediate.includes(at('2026-09-25','01:25')));assert.ok(!immediate.includes(at('2026-09-25','01:30')));
+  assert.ok(!dueSlots({...pilot,start_now:0},pilot.created_at).includes(at('2026-09-25','01:45')));
+  assert.ok(!dueSlots(pilot,at('2026-09-26','01:20')).includes(at('2026-09-26','01:45')));
+});
+
+test('short-notice creation persists its choice, generates now and reserves the requested first round exactly once',async t=>{
+  const f=await pilotFixture(t),now=at('2026-09-25','01:20');t.mock.method(Date,'now',()=>now);
+  const slots=[{hour:1,minute:45},{hour:2,minute:15}];
+  await assert.rejects(f.api('POST','',{groupId:'g',strategy:'original',days:7,slots,startNow:'true'}),/立即准备/);
+  const created=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7,slots,startNow:true})).json();
+  assert.deepEqual(created.run.errors,[]);
+  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(created.id);assert.equal(pilot.start_now,1);
+  const first=f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').get(pilot.id,at('2026-09-25','01:45'));assert.equal(first.status,'created');
+  const jobs=f.sqlite.prepare('SELECT payload_json,available_at FROM factory_jobs WHERE id IN (SELECT job_id FROM psychology_publish_items WHERE batch_id=?)').all(first.batch_id);
+  assert.equal(jobs.length,2);assert.ok(jobs.every(j=>j.available_at===now&&JSON.parse(j.payload_json).psychologyAutomation.generateAt===now));
+  const later=f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').get(pilot.id,at('2026-09-26','01:45'));assert.equal(later.status,'created');
+  const before=f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n;
+  await runAutopilot(f.env,pilot,now+60000);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n,before);
+});

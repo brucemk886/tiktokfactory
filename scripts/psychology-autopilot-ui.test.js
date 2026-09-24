@@ -109,3 +109,10 @@ test('duplicate times and cross-day stagger do not create any groups or partiall
  h.run("groupSchedules.set('g0',['08:00','08:00'])");await submit(h);assert.match(h.node('#createStatus').textContent,/重复/);assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
  h.run("defaultTimes=['23:40']");h.node('#groupOffset').value='30';h.node('#staggerGroups').onclick();assert.match(h.node('#createStatus').textContent,/超过当天/);assert.equal(h.run("groupSchedules.get('g0').join()"),'08:00,08:00');
 });
+
+
+test('immediate first-day preparation is explicit and frozen across group creation',async()=>{
+ const bodies=[];const h=harness({pilots:[],groups:batchGroups},async body=>{bodies.push(body);h.node('#startNow').checked=false;return {id:body.groupId,run:{batches:[1],errors:[]}};});await tick();settings(h);
+ h.node('#startNow').checked=true;h.node('#selectAllGroups').onclick();await submit(h);
+ assert.equal(bodies.length,9);assert.ok(bodies.every(b=>b.startNow===true));
+});

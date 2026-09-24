@@ -19,7 +19,7 @@ const DAY = 86400000, HOUR = 3600000;
 export const AUTOPILOT = Object.freeze({
   // Beijing times, roughly US morning, lunch and evening.
   slots: [{ hour: 8, minute: 0 }, { hour: 12, minute: 0 }, { hour: 21, minute: 0 }],
-  leadMs: 2 * HOUR, horizonMs: 26 * HOUR, staggerSeconds: 45, maxAccountsPerBatch: 50,
+  leadMs: 2 * HOUR, immediateLeadMs: 10 * 60000, horizonMs: 26 * HOUR, staggerSeconds: 45, maxAccountsPerBatch: 50,
   lowViews: 200, lowPosts: 5, failStreak: 3, maxDailyPosts: 10,
 });
 export const STRATEGIES = { evolve: 'A · 优胜放量', original: 'B · 原版测试', rewrite: 'C · 改写测试' };
@@ -81,7 +81,8 @@ export function dueSlots(pilot, now, slots = JSON.parse(pilot.slots_json)) {
     const daySlots = pilot.slots_effective_at && Date.parse(date+'T00:00:00+08:00')>=pilot.slots_effective_at ? JSON.parse(pilot.pending_slots_json) : slots;
     for (const s of daySlots) {
       const t = Date.parse(`${date}T${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}:00+08:00`);
-      if (t > now + AUTOPILOT.leadMs && t <= now + AUTOPILOT.horizonMs && t < pilot.ends_at && t >= pilot.created_at) out.push(t);
+      const lead = pilot.start_now && beijingDate(t)===beijingDate(pilot.created_at) ? AUTOPILOT.immediateLeadMs : AUTOPILOT.leadMs;
+      if (t > now + lead && t <= now + AUTOPILOT.horizonMs && t < pilot.ends_at && t >= pilot.created_at) out.push(t);
     }
   }
   return [...new Set(out)].sort((a, b) => a - b);
@@ -282,6 +283,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots);
+    if(body.startNow !== undefined && typeof body.startNow !== 'boolean')fail('立即准备选项无效。');
     if (!Object.hasOwn(STRATEGIES, body.strategy)) fail('请选择运营策略。');
     if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
     const group = (await autopilotDirectory(env, user, true)).groups.find(g => g.id === body.groupId);
@@ -290,9 +292,9 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     validateDayEnd(slots, group.accounts);
     if (await db.prepare("SELECT 1 FROM psychology_autopilots WHERE group_id=? AND status<>'ended'").bind(group.id).first()) fail('这个分组已经在自动运营中。', 409);
     const now = Date.now(), id = 'pilot-' + crypto.randomUUID();
-    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,?,'active',?,?,?)`)
-      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(slots), now + days * DAY, now, now).run();
-    await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}；每条提前 2 小时开始生成。`, {}, now);
+    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now) VALUES(?,?,?,?,?,?,'active',?,?,?,?)`)
+      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(slots), now + days * DAY, now, now, Number(body.startNow===true)).run();
+    await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}；${body.startNow?'首日不足 2 小时、距离发布超过 10 分钟的时段立即准备，其他时段提前 2 小时生成':'每条提前 2 小时开始生成'}。`, {}, now);
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
   }

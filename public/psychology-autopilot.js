@@ -87,7 +87,7 @@ function updateCreateControls() {
   $('#groupSelectionCount').textContent = `已选 ${count} 个分组 · ${availableGroups().filter(g=>selectedGroups.has(g.id)).reduce((sum,g)=>sum+g.accounts,0)} 个账号`;
   $('#createButton').textContent = creating ? '正在批量启动…' : `启动所选 ${count} 个分组`;
   $('#createButton').disabled = creating || loading || !count;
-  for (const id of ['selectAllGroups','clearGroups','strategy','days','refreshGroups','defaultDailyCount','groupOffset','applySchedule','staggerGroups']) $('#'+id).disabled = creating || loading;
+  for (const id of ['selectAllGroups','clearGroups','strategy','days','startNow','refreshGroups','defaultDailyCount','groupOffset','applySchedule','staggerGroups']) $('#'+id).disabled = creating || loading;
   for(const input of document.querySelectorAll('#groupSchedules input, #defaultTimes input'))input.disabled=creating;
   for (const input of document.querySelectorAll('[data-create-group]')) input.disabled = creating || !availableGroups().some(g=>g.id===input.value);
 }
@@ -191,7 +191,7 @@ $('#createForm').addEventListener('submit',async event=>{
   event.preventDefault();
   if (creating || loading) return;
   const groups = availableGroups().filter(g=>selectedGroups.has(g.id));
-  const strategy = $('#strategy').value, days = Number($('#days').value);
+  const strategy = $('#strategy').value, days = Number($('#days').value), startNow = $('#startNow').checked === true;
   if (!groups.length) { $('#createStatus').textContent='请至少选择一个可用分组。'; return; }
   if (!data.strategies[strategy] || !Number.isInteger(days) || days<1 || days>30) { $('#createStatus').textContent='请选择策略，并填写 1–30 天。'; return; }
   let configs;try{configs=new Map(groups.map(g=>[g.id,slotsFromTimes(groupSchedules.get(g.id)||defaultTimes,g.accounts)]));}catch(e){$('#createStatus').textContent=e.message;return;}
@@ -203,7 +203,7 @@ $('#createForm').addEventListener('submit',async event=>{
     for (const [index,group] of groups.entries()) {
       $('#createStatus').textContent=`正在启动 ${index+1}/${groups.length}：${group.name}，请保持页面打开…`;
       try {
-        const r=await api('','POST',{groupId:group.id,strategy,days,slots:configs.get(group.id)});
+        const r=await api('','POST',{groupId:group.id,strategy,days,startNow,slots:configs.get(group.id)});
         succeeded++; createdGroups.add(group.id); selectedGroups.delete(group.id);
         const errors=r.run?.errors || []; if(errors.length)warnings++;
         results.push({name:group.name,error:errors.length>0,message:`已创建，新增 ${r.run?.batches?.length || 0} 个批次${errors.length?'；排期需处理：'+errors.join('；'):''}`});

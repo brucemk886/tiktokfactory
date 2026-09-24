@@ -1,6 +1,8 @@
 # Current State
 
-- Autopilot new batches use balanced-v1: A tests originals/rewrites together then 70/30 proven/exploration; B originals only; C rewrites only. Shared live occupancy caps unjudged versions at three samples and two active rewrite variants/source; confirmed failures release samples, ambiguous results retain them. Owner revision allocation (0058) commits with batches. Staggered groups pair by Beijing date/daily round. Existing manual library draws remain legacy. No test pilots started; see docs/handoffs/2026-09-25-autopilot-balanced-testing.md.
+- Autopilot creation can explicitly opt into immediate first-day preparation (0059 start_now). That Beijing day accepts slots >10 minutes ahead; later days/default mode keep the two-hour lead. Generation timestamps remain max(now, publication minus two hours). See docs/handoffs/2026-09-25-autopilot-immediate-start.md.
+
+- Autopilot new batches use balanced-v1: A tests originals/rewrites together then 70/30 proven/exploration; B originals only; C rewrites only. Shared live occupancy caps unjudged versions at three samples and two active rewrite variants/source; confirmed failures release samples, ambiguous results retain them. Owner revision allocation (0058) commits with batches. Staggered groups pair by Beijing date/daily round. Existing manual library draws remain legacy. Test startup is now user-authorized (see immediate-start handoff); see docs/handoffs/2026-09-25-autopilot-balanced-testing.md.
 
 - Autopilot supports 1–10 daily posts/account with per-group Beijing times, shared defaults and explicit group offsets. Existing pilots expose schedule editing with a future whole-day effective boundary after reserved slots (0057). New autopilot photo preparation sleeps durably until two hours before each post; account staggering continues across batch chunks. Existing jobs remain frozen. See docs/handoffs/2026-09-25-autopilot-schedule.md.
 
