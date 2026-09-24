@@ -30,9 +30,9 @@ test('planning-only pause does not request cancellation, and account pause remai
  await h.run("openPause('pilot-test','account/a')");await h.node('#confirmPause').onclick();const last=h.requests.filter(r=>r.method==='PATCH').at(-1);assert.match(last.path,/accounts\/account%2Fa$/);assert.equal(last.body.stopPending,true);
 });
 
-test('initial visit, explicit refresh and opening creation refresh all groups; quiet polling reads cache',async()=>{
- const h=harness();await tick();assert.match(h.requests[0].path,/refreshGroups=1/);
- await h.node('#reload').onclick();assert.match(h.requests.at(-1).path,/refreshGroups=1/);
+test('initial visit and status refresh read cache; opening creation and group refresh revalidate directory',async()=>{
+ const h=harness();await tick();assert.equal(h.requests[0].path,'/api/psychology-autopilot');
+ await h.node('#reload').onclick();assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot');
  h.poll();await tick();assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot');
  h.node('#openCreate').onclick();await tick();assert.equal(h.node('#createDialog').open,true);assert.match(h.requests.at(-1).path,/refreshGroups=1/);
  await h.node('#refreshGroups').onclick();assert.match(h.requests.at(-1).path,/refreshGroups=1/);

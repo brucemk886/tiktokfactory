@@ -355,3 +355,31 @@ test('short-notice creation persists its choice, generates now and reserves the 
   const before=f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n;
   await runAutopilot(f.env,pilot,now+60000);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n,before);
 });
+
+test('batched overview preserves owner, overlapping slot and per-pilot history boundaries',async t=>{
+ const f=await pilotFixture(t),now=Date.now(),slot=Math.floor(now/1000)*1000;
+ for(let n=0;n<3;n++){
+  const id='pilot-'+crypto.randomUUID(),owner=n===2?'other-owner':'admin';
+  f.sqlite.prepare("INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,'[]','paused',?,?,?)").run(id,owner,'group-'+n,'group-'+n,'original',now+DAY,now,now);
+  // Valid configured times, same execution slot in all three pilots.
+  f.sqlite.prepare('UPDATE psychology_autopilots SET slots_json=? WHERE id=?').run(JSON.stringify([{hour:8,minute:0}]),id);
+  f.sqlite.prepare('INSERT INTO psychology_publish_batches VALUES(?,?,?,?)').run('batch-'+n,owner,'{}',now);
+  for(let j=0;j<13;j++)f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES(?,?,'created',?,?)").run(id,slot-j*DAY,j===0?'batch-'+n:'',now);
+  for(let j=0;j<65;j++)f.sqlite.prepare("INSERT INTO psychology_autopilot_log(autopilot_id,kind,message,created_at) VALUES(?,'status',?,?)").run(id,'group-'+n+' log '+j,now+j);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_log(autopilot_id,kind,message,detail_json,created_at) VALUES(?,'daily',?,'{}',?)").run(id,'daily-'+n,now-1);
+  for(let j=0;j<=n;j++){
+   const item='item-'+n+'-'+j;
+   f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES(?,?,?,?,?,?)').run(item,'batch-'+n,'source',item,'a',slot/1000);
+   await mergeAndStorePublishRecords(f.db,[{id:'record-'+item,autoTaskId:item,autoBatchId:'batch-'+n,batchId:'remote',status:n===0?'published':'failed',createdAt:now,updatedAt:now}]);
+  }
+ }
+ await f.api('GET'); // Warm the independent directory snapshot before counting list queries.
+ let rounds=0;const batch=f.db.batch.bind(f.db);f.db.batch=async statements=>{rounds++;return batch(statements);};
+ const result=await (await f.api('GET')).json();
+ assert.equal(rounds,2);assert.equal(result.pilots.length,2);
+ for(const p of result.pilots){assert.equal(p.schedule.length,12);assert.equal(p.logs.length,60);assert.equal(p.latest.message,'daily-'+p.groupName.slice(-1));assert.ok(p.logs.every(l=>l.message.startsWith(p.groupName)));}
+ const a=result.pilots.find(p=>p.groupName==='group-0'),b=result.pilots.find(p=>p.groupName==='group-1');
+ assert.equal(a.today.planned,1);assert.equal(a.today.published,1);assert.equal(a.today.failed,0);
+ assert.equal(b.today.planned,2);assert.equal(b.today.failed,2);assert.equal(b.today.published,0);
+ assert.equal(f.requests.length,0);
+});

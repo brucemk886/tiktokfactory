@@ -48,9 +48,14 @@ export async function slotExecution(db, slots, labels = new Map()) {
   if (!batchSlots.size) return [];
   const ids = JSON.stringify([...batchSlots.keys()]);
   const [rows, groups, stored] = await db.batch([
-    db.prepare(`SELECT i.*,c.variant_id,c.copy_json,j.status,j.type,j.title,j.error,j.result_json,j.available_at,j.auto_retry_count FROM psychology_publish_items i
+    db.prepare(`SELECT i.id,i.batch_id,i.connection_id,i.schedule_at,i.source_id,i.deleted_at,i.publish_group_id,
+      i.execution_status,i.execution_type,i.execution_error,
+      json_object('batchId',json_extract(i.receipt_json,'$.batchId')) receipt_json,
+      CASE WHEN i.ready_json='{}' THEN '{}' ELSE json_object('title',json_extract(i.ready_json,'$.title')) END ready_json,
+      c.variant_id,json_object('title',json_extract(c.copy_json,'$.title')) copy_json,
+      j.status,j.type,j.title,j.error,json_object('publishFailed',json_extract(j.result_json,'$.publishFailed')) result_json,j.available_at,j.auto_retry_count FROM psychology_publish_items i
       LEFT JOIN factory_jobs j ON j.id=i.job_id LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id WHERE i.batch_id IN (SELECT value FROM json_each(?)) ORDER BY i.schedule_at,i.id`).bind(ids),
-    db.prepare(`SELECT g.*,j.status retry_status,j.available_at retry_at FROM psychology_publish_groups g
+    db.prepare(`SELECT g.id,g.status,g.error,j.status retry_status,j.available_at retry_at FROM psychology_publish_groups g
       LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id IN (SELECT value FROM json_each(?))`).bind(ids),
     db.prepare(`SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN
       (SELECT id FROM psychology_publish_items WHERE batch_id IN (SELECT value FROM json_each(?))) ORDER BY COALESCE(json_extract(value_json,'$.updatedAt'),0)`).bind(ids),

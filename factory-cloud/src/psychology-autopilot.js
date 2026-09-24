@@ -260,15 +260,24 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     const [pilots, directory] = await Promise.all([db.prepare('SELECT * FROM psychology_autopilots WHERE owner=? ORDER BY created_at DESC LIMIT 20').bind(user.username).all(), autopilotDirectory(env, user, url.searchParams.get('refreshGroups') === '1')]);
     const groups = directory.groups;
     const labels = new Map([...accountsFromLatestArchive(await listLatestArchiveAccounts(db)), ...directory.accounts].map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
+    const pilotIds = JSON.stringify(pilots.results.map(p => p.id));
+    // One round trip for all pilots; per-pilot windows preserve list limits.
+    const [accountRows, slotRows, logRows, dailyRows] = await db.batch([
+      db.prepare('SELECT * FROM psychology_autopilot_accounts WHERE autopilot_id IN (SELECT value FROM json_each(?)) ORDER BY status DESC,connection_id').bind(pilotIds),
+      db.prepare(`SELECT * FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY slot_at DESC) rn FROM psychology_autopilot_slots WHERE autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn<=12 ORDER BY autopilot_id,slot_at DESC`).bind(pilotIds),
+      db.prepare(`SELECT * FROM (SELECT autopilot_id,kind,message,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn<=60 ORDER BY autopilot_id,rn`).bind(pilotIds),
+      db.prepare(`SELECT * FROM (SELECT autopilot_id,message,detail_json,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE kind='daily' AND autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn=1`).bind(pilotIds),
+    ]);
+    const allItems = await slotExecution(db, slotRows.results, labels);
     const out = [];
     for (const p of pilots.results) {
-      const [accounts, slots, logs, daily] = await Promise.all([
-        db.prepare('SELECT connection_id,status,reason,updated_at,stop_pending FROM psychology_autopilot_accounts WHERE autopilot_id=? ORDER BY status DESC,connection_id').bind(p.id).all(),
-        db.prepare('SELECT slot_at,status,batch_id,detail FROM psychology_autopilot_slots WHERE autopilot_id=? ORDER BY slot_at DESC LIMIT 12').bind(p.id).all(),
-        db.prepare('SELECT kind,message,detail_json,created_at FROM psychology_autopilot_log WHERE autopilot_id=? ORDER BY created_at DESC,id DESC LIMIT 60').bind(p.id).all(),
-        db.prepare("SELECT * FROM psychology_autopilot_log WHERE autopilot_id=? AND kind='daily' ORDER BY created_at DESC,id DESC LIMIT 1").bind(p.id).first(),
-      ]);
-      const items = await slotExecution(db, slots.results, labels);
+      const accounts = {results:accountRows.results.filter(a => a.autopilot_id===p.id)};
+      const slots = {results:slotRows.results.filter(s => s.autopilot_id===p.id)};
+      const logs = {results:logRows.results.filter(l => l.autopilot_id===p.id)};
+      const daily = dailyRows.results.find(l => l.autopilot_id===p.id);
+      // Times overlap between groups; ownership must be matched by batch ID.
+      const batchIds = new Set(slots.results.flatMap(s => String(s.batch_id||'').split(',').filter(Boolean)));
+      const items = allItems.filter(i => batchIds.has(i.batchId));
       const dayStart = Date.parse(beijingDate(Date.now()) + 'T00:00:00+08:00');
       const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));

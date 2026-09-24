@@ -234,6 +234,6 @@ $('#scheduleForm').addEventListener('submit',async e=>{
   catch(err){$('#scheduleStatus').textContent=err.message;}
   finally{savingSchedule=false;$('#saveSchedule').disabled=false;for(const input of document.querySelectorAll('#scheduleForm input'))input.disabled=false;}
 });
-$('#reload').onclick=()=>load(false,true);
+$('#reload').onclick=()=>load();
 setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load(true);},30000);
-load(false,true);
+load();
