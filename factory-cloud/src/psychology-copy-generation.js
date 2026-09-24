@@ -7,7 +7,8 @@ export function jsonBody(text){const value=String(text??'').trim(),start=value.i
 // Models the copy library may use for AI rewrites. Replicate models are billed
 // per token on the Replicate account; DeepSeek uses the existing key.
 export const COPY_MODELS=Object.freeze({
- 'claude-sonnet-5':{label:'Claude Sonnet 5',provider:'replicate',model:'anthropic/claude-sonnet-5'},
+ // effort 'low' turns thinking off on Sonnet 5; thinking tokens bill as output.
+ 'claude-sonnet-5':{label:'Claude Sonnet 5',provider:'replicate',model:'anthropic/claude-sonnet-5',effort:'low'},
  'claude-opus-4.7':{label:'Claude Opus 4.7',provider:'replicate',model:'anthropic/claude-opus-4.7'},
  'claude-haiku-4.5':{label:'Claude Haiku 4.5',provider:'replicate',model:'anthropic/claude-4.5-haiku'},
  [DEEPSEEK_PHOTO_MODEL]:{label:'DeepSeek Flash',provider:'deepseek'},
@@ -19,7 +20,7 @@ export function copyModel(id){
 }
 async function callModel(env,model,prompt,maxTokens){
  if(model.provider==='replicate'){
-  try{return await replicateText(env,{model:model.model,prompt,maxTokens});}
+  try{return await replicateText(env,{model:model.model,prompt,maxTokens,effort:model.effort});}
   catch(error){if(error.statusCode===503)throw error;fail('AI 生成暂时失败，请稍后重试：'+error.message);}
  }
  if(!env.DEEPSEEK_API_KEY)fail('AI 文案生成服务尚未配置。',503);

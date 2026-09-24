@@ -19,11 +19,18 @@ test('Replicate client waits, polls until done, joins streamed output and report
   assert.equal(calls[0].url, 'https://api.replicate.com/v1/models/anthropic/claude-sonnet-5/predictions');
   assert.equal(calls[0].init.headers.Authorization, 'Bearer r8_test');
   assert.equal(calls[0].init.headers.Prefer, 'wait=60');
-  assert.deepEqual(JSON.parse(calls[0].init.body).input, { prompt: 'hi', system_prompt: '', max_tokens: 1024, effort: 'low' });
+  assert.deepEqual(JSON.parse(calls[0].init.body).input, { prompt: 'hi', system_prompt: '', max_tokens: 1024 });
   assert.equal(calls.length, 3);
   await assert.rejects(replicateText({}, { model: 'm', prompt: 'x' }), e => e.statusCode === 503 && /REPLICATE_API_TOKEN/.test(e.message));
   await assert.rejects(replicateText({ REPLICATE_API_TOKEN: 't', fetch: async () => Response.json({ status: 'failed', error: 'bad input' }) }, { model: 'm', prompt: 'x' }), /bad input/);
   await assert.rejects(replicateText({ REPLICATE_API_TOKEN: 't', fetch: async () => Response.json({ detail: 'Unauthenticated' }, { status: 401 }) }, { model: 'm', prompt: 'x' }), /401.*Unauthenticated/);
+  let throttled = 0;
+  const waits = [];
+  const busy = { REPLICATE_API_TOKEN: 't', fetch: async (url, init = {}) => init.method === 'POST' && throttled++ < 2
+    ? new Response('{"detail":"Request was throttled"}', { status: 429, headers: { 'retry-after': '9' } })
+    : Response.json({ status: 'succeeded', output: ['ok'] }) };
+  assert.equal(await replicateText(busy, { model: 'm', prompt: 'x' }, { sleep: async ms => { waits.push(ms); } }), 'ok');
+  assert.deepEqual(waits, [9000, 9000]);
   let clock = 0;
   await assert.rejects(replicateText({ REPLICATE_API_TOKEN: 't', fetch: async () => Response.json({ status: 'starting', urls: { get: 'g' } }) }, { model: 'm', prompt: 'x' }, { sleep: async () => { clock += 60000; }, now: () => clock }), e => e.statusCode === 504);
 });
@@ -45,6 +52,7 @@ test('single AI draft uses the chosen Replicate model and rejects unknown models
   assert.equal(data.draft.title, version(1).title);
   assert.equal(f.prompts[0].url, 'https://api.replicate.com/v1/models/anthropic/claude-sonnet-5/predictions');
   assert.match(f.prompts[0].body.input.prompt, /Create ONE fresh/);
+  assert.equal(f.prompts[0].body.input.effort, 'low');
   assert.match(f.prompts[0].body.input.prompt, /stored original/);
   await assert.rejects(api(f, '/copies/generate?sourceId=' + f.row.id + '&model=gpt-9'), /不支持这个模型/);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n, 0);
@@ -56,6 +64,7 @@ test('batch AI rewrite saves passing versions enabled under the source and skips
   const data = await (await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-opus-4.7&count=5')).json();
   assert.equal(f.prompts[0].url, 'https://api.replicate.com/v1/models/anthropic/claude-opus-4.7/predictions');
   assert.match(f.prompts[0].body.input.prompt, /Create 5 distinct/);
+  assert.equal('effort' in f.prompts[0].body.input, false);
   assert.equal(data.created, 3);
   assert.equal(data.skipped.length, 2);
   assert.ok(data.skipped.some(s => /照抄了原文/.test(s)));

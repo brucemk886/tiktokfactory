@@ -3,7 +3,8 @@
 const API = 'https://api.replicate.com/v1';
 const fail = (message, statusCode = 502) => { throw Object.assign(new Error(message), { statusCode }); };
 
-export async function replicateText(env, { model, prompt, systemPrompt = '', maxTokens = 4096, effort = 'low' },
+// effort is only sent when given: only some models (e.g. Sonnet 5) accept it.
+export async function replicateText(env, { model, prompt, systemPrompt = '', maxTokens = 4096, effort },
   { fetchImpl = env.fetch || fetch, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), budgetMs = 120000, now = () => Date.now() } = {}) {
   const token = String(env.REPLICATE_API_TOKEN || '').trim();
   if (!token) fail('Replicate 密钥（REPLICATE_API_TOKEN）尚未配置。', 503);
@@ -15,11 +16,19 @@ export async function replicateText(env, { model, prompt, systemPrompt = '', max
     if (!response.ok) fail('Replicate 请求失败（' + response.status + '）：' + String(data.detail || data.title || data.error || '').slice(0, 200));
     return data;
   };
-  let prediction = await read(await fetchImpl(`${API}/models/${model}/predictions`, {
+  const create = () => fetchImpl(`${API}/models/${model}/predictions`, {
     method: 'POST', headers: { ...headers, Prefer: 'wait=60' },
     // Replicate's Claude models refuse max_tokens below 1024.
-    body: JSON.stringify({ input: { prompt, system_prompt: systemPrompt, max_tokens: Math.max(1024, maxTokens), effort } }),
-  }));
+    body: JSON.stringify({ input: { prompt, system_prompt: systemPrompt, max_tokens: Math.max(1024, maxTokens), ...(effort ? { effort } : {}) } }),
+  });
+  // Accounts under $5 credit are throttled to about 6 creates a minute; wait out 429s within the budget.
+  let response = await create();
+  while (response.status === 429 && now() - started < budgetMs) {
+    const retryAfter = Number(response.headers.get('retry-after')) || 10;
+    await sleep(Math.min(30, Math.max(1, retryAfter)) * 1000);
+    response = await create();
+  }
+  let prediction = await read(response);
   while (['starting', 'processing'].includes(prediction.status)) {
     if (now() - started > budgetMs || !prediction.urls?.get) fail('Replicate 生成超时，请稍后重试。', 504);
     await sleep(1500);
