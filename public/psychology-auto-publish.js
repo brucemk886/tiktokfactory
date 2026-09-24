@@ -18,7 +18,7 @@ function renderTemplates() {
   $('#sourceHint').textContent=`选题来源：同行${state.mediaType==='photo'?'图文':'视频'}爆款库，共 ${state.counts[state.mediaType]||0} 条。每条爆款生成一条新内容。`;
   renderSources();
   const extras=$('#photoOptions');
-  if(extras){extras.hidden=state.mediaType!=='photo';extras.open=!extras.hidden;}
+  if(extras){extras.hidden=state.mediaType!=='photo';extras.open=false;}
 }
 
 function sourceType(){return (state.mediaType==='photo'?$('#photoSource').value:$('#sourceType').value)||'peer';}
@@ -276,7 +276,7 @@ function renderSelectedBatch(){
 function detailTab(items){$('#batchDetailBody').hidden=items;$('#batchDetailItems').hidden=!items;$('#detailOverviewTab').setAttribute('aria-selected',String(!items));$('#detailItemsTab').setAttribute('aria-selected',String(items));$('#detailOverviewTab').tabIndex=items?-1:0;$('#detailItemsTab').tabIndex=items?0:-1;}
 $('#detailOverviewTab').addEventListener('click',()=>detailTab(false));$('#detailItemsTab').addEventListener('click',()=>detailTab(true));
 for(const id of ['detailOverviewTab','detailItemsTab'])$('#'+id).addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const items=e.key==='End'||(e.key!=='Home'&&id==='detailOverviewTab');detailTab(items);$('#'+(items?'detailItemsTab':'detailOverviewTab')).focus();}});
-$('#newBatch').addEventListener('click',()=>{$('#createBatchDialog').showModal();$('#batchName').focus();});
+$('#newBatch').addEventListener('click',()=>{$('#photoOptions').open=false;$('#createBatchDialog').showModal();$('#batchName').focus();});
 $('#closeCreateBatch').addEventListener('click',()=>{if(!state.busy)$('#createBatchDialog').close();});
 $('#createBatchDialog').addEventListener('cancel',e=>{if(state.busy)e.preventDefault();});
 $('#closeBatchDetail').addEventListener('click',()=>$('#batchDetail').close());
