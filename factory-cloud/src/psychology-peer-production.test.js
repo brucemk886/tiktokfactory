@@ -798,3 +798,22 @@ test('copy lease expires safely, owner scope is isolated and corrupted entries a
   assert.equal(photoCopySnapshot(long,{topic:'Source',script:'Caption'},1).plan.scenes[0].originalText.length,1500);
   assert.throws(()=>parseCachedCopyRewrite(JSON.stringify({...storyPlan(1),scenes:[{...storyPlan(1).scenes[0],sourceIndex:2}]}),copy),/编号/);
 });
+
+test('autopilot workflow sleeps until its frozen generation time before any provider work',async t=>{
+ const f=cloudFixture(t), generateAt=Date.now()+3600000;
+ const row=f.sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE id='cloud-test'").get();
+ const payload={...JSON.parse(row.payload_json),psychologyAutomation:{generateAt}};
+ f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify(payload));
+ let slept=0;
+ f.step.sleepUntil=async(name,date)=>{slept++;assert.equal(name,'autopilot-generation-time');assert.equal(date.getTime(),generateAt);assert.equal(f.pexelsCalls(),0);assert.equal(f.submissions.length,0);assert.equal(f.sqlite.prepare("SELECT status FROM factory_jobs WHERE id='cloud-test'").get().status,'queued');};
+ await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+ assert.equal(slept,1);assert.equal(f.sqlite.prepare("SELECT status FROM factory_jobs WHERE id='cloud-test'").get().status,'done');
+});
+test('autopilot cancelled while sleeping does not resume generation or call a provider',async t=>{
+ const f=cloudFixture(t),generateAt=Date.now()+3600000;
+ const row=f.sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE id='cloud-test'").get();
+ f.sqlite.prepare("UPDATE factory_jobs SET payload_json=? WHERE id='cloud-test'").run(JSON.stringify({...JSON.parse(row.payload_json),psychologyAutomation:{generateAt}}));
+ f.step.sleepUntil=async()=>{f.sqlite.prepare("UPDATE factory_jobs SET status='cancelled' WHERE id='cloud-test'").run();};
+ const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);assert.equal(result.skipped,true);assert.equal(f.pexelsCalls(),0);assert.equal(f.submissions.length,0);
+ assert.equal(f.sqlite.prepare("SELECT status FROM factory_jobs WHERE id='cloud-test'").get().status,'cancelled');
+});

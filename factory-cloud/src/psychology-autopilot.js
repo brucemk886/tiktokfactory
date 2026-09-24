@@ -19,7 +19,7 @@ export const AUTOPILOT = Object.freeze({
   // Beijing times, roughly US morning, lunch and evening.
   slots: [{ hour: 8, minute: 0 }, { hour: 12, minute: 0 }, { hour: 21, minute: 0 }],
   leadMs: 2 * HOUR, horizonMs: 26 * HOUR, staggerSeconds: 45, maxAccountsPerBatch: 50,
-  lowViews: 200, lowPosts: 5, failStreak: 3,
+  lowViews: 200, lowPosts: 5, failStreak: 3, maxDailyPosts: 10,
 });
 export const STRATEGIES = { evolve: 'A · 按表现进化', original: 'B · 只发原版首发', rewrite: 'C · 改写版优先' };
 // Expose the same thresholds used by selection, so the creation UI cannot drift.
@@ -53,12 +53,29 @@ const beijingLabel = t => new Date(t + 8 * HOUR).toISOString().slice(5, 16).repl
 const connectionOf = account => String(account.connectionId || String(account.schema || '').replace(/^tiktok:/, ''));
 async function uuidFrom(text) { const h = await sha256Hex(text); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`; }
 
+export function normalizePilotSlots(slots = AUTOPILOT.slots) {
+  if (!Array.isArray(slots) || slots.length < 1 || slots.length > AUTOPILOT.maxDailyPosts) fail('每号每天应发布 1–10 条，每条设置一个发布时间。');
+  if (slots.some(s => !s || !Number.isInteger(s.hour) || s.hour<0 || s.hour>23 || !Number.isInteger(s.minute) || s.minute<0 || s.minute>59)) fail('发布时间应为有效的北京时间（00:00–23:59）。');
+  const normalized=slots.map(s=>({hour:s.hour,minute:s.minute})).sort((a,b)=>a.hour*60+a.minute-b.hour*60-b.minute);
+  if(new Set(normalized.map(s=>s.hour*60+s.minute)).size!==slots.length)fail('每天的发布时间不能重复。');
+  return normalized;
+}
+const slotLabel = slots => slots.map(s=>`${String(s.hour).padStart(2,'0')}:${String(s.minute).padStart(2,'0')}`).join(' / ');
+function validateDayEnd(slots, accounts) {
+  const last=slots.at(-1);
+  if((last.hour*60+last.minute)*60 + Math.max(0,accounts-1)*AUTOPILOT.staggerSeconds >= 86400)fail('最后一个发布时间过晚，组内账号错峰后会跨天，请提前该时段。');
+}
+export function pilotSlotsAt(pilot, now) {
+  return normalizePilotSlots(JSON.parse(pilot.slots_effective_at && now>=pilot.slots_effective_at ? pilot.pending_slots_json : pilot.slots_json));
+}
+
 // Slot times (ms) inside (now+lead, now+horizon], within the pilot's lifetime.
 export function dueSlots(pilot, now, slots = JSON.parse(pilot.slots_json)) {
   const out = [];
   for (let d = 0; d < 3; d++) {
     const date = beijingDate(now + d * DAY);
-    for (const s of slots) {
+    const daySlots = pilot.slots_effective_at && Date.parse(date+'T00:00:00+08:00')>=pilot.slots_effective_at ? JSON.parse(pilot.pending_slots_json) : slots;
+    for (const s of daySlots) {
       const t = Date.parse(`${date}T${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}:00+08:00`);
       if (t > now + AUTOPILOT.leadMs && t <= now + AUTOPILOT.horizonMs && t < pilot.ends_at && t >= pilot.created_at) out.push(t);
     }
@@ -179,10 +196,11 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   const active = ids.filter(id => states.get(id) === 'active');
   const musicIds = (await kvGet(db, 'psychology-auto-music-pool', [])).filter(id => /^\d{1,30}$/.test(String(id))).slice(0, 100);
   for (const slot of dueSlots(pilot, now)) {
-    const current = await db.prepare('SELECT status FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
+    const current = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
     if (current?.status !== 'active') break;
-    const claim = await db.prepare(`INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)
-      ON CONFLICT(autopilot_id,slot_at) DO UPDATE SET status='creating',detail='',updated_at=excluded.updated_at WHERE status='failed'`).bind(pilot.id, slot, now).run();
+    if(!dueSlots(current,now).includes(slot))continue;
+    const claim = await db.prepare(`INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) SELECT ?,?,'creating',? FROM psychology_autopilots WHERE id=? AND status='active' AND updated_at=?
+      ON CONFLICT(autopilot_id,slot_at) DO UPDATE SET status='creating',detail='',updated_at=excluded.updated_at WHERE status='failed'`).bind(pilot.id, slot, now, pilot.id, current.updated_at).run();
     if (!claim.meta?.changes) continue;
     if (!active.length) {
       await db.prepare("UPDATE psychology_autopilot_slots SET status='skipped',detail='没有可发布的账号' WHERE autopilot_id=? AND slot_at=?").bind(pilot.id, slot).run();
@@ -194,10 +212,10 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
       const body = { requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${beijingLabel(slot)}`,
         // Every group of this owner at this slot shares one post order.
         mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: pilot.strategy, pairSeed: pilot.owner + ':' + slot, count: connectionIds.length, connectionIds,
-        scheduleAt: Math.floor(slot / 1000), intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
+        scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user });
+          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:AUTOPILOT.leadMs });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');
         batchIds.push(data.batchId);
@@ -251,7 +269,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
       out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at,
         today, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
-        slots: JSON.parse(p.slots_json), accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, stopPending:Boolean(a.stop_pending) })),
+        slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, stopPending:Boolean(a.stop_pending) })),
         schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
@@ -259,25 +277,45 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     return json({ pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
-    const body = await readJson(request), days = Number(body.days || 7);
+    const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots);
     if (!Object.hasOwn(STRATEGIES, body.strategy)) fail('请选择运营策略。');
     if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
     const group = (await autopilotDirectory(env, user, true)).groups.find(g => g.id === body.groupId);
     if (!group) fail('没有这个心理学分组的权限。', 403);
     if (!group.accounts) fail('这个分组里还没有已授权且有发布权限的账号，请检查分组成员和账号授权。');
+    validateDayEnd(slots, group.accounts);
     if (await db.prepare("SELECT 1 FROM psychology_autopilots WHERE group_id=? AND status<>'ended'").bind(group.id).first()) fail('这个分组已经在自动运营中。', 409);
     const now = Date.now(), id = 'pilot-' + crypto.randomUUID();
     await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,?,'active',?,?,?)`)
-      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(AUTOPILOT.slots), now + days * DAY, now, now).run();
-    await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每天北京时间 08:00 / 12:00 / 21:00 各发 1 条。`, {}, now);
+      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(slots), now + days * DAY, now, now).run();
+    await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}；每条提前 2 小时开始生成。`, {}, now);
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
   }
-  const one = url.pathname.match(/^\/api\/psychology-autopilot\/(pilot-[0-9a-f-]{36})(?:\/(run|impact|slots\/(\d+)|accounts\/([^/]+)))?$/);
+  const one = url.pathname.match(/^\/api\/psychology-autopilot\/(pilot-[0-9a-f-]{36})(?:\/(run|impact|schedule|slots\/(\d+)|accounts\/([^/]+)))?$/);
   if (!one) fail('不支持此请求。', 405);
   const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=? AND owner=?').bind(one[1], user.username).first();
   if (!pilot) fail('自动运营不存在。', 404);
   const now = Date.now();
+  if (one[2] === 'schedule' && request.method === 'PATCH') {
+    if(pilot.status==='ended')fail('已结束的自动运营不能修改发布设置。',409);
+    const body=await readJson(request);if(!Array.isArray(body.slots))fail('请设置每天的发布时间。');
+    const slots=normalizePilotSlots(body.slots);
+    const group=(await autopilotDirectory(env,user,true)).groups.find(g=>g.id===pilot.group_id);
+    if(!group)fail('没有这个心理学分组的权限。',403);
+    validateDayEnd(slots,group.accounts);
+    // Changes start on a whole Beijing day after all already-created/reserved slots.
+    // Existing generation and publishing snapshots remain immutable.
+    const latest=await db.prepare('SELECT MAX(slot_at) last_slot FROM psychology_autopilot_slots WHERE autopilot_id=?').bind(pilot.id).first();
+    if(pilot.slots_effective_at>now && Number(latest?.last_slot)>=pilot.slots_effective_at)fail('待生效设置已开始创建排期，请在该设置生效后再修改；已创建任务继续原计划。',409);
+    const effectiveAt=Date.parse(beijingDate(Math.max(now,Number(latest?.last_slot)||0))+'T00:00:00+08:00')+DAY;
+    if(effectiveAt>=pilot.ends_at)fail('本次运营结束前已无完整日期可应用新设置，请新建运营计划。',409);
+    const changed=await db.prepare("UPDATE psychology_autopilots SET slots_json=?,pending_slots_json=?,slots_effective_at=?,updated_at=? WHERE id=? AND status<>'ended' AND updated_at=? AND NOT EXISTS (SELECT 1 FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at>=?)")
+      .bind(JSON.stringify(pilotSlotsAt(pilot,now)),JSON.stringify(slots),effectiveAt,Math.max(now,pilot.updated_at+1),pilot.id,pilot.updated_at,pilot.id,effectiveAt).run();
+    if(!changed.meta?.changes)fail('运营设置刚被修改，请刷新后重试。',409);
+    await log(db,pilot.id,'status',`发布设置已更新：每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}，${beijingDate(effectiveAt)} 起生效；已创建任务继续原计划。`,{slots,effectiveAt},now);
+    return json({ok:true,slots,effectiveAt});
+  }
   if (one[2] === 'impact' && request.method === 'GET') return json(await stopImpact(db, pilot.id, url.searchParams.get('account') || ''));
   if (one[3] && request.method === 'GET') {
     const slot = await db.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').bind(pilot.id, Number(one[3])).first();

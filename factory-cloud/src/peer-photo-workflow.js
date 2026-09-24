@@ -24,6 +24,13 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     : env.DB.prepare("SELECT * FROM factory_jobs WHERE id = ? AND type = 'psychology-photo-story'").bind(id).first());
   if (!row || ['done', 'failed', 'canceled', 'cancelled'].includes(row.status)) return { skipped: true };
   const payload = JSON.parse(row.payload_json);
+  if (!extraction && payload.psychologyAutomation?.generateAt) {
+    // Durable sleep spreads preparation with the publication schedule. The step
+    // exists on every replay, even after its timestamp is in the past.
+    await step.sleepUntil('autopilot-generation-time', new Date(payload.psychologyAutomation.generateAt));
+    const current=await step.do('autopilot-after-wait', READ, ()=>env.DB.prepare('SELECT status FROM factory_jobs WHERE id=?').bind(id).first());
+    if(!current || ['done','failed','canceled','cancelled'].includes(current.status))return {skipped:true};
+  }
   const deepseek = String(env.DEEPSEEK_API_KEY || '').trim()
     ? createDeepSeekClient({ apiKey: env.DEEPSEEK_API_KEY, fetchImpl: env.fetch || fetch })
     : null;

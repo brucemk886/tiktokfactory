@@ -225,11 +225,11 @@ export async function assertAutoJobAccess(env, job, options = {}) {
   const user = await loadAutoUser(env.DB, job.created_by);
   await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: [payload.psychologyAutomation.connectionId] }, options);
 }
-export function insertAutoJob(db, { id, type, title, payload, createdBy }, stamp = Date.now()) {
+export function insertAutoJob(db, { id, type, title, payload, createdBy, availableAt = 0 }, stamp = Date.now()) {
   return db.prepare(`INSERT INTO factory_jobs
-    (id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at)
-    SELECT ?,?,'queued',?,0,'等待自动生成',?,'{}','',?,'',0,0,?,? WHERE NOT EXISTS (SELECT 1 FROM psychology_publish_items WHERE id=? AND deleted_at>0) ON CONFLICT(id) DO NOTHING`)
-    .bind(id, type, title, JSON.stringify(payload), createdBy, stamp, stamp, payload.psychologyAutomation?.id || id);
+    (id,type,status,title,percent,message,payload_json,result_json,error,created_by,worker_id,claimed_at,completed_at,created_at,updated_at,available_at)
+    SELECT ?,?,'queued',?,0,'等待自动生成',?,'{}','',?,'',0,0,?,?,? WHERE NOT EXISTS (SELECT 1 FROM psychology_publish_items WHERE id=? AND deleted_at>0) ON CONFLICT(id) DO NOTHING`)
+    .bind(id, type, title, JSON.stringify(payload), createdBy, stamp, stamp, availableAt, payload.psychologyAutomation?.id || id);
 }
 export function autoVideoPayload(source, config, item, accounts) {
   const quiz = operatorQuizFromPayload({ topicSource: source, sourceImage: source.sourceImage, choiceCopies: source.choices, content: source.content });
@@ -273,7 +273,7 @@ export function autoVideoPayload(source, config, item, accounts) {
   };
 }
 
-export async function handlePsychologyAutoPublish(request, env, url, session) {
+export async function handlePsychologyAutoPublish(request, env, url, session, internal = {}) {
   if (!url.pathname.startsWith(BASE)) return null;
   assertAutoUser(session?.user);
   const user = session.user;
@@ -486,6 +486,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
+    const generateAt = config.mediaType==='photo' && internal.productionLeadMs ? Math.max(stamp,entry.scheduleAt*1000-internal.productionLeadMs) : 0;
+    if(generateAt)payload.psychologyAutomation.generateAt=generateAt;
     if(entry.source.copySource)payload.copySource=entry.source.copySource;
     const comment=freezeComment(entry.source,config,commentSetting);
     if(comment){
@@ -497,7 +499,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     // Library draws reserve the viral post itself, so no later version of it reaches the same account.
     if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.usageKey||entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
-    statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username }, stamp));
+    statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username, availableAt:generateAt }, stamp));
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
       .bind(id, batchId, entry.source.id, id, entry.connectionId, entry.scheduleAt, groupId));
   }

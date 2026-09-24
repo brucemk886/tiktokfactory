@@ -94,3 +94,18 @@ test('refresh prunes unavailable selection; empty or invalid settings never subm
  h.node('#days').value='31';await submit(h);assert.match(h.node('#createStatus').textContent,/1–30/);
  h.node('#clearGroups').onclick();await submit(h);assert.match(h.node('#createStatus').textContent,/至少选择/);assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
 });
+
+test('per-group counts/times and stagger are frozen independently in batch requests',async()=>{
+ const h=harness({pilots:[],groups:batchGroups.slice(0,3)},async()=>({run:{batches:[],errors:[]}}));await tick();settings(h);h.node('#selectAllGroups').onclick();
+ h.node('#defaultDailyCount').listeners.change({target:{value:'1'}});h.node('#groupOffset').value='15';h.node('#staggerGroups').onclick();
+ assert.equal(h.run("groupSchedules.get('g0').join()"),'08:00');assert.equal(h.run("groupSchedules.get('g2').join()"),'08:30');
+ h.events.change({target:{dataset:{groupCount:'g1'},value:'2'}});
+ h.events.change({target:{dataset:{timeScope:'g1',timeIndex:'1'},value:'19:20'}});
+ await submit(h);const bodies=h.requests.filter(r=>r.method==='POST').map(r=>r.body);
+ assert.deepEqual(bodies.map(b=>b.slots),[[{hour:8,minute:0}],[{hour:8,minute:15},{hour:19,minute:20}],[{hour:8,minute:30}]]);
+});
+test('duplicate times and cross-day stagger do not create any groups or partially overwrite settings',async()=>{
+ const h=harness({pilots:[],groups:batchGroups.slice(0,2)});await tick();settings(h);h.node('#selectAllGroups').onclick();
+ h.run("groupSchedules.set('g0',['08:00','08:00'])");await submit(h);assert.match(h.node('#createStatus').textContent,/重复/);assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
+ h.run("defaultTimes=['23:40']");h.node('#groupOffset').value='30';h.node('#staggerGroups').onclick();assert.match(h.node('#createStatus').textContent,/超过当天/);assert.equal(h.run("groupSchedules.get('g0').join()"),'08:00,08:00');
+});

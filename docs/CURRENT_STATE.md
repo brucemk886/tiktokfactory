@@ -1,5 +1,7 @@
 # Current State
 
+- Autopilot supports 1–10 daily posts/account with per-group Beijing times, shared defaults and explicit group offsets. Existing pilots expose schedule editing with a future whole-day effective boundary after reserved slots (0057). New autopilot photo preparation sleeps durably until two hours before each post; account staggering continues across batch chunks. Existing jobs remain frozen. See docs/handoffs/2026-09-25-autopilot-schedule.md.
+
 - Autopilot creation supports multi-group selection and select-all: one strategy/duration creates independent pilots through sequential existing requests, with per-group progress and partial-failure results. Strategy-specific rules switch with A/B/C selection; shared scheduling/guards are separate. See docs/handoffs/2026-09-25-autopilot-multi-group.md.
 
 - Autopilot group counts and scheduling now use the complete authorized publishing directory instead of analytics archive membership. Page entry, create dialog and explicit refresh reload the hub directory; quiet 30-second polls reuse a whitelisted D1 directory snapshot and current local assignments. Scheduled runs/start revalidate the directory. Unsynced accounts can participate; no report sync required. See docs/handoffs/2026-09-25-autopilot-group-directory.md.

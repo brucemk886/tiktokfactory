@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -272,4 +272,49 @@ test('autopilot directory excludes read-only, outside-project, duplicates and re
  accounts=[];const refreshed=await (await f.api('GET','?refreshGroups=1')).json();assert.equal(refreshed.groups.find(g=>g.id==='g').accounts,0);
  await assert.rejects(f.api('POST','',{groupId:'g',strategy:'original',days:7}),/发布权限/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_autopilots').get().n,0);
+});
+
+test('custom daily times validate and select old/new schedule at a Beijing day boundary',()=>{
+ assert.deepEqual(normalizePilotSlots([{hour:20,minute:30},{hour:9,minute:15}]),[{hour:9,minute:15},{hour:20,minute:30}]);
+ for(const invalid of [[],Array(11).fill({hour:8,minute:0}),[{hour:24,minute:0}],[{hour:8,minute:60}],[{hour:'8',minute:0}],[{hour:8,minute:0},{hour:8,minute:0}]])assert.throws(()=>normalizePilotSlots(invalid));
+ const pilot={created_at:at('2026-09-23','00:00'),ends_at:at('2026-09-30','00:00'),slots_json:JSON.stringify([{hour:9,minute:0},{hour:20,minute:0}]),pending_slots_json:JSON.stringify([{hour:10,minute:15}]),slots_effective_at:at('2026-09-25','00:00')};
+ assert.deepEqual(dueSlots(pilot,at('2026-09-24','08:00')),[at('2026-09-24','20:00')]);
+ assert.deepEqual(dueSlots(pilot,at('2026-09-24','09:00')),[at('2026-09-24','20:00'),at('2026-09-25','10:15')]);
+ assert.equal(pilotSlotsAt(pilot,at('2026-09-24','23:59')).length,2);assert.equal(pilotSlotsAt(pilot,pilot.slots_effective_at).length,1);
+});
+test('one daily slot persists, allocates once per account and defers generation until two hours before each post',async t=>{
+ const f=await pilotFixture(t), slot={hour:10,minute:15};
+ const {id}=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7,slots:[slot]})).json();
+ const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);assert.deepEqual(JSON.parse(pilot.slots_json),[slot]);
+ const jobs=f.sqlite.prepare('SELECT j.payload_json,j.available_at,i.schedule_at FROM factory_jobs j JOIN psychology_publish_items i ON i.job_id=j.id').all();
+ assert.equal(jobs.length,2);
+ for(const job of jobs){assert.equal(job.available_at,job.schedule_at*1000-AUTOPILOT.leadMs);assert.equal(JSON.parse(job.payload_json).psychologyAutomation.generateAt,job.available_at);}
+ assert.equal(jobs[1].available_at-jobs[0].available_at,45000);assert.equal(f.requests.length,0);
+ const list=await (await f.api('GET')).json();assert.deepEqual(list.pilots[0].slots,[slot]);
+});
+test('schedule edits preserve created jobs, start after reserved days, are scoped and reject expired/malformed changes',async t=>{
+ const f=await pilotFixture(t);const {id}=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+ const before=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all();
+ const latest=f.sqlite.prepare('SELECT MAX(slot_at) t FROM psychology_autopilot_slots').get().t;
+ const updated=await (await f.api('PATCH',`/${id}/schedule`,{slots:[{hour:11,minute:25}]})).json();
+ assert.ok(updated.effectiveAt>latest);assert.equal(new Date(updated.effectiveAt+8*HOUR).getUTCHours(),0);
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all(),before);
+ const list=await (await f.api('GET')).json();assert.equal(list.pilots[0].slots.length,3);assert.deepEqual(list.pilots[0].pendingSlots,[{hour:11,minute:25}]);
+ const row=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+ assert.deepEqual(pilotSlotsAt(row,updated.effectiveAt),[{hour:11,minute:25}]);
+ await assert.rejects(f.api('PATCH',`/${id}/schedule`,{}),/发布时间/);
+ await assert.rejects(f.api('PATCH',`/${id}/schedule`,{slots:[{hour:99,minute:0}]}),/北京时间/);
+ await assert.rejects(f.api('PATCH','/pilot-00000000-0000-4000-8000-000000000000/schedule',{slots:[{hour:11,minute:25}]}),/不存在/);
+ f.sqlite.prepare('UPDATE psychology_autopilots SET ends_at=? WHERE id=?').run(updated.effectiveAt,id);
+ await assert.rejects(f.api('PATCH',`/${id}/schedule`,{slots:[{hour:11,minute:25}]}),/完整日期/);
+ await f.api('PATCH',`/${id}`,{status:'ended'});await assert.rejects(f.api('PATCH',`/${id}/schedule`,{slots:[{hour:11,minute:25}]}),/已结束/);
+ assert.equal(f.requests.length,0);
+});
+
+test('a pending schedule already reserved for its effective date cannot be overwritten into old times',async t=>{
+ const f=await pilotFixture(t);const {id}=await (await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+ const update=await (await f.api('PATCH',`/${id}/schedule`,{slots:[{hour:11,minute:25}]})).json();
+ f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)").run(id,update.effectiveAt+11*HOUR,Date.now());
+ await assert.rejects(f.api('PATCH',`/${id}/schedule`,{slots:[{hour:14,minute:0}]}),/待生效设置已开始创建排期/);
+ const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);assert.deepEqual(pilotSlotsAt(pilot,update.effectiveAt),[{hour:11,minute:25}]);
 });
