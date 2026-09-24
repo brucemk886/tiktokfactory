@@ -1,22 +1,22 @@
 /* Shared operations console. Loaded after page-specific styles by access.js. */
-:root{--lf-bg:#f5f7fb;--lf-sidebar-bg:#192b43;--lf-surface:#fff;--lf-surface-2:#f1f5fa;--lf-line:#e5eaf2;--lf-line-strong:#cfd8e6;--lf-text:#19283e;--lf-muted:#62738b;--lf-faint:#7c8ca2;--lf-accent:#1265e6;--lf-accent-fill:#1265e6;--lf-accent-ink:#fff;--lf-green:#178457;--lf-amber:#b96b05;--lf-red:#c33441;--lf-shadow:0 4px 18px #182c4610;--lf-sidebar:224px;--lf-radius:10px;--lf-radius-sm:7px}
+:root{--lf-bg:#f5f7fb;--lf-sidebar-bg:#fff;--lf-surface:#fff;--lf-surface-2:#f1f5fa;--lf-line:#e5eaf2;--lf-line-strong:#cfd8e6;--lf-text:#19283e;--lf-muted:#62738b;--lf-faint:#7c8ca2;--lf-accent:#1265e6;--lf-accent-fill:#1265e6;--lf-accent-ink:#fff;--lf-green:#178457;--lf-amber:#b96b05;--lf-red:#c33441;--lf-shadow:0 4px 18px #182c4610;--lf-sidebar:224px;--lf-radius:10px;--lf-radius-sm:7px}
 body.lf-console{min-width:0!important;background:var(--lf-bg)!important;background-image:none!important;color:var(--lf-text);font:14px/1.55 "Segoe UI Variable","Segoe UI","Microsoft YaHei",sans-serif;padding:56px 0 0 var(--lf-sidebar)!important}
 .lf-console>main{width:100%!important;min-width:0!important;max-width:none!important;margin:0!important;padding:28px!important;min-height:calc(100vh - 56px)}
 .lf-console main>*,.lf-console section,.lf-console form{min-width:0}
-.lf-console :is(.side-tabs,.tasks-sidebar){inset:0 auto 0 0!important;width:var(--lf-sidebar)!important;max-height:100vh;z-index:80!important;background:#192b43!important;color:#dce7f7!important;border:0!important;box-shadow:none!important;padding:18px 12px!important;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#53657b transparent}
+.lf-console :is(.side-tabs,.tasks-sidebar){inset:0 auto 0 0!important;width:var(--lf-sidebar)!important;max-height:100vh;z-index:80!important;background:var(--lf-sidebar-bg)!important;color:#52627a!important;border:0!important;border-right:1px solid var(--lf-line)!important;box-shadow:none!important;padding:18px 12px!important;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 .lf-console .side-tabs{display:flex!important;flex-direction:column;gap:4px}
-.lf-console :is(.side-tabs,.tasks-nav) a:not(.app-brand),.lf-console .sidebar-group-toggle{display:flex!important;align-items:center;gap:12px;color:#bfcde0!important;background:transparent!important;border:0!important;font-size:14px!important;font-weight:500!important;min-height:40px;padding:9px 12px!important;text-decoration:none;box-shadow:none;border-radius:7px}
-.lf-console :is(.side-tabs,.tasks-nav) a:not(.app-brand):hover,.lf-console .sidebar-group-toggle:hover{background:#253d5a!important;color:#fff!important}
-.lf-console :is(.side-tabs,.tasks-nav) a.is-active,.lf-console .sidebar-group.is-open>.sidebar-group-toggle{background:#234a7b!important;color:#fff!important}
+.lf-console :is(.side-tabs,.tasks-nav) a:not(.app-brand),.lf-console .sidebar-group-toggle{display:flex!important;align-items:center;gap:12px;color:#52627a!important;background:transparent!important;border:0!important;font-size:14px!important;font-weight:500!important;min-height:40px;padding:9px 12px!important;text-decoration:none;box-shadow:none;border-radius:7px}
+.lf-console :is(.side-tabs,.tasks-nav) a:not(.app-brand):hover,.lf-console .sidebar-group-toggle:hover{background:#f2f6fc!important;color:#1265e6!important}
+.lf-console :is(.side-tabs,.tasks-nav) a.is-active,.lf-console .sidebar-group.is-open>.sidebar-group-toggle{background:#eaf2ff!important;color:#1265e6!important}
 .lf-console .sidebar-group-items{padding:4px 0 8px 18px;gap:2px}
-.lf-console .sidebar-group-items>a{border-left:1px solid #3c516d!important;border-radius:0 7px 7px 0;padding-left:20px!important;font-size:13px!important;min-height:36px!important}
-.lf-console :is(.app-brand,.tasks-brand){display:flex;align-items:center;gap:11px;color:#fff!important;margin:0 0 22px!important;padding:8px!important;background:transparent!important}
+.lf-console .sidebar-group-items>a{border-left:1px solid #e8eef6!important;border-radius:0 7px 7px 0;padding-left:20px!important;font-size:13px!important;min-height:36px!important}
+.lf-console :is(.app-brand,.tasks-brand){display:flex;align-items:center;gap:11px;color:#19283e!important;margin:0 0 22px!important;padding:8px!important;background:transparent!important}
 .lf-console .app-brand>span,.lf-console .brand-mark{background:#1265e6!important;color:white!important;border-radius:9px;width:40px;height:40px;display:grid;place-items:center;font-size:16px;flex:none}
-.lf-console .app-brand b,.lf-console .tasks-brand strong{font-size:17px!important}.lf-console .app-brand small,.lf-console .tasks-brand small{color:#a9bbd4!important;font-size:11px!important}
-.lf-console .sidebar-user{color:#e5edf9;border-color:#344761;padding-top:16px;margin-top:auto}.lf-console .sidebar-user small{color:#a9bbd4!important;font-size:11px}.lf-console .sidebar-user i{background:#dbeafe;color:#1352b3;border-radius:50%;width:32px;height:32px}
-.lf-console .nav-logout{color:#bfcde0!important;background:transparent!important;border:0!important;font-size:13px!important;text-align:left;min-height:36px}
-.lf-icon{display:inline-block;width:19px;height:19px;flex:none;vertical-align:middle}.side-tabs .lf-icon,.tasks-nav .lf-icon{filter:invert(85%) sepia(10%) saturate(400%) hue-rotate(175deg)}
-.sidebar-group-chevron{margin-left:auto!important;width:12px;height:12px;display:inline-flex!important;font-size:0}.sidebar-group-chevron:before{content:"";width:12px;height:12px;background:url('/vendor/bootstrap-icons/chevron-down.svg') center/contain no-repeat;filter:invert(1)}
+.lf-console .app-brand b,.lf-console .tasks-brand strong{font-size:17px!important}.lf-console .app-brand small,.lf-console .tasks-brand small{color:#62738b!important;font-size:11px!important}
+.lf-console .sidebar-user{color:#19283e!important;border-color:#e5eaf2!important;padding-top:16px;margin-top:auto}.lf-console .sidebar-user small{color:#62738b!important;font-size:11px}.lf-console .sidebar-user i{background:#dbeafe;color:#1352b3;border-radius:50%;width:32px;height:32px}
+.lf-console .nav-logout{color:#52627a!important;background:transparent!important;border:0!important;font-size:13px!important;text-align:left;min-height:36px}
+.lf-icon{display:inline-block;width:19px;height:19px;flex:none;vertical-align:middle}.side-tabs .lf-icon,.tasks-nav .lf-icon{filter:invert(43%) sepia(15%) saturate(690%) hue-rotate(176deg)}
+.sidebar-group-chevron{margin-left:auto!important;width:12px;height:12px;display:inline-flex!important;font-size:0}.sidebar-group-chevron:before{content:"";width:12px;height:12px;background:url('/vendor/bootstrap-icons/chevron-down.svg') center/contain no-repeat;filter:invert(43%) sepia(15%) saturate(690%) hue-rotate(176deg)}
 .lf-console-bar{position:fixed;inset:0 0 auto var(--lf-sidebar);height:56px;display:flex;align-items:center;gap:16px;background:#ffffffed;border-bottom:1px solid var(--lf-line);padding:0 28px;z-index:55;backdrop-filter:blur(10px)}
 .lf-console .lf-nav-toggle{display:grid;place-items:center;min-width:34px;min-height:34px;padding:6px!important;border-color:transparent!important;background:transparent!important}.lf-breadcrumb{display:flex;align-items:center;gap:10px;color:var(--lf-muted);min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.lf-breadcrumb strong{color:var(--lf-text);font-weight:500}.lf-console-date{margin-left:auto;white-space:nowrap;color:var(--lf-muted);font-size:12px}.lf-top-user{width:30px;height:30px;display:grid;place-items:center;background:#e7f0ff;color:#1265e6;border-radius:50%;font-weight:600}
 .lf-console .lf-mobile-backdrop{display:none}.lf-console.lf-nav-hidden{--lf-sidebar:0px}.lf-nav-hidden :is(.side-tabs,.tasks-sidebar){transform:translateX(-100%);width:224px!important}
@@ -49,7 +49,7 @@ body.lf-console{min-width:0!important;background:var(--lf-bg)!important;backgrou
 .lf-console.psychology-auto-page .queue-metrics>div{min-height:84px;padding:12px 16px}
 .lf-console.psychology-auto-page .batch-table td{padding-top:10px!important;padding-bottom:10px!important}
 .lf-console.psychology-auto-page .task-list-panel .queue-header{margin:0 0 12px;padding:0}
-.lf-console .side-tabs .nav-logout{background:transparent!important;color:#bfcde0!important;border-color:transparent!important}
+.lf-console .side-tabs .nav-logout{background:transparent!important;color:#52627a!important;border-color:transparent!important}
 
 html:has(dialog[open]){overflow:hidden}
 
@@ -80,3 +80,5 @@ html:has(dialog[open]){overflow:hidden}
 .lf-console.copy-library-page .library-metrics{white-space:normal;overflow-wrap:normal}
 .lf-console.copy-library-page .copy-status:not(.is-off){background:#e7f7ef;color:#126e4a}
 @media(min-width:900px){.lf-console.copy-library-page .hits-table-wrap :is(th:last-child,td.library-actions){position:sticky;right:0;background:#fff;box-shadow:-5px 0 8px #192b4308;z-index:1}}
+
+.lf-console :is(.side-tabs,.tasks-nav) a.is-active .lf-icon,.lf-console .sidebar-group.is-open>.sidebar-group-toggle :is(.lf-icon,.sidebar-group-chevron:before){filter:invert(30%) sepia(94%) saturate(2580%) hue-rotate(209deg) brightness(96%) contrast(91%)}
