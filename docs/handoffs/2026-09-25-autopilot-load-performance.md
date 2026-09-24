@@ -12,4 +12,4 @@ factory-cloud/src/psychology-autopilot.js; psychology-autopilot-execution.js; au
 730 passing. New regression covers same-time groups, different owners, per-pilot 12-slot/60-log windows, daily summaries and distinct publication outcomes, with two overview D1 batches after directory warm-up. No real publication from tests.
 
 # Remaining
-Commit/push main, deploy using npm run deploy; compare production browser timings and confirm nine pilots are intact. No active generation/publication job should be restarted or cancelled.
+Completed: code dec8394 committed/pushed to main; clean HEAD==origin/main gate passed; deployed with npm run deploy, Worker d38d03a4-12f9-4c75-bb55-c2f1ddb785f2. Same-browser post-deploy first overview request 4,922 ms; subsequent authenticated GET 4,708 ms versus 11,079 ms before. HTTP200, nine active pilots and 360 planned today preserved. No generation/publication job restarted/cancelled. These are individual observed timings, not a latency SLA; static asset/network latency remains outside this focused change.
