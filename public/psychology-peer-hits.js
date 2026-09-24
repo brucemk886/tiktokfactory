@@ -27,7 +27,7 @@ function libraryRow(item){
  const status=done?'已提取':!row.auto_extract?'历史待补全':({queued:'等待提取',running:'提取中',failed:'提取失败'}[row.status]||'未提取');
  const title=content.title||titleOf(item);
  const cell=(v,cls='')=>'<td class="'+cls+'" title="'+escape(v)+'"><span>'+escape(v)+'</span></td>';
- return '<tr>'+cell('','library-select').replace('<span></span>',manage&&hasPeer?'<input type="checkbox" class="peer-select" data-peer-id="'+escape(item.id)+'" aria-label="选择 '+escape(title)+'" />':'—')+
+ return '<tr>'+cell('','library-select').replace('<span></span>',manage?'<input type="checkbox" data-can-produce="'+hasPeer+'" class="peer-select" data-peer-id="'+escape(item.id)+'" aria-label="选择 '+escape(title)+'" />':'—')+
  '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+'</small><small class="library-copy-id">文案 ID：<code>'+escape(row.id)+'</code></small></td>'+
  '<td class="library-metrics"><strong>'+metric(item.playCount)+' 播放</strong><small>赞 '+metric(item.likeCount)+' · 评 '+metric(item.commentCount)+'</small><small>藏 '+metric(item.favoriteCount)+' · 分享 '+metric(item.shareCount)+'</small><small>时长 '+(item.durationSeconds==null?'—':metric(item.durationSeconds)+' 秒')+'</small></td>'+
  '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+
@@ -35,7 +35,7 @@ function libraryRow(item){
  '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small></td>'+
  '<td class="hits-voice">'+(manage&&hasPeer?'<select class="voice-gender-select" data-id="'+escape(item.id)+'" data-current="'+escape(item.voiceGender||'male')+'" aria-label="音色性别"><option value="male"'+(item.voiceGender!=='female'?' selected':'')+'>男</option><option value="female"'+(item.voiceGender==='female'?' selected':'')+'>女</option></select>':'—')+'</td>'+
  '<td class="hits-video"><a href="'+escape(item.videoUrl)+'" target="_blank" rel="noopener noreferrer">打开原帖</a></td>'+
- '<td class="library-actions">'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-create-variant="'+escape(item.id)+'">新增改写</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage&&hasPeer?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除来源</button>':'')+'</td></tr>';
+ '<td class="library-actions">'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-create-variant="'+escape(item.id)+'">新增改写</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除文案</button>':'')+'</td></tr>';
 }
 
 async function loadList() {
@@ -47,7 +47,7 @@ async function loadList() {
     if(current.signal.aborted)return;
     if(integrated){
       const canManage=data.canManageSources===true;document.body.dataset.sourceAccess=String(canManage);
-      for(const id of ['apiPanel','manualPanel','produceBtn','moveSelectedBtn','clearSelectionBtn','selectionCount','productionStatus','productionPanel','rewriteCopyField'])if($('#'+id))$('#'+id).hidden=!canManage||(id==='rewriteCopyField'&&state.mediaType!=='photo');
+      for(const id of ['apiPanel','manualPanel','produceBtn','moveSelectedBtn','clearSelectionBtn','selectPageBtn','selectPageCheckbox','deleteSelectedBtn','selectionCount','productionStatus','productionPanel','rewriteCopyField'])if($('#'+id))$('#'+id).hidden=!canManage||(id==='rewriteCopyField'&&state.mediaType!=='photo');
       if(canManage&&!state.keyLoaded){state.keyLoaded=true;loadKey();}
       document.dispatchEvent(new CustomEvent('library-source-access',{detail:{canManage}}));
       const rows=data.items;data={...data,totalPages:data.pages,pageSize:20,items:rows.map(row=>({...row.peer,id:row.id,mediaType:row.media_type,title:row.title,videoUrl:row.source_url,createdAt:row.created_at,library:row}))};
@@ -101,9 +101,9 @@ document.querySelectorAll(".hits-tab").forEach(tab=>tab.addEventListener("click"
   if(tab.dataset.mediaType!==state.mediaType)applyMediaType(tab.dataset.mediaType);
 }));
 async function deleteHit(id) {
-  if (!id || !confirm(integrated?"删除这条同行来源记录？已提取文案、改写版本和已创建任务会保留。":"确定删除这条内容？删除后无法恢复。")) return;
+  if (!id || !confirm(integrated?"删除这条文案、同行来源及关联改写？已创建的生成和发布任务会保留。删除后无法恢复。":"确定删除这条内容？删除后无法恢复。")) return;
   try {
-    await api(`${API}/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await api(integrated?'/api/psychology-copy-library':API+'/'+encodeURIComponent(id), { method: "DELETE",...(integrated?{headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:[id]})}:{}) });
     await loadList();
   } catch (error) {
     message("#listStatus", error.message, true);
@@ -225,9 +225,16 @@ const rewriteRules=`For every psychology photo post, call the language model onc
 1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
 2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters).
 3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
-4. Each rewrite: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first, one clear idea per page; caption is required and can be short, hashtags allowed.
-5. English only, sounds like a real person posting, no invented statistics, no diagnoses, no links.
-6. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.`;
+4. Write for TikTok photo carousels, where people decide in one second whether to stop:
+   - Cover (title and first page): 5-12 words that make the reader feel "this is me". Name a specific moment or hidden feeling, in second person or POV. Create curiosity or a gentle call-out. Vary the hook style across the 5 versions; never reuse the same opening pattern.
+   - Middle pages: concrete, relatable micro-moments instead of psychology terms (rereading their last text, apologizing first, checking if they viewed your story, feeling fine until they go quiet). One idea per page, short lines, usually under 25 words, building toward the payoff.
+   - Emotion: validate before you advise. Name the fear underneath (being too much, being left, not being chosen), then offer a warm truth. Sound like a friend who has been there, not a therapist or a textbook. No shaming, no preaching.
+   - Last page: a payoff worth saving or sending — a reframe, a reassurance, or one small doable step.
+   - Caption: short and conversational, invites a reply (a question such as "which one are you?" or "be honest"), plus 2-5 relevant hashtags.
+   - Before submitting each version, check: would someone in this situation stop scrolling, feel seen, and want to save or send it? If not, rewrite it.
+5. Format: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first; caption is required.
+6. English only, no invented statistics, no diagnoses, no links.
+7. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();

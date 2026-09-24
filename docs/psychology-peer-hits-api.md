@@ -126,10 +126,13 @@ Content-Type: application/json
 
 1. **逐篇调用大模型改写，禁止模板和程序拼接。** 先读懂这一篇原帖的钩子、情境和情绪，再写。
 2. **每篇 5 个版本，每个版本换一个角度，但都围绕这一篇原帖**：例如换叙述视角（我 / 你 / 旁观者）、换具体场景（发消息、约会后、分手后）、换形式（清单、对比、一句话安慰、可执行小建议）。不同爆款之间不能共用同一句正文。
-3. **结构**：页数跟随原帖，单图也可以；首图是一句抓人的钩子（不超过 12 个英文单词为宜）；多图时每页一个完整意思、一两句话。
-4. **发布文案 `caption` 必须写**，可以很简短，可带话题标签。
-5. **不照抄原文句子，不虚构研究数据**，不做诊断（不说 "you have BPD" 之类），不引流、不放链接。
-6. 全部用英文，口吻像真人发帖，不要教科书腔。
+3. **首图钩子**：5–12 个英文单词，让人一眼觉得「这说的就是我」。写一个具体的瞬间或藏着的感受，用第二人称或 POV，制造好奇或轻轻的「被说中」感。5 个版本的开头方式要各不相同。
+4. **中间页写具体的小瞬间，不堆心理学名词**：反复看对方最后一条消息、总是先道歉、偷偷看对方有没有看你的快拍、对方一沉默就开始慌。每页一个意思，句子短，一般不超过 25 个词，一页页推向结尾。
+5. **先共情，再给答案**：说出底下那层恐惧（怕自己太多、怕被丢下、怕不被选择），再给一句温暖的真话。口吻像经历过的朋友，不像咨询师或教科书；不说教、不指责。
+6. **最后一页要值得收藏或转发**：换个角度看、一句安慰，或一个马上能做的小行动。
+7. **发布文案 `caption` 必须写**：简短口语化，引导评论（比如 "which one are you?"、"be honest"），加 2–5 个相关话题标签。页数跟随原帖，单图也可以。
+8. **提交前自查**：处在这个处境的人会不会停下来、觉得被说中、想收藏或转发？不会就重写。
+9. **不照抄原文句子，不虚构研究数据**，不做诊断（不说 "you have BPD" 之类），不引流、不放链接；全部用英文。
 
 ### 工厂自动拒收的情况
 
@@ -151,9 +154,16 @@ For every psychology photo post, call the language model once per post. Never us
 1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
 2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters).
 3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
-4. Each rewrite: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first, one clear idea per page; caption is required and can be short, hashtags allowed.
-5. English only, sounds like a real person posting, no invented statistics, no diagnoses, no links.
-6. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.
+4. Write for TikTok photo carousels, where people decide in one second whether to stop:
+   - Cover (title and first page): 5-12 words that make the reader feel "this is me". Name a specific moment or hidden feeling, in second person or POV. Create curiosity or a gentle call-out. Vary the hook style across the 5 versions; never reuse the same opening pattern.
+   - Middle pages: concrete, relatable micro-moments instead of psychology terms (rereading their last text, apologizing first, checking if they viewed your story, feeling fine until they go quiet). One idea per page, short lines, usually under 25 words, building toward the payoff.
+   - Emotion: validate before you advise. Name the fear underneath (being too much, being left, not being chosen), then offer a warm truth. Sound like a friend who has been there, not a therapist or a textbook. No shaming, no preaching.
+   - Last page: a payoff worth saving or sending — a reframe, a reassurance, or one small doable step.
+   - Caption: short and conversational, invites a reply (a question such as "which one are you?" or "be honest"), plus 2-5 relevant hashtags.
+   - Before submitting each version, check: would someone in this situation stop scrolling, feel seen, and want to save or send it? If not, rewrite it.
+5. Format: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first; caption is required.
+6. English only, no invented statistics, no diagnoses, no links.
+7. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.
 ```
 
 ## 去重与更新

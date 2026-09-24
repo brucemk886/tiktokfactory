@@ -7,13 +7,14 @@ const read=name=>fs.readFileSync(new URL('../public/'+name,import.meta.url),'utf
 const html=read('psychology-copy-library.html');
 function harness(script='psychology-copy-library.js') {
  const nodes=new Map();const events=new Map();const requests=[];
+ let selectable=[],accepted=true;const confirmations=[];
  const pages=Array.from({length:6},()=>({value:''}));
  for(const [,id] of html.matchAll(/\bid="([^"]+)"/g))nodes.set('#'+id,{value:'',textContent:'',disabled:false,open:false,dataset:{},classList:{toggle(){}},listeners:{},addEventListener(type,fn){this.listeners[type]=fn;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},reset(){for(const id of ['variantName','variantTitle','variantCaption'])nodes.get('#'+id).value='';nodes.get('#variantReviewed').checked=false;pages.forEach(p=>p.value='');}});
- const document={querySelector:q=>nodes.get(q)||null,querySelectorAll:q=>q==='[data-variant-page]'?pages:[],body:{dataset:{mediaType:'video',sourceAccess:'true'},classList:{contains:c=>c==='copy-library-page'}},addEventListener:(t,fn)=>events.set(t,fn),dispatchEvent:e=>events.get(e.type)?.(e)};
+ const document={querySelector:q=>nodes.get(q)||null,querySelectorAll:q=>q==='[data-variant-page]'?pages:q==='.peer-select'?selectable:[],body:{dataset:{mediaType:'video',sourceAccess:'true'},classList:{contains:c=>c==='copy-library-page'}},addEventListener:(t,fn)=>events.set(t,fn),dispatchEvent:e=>events.get(e.type)?.(e)};
  let respond=()=>({created:1,duplicates:0,page:1,total:0,items:[]});
- const context={document,crypto:{randomUUID},CustomEvent:class{constructor(type,options={}){this.type=type;Object.assign(this,options);}},location:{hash:''},URL,URLSearchParams,setTimeout,clearTimeout,fetch:async(url,options={})=>{requests.push({url,...options,body:options.body?JSON.parse(options.body):undefined});const data=await respond(url,options);return {ok:true,json:async()=>data};}};
+ const context={confirm:text=>{confirmations.push(text);return accepted;},document,crypto:{randomUUID},CustomEvent:class{constructor(type,options={}){this.type=type;Object.assign(this,options);}},location:{hash:''},URL,URLSearchParams,setTimeout,clearTimeout,fetch:async(url,options={})=>{requests.push({url,...options,body:options.body?JSON.parse(options.body):undefined});const data=await respond(url,options);return {ok:true,json:async()=>data};}};
  vm.runInNewContext(read(script),context);
- return {context,nodes,pages,events,requests,document,respond:fn=>{respond=fn;},async click(data){await nodes.get('#hitRows').listeners.click({target:{closest:()=>({dataset:data})}});},fill(){nodes.get('#variantName').value='Test version';nodes.get('#variantTitle').value='Test title';nodes.get('#variantReviewed').checked=true;pages[0].value='First page';},submit(){return nodes.get('#variantForm').onsubmit({preventDefault(){},submitter:{}});}};
+ return {context,nodes,pages,events,requests,document,confirmations,accept:value=>{accepted=value;},setRows:ids=>{selectable=ids.map(id=>({dataset:{peerId:id},checked:false,matches:q=>q==='.peer-select'}));},rows:()=>selectable,respond:fn=>{respond=fn;},async click(data){await nodes.get('#hitRows').listeners.click({target:{closest:()=>({dataset:data})}});},fill(){nodes.get('#variantName').value='Test version';nodes.get('#variantTitle').value='Test title';nodes.get('#variantReviewed').checked=true;pages[0].value='First page';},submit(){return nodes.get('#variantForm').onsubmit({preventDefault(){},submitter:{}});}};
 }
 const sources=[{id:'photo-source',media_type:'photo',title:'Photo source',content:{pages:[]}}, {id:'video-source',media_type:'video',title:'Video source',content:{transcript:'text'}}];
 test('library removes obsolete controls and keeps creation/import out of rewrite details',()=>{
@@ -72,4 +73,24 @@ test('comparison removes duplicate labels, tag-only pages and unused originals; 
  assert.ok(html.indexOf('They need space')>html.indexOf('<h3>第 4 页'));
  assert.doesNotMatch(html,/<small>|#Tag|#标签|#Avoidant|其余原文|第 6 页|Save this/);
  assert.equal((html.match(/第 3 页 · 第 1 句/g)||[]).length,1);
+});
+
+
+test('select page covers twenty rows, supports indeterminate state and preserves five-item recreation limit',async()=>{
+ const h=harness('psychology-peer-production.js');h.setRows(Array.from({length:20},(_,i)=>'id-'+i));h.events.get('peer-list-loaded')();
+ h.nodes.get('#selectPageBtn').listeners.click();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 20 条');assert.equal(h.nodes.get('#selectPageCheckbox').checked,true);assert.equal(h.nodes.get('#produceBtn').disabled,true);assert.equal(h.nodes.get('#deleteSelectedBtn').disabled,false);
+ await h.nodes.get('#produceBtn').listeners.click();assert.equal(h.requests.length,0);
+ const first=h.rows()[0];first.checked=false;h.nodes.get('#hitRows').listeners.change({target:first});assert.equal(h.nodes.get('#selectPageCheckbox').indeterminate,true);
+ h.nodes.get('#selectPageCheckbox').listeners.change({target:{checked:false}});assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
+ h.nodes.get('#selectPageBtn').listeners.click();h.setRows(['next-page']);h.events.get('peer-list-loaded')();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
+});
+
+test('batch delete confirms exact count, prevents duplicate clicks, retains selection on failure and refreshes after success',async()=>{
+ const h=harness('psychology-peer-production.js');h.setRows(['a','b']);h.events.get('peer-list-loaded')();h.nodes.get('#selectPageBtn').listeners.click();
+ h.accept(false);await h.nodes.get('#deleteSelectedBtn').listeners.click();assert.equal(h.requests.length,0);assert.match(h.confirmations[0],/2 条文案、同行来源及关联改写/);
+ h.accept(true);let reject;h.respond(()=>new Promise((_,r)=>reject=r));const pending=h.nodes.get('#deleteSelectedBtn').listeners.click();await h.nodes.get('#deleteSelectedBtn').listeners.click();assert.equal(h.requests.length,1);assert.equal(h.nodes.get('#selectPageBtn').disabled,true);
+ reject(new Error('offline'));await pending;assert.equal(h.nodes.get('#selectionCount').textContent,'已选 2 条');assert.equal(h.nodes.get('#deleteSelectedBtn').disabled,false);
+ let refreshed=false;h.events.set('peer-list-refresh-request',()=>{refreshed=true;});h.respond(()=>({deleted:2}));await h.nodes.get('#deleteSelectedBtn').listeners.click();
+ const req=h.requests.at(-1);assert.equal(req.method,'DELETE');assert.equal(req.url,'/api/psychology-copy-library');assert.deepEqual(req.body.ids,['a','b']);assert.equal(refreshed,true);assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
+ h.document.body.dataset.sourceAccess='false';h.nodes.get('#selectPageBtn').listeners.click();assert.equal(h.nodes.get('#selectionCount').textContent,'已选 0 条');
 });

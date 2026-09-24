@@ -1,5 +1,5 @@
 import {psychologyPeerHitFromRow} from './psychology-peer-hits-store.js';
-import {json,errorJson} from './http.js';
+import {json,errorJson,readJson} from './http.js';
 import {peerProductionPayload} from '../../scripts/psychology-peer-production.js';
 import {photoCopyKey,validatePhotoCopy} from './peer-photo-copy-cache.js';
 import {filterPhotoPageTexts,NO_USABLE_PAGES} from './photo-page-filter.js';
@@ -30,7 +30,24 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
  const user=session?.user;
  if(user?.role!=='admin'||!['psychology-copy-library','psychology-peer-hits'].some(id=>user.sidebarModules?.includes(id)))return errorJson('没有文案库权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
+ if(url.pathname===BASE&&request.method==='DELETE'){
+  if(!user.sidebarModules?.includes('psychology-peer-hits'))return errorJson('没有文案来源管理权限。',403);
+  const input=await readJson(request);
+  if(!Array.isArray(input?.ids)||!input.ids.length||input.ids.length>20||input.ids.some(id=>typeof id!=='string'||!/^psy-[a-f0-9]{32}$/.test(id)))return errorJson('请选择1–20条有效文案。',400);
+  const ids=JSON.stringify([...new Set(input.ids)]);
+  const originals=(await env.DB.prepare('SELECT id,source_url FROM psychology_copy_library WHERE id IN (SELECT value FROM json_each(?))').bind(ids).all()).results;
+  const keys=JSON.stringify([...new Set(originals.map(row=>{try{return photoCopyKey(row.source_url);}catch{return row.id;}}))]);
+  // Keep immutable job snapshots and usage history. Tombstones prevent old rewrites from being reused on reimport.
+  const results=await env.DB.batch([
+   env.DB.prepare('DELETE FROM psychology_copy_comparisons WHERE variant_id IN (SELECT id FROM psychology_copy_variants WHERE source_key IN (SELECT value FROM json_each(?)))').bind(keys),
+   env.DB.prepare('UPDATE psychology_copy_variants SET enabled=0,deleted_at=? WHERE source_key IN (SELECT value FROM json_each(?)) AND deleted_at=0').bind(Date.now(),keys),
+   env.DB.prepare('DELETE FROM psychology_peer_hits WHERE id IN (SELECT value FROM json_each(?))').bind(ids),
+   env.DB.prepare('DELETE FROM psychology_copy_library WHERE id IN (SELECT value FROM json_each(?)) RETURNING id').bind(ids),
+  ]);
+  return json({deleted:results[3].results.length});
+ }
  if(url.pathname===BASE&&request.method==='GET'){
+
   const media=url.searchParams.get('mediaType')||'all';
   if(!['all','video','photo'].includes(media))return errorJson('筛选条件无效。',400);
   const status=url.searchParams.get('status')||'done',sort=url.searchParams.get('sort')||'recent';

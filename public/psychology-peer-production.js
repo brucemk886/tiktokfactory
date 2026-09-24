@@ -4,6 +4,7 @@
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
   const endpoint = '/api/psychology-peer-hits/production';
   let busy = false, requestId = '', timer;
+  const library = document.body.classList.contains('copy-library-page');
 
   const notify = (text, error = false) => {
     $('#productionStatus').textContent = text;
@@ -15,7 +16,14 @@
       input.disabled = busy;
     });
     $('#selectionCount').textContent = `已选 ${selected.size} 条`;
-    $('#produceBtn').disabled = busy || !selected.size;
+    const visible=[...document.querySelectorAll('.peer-select')];
+    const canManage=!library||document.body.dataset.sourceAccess==='true';
+    $('#produceBtn').disabled = busy || !selected.size || selected.size>5 || visible.some(input=>selected.has(input.dataset.peerId)&&input.dataset.canProduce==='false');
+    $('#produceBtn').title=selected.size>5?'原帖复刻每次最多5条；批量删除可选择整页。':'';
+    const selectPage=$('#selectPageCheckbox');
+    if(selectPage){selectPage.disabled=busy||!canManage||!visible.length;selectPage.checked=visible.length>0&&visible.every(input=>selected.has(input.dataset.peerId));selectPage.indeterminate=selected.size>0&&!selectPage.checked;}
+    if($('#selectPageBtn'))$('#selectPageBtn').disabled=busy||!canManage||!visible.length;
+    if($('#deleteSelectedBtn'))$('#deleteSelectedBtn').disabled=busy||!canManage||!selected.size;
     const moveButton = $('#moveSelectedBtn');
     const targetPhoto = (document.body.dataset.mediaType || 'video') === 'video';
     if (moveButton) {
@@ -52,13 +60,33 @@
   $('#hitRows').addEventListener('change', event => {
     if (!event.target.matches('.peer-select')) return;
     const id = event.target.dataset.peerId;
-    if (event.target.checked && selected.size >= 5) {
+    if(busy){sync();return;}
+    if (!library && event.target.checked && selected.size >= 5) {
       event.target.checked = false;
       notify('每批最多选择 5 条。', true);
     } else if (event.target.checked) selected.add(id);
     else selected.delete(id);
     requestId = '';
     sync();
+  });
+  function selectPage(checked){
+    if(busy||document.body.dataset.sourceAccess!=='true')return;
+    for(const input of document.querySelectorAll('.peer-select')){if(checked)selected.add(input.dataset.peerId);else selected.delete(input.dataset.peerId);}
+    requestId='';sync();
+  }
+  $('#selectPageBtn')?.addEventListener('click',()=>selectPage(true));
+  $('#selectPageCheckbox')?.addEventListener('change',event=>selectPage(event.target.checked));
+  $('#deleteSelectedBtn')?.addEventListener('click',async()=>{
+    if(busy||!selected.size||document.body.dataset.sourceAccess!=='true')return;
+    const ids=[...selected];
+    if(!confirm('确定删除选中的 '+ids.length+' 条文案、同行来源及关联改写？已创建的生成和发布任务会保留。删除后无法恢复。'))return;
+    busy=true;sync();notify('正在删除 '+ids.length+' 条文案…');
+    try{
+      const data=await api('/api/psychology-copy-library',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+      ids.forEach(id=>selected.delete(id));requestId='';notify('已删除 '+data.deleted+' 条文案及对应来源、关联改写。');
+      document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
+    }catch(error){notify(error.message,true);}
+    finally{busy=false;sync();}
   });
   $('#clearSelectionBtn').addEventListener('click', () => {
     selected.clear();
@@ -90,7 +118,7 @@
     document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
   });
   $('#produceBtn').addEventListener('click', async () => {
-    if (busy || !selected.size) return;
+    if (busy || !selected.size || selected.size>5 || $('#produceBtn').disabled) return;
     busy = true;
     requestId ||= crypto.randomUUID();
     sync();

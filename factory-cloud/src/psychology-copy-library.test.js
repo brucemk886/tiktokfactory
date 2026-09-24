@@ -194,3 +194,29 @@ test('the old recreation board redirects into the manual view of publish records
  assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-production']},'/psychology-publish-sources'),true);
  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-production','psychology-publish-sources']},'/psychology-publish-sources'),false);
 });
+
+
+async function deleteCopies(f,ids,{user={...actor,sidebarModules:['psychology-peer-hits']},origin}={}){
+ const url=new URL('https://factory.test/api/psychology-copy-library');
+ return handlePsychologyCopyLibrary(new Request(url,{method:'DELETE',headers:{'Content-Type':'application/json',...(origin?{origin}:{})},body:JSON.stringify({ids})}),f.env,url,{user});
+}
+test('bulk deletion removes selected originals and peers, tombstones linked rewrites, and preserves job snapshots',async t=>{
+ const f=await setup(t);const imported=await importPsychologyPeerHits(f.db,[post(900,'photo',{pageTexts:['Keep breathing']}),post(901,'video',{transcript:'Original video words'}),post(902,'photo',{pageTexts:['Unrelated copy']})],'admin');
+ const ids=imported.items.map(i=>i.id);const keys=ids.map(id=>photoCopyKey(f.sqlite.prepare('SELECT source_url FROM psychology_copy_library WHERE id=?').get(id).source_url));
+ for(let i=0;i<3;i++){f.sqlite.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run('v'+i,'admin','version'+i,keys[i],'Title','Caption','["Words"]','fp'+i,1);f.sqlite.prepare('INSERT INTO psychology_copy_comparisons(variant_id,fingerprint,updated_at) VALUES (?,?,?)').run('v'+i,'fp'+i,1);}
+ f.sqlite.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,copy_json) VALUES (?,?,?)').run('published-item',keys[0],'{"title":"Preserved"}');
+ f.sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,payload_json,created_by,created_at,updated_at) VALUES ('active-job','psychology','running','Preserved','{}','admin',1,1)").run();
+ const before=f.sqlite.prepare('SELECT * FROM factory_jobs').all();
+ assert.equal((await (await deleteCopies(f,[ids[0],ids[1],ids[0]])).json()).deleted,2);
+ assert.deepEqual(f.sqlite.prepare('SELECT id FROM psychology_copy_library').all().map(r=>r.id),[ids[2]]);assert.deepEqual(f.sqlite.prepare('SELECT id FROM psychology_peer_hits').all().map(r=>r.id),[ids[2]]);
+ const variants=f.sqlite.prepare('SELECT id,enabled,deleted_at FROM psychology_copy_variants ORDER BY id').all();assert.equal(variants[0].enabled,0);assert.ok(variants[1].deleted_at>0);assert.equal(variants[2].enabled,1);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_comparisons').get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_creative_snapshots').get().n,1);assert.deepEqual(f.sqlite.prepare('SELECT * FROM factory_jobs').all(),before);
+ assert.equal((await(await deleteCopies(f,[ids[0]])).json()).deleted,0);
+});
+test('bulk deletion validates scope and rolls back on database failure',async t=>{
+ const f=await setup(t);const id=(await importPsychologyPeerHits(f.db,post(910),'admin')).items[0].id;
+ for(const ids of [[],['bad'],Array(21).fill(id)])assert.equal((await deleteCopies(f,ids)).status,400);
+ assert.equal((await deleteCopies(f,[id],{user:actor})).status,403);assert.equal((await deleteCopies(f,[id],{user:{...actor,role:'operator'}})).status,403);assert.equal((await deleteCopies(f,[id],{origin:'https://evil.test'})).status,403);
+ f.sqlite.exec("CREATE TRIGGER reject_copy_delete BEFORE DELETE ON psychology_copy_library BEGIN SELECT RAISE(ABORT,'test rollback'); END;");
+ await assert.rejects(deleteCopies(f,[id]),/test rollback/);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_peer_hits').get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_library').get().n,1);
+});
