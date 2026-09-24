@@ -17,7 +17,8 @@ export async function replicateText(env, { model, prompt, systemPrompt = '', max
   };
   let prediction = await read(await fetchImpl(`${API}/models/${model}/predictions`, {
     method: 'POST', headers: { ...headers, Prefer: 'wait=60' },
-    body: JSON.stringify({ input: { prompt, system_prompt: systemPrompt, max_tokens: maxTokens, effort } }),
+    // Replicate's Claude models refuse max_tokens below 1024.
+    body: JSON.stringify({ input: { prompt, system_prompt: systemPrompt, max_tokens: Math.max(1024, maxTokens), effort } }),
   }));
   while (['starting', 'processing'].includes(prediction.status)) {
     if (now() - started > budgetMs || !prediction.urls?.get) fail('Replicate 生成超时，请稍后重试。', 504);

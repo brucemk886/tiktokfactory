@@ -19,7 +19,7 @@ test('Replicate client waits, polls until done, joins streamed output and report
   assert.equal(calls[0].url, 'https://api.replicate.com/v1/models/anthropic/claude-sonnet-5/predictions');
   assert.equal(calls[0].init.headers.Authorization, 'Bearer r8_test');
   assert.equal(calls[0].init.headers.Prefer, 'wait=60');
-  assert.deepEqual(JSON.parse(calls[0].init.body).input, { prompt: 'hi', system_prompt: '', max_tokens: 100, effort: 'low' });
+  assert.deepEqual(JSON.parse(calls[0].init.body).input, { prompt: 'hi', system_prompt: '', max_tokens: 1024, effort: 'low' });
   assert.equal(calls.length, 3);
   await assert.rejects(replicateText({}, { model: 'm', prompt: 'x' }), e => e.statusCode === 503 && /REPLICATE_API_TOKEN/.test(e.message));
   await assert.rejects(replicateText({ REPLICATE_API_TOKEN: 't', fetch: async () => Response.json({ status: 'failed', error: 'bad input' }) }, { model: 'm', prompt: 'x' }), /bad input/);
