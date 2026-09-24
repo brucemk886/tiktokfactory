@@ -276,19 +276,28 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (url.pathname === BASE && request.method === 'GET') {
     const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
     const attention=url.searchParams.get('attention')==='1';
-    const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed'))":"");
+    const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.id IS NULL AND i.receipt_json='{}' AND i.ready_json='{}' AND NOT EXISTS(SELECT 1 FROM factory_publish_records r WHERE json_extract(r.value_json,'$.autoTaskId')=i.id AND COALESCE(json_extract(r.value_json,'$.batchId'),'')<>'' AND (json_extract(r.value_json,'$.autoBatchId') IS NULL OR json_extract(r.value_json,'$.autoBatchId')=i.batch_id))))":"");
     const total=(await env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(user.username).first()).n;
     const batches = await env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(user.username,pageSize,(page-1)*pageSize).all();
     const result = [];
     for (const batch of batches.results) {
       const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at
         FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=? AND i.deleted_at=0 ORDER BY i.id`).bind(batch.id).all();
+      // Publishing records survive execution-job cleanup. Match the immutable item ID,
+      // never an account/title, so unrelated posts cannot complete this task.
+      const durable = rows.results.length ? await env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))")
+        .bind(JSON.stringify(rows.results.map(row=>row.id))).all() : {results:[]};
+      const durableReceipts=new Map();
+      for(const stored of durable.results){
+        const record=readJsonValue(stored.value_json);
+        if(record.autoTaskId && record.batchId && (!record.autoBatchId || record.autoBatchId===batch.id))durableReceipts.set(record.autoTaskId,record);
+      }
       const groups=await env.DB.prepare("SELECT g.*,j.status AS retry_status,j.auto_retry_count,j.available_at FROM psychology_publish_groups g LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id=? ORDER BY g.ordinal").bind(batch.id).all();
       result.push({ groups:groups.results.map(g=>{const members=rows.results.filter(i=>i.publish_group_id===g.id);return {id:g.id,retryCount:g.auto_retry_count||0,retryAt:g.retry_status==='queued'?g.available_at:0,retrying:['queued','running'].includes(g.retry_status),number:g.ordinal+1,count:members.length,status:members.length?g.status:'cancelled',error:members.length?g.error:'',canRetry:!['queued','running'].includes(g.retry_status)&&members.length>0&&(g.status==='failed'||(g.status==='waiting'&&members.every(i=>i.ready_json!=='{}'))||(g.status==='submitting'&&g.updated_at<Date.now()-180000)),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''};}), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json), deletedCount:JSON.parse(batch.config_json).count-rows.results.length,
         items: rows.results.map(row => {
           const receipt = JSON.parse(row.receipt_json || '{}');
           const result = JSON.parse(row.result_json || '{}');
-          const submitted = Boolean(receipt.batchId || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
+          const submitted = Boolean(receipt.batchId || durableReceipts.has(row.id) || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
           return { retryCount:row.auto_retry_count||0,retryAt:row.status==='queued'?row.available_at:0,id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
             groupId:row.publish_group_id, scheduleAt: row.schedule_at, status: submitted ? 'submitted' : row.ready_json!=='{}' && row.publish_group_id ? 'ready' : row.status==='queued'&&row.available_at ? 'queued' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
             percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: submitted ? '' : row.error || result.publishError || '', type: row.type };

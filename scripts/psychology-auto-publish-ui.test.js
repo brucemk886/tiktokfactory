@@ -208,3 +208,19 @@ for(const media of ['photo','video'])for(const source of ['copy-library','copy-b
  await h.node('#refreshBatches').listeners.click();
  assert.equal(listWrites,0);assert.equal(detailWrites,0);assert.equal(h.node('#batchDetail').open,true);
  });
+
+
+test('missing execution records never masquerade as queued work',()=>{
+  const text=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8');
+  const functions=text.slice(text.indexOf('function batchStatus('),text.indexOf('let batchPage='));
+  const ctx=vm.createContext({});vm.runInContext(functions,ctx);
+  const state=(items,groups=[])=>ctx.batchStatus(items.map(status=>({status})),groups);
+  assert.equal(state(['submitted','missing']),'unknown');
+  assert.equal(ctx.statusLabel('unknown'),'状态待核实');
+  assert.equal(state(['submitted','submitted']),'done');
+  assert.equal(state(['submitted','queued']),'queued');
+  assert.equal(state(['submitted','done']),'running');
+  assert.equal(state(['failed','submitted']),'failed');
+  assert.equal(state(['unexpected']),'unknown');
+  assert.equal(state(['cancelled']),'cancelled');
+});
