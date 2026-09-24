@@ -21,5 +21,8 @@ Add AI 生成 to the source-bound 新增改写文案 dialog, using the factory's
 - Full factory suite: 653/653 passed; git diff --check passed.
 - Covers photo/video generation, current model contract, no writes/jobs, authorization/Origin/source validation, malformed provider output, failure preservation, duplicate clicks, source switching and review/save gating.
 
-## Next step
-Commit/push main, standard npm run deploy, then generate one unsaved production draft through the UI to verify the real provider and form fill.
+## Deployment / Completion
+- 513aa3e pushed to main; clean exact HEAD == origin/main verified before standard factory-cloud npm run deploy.
+- Production version: 9de7a0c9-811a-4c3d-8e81-1e46235b9da5.
+- Real browser/provider smoke test on the screenshot source succeeded: version name, title, caption and six body pages filled; busy controls restored and review remained unchecked. No variant saved, job created or content published. Verification session closed.
+- Complete; no remaining work.
