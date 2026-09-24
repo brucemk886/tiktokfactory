@@ -1,6 +1,6 @@
 # Current State
 
-- Authenticated factory pages share the navy/light admin console (admin-ui.css/js loaded by access.js), with collapsible responsive navigation and unified fields, tables and dialogs. Psychology auto-publish is table-first with a creation modal, batch-detail drawer, current-page filters and unchanged-data polling protection. Publishing and permission contracts are retained. See docs/handoffs/2026-09-24-admin-console-redesign.md.
+- Authenticated factory pages share the navy/light admin console (admin-ui.css/js declared in page HTML, with the console class applied before first paint), with collapsible responsive navigation and unified fields, tables and dialogs. Psychology auto-publish is table-first with a creation modal, batch-detail drawer, current-page filters and unchanged-data polling protection. Publishing and permission contracts are retained. See docs/handoffs/2026-09-24-admin-console-redesign.md.
 
 - Psychology source hits and extracted copy now share one 文案库 at `/psychology-copy-library`, separated into video/photo tabs with source metrics, extraction text/status and per-original rewrites. Completed text is the default; operators can inspect all imports, active failures or historical opted-out records. Old peer page URLs redirect here; Grokbot API and keys are unchanged. Source-management permissions and original-source recreation remain distinct from copy-based auto-production.
 

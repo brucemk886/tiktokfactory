@@ -84,12 +84,12 @@ function renderCanonicalSidebars(user, sidebarModules) {
 }
 
 function ensureThemeStylesheet() {
-  if (document.querySelector("link[data-lf-theme]")) return;
+  if (document.querySelector('link[data-lf-theme], link[href="/theme-ops.css"]')) return;
   const link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = "/theme-ops.css";
   link.dataset.lfTheme = "light";
-  document.head.appendChild(link);
+  document.head.insertBefore(link, document.querySelector("link[data-lf-console]"));
 }
 
 function ensureSidebarChrome(nav) {
