@@ -173,7 +173,7 @@ const sample={
         {
           "externalId": "anxious-reflection-v1",
           "title": "When messages leave you guessing",
-          "caption": "",
+          "caption": "Reading it one more time won't make it clearer. #anxiousattachment #overthinking",
           "pages": [
             "When messages leave you guessing",
             "You read the same message again, hoping to feel certain."
@@ -200,6 +200,11 @@ const sample={
                 ]
               },
               {
+                "text": "Reading it one more time won't make it clearer. #anxiousattachment #overthinking",
+                "zh": "再读一遍也不会更清楚。#焦虑型依恋 #想太多",
+                "originalTexts": []
+              },
+              {
                 "text": "You read the same message again, hoping to feel certain.",
                 "zh": "你又读了一遍同样的消息，希望能获得确定感。",
                 "originalTexts": [
@@ -215,5 +220,14 @@ const sample={
 };
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
+// Same text as the grokbot instruction in docs/psychology-peer-hits-api.md.
+const rewriteRules=`For every psychology photo post, call the language model once per post. Never use templates, fixed sentence patterns, or code that splices sentences together.
+1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
+2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages.
+3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
+4. Each rewrite: title = the cover hook (no hashtags); pages = 2-6 items, cover first, then one clear idea per page in 1-2 natural sentences; caption = 1-2 natural sentences plus 2-5 relevant hashtags. Hashtags only in the caption.
+5. English only, sounds like a real person posting, no invented statistics, no diagnoses, no links.
+6. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.`;
+$("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();

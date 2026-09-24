@@ -6,7 +6,7 @@ import {handlePsychologyCreative,normalizeVariant} from './psychology-creative.j
 import {comparisonUnits,validateComparison} from './psychology-copy-comparison.js';
 const actor={id:'admin',username:'admin',role:'admin',sidebarModules:['psychology-copy-library']};
 async function call(f,path,method='GET',body,user=actor,headers={}){const url=new URL('https://factory.test/api/psychology-creative/copies'+path);return handlePsychologyCreative(new Request(url,{method,headers,...(body?{body:JSON.stringify(body)}:{})}),f.env,url,{user});}
-const v={externalId:'review-test',title:'A new title',caption:'A new caption',pages:['New sentence one. New sentence two.','New third sentence.']};
+const v={externalId:'review-test',title:'A new title',caption:'A new caption that reads as a full sentence.',pages:['New sentence one. New sentence two.','New third sentence.']};
 async function setup(t){
  const f=await fixture(t);
  const result=await importPsychologyPeerHits(f.db,{mediaType:'photo',videoUrl:'https://www.tiktok.com/@example/photo/9901',title:'Original title',videoData:{language:'en',caption:'Original caption',pageTexts:['First original. Second original.','Third original.']},rewrites:[v]},'admin');

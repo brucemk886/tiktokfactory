@@ -146,7 +146,7 @@ test("admins can move records between video and photo tabs and later imports pre
 });
 
 const photoUrl=n=>`https://www.tiktok.com/@example/photo/${n}`;
-const rewrite=n=>({title:`Rewrite ${n}`,caption:`Caption ${n}`,pages:[`Cover ${n}`,`Page two ${n}`]});
+const rewrite=n=>({title:`Rewrite ${n}`,caption:`A full caption written for rewrite ${n}.`,pages:[`Cover ${n}`,`Page two ${n}`]});
 
 test("grokbot page text completes a historical photo copy that auto-extraction skips",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
@@ -191,6 +191,35 @@ test("rewrites in the same import become enabled versions under the original and
   const conflict=await importPsychologyPeerHits(db,[{videoUrl:photoUrl(702),rewrites:[{...rewrite(10),externalId:"fixed-v1"}]},{videoUrl:photoUrl(703),rewrites:[rewrite(11)]}],"admin");
   assert.deepEqual(conflict.rewrites,{created:1,duplicates:0,conflicts:1});
   assert.equal(sqlite.prepare("SELECT title FROM psychology_copy_variants WHERE external_id='fixed-v1'").get().title,"Rewrite 9");
+});
+
+test("rewrite quality gate refuses template, spliced and incomplete versions before any write",async t=>{
+  const {db,sqlite}=fixture(t);
+  const good={title:"When their silence gets loud",caption:"You are not too much for wanting a clear answer.",pages:["When their silence gets loud","A late reply is not a verdict on your worth"]};
+  const post=(n,rw,extra={})=>({videoUrl:photoUrl(1000+n),videoData:{pageTexts:["Original cover line here","He left me on read for two whole days"]},rewrites:[rw],...extra});
+  const refused=async(rw,pattern)=>{await assert.rejects(importPsychologyPeerHits(db,post(1,rw),"admin"),pattern);};
+  await refused({...good,caption:""},/caption 必须写完整的发布文案/);
+  await refused({...good,caption:"#anxiousattachment #fyp #love"},/caption 必须写完整的发布文案/);
+  await refused({...good,pages:[good.pages[0]]},/至少 2 页/);
+  await refused({...good,title:"Signs #attachment"},/标题不能包含话题标签/);
+  await refused({...good,pages:[good.pages[0],"Soft check: how many boxes hit today? #teacherattachment #xyzba"]},/第 2 页包含话题标签/);
+  await refused({...good,pages:[good.pages[0],"Read the full story, link in bio"]},/引流/);
+  await refused({...good,pages:[good.pages[0],"He left me on read for two whole days"]},/第 2 页原样照抄了原文/);
+  await refused({...good,pages:[good.pages[0],"Do they You track every delay in their reply?"]},/拼接痕迹/);
+  await refused({...good,pages:[good.pages[0],"Closeness feels urgent — they Closeness then scary"]},/拼接痕迹/);
+  await refused({...good,caption:"Kamu tidak sendirian, aku juga pernah merasakan ini",pages:["Kamu tidak sendirian","Aku juga pernah merasakan ini dengan dia"]},/必须是英文/);
+  // The same body line on two different posts is a template, in one request or against the library.
+  const template="They go warm, then scarce, without a clear reason";
+  await assert.rejects(importPsychologyPeerHits(db,[post(2,{...good,pages:[good.pages[0],template]}),post(3,{...good,title:"Other",pages:["Another cover",template]})],"admin"),/第 2 条 rewrites 第 1 项.*本次提交里另一篇爆款/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_peer_hits").get().n,0);
+  const first=await importPsychologyPeerHits(db,post(2,{...good,pages:[good.pages[0],template]}),"admin");
+  assert.equal(first.rewrites.created,1);
+  assert.equal((await importPsychologyPeerHits(db,post(2,{...good,pages:[good.pages[0],template]}),"admin")).rewrites.duplicates,1); // resending to the same post is fine
+  await assert.rejects(importPsychologyPeerHits(db,post(3,{...good,title:"Other",pages:["Another cover",template.toUpperCase()]}),"admin"),/文案库里其他爆款的改写完全相同/);
+  // Deleted versions still count, so a resubmitted template stays refused.
+  sqlite.prepare("UPDATE psychology_copy_variants SET deleted_at=1,enabled=0").run();
+  await assert.rejects(importPsychologyPeerHits(db,post(4,{...good,title:"Again",pages:["Third cover",template]}),"admin"),/其他爆款的改写完全相同/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_copy_variants").get().n,1);
 });
 
 test("invalid or oversized rewrites reject the whole batch before any write; non-English posts keep none",async t=>{

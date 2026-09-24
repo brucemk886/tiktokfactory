@@ -3,6 +3,7 @@ import { isEnglishPsychologyPeerHit } from "../../scripts/psychology-peer-langua
 import { photoCopyKey } from "./peer-photo-copy-cache.js";
 import { importedCopy } from "./psychology-copy-library.js";
 import { normalizeVariant } from "./psychology-creative.js";
+import { checkRewrite, checkSharedLines } from "./psychology-rewrite-quality.js";
 
 const TABLE = "psychology_peer_hits";
 const COPY_SYNC = `INSERT INTO psychology_copy_library(id,owner,media_type,title,source_url,source_json,created_at,updated_at)
@@ -48,7 +49,8 @@ async function normalizeRewrites(raw, item) {
     if (!rewrite || typeof rewrite !== "object" || Array.isArray(rewrite)) fail(`rewrites 第 ${index + 1} 项必须是对象。`);
     const provided = typeof rewrite.externalId === "string" ? rewrite.externalId.trim() : "";
     let variant;
-    try { variant = normalizeVariant({ ...rewrite, sourceKey, externalId: provided || "derived" }); }
+    const pageTexts = Array.isArray(item.videoData?.pageTexts) ? item.videoData.pageTexts.filter(text => typeof text === "string") : [];
+    try { variant = normalizeVariant({ ...rewrite, sourceKey, externalId: provided || "derived" }); checkRewrite(variant, pageTexts); }
     catch (error) { error.message = `rewrites 第 ${index + 1} 项：${error.message}`; throw error; }
     const fingerprint = await sha256Hex(JSON.stringify([variant.sourceKey, variant.title, variant.caption, variant.pages]));
     // An omitted ID follows the content, so resending identical rewrites is a no-op.
@@ -161,6 +163,7 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     } catch (error) { error.message = `第 ${index + 1} 条：${error.message}`; throw error; }
   }));
   if (items.reduce((sum, item) => sum + item.rewrites.length, 0) > MAX_REWRITES_PER_REQUEST) fail(`每次请求最多 ${MAX_REWRITES_PER_REQUEST} 个改写版本，请拆小批次。`);
+  await checkSharedLines(db, items.flatMap((item, index) => item.rewrites.map((rewrite, r) => ({ sourceKey: rewrite.sourceKey, pages: rewrite.pages, label: `第 ${index + 1} 条 rewrites 第 ${r + 1} 项` }))));
   const english = items.filter(item => isEnglishPsychologyPeerHit(item));
   const skipped = items.filter(item => !isEnglishPsychologyPeerHit(item));
   if (!english.length) {

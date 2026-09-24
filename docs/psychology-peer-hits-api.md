@@ -75,7 +75,7 @@ Content-Type: application/json
 | `source` | 数据来源，例如 `grokbot`，最多 80 字符。 |
 | `videoData` | 其他内容数据的 JSON 对象，序列化后最多 16000 字符；可保存标签、语言、文案、其他指标等。图文复刻可提供完整 `copy`、`caption`、`script`、`transcript` 或 `文案`。若已采集原文，图文可同时提供 `pageTexts`（按图片顺序，最多6项），视频可提供 `transcript` 和可选 `onScreenText`；文案库会直接归档这些字段，避免再次识别。仅有标题或发布文案不视为已完成逐页/逐帧提取。 |
 
-| `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符，`caption` 最多 2200 字符，`pages` 为 1–6 页、每页 1–1500 字符、第一项是首图。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
+| `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符且不含话题标签，`caption` 必填（去掉话题标签后至少 20 字符）、最多 2200 字符，`pages` 为 2–6 页、每页 1–1500 字符、第一项是首图。写入前会按下文「写入标准与改写规则」检查，任一版本不合格整批拒收并返回原因。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
 
 数量字段支持非负安全整数，也接受 `"128K"`、`"12.8万"`、`"1.2M"` 等字符串，存储为整数。标准字段优先于别名。时间可用带时区的 ISO 字符串，或 Unix 秒 / 毫秒时间戳；不接受无时区日期、负值和超过服务器时间一天的未来时间。接口列表返回时间统一为 Unix 毫秒，页面显示北京时间。
 
@@ -99,7 +99,7 @@ Content-Type: application/json
         "pageTexts": ["Signs you are anxiously attached", "You reread their texts looking for hidden meaning"]
       },
       "rewrites": [
-        { "title": "When silence feels like rejection", "caption": "You are not too much.", "pages": ["When silence feels like rejection", "A slow reply is not a verdict on you"] }
+        { "title": "When silence feels like rejection", "caption": "Rereading their last message again? You're not too much for wanting clarity. #anxiousattachment #relationships", "pages": ["When silence feels like rejection", "You check your phone before you even open your eyes", "A slow reply is not a verdict on your worth", "Try this: name the fear out loud, then wait an hour before you text"] }
       ]
     }
   ]
@@ -110,6 +110,52 @@ Content-Type: application/json
 - `title` 建议写原帖首图的钩子句，而不是一串话题标签；话题标签放进 `videoData.caption`。
 - 改写版本请去掉原帖的引流页（书单、LINK IN BIO、原作者口头禅），不虚构研究和统计数据，改变表达角度和具体情境，不只替换同义词。
 - 处理历史数据：对 `copy` 为 `needs_text` 的链接重新提交一次（附 `pageTexts` 和 `rewrites`）即可，指标字段可省略，已保存的值会保留。`collectedAt` 请省略或填本次处理时间；沿用比已保存记录更早的采集时间会被当作旧数据忽略（`ignored_older`），原文也不会补上。
+
+## 写入标准与改写规则（2026-09-24 起强制）
+
+2026-09-23 导入的 1936 个改写几乎都是程序套模板拼出来的：5 个固定标题句式只换一个话题词，正文每篇一字不差，Checklist 里塞进原文识别乱码，发布文案全空。已全部删除。以下规则由工厂在写入时检查，不达标直接拒收。
+
+### 原文（`videoData.pageTexts`）
+
+- 只提交心理学 / 情感关系题材的英文图文：依恋、分手、暧昧、边界、自我价值等。动漫角色设定、带货、纯段子等跑题内容不要提交。
+- `pageTexts` 必须是图片上清晰可读的完整句子，按图片顺序排列，一页一项。识别出乱码（如 `Nou make me the L once WAS`）、残句或大量错字时，请重新识别；仍不清楚就跳过这篇，不要提交。
+- 去掉引流页和水印文字（LINK IN BIO、作者名、书单页）。
+
+### 改写（`rewrites`）
+
+1. **逐篇调用大模型改写，禁止模板和程序拼接。** 先读懂这一篇原帖的钩子、情境和情绪，再写。
+2. **每篇 5 个版本，每个版本换一个角度，但都围绕这一篇原帖**：例如换叙述视角（我 / 你 / 旁观者）、换具体场景（发消息、约会后、分手后）、换形式（清单、对比、一句话安慰、可执行小建议）。不同爆款之间不能共用同一句正文。
+3. **结构**：首图是一句抓人的钩子（不超过 12 个英文单词为宜）；正文 2–5 页，每页一个完整意思、一两句话；最后一页可以是安慰或可执行的小建议。
+4. **发布文案 `caption` 必须写**：一两句自然的话 + 2–5 个相关话题标签。话题标签只放在 caption，不放进标题和图片页。
+5. **不照抄原文句子，不虚构研究数据**，不做诊断（不说 "you have BPD" 之类），不引流、不放链接。
+6. 全部用英文，口吻像真人发帖，不要教科书腔。
+
+### 工厂自动拒收的情况
+
+| 规则 | 报错示例 |
+|---|---|
+| `caption` 为空或只有话题标签 | caption 必须写完整的发布文案 |
+| `pages` 少于 2 页 | pages 至少 2 页 |
+| 标题或图片页含话题标签 | 第 N 页包含话题标签 |
+| 图片页或 caption 含链接、link in bio | 包含链接或引流 |
+| 图片页与本次提交的原文某页一字不差 | 原样照抄了原文 |
+| 拼接痕迹（如 `Do they You track…`） | 有拼接痕迹 |
+| 非英文 | 改写必须是英文 |
+| 某页（20 字符以上）与其他爆款的改写一字不差，包括本次提交里的其他帖子、库里已有和已删除的版本 | 疑似模板，每篇爆款请单独改写 |
+
+任一版本不合格，整批请求返回 400 并写明「第几条 · 第几个改写 · 第几页 · 原因」，这一批里的原文和其他改写也不会写入。按提示修正后重新提交即可。
+
+### 给 grokbot 的指令（可直接粘贴）
+
+```text
+For every psychology photo post, call the language model once per post. Never use templates, fixed sentence patterns, or code that splices sentences together.
+1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
+2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages.
+3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
+4. Each rewrite: title = the cover hook (no hashtags); pages = 2-6 items, cover first, then one clear idea per page in 1-2 natural sentences; caption = 1-2 natural sentences plus 2-5 relevant hashtags. Hashtags only in the caption.
+5. English only, sounds like a real person posting, no invented statistics, no diagnoses, no links.
+6. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.
+```
 
 ## 去重与更新
 
@@ -179,7 +225,7 @@ Content-Type: application/json
 {
   "externalId": "anxious-reflection-v1",
   "title": "When messages leave you guessing",
-  "caption": "",
+  "caption": "Reading it one more time won't make it clearer. #anxiousattachment #overthinking",
   "pages": ["When messages leave you guessing", "You read the same message again, hoping to feel certain."],
   "score": 91,
   "scoreReason": "钩子清晰，情境具体，表达温和。",
@@ -190,6 +236,7 @@ Content-Type: application/json
     ],
     "rewrite": [
       {"text": "When messages leave you guessing", "zh": "当消息让你反复猜测", "originalTexts": ["Signs you are anxiously attached"]},
+      {"text": "Reading it one more time won't make it clearer. #anxiousattachment #overthinking", "zh": "再读一遍也不会更清楚。#焦虑型依恋 #想太多", "originalTexts": []},
       {"text": "You read the same message again, hoping to feel certain.", "zh": "你又读了一遍同样的消息，希望能获得确定感。", "originalTexts": ["You reread their texts looking for hidden meaning"]}
     ]
   }
