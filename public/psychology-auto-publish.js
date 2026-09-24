@@ -177,13 +177,13 @@ $('#batchFilter').addEventListener('change',()=>{loadBatches(1).catch(e=>message
 $('#batchDateRange').addEventListener('change',()=>{
  const range=$('#batchDateRange').value;$('#batchCustomDates').hidden=range!=='custom';
  if(range==='custom')return;
- batchDates={range};loadBatches(1).catch(e=>message(e.message,true));
+ message('');batchDates={range};loadBatches(1).catch(e=>message(e.message,true));
 });
 $('#applyBatchDates').addEventListener('click',()=>{
  const startDate=$('#batchStartDate').value,endDate=$('#batchEndDate').value;
  if(!startDate||!endDate)return message('请选择开始和结束日期。',true);
  if(startDate>endDate)return message('开始日期不能晚于结束日期。',true);
- batchDates={range:'custom',startDate,endDate};loadBatches(1).catch(e=>message(e.message,true));
+ message('');batchDates={range:'custom',startDate,endDate};loadBatches(1).catch(e=>message(e.message,true));
 });
 async function loadBatches(page=batchPage) {
   const version=++batchLoadVersion;

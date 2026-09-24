@@ -276,5 +276,5 @@ test('custom batch dates wait for a valid applied range',async()=>{
  h.node('#applyBatchDates').listeners.click();assert.equal(h.requests.length,count);
  h.node('#batchStartDate').value='2026-09-22';h.node('#batchEndDate').value='2026-09-21';h.node('#applyBatchDates').listeners.click();assert.equal(h.requests.length,count);
  h.node('#batchEndDate').value='2026-09-22';h.node('#applyBatchDates').listeners.click();await tick();
- assert.match(h.requests.at(-1).path,/range=custom&startDate=2026-09-22&endDate=2026-09-22/);
+ assert.match(h.requests.at(-1).path,/range=custom&startDate=2026-09-22&endDate=2026-09-22/);assert.equal(h.node('#queueMessage').textContent,'');
 });

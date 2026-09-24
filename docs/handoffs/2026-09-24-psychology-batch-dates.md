@@ -19,5 +19,8 @@ Explain disabled next-page button and add date filtering to automatic publishing
 - Focused suite 78 passed: timezone boundaries, invalid dates, owner scope, count before pagination, cross-page filter persistence and custom query validation.
 - Full suite 642 passed including concurrent unrelated workspace changes; owned files will be shipped from a clean checkout.
 
-## Unfinished
-- Deployment/live verification pending.
+## Production verification
+- Deployed clean main 0e0dedc (includes eeffaa6) as 4400fd07-a984-45ae-86b7-4e35ed5ec13b from an isolated checkout; clean-checkout full suite 642 passed after supplying root dependencies.
+- Live browser: All = 7 batches / 1 page; custom September 22 = exactly 2 batches; Today = 0 with explicit date-empty message. Last-page buttons disabled correctly. No publication actions.
+- Browser found a stale validation message after correcting empty dates; follow-up clears that message on valid date application/preset change.
+- No unfinished implementation work.
