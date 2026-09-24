@@ -49,3 +49,9 @@ Deploy committed main when production Cloudflare access is available; then inves
 - Full suite 635 passed, including constant query-count/membership regression and slow options rendering regression.
 - Files: factory-cloud/src/psychology-auto-publish.js/.test.js, public/psychology-auto-publish.js/.html, scripts/psychology-auto-publish-ui.test.js.
 - Deployed cda0048 as version 88aea08a-cb8c-4e87-998c-53711d44c68e. Live Resource Timing after deployment: tasks/options/accounts all start at 6564 ms; task API 2945 ms (before 6611 ms), options 2478 ms, accounts 2383 ms. Seven rows present, no UI error. Samples are single-navigation observations, not latency guarantees; overall document/assets/auth time remains outside these API durations.
+
+## Replace misleading generation progress
+- Removed the mixed job-percent/submission-receipt progress calculation from both batch rows and details.
+- Column four is 发布状态 with separately displayed success/failure/pending/unavailable counts; column five is 批次状态. Counts wrap rather than being truncated into an ellipsis.
+- Detail drawer uses the same publication summary; no inference that missing job rows mean incomplete generation.
+- Existing UI suite: 22 passed. Changes are presentation-only.
