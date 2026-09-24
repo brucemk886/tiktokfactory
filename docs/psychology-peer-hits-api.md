@@ -85,9 +85,9 @@ Content-Type: application/json
 
 数量字段支持非负安全整数，也接受 `"128K"`、`"12.8万"`、`"1.2M"` 等字符串，存储为整数。标准字段优先于别名。时间可用带时区的 ISO 字符串，或 Unix 秒 / 毫秒时间戳；不接受无时区日期、负值和超过服务器时间一天的未来时间。接口列表返回时间统一为 Unix 毫秒，页面显示北京时间。
 
-## 图文：grokbot 一次提交原文与 5 个改写版本
+## 图文：grokbot 提交原帖与逐页文字
 
-图文生产只需要原文逐页文字和改写版本，推荐 grokbot 每篇图文一次提交全部内容：
+改写由工厂生成，grokbot 每篇图文提交原帖链接、逐页文字和必填数据即可：
 
 ```json
 {
@@ -109,10 +109,7 @@ Content-Type: application/json
         "language": "en",
         "caption": "which one is you? #anxiousattachment",
         "pageTexts": ["Signs you are anxiously attached", "You reread their texts looking for hidden meaning"]
-      },
-      "rewrites": [
-        { "title": "When silence feels like rejection", "caption": "Rereading their last message again? You're not too much for wanting clarity. #anxiousattachment #relationships", "pages": ["When silence feels like rejection", "You check your phone before you even open your eyes", "A slow reply is not a verdict on your worth", "Try this: name the fear out loud, then wait an hour before you text"] }
-      ]
+      }
     }
   ]
 }
@@ -124,6 +121,8 @@ Content-Type: application/json
 - 处理历史数据：对 `copy` 为 `needs_text` 的链接重新提交一次（附 `pageTexts` 和 `rewrites`）即可，已保存过的播放、互动、发布时间和账号可以省略，接口会沿用已保存的值；从未保存过的必须提供。`collectedAt` 请省略或填本次处理时间；沿用比已保存记录更早的采集时间会被当作旧数据忽略（`ignored_older`），原文也不会补上。
 
 ## 写入标准与改写规则（2026-09-24 起强制）
+
+**分工（2026-09-24 起）**：改写由工厂生成（文案库「批量新增改写」，默认 Claude Sonnet 5），grokbot 只负责找爆款，提交原帖、逐页文字和必填数据，不再提交 `rewrites`。接口仍接受 `rewrites`，提交时按下文「改写」规则检查；这些规则也是工厂生成改写时用的写法要求。
 
 2026-09-23 导入的 1936 个改写几乎都是程序套模板拼出来的：5 个固定标题句式只换一个话题词，正文每篇一字不差，Checklist 里塞进原文识别乱码，发布文案全空。已全部删除。以下规则由工厂在写入时检查，不达标直接拒收。
 
@@ -160,27 +159,16 @@ Content-Type: application/json
 
 任一版本不合格，整批请求返回 400 并写明「第几条 · 第几个改写 · 第几页 · 原因」，这一批里的原文和其他改写也不会写入。按提示修正后重新提交即可。
 
-### 给 grokbot 的指令（可直接粘贴）
+### 给 grokbot 的指令（只找爆款，可直接粘贴）
 
 ```text
-For every psychology photo post, call the language model once per post. Never use templates, fixed sentence patterns, or code that splices sentences together.
-1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
-2a. Every new post must include playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
-2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters).
-3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
-4. Write for TikTok photo carousels, where people decide in one second whether to stop:
-   - Cover (title and first page): 5-12 words that make the reader feel "this is me". Name a specific moment or hidden feeling, in second person or POV. Create curiosity or a gentle call-out. Vary the hook style across the 5 versions; never reuse the same opening pattern.
-   - Middle pages: concrete, relatable micro-moments instead of psychology terms (rereading their last text, apologizing first, checking if they viewed your story, feeling fine until they go quiet). One idea per page, short lines, usually under 25 words, building toward the payoff.
-   - Emotion: validate before you advise. Name the fear underneath (being too much, being left, not being chosen), then offer a warm truth. Sound like a friend who has been there, not a therapist or a textbook. No shaming, no preaching.
-   - Last page: a payoff worth saving or sending — a reframe, a reassurance, or one small doable step.
-   - Caption: short and conversational, invites a reply (a question such as "which one are you?" or "be honest"), plus 2-5 relevant hashtags.
-   - Before submitting each version, check: would someone in this situation stop scrolling, feel seen, and want to save or send it? If not, rewrite it.
-5. Format: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first; caption is required.
-6. English only, no invented statistics, no diagnoses, no links.
-7. Every rewrite must include comparison.original and comparison.rewrite with complete Simplified Chinese translations. comparison.original must cover the ORIGINAL title, ORIGINAL post caption (videoData.copy / caption / description; not the rewrite caption), and every original body sentence. comparison.rewrite must cover the REWRITTEN title, caption and every rewritten body sentence. Never omit the original post caption just because the image text has already been translated. Each entry is {"text":"exact source-language text","zh":"complete Chinese translation"}; rewritten entries also include "originalTexts":["exact matching original BODY sentences"], or [] for genuinely new content. Do not invent a match.
-8. Preserve exact text, punctuation, emoji and hashtags in text values. Title and caption are each one complete entry; split body text by line breaks and sentence endings. Repeated identical text may share one translation. Do not strip hashtags from the submitted caption/translation merely because the UI hides them. All generated post copy remains English; zh and scoreReason are Chinese.
-9. Before submitting, compare all original and rewritten text units against comparison: none may be missing or have an empty zh; every originalTexts reference must exist in the original body. Include a truthful score (0–100) and short Chinese scoreReason for each rewrite. Finish missing translations before submitting; do not rely on the factory's DeepSeek fallback.
-10. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit. To supplement translations or scores for an existing version, keep its externalId and original-language copy unchanged and resend the COMPLETE comparison. Do not submit only the missing sentence: comparison replaces the stored comparison object; do not create a duplicate version.
+You find and submit English psychology photo posts (TikTok photo carousels) to our factory's peer-hits API. Do NOT write rewrites: the factory writes them itself with its own model. Leave the "rewrites" field out.
+1. Which posts: only English photo posts about relationships, attachment (anxious / avoidant), emotional dependency, breakups, situationships, dating, boundaries or self-worth. Skip off-topic posts (character lore, product promos, pure jokes) and posts whose page text you cannot read clearly. Prefer recent posts that are clearly performing.
+2. Required on every new post: playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
+3. videoData.pageTexts: the clean, complete visible text of each image, in order, one item per image (max 6). Fix OCR noise and stray characters; remove watermarks, author names, book-list and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters). Always include pageTexts: without it the factory has to run paid image recognition.
+4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
+5. Do not resubmit posts that are already in the library. To update a post's numbers later, send the same videoUrl with only the metric fields; leave out pageTexts and any timestamp of when you collected it.
+6. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.
 ```
 
 ## 去重与更新

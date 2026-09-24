@@ -175,78 +175,20 @@ const sample={
           "Signs you are anxiously attached",
           "You reread their texts looking for hidden meaning"
         ]
-      },
-      "rewrites": [
-        {
-          "externalId": "anxious-reflection-v1",
-          "title": "When messages leave you guessing",
-          "caption": "Reading it one more time won't make it clearer. #anxiousattachment #overthinking",
-          "pages": [
-            "When messages leave you guessing",
-            "You read the same message again, hoping to feel certain."
-          ],
-          "score": 91,
-          "scoreReason": "钩子清晰，情境具体，表达温和。",
-          "comparison": {
-            "original": [
-              {"text":"Small texting habits can reveal what makes you feel safe.","zh":"发消息的小习惯能透露什么让你感到安心。"},
-              {
-                "text": "Signs you are anxiously attached",
-                "zh": "焦虑型依恋的表现"
-              },
-              {
-                "text": "You reread their texts looking for hidden meaning",
-                "zh": "你反复读对方的消息，试图寻找隐藏的含义"
-              }
-            ],
-            "rewrite": [
-              {
-                "text": "When messages leave you guessing",
-                "zh": "当消息让你反复猜测",
-                "originalTexts": [
-                  "Signs you are anxiously attached"
-                ]
-              },
-              {
-                "text": "Reading it one more time won't make it clearer. #anxiousattachment #overthinking",
-                "zh": "再读一遍也不会更清楚。#焦虑型依恋 #想太多",
-                "originalTexts": []
-              },
-              {
-                "text": "You read the same message again, hoping to feel certain.",
-                "zh": "你又读了一遍同样的消息，希望能获得确定感。",
-                "originalTexts": [
-                  "You reread their texts looking for hidden meaning"
-                ]
-              }
-            ]
-          }
-        }
-      ]
+      }
     }
   ]
 };
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
-// Same text as the grokbot instruction in docs/psychology-peer-hits-api.md.
-const rewriteRules=`For every psychology photo post, call the language model once per post. Never use templates, fixed sentence patterns, or code that splices sentences together.
-1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
-2a. Every new post must include playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
-2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters).
-3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
-4. Write for TikTok photo carousels, where people decide in one second whether to stop:
-   - Cover (title and first page): 5-12 words that make the reader feel "this is me". Name a specific moment or hidden feeling, in second person or POV. Create curiosity or a gentle call-out. Vary the hook style across the 5 versions; never reuse the same opening pattern.
-   - Middle pages: concrete, relatable micro-moments instead of psychology terms (rereading their last text, apologizing first, checking if they viewed your story, feeling fine until they go quiet). One idea per page, short lines, usually under 25 words, building toward the payoff.
-   - Emotion: validate before you advise. Name the fear underneath (being too much, being left, not being chosen), then offer a warm truth. Sound like a friend who has been there, not a therapist or a textbook. No shaming, no preaching.
-   - Last page: a payoff worth saving or sending — a reframe, a reassurance, or one small doable step.
-   - Caption: short and conversational, invites a reply (a question such as "which one are you?" or "be honest"), plus 2-5 relevant hashtags.
-   - Before submitting each version, check: would someone in this situation stop scrolling, feel seen, and want to save or send it? If not, rewrite it.
-5. Format: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first; caption is required.
-6. English only, no invented statistics, no diagnoses, no links.
-7. Every rewrite must include comparison.original and comparison.rewrite with complete Simplified Chinese translations. comparison.original must cover the ORIGINAL title, ORIGINAL post caption (videoData.copy / caption / description; not the rewrite caption), and every original body sentence. comparison.rewrite must cover the REWRITTEN title, caption and every rewritten body sentence. Never omit the original post caption just because the image text has already been translated. Each entry is {"text":"exact source-language text","zh":"complete Chinese translation"}; rewritten entries also include "originalTexts":["exact matching original BODY sentences"], or [] for genuinely new content. Do not invent a match.
-8. Preserve exact text, punctuation, emoji and hashtags in text values. Title and caption are each one complete entry; split body text by line breaks and sentence endings. Repeated identical text may share one translation. Do not strip hashtags from the submitted caption/translation merely because the UI hides them. All generated post copy remains English; zh and scoreReason are Chinese.
-9. Before submitting, compare all original and rewritten text units against comparison: none may be missing or have an empty zh; every originalTexts reference must exist in the original body. Include a truthful score (0–100) and short Chinese scoreReason for each rewrite. Finish missing translations before submitting; do not rely on the factory's DeepSeek fallback.
-10. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit. To supplement translations or scores for an existing version, keep its externalId and original-language copy unchanged and resend the COMPLETE comparison. Do not submit only the missing sentence: comparison replaces the stored comparison object; do not create a duplicate version.`;
+// Same text as the grokbot sourcing instruction in docs/psychology-peer-hits-api.md.
+const rewriteRules=`You find and submit English psychology photo posts (TikTok photo carousels) to our factory's peer-hits API. Do NOT write rewrites: the factory writes them itself with its own model. Leave the "rewrites" field out.
+1. Which posts: only English photo posts about relationships, attachment (anxious / avoidant), emotional dependency, breakups, situationships, dating, boundaries or self-worth. Skip off-topic posts (character lore, product promos, pure jokes) and posts whose page text you cannot read clearly. Prefer recent posts that are clearly performing.
+2. Required on every new post: playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
+3. videoData.pageTexts: the clean, complete visible text of each image, in order, one item per image (max 6). Fix OCR noise and stray characters; remove watermarks, author names, book-list and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters). Always include pageTexts: without it the factory has to run paid image recognition.
+4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
+5. Do not resubmit posts that are already in the library. To update a post's numbers later, send the same videoUrl with only the metric fields; leave out pageTexts and any timestamp of when you collected it.
+6. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();
