@@ -1,5 +1,7 @@
 # Current State
 
+- Grokbot peer-hit writes now require `topics` (1–3 of anxious / avoidant / breakup / situationship / boundaries / self-worth) and `topComments` (up to 20 liked comments; empty only when comment count is 0). The same API key can GET a weekly worklist: watch accounts, posts whose metrics are older than 7 days, and posts missing topics or comments. Rising plays (higher than the previous refresh, within 14 days) sort first in the copy library and are drawn first among unjudged photo posts. Sonnet rewrites receive the comments. The ops content tab groups the period by topic. Migration 0051. See docs/handoffs/2026-09-24-peer-enrichment.md.
+
 - Psychology batch UI now separates production and publication stages; mixed outcomes show 部分成功 with per-stage counts and errors. Migration 0050 persists execution evidence on publish items across job cleanup and restores 27 verified historical preparation failures. No historical jobs are recreated or republished. See docs/handoffs/2026-09-24-psychology-workflow-investigation.md.
 
 - Rewrite 查看 now supports title/sentence original-vs-rewrite Chinese comparisons. Existing versions use user-authorized DeepSeek on first view with D1 lease/hash caching (0049); Grokbot can provide comparison, score (0–100), scoreReason in rewrites, including metadata-only reimports. Rewrite lists sort score descending, unrated last; publishing selection remains traffic-based. See docs/handoffs/2026-09-24-copy-comparison-scoring.md and docs/psychology-peer-hits-api.md.

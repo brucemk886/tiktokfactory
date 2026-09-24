@@ -54,6 +54,9 @@ export async function handlePsychologyCreative(request,env,url,session){
   if(!sourceId||!/^psy-[a-f0-9]{32}$/.test(sourceId))return errorJson('请选择有效的爆款文案。',400);
   const source=await db.prepare("SELECT id,media_type,title,content_json,source_url FROM psychology_copy_library WHERE id=? AND status='done'").bind(sourceId).first();
   if(!source)return errorJson('爆款文案不存在或尚未提取完成。',404);
+  const peer=await db.prepare('SELECT topics_json,comments_json FROM psychology_peer_hits WHERE id=?').bind(sourceId).first();
+  source.topics=JSON.parse(peer?.topics_json||'[]');
+  source.topComments=JSON.parse(peer?.comments_json||'[]');
   const model=url.searchParams.get('model')||undefined;
   if(url.pathname===BASE+'/copies/generate')return json(await generateCopyDraft(env,source,{model}));
   const count=Number(url.searchParams.get('count')||5);

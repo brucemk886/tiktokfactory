@@ -112,6 +112,7 @@ function renderAccounts(){
 }
 function renderContent(f){
   const c=f.content;
+  $("#topicTable").innerHTML=(c.topics||[]).length?table(["题材",...summaryHeaders()],c.topics.map(t=>[esc(t.label),...summaryCells(t)])):'<div class="empty">这期作品还没有题材标签。grokbot 给爆款打上标签后，这里按题材比较破千率。</div>';
   const rows=page(c.sources,"sourcePage","sourcePager",()=>renderContent(state.data.framework));
   $("#sourceTable").innerHTML=rows.length?table(["爆款","累计使用","本期账号 / 版本",...summaryHeaders().slice(1),"主要象限"],rows.map(s=>['<div class="title">'+esc(s.title||s.source)+'</div>',fmt(s.totalUses),fmt(s.accounts)+" / "+fmt(s.versions),...summaryCells(s.stats).slice(1),esc(f.quadrants[s.quadrant].label)])):'<div class="empty">本期没有满24小时的作品。</div>';
   $("#reuseTable").innerHTML=table(["这篇爆款第几次使用",...summaryHeaders()],c.reuse.map(r=>[esc(r.label)+(r.label===c.dropAt?' <span class="ops-chip">明显下滑</span>':""),...summaryCells(r)]));

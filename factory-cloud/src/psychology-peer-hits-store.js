@@ -4,6 +4,7 @@ import { photoCopyKey } from "./peer-photo-copy-cache.js";
 import { importedCopy } from "./psychology-copy-library.js";
 import { normalizeVariant } from "./psychology-creative.js";
 import { checkRewrite, checkSharedLines } from "./psychology-rewrite-quality.js";
+import { parseTopics } from "../../scripts/psychology-peer-topics.js";
 
 const TABLE = "psychology_peer_hits";
 const COPY_SYNC = `INSERT INTO psychology_copy_library(id,owner,media_type,title,source_url,source_json,created_at,updated_at)
@@ -65,7 +66,8 @@ const FIELDS = {
   mediaType: "media_type", voiceGender: "voice_gender", videoId: "video_id", title: "title", accountName: "account_name", accountUsername: "account_username",
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
   commentCount: "comment_count", favoriteCount: "favorite_count", shareCount: "share_count",
-  durationSeconds: "duration_seconds", publishedAt: "published_at", videoData: "video_data_json", source: "source"
+  durationSeconds: "duration_seconds", publishedAt: "published_at", videoData: "video_data_json", source: "source",
+  topics: "topics_json", topComments: "comments_json", metricsAt: "metrics_at"
 };
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
 export function normalizeVoiceGender(value, fallback = "male") {
@@ -145,13 +147,29 @@ export async function normalizePsychologyPeerHit(raw, now = Date.now()) {
     favoriteCount: count(raw.favoriteCount ?? raw.favorites ?? raw.saves, "favoriteCount"),
     shareCount: count(raw.shareCount ?? raw.shares, "shareCount"), durationSeconds: duration,
     publishedAt: timestamp(raw.publishedAt, "publishedAt"), collectedAt: timestamp(raw.collectedAt, "collectedAt") || now,
-    videoData: data || null, source: optionalText(raw.source, 80, "source")
+    videoData: data || null, source: optionalText(raw.source, 80, "source"),
+    topics: topicsOf(raw.topics ?? data?.topics), topComments: parseComments(raw.topComments ?? data?.topComments),
+    metricsAt: [raw.playCount, raw.views, raw.likeCount, raw.likes, raw.commentCount, raw.comments, raw.favoriteCount, raw.favorites, raw.saves, raw.shareCount, raw.shares].some(value => value != null && value !== "") ? now : 0
   };
+}
+function topicsOf(value) { try { return parseTopics(value); } catch (error) { fail(error.message); } }
+function parseComments(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > 20) fail("topComments 最多 20 条。");
+  return value.map((item, index) => {
+    const text = typeof item === "string" ? item : item?.text;
+    if (typeof text !== "string" || !text.trim() || text.trim().length > 300) fail(`topComments 第 ${index + 1} 条须为最多 300 字符的评论原文。`);
+    const likes = item && typeof item === "object" ? count(item.likes ?? item.likeCount, "topComments.likes") : 0;
+    return { text: text.trim(), likes: likes || 0 };
+  }).sort((a, b) => b.likes - a.likes);
 }
 export function psychologyPeerHitFromRow(row) {
   if (!row) return null;
   const item = { id: row.id, videoUrl: row.video_url, platform: row.platform, collectedAt: row.collected_at, createdAt: row.created_at, updatedAt: row.updated_at };
-  for (const [key, column] of Object.entries(FIELDS)) item[key] = key === "videoData" ? JSON.parse(row[column] || "{}") : row[column] ?? null;
+  for (const [key, column] of Object.entries(FIELDS)) item[key] = ["videoData", "topics", "topComments"].includes(key) ? JSON.parse(row[column] || (key === "videoData" ? "{}" : "[]")) : row[column] ?? null;
+  item.prevPlayCount = row.prev_play_count ?? null;
+  item.playDelta = item.prevPlayCount == null || item.playCount == null ? null : item.playCount - item.prevPlayCount;
+  item.rising = item.playDelta > 0 && item.metricsAt > Date.now() - 14 * 86400000;
   return item;
 }
 // Grokbot must send the post's metrics, publish time and account (operator
@@ -159,13 +177,22 @@ export function psychologyPeerHitFromRow(row) {
 const REQUIRED_METRICS = [["playCount", "play_count"], ["likeCount", "like_count"], ["commentCount", "comment_count"],
   ["favoriteCount", "favorite_count"], ["shareCount", "share_count"], ["publishedAt", "published_at"]];
 async function assertRequiredMetrics(db, items) {
-  const saved = new Map((await db.prepare(`SELECT id,${REQUIRED_METRICS.map(([, c]) => c).join(",")},account_name,account_username FROM ${TABLE} WHERE id IN (SELECT value FROM json_each(?))`)
+  const saved = new Map((await db.prepare(`SELECT id,${REQUIRED_METRICS.map(([, c]) => c).join(",")},account_name,account_username,topics_json,comments_json FROM ${TABLE} WHERE id IN (SELECT value FROM json_each(?))`)
     .bind(JSON.stringify(items.map(item => item.id))).all()).results.map(row => [row.id, row]));
   items.forEach((item, index) => {
     const row = saved.get(item.id) || {};
     const missing = REQUIRED_METRICS.filter(([field, column]) => item[field] == null && row[column] == null).map(([field]) => field);
     if (!item.accountUsername && !item.accountName && !row.account_username && !row.account_name) missing.push("accountUsername");
     if (missing.length) fail(`第 ${index + 1} 条缺少必填字段：${missing.join("、")}。播放、点赞、评论、收藏、分享、原帖发布时间和账号都必须提供（没有的数量填 0）。`);
+    const savedTopics = row.topics_json && row.topics_json !== "[]" ? JSON.parse(row.topics_json) : null;
+    const savedComments = row.comments_json ? JSON.parse(row.comments_json) : null;
+    const topics = item.topics || savedTopics;
+    const comments = item.topComments != null ? item.topComments : savedComments;
+    const commentCount = item.commentCount ?? row.comment_count;
+    const enrich = [];
+    if (!topics?.length) enrich.push("topics");
+    if (comments == null || (Number(commentCount) > 0 && !comments.length)) enrich.push("topComments");
+    if (enrich.length) fail(`第 ${index + 1} 条缺少必填字段：${enrich.join("、")}。题材标签 topics 填 1–3 个；评论数大于 0 时 topComments 至少 1 条、最多 20 条（按点赞从高到低），评论数为 0 时传空数组。`);
   });
 }
 export async function importPsychologyPeerHits(db, payload, actor, { requireMetrics = false } = {}) {
@@ -196,13 +223,14 @@ export async function importPsychologyPeerHits(db, payload, actor, { requireMetr
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
-      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
+      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : ["topics_json", "comments_json"].includes(column) ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : column === "metrics_at" ? `${column} = CASE WHEN excluded.${column} > 0 THEN excluded.${column} ELSE ${TABLE}.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
+      prev_play_count = CASE WHEN excluded.play_count IS NOT NULL AND ${TABLE}.play_count IS NOT NULL AND excluded.play_count != ${TABLE}.play_count THEN ${TABLE}.play_count ELSE ${TABLE}.prev_play_count END,
       collected_at = excluded.collected_at, updated_at = excluded.updated_at
     WHERE excluded.collected_at >= ${TABLE}.collected_at
     RETURNING id, video_url, collected_at
   `).bind(item.id, item.videoKey, item.videoUrl, item.platform,
-    ...Object.keys(FIELDS).map(key => key === "videoData" && item[key] !== null ? JSON.stringify(item[key]) : item[key]),
-    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0),
+    ...Object.keys(FIELDS).map(key => key === "videoData" ? (item.videoData != null ? JSON.stringify(item.videoData) : null) : key === "topics" || key === "topComments" ? JSON.stringify(item[key] || []) : item[key]),
+    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0, item.topics != null ? 1 : 0, item.topComments != null ? 1 : 0),
     db.prepare(COPY_SYNC).bind(item.id,item.collectedAt)]);
   // Runs after every copy row exists, so a brand-new post completes in the same batch.
   const supplied = new Map();
@@ -329,4 +357,43 @@ export async function updatePsychologyPeerHitMediaType(db, id, mediaType) {
     throw error;
   }
   return { id: value, mediaType: type };
+}
+
+export function watchUsername(value) {
+  const name = String(value || "").trim().replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9._]{2,64}$/.test(name)) fail("对标账号用户名无效。");
+  return name;
+}
+export async function listWatchAccounts(db) {
+  const rows = await db.prepare("SELECT username, note, enabled, created_at FROM psychology_peer_watch_accounts ORDER BY username").all();
+  return { accounts: (rows.results || []).map(row => ({ username: row.username, note: row.note, enabled: row.enabled !== 0, createdAt: row.created_at })) };
+}
+export async function saveWatchAccount(db, actor, input) {
+  const username = watchUsername(input?.username);
+  const note = optionalText(input?.note, 200, "note") || "";
+  const count = Number((await db.prepare("SELECT COUNT(*) n FROM psychology_peer_watch_accounts").first())?.n || 0);
+  const exists = await db.prepare("SELECT username FROM psychology_peer_watch_accounts WHERE username=?").bind(username).first();
+  if (!exists && count >= 100) fail("对标账号最多 100 个。");
+  await db.prepare(`INSERT INTO psychology_peer_watch_accounts(username,note,enabled,created_by,created_at) VALUES(?,?,1,?,?)
+    ON CONFLICT(username) DO UPDATE SET note=excluded.note, enabled=1`).bind(username, note, actor, Date.now()).run();
+  return { username, note };
+}
+export async function deleteWatchAccount(db, username) {
+  const name = watchUsername(username);
+  const result = await db.prepare("DELETE FROM psychology_peer_watch_accounts WHERE username=?").bind(name).run();
+  if (!Number(result.meta?.changes)) { const error = new Error("没有这个对标账号。"); error.statusCode = 404; throw error; }
+  return { ok: true };
+}
+const WEEK = 7 * 86400000;
+export async function peerWorklist(db, now = Date.now()) {
+  const [watch, refresh, enrich] = await Promise.all([
+    db.prepare("SELECT username, note FROM psychology_peer_watch_accounts WHERE enabled=1 ORDER BY username").all(),
+    db.prepare(`SELECT video_url, account_username, play_count, metrics_at FROM ${TABLE} WHERE media_type='photo' AND (metrics_at=0 OR metrics_at<?) ORDER BY COALESCE(play_count,0) DESC, id LIMIT 40`).bind(now - WEEK).all(),
+    db.prepare(`SELECT video_url, account_username, topics_json, comments_json, comment_count FROM ${TABLE} WHERE media_type='photo' AND (topics_json='[]' OR (COALESCE(comment_count,0)>0 AND comments_json='[]')) ORDER BY COALESCE(play_count,0) DESC, id LIMIT 40`).all(),
+  ]);
+  return {
+    watchAccounts: (watch.results || []).map(row => ({ username: row.username, note: row.note })),
+    refresh: (refresh.results || []).map(row => ({ videoUrl: row.video_url, accountUsername: row.account_username, playCount: row.play_count, metricsAt: row.metrics_at })),
+    enrich: (enrich.results || []).map(row => ({ videoUrl: row.video_url, accountUsername: row.account_username, missing: [row.topics_json === "[]" ? "topics" : null, Number(row.comment_count) > 0 && row.comments_json === "[]" ? "topComments" : null].filter(Boolean) })),
+  };
 }

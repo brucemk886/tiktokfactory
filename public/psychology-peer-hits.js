@@ -28,7 +28,7 @@ function libraryRow(item){
  const title=content.title||titleOf(item);
  const cell=(v,cls='')=>'<td class="'+cls+'" title="'+escape(v)+'"><span>'+escape(v)+'</span></td>';
  return '<tr>'+cell('','library-select').replace('<span></span>',manage?'<input type="checkbox" data-can-produce="'+hasPeer+'" class="peer-select" data-peer-id="'+escape(item.id)+'" aria-label="选择 '+escape(title)+'" />':'—')+
- '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+'</small><small class="library-copy-id">文案 ID：<code>'+escape(row.id)+'</code></small></td>'+
+ '<td class="hits-title" title="'+escape(title)+'"><span>'+escape(title)+'</span><small>'+escape(item.accountUsername||item.accountName||'—')+(item.rising?' · 还在涨':'')+'</small><small>'+escape((item.topics||[]).map(id=>({anxious:'焦虑型依恋',avoidant:'回避型依恋',breakup:'分手',situationship:'暧昧',boundaries:'边界感','self-worth':'自我价值'}[id]||id)).join('、')||'未打题材')+'</small><small class="library-copy-id">文案 ID：<code>'+escape(row.id)+'</code></small></td>'+
  '<td class="library-metrics"><strong>'+metric(item.playCount)+' 播放</strong><small>赞 '+metric(item.likeCount)+' · 评 '+metric(item.commentCount)+'</small><small>藏 '+metric(item.favoriteCount)+' · 分享 '+metric(item.shareCount)+'</small></td>'+
  '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+
  '<td class="library-status"><span class="copy-status'+(done?'':' is-off')+'" title="'+escape(row.error||status)+'">'+status+'</span>'+(row.error?'<details><summary>原因</summary><p>'+escape(row.error)+'</p></details>':'')+(!done&&row.auto_extract&&row.status==='failed'?'<button type="button" data-retry-copy="'+escape(row.id)+'">重试提取</button>':'')+'</td>'+
@@ -175,7 +175,12 @@ const sample={
           "Signs you are anxiously attached",
           "You reread their texts looking for hidden meaning"
         ]
-      }
+      },
+      "topics": ["anxious"],
+      "topComments": [
+        {"text": "this is literally me with my ex", "likes": 2400},
+        {"text": "why do I always apologize first", "likes": 980}
+      ]
     }
   ]
 };
@@ -187,8 +192,29 @@ const rewriteRules=`You find and submit English psychology photo posts (TikTok p
 2. Required on every new post: playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
 3. videoData.pageTexts: the clean, complete visible text of each image, in order, one item per image (max 6). Fix OCR noise and stray characters; remove watermarks, author names, book-list and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters). Always include pageTexts: without it the factory has to run paid image recognition.
 4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
-5. Do not resubmit posts that are already in the library. To update a post's numbers later, send the same videoUrl with only the metric fields; leave out pageTexts and any timestamp of when you collected it.
-6. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.`;
+5. topics: 1 to 3 labels, using these ids only: anxious (焦虑型依恋), avoidant (回避型依恋), breakup (分手), situationship (暧昧), boundaries (边界感), self-worth (自我价值).
+6. topComments: the 10 to 20 comments with the most likes, as {"text","likes"}. Keep the commenter's original wording. If the post has fewer than 10 visible comments, send every one you can see. If commentCount is 0, send an empty array. These comments are reference for the factory's rewrite model.
+7. Once a week, GET this same endpoint with the Bearer key. It returns three lists:
+   - watchAccounts: accounts to check for new posts. Submit new performing photo posts the same way as any other post.
+   - refresh: posts whose play numbers are older than 7 days. Resubmit the same videoUrl with the current playCount, likeCount, commentCount, favoriteCount and shareCount only. Leave out pageTexts, topics, topComments and any timestamp of when you collected it.
+   - enrich: posts still missing topics or topComments. Resubmit the same videoUrl with just those fields.
+8. Do not resubmit posts that are already in the library except for the refresh and enrich lists above.
+9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
+async function loadWatch(){
+  if(!$("#watchList"))return;
+  const data=await api(API+"/watch-accounts");
+  $("#watchList").innerHTML=data.accounts.length?data.accounts.map(a=>'<li>@'+escape(a.username)+(a.note?' · '+escape(a.note):'')+' <button type="button" data-unwatch="'+escape(a.username)+'">移除</button></li>').join(""):"<li>还没有对标账号。</li>";
+}
+$("#watchForm")?.addEventListener("submit",async event=>{
+  event.preventDefault();
+  try{await api(API+"/watch-accounts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("#watchUsername").value,note:$("#watchNote").value})});$("#watchUsername").value="";$("#watchNote").value="";await loadWatch();}
+  catch(error){message("#keyStatus",error.message,true);}
+});
+$("#watchList")?.addEventListener("click",async event=>{
+  const name=event.target.dataset?.unwatch;if(!name)return;
+  try{await api(API+"/watch-accounts?username="+encodeURIComponent(name),{method:"DELETE"});await loadWatch();}catch(error){message("#keyStatus",error.message,true);}
+});
+if($("#watchList"))loadWatch().catch(error=>message("#keyStatus",error.message,true));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();

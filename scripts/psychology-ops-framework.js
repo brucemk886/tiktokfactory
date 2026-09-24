@@ -1,3 +1,4 @@
+import { TOPIC_LABELS } from './psychology-peer-topics.js';
 // One analysis frame for psychology auto-publishing, photo and video analysed
 // separately: every number comes from auto-published posts of one media type, bucketed by TikTok publish time, counted
 // once they are 24h old. Account stages alone use the account's whole history.
@@ -58,6 +59,17 @@ const dominant = counts => Object.entries(counts).filter(([k]) => k !== 'unknown
 
 // rows: buildContentPerformance rows for auto items of one media type (any batch window).
 // history: resolved items (earlier uses of the same post), oldest may predate the window.
+function topicBreakdown(rows, rules) {
+  const tagged = rows.filter(row => Array.isArray(row.topics));
+  if (!tagged.length) return [];
+  const buckets = new Map();
+  for (const row of tagged) {
+    const ids = row.topics.length ? row.topics : ['unset'];
+    for (const id of ids) { const list = buckets.get(id) || []; list.push(row); buckets.set(id, list); }
+  }
+  return [...buckets].map(([id, list]) => ({ id, label: TOPIC_LABELS[id] || '未打标', ...summarize(list, rules) }))
+    .sort((a, b) => (b.potentialRate ?? -1) - (a.potentialRate ?? -1) || b.n - a.n);
+}
 export function buildOpsFramework({ rows = [], history = [], videosByAccount = new Map(), accounts = [], window, media = 'photo', now = Date.now(), rules = RULES }) {
   const noun = media === 'video' ? '视频' : '图文';
   const uses = new Map(), perSource = new Map(), perVersion = new Map();
@@ -132,7 +144,8 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
     style: { changed: summarize(styled.filter(s => s.style !== s.prevStyle), rules), same: summarize(styled.filter(s => s.style === s.prevStyle), rules) },
     rewrite: { original: summarize(current.filter(s => !s.rewrite), rules), rewrite: summarize(current.filter(s => s.rewrite), rules), hitSources: hitSources.size,
       hitOriginal: summarize(current.filter(s => !s.rewrite && hitSources.has(s.source)), rules), hitRewrite: summarize(current.filter(s => s.rewrite && hitSources.has(s.source)), rules) },
-    postIndex: POST_BUCKETS.map(([lo, hi, label]) => ({ label, ...summarize(current.filter(s => inBucket([lo, hi], s.postIndex)), rules) })) };
+    postIndex: POST_BUCKETS.map(([lo, hi, label]) => ({ label, ...summarize(current.filter(s => inBucket([lo, hi], s.postIndex)), rules) })),
+    topics: topicBreakdown(current, rules) };
 
   // Strategy: playbook per stage checked against this period's data.
   const stages = Object.keys(STAGES).map(stage => {

@@ -10,6 +10,12 @@ const slots = n => Array.from({ length: n }, (_, i) => ({ connectionId: 'acc' + 
 const always = value => () => value;
 const pick = plan => plan.map(p => p.post.sourceKey + ':' + (p.variantId || 'original'));
 
+test('unjudged posts that are still gaining plays are drawn before older fresh posts', () => {
+  const hot = { ...post('hot', [], 9), rising: true, playDelta: 8000 };
+  const plan = planLibraryDraw({ posts: [post('old', [], 1), hot], slots: slots(1), random: always(0.9) });
+  assert.equal(plan[0].post.sourceKey, 'hot');
+});
+
 test('originals go first, a batch spreads over posts, and a taken original yields to its least-used rewrite', () => {
   const plan = planLibraryDraw({ posts: [post('A', ['a1', 'a2']), post('B', [], 1)], slots: slots(3), random: always(0.5) });
   assert.deepEqual(pick(plan), ['A:original', 'B:original', 'A:a1']);

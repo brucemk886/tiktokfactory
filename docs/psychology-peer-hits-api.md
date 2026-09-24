@@ -79,6 +79,8 @@ Content-Type: application/json
 | `publishedAt` | 原帖发布时间。**必填**。 |
 | `collectedAt` | 本次采集时间；省略时取接口接收时间。 |
 | `source` | 数据来源，例如 `grokbot`，最多 80 字符。 |
+| `topics` | **接口写入新帖必填**。1–3 个题材：`anxious` 焦虑型依恋、`avoidant` 回避型依恋、`breakup` 分手、`situationship` 暧昧、`boundaries` 边界感、`self-worth` 自我价值。也接受中文名。已保存过的更新可省略。 |
+| `topComments` | **接口写入新帖必填**。点赞最高的评论，最多 20 条，每项 `{ "text", "likes" }`，`text` 为评论原话、最多 300 字符。评论数为 0 时传 `[]`；评论数大于 0 时至少 1 条。已保存过的更新可省略。工厂改写时会把这些原话交给模型参考。 |
 | `videoData` | 其他内容数据的 JSON 对象，序列化后最多 16000 字符；可保存标签、语言、文案、其他指标等。图文复刻可提供完整 `copy`、`caption`、`script`、`transcript` 或 `文案`。若已采集原文，图文可同时提供 `pageTexts`（按图片顺序，最多6项），视频可提供 `transcript` 和可选 `onScreenText`；文案库会直接归档这些字段，避免再次识别。仅有标题或发布文案不视为已完成逐页/逐帧提取。 |
 
 | `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符，`caption` 必填（简短即可）、最多 2200 字符，`pages` 为 1–6 页、每页 1–1500 字符、第一项是首图。写入前会按下文「写入标准与改写规则」检查，任一版本不合格整批拒收并返回原因。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
@@ -109,7 +111,12 @@ Content-Type: application/json
         "language": "en",
         "caption": "which one is you? #anxiousattachment",
         "pageTexts": ["Signs you are anxiously attached", "You reread their texts looking for hidden meaning"]
-      }
+      },
+      "topics": ["anxious"],
+      "topComments": [
+        {"text": "this is literally me with my ex", "likes": 2400},
+        {"text": "why do I always apologize first", "likes": 980}
+      ]
     }
   ]
 }
@@ -167,9 +174,17 @@ You find and submit English psychology photo posts (TikTok photo carousels) to o
 2. Required on every new post: playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
 3. videoData.pageTexts: the clean, complete visible text of each image, in order, one item per image (max 6). Fix OCR noise and stray characters; remove watermarks, author names, book-list and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters). Always include pageTexts: without it the factory has to run paid image recognition.
 4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
-5. Do not resubmit posts that are already in the library. To update a post's numbers later, send the same videoUrl with only the metric fields; leave out pageTexts and any timestamp of when you collected it.
-6. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.
+5. topics: 1 to 3 labels, using these ids only: anxious (焦虑型依恋), avoidant (回避型依恋), breakup (分手), situationship (暧昧), boundaries (边界感), self-worth (自我价值).
+6. topComments: the 10 to 20 comments with the most likes, as {"text","likes"}. Keep the commenter's original wording. If the post has fewer than 10 visible comments, send every one you can see. If commentCount is 0, send an empty array. These comments are reference for the factory's rewrite model.
+7. Once a week, GET this same endpoint with the Bearer key. It returns three lists:
+   - watchAccounts: accounts to check for new posts. Submit new performing photo posts the same way as any other post.
+   - refresh: posts whose play numbers are older than 7 days. Resubmit the same videoUrl with the current playCount, likeCount, commentCount, favoriteCount and shareCount only. Leave out pageTexts, topics, topComments and any timestamp of when you collected it.
+   - enrich: posts still missing topics or topComments. Resubmit the same videoUrl with just those fields.
+8. Do not resubmit posts that are already in the library except for the refresh and enrich lists above.
+9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.
 ```
+
+同一接口的 `GET`（同一个 Bearer 密钥）返回 `{ watchAccounts, refresh, enrich }`。对标账号由文案库「写入接口」面板维护，最多 100 个。播放量回填会记下上一次播放；近 14 天内播放仍在涨的图文，文案库可按「还在涨的优先」排序，自动发布抽取未判定的爆款时也会先抽这些。运营报表「内容」页按题材汇总本期满 24 小时作品的破千率。
 
 ## 去重与更新
 

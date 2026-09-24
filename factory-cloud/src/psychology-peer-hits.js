@@ -1,5 +1,5 @@
 import { errorJson, json, randomToken, sha256Hex } from "./http.js";
-import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender, updatePsychologyPeerHitMediaType } from "./psychology-peer-hits-store.js";
+import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender, updatePsychologyPeerHitMediaType, listWatchAccounts, saveWatchAccount, deleteWatchAccount, peerWorklist } from "./psychology-peer-hits-store.js";
 import { handlePeerProduction } from './psychology-peer-production.js';
 
 export const PSYCHOLOGY_PEER_API = "/api/integrations/psychology/peer-hits";
@@ -37,7 +37,8 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
     const db = env.DB;
     if (external) {
       const actor = await externalActor(request, db);
-      if (request.method !== "POST") return errorJson("此密钥仅支持 POST 写入同行爆款。", 405);
+      if (request.method === "GET") return json(await peerWorklist(db));
+      if (request.method !== "POST") return errorJson("此密钥仅支持读取任务清单或 POST 写入同行爆款。", 405);
       return json(await importPsychologyPeerHits(db, await readImport(request), actor, { requireMetrics: true }));
     }
     if (!session) return errorJson("请先登录。", 401);
@@ -62,6 +63,12 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
         await db.prepare("DELETE FROM psychology_peer_hit_keys WHERE owner_id = ?").bind(user.id).run();
         return json({ ok: true });
       }
+      return errorJson("不支持此请求方法。", 405);
+    }
+    if (url.pathname === INTERNAL + "/watch-accounts") {
+      if (request.method === "GET") return json(await listWatchAccounts(db));
+      if (request.method === "POST") return json(await saveWatchAccount(db, user.id, await readImport(request)), 201);
+      if (request.method === "DELETE") return json(await deleteWatchAccount(db, url.searchParams.get("username")));
       return errorJson("不支持此请求方法。", 405);
     }
     if (url.pathname === INTERNAL) {

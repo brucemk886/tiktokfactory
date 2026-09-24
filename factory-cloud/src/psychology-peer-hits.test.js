@@ -19,7 +19,7 @@ function fixture(t) {
   sqlite.exec(fs.readFileSync(new URL("../migrations/0025_psychology_peer_hit_media_type.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0026_psychology_peer_hit_voice_gender.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0027_psychology_peer_hit_media_type_lock.sql",import.meta.url),"utf8"));
-  for(const name of ["0042_psychology_creative","0043_psychology_copy_library","0044_psychology_copy_library_future_only","0045_psychology_copy_variant_source","0047_psychology_copy_variant_delete","0049_psychology_copy_comparisons"])
+  for(const name of ["0042_psychology_creative","0043_psychology_copy_library","0044_psychology_copy_library_future_only","0045_psychology_copy_variant_source","0047_psychology_copy_variant_delete","0049_psychology_copy_comparisons","0051_psychology_peer_enrichment"])
     sqlite.exec(fs.readFileSync(new URL(`../migrations/${name}.sql`,import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
@@ -148,7 +148,7 @@ test("admins can move records between video and photo tabs and later imports pre
 });
 
 const photoUrl=n=>`https://www.tiktok.com/@example/photo/${n}`;
-const M={playCount:1200,likeCount:80,commentCount:0,favoriteCount:5,shareCount:0,publishedAt:"2026-09-01T00:00:00Z",accountUsername:"peer"};
+const M={playCount:1200,likeCount:80,commentCount:0,favoriteCount:5,shareCount:0,publishedAt:"2026-09-01T00:00:00Z",accountUsername:"peer",topics:["anxious"],topComments:[]};
 const rewrite=n=>({title:`Rewrite ${n}`,caption:`A full caption written for rewrite ${n}.`,pages:[`Cover ${n}`,`Page two ${n}`]});
 
 test("grokbot page text completes a historical photo copy that auto-extraction skips",async t=>{
@@ -276,7 +276,7 @@ test("API keys are hashed, write-only, isolated by owner, rotatable and revocabl
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(1)},{},null)).status,401);
   const auth={Authorization:"Bearer "+token};
   const written=await call(db,PSYCHOLOGY_PEER_API,"POST",{...M,videoUrl:url(1),title:"Bot",accountName:"Account",favoriteCount:10},auth,null);assert.equal(written.status,200);assert.equal((await written.json()).accepted,1);
-  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).status,405);
+  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).status,200);
   assert.equal((await call(db,"/api/psychology-peer-hits","GET",undefined,auth,null)).status,401);
   const secondToken=await key(db,{user:{...session.user,id:"second"}});const replacement=await key(db);
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(2)},auth,null)).status,401);
@@ -351,4 +351,27 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(script,/voice-gender-select/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
   assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
+});
+
+test("grokbot stores topics and liked comments, and the key can read the watch and refresh lists",async t=>{
+  const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
+  const photo="https://www.tiktok.com/@example/photo/8801";
+  const saved=await call(db,PSYCHOLOGY_PEER_API,"POST",{...M,commentCount:2,videoUrl:photo,topics:["焦虑型依恋","breakup"],topComments:[{text:"why do I always apologize first",likes:12},{text:"this is literally me with my ex",likes:40}]},auth,null);
+  assert.equal(saved.status,200);
+  const row=sqlite.prepare("SELECT topics_json,comments_json,play_count,metrics_at FROM psychology_peer_hits").get();
+  assert.deepEqual(JSON.parse(row.topics_json),["anxious","breakup"]);
+  assert.equal(JSON.parse(row.comments_json)[0].text,"this is literally me with my ex");
+  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{...M,videoUrl:photo,topics:["nope"]},auth,null)).status,400);
+  const again=await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photo,playCount:5000,likeCount:80,commentCount:2,favoriteCount:5,shareCount:0},auth,null);
+  assert.equal(again.status,200);
+  const risen=sqlite.prepare("SELECT play_count,prev_play_count FROM psychology_peer_hits").get();
+  assert.equal(risen.play_count,5000);assert.equal(risen.prev_play_count,1200);
+  sqlite.prepare("UPDATE psychology_peer_hits SET metrics_at=1").run();
+  const added=await call(db,"/api/psychology-peer-hits/watch-accounts","POST",{username:"@Peer.Account",note:"附件"});
+  assert.equal(added.status,201);
+  const list=await (await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).json();
+  assert.deepEqual(list.watchAccounts,[{username:"peer.account",note:"附件"}]);
+  assert.equal(list.refresh[0].videoUrl,photo);
+  assert.equal(list.enrich.length,0);
+  assert.equal((await call(db,"/api/psychology-peer-hits/watch-accounts?username=peer.account","DELETE")).status,200);
 });

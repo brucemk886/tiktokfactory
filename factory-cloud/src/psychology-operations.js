@@ -19,7 +19,14 @@ export async function frameworkFor(env,{accounts,window,media="photo",videosByAc
   videosByAccount=videosByAccount||await loadVideosForAccounts(env,env.DB,accounts.map(a=>a.schema),100);
   records=records||(await env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE created_at>=? ORDER BY created_at DESC LIMIT 10000").bind(window.previousStart).all()).results.map(row=>parseObject(row.value_json));
   const history=await loadResolvedItems(env.DB,window.previousStart-HISTORY_MS);
-  const framework=buildOpsFramework({rows:buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount,media}).rows,
+  const rows=buildContentPerformance({items:history.filter(i=>i.created_at>=window.previousStart-SCHEDULE_LEAD_MS),records,accounts,videosByAccount,media}).rows;
+  if(media==='photo'){
+    const peers=(await env.DB.prepare("SELECT video_url,topics_json FROM psychology_peer_hits WHERE media_type='photo'").all()).results||[];
+    const bySource=new Map();
+    for(const peer of peers){let key;try{key=photoCopyKey(peer.video_url);}catch{continue;}bySource.set(key,JSON.parse(peer.topics_json||'[]'));}
+    for(const row of rows)row.topics=bySource.get(row.source)||[];
+  }
+  const framework=buildOpsFramework({rows,
     history,videosByAccount,accounts,window,media});
   return {framework,history,videosByAccount,records};
 }

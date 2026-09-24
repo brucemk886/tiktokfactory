@@ -80,6 +80,7 @@ function fixture(){
     if(sql.includes("official_accounts_latest"))return{results:rows};
     if(sql.includes("factory_publish_records"))return{results:rows.map(r=>({value_json:JSON.stringify({id:r.account_key,connectionId:r.account_key,createdAt:Date.now(),status:"published"})}))};
     if(sql.includes("psychology_publish_items"))return{results:[]};
+    if(sql.includes("psychology_peer_hits"))return{results:[]};
     throw new Error(sql);
   }};}};
   const ARCHIVE={async get(key){reads.push(key);return{async json(){return{account_key:"tiktok:a",videos:[{id:"12345678901",createTime:Date.now()-2*DAY,views:400,duration:10}]};}};}};
