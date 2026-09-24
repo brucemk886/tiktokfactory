@@ -84,16 +84,16 @@
   <dialog id="variantDialog" class="copy-preview-dialog copy-rewrite-dialog copy-variant-dialog" aria-labelledby="variantDialogTitle">
     <div class="copy-dialog-head"><h2 id="variantDialogTitle">新增改写文案</h2><button id="closeVariant" type="button">关闭</button></div>
     <section class="copy-panel">
-      <p id="variantContext" class="copy-dialog-meta"></p>
+      <div class="copy-section-head"><p id="variantContext" class="copy-dialog-meta"></p><button id="generateVariant" type="button" class="primary-action">AI 生成</button></div>
       <p>新版本自动关联当前文案。正文填写 1–6 段，图文按段分页，视频按正文生成；审核保存后可供自动发布抽取。</p>
       <div class="copy-import-panel"><div class="copy-import-body">
-          <form id="variantForm">
+          <form id="variantForm"><fieldset id="variantFields" style="border:0;padding:0;margin:0;min-width:0;display:grid;gap:14px">
             <label>版本名称<input id="variantName" maxlength="120" placeholder="例如：情绪共鸣版" required /></label>
             <label>标题<input id="variantTitle" maxlength="200" required /></label>
             <label>发布文案<textarea id="variantCaption" maxlength="2200" rows="3"></textarea></label>
             <div id="variantPages"></div>
             <label class="copy-review-confirm"><input type="checkbox" id="variantReviewed" required />我已审核此版本，保存后启用</label>
-            <button class="primary-action" type="submit">保存新版本</button><p id="variantStatus" role="status"></p>
+            <button class="primary-action" type="submit">保存新版本</button></fieldset><p id="variantStatus" role="status" aria-live="polite"></p>
           </form>
         </div></div>
     </section>
@@ -129,6 +129,6 @@
   </dialog>
 
   <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-no-rewrite"></script><script src="/psychology-peer-production.js?v=20260924-no-rewrite"></script>
-<script type="module" src="/psychology-copy-library.js?v=20260924-6"></script>
+<script type="module" src="/psychology-copy-library.js?v=20260924-ai-draft"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+import {generateCopyDraft} from './psychology-copy-generation.js';
 import {normalizeCopyReview} from './psychology-copy-review.js';
 import {handleCopyComparison} from './psychology-copy-comparison.js';
 import { json,readJson,sha256Hex,errorJson } from './http.js';
@@ -26,6 +27,14 @@ export async function handlePsychologyCreative(request,env,url,session){
  const db=env.DB,owner=user.username;
  const comparison=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})\/comparison$/);
  if(comparison)return handleCopyComparison(request,env,url,owner,comparison[1]);
+ if(url.pathname===BASE+'/copies/generate'){
+  if(request.method!=='POST')return errorJson('不支持此请求。',405);
+  const sourceId=url.searchParams.get('sourceId');
+  if(!sourceId||!/^psy-[a-f0-9]{32}$/.test(sourceId))return errorJson('请选择有效的爆款文案。',400);
+  const source=await db.prepare("SELECT id,media_type,title,content_json FROM psychology_copy_library WHERE id=? AND status='done'").bind(sourceId).first();
+  if(!source)return errorJson('爆款文案不存在或尚未提取完成。',404);
+  return json(await generateCopyDraft(env,source));
+ }
  const sourceId=url.searchParams.get('sourceId');
  let sourceKey='';
  if(sourceId&&url.pathname===BASE+'/copies'){

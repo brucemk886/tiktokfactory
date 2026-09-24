@@ -14,6 +14,7 @@ let variantRequestVersion = 0;
 let draftVersionId = crypto.randomUUID();
 let variantSource = null;
 let variantSaving = false;
+let variantGenerating = false;
 
 async function api(path, method = "GET", body) {
   const response = await fetch("/api/psychology-creative" + path, {
@@ -96,7 +97,7 @@ function openRewrites(source = null) {
   loadCopies().catch(error => $("#copyStatus").textContent = error.message);
 }
 function openVariant(source) {
-  if (variantSaving) return;
+  if (variantSaving || variantGenerating) return;
   variantSource = source;
   draftVersionId = crypto.randomUUID();
   $("#variantForm").reset();
@@ -104,8 +105,24 @@ function openVariant(source) {
   $("#variantContext").textContent = typeLabel(source.media_type) + "爆款 · " + (source.content?.title || source.title);
   $("#variantDialog").showModal();
 }
-$("#closeVariant").onclick = () => { if (!variantSaving) $("#variantDialog").close(); };
-$("#variantDialog").addEventListener("cancel", event => { if (variantSaving) event.preventDefault(); });
+$("#closeVariant").onclick = () => { if (!variantSaving && !variantGenerating) $("#variantDialog").close(); };
+$("#variantDialog").addEventListener("cancel", event => { if (variantSaving || variantGenerating) event.preventDefault(); });
+$("#generateVariant").onclick = async () => {
+  if(variantSaving||variantGenerating||!variantSource)return;
+  const fields=[$('#variantName'),$('#variantTitle'),$('#variantCaption'),...document.querySelectorAll('[data-variant-page]')];
+  if(fields.some(field=>field.value.trim())&&!confirm('AI 生成会替换当前表单的草稿内容，是否继续？'))return;
+  const source=variantSource;
+  variantGenerating=true;$('#generateVariant').disabled=true;$('#generateVariant').textContent='生成中…';$('#closeVariant').disabled=true;$('#variantFields').disabled=true;
+  $('#variantStatus').textContent='正在根据原文生成改写草稿…';
+  try{
+    const {draft}=await api('/copies/generate?sourceId='+encodeURIComponent(source.id),'POST');
+    $('#variantName').value=draft.name;$('#variantTitle').value=draft.title;$('#variantCaption').value=draft.caption;
+    [...document.querySelectorAll('[data-variant-page]')].forEach((field,i)=>field.value=draft.pages[i]||'');
+    $('#variantReviewed').checked=false;draftVersionId=crypto.randomUUID();
+    $('#variantStatus').textContent='已生成草稿，请检查文案并勾选审核后保存。';
+  }catch(error){$('#variantStatus').textContent=error.message;}
+  finally{variantGenerating=false;$('#generateVariant').disabled=false;$('#generateVariant').textContent='AI 生成';$('#closeVariant').disabled=false;$('#variantFields').disabled=false;}
+};
 $("#bulkImportButton").onclick = () => {
   $("#copyJson").value = "";
   $("#copyFile").value = "";
@@ -225,9 +242,10 @@ $("#copyPreviewText").onclick = async () => {
 $("#variantPages").innerHTML = Array.from({ length: 6 }, (_, i) => '<label>第 ' + (i + 1) + ' 段 / 页' + (i ? '（选填）' : '（首图，必填）') + '<textarea data-variant-page maxlength="1500" rows="3" ' + (i ? '' : 'required') + '></textarea></label>').join('');
 $("#variantForm").onsubmit = async event => {
   event.preventDefault();
-  if (variantSaving || !variantSource || !$("#variantReviewed").checked) return;
+  if (variantSaving || variantGenerating || !variantSource || !$("#variantReviewed").checked) return;
   const source = variantSource;
   variantSaving = true;
+  $("#generateVariant").disabled = true;
   $("#closeVariant").disabled = true;
   event.submitter.disabled = true;
   try {
@@ -244,7 +262,7 @@ $("#variantForm").onsubmit = async event => {
     if ($("#rewriteDialog").open && selectedSource?.id === source.id) { copyPage = 1; await loadCopies(); }
     await loadOriginals();
   } catch (error) { $("#variantStatus").textContent = error.message; }
-  finally { variantSaving = false; $("#closeVariant").disabled = false; event.submitter.disabled = false; }
+  finally { variantSaving = false; $("#generateVariant").disabled = false; $("#closeVariant").disabled = false; event.submitter.disabled = false; }
 };
 loadOriginals();
 

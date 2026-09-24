@@ -216,3 +216,35 @@ test('original selection excludes unfinished rows, respects origin filter, and r
  assert.equal(textPages([text]).join(' ').replace(/\s+/g,' ').trim(),text.trim());
  assert.throws(()=>textPages(['x'.repeat(9001)]),/超过6页/);
 });
+
+
+test('AI rewrite uses stored photo/video text and existing DeepSeek model without saving or publishing',async t=>{
+ const f=await fixture(t);f.env.DEEPSEEK_API_KEY='test-key';
+ const draft={name:'情绪共鸣版',title:'Why silence feels so loud',caption:'What helps you feel safe? #attachment',pages:['Why silence feels so loud','Give yourself room to pause.']};
+ let calls=0;f.env.fetch=async(url,init)=>{calls++;assert.equal(url,'https://api.deepseek.com/chat/completions');const body=JSON.parse(init.body);assert.equal(body.model,'deepseek-flash');assert.equal(body.messages[0].content.length,1);assert.match(body.messages[0].content[0].text,/stored original/);return Response.json({choices:[{message:{content:JSON.stringify(draft)}}]});};
+ const jobs=f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n;
+ for(const media of ['photo','video']){
+  const row=f.sqlite.prepare('SELECT id FROM psychology_copy_library WHERE media_type=? LIMIT 1').get(media);
+  f.sqlite.prepare("UPDATE psychology_copy_library SET status='done',content_json=? WHERE id=?").run(JSON.stringify({title:'Source',caption:'stored original',...(media==='photo'?{pages:[{text:'First original'},{text:'Second original'}]}:{transcript:'Original spoken words'})}),row.id);
+  const data=await (await api(f,'/copies/generate?sourceId='+row.id,'POST')).json();assert.deepEqual(data.draft,draft);
+ }
+ assert.equal(calls,2);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,jobs);
+});
+
+test('AI rewrite checks permission, origin and completed source before calling provider; validates output and redacts failures',async t=>{
+ const f=await fixture(t);let calls=0;f.env.DEEPSEEK_API_KEY='secret-test-key';f.env.fetch=async()=>{calls++;throw new Error('secret-test-key provider detail');};
+ const row=f.sqlite.prepare("SELECT id FROM psychology_copy_library WHERE media_type='photo' LIMIT 1").get();const path='/copies/generate?sourceId='+row.id;
+ assert.equal((await api(f,path,'POST',null,{...user,role:'operator'})).status,403);
+ assert.equal((await api(f,'/copies/generate','POST')).status,400);
+ assert.equal((await api(f,path,'GET')).status,405);
+ assert.equal((await api(f,path,'POST')).status,404);
+ const url=new URL('https://factory.test/api/psychology-creative'+path);assert.equal((await handlePsychologyCreative(new Request(url,{method:'POST',headers:{Origin:'https://foreign.test'}}),f.env,url,{user})).status,403);assert.equal(calls,0);
+ f.sqlite.prepare("UPDATE psychology_copy_library SET status='done',content_json=? WHERE id=?").run(JSON.stringify({pages:[]}),row.id);
+ await assert.rejects(api(f,path,'POST'),e=>e.statusCode===400);assert.equal(calls,0);
+ f.sqlite.prepare('UPDATE psychology_copy_library SET content_json=? WHERE id=?').run(JSON.stringify({pages:[{text:'Original'}]}),row.id);
+ await assert.rejects(api(f,path,'POST'),e=>e.statusCode===502&&!e.message.includes('secret-test-key'));assert.equal(calls,1);
+ for(const response of ['invalid JSON',JSON.stringify({name:'Draft',title:'Title',caption:'Caption',pages:[]}),JSON.stringify({name:'Draft',title:'Title',caption:'Caption',pages:['#tag']}),JSON.stringify({name:'Draft',title:'Title',caption:'Caption',pages:['One','Extra']})]){
+  f.env.fetch=async()=>Response.json({choices:[{message:{content:response}}]});await assert.rejects(api(f,path,'POST'),e=>e.statusCode===502);
+ }
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,0);
+});
