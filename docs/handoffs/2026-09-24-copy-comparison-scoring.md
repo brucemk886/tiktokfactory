@@ -33,3 +33,8 @@ For new content, give Grokbot the API schema/instructions or the updated writing
 - Deduplicate original references by kind/text, preferring the rewrite card with the same page/sentence label. Shared references displayed elsewhere are labeled accurately instead of falsely called unmatched.
 - Remove the trailing unused-originals section. Stored content, translation cache and publishing data stay intact; cached historical views use the new display immediately.
 - Validation: 7/7 UI regression tests, including the user's page-3/page-4 duplicate and tag-only sixth-page case; git diff --check.
+
+## Follow-up: visible original IDs
+- Lists show the full library ID under title/account in both media tabs. The ID text can be selected without adding a copy action button.
+- Original preview metadata shows library ID plus sourceKey; Copy full text includes these identifiers without duplicating them inside the visible body. sourceKey remains the association key for standalone variant imports; peer-hit imports still use original post URL.
+- Files: public/psychology-peer-hits.js, psychology-copy-library.js/html/css. Validation: JS syntax, existing UI tests 7/7, git diff --check. No API/data changes.

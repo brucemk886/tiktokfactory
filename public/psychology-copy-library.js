@@ -39,7 +39,7 @@ function fullText(row) {
 }
 
 function openPreview({ kind, title, meta, text, sourceUrl = "" }) {
-  previewText = text;
+  previewText = meta + "\n\n" + text;
   $("#previewKind").textContent = kind;
   $("#previewKind").classList.toggle("is-video", kind === "视频");
   $("#previewTitle").textContent = title || "未命名文案";
@@ -69,7 +69,7 @@ $("#hitRows").addEventListener("click", async event => {
     openPreview({
       kind: typeLabel(row.media_type),
       title: row.content?.title || row.title,
-      meta: "提取完成于 " + displayTime(row.completed_at),
+      meta: "文案 ID：" + row.id + "\n来源编号（sourceKey）：" + (row.sourceKey || row.id) + "\n提取完成于 " + displayTime(row.completed_at),
       text: fullText(row),
       sourceUrl: row.source_url
     });

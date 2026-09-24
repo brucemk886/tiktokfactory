@@ -20,3 +20,5 @@
 .comparison-translation{padding:10px 12px;background:#f3f7fd;border-radius:7px;margin-bottom:14px}.comparison-translation>span{font-size:12px;font-weight:600;color:#506987}.comparison-translation p{margin-bottom:0}
 .comparison-empty,.comparison-columns small{color:#738398;font-size:12px}.comparison-unused{margin-top:18px}.comparison-unused article{padding:12px 0;border-bottom:1px solid #e3eaf3}
 @media(max-width:700px){.comparison-columns{grid-template-columns:1fr}.comparison-columns>section+section{border-left:0;border-top:1px solid #dfe7f1}}
+
+.copy-library-page .library-copy-id{font-size:11px!important;line-height:1.5;white-space:normal;overflow-wrap:anywhere}.library-copy-id code{font-family:ui-monospace,Consolas,monospace;user-select:all;color:var(--lf-muted,#62738b)}#previewMeta{white-space:pre-line;overflow-wrap:anywhere}
