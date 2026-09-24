@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology batch UI now separates production and publication stages; mixed outcomes show 部分成功 with per-stage counts and errors. Migration 0050 persists execution evidence on publish items across job cleanup and restores 27 verified historical preparation failures. No historical jobs are recreated or republished. See docs/handoffs/2026-09-24-psychology-workflow-investigation.md.
+
 - Rewrite 查看 now supports title/sentence original-vs-rewrite Chinese comparisons. Existing versions use user-authorized DeepSeek on first view with D1 lease/hash caching (0049); Grokbot can provide comparison, score (0–100), scoreReason in rewrites, including metadata-only reimports. Rewrite lists sort score descending, unrated last; publishing selection remains traffic-based. See docs/handoffs/2026-09-24-copy-comparison-scoring.md and docs/psychology-peer-hits-api.md.
 
 - Authenticated factory pages share the white-sidebar/light admin console (admin-ui.css/js declared in page HTML, with the console class applied before first paint), with collapsible responsive navigation and unified fields, tables and dialogs. Psychology auto-publish is table-first with a creation modal, batch-detail drawer, current-page filters and unchanged-data polling protection. Publishing and permission contracts are retained. See docs/handoffs/2026-09-24-admin-console-redesign.md.

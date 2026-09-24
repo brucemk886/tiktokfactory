@@ -74,3 +74,5 @@
 .task-status-badge[data-tone="unknown"]{background:#fff4df;color:#986100;}
 
 .batch-table td.batch-publication{white-space:normal;overflow:visible;text-overflow:clip;font-size:12px;line-height:1.8}.batch-publication>span{display:block}.detail-publication-heading{margin-top:20px;font-size:14px;}
+
+.task-status-badge[data-tone="partial"]{background:#fff4df;color:#986100}.task-status-badge[data-tone="scheduled"]{background:#eaf2ff;color:#1265e6}.detail-failure{padding:12px;background:#fff4ef;border-radius:6px;overflow-wrap:anywhere}.detail-failure p{white-space:pre-wrap;}

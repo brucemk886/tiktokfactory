@@ -20,3 +20,10 @@ Read-only investigation of single-item isolated groups shown as 未返回发布�
 - No production writes, retries, workflow restarts, media generation, or publication calls performed. No runtime code changed in this investigation.
 - Sanitized local workflow summaries are in the task host's TEMP/psychology-missing-workflows.jsonl, not Git. No tokens, source payloads, or signed asset URLs recorded.
 - Next implementation: independently persist terminal generation status/error and submission phase per item, preserve these before cleanup, reflect isolated members' actual stage, and import the 28 verified historical failure outcomes with evidence while retaining the unverified item. Never automatically recreate or publish these historical tasks.
+
+## Implemented stage-aware status (2026-09-24)
+- Migration 0050 snapshots status/type/error/time on psychology items using indexed triggers for execution updates, relinks and deletes. Update trigger only writes when status/error changes. Manual retry clears stale failure state; deleted active work is still missing, never inferred as success.
+- Backfills only 27 verified failed workflow IDs under no-current-job/no-receipt/no-ready guards. The title validation failure comes from its existing durable official record; the unqueryable history remains missing. No queue or publishing mutations.
+- New psychology-item-status.js resolves exact durable TikTok outcome, live retry, handoff, production/submission failure, then missing evidence. API exposes displayStatus/failureReason without changing executable status/retry controls.
+- Frontend distinguishes 排队中/制作中/制作失败/待发布/发布中/发布成功/发布失败/记录缺失. Mixed success batches show 部分成功; all successful show 全部成功. Per-item errors are directly visible. Group rows summarize actual member states, no longer waiting placeholders.
+- Full tests: 637 passed, including job deletion durability, retry superseding stale failure, remote outcomes winning, and mixed-stage aggregation.

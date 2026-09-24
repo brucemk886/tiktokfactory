@@ -915,3 +915,35 @@ test('listing multiple batches uses five SQL statements for the whole page',asyn
     assert.ok(batch.items.every(item=>item.id.startsWith(batch.id)));
   }
 });
+
+
+test('execution evidence survives job deletion and a live retry supersedes the prior failure',async t=>{
+ const {call,sqlite}=await fixture(t);await call('POST',input());
+ const item=sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').get();
+ sqlite.prepare("UPDATE factory_jobs SET status='failed',error='render failed',updated_at=123 WHERE id=?").run(item.job_id);
+ let data=await(await call()).json();let row=data.batches[0].items.find(i=>i.id===item.id);
+ assert.equal(row.displayStatus,'production_failed');assert.equal(row.failureReason,'render failed');
+ sqlite.prepare("UPDATE factory_jobs SET status='queued',error='',updated_at=124 WHERE id=?").run(item.job_id);
+ data=await(await call()).json();assert.equal(data.batches[0].items.find(i=>i.id===item.id).displayStatus,'queued');
+ sqlite.prepare("UPDATE factory_jobs SET status='failed',error='final render error',updated_at=125 WHERE id=?").run(item.job_id);
+ sqlite.prepare('DELETE FROM factory_jobs WHERE id=?').run(item.job_id);
+ data=await(await call()).json();row=data.batches[0].items.find(i=>i.id===item.id);
+ assert.equal(row.displayStatus,'production_failed');assert.equal(row.failureReason,'final render error');
+ const record={autoTaskId:item.id,autoBatchId:item.batch_id,batchId:'remote',status:'published'};
+ sqlite.prepare('INSERT INTO factory_publish_records(id,value_json) VALUES (?,?)').run('success',JSON.stringify(record));
+ data=await(await call()).json();row=data.batches[0].items.find(i=>i.id===item.id);
+ assert.equal(row.displayStatus,'published');assert.equal(row.failureReason,'');
+});
+
+test('item status distinguishes retry, scheduled handoff, remote rejection and lost active records',async()=>{
+ const {psychologyItemStatus:state}=await import('./psychology-item-status.js');
+ const row={status:null,execution_status:'failed',execution_type:'psychology-photo-story',execution_error:'analysis error',receipt_json:'{}',ready_json:'{}'};
+ assert.equal(state(row).displayStatus,'production_failed');
+ assert.equal(state({...row,status:'running',type:'psychology'}).displayStatus,'producing');
+ assert.equal(state(row,{batchId:'remote',status:'scheduled'}).displayStatus,'scheduled');
+ assert.equal(state(row,{batchId:'remote',officialRemoteStatus:'processing'}).displayStatus,'publishing');
+ assert.equal(state(row,{batchId:'remote',officialRemoteStatus:'failed',error:'rejected'}).failureReason,'rejected');
+ assert.equal(state(row,{batchId:'remote',officialRemoteStatus:'failed'}).displayStatus,'publish_failed');
+ assert.equal(state({...row,execution_status:'running'}).displayStatus,'missing');
+ assert.equal(state(row,{}, {retry_status:'queued'}).displayStatus,'publishing');
+});

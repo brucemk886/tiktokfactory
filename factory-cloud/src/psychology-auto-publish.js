@@ -1,3 +1,4 @@
+import { psychologyItemStatus } from './psychology-item-status.js';
 import { photoCopyKey } from './peer-photo-copy-cache.js';
 import { chooseVisualStyle } from '../../public/psychology-visual-styles.js';
 import { librarySource,reviewedSource } from './psychology-copy-source.js';
@@ -276,7 +277,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (url.pathname === BASE && request.method === 'GET') {
     const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
     const attention=url.searchParams.get('attention')==='1';
-    const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.id IS NULL AND i.receipt_json='{}' AND i.ready_json='{}' AND NOT EXISTS(SELECT 1 FROM factory_publish_records r WHERE json_extract(r.value_json,'$.autoTaskId')=i.id AND COALESCE(json_extract(r.value_json,'$.batchId'),'')<>'' AND (json_extract(r.value_json,'$.autoBatchId') IS NULL OR json_extract(r.value_json,'$.autoBatchId')=i.batch_id))))":"");
+    const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_publish_records r ON json_extract(r.value_json,'$.autoTaskId')=i.id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND lower(COALESCE(NULLIF(json_extract(r.value_json,'$.officialRemoteStatus'),''),json_extract(r.value_json,'$.status'))) IN ('failed','rejected','status_timeout','needs_review','canceled','cancelled','enqueue_failed')) OR EXISTS(SELECT 1 FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.id IS NULL AND i.receipt_json='{}' AND i.ready_json='{}' AND NOT EXISTS(SELECT 1 FROM factory_publish_records r WHERE json_extract(r.value_json,'$.autoTaskId')=i.id AND COALESCE(json_extract(r.value_json,'$.batchId'),'')<>'' AND (json_extract(r.value_json,'$.autoBatchId') IS NULL OR json_extract(r.value_json,'$.autoBatchId')=i.batch_id))))":"");
     const [countRows,batches] = await env.DB.batch([
       env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(user.username),
       env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(user.username,pageSize,(page-1)*pageSize),
@@ -298,10 +299,11 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
       const groups={results:allGroups.results.filter(row=>row.batch_id===batch.id)};
       const durableReceipts=new Map();
       const outcomes=new Map();
+      const recordsByItem=new Map();
       for(const stored of durable.results){
         const record=readJsonValue(stored.value_json);
         if(record.autoTaskId && (!record.autoBatchId || record.autoBatchId===batch.id)){
-          outcomes.set(record.autoTaskId,publishOutcome(record));
+          outcomes.set(record.autoTaskId,publishOutcome(record));recordsByItem.set(record.autoTaskId,record);
           if(record.batchId)durableReceipts.set(record.autoTaskId,record);
         }
       }
@@ -310,7 +312,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
           const receipt = JSON.parse(row.receipt_json || '{}');
           const result = JSON.parse(row.result_json || '{}');
           const submitted = Boolean(receipt.batchId || durableReceipts.has(row.id) || (!row.publish_group_id && row.type === 'official-publish' && row.status === 'done' && !result.publishFailed));
-          return { publishOutcome:outcomes.get(row.id)||(['failed'].includes(row.status)||result.publishFailed?'failed':submitted?'pending':'unavailable'), retryCount:row.auto_retry_count||0,retryAt:row.status==='queued'?row.available_at:0,id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
+          return { ...psychologyItemStatus(row,recordsByItem.get(row.id)||{},groups.results.find(g=>g.id===row.publish_group_id)||{}), publishOutcome:outcomes.get(row.id)||(['failed'].includes(row.status)||result.publishFailed?'failed':submitted?'pending':'unavailable'), retryCount:row.auto_retry_count||0,retryAt:row.status==='queued'?row.available_at:0,id: row.id, jobId: row.job_id, sourceId: row.source_id, title: row.title, connectionId: row.connection_id,
             groupId:row.publish_group_id, scheduleAt: row.schedule_at, status: submitted ? 'submitted' : row.ready_json!=='{}' && row.publish_group_id ? 'ready' : row.status==='queued'&&row.available_at ? 'queued' : result.publishFailed ? 'failed' : row.type === 'psychology-photo-story' && row.status === 'done' ? 'handoff' : row.status || 'missing',
             percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: submitted ? '' : row.error || result.publishError || '', type: row.type };
         }) });

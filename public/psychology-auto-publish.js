@@ -142,31 +142,34 @@ function summary() {
   $('#summary').textContent=ids.length ? `本批共生成 ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
 }
-function batchStatus(items,groups=[]){
-  // Submitted describes the batch handoff; individual publication results are separate.
-  const active=items.some(i=>['queued','running','handoff','ready','done'].includes(i.status))||groups.some(g=>g.retrying||g.status==='submitting');
-  if(!active && items.some(i=>i.status==='submitted'))return 'done';
-  if(groups.some(g=>g.status==='failed'&&!g.retrying))return 'failed';
-  if(items.some(i=>i.status==='missing'))return 'unknown';
-  if(groups.some(g=>g.retrying))return 'running';
-  if(!items.length)return 'cancelled';
-  if(items.some(i=>i.status==='failed'))return 'failed';
-  if(items.some(i=>['running','handoff','ready','done'].includes(i.status)))return 'running';
-  if(items.every(i=>i.status==='submitted'||i.status==='cancelled'))return items.every(i=>i.status==='cancelled')?'cancelled':'done';
-  return items.some(i=>i.status==='queued')?'queued':'unknown';
+function itemState(item){
+ if(item.displayStatus)return item.displayStatus;
+ if(item.publishOutcome==='published')return 'published';
+ if(item.publishOutcome==='failed')return 'publish_failed';
+ return ({queued:'queued',running:'producing',handoff:'producing',done:'producing',ready:'publishing',submitted:'scheduled',failed:'production_failed',cancelled:'cancelled'})[item.status]||'missing';
 }
+function batchStatus(items,groups=[]){
+ if(!items.length)return 'cancelled';
+ const states=items.map(itemState);
+ if(states.every(s=>s==='cancelled'))return 'cancelled';
+ if(states.every(s=>s==='published'||s==='cancelled'))return 'done';
+ if(states.includes('published'))return 'partial';
+ if(groups.some(g=>g.retrying)||states.some(s=>['producing','publishing'].includes(s)))return 'running';
+ if(states.some(s=>['production_failed','publish_failed'].includes(s)))return 'failed';
+ if(states.includes('queued'))return 'queued';
+ if(states.includes('scheduled'))return 'scheduled';
+ return 'unknown';
+}
+function itemLabel(status){return {published:'发布成功',production_failed:'制作失败',publish_failed:'发布失败',queued:'排队中',producing:'制作中',scheduled:'待发布',publishing:'发布中',missing:'记录缺失',cancelled:'已取消'}[status]||'记录缺失';}
 function publicationCounts(items){
-  const counts={published:0,failed:0,pending:0,unavailable:0};
-  for(const item of items)counts[Object.hasOwn(counts,item.publishOutcome)?item.publishOutcome:'unavailable']++;
-  return counts;
+ const counts={published:0,production_failed:0,publish_failed:0,queued:0,producing:0,scheduled:0,publishing:0,missing:0,cancelled:0};
+ for(const item of items)counts[itemState(item)]++;
+ return counts;
 }
 function publicationSummary(items){
-  const c=publicationCounts(items);
-  return '发布成功 '+c.published+' 条 · 发布失败 '+c.failed+' 条'+(c.pending?' · 发布中 '+c.pending+' 条':'')+(c.unavailable?' · 未返回结果 '+c.unavailable+' 条':'');
+ return Object.entries(publicationCounts(items)).filter(([,count])=>count).map(([key,count])=>itemLabel(key)+' '+count+' 条').join(' · ')||'暂无内容';
 }
-function statusLabel(status){
-  return {unknown:'状态待核实',queued:'排队中',running:'执行中',done:'已提交',failed:'待处理',cancelled:'已取消'}[status]||status;
-}
+function statusLabel(status){return {partial:'部分成功',unknown:'记录缺失',queued:'排队中',running:'处理中',scheduled:'待发布',done:'全部成功',failed:'处理失败',cancelled:'已取消'}[status]||status;}
 let batchPage=1,batchLoadVersion=0;
 $('#batchPrev').addEventListener('click',()=>{batchPage=Math.max(1,batchPage-1);loadBatches().catch(e=>message(e.message,true));});
 $('#batchNext').addEventListener('click',()=>{batchPage++;loadBatches().catch(e=>message(e.message,true));});
@@ -195,9 +198,9 @@ function renderBatches() {
   }
   $('#batches').setAttribute('aria-busy','false');
   const tones=state.batches.map(b=>batchStatus(b.items||[],b.groups||[]));
-  $('#queuedCount').textContent=tones.filter(s=>s==='queued').length;
+  $('#queuedCount').textContent=tones.filter(s=>s==='queued'||s==='scheduled').length;
   $('#runningCount').textContent=tones.filter(s=>s==='running').length;
-  $('#attentionCount').textContent=tones.filter(s=>s==='failed'||s==='unknown').length;
+  $('#attentionCount').textContent=tones.filter(s=>s==='failed'||s==='unknown'||s==='partial').length;
   $('#doneCount').textContent=tones.filter(s=>s==='done'||s==='cancelled').length;
   $('#safetySummary').textContent=state.batches.length?`本页 ${state.batches.length} 个任务，关闭页面不影响已入队任务。`:'生成完成后自动提交官方发布中台';
   $('#pageTotalCount').textContent=state.batches.length;
@@ -262,28 +265,28 @@ $('#batchForm').addEventListener('submit',async event=>{
 });
 
 function renderBatchDetail(b){
- const labels={queued:'等待执行',running:'执行中',done:'生成完成',submitted:'已提交中台',failed:'失败',cancelled:'已取消',missing:'任务记录缺失，发布结果待核实',handoff:'等待卡片渲染'};
+ const labels={queued:'等待执行',running:'执行中',done:'生成完成',submitted:'已提交中台',failed:'失败',cancelled:'已取消',missing:'记录缺失',handoff:'等待卡片渲染'};
 
     const items=b.items||[];
     const status=batchStatus(items,b.groups||[]);
     const submitted=items.filter(i=>i.status==='submitted').length;
     const running=items.filter(i=>['running','handoff','done'].includes(i.status)).length;
     const ready=items.filter(i=>i.status==='ready').length;
-    const failed=items.filter(i=>i.status==='failed');
-    const missing=items.filter(i=>i.status==='missing').length;
+    const failed=items.filter(i=>['production_failed','publish_failed'].includes(itemState(i)));
+    const missing=items.filter(i=>itemState(i)==='missing').length;
     const retryItems=items.filter(i=>['failed','handoff'].includes(i.status));
     const template=(state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template;
     const accounts=[...new Set(items.map(i=>i.connectionId).filter(Boolean))].map(accountName);
     const schedule=Object.entries(items.reduce((map,i)=>{const key=time(i.scheduleAt);map[key]=(map[key]||0)+1;return map;},{})).map(([when,count])=>`<span><b>${esc(when)}</b><em>${count} 条</em></span>`).join('');
-    const message=missing?publicationSummary(items):(b.groups||[]).find(g=>g.error)?.error||failed[0]?.error||items.find(i=>i.message)?.message||(!items.length?'该批次内容已全部删除。':submitted===items.length?'已全部提交官方发布中台。':`${labels[items[0]?.status]||'等待执行'} · ${submitted} / ${items.length} 已提交`);
+    const message=missing?publicationSummary(items):(b.groups||[]).find(g=>g.error)?.error||failed[0]?.failureReason||failed[0]?.error||items.find(i=>i.message)?.message||(!items.length?'该批次内容已全部删除。':submitted===items.length?'已全部提交官方发布中台。':`${labels[items[0]?.status]||'等待执行'} · ${submitted} / ${items.length} 已提交`);
     return `<article class="auto-task-item" data-status="${esc(status)}">
       <div class="task-item-head"><div><strong>${esc(b.config.name||'心理学自动发布')}</strong><small>${esc(time(b.createdAt/1000))} · ${b.config.mediaType==='photo'?'图文':'视频'} · ${esc(template)}</small></div><div class="task-head-actions"><span class="task-status-badge" data-tone="${esc(status)}">${esc(statusLabel(status))}</span></div></div>
       ${accounts.length?`<details class="task-accounts"><summary>${accounts.length} 个发布账号</summary><div class="task-groups">${accounts.map(name=>`<b>${esc(name)}</b>`).join('')}</div></details>`:''}
       <div class="detail-summary"><div><strong>${accounts.length}</strong><span>发布账号</span></div><div><strong>${items.length}</strong><span>本批内容</span></div><div><strong>${submitted}</strong><span>已提交中台</span></div></div>
       <h3 class="detail-publication-heading">发布状态</h3>
       <p>${esc(publicationSummary(items))}</p>${message!==publicationSummary(items)?`<p>${esc(message)}</p>`:''}
-      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>未返回结果 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
-      ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${g.retrying?'自动重试 '+g.retryCount+'/2 · '+(g.retryAt?'等待排队':'执行中'):g.status==='cancelled'?'已删除全部内容':g.status==='submitted'?'已提交':g.status==='submitting'?'提交中':g.status==='failed'?'提交失败':members.some(i=>i.status==='missing')?'未返回发布结果':'已就绪 '+n+'/'+g.count}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
+      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${publicationSummary(members)}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       ${schedule?`<details class="task-schedule"><summary>具体排期</summary>${schedule}</details>`:''}
       ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}
     </article>`;
@@ -292,7 +295,7 @@ let selectedBatchId='';
 function renderSelectedBatch(){
  const b=state.batches.find(b=>b.id===selectedBatchId);if(!b){$('#batchDetailBody').innerHTML='<div class="empty-state">该任务已不在当前页，请关闭详情并刷新列表。</div>';$('#batchDetailItems').innerHTML='';return;}
  $('#batchDetailBody').innerHTML=renderBatchDetail(b);
- $('#batchDetailItems').innerHTML=(b.items||[]).map(i=>`<article class="detail-item"><strong>${esc(i.title||i.sourceId||'未命名内容')}</strong><p>${esc(accountName(i.connectionId))} · ${esc(time(i.scheduleAt))}</p><p>${esc(({published:'发布成功',failed:'发布失败'})[i.publishOutcome]||({missing:'未返回发布结果',submitted:'已提交中台',failed:'失败',queued:'排队中',ready:'等待合批',running:'执行中',done:'生成完成',handoff:'等待卡片渲染',cancelled:'已取消'})[i.status]||i.status)}</p>${i.error?'<details><summary>查看失败原因</summary><pre>'+esc(i.error)+'</pre></details>':''}</article>`).join('')||'<div class="empty-state">该任务内容已全部删除。</div>';
+ $('#batchDetailItems').innerHTML=(b.items||[]).map(i=>`<article class="detail-item"><strong>${esc(i.title||i.sourceId||'未命名内容')}</strong><p>${esc(accountName(i.connectionId))} · ${esc(time(i.scheduleAt))}</p><p>${esc(itemLabel(itemState(i)))}</p>${i.failureReason||i.error?'<div class="detail-failure"><strong>原因</strong><p>'+esc(i.failureReason||i.error)+'</p></div>':''}</article>`).join('')||'<div class="empty-state">该任务内容已全部删除。</div>';
 }
 function detailTab(items){$('#batchDetailBody').hidden=items;$('#batchDetailItems').hidden=!items;$('#detailOverviewTab').setAttribute('aria-selected',String(!items));$('#detailItemsTab').setAttribute('aria-selected',String(items));$('#detailOverviewTab').tabIndex=items?-1:0;$('#detailItemsTab').tabIndex=items?0:-1;}
 $('#detailOverviewTab').addEventListener('click',()=>detailTab(false));$('#detailItemsTab').addEventListener('click',()=>detailTab(true));

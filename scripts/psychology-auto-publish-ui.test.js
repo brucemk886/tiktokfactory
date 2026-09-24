@@ -210,23 +210,20 @@ for(const media of ['photo','video'])for(const source of ['copy-library','copy-b
  });
 
 
-test('missing execution records never masquerade as queued work',()=>{
-  const text=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8');
-  const functions=text.slice(text.indexOf('function batchStatus('),text.indexOf('let batchPage='));
-  const ctx=vm.createContext({});vm.runInContext(functions,ctx);
-  const state=(items,groups=[])=>ctx.batchStatus(items.map(status=>({status})),groups);
-  assert.equal(state(['submitted','missing']),'done');
-  assert.equal(ctx.statusLabel('unknown'),'状态待核实');
-  assert.equal(state(['submitted','submitted']),'done');
-  assert.equal(state(['submitted','queued']),'queued');
-  assert.equal(state(['submitted','done']),'running');
-  assert.equal(state(['failed','submitted']),'done');
-  assert.equal(state(['submitted','failed','queued']),'failed');
-  assert.equal(ctx.publicationSummary([{publishOutcome:'published'},{publishOutcome:'failed'},{publishOutcome:'pending'},{}]),'发布成功 1 条 · 发布失败 1 条 · 发布中 1 条 · 未返回结果 1 条');
-  assert.equal(state(['unexpected']),'unknown');
-  assert.equal(state(['cancelled']),'cancelled');
+test('batch and item labels distinguish production, publication and missing records',()=>{
+ const text=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8');
+ const ctx=vm.createContext({});vm.runInContext(text.slice(text.indexOf('function itemState('),text.indexOf('let batchPage=')),ctx);
+ const state=(...statuses)=>ctx.batchStatus(statuses.map(displayStatus=>({displayStatus})));
+ assert.equal(state('published','production_failed'),'partial');
+ assert.equal(state('published','missing'),'partial');
+ assert.equal(state('published','published'),'done');
+ assert.equal(state('production_failed','publish_failed'),'failed');
+ assert.equal(state('queued'),'queued');assert.equal(state('producing'),'running');
+ assert.equal(state('scheduled'),'scheduled');assert.equal(state('publishing'),'running');
+ assert.equal(state('missing'),'unknown');assert.equal(state('cancelled'),'cancelled');
+ assert.equal(ctx.statusLabel('partial'),'部分成功');
+ assert.equal(ctx.publicationSummary([{displayStatus:'published'},{displayStatus:'production_failed'},{displayStatus:'publish_failed'},{}]),'发布成功 1 条 · 制作失败 1 条 · 发布失败 1 条 · 记录缺失 1 条');
 });
-
 
 test('slow initial batch response shows loading instead of an empty queue',async()=>{
   let resolveBatches;
