@@ -18,8 +18,10 @@
     $('#produceBtn').disabled = busy || !selected.size;
     const moveButton = $('#moveSelectedBtn');
     const targetPhoto = (document.body.dataset.mediaType || 'video') === 'video';
-    moveButton.textContent = targetPhoto ? '移动到图文爆款' : '移动到视频爆款';
-    moveButton.disabled = busy || !selected.size;
+    if (moveButton) {
+      moveButton.textContent = targetPhoto ? '移动到图文爆款' : '移动到视频爆款';
+      moveButton.disabled = busy || !selected.size;
+    }
     $('#clearSelectionBtn').disabled = busy;
   }
   async function api(url = endpoint, options = {}) {
@@ -63,7 +65,7 @@
     requestId = '';
     sync();
   });
-  $('#moveSelectedBtn').addEventListener('click', async () => {
+  $('#moveSelectedBtn')?.addEventListener('click', async () => {
     if (busy || !selected.size) return;
     const ids = [...selected];
     const currentType = document.body.dataset.mediaType || 'video';
@@ -117,6 +119,7 @@
   });
 
   async function refresh() {
+    if (!$('#productionPanel')) return;
     if(document.body.classList.contains('copy-library-page')&&document.body.dataset.sourceAccess!=='true')return;
     clearTimeout(timer);
     try {
@@ -145,7 +148,7 @@
     }
   }
 
-  $('#refreshProductionBtn').addEventListener('click', refresh);
+  $('#refreshProductionBtn')?.addEventListener('click', refresh);
   refresh();
   sync();
 })();

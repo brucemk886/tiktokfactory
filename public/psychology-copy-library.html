@@ -5,7 +5,7 @@
   <title>文案库 · 心理学</title>
   <link rel="stylesheet" href="/app.css" /><link rel="stylesheet" href="/module-pages.css" />
   <link rel="stylesheet" href="/psychology-pages.css" /><link rel="stylesheet" href="/psychology-peer-hits.css" />
-  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260923-1" />
+  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260924-2" />
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
@@ -15,7 +15,7 @@
   <main class="module-main">
     <header class="page-head">
       <div><h1>文案库</h1><p class="page-lead">统一管理爆款来源、播放数据、提取文案和改写版本。新内容导入后自动提取，供图文与视频生产复用。</p></div>
-      <div class="hits-header-tools"><a class="copy-header-link" href="/psychology-publish">自动发布</a><button id="bulkImportButton" type="button" aria-haspopup="dialog" aria-controls="rewriteDialog">批量导入</button>
+      <div class="hits-header-tools"><a class="copy-header-link" href="/psychology-publish">自动发布</a><button id="bulkImportButton" type="button" aria-haspopup="dialog" aria-controls="bulkImportDialog">批量导入</button>
         <details class="hits-header-panel" id="apiPanel"><summary>写入接口</summary>
           <div class="hits-panel hits-header-popover">
             <p>专用密钥只能写入心理学同行爆款。密钥生成后仅显示一次，请复制给 grokbot。</p>
@@ -54,12 +54,11 @@
     <section class="hits-panel">
       <div class="hits-toolbar"><label>展示范围<select id="libraryStatus"><option value="done">已提取文案</option><option value="all">全部导入记录</option><option value="queued">等待提取</option><option value="running">提取中</option><option value="failed">提取失败</option><option value="historical">历史待补全文案</option></select></label><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、正文、账号或原帖链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option><option value="recent">最近导入</option></select></label></div>
       <p class="library-help">默认只显示已提取文案；切换“全部导入记录”可管理尚未完成提取的素材。Grokbot 写入接口与密钥沿用原配置。</p><p id="listStatus" role="status">正在读取…</p>
-      <div class="hits-actions" id="sourceActions"><span id="selectionCount">已选 0 条</span><button id="produceBtn" type="button" disabled>原帖复刻</button><label class="hits-rewrite" id="rewriteCopyField" hidden><input id="rewriteCopy" type="checkbox" /> 改写文案</label><button id="moveSelectedBtn" type="button" disabled>移动到图文爆款</button><button id="clearSelectionBtn" type="button">清空选择</button><button id="exportOriginalPage" type="button">导出本页文案</button></div>
+      <div class="hits-actions" id="sourceActions"><span id="selectionCount">已选 0 条</span><button id="produceBtn" type="button" disabled>原帖复刻</button><label class="hits-rewrite" id="rewriteCopyField" hidden><input id="rewriteCopy" type="checkbox" /> 改写文案</label><button id="clearSelectionBtn" type="button">清空选择</button></div>
       <p id="productionStatus" role="status">原帖复刻每次最多选择5条，按原素材生成。使用已提取文案批量生成，请进入右上角的自动发布。</p>
       <div class="hits-table-wrap"><table><thead><tr><th>选择</th><th>标题 / 账号</th><th>播放 / 互动</th><th>发布 / 导入时间</th><th>发布文案</th><th>提取内容</th><th>文案状态</th><th>改写版本</th><th>音色</th><th id="mediaColumnLabel">原帖</th><th>操作</th></tr></thead><tbody id="hitRows"></tbody></table></div>
       <div class="hits-pagination"><button id="previousBtn" type="button" disabled>上一页</button><span id="pageInfo"></span><button id="nextBtn" type="button" disabled>下一页</button></div>
     </section>
-    <section class="hits-panel" id="productionPanel"><div class="hits-actions"><h2>爆款复刻</h2><a href="/psychology-publish-sources?view=manual">在发布记录里查看 →</a><button id="refreshProductionBtn" type="button">刷新记录</button></div><p id="jobsStatus" role="status"></p><div id="productionJobs"></div></section>
   </main>
   <dialog id="rewriteDialog" class="copy-preview-dialog copy-rewrite-dialog" aria-labelledby="rewriteTitle">
     <div class="copy-dialog-head"><div><h2 id="rewriteTitle">改写详情</h2></div><button id="closeRewrites" type="button">关闭</button></div>
@@ -67,30 +66,6 @@
       <p id="rewriteContext" class="copy-dialog-meta"></p>
       <details id="rewriteOriginal"><summary>查看对应爆款文案</summary><pre id="rewriteOriginalText"></pre></details>
       <p>改写版本审核后保存，启用的版本可供图文、视频自动发布抽取。保存版本不会立即发布；正文按 1–6 段保存：图文按段分页，视频以正文为依据编排模板。</p>
-      <details id="manualVariantPanel" class="copy-import-panel" hidden>
-        <summary>新增改写版本</summary><div class="copy-import-body">
-          <form id="variantForm">
-            <label>版本名称<input id="variantName" maxlength="120" placeholder="例如：情绪共鸣版" required /></label>
-            <label>标题<input id="variantTitle" maxlength="200" required /></label>
-            <label>发布文案<textarea id="variantCaption" maxlength="2200" rows="3"></textarea></label>
-            <div id="variantPages"></div>
-            <label class="copy-review-confirm"><input type="checkbox" id="variantReviewed" required />我已审核此版本，保存后启用</label>
-            <button class="primary-action" type="submit">保存新版本</button><p id="variantStatus" role="status"></p>
-          </form>
-        </div>
-      </details>
-      <details id="bulkImportPanel" class="copy-import-panel">
-        <summary>导入 Grokbot 文案</summary>
-        <div class="copy-import-body">
-          <p>从改写详情导入时自动关联当前爆款文案；跨文案批量导入请保留导出的 sourceKey。不同版本使用不同 externalId；pages 第一项为首图，每篇 1–6 页，每次最多 100 篇。请审核后再导入，导入即启用。</p>
-          <button id="downloadExample" type="button">下载导入示例</button>
-          <form id="importForm">
-            <label>选择 JSON 文件<input id="copyFile" type="file" accept=".json,application/json" /></label>
-            <label>或粘贴 JSON<textarea id="copyJson" rows="8" required placeholder='[{"externalId":"avoidant-v1","sourceKey":"attachment-001","title":"Post title","caption":"Post caption","pages":["Cover copy","Page 2 copy"]}]'></textarea></label>
-            <button type="submit" class="primary-action">导入已审核文案</button>
-          </form>
-        </div>
-      </details>
       <p id="copyStatus" class="copy-list-message" role="status"></p>
       <form id="copySearchForm" class="copy-toolbar"><label class="copy-search">搜索<input id="copySearch" type="search" placeholder="标题或来源编号" /></label><button>查询</button></form>
       <div class="copy-table-wrap">
@@ -103,6 +78,36 @@
     </section>
   </dialog>
 
+  <dialog id="variantDialog" class="copy-preview-dialog copy-rewrite-dialog copy-variant-dialog" aria-labelledby="variantDialogTitle">
+    <div class="copy-dialog-head"><h2 id="variantDialogTitle">新增改写文案</h2><button id="closeVariant" type="button">关闭</button></div>
+    <section class="copy-panel">
+      <p id="variantContext" class="copy-dialog-meta"></p>
+      <p>新版本自动关联当前文案。正文填写 1–6 段，图文按段分页，视频按正文生成；审核保存后可供自动发布抽取。</p>
+      <div class="copy-import-panel"><div class="copy-import-body">
+          <form id="variantForm">
+            <label>版本名称<input id="variantName" maxlength="120" placeholder="例如：情绪共鸣版" required /></label>
+            <label>标题<input id="variantTitle" maxlength="200" required /></label>
+            <label>发布文案<textarea id="variantCaption" maxlength="2200" rows="3"></textarea></label>
+            <div id="variantPages"></div>
+            <label class="copy-review-confirm"><input type="checkbox" id="variantReviewed" required />我已审核此版本，保存后启用</label>
+            <button class="primary-action" type="submit">保存新版本</button><p id="variantStatus" role="status"></p>
+          </form>
+        </div></div>
+    </section>
+  </dialog>
+  <dialog id="bulkImportDialog" class="copy-preview-dialog copy-rewrite-dialog" aria-labelledby="bulkImportTitle">
+    <div class="copy-dialog-head"><h2 id="bulkImportTitle">批量导入文案</h2><button id="closeBulkImport" type="button">关闭</button></div>
+    <section class="copy-panel"><div class="copy-import-panel"><div class="copy-import-body">
+          <p>通过 sourceKey 关联对应爆款文案。不同版本使用不同 externalId；pages 第一项为首图，每篇 1–6 页，每次最多 100 篇。请审核后再导入，导入即启用。</p>
+          <button id="downloadExample" type="button">下载导入示例</button>
+          <form id="importForm">
+            <label>选择 JSON 文件<input id="copyFile" type="file" accept=".json,application/json" /></label>
+            <label>或粘贴 JSON<textarea id="copyJson" rows="8" required placeholder='[{"externalId":"avoidant-v1","sourceKey":"attachment-001","title":"Post title","caption":"Post caption","pages":["Cover copy","Page 2 copy"]}]'></textarea></label>
+            <button type="submit" class="primary-action">导入已审核文案</button>
+          </form>
+        </div></div><p id="bulkImportStatus" role="status"></p></section>
+  </dialog>
+
   <dialog id="copyPreviewDialog" class="copy-preview-dialog">
     <div class="copy-dialog-head"><div><span id="previewKind" class="copy-kind"></span><h2 id="previewTitle"></h2></div><button id="closePreview" type="button" aria-label="关闭">关闭</button></div>
     <p id="previewMeta" class="copy-dialog-meta"></p>
@@ -110,7 +115,7 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260920-2"></script><script src="/psychology-peer-production.js?v=20260920-2"></script>
-<script type="module" src="/psychology-copy-library.js?v=20260923-1"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-2"></script><script src="/psychology-peer-production.js?v=20260924-2"></script>
+<script type="module" src="/psychology-copy-library.js?v=20260924-2"></script>
 </body>
 </html>

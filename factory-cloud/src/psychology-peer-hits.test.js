@@ -253,7 +253,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/id="produceBtn"[^>]*>原帖复刻<\/button>/);
   assert.match(page,/id="rewriteCopy"/);
   assert.doesNotMatch(page,/id="rewriteCopy"[^>]*checked/);
-  assert.match(page,/id="moveSelectedBtn"[^>]*>移动到图文爆款<\/button>/);
+  assert.doesNotMatch(page,/id="moveSelectedBtn"/);
   assert.doesNotMatch(page,/北京时间/);
   assert.doesNotMatch(page,/采集时间/);
   assert.doesNotMatch(page,/最新采集/);

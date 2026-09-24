@@ -12,6 +12,8 @@ let previewText = "";
 let selectedSource = null;
 let variantRequestVersion = 0;
 let draftVersionId = crypto.randomUUID();
+let variantSource = null;
+let variantSaving = false;
 
 async function api(path, method = "GET", body) {
   const response = await fetch("/api/psychology-creative" + path, {
@@ -22,20 +24,6 @@ async function api(path, method = "GET", body) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "请求失败");
   return data;
-}
-
-function exportRow(row) {
-  const content = row.content || {};
-  return {
-    sourceKey: row.sourceKey,
-    mediaType: row.media_type,
-    title: content.title || row.title,
-    caption: content.caption || "",
-    pages: (content.pages || []).map(page => page.text),
-    transcript: content.transcript || "",
-    onScreenText: content.onScreenText || [],
-    sourceUrl: row.source_url
-  };
 }
 
 function fullText(row) {
@@ -72,7 +60,6 @@ function openPreview({ kind, title, meta, text, sourceUrl = "" }) {
 
 function loadOriginals(){document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));}
 document.addEventListener('peer-list-loaded',event=>{originalItems=event.detail?.items||[];});
-$('#exportOriginalPage').onclick=()=>download('psychology-originals.json',originalItems.filter(r=>r.status==='done').map(exportRow));
 $("#hitRows").addEventListener("click", async event => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -81,9 +68,10 @@ $("#hitRows").addEventListener("click", async event => {
     try{const response=await fetch('/api/psychology-copy-library/'+encodeURIComponent(button.dataset.retryCopy)+'/retry',{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.error||'重试失败');loadOriginals();}catch(error){$('#listStatus').textContent=error.message;button.disabled=false;}
     return;
   }
-  const id = button.dataset.viewOriginal || button.dataset.copyOriginal || button.dataset.rewriteOriginal;
+  const id = button.dataset.viewOriginal || button.dataset.createVariant || button.dataset.rewriteOriginal;
   const row = originalItems.find(item => item.id === id);
   if (!row) return;
+  if (button.dataset.createVariant) { openVariant(row); return; }
   if (button.dataset.rewriteOriginal) { openRewrites(row); return; }
   if (button.dataset.viewOriginal) {
     openPreview({
@@ -95,28 +83,14 @@ $("#hitRows").addEventListener("click", async event => {
     });
     return;
   }
-  try {
-    await navigator.clipboard.writeText(fullText(row));
-    $("#listStatus").textContent = "已复制完整文案。";
-  } catch {
-    $("#listStatus").textContent = "自动复制失败，请打开查看后手动复制。";
-  }
 });
 
 function openRewrites(source = null) {
   selectedSource = source;
-  draftVersionId = crypto.randomUUID();
   copyPage = 1;
   $("#copySearch").value = "";
-  $("#copyJson").value = "";
-  $("#copyFile").value = "";
   $("#copyStatus").textContent = "";
-  $("#variantStatus").textContent = "";
-  $("#variantForm").reset();
-  $("#manualVariantPanel").open = false;
-  $("#bulkImportPanel").open = !source;
-  $("#manualVariantPanel").hidden = !source;
-  $("#rewriteTitle").textContent = source ? "改写详情" : "批量导入 / 全部改写";
+  $("#rewriteTitle").textContent = "改写详情";
   $("#rewriteContext").textContent = source ? typeLabel(source.media_type) + "爆款 · " + (source.content?.title || source.title) : "全部改写版本（含历史导入）。按来源编号关联的版本也会显示在对应爆款文案下。";
   $("#rewriteOriginal").hidden = !source;
   $("#rewriteOriginal").open = false;
@@ -129,7 +103,24 @@ function openRewrites(source = null) {
   $("#rewriteDialog").showModal();
   loadCopies().catch(error => $("#copyStatus").textContent = error.message);
 }
-$("#bulkImportButton").onclick = () => openRewrites();
+function openVariant(source) {
+  if (variantSaving) return;
+  variantSource = source;
+  draftVersionId = crypto.randomUUID();
+  $("#variantForm").reset();
+  $("#variantStatus").textContent = "";
+  $("#variantContext").textContent = typeLabel(source.media_type) + "爆款 · " + (source.content?.title || source.title);
+  $("#variantDialog").showModal();
+}
+$("#closeVariant").onclick = () => { if (!variantSaving) $("#variantDialog").close(); };
+$("#variantDialog").addEventListener("cancel", event => { if (variantSaving) event.preventDefault(); });
+$("#bulkImportButton").onclick = () => {
+  $("#copyJson").value = "";
+  $("#copyFile").value = "";
+  $("#bulkImportStatus").textContent = "";
+  $("#bulkImportDialog").showModal();
+};
+$("#closeBulkImport").onclick = () => $("#bulkImportDialog").close();
 $("#closeRewrites").onclick = () => $("#rewriteDialog").close();
 $("#rewriteDialog").addEventListener("close", () => { variantRequestVersion++; });
 if (location.hash === "#copies") openRewrites();
@@ -145,7 +136,7 @@ function download(name, data) {
 
 $("#downloadExample").onclick = () => download("grok-photo-copy-example.json", [{
   externalId: "attachment-001-v1",
-  sourceKey: selectedSource?.sourceKey || "attachment-001",
+  sourceKey: "attachment-001",
   title: "When closeness feels overwhelming",
   caption: "A reflection on asking for space and staying connected.",
   pages: ["When closeness feels overwhelming", "You can need space and still care about someone.", "Try saying: I need a quiet evening. Can we talk tomorrow?"]
@@ -154,7 +145,7 @@ $("#copyFile").onchange = async () => {
   const file = $("#copyFile").files[0];
   if (!file) return;
   if (file.size > 1500000) {
-    $("#copyStatus").textContent = "文件超过 1.5MB，请拆分导入。";
+    $("#bulkImportStatus").textContent = "文件超过 1.5MB，请拆分导入。";
     return;
   }
   $("#copyJson").value = await file.text();
@@ -163,13 +154,11 @@ $("#importForm").onsubmit = async event => {
   event.preventDefault();
   event.submitter.disabled = true;
   try {
-    const data = await api("/copies" + (selectedSource ? "?sourceId=" + encodeURIComponent(selectedSource.id) : ""), "POST", JSON.parse($("#copyJson").value));
-    $("#copyStatus").textContent = `已导入 ${data.created} 篇，跳过 ${data.duplicates} 篇重复编号。`;
-    copyPage = 1;
-    await loadCopies();
+    const data = await api("/copies", "POST", JSON.parse($("#copyJson").value));
+    $("#bulkImportStatus").textContent = `已导入 ${data.created} 篇，跳过 ${data.duplicates} 篇重复编号。`;
     await loadOriginals();
   } catch (error) {
-    $("#copyStatus").textContent = error.message;
+    $("#bulkImportStatus").textContent = error.message;
   } finally {
     event.submitter.disabled = false;
   }
@@ -191,7 +180,7 @@ async function loadCopies() {
     <td class="copy-cell-text" title="${esc(row.external_id)}"><span>${esc(row.external_id)}</span></td>
     <td>${row.pages.length} 页</td>
     <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button><button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
-  </tr>`).join("") : '<tr><td colspan="7">暂无改写版本。可新增版本，或展开“导入 Grokbot 文案”导入审核后的结果。</td></tr>';
+  </tr>`).join("") : '<tr><td colspan="7">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
   $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
   $("#copyPrev").disabled = copyPage === 1;
   $("#copyNext").disabled = copyPage * 20 >= data.total;
@@ -248,23 +237,25 @@ $("#copyPreviewText").onclick = async () => {
 $("#variantPages").innerHTML = Array.from({ length: 6 }, (_, i) => '<label>第 ' + (i + 1) + ' 段 / 页' + (i ? '（选填）' : '（首图，必填）') + '<textarea data-variant-page maxlength="1500" rows="3" ' + (i ? '' : 'required') + '></textarea></label>').join('');
 $("#variantForm").onsubmit = async event => {
   event.preventDefault();
-  if (!selectedSource || !$("#variantReviewed").checked) return;
+  if (variantSaving || !variantSource || !$("#variantReviewed").checked) return;
+  const source = variantSource;
+  variantSaving = true;
+  $("#closeVariant").disabled = true;
   event.submitter.disabled = true;
   try {
     const pages = [...document.querySelectorAll('[data-variant-page]')].map(el => el.value.trim());
     while (pages.length && !pages.at(-1)) pages.pop();
     if (pages.some(page => !page)) throw new Error('请按顺序填写页面，中间不能留空。');
-    const data = await api('/copies?sourceId=' + encodeURIComponent(selectedSource.id), 'POST', [{
+    const data = await api('/copies?sourceId=' + encodeURIComponent(source.id), 'POST', [{
       externalId: $("#variantName").value.trim().slice(0, 70) + '-' + draftVersionId,
       title: $("#variantTitle").value.trim(), caption: $("#variantCaption").value.trim(), pages
     }]);
     $("#variantStatus").textContent = '已保存并启用 ' + data.created + ' 个新版本。';
     $("#variantForm").reset();
     draftVersionId = crypto.randomUUID();
-    copyPage = 1;
-    await loadCopies();
+    if ($("#rewriteDialog").open && selectedSource?.id === source.id) { copyPage = 1; await loadCopies(); }
     await loadOriginals();
   } catch (error) { $("#variantStatus").textContent = error.message; }
-  finally { event.submitter.disabled = false; }
+  finally { variantSaving = false; $("#closeVariant").disabled = false; event.submitter.disabled = false; }
 };
 loadOriginals();

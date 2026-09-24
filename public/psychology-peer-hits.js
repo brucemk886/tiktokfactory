@@ -36,7 +36,7 @@ function libraryRow(item){
  '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small></td>'+
  '<td class="hits-voice">'+(manage&&hasPeer?'<select class="voice-gender-select" data-id="'+escape(item.id)+'" data-current="'+escape(item.voiceGender||'male')+'" aria-label="音色性别"><option value="male"'+(item.voiceGender!=='female'?' selected':'')+'>男</option><option value="female"'+(item.voiceGender==='female'?' selected':'')+'>女</option></select>':'—')+'</td>'+
  '<td class="hits-video"><a href="'+escape(item.videoUrl)+'" target="_blank" rel="noopener noreferrer">打开原帖</a></td>'+
- '<td class="library-actions">'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-copy-original="'+escape(item.id)+'">复制</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage&&hasPeer?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除来源</button>':'')+'</td></tr>';
+ '<td class="library-actions">'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-create-variant="'+escape(item.id)+'">新增改写</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage&&hasPeer?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除来源</button>':'')+'</td></tr>';
 }
 
 async function loadList() {
