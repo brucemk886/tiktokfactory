@@ -13,7 +13,7 @@ function harness(script='psychology-copy-library.js') {
  let respond=()=>({created:1,duplicates:0,page:1,total:0,items:[]});
  const context={document,crypto:{randomUUID},CustomEvent:class{constructor(type,options={}){this.type=type;Object.assign(this,options);}},location:{hash:''},URL,URLSearchParams,setTimeout,clearTimeout,fetch:async(url,options={})=>{requests.push({url,...options,body:options.body?JSON.parse(options.body):undefined});const data=await respond(url,options);return {ok:true,json:async()=>data};}};
  vm.runInNewContext(read(script),context);
- return {nodes,pages,events,requests,document,respond:fn=>{respond=fn;},async click(data){await nodes.get('#hitRows').listeners.click({target:{closest:()=>({dataset:data})}});},fill(){nodes.get('#variantName').value='Test version';nodes.get('#variantTitle').value='Test title';nodes.get('#variantReviewed').checked=true;pages[0].value='First page';},submit(){return nodes.get('#variantForm').onsubmit({preventDefault(){},submitter:{}});}};
+ return {context,nodes,pages,events,requests,document,respond:fn=>{respond=fn;},async click(data){await nodes.get('#hitRows').listeners.click({target:{closest:()=>({dataset:data})}});},fill(){nodes.get('#variantName').value='Test version';nodes.get('#variantTitle').value='Test title';nodes.get('#variantReviewed').checked=true;pages[0].value='First page';},submit(){return nodes.get('#variantForm').onsubmit({preventDefault(){},submitter:{}});}};
 }
 const sources=[{id:'photo-source',media_type:'photo',title:'Photo source',content:{pages:[]}}, {id:'video-source',media_type:'video',title:'Video source',content:{transcript:'text'}}];
 test('library removes obsolete controls and keeps creation/import out of rewrite details',()=>{
@@ -49,4 +49,9 @@ test('removed jobs panel makes no polling requests and both media tabs still ini
  const h=harness('psychology-peer-production.js');h.events.get('library-source-access')({detail:{canManage:true}});
  for(const mediaType of ['photo','video']){h.document.body.dataset.mediaType=mediaType;h.events.get('peer-media-type-changed')({detail:{mediaType}});h.events.get('peer-list-loaded')();}
  assert.equal(h.requests.length,0);assert.equal(h.nodes.get('#produceBtn').disabled,true);
+});
+
+test('comparison renders escaped source and rewrite text with Chinese and explicit unmatched state',()=>{
+ const h=harness();const html=h.context.comparisonMarkup({sourceFound:true,status:'done',original:[{id:'o0',label:'原句',text:'<img src=x onerror=alert(1)>',zh:'原文中文'}],rewrite:[{id:'r0',kind:'body',label:'第 1 句',text:'Rewritten',zh:'改写中文',originalIds:['o0']},{id:'r1',kind:'body',label:'第 2 句',text:'New thought',zh:'新内容',originalIds:[]}]});
+ assert.match(html,/&lt;img/);assert.doesNotMatch(html,/<img/);assert.match(html,/原文中文/);assert.match(html,/改写中文/);assert.match(html,/新增内容 \/ 未匹配到对应原句/);
 });

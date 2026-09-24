@@ -38,14 +38,6 @@ function fullText(row) {
   ].filter(Boolean).join("\n\n");
 }
 
-function reviewedFullText(row) {
-  return [
-    "标题：" + (row.title || "未命名文案"),
-    "发布文案：" + (row.caption || "（无）"),
-    row.pages.map((page, index) => "第" + (index + 1) + "段：\n" + page).join("\n\n")
-  ].join("\n\n");
-}
-
 function openPreview({ kind, title, meta, text, sourceUrl = "" }) {
   previewText = text;
   $("#previewKind").textContent = kind;
@@ -95,7 +87,7 @@ function openRewrites(source = null) {
   $("#rewriteOriginal").hidden = !source;
   $("#rewriteOriginal").open = false;
   $("#rewriteOriginalText").textContent = source ? fullText(source) : "";
-  $("#copyList").innerHTML = '<tr><td colspan="7">正在读取改写版本…</td></tr>';
+  $("#copyList").innerHTML = '<tr><td colspan="8">正在读取改写版本…</td></tr>';
   $("#copyPrev").disabled = true;
   $("#copyNext").disabled = true;
   $("#copyPage").textContent = "";
@@ -178,9 +170,10 @@ async function loadCopies() {
     <td class="copy-cell-caption copy-cell-text" title="${esc(row.caption || "—")}"><span>${esc(row.caption || "—")}</span></td>
     <td class="copy-cell-text" title="${esc(row.source_key)}"><span>${esc(row.source_key)}</span></td>
     <td class="copy-cell-text" title="${esc(row.external_id)}"><span>${esc(row.external_id)}</span></td>
+    <td title="${esc(row.score_reason || '')}">${row.quality_score == null ? '未评分' : esc(row.quality_score) + ' 分'}</td>
     <td>${row.pages.length} 页</td>
     <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button><button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
-  </tr>`).join("") : '<tr><td colspan="7">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
+  </tr>`).join("") : '<tr><td colspan="8">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
   $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
   $("#copyPrev").disabled = copyPage === 1;
   $("#copyNext").disabled = copyPage * 20 >= data.total;
@@ -191,12 +184,7 @@ $("#copyList").onclick = async event => {
   if (!button) return;
   if (button.dataset.viewReviewed) {
     const row = reviewedItems.find(item => String(item.id) === button.dataset.viewReviewed);
-    if (row) openPreview({
-      kind: "文案改写",
-      title: row.title,
-      meta: `来源 ${row.source_key} · 版本 ${row.external_id} · ${row.pages.length} 页`,
-      text: reviewedFullText(row)
-    });
+    if (row) openComparison(row);
     return;
   }
   const removing = button.dataset.deleteCopy;
@@ -259,3 +247,60 @@ $("#variantForm").onsubmit = async event => {
   finally { variantSaving = false; $("#closeVariant").disabled = false; event.submitter.disabled = false; }
 };
 loadOriginals();
+
+let comparisonVersion = 0;
+let comparisonSelection = null;
+function comparisonMarkup(data) {
+  const originals = new Map(data.original.map(row => [row.id, row]));
+  const used = new Set(data.rewrite.flatMap(row => row.originalIds || []));
+  const textBlock = row => '<p class="comparison-text">' + esc(row.text) + '</p><div class="comparison-translation"><span>中文翻译</span><p>' + esc(row.zh || '等待翻译…') + '</p></div>';
+  const cards = data.rewrite.map(row => {
+    const refs = (row.originalIds || []).map(id => originals.get(id)).filter(Boolean);
+    const empty = !data.sourceFound ? '未找到已提取的来源原文' : row.kind !== 'body' ? '原文未填写此字段' : data.status !== 'done' ? '正在匹配对应原句…' : '新增内容 / 未匹配到对应原句';
+    return '<article class="comparison-card"><h3>' + esc(row.label) + '</h3><div class="comparison-columns"><section><h4>对应原文</h4>' + (refs.length ? refs.map(ref => '<small>' + esc(ref.label) + '</small>' + textBlock(ref)).join('') : '<p class="comparison-empty">' + esc(empty) + '</p>') + '</section><section><h4>改写文案</h4>' + textBlock(row) + '</section></div></article>';
+  }).join('');
+  const unused = data.original.filter(row => !used.has(row.id));
+  return cards + (unused.length ? '<details class="comparison-unused"><summary>其余原文及翻译（' + unused.length + ' 项）</summary>' + unused.map(row => '<article><h4>' + esc(row.label) + '</h4>' + textBlock(row) + '</article>').join('') + '</details>' : '');
+}
+async function loadComparison() {
+  const selection = comparisonSelection;
+  if (!selection) return;
+  const version = ++comparisonVersion;
+  const active = () => version === comparisonVersion && $("#comparisonDialog").open;
+  $("#retryComparison").hidden = true;
+  $("#comparisonStatus").textContent = '正在读取原文与改写…';
+  const path = '/copies/' + encodeURIComponent(selection.id) + '/comparison' + (selection.sourceId ? '?sourceId=' + encodeURIComponent(selection.sourceId) : '');
+  try {
+    let data = await api(path);
+    if (!active()) return;
+    $("#comparisonContent").innerHTML = comparisonMarkup(data);
+    if (data.status !== 'done') {
+      $("#comparisonStatus").textContent = '正在生成中文翻译与逐句对应，首次查看可能需要稍等；完成后自动缓存。';
+      data = await api(path, 'POST');
+      const deadline = Date.now() + 155000;
+      while (data.status !== 'done' && active() && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        if (!active()) return;
+        data = await api(path);
+      }
+    }
+    if (!active()) return;
+    if (data.status !== 'done') throw new Error('翻译仍在处理中，请稍后重试。');
+    $("#comparisonContent").innerHTML = comparisonMarkup(data);
+    $("#comparisonStatus").textContent = (data.provider === 'grokbot' ? '已读取 Grokbot 写入的翻译与对应关系。' : '中文翻译与对应关系已缓存。') + (!data.sourceFound ? ' 该版本尚未关联可用原文。' : '');
+  } catch (error) {
+    if (!active()) return;
+    $("#comparisonStatus").textContent = error.message;
+    $("#retryComparison").hidden = false;
+  }
+}
+function openComparison(row) {
+  comparisonSelection = { id: row.id, sourceId: selectedSource?.id || '' };
+  $("#comparisonMeta").textContent = row.title + (row.quality_score == null ? ' · 未评分' : ' · Grokbot 评分 ' + row.quality_score + '/100') + (row.score_reason ? ' · ' + row.score_reason : '');
+  $("#comparisonContent").innerHTML = '';
+  $("#comparisonDialog").showModal();
+  loadComparison();
+}
+$("#retryComparison").onclick = loadComparison;
+$("#closeComparison").onclick = () => $("#comparisonDialog").close();
+$("#comparisonDialog").addEventListener('close', () => { comparisonVersion++; });

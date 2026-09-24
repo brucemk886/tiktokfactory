@@ -5,7 +5,7 @@
   <title>文案库 · 心理学</title>
   <link rel="stylesheet" href="/app.css" /><link rel="stylesheet" href="/module-pages.css" />
   <link rel="stylesheet" href="/psychology-pages.css" /><link rel="stylesheet" href="/psychology-peer-hits.css" />
-  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260924-3" />
+  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260924-4" />
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
@@ -67,11 +67,12 @@
       <details id="rewriteOriginal"><summary>查看对应爆款文案</summary><pre id="rewriteOriginalText"></pre></details>
       <p>改写版本审核后保存，启用的版本可供图文、视频自动发布抽取。保存版本不会立即发布；正文按 1–6 段保存：图文按段分页，视频以正文为依据编排模板。</p>
       <p id="copyStatus" class="copy-list-message" role="status"></p>
+      <p class="copy-comparison-help">按 Grokbot 改写评分从高到低排列，未评分版本在后。评分为文案质量参考，不代表实际播放表现。</p>
       <form id="copySearchForm" class="copy-toolbar"><label class="copy-search">搜索<input id="copySearch" type="search" placeholder="标题或来源编号" /></label><button>查询</button></form>
       <div class="copy-table-wrap">
         <table>
-          <thead><tr><th>状态</th><th>标题</th><th>发布文案</th><th>来源编号</th><th>版本</th><th>页数</th><th>操作</th></tr></thead>
-          <tbody id="copyList"><tr><td colspan="7">正在读取已审核文案…</td></tr></tbody>
+          <thead><tr><th>状态</th><th>标题</th><th>发布文案</th><th>来源编号</th><th>版本</th><th>评分</th><th>页数</th><th>操作</th></tr></thead>
+          <tbody id="copyList"><tr><td colspan="8">正在读取已审核文案…</td></tr></tbody>
         </table>
       </div>
       <div class="copy-pagination"><button id="copyPrev" type="button">上一页</button><span id="copyPage"></span><button id="copyNext" type="button">下一页</button></div>
@@ -108,6 +109,16 @@
         </div></div><p id="bulkImportStatus" role="status"></p></section>
   </dialog>
 
+  <dialog id="comparisonDialog" class="copy-preview-dialog copy-rewrite-dialog" aria-labelledby="comparisonTitle">
+    <div class="copy-dialog-head"><h2 id="comparisonTitle">改写对照与中文翻译</h2><button id="closeComparison" type="button">关闭</button></div>
+    <section class="copy-panel">
+      <p id="comparisonMeta" class="copy-dialog-meta"></p>
+      <p class="copy-comparison-help">左侧为已保存的原文，右侧为改写文案，下方各附中文翻译。句子对应关系由 AI 按语义判断，仅供审核参考；新增或无法匹配的内容会单独标明。</p>
+      <div class="copy-comparison-status"><p id="comparisonStatus" role="status" aria-live="polite"></p><button id="retryComparison" type="button" hidden>重试翻译</button></div>
+      <div id="comparisonContent"></div>
+    </section>
+  </dialog>
+
   <dialog id="copyPreviewDialog" class="copy-preview-dialog">
     <div class="copy-dialog-head"><div><span id="previewKind" class="copy-kind"></span><h2 id="previewTitle"></h2></div><button id="closePreview" type="button" aria-label="关闭">关闭</button></div>
     <p id="previewMeta" class="copy-dialog-meta"></p>
@@ -115,7 +126,7 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-3"></script><script src="/psychology-peer-production.js?v=20260924-3"></script>
-<script type="module" src="/psychology-copy-library.js?v=20260924-3"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-4"></script><script src="/psychology-peer-production.js?v=20260924-4"></script>
+<script type="module" src="/psychology-copy-library.js?v=20260924-4"></script>
 </body>
 </html>

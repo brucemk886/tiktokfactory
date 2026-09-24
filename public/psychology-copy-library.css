@@ -9,3 +9,14 @@
 .copy-library-page .hits-table-wrap table{min-width:1210px}.copy-library-page .library-metrics{min-width:145px;white-space:nowrap}.copy-library-page .hits-table-wrap small{display:block;margin-top:7px;color:#766e60;line-height:1.5}.copy-library-page .library-status{min-width:102px}.copy-library-page .library-status details{max-width:180px;overflow-wrap:anywhere}.copy-library-page .library-status button{margin-top:8px;white-space:nowrap}.copy-library-page .library-actions{min-width:166px;width:166px}.copy-library-page .library-actions button{margin:0 5px 7px 0;padding:7px 8px!important}.copy-library-page .library-help{font-size:13px}.copy-library-page .hits-time small{font-size:11px}.copy-library-page #bulkImportButton{background:#eef2cc;color:#45550e;border-color:#c8cfa2}@media(max-width:700px){.copy-library-page .hits-header-tools{justify-content:flex-start}.copy-library-page .hits-header-popover{width:calc(100vw - 40px);position:fixed;left:20px;right:20px;top:130px}}
 
 .copy-library-page .copy-header-link{color:inherit}.copy-library-page .hits-panel .hits-rewrite{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.copy-library-page .hits-panel .hits-rewrite[hidden]{display:none}
+
+.copy-comparison-help{color:var(--lf-muted,#62738a);font-size:13px;line-height:1.7}
+.copy-comparison-status{display:flex;align-items:center;gap:12px;min-height:40px;color:var(--lf-muted,#62738a)}
+.comparison-card{margin:16px 0;border:1px solid var(--lf-line,#dfe7f1);border-radius:10px;overflow:hidden}
+.comparison-card>h3{margin:0;padding:12px 16px;background:var(--lf-bg,#f4f7fc);font-size:14px}
+.comparison-columns{display:grid;grid-template-columns:1fr 1fr}.comparison-columns>section{min-width:0;padding:16px}.comparison-columns>section+section{border-left:1px solid var(--lf-line,#dfe7f1)}
+.comparison-columns h4{margin:0 0 12px;font-size:13px;color:var(--lf-muted,#62738a)}
+.comparison-text,.comparison-translation p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75;margin:6px 0 14px}
+.comparison-translation{padding:10px 12px;background:#f3f7fd;border-radius:7px;margin-bottom:14px}.comparison-translation>span{font-size:12px;font-weight:600;color:#506987}.comparison-translation p{margin-bottom:0}
+.comparison-empty,.comparison-columns small{color:#738398;font-size:12px}.comparison-unused{margin-top:18px}.comparison-unused article{padding:12px 0;border-bottom:1px solid #e3eaf3}
+@media(max-width:700px){.comparison-columns{grid-template-columns:1fr}.comparison-columns>section+section{border-left:0;border-top:1px solid #dfe7f1}}

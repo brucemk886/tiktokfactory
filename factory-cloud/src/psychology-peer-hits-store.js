@@ -26,10 +26,14 @@ const COPY_SUPPLIED = `UPDATE psychology_copy_library SET status='done',content_
   WHERE id=? AND status<>'done' AND media_type=? AND EXISTS (SELECT 1 FROM psychology_peer_hits WHERE id=? AND collected_at=?)`;
 // One statement for every rewrite in the request keeps a 100-post batch far
 // below D1's per-invocation query limit.
-const REWRITE_INSERT = `INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at)
+const REWRITE_INSERT = `INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,quality_score,score_reason,comparison_json)
   SELECT json_extract(value,'$.id'),json_extract(value,'$.owner'),json_extract(value,'$.externalId'),json_extract(value,'$.sourceKey'),
-    json_extract(value,'$.title'),json_extract(value,'$.caption'),json_extract(value,'$.pagesJson'),json_extract(value,'$.fingerprint'),?
-  FROM json_each(?) WHERE true ON CONFLICT(id) DO NOTHING`;
+    json_extract(value,'$.title'),json_extract(value,'$.caption'),json_extract(value,'$.pagesJson'),json_extract(value,'$.fingerprint'),?,json_extract(value,'$.score'),json_extract(value,'$.scoreReason'),json_extract(value,'$.comparisonJson')
+  FROM json_each(?) WHERE true ON CONFLICT(id) DO UPDATE SET
+ quality_score=COALESCE(excluded.quality_score,psychology_copy_variants.quality_score),
+ score_reason=CASE WHEN excluded.score_reason<>'' THEN excluded.score_reason ELSE psychology_copy_variants.score_reason END,
+ comparison_json=CASE WHEN excluded.comparison_json<>'' THEN excluded.comparison_json ELSE psychology_copy_variants.comparison_json END
+ WHERE psychology_copy_variants.fingerprint=excluded.fingerprint AND psychology_copy_variants.deleted_at=0`;
 const MAX_REWRITES_PER_ITEM = 10;
 const MAX_REWRITES_PER_REQUEST = 500;
 // Must match librarySource so rewrites land under the same original.
@@ -236,10 +240,10 @@ async function planRewrites(db, items, actor) {
       ? (existing.get(id) ?? rows.find(row => row.id === id)?.fingerprint) === rewrite.fingerprint ? "duplicates" : "conflicts"
       : "created";
     counts[outcome]++; totals[outcome]++;
-    if (outcome !== "created") continue;
+    if (outcome === "conflicts" || queued.has(id)) continue;
     queued.add(id);
     rows.push({ id, owner, externalId: rewrite.externalId, sourceKey: rewrite.sourceKey, title: rewrite.title, caption: rewrite.caption,
-      pagesJson: JSON.stringify(rewrite.pages), fingerprint: rewrite.fingerprint });
+      pagesJson: JSON.stringify(rewrite.pages), fingerprint: rewrite.fingerprint, score:rewrite.score, scoreReason:rewrite.scoreReason, comparisonJson:rewrite.comparison?JSON.stringify(rewrite.comparison):"" });
   }
   return { rows, totals, byItem };
 }

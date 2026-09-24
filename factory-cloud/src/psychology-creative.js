@@ -1,3 +1,5 @@
+import {normalizeCopyReview} from './psychology-copy-review.js';
+import {handleCopyComparison} from './psychology-copy-comparison.js';
 import { json,readJson,sha256Hex,errorJson } from './http.js';
 import { photoCopyKey } from './peer-photo-copy-cache.js';
 import { loadGroupStore } from './official.js';
@@ -13,7 +15,7 @@ export function normalizeVariant(input){
  if(!externalId||externalId.length>120||!sourceKey||sourceKey.length>200||!title||title.length>200||caption.length>2200)fail('每条须填写 externalId、sourceKey、title；标题最多200字符，发布文案最多2200字符。');
  if(!Array.isArray(input.pages)||input.pages.length<1||input.pages.length>6)fail('每篇文案须有1–6页，pages 第一项为首图文案。');
  const pages=input.pages.map(v=>typeof v==='string'?v.trim():'');if(pages.some(v=>!v||v.length>1500))fail('每页须为1–1500字符的文字。');
- return {externalId,sourceKey,title,caption,pages};
+ return {externalId,sourceKey,title,caption,pages,...normalizeCopyReview({...input,title,caption,pages})};
 }
 export function variantPlan(v){return {title:v.title,caption:v.caption,hooks:[],scenes:JSON.parse(v.pages_json).map((text,index)=>({sourceIndex:index+1,template:'text',textKind:index?'content':'cover',originalText:text,title:text,subtitle:'',body:'',text,stockQuery:''}))};}
 export async function handlePsychologyCreative(request,env,url,session){
@@ -22,6 +24,8 @@ export async function handlePsychologyCreative(request,env,url,session){
  if(!user||user.role!=='admin'||!(user.sidebarModules?.includes('psychology-publish')||(copyRoute&&['psychology-copy-library','psychology-peer-hits'].some(id=>user.sidebarModules?.includes(id)))))return errorJson('没有心理学自动发布权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
  const db=env.DB,owner=user.username;
+ const comparison=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})\/comparison$/);
+ if(comparison)return handleCopyComparison(request,env,url,owner,comparison[1]);
  const sourceId=url.searchParams.get('sourceId');
  let sourceKey='';
  if(sourceId&&url.pathname===BASE+'/copies'){
@@ -48,7 +52,7 @@ export async function handlePsychologyCreative(request,env,url,session){
   const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1))),q='%'+String(url.searchParams.get('q')||'').slice(0,100)+'%';
   const args=[owner,q,q];let where='owner=? AND deleted_at=0 AND (title LIKE ? OR source_key LIKE ?)';
   if(sourceId){where+=' AND source_key=?';args.push(sourceKey);}
-  const [rows,total]=await Promise.all([db.prepare('SELECT * FROM psychology_copy_variants WHERE '+where+' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
+  const [rows,total]=await Promise.all([db.prepare('SELECT id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,deleted_at,quality_score,score_reason FROM psychology_copy_variants WHERE '+where+' ORDER BY quality_score DESC,created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
   return json({items:rows.results.map(r=>({...r,pages:JSON.parse(r.pages_json)})),page,total:total.n});
  }
  if(url.pathname===BASE+'/copies'&&request.method==='POST'){
@@ -59,7 +63,7 @@ export async function handlePsychologyCreative(request,env,url,session){
   const statements=[];let created=0;
   for(const r of normalized){const id=await sha256Hex(owner+':'+r.externalId),fingerprint=await sha256Hex(JSON.stringify([r.sourceKey,r.title,r.caption,r.pages]));
    const old=await db.prepare('SELECT fingerprint FROM psychology_copy_variants WHERE id=?').bind(id).first();if(old&&old.fingerprint!==fingerprint)fail('文案编号 '+r.externalId+' 已存在且内容不同，请使用新的编号保留版本。',409);
-   statements.push(db.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET fingerprint=CASE WHEN fingerprint=excluded.fingerprint THEN fingerprint ELSE NULL END').bind(id,owner,r.externalId,r.sourceKey,r.title,r.caption,JSON.stringify(r.pages),fingerprint,Date.now()));if(!old)created++;
+   statements.push(db.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,quality_score,score_reason,comparison_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET fingerprint=CASE WHEN fingerprint=excluded.fingerprint THEN fingerprint ELSE NULL END,quality_score=COALESCE(excluded.quality_score,quality_score),score_reason=CASE WHEN excluded.score_reason<>\'\' THEN excluded.score_reason ELSE score_reason END,comparison_json=CASE WHEN excluded.comparison_json<>\'\' THEN excluded.comparison_json ELSE comparison_json END WHERE deleted_at=0').bind(id,owner,r.externalId,r.sourceKey,r.title,r.caption,JSON.stringify(r.pages),fingerprint,Date.now(),r.score,r.scoreReason,r.comparison?JSON.stringify(r.comparison):''));if(!old)created++;
   }
   await db.batch(statements);return json({ok:true,created,duplicates:rows.length-created});
  }

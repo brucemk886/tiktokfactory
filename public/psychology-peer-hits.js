@@ -154,12 +154,65 @@ $("#revokeKeyBtn").addEventListener("click",async()=>{
 async function copy(value){try{await navigator.clipboard.writeText(value);message("#keyStatus","已复制");}catch{message("#keyStatus","自动复制失败，请选中文本手动复制。",true);}}
 $("#copyKeyBtn").addEventListener("click",()=>copy($("#newApiKey").value));
 const endpoint=location.origin+"/api/integrations/psychology/peer-hits";$("#endpoint").value=endpoint;
-const sample={items:[{mediaType:"photo",videoUrl:"https://www.tiktok.com/@example/photo/1234567890123456789",title:"Signs you are anxiously attached",accountName:"Psychology Example",accountUsername:"@example",playCount:128000,likeCount:8200,commentCount:460,favoriteCount:1800,shareCount:920,source:"grokbot",
-  videoData:{language:"en",caption:"which one is you? #anxiousattachment",pageTexts:["Signs you are anxiously attached","You reread their texts looking for hidden meaning","You apologise even when you did nothing wrong"]},
-  rewrites:[
-    {title:"When silence feels like rejection",caption:"You are not too much. #anxiousattachment",pages:["When silence feels like rejection","A slow reply is not a verdict on you","Try naming the feeling before you react"]},
-    {title:"Why you over-explain",caption:"Soft reminder for anxious hearts",pages:["Why you over-explain","Clarity is not the same as defending yourself","Say it once. Let it land."]}
-  ]}]};
+const sample={
+  "items": [
+    {
+      "mediaType": "photo",
+      "videoUrl": "https://www.tiktok.com/@example/photo/1234567890123456789",
+      "title": "Signs you are anxiously attached",
+      "source": "grokbot",
+      "videoData": {
+        "language": "en",
+        "caption": "Signs you are anxiously attached",
+        "pageTexts": [
+          "Signs you are anxiously attached",
+          "You reread their texts looking for hidden meaning"
+        ]
+      },
+      "rewrites": [
+        {
+          "externalId": "anxious-reflection-v1",
+          "title": "When messages leave you guessing",
+          "caption": "",
+          "pages": [
+            "When messages leave you guessing",
+            "You read the same message again, hoping to feel certain."
+          ],
+          "score": 91,
+          "scoreReason": "钩子清晰，情境具体，表达温和。",
+          "comparison": {
+            "original": [
+              {
+                "text": "Signs you are anxiously attached",
+                "zh": "焦虑型依恋的表现"
+              },
+              {
+                "text": "You reread their texts looking for hidden meaning",
+                "zh": "你反复读对方的消息，试图寻找隐藏的含义"
+              }
+            ],
+            "rewrite": [
+              {
+                "text": "When messages leave you guessing",
+                "zh": "当消息让你反复猜测",
+                "originalTexts": [
+                  "Signs you are anxiously attached"
+                ]
+              },
+              {
+                "text": "You read the same message again, hoping to feel certain.",
+                "zh": "你又读了一遍同样的消息，希望能获得确定感。",
+                "originalTexts": [
+                  "You reread their texts looking for hidden meaning"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+};
 const example=[`curl -X POST '${endpoint}'`, "  -H 'Authorization: Bearer YOUR_API_KEY'", "  -H 'Content-Type: application/json'", `  --data '${JSON.stringify(sample,null,2)}'`].join(" " + String.fromCharCode(92,10));
 $("#apiExample").textContent=example;$("#copyExampleBtn").addEventListener("click",()=>copy(example));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});

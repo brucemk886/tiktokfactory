@@ -161,3 +161,47 @@ Content-Type: application/json
 | 500 / 网络超时 | 稍后指数退避重试，保留原视频身份和采集时间。 |
 
 页面用「视频爆款 / 图文爆款」两个 Tab 分开读取记录，默认按播放量降序，每页 20 条，可搜索标题、账号名称、用户名和帖子链接，并可逐条修改音色性别。视频复刻按记录选择男声 `Gubgw9l4dtIoQA9YZHgx` 或女性 Lara `vChnJZ1Cu89g2XXumPfT`；图文复刻由官网 DeepSeek V4.1 Flash（`deepseek-flash`）判断每页走文案卡片还是素材库底图，全局最多 10 个任务同时打模型（D1 槽位，租约 4 分钟；排队按任务创建时间先到先得，同批按条目序号，前 1 分钟每 5 秒重排、之后每 20 秒，等满 60 分钟判任务失败，不会挤进主通道；停止轮询的排队者 1 分钟后过期，不会堵住后面的任务。实测并发 11–12 时全部正常，顶到 23 开始大面积不响应），连续失败三次（间隔 10 秒、30 秒）就直接判任务失败并保留上游原话；没有备用模型，DeepSeek 密钥缺失或失效时任务直接失败；原帖图会先下载，HEIC 等模型不认的格式转成 JPEG 后以内嵌字节传给模型，不丢原图，也不再让上游回拉工厂临时地址；需要垫图时封面和详情分两次搜：封面尽量 1:1 对上原图，允许情侣和露脸；详情不再跟随对标画面，固定在海景/云彩/湖面几组明亮方向里按任务种子轮换，同种子还决定取哪一页结果并打乱分配，同一条爆款反复生成不会撞图，取回后按平均色亮度从亮到暗用。叠字保留空格、按词换行；改写时帖子标题/文案和图片叠字分开处理，不调用 Z-Image 和配音。
+
+## 改写中文对照与质量评分（2026-09-24）
+
+继续使用现有 `POST /api/integrations/psychology/peer-hits` 与专用密钥，在每条 `rewrites[]` 中增加：
+
+- `score`：0–100 数字；建议按钩子吸引力 25、情境共鸣 25、表达清晰度 20、改写差异度 20、内容审慎性 10 评分。它是 Grokbot 的文案质量评价，不是实际播放预测。
+- `scoreReason`：简短中文评分理由，最多 2000 字符。
+- `comparison.original`：原文标题、发布文案及逐页正文每一句的 `{ "text": "完整原语言原句", "zh": "中文翻译" }`。视频改为口播及画面文字逐句。
+- `comparison.rewrite`：改写标题、发布文案及逐页正文每一句的 `{ "text": "完整原语言改写句", "zh": "中文翻译", "originalTexts": ["对应的完整原句"] }`。正文可以对应多个原句；新增内容填 `[]`，不能编造原文。
+
+`text` 必须与提交的实际文案一致，不可缩写、改标点或省略后半句。正文按换行和句末标点拆句；标题与发布文案各作为完整一项，不拆句。同样文本重复出现时可复用同一项。正文的 `originalTexts` 只引用原文正文句子，不引用仅出现在标题/发布文案的句子。原文标题、发布文案与改写标题、发布文案按字段直接对应。
+
+示例（一个 rewrites 项）：
+
+```json
+{
+  "externalId": "anxious-reflection-v1",
+  "title": "When messages leave you guessing",
+  "caption": "",
+  "pages": ["When messages leave you guessing", "You read the same message again, hoping to feel certain."],
+  "score": 91,
+  "scoreReason": "钩子清晰，情境具体，表达温和。",
+  "comparison": {
+    "original": [
+      {"text": "Signs you are anxiously attached", "zh": "焦虑型依恋的表现"},
+      {"text": "You reread their texts looking for hidden meaning", "zh": "你反复读对方的消息，试图寻找隐藏的含义"}
+    ],
+    "rewrite": [
+      {"text": "When messages leave you guessing", "zh": "当消息让你反复猜测", "originalTexts": ["Signs you are anxiously attached"]},
+      {"text": "You read the same message again, hoping to feel certain.", "zh": "你又读了一遍同样的消息，希望能获得确定感。", "originalTexts": ["You reread their texts looking for hidden meaning"]}
+    ]
+  }
+}
+```
+
+- 文案库“改写详情”默认按评分降序，同分按创建时间降序；未评分在最后，0 分属于已评分。
+- 历史未翻译版本在点击“查看”时调用已授权的 DeepSeek 完成对照与中文翻译，并缓存。Grokbot 提供完整且与原文一致的翻译/对应关系时直接读取，不调用 DeepSeek；缺失或不匹配时首次查看可补全。
+- 相同 `externalId`、相同原语言正文的重传允许补充或更新评分、翻译。原语言正文仍不可覆盖，修改正文必须换版本编号。省略评分或翻译不会清空已有值；已删除版本不会被恢复。接口仍将此类补写计入 `duplicates`。
+- 原来的请求大小限制不变：每次最多 100 条来源、1 MB；增加翻译后建议缩小每批条数。单个版本的翻译最多 300 项、180000 字符。
+- 工厂只接收并展示评分，不会代替 Grokbot 给新版本自动打分，也不改变自动发布的实际流量择优策略。
+
+可直接给 Grokbot 的指令：
+
+> 后续导入心理学爆款时，每个改写版本同时提供 score、scoreReason 和 comparison。按上述 100 分规则独立评分，不为了排序虚报高分。comparison 覆盖原文和改写标题、发布文案以及每一句正文的准确中文翻译，并用 originalTexts 引用对应的完整原句；新增句子用空数组。保留 externalId 和正文，补写同一版本的翻译与评分时不要生成重复版本。
