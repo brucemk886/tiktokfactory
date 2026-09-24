@@ -10,6 +10,7 @@ import { operationsWindow, publishOutcome, parseObject } from '../../scripts/psy
 import { loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { executionCounts, slotExecution, stopImpact, stopPending, nextAutopilotCheck } from './psychology-autopilot-execution.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
+import { TEST_POLICY, TEST_RULES } from './psychology-copy-testing.js';
 import { EVOLUTION } from './psychology-copy-evolution.js';
 import { frameworkFor } from './psychology-operations.js';
 
@@ -21,34 +22,37 @@ export const AUTOPILOT = Object.freeze({
   leadMs: 2 * HOUR, horizonMs: 26 * HOUR, staggerSeconds: 45, maxAccountsPerBatch: 50,
   lowViews: 200, lowPosts: 5, failStreak: 3, maxDailyPosts: 10,
 });
-export const STRATEGIES = { evolve: 'A · 按表现进化', original: 'B · 只发原版首发', rewrite: 'C · 改写版优先' };
-// Expose the same thresholds used by selection, so the creation UI cannot drift.
+export const STRATEGIES = { evolve: 'A · 优胜放量', original: 'B · 原版测试', rewrite: 'C · 改写测试' };
 function strategyRules() {
-  const n = EVOLUTION.matureNeeded, exploit = Math.round(EVOLUTION.exploitShare * 100), retire = Math.round(EVOLUTION.retireRatio * 100);
+  const n = TEST_RULES.samples, exploit = Math.round(EVOLUTION.exploitShare * 100), retire = Math.round(EVOLUTION.retireRatio * 100);
   return {
-    evolve: { summary:'先建立原版基准，再根据实际播放表现选择版本。', rules:[
-      `原版未积累 ${n} 条满 24 小时且有播放数据的样本前，优先使用原版；原版在本批已被使用等情况下，才尝试使用次数较少的可用改写版。`,
-      `基准足够后，若成熟版本和待测试改写版都存在，约 ${exploit}% 的抽取倾向优先选择成熟版本中平均播放最高的版本，约 ${100-exploit}% 优先测试样本不足的改写版。原版也参与优胜版本比较。`,
-      `改写版达到 ${n} 条成熟样本后，如果平均播放低于原版的 ${retire}%，本策略不再抽取该版本。`,
-      `版本表现使用最近 ${EVOLUTION.windowDays} 天的自动发布记录及已归档播放数据，每天更新两次。比例是抽取倾向，不保证每批精确分配；某类没有可用版本时会使用其他可用版本。`,
+    evolve: { summary:'原版与改写版共同起测，有成熟数据后优胜放量并持续探索。', rules:[
+      `冷启动同时给原版、改写版测试机会；两类都有可用测试版本时交替选择，不等待原版先跑完。每版先分配 ${n} 个测试名额。`,
+      `成熟版本和待测试版本都存在时，约 ${exploit}% 优先平均播放最高的成熟版本，约 ${100-exploit}% 测试样本不足的版本；某类不可用时选另一类。比例是抽取倾向。`,
+      `原版与改写版都达到 ${n} 条满 24 小时且有播放数据的样本后，改写平均播放低于原版 ${retire}% 的版本不再由 A 抽取。`,
+      `使用最近 ${EVOLUTION.windowDays} 天归档表现，每天更新两次；已排队和已发布但数据未成熟的任务占用名额，不因数据延迟连续补发。`,
     ] },
-    original: { summary:'只使用已完成提取的原版文案，作为原版对照组。', rules:[
-      '只选择原版，不使用任何改写版本。只有改写版、没有可用原版的选题会跳过。',
-      '原版在同一批次中不会重复使用；当前账号已用过的选题也会跳过。',
-      '不会根据改写版表现切换版本，也不执行 A 策略的版本淘汰规则；选题层面的优先顺序仍遵循下方通用规则。',
-      '可用原版不足时，本批创建失败并提示补充文案，不会自动用改写版补足。',
+    original: { summary:'只测原版，优先补齐原版对照样本。', rules:[
+      '只使用已完成提取的原版，原版不可用就跳过选题，不用改写补足。',
+      `优先完成原版 ${n} 个测试名额；已占满但数据尚未成熟的版本等待评估，确认失败才释放名额。`,
+      '可用待测原版不足时，可以继续使用已有成熟数据的原版，不按照改写评分切换版本。',
+      '账号用过的选题与本批已用版本都会跳过；剩余候选不足时整批不创建并说明原因。',
     ] },
-    rewrite: { summary:'优先轮换可用改写版，必要时回退原版。', rules:[
-      '从已启用且可发布的改写版中，优先选择使用次数较少的版本；使用次数包含本批已分配记录。',
-      '没有可用改写版，或该选题的改写版在本批均已使用时，回退到尚可用的原版。',
-      '不执行 A 策略的版本优胜分配和低于原版的淘汰规则，也不按改写评分直接挑版本；选题层面仍遵循下方通用规则。',
-      '原版和改写版都没有可用版本时跳过该选题；所有候选仍不足时，本批创建失败并提示补充文案。',
+    rewrite: { summary:'只测改写版，轮换版本并补齐样本，不回退原版。', rules:[
+      '只选择已启用、可发布的改写版本；没有可用改写就跳过，不用原版补足。',
+      `每个选题同时测试最多 ${TEST_RULES.activeRewrites} 个未成熟改写版，优先完成已经开始的版本，再开放下一版。`,
+      `优先选择测试次数少的可用版本，每版先占用 ${n} 个测试名额，满额等待成熟数据；无待测版本时轮换已有成熟数据的改写。`,
+      '不按 AI 改写评分挑选，不执行 A 的相对淘汰；剩余候选不足时整批不创建并说明原因。',
     ] },
   };
 }
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 const ms = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? (n < 1e12 ? n * 1000 : n) : 0; };
 const beijingDate = t => new Date(t + 8 * HOUR).toISOString().slice(0, 10);
+export function pilotPairSeed(pilot, slot) {
+  const time=new Date(slot+8*HOUR), index=pilotSlotsAt(pilot,slot).findIndex(s=>s.hour===time.getUTCHours()&&s.minute===time.getUTCMinutes());
+  return `${pilot.owner}:${beijingDate(slot)}:round-${index+1}`;
+}
 const beijingLabel = t => new Date(t + 8 * HOUR).toISOString().slice(5, 16).replace('T', ' ');
 const connectionOf = account => String(account.connectionId || String(account.schema || '').replace(/^tiktok:/, ''));
 async function uuidFrom(text) { const h = await sha256Hex(text); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`; }
@@ -210,8 +214,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
     for (let offset = 0; offset < active.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = active.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch);
       const body = { requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${beijingLabel(slot)}`,
-        // Every group of this owner at this slot shares one post order.
-        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: pilot.strategy, pairSeed: pilot.owner + ':' + slot, count: connectionIds.length, connectionIds,
+        // Staggered groups pair by Beijing date and daily round, not wall-clock time.
+        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: pilot.strategy, libraryTestPolicy:TEST_POLICY, pairSeed: pilotPairSeed(current,slot), count: connectionIds.length, connectionIds,
         scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
@@ -274,7 +278,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    return json({ pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots);

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -102,7 +102,8 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   const config = JSON.parse(batches[0].config_json);
   assert.equal(batches[0].created_by, 'admin');
   assert.deepEqual([config.sourceType, config.libraryStrategy, config.staggerSeconds, config.template, config.count], ['library', 'original', 45, 'photo-text', 2]);
-  assert.equal(config.pairSeed, 'admin:' + config.scheduleAt * 1000);
+  assert.equal(config.pairSeed, pilotPairSeed(pilot,config.scheduleAt*1000));
+  assert.equal(config.libraryTestPolicy,'balanced-v1');
   const items = f.sqlite.prepare('SELECT i.connection_id,i.schedule_at,c.variant_id FROM psychology_publish_items i JOIN psychology_creative_snapshots c ON c.item_id=i.id ORDER BY i.schedule_at').all();
   assert.equal(items.length, expected * 2);
   assert.ok(items.every(i => i.variant_id === ''));
@@ -138,7 +139,7 @@ test('paused accounts are skipped, a paused pilot creates nothing, and ended pil
   // The group is free again; with only four library posts, account a has used them all, so the shortage is logged.
   const restarted = await (await f.api('POST', '', { groupId: 'g', strategy: 'rewrite', days: 7 })).json();
   assert.match(restarted.id, /^pilot-/);
-  assert.ok(restarted.run.errors.some(e => /不够/.test(e)));
+  assert.ok(restarted.run.errors.some(e => /不足/.test(e)));
   assert.ok(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilot_log WHERE autopilot_id=? AND kind='error'").get(restarted.id).n > 0);
 });
 
@@ -317,4 +318,15 @@ test('a pending schedule already reserved for its effective date cannot be overw
  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)").run(id,update.effectiveAt+11*HOUR,Date.now());
  await assert.rejects(f.api('PATCH',`/${id}/schedule`,{slots:[{hour:14,minute:0}]}),/待生效设置已开始创建排期/);
  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);assert.deepEqual(pilotSlotsAt(pilot,update.effectiveAt),[{hour:11,minute:25}]);
+});
+
+
+test('staggered midnight groups pair by Beijing date and daily round', () => {
+  const pilot=slots=>({owner:'admin',slots_json:JSON.stringify(slots),pending_slots_json:'[]',slots_effective_at:0});
+  const first=pilot([{hour:0,minute:15},{hour:0,minute:45}]);
+  const ninth=pilot([{hour:2,minute:15},{hour:2,minute:45}]);
+  assert.equal(pilotPairSeed(first,at('2026-09-26','00:15')),pilotPairSeed(ninth,at('2026-09-26','02:15')));
+  assert.equal(pilotPairSeed(first,at('2026-09-26','00:45')),pilotPairSeed(ninth,at('2026-09-26','02:45')));
+  assert.notEqual(pilotPairSeed(first,at('2026-09-26','00:15')),pilotPairSeed(first,at('2026-09-26','00:45')));
+  assert.notEqual(pilotPairSeed(first,at('2026-09-26','00:15')),pilotPairSeed(first,at('2026-09-27','00:15')));
 });

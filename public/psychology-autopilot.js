@@ -112,12 +112,13 @@ function render() {
   renderGroupChoices();
   if (!$('#strategy').options.length) $('#strategy').innerHTML = Object.entries(data.strategies).map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('');
   renderStrategyRules();
-  const r = data.rules, evolution = data.evolutionRules;
+  const r = data.rules;
   $('#rules').innerHTML = [
     '发布数量与北京时间按分组设置，每个时间点每号发 1 条；组内账号依次错开 '+r.staggerSeconds+' 秒，每条提前 2 小时开始生成。',
     '每天 0 点、8 点检查并排期，从图文文案库抽取，同一个账号不重复发同一篇爆款。',
-    '配对选题：同一运营人、同一时段的分组使用共同候选排序，再按所选策略挑版本；各账号用过的选题和可用版本不同，最终内容不保证完全相同。',
-    ...(evolution ? [`选题顺序：约 ${Math.round(evolution.exploitShare*100)}% 倾向已有成熟表现的选题，约 ${Math.round((1-evolution.exploitShare)*100)}% 倾向尚无成熟表现的选题。成熟选题按最佳成熟版本的平均播放排序，未成熟选题按入库顺序；这与 A 的版本选择比例是两层规则。`] : []),
+    '配对选题：同一运营人、同一北京时间日期、当天同一轮次的分组（允许错开时间）使用共同候选排序，再按所选策略挑版本；各账号用过的选题和可用版本不同，最终内容不保证完全相同。',
+    '测试名额：三种策略共享每版 3 次测试；排队中、生成中、已发布但未成熟的任务都占位，确认失败才释放。结果不明确时继续保留名额。',
+    '每个选题最多同时测试 2 个未成熟改写版，优先完成已开始的测试；成熟需满 24 小时且有播放数据，数据每天汇总两次。',
     '同一个账号不会重复使用同一篇选题，不论原版或改写；同一批次不重复使用同一个版本。只能选择文案库中可用的内容，不会因启动运营自动生成新改写。',
     '三种策略共用选题和停发规则；发布时间与每日数量按分组设置，策略只决定版本选择方式。',
     `连续 ${r.lowPosts} 条满24小时低于 ${r.lowViews} 播放，或连续 ${r.failStreak} 次发布失败，自动停发该号并停止本地尚未提交的任务。`,

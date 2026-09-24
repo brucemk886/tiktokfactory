@@ -1,3 +1,4 @@
+import { loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
 import { psychologyItemStatus } from './psychology-item-status.js';
 import { photoCopyKey } from './peer-photo-copy-cache.js';
 import { chooseVisualStyle } from '../../public/psychology-visual-styles.js';
@@ -425,7 +426,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
-  let sources;
+  let sources, testState;
   if (config.sourceType === 'topic-bank') sources = await selectTopicSources(env.DB, config);
   else if(config.sourceType==='copy-bank'){
     const rows=await env.DB.prepare('SELECT * FROM psychology_copy_variants WHERE owner=? AND enabled=1 AND (title LIKE ? OR source_key LIKE ?) ORDER BY '+(config.selection==='random'?'RANDOM()':'created_at DESC')+' LIMIT 1000').bind(user.username,'%'+config.query+'%','%'+config.query+'%').all();
@@ -433,9 +434,10 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   } else if(config.sourceType==='library'){
     const usable=row=>{try{librarySource(row,config.mediaType);return true;}catch{return false;}};
     const posts=await loadLibraryPosts(env.DB,user.username,config.mediaType,config.query,usable);
-    const [stats,used]=await Promise.all([loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
+    if(config.libraryTestPolicy)testState=await loadTestState(env.DB,user.username);
+    const [stats,used]=await Promise.all([testState?testState.stats:loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
     const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
-    sources=planLibraryDraw({posts,stats,slots,used,reuse:config.allowPeerReuse,strategy:config.libraryStrategy||'evolve',pairSeed:config.pairSeed||''}).map(pick=>({...pick,source:{
+    sources=(testState?planFairLibraryDraw:planLibraryDraw)({posts,stats,slots,used,reuse:config.allowPeerReuse,strategy:config.libraryStrategy||'evolve',pairSeed:config.pairSeed||''}).map(pick=>({...pick,source:{
       ...(pick.variantId?reviewedSource(pick.row,config.mediaType):librarySource(pick.row,config.mediaType)),usageKey:pick.post.sourceKey}}));
   } else if(config.sourceType==='copy-library'){
     const rows=await env.DB.prepare("SELECT * FROM psychology_copy_library WHERE status='done' AND (?='all' OR media_type=?) AND (title LIKE ? OR source_url LIKE ? OR content_json LIKE ?) ORDER BY "+(config.selection==='random'?'RANDOM()':'completed_at DESC,id')+' LIMIT 1000')
@@ -467,6 +469,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];
+  if(testState)statements.push(testAllocationStatement(env.DB,user.username,testState.revision,batchId,stamp));
   for(let offset=0;offset<selected.length;offset+=PSYCHOLOGY_GROUP_SIZE){
     const ordinal=Math.floor(offset/PSYCHOLOGY_GROUP_SIZE);
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES (?,?,?,?)')
@@ -507,6 +510,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   catch (error) {
     const winner = await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();
     if (!winner) {
+      if(/psychology_copy_test_allocations/.test(error.message))fail('测试名额刚被其他分组更新，请重新检查后分配。',409);
       if(/psychology_peer_account_usage/.test(error.message))fail('题目刚被其他任务分配给同一账号，请重新提交。',409);
       if (/TOPIC_CHANGED|TOPIC_ALREADY_USED/.test(error.message)) fail('题目刚被修改或已被其他批次抽取，请重新提交。',409);
       throw error;
