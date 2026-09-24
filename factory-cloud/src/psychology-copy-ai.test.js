@@ -69,8 +69,9 @@ test('batch AI rewrite saves passing versions enabled under the source and skips
   assert.equal(data.skipped.length, 2);
   assert.ok(data.skipped.some(s => /照抄了原文/.test(s)));
   assert.ok(data.skipped.some(s => /页数不符合/.test(s)));
-  const rows = f.sqlite.prepare('SELECT owner,external_id,source_key,enabled FROM psychology_copy_variants ORDER BY external_id').all();
+  const rows = f.sqlite.prepare('SELECT owner,external_id,source_key,enabled,rewrite_model FROM psychology_copy_variants ORDER BY external_id').all();
   assert.equal(rows.length, 3);
+  assert.ok(rows.every(r=>r.rewrite_model==='claude-opus-4.7'));
   assert.ok(rows.every(r => r.owner === 'admin' && r.enabled === 1 && r.external_id.startsWith('ai-claude-opus-4.7-') && r.source_key.startsWith('v1:tiktok:')));
   // Resending the same output is a no-op; a line already used by this post is not a template.
   assert.equal((await (await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-opus-4.7&count=5')).json()).created, 3);

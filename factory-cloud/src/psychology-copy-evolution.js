@@ -148,7 +148,7 @@ export async function loadUsedPosts(db, connectionIds, posts) {
 export async function loadResolvedItems(db, since) {
   // Light columns only: at 300 posts a day this spans tens of thousands of rows.
   const items = (await db.prepare(`SELECT i.id,i.connection_id,i.source_id,i.schedule_at,b.created_by AS owner,json_extract(b.config_json,'$.mediaType') AS media_type,b.created_at,
-      c.source_key AS snap_key,c.variant_id AS snap_variant,c.style_id,json_extract(c.copy_json,'$.title') AS copy_title,p.title AS peer_title,
+      c.rewrite_model,v.rewrite_model AS variant_model,c.source_key AS snap_key,c.variant_id AS snap_variant,c.style_id,json_extract(c.copy_json,'$.title') AS copy_title,p.title AS peer_title,
       p.video_url AS peer_url,v.source_key AS var_key,v.external_id AS var_external,v.title AS var_title
     FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
     LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id
@@ -161,7 +161,7 @@ export async function loadResolvedItems(db, since) {
     if (!sourceKey && item.var_key) { sourceKey = item.var_key; variant = item.var_external; }
     if (!sourceKey && item.peer_url) { try { sourceKey = photoCopyKey(item.peer_url); } catch { sourceKey = item.source_id; } variant = ''; }
     if (sourceKey) mapped.push({ ...item, config_json: JSON.stringify({ mediaType: item.media_type }), title: item.copy_title || item.var_title || item.peer_title || '',
-      source_key: sourceKey, variant_id: variant, style_id: item.style_id || '' });
+      source_key: sourceKey, variant_id: variant, rewrite_model:item.rewrite_model||item.variant_model||'', style_id: item.style_id || '' });
   }
   return mapped;
 }

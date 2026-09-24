@@ -124,10 +124,10 @@ test('AI generation fills current source draft once, blocks switching/saving and
  assert.equal(h.nodes.get('#variantFields').disabled,true);assert.equal(h.nodes.get('#closeVariant').disabled,true);
  await h.nodes.get('#generateVariant').onclick();await h.click({createVariant:'video-source'});h.nodes.get('#variantReviewed').checked=true;await h.submit();assert.equal(h.requests.length,1);
  assert.equal(h.requests[0].url,'/api/psychology-creative/copies/generate?sourceId=photo-source&model=claude-sonnet-5');
- resolve({draft:{name:'AI draft',title:'Generated title',caption:'Generated caption',pages:['Cover','Body']}});await pending;
+ resolve({model:'claude-sonnet-5',draft:{name:'AI draft',title:'Generated title',caption:'Generated caption',pages:['Cover','Body']}});await pending;
  assert.equal(h.nodes.get('#variantTitle').value,'Generated title');assert.deepEqual(h.pages.map(p=>p.value),['Cover','Body','','','','']);assert.equal(h.nodes.get('#variantReviewed').checked,false);assert.equal(h.nodes.get('#variantFields').disabled,false);
  assert.equal(h.requests.length,1);await h.submit();assert.equal(h.requests.length,1);
- h.nodes.get('#variantReviewed').checked=true;h.respond(()=>({created:1}));await h.submit();assert.equal(h.requests[1].url,'/api/psychology-creative/copies?sourceId=photo-source');
+ h.nodes.get('#variantReviewed').checked=true;h.respond(()=>({created:1}));await h.submit();assert.equal(h.requests[1].url,'/api/psychology-creative/copies?sourceId=photo-source');assert.equal(h.requests[1].body[0].rewriteModel,'claude-sonnet-5');
 });
 
 test('AI overwrite cancellation or failure preserves draft and allows retry',async()=>{

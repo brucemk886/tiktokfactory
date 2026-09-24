@@ -48,7 +48,7 @@ export async function handlePsychologyOperations(request, env, url, session) {
       loadVideosForAccounts(env,env.DB,accounts.map(a=>a.schema),100),
       env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE created_at>=? AND created_at<? ORDER BY created_at DESC LIMIT 10001").bind(window.previousStart,Date.now()+1).all(),
       env.DB.prepare(`SELECT i.id,i.source_id,i.batch_id,i.job_id,i.connection_id,i.receipt_json,i.publish_group_id,b.config_json,b.created_at,
-        c.source_key,c.variant_id,c.style_id,c.copy_hash,c.copy_json,json_extract(original.result_json,'$.plan') AS original_plan,json_extract(original.payload_json,'$.peerSource.videoUrl') AS original_url,
+        c.source_key,c.variant_id,c.rewrite_model,c.style_id,c.copy_hash,c.copy_json,json_extract(original.result_json,'$.plan') AS original_plan,json_extract(original.payload_json,'$.peerSource.videoUrl') AS original_url,
         j.type,j.status,j.title,j.error,json_extract(j.result_json,'$.publishFailed') AS publish_failed,
         json_extract(j.result_json,'$.publishError') AS publish_error
         FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id

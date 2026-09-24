@@ -15,6 +15,7 @@ let draftVersionId = crypto.randomUUID();
 let variantSource = null;
 let variantSaving = false;
 let variantGenerating = false;
+let draftRewriteModel = "";
 
 async function api(path, method = "GET", body) {
   const response = await fetch("/api/psychology-creative" + path, {
@@ -88,7 +89,7 @@ function openRewrites(source = null) {
   $("#rewriteOriginal").hidden = !source;
   $("#rewriteOriginal").open = false;
   $("#rewriteOriginalText").textContent = source ? fullText(source) : "";
-  $("#copyList").innerHTML = '<tr><td colspan="8">正在读取改写版本…</td></tr>';
+  $("#copyList").innerHTML = '<tr><td colspan="9">正在读取改写版本…</td></tr>';
   $("#copyPrev").disabled = true;
   $("#copyNext").disabled = true;
   $("#copyPage").textContent = "";
@@ -99,6 +100,7 @@ function openRewrites(source = null) {
 function openVariant(source) {
   if (variantSaving || variantGenerating) return;
   variantSource = source;
+  draftRewriteModel = "";
   draftVersionId = crypto.randomUUID();
   $("#variantForm").reset();
   $("#variantStatus").textContent = "";
@@ -115,7 +117,8 @@ $("#generateVariant").onclick = async () => {
   variantGenerating=true;$('#generateVariant').disabled=true;$('#generateVariant').textContent='生成中…';$('#closeVariant').disabled=true;$('#variantFields').disabled=true;
   $('#variantStatus').textContent='正在用 '+($('#variantModel').selectedOptions?.[0]?.textContent||$('#variantModel').value||'AI')+' 根据原文生成改写草稿…';
   try{
-    const {draft}=await api('/copies/generate?sourceId='+encodeURIComponent(source.id)+'&model='+encodeURIComponent($('#variantModel').value),'POST');
+    const {draft,model}=await api('/copies/generate?sourceId='+encodeURIComponent(source.id)+'&model='+encodeURIComponent($('#variantModel').value),'POST');
+    draftRewriteModel=model||'';
     $('#variantName').value=draft.name;$('#variantTitle').value=draft.title;$('#variantCaption').value=draft.caption;
     [...document.querySelectorAll('[data-variant-page]')].forEach((field,i)=>field.value=draft.pages[i]||'');
     $('#variantReviewed').checked=false;draftVersionId=crypto.randomUUID();
@@ -187,10 +190,11 @@ async function loadCopies() {
     <td class="copy-cell-caption copy-cell-text" title="${esc(row.caption || "—")}"><span>${esc(row.caption || "—")}</span></td>
     <td class="copy-cell-text" title="${esc(row.source_key)}"><span>${esc(row.source_key)}</span></td>
     <td class="copy-cell-text" title="${esc(row.external_id)}"><span>${esc(row.external_id)}</span></td>
+    <td>${esc(row.rewriteModelLabel || '模型未知')}</td>
     <td title="${esc(row.score_reason || '')}">${row.quality_score == null ? '未评分' : esc(row.quality_score) + ' 分'}</td>
     <td>${row.pages.length} 页</td>
     <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button><button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
-  </tr>`).join("") : '<tr><td colspan="8">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
+  </tr>`).join("") : '<tr><td colspan="9">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
   $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
   $("#copyPrev").disabled = copyPage === 1;
   $("#copyNext").disabled = copyPage * 20 >= data.total;
@@ -254,11 +258,12 @@ $("#variantForm").onsubmit = async event => {
     if (pages.some(page => !page)) throw new Error('请按顺序填写页面，中间不能留空。');
     const data = await api('/copies?sourceId=' + encodeURIComponent(source.id), 'POST', [{
       externalId: $("#variantName").value.trim().slice(0, 70) + '-' + draftVersionId,
-      title: $("#variantTitle").value.trim(), caption: $("#variantCaption").value.trim(), pages
+      title: $("#variantTitle").value.trim(), caption: $("#variantCaption").value.trim(), pages, rewriteModel:draftRewriteModel
     }]);
     $("#variantStatus").textContent = '已保存并启用 ' + data.created + ' 个新版本。';
     $("#variantForm").reset();
     draftVersionId = crypto.randomUUID();
+    draftRewriteModel = "";
     if ($("#rewriteDialog").open && selectedSource?.id === source.id) { copyPage = 1; await loadCopies(); }
     await loadOriginals();
   } catch (error) { $("#variantStatus").textContent = error.message; }
@@ -330,7 +335,7 @@ async function loadComparison() {
 }
 function openComparison(row) {
   comparisonSelection = { id: row.id, sourceId: selectedSource?.id || '' };
-  $("#comparisonMeta").textContent = row.title + (row.quality_score == null ? ' · 未评分' : ' · Grokbot 评分 ' + row.quality_score + '/100') + (row.score_reason ? ' · ' + row.score_reason : '');
+  $("#comparisonMeta").textContent = row.title + " · " + (row.rewriteModelLabel || "模型未知") + (row.quality_score == null ? ' · 未评分' : ' · Grokbot 评分 ' + row.quality_score + '/100') + (row.score_reason ? ' · ' + row.score_reason : '');
   $("#comparisonContent").innerHTML = '';
   $("#comparisonDialog").showModal();
   loadComparison();

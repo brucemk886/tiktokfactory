@@ -31,10 +31,11 @@ const COPY_SKIPPED = `UPDATE psychology_copy_library SET status='failed',error=?
   WHERE id=? AND status<>'done' AND media_type=? AND EXISTS (SELECT 1 FROM psychology_peer_hits WHERE id=? AND collected_at=?)`;
 // One statement for every rewrite in the request keeps a 100-post batch far
 // below D1's per-invocation query limit.
-const REWRITE_INSERT = `INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,quality_score,score_reason,comparison_json)
+const REWRITE_INSERT = `INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,quality_score,score_reason,comparison_json,rewrite_model)
   SELECT json_extract(value,'$.id'),json_extract(value,'$.owner'),json_extract(value,'$.externalId'),json_extract(value,'$.sourceKey'),
-    json_extract(value,'$.title'),json_extract(value,'$.caption'),json_extract(value,'$.pagesJson'),json_extract(value,'$.fingerprint'),?,json_extract(value,'$.score'),json_extract(value,'$.scoreReason'),json_extract(value,'$.comparisonJson')
+    json_extract(value,'$.title'),json_extract(value,'$.caption'),json_extract(value,'$.pagesJson'),json_extract(value,'$.fingerprint'),?,json_extract(value,'$.score'),json_extract(value,'$.scoreReason'),json_extract(value,'$.comparisonJson'),json_extract(value,'$.rewriteModel')
   FROM json_each(?) WHERE true ON CONFLICT(id) DO UPDATE SET
+ rewrite_model=CASE WHEN psychology_copy_variants.rewrite_model='' THEN excluded.rewrite_model ELSE psychology_copy_variants.rewrite_model END,
  quality_score=COALESCE(excluded.quality_score,psychology_copy_variants.quality_score),
  score_reason=CASE WHEN excluded.score_reason<>'' THEN excluded.score_reason ELSE psychology_copy_variants.score_reason END,
  comparison_json=CASE WHEN excluded.comparison_json<>'' THEN excluded.comparison_json ELSE psychology_copy_variants.comparison_json END
@@ -290,7 +291,7 @@ async function planRewrites(db, items, actor) {
     if (outcome === "conflicts" || queued.has(id)) continue;
     queued.add(id);
     rows.push({ id, owner, externalId: rewrite.externalId, sourceKey: rewrite.sourceKey, title: rewrite.title, caption: rewrite.caption,
-      pagesJson: JSON.stringify(rewrite.pages), fingerprint: rewrite.fingerprint, score:rewrite.score, scoreReason:rewrite.scoreReason, comparisonJson:rewrite.comparison?JSON.stringify(rewrite.comparison):"" });
+      rewriteModel:rewrite.rewriteModel, pagesJson: JSON.stringify(rewrite.pages), fingerprint: rewrite.fingerprint, score:rewrite.score, scoreReason:rewrite.scoreReason, comparisonJson:rewrite.comparison?JSON.stringify(rewrite.comparison):"" });
   }
   return { rows, totals, byItem };
 }

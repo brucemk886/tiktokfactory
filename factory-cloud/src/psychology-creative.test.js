@@ -248,3 +248,29 @@ test('AI rewrite checks permission, origin and completed source before calling p
  }
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,0);
 });
+
+
+test('rewrite model survives imports, duplicate metadata and photo/video publish snapshots',async t=>{
+ for(const mediaType of ['photo','video'])await t.test(mediaType,async t=>{
+  const f=await fixture(t),copy={...variant(51),rewriteModel:'claude-sonnet-5'};
+  await api(f,'/copies','POST',[copy]);
+  await api(f,'/copies','POST',[{...copy,rewriteModel:'claude-opus-4.7'}]);
+  const listed=await (await api(f,'/copies')).json();
+  assert.equal(listed.items[0].rewriteModel,'claude-sonnet-5');assert.equal(listed.items[0].rewriteModelLabel,'Claude Sonnet 5');
+  const response=await f.call('POST',input({mediaType,template:mediaType==='photo'?'photo-text':'psychology',sourceType:'copy-bank',count:1,connectionIds:['a']}));assert.equal(response.status,202);
+  assert.equal(f.sqlite.prepare('SELECT rewrite_model FROM psychology_creative_snapshots').get().rewrite_model,'claude-sonnet-5');
+  const payload=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs LIMIT 1').get().payload_json);assert.equal(payload.copySource.rewriteModel,'claude-sonnet-5');
+  f.sqlite.prepare("DELETE FROM psychology_copy_variants").run();
+  assert.equal(f.sqlite.prepare('SELECT rewrite_model FROM psychology_creative_snapshots').get().rewrite_model,'claude-sonnet-5');
+ });
+});
+
+test('model migration recognizes exact factory batch IDs and leaves unknown imports unclassified',async t=>{
+ const {DatabaseSync}=await import('node:sqlite');const fs=await import('node:fs');const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());
+ const dir=new URL('../migrations/',import.meta.url);
+ for(const file of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')&&f<'0052').sort())sqlite.exec(fs.readFileSync(new URL(file,dir),'utf8'));
+ const externalIds=['ai-claude-sonnet-5-'+ 'a'.repeat(24),'ai-deepseek-flash-'+ 'b'.repeat(24),'grok-version-1','ai-claude-sonnet-5-not-a-factory-hash'];
+ externalIds.forEach((id,index)=>sqlite.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(String(index),'admin',id,'source','Title','','["Body"]','hash',0));
+ sqlite.exec(fs.readFileSync(new URL('0052_psychology_rewrite_model.sql',dir),'utf8'));
+ assert.deepEqual(sqlite.prepare('SELECT rewrite_model FROM psychology_copy_variants ORDER BY id').all().map(r=>r.rewrite_model),['claude-sonnet-5','deepseek-flash','','']);
+});

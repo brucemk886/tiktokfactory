@@ -40,5 +40,5 @@ export function reviewedSource(row,mediaType){
  const plan=variantPlan(row),body=plan.scenes.map(s=>s.originalText).join('\n\n');
  if(mediaType==='video'&&body.length>5000)fail('所选改写超过视频模板5000字符上限，请新增精简版本。');
  return {id:row.id,title:row.title,videoUrl:'',sourceKey:row.source_key,variantId:row.external_id,copyVariant:plan,videoData:mediaType==='photo'?{caption:row.caption}:{transcript:body,caption:row.caption},
-  copySource:{id:row.id,sourceKey:row.source_key,kind:'rewrite',variantId:row.external_id,content:{title:row.title,caption:row.caption,pages:JSON.parse(row.pages_json)}}};
+  copySource:{id:row.id,sourceKey:row.source_key,kind:'rewrite',variantId:row.external_id,rewriteModel:row.rewrite_model||'',content:{title:row.title,caption:row.caption,pages:JSON.parse(row.pages_json)}}};
 }

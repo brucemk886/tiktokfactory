@@ -491,8 +491,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     if(comment){
       statements.push(insertScheduledComment(env.DB,item,entry.source,comment,user.username,stamp));
     }
-    if(config.mediaType==='photo'){
-      statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id) VALUES(?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId));
+    if(config.mediaType==='photo'||entry.source.copySource?.kind==='rewrite'){
+      statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id,rewrite_model) VALUES(?,?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId,entry.source.copySource?.rewriteModel||''));
     }
     // Library draws reserve the viral post itself, so no later version of it reaches the same account.
     if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.usageKey||entry.source.id,entry.connectionId,id));

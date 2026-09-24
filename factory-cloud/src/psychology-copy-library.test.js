@@ -220,3 +220,16 @@ test('bulk deletion validates scope and rolls back on database failure',async t=
  f.sqlite.exec("CREATE TRIGGER reject_copy_delete BEFORE DELETE ON psychology_copy_library BEGIN SELECT RAISE(ABORT,'test rollback'); END;");
  await assert.rejects(deleteCopies(f,[id]),/test rollback/);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_peer_hits').get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_library').get().n,1);
 });
+
+
+test('library summarizes rewrite model counts without counting deleted or other-owner versions',async t=>{
+ const f=await setup(t);await importPsychologyPeerHits(f.db,post(983,'photo',{pageTexts:['Some attachment words']}),'admin');
+ const source=f.sqlite.prepare('SELECT id FROM psychology_copy_library').get();
+ const {handlePsychologyCreative}=await import('./psychology-creative.js');
+ const url=new URL('https://factory.test/api/psychology-creative/copies?sourceId='+source.id);
+ const versions=['claude-sonnet-5','claude-sonnet-5','claude-opus-4.7',''].map((model,i)=>({externalId:'model-'+i,title:'Title '+i,caption:'Caption',pages:['Body '+i],rewriteModel:model}));
+ await handlePsychologyCreative(new Request(url,{method:'POST',body:JSON.stringify(versions)}),f.env,url,{user:actor});
+ f.sqlite.prepare("UPDATE psychology_copy_variants SET deleted_at=1,enabled=0 WHERE external_id='model-2'").run();
+ const item=(await (await api(f,'?mediaType=photo')).json()).items[0];
+ assert.equal(item.variantCount,3);assert.deepEqual(item.rewriteModels.map(m=>[m.label,m.count]).sort(),[['Claude Sonnet 5',2],['模型未知',1]].sort());
+});

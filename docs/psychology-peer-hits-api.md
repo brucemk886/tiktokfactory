@@ -283,3 +283,8 @@ You find and submit English psychology photo posts (TikTok photo carousels) to o
 可直接给 Grokbot 的指令：
 
 > 后续导入心理学爆款时，每个改写版本同时提供 score、scoreReason 和 comparison。按上述 100 分规则独立评分，不为了排序虚报高分。comparison 覆盖原文和改写标题、发布文案以及每一句正文的准确中文翻译，并用 originalTexts 引用对应的完整原句；新增句子用空数组。保留 externalId 和正文，补写同一版本的翻译与评分时不要生成重复版本。
+
+
+### 改写模型标记
+
+可选改写导入的每个版本可填写 `rewriteModel`，例如 `claude-sonnet-5`、`claude-opus-4.7`、`claude-haiku-4.5`、`deepseek-flash`。请填写实际生成模型；Grokbot 只是导入工具，不代表具体模型。未提供时显示“模型未知”。已确认的模型不会被同编号重复导入覆盖；历史未知版本可以补充模型。中文翻译所用的模型不会被当成改写模型。
