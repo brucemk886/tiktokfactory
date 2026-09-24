@@ -215,12 +215,14 @@ test('missing execution records never masquerade as queued work',()=>{
   const functions=text.slice(text.indexOf('function batchStatus('),text.indexOf('let batchPage='));
   const ctx=vm.createContext({});vm.runInContext(functions,ctx);
   const state=(items,groups=[])=>ctx.batchStatus(items.map(status=>({status})),groups);
-  assert.equal(state(['submitted','missing']),'unknown');
+  assert.equal(state(['submitted','missing']),'done');
   assert.equal(ctx.statusLabel('unknown'),'状态待核实');
   assert.equal(state(['submitted','submitted']),'done');
   assert.equal(state(['submitted','queued']),'queued');
   assert.equal(state(['submitted','done']),'running');
-  assert.equal(state(['failed','submitted']),'failed');
+  assert.equal(state(['failed','submitted']),'done');
+  assert.equal(state(['submitted','failed','queued']),'failed');
+  assert.equal(ctx.publicationSummary([{publishOutcome:'published'},{publishOutcome:'failed'},{publishOutcome:'pending'},{}]),'发布成功 1 条 · 发布失败 1 条 · 发布中 1 条 · 未返回结果 1 条');
   assert.equal(state(['unexpected']),'unknown');
   assert.equal(state(['cancelled']),'cancelled');
 });

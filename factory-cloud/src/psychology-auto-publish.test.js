@@ -890,11 +890,12 @@ test('batch listing uses durable item receipts after job cleanup without submitt
   const items=sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all();
   sqlite.prepare('DELETE FROM factory_jobs').run();
   for(const [index,item] of items.entries()){
-    const record={id:'persisted-'+index,autoTaskId:item.id,autoBatchId:index===1?'other-batch':item.batch_id,batchId:index===2?'':'remote-confirmed'};
+    const record={id:'persisted-'+index,autoTaskId:item.id,status:index===0?'published':'failed',autoBatchId:index===1?'other-batch':item.batch_id,batchId:index===2?'':'remote-confirmed'};
     sqlite.prepare('INSERT INTO factory_publish_records(id,value_json,created_at) VALUES (?,?,0)').run(record.id,JSON.stringify(record));
   }
   const data=await (await call()).json();
   assert.deepEqual(data.batches[0].items.map(i=>i.status),['submitted','missing','missing']);
+  assert.deepEqual(data.batches[0].items.map(i=>i.publishOutcome),['published','unavailable','failed']);
   assert.equal(requests.length,0);
   const attention=await (await call('GET',null,'/api/psychology-auto-publish?attention=1')).json();
   assert.equal(attention.batches.length,1);

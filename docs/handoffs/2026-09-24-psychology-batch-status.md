@@ -29,3 +29,10 @@ Deploy committed main when production Cloudflare access is available; then inves
 - Live page verified: queued 0, attention 5, five affected batches show 状态待核实; the two complete batches remain 已提交. No browser error message.
 - Remote SQL confirms execution jobs are missing for all historical items, but durable receipts retain submitted status for 113 overall (91 in the five affected batches). Twenty-nine affected items lack a usable receipt. Historical deletion cause remains unproven; 30-day scheduled pruning does not explain these recent dates by itself.
 - Remaining work is investigation of those 29 outcomes against hub records; UI intentionally does not claim publication or enqueue recovery.
+## Batch submission and individual outcomes — follow-up
+- User requested partially successful batches still show 已提交, with explicit success/failure counts.
+- A batch with at least one submitted item and no active generation/submission/retry now shows 已提交 despite failed or missing siblings. Active work retains existing running/attention behavior.
+- API returns each item's publication outcome from its exact durable record, validating autoBatchId. Local generation failure also counts as failure; a missing job without a result never fabricates success/failure.
+- Table and detail display 发布成功 / 发布失败, plus 发布中 or 未返回结果 when applicable; per-item detail shows the actual publication outcome.
+- Production read-only evidence: 0922-0920-3-20 = 10 published/10 unavailable; 0922-心理学-2-30 = 14 published/2 failed/14 unavailable; 0922-0918-20 = 19 published/1 unavailable; 心理学-2 9.21 30条 = 28 published/1 failed/1 unavailable; 0920-3-9.21 20条 = 17 published/1 failed/2 unavailable.
+- Full regression suite: 631 passed. No publication/retry triggered.
