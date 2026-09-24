@@ -24,5 +24,11 @@
 - npm --prefix factory-cloud test：647/647 通过。
 - git diff --check 通过。
 
+## Deployment / Verification
+- 代码提交 1be1cc3 已推送 main，通过 clean HEAD == origin/main 守卫后运行标准 npm run deploy。
+- 线上版本：76440951-6128-4fef-b4c8-ee0e3be3004f。
+- 浏览器确认图文、视频列表均显示全选与批量删除入口；检查时图文全部记录返回 0 条，空列表选择控件正确禁用。整页选择、取消和删除通过本地测试验证。未执行任何线上删除。
+- 提交时并发暂存的 Grok 改写提示词文档和前端规则变更一并进入同一提交，保留其内容，最终提交重新运行 647 项测试全部通过。
+
 ## Unfinished work / Next step
-按仓库要求提交并推送 main 后部署；线上仅验证全选/清空交互，不调用真实删除。
+本次功能已完成。用户可导入文案后全选本页并确认批量删除。
