@@ -170,21 +170,38 @@ function publicationSummary(items){
  return Object.entries(publicationCounts(items)).filter(([,count])=>count).map(([key,count])=>itemLabel(key)+' '+count+' 条').join(' · ')||'暂无内容';
 }
 function statusLabel(status){return {partial:'部分成功',unknown:'记录缺失',queued:'排队中',running:'处理中',scheduled:'待发布',done:'全部成功',failed:'处理失败',cancelled:'已取消'}[status]||status;}
-let batchPage=1,batchLoadVersion=0;
-$('#batchPrev').addEventListener('click',()=>{batchPage=Math.max(1,batchPage-1);loadBatches().catch(e=>message(e.message,true));});
-$('#batchNext').addEventListener('click',()=>{batchPage++;loadBatches().catch(e=>message(e.message,true));});
-$('#batchFilter').addEventListener('change',()=>{batchPage=1;loadBatches().catch(e=>message(e.message,true));});
-async function loadBatches() {
+let batchPage=1,batchLoadVersion=0,batchHasMore=false,batchDates={range:'all'};
+$('#batchPrev').addEventListener('click',()=>{if(!$('#batchPrev').disabled)loadBatches(Math.max(1,batchPage-1)).catch(e=>message(e.message,true));});
+$('#batchNext').addEventListener('click',()=>{if(!$('#batchNext').disabled)loadBatches(batchPage+1).catch(e=>message(e.message,true));});
+$('#batchFilter').addEventListener('change',()=>{loadBatches(1).catch(e=>message(e.message,true));});
+$('#batchDateRange').addEventListener('change',()=>{
+ const range=$('#batchDateRange').value;$('#batchCustomDates').hidden=range!=='custom';
+ if(range==='custom')return;
+ batchDates={range};loadBatches(1).catch(e=>message(e.message,true));
+});
+$('#applyBatchDates').addEventListener('click',()=>{
+ const startDate=$('#batchStartDate').value,endDate=$('#batchEndDate').value;
+ if(!startDate||!endDate)return message('请选择开始和结束日期。',true);
+ if(startDate>endDate)return message('开始日期不能晚于结束日期。',true);
+ batchDates={range:'custom',startDate,endDate};loadBatches(1).catch(e=>message(e.message,true));
+});
+async function loadBatches(page=batchPage) {
   const version=++batchLoadVersion;
+  $('#batchPrev').disabled=true;$('#batchNext').disabled=true;
   if(!state.batchesLoaded){state.batchesError=false;renderBatches();}
   let data;
-  try{data=await api('/api/psychology-auto-publish?page='+batchPage+'&attention='+($('#batchFilter').value==='attention'?'1':'0'));}
-  catch(error){if(version===batchLoadVersion&&!state.batchesLoaded){state.batchesError=true;renderBatches();}throw error;}
+  const dateQuery='&range='+batchDates.range+(batchDates.range==='custom'?'&startDate='+encodeURIComponent(batchDates.startDate)+'&endDate='+encodeURIComponent(batchDates.endDate):'');
+  try{data=await api('/api/psychology-auto-publish?page='+page+'&attention='+($('#batchFilter').value==='attention'?'1':'0')+dateQuery);}
+  catch(error){if(version===batchLoadVersion){if(!state.batchesLoaded){state.batchesError=true;renderBatches();}else{$('#batchPrev').disabled=batchPage<=1;$('#batchNext').disabled=!batchHasMore;}}throw error;}
   if(version!==batchLoadVersion)return;
+  const total=data.pagination?.total??(data.batches||[]).length,pageSize=data.pagination?.pageSize||10,pages=Math.max(1,Math.ceil(total/pageSize));
+  if(page>pages)return loadBatches(pages);
+  batchPage=page;batchHasMore=Boolean(data.pagination?.hasMore);
   const signature=JSON.stringify(data.batches||[]),changed=signature!==state.lastBatchJSON;state.lastBatchJSON=signature;
   state.batches=data.batches||[];state.batchesLoaded=true;state.batchesError=false;
   $('#batchPrev').disabled=batchPage<=1;$('#batchNext').disabled=!data.pagination?.hasMore;
-  $('#batchPage').textContent='第 '+batchPage+' 页 / 共 '+(data.pagination?.total||0)+' 个任务';
+  $('#batchPage').textContent='第 '+batchPage+' / '+pages+' 页 · 共 '+total+' 个批次 · 每页 '+pageSize+' 个';
+  $('#batchPageHint').textContent=!total?'暂无匹配批次':!data.pagination?.hasMore?'已到最后一页':'';
   if(changed)renderBatches();
 }
 function renderBatches() {
@@ -209,7 +226,7 @@ function renderBatches() {
   $('#batches').innerHTML=rows.length?'<div class="batch-table-wrap"><table class="batch-table"><thead><tr><th>批次名称</th><th>内容类型</th><th>账号 / 内容</th><th>发布状态</th><th>批次状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+rows.map(b=>{
     const items=b.items||[],tone=batchStatus(items,b.groups||[]),accounts=[...new Set(items.map(i=>i.connectionId).filter(Boolean))];
     return `<tr data-batch-row="${esc(b.id)}"><td><button type="button" class="batch-name" data-batch-open="${esc(b.id)}">${esc(b.config.name||'心理学自动发布')}</button><small>${esc((state.templates[b.config.mediaType]||[]).find(t=>t.id===b.config.template)?.label||b.config.template||'')}</small></td><td><span class="batch-kind">${b.config.mediaType==='photo'?'图文':'视频'}</span></td><td><span title="${esc(accounts.map(accountName).join('、'))}">${accounts.length} 个账号</span><small>${items.length} 条内容</small></td><td class="batch-publication">${publicationSummary(items).split(' · ').map(text=>`<span>${esc(text)}</span>`).join('')}</td><td><span class="task-status-badge" data-tone="${tone}">${esc(statusLabel(tone))}</span></td><td class="batch-time">${esc(time(b.createdAt/1000))}</td><td><button type="button" data-batch-open="${esc(b.id)}" aria-label="查看批次：${esc(b.config.name||'心理学自动发布')}">查看</button></td></tr>`;
-  }).join('')+'</tbody></table></div>':'<div class="empty-state"><strong>'+ (state.batches.length?'本页没有匹配任务':'暂无发布任务')+'</strong><span>'+(state.batches.length?'调整搜索或内容类型筛选后重试。':'点击右上角“新建发布任务”开始。')+'</span></div>';
+  }).join('')+'</tbody></table></div>':'<div class="empty-state"><strong>'+ (state.batches.length?'本页没有匹配任务':batchDates.range!=='all'?'所选日期内暂无发布任务':'暂无发布任务')+'</strong><span>'+(state.batches.length?'调整搜索或内容类型筛选后重试。':batchDates.range!=='all'?'切换创建日期范围查看其他批次。':'点击右上角“新建发布任务”开始。')+'</span></div>';
   if($('#batchDetail').open)renderSelectedBatch();
 
 }

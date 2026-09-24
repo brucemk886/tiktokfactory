@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
-import { handlePsychologyAutoPublish, enqueueAutoPhotoRender, enqueueAutoVideoPublish, assertAutoJobAccess } from './psychology-auto-publish.js';
+import { batchCreatedWindow, handlePsychologyAutoPublish, enqueueAutoPhotoRender, enqueueAutoVideoPublish, assertAutoJobAccess } from './psychology-auto-publish.js';
 import { pageFileFor } from './pages.js';
 import { handleJobs, officialPublishFollowupPayload } from './jobs.js';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
@@ -705,7 +705,7 @@ test('library source draws originals first, reserves the post per account and ne
   const {call,sqlite,env}=await fixture(t);
   const photo=n=>'https://www.tiktok.com/@example/photo/'+n;
   await importPsychologyPeerHits(env.DB,[
-    {videoUrl:photo(300),title:'Post A',videoData:{pageTexts:['A cover','A page']},rewrites:[{title:'A v1',caption:'c',pages:['A1 cover']}]},
+    {videoUrl:photo(300),title:'Post A',videoData:{pageTexts:['A cover','A page']},rewrites:[{title:'A v1',caption:'A caption long enough for the gate.',pages:['A1 cover','A1 body page']}]},
     {videoUrl:photo(301),title:'Post B',videoData:{pageTexts:['B cover']}},
   ],user.id);
   const batch=()=>call('POST',input({mediaType:'photo',template:'photo-text',sourceType:'library',count:2,connectionIds:['a','b']}));
@@ -946,4 +946,26 @@ test('item status distinguishes retry, scheduled handoff, remote rejection and l
  assert.equal(state(row,{batchId:'remote',officialRemoteStatus:'failed'}).displayStatus,'publish_failed');
  assert.equal(state({...row,execution_status:'running'}).displayStatus,'missing');
  assert.equal(state(row,{}, {retry_status:'queued'}).displayStatus,'publishing');
+});
+
+
+test('batch creation dates use Beijing midnight and validate custom ranges',()=>{
+ const now=Date.parse('2026-09-24T04:00:00Z'),day=86400000,today=Date.parse('2026-09-23T16:00:00Z');
+ for(const [range,start,end] of [['today',0,1],['yesterday',-1,0],['7d',-6,1],['30d',-29,1]])assert.deepEqual(batchCreatedWindow({range},now),{start:today+start*day,end:today+end*day});
+ assert.equal(batchCreatedWindow({range:'all'},now),null);
+ assert.deepEqual(batchCreatedWindow({range:'custom',startDate:'2026-09-24',endDate:'2026-09-24'}),{start:today,end:today+day});
+ for(const input of [{range:'bad'},{range:'custom'},{range:'custom',startDate:'2026-02-30',endDate:'2026-03-01'},{range:'custom',startDate:'2026-09-25',endDate:'2026-09-24'}])assert.throws(()=>batchCreatedWindow(input),e=>e.statusCode===400);
+});
+
+test('creation-date filters apply before batch count and pagination and preserve owner scope',async t=>{
+ const f=await fixture(t),start=Date.parse('2026-09-23T16:00:00Z');
+ const insert=f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)');
+ for(let i=0;i<12;i++)insert.run('dated-'+i,user.username,'{}',start+i);
+ insert.run('before',user.username,'{}',start-1);insert.run('after',user.username,'{}',start+86400000);insert.run('other','someone-else','{}',start+2);
+ const url='/api/psychology-auto-publish?range=custom&startDate=2026-09-24&endDate=2026-09-24';
+ const first=await(await f.call('GET',undefined,url)).json(),second=await(await f.call('GET',undefined,url+'&page=2')).json();
+ assert.equal(first.pagination.total,12);assert.equal(first.pagination.hasMore,true);assert.equal(first.batches.length,10);
+ assert.equal(second.pagination.total,12);assert.equal(second.pagination.hasMore,false);assert.deepEqual(second.batches.map(b=>b.id),['dated-1','dated-0']);
+ const empty=await(await f.call('GET',undefined,url+'&attention=1')).json();assert.equal(empty.pagination.total,0);
+ const all=await(await f.call()).json();assert.equal(all.pagination.total,14);
 });

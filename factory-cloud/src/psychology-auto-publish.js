@@ -129,6 +129,22 @@ export function publishTimeWindow(range, now = Date.now()) {
   const todayStart = Math.floor((current + offset) / day) * day - offset;
   return { start: todayStart + days[0] * day, end: todayStart + days[1] * day };
 }
+// Batch filters use creation time in milliseconds; both endpoints are Beijing dates.
+export function batchCreatedWindow(input, now = Date.now()) {
+  if (input.range !== 'custom') {
+    const window = publishTimeWindow(input.range, now);
+    return window && { start: window.start * 1000, end: window.end * 1000 };
+  }
+  const parseDate = value => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) fail('请选择完整的开始和结束日期。');
+    const utc = Date.parse(value + 'T00:00:00Z');
+    if (!Number.isFinite(utc) || new Date(utc).toISOString().slice(0, 10) !== value) fail('日期无效。');
+    return utc - 8 * 3600000;
+  };
+  const start = parseDate(input.startDate), last = parseDate(input.endDate);
+  if (start > last) fail('开始日期不能晚于结束日期。');
+  return { start, end: last + 86400000 };
+}
 export async function listAutoPublishSources(db, user, input = {}, env = null) {
   const query = String(input.query || '').trim().slice(0, 100);
   const mediaType = input.mediaType === 'photo' || input.mediaType === 'video' ? input.mediaType : '';
@@ -277,10 +293,13 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
   if (url.pathname === BASE && request.method === 'GET') {
     const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
     const attention=url.searchParams.get('attention')==='1';
-    const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_publish_records r ON json_extract(r.value_json,'$.autoTaskId')=i.id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND lower(COALESCE(NULLIF(json_extract(r.value_json,'$.officialRemoteStatus'),''),json_extract(r.value_json,'$.status'))) IN ('failed','rejected','status_timeout','needs_review','canceled','cancelled','enqueue_failed')) OR EXISTS(SELECT 1 FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.id IS NULL AND i.receipt_json='{}' AND i.ready_json='{}' AND NOT EXISTS(SELECT 1 FROM factory_publish_records r WHERE json_extract(r.value_json,'$.autoTaskId')=i.id AND COALESCE(json_extract(r.value_json,'$.batchId'),'')<>'' AND (json_extract(r.value_json,'$.autoBatchId') IS NULL OR json_extract(r.value_json,'$.autoBatchId')=i.batch_id))))":"");
+    let where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_publish_records r ON json_extract(r.value_json,'$.autoTaskId')=i.id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND lower(COALESCE(NULLIF(json_extract(r.value_json,'$.officialRemoteStatus'),''),json_extract(r.value_json,'$.status'))) IN ('failed','rejected','status_timeout','needs_review','canceled','cancelled','enqueue_failed')) OR EXISTS(SELECT 1 FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.id IS NULL AND i.receipt_json='{}' AND i.ready_json='{}' AND NOT EXISTS(SELECT 1 FROM factory_publish_records r WHERE json_extract(r.value_json,'$.autoTaskId')=i.id AND COALESCE(json_extract(r.value_json,'$.batchId'),'')<>'' AND (json_extract(r.value_json,'$.autoBatchId') IS NULL OR json_extract(r.value_json,'$.autoBatchId')=i.batch_id))))":"");
+    const window=batchCreatedWindow({range:url.searchParams.get('range'),startDate:url.searchParams.get('startDate'),endDate:url.searchParams.get('endDate')});
+    const filterArgs=[user.username];
+    if(window){where+=' AND created_at>=? AND created_at<?';filterArgs.push(window.start,window.end);}
     const [countRows,batches] = await env.DB.batch([
-      env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(user.username),
-      env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(user.username,pageSize,(page-1)*pageSize),
+      env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(...filterArgs),
+      env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(...filterArgs,pageSize,(page-1)*pageSize),
     ]);
     const total=countRows.results[0].n;
     const ids=JSON.stringify(batches.results.map(batch=>batch.id));

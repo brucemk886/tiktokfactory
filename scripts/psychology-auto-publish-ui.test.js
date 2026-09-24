@@ -256,3 +256,25 @@ test('task list does not wait for slow creation-form options',async()=>{
   assert.ok(h.requests.some(r=>r.path.includes('/options')));
   resolveOptions({});await h.ready;
 });
+
+
+test('pagination shows total pages and retains date filter across pages',async()=>{
+ const data={batches:[],pagination:{page:1,pageSize:10,total:12,hasMore:true}};
+ const h=harness(Promise.resolve([]),false,{},Promise.resolve(data));await h.ready;
+ assert.equal(h.node('#batchNext').disabled,false);assert.match(h.node('#batchPage').textContent,/第 1 \/ 2 页.*共 12 个批次/);
+ h.node('#batchDateRange').value='7d';h.node('#batchDateRange').listeners.change();await tick();
+ assert.match(h.requests.at(-1).path,/page=1.*range=7d/);
+ data.pagination.hasMore=false;h.node('#batchNext').listeners.click();await tick();
+ assert.match(h.requests.at(-1).path,/page=2.*range=7d/);assert.equal(h.node('#batchNext').disabled,true);assert.equal(h.node('#batchPageHint').textContent,'已到最后一页');
+ const count=h.requests.length;h.node('#batchNext').listeners.click();assert.equal(h.requests.length,count);
+ h.node('#batchDateRange').value='today';h.node('#batchDateRange').listeners.change();await tick();assert.match(h.requests.at(-1).path,/page=1.*range=today/);
+});
+
+test('custom batch dates wait for a valid applied range',async()=>{
+ const h=harness(Promise.resolve([]));await h.ready;const count=h.requests.length;
+ h.node('#batchDateRange').value='custom';h.node('#batchDateRange').listeners.change();assert.equal(h.node('#batchCustomDates').hidden,false);assert.equal(h.requests.length,count);
+ h.node('#applyBatchDates').listeners.click();assert.equal(h.requests.length,count);
+ h.node('#batchStartDate').value='2026-09-22';h.node('#batchEndDate').value='2026-09-21';h.node('#applyBatchDates').listeners.click();assert.equal(h.requests.length,count);
+ h.node('#batchEndDate').value='2026-09-22';h.node('#applyBatchDates').listeners.click();await tick();
+ assert.match(h.requests.at(-1).path,/range=custom&startDate=2026-09-22&endDate=2026-09-22/);
+});
