@@ -7,7 +7,7 @@ import { planLibraryDraw } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
 const HOUR = 3600000, DAY = 24 * HOUR;
-const admin = { id: 'admin', username: 'admin', role: 'admin', sidebarModules: ['psychology-publish'] };
+const admin = { id: 'admin', username: 'admin', role: 'admin', sidebarModules: ['psychology-publish', 'psychology-autopilot'] };
 const at = (date, hm) => Date.parse(`${date}T${hm}:00+08:00`);
 
 test('due slots are the Beijing 08:00 / 12:00 / 21:00 times 2–26 hours ahead, inside the run period', () => {
@@ -88,6 +88,9 @@ async function pilotFixture(t) {
 test('autopilot starts on a group, schedules library batches for the coming slots as the owner, and is idempotent', async t => {
   const f = await pilotFixture(t);
   await assert.rejects(f.api('POST', '', { groupId: 'other', strategy: 'evolve' }), /没有这个心理学分组/);
+  const url = new URL('https://factory.test/api/psychology-autopilot');
+  await assert.rejects(handlePsychologyAutopilot(new Request(url), f.env, url, { user: { ...admin, sidebarModules: ['psychology-publish'] } }), /没有自动运营权限/);
+  await assert.rejects(handlePsychologyAutopilot(new Request(url), f.env, url, { user: { ...admin, role: 'operator' } }), /没有自动运营权限/);
   const started = await (await f.api('POST', '', { groupId: 'g', strategy: 'original', days: 7 })).json();
   await assert.rejects(f.api('POST', '', { groupId: 'g', strategy: 'evolve' }), /已经在自动运营/);
   const pilot = f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(started.id);

@@ -30,6 +30,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
   moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ["admin"], psychologyGroup()),
+  moduleItem("psychology-autopilot", "/psychology-autopilot", "自动运营", ["admin"], psychologyGroup()),
   moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ["admin"], psychologyGroup()),
   moduleItem("psychology-comments", "/psychology-comments", "定时评论", ["admin"], psychologyGroup()),
   moduleItem("psychology-publish-sources", "/psychology-publish-sources", "心理学发布记录", ["admin"], psychologyGroup()),
@@ -79,6 +80,7 @@ export function moduleIdForPath(pathname) {
     "/psychology-publish-designs": "psychology-publish",
     "/psychology-creative.html": "psychology-publish",
     "/psychology-copy-library.html": "psychology-copy-library",
+    "/psychology-autopilot.html": "psychology-autopilot",
     "/tiktok-connections-organize": "tiktok-connections",
     "/official-account-detail": "official-analytics",
     "/official-account-videos": "official-analytics",
@@ -110,7 +112,6 @@ export function canAccessPath(user, pathname) {
   if(['/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
   // 爆款复刻 merged into the publish records page; either saved grant still opens it.
   if(['/psychology-production','/psychology-production.html','/psychology-publish-sources','/psychology-publish-sources.html'].includes(clean))return user.role==='admin'&&['psychology-production','psychology-publish-sources'].some(id=>(user.sidebarModules||[]).includes(id));
-  if(['/psychology-autopilot','/psychology-autopilot.html'].includes(clean))return user.role==='admin'&&(user.sidebarModules||[]).includes('psychology-publish');
   const moduleId = moduleIdForPath(pathname);
   if (!moduleId) return true;
   if (moduleId === "accounts" || moduleId === "geelark-profiles") return user.role === "admin";

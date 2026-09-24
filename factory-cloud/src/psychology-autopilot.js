@@ -7,7 +7,7 @@ import { loadGroupStore, scopedAnalyticsAccounts } from './official.js';
 import { listLatestArchiveAccounts, accountsFromLatestArchive, loadVideosForAccounts } from './official-archive-store.js';
 import { publicState, findProjectForModule, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
 import { operationsWindow, publishOutcome, parseObject } from '../../scripts/psychology-operations.js';
-import { assertAutoUser, loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
+import { loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { frameworkFor } from './psychology-operations.js';
 
 const BASE = '/api/psychology-autopilot';
@@ -174,7 +174,7 @@ async function psychologyGroups(env, user) {
 export async function handlePsychologyAutopilot(request, env, url, session) {
   if (!url.pathname.startsWith(BASE)) return null;
   const user = session?.user;
-  assertAutoUser(user);
+  if (user?.role !== 'admin' || !(user.sidebarModules || []).includes('psychology-autopilot')) fail('没有自动运营权限。', 403);
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
   const db = env.DB;
   if (url.pathname === BASE && request.method === 'GET') {
