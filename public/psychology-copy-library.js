@@ -6,6 +6,8 @@ const typeLabel = type => type === "video" ? "视频" : "图文";
 const displayTime = value => value ? new Date(value).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) : "—";
 
 let copyPage = 1;
+let copiesLoading = false;
+let copyTotalPages = 1;
 let originalItems = [];
 let reviewedItems = [];
 let previewText = "";
@@ -17,8 +19,9 @@ let variantSaving = false;
 let variantGenerating = false;
 let draftRewriteModel = "";
 
-async function api(path, method = "GET", body) {
+async function api(path, method = "GET", body, options = {}) {
   const response = await fetch("/api/psychology-creative" + path, {
+    ...options,
     method,
     cache: "no-store",
     ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {})
@@ -66,7 +69,7 @@ $("#hitRows").addEventListener("click", async event => {
   const row = originalItems.find(item => item.id === id);
   if (!row) return;
   if (button.dataset.createVariant) { openVariant(row); return; }
-  if (button.dataset.rewriteOriginal) { openRewrites(row); return; }
+  if (button.dataset.rewriteOriginal) { openRewrites(row,button.dataset.reviewFilter||"all"); return; }
   if (button.dataset.viewOriginal) {
     openPreview({
       kind: typeLabel(row.media_type),
@@ -79,7 +82,8 @@ $("#hitRows").addEventListener("click", async event => {
   }
 });
 
-function openRewrites(source = null) {
+function openRewrites(source = null, status = "all") {
+  $("#copyReviewFilter").value = status;
   selectedSource = source;
   copyPage = 1;
   $("#copySearch").value = "";
@@ -176,13 +180,18 @@ $("#importForm").onsubmit = async event => {
   }
 };
 
-async function loadCopies() {
+async function loadCopies(requestedPage = copyPage) {
   const version = ++variantRequestVersion;
-  const params = new URLSearchParams({ page: copyPage, q: $("#copySearch").value });
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),30000);
+  copiesLoading=true;$("#copyPrev").disabled=true;$("#copyNext").disabled=true;
+  $("#copyPage").textContent=`正在加载第 ${requestedPage} 页…`;
+  try {
+  const params = new URLSearchParams({ page: requestedPage, q: $("#copySearch").value, status: $("#copyReviewFilter").value||'all' });
   if (selectedSource) params.set("sourceId", selectedSource.id);
-  const data = await api("/copies?" + params);
+  const data = await api("/copies?" + params,"GET",undefined,{signal:controller.signal});
   if (version !== variantRequestVersion) return;
   copyPage = data.page;
+  copyTotalPages = data.pages||Math.max(1,Math.ceil(data.total/20));
   reviewedItems = data.items;
   $("#copyList").innerHTML = data.items.length ? data.items.map(row => `<tr>
     <td><span class="copy-status${row.enabled ? "" : " is-off"}">${row.review_status==='pending'?"未通过质检":row.enabled ? (row.reviewed_at?"已启用 · 人工通过":"已启用") : "已停用"}</span></td>
@@ -194,10 +203,12 @@ async function loadCopies() {
     <td title="${esc(row.score_reason || '')}">${row.quality_score == null ? '未评分' : esc(row.quality_score) + ' 分'}</td>
     <td>${row.pages.length} 页${row.review_status==='pending'?'<p>'+esc(row.review_reason)+'</p>':''}</td>
     <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button>${row.review_status==='pending'?'<button type="button" data-review-copy="'+row.id+'">通过</button>':'<button type="button" data-toggle-copy="'+row.id+'" data-enabled="'+(row.enabled?'0':'1')+'">'+(row.enabled?'停用':'启用')+'</button>'}<button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
-  </tr>`).join("") : '<tr><td colspan="9">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
-  $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
+  </tr>`).join("") : '<tr><td colspan="9">没有符合当前筛选的改写版本。可切换“全部版本”查看。</td></tr>';
+  $("#copyPage").textContent = `共 ${data.total} 个版本 · 第 ${copyPage} / ${data.pages||Math.max(1,Math.ceil(data.total/20))} 页`;
   $("#copyPrev").disabled = copyPage === 1;
   $("#copyNext").disabled = copyPage * 20 >= data.total;
+  } catch(error) {if(version===variantRequestVersion){$("#copyPage").textContent='加载失败，请重新查询';$("#copyPrev").disabled=copyPage<=1;$("#copyNext").disabled=copyPage>=copyTotalPages;}if(error.name==='AbortError')throw new Error('加载超时，请重新查询。');throw error;}
+  finally{clearTimeout(timeout);if(version===variantRequestVersion)copiesLoading=false;}
 }
 
 $("#copyList").onclick = async event => {
@@ -227,8 +238,9 @@ $("#copyList").onclick = async event => {
   }
 };
 $("#copySearchForm").onsubmit = event => { event.preventDefault(); copyPage = 1; loadCopies().catch(error => $("#copyStatus").textContent = error.message); };
-$("#copyPrev").onclick = () => { copyPage--; loadCopies().catch(error => $("#copyStatus").textContent = error.message); };
-$("#copyNext").onclick = () => { copyPage++; loadCopies().catch(error => $("#copyStatus").textContent = error.message); };
+$("#copyReviewFilter").onchange = () => { copyPage=1;loadCopies().catch(error => $("#copyStatus").textContent=error.message); };
+$("#copyPrev").onclick = () => { if(copiesLoading||$("#copyPrev").disabled)return; loadCopies(copyPage-1).catch(error => $("#copyStatus").textContent = error.message); };
+$("#copyNext").onclick = () => { if(copiesLoading||$("#copyNext").disabled)return; loadCopies(copyPage+1).catch(error => $("#copyStatus").textContent = error.message); };
 
 $("#closePreview").onclick = () => $("#copyPreviewDialog").close();
 $("#copyPreviewDialog").addEventListener("click", event => {

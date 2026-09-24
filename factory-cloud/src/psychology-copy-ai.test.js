@@ -149,3 +149,15 @@ test('all invalid drafts remain reviewable; malformed output needs corrected con
  assert.equal((await request({title:'Fixed title',caption:'Fixed caption',pages:['First page','Second page']})).status,200);
  const saved=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();assert.equal(saved.title,'Fixed title');assert.equal(saved.raw_response,raw);assert.equal(saved.enabled,1);
 });
+
+
+test('batch provider failures remain filterable and later completed attempts clear the failure',async t=>{
+ const f=await aiFixture(t,JSON.stringify({versions:[version(1)]}));
+ const goodFetch=f.env.fetch;f.env.fetch=async()=>Response.json({status:'failed',error:'Provider unavailable'});
+ await assert.rejects(api(f,'/copies/generate-batch?model=claude-sonnet-5&sourceId='+f.row.id),/Provider unavailable/);
+ let row=f.sqlite.prepare('SELECT * FROM psychology_rewrite_attempts WHERE source_id=?').get(f.row.id);
+ assert.equal(row.status,'failed');assert.match(row.error,/Provider unavailable/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,0);
+ f.env.fetch=goodFetch;await api(f,'/copies/generate-batch?model=claude-sonnet-5&sourceId='+f.row.id);
+ row=f.sqlite.prepare('SELECT * FROM psychology_rewrite_attempts WHERE source_id=?').get(f.row.id);assert.equal(row.status,'done');assert.equal(row.error,'');
+});

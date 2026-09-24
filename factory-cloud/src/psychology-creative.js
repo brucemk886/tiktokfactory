@@ -74,7 +74,14 @@ export async function handlePsychologyCreative(request,env,url,session){
   if(url.pathname===BASE+'/copies/generate')return json(await generateCopyDraft(env,source,{model}));
   const count=Number(url.searchParams.get('count')||5);
   if(!Number.isInteger(count)||count<1||count>5)return errorJson('每篇生成 1–5 个版本。',400);
-  return json(await saveGeneratedVersions(db,owner,source,await generateCopyDrafts(env,source,{model,count})));
+  const startedAt=Date.now();
+  const record=async(status,error='')=>db.prepare("INSERT INTO psychology_rewrite_attempts(owner,source_id,started_at,completed_at,status,error,model) VALUES(?,?,?,?,?,?,?) ON CONFLICT(owner,source_id) DO UPDATE SET started_at=excluded.started_at,completed_at=excluded.completed_at,status=excluded.status,error=excluded.error,model=excluded.model WHERE excluded.started_at>=psychology_rewrite_attempts.started_at")
+   .bind(owner,sourceId,startedAt,Date.now(),status,String(error).slice(0,1500),model||'').run();
+  let result;
+  try{result=await saveGeneratedVersions(db,owner,source,await generateCopyDrafts(env,source,{model,count}));}
+  catch(error){await record('failed',error.message);throw error;}
+  await record('done');
+  return json(result);
  }
  const sourceId=url.searchParams.get('sourceId');
  let sourceKey='';
@@ -99,11 +106,17 @@ export async function handlePsychologyCreative(request,env,url,session){
   }
  }
  if(url.pathname===BASE+'/copies'&&request.method==='GET'){
-  const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1))),q='%'+String(url.searchParams.get('q')||'').slice(0,100)+'%';
+  const requestedPage=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1))),q='%'+String(url.searchParams.get('q')||'').slice(0,100)+'%';
   const args=[owner,q,q];let where='owner=? AND deleted_at=0 AND (title LIKE ? OR source_key LIKE ?)';
   if(sourceId){where+=' AND source_key=?';args.push(sourceKey);}
-  const [rows,total]=await Promise.all([db.prepare('SELECT id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,deleted_at,quality_score,score_reason,rewrite_model,review_status,review_reason,raw_response,reviewed_at FROM psychology_copy_variants WHERE '+where+' ORDER BY quality_score DESC,created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
-  return json({items:rows.results.map(r=>({...r,rewriteModel:r.rewrite_model,rewriteModelLabel:rewriteModelLabel(r.rewrite_model),pages:JSON.parse(r.pages_json)})),page,total:total.n});
+  const status=url.searchParams.get('status')||'all';
+  const statuses={all:'1=1',pending:"review_status='pending'",enabled:"review_status='approved' AND enabled=1",disabled:"review_status='approved' AND enabled=0",manual:"review_status='approved' AND reviewed_at>0"};
+  if(!Object.hasOwn(statuses,status))return errorJson('改写状态无效。',400);
+  where+=' AND ('+statuses[status]+')';
+  const total=await db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first();
+  const pages=Math.max(1,Math.ceil(total.n/20)),page=Math.min(requestedPage,pages);
+  const rows=await db.prepare('SELECT id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,deleted_at,quality_score,score_reason,rewrite_model,review_status,review_reason,raw_response,reviewed_at FROM psychology_copy_variants WHERE '+where+' ORDER BY quality_score DESC,created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all();
+  return json({items:rows.results.map(r=>({...r,rewriteModel:r.rewrite_model,rewriteModelLabel:rewriteModelLabel(r.rewrite_model),pages:JSON.parse(r.pages_json)})),page,pages,pageSize:20,total:total.n});
  }
  if(url.pathname===BASE+'/copies'&&request.method==='POST'){
   const raw=await request.text();if(raw.length>1500000)fail('导入内容过大。');let body;try{body=JSON.parse(raw);}catch{fail('请输入有效 JSON。');}

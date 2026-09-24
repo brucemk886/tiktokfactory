@@ -55,8 +55,26 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   if(!['all','done','queued','running','failed','historical'].includes(status)||!['recent','plays','published'].includes(sort))return errorJson('筛选条件无效。',400);
   const query='%'+String(url.searchParams.get('q')||'').slice(0,200)+'%';
   const statusWhere=status==='all'?'1=1':status==='historical'?"c.auto_extract=0 AND c.status<>'done'":status==='done'?"c.status='done'":"c.status=? AND c.auto_extract=1";
-  const where=statusWhere+" AND (?='all' OR c.media_type=?) AND (c.title LIKE ? OR c.source_url LIKE ? OR c.content_json LIKE ? OR p.account_name LIKE ? OR p.account_username LIKE ?)";
+  let where=statusWhere+" AND (?='all' OR c.media_type=?) AND (c.title LIKE ? OR c.source_url LIKE ? OR c.content_json LIKE ? OR p.account_name LIKE ? OR p.account_username LIKE ?)";
   const args=[...(['queued','running','failed'].includes(status)?[status]:[]),media,media,query,query,query,query,query];
+  const rewriteStatus=url.searchParams.get('rewriteStatus')||'all';
+  if(!['all','attention','pending','failed','none','enabled','disabled'].includes(rewriteStatus))return errorJson('改写状态无效。',400);
+  if(rewriteStatus!=='all'){
+   // Canonicalize with the same URL parser as imports, including share links.
+   // Only lightweight ids/URLs are read here; content remains paginated in SQL.
+   const [sources,versions,attempts]=await Promise.all([
+    env.DB.prepare('SELECT id,source_url FROM psychology_copy_library').all(),
+    env.DB.prepare("SELECT source_key,COUNT(*) total,SUM(enabled) enabled,SUM(CASE WHEN review_status='pending' THEN 1 ELSE 0 END) pending,SUM(CASE WHEN review_status='approved' AND enabled=0 THEN 1 ELSE 0 END) disabled FROM psychology_copy_variants WHERE owner=? AND deleted_at=0 GROUP BY source_key").bind(user.username).all(),
+    env.DB.prepare("SELECT source_id FROM psychology_rewrite_attempts WHERE owner=? AND status='failed'").bind(user.username).all()
+   ]);
+   const groups=new Map(versions.results.map(r=>[r.source_key,r])),failed=new Set(attempts.results.map(r=>r.source_id));
+   const ids=sources.results.filter(r=>{
+    let key;try{key=photoCopyKey(r.source_url);}catch{key=r.id;}
+    const v=groups.get(key)||{};
+    return rewriteStatus==='failed'?failed.has(r.id):rewriteStatus==='attention'?failed.has(r.id)||v.pending>0:rewriteStatus==='none'?!v.total:v[rewriteStatus]>0;
+   }).map(r=>r.id);
+   where+=' AND c.id IN (SELECT value FROM json_each(?))';args.push(JSON.stringify(ids));
+  }
   const from=' FROM psychology_copy_library c LEFT JOIN psychology_peer_hits p ON p.id=c.id WHERE ';
   const total=Number((await env.DB.prepare('SELECT COUNT(*) n'+from+where).bind(...args).first()).n);
   const pages=Math.max(1,Math.ceil(total/20)),page=Math.min(pages,Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)));
@@ -66,12 +84,14 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   const ids=items.map(r=>r.id);
   const peers=ids.length?(await env.DB.prepare('SELECT * FROM psychology_peer_hits WHERE id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(ids)).all()).results.map(psychologyPeerHitFromRow):[];
   const byId=new Map(peers.map(r=>[r.id,r]));
+  const attempts=ids.length?(await env.DB.prepare('SELECT source_id,status,error,completed_at,model FROM psychology_rewrite_attempts WHERE owner=? AND source_id IN (SELECT value FROM json_each(?))').bind(user.username,JSON.stringify(ids)).all()).results:[];
+  const attemptById=new Map(attempts.map(r=>[r.source_id,r]));
   const originals=items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)}));
   const keys=[...new Set(originals.map(r=>r.sourceKey))];
   const variants=keys.length?(await env.DB.prepare('SELECT source_key,rewrite_model,COUNT(*) total,SUM(enabled) enabled,SUM(CASE WHEN review_status=\'pending\' THEN 1 ELSE 0 END) pending FROM psychology_copy_variants WHERE owner=? AND deleted_at=0 AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key,rewrite_model').bind(user.username,...keys).all()).results:[];
   const bySource=new Map();
   for(const r of variants){const group=bySource.get(r.source_key)||{total:0,enabled:0,pending:0,models:[]};group.total+=Number(r.total);group.enabled+=Number(r.enabled);group.pending+=Number(r.pending);group.models.push({id:r.rewrite_model,label:rewriteModelLabel(r.rewrite_model),count:Number(r.total)});bySource.set(r.source_key,group);}
-  return json({canManageSources:user.sidebarModules?.includes('psychology-peer-hits')===true,items:originals.map(r=>({...r,peer:byId.get(r.id)||null,variantCount:Number(bySource.get(r.sourceKey)?.total||0),rewriteModels:bySource.get(r.sourceKey)?.models||[], pendingVariantCount:Number(bySource.get(r.sourceKey)?.pending||0), enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
+  return json({canManageSources:user.sidebarModules?.includes('psychology-peer-hits')===true,items:originals.map(r=>({...r,rewriteAttempt:attemptById.get(r.id)||null,peer:byId.get(r.id)||null,variantCount:Number(bySource.get(r.sourceKey)?.total||0),rewriteModels:bySource.get(r.sourceKey)?.models||[], pendingVariantCount:Number(bySource.get(r.sourceKey)?.pending||0), enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
  }
  const match=url.pathname.match(/^\/api\/psychology-copy-library\/(psy-[a-f0-9]{32})\/retry$/);
  if(match&&request.method==='POST'){

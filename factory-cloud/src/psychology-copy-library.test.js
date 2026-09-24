@@ -233,3 +233,29 @@ test('library summarizes rewrite model counts without counting deleted or other-
  const item=(await (await api(f,'?mediaType=photo')).json()).items[0];
  assert.equal(item.variantCount,3);assert.deepEqual(item.rewriteModels.map(m=>[m.label,m.count]).sort(),[['Claude Sonnet 5',2],['模型未知',1]].sort());
 });
+
+
+test('rewrite filters paginate originals after canonical matching and scope versions and failures to owner',async t=>{
+ const f=await setup(t);
+ await importPsychologyPeerHits(f.db,Array.from({length:25},(_,i)=>post(8000000+i,'photo',{pageTexts:['Original line '+i]})),'admin');
+ f.sqlite.exec("UPDATE psychology_copy_library SET status='done'");
+ const originals=f.sqlite.prepare('SELECT id,source_url FROM psychology_copy_library ORDER BY id').all();
+ const insert=f.sqlite.prepare("INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,review_status,deleted_at) VALUES(?,?,?,?,?,'',json_array('Text'),?,1,?,?,?)");
+ originals.slice(0,21).forEach((r,i)=>insert.run('pending'+i,'admin','pending'+i,photoCopyKey(r.source_url),'Pending '+i,'fp'+i,0,'pending',0));
+ insert.run('foreign','other','foreign',photoCopyKey(originals[21].source_url),'Foreign','foreign',0,'pending',0);
+ insert.run('removed','admin','removed',photoCopyKey(originals[22].source_url),'Removed','removed',0,'pending',1);
+ insert.run('enabled','admin','enabled',photoCopyKey(originals[23].source_url),'Enabled','enabled',1,'approved',0);
+ insert.run('disabled','admin','disabled',photoCopyKey(originals[24].source_url),'Disabled','disabled',0,'approved',0);
+ f.sqlite.prepare("INSERT INTO psychology_rewrite_attempts VALUES('admin',?,1,2,'failed','Provider unavailable','sonnet')").run(originals[22].id);
+ const query=async q=>(await api(f,'?mediaType=photo&'+q)).json();
+ const first=await query('rewriteStatus=pending');assert.equal(first.total,21);assert.equal(first.pages,2);assert.equal(first.items.length,20);
+ const second=await query('rewriteStatus=pending&page=2');assert.equal(second.items.length,1);assert.ok(!first.items.some(r=>r.id===second.items[0].id));
+ assert.equal((await query('rewriteStatus=pending&page=99')).page,2);
+ assert.equal((await query('rewriteStatus=attention')).total,22);
+ const failed=await query('rewriteStatus=failed');assert.equal(failed.total,1);assert.equal(failed.items[0].rewriteAttempt.error,'Provider unavailable');
+ assert.equal((await query('rewriteStatus=none')).total,2);
+ assert.equal((await query('rewriteStatus=enabled')).items[0].id,originals[23].id);
+ assert.equal((await query('rewriteStatus=disabled')).items[0].id,originals[24].id);
+ assert.equal((await query('rewriteStatus=pending&q=nonexistent')).total,0);
+ assert.equal((await api(f,'?rewriteStatus=bad')).status,400);
+});

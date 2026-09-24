@@ -274,3 +274,18 @@ test('model migration recognizes exact factory batch IDs and leaves unknown impo
  sqlite.exec(fs.readFileSync(new URL('0052_psychology_rewrite_model.sql',dir),'utf8'));
  assert.deepEqual(sqlite.prepare('SELECT rewrite_model FROM psychology_copy_variants ORDER BY id').all().map(r=>r.rewrite_model),['claude-sonnet-5','deepseek-flash','','']);
 });
+
+
+test('version status filter distinguishes pending from disabled and clamps pages',async t=>{
+ const f=await fixture(t);await api(f,'/copies','POST',Array.from({length:25},(_,i)=>variant(i)));
+ f.sqlite.exec("UPDATE psychology_copy_variants SET enabled=0,review_status='pending' WHERE external_id IN ('v0','v1'); UPDATE psychology_copy_variants SET enabled=0 WHERE external_id='v2'; UPDATE psychology_copy_variants SET reviewed_at=123 WHERE external_id='v3'");
+ const query=async q=>(await api(f,'/copies?'+q)).json();
+ assert.equal((await query('status=enabled')).total,22);
+ const second=await query('status=enabled&page=2');assert.equal(second.items.length,2);assert.equal(second.pages,2);
+ assert.equal((await query('status=pending&page=2')).page,1);
+ assert.equal((await query('status=pending')).total,2);
+ assert.equal((await query('status=disabled')).total,1);
+ assert.equal((await query('status=manual')).total,1);
+ assert.equal((await query('status=pending&q=missing')).total,0);
+ assert.equal((await api(f,'/copies?status=bad')).status,400);
+});

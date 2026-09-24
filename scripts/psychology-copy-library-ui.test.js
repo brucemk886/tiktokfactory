@@ -12,7 +12,7 @@ function harness(script='psychology-copy-library.js') {
  for(const [,id] of html.matchAll(/\bid="([^"]+)"/g))nodes.set('#'+id,{value:'',textContent:'',disabled:false,open:false,dataset:{},classList:{toggle(){}},listeners:{},addEventListener(type,fn){this.listeners[type]=fn;},showModal(){this.open=true;},close(){this.open=false;this.listeners.close?.();},reset(){for(const id of ['variantName','variantTitle','variantCaption'])nodes.get('#'+id).value='';nodes.get('#variantReviewed').checked=false;pages.forEach(p=>p.value='');}});
  const document={querySelector:q=>nodes.get(q)||null,querySelectorAll:q=>q==='[data-variant-page]'?pages:q==='.peer-select'?selectable:[],body:{dataset:{mediaType:'video',sourceAccess:'true'},classList:{contains:c=>c==='copy-library-page'}},addEventListener:(t,fn)=>events.set(t,fn),dispatchEvent:e=>events.get(e.type)?.(e)};
  let respond=()=>({created:1,duplicates:0,page:1,total:0,items:[]});
- const context={confirm:text=>{confirmations.push(text);return accepted;},document,crypto:{randomUUID},CustomEvent:class{constructor(type,options={}){this.type=type;Object.assign(this,options);}},location:{hash:''},URL,URLSearchParams,setTimeout,clearTimeout,fetch:async(url,options={})=>{requests.push({url,...options,body:options.body?JSON.parse(options.body):undefined});const data=await respond(url,options);return {ok:true,json:async()=>data};}};
+ const context={AbortController,confirm:text=>{confirmations.push(text);return accepted;},document,crypto:{randomUUID},CustomEvent:class{constructor(type,options={}){this.type=type;Object.assign(this,options);}},location:{hash:''},URL,URLSearchParams,setTimeout,clearTimeout,fetch:async(url,options={})=>{requests.push({url,...options,body:options.body?JSON.parse(options.body):undefined});const data=await respond(url,options);return {ok:true,json:async()=>data};}};
  vm.runInNewContext(read(script),context);
  return {context,nodes,pages,events,requests,document,confirmations,accept:value=>{accepted=value;},setRows:ids=>{selectable=ids.map(id=>({dataset:{peerId:id},checked:false,matches:q=>q==='.peer-select'}));},rows:()=>selectable,respond:fn=>{respond=fn;},async click(data){await nodes.get('#hitRows').listeners.click({target:{closest:()=>({dataset:data})}});},fill(){nodes.get('#variantName').value='Test version';nodes.get('#variantTitle').value='Test title';nodes.get('#variantReviewed').checked=true;pages[0].value='First page';},submit(){return nodes.get('#variantForm').onsubmit({preventDefault(){},submitter:{}});}};
 }
@@ -166,4 +166,25 @@ test('quality review shows literal raw output and reason, and approval sends onl
  h.nodes.get('#qualityReviewPages').value=JSON.stringify(['Edited page']);h.respond(()=>({ok:true,items:[],page:1,total:0}));
  await h.nodes.get('#qualityReviewForm').onsubmit({preventDefault(){}});
  const approved=h.requests.find(r=>r.url.endsWith('/approve'));assert.deepEqual(approved.body,{title:'Review title',caption:'Caption',pages:['Edited page']});assert.equal(h.nodes.get('#qualityReviewDialog').open,false);
+});
+
+
+test('pending shortcut and detail filters use server status and reset pagination',async()=>{
+ const h=harness();h.events.get('peer-list-loaded')({detail:{items:sources}});
+ await h.click({rewriteOriginal:sources[0].id,reviewFilter:'pending'});await new Promise(r=>setTimeout(r,0));
+ assert.equal(new URL(h.requests.at(-1).url,'https://test').searchParams.get('status'),'pending');
+ h.nodes.get('#copyReviewFilter').value='enabled';h.nodes.get('#copyReviewFilter').onchange();await new Promise(r=>setTimeout(r,0));
+ const params=new URL(h.requests.at(-1).url,'https://test').searchParams;assert.equal(params.get('status'),'enabled');assert.equal(params.get('page'),'1');
+ assert.match(h.nodes.get('#copyPage').textContent,/0 个版本/);
+});
+
+test('library paging keeps confirmed page on failure and passes rewrite filter to the server',async()=>{
+ const nodes=new Map();for(const id of ['previousBtn','nextBtn','listStatus','pageInfo','query','sort','libraryStatus','rewriteStatus','hitRows'])nodes.set('#'+id,{value:'',classList:{toggle(){}},textContent:''});
+ nodes.get('#rewriteStatus').value='pending';nodes.get('#libraryStatus').value='done';nodes.get('#sort').value='plays';
+ const requests=[];let respond=()=>({page:1,pages:3,total:45,items:[],canManageSources:false});
+ const ctx={AbortController,URLSearchParams,setTimeout,clearTimeout,CustomEvent:class{},document:{querySelector:s=>nodes.get(s),querySelectorAll:()=>[],body:{classList:{contains:()=>true},dataset:{}},addEventListener(){},dispatchEvent(){}},fetch:async(url)=>{requests.push(url);return {ok:true,json:async()=>respond()};}};
+ vm.runInNewContext(read('psychology-peer-hits.js').split('async function loadKey()')[0],ctx);
+ await ctx.loadList();assert.equal(nodes.get('#nextBtn').disabled,false);assert.match(requests[0],/rewriteStatus=pending/);
+ respond=()=>{throw new Error('offline');};await ctx.loadList(2);assert.equal(vm.runInNewContext('state.page',ctx),1);assert.equal(nodes.get('#nextBtn').disabled,false);
+ respond=()=>({page:2,pages:3,total:45,items:[],canManageSources:false});await ctx.loadList(2);assert.equal(vm.runInNewContext('state.page',ctx),2);assert.match(nodes.get('#pageInfo').textContent,/第 2 \/ 3 页/);
 });

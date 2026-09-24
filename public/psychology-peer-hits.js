@@ -20,7 +20,12 @@ async function api(url, options={}) {
   const res = await fetch(url, {cache:"no-store",...options}); const data=await res.json();
   if(!res.ok) throw new Error(data.error || "请求失败，请稍后重试。"); return data;
 }
-function pager() { $("#previousBtn").disabled=state.loading||state.page<=1; $("#nextBtn").disabled=state.loading||state.page>=state.totalPages; }
+function pager() {
+ $("#previousBtn").disabled=state.loading||state.page<=1;
+ $("#nextBtn").disabled=state.loading||state.page>=state.totalPages;
+ $("#nextBtn").textContent=state.loading?'加载中…':'下一页';
+ $("#nextBtn").title=state.loading?'正在加载，请稍候':state.page>=state.totalPages?'已经是最后一页':'';
+}
 
 function libraryRow(item){
  const row=item.library,content=row.content||{},done=row.status==='done',manage=document.body.dataset.sourceAccess==='true',hasPeer=!!row.peer;
@@ -32,17 +37,19 @@ function libraryRow(item){
  '<td class="library-metrics"><strong>'+metric(item.playCount)+' 播放</strong><small>赞 '+metric(item.likeCount)+' · 评 '+metric(item.commentCount)+'</small><small>藏 '+metric(item.favoriteCount)+' · 分享 '+metric(item.shareCount)+'</small></td>'+
  '<td class="hits-time">'+time(item.publishedAt)+'<small>导入 '+time(item.createdAt)+'</small></td>'+
  '<td class="library-status"><span class="copy-status'+(done?'':' is-off')+'" title="'+escape(row.error||status)+'">'+status+'</span>'+(row.error?'<details><summary>原因</summary><p>'+escape(row.error)+'</p></details>':'')+(!done&&row.auto_extract&&row.status==='failed'?'<button type="button" data-retry-copy="'+escape(row.id)+'">重试提取</button>':'')+'</td>'+
- '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small>'+(row.pendingVariantCount?'<small>未通过质检 '+Number(row.pendingVariantCount)+' 个</small>':'')+(row.rewriteModels||[]).map(m=>'<small>'+escape(m.label)+' · '+Number(m.count)+' 个</small>').join('')+'</td>'+
+ '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small>'+(row.pendingVariantCount?'<button type="button" data-rewrite-original="'+escape(row.id)+'" data-review-filter="pending">待审核 '+Number(row.pendingVariantCount)+' 个</button>':'')+(row.rewriteAttempt?.status==='failed'?'<details><summary>改写生成失败</summary><p>'+escape(row.rewriteAttempt.error)+'</p><small>'+time(row.rewriteAttempt.completed_at)+'</small></details>':'')+(row.rewriteModels||[]).map(m=>'<small>'+escape(m.label)+' · '+Number(m.count)+' 个</small>').join('')+'</td>'+
  '<td class="hits-voice">'+(manage&&hasPeer?'<select class="voice-gender-select" data-id="'+escape(item.id)+'" data-current="'+escape(item.voiceGender||'male')+'" aria-label="音色性别"><option value="male"'+(item.voiceGender!=='female'?' selected':'')+'>男</option><option value="female"'+(item.voiceGender==='female'?' selected':'')+'>女</option></select>':'—')+'</td>'+
  '<td class="hits-video"><a href="'+escape(item.videoUrl)+'" target="_blank" rel="noopener noreferrer">打开原帖</a></td>'+
  '<td class="library-actions"><button type="button" data-hot-comments="'+escape(item.id)+'">查看热门评论</button>'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-create-variant="'+escape(item.id)+'">新增改写</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除文案</button>':'')+'</td></tr>';
 }
 
-async function loadList() {
-  controller?.abort(); const current=new AbortController();controller=current;state.loading=true;pager();message("#listStatus","正在读取…");
+async function loadList(requestedPage = state.page) {
+  if(typeof requestedPage!=="number")requestedPage=state.page;
+  controller?.abort(); const current=new AbortController();controller=current;state.loading=true;pager();message("#listStatus",`正在加载第 ${requestedPage} 页…`);
+  let timedOut=false;const timeout=setTimeout(()=>{timedOut=true;current.abort();},30000);
   try {
-    const query=new URLSearchParams({page:String(state.page),query:$("#query").value.trim(),sort:$("#sort").value,mediaType:state.mediaType});
-    if(integrated){query.set('q',$('#query').value.trim());query.set('status',$('#libraryStatus').value);}
+    const query=new URLSearchParams({page:String(requestedPage),query:$("#query").value.trim(),sort:$("#sort").value,mediaType:state.mediaType});
+    if(integrated){query.set('q',$('#query').value.trim());query.set('status',$('#libraryStatus').value);query.set('rewriteStatus',$('#rewriteStatus').value||'all');}
     let data=await api((integrated?'/api/psychology-copy-library':API)+"?"+query,{signal:current.signal});
     if(current.signal.aborted)return;
     if(integrated){
@@ -66,9 +73,9 @@ async function loadList() {
     </tr>`).join(""):'<tr><td colspan="'+(integrated?9:14)+'">'+(integrated?'当前分类没有符合条件的文案，可切换图文/视频或展示范围。':'暂无记录，可手动添加或通过 grokbot 接口写入。')+'</td></tr>';
     document.dispatchEvent(new CustomEvent('peer-list-loaded',{detail:{items:data.items.map(item=>item.library).filter(Boolean)}}));
     message("#listStatus",`共 ${data.total} 条${state.mediaType === "photo" ? "图文" : "视频"} · 未采集的数据以 — 显示`);
-    $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 每页 ${data.pageSize} 条`;
-  } catch(error) { if(error.name!=="AbortError")message("#listStatus",error.message,true); }
-  finally { if(controller===current){state.loading=false;pager();} }
+    $("#pageInfo").textContent=`第 ${data.page} / ${data.totalPages} 页 · 共 ${data.total} 条 · 每页 ${data.pageSize} 条`;
+  } catch(error) { if(controller===current&&(timedOut||error.name!=="AbortError"))message("#listStatus",timedOut?"加载超时，可点击刷新重试。":error.message,true); }
+  finally { clearTimeout(timeout);if(controller===current){state.loading=false;pager();} }
 }
 async function loadKey() {
   try { const data=await api(API+"/api-key");state.keyConfigured=data.configured;$("#createKeyBtn").textContent=data.configured?"重新生成密钥":"生成 API Key";$("#revokeKeyBtn").hidden=!data.configured;message("#keyStatus",data.configured?`已启用 ${data.prefix}… · 创建于 ${time(data.createdAt)}`:"尚未生成密钥"); }
@@ -130,8 +137,8 @@ $("#hitRows").addEventListener("click",event=>{
   if(remove)deleteHit(remove.dataset.id);
 });
 document.addEventListener("peer-list-refresh-request",loadList);
-$("#previousBtn").addEventListener("click",()=>{state.page--;loadList();});
-$("#nextBtn").addEventListener("click",()=>{state.page++;loadList();});
+$("#previousBtn").addEventListener("click",()=>{if(!state.loading&&state.page>1)loadList(state.page-1);});
+$("#nextBtn").addEventListener("click",()=>{if(!state.loading&&state.page<state.totalPages)loadList(state.page+1);});
 ($("#sourceImportForm")||$("#importForm")).addEventListener("submit",async event=>{
   event.preventDefault();const data=Object.fromEntries(new FormData(event.target));
   try { data.videoData=data.videoData.trim()?JSON.parse(data.videoData):undefined;data.mediaType=state.mediaType;data.source="manual";$("#importBtn").disabled=true;
@@ -238,5 +245,5 @@ const rewriteRules=`You find and submit English psychology photo posts (TikTok p
 8. Do not resubmit posts that are already in the library except to complete missing topics or topComments from enrich. Do not schedule weekly metric refreshes for existing posts.
 9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
-if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
+if(integrated)for(const selector of ['#libraryStatus','#rewriteStatus'])$(selector).addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();
