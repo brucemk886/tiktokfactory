@@ -68,7 +68,7 @@ const FIELDS = {
   accountUrl: "account_url", coverUrl: "cover_url", playCount: "play_count", likeCount: "like_count",
   commentCount: "comment_count", favoriteCount: "favorite_count", shareCount: "share_count",
   durationSeconds: "duration_seconds", publishedAt: "published_at", videoData: "video_data_json", source: "source",
-  topics: "topics_json", topComments: "comments_json"
+  topics: "topics_json", topComments: "comments_json", topCommentsNote: "comments_note"
 };
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
 export function normalizeVoiceGender(value, fallback = "male") {
@@ -149,19 +149,24 @@ export async function normalizePsychologyPeerHit(raw, now = Date.now()) {
     shareCount: count(raw.shareCount ?? raw.shares, "shareCount"), durationSeconds: duration,
     publishedAt: timestamp(raw.publishedAt, "publishedAt"), collectedAt: timestamp(raw.collectedAt, "collectedAt") || now,
     videoData: data || null, source: optionalText(raw.source, 80, "source"),
-    topics: topicsOf(raw.topics ?? data?.topics), topComments: parseComments(raw.topComments ?? data?.topComments)
+    topics: topicsOf(raw.topics ?? data?.topics), topComments: parseComments(raw.topComments ?? data?.topComments),
+    topCommentsNote: optionalText(raw.topCommentsNote ?? data?.topCommentsNote,500,"topCommentsNote")||"",
+    commentsNoteProvided: raw.topCommentsNote!=null||data?.topCommentsNote!=null||raw.topComments!=null||data?.topComments!=null
   };
 }
 function topicsOf(value) { try { return parseTopics(value); } catch (error) { fail(error.message); } }
 function parseComments(value) {
   if (value == null) return null;
-  if (!Array.isArray(value) || value.length > 20) fail("topComments 最多 20 条。");
-  return value.map((item, index) => {
-    const text = typeof item === "string" ? item : item?.text;
-    if (typeof text !== "string" || !text.trim() || text.trim().length > 300) fail(`topComments 第 ${index + 1} 条须为最多 300 字符的评论原文。`);
-    const likes = item && typeof item === "object" ? count(item.likes ?? item.likeCount, "topComments.likes") : 0;
-    return { text: text.trim(), likes: likes || 0 };
-  }).sort((a, b) => b.likes - a.likes);
+  if (!Array.isArray(value) || value.length > 100) fail("topComments 最多提交 100 条候选评论，保留点赞最高的 20 条。");
+  const unique=new Map();
+  for(const [index,item] of value.entries()){
+    if(!item||typeof item!=="object"||Array.isArray(item)||typeof item.text!=="string"||!item.text.trim()||item.text.trim().length>1000)fail(`topComments 第 ${index+1} 条须提供最多 1000 字符的评论原文及点赞数量。`);
+    const likes=count(item.likes??item.likeCount,"topComments.likes");
+    if(likes==null)fail(`topComments 第 ${index+1} 条缺少点赞数量 likes。`);
+    const text=item.text.trim();
+    if(likes>0&&(!unique.has(text)||unique.get(text).likes<likes))unique.set(text,{text,likes});
+  }
+  return [...unique.values()].sort((a,b)=>b.likes-a.likes).slice(0,20);
 }
 export function psychologyPeerHitFromRow(row) {
   if (!row) return null;
@@ -174,7 +179,7 @@ export function psychologyPeerHitFromRow(row) {
 const REQUIRED_METRICS = [["playCount", "play_count"], ["likeCount", "like_count"], ["commentCount", "comment_count"],
   ["favoriteCount", "favorite_count"], ["shareCount", "share_count"], ["publishedAt", "published_at"]];
 async function assertRequiredMetrics(db, items) {
-  const saved = new Map((await db.prepare(`SELECT id,${REQUIRED_METRICS.map(([, c]) => c).join(",")},account_name,account_username,topics_json,comments_json FROM ${TABLE} WHERE id IN (SELECT value FROM json_each(?))`)
+  const saved = new Map((await db.prepare(`SELECT id,${REQUIRED_METRICS.map(([, c]) => c).join(",")},account_name,account_username,topics_json,comments_json,comments_note FROM ${TABLE} WHERE id IN (SELECT value FROM json_each(?))`)
     .bind(JSON.stringify(items.map(item => item.id))).all()).results.map(row => [row.id, row]));
   items.forEach((item, index) => {
     const row = saved.get(item.id) || {};
@@ -188,8 +193,9 @@ async function assertRequiredMetrics(db, items) {
     const commentCount = item.commentCount ?? row.comment_count;
     const enrich = [];
     if (!topics?.length) enrich.push("topics");
-    if (comments == null || (Number(commentCount) > 0 && !comments.length)) enrich.push("topComments");
-    if (enrich.length) fail(`第 ${index + 1} 条缺少必填字段：${enrich.join("、")}。题材标签 topics 填 1–3 个；评论数大于 0 时 topComments 至少 1 条、最多 20 条（按点赞从高到低），评论数为 0 时传空数组。`);
+    const note=item.commentsNoteProvided?item.topCommentsNote:row.comments_note;
+    if ((!row.id||item.topComments!=null) && (comments==null || (comments.length<Math.min(10,Number(commentCount)||0)&&!note))) enrich.push("topComments / topCommentsNote");
+    if (enrich.length) fail(`第 ${index + 1} 条缺少必填字段：${enrich.join("、")}。题材标签 topics 填 1–3 个；topComments 按点赞从高到低保留 10–20 条有赞评论。可获取有赞评论不足时提供全部可获取评论，并填写 topCommentsNote 说明原因；评论数为 0 时传空数组。`);
   });
 }
 export async function importPsychologyPeerHits(db, payload, actor, { requireMetrics = false } = {}) {
@@ -220,13 +226,13 @@ export async function importPsychologyPeerHits(db, payload, actor, { requireMetr
     VALUES (${Array(4 + columns.length + 4).fill("?").join(",")})
     ON CONFLICT(video_key) DO UPDATE SET
       video_url = excluded.video_url,
-      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : ["topics_json", "comments_json"].includes(column) ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
+      ${columns.map(column => column === "video_data_json" ? `${column} = CASE WHEN excluded.${column} IS NULL THEN ${TABLE}.${column} ELSE json_patch(COALESCE(${TABLE}.${column}, '{}'), excluded.${column}) END` : column === "voice_gender" ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : ["topics_json", "comments_json", "comments_note"].includes(column) ? `${column} = CASE WHEN ? = 1 THEN excluded.${column} ELSE ${TABLE}.${column} END` : column === "media_type" ? `${column} = CASE WHEN ${TABLE}.media_type_locked = 1 THEN ${TABLE}.${column} ELSE excluded.${column} END` : `${column} = COALESCE(excluded.${column}, ${TABLE}.${column})`).join(",")},
       collected_at = excluded.collected_at, updated_at = excluded.updated_at
     WHERE excluded.collected_at >= ${TABLE}.collected_at
     RETURNING id, video_url, collected_at
   `).bind(item.id, item.videoKey, item.videoUrl, item.platform,
     ...Object.keys(FIELDS).map(key => key === "videoData" ? (item.videoData != null ? JSON.stringify(item.videoData) : null) : key === "topics" || key === "topComments" ? JSON.stringify(item[key] || []) : item[key]),
-    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0, item.topics != null ? 1 : 0, item.topComments != null ? 1 : 0),
+    item.collectedAt, actor, now, now, item.voiceGenderProvided ? 1 : 0, item.topics != null ? 1 : 0, item.topComments != null ? 1 : 0, item.commentsNoteProvided ? 1 : 0),
     db.prepare(COPY_SYNC).bind(item.id,item.collectedAt)]);
   // Runs after every copy row exists, so a brand-new post completes in the same batch.
   const supplied = new Map();
@@ -356,23 +362,36 @@ export async function updatePsychologyPeerHitMediaType(db, id, mediaType) {
 }
 
 export function watchUsername(value) {
-  const name = String(value || "").trim().replace(/^@/, "").toLowerCase();
+  let name=String(value||"").trim();
+  if(/^https?:\/\//i.test(name)){
+    let url;try{url=new URL(name);}catch{fail("对标账号链接无效。");}
+    const match=url.pathname.match(/^\/@([a-z0-9._]+)\/?$/i);
+    if(!['tiktok.com','www.tiktok.com','m.tiktok.com'].includes(url.hostname.toLowerCase())||url.username||url.password||!match)fail("请填写 TikTok 账号主页链接或 @用户名。");
+    name=match[1];
+  }
+  name=name.replace(/^@/,"").toLowerCase();
   if (!/^[a-z0-9._]{2,64}$/.test(name)) fail("对标账号用户名无效。");
   return name;
 }
 export async function listWatchAccounts(db) {
-  const rows = await db.prepare("SELECT username, note, enabled, created_at FROM psychology_peer_watch_accounts ORDER BY username").all();
-  return { accounts: (rows.results || []).map(row => ({ username: row.username, note: row.note, enabled: row.enabled !== 0, createdAt: row.created_at })) };
+  const rows = await db.prepare("SELECT username, note, enabled, created_at FROM psychology_peer_watch_accounts ORDER BY created_at DESC,username").all();
+  return { accounts: (rows.results || []).map(row => ({ username: row.username, note: row.note, enabled:false, status:'pending', createdAt: row.created_at })) };
 }
 export async function saveWatchAccount(db, actor, input) {
-  const username = watchUsername(input?.username);
-  const note = optionalText(input?.note, 200, "note") || "";
-  const count = Number((await db.prepare("SELECT COUNT(*) n FROM psychology_peer_watch_accounts").first())?.n || 0);
-  const exists = await db.prepare("SELECT username FROM psychology_peer_watch_accounts WHERE username=?").bind(username).first();
-  if (!exists && count >= 100) fail("对标账号最多 100 个。");
-  await db.prepare(`INSERT INTO psychology_peer_watch_accounts(username,note,enabled,created_by,created_at) VALUES(?,?,1,?,?)
-    ON CONFLICT(username) DO UPDATE SET note=excluded.note, enabled=1`).bind(username, note, actor, Date.now()).run();
-  return { username, note };
+  const raw=input?.usernames??[input?.username];
+  if(!Array.isArray(raw)||!raw.length||raw.length>100)fail("每次添加 1–100 个对标账号。");
+  const names=[...new Set(raw.map(watchUsername))],note=optionalText(input?.note,200,"note")||"";
+  const saved=new Set((await db.prepare("SELECT username FROM psychology_peer_watch_accounts").all()).results.map(row=>row.username));
+  const fresh=names.filter(name=>!saved.has(name));
+  if(saved.size+fresh.length>100)fail("对标账号最多 100 个。现有 "+saved.size+" 个，本次新增 "+fresh.length+" 个。");
+  let created=0;
+  if(fresh.length){
+    try{
+      const results=await db.batch(fresh.map(username=>db.prepare("INSERT INTO psychology_peer_watch_accounts(username,note,enabled,created_by,created_at) VALUES(?,?,0,?,?) ON CONFLICT(username) DO NOTHING RETURNING username").bind(username,note,actor,Date.now())));
+      created=results.reduce((n,r)=>n+(r.results?.length||0),0);
+    }catch(error){if(String(error.message).includes("对标账号最多"))fail("对标账号最多 100 个。");throw error;}
+  }
+  return {created,skipped:raw.length-created,status:'pending'};
 }
 export async function deleteWatchAccount(db, username) {
   const name = watchUsername(username);
@@ -381,12 +400,11 @@ export async function deleteWatchAccount(db, username) {
   return { ok: true };
 }
 export async function peerWorklist(db) {
-  const [watch, enrich] = await Promise.all([
-    db.prepare("SELECT username, note FROM psychology_peer_watch_accounts WHERE enabled=1 ORDER BY username").all(),
-    db.prepare(`SELECT video_url, account_username, topics_json, comments_json, comment_count FROM ${TABLE} WHERE media_type='photo' AND (topics_json='[]' OR (COALESCE(comment_count,0)>0 AND comments_json='[]')) ORDER BY COALESCE(play_count,0) DESC, id LIMIT 40`).all(),
+  const [enrich] = await Promise.all([
+    db.prepare(`SELECT video_url, account_username, topics_json, comments_json, comments_note, comment_count FROM ${TABLE} WHERE (topics_json='[]' OR (COALESCE(comment_count,0)>0 AND json_array_length(comments_json)<MIN(10,comment_count) AND comments_note='')) ORDER BY COALESCE(play_count,0) DESC, id LIMIT 40`).all(),
   ]);
   return {
-    watchAccounts: (watch.results || []).map(row => ({ username: row.username, note: row.note })),
-    enrich: (enrich.results || []).map(row => ({ videoUrl: row.video_url, accountUsername: row.account_username, missing: [row.topics_json === "[]" ? "topics" : null, Number(row.comment_count) > 0 && row.comments_json === "[]" ? "topComments" : null].filter(Boolean) })),
+    watchAccounts: [], // Prospects are not collection assignments; manual activation is deferred.
+    enrich: (enrich.results || []).map(row => ({ videoUrl: row.video_url, accountUsername: row.account_username, missing: [row.topics_json === "[]" ? "topics" : null, Number(row.comment_count) > 0 && JSON.parse(row.comments_json).length < Math.min(10,Number(row.comment_count)) && !row.comments_note ? "topComments" : null].filter(Boolean) })),
   };
 }

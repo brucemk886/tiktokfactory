@@ -136,3 +136,24 @@ test('AI overwrite cancellation or failure preserves draft and allows retry',asy
  h.accept(true);h.respond(()=>{throw new Error('Try again');});await h.nodes.get('#generateVariant').onclick();assert.equal(h.nodes.get('#variantTitle').value,'Test title');assert.equal(h.pages[0].value,'First page');assert.equal(h.nodes.get('#generateVariant').disabled,false);assert.equal(h.nodes.get('#variantFields').disabled,false);
  h.respond(()=>({draft:{name:'New draft',title:'New title',caption:'Caption',pages:['New page']}}));await h.nodes.get('#generateVariant').onclick();assert.equal(h.nodes.get('#variantTitle').value,'New title');assert.equal(h.nodes.get('#variantReviewed').checked,false);
 });
+
+
+test('independent pending-account dialog supports bulk inputs without scheduling collection',async()=>{
+ const h=harness('psychology-peer-extras.js');assert.equal(h.requests.length,0);
+ h.events.get('library-source-access')({detail:{canManage:false}});assert.equal(h.nodes.get('#watchAccountsButton').hidden,true);
+ h.events.get('library-source-access')({detail:{canManage:true}});assert.equal(h.nodes.get('#watchAccountsButton').hidden,false);
+ h.respond((url,options)=>options.method==='POST'?{created:2,skipped:0}:{accounts:[{username:'peer',note:'<script>',status:'pending'}]});
+ await h.nodes.get('#watchAccountsButton').onclick();assert.equal(h.nodes.get('#watchAccountsDialog').open,true);assert.match(h.nodes.get('#watchList').innerHTML,/待抓取/);assert.doesNotMatch(h.nodes.get('#watchList').innerHTML,/<script>/);
+ h.nodes.get('#watchUsernames').value='@peer.one\nhttps://www.tiktok.com/@peer.two';
+ await h.nodes.get('#watchForm').onsubmit({preventDefault(){}});
+ const request=h.requests.find(r=>r.method==='POST');assert.deepEqual(request.body.usernames,['@peer.one','https://www.tiktok.com/@peer.two']);assert.equal(request.body.enabled,undefined);
+ assert.ok(h.requests.every(r=>r.url==='/api/psychology-peer-hits/watch-accounts'));
+ assert.match(h.nodes.get('#watchStatus').textContent,/新增 2 个待抓取/);
+});
+
+test('hot-comment action renders escaped originals and descending likes without external calls',async()=>{
+ const h=harness('psychology-peer-extras.js');
+ h.events.get('peer-list-loaded')({detail:{items:[{id:'a',title:'Source',peer:{commentCount:20,topComments:[{text:'lower',likes:10},{text:'<img src=x>',likes:200},{text:'zero',likes:0}],topCommentsNote:'Only two visible'}}]}});
+ await h.click({hotComments:'a'});assert.equal(h.nodes.get('#hotCommentsDialog').open,true);
+ const markup=h.nodes.get('#hotCommentsList').innerHTML;assert.ok(markup.indexOf('&lt;img')<markup.indexOf('lower'));assert.doesNotMatch(markup,/<img|zero/);assert.match(markup,/200/);assert.match(h.nodes.get('#hotCommentsStatus').textContent,/Only two visible/);assert.equal(h.requests.length,0);
+});

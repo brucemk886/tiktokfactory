@@ -35,7 +35,7 @@ function libraryRow(item){
  '<td>'+Number(row.variantCount||0)+' 个版本<small>启用 '+Number(row.enabledVariantCount||0)+' 个</small>'+(row.rewriteModels||[]).map(m=>'<small>'+escape(m.label)+' · '+Number(m.count)+' 个</small>').join('')+'</td>'+
  '<td class="hits-voice">'+(manage&&hasPeer?'<select class="voice-gender-select" data-id="'+escape(item.id)+'" data-current="'+escape(item.voiceGender||'male')+'" aria-label="音色性别"><option value="male"'+(item.voiceGender!=='female'?' selected':'')+'>男</option><option value="female"'+(item.voiceGender==='female'?' selected':'')+'>女</option></select>':'—')+'</td>'+
  '<td class="hits-video"><a href="'+escape(item.videoUrl)+'" target="_blank" rel="noopener noreferrer">打开原帖</a></td>'+
- '<td class="library-actions">'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-create-variant="'+escape(item.id)+'">新增改写</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除文案</button>':'')+'</td></tr>';
+ '<td class="library-actions"><button type="button" data-hot-comments="'+escape(item.id)+'">查看热门评论</button>'+(done?'<button type="button" data-view-original="'+escape(item.id)+'">查看文案</button><button type="button" data-create-variant="'+escape(item.id)+'">新增改写</button><button type="button" data-rewrite-original="'+escape(item.id)+'">改写详情</button>':'')+(manage?'<button type="button" class="hits-delete" data-id="'+escape(item.id)+'">删除文案</button>':'')+'</td></tr>';
 }
 
 async function loadList() {
@@ -178,8 +178,46 @@ const sample={
       },
       "topics": ["anxious"],
       "topComments": [
-        {"text": "this is literally me with my ex", "likes": 2400},
-        {"text": "why do I always apologize first", "likes": 980}
+        {
+          "text": "this is literally me with my ex",
+          "likes": 1000
+        },
+        {
+          "text": "why do I always apologize first",
+          "likes": 910
+        },
+        {
+          "text": "I always reread the last message",
+          "likes": 820
+        },
+        {
+          "text": "The silence feels louder at night",
+          "likes": 730
+        },
+        {
+          "text": "I wish I could stop checking my phone",
+          "likes": 640
+        },
+        {
+          "text": "This explains why I ask if we are okay",
+          "likes": 550
+        },
+        {
+          "text": "Waiting for a reply feels so long",
+          "likes": 460
+        },
+        {
+          "text": "I am trying to ask for reassurance directly",
+          "likes": 370
+        },
+        {
+          "text": "I needed this reminder today",
+          "likes": 280
+        },
+        {
+          "text": "Learning to pause before I send another text",
+          "likes": 190
+        }
       ]
     }
   ]
@@ -193,27 +231,12 @@ const rewriteRules=`You find and submit English psychology photo posts (TikTok p
 3. videoData.pageTexts: the clean, complete visible text of each image, in order, one item per image (max 6). Fix OCR noise and stray characters; remove watermarks, author names, book-list and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters). Always include pageTexts: without it the factory has to run paid image recognition.
 4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
 5. topics: 1 to 3 labels, using these ids only: anxious (焦虑型依恋), avoidant (回避型依恋), breakup (分手), situationship (暧昧), boundaries (边界感), self-worth (自我价值).
-6. topComments: the 10 to 20 comments with the most likes, as {"text","likes"}. Keep the commenter's original wording. If the post has fewer than 10 visible comments, send every one you can see. If commentCount is 0, send an empty array. These comments are reference for the factory's rewrite model.
+6. topComments: collect the highest-liked visible comments when importing each post. Keep 10–20 distinct comments with positive likes, sorted by likes descending. Each item must be {"text":"the unchanged comment","likes":123}; never invent text or counts. You may submit up to 100 candidates; the factory deduplicates and keeps the top 20. If fewer than 10 liked comments are obtainable, submit all obtainable liked comments and explain the shortfall in topCommentsNote (for example fewer comments, comments disabled or access restricted). If commentCount is 0, send []. These comments are reference for the factory rewrite model.
 7. Before each sourcing task, GET this same endpoint with the Bearer key. It returns two lists:
-   - watchAccounts: accounts to check for new posts. Submit new performing photo posts the same way as any other post.
-   - enrich: posts still missing topics or topComments. Resubmit the same videoUrl with just those fields.
+   - watchAccounts: currently empty. Watch accounts are saved as pending prospects only. Do not crawl them or schedule daily collection unless the user explicitly asks in a later task.
+   - enrich: posts still missing topics or enough liked comments. Resubmit the same videoUrl with the missing topics and/or topComments; explain any comment shortfall in topCommentsNote.
 8. Do not resubmit posts that are already in the library except to complete missing topics or topComments from enrich. Do not schedule weekly metric refreshes for existing posts.
 9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.`;
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
-async function loadWatch(){
-  if(!$("#watchList"))return;
-  const data=await api(API+"/watch-accounts");
-  $("#watchList").innerHTML=data.accounts.length?data.accounts.map(a=>'<li>@'+escape(a.username)+(a.note?' · '+escape(a.note):'')+' <button type="button" data-unwatch="'+escape(a.username)+'">移除</button></li>').join(""):"<li>还没有对标账号。</li>";
-}
-$("#watchForm")?.addEventListener("submit",async event=>{
-  event.preventDefault();
-  try{await api(API+"/watch-accounts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("#watchUsername").value,note:$("#watchNote").value})});$("#watchUsername").value="";$("#watchNote").value="";await loadWatch();}
-  catch(error){message("#keyStatus",error.message,true);}
-});
-$("#watchList")?.addEventListener("click",async event=>{
-  const name=event.target.dataset?.unwatch;if(!name)return;
-  try{await api(API+"/watch-accounts?username="+encodeURIComponent(name),{method:"DELETE"});await loadWatch();}catch(error){message("#keyStatus",error.message,true);}
-});
-if($("#watchList"))loadWatch().catch(error=>message("#keyStatus",error.message,true));
 if(integrated)$('#libraryStatus').addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();

@@ -23,6 +23,7 @@ function fixture(t) {
     sqlite.exec(fs.readFileSync(new URL(`../migrations/${name}.sql`,import.meta.url),"utf8"));
   sqlite.exec('CREATE TABLE psychology_publish_items(id TEXT PRIMARY KEY,source_id TEXT);');
   sqlite.exec(fs.readFileSync(new URL('../migrations/0052_psychology_rewrite_model.sql',import.meta.url),'utf8'));
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0053_psychology_peer_pending_comments.sql',import.meta.url),'utf8'));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
   return {db,sqlite};
@@ -372,7 +373,8 @@ test("grokbot stores topics and liked comments, and the key reads watch/enrichme
   const added=await call(db,"/api/psychology-peer-hits/watch-accounts","POST",{username:"@Peer.Account",note:"附件"});
   assert.equal(added.status,201);
   const list=await (await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).json();
-  assert.deepEqual(list.watchAccounts,[{username:"peer.account",note:"附件"}]);
+  assert.deepEqual(list.watchAccounts,[]);
+  const accounts=await (await call(db,"/api/psychology-peer-hits/watch-accounts")).json();assert.equal(accounts.accounts[0].status,"pending");assert.equal(accounts.accounts[0].enabled,false);
   assert.deepEqual(Object.keys(list).sort(),['enrich','watchAccounts']);
   assert.equal(list.enrich.length,0);
   const legacyPhoto="https://www.tiktok.com/@example/photo/8802";
@@ -384,4 +386,36 @@ test("grokbot stores topics and liked comments, and the key reads watch/enrichme
   const listed=await listPsychologyPeerHits(db,new URLSearchParams("mediaType=photo"));
   for(const item of listed.items)for(const field of ["rising","playDelta","prevPlayCount","metricsAt"])assert.equal(Object.hasOwn(item,field),false);
   assert.equal((await call(db,"/api/psychology-peer-hits/watch-accounts?username=peer.account","DELETE")).status,200);
+});
+
+
+test('pending watch accounts normalize bulk inputs, preserve duplicates and enforce atomic limits and permissions',async t=>{
+ const {db}=fixture(t),path='/api/psychology-peer-hits/watch-accounts';
+ assert.equal((await call(db,path,'POST',{usernames:['peer']},{},null)).status,401);
+ const result=await call(db,path,'POST',{usernames:['@Peer.One','https://www.tiktok.com/@peer.two/','peer.one'],note:'review later'});
+ assert.equal(result.status,201);assert.deepEqual(await result.json(),{created:2,skipped:1,status:'pending'});
+ assert.equal((await call(db,path,'POST',{usernames:['valid','https://evil.test/@peer']})).status,400);
+ let accounts=(await (await call(db,path)).json()).accounts;assert.equal(accounts.length,2);assert.ok(accounts.every(a=>a.status==='pending'&&a.enabled===false));
+ await call(db,path,'POST',{usernames:['PEER.ONE'],note:'do not overwrite'});
+ accounts=(await (await call(db,path)).json()).accounts;assert.equal(accounts.find(a=>a.username==='peer.one').note,'review later');
+ assert.equal((await call(db,path,'POST',{usernames:Array.from({length:98},(_,i)=>'peer'+i)})).status,201);
+ assert.equal((await call(db,path,'POST',{usernames:['overflow']})).status,400);
+ assert.equal((await (await call(db,path)).json()).accounts.length,100);
+ const token=await key(db);assert.deepEqual((await (await call(db,PSYCHOLOGY_PEER_API,'GET',undefined,{Authorization:'Bearer '+token},null)).json()).watchAccounts,[]);
+});
+
+test('liked comments are validated, deduplicated and ranked, and shortfalls are recorded rather than invented',async t=>{
+ const {db}=fixture(t),token=await key(db),auth={Authorization:'Bearer '+token};
+ const comments=Array.from({length:25},(_,i)=>({text:'Comment '+i,likes:i+1}));
+ const response=await call(db,PSYCHOLOGY_PEER_API,'POST',{...M,videoUrl:url(9901),commentCount:100,topComments:[...comments,{text:'Comment 0',likes:900},{text:'zero',likes:0}]},auth,null);
+ assert.equal(response.status,200);
+ let row=(await listPsychologyPeerHits(db,new URLSearchParams())).items[0];assert.equal(row.topComments.length,20);assert.deepEqual(row.topComments[0],{text:'Comment 0',likes:900});assert.equal(row.topComments.at(-1).likes,7);
+ assert.equal((await call(db,PSYCHOLOGY_PEER_API,'POST',{...M,videoUrl:url(9902),commentCount:100,topComments:comments.slice(0,9)},auth,null)).status,400);
+ assert.equal((await call(db,PSYCHOLOGY_PEER_API,'POST',{...M,videoUrl:url(9902),commentCount:100,topComments:comments.slice(0,9),topCommentsNote:'Only 9 liked comments visible'},auth,null)).status,200);
+ assert.equal((await call(db,PSYCHOLOGY_PEER_API,'POST',{videoUrl:url(9902),title:'Updated'},auth,null)).status,200);
+ row=(await listPsychologyPeerHits(db,new URLSearchParams())).items.find(r=>r.videoId==='9902');assert.equal(row.topCommentsNote,'Only 9 liked comments visible');assert.equal(row.topComments.length,9);
+ assert.equal((await (await call(db,PSYCHOLOGY_PEER_API,'GET',undefined,auth,null)).json()).enrich.length,0);
+ await assert.rejects(normalizePsychologyPeerHit({videoUrl:url(99),topComments:[{text:'No count'}]}),e=>e.statusCode===400);
+ assert.equal((await call(db,PSYCHOLOGY_PEER_API,'POST',{videoUrl:url(9902),topComments:comments.slice(0,10)},auth,null)).status,200);
+ row=(await listPsychologyPeerHits(db,new URLSearchParams())).items.find(r=>r.videoId==='9902');assert.equal(row.topCommentsNote,'');
 });

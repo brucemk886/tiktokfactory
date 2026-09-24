@@ -80,7 +80,8 @@ Content-Type: application/json
 | `collectedAt` | 本次采集时间；省略时取接口接收时间。 |
 | `source` | 数据来源，例如 `grokbot`，最多 80 字符。 |
 | `topics` | **接口写入新帖必填**。1–3 个题材：`anxious` 焦虑型依恋、`avoidant` 回避型依恋、`breakup` 分手、`situationship` 暧昧、`boundaries` 边界感、`self-worth` 自我价值。也接受中文名。已保存过的更新可省略。 |
-| `topComments` | **接口写入新帖必填**。点赞最高的评论，最多 20 条，每项 `{ "text", "likes" }`，`text` 为评论原话、最多 300 字符。评论数为 0 时传 `[]`；评论数大于 0 时至少 1 条。已保存过的更新可省略。工厂改写时会把这些原话交给模型参考。 |
+| `topCommentsNote` | 可获取高赞评论不足时的原因，最多 500 字符；补齐评论时可清空。 |
+| `topComments` | **接口写入新帖必填**。点赞最高的评论，最多 20 条，每项 `{ "text", "likes" }`，`text` 为评论原话、最多 1000 字符，`likes` 必填。只保留有赞评论，按点赞降序去重；通常至少 10 条，最多保存 20 条（可提交最多 100 条候选）。不足 10 条时提供全部可获取有赞评论，并填写 `topCommentsNote` 说明原因。评论数为 0 时传 `[]`。已保存过的更新可省略。工厂改写时会把这些原话交给模型参考。 |
 | `videoData` | 其他内容数据的 JSON 对象，序列化后最多 16000 字符；可保存标签、语言、文案、其他指标等。图文复刻可提供完整 `copy`、`caption`、`script`、`transcript` 或 `文案`。若已采集原文，图文可同时提供 `pageTexts`（按图片顺序，最多6项），视频可提供 `transcript` 和可选 `onScreenText`；文案库会直接归档这些字段，避免再次识别。仅有标题或发布文案不视为已完成逐页/逐帧提取。 |
 
 | `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符，`caption` 必填（简短即可）、最多 2200 字符，`pages` 为 1–6 页、每页 1–1500 字符、第一项是首图。写入前会按下文「写入标准与改写规则」检查，任一版本不合格整批拒收并返回原因。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
@@ -114,8 +115,46 @@ Content-Type: application/json
       },
       "topics": ["anxious"],
       "topComments": [
-        {"text": "this is literally me with my ex", "likes": 2400},
-        {"text": "why do I always apologize first", "likes": 980}
+        {
+          "text": "this is literally me with my ex",
+          "likes": 1000
+        },
+        {
+          "text": "why do I always apologize first",
+          "likes": 910
+        },
+        {
+          "text": "I always reread the last message",
+          "likes": 820
+        },
+        {
+          "text": "The silence feels louder at night",
+          "likes": 730
+        },
+        {
+          "text": "I wish I could stop checking my phone",
+          "likes": 640
+        },
+        {
+          "text": "This explains why I ask if we are okay",
+          "likes": 550
+        },
+        {
+          "text": "Waiting for a reply feels so long",
+          "likes": 460
+        },
+        {
+          "text": "I am trying to ask for reassurance directly",
+          "likes": 370
+        },
+        {
+          "text": "I needed this reminder today",
+          "likes": 280
+        },
+        {
+          "text": "Learning to pause before I send another text",
+          "likes": 190
+        }
       ]
     }
   ]
@@ -175,15 +214,15 @@ You find and submit English psychology photo posts (TikTok photo carousels) to o
 3. videoData.pageTexts: the clean, complete visible text of each image, in order, one item per image (max 6). Fix OCR noise and stray characters; remove watermarks, author names, book-list and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters). Always include pageTexts: without it the factory has to run paid image recognition.
 4. videoData.caption: the post's own caption, unchanged. title: the post's cover hook (not a string of hashtags).
 5. topics: 1 to 3 labels, using these ids only: anxious (焦虑型依恋), avoidant (回避型依恋), breakup (分手), situationship (暧昧), boundaries (边界感), self-worth (自我价值).
-6. topComments: the 10 to 20 comments with the most likes, as {"text","likes"}. Keep the commenter's original wording. If the post has fewer than 10 visible comments, send every one you can see. If commentCount is 0, send an empty array. These comments are reference for the factory's rewrite model.
+6. topComments: collect the highest-liked visible comments when importing each post. Keep 10–20 distinct comments with positive likes, sorted by likes descending. Each item must be {"text":"the unchanged comment","likes":123}; never invent text or counts. You may submit up to 100 candidates; the factory deduplicates and keeps the top 20. If fewer than 10 liked comments are obtainable, submit all obtainable liked comments and explain the shortfall in topCommentsNote (for example fewer comments, comments disabled or access restricted). If commentCount is 0, send []. These comments are reference for the factory rewrite model.
 7. Before each sourcing task, GET this same endpoint with the Bearer key. It returns two lists:
-   - watchAccounts: accounts to check for new posts. Submit new performing photo posts the same way as any other post.
-   - enrich: posts still missing topics or topComments. Resubmit the same videoUrl with just those fields.
+   - watchAccounts: currently empty. Watch accounts are saved as pending prospects only. Do not crawl them or schedule daily collection unless the user explicitly asks in a later task.
+   - enrich: posts still missing topics or enough liked comments. Resubmit the same videoUrl with the missing topics and/or topComments; explain any comment shortfall in topCommentsNote.
 8. Do not resubmit posts that are already in the library except to complete missing topics or topComments from enrich. Do not schedule weekly metric refreshes for existing posts.
 9. Submit 10-20 posts per request. If the factory rejects a request, read the error (item number and reason), fix only that item and resubmit.
 ```
 
-同一接口的 `GET`（同一个 Bearer 密钥）返回 `{ watchAccounts, enrich }`。对标账号由文案库「写入接口」面板维护，最多 100 个；enrich 保留缺失题材或热门评论的补全清单。每周播放数据回填已取消，自动发布不使用同行播放增量调整选题顺序。运营报表「内容」页按题材汇总本期满 24 小时作品的破千率。
+同一接口的 `GET`（同一个 Bearer 密钥）返回 `{ watchAccounts, enrich }`。对标账号由文案库右上角「对标账号」独立入口维护，可批量添加，最多 100 个，均保存为“待抓取”。暂不向 Grokbot 下发这些账号，watchAccounts 返回空数组，不安排每日抓取；enrich 保留缺失题材或不足高赞评论的补全清单（有不足原因的无需反复补全）。每周播放数据回填已取消，自动发布不使用同行播放增量调整选题顺序。运营报表「内容」页按题材汇总本期满 24 小时作品的破千率。
 
 ## 去重与更新
 
