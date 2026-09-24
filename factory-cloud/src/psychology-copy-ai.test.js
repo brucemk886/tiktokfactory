@@ -71,6 +71,11 @@ test('batch AI rewrite saves passing versions enabled under the source and skips
   assert.match((await tooMany.json()).error, /1–5/);
 });
 
+test('model output wrapped in a code fence or a sentence still parses', async t => {
+  const f = await aiFixture(t, 'Here are your rewrites:\n```json\n' + JSON.stringify({ versions: [version(1), version(2)] }) + '\n```\nHope this helps!');
+  assert.equal((await (await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-sonnet-5&count=2')).json()).created, 2);
+});
+
 test('batch AI rewrite fails clearly when nothing usable comes back or the key is missing', async t => {
   const f = await aiFixture(t, 'not json');
   await assert.rejects(api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-sonnet-5&count=2'), /格式无效/);
