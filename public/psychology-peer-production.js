@@ -22,6 +22,7 @@
     if(selectPage){selectPage.disabled=busy||!canManage||!visible.length;selectPage.checked=visible.length>0&&visible.every(input=>selected.has(input.dataset.peerId));selectPage.indeterminate=selected.size>0&&!selectPage.checked;}
     if($('#selectPageBtn'))$('#selectPageBtn').disabled=busy||!canManage||!visible.length;
     if($('#deleteSelectedBtn'))$('#deleteSelectedBtn').disabled=busy||!canManage||!selected.size;
+    if($('#batchRewriteBtn'))$('#batchRewriteBtn').disabled=busy||!selected.size;
     const moveButton = $('#moveSelectedBtn');
     const targetPhoto = (document.body.dataset.mediaType || 'video') === 'video';
     if (moveButton) {
@@ -83,6 +84,24 @@
       document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
     }catch(error){notify(error.message,true);}
     finally{busy=false;sync();}
+  });
+  // One request per post; two posts at a time keeps the page responsive.
+  $('#batchRewriteBtn')?.addEventListener('click',async()=>{
+    if(busy||!selected.size)return;
+    const ids=[...selected],model=$('#batchModel').value,count=Number($('#batchCount').value)||5,label=$('#batchModel').selectedOptions?.[0]?.textContent||model;
+    if(!confirm('用 '+label+' 为选中的 '+ids.length+' 篇各生成 '+count+' 个改写？生成的版本会通过质量检查后直接保存并启用，可在改写详情里删除。'))return;
+    busy=true;sync();
+    let done=0,created=0,skipped=0;const failed=[];
+    const run=async id=>{
+      try{const data=await api('/api/psychology-creative/copies/generate-batch?sourceId='+encodeURIComponent(id)+'&model='+encodeURIComponent(model)+'&count='+count,{method:'POST'});created+=data.created;skipped+=data.skipped.length;selected.delete(id);}
+      catch(error){failed.push(error.message);}
+      done++;notify('正在生成改写：'+done+' / '+ids.length+' 篇，已保存 '+created+' 个版本…');
+    };
+    notify('正在生成改写：0 / '+ids.length+' 篇…');
+    const queue=[...ids];await Promise.all([0,1].map(async()=>{while(queue.length)await run(queue.shift());}));
+    busy=false;requestId='';sync();
+    notify('完成：保存 '+created+' 个改写版本'+(skipped?'，'+skipped+' 个未通过质量检查':'')+(failed.length?'；'+failed.length+' 篇失败：'+[...new Set(failed)].join('；'):'')+'。',failed.length>0);
+    document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
   });
   $('#clearSelectionBtn').addEventListener('click', () => {
     selected.clear();

@@ -5,7 +5,7 @@
   <title>文案库 · 心理学</title>
   <link rel="stylesheet" href="/app.css" /><link rel="stylesheet" href="/module-pages.css" />
   <link rel="stylesheet" href="/psychology-pages.css" /><link rel="stylesheet" href="/psychology-peer-hits.css" />
-  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260924-6" />
+  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260924-batch-ai" />
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
@@ -56,7 +56,7 @@
     <section class="hits-panel">
       <div class="hits-toolbar"><label>展示范围<select id="libraryStatus"><option value="done">已提取文案</option><option value="all">全部导入记录</option><option value="queued">等待提取</option><option value="running">提取中</option><option value="failed">提取失败</option><option value="historical">历史待补全文案</option></select></label><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、正文、账号或原帖链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option><option value="recent">最近导入</option></select></label></div>
       <p class="library-help">默认只显示已提取文案；切换“全部导入记录”可管理尚未完成提取的素材。Grokbot 写入接口与密钥沿用原配置。</p><p id="listStatus" role="status">正在读取…</p>
-      <div class="hits-actions" id="sourceActions"><span id="selectionCount">已选 0 条</span><button id="selectPageBtn" type="button" disabled>全选本页</button><button id="deleteSelectedBtn" type="button" disabled>批量删除</button><button id="clearSelectionBtn" type="button">清空选择</button></div>
+      <div class="hits-actions" id="sourceActions"><span id="selectionCount">已选 0 条</span><button id="selectPageBtn" type="button" disabled>全选本页</button><button id="deleteSelectedBtn" type="button" disabled>批量删除</button><span class="batch-rewrite"><label>模型<select id="batchModel"><option value="claude-sonnet-5" selected>Claude Sonnet 5（推荐）</option><option value="claude-opus-4.7">Claude Opus 4.7（更贵）</option><option value="claude-haiku-4.5">Claude Haiku 4.5（更便宜）</option><option value="deepseek-flash">DeepSeek Flash</option></select></label><label>每篇<select id="batchCount"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option></select>个</label><button id="batchRewriteBtn" type="button" disabled>批量新增改写</button></span><button id="clearSelectionBtn" type="button">清空选择</button></div>
       <p id="productionStatus" role="status">使用已提取文案批量生成，请进入右上角的自动发布。</p>
       <div class="hits-table-wrap"><table><thead><tr><th><input id="selectPageCheckbox" type="checkbox" aria-label="全选本页文案" disabled /></th><th>标题 / 账号</th><th>播放 / 互动</th><th>发布 / 导入时间</th><th>文案状态</th><th>改写版本</th><th>音色</th><th id="mediaColumnLabel">原帖</th><th>操作</th></tr></thead><tbody id="hitRows"></tbody></table></div>
       <div class="hits-pagination"><button id="previousBtn" type="button" disabled>上一页</button><span id="pageInfo"></span><button id="nextBtn" type="button" disabled>下一页</button></div>
@@ -84,7 +84,7 @@
   <dialog id="variantDialog" class="copy-preview-dialog copy-rewrite-dialog copy-variant-dialog" aria-labelledby="variantDialogTitle">
     <div class="copy-dialog-head"><h2 id="variantDialogTitle">新增改写文案</h2><button id="closeVariant" type="button">关闭</button></div>
     <section class="copy-panel">
-      <div class="copy-section-head"><p id="variantContext" class="copy-dialog-meta"></p><button id="generateVariant" type="button" class="primary-action">AI 生成</button></div>
+      <div class="copy-section-head"><p id="variantContext" class="copy-dialog-meta"></p><div class="copy-generate"><label>模型<select id="variantModel"><option value="claude-sonnet-5" selected>Claude Sonnet 5（推荐）</option><option value="claude-opus-4.7">Claude Opus 4.7（更贵）</option><option value="claude-haiku-4.5">Claude Haiku 4.5（更便宜）</option><option value="deepseek-flash">DeepSeek Flash</option></select></label><button id="generateVariant" type="button" class="primary-action">AI 生成</button></div></div>
       <p>新版本自动关联当前文案。正文填写 1–6 段，图文按段分页，视频按正文生成；审核保存后可供自动发布抽取。</p>
       <div class="copy-import-panel"><div class="copy-import-body">
           <form id="variantForm"><fieldset id="variantFields" style="border:0;padding:0;margin:0;min-width:0;display:grid;gap:14px">
@@ -128,7 +128,7 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-no-duration"></script><script src="/psychology-peer-production.js?v=20260924-no-recreate"></script>
-<script type="module" src="/psychology-copy-library.js?v=20260924-ai-draft"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-no-duration"></script><script src="/psychology-peer-production.js?v=20260924-batch-ai"></script>
+<script type="module" src="/psychology-copy-library.js?v=20260924-batch-ai"></script>
 </body>
 </html>

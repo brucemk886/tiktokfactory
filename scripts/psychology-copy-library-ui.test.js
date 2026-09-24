@@ -95,6 +95,23 @@ test('batch delete confirms exact count, prevents duplicate clicks, retains sele
 });
 
 
+test('batch AI rewrite posts one request per selected source with the chosen model and count',async()=>{
+ assert.match(html,/id="batchModel"[\s\S]*claude-sonnet-5[\s\S]*id="batchCount"[\s\S]*id="batchRewriteBtn"/);
+ assert.match(html,/id="variantModel"[\s\S]*value="claude-sonnet-5" selected/);
+ const h=harness('psychology-peer-production.js');h.setRows(['a','b','c']);h.events.get('peer-list-loaded')();
+ assert.equal(h.nodes.get('#batchRewriteBtn').disabled,true);
+ h.nodes.get('#selectPageBtn').listeners.click();assert.equal(h.nodes.get('#batchRewriteBtn').disabled,false);
+ h.nodes.get('#batchModel').value='claude-haiku-4.5';h.nodes.get('#batchCount').value='3';
+ h.accept(false);await h.nodes.get('#batchRewriteBtn').listeners.click();assert.equal(h.requests.length,0);
+ h.accept(true);h.respond(url=>url.includes('sourceId=b')?Promise.reject(new Error('原文尚无可用于改写的正文')):({created:3,skipped:['x']}));
+ let refreshed=false;h.events.set('peer-list-refresh-request',()=>{refreshed=true;});
+ await h.nodes.get('#batchRewriteBtn').listeners.click();
+ assert.deepEqual(h.requests.map(r=>r.url).sort(),['a','b','c'].map(id=>'/api/psychology-creative/copies/generate-batch?sourceId='+id+'&model=claude-haiku-4.5&count=3'));
+ assert.ok(h.requests.every(r=>r.method==='POST'));
+ assert.match(h.nodes.get('#productionStatus').textContent,/保存 6 个改写版本，2 个未通过质量检查；1 篇失败/);
+ assert.equal(h.nodes.get('#selectionCount').textContent,'已选 1 条');assert.equal(refreshed,true);
+});
+
 test('original recreation is removed from the copy library',()=>{
  assert.doesNotMatch(html,/rewriteCopy|produceBtn|原帖复刻/);
  assert.doesNotMatch(read('psychology-peer-production.js'),/produceBtn|原帖复刻/);
@@ -102,11 +119,11 @@ test('original recreation is removed from the copy library',()=>{
 
 
 test('AI generation fills current source draft once, blocks switching/saving and requires fresh review',async()=>{
- const h=harness();h.events.get('peer-list-loaded')({detail:{items:sources}});await h.click({createVariant:'photo-source'});
+ const h=harness();h.events.get('peer-list-loaded')({detail:{items:sources}});await h.click({createVariant:'photo-source'});h.nodes.get('#variantModel').value='claude-sonnet-5';
  let resolve;h.respond(()=>new Promise(r=>resolve=r));const pending=h.nodes.get('#generateVariant').onclick();
  assert.equal(h.nodes.get('#variantFields').disabled,true);assert.equal(h.nodes.get('#closeVariant').disabled,true);
  await h.nodes.get('#generateVariant').onclick();await h.click({createVariant:'video-source'});h.nodes.get('#variantReviewed').checked=true;await h.submit();assert.equal(h.requests.length,1);
- assert.equal(h.requests[0].url,'/api/psychology-creative/copies/generate?sourceId=photo-source');
+ assert.equal(h.requests[0].url,'/api/psychology-creative/copies/generate?sourceId=photo-source&model=claude-sonnet-5');
  resolve({draft:{name:'AI draft',title:'Generated title',caption:'Generated caption',pages:['Cover','Body']}});await pending;
  assert.equal(h.nodes.get('#variantTitle').value,'Generated title');assert.deepEqual(h.pages.map(p=>p.value),['Cover','Body','','','','']);assert.equal(h.nodes.get('#variantReviewed').checked,false);assert.equal(h.nodes.get('#variantFields').disabled,false);
  assert.equal(h.requests.length,1);await h.submit();assert.equal(h.requests.length,1);

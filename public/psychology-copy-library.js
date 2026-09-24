@@ -113,9 +113,9 @@ $("#generateVariant").onclick = async () => {
   if(fields.some(field=>field.value.trim())&&!confirm('AI 生成会替换当前表单的草稿内容，是否继续？'))return;
   const source=variantSource;
   variantGenerating=true;$('#generateVariant').disabled=true;$('#generateVariant').textContent='生成中…';$('#closeVariant').disabled=true;$('#variantFields').disabled=true;
-  $('#variantStatus').textContent='正在根据原文生成改写草稿…';
+  $('#variantStatus').textContent='正在用 '+($('#variantModel').selectedOptions?.[0]?.textContent||$('#variantModel').value||'AI')+' 根据原文生成改写草稿…';
   try{
-    const {draft}=await api('/copies/generate?sourceId='+encodeURIComponent(source.id),'POST');
+    const {draft}=await api('/copies/generate?sourceId='+encodeURIComponent(source.id)+'&model='+encodeURIComponent($('#variantModel').value),'POST');
     $('#variantName').value=draft.name;$('#variantTitle').value=draft.title;$('#variantCaption').value=draft.caption;
     [...document.querySelectorAll('[data-variant-page]')].forEach((field,i)=>field.value=draft.pages[i]||'');
     $('#variantReviewed').checked=false;draftVersionId=crypto.randomUUID();

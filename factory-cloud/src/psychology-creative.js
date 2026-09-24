@@ -1,4 +1,5 @@
-import {generateCopyDraft} from './psychology-copy-generation.js';
+import {generateCopyDraft,generateCopyDrafts} from './psychology-copy-generation.js';
+import {checkRewrite,checkSharedLines} from './psychology-rewrite-quality.js';
 import {normalizeCopyReview} from './psychology-copy-review.js';
 import {handleCopyComparison} from './psychology-copy-comparison.js';
 import { json,readJson,sha256Hex,errorJson } from './http.js';
@@ -18,6 +19,26 @@ export function normalizeVariant(input){
  const pages=input.pages.map(v=>typeof v==='string'?v.trim():'');if(pages.some(v=>!v||v.length>1500))fail('每页须为1–1500字符的文字。');
  return {externalId,sourceKey,title,caption,pages,...normalizeCopyReview({...input,title,caption,pages})};
 }
+// Batch AI versions go through the same quality gate as Grokbot imports and
+// are saved enabled; a failing version is skipped with its reason.
+async function saveGeneratedVersions(db,owner,source,{drafts,rejected,model}){
+ let sourceKey;try{sourceKey=photoCopyKey(source.source_url);}catch{sourceKey=source.id;}
+ const originalPages=(JSON.parse(source.content_json||'{}').pages||[]).map(p=>p?.text).filter(t=>typeof t==='string');
+ const skipped=[...rejected],statements=[];let created=0;
+ for(const draft of drafts){
+  try{
+   const fingerprint=await sha256Hex(JSON.stringify([sourceKey,draft.title,draft.caption,draft.pages]));
+   const variant=normalizeVariant({externalId:'ai-'+model+'-'+fingerprint.slice(0,24),sourceKey,title:draft.title,caption:draft.caption,pages:draft.pages});
+   checkRewrite(variant,originalPages);
+   await checkSharedLines(db,[{sourceKey,pages:variant.pages,label:'AI 版本'}]);
+   statements.push(db.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
+    .bind(await sha256Hex(owner+':'+variant.externalId),owner,variant.externalId,sourceKey,variant.title,variant.caption,JSON.stringify(variant.pages),fingerprint,Date.now()));
+   created++;
+  }catch(error){skipped.push(error.message);}
+ }
+ if(statements.length)await db.batch(statements);
+ return {created,skipped,model};
+}
 export function variantPlan(v){return {title:v.title,caption:v.caption,hooks:[],scenes:JSON.parse(v.pages_json).map((text,index)=>({sourceIndex:index+1,template:'text',textKind:index?'content':'cover',originalText:text,title:text,subtitle:'',body:'',text,stockQuery:''}))};}
 export async function handlePsychologyCreative(request,env,url,session){
  if(!url.pathname.startsWith(BASE))return null;
@@ -27,13 +48,17 @@ export async function handlePsychologyCreative(request,env,url,session){
  const db=env.DB,owner=user.username;
  const comparison=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})\/comparison$/);
  if(comparison)return handleCopyComparison(request,env,url,owner,comparison[1]);
- if(url.pathname===BASE+'/copies/generate'){
+ if(url.pathname===BASE+'/copies/generate'||url.pathname===BASE+'/copies/generate-batch'){
   if(request.method!=='POST')return errorJson('不支持此请求。',405);
   const sourceId=url.searchParams.get('sourceId');
   if(!sourceId||!/^psy-[a-f0-9]{32}$/.test(sourceId))return errorJson('请选择有效的爆款文案。',400);
-  const source=await db.prepare("SELECT id,media_type,title,content_json FROM psychology_copy_library WHERE id=? AND status='done'").bind(sourceId).first();
+  const source=await db.prepare("SELECT id,media_type,title,content_json,source_url FROM psychology_copy_library WHERE id=? AND status='done'").bind(sourceId).first();
   if(!source)return errorJson('爆款文案不存在或尚未提取完成。',404);
-  return json(await generateCopyDraft(env,source));
+  const model=url.searchParams.get('model')||undefined;
+  if(url.pathname===BASE+'/copies/generate')return json(await generateCopyDraft(env,source,{model}));
+  const count=Number(url.searchParams.get('count')||5);
+  if(!Number.isInteger(count)||count<1||count>5)return errorJson('每篇生成 1–5 个版本。',400);
+  return json(await saveGeneratedVersions(db,owner,source,await generateCopyDrafts(env,source,{model,count})));
  }
  const sourceId=url.searchParams.get('sourceId');
  let sourceKey='';
