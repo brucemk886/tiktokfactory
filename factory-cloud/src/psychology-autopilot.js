@@ -10,6 +10,7 @@ import { operationsWindow, publishOutcome, parseObject } from '../../scripts/psy
 import { loadAutoUser, handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { executionCounts, slotExecution, stopImpact, stopPending, nextAutopilotCheck } from './psychology-autopilot-execution.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
+import { EVOLUTION } from './psychology-copy-evolution.js';
 import { frameworkFor } from './psychology-operations.js';
 
 const BASE = '/api/psychology-autopilot';
@@ -21,6 +22,30 @@ export const AUTOPILOT = Object.freeze({
   lowViews: 200, lowPosts: 5, failStreak: 3,
 });
 export const STRATEGIES = { evolve: 'A · 按表现进化', original: 'B · 只发原版首发', rewrite: 'C · 改写版优先' };
+// Expose the same thresholds used by selection, so the creation UI cannot drift.
+function strategyRules() {
+  const n = EVOLUTION.matureNeeded, exploit = Math.round(EVOLUTION.exploitShare * 100), retire = Math.round(EVOLUTION.retireRatio * 100);
+  return {
+    evolve: { summary:'先建立原版基准，再根据实际播放表现选择版本。', rules:[
+      `原版未积累 ${n} 条满 24 小时且有播放数据的样本前，优先使用原版；原版在本批已被使用等情况下，才尝试使用次数较少的可用改写版。`,
+      `基准足够后，若成熟版本和待测试改写版都存在，约 ${exploit}% 的抽取倾向优先选择成熟版本中平均播放最高的版本，约 ${100-exploit}% 优先测试样本不足的改写版。原版也参与优胜版本比较。`,
+      `改写版达到 ${n} 条成熟样本后，如果平均播放低于原版的 ${retire}%，本策略不再抽取该版本。`,
+      `版本表现使用最近 ${EVOLUTION.windowDays} 天的自动发布记录及已归档播放数据，每天更新两次。比例是抽取倾向，不保证每批精确分配；某类没有可用版本时会使用其他可用版本。`,
+    ] },
+    original: { summary:'只使用已完成提取的原版文案，作为原版对照组。', rules:[
+      '只选择原版，不使用任何改写版本。只有改写版、没有可用原版的选题会跳过。',
+      '原版在同一批次中不会重复使用；当前账号已用过的选题也会跳过。',
+      '不会根据改写版表现切换版本，也不执行 A 策略的版本淘汰规则；选题层面的优先顺序仍遵循下方通用规则。',
+      '可用原版不足时，本批创建失败并提示补充文案，不会自动用改写版补足。',
+    ] },
+    rewrite: { summary:'优先轮换可用改写版，必要时回退原版。', rules:[
+      '从已启用且可发布的改写版中，优先选择使用次数较少的版本；使用次数包含本批已分配记录。',
+      '没有可用改写版，或该选题的改写版在本批均已使用时，回退到尚可用的原版。',
+      '不执行 A 策略的版本优胜分配和低于原版的淘汰规则，也不按改写评分直接挑版本；选题层面仍遵循下方通用规则。',
+      '原版和改写版都没有可用版本时跳过该选题；所有候选仍不足时，本批创建失败并提示补充文案。',
+    ] },
+  };
+}
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 const ms = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? (n < 1e12 ? n * 1000 : n) : 0; };
 const beijingDate = t => new Date(t + 8 * HOUR).toISOString().slice(0, 10);
@@ -231,7 +256,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ pilots: out, groups, strategies: STRATEGIES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    return json({ pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7);

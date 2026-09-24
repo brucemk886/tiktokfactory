@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>心理学 · 自动运营</title>
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-4"><link rel="stylesheet" href="/psychology-autopilot.css?v=20260925-1"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-4"><link rel="stylesheet" href="/psychology-autopilot.css?v=20260925-2"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
 </head>
@@ -17,6 +17,7 @@
 <p class="section-hint">账号数量来自完整授权目录，不依赖报表同步。仅统计有发布权限的分组成员。 <button type="button" id="refreshGroups">刷新账号分组</button></p>
 <p id="groupDirectoryStatus" role="status" class="section-hint"></p>
 <form id="createForm" class="ops-filters pilot-form"><label>账号分组<select id="groupId" required></select></label><label>运营策略<select id="strategy"></select></label><label>运行天数<input id="days" type="number" min="1" max="30" value="7" required></label><button class="primary-link" type="submit" id="createButton">启动</button></form>
-<details><summary>查看运营规则</summary><ul class="pilot-rules" id="rules"></ul></details><p id="createStatus" role="status"></p></dialog>
+<section class="pilot-strategy-rules" aria-labelledby="strategyRulesTitle" aria-live="polite"><h3 id="strategyRulesTitle">当前策略规则</h3><p id="strategySummary"></p><ul class="pilot-rules" id="strategyRules"></ul></section>
+<details open><summary>三种策略共用的运营规则</summary><ul class="pilot-rules" id="rules"></ul></details><p id="createStatus" role="status"></p></dialog>
 <dialog id="pauseDialog" class="pilot-dialog"><h2 id="pauseTitle">暂停自动运营</h2><p id="pauseImpact" role="status"></p><fieldset id="pauseChoices"><legend>暂停范围</legend><label><input type="radio" name="pauseMode" value="planning" checked>只暂停新增排期，已排任务继续</label><label><input type="radio" name="pauseMode" value="pending">同时停止本地尚未提交的任务</label></fieldset><p class="section-hint">已进入提交或已交给官方中台的任务无法在这里撤回，仍可能发布。恢复后不会重新创建已停止的任务。</p><div class="pilot-actions"><button type="button" data-close="pauseDialog">返回</button><button type="button" id="confirmPause">确认暂停</button></div></dialog>
-</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260925-1"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260925-2"></script></body></html>

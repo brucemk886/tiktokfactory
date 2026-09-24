@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../public/psychology-autopilot.js',import.meta.url),'utf8');
-function harness(){
+function harness(overrides={}){
  const nodes=new Map(),events={},requests=[];let poll,failRead=false;
  const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='[name="pauseMode"]:checked'?'planning':'',options:[],innerHTML:'',textContent:'',listeners:{},classList:{toggle(){}},showModal(){this.open=true;},close(){this.open=false;},scrollIntoView(){},addEventListener(k,fn){this.listeners[k]=fn;}});return nodes.get(s);};
  const pilot={id:'pilot-test',groupId:'g',groupName:'<unsafe>',status:'active',accounts:[],today:{planned:2,published:1,failed:1},schedule:[{slotAt:1,status:'created',counts:{planned:2,published:1,failed:1}}],attention:[],logs:[],lastRunAt:1};
- const data={pilots:[pilot],groups:[],strategies:{evolve:'A'},rules:{slots:[],staggerSeconds:45,lowPosts:5,lowViews:200,failStreak:3},fetchedAt:2};
+ const data={pilots:[pilot],groups:[],strategies:{evolve:'A'},rules:{slots:[],staggerSeconds:45,lowPosts:5,lowViews:200,failStreak:3},fetchedAt:2,...overrides};
  const document={hidden:false,querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):node(s),querySelectorAll:()=>[],getElementById:id=>node('#'+id),addEventListener(k,fn){events[k]=fn;}};
  const context=vm.createContext({document,confirm:()=>true,setInterval(fn){poll=fn;},fetch:async(path,init)=>{requests.push({path,...init,body:init.body?JSON.parse(init.body):null});if(failRead&&init.method==='GET')throw Error('offline');return {ok:true,json:async()=>path.includes('/impact')?{stoppable:2,protected:1}:init.method==='PATCH'?{ok:true,stopped:2}:data};}});
  vm.runInContext(source,context);
@@ -36,4 +36,20 @@ test('initial visit, explicit refresh and opening creation refresh all groups; q
  h.poll();await tick();assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot');
  h.node('#openCreate').onclick();await tick();assert.equal(h.node('#createDialog').open,true);assert.match(h.requests.at(-1).path,/refreshGroups=1/);
  await h.node('#refreshGroups').onclick();assert.match(h.requests.at(-1).path,/refreshGroups=1/);
+});
+
+
+test('strategy selection changes its own rules immediately, keeps common rules and selection on refresh',async()=>{
+ const h=harness({strategies:{evolve:'A',original:'B',rewrite:'C'},strategyRules:{
+  evolve:{summary:'先原版再比较',rules:['A 专属规则']},original:{summary:'只发原版',rules:['B 专属规则']},rewrite:{summary:'改写优先',rules:['C 专属规则 <unsafe>']}
+ }});await tick();
+ assert.match(h.node('#strategyRules').innerHTML,/A 专属规则/);
+ const common=h.node('#rules').innerHTML, reads=h.requests.length;
+ for(const [value,text] of [['original','B 专属规则'],['rewrite','C 专属规则']]){
+  h.node('#strategy').value=value;h.node('#strategy').listeners.change();
+  assert.ok(h.node('#strategyRules').innerHTML.includes(text));assert.equal(h.node('#rules').innerHTML,common);
+ }
+ assert.equal(h.requests.length,reads);assert.match(h.node('#strategyRules').innerHTML,/&lt;unsafe&gt;/);
+ assert.doesNotMatch(h.node('#strategyRules').innerHTML,/A 专属规则|B 专属规则|<unsafe>/);
+ await h.node('#reload').onclick();assert.equal(h.node('#strategy').value,'rewrite');assert.match(h.node('#strategyRules').innerHTML,/C 专属规则/);
 });

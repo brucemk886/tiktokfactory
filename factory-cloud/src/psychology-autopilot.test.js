@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT } from './psychology-autopilot.js';
-import { planLibraryDraw } from './psychology-copy-evolution.js';
+import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
 const HOUR = 3600000, DAY = 24 * HOUR;
@@ -116,6 +116,9 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   assert.equal(list.pilots[0].schedule.filter(s => s.status === 'created').length, expected);
   assert.ok(list.pilots[0].logs.some(l => l.kind === 'daily'));
   assert.equal(list.groups.find(g => g.id === 'g').accounts, 2);
+  assert.deepEqual(Object.keys(list.strategyRules).sort(),Object.keys(list.strategies).sort());
+  assert.deepEqual(list.evolutionRules,EVOLUTION);
+  assert.ok(Object.values(list.strategyRules).every(s=>s.summary&&s.rules.length>=4));
   assert.equal(f.requests.length, 0);
 });
 

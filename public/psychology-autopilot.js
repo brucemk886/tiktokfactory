@@ -25,17 +25,28 @@ async function load(quiet = false, refreshGroups = false) {
   catch (error) { notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
   finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; if(refreshGroups) $('#createButton').disabled=false; }
 }
+function renderStrategyRules() {
+  const strategy = $('#strategy').value || 'evolve', selected = data?.strategyRules?.[strategy];
+  $('#strategyRulesTitle').textContent = '当前策略规则 · ' + (data?.strategies?.[strategy] || strategy);
+  $('#strategySummary').textContent = selected?.summary || '正在读取策略规则…';
+  $('#strategyRules').innerHTML = (selected?.rules || []).map(rule => '<li>' + esc(rule) + '</li>').join('');
+}
+$('#strategy').addEventListener('change', renderStrategyRules);
 function render() {
   const pilots = data.pilots, live = new Set(pilots.filter(p => p.status !== 'ended').map(p => p.groupId));
   const oldGroup = $('#groupId').value;
   $('#groupId').innerHTML = '<option value="">请选择账号分组</option>' + data.groups.map(g => `<option value="${esc(g.id)}" ${live.has(g.id)||!g.accounts?'disabled':''}>${esc(g.name)}（${g.accounts} 个号）${live.has(g.id)?' · 已托管':''}</option>`).join('');
   if (data.groups.some(g=>g.id===oldGroup&&!live.has(g.id))) $('#groupId').value = oldGroup;
   if (!$('#strategy').options.length) $('#strategy').innerHTML = Object.entries(data.strategies).map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('');
-  const r = data.rules;
+  renderStrategyRules();
+  const r = data.rules, evolution = data.evolutionRules;
   $('#rules').innerHTML = [
     '每号每天 3 条，北京时间 '+r.slots.map(s=>String(s.hour).padStart(2,'0')+':'+String(s.minute).padStart(2,'0')).join(' / ')+'；各账号错开 '+r.staggerSeconds+' 秒。',
     '每天 0 点、8 点检查并排期，从图文文案库抽取，同一个账号不重复发同一篇爆款。',
-    '同一时段各组配对抽取爆款：A 按表现进化，B 只发原版，C 改写优先。',
+    '配对选题：同一运营人、同一时段的分组使用共同候选排序，再按所选策略挑版本；各账号用过的选题和可用版本不同，最终内容不保证完全相同。',
+    ...(evolution ? [`选题顺序：约 ${Math.round(evolution.exploitShare*100)}% 倾向已有成熟表现的选题，约 ${Math.round((1-evolution.exploitShare)*100)}% 倾向尚无成熟表现的选题。成熟选题按最佳成熟版本的平均播放排序，未成熟选题按入库顺序；这与 A 的版本选择比例是两层规则。`] : []),
+    '同一个账号不会重复使用同一篇选题，不论原版或改写；同一批次不重复使用同一个版本。只能选择文案库中可用的内容，不会因启动运营自动生成新改写。',
+    '三种策略的发布时间、每日数量、配对选题和停发条件相同。切换策略只改变版本选择方式。',
     `连续 ${r.lowPosts} 条满24小时低于 ${r.lowViews} 播放，或连续 ${r.failStreak} 次发布失败，自动停发该号并停止本地尚未提交的任务。`,
   ].map(t=>'<li>'+esc(t)+'</li>').join('');
   const sum = pilots.reduce((s,p)=>{ for(const [k,v] of Object.entries(p.today||{}))s[k]=(s[k]||0)+v;return s; },{});
