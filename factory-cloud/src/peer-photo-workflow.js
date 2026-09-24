@@ -6,6 +6,7 @@ import { photoCopyKey, claimPhotoCopy, storePhotoCopy, releasePhotoCopy, photoCo
 import { claimAnalysisSlot, releaseAnalysisSlot } from './photo-analysis-gate.js';
 import { resolveTikTokPhotoSource } from './tikhub-photo-source.js';
 import { withProductionPatch, compactProduction } from '../../scripts/production-timeline.js';
+import { photoContent } from './psychology-copy-library.js';
 
 // Paid submissions are never blindly retried after an ambiguous provider error.
 // The budget stays above the DeepSeek client timeout so an unanswered request
@@ -41,8 +42,8 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     const at = await step.do(`${name}-time`, () => Date.now());
     state = withProductionPatch(state, {status,message,...patch}, at);
     if(extraction){
-      const content=plan?{mediaType:'photo',title:payload.peerSource?.title||payload.topic||'',caption:payload.script||'',
-        pages:plan.scenes.map((s,i)=>({index:i+1,text:s.originalText})),transcript:'',onScreenText:[]}:null;
+      let content=plan?photoContent(payload.peerSource?.title||payload.topic||'',payload.script||'',plan.scenes.map(s=>s.originalText)):null;
+      if(content?.skipped){if(status==='done'){status='failed';error=content.skipped;}content=null;}
       const changed=await step.do(name,READ,()=>env.DB.prepare("UPDATE psychology_copy_library SET status=?,content_json=COALESCE(?,content_json),error=?,provider=?,updated_at=?,completed_at=? WHERE id=? AND attempt=? AND status='running'")
         .bind(status,content?JSON.stringify(content):null,error,copyCache==='hit'?'source-copy-cache':chat.model,at,['done','failed'].includes(status)?at:0,event.payload.copyId,event.payload.attempt).run());
       if(!changed.meta?.changes)throw new Error('文案提取任务已变更。');

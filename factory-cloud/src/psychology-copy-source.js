@@ -1,5 +1,6 @@
 import { photoCopyKey } from './peer-photo-copy-cache.js';
 import { variantPlan } from './psychology-creative.js';
+import { filterPhotoPageTexts, NO_USABLE_PAGES } from './photo-page-filter.js';
 const fail=message=>{throw Object.assign(new Error(message),{statusCode:400});};
 const clean=value=>typeof value==='string'?value.trim():'';
 // Split for card layout without calling a model or dropping source words.
@@ -15,7 +16,9 @@ export function textPages(blocks){
 }
 export function librarySource(row,mediaType){
  const content=JSON.parse(row.content_json||'{}'),source=JSON.parse(row.source_json||'{}');
- const pages=(content.pages||[]).map(p=>clean(p.text)).filter(Boolean);
+ const texts=(content.pages||[]).map(p=>clean(p.text)).filter(Boolean);
+ const pages=row.media_type==='photo'?filterPhotoPageTexts(texts):texts;
+ if(row.media_type==='photo'&&texts.length&&!pages.length)fail(NO_USABLE_PAGES);
  const transcript=clean(content.transcript),screen=(content.onScreenText||[]).map(clean).filter(Boolean);
  const body=row.media_type==='photo'?pages.join('\n\n'):[transcript,screen.length?'画面文字：\n'+screen.join('\n'): ''].filter(Boolean).join('\n\n');
  if(!body)fail('爆款文案没有可用正文，请先完善提取内容。');

@@ -120,6 +120,7 @@ Content-Type: application/json
 - 只提交心理学 / 情感关系题材的英文图文：依恋、分手、暧昧、边界、自我价值等。动漫角色设定、带货、纯段子等跑题内容不要提交。
 - `pageTexts` 必须是图片上清晰可读的完整句子，按图片顺序排列，一页一项。识别出乱码（如 `Nou make me the L once WAS`）、残句或大量错字时，请重新识别；仍不清楚就跳过这篇，不要提交。
 - 去掉引流页和水印文字（LINK IN BIO、作者名、书单页）。
+- 工厂会自动去掉两类页：只有页码、数字或符号的页（没有连续两个字母）；超过 500 字符的长段落页（整页书或文章截图）。其余页按原顺序重新编号，可以只剩首图。全部页都被去掉的帖子，返回 `copy: "skipped"` 并记为失败，不会再调用工厂识图。
 
 ### 改写（`rewrites`）
 
@@ -148,7 +149,7 @@ Content-Type: application/json
 ```text
 For every psychology photo post, call the language model once per post. Never use templates, fixed sentence patterns, or code that splices sentences together.
 1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
-2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages.
+2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters).
 3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
 4. Each rewrite: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first, one clear idea per page; caption is required and can be short, hashtags allowed.
 5. English only, sounds like a real person posting, no invented statistics, no diagnoses, no links.

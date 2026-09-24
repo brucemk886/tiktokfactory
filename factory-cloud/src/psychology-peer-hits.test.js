@@ -7,6 +7,8 @@ import { handlePsychologyPeerHits, PSYCHOLOGY_PEER_API } from "./psychology-peer
 import { pageFileFor } from "./pages.js";
 import { SIDEBAR_MODULES, sidebarModuleIdsForRole } from "./sidebar.js";
 import worker from "./index.js";
+import { filterPhotoPageTexts } from "./photo-page-filter.js";
+import { librarySource } from "./psychology-copy-source.js";
 const BASE="https://factory.test";
 const session={user:{id:"admin",role:"admin",sidebarModules:["psychology-peer-hits"]}};
 const url = n => `https://www.tiktok.com/@example/video/${n}`;
@@ -191,6 +193,24 @@ test("rewrites in the same import become enabled versions under the original and
   const conflict=await importPsychologyPeerHits(db,[{videoUrl:photoUrl(702),rewrites:[{...rewrite(10),externalId:"fixed-v1"}]},{videoUrl:photoUrl(703),rewrites:[rewrite(11)]}],"admin");
   assert.deepEqual(conflict.rewrites,{created:1,duplicates:0,conflicts:1});
   assert.equal(sqlite.prepare("SELECT title FROM psychology_copy_variants WHERE external_id='fixed-v1'").get().title,"Rewrite 9");
+});
+
+test("page numbers and long book-page screenshots are dropped from original photo text",async t=>{
+  const {db,sqlite}=fixture(t);
+  assert.deepEqual(filterPhotoPageTexts(["Hook line here","46"," 1/5 ","💔","x".repeat(501),"ok".repeat(250)]),["Hook line here","ok".repeat(250)]);
+  const hook="you've been giving him the silent treatment for 2 hours because he chose a night with his friends over a night with you but then you remember page 46";
+  const book="Just because your partner wants to see their friends doesn't mean they prefer them over you. "+"They text you to say they're going out with friends tonight. ".repeat(20);
+  const kept=await importPsychologyPeerHits(db,{videoUrl:photoUrl(1201),title:"page 46",videoData:{pageTexts:[hook,"46",book]}},"admin");
+  assert.equal(kept.items[0].copy,"ready");
+  assert.deepEqual(JSON.parse(sqlite.prepare("SELECT content_json FROM psychology_copy_library").get().content_json).pages,[{index:1,text:hook}]);
+  const none=await importPsychologyPeerHits(db,{videoUrl:photoUrl(1202),title:"only book",videoData:{pageTexts:["46",book]}},"admin");
+  assert.deepEqual([none.items[0].copy,none.items[0].copyNote],["skipped","图片页都是页码或长段落截图，已跳过这篇。"]);
+  const row=sqlite.prepare("SELECT * FROM psychology_copy_library WHERE source_url LIKE '%1202%'").get();
+  assert.deepEqual([row.status,row.content_json],["failed","{}"]);
+  // Older library rows are filtered when drawn, and refused when nothing usable is left.
+  const old={id:"old",media_type:"photo",source_url:photoUrl(1203),title:"t",source_json:"{}",content_json:JSON.stringify({title:"t",caption:"c",pages:[{index:1,text:hook},{index:2,text:"46"},{index:3,text:book}]})};
+  assert.deepEqual(librarySource(old,"photo").copyVariant.scenes.map(s=>s.originalText),[hook]);
+  assert.throws(()=>librarySource({...old,content_json:JSON.stringify({pages:[{index:1,text:"46"},{index:2,text:book}]})},"photo"),/页码或长段落/);
 });
 
 test("rewrite quality gate refuses template, spliced and incomplete versions before any write",async t=>{

@@ -11,6 +11,9 @@ The 2026-09-23 Grokbot import produced template rewrites (five fixed title patte
   - no page (20+ chars, case-insensitive) identical to another post's rewrite in the same request or anywhere in the library, deleted versions included.
 - Docs: `docs/psychology-peer-hits-api.md` gains 写入标准与改写规则 (original-text standard, rewrite rules, rejection table, a pasteable English instruction). Examples no longer use an empty caption. The copy library's 写入接口 panel shows the rules and has a button that copies the instruction.
 
+## Original page filter (2026-09-24, operator rule)
+- `photo-page-filter.js`: original photo pages without two consecutive letters (page numbers, symbols) or over 500 characters (photographed book pages) are dropped and the rest renumbered. Applied to Grokbot `pageTexts`, the copy-cache path, DeepSeek extraction results, and `librarySource` at draw time. A post with nothing left is `copy: "skipped"` / status failed with no paid extraction.
+
 ## Tests
 Factory suite 642/642, including a gate test built from real template lines. Fixtures of other suites updated only where their deliberately minimal captions now fail the gate.
 

@@ -25,6 +25,9 @@ const COPY_SYNC_BY_ID=COPY_SYNC.replace('p.id=? AND p.collected_at=?','p.id=?');
 const COPY_SUPPLIED = `UPDATE psychology_copy_library SET status='done',content_json=?,provider='imported-text',error='',
   attempt=attempt+1,workflow_id='',completed_at=?,updated_at=?
   WHERE id=? AND status<>'done' AND media_type=? AND EXISTS (SELECT 1 FROM psychology_peer_hits WHERE id=? AND collected_at=?)`;
+// Supplied text with no usable page ends the copy without a paid extraction.
+const COPY_SKIPPED = `UPDATE psychology_copy_library SET status='failed',error=?,attempt=attempt+1,workflow_id='',updated_at=?
+  WHERE id=? AND status<>'done' AND media_type=? AND EXISTS (SELECT 1 FROM psychology_peer_hits WHERE id=? AND collected_at=?)`;
 // One statement for every rewrite in the request keeps a 100-post batch far
 // below D1's per-invocation query limit.
 const REWRITE_INSERT = `INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,quality_score,score_reason,comparison_json)
@@ -192,6 +195,7 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     const content = importedCopy({ mediaType: item.mediaType, title: item.title || "", videoData: item.videoData || {} });
     if (!content) continue;
     supplied.set(item.id, content);
+    if (content.skipped) { statements.push(db.prepare(COPY_SKIPPED).bind(content.skipped, now, item.id, item.mediaType, item.id, item.collectedAt)); continue; }
     statements.push(db.prepare(COPY_SUPPLIED).bind(JSON.stringify(content), now, now, item.id, item.mediaType, item.id, item.collectedAt));
   }
   const rewriteState = await planRewrites(db, english, actor);
@@ -210,13 +214,15 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     items: items.map(item => {
       const status = byId.get(item.id) || "skipped_non_english";
       if (status === "skipped_non_english") return { id: item.id, videoUrl: item.videoUrl, status };
-      return { id: item.id, videoUrl: item.videoUrl, status, ...copyReport(item, copyById.get(item.id), supplied.has(item.id)), rewrites: rewriteState.byItem.get(item.id) };
+      return { id: item.id, videoUrl: item.videoUrl, status, ...copyReport(item, copyById.get(item.id), supplied.get(item.id)), rewrites: rewriteState.byItem.get(item.id) };
     }),
   };
 }
 // Tells grokbot, per post, whether the factory still needs anything from it.
-function copyReport(item, row, textSupplied) {
+function copyReport(item, row, suppliedContent) {
   if (row?.status === "done") return { copy: "ready" };
+  if (suppliedContent?.skipped) return { copy: "skipped", copyNote: suppliedContent.skipped };
+  const textSupplied = Boolean(suppliedContent);
   if (row?.auto_extract === 0 || row?.auto_extract === "0") {
     return { copy: "needs_text", copyNote: item.mediaType === "photo" ? "历史爆款不会自动提取，请提交 videoData.pageTexts（按图片顺序 1–6 页）。" : "历史爆款不会自动提取，请提交 videoData.transcript。" };
   }

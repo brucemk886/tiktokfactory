@@ -2,18 +2,24 @@ import {psychologyPeerHitFromRow} from './psychology-peer-hits-store.js';
 import {json,errorJson} from './http.js';
 import {peerProductionPayload} from '../../scripts/psychology-peer-production.js';
 import {photoCopyKey,validatePhotoCopy} from './peer-photo-copy-cache.js';
+import {filterPhotoPageTexts,NO_USABLE_PAGES} from './photo-page-filter.js';
 
 const BASE='/api/psychology-copy-library';
 export const COPY_EXTRACTION_CONCURRENCY=3;
 const safeParse=value=>{try{return JSON.parse(value||'{}');}catch{return {};}};
+// Photo copy with unusable pages removed; `skipped` carries the reason when none remain.
+export function photoContent(title,caption,texts){
+ const kept=filterPhotoPageTexts(texts);
+ if(!kept.length)return {mediaType:'photo',skipped:NO_USABLE_PAGES};
+ return {mediaType:'photo',title,caption,pages:kept.map((text,i)=>({index:i+1,text})),transcript:'',onScreenText:[]};
+}
 export function originalPhotoContent(copy){
- return {mediaType:'photo',title:copy.sourceTitle,caption:copy.sourceCopy,
-  pages:copy.plan.scenes.map((s,i)=>({index:i+1,text:s.originalText})),transcript:'',onScreenText:[]};
+ return photoContent(copy.sourceTitle,copy.sourceCopy,copy.plan.scenes.map(s=>s.originalText));
 }
 export function importedCopy(source){
  const d=source.videoData||{},caption=String(d.copy||d.caption||d.description||source.title||'');
  if(source.mediaType==='photo'&&Array.isArray(d.pageTexts)&&d.pageTexts.length>0&&d.pageTexts.length<=6&&d.pageTexts.every(t=>typeof t==='string'&&t.length<=10000))
-  return {mediaType:'photo',title:source.title||'',caption,pages:d.pageTexts.map((text,i)=>({index:i+1,text})),transcript:'',onScreenText:[]};
+  return photoContent(source.title||'',caption,d.pageTexts);
  if(source.mediaType==='video'&&typeof d.transcript==='string'&&d.transcript.trim()&&d.transcript.length<=12000)
   return {mediaType:'video',title:source.title||'',caption,pages:[],transcript:d.transcript,
    onScreenText:Array.isArray(d.onScreenText)?d.onScreenText.filter(t=>typeof t==='string').slice(0,100):[]};
@@ -70,6 +76,7 @@ export async function dispatchCopyExtractions(env,now=Date.now()){
     if(cached){content=originalPhotoContent(validatePhotoCopy(JSON.parse(cached.copy_json)));provider='source-copy-cache';}
    }catch{/* Invalid cache is repaired by the normal extraction path. */}
   }
+  if(content?.skipped){await db.prepare("UPDATE psychology_copy_library SET status='failed',error=?,updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(content.skipped,now,row.id,row.attempt).run();continue;}
   if(content){await db.prepare("UPDATE psychology_copy_library SET status='done',content_json=?,provider=?,error='',completed_at=?,updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(JSON.stringify(content),provider,now,now,row.id,row.attempt).run();continue;}
   const actor=await db.prepare("SELECT active,role FROM factory_users WHERE username=?").bind(row.owner).first();
   if(!actor?.active||actor.role!=='admin'){await db.prepare("UPDATE psychology_copy_library SET status='failed',error='原导入账号已停用或无管理员权限。',updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(now,row.id,row.attempt).run();continue;}
