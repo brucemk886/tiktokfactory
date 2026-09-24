@@ -185,15 +185,15 @@ async function loadCopies() {
   copyPage = data.page;
   reviewedItems = data.items;
   $("#copyList").innerHTML = data.items.length ? data.items.map(row => `<tr>
-    <td><span class="copy-status${row.enabled ? "" : " is-off"}">${row.enabled ? "已启用" : "已停用"}</span></td>
+    <td><span class="copy-status${row.enabled ? "" : " is-off"}">${row.review_status==='pending'?"未通过质检":row.enabled ? (row.reviewed_at?"已启用 · 人工通过":"已启用") : "已停用"}</span></td>
     <td class="copy-cell-title copy-cell-text" title="${esc(row.title)}"><span>${esc(row.title)}</span></td>
     <td class="copy-cell-caption copy-cell-text" title="${esc(row.caption || "—")}"><span>${esc(row.caption || "—")}</span></td>
     <td class="copy-cell-text" title="${esc(row.source_key)}"><span>${esc(row.source_key)}</span></td>
     <td class="copy-cell-text" title="${esc(row.external_id)}"><span>${esc(row.external_id)}</span></td>
     <td>${esc(row.rewriteModelLabel || '模型未知')}</td>
     <td title="${esc(row.score_reason || '')}">${row.quality_score == null ? '未评分' : esc(row.quality_score) + ' 分'}</td>
-    <td>${row.pages.length} 页</td>
-    <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button><button type="button" data-toggle-copy="${row.id}" data-enabled="${row.enabled ? "0" : "1"}">${row.enabled ? "停用" : "启用"}</button><button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
+    <td>${row.pages.length} 页${row.review_status==='pending'?'<p>'+esc(row.review_reason)+'</p>':''}</td>
+    <td class="copy-cell-actions"><button type="button" data-view-reviewed="${row.id}">查看</button>${row.review_status==='pending'?'<button type="button" data-review-copy="'+row.id+'">通过</button>':'<button type="button" data-toggle-copy="'+row.id+'" data-enabled="'+(row.enabled?'0':'1')+'">'+(row.enabled?'停用':'启用')+'</button>'}<button type="button" class="danger-link" data-delete-copy="${row.id}">删除</button></td>
   </tr>`).join("") : '<tr><td colspan="9">暂无改写版本。请返回文案列表，点击该文案的“新增改写”。</td></tr>';
   $("#copyPage").textContent = `共 ${data.total} 篇 · 第 ${copyPage} 页`;
   $("#copyPrev").disabled = copyPage === 1;
@@ -205,9 +205,10 @@ $("#copyList").onclick = async event => {
   if (!button) return;
   if (button.dataset.viewReviewed) {
     const row = reviewedItems.find(item => String(item.id) === button.dataset.viewReviewed);
-    if (row) openComparison(row);
+    if (row) {if(row.review_status==='pending')openQualityReview(row);else openComparison(row);}
     return;
   }
+  if(button.dataset.reviewCopy){const row=reviewedItems.find(r=>r.id===button.dataset.reviewCopy);if(row)openQualityReview(row);return;}
   const removing = button.dataset.deleteCopy;
   if (!button.dataset.toggleCopy && !removing) return;
   if (removing) {
@@ -343,3 +344,28 @@ function openComparison(row) {
 $("#retryComparison").onclick = loadComparison;
 $("#closeComparison").onclick = () => $("#comparisonDialog").close();
 $("#comparisonDialog").addEventListener('close', () => { comparisonVersion++; });
+
+let qualityReviewSelection=null,qualityReviewSaving=false;
+function openQualityReview(row){
+ if(qualityReviewSaving)return;
+ qualityReviewSelection=row;
+ $('#qualityReviewMeta').textContent=row.title+' · '+(row.rewriteModelLabel||'模型未知');
+ $('#qualityReviewReason').textContent='未通过原因：'+row.review_reason;
+ $('#qualityReviewRaw').textContent=row.raw_response||JSON.stringify({title:row.title,caption:row.caption,pages:row.pages},null,2);
+ $('#qualityReviewName').value=row.title==='未通过质检的模型返回'?'':row.title;
+ $('#qualityReviewCaption').value=row.caption||'';
+ $('#qualityReviewPages').value=JSON.stringify(row.pages||[],null,2);
+ $('#qualityReviewStatus').textContent='';$('#qualityReviewDialog').showModal();
+}
+$('#closeQualityReview').onclick=()=>{if(!qualityReviewSaving)$('#qualityReviewDialog').close();};
+$('#qualityReviewDialog').addEventListener('cancel',event=>{if(qualityReviewSaving)event.preventDefault();});
+$('#qualityReviewForm').onsubmit=async event=>{
+ event.preventDefault();if(qualityReviewSaving||!qualityReviewSelection)return;
+ let pages;try{pages=JSON.parse($('#qualityReviewPages').value);}catch{$('#qualityReviewStatus').textContent='正文须为 JSON 字符串数组，例如 ["首图文案","第二页正文"]。';return;}
+ qualityReviewSaving=true;$('#qualityReviewFields').disabled=true;$('#closeQualityReview').disabled=true;
+ try{
+  await api('/copies/'+encodeURIComponent(qualityReviewSelection.id)+'/approve','POST',{title:$('#qualityReviewName').value.trim(),caption:$('#qualityReviewCaption').value.trim(),pages});
+  $('#qualityReviewDialog').close();$('#copyStatus').textContent='已人工通过并启用该版本。';await loadCopies();await loadOriginals();
+ }catch(error){$('#qualityReviewStatus').textContent=error.message;}
+ finally{qualityReviewSaving=false;$('#qualityReviewFields').disabled=false;$('#closeQualityReview').disabled=false;}
+};

@@ -97,6 +97,19 @@
     </section>
   </dialog>
 
+  <dialog id="qualityReviewDialog" class="copy-preview-dialog copy-rewrite-dialog" aria-labelledby="qualityReviewTitle">
+    <div class="copy-dialog-head"><h2 id="qualityReviewTitle">未通过质检的改写</h2><button id="closeQualityReview" type="button">关闭</button></div>
+    <section class="copy-panel"><p id="qualityReviewMeta"></p><p id="qualityReviewReason" role="status"></p>
+      <details open><summary>模型原始返回</summary><pre id="qualityReviewRaw" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto"></pre></details>
+      <p>检查内容后可直接通过；格式不完整时请先修正。通过后启用，可供自动发布抽取。</p>
+      <form id="qualityReviewForm"><fieldset id="qualityReviewFields" style="border:0;padding:0;display:grid;gap:14px;min-width:0">
+        <label>标题<input id="qualityReviewName" maxlength="200" required /></label>
+        <label>发布文案<textarea id="qualityReviewCaption" maxlength="2200" rows="3"></textarea></label>
+        <label>正文（JSON 字符串数组，1–6 段）<textarea id="qualityReviewPages" rows="10" required></textarea></label>
+        <button type="submit" class="primary-action">通过</button></fieldset><p id="qualityReviewStatus" role="status"></p>
+      </form>
+    </section>
+  </dialog>
   <dialog id="variantDialog" class="copy-preview-dialog copy-rewrite-dialog copy-variant-dialog" aria-labelledby="variantDialogTitle">
     <div class="copy-dialog-head"><h2 id="variantDialogTitle">新增改写文案</h2><button id="closeVariant" type="button">关闭</button></div>
     <section class="copy-panel">
@@ -144,8 +157,8 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-peer-extras"></script><script src="/psychology-peer-production.js?v=20260924-batch-ai"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260924-quality-review"></script><script src="/psychology-peer-production.js?v=20260924-quality-review"></script>
 <script src="/psychology-peer-extras.js?v=20260924-peer-extras"></script>
-<script type="module" src="/psychology-copy-library.js?v=20260924-model-label"></script>
+<script type="module" src="/psychology-copy-library.js?v=20260924-quality-review"></script>
 </body>
 </html>

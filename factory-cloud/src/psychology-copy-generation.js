@@ -57,18 +57,18 @@ ${input}`;
 }
 
 // Several versions in one call, so the model can keep their angles apart.
-// Invalid versions are dropped; the call fails only when none is usable.
+// Invalid versions retain their raw output for disabled manual review.
 export async function generateCopyDrafts(env,source,{model:modelId,count=5}={}){
  const model=copyModel(modelId),{photo,pages,input}=originalOf(source);
  const prompt=`Create ${count} distinct psychology/relationship social-media rewrites of ORIGINAL_JSON. Each version must take a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action) and open with a different hook style; no sentence may repeat across versions. ${RULES(photo,pages)} Return JSON ONLY: {"versions":[${DRAFT_FIELDS}, ...]} with exactly ${count} items. Do not include review state, IDs, scores or commentary. ORIGINAL_JSON:
 ${input}`;
  const text=await callModel(env,model,prompt,Math.min(16000,2000*count));
  let versions;
- try{versions=JSON.parse(jsonBody(text)).versions;}catch{fail('AI 返回格式无效，请重新生成。');}
- if(!Array.isArray(versions))fail('AI 返回格式无效，请重新生成。');
+ try{versions=JSON.parse(jsonBody(text)).versions;}catch{}
+ if(!Array.isArray(versions)||!versions.length)return {drafts:[],rejected:[{raw:text,reason:'AI 返回格式无效，未得到可用版本数组。'}],model:model.id};
  const drafts=[],rejected=[];
- for(const version of versions.slice(0,count)){try{drafts.push(validateCopyDraft(JSON.stringify(version),photo?pages.length:null));}catch(error){rejected.push(error.message);}}
- if(!drafts.length)fail('AI 返回的版本都不符合要求，请重新生成。');
+ for(const version of versions.slice(0,count)){try{drafts.push(validateCopyDraft(JSON.stringify(version),photo?pages.length:null));}catch(error){rejected.push({raw:JSON.stringify(version),reason:error.message});}}
+
  return {drafts,rejected,model:model.id};
 }
 
@@ -76,6 +76,14 @@ export function validateCopyDraft(text,pageCount=null){
  let draft;
  try{if(typeof text!=='string'||text.length>20000)throw new Error();draft=JSON.parse(jsonBody(text));}catch{fail('AI 返回格式无效，请重新生成。');}
  const valid=(v,max)=>typeof v==='string'&&v.trim().length>0&&v.trim().length<=max;
- if(!draft||!valid(draft.name,70)||!valid(draft.title,200)||!valid(draft.caption,2200)||!Array.isArray(draft.pages)||!draft.pages.length||draft.pages.length>6||(pageCount!==null&&draft.pages.length!==pageCount)||draft.pages.some(p=>!valid(p,1500)||!p.replace(/[#＃][\p{L}\p{N}_]+/gu,'').trim()))fail('AI 返回的标题、文案或页数不符合要求，请重新生成。');
+ if(!draft||!valid(draft.name,70))fail('版本名称 name 缺失或超过 70 字符。');
+ if(!valid(draft.title,200))fail('标题 title 缺失或超过 200 字符。');
+ if(!valid(draft.caption,2200))fail('发布文案 caption 缺失或超过 2200 字符。');
+ if(!Array.isArray(draft.pages)||!draft.pages.length||draft.pages.length>6)fail('正文页数不符合要求：pages 须为 1–6 段文字。');
+ if(pageCount!==null&&draft.pages.length!==pageCount)fail('正文页数不符合要求：原文 '+pageCount+' 页，模型返回 '+draft.pages.length+' 页。');
+ for(const [i,page] of draft.pages.entries()){
+  if(!valid(page,1500))fail('第 '+(i+1)+' 页须为 1–1500 字符的文字。');
+  if(!page.replace(/[#＃][\p{L}\p{N}_]+/gu,'').trim())fail('第 '+(i+1)+' 页只有标签，没有正文。');
+ }
  return {name:draft.name.trim(),title:draft.title.trim(),caption:draft.caption.trim(),pages:draft.pages.map(p=>p.trim())};
 }

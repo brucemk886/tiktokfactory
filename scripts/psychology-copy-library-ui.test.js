@@ -108,7 +108,7 @@ test('batch AI rewrite posts one request per selected source with the chosen mod
  await h.nodes.get('#batchRewriteBtn').listeners.click();
  assert.deepEqual(h.requests.map(r=>r.url).sort(),['a','b','c'].map(id=>'/api/psychology-creative/copies/generate-batch?sourceId='+id+'&model=claude-haiku-4.5&count=3'));
  assert.ok(h.requests.every(r=>r.method==='POST'));
- assert.match(h.nodes.get('#productionStatus').textContent,/保存 6 个改写版本，2 个未通过质量检查；1 篇失败/);
+ assert.match(h.nodes.get('#productionStatus').textContent,/保存 6 个改写版本，2 个未通过质检.*1 篇失败/);
  assert.equal(h.nodes.get('#selectionCount').textContent,'已选 1 条');assert.equal(refreshed,true);
 });
 
@@ -156,4 +156,14 @@ test('hot-comment action renders escaped originals and descending likes without 
  h.events.get('peer-list-loaded')({detail:{items:[{id:'a',title:'Source',peer:{commentCount:20,topComments:[{text:'lower',likes:10},{text:'<img src=x>',likes:200},{text:'zero',likes:0}],topCommentsNote:'Only two visible'}}]}});
  await h.click({hotComments:'a'});assert.equal(h.nodes.get('#hotCommentsDialog').open,true);
  const markup=h.nodes.get('#hotCommentsList').innerHTML;assert.ok(markup.indexOf('&lt;img')<markup.indexOf('lower'));assert.doesNotMatch(markup,/<img|zero/);assert.match(markup,/200/);assert.match(h.nodes.get('#hotCommentsStatus').textContent,/Only two visible/);assert.equal(h.requests.length,0);
+});
+
+
+test('quality review shows literal raw output and reason, and approval sends only edited content',async()=>{
+ const h=harness();const row={id:'a'.repeat(64),title:'Review title',caption:'Caption',pages:['First page'],review_reason:'Copied original',raw_response:'<script>raw model text</script>',rewriteModelLabel:'Sonnet 5'};
+ h.context.openQualityReview(row);assert.equal(h.nodes.get('#qualityReviewDialog').open,true);assert.equal(h.nodes.get('#qualityReviewRaw').textContent,row.raw_response);assert.match(h.nodes.get('#qualityReviewReason').textContent,/Copied original/);
+ h.nodes.get('#qualityReviewPages').value='invalid';await h.nodes.get('#qualityReviewForm').onsubmit({preventDefault(){}});assert.equal(h.requests.length,0);
+ h.nodes.get('#qualityReviewPages').value=JSON.stringify(['Edited page']);h.respond(()=>({ok:true,items:[],page:1,total:0}));
+ await h.nodes.get('#qualityReviewForm').onsubmit({preventDefault(){}});
+ const approved=h.requests.find(r=>r.url.endsWith('/approve'));assert.deepEqual(approved.body,{title:'Review title',caption:'Caption',pages:['Edited page']});assert.equal(h.nodes.get('#qualityReviewDialog').open,false);
 });

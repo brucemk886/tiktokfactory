@@ -89,18 +89,18 @@
   $('#batchRewriteBtn')?.addEventListener('click',async()=>{
     if(busy||!selected.size)return;
     const ids=[...selected],model=$('#batchModel').value,count=Number($('#batchCount').value)||5,label=$('#batchModel').selectedOptions?.[0]?.textContent||model;
-    if(!confirm('用 '+label+' 为选中的 '+ids.length+' 篇各生成 '+count+' 个改写？生成的版本会通过质量检查后直接保存并启用，可在改写详情里删除。'))return;
+    if(!confirm('用 '+label+' 为选中的 '+ids.length+' 篇各生成 '+count+' 个改写？通过质检的版本保存并启用，未通过的保留在改写详情中等待人工审核。'))return;
     busy=true;sync();
-    let done=0,created=0,skipped=0;const failed=[];
+    let done=0,created=0,skipped=0,pending=0;const failed=[];
     const run=async id=>{
-      try{const data=await api('/api/psychology-creative/copies/generate-batch?sourceId='+encodeURIComponent(id)+'&model='+encodeURIComponent(model)+'&count='+count,{method:'POST'});created+=data.created;skipped+=data.skipped.length;selected.delete(id);}
+      try{const data=await api('/api/psychology-creative/copies/generate-batch?sourceId='+encodeURIComponent(id)+'&model='+encodeURIComponent(model)+'&count='+count,{method:'POST'});created+=data.created;skipped+=data.skipped.length;pending+=Number(data.pending)||0;selected.delete(id);}
       catch(error){failed.push(error.message);}
-      done++;notify('正在生成改写：'+done+' / '+ids.length+' 篇，已保存 '+created+' 个版本…');
+      done++;notify('正在生成改写：'+done+' / '+ids.length+' 篇，已保存 '+created+' 个版本，待审核 '+pending+' 个…');
     };
     notify('正在生成改写：0 / '+ids.length+' 篇…');
     const queue=[...ids];await Promise.all([0,1].map(async()=>{while(queue.length)await run(queue.shift());}));
     busy=false;requestId='';sync();
-    notify('完成：保存 '+created+' 个改写版本'+(skipped?'，'+skipped+' 个未通过质量检查':'')+(failed.length?'；'+failed.length+' 篇失败：'+[...new Set(failed)].join('；'):'')+'。',failed.length>0);
+    notify('完成：保存 '+created+' 个改写版本'+(skipped?'，'+skipped+' 个未通过质检（本次新增待审核 '+pending+' 个，可在改写详情查看并通过）':'')+(failed.length?'；'+failed.length+' 篇失败：'+[...new Set(failed)].join('；'):'')+'。',failed.length>0);
     document.dispatchEvent(new CustomEvent('peer-list-refresh-request'));
   });
   $('#clearSelectionBtn').addEventListener('click', () => {

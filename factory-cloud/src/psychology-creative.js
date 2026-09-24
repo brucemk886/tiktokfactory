@@ -20,25 +20,37 @@ export function normalizeVariant(input){
  const pages=input.pages.map(v=>typeof v==='string'?v.trim():'');if(pages.some(v=>!v||v.length>1500))fail('每页须为1–1500字符的文字。');
  return {externalId,sourceKey,title,caption,pages,rewriteModel:normalizeRewriteModel(input.rewriteModel),...normalizeCopyReview({...input,title,caption,pages})};
 }
-// Batch AI versions go through the same quality gate as Grokbot imports and
-// are saved enabled; a failing version is skipped with its reason.
+// Preserve rejected model output disabled for explicit human review.
 async function saveGeneratedVersions(db,owner,source,{drafts,rejected,model}){
  let sourceKey;try{sourceKey=photoCopyKey(source.source_url);}catch{sourceKey=source.id;}
  const originalPages=(JSON.parse(source.content_json||'{}').pages||[]).map(p=>p?.text).filter(t=>typeof t==='string');
- const skipped=[...rejected],statements=[];let created=0;
+ const pending=[...rejected],statements=[];
  for(const draft of drafts){
+  let variant;
   try{
-   const fingerprint=await sha256Hex(JSON.stringify([sourceKey,draft.title,draft.caption,draft.pages]));
-   const variant=normalizeVariant({externalId:'ai-'+model+'-'+fingerprint.slice(0,24),sourceKey,title:draft.title,caption:draft.caption,pages:draft.pages});
+   variant=normalizeVariant({externalId:'validation',sourceKey,title:draft.title,caption:draft.caption,pages:draft.pages});
    checkRewrite(variant,originalPages);
    await checkSharedLines(db,[{sourceKey,pages:variant.pages,label:'AI 版本'}]);
-   statements.push(db.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,rewrite_model) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
-    .bind(await sha256Hex(owner+':'+variant.externalId),owner,variant.externalId,sourceKey,variant.title,variant.caption,JSON.stringify(variant.pages),fingerprint,Date.now(),model));
-   created++;
-  }catch(error){skipped.push(error.message);}
+  }catch(error){if(error.statusCode!==400)throw error;pending.push({raw:JSON.stringify(draft),reason:error.message});continue;}
+  const fingerprint=await sha256Hex(JSON.stringify([sourceKey,variant.title,variant.caption,variant.pages]));
+  const externalId='ai-'+model+'-'+fingerprint.slice(0,24);
+  statements.push(db.prepare('INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,rewrite_model) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING RETURNING id')
+   .bind(await sha256Hex(owner+':'+externalId),owner,externalId,sourceKey,variant.title,variant.caption,JSON.stringify(variant.pages),fingerprint,Date.now(),model));
  }
- if(statements.length)await db.batch(statements);
- return {created,skipped,model};
+ const acceptedCount=statements.length;
+ for(const item of pending){
+  const raw=String(item.raw??'');let draft;try{draft=JSON.parse(raw);}catch{}
+  const title=typeof draft?.title==='string'?draft.title:'未通过质检的模型返回';
+  const caption=typeof draft?.caption==='string'?draft.caption:'';
+  const pages=Array.isArray(draft?.pages)?draft.pages.filter(p=>typeof p==='string'):[];
+  const fingerprint=await sha256Hex(JSON.stringify([sourceKey,model,raw]));
+  const externalId='ai-review-'+fingerprint.slice(0,32);
+  statements.push(db.prepare("INSERT INTO psychology_copy_variants(id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,rewrite_model,enabled,review_status,review_reason,raw_response) VALUES(?,?,?,?,?,?,?,?,?,?,0,'pending',?,?) ON CONFLICT(id) DO NOTHING RETURNING id")
+   .bind(await sha256Hex(owner+':'+externalId),owner,externalId,sourceKey,title,caption,JSON.stringify(pages),fingerprint,Date.now(),model,item.reason,raw));
+ }
+ const results=statements.length?await db.batch(statements):[];
+ const added=rows=>rows.reduce((n,r)=>n+(r.results?.length||0),0);
+ return {created:added(results.slice(0,acceptedCount)),pending:added(results.slice(acceptedCount)),skipped:pending.map(r=>r.reason),model};
 }
 export function variantPlan(v){return {title:v.title,caption:v.caption,hooks:[],scenes:JSON.parse(v.pages_json).map((text,index)=>({sourceIndex:index+1,template:'text',textKind:index?'content':'cover',originalText:text,title:text,subtitle:'',body:'',text,stockQuery:''}))};}
 export async function handlePsychologyCreative(request,env,url,session){
@@ -90,7 +102,7 @@ export async function handlePsychologyCreative(request,env,url,session){
   const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1))),q='%'+String(url.searchParams.get('q')||'').slice(0,100)+'%';
   const args=[owner,q,q];let where='owner=? AND deleted_at=0 AND (title LIKE ? OR source_key LIKE ?)';
   if(sourceId){where+=' AND source_key=?';args.push(sourceKey);}
-  const [rows,total]=await Promise.all([db.prepare('SELECT id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,deleted_at,quality_score,score_reason,rewrite_model FROM psychology_copy_variants WHERE '+where+' ORDER BY quality_score DESC,created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
+  const [rows,total]=await Promise.all([db.prepare('SELECT id,owner,external_id,source_key,title,caption,pages_json,fingerprint,created_at,enabled,deleted_at,quality_score,score_reason,rewrite_model,review_status,review_reason,raw_response,reviewed_at FROM psychology_copy_variants WHERE '+where+' ORDER BY quality_score DESC,created_at DESC,id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all(),db.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE '+where).bind(...args).first()]);
   return json({items:rows.results.map(r=>({...r,rewriteModel:r.rewrite_model,rewriteModelLabel:rewriteModelLabel(r.rewrite_model),pages:JSON.parse(r.pages_json)})),page,total:total.n});
  }
  if(url.pathname===BASE+'/copies'&&request.method==='POST'){
@@ -105,8 +117,22 @@ export async function handlePsychologyCreative(request,env,url,session){
   }
   await db.batch(statements);return json({ok:true,created,duplicates:rows.length-created});
  }
+ const approve=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})\/approve$/);
+ if(approve&&request.method==='POST'){
+  const row=await db.prepare('SELECT * FROM psychology_copy_variants WHERE id=? AND owner=? AND deleted_at=0').bind(approve[1],owner).first();
+  if(!row)fail('文案不存在。',404);
+  if(row.review_status!=='pending')return json({ok:true,alreadyApproved:true});
+  const input=await readJson(request);
+  if(!input||typeof input!=='object'||Array.isArray(input))fail('请提交有效的审核内容。');
+  const variant=normalizeVariant({externalId:row.external_id,sourceKey:row.source_key,title:input.title??row.title,caption:input.caption??row.caption,pages:input.pages??JSON.parse(row.pages_json)});
+  const fingerprint=await sha256Hex(JSON.stringify([row.source_key,variant.title,variant.caption,variant.pages]));
+  const result=await db.prepare("UPDATE psychology_copy_variants SET title=?,caption=?,pages_json=?,fingerprint=?,review_status='approved',reviewed_at=?,enabled=1,comparison_json='' WHERE id=? AND owner=? AND deleted_at=0 AND review_status='pending'")
+   .bind(variant.title,variant.caption,JSON.stringify(variant.pages),fingerprint,Date.now(),row.id,owner).run();
+  if(!result.meta.changes)fail('该版本状态已变化，请刷新后查看。',409);
+  return json({ok:true});
+ }
  const match=url.pathname.match(/^\/api\/psychology-creative\/copies\/([a-f0-9]{64})$/);
- if(match&&request.method==='PATCH'){const b=await readJson(request);if(typeof b.enabled!=='boolean')fail('启用状态无效。');const result=await db.prepare('UPDATE psychology_copy_variants SET enabled=? WHERE id=? AND owner=? AND deleted_at=0').bind(b.enabled?1:0,match[1],owner).run();if(!result.meta.changes)fail('文案不存在。',404);return json({ok:true});}
+ if(match&&request.method==='PATCH'){const b=await readJson(request);if(typeof b.enabled!=='boolean')fail('启用状态无效。');const result=await db.prepare('UPDATE psychology_copy_variants SET enabled=? WHERE id=? AND owner=? AND deleted_at=0 AND review_status=\'approved\'').bind(b.enabled?1:0,match[1],owner).run();if(!result.meta.changes)fail('文案不存在。',404);return json({ok:true});}
  // Deleted rows stay as tombstones so Grokbot re-imports of the same version are skipped as duplicates.
  if(match&&request.method==='DELETE'){const result=await db.prepare('UPDATE psychology_copy_variants SET enabled=0,deleted_at=? WHERE id=? AND owner=? AND deleted_at=0').bind(Date.now(),match[1],owner).run();if(!result.meta.changes)fail('文案不存在。',404);return json({ok:true});}
  if(url.pathname===BASE+'/export'&&request.method==='GET'){

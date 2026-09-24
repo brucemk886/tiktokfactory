@@ -69,13 +69,13 @@ test('batch AI rewrite saves passing versions enabled under the source and skips
   assert.equal(data.skipped.length, 2);
   assert.ok(data.skipped.some(s => /照抄了原文/.test(s)));
   assert.ok(data.skipped.some(s => /页数不符合/.test(s)));
-  const rows = f.sqlite.prepare('SELECT owner,external_id,source_key,enabled,rewrite_model FROM psychology_copy_variants ORDER BY external_id').all();
+  const rows = f.sqlite.prepare('SELECT owner,external_id,source_key,enabled,rewrite_model FROM psychology_copy_variants WHERE review_status=\'approved\' ORDER BY external_id').all();
   assert.equal(rows.length, 3);
   assert.ok(rows.every(r=>r.rewrite_model==='claude-opus-4.7'));
   assert.ok(rows.every(r => r.owner === 'admin' && r.enabled === 1 && r.external_id.startsWith('ai-claude-opus-4.7-') && r.source_key.startsWith('v1:tiktok:')));
   // Resending the same output is a no-op; a line already used by this post is not a template.
-  assert.equal((await (await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-opus-4.7&count=5')).json()).created, 3);
-  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n, 3);
+  assert.equal((await (await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-opus-4.7&count=5')).json()).created, 0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n, 5);
   const tooMany = await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&count=6');
   assert.equal(tooMany.status, 400);
   assert.match((await tooMany.json()).error, /1–5/);
@@ -88,7 +88,7 @@ test('model output wrapped in a code fence or a sentence still parses', async t 
 
 test('batch AI rewrite fails clearly when nothing usable comes back or the key is missing', async t => {
   const f = await aiFixture(t, 'not json');
-  await assert.rejects(api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-sonnet-5&count=2'), /格式无效/);
+  const result=await (await api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-sonnet-5&count=2')).json();assert.equal(result.pending,1);assert.equal(result.created,0);assert.equal(f.sqlite.prepare('SELECT raw_response FROM psychology_copy_variants').get().raw_response,'not json');
   delete f.env.REPLICATE_API_TOKEN;
   await assert.rejects(api(f, '/copies/generate-batch?sourceId=' + f.row.id + '&model=claude-sonnet-5&count=2'), e => e.statusCode === 503);
 });
@@ -117,4 +117,35 @@ test('rewrites use available comments without padding and still work without com
   const reference=JSON.parse(f.prompts.at(-1).body.input.prompt.split('ORIGINAL_JSON:').at(-1));
   assert.deepEqual(reference.topComments||[],comments);
  }
+});
+
+
+test('rejected versions retain output and reasons; only owner approval makes them eligible',async t=>{
+ const draft={...version(1),pages:['A fresh cover','First original page text here']};
+ const f=await aiFixture(t,JSON.stringify({versions:[draft]}));
+ const result=await (await api(f,'/copies/generate-batch?sourceId='+f.row.id+'&model=claude-sonnet-5&count=1')).json();
+ assert.equal(result.pending,1);assert.equal(result.created,0);
+ const row=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();assert.equal(row.enabled,0);assert.equal(row.review_status,'pending');assert.match(row.review_reason,/照抄/);assert.equal(JSON.parse(row.raw_response).pages[1],draft.pages[1]);
+ const listed=await (await api(f,'/copies?sourceId='+f.row.id,'GET')).json();assert.equal(listed.items[0].raw_response,row.raw_response);
+ const request=(suffix,body,actor=user,method='POST')=>{const url=new URL('https://factory.test/api/psychology-creative/copies/'+row.id+suffix);return handlePsychologyCreative(new Request(url,{method,body:JSON.stringify(body)}),f.env,url,{user:actor});};
+ await assert.rejects(request('',{enabled:true},user,'PATCH'),e=>e.statusCode===404);
+ assert.throws(()=>f.sqlite.prepare('UPDATE psychology_copy_variants SET enabled=1 WHERE id=?').run(row.id),/Pending rewrite/);
+ await assert.rejects(request('/approve',{}, {...user,username:'other'}),e=>e.statusCode===404);
+ assert.equal((await request('/approve',{}, {...user,role:'operator'})).status,403);
+ assert.equal((await request('/approve',{})).status,200);
+ let approved=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();assert.equal(approved.enabled,1);assert.equal(approved.review_status,'approved');assert.ok(approved.reviewed_at>0);assert.equal(approved.raw_response,row.raw_response);
+ assert.equal((await (await request('/approve',{})).json()).alreadyApproved,true);
+ const again=await (await api(f,'/copies/generate-batch?sourceId='+f.row.id+'&model=claude-sonnet-5&count=1')).json();assert.equal(again.pending,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants').get().n,1);
+});
+
+test('all invalid drafts remain reviewable; malformed output needs corrected content before approval',async t=>{
+ const raw='The model did not return a JSON object <script>bad</script>';
+ const f=await aiFixture(t,raw);
+ const result=await (await api(f,'/copies/generate-batch?sourceId='+f.row.id+'&model=claude-sonnet-5&count=2')).json();assert.equal(result.pending,1);
+ const row=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();assert.equal(row.raw_response,raw);assert.equal(row.enabled,0);
+ const request=body=>{const url=new URL('https://factory.test/api/psychology-creative/copies/'+row.id+'/approve');return handlePsychologyCreative(new Request(url,{method:'POST',body:JSON.stringify(body)}),f.env,url,{user});};
+ await assert.rejects(request({}),e=>e.statusCode===400);assert.equal(f.sqlite.prepare('SELECT enabled FROM psychology_copy_variants').get().enabled,0);
+ await assert.rejects(request({title:'Fixed',pages:Array(7).fill('Too many')}),e=>e.statusCode===400);
+ assert.equal((await request({title:'Fixed title',caption:'Fixed caption',pages:['First page','Second page']})).status,200);
+ const saved=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();assert.equal(saved.title,'Fixed title');assert.equal(saved.raw_response,raw);assert.equal(saved.enabled,1);
 });

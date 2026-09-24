@@ -68,10 +68,10 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
   const byId=new Map(peers.map(r=>[r.id,r]));
   const originals=items.map(({content_json,...r})=>({...r,sourceKey:(()=>{try{return photoCopyKey(r.source_url);}catch{return r.id;}})(),content:safeParse(content_json)}));
   const keys=[...new Set(originals.map(r=>r.sourceKey))];
-  const variants=keys.length?(await env.DB.prepare('SELECT source_key,rewrite_model,COUNT(*) total,SUM(enabled) enabled FROM psychology_copy_variants WHERE owner=? AND deleted_at=0 AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key,rewrite_model').bind(user.username,...keys).all()).results:[];
+  const variants=keys.length?(await env.DB.prepare('SELECT source_key,rewrite_model,COUNT(*) total,SUM(enabled) enabled,SUM(CASE WHEN review_status=\'pending\' THEN 1 ELSE 0 END) pending FROM psychology_copy_variants WHERE owner=? AND deleted_at=0 AND source_key IN ('+keys.map(()=>'?').join(',')+') GROUP BY source_key,rewrite_model').bind(user.username,...keys).all()).results:[];
   const bySource=new Map();
-  for(const r of variants){const group=bySource.get(r.source_key)||{total:0,enabled:0,models:[]};group.total+=Number(r.total);group.enabled+=Number(r.enabled);group.models.push({id:r.rewrite_model,label:rewriteModelLabel(r.rewrite_model),count:Number(r.total)});bySource.set(r.source_key,group);}
-  return json({canManageSources:user.sidebarModules?.includes('psychology-peer-hits')===true,items:originals.map(r=>({...r,peer:byId.get(r.id)||null,variantCount:Number(bySource.get(r.sourceKey)?.total||0),rewriteModels:bySource.get(r.sourceKey)?.models||[], enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
+  for(const r of variants){const group=bySource.get(r.source_key)||{total:0,enabled:0,pending:0,models:[]};group.total+=Number(r.total);group.enabled+=Number(r.enabled);group.pending+=Number(r.pending);group.models.push({id:r.rewrite_model,label:rewriteModelLabel(r.rewrite_model),count:Number(r.total)});bySource.set(r.source_key,group);}
+  return json({canManageSources:user.sidebarModules?.includes('psychology-peer-hits')===true,items:originals.map(r=>({...r,peer:byId.get(r.id)||null,variantCount:Number(bySource.get(r.sourceKey)?.total||0),rewriteModels:bySource.get(r.sourceKey)?.models||[], pendingVariantCount:Number(bySource.get(r.sourceKey)?.pending||0), enabledVariantCount:Number(bySource.get(r.sourceKey)?.enabled||0)})),total,page,pages,counts});
  }
  const match=url.pathname.match(/^\/api\/psychology-copy-library\/(psy-[a-f0-9]{32})\/retry$/);
  if(match&&request.method==='POST'){

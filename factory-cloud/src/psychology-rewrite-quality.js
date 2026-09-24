@@ -38,7 +38,7 @@ export async function checkSharedLines(db, entries, rules = REWRITE_RULES) {
   }
   if (!owners.size) return;
   const clash = await db.prepare(`SELECT lower(trim(p.value)) AS line, v.source_key FROM psychology_copy_variants v, json_each(v.pages_json) p
-    WHERE lower(trim(p.value)) IN (SELECT value FROM json_each(?)) LIMIT 200`).bind(JSON.stringify([...owners.keys()])).all();
+    WHERE v.review_status='approved' AND lower(trim(p.value)) IN (SELECT value FROM json_each(?)) LIMIT 200`).bind(JSON.stringify([...owners.keys()])).all();
   for (const row of clash.results) {
     const mine = owners.get(row.line);
     if (mine && mine.sourceKey !== row.source_key) fail(`${mine.label}：${quote(row.line)} 与文案库里其他爆款的改写完全相同，疑似模板。每篇爆款请单独改写。`);

@@ -24,6 +24,7 @@ function fixture(t) {
   sqlite.exec('CREATE TABLE psychology_publish_items(id TEXT PRIMARY KEY,source_id TEXT);');
   sqlite.exec(fs.readFileSync(new URL('../migrations/0052_psychology_rewrite_model.sql',import.meta.url),'utf8'));
   sqlite.exec(fs.readFileSync(new URL('../migrations/0053_psychology_peer_pending_comments.sql',import.meta.url),'utf8'));
+  sqlite.exec(fs.readFileSync(new URL('../migrations/0055_psychology_rewrite_review.sql',import.meta.url),'utf8'));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},async first(){return sqlite.prepare(sql).get(...this.args)||null;},async all(){return {results:sqlite.prepare(sql).all(...this.args)};},async run(){const info=sqlite.prepare(sql).run(...this.args);return {meta:{changes:Number(info.changes)}};}};},
     async batch(statements){sqlite.exec("BEGIN");try{const results=[];for(const stmt of statements)results.push(await stmt.all());sqlite.exec("COMMIT");return results;}catch(error){sqlite.exec("ROLLBACK");throw error;}}};
   return {db,sqlite};
