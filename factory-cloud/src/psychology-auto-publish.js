@@ -526,6 +526,12 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
 export async function dispatchPhotoBatch(env, batchId) {
   const rows = await env.DB.prepare(`SELECT j.id FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id
     WHERE i.batch_id=? AND j.type='psychology-photo-story' AND j.status='queued'`).bind(batchId).all();
+  if(rows.results.length && typeof env.PEER_PHOTO_WORKFLOW.createBatch==='function') {
+    // Cloudflare's batch creation is idempotent: existing IDs are skipped.
+    // Keep the stable IDs while avoiding serial status/create round trips.
+    await env.PEER_PHOTO_WORKFLOW.createBatch(rows.results.map(row=>({id:row.id,params:{jobId:row.id}})));
+    return;
+  }
   for (const row of rows.results) {
     // Stable workflow IDs prevent double paid work when the HTTP reply is lost.
     try { await env.PEER_PHOTO_WORKFLOW.get(row.id).then(instance => instance.status()); }

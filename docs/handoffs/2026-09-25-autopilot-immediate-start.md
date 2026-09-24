@@ -13,3 +13,7 @@ Explicit startNow=true persists start_now via0059. First Beijing date accepts >1
 
 # Remaining / next step
 Commit/push main, deploy via npm run deploy, then create9 pilots via authenticated application API using the verified group IDs and startNow=true. Confirm initial 360 items schedule and generation; monitor first group before01:45. Do not claim started until records and queues have been verified. User has already authorized real generation and publication; no further approval needed.
+
+
+# Startup correction
+The first live immediate-deadline workflow failed before production: Cloudflare rejects sleepUntil dates in the past. Replaced with a persisted remaining duration and relative sleep, skipping sleep when already due. Future replay remains deterministic. Workflow dispatch now uses the documented idempotent createBatch API instead of serial get/create requests; stable task IDs are unchanged. Final suite729 passing. Recover only verified errored pre-production instances; do not interrupt healthy/sleeping work or duplicate tasks.

@@ -25,9 +25,10 @@ export async function runPeerPhotoWorkflow(env, event, step) {
   if (!row || ['done', 'failed', 'canceled', 'cancelled'].includes(row.status)) return { skipped: true };
   const payload = JSON.parse(row.payload_json);
   if (!extraction && payload.psychologyAutomation?.generateAt) {
-    // Durable sleep spreads preparation with the publication schedule. The step
-    // exists on every replay, even after its timestamp is in the past.
-    await step.sleepUntil('autopilot-generation-time', new Date(payload.psychologyAutomation.generateAt));
+    // Freeze the remaining duration once for deterministic replay. Past deadlines
+    // prepare immediately; relative sleep avoids Cloudflare rejecting past dates.
+    const remaining=await step.do('autopilot-generation-delay',READ,()=>Math.max(0,payload.psychologyAutomation.generateAt-Date.now()));
+    if(remaining>0)await step.sleep('autopilot-generation-time',remaining);
     const current=await step.do('autopilot-after-wait', READ, ()=>env.DB.prepare('SELECT status FROM factory_jobs WHERE id=?').bind(id).first());
     if(!current || ['done','failed','canceled','cancelled'].includes(current.status))return {skipped:true};
   }

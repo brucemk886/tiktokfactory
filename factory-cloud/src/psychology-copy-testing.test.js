@@ -136,3 +136,12 @@ test('nine groups with two daily rounds allocate 360 distinct account/source pai
   assert.ok(all.every(i=>i.variantId!=='v3'));
   for(const connectionId of new Set(all.map(i=>i.connectionId))){const times=all.filter(i=>i.connectionId===connectionId).map(i=>i.scheduleAt);assert.equal(times[1]-times[0],1800);}
 });
+
+
+test('workflow batch dispatch uses stable ids and idempotently rechecks the same batch',async t=>{
+ const f=await ready(t),calls=[];f.env.PEER_PHOTO_WORKFLOW.createBatch=async rows=>{calls.push(rows);return rows;};
+ const request=batch();const first=await (await f.call('POST',request)).json();
+ const second=await (await f.call('POST',request)).json();assert.equal(second.batchId,first.batchId);
+ assert.equal(calls.length,2);assert.deepEqual(calls[0],calls[1]);assert.equal(calls[0].length,2);
+ assert.ok(calls[0].every(row=>row.id===row.params.jobId));assert.equal(f.requests.length,0);
+});
