@@ -75,7 +75,7 @@ Content-Type: application/json
 | `source` | 数据来源，例如 `grokbot`，最多 80 字符。 |
 | `videoData` | 其他内容数据的 JSON 对象，序列化后最多 16000 字符；可保存标签、语言、文案、其他指标等。图文复刻可提供完整 `copy`、`caption`、`script`、`transcript` 或 `文案`。若已采集原文，图文可同时提供 `pageTexts`（按图片顺序，最多6项），视频可提供 `transcript` 和可选 `onScreenText`；文案库会直接归档这些字段，避免再次识别。仅有标题或发布文案不视为已完成逐页/逐帧提取。 |
 
-| `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符且不含话题标签，`caption` 必填（去掉话题标签后至少 20 字符）、最多 2200 字符，`pages` 为 2–6 页、每页 1–1500 字符、第一项是首图。写入前会按下文「写入标准与改写规则」检查，任一版本不合格整批拒收并返回原因。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
+| `rewrites` | 可选，改写版本数组，每条内容最多 10 个、每次请求合计最多 500 个。每项 `{ "title", "caption", "pages": [...], "externalId"? }`：`title` 最多 200 字符，`caption` 必填（简短即可）、最多 2200 字符，`pages` 为 1–6 页、每页 1–1500 字符、第一项是首图。写入前会按下文「写入标准与改写规则」检查，任一版本不合格整批拒收并返回原因。导入即启用，自动挂到这条爆款原文下，可供图文、视频自动发布抽取。`externalId` 可省略：省略时按内容自动生成，同样内容重复提交会被识别为重复；显式传入时，同编号不同内容会被拒绝（版本不可覆盖），该版本记为 `conflicts`，同批其他内容照常写入。 |
 
 数量字段支持非负安全整数，也接受 `"128K"`、`"12.8万"`、`"1.2M"` 等字符串，存储为整数。标准字段优先于别名。时间可用带时区的 ISO 字符串，或 Unix 秒 / 毫秒时间戳；不接受无时区日期、负值和超过服务器时间一天的未来时间。接口列表返回时间统一为 Unix 毫秒，页面显示北京时间。
 
@@ -125,8 +125,8 @@ Content-Type: application/json
 
 1. **逐篇调用大模型改写，禁止模板和程序拼接。** 先读懂这一篇原帖的钩子、情境和情绪，再写。
 2. **每篇 5 个版本，每个版本换一个角度，但都围绕这一篇原帖**：例如换叙述视角（我 / 你 / 旁观者）、换具体场景（发消息、约会后、分手后）、换形式（清单、对比、一句话安慰、可执行小建议）。不同爆款之间不能共用同一句正文。
-3. **结构**：首图是一句抓人的钩子（不超过 12 个英文单词为宜）；正文 2–5 页，每页一个完整意思、一两句话；最后一页可以是安慰或可执行的小建议。
-4. **发布文案 `caption` 必须写**：一两句自然的话 + 2–5 个相关话题标签。话题标签只放在 caption，不放进标题和图片页。
+3. **结构**：页数跟随原帖，单图也可以；首图是一句抓人的钩子（不超过 12 个英文单词为宜）；多图时每页一个完整意思、一两句话。
+4. **发布文案 `caption` 必须写**，可以很简短，可带话题标签。
 5. **不照抄原文句子，不虚构研究数据**，不做诊断（不说 "you have BPD" 之类），不引流、不放链接。
 6. 全部用英文，口吻像真人发帖，不要教科书腔。
 
@@ -134,9 +134,7 @@ Content-Type: application/json
 
 | 规则 | 报错示例 |
 |---|---|
-| `caption` 为空或只有话题标签 | caption 必须写完整的发布文案 |
-| `pages` 少于 2 页 | pages 至少 2 页 |
-| 标题或图片页含话题标签 | 第 N 页包含话题标签 |
+| `caption` 为空 | caption 不能为空 |
 | 图片页或 caption 含链接、link in bio | 包含链接或引流 |
 | 图片页与本次提交的原文某页一字不差 | 原样照抄了原文 |
 | 拼接痕迹（如 `Do they You track…`） | 有拼接痕迹 |
@@ -152,7 +150,7 @@ For every psychology photo post, call the language model once per post. Never us
 1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
 2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages.
 3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
-4. Each rewrite: title = the cover hook (no hashtags); pages = 2-6 items, cover first, then one clear idea per page in 1-2 natural sentences; caption = 1-2 natural sentences plus 2-5 relevant hashtags. Hashtags only in the caption.
+4. Each rewrite: title = the cover hook; pages = 1-6 items following the original post (a single image is fine), cover first, one clear idea per page; caption is required and can be short, hashtags allowed.
 5. English only, sounds like a real person posting, no invented statistics, no diagnoses, no links.
 6. If the factory rejects a request, read the error (post, rewrite, page, reason), fix only that part and resubmit.
 ```

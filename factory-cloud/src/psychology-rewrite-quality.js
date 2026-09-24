@@ -3,8 +3,7 @@
 // template or spliced output never reaches the library.
 import { isEnglishPeerCopy } from '../../scripts/psychology-peer-language.js';
 
-export const REWRITE_RULES = Object.freeze({ minPages: 2, minCaptionText: 20, sharedLineChars: 20 });
-const HASHTAG = /(^|\s)#[\p{L}\p{N}_]+/u;
+export const REWRITE_RULES = Object.freeze({ sharedLineChars: 20 });
 const LINK = /https?:\/\/|www\.|link\s*in\s*(my\s*)?bio|linkinbio/i;
 // Machine-joined fragments such as "Do they You track…" or "they Closeness".
 const SPLICE = /\b(do|does|did|when|if|they|you|he|she|we)\s+(they|you|he|she|we)\s+(You|They|He|She|We|I)\b|\b(they|you|he|she|we)\s+(You|They|He|She|We|Closeness|Affection)\b/;
@@ -14,14 +13,10 @@ const quote = text => '「' + String(text).slice(0, 60) + (String(text).length >
 
 // Rules one version must meet on its own. originalPages: the post's original page texts, if known.
 export function checkRewrite(rewrite, originalPages = [], rules = REWRITE_RULES) {
-  if (HASHTAG.test(rewrite.title)) fail('标题不能包含话题标签，标签请放进 caption。');
-  const captionText = rewrite.caption.replace(/#[^\s#]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (captionText.length < rules.minCaptionText) fail(`caption 必须写完整的发布文案（去掉话题标签后至少 ${rules.minCaptionText} 个字符），不能为空或只有标签。`);
-  if (rewrite.pages.length < rules.minPages) fail(`pages 至少 ${rules.minPages} 页：首图钩子 + 至少 1 页正文。`);
+  if (!rewrite.caption.trim()) fail('caption 不能为空，请写发布文案（简短即可）。');
   const originals = new Set(originalPages.map(lineKey).filter(line => line.length >= rules.sharedLineChars));
   rewrite.pages.forEach((page, index) => {
     const at = `第 ${index + 1} 页`;
-    if (HASHTAG.test(page)) fail(`${at}包含话题标签，图片页只放正文，标签放进 caption。`);
     if (LINK.test(page) || LINK.test(rewrite.caption)) fail(`${at}或 caption 包含链接或引流（link in bio），请删除。`);
     if (originals.has(lineKey(page))) fail(`${at}原样照抄了原文 ${quote(page)}，改写需要换成新的表达。`);
     if (SPLICE.test(page)) fail(`${at}有拼接痕迹 ${quote(page)}，请由模型逐句重写，不要用程序拼接句子。`);

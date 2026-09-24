@@ -198,11 +198,12 @@ test("rewrite quality gate refuses template, spliced and incomplete versions bef
   const good={title:"When their silence gets loud",caption:"You are not too much for wanting a clear answer.",pages:["When their silence gets loud","A late reply is not a verdict on your worth"]};
   const post=(n,rw,extra={})=>({videoUrl:photoUrl(1000+n),videoData:{pageTexts:["Original cover line here","He left me on read for two whole days"]},rewrites:[rw],...extra});
   const refused=async(rw,pattern)=>{await assert.rejects(importPsychologyPeerHits(db,post(1,rw),"admin"),pattern);};
-  await refused({...good,caption:""},/caption 必须写完整的发布文案/);
-  await refused({...good,caption:"#anxiousattachment #fyp #love"},/caption 必须写完整的发布文案/);
-  await refused({...good,pages:[good.pages[0]]},/至少 2 页/);
-  await refused({...good,title:"Signs #attachment"},/标题不能包含话题标签/);
-  await refused({...good,pages:[good.pages[0],"Soft check: how many boxes hit today? #teacherattachment #xyzba"]},/第 2 页包含话题标签/);
+  await refused({...good,caption:""},/caption 不能为空/);
+  await refused({...good,caption:"   "},/caption 不能为空/);
+  // Short captions, hashtag-only captions, single-image posts and hashtags on pages are all allowed.
+  const loose=await importPsychologyPeerHits(db,post(9,{title:"Me? #relatable",caption:"#fyp",pages:["Too real #anxiousattachment"]}),"admin");
+  assert.equal(loose.rewrites.created,1);
+  sqlite.prepare("DELETE FROM psychology_copy_variants").run();sqlite.prepare("DELETE FROM psychology_copy_library").run();sqlite.prepare("DELETE FROM psychology_peer_hits").run();
   await refused({...good,pages:[good.pages[0],"Read the full story, link in bio"]},/引流/);
   await refused({...good,pages:[good.pages[0],"He left me on read for two whole days"]},/第 2 页原样照抄了原文/);
   await refused({...good,pages:[good.pages[0],"Do they You track every delay in their reply?"]},/拼接痕迹/);
