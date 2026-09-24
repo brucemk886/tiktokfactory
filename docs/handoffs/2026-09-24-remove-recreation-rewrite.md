@@ -14,5 +14,8 @@ Remove the copy-library toolbar's 改写文案 checkbox and its associated origi
 - UI behavior tests verify both media tabs submit no rewrite option; backend regression verifies legacy true cannot enable rewriting for newly created manual recreations.
 - git diff --check passed.
 
-## Next step
-Commit and push main, then standard factory-cloud npm run deploy and read-only online control verification.
+## Deployment / Completion
+- ed68fe6 committed and pushed to main; clean HEAD == origin/main verified before standard factory-cloud npm run deploy.
+- Production version: 43072507-7fd1-4b31-af1d-7cb08358d4d0.
+- Read-only browser verification on the 10-row photo list confirmed 改写文案 absent, with 原帖复刻, 全选本页, 批量删除 and row 新增改写 retained. No production jobs created or data changed.
+- Complete; no remaining work.
