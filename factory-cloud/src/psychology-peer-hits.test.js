@@ -148,13 +148,14 @@ test("admins can move records between video and photo tabs and later imports pre
 });
 
 const photoUrl=n=>`https://www.tiktok.com/@example/photo/${n}`;
+const M={playCount:1200,likeCount:80,commentCount:0,favoriteCount:5,shareCount:0,publishedAt:"2026-09-01T00:00:00Z",accountUsername:"peer"};
 const rewrite=n=>({title:`Rewrite ${n}`,caption:`A full caption written for rewrite ${n}.`,pages:[`Cover ${n}`,`Page two ${n}`]});
 
 test("grokbot page text completes a historical photo copy that auto-extraction skips",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
   await importPsychologyPeerHits(db,{videoUrl:photoUrl(501),title:"Old post",collectedAt:Date.now()-60000},"admin");
   sqlite.prepare("UPDATE psychology_copy_library SET auto_extract=0").run(); // what migration 0044 did to the 09-18 backlog
-  const before=await (await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photoUrl(501)},auth,null)).json();
+  const before=await (await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photoUrl(501),...M},auth,null)).json();
   assert.equal(before.items[0].copy,"needs_text");assert.match(before.items[0].copyNote,/pageTexts/);
   const response=await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:photoUrl(501),videoData:{pageTexts:["Signs you feel too much","You replay every text"]}},auth,null);
   const body=await response.json();assert.equal(response.status,200);assert.equal(body.items[0].copy,"ready");
@@ -177,9 +178,24 @@ test("new posts with text are ready at once; without text they queue, and bad pa
   assert.match(result.items[2].copyNote,/1–6/);
 });
 
+test("the grokbot API requires metrics, publish time and account; updates may rely on saved values",async t=>{
+  const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
+  const post=async body=>{const r=await call(db,PSYCHOLOGY_PEER_API,"POST",body,auth,null);return {status:r.status,body:await r.json()};};
+  const missing=await post({videoUrl:photoUrl(1301),playCount:10});
+  assert.equal(missing.status,400);
+  assert.match(missing.body.error,/第 1 条缺少必填字段：likeCount、commentCount、favoriteCount、shareCount、publishedAt、accountUsername/);
+  assert.match((await post([{...M,videoUrl:photoUrl(1302)},{...M,videoUrl:photoUrl(1303),accountUsername:undefined}])).body.error,/第 2 条缺少必填字段：accountUsername/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_peer_hits").get().n,0);
+  assert.equal((await post({...M,videoUrl:photoUrl(1304),likeCount:0,shareCount:"0"})).status,200); // zero counts are values
+  assert.equal((await post({videoUrl:photoUrl(1304),videoData:{pageTexts:["Later page text"]}})).status,200); // saved row fills the gaps
+  assert.equal((await post({...M,videoUrl:photoUrl(1305),accountUsername:undefined,accountName:"Peer Name"})).status,200);
+  // The signed-in manual path keeps these fields optional.
+  assert.equal((await importPsychologyPeerHits(db,{videoUrl:photoUrl(1306)},"admin")).accepted,1);
+});
+
 test("rewrites in the same import become enabled versions under the original and resends are no-ops",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);const auth={Authorization:"Bearer "+token};
-  const payload={videoUrl:photoUrl(701),videoData:{pageTexts:["Original cover","Original page"]},rewrites:[1,2,3,4,5].map(rewrite)};
+  const payload={...M,videoUrl:photoUrl(701),videoData:{pageTexts:["Original cover","Original page"]},rewrites:[1,2,3,4,5].map(rewrite)};
   const first=await (await call(db,PSYCHOLOGY_PEER_API,"POST",payload,auth,null)).json();
   assert.deepEqual(first.rewrites,{created:5,duplicates:0,conflicts:0});assert.deepEqual(first.items[0].rewrites,{created:5,duplicates:0,conflicts:0});
   const rows=sqlite.prepare("SELECT * FROM psychology_copy_variants ORDER BY title").all();
@@ -259,15 +275,15 @@ test("API keys are hashed, write-only, isolated by owner, rotatable and revocabl
   const metadata=await (await call(db,"/api/psychology-peer-hits/api-key")).json();assert.equal(metadata.configured,true);assert.equal(metadata.apiKey,undefined);assert.equal(JSON.stringify(metadata).includes(token),false);
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(1)},{},null)).status,401);
   const auth={Authorization:"Bearer "+token};
-  const written=await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(1),title:"Bot",accountName:"Account",favoriteCount:10},auth,null);assert.equal(written.status,200);assert.equal((await written.json()).accepted,1);
+  const written=await call(db,PSYCHOLOGY_PEER_API,"POST",{...M,videoUrl:url(1),title:"Bot",accountName:"Account",favoriteCount:10},auth,null);assert.equal(written.status,200);assert.equal((await written.json()).accepted,1);
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"GET",undefined,auth,null)).status,405);
   assert.equal((await call(db,"/api/psychology-peer-hits","GET",undefined,auth,null)).status,401);
   const secondToken=await key(db,{user:{...session.user,id:"second"}});const replacement=await key(db);
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(2)},auth,null)).status,401);
-  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(2)},{Authorization:"Bearer "+replacement},null)).status,200);
+  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(2),...M},{Authorization:"Bearer "+replacement},null)).status,200);
   await call(db,"/api/psychology-peer-hits/api-key","DELETE");
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(3)},{Authorization:"Bearer "+replacement},null)).status,401);
-  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(3)},{Authorization:"Bearer "+secondToken},null)).status,200);
+  assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(3),...M},{Authorization:"Bearer "+secondToken},null)).status,200);
   sqlite.prepare("UPDATE factory_users SET active=0 WHERE id='second'").run();
   assert.equal((await call(db,PSYCHOLOGY_PEER_API,"POST",{videoUrl:url(4)},{Authorization:"Bearer "+secondToken},null)).status,401);
 });
@@ -287,7 +303,7 @@ test("permission and request guards protect key management and reject malformed 
 
 test("public integration dispatch works without a login cookie and stays separate from novel hits",async t=>{
   const {db}=fixture(t);const token=await key(db);
-  const req=new Request(BASE+PSYCHOLOGY_PEER_API,{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({videoUrl:url(100),playCount:100})});
+  const req=new Request(BASE+PSYCHOLOGY_PEER_API,{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({...M,videoUrl:url(100),playCount:100})});
   const response=await worker.fetch(req,{DB:db},{});assert.equal(response.status,200);assert.equal((await response.json()).accepted,1);
   assert.equal(pageFileFor("/psychology-peer-hits"),"psychology-peer-hits.html");
   const page=fs.readFileSync(new URL("../../public/psychology-copy-library.html",import.meta.url),"utf8");

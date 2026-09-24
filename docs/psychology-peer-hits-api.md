@@ -32,6 +32,12 @@ Content-Type: application/json
       "accountUsername": "@example",
       "accountUrl": "https://www.tiktok.com/@example",
       "playCount": 128000,
+      "likeCount": 9400,
+      "commentCount": 210,
+      "favoriteCount": 1800,
+      "shareCount": 520,
+      "publishedAt": "2026-09-01T14:30:00Z",
+      "accountUsername": "example",
       "likeCount": 8200,
       "commentCount": 460,
       "favoriteCount": 1800,
@@ -62,15 +68,15 @@ Content-Type: application/json
 | `videoId` | 可选字符串，最多 100 字符；TikTok 完整链接可自动解析。不接受数字，避免长 ID 精度丢失。与链接中的 ID 不同会报错。 |
 | `platform` | 非 TikTok 链接可填平台名称，最多 40 字符，默认取域名；TikTok 域名自动记为 `tiktok`。 |
 | `title` | 标题或文案，最多 2000 字符。 |
-| `accountName` / `accountUsername` | 账号显示名称 / 用户名，各最多 160 字符。 |
+| `accountName` / `accountUsername` | 账号显示名称 / 用户名，各最多 160 字符。**接口写入必填**（2026-09-24 起）：至少填一个。 |
 | `accountUrl` / `coverUrl` | 可选账号主页 / 封面 HTTP/HTTPS URL，各最多 2000 字符。只存储地址，不抓取内容。 |
-| `playCount` | 播放量，也接受 `views`。 |
-| `likeCount` | 点赞量，也接受 `likes`。 |
-| `commentCount` | 评论量，也接受 `comments`。 |
-| `favoriteCount` | 收藏量，也接受 `favorites` 或 `saves`。 |
-| `shareCount` | 分享量，也接受 `shares`。 |
+| `playCount` | 播放量，也接受 `views`。**接口写入必填**（2026-09-24 起）：没有时填 0。 |
+| `likeCount` | 点赞量，也接受 `likes`。**必填**，没有时填 0。 |
+| `commentCount` | 评论量，也接受 `comments`。**必填**，没有时填 0。 |
+| `favoriteCount` | 收藏量，也接受 `favorites` 或 `saves`。**必填**，没有时填 0。 |
+| `shareCount` | 分享量，也接受 `shares`。**必填**，没有时填 0。 |
 | `durationSeconds` | 时长，0–86400 秒，可含小数。 |
-| `publishedAt` | 视频发布时间。 |
+| `publishedAt` | 原帖发布时间。**必填**。 |
 | `collectedAt` | 本次采集时间；省略时取接口接收时间。 |
 | `source` | 数据来源，例如 `grokbot`，最多 80 字符。 |
 | `videoData` | 其他内容数据的 JSON 对象，序列化后最多 16000 字符；可保存标签、语言、文案、其他指标等。图文复刻可提供完整 `copy`、`caption`、`script`、`transcript` 或 `文案`。若已采集原文，图文可同时提供 `pageTexts`（按图片顺序，最多6项），视频可提供 `transcript` 和可选 `onScreenText`；文案库会直接归档这些字段，避免再次识别。仅有标题或发布文案不视为已完成逐页/逐帧提取。 |
@@ -91,6 +97,12 @@ Content-Type: application/json
       "videoUrl": "https://www.tiktok.com/@example/photo/1234567890123456789",
       "title": "Signs you are anxiously attached",
       "playCount": 128000,
+      "likeCount": 9400,
+      "commentCount": 210,
+      "favoriteCount": 1800,
+      "shareCount": 520,
+      "publishedAt": "2026-09-01T14:30:00Z",
+      "accountUsername": "example",
       "collectedAt": "2026-09-23T06:00:00Z",
       "source": "grokbot",
       "videoData": {
@@ -109,7 +121,7 @@ Content-Type: application/json
 - 附带 `pageTexts`（按图片顺序 1–6 页）的图文，原文在写入时立即完成，返回 `copy: "ready"`，不再调用工厂识图，历史记录同样适用。原帖超过 6 张图时请先整理成 6 页以内再提交，否则工厂会退回自动识图（仅取前 6 张）。已完成的原文不会被后续提交覆盖。
 - `title` 建议写原帖首图的钩子句，而不是一串话题标签；话题标签放进 `videoData.caption`。
 - 改写版本请去掉原帖的引流页（书单、LINK IN BIO、原作者口头禅），不虚构研究和统计数据，改变表达角度和具体情境，不只替换同义词。
-- 处理历史数据：对 `copy` 为 `needs_text` 的链接重新提交一次（附 `pageTexts` 和 `rewrites`）即可，指标字段可省略，已保存的值会保留。`collectedAt` 请省略或填本次处理时间；沿用比已保存记录更早的采集时间会被当作旧数据忽略（`ignored_older`），原文也不会补上。
+- 处理历史数据：对 `copy` 为 `needs_text` 的链接重新提交一次（附 `pageTexts` 和 `rewrites`）即可，已保存过的播放、互动、发布时间和账号可以省略，接口会沿用已保存的值；从未保存过的必须提供。`collectedAt` 请省略或填本次处理时间；沿用比已保存记录更早的采集时间会被当作旧数据忽略（`ignored_older`），原文也不会补上。
 
 ## 写入标准与改写规则（2026-09-24 起强制）
 
@@ -138,6 +150,7 @@ Content-Type: application/json
 
 | 规则 | 报错示例 |
 |---|---|
+| 新帖子缺少 playCount、likeCount、commentCount、favoriteCount、shareCount、publishedAt 或账号（accountUsername / accountName 至少一个）；已保存过的字段可省略 | 第 N 条缺少必填字段：… |
 | `caption` 为空 | caption 不能为空 |
 | 图片页或 caption 含链接、link in bio | 包含链接或引流 |
 | 图片页与本次提交的原文某页一字不差 | 原样照抄了原文 |
@@ -152,6 +165,7 @@ Content-Type: application/json
 ```text
 For every psychology photo post, call the language model once per post. Never use templates, fixed sentence patterns, or code that splices sentences together.
 1. Read this post's page texts and caption. Skip the post entirely (submit nothing) if it is not about relationships, attachment, breakups, dating or self-worth, or if the page text is garbled or incomplete.
+2a. Every new post must include playCount, likeCount, commentCount, favoriteCount, shareCount (use 0 when a count is zero), publishedAt (ISO with timezone or Unix timestamp) and accountUsername (or accountName). The factory rejects posts without them.
 2. Submit videoData.pageTexts as the clean, complete visible text of each image, in order, one item per image (max 6). Remove watermarks, author names and "link in bio" pages. Leave out pages that are only a page number or symbols, and long photographed book/article pages (over 500 characters).
 3. Write 5 rewrites. Each keeps this post's core idea and emotional hook but takes a different angle (point of view, concrete scenario, or format such as checklist, contrast, reassurance, one small action). No sentence may be reused across different posts, and no page may copy an original sentence word for word.
 4. Write for TikTok photo carousels, where people decide in one second whether to stop:

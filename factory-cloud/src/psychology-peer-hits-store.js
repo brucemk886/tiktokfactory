@@ -154,7 +154,21 @@ export function psychologyPeerHitFromRow(row) {
   for (const [key, column] of Object.entries(FIELDS)) item[key] = key === "videoData" ? JSON.parse(row[column] || "{}") : row[column] ?? null;
   return item;
 }
-export async function importPsychologyPeerHits(db, payload, actor) {
+// Grokbot must send the post's metrics, publish time and account (operator
+// rule, 2026-09-24). An update may omit a field the saved row already has.
+const REQUIRED_METRICS = [["playCount", "play_count"], ["likeCount", "like_count"], ["commentCount", "comment_count"],
+  ["favoriteCount", "favorite_count"], ["shareCount", "share_count"], ["publishedAt", "published_at"]];
+async function assertRequiredMetrics(db, items) {
+  const saved = new Map((await db.prepare(`SELECT id,${REQUIRED_METRICS.map(([, c]) => c).join(",")},account_name,account_username FROM ${TABLE} WHERE id IN (SELECT value FROM json_each(?))`)
+    .bind(JSON.stringify(items.map(item => item.id))).all()).results.map(row => [row.id, row]));
+  items.forEach((item, index) => {
+    const row = saved.get(item.id) || {};
+    const missing = REQUIRED_METRICS.filter(([field, column]) => item[field] == null && row[column] == null).map(([field]) => field);
+    if (!item.accountUsername && !item.accountName && !row.account_username && !row.account_name) missing.push("accountUsername");
+    if (missing.length) fail(`第 ${index + 1} 条缺少必填字段：${missing.join("、")}。播放、点赞、评论、收藏、分享、原帖发布时间和账号都必须提供（没有的数量填 0）。`);
+  });
+}
+export async function importPsychologyPeerHits(db, payload, actor, { requireMetrics = false } = {}) {
   const rawItems = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [payload];
   if (!rawItems.length || rawItems.length > 100) fail("每次提交 1–100 条内容。");
   const now = Date.now();
@@ -166,6 +180,7 @@ export async function importPsychologyPeerHits(db, payload, actor) {
     } catch (error) { error.message = `第 ${index + 1} 条：${error.message}`; throw error; }
   }));
   if (items.reduce((sum, item) => sum + item.rewrites.length, 0) > MAX_REWRITES_PER_REQUEST) fail(`每次请求最多 ${MAX_REWRITES_PER_REQUEST} 个改写版本，请拆小批次。`);
+  if (requireMetrics) await assertRequiredMetrics(db, items);
   await checkSharedLines(db, items.flatMap((item, index) => item.rewrites.map((rewrite, r) => ({ sourceKey: rewrite.sourceKey, pages: rewrite.pages, label: `第 ${index + 1} 条 rewrites 第 ${r + 1} 项` }))));
   const english = items.filter(item => isEnglishPsychologyPeerHit(item));
   const skipped = items.filter(item => !isEnglishPsychologyPeerHit(item));

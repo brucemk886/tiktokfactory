@@ -38,7 +38,7 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
     if (external) {
       const actor = await externalActor(request, db);
       if (request.method !== "POST") return errorJson("此密钥仅支持 POST 写入同行爆款。", 405);
-      return json(await importPsychologyPeerHits(db, await readImport(request), actor));
+      return json(await importPsychologyPeerHits(db, await readImport(request), actor, { requireMetrics: true }));
     }
     if (!session) return errorJson("请先登录。", 401);
     const user = session.user;

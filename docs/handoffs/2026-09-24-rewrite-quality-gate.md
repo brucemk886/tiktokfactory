@@ -14,6 +14,9 @@ The 2026-09-23 Grokbot import produced template rewrites (five fixed title patte
 ## Original page filter (2026-09-24, operator rule)
 - `photo-page-filter.js`: original photo pages without two consecutive letters (page numbers, symbols) or over 500 characters (photographed book pages) are dropped and the rest renumbered. Applied to Grokbot `pageTexts`, the copy-cache path, DeepSeek extraction results, and `librarySource` at draw time. A post with nothing left is `copy: "skipped"` / status failed with no paid extraction.
 
+## Required metrics (2026-09-24, operator rule)
+- The key-authenticated peer-hits API (`requireMetrics`) rejects a post without playCount, likeCount, commentCount, favoriteCount, shareCount, publishedAt and accountUsername/accountName, unless the saved row already has that field. Zero counts are accepted. The signed-in manual import keeps them optional.
+
 ## Tests
 Factory suite 642/642, including a gate test built from real template lines. Fixtures of other suites updated only where their deliberately minimal captions now fail the gate.
 
