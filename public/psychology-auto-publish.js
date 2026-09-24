@@ -308,10 +308,15 @@ $('#batchDetail').addEventListener('close',()=>{document.querySelector('[data-ba
 $('#batches').addEventListener('click',event=>{const button=event.target.closest('[data-batch-open]');if(!button)return;selectedBatchId=button.dataset.batchOpen;renderSelectedBatch();detailTab(false);$('#batchDetail').showModal();});
 $('#batchSearch').addEventListener('input',renderBatches);$('#batchMedia').addEventListener('change',renderBatches);
 const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
-try {
-  const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,libraryRewrites:data.libraryRewrites,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
-  if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
-  renderTemplates();
-  await Promise.all([loadAccounts(),loadBatches()]);
-} catch(e){if(!state.batchesLoaded){state.batchesError=true;renderBatches();}message(e.message,true);}
+// Task-list loading is independent of creation-form options and account lookups.
+const initialLoads=await Promise.allSettled([
+  loadBatches(),
+  loadAccounts(),
+  (async()=>{
+    const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,libraryRewrites:data.libraryRewrites,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
+    if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
+    renderTemplates();renderBatches();
+  })(),
+]);
+for(const result of initialLoads)if(result.status==='rejected')message(result.reason.message,true);
 setInterval(()=>{if(!document.hidden)loadBatches().catch(e=>message(e.message,true));},15000);

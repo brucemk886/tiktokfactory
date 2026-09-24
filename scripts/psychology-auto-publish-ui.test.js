@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
-function harness(accountsPromise, failed=false, options={}, batchesPromise=null) {
+function harness(accountsPromise, failed=false, options={}, batchesPromise=null, optionsPromise=null) {
   const nodes=new Map();
   function node(selector) {
     if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'peer':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},setAttribute(name,value){this[name]=value;},focus(){},showModal(){this.open=true;},close(){this.open=false;},addEventListener(type,fn){this.listeners[type]=fn;}});
@@ -15,7 +15,7 @@ function harness(accountsPromise, failed=false, options={}, batchesPromise=null)
   let accounts=accountsPromise;
   const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
+  const context=vm.createContext({VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
   const ready=vm.runInContext('(async()=>{'+source+'})()',context);
   return {node,ready,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
 }
@@ -248,4 +248,14 @@ test('initial request failure is not presented as an empty queue',async()=>{
   assert.match(h.node('#batches').innerHTML,/任务加载失败/);
   assert.doesNotMatch(h.node('#batches').innerHTML,/暂无发布任务/);
   assert.equal(h.node('#batches')['aria-busy'],'false');
+});
+
+
+test('task list does not wait for slow creation-form options',async()=>{
+  let resolveOptions;
+  const h=harness(Promise.resolve([]),false,{},null,new Promise(resolve=>{resolveOptions=resolve;}));
+  await tick();
+  assert.match(h.node('#batches').innerHTML,/Existing photo batch/);
+  assert.ok(h.requests.some(r=>r.path.includes('/options')));
+  resolveOptions({});await h.ready;
 });

@@ -277,16 +277,25 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
     const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
     const attention=url.searchParams.get('attention')==='1';
     const where="created_by=?"+(attention?" AND (EXISTS(SELECT 1 FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_groups g WHERE g.batch_id=psychology_publish_batches.id AND g.status='failed') OR EXISTS(SELECT 1 FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=psychology_publish_batches.id AND i.deleted_at=0 AND j.id IS NULL AND i.receipt_json='{}' AND i.ready_json='{}' AND NOT EXISTS(SELECT 1 FROM factory_publish_records r WHERE json_extract(r.value_json,'$.autoTaskId')=i.id AND COALESCE(json_extract(r.value_json,'$.batchId'),'')<>'' AND (json_extract(r.value_json,'$.autoBatchId') IS NULL OR json_extract(r.value_json,'$.autoBatchId')=i.batch_id))))":"");
-    const total=(await env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(user.username).first()).n;
-    const batches = await env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(user.username,pageSize,(page-1)*pageSize).all();
+    const [countRows,batches] = await env.DB.batch([
+      env.DB.prepare('SELECT COUNT(*) n FROM psychology_publish_batches WHERE '+where).bind(user.username),
+      env.DB.prepare('SELECT * FROM psychology_publish_batches WHERE '+where+' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?').bind(user.username,pageSize,(page-1)*pageSize),
+    ]);
+    const total=countRows.results[0].n;
+    const ids=JSON.stringify(batches.results.map(batch=>batch.id));
+    const [allItems,allGroups]=batches.results.length?await env.DB.batch([
+      env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at
+        FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id
+        WHERE i.batch_id IN (SELECT value FROM json_each(?)) AND i.deleted_at=0 ORDER BY i.id`).bind(ids),
+      env.DB.prepare("SELECT g.*,j.status AS retry_status,j.auto_retry_count,j.available_at FROM psychology_publish_groups g LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id IN (SELECT value FROM json_each(?)) ORDER BY g.ordinal").bind(ids),
+    ]):[{results:[]},{results:[]}];
+    // Load durable outcomes once for the selected page, not once per batch.
+    const durable=allItems.results.length?await env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(allItems.results.map(row=>row.id))).all():{results:[]};
     const result = [];
     for (const batch of batches.results) {
-      const rows = await env.DB.prepare(`SELECT i.*,j.type,j.title,j.status,j.percent,j.message,j.error,j.result_json,j.auto_retry_count,j.available_at
-        FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.batch_id=? AND i.deleted_at=0 ORDER BY i.id`).bind(batch.id).all();
-      // Publishing records survive execution-job cleanup. Match the immutable item ID,
-      // never an account/title, so unrelated posts cannot complete this task.
-      const durable = rows.results.length ? await env.DB.prepare("SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))")
-        .bind(JSON.stringify(rows.results.map(row=>row.id))).all() : {results:[]};
+      const rows={results:allItems.results.filter(row=>row.batch_id===batch.id)};
+      const groups={results:allGroups.results.filter(row=>row.batch_id===batch.id)};
       const durableReceipts=new Map();
       const outcomes=new Map();
       for(const stored of durable.results){
@@ -296,7 +305,6 @@ export async function handlePsychologyAutoPublish(request, env, url, session) {
           if(record.batchId)durableReceipts.set(record.autoTaskId,record);
         }
       }
-      const groups=await env.DB.prepare("SELECT g.*,j.status AS retry_status,j.auto_retry_count,j.available_at FROM psychology_publish_groups g LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id=? ORDER BY g.ordinal").bind(batch.id).all();
       result.push({ groups:groups.results.map(g=>{const members=rows.results.filter(i=>i.publish_group_id===g.id);return {id:g.id,retryCount:g.auto_retry_count||0,retryAt:g.retry_status==='queued'?g.available_at:0,retrying:['queued','running'].includes(g.retry_status),number:g.ordinal+1,count:members.length,status:members.length?g.status:'cancelled',error:members.length?g.error:'',canRetry:!['queued','running'].includes(g.retry_status)&&members.length>0&&(g.status==='failed'||(g.status==='waiting'&&members.every(i=>i.ready_json!=='{}'))||(g.status==='submitting'&&g.updated_at<Date.now()-180000)),remoteBatchId:JSON.parse(g.response_json||'{}').batch?.id||''};}), id: batch.id, createdAt: batch.created_at, config: JSON.parse(batch.config_json), deletedCount:JSON.parse(batch.config_json).count-rows.results.length,
         items: rows.results.map(row => {
           const receipt = JSON.parse(row.receipt_json || '{}');

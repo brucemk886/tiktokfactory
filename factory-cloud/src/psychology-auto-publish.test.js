@@ -900,3 +900,18 @@ test('batch listing uses durable item receipts after job cleanup without submitt
   const attention=await (await call('GET',null,'/api/psychology-auto-publish?attention=1')).json();
   assert.equal(attention.batches.length,1);
 });
+
+
+test('listing multiple batches uses five SQL statements for the whole page',async t=>{
+  const {call,db}=await fixture(t);
+  await call('POST',input());await call('POST',input());
+  const original=db.prepare.bind(db),queries=[];
+  db.prepare=sql=>{queries.push(sql);return original(sql);};
+  const data=await(await call()).json();
+  assert.equal(data.batches.length,2);
+  assert.equal(queries.length,5);
+  for(const batch of data.batches){
+    assert.equal(batch.items.length,3);
+    assert.ok(batch.items.every(item=>item.id.startsWith(batch.id)));
+  }
+});

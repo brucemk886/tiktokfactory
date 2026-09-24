@@ -41,3 +41,10 @@ Deploy committed main when production Cloudflare access is available; then inves
 - Initial HTML and pre-response rerenders show loading, placeholder metrics and disabled pagination instead of a false empty state.
 - Successful empty response alone shows 暂无发布任务. Initial request failure shows an explicit refreshable error; subsequent refresh failure retains already loaded rows.
 - UI regression suite: 21 passed, including delayed first response and network failure. Modified public/psychology-auto-publish.html/.js and scripts/psychology-auto-publish-ui.test.js.
+
+## Task-list load latency optimization
+- Before-change live Resource Timing sample: options 2153 ms, then task list 6611 ms; accounts 2287 ms. Task list started only after options finished.
+- Frontend now starts list/accounts/options concurrently and isolates failures with allSettled. Visible list no longer waits on creation-form options.
+- Backend queries selected page using count+batch read, all items+groups read, then one durable-record read: 5 SQL statements in 3 database calls versus 23 calls for the current 7 batches. No changes to selection, permission scoping, status or publication behavior.
+- Full suite 635 passed, including constant query-count/membership regression and slow options rendering regression.
+- Files: factory-cloud/src/psychology-auto-publish.js/.test.js, public/psychology-auto-publish.js/.html, scripts/psychology-auto-publish-ui.test.js.
