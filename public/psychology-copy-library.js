@@ -357,10 +357,38 @@ $("#retryComparison").onclick = loadComparison;
 $("#closeComparison").onclick = () => $("#comparisonDialog").close();
 $("#comparisonDialog").addEventListener('close', () => { comparisonVersion++; });
 
+function qualityReviewMarkup(row, source) {
+ const content=source?.content||{};
+ const block=(text,empty='（未填写）')=>text?'<p class="comparison-text">'+esc(text)+'</p>':'<p class="comparison-empty">'+esc(empty)+'</p>';
+ const card=(label,left,right)=>'<article class="comparison-card"><h3>'+esc(label)+'</h3><div class="comparison-columns"><section><h4>来源原文</h4>'+left+'</section><section><h4>待审核改写</h4>'+right+'</section></div></article>';
+ const original=text=>source?block(text):block('','未找到对应来源原文');
+ const title=row.title==='未通过质检的模型返回'?'':row.title;
+ let markup=card('标题',original(content.title||source?.title),block(title,'模型未返回可用标题'));
+ markup+=card('发布文案',original(content.caption),block(row.caption));
+ const pages=Array.isArray(row.pages)?row.pages:[];
+ const originalPages=Array.isArray(content.pages)?content.pages:[];
+ const usable=text=>typeof text==='string'&&/[\p{L}\p{N}]/u.test(text.replace(/(^|\s)[#＃][\p{L}\p{N}_]+/gu,'$1'));
+ const body=(list)=>list.map((text,i)=>usable(text)?'<h4>第 '+(i+1)+' 段</h4>'+block(text):'').join('');
+ if(source?.media_type==='video'){
+  markup+=card('正文',original([content.transcript,...(content.onScreenText||[])].filter(Boolean).join('\n\n')),body(pages)||block('','模型未返回可用正文，请展开模型原始返回查看。'));
+ }else{
+  for(let i=0;i<Math.max(originalPages.length,pages.length);i++){
+   const left=originalPages[i]?.text||'',right=pages[i]||'';
+   if(!usable(left)&&!usable(right))continue;
+   markup+=card('第 '+(i+1)+' 页',original(left),block(right,'该页没有对应改写内容'));
+  }
+ }
+ if(!pages.some(usable))markup+=card('模型返回',block('','模型返回未形成有效正文，请参照上方原文人工检查。'),'<pre class="quality-review-raw">'+esc(row.raw_response||'（无原始返回）')+'</pre>');
+ return markup;
+}
+let qualityReviewSource=null;
 let qualityReviewSelection=null,qualityReviewSaving=false;
 function openQualityReview(row){
  if(qualityReviewSaving)return;
  qualityReviewSelection=row;
+ qualityReviewSource=selectedSource||originalItems.find(source=>source.sourceKey===row.source_key)||null;
+ $('#qualityReviewComparison').innerHTML=qualityReviewMarkup(row,qualityReviewSource);
+ $('#qualityReviewEditor').open=!(row.pages?.length&&row.title&&row.title!=='未通过质检的模型返回');
  $('#qualityReviewMeta').textContent=row.title+' · '+(row.rewriteModelLabel||'模型未知');
  $('#qualityReviewReason').textContent='未通过原因：'+row.review_reason;
  $('#qualityReviewRaw').textContent=row.raw_response||JSON.stringify({title:row.title,caption:row.caption,pages:row.pages},null,2);
@@ -371,6 +399,11 @@ function openQualityReview(row){
 }
 $('#closeQualityReview').onclick=()=>{if(!qualityReviewSaving)$('#qualityReviewDialog').close();};
 $('#qualityReviewDialog').addEventListener('cancel',event=>{if(qualityReviewSaving)event.preventDefault();});
+$('#qualityReviewForm').addEventListener('input',()=>{
+ let pages;try{pages=JSON.parse($('#qualityReviewPages').value);}catch{return;}
+ if(!Array.isArray(pages)||pages.some(page=>typeof page!=='string'))return;
+ $('#qualityReviewComparison').innerHTML=qualityReviewMarkup({...qualityReviewSelection,title:$('#qualityReviewName').value,caption:$('#qualityReviewCaption').value,pages},qualityReviewSource);
+});
 $('#qualityReviewForm').onsubmit=async event=>{
  event.preventDefault();if(qualityReviewSaving||!qualityReviewSelection)return;
  let pages;try{pages=JSON.parse($('#qualityReviewPages').value);}catch{$('#qualityReviewStatus').textContent='正文须为 JSON 字符串数组，例如 ["首图文案","第二页正文"]。';return;}

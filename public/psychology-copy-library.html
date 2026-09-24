@@ -5,7 +5,7 @@
   <title>文案库 · 心理学</title>
   <link rel="stylesheet" href="/app.css" /><link rel="stylesheet" href="/module-pages.css" />
   <link rel="stylesheet" href="/psychology-pages.css" /><link rel="stylesheet" href="/psychology-peer-hits.css" />
-  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260924-peer-extras" />
+  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260925-review-compare" />
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
@@ -100,12 +100,16 @@
   <dialog id="qualityReviewDialog" class="copy-preview-dialog copy-rewrite-dialog" aria-labelledby="qualityReviewTitle">
     <div class="copy-dialog-head"><h2 id="qualityReviewTitle">未通过质检的改写</h2><button id="closeQualityReview" type="button">关闭</button></div>
     <section class="copy-panel"><p id="qualityReviewMeta"></p><p id="qualityReviewReason" role="status"></p>
-      <details open><summary>模型原始返回</summary><pre id="qualityReviewRaw" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto"></pre></details>
+      <p class="copy-comparison-help">左侧为来源原文，右侧为待审核改写；正文按页序展示，供人工对照。</p>
+      <div id="qualityReviewComparison"></div>
+      <details><summary>模型原始返回</summary><pre id="qualityReviewRaw" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto"></pre></details>
       <p>检查内容后可直接通过；格式不完整时请先修正。通过后启用，可供自动发布抽取。</p>
       <form id="qualityReviewForm"><fieldset id="qualityReviewFields" style="border:0;padding:0;display:grid;gap:14px;min-width:0">
+        <details id="qualityReviewEditor"><summary>修改内容后通过</summary><div class="quality-review-editor">
         <label>标题<input id="qualityReviewName" maxlength="200" required /></label>
         <label>发布文案<textarea id="qualityReviewCaption" maxlength="2200" rows="3"></textarea></label>
         <label>正文（JSON 字符串数组，1–6 段）<textarea id="qualityReviewPages" rows="10" required></textarea></label>
+        </div></details>
         <button type="submit" class="primary-action">通过</button></fieldset><p id="qualityReviewStatus" role="status"></p>
       </form>
     </section>
@@ -157,8 +161,8 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260925-library-filters"></script><script src="/psychology-peer-production.js?v=20260925-library-filters"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260925-review-compare"></script><script src="/psychology-peer-production.js?v=20260925-review-compare"></script>
 <script src="/psychology-peer-extras.js?v=20260924-peer-extras"></script>
-<script type="module" src="/psychology-copy-library.js?v=20260925-library-filters"></script>
+<script type="module" src="/psychology-copy-library.js?v=20260925-review-compare"></script>
 </body>
 </html>

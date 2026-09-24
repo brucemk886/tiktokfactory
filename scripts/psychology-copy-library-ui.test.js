@@ -188,3 +188,30 @@ test('library paging keeps confirmed page on failure and passes rewrite filter t
  respond=()=>{throw new Error('offline');};await ctx.loadList(2);assert.equal(vm.runInNewContext('state.page',ctx),1);assert.equal(nodes.get('#nextBtn').disabled,false);
  respond=()=>({page:2,pages:3,total:45,items:[],canManageSources:false});await ctx.loadList(2);assert.equal(vm.runInNewContext('state.page',ctx),2);assert.match(nodes.get('#pageInfo').textContent,/第 2 \/ 3 页/);
 });
+
+
+test('rejected review compares title, caption and every original/rewrite page without hiding omitted content',()=>{
+ const h=harness();
+ const source={title:'Original title',media_type:'photo',content:{caption:'Original caption',pages:[{text:'Original first'},{text:'Original second'},{text:'Original third'}]}};
+ const result=h.context.qualityReviewMarkup({title:'Rewrite title',caption:'Rewrite caption',pages:['Rewrite first','<img src=x onerror=alert(1)>'],raw_response:'raw'},source);
+ for(const text of ['Original title','Rewrite title','Original caption','Rewrite caption','Original first','Rewrite first','Original second','Original third','第 3 页','该页没有对应改写内容'])assert.ok(result.includes(text),text);
+ assert.match(result,/&lt;img/);assert.doesNotMatch(result,/<img/);
+ assert.ok(result.indexOf('Original first')<result.indexOf('Rewrite first'));
+});
+
+test('malformed rejected output stays literal beside source and video transcript remains visible',()=>{
+ const h=harness();const row={title:'未通过质检的模型返回',pages:[],raw_response:'<script>bad output</script>'};
+ const result=h.context.qualityReviewMarkup(row,{title:'Video title',media_type:'video',content:{transcript:'Original spoken words',onScreenText:['Visible words']}});
+ assert.match(result,/Original spoken words/);assert.match(result,/Visible words/);assert.match(result,/模型未返回可用标题/);assert.match(result,/&lt;script&gt;bad output/);assert.doesNotMatch(result,/<script>/);
+ assert.match(h.context.qualityReviewMarkup(row,null),/未找到对应来源原文/);
+});
+
+test('rejected review uses selected source and preview reflects approval edits without sending requests',async()=>{
+ const h=harness();h.events.get('peer-list-loaded')({detail:{items:[{...sources[0],title:'Source for review',content:{pages:[{text:'Source sentence'}]}}]}});
+ await h.click({rewriteOriginal:sources[0].id});await new Promise(r=>setTimeout(r,0));
+ h.context.openQualityReview({id:'pending',title:'Draft title',pages:['Draft sentence'],raw_response:'raw',review_reason:'Copied'});
+ assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Source sentence/);
+ h.nodes.get('#qualityReviewName').value='Edited title';h.nodes.get('#qualityReviewPages').value='["Edited sentence"]';
+ const before=h.requests.length;h.nodes.get('#qualityReviewForm').listeners.input();
+ assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Edited title/);assert.match(h.nodes.get('#qualityReviewComparison').innerHTML,/Edited sentence/);assert.equal(h.requests.length,before);
+});
