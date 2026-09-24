@@ -65,3 +65,14 @@ test('sentence splitting supports video transcript and screen text; hallucinated
  const good={translations:[...orig,...rewrite].map(u=>({id:u.id,zh:'中文'})),matches:[{id:'r0',originalIds:['o1']}]};assert.equal(validateComparison(good,orig,rewrite).rewrite[0].text,'Rewritten.');
  assert.throws(()=>validateComparison({...good,matches:[{id:'r0',originalIds:['invented']}]},orig,rewrite));assert.throws(()=>validateComparison({...good,translations:good.translations.slice(1)},orig,rewrite));
 });
+
+
+test('comparison reports validation versus provider failures without exposing provider secrets',async t=>{
+ const f=await setup(t);provider(f,()=>({translations:[],matches:[]}));
+ let result=await (await call(f,f.path,'POST')).json();assert.match(result.error,/部分句子的中文翻译缺失/);
+ f.env.fetch=async()=>Response.json({error:{message:'secret provider detail'}},{status:429});
+ result=await (await call(f,f.path,'POST')).json();assert.match(result.error,/HTTP 429/);assert.doesNotMatch(result.error,/secret/);
+ f.env.fetch=async()=>{throw Object.assign(new Error('secret timeout detail'),{name:'TimeoutError'});};
+ result=await (await call(f,f.path,'POST')).json();assert.match(result.error,/超时/);assert.doesNotMatch(result.error,/secret/);
+ assert.equal(f.sqlite.prepare('SELECT lease_until FROM psychology_copy_comparisons').get().lease_until,0);
+});
