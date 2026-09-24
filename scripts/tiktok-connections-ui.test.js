@@ -14,8 +14,9 @@ test("authorized account list is a view page with 20-account pagination", () => 
   const script = read("tiktok-connections.js");
   assert.match(html, /data-connections-page="view"/);
   assert.match(html, /href="\/tiktok-connections-organize"/);
-  assert.match(html, /新建项目 \/ 分组/);
+  assert.match(html, /项目分组管理/);
   assert.match(html, /id="accountPager"/);
+  assert.doesNotMatch(html,/id="rename(?:Dialog|ProjectBtn|GroupBtn)"/);
   assert.match(html, /id="assignGroupBtn"/);
   assert.match(html, /id="selectVisibleBtn"/);
   assert.match(html, /id="moveGroupToProjectBtn"/);
@@ -46,8 +47,9 @@ test("creating projects and groups happens on a separate organize page", () => {
   const html = read("tiktok-connections-organize.html");
   const access = read("access.js");
   assert.match(html, /data-connections-page="organize"/);
-  assert.match(html, /<h1>新建项目与分组<\/h1>/);
+  assert.match(html, /<h1>项目分组管理<\/h1>/);
   assert.match(html, /id="createProjectBtn"/);
+  for(const id of ["renameProjectBtn","renameGroupBtn","renameDialog","renameForm"])assert.ok(html.includes(`id="${id}"`));
   assert.match(html, /id="createGroupBtn"/);
   assert.match(html, /id="deleteProjectSelect"/);
   assert.match(html, /id="deleteGroupSelect"/);

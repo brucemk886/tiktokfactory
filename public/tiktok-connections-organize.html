@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>新建项目与分组</title>
+    <title>项目分组管理</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/tiktok-connections.css" />
+    <link rel="stylesheet" href="/tiktok-connections.css?v=20260924-organize" />
 
   <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
@@ -28,8 +28,8 @@
       <header class="page-header">
         <div>
           <p class="eyebrow">OFFICIAL TIKTOK DATA</p>
-          <h1>新建项目与分组</h1>
-          <p>先建项目，再在项目下建分组。账号勾选与移入请回列表页操作。</p>
+          <h1>项目分组管理</h1>
+          <p>统一新增、修改和删除项目与分组。账号与分组的批量移动请返回账号列表。</p>
         </div>
         <a class="secondary-button link-button" href="/tiktok-connections">返回账号列表</a>
       </header>
@@ -59,15 +59,17 @@
       <section class="workflow-section">
         <div class="section-head">
           <span>02</span>
-          <div><h2>删除</h2><p>删除项目后，分组仍在，只是不再属于该项目。删除分组后，组内账号回到未分组。</p></div>
+          <div><h2>修改与删除</h2><p>删除项目后，分组仍在，只是不再属于该项目。删除分组后，组内账号回到未分组。</p></div>
         </div>
         <div class="account-panels">
           <section class="account-panel">
-            <h3>删除项目或分组</h3>
+            <h3>管理已有项目与分组</h3>
             <div class="account-toolbar manage-toolbar">
               <label><span>项目</span><select id="deleteProjectSelect"><option value="">请选择项目</option></select></label>
+              <button id="renameProjectBtn" class="secondary-button" type="button" disabled>修改项目名称</button>
               <button id="deleteProjectBtn" class="secondary-button" type="button">删除所选项目</button>
               <label><span>分组</span><select id="deleteGroupSelect"><option value="">请选择分组</option></select></label>
+              <button id="renameGroupBtn" class="secondary-button" type="button" disabled>修改分组名称</button>
               <button id="deleteGroupBtn" class="secondary-button" type="button">删除所选分组</button>
             </div>
           </section>
@@ -75,7 +77,13 @@
         <div id="statusMessage" class="status-message" hidden></div>
       </section>
     </main>
+    <dialog id="renameDialog" class="rename-dialog" aria-labelledby="renameTitle">
+      <form id="renameForm"><h2 id="renameTitle">修改名称</h2><p>修改名称后，账号归属及项目关联保持不变。</p>
+        <label for="renameName">新名称</label><input id="renameName" maxlength="40" required autocomplete="off"><small>最多 40 个字符，同类名称不能重复。</small>
+        <p id="renameError" class="rename-error" role="alert"></p><div class="button-row"><button id="cancelRename" type="button" class="secondary-button">取消</button><button id="saveRename" type="submit" class="primary-button">保存名称</button></div>
+      </form>
+    </dialog>
     <script src="/access.js"></script>
-    <script type="module" src="/tiktok-connections.js?v=20260917-2"></script>
+    <script type="module" src="/tiktok-connections.js?v=20260924-organize"></script>
   </body>
 </html>

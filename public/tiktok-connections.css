@@ -37,7 +37,7 @@ button:disabled { opacity: .55; cursor: wait; }
 .create-group-toolbar { grid-template-columns: minmax(180px, 0.8fr) minmax(280px, 1.2fr); }
 .assign-toolbar { grid-template-columns: auto minmax(220px, 1fr) auto auto; }
 .move-group-toolbar { grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.8fr) auto; margin-top: 12px; }
-.manage-toolbar { grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr) auto; justify-content: start; margin-top: 12px; }
+.manage-toolbar { grid-template-columns: minmax(220px, 1fr) auto auto; justify-content: start; margin-top: 12px; }
 .report-toolbar { grid-template-columns: minmax(220px, 0.9fr) auto auto; }
 .report-switch { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--lf-text); }
 .report-switch input { width: 18px; height: 18px; min-height: 18px; padding: 0; accent-color: var(--accent); }

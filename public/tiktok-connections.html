@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TikTok 账号</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/tiktok-connections.css" />
+    <link rel="stylesheet" href="/tiktok-connections.css?v=20260924-organize" />
 
   <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
@@ -29,10 +29,10 @@
         <div>
           <p class="eyebrow">OFFICIAL TIKTOK DATA</p>
           <h1>TikTok 账号</h1>
-          <p>分组页勾选账号移入分组，项目页勾选分组移入项目。新建、删除请到单独的管理页。</p>
+          <p>分组页勾选账号移入分组，项目页勾选分组移入项目。项目和分组的新增、改名、删除请到「项目分组管理」。</p>
         </div>
         <div class="header-actions">
-          <a class="secondary-button link-button" href="/tiktok-connections-organize">新建项目 / 分组</a>
+          <a class="secondary-button link-button" href="/tiktok-connections-organize">项目分组管理</a>
           <a id="authorizeLink" class="primary-button link-button" href="https://tiktokaitool.com/dashboard?view=connect" target="_blank" rel="noreferrer">前往网站授权账号</a>
         </div>
       </header>
@@ -70,7 +70,7 @@
             <section class="account-panel">
               <h3>筛选账号</h3>
               <div class="account-toolbar filter-toolbar group-filter-toolbar">
-                <div class="rename-filter"><label for="groupFilter">分组</label><div class="rename-picker"><select id="groupFilter"><option value="">全部分组</option></select><button id="renameGroupBtn" class="secondary-button" type="button" disabled>修改分组名称</button></div></div>
+                <div class="rename-filter"><label for="groupFilter">分组</label><div class="rename-picker"><select id="groupFilter"><option value="">全部分组</option></select></div></div>
                 <label class="account-search"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="用户名或显示名" /></label>
               </div>
             </section>
@@ -92,7 +92,7 @@
             <section class="account-panel">
               <h3>筛选分组</h3>
               <div class="account-toolbar filter-toolbar group-filter-toolbar">
-                <div class="rename-filter"><label for="projectFilter">项目</label><div class="rename-picker"><select id="projectFilter"><option value="">全部项目</option></select><button id="renameProjectBtn" class="secondary-button" type="button" disabled>修改项目名称</button></div></div>
+                <div class="rename-filter"><label for="projectFilter">项目</label><div class="rename-picker"><select id="projectFilter"><option value="">全部项目</option></select></div></div>
                 <label class="account-search"><span>搜索分组</span><input id="groupSearch" type="search" placeholder="分组或项目名" /></label>
               </div>
             </section>
@@ -112,13 +112,8 @@
         <div id="statusMessage" class="status-message" hidden></div>
       </section>
     </main>
-    <dialog id="renameDialog" class="rename-dialog" aria-labelledby="renameTitle">
-      <form id="renameForm"><h2 id="renameTitle">修改名称</h2><p>修改名称后，账号归属及项目关联保持不变。</p>
-        <label for="renameName">新名称</label><input id="renameName" maxlength="40" required autocomplete="off"><small>最多 40 个字符，同类名称不能重复。</small>
-        <p id="renameError" class="rename-error" role="alert"></p><div class="button-row"><button id="cancelRename" type="button" class="secondary-button">取消</button><button id="saveRename" type="submit" class="primary-button">保存名称</button></div>
-      </form>
-    </dialog>
+
     <script src="/access.js"></script>
-    <script type="module" src="/tiktok-connections.js?v=20260920-rename"></script>
+    <script type="module" src="/tiktok-connections.js?v=20260924-organize"></script>
   </body>
 </html>

@@ -73,6 +73,7 @@ elements.groupFilter?.addEventListener("change", () => { state.page = 1; renderA
 elements.accountSearch?.addEventListener("input", () => { state.page = 1; renderAccounts(); });
 elements.groupSearch?.addEventListener("input", () => { state.groupPage = 1; renderGroups(); });
 elements.deleteProjectSelect?.addEventListener("change", fillDeleteGroupSelect);
+elements.deleteGroupSelect?.addEventListener("change", syncRenameButtons);
 elements.createProjectBtn?.addEventListener("click", createProject);
 elements.deleteProjectBtn?.addEventListener("click", deleteCurrentProject);
 elements.createGroupBtn?.addEventListener("click", createGroup);
@@ -85,9 +86,8 @@ elements.deleteGroupBtn?.addEventListener("click", deleteCurrentGroup);
 elements.groupsTab?.addEventListener("click", () => setWorkspaceTab("groups"));
 elements.projectsTab?.addEventListener("click", () => setWorkspaceTab("projects"));
 
-elements.renameGroupBtn?.addEventListener("click", () => openRename("group", currentGroupId()));
-elements.renameProjectBtn?.addEventListener("click", () => openRename("project", elements.projectFilter?.value));
-elements.groupList?.addEventListener("click", event => {const button=event.target.closest("[data-rename-group]");if(button)openRename("group",button.dataset.renameGroup);});
+elements.renameGroupBtn?.addEventListener("click", () => openRename("group", elements.deleteGroupSelect?.value));
+elements.renameProjectBtn?.addEventListener("click", () => openRename("project", elements.deleteProjectSelect?.value));
 elements.cancelRename?.addEventListener("click", () => {if(!state.renaming)elements.renameDialog.close();});
 elements.renameDialog?.addEventListener("cancel", event => {if(state.renaming)event.preventDefault();});
 elements.renameForm?.addEventListener("submit", saveRename);
@@ -247,6 +247,7 @@ function fillDeleteGroupSelect() {
   const current = elements.deleteGroupSelect.value;
   elements.deleteGroupSelect.innerHTML = `<option value="">请选择分组</option>${groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
   if ([...elements.deleteGroupSelect.options].some((item) => item.value === current)) elements.deleteGroupSelect.value = current;
+  syncRenameButtons();
 }
 
 function visibleAccounts() {
@@ -366,7 +367,7 @@ function renderGroups() {
     const count = groupAccountCount(group.id) || Number(group.accountCount || 0);
     return `<article class="account-row group-row">
       <input class="group-check" type="checkbox" value="${escapeHtml(group.id)}" />
-      <div><strong>${escapeHtml(group.name)}</strong><button type="button" class="secondary-button group-rename-action" data-rename-group="${escapeHtml(group.id)}">修改名称</button><span>${escapeHtml(group.projectName ? "已分配项目" : "尚未分配项目")}</span></div>
+      <div><strong>${escapeHtml(group.name)}</strong><span>${escapeHtml(group.projectName ? "已分配项目" : "尚未分配项目")}</span></div>
       <div><small>所属项目</small><b class="group-chip${group.projectName ? "" : " is-empty"}">${escapeHtml(group.projectName || "未分配项目")}</b></div>
       <div><small>账号</small><b>${formatNumber(count)}</b></div>
     </article>`;
@@ -481,8 +482,8 @@ function selectedAccounts() {
 }
 
 function syncRenameButtons() {
-  if(elements.renameGroupBtn)elements.renameGroupBtn.disabled=!state.groups.some(g=>g.id===currentGroupId());
-  if(elements.renameProjectBtn)elements.renameProjectBtn.disabled=!state.projects.some(p=>p.id===elements.projectFilter?.value);
+  if(elements.renameGroupBtn)elements.renameGroupBtn.disabled=!state.groups.some(g=>g.id===elements.deleteGroupSelect?.value);
+  if(elements.renameProjectBtn)elements.renameProjectBtn.disabled=!state.projects.some(p=>p.id===elements.deleteProjectSelect?.value);
 }
 function openRename(kind, id) {
   if(state.renaming||!elements.renameDialog)return;
@@ -678,6 +679,7 @@ async function deleteCurrentGroup() {
     applyGroupState(result);
     if (elements.groupFilter) elements.groupFilter.value = "";
     if (elements.deleteGroupSelect) elements.deleteGroupSelect.value = "";
+    syncRenameButtons();
     renderWorkspace();
     showStatus("分组已删除，账号已回到未分组。");
   } catch (error) {
