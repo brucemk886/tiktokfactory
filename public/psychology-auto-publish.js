@@ -1,6 +1,6 @@
 import { VISUAL_STYLES } from './psychology-visual-styles.js';
 const $ = s => document.querySelector(s);
-const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], requestId:crypto.randomUUID(), busy:false, submittedInput:null };
+const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
 async function api(path, body, method) {
@@ -173,15 +173,27 @@ $('#batchNext').addEventListener('click',()=>{batchPage++;loadBatches().catch(e=
 $('#batchFilter').addEventListener('change',()=>{batchPage=1;loadBatches().catch(e=>message(e.message,true));});
 async function loadBatches() {
   const version=++batchLoadVersion;
-  const data=await api('/api/psychology-auto-publish?page='+batchPage+'&attention='+($('#batchFilter').value==='attention'?'1':'0'));
+  if(!state.batchesLoaded){state.batchesError=false;renderBatches();}
+  let data;
+  try{data=await api('/api/psychology-auto-publish?page='+batchPage+'&attention='+($('#batchFilter').value==='attention'?'1':'0'));}
+  catch(error){if(version===batchLoadVersion&&!state.batchesLoaded){state.batchesError=true;renderBatches();}throw error;}
   if(version!==batchLoadVersion)return;
   const signature=JSON.stringify(data.batches||[]),changed=signature!==state.lastBatchJSON;state.lastBatchJSON=signature;
-  state.batches=data.batches||[];
+  state.batches=data.batches||[];state.batchesLoaded=true;state.batchesError=false;
   $('#batchPrev').disabled=batchPage<=1;$('#batchNext').disabled=!data.pagination?.hasMore;
   $('#batchPage').textContent='第 '+batchPage+' 页 / 共 '+(data.pagination?.total||0)+' 个任务';
   if(changed)renderBatches();
 }
 function renderBatches() {
+  if(!state.batchesLoaded){
+    for(const id of ['pageTotalCount','queuedCount','runningCount','attentionCount','doneCount'])$('#'+id).textContent='—';
+    $('#safetySummary').textContent=state.batchesError?'任务加载失败，请点击刷新重试。':'正在加载发布任务…';
+    $('#batches').setAttribute('aria-busy',String(!state.batchesError));
+    $('#batches').innerHTML='<div class="empty-state" role="status"><strong>'+(state.batchesError?'任务加载失败':'正在加载发布任务…')+'</strong><span>'+(state.batchesError?'请点击上方刷新重试。':'正在读取任务和发布结果，请稍候。')+'</span></div>';
+    $('#batchPrev').disabled=true;$('#batchNext').disabled=true;
+    return;
+  }
+  $('#batches').setAttribute('aria-busy','false');
   const tones=state.batches.map(b=>batchStatus(b.items||[],b.groups||[]));
   $('#queuedCount').textContent=tones.filter(s=>s==='queued').length;
   $('#runningCount').textContent=tones.filter(s=>s==='running').length;
@@ -301,5 +313,5 @@ try {
   if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
   renderTemplates();
   await Promise.all([loadAccounts(),loadBatches()]);
-} catch(e){message(e.message,true);}
+} catch(e){if(!state.batchesLoaded){state.batchesError=true;renderBatches();}message(e.message,true);}
 setInterval(()=>{if(!document.hidden)loadBatches().catch(e=>message(e.message,true));},15000);

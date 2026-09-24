@@ -51,16 +51,16 @@
 <div class="submit-row"><p id="message" role="status" aria-live="polite"></p><button type="submit" id="submitBatch" class="primary-action">创建并自动发布</button></div>
 </section></form></dialog>
 <aside class="task-list-panel" aria-label="任务队列">
-<div class="queue-header"><div><h2>发布任务</h2><p id="safetySummary">每20条合并提交，一个创建任务统一管理</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
-<div class="queue-metrics"><div class="queue-total"><span id="pageTotalCount">0</span><small>本页任务</small></div>
-<div><span id="queuedCount">0</span><small>排队</small></div>
-<div><span id="runningCount">0</span><small>执行中</small></div>
-<div><span id="attentionCount">0</span><small>待处理</small></div>
-<div><span id="doneCount">0</span><small>已提交 / 已取消</small></div>
+<div class="queue-header"><div><h2>发布任务</h2><p id="safetySummary">正在加载发布任务…</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
+<div class="queue-metrics"><div class="queue-total"><span id="pageTotalCount">—</span><small>本页任务</small></div>
+<div><span id="queuedCount">—</span><small>排队</small></div>
+<div><span id="runningCount">—</span><small>执行中</small></div>
+<div><span id="attentionCount">—</span><small>待处理</small></div>
+<div><span id="doneCount">—</span><small>已提交 / 已取消</small></div>
 </div>
 <div class="queue-filters"><label class="queue-search">搜索本页<input id="batchSearch" type="search" placeholder="批次名称或账号"></label><label>内容类型<select id="batchMedia"><option value="all">全部类型</option><option value="photo">图文</option><option value="video">视频</option></select></label><label>任务筛选<select id="batchFilter" aria-label="任务筛选"><option value="all">全部任务</option><option value="attention">待处理任务</option></select></label></div>
-<div id="batches" class="auto-task-list"><div class="empty-state"><strong>队列为空</strong><span>创建任务后会在这里显示实时进度</span></div></div>
-<div class="queue-pagination"><button type="button" id="batchPrev">上一页</button><span id="batchPage" aria-live="polite"></span><button type="button" id="batchNext">下一页</button></div>
+<div id="batches" class="auto-task-list" aria-busy="true"><div class="empty-state" role="status"><strong>正在加载发布任务…</strong><span>正在读取任务和发布结果，请稍候。</span></div></div>
+<div class="queue-pagination"><button type="button" id="batchPrev" disabled>上一页</button><span id="batchPage" aria-live="polite"></span><button type="button" id="batchNext" disabled>下一页</button></div>
 </aside>
 </div>
-</main><dialog id="batchDetail" class="batch-detail-dialog" aria-labelledby="batchDetailTitle"><div class="lf-dialog-head"><h2 id="batchDetailTitle">批次详情</h2><button type="button" id="closeBatchDetail" class="lf-icon-button" aria-label="关闭批次详情"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><div class="detail-tabs" role="tablist" aria-label="批次详情内容"><button type="button" id="detailOverviewTab" role="tab" aria-selected="true" aria-controls="batchDetailBody">概览</button><button type="button" id="detailItemsTab" role="tab" aria-selected="false" aria-controls="batchDetailItems" tabindex="-1">任务明细</button></div><div id="batchDetailBody" role="tabpanel" aria-labelledby="detailOverviewTab"></div><div id="batchDetailItems" role="tabpanel" aria-labelledby="detailItemsTab" hidden></div><div class="detail-footer"><a href="/psychology-publish-sources">查看发布记录</a><small>已提交表示已交接中台，实际发布结果请查看发布记录。</small></div></dialog><script src="/access.js"></script><script type="module" src="/psychology-auto-publish.js?v=20260924-outcomes"></script></body></html>
+</main><dialog id="batchDetail" class="batch-detail-dialog" aria-labelledby="batchDetailTitle"><div class="lf-dialog-head"><h2 id="batchDetailTitle">批次详情</h2><button type="button" id="closeBatchDetail" class="lf-icon-button" aria-label="关闭批次详情"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><div class="detail-tabs" role="tablist" aria-label="批次详情内容"><button type="button" id="detailOverviewTab" role="tab" aria-selected="true" aria-controls="batchDetailBody">概览</button><button type="button" id="detailItemsTab" role="tab" aria-selected="false" aria-controls="batchDetailItems" tabindex="-1">任务明细</button></div><div id="batchDetailBody" role="tabpanel" aria-labelledby="detailOverviewTab"></div><div id="batchDetailItems" role="tabpanel" aria-labelledby="detailItemsTab" hidden></div><div class="detail-footer"><a href="/psychology-publish-sources">查看发布记录</a><small>已提交表示已交接中台，实际发布结果请查看发布记录。</small></div></dialog><script src="/access.js"></script><script type="module" src="/psychology-auto-publish.js?v=20260924-loading"></script></body></html>

@@ -36,3 +36,8 @@ Deploy committed main when production Cloudflare access is available; then inves
 - Table and detail display 发布成功 / 发布失败, plus 发布中 or 未返回结果 when applicable; per-item detail shows the actual publication outcome.
 - Production read-only evidence: 0922-0920-3-20 = 10 published/10 unavailable; 0922-心理学-2-30 = 14 published/2 failed/14 unavailable; 0922-0918-20 = 19 published/1 unavailable; 心理学-2 9.21 30条 = 28 published/1 failed/1 unavailable; 0920-3-9.21 20条 = 17 published/1 failed/2 unavailable.
 - Full regression suite: 631 passed. No publication/retry triggered.
+
+## Initial task-list loading state
+- Initial HTML and pre-response rerenders show loading, placeholder metrics and disabled pagination instead of a false empty state.
+- Successful empty response alone shows 暂无发布任务. Initial request failure shows an explicit refreshable error; subsequent refresh failure retains already loaded rows.
+- UI regression suite: 21 passed, including delayed first response and network failure. Modified public/psychology-auto-publish.html/.js and scripts/psychology-auto-publish-ui.test.js.

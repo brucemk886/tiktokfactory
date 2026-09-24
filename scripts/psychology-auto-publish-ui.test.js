@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
-function harness(accountsPromise, failed=false, options={}) {
+function harness(accountsPromise, failed=false, options={}, batchesPromise=null) {
   const nodes=new Map();
   function node(selector) {
     if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'peer':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},setAttribute(name,value){this[name]=value;},focus(){},showModal(){this.open=true;},close(){this.open=false;},addEventListener(type,fn){this.listeners[type]=fn;}});
@@ -15,7 +15,7 @@ function harness(accountsPromise, failed=false, options={}) {
   let accounts=accountsPromise;
   const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:{batches:[batch]}};}});
+  const context=vm.createContext({VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...options}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
   const ready=vm.runInContext('(async()=>{'+source+'})()',context);
   return {node,ready,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
 }
@@ -225,4 +225,27 @@ test('missing execution records never masquerade as queued work',()=>{
   assert.equal(ctx.publicationSummary([{publishOutcome:'published'},{publishOutcome:'failed'},{publishOutcome:'pending'},{}]),'发布成功 1 条 · 发布失败 1 条 · 发布中 1 条 · 未返回结果 1 条');
   assert.equal(state(['unexpected']),'unknown');
   assert.equal(state(['cancelled']),'cancelled');
+});
+
+
+test('slow initial batch response shows loading instead of an empty queue',async()=>{
+  let resolveBatches;
+  const h=harness(Promise.resolve([]),false,{},new Promise(resolve=>{resolveBatches=resolve;}));
+  await tick();
+  assert.match(h.node('#batches').innerHTML,/正在加载发布任务/);
+  assert.doesNotMatch(h.node('#batches').innerHTML,/暂无发布任务|队列为空/);
+  assert.equal(h.node('#pageTotalCount').textContent,'—');
+  assert.equal(h.node('#batchNext').disabled,true);
+  resolveBatches({batches:[]});await h.ready;
+  assert.match(h.node('#batches').innerHTML,/暂无发布任务/);
+  assert.equal(h.node('#pageTotalCount').textContent,0);
+});
+
+test('initial request failure is not presented as an empty queue',async()=>{
+  let rejectBatches;
+  const h=harness(Promise.resolve([]),false,{},new Promise((resolve,reject)=>{rejectBatches=reject;}));
+  await tick();rejectBatches(new Error('network unavailable'));await h.ready;
+  assert.match(h.node('#batches').innerHTML,/任务加载失败/);
+  assert.doesNotMatch(h.node('#batches').innerHTML,/暂无发布任务/);
+  assert.equal(h.node('#batches')['aria-busy'],'false');
 });
