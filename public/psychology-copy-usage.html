@@ -4,7 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>文案使用与效果 · 心理学</title>
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/module-pages.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-peer-hits.css">
-<link rel="stylesheet" href="/psychology-copy-usage.css?v=20260926">
+<link rel="stylesheet" href="/psychology-copy-usage.css?v=20260926-help">
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light"><link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
 </head>
@@ -25,7 +25,7 @@
 <section aria-labelledby="inventoryTitle"><div class="usage-section-head"><h2 id="inventoryTitle">文案库存</h2><span>当前总量 · 随内容类型与搜索筛选</span></div><div class="usage-cards" id="inventoryCards"></div></section>
 <section aria-labelledby="usageTitle"><div class="usage-section-head"><h2 id="usageTitle">抽取使用</h2><span id="periodLabel">所选时间内</span></div><div class="usage-cards usage-four" id="usageCards"></div></section>
 <section aria-labelledby="effectsTitle"><div class="usage-section-head"><h2 id="effectsTitle">文案效果</h2><span>本方内容表现 · 不包含来源帖播放量</span></div><div class="usage-cards usage-four" id="effectCards"></div></section>
-<section class="hits-panel"><h2>原文与改写对比</h2><div class="hits-table-wrap"><table><thead><tr><th>版本类型</th><th>抽取次数</th><th>有效样本</th><th>中位播放</th><th>破千率</th><th>破万率</th><th>平均完播率</th></tr></thead><tbody id="comparison"></tbody></table></div><p class="usage-note">有效样本为已有播放数据的内容，0 播放计入，缺失不计入；完播率仅统计有该指标的样本。结果是最近同步的累计值，不是所选日期内新增播放。样本较少时仅供观察。</p></section>
+<section class="hits-panel"><h2>原文与改写对比</h2><div class="hits-table-wrap"><table><thead><tr><th>版本类型</th><th>抽取次数</th><th><button id="sampleHelpButton" class="usage-help" type="button" aria-describedby="sampleHelp">有效样本 <span aria-hidden="true">ⓘ</span></button></th><th>中位播放</th><th>破千率</th><th>破万率</th><th>平均完播率</th></tr></thead><tbody id="comparison"></tbody></table></div><p class="usage-note">有效样本为已有播放数据的内容，0 播放计入，缺失不计入；完播率仅统计有该指标的样本。结果是最近同步的累计值，不是所选日期内新增播放。样本较少时仅供观察。</p></section>
 <section class="hits-panel"><div class="usage-section-head"><h2>爆款文案明细</h2><div class="usage-list-controls"><label>使用情况<select id="usage"><option value="all">全部文案</option><option value="used">已抽取</option><option value="unused">未抽取</option><option value="data">有效果数据</option></select></label><label>排序<select id="sort"><option value="views">来源爆款播放量（高到低）</option><option value="recent">最近入库</option><option value="draws">抽取次数</option><option value="median">中位播放</option><option value="potential">破千率</option></select></label></div></div>
 <div class="hits-table-wrap"><table class="usage-list"><thead><tr><th>文案 / 题材</th><th>改写版本</th><th>抽取次数</th><th>最近抽取</th><th>有效样本</th><th>中位播放 / 破千率</th><th>原文 / 改写中位播放</th><th>操作</th></tr></thead><tbody id="copies"></tbody></table></div>
 <div class="usage-pager"><button id="prev" type="button" disabled>上一页</button><span id="pageInfo"></span><button id="next" type="button" disabled>下一页</button></div></section>
@@ -33,5 +33,6 @@
 </div>
 </main>
 <dialog id="detailDialog" aria-labelledby="detailTitle"><div class="usage-section-head"><div><small>文案版本</small><h2 id="detailTitle"></h2></div><button id="closeDetail" type="button" aria-label="关闭版本详情">关闭</button></div><p id="detailStatus" role="status" aria-live="polite"></p><div class="hits-table-wrap"><table><thead><tr><th>版本 / 模型</th><th>状态</th><th>创建时间</th><th>抽取次数 / 最近抽取</th><th>有效样本</th><th>中位播放</th><th>破千 / 破万率</th><th>正文</th></tr></thead><tbody id="versions"></tbody></table></div><div class="usage-pager"><button id="detailPrev" type="button">上一页</button><span id="detailPageInfo"></span><button id="detailNext" type="button">下一页</button></div><section id="textPanel" hidden><h3 id="textTitle">文案正文</h3><pre id="copyText"></pre></section></dialog>
-<script src="/access.js"></script><script type="module" src="/psychology-copy-usage.js?v=20260926-views"></script>
+<div id="sampleHelp" class="usage-tooltip" role="tooltip" hidden><strong>什么是有效样本？</strong><p>所选时间内已发布，且已同步到播放量的本方图文或视频。每条内容计 1 个样本，同一文案可以有多个样本。</p><p><b>0 播放计入；尚未获取到播放数据的不计入。</b></p><p>按实际发布时间筛选，不等于文案数量或抽取次数。用于计算中位播放、破千率和破万率；完播率另按有完播数据的样本计算。</p></div>
+<script src="/access.js"></script><script type="module" src="/psychology-copy-usage.js?v=20260926-help"></script>
 </body></html>

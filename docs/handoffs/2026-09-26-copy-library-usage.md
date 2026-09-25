@@ -37,3 +37,6 @@ Code release and authenticated production verification follow this commit. Verif
 
 ## Follow-up: viral copy list ordering
 Renamed the detail section to 爆款文案明细. UI and API now default to source post play_count descending, with stable created_at/id tie-breaking and missing play counts last. Source plays appear explicitly under the title, independent of own-content outcome metrics; existing draw/median/rate sorts remain available. Regression verifies source-play ordering even when own outcomes rank differently. Full suite: 765 tests pass.
+
+## Follow-up: effective-sample explanation
+The 原文与改写对比 table now has a hover/focus tooltip on 有效样本. It defines one observed own-content item as one sample, permits multiple samples per copy, includes real zero views and excludes missing metrics, explains actual-publication-date scoping and the distinction from draw/copy counts, and separates the completion-rate denominator. Tooltip is placed outside the scrolling table, kept inside viewport bounds, remains hoverable, and closes on Escape/scroll. Existing 765 tests pass; analytics logic is unchanged.

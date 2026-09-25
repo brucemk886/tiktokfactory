@@ -13,3 +13,6 @@
 @media(max-width:520px){.usage-card strong{font-size:24px}.copy-usage-page .usage-card{padding:14px}.usage-pager{justify-content:center}}
 
 .copy-usage-page.lf-console .hits-table-wrap table{table-layout:auto}.copy-usage-page.lf-console .usage-card strong{color:var(--lf-text,#19283e)}
+
+.copy-usage-page.lf-console .module-main button.usage-help{padding:0;border:0;background:transparent;box-shadow:none;color:inherit;font:inherit;display:inline-flex;align-items:center;gap:5px;cursor:help}.usage-help span{color:var(--lf-muted,#62738b)}
+.copy-usage-page .usage-tooltip{position:fixed;z-index:150;box-sizing:border-box;width:min(360px,calc(100vw - 24px));padding:16px 18px;border:1px solid var(--lf-line-strong,#cfd8e6);border-radius:9px;background:var(--lf-surface,#fff);color:var(--lf-text,#19283e);box-shadow:0 8px 28px #182c4626;font-size:12px;line-height:1.7;white-space:normal}.usage-tooltip strong{font-size:13px}.usage-tooltip p{margin:8px 0 0}.usage-tooltip b{font-weight:600}
