@@ -89,13 +89,23 @@ function render(){
   $("#contentDetail").hidden=f.media==="video";
   const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="potentialRate";
   $("#coverage").textContent=state.data.coverage;$("#completionLine").textContent=f.overview.completionLine==null?"暂无完播数据":pct(f.overview.completionLine);
-  renderOverview(f);renderAccounts();renderContent(f);renderStrategy(f);renderBatches();renderContentPerformance(state.data.content);
+  renderAutopilot();renderOverview(f);renderAccounts();renderContent(f);renderStrategy(f);renderBatches();renderContentPerformance(state.data.content);
+}
+function renderAutopilot(){
+  const a=state.data.autopilot||{summary:{},groups:[],strategies:[],basis:''},s=a.summary;
+  $('#autopilotBasis').textContent=a.basis;
+  const cards=[['计划发布',s.planned,'按计划发布时间'],['已确认发布',s.published,'以发布回执为准'],['失败',s.failed,'官方或执行失败'],['处理中',s.pending,'生成、排队或待回执'],['待同步播放',s.missingMetrics,'已发布但指标尚未同步'],['已同步播放',s.synced,'待同步 '+fmt(s.missingMetrics)+' 条'],['当前累计播放',s.views,'仅合计已同步指标']];
+  $('#autopilotMetrics').innerHTML=cards.map(([name,n,note])=>'<div class="metric"><span>'+esc(name)+'</span><strong>'+fmt(n)+'</strong><small>'+esc(note)+'</small></div>').join('');
+  const headers=['账号数','计划 / 发布','失败 / 处理中','已停止','已同步 / 待同步','当前累计播放','当前均播 / 中位','当前破千 / 破万','点赞 / 评论 / 分享','评估'];
+  const cells=r=>[fmt(r.accounts),fmt(r.planned)+' / '+fmt(r.published),fmt(r.failed)+' / '+fmt(r.pending),fmt(r.stopped),fmt(r.synced)+' / '+fmt(r.missingMetrics),fmt(r.views),fmt(r.averageViews)+' / '+fmt(r.medianViews),pct(r.potentialRate)+' / '+pct(r.hitRate),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),esc(r.assessment)];
+  $('#autopilotStrategies').innerHTML=a.summary.planned?table(['策略',...headers],a.strategies.map(r=>[esc(r.label)+'<small>'+fmt(r.groups)+' 个运营组 · 原版 '+fmt(r.original)+' / 改写 '+fmt(r.rewrite)+'</small>',...cells(r)])):'<div class="empty">当前日期与分组范围没有自动运营任务。</div>';
+  $('#autopilotGroups').innerHTML=a.groups.length?table(['分组 / 策略',...headers],a.groups.map(r=>[esc(r.name)+'<small>'+esc(r.strategyLabel)+'</small>',...cells(r)])):'<div class="empty">当前范围没有自动运营分组。</div>';
 }
 function renderOverview(f){
   const c=f.overview.current,p=f.overview.previous;
   $("#findings").innerHTML='<ul>'+f.strategy.findings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
   const delta=(a,b,format,points)=>a===null||b===null||a===undefined||b===undefined?"":" · "+(a>=b?"+":"")+(points?((a-b)*100).toFixed(1)+" 个百分点":format(a-b));
-  const cards=[["满24小时作品",c.n,p.n,fmt,f.overview.observing+" 条观察中"],["破千率",c.potentialRate,p.potentialRate,pct,"潜力及以上",true],["破万率",c.hitRate,p.hitRate,pct,"待爆及以上",true],
+  const cards=[["已同步作品",c.n,p.n,fmt,f.overview.observing+" 条待同步播放"],["破千率",c.potentialRate,p.potentialRate,pct,"潜力及以上",true],["破万率",c.hitRate,p.hitRate,pct,"待爆及以上",true],
     ["中位播放",c.medianViews,p.medianViews,fmt,"平均 "+fmt(c.avgViews)],["完播率",c.completion,p.completion,pct,"平均值",true],["平均播放时长",c.averageWatch,p.averageWatch,sec,"秒"],...(isVideo()?[["3秒留存",c.retention3,p.retention3,pct,"第3秒还在看的比例",true]]:[])];
   $("#metrics").innerHTML=cards.map(([label,value,previous,format,note,points])=>'<div class="metric"><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+delta(value,previous,format,points)+'<br>'+esc(note)+'</small></div>').join("");
   $("#tierTable").innerHTML=table(["流量池","播放区间","本期作品","占比","上期占比"],f.tiers.map((t,i)=>{const next=f.tiers[i+1];return [esc(t.label),fmt(t.min)+(next?" – "+fmt(next.min):" 以上"),fmt(c.tiers[t.id]),c.n?pct(c.tiers[t.id]/c.n):"—",p.n?pct(p.tiers[t.id]/p.n):"—"];}));
@@ -107,7 +117,7 @@ function renderTrend(){
   if(!state.data)return;
   const key=$("#trendMetric").value,rows=state.data.framework.overview.daily,format=["potentialRate","completion","retention3"].includes(key)?pct:key==="averageWatch"?sec:fmt;
   const values=rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined),max=Math.max(...values,["potentialRate","completion","retention3"].includes(key)?0.01:1);
-  if(!values.length){$("#trendChart").innerHTML='<div class="empty">当前周期暂无满24小时的作品。</div>';return;}
+  if(!values.length){$("#trendChart").innerHTML='<div class="empty">当前周期暂无已同步播放的作品。</div>';return;}
   const x=i=>50+i*900/Math.max(1,rows.length-1),y=v=>235-v/max*190,has=v=>v!==null&&v!==undefined;
   const segments=rows.slice(1).map((r,i)=>has(r[key])&&has(rows[i][key])?'<line class="line" x1="'+x(i)+'" y1="'+y(rows[i][key])+'" x2="'+x(i+1)+'" y2="'+y(r[key])+'"/>':"").join("");
   const dots=rows.map((r,i)=>has(r[key])?'<circle cx="'+x(i)+'" cy="'+y(r[key])+'" r="4"><title>'+r.date+"："+format(r[key])+'</title></circle>':"").join("");
@@ -131,7 +141,7 @@ function renderContent(f){
   const c=f.content;
   $("#topicTable").innerHTML=(c.topics||[]).length?table(["题材",...summaryHeaders()],c.topics.map(t=>[esc(t.label),...summaryCells(t)])):'<div class="empty">这期作品还没有题材标签。grokbot 给爆款打上标签后，这里按题材比较破千率。</div>';
   const rows=page(c.sources,"sourcePage","sourcePager",()=>renderContent(state.data.framework));
-  $("#sourceTable").innerHTML=rows.length?table(["爆款","累计使用","本期账号 / 版本",...summaryHeaders().slice(1),"主要象限"],rows.map(s=>['<div class="title">'+esc(s.title||s.source)+'</div>',fmt(s.totalUses),fmt(s.accounts)+" / "+fmt(s.versions),...summaryCells(s.stats).slice(1),esc(f.quadrants[s.quadrant].label)])):'<div class="empty">本期没有满24小时的作品。</div>';
+  $("#sourceTable").innerHTML=rows.length?table(["爆款","累计使用","本期账号 / 版本",...summaryHeaders().slice(1),"主要象限"],rows.map(s=>['<div class="title">'+esc(s.title||s.source)+'</div>',fmt(s.totalUses),fmt(s.accounts)+" / "+fmt(s.versions),...summaryCells(s.stats).slice(1),esc(f.quadrants[s.quadrant].label)])):'<div class="empty">本期没有已同步播放的作品。</div>';
   $("#reuseTable").innerHTML=table(["这篇爆款第几次使用",...summaryHeaders()],c.reuse.map(r=>[esc(r.label)+(r.label===c.dropAt?' <span class="ops-chip">明显下滑</span>':""),...summaryCells(r)]));
   $("#variationTable").innerHTML=summaryTable("重复使用时",[["换一个没用过的版本",c.version.fresh],["沿用已经用过的版本",c.version.same],["换了图文样式",c.style.changed],["和上次同样式",c.style.same]]);
   const w=c.rewrite;

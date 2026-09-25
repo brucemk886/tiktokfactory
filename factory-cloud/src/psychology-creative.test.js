@@ -87,6 +87,7 @@ test('comparison joins exact task and account plus video, never batch or title, 
 
 test('operations endpoint reads creative joins with existing scope and reports empty coverage honestly',async t=>{
  const f=await fixture(t),url=new URL('https://factory.test/api/psychology-operations?period=7d');
+ f.env.ARCHIVE={async get(){return null;}};
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{...user,sidebarModules:['psychology-ops-report']}});
  const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content,null);
  const detailUrl=new URL(url);detailUrl.searchParams.set('details','1');
@@ -290,4 +291,26 @@ test('version status filter distinguishes pending from disabled and clamps pages
  assert.equal((await query('status=manual')).total,1);
  assert.equal((await query('status=pending&q=missing')).total,0);
  assert.equal((await api(f,'/copies?status=bad')).status,400);
+});
+
+
+test('operations attributes multi-batch pilot slots to their group and strategy, including unsynced accounts',async t=>{
+ const f=await fixture(t),now=Date.now(),when=Math.floor(now/1000)-60;
+ f.env.ARCHIVE={async get(){return null;}};
+ f.sqlite.prepare("INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES ('pilot','admin','g','自动运营1','original','[]','active',?,?,?)").run(now+86400000,now,now);
+ for(const [batch,account,media,linked] of [['first','a','photo',true],['second','b','photo',true],['manual','a','photo',false],['outside','outside','photo',true],['video','a','video',true],['future','a','photo',true]]){
+  f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run(batch,'admin',JSON.stringify({mediaType:media,...(batch==='second'?{libraryStrategy:'rewrite'}:{})}),now-3*86400000);
+  f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?)').run(batch+'-item',batch,'source','job',account,batch==='future'?when+86400:when);
+  f.sqlite.prepare('INSERT INTO factory_publish_records(id,created_at,value_json) VALUES (?,?,?)').run('psychology:'+batch+'-item',now-3*86400000,JSON.stringify({autoTaskId:batch+'-item',autoBatchId:batch,connectionId:account,status:'published'}));
+ }
+ f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES ('pilot',?,'created','first,second,outside,video,future',?)").run(now-60000,now);
+ const actor={...user,sidebarModules:['psychology-ops-report']};
+ const read=async(query='',as=actor)=>{const url=new URL('https://factory.test/api/psychology-operations?'+query);const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:as});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
+ const r=await read();assert.equal(r.autopilot.summary.planned,2);assert.equal(r.autopilot.summary.published,2);assert.equal(r.autopilot.summary.missingMetrics,2);assert.equal(r.autopilot.summary.views,null);
+ assert.equal(r.autopilot.groups.length,2);assert.equal(r.autopilot.strategies.find(s=>s.id==='original').published,1);assert.equal(r.autopilot.strategies.find(s=>s.id==='rewrite').published,1);
+ assert.equal((await read('group=g')).autopilot.summary.planned,2);
+ assert.equal((await read('',{...actor,role:'member',allowedAccountGroups:['g']})).autopilot.summary.planned,2);
+ assert.equal((await read('media=video')).autopilot.summary.planned,1);
+ assert.equal((await read('',{...actor,role:'member',allowedAccountGroups:['other']})).autopilot.summary.planned,0);
+ assert.equal(f.requests.length,0);
 });

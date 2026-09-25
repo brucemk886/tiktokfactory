@@ -1,7 +1,8 @@
 import { TOPIC_LABELS } from './psychology-peer-topics.js';
 // One analysis frame for psychology auto-publishing, photo and video analysed
 // separately: every number comes from auto-published posts of one media type, bucketed by TikTok publish time, counted
-// once they are 24h old. Account stages alone use the account's whole history.
+// immediately in the interactive report, or at 24h for the automation analysis.
+// Account stages alone use the account's whole history.
 const DAY = 86400000;
 const ms = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? (n < 1e12 ? n * 1000 : n) : Date.parse(v || '') || 0; };
 const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -70,8 +71,9 @@ function topicBreakdown(rows, rules) {
   return [...buckets].map(([id, list]) => ({ id, label: TOPIC_LABELS[id] || '未打标', ...summarize(list, rules) }))
     .sort((a, b) => (b.potentialRate ?? -1) - (a.potentialRate ?? -1) || b.n - a.n);
 }
-export function buildOpsFramework({ rows = [], history = [], videosByAccount = new Map(), accounts = [], window, media = 'photo', now = Date.now(), rules = RULES }) {
+export function buildOpsFramework({ rows = [], history = [], videosByAccount = new Map(), accounts = [], window, media = 'photo', now = Date.now(), rules = RULES, matureOnly = true }) {
   const noun = media === 'video' ? '视频' : '图文';
+  const sampleLabel = matureOnly ? '满24小时的' : '已同步播放的';
   const uses = new Map(), perSource = new Map(), perVersion = new Map();
   for (const item of [...history].sort((a, b) => (a.schedule_at - b.schedule_at) || String(a.id).localeCompare(String(b.id)))) {
     const key = item.source_key, versionKey = key + '\u0000' + (item.variant_id || ''), prev = perSource.get(key);
@@ -85,11 +87,11 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
     .map(v => ({ t: ms(v.createTime || v.createdAt || v.create_time), views: Number(v.views ?? v.viewCount ?? v.playCount) }))
     .filter(v => v.t && Number.isFinite(v.views)).sort((a, b) => a.t - b.t));
   const info = new Map(accounts.map(a => [a.schema, { name: a.profile?.username || a.username || a.label || a.schema, group: a.groupName || '' }]));
-  const stageAt = (account, time) => accountStage((timelines.get(account) || []).filter(v => v.t < time && time - v.t >= DAY).map(v => v.views), rules);
+  const stageAt = (account, time) => accountStage((timelines.get(account) || []).filter(v => v.t < time && (!matureOnly || time - v.t >= DAY)).map(v => v.views), rules);
 
   const inWindow = t => t >= window.start && t < window.end, inPrevious = t => t >= window.previousStart && t < window.start;
   const posts = rows.filter(r => r.time && (inWindow(r.time) || inPrevious(r.time)));
-  const mature = posts.filter(r => r.mature && r.views != null);
+  const mature = posts.filter(r => (!matureOnly || r.mature) && r.views != null);
   const completionLine = median(positive(mature.filter(r => inWindow(r.time)), 'completion'));
   const samples = mature.map(row => {
     const use = uses.get(row.id) || { useIndex: 1, versionIndex: 1, prevStyle: '' };
@@ -102,7 +104,7 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
   // Overview
   const daily = Array.from({ length: window.days }, (_, i) => { const date = dateKey(window.start + i * DAY); return { date, ...summarize(current.filter(s => dateKey(s.time) === date), rules) }; });
   const overview = { current: summarize(current, rules), previous: summarize(previous, rules), daily,
-    observing: posts.filter(r => inWindow(r.time) && !(r.mature && r.views != null)).length, completionLine };
+    observing: posts.filter(r => inWindow(r.time) && !((!matureOnly || r.mature) && r.views != null)).length, completionLine };
 
   // Accounts: cumulative stage at period start and end, period stats from auto photo posts.
   const endTime = Math.min(now, window.end), stageCounts = { start: {}, end: {} }, transitions = new Map(), accountRows = [];
@@ -116,14 +118,14 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
     transitions.set(move, (transitions.get(move) || 0) + 1);
     const own = current.filter(s => s.account === account), stats = summarize(own, rules), main = dominant(stats.quadrants);
     const rank = { launch: 0, normal: 1, potential: 2, burst: 3 };
-    const issue = !own.length ? '本期没有满24小时的自动发布' + noun
+    const issue = !own.length ? '本期没有'+sampleLabel+'自动发布' + noun
       : stats.n >= rules.minSample && stats.medianViews < rules.lowViews ? '持续低播放，先查账号状态'
       : startStage && rank[endStage] < rank[startStage] ? '阶段下滑，查最近内容'
       : endStage === 'potential' || endStage === 'burst' ? '潜力号，可以加码'
       : own.length >= 3 && main === 'account' ? '内容完播不错但没推流，偏号的问题'
       : own.length >= 3 && main === 'weak' ? '内容留不住人，换内容方向' : '';
     accountRows.push({ account, ...(info.get(account) || { name: account, group: '' }), startStage, endStage,
-      totalPosts: list.filter(v => v.t < endTime && endTime - v.t >= DAY).length, stats, quadrant: main, issue });
+      totalPosts: list.filter(v => v.t < endTime && (!matureOnly || endTime - v.t >= DAY)).length, stats, quadrant: main, issue });
   }
   accountRows.sort((a, b) => (b.stats.medianViews ?? -1) - (a.stats.medianViews ?? -1));
 
@@ -156,7 +158,7 @@ export function buildOpsFramework({ rows = [], history = [], videosByAccount = n
       best: ready.length > 1 ? ready.sort((a, b) => b[1].medianViews - a[1].medianViews)[0][0] : null };
   });
   const findings = [], pct = v => Math.round(v * 100) + '%', ratio = (a, b) => b.medianViews > 0 ? a.medianViews / b.medianViews : null, o = overview.current;
-  if (!enough(o, rules)) findings.push(`样本不足：本期满24小时的自动发布${noun}只有 ${o.n} 条（需≥${rules.minSample}），先继续跑。`);
+  if (!enough(o, rules)) findings.push(`样本不足：本期${sampleLabel}自动发布${noun}只有 ${o.n} 条（需≥${rules.minSample}），先继续跑。`);
   else {
     findings.push(`本期${noun} ${o.n} 条，中位播放 ${Math.round(o.medianViews)}，破千 ${pct(o.potentialRate)}，破万 ${pct(o.hitRate)}` + (o.retention3 != null ? `，3秒留存 ${pct(o.retention3)}` : '') + (enough(overview.previous, rules) ? `；上期破千 ${pct(overview.previous.potentialRate)}。` : '。'));
     const q = o.quadrants, known = o.n - q.unknown;

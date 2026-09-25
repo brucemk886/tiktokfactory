@@ -134,3 +134,14 @@ test('accounts: cumulative stages at period start and end, transitions, issues a
   assert.equal(launch.kinds.first.n, 5);
   assert.equal(launch.best, null);
 });
+
+
+test('interactive report includes same-day samples while the scheduler retains its maturity policy',()=>{
+ const account='tiktok:a',time=now-3600000;
+ const rows=[{id:'i',account,time,views:2000,mature:false,source:'s',topics:[],completion:.5,variant:'',style:'s'},{id:'missing',account,time,views:null,mature:false,topics:[]}];
+ const input={rows,window:{start:now-8*3600000,end:now+16*3600000,previousStart:now-32*3600000,days:1},now,videosByAccount:new Map([[account,[{id:'v',createTime:time/1000,views:2000}]]])};
+ const report=buildOpsFramework({...input,matureOnly:false});
+ assert.equal(report.overview.current.n,1);assert.equal(report.overview.current.avgViews,2000);assert.equal(report.overview.current.potentialRate,1);assert.equal(report.overview.observing,1);
+ assert.equal(report.accounts.rows[0].totalPosts,1);assert.equal(report.content.sources.length,1);assert.equal(report.overview.daily[0].n,1);
+ assert.equal(buildOpsFramework(input).overview.current.n,0);
+});

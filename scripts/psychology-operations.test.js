@@ -148,3 +148,36 @@ test('report UI defaults today, loads details on demand and rejects stale detail
  assert.equal(requests[1].init.signal.aborted,true);release();await detail;await new Promise(r=>setImmediate(r));assert.equal(rendered.length,0);
  assert.match(requests[2].url,/period=7d/);
 });
+
+
+test('autopilot same-day report counts all 360 tasks, nine groups and three strategies without an age gate',async()=>{
+ const {buildAutopilotReport}=await import('./psychology-autopilot-report.js');
+ const list=[],items=[],records=[],videosByAccount=new Map();
+ for(let g=1;g<=9;g++)for(let a=0;a<20;a++){
+  const account=`g${g}-a${a}`,schema='tiktok:'+account;list.push({schema});const videos=[];
+  for(let n=0;n<2;n++){
+   const id=`${account}-${n}`,videoId='v'+id;
+   items.push({id,batch_id:'b'+g,pilot_id:'p'+g,group_id:'g'+g,group_name:'自动运营'+g,strategy:['evolve','original','rewrite'][Math.floor((g-1)/3)],connection_id:account,schedule_at:(now-3600000)/1000,media_type:'photo',variant_id:n?'rewrite':''});
+   records.push({autoTaskId:id,autoBatchId:'b'+g,connectionId:account,videoId,officialRemoteStatus:'PUBLISHED',publishedAt:now-3600000});
+   videos.push({id:videoId,createTime:(now-3600000)/1000,views:n?2000:0,likes:0});
+  }videosByAccount.set(schema,videos);
+ }
+ const r=buildAutopilotReport({items:[...items,items[0]],records,accounts:list,videosByAccount,window,now});
+ assert.equal(r.summary.planned,360);assert.equal(r.summary.published,360);assert.equal(r.summary.synced,360);assert.equal(r.summary.accounts,180);
+ assert.equal(r.summary.views,360000);assert.equal(r.summary.averageViews,1000);assert.equal(r.summary.potentialRate,.5);
+ assert.equal(r.groups.length,9);assert.ok(r.groups.every(g=>g.planned===40&&g.published===40));assert.deepEqual(r.strategies.map(s=>s.planned),[120,120,120]);
+ assert.equal(r.summary.original,180);assert.equal(r.summary.rewrite,180);
+});
+
+test('autopilot joins exact account and task, distinguishes missing metrics from zero, and respects scheduled dates',async()=>{
+ const {buildAutopilotReport}=await import('./psychology-autopilot-report.js');
+ const base={batch_id:'b',pilot_id:'p',group_id:'g',group_name:'G',strategy:'original',connection_id:'a',schedule_at:now/1000,media_type:'photo'};
+ const items=['zero','missing','remote-fail','local-fail','submitted','stopped','wrong-account','wrong-batch','queued'].map(id=>({...base,id}));
+ items.find(i=>i.id==='local-fail').execution_status='failed';items.find(i=>i.id==='submitted').execution_status='failed';items.find(i=>i.id==='submitted').receipt_json='{"batchId":"remote"}';items.find(i=>i.id==='stopped').deleted_at=now;
+ items.push({...base,id:'tomorrow',schedule_at:window.end/1000},{...base,id:'outside',connection_id:'outside'},{...base,id:'video',media_type:'video'});
+ const records=[{autoTaskId:'zero',videoId:'v0',status:'published'},{autoTaskId:'missing',status:'published'},{autoTaskId:'remote-fail',status:'failed'},{autoTaskId:'wrong-account',connectionId:'b',status:'published'},{autoTaskId:'wrong-batch',autoBatchId:'other',status:'published'}];
+ const r=buildAutopilotReport({items,records,accounts:[accounts[0]],videosByAccount:new Map([['tiktok:a',[{id:'v0',createTime:now/1000,views:0}]]]),window,now});
+ assert.equal(r.summary.planned,9);assert.equal(r.summary.published,2);assert.equal(r.summary.failed,2);assert.equal(r.summary.stopped,1);assert.equal(r.summary.pending,4);
+ assert.equal(r.summary.synced,1);assert.equal(r.summary.missingMetrics,1);assert.equal(r.summary.averageViews,0);assert.equal(r.summary.likes,null);
+ const empty=buildAutopilotReport({items:[{...base,id:'missing'}],records,accounts,window,now});assert.equal(empty.summary.views,null);assert.equal(empty.summary.potentialRate,null);
+});
