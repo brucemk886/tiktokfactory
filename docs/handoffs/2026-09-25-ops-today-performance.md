@@ -13,4 +13,7 @@ scripts/psychology-operations.js/tests, factory-cloud/src/psychology-operations.
 734 passing. Covers Beijing/UTC rollover, previous-day comparison, explicit custom range, lazy-detail scope, stale responses, bounded concurrency, no repair writes and retained D1 fallback. No live publishing tests.
 
 # Remaining
-Deploy committed/pushed main via npm run deploy from clean release checkout; verify today default, filter and timing on production. Preserve unrelated untracked diagnostic files in original checkout.
+Code bbed36a committed/pushed main; deployed from clean independent main checkout under work/ops-report-release using npm run deploy, preserving original untracked diagnostics. Retained the original ignored remotion-assets resource set. A transient Cloudflare cron update fetch failure was retried through the same deployment command; final deployment fully succeeded including all four crons, version26215ad6-c004-4763-969c-42da2fc9cfa8.
+Production browser: default period=today, 2026-09-25 compared with 2026-09-24, visible report, 13,615ms /64,551 bytes. Same 7d query after fix14,511ms vs22,865ms before (single observed samples, not SLA). Returned10 groups, HTTP200, summary content=null as intended. Remaining cold-load time is still significant; no claim of instant loading. No active publication jobs were changed.
+
+Expanded live comparison loaded successfully on demand (16,125ms); page displays copy/style coverage without blocking initial overview.
