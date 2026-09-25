@@ -1,6 +1,6 @@
 # Current State
 
-- Autopilot viewing defaults to Beijing today with yesterday/last-7-days filters. Execution summaries, slots and logs follow the selection; all slots in the bounded date window are included. Current account controls and latest mature strategy analysis remain separate. See docs/handoffs/2026-09-26-autopilot-period-filter.md.
+- Autopilot viewing defaults to Beijing today with yesterday/last-7-days filters. Execution summaries, slots and logs follow the selection; all slots in the bounded date window are included. Group performance now also follows selected actual publication dates using durable facts, including same-day metrics; no samples display —. Current account controls and scheduler mature analysis remain separate. See docs/handoffs/2026-09-26-autopilot-period-filter.md.
 
 - Psychology operations phase1 now uses long-lived per-video/task reporting facts and incremental account/day/pilot/strategy rollups (0061), fresh SQL authorization, server-side 10-row pagination and lazy tabs. Minute maintenance handles durable task reconciliation and keyset archive backfill; opening reports never loads raw archives. Exact SQL statistics have no record-count truncation. This is reporting capacity work, not a 10k-account publishing certification. See docs/handoffs/2026-09-25-ops-report-scale-phase1.md.
 

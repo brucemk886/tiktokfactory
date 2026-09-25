@@ -10,4 +10,4 @@ The owner-scoped overview metadata batch now aggregates ops_task_facts for the s
 756 tests pass, including yesterday/today/7d separation, no samples, same-day data, zero versus missing, unpublished exclusion, owner isolation and an explicit historical 495 / 7.1% UI regression. No real publishing calls.
 
 ## Release
-Pending deployment and live verification.
+Committed/pushed 0b4e5cf, then deployed from clean origin/main via npm run deploy. Worker 071935a5-695d-4947-b50b-d30b611d5a3c. Authenticated UI verification for group 1: today 40 planned / 0 published / 0 metric samples, median/rate — / —; yesterday 38 published / 38 metric samples, 274 / 5.3%. Tests and live verification performed no publishing actions.
