@@ -411,3 +411,16 @@ test('period selection includes all seven days beyond twelve slots and excludes 
  }
  assert.equal(f.requests.length,0);
 });
+
+test('autopilot performance follows actual publication period, includes same-day zero views and isolates pilot ownership',async t=>{
+ const f=await pilotFixture(t),day=autopilotViewWindow().start;
+ for(const [id,owner] of [['visible','admin'],['hidden','other']]) f.sqlite.prepare("INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES(?,?,?,'G','original','[{\"hour\":8,\"minute\":0}]','paused',?,?,?)").run(id,owner,id,day+DAY,day,day);
+ const add=(id,pilot,time,views,state='published')=>f.sqlite.prepare('INSERT INTO ops_task_facts(id,batch_id,account_key,media,schedule_at,published_at,pilot_id,views,state) VALUES(?,?,?,\'photo\',?,?,?,?,?)').run(id,'b','tiktok:a',day,time,pilot,views,state);
+ add('y1','visible',day-1,400);add('y2','visible',day-1,1600);add('foreign','hidden',day+1,99999);
+ let result=await(await f.api('GET')).json();assert.deepEqual(result.pilots[0].performance,{n:0,medianViews:null,potentialRate:null});
+ const yesterday=await(await f.api('GET','?period=yesterday')).json();assert.equal(yesterday.pilots[0].performance.n,2);assert.equal(yesterday.pilots[0].performance.medianViews,1000);assert.equal(yesterday.pilots[0].performance.potentialRate,0.5);
+ add('t0','visible',day+1,0);add('t1','visible',day+2,1000);add('missing','visible',day+3,null);add('not-published','visible',day+4,9000,'pending');
+ result=await(await f.api('GET')).json();assert.equal(result.pilots[0].performance.n,2);assert.equal(result.pilots[0].performance.medianViews,500);assert.equal(result.pilots[0].performance.potentialRate,0.5);
+ const week=await(await f.api('GET','?period=7d')).json();assert.equal(week.pilots[0].performance.n,4);assert.equal(week.pilots[0].performance.medianViews,700);
+ assert.equal(f.requests.length,0);
+});

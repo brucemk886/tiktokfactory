@@ -271,11 +271,18 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     const labels = new Map([...accountsFromLatestArchive(await listLatestArchiveAccounts(db)), ...directory.accounts].map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
     const pilotIds = JSON.stringify(pilots.results.map(p => p.id));
     // One round trip for all pilots; per-pilot windows preserve list limits.
-    const [accountRows, slotRows, logRows, dailyRows] = await db.batch([
+    const [accountRows, slotRows, logRows, dailyRows, performanceRows] = await db.batch([
       db.prepare('SELECT * FROM psychology_autopilot_accounts WHERE autopilot_id IN (SELECT value FROM json_each(?)) ORDER BY status DESC,connection_id').bind(pilotIds),
       db.prepare(`SELECT * FROM psychology_autopilot_slots WHERE autopilot_id IN (SELECT value FROM json_each(?)) AND slot_at>=? AND slot_at<? ORDER BY autopilot_id,slot_at DESC`).bind(pilotIds,window.start,window.end),
       db.prepare(`SELECT * FROM (SELECT autopilot_id,kind,message,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE autopilot_id IN (SELECT value FROM json_each(?)) AND created_at>=? AND created_at<?) WHERE rn<=60 ORDER BY autopilot_id,rn`).bind(pilotIds,window.start,window.end),
       db.prepare(`SELECT * FROM (SELECT autopilot_id,message,detail_json,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE kind='daily' AND autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn=1`).bind(pilotIds),
+      db.prepare(`WITH ranked AS (
+        SELECT pilot_id,views,row_number() OVER(PARTITION BY pilot_id ORDER BY views,id) rn,count(*) OVER(PARTITION BY pilot_id) n
+        FROM ops_task_facts WHERE media='photo' AND pilot_id IN (SELECT value FROM json_each(?))
+          AND published_at>=? AND published_at<? AND state='published' AND views IS NOT NULL)
+        SELECT pilot_id,count(*) n,avg(CASE WHEN rn IN ((n+1)/2,(n+2)/2) THEN views END) medianViews,
+          avg(CASE WHEN views>=1000 THEN 1.0 ELSE 0.0 END) potentialRate
+        FROM ranked GROUP BY pilot_id`).bind(pilotIds,window.start,window.end),
     ]);
     const allItems = await slotExecution(db, slotRows.results, labels);
     const out = [];
@@ -291,7 +298,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
       const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
       out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at,
-        today, execution:executionCounts(items), attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
+        today, execution:executionCounts(items), performance:performanceRows.results.find(r=>r.pilot_id===p.id)||{n:0,medianViews:null,potentialRate:null}, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
         slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, stopPending:Boolean(a.stop_pending) })),
         schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,

@@ -142,7 +142,7 @@ function render() {
     if(p.status==='active' && p.lastRunAt && data.fetchedAt-p.lastRunAt>26*3600000)alerts.push([esc(p.groupName),'检查延迟','超过 26 小时没有自动检查，请核对后台运行情况。',`<a href="#${p.id}">立即检查</a>`]);
   }
   $('#attention').innerHTML = alerts.length ? `<p>${alerts.length} 项待核对 / 恢复中</p>`+table(['分组 / 账号','情况','原因 / 下一步','操作'],alerts.slice(0,30))+(alerts.length>30?'<p>先显示前 30 项，展开各组排期查看全部明细。</p>':'') : '<p class="section-hint">最近排期没有待处理异常。</p>';
-  $('#compare').innerHTML = pilots.length ? table(['分组 / 策略','状态',PERIOD_LABELS[data.window?.period||'today']+'执行','近7天成熟作品','中位播放 / 破千率','最近检查','详情'],pilots.map(p=>[esc(p.groupName)+'<small>'+esc(p.strategyLabel)+'</small>',STATUS[p.status],esc(totals(p.execution||p.today)),fmt(p.latest?.overview?.n),fmt(p.latest?.overview?.medianViews)+' / '+pct(p.latest?.overview?.potentialRate),time(p.lastRunAt),`<a href="#${p.id}">查看运营详情</a>`])) : '<p>创建运营计划后，会在这里显示各组执行和效果。</p>';
+  $('#compare').innerHTML = pilots.length ? table(['分组 / 策略','状态',PERIOD_LABELS[data.window?.period||'today']+'执行',PERIOD_LABELS[data.window?.period||'today']+'已同步作品','中位播放 / 破千率','最近检查','详情'],pilots.map(p=>[esc(p.groupName)+'<small>'+esc(p.strategyLabel)+'</small>',STATUS[p.status],esc(totals(p.execution||p.today)),fmt(p.performance?.n??0),fmt(p.performance?.medianViews)+' / '+pct(p.performance?.potentialRate),time(p.lastRunAt),`<a href="#${p.id}">查看运营详情</a>`])) : '<p>创建运营计划后，会在这里显示各组执行和效果。</p>';
   const opened = new Set([...document.querySelectorAll('#pilots details[open]')].map(d=>d.id));
   const slotBodies = new Map([...document.querySelectorAll('[data-slot-body]')].map(e=>[e.id,e.innerHTML]));
   $('#pilots').innerHTML = pilots.map(p=>{

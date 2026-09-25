@@ -137,3 +137,8 @@ test('switching period during a pending refresh discards old response and reques
  h.run('unblock()');await pending;await tick();
  assert.match(h.requests.at(-1).path,/period=7d/);assert.equal(h.run('selectedPeriod'),'7d');assert.equal(h.run('loading'),false);
 });
+
+test('comparison uses selected-period performance and never substitutes historical strategy analysis',async()=>{
+ const h=harness({pilots:[{id:'p',groupId:'g',groupName:'G',strategyLabel:'A',status:'active',accounts:[],schedule:[],logs:[],today:{planned:40},latest:{overview:{n:14,medianViews:495,potentialRate:0.071}},performance:{n:0,medianViews:null,potentialRate:null}}],window:{period:'today',from:'2026-09-26',to:'2026-09-26'}});await tick();
+ assert.match(h.node('#compare').innerHTML,/今天已同步作品/);assert.match(h.node('#compare').innerHTML,/— \/ —/);assert.doesNotMatch(h.node('#compare').innerHTML,/495|7\.1%/);
+});
