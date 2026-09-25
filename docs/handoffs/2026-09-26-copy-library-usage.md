@@ -26,3 +26,11 @@ Add a content-only view of copy inventory, draw coverage and original/rewrite pe
 
 ## Release / remaining work
 Code release and authenticated production verification follow this commit. Verify library entry, date/media changes and version text in the live browser. Current library identity mapping scales with number of originals, not account/task history; consider persisting canonical identity keys if the content catalog itself becomes very large. Existing analytics sync coverage remains the source of effect completeness.
+
+## Production verification
+- Code commit ac19e72 was pushed to main, then deployed through `npm run deploy` after the clean/exact-origin guard passed. No migrations were needed. Worker version: 995d93b2-34e9-4c45-8eb6-e809b734b1a3.
+- Authenticated page loads the real local inventory and historical observations; initial stats request returned HTTP 200 in ~2.14 s (browser network timing). Sorting response ~1.96 s; version detail ~2.35 s.
+- Today changes the usage window and shows zero effective samples / null metrics, without falling back to historical performance. All-time original/rewrite comparisons load separately.
+- Used-copy detail resolves one original and three rewrites with distinct draw/sample counts; a rewrite body loads only when selected. Main pagination reaches page 2 with 20 rows; media changes reset to page 1.
+- Desktop 1440 px and mobile 390 px DOM checks show document scrollWidth equal to viewport width; wide tables scroll inside their containers. Screenshot transport timed out, so screenshot-based visual QA was not completed. Semantic controls, live data, layout bounds, modal/body and page navigation were verified. The independent browser session was stopped.
+- No account, group, schedule or publishing mutations were performed. Expected cancelled requests during rapid filter changes are handled; a browser extension additionally logged the cancellation. No feature blocker remains.
