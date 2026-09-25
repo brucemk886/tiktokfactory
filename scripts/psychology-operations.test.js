@@ -1,3 +1,4 @@
+import {fixture as cloudFixture} from '../factory-cloud/src/psychology-cloud-test-fixture.js';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildOperationsReport, operationsWindow, mediaKind, publishOutcome } from "./psychology-operations.js";
@@ -69,37 +70,25 @@ test("photo plan completion alone is not counted as rendered content",()=>{
   const r=report({items:[{...base,id:"plan",type:"psychology-photo-story",status:"done"},{...base,id:"render",type:"psychology",status:"done"}]});
   assert.equal(r.funnel.planned,2);assert.equal(r.funnel.generated,1);assert.equal(r.funnel.submitted,0);
 });
-function fixture(){
-  const store=ensureModuleProjects({});
-  store.groups=[{id:"g1",name:"Psych",projectId:"proj-psych"},{id:"g2",name:"Other",projectId:"proj-psych"},{id:"g3",name:"Novel",projectId:"proj-novel"}];
-  const assigned=[{account_key:"a",group_id:"g1"},{account_key:"b",group_id:"g2"},{account_key:"c",group_id:"g3"}];
-  const rows=["a","b","c"].map(id=>({account_key:"tiktok:"+id,label:id,profile_json:JSON.stringify({username:id}),synced_at:Date.now()}));
-  const reads=[];
-  const DB={async batch(statements){return Promise.all(statements.map(s=>s.all()));},prepare(sql){assert.match(sql.trim(),/^SELECT/);return{bind(){return this;},async first(){if(sql.includes("factory_kv"))return{value_json:JSON.stringify(store)};throw new Error(sql);},async all(){
-    if(sql.includes("factory_kv"))return{results:[{value_json:JSON.stringify(store)}]};
-    if(sql.includes("official_report_video_cache"))return{results:[]};
-    if(sql.includes("official_account_assignments"))return{results:assigned};
-    if(sql.includes("official_accounts_latest"))return{results:rows};
-    if(sql.includes("factory_publish_records"))return{results:rows.map(r=>({value_json:JSON.stringify({id:r.account_key,connectionId:r.account_key,createdAt:Date.now(),status:"published"})}))};
-    if(sql.includes("psychology_publish_items"))return{results:[]};
-    if(sql.includes("psychology_peer_hits"))return{results:[]};
-    throw new Error(sql);
-  }};}};
-  const ARCHIVE={async get(key){reads.push(key);return{async json(){return{account_key:"tiktok:a",videos:[{id:"12345678901",createTime:Date.now()-2*DAY,views:400,duration:10}]};}};}};
-  return{env:{DB,ARCHIVE},reads,assigned};
+async function fixture(t){
+ const f=await cloudFixture(t),store=ensureModuleProjects({});
+ store.groups=[{id:'g1',name:'Psych',projectId:'proj-psych'},{id:'g2',name:'Other',projectId:'proj-psych'},{id:'g3',name:'Novel',projectId:'proj-novel'}];
+ f.sqlite.prepare("UPDATE factory_kv SET value_json=? WHERE key='official-account-groups'").run(JSON.stringify(store));
+ for(const [account,group]of [['a','g1'],['b','g2'],['c','g3']]){f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id) VALUES (?,?)').run(account,group);f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,label,synced_at) VALUES (?,?,?)').run('tiktok:'+account,account,Date.now());}
+ const reads=[];f.env.ARCHIVE={async get(k){reads.push(k);throw new Error('Report must not fetch archives');}};return {...f,reads};
 }
 test("operations API is read-only and requires its existing sidebar permission",async()=>{
   const url=new URL("https://factory.test/api/psychology-operations");
   assert.equal((await handlePsychologyOperations(new Request(url),{},url,{user:{role:"admin",sidebarModules:[]}})).status,403);
   assert.equal((await handlePsychologyOperations(new Request(url,{method:"POST"}),{},url,{})).status,405);
 });
-test("operations API applies project and assigned-group scope before reading video packs",async()=>{
-  const{env,reads}=fixture(),url=new URL("https://factory.test/api/psychology-operations?period=7d&module=novel-promotion");
+test("operations API applies project and assigned-group scope without reading video packs",async t=>{
+  const{env,reads}=await fixture(t),url=new URL("https://factory.test/api/psychology-operations?period=7d&module=novel-promotion");
   const user={role:"operator",sidebarModules:["psychology-ops-report"],allowedAccountGroups:["g1"]};
   const response=await handlePsychologyOperations(new Request(url),env,url,{user});
   const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));
   assert.deepEqual(body.groups.map(g=>g.id),["g1"]);assert.equal(body.framework.media,"photo");
-  assert.equal(reads.length,1);assert.match(reads[0],/tiktok%3Aa/);
+  assert.equal(reads.length,0);
   url.searchParams.set("group","g2");
   assert.equal((await handlePsychologyOperations(new Request(url),env,url,{user})).status,403);
 });
@@ -128,11 +117,11 @@ test('today is the default Beijing calendar day and compares yesterday across UT
  assert.equal(operationsWindow(new URLSearchParams('period=custom&from=2026-09-22&to=2026-09-23'),time).from,'2026-09-22');
 });
 
-test('overview skips heavy content but detail uses the same group permission checks',async()=>{
- const {env}=fixture(),user={role:'operator',sidebarModules:['psychology-ops-report'],allowedAccountGroups:['g1']};
+test('overview skips heavy content but detail uses the same group permission checks',async t=>{
+ const {env}=await fixture(t),user={role:'operator',sidebarModules:['psychology-ops-report'],allowedAccountGroups:['g1']};
  const call=async query=>{const u=new URL('https://factory.test/api/psychology-operations?'+query);return handlePsychologyOperations(new Request(u),env,u,{user});};
- const summary=await(await call('period=today')).json();assert.equal(summary.window.period,'today');assert.equal(summary.content,null);assert.ok(summary.framework);
- const detail=await(await call('period=today&details=1')).json();assert.ok(Array.isArray(detail.content.rows));assert.equal(detail.framework,undefined);
+ const summary=await(await call('period=today')).json();assert.equal(summary.window.period,'today');assert.equal(summary.content,undefined);assert.ok(summary.framework);
+ const detail=await(await call('period=today&details=1')).json();assert.ok(Array.isArray(detail.comparisons));assert.equal(detail.framework,undefined);
  assert.equal((await call('period=today&details=1&group=g2')).status,403);
 });
 
@@ -141,11 +130,11 @@ test('report UI defaults today, loads details on demand and rejects stale detail
  const src=fs.readFileSync(new URL('../public/psychology-operations.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/,'');
  const nodes=new Map(),requests=[],rendered=[];let release;
  const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='#period'?'today':'',hidden:true,open:false,textContent:'',innerHTML:'',listeners:{},classList:{toggle(){}},addEventListener(k,f){this.listeners[k]=f;},setAttribute(){},contains(){return false;},focus(){}});return nodes.get(s);};
- const data={groups:[],window:{from:'2026-09-25',to:'2026-09-25',previousFrom:'2026-09-24',previousTo:'2026-09-24'},framework:{},content:null};
- const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'',href:'https://factory.test/psychology-ops-report'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},renderContentPerformance:v=>rendered.push(v),fetch:async(url,init)=>{requests.push({url,init});if(url.includes('details=1'))return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({content:{rows:[{id:'old'}]}})});});return {ok:true,json:async()=>data};}});
+ const data={groups:[],window:{from:'2026-09-25',to:'2026-09-25',previousFrom:'2026-09-24',previousTo:'2026-09-24'},framework:{},content:null,progress:{ready:true,pending:0}};
+ const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'',href:'https://factory.test/psychology-ops-report'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},renderContentPerformance:v=>rendered.push(v),fetch:async(url,init)=>{requests.push({url,init});if(url.includes('panel=details'))return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({content:{rows:[{id:'old'}]}})});});return {ok:true,json:async()=>data};}});
  vm.runInContext(src+'\nrender=()=>{};',context);await new Promise(r=>setImmediate(r));
  assert.match(requests[0].url,/period=today/);assert.equal(requests.length,1);
- node('#contentDetail').open=true;const detail=node('#contentDetail').listeners.toggle();await new Promise(r=>setImmediate(r));assert.match(requests[1].url,/details=1/);
+ node('#contentDetail').open=true;const detail=node('#contentDetail').listeners.toggle();await new Promise(r=>setImmediate(r));assert.match(requests[1].url,/panel=details/);
  node('#period').value='7d';node('#period').listeners.change();await new Promise(r=>setImmediate(r));
  assert.equal(requests[1].init.signal.aborted,true);release();await detail;await new Promise(r=>setImmediate(r));assert.equal(rendered.length,0);
  assert.match(requests[2].url,/period=7d/);
@@ -185,8 +174,8 @@ test('autopilot joins exact account and task, distinguishes missing metrics from
 });
 
 
-test('a newly assigned unsynced account does not hide known archive timestamps',async()=>{
- const {env,assigned}=fixture();assigned.push({account_key:'unsynced',group_id:'g1'});
+test('a newly assigned unsynced account does not hide known archive timestamps',async t=>{
+ const {env,sqlite}=await fixture(t);sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('unsynced','g1')").run();
  const url=new URL('https://factory.test/api/psychology-operations');
  const response=await handlePsychologyOperations(new Request(url),env,url,{user:{role:'admin',sidebarModules:['psychology-ops-report']}});
  const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));assert.ok(body.archiveAt>0);

@@ -30,7 +30,7 @@
 <p id="autopilotBasis" class="section-hint"></p>
 <section id="autopilotMetrics" class="overview-grid" aria-label="自动运营发布进度"></section>
 <h3>A / B / C 策略对比</h3><p class="section-hint">发布当天即可比较当前累计播放、均播和破千率；未同步的作品不按0计算。</p><div id="autopilotStrategies" class="table-wrap"></div>
-<h3>自动运营分组对比</h3><div id="autopilotGroups" class="table-wrap"></div>
+<h3>自动运营分组对比</h3><div id="autopilotGroups" class="table-wrap"></div><div id="autopilotPager" class="ops-pager"></div>
 <div class="section-title"><div><p>PERFORMANCE</p><h2>当前作品效果评估</h2></div></div>
 <div id="findings" class="ops-findings"></div>
 <section id="metrics" class="overview-grid" aria-label="核心表现"></section>
@@ -39,7 +39,7 @@
 <div class="section-title"><div><h3>每日趋势</h3></div><label>查看指标 <select id="trendMetric"><option value="potentialRate">破千率</option><option value="medianViews">中位播放</option><option value="n">已同步作品</option><option value="completion">完播率</option><option value="averageWatch">平均播放时长</option><option value="retention3" data-video>3秒留存（视频）</option></select></label></div>
 <div id="trendChart" class="ops-chart"></div>
 <details class="ops-daily"><summary>每日明细</summary><div id="dailyTable" class="table-wrap"></div></details>
-<details class="ops-daily"><summary>发布执行（按批次创建时间，含失败原因）</summary><div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div></details>
+<details class="ops-daily" id="executionDetail"><summary>发布执行（按计划发布时间，含失败原因）</summary><div id="funnel" class="ops-funnel"></div><div id="batchList"></div><div id="batchPager" class="ops-pager"></div></details>
 </section>
 
 <section id="accounts" class="panel data-section" role="tabpanel" aria-labelledby="accountsTab" hidden>
@@ -67,4 +67,4 @@
 <h3>当前生效的抽取规则</h3><div id="evolutionRules" class="ops-rules"></div>
 <h3>各阶段打法 vs 实际数据</h3><p class="section-hint">打法是先定的假设；右边是本期该阶段账号发各类内容的实际中位播放，满5条才比较。</p><div id="stageTable" class="table-wrap"></div>
 </section></div>
-</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260925-autopilot-report"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260925-scale-v2"></script></body></html>

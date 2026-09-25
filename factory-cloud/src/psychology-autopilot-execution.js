@@ -19,14 +19,15 @@ export async function stopImpact(db, pilotId, connectionId = '') {
 
 export async function stopPending(db, pilotId, connectionId = '', now = Date.now()) {
   const results = await db.batch([
-    db.prepare(`UPDATE psychology_publish_items SET deleted_at=? WHERE ${pilotMembership} AND (?='' OR connection_id=?) AND ${cancellable}`)
+    db.prepare(`UPDATE psychology_publish_items SET deleted_at=? WHERE ${pilotMembership} AND (?='' OR connection_id=?) AND ${cancellable} RETURNING id`)
       .bind(now, pilotId, connectionId, connectionId),
     // Running generation is allowed to finish; tombstones exclude its output from submission.
     db.prepare(`UPDATE factory_jobs SET status='cancelled',message='自动运营已停止尚未提交的任务',updated_at=? WHERE status='queued'
       AND id IN (SELECT job_id FROM psychology_publish_items WHERE ${pilotMembership} AND deleted_at=? AND (?='' OR connection_id=?))`)
       .bind(now, pilotId, now, connectionId, connectionId),
   ]);
-  return Number(results[0].meta?.changes || 0);
+  // Count primary rows, not reporting-trigger writes included by total_changes.
+  return results[0].results.length;
 }
 
 export function nextAutopilotCheck(now = Date.now()) {

@@ -187,11 +187,11 @@ test('report context honors empty canonical assignments and rejects removed grou
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{role:'operator',sidebarModules:['psychology-ops-report'],allowedAccountGroups:[]}});
  assert.equal(response.status,403);assert.equal(f.reads.length,0);
 });
-test('operations warm path makes two batch reads and never re-fetches raw archive packs',async t=>{
+test('operations warm path makes one aggregate batch read and never re-fetches raw archive packs',async t=>{
  const f=await reportProjectionFixture(t),{upsertOfficialAccounts}=await import('./official-archive-store.js');
  await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:Date.now(),videos:[{id:'v',createTime:Date.now()/1000,views:10}]}]);
  let batches=0;const original=f.db.batch.bind(f.db);f.db.batch=async q=>{batches++;return original(q);};
  const {handlePsychologyOperations}=await import('./psychology-operations.js'),url=new URL('https://factory.test/api/psychology-operations');
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{role:'admin',sidebarModules:['psychology-ops-report']}});
- assert.equal(response.status,200,await response.text());assert.equal(batches,2);assert.equal(f.reads.length,0);assert.match(response.headers.get('server-timing'),/scope;dur=/);
+ assert.equal(response.status,200,await response.text());assert.equal(batches,1);assert.equal(f.reads.length,0);assert.match(response.headers.get('server-timing'),/total;dur=/);
 });

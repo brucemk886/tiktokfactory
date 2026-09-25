@@ -1,3 +1,4 @@
+import {refreshReportFacts} from './psychology-report-facts.js';
 import { handlePsychologyOperations } from './psychology-operations.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -89,14 +90,14 @@ test('operations endpoint reads creative joins with existing scope and reports e
  const f=await fixture(t),url=new URL('https://factory.test/api/psychology-operations?period=7d');
  f.env.ARCHIVE={async get(){return null;}};
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{...user,sidebarModules:['psychology-ops-report']}});
- const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content,null);
+ const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content,undefined);
  const detailUrl=new URL(url);detailUrl.searchParams.set('details','1');
- const detail=await(await handlePsychologyOperations(new Request(detailUrl),f.env,detailUrl,{user:{...user,sidebarModules:['psychology-ops-report']}})).json();assert.equal(detail.content.coverage.total,0);
- assert.equal(result.framework.overview.current.n,0);assert.equal(result.framework.overview.daily.length,7);assert.match(result.framework.strategy.findings[0],/样本不足/);
+ const detail=await(await handlePsychologyOperations(new Request(detailUrl),f.env,detailUrl,{user:{...user,sidebarModules:['psychology-ops-report']}})).json();assert.equal(detail.pagination.total,0);
+ assert.equal(result.framework.overview.current.n,0);assert.equal(result.framework.overview.daily.length,7);assert.match(result.framework.strategy.findings[0],/统计覆盖/);
  assert.equal(result.evolution.exploitShare,0.7);assert.equal(result.framework.media,'photo');
  const videoUrl=new URL('https://factory.test/api/psychology-operations?period=7d&media=video');
  const video=await (await handlePsychologyOperations(new Request(videoUrl),f.env,videoUrl,{user:{...user,sidebarModules:['psychology-ops-report']}})).json();
- assert.equal(video.framework.media,'video');assert.match(video.framework.strategy.findings[0],/自动发布视频/);
+ assert.equal(video.framework.media,'video');assert.match(video.framework.strategy.findings[0],/自动发布任务/);
 });
 
 test('replacement pool retains seven originals and archives old layouts for frozen jobs',()=>{
@@ -307,7 +308,7 @@ test('operations attributes multi-batch pilot slots to their group and strategy,
  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES ('pilot',?,'created','first,second,outside,video,future',?)").run(now-60000,now);
  const actor={...user,sidebarModules:['psychology-ops-report']};
  const read=async(query='',as=actor)=>{const url=new URL('https://factory.test/api/psychology-operations?'+query);const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:as});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
- const r=await read();assert.equal(r.autopilot.summary.planned,2);assert.equal(r.autopilot.summary.published,2);assert.equal(r.autopilot.summary.missingMetrics,2);assert.equal(r.autopilot.summary.views,null);
+ await refreshReportFacts(f.db);const r=await read();assert.equal(r.autopilot.summary.planned,2);assert.equal(r.autopilot.summary.published,2);assert.equal(r.autopilot.summary.missingMetrics,2);assert.equal(r.autopilot.summary.views,null);
  assert.equal(r.autopilot.groups.length,2);assert.equal(r.autopilot.strategies.find(s=>s.id==='original').published,1);assert.equal(r.autopilot.strategies.find(s=>s.id==='rewrite').published,1);
  assert.equal((await read('group=g')).autopilot.summary.planned,2);
  assert.equal((await read('',{...actor,role:'member',allowedAccountGroups:['g']})).autopilot.summary.planned,2);

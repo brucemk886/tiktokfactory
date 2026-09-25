@@ -1,3 +1,4 @@
+import {reportVideoFactWrite} from './psychology-report-facts.js';
 import { projectReportVideos } from '../../scripts/official-report-videos.js';
 import { loadFactoryArchiveScope } from "./factory-archive-scope.js";
 import { filterFactoryArchiveAccounts } from "../../scripts/factory-archive-scope.js";
@@ -303,7 +304,7 @@ export async function upsertOfficialAccounts(env, db, accounts) {
   // Commit the report projection with the account timestamp so normal report
   // reads never need to fetch hundreds of R2 objects.
   const statements=rows.flatMap((row,i)=>[upserts[i],reportVideoCacheWrite(db,row.account_key,row.synced_at,
-    unpackAccountVideos(packAccountVideos(row.account_key,row.videos,row),100))]);
+    unpackAccountVideos(packAccountVideos(row.account_key,row.videos,row),100)),reportVideoFactWrite(db,row.account_key,row.synced_at,unpackAccountVideos(packAccountVideos(row.account_key,row.videos,row),100))]);
   for (const slice of chunk(statements, BATCH_SIZE)) {
     await db.batch(slice);
   }
