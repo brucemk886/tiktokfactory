@@ -140,12 +140,16 @@ async function readAdvanced(db,{scope,authorized,base,args,ids,media,window,page
   return {strategy:{stages:Object.keys(STAGES).map(stage=>{const kinds=Object.fromEntries(Object.keys(KINDS).map(kind=>[kind,stat(result.find(r=>r.stage===stage&&r.kind===kind))]));const ready=Object.entries(kinds).filter(([,s])=>s.n>=5).sort((a,b)=>b[1].medianViews-a[1].medianViews);return {stage,label:STAGES[stage],playbook:PLAYBOOK[stage],kinds,best:ready.length>1?ready[0][0]:null};})}};
  }
  const comparisons=extra+`,hit_sources AS (SELECT DISTINCT source FROM current WHERE variant='' AND views>=10000),comparison AS (
- SELECT id,views,state,average_watch,completion,retention3,likes,comments,shares,saves,quadrant,CASE WHEN useIndex=1 THEN 'reuse1' WHEN useIndex=2 THEN 'reuse2' WHEN useIndex=3 THEN 'reuse3' WHEN useIndex<=5 THEN 'reuse5' WHEN useIndex<=10 THEN 'reuse10' ELSE 'reuse11' END category FROM current
- UNION ALL SELECT id,views,state,average_watch,completion,retention3,likes,comments,shares,saves,quadrant,CASE WHEN variant='' THEN 'original' ELSE 'rewrite' END FROM current
- UNION ALL SELECT id,views,state,average_watch,completion,retention3,likes,comments,shares,saves,quadrant,CASE WHEN versionIndex=1 THEN 'fresh' ELSE 'same' END FROM current WHERE useIndex>1
- UNION ALL SELECT id,views,state,average_watch,completion,retention3,likes,comments,shares,saves,quadrant,CASE WHEN style=prevStyle THEN 'styleSame' ELSE 'styleChanged' END FROM current WHERE useIndex>1 AND style<>'' AND prevStyle<>''
- UNION ALL SELECT id,views,state,average_watch,completion,retention3,likes,comments,shares,saves,quadrant,CASE WHEN variant='' THEN 'hitOriginal' ELSE 'hitRewrite' END FROM current WHERE source IN (SELECT source FROM hit_sources)
- UNION ALL SELECT id,views,state,average_watch,completion,retention3,likes,comments,shares,saves,quadrant,CASE WHEN postIndex<=3 THEN 'post3' WHEN postIndex<=10 THEN 'post10' WHEN postIndex<=30 THEN 'post30' ELSE 'post31' END FROM current)`;
+ SELECT c.id,c.views,c.state,c.average_watch,c.completion,c.retention3,c.likes,c.comments,c.shares,c.saves,c.quadrant,
+ CASE j.value
+ WHEN 'reuse' THEN CASE WHEN useIndex=1 THEN 'reuse1' WHEN useIndex=2 THEN 'reuse2' WHEN useIndex=3 THEN 'reuse3' WHEN useIndex<=5 THEN 'reuse5' WHEN useIndex<=10 THEN 'reuse10' ELSE 'reuse11' END
+ WHEN 'kind' THEN CASE WHEN variant='' THEN 'original' ELSE 'rewrite' END
+ WHEN 'version' THEN CASE WHEN versionIndex=1 THEN 'fresh' ELSE 'same' END
+ WHEN 'style' THEN CASE WHEN style=prevStyle THEN 'styleSame' ELSE 'styleChanged' END
+ WHEN 'hit' THEN CASE WHEN variant='' THEN 'hitOriginal' ELSE 'hitRewrite' END
+ ELSE CASE WHEN postIndex<=3 THEN 'post3' WHEN postIndex<=10 THEN 'post10' WHEN postIndex<=30 THEN 'post30' ELSE 'post31' END END category
+ FROM current c CROSS JOIN json_each('["reuse","kind","version","style","hit","post"]') j
+ WHERE j.value IN ('reuse','kind','post') OR (j.value='version' AND useIndex>1) OR (j.value='style' AND useIndex>1 AND style<>'' AND prevStyle<>'') OR (j.value='hit' AND source IN (SELECT source FROM hit_sources)))`;
  const ctes=comparisons+','+summaryCTE('comparison_stats','comparison','category')+','+summaryCTE('source_stats','current','source')+
   `,tagged AS (SELECT c.*,COALESCE(t.value,'unset') topic FROM current c LEFT JOIN psychology_peer_hits p ON c.source='v1:tiktok:'||p.video_id LEFT JOIN json_each(p.topics_json) t),`+summaryCTE('topic_stats','tagged','topic')+
   `,selected_sources AS (SELECT * FROM source_stats ORDER BY medianViews DESC,source LIMIT ${SIZE} OFFSET ${offset}),source_labels AS (SELECT source,max(title) title,count(DISTINCT account_key) accounts,count(DISTINCT variant) versions FROM current WHERE source IN (SELECT source FROM selected_sources) GROUP BY source),use_totals AS (SELECT source,count(*) totalUses FROM uses WHERE source IN (SELECT source FROM selected_sources) GROUP BY source)`;
