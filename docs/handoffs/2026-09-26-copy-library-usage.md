@@ -34,3 +34,6 @@ Code release and authenticated production verification follow this commit. Verif
 - Used-copy detail resolves one original and three rewrites with distinct draw/sample counts; a rewrite body loads only when selected. Main pagination reaches page 2 with 20 rows; media changes reset to page 1.
 - Desktop 1440 px and mobile 390 px DOM checks show document scrollWidth equal to viewport width; wide tables scroll inside their containers. Screenshot transport timed out, so screenshot-based visual QA was not completed. Semantic controls, live data, layout bounds, modal/body and page navigation were verified. The independent browser session was stopped.
 - No account, group, schedule or publishing mutations were performed. Expected cancelled requests during rapid filter changes are handled; a browser extension additionally logged the cancellation. No feature blocker remains.
+
+## Follow-up: viral copy list ordering
+Renamed the detail section to 爆款文案明细. UI and API now default to source post play_count descending, with stable created_at/id tie-breaking and missing play counts last. Source plays appear explicitly under the title, independent of own-content outcome metrics; existing draw/median/rate sorts remain available. Regression verifies source-play ordering even when own outcomes rank differently. Full suite: 765 tests pass.

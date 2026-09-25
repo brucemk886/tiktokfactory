@@ -59,3 +59,15 @@ test('SQL aggregates beyond old 20,000 row limits and uses exact even median',as
  f.sqlite.exec('BEGIN');for(let i=0;i<20002;i++){insert.run('bulk-'+i,f.copy.id,now/1000);fact.run('bulk-'+i,now,now,i,now);}f.sqlite.exec('COMMIT');
  const d=await (await f.api()).json();assert.equal(d.usage.draws,20002);assert.equal(d.effects.samples,20002);assert.equal(d.effects.medianViews,10000.5);
 });
+
+
+test('viral copy list defaults to source views descending, independently of our own effects',async t=>{
+ const f=await setup(t);const other=f.sqlite.prepare('SELECT id FROM psychology_copy_library WHERE id<>? ORDER BY id LIMIT 1').get(f.copy.id).id;
+ f.sqlite.prepare('UPDATE psychology_peer_hits SET play_count=1000000 WHERE id=?').run(other);
+ f.sqlite.prepare('UPDATE psychology_peer_hits SET play_count=900000 WHERE id=?').run(f.copy.id);
+ f.event('own-performance',{views:9000000});
+ const d=await (await f.api()).json();assert.equal(d.items[0].id,other);assert.equal(d.items[0].sourceViews,1000000);assert.equal(d.items[1].id,f.copy.id);assert.equal(d.effects.samples,1);assert.equal(d.effects.medianViews,9000000);
+ const median=await (await f.api('?sort=median')).json();assert.equal(median.items[0].id,f.copy.id);
+ const expected=f.sqlite.prepare("SELECT c.id FROM psychology_copy_library c LEFT JOIN psychology_peer_hits p ON p.id=c.id WHERE c.status='done' ORDER BY p.play_count DESC,c.created_at DESC,c.id").all().map(r=>r.id);
+ assert.deepEqual(d.items.map(r=>r.id),expected);
+});

@@ -37,7 +37,7 @@ async function context(db,owner,params){
  const topicQuery=Object.entries(TOPIC_LABELS).find(([,label])=>label.includes(query)&&query)?.[0]||query;
  const args=[JSON.stringify(identities),query,query,topicQuery,copy,copy,owner,owner,window.start,window.end,window.start,window.end,window.start,window.end];
  const cte=`WITH keys AS MATERIALIZED (SELECT json_extract(value,'$.id') id,json_extract(value,'$.key') source_key FROM json_each(?)),
- catalog AS MATERIALIZED (SELECT c.id,k.source_key,c.title,c.media_type,c.created_at,COALESCE(p.topics_json,'[]') topics FROM keys k JOIN psychology_copy_library c ON c.id=k.id LEFT JOIN psychology_peer_hits p ON p.id=c.id
+ catalog AS MATERIALIZED (SELECT c.id,k.source_key,c.title,c.media_type,c.created_at,p.play_count sourceViews,COALESCE(p.topics_json,'[]') topics FROM keys k JOIN psychology_copy_library c ON c.id=k.id LEFT JOIN psychology_peer_hits p ON p.id=c.id
  WHERE (?='' OR instr(lower(c.title),lower(?))>0 OR instr(lower(COALESCE(p.topics_json,'')),lower(?))>0) AND (?='' OR c.id=?)),
  versions AS MATERIALIZED (SELECT v.* FROM psychology_copy_variants v WHERE v.owner=? AND v.source_key IN (SELECT source_key FROM catalog)),
  events AS MATERIALIZED (
@@ -80,8 +80,8 @@ export async function handleCopyUsage(request,env,url,user){
  if(request.method!=='GET')return errorJson('仅支持读取文案统计。',405);
  const started=Date.now(),p=url.searchParams,db=env.DB;
  try{
-  const usage=p.get('usage')||'all',sort=p.get('sort')||'recent';
-  if(!['all','used','unused','data'].includes(usage)||!['recent','draws','median','potential'].includes(sort))throw new Error('筛选条件无效。');
+  const usage=p.get('usage')||'all',sort=p.get('sort')||'views';
+  if(!['all','used','unused','data'].includes(usage)||!['views','recent','draws','median','potential'].includes(sort))throw new Error('筛选条件无效。');
   const {cte,args,window}=await context(db,user.username,p),page=numberPage(p.get('page')),offset=(page-1)*SIZE;
   const run=sql=>db.prepare(cte+sql).bind(...args);
   let data;
@@ -109,7 +109,7 @@ export async function handleCopyUsage(request,env,url,user){
    data=JSON.parse(r.payload);data.items=data.items.map(r=>({...r,stats:parse(r.stats),model:rewriteModelLabel(r.model)}));data.copy={id:source.id,title:source.title};
   }else{
    const where={all:'1',used:'draws>0',unused:'draws=0',data:'samples>0'}[usage];
-   const order={recent:'created_at DESC,id',draws:'draws DESC,id',median:'medianViews DESC,samples DESC,id',potential:'potentialRate DESC,samples DESC,id'}[sort];
+   const order={views:'sourceViews DESC,created_at DESC,id',recent:'created_at DESC,id',draws:'draws DESC,id',median:'medianViews DESC,samples DESC,id',potential:'potentialRate DESC,samples DESC,id'}[sort];
    const sql=` SELECT json_object(
  'inventory',json_object('originals',(SELECT count(*) FROM catalog),'rewrites',COALESCE((SELECT sum(rewrites) FROM version_counts),0),'usable',(SELECT count(*) FROM catalog)+COALESCE((SELECT sum(usable) FROM version_counts),0),'pending',COALESCE((SELECT sum(pending) FROM version_counts),0),'disabled',COALESCE((SELECT sum(disabled) FROM version_counts),0)),
  'usage',json_object('used',(SELECT count(*) FROM copies WHERE draws>0),'unused',(SELECT count(*) FROM copies WHERE draws=0),'draws',COALESCE((SELECT sum(draws) FROM copies),0),'originalDraws',COALESCE((SELECT sum(originalDraws) FROM copies),0),'rewriteDraws',COALESCE((SELECT sum(rewriteDraws) FROM copies),0)),
@@ -118,7 +118,7 @@ export async function handleCopyUsage(request,env,url,user){
  'updatedAt',(SELECT max(syncedAt) FROM stats),
  'comparison',${rowsJson("SELECT variant kind,samples,medianViews,averageViews,potentialRate,hitRate,completion,completionSamples FROM stats WHERE level='kind'",['kind',...metrics])},
  'total',(SELECT count(*) FROM copies WHERE ${where}),
- 'items',${rowsJson('SELECT * FROM copies WHERE '+where+' ORDER BY '+order+' LIMIT '+SIZE+' OFFSET '+offset,['id','title','media_type','topics','created_at','rewrites','draws','originalDraws','rewriteDraws','lastDraw','samples','medianViews','potentialRate','hitRate','completion','original','rewrite'])}) payload`;
+ 'items',${rowsJson('SELECT * FROM copies WHERE '+where+' ORDER BY '+order+' LIMIT '+SIZE+' OFFSET '+offset,['id','title','media_type','topics','created_at','sourceViews','rewrites','draws','originalDraws','rewriteDraws','lastDraw','samples','medianViews','potentialRate','hitRate','completion','original','rewrite'])}) payload`;
    data=JSON.parse((await run(sql).first()).payload);
    data.effects=data.effects||emptyStats();data.usage.coverage=data.inventory.originals?data.usage.used/data.inventory.originals:null;
    data.items=data.items.map(r=>({...r,topics:parse(r.topics).map(t=>TOPIC_LABELS[t]||t),original:parse(r.original),rewrite:parse(r.rewrite)}));
