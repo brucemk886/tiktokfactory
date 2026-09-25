@@ -43,6 +43,7 @@ const PAGE_FILES = {
   "/psychology-topic-bank": "psychology-topic-bank.html",
   "/psychology-publish-designs": "psychology-creative.html",
   "/psychology-copy-library": "psychology-copy-library.html",
+  "/psychology-copy-usage": "psychology-copy-usage.html",
   "/psychology-publish": "psychology-auto-publish.html",
   "/psychology-comments": "psychology-comments.html",
   "/psychology-publish-sources": "psychology-publish-sources.html",

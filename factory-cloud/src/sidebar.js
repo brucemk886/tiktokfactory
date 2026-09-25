@@ -80,6 +80,8 @@ export function moduleIdForPath(pathname) {
     "/psychology-publish-designs": "psychology-publish",
     "/psychology-creative.html": "psychology-publish",
     "/psychology-copy-library.html": "psychology-copy-library",
+    "/psychology-copy-usage": "psychology-copy-library",
+    "/psychology-copy-usage.html": "psychology-copy-library",
     "/psychology-autopilot.html": "psychology-autopilot",
     "/tiktok-connections-organize": "tiktok-connections",
     "/official-account-detail": "official-analytics",
@@ -109,7 +111,7 @@ export function canAccessPath(user, pathname) {
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
   }
-  if(['/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
+  if(['/psychology-copy-usage','/psychology-copy-usage.html','/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
   // 爆款复刻 merged into the publish records page; either saved grant still opens it.
   if(['/psychology-production','/psychology-production.html','/psychology-publish-sources','/psychology-publish-sources.html'].includes(clean))return user.role==='admin'&&['psychology-production','psychology-publish-sources'].some(id=>(user.sidebarModules||[]).includes(id));
   const moduleId = moduleIdForPath(pathname);

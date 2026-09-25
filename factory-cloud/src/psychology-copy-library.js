@@ -1,3 +1,4 @@
+import {handleCopyUsage} from './psychology-copy-usage.js';
 import {rewriteModelLabel} from './psychology-rewrite-model.js';
 import {psychologyPeerHitFromRow} from './psychology-peer-hits-store.js';
 import {json,errorJson,readJson} from './http.js';
@@ -31,6 +32,7 @@ export async function handlePsychologyCopyLibrary(request,env,url,session){
  const user=session?.user;
  if(user?.role!=='admin'||!['psychology-copy-library','psychology-peer-hits'].some(id=>user.sidebarModules?.includes(id)))return errorJson('没有文案库权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
+ if(url.pathname===BASE+'/usage')return handleCopyUsage(request,env,url,user);
  if(url.pathname===BASE&&request.method==='DELETE'){
   if(!user.sidebarModules?.includes('psychology-peer-hits'))return errorJson('没有文案来源管理权限。',403);
   const input=await readJson(request);
