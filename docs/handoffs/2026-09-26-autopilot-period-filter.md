@@ -12,4 +12,4 @@ Add Today (default), Yesterday and Last 7 Days to psychology automatic operation
 754 suite tests pass, including Beijing midnight boundaries, all 14 slots in a two-post seven-day fixture, outside-range exclusion, owner/overlapping-slot isolation, retained selection across polling and fast-switch stale-response protection. Tests make no real publishing calls.
 
 ## Release
-Pending deployment and live read-only verification.
+Committed/pushed ebaea19 to main, then deployed via npm run deploy from clean HEAD==origin/main. Worker 74c439cc-51a4-49cf-853b-b43063702adf. Logged-in browser verified today=360 planned, yesterday=360 planned / 348 published / 6 pending / 6 failed / 18 slots; last 7 days (2026-09-20 through 2026-09-26)=720 planned / 36 slots. Only GET and UI filter operations used; active generation continued normally.
