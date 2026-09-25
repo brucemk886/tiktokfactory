@@ -145,16 +145,19 @@ export async function loadUsedPosts(db, connectionIds, posts) {
 // performance report.
 // Auto-published items with the viral post and version they used. Newer items
 // carry a creative snapshot; older ones fall back to the rewrite row or peer URL.
-export async function loadResolvedItems(db, since) {
+export function resolvedItemsQuery(db, since) {
   // Light columns only: at 300 posts a day this spans tens of thousands of rows.
-  const items = (await db.prepare(`SELECT i.id,i.connection_id,i.source_id,i.schedule_at,b.created_by AS owner,json_extract(b.config_json,'$.mediaType') AS media_type,b.created_at,
+  return db.prepare(`SELECT i.id,i.connection_id,i.source_id,i.schedule_at,b.created_by AS owner,json_extract(b.config_json,'$.mediaType') AS media_type,b.created_at,
       c.rewrite_model,v.rewrite_model AS variant_model,c.source_key AS snap_key,c.variant_id AS snap_variant,c.style_id,json_extract(c.copy_json,'$.title') AS copy_title,p.title AS peer_title,
       p.video_url AS peer_url,v.source_key AS var_key,v.external_id AS var_external,v.title AS var_title
     FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
     LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id
     LEFT JOIN psychology_peer_hits p ON p.id=i.source_id
     LEFT JOIN psychology_copy_variants v ON v.id=i.source_id
-    WHERE i.deleted_at=0 AND b.created_at>=? ORDER BY b.created_at DESC LIMIT 20000`).bind(since).all()).results;
+    WHERE i.deleted_at=0 AND b.created_at>=? ORDER BY b.created_at DESC LIMIT 20000`).bind(since);
+}
+export async function loadResolvedItems(db,since){return resolveItems((await resolvedItemsQuery(db,since).all()).results);}
+export function resolveItems(items){
   const mapped = [];
   for (const item of items) {
     let sourceKey = item.snap_key, variant = item.snap_variant || '';

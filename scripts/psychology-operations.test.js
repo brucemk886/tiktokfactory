@@ -75,7 +75,9 @@ function fixture(){
   const assigned=[{account_key:"a",group_id:"g1"},{account_key:"b",group_id:"g2"},{account_key:"c",group_id:"g3"}];
   const rows=["a","b","c"].map(id=>({account_key:"tiktok:"+id,label:id,profile_json:JSON.stringify({username:id}),synced_at:Date.now()}));
   const reads=[];
-  const DB={prepare(sql){assert.match(sql.trim(),/^SELECT/);return{bind(){return this;},async first(){if(sql.includes("factory_kv"))return{value_json:JSON.stringify(store)};throw new Error(sql);},async all(){
+  const DB={async batch(statements){return Promise.all(statements.map(s=>s.all()));},prepare(sql){assert.match(sql.trim(),/^SELECT/);return{bind(){return this;},async first(){if(sql.includes("factory_kv"))return{value_json:JSON.stringify(store)};throw new Error(sql);},async all(){
+    if(sql.includes("factory_kv"))return{results:[{value_json:JSON.stringify(store)}]};
+    if(sql.includes("official_report_video_cache"))return{results:[]};
     if(sql.includes("official_account_assignments"))return{results:assigned};
     if(sql.includes("official_accounts_latest"))return{results:rows};
     if(sql.includes("factory_publish_records"))return{results:rows.map(r=>({value_json:JSON.stringify({id:r.account_key,connectionId:r.account_key,createdAt:Date.now(),status:"published"})}))};

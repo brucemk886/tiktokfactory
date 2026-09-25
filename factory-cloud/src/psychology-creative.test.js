@@ -296,6 +296,7 @@ test('version status filter distinguishes pending from disabled and clamps pages
 
 test('operations attributes multi-batch pilot slots to their group and strategy, including unsynced accounts',async t=>{
  const f=await fixture(t),now=Date.now(),when=Math.floor(now/1000)-60;
+ f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id,updated_at) VALUES ('a','g',0),('b','g',0),('outside','other',0)").run();
  f.env.ARCHIVE={async get(){return null;}};
  f.sqlite.prepare("INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES ('pilot','admin','g','自动运营1','original','[]','active',?,?,?)").run(now+86400000,now,now);
  for(const [batch,account,media,linked] of [['first','a','photo',true],['second','b','photo',true],['manual','a','photo',false],['outside','outside','photo',true],['video','a','video',true],['future','a','photo',true]]){

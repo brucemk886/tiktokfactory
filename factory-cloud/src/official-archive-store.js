@@ -1,3 +1,4 @@
+import { projectReportVideos } from '../../scripts/official-report-videos.js';
 import { loadFactoryArchiveScope } from "./factory-archive-scope.js";
 import { filterFactoryArchiveAccounts } from "../../scripts/factory-archive-scope.js";
 import {
@@ -299,7 +300,11 @@ export async function upsertOfficialAccounts(env, db, accounts) {
     row.shares,
     row.reach
   ));
-  for (const slice of chunk(upserts, BATCH_SIZE)) {
+  // Commit the report projection with the account timestamp so normal report
+  // reads never need to fetch hundreds of R2 objects.
+  const statements=rows.flatMap((row,i)=>[upserts[i],reportVideoCacheWrite(db,row.account_key,row.synced_at,
+    unpackAccountVideos(packAccountVideos(row.account_key,row.videos,row),100))]);
+  for (const slice of chunk(statements, BATCH_SIZE)) {
     await db.batch(slice);
   }
   for (const slice of chunk(rows, R2_CONCURRENCY)) {
@@ -317,6 +322,7 @@ export async function deleteOfficialAccounts(env, db, accountKeys) {
     await db.batch(slice.flatMap((accountKey) => [
       db.prepare("DELETE FROM official_accounts_latest WHERE account_key = ?").bind(accountKey),
       db.prepare("DELETE FROM official_account_assignments WHERE account_key = ?").bind(accountKey),
+      db.prepare("DELETE FROM official_report_video_cache WHERE account_key = ?").bind(accountKey),
     ]));
     await Promise.all(slice.map((accountKey) => deleteAccountVideos(env, accountKey)));
   }
@@ -470,4 +476,44 @@ function chunk(items, size) {
   const rows = [];
   for (let index = 0; index < items.length; index += size) rows.push(items.slice(index, index + size));
   return rows;
+}
+
+
+export const REPORT_VIDEO_CACHE_VERSION=1;
+export function reportVideoCacheQuery(db,keys){
+ return db.prepare('SELECT account_key,synced_at,version,videos_json FROM official_report_video_cache WHERE account_key IN (SELECT value FROM json_each(?))').bind(JSON.stringify(keys));
+}
+function reportVideoCacheWrite(db,key,stamp,videos,conditional=false){
+ const payload=JSON.stringify(projectReportVideos(videos));
+ return db.prepare(`INSERT INTO official_report_video_cache(account_key,synced_at,version,videos_json)
+  SELECT ?,?,?,? ${conditional?'WHERE EXISTS (SELECT 1 FROM official_accounts_latest WHERE account_key=? AND synced_at=?)':'WHERE 1'}
+  ON CONFLICT(account_key) DO UPDATE SET synced_at=excluded.synced_at,version=excluded.version,videos_json=excluded.videos_json
+  WHERE official_report_video_cache.synced_at<=excluded.synced_at`)
+  .bind(key,stamp,REPORT_VIDEO_CACHE_VERSION,payload,...(conditional?[key,stamp]:[]));
+}
+// Caller supplies freshly authorized accounts and cache rows from the same
+// request. A timestamp/version mismatch falls back to the raw archive once.
+export async function loadReportVideosForAccounts(env,db,accounts,cacheRows=[]){
+ const cached=new Map(cacheRows.map(r=>[r.account_key,r])),result=new Map(),missing=[];
+ for(const account of accounts){
+  if(!Number(account.latestSyncAt))continue;
+  const row=cached.get(account.schema);let videos;
+  try{videos=JSON.parse(row?.videos_json||'null');}catch{}
+  if(row?.version===REPORT_VIDEO_CACHE_VERSION&&Number(row.synced_at)===Number(account.latestSyncAt)&&Array.isArray(videos))result.set(account.schema,videos);
+  else missing.push(account);
+ }
+ if(!missing.length)return result;
+ // Recheck canonical archive scope for fallback/backfill; never revive a removed grant.
+ const allowed=new Set(await loadFactoryArchiveScope(db)),writes=[],legacy=[];let next=0;
+ await Promise.all(Array.from({length:Math.min(24,missing.length)},async()=>{
+  while(next<missing.length){const a=missing[next++];if(!allowed.has(a.schema))continue;
+   const pack=await readAccountVideos(env,a.schema);
+   if(!pack){legacy.push(a.schema);continue;}
+   const videos=projectReportVideos(unpackAccountVideos(pack,100));result.set(a.schema,videos);
+   if(Number(pack.synced_at)===Number(a.latestSyncAt))writes.push(reportVideoCacheWrite(db,a.schema,Number(a.latestSyncAt),videos,true));
+  }
+ }));
+ if(legacy.length)for(const [key,videos]of await loadVideosFromD1(db,legacy,100))result.set(key,projectReportVideos(videos));
+ for(const batch of chunk(writes,BATCH_SIZE))await db.batch(batch);
+ return result;
 }

@@ -140,3 +140,58 @@ test('report archive reads use a bounded pool, enforce scope and avoid read-path
  const result=await loadVideosForAccounts(env,db,[...keys,keys[0],'tiktok:outside'],100,{concurrency:24,repair:false});
  assert.equal(reads.length,35);assert.ok(peak>8&&peak<=24);assert.equal(result.size,35);assert.equal(result.has('tiktok:outside'),false);assert.equal(result.get(keys[34])[0].id,'fallback');
 });
+
+
+async function reportProjectionFixture(t){
+ const {fixture}=await import('./psychology-cloud-test-fixture.js'),f=await fixture(t);
+ f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id,updated_at) VALUES ('a','g',0),('b','g',0)").run();
+ const objects=new Map(),reads=[];
+ f.env.ARCHIVE={async put(key,value){objects.set(key,JSON.parse(value));},async get(key){reads.push(key);return objects.has(key)?{async json(){return objects.get(key);}}:null;},async delete(key){objects.delete(key);}};
+ return {...f,objects,reads};
+}
+test('archive sync maintains report projections, and hot report reads require no R2 objects',async t=>{
+ const f=await reportProjectionFixture(t);
+ const {upsertOfficialAccounts,loadReportVideosForAccounts,reportVideoCacheQuery,deleteOfficialAccounts}=await import('./official-archive-store.js');
+ const {loadReportContext}=await import('./psychology-report-data.js');
+ const make=(stamp,views)=>({schema:'tiktok:a',latestSyncAt:stamp,profile:{username:'alpha',largeUnused:'x'.repeat(1000)},videos:[{id:'v',createTime:stamp/1000,views,likes:0,retention:[{second:3,percentage:50}],analytics:{favorites:2,privateUnused:'must-not-be-in-report'}}]});
+ await upsertOfficialAccounts(f.env,f.db,[make(1000000000000,0)]);
+ const load=async()=>{const {archived}=await loadReportContext(f.db),rows=(await reportVideoCacheQuery(f.db,archived.map(a=>a.schema)).all()).results;return loadReportVideosForAccounts(f.env,f.db,archived,rows);};
+ let result=await load();assert.equal(f.reads.length,0);assert.equal(result.get('tiktok:a')[0].views,0);assert.equal(result.get('tiktok:a')[0].analytics.favorites,2);assert.equal(result.get('tiktok:a')[0].retention[0].percentage,50);
+ assert.doesNotMatch(JSON.stringify(result.get('tiktok:a')),/privateUnused|must-not/);
+ await upsertOfficialAccounts(f.env,f.db,[make(1000000001000,99)]);result=await load();assert.equal(result.get('tiktok:a')[0].views,99);assert.equal(f.reads.length,0);
+ await deleteOfficialAccounts(f.env,f.db,['tiktok:a']);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM official_report_video_cache').get().n,0);
+});
+test('legacy report projection fills once and stale fallback cannot overwrite a newer sync',async t=>{
+ const f=await reportProjectionFixture(t);
+ const {upsertOfficialAccounts,loadReportVideosForAccounts,reportVideoCacheQuery}=await import('./official-archive-store.js');
+ const {loadReportContext}=await import('./psychology-report-data.js');
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:1000,videos:[{id:'v',createTime:1,views:7}]}]);
+ f.sqlite.exec('DELETE FROM official_report_video_cache');
+ const {archived}=await loadReportContext(f.db);
+ assert.equal((await loadReportVideosForAccounts(f.env,f.db,archived,[])).get('tiktok:a')[0].views,7);assert.equal(f.reads.length,1);
+ const rows=(await reportVideoCacheQuery(f.db,['tiktok:a']).all()).results;
+ await loadReportVideosForAccounts(f.env,f.db,archived,rows);assert.equal(f.reads.length,1);
+ const oldPack=structuredClone([...f.objects.values()][0]);
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:2000,videos:[{id:'v',createTime:1,views:42}]}]);
+ f.objects.set([...f.objects.keys()][0],oldPack);
+ await loadReportVideosForAccounts(f.env,f.db,archived,[]);
+ const current=f.sqlite.prepare('SELECT * FROM official_report_video_cache').get();assert.equal(current.synced_at,2000);assert.equal(JSON.parse(current.videos_json)[0].views,42);
+});
+test('report context honors empty canonical assignments and rejects removed group access even with cached data',async t=>{
+ const f=await reportProjectionFixture(t),{upsertOfficialAccounts}=await import('./official-archive-store.js');
+ const {loadReportContext}=await import('./psychology-report-data.js');
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:1000,videos:[]}]);
+ f.sqlite.exec('DELETE FROM official_account_assignments');
+ assert.equal((await loadReportContext(f.db)).archived.length,0);
+ const {handlePsychologyOperations}=await import('./psychology-operations.js'),url=new URL('https://factory.test/api/psychology-operations?group=g');
+ const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{role:'operator',sidebarModules:['psychology-ops-report'],allowedAccountGroups:[]}});
+ assert.equal(response.status,403);assert.equal(f.reads.length,0);
+});
+test('operations warm path makes two batch reads and never re-fetches raw archive packs',async t=>{
+ const f=await reportProjectionFixture(t),{upsertOfficialAccounts}=await import('./official-archive-store.js');
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:Date.now(),videos:[{id:'v',createTime:Date.now()/1000,views:10}]}]);
+ let batches=0;const original=f.db.batch.bind(f.db);f.db.batch=async q=>{batches++;return original(q);};
+ const {handlePsychologyOperations}=await import('./psychology-operations.js'),url=new URL('https://factory.test/api/psychology-operations');
+ const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{role:'admin',sidebarModules:['psychology-ops-report']}});
+ assert.equal(response.status,200,await response.text());assert.equal(batches,2);assert.equal(f.reads.length,0);assert.match(response.headers.get('server-timing'),/scope;dur=/);
+});

@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology operations now reads synchronized per-account D1 report projections (migration0060) instead of fetching every R2 archive pack on each visit. Current permissions/assignments and lightweight account metadata are loaded in one batch; report inputs in a second batch. Missing legacy projections backfill once with timestamp guards; ingestion updates/deletion removes projections. Server-Timing distinguishes scope/query/archive/compute time. See docs/handoffs/2026-09-25-ops-report-fast-read.md.
+
 - Psychology operations now includes an autopilot execution/effect summary, pilot-group and A/B/C strategy comparisons from persisted slot/batch/item links. Planned publication dates scope execution; confirmed receipts count immediately even without analytics. Interactive overview/accounts/content/strategy metrics include same-day posts with synced views, with missing values distinct from zero. Scheduler maturity-based allocation is unchanged. See docs/handoffs/2026-09-25-autopilot-operations-report.md.
 
 - Psychology operations defaults to today in Beijing time (previous period = yesterday), with today/7d/30d/custom selection. Overview reads omit full copy/plan payloads; detailed comparison is fetched on expansion with identical authorization. Archive reads use a bounded 24-reader pool and no interactive repair writes; stale UI requests are aborted/ignored. See docs/handoffs/2026-09-25-ops-today-performance.md.
