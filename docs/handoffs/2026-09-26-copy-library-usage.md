@@ -40,3 +40,6 @@ Renamed the detail section to 爆款文案明细. UI and API now default to sour
 
 ## Follow-up: effective-sample explanation
 The 原文与改写对比 table now has a hover/focus tooltip on 有效样本. It defines one observed own-content item as one sample, permits multiple samples per copy, includes real zero views and excludes missing metrics, explains actual-publication-date scoping and the distinction from draw/copy counts, and separates the completion-rate denominator. Tooltip is placed outside the scrolling table, kept inside viewport bounds, remains hoverable, and closes on Escape/scroll. Existing 765 tests pass; analytics logic is unchanged.
+
+## Correction: rank by own-content maximum views
+User clarified that 爆款播放量 means their own published content, not the source post. Added 最高播放 to the detail table and changed the default `views` sort to each copy's maximum observed own-content views (original + rewrite variants), descending with stable ties and nulls last. Removed source-play display/projection from this page. Metric uses the selected actual-publication-date window and the existing owner-scoped observed samples. Zero remains valid and distinct from null. Regression covers rewrite peak, competing source popularity, median vs maximum, date/owner exclusion and zero/null ordering. Full suite: 765 tests pass.

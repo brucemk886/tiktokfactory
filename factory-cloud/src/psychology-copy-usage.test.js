@@ -61,13 +61,18 @@ test('SQL aggregates beyond old 20,000 row limits and uses exact even median',as
 });
 
 
-test('viral copy list defaults to source views descending, independently of our own effects',async t=>{
- const f=await setup(t);const other=f.sqlite.prepare('SELECT id FROM psychology_copy_library WHERE id<>? ORDER BY id LIMIT 1').get(f.copy.id).id;
+test('viral copies rank by highest own-content views across original and rewrites, not source plays',async t=>{
+ const f=await setup(t);const [other,zero]=f.sqlite.prepare('SELECT id FROM psychology_copy_library WHERE id<>? ORDER BY id LIMIT 2').all(f.copy.id).map(r=>r.id);
  f.sqlite.prepare('UPDATE psychology_peer_hits SET play_count=1000000 WHERE id=?').run(other);
- f.sqlite.prepare('UPDATE psychology_peer_hits SET play_count=900000 WHERE id=?').run(f.copy.id);
- f.event('own-performance',{views:9000000});
- const d=await (await f.api()).json();assert.equal(d.items[0].id,other);assert.equal(d.items[0].sourceViews,1000000);assert.equal(d.items[1].id,f.copy.id);assert.equal(d.effects.samples,1);assert.equal(d.effects.medianViews,9000000);
- const median=await (await f.api('?sort=median')).json();assert.equal(median.items[0].id,f.copy.id);
- const expected=f.sqlite.prepare("SELECT c.id FROM psychology_copy_library c LEFT JOIN psychology_peer_hits p ON p.id=c.id WHERE c.status='done' ORDER BY p.play_count DESC,c.created_at DESC,c.id").all().map(r=>r.id);
- assert.deepEqual(d.items.map(r=>r.id),expected);
+ f.sqlite.prepare('UPDATE psychology_peer_hits SET play_count=1 WHERE id=?').run(f.copy.id);
+ f.event('original-low',{views:10});f.event('original-mid',{views:20});f.event('rewrite-peak',{variant:'rewrite-external',views:10000});
+ f.event('other-copy',{snapshot:false,views:400});f.sqlite.prepare('UPDATE psychology_publish_items SET source_id=? WHERE id=?').run(other,'other-copy');
+ f.event('zero-copy',{snapshot:false,views:0});f.sqlite.prepare('UPDATE psychology_publish_items SET source_id=? WHERE id=?').run(zero,'zero-copy');
+ f.event('wrong-owner',{owner:'other',views:999999});f.event('outside-period',{published:now+86400000,views:888888});
+ const d=await (await f.api('?period=custom&from=2026-09-26&to=2026-09-26')).json();
+ assert.deepEqual(d.items.slice(0,3).map(r=>[r.id,r.maxViews]),[[f.copy.id,10000],[other,400],[zero,0]]);
+ assert.ok(d.items.slice(3).every(r=>r.maxViews===null));assert.equal(d.effects.samples,5);assert.equal(d.items[0].original.medianViews,15);assert.equal(d.items[0].rewrite.medianViews,10000);
+ assert.equal(d.items[0].sourceViews,undefined);
+ const median=await (await f.api('?sort=median&period=custom&from=2026-09-26&to=2026-09-26')).json();assert.equal(median.items[0].id,other);
+ const earlier=await (await f.api('?period=custom&from=2026-09-25&to=2026-09-25')).json();assert.ok(earlier.items.every(r=>r.maxViews===null));
 });

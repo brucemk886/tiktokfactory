@@ -37,7 +37,7 @@ async function context(db,owner,params){
  const topicQuery=Object.entries(TOPIC_LABELS).find(([,label])=>label.includes(query)&&query)?.[0]||query;
  const args=[JSON.stringify(identities),query,query,topicQuery,copy,copy,owner,owner,window.start,window.end,window.start,window.end,window.start,window.end];
  const cte=`WITH keys AS MATERIALIZED (SELECT json_extract(value,'$.id') id,json_extract(value,'$.key') source_key FROM json_each(?)),
- catalog AS MATERIALIZED (SELECT c.id,k.source_key,c.title,c.media_type,c.created_at,p.play_count sourceViews,COALESCE(p.topics_json,'[]') topics FROM keys k JOIN psychology_copy_library c ON c.id=k.id LEFT JOIN psychology_peer_hits p ON p.id=c.id
+ catalog AS MATERIALIZED (SELECT c.id,k.source_key,c.title,c.media_type,c.created_at,COALESCE(p.topics_json,'[]') topics FROM keys k JOIN psychology_copy_library c ON c.id=k.id LEFT JOIN psychology_peer_hits p ON p.id=c.id
  WHERE (?='' OR instr(lower(c.title),lower(?))>0 OR instr(lower(COALESCE(p.topics_json,'')),lower(?))>0) AND (?='' OR c.id=?)),
  versions AS MATERIALIZED (SELECT v.* FROM psychology_copy_variants v WHERE v.owner=? AND v.source_key IN (SELECT source_key FROM catalog)),
  events AS MATERIALIZED (
@@ -63,14 +63,14 @@ async function context(db,owner,params){
  UNION ALL SELECT 'total','','',views,freq,completion_sum,completion_n,synced_at FROM observations),
  frequencies AS (SELECT level,source_key,variant,views,sum(freq) freq,sum(completion_sum) completion_sum,sum(completion_n) completion_n,max(synced_at) synced_at FROM buckets GROUP BY level,source_key,variant,views),
  ranked AS (SELECT *,sum(freq) OVER(PARTITION BY level,source_key,variant ORDER BY views) cumulative,sum(freq) OVER(PARTITION BY level,source_key,variant) nn FROM frequencies),
- stats AS MATERIALIZED (SELECT level,source_key,variant,sum(freq) samples,1.0*sum(views*freq)/sum(freq) averageViews,
+ stats AS MATERIALIZED (SELECT level,source_key,variant,sum(freq) samples,max(views) maxViews,1.0*sum(views*freq)/sum(freq) averageViews,
  (sum(CASE WHEN (nn+1)/2>cumulative-freq AND (nn+1)/2<=cumulative THEN views ELSE 0 END)+sum(CASE WHEN (nn+2)/2>cumulative-freq AND (nn+2)/2<=cumulative THEN views ELSE 0 END))/2.0 medianViews,
  1.0*sum(CASE WHEN views>=1000 THEN freq ELSE 0 END)/sum(freq) potentialRate,1.0*sum(CASE WHEN views>=10000 THEN freq ELSE 0 END)/sum(freq) hitRate,
  1.0*sum(completion_sum)/nullif(sum(completion_n),0) completion,sum(completion_n) completionSamples,max(synced_at) syncedAt FROM ranked GROUP BY level,source_key,variant),
  copy_draws AS (SELECT source_key,sum(draws) draws,sum(CASE WHEN variant='' THEN draws ELSE 0 END) originalDraws,sum(CASE WHEN variant<>'' THEN draws ELSE 0 END) rewriteDraws,max(lastDraw) lastDraw FROM draws GROUP BY source_key),
  version_counts AS (SELECT source_key,count(*) rewrites,sum(enabled=1 AND review_status='approved') usable,sum(review_status='pending') pending,sum(enabled=0 AND review_status='approved') disabled FROM versions WHERE deleted_at=0 GROUP BY source_key),
  copies AS MATERIALIZED (SELECT c.*,COALESCE(v.rewrites,0) rewrites,COALESCE(d.draws,0) draws,COALESCE(d.originalDraws,0) originalDraws,COALESCE(d.rewriteDraws,0) rewriteDraws,d.lastDraw,
- COALESCE(s.samples,0) samples,s.medianViews,s.potentialRate,s.hitRate,s.completion,${statJson('o')} original,${statJson('r')} rewrite
+ COALESCE(s.samples,0) samples,s.maxViews,s.medianViews,s.potentialRate,s.hitRate,s.completion,${statJson('o')} original,${statJson('r')} rewrite
  FROM catalog c LEFT JOIN version_counts v USING(source_key) LEFT JOIN copy_draws d USING(source_key) LEFT JOIN stats s ON s.level='copy' AND s.source_key=c.source_key
  LEFT JOIN stats o ON o.level='copyKind' AND o.source_key=c.source_key AND o.variant='original'
  LEFT JOIN stats r ON r.level='copyKind' AND r.source_key=c.source_key AND r.variant='rewrite')`;
@@ -109,7 +109,7 @@ export async function handleCopyUsage(request,env,url,user){
    data=JSON.parse(r.payload);data.items=data.items.map(r=>({...r,stats:parse(r.stats),model:rewriteModelLabel(r.model)}));data.copy={id:source.id,title:source.title};
   }else{
    const where={all:'1',used:'draws>0',unused:'draws=0',data:'samples>0'}[usage];
-   const order={views:'sourceViews DESC,created_at DESC,id',recent:'created_at DESC,id',draws:'draws DESC,id',median:'medianViews DESC,samples DESC,id',potential:'potentialRate DESC,samples DESC,id'}[sort];
+   const order={views:'maxViews DESC,created_at DESC,id',recent:'created_at DESC,id',draws:'draws DESC,id',median:'medianViews DESC,samples DESC,id',potential:'potentialRate DESC,samples DESC,id'}[sort];
    const sql=` SELECT json_object(
  'inventory',json_object('originals',(SELECT count(*) FROM catalog),'rewrites',COALESCE((SELECT sum(rewrites) FROM version_counts),0),'usable',(SELECT count(*) FROM catalog)+COALESCE((SELECT sum(usable) FROM version_counts),0),'pending',COALESCE((SELECT sum(pending) FROM version_counts),0),'disabled',COALESCE((SELECT sum(disabled) FROM version_counts),0)),
  'usage',json_object('used',(SELECT count(*) FROM copies WHERE draws>0),'unused',(SELECT count(*) FROM copies WHERE draws=0),'draws',COALESCE((SELECT sum(draws) FROM copies),0),'originalDraws',COALESCE((SELECT sum(originalDraws) FROM copies),0),'rewriteDraws',COALESCE((SELECT sum(rewriteDraws) FROM copies),0)),
@@ -118,7 +118,7 @@ export async function handleCopyUsage(request,env,url,user){
  'updatedAt',(SELECT max(syncedAt) FROM stats),
  'comparison',${rowsJson("SELECT variant kind,samples,medianViews,averageViews,potentialRate,hitRate,completion,completionSamples FROM stats WHERE level='kind'",['kind',...metrics])},
  'total',(SELECT count(*) FROM copies WHERE ${where}),
- 'items',${rowsJson('SELECT * FROM copies WHERE '+where+' ORDER BY '+order+' LIMIT '+SIZE+' OFFSET '+offset,['id','title','media_type','topics','created_at','sourceViews','rewrites','draws','originalDraws','rewriteDraws','lastDraw','samples','medianViews','potentialRate','hitRate','completion','original','rewrite'])}) payload`;
+ 'items',${rowsJson('SELECT * FROM copies WHERE '+where+' ORDER BY '+order+' LIMIT '+SIZE+' OFFSET '+offset,['id','title','media_type','topics','created_at','rewrites','draws','originalDraws','rewriteDraws','lastDraw','samples','maxViews','medianViews','potentialRate','hitRate','completion','original','rewrite'])}) payload`;
    data=JSON.parse((await run(sql).first()).payload);
    data.effects=data.effects||emptyStats();data.usage.coverage=data.inventory.originals?data.usage.used/data.inventory.originals:null;
    data.items=data.items.map(r=>({...r,topics:parse(r.topics).map(t=>TOPIC_LABELS[t]||t),original:parse(r.original),rewrite:parse(r.rewrite)}));
