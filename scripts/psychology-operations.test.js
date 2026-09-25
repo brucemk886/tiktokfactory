@@ -84,7 +84,7 @@ function fixture(){
     throw new Error(sql);
   }};}};
   const ARCHIVE={async get(key){reads.push(key);return{async json(){return{account_key:"tiktok:a",videos:[{id:"12345678901",createTime:Date.now()-2*DAY,views:400,duration:10}]};}};}};
-  return{env:{DB,ARCHIVE},reads};
+  return{env:{DB,ARCHIVE},reads,assigned};
 }
 test("operations API is read-only and requires its existing sidebar permission",async()=>{
   const url=new URL("https://factory.test/api/psychology-operations");
@@ -180,4 +180,12 @@ test('autopilot joins exact account and task, distinguishes missing metrics from
  assert.equal(r.summary.planned,9);assert.equal(r.summary.published,2);assert.equal(r.summary.failed,2);assert.equal(r.summary.stopped,1);assert.equal(r.summary.pending,4);
  assert.equal(r.summary.synced,1);assert.equal(r.summary.missingMetrics,1);assert.equal(r.summary.averageViews,0);assert.equal(r.summary.likes,null);
  const empty=buildAutopilotReport({items:[{...base,id:'missing'}],records,accounts,window,now});assert.equal(empty.summary.views,null);assert.equal(empty.summary.potentialRate,null);
+});
+
+
+test('a newly assigned unsynced account does not hide known archive timestamps',async()=>{
+ const {env,assigned}=fixture();assigned.push({account_key:'unsynced',group_id:'g1'});
+ const url=new URL('https://factory.test/api/psychology-operations');
+ const response=await handlePsychologyOperations(new Request(url),env,url,{user:{role:'admin',sidebarModules:['psychology-ops-report']}});
+ const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));assert.ok(body.archiveAt>0);
 });

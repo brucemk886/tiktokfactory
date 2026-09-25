@@ -96,7 +96,7 @@ export async function handlePsychologyOperations(request, env, url, session) {
     const {framework}=await frameworkFor(env,{accounts,window,media,videosByAccount,records,history,matureOnly:false});
     const autopilot=buildAutopilotReport({items:autopilotRows.results.slice(0,20000),records,accounts,videosByAccount,window,media});
     return json({...report,autopilot,content:null,framework,evolution:EVOLUTION,groups,projectName:project?.name||"心理学",updatedAt:Date.now(),
-      archiveAt:accounts.length?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0)):0,
+      archiveAt:accounts.some(a=>Number(a.latestSyncAt)>0)?Math.min(...accounts.map(a=>Number(a.latestSyncAt)||0).filter(t=>t>0)):0,
       limited:autopilotRows.results.length>20000 || (recordRows.results||[]).length>10000 || (itemRows.results||[]).length>5000 || history.length>=20000,
       coverage:"播放分析基于每个账号最近100条已同步作品的当前累计播放，按作品发布日期汇总，并非每日新增播放。历史较多时，上期数据可能不完整。"});
   }catch(error){return errorJson(error.message||"读取运营报表失败。",400);}
