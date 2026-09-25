@@ -35,7 +35,7 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 
 - scripts/psychology-operations.js owns pure date-window, media, account-performance and batch-funnel calculations.
 - factory-cloud/src/psychology-operations.js exposes a scoped GET report over existing archive, publish-record and automation tables. The report does not enqueue or publish work.
-- public/psychology-operations.* provides the separate review UI; the existing shared data overview remains on /psychology-effects.
+- public/psychology-operations.* provides the separate review UI; the existing shared data overview remains on /psychology-effects. Reports default to the Beijing calendar day. The summary omits heavy creative text/plan columns; details=1 loads the expanded comparison using the same scope. Interactive archive loading uses a bounded 24-reader pool without read-path repair writes; other callers keep the default concurrency/repair behavior.
 
 ## Psychology template topic banks
 

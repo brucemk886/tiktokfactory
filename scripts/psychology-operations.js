@@ -5,11 +5,11 @@ const millis = value => { const n = Number(value); return Number.isFinite(n) && 
 const number = value => Math.max(0, Number(value) || 0);
 export function operationsWindow(query, now = Date.now()) {
   const today = shanghaiDateKey(now);
-  const preset = query.get("period") || "7d";
+  const preset = query.get("period") || "today";
   const to = preset === "custom" ? query.get("to") : today;
-  const from = preset === "custom" ? query.get("from") : shanghaiDateKey(Date.parse(today + "T00:00:00+08:00") - (preset === "30d" ? 29 : 6) * DAY);
+  const from = preset === "custom" ? query.get("from") : shanghaiDateKey(Date.parse(today + "T00:00:00+08:00") - (preset === "today" ? 0 : preset === "30d" ? 29 : 6) * DAY);
   const valid = key => /^\d{4}-\d{2}-\d{2}$/.test(key || "") && shanghaiDateKey(Date.parse(key + "T00:00:00+08:00")) === key;
-  if (!["7d", "30d", "custom"].includes(preset) || !valid(from) || !valid(to)) throw new Error("请选择有效日期。");
+  if (!["today", "7d", "30d", "custom"].includes(preset) || !valid(from) || !valid(to)) throw new Error("请选择有效日期。");
   const start = Date.parse(from + "T00:00:00+08:00"), end = Date.parse(to + "T00:00:00+08:00") + DAY;
   const days = (end - start) / DAY;
   if (days < 1 || days > 31 || to > today) throw new Error("请选择不超过31天、且不晚于今天的日期范围。");

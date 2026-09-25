@@ -126,3 +126,17 @@ test('later page failures and invalid cursors never report a complete live direc
   t.mock.method(globalThis,'fetch',async url=>new URL(url).searchParams.get('cursor')?Response.json({error:'unavailable'},{status:503}):Response.json({accounts:f.live.slice(0,100),hasMore:true,nextCursor:brokenCursor?'':'next'}));
   for(const invalid of [false,true]){brokenCursor=invalid;const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,100);assert.equal(result.directoryComplete,false);assert.equal(result.source,'archive+partial-live');}
 });
+
+test('report archive reads use a bounded pool, enforce scope and avoid read-path repair writes',async()=>{
+ const {loadVideosForAccounts}=await import('./official-archive-store.js');
+ const keys=Array.from({length:35},(_,i)=>'tiktok:a'+i),reads=[];let active=0,peak=0;
+ const store={projects:[{id:'p',name:'Psych',moduleKey:'psychology'}],groups:[{id:'g',name:'Group',projectId:'p'}]};
+ const db={prepare(sql){assert.match(sql.trim(),/^SELECT/);return {bind(){return this;},async first(){assert.match(sql,/factory_kv/);return {value_json:JSON.stringify(store)};},async all(){
+  if(sql.includes('official_account_assignments'))return {results:keys.map(key=>({account_key:key,group_id:'g'}))};
+  if(sql.includes('official_videos_latest'))return {results:[{account_key:keys[34],video_id:'fallback',video_json:'{}',create_time:1}]};
+  throw Error('Unexpected query '+sql);
+ }};}};
+ const env={ARCHIVE:{async get(key){reads.push(key);active++;peak=Math.max(peak,active);await new Promise(r=>setImmediate(r));active--;return key.includes('a34')?null:{async json(){return {videos:[{id:key}]};}};},async put(){throw Error('A report must not write archive packs');}}};
+ const result=await loadVideosForAccounts(env,db,[...keys,keys[0],'tiktok:outside'],100,{concurrency:24,repair:false});
+ assert.equal(reads.length,35);assert.ok(peak>8&&peak<=24);assert.equal(result.size,35);assert.equal(result.has('tiktok:outside'),false);assert.equal(result.get(keys[34])[0].id,'fallback');
+});

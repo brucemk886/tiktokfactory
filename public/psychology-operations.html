@@ -14,7 +14,7 @@
 <p>平均播放时长、完播率、点赞、评论、分享取已同步且大于0的作品平均；视频另看<strong>3秒留存</strong>（逐秒留存曲线第3秒还在看的比例，曲线不足3秒不计）；收藏官方接口未同步。每组样本满5条才下结论。</p><p id="coverage"></p></div></div></header>
 <div class="ops-media-tabs" role="tablist" aria-label="内容类型"><button type="button" role="tab" class="ops-media-tab" data-media="photo" aria-selected="true">图文</button><button type="button" role="tab" class="ops-media-tab" data-media="video" aria-selected="false">视频</button></div>
 <form id="filters" class="panel ops-filters">
-<label>统计周期<select id="period"><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
+<label>统计周期<select id="period"><option value="today">今天（北京时间）</option><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
 <label id="fromLabel" hidden>开始日期<input id="from" type="date"></label><label id="toLabel" hidden>结束日期<input id="to" type="date"></label>
 <label>账号分组<select id="group"><option value="">全部授权分组</option></select></label><button class="primary-link" type="submit" id="query">查询</button>
 </form>
@@ -62,4 +62,4 @@
 <h3>当前生效的抽取规则</h3><div id="evolutionRules" class="ops-rules"></div>
 <h3>各阶段打法 vs 实际数据</h3><p class="section-hint">打法是先定的假设；右边是本期该阶段账号发各类内容的实际中位播放，满5条才比较。</p><div id="stageTable" class="table-wrap"></div>
 </section></div>
-</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260924-topics"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260925-fast-today"></script></body></html>

@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology operations defaults to today in Beijing time (previous period = yesterday), with today/7d/30d/custom selection. Overview reads omit full copy/plan payloads; detailed comparison is fetched on expansion with identical authorization. Archive reads use a bounded 24-reader pool and no interactive repair writes; stale UI requests are aborted/ignored. See docs/handoffs/2026-09-25-ops-today-performance.md.
+
 - Autopilot overview batches per-pilot metadata and execution reads across the selected owner’s pilots, retaining separate 12-slot/60-log windows and matching items by batch ID. It projects status/title fields instead of reading full image/upload/group-request payloads. See docs/handoffs/2026-09-25-autopilot-load-performance.md.
 
 - On 2026-09-25 (Beijing), the authorized seven-day nine-group test was activated: 180 accounts, 2 posts/account/day; groups 1–3 A, 4–6 B, 7–9 C. First group starts 01:45, groups offset 10 minutes, second daily round +30 minutes, accounts offset 45 seconds. See the immediate-start handoff for activation and recovery evidence.

@@ -88,7 +88,9 @@ test('comparison joins exact task and account plus video, never batch or title, 
 test('operations endpoint reads creative joins with existing scope and reports empty coverage honestly',async t=>{
  const f=await fixture(t),url=new URL('https://factory.test/api/psychology-operations?period=7d');
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{...user,sidebarModules:['psychology-ops-report']}});
- const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content.coverage.total,0);
+ const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.content,null);
+ const detailUrl=new URL(url);detailUrl.searchParams.set('details','1');
+ const detail=await(await handlePsychologyOperations(new Request(detailUrl),f.env,detailUrl,{user:{...user,sidebarModules:['psychology-ops-report']}})).json();assert.equal(detail.content.coverage.total,0);
  assert.equal(result.framework.overview.current.n,0);assert.equal(result.framework.overview.daily.length,7);assert.match(result.framework.strategy.findings[0],/样本不足/);
  assert.equal(result.evolution.exploitShare,0.7);assert.equal(result.framework.media,'photo');
  const videoUrl=new URL('https://factory.test/api/psychology-operations?period=7d&media=video');

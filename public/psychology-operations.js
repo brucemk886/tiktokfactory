@@ -9,12 +9,12 @@ const TABS=["overview","accounts","content","strategy"];
 const params = new URLSearchParams(location.search);
 const state = { data:null,tab:TABS.includes(params.get("tab"))?params.get("tab"):"overview",accountPage:1,batchPage:1,sourcePage:1,request:0 };
 for(const key of ["period","from","to"]) if(params.has(key)) $("#"+key).value=params.get(key);
-if(!$("#period").value)$("#period").value="7d";
+if(!$("#period").value)$("#period").value="today";
 state.media=params.get("media")==="video"?"video":"photo";
 function renderMediaTabs(){document.querySelectorAll("[data-media]").forEach(b=>{const on=b.dataset.media===state.media;b.classList.toggle("is-active",on);b.setAttribute("aria-selected",String(on));});}
 document.querySelectorAll("[data-media]").forEach(b=>b.addEventListener("click",()=>{if(b.dataset.media===state.media)return;state.media=b.dataset.media;renderMediaTabs();load();}));
 renderMediaTabs();
-$("#period").addEventListener("change",toggleDates);
+$("#period").addEventListener("change",()=>{toggleDates();if($("#period").value!=="custom")load();});
 $("#filters").addEventListener("submit",event=>{event.preventDefault();load();});
 $("#trendMetric").addEventListener("change",renderTrend);
 for(const id of ["accountSort","accountFilter"]) $("#"+id).addEventListener("change",()=>{state.accountPage=1;renderAccounts();});
@@ -30,22 +30,38 @@ const showMethod=open=>{methodPanel.hidden=!open;methodToggle.setAttribute("aria
 methodToggle.addEventListener("click",event=>{event.stopPropagation();showMethod(methodPanel.hidden);});
 document.addEventListener("click",event=>{if(!methodPanel.hidden&&!methodPanel.contains(event.target))showMethod(false);});
 document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!methodPanel.hidden){showMethod(false);methodToggle.focus();}});
-toggleDates();selectTab(state.tab,false);load();
+toggleDates();selectTab(state.tab,false);
 function toggleDates(){const custom=$("#period").value==="custom";$("#fromLabel").hidden=!custom;$("#toLabel").hidden=!custom;$("#from").required=custom;$("#to").required=custom;}
 function selectTab(tab,save=true){
   state.tab=tab;
   document.querySelectorAll("[data-tab]").forEach(button=>{const active=button.dataset.tab===tab;button.setAttribute("aria-selected",String(active));button.tabIndex=active?0:-1;button.classList.toggle("is-active",active);$("#"+button.dataset.tab).hidden=!active;});
   if(save){const url=new URL(location.href);url.searchParams.set("tab",tab);history.replaceState({},"",url);}
 }
+let reportController=null,detailController=null,detailLoaded=false,currentQuery="";
+$("#contentDetail").addEventListener("toggle",()=>{if($("#contentDetail").open)loadDetail();});
+async function loadDetail(){
+  if(detailLoaded||detailController||!state.data||state.media!=="photo")return;
+  const request=state.request,query=currentQuery,controller=new AbortController();detailController=controller;
+  $("#contentCoverage").textContent="正在读取明细对比…";
+  try{
+    const response=await fetch("/api/psychology-operations?"+query+"&details=1",{cache:"no-store",signal:controller.signal});const result=await response.json();
+    if(!response.ok)throw new Error(result.error||"读取明细失败");
+    if(request!==state.request)return;
+    detailLoaded=true;renderContentPerformance(result.content);
+  }catch(error){if(request===state.request&&error.name!=="AbortError")$("#contentCoverage").textContent="明细读取失败："+error.message+"，请收起后重新展开。";}
+  finally{if(detailController===controller)detailController=null;}
+}
 async function load(){
+  reportController?.abort();detailController?.abort();detailController=null;detailLoaded=false;$("#contentDetail").open=false;
+  const controller=new AbortController();reportController=controller;
   const request=++state.request;$("#query").disabled=true;$("#report").hidden=true;$("#status").textContent="正在读取运营报表…";
   const query=new URLSearchParams({period:$("#period").value,media:state.media,group:state.data?$("#group").value:(params.get("group")||"")});
   if(query.get("period")==="custom"){query.set("from",$("#from").value);query.set("to",$("#to").value);}
   try{
-    const response=await fetch("/api/psychology-operations?"+query,{cache:"no-store"});const data=await response.json();
+    const response=await fetch("/api/psychology-operations?"+query,{cache:"no-store",signal:controller.signal});const data=await response.json();
     if(!response.ok)throw new Error(data.error||"读取失败");
     if(request!==state.request)return;
-    state.data=data;state.accountPage=state.batchPage=state.sourcePage=1;
+    state.data=data;currentQuery=query.toString();state.accountPage=state.batchPage=state.sourcePage=1;
     $("#group").innerHTML='<option value="">全部授权分组</option>'+data.groups.map(g=>'<option value="'+esc(g.id)+'">'+esc(g.name)+'</option>').join("");
     $("#group").value=query.get("group");$("#from").value=data.window.from;$("#to").value=data.window.to;
     const url=new URL(location.href);url.search=query.toString();url.searchParams.set("tab",state.tab);history.replaceState({},"",url);
@@ -55,6 +71,7 @@ async function load(){
   }catch(error){if(request===state.request)$("#status").textContent=error.message||"读取失败，请重试。";}
   finally{if(request===state.request)$("#query").disabled=false;}
 }
+load();
 function table(headers,rows){return '<table class="ops-table"><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join("")+'</tr></thead><tbody>'+rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join("")+'</tr>').join("")+'</tbody></table>';}
 function page(items,key,id,render){
   const count=Math.max(1,Math.ceil(items.length/10));state[key]=Math.min(count,Math.max(1,state[key]));

@@ -165,22 +165,26 @@ export async function loadLatestArchiveVideosByAccount(env, db, videosPerAccount
   return loadVideosForAccounts(env, db, rows.map((row) => row.account_key), videosPerAccount);
 }
 
-export async function loadVideosForAccounts(env, db, accountKeys = [], videosPerAccount = 80) {
+export async function loadVideosForAccounts(env, db, accountKeys = [], videosPerAccount = 80, options = {}) {
   const allowed = new Set(await loadFactoryArchiveScope(db));
   const keys = Array.from(new Set((accountKeys || []).map((key) => String(key || "").trim()).filter(key => allowed.has(key))));
   const videosByAccount = new Map();
   const missing = [];
-  for (const batch of chunk(keys, R2_CONCURRENCY)) {
-    const packs = await Promise.all(batch.map((accountKey) => readAccountVideos(env, accountKey)));
-    batch.forEach((accountKey, index) => {
-      if (packs[index]) videosByAccount.set(accountKey, unpackAccountVideos(packs[index], videosPerAccount));
+  // A bounded pool lets fast accounts proceed without waiting for a slow wave.
+  const concurrency=Math.max(1,Math.min(24,Number(options.concurrency)||R2_CONCURRENCY));
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(concurrency,keys.length)},async()=>{
+    while(next<keys.length){
+      const accountKey=keys[next++],pack=await readAccountVideos(env,accountKey);
+      if(pack)videosByAccount.set(accountKey,unpackAccountVideos(pack,videosPerAccount));
       else missing.push(accountKey);
-    });
-  }
+    }
+  }));
   if (missing.length) {
     const fromD1 = await loadVideosFromD1(db, missing, videosPerAccount);
     for (const [accountKey, videos] of fromD1.entries()) {
       videosByAccount.set(accountKey, videos);
+      if(options.repair === false)continue; // Interactive reports remain read-only.
       const row = (await db.prepare("SELECT snapshot_date, synced_at FROM official_accounts_latest WHERE account_key = ?").bind(accountKey).first()) || {};
       await writeAccountVideos(env, accountKey, videos, row);
     }

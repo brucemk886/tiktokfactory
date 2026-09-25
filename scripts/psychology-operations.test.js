@@ -113,3 +113,38 @@ test("grouped video upload completion waits for an actual remote receipt",()=>{
   assert.equal(r.funnel.generated,2);assert.equal(r.funnel.submitted,1);
   assert.equal(r.batches[0].items.find(i=>i.id==="ready").state,"generated");
 });
+
+test('today is the default Beijing calendar day and compares yesterday across UTC midnight',()=>{
+ const time=Date.parse('2026-09-24T17:15:00Z');
+ for(const query of ['', 'period=today']){
+  const w=operationsWindow(new URLSearchParams(query),time);
+  assert.equal(w.period,'today');assert.equal(w.from,'2026-09-25');assert.equal(w.to,'2026-09-25');assert.equal(w.days,1);
+  assert.equal(w.start,Date.parse('2026-09-24T16:00:00Z'));assert.equal(w.end-w.start,DAY);
+  assert.equal(w.previousFrom,'2026-09-24');assert.equal(w.previousTo,'2026-09-24');
+ }
+ assert.equal(operationsWindow(new URLSearchParams('period=7d'),time).days,7);
+ assert.equal(operationsWindow(new URLSearchParams('period=custom&from=2026-09-22&to=2026-09-23'),time).from,'2026-09-22');
+});
+
+test('overview skips heavy content but detail uses the same group permission checks',async()=>{
+ const {env}=fixture(),user={role:'operator',sidebarModules:['psychology-ops-report'],allowedAccountGroups:['g1']};
+ const call=async query=>{const u=new URL('https://factory.test/api/psychology-operations?'+query);return handlePsychologyOperations(new Request(u),env,u,{user});};
+ const summary=await(await call('period=today')).json();assert.equal(summary.window.period,'today');assert.equal(summary.content,null);assert.ok(summary.framework);
+ const detail=await(await call('period=today&details=1')).json();assert.ok(Array.isArray(detail.content.rows));assert.equal(detail.framework,undefined);
+ assert.equal((await call('period=today&details=1&group=g2')).status,403);
+});
+
+test('report UI defaults today, loads details on demand and rejects stale detail responses',async()=>{
+ const fs=await import('node:fs'),vm=await import('node:vm');
+ const src=fs.readFileSync(new URL('../public/psychology-operations.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/,'');
+ const nodes=new Map(),requests=[],rendered=[];let release;
+ const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='#period'?'today':'',hidden:true,open:false,textContent:'',innerHTML:'',listeners:{},classList:{toggle(){}},addEventListener(k,f){this.listeners[k]=f;},setAttribute(){},contains(){return false;},focus(){}});return nodes.get(s);};
+ const data={groups:[],window:{from:'2026-09-25',to:'2026-09-25',previousFrom:'2026-09-24',previousTo:'2026-09-24'},framework:{},content:null};
+ const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'',href:'https://factory.test/psychology-ops-report'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},renderContentPerformance:v=>rendered.push(v),fetch:async(url,init)=>{requests.push({url,init});if(url.includes('details=1'))return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({content:{rows:[{id:'old'}]}})});});return {ok:true,json:async()=>data};}});
+ vm.runInContext(src+'\nrender=()=>{};',context);await new Promise(r=>setImmediate(r));
+ assert.match(requests[0].url,/period=today/);assert.equal(requests.length,1);
+ node('#contentDetail').open=true;const detail=node('#contentDetail').listeners.toggle();await new Promise(r=>setImmediate(r));assert.match(requests[1].url,/details=1/);
+ node('#period').value='7d';node('#period').listeners.change();await new Promise(r=>setImmediate(r));
+ assert.equal(requests[1].init.signal.aborted,true);release();await detail;await new Promise(r=>setImmediate(r));assert.equal(rendered.length,0);
+ assert.match(requests[2].url,/period=7d/);
+});
