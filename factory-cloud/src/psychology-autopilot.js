@@ -250,6 +250,14 @@ export async function runAutopilots(env, now = Date.now()) {
   return results;
 }
 
+export function autopilotViewWindow(period = 'today', now = Date.now()) {
+  if (!['today','yesterday','7d'].includes(period)) fail('请选择今天、昨天或近7天。',400);
+  const dayStart=Date.parse(beijingDate(now)+'T00:00:00+08:00');
+  const start=dayStart-(period==='yesterday'?DAY:period==='7d'?6*DAY:0);
+  const end=period==='yesterday'?dayStart:dayStart+DAY;
+  return {period,start,end,from:beijingDate(start),to:beijingDate(end-1),label:{today:'今天',yesterday:'昨天','7d':'近7天'}[period]};
+}
+
 export async function handlePsychologyAutopilot(request, env, url, session) {
   if (!url.pathname.startsWith(BASE)) return null;
   const user = session?.user;
@@ -257,6 +265,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
   const db = env.DB;
   if (url.pathname === BASE && request.method === 'GET') {
+    const window=autopilotViewWindow(url.searchParams.get('period') || 'today');
     const [pilots, directory] = await Promise.all([db.prepare('SELECT * FROM psychology_autopilots WHERE owner=? ORDER BY created_at DESC LIMIT 20').bind(user.username).all(), autopilotDirectory(env, user, url.searchParams.get('refreshGroups') === '1')]);
     const groups = directory.groups;
     const labels = new Map([...accountsFromLatestArchive(await listLatestArchiveAccounts(db)), ...directory.accounts].map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
@@ -264,8 +273,8 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     // One round trip for all pilots; per-pilot windows preserve list limits.
     const [accountRows, slotRows, logRows, dailyRows] = await db.batch([
       db.prepare('SELECT * FROM psychology_autopilot_accounts WHERE autopilot_id IN (SELECT value FROM json_each(?)) ORDER BY status DESC,connection_id').bind(pilotIds),
-      db.prepare(`SELECT * FROM (SELECT *,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY slot_at DESC) rn FROM psychology_autopilot_slots WHERE autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn<=12 ORDER BY autopilot_id,slot_at DESC`).bind(pilotIds),
-      db.prepare(`SELECT * FROM (SELECT autopilot_id,kind,message,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn<=60 ORDER BY autopilot_id,rn`).bind(pilotIds),
+      db.prepare(`SELECT * FROM psychology_autopilot_slots WHERE autopilot_id IN (SELECT value FROM json_each(?)) AND slot_at>=? AND slot_at<? ORDER BY autopilot_id,slot_at DESC`).bind(pilotIds,window.start,window.end),
+      db.prepare(`SELECT * FROM (SELECT autopilot_id,kind,message,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE autopilot_id IN (SELECT value FROM json_each(?)) AND created_at>=? AND created_at<?) WHERE rn<=60 ORDER BY autopilot_id,rn`).bind(pilotIds,window.start,window.end),
       db.prepare(`SELECT * FROM (SELECT autopilot_id,message,detail_json,created_at,ROW_NUMBER() OVER (PARTITION BY autopilot_id ORDER BY created_at DESC,id DESC) rn FROM psychology_autopilot_log WHERE kind='daily' AND autopilot_id IN (SELECT value FROM json_each(?))) WHERE rn=1`).bind(pilotIds),
     ]);
     const allItems = await slotExecution(db, slotRows.results, labels);
@@ -277,18 +286,18 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
       const daily = dailyRows.results.find(l => l.autopilot_id===p.id);
       // Times overlap between groups; ownership must be matched by batch ID.
       const batchIds = new Set(slots.results.flatMap(s => String(s.batch_id||'').split(',').filter(Boolean)));
-      const items = allItems.filter(i => batchIds.has(i.batchId));
+      const items = allItems.filter(i => batchIds.has(i.batchId) && i.scheduleAt >= window.start && i.scheduleAt < window.end);
       const dayStart = Date.parse(beijingDate(Date.now()) + 'T00:00:00+08:00');
       const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
       out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at,
-        today, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
+        today, execution:executionCounts(items), attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
         slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, stopPending:Boolean(a.stop_pending) })),
         schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    return json({ window, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots);

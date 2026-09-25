@@ -7,10 +7,10 @@
 <body class="work-page official-data-page psychology-module lf-console"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
 <header class="page-head"><div><h1>自动运营</h1><p class="page-lead">把一个或多个账号分组交给系统：每天自动从文案库抽内容、排发布、分析数据、停掉有问题的号。多个分组用不同策略跑，对比哪种打法更好。</p></div><div class="ops-head-tools"><nav class="page-links"><a href="/psychology-publish">自动发布</a><a href="/psychology-ops-report">运营报表</a><a href="/psychology-copy-library">文案库</a></nav></div></header>
 
-<div class="pilot-toolbar"><p id="status" role="status">正在读取…</p><div class="pilot-actions"><button type="button" id="reload">刷新状态</button><button type="button" id="openCreate" class="primary-link">新建自动运营</button></div></div>
-<section aria-label="今日运营总览" id="overview" class="pilot-overview"></section>
+<div class="pilot-toolbar"><label>统计时间（北京时间） <select id="period"><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d">近7天</option></select></label><p id="status" role="status">正在读取…</p><div class="pilot-actions"><button type="button" id="reload">刷新状态</button><button type="button" id="openCreate" class="primary-link">新建自动运营</button></div></div>
+<section aria-label="所选时间运营总览" id="overview" class="pilot-overview"></section>
 <p class="section-hint" id="freshness"></p>
-<section class="panel data-section"><h2>待处理与自动恢复</h2><p class="section-hint">汇总各组最近 12 个排期的异常；已停止的任务不计为失败。历史明细可查看发布记录。</p><div id="attention"></div></section>
+<section class="panel data-section"><h2>待处理与自动恢复</h2><p class="section-hint">展示所选时间的任务异常；账号停发与分析过期提示反映当前状态。已停止的任务不计为失败。</p><div id="attention"></div></section>
 <section class="panel data-section"><h2>运营分组</h2><p class="section-hint">效果基于近 7 天满 24 小时的作品；执行数量按北京时间的计划发布时间统计。</p><div id="compare" class="table-wrap"></div></section>
 <div id="pilots"></div>
 <dialog id="createDialog" class="pilot-dialog"><div class="section-title"><h2>新建自动运营</h2><button type="button" data-close="createDialog" aria-label="关闭新建窗口">关闭</button></div>
@@ -22,4 +22,4 @@
 <details open><summary>三种策略共用的运营规则</summary><ul class="pilot-rules" id="rules"></ul></details></dialog>
 <dialog id="scheduleDialog" class="pilot-dialog"><div class="section-title"><h2 id="scheduleTitle">分组发布设置</h2><button type="button" data-close="scheduleDialog">关闭</button></div><form id="scheduleForm"><label>每号每天发布条数<input id="editDailyCount" type="number" min="1" max="10" value="3" required></label><div id="editTimes" class="pilot-time-inputs"></div><p class="section-hint">北京时间，每个时间点每号 1 条，组内账号依次错开 45 秒，生成提前 2 小时开始。修改从已创建排期之后的下一个完整日期生效，保存后显示具体日期。已创建的生成和发布任务继续原计划。</p><button type="submit" id="saveSchedule" class="primary-link">保存发布设置</button><p id="scheduleStatus" role="status"></p></form></dialog>
 <dialog id="pauseDialog" class="pilot-dialog"><h2 id="pauseTitle">暂停自动运营</h2><p id="pauseImpact" role="status"></p><fieldset id="pauseChoices"><legend>暂停范围</legend><label><input type="radio" name="pauseMode" value="planning" checked>只暂停新增排期，已排任务继续</label><label><input type="radio" name="pauseMode" value="pending">同时停止本地尚未提交的任务</label></fieldset><p class="section-hint">已进入提交或已交给官方中台的任务无法在这里撤回，仍可能发布。恢复后不会重新创建已停止的任务。</p><div class="pilot-actions"><button type="button" data-close="pauseDialog">返回</button><button type="button" id="confirmPause">确认暂停</button></div></dialog>
-</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260925-7"></script></body></html>
+</main><script src="/access.js"></script><script type="module" src="/psychology-autopilot.js?v=20260926-1"></script></body></html>

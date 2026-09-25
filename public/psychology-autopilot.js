@@ -6,6 +6,8 @@ const time = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone
 const STATUS = { active:'运行中', paused:'已暂停', ended:'已结束' };
 const SLOT = { creating:'创建中', created:'已创建排期', failed:'创建失败', skipped:'已跳过' };
 const ITEM = { queued:'等待制作', producing:'制作中', publishing:'提交 / 处理中', scheduled:'等待官方发布', published:'已发布', production_failed:'制作失败', publish_failed:'发布失败', cancelled:'已停止', missing:'结果待核对' };
+let selectedPeriod = 'today';
+const PERIOD_LABELS={today:'今天',yesterday:'昨天','7d':'近7天'};
 let data = null, loading = false, pendingPause = null, creating = false;
 const selectedGroups = new Set(), createdGroups = new Set(), groupSchedules = new Map();
 let defaultTimes = ['08:00','12:00','21:00'], editTimes = [], editingPilot = '', savingSchedule = false;
@@ -64,12 +66,13 @@ function notice(text, error = false) { $('#status').textContent = text; $('#stat
 function totals(c = {}) { return `计划 ${c.planned||0} · 已发布 ${c.published||0} · 制作 ${Number(c.queued||0)+Number(c.producing||0)} · 待发布 ${c.pending||0} · 失败 ${c.failed||0} · 已停止 ${c.stopped||0}${c.unknown ? ' · 待核对 '+c.unknown : ''}`; }
 async function load(quiet = false, refreshGroups = false) {
   if (loading || creating) return;
+  const period=selectedPeriod;
   loading = true; $('#reload').disabled = true; $('#refreshGroups').disabled = true;
   if (!quiet) notice(refreshGroups ? '正在更新账号分组与发布状态…' : '正在读取本地发布回执…');
   if (refreshGroups) { $('#groupDirectoryStatus').textContent='正在同步授权账号目录…'; $('#createButton').disabled=true; }
-  try { const next = await api(refreshGroups ? '?refreshGroups=1' : ''); data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
-  catch (error) { notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
-  finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); }
+  try { const query=(period==='today'?'':'period='+period)+(refreshGroups?(period==='today'?'':'&')+'refreshGroups=1':''); const next = await api(query?'?'+query:''); if(period!==selectedPeriod)return; data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
+  catch (error) { if(period!==selectedPeriod)return; notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
+  finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); if(period!==selectedPeriod)load(); }
 }
 function renderStrategyRules() {
   const strategy = $('#strategy').value || 'evolve', selected = data?.strategyRules?.[strategy];
@@ -123,12 +126,12 @@ function render() {
     '三种策略共用选题和停发规则；发布时间与每日数量按分组设置，策略只决定版本选择方式。',
     `连续 ${r.lowPosts} 条满24小时低于 ${r.lowViews} 播放，或连续 ${r.failStreak} 次发布失败，自动停发该号并停止本地尚未提交的任务。`,
   ].map(t=>'<li>'+esc(t)+'</li>').join('');
-  const sum = pilots.reduce((s,p)=>{ for(const [k,v] of Object.entries(p.today||{}))s[k]=(s[k]||0)+v;return s; },{});
+  const sum = pilots.reduce((s,p)=>{ for(const [k,v] of Object.entries(p.execution||p.today||{}))s[k]=(s[k]||0)+v;return s; },{});
   const active = pilots.filter(p=>p.status==='active').reduce((n,p)=>n+p.accounts.filter(a=>a.status==='active').length,0);
   const stopped = pilots.filter(p=>p.status!=='ended').reduce((n,p)=>n+p.accounts.filter(a=>a.status==='paused'||p.status==='paused').length,0);
-  $('#overview').innerHTML = [['运营账号',active],['今日已排',sum.planned||0],['制作中 / 待制作',(sum.producing||0)+(sum.queued||0)],['待发布 / 处理中',sum.pending||0],['已发布',sum.published||0],['失败 / 待核对',(sum.failed||0)+(sum.unknown||0)],['停发账号',stopped],['已停止任务',sum.stopped||0]].map(([label,n])=>`<div class="pilot-metric"><span>${label}</span><strong>${fmt(n)}</strong></div>`).join('');
+  $('#overview').innerHTML = [['当前运营账号',active],[PERIOD_LABELS[data.window?.period||'today']+'已排',sum.planned||0],['制作中 / 待制作',(sum.producing||0)+(sum.queued||0)],['待发布 / 处理中',sum.pending||0],['已发布',sum.published||0],['失败 / 待核对',(sum.failed||0)+(sum.unknown||0)],['当前停发账号',stopped],['已停止任务',sum.stopped||0]].map(([label,n])=>`<div class="pilot-metric"><span>${label}</span><strong>${fmt(n)}</strong></div>`).join('');
   const next = pilots.map(p=>p.nextCheckAt).filter(Boolean).sort((a,b)=>a-b)[0];
-  $('#freshness').textContent = `回执读取于 ${time(data.fetchedAt)} · 下次计划检查 ${time(next)}（北京时间，实际以后台调度为准）。今日数量为已创建任务，未成功创建的排期见下方异常。页面每 30 秒读取本地记录，不主动查询 TikTok。`;
+  $('#freshness').textContent = `回执读取于 ${time(data.fetchedAt)} · 下次计划检查 ${time(next)}（北京时间，实际以后台调度为准）。${PERIOD_LABELS[data.window?.period||'today']}（${data.window?.from||''} 至 ${data.window?.to||''}）数量为已创建任务，未成功创建的排期见下方异常。页面每 30 秒读取本地记录，不主动查询 TikTok。`;
   const alerts = [];
   for(const p of pilots) {
     if(p.lastRunError)alerts.push([esc(p.groupName),'最近检查异常',esc(p.lastRunError),`<a href="#${p.id}">查看日志并处理</a>`]);
@@ -139,16 +142,16 @@ function render() {
     if(p.status==='active' && p.lastRunAt && data.fetchedAt-p.lastRunAt>26*3600000)alerts.push([esc(p.groupName),'检查延迟','超过 26 小时没有自动检查，请核对后台运行情况。',`<a href="#${p.id}">立即检查</a>`]);
   }
   $('#attention').innerHTML = alerts.length ? `<p>${alerts.length} 项待核对 / 恢复中</p>`+table(['分组 / 账号','情况','原因 / 下一步','操作'],alerts.slice(0,30))+(alerts.length>30?'<p>先显示前 30 项，展开各组排期查看全部明细。</p>':'') : '<p class="section-hint">最近排期没有待处理异常。</p>';
-  $('#compare').innerHTML = pilots.length ? table(['分组 / 策略','状态','今日执行','近7天成熟作品','中位播放 / 破千率','最近检查','详情'],pilots.map(p=>[esc(p.groupName)+'<small>'+esc(p.strategyLabel)+'</small>',STATUS[p.status],esc(totals(p.today)),fmt(p.latest?.overview?.n),fmt(p.latest?.overview?.medianViews)+' / '+pct(p.latest?.overview?.potentialRate),time(p.lastRunAt),`<a href="#${p.id}">查看运营详情</a>`])) : '<p>创建运营计划后，会在这里显示各组执行和效果。</p>';
+  $('#compare').innerHTML = pilots.length ? table(['分组 / 策略','状态',PERIOD_LABELS[data.window?.period||'today']+'执行','近7天成熟作品','中位播放 / 破千率','最近检查','详情'],pilots.map(p=>[esc(p.groupName)+'<small>'+esc(p.strategyLabel)+'</small>',STATUS[p.status],esc(totals(p.execution||p.today)),fmt(p.latest?.overview?.n),fmt(p.latest?.overview?.medianViews)+' / '+pct(p.latest?.overview?.potentialRate),time(p.lastRunAt),`<a href="#${p.id}">查看运营详情</a>`])) : '<p>创建运营计划后，会在这里显示各组执行和效果。</p>';
   const opened = new Set([...document.querySelectorAll('#pilots details[open]')].map(d=>d.id));
   const slotBodies = new Map([...document.querySelectorAll('[data-slot-body]')].map(e=>[e.id,e.innerHTML]));
   $('#pilots').innerHTML = pilots.map(p=>{
     const actions = p.status==='ended' ? '' : `<button data-schedule="${p.id}">发布设置</button>` + (p.status==='active' ? `<button data-run="${p.id}">立即检查并排期</button><button data-pause="${p.id}">暂停…</button>` : `<button data-status="active" data-pilot="${p.id}">恢复运营</button><button data-pause="${p.id}">停止未提交任务…</button>`) + `<button data-status="ended" data-pilot="${p.id}">结束运营</button>`;
     const schedule = [...p.schedule].sort((a,b)=>b.slotAt-a.slotAt);
     return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>${esc(p.groupName)} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc((p.slots||[]).map(hm).join(' / '))}（北京时间）${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(p.pendingSlots.map(hm).join(' / '))+'，'+time(p.scheduleEffectiveAt)+' 起生效':''} · 运行至 ${time(p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
-    <h3>最近 12 个发布排期</h3>${schedule.length?schedule.map(s=>`<details class="pilot-slot" id="slot-${p.id}-${s.slotAt}" data-slot-details data-pilot="${p.id}" data-slot="${s.slotAt}"><summary>${time(s.slotAt)} · ${SLOT[s.status]||esc(s.status)}<span>${esc(totals(s.counts))}</span></summary>${s.detail?'<p class="pilot-error">'+esc(s.detail)+'</p>':''}<div id="body-${p.id}-${s.slotAt}" data-slot-body><button data-detail="${p.id}" data-slot="${s.slotAt}">读取内容明细</button></div></details>`).join(''):'<p>还没有排期。</p>'}
+    <h3>${PERIOD_LABELS[data.window?.period||'today']}发布排期</h3>${schedule.length?schedule.map(s=>`<details class="pilot-slot" id="slot-${p.id}-${s.slotAt}" data-slot-details data-pilot="${p.id}" data-slot="${s.slotAt}"><summary>${time(s.slotAt)} · ${SLOT[s.status]||esc(s.status)}<span>${esc(totals(s.counts))}</span></summary>${s.detail?'<p class="pilot-error">'+esc(s.detail)+'</p>':''}<div id="body-${p.id}-${s.slotAt}" data-slot-body><button data-detail="${p.id}" data-slot="${s.slotAt}">读取内容明细</button></div></details>`).join(''):'<p>所选时间没有排期。</p>'}
     <details id="accounts-${p.id}" class="ops-daily"><summary>账号状态（${p.accounts.length}）</summary>${table(['账号','状态','原因 / 暂停范围','操作'],p.accounts.map(a=>['@'+esc(a.name),a.status==='active'?(p.status==='active'?'参与排期':'随运营暂停'):'已停发',esc(a.reason||'—')+(a.status==='paused'?'<small>'+(a.stopPending?'本地未提交任务已停止':'仅停止新增排期')+'</small>':''),p.status==='ended'?'':a.status==='active'?`<button data-pause="${p.id}" data-account="${esc(a.connectionId)}">停发…</button>`:`<button data-pilot="${p.id}" data-account="${esc(a.connectionId)}" data-account-status="active">恢复</button>`]))}</details>
-    <details id="logs-${p.id}" class="ops-daily"><summary>运营日志与分析</summary>${p.latest?.findings?.length?'<ul>'+p.latest.findings.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul>':''}<ul class="pilot-log">${p.logs.map(l=>`<li class="is-${esc(l.kind)}"><time>${time(l.at)}</time>${esc(l.message)}</li>`).join('')}</ul></details></section>`;
+    <details id="logs-${p.id}" class="ops-daily"><summary>所选时间日志（最近60条）与最近分析</summary>${p.latest?.findings?.length?'<ul>'+p.latest.findings.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul>':''}<ul class="pilot-log">${p.logs.map(l=>`<li class="is-${esc(l.kind)}"><time>${time(l.at)}</time>${esc(l.message)}</li>`).join('')}</ul></details></section>`;
   }).join('');
   for(const id of opened){const d=document.getElementById(id);if(d)d.open=true;}
   for(const [id,html] of slotBodies){const el=document.getElementById(id);if(el&&opened.has(id.replace('body-','slot-')))el.innerHTML=html;}
@@ -235,5 +238,7 @@ $('#scheduleForm').addEventListener('submit',async e=>{
   finally{savingSchedule=false;$('#saveSchedule').disabled=false;for(const input of document.querySelectorAll('#scheduleForm input'))input.disabled=false;}
 });
 $('#reload').onclick=()=>load();
+$('#period').value=selectedPeriod;
+$('#period').addEventListener('change',()=>{selectedPeriod=$('#period').value;load();});
 setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load(true);},30000);
 load();

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -377,9 +377,37 @@ test('batched overview preserves owner, overlapping slot and per-pilot history b
  let rounds=0;const batch=f.db.batch.bind(f.db);f.db.batch=async statements=>{rounds++;return batch(statements);};
  const result=await (await f.api('GET')).json();
  assert.equal(rounds,2);assert.equal(result.pilots.length,2);
- for(const p of result.pilots){assert.equal(p.schedule.length,12);assert.equal(p.logs.length,60);assert.equal(p.latest.message,'daily-'+p.groupName.slice(-1));assert.ok(p.logs.every(l=>l.message.startsWith(p.groupName)));}
+ for(const p of result.pilots){assert.equal(p.schedule.length,1);assert.equal(p.logs.length,60);assert.equal(p.latest.message,'daily-'+p.groupName.slice(-1));assert.ok(p.logs.every(l=>l.message.startsWith(p.groupName)));}
  const a=result.pilots.find(p=>p.groupName==='group-0'),b=result.pilots.find(p=>p.groupName==='group-1');
  assert.equal(a.today.planned,1);assert.equal(a.today.published,1);assert.equal(a.today.failed,0);
  assert.equal(b.today.planned,2);assert.equal(b.today.failed,2);assert.equal(b.today.published,0);
+ assert.equal(f.requests.length,0);
+});
+
+
+test('autopilot period follows Beijing boundaries including seven complete calendar dates',()=>{
+ const now=at('2026-09-26','00:05');
+ assert.equal(autopilotViewWindow(undefined,now).start,at('2026-09-26','00:00'));
+ assert.equal(autopilotViewWindow('yesterday',now).end,at('2026-09-26','00:00'));
+ assert.equal(autopilotViewWindow('7d',now).start,at('2026-09-20','00:00'));
+ assert.throws(()=>autopilotViewWindow('all',now),/请选择/);
+});
+
+test('period selection includes all seven days beyond twelve slots and excludes outside slots and logs',async t=>{
+ const f=await pilotFixture(t),now=Date.now(),day=autopilotViewWindow('today',now).start,id='period-pilot';
+ f.sqlite.prepare("INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at) VALUES(?,'admin','g','Period','original','[{\"hour\":0,\"minute\":0},{\"hour\":1,\"minute\":0}]','paused',?,?,?)").run(id,now+DAY,now-8*DAY,now);
+ for(let d=-7;d<=1;d++)for(let h=0;h<2;h++){
+  const slot=day+d*DAY+h*HOUR,batch='period-b'+d+'-'+h;
+  f.sqlite.prepare('INSERT INTO psychology_publish_batches VALUES(?,?,?,?)').run(batch,'admin','{}',slot);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES(?,?,'created',?,?)").run(id,slot,batch,slot);
+  f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES(?,?,?,?,?,?)').run(batch,batch,'source','missing','a',slot/1000);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_log(autopilot_id,kind,message,created_at) VALUES(?,'status',?,?)").run(id,batch,slot);
+ }
+ for(const [period,n] of [['today',2],['yesterday',2],['7d',14]]){
+  const result=await(await f.api('GET','?period='+period)).json(),p=result.pilots[0];
+  assert.equal(p.schedule.length,n);assert.equal(p.execution.planned,n);assert.equal(p.logs.length,n);
+  assert.ok(p.schedule.every(s=>s.slotAt>=result.window.start&&s.slotAt<result.window.end));
+  assert.ok(p.attention.every(i=>i.scheduleAt>=result.window.start&&i.scheduleAt<result.window.end));
+ }
  assert.equal(f.requests.length,0);
 });

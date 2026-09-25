@@ -116,3 +116,24 @@ test('immediate first-day preparation is explicit and frozen across group creati
  h.node('#startNow').checked=true;h.node('#selectAllGroups').onclick();await submit(h);
  assert.equal(bodies.length,9);assert.ok(bodies.every(b=>b.startNow===true));
 });
+
+
+test('period defaults today and is retained for status refresh, polling and group refresh',async()=>{
+ const h=harness();await tick();assert.equal(h.node('#period').value,'today');
+ for(const period of ['yesterday','7d']){
+  h.node('#period').value=period;h.node('#period').listeners.change();await tick();assert.match(h.requests.at(-1).path,new RegExp('period='+period));
+  await h.node('#reload').onclick();assert.match(h.requests.at(-1).path,new RegExp('period='+period));
+  h.poll();await tick();assert.match(h.requests.at(-1).path,new RegExp('period='+period));
+ }
+ await h.node('#refreshGroups').onclick();assert.match(h.requests.at(-1).path,/period=7d&refreshGroups=1/);
+});
+
+test('switching period during a pending refresh discards old response and requests latest selection',async()=>{
+ const h=harness();await tick();
+ h.run('const originalFetch=fetch;let unblock;let gateOnce=true;fetch=async(...args)=>{if(gateOnce){gateOnce=false;await new Promise(resolve=>unblock=resolve);}return originalFetch(...args);};');
+ const pending=h.node('#reload').onclick();await tick();
+ h.node('#period').value='yesterday';h.node('#period').listeners.change();
+ h.node('#period').value='7d';h.node('#period').listeners.change();
+ h.run('unblock()');await pending;await tick();
+ assert.match(h.requests.at(-1).path,/period=7d/);assert.equal(h.run('selectedPeriod'),'7d');assert.equal(h.run('loading'),false);
+});
