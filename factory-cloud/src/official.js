@@ -517,7 +517,7 @@ async function buildModuleReport(env, db, store, searchParams, user) {
     groupId,
     projectId: liveProject.id,
     groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-  }));
+  }), accountRows);
   const livePayload = async () => ({
     module: liveProject.moduleKey,
     project: liveProject,

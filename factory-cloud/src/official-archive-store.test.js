@@ -195,3 +195,19 @@ test('operations warm path makes one aggregate batch read and never re-fetches r
  const response=await handlePsychologyOperations(new Request(url),f.env,url,{user:{role:'admin',sidebarModules:['psychology-ops-report']}});
  assert.equal(response.status,200,await response.text());assert.equal(batches,1);assert.equal(f.reads.length,0);assert.match(response.headers.get('server-timing'),/total;dur=/);
 });
+
+test('data overview reuses synchronized D1 projections without per-account object reads and keeps its scope',async t=>{
+ const f=await reportProjectionFixture(t);
+ const {upsertOfficialAccounts,loadVideosForAccounts,listLatestArchiveAccounts}=await import('./official-archive-store.js');
+ const {loadArchiveBundle}=await import('./ops-report-store.js');
+ const {computeGroupReport}=await import('../../scripts/official-group-report.js');
+ const now=Date.now(),videos=Array.from({length:90},(_,i)=>({id:'video'+i,createTime:Math.floor(now/1000)-i,title:'Post '+i,views:i*50,likes:i,comments:0,shareLink:'https://www.tiktok.com/@test/video/'+i}));
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:now,videos},{schema:'tiktok:b',latestSyncAt:now,videos:[{id:'other',createTime:now,views:999}]}]);
+ const raw=await loadVideosForAccounts(f.env,f.db,['tiktok:a'],80);f.reads.length=0;
+ const rows=await listLatestArchiveAccounts(f.db),cached=await loadArchiveBundle(f.env,f.db,['tiktok:a'],rows);
+ assert.equal(f.reads.length,0);assert.equal(cached.accountRows.length,1);assert.equal(cached.videosByAccount.has('tiktok:b'),false);assert.equal(cached.videosByAccount.get('tiktok:a').length,80);
+ const scoped=list=>list.map(v=>({...v,account:'tiktok:a',username:'a'}));
+ assert.deepEqual(computeGroupReport({videos:scoped(cached.videosByAccount.get('tiktok:a')),now}),computeGroupReport({videos:scoped(raw.get('tiktok:a')),now}));
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:now+1,videos:[{id:'new',createTime:now,views:5}]}]);
+ assert.equal((await loadArchiveBundle(f.env,f.db,['tiktok:a'])).videosByAccount.get('tiktok:a')[0].views,5);assert.equal(f.reads.length,0);
+});

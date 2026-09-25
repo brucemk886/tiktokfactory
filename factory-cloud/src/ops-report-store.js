@@ -1,7 +1,9 @@
 import { archiveAccountKeysForScope, publicState } from "../../scripts/official-account-group-store.js";
 import {
   listLatestArchiveAccounts,
-  loadVideosForAccounts,
+  loadReportVideosForAccounts,
+  reportVideoCacheQuery,
+  accountsFromLatestArchive,
 } from "./official-archive-store.js";
 import {
   computeGroupReport,
@@ -14,12 +16,20 @@ import {
 const PROJECT_GROUP_ID = "";
 const PROJECT_GROUP_NAME = "全部项目";
 
-export async function loadArchiveBundle(env, db, accountKeys = null) {
-  const accountRows = await listLatestArchiveAccounts(db);
+export async function loadArchiveBundle(env, db, accountKeys = null, knownAccountRows = null) {
+  const accountRows = knownAccountRows || await listLatestArchiveAccounts(db);
   const keys = Array.isArray(accountKeys)
     ? accountKeys
     : accountRows.map((row) => row.account_key);
-  const videosByAccount = await loadVideosForAccounts(env, db, keys, 80);
+  const wanted = new Set(keys);
+  const scopedRows = accountRows.filter(row => wanted.has(row.account_key));
+  // Reuse the synchronized D1 projection instead of rereading one R2 object per
+  // account on every overview visit. The shared loader validates timestamps and
+  // repairs legacy misses once; current scope is always supplied by the caller.
+  const cached = await reportVideoCacheQuery(db, scopedRows.map(row => row.account_key)).all();
+  const projected = await loadReportVideosForAccounts(env, db, accountsFromLatestArchive(scopedRows), cached.results || []);
+  // Keep this existing overview's latest-80 scope unchanged by the fast path.
+  const videosByAccount = new Map([...projected].map(([key, videos]) => [key, videos.slice(0, 80)]));
   return {
     accountRows: Array.isArray(accountKeys)
       ? accountRows.filter((row) => keys.includes(row.account_key))
