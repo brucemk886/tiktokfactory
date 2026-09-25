@@ -19,6 +19,9 @@ test('SQL reports: every panel, long-term metrics, delta correction, pagination 
  await refreshReportFacts(f.db);
  const first=await read(f);assert.equal(first.autopilot.summary.planned,12);assert.equal(first.autopilot.summary.synced,12);assert.equal(first.autopilot.summary.views,66000);assert.equal(first.autopilot.summary.medianViews,5500);assert.equal(first.framework.overview.current.n,12);
  for(const panel of ['accounts','content','strategy','details','batches','groups']){const data=await read(f,'panel='+panel);assert.equal(data.panel,panel);}
+ f.sqlite.exec("UPDATE ops_task_facts SET title='Readable test title',copy_hash='internal-hash'");
+ assert.equal((await read(f,'panel=details&mode=copy')).comparisons[0].label,'Readable test title');
+ assert.equal((await read(f,'panel=details&mode=copy')).comparisons[0].key,'internal-hash');
  const details=await read(f,'panel=details&key=v1:tiktok:200');assert.equal(details.items.length,10);assert.equal(details.pagination.total,12);assert.equal((await read(f,'panel=details&key=v1:tiktok:200&page=2')).items.length,2);
  await f.db.batch([reportVideoFactWrite(f.db,'a',now+1,[{id:'v0',createTime:now,views:1234}])]);
  assert.equal((await read(f)).autopilot.summary.views,67234);

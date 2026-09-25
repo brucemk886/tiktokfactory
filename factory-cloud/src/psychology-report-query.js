@@ -108,9 +108,9 @@ export async function handleScalableOperations(request,env,url,session){
    if(panel==='details'&&!url.searchParams.has('key')){
     const dimension={source:'source',copy:'copy_hash',style:'style'}[mode];if(!dimension)return errorJson('对比维度无效。',400);
     const grouped=cte+",detail_samples AS (SELECT *,"+dimension+" comparison_key,'unknown' quadrant FROM rows)";
-    const groupedSQL=append(grouped,summarySQL('detail_samples','comparison_key'));
+    const groupedSQL=grouped+','+summaryCTE('detail_stats','detail_samples','comparison_key')+`,detail_labels AS (SELECT comparison_key,max(nullif(title,'')) label FROM detail_samples GROUP BY comparison_key) SELECT s.*,l.label FROM detail_stats s LEFT JOIN detail_labels l USING(comparison_key)`;
     const [rows,total]=await db.batch([run(groupedSQL+` ORDER BY medianViews DESC,comparison_key LIMIT ${SIZE} OFFSET ${offset}`,bind),run(cte+` SELECT count(DISTINCT ${dimension}) n FROM rows WHERE state='published' AND views IS NOT NULL`,bind)]);
-    data.comparisons=rows.results.map(r=>({...r,key:r.comparison_key,label:r.comparison_key||'历史记录未保存'}));data.pagination=paging([],total.results[0].n,page);
+    data.comparisons=rows.results.map(r=>({...r,key:r.comparison_key,label:(mode==='style'?r.comparison_key:r.label)||'历史记录未保存'}));data.pagination=paging([],total.results[0].n,page);
    }else{
     const dimension={source:'source',copy:'copy_hash',style:'style'}[mode];if(!dimension)return errorJson('对比维度无效。',400);
     const condition=panel==='details'?' WHERE '+dimension+'=?':'';const bindings=panel==='details'?[...bind,url.searchParams.get('key')]:bind;
