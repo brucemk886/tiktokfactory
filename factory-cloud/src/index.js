@@ -1,3 +1,4 @@
+import {serveUiAsset,versionPageAssets} from './ui-assets.js';
 import {handlePsychologyManagement,MANAGEMENT_API} from './psychology-management-api.js';
 import {PSYCHOLOGY_COPY_API} from './psychology-copy-integration.js';
 import {handlePhotoFactory} from './photo-factory.js';
@@ -44,6 +45,9 @@ export default {
         return json({ ok: true, service: "tiktok-factory", time: Date.now() });
       }
 
+      const staticResponse = await serveUiAsset(request, env, url);
+      if (staticResponse) return staticResponse;
+
       const authResponse = await handleAuth(request, env, url);
       if (authResponse) return authResponse;
 
@@ -72,10 +76,10 @@ export default {
         return errorJson("此接口尚未迁到工厂云，或需要工人机处理。", 501);
       }
 
-      const session = await getSession(request, env.DB);
-      if (!isPublicPath(url.pathname) && request.method === "GET") {
-        if (!(await hasUsers(env.DB))) return redirect("/setup");
-        if (!session) return redirect("/login");
+      if (!["GET","HEAD"].includes(request.method)) return errorJson("Method not allowed",405);
+      if (!isPublicPath(url.pathname)) {
+        const session = await getSession(request, env.DB);
+        if (!session) return redirect(await hasUsers(env.DB) ? "/login" : "/setup");
         if (!canAccessPath(session.user, url.pathname)) {
           const home = homePathForUser(session.user);
           if (home && home !== url.pathname) return redirect(home);
@@ -96,8 +100,10 @@ export default {
       }
       if (!env.ASSETS) return errorJson("静态资源未绑定。", 500);
       const page = pageFileFor(url.pathname);
-      if (page) return env.ASSETS.fetch(rewriteAssetRequest(request, url, page));
-      return env.ASSETS.fetch(request);
+      const assetRequest = page ? rewriteAssetRequest(request,url,page) : new Request(request);
+      assetRequest.headers.delete("If-None-Match");
+      assetRequest.headers.delete("If-Modified-Since");
+      return versionPageAssets(await env.ASSETS.fetch(assetRequest),request);
     } catch (error) {
       const status = Number(error.statusCode || error.status) || 500;
       return errorJson(error.message || "工厂云处理失败。", status);

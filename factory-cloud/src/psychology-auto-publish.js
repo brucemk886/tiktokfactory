@@ -60,8 +60,8 @@ async function lookupAccountHandles(db, connectionIds) {
     const bare = id.replace(/^tiktok:/i, '');
     return [bare, `tiktok:${bare}`];
   }))];
-  const rows = await db.prepare(`SELECT account_key, label, profile_json FROM official_accounts_latest WHERE account_key IN (${keys.map(() => '?').join(',')})`)
-    .bind(...keys).all();
+  const rows = await db.prepare(`SELECT account_key, label, profile_json FROM official_accounts_latest WHERE account_key IN (SELECT value FROM json_each(?))`)
+    .bind(JSON.stringify(keys)).all();
   const handles = new Map();
   for (const row of rows.results) {
     const handle = accountHandle(readJsonValue(row.profile_json).username, row.label);
@@ -338,7 +338,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
             percent: row.percent || 0, message: submitted ? '已提交官方发布中台' : row.ready_json!=='{}' && row.publish_group_id ? '素材已就绪，等待整组提交' : row.message, error: submitted ? '' : row.error || result.publishError || '', type: row.type };
         }) });
     }
-    return json({ batches: result, pagination:{page,pageSize,total,hasMore:page*pageSize<total} });
+    const handles=await lookupAccountHandles(env.DB,allItems.results.map(row=>row.connection_id));
+    return json({ batches: result, templates:AUTO_TEMPLATES, accountHandles:Object.fromEntries(handles), pagination:{page,pageSize,total,hasMore:page*pageSize<total} });
   }
   const remove=url.pathname.match(/^\/api\/psychology-auto-publish\/([^/]+)$/);
   if(remove && request.method==='DELETE'){

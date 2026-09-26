@@ -3,7 +3,7 @@ ensureConsoleAssets();
 
 (async function guard() {
   try {
-    const response = await fetch("/api/auth/me", { cache: "no-store" });
+    const response = await fetch("/api/auth/me?view=navigation", { cache: "no-store" });
     if (!response.ok) return location.assign("/login");
     const { user, home, sidebarModules } = await response.json();
     if (!Array.isArray(sidebarModules)) throw new Error("Sidebar catalog is unavailable.");

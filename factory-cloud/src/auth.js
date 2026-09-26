@@ -61,13 +61,13 @@ export async function handleAuth(request, env, url) {
     return json({ ok: true }, 200, { "Set-Cookie": clearSessionCookie(url.protocol === "https:") });
   }
 
-  const session = await getSession(request, env.DB);
   if (method === "GET" && pathname === "/api/auth/me") {
+    const session = await getSession(request, env.DB);
     if (!session) return errorJson("请先登录。", 401);
     return json({
       user: session.user,
       home: homePathForUser(session.user),
-      profiles: session.user.role === "admin" ? await listProfiles(env.DB) : [],
+      profiles: url.searchParams.get("view")!=="navigation" && session.user.role === "admin" ? await listProfiles(env.DB) : [],
       sidebarModules: publicSidebarModules()
     });
   }

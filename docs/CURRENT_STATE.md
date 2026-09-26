@@ -1,5 +1,7 @@
 # Current State
 
+- Shared UI assets now bypass D1 authentication through a tracked code/style/icon allowlist, with content-version browser caching and private HTML no-store. Authorization remains fresh per API/page request. Publish creation options/accounts load on dialog open, while list labels come from local records. Run `npm run assets:manifest --prefix factory-cloud` after UI JS/CSS/icon edits and commit the manifest before deploying. See docs/handoffs/2026-09-26-backend-loading.md.
+
 - Psychology effects, operations, autopilot and visual styles now have external GET/POST/PATCH management APIs with a separate scoped admin key. Reports support editable query presets (raw metrics read-only); new autopilots start paused; managed style definitions are frozen into future task payloads. Each page has an API entry and copyable rules. See docs/psychology-management-api.md.
 
 - External psychology APIs reuse existing keys: template topics GET all banks / single topic and revision-guarded PATCH; copy-library GET originals/owned rewrites and revision-guarded PATCH at `/api/integrations/psychology/copy-library`. Original edits synchronize source text and invalidate stale photo caches; active extraction is protected. Existing peer-hit GET worklist and POST imports stay compatible. No delete, publishing or pending-review approval is exposed. See docs/psychology-copy-library-api.md and docs/psychology-template-topics-api.md.

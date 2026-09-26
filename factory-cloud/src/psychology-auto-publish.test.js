@@ -902,14 +902,18 @@ test('batch listing uses durable item receipts after job cleanup without submitt
 });
 
 
-test('listing multiple batches uses five SQL statements for the whole page',async t=>{
-  const {call,db}=await fixture(t);
+test('listing multiple batches uses six bounded queries including local account labels',async t=>{
+  const {call,db,sqlite}=await fixture(t);
+  sqlite.prepare("INSERT INTO official_accounts_latest(account_key,profile_json) VALUES (?,?)").run('tiktok:a',JSON.stringify({username:'local-alpha'}));
+  sqlite.prepare("INSERT INTO official_accounts_latest(account_key,profile_json) VALUES (?,?)").run('tiktok:outside',JSON.stringify({username:'private-outside'}));
   await call('POST',input());await call('POST',input());
   const original=db.prepare.bind(db),queries=[];
   db.prepare=sql=>{queries.push(sql);return original(sql);};
   const data=await(await call()).json();
   assert.equal(data.batches.length,2);
-  assert.equal(queries.length,5);
+  assert.equal(queries.length,6);
+  assert.equal(data.accountHandles.a,"local-alpha");assert.equal(data.accountHandles.outside,undefined);
+  assert.ok(data.templates.video.length>0);
   for(const batch of data.batches){
     assert.equal(batch.items.length,3);
     assert.ok(batch.items.every(item=>item.id.startsWith(batch.id)));

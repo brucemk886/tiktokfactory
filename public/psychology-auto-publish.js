@@ -137,9 +137,9 @@ for(const [selector,action] of [['#selectVisibleAccounts','select'],['#clearVisi
   });
 }
 function accountName(id) {
-  const a=state.accounts.find(a=>String(a.connectionId||a.id)===String(id));
+  const a=state.accounts.find(a=>String(a.connectionId||a.id)===String(id))||(state.batchHandles?.[id]?{username:state.batchHandles[id]}:null);
   const username=String(a?.username||'').trim().replace(/^@+/, '');
-  return username?'@'+username:a?.displayName||a?.label||(state.accountsLoaded?'账号信息不可用':'账号加载中…');
+  return username?'@'+username:a?.displayName||a?.label||(state.accountsLoading?'账号加载中…':'账号信息不可用');
 }
 function summary() {
   const ids=selected(), count=Number($('#count').value)||0;
@@ -201,7 +201,9 @@ async function loadBatches(page=batchPage) {
   const total=data.pagination?.total??(data.batches||[]).length,pageSize=data.pagination?.pageSize||10,pages=Math.max(1,Math.ceil(total/pageSize));
   if(page>pages)return loadBatches(pages);
   batchPage=page;batchHasMore=Boolean(data.pagination?.hasMore);
-  const signature=JSON.stringify(data.batches||[]),changed=signature!==state.lastBatchJSON;state.lastBatchJSON=signature;
+  state.batchHandles=data.accountHandles||{};
+  if(data.templates)state.templates=data.templates;
+  const signature=JSON.stringify([data.batches||[],state.batchHandles]),changed=signature!==state.lastBatchJSON;state.lastBatchJSON=signature;
   state.batches=data.batches||[];state.batchesLoaded=true;state.batchesError=false;
   $('#batchPrev').disabled=batchPage<=1;$('#batchNext').disabled=!data.pagination?.hasMore;
   $('#batchPage').textContent='第 '+batchPage+' / '+pages+' 页 · 共 '+total+' 个批次 · 每页 '+pageSize+' 个';
@@ -263,6 +265,7 @@ $('#batchDetailBody').addEventListener('click',handleBatchAction);
 $('#batchDetailItems').addEventListener('click',handleBatchAction);
 $('#batchForm').addEventListener('submit',async event=>{
   event.preventDefault();if(state.busy)return;
+  if(!state.optionsLoaded)return message('请等待题库选项加载完成，或重新打开新建任务重试。',true);
   if(state.accountsLoading||state.accountsMedia!==state.mediaType)return message('请等待当前内容类型的发布账号加载完成，或点击刷新账号重试。',true);
   if(state.mediaType==='video'&&!state.canUseTopics)return message('当前账号没有模板题库权限，请联系管理员开通后创建视频任务。',true);
   const ids=selected();
@@ -324,7 +327,7 @@ function renderSelectedBatch(){
 function detailTab(items){$('#batchDetailBody').hidden=items;$('#batchDetailItems').hidden=!items;$('#detailOverviewTab').setAttribute('aria-selected',String(!items));$('#detailItemsTab').setAttribute('aria-selected',String(items));$('#detailOverviewTab').tabIndex=items?-1:0;$('#detailItemsTab').tabIndex=items?0:-1;}
 $('#detailOverviewTab').addEventListener('click',()=>detailTab(false));$('#detailItemsTab').addEventListener('click',()=>detailTab(true));
 for(const id of ['detailOverviewTab','detailItemsTab'])$('#'+id).addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const items=e.key==='End'||(e.key!=='Home'&&id==='detailOverviewTab');detailTab(items);$('#'+(items?'detailItemsTab':'detailOverviewTab')).focus();}});
-$('#newBatch').addEventListener('click',()=>{$('#photoOptions').open=false;$('#createBatchDialog').showModal();$('#batchName').focus();});
+$('#newBatch').addEventListener('click',async()=>{$('#photoOptions').open=false;$('#createBatchDialog').showModal();$('#batchName').focus();try{await loadCreation();}catch(e){message(e.message,true);}});
 $('#closeCreateBatch').addEventListener('click',()=>{if(!state.busy)$('#createBatchDialog').close();});
 $('#createBatchDialog').addEventListener('cancel',e=>{if(state.busy)e.preventDefault();});
 $('#closeBatchDetail').addEventListener('click',()=>$('#batchDetail').close());
@@ -332,15 +335,22 @@ $('#batchDetail').addEventListener('close',()=>{document.querySelector('[data-ba
 $('#batches').addEventListener('click',event=>{const button=event.target.closest('[data-batch-open]');if(!button)return;selectedBatchId=button.dataset.batchOpen;renderSelectedBatch();detailTab(false);$('#batchDetail').showModal();});
 $('#batchSearch').addEventListener('input',renderBatches);$('#batchMedia').addEventListener('change',renderBatches);
 const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
-// Task-list loading is independent of creation-form options and account lookups.
-const initialLoads=await Promise.allSettled([
-  loadBatches(),
-  loadAccounts(),
-  (async()=>{
+// Load creation-only data when the dialog opens, never on list navigation.
+let creationPromise;
+async function loadCreation(){
+ if(creationPromise)return creationPromise;
+ creationPromise=(async()=>{
+  const results=await Promise.allSettled([
+   state.accountsLoaded&&state.accountsMedia===state.mediaType?Promise.resolve():loadAccounts(),
+   state.optionsLoaded?Promise.resolve():(async()=>{
     const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,libraryRewrites:data.libraryRewrites,topicCounts:data.topicCounts,canUseTopics:data.canUseTopics});
     if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
-    renderTemplates();renderBatches();
-  })(),
-]);
-for(const result of initialLoads)if(result.status==='rejected')message(result.reason.message,true);
+    state.optionsLoaded=true;renderTemplates();renderBatches();
+   })(),
+  ]);
+  const error=results.find(r=>r.status==='rejected');if(error)throw error.reason;
+ })();
+ try{await creationPromise;}finally{creationPromise=null;}
+}
+try{await loadBatches();}catch(e){message(e.message,true);}
 setInterval(()=>{if(!document.hidden)loadBatches().catch(e=>message(e.message,true));},15000);
