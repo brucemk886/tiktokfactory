@@ -8,14 +8,14 @@ const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',impo
 function harness(accountsPromise, failed=false, options={}, batchesPromise=null, optionsPromise=null) {
   const nodes=new Map();
   function node(selector) {
-    if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'peer':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},setAttribute(name,value){this[name]=value;},focus(){},showModal(){this.open=true;},close(){this.open=false;},addEventListener(type,fn){this.listeners[type]=fn;}});
+    if(!nodes.has(selector))nodes.set(selector,{value:selector==='#sourceType'?'topic-bank':selector==='#template'?'psychology':selector==='#count'?'3':'',innerHTML:'',textContent:'',listeners:{},querySelectorAll:()=>[],classList:{toggle(){}},setAttribute(name,value){this[name]=value;},focus(){},showModal(){this.open=true;},close(){this.open=false;},addEventListener(type,fn){this.listeners[type]=fn;}});
     return nodes.get(selector);
   }
   const mediaButtons=['video','photo'].map(media=>({dataset:{media},classList:{toggle(){}},setAttribute(){},addEventListener(type,fn){this[type]=fn;}}));
   let accounts=accountsPromise;
   const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:false,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
+  const context=vm.createContext({mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
   const ready=vm.runInContext('(async()=>{'+source+'})()',context);
   return {node,ready,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
 }
@@ -139,15 +139,17 @@ test('concrete topic banks display counts, synchronize renderer both ways and su
  assert.match(h.node('#sourceHint').textContent,/已启用 11 条，未使用 8 条/);
 });
 
-test('peer source, photo mode and missing topic permission hide the bank selector',async()=>{
+test('video always uses topics; photo remains separate and missing permission cannot submit',async()=>{
  const h=harness(Promise.resolve([]),false,topicOptions);await h.ready;
  h.node('#template').value='psychology';chooseSource(h,'topic-bank');
- chooseSource(h,'peer');assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#templateField').hidden,false);
+ chooseSource(h,'peer');assert.equal(h.node('#sourceType').value,'topic-bank');assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#templateField').hidden,true);
  chooseSource(h,'topic-bank');await h.mediaButtons[1].click();
  assert.equal(h.node('#topicBankField').hidden,true);assert.equal(h.node('#templateField').hidden,false);assert.equal(h.node('#unusedField').hidden,true);
  await h.mediaButtons[0].click();assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#templateField').hidden,true);
- const denied=harness(Promise.resolve([]));await denied.ready;chooseSource(denied,'topic-bank');
- assert.equal(denied.node('#topicBankField').hidden,true);assert.equal(denied.node('#sourceType').value,'copy-library');
+ const denied=harness(Promise.resolve(grouped),false,{canUseTopics:false});await denied.ready;
+ assert.equal(denied.node('#sourceType').value,'topic-bank');assert.match(denied.node('#sourceHint').textContent,/没有模板题库权限/);
+ denied.node('#selectVisibleAccounts').listeners.click();await denied.node('#batchForm').listeners.submit({preventDefault(){}});
+ assert.match(denied.node('#message').textContent,/没有模板题库权限/);assert.equal(denied.requests.filter(r=>r.method==='POST').length,0);
 });
 
 test('mismatched bank and renderer cannot submit an unintended topic bank',async()=>{
@@ -170,7 +172,7 @@ test('photo UI defaults to random per post and creative page no longer assigns a
  assert.match(creative,/psychology-ops-report\?tab=content/);
 });
 
-for(const media of ['photo','video'])for(const source of ['copy-library','copy-bank'])test(media+' submits library source and preserves copy reuse controls after submission: '+source,async()=>{
+for(const media of ['photo'])for(const source of ['copy-library','copy-bank'])test(media+' submits library source and preserves copy reuse controls after submission: '+source,async()=>{
  const h=harness(Promise.resolve(grouped),false,{libraryCounts:{photo:8,video:3}});await h.ready;
  if(media==='photo')await h.mediaButtons[1].click();
  h.node('#rewriteCopy').checked=true;
@@ -277,4 +279,18 @@ test('custom batch dates wait for a valid applied range',async()=>{
  h.node('#batchStartDate').value='2026-09-22';h.node('#batchEndDate').value='2026-09-21';h.node('#applyBatchDates').listeners.click();assert.equal(h.requests.length,count);
  h.node('#batchEndDate').value='2026-09-22';h.node('#applyBatchDates').listeners.click();await tick();
  assert.match(h.requests.at(-1).path,/range=custom&startDate=2026-09-22&endDate=2026-09-22/);assert.equal(h.node('#queueMessage').textContent,'');
+});
+
+
+test('new video form exposes only template topics and ignores stale source values',async()=>{
+ const html=fs.readFileSync(new URL('../public/psychology-auto-publish.html',import.meta.url),'utf8');
+ const options=html.match(/<select id="sourceType">([\s\S]*?)<\/select>/)[1];
+ assert.equal((options.match(/<option /g)||[]).length,1);assert.match(options,/value="topic-bank"/);
+ const h=harness(Promise.resolve(grouped),false,topicOptions);await h.ready;
+ assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#libraryMediaField').hidden,true);
+ filterGroup(h,'g2');h.node('#selectVisibleAccounts').listeners.click();
+ h.node('#sourceType').value='copy-library';
+ await h.node('#batchForm').listeners.submit({preventDefault(){}});
+ const post=h.requests.find(r=>r.path==='/api/psychology-auto-publish'&&r.method==='POST');
+ assert.equal(post.body.sourceType,'topic-bank');assert.equal(post.body.template,'psychology');
 });

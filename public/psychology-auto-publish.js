@@ -23,12 +23,12 @@ function renderTemplates() {
   if(extras){extras.hidden=state.mediaType!=='photo';extras.open=false;}
 }
 
-function sourceType(){return (state.mediaType==='photo'?$('#photoSource').value:$('#sourceType').value)||'peer';}
+function sourceType(){return state.mediaType==='photo'?($('#photoSource').value||'library'):'topic-bank';}
 function renderSources(){
   one.sync();
   $('#sourceTypeField').hidden=state.mediaType!=='video';
   $('#photoSourceField').hidden=state.mediaType!=='photo';
-  if(!state.canUseTopics&&$('#sourceType').value==='topic-bank')$('#sourceType').value='copy-library';
+  $('#sourceType').value='topic-bank';
   $('#sourceType option[value="topic-bank"]').disabled=!state.canUseTopics;
   const bank=sourceType()==='topic-bank',evolving=sourceType()==='library',fromLibrary=['copy-bank','copy-library','library'].includes(sourceType()),previous=$('#selection').value;
   $('#libraryMediaField').hidden=sourceType()!=='copy-library';
@@ -58,6 +58,7 @@ function renderSources(){
   const c=state.topicCounts?.[$('#template').value]||{};
   const label=banks.find(t=>t.id===$('#topicBank').value)?.label||'';
   $('#sourceHint').textContent=evolving?'从文案库图文爆款抽取：已提取原文 '+(state.libraryCounts?.photo||0)+' 篇，启用的改写版本 '+(state.libraryRewrites||0)+' 个。每篇先用原版，原版攒够 3 条满 24 小时的数据后开始试改写版本；表现最好的版本拿约 70%，其余继续试新版本；平均播放低于原版一半的改写不再抽。同一账号不会重复发同一篇爆款（原版或任一改写）。数据每天 0 点、8 点更新。':sourceType()==='copy-library'?'复用已提取文字（图文 '+(state.libraryCounts?.photo||0)+' 篇 / 视频 '+(state.libraryCounts?.video||0)+' 篇），不重复获取原素材。图文优先按原分页或视频口播生成，最多6页；视频以正文编排模板，最多5000字符。题目揭晓评论仍需选择模板题库。':sourceType()==='copy-bank'?'从已启用的改写版本抽取。图文直接使用已保存分页；视频以版本正文为依据生成。':bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
+  if(bank&&!state.canUseTopics)$('#sourceHint').textContent='当前账号没有模板题库权限，请联系管理员开通后创建视频任务。';
 }
 $('#sourceType').addEventListener('change',renderSources);
 $('#styleId').innerHTML=VISUAL_STYLES.map(s=>`<option value="${s.id}">${s.label}</option>`).join('');
@@ -263,6 +264,7 @@ $('#batchDetailItems').addEventListener('click',handleBatchAction);
 $('#batchForm').addEventListener('submit',async event=>{
   event.preventDefault();if(state.busy)return;
   if(state.accountsLoading||state.accountsMedia!==state.mediaType)return message('请等待当前内容类型的发布账号加载完成，或点击刷新账号重试。',true);
+  if(state.mediaType==='video'&&!state.canUseTopics)return message('当前账号没有模板题库权限，请联系管理员开通后创建视频任务。',true);
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
