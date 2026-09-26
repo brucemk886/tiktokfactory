@@ -54,18 +54,15 @@ CREATE INDEX photo_job_copy ON photo_jobs(copy_id,state);
 CREATE UNIQUE INDEX photo_job_video ON photo_jobs(connection_id,video_id) WHERE video_id<>'';
 -- Guards apply only to new tables. Legacy jobs/pilots are never rewritten.
 CREATE TRIGGER photo_pilot_start_guard BEFORE UPDATE OF status ON photo_pilots WHEN NEW.status='active' BEGIN
- SELECT CASE WHEN EXISTS(SELECT 1 FROM psychology_autopilots p WHERE p.status IN ('active','paused') AND p.ends_at>CAST(strftime('%s','now') AS INTEGER)*1000 AND
- (p.group_id=NEW.group_id OR EXISTS(SELECT 1 FROM psychology_autopilot_accounts a WHERE a.autopilot_id=p.id AND a.connection_id IN(SELECT json_extract(value,'$.id') FROM json_each(NEW.accounts_json)))))
- THEN RAISE(ABORT,'账号仍被旧心理学自动运营占用') END;
- SELECT CASE WHEN EXISTS(SELECT 1 FROM photo_pilots p WHERE p.id<>NEW.id AND p.status IN ('active','paused') AND
- (p.group_id=NEW.group_id OR EXISTS(SELECT 1 FROM json_each(p.accounts_json) a WHERE json_extract(a.value,'$.id') IN(SELECT json_extract(value,'$.id') FROM json_each(NEW.accounts_json)))))
- THEN RAISE(ABORT,'账号已被其他图文测试占用') END;
+ SELECT RAISE(ABORT,'账号仍被旧心理学自动运营占用') WHERE EXISTS(SELECT 1 FROM psychology_autopilots p WHERE p.status IN ('active','paused') AND p.ends_at>CAST(strftime('%s','now') AS INTEGER)*1000 AND
+ (p.group_id=NEW.group_id OR EXISTS(SELECT 1 FROM psychology_autopilot_accounts a WHERE a.autopilot_id=p.id AND a.connection_id IN(SELECT json_extract(value,'$.id') FROM json_each(NEW.accounts_json)))));
+ SELECT RAISE(ABORT,'账号已被其他图文测试占用') WHERE EXISTS(SELECT 1 FROM photo_pilots p WHERE p.id<>NEW.id AND p.status IN ('active','paused') AND
+ (p.group_id=NEW.group_id OR EXISTS(SELECT 1 FROM json_each(p.accounts_json) a WHERE json_extract(a.value,'$.id') IN(SELECT json_extract(value,'$.id') FROM json_each(NEW.accounts_json)))));
 END;
 CREATE TRIGGER photo_job_insert_guard BEFORE INSERT ON photo_jobs BEGIN
- SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM photo_pilots p JOIN photo_directions d ON d.id=p.direction_id JOIN photo_copies c ON c.id=NEW.copy_id
+ SELECT RAISE(ABORT,'图文方向、文案或运营状态已变化') WHERE NOT EXISTS(SELECT 1 FROM photo_pilots p JOIN photo_directions d ON d.id=p.direction_id JOIN photo_copies c ON c.id=NEW.copy_id
  WHERE p.id=NEW.pilot_id AND p.status='active' AND d.enabled=1 AND d.owner=NEW.owner AND d.id=NEW.direction_id
- AND c.owner=NEW.owner AND c.direction_id=NEW.direction_id AND c.source_id=NEW.source_id AND c.enabled=1)
- THEN RAISE(ABORT,'图文方向、文案或运营状态已变化') END;
+ AND c.owner=NEW.owner AND c.direction_id=NEW.direction_id AND c.source_id=NEW.source_id AND c.enabled=1);
 END;
 ALTER TABLE photo_jobs ADD COLUMN assets_cleaned INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX photo_job_cleanup ON photo_jobs(state,assets_cleaned,updated_at);

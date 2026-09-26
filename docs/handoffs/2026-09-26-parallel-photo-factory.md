@@ -26,6 +26,7 @@ Add a photo-only, direction-configurable content factory next to the existing ps
 - Desktop 1440 and mobile 390 DOM bounds showed no horizontal overflow. Browser screenshot transport timed out; actual locally generated card was separately inspected. No screenshot-based whole-page visual QA claim.
 
 ## Release / unfinished
+Initial deploy stopped safely: transient Cloudflare 7403, then D1 rejected nested CASE trigger statements as incomplete SQL. Replaced trigger expressions with the existing SELECT RAISE(...) WHERE pattern; all 19 focused tests passed again.
 Commit, push main, guarded deploy and live read-only verification follow this handoff. No production direction/copy/pilot is created by deployment. No migration or old-task cutover is authorized yet.
 
 ## Next step
