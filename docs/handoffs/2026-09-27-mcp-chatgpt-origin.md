@@ -16,3 +16,6 @@ Real provider test runs the complete registration→authorization landing→same
 
 ## Next step
 After deployment, user restarts Connect in ChatGPT from the MCP app page; stale consent pages should be closed. If their browser still fails, capture the exact failing request stage before changing any additional origin policy.
+
+## Deployment evidence
+Main 2910d4f deployed with npm run deploy from a clean synchronized main checkout. Worker version e8eba39d-6ed9-44b0-b8b2-ce1a0435e11c. Live ChatGPT-origin discovery and auth landing returned 200, MCP preflight 204, unauthenticated MCP 401 with exact-origin CORS. Evil origin and cross-origin consent POST remained 403. User must retry their actual ChatGPT connection to confirm browser completion.
