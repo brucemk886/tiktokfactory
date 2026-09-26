@@ -129,6 +129,12 @@ async function loadReport() {
     if (state.groupId) query.set("group", state.groupId);
     if (state.fromKey) query.set("from", state.fromKey);
     if (state.toKey) query.set("to", state.toKey);
+    const publishQuery = new URLSearchParams(query);
+    publishQuery.set("view", "publish");
+    // Start both reads together; slow receipts never delay rendering analytics.
+    const publishPromise = fetch(`/api/official-tiktok/ops-report?${publishQuery}`, { cache: "no-store", signal: controller.signal })
+      .then(async response => ({ ok: response.ok, data: await response.json() }))
+      .catch(() => ({ ok: false, data: {} }));
     const response = await fetch(`/api/official-tiktok/ops-report?${query}`, { cache: "no-store", signal: controller.signal });
     const data = await response.json().catch(() => ({}));
     if (requestId !== reportRequest) return;
@@ -145,7 +151,7 @@ async function loadReport() {
     state.pages = { high: 1, low: 1, normal: 1 };
     render();
     if (data.publishStatus === "pending" && data.report?.enabled) {
-      void loadPublishOutcome(query, requestId, controller.signal);
+      void loadPublishOutcome(publishPromise, requestId, controller.signal);
     }
   } catch (error) {
     if (requestId !== reportRequest || controller.signal.aborted) return;
@@ -154,13 +160,11 @@ async function loadReport() {
   }
 }
 
-async function loadPublishOutcome(query, requestId, signal) {
-  query.set("view", "publish");
+async function loadPublishOutcome(publishPromise, requestId, signal) {
   try {
-    const response = await fetch(`/api/official-tiktok/ops-report?${query}`, { cache: "no-store", signal });
-    const data = await response.json().catch(() => ({}));
+    const { ok, data } = await publishPromise;
     if (requestId !== reportRequest) return;
-    if (!response.ok || data.publishStatus !== "ready") throw new Error("publish unavailable");
+    if (!ok || data.publishStatus !== "ready") throw new Error("publish unavailable");
     state.data.report.summary = { ...state.data.report.summary, ...data.report.summary };
     state.data.publishStatus = "ready";
   } catch (error) {

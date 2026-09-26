@@ -271,3 +271,19 @@ test('split overview preserves totals and permissions while publish-only skips a
  calls=[];await buildModuleReport(f.env,f.db,current,params('publish'),{role:'operator',allowedAccountGroups:[]});assert.equal(calls.length,0);
  fail=true;const unavailable=await buildModuleReport(f.env,f.db,current,params('publish'),{role:'admin'});assert.equal(unavailable.publishStatus,'unavailable');
 });
+
+test('shared report endpoint batches fresh scope once and honors revoked canonical assignments',async t=>{
+ const f=await reportProjectionFixture(t);
+ const {kvSet}=await import('./kv.js');const {handleOfficial}=await import('./official.js');
+ await kvSet(f.db,'official-account-groups',{projects:[{id:'p',name:'Psych',moduleKey:'psychology',reportEnabled:true}],groups:[{id:'g',name:'Group',projectId:'p'}],assignments:{a:'g'}});
+ let batches=0;const batch=f.db.batch;f.db.batch=async items=>{batches++;return batch(items);};
+ const url=new URL('https://factory.test/api/official-tiktok/ops-report?module=psychology&view=analytics');
+ const session={user:{id:'admin',role:'admin'}};
+ const response=await handleOfficial(new Request(url),f.env,url,session);
+ assert.equal(response.status,200);assert.equal(batches,1);assert.match(response.headers.get('Server-Timing'),/context;dur=/);
+ const result=await response.json();assert.equal(result.report.enabled,true);assert.equal(result.publishStatus,'pending');
+ f.sqlite.exec('DELETE FROM official_account_assignments');
+ const publish=new URL(url);publish.searchParams.set('view','publish');
+ const revoked=await handleOfficial(new Request(publish),f.env,publish,session);
+ assert.equal((await revoked.json()).report.summary.publishTotal,0);
+});

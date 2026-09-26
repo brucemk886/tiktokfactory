@@ -58,7 +58,7 @@ test("report tabs isolate panels, preserve date/group filters and encode video d
   b.tabs[2].events.click();
   assert.equal(b.node("#anomalySection").hidden, false);
   assert.equal(b.node("#lowSection").hidden, true);
-  assert.equal(calls, 1, "tab switching must not reload the report");
+  assert.equal(calls, 2, "tab switching must not reload either report view");
   assert.equal(b.location.searchParams.get("period"), "7d");
   assert.equal(b.location.searchParams.get("group"), "g");
   const href = vm.runInContext('videoDetailHref({account:"acct&1",id:"12345678903"})', b.context);

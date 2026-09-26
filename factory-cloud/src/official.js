@@ -1,3 +1,4 @@
+import { loadReportContext } from "./psychology-report-data.js";
 import { pagePublishRecords } from './publish-records-store.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
 import {
@@ -231,6 +232,17 @@ async function handleAccountGroups(request, env, db, url, session) {
   // Reads stay open to every signed-in user (operators need their scoped
   // groups); creating, renaming, deleting or reassigning is admin-only.
   if (method !== "GET" && !isAdmin(session)) return errorJson("仅管理员可以管理项目与分组。", 403);
+  if (method === "GET" && pathname === "/api/official-tiktok/ops-report") {
+    try {
+      const start = performance.now();
+      const { store, accountRows } = await loadReportContext(db);
+      const timing = [`context;dur=${(performance.now() - start).toFixed(1)}`];
+      const payload = await buildModuleReport(env, db, store, url.searchParams, session?.user, timing, accountRows);
+      return json(payload, 200, { "Server-Timing": timing.join(", ") });
+    } catch (error) {
+      return errorJson(error.message || "读取报表失败。", error.statusCode || 400);
+    }
+  }
   const store = await loadGroupStore(db);
 
   try {
@@ -268,11 +280,6 @@ async function handleAccountGroups(request, env, db, url, session) {
     const reportMatch = pathname.match(/^\/api\/official-tiktok\/groups\/([^/]+)\/report$/);
     if (method === "GET" && reportMatch) {
       return json(await buildGroupReport(env, db, store, decodeURIComponent(reportMatch[1]), url.searchParams.get("period") || "today"));
-    }
-    if (method === "GET" && pathname === "/api/official-tiktok/ops-report") {
-      const timing = [];
-      const payload = await buildModuleReport(env, db, store, url.searchParams, session?.user, timing);
-      return json(payload, 200, { "Server-Timing": timing.join(", ") });
     }
     if (method === "GET" && pathname === "/api/official-tiktok/ops-report-history") {
       return json(await listModuleReportHistory(db, store, url.searchParams, session?.user));
@@ -478,7 +485,7 @@ async function saveGroupStore(db, store) {
   return publicState({ ...next, assignments: next.assignments });
 }
 
-export async function buildModuleReport(env, db, store, searchParams, user, timing = []) {
+export async function buildModuleReport(env, db, store, searchParams, user, timing = [], knownAccountRows = null) {
   const startedAt = performance.now();
   const view = searchParams.get("view") || "full";
   const moduleKey = String(searchParams.get("module") || "").trim();
@@ -516,7 +523,7 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
   if (!groupId && !canSeeProjectTotal) {
     groupId = groups[0]?.id || "";
   }
-  const accountRows = await listLatestArchiveAccounts(db);
+  const accountRows = knownAccountRows || await listLatestArchiveAccounts(db);
   const scope = {
     groupId,
     projectId: liveProject.id,
@@ -551,7 +558,7 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
   let report, source, persistedAt;
   if (isLive) {
     const start = performance.now();
-    const bundle = await loadArchiveBundle(env, db, keys, accountRows, selected);
+    const bundle = await loadArchiveBundle(env, db, keys, accountRows, selected, timing);
     timing.push(`archive;dur=${(performance.now() - start).toFixed(1)}`);
     const computeStart = performance.now();
     report = computeLiveReport({ store, project: liveProject, ...scope, period, now,

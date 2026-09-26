@@ -652,7 +652,7 @@ test("psychology overview renders project metrics and keeps filtered queries sco
     fetch: async (path, options) => {
       assert.equal(options?.method || "GET", "GET");
       const query = new URL(path, "https://factory.test").searchParams;
-      requests.push(query);
+      if (query.get("view") !== "publish") requests.push(query);
       return { ok: true, json: async () => ({
         project: { id: "psych-project", name: "心理学", reportEnabled: true },
         groups: [{ id: "psych-group", name: "心理学测试组" }],

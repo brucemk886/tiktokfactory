@@ -16,7 +16,7 @@ import {
 const PROJECT_GROUP_ID = "";
 const PROJECT_GROUP_NAME = "全部项目";
 
-export async function loadArchiveBundle(env, db, accountKeys = null, knownAccountRows = null, window = null) {
+export async function loadArchiveBundle(env, db, accountKeys = null, knownAccountRows = null, window = null, timing = []) {
   const accountRows = knownAccountRows || await listLatestArchiveAccounts(db);
   const keys = Array.isArray(accountKeys)
     ? accountKeys
@@ -26,8 +26,12 @@ export async function loadArchiveBundle(env, db, accountKeys = null, knownAccoun
   // Reuse the synchronized D1 projection instead of rereading one R2 object per
   // account on every overview visit. The shared loader validates timestamps and
   // repairs legacy misses once; current scope is always supplied by the caller.
+  const queryStart = performance.now();
   const cached = await reportVideoCacheQuery(db, scopedRows.map(row => row.account_key), window).all();
+  timing.push(`cache;dur=${(performance.now() - queryStart).toFixed(1)}`);
+  const fallbackStart = performance.now();
   const projected = await loadReportVideosForAccounts(env, db, accountsFromLatestArchive(scopedRows), cached.results || []);
+  timing.push(`fallback;dur=${(performance.now() - fallbackStart).toFixed(1)}`);
   // Keep this existing overview's latest-80 scope unchanged by the fast path.
   const videosByAccount = new Map([...projected].map(([key, videos]) => [key, videos.slice(0, 80)]));
   return {

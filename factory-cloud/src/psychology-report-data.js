@@ -20,5 +20,5 @@ export async function loadReportContext(db){
  raw.assignments=Object.fromEntries(rows.assignments.results.map(r=>[r.account_key,r.group_id]));
  const accounts=accountsFromLatestArchive(rows.accounts.results);
  const store=rememberAccountAliases(ensureModuleProjects(raw),accounts),allowed=new Set(factoryArchiveKeys(store));
- return {store,archived:accounts.filter(a=>allowed.has(a.schema))};
+ return {store,archived:accounts.filter(a=>allowed.has(a.schema)),accountRows:rows.accounts.results.filter(row=>allowed.has(row.account_key))};
 }

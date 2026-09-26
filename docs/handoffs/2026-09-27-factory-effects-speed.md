@@ -19,3 +19,6 @@ factory-cloud/src/official.js, official-archive-store.js/test, ops-report-store.
 
 ## Release and follow-up
 Implementation made in an isolated clean main checkout at work/effects-fast-release because the main workspace contains another task's uncommitted changes. Commit/push main and deploy through factory-cloud npm run deploy. Record actual post-deployment factory timings in the task result. Do not attribute the separate mid-platform optimization to this factory fix.
+
+## Second pass
+First production validation retained all metrics but analytics still took 7,479 ms; receipt view took 5,065 ms. The context path repeated serial D1 reads. Reuse the existing batched fresh report context (canonical assignments, compact account rows), pass its rows through the overview, and launch both browser views concurrently. Add cache/fallback timing spans and endpoint tests for one context batch plus assignment revocation. The baseline immediately before deployment for 2026-09-26 was 9,045 ms; 348 videos, 83,599 views, buckets 10/135/199/4, receipts 357 total / 348 success / 9 failed.
