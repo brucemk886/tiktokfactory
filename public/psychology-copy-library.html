@@ -17,15 +17,15 @@
       <div><h1>文案库</h1><p class="page-lead">统一管理爆款来源、播放数据、提取文案和改写版本。新内容导入后自动提取，供图文与视频生产复用。</p></div>
       <div class="hits-header-tools"><a class="copy-header-link" href="/psychology-copy-usage">使用与效果</a><a class="copy-header-link" href="/psychology-publish">自动发布</a><button id="bulkImportButton" type="button" aria-haspopup="dialog" aria-controls="bulkImportDialog">批量导入</button>
         <button id="watchAccountsButton" type="button" aria-haspopup="dialog" aria-controls="watchAccountsDialog" hidden>对标账号</button>
-        <details class="hits-header-panel" id="apiPanel"><summary>写入接口</summary>
+        <details class="hits-header-panel" id="apiPanel"><summary>读写接口</summary>
           <div class="hits-panel hits-header-popover">
-            <p>专用密钥只能写入心理学同行爆款。密钥生成后仅显示一次，请复制给 grokbot。</p>
+            <p>现有密钥支持导入爆款、读取文案和按 ID 修改；改写版本仅限本账号。密钥生成后仅显示一次，请复制给 grokbot。</p>
             <label>接口地址<input id="endpoint" readonly /></label>
             <div class="hits-actions"><button id="createKeyBtn" type="button">生成 API Key</button><button id="revokeKeyBtn" type="button" hidden>停用密钥</button><span id="keyStatus" role="status">正在读取接口配置…</span></div>
             <div id="newKeyPanel" hidden><label>新密钥<input id="newApiKey" readonly autocomplete="off" /></label><button id="copyKeyBtn" type="button">复制密钥</button></div>
             <p>POST · Authorization: Bearer YOUR_API_KEY · Content-Type: application/json</p>
             <p>支持单条对象或 { "items": [...] } 批量提交，每次最多 100 条、1 MB。TikTok 帖子链接必填；播放、点赞、评论、收藏、分享（没有的数量填 0）、原帖发布时间 publishedAt 和账号 accountUsername 也必填，已保存过的可省略；mediaType 使用 video 或 photo，voiceGender 使用 male 或 female。其余字段可分次补充，相同内容不会重复添加，collectedAt 较旧的记录会被忽略。</p>
-            <pre id="apiExample"></pre><button id="copyExampleBtn" type="button">复制请求示例</button>
+            <pre id="copyReadExample"></pre><button id="copyReadRulesBtn" type="button">复制文案读取与修改说明</button><pre id="apiExample"></pre><button id="copyExampleBtn" type="button">复制请求示例</button>
             <p><strong>写入规则</strong>：改写由工厂生成。grokbot 导入原帖时一并提交题材标签和高赞评论。对标账号请在右上角独立入口管理，暂不自动采集。如果仍提交 rewrites，会按改写规则检查。</p>
             <button id="copyRulesBtn" type="button">复制给 grokbot 的写入规则</button>
             <p>播放等数量可写整数或 12.8万、128K。时间使用带时区的 ISO 格式或 Unix 时间戳。videoId 使用字符串；videoData 可保留其他内容数据。</p>
@@ -162,7 +162,7 @@
     <div class="copy-dialog-actions"><a id="previewSource" href="#" target="_blank" rel="noopener noreferrer">打开原帖</a><button id="copyPreviewText" type="button">复制全文</button></div>
   </dialog>
 
-  <script src="/access.js"></script><script src="/psychology-peer-hits.js?v=20260925-page-recovery"></script><script src="/psychology-peer-production.js?v=20260925-page-recovery"></script>
+  <script src="/access.js"></script><script src="/psychology-peer-hits.js?rw=20260926&v=20260925-page-recovery"></script><script src="/psychology-peer-production.js?v=20260925-page-recovery"></script>
 <script src="/psychology-peer-extras.js?v=20260924-peer-extras"></script>
 <script type="module" src="/psychology-copy-library.js?v=20260925-page-recovery"></script>
 </body>

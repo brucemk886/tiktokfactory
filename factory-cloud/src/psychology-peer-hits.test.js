@@ -315,7 +315,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(page,/data-media-type="video">视频爆款<\/button>/);
   assert.match(page,/data-media-type="photo">图文爆款<\/button>/);
   assert.match(page,/class="hits-header-tools"/);
-  assert.match(page,/<summary>写入接口<\/summary>/);
+  assert.match(page,/<summary>读写接口<\/summary>/);
   assert.doesNotMatch(page,/<summary>grokbot 写入接口<\/summary>/);
   assert.match(page,/<th>发布 \/ 导入时间<\/th><th>文案状态<\/th><th>改写版本<\/th>/);
   assert.doesNotMatch(page,/recreationVoice|配音声音/);

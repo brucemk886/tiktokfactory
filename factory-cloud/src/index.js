@@ -1,3 +1,4 @@
+import {PSYCHOLOGY_COPY_API} from './psychology-copy-integration.js';
 import {handlePhotoFactory} from './photo-factory.js';
 import {PHOTO_IMPORT} from './photo-factory-domain.js';
 import {handlePsychologyCopyLibrary,dispatchCopyExtractions} from './psychology-copy-library.js';
@@ -46,8 +47,8 @@ export default {
       if (authResponse) return authResponse;
 
       if (url.pathname === PHOTO_IMPORT) return await handlePhotoFactory(request,env,url,null);
-      if (url.pathname === PSYCHOLOGY_PEER_API) return await handlePsychologyPeerHits(request, env, url, null);
-      if (url.pathname === PSYCHOLOGY_TOPIC_API) return await handlePsychologyTopicBank(request, env, url, null);
+      if (url.pathname === PSYCHOLOGY_PEER_API || url.pathname === PSYCHOLOGY_COPY_API || url.pathname.startsWith(PSYCHOLOGY_COPY_API + '/')) return await handlePsychologyPeerHits(request, env, url, null);
+      if (url.pathname === PSYCHOLOGY_TOPIC_API || url.pathname.startsWith(PSYCHOLOGY_TOPIC_API + '/')) return await handlePsychologyTopicBank(request, env, url, null);
 
       if (url.pathname.startsWith(GEMINI_VIDEO_SOURCE_PATH)) return await handleGeminiVideoSource(request, env, url);
       if (url.pathname.startsWith(KIE_PHOTO_SOURCE_PATH)) return await handleKiePhotoSource(request, env, url);

@@ -222,7 +222,7 @@ $("#createKeyBtn")?.addEventListener("click",async()=>{
   finally{$("#createKeyBtn").disabled=false;}
 });
 $("#revokeKeyBtn")?.addEventListener("click",async()=>{
-  if(!confirm("停用后 grokbot 将无法继续写入题库。确定停用吗？"))return;
+  if(!confirm("停用后 grokbot 将无法继续读取或修改题库。确定停用吗？"))return;
   $("#revokeKeyBtn").disabled=true;
   try{await api(BASE+"/api-key","DELETE");$("#newApiKey").value="";$("#newKeyPanel").hidden=true;await loadKey();}
   catch(error){$("#keyStatus").textContent=error.message;$("#keyStatus").classList.add("is-error");}
@@ -231,3 +231,16 @@ $("#revokeKeyBtn")?.addEventListener("click",async()=>{
 $("#copyKeyBtn")?.addEventListener("click",()=>copyText($("#newApiKey").value,"已复制密钥"));
 $("#copyExampleBtn")?.addEventListener("click",()=>copyText($("#apiExample").textContent,"已复制请求示例"));
 loadKey();
+
+const topicReadRules=`题库 API（沿用 psy_topics_ 密钥，不需要登录 Cookie）：
+Authorization: Bearer YOUR_API_KEY
+GET ${endpoint}?template=all&page=1&pageSize=100
+GET ${endpoint}/TOPIC_ID
+PATCH ${endpoint}/TOPIC_ID
+Content-Type: application/json
+{"revision":1,"revealComment":"新的揭晓评论","replyOptions":{"A":"A 的回复"}}
+读取列表返回 items、total、page、pageSize、totalPages、hasMore；template 可选 all / psychology / psychology-collage / psychology-target-2，enabled 可选 all / active / inactive，query 搜索标题、内容、分类。逐页读取直到 hasMore=false。
+TOPIC_ID 和 revision 必须使用 GET 返回的值。PATCH 可改 title/content/category/priority/enabled/revealComment/replyOptions/choices/imageKey/imageUrl；不要回传整个读取对象。replyOptions 支持只改某个选项，choices 须提交完整四个选项。imageKey/imageUrl 用于单图模板。图片 previewUrl 须携带同一 Authorization 读取。
+409 表示旧版本冲突或重复题目，重新读取后核对修改，不要盲目覆盖。POST 仍只新增、相同内容跳过；不支持 DELETE。`;
+$("#topicReadExample").textContent=topicReadRules;
+$("#copyTopicReadBtn").onclick=()=>copyText(topicReadRules,"已复制读取与修改说明");

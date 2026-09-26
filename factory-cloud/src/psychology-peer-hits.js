@@ -1,3 +1,4 @@
+import {handleCopyIntegration,PSYCHOLOGY_COPY_API} from './psychology-copy-integration.js';
 import { errorJson, json, randomToken, sha256Hex } from "./http.js";
 import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender, updatePsychologyPeerHitMediaType, listWatchAccounts, saveWatchAccount, deleteWatchAccount, peerWorklist } from "./psychology-peer-hits-store.js";
 import { handlePeerProduction } from './psychology-peer-production.js';
@@ -31,12 +32,14 @@ async function externalActor(request, db) {
   return key.owner_id;
 }
 export async function handlePsychologyPeerHits(request, env, url, session) {
-  const external = url.pathname === PSYCHOLOGY_PEER_API;
+  const copyExternal=url.pathname===PSYCHOLOGY_COPY_API||url.pathname.startsWith(PSYCHOLOGY_COPY_API+'/');
+  const external = url.pathname === PSYCHOLOGY_PEER_API || copyExternal;
   if (!external && url.pathname !== INTERNAL && !url.pathname.startsWith(INTERNAL + "/")) return null;
   try {
     const db = env.DB;
     if (external) {
       const actor = await externalActor(request, db);
+      if(copyExternal)return await handleCopyIntegration(request,env,url,actor,readImport);
       if (request.method === "GET") return json(await peerWorklist(db));
       if (request.method !== "POST") return errorJson("此密钥仅支持读取任务清单或 POST 写入同行爆款。", 405);
       return json(await importPsychologyPeerHits(db, await readImport(request), actor, { requireMetrics: true }));
