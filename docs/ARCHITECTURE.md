@@ -153,3 +153,11 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 
 - factory-cloud/src/psychology-copy-usage.js is a read-only content adapter behind the existing library permission. It resolves shared canonical source identities, owner-scoped variants and immutable selection timestamps, and consumes the existing deduplicated local metric facts. Domain output is only copy/version inventory, draws and statistical observations. It does not invoke downstream workflow controllers or expose account/group/task management.
 - public/psychology-copy-usage.* is a library child page with backend pagination and lazy version/body reads. Inventory is current; usage uses selection time; effects use actual publication dates and latest cumulative metrics. No read-triggered remote sync, repair or mutation.
+
+
+## Parallel photo content factory
+
+- photo_directions/copies/pilots/slots/jobs/source_uses/import_keys own the new photo-only domain (0062), isolated from psychology content and scheduler tables. An owner-scoped direction config defines tags, language/audience, rewrite model/rules, structure, aspect, page constraints and style choices. Jobs freeze config revision and exact content.
+- photo-factory.js exposes admin UI APIs and direction-bound external text imports. These keys cannot publish. New trials are drafts; active legacy psychology groups/accounts block enrollment and execution. The old seven-day run is unchanged.
+- photo-factory-execution.js uses a separate PhotoFactoryWorkflow with bounded minute planning and two concurrent preparation workflows. Durable local reservations and frozen hub request/externalId retain idempotency; no new factory_jobs or psychology task rows are created. Shared rendering keeps legacy defaults, and shared official transport owns remote publication.
+- Reports join new jobs to existing locally synchronized ops_video_facts by exact account/video identity. Copy inventory and version effects remain separate from publishing controls. No read-time remote sync and no inferred migration of old observations.

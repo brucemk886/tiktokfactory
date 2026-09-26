@@ -1,5 +1,7 @@
 # Current State
 
+- Parallel photo-only factory at /photo-factory (0062): configurable directions, isolated copy/rewrites, local card preview, explicit-start multi-group trial drafts, separate Workflow and local reports. Existing psychology seven-day automation and video paths are not migrated; user will test Zodiac/new groups before deciding a cutover. See docs/handoffs/2026-09-26-parallel-photo-factory.md and docs/photo-factory.md.
+
 - Copy library now has a content-only Usage & Effects child page with inventory, draw coverage, original/rewrite comparison and lazy version text. Owner-scoped usage/effects are aggregated in SQL over existing local selection/analytics records with Beijing time filters and 20-row pagination; no account/group/publishing controls or remote fetches. See docs/handoffs/2026-09-26-copy-library-usage.md.
 
 - Autopilot viewing defaults to Beijing today with yesterday/last-7-days filters. Execution summaries, slots and logs follow the selection; all slots in the bounded date window are included. Group performance now also follows selected actual publication dates using durable facts, including same-day metrics; no samples display —. Current account controls and scheduler mature analysis remain separate. See docs/handoffs/2026-09-26-autopilot-period-filter.md.

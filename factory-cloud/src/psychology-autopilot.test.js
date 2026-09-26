@@ -114,7 +114,10 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n, expected);
   const list = await (await f.api('GET')).json();
   assert.equal(list.pilots[0].accounts.length, 2);
-  assert.equal(list.pilots[0].schedule.filter(s => s.status === 'created').length, expected);
+  // GET defaults to today; dueSlots can also reserve tomorrow near midnight.
+  const todayStart=autopilotViewWindow('today').start;
+  const expectedToday=f.sqlite.prepare("SELECT count(*) n FROM psychology_autopilot_slots WHERE autopilot_id=? AND status='created' AND slot_at>=? AND slot_at<?").get(pilot.id,todayStart,todayStart+86400000).n;
+  assert.equal(list.pilots[0].schedule.filter(s => s.status === 'created').length, expectedToday);
   assert.ok(list.pilots[0].logs.some(l => l.kind === 'daily'));
   assert.equal(list.groups.find(g => g.id === 'g').accounts, 2);
   assert.deepEqual(Object.keys(list.strategyRules).sort(),Object.keys(list.strategies).sort());

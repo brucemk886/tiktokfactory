@@ -19,6 +19,11 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("operator-official", "/operator/official", "小说自运营", ALL, novelPromotionGroup()),
   moduleItem("tasks", "/tasks", "Reddit 自动发布", ALL, novelPromotionGroup()),
   moduleItem("novel-exceptions", "/novel-exceptions", "异常处理", ["admin"], novelPromotionGroup()),
+  moduleItem("photo-factory", "/photo-factory", "内容方向", ["admin"], {id:"photo-factory",label:"图文工厂"}),
+  moduleItem("photo-factory-library", "/photo-factory/library", "文案库", ["admin"], {id:"photo-factory",label:"图文工厂"}),
+  moduleItem("photo-factory-templates", "/photo-factory/templates", "模板工作台", ["admin"], {id:"photo-factory",label:"图文工厂"}),
+  moduleItem("photo-factory-autopilot", "/photo-factory/autopilot", "自动运营", ["admin"], {id:"photo-factory",label:"图文工厂"}),
+  moduleItem("photo-factory-reports", "/photo-factory/reports", "运营报表", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ["admin"], psychologyGroup()),
   moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ["admin"], psychologyGroup(), "psychology-copy-library"),
   moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup(), "psychology-publish-sources"),
@@ -107,6 +112,7 @@ const ACCOUNT_DATA_DETAIL_PATHS = Object.freeze(["/official-account-detail", "/o
 
 export function canAccessPath(user, pathname) {
   if (!user) return false;
+  if(pathname.startsWith("/photo-factory"))return user.role==="admin"&&(user.sidebarModules||[]).includes("photo-factory");
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));

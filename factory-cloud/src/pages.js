@@ -1,4 +1,9 @@
 const PAGE_FILES = {
+  "/photo-factory": "photo-factory.html",
+  "/photo-factory/library": "photo-factory.html",
+  "/photo-factory/templates": "photo-factory.html",
+  "/photo-factory/autopilot": "photo-factory.html",
+  "/photo-factory/reports": "photo-factory.html",
   "/": "hub.html",
   "/work-journal": "work-journal.html",
   "/work-journal-mindmap": "work-journal-mindmap.html",

@@ -369,6 +369,7 @@ function normalizeGroups(value) {
 function withOpsReportModules(value, role) {
   const modules = Array.isArray(value) ? [...value] : [];
   if (!modules.length) return value;
+  if(role==='admin'&&modules.includes('psychology-publish'))for(const id of ['photo-factory','photo-factory-library','photo-factory-templates','photo-factory-autopilot','photo-factory-reports'])if(!modules.includes(id))modules.push(id);
   const midVideoIds = ["mid-video", "schulte", "quiz", "podcast", "ai", "mid-video-effects", "mid-video-ops-report", "mid-video-publish"];
   const psychologyIds = ["psychology-peer-hits", "psychology", "psychology-collage", "psychology-narrative", "psychology-photo", "psychology-effects", "psychology-ops-report", "psychology-publish", "psychology-publish-sources"];
   const novelIds = ["novel-strategy", "novel-library", "novel-peer-hits", "novel-ops-report", "novel-effects", "operator-official", "tasks", "novel-exceptions"];

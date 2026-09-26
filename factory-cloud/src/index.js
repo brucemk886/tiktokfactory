@@ -1,3 +1,5 @@
+import {handlePhotoFactory} from './photo-factory.js';
+import {PHOTO_IMPORT} from './photo-factory-domain.js';
 import {handlePsychologyCopyLibrary,dispatchCopyExtractions} from './psychology-copy-library.js';
 import { handlePsychologyCreative } from './psychology-creative.js';
 import {handlePsychologyAutoReplies,dispatchAutoReplies,consumeAutoReplies} from './psychology-auto-replies.js';
@@ -42,6 +44,7 @@ export default {
       const authResponse = await handleAuth(request, env, url);
       if (authResponse) return authResponse;
 
+      if (url.pathname === PHOTO_IMPORT) return await handlePhotoFactory(request,env,url,null);
       if (url.pathname === PSYCHOLOGY_PEER_API) return await handlePsychologyPeerHits(request, env, url, null);
       if (url.pathname === PSYCHOLOGY_TOPIC_API) return await handlePsychologyTopicBank(request, env, url, null);
 
@@ -57,7 +60,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
@@ -103,7 +106,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)]]);return;}
+    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);return;}
     if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
