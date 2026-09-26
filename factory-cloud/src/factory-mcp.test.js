@@ -103,3 +103,28 @@ test('read filters translate legacy booleans and topic search without widening q
  const metadata=await json(await f.fetch('/.well-known/oauth-protected-resource/mcp'));assert.ok(metadata.scopes_supported.includes('factory.topics.write'));
  assert.equal(f.requests.length,0);
  });
+
+
+test('ChatGPT cross-origin discovery, PKCE and MCP calls work while consent stays same-origin',async t=>{
+ const f=await setup(t),fetch=f.fetch;
+ f.fetch=(path,init={})=>fetch(path,{...init,headers:{origin:'https://chatgpt.com',...Object.fromEntries(new Headers(init.headers))}});
+ const meta=await f.fetch('/.well-known/oauth-protected-resource/mcp');assert.equal(meta.status,200);assert.equal(meta.headers.get('access-control-allow-origin'),'https://chatgpt.com');
+ const unauth=await f.fetch('/mcp');assert.equal(unauth.status,401);assert.match(unauth.headers.get('access-control-expose-headers'),/WWW-Authenticate/);assert.equal(unauth.headers.get('access-control-allow-credentials'),null);
+ const a=await authorize(f,true);const list=await json(await rpc(f,a.token.access_token,'tools/list'));assert.equal(list.result.tools.length,21);
+ assert.equal((await f.browser('/factory-mcp',{method:'POST',headers:{origin:'https://chatgpt.com'},body:a.body})).status,403);
+ assert.equal((await f.browser('/oauth/authorize',{method:'POST',headers:{origin:'https://chatgpt.com'},body:a.body})).status,403);
+ assert.equal(f.requests.length,0);
+});
+test('CORS preflights are route/method/header bounded and never authenticate a tool call',async t=>{
+ const f=await setup(t);
+ for(const [path,method] of [['/mcp','POST'],['/oauth/token','POST'],['/oauth/register','POST'],['/.well-known/oauth-authorization-server','GET']]){
+ const r=await f.fetch(path,{method:'OPTIONS',headers:{origin:'https://chatgpt.com','access-control-request-method':method,'access-control-request-headers':'Authorization, Content-Type, MCP-Protocol-Version'}});
+ assert.equal(r.status,204);assert.equal(r.headers.get('access-control-allow-origin'),'https://chatgpt.com');assert.notEqual(r.headers.get('access-control-allow-methods'),'*');
+ }
+ for(const origin of ['null','https://evil.test','https://chatgpt.com.evil.test','http://chatgpt.com']){
+ for(const path of ['/mcp','/.well-known/oauth-protected-resource/mcp','/oauth/authorize'])assert.equal((await f.fetch(path,{headers:{origin}})).status,403);
+ }
+ for(const headers of [{'access-control-request-method':'PATCH'},{'access-control-request-method':'POST','access-control-request-headers':'x-untrusted'}])assert.equal((await f.fetch('/mcp',{method:'OPTIONS',headers:{origin:'https://chatgpt.com',...headers}})).status,403);
+ assert.equal((await f.fetch('/oauth/authorize',{method:'OPTIONS',headers:{origin:'https://chatgpt.com','access-control-request-method':'POST'}})).status,403);
+ const r=await f.browser('/mcp',{headers:{origin:'https://chatgpt.com'}});assert.equal(r.status,401);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_mcp_connections').get().n,0);
+});

@@ -76,3 +76,8 @@ After R2 save, deterministic object key plus operation/hash metadata recover an 
 - `IMPORT_PENDING`: image saved but import retries exhausted. Resubmit the same input/UUID to retry import without calling OpenAI, even if its key has since been removed.
 
 Tests mock all providers. Initial rollout has no OpenAI key, so paid generation needs a real one-image check after the user configures it.
+
+
+## ChatGPT cross-origin connection handling
+
+The protocol endpoints (`/mcp`, registration/token, OAuth discovery) accept the exact browser Origin `https://chatgpt.com` and bounded CORS preflights. OAuth authorization landing GET also accepts that origin. Cross-origin MCP calls still require bearer OAuth tokens; no cookie credentials are enabled in CORS. Authorization approval and connection-revocation POSTs remain strictly Factory same-origin with session CSRF and consent-handle checks. Other origins (including null/lookalikes) are rejected. This fixes the blanket same-origin check that rejected legitimate ChatGPT connection requests with “不允许跨站请求”。

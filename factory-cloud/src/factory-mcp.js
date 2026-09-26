@@ -7,6 +7,23 @@ export const MCP_ORIGIN='https://factory.tiktokaitool.com';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const fail=(message,status=400)=>new Response(message,{status,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store'}});
 const csrf=session=>sha256Hex('factory-mcp-consent:'+session.token);
+// Browser MCP traffic is bearer-authenticated. Cookie-based consent remains same-origin.
+const MCP_BROWSER_ORIGINS=new Set(['https://chatgpt.com']);
+const MCP_PROTOCOL_PATHS=new Set(['/mcp','/oauth/register','/oauth/token','/.well-known/oauth-authorization-server','/.well-known/oauth-protected-resource/mcp']);
+const CORS_HEADERS=['authorization','content-type','accept','mcp-protocol-version','mcp-session-id','last-event-id'];
+function protocolMethods(path){return path==='/mcp'?['GET','POST','DELETE']:path.startsWith('/.well-known/')?['GET']:['POST'];}
+function withProtocolCors(response,requestOrigin,methods){
+ const headers=new Headers(response.headers);
+ headers.set('access-control-allow-origin',requestOrigin);
+ headers.set('access-control-allow-methods',[...methods,'OPTIONS'].join(', '));
+ headers.set('access-control-allow-headers',CORS_HEADERS.join(', '));
+ headers.set('access-control-expose-headers','WWW-Authenticate, Mcp-Session-Id, MCP-Protocol-Version, Retry-After');
+ headers.set('access-control-max-age','600');
+ headers.delete('access-control-allow-credentials');
+ const vary=headers.get('vary');headers.set('vary',vary?vary+', Origin':'Origin');
+ return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
 async function describeConsent(oauth,auth){
  const client=await oauth.lookupClient(auth.clientId);
  if(!client)throw new AuthorizationError('invalid_client',{description:'应用不存在。'});
@@ -90,8 +107,20 @@ export function createMcpWorker(factory,origin=MCP_ORIGIN){
   const url=new URL(request.url),isMcp=url.pathname==='/mcp'||url.pathname.startsWith('/mcp/')||url.pathname.startsWith('/oauth/')||url.pathname.startsWith('/.well-known/oauth-')||url.pathname==='/factory-mcp';
   if(!isMcp)return factory.fetch(request,env,ctx);
   if(url.origin!==origin)return fail('请使用工厂正式域名连接。',400);
-  if(request.headers.has('origin')&&request.headers.get('origin')!==origin)return fail('不允许跨站请求。',403);
+  const requestOrigin=request.headers.get('origin'),crossOrigin=requestOrigin!==null&&requestOrigin!==origin;
+  const protocol=MCP_PROTOCOL_PATHS.has(url.pathname),methods=protocolMethods(url.pathname);
+  // Only the OAuth landing GET may arrive from ChatGPT. Approve/revoke POSTs
+  // still require our own Origin, session CSRF and the provider consent handle.
+  const authorizationLanding=url.pathname==='/oauth/authorize'&&request.method==='GET';
+  if(crossOrigin&&(!MCP_BROWSER_ORIGINS.has(requestOrigin)||!protocol&&!authorizationLanding))return fail('不允许跨站请求。',403);
+  if(protocol&&request.method==='OPTIONS'&&requestOrigin){
+   const requestedMethod=request.headers.get('access-control-request-method');
+   const requestedHeaders=(request.headers.get('access-control-request-headers')||'').toLowerCase().split(',').map(h=>h.trim()).filter(Boolean);
+   if(!methods.includes(requestedMethod)||requestedHeaders.some(h=>!CORS_HEADERS.includes(h)))return fail('跨域请求方法或请求头不受支持。',403);
+   return withProtocolCors(new Response(null,{status:204}),requestOrigin,methods);
+  }
   if(Number(request.headers.get('content-length')||0)>131072)return fail('请求过大',413);
-  return provider.fetch(request,env,ctx);
+  const response=await provider.fetch(request,env,ctx);
+  return protocol&&requestOrigin?withProtocolCors(response,requestOrigin,methods):response;
  }};
 }
