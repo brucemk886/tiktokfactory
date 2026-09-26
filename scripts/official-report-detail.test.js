@@ -22,7 +22,7 @@ function browser(url, fetch) {
   const location = new URL(url);
   const document = { querySelector: node, querySelectorAll: (s) => s === "[data-result-tab]" ? tabs : [] };
   const context = vm.createContext({
-    location, document, URL, URLSearchParams, window: {}, fetch,
+    location, document, URL, URLSearchParams, AbortController, window: {}, fetch,
     history: { replaceState(_state, _title, url) { location.href = String(url); } },
   });
   return { context, nodes, node, tabs, location };
@@ -176,4 +176,39 @@ test("legacy snapshots distinguish missing normal-video details from a genuinely
   await flush();
   assert.match(b.node("#normalSection").innerHTML, /历史快照未保存/);
   assert.doesNotMatch(b.node("#normalSection").innerHTML, /这一时段没有/);
+});
+
+test('overview renders analytics before delayed receipts and keeps unavailable values distinct from zero',async()=>{
+ let release;
+ const b=browser('https://factory.test/psychology-effects',async path=>{
+  if(new URL(path,'https://factory.test').searchParams.get('view')==='publish')return new Promise(resolve=>{release=resolve;});
+  return reply({project:{id:'p',reportEnabled:true},publishStatus:'pending',report:{enabled:true,summary:{published:11,views:1234},buckets:{highView:[{id:'12345678901',title:'visible before receipts',views:1234}]}}});
+ });
+ vm.runInContext(read('official-group-report.js'),b.context);await flush();
+ assert.match(b.node('#highSection').innerHTML,/visible before receipts/);
+ assert.match(b.node('#summaryGrid').innerHTML,/1,234/);
+ assert.match(b.node('#summaryGrid').innerHTML,/发布成功<\/span><strong>—/);
+ assert.match(b.node('#publishStatus').textContent,/读取中/);
+ release(reply({publishStatus:'unavailable'}));await flush();
+ assert.match(b.node('#publishStatus').textContent,/暂时不可用/);
+ assert.match(b.node('#summaryGrid').innerHTML,/发布失败<\/span><strong>—/);
+ assert.match(b.node('#highSection').innerHTML,/visible before receipts/);
+});
+
+test('changing filters aborts old requests and ignores late receipt results',async()=>{
+ const pending=[],signals=[];
+ const b=browser('https://factory.test/psychology-effects',async(path,options)=>{
+  const q=new URL(path,'https://factory.test').searchParams;signals.push(options.signal);
+  if(q.get('view')==='publish')return new Promise(resolve=>pending.push(resolve));
+  const views=q.get('group')==='new'?222:111;
+  return reply({project:{id:'p',reportEnabled:true},publishStatus:'pending',report:{enabled:true,summary:{views},buckets:{}}});
+ });
+ vm.runInContext(read('official-group-report.js'),b.context);await flush();
+ vm.runInContext('state.groupId="new"; loadReport()',b.context);await flush();
+ assert.equal(signals[0].aborted,true);assert.equal(pending.length,2);
+ pending[1](reply({publishStatus:'ready',report:{summary:{publishTotal:22,publishSuccess:20,publishFailed:2,riskAccountCount:0}}}));await flush();
+ pending[0](reply({publishStatus:'ready',report:{summary:{publishSuccess:999}}}));await flush();
+ assert.equal(vm.runInContext('state.data.report.summary.publishSuccess',b.context),20);
+ assert.equal(vm.runInContext('state.data.report.summary.views',b.context),222);
+ assert.equal(b.node('#publishStatus').textContent,'');
 });

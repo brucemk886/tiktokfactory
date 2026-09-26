@@ -55,6 +55,9 @@ if (PRESET_PERIODS.includes(state.period) || !state.fromKey || !state.toKey) {
   syncPeriodFromDates();
 }
 
+let reportRequest = 0;
+let reportController;
+
 bindToolbar();
 if (document.documentElement?.classList.contains("psychology-module")) document.body?.classList.add("psychology-module");
 loadReport();
@@ -102,6 +105,10 @@ function bindToolbar() {
 }
 
 async function loadReport() {
+  const requestId = ++reportRequest;
+  reportController?.abort();
+  const controller = new AbortController();
+  reportController = controller;
   const title = document.querySelector("#pageTitle");
   const copy = document.querySelector("#pageCopy");
   const meta = document.querySelector("#reportMeta");
@@ -115,13 +122,16 @@ async function loadReport() {
   title.textContent = reportTitle();
   document.title = title.textContent;
   meta.textContent = "正在读取报表…";
+  document.querySelector("#publishStatus").textContent = "";
+  renderEmpty("正在读取报表…");
   try {
-    const query = new URLSearchParams({ module: state.module, period: state.period });
+    const query = new URLSearchParams({ module: state.module, period: state.period, view: "analytics" });
     if (state.groupId) query.set("group", state.groupId);
     if (state.fromKey) query.set("from", state.fromKey);
     if (state.toKey) query.set("to", state.toKey);
-    const response = await fetch(`/api/official-tiktok/ops-report?${query}`, { cache: "no-store" });
+    const response = await fetch(`/api/official-tiktok/ops-report?${query}`, { cache: "no-store", signal: controller.signal });
     const data = await response.json().catch(() => ({}));
+    if (requestId !== reportRequest) return;
     if (!response.ok) throw new Error(data.error || "读取报表失败。");
     state.data = data;
     if (!state.groupId && data.report?.groupId) state.groupId = data.report.groupId;
@@ -134,10 +144,30 @@ async function loadReport() {
     }
     state.pages = { high: 1, low: 1, normal: 1 };
     render();
+    if (data.publishStatus === "pending" && data.report?.enabled) {
+      void loadPublishOutcome(query, requestId, controller.signal);
+    }
   } catch (error) {
+    if (requestId !== reportRequest || controller.signal.aborted) return;
     meta.textContent = error.message || "读取报表失败。";
     renderEmpty(error.message || "读取报表失败。");
   }
+}
+
+async function loadPublishOutcome(query, requestId, signal) {
+  query.set("view", "publish");
+  try {
+    const response = await fetch(`/api/official-tiktok/ops-report?${query}`, { cache: "no-store", signal });
+    const data = await response.json().catch(() => ({}));
+    if (requestId !== reportRequest) return;
+    if (!response.ok || data.publishStatus !== "ready") throw new Error("publish unavailable");
+    state.data.report.summary = { ...state.data.report.summary, ...data.report.summary };
+    state.data.publishStatus = "ready";
+  } catch (error) {
+    if (requestId !== reportRequest || signal.aborted) return;
+    state.data.publishStatus = "unavailable";
+  }
+  renderSummary();
 }
 
 function render() {
@@ -164,19 +194,7 @@ function render() {
   const summary = report.summary || {};
   const sourceLabel = data.source === "snapshot" ? "历史快照" : "实时查询";
   document.querySelector("#reportMeta").textContent = `${rangeLabel(report)} · ${scopeName} · ${sourceLabel} · 低播 < ${report.thresholds?.lowView || 200} · 高播 ≥ ${report.thresholds?.highView || 1000}`;
-  document.querySelector("#summaryGrid").innerHTML = [
-    ["发布总数", formatNumber(summary.publishTotal ?? ((Number(summary.publishSuccess) || 0) + (Number(summary.publishFailed) || 0)))],
-    ["发布视频", formatNumber(summary.published)],
-    ["发布成功", formatNumber(summary.publishSuccess)],
-    ["发布失败", formatNumber(summary.publishFailed)],
-    ["风控账号", formatNumber(summary.riskAccountCount)],
-    ["0 播", formatNumber(summary.zeroView)],
-    ["低播", formatNumber(summary.lowView)],
-    ["高播", formatNumber(summary.highView)],
-    ["总播放", formatNumber(summary.views)],
-    ["均播", formatNumber(summary.avgView ?? averageViews(summary))],
-    ["异常账号", formatNumber(summary.anomalyAccountCount)],
-  ].map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  renderSummary();
   renderAnomalies(report.anomalyAccounts || [], report.buckets?.zeroView || []);
   updateResultTabs();
   renderBucket("highSection", "高播视频", `播放达到 ${report.thresholds?.highView || 1000} 以上。`, report.buckets?.highView || [], "high");
@@ -186,6 +204,28 @@ function render() {
   } else {
     renderBucket("normalSection", "正常播放视频", `播放 ≥ ${report.thresholds?.lowView || 200} 且 < ${report.thresholds?.highView || 1000}。`, report.buckets?.midView || [], "normal");
   }
+}
+
+function renderSummary() {
+  const report = state.data?.report || {};
+  const status = state.data?.publishStatus;
+  const publishNumber = value => status === "pending" || status === "unavailable" ? "—" : formatNumber(value);
+  document.querySelector("#publishStatus").textContent = status === "pending"
+    ? "发布结果读取中…" : status === "unavailable" ? "发布结果暂时不可用，点击查询重试。" : "";
+  const summary = report.summary || {};
+  document.querySelector("#summaryGrid").innerHTML = [
+    ["发布总数", publishNumber(summary.publishTotal ?? ((Number(summary.publishSuccess) || 0) + (Number(summary.publishFailed) || 0)))],
+    ["发布视频", formatNumber(summary.published)],
+    ["发布成功", publishNumber(summary.publishSuccess)],
+    ["发布失败", publishNumber(summary.publishFailed)],
+    ["风控账号", publishNumber(summary.riskAccountCount)],
+    ["0 播", formatNumber(summary.zeroView)],
+    ["低播", formatNumber(summary.lowView)],
+    ["高播", formatNumber(summary.highView)],
+    ["总播放", formatNumber(summary.views)],
+    ["均播", formatNumber(summary.avgView ?? averageViews(summary))],
+    ["异常账号", formatNumber(summary.anomalyAccountCount)],
+  ].map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
 }
 
 function fillSelects(data) {

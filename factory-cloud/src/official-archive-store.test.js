@@ -211,3 +211,63 @@ test('data overview reuses synchronized D1 projections without per-account objec
  await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:now+1,videos:[{id:'new',createTime:now,views:5}]}]);
  assert.equal((await loadArchiveBundle(f.env,f.db,['tiktok:a'])).videosByAccount.get('tiktok:a')[0].views,5);assert.equal(f.reads.length,0);
 });
+
+test('windowed shared overview matches the full latest-80 report, including boundaries and corrupt cache fallback',async t=>{
+ const f=await reportProjectionFixture(t);
+ const {upsertOfficialAccounts,listLatestArchiveAccounts,reportVideoCacheQuery}=await import('./official-archive-store.js');
+ const {loadArchiveBundle}=await import('./ops-report-store.js');
+ const {computeGroupReport,resolveReportWindow}=await import('../../scripts/official-group-report.js');
+ const now=Date.parse('2026-09-26T04:00:00Z'),day=Date.parse('2026-09-25T16:00:00Z');
+ const videos=Array.from({length:100},(_,i)=>({id:String(i),createTime:day/1000+(i%5===0?-1:i),views:i*100}));
+ videos[1].createdAt=day;videos[2].createdAt=day+86400000;videos[3].createdAt=String(day);videos[4].createdAt='';
+ await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:a',latestSyncAt:now,videos}]);
+ const rows=await listLatestArchiveAccounts(f.db),full=await loadArchiveBundle(f.env,f.db,['tiktok:a'],rows);
+ for(const period of ['today','yesterday','7d','30d']){
+  const window=resolveReportWindow({period,now});
+  const filtered=await loadArchiveBundle(f.env,f.db,['tiktok:a'],rows,window);
+  assert.deepEqual(computeGroupReport({videos:filtered.videosByAccount.get('tiktok:a'),period,now}),computeGroupReport({videos:full.videosByAccount.get('tiktok:a'),period,now}));
+  const payload=(await reportVideoCacheQuery(f.db,['tiktok:a'],window).all()).results[0].videos_json;
+  assert.ok(JSON.parse(payload).every(v=>full.videosByAccount.get('tiktok:a').some(original=>original.id===v.id)));
+ }
+ assert.equal(f.reads.length,0);
+ f.sqlite.prepare("UPDATE official_report_video_cache SET videos_json='invalid' WHERE account_key='tiktok:a'").run();
+ const fallback=await loadArchiveBundle(f.env,f.db,['tiktok:a'],rows,resolveReportWindow({period:'today',now}));
+ assert.equal(f.reads.length,1);assert.equal(fallback.videosByAccount.get('tiktok:a').length,80);
+});
+
+test('split overview preserves totals and permissions while publish-only skips archives and bounds bridge concurrency',async t=>{
+ const f=await reportProjectionFixture(t);
+ const {buildModuleReport,loadGroupStore}=await import('./official.js');
+ const {kvSet}=await import('./kv.js');
+ const {upsertOfficialAccounts}=await import('./official-archive-store.js');
+ const ids=Array.from({length:250},(_,i)=>`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`);
+ const store={projects:[{id:'p',name:'Psych',moduleKey:'psychology',reportEnabled:true}],groups:[{id:'g1',name:'One',projectId:'p'},{id:'g2',name:'Two',projectId:'p'}]};
+ await kvSet(f.db,'official-account-groups',store);
+ f.sqlite.exec('DELETE FROM official_account_assignments');
+ for(const [i,id] of ids.entries())f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id,updated_at) VALUES (?,?,0)').run(id,i<180?'g1':'g2');
+ const now=Date.now();await upsertOfficialAccounts(f.env,f.db,[{schema:'tiktok:'+ids[0],latestSyncAt:now,videos:[{id:'v',createTime:now,views:777}]}]);
+ let calls=[],active=0,peak=0,fail=false;
+ t.mock.method(console,'warn',()=>{});
+ t.mock.method(globalThis,'fetch',async url=>{
+  assert.match(String(url),/\/api\/v1\/publish\/stats\?/);const ids=new URL(url).searchParams.get('connectionIds').split(',');calls.push(ids);
+  active++;peak=Math.max(peak,active);await new Promise(r=>setImmediate(r));active--;
+  return fail?Response.json({error:'failed'},{status:503}):Response.json({total:ids.length,success:ids.length-1,failed:1,riskAccounts:0});
+ });
+ const current=await loadGroupStore(f.db),params=view=>new URLSearchParams({module:'psychology',period:'today',view});
+ const analytics=await buildModuleReport(f.env,f.db,current,params('analytics'),{role:'admin'});
+ assert.equal(calls.length,0);assert.equal(analytics.report.summary.views,777);assert.equal(analytics.report.summary.publishTotal,null);
+ const original=f.db.prepare;f.db.prepare=sql=>{assert.doesNotMatch(sql,/official_report_video_cache|official_videos_latest/);return original(sql);};
+ const publish=await buildModuleReport(f.env,f.db,current,params('publish'),{role:'admin'});
+ f.db.prepare=original;
+ assert.equal(publish.publishStatus,'ready');assert.equal(publish.report.summary.publishTotal,250);assert.equal(peak,3);assert.ok(calls.every(ids=>ids.length<=80));
+ const full=await buildModuleReport(f.env,f.db,current,params('full'),{role:'admin'});
+ assert.deepEqual(full.report.summary,{...analytics.report.summary,...publish.report.summary});
+ assert.deepEqual(full.report.buckets,analytics.report.buckets);
+ calls=[];
+ await buildModuleReport(f.env,f.db,current,params('publish'),{role:'operator',allowedAccountGroups:['g1']});
+ assert.deepEqual(new Set(calls.flat()),new Set(ids.slice(0,180)));
+ const blocked=params('publish');blocked.set('group','g2');
+ await assert.rejects(buildModuleReport(f.env,f.db,current,blocked,{role:'operator',allowedAccountGroups:['g1']}),e=>e.statusCode===403);
+ calls=[];await buildModuleReport(f.env,f.db,current,params('publish'),{role:'operator',allowedAccountGroups:[]});assert.equal(calls.length,0);
+ fail=true;const unavailable=await buildModuleReport(f.env,f.db,current,params('publish'),{role:'admin'});assert.equal(unavailable.publishStatus,'unavailable');
+});

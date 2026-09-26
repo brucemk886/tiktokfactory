@@ -270,7 +270,9 @@ async function handleAccountGroups(request, env, db, url, session) {
       return json(await buildGroupReport(env, db, store, decodeURIComponent(reportMatch[1]), url.searchParams.get("period") || "today"));
     }
     if (method === "GET" && pathname === "/api/official-tiktok/ops-report") {
-      return json(await buildModuleReport(env, db, store, url.searchParams, session?.user));
+      const timing = [];
+      const payload = await buildModuleReport(env, db, store, url.searchParams, session?.user, timing);
+      return json(payload, 200, { "Server-Timing": timing.join(", ") });
     }
     if (method === "GET" && pathname === "/api/official-tiktok/ops-report-history") {
       return json(await listModuleReportHistory(db, store, url.searchParams, session?.user));
@@ -476,7 +478,9 @@ async function saveGroupStore(db, store) {
   return publicState({ ...next, assignments: next.assignments });
 }
 
-async function buildModuleReport(env, db, store, searchParams, user) {
+export async function buildModuleReport(env, db, store, searchParams, user, timing = []) {
+  const startedAt = performance.now();
+  const view = searchParams.get("view") || "full";
   const moduleKey = String(searchParams.get("module") || "").trim();
   let groupId = String(searchParams.get("group") || "").trim();
   const dateKey = String(searchParams.get("date") || "").trim();
@@ -513,72 +517,61 @@ async function buildModuleReport(env, db, store, searchParams, user) {
     groupId = groups[0]?.id || "";
   }
   const accountRows = await listLatestArchiveAccounts(db);
-  const bundle = await loadArchiveBundle(env, db, archiveAccountKeysForScope(store, accountRows, {
+  const scope = {
     groupId,
     projectId: liveProject.id,
     groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-  }), accountRows);
-  const livePayload = async () => ({
-    module: liveProject.moduleKey,
-    project: liveProject,
-    groups,
-    canSeeProjectTotal,
-    scopes: reportScopes(groups, canSeeProjectTotal),
-    source: "live",
-    dates: [],
-    report: attachPublishOutcome(computeLiveReport({
-      store,
-      project: liveProject,
-      groupId,
-      period,
-      now,
-      fromKey: queryFrom,
-      toKey: queryTo,
-      bundle,
-      groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-    }), await loadScopedPublishStats(env, db, {
-      store,
-      projectId: liveProject.id,
-      groupId,
-      groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-      bundle,
-      fromKey: queryFrom,
-      toKey: queryTo,
-    })),
-  });
-  const isPresetWindow = ["today", "yesterday", "7d", "30d", "week"].includes(period);
-  if (isPresetWindow || queryFrom !== queryTo) {
-    return livePayload();
-  }
-  const snapshot = await readOpsSnapshot(db, {
-    moduleKey: liveProject.moduleKey,
-    projectId: liveProject.id,
-    groupId,
-    period: "today",
-    dateKey: queryFrom,
-  });
-  return {
-    module: liveProject.moduleKey,
-    project: liveProject,
-    groups,
-    canSeeProjectTotal,
-    scopes: reportScopes(groups, canSeeProjectTotal),
-    source: snapshot ? "snapshot" : "missing",
-    persistedAt: snapshot?.updated_at || 0,
-    dates: [],
-    report: attachPublishOutcome(
-      snapshot?.report || emptySnapshotReport(liveProject, period, queryFrom, groupId, groups, queryTo),
-      await loadScopedPublishStats(env, db, {
-        store,
-        projectId: liveProject.id,
-        groupId,
-        groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
-        bundle,
-        fromKey: queryFrom,
-        toKey: queryTo,
-      }),
-    ),
   };
+  const keys = archiveAccountKeysForScope(store, accountRows, scope);
+  const wanted = new Set(keys);
+  const scopedRows = accountRows.filter(row => wanted.has(row.account_key));
+  timing.push(`scope;dur=${(performance.now() - startedAt).toFixed(1)}`);
+  const base = {
+    module: liveProject.moduleKey, project: liveProject, groups, canSeeProjectTotal,
+    scopes: reportScopes(groups, canSeeProjectTotal), dates: [],
+  };
+  // Publish receipts only need authorized account IDs. Never read video packs here.
+  const publish = async () => {
+    const start = performance.now();
+    const stats = await loadScopedPublishStats(env, db, {
+      store, ...scope, bundle: { accountRows: scopedRows }, fromKey: queryFrom, toKey: queryTo,
+    });
+    timing.push(`publish;dur=${(performance.now() - start).toFixed(1)}`);
+    return stats;
+  };
+  if (view === "publish") {
+    const stats = await publish();
+    return { ...base, publishStatus: stats.unavailable ? "unavailable" : "ready",
+      report: { enabled: true, groupId, period, fromKey: queryFrom, toKey: queryTo,
+        summary: attachPublishOutcome({}, stats).summary } };
+  }
+  // Full API callers retain the existing response; the UI can load the two parts independently.
+  const publishPromise = view === "analytics" ? null : publish();
+  const isLive = ["today", "yesterday", "7d", "30d", "week"].includes(period) || queryFrom !== queryTo;
+  let report, source, persistedAt;
+  if (isLive) {
+    const start = performance.now();
+    const bundle = await loadArchiveBundle(env, db, keys, accountRows, selected);
+    timing.push(`archive;dur=${(performance.now() - start).toFixed(1)}`);
+    const computeStart = performance.now();
+    report = computeLiveReport({ store, project: liveProject, ...scope, period, now,
+      fromKey: queryFrom, toKey: queryTo, bundle });
+    timing.push(`compute;dur=${(performance.now() - computeStart).toFixed(1)}`);
+    source = "live";
+  } else {
+    const snapshot = await readOpsSnapshot(db, {
+      moduleKey: liveProject.moduleKey, projectId: liveProject.id, groupId,
+      period: "today", dateKey: queryFrom,
+    });
+    report = snapshot?.report || emptySnapshotReport(liveProject, period, queryFrom, groupId, groups, queryTo);
+    source = snapshot ? "snapshot" : "missing";
+    persistedAt = snapshot?.updated_at || 0;
+  }
+  if (publishPromise) report = attachPublishOutcome(report, await publishPromise);
+  else report = { ...report, summary: { ...report.summary,
+    publishTotal: null, publishSuccess: null, publishFailed: null, riskAccountCount: null } };
+  return { ...base, source, ...(persistedAt === undefined ? {} : { persistedAt }), report,
+    ...(view === "analytics" ? { publishStatus: "pending" } : {}) };
 }
 
 async function listModuleReportHistory(db, store, searchParams, user) {
@@ -703,15 +696,20 @@ async function loadScopedPublishStats(env, db, { store, projectId, groupId, grou
     return { total: 0, success: 0, failed: 0, riskAccounts: 0 };
   }
   try {
+    const chunks = chunkList(connectionIds, 80);
     const parts = [];
-    for (const chunk of chunkList(connectionIds, 80)) {
-      const params = new URLSearchParams({ from: String(start), to: String(end), connectionIds: chunk.join(",") });
-      parts.push(await signalDesk(env, db, `/api/v1/publish/stats?${params}`));
-    }
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(3, chunks.length) }, async () => {
+      while (next < chunks.length) {
+        const chunk = chunks[next++];
+        const params = new URLSearchParams({ from: String(start), to: String(end), connectionIds: chunk.join(",") });
+        parts.push(await signalDesk(env, db, `/api/v1/publish/stats?${params}`));
+      }
+    }));
     return mergePublishStats(parts);
   } catch (error) {
     console.warn(JSON.stringify({ event: "publish-stats-unavailable", error: String(error?.message || error) }));
-    return { total: 0, success: 0, failed: 0, riskAccounts: 0 };
+    return { total: 0, success: 0, failed: 0, riskAccounts: 0, unavailable: true };
   }
 }
 

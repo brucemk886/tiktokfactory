@@ -1,5 +1,7 @@
 # Current State
 
+- Shared factory data overview (/psychology-effects) renders analytics before bridge receipt totals; report reads filter the existing latest-80 cache by Beijing dates, receipts use three bounded parallel reads, and obsolete UI requests are cancelled. Full API and current group authorization remain compatible. See docs/handoffs/2026-09-27-factory-effects-speed.md.
+
 - Project unified API is available at `/api/v1/factory` with one project-wide key, module/action routing for psychology and photo factory, current administrator authorization and durable mutation replay protection. Manage the key and copy AI instructions at `/factory-api`. Existing dedicated integrations retain their scopes. See `docs/FACTORY_API.md` and `docs/handoffs/2026-09-26-project-unified-api.md`.
 
 - Shared UI assets now bypass D1 authentication through a tracked code/style/icon allowlist, with content-version browser caching and private HTML no-store. Authorization remains fresh per API/page request. Publish creation options/accounts load on dialog open, while list labels come from local records. Run `npm run assets:manifest --prefix factory-cloud` after UI JS/CSS/icon edits and commit the manifest before deploying. See docs/handoffs/2026-09-26-backend-loading.md.

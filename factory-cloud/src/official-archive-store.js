@@ -481,7 +481,26 @@ function chunk(items, size) {
 
 
 export const REPORT_VIDEO_CACHE_VERSION=1;
-export function reportVideoCacheQuery(db,keys){
+export function reportVideoCacheQuery(db,keys,window=null){
+ // Filter before transferring cached JSON from D1, keeping the same first-80
+ // window used by the shared overview. Unusable projections still fall back.
+ if(Number.isFinite(window?.startAt)&&Number.isFinite(window?.endAt)){
+  return db.prepare(`SELECT account_key,synced_at,version,
+   CASE WHEN json_valid(videos_json) AND json_type(videos_json)='array' THEN
+    (SELECT json_group_array(json(value)) FROM (
+     SELECT value FROM json_each(videos_json) v
+     WHERE CAST(v.key AS INTEGER)<80 AND
+      (CASE WHEN CAST(COALESCE(NULLIF(NULLIF(json_extract(v.value,'$.createdAt'),0),''),json_extract(v.value,'$.createTime')) AS REAL)<1e12
+       THEN CAST(COALESCE(NULLIF(NULLIF(json_extract(v.value,'$.createdAt'),0),''),json_extract(v.value,'$.createTime')) AS REAL)*1000
+       ELSE CAST(COALESCE(NULLIF(NULLIF(json_extract(v.value,'$.createdAt'),0),''),json_extract(v.value,'$.createTime')) AS REAL) END)>=?
+     AND (CASE WHEN CAST(COALESCE(NULLIF(NULLIF(json_extract(v.value,'$.createdAt'),0),''),json_extract(v.value,'$.createTime')) AS REAL)<1e12
+       THEN CAST(COALESCE(NULLIF(NULLIF(json_extract(v.value,'$.createdAt'),0),''),json_extract(v.value,'$.createTime')) AS REAL)*1000
+       ELSE CAST(COALESCE(NULLIF(NULLIF(json_extract(v.value,'$.createdAt'),0),''),json_extract(v.value,'$.createTime')) AS REAL) END)<?
+     ORDER BY CAST(v.key AS INTEGER)))
+    ELSE videos_json END AS videos_json
+   FROM official_report_video_cache WHERE account_key IN (SELECT value FROM json_each(?))`)
+   .bind(window.startAt,window.endAt,JSON.stringify(keys));
+ }
  return db.prepare('SELECT account_key,synced_at,version,videos_json FROM official_report_video_cache WHERE account_key IN (SELECT value FROM json_each(?))').bind(JSON.stringify(keys));
 }
 function reportVideoCacheWrite(db,key,stamp,videos,conditional=false){

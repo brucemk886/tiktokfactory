@@ -647,7 +647,7 @@ test("psychology overview renders project metrics and keeps filtered queries sco
     querySelectorAll() { return []; },
   };
   const context = vm.createContext({
-    document, URLSearchParams, URL,
+    document, URLSearchParams, URL, AbortController,
     location: new URL("https://factory.test/psychology-effects?module=novel-promotion&period=7d&group=psych-group"),
     fetch: async (path, options) => {
       assert.equal(options?.method || "GET", "GET");
