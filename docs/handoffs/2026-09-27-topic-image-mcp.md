@@ -18,3 +18,6 @@ Focused tests cover async success, defaults, single-image rendering key, UUID co
 
 ## Unfinished / next step
 User must add OPENAI_API_KEY as a Cloudflare Secret, refresh MCP metadata, reauthorize the write scope, then explicitly test one image and check the disabled topic. No real paid image request made during implementation. Stored collage cover does not alter existing video rendering.
+
+## Deployment
+Committed/pushed main acfea02, then deployed using npm run deploy from a clean main checkout exactly matching origin/main. Migration 0066 applied (7 statements). Worker version 05fd81a0-a7de-418a-a61b-d7b05dd73e4d; new factory-topic-image Workflow bound. Live OAuth authorization/protected-resource metadata both return 200 and factory.topics.write. Unauthenticated /mcp still returns 401 with resource challenge. OpenAI generation remains untested live until user configures the secret.
