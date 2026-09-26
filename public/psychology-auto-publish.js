@@ -1,3 +1,4 @@
+import { mountPsychologyOne } from './psychology-tiktok-one.js';
 import { VISUAL_STYLES } from './psychology-visual-styles.js';
 const $ = s => document.querySelector(s);
 const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
@@ -9,6 +10,7 @@ async function api(path, body, method) {
   if(!response.ok) throw new Error(data.error || '请求失败');
   return data;
 }
+const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,changed:()=>{resetAccountInput();summary();}});
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
@@ -23,6 +25,7 @@ function renderTemplates() {
 
 function sourceType(){return (state.mediaType==='photo'?$('#photoSource').value:$('#sourceType').value)||'peer';}
 function renderSources(){
+  one.sync();
   $('#sourceTypeField').hidden=state.mediaType!=='video';
   $('#photoSourceField').hidden=state.mediaType!=='photo';
   if(!state.canUseTopics&&$('#sourceType').value==='topic-bank')$('#sourceType').value='copy-library';
@@ -110,7 +113,7 @@ async function loadAccounts() {
     const valid=new Set(state.accounts.map(accountId));
     state.selectedAccounts=new Set([...state.selectedAccounts].filter(id=>valid.has(id)));
     if(before!==selected().join('|'))resetAccountInput();
-    state.accountsLoaded=true;state.accountsMedia=media;
+    state.accountsLoaded=true;state.accountsMedia=media;one.selectionChanged();
     renderAccountGroups();renderBatches();
   } finally {
     if(loadId===state.accountsLoadId){state.accountsLoading=false;renderAccounts();}
@@ -122,14 +125,14 @@ $('#accounts').addEventListener('input',event=>{
   const input=event.target;
   if(state.busy||state.accountsLoading||input.type!=='checkbox'||!state.accounts.some(a=>accountId(a)===input.value))return;
   if(input.checked)state.selectedAccounts.add(input.value);else state.selectedAccounts.delete(input.value);
-  resetAccountInput();renderAccountControls();summary();
+  resetAccountInput();renderAccountControls();summary();one.selectionChanged();
 });
 for(const [selector,action] of [['#selectVisibleAccounts','select'],['#clearVisibleAccounts','clear'],['#clearAllAccounts','all']]){
   $(selector).addEventListener('click',()=>{
     if(state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType)return;
     if(action==='all')state.selectedAccounts.clear();
     else for(const a of visibleAccounts()){if(action==='select')state.selectedAccounts.add(accountId(a));else state.selectedAccounts.delete(accountId(a));}
-    resetAccountInput();renderAccounts();
+    resetAccountInput();renderAccounts();one.selectionChanged();
   });
 }
 function accountName(id) {
@@ -264,12 +267,14 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
-  const body=state.submittedInput||{styleMode:$('#styleMode').value,styleId:$('#styleId').value,allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  let tiktokOne;try{tiktokOne=one.context();}catch(e){return message(e.message,true);}
+  const body=state.submittedInput||{...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
-  message('正在抽取选题并创建自动发布任务…');
+  message(body.tiktokOne?'正在检查账号并申请加入项目，随后创建任务…':'正在抽取选题并创建自动发布任务…');
   try {
     const data=await api('/api/psychology-auto-publish',body);
+    one.markJoined(body.tiktokOne,body.connectionIds);
     $('#createBatchDialog').close();globalThis.LFUI?.toast('发布任务已创建，可以在列表中查看进度。');
     state.requestId=crypto.randomUUID();state.submittedInput=null;
     message(data.duplicate?'该批次已创建，已恢复任务状态。':'任务已加入队列，每20条素材就绪后整批提交。');
@@ -302,7 +307,7 @@ function renderBatchDetail(b){
       <div class="detail-summary"><div><strong>${accounts.length}</strong><span>发布账号</span></div><div><strong>${items.length}</strong><span>本批内容</span></div><div><strong>${submitted}</strong><span>已提交中台</span></div></div>
       <h3 class="detail-publication-heading">发布状态</h3>
       <p>${esc(publicationSummary(items))}</p>${message!==publicationSummary(items)?`<p>${esc(message)}</p>`:''}
-      <div class="task-counts"><span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      <div class="task-counts">${b.config.tiktokOne?`<span>挂锚点 · 项目 ${esc(b.config.tiktokOne.campaignId)}</span>`:''}<span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
       ${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${publicationSummary(members)}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       ${schedule?`<details class="task-schedule"><summary>具体排期</summary>${schedule}</details>`:''}
       ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}

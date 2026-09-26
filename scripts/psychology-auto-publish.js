@@ -12,6 +12,12 @@ export const AUTO_TEMPLATES = Object.freeze({
 });
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
 
+export function normalizeOneProject(input) {
+ if(!input||typeof input!=='object'||Array.isArray(input))fail('请选择 TikTok One 品牌账号和项目。');
+ const connectionId=String(input.connectionId||'').trim(),accountId=String(input.accountId||'').trim(),campaignId=String(input.campaignId||'').trim();
+ if(!/^[a-zA-Z0-9_-]{1,100}$/.test(connectionId)||!/^\d{1,30}$/.test(accountId)||!/^\d{1,30}$/.test(campaignId))fail('TikTok One 品牌账号或项目无效，请重新选择。');
+ return {connectionId,accountId,campaignId};
+}
 export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule = true } = {}) {
   const mediaType = String(input.mediaType || 'video');
   if (!Object.hasOwn(AUTO_TEMPLATES, mediaType)) fail('请选择图文或视频。');
@@ -54,7 +60,9 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(!Number.isInteger(staggerSeconds)||staggerSeconds<0||staggerSeconds>600)fail('账号错开秒数应为 0–600。');
   const libraryMediaType=String(input.libraryMediaType||'all');
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
-  return { ...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  const tiktokOne=input.tiktokOne==null?null:normalizeOneProject(input.tiktokOne);
+  if(tiktokOne&&mediaType!=='video')fail('TikTok One 挂锚点发布仅支持视频模板。');
+  return { ...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {

@@ -43,6 +43,14 @@
 <div class="account-selection-actions"><button id="selectVisibleAccounts" type="button" disabled>全选筛选结果</button><button id="clearVisibleAccounts" type="button" disabled>取消当前筛选内选择</button><button id="clearAllAccounts" type="button" disabled>清空全部选择</button></div>
 <p id="accountSelectionStatus" class="field-hint" role="status" aria-live="polite"></p>
 <div id="accounts" class="account-grid" aria-live="polite">正在读取心理学项目账号…</div></section>
+<section class="panel auto-section" id="oneSection"><div class="section-title"><h2>TikTok One 项目</h2></div>
+<label class="auto-check"><input type="checkbox" id="oneEnabled"> 挂锚点发布</label>
+<div id="oneFields" hidden><div class="auto-grid">
+<label class="field">品牌账号<select id="oneBrand"><option value="">请选择品牌账号</option></select></label>
+<label class="field">项目<select id="oneProject"><option value="">请先选择品牌账号</option></select></label></div>
+<div class="account-selection-actions"><button id="oneRefreshProjects" type="button">刷新项目</button><button id="oneRecheck" type="button">重新检查账号</button></div>
+<p class="field-hint">适用于四图、单图等模板生成的视频。已加入所选项目的账号直接发布，未确认加入的账号会在创建任务时通过接口申请加入，并启用品牌合作披露。实际锚点展示与审核结果以 TikTok 为准。</p>
+<p id="oneStatus" class="field-hint" role="status"></p><div id="oneAccounts" aria-live="polite"></div></div></section>
 <section class="panel auto-section"><div class="section-title"><h2>发布计划</h2></div>
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>
 <label class="field"><span>同账号发布间隔（分钟）</span><input id="intervalMinutes" type="number" min="1" max="10080" value="60" required></label></div>

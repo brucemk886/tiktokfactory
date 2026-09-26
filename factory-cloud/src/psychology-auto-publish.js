@@ -1,3 +1,4 @@
+import { assertPsychologyOneUser, ensurePsychologyOneMembers } from './psychology-tiktok-one.js';
 import { loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
 import { psychologyItemStatus } from './psychology-item-status.js';
 import { photoCopyKey } from './peer-photo-copy-cache.js';
@@ -417,11 +418,13 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   if (existing) {
     const saved = normalizeAutoPublish(JSON.parse(existing.config_json), existing.created_at, { validateSchedule: false });
     const incoming = normalizeAutoPublish(input, existing.created_at, { validateSchedule: false });
+    if(incoming.tiktokOne)assertPsychologyOneUser(user);
     if (JSON.stringify(incoming) !== JSON.stringify(saved)) fail('该提交编号已用于其他配置，请重新提交。', 409);
     await dispatchPhotoBatch(env, batchId);
     return json({ accepted: true, duplicate: true, batchId });
   }
   const config = normalizeAutoPublish(input);
+  if(config.tiktokOne)assertPsychologyOneUser(user);
   if (config.sourceType === 'topic-bank') assertTopicBankUser(user);
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
@@ -466,6 +469,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   const commentSetting = config.mediaType==='video' ? await commentTemplate(env.DB,config.template) : {enabled:0};
   if(commentSetting.enabled && commentSetting.auto_reply_enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list')))fail('自动回复需要目标账号授予评论读取权限，请重新授权。',403);
   if(commentSetting.enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list.manage')))fail('定时评论需要目标账号授予评论管理权限，请重新授权。',403);
+  await ensurePsychologyOneMembers(env,user,config,scoped.accounts);
   const stamp = Date.now();
   const statements = [env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)')
     .bind(batchId, user.username, JSON.stringify(config), stamp)];

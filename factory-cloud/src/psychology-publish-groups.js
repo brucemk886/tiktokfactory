@@ -65,7 +65,7 @@ export async function dispatchPublishGroup(env,groupId) {
     let request=parse(group.request_json);
     if(!request.items) {
       const config=parse(group.config_json);
-      request={externalId:'local-factory-'+groupId,name:(config.name+' · 第 '+(group.ordinal+1)+' 批').slice(0,160),
+      request={...(config.tiktokOne?{tiktokOne:config.tiktokOne}:{}),externalId:'local-factory-'+groupId,name:(config.name+' · 第 '+(group.ordinal+1)+' 批').slice(0,160),
         items:rows.map(r=>({...parse(r.ready_json).item,externalRef:r.id,connectionId:r.connection_id,scheduleAt:r.schedule_at*1000}))};
       // Freeze the exact remote request before network I/O; retries reuse its stable externalId.
       await db.prepare("UPDATE psychology_publish_groups SET request_json=? WHERE id=? AND request_json='{}'").bind(JSON.stringify(request),groupId).run();
@@ -91,7 +91,7 @@ export async function dispatchPublishGroup(env,groupId) {
         connectionId:row.connection_id,accountName:remote.accountDisplayName||'',accountUsername:remote.username||'',
         officialBatchIds:[response.batch.id],batchId:response.batch.id,taskIds:[remote.id],remoteTaskId:remote.id,
         externalRef:row.id,autoTaskId:row.id,autoBatchId:group.batch_id,provider:'official',source:'official-tiktok',
-        mediaType:ready.mediaType,photoCount:ready.item.photoAssetKeys?.length||0,note:'心理学自动发布 · 每组最多20条'};
+        ...(request.tiktokOne?{tiktokOne:request.tiktokOne}:{}),mediaType:ready.mediaType,photoCount:ready.item.photoAssetKeys?.length||0,note:'心理学自动发布 · 每组最多20条'};
     });
     await mergeAndStorePublishRecords(db,records);
     await db.batch([
