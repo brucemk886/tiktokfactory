@@ -22,3 +22,12 @@ Implementation made in an isolated clean main checkout at work/effects-fast-rele
 
 ## Second pass
 First production validation retained all metrics but analytics still took 7,479 ms; receipt view took 5,065 ms. The context path repeated serial D1 reads. Reuse the existing batched fresh report context (canonical assignments, compact account rows), pass its rows through the overview, and launch both browser views concurrently. Add cache/fallback timing spans and endpoint tests for one context batch plus assignment revocation. The baseline immediately before deployment for 2026-09-26 was 9,045 ms; 348 videos, 83,599 views, buckets 10/135/199/4, receipts 357 total / 348 success / 9 failed.
+
+## Verified production result
+- Deployed code dc0740c via npm run deploy after the clean main guard; Worker version e1d5f35d-2b9d-4420-81ec-187b25a62834.
+- Full factory suite: 836 tests passed.
+- Same 2026-09-26 dataset: before 9,045 ms for the full report; after analytics 5,017 ms and receipts 3,971 ms launched together. Visible totals remain 348 videos / 83,599 views, 10 zero / 135 low / 199 normal / 4 high, 357 receipt total / 348 success / 9 failed.
+- Today after midnight: analytics 3,055 ms, receipts 3,089 ms; both HTTP 200. These are individual browser samples, not a latency guarantee.
+- Timing after change: yesterday context 1,345 ms, cache read 1,670 ms, no archive fallback; remaining latency is primarily D1/network and upstream reads. No further mutation of active rendering or publishing jobs.
+- Saved ignored evidence: work/effects-baseline.json and work/effects-release-evidence.json. Browser sessions closed. A transient ERR_CONNECTION_CLOSED during rollout recovered on one reload.
+- No unfinished correctness work. Further latency work can target database placement and per-scope SQL pagination if needed.
