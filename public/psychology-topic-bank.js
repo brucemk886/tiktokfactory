@@ -46,7 +46,7 @@ function topicPreview(topic){
   if(topic.choices?.length===4){
     return '<div class="topic-copy">'+topic.choices.map(c=>esc(c.label+": "+(c.copy||""))).join(" · ")+'</div><div class="topic-choices">'+topic.choices.map(c=>c.previewUrl?`<img src="${esc(c.previewUrl)}" alt="${esc(c.label)}" loading="lazy">`:"<span>"+esc(c.label)+"</span>").join("")+"</div>";
   }
-  return '<div class="topic-copy">'+esc(topic.content||"未填写内容，将根据题目生成")+"</div>";
+  return '<div class="topic-copy">'+esc(topic.content||"未填写内容，将根据题目生成")+"</div>"+(topic.coverAsset?`<div class="topic-choices"><a href="${esc(topic.coverAsset.url)}" target="_blank" rel="noopener"><img src="${esc(topic.coverAsset.url)}" alt="题目封面" loading="lazy"></a></div><small>素材 ID：${esc(topic.coverAsset.id)}</small>`:'');
 }
 function isFour(){return state.template==="psychology";}
 function isSingle(){return state.template==="psychology-target-2";}

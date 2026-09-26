@@ -232,7 +232,11 @@ export function normalizeTopic(input,template){
     if(typeof value!=='string'||[...value.trim()].length>150)fail(`${label} 自动回复最多150个字符。`);
     replyOptions[label]=value.trim();
   }
-  return {template,title,content,category,priority,enabled,choices,sourceImage,revealComment,replyOptions};
+  const coverAssetId=String(input.coverAssetId??input.cover_asset_id??'');
+  const imageAssetIds=input.imageAssetIds??JSON.parse(input.image_asset_ids_json||'[]');
+  if(coverAssetId&&!/^asset-[0-9a-f-]{36}$/i.test(coverAssetId))fail('封面素材 ID 无效。');
+  if(!Array.isArray(imageAssetIds)||imageAssetIds.length>6||imageAssetIds.some(id=>typeof id!=='string'||!/^asset-[0-9a-f-]{36}$/i.test(id)))fail('图片素材 ID 无效。');
+  return {template,title,content,category,priority,enabled,choices,sourceImage,revealComment,replyOptions,coverAssetId,imageAssetIds};
 }
 export function collectTopicWriteItems(input){
   if(Array.isArray(input))return normalizeWriteList(input,undefined);
@@ -254,6 +258,10 @@ function normalizeWriteList(items,fallbackTemplate){
   });
 }
 export function topicFingerprintText(topic){
+  const base=topicFingerprintBase(topic);
+  return topic.coverAssetId||topic.imageAssetIds?.length?base+'\nassets:'+JSON.stringify([topic.coverAssetId||'',topic.imageAssetIds||[]]):base;
+}
+function topicFingerprintBase(topic){
   const single=topic.sourceImage&&topic.choices?{...topic.sourceImage,choices:topic.choices}:parseSingleImageQuiz(topic.content);
   if(hasCompleteSingleImageQuiz(single)){
     return [topic.template,topic.title.normalize("NFKC").toLowerCase().replace(/\s+/g," "),[single.imageKey||single.imageUrl||"",...single.choices.map(item=>item.copy)].join("|")].join("\n");
@@ -269,7 +277,7 @@ export function topicSource(row){
   const choices=single?.choices||parseFourImageChoices(row.content);
   const script=hasCompleteSingleImageQuiz(single)?singleImageCopyText(single):hasCompleteFourImages(choices)?fourImageCopyText(choices):row.content;
   return {
-    id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,revealComment:row.reveal_comment||"",replyOptions:JSON.parse(row.reply_options_json||"{}"),
+    coverAssetId:row.cover_asset_id||'',imageAssetIds:JSON.parse(row.image_asset_ids_json||'[]'),id:row.id,title:row.title,content:row.content,category:row.category,template:row.template,revision:row.revision,revealComment:row.reveal_comment||"",replyOptions:JSON.parse(row.reply_options_json||"{}"),
     choices,sourceImage:single?{imageKey:single.imageKey||"",imageUrl:single.imageUrl||""}:null,
     videoData:{script},voiceGender:"male",
   };

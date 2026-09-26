@@ -94,7 +94,7 @@ export const UI_ASSETS = {
   "/psychology-text-card.js": "6aa632622e27c5495d68",
   "/psychology-tiktok-one.js": "714fce18e3d73960a819",
   "/psychology-topic-bank.css": "0de80c89aa09bb58d624",
-  "/psychology-topic-bank.js": "e84066f85dbc0e5b519e",
+  "/psychology-topic-bank.js": "b74c7a84746674a8db6a",
   "/psychology-topic-import.js": "cf1f06df5c277f430dcb",
   "/psychology-visual-styles.js": "91942ff4b7350d884d93",
   "/psychology.css": "0e83a4e8264de6a5b10a",

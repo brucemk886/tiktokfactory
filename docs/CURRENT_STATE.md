@@ -1,5 +1,8 @@
 # Current State
 
+- MCP v1.1 adds an explicitly authorized OpenAI image → R2 asset → disabled topic workflow, plus owner-scoped operation status. Migration 0066; paid generation is attempted at most once per request UUID, storage/import can recover without regeneration. Configure OPENAI_API_KEY and reauthorize factory.topics.write before use. Existing read grants stay read-only; single-image/collage-cover support, no four-image generation or publishing. See docs/FACTORY_MCP.md.
+
+
 - Shared factory data overview (/psychology-effects) renders analytics before bridge receipt totals; report reads filter the existing latest-80 cache by Beijing dates, receipts use three bounded parallel reads, and obsolete UI requests are cancelled. Full API and current group authorization remain compatible. See docs/handoffs/2026-09-27-factory-effects-speed.md.
 - ChatGPT read-only MCP is available at `/mcp` with OAuth 2.1/PKCE, CIMD/DCR and 19 individually scoped read tools. Factory admins approve with their existing login and manage/revoke connections at `/factory-mcp` via 统一 API. Migration 0065 and OAUTH_KV; no shared project API key is exposed. See docs/FACTORY_MCP.md.
 

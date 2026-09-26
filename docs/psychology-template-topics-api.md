@@ -146,3 +146,9 @@ Content-Type: application/json
 新增可选字段 `revealComment`（CSV 中文列名「揭晓评论」），最多 2000 字符。它独立于 content，不作为生成脚本。开启模板定时评论后，每道被抽中的题都必须填写该字段，否则整批创建会被拒绝。模板延迟默认 120 分钟，可在心理学「定时评论」页面设置，并可配置发布文案末尾的关注引导语。
 
 已创建批次固定使用当时的答案与延迟；修改题目或停用模板不追溯修改旧任务。相同题目/内容的重复导入仍跳过，修改既有答案请使用编辑功能。
+
+## AI 素材引用
+
+`topics.import` 的 item 和 `topics.update` 的 body 均可带 `coverAssetId`、`imageAssetIds`。素材 ID 为 `asset-UUID`，最多关联6张（含封面），须属于 API Key 对应管理员且状态为 ready。单图互动模板设置 coverAssetId 时会自动填写题图的 R2 imageKey，保留四个选项；拼贴模板存为题库封面附件，不修改拼贴视频渲染逻辑。
+
+读取同时返回 `coverAsset`、`imageAssets`：ID、mimeType、尺寸、字节数、SHA256、模型和私有预览地址。该素材 URL 需网页登录工厂；单图原有 image.previewUrl 的 Bearer 集成读取仍可用。旧题目未关联素材时 ID 为空，原有图片字段继续兼容。PATCH 仍须 revision，省略素材字段则保持原引用。MCP 生图入库的配置、写授权与恢复见 [FACTORY_MCP.md](FACTORY_MCP.md)。

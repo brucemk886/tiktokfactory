@@ -1,3 +1,4 @@
+import {resolveTopicAssets,hydrateTopicAssets} from './topic-assets.js';
 import { json,errorJson,readJson,sha256Hex,randomToken } from "./http.js";
 import { TOPIC_TEMPLATES,TOPIC_IMAGE_KEY,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource,parseFourImageChoices,parseSingleImageQuiz } from "../../scripts/psychology-topic-bank.js";
 export const PSYCHOLOGY_TOPIC_API="/api/integrations/psychology/template-topics";
@@ -33,7 +34,7 @@ function publicSourceImage(content){
     previewUrl:single.imageKey?`${BASE}/assets?key=${encodeURIComponent(single.imageKey)}`:single.imageUrl||"",
   };
 }
-const publicTopic=row=>({id:row.id,template:row.template,title:row.title,content:row.content,revealComment:row.reveal_comment||"",replyOptions:JSON.parse(row.reply_options_json||"{}"),category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"||row.template==="psychology-target-2"?publicChoices(row.content):null,image:row.template==="psychology-target-2"?publicSourceImage(row.content):null});
+const publicTopic=row=>({coverAssetId:row.cover_asset_id||'',imageAssetIds:JSON.parse(row.image_asset_ids_json||'[]'),id:row.id,template:row.template,title:row.title,content:row.content,revealComment:row.reveal_comment||"",replyOptions:JSON.parse(row.reply_options_json||"{}"),category:row.category,priority:row.priority,enabled:Boolean(row.enabled),usageCount:row.usage_count,lastUsedAt:row.last_used_at,revision:row.revision,createdAt:row.created_at,choices:row.template==="psychology"||row.template==="psychology-target-2"?publicChoices(row.content):null,image:row.template==="psychology-target-2"?publicSourceImage(row.content):null});
 export function topicImageObjectKey(id,ext){
   const suffix=ext==="jpeg"?"jpg":ext;
   return `psychology-topics/${id}.${suffix}`;
@@ -132,14 +133,19 @@ async function externalActor(request,db){
   return key.owner_id;
 }
 export async function writeIntegrationTopics(db,input,actor){
-  const topics=collectTopicWriteItems(input);
+  if(!input||typeof input!=="object")reject("请提交题目对象或数组。",400);
+  const raw=Array.isArray(input)?input:input.items??[input];
+  if(!Array.isArray(raw)||raw.length<1||raw.length>100||raw.some(item=>!item||typeof item!=="object"||Array.isArray(item)))reject("items 须为 1–100 条题目对象的数组。",400);
+  const resolved=[];
+  for(const item of raw)resolved.push(await resolveTopicAssets(db,item,actor,item.template||input.template));
+  const topics=collectTopicWriteItems(Array.isArray(input)?resolved:{...input,items:resolved});
   const stamp=Date.now(),statements=[],planned=[];
   for(const topic of topics){
     const fingerprint=await sha256Hex(topicFingerprintText(topic));
     const id="topic-"+fingerprint;
     planned.push({id,topic});
-    statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment,reply_options_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
-      .bind(id,topic.template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,fingerprint,actor,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions)));
+    statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment,reply_options_json,cover_asset_id,image_asset_ids_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id,topic.template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,fingerprint,actor,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions),topic.coverAssetId,JSON.stringify(topic.imageAssetIds)));
   }
   const result=await db.batch(statements);
   const items=planned.map((row,index)=>({id:row.id,template:row.topic.template,title:row.topic.title,status:Number(result[index].meta?.changes||0)?"created":"skipped"}));
@@ -164,21 +170,22 @@ async function listTopics(db,url,defaultTemplate,serialize=publicTopic){
  const [total,rows,counts]=await Promise.all([
   db.prepare('SELECT COUNT(*) n FROM psychology_template_topics WHERE '+where).bind(...args).first(),
   db.prepare('SELECT * FROM psychology_template_topics WHERE '+where+' ORDER BY created_at DESC,id LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all(),topicCounts(db)]);
- return json({templates:TOPIC_TEMPLATES,counts,total:total.n,page,pageSize,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,items:rows.results.map(serialize)});
+ return json({templates:TOPIC_TEMPLATES,counts,total:total.n,page,pageSize,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,items:await hydrateTopicAssets(db,rows.results.map(serialize),url.origin)});
 }
-async function updateTopic(db,id,input,{external=false,remove=false,serialize=publicTopic}={}){
+async function updateTopic(db,id,input,{external=false,remove=false,serialize=publicTopic,actor}={}){
  const row=await db.prepare('SELECT * FROM psychology_template_topics WHERE id=? AND deleted_at=0').bind(id).first();
  if(!row)return errorJson('题目不存在或已删除。',404);
  if(!input||typeof input!=='object'||Array.isArray(input))return errorJson('请提交题目修改对象。',400);
  if(!Object.hasOwn(input,'revision')||!Number.isSafeInteger(Number(input.revision))||Number(input.revision)!==row.revision)return errorJson('revision 缺失或题目已被修改，请重新读取后重试。',409);
  if(external){
-  const fields=['revision','title','content','category','priority','enabled','revealComment','replyOptions','choices','imageKey','imageUrl'];
+  const fields=['revision','title','content','category','priority','enabled','revealComment','replyOptions','choices','imageKey','imageUrl','coverAssetId','imageAssetIds'];
   if(Object.keys(input).some(key=>!fields.includes(key)))return errorJson('包含不可修改字段；请仅提交 revision 和要修改的题目字段。',400);
   if(Object.keys(input).length===1)return errorJson('请至少提供一个要修改的字段。',400);
  }
  let statement;
  if(remove)statement=db.prepare('UPDATE psychology_template_topics SET deleted_at=?,enabled=0,revision=revision+1 WHERE id=? AND revision=? AND deleted_at=0').bind(Date.now(),row.id,row.revision);
  else{
+  if(Object.hasOwn(input,'coverAssetId')||Object.hasOwn(input,'imageAssetIds'))input=await resolveTopicAssets(db,{coverAssetId:row.cover_asset_id||'',imageAssetIds:JSON.parse(row.image_asset_ids_json||'[]'),...input},actor,row.template);
   const previousReplies=JSON.parse(row.reply_options_json||'{}');
   if(Object.hasOwn(input,'replyOptions')&&(!input.replyOptions||typeof input.replyOptions!=='object'||Array.isArray(input.replyOptions)||Object.keys(input.replyOptions).some(k=>!['A','B','C','D'].includes(k))))return errorJson('replyOptions 须为 A/B/C/D 回复对象。',400);
   const priorImage=parseSingleImageQuiz(row.content);
@@ -188,12 +195,12 @@ async function updateTopic(db,id,input,{external=false,remove=false,serialize=pu
   if(Object.hasOwn(input,'imageUrl')&&!Object.hasOwn(input,'imageKey'))imageFields.imageKey='';
   if(Object.hasOwn(input,'imageKey')&&!Object.hasOwn(input,'imageUrl'))imageFields.imageUrl='';
   const topic=normalizeTopic({...row,...imageFields,...input,replyOptions:{...previousReplies,...input.replyOptions}},row.template);
-  statement=db.prepare('UPDATE psychology_template_topics SET title=?,content=?,category=?,priority=?,enabled=?,reveal_comment=?,reply_options_json=?,fingerprint=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND deleted_at=0')
-   .bind(topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,topic.revealComment,JSON.stringify(topic.replyOptions),await sha256Hex(topicFingerprintText(topic)),Date.now(),row.id,row.revision);
+  statement=db.prepare('UPDATE psychology_template_topics SET title=?,content=?,category=?,priority=?,enabled=?,reveal_comment=?,reply_options_json=?,fingerprint=?,cover_asset_id=?,image_asset_ids_json=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND deleted_at=0')
+   .bind(topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,topic.revealComment,JSON.stringify(topic.replyOptions),await sha256Hex(topicFingerprintText(topic)),topic.coverAssetId,JSON.stringify(topic.imageAssetIds),Date.now(),row.id,row.revision);
  }
  try{const result=await statement.run();if(!result.meta?.changes)return errorJson('题目已变化，请重新读取后重试。',409);}
  catch(error){if(String(error.message).includes('UNIQUE'))return errorJson('当前题库已存在相同题目和内容。',409);throw error;}
- return json({ok:true,...(remove?{}:{item:serialize(await db.prepare('SELECT * FROM psychology_template_topics WHERE id=?').bind(id).first())})});
+ return json({ok:true,...(remove?{}:{item:(await hydrateTopicAssets(db,[serialize(await db.prepare('SELECT * FROM psychology_template_topics WHERE id=?').bind(id).first())]))[0]})});
 }
 export async function handlePsychologyTopicBank(request,env,url,session,trusted={}){
   const external=url.pathname===PSYCHOLOGY_TOPIC_API||url.pathname.startsWith(PSYCHOLOGY_TOPIC_API+'/');
@@ -211,9 +218,9 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
       const id=path.match(/^\/(topic-[a-z0-9-]+)$/)?.[1];
       if(id&&request.method==='GET'){
        const row=await db.prepare('SELECT * FROM psychology_template_topics WHERE id=? AND deleted_at=0').bind(id).first();
-       return row?json({item:serialize(row)}):errorJson('题目不存在或已删除。',404);
+       return row?json({item:(await hydrateTopicAssets(db,[serialize(row)],url.origin))[0]}):errorJson('题目不存在或已删除。',404);
       }
-      if(id&&request.method==='PATCH')return await updateTopic(db,id,await readImport(request),{external:true,serialize});
+      if(id&&request.method==='PATCH')return await updateTopic(db,id,await readImport(request),{external:true,serialize,actor});
       return errorJson('支持 GET 列表/单题、POST 新增和 PATCH 单题修改；不支持此路径或方法。',405);
     }
     if(!session)return errorJson("请先登录。",401);
@@ -250,14 +257,15 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
       const input=await readJson(request),template=validateTopicTemplate(input.template);
       if(!/^[0-9a-f-]{36}$/i.test(String(input.requestId||"")))return errorJson("提交编号无效，请重试。",400);
       if(!Array.isArray(input.items)||!input.items.length||input.items.length>100)return errorJson("每次可导入1–100条题目。",400);
-      const topics=input.items.map((item,index)=>{try{return normalizeTopic(item,template);}catch(error){throw Object.assign(error,{message:"第"+(index+1)+"条："+error.message});}});
+      const resolved=[];for(const item of input.items)resolved.push(await resolveTopicAssets(db,item,user.id,template));
+      const topics=resolved.map((item,index)=>{try{return normalizeTopic(item,template);}catch(error){throw Object.assign(error,{message:"第"+(index+1)+"条："+error.message});}});
       const id=await sha256Hex(user.username+":"+input.requestId),hash=await sha256Hex(JSON.stringify(topics));
       const prior=await db.prepare("SELECT * FROM psychology_topic_imports WHERE id=?").bind(id).first();
       if(prior){if(prior.payload_hash!==hash)return errorJson("该提交编号对应的内容已改变，请重新提交。",409);return json({duplicate:true,received:topics.length});}
       const stamp=Date.now(),statements=[db.prepare("INSERT INTO psychology_topic_imports(id,payload_hash,created_by,created_at) VALUES (?,?,?,?)").bind(id,hash,user.username,stamp)];
       for(const[index,topic]of topics.entries()){
-        statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment,reply_options_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
-          .bind("topic-"+id.slice(0,32)+"-"+index,template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,await sha256Hex(topicFingerprintText(topic)),user.username,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions)));
+        statements.push(db.prepare("INSERT OR IGNORE INTO psychology_template_topics(id,template,title,content,category,priority,enabled,fingerprint,created_by,created_at,updated_at,reveal_comment,reply_options_json,cover_asset_id,image_asset_ids_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+          .bind("topic-"+id.slice(0,32)+"-"+index,template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,await sha256Hex(topicFingerprintText(topic)),user.username,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions),topic.coverAssetId,JSON.stringify(topic.imageAssetIds)));
       }
       try{
         const result=await db.batch(statements);const created=result.slice(1).reduce((n,r)=>n+Number(r.meta?.changes||0),0);
@@ -270,7 +278,7 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
     }
     const match=url.pathname.match(/^\/api\/psychology-template-topics\/(topic-[a-z0-9-]+)$/);
     if(match&&["PATCH","DELETE"].includes(request.method)){
-      return await updateTopic(db,match[1],await readJson(request),{remove:request.method==='DELETE'});
+      return await updateTopic(db,match[1],await readJson(request),{remove:request.method==='DELETE',actor:user.id});
     }
     return errorJson("不支持此请求。",405);
   }catch(error){return errorJson(error.message||"题库操作失败。",error.statusCode||400);}

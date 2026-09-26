@@ -9,9 +9,9 @@ const photo=(method,path,description,query=[],example={})=>op(method,'/api/photo
 export const CATALOG={
  psychology:{
   'topics.list':op('GET','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'读取各模板题库与题目',['template','page','pageSize','q','enabled','onlyUnused'],{query:{template:'all',page:1}}),
-  'topics.get':op('GET','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'读取题目及 revision',[],{id:'topic-ID'}),
-  'topics.import':op('POST','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'导入模板题目',[],{body:{template:'psychology-collage',items:[{title:'测试题目',content:'具体题目和完整内容',enabled:false}]}}),
-  'topics.update':op('PATCH','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'按 revision 修改题目',[],{id:'topic-ID',body:{revision:1,title:'新的题目'}}),
+  'topics.get':op('GET','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'读取题目及 revision',[],{id:'topic-ID'},'返回 coverAssetId/imageAssetIds 及关联素材元数据；素材 URL 需要登录工厂。'),
+  'topics.import':op('POST','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'导入模板题目',[],{body:{template:'psychology-collage',items:[{title:'测试题目',content:'具体题目和完整内容',enabled:false}]}},'可选 coverAssetId 和 imageAssetIds（最多6个），须为当前账号所属的 ready 素材。单图模板 coverAssetId 自动绑定题图，仍需完整四个 choices。'),
+  'topics.update':op('PATCH','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'按 revision 修改题目',[],{id:'topic-ID',body:{revision:1,title:'新的题目'}},'支持 coverAssetId/imageAssetIds；先读当前 revision。图片引用须属于当前账号，省略则保留。'),
   'copies.list':op('GET','/api/integrations/psychology/copy-library','copy',copy,'读取文案原文',['page','pageSize','mediaType','status','q'],{query:{mediaType:'all',page:1}}),
   'copies.get':op('GET','/api/integrations/psychology/copy-library/:id','copy',copy,'读取原文和 revision',[],{id:'psy-ID'}),
   'copies.update':op('PATCH','/api/integrations/psychology/copy-library/:id','copy',copy,'按 revision 修改已提取原文',[],{id:'psy-ID',body:{revision:'从读取结果取得',title:'新标题'}}),

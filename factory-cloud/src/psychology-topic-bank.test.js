@@ -18,6 +18,7 @@ function fixture(t){
   sqlite.exec(fs.readFileSync(new URL("../migrations/0033_psychology_template_topic_keys.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0036_psychology_scheduled_comments.sql",import.meta.url),"utf8"));
   sqlite.exec(fs.readFileSync(new URL("../migrations/0040_psychology_auto_replies.sql",import.meta.url),"utf8"));
+  for(const name of ["0065_factory_mcp.sql","0066_topic_image_assets.sql"])sqlite.exec(fs.readFileSync(new URL("../migrations/"+name,import.meta.url),"utf8"));
   const db={prepare(sql){return {args:[],bind(...args){this.args=args;return this;},
     async first(){return sqlite.prepare(sql).get(...this.args)||null;},
     async all(){

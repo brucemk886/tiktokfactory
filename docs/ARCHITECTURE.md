@@ -176,4 +176,9 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 
 ## Read-only ChatGPT MCP (2026-09-27)
 
-`factory-cloud/src/entry.js` wraps the existing fetch handler using `factory-mcp.js`; cron/queue/workflows are retained. OAuthProvider owns metadata, registration and tokens, with explicit factory-session consent. `factory-mcp-tools.js` exposes only 19 allowlisted read tools and dispatches through `callFactoryRead`, a server-only adapter over existing unified API handlers. Current user permissions and D1 connection revocation are checked on every request. `OAUTH_KV` is separate from application storage; migration 0065 holds only connection audit metadata. See FACTORY_MCP.md for protocol and setup details.
+`factory-cloud/src/entry.js` wraps the existing fetch handler using `factory-mcp.js`; cron/queue/workflows are retained. OAuthProvider owns metadata, registration and tokens, with explicit factory-session consent. `factory-mcp-tools.js` exposes 19 allowlisted business read tools and dispatches through `callFactoryRead`, a server-only adapter over existing unified API handlers. Current user permissions and D1 connection revocation are checked on every request. `OAUTH_KV` is separate from application storage; migration 0065 holds only connection audit metadata. See FACTORY_MCP.md for protocol and setup details.
+
+
+## Topic image generation and assets
+
+`topic-image-operation.js` owns a durable operation identified by owner + request UUID, backed by migration 0066 and `TopicImageWorkflow`. OpenAI generation is claimed atomically once, without provider retries. R2 image bytes and operation/hash metadata form the durable recovery checkpoint; `topic-assets.js` owns asset reference validation, ownership and bounded batch hydration. The existing topic importer remains the single topic insertion path and its fingerprint includes asset references. Defaults disabled; no publishing call. `factory.topics.write` is explicit extra OAuth consent, separate from existing read tokens. Existing image key format/renderers and workflows remain compatible. See FACTORY_MCP.md.

@@ -35,3 +35,7 @@ export class PsychologyCopyWorkflow extends WorkflowEntrypoint {
 export class PhotoFactoryWorkflow extends WorkflowEntrypoint {
  async run(event,step){return (await import('./photo-factory-execution.js')).runPhotoFactoryWorkflow(this.env,event,step);}
 }
+
+export class TopicImageWorkflow extends WorkflowEntrypoint {
+ async run(event,step){return (await import('./topic-image-operation.js')).runTopicImageWorkflow(this.env,event,step);}
+}
