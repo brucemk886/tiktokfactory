@@ -54,7 +54,7 @@ export const UI_ASSETS = {
   "/photo-factory.css": "783461986b533d8c6291",
   "/photo-factory.js": "70679e33602abe13744c",
   "/psychology-auto-publish.css": "6bda776765580a296297",
-  "/psychology-auto-publish.js": "7a798f93b453baeb399c",
+  "/psychology-auto-publish.js": "9ae34f81924bb521b1e9",
   "/psychology-auto-replies.js": "2eb022a20e57b0d02359",
   "/psychology-autopilot.css": "5e1afe63642fc50d67fa",
   "/psychology-autopilot.js": "e350461a469da4f066af",

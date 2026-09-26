@@ -27,6 +27,7 @@ test('a fast batch response is rerendered with @handles when slow account data a
   const h=harness(new Promise(resolve=>{resolveAccounts=resolve;}));
   await tick();
   assert.match(h.node('#batches').innerHTML,/账号加载中/);
+  assert.match(h.node('#accounts').innerHTML,/正在读取/);assert.doesNotMatch(h.node('#accounts').innerHTML,/还没有可发布账号/);
   assert.doesNotMatch(h.node('#batches').innerHTML,/internal-[abc]/);
   resolveAccounts([{connectionId:'internal-a',username:'first',displayName:'Nickname'}, {id:'internal-b',username:'@second'}, {connectionId:'internal-c',username:'third'}]);
   await h.ready;

@@ -21,3 +21,6 @@ After changing tracked frontend JS/CSS/icons run `npm run assets:manifest --pref
 
 ## Remaining
 Observe actual post-release browser timings; network and individual business-query latency are still separate from public static serving. Existing queued/running work remains untouched.
+
+## Production verification
+On the same Chrome profile after rollout: publish FCP 908 ms / load 1244 ms (before 2752 / 5539); copy library FCP 828 ms / load 956 ms (before 2904 / 7099). These are individual navigation samples, not a latency guarantee or API completion time. Publish list request was 1916 ms after versus 2756 ms before. Entry sends auth + list only; opening creation then loads topics and 187 account choices successfully, with no publish/join performed. Loading placeholders were clarified so deferred account reads are not shown as empty accounts.
