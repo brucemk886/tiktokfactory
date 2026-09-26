@@ -173,3 +173,7 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 - `factory-api.js` authenticates one active project key, validates bounded module/action envelopes and dispatches only the fixed operations in `factory-api-catalog.js`. Business modules retain authorization, ownership, revisions, scheduling, publication and quality rules. Trusted actor adapters are server arguments, never request-provided claims.
 - `factory_ai_keys` stores the singleton project key hash and owner. `factory_ai_requests` stores durable mutation claims and JSON receipts, keyed by owner/request UUID. Unknown results stay claimed and cannot automatically repeat; key rotation does not remove claims. Reads delegate normally.
 - `/factory-api` is the admin key/catalog UI. Legacy scoped API entry points remain compatible and do not inherit the broader project credential.
+
+## Read-only ChatGPT MCP (2026-09-27)
+
+`factory-cloud/src/entry.js` wraps the existing fetch handler using `factory-mcp.js`; cron/queue/workflows are retained. OAuthProvider owns metadata, registration and tokens, with explicit factory-session consent. `factory-mcp-tools.js` exposes only 19 allowlisted read tools and dispatches through `callFactoryRead`, a server-only adapter over existing unified API handlers. Current user permissions and D1 connection revocation are checked on every request. `OAUTH_KV` is separate from application storage; migration 0065 holds only connection audit metadata. See FACTORY_MCP.md for protocol and setup details.

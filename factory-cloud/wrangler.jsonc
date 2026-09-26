@@ -22,7 +22,8 @@
   ],
   "compatibility_date": "2026-08-03",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "global_fetch_strictly_public"
   ],
   "workers_dev": true,
   "preview_urls": false,
@@ -99,5 +100,11 @@
         "retry_delay": 60
       }
     ]
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "6505aebdac4947bf8116cb4d096aab13"
+    }
+  ]
 }

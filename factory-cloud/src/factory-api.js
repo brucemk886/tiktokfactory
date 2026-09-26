@@ -120,3 +120,14 @@ export async function handleFactoryApi(request,env,url,session){
   }catch{return json({error:'结果保存失败，请检查业务记录；不要重复执行。',code:'RESULT_UNKNOWN',requestId:input.requestId},503);}
  }catch(error){return errorJson(error.statusCode?error.message:'统一 API 暂时不可用。',error.statusCode||500);}
 }
+
+// Internal-only adapter: OAuth callers cannot supply routes, headers or write actions.
+export async function callFactoryRead(env,user,input,origin){
+ only(input,['module','action','params']);
+ const entry=entryFor(user,input.module,input.action);
+ if(entry.method!=='GET')fail('MCP 仅开放读取操作。',403);
+ const {url,request}=prepare(input,entry,origin);
+ // The legacy topic reader calls its search parameter query.
+ if(input.module==='psychology'&&input.action==='topics.list'&&url.searchParams.has('q'))url.searchParams.set('query',url.searchParams.get('q'));
+ return dispatch(entry,request,env,url,user);
+}

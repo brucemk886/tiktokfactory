@@ -4,7 +4,9 @@ import { enqueueAutoPhotoRender } from './psychology-auto-publish.js';
 import { runPeerPhotoWorkflow } from './peer-photo-workflow.js';
 import { runGeminiVideoWorkflow } from './gemini-video-workflow.js';
 import { runPsychologyRecreationWorkflow } from './psychology-recreation-workflow.js';
-export { default } from './index.js';
+import factory from './index.js';
+import {createMcpWorker} from './factory-mcp.js';
+export default createMcpWorker(factory);
 
 export class PeerPhotoWorkflow extends WorkflowEntrypoint {
   async run(event, step) {

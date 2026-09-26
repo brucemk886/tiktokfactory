@@ -23,7 +23,7 @@ export const UI_ASSETS = {
   "/hub.js": "fe1e434f86e2e4b5b81c",
   "/local-queue.css": "751ce2163a2a979ed1ae",
   "/local-queue.js": "f4cc309a963613ab28c5",
-  "/login.js": "3908a50ab0c2b05d89db",
+  "/login.js": "5af4f9fd9c5b6a1c9a38",
   "/module-pages.css": "7efd8540a69c631366de",
   "/module-publish.js": "2cd58f1ce8acbca8c5c8",
   "/novel-audio.css": "c0771a32eab0a2f9d039",

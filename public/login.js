@@ -14,5 +14,8 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
   const data = await response.json();
   if (!response.ok) return status.textContent = data.error || "登录失败。";
   if (!data.home) return status.textContent = "当前账号没有可访问的页面，请联系管理员分配 GeeLark 备用权限。";
-  location.assign(data.home);
+  const next = new URLSearchParams(location.search).get('next');
+  // Only the two same-origin OAuth pages may override the normal login destination.
+  const target = next && new URL(next, location.origin);
+  location.assign(target && target.origin === location.origin && ['/oauth/authorize', '/factory-mcp'].includes(target.pathname) ? target.href : data.home);
 });

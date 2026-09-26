@@ -1,6 +1,7 @@
 # Current State
 
 - Shared factory data overview (/psychology-effects) renders analytics before bridge receipt totals; report reads filter the existing latest-80 cache by Beijing dates, receipts use three bounded parallel reads, and obsolete UI requests are cancelled. Full API and current group authorization remain compatible. See docs/handoffs/2026-09-27-factory-effects-speed.md.
+- ChatGPT read-only MCP is available at `/mcp` with OAuth 2.1/PKCE, CIMD/DCR and 19 individually scoped read tools. Factory admins approve with their existing login and manage/revoke connections at `/factory-mcp` via 统一 API. Migration 0065 and OAUTH_KV; no shared project API key is exposed. See docs/FACTORY_MCP.md.
 
 - Project unified API is available at `/api/v1/factory` with one project-wide key, module/action routing for psychology and photo factory, current administrator authorization and durable mutation replay protection. Manage the key and copy AI instructions at `/factory-api`. Existing dedicated integrations retain their scopes. See `docs/FACTORY_API.md` and `docs/handoffs/2026-09-26-project-unified-api.md`.
 
