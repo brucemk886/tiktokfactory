@@ -167,3 +167,9 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 - psychology-management-api.js authenticates scoped psy_manage_ tokens against the current administrator, then delegates only explicit report/autopilot/style operations. Import keys retain their original separate boundary. D1 owns hashed keys, owner-scoped report presets, style overrides and idempotency fingerprints (0063).
 - Report metrics reuse the existing overview/scalable-report services and remain read-only. Autopilot creates paused through this adapter, requires revision-aware explicit activation and uses the existing scheduler. The external list is paginated.
 - psychology-managed-styles.js resolves built-ins plus owner changes. Photo creation persists the full validated style definition into the immutable job payload; local and cloud renderers use that snapshot. Subsequent edits never restyle existing tasks.
+
+## Project unified API
+
+- `factory-api.js` authenticates one active project key, validates bounded module/action envelopes and dispatches only the fixed operations in `factory-api-catalog.js`. Business modules retain authorization, ownership, revisions, scheduling, publication and quality rules. Trusted actor adapters are server arguments, never request-provided claims.
+- `factory_ai_keys` stores the singleton project key hash and owner. `factory_ai_requests` stores durable mutation claims and JSON receipts, keyed by owner/request UUID. Unknown results stay claimed and cannot automatically repeat; key rotation does not remove claims. Reads delegate normally.
+- `/factory-api` is the admin key/catalog UI. Legacy scoped API entry points remain compatible and do not inherit the broader project credential.

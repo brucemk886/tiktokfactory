@@ -195,13 +195,14 @@ async function updateTopic(db,id,input,{external=false,remove=false,serialize=pu
  catch(error){if(String(error.message).includes('UNIQUE'))return errorJson('当前题库已存在相同题目和内容。',409);throw error;}
  return json({ok:true,...(remove?{}:{item:serialize(await db.prepare('SELECT * FROM psychology_template_topics WHERE id=?').bind(id).first())})});
 }
-export async function handlePsychologyTopicBank(request,env,url,session){
+export async function handlePsychologyTopicBank(request,env,url,session,trusted={}){
   const external=url.pathname===PSYCHOLOGY_TOPIC_API||url.pathname.startsWith(PSYCHOLOGY_TOPIC_API+'/');
   if(!external && !url.pathname.startsWith(BASE))return null;
   try{
     const db=env.DB;
     if(external){
-      const actor=await externalActor(request,db);
+      if(trusted.user)assertTopicBankUser(trusted.user);
+      const actor=trusted.user?.id || await externalActor(request,db);
       const path=url.pathname.slice(PSYCHOLOGY_TOPIC_API.length);
       if(!path&&request.method==='POST')return json(await writeIntegrationTopics(db,await readImport(request),actor));
       const serialize=row=>integrationTopic(row,url.origin);

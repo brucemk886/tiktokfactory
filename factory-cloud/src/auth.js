@@ -421,9 +421,9 @@ function withWorkJournalModule(value, role) {
   if (role !== "admin") return value;
   const modules = Array.isArray(value) ? [...value] : [];
   if (!modules.length) return value;
-  const withoutJournal = modules.filter((moduleId) => moduleId !== "work-journal");
+  const withoutJournal = modules.filter((moduleId) => !["work-journal","factory-api"].includes(moduleId));
   const accountsIndex = withoutJournal.indexOf("accounts");
-  withoutJournal.splice(accountsIndex >= 0 ? accountsIndex : withoutJournal.length, 0, "work-journal");
+  withoutJournal.splice(accountsIndex >= 0 ? accountsIndex : withoutJournal.length, 0, "work-journal", "factory-api");
   return withoutJournal;
 }
 

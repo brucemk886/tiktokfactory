@@ -99,12 +99,12 @@ async function views(db,user,module,id,method,input){
  if(!changed.meta?.changes)fail('方案已变化或已达 100 个上限，请重新读取。',409);
  return json({item:publicView(await db.prepare('SELECT * FROM psychology_report_views WHERE id=?').bind(id).first())},old?200:201);
 }
-export async function handlePsychologyManagement(request,env,url,session){
+export async function handlePsychologyManagement(request,env,url,session,trusted={}){
  const external=url.pathname===MANAGEMENT_API||url.pathname.startsWith(MANAGEMENT_API+'/');
  if(!external&&url.pathname!==INTERNAL+'/api-key'&&url.pathname!==INTERNAL+'/styles')return null;
  try{
   let user,scopes;
-  if(external)({user,scopes}=await actor(request,env.DB));
+  if(external)({user,scopes}=trusted.actor || await actor(request,env.DB));
   else{
    user=session?.user;if(!user)fail('请先登录。',401);
    if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)fail('不允许跨站修改。',403);

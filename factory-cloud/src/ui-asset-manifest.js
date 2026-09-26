@@ -16,6 +16,8 @@ export const UI_ASSETS = {
   "/asset-usage.css": "45f9b9f94c9f323652d1",
   "/asset-usage.js": "1fd3164cd91ee7831f32",
   "/audio-job.js": "694c0a94e435e1e223a9",
+  "/factory-api.css": "50d0a468f5dbbd39a5d5",
+  "/factory-api.js": "0940d47e547488ba35a8",
   "/geelark-profiles.js": "b07b9002f79708849b63",
   "/hub.css": "2cd43661aaa22b2f93ad",
   "/hub.js": "fe1e434f86e2e4b5b81c",

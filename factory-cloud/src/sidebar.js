@@ -50,6 +50,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("stats", "/stats", "GeeLark · 发布记录", ALL, geelarkBackupGroup()),
   moduleItem("analytics-settings", "/analytics-settings", "GeeLark · 抓取配置", ALL, geelarkBackupGroup()),
   moduleItem("work-journal", "/work-journal", "工作记录", ALL),
+  moduleItem("factory-api", "/factory-api", "统一 API", ["admin"]),
   moduleItem("accounts", "/accounts", "账户管理", ["admin"])
 ]);
 
@@ -112,6 +113,7 @@ const ACCOUNT_DATA_DETAIL_PATHS = Object.freeze(["/official-account-detail", "/o
 
 export function canAccessPath(user, pathname) {
   if (!user) return false;
+  if(["/factory-api","/factory-api.html"].includes(pathname))return user.role==="admin";
   if(pathname.startsWith("/photo-factory"))return user.role==="admin"&&(user.sidebarModules||[]).includes("photo-factory");
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {

@@ -1,3 +1,5 @@
+import {handleFactoryApi} from './factory-api.js';
+import {FACTORY_API} from './factory-api-catalog.js';
 import {serveUiAsset,versionPageAssets} from './ui-assets.js';
 import {handlePsychologyManagement,MANAGEMENT_API} from './psychology-management-api.js';
 import {PSYCHOLOGY_COPY_API} from './psychology-copy-integration.js';
@@ -51,6 +53,7 @@ export default {
       const authResponse = await handleAuth(request, env, url);
       if (authResponse) return authResponse;
 
+      if (url.pathname === FACTORY_API) return await handleFactoryApi(request,env,url,null);
       if (url.pathname === MANAGEMENT_API || url.pathname.startsWith(MANAGEMENT_API + '/')) return await handlePsychologyManagement(request,env,url,null);
       if (url.pathname === PHOTO_IMPORT) return await handlePhotoFactory(request,env,url,null);
       if (url.pathname === PSYCHOLOGY_PEER_API || url.pathname === PSYCHOLOGY_COPY_API || url.pathname.startsWith(PSYCHOLOGY_COPY_API + '/')) return await handlePsychologyPeerHits(request, env, url, null);
@@ -68,7 +71,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyManagement,handlePsychologyOne,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
