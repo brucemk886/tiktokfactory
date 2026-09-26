@@ -247,3 +247,20 @@ const rewriteRules=`You find and submit English psychology photo posts (TikTok p
 $("#copyRulesBtn")?.addEventListener("click",()=>copy(rewriteRules));
 if(integrated)for(const selector of ['#libraryStatus','#rewriteStatus'])$(selector).addEventListener('change',()=>{state.page=1;document.dispatchEvent(new CustomEvent('peer-selection-clear'));loadList();});
 applyMediaType(new URLSearchParams(location.search).get('mediaType')==='photo'?'photo':'video');if(!integrated)loadKey();
+
+const copyReadRules=`文案库 API（沿用 psy_hits_ 密钥，不需要登录 Cookie）：
+Authorization: Bearer YOUR_API_KEY
+文案列表：GET ${location.origin}/api/integrations/psychology/copy-library?mediaType=all&status=done&page=1&pageSize=20
+单篇文案：GET ${location.origin}/api/integrations/psychology/copy-library/COPY_ID
+修改原文：PATCH ${location.origin}/api/integrations/psychology/copy-library/COPY_ID
+Content-Type: application/json
+{"revision":"读取返回的 revision","title":"新标题","pages":["第1页原文","第2页原文"]}
+COPY_ID 使用页面文案 ID 或 GET 返回的 id。列表默认已完成文案；mediaType=all/photo/video，status=all/done/queued/running/failed，q 搜索；pageSize 为 1–100，逐页读取直到 hasMore=false。
+PATCH 原文可改 title/caption/pages/transcript/onScreenText/topics/topComments/topCommentsNote；图文 pages 为 1–6 项字符串，每项有效正文最多500字符，视频用 transcript。未传字段保留。正文修改会同步来源，正在提取的文案返回409，等待完成后修改。
+改写列表：GET ${location.origin}/api/integrations/psychology/copy-library/COPY_ID/rewrites?page=1&pageSize=20
+读取或修改单个改写：GET/PATCH ${location.origin}/api/integrations/psychology/copy-library/COPY_ID/rewrites/VERSION_ID
+改写 PATCH 同样须 revision，可改 title/caption/pages/enabled/rewriteModel/score/scoreReason/comparison；只能访问密钥所属账号的版本，未通过质检不能通过 API 直接启用。comparison 使用原有逐句翻译结构。正文修改仍执行质量检查，并清除未重新提供的旧评分和翻译。
+revision 是不透明字符串，请原样回传；409时重新读取并核对，不要盲目覆盖。不要回传整个读取对象。接口不删除文案、不创建发布任务。
+新增仍 POST ${endpoint}。原地址的 GET 仍是 watchAccounts/enrich 清单，不是文案列表。`;
+if($("#copyReadExample"))$("#copyReadExample").textContent=copyReadRules;
+$("#copyReadRulesBtn")?.addEventListener('click',()=>copy(copyReadRules));

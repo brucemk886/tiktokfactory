@@ -146,15 +146,74 @@ export async function writeIntegrationTopics(db,input,actor){
   const created=items.filter(item=>item.status==="created").length;
   return {accepted:topics.length,created,skipped:topics.length-created,items};
 }
+function integrationTopic(row,origin){
+ const item=publicTopic(row);
+ const image=value=>value&&({...value,previewUrl:value.imageKey?`${origin}${PSYCHOLOGY_TOPIC_API}/assets?key=${encodeURIComponent(value.imageKey)}`:value.imageUrl||''});
+ return {...item,choices:item.choices?.map(image)||null,image:image(item.image)};
+}
+async function listTopics(db,url,defaultTemplate,serialize=publicTopic){
+ const template=url.searchParams.get('template')||defaultTemplate,query=(url.searchParams.get('query')||'').slice(0,100);
+ if(template!=='all')validateTopicTemplate(template);
+ const enabled=url.searchParams.get('enabled')||'all';
+ if(!['all','active','inactive'].includes(enabled))return errorJson('启用筛选无效。',400);
+ const pageSize=Number(url.searchParams.get('pageSize')||20);
+ if(!Number.isInteger(pageSize)||pageSize<1||pageSize>100)return errorJson('pageSize 须为 1–100 的整数。',400);
+ const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page'))||1)));
+ const where="(?='all' OR template=?) AND deleted_at=0"+(enabled==='active'?' AND enabled=1':enabled==='inactive'?' AND enabled=0':'')+" AND (?='' OR title LIKE ? OR content LIKE ? OR category LIKE ?)";
+ const args=[template,template,query,'%'+query+'%','%'+query+'%','%'+query+'%'];
+ const [total,rows,counts]=await Promise.all([
+  db.prepare('SELECT COUNT(*) n FROM psychology_template_topics WHERE '+where).bind(...args).first(),
+  db.prepare('SELECT * FROM psychology_template_topics WHERE '+where+' ORDER BY created_at DESC,id LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all(),topicCounts(db)]);
+ return json({templates:TOPIC_TEMPLATES,counts,total:total.n,page,pageSize,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,items:rows.results.map(serialize)});
+}
+async function updateTopic(db,id,input,{external=false,remove=false,serialize=publicTopic}={}){
+ const row=await db.prepare('SELECT * FROM psychology_template_topics WHERE id=? AND deleted_at=0').bind(id).first();
+ if(!row)return errorJson('题目不存在或已删除。',404);
+ if(!input||typeof input!=='object'||Array.isArray(input))return errorJson('请提交题目修改对象。',400);
+ if(!Object.hasOwn(input,'revision')||!Number.isSafeInteger(Number(input.revision))||Number(input.revision)!==row.revision)return errorJson('revision 缺失或题目已被修改，请重新读取后重试。',409);
+ if(external){
+  const fields=['revision','title','content','category','priority','enabled','revealComment','replyOptions','choices','imageKey','imageUrl'];
+  if(Object.keys(input).some(key=>!fields.includes(key)))return errorJson('包含不可修改字段；请仅提交 revision 和要修改的题目字段。',400);
+  if(Object.keys(input).length===1)return errorJson('请至少提供一个要修改的字段。',400);
+ }
+ let statement;
+ if(remove)statement=db.prepare('UPDATE psychology_template_topics SET deleted_at=?,enabled=0,revision=revision+1 WHERE id=? AND revision=? AND deleted_at=0').bind(Date.now(),row.id,row.revision);
+ else{
+  const previousReplies=JSON.parse(row.reply_options_json||'{}');
+  if(Object.hasOwn(input,'replyOptions')&&(!input.replyOptions||typeof input.replyOptions!=='object'||Array.isArray(input.replyOptions)||Object.keys(input.replyOptions).some(k=>!['A','B','C','D'].includes(k))))return errorJson('replyOptions 须为 A/B/C/D 回复对象。',400);
+  const priorImage=parseSingleImageQuiz(row.content);
+  const imageChange=row.template==='psychology-target-2'&&['choices','imageKey','imageUrl'].some(k=>Object.hasOwn(input,k));
+  const imageFields=imageChange&&priorImage?{choices:priorImage.choices,imageKey:priorImage.imageKey||'',imageUrl:priorImage.imageUrl||''}:{};
+  // Replacing the URL clears an old uploaded-image key (and conversely).
+  if(Object.hasOwn(input,'imageUrl')&&!Object.hasOwn(input,'imageKey'))imageFields.imageKey='';
+  if(Object.hasOwn(input,'imageKey')&&!Object.hasOwn(input,'imageUrl'))imageFields.imageUrl='';
+  const topic=normalizeTopic({...row,...imageFields,...input,replyOptions:{...previousReplies,...input.replyOptions}},row.template);
+  statement=db.prepare('UPDATE psychology_template_topics SET title=?,content=?,category=?,priority=?,enabled=?,reveal_comment=?,reply_options_json=?,fingerprint=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND deleted_at=0')
+   .bind(topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,topic.revealComment,JSON.stringify(topic.replyOptions),await sha256Hex(topicFingerprintText(topic)),Date.now(),row.id,row.revision);
+ }
+ try{const result=await statement.run();if(!result.meta?.changes)return errorJson('题目已变化，请重新读取后重试。',409);}
+ catch(error){if(String(error.message).includes('UNIQUE'))return errorJson('当前题库已存在相同题目和内容。',409);throw error;}
+ return json({ok:true,...(remove?{}:{item:serialize(await db.prepare('SELECT * FROM psychology_template_topics WHERE id=?').bind(id).first())})});
+}
 export async function handlePsychologyTopicBank(request,env,url,session){
-  const external=url.pathname===PSYCHOLOGY_TOPIC_API;
+  const external=url.pathname===PSYCHOLOGY_TOPIC_API||url.pathname.startsWith(PSYCHOLOGY_TOPIC_API+'/');
   if(!external && !url.pathname.startsWith(BASE))return null;
   try{
     const db=env.DB;
     if(external){
       const actor=await externalActor(request,db);
-      if(request.method!=="POST")return errorJson("此密钥仅支持 POST 写入模板题库。",405);
-      return json(await writeIntegrationTopics(db,await readImport(request),actor));
+      const path=url.pathname.slice(PSYCHOLOGY_TOPIC_API.length);
+      if(!path&&request.method==='POST')return json(await writeIntegrationTopics(db,await readImport(request),actor));
+      const serialize=row=>integrationTopic(row,url.origin);
+      if(!path&&request.method==='GET')return await listTopics(db,url,'all',serialize);
+      if(path==='/assets'&&request.method==='GET')return await serveTopicImage(env,url.searchParams.get('key'));
+      const id=path.match(/^\/(topic-[a-z0-9-]+)$/)?.[1];
+      if(id&&request.method==='GET'){
+       const row=await db.prepare('SELECT * FROM psychology_template_topics WHERE id=? AND deleted_at=0').bind(id).first();
+       return row?json({item:serialize(row)}):errorJson('题目不存在或已删除。',404);
+      }
+      if(id&&request.method==='PATCH')return await updateTopic(db,id,await readImport(request),{external:true,serialize});
+      return errorJson('支持 GET 列表/单题、POST 新增和 PATCH 单题修改；不支持此路径或方法。',405);
     }
     if(!session)return errorJson("请先登录。",401);
     assertTopicBankUser(session.user);
@@ -184,16 +243,7 @@ export async function handlePsychologyTopicBank(request,env,url,session){
       return errorJson("不支持此请求方法。",405);
     }
     if(url.pathname===BASE && request.method==="GET"){
-      const template=validateTopicTemplate(url.searchParams.get("template")||"psychology"),query=(url.searchParams.get("query")||"").slice(0,100);
-      const enabled=url.searchParams.get("enabled")||"all";
-      if(!["all","active","inactive"].includes(enabled))return errorJson("启用筛选无效。",400);
-      const page=Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get("page"))||1)));
-      const where="template=? AND deleted_at=0"+(enabled==="active"?" AND enabled=1":enabled==="inactive"?" AND enabled=0":"")+" AND (?='' OR title LIKE ? OR content LIKE ? OR category LIKE ?)";
-      const args=[template,query,"%"+query+"%","%"+query+"%","%"+query+"%"];
-      const[total,rows,counts]=await Promise.all([
-        db.prepare("SELECT COUNT(*) AS n FROM psychology_template_topics WHERE "+where).bind(...args).first(),
-        db.prepare("SELECT * FROM psychology_template_topics WHERE "+where+" ORDER BY created_at DESC,id LIMIT 20 OFFSET ?").bind(...args,(page-1)*20).all(),topicCounts(db)]);
-      return json({templates:TOPIC_TEMPLATES,counts,total:total.n,page,items:rows.results.map(publicTopic)});
+      return await listTopics(db,url,'psychology');
     }
     if(url.pathname===BASE+"/import" && request.method==="POST"){
       const input=await readJson(request),template=validateTopicTemplate(input.template);
@@ -219,20 +269,7 @@ export async function handlePsychologyTopicBank(request,env,url,session){
     }
     const match=url.pathname.match(/^\/api\/psychology-template-topics\/(topic-[a-z0-9-]+)$/);
     if(match&&["PATCH","DELETE"].includes(request.method)){
-      const row=await db.prepare("SELECT * FROM psychology_template_topics WHERE id=? AND deleted_at=0").bind(match[1]).first();
-      if(!row)return errorJson("题目不存在或已删除。",404);
-      const input=await readJson(request);
-      if(Number(input.revision)!==row.revision)return errorJson("题目已被修改，请刷新后重试。",409);
-      let statement;
-      if(request.method==="DELETE")statement=db.prepare("UPDATE psychology_template_topics SET deleted_at=?,enabled=0,revision=revision+1 WHERE id=? AND revision=? AND deleted_at=0").bind(Date.now(),row.id,row.revision);
-      else{
-        const topic=normalizeTopic({...row,replyOptions:JSON.parse(row.reply_options_json||"{}"),...input},row.template);
-        statement=db.prepare("UPDATE psychology_template_topics SET title=?,content=?,category=?,priority=?,enabled=?,reveal_comment=?,reply_options_json=?,fingerprint=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND deleted_at=0")
-          .bind(topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,topic.revealComment,JSON.stringify(topic.replyOptions),await sha256Hex(topicFingerprintText(topic)),Date.now(),row.id,row.revision);
-      }
-      try{const result=await statement.run();if(!result.meta?.changes)return errorJson("题目已变化，请刷新重试。",409);}
-      catch(error){if(String(error.message).includes("UNIQUE"))return errorJson("当前题库已存在相同题目和内容。",409);throw error;}
-      return json({ok:true});
+      return await updateTopic(db,match[1],await readJson(request),{remove:request.method==='DELETE'});
     }
     return errorJson("不支持此请求。",405);
   }catch(error){return errorJson(error.message||"题库操作失败。",error.statusCode||400);}

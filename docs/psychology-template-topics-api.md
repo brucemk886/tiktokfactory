@@ -1,11 +1,11 @@
-# 心理学模板题库：grokbot 写入 API
+# 心理学模板题库：外部读写 API
 
 本接口保存 grokbot 采集或生成的题目到工厂「模板题库」。它不代替页面上的手动新增 / CSV 导入，也不会自动发布。
 
 ## 开始使用
 
 1. 管理员进入工厂「心理学 → 模板题库」。
-2. 点击页面右上角「写入接口」，再点击「生成 API Key」。完整密钥只在生成时显示，复制到 grokbot 的密钥配置中，不要写入代码仓库或任务日志。
+2. 点击页面右上角「读写接口」，再点击「生成 API Key」。完整密钥只在生成时显示，复制到 grokbot 的密钥配置中，不要写入代码仓库或任务日志。
 3. 向下面的地址发送 JSON。无需工厂登录 Cookie。此密钥与同行爆款密钥不是同一把。
 
 ```text
@@ -14,7 +14,35 @@ Authorization: Bearer YOUR_API_KEY
 Content-Type: application/json
 ```
 
-密钥仅允许写入本模块；不具备查询列表、管理密钥或发布视频权限。每位管理员可有一个密钥，轮换后旧密钥立即失效。停用密钥、禁用或降级所属管理员账号也会使其失效。三个模板题库供有权限的管理员共享查看。
+现有密钥支持读取全部共享题库、新增及按 ID 修改；不具备删除、管理密钥或发布视频权限。无需重新生成密钥。每位管理员可有一个密钥，轮换后旧密钥立即失效。停用密钥、禁用或降级所属管理员账号也会使其失效。三个模板题库供有权限的管理员共享查看。
+
+## 读取全部题目与单题
+
+```text
+GET /api/integrations/psychology/template-topics?template=all&page=1&pageSize=100
+GET /api/integrations/psychology/template-topics/TOPIC_ID
+Authorization: Bearer YOUR_API_KEY
+```
+
+列表返回 `items/total/page/pageSize/totalPages/hasMore/templates/counts`。默认全部模板、全部启用状态，每页20条；`pageSize` 1–100，按 `createdAt` 降序、ID 稳定排序，逐页读取直到 `hasMore=false`。`template` 支持 `all` 或下表三个模板 ID；`enabled` 为 `all/active/inactive`，`query` 搜索题目、内容和分类（最多100字符）。已删除题目不返回。counts 是未删除的各题库总量，不随搜索条件变化。
+
+单题返回 `{ "item": {...} }`，包含 `id/template/title/content/category/priority/enabled/revealComment/replyOptions/choices/image/revision/usageCount/lastUsedAt/createdAt`。四图 choices 按 A/B/C/D 返回图片和文案；单图 image 返回题图。已上传图片的 previewUrl 指向本集成的 `/assets?key=...`，GET 图片时同样携带 Bearer 密钥，不能直接当成免鉴权公开 URL。
+
+## 按 ID 局部修改
+
+```text
+PATCH /api/integrations/psychology/template-topics/TOPIC_ID
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+```
+
+```json
+{"revision":1,"revealComment":"新的揭晓评论","replyOptions":{"A":"A 的新回复"},"enabled":true}
+```
+
+`TOPIC_ID`、数字 `revision` 使用 GET 返回值。可修改 `title/content/category/priority/enabled/revealComment/replyOptions/choices/imageKey/imageUrl`；省略的字段保持不变。`replyOptions` 可以只提交要改的字母（空字符串清除该回复），`choices` 修改时须提交完整四项。单图只改 choices 时保留题图，只改 imageUrl/imageKey 时保留选项；图片二者互斥，设置其中之一会清除旧的另一个字段。四图图片在对应 choices 中修改。不要同时提交 content 和结构化图片/选项，以免结构化内容覆盖 content。
+
+成功返回 `{ "ok": true, "item": {...} }`，revision 自增。版本缺失或过期返回409；先重新读取并核对冲突，再决定如何修改。题库归属 template、ID、使用量和创建时间只读；未知字段返回400。PATCH 不改变已创建任务的题目快照。POST 仍只新增或跳过重复，不会覆盖现有题目。
 
 ## 单条 / 批量请求
 
@@ -107,7 +135,7 @@ Content-Type: application/json
 | --- | --- |
 | 400 | 参数或某条题目无效，按错误说明修正后重试。 |
 | 401 | 密钥缺失、无效、已停用或所属账号不可用。 |
-| 405 | 使用 POST；专用密钥不支持读列表。 |
+| 405 | 不支持该路径或方法；使用 GET 读取、POST 新增、PATCH 修改。 |
 | 413 | 请求超过 1 MiB，拆小批次。 |
 | 415 | 设置 `Content-Type: application/json`。 |
 | 500 / 网络超时 | 稍后指数退避重试，题目身份保持不变即可幂等写入。 |

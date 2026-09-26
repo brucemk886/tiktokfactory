@@ -69,7 +69,7 @@ test("grokbot write skips duplicates, isolates templates and rejects invalid bat
   assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM psychology_template_topics WHERE title='Good'").get().n,0);
 });
 
-test("API keys are hashed, write-only, isolated by owner, rotatable and revocable",async t=>{
+test("API keys are hashed, read/write capable, isolated by owner, rotatable and revocable",async t=>{
   const {db,sqlite}=fixture(t);const token=await key(db);
   const stored=sqlite.prepare("SELECT * FROM psychology_template_topic_keys").get();
   assert.notEqual(stored.token_hash,token);assert.equal(stored.token_hash.length,64);
@@ -81,7 +81,7 @@ test("API keys are hashed, write-only, isolated by owner, rotatable and revocabl
   const written=await call(db,PSYCHOLOGY_TOPIC_API,"POST",{template:"psychology",title:"Bot",content:"Guide"},auth,null);
   assert.equal(written.status,200);
   const body=await written.json();assert.equal(body.accepted,1);assert.equal(body.created,1);assert.equal(body.items[0].status,"created");
-  assert.equal((await call(db,PSYCHOLOGY_TOPIC_API,"GET",undefined,auth,null)).status,405);
+  assert.equal((await call(db,PSYCHOLOGY_TOPIC_API,"GET",undefined,auth,null)).status,200);
   assert.equal((await call(db,"/api/psychology-template-topics","GET",undefined,auth,null)).status,401);
   const secondToken=await key(db,{user:{...session.user,id:"second"}});
   const replacement=await key(db);
@@ -116,7 +116,7 @@ test("public integration dispatch works without a login cookie and stays on the 
   assert.equal(pageFileFor("/psychology-topic-bank"),"psychology-topic-bank.html");
   const page=fs.readFileSync(new URL("../../public/psychology-topic-bank.html",import.meta.url),"utf8");
   const script=fs.readFileSync(new URL("../../public/psychology-topic-bank.js",import.meta.url),"utf8");
-  assert.match(page,/<summary>写入接口<\/summary>/);
+  assert.match(page,/<summary>读写接口<\/summary>/);
   assert.doesNotMatch(page,/<summary>grokbot 写入接口<\/summary>/);
   assert.match(page,/id="createKeyBtn"/);
   assert.match(page,/psychology-collage（02 拼贴）/);
@@ -185,4 +185,42 @@ test("single-image quiz topics store one image and four option copies", async t 
   })).status,400);
   const titleOnly=await call(db,PSYCHOLOGY_TOPIC_API,"POST",{template:"psychology-target-2",title:"Grokbot title only"},{Authorization:"Bearer "+await key(db)},null);
   assert.equal(titleOnly.status,200);
+});
+
+test('external topic reads include all shared banks, filters, stable pagination and protected images',async t=>{
+ const {db,sqlite}=fixture(t),auth={Authorization:'Bearer '+await key(db)};
+ await writeIntegrationTopics(db,{items:Array.from({length:23},(_,i)=>({template:i%2?'psychology-collage':'psychology',title:'Shared '+i,enabled:i!==0,content:'Body '+i}))},'second');
+ let data=await (await call(db,PSYCHOLOGY_TOPIC_API+'?pageSize=10','GET',undefined,auth,null)).json();assert.equal(data.total,23);assert.equal(data.items.length,10);assert.equal(data.hasMore,true);
+ const second=await (await call(db,PSYCHOLOGY_TOPIC_API+'?pageSize=10&page=2','GET',undefined,auth,null)).json();assert.ok(second.items.every(item=>!data.items.some(first=>first.id===item.id)));
+ data=await (await call(db,PSYCHOLOGY_TOPIC_API+'?enabled=inactive','GET',undefined,auth,null)).json();assert.equal(data.total,1);
+ assert.equal((await call(db,PSYCHOLOGY_TOPIC_API+'?template=bogus','GET',undefined,auth,null)).status,400);
+ assert.equal((await call(db,PSYCHOLOGY_TOPIC_API+'?pageSize=101','GET',undefined,auth,null)).status,400);
+ const uploaded='psychology-topics/11111111-1111-1111-1111-111111111111.jpg';
+ const saved=await writeIntegrationTopics(db,{template:'psychology-target-2',title:'Image test',imageKey:uploaded,choices:['Stay','Go','Wait','Ask'].map(copy=>({copy}))},'admin');
+ const path=PSYCHOLOGY_TOPIC_API+'/'+saved.items[0].id;
+ const item=(await (await call(db,path,'GET',undefined,auth,null)).json()).item;
+ assert.equal(item.choices.length,4);assert.ok(item.image.previewUrl.startsWith(BASE+PSYCHOLOGY_TOPIC_API+'/assets?key='));
+ const req=new Request(item.image.previewUrl,{headers:auth});
+ const res=await worker.fetch(req,{DB:db,ARCHIVE:{async get(key){assert.equal(key,uploaded);return {body:new Uint8Array([255,216,255])};}}},{});assert.equal(res.status,200);
+ assert.equal((await call(db,PSYCHOLOGY_TOPIC_API+'/assets?key='+encodeURIComponent(uploaded),'GET',undefined,{},null)).status,401);
+ sqlite.prepare('UPDATE psychology_template_topics SET deleted_at=1 WHERE id=?').run(item.id);
+ assert.equal((await call(db,path,'GET',undefined,auth,null)).status,404);
+});
+
+test('topic PATCH preserves omitted fields, merges replies and uses revision guard without a cookie',async t=>{
+ const {db,sqlite}=fixture(t),auth={Authorization:'Bearer '+await key(db)};
+ const saved=await writeIntegrationTopics(db,{template:'psychology-target-2',title:'Editable',imageUrl:'https://example.com/first.jpg',choices:['Stay','Go','Wait','Ask'].map(copy=>({copy})),revealComment:'Reveal',replyOptions:{A:'Reply A',B:'Reply B'}},'admin');
+ const path=PSYCHOLOGY_TOPIC_API+'/'+saved.items[0].id;
+ let item=(await (await call(db,path,'GET',undefined,auth,null)).json()).item;
+ const old=item.revision;
+ const req=new Request(BASE+path,{method:'PATCH',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({revision:old,replyOptions:{A:'Updated'},choices:['Stay close','Go','Wait','Ask'].map(copy=>({copy}))})});
+ let res=await worker.fetch(req,{DB:db},{});assert.equal(res.status,200,await res.clone().text());item=(await res.json()).item;
+ assert.equal(item.revision,old+1);assert.equal(item.replyOptions.A,'Updated');assert.equal(item.replyOptions.B,'Reply B');assert.equal(item.revealComment,'Reveal');assert.equal(item.image.imageUrl,'https://example.com/first.jpg');assert.equal(item.choices[0].copy,'Stay close');
+ assert.equal((await call(db,path,'PATCH',{revision:old,title:'Stale'},auth,null)).status,409);
+ assert.equal((await call(db,path,'PATCH',{title:'No revision'},auth,null)).status,409);
+ assert.equal((await call(db,path,'PATCH',{revision:item.revision,template:'psychology'},auth,null)).status,400);
+ assert.equal((await call(db,path,'DELETE',{revision:item.revision},auth,null)).status,405);
+ assert.equal((await call(db,PSYCHOLOGY_TOPIC_API+'/api-key','POST',{},auth,null)).status,405);
+ res=await call(db,path,'PATCH',{revision:item.revision,imageUrl:'https://example.com/new.jpg',enabled:false},auth,null);assert.equal(res.status,200);item=(await res.json()).item;assert.equal(item.image.imageUrl,'https://example.com/new.jpg');assert.equal(item.enabled,false);
+ assert.equal(sqlite.prepare('SELECT usage_count FROM psychology_template_topics WHERE id=?').get(item.id).usage_count,0);
 });

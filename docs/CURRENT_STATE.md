@@ -1,5 +1,7 @@
 # Current State
 
+- External psychology APIs reuse existing keys: template topics GET all banks / single topic and revision-guarded PATCH; copy-library GET originals/owned rewrites and revision-guarded PATCH at `/api/integrations/psychology/copy-library`. Original edits synchronize source text and invalidate stale photo caches; active extraction is protected. Existing peer-hit GET worklist and POST imports stay compatible. No delete, publishing or pending-review approval is exposed. See docs/psychology-copy-library-api.md and docs/psychology-template-topics-api.md.
+
 - Parallel photo-only factory at /photo-factory (0062): configurable directions, isolated copy/rewrites, local card preview, explicit-start multi-group trial drafts, separate Workflow and local reports. Existing psychology seven-day automation and video paths are not migrated; user will test Zodiac/new groups before deciding a cutover. See docs/handoffs/2026-09-26-parallel-photo-factory.md and docs/photo-factory.md.
 
 - Copy library now has a content-only Usage & Effects child page with inventory, draw coverage, original/rewrite comparison and lazy version text. Owner-scoped usage/effects are aggregated in SQL over existing local selection/analytics records with Beijing time filters and 20-row pagination; no account/group/publishing controls or remote fetches. See docs/handoffs/2026-09-26-copy-library-usage.md.
@@ -60,7 +62,7 @@ Updated: 2026-09-24
 
 - Psychology landscape renders stage all eight `psychology-poses` SVG companions into each isolated Remotion public directory, avoiding missing-asset failures in interactive and landscape four-image videos.
 
-- Psychology has an admin-only 模板题库 at /psychology-topic-bank: a three-template overview with topic counts and independent, deep-linkable topic lists for templates 01/02/03, manual create/edit/disable/delete, CSV/JSON import, and a write-only grokbot API at `/api/integrations/psychology/template-topics`. Template 01 stores A/B/C/D uploads plus per-image copy; automatic video publishing composites those four images instead of Z-Image. Template 03 is 单图互动测试模板: one uploaded image plus operator-filled A/B/C/D option text; rendering overlays those labels on the photo and skips Z-Image. Usage and immutable job snapshots are committed atomically (migration 0029; grokbot keys in 0033). See `docs/psychology-template-topics-api.md`.
+- Psychology has an admin-only 模板题库 at /psychology-topic-bank: a three-template overview with topic counts and independent, deep-linkable topic lists for templates 01/02/03, manual create/edit/disable/delete, CSV/JSON import, and a read/write grokbot API at `/api/integrations/psychology/template-topics`. Template 01 stores A/B/C/D uploads plus per-image copy; automatic video publishing composites those four images instead of Z-Image. Template 03 is 单图互动测试模板: one uploaded image plus operator-filled A/B/C/D option text; rendering overlays those labels on the photo and skips Z-Image. Usage and immutable job snapshots are committed atomically (migration 0029; grokbot keys in 0033). See `docs/psychology-template-topics-api.md`.
 
 - Psychology automatic publishing supports account-group filtering, handle/nickname search and select/clear filtered accounts. Cross-group selections remain explicit in counts and the publishing summary; refresh removes accounts no longer available.
 
