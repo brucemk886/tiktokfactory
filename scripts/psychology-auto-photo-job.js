@@ -29,8 +29,8 @@ export async function openCardRenderer(root) {
       window.cards = await import('/psychology-text-card.js');
     });
     return {
-      async render(source, index, template, imageData = '', styleId = '') {
-        return page.evaluate(renderAutomationCard, { source, index, template, imageData, styleId });
+      async render(source, index, template, imageData = '', styleId = '', styleDefinition = null) {
+        return page.evaluate(renderAutomationCard, { source, index, template, imageData, styleId, styleDefinition });
       },
       async close() { await browser.close(); await new Promise(resolve => server.close(resolve)); },
     };
@@ -77,7 +77,7 @@ export async function runAutoPhotoJob({ root, workDir, payload, patchJob }) {
         if (!response.ok) throw new Error('素材底图读取失败：' + response.status);
         imageData = 'data:' + response.headers.get('content-type') + ';base64,' + Buffer.from(await response.arrayBuffer()).toString('base64');
       }
-      const dataUrl = await renderer.render(source,index,payload.psychologyAutomation.template,imageData,payload.psychologyAutomation.styleId||'');
+      const dataUrl = await renderer.render(source,index,payload.psychologyAutomation.template,imageData,payload.psychologyAutomation.styleId||'',payload.psychologyAutomation.styleDefinition||null);
       await call(api + '/upload', {index,dataUrl});
       patchJob({status:'running',percent:Math.round(20+65*(index+1)/payload.pages.length),message:`已上传 ${index+1}/${payload.pages.length} 张图片`});
     }

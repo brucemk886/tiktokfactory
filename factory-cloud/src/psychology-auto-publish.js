@@ -2,7 +2,7 @@ import { assertPsychologyOneUser, ensurePsychologyOneMembers } from './psycholog
 import { loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
 import { psychologyItemStatus } from './psychology-item-status.js';
 import { photoCopyKey } from './peer-photo-copy-cache.js';
-import { chooseVisualStyle } from '../../public/psychology-visual-styles.js';
+import {managedStyles,selectManagedStyle} from './psychology-managed-styles.js';
 import { librarySource,reviewedSource } from './psychology-copy-source.js';
 import { planLibraryDraw, loadLibraryPosts, loadCopyStats, loadUsedPosts } from './psychology-copy-evolution.js';
 import { copyIdentity } from './psychology-creative.js';
@@ -479,6 +479,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES (?,?,?,?)')
       .bind(batchId+'-group-'+ordinal,batchId,ordinal,Math.min(PSYCHOLOGY_GROUP_SIZE,selected.length-offset)));
   }
+  const stylePool=config.mediaType==='photo'&&config.styleMode!=='legacy'?await managedStyles(env.DB,user.username):[];
   for (const [index, entry] of selected.entries()) {
     const id = batchId + '-' + String(index).padStart(3, '0');
     // Music is drawn once at creation and frozen inside the job payload, so
@@ -488,7 +489,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const account = scoped.accounts.find(a => String(a.connectionId || a.id) === entry.connectionId) || {};
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
       username: String(account.username || '').trim().replace(/^@/, '') };
-    const item = { styleId:config.mediaType==='photo'?chooseVisualStyle(account,[],config.styleMode,config.styleId):'',account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const styleDefinition=config.mediaType==='photo'?selectManagedStyle(stylePool,config.styleMode,config.styleId):null;
+    const item = { styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }

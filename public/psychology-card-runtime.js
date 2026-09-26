@@ -1,5 +1,5 @@
 // Shared by local Chrome and Cloudflare Chromium.
-export async function renderAutomationCard({ source, index, template, imageData = '', styleId = '', aspectRatio = '3:4' }) {
+export async function renderAutomationCard({ source, index, template, imageData = '', styleId = '', styleDefinition = null, aspectRatio = '3:4' }) {
           const { renderTextCard, renderOverlayCard } = window.renderer;
           let canvas;
           if (!styleId && source.template === 'stock' && template !== 'photo-text') {
@@ -14,7 +14,7 @@ export async function renderAutomationCard({ source, index, template, imageData 
             const slide = window.cards.buildTextCardSlides({ title, body:[source.subtitle,source.body].filter(Boolean).join('\n'),
               count:1, template:kind, smash:false, pageNumber:index + 1 })[0];
             if(styleId && kind==='cover')slide.title=title;
-            canvas = renderTextCard(slide, aspectRatio, styleId);
+            canvas = renderTextCard(slide, aspectRatio, styleId, styleDefinition);
           }
           return canvas.toDataURL('image/jpeg', 0.92);
 }

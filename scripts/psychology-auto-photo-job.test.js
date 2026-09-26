@@ -29,7 +29,7 @@ test('photo worker resumes completed uploads, renders remaining JPEG and submits
     if(String(url).endsWith('/publish'))return Response.json({batchId:'batch-1'});
     throw new Error('Unexpected network request');
   });
-  await runAutoPhotoJob({root:fileURLToPath(new URL("../",import.meta.url)),workDir,payload:{jobId:'photo-job',psychologyAutomation:{template:'photo-text'},
+  await runAutoPhotoJob({root:fileURLToPath(new URL("../",import.meta.url)),workDir,payload:{jobId:'photo-job',psychologyAutomation:{template:'photo-text',styleId:'style-'+ 'a'.repeat(32),styleDefinition:{id:'style-'+ 'a'.repeat(32),layout:'center',coverBg:'#123456',coverInk:'#ffffff',bg:'#ffffff',ink:'#123456',accent:'#789abc',revision:1}},
     pages:[{template:'cover',title:'Pause before replying'},{template:'content',title:'Notice your needs',body:'You can take your time.\nYou can ask for space.'}]},
     patchJob:patch=>patches.push(patch)});
   assert.equal(calls.filter(c=>c.url.endsWith('/upload')).length,1);

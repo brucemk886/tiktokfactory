@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology effects, operations, autopilot and visual styles now have external GET/POST/PATCH management APIs with a separate scoped admin key. Reports support editable query presets (raw metrics read-only); new autopilots start paused; managed style definitions are frozen into future task payloads. Each page has an API entry and copyable rules. See docs/psychology-management-api.md.
+
 - External psychology APIs reuse existing keys: template topics GET all banks / single topic and revision-guarded PATCH; copy-library GET originals/owned rewrites and revision-guarded PATCH at `/api/integrations/psychology/copy-library`. Original edits synchronize source text and invalidate stale photo caches; active extraction is protected. Existing peer-hit GET worklist and POST imports stay compatible. No delete, publishing or pending-review approval is exposed. See docs/psychology-copy-library-api.md and docs/psychology-template-topics-api.md.
 
 - Parallel photo-only factory at /photo-factory (0062): configurable directions, isolated copy/rewrites, local card preview, explicit-start multi-group trial drafts, separate Workflow and local reports. Existing psychology seven-day automation and video paths are not migrated; user will test Zodiac/new groups before deciding a cutover. See docs/handoffs/2026-09-26-parallel-photo-factory.md and docs/photo-factory.md.

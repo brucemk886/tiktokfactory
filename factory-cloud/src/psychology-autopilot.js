@@ -258,7 +258,7 @@ export function autopilotViewWindow(period = 'today', now = Date.now()) {
   return {period,start,end,from:beijingDate(start),to:beijingDate(end-1),label:{today:'今天',yesterday:'昨天','7d':'近7天'}[period]};
 }
 
-export async function handlePsychologyAutopilot(request, env, url, session) {
+export async function handlePsychologyAutopilot(request, env, url, session, apiOptions = {}) {
   if (!url.pathname.startsWith(BASE)) return null;
   const user = session?.user;
   if (user?.role !== 'admin' || !(user.sidebarModules || []).includes('psychology-autopilot')) fail('没有自动运营权限。', 403);
@@ -266,7 +266,15 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
   const db = env.DB;
   if (url.pathname === BASE && request.method === 'GET') {
     const window=autopilotViewWindow(url.searchParams.get('period') || 'today');
-    const [pilots, directory] = await Promise.all([db.prepare('SELECT * FROM psychology_autopilots WHERE owner=? ORDER BY created_at DESC LIMIT 20').bind(user.username).all(), autopilotDirectory(env, user, url.searchParams.get('refreshGroups') === '1')]);
+    const page=apiOptions.external?Number(url.searchParams.get('page')||1):1,pageSize=apiOptions.external?Number(url.searchParams.get('pageSize')||20):20;
+    if(!Number.isInteger(page)||page<1||page>100000||!Number.isInteger(pageSize)||pageSize<1||pageSize>100)fail('分页参数无效。');
+    const only=apiOptions.pilotId||'';
+    const directory=await autopilotDirectory(env,user,url.searchParams.get('refreshGroups')==='1');
+    // Historical logs can contain former members: external callers must retain
+    // access to every recorded member as well as the plan's group.
+    const scope=apiOptions.external?` AND group_id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM psychology_autopilot_accounts a WHERE a.autopilot_id=psychology_autopilots.id AND a.connection_id NOT IN (SELECT value FROM json_each(?)))`:'';
+    const args=[user.username,only,only,...(apiOptions.external?[JSON.stringify(directory.groups.map(g=>g.id)),JSON.stringify(directory.accounts.map(connectionOf))]:[])];
+    const [pilots,total]=await Promise.all([db.prepare("SELECT * FROM psychology_autopilots WHERE owner=? AND (?='' OR id=?)"+scope+" ORDER BY created_at DESC,id LIMIT ? OFFSET ?").bind(...args,pageSize,(page-1)*pageSize).all(),db.prepare("SELECT count(*) n FROM psychology_autopilots WHERE owner=? AND (?='' OR id=?)"+scope).bind(...args).first()]);
     const groups = directory.groups;
     const labels = new Map([...accountsFromLatestArchive(await listLatestArchiveAccounts(db)), ...directory.accounts].map(a => [connectionOf(a), a.profile?.username || a.username || a.label || '']));
     const pilotIds = JSON.stringify(pilots.results.map(p => p.id));
@@ -297,28 +305,37 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
       const dayStart = Date.parse(beijingDate(Date.now()) + 'T00:00:00+08:00');
       const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
-      out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at,
+      out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at, revision:p.updated_at,
         today, execution:executionCounts(items), performance:performanceRows.results.find(r=>r.pilot_id===p.id)||{n:0,medianViews:null,potentialRate:null}, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
-        slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, stopPending:Boolean(a.stop_pending) })),
+        slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, revision:a.updated_at, stopPending:Boolean(a.stop_pending) })),
         schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ window, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    return json({ page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots);
     if(body.startNow !== undefined && typeof body.startNow !== 'boolean')fail('立即准备选项无效。');
     if (!Object.hasOwn(STRATEGIES, body.strategy)) fail('请选择运营策略。');
     if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
+    let apiId='',apiHash='';
+    if(apiOptions.external){
+      if(!/^[a-f0-9-]{36}$/i.test(body.requestId||''))fail('新增须填写 UUID requestId，重试沿用同一个值。');
+      apiId='pilot-'+await uuidFrom(user.username+':'+body.requestId);
+      apiHash=await sha256Hex(JSON.stringify([body.groupId,body.strategy,days,slots,body.startNow===true]));
+      const prior=await db.prepare('SELECT id,group_id,api_request_hash,status,updated_at FROM psychology_autopilots WHERE id=? AND owner=?').bind(apiId,user.username).first();
+      if(prior){if(!(await autopilotDirectory(env,user)).groups.some(g=>g.id===prior.group_id))fail('没有这个心理学分组的权限。',403);if(prior.api_request_hash!==apiHash)fail('requestId 已用于不同运营设置。',409);return json({id:prior.id,status:prior.status,revision:prior.updated_at,duplicate:true});}
+    }
     const group = (await autopilotDirectory(env, user, true)).groups.find(g => g.id === body.groupId);
     if (!group) fail('没有这个心理学分组的权限。', 403);
     if (!group.accounts) fail('这个分组里还没有已授权且有发布权限的账号，请检查分组成员和账号授权。');
     validateDayEnd(slots, group.accounts);
     if (await db.prepare("SELECT 1 FROM psychology_autopilots WHERE group_id=? AND status<>'ended'").bind(group.id).first()) fail('这个分组已经在自动运营中。', 409);
-    const now = Date.now(), id = 'pilot-' + crypto.randomUUID();
-    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now) VALUES(?,?,?,?,?,?,'active',?,?,?,?)`)
-      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(slots), now + days * DAY, now, now, Number(body.startNow===true)).run();
+    const now = Date.now(), id = apiId || 'pilot-' + crypto.randomUUID(), initialStatus=apiOptions.external?'paused':'active';
+    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now,api_request_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(slots),initialStatus, now + days * DAY, now, now, Number(body.startNow===true),apiHash).run();
+    if(apiOptions.external){await log(db,id,'status','通过管理 API 创建，已暂停；明确恢复后才会新增排期。',{},now);return json({id,status:initialStatus,revision:now},201);}
     await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}；${body.startNow?'首日不足 2 小时、距离发布超过 10 分钟的时段立即准备，其他时段提前 2 小时生成':'每条提前 2 小时开始生成'}。`, {}, now);
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
@@ -328,6 +345,20 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
   const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=? AND owner=?').bind(one[1], user.username).first();
   if (!pilot) fail('自动运营不存在。', 404);
   const now = Date.now();
+  if(apiOptions.external){
+    const directory=await autopilotDirectory(env,user);
+    const allowed=directory.groups.some(g=>g.id===pilot.group_id);
+    if(!allowed)fail('没有这个心理学分组的权限。',403);
+    const ids=new Set(directory.accounts.map(connectionOf));
+    const members=(await db.prepare('SELECT connection_id FROM psychology_autopilot_accounts WHERE autopilot_id=?').bind(pilot.id).all()).results;
+    if(members.some(a=>!ids.has(a.connection_id)))fail('此运营包含当前权限之外的历史账号，请在后台处理分组权限。',403);
+    const account=one[4]?decodeURIComponent(one[4]):url.searchParams.get('account');
+    if(account&&!directory.accounts.some(a=>connectionOf(a)===account&&a.groupId===pilot.group_id))fail('没有此分组账号的操作权限。',403);
+    if(request.method==='PATCH'&&!one[4]){
+      const body=await request.clone().json();
+      if(!Number.isSafeInteger(body.revision)||body.revision!==pilot.updated_at)fail('revision 缺失或运营设置已修改，请重新读取。',409);
+    }
+  }
   if (one[2] === 'schedule' && request.method === 'PATCH') {
     if(pilot.status==='ended')fail('已结束的自动运营不能修改发布设置。',409);
     const body=await readJson(request);if(!Array.isArray(body.slots))fail('请设置每天的发布时间。');
@@ -345,7 +376,7 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
       .bind(JSON.stringify(pilotSlotsAt(pilot,now)),JSON.stringify(slots),effectiveAt,Math.max(now,pilot.updated_at+1),pilot.id,pilot.updated_at,pilot.id,effectiveAt).run();
     if(!changed.meta?.changes)fail('运营设置刚被修改，请刷新后重试。',409);
     await log(db,pilot.id,'status',`发布设置已更新：每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}，${beijingDate(effectiveAt)} 起生效；已创建任务继续原计划。`,{slots,effectiveAt},now);
-    return json({ok:true,slots,effectiveAt});
+    return json({ok:true,slots,effectiveAt,revision:Math.max(now,pilot.updated_at+1)});
   }
   if (one[2] === 'impact' && request.method === 'GET') return json(await stopImpact(db, pilot.id, url.searchParams.get('account') || ''));
   if (one[3] && request.method === 'GET') {
@@ -356,15 +387,23 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     return json({ items:await slotExecution(db, [slot], labels) });
   }
   if (!one[2] && request.method === 'PATCH') {
-    const body = await readJson(request), status = body.status;
+    const body = await readJson(request), status = body.status ?? pilot.status;
     if (body.stopPending !== undefined && typeof body.stopPending !== 'boolean') fail('暂停范围无效。');
     if (!['active', 'paused', 'ended'].includes(status)) fail('状态无效。');
     if (pilot.status === 'ended') fail('已结束的自动运营不能再修改。', 409);
-    await db.prepare('UPDATE psychology_autopilots SET status=?,stop_pending=?,updated_at=? WHERE id=?').bind(status, status === 'active' ? 0 : Number(Boolean(body.stopPending)), now, pilot.id).run();
+    const strategy=apiOptions.external?(body.strategy??pilot.strategy):pilot.strategy;
+    const endsAt=apiOptions.external?(body.endsAt??pilot.ends_at):pilot.ends_at;
+    if(!Object.hasOwn(STRATEGIES,strategy))fail('运营策略无效。');
+    if(apiOptions.external&&(body.endsAt!==undefined||status==='active')&&(!Number.isSafeInteger(endsAt)||endsAt<=now||endsAt>now+30*DAY))fail('endsAt 须为未来 30 天内的毫秒时间戳。');
+    if(status==='active'&&apiOptions.external&&!user.sidebarModules.includes('psychology-publish'))fail('没有自动发布权限。',403);
+    const stamp=Math.max(now,pilot.updated_at+1);
+    const result=await db.prepare('UPDATE psychology_autopilots SET status=?,stop_pending=?,strategy=?,ends_at=?,updated_at=? WHERE id=? AND owner=? AND updated_at=?')
+      .bind(status,status==='active'?0:Number(body.stopPending??pilot.stop_pending),strategy,endsAt,stamp,pilot.id,user.username,pilot.updated_at).run();
+    if(!result.meta?.changes)fail('运营设置已变化，请重新读取。',409);
     const stopped = status !== 'active' && body.stopPending ? await stopPending(db, pilot.id) : 0;
     await log(db, pilot.id, 'status', { active: '已恢复自动运营。', paused: body.stopPending ? '已暂停自动运营并停止本地尚未提交的任务。' : '已暂停新增排期，已排好的发布照常进行。', ended: '已结束自动运营。' }[status], {}, now);
     if (body.stopPending) await log(db, pilot.id, 'status', `已停止本地尚未提交的 ${stopped} 条任务；已进入提交的任务仍会继续。恢复不重新创建已停止任务。`, {}, now);
-    return json({ ok: true, stopped });
+    return json({ ok: true, stopped,revision:stamp,status,strategy,endsAt });
   }
   if (one[2] === 'run' && request.method === 'POST') {
     if (pilot.status !== 'active') fail('请先恢复自动运营。', 409);
@@ -374,12 +413,16 @@ export async function handlePsychologyAutopilot(request, env, url, session) {
     const body = await readJson(request), status = body.status, connectionId = decodeURIComponent(one[4]);
     if (pilot.status === 'ended') fail('已结束的自动运营不能再修改。', 409);
     if (!['active', 'paused'].includes(status)) fail('状态无效。');
-    const result = await db.prepare('UPDATE psychology_autopilot_accounts SET status=?,stop_pending=?,reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=?')
-      .bind(status, status === 'paused' ? 1 : 0, status === 'paused' ? '手动停发' : '', now, pilot.id, connectionId).run();
+    const saved=await db.prepare('SELECT updated_at FROM psychology_autopilot_accounts WHERE autopilot_id=? AND connection_id=?').bind(pilot.id,connectionId).first();
+    if(!saved)fail('账号不在这个自动运营里。',404);
+    if(apiOptions.external&&(!Number.isSafeInteger(body.revision)||body.revision!==saved.updated_at))fail('账号状态已变化，请重新读取。',409);
+    const stamp=Math.max(now,saved.updated_at+1);
+    const result = await db.prepare('UPDATE psychology_autopilot_accounts SET status=?,stop_pending=?,reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=? AND updated_at=?')
+      .bind(status, status === 'paused' ? 1 : 0, status === 'paused' ? '手动停发' : '', stamp, pilot.id, connectionId,saved.updated_at).run();
     if (!result.meta?.changes) fail('账号不在这个自动运营里。', 404);
     const stopped = status === 'paused' ? await stopPending(db, pilot.id, connectionId) : 0;
     await log(db, pilot.id, status === 'paused' ? 'pause' : 'resume', (status === 'paused' ? '手动停发账号 ' : '已恢复账号 ') + connectionId, { connectionId }, now);
-    return json({ ok: true, stopped });
+    return json({ ok: true, stopped,revision:stamp });
   }
   fail('不支持此请求。', 405);
 }

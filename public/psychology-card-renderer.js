@@ -4,8 +4,8 @@ import { cardCanvasSize, wrapLines, wrapOverlayLines, planCenteredBlock, parseEm
 const COVER_BG = "#111111";
 const COVER_INK = "#f4f1ea";
 
-export function renderTextCard(slide, aspectRatio, styleId = '') {
-  if(styleId)return renderStyledCard(slide,aspectRatio,styleId);
+export function renderTextCard(slide, aspectRatio, styleId = '', styleDefinition = null) {
+  if(styleId)return renderStyledCard(slide,aspectRatio,styleId,styleDefinition);
   return slide.kind === "cover" ? renderCoverCard(slide, aspectRatio) : renderContentCard(slide, aspectRatio);
 }
 

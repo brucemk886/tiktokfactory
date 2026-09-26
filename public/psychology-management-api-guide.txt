@@ -1,0 +1,84 @@
+心理学管理 API（2026-09-26）
+基础地址：https://factory.tiktokaitool.com/api/integrations/psychology/manage
+鉴权：Authorization: Bearer <psy_manage_管理密钥>
+POST/PATCH：Content-Type: application/json；请求体最多 128 KiB。
+请在数据概览、运营报表、自动运营或图文样式右上角“API 接口”生成独立管理密钥并勾选所需读写权限。旧文案/题库写入密钥不能代替此密钥。
+密钥以当前管理员身份执行，保留后台已有的模块权限和心理学项目范围。管理员按后台既有规则可访问心理学各分组。读取与写入是独立 scope；自动运营写入还需自动发布权限。密钥重新生成或撤销立即使旧密钥失效。
+报表方案、自动运营计划与样式配置按密钥所属管理员隔离。不要复制密钥到公开仓库、截图或日志。
+
+通用写入规则：
+1. 新增提供 requestId（crypto.randomUUID()）。同一新增请求重试必须使用相同 requestId 和相同内容。成功为 201，重复为 200 / duplicate:true；同 ID 换内容为 409。
+2. 修改先 GET 取得当前 revision，再 PATCH 同一资源。未提供 revision 或旧版本修改返回 409；重新读取并核对，不要直接盲目覆盖。
+3. 未出现的可修改字段保持不变；query 是完整替换。未知字段返回 400。无删除接口。
+4. 401 密钥无效；403 权限不足；404 资源不可见或不存在；405 方法错误；413 请求过大；415 非 JSON。错误为 {"error":"..."}。
+5. 网络中断后先读取/用原 requestId 重试确认，不要换 requestId 创建重复对象。
+
+一、数据概览（effects）
+GET /effects?period=7d&group=<分组ID>
+查询与心理学“数据概览”相同口径，统计数据只读。省略 group 返回全部当前心理学分组。
+period：today / yesterday / 7d / 30d / week；自定义使用 from=YYYY-MM-DD&to=YYYY-MM-DD，也可 date=YYYY-MM-DD。
+此接口复用当前概览汇总和缓存逻辑，不负责回填或伪造播放、互动数据。
+GET /effects/views：读取已保存查询方案（每个管理员最多 100 个）。
+GET /effects/views/<id>：读取单个方案，返回 item。
+POST /effects/views
+{"requestId":"<UUID>","name":"心理学近7天","query":{"period":"7d","group":"<分组ID>"}}
+PATCH /effects/views/<id>
+{"revision":1,"name":"心理学近30天","query":{"period":"30d","group":"<分组ID>"}}
+GET /effects?viewId=<方案ID>：使用方案读取统计，可另传允许的查询参数覆盖方案。
+方案只保存查询条件，不修改原始数据；可通过 API 列出和复用。
+
+二、运营报表（operations）
+GET /operations?period=7d&media=photo&panel=overview
+参数：
+- period：today / 7d / 30d / custom；custom 必须提供 from、to，范围 1–31 天且不晚于今天，按北京时间。
+- media：photo / video；group：心理学分组 ID（可省略）。
+- panel：overview / accounts / content / strategy / details / batches / groups。
+- 分页 page 从 1 开始，明细每页 10 条；返回 pagination。
+- accounts：sort=medianViews / potentialRate / completion / n；filter=all / issue / potential / launch。
+- content、details：mode=source / copy / style；q 搜索；details 传 key 指定对比项。
+GET /operations/views 与 GET /operations/views/<id>：读取方案。
+POST /operations/views
+{"requestId":"<UUID>","name":"图文近7天内容效果","query":{"period":"7d","media":"photo","panel":"content","mode":"source"}}
+PATCH /operations/views/<id>
+{"revision":1,"query":{"period":"30d","media":"photo","panel":"content","mode":"style"}}
+GET /operations?viewId=<方案ID>：执行方案。方案归属与并发规则同 effects，最多 100 个。
+播放量、点赞、发布结果等依赖现有同步链路，只能读取，不能通过此管理 API 改值。
+
+三、自动运营（autopilot）
+GET /autopilot?page=1&pageSize=20&period=today
+pageSize 1–100；period=today / yesterday / 7d。返回 pilots、groups、total、totalPages、hasMore、策略与运行规则。
+GET /autopilot/<id>：返回 item，包括 revision、策略、状态、时间、排期、账号状态及执行情况。
+GET /autopilot/<id>/impact?account=<connectionId>：读取暂停影响；account 可省略。
+GET /autopilot/<id>/slots/<毫秒时间戳>：读取某个排期任务明细。
+如历史计划包含已离开心理学权限范围的账号，外部列表隐藏该计划，单项操作拒绝，需在后台核对分组。
+POST /autopilot
+{"requestId":"<UUID>","groupId":"<分组ID>","strategy":"original","days":7,"slots":[{"hour":8,"minute":0},{"hour":21,"minute":0}],"startNow":false}
+strategy：evolve / original / rewrite。days 1–30；slots 每天 1–10 个不重复北京时间。分组须有可发布账号，且同一分组只能存在一个未结束计划。
+重要：API 新增返回 status=paused，不产生发布任务；运行期从创建时起计。
+PATCH /autopilot/<id>
+{"revision":<GET返回值>,"status":"active"}
+启用后由既有定时任务执行，将产生真实排期、生成与发布。不要未经运营人员指令自动启用。
+同一路径还可修改 strategy、endsAt（未来 30 天内的毫秒时间戳）、status（active/paused/ended）和 stopPending（布尔）。
+暂停示例：
+{"revision":<GET返回值>,"status":"paused","stopPending":false}
+stopPending=false：仅停新增排期，已排任务继续。true：停止尚未提交任务，已进入提交的任务仍继续；恢复不重建已停止任务。
+PATCH /autopilot/<id>/schedule
+{"revision":<计划revision>,"slots":[{"hour":12,"minute":0}]}
+返回 effectiveAt；新时段从已预留排期之后的完整北京时间日期生效，已有任务不变。
+PATCH /autopilot/<id>/accounts/<connectionId>
+{"revision":<accounts中此账号的revision>,"status":"paused"}
+账号只支持 paused/active；暂停账号会停止其本地未提交任务。已结束计划不能修改。无对外立即执行 /run 接口。
+
+四、图文样式（styles）
+GET /styles：返回 items、total、active、layouts。内置 20 套；管理员自定义后总数上限 100 套。
+GET /styles/<id>：返回 item，包含 id、label、enabled、revision、builtin、颜色与 layout。
+POST /styles
+{"requestId":"<UUID>","baseStyleId":"classic","label":"温柔蓝调","coverBg":"#E8EEF7","coverInk":"#24354E","bg":"#F5F8FD","ink":"#24354E","accent":"#7593BD","enabled":false}
+以 baseStyleId 克隆，省略颜色和 layout 时继承。新增默认停用。
+PATCH /styles/<id>
+{"revision":<GET返回值>,"label":"温柔蓝调","enabled":true,"coverBg":"#EDF3FA"}
+支持 label、coverBg、coverInk、bg、ink、accent、layout、enabled。
+颜色只接受 #RRGGBB；layout 只能使用 GET 返回的 layouts，不能写入 HTML、CSS 或可执行代码。
+至少保留一套启用样式；内置样式首次修改 revision=0，自定义从 1 开始。
+启用的样式会参与此管理员后续图文任务的随机抽取，页面能看到实际预览和样式 ID。
+任务创建时冻结样式定义与 revision；之后修改样式不会改变已生成、已排队或重试的作品。旧任务仍兼容历史样式。

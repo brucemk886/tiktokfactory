@@ -49,7 +49,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   const requestedStyleMode=String(input.styleMode||'random');
   // Older open pages may still submit group mode; new tasks now draw per post.
   const styleMode=mediaType==='photo'?(requestedStyleMode==='group'?'random':requestedStyleMode):'legacy',styleId=String(input.styleId||'classic');
-  if(!['legacy','fixed','random'].includes(styleMode)||!styleById(styleId))fail('图文视觉样式配置无效。');
+  if(!['legacy','fixed','random'].includes(styleMode)||(!styleById(styleId)&&!/^style-[a-f0-9]{32}$/.test(styleId)))fail('图文视觉样式配置无效。');
   if(['copy-bank','copy-library','library'].includes(sourceType)&&input.rewriteCopy===true)fail('文案库内容直接复用，请在改写详情保存新版本后使用。');
   const libraryStrategy=String(input.libraryStrategy||'evolve');
   if(sourceType==='library'&&!['evolve','original','rewrite'].includes(libraryStrategy))fail('文案库抽取策略无效。');

@@ -1,7 +1,7 @@
 import { cardCanvasSize, wrapLines } from "./psychology-text-card.js";
 import { styleById } from "./psychology-visual-styles.js";
-export function renderStyledCard(slide,aspectRatio,styleId){
- const s=styleById(styleId);if(!s)throw new Error('未知图文样式');
+export function renderStyledCard(slide,aspectRatio,styleId,styleDefinition=null){
+ const s=styleDefinition||styleById(styleId);if(!s)throw new Error('未知图文样式');
  const {width:w,height:h}=cardCanvasSize(aspectRatio),canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
  const c=canvas.getContext('2d'),cover=slide.kind==='cover',l=s.layout,p=w*.1;
  c.fillStyle=cover?s.coverBg:s.bg;c.fillRect(0,0,w,h);

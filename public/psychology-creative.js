@@ -1,7 +1,25 @@
-import {VISUAL_STYLES,styleById} from './psychology-visual-styles.js';
 import {renderTextCard} from './psychology-card-renderer.js';
-const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=s=>document.querySelector(s);
 const cover={kind:'cover',title:'When closeness feels like too much',pageNumber:1},inside={kind:'content',title:'',bullets:['Needing space can be a way to feel safe.','Try naming your need without disappearing.'],pageNumber:2};
-function cards(container,id,full=false){for(const slide of [cover,inside]){const original=renderTextCard(slide,'3:4',id);if(full){container.append(original);continue;}const thumb=document.createElement('canvas');thumb.width=216;thumb.height=288;thumb.getContext('2d').drawImage(original,0,0,216,288);original.width=0;container.append(thumb);}}
-for(const s of VISUAL_STYLES){const article=document.createElement('article');article.className='style-card';article.innerHTML=`<h3>${esc(s.label)}</h3><div class="style-pair"></div><button type="button" data-preview="${s.id}">放大查看</button>`;cards(article.querySelector('.style-pair'),s.id);$('#styleGallery').append(article);}
-$('#styleGallery').onclick=e=>{const b=e.target.closest('[data-preview]');if(!b)return;$('#previewTitle').textContent=styleById(b.dataset.preview).label;$('#previewCards').replaceChildren();cards($('#previewCards'),b.dataset.preview,true);$('#styleDialog').showModal();};$('#closeStyle').onclick=()=>$('#styleDialog').close();
+const styles=new Map();
+function cards(container,s,full=false){for(const slide of [cover,inside]){const original=renderTextCard(slide,'3:4',s.id,s);if(full){container.append(original);continue;}const thumb=document.createElement('canvas');thumb.width=216;thumb.height=288;thumb.getContext('2d').drawImage(original,0,0,216,288);original.width=0;container.append(thumb);}}
+async function load(){
+ const gallery=$('#styleGallery');gallery.textContent='正在读取图文样式…';
+ try{
+  const response=await fetch('/api/psychology-management/styles',{cache:'no-store'}),data=await response.json();
+  if(!response.ok)throw new Error(data.error||'样式读取失败');
+  gallery.replaceChildren();
+  $('#styleCount').textContent=data.items.length+'套情感心理学样式 · 启用 '+data.active+' 套';
+  for(const s of data.items){
+   styles.set(s.id,s);const article=document.createElement('article');article.className='style-card';
+   const title=document.createElement('h3');title.textContent=s.label+(s.enabled?'':'（已停用）');
+   const pair=document.createElement('div');pair.className='style-pair';cards(pair,s);
+   const id=document.createElement('small');id.textContent='ID: '+s.id;id.style.overflowWrap='anywhere';
+   const button=document.createElement('button');button.type='button';button.dataset.preview=s.id;button.textContent='放大查看';
+   article.append(title,pair,id,button);gallery.append(article);
+  }
+ }catch(error){gallery.textContent=error.message;const retry=document.createElement('button');retry.textContent='重试';retry.onclick=load;gallery.append(retry);}
+}
+$('#styleGallery').onclick=e=>{const b=e.target.closest('[data-preview]');if(!b)return;const s=styles.get(b.dataset.preview);$('#previewTitle').textContent=s.label;$('#previewCards').replaceChildren();cards($('#previewCards'),s,true);$('#styleDialog').showModal();};
+$('#closeStyle').onclick=()=>$('#styleDialog').close();
+load();

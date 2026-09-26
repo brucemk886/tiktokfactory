@@ -161,3 +161,9 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 - photo-factory.js exposes admin UI APIs and direction-bound external text imports. These keys cannot publish. New trials are drafts; active legacy psychology groups/accounts block enrollment and execution. The old seven-day run is unchanged.
 - photo-factory-execution.js uses a separate PhotoFactoryWorkflow with bounded minute planning and two concurrent preparation workflows. Durable local reservations and frozen hub request/externalId retain idempotency; no new factory_jobs or psychology task rows are created. Shared rendering keeps legacy defaults, and shared official transport owns remote publication.
 - Reports join new jobs to existing locally synchronized ops_video_facts by exact account/video identity. Copy inventory and version effects remain separate from publishing controls. No read-time remote sync and no inferred migration of old observations.
+
+## Psychology external management boundary
+
+- psychology-management-api.js authenticates scoped psy_manage_ tokens against the current administrator, then delegates only explicit report/autopilot/style operations. Import keys retain their original separate boundary. D1 owns hashed keys, owner-scoped report presets, style overrides and idempotency fingerprints (0063).
+- Report metrics reuse the existing overview/scalable-report services and remain read-only. Autopilot creates paused through this adapter, requires revision-aware explicit activation and uses the existing scheduler. The external list is paginated.
+- psychology-managed-styles.js resolves built-ins plus owner changes. Photo creation persists the full validated style definition into the immutable job payload; local and cloud renderers use that snapshot. Subsequent edits never restyle existing tasks.

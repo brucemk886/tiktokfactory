@@ -1,3 +1,4 @@
+import {handlePsychologyManagement,MANAGEMENT_API} from './psychology-management-api.js';
 import {PSYCHOLOGY_COPY_API} from './psychology-copy-integration.js';
 import {handlePhotoFactory} from './photo-factory.js';
 import {PHOTO_IMPORT} from './photo-factory-domain.js';
@@ -46,6 +47,7 @@ export default {
       const authResponse = await handleAuth(request, env, url);
       if (authResponse) return authResponse;
 
+      if (url.pathname === MANAGEMENT_API || url.pathname.startsWith(MANAGEMENT_API + '/')) return await handlePsychologyManagement(request,env,url,null);
       if (url.pathname === PHOTO_IMPORT) return await handlePhotoFactory(request,env,url,null);
       if (url.pathname === PSYCHOLOGY_PEER_API || url.pathname === PSYCHOLOGY_COPY_API || url.pathname.startsWith(PSYCHOLOGY_COPY_API + '/')) return await handlePsychologyPeerHits(request, env, url, null);
       if (url.pathname === PSYCHOLOGY_TOPIC_API || url.pathname.startsWith(PSYCHOLOGY_TOPIC_API + '/')) return await handlePsychologyTopicBank(request, env, url, null);
@@ -62,7 +64,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handlePsychologyOne,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyManagement,handlePsychologyOne,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
