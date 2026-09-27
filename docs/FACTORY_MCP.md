@@ -81,3 +81,6 @@ Tests mock all providers. Initial rollout has no OpenAI key, so paid generation 
 ## ChatGPT cross-origin connection handling
 
 The protocol endpoints (`/mcp`, registration/token, OAuth discovery) accept the exact browser Origin `https://chatgpt.com` and bounded CORS preflights. OAuth authorization landing GET also accepts that origin. Cross-origin MCP calls still require bearer OAuth tokens; no cookie credentials are enabled in CORS. Authorization approval and connection-revocation POSTs remain strictly Factory same-origin with session CSRF and consent-handle checks. Other origins (including null/lookalikes) are rejected. This fixes the blanket same-origin check that rejected legitimate ChatGPT connection requests with “不允许跨站请求”。
+
+
+Authorization HTML uses `Referrer-Policy: strict-origin`. Do not change these native POST form pages to `no-referrer`: Chromium then sends Origin:null even on same-origin submissions, and correct CSRF/origin validation rejects approve/deny/revoke. strict-origin sends only the site origin as Referer, never OAuth query/state. Null Origin remains rejected. A real headless Chromium regression contrasts both policies and verifies the actual form header.

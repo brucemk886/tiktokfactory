@@ -128,3 +128,50 @@ test('CORS preflights are route/method/header bounded and never authenticate a t
  assert.equal((await f.fetch('/oauth/authorize',{method:'OPTIONS',headers:{origin:'https://chatgpt.com','access-control-request-method':'POST'}})).status,403);
  const r=await f.browser('/mcp',{headers:{origin:'https://chatgpt.com'}});assert.equal(r.status,401);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_mcp_connections').get().n,0);
 });
+
+
+test('consent pages keep a usable Origin on native browser POST without leaking authorization URL',async t=>{
+ const f=await setup(t),page=await f.browser('/factory-mcp');
+ assert.equal(page.headers.get('referrer-policy'),'strict-origin');
+ assert.match(page.headers.get('content-security-policy'),/form-action 'self'/);
+ // Transport tests construct Origin manually; this regression uses Chromium's
+ // native navigation/form algorithm instead of fetch or synthetic headers.
+ const {default:fs}=await import('node:fs');
+ const executablePath=[process.env.CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Google/Chrome/Application/chrome.exe','/usr/bin/google-chrome','/usr/bin/chromium'].filter(Boolean).find(p=>fs.existsSync(p));
+ if(!executablePath){t.diagnostic('Native browser check unavailable: Chrome is not installed; header contract checked.');return;}
+ const {default:puppeteer}=await import('puppeteer-core');
+ const browser=await puppeteer.launch({executablePath,headless:true});t.after(()=>browser.close());
+ for(const [policy,expected] of [['no-referrer','null'],[page.headers.get('referrer-policy'),MCP_ORIGIN]]){
+  const tab=await browser.newPage();await tab.setRequestInterception(true);let observed;
+  tab.on('request',async request=>{
+   if(request.method()==='POST'){
+    observed={origin:request.headers().origin,referer:request.headers().referer};
+    await request.respond({status:200,contentType:'text/plain',body:'diagnostic received'});
+   }else await request.respond({status:200,headers:{'Content-Type':'text/html','Referrer-Policy':policy,'Content-Security-Policy':page.headers.get('content-security-policy')},body:'<form method="post" action="/oauth/authorize"><button>Diagnostic submit</button></form>'});
+  });
+  await tab.goto(MCP_ORIGIN+'/oauth/authorize?state=diagnostic-query');
+  await Promise.all([tab.waitForNavigation(),tab.click('button')]);
+  assert.equal(observed.origin,expected);
+  if(policy==='strict-origin')assert.equal(observed.referer,MCP_ORIGIN+'/');
+  await tab.close();
+ }
+ const {token,query}=await authorize(f);await json(await rpc(f,token.access_token,'tools/list'));
+ // Exercise the actual consent HTML and cookie-bound handle too, through the
+ // real OAuth provider with the in-memory fixture, never the production server.
+ const consentTab=await browser.newPage();await consentTab.setRequestInterception(true);let lastPost;
+ consentTab.on('request',async request=>{
+  const url=new URL(request.url());
+  if(url.origin!==MCP_ORIGIN||url.pathname!=='/oauth/authorize'){await request.respond({status:404,body:'not part of fixture'});return;}
+  const headers=request.headers();headers.cookie='lf_session='+f.session+'; '+(headers.cookie||'');
+  const body=request.method()==='POST'?(request.postData()??await request.fetchPostData()):undefined;
+  const response=await f.fetch(url.pathname+url.search,{method:request.method(),headers,...(body!==undefined?{body}: {})});
+  if(request.method()==='POST')lastPost={status:response.status,fields:[...new URLSearchParams(body).keys()],bodyLength:body?.length,csrfCorrect:new URLSearchParams(body).get('csrf')===await sha256Hex('factory-mcp-consent:'+f.session),origin:headers.origin,site:headers['sec-fetch-site'],error:response.status===200?'':await response.clone().text()};
+  await request.respond({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});
+ });
+ await consentTab.goto(MCP_ORIGIN+'/oauth/authorize?'+query);
+ await Promise.all([consentTab.waitForNavigation(),consentTab.click('button[value="approve"]')]);
+ assert.match(await consentTab.title(),/只读授权成功/,JSON.stringify(lastPost));
+ assert.equal(await consentTab.$eval('#returnToClient',link=>link.textContent),'返回 Test ChatGPT');
+ await consentTab.close();
+ assert.equal((await f.browser('/oauth/authorize',{method:'POST',headers:{origin:'null'},body:''})).status,403);
+});

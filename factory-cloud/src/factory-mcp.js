@@ -30,8 +30,10 @@ async function describeConsent(oauth,auth){
  const host=new URL(auth.redirectUri).hostname;
  return {clientName:client.clientName||'未命名应用',clientDomain:auth.clientId.startsWith('https://')?new URL(auth.clientId).hostname:null,redirectHost:host,redirectIsLoopback:['localhost','127.0.0.1','[::1]'].includes(host)};
 }
+// no-referrer turns native form POST Origin into null in browsers.
+// strict-origin preserves same-origin form validation without leaking OAuth URL/query.
 function page(title,body,headers=new Headers()){
- headers.set('content-type','text/html; charset=utf-8');headers.set('cache-control','no-store');headers.set('referrer-policy','no-referrer');headers.set('x-frame-options','DENY');
+ headers.set('content-type','text/html; charset=utf-8');headers.set('cache-control','no-store');headers.set('referrer-policy','strict-origin');headers.set('x-frame-options','DENY');
  headers.set('content-security-policy',"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
  return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)} · Local Factory</title><style>body{margin:0;background:#f4f7fc;color:#172d4c;font:16px/1.7 system-ui}main{max-width:720px;margin:6vh auto;padding:32px;background:white;border:1px solid #dce5f3;border-radius:16px}h1{font-size:25px}a{color:#1260db}button{padding:10px 18px;background:#1260db;color:white;border:0;border-radius:7px;cursor:pointer;font:inherit;margin:8px 8px 0 0}code{overflow-wrap:anywhere}article{border-top:1px solid #dce5f3;padding:14px 0}.muted{color:#64748b}</style><main><h1>${escape(title)}</h1>${body}</main></html>`,{headers});
 }
