@@ -17,4 +17,6 @@ factory-cloud/src/topic-import-widget.js; factory-mcp-tools.js; topic-file-impor
 26 focused tests passed; full factory suite 873 passed, zero failed/skipped. Actual Chrome tests cover library selection, local upload, escaped topic text, actual OAuth/MCP fixture saving, app-only authorization, standard iframe bridge, lost response after committed import then status lookup, and upload failure without a Factory write. Host file helpers are mocked, R2/downloads use fixture bytes, no publishing or generation API calls. A local fixture screenshot was visually reviewed.
 
 ## Deployment / remaining work
-Pending commit, push main and deployment. Final live ChatGPT host verification is user-side: refresh tools, open the prepare card, select a real PNG, confirm and verify completed/topic ID.
+Code commit f81ba4d was pushed to GitHub main, then deployed with npm run deploy from a clean release checkout at exactly origin/main. Worker version ba03eedc-f7b5-4bf8-952f-04855f6557fb. No migrations. Live health and both OAuth discovery endpoints return 200; unauthenticated MCP remains 401.
+
+Final live ChatGPT host verification is user-side: refresh tools, open the prepare card, select a real PNG, confirm and verify completed/topic ID.
