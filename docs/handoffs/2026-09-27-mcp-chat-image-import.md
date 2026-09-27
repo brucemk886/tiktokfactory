@@ -16,5 +16,8 @@ factory-cloud/src/topic-file-import.js and .test.js; factory-mcp-tools.js; facto
 ## Verification
 35 focused tests passed: actual OAuth/MCP file schema and call without key/workflow, disabled topic creation, quiz image binding, retries, stale lease, URL/redirect rejection, bounded/invalid images, permissions and secret handling. Full factory suite: 871 passed, 0 failed. No real generation or publishing calls.
 
-## Next step
-Commit/push main, deploy via clean aligned release checkout. User refreshes Local Factory tools, starts a new chat and passes a real image attachment; this final ChatGPT-side handoff remains unverified.
+## Deployment
+Code commit 437e0bb pushed to GitHub main and deployed with npm run deploy from clean release main exactly matching origin/main. Worker version beb1c8ea-dae6-48f6-beed-762ec271cfa2. No migrations required. Live checks: discovery 200 with factory.read/factory.topics.write; unauthenticated /mcp 401; authorization page retains strict-origin.
+
+## Remaining user step
+User refreshes Local Factory tools, starts a new chat and passes a real PNG attachment. This final ChatGPT-side generated-image handoff remains unverified. Existing write authorization suffices; read-only users must consent to image import.
