@@ -1,6 +1,6 @@
 # Current State
 
-- MCP v1.3 adds psychology_prepare_topic_image_import: a ChatGPT file-picker/upload card followed by an app-only save tool without fileParams, avoiding the reported string/object adapter conflict. Native chat image generation remains outside Factory; no OPENAI_API_KEY. Direct file import, scoped authorization and retry protection remain. ChatGPT host file-library/native-image availability needs user-side verification. See docs/FACTORY_MCP.md.
+- MCP v1.3.1 accepts the exact user-reported image host oaisdmntprwestus.blob.core.windows.net (no Azure-wide wildcard) and includes operation error codes in visible text. MCP v1.3 adds psychology_prepare_topic_image_import: a ChatGPT file-picker/upload card followed by an app-only save tool without fileParams, avoiding the reported string/object adapter conflict. Native chat image generation remains outside Factory; no OPENAI_API_KEY. Direct file import, scoped authorization and retry protection remain. ChatGPT host file-library/native-image availability needs user-side verification. See docs/FACTORY_MCP.md.
 
 
 - Shared factory data overview (/psychology-effects) renders analytics before bridge receipt totals; report reads filter the existing latest-80 cache by Beijing dates, receipts use three bounded parallel reads, and obsolete UI requests are cancelled. Full API and current group authorization remain compatible. See docs/handoffs/2026-09-27-factory-effects-speed.md.

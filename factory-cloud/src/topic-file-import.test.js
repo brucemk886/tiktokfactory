@@ -84,3 +84,25 @@ test('interrupted receiving task can be resumed after bounded lease expires',asy
  f.sqlite.prepare("UPDATE factory_ai_operations SET status='receiving',updated_at=?").run(Date.now()-190000);
  f.env.fetch=async()=>new Response(png);assert.equal((await importTopicFile(f.env,user,i)).status,'completed');
 });
+
+
+test('reported ChatGPT Blob host imports and retries without storing signed URLs',async t=>{
+ const f=await setup(t),url='https://oaisdmntprwestus.blob.core.windows.net/image/test.png?sig=private-blob',i=input({image:{file_id:'file-blob',download_url:url}});
+ const result=await importTopicFile(f.env,user,i);assert.equal(result.status,'completed');assert.equal(result.topic.enabled,false);assert.equal(f.calls[0],url);
+ const replay=await importTopicFile(f.env,user,{...i,image:{...i.image,download_url:url+'-renewed'}});assert.equal(replay.topic.id,result.topic.id);assert.equal(f.calls.length,1);
+ assert.doesNotMatch(JSON.stringify(f.sqlite.prepare('SELECT * FROM factory_ai_operations').get()),/private-blob|download_url/);assert.equal(f.requests.length,0);
+});
+
+test('Blob account allowlist is exact and every redirect remains checked',async t=>{
+ const host='oaisdmntprwestus.blob.core.windows.net';
+ assert.equal(chatFileUrl('https://'+host.toUpperCase()+'/image.png'),'https://'+host+'/image.png');
+ for(const url of ['http://'+host+'/x','https://'+host+':444/x','https://user:pass@'+host+'/x','https://'+host+'/x#fragment','https://'+host+'.evil.test/x','https://child.'+host+'/x','https://oaisdmntpreastus.blob.core.windows.net/x','https://unrelated.blob.core.windows.net/x','blob:https://'+host+'/id'])assert.throws(()=>chatFileUrl(url),e=>e.code==='FILE_HOST_NOT_ALLOWED');
+ const f=await setup(t),i=input();let urls=[];
+ f.env.fetch=async(url,init)=>{urls.push(url);assert.equal(init.redirect,'manual');assert.equal(init.credentials,'omit');assert.equal(init.headers,undefined);return urls.length===1?new Response(null,{status:302,headers:{location:'https://'+host+'/image.png?sig=private-redirect'}}):new Response(png);};
+ assert.equal((await importTopicFile(f.env,user,i)).status,'completed');assert.equal(urls.length,2);
+ // An allowed Blob URL cannot redirect into another tenant or a private address.
+ for(const location of ['https://unrelated.blob.core.windows.net/x','http://169.254.169.254/x']){
+  let calls=0;f.env.fetch=async()=>{calls++;return new Response(null,{status:302,headers:{location}});};
+  await assert.rejects(importTopicFile(f.env,user,input({image:{file_id:'file-blocked',download_url:'https://'+host+'/x'}})),e=>e.code==='FILE_HOST_NOT_ALLOWED');assert.equal(calls,1);
+ }
+});

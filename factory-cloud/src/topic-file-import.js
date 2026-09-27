@@ -6,6 +6,9 @@ import {normalizeTopic} from '../../scripts/psychology-topic-bank.js';
 import {topicImageInput,topicImageStatus,inspectPng,importReadyImage} from './topic-image-operation.js';
 
 const MAX_BYTES=8*1024*1024;
+// Exact storage account reported by the user's ChatGPT image handoff. Do not
+// broaden this to all Azure Blob tenants or infer other regions from its name.
+const CHAT_IMAGE_BLOB_HOST='oaisdmntprwestus.blob.core.windows.net';
 const fail=(message,statusCode=400,code='INVALID_INPUT')=>{throw Object.assign(new Error(message),{statusCode,code});};
 // All four file properties are declared; only the two host-provided fields are required.
 export const topicFileInput=topicImageInput.omit({imagePrompt:true,imageModel:true,imageSize:true}).extend({
@@ -26,7 +29,7 @@ async function activeUser(db,id){const row=await db.prepare('SELECT * FROM facto
 export function chatFileUrl(value){
  let url;try{url=new URL(value);}catch{fail('需要 ChatGPT 提供的图片附件，不能使用 sandbox 路径或手写地址。',400,'FILE_REFERENCE_REQUIRED');}
  const host=url.hostname;
- if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!(host==='oaiusercontent.com'||host.endsWith('.oaiusercontent.com')))
+ if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!(host==='oaiusercontent.com'||host.endsWith('.oaiusercontent.com')||host===CHAT_IMAGE_BLOB_HOST))
   fail('图片下载域名 '+host+' 不受支持。请通过选图入库界面选择图片；不要传入聊天页面或 sandbox 地址。',400,'FILE_HOST_NOT_ALLOWED');
  return url.href;
 }

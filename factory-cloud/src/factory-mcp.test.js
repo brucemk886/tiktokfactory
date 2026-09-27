@@ -274,3 +274,17 @@ test('real Chrome picker selects host file then calls actual OAuth MCP import wi
  assert.equal(await tab2.$eval('#save',e=>e.disabled),true);assert.equal(await tab2.$eval('#upload',e=>e.disabled),false);assert.equal(downloads,3);
  assert.equal(f.requests.length,0);
 });
+
+
+test('MCP file host errors include a visible code and Blob host reaches bounded download',async t=>{
+ const f=await setup(t),a=await authorize(f,true),draft={requestId:crypto.randomUUID(),title:'Blob retry',content:'Reflection'};
+ const invoke=async url=>(await json(await rpc(f,a.token.access_token,'tools/call',{name:'psychology_import_topic_image',arguments:{...draft,image:{file_id:'file-blob',download_url:url}}}))).result;
+ const denied=await invoke('https://unrelated.blob.core.windows.net/image.png?sig=private-test');
+ assert.equal(denied.isError,true);assert.equal(denied.structuredContent.errorCode,'FILE_HOST_NOT_ALLOWED');assert.match(denied.content[0].text,/\[FILE_HOST_NOT_ALLOWED\]/);assert.doesNotMatch(JSON.stringify(denied),/private-test/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);
+ f.env.ARCHIVE={};let calls=0;f.env.ARCHIVE.head=async()=>null;
+ f.env.fetch=async()=>{calls++;return new Response('expired',{status:403});};
+ const expired=await invoke('https://oaisdmntprwestus.blob.core.windows.net/image.png?sig=private-test');
+ assert.equal(calls,1);assert.equal(expired.isError,true);assert.equal(expired.structuredContent.errorCode,'FILE_HTTP_403');assert.match(expired.content[0].text,/\[FILE_HTTP_403\]/);assert.doesNotMatch(JSON.stringify(expired),/private-test/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,0);assert.equal(f.requests.length,0);
+});

@@ -32,7 +32,7 @@ Official OAuth: https://developers.openai.com/plugins/build/auth
 
 `npm test` includes real OAuth provider PKCE code exchange, discovery, MCP initialization/list/call, refresh, replay rejection, audience validation, CIMD metadata, consent security, current-user permissions, revocation, read filtering and write denial. Network publishing calls are mocked and asserted absent. ChatGPT web account connection must still be completed by the user.
 
-## Import a ChatGPT image and topic (v1.3)
+## Import a ChatGPT image and topic (v1.3.1)
 
 **No OPENAI_API_KEY is needed.** Generate the image with ChatGPT's native image capability, then call `psychology_prepare_topic_image_import` with the topic draft only. Factory opens a **选择图片并入库** card. Opening it does not create an operation or a topic.
 
@@ -53,10 +53,12 @@ Factory only downloads, stores and imports the supplied PNG; neither path invoke
 
 Input:
 - `requestId`: fresh UUID for a new authorized import; all retries retain it.
-- `image`: the actual host-provided file object. Accepts HTTPS `oaiusercontent.com` and its subdomains, including validated redirects. No caller cookies or bearer credentials are forwarded.
+- `image`: the actual host-provided file object. Accepts HTTPS `oaiusercontent.com` and its subdomains, plus the exact user-reported image storage account `oaisdmntprwestus.blob.core.windows.net`, including individually validated redirects. Other Azure Blob accounts are not allowed. No caller cookies or bearer credentials are forwarded.
 - `template`: `psychology-target-2` (single-image quiz), or `psychology-collage` (cover attachment, default).
 - `title`, `content`: required topic text. `choices`: exactly four `{copy}` objects in A/B/C/D order for single-image quizzes; omitted for collage.
 - `revealComment`: optional reveal comment. `enabled`: false by default.
+
+The reported Blob hostname is supported as a narrowly scoped compatibility case, not a claim that all ChatGPT generated images have externally downloadable URLs. A valid temporary URL is still required. Factory operation errors now include their code in both structuredContent.errorCode and visible text; an outer client INVALID_ARGUMENT alone does not identify the underlying server error. This patch changes no tool names or input schemas.
 
 This version accepts complete PNG files up to 8 MiB and 4096 pixels per side. Format is checked from bytes, independent of MIME/name. Download is bounded to 30 seconds and a bounded redirect count. Other formats/hosts return an actionable error rather than following arbitrary URLs. Four-image quizzes are not supported by this one-image tool. Collage covers are attached to the topic; the collage renderer itself is unchanged.
 
