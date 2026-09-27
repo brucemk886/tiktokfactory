@@ -16,4 +16,4 @@ factory-cloud/src/topic-file-import.js and .test.js; factory-mcp-tools.js; facto
 29 focused tests passed: reported host import and idempotent replay; exact-host/lookalike/other tenant restrictions; allowed and denied redirects; no stored signed URLs; actual OAuth/MCP visible errors and expired URL reaching download without creating a topic. All networking/storage fixture-based, no publishing or generation calls. Full factory suite: 876 passed, zero failed/skipped.
 
 ## Deployment / remaining work
-Pending commit, push and deployment. User must retry the original request ID/topic/file using a real current download URL; no access to that ChatGPT session or signed image link here, so actual user image ingestion cannot be claimed complete.
+Code 595e846 pushed to GitHub main and deployed from a clean checkout at exactly origin/main using npm run deploy. Worker version e5beb57d-2822-45bb-a410-86347cda59d2; no migrations required. User must retry the original request ID/topic/file using a real current download URL; no access to that ChatGPT session or signed image link here, so actual user image ingestion cannot be claimed complete.
