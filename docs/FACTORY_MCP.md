@@ -23,7 +23,7 @@ Official OAuth: https://developers.openai.com/plugins/build/auth
 - Same-Worker internal read adapter reuses the unified Factory API handlers. No shared administrator key is stored or passed to ChatGPT. Write actions are denied again at the internal adapter.
 - 19 original read tools: psychology topics list/get; copies list/get; rewrites list/get; publish options/accounts/list; effects get; operations get; styles list; autopilot list/get. Photo factory directions/copies/accounts/autopilot list and reports get.
 - List endpoints retain business pagination. Explicit pageSize is capped at 50 (default 20). Small configuration/account directories retain existing directory semantics; there is no automatic traversal of all pages.
-- Two additional tools provide scoped existing-image import and operation status (21 total for an admin with all modules). No publishing, deletes or autopilot activation tools. The internal query adapter still rejects writes.
+- Four additional tools provide a prepare/picker UI, an app-only save action, direct file import and operation status (23 total in raw tools/list for an admin with all modules; the app-only action is hidden from model discovery by host metadata). No publishing, deletes or autopilot activation tools. The internal query adapter still rejects writes.
 - Query tool arguments are allowlisted; token/password/API-key fields are stripped recursively from structured responses. Tool output is business data, not instructions.
 - `/factory-mcp` needs factory session login. Browser POST actions require same Origin plus session-bound CSRF. Consent requires the provider's single-use, browser-bound handle as well. Client-controlled strings are escaped, framing is forbidden, CSP remains restrictive.
 - Existing fetch routes bypass the MCP wrapper; scheduled/queue handlers and workflow classes remain intact.
@@ -32,15 +32,24 @@ Official OAuth: https://developers.openai.com/plugins/build/auth
 
 `npm test` includes real OAuth provider PKCE code exchange, discovery, MCP initialization/list/call, refresh, replay rejection, audience validation, CIMD metadata, consent security, current-user permissions, revocation, read filtering and write denial. Network publishing calls are mocked and asserted absent. ChatGPT web account connection must still be completed by the user.
 
-## Import a ChatGPT image and topic (v1.2)
+## Import a ChatGPT image and topic (v1.3)
 
-**No OPENAI_API_KEY is needed.** Generate the image with ChatGPT's native image capability, then pass the existing PNG through the file input to `psychology_import_topic_image`. Factory only downloads, stores and imports the supplied image; it never invokes a generation API on this path. The old `psychology_generate_image_and_import_topic` tool is removed from MCP discovery and dispatch, including for stale clients. Existing background jobs are not interrupted.
+**No OPENAI_API_KEY is needed.** Generate the image with ChatGPT's native image capability, then call `psychology_prepare_topic_image_import` with the topic draft only. Factory opens a **选择图片并入库** card. Opening it does not create an operation or a topic.
 
-In ChatGPT → Local Factory connection, refresh tools and start a new conversation. The new tool is titled **保存聊天图片并导入心理学题目**. Reconnect only if a write call asks for `factory.topics.write`; authorize **允许读取与图片入库**. Existing write grants cover this narrower create operation. Read-only grants stay read-only. No arbitrary edits/deletes/publication are added.
+In ChatGPT → Local Factory connection, refresh tools and start a new conversation if the new tool is missing. Reconnect only if a write call asks for `factory.topics.write`; authorize **允许读取与图片入库**. Existing write grants cover this narrower create operation. Read-only grants stay read-only. No arbitrary edits/deletes/publication are added.
 
-Example user prompt: “先用聊天框生成一张情感依赖主题 PNG 图片，再调用 Local Factory 的 psychology_import_topic_image，保存图片并创建单图互动测试题，含 A/B/C/D 选项和揭晓评论，保持停用。完成后返回题目 ID。”
+Example prompt for the failed import: “沿用刚才的题目、A/B/C/D、揭晓评论和 requestId，调用 psychology_prepare_topic_image_import 打开选图入库界面。保持停用，不调用生图 API。”
 
-The tool declares `_meta["openai/fileParams"]: ["image"]`. ChatGPT supplies `image.download_url` and `image.file_id`; optional `mime_type` and `file_name` are declared in the schema. Do not invent file references, URLs, base64, or sandbox paths. If the current ChatGPT client cannot supply a generated image as a tool file, ask the user to attach that image to the conversation. The generated-image handoff is client-dependent and requires a real user-side check; a successful server test does not prove that every ChatGPT client can pass a newly generated image automatically.
+1. The model supplies `requestId`, template, title, content and choices/reveal; it must not supply an image string/object or invent a download URL for this prepare tool.
+2. In the card the user selects a PNG with ChatGPT's optional `window.openai.selectFiles()` helper. If the generated image is absent from the library, save it locally and use **选择本地 PNG** (`uploadFile`). Host helper availability is feature-detected; some accounts/clients do not have a library. Actual user-side generated-image availability remains unverified.
+3. On explicit confirmation, the UI calls `getFileDownloadUrl({fileId})`, then the app-only `psychology_save_selected_topic_image` with the real canonical file object. This action deliberately has **no openai/fileParams metadata**, bypassing the observed client string/object adapter conflict. It uses the same server importer, OAuth write scope, current Factory permissions, download validation and idempotency as direct imports.
+4. Only a `completed` result with a real topic ID displays success. Lost responses can be checked with **查询入库结果**; retries keep the same request/file. Temporary download links are neither saved in widget state nor persisted server-side.
+
+The UI is a self-contained MCP Apps HTML resource (`text/html;profile=mcp-app`), with the standard 2026-01-26 postMessage bridge and optional ChatGPT file helpers. Legacy `window.openai.callTool` is retained as a host fallback. There are no external UI assets, direct browser network requests or app-side credentials.
+
+`psychology_import_topic_image` remains for clients whose file parameter conversion works. It declares the complete four-field file schema and `_meta["openai/fileParams"]: ["image"]`. If the client alternates between “expected object, received string” and “is not of type string”, stop retrying alternate representations and use the picker. Do not claim this error is fixed in ChatGPT itself. The old `psychology_generate_image_and_import_topic` is removed from MCP discovery/dispatch; accepted historical generation jobs remain intact.
+
+Factory only downloads, stores and imports the supplied PNG; neither path invokes a generation API. Real Chrome tests exercise the card against the actual OAuth/MCP test fixture, while host file-library/upload helpers are simulated. They do not prove that every ChatGPT client can pass a newly generated image automatically.
 
 Input:
 - `requestId`: fresh UUID for a new authorized import; all retries retain it.
@@ -55,7 +64,9 @@ This version accepts complete PNG files up to 8 MiB and 4096 pixels per side. Fo
 
 Idempotency binds owner/requestId, topic content and file_id, excluding expiring download URLs and cosmetic MIME/name. Refreshing the same file's URL is safe; a different file ID or topic under the same request ID returns REQUEST_ID_CONFLICT. Signed URLs are never stored. A SQL claim serializes concurrent retries; immutable R2 bytes are the recovery checkpoint. A failed download stores no asset/topic. R2/D1/import failures recover on retry using the original request ID without downloading already-stored bytes. Interrupted requests can resume after a 180-second lease. Import errors do not trigger new image generation.
 
-Official file input contract: https://developers.openai.com/plugins/reference#file-apis
+Official file input and UI contract: https://developers.openai.com/plugins/reference#file-apis
+
+MCP Apps bridge specification: https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx
 
 ### Historical v1.1 generation jobs
 

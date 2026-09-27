@@ -1,6 +1,6 @@
 # Current State
 
-- MCP v1.2 replaces paid API image generation with `psychology_import_topic_image`: ChatGPT supplies an existing PNG through official file params, Factory stores it and creates a disabled topic. No OPENAI_API_KEY; factory.topics.write remains required. Signed file URLs are transient; idempotent imports recover stored bytes. Old generator removed from MCP discovery/dispatch; accepted historical workflows retained. ChatGPT generated-image file handoff still needs a user-side check. See docs/FACTORY_MCP.md.
+- MCP v1.3 adds psychology_prepare_topic_image_import: a ChatGPT file-picker/upload card followed by an app-only save tool without fileParams, avoiding the reported string/object adapter conflict. Native chat image generation remains outside Factory; no OPENAI_API_KEY. Direct file import, scoped authorization and retry protection remain. ChatGPT host file-library/native-image availability needs user-side verification. See docs/FACTORY_MCP.md.
 
 
 - Shared factory data overview (/psychology-effects) renders analytics before bridge receipt totals; report reads filter the existing latest-80 cache by Beijing dates, receipts use three bounded parallel reads, and obsolete UI requests are cancelled. Full API and current group authorization remain compatible. See docs/handoffs/2026-09-27-factory-effects-speed.md.

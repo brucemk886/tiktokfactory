@@ -11,6 +11,14 @@ const fail=(message,statusCode=400,code='INVALID_INPUT')=>{throw Object.assign(n
 export const topicFileInput=topicImageInput.omit({imagePrompt:true,imageModel:true,imageSize:true}).extend({
  image:z.object({download_url:z.string().min(1).max(16000),file_id:z.string().min(1).max(300),mime_type:z.string().max(100).optional(),file_name:z.string().max(500).optional()}).strict()
 }).strict();
+export const topicDraftInput=topicFileInput.omit({image:true});
+export function validateTopicDraft(raw){
+ const topic=topicDraftInput.parse(raw);
+ if(topic.template==='psychology-target-2'&&!topic.choices)fail('单图互动测试必须提供 A/B/C/D 四个 choices 文案。');
+ if(topic.template==='psychology-collage'&&topic.choices)fail('纸张拼贴模板不接受测试选项。');
+ normalizeTopic({...topic,...(topic.choices?{imageKey:'psychology-topics/00000000-0000-4000-8000-000000000000.png'}:{})},topic.template);
+ return topic;
+}
 const get=(db,user,id)=>db.prepare('SELECT * FROM factory_ai_operations WHERE owner_id=? AND request_id=?').bind(user,id).first();
 const keyFor=row=>'psychology-topics/'+row.asset_id.slice(6)+'.png';
 async function activeUser(db,id){const row=await db.prepare('SELECT * FROM factory_users WHERE id=? AND active=1').bind(id).first();assertTopicBankUser(row&&toPublicUser(row));}
@@ -19,7 +27,7 @@ export function chatFileUrl(value){
  let url;try{url=new URL(value);}catch{fail('需要 ChatGPT 提供的图片附件，不能使用 sandbox 路径或手写地址。',400,'FILE_REFERENCE_REQUIRED');}
  const host=url.hostname;
  if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!(host==='oaiusercontent.com'||host.endsWith('.oaiusercontent.com')))
-  fail('请将图片作为 ChatGPT 附件传入；只接受 ChatGPT 文件下载地址。',400,'FILE_HOST_NOT_ALLOWED');
+  fail('图片下载域名 '+host+' 不受支持。请通过选图入库界面选择图片；不要传入聊天页面或 sandbox 地址。',400,'FILE_HOST_NOT_ALLOWED');
  return url.href;
 }
 async function downloadPng(env,url){
@@ -55,9 +63,7 @@ async function registerFile(env,row,stored){
 export async function importTopicFile(env,user,raw,origin=''){
  assertTopicBankUser(user);await activeUser(env.DB,user.id);
  const {image,...topic}=topicFileInput.parse(raw);
- if(topic.template==='psychology-target-2'&&!topic.choices)fail('单图互动测试必须提供 A/B/C/D 四个 choices 文案。');
- if(topic.template==='psychology-collage'&&topic.choices)fail('纸张拼贴模板不接受测试选项。');
- normalizeTopic({...topic,...(topic.choices?{imageKey:'psychology-topics/00000000-0000-4000-8000-000000000000.png'}:{})},topic.template);
+ validateTopicDraft(topic);
  // Signed URLs are ephemeral secrets, never persist or include them in error messages.
  const input={...topic,mode:'chatgpt-file',fileId:image.file_id};
  const inputHash=await sha256Hex(JSON.stringify(input));

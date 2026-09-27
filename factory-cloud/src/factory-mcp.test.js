@@ -50,7 +50,7 @@ test('discovery and no cookie/project key bypass; existing routes pass through',
 test('PKCE exchange, MCP initialize/list/call, schemas and live permission checks',async t=>{
  const f=await setup(t),a=await authorize(f),token=a.token.access_token;
  const init=await json(await rpc(f,token,'initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}}));assert.equal(init.result.serverInfo.name,'local-factory');
- const list=await json(await rpc(f,token,'tools/list'));assert.equal(list.result.tools.length,21);assert.equal(list.result.tools.filter(x=>x.annotations.readOnlyHint).length,20);assert.deepEqual(list.result.tools.filter(x=>!x.annotations.readOnlyHint).map(x=>x.name),['psychology_import_topic_image']);
+ const list=await json(await rpc(f,token,'tools/list'));assert.equal(list.result.tools.length,23);assert.equal(list.result.tools.filter(x=>x.annotations.readOnlyHint).length,21);assert.deepEqual(list.result.tools.filter(x=>!x.annotations.readOnlyHint).map(x=>x.name),['psychology_save_selected_topic_image','psychology_import_topic_image']);
  const call=await json(await rpc(f,token,'tools/call',{name:'psychology_topics_list',arguments:{page:1,pageSize:2}}));assert.equal(call.result.isError,false);
  for(const params of [{name:'psychology_topics_list',arguments:{pageSize:10000}},{name:'psychology_publish_create',arguments:{}}]){const x=await json(await rpc(f,token,'tools/call',params));assert.ok(x.result?.isError||x.error);}
  f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-topic-bank']));assert.ok((await json(await rpc(f,token,'tools/list'))).result.tools.every(t=>!t.name.startsWith('photo_factory_')));
@@ -118,7 +118,7 @@ test('ChatGPT cross-origin discovery, PKCE and MCP calls work while consent stay
  f.fetch=(path,init={})=>fetch(path,{...init,headers:{origin:'https://chatgpt.com',...Object.fromEntries(new Headers(init.headers))}});
  const meta=await f.fetch('/.well-known/oauth-protected-resource/mcp');assert.equal(meta.status,200);assert.equal(meta.headers.get('access-control-allow-origin'),'https://chatgpt.com');
  const unauth=await f.fetch('/mcp');assert.equal(unauth.status,401);assert.match(unauth.headers.get('access-control-expose-headers'),/WWW-Authenticate/);assert.equal(unauth.headers.get('access-control-allow-credentials'),null);
- const a=await authorize(f,true);const list=await json(await rpc(f,a.token.access_token,'tools/list'));assert.equal(list.result.tools.length,21);
+ const a=await authorize(f,true);const list=await json(await rpc(f,a.token.access_token,'tools/list'));assert.equal(list.result.tools.length,23);
  assert.equal((await f.browser('/factory-mcp',{method:'POST',headers:{origin:'https://chatgpt.com'},body:a.body})).status,403);
  assert.equal((await f.browser('/oauth/authorize',{method:'POST',headers:{origin:'https://chatgpt.com'},body:a.body})).status,403);
  assert.equal(f.requests.length,0);
@@ -182,4 +182,95 @@ test('consent pages keep a usable Origin on native browser POST without leaking 
  assert.equal(await consentTab.$eval('#returnToClient',link=>link.textContent),'返回 Test ChatGPT');
  await consentTab.close();
  assert.equal((await f.browser('/oauth/authorize',{method:'POST',headers:{origin:'null'},body:''})).status,403);
+});
+
+
+test('picker resource prepares without writing, avoids fileParams on UI save, preserves OAuth checks',async t=>{
+ const f=await setup(t),a=await authorize(f),draft={requestId:crypto.randomUUID(),title:'Draft',content:'Body'};
+ const list=(await json(await rpc(f,a.token.access_token,'tools/list'))).result.tools;
+ const prepare=list.find(x=>x.name==='psychology_prepare_topic_image_import'),save=list.find(x=>x.name==='psychology_save_selected_topic_image');
+ assert.equal(prepare.inputSchema.properties.image,undefined);assert.equal(prepare._meta['openai/fileParams'],undefined);
+ assert.equal(save._meta['openai/fileParams'],undefined);assert.deepEqual(save._meta.ui.visibility,['app']);assert.equal(save._meta['openai/widgetAccessible'],true);
+ const result=await json(await rpc(f,a.token.access_token,'tools/call',{name:prepare.name,arguments:draft}));assert.equal(result.result.structuredContent.status,'awaiting_image');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);
+ const resource=await json(await rpc(f,a.token.access_token,'resources/read',{uri:prepare._meta.ui.resourceUri}));assert.equal(resource.result.contents[0].mimeType,'text/html;profile=mcp-app');assert.match(resource.result.contents[0].text,/selectFiles/);
+ const args={...draft,image:{file_id:'file-picker',download_url:'https://files.oaiusercontent.com/test.png'}};
+ const denied=await json(await rpc(f,a.token.access_token,'tools/call',{name:save.name,arguments:args}));assert.match(JSON.stringify(denied.result._meta),/insufficient_scope/);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);
+ const invalid=await json(await rpc(f,a.token.access_token,'tools/call',{name:prepare.name,arguments:{...draft,template:'psychology-target-2'}}));assert.ok(invalid.error||invalid.result?.isError);
+ const stringFile=await json(await rpc(f,a.token.access_token,'tools/call',{name:save.name,arguments:{...args,image:'file-picker'}}));assert.ok(stringFile.error||stringFile.result?.isError);
+});
+
+test('real Chrome picker selects host file then calls actual OAuth MCP import without any generation',async t=>{
+ const {default:fs}=await import('node:fs');const executablePath=[process.env.CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Google/Chrome/Application/chrome.exe','/usr/bin/google-chrome','/usr/bin/chromium'].filter(Boolean).find(p=>fs.existsSync(p));if(!executablePath){t.skip('Chrome unavailable');return;}
+ const f=await setup(t),a=await authorize(f,true),draft={requestId:crypto.randomUUID(),template:'psychology-target-2',title:'<img src=x onerror="window.unsafe=true">',content:'Reflection',choices:['A','B','C','D'].map(copy=>({copy})),revealComment:'Reveal'};
+ const prepared=(await json(await rpc(f,a.token.access_token,'tools/call',{name:'psychology_prepare_topic_image_import',arguments:draft}))).result.structuredContent;
+ const {TOPIC_IMPORT_UI}=await import('./topic-import-widget.js');const html=(await json(await rpc(f,a.token.access_token,'resources/read',{uri:TOPIC_IMPORT_UI}))).result.contents[0].text;
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK2cAAAAASUVORK5CYII=','base64'),objects=new Map();
+ f.env.ARCHIVE={async head(k){return objects.get(k)||null;},async put(k,b,o){if(objects.has(k))return null;objects.set(k,{size:b.length,customMetadata:o.customMetadata});return objects.get(k);}};
+ let downloads=0;f.env.fetch=async(url,init)=>{assert.match(url,/^https:\/\/files.oaiusercontent.com\//);assert.equal(init.method,'GET');downloads++;return new Response(png);};
+ delete f.env.OPENAI_API_KEY;delete f.env.TOPIC_IMAGE_WORKFLOW;
+ const {default:puppeteer}=await import('puppeteer-core');const browser=await puppeteer.launch({executablePath,headless:true});t.after(()=>browser.close());
+ const tab=await browser.newPage(),errors=[];tab.on('pageerror',e=>errors.push(e.message));await tab.setViewport({width:640,height:850});
+ await tab.exposeFunction('fixtureCall',async(name,args)=>{const result=await json(await rpc(f,a.token.access_token,'tools/call',{name,arguments:args}));assert.ok(!result.error,JSON.stringify(result));return result.result;});
+ await tab.evaluate(data=>{window.openai={toolOutput:data,selectFiles:async()=>[{fileId:'file-picker-test',fileName:'attachment.png',mimeType:'image/png'}],getFileDownloadUrl:async({fileId})=>{if(fileId!=='file-picker-test')throw Error('wrong file');return {downloadUrl:'https://files.oaiusercontent.com/test.png?sig=private-picker'};},callTool:window.fixtureCall,setWidgetState:s=>{window.savedState=s;}};},prepared);
+ await tab.setContent(html);await tab.click('summary');assert.equal(await tab.$eval('#title',e=>e.textContent),draft.title);assert.equal(await tab.evaluate(()=>window.unsafe),undefined);
+ assert.equal(await tab.$eval('#save',e=>e.disabled),true);await tab.click('#library');await tab.waitForFunction(()=>!document.getElementById('save').disabled);assert.equal(downloads,0);
+ await tab.click('#save');await tab.waitForFunction(()=>document.getElementById('status').textContent.includes('已写入成功'));
+ assert.equal(downloads,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,1);assert.equal(await tab.$eval('#save',e=>e.disabled),true);assert.doesNotMatch(await tab.evaluate(()=>JSON.stringify(window.savedState)),/download_url|private-picker/);assert.deepEqual(errors,[]);
+ assert.equal(await tab.$eval('#choices',e=>e.textContent),'A · A\nB · B\nC · C\nD · D');
+ // A fresh card also supports uploadFile when selectFiles is unavailable.
+ const tab2=await browser.newPage();await tab2.exposeFunction('fixtureCall',async(name,args)=>(await json(await rpc(f,a.token.access_token,'tools/call',{name,arguments:args}))).result);
+ await tab2.evaluate(data=>{window.openai={toolOutput:data,uploadFile:async file=>{window.uploaded={name:file.name,size:file.size};return {fileId:'file-upload-test'};},getFileDownloadUrl:async()=>({downloadUrl:'https://files.oaiusercontent.com/upload.png'}),callTool:window.fixtureCall};},{...prepared,draft:{...prepared.draft,requestId:crypto.randomUUID()}});
+ await tab2.setContent(html);assert.equal(await tab2.$eval('#library',e=>e.disabled),true);assert.equal(await tab2.$eval('#upload',e=>e.disabled),false);
+ await tab2.evaluate(bytes=>{const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(bytes)],'local.png',{type:'image/png'}));const el=document.getElementById('file');el.files=transfer.files;el.dispatchEvent(new Event('change'));},[...png]);
+ await tab2.waitForFunction(()=>!document.getElementById('save').disabled);await tab2.click('#save');await tab2.waitForFunction(()=>document.getElementById('status').textContent.includes('已写入成功'));assert.equal(downloads,2);
+
+ // A sandbox iframe uses the standard postMessage bridge with no callTool fallback.
+ // Simulate a lost tool response AFTER a successful import, then query the same ID.
+ const host=await browser.newPage();await host.setViewport({width:640,height:900});
+ const third={...prepared,draft:{...prepared.draft,requestId:crypto.randomUUID(),title:'When closeness feels overwhelming'}};
+ let savedRequest;
+ await host.exposeFunction('fixtureCall',async(name,args)=>{
+  const result=(await json(await rpc(f,a.token.access_token,'tools/call',{name,arguments:args}))).result;
+  if(name==='psychology_save_selected_topic_image'){savedRequest=args.requestId;return {lost:true};}
+  assert.equal(args.requestId,savedRequest);return result;
+ });
+ await host.setContent('<iframe title="Factory" style="border:0;width:100%;height:850px" sandbox="allow-scripts allow-same-origin"></iframe>');
+ await host.evaluate(({html,prepared})=>{
+  const frame=document.querySelector('iframe');window.bridgeMethods=[];
+  window.addEventListener('message',async event=>{
+   if(event.source!==frame.contentWindow)return;
+   const msg=event.data;window.bridgeMethods.push(msg.method);
+   const send=data=>event.source.postMessage({jsonrpc:'2.0',...data},'*');
+   if(msg.method==='ui/initialize'){
+    if(msg.params.protocolVersion!=='2026-01-26')throw Error('bad protocol');
+    send({id:msg.id,result:{protocolVersion:'2026-01-26',hostCapabilities:{},hostInfo:{name:'Fixture',version:'1'}}});
+   }else if(msg.method==='ui/notifications/initialized')send({method:'ui/notifications/tool-result',params:{structuredContent:prepared}});
+   else if(msg.method==='tools/call'){
+    const result=await window.fixtureCall(msg.params.name,msg.params.arguments);
+    if(result.lost)send({id:msg.id,error:{code:-32603,message:'lost acknowledgement'}});
+    else send({id:msg.id,result});
+   }
+  });
+  // Host-only injection of file capabilities; no draft/callTool shortcut in this test.
+  frame.srcdoc=html.replace('<script>',`<script>window.openai={selectFiles:async()=>[{fileId:'file-bridge-test',fileName:'selected.png',mimeType:'image/png'}],getFileDownloadUrl:async()=>({downloadUrl:'https://files.oaiusercontent.com/bridge.png'}),setWidgetState:s=>{window.savedState=s;}};<`+'/script><script>');
+ },{html,prepared:third});
+ await host.waitForFunction(()=>window.bridgeMethods.includes('ui/notifications/initialized'));
+ const frame=host.frames().find(x=>x!==host.mainFrame());
+ await frame.waitForFunction(()=>!document.getElementById('library').disabled);
+ await frame.click('#library');await frame.waitForFunction(()=>!document.getElementById('save').disabled);
+ await frame.click('#save');await frame.waitForFunction(()=>document.getElementById('status').textContent.includes('暂时无法确认'));
+ assert.equal(await frame.$eval('#library',e=>e.disabled),true);assert.equal(await frame.$eval('#save',e=>e.disabled),false);
+ assert.equal(downloads,3);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,3);
+ await frame.click('#check');await frame.waitForFunction(()=>document.getElementById('status').textContent.includes('已写入成功'));
+ assert.equal(downloads,3);assert.equal(await frame.$eval('#save',e=>e.disabled),true);
+ assert.ok((await host.evaluate(()=>window.bridgeMethods)).includes('ui/notifications/size-changed'));
+ // Keep a local screenshot for visual review; no production/user data is used.
+ if(process.env.MCP_PICKER_SCREENSHOT)await host.screenshot({path:process.env.MCP_PICKER_SCREENSHOT,fullPage:true});
+ // Host upload failures leave the card usable and make no Factory call.
+ await tab2.evaluate(id=>{window.openai.uploadFile=async()=>{throw Error('upload failed');};window.openai.toolOutput.draft.requestId=id;},crypto.randomUUID());
+ await tab2.setContent(html);
+ await tab2.evaluate(()=>{const transfer=new DataTransfer();transfer.items.add(new File(['png'],'failed.png',{type:'image/png'}));const el=document.getElementById('file');el.files=transfer.files;el.dispatchEvent(new Event('change'));});
+ await tab2.waitForFunction(()=>document.getElementById('status').textContent.includes('没有取得可用图片'));
+ assert.equal(await tab2.$eval('#save',e=>e.disabled),true);assert.equal(await tab2.$eval('#upload',e=>e.disabled),false);assert.equal(downloads,3);
+ assert.equal(f.requests.length,0);
 });
