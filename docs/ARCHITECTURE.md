@@ -182,3 +182,10 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 ## Topic image generation and assets
 
 `topic-image-operation.js` owns a durable operation identified by owner + request UUID, backed by migration 0066 and `TopicImageWorkflow`. OpenAI generation is claimed atomically once, without provider retries. R2 image bytes and operation/hash metadata form the durable recovery checkpoint; `topic-assets.js` owns asset reference validation, ownership and bounded batch hydration. The existing topic importer remains the single topic insertion path and its fingerprint includes asset references. Defaults disabled; no publishing call. `factory.topics.write` is explicit extra OAuth consent, separate from existing read tokens. Existing image key format/renderers and workflows remain compatible. See FACTORY_MCP.md.
+
+
+## MCP topic image ingestion
+
+- topic-file-import.js accepts authenticated file references or app-only PNG byte uploads. URL inputs use bounded downloads and per-redirect source checks; local bytes traverse the existing OAuth MCP JSON channel without a separate multipart auth endpoint. No generation API is invoked.
+- topic-png.js validates static PNG chunks/CRC and decodes DEFLATE scanlines (including Adam7) with bounded row buffers. Bytes and signed URLs never enter operation JSON; URL input fingerprints retain file ID and byte inputs use a SHA-256 identity.
+- Both paths share factory_ai_operations leases, immutable R2 checkpoints and topic import receipts. Native ChatGPT file availability is a host capability. The URL pattern is a compatibility policy, not proof of domain ownership.

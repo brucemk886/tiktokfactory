@@ -1,14 +1,15 @@
 import {z} from 'zod';
+import {decodeTopicPng} from './topic-png.js';
 import {sha256Hex} from './http.js';
 import {toPublicUser} from './auth.js';
 import {assertTopicBankUser} from './psychology-topic-bank.js';
 import {normalizeTopic} from '../../scripts/psychology-topic-bank.js';
-import {topicImageInput,topicImageStatus,inspectPng,importReadyImage} from './topic-image-operation.js';
+import {topicImageInput,topicImageStatus,importReadyImage} from './topic-image-operation.js';
 
 const MAX_BYTES=8*1024*1024;
-// Exact storage account reported by the user's ChatGPT image handoff. Do not
-// broaden this to all Azure Blob tenants or infer other regions from its name.
-const CHAT_IMAGE_BLOB_HOST='oaisdmntprwestus.blob.core.windows.net';
+// Compatibility pattern requested by the user, not proof of OpenAI ownership.
+// Azure storage names are 3-24 lowercase letters/digits; no hyphens/subdomains.
+const CHAT_IMAGE_BLOB_HOST=/^oaisdmntpr[a-z0-9]{1,14}\.blob\.core\.windows\.net$/;
 const fail=(message,statusCode=400,code='INVALID_INPUT')=>{throw Object.assign(new Error(message),{statusCode,code});};
 // All four file properties are declared; only the two host-provided fields are required.
 export const topicFileInput=topicImageInput.omit({imagePrompt:true,imageModel:true,imageSize:true}).extend({
@@ -29,8 +30,8 @@ async function activeUser(db,id){const row=await db.prepare('SELECT * FROM facto
 export function chatFileUrl(value){
  let url;try{url=new URL(value);}catch{fail('需要 ChatGPT 提供的图片附件，不能使用 sandbox 路径或手写地址。',400,'FILE_REFERENCE_REQUIRED');}
  const host=url.hostname;
- if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!(host==='oaiusercontent.com'||host.endsWith('.oaiusercontent.com')||host===CHAT_IMAGE_BLOB_HOST))
-  fail('图片下载域名 '+host+' 不受支持。请通过选图入库界面选择图片；不要传入聊天页面或 sandbox 地址。',400,'FILE_HOST_NOT_ALLOWED');
+ if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!(host==='oaiusercontent.com'||host.endsWith('.oaiusercontent.com')||CHAT_IMAGE_BLOB_HOST.test(host)))
+  throw Object.assign(new Error('图片下载地址不受支持，请使用文件上传或有效的图片下载地址。'),{statusCode:400,code:'FILE_HOST_NOT_ALLOWED',host});
  return url.href;
 }
 async function downloadPng(env,url){
@@ -48,32 +49,39 @@ async function downloadPng(env,url){
   try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>MAX_BYTES)fail('图片不能超过 8 MB。',413,'IMAGE_TOO_LARGE');chunks.push(value);}}
   finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
   const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-  // Native ChatGPT generated images are normally PNG. Do not trust MIME or filename.
-  let dimensions;try{dimensions=inspectPng(bytes);}catch{fail('请附加完整 PNG 图片，单边不超过 4096 像素。',400,'INVALID_IMAGE');}
-  const view=new DataView(bytes.buffer);let pos=8,idat=false,ended=false;
-  while(pos+12<=bytes.length){const size=view.getUint32(pos),type=String.fromCharCode(...bytes.slice(pos+4,pos+8));if(size>bytes.length-pos-12)break;if(pos===8&&(type!=='IHDR'||size!==13))break;if(type==='IDAT')idat=true;pos+=size+12;if(type==='IEND'){ended=size===0&&pos===bytes.length;break;}}
-  if(!idat||!ended)fail('PNG 图片不完整，请重新附加图片。',400,'INVALID_IMAGE');
-  return {bytes,...dimensions};
+  return decodeTopicPng(bytes);
  }
  fail('图片下载重定向过多。',502,'FILE_REDIRECT_FAILED');
 }
 async function registerFile(env,row,stored){
  const m=stored.customMetadata||{};
  if(m.operation!==row.workflow_id||m.inputHash!==row.input_hash||!m.sha256)fail('图片存储记录不匹配。',409,'ASSET_CONFLICT');
- await env.DB.prepare("INSERT OR IGNORE INTO factory_assets(id,owner_id,purpose,object_key,mime_type,bytes,width,height,sha256,source,generation_model,generation_prompt,status,created_at) VALUES(?,?,'psychology-topic-cover',?,'image/png',?,?,?,?,'chatgpt-file','','','ready',?)")
- .bind(row.asset_id,row.owner_id,keyFor(row),stored.size,Number(m.width),Number(m.height),m.sha256,Date.now()).run();
+ await env.DB.prepare("INSERT OR IGNORE INTO factory_assets(id,owner_id,purpose,object_key,mime_type,bytes,width,height,sha256,source,generation_model,generation_prompt,status,created_at) VALUES(?,?,'psychology-topic-cover',?,'image/png',?,?,?,?,?,'','','ready',?)")
+ .bind(row.asset_id,row.owner_id,keyFor(row),stored.size,Number(m.width),Number(m.height),m.sha256,JSON.parse(row.input_json).transport==='client-png'?'client-png':'chatgpt-file',Date.now()).run();
+}
+export const topicBytesInput=topicDraftInput.extend({imageBase64:z.string().min(1).max(4*Math.ceil(MAX_BYTES/3))}).strict();
+export async function importTopicBytes(env,user,raw,origin=''){
+ assertTopicBankUser(user);await activeUser(env.DB,user.id);
+ const {imageBase64,...topic}=topicBytesInput.parse(raw);validateTopicDraft(topic);
+ if(imageBase64.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64))fail('图片编码无效。',400,'INVALID_IMAGE');
+ const bytes=Uint8Array.from(atob(imageBase64),c=>c.charCodeAt(0));
+ if(bytes.length>MAX_BYTES)fail('图片不能超过 8 MB。',413,'IMAGE_TOO_LARGE');
+ const data=await decodeTopicPng(bytes),digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+ return importFileSource(env,user,topic,'bytes-sha256:'+digest,()=>data,()=>{},origin,'client-png');
 }
 export async function importTopicFile(env,user,raw,origin=''){
  assertTopicBankUser(user);await activeUser(env.DB,user.id);
- const {image,...topic}=topicFileInput.parse(raw);
- validateTopicDraft(topic);
+ const {image,...topic}=topicFileInput.parse(raw);validateTopicDraft(topic);
+ return importFileSource(env,user,topic,image.file_id,()=>downloadPng(env,image.download_url),()=>chatFileUrl(image.download_url),origin);
+}
+async function importFileSource(env,user,topic,fileId,loadImage,validateSource,origin,transport){
  // Signed URLs are ephemeral secrets, never persist or include them in error messages.
- const input={...topic,mode:'chatgpt-file',fileId:image.file_id};
+ const input={...topic,mode:'chatgpt-file',fileId,...(transport?{transport}:{})};
  const inputHash=await sha256Hex(JSON.stringify(input));
  let row=await get(env.DB,user.id,topic.requestId);
- if(row&&row.input_hash!==inputHash)fail('requestId 已用于不同图片或题目；恢复原任务时请保留原 file_id 和题目内容。',409,'REQUEST_ID_CONFLICT');
+ if(row&&row.input_hash!==inputHash)fail('requestId 已用于不同图片或题目；请保持原上传方式、图片和题目内容。',409,'REQUEST_ID_CONFLICT');
  if(row?.status==='completed')return topicImageStatus(env,user,topic.requestId,origin);
- chatFileUrl(image.download_url);
+ validateSource();
  if(!env.ARCHIVE)fail('图片存储未配置。',503,'STORAGE_NOT_CONFIGURED');
  const now=Date.now(),operation='topic-file-'+(await sha256Hex(user.id+':'+topic.requestId)).slice(0,40);
  await env.DB.prepare("INSERT INTO factory_ai_operations(owner_id,request_id,input_hash,input_json,status,asset_id,workflow_id,import_request_id,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?) ON CONFLICT(owner_id,request_id) DO NOTHING")
@@ -88,7 +96,7 @@ export async function importTopicFile(env,user,raw,origin=''){
  try{
   let stored=await env.ARCHIVE.head(keyFor(row));
   if(!stored){
-   const imageData=await downloadPng(env,image.download_url);
+   const imageData=await loadImage();
    await activeUser(env.DB,user.id);
    if(!await owns())return topicImageStatus(env,user,topic.requestId,origin);
    const sha256=[...new Uint8Array(await crypto.subtle.digest('SHA-256',imageData.bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');

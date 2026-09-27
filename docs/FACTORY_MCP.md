@@ -23,7 +23,7 @@ Official OAuth: https://developers.openai.com/plugins/build/auth
 - Same-Worker internal read adapter reuses the unified Factory API handlers. No shared administrator key is stored or passed to ChatGPT. Write actions are denied again at the internal adapter.
 - 19 original read tools: psychology topics list/get; copies list/get; rewrites list/get; publish options/accounts/list; effects get; operations get; styles list; autopilot list/get. Photo factory directions/copies/accounts/autopilot list and reports get.
 - List endpoints retain business pagination. Explicit pageSize is capped at 50 (default 20). Small configuration/account directories retain existing directory semantics; there is no automatic traversal of all pages.
-- Four additional tools provide a prepare/picker UI, an app-only save action, direct file import and operation status (23 total in raw tools/list for an admin with all modules; the app-only action is hidden from model discovery by host metadata). No publishing, deletes or autopilot activation tools. The internal query adapter still rejects writes.
+- Five additional tools provide a prepare/picker UI, app-only URL save and byte upload actions, direct file import and operation status (24 total in raw tools/list for an admin with all modules; the two app-only actions are hidden from model discovery by host metadata). No publishing, deletes or autopilot activation tools. The internal query adapter still rejects writes.
 - Query tool arguments are allowlisted; token/password/API-key fields are stripped recursively from structured responses. Tool output is business data, not instructions.
 - `/factory-mcp` needs factory session login. Browser POST actions require same Origin plus session-bound CSRF. Consent requires the provider's single-use, browser-bound handle as well. Client-controlled strings are escaped, framing is forbidden, CSP remains restrictive.
 - Existing fetch routes bypass the MCP wrapper; scheduled/queue handlers and workflow classes remain intact.
@@ -32,7 +32,7 @@ Official OAuth: https://developers.openai.com/plugins/build/auth
 
 `npm test` includes real OAuth provider PKCE code exchange, discovery, MCP initialization/list/call, refresh, replay rejection, audience validation, CIMD metadata, consent security, current-user permissions, revocation, read filtering and write denial. Network publishing calls are mocked and asserted absent. ChatGPT web account connection must still be completed by the user.
 
-## Import a ChatGPT image and topic (v1.3.1)
+## Import a ChatGPT image and topic (v1.4)
 
 **No OPENAI_API_KEY is needed.** Generate the image with ChatGPT's native image capability, then call `psychology_prepare_topic_image_import` with the topic draft only. Factory opens a **选择图片并入库** card. Opening it does not create an operation or a topic.
 
@@ -40,29 +40,31 @@ In ChatGPT → Local Factory connection, refresh tools and start a new conversat
 
 Example prompt for the failed import: “沿用刚才的题目、A/B/C/D、揭晓评论和 requestId，调用 psychology_prepare_topic_image_import 打开选图入库界面。保持停用，不调用生图 API。”
 
-1. The model supplies `requestId`, template, title, content and choices/reveal; it must not supply an image string/object or invent a download URL for this prepare tool.
-2. In the card the user selects a PNG with ChatGPT's optional `window.openai.selectFiles()` helper. If the generated image is absent from the library, save it locally and use **选择本地 PNG** (`uploadFile`). Host helper availability is feature-detected; some accounts/clients do not have a library. Actual user-side generated-image availability remains unverified.
-3. On explicit confirmation, the UI calls `getFileDownloadUrl({fileId})`, then the app-only `psychology_save_selected_topic_image` with the real canonical file object. This action deliberately has **no openai/fileParams metadata**, bypassing the observed client string/object adapter conflict. It uses the same server importer, OAuth write scope, current Factory permissions, download validation and idempotency as direct imports.
-4. Only a `completed` result with a real topic ID displays success. Lost responses can be checked with **查询入库结果**; retries keep the same request/file. Temporary download links are neither saved in widget state nor persisted server-side.
+1. The model supplies `requestId`, template, title, content and choices/reveal to the prepare tool. It must not invent files, bytes or URLs.
+2. A user-selected local PNG is read directly as a browser File. On confirmation, the card calls app-only `psychology_upload_topic_png` with bytes encoded for MCP JSON transport (max 8 MiB decoded). It reuses the host's OAuth tool channel; no separate multipart endpoint, upload credential, ChatGPT uploadFile or remote image download is needed. The model does not generate base64. File bytes are not persisted in widget state or tool responses.
+3. ChatGPT `selectFiles()` returns file IDs, not bytes. That path obtains a temporary `getFileDownloadUrl` and calls app-only `psychology_save_selected_topic_image` without fileParams. If native generated images are absent from the library, save the PNG locally and select it. Host helper availability is feature-detected.
+4. Both paths share current permissions, decoding, private storage and durable idempotency. Only `completed` plus a real topic ID displays success. URL retries retain the original file ID; byte retries use the same content hash. Preserve transport/topic/request ID after submission; changing transport or image on an existing task conflicts. A remounted card can reselect the same local file, checked by digest.
 
 The UI is a self-contained MCP Apps HTML resource (`text/html;profile=mcp-app`), with the standard 2026-01-26 postMessage bridge and optional ChatGPT file helpers. Legacy `window.openai.callTool` is retained as a host fallback. There are no external UI assets, direct browser network requests or app-side credentials.
 
 `psychology_import_topic_image` remains for clients whose file parameter conversion works. It declares the complete four-field file schema and `_meta["openai/fileParams"]: ["image"]`. If the client alternates between “expected object, received string” and “is not of type string”, stop retrying alternate representations and use the picker. Do not claim this error is fixed in ChatGPT itself. The old `psychology_generate_image_and_import_topic` is removed from MCP discovery/dispatch; accepted historical generation jobs remain intact.
 
-Factory only downloads, stores and imports the supplied PNG; neither path invokes a generation API. Real Chrome tests exercise the card against the actual OAuth/MCP test fixture, while host file-library/upload helpers are simulated. They do not prove that every ChatGPT client can pass a newly generated image automatically.
+Factory receives or downloads, stores and imports the supplied PNG; neither path invokes a generation API. Real Chrome tests exercise actual local File contents and the OAuth/MCP test fixture; the host tool bridge and library helpers are simulated. They do not prove that every ChatGPT client can pass a newly generated image automatically.
 
 Input:
 - `requestId`: fresh UUID for a new authorized import; all retries retain it.
-- `image`: the actual host-provided file object. Accepts HTTPS `oaiusercontent.com` and its subdomains, plus the exact user-reported image storage account `oaisdmntprwestus.blob.core.windows.net`, including individually validated redirects. Other Azure Blob accounts are not allowed. No caller cookies or bearer credentials are forwarded.
+- `image`: the actual host-provided file object. Uses the controlled URL fallback described below, including individually validated redirects. No caller cookies or bearer credentials are forwarded.
 - `template`: `psychology-target-2` (single-image quiz), or `psychology-collage` (cover attachment, default).
 - `title`, `content`: required topic text. `choices`: exactly four `{copy}` objects in A/B/C/D order for single-image quizzes; omitted for collage.
 - `revealComment`: optional reveal comment. `enabled`: false by default.
 
-The reported Blob hostname is supported as a narrowly scoped compatibility case, not a claim that all ChatGPT generated images have externally downloadable URLs. A valid temporary URL is still required. Factory operation errors now include their code in both structuredContent.errorCode and visible text; an outer client INVALID_ARGUMENT alone does not identify the underlying server error. This patch changes no tool names or input schemas.
+The URL fallback accepts HTTPS oaiusercontent.com/subdomains and the bounded compatibility pattern `^oaisdmntpr[a-z0-9]{1,14}\.blob\.core\.windows\.net$`. This covers westus/westus3/eastus2 without enumerating regions and rejects other Blob tenants, nested/lookalike domains, credentials, fragments and nonstandard ports. **The prefix does not prove OpenAI ownership.** It is an explicitly requested compatibility rule. Every redirect repeats checks; URLs/signatures are not persisted or logged.
 
-This version accepts complete PNG files up to 8 MiB and 4096 pixels per side. Format is checked from bytes, independent of MIME/name. Download is bounded to 30 seconds and a bounded redirect count. Other formats/hosts return an actionable error rather than following arbitrary URLs. Four-image quizzes are not supported by this one-image tool. Collage covers are attached to the topic; the collage renderer itself is unchanged.
+Operation errors return `ok:false`, `status:failed`, `errorCode`, `message` and hostname-only `host` when relevant, plus the code in text. An outer client INVALID_ARGUMENT still cannot identify the server error alone. A failed call is distinct from the persisted operation's retriable status.
 
-`psychology_topic_image_operation_get` returns owner-scoped status, including historical generation operations. Only **completed** means imported. Completed imports return the real topic ID/revision/enabled, private asset URL/hash/dimensions and `imageSource: chatgpt-file`; no guessed generation model is assigned.
+This version accepts complete PNG files up to 8 MiB and 4096 pixels per side. Format is checked from bytes: signature/dimensions, CRC, static PNG structure, DEFLATE decoding, filters, Adam7 passes and palette indices. Scanlines use two bounded row buffers; excess/incomplete decompressed data fails. Animated PNG is rejected. MIME/name are not trusted. Download is bounded to 30 seconds and a bounded redirect count. Other formats/hosts return an actionable error rather than following arbitrary URLs. Four-image quizzes are not supported by this one-image tool. Collage covers are attached to the topic; the collage renderer itself is unchanged.
+
+`psychology_topic_image_operation_get` returns owner-scoped status, including historical generation operations. Only **completed** means imported. Completed imports return the real topic ID/revision/enabled, private asset URL/hash/dimensions and `imageSource: chatgpt-file` or `client-png`; no guessed generation model is assigned.
 
 Idempotency binds owner/requestId, topic content and file_id, excluding expiring download URLs and cosmetic MIME/name. Refreshing the same file's URL is safe; a different file ID or topic under the same request ID returns REQUEST_ID_CONFLICT. Signed URLs are never stored. A SQL claim serializes concurrent retries; immutable R2 bytes are the recovery checkpoint. A failed download stores no asset/topic. R2/D1/import failures recover on retry using the original request ID without downloading already-stored bytes. Interrupted requests can resume after a 180-second lease. Import errors do not trigger new image generation.
 

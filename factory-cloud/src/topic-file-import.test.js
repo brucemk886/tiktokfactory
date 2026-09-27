@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture} from './psychology-cloud-test-fixture.js';
-import {importTopicFile,chatFileUrl,topicFileInput} from './topic-file-import.js';
+import {importTopicFile,importTopicBytes,chatFileUrl,topicFileInput} from './topic-file-import.js';
 import {topicImageStatus} from './topic-image-operation.js';
 const user={id:'admin',role:'admin',sidebarModules:['psychology-topic-bank']};
-const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK2cAAAAASUVORK5CYII=','base64');
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64');
 const input=(extra={})=>({requestId:crypto.randomUUID(),title:'Why closeness feels scary',content:'A gentle reflection',image:{file_id:'file-chat-test',download_url:'https://files.oaiusercontent.com/test.png?sig=private-test'},...extra});
 async function setup(t){
  const f=await fixture(t);f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(user.sidebarModules));
@@ -93,10 +93,11 @@ test('reported ChatGPT Blob host imports and retries without storing signed URLs
  assert.doesNotMatch(JSON.stringify(f.sqlite.prepare('SELECT * FROM factory_ai_operations').get()),/private-blob|download_url/);assert.equal(f.requests.length,0);
 });
 
-test('Blob account allowlist is exact and every redirect remains checked',async t=>{
+test('Blob compatibility pattern is bounded and every redirect remains checked',async t=>{
  const host='oaisdmntprwestus.blob.core.windows.net';
  assert.equal(chatFileUrl('https://'+host.toUpperCase()+'/image.png'),'https://'+host+'/image.png');
- for(const url of ['http://'+host+'/x','https://'+host+':444/x','https://user:pass@'+host+'/x','https://'+host+'/x#fragment','https://'+host+'.evil.test/x','https://child.'+host+'/x','https://oaisdmntpreastus.blob.core.windows.net/x','https://unrelated.blob.core.windows.net/x','blob:https://'+host+'/id'])assert.throws(()=>chatFileUrl(url),e=>e.code==='FILE_HOST_NOT_ALLOWED');
+ for(const region of ['westus3','eastus2','northeurope'])assert.equal(new URL(chatFileUrl('https://oaisdmntpr'+region+'.blob.core.windows.net/x')).hostname,'oaisdmntpr'+region+'.blob.core.windows.net');
+ for(const url of ['http://'+host+'/x','https://'+host+':444/x','https://user:pass@'+host+'/x','https://'+host+'/x#fragment','https://'+host+'.evil.test/x','https://child.'+host+'/x','https://oaisdmntpr.blob.core.windows.net/x','https://oaisdmntpr-westus.blob.core.windows.net/x','https://oaisdmntprabcdefghijklmnop.blob.core.windows.net/x','https://unrelated.blob.core.windows.net/x','blob:https://'+host+'/id'])assert.throws(()=>chatFileUrl(url),e=>e.code==='FILE_HOST_NOT_ALLOWED');
  const f=await setup(t),i=input();let urls=[];
  f.env.fetch=async(url,init)=>{urls.push(url);assert.equal(init.redirect,'manual');assert.equal(init.credentials,'omit');assert.equal(init.headers,undefined);return urls.length===1?new Response(null,{status:302,headers:{location:'https://'+host+'/image.png?sig=private-redirect'}}):new Response(png);};
  assert.equal((await importTopicFile(f.env,user,i)).status,'completed');assert.equal(urls.length,2);
@@ -105,4 +106,45 @@ test('Blob account allowlist is exact and every redirect remains checked',async 
   let calls=0;f.env.fetch=async()=>{calls++;return new Response(null,{status:302,headers:{location}});};
   await assert.rejects(importTopicFile(f.env,user,input({image:{file_id:'file-blocked',download_url:'https://'+host+'/x'}})),e=>e.code==='FILE_HOST_NOT_ALLOWED');assert.equal(calls,1);
  }
+});
+
+
+test('actual PNG bytes import without any remote fetch and recover identically',async t=>{
+ const f=await setup(t),{image,...draft}=input(),args={...draft,imageBase64:png.toString('base64')};
+ f.env.fetch=async()=>{throw Error('bytes path must never download');};
+ const result=await importTopicBytes(f.env,user,args);assert.equal(result.status,'completed');assert.equal(result.imageSource,'client-png');assert.equal(result.topic.enabled,false);
+ assert.equal((await importTopicBytes(f.env,user,args)).topic.id,result.topic.id);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,1);
+ assert.doesNotMatch(JSON.stringify(f.sqlite.prepare('SELECT * FROM factory_ai_operations').get()),/imageBase64|download_url/);assert.equal(f.calls.length,0);
+ await assert.rejects(importTopicBytes(f.env,user,{...args,title:'changed'}),e=>e.code==='REQUEST_ID_CONFLICT');
+ await assert.rejects(importTopicBytes(f.env,{...user,role:'operator'},args),e=>e.statusCode===403);
+});
+
+test('byte upload refuses malformed or oversized inputs before writing anything',async t=>{
+ const f=await setup(t),{image,...draft}=input();
+ for(const imageBase64 of ['YQ==','data:image/png;base64,YQ==','!!!!','', 'A'.repeat(4*Math.ceil(8*1024*1024/3)+4)])await assert.rejects(importTopicBytes(f.env,user,{...draft,imageBase64}));
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);assert.equal(f.objects.size,0);
+});
+
+
+test('PNG bytes are decoded with CRC, filters, palette and bounded decompression checks',async()=>{
+ const {decodeTopicPng,pngCrc}=await import('./topic-png.js'),{deflateSync}=await import('node:zlib');
+ const chunk=(type,data)=>{const t=Buffer.from(type),n=Buffer.alloc(4),crc=Buffer.alloc(4);n.writeUInt32BE(data.length);crc.writeUInt32BE(pngCrc(Buffer.concat([t,data])));return Buffer.concat([n,t,data,crc]);};
+ const make=({w=1,h=1,depth=8,type=6,raw=Buffer.from([0,1,2,3,255]),compressed,interlace=0,extra=[],split=false}={})=>{
+  const header=Buffer.alloc(13);header.writeUInt32BE(w);header.writeUInt32BE(h,4);header[8]=depth;header[9]=type;header[12]=interlace;
+  const data=compressed||deflateSync(raw),parts=split?[chunk('IDAT',data.subarray(0,3)),chunk('IDAT',data.subarray(3))]:[chunk('IDAT',data)];
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),...extra,...parts,chunk('IEND',Buffer.alloc(0))]);
+ };
+ for(const filter of [0,1,2,3,4])assert.equal((await decodeTopicPng(make({raw:Buffer.from([filter,0,0,0,255]),split:true}))).width,1);
+ assert.equal((await decodeTopicPng(make({interlace:1}))).height,1);
+ assert.equal((await decodeTopicPng(make({type:0,depth:16,raw:Buffer.from([0,255,255])}))).width,1);
+ const badCrc=Buffer.from(png);badCrc[52]^=1;
+ for(const bytes of [badCrc,make({w:4097}),make({raw:Buffer.from([5,0,0,0,0])}),make({raw:Buffer.alloc(200000)}),make({raw:Buffer.from([0])}),make({compressed:Buffer.from('bad-deflate')}),make({type:3,raw:Buffer.from([0,0])}),make({type:3,raw:Buffer.from([0,1]),extra:[chunk('PLTE',Buffer.from([255,0,0]))]}),make({extra:[chunk('ABCD',Buffer.alloc(0))]}),make({extra:[chunk('acTL',Buffer.alloc(8))]})])await assert.rejects(decodeTopicPng(bytes),e=>e.code==='INVALID_IMAGE');
+ assert.equal((await decodeTopicPng(make({type:3,raw:Buffer.from([0,0]),extra:[chunk('PLTE',Buffer.from([255,0,0]))]}))).width,1);
+});
+
+test('byte upload resumes stored content after an import failure without another download',async t=>{
+ const f=await setup(t),{image,...draft}=input(),args={...draft,imageBase64:png.toString('base64')},batch=f.db.batch;
+ f.db.batch=async()=>{throw Error('transient database error');};
+ await assert.rejects(importTopicBytes(f.env,user,args),e=>e.code==='FILE_IMPORT_RETRY');assert.equal(f.objects.size,1);
+ f.db.batch=batch;assert.equal((await importTopicBytes(f.env,user,args)).status,'completed');assert.equal(f.calls.length,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,1);
 });
