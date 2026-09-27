@@ -32,11 +32,11 @@ async function authorize(f,write=false){
  const c=await json(await f.fetch('/oauth/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'Test ChatGPT',redirect_uris:['https://chatgpt.com/connector/oauth/test'],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']})}),201);
  const verifier='a'.repeat(64),challenge=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))).toString('base64url');
  const query=new URLSearchParams({response_type:'code',client_id:c.client_id,redirect_uri:c.redirect_uris[0],scope:'factory.read offline_access'+(write?' factory.topics.write':''),state:'test-state',code_challenge:challenge,code_challenge_method:'S256',resource:MCP_ORIGIN+'/mcp'});
- const start=await f.browser('/oauth/authorize?'+query);const html=await start.text();assert.match(html,write?/允许读取与生图入库/:/允许只读访问/);
+ const start=await f.browser('/oauth/authorize?'+query);const html=await start.text();assert.match(html,write?/允许读取与图片入库/:/允许只读访问/);
  const handle=html.match(/name="handle" value="([^"]+)"/)[1],csrf=html.match(/name="csrf" value="([^"]+)"/)[1],cookie=start.headers.get('set-cookie').split(';')[0];
  const body=new URLSearchParams({handle,csrf,decision:'approve'}).toString();
  const approved=await f.browser('/oauth/authorize',{method:'POST',headers:{origin:MCP_ORIGIN,cookie:'lf_session='+f.session+'; '+cookie,'content-type':'application/x-www-form-urlencoded'},body});
- assert.equal(approved.status,200);const approvedHtml=await approved.text();assert.match(approvedHtml,write?/生图入库授权成功/:/只读授权成功/);const location=new URL(approvedHtml.match(/id="returnToClient" href="([^"]+)"/)[1].replaceAll('&#38;','&')); assert.equal(location.searchParams.get('state'),'test-state');assert.equal(location.searchParams.get('iss'),MCP_ORIGIN);
+ assert.equal(approved.status,200);const approvedHtml=await approved.text();assert.match(approvedHtml,write?/图片入库授权成功/:/只读授权成功/);const location=new URL(approvedHtml.match(/id="returnToClient" href="([^"]+)"/)[1].replaceAll('&#38;','&')); assert.equal(location.searchParams.get('state'),'test-state');assert.equal(location.searchParams.get('iss'),MCP_ORIGIN);
  const tokenBody=new URLSearchParams({grant_type:'authorization_code',code:location.searchParams.get('code'),client_id:c.client_id,redirect_uri:c.redirect_uris[0],code_verifier:verifier,resource:MCP_ORIGIN+'/mcp'});
  const token=await json(await f.fetch('/oauth/token',{method:'POST',body:tokenBody}));return {token,c,tokenBody,query,body,cookie};
 }
@@ -50,7 +50,7 @@ test('discovery and no cookie/project key bypass; existing routes pass through',
 test('PKCE exchange, MCP initialize/list/call, schemas and live permission checks',async t=>{
  const f=await setup(t),a=await authorize(f),token=a.token.access_token;
  const init=await json(await rpc(f,token,'initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}}));assert.equal(init.result.serverInfo.name,'local-factory');
- const list=await json(await rpc(f,token,'tools/list'));assert.equal(list.result.tools.length,21);assert.equal(list.result.tools.filter(x=>x.annotations.readOnlyHint).length,20);assert.deepEqual(list.result.tools.filter(x=>!x.annotations.readOnlyHint).map(x=>x.name),['psychology_generate_image_and_import_topic']);
+ const list=await json(await rpc(f,token,'tools/list'));assert.equal(list.result.tools.length,21);assert.equal(list.result.tools.filter(x=>x.annotations.readOnlyHint).length,20);assert.deepEqual(list.result.tools.filter(x=>!x.annotations.readOnlyHint).map(x=>x.name),['psychology_import_topic_image']);
  const call=await json(await rpc(f,token,'tools/call',{name:'psychology_topics_list',arguments:{page:1,pageSize:2}}));assert.equal(call.result.isError,false);
  for(const params of [{name:'psychology_topics_list',arguments:{pageSize:10000}},{name:'psychology_publish_create',arguments:{}}]){const x=await json(await rpc(f,token,'tools/call',params));assert.ok(x.result?.isError||x.error);}
  f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-topic-bank']));assert.ok((await json(await rpc(f,token,'tools/list'))).result.tools.every(t=>!t.name.startsWith('photo_factory_')));
@@ -91,19 +91,27 @@ test('read filters translate legacy booleans and topic search without widening q
  x=await json(await rpc(f,a.token.access_token,'tools/call',{name:'psychology_publish_list',arguments:{attention:true}}));assert.equal(x.result.isError,false);
 });
 
- test('write tool requires explicit additional OAuth consent; configuration errors are actionable',async t=>{
- const f=await setup(t),read=await authorize(f),args={requestId:crypto.randomUUID(),title:'A',content:'B',imagePrompt:'C'};
- let out=await json(await rpc(f,read.token.access_token,'tools/call',{name:'psychology_generate_image_and_import_topic',arguments:args}));
+test('file import requires write consent and works without an OpenAI key or workflow',async t=>{
+ const f=await setup(t),read=await authorize(f),args={requestId:crypto.randomUUID(),title:'A',content:'B',image:{download_url:'https://files.oaiusercontent.com/example.png?sig=test-only',file_id:'file-test'}};
+ const tools=(await json(await rpc(f,read.token.access_token,'tools/list'))).result.tools;
+ assert.ok(!tools.some(x=>x.name==='psychology_generate_image_and_import_topic'));
+ const tool=tools.find(x=>x.name==='psychology_import_topic_image');
+ assert.deepEqual(tool._meta['openai/fileParams'],['image']);
+ assert.deepEqual(tool.inputSchema.properties.image.required,['download_url','file_id']);
+ for(const field of ['download_url','file_id','mime_type','file_name'])assert.ok(tool.inputSchema.properties.image.properties[field]);
+ let out=await json(await rpc(f,read.token.access_token,'tools/call',{name:tool.name,arguments:args}));
  assert.equal(out.result.isError,true);assert.match(JSON.stringify(out.result._meta),/insufficient_scope/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);
  const write=await authorize(f,true);assert.ok(write.token.scope.includes('factory.topics.write'));
- out=await json(await rpc(f,write.token.access_token,'tools/call',{name:'psychology_generate_image_and_import_topic',arguments:args}));
- assert.equal(out.result.isError,true);assert.match(JSON.stringify(out.result),/OPENAI_NOT_CONFIGURED/);
- assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);
- const metadata=await json(await f.fetch('/.well-known/oauth-protected-resource/mcp'));assert.ok(metadata.scopes_supported.includes('factory.topics.write'));
+ delete f.env.OPENAI_API_KEY;delete f.env.TOPIC_IMAGE_WORKFLOW;
+ const objects=new Map();f.env.ARCHIVE={async head(k){return objects.get(k)||null;},async put(k,b,o){objects.set(k,{size:b.length,customMetadata:o.customMetadata});return objects.get(k);}};
+ let downloads=0;f.env.fetch=async(url,init)=>{assert.equal(url,args.image.download_url);assert.equal(init.method,'GET');assert.equal(init.headers,undefined);downloads++;return new Response(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK2cAAAAASUVORK5CYII=','base64'));};
+ out=await json(await rpc(f,write.token.access_token,'tools/call',{name:tool.name,arguments:args}));
+ assert.equal(out.result.isError,false,JSON.stringify(out));assert.equal(out.result.structuredContent.status,'completed');assert.equal(out.result.structuredContent.topic.enabled,false);
+ const repeated=await json(await rpc(f,write.token.access_token,'tools/call',{name:tool.name,arguments:args}));assert.equal(repeated.result.structuredContent.topic.id,out.result.structuredContent.topic.id);assert.equal(downloads,1);
+ const removed=await json(await rpc(f,write.token.access_token,'tools/call',{name:'psychology_generate_image_and_import_topic',arguments:{requestId:crypto.randomUUID(),title:'A',content:'B',imagePrompt:'C'}}));assert.ok(removed.error||removed.result?.isError);assert.equal(downloads,1);
  assert.equal(f.requests.length,0);
- });
-
+});
 
 test('ChatGPT cross-origin discovery, PKCE and MCP calls work while consent stays same-origin',async t=>{
  const f=await setup(t),fetch=f.fetch;

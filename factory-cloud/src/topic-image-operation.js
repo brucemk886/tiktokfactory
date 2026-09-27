@@ -12,10 +12,11 @@ const get=(db,owner,id)=>db.prepare('SELECT * FROM factory_ai_operations WHERE o
 const keyFor=assetId=>'psychology-topics/'+assetId.slice(6)+'.png';
 async function currentUser(db,id){const row=await db.prepare('SELECT * FROM factory_users WHERE id=? AND active=1').bind(id).first();const user=row&&toPublicUser(row);assertTopicBankUser(user);return user;}
 export async function topicImageStatus(env,user,requestId,origin=''){
- assertTopicBankUser(user);UUID.parse(requestId);const row=await get(env.DB,user.id,requestId);if(!row)fail('生图入库任务不存在。',404,'NOT_FOUND');
+ assertTopicBankUser(user);UUID.parse(requestId);const row=await get(env.DB,user.id,requestId);if(!row)fail('图片入库任务不存在。',404,'NOT_FOUND');
+ const fileImport=JSON.parse(row.input_json).mode==='chatgpt-file';
  const status=row.status==='generating'&&Date.now()-row.updated_at>6*60*1000?'unknown':row.status;
  const result=row.result_json?JSON.parse(row.result_json):null;
- return {ok:status==='completed',requestId,status,errorCode:row.error_code||null,...(result||{}),...(result?.asset?{asset:{...result.asset,url:origin+result.asset.url}}:{}),next:status==='completed'?'已入库':status==='unknown'?'结果未确认，请沿用同一 requestId 恢复；不要换编号重新生图。':status==='failed'?'任务已停止，请检查 errorCode。':row.error_code==='IMPORT_PENDING'?'图片已保存，入库暂未完成；请沿用同一 requestId 恢复，不会重新生图。':'后台处理中，请使用 psychology_topic_image_operation_get 查询同一 requestId。'};
+ return {ok:status==='completed',requestId,status,errorCode:row.error_code||null,...(result||{}),...(result?.asset?{asset:{...result.asset,url:origin+result.asset.url}}:{}),next:status==='completed'?'已入库':fileImport?(row.error_code||['pending','receiving','importing'].includes(status)&&Date.now()-row.updated_at>180000?'请沿用同一 requestId 和原附件重新调用 psychology_import_topic_image；会复用已保存图片，不调用生图 API。':'正在保存聊天图片并入库，请查询同一 requestId。'):status==='unknown'?'结果未确认，请沿用同一 requestId 恢复；不要换编号重新生图。':status==='failed'?'任务已停止，请检查 errorCode。':row.error_code==='IMPORT_PENDING'?'图片已保存，入库暂未完成；请沿用同一 requestId 恢复，不会重新生图。':'后台处理中，请使用 psychology_topic_image_operation_get 查询同一 requestId。'};
 }
 export async function startTopicImage(env,user,raw,origin=''){
  assertTopicBankUser(user);const input=topicImageInput.parse(raw);
@@ -87,7 +88,7 @@ async function generateAndStore(env,row){
   stage='registry';await registerStoredAsset(env,row,{...dimensions,sha256,bytes:bytes.length});
  }catch(error){await state(env.DB,row,'unknown',stage==='storage'?'STORAGE_RESULT_UNKNOWN':stage==='registry'?'ASSET_RECORD_PENDING':error.code==='INVALID_IMAGE'?'INVALID_IMAGE':'PROVIDER_RESULT_UNKNOWN');}
 }
-async function importReadyImage(env,row){
+export async function importReadyImage(env,row){
  const user=await currentUser(env.DB,row.owner_id),input=JSON.parse(row.input_json);
  const asset=await env.DB.prepare("SELECT * FROM factory_assets WHERE id=? AND owner_id=? AND status='ready'").bind(row.asset_id,row.owner_id).first();
  if(!asset)return;
@@ -97,7 +98,7 @@ async function importReadyImage(env,row){
  const item=result.items?.[0];if(result.accepted!==1||!item||!['created','skipped'].includes(item.status))fail('题目导入结果未确认。',503,'IMPORT_RESULT_UNKNOWN');
  const topic=await env.DB.prepare('SELECT id,title,revision,enabled,cover_asset_id FROM psychology_template_topics WHERE id=? AND deleted_at=0').bind(item.id).first();
  if(!topic||topic.cover_asset_id!==asset.id)fail('题目入库状态未确认。',503,'IMPORT_RESULT_UNKNOWN');
- const output={topic:{id:topic.id,title:topic.title,revision:topic.revision,enabled:!!topic.enabled},asset:publicAsset(asset),imageGeneration:{model:input.imageModel},importRequestId:row.import_request_id};
+ const output={topic:{id:topic.id,title:topic.title,revision:topic.revision,enabled:!!topic.enabled},asset:publicAsset(asset),...(input.mode==='chatgpt-file'?{imageSource:'chatgpt-file'}:{imageGeneration:{model:input.imageModel}}),importRequestId:row.import_request_id};
  await env.DB.prepare("UPDATE factory_ai_operations SET status='completed',result_json=?,error_code=NULL,updated_at=? WHERE owner_id=? AND request_id=?").bind(JSON.stringify(output),Date.now(),row.owner_id,row.request_id).run();
  return output;
 }

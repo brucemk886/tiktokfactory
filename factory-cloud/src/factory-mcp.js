@@ -39,7 +39,7 @@ function page(title,body,headers=new Headers()){
 }
 export function validateAuthorization(auth){
  if(auth.responseType!=='code'||auth.codeChallengeMethod!=='S256'||!auth.codeChallenge)throw new AuthorizationError('invalid_request',{description:'此连接必须使用授权码和 PKCE S256。'});
- if(auth.scope.some(s=>!['factory.read','factory.topics.write','offline_access'].includes(s)))throw new AuthorizationError('invalid_scope',{description:'仅支持读取和题库生图入库权限。'});
+ if(auth.scope.some(s=>!['factory.read','factory.topics.write','offline_access'].includes(s)))throw new AuthorizationError('invalid_scope',{description:'仅支持读取和题库图片入库权限。'});
 }
 export async function mcpActor(env,ctx){
  if(!ctx.auth?.scope?.includes('factory.read')||!ctx.props?.userId||!ctx.props?.connectionId)return null;
@@ -75,7 +75,7 @@ export function createMcpWorker(factory,origin=MCP_ORIGIN){
     return new Response(null,{status:303,headers:{location:'/factory-mcp','cache-control':'no-store'}});
    }
    const result=await env.DB.prepare('SELECT id,client_name,created_at,scopes_json FROM factory_mcp_connections WHERE owner_id=? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 100').bind(session.user.id).all();
-   return page('ChatGPT 工厂连接',`<p><a href="/factory-api">返回统一 API</a></p><p>MCP 地址：<code>${escape(resource)}</code></p><p>在 ChatGPT 开启开发者模式，新增 MCP 连接，填写此地址，认证选择 OAuth，再用工厂账号登录授权。无需填写项目 API Key；支持动态客户端注册。</p><p>可以查询题库、文案及改写、发布状态、报表、样式、自动运营计划和图文工厂。额外授权 factory.topics.write 后，可以付费生图并导入题库。发布与启动自动运营不开放。</p><p>OpenAI 生图接口：${env.OPENAI_API_KEY?'已配置':'未配置，请在 Worker Secrets 添加 OPENAI_API_KEY'}。</p><h2>我的授权连接</h2>${result.results.length?result.results.map(c=>`<article><strong>${escape(c.client_name)}</strong><p>${JSON.parse(c.scopes_json).includes('factory.topics.write')?'读取 + 生图入库':'只读'}</p><p class="muted">授权时间：${escape(new Date(c.created_at).toISOString())}</p><form method="post"><input type="hidden" name="csrf" value="${marker}"><input type="hidden" name="id" value="${escape(c.id)}"><button>撤销连接</button></form></article>`).join(''):'<p>暂无授权连接。</p>'}`);
+   return page('ChatGPT 工厂连接',`<p><a href="/factory-api">返回统一 API</a></p><p>MCP 地址：<code>${escape(resource)}</code></p><p>在 ChatGPT 开启开发者模式，新增 MCP 连接，填写此地址，认证选择 OAuth，再用工厂账号登录授权。无需填写项目 API Key；支持动态客户端注册。</p><p>可以查询题库、文案及改写、发布状态、报表、样式、自动运营计划和图文工厂。额外授权 factory.topics.write 后，可以保存聊天图片并导入题库。发布与启动自动运营不开放。</p><p>先在 ChatGPT 聊天中生成图片，再通过插件保存图片并入库，无需配置 OPENAI_API_KEY。</p><h2>我的授权连接</h2>${result.results.length?result.results.map(c=>`<article><strong>${escape(c.client_name)}</strong><p>${JSON.parse(c.scopes_json).includes('factory.topics.write')?'读取 + 图片入库':'只读'}</p><p class="muted">授权时间：${escape(new Date(c.created_at).toISOString())}</p><form method="post"><input type="hidden" name="csrf" value="${marker}"><input type="hidden" name="id" value="${escape(c.id)}"><button>撤销连接</button></form></article>`).join(''):'<p>暂无授权连接。</p>'}`);
   }
   try{
    const oauth=env.OAUTH_PROVIDER;
@@ -83,7 +83,7 @@ export function createMcpWorker(factory,origin=MCP_ORIGIN){
     const auth=await oauth.parseAuthRequest(request);validateAuthorization(auth);
     if(auth.scope.includes('factory.topics.write')&&!session.user.sidebarModules?.includes('psychology-topic-bank'))return fail('没有题库管理权限。',403);
     const details=await describeConsent(oauth,auth),consent=await oauth.beginConsent(auth);
-    return page(auth.scope.includes('factory.topics.write')?'授权工厂生图入库':'授权读取工厂数据',`<p>当前工厂账号：<strong>${escape(session.user.displayName||session.user.username)}</strong></p><p>应用：<strong>${escape(details.clientName)}</strong></p><p>${details.clientDomain?'应用域名：'+escape(details.clientDomain):'应用名称由客户端自行填写，请核对回调地址。'}</p><p>授权返回地址：<strong>${escape(details.redirectHost)}</strong></p>${details.redirectIsLoopback?'<p>此授权将交给本机应用，请确认是你刚发起的连接。</p>':''}<p>授权范围：<strong>factory.read（只读）</strong>。查询范围以你的工厂模块权限为准，包括题目、文案、账号和运营数据。</p>${auth.scope.includes('factory.topics.write')?'<p><strong>factory.topics.write：允许付费调用 OpenAI 生成图片，保存素材并新建题目。默认停用；明确指定 enabled=true 会使题目进入可用题库。</strong></p>':''}${auth.scope.includes('offline_access')?'<p>包含离线访问，可自动续期。':''}</p><p>需要停止访问时，在统一 API → ChatGPT 连接中撤销。</p><form method="post"><input type="hidden" name="csrf" value="${marker}"><input type="hidden" name="handle" value="${escape(consent.handle)}"><button name="decision" value="approve">${auth.scope.includes('factory.topics.write')?'允许读取与生图入库':'允许只读访问'}</button><button name="decision" value="deny">拒绝</button></form>`,consent.headers);
+    return page(auth.scope.includes('factory.topics.write')?'授权工厂图片入库':'授权读取工厂数据',`<p>当前工厂账号：<strong>${escape(session.user.displayName||session.user.username)}</strong></p><p>应用：<strong>${escape(details.clientName)}</strong></p><p>${details.clientDomain?'应用域名：'+escape(details.clientDomain):'应用名称由客户端自行填写，请核对回调地址。'}</p><p>授权返回地址：<strong>${escape(details.redirectHost)}</strong></p>${details.redirectIsLoopback?'<p>此授权将交给本机应用，请确认是你刚发起的连接。</p>':''}<p>授权范围：<strong>factory.read（只读）</strong>。查询范围以你的工厂模块权限为准，包括题目、文案、账号和运营数据。</p>${auth.scope.includes('factory.topics.write')?'<p><strong>factory.topics.write：允许接收 ChatGPT 已生成或你附加的图片，保存素材并新建题目。不调用生图 API，不需要 OpenAI API Key。默认停用；明确指定 enabled=true 会使题目进入可用题库。</strong></p>':''}${auth.scope.includes('offline_access')?'<p>包含离线访问，可自动续期。':''}</p><p>需要停止访问时，在统一 API → ChatGPT 连接中撤销。</p><form method="post"><input type="hidden" name="csrf" value="${marker}"><input type="hidden" name="handle" value="${escape(consent.handle)}"><button name="decision" value="approve">${auth.scope.includes('factory.topics.write')?'允许读取与图片入库':'允许只读访问'}</button><button name="decision" value="deny">拒绝</button></form>`,consent.headers);
    }
    const handle=form.get('handle')||'';
    if(form.get('decision')!=='approve'){
@@ -96,7 +96,7 @@ export function createMcpWorker(factory,origin=MCP_ORIGIN){
    const details=await describeConsent(oauth,approved.request),connectionId=crypto.randomUUID();
    await env.DB.prepare('INSERT INTO factory_mcp_connections(id,owner_id,client_name,created_at,scopes_json) VALUES(?,?,?,?,?)').bind(connectionId,session.user.id,details.clientName,Date.now(),JSON.stringify(scope)).run();
    const {redirectTo}=await oauth.completeAuthorization({request:approved.request,userId:session.user.id,metadata:{connectionId},scope,props:{userId:session.user.id,connectionId}});
-   return page(scope.includes('factory.topics.write')?'生图入库授权成功':'只读授权成功',`<p>最后一步：返回应用完成连接。</p><p><a id="returnToClient" href="${escape(redirectTo)}">返回 ${escape(details.clientName)}</a></p>`,approved.headers);
+   return page(scope.includes('factory.topics.write')?'图片入库授权成功':'只读授权成功',`<p>最后一步：返回应用完成连接。</p><p><a id="returnToClient" href="${escape(redirectTo)}">返回 ${escape(details.clientName)}</a></p>`,approved.headers);
   }catch(error){
    if(!(error instanceof AuthorizationError)&&!(error instanceof CimdFetchError))throw error;
    if(error instanceof AuthorizationError&&error.redirectTo)return page('授权未完成',`<p>${escape(error.description)}</p><a href="${escape(error.redirectTo)}">返回应用</a>`);
