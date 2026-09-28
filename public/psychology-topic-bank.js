@@ -1,11 +1,12 @@
+import {collectTopics, deleteSelectedTopics} from "/psychology-topic-selection.js";
 import {parseTopicImport} from "/psychology-topic-import.js";
 const $=s=>document.querySelector(s),BASE="/api/psychology-template-topics";
 const bankIds=["psychology","psychology-collage","psychology-target-2"];
 const selectedBank=()=>{const value=new URLSearchParams(location.search).get("template");return bankIds.includes(value)?value:null;};
-const state={template:selectedBank()||"psychology",detail:Boolean(selectedBank()),page:1,items:[],templates:[],editing:null,choiceDraft:[],imageDraft:{imageKey:"",imageUrl:"",previewUrl:""},requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0};
+const state={template:selectedBank()||"psychology",detail:Boolean(selectedBank()),page:1,items:[],templates:[],editing:null,choiceDraft:[],imageDraft:{imageKey:"",imageUrl:"",previewUrl:""},requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0,selected:new Map(),bulkBusy:false,total:0,filters:null};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function api(path,method="GET",body){
-  const r=await fetch(path,{method,...(body?{headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});
+  const r=await fetch(path,{method,...(method==="DELETE"?{signal:AbortSignal.timeout(30000)}:{}),...(body?{headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{})});
   const data=await r.json();if(!r.ok)throw new Error(data.error||"请求失败");return data;
 }
 function message(text,error=false){$("#message").textContent=text;$("#message").classList.toggle("error",error);}
@@ -14,18 +15,20 @@ function showBankView(){
   $("#bankOverview").hidden=state.detail;$("#bankDetail").hidden=!state.detail;
 }
 function navigateBank(template){
+  if(state.bulkBusy)return;
   state.template=template||"psychology";state.detail=Boolean(template);state.page=1;
   $("#search").value="";$("#enabledFilter").value="all";message("");showBankView();
   load().catch(error=>message(error.message,true));
 }
 async function load(){
+  state.selected.clear();state.total=0;syncSelection();
   const id=++state.loadId;
   state.items=[];$("#topicList").innerHTML='<div class="empty-state">正在读取题目…</div>';
   const q=new URLSearchParams({template:state.template,page:String(state.page),query:$("#search").value.trim(),enabled:$("#enabledFilter").value});
   const data=await api(BASE+"?"+q);
   if(id!==state.loadId)return;
-  if(!data.items.length&&data.total&&state.page>1){state.page=Math.ceil(data.total/20);return load();}
-  state.items=data.items;state.templates=data.templates;
+  if(state.page>Math.max(1,Math.ceil(data.total/20))){state.page=Math.max(1,Math.ceil(data.total/20));return load();}
+  state.items=data.items;state.templates=data.templates;state.total=data.total;state.filters=Object.fromEntries(q);
   showBankView();
   $("#bankCards").innerHTML=data.templates.map(t=>{const c=data.counts[t.id];return `<a class="bank-card" href="?template=${encodeURIComponent(t.id)}"><strong>${esc(t.label)}</strong><span>${esc(t.hint)}</span><b>${c.total} 道题目</b><small>已启用 ${c.enabled} · 未使用且启用 ${c.unused}</small><em>进入题目列表 →</em></a>`;}).join("");
   $("#bankTitle").textContent=bank().label+" · 题目列表";
@@ -34,10 +37,49 @@ async function load(){
   $("#bankHint").textContent=bank().hint;
   const c=data.counts[state.template];
   $("#bankCounts").innerHTML="<span>全部题目 <b>"+c.total+"</b></span><span>已启用 <b>"+c.enabled+"</b></span><span>未使用且启用 <b>"+c.unused+"</b></span>";
-  $("#topicList").innerHTML=data.items.length?'<table class="queue-table"><thead><tr><th>题目与内容</th><th>揭晓评论</th><th>分类</th><th>优先级</th><th>状态</th><th>已抽取</th><th>操作</th></tr></thead><tbody>'+data.items.map(t=>'<tr><td><div class="topic-title">'+esc(t.title)+'</div>'+topicPreview(t)+'</td><td>'+(t.revealComment?'<details class="topic-answer"><summary>查看揭晓评论</summary><p>'+esc(t.revealComment)+'</p></details>':'<span class="field-hint">未填写</span>')+'</td><td>'+esc(t.category||"—")+'</td><td>'+t.priority+'</td><td>'+(t.enabled?"已启用":"已停用")+'</td><td>'+t.usageCount+' 次<small>'+(t.lastUsedAt?esc(new Date(t.lastUsedAt).toLocaleString("zh-CN")):"尚未抽取")+'</small></td><td><div class="bank-actions"><button data-edit="'+t.id+'">编辑</button><button data-toggle="'+t.id+'">'+(t.enabled?"停用":"启用")+'</button><button data-delete="'+t.id+'">删除</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">'+(c.total?"没有符合筛选条件的题目。":"此模板题库还是空的。新增题目或批量导入后，即可用于自动发布。")+"</div>";
+  $("#topicList").innerHTML=data.items.length?'<table class="queue-table"><thead><tr><th><input id="selectPageCheckbox" type="checkbox" aria-label="全选本页"></th><th>题目与内容</th><th>揭晓评论</th><th>分类</th><th>优先级</th><th>状态</th><th>已抽取</th><th>操作</th></tr></thead><tbody>'+data.items.map(t=>'<tr><td><input type="checkbox" data-select-topic="'+esc(t.id)+'" aria-label="选择题目：'+esc(t.title)+'"></td><td><div class="topic-title">'+esc(t.title)+'</div>'+topicPreview(t)+'</td><td>'+(t.revealComment?'<details class="topic-answer"><summary>查看揭晓评论</summary><p>'+esc(t.revealComment)+'</p></details>':'<span class="field-hint">未填写</span>')+'</td><td>'+esc(t.category||"—")+'</td><td>'+t.priority+'</td><td>'+(t.enabled?"已启用":"已停用")+'</td><td>'+t.usageCount+' 次<small>'+(t.lastUsedAt?esc(new Date(t.lastUsedAt).toLocaleString("zh-CN")):"尚未抽取")+'</small></td><td><div class="bank-actions"><button data-edit="'+t.id+'">编辑</button><button data-toggle="'+t.id+'">'+(t.enabled?"停用":"启用")+'</button><button data-delete="'+t.id+'">删除</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">'+(c.total?"没有符合筛选条件的题目。":"此模板题库还是空的。新增题目或批量导入后，即可用于自动发布。")+"</div>";
   $("#pageInfo").textContent="共 "+data.total+" 条 · 第 "+state.page+" / "+Math.max(1,Math.ceil(data.total/20))+" 页";
+  syncSelection();
   $("#prevPage").disabled=state.page<=1;$("#nextPage").disabled=state.page*20>=data.total;
 }
+function syncSelection(){
+  $("#selectedCount").textContent="已选 "+state.selected.size+" 道";
+  $("#deleteSelected").disabled=state.busy||state.bulkBusy||!state.selected.size;
+  $("#clearSelected").disabled=state.bulkBusy||!state.selected.size;
+  $("#selectPage").disabled=state.busy||state.bulkBusy||!state.total;
+  $("#selectAllResults").disabled=state.busy||state.bulkBusy||!state.total;
+  document.querySelectorAll("[data-select-topic]").forEach(el=>el.checked=state.selected.has(el.dataset.selectTopic));
+  const box=$("#selectPageCheckbox"),count=state.items.filter(t=>state.selected.has(t.id)).length;
+  if(box){box.checked=state.items.length>0&&count===state.items.length;box.indeterminate=count>0&&count<state.items.length;}
+}
+function selectPage(checked=true){if(state.busy||state.bulkBusy)return;for(const item of state.items){if(checked)state.selected.set(item.id,item);else state.selected.delete(item.id);}syncSelection();}
+function bulkLock(value){state.bulkBusy=value;$("#bankDetail").inert=value;$("#bankDetail").setAttribute("aria-busy",String(value));syncSelection();}
+$("#selectPage").onclick=()=>selectPage();
+$("#clearSelected").onclick=()=>{state.selected.clear();syncSelection();};
+$("#topicList").onchange=e=>{
+  if(state.busy||state.bulkBusy)return;
+  if(e.target.id==="selectPageCheckbox")return selectPage(e.target.checked);
+  const item=state.items.find(t=>t.id===e.target.dataset.selectTopic);if(!item)return;
+  if(e.target.checked)state.selected.set(item.id,item);else state.selected.delete(item.id);syncSelection();
+};
+$("#selectAllResults").onclick=async()=>{
+  if(state.busy||state.bulkBusy||!state.total)return;
+  bulkLock(true);message("正在选择当前题库的全部筛选结果…");
+  try{state.selected=await collectTopics(api,BASE,state.filters);message("已选择 "+state.selected.size+" 道题目（包含其他页）。");}
+  catch(error){message("全选未完成："+error.message,true);}
+  finally{bulkLock(false);}
+};
+$("#deleteSelected").onclick=async()=>{
+  if(state.busy||state.bulkBusy||!state.selected.size)return;
+  const items=[...state.selected.values()];
+  if(!confirm("确定删除「"+bank().label+"」中选中的 "+items.length+" 道题目？\n删除后不再抽取，已创建任务的内容保持不变。"))return;
+  bulkLock(true);
+  const result=await deleteSelectedTopics(api,BASE,items,(done,total)=>message("正在删除："+done+" / "+total+"，请勿关闭页面。"));
+  const summary="已删除 "+result.deleted+" 道，失败 "+result.failed.length+" 道。";
+  try{await load();message(summary+(result.failed.length?"失败详情："+result.failed.slice(0,5).map(t=>t.title+"："+t.error).join("；")+(result.failed.length>5?"；其余失败题目仍保留在题库中。":""):""),result.failed.length>0);}
+  catch(error){message(summary+"列表刷新失败："+error.message,true);}
+  finally{bulkLock(false);}
+};
 function topicPreview(topic){
   if(topic.template==="psychology-target-2"&&topic.choices?.length===4){
     const img=topic.image?.previewUrl;
@@ -134,7 +176,7 @@ async function collectSingleImage(){
   });
   return {imageKey,imageUrl,choices};
 }
-function lock(form,busy){state.busy=busy;form.querySelectorAll("input,textarea,button").forEach(n=>n.disabled=busy);}
+function lock(form,busy){state.busy=busy;form.querySelectorAll("input,textarea,button").forEach(n=>n.disabled=busy);syncSelection();}
 document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>{if(!state.busy)$("#"+b.dataset.close).close();});
 document.querySelectorAll("dialog").forEach(d=>d.addEventListener("cancel",e=>{if(state.busy)e.preventDefault();}));
 function openBank(template){history.pushState(null,"",template?"?template="+encodeURIComponent(template):location.pathname);navigateBank(template);}
@@ -142,9 +184,9 @@ $("#bankTabs").onclick=e=>{const b=e.target.closest("[data-bank]");if(!b||state.
 $("#bankCards").onclick=e=>{const a=e.target.closest("a");if(!a||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();openBank(new URL(a.href).searchParams.get("template"));};
 $("#backToBanks").onclick=e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();openBank(null);};
 window.addEventListener("popstate",()=>navigateBank(selectedBank()));
-$("#searchForm").onsubmit=e=>{e.preventDefault();state.page=1;load().catch(e=>message(e.message,true));};
-$("#prevPage").onclick=()=>{state.page--;load().catch(e=>message(e.message,true));};
-$("#nextPage").onclick=()=>{state.page++;load().catch(e=>message(e.message,true));};
+$("#searchForm").onsubmit=e=>{e.preventDefault();if(state.bulkBusy)return;state.page=1;load().catch(e=>message(e.message,true));};
+$("#prevPage").onclick=()=>{if(state.bulkBusy)return;state.page--;load().catch(e=>message(e.message,true));};
+$("#nextPage").onclick=()=>{if(state.bulkBusy)return;state.page++;load().catch(e=>message(e.message,true));};
 $("#newTopic").onclick=()=>{if(bank())showEditor();};
 $("#editForm").oninput=()=>state.requestId=crypto.randomUUID();
 $("#editForm").onsubmit=async e=>{
@@ -169,7 +211,7 @@ $("#topicList").onclick=async e=>{
   if(button.dataset.delete&&!confirm("删除题目「"+topic.title+"」？已创建的任务不受影响。"))return;
   state.busy=true;button.disabled=true;
   try{await api(BASE+"/"+id,button.dataset.delete?"DELETE":"PATCH",{revision:topic.revision,enabled:!topic.enabled});message(button.dataset.delete?"题目已删除。":"题目状态已更新。");await load();}
-  catch(error){message(error.message,true);button.disabled=false;}finally{state.busy=false;}
+  catch(error){message(error.message,true);button.disabled=false;}finally{state.busy=false;syncSelection();}
 };
 $("#importTopics").onclick=()=>{if(!bank())return;state.importId=crypto.randomUUID();$("#importBank").textContent="导入到："+bank().label;$("#importText").value="";$("#importFile").value="";$("#importError").textContent="";$("#importDialog").showModal();};
 $("#importText").oninput=()=>state.importId=crypto.randomUUID();
