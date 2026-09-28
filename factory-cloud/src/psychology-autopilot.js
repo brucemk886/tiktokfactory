@@ -236,8 +236,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   return summary;
 }
 
-// Active accounts with no item on an already-created future slot get one
-// supplementary batch. Soft-deleted rows still count, so stopped tasks stay stopped.
+// Active accounts with no live item on an already-created future slot get one
+// supplementary batch. A cancelled future item is replaced; past slots are left alone.
 async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary) {
   if (!active.length || pilot.status !== 'active') return;
   const slots = (await db.prepare(`SELECT slot_at,batch_id FROM psychology_autopilot_slots
@@ -247,7 +247,7 @@ async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, n
     if (current?.status !== 'active') break;
     const batchIds = String(slot.batch_id || '').split(',').filter(Boolean);
     if (!batchIds.length) continue;
-    const present = new Set((await db.prepare('SELECT connection_id FROM psychology_publish_items WHERE batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).all()).results.map(r => r.connection_id));
+    const present = new Set((await db.prepare('SELECT connection_id FROM psychology_publish_items WHERE deleted_at=0 AND batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).all()).results.map(r => r.connection_id));
     const missing = active.filter(id => !present.has(id));
     if (!missing.length) continue;
     const maxRow = await db.prepare('SELECT MAX(schedule_at) AS last FROM psychology_publish_items WHERE deleted_at=0 AND batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).first();

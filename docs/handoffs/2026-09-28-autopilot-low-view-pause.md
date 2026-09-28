@@ -7,7 +7,7 @@ Keep the 38 accounts paused on 2026-09-28 publishing through 2026-10-01, and sto
 ## Decisions
 
 - Consecutive publish failures (3) still pause an account and cancel unsent local tasks.
-- Backfill only future slots that are already `created` and more than 5 minutes away. An account with any item row on that slot, including a soft-deleted one, is not given another task.
+- Backfill only future slots that are already `created` and more than 5 minutes away. An active account whose item on that slot was cancelled gets a new one. Past slots are not recreated.
 - Restored accounts are scheduled 45 seconds after the last live item in the slot. Later days (Sep 30 and Oct 1) are still created by the 00:00 and 08:00 Beijing runs.
 
 ## Files changed

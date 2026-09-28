@@ -141,7 +141,7 @@
 ### 3.3.1 心理学自动运营（autopilot）
 
 - `/psychology-autopilot`（admin + `psychology-publish`）：把一个心理学分组交给系统。表 `psychology_autopilots` / `_accounts` / `_slots` / `_log`（迁移 `0048`），一个分组同时只能有一个未结束的自动运营。
-- 每日 cron（北京 0 点、8 点，在 `psychology-copy-performance` 之后）跑 `runAutopilots`：只因连续 3 次发布失败停号（不再因连续 5 条满 24 小时播放低于 200 停号）→ 每天一次近 7 天分析（和运营报表同一 `frameworkFor`）→ 给 2–26 小时内的时段建一个 `library` 图文批次（`libraryStrategy` = evolve / original / rewrite，`staggerSeconds=45`，`pairSeed=启动人:日期:轮次`）。已创建且仍晚于当前 5 分钟以上的时段，若有活跃账号还没有任务（含被恢复的号），会补一批，不重建已软删的任务。时段按 `(autopilot_id, slot_at)` 认领，失败的时段下次重试，重复运行不会重复建同一批账号。
+- 每日 cron（北京 0 点、8 点，在 `psychology-copy-performance` 之后）跑 `runAutopilots`：只因连续 3 次发布失败停号（不再因连续 5 条满 24 小时播放低于 200 停号）→ 每天一次近 7 天分析（和运营报表同一 `frameworkFor`）→ 给 2–26 小时内的时段建一个 `library` 图文批次（`libraryStrategy` = evolve / original / rewrite，`staggerSeconds=45`，`pairSeed=启动人:日期:轮次`）。已创建且仍晚于当前 5 分钟以上的时段，若有活跃账号还没有未取消的任务，会补一批。已经取消、但发布时间还没到的任务会补上；已经过去的时段不补。时段按 `(autopilot_id, slot_at)` 认领，失败的时段下次重试，重复运行不会重复建同一批账号。
 - 容量：每个号每天 3 条，每组 ≤50 号一批；同号不重复同一篇爆款，所以一周每号需要 21 篇不同爆款。
 
 ### 3.4 发布记录与回执

@@ -118,6 +118,11 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   assert.equal(back.schedule_at, kept.last + 45);
   const duplicate = await runAutopilot(f.env, pilot, pilot.created_at + 180000);
   assert.equal(duplicate.batches.length, 0);
+  const cancelled = f.sqlite.prepare("SELECT id FROM psychology_publish_items WHERE connection_id='b' AND batch_id=?").get(linked[1]);
+  f.sqlite.prepare('UPDATE psychology_publish_items SET deleted_at=? WHERE id=?').run(Date.now(), cancelled.id);
+  f.sqlite.prepare('DELETE FROM psychology_peer_account_usage WHERE item_id=?').run(cancelled.id);
+  const replaced = await runAutopilot(f.env, pilot, pilot.created_at + 240000);
+  assert.equal(replaced.batches.length, 1, JSON.stringify(replaced.errors));
   const list = await (await f.api('GET')).json();
   assert.equal(list.pilots[0].accounts.length, 2);
   // GET defaults to today; dueSlots can also reserve tomorrow near midnight.

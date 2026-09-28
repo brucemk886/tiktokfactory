@@ -1,6 +1,6 @@
 # Current State
 
-- Autopilot no longer stops an account for five matured posts under 200 views. Only three consecutive publish failures pause an account. Active accounts missing from an already-created future slot get one supplementary batch; soft-deleted tasks are not recreated. The 2026-09-25 seven-day run still ends 2026-10-02 01:24–01:36 Beijing, so the last posts are 2026-10-01 01:45–03:35.
+- Autopilot no longer stops an account for five matured posts under 200 views. Only three consecutive publish failures pause an account. Active accounts missing a live item on an already-created future slot get one supplementary batch, including items cancelled before that slot. Past slots are not recreated. The 2026-09-25 seven-day run still ends 2026-10-02 01:24–01:36 Beijing, so the last posts are 2026-10-01 01:45–03:35.
 
 - Single-image test topics now own multi-image pools (0067). Draws consume each image globally once in the same transaction as publishing jobs, while the topic remains reusable. Topic UI supports paginated images, multi-file import, enable/disable and explicit Kie Nano Banana background generation; generated images require enabling after preview. Existing used primary images stay consumed. See docs/handoffs/2026-09-28-topic-image-pool.md.
 
