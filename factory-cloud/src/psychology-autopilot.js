@@ -1,6 +1,6 @@
 // Autopilot: runs one psychology photo account group on its own. Twice a day it
-// pauses accounts that keep failing or stay under 200 views, logs a 7-day
-// analysis, and creates library batches for the next day's slots as the owner.
+// pauses accounts that keep failing to publish, logs a 7-day analysis, and
+// creates library batches for the next day's slots as the owner.
 import { json, errorJson, readJson, sha256Hex } from './http.js';
 import { kvGet, kvSet } from './kv.js';
 import { loadGroupStore } from './official.js';
@@ -47,7 +47,6 @@ function strategyRules() {
   };
 }
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
-const ms = v => { const n = Number(v); return Number.isFinite(n) && n > 0 ? (n < 1e12 ? n * 1000 : n) : 0; };
 const beijingDate = t => new Date(t + 8 * HOUR).toISOString().slice(0, 10);
 export function pilotPairSeed(pilot, slot) {
   const time=new Date(slot+8*HOUR), index=pilotSlotsAt(pilot,slot).findIndex(s=>s.hour===time.getUTCHours()&&s.minute===time.getUTCMinutes());
@@ -88,14 +87,11 @@ export function dueSlots(pilot, now, slots = JSON.parse(pilot.slots_json)) {
   return [...new Set(out)].sort((a, b) => a - b);
 }
 
-// Accounts to pause: 5 matured posts since the pilot started all under 200
-// views, or the last 3 due autopilot items all failed to publish.
-export function guardAccounts({ pilot, connectionIds, videosByConnection, outcomesByConnection, now, rules = AUTOPILOT }) {
+// Accounts to pause: the last 3 due autopilot items all failed to publish.
+// Low-play volume is reported, not used to stop an account mid-run.
+export function guardAccounts({ connectionIds, outcomesByConnection, rules = AUTOPILOT }) {
   const pauses = [];
   for (const id of connectionIds) {
-    const recent = (videosByConnection.get(id) || []).map(v => ({ t: ms(v.createTime || v.createdAt), views: Number(v.views) || 0 }))
-      .filter(v => v.t >= pilot.created_at && now - v.t >= DAY).sort((a, b) => b.t - a.t).slice(0, rules.lowPosts);
-    if (recent.length === rules.lowPosts && recent.every(v => v.views < rules.lowViews)) { pauses.push({ id, reason: `连续${rules.lowPosts}条满24小时播放都低于${rules.lowViews}` }); continue; }
     const last = (outcomesByConnection.get(id) || []).slice(0, rules.failStreak);
     if (last.length === rules.failStreak && last.every(o => o === 'failed')) pauses.push({ id, reason: `连续${rules.failStreak}次发布失败` });
   }
@@ -175,8 +171,7 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
     SELECT ?,value,'active','',? FROM json_each(?)`).bind(pilot.id, now, JSON.stringify(ids)).run();
   const states = new Map((await db.prepare('SELECT connection_id,status FROM psychology_autopilot_accounts WHERE autopilot_id=?').bind(pilot.id).all()).results.map(r => [r.connection_id, r.status]));
   const videosByAccount = await loadVideosForAccounts(env, db, accounts.map(a => a.schema), 100);
-  const videosByConnection = new Map(accounts.map(a => [connectionOf(a), videosByAccount.get(a.schema) || []]));
-  const pauses = guardAccounts({ pilot, connectionIds: ids.filter(id => states.get(id) === 'active'), videosByConnection, outcomesByConnection: await pilotOutcomes(db, pilot.id, now), now });
+  const pauses = guardAccounts({ connectionIds: ids.filter(id => states.get(id) === 'active'), outcomesByConnection: await pilotOutcomes(db, pilot.id, now) });
   const names = new Map(accounts.map(a => [connectionOf(a), a.profile?.username || a.username || a.label || connectionOf(a)]));
   for (const p of pauses) {
     await db.prepare("UPDATE psychology_autopilot_accounts SET status='paused',stop_pending=1,reason=?,updated_at=? WHERE autopilot_id=? AND connection_id=? AND status='active'").bind(p.reason, now, pilot.id, p.id).run();
@@ -237,7 +232,45 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
     if (batchIds.length) { summary.batches.push(...batchIds); await log(db, pilot.id, 'batch', `已排 ${beijingLabel(slot)} 的发布：${active.length} 个号`, { slot, batchIds, accounts: active.length }, now); }
     if (errors.length) { summary.errors.push(...errors); await log(db, pilot.id, 'error', `${beijingLabel(slot)} 创建失败：${detail}`, { slot }, now); }
   }
+  await fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary);
   return summary;
+}
+
+// Active accounts with no item on an already-created future slot get one
+// supplementary batch. Soft-deleted rows still count, so stopped tasks stay stopped.
+async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary) {
+  if (!active.length || pilot.status !== 'active') return;
+  const slots = (await db.prepare(`SELECT slot_at,batch_id FROM psychology_autopilot_slots
+    WHERE autopilot_id=? AND status='created' AND slot_at>? AND slot_at<? ORDER BY slot_at`).bind(pilot.id, now + 5 * 60000, pilot.ends_at).all()).results;
+  for (const slot of slots) {
+    const current = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
+    if (current?.status !== 'active') break;
+    const batchIds = String(slot.batch_id || '').split(',').filter(Boolean);
+    if (!batchIds.length) continue;
+    const present = new Set((await db.prepare('SELECT connection_id FROM psychology_publish_items WHERE batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).all()).results.map(r => r.connection_id));
+    const missing = active.filter(id => !present.has(id));
+    if (!missing.length) continue;
+    const maxRow = await db.prepare('SELECT MAX(schedule_at) AS last FROM psychology_publish_items WHERE deleted_at=0 AND batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).first();
+    const base = maxRow?.last ? Number(maxRow.last) + AUTOPILOT.staggerSeconds : Math.floor(slot.slot_at / 1000);
+    const added = [], errors = [];
+    for (let offset = 0; offset < missing.length; offset += AUTOPILOT.maxAccountsPerBatch) {
+      const connectionIds = missing.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch);
+      const body = { requestId: await uuidFrom(pilot.id + ':restore:' + slot.slot_at + ':' + connectionIds.join(',')), name: `自动运营 · ${current.group_name || current.group_id} · ${beijingLabel(slot.slot_at)} · 补排`,
+        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: current.strategy, libraryTestPolicy: TEST_POLICY, pairSeed: pilotPairSeed(current, slot.slot_at), count: connectionIds.length, connectionIds,
+        scheduleAt: base + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
+      try {
+        const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs: AUTOPILOT.leadMs });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '创建失败');
+        if (!batchIds.includes(data.batchId)) batchIds.push(data.batchId);
+        added.push(data.batchId);
+        await db.prepare('UPDATE psychology_autopilot_slots SET batch_id=?,updated_at=? WHERE autopilot_id=? AND slot_at=?').bind(batchIds.join(','), Date.now(), pilot.id, slot.slot_at).run();
+      } catch (error) { errors.push(String(error.message || error).slice(0, 300)); }
+    }
+    if (added.length) { summary.batches.push(...added); await log(db, pilot.id, 'batch', `已补排 ${beijingLabel(slot.slot_at)}：恢复 ${missing.length} 个号`, { slot: slot.slot_at, batchIds: added, accounts: missing.length }, now); }
+    if (errors.length) { const detail = errors.join('；'); summary.errors.push(...errors); await log(db, pilot.id, 'error', `${beijingLabel(slot.slot_at)} 补排失败：${detail}`, { slot: slot.slot_at }, now); }
+  }
 }
 
 export async function runAutopilots(env, now = Date.now()) {

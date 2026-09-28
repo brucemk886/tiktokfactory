@@ -119,7 +119,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);return;}
+    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);await runPendingAutopilotFill(env);return;}
     if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
@@ -158,4 +158,25 @@ export async function runScheduledSteps(cron, steps) {
     }
   }
   return results;
+}
+
+// One-shot: set factory_kv autopilot-fill-missing-v1 to {"status":"pending"} to run
+// autopilot once on the next minute. Cleared by the run itself.
+async function runPendingAutopilotFill(env) {
+  const key = 'autopilot-fill-missing-v1';
+  const row = await env.DB.prepare('SELECT value_json FROM factory_kv WHERE key=?').bind(key).first();
+  if (!row?.value_json) return;
+  let flag;
+  try { flag = JSON.parse(row.value_json); } catch { return; }
+  if (flag?.status !== 'pending') return;
+  const running = JSON.stringify({ status: 'running', at: Date.now() });
+  const claimed = await env.DB.prepare('UPDATE factory_kv SET value_json=?, updated_at=? WHERE key=? AND value_json=?').bind(running, Date.now(), key, row.value_json).run();
+  if (!claimed.meta?.changes) return;
+  try {
+    const result = await (await import('./psychology-autopilot.js')).runAutopilots(env);
+    const summary = Object.fromEntries(Object.entries(result).map(([id, value]) => [id, value?.error ? { error: String(value.error).slice(0, 300) } : { batches: value.batches?.length || 0, paused: value.paused?.length || 0, errors: (value.errors || []).slice(0, 5) }]));
+    await env.DB.prepare('UPDATE factory_kv SET value_json=?, updated_at=? WHERE key=?').bind(JSON.stringify({ status: 'done', at: Date.now(), summary }), Date.now(), key).run();
+  } catch (error) {
+    await env.DB.prepare('UPDATE factory_kv SET value_json=?, updated_at=? WHERE key=?').bind(JSON.stringify({ status: 'error', at: Date.now(), error: String(error?.message || error).slice(0, 500) }), Date.now(), key).run();
+  }
 }

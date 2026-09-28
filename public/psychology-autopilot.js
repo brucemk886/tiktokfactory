@@ -124,7 +124,7 @@ function render() {
     '每个选题最多同时测试 2 个未成熟改写版，优先完成已开始的测试；成熟需满 24 小时且有播放数据，数据每天汇总两次。',
     '同一个账号不会重复使用同一篇选题，不论原版或改写；同一批次不重复使用同一个版本。只能选择文案库中可用的内容，不会因启动运营自动生成新改写。',
     '三种策略共用选题和停发规则；发布时间与每日数量按分组设置，策略只决定版本选择方式。',
-    `连续 ${r.lowPosts} 条满24小时低于 ${r.lowViews} 播放，或连续 ${r.failStreak} 次发布失败，自动停发该号并停止本地尚未提交的任务。`,
+    `连续 ${r.failStreak} 次发布失败，自动停发该号并停止本地尚未提交的任务。低播放只进入分析，不中途停号。`,
   ].map(t=>'<li>'+esc(t)+'</li>').join('');
   const sum = pilots.reduce((s,p)=>{ for(const [k,v] of Object.entries(p.execution||p.today||{}))s[k]=(s[k]||0)+v;return s; },{});
   const active = pilots.filter(p=>p.status==='active').reduce((n,p)=>n+p.accounts.filter(a=>a.status==='active').length,0);

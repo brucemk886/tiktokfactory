@@ -18,19 +18,11 @@ test('due slots are the Beijing 08:00 / 12:00 / 21:00 times 2–26 hours ahead, 
   assert.deepEqual(dueSlots(pilot, at('2026-09-29', '08:00')), [at('2026-09-29', '12:00'), at('2026-09-29', '21:00')]); // run ends at 09-30 00:00
 });
 
-test('guard pauses five low matured posts since the start or three failed publishes in a row', () => {
-  const now = at('2026-09-26', '12:00'), pilot = { created_at: at('2026-09-23', '00:00') };
-  const posts = (views, startDay = 24) => views.map((v, i) => ({ createTime: (at(`2026-09-${startDay}`, '08:00') + i * 5 * HOUR) / 1000, views: v }));
-  const videosByConnection = new Map([
-    ['low', posts([10, 50, 199, 0, 120])],
-    ['one-ok', posts([10, 50, 250, 0, 120])],
-    ['old-low', [...posts([1, 1, 1, 1], 20), ...posts([5])]], // low posts before the pilot started do not count
-    ['fresh', [...posts([1, 1, 1, 1]), { createTime: (now - HOUR) / 1000, views: 0 }]],
-  ]);
-  const outcomesByConnection = new Map([['failing', ['failed', 'failed', 'failed']], ['recovered', ['failed', 'failed', 'published']]]);
-  const ids = ['low', 'one-ok', 'old-low', 'fresh', 'failing', 'recovered'];
-  assert.deepEqual(guardAccounts({ pilot, connectionIds: ids, videosByConnection, outcomesByConnection, now }).map(p => [p.id, p.reason]),
-    [['low', '连续5条满24小时播放都低于200'], ['failing', '连续3次发布失败']]);
+test('guard pauses three failed publishes in a row and keeps low-play accounts running', () => {
+  const outcomesByConnection = new Map([['low', ['published']], ['failing', ['failed', 'failed', 'failed']], ['recovered', ['failed', 'failed', 'published']]]);
+  const ids = ['low', 'failing', 'recovered'];
+  assert.deepEqual(guardAccounts({ connectionIds: ids, outcomesByConnection }).map(p => [p.id, p.reason]),
+    [['failing', '连续3次发布失败']]);
 });
 
 test('library draw strategies: original only never uses rewrites, rewrite-first falls back to the original', () => {
@@ -112,6 +104,20 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   const again = await runAutopilot(f.env, pilot, pilot.created_at + 60000);
   assert.equal(again.batches.length, 0);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n, expected);
+  const slot = f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? ORDER BY slot_at DESC').get(pilot.id);
+  const dropped = f.sqlite.prepare("SELECT id,job_id FROM psychology_publish_items WHERE connection_id='b' AND batch_id=?").get(slot.batch_id);
+  f.sqlite.prepare('DELETE FROM psychology_peer_account_usage WHERE item_id=?').run(dropped.id);
+  f.sqlite.prepare('DELETE FROM psychology_publish_items WHERE id=?').run(dropped.id);
+  f.sqlite.prepare('DELETE FROM factory_jobs WHERE id=?').run(dropped.job_id);
+  const restored = await runAutopilot(f.env, pilot, pilot.created_at + 120000);
+  assert.equal(restored.batches.length, 1, JSON.stringify(restored.errors));
+  const linked = f.sqlite.prepare('SELECT batch_id FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').get(pilot.id, slot.slot_at).batch_id.split(',');
+  assert.equal(linked.length, 2);
+  const back = f.sqlite.prepare("SELECT schedule_at FROM psychology_publish_items WHERE deleted_at=0 AND connection_id='b' AND batch_id=?").get(linked[1]);
+  const kept = f.sqlite.prepare("SELECT MAX(schedule_at) AS last FROM psychology_publish_items WHERE deleted_at=0 AND batch_id=?").get(linked[0]);
+  assert.equal(back.schedule_at, kept.last + 45);
+  const duplicate = await runAutopilot(f.env, pilot, pilot.created_at + 180000);
+  assert.equal(duplicate.batches.length, 0);
   const list = await (await f.api('GET')).json();
   assert.equal(list.pilots[0].accounts.length, 2);
   // GET defaults to today; dueSlots can also reserve tomorrow near midnight.
