@@ -17,10 +17,10 @@ One reusable single-image quiz topic, many images, each image drawn once. Allow 
 Existing scale-p2 signature tampering test had a 1/256 chance to leave the signature unchanged (forced "00" prefix); test-only fix now always changes the prefix.
 
 ## Validation
-Full suite passed 896 tests before final pre-generation revision guard/read-race adjustments; focused tests rerun below in deployment follow-up. Chrome fixture verified multi-upload, pagination, disabling, consumed protection and stable generation request IDs. Model/publishing calls mocked; no real Kie charge or production publishing test.
+Full suite passed 896 tests; 18 focused backend/browser/asset-manifest checks also passed after the final pre-generation revision guard and UI read-race adjustments. Chrome fixture verified multi-upload, pagination, disabling, consumed protection and stable generation request IDs. Model/publishing calls mocked; no real Kie charge or production publishing test.
 
 ## Deployment
-Pending commit/push/deploy at time of this entry. Follow-up records final deployment.
+Committed and pushed 92e1643 to GitHub main, then deployed from the clean main release checkout with exact HEAD == origin/main via npm run deploy. Migration 0067 applied successfully. Worker version dba50b7c-bb67-4454-aee1-65a5cb2283e4. Live health/new JS resources returned 200; unauthenticated pool API returned 401. Read-only D1 check confirmed pool tables exist. No live generation or publishing was initiated.
 
 ## Limitations / next steps
 AI requires explicit operator enabling after preview. Remote URL imports should use stable URLs; prefer owned/uploaded assets for byte deduplication. No automatic replenishment or visual quality scoring. Paid provider smoke test should be initiated from a real topic by the operator when desired.
