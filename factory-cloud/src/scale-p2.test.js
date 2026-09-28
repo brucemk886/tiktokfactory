@@ -82,7 +82,7 @@ async function signedRequest(secret, payload, { timestamp = Math.floor(Date.now(
   const signature = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return new Request("https://factory.test/api/integrations/signal-desk/publish-events", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-signal-timestamp": String(timestamp), "x-signal-signature": `v1=${tamper ? "00" + signature.slice(2) : signature}` },
+    headers: { "content-type": "application/json", "x-signal-timestamp": String(timestamp), "x-signal-signature": `v1=${tamper ? (signature.startsWith("00") ? "01" : "00") + signature.slice(2) : signature}` },
     body,
   });
 }

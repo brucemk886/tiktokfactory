@@ -1,3 +1,4 @@
+import {imagePoolCounts,imageBankCounts,selectImageSources,handleTopicImages} from './psychology-topic-images.js';
 import {resolveTopicAssets,hydrateTopicAssets} from './topic-assets.js';
 import { json,errorJson,readJson,sha256Hex,randomToken } from "./http.js";
 import { TOPIC_TEMPLATES,TOPIC_IMAGE_KEY,validateTopicTemplate,normalizeTopic,collectTopicWriteItems,topicFingerprintText,topicSource,parseFourImageChoices,parseSingleImageQuiz } from "../../scripts/psychology-topic-bank.js";
@@ -76,8 +77,10 @@ function decodeTopicImage(input={}){
 export async function storeTopicImage(env,input){
   if(!env?.ARCHIVE)throw Object.assign(new Error("图片存储尚未配置。"),{statusCode:503});
   const image=decodeTopicImage(input);
-  const key=topicImageObjectKey(crypto.randomUUID(),image.ext);
+  const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',image.bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+  const key=topicImageObjectKey([digest.slice(0,8),digest.slice(8,12),digest.slice(12,16),digest.slice(16,20),digest.slice(20,32)].join('-'),image.ext);
   await env.ARCHIVE.put(key,image.bytes,{httpMetadata:{contentType:image.contentType},customMetadata:{kind:"psychology-topic-choice"}});
+  await env.DB.prepare('INSERT OR IGNORE INTO psychology_topic_image_files(object_key,fingerprint) VALUES(?,?)').bind(key,'sha256:'+digest).run();
   return {key,contentType:image.contentType,url:`${BASE}/assets?key=${encodeURIComponent(key)}`};
 }
 export async function serveTopicImage(env,key){
@@ -91,10 +94,14 @@ export async function serveTopicImage(env,key){
 }
 export async function topicCounts(db){
   const{results}=await db.prepare("SELECT template,COUNT(*) AS total,SUM(enabled) AS enabled,SUM(CASE WHEN enabled=1 AND usage_count=0 THEN 1 ELSE 0 END) AS unused FROM psychology_template_topics WHERE deleted_at=0 GROUP BY template").all();
-  return Object.fromEntries(TOPIC_TEMPLATES.map(t=>[t.id,results.find(r=>r.template===t.id)||{total:0,enabled:0,unused:0}]));
+  const counts=Object.fromEntries(TOPIC_TEMPLATES.map(t=>[t.id,results.find(r=>r.template===t.id)||{total:0,enabled:0,unused:0}]));
+  const pool=await imageBankCounts(db);
+  counts['psychology-target-2']={...counts['psychology-target-2'],unused:pool.availableTopics,availableImages:pool.availableImages};
+  return counts;
 }
 export async function selectTopicSources(db,config){
   validateTopicTemplate(config.template);
+  if(config.template==="psychology-target-2")return selectImageSources(db,config);
   const order={random:"RANDOM()",recent:"created_at DESC,id",priority:"priority DESC,created_at ASC,id","least-used":"usage_count ASC,last_used_at ASC,priority DESC,id"}[config.selection];
   if(!order)throw Object.assign(new Error("题库抽取规则无效。"),{statusCode:400});
   const{results}=await db.prepare("SELECT * FROM psychology_template_topics WHERE template=? AND enabled=1 AND deleted_at=0"+
@@ -103,8 +110,8 @@ export async function selectTopicSources(db,config){
   return results.map(topicSource);
 }
 export function topicUsageStatement(db,source,batchId,itemId,config,stamp){
-  return db.prepare("INSERT INTO psychology_topic_usage(topic_id,batch_id,item_id,template,revision,only_unused,created_at) VALUES (?,?,?,?,?,?,?)")
-    .bind(source.id,batchId,itemId,config.template,source.revision,config.onlyUnused?1:0,stamp);
+  return db.prepare("INSERT INTO psychology_topic_usage(topic_id,batch_id,item_id,template,revision,only_unused,created_at,image_id) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(source.id,batchId,itemId,config.template,source.revision,config.onlyUnused?1:0,stamp,source.imageId||"");
 }
 const reject=(message,statusCode)=>{throw Object.assign(new Error(message),{statusCode});};
 async function readImport(request){
@@ -170,7 +177,7 @@ async function listTopics(db,url,defaultTemplate,serialize=publicTopic){
  const [total,rows,counts]=await Promise.all([
   db.prepare('SELECT COUNT(*) n FROM psychology_template_topics WHERE '+where).bind(...args).first(),
   db.prepare('SELECT * FROM psychology_template_topics WHERE '+where+' ORDER BY created_at DESC,id LIMIT ? OFFSET ?').bind(...args,pageSize,(page-1)*pageSize).all(),topicCounts(db)]);
- return json({templates:TOPIC_TEMPLATES,counts,total:total.n,page,pageSize,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,items:await hydrateTopicAssets(db,rows.results.map(serialize),url.origin)});
+ return json({templates:TOPIC_TEMPLATES,counts,total:total.n,page,pageSize,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,items:await hydrateTopicAssets(db,await imagePoolCounts(db,rows.results.map(serialize)),url.origin)});
 }
 async function updateTopic(db,id,input,{external=false,remove=false,serialize=publicTopic,actor}={}){
  const row=await db.prepare('SELECT * FROM psychology_template_topics WHERE id=? AND deleted_at=0').bind(id).first();
@@ -211,6 +218,8 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
       if(trusted.user)assertTopicBankUser(trusted.user);
       const actor=trusted.user?.id || await externalActor(request,db);
       const path=url.pathname.slice(PSYCHOLOGY_TOPIC_API.length);
+      const images=path.match(/^\/(topic-[a-z0-9-]+)\/images(?:\/(image-[a-z0-9-]+))?$/);
+      if(images)return await handleTopicImages(request,env,url,actor,images[1],images[2]);
       if(!path&&request.method==='POST')return json(await writeIntegrationTopics(db,await readImport(request),actor));
       const serialize=row=>integrationTopic(row,url.origin);
       if(!path&&request.method==='GET')return await listTopics(db,url,'all',serialize);
@@ -226,6 +235,14 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
     if(!session)return errorJson("请先登录。",401);
     assertTopicBankUser(session.user);
     const user=session.user;
+    if(request.method!=="GET" && request.headers.get("origin") && request.headers.get("origin")!==url.origin)return errorJson("不允许跨站修改。",403);
+    const images=url.pathname.slice(BASE.length).match(/^\/(topic-[a-z0-9-]+)\/images(?:\/(image-[a-z0-9-]+))?$/);
+    if(images)return await handleTopicImages(request,env,url,user.id,images[1],images[2]);
+    const generation=url.pathname.slice(BASE.length).match(/^\/(topic-[a-z0-9-]+)\/image-generation$/);
+    if(generation){
+      const {handlePoolGeneration}=await import('./topic-pool-generation.js');
+      return await handlePoolGeneration(request,env,url,user,generation[1]);
+    }
     if(url.pathname===BASE+"/assets"){
       if(request.method==="POST")return json(await storeTopicImage(env,await readJson(request)),201);
       if(request.method==="GET")return serveTopicImage(env,url.searchParams.get("key"));
@@ -268,7 +285,7 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
           .bind("topic-"+id.slice(0,32)+"-"+index,template,topic.title,topic.content,topic.category,topic.priority,topic.enabled?1:0,await sha256Hex(topicFingerprintText(topic)),user.username,stamp,stamp,topic.revealComment,JSON.stringify(topic.replyOptions),topic.coverAssetId,JSON.stringify(topic.imageAssetIds)));
       }
       try{
-        const result=await db.batch(statements);const created=result.slice(1).reduce((n,r)=>n+Number(r.meta?.changes||0),0);
+        const result=await db.batch(statements);const created=result.slice(1).reduce((n,r)=>n+(r.meta?.changes?1:0),0);
         return json({received:topics.length,created,skipped:topics.length-created},201);
       }catch(error){
         const winner=await db.prepare("SELECT * FROM psychology_topic_imports WHERE id=?").bind(id).first();

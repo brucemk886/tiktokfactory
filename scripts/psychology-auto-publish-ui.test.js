@@ -117,7 +117,7 @@ test('late refresh responses cannot replace the newest account directory',async(
  assert.match(h.node('#accounts').innerHTML,/@charlie/);assert.doesNotMatch(h.node('#accounts').innerHTML,/@alpha/);
 });
 
-const topicOptions={canUseTopics:true,templates:{video:[{id:'psychology',label:'四图测试'},{id:'psychology-collage',label:'纸张拼贴'},{id:'psychology-target-2',label:'单图互动测试'}],photo:[{id:'photo-original',label:'跟随原帖'}]},topicCounts:{psychology:{total:3,enabled:0,unused:0},'psychology-collage':{total:18,enabled:4,unused:2},'psychology-target-2':{total:28,enabled:11,unused:8}}};
+const topicOptions={canUseTopics:true,templates:{video:[{id:'psychology',label:'四图测试'},{id:'psychology-collage',label:'纸张拼贴'},{id:'psychology-target-2',label:'单图互动测试'}],photo:[{id:'photo-original',label:'跟随原帖'}]},topicCounts:{psychology:{total:3,enabled:0,unused:0},'psychology-collage':{total:18,enabled:4,unused:2},'psychology-target-2':{total:28,enabled:11,unused:8,availableImages:24}}};
 function chooseSource(h,source){h.node('#sourceType').value=source;h.node('#sourceType').listeners.change();}
 function chooseBank(h,bank){h.node('#topicBank').value=bank;h.node('#topicBank').listeners.change();}
 
@@ -138,7 +138,8 @@ test('concrete topic banks display counts, synchronize renderer both ways and su
  }
  h.node('#template').value='psychology-target-2';h.node('#template').listeners.change();
  assert.equal(h.node('#topicBank').value,'psychology-target-2');
- assert.match(h.node('#sourceHint').textContent,/已启用 11 条，未使用 8 条/);
+ assert.match(h.node('#sourceHint').textContent,/可用图片 24 张/);
+ assert.equal(h.node('#unusedField').hidden,true);
 });
 
 test('video always uses topics; photo remains separate and missing permission cannot submit',async()=>{

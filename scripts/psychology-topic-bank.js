@@ -1,7 +1,7 @@
 export const TOPIC_TEMPLATES=Object.freeze([
   {id:"psychology",label:"01 · 四图测试模板",hint:"题目作为测试问题；上传 A/B/C/D 四张图片并填写每张对应的文案。"},
   {id:"psychology-collage",label:"02 · 纸张拼贴模板",hint:"题目作为视频主题；内容填写观点、故事线或解说稿。"},
-  {id:"psychology-target-2",label:"03 · 单图互动测试模板",hint:"题目作为测试问题；上传一张图片，并自行填写 A/B/C/D 四个选项。"},
+  {id:"psychology-target-2",label:"03 · 单图互动测试模板",hint:"题目共用 A/B/C/D 四个选项，可补充多张配图；每张图片只抽取一次。"},
 ]);
 export const CHOICE_LABELS=Object.freeze(["A","B","C","D"]);
 export const TOPIC_IMAGE_KEY=/^psychology-topics\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpe?g|png|webp)$/i;

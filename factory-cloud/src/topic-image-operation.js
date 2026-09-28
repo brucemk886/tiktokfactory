@@ -104,6 +104,8 @@ export async function importReadyImage(env,row){
 }
 export async function runTopicImageWorkflow(env,event,step){
  const {ownerId,requestId}=event.payload;
+ const initial=await get(env.DB,ownerId,requestId);
+ if(initial&&JSON.parse(initial.input_json).mode==='topic-pool'){const {runPoolImageWorkflow}=await import('./topic-pool-generation.js');return runPoolImageWorkflow(env,event,step);}
  await step.do('generate-and-store',{retries:{limit:0,delay:'1 second'},timeout:'5 minutes'},async()=>{const row=await get(env.DB,ownerId,requestId);if(row?.status==='pending')await generateAndStore(env,row);});
  try{return await step.do('register-and-import',{retries:{limit:3,delay:'10 seconds',backoff:'exponential'},timeout:'1 minute'},async()=>{
   let row=await get(env.DB,ownerId,requestId);if(!row||['completed','failed'].includes(row.status))return {status:row?.status};

@@ -1,3 +1,4 @@
+import {appendTopicImages} from './psychology-topic-images.js';
 import { summarizeOfficialPublishRecords, collectOfficialLiveBatchIds } from '../../scripts/official-publish-records.js';
 import { stagePublishItem, dispatchPublishGroup, handleAutoVideoStage } from './psychology-publish-groups.js';
 import { claimTypeFilter } from './jobs.js';
@@ -292,14 +293,14 @@ test('single-image quiz batches freeze the source image and refuse incomplete to
   assert.equal(payload.choiceCopies[0].copy,'Stay');
   assert.equal(payload.choiceImages,undefined);
   await seedBank(env,'psychology-target-2',[{title:'Incomplete only'}]);
-  await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID(),onlyUnused:true},undefined,actor),/单图互动题目需要一张图片/);
+  await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID(),onlyUnused:true},undefined,actor),/可用图片只有 0 张/);
 });
 test('topic rules exclude disabled/deleted sources and support category search',async t=>{
   const{env,db,sqlite}=await fixture(t);
-  await seedBank(env,'psychology-target-2',[{title:'Old',category:'Relationship',priority:99},{title:'New',priority:1},{title:'Off',enabled:false}]);
+  await seedBank(env,'psychology-collage',[{title:'Old',category:'Relationship',priority:99},{title:'New',priority:1},{title:'Off',enabled:false}]);
   sqlite.prepare("UPDATE psychology_template_topics SET created_at=100,usage_count=3,last_used_at=200 WHERE title='Old'").run();
   sqlite.prepare("UPDATE psychology_template_topics SET created_at=300 WHERE title='New'").run();
-  const config={template:'psychology-target-2',query:'',count:10,onlyUnused:false,selection:'recent'};
+  const config={template:'psychology-collage',query:'',count:10,onlyUnused:false,selection:'recent'};
   assert.deepEqual((await selectTopicSources(db,config)).map(t=>t.title),['New','Old']);
   assert.deepEqual((await selectTopicSources(db,{...config,selection:'priority'})).map(t=>t.title),['Old','New']);
   assert.deepEqual((await selectTopicSources(db,{...config,selection:'least-used'})).map(t=>t.title),['New','Old']);
@@ -972,4 +973,21 @@ test('creation-date filters apply before batch count and pagination and preserve
  assert.equal(second.pagination.total,12);assert.equal(second.pagination.hasMore,false);assert.deepEqual(second.batches.map(b=>b.id),['dated-1','dated-0']);
  const empty=await(await f.call('GET',undefined,url+'&attention=1')).json();assert.equal(empty.pagination.total,0);
  const all=await(await f.call()).json();assert.equal(all.pagination.total,14);
+});
+
+test('single-image batch consumes different images of one topic and freezes independent job snapshots',async t=>{
+ const {env,sqlite,call,db}=await fixture(t),actor={...user,sidebarModules:[...user.sidebarModules,'psychology-topic-bank']};
+ await seedBank(env,'psychology-target-2',[{title:'Same reusable topic',imageUrl:'https://example.com/one.png',choices:['A','B','C','D'].map(copy=>({copy}))}]);
+ const topic=sqlite.prepare('SELECT * FROM psychology_template_topics').get();
+ await appendTopicImages(env,user.id,topic.id,{revision:topic.revision,images:[{imageUrl:'https://example.com/two.png'},{imageUrl:'https://example.com/three.png'}]});
+ const body=input({count:3,sourceType:'topic-bank',template:'psychology-target-2',selection:'random'});
+ assert.equal((await call('POST',body,undefined,actor)).status,202);
+ const payloads=sqlite.prepare('SELECT payload_json FROM factory_jobs').all().map(r=>JSON.parse(r.payload_json));
+ assert.equal(payloads.length,3);assert.equal(new Set(payloads.map(p=>p.topicSource.id)).size,1);
+ assert.equal(new Set(payloads.map(p=>p.sourceImage.imageUrl)).size,3);
+ assert.equal(new Set(payloads.map(p=>p.topicSource.imageId)).size,3);
+ assert.equal((await call('POST',body,undefined,actor)).status,200);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM psychology_topic_image_uses').get().n,3);
+ await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID(),onlyUnused:false},undefined,actor),/可用图片只有 0 张/);
+ assert.equal((await selectTopicSources(db,{...body,query:''})).length,0);
 });

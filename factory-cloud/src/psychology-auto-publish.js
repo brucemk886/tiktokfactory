@@ -264,7 +264,7 @@ export function autoVideoPayload(source, config, item, accounts) {
     language: config.template === 'psychology-collage' ? 'zh-CN' : 'en',
     targetDuration: config.template === 'psychology-collage' ? 90 : 16, sceneCount: 10,
     aspectRatio: '9:16', imageModel: 'z-image', imageModels: ['z-image'], elevenLabsVoiceId: voice,
-    ...(config.sourceType === 'topic-bank' ? { topicSource: { id: source.id, template: source.template, title: source.title, content: source.content, category: source.category, revision: source.revision, choices: choiceImages.length ? choiceImages : choiceCopies, sourceImage } } : { peerSource: { id: source.id, title: source.title, videoUrl: source.videoUrl, collectedAt: source.collectedAt } }),
+    ...(config.sourceType === 'topic-bank' ? { topicSource: { imageId:source.imageId||'', id: source.id, template: source.template, title: source.title, content: source.content, category: source.category, revision: source.revision, choices: choiceImages.length ? choiceImages : choiceCopies, sourceImage } } : { peerSource: { id: source.id, title: source.title, videoUrl: source.videoUrl, collectedAt: source.collectedAt } }),
     taskId: item.id, taskName: config.name,
     psychologyAutomation: item,
     publish: { provider: 'official', autoPublish: true, connectionIds: [item.connectionId],
@@ -431,7 +431,10 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
   let sources, testState;
-  if (config.sourceType === 'topic-bank') sources = await selectTopicSources(env.DB, config);
+  if (config.sourceType === 'topic-bank') {
+    sources = await selectTopicSources(env.DB, config);
+    if(config.template==='psychology-target-2'&&sources.length<config.count)fail('符合条件的可用图片只有 '+sources.length+' 张，请补充图片或减少生成数量。已抽取图片不会再次使用。');
+  }
   else if(config.sourceType==='copy-bank'){
     const rows=await env.DB.prepare('SELECT * FROM psychology_copy_variants WHERE owner=? AND enabled=1 AND (title LIKE ? OR source_key LIKE ?) ORDER BY '+(config.selection==='random'?'RANDOM()':'created_at DESC')+' LIMIT 1000').bind(user.username,'%'+config.query+'%','%'+config.query+'%').all();
     sources=rows.results.map(r=>({...r,id:r.id,sourceRow:r,sourceKind:'rewrite'}));
@@ -519,7 +522,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     if (!winner) {
       if(/psychology_copy_test_allocations/.test(error.message))fail('测试名额刚被其他分组更新，请重新检查后分配。',409);
       if(/psychology_peer_account_usage/.test(error.message))fail('题目刚被其他任务分配给同一账号，请重新提交。',409);
-      if (/TOPIC_CHANGED|TOPIC_ALREADY_USED/.test(error.message)) fail('题目刚被修改或已被其他批次抽取，请重新提交。',409);
+      if (/TOPIC_CHANGED|TOPIC_ALREADY_USED|TOPIC_IMAGE_UNAVAILABLE|psychology_topic_image_uses/.test(error.message)) fail('题目刚被修改或已被其他批次抽取，请重新提交。',409);
       throw error;
     }
     if (winner.config_json !== JSON.stringify(config)) fail('该提交编号已用于其他配置。',409);

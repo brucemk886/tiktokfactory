@@ -1,5 +1,7 @@
 # Current State
 
+- Single-image test topics now own multi-image pools (0067). Draws consume each image globally once in the same transaction as publishing jobs, while the topic remains reusable. Topic UI supports paginated images, multi-file import, enable/disable and explicit Kie Nano Banana background generation; generated images require enabling after preview. Existing used primary images stay consumed. See docs/handoffs/2026-09-28-topic-image-pool.md.
+
 - MCP v1.4 uploads local PNG contents over the authenticated app-only MCP channel; file-ID inputs retain a bounded oaisdmntpr-region Blob/oaiusercontent URL fallback. Both paths decode static PNG scanlines/CRC and share durable import protection. No generation API/key. Picker resource v2 requires ChatGPT metadata refresh; native-image file access remains host-dependent. See docs/FACTORY_MCP.md.
 
 
