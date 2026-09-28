@@ -13,7 +13,7 @@ Add select-all and bulk deletion to each psychology template topic bank.
 public/psychology-topic-bank.html/js/css; public/psychology-topic-selection.js; scripts/psychology-topic-selection.test.js; factory-cloud/package.json; generated UI asset manifest.
 
 ## Tests
-12 focused tests passed: existing backend permissions/revisions, bounded selection with filters, partial failures, actual Chrome selection/confirmation cancel/pagination/last-page recovery/empty state/template isolation. Browser API fixture only, no publishing calls.
+19 focused tests passed (including asset manifest checks): existing backend permissions/revisions, bounded selection with filters, partial failures, actual Chrome selection/confirmation cancel/pagination/last-page recovery/empty state/template isolation. Browser API fixture only, no publishing calls.
 
 ## Deployment
-Pending commit/push and clean main deployment. No remaining feature work.
+Committed and pushed 70bba7c to main; npm run deploy from a clean main checkout matching origin/main succeeded. Worker version 5f9737b6-6006-49c5-a61c-60660f90d0d9. Live health and both changed JS entry points returned 200 and new selection exports were verified. No remaining feature work.
