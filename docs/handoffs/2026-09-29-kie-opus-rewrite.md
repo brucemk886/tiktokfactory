@@ -20,3 +20,7 @@ Feature commit fefee1c was pushed to main and deployed from a clean main checkou
 
 ## Runtime redirect fix
 User's first attempt failed before HTTP dispatch: workerd rejects RequestInit redirect=error with TypeError. Reproduced in Miniflare/workerd; manual/follow accepted. Switch to manual and reject 3xx explicitly, retaining credential isolation and no automatic paid retries. Added real workerd request-construction regression plus redirect rejection. 57 focused tests passed.
+
+Runtime fix 61556db deployed successfully through npm run deploy; Worker 0bf10df1-8f26-4eae-b4c2-7ee67ef44de7. Live browser verification used the same source title as the user's error screenshot. Selected Kie Opus 4.8 and clicked AI generation once: form populated a version name, title, caption and four pages, with the success message. Draft was not saved or enabled. Browser session/debug capture closed. This supersedes the earlier no-paid-smoke-test limitation.
+
+Incidental unrelated finding: searching the full 61-character source title returned D1 LIKE/GLOB pattern-too-complex; a short keyword worked. Not changed in this provider fix.
