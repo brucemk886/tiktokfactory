@@ -8,7 +8,7 @@ export async function kieClaudeText(env, { model, prompt, maxTokens = 4096 }) {
   let response;
   try {
     response = await (env.fetch || fetch)(ENDPOINT, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(120000),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(120000),
       headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens, thinkingFlag: false, stream: false }),
@@ -16,6 +16,12 @@ export async function kieClaudeText(env, { model, prompt, maxTokens = 4096 }) {
   } catch (error) {
     fail(error.name === 'TimeoutError' || error.name === 'AbortError'
       ? 'Kie 文案生成超时，请稍后重试。' : 'Kie 文案生成连接失败，请稍后重试。', 504);
+  }
+  // workerd does not support redirect: 'error'. Reject 3xx explicitly without
+  // forwarding the API credential or replaying the paid request elsewhere.
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel();
+    fail('Kie 文案接口返回重定向，已停止请求，请联系管理员检查接口地址。');
   }
   if (!response.ok) {
     await response.body?.cancel();

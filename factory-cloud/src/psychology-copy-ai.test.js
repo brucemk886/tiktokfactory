@@ -246,3 +246,14 @@ test('Kie provider rejects missing credentials, errors, empty/truncated and over
  ];
  for(const response of cases){let calls=0;await assert.rejects(kieClaudeText({KIE_API_KEY:'secret',fetch:async()=>{calls++;return response();}},input),e=>e.statusCode>=500&&!e.message.includes('secret'));assert.equal(calls,1);}
 });
+
+
+test('Kie request works in workerd and rejects redirects without forwarding credentials', async()=>{
+ const {Miniflare,convertV4MiniflareOptions}=await import('miniflare');
+ const source=readFileSync(new URL('./kie-claude.js',import.meta.url),'utf8');
+ const script=source+`
+export default {async fetch(){let calls=0;const modes=[];const env={KIE_API_KEY:'test',fetch:async(url,init)=>{calls++;const req=new Request(url,init);modes.push(req.redirect);if(calls===1)return Response.json({content:[{type:'text',text:'ok'}]});return new Response(null,{status:307,headers:{location:'https://untrusted.example/'}});}};const result=await kieClaudeText(env,{model:'claude-opus-4-8',prompt:'test'});let failure='';try{await kieClaudeText(env,{model:'claude-opus-4-8',prompt:'test'});}catch(e){failure=e.message;}return Response.json({result,calls,modes,failure});}}`;
+ const options={modules:true,compatibilityDate:'2026-08-01',script};
+ const mf=new Miniflare(convertV4MiniflareOptions?convertV4MiniflareOptions(options):options);
+ try{const result=await(await mf.dispatchFetch('http://localhost')).json();assert.equal(result.result,'ok');assert.equal(result.calls,2);assert.deepEqual(result.modes,['manual','manual']);assert.match(result.failure,/重定向/);}finally{await mf.dispose();}
+});

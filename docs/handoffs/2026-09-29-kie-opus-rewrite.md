@@ -17,3 +17,6 @@ factory-cloud/src/kie-claude.js; psychology-copy-generation.js; psychology-rewri
 
 ## Unfinished / next step
 Feature commit fefee1c was pushed to main and deployed from a clean main checkout with npm run deploy. Initial trigger synchronization had a network failure; the standard deployment retry completed successfully, including all cron and workflow triggers. Live Worker version: 3b2b515a-7e8f-4c69-a3f6-5430d38342a4. Actual paid model generation has not been smoke-tested; first manual generation can validate account credit and provider availability.
+
+## Runtime redirect fix
+User's first attempt failed before HTTP dispatch: workerd rejects RequestInit redirect=error with TypeError. Reproduced in Miniflare/workerd; manual/follow accepted. Switch to manual and reject 3xx explicitly, retaining credential isolation and no automatic paid retries. Added real workerd request-construction regression plus redirect rejection. 57 focused tests passed.
