@@ -58,7 +58,7 @@ test("report tabs isolate panels, preserve date/group filters and encode video d
   b.tabs[2].events.click();
   assert.equal(b.node("#anomalySection").hidden, false);
   assert.equal(b.node("#lowSection").hidden, true);
-  assert.equal(calls, 2, "tab switching must not reload either report view");
+  assert.equal(calls, 3, "tab switching must not reload analytics, publishing or traffic");
   assert.equal(b.location.searchParams.get("period"), "7d");
   assert.equal(b.location.searchParams.get("group"), "g");
   const href = vm.runInContext('videoDetailHref({account:"acct&1",id:"12345678903"})', b.context);
@@ -211,4 +211,24 @@ test('changing filters aborts old requests and ignores late receipt results',asy
  assert.equal(vm.runInContext('state.data.report.summary.publishSuccess',b.context),20);
  assert.equal(vm.runInContext('state.data.report.summary.views',b.context),222);
  assert.equal(b.node('#publishStatus').textContent,'');
+});
+
+
+test('traffic panel escapes names, paginates all accounts, preserves missing values and rejects stale responses',async()=>{
+ let resolveOld;
+ const b=browser('https://factory.test/psychology-effects?period=7d&group=old',async(path)=>{
+  const query=new URL(path,'https://factory.test').searchParams;
+  if(query.get('view')==='traffic')return new Promise(resolve=>{resolveOld=resolve;});
+  return reply({project:{id:'p'},report:{enabled:false}});
+ });
+ vm.runInContext(read('official-group-report.js'),b.context);await flush();
+ const traffic={fromKey:'2026-09-22',toKey:'2026-09-28',summary:{videoViews:0,profileViews:null,ratio:null,coveredAccounts:0,totalAccounts:12,pairedDays:0,pairedProfileViews:0,pairedVideoViews:0},accounts:Array.from({length:12},(_,i)=>({label:'<name>'+i,videoViews:null,profileViews:null,ratio:null,pairedDays:0,expectedDays:7,syncStatus:'pending'}))};
+ b.context.trafficFixture=traffic;
+ vm.runInContext('state.traffic=trafficFixture; renderTraffic()',b.context);
+ let html=b.node('#trafficPanel').innerHTML;
+ assert.match(html,/&lt;name&gt;0/);assert.doesNotMatch(html,/<name>/);assert.doesNotMatch(html,/&lt;name&gt;10/);assert.match(html,/第 1 \/ 2 页/);assert.match(html,/—/);
+ vm.runInContext('state.trafficPage=2; renderTraffic(); reportRequest++',b.context);
+ html=b.node('#trafficPanel').innerHTML;assert.match(html,/&lt;name&gt;10/);assert.doesNotMatch(html,/&lt;name&gt;0</);
+ resolveOld(reply({report:{enabled:true},traffic:{...traffic,accounts:[]}}));await flush();
+ assert.equal(b.node('#trafficPanel').innerHTML,html);
 });

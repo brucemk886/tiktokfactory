@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology data overview includes UTC daily profile visits, video activity, matched-day visit ratio and paginated account coverage. Hub daily sync refreshes traffic separately from weekly audience insights; missing metrics remain null. See docs/handoffs/2026-09-29-profile-traffic.md.
+
 - Copy-library single/batch rewrites support Claude Opus 4.8 through Kie (`claude-opus-4-8`), reusing KIE_API_KEY and preserving model attribution. Existing defaults and quality gates are unchanged. See docs/handoffs/2026-09-29-kie-opus-rewrite.md.
 
 - Autopilot no longer stops an account for five matured posts under 200 views. Only three consecutive publish failures pause an account. Active accounts missing a live item on an already-created future slot get one supplementary batch, including items cancelled before that slot. Past slots are not recreated. The 2026-09-25 seven-day run still ends 2026-10-02 01:24–01:36 Beijing, so the last posts are 2026-10-01 01:45–03:35.

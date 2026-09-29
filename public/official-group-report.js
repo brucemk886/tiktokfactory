@@ -45,6 +45,8 @@ const state = {
   fromKey: params.get("from") || params.get("date") || "",
   toKey: params.get("to") || params.get("date") || "",
   data: null,
+  traffic: null,
+  trafficPage: 1,
   pages: { high: 1, low: 1, normal: 1 },
   activeTab: ["high", "low", "anomaly"].includes(params.get("tab")) ? params.get("tab") : "high",
 };
@@ -129,6 +131,7 @@ async function loadReport() {
     if (state.groupId) query.set("group", state.groupId);
     if (state.fromKey) query.set("from", state.fromKey);
     if (state.toKey) query.set("to", state.toKey);
+    if (location.pathname === "/psychology-effects") void loadTraffic(query, requestId, controller.signal);
     const publishQuery = new URLSearchParams(query);
     publishQuery.set("view", "publish");
     // Start both reads together; slow receipts never delay rendering analytics.
@@ -530,4 +533,54 @@ function videoTable(items, tab) {
         '</td><td><div class="report-video-actions">' + (detail ? '<a class="table-action primary-table-action" href="' + escapeHtml(detail) + '">视频详情</a>' : '<span>暂无详情</span>') +
         videoJumpCell(item) + '</div></td></tr>';
     }).join("") + '</tbody></table></div>';
+}
+
+
+async function loadTraffic(query, requestId, signal) {
+  const panel = document.querySelector('#trafficPanel');
+  panel.hidden = false;
+  panel.innerHTML = '<h2>主页访问</h2><p role="status">正在读取同期播放与主页访问…</p>';
+  state.traffic = null;
+  state.trafficPage = 1;
+  try {
+    const q = new URLSearchParams(query); q.set('view', 'traffic');
+    const response = await fetch(`/api/official-tiktok/ops-report?${q}`, {cache:'no-store', signal});
+    const data = await response.json();
+    if (requestId !== reportRequest || signal.aborted) return;
+    if (!response.ok) throw new Error(data.error || '主页访问读取失败，请点击查询重试。');
+    if (!data.report?.enabled) { panel.hidden = true; return; }
+    state.traffic = data.traffic;
+    renderTraffic();
+  } catch (error) {
+    if (requestId !== reportRequest || signal.aborted) return;
+    panel.innerHTML = `<h2>主页访问</h2><p role="alert">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderTraffic() {
+  const panel = document.querySelector('#trafficPanel');
+  const data = state.traffic;
+  if (!data) return;
+  const s = data.summary;
+  const count = v => v === null ? '—' : formatNumber(v);
+  const ratio = v => v === null ? '—' : `${(v * 100).toFixed(2)}%`;
+  const totalPages = Math.max(1, Math.ceil(data.accounts.length / PAGE_SIZE));
+  state.trafficPage = Math.min(totalPages, Math.max(1, state.trafficPage));
+  const rows = data.accounts.slice((state.trafficPage - 1) * PAGE_SIZE, state.trafficPage * PAGE_SIZE);
+  panel.innerHTML = `<div class="section-title"><h2>主页访问</h2><span>${escapeHtml(data.fromKey)} 至 ${escapeHtml(data.toKey)} · UTC</span></div>
+    <p class="section-hint">每天后台更新。TikTok 日报存在延迟，今天可能尚无数据；未返回显示为 —。这里统计日期内发生的播放，下面的视频表现统计所选日期发布视频的累计播放。</p>
+    <div class="traffic-metrics">${[
+      ['同期视频播放', count(s.videoViews)], ['主页访问次数', count(s.profileViews)],
+      ['主页访问比', ratio(s.ratio)], ['可配对账号', `${s.coveredAccounts} / ${s.totalAccounts}`],
+    ].map(([label,value])=>`<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div>
+    <p class="section-hint">访问比 = 同账号、同日的主页访问 ÷ 视频播放。参与计算：${formatNumber(s.pairedProfileViews)} 次访问 / ${formatNumber(s.pairedVideoViews)} 次播放，共 ${s.pairedDays} 个账号日。仅供趋势参考，主页访问可能来自搜索等其他入口，不代表视频观众转化率。</p>
+    <p class="section-hint">所选范围最新数据日：${escapeHtml(s.latestDate || '尚无')} · 最近同步：${s.updatedAt ? escapeHtml(formatTime(s.updatedAt)) : '等待首次同步'}</p>
+    <div class="traffic-table-wrap"><table class="traffic-table"><thead><tr><th>账号</th><th>同期播放</th><th>主页访问</th><th>访问比</th><th>配对天数</th><th>最近同步</th><th>数据状态</th></tr></thead><tbody>${rows.length ? rows.map(row => {
+      const status = row.syncStatus === 'error' ? '本次同步失败' : row.pairedDays === row.expectedDays ? '完整' : row.pairedDays ? '部分日期可用' : row.syncStatus === 'pending' ? '等待首次同步' : '所选日期未返回完整指标';
+      return `<tr><td>${escapeHtml(row.label)}</td><td>${count(row.videoViews)}</td><td>${count(row.profileViews)}</td><td title="仅按配对日期计算">${ratio(row.ratio)}</td><td>${row.pairedDays} / ${row.expectedDays}</td><td>${row.updatedAt ? escapeHtml(formatTime(row.updatedAt)) : '—'}</td><td>${status}</td></tr>`;
+    }).join('') : '<tr><td colspan="7">当前分组暂无账号。</td></tr>'}</tbody></table></div>
+    <div class="traffic-pager"><button type="button" data-traffic-page="-1" ${state.trafficPage === 1 ? 'disabled' : ''}>上一页</button><span>第 ${state.trafficPage} / ${totalPages} 页 · 共 ${data.accounts.length} 个账号</span><button type="button" data-traffic-page="1" ${state.trafficPage === totalPages ? 'disabled' : ''}>下一页</button></div>`;
+  panel.querySelectorAll('[data-traffic-page]').forEach(button => button.addEventListener('click', () => {
+    state.trafficPage += Number(button.dataset.trafficPage); renderTraffic();
+  }));
 }

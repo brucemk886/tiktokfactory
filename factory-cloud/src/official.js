@@ -1,3 +1,4 @@
+import { loadProfileTraffic } from "./profile-traffic.js";
 import { loadReportContext } from "./psychology-report-data.js";
 import { pagePublishRecords } from './publish-records-store.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
@@ -537,6 +538,10 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
     module: liveProject.moduleKey, project: liveProject, groups, canSeeProjectTotal,
     scopes: reportScopes(groups, canSeeProjectTotal), dates: [],
   };
+  if (view === "traffic") {
+    return { ...base, report: {enabled: true, groupId, period, fromKey: queryFrom, toKey: queryTo},
+      traffic: await loadProfileTraffic(db, scopedRows, queryFrom, queryTo) };
+  }
   // Publish receipts only need authorized account IDs. Never read video packs here.
   const publish = async () => {
     const start = performance.now();
