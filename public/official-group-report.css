@@ -24,3 +24,7 @@
 .traffic-table th { background:#f3f6fb; color:#546985; }
 .traffic-pager { display:flex; justify-content:flex-end; align-items:center; gap:12px; margin-top:16px; }
 @media(max-width:700px) { .traffic-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+#trafficDetails[hidden] { display:none; }
+#trafficDetails > summary { cursor:pointer; font-weight:600; padding:4px 0; }
+#trafficDetails[open] > summary { margin-bottom:20px; }

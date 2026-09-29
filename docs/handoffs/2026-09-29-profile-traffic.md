@@ -16,3 +16,7 @@ Limitations: TikTok may delay or omit metrics. Today is not real time. No synthe
 - Final factory suite: 902 passed, 0 failed. Hub: 304 passed; build and TypeScript pass.
 - Live scoped account: upstream and Factory both contain 30 daily rows. Overview last-7-days displays 2527 video views / 17 profile visits = 0.67%, six matched days through Sep28. One of 187 scoped accounts populated at verification; others fill during existing daily 07:00 Beijing full sync. Missing today correctly excluded. Pagination to page2/19 verified; viewport screenshot reviewed.
 - No publishing API or jobs changed. Unrelated primary checkout untracked factory-cloud/tmp-fill-wait.mjs preserved.
+
+## Compact overview follow-up
+- User requested immediate refresh for all currently active autopilot accounts. Selected distinct connection IDs only where autopilot and account are active and autopilot not expired; submitted 180 existing scheduled/full-sync messages in two batches to signal-desk-tiktok-sync. Existing limiter and weekly audience policy apply. No publish jobs changed. Run metadata is local ignored work/active-traffic-sync-run.json; credentials were held only in memory.
+- Moved profile visits and ratio immediately after total views in summary; retained explicit hover explanation of different denominators. Account coverage/details now in bottom native details element, closed initially. Summaries load independently of expansion. Clear stale report state on filter reload. 32 focused UI/module tests pass, including order, collapse and ratio/missing rendering.

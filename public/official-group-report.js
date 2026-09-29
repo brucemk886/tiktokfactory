@@ -125,6 +125,7 @@ async function loadReport() {
   document.title = title.textContent;
   meta.textContent = "正在读取报表…";
   document.querySelector("#publishStatus").textContent = "";
+  state.data = null;
   renderEmpty("正在读取报表…");
   try {
     const query = new URLSearchParams({ module: state.module, period: state.period, view: "analytics" });
@@ -230,9 +231,13 @@ function renderSummary() {
     ["低播", formatNumber(summary.lowView)],
     ["高播", formatNumber(summary.highView)],
     ["总播放", formatNumber(summary.views)],
+    ...(location.pathname === "/psychology-effects" ? [
+      ["主页访问次数", state.traffic?.summary?.profileViews == null ? "—" : formatNumber(state.traffic.summary.profileViews), "按所选 UTC 日期统计，数据有延迟；覆盖情况见底部明细。"],
+      ["主页访问比", state.traffic?.summary?.ratio == null ? "—" : `${(state.traffic.summary.ratio * 100).toFixed(2)}%`, "同账号、同日主页访问 ÷ 同期播放；与旁边总播放的统计口径不同，详见底部说明。"],
+    ] : []),
     ["均播", formatNumber(summary.avgView ?? averageViews(summary))],
     ["异常账号", formatNumber(summary.anomalyAccountCount)],
-  ].map(([label, value]) => `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  ].map(([label, value, hint]) => `<div class="metric"${hint ? ` title="${escapeHtml(hint)}"` : ""}><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
 }
 
 function fillSelects(data) {
@@ -538,7 +543,7 @@ function videoTable(items, tab) {
 
 async function loadTraffic(query, requestId, signal) {
   const panel = document.querySelector('#trafficPanel');
-  panel.hidden = false;
+  document.querySelector('#trafficDetails').hidden = false;
   panel.innerHTML = '<h2>主页访问</h2><p role="status">正在读取同期播放与主页访问…</p>';
   state.traffic = null;
   state.trafficPage = 1;
@@ -548,9 +553,10 @@ async function loadTraffic(query, requestId, signal) {
     const data = await response.json();
     if (requestId !== reportRequest || signal.aborted) return;
     if (!response.ok) throw new Error(data.error || '主页访问读取失败，请点击查询重试。');
-    if (!data.report?.enabled) { panel.hidden = true; return; }
+    if (!data.report?.enabled) { document.querySelector('#trafficDetails').hidden = true; return; }
     state.traffic = data.traffic;
     renderTraffic();
+    if (state.data?.report?.enabled) renderSummary();
   } catch (error) {
     if (requestId !== reportRequest || signal.aborted) return;
     panel.innerHTML = `<h2>主页访问</h2><p role="alert">${escapeHtml(error.message)}</p>`;
@@ -568,7 +574,7 @@ function renderTraffic() {
   state.trafficPage = Math.min(totalPages, Math.max(1, state.trafficPage));
   const rows = data.accounts.slice((state.trafficPage - 1) * PAGE_SIZE, state.trafficPage * PAGE_SIZE);
   panel.innerHTML = `<div class="section-title"><h2>主页访问</h2><span>${escapeHtml(data.fromKey)} 至 ${escapeHtml(data.toKey)} · UTC</span></div>
-    <p class="section-hint">每天后台更新。TikTok 日报存在延迟，今天可能尚无数据；未返回显示为 —。这里统计日期内发生的播放，下面的视频表现统计所选日期发布视频的累计播放。</p>
+    <p class="section-hint">每天后台更新。TikTok 日报存在延迟，今天可能尚无数据；未返回显示为 —。这里统计日期内发生的播放，上方的视频表现统计所选日期发布视频的累计播放。</p>
     <div class="traffic-metrics">${[
       ['同期视频播放', count(s.videoViews)], ['主页访问次数', count(s.profileViews)],
       ['主页访问比', ratio(s.ratio)], ['可配对账号', `${s.coveredAccounts} / ${s.totalAccounts}`],

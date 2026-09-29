@@ -232,3 +232,21 @@ test('traffic panel escapes names, paginates all accounts, preserves missing val
  resolveOld(reply({report:{enabled:true},traffic:{...traffic,accounts:[]}}));await flush();
  assert.equal(b.node('#trafficPanel').innerHTML,html);
 });
+
+
+test('profile traffic summary follows total views and details start collapsed at the bottom',async()=>{
+ const html=read('official-group-report.html');
+ assert.match(html,/<details[^>]*id="trafficDetails"[^>]*hidden>/);
+ assert.doesNotMatch(html,/<details[^>]*id="trafficDetails"[^>]* open/);
+ assert.ok(html.indexOf('id="trafficDetails"')>html.indexOf('id="normalSection"'));
+ const b=browser('https://factory.test/psychology-effects',async()=>reply({project:{},report:{enabled:false}}));
+ vm.runInContext(read('official-group-report.js'),b.context);await flush();
+ vm.runInContext('state.data={report:{enabled:true,summary:{views:500}}}; state.traffic={summary:{profileViews:17,ratio:0.0067}}; renderSummary()',b.context);
+ const result=b.node('#summaryGrid').innerHTML;
+ assert.ok(result.indexOf('总播放')<result.indexOf('主页访问次数'));
+ assert.ok(result.indexOf('主页访问次数')<result.indexOf('主页访问比'));
+ assert.ok(result.indexOf('主页访问比')<result.indexOf('均播'));
+ assert.match(result,/0.67%/);assert.match(result,/>17</);
+ vm.runInContext('state.traffic=null; renderSummary()',b.context);
+ assert.doesNotMatch(b.node('#summaryGrid').innerHTML,/0.67%/);
+});
