@@ -9,3 +9,10 @@ Producer: sibling tiktokaitool commit f2a977e fetches daily fields once per UTC 
 Tests: backend coverage/zero/null and permission rejection/revocation pass; existing archive/report suites pass. Full factory run exposed two UI mocks assuming two fetches; updated for third isolated view and 31 focused UI/module tests pass, including traffic pagination, escaping and stale-response protection. Hub build/typecheck/full 304 tests pass. Deployment/live verification follows.
 
 Limitations: TikTok may delay or omit metrics. Today is not real time. No synthetic zero or cross-account/date ratio. History beyond retained 60 days is unavailable. Current shared archive directory remains bounded to existing 5000-account limit.
+
+## Release verification
+- Factory code b4acaa2 pushed main and deployed from clean exact-origin/main checkout via npm run deploy; Worker 6f6e7817-9f70-4343-85d5-85cd72b3c588.
+- Hub f2a977e pushed main, deployed via npm run cloudflare:deploy; Worker f144d10d-d1c7-4735-92c6-176016dcd4d2.
+- Final factory suite: 902 passed, 0 failed. Hub: 304 passed; build and TypeScript pass.
+- Live scoped account: upstream and Factory both contain 30 daily rows. Overview last-7-days displays 2527 video views / 17 profile visits = 0.67%, six matched days through Sep28. One of 187 scoped accounts populated at verification; others fill during existing daily 07:00 Beijing full sync. Missing today correctly excluded. Pagination to page2/19 verified; viewport screenshot reviewed.
+- No publishing API or jobs changed. Unrelated primary checkout untracked factory-cloud/tmp-fill-wait.mjs preserved.
