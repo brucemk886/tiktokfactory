@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { handlePsychologyCreative } from './psychology-creative.js';
 import { replicateText } from './replicate.js';
+import {kieClaudeText} from './kie-claude.js';
+import {rewriteModelLabel} from './psychology-rewrite-model.js';
+import {readFileSync} from 'node:fs';
 import {parseCopyModelJson} from './psychology-copy-generation.js';
 
 const user = { id: 'admin', username: 'admin', role: 'admin', sidebarModules: ['psychology-publish'] };
@@ -205,4 +208,41 @@ test('historical malformed multi-version output splits atomically, remains pendi
  await handlePsychologyCreative(new Request(url,{method:'POST',body:'{}'}),f.env,url,{user});
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE enabled=1').get().n,1);
  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_copy_variants WHERE review_status='pending' AND deleted_at=0").get().n,2);
+});
+
+
+test('Kie Opus is selectable in both pickers, generates drafts and persists batch attribution', async t => {
+ const f=await aiFixture(t, 'unused');f.env.KIE_API_KEY='kie_test';
+ const calls=[];let output=version(1);
+ f.env.fetch=async(url,init)=>{calls.push({url,init,body:JSON.parse(init.body)});return Response.json({type:'message',stop_reason:'end_turn',content:[{type:'thinking',thinking:'private'},{type:'text',text:JSON.stringify(output)}]});};
+ const single=await(await api(f,'/copies/generate?sourceId='+f.row.id+'&model=claude-opus-4-8')).json();
+ assert.equal(single.model,'claude-opus-4-8');assert.deepEqual(single.draft.pages,version(1).pages);
+ assert.equal(calls[0].url,'https://api.kie.ai/claude/v1/messages');
+ assert.equal(calls[0].init.headers.Authorization,'Bearer kie_test');
+ assert.equal(calls[0].body.model,'claude-opus-4-8');assert.equal(calls[0].body.stream,false);assert.equal(calls[0].body.thinkingFlag,false);
+ assert.match(calls[0].body.messages[0].content,/stored original/);
+ output={versions:[version(1),version(2)]};
+ const batch=await(await api(f,'/copies/generate-batch?sourceId='+f.row.id+'&model=claude-opus-4-8&count=2')).json();
+ assert.equal(batch.created,2);assert.equal(calls.length,2);
+ const rows=f.sqlite.prepare('SELECT rewrite_model,external_id FROM psychology_copy_variants').all();
+ assert.ok(rows.every(r=>r.rewrite_model==='claude-opus-4-8'&&r.external_id.startsWith('ai-claude-opus-4-8-')));
+ assert.equal(rewriteModelLabel(rows[0].rewrite_model),'Claude Opus 4.8（Kie）');
+ const html=readFileSync(new URL('../../public/psychology-copy-library.html',import.meta.url),'utf8');
+ for(const id of ['variantModel','batchModel'])assert.match(html.match(new RegExp('<select id="'+id+'">([^]*?)</select>'))?.[1]||'',/value="claude-opus-4-8"/);
+});
+
+test('Kie provider rejects missing credentials, errors, empty/truncated and oversized output without retries', async()=>{
+ const input={model:'claude-opus-4-8',prompt:'hello'};
+ await assert.rejects(kieClaudeText({},input),e=>e.statusCode===503);
+ const cases=[
+  ()=>Response.json({error:'secret'}, {status:401}),
+  ()=>Response.json({error:{message:'secret'}}),
+  ()=>Response.json({code:500,msg:'secret'}),
+  ()=>new Response('not JSON'),
+  ()=>Response.json({content:[{type:'thinking',thinking:'secret'}]}),
+  ()=>Response.json({stop_reason:'max_tokens',content:[{type:'text',text:'partial'}]}),
+  ()=>new Response('a'.repeat(1024*1024+1)),
+  ()=>{throw new DOMException('secret','TimeoutError');},
+ ];
+ for(const response of cases){let calls=0;await assert.rejects(kieClaudeText({KIE_API_KEY:'secret',fetch:async()=>{calls++;return response();}},input),e=>e.statusCode>=500&&!e.message.includes('secret'));assert.equal(calls,1);}
 });
