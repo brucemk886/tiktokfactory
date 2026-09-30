@@ -32,3 +32,8 @@ New-cycle publishing and >=72-hour performance have not occurred yet. No winning
 
 ## Recommended next step
 Review project-wide actual allocation and fixed-baseline readiness after the first new samples are >=72 hours old (starting October 5, subject to actual publication and metric synchronization). Evaluate low-account recovery after six mature observations spanning three sources; decide the next bounded cycle before October 9.
+
+## Release and cleanup
+- Code/explanation release f3b7b82b33d3ddb6ea9744c019b16eaff8bffa62 was pushed to GitHub main before deployment. The deploy guard confirmed a clean main checkout exactly equal to origin/main. Worker version: 34af792c-4e90-428f-8639-426094b9d054. Live operations JS matched its committed hash; live MCP showed the new three-post rule and nine unchanged October 2–9 cycle boundaries.
+- Worktree archival unexpectedly traversed dependency junctions after an attempted unlink safety check failed, emptying the original two node_modules directories. Both were restored with npm ci from unchanged lockfiles. All sixteen direct dependency versions matched the locks, localhost:3010 still responded with its expected authentication redirect, and the full 959-test suite passed again. No service process was stopped or restarted.
+- Do not archive a managed Windows worktree while dependency junctions point at the original checkout. Verify that each unlink actually succeeded before archival; abort archival on cleanup failure. Prefer installing isolated dependencies where practical.
