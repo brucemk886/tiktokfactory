@@ -32,6 +32,13 @@ Read-only authenticated UI/API verification: policy revision 2, 187 eligible/enr
 - Screenshot review confirmed readable Pacific/PDT and Beijing dates and the 11:30 baseline. No immediate-run or manual publishing endpoint was called.
 
 ## Unfinished work / next step
-Original-plan cards now refresh after a successful project save; list-read failures preserve the confirmed save and last list data. The existing 30-second polling remains. No implementation work remains; final deployment metadata follows below. Operationally, retain normal scheduled dispatch and observe capacity/content shortages through existing reports; this change does not implement dynamic generation capacity or automatic cycle renewal.
+Original-plan cards now refresh after a successful project save; list-read failures preserve the confirmed save and last list data. The existing 30-second polling remains. No implementation work remains. Operationally, retain normal scheduled dispatch and observe capacity/content shortages through existing reports; this change does not implement dynamic generation capacity or automatic cycle renewal.
 
 The pre-existing original-workspace untracked factory-cloud/tmp-fill-wait.mjs is untouched. This implementation worktree has isolated ordinary npm-ci directories (no junctions).
+
+
+## Final release
+- UI polish committed/pushed as 3885337, then deployed from clean exact origin/main using npm run deploy. Final Worker version: 4933ff89-e55f-4b17-b62b-865c0aaa7838.
+- First polish-deploy migration verification returned Cloudflare 7403 before deployment; one ordinary retry succeeded with no migrations needed. No authorization settings or credentials were changed.
+- Public production JS returned HTTP 200 and normalized SHA-256 prefix bb7419e10338a3b4a278, exactly matching the committed asset manifest. The final release changes display refresh only; the verified revision-3 production policy was not written again.
+- The agent browser session had already expired during validation; no borrowed user tabs or running agent browser session remain from this task.
