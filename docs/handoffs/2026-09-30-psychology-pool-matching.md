@@ -29,7 +29,11 @@ Implement the approved account-pool × content-pool operating strategy and redes
 - Syntax and git diff format checks.
 
 ## Release and operations
-Ship clean committed GitHub main using npm run deploy from factory-cloud; migrations apply through the existing deploy wrapper. Continue the nine current psychology plans with a seven-day pool cycle after their existing reserved dates. Verify strategy boundaries/end dates and retained paused memberships through scoped read tools. Existing production/publishing jobs are not cancelled or rewritten.
+Code commit ee16b4a was pushed to GitHub main and deployed from a clean main checkout with exact HEAD == origin/main using npm run deploy in factory-cloud. Migrations 0068/0069 succeeded. Worker release: 55348a50-bedc-437e-8a5d-8fdcbf7461d6.
+
+All nine current plans were revision-guarded into a pending pool cycle from 2026-10-02 00:00 through 2026-10-09 00:00 Beijing time. Scoped MCP reads verified nine pending strategies, identical existing slots/member states and unchanged current legacy strategies before the boundary. Configuration created no pool jobs immediately (pool match table remains empty). No production or publishing jobs were cancelled or rewritten.
+
+Production panel=pools&mode=summary&period=30d read succeeded. At verification there were 1,156 mature observations and zero qualifying winner versions, so readiness explicitly reports warming. New-cycle baselines require their observation period before low-account rescue.
 
 ## Unfinished work
 No pending implementation. Baseline maturation and low-account recovery require future observed results. First eligible content can only be assessed after its 72-hour observation gate; the report must continue to distinguish this from exact same-age performance.
