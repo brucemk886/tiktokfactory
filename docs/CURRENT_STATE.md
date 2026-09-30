@@ -1,6 +1,6 @@
 # Current State
 
-- Psychology independent operating task groups (0070) overlay permission-group delivery plans: seven-day cycles, three-day future-effective role review, automatic admission of newly authorized psychology publishing accounts, a capped stable review cohort, preserved pauses, and atomic three-round daily claims. The autopilot page supports configuration previews and paginated group members. Data overview remains free of pool logic. See docs/handoffs/2026-09-30-psychology-task-groups.md.
+- Psychology independent operating task groups (0070) overlay permission-group delivery plans: seven-day cycles, three-day future-effective role review, automatic admission of newly authorized psychology publishing accounts, a capped stable review cohort, preserved pauses, and atomic three-round daily claims. Enabled for the October 2–9 cycle, with first review October 5. The autopilot page supports configuration previews and paginated group members. Data overview remains free of pool logic. See docs/handoffs/2026-09-30-psychology-task-groups.md.
 
 - Psychology's nine active plans switch to a shared pool cycle and three posts/account/day on October 2, through October 9 Beijing. Three rounds start at 08:00/14:00/20:00, with each subsequent group offset ten minutes. Administrative groups remain execution boundaries; pool matching controls content. See docs/handoffs/2026-09-30-psychology-three-post-cycle.md.
 

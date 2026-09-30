@@ -24,5 +24,14 @@ Full factory suite: 996/996 passed after all code was frozen; UI tests: 28/28, n
 
 Before rollout, the authenticated seven-day autopilot view recorded 9 plans, 180 historical account memberships and 108 reserved slots. The SHA-256 fingerprint of plan/group/status/end dates, current/pending schedules and strategies, account pause state, and slot/batch identifiers was f18a93351d4349596bd36901ea9f401168bf974d7c9fb9fbbcff459c4765cbbf. Existing future strategy starts October 2 and all nine plans end October 9 Beijing.
 
+## Release and live verification
+- Code release 27663ad was committed and pushed to GitHub main, then deployed with npm run deploy from a clean main checkout exactly matching origin/main. Migration 0070 applied successfully. The first Worker attempt returned a transient Cloudflare authentication error; one repeat of the standard command succeeded. Worker version: a5d8357d-c6bc-4b7a-affa-a6b0300a05c0.
+- The authenticated UI successfully previewed and saved policy revision 1 for the nine existing plans. Starts 2026-10-02 00:00 and ends 2026-10-09 00:00 Beijing; next review 2026-10-05 00:00. New-account admission is enabled, review target 60.
+- Current eligible psychology publishing directory: 187. Initially enrolled: 175; previously out-of-run accounts excluded: 12; blocked: 0. Roles: review 60 (10 strong + 50 normal), normal production 56, hook rescue 10, content rescue 32, diagnostic 16, observing 1. Separate strong production and launch are currently 0 because strong accounts are in the review cohort and no new accounts have yet enrolled.
+- After activation the plan/member/schedule SHA-256 fingerprint exactly matched the pre-rollout fingerprint above. The nine schedules, strategy boundaries, pauses and 108 listed reserved slots remained unchanged.
+- Live group-card click and next-page interaction succeeded. All three review pages returned 20 rows, totaling 60 distinct accounts. Visual screenshots confirmed readable role cards and member tables. The owned browser session was stopped after verification.
+
 ## Unfinished work / next step
-Commit and push main from the isolated worktree, deploy using factory-cloud/npm run deploy, then enable the reviewed policy for the current nine plans and verify October 2–9 dates and unchanged existing jobs. Keep the original untracked factory-cloud/tmp-fill-wait.mjs untouched. The worktree uses isolated npm-ci dependencies, never dependency junctions.
+Implementation and activation are complete. Future October 2 publishing and mature content outcomes have not happened yet. Review real allocations and mature evidence beginning October 5, and choose the next bounded cycle before October 9. No 24-hour candidate promotion or automatic indefinite renewal is enabled.
+
+The original untracked factory-cloud/tmp-fill-wait.mjs remains untouched. The implementation worktree uses isolated npm-ci dependencies, never dependency junctions.
