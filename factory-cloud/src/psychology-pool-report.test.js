@@ -251,3 +251,83 @@ test('exact style revisions separate report and runtime effects; frozen match re
   assert.equal(state.versions.get(key(2)).stats.n, 1);
   assert.equal(f.requests.length, 0);
 });
+
+function reportAliases(f, aliases) {
+  f.sqlite.prepare("UPDATE factory_kv SET value_json=json_set(value_json,'$.aliases',json(?)) WHERE key='official-account-groups'")
+    .run(JSON.stringify(aliases));
+}
+function reportAccount(f, key, { username = '', label = '' } = {}) {
+  f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,label,profile_json) VALUES(?,?,?)')
+    .run('tiktok:' + key, label, JSON.stringify(username ? { username } : {}));
+}
+
+test('pool reports count canonical psychology accounts once, including unsynced and legacy direct assignments', async t => {
+  const f = await fixture(t), window = operationsWindow(new URLSearchParams('period=7d'));
+  const synced = '11111111-1111-4111-8111-111111111111';
+  const unsynced = '22222222-2222-4222-8222-222222222222';
+  const profileOnly = '33333333-3333-4333-8333-333333333333';
+  const labelOnly = '44444444-4444-4444-8444-444444444444';
+  const outside = '55555555-5555-4555-8555-555555555555';
+  assign(f, [synced, 'synced-name', unsynced, 'unsynced-name', profileOnly, '@profile-name', labelOnly, 'tiktok:label-name', 'legacy-unmapped']);
+  assign(f, [outside], 'other');
+  // Stale alias assignment in psychology cannot override its primary's other-project grant.
+  assign(f, ['outside-name']);
+  reportAliases(f, { [synced]: synced, 'synced-name': synced, [unsynced]: unsynced, 'unsynced-name': unsynced, 'outside-name': outside });
+  reportAccount(f, synced, { username: 'synced-name' });
+  // A legacy archive row under the username remains an alias, not another account.
+  reportAccount(f, 'synced-name', { label: '@synced-name' });
+  reportAccount(f, profileOnly, { username: 'profile-name' });
+  reportAccount(f, labelOnly, { label: '@label-name' });
+  reportAccount(f, outside, { username: 'outside-name' });
+  fact(f, 'synced-post', { account_key: 'tiktok:' + synced, published_at: window.start + DAY, views: 100 });
+  fact(f, 'profile-post', { account_key: 'tiktok:' + profileOnly, published_at: window.start + DAY, views: 200 });
+  fact(f, 'outside-post', { account_key: 'tiktok:' + outside, published_at: window.start + DAY, source: 'outside-secret', views: 999999 });
+  const prepare = f.db.prepare.bind(f.db);
+  f.db.prepare = sql => { assert.doesNotMatch(sql, /official_report_video_cache|official_videos_latest/); return prepare(sql); };
+  const changes = f.sqlite.prepare('SELECT total_changes() n').get().n;
+  const result = await read(f, 'mode=accounts', { ...actor, role: 'operator', allowedAccountGroups: ['g', 'other'] });
+  assert.equal(result.coverage.authorizedAccounts, 5);
+  assert.equal(result.accounts.total, 5);
+  assert.deepEqual(result.accounts.rows.map(row => row.account).sort(), [synced, unsynced, profileOnly, labelOnly, 'legacy-unmapped'].map(key => 'tiktok:' + key).sort());
+  assert.equal(result.accountPools.reduce((total, pool) => total + pool.accounts, 0), 5);
+  assert.equal(result.accountPools.find(pool => pool.id === 'observing').accounts, 5);
+  assert.equal(result.overview.current.n, 2);
+  assert.equal(result.overview.current.views, 300);
+  assert.equal(result.coverage.published, 2);
+  assert.equal(result.accounts.rows.find(row => row.account === 'tiktok:' + unsynced).stats.n, 0);
+  assert.ok(!JSON.stringify(result).includes('outside-secret'));
+  const content = await read(f, 'mode=content');
+  assert.equal(content.content.rows[0].accounts, 2);
+  assert.equal(content.content.rows[0].stats.n, 2);
+  assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n, changes);
+  assert.equal(f.requests.length, 0);
+});
+
+test('canonical primary grants win over stale aliases after group moves, removal and user revocation', async t => {
+  const f = await fixture(t), window = operationsWindow(new URLSearchParams('period=7d'));
+  assign(f, ['a', 'alpha']);
+  reportAliases(f, { a: 'a', alpha: 'a' });
+  reportAccount(f, 'a', { username: 'alpha' });
+  fact(f, 'visible', { published_at: window.start + DAY, views: 700 });
+  match(f, 'visible');
+  const operator = { ...actor, role: 'operator', allowedAccountGroups: ['g'] };
+  assert.equal((await read(f, 'mode=accounts', operator)).coverage.authorizedAccounts, 1);
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other' WHERE account_key='a'").run();
+  let result = await read(f, 'mode=accounts', operator);
+  assert.equal(result.coverage.authorizedAccounts, 0);
+  assert.equal(result.overview.current.n, 0);
+  assert.equal(result.allocation.total, 0);
+  assert.equal((await read(f, '', { ...operator, allowedAccountGroups: ['g', 'other'] })).coverage.authorizedAccounts, 0);
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='g' WHERE account_key='a'").run();
+  assert.equal((await read(f, '', { ...operator, allowedAccountGroups: [] })).coverage.authorizedAccounts, 0);
+  assert.equal((await read(f, '', operator)).coverage.authorizedAccounts, 1);
+  f.sqlite.prepare("DELETE FROM official_account_assignments WHERE account_key='a'").run();
+  result = await read(f, 'mode=accounts', operator);
+  assert.equal(result.coverage.authorizedAccounts, 0);
+  assert.equal(result.accounts.total, 0);
+  assert.equal(result.allocation.total, 0);
+  // Older alias metadata reconstructed from the profile must not restore the removed primary grant either.
+  reportAliases(f, {});
+  assert.equal((await read(f, '', operator)).coverage.authorizedAccounts, 0);
+  assert.equal(f.requests.length, 0);
+});

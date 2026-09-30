@@ -184,7 +184,7 @@ function render() {
   const project = data.project || {};
   const groups = data.groups || [];
   const report = data.report || {};
-  const scopeName = report.groupName || (state.groupId ? groups.find((item) => item.id === state.groupId)?.name : "全部项目") || "全部项目";
+  const scopeName = reportScopeName(report, groups);
   document.querySelector("#pageCopy").textContent = reportCopy(project);
   fillSelects(data);
   markActivePeriod();
@@ -213,6 +213,17 @@ function render() {
   } else {
     renderBucket("normalSection", "正常播放视频", `播放 ≥ ${report.thresholds?.lowView || 200} 且 < ${report.thresholds?.highView || 1000}。`, report.buckets?.midView || [], "normal");
   }
+}
+
+function reportScopeName(report, groups) {
+  if (location.pathname === "/psychology-effects") {
+    const groupId = state.groupId || report.groupId;
+    if (!groupId) return "心理学全部分组";
+    const groupName = report.groupName && report.groupName !== "全部项目"
+      ? report.groupName : groups.find((item) => item.id === groupId)?.name;
+    return `心理学 · ${groupName || "所选分组"}`;
+  }
+  return report.groupName || (state.groupId ? groups.find((item) => item.id === state.groupId)?.name : "全部项目") || "全部项目";
 }
 
 function renderSummary() {
@@ -250,7 +261,7 @@ function fillSelects(data) {
   if (!groupSelect) return;
   const current = state.groupId || data.report?.groupId || "";
   groupSelect.innerHTML = scopes.map((item) => (
-    `<option value="${escapeHtml(item.id)}"${item.id === current ? " selected" : ""}>${escapeHtml(item.name)}</option>`
+    `<option value="${escapeHtml(item.id)}"${item.id === current ? " selected" : ""}>${escapeHtml(location.pathname === "/psychology-effects" && !item.id ? "心理学全部分组" : item.name)}</option>`
   )).join("") || `<option value="">暂无分组</option>`;
   state.groupId = groupSelect.value;
 }
@@ -614,10 +625,12 @@ function renderMatchingOverview(m,panel,query){
  const diagnostic=pools.filter(r=>['diagnostic','diagnose'].includes(r.id));
  const totalFor=rows=>rows.length?rows.reduce((n,r)=>n+Number(r.accounts||0),0):0;
  const period=query?.get('period')||state.period,group=query?.get('group')||state.groupId,linkQuery=new URLSearchParams({period:period==='yesterday'?'custom':period,media:'photo'});if(group)linkQuery.set('group',group);if(!PRESET_PERIODS.includes(period)||period==='yesterday'){linkQuery.set('from',query?.get('from')||state.fromKey);linkQuery.set('to',query?.get('to')||state.toKey);}
+ const accountScopeLabel=group?'心理学分组账号':'心理学项目账号';
  const allocation=m.allocation||{},actual=allocation.rows||[],planned=actual.reduce((n,r)=>n+Number(r.planned||0),0),warmup=actual.reduce((n,r)=>n+Number(r.warmup||0),0);
  const longQuery=new URLSearchParams(linkQuery);longQuery.set('period','30d');longQuery.delete('from');longQuery.delete('to');const weekQuery=new URLSearchParams(longQuery);weekQuery.set('period','7d');
  panel.innerHTML='<div class="section-title"><div><p>POOL MATCHING</p><h2>账号池 × 内容池</h2></div><a class="table-action primary-table-action" href="/psychology-ops-report?'+escapeHtml(linkQuery.toString())+'">进入运营报表</a></div>'+
- (m.readiness?.status==='warming'?'<div class="matching-readiness" role="status"><strong>优胜版本补测中</strong><p>'+escapeHtml(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+count(m.readiness.winnerVersions)+' · 满足对应池条件的版本 '+count(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'')+'<div class="matching-overview-cards">'+[['授权账号',cov.authorizedAccounts],['需内容救援',totalFor(rescue)],['近零待诊断',totalFor(diagnostic)],['样本不足待观察',cov.observingAccounts],['跨层改善',rec.improved],['已满72h可评估作品',stats.n]].map(([label,value])=>'<div class="metric"><span>'+escapeHtml(label)+'</span><strong>'+count(value)+'</strong></div>').join('')+'</div>'+
+ '<p class="section-hint">仅统计心理学项目内、当前有权限的账号；账号按唯一身份去重。</p>'+
+ (m.readiness?.status==='warming'?'<div class="matching-readiness" role="status"><strong>优胜版本补测中</strong><p>'+escapeHtml(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+count(m.readiness.winnerVersions)+' · 满足对应池条件的版本 '+count(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'')+'<div class="matching-overview-cards">'+[[accountScopeLabel,cov.authorizedAccounts],['需内容救援',totalFor(rescue)],['近零待诊断',totalFor(diagnostic)],['样本不足待观察',cov.observingAccounts],['跨层改善',rec.improved],['已满72h可评估作品',stats.n]].map(([label,value])=>'<div class="metric"><span>'+escapeHtml(label)+'</span><strong>'+count(value)+'</strong></div>').join('')+'</div>'+
  '<div class="matching-overview-pools">'+pools.map(r=>'<span>'+escapeHtml(r.label)+' <strong>'+count(r.accounts)+'</strong></span>').join('')+'</div>'+
  '<p class="section-hint">内容池：'+contents.map(r=>escapeHtml(r.label)+' '+count(r.versions)).join(' · ')+'。只统计已观察的具体版本；今天的新发布样本尚未满72小时。自动运营实际匹配使用近30天成熟累计样本。 <a href="/psychology-ops-report?'+escapeHtml(weekQuery.toString())+'">近7天复盘</a> · <a href="/psychology-ops-report?'+escapeHtml(longQuery.toString())+'">近30天分层</a></p>'+
  '<p class="section-hint">已满72h样本：中位播放 '+count(stats.medianViews)+' · 千播率 '+percent(stats.potentialRate)+' · 完成率 '+percent(stats.completion)+'；待同步 '+count(cov.missingMetrics)+' 条。使用最新累计指标，不是第72小时的精确快照。</p>'+

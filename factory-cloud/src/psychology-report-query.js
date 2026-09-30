@@ -1,5 +1,6 @@
 import {json,errorJson} from './http.js';
 import {readPoolReport} from './psychology-pool-report.js';
+import {reportAccountScopeSQL} from './official-report-account-scope.js';
 import {operationsWindow} from '../../scripts/psychology-operations.js';
 import {ensureModuleProjects,findProjectForModule,publicState,userAllowedGroupIds} from '../../scripts/official-account-group-store.js';
 import {VIEW_TIERS,QUADRANTS,STAGES,KINDS,PLAYBOOK,RULES} from '../../scripts/psychology-ops-framework.js';
@@ -49,7 +50,7 @@ export async function handleScalableOperations(request,env,url,session){
   const ids=JSON.stringify(groups.filter(g=>!group||g.id===group).map(g=>g.id));
   // Canonical assignments are evaluated on every request. No directory cap,
   // username fallback, archive reads, or cached permission decisions.
-  const scope=`WITH allowed AS MATERIALIZED (SELECT DISTINCT 'tiktok:'||replace(account_key,'tiktok:','') account_key,group_id current_group FROM official_account_assignments WHERE group_id IN (SELECT value FROM json_each(?)))`;
+  const scope=reportAccountScopeSQL;
   const authorized=`f.account_key=a.account_key AND (f.pilot_id='' OR f.group_id IN (SELECT value FROM json_each(?)))`;
   const base=scope+`,base AS (SELECT f.*,a.current_group FROM allowed a CROSS JOIN ops_task_facts f INDEXED BY ops_task_account_published ON ${authorized} WHERE f.media=? AND f.published_at>=? AND f.published_at<?),
   completions AS (SELECT completion,row_number() OVER (ORDER BY completion) rn,count(*) OVER () n FROM base WHERE published_at>=? AND views IS NOT NULL AND state='published' AND completion>0),

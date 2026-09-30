@@ -543,7 +543,8 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
   const scope = {
     groupId,
     projectId: liveProject.id,
-    groupIds: !groupId && allowedIds ? Array.from(allowedIds) : null,
+    // Module project membership and current user grants must both constrain every panel.
+    groupIds: !groupId ? groups.map(group => group.id) : null,
   };
   const keys = archiveAccountKeysForScope(store, accountRows, scope);
   const wanted = new Set(keys);

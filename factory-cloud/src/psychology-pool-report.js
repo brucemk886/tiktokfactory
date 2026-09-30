@@ -1,3 +1,4 @@
+import { reportAccountScopeSQL } from './official-report-account-scope.js';
 import { ensureModuleProjects, findProjectForModule, publicState, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
 import { ACCOUNT_POOLS, CONTENT_POOLS, POOL_POLICY, poolQuota, classifyAccountPool, classifyContentPool } from '../../scripts/psychology-pool-policy.js';
 
@@ -65,9 +66,7 @@ export async function readPoolReport(db, { ids, window, media = 'photo', groups 
   const page = pageNumber(params.get('page'));
   const offset = (page - 1) * PAGE_SIZE;
   const cutoff = now - POOL_POLICY.maturityHours / 24 * DAY;
-  const cte = `WITH allowed AS MATERIALIZED (
-      SELECT DISTINCT 'tiktok:'||replace(account_key,'tiktok:','') account_key,group_id current_group
-      FROM official_account_assignments WHERE group_id IN (SELECT value FROM json_each(?))),
+  const cte = `${reportAccountScopeSQL},
     facts AS MATERIALIZED (SELECT f.*,COALESCE(m.style_revision,CAST(json_extract(j.payload_json,'$.psychologyAutomation.styleDefinition.revision') AS INTEGER),0) style_revision,a.current_group,CASE WHEN f.published_at>=? THEN 'current' ELSE 'previous' END bucket,
       f.published_at<=? mature FROM allowed a CROSS JOIN ops_task_facts f INDEXED BY ops_task_account_published
       ON f.account_key=a.account_key AND (f.pilot_id='' OR f.group_id IN (SELECT value FROM json_each(?)))

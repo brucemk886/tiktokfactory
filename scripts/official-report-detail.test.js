@@ -270,3 +270,77 @@ test('matching overview errors leave analytics usable and unrelated modules neve
  vm.runInContext(read('official-group-report.js'),b.context);await flush();assert.match(b.node('#matchingOverview').innerHTML,/role="alert".*&lt;offline&gt;/);assert.match(b.node('#summaryGrid').innerHTML,/>11</);
  const views=[],novel=browser('https://factory.test/novel-ops-report',async path=>{views.push(new URL(path,'https://factory.test').searchParams.get('view'));return reply({project:{},report:{enabled:false}});});vm.runInContext(read('official-group-report.js'),novel.context);await flush();assert.deepEqual(views.sort(),['analytics','publish']);assert.equal(novel.nodes.has('#matchingOverview'),false);
 });
+
+
+test('psychology overview names its project scope and keeps the path authoritative over a spoofed module', async () => {
+  const queries = [];
+  const data = {
+    project: { id: 'p', name: '心理学', reportEnabled: true },
+    groups: [{ id: 'g', name: '心理组' }],
+    scopes: [{ id: '', name: '全部项目' }, { id: 'g', name: '心理组' }],
+    canSeeProjectTotal: true,
+    report: { enabled: true, groupName: '全部项目', summary: {}, buckets: {} },
+  };
+  const matching = { coverage: { authorizedAccounts: 188 }, accountPools: [], contentPools: [] };
+  const b = browser('https://factory.test/psychology-effects?module=novel-promotion', async path => {
+    const query = new URL(path, 'https://factory.test').searchParams;
+    queries.push(query);
+    return reply(query.get('view') === 'pools' ? { matching } : data);
+  });
+  vm.runInContext(read('official-group-report.js'), b.context);
+  await flush();
+  assert.equal(queries.length, 4);
+  assert.ok(queries.every(query => query.get('module') === 'psychology'));
+  assert.match(b.node('#groupSelect').innerHTML, /value="" selected>心理学全部分组<\/option>/);
+  assert.match(b.node('#groupSelect').innerHTML, /value="g">心理组<\/option>/);
+  assert.doesNotMatch(b.node('#groupSelect').innerHTML, /全部项目/);
+  assert.match(b.node('#reportMeta').textContent, /心理学全部分组/);
+  assert.doesNotMatch(b.node('#reportMeta').textContent, /全部项目/);
+  assert.match(b.node('#matchingOverview').innerHTML, /心理学项目账号<\/span><strong>188<\/strong>/);
+  assert.match(b.node('#matchingOverview').innerHTML, /仅统计心理学项目内、当前有权限的账号；账号按唯一身份去重。/);
+  assert.doesNotMatch(b.node('#matchingOverview').innerHTML, /授权账号/);
+  vm.runInContext('state.data.scopes = null; fillSelects(state.data)', b.context);
+  assert.match(b.node('#groupSelect').innerHTML, /value="" selected>心理学全部分组<\/option>/);
+});
+
+test('psychology overview preserves selected group identities, labels and request scope', async () => {
+  const queries = [];
+  const data = {
+    project: { id: 'p', name: '心理学', reportEnabled: true },
+    groups: [{ id: 'g&1', name: '<心理组>' }],
+    scopes: [{ id: '', name: '全部项目' }, { id: 'g&1', name: '<心理组>' }],
+    report: { enabled: true, groupId: 'g&1', groupName: '<心理组>', summary: {}, buckets: {} },
+  };
+  const b = browser('https://factory.test/psychology-effects?module=mid-video&group=g%261', async path => {
+    const query = new URL(path, 'https://factory.test').searchParams;
+    queries.push(query);
+    return reply(query.get('view') === 'pools' ? { matching: { coverage: { authorizedAccounts: 20 } } } : data);
+  });
+  b.node('#groupSelect').value = 'g&1';
+  vm.runInContext(read('official-group-report.js'), b.context);
+  await flush();
+  assert.ok(queries.every(query => query.get('module') === 'psychology' && query.get('group') === 'g&1'));
+  assert.match(b.node('#groupSelect').innerHTML, /value="g&amp;1" selected>&lt;心理组&gt;<\/option>/);
+  assert.equal(vm.runInContext('state.groupId', b.context), 'g&1');
+  assert.match(b.node('#reportMeta').textContent, /心理学 · <心理组>/);
+  assert.match(b.node('#matchingOverview').innerHTML, /心理学分组账号<\/span><strong>20<\/strong>/);
+  assert.match(b.node('#matchingOverview').innerHTML, /group=g%261/);
+  assert.equal(vm.runInContext('reportScopeName({groupName:"全部项目"}, state.data.groups)', b.context), '心理学 · <心理组>');
+});
+
+test('other report paths retain their module, project-wide labels and request views', async () => {
+  for (const [path, module] of [['novel-ops-report', 'novel-promotion'], ['mid-video-ops-report', 'mid-video'], ['psychology-ops-report', 'psychology']]) {
+    const queries = [];
+    const b = browser('https://factory.test/' + path + '?module=invalid', async url => {
+      queries.push(new URL(url, 'https://factory.test').searchParams);
+      return reply({ project: { id: 'p', reportEnabled: true }, scopes: [{ id: '', name: '全部项目' }], report: { enabled: true, groupName: '全部项目', summary: {}, buckets: {} } });
+    });
+    vm.runInContext(read('official-group-report.js'), b.context);
+    await flush();
+    assert.ok(queries.every(query => query.get('module') === module));
+    assert.deepEqual(queries.map(query => query.get('view')).sort(), ['analytics', 'publish']);
+    assert.match(b.node('#groupSelect').innerHTML, /value="" selected>全部项目<\/option>/);
+    assert.match(b.node('#reportMeta').textContent, /全部项目/);
+    assert.equal(b.nodes.has('#matchingOverview'), false);
+  }
+});
