@@ -60,6 +60,8 @@ test('report plans are idempotent, owner scoped, revision guarded and never edit
   assert.equal((await f.call('/'+module+'?module=other')).status,400);
  }
  assert.equal((await f.call('/effects?from=bad')).status,400);
+ assert.equal((await f.call('/effects?view=pools')).status,400);
+ assert.equal((await f.call('/effects/views','POST',{requestId:crypto.randomUUID(),name:'Removed pool view',query:{view:'pools'}})).status,400);
  assert.equal((await f.call('/operations?media=bad')).status,400);
  assert.equal((await f.call('/operations?period=custom&from=invalid&to=invalid')).status,400);
  const row=f.sqlite.prepare('SELECT * FROM psychology_report_views LIMIT 1').get();

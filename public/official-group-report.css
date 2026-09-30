@@ -28,7 +28,3 @@
 #trafficDetails[hidden] { display:none; }
 #trafficDetails > summary { cursor:pointer; font-weight:600; padding:4px 0; }
 #trafficDetails[open] > summary { margin-bottom:20px; }
-
-#matchingOverview[hidden]{display:none}.matching-overview-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin:16px 0}.matching-overview-pools{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.matching-overview-pools>span{border:1px solid var(--lf-line-strong);background:#f7f9fc;border-radius:8px;padding:10px 12px;font-size:13px}.matching-overview-pools strong{margin-left:6px}#matchingOverview .section-title{flex-wrap:wrap;gap:12px}
-
-.matching-readiness{border:1px solid #d8b967;background:#fff9e8;color:#66501e;border-radius:10px;padding:16px;margin:16px 0}.matching-readiness p{font-size:13px;line-height:1.7;margin:8px 0}.matching-readiness small{font-size:12px;line-height:1.6}

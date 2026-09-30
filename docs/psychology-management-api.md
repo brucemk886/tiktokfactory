@@ -10,7 +10,7 @@ Four psychology modules expose scoped management APIs under `/api/integrations/p
 
 Migration 0068 adds current/pending strategy overlays and cycle boundaries without changing legacy strategy constraints. Revision-guarded PATCH /autopilot/id/strategy with strategy=pools and days=7 schedules a new cycle after the last reserved Beijing date. Existing jobs and paused memberships are preserved. Migration 0069 freezes each allocated account/content pool, copy hash, style revision, cycle and reason.
 
-Operations panel=pools supports summary/accounts/content/matrix and pool filters; effects view=pools provides the same scoped summary. The report separates latest cumulative observations from posts at least 72 hours old, frozen actual allocations from retrospective classifications, and null from zero. No exact historical 72-hour snapshots exist.
+Operations panel=pools supports summary/accounts/content/matrix and pool filters. Effects provides publication, playback, interaction and profile-traffic data. The report separates latest cumulative observations from posts at least 72 hours old, frozen actual allocations from retrospective classifications, and null from zero. No exact historical 72-hour snapshots exist.
 
 During startup, stable accounts complete five-account exact copy/style baselines. Low accounts wait when qualified content is unavailable; diagnostics review six mature posts across three sources before more allocations. Confirmed failures release sample occupancy; unknown remote results and retries keep it. Scope is rechecked at each allocation.
 

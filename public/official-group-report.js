@@ -28,7 +28,7 @@ function reportCopy(project = {}) {
       ? `${project.name} 看项目账号的发布和播放，不区分是不是小说内容。`
       : "看小说推文项目账号的发布和播放，不区分是不是小说内容。";
   }
-  if (location.pathname === "/psychology-effects") return "心理学按账号池与内容池看运营规模、低流量恢复与匹配效果；作品明细和主页访问继续独立展示。";
+  if (location.pathname === "/psychology-effects") return "查看心理学项目账号的发布、播放、互动与主页访问数据。";
   return project.name
     ? `${project.name} 按今天、昨天、近7天和最近30天看分组发布和播放。`
     : "这个模块还没有项目。";
@@ -133,7 +133,7 @@ async function loadReport() {
     if (state.groupId) query.set("group", state.groupId);
     if (state.fromKey) query.set("from", state.fromKey);
     if (state.toKey) query.set("to", state.toKey);
-    if (location.pathname === "/psychology-effects") { void loadTraffic(query, requestId, controller.signal); void loadMatchingOverview(query, requestId, controller.signal); }
+    if (location.pathname === "/psychology-effects") void loadTraffic(query, requestId, controller.signal);
     const publishQuery = new URLSearchParams(query);
     publishQuery.set("view", "publish");
     // Start both reads together; slow receipts never delay rendering analytics.
@@ -601,39 +601,4 @@ function renderTraffic() {
   panel.querySelectorAll('[data-traffic-page]').forEach(button => button.addEventListener('click', () => {
     state.trafficPage += Number(button.dataset.trafficPage); renderTraffic();
   }));
-}
-
-async function loadMatchingOverview(query, requestId, signal) {
- const panel=document.querySelector('#matchingOverview');
- if(!panel)return;
- panel.hidden=false;panel.setAttribute('aria-busy','true');
- panel.innerHTML='<div class="section-title"><h2>账号池 × 内容池</h2></div><p role="status">正在读取账号分层与匹配效果…</p>';
- try{
-  const q=new URLSearchParams(query);q.set('view','pools');q.set('media','photo');
-  const res=await fetch('/api/official-tiktok/ops-report?'+q,{cache:'no-store',signal}),data=await res.json();
-  if(requestId!==reportRequest||signal.aborted)return;
-  if(!res.ok)throw Error(data.error||'匹配概览读取失败');
-  if(data.report?.enabled===false){panel.hidden=true;return;}
-  if(!data.matching)throw Error('匹配概览暂未就绪');
-  renderMatchingOverview(data.matching,panel,query);
- }catch(error){if(requestId!==reportRequest||signal.aborted)return;panel.innerHTML='<h2>账号池 × 内容池</h2><p role="alert">'+escapeHtml(error.message)+' <button type="button" class="table-action" id="retryMatchingOverview">重试</button></p>';document.querySelector('#retryMatchingOverview').onclick=()=>loadMatchingOverview(query,requestId,signal);}
- finally{if(requestId===reportRequest&&!signal.aborted)panel.setAttribute('aria-busy','false');}
-}
-function renderMatchingOverview(m,panel,query){
- const count=v=>v==null?'—':formatNumber(v),percent=v=>v==null?'—':(v*100).toFixed(1)+'%',pools=m.accountPools||[],contents=m.contentPools||[],cov=m.coverage||{},rec=m.recovery||{},stats=m.overview?.mature||{};
- const rescue=pools.filter(r=>['rescue','rescue_entry','rescue_retention','rescue_hook','rescue_hold','rescue-hook','rescue-content'].includes(r.id));
- const diagnostic=pools.filter(r=>['diagnostic','diagnose'].includes(r.id));
- const totalFor=rows=>rows.length?rows.reduce((n,r)=>n+Number(r.accounts||0),0):0;
- const period=query?.get('period')||state.period,group=query?.get('group')||state.groupId,linkQuery=new URLSearchParams({period:period==='yesterday'?'custom':period,media:'photo'});if(group)linkQuery.set('group',group);if(!PRESET_PERIODS.includes(period)||period==='yesterday'){linkQuery.set('from',query?.get('from')||state.fromKey);linkQuery.set('to',query?.get('to')||state.toKey);}
- const accountScopeLabel=group?'心理学分组账号':'心理学项目账号';
- const allocation=m.allocation||{},actual=allocation.rows||[],planned=actual.reduce((n,r)=>n+Number(r.planned||0),0),warmup=actual.reduce((n,r)=>n+Number(r.warmup||0),0);
- const longQuery=new URLSearchParams(linkQuery);longQuery.set('period','30d');longQuery.delete('from');longQuery.delete('to');const weekQuery=new URLSearchParams(longQuery);weekQuery.set('period','7d');
- panel.innerHTML='<div class="section-title"><div><p>POOL MATCHING</p><h2>账号池 × 内容池</h2></div><a class="table-action primary-table-action" href="/psychology-ops-report?'+escapeHtml(linkQuery.toString())+'">进入运营报表</a></div>'+
- '<p class="section-hint">仅统计心理学项目内、当前有权限的账号；账号按唯一身份去重。</p>'+
- (m.readiness?.status==='warming'?'<div class="matching-readiness" role="status"><strong>优胜版本补测中</strong><p>'+escapeHtml(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+count(m.readiness.winnerVersions)+' · 满足对应池条件的版本 '+count(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'')+'<div class="matching-overview-cards">'+[[accountScopeLabel,cov.authorizedAccounts],['需内容救援',totalFor(rescue)],['近零待诊断',totalFor(diagnostic)],['样本不足待观察',cov.observingAccounts],['跨层改善',rec.improved],['已满72h可评估作品',stats.n]].map(([label,value])=>'<div class="metric"><span>'+escapeHtml(label)+'</span><strong>'+count(value)+'</strong></div>').join('')+'</div>'+
- '<div class="matching-overview-pools">'+pools.map(r=>'<span>'+escapeHtml(r.label)+' <strong>'+count(r.accounts)+'</strong></span>').join('')+'</div>'+
- '<p class="section-hint">内容池：'+contents.map(r=>escapeHtml(r.label)+' '+count(r.versions)).join(' · ')+'。只统计已观察的具体版本；今天的新发布样本尚未满72小时。自动运营实际匹配使用近30天成熟累计样本。 <a href="/psychology-ops-report?'+escapeHtml(weekQuery.toString())+'">近7天复盘</a> · <a href="/psychology-ops-report?'+escapeHtml(longQuery.toString())+'">近30天分层</a></p>'+
- '<p class="section-hint">已满72h样本：中位播放 '+count(stats.medianViews)+' · 千播率 '+percent(stats.potentialRate)+' · 完成率 '+percent(stats.completion)+'；待同步 '+count(cov.missingMetrics)+' 条。使用最新累计指标，不是第72小时的精确快照。</p>'+
- '<p class="section-hint">新策略实际分配 '+count(allocation.total??planned)+' 条 · 其中固定版本补测 '+count(warmup)+' 条。以排期时的账号池与内容池统计，历史表现按当前分层回看，分别呈现。</p>'+
- '<p class="section-hint">分池反映可观测流量表现，不代表平台内部权重。低号恢复要求两期各至少6条且覆盖3个来源；样本不足暂不判断。匹配结果与具体内容版本见运营报表。</p>';
 }

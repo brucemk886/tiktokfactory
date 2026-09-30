@@ -152,23 +152,12 @@ test('pools are exact, paginated, fresh-authorized and all read paths skip remot
   assert.equal(f.requests.length, 0);
 });
 
-test('overview pools adapter keeps effects/group permissions without requiring operations permission or archive directory', async t => {
-  const f = await fixture(t), window = operationsWindow(new URLSearchParams('period=7d'));
-  assign(f, ['a']); fact(f, 'a', { published_at: window.start + DAY });
-  f.sqlite.exec("UPDATE factory_kv SET value_json=json_set(value_json,'$.projects[0].reportEnabled',json('true')) WHERE key='official-account-groups'");
-  const store = await loadGroupStore(f.db);
-  const query = new URLSearchParams({ module: 'psychology', view: 'pools', period: '7d' });
-  const user = { role: 'operator', sidebarModules: ['psychology-effects'], allowedAccountGroups: ['g'] };
-  const prepare = f.db.prepare.bind(f.db);
-  f.db.prepare = sql => { assert.doesNotMatch(sql, /official_report_video_cache|official_videos_latest/); return prepare(sql); };
-  const result = await buildModuleReport(f.env, f.db, store, query, user, [], []);
-  assert.equal(result.matching.overview.current.n, 1);
-  assert.equal(result.matching.coverage.authorizedAccounts, 1);
-  query.set('group', 'other');
-  await assert.rejects(buildModuleReport(f.env, f.db, store, query, user), error => error.statusCode === 403);
-  query.delete('group');
-  assert.equal((await buildModuleReport(f.env, f.db, store, query, { ...user, allowedAccountGroups: [] })).matching.coverage.authorizedAccounts, 0);
-  assert.equal(f.requests.length, 0);
+test('overview rejects the removed pool view before reading report facts', async t => {
+  const f = await fixture(t),store = await loadGroupStore(f.db);
+  const query = new URLSearchParams({module:'psychology',view:'pools',period:'7d'});
+  let reads=0;const prepare=f.db.prepare.bind(f.db);f.db.prepare=sql=>{reads++;return prepare(sql);};
+  await assert.rejects(buildModuleReport(f.env,f.db,store,query,{role:'admin'}),error=>error.statusCode===400);
+  assert.equal(reads,0);assert.equal(f.requests.length,0);
 });
 
 test('runtime matching loads only scoped grouped mature performance with exact candidate keys', async t => {

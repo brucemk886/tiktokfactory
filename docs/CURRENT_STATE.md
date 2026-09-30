@@ -2,9 +2,9 @@
 
 - Psychology reporting counts unique project accounts through canonical identity aliases, retaining unsynced assigned accounts and rejecting stale alias grants. All overview panels intersect module-project groups with current user permissions. See docs/handoffs/2026-09-30-psychology-overview-scope.md.
 
-- Psychology operates through account/content pool matching (0068/0069): future cycle transitions preserve existing jobs, exact copy/style/revision evidence controls content promotion, diagnostic recovery has a six-test review gate, and partial shortages skip individual accounts. Operations/data overview separate cumulative/mature observations, frozen allocations and retrospective evidence. Strict baseline shortage is shown explicitly. See docs/handoffs/2026-09-30-psychology-pool-matching.md.
+- Psychology operates through account/content pool matching (0068/0069): future cycle transitions preserve existing jobs, exact copy/style/revision evidence controls content promotion, diagnostic recovery has a six-test review gate, and partial shortages skip individual accounts. Operations reports separate cumulative/mature observations, frozen allocations and retrospective evidence. Strict baseline shortage is shown explicitly. See docs/handoffs/2026-09-30-psychology-pool-matching.md.
 
-- Psychology data overview includes UTC daily profile visits, video activity, matched-day visit ratio and paginated account coverage. Hub daily sync refreshes traffic separately from weekly audience insights; missing metrics remain null. See docs/handoffs/2026-09-29-profile-traffic.md.
+- Psychology data overview shows project publication, playback, interaction and UTC profile visits. The account/content pool panel and its overview requests/API adapter have been removed; see docs/handoffs/2026-09-30-remove-overview-pools.md. It includes video activity, matched-day visit ratio and paginated account coverage. Hub daily sync refreshes traffic separately from weekly audience insights; missing metrics remain null. See docs/handoffs/2026-09-29-profile-traffic.md.
 
 - Copy-library single/batch rewrites support Claude Opus 4.8 through Kie (`claude-opus-4-8`), reusing KIE_API_KEY and preserving model attribution. Existing defaults and quality gates are unchanged. See docs/handoffs/2026-09-29-kie-opus-rewrite.md.
 

@@ -50,7 +50,7 @@ async function keys(request,db,user){
 }
 async function reportQuery(db,user,module,input){
  if(!input||typeof input!=='object'||Array.isArray(input))fail('query 须为查询参数对象。');
- const fields=module==='effects'?['period','group','from','to','date','view']:['period','group','from','to','media','panel','page','sort','filter','q','mode','key','accountPool','contentPool'];
+ const fields=module==='effects'?['period','group','from','to','date']:['period','group','from','to','media','panel','page','sort','filter','q','mode','key','accountPool','contentPool'];
  only(input,fields);
  if(Object.values(input).some(v=>!['string','number'].includes(typeof v)||String(v).length>2000))fail('查询参数格式无效。');
  const params=new URLSearchParams(Object.entries(input).map(([k,v])=>[k,String(v)]));
@@ -61,7 +61,6 @@ async function reportQuery(db,user,module,input){
   if(params.has('page')&&(!Number.isInteger(Number(params.get('page')))||Number(params.get('page'))<1||Number(params.get('page'))>1000000))fail('page 须为 1–1000000 整数。');
   if(!['photo','video'].includes(params.get('media')||'photo')||!['overview','accounts','content','strategy','details','batches','groups','pools'].includes(params.get('panel')||'overview'))fail('报表 media/panel 无效。');
  }else{
-  if(params.has('view')&&params.get('view')!=='pools')fail('数据概览 view 仅支持 pools。');
   if(params.has('period')&&!['today','yesterday','7d','30d','week','custom'].includes(params.get('period')))fail('数据概览 period 无效。');
   if(params.get('period')==='custom'&&(!params.get('from')||!params.get('to')))fail('自定义周期须提供 from 和 to。');
   if(params.get('from')&&params.get('to')&&params.get('from')>params.get('to'))fail('开始日期不能晚于结束日期。');
