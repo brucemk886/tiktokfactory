@@ -18,12 +18,20 @@ Use America/Los_Angeles for psychology automatic publishing. The user chose Paci
 - Scoped external management API accepts timeZone with idempotency/permission validation; guide and architecture/current-state documentation.
 
 ## Validation
-Final integrated factory-cloud suite passed 1,047/1,047; generated asset manifest and git diff --check passed. UI focused tests passed 35/35; policy/execution focused tests passed 65/65; scoped external API passed 9/9. Focused local tests cover Pacific summer/winter conversion, missing/repeated DST clock hours, three rounds across two Beijing dates, calendar cycles/reviews, frozen-task preservation, concurrent transition conflicts, project timezone consistency and original permission/pause behavior. Tests mock external publishing calls.
+Final integrated factory-cloud suite passed 1,049/1,049; generated asset manifest and git diff --check passed. UI focused tests passed 37/37; policy/execution focused tests passed 65/65; scoped external API passed 9/9. Focused local tests cover Pacific summer/winter conversion, missing/repeated DST clock hours, three rounds across two Beijing dates, calendar cycles/reviews, frozen-task preservation, concurrent transition conflicts, project timezone consistency and original permission/pause behavior. Tests mock external publishing calls.
 
 ## Live state before change
 Read-only authenticated UI/API verification: policy revision 2, 187 eligible/enrolled, zero blocked/excluded; nine plans and 180 historical account memberships. The seven-day-view projection of plan ID/status/current slots, account ID/status/stopPending and reserved slot times/batch references hashed to 330014270f09879c2605f5ce55f9efa66e5208881128166f92921840794325a8 (108 visible slots). Pending configuration is excluded because it is the intended change; mutable receipts are excluded.
 
+## Production activation
+- Core code committed/pushed as d201d99; clean main matched origin/main before npm run deploy. Migration 0072 applied successfully. Initial Worker version 40964146-1211-4d63-ae8a-f5337afd8451.
+- Authenticated project UI previewed and saved Pacific configuration. Policy revision 3, enabled project enrollment and auto-admission retained. Local cycle is October 2 00:00 through October 9 00:00 Pacific, first review October 5 00:00. UTC millisecond boundaries: startsAt 1790924400000, endsAt 1791529200000, nextReviewAt 1791183600000; old-boundary prestart cutoff 1790870400000.
+- All nine existing plans have pending Pacific slots at 08:00/11:30/20:00 plus their original 0–80 minute offsets, effective at the project start. Historical current Shanghai slots remain unchanged until transition. Account staggering remains 45 seconds.
+- Verified 187 enrolled/eligible, zero excluded/blocked. Roles preserved: review 60, strong 0, normal 56, hook rescue 10, content rescue 32, diagnostic 21, observing 1, launch 7.
+- Post-save seven-day-view projection matched the pre-save SHA-256 exactly: 330014270f09879c2605f5ce55f9efa66e5208881128166f92921840794325a8. Nine plans, 180 historical memberships and 108 visible slots unchanged. This is a bounded visible-history check, not a claim that every database field was compared.
+- Screenshot review confirmed readable Pacific/PDT and Beijing dates and the 11:30 baseline. No immediate-run or manual publishing endpoint was called.
+
 ## Unfinished work / next step
-Complete tests, commit/push main, deploy through factory-cloud npm run deploy, then use the authenticated project settings UI to preview and save America/Los_Angeles. Verify exact local times, cycle boundaries, account counts and preserved execution projection. No immediate-run/manual publishing trigger is needed.
+Original-plan cards now refresh after a successful project save; list-read failures preserve the confirmed save and last list data. The existing 30-second polling remains. No implementation work remains; final deployment metadata follows below. Operationally, retain normal scheduled dispatch and observe capacity/content shortages through existing reports; this change does not implement dynamic generation capacity or automatic cycle renewal.
 
 The pre-existing original-workspace untracked factory-cloud/tmp-fill-wait.mjs is untouched. This implementation worktree has isolated ordinary npm-ci directories (no junctions).

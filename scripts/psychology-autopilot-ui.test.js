@@ -353,3 +353,30 @@ test('failed schedule save restores timezone and local inputs for editing and re
  assert.match(h.node('#scheduleStatus').textContent,/已保存/);assert.ok([...inputs,zone].every(input=>input.disabled===false));
  h.run("openSchedule('p')");assert.equal(zone.disabled,false);
 });
+
+
+test('saving project Pacific settings immediately refreshes original-plan pending timezone and 11:30 slots',async()=>{
+ const oldSlots=[{hour:8,minute:0},{hour:14,minute:0},{hour:20,minute:0}],newSlots=[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}],effectiveAt=Date.parse('2026-10-02T07:00:00Z');
+ const pilots=[{id:'p',groupId:'g',groupName:'Group',status:'active',accounts:[],schedule:[],attention:[],logs:[],slots:oldSlots,pendingSlots:oldSlots,timeZone:'Asia/Shanghai',pendingTimeZone:'Asia/Shanghai',scheduleEffectiveAt:Date.parse('2026-10-02T00:00:00+08:00')}];
+ const task=taskFixture();task.policy={...taskPolicy({revision:2,enabled:true,enrollmentMode:'project',projectId:task.project.id,reviewTarget:60,admitNewAccounts:true}),timeZone:'Asia/Shanghai'};
+ const h=harness({pilots},null,null,async(_path,init)=>{
+  if(init.method==='GET')return taskReply(task);
+  const result={...task,policy:{...taskPolicy(init.body,init.method==='PATCH'?3:2),timeZone:'America/Los_Angeles',startsAt:effectiveAt},effectiveAt};
+  if(init.method==='PATCH')pilots[0]={...pilots[0],pendingSlots:newSlots,pendingTimeZone:'America/Los_Angeles',scheduleEffectiveAt:effectiveAt};
+  return taskReply(result);
+ });await tick();h.node('#period').value='7d';h.node('#period').listeners.change();await tick();
+ await h.node('#openTaskGroupConfig').onclick();h.node('#taskGroupTimeZone').value='America/Los_Angeles';h.node('#taskGroupTimeZone').listeners.change();await h.node('#previewTaskGroups').onclick();
+ const before=h.requests.length;await h.node('#saveTaskGroups').onclick();
+ assert.deepEqual(h.requests.slice(before).map(request=>[request.method,request.path]),[['PATCH','/api/psychology-autopilot/task-groups'],['GET','/api/psychology-autopilot?period=7d']]);
+ assert.equal(h.run('data.pilots[0].pendingTimeZone'),'America/Los_Angeles');assert.ok(h.node('#pilots').innerHTML.includes('新设置：每天 3 条 · 08:00 / 11:30 / 20:00（美国太平洋时间）'));assert.ok(h.node('#pilots').innerHTML.includes('08:00 / 14:00 / 20:00（北京时间）'));
+ assert.match(h.node('#taskGroupConfigStatus').textContent,/^已保存：/);assert.match(h.node('#taskGroupPreview').innerHTML,/已保存的实际配置/);assert.equal(h.run('taskGroupsData.policy.revision'),3);
+ const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/统计日期按北京时间；排期同时标注运营时区/);assert.doesNotMatch(html,/日期均为北京时间/);
+});
+
+test('original-plan refresh failure after saving preserves the successful project setting and last plan data',async()=>{
+ const task=taskFixture(),h=harness({},null,null,async(_path,init)=>taskReply(init.method==='GET'?task:{...task,policy:taskPolicy(init.body,init.method==='PATCH'?3:0)}));await tick();
+ const plans=h.node('#pilots').innerHTML;await h.node('#openTaskGroupConfig').onclick();await h.node('#previewTaskGroups').onclick();h.fail();await h.node('#saveTaskGroups').onclick();
+ assert.match(h.node('#taskGroupConfigStatus').textContent,/^已保存：/);assert.doesNotMatch(h.node('#taskGroupConfigStatus').textContent,/保存失败/);assert.match(h.node('#taskGroupPreview').innerHTML,/已保存的实际配置/);assert.equal(h.run('taskGroupsData.policy.revision'),3);
+ assert.equal(h.node('#pilots').innerHTML,plans);assert.match(h.node('#status').textContent,/更新失败，保留上次数据：offline/);assert.equal(h.node('#saveTaskGroups').disabled,true);assert.equal(h.run('taskConfigBusy'),false);
+ assert.equal(h.requests.filter(request=>request.method==='PATCH').length,1);assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot');
+});

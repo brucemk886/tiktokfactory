@@ -90,13 +90,13 @@ async function api(path = '', method = 'GET', body) {
 function table(headers, rows) { return '<div class="table-wrap"><table class="ops-table"><thead><tr>' + headers.map(h => '<th scope="col">' + h + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>'; }
 function notice(text, error = false) { $('#status').textContent = text; $('#status').classList.toggle('pilot-error', error); }
 function totals(c = {}) { return `计划 ${c.planned||0} · 已发布 ${c.published||0} · 制作 ${Number(c.queued||0)+Number(c.producing||0)} · 待发布 ${c.pending||0} · 失败 ${c.failed||0} · 已停止 ${c.stopped||0}${c.unknown ? ' · 待核对 '+c.unknown : ''}`; }
-async function load(quiet = false, refreshGroups = false) {
+async function load(quiet = false, refreshGroups = false, refreshTaskGroups = true) {
   if (loading || creating || switchingPools || taskConfigBusy) return;
   const period=selectedPeriod;
   loading = true; $('#reload').disabled = true; $('#refreshGroups').disabled = true;
   if (!quiet) notice(refreshGroups ? '正在更新账号分组与发布状态…' : '正在读取本地发布回执…');
   if (refreshGroups) { $('#groupDirectoryStatus').textContent='正在同步授权账号目录…'; $('#createButton').disabled=true; }
-  try { const query=(period==='today'?'':'period='+period)+(refreshGroups?(period==='today'?'':'&')+'refreshGroups=1':''); const pending=api(query?'?'+query:''); void loadTaskGroups(); const next = await pending; if(period!==selectedPeriod)return; data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '暂无原发布计划。可在项目设置中预览并启用项目自动运营。'); }
+  try { const query=(period==='today'?'':'period='+period)+(refreshGroups?(period==='today'?'':'&')+'refreshGroups=1':''); const pending=api(query?'?'+query:''); if(refreshTaskGroups)void loadTaskGroups(); const next = await pending; if(period!==selectedPeriod)return; data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '暂无原发布计划。可在项目设置中预览并启用项目自动运营。'); }
   catch (error) { if(period!==selectedPeriod)return; notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
   finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); if(period!==selectedPeriod)load(); }
 }
@@ -387,10 +387,11 @@ $('#previewTaskGroups').onclick=async()=>{
 };
 $('#saveTaskGroups').onclick=async()=>{
  if(taskConfigBusy||!taskPreview)return;let body;try{body=taskConfigBody();if(JSON.stringify(body)!==taskPreview.fingerprint)throw Error('配置或版本已变化，请重新预览。');}catch(error){taskPreview=null;$('#taskGroupConfigStatus').textContent=error.message;updateTaskConfigControls();return;}
- taskConfigBusy=true;$('#taskGroupConfigStatus').textContent='正在保存项目设置…';updateTaskConfigControls();
- try{const result=await api('/task-groups','PATCH',body);++taskGroupRequest;taskGroupsData=result;taskPreview=null;renderTaskGroups();$('#taskGroupPreview').innerHTML=taskPreviewHtml(result,'已保存的实际配置');$('#taskGroupConfigStatus').textContent='已保存：'+zonedTime(result.effectiveAt||result.policy?.startsAt,result.policy?.timeZone)+' 起生效，运行至 '+zonedTime(result.policy?.endsAt,result.policy?.timeZone)+'。已创建任务继续原配置。';if(taskGroupRole)void loadTaskMembers(taskGroupRole,1);}
+ let saved=false;taskConfigBusy=true;$('#taskGroupConfigStatus').textContent='正在保存项目设置…';updateTaskConfigControls();
+ try{const result=await api('/task-groups','PATCH',body);++taskGroupRequest;taskGroupsData=result;taskPreview=null;renderTaskGroups();$('#taskGroupPreview').innerHTML=taskPreviewHtml(result,'已保存的实际配置');$('#taskGroupConfigStatus').textContent='已保存：'+zonedTime(result.effectiveAt||result.policy?.startsAt,result.policy?.timeZone)+' 起生效，运行至 '+zonedTime(result.policy?.endsAt,result.policy?.timeZone)+'。已创建任务继续原配置。';saved=true;if(taskGroupRole)void loadTaskMembers(taskGroupRole,1);}
  catch(error){taskPreview=null;$('#taskGroupConfigStatus').textContent='保存失败：'+error.message+'。请重新预览后重试；版本冲突时重新打开配置读取最新版本。';}
  finally{taskConfigBusy=false;updateTaskConfigControls();}
+ if(saved)await load(true,false,false);
 };
 function renderProjectZoneHint(){const zone=zoneFor($('#taskGroupTimeZone').value);$('#taskGroupTimeZoneHint').textContent='每天3条基准时段：'+projectSlots(zone)+'（'+ZONES[zone]+'）。'+(zone==='America/Los_Angeles'?'按America/Los_Angeles自动处理PDT/PST；预览与保存会同时显示北京时间。':'现有北京时间配置保留，选择太平洋时间后须重新预览并保存。')+' 已冻结任务保留；开始后的周期或冲突排期由服务校验，实际边界以保存结果为准。';}
 $('#taskGroupTimeZone').addEventListener('change',()=>{invalidateTaskPreview();renderProjectZoneHint();});
