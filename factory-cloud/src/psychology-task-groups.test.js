@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
+import { PACIFIC_TIME_ZONE, zonedEpoch, zonedDate } from '../../scripts/psychology-schedule-time.js';
 import { kvSet } from './kv.js';
 import { handleTaskGroups,reconcileTaskGroups,taskAssignmentsFor } from './psychology-task-groups.js';
 
@@ -183,4 +184,119 @@ test('legacy reservations before the existing cycle preserve its planned reviewe
  assert.equal(result.data.groups.find(g=>g.role==='review').accounts,1);assert.equal(result.data.totals.blocked,0);
  assert.equal(f.sqlite.prepare("SELECT role FROM psychology_task_group_snapshots WHERE connection_id='a' ORDER BY effective_at DESC LIMIT 1").get().role,'review');
  assert.deepEqual(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='legacy-item'").get(),frozen);
+});
+
+
+const pacificConfig=revision=>({revision,enabled:true,enrollmentMode:'project',projectId:'proj-psych',reviewTarget:5,admitNewAccounts:true,timeZone:PACIFIC_TIME_ZONE});
+
+test('Pacific prestart transition preserves local cycle dates, frozen jobs, pauses and group staggering atomically',async t=>{
+ const f=await setup(t);await f.activate();
+ const offsetSlots=slots.map(s=>({hour:s.hour,minute:s.minute+10}));
+ f.pilot('second','spare',{slots_json:JSON.stringify(offsetSlots),status:'paused'});
+ f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run('frozen-before','admin','{}',now);
+ f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?)').run('old-item','frozen-before','source','old-job','a',at('2026-10-01','08:00')/1000);
+ const frozen=JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_publish_items').all()),before=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ const preview=await f.call('POST',pacificConfig(1),base+'/preview');assert.equal(preview.status,200,JSON.stringify(preview));
+ assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);
+ const saved=await f.call('PATCH',pacificConfig(1));assert.equal(saved.status,200,JSON.stringify(saved));
+ const p=saved.data.policy;assert.equal(p.timeZone,PACIFIC_TIME_ZONE);assert.equal(p.startsAt,zonedEpoch('2026-10-02',0,0,PACIFIC_TIME_ZONE));
+ assert.equal(p.prestartCutoffAt,starts);assert.equal(p.endsAt,zonedEpoch('2026-10-09',0,0,PACIFIC_TIME_ZONE));assert.equal(p.nextReviewAt,zonedEpoch('2026-10-05',0,0,PACIFIC_TIME_ZONE));
+ for(const [id,offset] of [['source',0],['second',10]]){
+  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+  assert.equal(pilot.schedule_timezone,'Asia/Shanghai');assert.equal(pilot.pending_schedule_timezone,PACIFIC_TIME_ZONE);
+  assert.deepEqual(JSON.parse(pilot.pending_slots_json),[{hour:8,minute:offset},{hour:11,minute:30+offset},{hour:20,minute:offset}]);
+  assert.equal(pilot.slots_effective_at,p.startsAt);assert.equal(pilot.strategy_effective_at,p.startsAt);assert.equal(pilot.ends_at,p.endsAt);
+ }
+ assert.equal(f.sqlite.prepare("SELECT status FROM psychology_autopilots WHERE id='second'").get().status,'paused');
+ assert.ok(f.sqlite.prepare('SELECT effective_at FROM psychology_task_group_snapshots').all().every(s=>s.effective_at===p.startsAt));
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['a'],p.startsAt)).get('a').timeZone,PACIFIC_TIME_ZONE);
+ assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_publish_items').all()),frozen);
+ assert.equal(f.requests.length,0);
+});
+
+for(const situation of ['started','reserved','frozen'])test('Pacific transition refuses '+situation+' cycle without partial mutation',async t=>{
+ const f=await setup(t);await f.activate();
+ if(situation==='reserved')f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES ('source',?,'creating',0)").run(starts+8*3600000);
+ if(situation==='frozen'){
+  f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run('future','admin','{}',now);
+  f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?)').run('future-item','future','source','job','a',(starts+8*3600000)/1000);
+ }
+ const before=JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_task_group_policies').get());
+ const result=await f.call('PATCH',pacificConfig(1),base,situation==='started'?starts:now);assert.equal(result.status,409,JSON.stringify(result));
+ assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_task_group_policies').get()),before);
+ assert.equal(f.sqlite.prepare("SELECT pending_schedule_timezone FROM psychology_autopilots WHERE id='source'").get().pending_schedule_timezone,'');
+});
+
+for(const change of ['slot','item','policy'])test('Pacific transition detects concurrent '+change+' reservation/configuration at commit',async t=>{
+ const f=await setup(t);await f.activate();const batch=f.db.batch.bind(f.db);
+ f.db.batch=async statements=>{
+  if(change==='slot')f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES ('source',?,'created',0)").run(starts+8*3600000);
+  if(change==='item'){
+   f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run('race','admin','{}',now);
+   f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?)').run('race-item','race','source','job','a',(starts+8*3600000)/1000);
+  }
+  if(change==='policy')f.sqlite.prepare('UPDATE psychology_task_group_policies SET revision=revision+1').run();
+  return batch(statements);
+ };
+ const result=await f.call('PATCH',pacificConfig(1));assert.equal(result.status,409,JSON.stringify(result));
+ assert.equal(f.sqlite.prepare('SELECT time_zone FROM psychology_task_group_policies').get().time_zone,'Asia/Shanghai');
+ assert.equal(f.sqlite.prepare("SELECT pending_schedule_timezone FROM psychology_autopilots WHERE id='source'").get().pending_schedule_timezone,'');
+ assert.ok(f.sqlite.prepare('SELECT effective_at FROM psychology_task_group_snapshots').all().every(s=>s.effective_at===starts));
+});
+
+test('Pacific cycle and three-day reviews use local calendar days through autumn DST',async t=>{
+ const f=await setup(t),zone=PACIFIC_TIME_ZONE,lateNow=zonedEpoch('2026-10-30',12,0,zone);
+ f.sqlite.prepare('UPDATE psychology_autopilots SET ends_at=?').run(zonedEpoch('2026-11-10',0,0,zone));
+ const result=await f.call('PATCH',pacificConfig(0),base,lateNow);assert.equal(result.status,200,JSON.stringify(result));
+ const p=result.data.policy;assert.equal(zonedDate(p.startsAt,zone),'2026-10-31');assert.equal(zonedDate(p.endsAt,zone),'2026-11-07');
+ assert.equal(p.endsAt-p.startsAt,7*DAY+3600000);assert.equal(p.nextReviewAt-p.startsAt,3*DAY+3600000);
+ const review=await reconcileTaskGroups(f.env,user,f.directory,p.nextReviewAt+1000);
+ assert.equal(zonedDate(review.policy.nextReviewAt,zone),'2026-11-06');assert.equal(review.policy.endsAt,p.endsAt);
+ f.add('dst-new');const added=await reconcileTaskGroups(f.env,user,f.directory,p.nextReviewAt+2000);
+ const latest=f.sqlite.prepare("SELECT effective_at FROM psychology_task_group_snapshots WHERE connection_id='dst-new' ORDER BY effective_at DESC LIMIT 1").get();
+ assert.equal(zonedDate(latest.effective_at,zone),'2026-11-04');assert.equal(added.policy.endsAt,p.endsAt);
+ assert.equal(f.requests.length,0);
+});
+
+
+test('an active Pacific project blocks later Beijing executors instead of silently adopting their publication clock',async t=>{
+ const f=await setup(t);await f.activate();
+ const changed=await f.call('PATCH',pacificConfig(1));assert.equal(changed.status,200,JSON.stringify(changed));
+ f.pilot('late-beijing','spare');
+ const result=await reconcileTaskGroups(f.env,user,f.directory,now+1000);
+ assert.deepEqual(result.policy.sourcePilotIds,['source']);assert.equal(result.totals.blocked,1);
+ assert.equal(f.sqlite.prepare("SELECT task_group_policy_id FROM psychology_autopilots WHERE id='late-beijing'").get().task_group_policy_id,'');
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['c'],zonedEpoch('2026-10-03',8,0,PACIFIC_TIME_ZONE))).size,0);
+ assert.match(f.sqlite.prepare("SELECT reason FROM psychology_task_group_accounts WHERE connection_id='c'").get().reason,/不兼容/);
+});
+
+test('prestart timezone transition leaves prior-cycle membership history on its original instants',async t=>{
+ const f=await setup(t),saved=await f.activate(),oldDate=starts-3*DAY;
+ f.sqlite.prepare('INSERT INTO psychology_task_group_snapshots(policy_id,connection_id,effective_at,revision,role,account_pool,group_id,name,paused,reason) VALUES (?,?,?,?,?,?,?,?,?,?)')
+  .run(saved.policy.id,'a',oldDate,0,'strong','strong','g','past a',0,'past cycle');
+ const before=f.sqlite.prepare('SELECT * FROM psychology_task_group_snapshots WHERE effective_at=?').get(oldDate);
+ const result=await f.call('PATCH',pacificConfig(1));assert.equal(result.status,200,JSON.stringify(result));
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_task_group_snapshots WHERE effective_at=?').get(oldDate),before);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_task_group_snapshots WHERE effective_at=?').get(zonedEpoch('2026-10-02',0,0,PACIFIC_TIME_ZONE)).n,3);
+});
+
+
+test('Pacific preview treats existing two-slot plans with a pending pool cycle prospectively',async t=>{
+ const f=await setup(t);await f.activate();
+ f.sqlite.prepare("UPDATE psychology_autopilots SET slots_json=?,pending_slots_json=?,slots_effective_at=?,current_strategy='original',pending_strategy='pools',strategy_effective_at=? WHERE id='source'")
+  .run(JSON.stringify([{hour:1,minute:45},{hour:2,minute:15}]),JSON.stringify(slots),starts,starts);
+ const result=await f.call('POST',pacificConfig(1),base+'/preview');assert.equal(result.status,200,JSON.stringify(result));
+ assert.equal(result.data.totals.enrolled,3);assert.equal(result.data.totals.blocked,0);
+ assert.deepEqual(result.data.policy.sourcePilotIds,['source']);assert.equal(result.data.policy.timeZone,PACIFIC_TIME_ZONE);
+});
+
+
+for(const scenario of ['already started','reserved earlier','safe'])test('reverse Pacific prestart transition protects the earlier boundary: '+scenario,async t=>{
+ const f=await setup(t);await f.activate();const pacific=await f.call('PATCH',pacificConfig(1));assert.equal(pacific.status,200);
+ if(scenario==='reserved earlier')f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES ('source',?,'created',0)").run(starts+3600000);
+ const before=JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_task_group_policies').get());
+ const result=await f.call('PATCH',{...pacificConfig(2),timeZone:'Asia/Shanghai'},base,scenario==='already started'?starts+3600000:now);
+ assert.equal(result.status,scenario==='safe'?200:409,JSON.stringify(result));
+ if(scenario==='safe'){assert.equal(result.data.policy.startsAt,starts);assert.equal(result.data.policy.timeZone,'Asia/Shanghai');}
+ else assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_task_group_policies').get()),before);
 });

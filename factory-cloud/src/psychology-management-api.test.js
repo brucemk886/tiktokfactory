@@ -170,3 +170,23 @@ test('style definitions freeze on queued photo jobs and are not changed on retry
  assert.equal(f.sqlite.prepare('SELECT payload_json FROM factory_jobs').get().payload_json,before);
  assert.equal(f.requests.length,0);
 });
+
+
+test('external autopilot accepts explicit Pacific schedules and preserves timezone idempotency without jobs',async t=>{
+ const f=await setup(t),body={requestId:crypto.randomUUID(),groupId:'g',strategy:'original',days:7,timeZone:'America/Los_Angeles',slots:[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}]};
+ const made=await value(await f.call('/autopilot','POST',body),201);
+ assert.equal(made.status,'paused');
+ assert.equal((await value(await f.call('/autopilot','POST',body))).duplicate,true);
+ assert.equal((await f.call('/autopilot','POST',{...body,timeZone:'Asia/Shanghai'})).status,409);
+ assert.equal((await f.call('/autopilot','POST',{...body,requestId:crypto.randomUUID(),timeZone:'America/Invalid'})).status,400);
+ const item=(await value(await f.call('/autopilot/'+made.id))).item;
+ assert.equal(item.timeZone,'America/Los_Angeles');
+ assert.deepEqual(item.slots,body.slots);
+ const schedule=await value(await f.call('/autopilot/'+made.id+'/schedule','PATCH',{revision:item.revision,slots:body.slots,timeZone:body.timeZone}));
+ assert.equal(schedule.timeZone,body.timeZone);
+ const preserved=await value(await f.call('/autopilot/'+made.id+'/schedule','PATCH',{revision:schedule.revision,slots:body.slots}));
+ assert.equal(preserved.timeZone,body.timeZone);
+ assert.equal((await f.call('/autopilot/'+made.id+'/schedule','PATCH',{revision:preserved.revision,slots:body.slots,timeZone:'America/Invalid'})).status,400);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
+ assert.equal(f.requests.length,0);
+});

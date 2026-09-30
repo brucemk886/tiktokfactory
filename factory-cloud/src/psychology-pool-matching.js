@@ -1,3 +1,4 @@
+import { normalizeTimeZone, zonedDate } from '../../scripts/psychology-schedule-time.js';
 import { POOL_POLICY, classifyAccountPool, desiredContentPool, rankPoolCandidates } from '../../scripts/psychology-pool-policy.js';
 import { librarySource, reviewedSource } from './psychology-copy-source.js';
 import { copyIdentity } from './psychology-creative.js';
@@ -133,10 +134,10 @@ export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupi
     const reason=warmup?'优胜内容不足：中强账号补足固定版本、固定样式的五账号基线':
       reviewing&&chosen.pool==='explore'?'评审组：固定版本、固定样式补齐五账号验证':accountPool==='diagnostic'?'优胜内容诊断基准':desired===chosen.pool?'按本轮配额匹配':'优先池不足，使用允许的成熟候选';
     const poolMatch={policy:POOL_POLICY.version,accountPool,desiredPool:desired,contentPool:chosen.pool,reason,
-      cycleStartAt:cycle,dayIndex:context.dayIndex,round:context.round,asOf:context.asOf||Date.now(),
+      timeZone:normalizeTimeZone(assignment?.timeZone||context.timeZone),cycleStartAt:cycle,dayIndex:context.dayIndex,round:context.round,asOf:context.asOf||Date.now(),
       sampleCount:chosen.stats.n,accountMedianViews:observed.stats.medianViews,copyHash:chosen.identity.hash,
       styleRevision:chosen.styleDefinition.revision||0,warmup,
-      ...(assignment?{taskGroup:{policyId:assignment.policyId,id:assignment.id,role:assignment.role,revision:assignment.revision,effectiveAt:assignment.effectiveAt}}:{})};
+      ...(assignment?{taskGroup:{policyId:assignment.policyId,timeZone:normalizeTimeZone(assignment.timeZone),id:assignment.id,role:assignment.role,revision:assignment.revision,effectiveAt:assignment.effectiveAt}}:{})};
     plan.push({...slot,...chosen,source:{...chosen.source,usageKey:chosen.post.sourceKey,
       poolMatch,poolStyle:chosen.styleDefinition,poolIdentity:chosen.identity}});
     seen.add(chosen.post.sourceKey);used.set(slot.connectionId,seen);extra.set(chosen.key,(extra.get(chosen.key)||0)+1);
@@ -160,11 +161,11 @@ export function poolMatchStatement(db,item,source,owner,now){
 export function taskGroupAllocationStatement(db,item,source,now){
   const match=source.poolMatch, group=match?.taskGroup;
   if(!group)return null;
-  const day=new Date(item.scheduleAt*1000+8*3600000).toISOString().slice(0,10);
-  return db.prepare(`INSERT INTO psychology_task_group_allocations(policy_id,connection_id,beijing_date,round,item_id,created_at)
-    VALUES(CASE WHEN EXISTS(SELECT 1 FROM psychology_task_group_policies WHERE id=? AND enabled=1 AND starts_at<=? AND ends_at>?)
+  const timeZone=normalizeTimeZone(group.timeZone||match.timeZone),day=zonedDate(item.scheduleAt*1000,timeZone);
+  return db.prepare(`INSERT INTO psychology_task_group_allocations(policy_id,connection_id,beijing_date,round,item_id,created_at,time_zone)
+    VALUES(CASE WHEN EXISTS(SELECT 1 FROM psychology_task_group_policies WHERE id=? AND time_zone=? AND enabled=1 AND starts_at<=? AND ends_at>?)
       AND EXISTS(SELECT 1 FROM psychology_task_group_snapshots s WHERE s.policy_id=? AND s.connection_id=? AND s.revision=? AND s.effective_at=?
         AND NOT EXISTS(SELECT 1 FROM psychology_task_group_snapshots newer WHERE newer.policy_id=s.policy_id AND newer.connection_id=s.connection_id AND newer.effective_at>s.effective_at AND newer.effective_at<=?))
-      THEN ? ELSE NULL END,?,?,?,?,?)`)
-    .bind(group.policyId,item.scheduleAt*1000,item.scheduleAt*1000,group.policyId,item.connectionId,group.revision,group.effectiveAt,item.scheduleAt*1000,group.policyId,item.connectionId,day,match.round,item.id,now);
+      THEN ? ELSE NULL END,?,?,?,?,?,?)`)
+    .bind(group.policyId,timeZone,item.scheduleAt*1000,item.scheduleAt*1000,group.policyId,item.connectionId,group.revision,group.effectiveAt,item.scheduleAt*1000,group.policyId,item.connectionId,day,match.round,item.id,now,timeZone);
 }

@@ -991,3 +991,12 @@ test('single-image batch consumes different images of one topic and freezes inde
  await assert.rejects(call('POST',{...body,requestId:crypto.randomUUID(),onlyUnused:false},undefined,actor),/可用图片只有 0 张/);
  assert.equal((await selectTopicSources(db,{...body,query:''})).length,0);
 });
+
+test('pool normalization preserves audience timezone and rejects unsupported zone', () => {
+  const raw=input({mediaType:'photo',template:'photo-text',sourceType:'library',libraryStrategy:'pools',libraryTestPolicy:'pools-v1',
+    poolContext:{cycleStartAt:Date.now()-86400000,postsPerDay:3,dayIndex:0,round:1,timeZone:'America/Los_Angeles'}});
+  assert.equal(normalizeAutoPublish(raw).poolContext.timeZone,'America/Los_Angeles');
+  assert.throws(()=>normalizeAutoPublish({...raw,poolContext:{...raw.poolContext,timeZone:'Invalid/Zone'}}),e=>e.statusCode===400);
+  const {timeZone,...legacy}=raw.poolContext;
+  assert.deepEqual(normalizeAutoPublish({...raw,poolContext:legacy}).poolContext,legacy);
+});

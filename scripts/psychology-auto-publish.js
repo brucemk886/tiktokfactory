@@ -1,3 +1,4 @@
+import { normalizeTimeZone } from './psychology-schedule-time.js';
 import { styleById } from '../public/psychology-visual-styles.js';
 export const AUTO_TEMPLATES = Object.freeze({
   video: [
@@ -61,7 +62,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
     if(libraryTestPolicy!=='pools-v1'||!c||!Number.isSafeInteger(c.cycleStartAt)||c.cycleStartAt<=0||c.cycleStartAt>scheduleAt*1000
       ||!Number.isInteger(c.postsPerDay)||c.postsPerDay<1||c.postsPerDay>10||!Number.isInteger(c.dayIndex)||c.dayIndex<0||c.dayIndex>29
       ||!Number.isInteger(c.round)||c.round<0||c.round>=c.postsPerDay)fail('账号池匹配需要有效的周期、每日配额和轮次。');
-    poolContext={cycleStartAt:c.cycleStartAt,postsPerDay:c.postsPerDay,dayIndex:c.dayIndex,round:c.round};
+    poolContext={cycleStartAt:c.cycleStartAt,postsPerDay:c.postsPerDay,dayIndex:c.dayIndex,round:c.round,...(c.timeZone!==undefined?{timeZone:normalizeTimeZone(c.timeZone)}:{})};
   }else if(libraryTestPolicy==='pools-v1')fail('账号池测试政策只能用于账号池匹配。');
   const pairSeed=sourceType==='library'?String(input.pairSeed||'').slice(0,120):'';
   const staggerSeconds=Number(input.staggerSeconds||0);

@@ -8,7 +8,7 @@ Four psychology modules expose scoped management APIs under `/api/integrations/p
 
 ## Account and content pools
 
-Migration 0068 adds current/pending strategy overlays and cycle boundaries without changing legacy strategy constraints. Revision-guarded PATCH /autopilot/id/strategy with strategy=pools and days=7 schedules a new cycle after the last reserved Beijing date. Existing jobs and paused memberships are preserved. Migration 0069 freezes each allocated account/content pool, copy hash, style revision, cycle and reason.
+Migration 0068 adds current/pending strategy overlays and cycle boundaries without changing legacy strategy constraints. Revision-guarded PATCH /autopilot/id/strategy with strategy=pools and days=7 schedules a new cycle after the last reserved operating-zone date. Existing jobs and paused memberships are preserved. Migration 0069 freezes each allocated account/content pool, copy hash, style revision, cycle and reason.
 
 Operations panel=pools supports summary/accounts/content/matrix and pool filters. Effects provides publication, playback, interaction and profile-traffic data. The report separates latest cumulative observations from posts at least 72 hours old, frozen actual allocations from retrospective classifications, and null from zero. No exact historical 72-hour snapshots exist.
 
@@ -29,3 +29,5 @@ Migration 0063 adds key, report-preset and style tables and autopilot request fi
 
 ## Scope limits
 Query presets currently have an API listing rather than a separate page editor. Style layouts are selected from the existing 20 supported layouts; external HTML/CSS/code is not accepted. Definition changes affect only future work. A custom style is visible to its owner on 图文样式; fixed-selection dropdowns on older open publication forms still list built-ins, while random generation uses the current enabled registry.
+
+Migration 0072 adds explicit `timeZone` (America/Los_Angeles or Asia/Shanghai) to plan creation and schedule changes. Creation defaults to legacy Shanghai; schedule omission preserves the current/pending zone. Local calendar boundaries follow DST. Project-managed schedules must retain the project zone and three rounds and cannot take effect before the project cycle starts.

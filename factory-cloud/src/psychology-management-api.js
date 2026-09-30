@@ -139,7 +139,7 @@ export async function handlePsychologyManagement(request,env,url,session,trusted
   if(!suffix&&request.method==='PATCH')fail('请指定运营 ID。',405);
   if(suffix&&request.method==='POST')fail('不提供外部立即执行接口。',405);
   if(body){
-   const fields=!suffix?['requestId','groupId','strategy','days','slots','startNow']:suffix.endsWith('/schedule')?['revision','slots']:suffix.endsWith('/strategy')?['revision','strategy','days']:suffix.includes('/accounts/')?['revision','status']:['revision','status','stopPending','strategy','endsAt'];
+   const fields=!suffix?['requestId','groupId','strategy','days','slots','timeZone','startNow']:suffix.endsWith('/schedule')?['revision','slots','timeZone']:suffix.endsWith('/strategy')?['revision','strategy','days']:suffix.includes('/accounts/')?['revision','status']:['revision','status','stopPending','strategy','endsAt'];
    only(body,fields);
    if(suffix&&!fields.some(k=>k!=='revision'&&Object.hasOwn(body,k)))fail('请提交至少一个修改字段。');
   }

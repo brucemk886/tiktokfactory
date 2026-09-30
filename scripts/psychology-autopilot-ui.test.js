@@ -222,9 +222,9 @@ test('project automatic enrollment requires preview and works without source pla
  assert.match(h.node('#taskGroupProject').textContent,/绑定项目：心理学.*无需选择原发布计划/);
  await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,0);
  await h.node('#previewTaskGroups').onclick();const preview=h.requests.find(r=>r.path.endsWith('/task-groups/preview'));
- assert.deepEqual(preview.body,{revision:0,enabled:true,enrollmentMode:'project',projectId:'psychology-project',reviewTarget:60,admitNewAccounts:true});
+ assert.deepEqual(preview.body,{revision:0,enabled:true,enrollmentMode:'project',projectId:'psychology-project',timeZone:'America/Los_Angeles',reviewTarget:60,admitNewAccounts:true});
  assert.match(h.node('#taskGroupPreview').innerHTML,/绑定项目：心理学.*每日目标3条/);assert.match(h.node('#taskGroupPreview').innerHTML,/纳入 175 个账号.*排除 5 个账号.*待处理 2 个账号/);assert.equal(h.node('#saveTaskGroups').disabled,false);
- await h.node('#saveTaskGroups').onclick();assert.deepEqual(saved,preview.body);assert.match(h.node('#taskGroupConfigStatus').textContent,/已保存：10\/03/);assert.match(h.node('#taskGroupPreview').innerHTML,/已保存的实际配置/);assert.equal(h.node('#saveTaskGroups').disabled,true);
+ await h.node('#saveTaskGroups').onclick();assert.deepEqual(saved,preview.body);assert.match(h.node('#taskGroupConfigStatus').textContent,/已保存：.*10\/03/);assert.match(h.node('#taskGroupPreview').innerHTML,/已保存的实际配置/);assert.equal(h.node('#saveTaskGroups').disabled,true);
  assert.equal(h.requests.filter(r=>r.method==='POST').length,1,'the preview never creates an original publishing plan');
  assert.match(h.node('#taskGroupProjectSummary').textContent,/项目账号按数据自动纳入与分层/);
  const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.doesNotMatch(html,/taskGroupPilotChoices|taskGroupSelectAll|data-task-pilot/);assert.match(html,/原发布计划与历史/);
@@ -291,4 +291,65 @@ test('missing project authorization cannot be previewed or saved and can be retr
  await h.node('#openTaskGroupConfig').onclick();assert.match(h.node('#taskGroupConfigStatus').textContent,/绑定项目不可用/);assert.equal(h.node('#previewTaskGroups').disabled,true);assert.equal(h.node('#retryTaskGroupConfig').hidden,false);
  await h.node('#previewTaskGroups').onclick();await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method!=='GET').length,0);
  task.project={id:'psychology-project',name:'<心理学>'};await h.node('#retryTaskGroupConfig').onclick();await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.projectId,'psychology-project');assert.match(h.node('#taskGroupPreview').innerHTML,/&lt;心理学&gt;/);assert.doesNotMatch(h.node('#taskGroupPreview').innerHTML,/<心理学>/);assert.equal(h.node('#compare').innerHTML,plans);
+});
+
+test('Pacific dates use DST-aware PDT and PST with Beijing comparison, including repeated fall-back hours',async()=>{
+ const h=harness();await tick();
+ const summer=h.run("zonedTime(Date.parse('2026-07-15T15:00:00Z'),'America/Los_Angeles')");
+ const winter=h.run("zonedTime(Date.parse('2026-01-15T16:00:00Z'),'America/Los_Angeles')");
+ assert.match(summer,/07\/15 08:00.*PDT.*07\/15 23:00 北京时间/);assert.match(winter,/01\/15 08:00.*PST.*01\/16 00:00 北京时间/);
+ const first=h.run("zonedTime(Date.parse('2026-11-01T08:30:00Z'),'America/Los_Angeles')"),second=h.run("zonedTime(Date.parse('2026-11-01T09:30:00Z'),'America/Los_Angeles')");
+ assert.match(first,/11\/01 01:30.*PDT.*16:30 北京时间/);assert.match(second,/11\/01 01:30.*PST.*17:30 北京时间/);
+ assert.equal(h.run("zonedTime(null,'America/Los_Angeles')"),'—');
+});
+
+test('stored Beijing policy remains Beijing until Pacific selection invalidates preview and freezes the new save body',async()=>{
+ const task=taskFixture();task.policy={...taskPolicy({revision:4,enabled:true,enrollmentMode:'project',projectId:task.project.id,reviewTarget:60,admitNewAccounts:true}),timeZone:'Asia/Shanghai'};
+ const h=harness({},null,null,async(_path,init)=>taskReply(init.method==='GET'?task:{...task,policy:{...task.policy,...init.body,startsAt:Date.parse('2026-10-02T07:00:00Z'),endsAt:Date.parse('2026-10-09T07:00:00Z'),nextReviewAt:Date.parse('2026-10-05T07:00:00Z')},effectiveAt:Date.parse('2026-10-02T07:00:00Z')}));await tick();await h.node('#openTaskGroupConfig').onclick();
+ assert.equal(h.node('#taskGroupTimeZone').value,'Asia/Shanghai');await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.timeZone,'Asia/Shanghai');
+ h.node('#taskGroupTimeZone').value='America/Los_Angeles';h.node('#taskGroupTimeZone').listeners.change();assert.equal(h.node('#saveTaskGroups').disabled,true);await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,0);
+ assert.match(h.node('#taskGroupTimeZoneHint').textContent,/08:00 \/ 11:30 \/ 20:00.*PDT\/PST/);assert.doesNotMatch(h.node('#taskGroupTimeZoneHint').textContent,/13:00/);
+ await h.node('#previewTaskGroups').onclick();const preview=h.requests.at(-1);assert.equal(preview.body.timeZone,'America/Los_Angeles');assert.match(h.node('#taskGroupPreview').innerHTML,/08:00 \/ 11:30 \/ 20:00/);assert.match(h.node('#taskGroupPreview').innerHTML,/10\/02 00:00.*PDT.*10\/02 15:00 北京时间/);
+ await h.node('#saveTaskGroups').onclick();assert.deepEqual(h.requests.filter(r=>r.method==='PATCH')[0].body,preview.body);assert.match(h.node('#taskGroupStatus').textContent,/10\/05 00:00.*10\/05 15:00 北京时间/);assert.match(h.node('#taskGroupConfigStatus').textContent,/10\/02 00:00.*PDT.*15:00 北京时间/);
+});
+
+test('Pacific role membership shows its individual effective date in Pacific and Beijing',async()=>{
+ const task=taskFixture();task.policy={...taskPolicy({revision:4,enabled:true}),timeZone:'America/Los_Angeles'};
+ const h=harness({},null,null,async path=>taskReply(path.includes('?')?{...task,membership:{page:1,total:1,totalPages:1,rows:[{name:'member',role:'launch',accountPool:'observing',effectiveAt:Date.parse('2026-10-03T07:00:00Z'),paused:true,reason:'preserved pause'}]}}:task));await tick();clickTaskRole(h,'launch');await tick();
+ assert.match(h.node('#taskGroupMemberTable').innerHTML,/10\/03 00:00.*PDT.*10\/03 15:00 北京时间/);assert.match(h.node('#taskGroupMemberTable').innerHTML,/已暂停.*preserved pause/);
+});
+
+test('manual schedule editor uses pending timezone and submits local clocks plus timezone while reports retain Beijing dates',async()=>{
+ const slots=[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}],effectiveAt=Date.parse('2026-10-02T07:00:00Z');
+ const pilot={id:'p',groupId:'g',groupName:'Group',status:'active',accounts:[],schedule:[{slotAt:Date.parse('2026-10-03T15:00:00Z'),status:'created',counts:{}}],attention:[],logs:[],slots:[{hour:8,minute:0},{hour:14,minute:0},{hour:20,minute:0}],pendingSlots:slots,timeZone:'Asia/Shanghai',pendingTimeZone:'America/Los_Angeles',scheduleEffectiveAt:effectiveAt,endsAt:Date.parse('2026-10-09T07:00:00Z')};
+ const h=harness({pilots:[pilot]},null,async body=>({slots:body.slots,timeZone:body.timeZone,effectiveAt}));await tick();
+ assert.match(h.node('#pilots').innerHTML,/08:00 \/ 14:00 \/ 20:00（北京时间）/);assert.match(h.node('#pilots').innerHTML,/08:00 \/ 11:30 \/ 20:00（美国太平洋时间）/);assert.match(h.node('#pilots').innerHTML,/10\/03 08:00.*PDT.*10\/03 23:00 北京时间/);assert.match(h.node('#pilots').innerHTML,/统计日期按北京时间/);
+ h.run("openSchedule('p')");assert.equal(h.node('#editTimeZone').value,'America/Los_Angeles');await h.node('#scheduleForm').listeners.submit({preventDefault(){}});
+ assert.deepEqual(h.requests.find(r=>r.method==='PATCH').body,{slots,timeZone:'America/Los_Angeles'});assert.match(h.node('#scheduleStatus').textContent,/10\/02 00:00.*PDT.*15:00 北京时间/);assert.match(h.node('#scheduleZoneHint').textContent,/项目自动运营期间须保持项目时区及每天3条/);
+ const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/统计时间（北京时间）/);
+});
+
+test('new manual plans freeze an explicit Pacific timezone and 11:30 lunch rather than converting local input to Beijing',async()=>{
+ const h=harness({pilots:[],groups:batchGroups.slice(0,1)},async()=>({run:{batches:[],errors:[]}}));await tick();settings(h);h.node('#createTimeZone').value='America/Los_Angeles';h.node('#defaultDailyCount').listeners.change({target:{value:'3'}});
+ for(const [index,value] of ['08:00','11:30','20:00'].entries())h.events.change({target:{dataset:{timeScope:'default',timeIndex:String(index)},value}});
+ h.node('#selectAllGroups').onclick();h.node('#applySchedule').onclick();await submit(h);const body=h.requests.find(r=>r.method==='POST').body;
+ assert.equal(body.timeZone,'America/Los_Angeles');assert.deepEqual(body.slots,[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}]);
+});
+
+
+test('failed schedule save restores timezone and local inputs for editing and retry',async()=>{
+ const slots=[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}],effectiveAt=Date.parse('2026-10-02T07:00:00Z');
+ const pilot={id:'p',groupId:'g',groupName:'Group',status:'active',accounts:[],schedule:[],attention:[],logs:[],slots,timeZone:'America/Los_Angeles'};
+ let release,attempts=0;const gate=new Promise(resolve=>release=resolve);
+ const h=harness({pilots:[pilot]},null,async body=>{if(++attempts===1){await gate;throw Error('项目自动运营期间须保持项目时区及每天3条，请在项目设置中统一调整时区。');}return {slots:body.slots,timeZone:body.timeZone,effectiveAt};});await tick();
+ const inputs=[h.node('#editDailyCount'),h.node('#editLocalTime')],zone=h.node('#editTimeZone');
+ h.document.querySelectorAll=selector=>selector==='#scheduleForm input, #scheduleForm select'?[...inputs,zone]:selector==='#scheduleForm input'?inputs:[];
+ h.run("openSchedule('p')");const pending=h.node('#scheduleForm').listeners.submit({preventDefault(){}});await tick();
+ assert.ok([...inputs,zone].every(input=>input.disabled));assert.equal(h.node('#saveSchedule').disabled,true);
+ release();await pending;assert.match(h.node('#scheduleStatus').textContent,/项目自动运营期间须保持项目时区/);
+ assert.ok([...inputs,zone].every(input=>input.disabled===false));assert.equal(h.node('#saveSchedule').disabled,false);
+ zone.value='Asia/Shanghai';zone.listeners.change();await h.node('#scheduleForm').listeners.submit({preventDefault(){}});
+ const patches=h.requests.filter(request=>request.method==='PATCH');assert.equal(patches.length,2);assert.deepEqual(patches.map(request=>request.body.timeZone),['America/Los_Angeles','Asia/Shanghai']);assert.deepEqual(patches[1].body.slots,slots);
+ assert.match(h.node('#scheduleStatus').textContent,/已保存/);assert.ok([...inputs,zone].every(input=>input.disabled===false));
+ h.run("openSchedule('p')");assert.equal(zone.disabled,false);
 });

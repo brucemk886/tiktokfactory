@@ -54,8 +54,8 @@ GET /autopilot/<id>/impact?account=<connectionId>：读取暂停影响；account
 GET /autopilot/<id>/slots/<毫秒时间戳>：读取某个排期任务明细。
 如历史计划包含已离开心理学权限范围的账号，外部列表隐藏该计划，单项操作拒绝，需在后台核对分组。
 POST /autopilot
-{"requestId":"<UUID>","groupId":"<分组ID>","strategy":"original","days":7,"slots":[{"hour":8,"minute":0},{"hour":21,"minute":0}],"startNow":false}
-strategy：pools / evolve / original / rewrite。pools 为账号池×内容池，省略slots时默认每日两条。days 1–30；slots 每天 1–10 个不重复北京时间。分组须有可发布账号，且同一分组只能存在一个未结束计划。
+{"requestId":"<UUID>","groupId":"<分组ID>","strategy":"original","days":7,"timeZone":"America/Los_Angeles","slots":[{"hour":8,"minute":0},{"hour":11,"minute":30},{"hour":20,"minute":0}],"startNow":false}
+strategy：pools / evolve / original / rewrite。pools 为账号池×内容池，省略slots时默认每日两条。days 1–30；slots 每天 1–10 个不重复当地时间。timeZone 支持 America/Los_Angeles（美西，自动适应夏令时）和 Asia/Shanghai（北京）；创建时省略默认北京。分组须有可发布账号，且同一分组只能存在一个未结束计划。
 重要：API 新增返回 status=paused，不产生发布任务；运行期从创建时起计。
 PATCH /autopilot/<id>
 {"revision":<GET返回值>,"status":"active"}
@@ -66,14 +66,14 @@ PATCH /autopilot/<id>
 stopPending=false：仅停新增排期，已排任务继续。true：停止尚未提交任务，已进入提交的任务仍继续；恢复不重建已停止任务。
 PATCH /autopilot/<id>/strategy
 {"revision":<当前revision>,"strategy":"pools","days":7}
-- 当前权限、revision和排期重新检查；从已创建/保留排期之后的下一个北京时间整天生效，endsAt延长到生效日之后days天；已有任务不修改，账号暂停状态保留。
+- 当前权限、revision和排期重新检查；从已创建/保留排期之后的下一个运营时区整天生效，endsAt延长到生效日之后days天；已有任务不修改，账号暂停状态保留。
 - 响应有pendingStrategy、strategyEffectiveAt、endsAt。当前/待生效策略通过GET读取，不用当前strategy字段猜测。
 - 中强号可固定具体版本及样式补足5个不同账号的测试占位，满72小时再评估；低号合格基准不足会跳过。诊断号先6条基准，未获6条成熟且3来源及中位播放至少50的复查证据前等待。
 - 真实未知远端发布结果继续占位，确认失败才释放；同号不重复原帖。池匹配不足只跳过相应账号，不改账号暂停状态。
 
 PATCH /autopilot/<id>/schedule
-{"revision":<计划revision>,"slots":[{"hour":12,"minute":0}]}
-返回 effectiveAt；新时段从已预留排期之后的完整北京时间日期生效，已有任务不变。
+{"revision":<计划revision>,"timeZone":"America/Los_Angeles","slots":[{"hour":8,"minute":0},{"hour":11,"minute":30},{"hour":20,"minute":0}]}
+返回 effectiveAt、timeZone；省略 timeZone 保留当前或待生效时区。新时段从已预留排期之后的完整目标时区日期生效，已有任务不变。绑定项目运营期间必须保持项目时区及每日 3 条，且不得早于项目周期开始；项目时区在后台项目设置统一调整。
 PATCH /autopilot/<id>/accounts/<connectionId>
 {"revision":<accounts中此账号的revision>,"status":"paused"}
 账号只支持 paused/active；暂停账号会停止其本地未提交任务。已结束计划不能修改。无对外立即执行 /run 接口。

@@ -235,7 +235,7 @@ test('review task members use two fixed-version validation rounds and one winner
     assert.equal(result.plan.length,1);
     const match=result.plan[0].source.poolMatch;
     assert.equal(match.contentPool,round===2?'winner':'explore');
-    assert.deepEqual(match.taskGroup,{policyId:'policy',id:'policy:review',role:'review',revision:3,effectiveAt:cycle});
+    assert.deepEqual(match.taskGroup,{policyId:'policy',timeZone:'Asia/Shanghai',id:'policy:review',role:'review',revision:3,effectiveAt:cycle});
   }
   const full=new Map([[candidates[0].key,{posts:5,accounts:new Set(['b','c','d','e','f'])}]]);
   const result=plan({candidates,taskAssignments,occupied:full,context:context({postsPerDay:3})});

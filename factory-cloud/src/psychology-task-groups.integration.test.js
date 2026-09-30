@@ -8,6 +8,7 @@ import { handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { runAutopilot, runAutopilots, handlePsychologyAutopilot } from './psychology-autopilot.js';
 import { taskAssignmentsFor, handleTaskGroups } from './psychology-task-groups.js';
 import { taskSlotAccounts, taskPublishContext, sameDeliveryDay, reconcileTaskExecutors } from './psychology-task-group-execution.js';
+import { PACIFIC_TIME_ZONE, zonedEpoch, zonedDate } from '../../scripts/psychology-schedule-time.js';
 import { POOL_POLICY } from '../../scripts/psychology-pool-policy.js';
 
 const DAY = 86400000, HOUR = 3600000;
@@ -363,7 +364,9 @@ test('project controller bootstraps without any manual plans and admits all curr
   const executors=f.sqlite.prepare("SELECT * FROM psychology_autopilots WHERE status='active'").all();
   assert.deepEqual(new Set(executors.map(pilot=>pilot.group_id)),new Set(['g','spare']));
   assert.ok(executors.every(pilot=>pilot.task_group_policy_id===bound.policy.id&&pilot.task_group_managed===1));
-  assert.ok(executors.every(pilot=>JSON.stringify(JSON.parse(pilot.slots_json))===JSON.stringify(slots)));
+  assert.equal(bound.policy.timeZone,PACIFIC_TIME_ZONE);
+  assert.ok(executors.every(pilot=>pilot.schedule_timezone===PACIFIC_TIME_ZONE));
+  for(const pilot of executors){const times=JSON.parse(pilot.slots_json).map(s=>s.hour*60+s.minute);assert.equal(times[1]-times[0],210);assert.equal(times[2]-times[0],720);}
   for(const id of ['a','b'])assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_task_group_allocations WHERE connection_id=?').get(id).n,3);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_task_group_accounts WHERE connection_id='outside'").get().n,0);
 
@@ -539,7 +542,7 @@ test('expired legacy reservations follow a moved account and delay only its new 
   f.sqlite.prepare("UPDATE official_account_assignments SET group_id='new-group' WHERE account_key='a'").run();
   for(let n=0;n<6;n++)f.sqlite.prepare("INSERT INTO ops_task_facts(id,batch_id,account_key,media,schedule_at,published_at,source,variant,style,copy_hash,state,views,completion) VALUES(?,?,'tiktok:c','photo',?,?,?,'','classic','historical-copy','published',600,0.2)")
     .run('reserved-c'+n,'history',created-4*DAY,created-4*DAY,'reserved-c-source-'+n);
-  const permissions=permissionFingerprint(f),bound=await bindProject(f);
+  const permissions=permissionFingerprint(f),bound=await bindProject(f,created,{timeZone:'Asia/Shanghai'});
   assert.equal(bound.policy.startsAt,at('2026-10-01'));
   assert.equal(bound.totals.enrolled,3);
   assert.equal(bound.totals.blocked,1);
@@ -582,4 +585,55 @@ test('frozen reservations from another owner still protect a currently authorize
   assert.equal(f.sqlite.prepare('SELECT created_by FROM psychology_publish_batches WHERE id=?').get(batch.batchId).created_by,'other-owner');
   assert.equal(f.sqlite.prepare('SELECT owner FROM psychology_autopilots WHERE id=?').get(prior.id).owner,'other-owner');
   assert.equal(f.requests.length,0);
+});
+
+
+test('Pacific rounds share one local-day cap across two Beijing dates and freeze their timezone',async t=>{
+ const f=await taskFixture(t),zone=PACIFIC_TIME_ZONE,start=zonedEpoch('2026-10-02',0,0,zone),end=zonedEpoch('2026-10-09',0,0,zone);
+ const times=[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}];
+ f.sqlite.prepare('UPDATE psychology_task_group_policies SET time_zone=?,starts_at=?,ends_at=?,enrollment_mode=?').run(zone,start,end,'project');
+ f.sqlite.prepare('UPDATE psychology_task_group_snapshots SET effective_at=?').run(start);
+ f.sqlite.prepare('UPDATE psychology_autopilots SET schedule_timezone=?,slots_json=?,ends_at=?,strategy_started_at=?').run(zone,JSON.stringify(times),end,start);
+ const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(f.sourcePilot.id);f.setNow(start);
+ for(let round=0;round<3;round++){
+  const {hour,minute}=times[round],slot=zonedEpoch('2026-10-02',hour,minute,zone);
+  assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],slot),['a','b']);
+  const input=f.body(round,{scheduleAt:slot/1000,poolContext:{cycleStartAt:start,postsPerDay:3,round,dayIndex:0,timeZone:zone}});
+  const response=await f.dispatch(input,slot);assert.equal(response.status,202);assert.equal((await response.json()).count,2);
+ }
+ const claims=f.sqlite.prepare('SELECT * FROM psychology_task_group_allocations ORDER BY connection_id,round').all();
+ assert.equal(claims.length,6);assert.ok(claims.every(c=>c.beijing_date==='2026-10-02'&&c.time_zone===zone));
+ const items=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY schedule_at').all();
+ assert.equal(new Set(items.map(i=>zonedDate(i.schedule_at*1000,'Asia/Shanghai'))).size,2);
+ const jobs=f.sqlite.prepare('SELECT payload_json FROM factory_jobs').all().map(j=>JSON.parse(j.payload_json));
+ assert.ok(jobs.every(j=>j.psychologyAutomation.poolMatch.timeZone===zone&&j.psychologyAutomation.poolMatch.taskGroup.timeZone===zone));
+ const finalSlot=zonedEpoch('2026-10-02',20,0,zone);
+ assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],finalSlot),[]);
+ await assert.rejects(f.dispatch(f.body(2,{scheduleAt:finalSlot/1000,poolContext:{cycleStartAt:start,postsPerDay:3,round:2,dayIndex:0,timeZone:zone}})),error=>error.statusCode===409);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_task_group_allocations').get().n,6);assert.equal(f.requests.length,0);
+});
+
+test('Pacific delivery-day boundaries remain local over autumn DST and reject next-local-day spillover',()=>{
+ const zone=PACIFIC_TIME_ZONE,end=zonedEpoch('2026-11-03',0,0,zone),slot=zonedEpoch('2026-11-01',8,0,zone);
+ assert.equal(sameDeliveryDay(slot,zonedEpoch('2026-11-01',23,59,zone)/1000,end,zone),true);
+ assert.equal(sameDeliveryDay(slot,zonedEpoch('2026-11-02',0,0,zone)/1000,end,zone),false);
+ const previous=zonedEpoch('2026-10-31',23,59,zone);
+ assert.equal(sameDeliveryDay(previous,zonedEpoch('2026-11-01',0,0,zone)/1000,end,zone),false);
+});
+
+
+test('prestart Pacific transition closes the legacy schedule gap without changing frozen old tasks',async t=>{
+ const f=await taskFixture(t);f.sqlite.prepare('UPDATE psychology_task_group_accounts SET legacy_member=1 WHERE enrolled=1').run();
+ const oldSlot=at('2026-10-01','08:00');
+ f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run('gap-old','admin','{}',created);
+ f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?)').run('gap-item','gap-old','source','job','a',oldSlot/1000);
+ const before=JSON.stringify(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='gap-item'").get());
+ const bound=await bindProject(f,created,{timeZone:PACIFIC_TIME_ZONE});
+ const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(f.sourcePilot.id);
+ assert.equal(bound.policy.prestartCutoffAt,starts);
+ assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],oldSlot),['a','b']);
+ assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],starts+2*HOUR),[]);
+ assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],zonedEpoch('2026-10-02',8,0,PACIFIC_TIME_ZONE)),['a','b']);
+ assert.equal(JSON.stringify(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='gap-item'").get()),before);
+ assert.equal(f.requests.length,0);
 });
