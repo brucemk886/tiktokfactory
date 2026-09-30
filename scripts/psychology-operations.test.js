@@ -182,15 +182,17 @@ test('a newly assigned unsynced account does not hide known archive timestamps',
 });
 
 
-function poolBrowser(fetchPool){
+function poolBrowser(fetchPool,{search='?period=7d&group=g1'}={}){
  const fs=globalThis.process.getBuiltinModule('fs'),vm=globalThis.process.getBuiltinModule('vm');
  const src=fs.readFileSync(new URL('../public/psychology-operations.js',import.meta.url),'utf8');
- const nodes=new Map(),requests=[];
- const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='#period'?'7d':'',hidden:false,open:false,textContent:'',innerHTML:'',listeners:{},attributes:{},classList:{toggle(){}},addEventListener(k,f){this.listeners[k]=f;},setAttribute(k,v){this.attributes[k]=v;},querySelector:q=>node(s+' '+q),querySelectorAll:()=>[],contains(){return false;},focus(){}});return nodes.get(s);};
+ const nodes=new Map(),requests=[],urls=[];
+ const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='#period'?'7d':'',hidden:false,open:false,textContent:'',innerHTML:'',dataset:{},listeners:{},attributes:{},classList:{toggle(){}},addEventListener(k,f){this.listeners[k]=f;},setAttribute(k,v){this.attributes[k]=v;},querySelector:q=>node(s+' '+q),querySelectorAll:()=>[],contains(target){return target?.container===this;},focus(options){this.focused=true;this.focusOptions=options;},scrollIntoView(options){this.scrollOptions=options;}});return nodes.get(s);};
+ const tabs=['overview','accounts','content','strategy'].map(id=>{const button=node('[data-tab="'+id+'"]');button.dataset.tab=id;return button;});
  const data={groups:[{id:'g1',name:'G1'}],window:{from:'2026-09-24',to:'2026-09-30',previousFrom:'2026-09-17',previousTo:'2026-09-23'},framework:{},progress:{ready:true}};
- const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'?period=7d&group=g1',href:'https://factory.test/psychology-ops-report?period=7d&group=g1'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},fetch:async(url,init)=>{const q=new URL(url,'https://factory.test').searchParams;requests.push({url,q,init});return q.get('panel')==='pools'?fetchPool(q,init):{ok:true,json:async()=>data};}});
+ const location={search,href:'https://factory.test/psychology-ops-report'+search};
+ const context=vm.createContext({URL,URLSearchParams,AbortController,location,history:{replaceState(_state,_title,url){const next=new URL(url,location.href);location.href=next.href;location.search=next.search;urls.push(next);}},document:{querySelector:node,querySelectorAll:s=>s==='[data-tab]'?tabs:[],addEventListener(){}},fetch:async(url,init)=>{const q=new URL(url,'https://factory.test').searchParams;requests.push({url,q,init});return q.get('panel')==='pools'?fetchPool(q,init):{ok:true,json:async()=>data};}});
  vm.runInContext(src+'\nrender=()=>{};',context);
- return {node,requests,run:code=>vm.runInContext(code,context)};
+ return {node,requests,tabs,urls,run:code=>vm.runInContext(code,context),clickPool(id,{nested=false,inside=true}={}){const card={dataset:{accountPool:id},container:inside?node('#poolSummary'):null,closest:s=>s==='[data-account-pool]'?card:null};return node('#poolSummary').listeners.click({target:nested?{closest:s=>card.closest(s)}:card});}};
 }
 const poolTick=()=>new Promise(r=>setImmediate(r));
 const poolMatching=()=>({
@@ -226,4 +228,44 @@ test('actual allocation displays frozen decisions and execution counts separatel
  const m={...poolMatching(),allocation:{total:3,basis:'排期时冻结的分池',rows:[{accountPool:'strong',contentPool:'winner',planned:3,published:1,pending:1,failed:1,stopped:0,synced:0,views:null,medianViews:null,warmup:2}]}};
  const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:m})}));await poolTick();await h.run("loadPools('summary')");
  const html=h.node('#poolAllocation').innerHTML;assert.match(html,/排期时账号池/);assert.match(html,/3 \/ 1/);assert.match(html,/— \/ —/);assert.match(html,/基线补测/);assert.match(html,/排期时冻结的分池/);assert.doesNotMatch(h.node('#poolMatrix').innerHTML,/3 \/ 1/);
+});
+
+
+test('account pool cards are native controls that open scoped page-one accounts including empty pools',async()=>{
+ const m=poolMatching();m.accountPools[0].accounts=0;
+ const h=poolBrowser(async q=>({ok:true,json:async()=>({matching:{...m,...(q.get('mode')==='accounts'?{accounts:{page:Number(q.get('page')),pages:q.get('accountPool')==='strong'?1:3,total:q.get('accountPool')==='strong'?0:21,rows:[]}}:{})}})}),{search:'?period=custom&from=2026-09-24&to=2026-09-30&group=g1&media=video'});
+ await poolTick();await h.run("loadPools('summary')");
+ const html=h.node('#poolSummary').innerHTML,buttons=[...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].filter(b=>/data-account-pool=/.test(b[1]));
+ assert.equal(buttons.length,m.accountPools.length);
+ for(const [i,button]of buttons.entries()){
+  assert.match(button[1],/type="button"/);assert.match(button[1],/aria-controls="accounts"/);assert.match(button[1],new RegExp('data-account-pool="'+m.accountPools[i].id+'"'));
+  assert.match(button[1],new RegExp('aria-label="查看'+m.accountPools[i].label+'的'+m.accountPools[i].accounts+'个账号"'));assert.doesNotMatch(button[1],/disabled|tabindex="-1"/);
+ }
+ assert.match(html,/<article class="ops-pool-card"><span>优胜池<\/span>/);
+ h.node('#poolAccountFilter').value='rescue-hook';await h.run("loadPools('accounts',3)");
+ const before=h.requests.length;await h.clickPool('missing');await h.clickPool('strong',{inside:false});assert.equal(h.requests.length,before);
+ await h.clickPool('strong',{nested:true});await poolTick();
+ const q=h.requests.at(-1).q;
+ assert.equal(q.get('panel'),'pools');assert.equal(q.get('mode'),'accounts');assert.equal(q.get('accountPool'),'strong');assert.equal(q.get('page'),'1');
+ for(const [key,value]of Object.entries({period:'custom',from:'2026-09-24',to:'2026-09-30',group:'g1',media:'video'}))assert.equal(q.get(key),value);
+ assert.equal(h.node('#poolAccountFilter').value,'strong');assert.match(h.node('#poolAccountTable').innerHTML,/没有符合条件的账号/);
+ for(const tab of h.tabs){const active=tab.dataset.tab==='accounts';assert.equal(tab.attributes['aria-selected'],String(active));assert.equal(tab.tabIndex,active?0:-1);assert.equal(h.node('#'+tab.dataset.tab).hidden,!active);}
+ assert.equal(h.urls.at(-1).searchParams.get('tab'),'accounts');assert.equal(h.urls.at(-1).searchParams.get('group'),'g1');assert.equal(h.urls.at(-1).searchParams.get('media'),'video');
+ assert.equal(h.node('#accounts').scrollOptions?.block,'start');assert.equal(h.node('#poolAccountFilter').focused,true);assert.equal(h.node('#poolAccountFilter').focusOptions?.preventScroll,true);
+});
+
+test('successive pool-card clicks reject stale accounts and retain the tab selected while they load',async()=>{
+ const m=poolMatching();let release;
+ const response=name=>({ok:true,json:async()=>({matching:{...m,accounts:{page:1,pages:1,total:1,rows:[{name,group:'G1',pool:name==='current'?'rescue-hook':'strong',stats:{}}]}}})});
+ const h=poolBrowser(async q=>q.get('mode')!=='accounts'?{ok:true,json:async()=>({matching:m})}:q.get('accountPool')==='strong'?new Promise(resolve=>{release=resolve;}):response('current'));
+ await poolTick();await h.run("loadPools('summary')");
+ const old=h.clickPool('strong');await poolTick();const oldRequest=h.requests.at(-1);assert.equal(oldRequest.q.get('accountPool'),'strong');
+ h.tabs.find(tab=>tab.dataset.tab==='overview').listeners.click();assert.equal(h.node('#overview').hidden,false);
+ await h.clickPool('rescue-hook');await poolTick();
+ assert.equal(oldRequest.init.signal.aborted,true);assert.equal(h.requests.at(-1).q.get('accountPool'),'rescue-hook');assert.equal(h.requests.at(-1).q.get('page'),'1');
+ const html=h.node('#poolAccountTable').innerHTML;assert.match(html,/@current/);assert.equal(h.node('#poolAccountFilter').value,'rescue-hook');assert.equal(h.node('#accounts').hidden,false);
+ h.tabs.find(tab=>tab.dataset.tab==='content').listeners.click();await poolTick();
+ release(response('obsolete'));await old;await poolTick();
+ assert.equal(h.node('#poolAccountTable').innerHTML,html);assert.doesNotMatch(h.node('#poolAccountTable').innerHTML,/obsolete/);assert.equal(h.node('#poolAccountTable').attributes['aria-busy'],'false');
+ assert.equal(h.node('#poolAccountFilter').value,'rescue-hook');assert.equal(h.node('#content').hidden,false);assert.equal(h.node('#accounts').hidden,true);assert.equal(h.urls.at(-1).searchParams.get('tab'),'content');
 });

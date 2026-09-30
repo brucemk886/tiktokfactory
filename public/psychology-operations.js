@@ -229,7 +229,19 @@ function renderPoolSelectors(){
 }
 function poolStatsCells(s={}){return [fmt(s.n),fmt(s.medianViews)+'<small>平均 '+fmt(s.avgViews)+'</small>',pct(s.potentialRate),pct(s.completion)];}
 const poolStatsHeaders=['已满72h作品','中位播放 / 均播','千播率','完成率'];
-function poolCards(rows=[],kind){return '<div class="ops-pool-cards">'+rows.map(r=>'<article class="ops-pool-card"><span>'+esc(r.label)+'</span><strong>'+fmt(kind==='account'?r.accounts:r.versions)+'</strong><small>'+esc(r.action)+'</small></article>').join('')+'</div>';}
+function poolCards(rows=[],kind){return '<div class="ops-pool-cards">'+rows.map(r=>{
+ const content='<span>'+esc(r.label)+'</span><strong>'+fmt(kind==='account'?r.accounts:r.versions)+'</strong><small>'+esc(r.action)+'</small>';
+ return kind==='account'?'<button type="button" class="ops-pool-card ops-pool-card-button" data-account-pool="'+esc(r.id)+'" aria-controls="accounts" aria-label="'+esc('查看'+r.label+'的'+fmt(r.accounts)+'个账号')+'">'+content+'<small class="ops-pool-card-link">查看账号 →</small></button>':'<article class="ops-pool-card">'+content+'</article>';
+}).join('')+'</div>';}
+$('#poolSummary').addEventListener('click',event=>{
+ const card=event.target.closest('[data-account-pool]');
+ if(!card||!$('#poolSummary').contains(card)||!state.matching?.accountPools?.some(row=>row.id===card.dataset.accountPool))return;
+ $('#poolAccountFilter').value=card.dataset.accountPool;
+ selectTab('accounts');
+ $('#accounts').scrollIntoView?.({block:'start'});
+ $('#poolAccountFilter').focus({preventScroll:true});
+});
+
 function renderPoolSummary(m){
  const c=m.coverage||{},o=m.overview||{},cur=o.current||{},mat=o.mature||{};
  $('#poolSummary').innerHTML=(m.readiness?.status==='warming'?'<div class="ops-pool-readiness" role="status"><strong>优胜版本补测中</strong><p>'+esc(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+fmt(m.readiness.winnerVersions)+' · 满足对应内容池条件的版本 '+fmt(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'')+'<h3>账号池规模</h3>'+poolCards(m.accountPools,'account')+'<h3>内容池规模 · 已观察版本</h3>'+poolCards(m.contentPools,'content')+
