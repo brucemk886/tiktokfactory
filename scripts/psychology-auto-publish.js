@@ -52,9 +52,17 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(!['legacy','fixed','random'].includes(styleMode)||(!styleById(styleId)&&!/^style-[a-f0-9]{32}$/.test(styleId)))fail('图文视觉样式配置无效。');
   if(['copy-bank','copy-library','library'].includes(sourceType)&&input.rewriteCopy===true)fail('文案库内容直接复用，请在改写详情保存新版本后使用。');
   const libraryStrategy=String(input.libraryStrategy||'evolve');
-  if(sourceType==='library'&&!['evolve','original','rewrite'].includes(libraryStrategy))fail('文案库抽取策略无效。');
+  if(sourceType==='library'&&!['evolve','original','rewrite','pools'].includes(libraryStrategy))fail('文案库抽取策略无效。');
   const libraryTestPolicy=String(input.libraryTestPolicy||'');
-  if(libraryTestPolicy && (libraryTestPolicy!=='balanced-v1'||sourceType!=='library'||input.allowPeerReuse===true))fail('测试策略仅支持文案库且不能重复选题。');
+  if(libraryTestPolicy && (!['balanced-v1','pools-v1'].includes(libraryTestPolicy)||sourceType!=='library'||input.allowPeerReuse===true))fail('测试策略仅支持文案库且不能重复选题。');
+  let poolContext;
+  if(sourceType==='library'&&libraryStrategy==='pools'){
+    const c=input.poolContext;
+    if(libraryTestPolicy!=='pools-v1'||!c||!Number.isSafeInteger(c.cycleStartAt)||c.cycleStartAt<=0||c.cycleStartAt>scheduleAt*1000
+      ||!Number.isInteger(c.postsPerDay)||c.postsPerDay<1||c.postsPerDay>10||!Number.isInteger(c.dayIndex)||c.dayIndex<0||c.dayIndex>29
+      ||!Number.isInteger(c.round)||c.round<0||c.round>=c.postsPerDay)fail('账号池匹配需要有效的周期、每日配额和轮次。');
+    poolContext={cycleStartAt:c.cycleStartAt,postsPerDay:c.postsPerDay,dayIndex:c.dayIndex,round:c.round};
+  }else if(libraryTestPolicy==='pools-v1')fail('账号池测试政策只能用于账号池匹配。');
   const pairSeed=sourceType==='library'?String(input.pairSeed||'').slice(0,120):'';
   const staggerSeconds=Number(input.staggerSeconds||0);
   if(!Number.isInteger(staggerSeconds)||staggerSeconds<0||staggerSeconds>600)fail('账号错开秒数应为 0–600。');
@@ -62,7 +70,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
   const tiktokOne=input.tiktokOne==null?null:normalizeOneProject(input.tiktokOne);
   if(tiktokOne&&mediaType!=='video')fail('TikTok One 挂锚点发布仅支持视频模板。');
-  return { ...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  return { ...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {

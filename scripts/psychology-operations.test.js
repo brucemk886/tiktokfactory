@@ -125,13 +125,13 @@ test('overview skips heavy content but detail uses the same group permission che
  assert.equal((await call('period=today&details=1&group=g2')).status,403);
 });
 
-test('report UI defaults today, loads details on demand and rejects stale detail responses',async()=>{
+test('report UI retains an explicit today filter, loads details on demand and rejects stale detail responses',async()=>{
  const fs=await import('node:fs'),vm=await import('node:vm');
  const src=fs.readFileSync(new URL('../public/psychology-operations.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/,'');
  const nodes=new Map(),requests=[],rendered=[];let release;
  const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='#period'?'today':'',hidden:true,open:false,textContent:'',innerHTML:'',listeners:{},classList:{toggle(){}},addEventListener(k,f){this.listeners[k]=f;},setAttribute(){},contains(){return false;},focus(){}});return nodes.get(s);};
  const data={groups:[],window:{from:'2026-09-25',to:'2026-09-25',previousFrom:'2026-09-24',previousTo:'2026-09-24'},framework:{},content:null,progress:{ready:true,pending:0}};
- const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'',href:'https://factory.test/psychology-ops-report'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},renderContentPerformance:v=>rendered.push(v),fetch:async(url,init)=>{requests.push({url,init});if(url.includes('panel=details'))return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({content:{rows:[{id:'old'}]}})});});return {ok:true,json:async()=>data};}});
+ const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'?period=today',href:'https://factory.test/psychology-ops-report?period=today'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},renderContentPerformance:v=>rendered.push(v),fetch:async(url,init)=>{requests.push({url,init});if(url.includes('panel=details'))return new Promise(resolve=>{release=()=>resolve({ok:true,json:async()=>({content:{rows:[{id:'old'}]}})});});return {ok:true,json:async()=>data};}});
  vm.runInContext(src+'\nrender=()=>{};',context);await new Promise(r=>setImmediate(r));
  assert.match(requests[0].url,/period=today/);assert.equal(requests.length,1);
  node('#contentDetail').open=true;const detail=node('#contentDetail').listeners.toggle();await new Promise(r=>setImmediate(r));assert.match(requests[1].url,/panel=details/);
@@ -156,7 +156,7 @@ test('autopilot same-day report counts all 360 tasks, nine groups and three stra
  const r=buildAutopilotReport({items:[...items,items[0]],records,accounts:list,videosByAccount,window,now});
  assert.equal(r.summary.planned,360);assert.equal(r.summary.published,360);assert.equal(r.summary.synced,360);assert.equal(r.summary.accounts,180);
  assert.equal(r.summary.views,360000);assert.equal(r.summary.averageViews,1000);assert.equal(r.summary.potentialRate,.5);
- assert.equal(r.groups.length,9);assert.ok(r.groups.every(g=>g.planned===40&&g.published===40));assert.deepEqual(r.strategies.map(s=>s.planned),[120,120,120]);
+ assert.equal(r.groups.length,9);assert.ok(r.groups.every(g=>g.planned===40&&g.published===40));assert.deepEqual(Object.fromEntries(r.strategies.map(s=>[s.id,s.planned])),{pools:0,evolve:120,original:120,rewrite:120});
  assert.equal(r.summary.original,180);assert.equal(r.summary.rewrite,180);
 });
 
@@ -179,4 +179,51 @@ test('a newly assigned unsynced account does not hide known archive timestamps',
  const url=new URL('https://factory.test/api/psychology-operations');
  const response=await handlePsychologyOperations(new Request(url),env,url,{user:{role:'admin',sidebarModules:['psychology-ops-report']}});
  const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));assert.ok(body.archiveAt>0);
+});
+
+
+function poolBrowser(fetchPool){
+ const fs=globalThis.process.getBuiltinModule('fs'),vm=globalThis.process.getBuiltinModule('vm');
+ const src=fs.readFileSync(new URL('../public/psychology-operations.js',import.meta.url),'utf8');
+ const nodes=new Map(),requests=[];
+ const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='#period'?'7d':'',hidden:false,open:false,textContent:'',innerHTML:'',listeners:{},attributes:{},classList:{toggle(){}},addEventListener(k,f){this.listeners[k]=f;},setAttribute(k,v){this.attributes[k]=v;},querySelector:q=>node(s+' '+q),querySelectorAll:()=>[],contains(){return false;},focus(){}});return nodes.get(s);};
+ const data={groups:[{id:'g1',name:'G1'}],window:{from:'2026-09-24',to:'2026-09-30',previousFrom:'2026-09-17',previousTo:'2026-09-23'},framework:{},progress:{ready:true}};
+ const context=vm.createContext({URL,URLSearchParams,AbortController,location:{search:'?period=7d&group=g1',href:'https://factory.test/psychology-ops-report?period=7d&group=g1'},history:{replaceState(){}},document:{querySelector:node,querySelectorAll:()=>[],addEventListener(){}},fetch:async(url,init)=>{const q=new URL(url,'https://factory.test').searchParams;requests.push({url,q,init});return q.get('panel')==='pools'?fetchPool(q,init):{ok:true,json:async()=>data};}});
+ vm.runInContext(src+'\nrender=()=>{};',context);
+ return {node,requests,run:code=>vm.runInContext(code,context)};
+}
+const poolTick=()=>new Promise(r=>setImmediate(r));
+const poolMatching=()=>({
+ accountPools:[{id:'strong',label:'强号池',action:'保持产出',accounts:1,quota:{winner:12,optimize:1,explore:1,total:14}},{id:'rescue-hook',label:'低号救援 · 首图',action:'测试首图',accounts:1,quota:{winner:11,optimize:3,explore:0,total:14}}],
+ contentPools:[{id:'winner',label:'优胜池',action:'基准',versions:1}],coverage:{published:3,synced:2,missingMetrics:1,matureSynced:1,observingAccounts:0,unknownVersions:0,unknownStyles:0},
+ overview:{current:{n:2,views:1000,medianViews:500,potentialRate:0,completion:null},mature:{n:1,views:0,medianViews:0,potentialRate:0,completion:0}},recovery:{improved:0,declined:0,stable:0,comparable:0,insufficient:2},matrix:{rows:[]}
+});
+test('pool summary distinguishes fresh cumulative observations, mature zero metrics and missing metrics',async()=>{
+ const m={...poolMatching(),readiness:{status:'warming',winnerVersions:0,readyVersions:1,nextStep:'<固定样式补测>'}},h=poolBrowser(async()=>({ok:true,json:async()=>({matching:m})}));await poolTick();await h.run("loadPools('summary')");
+ const html=h.node('#poolSummary').innerHTML;assert.match(html,/已同步累计（含新发布）/);assert.match(html,/已满72h可评估/);assert.match(html,/1,000/);assert.match(html,/>0</);assert.match(html,/—/);assert.match(html,/待同步 1/);assert.match(html,/优胜版本补测中/);assert.match(html,/&lt;固定样式补测&gt;/);assert.doesNotMatch(html,/<固定样式补测>/);
+ assert.match(h.node('#poolMatrix').innerHTML,/暂无满72小时/);assert.match(h.node('#poolAllocation').innerHTML,/尚无账号池匹配的新排期/);assert.doesNotMatch(h.node('#poolPolicy').innerHTML,/total/);
+ assert.equal(h.requests.at(-1).q.get('group'),'g1');assert.equal(h.requests.at(-1).q.get('media'),'photo');assert.equal(h.requests.at(-1).q.get('period'),'7d');
+});
+test('pool account pagination keeps scope and filters, exposes missing values and escapes user content',async()=>{
+ const m=poolMatching(),h=poolBrowser(async q=>({ok:true,json:async()=>({matching:{...m,accounts:{page:Number(q.get('page')),pages:2,total:12,rows:[{name:'<unsafe>',group:'G1',pool:'rescue-hook',previousPool:'strong',comparable:true,improved:false,stats:{n:6,medianViews:100,avgViews:200,completion:null},previousStats:{medianViews:700},medianDelta:-600,recommendation:'<check>'}]}}})}));await poolTick();
+ h.node('#poolAccountFilter').value='rescue-hook';const next={dataset:{poolStep:'1'}},prev={dataset:{poolStep:'-1'}};
+ h.node('#poolAccountPager').querySelectorAll=s=>s==='[data-pool-step]'?[prev,next]:[];
+ await h.run("loadPools('accounts')");assert.match(h.node('#poolAccountTable').innerHTML,/&lt;unsafe&gt;|&lt;check&gt;/);assert.doesNotMatch(h.node('#poolAccountTable').innerHTML,/<unsafe>|<check>/);assert.match(h.node('#poolAccountTable').innerHTML,/流量下滑/);assert.match(h.node('#poolAccountTable').innerHTML,/—/);
+ assert.match(h.node('#poolAccountPager').innerHTML,/aria-label="下一页"/);await next.onclick();const q=h.requests.at(-1).q;assert.equal(q.get('page'),'2');assert.equal(q.get('accountPool'),'rescue-hook');assert.equal(q.get('group'),'g1');assert.equal(q.get('media'),'photo');
+});
+test('pool read failures stay isolated and obsolete same-panel responses cannot overwrite new results',async()=>{
+ let release,phase=0;const m=poolMatching(),h=poolBrowser(async()=>{phase++;if(phase===1)return new Promise(r=>{release=r;});if(phase===2)return {ok:true,json:async()=>({matching:{...m,accounts:{page:1,pages:1,total:0,rows:[]}}})};return {ok:false,json:async()=>({error:'<offline>'})};});await poolTick();
+ const old=h.run("loadPools('accounts')");await poolTick();await h.run("loadPools('accounts')");const html=h.node('#poolAccountTable').innerHTML;assert.match(html,/没有符合条件/);assert.equal(h.requests[1].init.signal.aborted,true);
+ release({ok:true,json:async()=>({matching:{...m,accounts:{page:1,pages:1,total:1,rows:[{name:'old',stats:{}}]}}})});await old;assert.equal(h.node('#poolAccountTable').innerHTML,html);
+ h.node('#autopilotMetrics').innerHTML='execution survives';await h.run("loadPools('accounts')");assert.match(h.node('#poolAccountTable').innerHTML,/role="alert".*&lt;offline&gt;/);assert.equal(h.node('#autopilotMetrics').innerHTML,'execution survives');assert.equal(h.node('#poolAccountTable').attributes['aria-busy'],'false');
+});
+test('content pool rendering separates original from unknown identities and retains version/style details',async()=>{
+ const m=poolMatching(),h=poolBrowser(async()=>({ok:true,json:async()=>({matching:{...m,content:{page:1,pages:1,total:2,rows:[{source:'a',title:'<title>',version:'',versionKnown:true,style:'paper',styleKnown:true,styleRevision:2,copyHash:'abcdef12',pool:'winner',accounts:5,stats:{n:5,medianViews:600},cumulativeStats:{n:7}},{source:'b',title:'unknown',version:'',versionKnown:false,style:'',styleKnown:false,pool:'winner',accounts:0,stats:{n:0}}]}}})}));await poolTick();await h.run("loadPools('content')");const html=h.node('#poolContentTable').innerHTML;
+ assert.match(html,/原版 · paper · 样式第 2 版/);assert.match(html,/版本身份未知 · 样式未知/);assert.match(html,/&lt;title&gt;/);assert.doesNotMatch(html,/abcdef12/);assert.match(h.node('#poolContentPager').innerHTML,/共 2 条/);
+});
+
+test('actual allocation displays frozen decisions and execution counts separately from retrospective metrics',async()=>{
+ const m={...poolMatching(),allocation:{total:3,basis:'排期时冻结的分池',rows:[{accountPool:'strong',contentPool:'winner',planned:3,published:1,pending:1,failed:1,stopped:0,synced:0,views:null,medianViews:null,warmup:2}]}};
+ const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:m})}));await poolTick();await h.run("loadPools('summary')");
+ const html=h.node('#poolAllocation').innerHTML;assert.match(html,/排期时账号池/);assert.match(html,/3 \/ 1/);assert.match(html,/— \/ —/);assert.match(html,/基线补测/);assert.match(html,/排期时冻结的分池/);assert.doesNotMatch(h.node('#poolMatrix').innerHTML,/3 \/ 1/);
 });

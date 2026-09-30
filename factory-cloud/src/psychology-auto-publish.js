@@ -1,3 +1,5 @@
+import { buildPoolCandidates,loadPoolReservations,planPoolMatches,poolMatchStatement } from './psychology-pool-matching.js';
+import { readPoolMatchingState } from './psychology-pool-report.js';
 import { assertPsychologyOneUser, ensurePsychologyOneMembers } from './psychology-tiktok-one.js';
 import { loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
 import { psychologyItemStatus } from './psychology-item-status.js';
@@ -430,7 +432,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
-  let sources, testState;
+  let sources, testState, matchingSkipped=[];
   if (config.sourceType === 'topic-bank') {
     sources = await selectTopicSources(env.DB, config);
     if(config.template==='psychology-target-2'&&sources.length<config.count)fail('符合条件的可用图片只有 '+sources.length+' 张，请补充图片或减少生成数量。已抽取图片不会再次使用。');
@@ -444,8 +446,19 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     if(config.libraryTestPolicy)testState=await loadTestState(env.DB,user.username);
     const [stats,used]=await Promise.all([testState?testState.stats:loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
     const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
-    sources=(testState?planFairLibraryDraw:planLibraryDraw)({posts,stats,slots,used,reuse:config.allowPeerReuse,strategy:config.libraryStrategy||'evolve',pairSeed:config.pairSeed||''}).map(pick=>({...pick,source:{
-      ...(pick.variantId?reviewedSource(pick.row,config.mediaType):librarySource(pick.row,config.mediaType)),usageKey:pick.post.sourceKey}}));
+    if(config.libraryStrategy==='pools'){
+      const [state,styleChoices,reservations]=await Promise.all([
+        readPoolMatchingState(env.DB,user,config.connectionIds),managedStyles(env.DB,user.username),
+        loadPoolReservations(env.DB,user.username,config.poolContext.cycleStartAt)]);
+      const candidates=await buildPoolCandidates(posts,state,styleChoices,reservations.occupied);
+      const matches=planPoolMatches({candidates,accounts:state.accounts,slots,used,...reservations,
+        context:config.poolContext,owner:user.username,pairSeed:config.pairSeed||''});
+      sources=matches.plan;matchingSkipped=matches.skipped;
+      if(!sources.length)return json({accepted:true,batchId:'',count:0,skipped:matchingSkipped},202);
+    }else{
+      sources=(testState?planFairLibraryDraw:planLibraryDraw)({posts,stats,slots,used,reuse:config.allowPeerReuse,strategy:config.libraryStrategy||'evolve',pairSeed:config.pairSeed||''}).map(pick=>({...pick,source:{
+        ...(pick.variantId?reviewedSource(pick.row,config.mediaType):librarySource(pick.row,config.mediaType)),usageKey:pick.post.sourceKey}}));
+    }
   } else if(config.sourceType==='copy-library'){
     const rows=await env.DB.prepare("SELECT * FROM psychology_copy_library WHERE status='done' AND (?='all' OR media_type=?) AND (title LIKE ? OR source_url LIKE ? OR content_json LIKE ?) ORDER BY "+(config.selection==='random'?'RANDOM()':'completed_at DESC,id')+' LIMIT 1000')
       .bind(config.libraryMediaType,config.libraryMediaType,'%'+config.query+'%','%'+config.query+'%','%'+config.query+'%').all();
@@ -493,8 +506,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const account = scoped.accounts.find(a => String(a.connectionId || a.id) === entry.connectionId) || {};
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
       username: String(account.username || '').trim().replace(/^@/, '') };
-    const styleDefinition=config.mediaType==='photo'?selectManagedStyle(stylePool,config.styleMode,config.styleId):null;
-    const item = { styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const styleDefinition=config.mediaType==='photo'?(entry.source.poolStyle?selectManagedStyle([entry.source.poolStyle],'fixed',entry.source.poolStyle.id):selectManagedStyle(stylePool,config.styleMode,config.styleId)):null;
+    const item = { ...(entry.source.poolMatch?{poolMatch:entry.source.poolMatch}:{}),styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
@@ -507,7 +520,8 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
       statements.push(insertScheduledComment(env.DB,item,entry.source,comment,user.username,stamp));
     }
     if(config.mediaType==='photo'||entry.source.copySource?.kind==='rewrite'){
-      statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id,rewrite_model) VALUES(?,?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId,entry.source.copySource?.rewriteModel||''));
+      statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id,rewrite_model,copy_hash,copy_json) VALUES(?,?,?,?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId,entry.source.copySource?.rewriteModel||'',entry.source.poolIdentity?.hash||'',JSON.stringify(entry.source.poolIdentity?.copy||{})));
+      if(entry.source.poolMatch)statements.push(poolMatchStatement(env.DB,item,entry.source,user.username,stamp));
     }
     // Library draws reserve the viral post itself, so no later version of it reaches the same account.
     if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.usageKey||entry.source.id,entry.connectionId,id));
@@ -530,7 +544,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   // Remember the submitted music pool so the page pre-fills it next time.
   if (config.mediaType === 'photo') await kvSet(env.DB, MUSIC_POOL_KEY, config.musicIds);
   await dispatchPhotoBatch(env, batchId);
-  return json({ accepted: true, batchId, count: config.count }, 202);
+  return json({ accepted: true, batchId, count: selected.length,...(matchingSkipped.length?{skipped:matchingSkipped}:{}) }, 202);
 }
 
 export async function dispatchPhotoBatch(env, batchId) {

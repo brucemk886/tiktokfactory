@@ -1,4 +1,5 @@
 import {json,errorJson} from './http.js';
+import {readPoolReport} from './psychology-pool-report.js';
 import {operationsWindow} from '../../scripts/psychology-operations.js';
 import {ensureModuleProjects,findProjectForModule,publicState,userAllowedGroupIds} from '../../scripts/official-account-group-store.js';
 import {VIEW_TIERS,QUADRANTS,STAGES,KINDS,PLAYBOOK,RULES} from '../../scripts/psychology-ops-framework.js';
@@ -40,7 +41,7 @@ export async function handleScalableOperations(request,env,url,session){
  const started=Date.now(),db=env.DB;
  try{
   const window=operationsWindow(url.searchParams),media=url.searchParams.get('media')||'photo',group=url.searchParams.get('group')||'',panel=url.searchParams.get('panel')||(url.searchParams.get('details')==='1'?'details':'overview');
-  if(!['photo','video'].includes(media)||!['overview','accounts','content','strategy','details','batches','groups'].includes(panel))return errorJson('查询类型无效。',400);
+  if(!['photo','video'].includes(media)||!['overview','accounts','content','strategy','details','batches','groups','pools'].includes(panel))return errorJson('查询类型无效。',400);
   const raw=await db.prepare("SELECT json_object('projects',json_extract(value_json,'$.projects'),'groups',json_extract(value_json,'$.groups')) value_json FROM factory_kv WHERE key='official-account-groups'").first();
   const store=ensureModuleProjects(JSON.parse(raw?.value_json||'{}')),project=findProjectForModule(store,'psychology'),allow=userAllowedGroupIds(user);
   const groups=publicState(store).groups.filter(g=>g.projectId===project?.id&&(!allow||allow.has(g.id)));
@@ -59,6 +60,7 @@ export async function handleScalableOperations(request,env,url,session){
   const run=(sql,bind=args)=>db.prepare(sql).bind(...bind);
   const page=pageNumber(url.searchParams.get('page')),offset=(page-1)*SIZE;
   let data={};
+  if(panel==='pools')data=await readPoolReport(db,{ids,window,media,groups,url});
   if(panel==='overview'||panel==='groups'){
    const planned=scope+`,planned AS (SELECT f.* FROM allowed a CROSS JOIN ops_task_facts f INDEXED BY ops_task_account_schedule ON ${authorized} WHERE f.media=? AND f.schedule_at>=? AND f.schedule_at<? AND f.pilot_id<>'')`;
    const planArgs=[ids,ids,media,window.start,window.end];

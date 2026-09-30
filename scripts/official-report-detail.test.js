@@ -58,7 +58,7 @@ test("report tabs isolate panels, preserve date/group filters and encode video d
   b.tabs[2].events.click();
   assert.equal(b.node("#anomalySection").hidden, false);
   assert.equal(b.node("#lowSection").hidden, true);
-  assert.equal(calls, 3, "tab switching must not reload analytics, publishing or traffic");
+  assert.equal(calls, 4, "tab switching must not reload analytics, publishing, traffic or matching pools");
   assert.equal(b.location.searchParams.get("period"), "7d");
   assert.equal(b.location.searchParams.get("group"), "g");
   const href = vm.runInContext('videoDetailHref({account:"acct&1",id:"12345678903"})', b.context);
@@ -249,4 +249,24 @@ test('profile traffic summary follows total views and details start collapsed at
  assert.match(result,/0.67%/);assert.match(result,/>17</);
  vm.runInContext('state.traffic=null; renderSummary()',b.context);
  assert.doesNotMatch(b.node('#summaryGrid').innerHTML,/0.67%/);
+});
+
+
+test('psychology matching overview loads independently, retains group/date scope and ignores stale replies',async()=>{
+ const pending=[],queries=[];
+ const b=browser('https://factory.test/psychology-effects?period=7d&group=old',async(path,options)=>{
+  const q=new URL(path,'https://factory.test').searchParams;queries.push({q,signal:options.signal});
+  if(q.get('view')==='pools')return new Promise(resolve=>pending.push(resolve));
+  if(q.get('view')==='traffic')return reply({report:{enabled:false}});
+  return reply({project:{id:'p',reportEnabled:true},report:{enabled:true,summary:{views:123},buckets:{}}});
+ });vm.runInContext(read('official-group-report.js'),b.context);await flush();assert.match(b.node('#summaryGrid').innerHTML,/>123</);assert.match(b.node('#matchingOverview').innerHTML,/正在读取/);
+ vm.runInContext('state.groupId="new"; loadReport()',b.context);await flush();const q=queries.filter(r=>r.q.get('view')==='pools');assert.equal(q[0].signal.aborted,true);assert.equal(q[1].q.get('group'),'new');assert.equal(q[1].q.get('period'),'7d');assert.equal(q[1].q.get('media'),'photo');assert.ok(q[1].q.get('from'));assert.ok(q[1].q.get('to'));
+ const matching={accountPools:[{id:'rescue-hook',label:'<low>',accounts:4}],contentPools:[],coverage:{authorizedAccounts:4,missingMetrics:1},overview:{mature:{n:0,medianViews:null}},recovery:{improved:0}};
+ pending[1](reply({matching}));await flush();const html=b.node('#matchingOverview').innerHTML;assert.match(html,/需内容救援/);assert.match(html,/>4</);assert.match(html,/&lt;low&gt;/);assert.match(html,/group=new/);assert.match(html,/—/);assert.match(html,/不是第72小时的精确快照/);
+ pending[0](reply({matching:{...matching,coverage:{authorizedAccounts:999}}}));await flush();assert.equal(b.node('#matchingOverview').innerHTML,html);
+});
+test('matching overview errors leave analytics usable and unrelated modules never request pool data',async()=>{
+ const b=browser('https://factory.test/psychology-effects',async path=>{const view=new URL(path,'https://factory.test').searchParams.get('view');if(view==='pools')return reply({error:'<offline>'},false);if(view==='traffic')return reply({report:{enabled:false}});return reply({project:{id:'p'},report:{enabled:true,summary:{views:11},buckets:{}}});});
+ vm.runInContext(read('official-group-report.js'),b.context);await flush();assert.match(b.node('#matchingOverview').innerHTML,/role="alert".*&lt;offline&gt;/);assert.match(b.node('#summaryGrid').innerHTML,/>11</);
+ const views=[],novel=browser('https://factory.test/novel-ops-report',async path=>{views.push(new URL(path,'https://factory.test').searchParams.get('view'));return reply({project:{},report:{enabled:false}});});vm.runInContext(read('official-group-report.js'),novel.context);await flush();assert.deepEqual(views.sort(),['analytics','publish']);assert.equal(novel.nodes.has('#matchingOverview'),false);
 });

@@ -32,7 +32,9 @@ GET /operations?period=7d&media=photo&panel=overview
 参数：
 - period：today / 7d / 30d / custom；custom 必须提供 from、to，范围 1–31 天且不晚于今天，按北京时间。
 - media：photo / video；group：心理学分组 ID（可省略）。
-- panel：overview / accounts / content / strategy / details / batches / groups。
+- panel：overview / accounts / content / strategy / details / batches / groups / pools。
+- 账号池报告：panel=pools，mode=summary/accounts/content/matrix；accountPool、contentPool 可按响应中的池ID筛选，明细10行分页。
+- pools 的累计/满72小时观察数据分开，版本锁定文本哈希、样式与修订；allocation 是冻结的真实分配，matrix 是历史分层回看，不能当成因果效果。
 - 分页 page 从 1 开始，明细每页 10 条；返回 pagination。
 - accounts：sort=medianViews / potentialRate / completion / n；filter=all / issue / potential / launch。
 - content、details：mode=source / copy / style；q 搜索；details 传 key 指定对比项。
@@ -53,15 +55,22 @@ GET /autopilot/<id>/slots/<毫秒时间戳>：读取某个排期任务明细。
 如历史计划包含已离开心理学权限范围的账号，外部列表隐藏该计划，单项操作拒绝，需在后台核对分组。
 POST /autopilot
 {"requestId":"<UUID>","groupId":"<分组ID>","strategy":"original","days":7,"slots":[{"hour":8,"minute":0},{"hour":21,"minute":0}],"startNow":false}
-strategy：evolve / original / rewrite。days 1–30；slots 每天 1–10 个不重复北京时间。分组须有可发布账号，且同一分组只能存在一个未结束计划。
+strategy：pools / evolve / original / rewrite。pools 为账号池×内容池，省略slots时默认每日两条。days 1–30；slots 每天 1–10 个不重复北京时间。分组须有可发布账号，且同一分组只能存在一个未结束计划。
 重要：API 新增返回 status=paused，不产生发布任务；运行期从创建时起计。
 PATCH /autopilot/<id>
 {"revision":<GET返回值>,"status":"active"}
 启用后由既有定时任务执行，将产生真实排期、生成与发布。不要未经运营人员指令自动启用。
-同一路径还可修改 strategy、endsAt（未来 30 天内的毫秒时间戳）、status（active/paused/ended）和 stopPending（布尔）。
+旧策略之间同一路径还可修改 strategy、endsAt（未来 30 天内的毫秒时间戳）、status（active/paused/ended）和 stopPending（布尔）。
 暂停示例：
 {"revision":<GET返回值>,"status":"paused","stopPending":false}
 stopPending=false：仅停新增排期，已排任务继续。true：停止尚未提交任务，已进入提交的任务仍继续；恢复不重建已停止任务。
+PATCH /autopilot/<id>/strategy
+{"revision":<当前revision>,"strategy":"pools","days":7}
+- 当前权限、revision和排期重新检查；从已创建/保留排期之后的下一个北京时间整天生效，endsAt延长到生效日之后days天；已有任务不修改，账号暂停状态保留。
+- 响应有pendingStrategy、strategyEffectiveAt、endsAt。当前/待生效策略通过GET读取，不用当前strategy字段猜测。
+- 中强号可固定具体版本及样式补足5个不同账号的测试占位，满72小时再评估；低号合格基准不足会跳过。诊断号先6条基准，未获6条成熟且3来源及中位播放至少50的复查证据前等待。
+- 真实未知远端发布结果继续占位，确认失败才释放；同号不重复原帖。池匹配不足只跳过相应账号，不改账号暂停状态。
+
 PATCH /autopilot/<id>/schedule
 {"revision":<计划revision>,"slots":[{"hour":12,"minute":0}]}
 返回 effectiveAt；新时段从已预留排期之后的完整北京时间日期生效，已有任务不变。

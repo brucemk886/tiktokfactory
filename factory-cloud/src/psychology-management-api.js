@@ -50,7 +50,7 @@ async function keys(request,db,user){
 }
 async function reportQuery(db,user,module,input){
  if(!input||typeof input!=='object'||Array.isArray(input))fail('query 须为查询参数对象。');
- const fields=module==='effects'?['period','group','from','to','date']:['period','group','from','to','media','panel','page','sort','filter','q','mode','key'];
+ const fields=module==='effects'?['period','group','from','to','date','view']:['period','group','from','to','media','panel','page','sort','filter','q','mode','key','accountPool','contentPool'];
  only(input,fields);
  if(Object.values(input).some(v=>!['string','number'].includes(typeof v)||String(v).length>2000))fail('查询参数格式无效。');
  const params=new URLSearchParams(Object.entries(input).map(([k,v])=>[k,String(v)]));
@@ -59,8 +59,9 @@ async function reportQuery(db,user,module,input){
  if(module==='operations'){
   try{operationsWindow(params);}catch(error){fail(error.message);}
   if(params.has('page')&&(!Number.isInteger(Number(params.get('page')))||Number(params.get('page'))<1||Number(params.get('page'))>1000000))fail('page 须为 1–1000000 整数。');
-  if(!['photo','video'].includes(params.get('media')||'photo')||!['overview','accounts','content','strategy','details','batches','groups'].includes(params.get('panel')||'overview'))fail('报表 media/panel 无效。');
+  if(!['photo','video'].includes(params.get('media')||'photo')||!['overview','accounts','content','strategy','details','batches','groups','pools'].includes(params.get('panel')||'overview'))fail('报表 media/panel 无效。');
  }else{
+  if(params.has('view')&&params.get('view')!=='pools')fail('数据概览 view 仅支持 pools。');
   if(params.has('period')&&!['today','yesterday','7d','30d','week','custom'].includes(params.get('period')))fail('数据概览 period 无效。');
   if(params.get('period')==='custom'&&(!params.get('from')||!params.get('to')))fail('自定义周期须提供 from 和 to。');
   if(params.get('from')&&params.get('to')&&params.get('from')>params.get('to'))fail('开始日期不能晚于结束日期。');
@@ -135,11 +136,11 @@ export async function handlePsychologyManagement(request,env,url,session,trusted
   // Only these explicit operations are delegated; there is no arbitrary internal-route proxy.
   if(!user.sidebarModules.includes('psychology-publish')&&request.method!=='GET')fail('自动运营写入还需要自动发布权限。',403);
   const suffix=parts.join('/');
-  if(suffix&&!/^pilot-[a-f0-9-]{36}(?:\/(?:schedule|impact|slots\/\d+|accounts\/[^/]+))?$/.test(suffix))fail('自动运营路径不存在。',404);
+  if(suffix&&!/^pilot-[a-f0-9-]{36}(?:\/(?:schedule|strategy|impact|slots\/\d+|accounts\/[^/]+))?$/.test(suffix))fail('自动运营路径不存在。',404);
   if(!suffix&&request.method==='PATCH')fail('请指定运营 ID。',405);
   if(suffix&&request.method==='POST')fail('不提供外部立即执行接口。',405);
   if(body){
-   const fields=!suffix?['requestId','groupId','strategy','days','slots','startNow']:suffix.endsWith('/schedule')?['revision','slots']:suffix.includes('/accounts/')?['revision','status']:['revision','status','stopPending','strategy','endsAt'];
+   const fields=!suffix?['requestId','groupId','strategy','days','slots','startNow']:suffix.endsWith('/schedule')?['revision','slots']:suffix.endsWith('/strategy')?['revision','strategy','days']:suffix.includes('/accounts/')?['revision','status']:['revision','status','stopPending','strategy','endsAt'];
    only(body,fields);
    if(suffix&&!fields.some(k=>k!=='revision'&&Object.hasOwn(body,k)))fail('请提交至少一个修改字段。');
   }

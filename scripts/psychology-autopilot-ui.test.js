@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../public/psychology-autopilot.js',import.meta.url),'utf8');
-function harness(overrides={},post){
+function harness(overrides={},post,patch){
  const nodes=new Map(),events={},requests=[];let poll,failRead=false;
  const node=s=>{if(!nodes.has(s))nodes.set(s,{value:s==='[name="pauseMode"]:checked'?'planning':'',options:[],innerHTML:'',textContent:'',listeners:{},classList:{toggle(){}},showModal(){this.open=true;},close(){this.open=false;},scrollIntoView(){},addEventListener(k,fn){this.listeners[k]=fn;}});return nodes.get(s);};
  const pilot={id:'pilot-test',groupId:'g',groupName:'<unsafe>',status:'active',accounts:[],today:{planned:2,published:1,failed:1},schedule:[{slotAt:1,status:'created',counts:{planned:2,published:1,failed:1}}],attention:[],logs:[],lastRunAt:1};
  const data={pilots:[pilot],groups:[],strategies:{evolve:'A'},rules:{slots:[],staggerSeconds:45,lowPosts:5,lowViews:200,failStreak:3},fetchedAt:2,...overrides};
  const document={hidden:false,querySelector:s=>s==='dialog[open]'?[...nodes.values()].find(n=>n.open):node(s),querySelectorAll:()=>[],getElementById:id=>node('#'+id),addEventListener(k,fn){events[k]=fn;}};
- const context=vm.createContext({document,confirm:()=>true,setInterval(fn){poll=fn;},fetch:async(path,init)=>{requests.push({path,...init,body:init.body?JSON.parse(init.body):null});if(failRead&&init.method==='GET')throw Error('offline');if(init.method==='POST'&&post)return {ok:true,json:async()=>post(JSON.parse(init.body))};return {ok:true,json:async()=>path.includes('/impact')?{stoppable:2,protected:1}:init.method==='PATCH'?{ok:true,stopped:2}:data};}});
+ const context=vm.createContext({document,confirm:()=>true,setInterval(fn){poll=fn;},fetch:async(path,init)=>{requests.push({path,...init,body:init.body?JSON.parse(init.body):null});if(failRead&&init.method==='GET')throw Error('offline');if(init.method==='PATCH'&&patch)return {ok:true,json:async()=>patch(JSON.parse(init.body),path)};if(init.method==='POST'&&post)return {ok:true,json:async()=>post(JSON.parse(init.body))};return {ok:true,json:async()=>path.includes('/impact')?{stoppable:2,protected:1}:init.method==='PATCH'?{ok:true,stopped:2}:data};}});
  vm.runInContext(source,context);
  return {node,events,requests,document,run:code=>vm.runInContext(code,context),poll:()=>poll(),fail:()=>{failRead=true;}};
 }
@@ -141,4 +141,20 @@ test('switching period during a pending refresh discards old response and reques
 test('comparison uses selected-period performance and never substitutes historical strategy analysis',async()=>{
  const h=harness({pilots:[{id:'p',groupId:'g',groupName:'G',strategyLabel:'A',status:'active',accounts:[],schedule:[],logs:[],today:{planned:40},latest:{overview:{n:14,medianViews:495,potentialRate:0.071}},performance:{n:0,medianViews:null,potentialRate:null}}],window:{period:'today',from:'2026-09-26',to:'2026-09-26'}});await tick();
  assert.match(h.node('#compare').innerHTML,/今天已同步作品/);assert.match(h.node('#compare').innerHTML,/— \/ —/);assert.doesNotMatch(h.node('#compare').innerHTML,/495|7\.1%/);
+});
+
+
+test('new automation defaults to pool matching and two daily posts while preserving explicit strategy choices',async()=>{
+ const h=harness({pilots:[],groups:batchGroups.slice(0,1),strategies:{evolve:'A',pools:'账号池匹配'},strategyRules:{pools:{summary:'按账号池匹配',rules:['72小时']}}},async()=>({run:{batches:[],errors:[]}}));await tick();
+ assert.equal(h.node('#strategy').value,'pools');assert.equal(h.node('#poolQuotaGuide').hidden,false);assert.equal(h.run('defaultTimes.length'),2);
+ h.node('#days').value='7';h.node('#selectAllGroups').onclick();await submit(h);const request=h.requests.find(r=>r.method==='POST');assert.equal(request.body.strategy,'pools');assert.equal(request.body.slots.length,2);
+});
+test('future pool switch is serial, revision guarded, preserves pause state and disables saved groups for retry',async()=>{
+ const pilots=[{id:'p1',groupId:'g1',groupName:'One',status:'active',revision:8,slots:[],accounts:[],schedule:[],attention:[],logs:[]},{id:'p2',groupId:'g2',groupName:'<Two>',status:'paused',revision:9,slots:[],accounts:[],schedule:[],attention:[],logs:[]}];
+ const h=harness({pilots,strategies:{pools:'账号池匹配'}},null,async(body,path)=>{if(path.includes('/p2/'))throw Error('<conflict>');return {effectiveAt:Date.parse('2026-10-02T00:00:00+08:00'),endsAt:Date.parse('2026-10-09T00:00:00+08:00')};});await tick();
+ h.node('#openPoolSwitch').onclick();assert.match(h.node('#poolSwitchChoices').innerHTML,/&lt;Two&gt;/);
+ const choices=pilots.map(p=>({dataset:{poolPilot:p.id},checked:true,disabled:false}));h.document.querySelectorAll=s=>s==='[data-pool-pilot]:checked'?choices.filter(c=>c.checked):s==='[data-pool-pilot]'?choices:[];
+ await h.node('#confirmPoolSwitch').onclick();const patches=h.requests.filter(r=>r.method==='PATCH');assert.equal(patches.length,2);assert.deepEqual(patches.map(r=>r.body),[{strategy:'pools',days:7,revision:8},{strategy:'pools',days:7,revision:9}]);assert.ok(patches.every(r=>r.path.endsWith('/strategy')));
+ assert.equal(choices[0].disabled,true);assert.equal(choices[0].checked,false);assert.equal(choices[1].checked,true);assert.match(h.node('#poolSwitchResults').innerHTML,/未保存.*&lt;conflict&gt;/);assert.doesNotMatch(h.node('#poolSwitchResults').innerHTML,/<conflict>/);
+ await h.node('#confirmPoolSwitch').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH'&&r.path.includes('/p1/')).length,1);assert.equal(pilots[1].status,'paused');
 });

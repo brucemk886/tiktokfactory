@@ -1,4 +1,5 @@
 import { loadProfileTraffic } from "./profile-traffic.js";
+import { readPoolReport } from "./psychology-pool-report.js";
 import { loadReportContext } from "./psychology-report-data.js";
 import { pagePublishRecords } from './publish-records-store.js';
 import { publishAccountDirectory } from './psychology-account-access.js';
@@ -523,6 +524,20 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
   }
   if (!groupId && !canSeeProjectTotal) {
     groupId = groups[0]?.id || "";
+  }
+  // Pool analytics uses the durable fact tables and current canonical assignments,
+  // independent of the bounded archive directory used by the legacy overview.
+  if (view === "pools") {
+    if (liveProject.moduleKey !== "psychology") throw new Error("账号池与内容池只适用于心理学。");
+    const poolGroups = groups.filter(group => !groupId || group.id === groupId);
+    const start = Date.parse(queryFrom + "T00:00:00+08:00");
+    const end = Date.parse(queryTo + "T00:00:00+08:00") + 86400000;
+    const window = { period, from: queryFrom, to: queryTo, start, end, days: (end - start) / 86400000, previousStart: start - (end - start) };
+    const data = await readPoolReport(db, { ids: JSON.stringify(poolGroups.map(group => group.id)), window, media: "photo", groups,
+      url: { searchParams }, now });
+    return { module: liveProject.moduleKey, project: liveProject, groups, canSeeProjectTotal,
+      scopes: reportScopes(groups, canSeeProjectTotal), dates: [], window, media: "photo",
+      report: { enabled: true, groupId, period, fromKey: queryFrom, toKey: queryTo }, ...data };
   }
   const accountRows = knownAccountRows || await listLatestArchiveAccounts(db);
   const scope = {

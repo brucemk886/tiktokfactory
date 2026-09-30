@@ -9,11 +9,12 @@ const TABS=["overview","accounts","content","strategy"];
 const params = new URLSearchParams(location.search);
 const state = { data:null,tab:TABS.includes(params.get("tab"))?params.get("tab"):"overview",accountPage:1,batchPage:1,sourcePage:1,request:0 };
 for(const key of ["period","from","to"]) if(params.has(key)) $("#"+key).value=params.get(key);
-if(!$("#period").value)$("#period").value="today";
+if(!$("#period").value)$("#period").value="7d";
 state.media=params.get("media")==="video"?"video":"photo";
 function renderMediaTabs(){document.querySelectorAll("[data-media]").forEach(b=>{const on=b.dataset.media===state.media;b.classList.toggle("is-active",on);b.setAttribute("aria-selected",String(on));});}
 document.querySelectorAll("[data-media]").forEach(b=>b.addEventListener("click",()=>{if(b.dataset.media===state.media)return;state.media=b.dataset.media;renderMediaTabs();load();}));
 renderMediaTabs();
+document.querySelectorAll("[data-pool-range]").forEach(button=>button.addEventListener("click",()=>{$("#period").value=button.dataset.poolRange;toggleDates();load();}));
 $("#period").addEventListener("change",()=>{toggleDates();if($("#period").value!=="custom")load();});
 $("#filters").addEventListener("submit",event=>{event.preventDefault();load();});
 $("#trendMetric").addEventListener("change",renderTrend);
@@ -35,7 +36,7 @@ function toggleDates(){const custom=$("#period").value==="custom";$("#fromLabel"
 function selectTab(tab,save=true){
   state.tab=tab;
   document.querySelectorAll("[data-tab]").forEach(button=>{const active=button.dataset.tab===tab;button.setAttribute("aria-selected",String(active));button.tabIndex=active?0:-1;button.classList.toggle("is-active",active);$("#"+button.dataset.tab).hidden=!active;});
-  if(save&&state.data&&tab!=="overview")loadPanel(tab);
+  if(save&&state.data){if(tab==="strategy")loadPanel(tab);else if(tab!=="overview")loadPools(tab);}
   if(save){const url=new URL(location.href);url.searchParams.set("tab",tab);history.replaceState({},"",url);}
 }
 let reportController=null,detailController=null,detailLoaded=false,currentQuery="";
@@ -94,18 +95,18 @@ async function load(){
     const response=await fetch("/api/psychology-operations?"+query,{cache:"no-store",signal:controller.signal});const data=await response.json();
     if(!response.ok)throw new Error(data.error||"读取失败");
     if(request!==state.request)return;
-    state.data=data;state.pages={};currentQuery=query.toString();state.accountPage=state.batchPage=state.sourcePage=1;
+    state.data=data;state.matching=null;$("#legacyAccountDetails").open=false;$("#legacyContentDetails").open=false;$("#poolMatrixDetails").open=false;state.pages={};currentQuery=query.toString();state.accountPage=state.batchPage=state.sourcePage=1;
     $("#group").innerHTML='<option value="">全部授权分组</option>'+data.groups.map(g=>'<option value="'+esc(g.id)+'">'+esc(g.name)+'</option>').join("");
     $("#group").value=query.get("group");$("#from").value=data.window.from;$("#to").value=data.window.to;
     const url=new URL(location.href);url.search=query.toString();url.searchParams.set("tab",state.tab);history.replaceState({},"",url);
     $("#status").textContent=data.window.from+" 至 "+data.window.to+" · 对比上期 "+data.window.previousFrom+" 至 "+data.window.previousTo+
       (data.archiveAt?" · 最早指标同步 "+time(data.archiveAt):"")+(data.progress.ready?"":" · 正在迁移历史数据，当前统计尚未完整")+(data.progress.error?" · 历史迁移正在重试":"")+(data.progress.pending?" · "+data.progress.pending+" 条状态等待后台更新":" · 发布状态已同步");
-    render();$("#report").hidden=false;if(state.tab!=="overview")loadPanel(state.tab);
+    render();$("#report").hidden=false;if(state.tab!=="overview"){if(state.tab==="strategy")loadPanel(state.tab);else loadPools(state.tab);}
   }catch(error){if(request===state.request)$("#status").textContent=error.message||"读取失败，请重试。";}
   finally{if(request===state.request)$("#query").disabled=false;}
 }
 load();
-function table(headers,rows){return '<table class="ops-table"><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join("")+'</tr></thead><tbody>'+rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join("")+'</tr>').join("")+'</tbody></table>';}
+function table(headers,rows){return '<table class="ops-table"><thead><tr>'+headers.map(h=>'<th scope="col">'+h+'</th>').join("")+'</tr></thead><tbody>'+rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join("")+'</tr>').join("")+'</tbody></table>';}
 const isVideo=()=>state.data?.framework?.media==="video";
 const summaryCells=s=>[fmt(s.n),fmt(s.medianViews)+"<small>平均 "+fmt(s.avgViews)+"</small>",pct(s.potentialRate),pct(s.hitRate),sec(s.averageWatch),pct(s.completion),...(isVideo()?[pct(s.retention3)]:[]),fmt(s.likes)+" / "+fmt(s.comments)+" / "+fmt(s.shares)];
 const summaryHeaders=()=>["作品数","中位播放","破千率","破万率","平均播放时长","完播率",...(isVideo()?["3秒留存"]:[]),"平均 赞 / 评 / 转"];
@@ -116,7 +117,7 @@ function render(){
   $("#contentDetail").hidden=f.media==="video";
   const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="potentialRate";
   $("#coverage").textContent=state.data.coverage;$("#completionLine").textContent=f.overview.completionLine==null?"暂无完播数据":pct(f.overview.completionLine);
-  renderAutopilot();renderOverview(f);
+  renderAutopilot();renderOverview(f);loadPools("summary");
 }
 function renderAutopilot(){
   const a=state.data.autopilot||{summary:{},groups:[],strategies:[],basis:''},s=a.summary;
@@ -175,9 +176,9 @@ function renderContent(f){
   $("#postIndexTable").innerHTML=summaryTable("账号第几条作品",c.postIndex.map(r=>[esc(r.label),r]));
 }
 function renderStrategy(f){
-  const e=state.data.evolution;
+  const e=state.data.evolution;renderPoolPolicy();
   if(isVideo())$("#evolutionRules").innerHTML='<ul><li>视频自动发布目前按创建批次时选的来源抽取，还没有接入“按表现进化”；等视频开始发、数据够了再接入。</li><li>下面的阶段对照照常统计视频数据。</li></ul>';
-  else $("#evolutionRules").innerHTML='<ul><li>同一账号不会重复发布同一来源的原版或改写版。</li><li>自动运营 A：原版与改写并行测试，积累有效样本后约70%使用优胜内容、30%探索。</li><li>自动运营 B：只测原版；C：只测改写。未完成判断的版本限制并行测试数量。</li><li>自动选材沿用满24小时的判断规则；本报表展示当天已经同步的数据。每次同步指标后更新报表，发布状态由后台每分钟分批更新。</li></ul>';
+  else $("#evolutionRules").innerHTML='<ul><li>同一账号不会重复发布同一来源的原版或改写版。</li><li>自动运营 A：原版与改写并行测试，积累有效样本后约70%使用优胜内容、30%探索。</li><li>自动运营 B：只测原版；C：只测改写。未完成判断的版本限制并行测试数量。</li><li>历史 A / B / C 沿用原选材规则；账号池匹配使用满72小时的最新累计样本。本报表同时保留当天已经同步的数据。每次同步指标后更新报表，发布状态由后台每分钟分批更新。</li></ul>';
   const kinds=f.kinds;
   $("#stageTable").innerHTML=table(["阶段","当前打法（假设）",...Object.values(kinds),"数据显示最好"],f.strategy.stages.map(st=>[esc(st.label),esc(st.playbook),
     ...Object.keys(kinds).map(k=>{const x=st.kinds[k];return fmt(x.medianViews)+"<small>"+x.n+" 条 · 破千 "+pct(x.potentialRate)+" · 完播 "+pct(x.completion)+"</small>";}),st.best?esc(kinds[st.best]):"样本不足"]));
@@ -185,4 +186,91 @@ function renderStrategy(f){
 function detailLink(video){
   const query=new URLSearchParams({account:video.account,video:video.id,module:"psychology",returnTo:location.pathname+location.search});
   return '<a class="table-action" href="/official-video-detail?'+esc(query.toString())+'">视频详情</a>'+(video.share?'<a class="table-action" target="_blank" rel="noreferrer" href="'+esc(video.share)+'">打开</a>':"");
+}
+
+// Pool reads are independent of legacy report tabs and are cancelled on scope changes.
+const poolTargets={summary:'poolSummary',accounts:'poolAccountTable',content:'poolContentTable',matrix:'poolMatrixTable'};
+for(const [id,mode] of [['poolAccountFilter','accounts'],['poolContentFilter','content'],['matrixAccountPool','matrix'],['matrixContentPool','matrix']])$('#'+id).addEventListener('change',()=>loadPools(mode));
+$('#poolMatrixDetails').addEventListener('toggle',()=>{if($('#poolMatrixDetails').open)loadPools('matrix');});
+$('#legacyAccountDetails').addEventListener('toggle',()=>{if($('#legacyAccountDetails').open)loadPanel('accounts');});
+$('#legacyContentDetails').addEventListener('toggle',()=>{if($('#legacyContentDetails').open)loadPanel('content');});
+async function loadPools(mode='summary',page=1){
+ if(!state.data)return;
+ const key='pools-'+mode,request=state.request,q=new URLSearchParams(currentQuery);
+ q.set('panel','pools');q.set('mode',mode);q.set('page',page);
+ if(mode==='accounts')q.set('accountPool',$('#poolAccountFilter').value);
+ if(mode==='content')q.set('contentPool',$('#poolContentFilter').value);
+ if(mode==='matrix'){q.set('accountPool',$('#matrixAccountPool').value);q.set('contentPool',$('#matrixContentPool').value);}
+ panelRequests.get(key)?.abort();const controller=new AbortController();panelRequests.set(key,controller);
+ const target=$('#'+poolTargets[mode]),pager={accounts:'poolAccountPager',content:'poolContentPager',matrix:'poolMatrixPager'}[mode];
+ target.setAttribute('aria-busy','true');target.innerHTML='<p role="status">正在读取分池数据…</p>';
+ if(pager)$('#'+pager).querySelectorAll('button').forEach(b=>b.disabled=true);
+ try{
+  const res=await fetch('/api/psychology-operations?'+q,{cache:'no-store',signal:controller.signal}),data=await res.json();
+  if(request!==state.request||controller.signal.aborted)return;
+  if(!res.ok)throw Error(data.error||'分池数据读取失败');
+  if(!data.matching)throw Error('分池数据暂未就绪');
+  const detail=data.matching[{accounts:'accounts',content:'content',matrix:'matrixDetails'}[mode]];
+  if(detail&&detail.page>detail.pages&&detail.pages>=1)return await loadPools(mode,detail.pages);
+  state.matching=data.matching;renderPoolSelectors();renderPoolPolicy();
+  if(mode==='summary')renderPoolSummary(data.matching);
+  if(mode==='accounts')renderPoolAccounts(data.matching);
+  if(mode==='content')renderPoolContent(data.matching);
+  if(mode==='matrix')renderPoolMatrixDetails(data.matching);
+ }catch(error){if(request===state.request&&!controller.signal.aborted){target.innerHTML='<p role="alert">'+esc(error.message)+' <button type="button" class="table-action" data-pool-retry>重试</button></p>';target.querySelector('[data-pool-retry]').onclick=()=>loadPools(mode,page);if(pager)$('#'+pager).innerHTML='';}}
+ finally{if(panelRequests.get(key)===controller){panelRequests.delete(key);target.setAttribute('aria-busy','false');}}
+}
+function poolLabel(id,kind='account'){const rows=kind==='account'?state.matching?.accountPools:state.matching?.contentPools;return rows?.find(r=>r.id===id)?.label||id||'待观察';}
+function renderPoolSelectors(){
+ for(const [id,kind] of [['poolAccountFilter','account'],['matrixAccountPool','account'],['poolContentFilter','content'],['matrixContentPool','content']]){
+  const node=$('#'+id),current=node.value,rows=kind==='account'?state.matching.accountPools:state.matching.contentPools;
+  node.innerHTML='<option value="">全部'+(kind==='account'?'账号池':'内容池')+'</option>'+(rows||[]).map(r=>'<option value="'+esc(r.id)+'">'+esc(r.label)+'</option>').join('');node.value=current;
+ }
+}
+function poolStatsCells(s={}){return [fmt(s.n),fmt(s.medianViews)+'<small>平均 '+fmt(s.avgViews)+'</small>',pct(s.potentialRate),pct(s.completion)];}
+const poolStatsHeaders=['已满72h作品','中位播放 / 均播','千播率','完成率'];
+function poolCards(rows=[],kind){return '<div class="ops-pool-cards">'+rows.map(r=>'<article class="ops-pool-card"><span>'+esc(r.label)+'</span><strong>'+fmt(kind==='account'?r.accounts:r.versions)+'</strong><small>'+esc(r.action)+'</small></article>').join('')+'</div>';}
+function renderPoolSummary(m){
+ const c=m.coverage||{},o=m.overview||{},cur=o.current||{},mat=o.mature||{};
+ $('#poolSummary').innerHTML=(m.readiness?.status==='warming'?'<div class="ops-pool-readiness" role="status"><strong>优胜版本补测中</strong><p>'+esc(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+fmt(m.readiness.winnerVersions)+' · 满足对应内容池条件的版本 '+fmt(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'')+'<h3>账号池规模</h3>'+poolCards(m.accountPools,'account')+'<h3>内容池规模 · 已观察版本</h3>'+poolCards(m.contentPools,'content')+
+ '<h3>累计表现与可评估样本</h3>'+table(['观察口径','已同步作品','累计播放','中位播放','千播率','完成率'],[['已同步累计（含新发布）',fmt(cur.n),fmt(cur.views),fmt(cur.medianViews),pct(cur.potentialRate),pct(cur.completion)],['已满72h可评估 · 最新累计',fmt(mat.n),fmt(mat.views),fmt(mat.medianViews),pct(mat.potentialRate),pct(mat.completion)]])+
+ '<p class="section-hint">'+esc(m.basis||c.basis||'已满72h使用最新累计指标，不是第72小时的精确快照。')+' 已发布 '+fmt(c.published)+' · 待同步 '+fmt(c.missingMetrics)+' · 待观察账号 '+fmt(c.observingAccounts)+' · 版本身份不完整 '+fmt(c.unknownVersions)+' · 样式未知 '+fmt(c.unknownStyles)+'。</p>';
+ $('#poolMatrix').innerHTML=(m.matrix?.rows||[]).length?table(['账号池','内容池','账号 / 版本',...poolStatsHeaders],m.matrix.rows.map(r=>[esc(poolLabel(r.accountPool)),esc(poolLabel(r.contentPool,'content')),fmt(r.accounts)+' / '+fmt(r.versions),...poolStatsCells(r.stats)])):'<p class="empty">当前范围暂无满72小时的匹配样本。新发布作品继续留在观察中。</p>';
+ $('#poolMatrix').innerHTML+='<p class="section-hint">'+esc(m.matrix?.basis||'回顾分池存在选择偏差，不能作为因果结论。')+'</p>';
+ renderPoolRecovery(m.recovery);renderPoolAllocation(m.allocation);
+}
+function poolPager(id,info,mode){
+ if(!info){$('#'+id).innerHTML='';return;}
+ $('#'+id).innerHTML='<span role="status">第 '+fmt(info.page)+' / '+fmt(info.pages)+' 页 · 共 '+fmt(info.total)+' 条</span><button type="button" class="table-action" aria-label="上一页" data-pool-step="-1" '+(info.page<=1?'disabled':'')+'>上一页</button><button type="button" class="table-action" aria-label="下一页" data-pool-step="1" '+(info.page>=info.pages?'disabled':'')+'>下一页</button>';
+ $('#'+id).querySelectorAll('[data-pool-step]').forEach(b=>b.onclick=()=>loadPools(mode,info.page+Number(b.dataset.poolStep)));
+}
+function renderPoolRecovery(r={}){
+ const html=[['跨层改善',r.improved],['流量下滑',r.declined],['同层稳定',r.stable],['可比较账号',r.comparable],['仍需观察',r.insufficient]].map(([label,value])=>'<div class="metric"><span>'+label+'</span><strong>'+fmt(value)+'</strong></div>').join('')+'<p class="section-hint ops-pool-wide">'+esc(r.basis||'缺少足够样本的账号不判断恢复。')+'</p>';
+ for(const id of ['poolRecovery','poolRecoveryOverview'])$('#'+id).innerHTML=html;
+}
+function renderPoolAccounts(m){
+ renderPoolRecovery(m.recovery);const d=m.accounts||{},rows=d.rows||[];
+ $('#poolAccountTable').innerHTML=rows.length?table(['账号 / 分组','账号池（上期 → 本期）',...poolStatsHeaders,'上期中位 / 变化','恢复判断','匹配建议'],rows.map(r=>[
+  '@'+esc(r.name)+'<small>'+esc(r.group)+'</small>',esc(poolLabel(r.previousPool))+' → '+esc(poolLabel(r.pool)),...poolStatsCells(r.stats),fmt(r.previousStats?.medianViews)+' / '+(r.medianDelta==null?'—':(r.medianDelta>0?'+':'')+fmt(r.medianDelta)),!r.comparable?'样本不足':r.improved?'跨层改善':poolLevel(r.pool)<poolLevel(r.previousPool)?'流量下滑':'同层稳定',esc(r.recommendation||'等待足够样本')
+ ])):'<p class="empty">没有符合条件的账号。</p>';poolPager('poolAccountPager',d.pagination||d,'accounts');
+}
+const poolLevel=id=>({diagnostic:0,'rescue-hook':1,'rescue-content':1,normal:2,strong:3}[id]??-1);
+function versionTitle(r){return '<div class="title">'+esc(r.title||r.source||'未知来源')+'</div><small>'+esc((r.versionKnown??Boolean(r.copyHash))?(r.version||'原版'):'版本身份未知')+' · '+esc((r.styleKnown??Boolean(r.style))?r.style:'样式未知')+((r.styleKnown??Boolean(r.style))&&r.styleRevision!=null?' · 样式第 '+fmt(r.styleRevision)+' 版':'')+'</small>';}
+function renderPoolContent(m){
+ const d=m.content||{},rows=d.rows||[];
+ $('#poolContentTable').innerHTML=rows.length?table(['来源 / 具体版本 / 样式','内容池','验证账号数',...poolStatsHeaders,'已同步累计样本'],rows.map(r=>[versionTitle(r),esc(poolLabel(r.pool,'content')),fmt(r.accounts),...poolStatsCells(r.stats),fmt(r.cumulativeStats?.n)])):'<p class="empty">当前范围没有已观察内容版本。</p>';poolPager('poolContentPager',d.pagination||d,'content');
+}
+function renderPoolMatrixDetails(m){
+ const d=m.matrixDetails||{},rows=d.rows||[];
+ $('#poolMatrixTable').innerHTML=rows.length?table(['具体内容版本','账号池','内容池','验证账号数',...poolStatsHeaders],rows.map(r=>[versionTitle(r),esc(poolLabel(r.accountPool)),esc(poolLabel(r.contentPool,'content')),fmt(r.accounts),...poolStatsCells(r.stats)])):'<p class="empty">没有符合条件的成熟匹配记录。</p>';poolPager('poolMatrixPager',d.pagination||d,'matrix');
+}
+function renderPoolPolicy(){
+ if(!state.matching)return;
+ $('#poolPolicy').innerHTML=table(['账号池','每周14条起始配额','匹配动作'],(state.matching.accountPools||[]).map(r=>[esc(r.label),r.id==='diagnostic'?'先6条基准测试后复查':r.id==='observing'?'先积累成熟基准样本':r.quota?esc(['winner','optimize','explore'].map(k=>({winner:'优胜 / 救援基准',optimize:'优化验证',explore:'新内容'}[k])+' '+fmt(r.quota[k])).join(' · ')):'按样本与状态判断',esc(r.action)]))+ '<ul><li>成熟优胜版本不足时，先在中强号固定样式补到5个不同账号并等待满72小时；低号缺少合格基准会跳过并记录原因，配额是目标而非保证发布量。</li><li>强号 12 / 1 / 1，中号 10 / 3 / 1，救援号 11 / 3 / 0（优胜基准 / 优化验证 / 新内容）。近零号先做6条诊断后复查，样本不足保留观察。</li><li>匹配按具体版本与账号池分别验证，低流量救援需要覆盖至少三个来源；发布满72小时后用最新累计值复盘。</li><li>内容语言、主题和账号受众需人工核对；平台推荐资格及公开可见性检查不能由低播放数代替。</li><li>对照与历史关联用于发现线索，不作为因果结论。已生成、已提交或已排期任务保留原内容，配置仅影响未来新增排期。</li></ul>';
+}
+
+function renderPoolAllocation(a={}){
+ const rows=a.rows||[];
+ $('#poolAllocation').innerHTML=rows.length?table(['排期时账号池','排期时内容池','计划 / 已发布','待处理 / 失败 / 停止','已同步作品','最新累计播放 / 中位','基线补测'],rows.map(r=>[esc(poolLabel(r.accountPool)),esc(poolLabel(r.contentPool,'content')),fmt(r.planned)+' / '+fmt(r.published),fmt(r.pending)+' / '+fmt(r.failed)+' / '+fmt(r.stopped),fmt(r.synced),fmt(r.views)+' / '+fmt(r.medianViews),fmt(r.warmup)])):'<p class="empty">当前范围尚无账号池匹配的新排期。未来策略生效后，实际分配会显示在这里。</p>';
+ $('#poolAllocation').innerHTML+='<p class="section-hint">'+esc(a.basis||'以排期时冻结的账号池与内容池统计实际分配，保留新策略执行记录。')+'</p>';
 }

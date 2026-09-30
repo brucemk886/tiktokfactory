@@ -641,7 +641,7 @@ test("psychology overview renders project metrics and keeps filtered queries sco
   const requests = [];
   const document = {
     querySelector(selector) {
-      if (!nodes.has(selector)) nodes.set(selector, { value: "", innerHTML: "", textContent: "", addEventListener() {} });
+      if (!nodes.has(selector)) nodes.set(selector, { value: "", innerHTML: "", textContent: "", addEventListener() {}, setAttribute(key, value) { this[key] = value; } });
       return nodes.get(selector);
     },
     querySelectorAll() { return []; },

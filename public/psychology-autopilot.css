@@ -11,3 +11,5 @@
 .pilot-schedule-settings{border:1px solid #e4e7ec;border-radius:8px;padding:16px;margin:16px 0}.pilot-schedule-settings h3{margin:0 0 12px;font-size:15px}.pilot-schedule-tools,.pilot-time-inputs{display:flex;align-items:end;flex-wrap:wrap;gap:10px;margin:10px 0}.pilot-schedule-tools label,.pilot-time-inputs label{display:flex;flex-direction:column;gap:6px;font-size:12px}.pilot-schedule-tools input[type=number],.pilot-group-schedule input[type=number],#editDailyCount{width:80px}.pilot-time-inputs input{width:120px}.pilot-group-schedule{border-top:1px solid #e4e7ec;padding-top:12px;margin-top:12px}.pilot-group-schedule>label{display:inline-flex;align-items:center;gap:6px;margin-left:12px;font-size:13px}.pilot-group-schedule strong{font-size:13px}
 
 #groupSchedules{max-height:320px;overflow:auto;padding-right:6px}
+
+.pilot-pool-guide{background:#f4f7fc;border:1px solid var(--lf-line-strong);border-radius:10px;padding:16px;margin:16px 0}.pilot-pool-guide p{font-size:13px;line-height:1.7}#poolSwitchChoices{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:18px 0}#poolSwitchResults{line-height:1.8}

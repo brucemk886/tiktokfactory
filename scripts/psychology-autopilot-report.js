@@ -1,7 +1,7 @@
 import { parseObject, publishOutcome } from './psychology-operations.js';
 import { normalizeAccountKey } from './official-account-group-store.js';
 const DAY=86400000;
-export const AUTOPILOT_STRATEGIES={evolve:'A · 优胜放量',original:'B · 原版测试',rewrite:'C · 改写测试'};
+export const AUTOPILOT_STRATEGIES={pools:'账号池 × 内容池',evolve:'A · 优胜放量',original:'B · 原版测试',rewrite:'C · 改写测试'};
 const ms=v=>{if(!v)return 0;const n=Number(v);return Number.isFinite(n)?(n<1e12?n*1000:n):Date.parse(v)||0;};
 const metric=(v,...keys)=>{const a=parseObject(v?.analytics);for(const k of keys){const n=v?.[k]??a[k];if(n!==undefined&&n!==null&&n!==''&&Number.isFinite(Number(n)))return Math.max(0,Number(n));}return null;};
 const mean=a=>a.length?a.reduce((n,v)=>n+v,0)/a.length:null;

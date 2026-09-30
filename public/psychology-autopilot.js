@@ -8,9 +8,9 @@ const SLOT = { creating:'创建中', created:'已创建排期', failed:'创建�
 const ITEM = { queued:'等待制作', producing:'制作中', publishing:'提交 / 处理中', scheduled:'等待官方发布', published:'已发布', production_failed:'制作失败', publish_failed:'发布失败', cancelled:'已停止', missing:'结果待核对' };
 let selectedPeriod = 'today';
 const PERIOD_LABELS={today:'今天',yesterday:'昨天','7d':'近7天'};
-let data = null, loading = false, pendingPause = null, creating = false;
+let data = null, loading = false, pendingPause = null, creating = false, switchingPools = false;
 const selectedGroups = new Set(), createdGroups = new Set(), groupSchedules = new Map();
-let defaultTimes = ['08:00','12:00','21:00'], editTimes = [], editingPilot = '', savingSchedule = false;
+let defaultTimes = ['08:00','21:00'], editTimes = [], editingPilot = '', savingSchedule = false;
 const hm = slot => `${String(slot.hour).padStart(2,'0')}:${String(slot.minute).padStart(2,'0')}`;
 function timesForCount(current, count) {
   if(!Number.isInteger(count) || count<1 || count>10)throw Error('每号每天应发布 1–10 条。');
@@ -65,7 +65,7 @@ function table(headers, rows) { return '<div class="table-wrap"><table class="op
 function notice(text, error = false) { $('#status').textContent = text; $('#status').classList.toggle('pilot-error', error); }
 function totals(c = {}) { return `计划 ${c.planned||0} · 已发布 ${c.published||0} · 制作 ${Number(c.queued||0)+Number(c.producing||0)} · 待发布 ${c.pending||0} · 失败 ${c.failed||0} · 已停止 ${c.stopped||0}${c.unknown ? ' · 待核对 '+c.unknown : ''}`; }
 async function load(quiet = false, refreshGroups = false) {
-  if (loading || creating) return;
+  if (loading || creating || switchingPools) return;
   const period=selectedPeriod;
   loading = true; $('#reload').disabled = true; $('#refreshGroups').disabled = true;
   if (!quiet) notice(refreshGroups ? '正在更新账号分组与发布状态…' : '正在读取本地发布回执…');
@@ -75,10 +75,11 @@ async function load(quiet = false, refreshGroups = false) {
   finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); if(period!==selectedPeriod)load(); }
 }
 function renderStrategyRules() {
-  const strategy = $('#strategy').value || 'evolve', selected = data?.strategyRules?.[strategy];
+  const strategy = $('#strategy').value || (data?.strategies?.pools ? 'pools' : 'evolve'), selected = data?.strategyRules?.[strategy];
   $('#strategyRulesTitle').textContent = '当前策略规则 · ' + (data?.strategies?.[strategy] || strategy);
   $('#strategySummary').textContent = selected?.summary || '正在读取策略规则…';
   $('#strategyRules').innerHTML = (selected?.rules || []).map(rule => '<li>' + esc(rule) + '</li>').join('');
+  $('#poolQuotaGuide').hidden=strategy!=='pools';
 }
 $('#strategy').addEventListener('change', renderStrategyRules);
 function availableGroups() {
@@ -113,17 +114,17 @@ $('#createDialog').addEventListener('cancel', event => { if(creating)event.preve
 function render() {
   const pilots = data.pilots;
   renderGroupChoices();
-  if (!$('#strategy').options.length) $('#strategy').innerHTML = Object.entries(data.strategies).map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('');
+  if (!$('#strategy').options.length) { const preferred=data.strategies.pools?'pools':'evolve',current=$('#strategy').value;$('#strategy').innerHTML = Object.entries(data.strategies).map(([id,label])=>`<option value="${esc(id)}"${id===preferred?' selected':''}>${esc(label)}</option>`).join('');$('#strategy').value=Object.hasOwn(data.strategies,current)?current:preferred; }
   renderStrategyRules();
   const r = data.rules;
   $('#rules').innerHTML = [
     '发布数量与北京时间按分组设置，每个时间点每号发 1 条；组内账号依次错开 '+r.staggerSeconds+' 秒，每条提前 2 小时开始生成。',
     '每天 0 点、8 点检查并排期，从图文文案库抽取，同一个账号不重复发同一篇爆款。',
     '配对选题：同一运营人、同一北京时间日期、当天同一轮次的分组（允许错开时间）使用共同候选排序，再按所选策略挑版本；各账号用过的选题和可用版本不同，最终内容不保证完全相同。',
-    '测试名额：三种策略共享每版 3 次测试；排队中、生成中、已发布但未成熟的任务都占位，确认失败才释放。结果不明确时继续保留名额。',
-    '每个选题最多同时测试 2 个未成熟改写版，优先完成已开始的测试；成熟需满 24 小时且有播放数据，数据每天汇总两次。',
+    '测试名额按所选策略限制；排队中、生成中、已发布但未成熟的任务都占位，确认失败才释放。结果不明确时继续保留名额。',
+    '每个选题最多同时测试 2 个未成熟改写版，优先完成已开始的测试。账号池匹配用满72小时的最新累计样本；历史 A / B / C 保留原评估规则。',
     '同一个账号不会重复使用同一篇选题，不论原版或改写；同一批次不重复使用同一个版本。只能选择文案库中可用的内容，不会因启动运营自动生成新改写。',
-    '三种策略共用选题和停发规则；发布时间与每日数量按分组设置，策略只决定版本选择方式。',
+    '发布时间与每日数量按分组设置；账号池匹配按账号表现分配优胜、优化与新内容配额，历史策略保留兼容。',
     `连续 ${r.failStreak} 次发布失败，自动停发该号并停止本地尚未提交的任务。低播放只进入分析，不中途停号。`,
   ].map(t=>'<li>'+esc(t)+'</li>').join('');
   const sum = pilots.reduce((s,p)=>{ for(const [k,v] of Object.entries(p.execution||p.today||{}))s[k]=(s[k]||0)+v;return s; },{});
@@ -146,9 +147,9 @@ function render() {
   const opened = new Set([...document.querySelectorAll('#pilots details[open]')].map(d=>d.id));
   const slotBodies = new Map([...document.querySelectorAll('[data-slot-body]')].map(e=>[e.id,e.innerHTML]));
   $('#pilots').innerHTML = pilots.map(p=>{
-    const actions = p.status==='ended' ? '' : `<button data-schedule="${p.id}">发布设置</button>` + (p.status==='active' ? `<button data-run="${p.id}">立即检查并排期</button><button data-pause="${p.id}">暂停…</button>` : `<button data-status="active" data-pilot="${p.id}">恢复运营</button><button data-pause="${p.id}">停止未提交任务…</button>`) + `<button data-status="ended" data-pilot="${p.id}">结束运营</button>`;
+    const actions = p.status==='ended' ? '' : `<button data-schedule="${p.id}">发布设置</button><button data-pool-switch="${p.id}">账号池匹配…</button>` + (p.status==='active' ? `<button data-run="${p.id}">立即检查并排期</button><button data-pause="${p.id}">暂停…</button>` : `<button data-status="active" data-pilot="${p.id}">恢复运营</button><button data-pause="${p.id}">停止未提交任务…</button>`) + `<button data-status="ended" data-pilot="${p.id}">结束运营</button>`;
     const schedule = [...p.schedule].sort((a,b)=>b.slotAt-a.slotAt);
-    return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>${esc(p.groupName)} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc((p.slots||[]).map(hm).join(' / '))}（北京时间）${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(p.pendingSlots.map(hm).join(' / '))+'，'+time(p.scheduleEffectiveAt)+' 起生效':''} · 运行至 ${time(p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
+    return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>${esc(p.groupName)} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc((p.slots||[]).map(hm).join(' / '))}（北京时间）${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(p.pendingSlots.map(hm).join(' / '))+'，'+time(p.scheduleEffectiveAt)+' 起生效':''}${p.pendingStrategy?'<br>未来策略：'+esc(data.strategies[p.pendingStrategy]||p.pendingStrategy)+' · '+time(p.strategyEffectiveAt)+' 起生效':''} · 运行至 ${time(p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
     <h3>${PERIOD_LABELS[data.window?.period||'today']}发布排期</h3>${schedule.length?schedule.map(s=>`<details class="pilot-slot" id="slot-${p.id}-${s.slotAt}" data-slot-details data-pilot="${p.id}" data-slot="${s.slotAt}"><summary>${time(s.slotAt)} · ${SLOT[s.status]||esc(s.status)}<span>${esc(totals(s.counts))}</span></summary>${s.detail?'<p class="pilot-error">'+esc(s.detail)+'</p>':''}<div id="body-${p.id}-${s.slotAt}" data-slot-body><button data-detail="${p.id}" data-slot="${s.slotAt}">读取内容明细</button></div></details>`).join(''):'<p>所选时间没有排期。</p>'}
     <details id="accounts-${p.id}" class="ops-daily"><summary>账号状态（${p.accounts.length}）</summary>${table(['账号','状态','原因 / 暂停范围','操作'],p.accounts.map(a=>['@'+esc(a.name),a.status==='active'?(p.status==='active'?'参与排期':'随运营暂停'):'已停发',esc(a.reason||'—')+(a.status==='paused'?'<small>'+(a.stopPending?'本地未提交任务已停止':'仅停止新增排期')+'</small>':''),p.status==='ended'?'':a.status==='active'?`<button data-pause="${p.id}" data-account="${esc(a.connectionId)}">停发…</button>`:`<button data-pilot="${p.id}" data-account="${esc(a.connectionId)}" data-account-status="active">恢复</button>`]))}</details>
     <details id="logs-${p.id}" class="ops-daily"><summary>所选时间日志（最近60条）与最近分析</summary>${p.latest?.findings?.length?'<ul>'+p.latest.findings.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul>':''}<ul class="pilot-log">${p.logs.map(l=>`<li class="is-${esc(l.kind)}"><time>${time(l.at)}</time>${esc(l.message)}</li>`).join('')}</ul></details></section>`;
@@ -169,8 +170,9 @@ async function openPause(pilot,account=''){
 }
 document.addEventListener('click',async event=>{
   const b=event.target.closest('button');if(!b)return;
-  if(b.dataset.close){if((b.dataset.close==='createDialog' && creating)||(b.dataset.close==='scheduleDialog'&&savingSchedule))return;$('#'+b.dataset.close).close();return;}
+  if(b.dataset.close){if((b.dataset.close==='createDialog' && creating)||(b.dataset.close==='scheduleDialog'&&savingSchedule)||(b.dataset.close==='poolSwitchDialog'&&switchingPools))return;$('#'+b.dataset.close).close();return;}
   if(b.dataset.schedule){openSchedule(b.dataset.schedule);return;}
+  if(b.dataset.poolSwitch){openPoolSwitch(b.dataset.poolSwitch);return;}
   if(b.dataset.detail){await detail(b.dataset.detail,b.dataset.slot);return;}
   if(b.dataset.pause){await openPause(b.dataset.pause,b.dataset.account);return;}
   const pilot=b.dataset.pilot||b.dataset.run;if(!pilot)return;
@@ -242,3 +244,27 @@ $('#period').value=selectedPeriod;
 $('#period').addEventListener('change',()=>{selectedPeriod=$('#period').value;load();});
 setInterval(()=>{if(!document.hidden&&!document.querySelector('dialog[open]'))load(true);},30000);
 load();
+
+function openPoolSwitch(pilotId=''){
+ if(loading||creating||switchingPools)return;
+ const pilots=(data?.pilots||[]).filter(p=>p.status!=='ended'&&(!pilotId||p.id===pilotId));
+ $('#poolSwitchChoices').innerHTML=pilots.map(p=>'<label class="pilot-group-choice"><input type="checkbox" data-pool-pilot="'+esc(p.id)+'" checked><span>'+esc(p.groupName)+'<small>'+esc(p.strategyLabel)+' · 每号每天 '+(p.slots||[]).length+' 条'+(p.pendingStrategy?' · '+time(p.strategyEffectiveAt)+' 已配置生效':'')+'</small></span></label>').join('')||'<p>当前没有可接续的运营组。</p>';
+ $('#poolSwitchStatus').textContent='保存后显示各组实际生效日期。';$('#poolSwitchResults').innerHTML='';$('#confirmPoolSwitch').disabled=!pilots.length;$('#poolSwitchDialog').showModal();
+}
+$('#openPoolSwitch').onclick=()=>openPoolSwitch();
+$('#poolSwitchDialog').addEventListener('cancel',event=>{if(switchingPools)event.preventDefault();});
+$('#confirmPoolSwitch').onclick=async()=>{
+ if(switchingPools)return;
+ const ids=[...document.querySelectorAll('[data-pool-pilot]:checked')].filter(n=>!n.disabled).map(n=>n.dataset.poolPilot),pilots=ids.map(id=>data.pilots.find(p=>p.id===id)).filter(Boolean);
+ if(!pilots.length){$('#poolSwitchStatus').textContent='请至少选择一个运营组。';return;}
+ switchingPools=true;$('#confirmPoolSwitch').disabled=true;const results=[];
+ try{
+  for(const p of pilots){
+   $('#poolSwitchStatus').textContent='正在保存 '+(results.length+1)+' / '+pilots.length+'：'+p.groupName;
+   try{const r=await api('/'+encodeURIComponent(p.id)+'/strategy','PATCH',{strategy:'pools',days:7,revision:p.revision});for(const choice of document.querySelectorAll('[data-pool-pilot]'))if(choice.dataset.poolPilot===p.id){choice.checked=false;choice.disabled=true;}results.push('<li>'+esc(p.groupName)+'：'+time(r.effectiveAt||r.strategyEffectiveAt)+' 起账号池匹配，运行至 '+time(r.endsAt)+'</li>');}
+   catch(error){results.push('<li class="pilot-error">'+esc(p.groupName)+'：未保存 · '+esc(error.message)+'</li>');}
+   $('#poolSwitchResults').innerHTML=results.join('');
+  }
+  $('#poolSwitchStatus').textContent='配置提交完成；请核对各组生效日期和未保存项。';
+ }finally{switchingPools=false;$('#confirmPoolSwitch').disabled=false;await load(true);}
+};

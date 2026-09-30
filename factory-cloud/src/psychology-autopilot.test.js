@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -437,4 +437,104 @@ test('autopilot performance follows actual publication period, includes same-day
  result=await(await f.api('GET')).json();assert.equal(result.pilots[0].performance.n,2);assert.equal(result.pilots[0].performance.medianViews,500);assert.equal(result.pilots[0].performance.potentialRate,0.5);
  const week=await(await f.api('GET','?period=7d')).json();assert.equal(week.pilots[0].performance.n,4);assert.equal(week.pilots[0].performance.medianViews,700);
  assert.equal(f.requests.length,0);
+});
+
+
+test('pool strategy resolves by slot time and calendar days with zero-based rounds', () => {
+  const start=at('2026-10-02','00:00');
+  const pilot={strategy:'original',current_strategy:'original',pending_strategy:'pools',strategy_effective_at:start,strategy_started_at:at('2026-09-25','01:25'),created_at:at('2026-09-25','01:25'),slots_json:JSON.stringify([{hour:1,minute:45},{hour:2,minute:15}]),slots_effective_at:0};
+  assert.equal(pilotStrategyAt(pilot,start-1),'original');
+  assert.equal(pilotStrategyAt(pilot,start),'pools');
+  assert.deepEqual(pilotPoolContext(pilot,at('2026-10-02','01:45')),{cycleStartAt:start,postsPerDay:2,round:0,dayIndex:0});
+  assert.deepEqual(pilotPoolContext(pilot,at('2026-10-04','02:15')),{cycleStartAt:start,postsPerDay:2,round:1,dayIndex:2});
+  assert.throws(()=>pilotPoolContext(pilot,at('2026-10-02','03:15')),/发布时段/);
+});
+
+test('future pool strategy starts after reserved Beijing dates without changing jobs or account states', async t => {
+  const f=await pilotFixture(t),now=at('2026-09-30','12:00');t.mock.method(Date,'now',()=>now);
+  const {id}=await(await f.api('POST','',{groupId:'g',strategy:'original',days:7,slots:[{hour:1,minute:45},{hour:2,minute:15}]})).json();
+  const original=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+  const jobs=f.sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id').all();
+  const items=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all();
+  const slots=f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots ORDER BY slot_at').all();
+  const accounts=f.sqlite.prepare('SELECT * FROM psychology_autopilot_accounts ORDER BY connection_id').all();
+  const response=await(await f.api('PATCH','/'+id+'/strategy',{strategy:'pools',days:7,revision:original.updated_at})).json();
+  assert.equal(response.effectiveAt,at('2026-10-02','00:00'));
+  assert.equal(response.endsAt,at('2026-10-09','00:00'));
+  assert.equal(response.pendingStrategy,'pools');
+  assert.equal(response.strategy,'original');
+  assert.ok(response.revision>original.updated_at);
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM factory_jobs ORDER BY id').all(),jobs);
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all(),items);
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots ORDER BY slot_at').all(),slots);
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_autopilot_accounts ORDER BY connection_id').all(),accounts);
+  const listed=(await(await f.api('GET')).json()).pilots[0];
+  assert.equal(listed.pendingStrategy,'pools');assert.equal(listed.strategyEffectiveAt,response.effectiveAt);
+  assert.equal(listed.strategy,'original');assert.equal(listed.endsAt,response.endsAt);
+  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+  assert.equal(pilotStrategyAt(pilot,response.effectiveAt),'pools');
+  assert.equal(pilotPoolContext(pilot,response.effectiveAt+HOUR+45*60000).dayIndex,0);
+  assert.equal(f.requests.length,0);
+});
+
+test('pool strategy continuation validates revision, scope, origin, duration and pending reservations', async t => {
+  const f=await pilotFixture(t),now=at('2026-09-30','12:00');t.mock.method(Date,'now',()=>now);
+  const {id}=await(await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id),path='/'+id+'/strategy';
+  await assert.rejects(f.api('PATCH',path,{strategy:'pools',days:7}),/revision/);
+  await assert.rejects(f.api('PATCH',path,{strategy:'pools',days:0,revision:pilot.updated_at}),/运行天数/);
+  await assert.rejects(f.api('PATCH',path,{strategy:'rewrite',revision:pilot.updated_at}),/接续策略/);
+  const url=new URL('https://factory.test/api/psychology-autopilot'+path);
+  const body={strategy:'pools',days:7,revision:pilot.updated_at};
+  await assert.rejects(handlePsychologyAutopilot(new Request(url,{method:'PATCH',headers:{origin:'https://other.test'},body:JSON.stringify(body)}),f.env,url,{user:admin}),/跨站/);
+  await assert.rejects(handlePsychologyAutopilot(new Request(url,{method:'PATCH',body:JSON.stringify(body)}),f.env,url,{user:{...admin,role:'operator'}}),/权限/);
+  const response=await(await f.api('PATCH',path,body)).json();
+  await assert.rejects(f.api('PATCH',path,body),/revision/);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)").run(id,response.effectiveAt+8*HOUR,now);
+  await assert.rejects(f.api('PATCH',path,{...body,revision:response.revision}),/待生效策略已开始创建排期/);
+  await f.api('PATCH','/'+id,{status:'ended'});
+  await assert.rejects(f.api('PATCH',path,{...body,revision:response.revision}),/已结束/);
+  assert.equal(f.requests.length,0);
+});
+
+test('new pool strategy pilots use two default slots and retain external paused creation', async t => {
+  const f=await pilotFixture(t),now=at('2026-09-30','12:00');t.mock.method(Date,'now',()=>now);
+  const url=new URL('https://factory.test/api/psychology-autopilot');
+  const request=new Request(url,{method:'POST',body:JSON.stringify({requestId:crypto.randomUUID(),groupId:'g',strategy:'pools',days:7})});
+  const created=await(await handlePsychologyAutopilot(request,f.env,url,{user:admin},{external:true})).json();
+  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(created.id);
+  assert.equal(pilot.status,'paused');assert.equal(pilot.current_strategy,'pools');
+  assert.equal(pilot.strategy,'evolve');assert.equal(pilotStrategyAt(pilot,now),'pools');
+  assert.equal(JSON.parse(pilot.slots_json).length,2);assert.equal(pilot.strategy_started_at,now);
+  const listed=(await(await f.api('GET')).json()).pilots[0];
+  assert.equal(listed.strategy,'pools');assert.equal(listed.pendingStrategy,null);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);
+  assert.equal(f.requests.length,0);
+});
+
+test('pool-to-pool continuation retains the current cycle until its future boundary', async t => {
+  const f=await pilotFixture(t),now=at('2026-10-03','12:00');t.mock.method(Date,'now',()=>now);
+  const url=new URL('https://factory.test/api/psychology-autopilot');
+  const made=await(await handlePsychologyAutopilot(new Request(url,{method:'POST',body:JSON.stringify({requestId:crypto.randomUUID(),groupId:'g',strategy:'pools',days:7})}),f.env,url,{user:admin},{external:true})).json();
+  const original=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(made.id);
+  const next=await(await f.api('PATCH','/'+made.id+'/strategy',{strategy:'pools',days:7,revision:original.updated_at})).json();
+  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(made.id);
+  assert.equal(pilotStrategyAt(pilot,next.effectiveAt-1),'pools');
+  assert.equal(pilotPoolContext(pilot,at('2026-10-03','12:00')).cycleStartAt,original.created_at);
+  assert.equal(pilotPoolContext(pilot,next.effectiveAt+8*HOUR).cycleStartAt,next.effectiveAt);
+  assert.equal(f.requests.length,0);
+});
+
+test('reporting slot triggers prefer frozen batch strategy and otherwise resolve strategy at publication slot', async t => {
+  const f=await pilotFixture(t),now=at('2026-09-30','12:00');t.mock.method(Date,'now',()=>now);
+  const {id}=await(await f.api('POST','',{groupId:'g',strategy:'original',days:7})).json();
+  const original=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+  const next=await(await f.api('PATCH','/'+id+'/strategy',{strategy:'pools',days:7,revision:original.updated_at})).json();
+  for(const [batch,config] of [['frozen-original',{libraryStrategy:'original'}],['frozen-pools',{libraryStrategy:'pools'}],['inferred-pools',{}]])f.sqlite.prepare('INSERT INTO psychology_publish_batches VALUES(?,?,?,?)').run(batch,'admin',JSON.stringify(config),now);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES(?,?,'created',?,?)").run(id,next.effectiveAt+8*HOUR,'frozen-original,inferred-pools',now);
+  assert.equal(f.sqlite.prepare('SELECT strategy FROM ops_pilot_batches WHERE batch_id=?').get('frozen-original').strategy,'original');
+  assert.equal(f.sqlite.prepare('SELECT strategy FROM ops_pilot_batches WHERE batch_id=?').get('inferred-pools').strategy,'pools');
+  f.sqlite.prepare('UPDATE psychology_autopilot_slots SET batch_id=? WHERE autopilot_id=? AND slot_at=?').run('frozen-original,inferred-pools,frozen-pools',id,next.effectiveAt+8*HOUR);
+  assert.equal(f.sqlite.prepare('SELECT strategy FROM ops_pilot_batches WHERE batch_id=?').get('frozen-pools').strategy,'pools');
+  assert.equal(f.requests.length,0);
 });

@@ -12,6 +12,8 @@ import { executionCounts, slotExecution, stopImpact, stopPending, nextAutopilotC
 import { publishAccountDirectory } from './psychology-account-access.js';
 import { TEST_POLICY, TEST_RULES } from './psychology-copy-testing.js';
 import { EVOLUTION } from './psychology-copy-evolution.js';
+import { POOL_POLICY, ACCOUNT_POOLS, CONTENT_POOLS } from '../../scripts/psychology-pool-policy.js';
+import { readPoolReport } from './psychology-pool-report.js';
 import { frameworkFor } from './psychology-operations.js';
 
 const BASE = '/api/psychology-autopilot';
@@ -22,10 +24,17 @@ export const AUTOPILOT = Object.freeze({
   leadMs: 2 * HOUR, immediateLeadMs: 10 * 60000, horizonMs: 26 * HOUR, staggerSeconds: 45, maxAccountsPerBatch: 50,
   lowViews: 200, lowPosts: 5, failStreak: 3, maxDailyPosts: 10,
 });
-export const STRATEGIES = { evolve: 'A · 优胜放量', original: 'B · 原版测试', rewrite: 'C · 改写测试' };
+export const STRATEGIES = { pools: '账号池 × 内容池匹配', evolve: 'A · 优胜放量', original: 'B · 原版测试', rewrite: 'C · 改写测试' };
 function strategyRules() {
   const n = TEST_RULES.samples, exploit = Math.round(EVOLUTION.exploitShare * 100), retire = Math.round(EVOLUTION.retireRatio * 100);
   return {
+    pools: { summary:'按成熟账号池匹配精确版本与样式的内容池，低号专门救援。', rules:[
+      '账号按至少五条满 72 小时作品的播放中位数分层；观察权重不是平台内部权重，低播放不会自动停号。',
+      '强号每周 12 / 1 / 1，中号 10 / 3 / 1，低号 11 / 3 / 0，分别对应优胜 / 优化验证 / 新内容；每天两条时至少一条基准。',
+      '内容按精确版本和样式统计，至少五个不同账号的成熟有效样本才判断优胜；未知指标保持缺失，真实零保持零。',
+      '低号不分配冷探索；近零号先检查状态，最多六条基准测试后等待复查，不自动封号；没有合格内容时只跳过相应账号。',
+      '后续策略按已保留排期之后的完整北京时间日期生效，已创建的生产与发布任务保持原计划。',
+    ] },
     evolve: { summary:'原版与改写版共同起测，有成熟数据后优胜放量并持续探索。', rules:[
       `冷启动同时给原版、改写版测试机会；两类都有可用测试版本时交替选择，不等待原版先跑完。每版先分配 ${n} 个测试名额。`,
       `成熟版本和待测试版本都存在时，约 ${exploit}% 优先平均播放最高的成熟版本，约 ${100-exploit}% 测试样本不足的版本；某类不可用时选另一类。比例是抽取倾向。`,
@@ -70,6 +79,28 @@ function validateDayEnd(slots, accounts) {
 }
 export function pilotSlotsAt(pilot, now) {
   return normalizePilotSlots(JSON.parse(pilot.slots_effective_at && now>=pilot.slots_effective_at ? pilot.pending_slots_json : pilot.slots_json));
+}
+
+// Resolve the additive canonical strategy at the slot time, preserving legacy
+// CHECK constraints and immutable generation/publication snapshots.
+export function pilotStrategyAt(pilot, time) {
+  return pilot.pending_strategy && pilot.strategy_effective_at && time >= pilot.strategy_effective_at
+    ? pilot.pending_strategy : pilot.current_strategy || pilot.strategy;
+}
+const pilotStrategyStartAt = (pilot, time) => pilot.pending_strategy && pilot.strategy_effective_at && time >= pilot.strategy_effective_at
+  ? pilot.strategy_effective_at : pilot.strategy_started_at || pilot.created_at;
+export function pilotPoolContext(pilot, slot) {
+  const slots = pilotSlotsAt(pilot, slot), time = new Date(slot + 8 * HOUR);
+  const round = slots.findIndex(s => s.hour === time.getUTCHours() && s.minute === time.getUTCMinutes());
+  if (round < 0) fail('发布时段不在当前运营配置中。', 409);
+  const cycleStartAt = pilotStrategyStartAt(pilot, slot);
+  const dayIndex = Math.max(0, Math.round((Date.parse(beijingDate(slot)+'T00:00:00+08:00') - Date.parse(beijingDate(cycleStartAt)+'T00:00:00+08:00')) / DAY));
+  return { cycleStartAt, postsPerDay: slots.length, round, dayIndex };
+}
+function pilotLibraryConfig(pilot, slot) {
+  const strategy = pilotStrategyAt(pilot, slot);
+  return { libraryStrategy: strategy, libraryTestPolicy: strategy === 'pools' ? POOL_POLICY.version : TEST_POLICY,
+    ...(strategy === 'pools' ? { poolContext: pilotPoolContext(pilot, slot) } : {}) };
 }
 
 // Slot times (ms) inside (now+lead, now+horizon], within the pilot's lifetime.
@@ -149,7 +180,7 @@ async function pilotOutcomes(db, pilotId, now) {
 }
 
 export async function runAutopilot(env, pilot, now = Date.now()) {
-  const db = env.DB, summary = { paused: [], batches: [], errors: [] };
+  const db = env.DB, summary = { paused: [], batches: [], errors: [], skipped: [] };
   pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
   if (!pilot || pilot.status !== 'active') return summary;
   await db.prepare('UPDATE psychology_autopilots SET last_run_at=? WHERE id=?').bind(now, pilot.id).run();
@@ -185,11 +216,19 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   const dayStart = Date.parse(beijingDate(now) + 'T00:00:00+08:00');
   if (!(await db.prepare("SELECT 1 FROM psychology_autopilot_log WHERE autopilot_id=? AND kind='daily' AND created_at>=?").bind(pilot.id, dayStart).first()) && accounts.length) {
     try {
+      if(pilotStrategyAt(pilot,now)==='pools'){
+        const window=operationsWindow(new URLSearchParams({period:'30d'}),now);
+        const {matching}=await readPoolReport(db,{ids:JSON.stringify([pilot.group_id]),window,media:'photo',now});
+        const o=matching.overview.mature,pct=v=>v==null?'—':Math.round(v*100)+'%';
+        await log(db,pilot.id,'daily','近30天 '+o.n+' 条满72小时 · 中位播放 '+(o.medianViews==null?'—':Math.round(o.medianViews))+' · 完播 '+pct(o.completion)+' · 优胜版本 '+matching.readiness.winnerVersions,
+          {overview:o,previous:matching.overview.previousMature,matching,basis:matching.basis},now);
+      }else{
       const window = operationsWindow(new URLSearchParams({ period: '7d' }), now);
       const { framework } = await frameworkFor(env, { accounts, window, media: 'photo', videosByAccount });
       const o = framework.overview.current, pct = v => v == null ? '—' : Math.round(v * 100) + '%';
       await log(db, pilot.id, 'daily', `近7天 ${o.n} 条满24小时 · 中位播放 ${o.medianViews == null ? '—' : Math.round(o.medianViews)} · 破千 ${pct(o.potentialRate)} · 破万 ${pct(o.hitRate)} · 完播 ${pct(o.completion)}`,
         { overview: o, previous: framework.overview.previous, stages: framework.accounts.stages.end, findings: framework.strategy.findings, observing: framework.overview.observing }, now);
+      }
     } catch (error) { await log(db, pilot.id, 'error', '每日分析失败：' + String(error.message || error).slice(0, 300), {}, now); }
   }
 
@@ -207,18 +246,25 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
       continue;
     }
     const batchIds = [], errors = [];
+    let createdAccounts = 0;
     for (let offset = 0; offset < active.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = active.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch);
       const body = { requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${beijingLabel(slot)}`,
         // Staggered groups pair by Beijing date and daily round, not wall-clock time.
-        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: pilot.strategy, libraryTestPolicy:TEST_POLICY, pairSeed: pilotPairSeed(current,slot), count: connectionIds.length, connectionIds,
+        mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(current,slot), pairSeed: pilotPairSeed(current,slot), count: connectionIds.length, connectionIds,
         scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
           env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:AUTOPILOT.leadMs });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');
+        if (Array.isArray(data.skipped) && data.skipped.length) {
+          summary.skipped.push(...data.skipped);
+          await log(db,pilot.id,'matching','账号池匹配跳过 '+data.skipped.length+' 个号：'+data.skipped.map(a => a.connectionId + ' ' + a.reason).join('；').slice(0,1000),{slot,skipped:data.skipped},now);
+        }
+        if (!data.batchId) continue;
         batchIds.push(data.batchId);
+        createdAccounts += Number.isInteger(data.count) ? data.count : connectionIds.length;
         await db.prepare('UPDATE psychology_autopilot_slots SET batch_id=? WHERE autopilot_id=? AND slot_at=?').bind(batchIds.join(','), pilot.id, slot).run();
         const fresh = await db.prepare('SELECT status,stop_pending FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
         if (fresh?.status !== 'active' && fresh?.stop_pending) await stopPending(db, pilot.id);
@@ -227,9 +273,9 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
         if (fresh?.status !== 'active') break;
       } catch (error) { errors.push(String(error.message || error).slice(0, 300)); }
     }
-    const status = batchIds.length ? 'created' : 'failed', detail = errors.join('；');
+    const status = batchIds.length ? 'created' : errors.length ? 'failed' : 'skipped', detail = errors.join('；') || (!batchIds.length ? '账号池匹配没有合格候选，等待复查或内容成熟' : '');
     await db.prepare('UPDATE psychology_autopilot_slots SET status=?,batch_id=?,detail=?,updated_at=? WHERE autopilot_id=? AND slot_at=?').bind(status, batchIds.join(','), detail, Date.now(), pilot.id, slot).run();
-    if (batchIds.length) { summary.batches.push(...batchIds); await log(db, pilot.id, 'batch', `已排 ${beijingLabel(slot)} 的发布：${active.length} 个号`, { slot, batchIds, accounts: active.length }, now); }
+    if (batchIds.length) { summary.batches.push(...batchIds); await log(db, pilot.id, 'batch', `已排 ${beijingLabel(slot)} 的发布：${createdAccounts} 个号`, { slot, batchIds, accounts: createdAccounts }, now); }
     if (errors.length) { summary.errors.push(...errors); await log(db, pilot.id, 'error', `${beijingLabel(slot)} 创建失败：${detail}`, { slot }, now); }
   }
   await fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary);
@@ -253,22 +299,29 @@ async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, n
     const maxRow = await db.prepare('SELECT MAX(schedule_at) AS last FROM psychology_publish_items WHERE deleted_at=0 AND batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).first();
     const base = maxRow?.last ? Number(maxRow.last) + AUTOPILOT.staggerSeconds : Math.floor(slot.slot_at / 1000);
     const added = [], errors = [];
+    let restoredAccounts = 0;
     for (let offset = 0; offset < missing.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = missing.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch);
       const body = { requestId: await uuidFrom(pilot.id + ':restore:' + slot.slot_at + ':' + connectionIds.join(',')), name: `自动运营 · ${current.group_name || current.group_id} · ${beijingLabel(slot.slot_at)} · 补排`,
-        mediaType: 'photo', template: 'photo-text', sourceType: 'library', libraryStrategy: current.strategy, libraryTestPolicy: TEST_POLICY, pairSeed: pilotPairSeed(current, slot.slot_at), count: connectionIds.length, connectionIds,
+        mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(current,slot.slot_at), pairSeed: pilotPairSeed(current, slot.slot_at), count: connectionIds.length, connectionIds,
         scheduleAt: base + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
           env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs: AUTOPILOT.leadMs });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');
+        if (Array.isArray(data.skipped) && data.skipped.length) {
+          summary.skipped.push(...data.skipped);
+          await log(db,pilot.id,'matching','补排匹配跳过 '+data.skipped.length+' 个号：'+data.skipped.map(a => a.connectionId + ' ' + a.reason).join('；').slice(0,1000),{slot:slot.slot_at,skipped:data.skipped},now);
+        }
+        if (!data.batchId) continue;
         if (!batchIds.includes(data.batchId)) batchIds.push(data.batchId);
         added.push(data.batchId);
+        restoredAccounts += Number.isInteger(data.count) ? data.count : connectionIds.length;
         await db.prepare('UPDATE psychology_autopilot_slots SET batch_id=?,updated_at=? WHERE autopilot_id=? AND slot_at=?').bind(batchIds.join(','), Date.now(), pilot.id, slot.slot_at).run();
       } catch (error) { errors.push(String(error.message || error).slice(0, 300)); }
     }
-    if (added.length) { summary.batches.push(...added); await log(db, pilot.id, 'batch', `已补排 ${beijingLabel(slot.slot_at)}：恢复 ${missing.length} 个号`, { slot: slot.slot_at, batchIds: added, accounts: missing.length }, now); }
+    if (added.length) { summary.batches.push(...added); await log(db, pilot.id, 'batch', `已补排 ${beijingLabel(slot.slot_at)}：恢复 ${restoredAccounts} 个号`, { slot: slot.slot_at, batchIds: added, accounts: restoredAccounts }, now); }
     if (errors.length) { const detail = errors.join('；'); summary.errors.push(...errors); await log(db, pilot.id, 'error', `${beijingLabel(slot.slot_at)} 补排失败：${detail}`, { slot: slot.slot_at }, now); }
   }
 }
@@ -338,17 +391,17 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
       const dayStart = Date.parse(beijingDate(Date.now()) + 'T00:00:00+08:00');
       const today = executionCounts(items.filter(i => i.scheduleAt >= dayStart && i.scheduleAt < dayStart + DAY));
       const attention = items.filter(i => i.error || i.retrying || ['missing','production_failed','publish_failed'].includes(i.state));
-      out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: p.strategy, strategyLabel: STRATEGIES[p.strategy], status: p.status, endsAt: p.ends_at, createdAt: p.created_at, revision:p.updated_at,
+      out.push({ id: p.id, groupId: p.group_id, groupName: p.group_name, strategy: pilotStrategyAt(p,Date.now()), strategyLabel: STRATEGIES[pilotStrategyAt(p,Date.now())], pendingStrategy:p.strategy_effective_at>Date.now()?p.pending_strategy||null:null, strategyEffectiveAt:p.strategy_effective_at>Date.now()?p.strategy_effective_at:0, status: p.status, endsAt: p.ends_at, createdAt: p.created_at, revision:p.updated_at,
         today, execution:executionCounts(items), performance:performanceRows.results.find(r=>r.pilot_id===p.id)||{n:0,medianViews:null,potentialRate:null}, attention, lastRunError:logs.results.find(l=>l.kind==='error' && l.created_at>=p.last_run_at)?.message || '', lastRunAt:p.last_run_at, nextCheckAt:p.status === 'active' ? nextAutopilotCheck() : null, stopPending:Boolean(p.stop_pending),
         slots: pilotSlotsAt(p,Date.now()), pendingSlots:p.slots_effective_at>Date.now()?JSON.parse(p.pending_slots_json):null, scheduleEffectiveAt:p.slots_effective_at>Date.now()?p.slots_effective_at:0, accounts: accounts.results.map(a => ({ connectionId: a.connection_id, name: labels.get(a.connection_id) || a.connection_id, status: a.status, reason: a.reason, updatedAt: a.updated_at, revision:a.updated_at, stopPending:Boolean(a.stop_pending) })),
         schedule: slots.results.map(s => ({ slotAt: s.slot_at, status: s.status, batchIds: s.batch_id ? s.batch_id.split(',') : [], detail: s.detail, counts:executionCounts(items.filter(i => i.slotAt === s.slot_at)) })),
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    return json({ page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, poolRules:POOL_POLICY, accountPools:ACCOUNT_POOLS, contentPools:CONTENT_POOLS, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
-    const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots);
+    const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots ?? (body.strategy === 'pools' ? AUTOPILOT.slots.slice(0,2) : AUTOPILOT.slots));
     if(body.startNow !== undefined && typeof body.startNow !== 'boolean')fail('立即准备选项无效。');
     if (!Object.hasOwn(STRATEGIES, body.strategy)) fail('请选择运营策略。');
     if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
@@ -366,14 +419,14 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     validateDayEnd(slots, group.accounts);
     if (await db.prepare("SELECT 1 FROM psychology_autopilots WHERE group_id=? AND status<>'ended'").bind(group.id).first()) fail('这个分组已经在自动运营中。', 409);
     const now = Date.now(), id = apiId || 'pilot-' + crypto.randomUUID(), initialStatus=apiOptions.external?'paused':'active';
-    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now,api_request_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(id, user.username, group.id, group.name, body.strategy, JSON.stringify(slots),initialStatus, now + days * DAY, now, now, Number(body.startNow===true),apiHash).run();
+    await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now,api_request_hash,current_strategy,strategy_started_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(id, user.username, group.id, group.name, body.strategy==='pools'?'evolve':body.strategy, JSON.stringify(slots),initialStatus, now + days * DAY, now, now, Number(body.startNow===true),apiHash,body.strategy,now).run();
     if(apiOptions.external){await log(db,id,'status','通过管理 API 创建，已暂停；明确恢复后才会新增排期。',{},now);return json({id,status:initialStatus,revision:now},201);}
     await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，北京时间 ${slotLabel(slots)}；${body.startNow?'首日不足 2 小时、距离发布超过 10 分钟的时段立即准备，其他时段提前 2 小时生成':'每条提前 2 小时开始生成'}。`, {}, now);
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
   }
-  const one = url.pathname.match(/^\/api\/psychology-autopilot\/(pilot-[0-9a-f-]{36})(?:\/(run|impact|schedule|slots\/(\d+)|accounts\/([^/]+)))?$/);
+  const one = url.pathname.match(/^\/api\/psychology-autopilot\/(pilot-[0-9a-f-]{36})(?:\/(run|impact|schedule|strategy|slots\/(\d+)|accounts\/([^/]+)))?$/);
   if (!one) fail('不支持此请求。', 405);
   const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=? AND owner=?').bind(one[1], user.username).first();
   if (!pilot) fail('自动运营不存在。', 404);
@@ -391,6 +444,25 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
       const body=await request.clone().json();
       if(!Number.isSafeInteger(body.revision)||body.revision!==pilot.updated_at)fail('revision 缺失或运营设置已修改，请重新读取。',409);
     }
+  }
+  if (one[2] === 'strategy' && request.method === 'PATCH') {
+    if (pilot.status === 'ended') fail('已结束的自动运营不能接续策略。',409);
+    const body = await readJson(request), days = Number(body.days ?? 7);
+    if (body.strategy !== 'pools') fail('接续策略请选择账号池与内容池匹配。');
+    if (!Number.isInteger(days) || days < 1 || days > 30) fail('运行天数应为 1–30 天。');
+    if (!Number.isSafeInteger(body.revision) || body.revision !== pilot.updated_at) fail('revision 缺失或运营设置已修改，请重新读取。',409);
+    const group=(await autopilotDirectory(env,user,true)).groups.find(g=>g.id===pilot.group_id);
+    if(!group)fail('没有这个心理学分组的权限。',403);
+    if(!group.accounts)fail('此分组没有可发布账号。');
+    const latest=await db.prepare('SELECT MAX(slot_at) last_slot FROM psychology_autopilot_slots WHERE autopilot_id=?').bind(pilot.id).first();
+    if(pilot.strategy_effective_at>now && Number(latest?.last_slot)>=pilot.strategy_effective_at)fail('待生效策略已开始创建排期，请在策略生效后再修改。',409);
+    const effectiveAt=Date.parse(beijingDate(Math.max(now,Number(latest?.last_slot)||0))+'T00:00:00+08:00')+DAY;
+    const endsAt=effectiveAt+days*DAY, stamp=Math.max(now,pilot.updated_at+1), strategy=pilotStrategyAt(pilot,now);
+    const changed=await db.prepare("UPDATE psychology_autopilots SET current_strategy=?,strategy_started_at=?,pending_strategy=?,strategy_effective_at=?,ends_at=?,updated_at=? WHERE id=? AND owner=? AND status<>'ended' AND updated_at=? AND NOT EXISTS (SELECT 1 FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at>=?)")
+      .bind(strategy,pilotStrategyStartAt(pilot,now),'pools',effectiveAt,endsAt,stamp,pilot.id,user.username,pilot.updated_at,pilot.id,effectiveAt).run();
+    if(!changed.meta?.changes)fail('运营设置或排期刚被修改，请刷新后重试。',409);
+    await log(db,pilot.id,'status','账号池与内容池匹配将于 '+beijingDate(effectiveAt)+' 起接续 '+days+' 天；已创建任务继续原计划，账号暂停状态保持。',{strategy:'pools',effectiveAt,endsAt},now);
+    return json({ok:true,strategy,pendingStrategy:'pools',effectiveAt,strategyEffectiveAt:effectiveAt,endsAt,revision:stamp});
   }
   if (one[2] === 'schedule' && request.method === 'PATCH') {
     if(pilot.status==='ended')fail('已结束的自动运营不能修改发布设置。',409);
@@ -424,14 +496,17 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     if (body.stopPending !== undefined && typeof body.stopPending !== 'boolean') fail('暂停范围无效。');
     if (!['active', 'paused', 'ended'].includes(status)) fail('状态无效。');
     if (pilot.status === 'ended') fail('已结束的自动运营不能再修改。', 409);
-    const strategy=apiOptions.external?(body.strategy??pilot.strategy):pilot.strategy;
+    const strategy=apiOptions.external?(body.strategy??pilotStrategyAt(pilot,now)):pilotStrategyAt(pilot,now);
+    if(apiOptions.external&&body.strategy==='pools'&&pilotStrategyAt(pilot,now)!=='pools')fail('切换账号池匹配请使用 /strategy 未来接续接口。',409);
+    if(apiOptions.external&&body.strategy!==undefined&&pilot.strategy_effective_at>now)fail('已有待生效策略，请等待生效后再修改当前策略。',409);
     const endsAt=apiOptions.external?(body.endsAt??pilot.ends_at):pilot.ends_at;
     if(!Object.hasOwn(STRATEGIES,strategy))fail('运营策略无效。');
     if(apiOptions.external&&(body.endsAt!==undefined||status==='active')&&(!Number.isSafeInteger(endsAt)||endsAt<=now||endsAt>now+30*DAY))fail('endsAt 须为未来 30 天内的毫秒时间戳。');
     if(status==='active'&&apiOptions.external&&!user.sidebarModules.includes('psychology-publish'))fail('没有自动发布权限。',403);
     const stamp=Math.max(now,pilot.updated_at+1);
-    const result=await db.prepare('UPDATE psychology_autopilots SET status=?,stop_pending=?,strategy=?,ends_at=?,updated_at=? WHERE id=? AND owner=? AND updated_at=?')
-      .bind(status,status==='active'?0:Number(body.stopPending??pilot.stop_pending),strategy,endsAt,stamp,pilot.id,user.username,pilot.updated_at).run();
+    const changing=apiOptions.external&&body.strategy!==undefined&&strategy!==pilotStrategyAt(pilot,now);
+    const result=await db.prepare('UPDATE psychology_autopilots SET status=?,stop_pending=?,strategy=?,current_strategy=?,strategy_started_at=?,pending_strategy=?,strategy_effective_at=?,ends_at=?,updated_at=? WHERE id=? AND owner=? AND updated_at=?')
+      .bind(status,status==='active'?0:Number(body.stopPending??pilot.stop_pending),strategy==='pools'?pilot.strategy:strategy,changing?strategy:pilot.current_strategy||'',changing?now:pilot.strategy_started_at||0,changing?'':pilot.pending_strategy||'',changing?0:pilot.strategy_effective_at||0,endsAt,stamp,pilot.id,user.username,pilot.updated_at).run();
     if(!result.meta?.changes)fail('运营设置已变化，请重新读取。',409);
     const stopped = status !== 'active' && body.stopPending ? await stopPending(db, pilot.id) : 0;
     await log(db, pilot.id, 'status', { active: '已恢复自动运营。', paused: body.stopPending ? '已暂停自动运营并停止本地尚未提交的任务。' : '已暂停新增排期，已排好的发布照常进行。', ended: '已结束自动运营。' }[status], {}, now);
