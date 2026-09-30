@@ -1,4 +1,5 @@
-import { buildPoolCandidates,loadPoolReservations,planPoolMatches,poolMatchStatement } from './psychology-pool-matching.js';
+import { taskAssignmentsFor } from './psychology-task-groups.js';
+import { buildPoolCandidates,loadPoolReservations,planPoolMatches,poolMatchStatement,taskGroupAllocationStatement } from './psychology-pool-matching.js';
 import { readPoolMatchingState } from './psychology-pool-report.js';
 import { assertPsychologyOneUser, ensurePsychologyOneMembers } from './psychology-tiktok-one.js';
 import { loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
@@ -447,12 +448,14 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const [stats,used]=await Promise.all([testState?testState.stats:loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
     const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
     if(config.libraryStrategy==='pools'){
-      const [state,styleChoices,reservations]=await Promise.all([
+      const [state,styleChoices,reservations,taskAssignments]=await Promise.all([
         readPoolMatchingState(env.DB,user,config.connectionIds),managedStyles(env.DB,user.username),
-        loadPoolReservations(env.DB,user.username,config.poolContext.cycleStartAt)]);
+        loadPoolReservations(env.DB,user.username,config.poolContext.cycleStartAt),
+        internal.taskGroupPolicyId?taskAssignmentsFor(env.DB,user.username,config.connectionIds,internal.taskSlotAt||config.scheduleAt*1000):new Map()]);
+      if(internal.taskGroupPolicyId&&config.connectionIds.some(id=>taskAssignments.get(id)?.policyId!==internal.taskGroupPolicyId||taskAssignments.get(id)?.paused))fail('运营任务组分配已变化，请重新调度。',409);
       const candidates=await buildPoolCandidates(posts,state,styleChoices,reservations.occupied);
       const matches=planPoolMatches({candidates,accounts:state.accounts,slots,used,...reservations,
-        context:config.poolContext,owner:user.username,pairSeed:config.pairSeed||''});
+        context:config.poolContext,owner:user.username,pairSeed:config.pairSeed||'',taskAssignments});
       sources=matches.plan;matchingSkipped=matches.skipped;
       if(!sources.length)return json({accepted:true,batchId:'',count:0,skipped:matchingSkipped},202);
     }else{
@@ -521,7 +524,11 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     }
     if(config.mediaType==='photo'||entry.source.copySource?.kind==='rewrite'){
       statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id,rewrite_model,copy_hash,copy_json) VALUES(?,?,?,?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId,entry.source.copySource?.rewriteModel||'',entry.source.poolIdentity?.hash||'',JSON.stringify(entry.source.poolIdentity?.copy||{})));
-      if(entry.source.poolMatch)statements.push(poolMatchStatement(env.DB,item,entry.source,user.username,stamp));
+      if(entry.source.poolMatch){
+        statements.push(poolMatchStatement(env.DB,item,entry.source,user.username,stamp));
+        const taskClaim=taskGroupAllocationStatement(env.DB,item,entry.source,stamp);
+        if(taskClaim)statements.push(taskClaim);
+      }
     }
     // Library draws reserve the viral post itself, so no later version of it reaches the same account.
     if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.usageKey||entry.source.id,entry.connectionId,id));
@@ -534,6 +541,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   catch (error) {
     const winner = await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();
     if (!winner) {
+      if(/psychology_task_group_allocations/.test(error.message))fail('该账号今天的发布轮次已被占用，请重新检查任务组分配。',409);
       if(/psychology_copy_test_allocations/.test(error.message))fail('测试名额刚被其他分组更新，请重新检查后分配。',409);
       if(/psychology_peer_account_usage/.test(error.message))fail('题目刚被其他任务分配给同一账号，请重新提交。',409);
       if (/TOPIC_CHANGED|TOPIC_ALREADY_USED|TOPIC_IMAGE_UNAVAILABLE|psychology_topic_image_uses/.test(error.message)) fail('题目刚被修改或已被其他批次抽取，请重新提交。',409);

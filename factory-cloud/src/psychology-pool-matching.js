@@ -95,7 +95,7 @@ export async function buildPoolCandidates(posts, state, styles, reservations = n
   return candidates;
 }
 
-export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupied=new Map(),cycles=new Map(),context,owner='',pairSeed=''}){
+export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupied=new Map(),cycles=new Map(),context,owner='',pairSeed='',taskAssignments=new Map()}){
   const plan=[],skipped=[],extra=new Map(),cycleExtra=new Map();
   const cycle=context.cycleStartAt;
   for(const slot of slots){
@@ -109,7 +109,10 @@ export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupi
       observed={...observed,pool:classifyAccountPool(prior.stats),stats:prior.stats};
     }
     const accountPool=observed.pool;
-    const desired=desiredContentPool({accountPool,...context,seed:owner+':'+cycle+':'+slot.connectionId});
+    const assignment=taskAssignments.get(slot.connectionId);
+    const reviewing=assignment?.role==='review'&&['strong','normal'].includes(accountPool);
+    // Reviewers devote two rounds to fixed-version validation and one to production.
+    const desired=reviewing&&context.round%3!==2?'explore':reviewing?'winner':desiredContentPool({accountPool,...context,seed:owner+':'+cycle+':'+slot.connectionId});
     const seen=used.get(slot.connectionId)||new Set();
     const eligible=candidates.filter(c=>{
       if(seen.has(c.post.sourceKey))return false;
@@ -119,7 +122,7 @@ export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupi
     });
     const ranked=rankPoolCandidates(eligible,accountPool,{desiredPool:desired,seed:pairSeed+':'+slot.connectionId});
     // On stable accounts, started baselines take priority during the initial shortage.
-    if(!ranked.some(c=>c.pool==='winner')&&['strong','normal'].includes(accountPool)){
+    if((reviewing&&desired==='explore'||!ranked.some(c=>c.pool==='winner'))&&['strong','normal'].includes(accountPool)){
       ranked.sort((a,b)=>Number(b.pool==='explore')-Number(a.pool==='explore')
         ||(b.occupied+(extra.get(b.key)||0))-(a.occupied+(extra.get(a.key)||0))
         ||b.stats.n-a.stats.n||(b.stats.medianViews??-1)-(a.stats.medianViews??-1));
@@ -128,11 +131,12 @@ export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupi
     if(!chosen){skipped.push({...slot,reason:['strong','normal'].includes(accountPool)?'可用版本已满五个占位，等待成熟数据或补充可用文案':'合格优胜/优化内容不足；先由中强账号固定样式补足五账号基线'});continue;}
     const warmup=chosen.pool==='explore'&&desired!=='explore';
     const reason=warmup?'优胜内容不足：中强账号补足固定版本、固定样式的五账号基线':
-      accountPool==='diagnostic'?'优胜内容诊断基准':desired===chosen.pool?'按本轮配额匹配':'优先池不足，使用允许的成熟候选';
+      reviewing&&chosen.pool==='explore'?'评审组：固定版本、固定样式补齐五账号验证':accountPool==='diagnostic'?'优胜内容诊断基准':desired===chosen.pool?'按本轮配额匹配':'优先池不足，使用允许的成熟候选';
     const poolMatch={policy:POOL_POLICY.version,accountPool,desiredPool:desired,contentPool:chosen.pool,reason,
       cycleStartAt:cycle,dayIndex:context.dayIndex,round:context.round,asOf:context.asOf||Date.now(),
       sampleCount:chosen.stats.n,accountMedianViews:observed.stats.medianViews,copyHash:chosen.identity.hash,
-      styleRevision:chosen.styleDefinition.revision||0,warmup};
+      styleRevision:chosen.styleDefinition.revision||0,warmup,
+      ...(assignment?{taskGroup:{policyId:assignment.policyId,id:assignment.id,role:assignment.role,revision:assignment.revision,effectiveAt:assignment.effectiveAt}}:{})};
     plan.push({...slot,...chosen,source:{...chosen.source,usageKey:chosen.post.sourceKey,
       poolMatch,poolStyle:chosen.styleDefinition,poolIdentity:chosen.identity}});
     seen.add(chosen.post.sourceKey);used.set(slot.connectionId,seen);extra.set(chosen.key,(extra.get(chosen.key)||0)+1);
@@ -150,3 +154,17 @@ export function poolMatchStatement(db,item,source,owner,now){
     match.dayIndex,match.round,match.reason,now);
 }
 
+
+// This claim is committed with the item and matching snapshot. Concurrent task
+// executors cannot consume the same account's daily round twice.
+export function taskGroupAllocationStatement(db,item,source,now){
+  const match=source.poolMatch, group=match?.taskGroup;
+  if(!group)return null;
+  const day=new Date(item.scheduleAt*1000+8*3600000).toISOString().slice(0,10);
+  return db.prepare(`INSERT INTO psychology_task_group_allocations(policy_id,connection_id,beijing_date,round,item_id,created_at)
+    VALUES(CASE WHEN EXISTS(SELECT 1 FROM psychology_task_group_policies WHERE id=? AND enabled=1 AND starts_at<=? AND ends_at>?)
+      AND EXISTS(SELECT 1 FROM psychology_task_group_snapshots s WHERE s.policy_id=? AND s.connection_id=? AND s.revision=? AND s.effective_at=?
+        AND NOT EXISTS(SELECT 1 FROM psychology_task_group_snapshots newer WHERE newer.policy_id=s.policy_id AND newer.connection_id=s.connection_id AND newer.effective_at>s.effective_at AND newer.effective_at<=?))
+      THEN ? ELSE NULL END,?,?,?,?,?)`)
+    .bind(group.policyId,item.scheduleAt*1000,item.scheduleAt*1000,group.policyId,item.connectionId,group.revision,group.effectiveAt,item.scheduleAt*1000,group.policyId,item.connectionId,day,match.round,item.id,now);
+}

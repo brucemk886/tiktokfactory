@@ -225,3 +225,28 @@ test('real baseline allocation caps five occupied accounts and a definite failur
   const after=await loadPoolReservations(f.db,'admin',cycle,now);assert.equal([...after.occupied.values()][0].posts,5);assert.equal([...after.occupied.values()][0].accounts.size,5);
   assert.equal(f.requests.length,0);
 });
+
+test('review task members use two fixed-version validation rounds and one winner round, freezing the role', () => {
+  const assignment={policyId:'policy',id:'policy:review',role:'review',revision:3,effectiveAt:cycle,accountPool:'normal',groupId:'g'};
+  const taskAssignments=new Map([['a',assignment]]);
+  const candidates=[candidate('cold','explore'),candidate('proven','winner')];
+  for(const round of [0,1,2]){
+    const result=plan({candidates,taskAssignments,context:context({postsPerDay:3,round})});
+    assert.equal(result.plan.length,1);
+    const match=result.plan[0].source.poolMatch;
+    assert.equal(match.contentPool,round===2?'winner':'explore');
+    assert.deepEqual(match.taskGroup,{policyId:'policy',id:'policy:review',role:'review',revision:3,effectiveAt:cycle});
+  }
+  const full=new Map([[candidates[0].key,{posts:5,accounts:new Set(['b','c','d','e','f'])}]]);
+  const result=plan({candidates,taskAssignments,occupied:full,context:context({postsPerDay:3})});
+  assert.equal(result.plan[0].source.poolMatch.contentPool,'winner');
+});
+
+test('a review role cannot bypass fresh weak-account evidence or cold-version limits', () => {
+  const taskAssignments=new Map([['a',{policyId:'policy',id:'review',role:'review',revision:2,effectiveAt:cycle,accountPool:'normal'}]]);
+  const result=plan({taskAssignments,accounts:accounts([['a','rescue-hook',{medianViews:100}]])});
+  assert.equal(result.plan.length,0);assert.equal(result.skipped.length,1);
+  const proved=plan({taskAssignments,accounts:accounts([['a','rescue-hook',{medianViews:100}]]),candidates:[candidate('baseline','winner')]});
+  assert.equal(proved.plan[0].source.poolMatch.accountPool,'rescue-hook');
+  assert.equal(proved.plan[0].source.poolMatch.contentPool,'winner');
+});
