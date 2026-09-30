@@ -6,7 +6,7 @@ import { loadGroupStore } from './official.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { handlePsychologyAutoPublish } from './psychology-auto-publish.js';
 import { runAutopilot, runAutopilots, handlePsychologyAutopilot } from './psychology-autopilot.js';
-import { taskAssignmentsFor, handleTaskGroups } from './psychology-task-groups.js';
+import { taskAssignmentsFor, handleTaskGroups, reconcileTaskGroups } from './psychology-task-groups.js';
 import { taskSlotAccounts, taskPublishContext, sameDeliveryDay, reconcileTaskExecutors } from './psychology-task-group-execution.js';
 import { PACIFIC_TIME_ZONE, zonedEpoch, zonedDate } from '../../scripts/psychology-schedule-time.js';
 import { POOL_POLICY } from '../../scripts/psychology-pool-policy.js';
@@ -635,5 +635,96 @@ test('prestart Pacific transition closes the legacy schedule gap without changin
  assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],starts+2*HOUR),[]);
  assert.deepEqual(await taskSlotAccounts(f.db,pilot,['a','b'],zonedEpoch('2026-10-02',8,0,PACIFIC_TIME_ZONE)),['a','b']);
  assert.equal(JSON.stringify(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='gap-item'").get()),before);
+ assert.equal(f.requests.length,0);
+});
+
+
+function configurePacificAdmissionCycle(f,date='2026-10-02',endDate='2026-10-09') {
+ const zone=PACIFIC_TIME_ZONE,start=zonedEpoch(date,0,0,zone),end=zonedEpoch(endDate,0,0,zone);
+ f.sqlite.prepare("UPDATE psychology_task_group_policies SET enrollment_mode='project',time_zone=?,starts_at=?,ends_at=?,next_review_at=?").run(zone,start,end,end);
+ f.sqlite.prepare('UPDATE psychology_task_group_snapshots SET effective_at=?').run(start);
+ f.sqlite.prepare('UPDATE psychology_autopilots SET schedule_timezone=?,slots_json=?,ends_at=?,strategy_started_at=?').run(zone,JSON.stringify([{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}]),end,start);
+ return {zone,start,end,pilot:f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(f.sourcePilot.id)};
+}
+function addBoundProjectAccount(f,id,boundAt,{history=true,group='g'}={}) {
+ f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id,updated_at) VALUES(?,?,?)').run(id,group,boundAt);
+ f.directory.push({id,connectionId:id,username:id,scopes:['video.publish']});
+ if(history)for(let n=0;n<6;n++)f.sqlite.prepare("INSERT INTO ops_task_facts(id,batch_id,account_key,media,schedule_at,published_at,source,variant,style,copy_hash,state,views,completion) VALUES(?,?,?,'photo',?,?,?,'','classic','historical-copy','published',600,0.2)")
+  .run('admission-'+id+n,'history','tiktok:'+id,created-4*DAY,created-4*DAY,'admission-source-'+n);
+}
+
+test('late Pacific binding joins next day and supplements reserved slots without repeating existing accounts',async t=>{
+ const f=await taskFixture(t),{zone,pilot}=configurePacificAdmissionCycle(f);
+ const prepare=zonedEpoch('2026-10-02',16,0,zone);f.setNow(prepare);
+ const first=await runAutopilot(f.env,pilot,prepare);assert.ok(first.batches.length,JSON.stringify(first.errors));
+ const frozenItems=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').all();
+ const frozenJobs=f.sqlite.prepare('SELECT id,payload_json,available_at FROM factory_jobs ORDER BY id').all();
+ // A later reservation for existing accounts must not defer the new member.
+ f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES(?,?,'created','',?)").run(pilot.id,zonedEpoch('2026-10-04',20,0,zone),prepare);
+ const bound=zonedEpoch('2026-10-02',23,59,zone),tomorrow=zonedEpoch('2026-10-03',0,0,zone);f.setNow(bound);
+ addBoundProjectAccount(f,'new-next-day',bound);
+ await reconcileTaskExecutors(f.env,actor,{accounts:f.directory},bound);
+ const member=f.sqlite.prepare("SELECT * FROM psychology_task_group_snapshots WHERE connection_id='new-next-day' ORDER BY effective_at LIMIT 1").get();
+ assert.equal(member.effective_at,tomorrow);
+ assert.equal(f.sqlite.prepare("SELECT first_seen_at FROM psychology_task_group_accounts WHERE connection_id='new-next-day'").get().first_seen_at,bound);
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['new-next-day'],bound)).size,0);
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['new-next-day'],tomorrow+8*HOUR)).size,1);
+ const result=await runAutopilot(f.env,f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(pilot.id),bound);
+ assert.deepEqual(result.errors,[]);
+ const claims=f.sqlite.prepare("SELECT * FROM psychology_task_group_allocations WHERE connection_id='new-next-day' ORDER BY round").all();
+ assert.deepEqual(claims.map(c=>[c.beijing_date,c.round]),[['2026-10-03',0],['2026-10-03',1],['2026-10-03',2]]);
+ const beforeCounts=f.sqlite.prepare('SELECT connection_id,schedule_at,count(*) n FROM psychology_publish_items WHERE deleted_at=0 GROUP BY connection_id,schedule_at ORDER BY connection_id,schedule_at').all();
+ await runAutopilot(f.env,f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(pilot.id),bound);
+ assert.deepEqual(f.sqlite.prepare('SELECT connection_id,schedule_at,count(*) n FROM psychology_publish_items WHERE deleted_at=0 GROUP BY connection_id,schedule_at ORDER BY connection_id,schedule_at').all(),beforeCounts);
+ assert.ok(beforeCounts.every(c=>c.n===1));
+ for(const item of frozenItems)assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_publish_items WHERE id=?').get(item.id),item);
+ for(const job of frozenJobs)assert.deepEqual(f.sqlite.prepare('SELECT id,payload_json,available_at FROM factory_jobs WHERE id=?').get(job.id),job);
+ assert.equal(f.requests.length,0);
+});
+
+test('a binding saved before Pacific midnight stays next-day eligible when its directory is observed after midnight',async t=>{
+ const f=await taskFixture(t),{zone}=configurePacificAdmissionCycle(f);
+ const bound=zonedEpoch('2026-10-02',23,59,zone),observed=zonedEpoch('2026-10-03',0,1,zone);f.setNow(observed);
+ addBoundProjectAccount(f,'delayed-discovery',bound);
+ addBoundProjectAccount(f,'legacy-undated',0);
+ await reconcileTaskGroups(f.env,actor,{accounts:f.directory},observed);
+ const read=id=>f.sqlite.prepare('SELECT effective_at FROM psychology_task_group_snapshots WHERE connection_id=? ORDER BY effective_at LIMIT 1').get(id).effective_at;
+ assert.equal(read('delayed-discovery'),zonedEpoch('2026-10-03',0,0,zone));
+ assert.equal(read('legacy-undated'),zonedEpoch('2026-10-04',0,0,zone));
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['delayed-discovery'],zonedEpoch('2026-10-02',23,59,zone))).size,0);
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['delayed-discovery'],zonedEpoch('2026-10-03',8,0,zone))).size,1);
+ // first_seen_at records actual observation, not an invented binding date.
+ assert.equal(f.sqlite.prepare("SELECT first_seen_at FROM psychology_task_group_accounts WHERE connection_id='delayed-discovery'").get().first_seen_at,observed);
+ assert.equal(f.requests.length,0);
+});
+
+test('fully reserved final days still admit new members on their own next Pacific day',async t=>{
+ const f=await taskFixture(t),{zone,pilot,end}=configurePacificAdmissionCycle(f);
+ const bound=zonedEpoch('2026-10-07',12,0,zone);f.setNow(bound);
+ f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,updated_at) VALUES(?,?,'created','',?)").run(pilot.id,zonedEpoch('2026-10-08',20,0,zone),bound);
+ const before=f.sqlite.prepare("SELECT * FROM psychology_task_group_snapshots WHERE connection_id IN ('a','b') ORDER BY connection_id,effective_at").all();
+ addBoundProjectAccount(f,'final-day',bound);
+ const result=await reconcileTaskGroups(f.env,actor,{accounts:f.directory},bound);
+ assert.equal(result.warning,undefined);assert.equal(result.policy.endsAt,end);
+ const effective=f.sqlite.prepare("SELECT effective_at FROM psychology_task_group_snapshots WHERE connection_id='final-day'").get().effective_at;
+ assert.equal(effective,zonedEpoch('2026-10-08',0,0,zone));
+ assert.deepEqual(f.sqlite.prepare("SELECT * FROM psychology_task_group_snapshots WHERE connection_id IN ('a','b') ORDER BY connection_id,effective_at").all(),before);
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['final-day'],zonedEpoch('2026-10-08',8,0,zone))).size,1);
+ assert.equal(f.requests.length,0);
+});
+
+test('new-member admission respects its own frozen task and Pacific calendar dates across DST',async t=>{
+ const f=await taskFixture(t),{zone}=configurePacificAdmissionCycle(f,'2026-10-31','2026-11-07');
+ const bound=zonedEpoch('2026-10-31',23,59,zone);f.setNow(bound);
+ addBoundProjectAccount(f,'dst-new',bound,{history:false});addBoundProjectAccount(f,'reserved-new',bound,{history:false});
+ f.sqlite.prepare("INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES('own-frozen','admin','{}',?)").run(bound);
+ f.sqlite.prepare("INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES('own-frozen-item','own-frozen','source','job','reserved-new',?)").run(zonedEpoch('2026-11-01',20,0,zone)/1000);
+ const before=f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='own-frozen-item'").get();
+ await reconcileTaskGroups(f.env,actor,{accounts:f.directory},bound);
+ const read=id=>f.sqlite.prepare('SELECT effective_at FROM psychology_task_group_snapshots WHERE connection_id=? ORDER BY effective_at LIMIT 1').get(id).effective_at;
+ assert.equal(read('dst-new'),zonedEpoch('2026-11-01',0,0,zone));
+ assert.equal(read('reserved-new'),zonedEpoch('2026-11-02',0,0,zone));
+ assert.equal(read('reserved-new')-read('dst-new'),25*HOUR);
+ assert.deepEqual(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='own-frozen-item'").get(),before);
  assert.equal(f.requests.length,0);
 });

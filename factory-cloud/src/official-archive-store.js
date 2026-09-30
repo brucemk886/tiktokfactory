@@ -254,6 +254,7 @@ export async function saveAccountAssignments(db, assignments = {}) {
     INSERT INTO official_account_assignments (account_key, group_id, updated_at)
     VALUES (?, ?, ?)
     ON CONFLICT(account_key) DO UPDATE SET group_id = excluded.group_id, updated_at = excluded.updated_at
+    WHERE official_account_assignments.group_id IS NOT excluded.group_id
   `).bind(accountKey, groupId, stamp));
   for (const row of existing) {
     if (!keep.has(row.account_key)) {

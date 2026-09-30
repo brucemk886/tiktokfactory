@@ -1,7 +1,7 @@
 import { handleTaskGroups } from './psychology-task-groups.js';
 import { reconcileTaskExecutors,taskSlotAccounts,taskPublishContext,sameDeliveryDay } from './psychology-task-group-execution.js';
-// Autopilot: runs one psychology photo account group on its own. Twice a day it
-// pauses accounts that keep failing to publish, logs a 7-day analysis, and
+// Autopilot: checks psychology groups at Pacific 05:00 / 08:30 / 17:00.
+// It pauses accounts that keep failing to publish, logs a 7-day analysis, and
 // creates library batches for the next day's slots as the owner.
 import { json, errorJson, readJson, sha256Hex } from './http.js';
 import { kvGet, kvSet } from './kv.js';
@@ -17,6 +17,7 @@ import { EVOLUTION } from './psychology-copy-evolution.js';
 import { POOL_POLICY, ACCOUNT_POOLS, CONTENT_POOLS } from '../../scripts/psychology-pool-policy.js';
 import { readPoolReport } from './psychology-pool-report.js';
 import { frameworkFor } from './psychology-operations.js';
+import { PRODUCTION_POLICY, readProductionLoad, estimateProductionLead } from './psychology-production-capacity.js';
 import { DEFAULT_TIME_ZONE, PACIFIC_TIME_ZONE, normalizeTimeZone, zonedParts, zonedDate, zonedEpoch, addCalendarDays, nextDay, addZonedDays, calendarDayIndex, pilotTimeZoneAt } from '../../scripts/psychology-schedule-time.js';
 
 const BASE = '/api/psychology-autopilot';
@@ -43,7 +44,7 @@ function strategyRules() {
       `冷启动同时给原版、改写版测试机会；两类都有可用测试版本时交替选择，不等待原版先跑完。每版先分配 ${n} 个测试名额。`,
       `成熟版本和待测试版本都存在时，约 ${exploit}% 优先平均播放最高的成熟版本，约 ${100-exploit}% 测试样本不足的版本；某类不可用时选另一类。比例是抽取倾向。`,
       `原版与改写版都达到 ${n} 条满 24 小时且有播放数据的样本后，改写平均播放低于原版 ${retire}% 的版本不再由 A 抽取。`,
-      `使用最近 ${EVOLUTION.windowDays} 天归档表现，每天更新两次；已排队和已发布但数据未成熟的任务占用名额，不因数据延迟连续补发。`,
+      `使用最近 ${EVOLUTION.windowDays} 天归档表现，每轮检查按最新已同步数据评估；已排队和已发布但数据未成熟的任务占用名额，不因数据延迟连续补发。`,
     ] },
     original: { summary:'只测原版，优先补齐原版对照样本。', rules:[
       '只使用已完成提取的原版，原版不可用就跳过选题，不用改写补足。',
@@ -171,8 +172,78 @@ async function autopilotDirectory(env, user, fresh = false) {
   return { accounts, fullAccounts:directory.accounts, updatedAt:directory.updatedAt,
     groups:scoped.groups.map(g => ({ id:g.id, name:g.name, accounts:accounts.filter(a => a.groupId === g.id).length })) };
 }
-async function groupAccounts(env, user, groupId) {
-  return (await autopilotDirectory(env, user, true)).accounts.filter(a => a.groupId === groupId);
+// Forecasts count complete authorized operating groups, never a UI page or a
+// 50-account allocation chunk. Existing reservations remain load, not new work.
+export async function readOwnerProductionForecast(db,user,directory,now=Date.now()){
+  const [planRows,stateRows,policy]=await Promise.all([
+    db.prepare("SELECT * FROM psychology_autopilots WHERE owner=? AND status='active' AND ends_at>? ORDER BY id").bind(user.username,now).all(),
+    db.prepare('SELECT a.*,p.updated_at pilot_updated_at FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? ORDER BY a.updated_at DESC,p.updated_at DESC,a.autopilot_id').bind(user.username).all(),
+    db.prepare('SELECT * FROM psychology_task_group_policies WHERE owner=?').bind(user.username).first(),
+  ]);
+  const registry=policy?new Map((await db.prepare('SELECT * FROM psychology_task_group_accounts WHERE policy_id=?').bind(policy.id).all()).results.map(a=>[a.connection_id,a])):new Map();
+  const states=new Map(stateRows.results.map(a=>[a.autopilot_id+':'+a.connection_id,a.status])),latest=new Map();
+  for(const a of stateRows.results)if(!latest.has(a.connection_id))latest.set(a.connection_id,a.status);
+  const authorized=new Map();
+  for(const account of directory.accounts||[]){
+    if(Array.isArray(account.scopes)&&!account.scopes.includes('video.publish'))continue;
+    authorized.set(connectionOf(account),account);
+  }
+  const candidates=(pilot,slot)=>{
+    if(slot<pilot.created_at||slot>=pilot.ends_at)return [];
+    const selected=policy&&pilot.task_group_policy_id===policy.id;
+    let ids=[...authorized].filter(([id,a])=>a.groupId===pilot.group_id&&(states.get(pilot.id+':'+id)||latest.get(id)||(registry.get(id)?.paused?'paused':'active'))!=='paused').map(([id])=>id);
+    if(!policy)return pilot.task_group_managed?[]:ids;
+    if(!selected)return ids.filter(id=>!registry.get(id)?.enrolled);
+    ids=ids.filter(id=>registry.get(id)?.enrolled&&!registry.get(id)?.excluded);
+    if(!policy.enabled||slot>=policy.ends_at)return pilot.task_group_managed?[]:ids;
+    if(policy.prestart_cutoff_at&&slot>=policy.prestart_cutoff_at&&slot<policy.starts_at)return [];
+    if(slot<policy.starts_at)return pilot.task_group_managed?[]:ids.filter(id=>policy.enrollment_mode==='project'?registry.get(id).legacy_member===1:registry.get(id).first_seen_at<=policy.created_at);
+    if(policy.enrollment_mode==='project'&&(pilotStrategyAt(pilot,slot)!=='pools'||pilotSlotsAt(pilot,slot).length!==3||pilotTimeZoneAt(pilot,slot)!==normalizeTimeZone(policy.time_zone)))return [];
+    return ids;
+  };
+  const forecasts=[],members=new Set();let nextSlotAt=0;
+  for(const pilot of planRows.results){
+    const reference=Math.max(now,pilot.created_at,policy?.enabled&&pilot.task_group_policy_id===policy.id?policy.starts_at:0);
+    for(const id of candidates(pilot,reference))members.add(id);
+    // Include near future slots in the forecast without changing dueSlots'
+    // production admission gate or creating any additional publications.
+    const times=[...new Set([...dueSlots(pilot,now),...dueSlots(pilot,now-AUTOPILOT.leadMs)])].filter(slot=>slot>now).sort((a,b)=>a-b);
+    for(const slotAt of times){const ids=candidates(pilot,slotAt);if(!ids.length)continue;
+      forecasts.push({owner:user.username,slotAt,accountCount:ids.length});
+      if(!nextSlotAt||slotAt<nextSlotAt)nextSlotAt=slotAt;
+    }
+  }
+  const reserved=await db.prepare("SELECT min(s.slot_at) slot FROM psychology_autopilot_slots s JOIN psychology_autopilots p ON p.id=s.autopilot_id WHERE p.owner=? AND p.status='active' AND p.ends_at>? AND s.slot_at>? AND p.group_id IN (SELECT value FROM json_each(?))").bind(user.username,now,now,JSON.stringify([...new Set([...authorized.values()].map(a=>a.groupId))])).first();
+  if(reserved?.slot&&(!nextSlotAt||reserved.slot<nextSlotAt))nextSlotAt=reserved.slot;
+  return {accountCount:members.size,nextSlotAt,forecasts};
+}
+
+export async function readAutopilotProductionContext(env,user=null,directory=null,now=Date.now()){
+  const [load,store,ownerRows]=await Promise.all([readProductionLoad(env.DB,now),loadGroupStore(env.DB),env.DB.prepare("SELECT DISTINCT owner FROM psychology_autopilots WHERE status='active' AND ends_at>?").bind(now).all()]);
+  if(!directory){const stored=await kvGet(env.DB,DIRECTORY_KEY,null);directory={accounts:[],fullAccounts:stored?.accounts||[]};}
+  const owners=new Map(),forecasts=[];
+  const names=new Set([...(user?[user.username]:[]),...ownerRows.results.map(p=>p.owner)]);
+  for(const owner of names){
+    let actor=user,scope=directory;
+    if(owner!==user?.username){
+      try{actor=await loadAutoUser(env.DB,owner);}catch{continue;}
+      scope=scopeOfficialAccess({accounts:directory.fullAccounts||[]},store,actor,'psychology');
+    }
+    const forecast=await readOwnerProductionForecast(env.DB,actor,scope,now);
+    owners.set(owner,forecast);forecasts.push(...forecast.forecasts);
+  }
+  return {load:{...load,forecasts},owners};
+}
+
+// Only the three background checks refresh capacity. UI polling reads one
+// owner-scoped snapshot and never scans shared queues or other owners' plans.
+export async function refreshProductionCapacitySnapshots(env,now=Date.now()){
+  const production=await readAutopilotProductionContext(env,null,null,now);
+  for(const [owner,forecast] of production.owners){
+    const capacity={...estimateProductionLead(production.load,{accountCount:forecast.accountCount,slotAt:forecast.nextSlotAt,owner,now:production.load.asOf}),nextSlotAt:forecast.nextSlotAt,minLeadMs:PRODUCTION_POLICY.minLeadMs,maxLeadMs:PRODUCTION_POLICY.maxLeadMs};
+    await kvSet(env.DB,'psychology-production-capacity:'+owner,capacity);
+  }
+  return {refreshed:production.owners.size,asOf:production.load.asOf};
 }
 
 // Latest-first publish outcomes of this pilot's items that should have gone out by now.
@@ -193,7 +264,7 @@ async function pilotOutcomes(db, pilotId, now) {
   return out;
 }
 
-export async function runAutopilot(env, pilot, now = Date.now()) {
+export async function runAutopilot(env, pilot, now = Date.now(), productionContext = null) {
   const db = env.DB, summary = { paused: [], batches: [], errors: [], skipped: [] };
   pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
   if (!pilot || pilot.status !== 'active') return summary;
@@ -210,7 +281,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
     await log(db, pilot.id, 'status', '启动人账号已停用或没有自动发布权限，自动运营已暂停。', {}, now);
     return summary;
   }
-  const accounts = await groupAccounts(env, user, pilot.group_id);
+  const directory=await autopilotDirectory(env,user,true);
+  const accounts=directory.accounts.filter(a=>a.groupId===pilot.group_id);
   const ids = accounts.map(connectionOf);
   if (ids.length) await db.prepare(`INSERT OR IGNORE INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at)
     SELECT ?,value,CASE WHEN ?<>'' AND (SELECT a.status FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? AND a.connection_id=value ORDER BY a.updated_at DESC,p.updated_at DESC,a.autopilot_id LIMIT 1)='paused' THEN 'paused' ELSE 'active' END,
@@ -249,6 +321,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   }
 
   const active = ids.filter(id => states.get(id) === 'active');
+  const production=productionContext||await readAutopilotProductionContext(env,user,directory,now);
+  const forecast=production.owners.get(user.username)||await readOwnerProductionForecast(db,user,directory,now);
   const musicIds = (await kvGet(db, 'psychology-auto-music-pool', [])).filter(id => /^\d{1,30}$/.test(String(id))).slice(0, 100);
   for (const slot of dueSlots(pilot, now)) {
     const current = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(pilot.id).first();
@@ -263,6 +337,7 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
       await db.prepare("UPDATE psychology_autopilot_slots SET status='skipped',detail='没有可发布的账号' WHERE autopilot_id=? AND slot_at=?").bind(pilot.id, slot).run();
       continue;
     }
+    const productionPlan=estimateProductionLead(production.load,{accountCount:forecast.accountCount,slotAt:slot,owner:user.username,now});
     const batchIds = [], errors = [];
     let createdAccounts = 0;
     for (let offset = 0; offset < slotAccounts.length; offset += AUTOPILOT.maxAccountsPerBatch) {
@@ -274,7 +349,7 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
         scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:AUTOPILOT.leadMs,...taskContext });
+          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');
         if (Array.isArray(data.skipped) && data.skipped.length) {
@@ -297,13 +372,13 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
     if (batchIds.length) { summary.batches.push(...batchIds); await log(db, pilot.id, 'batch', `已排 ${pilotLabel(current,slot)} 的发布：${createdAccounts} 个号`, { slot, batchIds, accounts: createdAccounts }, now); }
     if (errors.length) { summary.errors.push(...errors); await log(db, pilot.id, 'error', `${pilotLabel(current,slot)} 创建失败：${detail}`, { slot }, now); }
   }
-  await fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary);
+  await fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary, production, forecast);
   return summary;
 }
 
 // Active accounts with no live item on an already-created future slot get one
 // supplementary batch. A cancelled future item is replaced; past slots are left alone.
-async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary) {
+async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, now, summary, production, forecast) {
   if (!active.length || pilot.status !== 'active') return;
   const slots = (await db.prepare(`SELECT slot_at,batch_id FROM psychology_autopilot_slots
     WHERE autopilot_id=? AND status='created' AND slot_at>? AND slot_at<? ORDER BY slot_at`).bind(pilot.id, now + 5 * 60000, pilot.ends_at).all()).results;
@@ -319,6 +394,7 @@ async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, n
     if (!missing.length) continue;
     const maxRow = await db.prepare('SELECT MAX(schedule_at) AS last FROM psychology_publish_items WHERE deleted_at=0 AND batch_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(batchIds)).first();
     const base = maxRow?.last ? Number(maxRow.last) + AUTOPILOT.staggerSeconds : Math.floor(slot.slot_at / 1000);
+    const productionPlan=estimateProductionLead(production.load,{accountCount:forecast.accountCount,slotAt:slot.slot_at,owner:user.username,now});
     const added = [], errors = [];
     let restoredAccounts = 0;
     for (let offset = 0; offset < missing.length; offset += AUTOPILOT.maxAccountsPerBatch) {
@@ -329,7 +405,7 @@ async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, n
         scheduleAt: base + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs: AUTOPILOT.leadMs,...taskContext });
+          env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '创建失败');
         if (Array.isArray(data.skipped) && data.skipped.length) {
@@ -357,6 +433,11 @@ export async function runAutopilots(env, now = Date.now()) {
     try {const user=await loadAutoUser(env.DB,policy.owner);await reconcileTaskExecutors(env,user,await autopilotDirectory(env,user,true),now);}
     catch(error){results['task-groups:'+policy.owner]={error:error.message};}
   }
+  let production=null;
+  const first=await env.DB.prepare("SELECT owner FROM psychology_autopilots WHERE status='active' AND ends_at>? ORDER BY id LIMIT 1").bind(now).first();
+  if(first){
+    try{const user=await loadAutoUser(env.DB,first.owner),directory=await autopilotDirectory(env,user,true);production=await readAutopilotProductionContext(env,user,directory,now);}catch{}
+  }
   let cursor='';
   // Keyset pagination prevents new executors beyond the old first-20 limit
   // from being permanently starved; every active plan is processed once.
@@ -364,7 +445,7 @@ export async function runAutopilots(env, now = Date.now()) {
     const pilots=(await env.DB.prepare("SELECT * FROM psychology_autopilots WHERE status='active' AND id>? ORDER BY id LIMIT 20").bind(cursor).all()).results;
     if(!pilots.length)break;
     for (const pilot of pilots) {
-      try { results[pilot.id] = await runAutopilot(env, pilot, now); }
+      try { results[pilot.id] = await runAutopilot(env, pilot, now, production); }
       catch (error) { results[pilot.id] = { error: error.message }; await log(env.DB, pilot.id, 'error', '运行失败：' + String(error.message || error).slice(0, 300), {}, now).catch(() => {}); }
     }
     cursor=pilots.at(-1).id;
@@ -439,7 +520,8 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
         latest: daily ? { at: daily.created_at, message: daily.message, ...parseObject(daily.detail_json) } : null,
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
-    return json({ page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, poolRules:POOL_POLICY, accountPools:ACCOUNT_POOLS, contentPools:CONTENT_POOLS, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    const productionCapacity=await kvGet(db,'psychology-production-capacity:'+user.username,null);
+    return json({ page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, productionCapacity, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, poolRules:POOL_POLICY, accountPools:ACCOUNT_POOLS, contentPools:CONTENT_POOLS, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots ?? (body.strategy === 'pools' ? AUTOPILOT.slots.slice(0,2) : AUTOPILOT.slots));
@@ -464,7 +546,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     await db.prepare(`INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,slots_json,status,ends_at,created_at,updated_at,start_now,api_request_hash,current_strategy,strategy_started_at,schedule_timezone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .bind(id, user.username, group.id, group.name, body.strategy==='pools'?'evolve':body.strategy, JSON.stringify(slots),initialStatus, addZonedDays(now,days,timeZone), now, now, Number(body.startNow===true),apiHash,body.strategy,now,timeZone).run();
     if(apiOptions.external){await log(db,id,'status','通过管理 API 创建，已暂停；明确恢复后才会新增排期。',{},now);return json({id,status:initialStatus,revision:now},201);}
-    await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，${timeZoneLabel(timeZone)} ${slotLabel(slots)}；${body.startNow?'首日不足 2 小时、距离发布超过 10 分钟的时段立即准备，其他时段提前 2 小时生成':'每条提前 2 小时开始生成'}。`, {}, now);
+    await log(db, id, 'status', `开始自动运营 ${days} 天：${STRATEGIES[body.strategy]}，${group.accounts} 个号，每号每天 ${slots.length} 条，${timeZoneLabel(timeZone)} ${slotLabel(slots)}；${body.startNow?'首日不足 2 小时、距离发布超过 10 分钟的时段立即准备；':''}其余按账号数与积压提前 ${PRODUCTION_POLICY.minLeadMs/HOUR}–${PRODUCTION_POLICY.maxLeadMs/HOUR} 小时开始生成。`, {}, now);
     const pilot = await db.prepare('SELECT * FROM psychology_autopilots WHERE id=?').bind(id).first();
     return json({ id, run: await runAutopilot(env, pilot, now) });
   }

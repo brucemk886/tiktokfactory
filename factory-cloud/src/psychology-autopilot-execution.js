@@ -1,7 +1,8 @@
 import { psychologyItemStatus } from './psychology-item-status.js';
 import { parseObject } from '../../scripts/psychology-operations.js';
+import { PACIFIC_TIME_ZONE, zonedDate, zonedEpoch, addCalendarDays } from '../../scripts/psychology-schedule-time.js';
 
-const DAY = 86400000;
+export const AUTOPILOT_CHECK_SLOTS = Object.freeze([{hour:5,minute:0},{hour:8,minute:30},{hour:17,minute:0}].map(Object.freeze));
 export const pilotMembership = `EXISTS (SELECT 1 FROM psychology_autopilot_slots s WHERE s.autopilot_id=? AND instr(','||s.batch_id||',', ','||psychology_publish_items.batch_id||',')>0)`;
 // A submission lease or frozen request is an irreversible boundary for local cancellation.
 const cancellable = `deleted_at=0 AND receipt_json='{}' AND publish_group_id<>''
@@ -30,10 +31,18 @@ export async function stopPending(db, pilotId, connectionId = '', now = Date.now
   return results[0].results.length;
 }
 
-export function nextAutopilotCheck(now = Date.now()) {
-  const start = Math.floor((now + 8 * 3600000) / DAY) * DAY - 8 * 3600000;
-  return [start, start + 8 * 3600000, start + DAY].find(t => t > now);
+// The clock gate and UI share these audience-local instants. A missed tick
+// still has one stable window key; retries never create an extra daily check.
+export function autopilotCheckWindow(now = Date.now()) {
+  const date=zonedDate(now,PACIFIC_TIME_ZONE),windows=[];
+  for(const day of [-1,0,1])for(const slot of AUTOPILOT_CHECK_SLOTS){
+    const localDate=addCalendarDays(date,day);
+    windows.push({scheduledAt:zonedEpoch(localDate,slot.hour,slot.minute,PACIFIC_TIME_ZONE),key:`${localDate}:${String(slot.hour).padStart(2,'0')}:${String(slot.minute).padStart(2,'0')}`});
+  }
+  const current=windows.filter(slot=>slot.scheduledAt<=now).at(-1),next=windows.find(slot=>slot.scheduledAt>now);
+  return {...current,nextAt:next.scheduledAt};
 }
+export function nextAutopilotCheck(now = Date.now()) { return autopilotCheckWindow(now).nextAt; }
 export function executionCounts(items) {
   const counts = { planned: items.length, queued: 0, producing: 0, pending: 0, published: 0, failed: 0, stopped: 0, unknown: 0 };
   for (const i of items) {
@@ -54,8 +63,12 @@ export async function slotExecution(db, slots, labels = new Map()) {
       json_object('batchId',json_extract(i.receipt_json,'$.batchId')) receipt_json,
       CASE WHEN i.ready_json='{}' THEN '{}' ELSE json_object('title',json_extract(i.ready_json,'$.title')) END ready_json,
       c.variant_id,json_object('title',json_extract(c.copy_json,'$.title')) copy_json,
+      COALESCE(gp.generation_at,json_extract(COALESCE(parent.payload_json,j.payload_json),'$.psychologyAutomation.generateAt')) generation_start_at,
+      COALESCE(gp.lead_ms,json_extract(COALESCE(parent.payload_json,j.payload_json),'$.psychologyAutomation.productionPlan.leadMs')) production_lead_ms,
+      COALESCE(gp.policy,json_extract(COALESCE(parent.payload_json,j.payload_json),'$.psychologyAutomation.productionPlan.policy')) production_policy,
+      (COALESCE(json_extract(gp.plan_json,'$.capacityRisk'),json_extract(COALESCE(parent.payload_json,j.payload_json),'$.psychologyAutomation.productionPlan.capacityRisk'),0) OR COALESCE(json_extract(gp.plan_json,'$.shortLead'),json_extract(COALESCE(parent.payload_json,j.payload_json),'$.psychologyAutomation.productionPlan.shortLead'),0)) production_risk,
       j.status,j.type,j.title,j.error,json_object('publishFailed',json_extract(j.result_json,'$.publishFailed')) result_json,j.available_at,j.auto_retry_count FROM psychology_publish_items i
-      LEFT JOIN factory_jobs j ON j.id=i.job_id LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id WHERE i.batch_id IN (SELECT value FROM json_each(?)) ORDER BY i.schedule_at,i.id`).bind(ids),
+      LEFT JOIN factory_jobs j ON j.id=i.job_id LEFT JOIN factory_jobs parent ON parent.id=i.id LEFT JOIN psychology_generation_plans gp ON gp.job_id=i.id LEFT JOIN psychology_creative_snapshots c ON c.item_id=i.id WHERE i.batch_id IN (SELECT value FROM json_each(?)) ORDER BY i.schedule_at,i.id`).bind(ids),
     db.prepare(`SELECT g.id,g.status,g.error,j.status retry_status,j.available_at retry_at FROM psychology_publish_groups g
       LEFT JOIN factory_jobs j ON j.id=g.id||'-submit' WHERE g.batch_id IN (SELECT value FROM json_each(?))`).bind(ids),
     db.prepare(`SELECT value_json FROM factory_publish_records WHERE json_extract(value_json,'$.autoTaskId') IN
@@ -72,7 +85,7 @@ export async function slotExecution(db, slots, labels = new Map()) {
     return { id:row.id, batchId:row.batch_id, slotAt:batchSlots.get(row.batch_id), connectionId:row.connection_id,
       account:labels.get(row.connection_id)||row.connection_id, title:row.title||parseObject(row.ready_json).title||parseObject(row.copy_json).title||row.source_id,
       version:row.variant_id ? '改写 · '+row.variant_id : row.variant_id === '' ? '原版' : '未记录',
-      scheduleAt:row.schedule_at*1000, state:status.displayStatus, error:String(status.failureReason||'').slice(0,600),
+      scheduleAt:row.schedule_at*1000,generationStartAt:Number(row.generation_start_at)||0,productionLeadMs:Number(row.production_lead_ms)||0,productionPolicy:String(row.production_policy||''),productionRisk:Boolean(row.production_risk), state:status.displayStatus, error:String(status.failureReason||'').slice(0,600),
       retrying:Boolean(retrying), retryAt:retrying ? (group.retry_at||row.available_at||0) : 0,
       videoId:String(record.videoId||record.tiktokVideoId||''),
       recordUrl:'/psychology-publish-sources',

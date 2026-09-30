@@ -827,3 +827,56 @@ test('autopilot past generation deadline starts without asking Cloudflare to sle
  await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
  assert.equal(f.sqlite.prepare("SELECT status FROM factory_jobs WHERE id='cloud-test'").get().status,'done');
 });
+
+function adaptiveCloudFixture(t) {
+ const f=cloudFixture(t),stamp=Date.now();
+ for(const name of ['0028_psychology_auto_publish.sql','0030_psychology_publish_groups.sql','0031_psychology_item_deletion.sql','0073_psychology_adaptive_generation.sql'])
+  f.sqlite.exec(fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
+ // The small legacy fixture does not expose D1 batch change metadata. The
+ // adaptive gate needs the real UPDATE change counts from its two-statement CAS.
+ f.env.DB.batch=async statements=>{
+  f.sqlite.exec('BEGIN');
+  try {const results=[];for(const statement of statements)results.push(await statement.run());f.sqlite.exec('COMMIT');return results;}
+  catch(error){f.sqlite.exec('ROLLBACK');throw error;}
+ };
+ const row=f.sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE id='cloud-test'").get();
+ const payload={...JSON.parse(row.payload_json),psychologyAutomation:{id:'cloud-test',cloudPhotoRender:true,generateAt:stamp+3600000,productionPlan:{policy:'adaptive-v1',generationAt:stamp+3600000}}};
+ f.sqlite.prepare("UPDATE factory_jobs SET payload_json=?,created_at=?,updated_at=? WHERE id='cloud-test'").run(JSON.stringify(payload),stamp-1000,stamp);
+ f.sqlite.prepare("INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES('adaptive','admin','{}',?)").run(stamp);
+ f.sqlite.exec("INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES('adaptive-group','adaptive',0,1)");
+ f.sqlite.prepare("INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES('cloud-test','adaptive','source','cloud-test','a',?,'adaptive-group')").run(Math.floor((stamp+2*3600000)/1000));
+ f.sqlite.prepare("INSERT INTO psychology_generation_plans(job_id,policy,generation_at,initial_generation_at,lead_ms,required_lead_ms,evaluated_at,plan_json,updated_at) VALUES('cloud-test','adaptive-v1',?,?,7200000,7200000,?,'{}',?)").run(stamp-1000,stamp+3600000,stamp,stamp);
+ return f;
+}
+
+test('adaptive workflow uses the current generation plan without sleeping for its frozen older payload time',async t=>{
+ const f=adaptiveCloudFixture(t),fetch=f.env.fetch;let providerCalls=0;
+ f.env.fetch=async(...args)=>{providerCalls++;return fetch(...args);};
+ const result=await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+ assert.equal(result.count,6);assert.ok(providerCalls>0);
+ assert.ok(!f.sleeps.includes('autopilot-generation-time'));
+ const saved=f.sqlite.prepare("SELECT status,payload_json FROM factory_jobs WHERE id='cloud-test'").get();
+ assert.equal(saved.status,'done');assert.ok(JSON.parse(saved.payload_json).psychologyAutomation.generateAt>Date.now());
+ assert.ok(f.sqlite.prepare("SELECT started_at FROM psychology_generation_plans WHERE job_id='cloud-test'").get().started_at>0);
+ const firstCalls=providerCalls;
+ await runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step);
+ assert.equal(providerCalls,firstCalls,'workflow replay reuses provider step results');
+});
+
+test('adaptive cancellation after begin and before starting cannot revive the source or call a provider',async t=>{
+ const f=adaptiveCloudFixture(t),originalDo=f.step.do.bind(f.step);let providerCalls=0;
+ f.env.fetch=async()=>{providerCalls++;throw new Error('provider must not run after cancellation');};
+ f.step.do=async(name,...args)=>{
+  const result=await originalDo(name,...args);
+  if(name==='adaptive-generation-begin-v1'){
+   assert.equal(result,true);
+   assert.equal(f.sqlite.prepare("SELECT status FROM factory_jobs WHERE id='cloud-test'").get().status,'running');
+   f.sqlite.exec("UPDATE factory_jobs SET status='cancelled' WHERE id='cloud-test'");
+  }
+  return result;
+ };
+ await assert.rejects(runPeerPhotoWorkflow(f.env,{payload:{jobId:'cloud-test'}},f.step),/已取消/);
+ const row=f.sqlite.prepare("SELECT status,result_json FROM factory_jobs WHERE id='cloud-test'").get();
+ assert.equal(row.status,'cancelled');assert.equal(row.result_json,'{}');
+ assert.equal(providerCalls,0);assert.equal(f.pexelsCalls(),0);assert.equal(f.submissions.length,0);
+});

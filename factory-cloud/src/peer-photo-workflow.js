@@ -1,3 +1,4 @@
+import { beginAdaptiveProduction } from './psychology-adaptive-production.js';
 import { buildPhotoStoryPrompt } from '../../scripts/psychology-peer-production.js';
 import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
 import { searchStockPhotos } from './photo-publishing.js';
@@ -24,7 +25,10 @@ export async function runPeerPhotoWorkflow(env, event, step) {
     : env.DB.prepare("SELECT * FROM factory_jobs WHERE id = ? AND type = 'psychology-photo-story'").bind(id).first());
   if (!row || ['done', 'failed', 'canceled', 'cancelled'].includes(row.status)) return { skipped: true };
   const payload = JSON.parse(row.payload_json);
-  if (!extraction && payload.psychologyAutomation?.generateAt) {
+  if(!extraction && payload.psychologyAutomation?.productionPlan?.policy==='adaptive-v1'){
+    const allowed=await step.do('adaptive-generation-begin-v1',READ,()=>beginAdaptiveProduction(env.DB,id));
+    if(!allowed)return {skipped:true};
+  } else if (!extraction && payload.psychologyAutomation?.generateAt) {
     // Freeze the remaining duration once for deterministic replay. Past deadlines
     // prepare immediately; relative sleep avoids Cloudflare rejecting past dates.
     const remaining=await step.do('autopilot-generation-delay',READ,()=>Math.max(0,payload.psychologyAutomation.generateAt-Date.now()));
@@ -57,8 +61,9 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       if(!changed.meta?.changes)throw new Error('文案提取任务已变更。');
       return;
     }
-    await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_jobs SET status=?, percent=?, message=?, result_json=?, error=?, worker_id='cloud-photo', updated_at=?, completed_at=? WHERE id=?`)
+    const saved=await step.do(name, READ, () => env.DB.prepare(`UPDATE factory_jobs SET status=?, percent=?, message=?, result_json=?, error=?, worker_id='cloud-photo', updated_at=?, completed_at=? WHERE id=? ${payload.psychologyAutomation?.productionPlan?.policy==='adaptive-v1'?"AND status NOT IN ('cancelled','canceled')":''}`)
       .bind(status, percent, message, JSON.stringify({ plan, results, production:compactProduction(state.production), execution: 'cloud', analysisModel: chat.model, sourceCopyCache: copyCache, progressCurrent: results.length, progressTotal: total }), error, at, ['done','failed'].includes(status) ? at : 0, id).run());
+    if(payload.psychologyAutomation?.productionPlan?.policy==='adaptive-v1'&&!saved.meta?.changes)throw new Error('动态生成任务已取消。');
   }
   try {
     // No paid stand-in for the primary model: a missing key stops the job here

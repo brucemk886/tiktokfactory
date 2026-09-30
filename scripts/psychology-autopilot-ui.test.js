@@ -380,3 +380,56 @@ test('original-plan refresh failure after saving preserves the successful projec
  assert.equal(h.node('#pilots').innerHTML,plans);assert.match(h.node('#status').textContent,/更新失败，保留上次数据：offline/);assert.equal(h.node('#saveTaskGroups').disabled,true);assert.equal(h.run('taskConfigBusy'),false);
  assert.equal(h.requests.filter(request=>request.method==='PATCH').length,1);assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot');
 });
+
+
+const capacityFixture=overrides=>({policy:'adaptive-v1',asOf:Date.parse('2026-09-30T01:00:00Z'),leadMs:2*3600000,requiredLeadMs:2*3600000,forecastJobs:861,backlogJobs:45,accountCount:287,sampleCount:0,serviceMs:5*60000,capacityRisk:false,shortLead:false,reason:'样本不足，采用保守估算',...overrides});
+
+test('missing generation-capacity fields preserve the legacy UI without inventing an estimate or extra reads',async()=>{
+ const h=harness();await tick();assert.equal(h.node('#productionCapacity').hidden,true);assert.equal(h.node('#productionCapacity').innerHTML,'');
+ assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));assert.match(h.node('#overview').innerHTML,/今天已排/);
+ const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/id="productionCapacity"[^>]*role="status"/);assert.doesNotMatch(html,/每条提前 2 小时|生成提前 2 小时|距当前 2 小时/);assert.doesNotMatch(h.node('#rules').innerHTML,/每条提前 2 小时/);
+});
+
+test('adaptive generation shows the current account and shared-backlog estimate with a conservative prior',async()=>{
+ const h=harness({productionCapacity:capacityFixture(),window:{period:'yesterday',from:'2026-09-29',to:'2026-09-29'}});await tick();
+ const html=h.node('#productionCapacity').innerHTML;assert.equal(h.node('#productionCapacity').hidden,false);assert.match(html,/最近检查预计提前 2 小时/);assert.match(html,/参与账号 287 个.*同窗口预估任务 861 条.*共享积压 45 条/);
+ assert.match(html,/完成样本不足20条，采用保守估算.*至少5分钟/);assert.match(html,/完成样本 0 条/);assert.doesNotMatch(html,/P95|不能保证准时/);assert.match(html,/最近检查估算与所选统计日期无关/);assert.match(html,/每天检查3次.*美西05:00.*08:30.*17:00.*只提前、不推迟.*任务按保存的生成时间执行/);
+ assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));
+});
+
+test('capacity and short-window risks escape server reasons and refresh from the existing status GET',async()=>{
+ const capacity=capacityFixture({leadMs:3*3600000,requiredLeadMs:13*3600000,sampleCount:20,serviceMs:6*60000,capacityRisk:true,shortLead:true,reason:'<img src=x onerror=alert(1)> queue'}),h=harness({productionCapacity:capacity});await tick();
+ let html=h.node('#productionCapacity').innerHTML;assert.match(html,/最近检查预计提前 3 小时/);assert.match(html,/最近7天P95单条耗时 6 分钟参考/);assert.doesNotMatch(html,/样本不足20条/);assert.match(html,/积压风险.*临近排期准备时间偏短.*估算所需 13 小时.*上限3小时.*不能保证准时/);
+ assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt; queue/);assert.doesNotMatch(html,/<img/);
+ Object.assign(capacity,{leadMs:2.5*3600000,requiredLeadMs:2.5*3600000,capacityRisk:false,shortLead:false,reason:'队列已更新'});await h.node('#reload').onclick();html=h.node('#productionCapacity').innerHTML;
+ assert.match(html,/最近检查预计提前 2\.5 小时/);assert.match(html,/队列已更新/);assert.doesNotMatch(html,/积压风险|临近排期准备时间偏短|&lt;img/);
+ assert.deepEqual(h.requests.map(request=>request.path),['/api/psychology-autopilot','/api/psychology-autopilot/task-groups','/api/psychology-autopilot','/api/psychology-autopilot/task-groups']);assert.ok(h.requests.every(request=>request.method==='GET'));
+});
+
+test('slot detail shows each saved generation start across DST independently of the current capacity estimate',async()=>{
+ const slot=Date.parse('2026-11-01T11:00:00Z'),items=[
+  {account:'first',title:'A',version:'原版',scheduleAt:slot,generationStartAt:Date.parse('2026-11-01T08:30:00Z'),productionLeadMs:2.5*3600000,productionPolicy:'adaptive-v1',productionRisk:true,state:'queued'},
+  {account:'second',title:'B',version:'原版',scheduleAt:slot,generationStartAt:Date.parse('2026-11-01T09:30:00Z'),productionLeadMs:1.5*3600000,productionPolicy:'adaptive-v1',productionRisk:false,state:'queued'},
+  {account:'historical',title:'C',version:'原版',scheduleAt:slot,generationStartAt:null,productionLeadMs:2*3600000,productionPolicy:'adaptive-v1',state:'published'}
+ ];
+ const pilots=[{id:'p',groupId:'g',groupName:'Group',status:'active',accounts:[],schedule:[],attention:[],logs:[],timeZone:'Asia/Shanghai',pendingTimeZone:'America/Los_Angeles',scheduleEffectiveAt:Date.parse('2026-10-02T07:00:00Z')}];
+ const h=harness({pilots,items,productionCapacity:capacityFixture()});await tick();await h.run("detail('p',"+slot+")");
+ const html=h.node('#body-p-'+slot).innerHTML;assert.match(html,/<th scope="col">计划开始生成<\/th>/);assert.match(html,/等待中可安全提前，发布时间保持原计划/);
+ const rows=html.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g),cells=rows.map(row=>[...row.matchAll(/<td>(.*?)<\/td>/g)].map(match=>match[1]));
+ assert.match(cells[0][2],/11\/01 03:00.*PST.*11\/01 19:00 北京时间/);assert.match(cells[0][3],/11\/01 01:30.*PDT.*11\/01 16:30 北京时间/);assert.match(cells[0][3],/计划提前 2\.5 小时.*动态估算.*准备时间可能不足/);
+ assert.match(cells[1][3],/11\/01 01:30.*PST.*11\/01 17:30 北京时间/);assert.doesNotMatch(cells[1][3],/准备时间可能不足/);assert.equal(cells[2][3],'—');assert.match(h.node('#productionCapacity').innerHTML,/最近检查预计提前 2 小时/);
+ assert.equal(h.requests.length,3);assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot/p/slots/'+slot);assert.ok(h.requests.every(request=>request.method==='GET'));
+});
+
+
+test('project preview explains next-local-day admission and respects turning new-account admission off',async()=>{
+ const task=taskFixture(),h=harness({},null,null,async(_path,init)=>taskReply(init.method==='GET'?task:{...task,policy:taskPolicy(init.body),preview:true}));await tick();await h.node('#openTaskGroupConfig').onclick();await h.node('#previewTaskGroups').onclick();
+ assert.equal(h.requests.at(-1).body.admitNewAccounts,true);assert.match(h.node('#taskGroupPreview').innerHTML,/新授权账号默认从美国太平洋时间次日的新一期排期开始参与，不插入当天任务/);
+ h.node('#taskGroupAdmitNew').checked=false;h.node('#taskGroupAdmitNew').listeners.change();await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.admitNewAccounts,false);assert.match(h.node('#taskGroupPreview').innerHTML,/暂不自动纳入新授权账号/);assert.doesNotMatch(h.node('#taskGroupPreview').innerHTML,/新授权账号默认从.*次日/);
+ assert.equal(h.requests.filter(request=>request.method==='PATCH').length,0);
+});
+
+
+test('a missing saved capacity snapshot explains the three daily Pacific checks without a live estimate',async()=>{
+ const h=harness({productionCapacity:null});await tick();assert.equal(h.node('#productionCapacity').hidden,false);assert.match(h.node('#productionCapacity').innerHTML,/尚未完成生成准备检查；每天美西05:00.*08:30.*17:00更新/);assert.doesNotMatch(h.node('#productionCapacity').innerHTML,/预计提前|每分钟|每5分钟/);assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));
+});

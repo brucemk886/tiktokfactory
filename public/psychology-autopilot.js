@@ -100,6 +100,22 @@ async function load(quiet = false, refreshGroups = false, refreshTaskGroups = tr
   catch (error) { if(period!==selectedPeriod)return; notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
   finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); if(period!==selectedPeriod)load(); }
 }
+function renderProductionCapacity(){
+ const target=$('#productionCapacity'),capacity=data.productionCapacity;
+ if(capacity==null){target.hidden=!Object.hasOwn(data,'productionCapacity');target.innerHTML=target.hidden?'':'尚未完成生成准备检查；每天美西05:00/08:30/17:00更新。';return;}
+ if(!Number.isFinite(capacity.leadMs)){target.hidden=true;target.innerHTML='';return;}
+ const hours=value=>fmt(Number.isFinite(value)?value/3600000:null),risk=capacity.capacityRisk||capacity.shortLead;
+ const samples=Number.isFinite(capacity.sampleCount)?capacity.sampleCount:null;
+ const basis=samples==null?'完成样本数未记录。':samples<20?'完成样本不足20条，采用保守估算（单条按至少5分钟参考）。':'最近7天P95单条耗时 '+fmt(Number.isFinite(capacity.serviceMs)?capacity.serviceMs/60000:null)+' 分钟参考。';
+ const warnings=[capacity.capacityRisk?'积压风险：容量估算超过当前准备窗口。':'',capacity.shortLead?'临近排期准备时间偏短。':''].filter(Boolean).join(' ');
+ target.hidden=false;
+ target.innerHTML='<strong>生成准备 · 最近检查预计提前 '+hours(capacity.leadMs)+' 小时</strong><br>参与账号 '+fmt(capacity.accountCount)+' 个 · 同窗口预估任务 '+fmt(capacity.forecastJobs)+' 条 · 共享积压 '+fmt(capacity.backlogJobs)+' 条<br><span class="section-hint">'+esc(basis)+(samples==null?'':' 完成样本 '+fmt(samples)+' 条。')+' 最近检查于 '+esc(zonedTime(capacity.asOf))+'。</span>'+(risk?'<br><span class="pilot-error">'+esc(warnings)+' 估算所需 '+hours(capacity.requiredLeadMs)+' 小时，准备提前量上限3小时；当前提前量可能不足，不能保证准时。</span>':'')+(capacity.reason?'<br><span class="section-hint">'+esc(capacity.reason)+'</span>':'')+'<br><span class="section-hint">最近检查估算与所选统计日期无关。每天检查3次：美西05:00/08:30/17:00（每轮前3小时），复算只提前、不推迟；任务按保存的生成时间执行，计划开始时间见内容明细。</span>';
+}
+function generationCell(item,pilot){
+ if(!Number.isFinite(item.generationStartAt)||item.generationStartAt<=0)return '—';
+ const zone=item.timeZone||pilotZoneAt(pilot,item.scheduleAt);
+ return esc(zonedTime(item.generationStartAt,zone))+(Number.isFinite(item.productionLeadMs)?'<small>计划提前 '+fmt(item.productionLeadMs/3600000)+' 小时'+(item.productionPolicy==='adaptive-v1'?' · 动态估算':'')+'</small>':'')+(item.productionRisk?'<small class="pilot-error">准备时间可能不足，不能保证准时。</small>':'');
+}
 function renderStrategyRules() {
   const strategy = $('#strategy').value || (data?.strategies?.pools ? 'pools' : 'evolve'), selected = data?.strategyRules?.[strategy];
   $('#strategyRulesTitle').textContent = '当前策略规则 · ' + (data?.strategies?.[strategy] || strategy);
@@ -142,9 +158,10 @@ function render() {
   renderGroupChoices();
   if (!$('#strategy').options.length) { const preferred=data.strategies.pools?'pools':'evolve',current=$('#strategy').value;$('#strategy').innerHTML = Object.entries(data.strategies).map(([id,label])=>`<option value="${esc(id)}"${id===preferred?' selected':''}>${esc(label)}</option>`).join('');$('#strategy').value=Object.hasOwn(data.strategies,current)?current:preferred; }
   renderStrategyRules();
+  renderProductionCapacity();
   const r = data.rules;
   $('#rules').innerHTML = [
-    '发布数量与当地时间按计划所选时区设置，每个时间点每号发 1 条；组内账号依次错开 '+r.staggerSeconds+' 秒，每条提前 2 小时开始生成。',
+    '发布数量与当地时间按计划所选时区设置，每个时间点每号发 1 条；组内账号依次错开 '+r.staggerSeconds+' 秒；生成准备按参与账号、预计任务与共享积压动态提前2–3小时估算，保留26小时预排窗口。每天检查3次：美西05:00/08:30/17:00（每轮前3小时），复算只提前、不推迟；任务按保存的生成时间执行，估算不保证准时。',
     '后台定期检查并排期，从图文文案库抽取，同一个账号不重复发同一篇爆款。',
     '配对选题：同一运营人、同一计划时区的当地日期、当天同一轮次的分组（允许错开时间）使用共同候选排序，再按所选策略挑版本；各账号用过的选题和可用版本不同，最终内容不保证完全相同。',
     '测试名额按所选策略限制；排队中、生成中、已发布但未成熟的任务都占位，确认失败才释放。结果不明确时继续保留名额。',
@@ -186,7 +203,7 @@ function render() {
 async function detail(pilot,slot){
   const section=document.getElementById(`slot-${pilot}-${slot}`),body=document.getElementById(`body-${pilot}-${slot}`);
   section.open=true;body.textContent='正在读取明细…';section.scrollIntoView({block:'nearest'});
-  try { const r=await api(`/${pilot}/slots/${slot}`);body.innerHTML=`<p class="section-hint">读取于 ${time(Date.now())} <button data-detail="${pilot}" data-slot="${slot}">刷新明细</button></p>`+table(['账号 / 内容','文案版本','计划发布时间','实际状态','视频 ID','原因 / 处理'],r.items.map(i=>['@'+esc(i.account)+'<small>'+esc(i.title)+'</small>',esc(i.version),zonedTime(i.scheduleAt,i.timeZone||pilotZoneAt(data.pilots.find(p=>p.id===pilot)||{},i.scheduleAt)),esc(ITEM[i.state]||i.state)+(i.retrying?'<small>系统自动恢复中</small>':''),esc(i.videoId||'尚未返回'),esc(i.error||'—')+`<small><a href="/psychology-publish-sources">查看发布记录</a> · <a href="/psychology-publish">进入自动发布处理</a></small>`])); }
+  try { const r=await api(`/${pilot}/slots/${slot}`);body.innerHTML=`<p class="section-hint">计划开始生成显示当前保存时间；等待中可安全提前，发布时间保持原计划。读取于 ${time(Date.now())} <button data-detail="${pilot}" data-slot="${slot}">刷新明细</button></p>`+table(['账号 / 内容','文案版本','计划发布时间','计划开始生成','实际状态','视频 ID','原因 / 处理'],r.items.map(i=>['@'+esc(i.account)+'<small>'+esc(i.title)+'</small>',esc(i.version),zonedTime(i.scheduleAt,i.timeZone||pilotZoneAt(data.pilots.find(p=>p.id===pilot)||{},i.scheduleAt)),generationCell(i,data.pilots.find(p=>p.id===pilot)||{}),esc(ITEM[i.state]||i.state)+(i.retrying?'<small>系统自动恢复中</small>':''),esc(i.videoId||'尚未返回'),esc(i.error||'—')+`<small><a href="/psychology-publish-sources">查看发布记录</a> · <a href="/psychology-publish">进入自动发布处理</a></small>`])); }
   catch(e){body.textContent=e.message;}
 }
 async function openPause(pilot,account=''){
@@ -355,7 +372,7 @@ function invalidateTaskPreview(){
 }
 function taskPreviewHtml(result,label='配置预览'){
  const p=result.policy||{},t=result.totals||{},zone=zoneFor(p.timeZone);
- return '<h3>'+label+'</h3><p>绑定项目：'+esc(result.project?.name||taskGroupsData?.project?.name||'心理学')+' · 账号按数据自动分层 · 每日目标3条 · 基准时段 '+projectSlots(zone)+'（'+ZONES[zone]+'）</p><p>生效：'+esc(zonedTime(result.effectiveAt||p.startsAt,zone))+' · 周期：'+esc(zonedTime(p.startsAt,zone))+' 至 '+esc(zonedTime(p.endsAt,zone))+'</p><p>纳入 '+fmt(t.enrolled)+' 个账号 · 排除 '+fmt(t.excluded)+' 个账号 · 合格 '+fmt(t.eligible)+' 个账号 · 待处理 '+fmt(t.blocked)+' 个账号。</p>'+table(['任务角色','账号数','参与 / 暂停'],taskRoleRows(result).map(g=>[esc(g.label),fmt(g.accounts),fmt(g.active)+' / '+fmt(g.paused)]))+'<p class="section-hint">7天周期，每3天复评，按项目时区计算。只调整未来尚未创建的任务；保存时重新核对权限和已保留排期，实际生效日期以保存结果为准。</p>';
+ return '<h3>'+label+'</h3><p>绑定项目：'+esc(result.project?.name||taskGroupsData?.project?.name||'心理学')+' · 账号按数据自动分层 · 每日目标3条 · 基准时段 '+projectSlots(zone)+'（'+ZONES[zone]+'）</p><p>生效：'+esc(zonedTime(result.effectiveAt||p.startsAt,zone))+' · 周期：'+esc(zonedTime(p.startsAt,zone))+' 至 '+esc(zonedTime(p.endsAt,zone))+'</p><p>'+(p.admitNewAccounts===false?'暂不自动纳入新授权账号。':'新授权账号默认从'+ZONES[zone]+'次日的新一期排期开始参与，不插入当天任务。')+'</p><p>纳入 '+fmt(t.enrolled)+' 个账号 · 排除 '+fmt(t.excluded)+' 个账号 · 合格 '+fmt(t.eligible)+' 个账号 · 待处理 '+fmt(t.blocked)+' 个账号。</p>'+table(['任务角色','账号数','参与 / 暂停'],taskRoleRows(result).map(g=>[esc(g.label),fmt(g.accounts),fmt(g.active)+' / '+fmt(g.paused)]))+'<p class="section-hint">7天周期，每3天复评，按项目时区计算。只调整未来尚未创建的任务；保存时重新核对权限和已保留排期，实际生效日期以保存结果为准。</p>';
 }
 async function openTaskGroupConfig(){
  if(taskConfigBusy||creating||switchingPools)return;

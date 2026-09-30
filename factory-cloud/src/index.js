@@ -119,7 +119,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);await runPendingAutopilotFill(env);return;}
+    if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['psychology-operating-check',async()=> (await import('./psychology-production-checks.js')).runProductionCheck(env)],['adaptive-generation',async()=> (await import('./psychology-adaptive-production.js')).dispatchAdaptiveProduction(env)],['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);await runPendingAutopilotFill(env);return;}
     if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
@@ -135,8 +135,6 @@ export default {
       ["factory-storage-sample", () => collectFactoryStorageSample(env, env.DB)],
       ["novel-exceptions-reconcile", () => reconcileNovelExceptions(env.DB)],
       ["psychology-copy-performance", async () => (await import("./psychology-copy-evolution.js")).refreshCopyPerformance(env)],
-      // After the rollup, so each day's draws use fresh performance data.
-      ["psychology-autopilot", async () => (await import("./psychology-autopilot.js")).runAutopilots(env)],
     ]);
     console.info(JSON.stringify({ event: "scheduled-steps-completed", cron: controller.cron, ...results }));
     ctx?.waitUntil?.(backfillMissingAudioDurations(env, env.DB, { limit: 40 }).catch(() => {}));

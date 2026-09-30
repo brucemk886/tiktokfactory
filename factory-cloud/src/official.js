@@ -273,7 +273,12 @@ async function handleAccountGroups(request, env, db, url, session) {
     }
     const groupMatch = pathname.match(/^\/api\/official-tiktok\/account-groups\/([^/]+)$/);
     if (method === "PATCH" && groupMatch) {
-      return json(await saveGroupStore(db, updateGroup(store, decodeURIComponent(groupMatch[1]), await readJson(request))));
+      const groupId = decodeURIComponent(groupMatch[1]);
+      const next = updateGroup(store, groupId, await readJson(request));
+      const previous = store.groups.find(group => group.id === groupId);
+      const current = next.groups.find(group => group.id === groupId);
+      const reboundGroups = previous.projectId !== current.projectId ? [groupId] : [];
+      return json(await saveGroupStore(db, next, reboundGroups));
     }
     if (method === "DELETE" && groupMatch) {
       return json(await saveGroupStore(db, deleteGroup(store, decodeURIComponent(groupMatch[1]))));
@@ -479,10 +484,21 @@ export async function loadGroupStore(db) {
   return rememberAccountAliases(store, accountsFromArchiveRows(results || []));
 }
 
-async function saveGroupStore(db, store) {
+async function saveGroupStore(db, store, reboundGroups = []) {
   const next = normalizeStore(store);
   await saveAccountAssignments(db, next.assignments);
-  await kvSet(db, "official-account-groups", { ...next, assignments: {} });
+  const stored = { ...next, assignments: {} };
+  if (reboundGroups.length) {
+    const stamp = Date.now();
+    // Moving a delivery group into another project is a new account binding.
+    // Persist the project change and its binding times together; renames never reset them.
+    await db.batch([
+      db.prepare("UPDATE official_account_assignments SET updated_at = ? WHERE group_id IN (SELECT value FROM json_each(?))").bind(stamp, JSON.stringify(reboundGroups)),
+      db.prepare("INSERT INTO factory_kv (key,value_json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at").bind("official-account-groups", JSON.stringify(stored), stamp),
+    ]);
+  } else {
+    await kvSet(db, "official-account-groups", stored);
+  }
   return publicState({ ...next, assignments: next.assignments });
 }
 

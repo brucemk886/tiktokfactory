@@ -1,3 +1,4 @@
+import { makeProductionPlan,generationPlanStatement } from './psychology-adaptive-production.js';
 import { taskAssignmentsFor } from './psychology-task-groups.js';
 import { buildPoolCandidates,loadPoolReservations,planPoolMatches,poolMatchStatement,taskGroupAllocationStatement } from './psychology-pool-matching.js';
 import { readPoolMatchingState } from './psychology-pool-report.js';
@@ -515,7 +516,9 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
-    const generateAt = config.mediaType==='photo' && internal.productionLeadMs ? Math.max(stamp,entry.scheduleAt*1000-internal.productionLeadMs) : 0;
+    const productionPlan=config.mediaType==='photo'?makeProductionPlan(internal.productionPlan,entry.scheduleAt*1000,stamp):null;
+    const generateAt = productionPlan?.generationAt || (config.mediaType==='photo' && internal.productionLeadMs ? Math.max(stamp,entry.scheduleAt*1000-internal.productionLeadMs) : 0);
+    if(productionPlan)payload.psychologyAutomation.productionPlan=productionPlan;
     if(generateAt)payload.psychologyAutomation.generateAt=generateAt;
     if(entry.source.copySource)payload.copySource=entry.source.copySource;
     const comment=freezeComment(entry.source,config,commentSetting);
@@ -534,6 +537,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     if(config.sourceType!=='topic-bank')statements.push(env.DB.prepare('INSERT '+(config.allowPeerReuse?'OR IGNORE ':'')+'INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES (?,?,?)').bind(entry.source.usageKey||entry.source.id,entry.connectionId,id));
     if (config.sourceType === 'topic-bank') statements.push(topicUsageStatement(env.DB, entry.source, batchId, id, config, stamp));
     statements.push(insertAutoJob(env.DB, { id, type, title: entry.source.title || config.name, payload, createdBy: user.username, availableAt:generateAt }, stamp));
+    if(productionPlan)statements.push(generationPlanStatement(env.DB,id,productionPlan,stamp));
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
       .bind(id, batchId, entry.source.id, id, entry.connectionId, entry.scheduleAt, groupId));
   }
@@ -557,7 +561,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
 
 export async function dispatchPhotoBatch(env, batchId) {
   const rows = await env.DB.prepare(`SELECT j.id FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.job_id
-    WHERE i.batch_id=? AND j.type='psychology-photo-story' AND j.status='queued'`).bind(batchId).all();
+    WHERE i.batch_id=? AND j.type='psychology-photo-story' AND j.status='queued' AND NOT EXISTS(SELECT 1 FROM psychology_generation_plans gp WHERE gp.job_id=j.id)`).bind(batchId).all();
   if(rows.results.length && typeof env.PEER_PHOTO_WORKFLOW.createBatch==='function') {
     // Cloudflare's batch creation is idempotent: existing IDs are skipped.
     // Keep the stable IDs while avoiding serial status/create round trips.

@@ -51,14 +51,17 @@ async function scopeFor(db,user,directory){
  const project=findProjectForModule(store,'psychology');
  const allGroups=store.groups.filter(g=>g.projectId===project?.id),grant=userAllowedGroupIds(user);
  const groups=allGroups.filter(g=>!grant||grant.has(g.id)),allowedGroups=new Set(groups.map(g=>g.id));
- const canonical=await rows(db,`${reportAccountScopeSQL} SELECT account_key,current_group FROM allowed`,JSON.stringify(allGroups.map(g=>g.id)));
+ const rawKey="ltrim(trim(COALESCE(a.account_key,'')),'@')",canonicalKey=`CASE WHEN lower(substr(${rawKey},1,7))='tiktok:' THEN substr(${rawKey},8) ELSE ${rawKey} END`;
+ const canonical=await rows(db,`${reportAccountScopeSQL} SELECT account_key,current_group,
+  (SELECT max(a.updated_at) FROM official_account_assignments a WHERE substr(${canonicalKey},1,160)=substr(allowed.account_key,8) AND a.group_id=allowed.current_group) bound_at FROM allowed`,JSON.stringify(allGroups.map(g=>g.id)));
+ const boundAt=new Map(canonical.map(a=>[a.account_key.replace(/^tiktok:/,''),Number(a.bound_at)||0]));
  const assignments=new Map(canonical.map(a=>[a.account_key.replace(/^tiktok:/,''),a.current_group]));
  if(!directory){const saved=await db.prepare("SELECT value_json FROM factory_kv WHERE key='psychology-autopilot-account-directory-v1'").first();directory=parse(saved?.value_json,{accounts:[]});}
  const source=Array.isArray(directory)?directory:directory.fullAccounts||directory.accounts||[],seen=new Set(),all=[];
  for(const a of source){const connectionId=connectionOf(a),groupId=assignments.get(connectionId);
   if(!connectionId||seen.has(connectionId)||!groupId||(Array.isArray(a.scopes)&&!a.scopes.includes('video.publish')))continue;
   seen.add(connectionId);all.push({connectionId,name:String(a.profile?.username||a.username||a.displayName||a.label||connectionId),
-   groupId,groupName:allGroups.find(g=>g.id===groupId)?.name||groupId});}
+   groupId,groupName:allGroups.find(g=>g.id===groupId)?.name||groupId,boundAt:boundAt.get(connectionId)||0});}
  return {project,groups,all,eligible:all.filter(a=>allowedGroups.has(a.groupId)),assignments,allowedGroups};
 }
 
@@ -103,7 +106,7 @@ function validateConfig(body,c,now){
  if(mode==='project'){
   if(body.projectId!==c.scope.project.id)fail('只能绑定当前有权限的心理学项目。',403);
   const cutoff=Math.max(nextDay(now,c.timeZone),c.policy?.starts_at||0);
-  body.sourcePilotIds=c.own.filter(p=>p.ends_at>now&&compatible(p,cutoff,c.allowScheduleTransition?undefined:c.timeZone)&&(!c.policy||now>=c.policy.ends_at||nextDay(Math.max(now,p.last_reserved||0),c.timeZone)<c.policy.ends_at)).map(p=>p.id);
+  body.sourcePilotIds=c.own.filter(p=>p.ends_at>now&&compatible(p,cutoff,c.allowScheduleTransition?undefined:c.timeZone)).map(p=>p.id);
   return c.own.filter(p=>body.sourcePilotIds.includes(p.id));
  }
  if(!Array.isArray(body.sourcePilotIds)||body.sourcePilotIds.some(id=>typeof id!=='string')||new Set(body.sourcePilotIds).size!==body.sourcePilotIds.length)fail('请选择有效的执行计划。');
@@ -150,11 +153,12 @@ async function proposed(db,c,body,now,{reconcile=false}={}){
   next_review_at:continuing?(timeZoneTransition?retime(c.policy.next_review_at):c.policy.next_review_at):addZonedDays(startsAt,3,timeZone),time_zone:timeZone,enrollment_mode:mode,review_target:body.reviewTarget,admit_new_accounts:Number(body.admitNewAccounts),
   source_pilot_ids_json:JSON.stringify(body.sourcePilotIds),created_at:c.policy?.created_at??now,updated_at:now};
  const sourceIds=new Set(body.sourcePilotIds),selectedGroups=new Set(selected.map(p=>p.group_id));
- const registry=new Map(c.registry.map(a=>[a.connection_id,{...a}])),initial=!c.policy;
+ const registry=new Map(c.registry.map(a=>[a.connection_id,{...a}])),initial=!c.policy,admissions=new Set();
+ const priorRegistry=new Map(c.registry.map(a=>[a.connection_id,a])),previousMembers=new Set(c.snapshots.map(s=>s.connection_id));
  const oldSources=new Set(parse(c.policy?.source_pilot_ids_json,[])),explicitGroups=new Set(!reconcile?selected.filter(p=>!oldSources.has(p.id)).map(p=>p.group_id):[]),restored=new Set();
  for(const a of c.scope.all){let r=registry.get(a.connectionId);
   if(!r){const enrolled=projectMode?c.scope.allowedGroups.has(a.groupId)&&(initial||!reconcile||body.admitNewAccounts):initial?selectedGroups.has(a.groupId)&&c.scope.allowedGroups.has(a.groupId):body.admitNewAccounts&&c.scope.allowedGroups.has(a.groupId);
-   r={policy_id:policyId,connection_id:a.connectionId,first_seen_at:initial?policy.created_at:Math.max(now,policy.created_at+1),enrolled:Number(enrolled),excluded:Number(!enrolled),is_new:Number(!initial),legacy_member:Number(initial&&!projectMode&&enrolled),paused:0,reason:enrolled?'':'首次纳管范围外的既有账号',group_id:a.groupId,name:a.name,updated_at:now};registry.set(a.connectionId,r);}
+   r={policy_id:policyId,connection_id:a.connectionId,first_seen_at:initial?policy.created_at:projectMode?now:Math.max(now,policy.created_at+1),enrolled:Number(enrolled),excluded:Number(!enrolled),is_new:Number(!initial),legacy_member:Number(initial&&!projectMode&&enrolled),paused:0,reason:enrolled?'':'首次纳管范围外的既有账号',group_id:a.groupId,name:a.name,updated_at:now};registry.set(a.connectionId,r);}
   if(!c.scope.allowedGroups.has(a.groupId))continue;
   if(r.excluded&&(explicitGroups.has(a.groupId)||projectMode&&(!reconcile||body.admitNewAccounts))){r.enrolled=1;r.excluded=0;r.legacy_member=0;r.reason='';restored.add(a.connectionId);}
   const state=accountState(c,a,sourceIds,policyId);Object.assign(r,{paused:Number(state.paused),reason:r.excluded?r.reason:state.reason,group_id:a.groupId,name:a.name,updated_at:now});}
@@ -163,11 +167,18 @@ async function proposed(db,c,body,now,{reconcile=false}={}){
  const accounts=c.scope.eligible.filter(a=>registry.get(a.connectionId)?.enrolled&&!registry.get(a.connectionId).excluded).map(a=>{
   const r=registry.get(a.connectionId),state=accountState(c,a,sourceIds,policyId),o=observed.accounts.get('tiktok:'+a.connectionId),n=o?.stats.n||0;
   if(initial||restored.has(a.connectionId))r.is_new=Number(n===0);else if(o?.pool&&o.pool!=='observing')r.is_new=0;
-  return {...a,...state,blocked:state.blocked&&!state.waiting||state.readyAt>effectiveAt,effectiveAt:Math.max(effectiveAt,state.readyAt||0),accountPool:o?.pool||'observing',n,isNew:Boolean(r.is_new)};});
+  const old=priorRegistry.get(a.connectionId),admitting=continuing&&projectMode&&(!old?.enrolled||old.excluded||!previousMembers.has(a.connectionId));
+  // A saved project binding has its own timestamp. Late discovery must not
+  // postpone that account by another audience day. Legacy rows without a
+  // binding timestamp use first observation; own frozen work still wins.
+  const admittedAt=a.boundAt>0&&a.boundAt<=now?a.boundAt:now;
+  const accountBoundary=admitting?Math.max(startsAt,nextDay(admittedAt,timeZone)):effectiveAt;
+  if(admitting)admissions.add(a.connectionId);
+  return {...a,...state,blocked:state.blocked&&!state.waiting||state.readyAt>accountBoundary,effectiveAt:Math.max(accountBoundary,state.readyAt||0),accountPool:o?.pool||'observing',n,isNew:Boolean(r.is_new)};});
  let assignments=assignTaskGroupRoles(accounts,{reviewTarget:body.reviewTarget,previousReview});
  const retimedSnapshots=timeZoneTransition?c.snapshots.filter(s=>s.effective_at>=c.policy.starts_at).map(s=>({...s,effective_at:retime(s.effective_at)})):[];
  if(timeZoneTransition){const previous=latestFor(retimedSnapshots,Infinity);assignments=assignments.map(a=>{const s=previous.get(a.connectionId);return s?{...a,role:s.role,accountPool:s.account_pool,effectiveAt:Math.max(a.effectiveAt,s.effective_at)}:a;});}
- return {policy,effectiveAt,registry:[...registry.values()],assignments,selected,timeZoneTransition,transitionCutoff,retimedSnapshots};
+ return {policy,effectiveAt,registry:[...registry.values()],assignments,selected,timeZoneTransition,transitionCutoff,retimedSnapshots,admissions};
 }
 
 function responseData(c,policy,registry,snapshots,{now,effectiveAt=0,group='',page=1}={}){
@@ -256,10 +267,16 @@ export async function reconcileTaskGroups(env,user,directory,now=Date.now()){
  const reviewDue=now>=p.next_review_at&&p.next_review_at<p.ends_at;
  const changed=reviewDue||plan.policy.source_pilot_ids_json!==p.source_pilot_ids_json||plan.registry.some(a=>{const old=known.get(a.connection_id);return !old||['enrolled','excluded','legacy_member','paused','reason','group_id','name','is_new'].some(k=>old[k]!==a[k]);});
  let saved=p;
- if(changed&&plan.effectiveAt>=p.ends_at)return {...responseData(c,p,c.registry,c.snapshots,{now}),newExecutorGroups:[],warning:'本周期已无可安全调整的未来整日，新成员等待下一周期。'};
+ if(changed&&plan.effectiveAt>=p.ends_at){
+  const admissions=plan.assignments.filter(a=>plan.admissions.has(a.connectionId)&&a.effectiveAt<p.ends_at);
+  if(!admissions.length)return {...responseData(c,p,c.registry,c.snapshots,{now}),newExecutorGroups:[],warning:'本周期已无可安全调整的未来整日，新成员等待下一周期。'};
+  // Fully reserved existing accounts can keep their snapshots while new
+  // members fill their own empty next-day account/round claims.
+  plan.assignments=admissions;
+ }
  if(changed){
   if(!reviewDue)plan.assignments=plan.assignments.map(a=>{const old=prior.get(a.connectionId);return old?{...a,role:old.role,accountPool:old.account_pool}:a;});
-  if(reviewDue){plan.policy.last_review_at=now;plan.policy.next_review_at=Math.min(p.ends_at,addZonedDays(p.next_review_at,3,normalizeTimeZone(p.time_zone)));}
+  if(reviewDue&&plan.effectiveAt<p.ends_at){plan.policy.last_review_at=now;plan.policy.next_review_at=Math.min(p.ends_at,addZonedDays(p.next_review_at,3,normalizeTimeZone(p.time_zone)));}
   saved=await savePlan(db,c,plan,now);
  }
  const sourceIds=new Set(body.sourcePilotIds),newGroups=new Map(),futureMembers=latestFor(changed?[...c.snapshots,...snapshotsForPlan(plan,saved.revision)]:c.snapshots,Infinity);

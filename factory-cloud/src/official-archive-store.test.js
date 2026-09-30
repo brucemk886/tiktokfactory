@@ -287,3 +287,58 @@ test('shared report endpoint batches fresh scope once and honors revoked canonic
  const revoked=await handleOfficial(new Request(publish),f.env,publish,session);
  assert.equal((await revoked.json()).report.summary.publishTotal,0);
 });
+
+
+async function assignmentFixture(t){
+ const {fixture}=await import('./psychology-cloud-test-fixture.js'),f=await fixture(t);
+ const {loadGroupStore}=await import('./official.js');await loadGroupStore(f.db);
+ f.sqlite.exec("UPDATE official_account_assignments SET updated_at=100");
+ let clock=1000;t.mock.method(Date,'now',()=>clock);
+ let networkCalls=0;t.mock.method(globalThis,'fetch',async()=>{networkCalls++;throw Error('Assignment routes must not call external APIs');});
+ const {handleOfficial}=await import('./official.js');
+ const call=async(method,path,body,role='admin')=>{const req=new Request('https://factory.test'+path,{method,headers:{'content-type':'application/json'},body:JSON.stringify(body)});return handleOfficial(req,f.env,new URL(req.url),{user:{role,username:role}});};
+ return {...f,call,setClock(value){clock=value;},networkCalls:()=>networkCalls};
+}
+
+test('assignment saves preserve binding times for unchanged rows and timestamp only new or moved bindings',async t=>{
+ const f=await assignmentFixture(t),{saveAccountAssignments}=await import('./official-archive-store.js');
+ await saveAccountAssignments(f.db,{a:'g',b:'other',outside:'other',new:'g'});
+ const rows=()=>Object.fromEntries(f.sqlite.prepare('SELECT account_key,group_id,updated_at FROM official_account_assignments ORDER BY account_key').all().map(row=>[row.account_key,[row.group_id,row.updated_at]]));
+ assert.deepEqual(rows(),{a:['g',100],b:['other',1000],new:['g',1000],outside:['other',100]});
+ f.setClock(2000);await saveAccountAssignments(f.db,{a:'g',b:'other',outside:'other',new:'g'});assert.deepEqual(rows(),{a:['g',100],b:['other',1000],new:['g',1000],outside:['other',100]});
+ await saveAccountAssignments(f.db,{a:'g',outside:'other'});assert.deepEqual(rows(),{a:['g',100],outside:['other',100]});assert.equal(f.networkCalls(),0);
+});
+
+test('authorized account binding saves do not reset existing members or trigger planning and publishing',async t=>{
+ const f=await assignmentFixture(t),{kvGet}=await import('./kv.js');
+ const jobs=f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n;
+ const result=await f.call('POST','/api/official-tiktok/account-groups/assign',{accounts:[{id:'new'}],groupId:'g'});assert.equal(result.status,200);assert.equal((await result.json()).assignments.new,'g');
+ assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='new'").get().updated_at,1000);assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='a'").get().updated_at,100);
+ f.setClock(2000);assert.equal((await f.call('POST','/api/official-tiktok/account-groups/assign',{accounts:[{id:'new'}],groupId:'g'})).status,200);assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='new'").get().updated_at,1000);
+ assert.equal(await kvGet(f.db,'autopilot-fill-missing-v1',null),null);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,jobs);assert.equal(f.networkCalls(),0);
+});
+
+test('moving an entire group between projects renews only its bindings while rename and same-project saves preserve them',async t=>{
+ const f=await assignmentFixture(t),{kvGet}=await import('./kv.js');
+ const path='/api/official-tiktok/account-groups/g';
+ assert.equal((await f.call('PATCH',path,{name:'Renamed',projectId:'proj-psych'})).status,200);assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='a'").get().updated_at,100);
+ assert.equal((await f.call('PATCH',path,{projectId:'proj-novel'})).status,200);
+ assert.deepEqual(f.sqlite.prepare("SELECT group_id,updated_at FROM official_account_assignments WHERE account_key IN ('a','b') ORDER BY account_key").all().map(row=>[row.group_id,row.updated_at]),[['g',1000],['g',1000]]);assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='outside'").get().updated_at,100);
+ f.setClock(2000);assert.equal((await f.call('PATCH',path,{projectId:'proj-psych'})).status,200);assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='a'").get().updated_at,2000);
+ f.setClock(3000);assert.equal((await f.call('PATCH','/api/official-tiktok/projects/proj-psych',{moduleKey:'novel-promotion'})).status,200);assert.equal((await kvGet(f.db,'official-account-groups',{})).projects.find(project=>project.id==='proj-psych').moduleKey,'psychology');assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='a'").get().updated_at,2000);
+ assert.equal(await kvGet(f.db,'autopilot-fill-missing-v1',null),null);assert.equal(f.networkCalls(),0);
+});
+
+test('group project and binding times roll back together if persisting the moved project fails',async t=>{
+ const f=await assignmentFixture(t),{kvGet}=await import('./kv.js'),prepare=f.db.prepare;
+ f.db.prepare=sql=>{const statement=prepare(sql);if(!sql.startsWith('INSERT INTO factory_kv (key,value_json,updated_at)'))return statement;const bind=statement.bind;return {...statement,bind(...args){const bound=bind.call(statement,...args);return {...bound,async all(){throw Error('simulated project store failure');}};}};};
+ const response=await f.call('PATCH','/api/official-tiktok/account-groups/g',{projectId:'proj-novel'});assert.equal(response.status,400);
+ assert.equal((await kvGet(f.db,'official-account-groups',{})).groups.find(group=>group.id==='g').projectId,'proj-psych');assert.equal(f.sqlite.prepare("SELECT updated_at FROM official_account_assignments WHERE account_key='a'").get().updated_at,100);assert.equal(f.networkCalls(),0);
+});
+
+test('operator permissions still reject account reassignment and whole-group project moves',async t=>{
+ const f=await assignmentFixture(t),before=f.sqlite.prepare('SELECT * FROM official_account_assignments ORDER BY account_key').all();
+ assert.equal((await f.call('POST','/api/official-tiktok/account-groups/assign',{accounts:[{id:'a'}],groupId:'other'},'operator')).status,403);
+ assert.equal((await f.call('PATCH','/api/official-tiktok/account-groups/g',{projectId:'proj-novel'},'operator')).status,403);
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM official_account_assignments ORDER BY account_key').all(),before);assert.equal(f.networkCalls(),0);
+});

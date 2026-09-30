@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -157,7 +157,7 @@ test('paused accounts are skipped, a paused pilot creates nothing, and ended pil
   assert.ok(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilot_log WHERE autopilot_id=? AND kind='error'").get(restarted.id).n > 0);
 });
 
-import { stopPending, stopImpact, slotExecution, executionCounts, nextAutopilotCheck } from './psychology-autopilot-execution.js';
+import { stopPending, stopImpact, slotExecution, executionCounts, nextAutopilotCheck, autopilotCheckWindow, AUTOPILOT_CHECK_SLOTS } from './psychology-autopilot-execution.js';
 import { mergeAndStorePublishRecords } from './publish-records-store.js';
 import { dispatchPublishGroup, stagePublishItem } from './psychology-publish-groups.js';
 
@@ -241,8 +241,8 @@ test('multi-batch slot membership and daily schedule boundaries are exact',async
   const total=f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n;
   assert.equal(impact.stoppable,total);
   assert.equal(await stopPending(f.db,id),total);
-  assert.equal(nextAutopilotCheck(at('2026-09-24','00:00')),at('2026-09-24','08:00'));
-  assert.equal(nextAutopilotCheck(at('2026-09-24','08:00')),at('2026-09-25','00:00'));
+  assert.equal(nextAutopilotCheck(at('2026-09-24','00:00')),at('2026-09-24','08:00')); // Pacific prior-date 17:00
+  assert.equal(nextAutopilotCheck(at('2026-09-24','08:00')),at('2026-09-24','20:00')); // next Pacific 05:00
 });
 
 import { kvSet } from './kv.js';
@@ -632,4 +632,146 @@ test('prestart project schedule edits cannot advance the unified Pacific cycle b
  const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
  assert.deepEqual(pilotSlotsAt(pilot,start-1),pacificSlots);assert.deepEqual(pilotSlotsAt(pilot,start),editedSlots);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n,0);assert.equal(f.requests.length,0);
+});
+
+
+function insertForecastPilot(f,{id='pilot-'+crypto.randomUUID(),owner='admin',groupId='g',now,slots=[{hour:8,minute:0}],status='active',timeZone='Asia/Shanghai'}){
+ f.sqlite.prepare('INSERT INTO psychology_autopilots(id,owner,group_id,group_name,strategy,current_strategy,slots_json,schedule_timezone,status,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,owner,groupId,groupId,'original','original',JSON.stringify(slots),timeZone,status,now+7*DAY,now,now);
+ return f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+}
+
+test('background capacity snapshots count every operating group and GET reads only its owner snapshot without load scans',async t=>{
+ const f=await pilotFixture(t),now=at('2026-10-01','00:00');t.mock.method(Date,'now',()=>now);
+ const groups=Array.from({length:23},(_,n)=>({id:'forecast-'+n,name:'Group '+n,projectId:'psych'}));
+ groups.push({id:'second-owner',name:'Other owner',projectId:'psych'},{id:'outside',name:'Other project',projectId:'novel'});
+ const accounts=[],assignments={};
+ for(let g=0;g<23;g++)for(let n=0;n<(g===0?200:3);n++){const id=`f-${g}-${n}`;accounts.push({id,connectionId:id,scopes:['video.publish']});assignments[id]='forecast-'+g;}
+ for(let n=0;n<20;n++){const id='other-'+n;accounts.push({id,connectionId:id,scopes:['video.publish']});assignments[id]='second-owner';}
+ accounts.push({id:'read-only',connectionId:'read-only',scopes:['user.info.basic']},{id:'foreign',connectionId:'foreign',scopes:['video.publish']});assignments['read-only']='forecast-0';assignments.foreign='outside';
+ await kvSet(f.db,'official-account-groups',{projects:[{id:'psych',name:'心理学',moduleKey:'psychology'},{id:'novel',name:'小说',moduleKey:'novel-promotion'}],groups,assignments});
+ t.mock.method(globalThis,'fetch',async url=>{assert.ok(String(url).includes('/api/v1/accounts'));return Response.json({accounts});});
+ for(let g=0;g<23;g++)insertForecastPilot(f,{groupId:'forecast-'+g,now,id:'pilot-forecast-'+g});
+ insertForecastPilot(f,{groupId:'outside',now,id:'pilot-foreign'});
+ f.sqlite.prepare("INSERT INTO factory_users(id,username,role,password_hash,password_salt,sidebar_modules_json,created_at,updated_at) VALUES ('other-admin','other-admin','admin','','',?,0,0)").run(JSON.stringify(['psychology-publish','psychology-autopilot']));
+ insertForecastPilot(f,{groupId:'second-owner',owner:'other-admin',now,id:'pilot-other-owner'});
+ f.sqlite.prepare("INSERT INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,updated_at) VALUES('pilot-forecast-0','f-0-0','paused',?)").run(now);
+ const initial=await(await f.api('GET','?refreshGroups=1')).json();
+ assert.equal(initial.pilots.length,20);assert.equal(initial.productionCapacity,null);
+ assert.deepEqual(await refreshProductionCapacitySnapshots(f.env,now),{refreshed:2,asOf:now});
+ const context=await readAutopilotProductionContext(f.env,null,null,now);
+ assert.equal(context.owners.get('admin').accountCount,265);assert.equal(context.owners.get('other-admin').accountCount,20);
+ assert.equal(context.load.forecasts.filter(v=>v.slotAt===at('2026-10-01','08:00')).reduce((sum,v)=>sum+v.accountCount,0),285);
+ const snapshots=f.sqlite.prepare("SELECT key,value_json FROM factory_kv WHERE key LIKE 'psychology-production-capacity:%' ORDER BY key").all();
+ assert.equal(snapshots.length,2);
+ assert.equal(JSON.parse(snapshots.find(s=>s.key.endsWith(':other-admin')).value_json).accountCount,20);
+ const writes=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ t.mock.method(globalThis,'fetch',async()=>{throw Error('GET must remain local');});
+ const prepare=f.db.prepare.bind(f.db),capacityReads=[];
+ t.mock.method(f.db,'prepare',sql=>{
+  assert.doesNotMatch(sql,/SELECT DISTINCT owner FROM psychology_autopilots|SELECT DISTINCT j.id,j.created_by owner|SELECT json_extract\(result_json,'\$\.elapsedMs'\)/,'GET must not recompute shared production load');
+  const statement=prepare(sql),bind=statement.bind;
+  statement.bind=function(...args){
+   if(sql.includes('FROM factory_kv')&&String(args[0]).startsWith('psychology-production-capacity:'))capacityReads.push(args[0]);
+   return bind.apply(this,args);
+  };
+  return statement;
+ });
+ const again=await(await f.api('GET')).json();
+ assert.equal(again.productionCapacity.accountCount,265);assert.equal(again.productionCapacity.forecastJobs,285);
+ assert.equal(again.productionCapacity.nextSlotAt,at('2026-10-01','08:00'));assert.ok(again.productionCapacity.leadMs>2*HOUR);
+ assert.equal(again.productionCapacity.asOf,now);assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,writes);
+ assert.deepEqual(capacityReads,['psychology-production-capacity:admin']);
+ const text=JSON.stringify(again.productionCapacity);assert.ok(!text.includes('other-admin'));assert.ok(!text.includes('f-0-0'));
+ // A missing own snapshot must not fall back to a different owner's data or refresh it.
+ f.sqlite.prepare("DELETE FROM factory_kv WHERE key='psychology-production-capacity:admin'").run();
+ const afterDelete=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ assert.equal((await(await f.api('GET')).json()).productionCapacity,null);
+ assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,afterDelete);
+ assert.deepEqual(capacityReads,['psychology-production-capacity:admin','psychology-production-capacity:admin']);
+ assert.equal(f.requests.length,0);
+});
+
+test('every allocation chunk uses the whole owner population across execution groups',async t=>{
+ const f=await pilotFixture(t),now=at('2026-10-01','00:00');t.mock.method(Date,'now',()=>now);
+ const accounts=Array.from({length:101},(_,n)=>({id:'bulk-'+n,connectionId:'bulk-'+n,scopes:['video.publish']}));
+ await kvSet(f.db,'official-account-groups',{projects:[{id:'psych',name:'心理学',moduleKey:'psychology'}],groups:[{id:'g',name:'Chunk group',projectId:'psych'},{id:'g2',name:'Other group',projectId:'psych'}],assignments:Object.fromEntries(accounts.map((a,n)=>[a.id,n<61?'g':'g2']))});
+ t.mock.method(globalThis,'fetch',async url=>{assert.ok(String(url).includes('/api/v1/accounts'));return Response.json({accounts});});
+ await importPsychologyPeerHits(f.db,Array.from({length:70},(_,n)=>({videoUrl:'https://www.tiktok.com/@example/photo/'+(80000+n),title:'Capacity '+n,videoData:{pageTexts:['Cover '+n,'Body '+n]}})),admin.id);
+ insertForecastPilot(f,{groupId:'g2',now});
+ const created=await(await f.api('POST','',{groupId:'g',strategy:'original',days:3,slots:[{hour:8,minute:0}]})).json();
+ assert.equal(created.run.batches.length,2,JSON.stringify(created.run.errors));
+ const jobs=f.sqlite.prepare('SELECT j.payload_json FROM factory_jobs j JOIN psychology_publish_items i ON i.id=j.id').all();
+ assert.equal(jobs.length,61);
+ assert.ok(jobs.every(j=>JSON.parse(j.payload_json).psychologyAutomation.productionPlan.accountCount===101));
+ assert.ok(jobs.every(j=>JSON.parse(j.payload_json).psychologyAutomation.productionPlan.policy==='adaptive-v1'));
+ assert.equal(f.requests.length,0);
+});
+
+test('near future supplemental slots retain publishing time and flag short production lead',async t=>{
+ const f=await pilotFixture(t);let now=at('2026-10-01','00:00');t.mock.method(Date,'now',()=>now);
+ const {id}=await(await f.api('POST','',{groupId:'g',strategy:'original',days:3,slots:[{hour:8,minute:0}]})).json();
+ const original=f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE connection_id='b'").get();
+ f.sqlite.prepare('DELETE FROM psychology_peer_account_usage WHERE item_id=?').run(original.id);
+ f.sqlite.prepare('UPDATE psychology_publish_items SET deleted_at=? WHERE id=?').run(now,original.id);
+ now=at('2026-10-01','07:40');
+ const pilot=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(id);
+ const result=await runAutopilot(f.env,pilot,now);assert.equal(result.batches.length,2,JSON.stringify(result.errors));
+ // The 26-hour horizon also adds tomorrow's normal batch. Identify today's
+ // supplement by its immutable publication time, not its return order.
+ const restored=f.sqlite.prepare("SELECT i.schedule_at,j.payload_json FROM psychology_publish_items i JOIN factory_jobs j ON j.id=i.id WHERE i.connection_id='b' AND i.schedule_at=? AND i.deleted_at=0").get(original.schedule_at);
+ const automation=JSON.parse(restored.payload_json).psychologyAutomation;
+ assert.equal(restored.schedule_at,original.schedule_at);assert.equal(automation.generateAt,now);assert.equal(automation.productionPlan.shortLead,true);
+ assert.equal(f.requests.length,0);
+});
+
+test('execution detail prefers persisted generation plan and parent metadata over render retry availability',async t=>{
+ const f=await pilotFixture(t),now=at('2026-10-01','00:00');t.mock.method(Date,'now',()=>now);
+ const {id}=await(await f.api('POST','',{groupId:'g',strategy:'original',days:3,slots:[{hour:8,minute:0}]})).json();
+ const item=f.sqlite.prepare('SELECT * FROM psychology_publish_items ORDER BY id').get(),source=f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id=?').get(item.id);
+ const child=item.id+'-render';
+ f.sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,created_by,payload_json,available_at,created_at,updated_at) VALUES(?,'psychology','queued','Render','admin',?,?,?,?)").run(child,JSON.stringify({psychologyAutomation:{generateAt:now+123,productionPlan:{leadMs:123,policy:'wrong'}}}),now+7*HOUR,now,now);
+ f.sqlite.prepare('UPDATE psychology_publish_items SET job_id=? WHERE id=?').run(child,item.id);
+ const generation=now+3*HOUR;
+ f.sqlite.prepare('UPDATE psychology_generation_plans SET generation_at=?,lead_ms=?,plan_json=? WHERE job_id=?').run(generation,3*HOUR,JSON.stringify({capacityRisk:false,shortLead:true}),item.id);
+ const slot=f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=?').get(id);
+ let detail=(await slotExecution(f.db,[slot])).find(i=>i.id===item.id);
+ assert.equal(detail.generationStartAt,generation);assert.equal(detail.productionLeadMs,3*HOUR);assert.equal(detail.productionPolicy,'adaptive-v1');assert.equal(detail.productionRisk,true);
+ f.sqlite.prepare('DELETE FROM psychology_generation_plans WHERE job_id=?').run(item.id);
+ detail=(await slotExecution(f.db,[slot])).find(i=>i.id===item.id);
+ assert.equal(detail.generationStartAt,JSON.parse(source.payload_json).psychologyAutomation.generateAt);assert.equal(detail.productionLeadMs,2*HOUR);
+ // Legacy parents still expose generateAt even though no adaptive metadata exists.
+ const legacy=JSON.parse(source.payload_json);delete legacy.psychologyAutomation.productionPlan;
+ f.sqlite.prepare('UPDATE factory_jobs SET payload_json=? WHERE id=?').run(JSON.stringify(legacy),item.id);
+ detail=(await slotExecution(f.db,[slot])).find(i=>i.id===item.id);assert.equal(detail.generationStartAt,legacy.psychologyAutomation.generateAt);assert.equal(detail.productionPolicy,'');
+ assert.equal(f.requests.length,0);
+});
+
+
+test('three daily checks use Pacific 05:00, 08:30 and 17:00 with stable current-window keys',()=>{
+ assert.deepEqual(AUTOPILOT_CHECK_SLOTS,[{hour:5,minute:0},{hour:8,minute:30},{hour:17,minute:0}]);
+ const summer=['2026-10-02T12:00:00','2026-10-02T15:30:00','2026-10-03T00:00:00','2026-10-03T12:00:00'].map(utc);
+ for(let i=0;i<3;i++){
+  assert.equal(nextAutopilotCheck(summer[i]-1),summer[i]);
+  assert.equal(nextAutopilotCheck(summer[i]),summer[i+1]);
+  const current=autopilotCheckWindow(summer[i]+59000);
+  assert.equal(current.scheduledAt,summer[i]);assert.equal(current.nextAt,summer[i+1]);
+  assert.equal(current.key,['2026-10-02:05:00','2026-10-02:08:30','2026-10-02:17:00'][i]);
+ }
+ const midnight=autopilotCheckWindow(utc('2026-10-03T07:00:00'));
+ assert.equal(midnight.key,'2026-10-02:17:00');assert.equal(midnight.nextAt,summer[3]);
+});
+
+test('three Pacific checks preserve local clocks through both DST changes and winter',()=>{
+ const cases=[
+  ['2026-03-08T01:00:00','2026-03-08T12:00:00','2026-03-07:17:00',11],
+  ['2026-11-01T00:00:00','2026-11-01T13:00:00','2026-10-31:17:00',13],
+  ['2026-11-02T01:00:00','2026-11-02T13:00:00','2026-11-01:17:00',12],
+ ];
+ for(const [previous,next,key,hours] of cases){
+  const window=autopilotCheckWindow(utc(previous));
+  assert.equal(window.key,key);assert.equal(window.scheduledAt,utc(previous));assert.equal(window.nextAt,utc(next));
+  assert.equal(window.nextAt-window.scheduledAt,hours*HOUR);
+ }
+ assert.equal(nextAutopilotCheck(utc('2026-11-01T13:00:00')),utc('2026-11-01T16:30:00'));
+ assert.equal(nextAutopilotCheck(utc('2026-11-01T16:30:00')),utc('2026-11-02T01:00:00'));
 });
