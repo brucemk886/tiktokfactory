@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology's nine active plans switch to a shared pool cycle and three posts/account/day on October 2, through October 9 Beijing. Three rounds start at 08:00/14:00/20:00, with each subsequent group offset ten minutes. Administrative groups remain execution boundaries; pool matching controls content. See docs/handoffs/2026-09-30-psychology-three-post-cycle.md.
+
 - Psychology reporting counts unique project accounts through canonical identity aliases, retaining unsynced assigned accounts and rejecting stale alias grants. All overview panels intersect module-project groups with current user permissions. See docs/handoffs/2026-09-30-psychology-overview-scope.md.
 
 - Psychology operates through account/content pool matching (0068/0069): future cycle transitions preserve existing jobs, exact copy/style/revision evidence controls content promotion, diagnostic recovery has a six-test review gate, and partial shortages skip individual accounts. Operations reports separate cumulative/mature observations, frozen allocations and retrospective evidence. Strict baseline shortage is shown explicitly. See docs/handoffs/2026-09-30-psychology-pool-matching.md.

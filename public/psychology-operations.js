@@ -278,7 +278,7 @@ function renderPoolMatrixDetails(m){
 }
 function renderPoolPolicy(){
  if(!state.matching)return;
- $('#poolPolicy').innerHTML=table(['账号池','每周14条起始配额','匹配动作'],(state.matching.accountPools||[]).map(r=>[esc(r.label),r.id==='diagnostic'?'先6条基准测试后复查':r.id==='observing'?'先积累成熟基准样本':r.quota?esc(['winner','optimize','explore'].map(k=>({winner:'优胜 / 救援基准',optimize:'优化验证',explore:'新内容'}[k])+' '+fmt(r.quota[k])).join(' · ')):'按样本与状态判断',esc(r.action)]))+ '<ul><li>成熟优胜版本不足时，先在中强号固定样式补到5个不同账号并等待满72小时；低号缺少合格基准会跳过并记录原因，配额是目标而非保证发布量。</li><li>强号 12 / 1 / 1，中号 10 / 3 / 1，救援号 11 / 3 / 0（优胜基准 / 优化验证 / 新内容）。近零号先做6条诊断后复查，样本不足保留观察。</li><li>匹配按具体版本与账号池分别验证，低流量救援需要覆盖至少三个来源；发布满72小时后用最新累计值复盘。</li><li>内容语言、主题和账号受众需人工核对；平台推荐资格及公开可见性检查不能由低播放数代替。</li><li>对照与历史关联用于发现线索，不作为因果结论。已生成、已提交或已排期任务保留原内容，配置仅影响未来新增排期。</li></ul>';
+ $('#poolPolicy').innerHTML=table(['账号池','每天2条参考 · 每周14条','匹配动作'],(state.matching.accountPools||[]).map(r=>[esc(r.label),r.id==='diagnostic'?'先6条基准测试后复查':r.id==='observing'?'先积累成熟基准样本':r.quota?esc(['winner','optimize','explore'].map(k=>({winner:'优胜 / 救援基准',optimize:'优化验证',explore:'新内容'}[k])+' '+fmt(r.quota[k])).join(' · ')):'按样本与状态判断',esc(r.action)]))+ '<ul><li>成熟优胜版本不足时，先在中强号固定样式补到5个不同账号并等待满72小时；低号缺少合格基准会跳过并记录原因，配额是目标而非保证发布量。</li><li>配额随计划的每日发布条数（1–10条）按比例换算并取整，顺序为优胜基准 / 优化验证 / 新内容。每天2条（每周14条）参考：强号 12 / 1 / 1、中号 10 / 3 / 1、救援号 11 / 3 / 0；每天3条（每周21条）参考：强号 18 / 2 / 1、中号 15 / 5 / 1、救援号 17 / 4 / 0。近零号先做6条诊断后复查，样本不足保留观察。</li><li>匹配按具体版本与账号池分别验证，低流量救援需要覆盖至少三个来源；发布满72小时后用最新累计值复盘。</li><li>内容语言、主题和账号受众需人工核对；平台推荐资格及公开可见性检查不能由低播放数代替。</li><li>对照与历史关联用于发现线索，不作为因果结论。已生成、已提交或已排期任务保留原内容，配置仅影响未来新增排期。</li></ul>';
 }
 
 function renderPoolAllocation(a={}){
