@@ -28,8 +28,17 @@ Focused queue, source Workflow, scheduling, UI and admission tests cover caps, c
 
 ## Deployment and verification
 
-Final regression passed. Pending clean main push, factory-cloud npm run deploy and read-only production verification. No production task run, pause, cancellation or account binding was triggered manually during validation.
+Released c8227732dc2721c9ea4757c90878a85c18c1a22e after clean main matched origin/main. Deployed with factory-cloud npm run deploy; migration 0073 succeeded. Worker version b2a1f413-656e-4830-b563-a3be709579ad. No production task run, pause, cancellation or account binding was triggered manually during validation.
 
 ## Unfinished work / next step
 
-No requirement is intended to remain unfinished. Monitor actual service samples and capacity warnings after the October 2 cycle begins; cap stays three hours even when predicted demand exceeds it. New/weak accounts still wait if matching lacks qualified content. Production release checks follow below.
+Implementation and release are complete. Monitor actual service samples and capacity warnings after the October 2 cycle begins; cap stays three hours even when predicted demand exceeds it. New/weak accounts still wait if matching lacks qualified content. Production release checks follow below.
+
+
+## Live release checks
+
+- Read-only authenticated browser inspection showed the new three-check message and a deliberate no-snapshot state before the first scheduled check; next check was 2026-09-30 08:30 PDT (23:30 Beijing).
+- Health endpoint returned 200. Existing nine plan records and 180 historical account memberships were preserved; the same selected plan/status/slot/account-state digest before and after release was cce226d14d900bb5baeda3cd47f292a239edbf4db97148a2b3614c39eb59c562.
+- Project policy remains enabled, revision 3, America/Los_Angeles, October 2–9 local cycle, with automatic new-account admission enabled. No policy mutation was necessary.
+- The new actual scheduled dispatch has not been manually forced in production; lifecycle, provider replay/cancellation, time zones and admission were validated using isolated tests. Live publishing and rendering work was left running.
+- Temporary browser session was closed. Original untracked factory-cloud/tmp-fill-wait.mjs retained SHA256 D5E0EDB4A145BDAB4C1533BC3A220AABBA98668BF57DAFE63922873F188A2B97. Worktree dependencies are ordinary directories, not shared junctions.
