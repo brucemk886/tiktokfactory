@@ -318,3 +318,268 @@ test('live-cycle arrivals expose blocked future membership before it becomes dis
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_items').get().n,0);
   assert.equal(f.requests.length,0);
 });
+
+function clearTaskPolicy(f,{pilots=false}={}) {
+  for(const table of ['psychology_task_group_allocations','psychology_task_group_snapshots','psychology_task_group_accounts',
+    'psychology_task_group_cycles','psychology_task_group_revisions','psychology_task_group_policies']) {
+    f.sqlite.prepare('DELETE FROM '+table).run();
+  }
+  if(pilots)for(const table of ['psychology_autopilot_accounts','psychology_autopilot_slots','psychology_autopilot_log','psychology_autopilots']) {
+    f.sqlite.prepare('DELETE FROM '+table).run();
+  }
+}
+async function bindProject(f,now=created,overrides={}) {
+  f.setNow(now);
+  const current=f.sqlite.prepare('SELECT revision FROM psychology_task_group_policies').get();
+  const body={revision:current?.revision||0,enabled:true,enrollmentMode:'project',projectId:'proj-psych',
+    reviewTarget:5,admitNewAccounts:true,...overrides};
+  const url=new URL('https://factory.test/api/psychology-autopilot/task-groups');
+  const response=await handleTaskGroups(new Request(url,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),
+    f.env,url,actor,{directory:{accounts:f.directory},now});
+  const data=await response.json();
+  assert.equal(response.status,200,JSON.stringify(data));
+  assert.equal(data.policy.enrollmentMode,'project');
+  assert.equal(data.policy.projectId,'proj-psych');
+  return data;
+}
+function permissionFingerprint(f) {
+  return JSON.stringify({
+    groups:f.sqlite.prepare("SELECT value_json FROM factory_kv WHERE key='official-account-groups'").get(),
+    assignments:f.sqlite.prepare('SELECT * FROM official_account_assignments ORDER BY account_key').all(),
+  });
+}
+
+test('project controller bootstraps without any manual plans and admits all current and future eligible accounts',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  const permissions=permissionFingerprint(f),bound=await bindProject(f);
+  assert.equal(bound.totals.enrolled,3);
+  assert.equal(bound.totals.excluded,0);
+  assert.deepEqual(bound.policy.sourcePilotIds,[]);
+  assert.deepEqual(new Set(f.sqlite.prepare('SELECT connection_id FROM psychology_task_group_accounts WHERE enrolled=1').all().map(row=>row.connection_id)),
+    new Set(['a','b','c']));
+  const start=bound.policy.startsAt;f.setNow(start);
+  const result=await runAutopilots(f.env,start);
+  assert.ok(Object.keys(result).some(key=>key.startsWith('pilot-')));
+  const executors=f.sqlite.prepare("SELECT * FROM psychology_autopilots WHERE status='active'").all();
+  assert.deepEqual(new Set(executors.map(pilot=>pilot.group_id)),new Set(['g','spare']));
+  assert.ok(executors.every(pilot=>pilot.task_group_policy_id===bound.policy.id&&pilot.task_group_managed===1));
+  assert.ok(executors.every(pilot=>JSON.stringify(JSON.parse(pilot.slots_json))===JSON.stringify(slots)));
+  for(const id of ['a','b'])assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_task_group_allocations WHERE connection_id=?').get(id).n,3);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_task_group_accounts WHERE connection_id='outside'").get().n,0);
+
+  f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('d','new-group')").run();
+  f.directory.push({id:'d',connectionId:'d',username:'d',scopes:['video.publish']});
+  const arrival=start+HOUR;f.setNow(arrival);
+  await runAutopilots(f.env,arrival);
+  const admitted=f.sqlite.prepare("SELECT * FROM psychology_task_group_accounts WHERE connection_id='d'").get();
+  assert.equal(admitted.enrolled,1);
+  assert.equal(admitted.excluded,0);
+  const membership=f.sqlite.prepare("SELECT effective_at FROM psychology_task_group_snapshots WHERE connection_id='d' ORDER BY effective_at DESC LIMIT 1").get();
+  assert.ok(membership.effective_at>arrival);
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['d'],arrival)).size,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='new-group' AND status<>'ended'").get().n,1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='d' AND schedule_at*1000<?").get(membership.effective_at).n,0);
+  f.sqlite.prepare("DELETE FROM official_account_assignments WHERE account_key='d'").run();
+  assert.equal(permissionFingerprint(f),permissions);
+  assert.equal(f.requests.length,0);
+});
+
+test('project binding restores excluded accounts and auto-binds compatible plans without filling prestart reservations',async t=>{
+  const f=await taskFixture(t);
+  f.sqlite.prepare("UPDATE psychology_task_group_accounts SET legacy_member=1 WHERE enrolled=1 AND excluded=0").run();
+  const spare=f.pilot({group_id:'spare',group_name:'Unselected',task_group_policy_id:'',task_group_managed:0});
+  f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('legacy-spare','spare')").run();
+  f.directory.push({id:'legacy-spare',connectionId:'legacy-spare',username:'legacy-spare',scopes:['video.publish']});
+  f.registry('legacy-spare',{enrolled:0,excluded:1,group:'spare'});
+  const oldInput={requestId:crypto.randomUUID(),name:'Frozen legacy work',mediaType:'photo',template:'photo-text',sourceType:'library',
+    libraryStrategy:'original',count:1,connectionIds:['legacy-spare'],scheduleAt:at('2026-10-01','08:00')/1000,intervalMinutes:60};
+  const oldBatch=await(await f.call('POST',oldInput)).json();
+  assert.ok(oldBatch.batchId);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,detail,updated_at) VALUES(?,?,'created',?,'frozen legacy',?)")
+    .run(spare.id,at('2026-10-01','08:00'),oldBatch.batchId,created);
+  const tables=['psychology_publish_batches','psychology_publish_items','factory_jobs','psychology_autopilot_slots'];
+  const frozen=()=>Object.fromEntries(tables.map(table=>[table,JSON.stringify(f.sqlite.prepare('SELECT * FROM '+table+' ORDER BY rowid').all())]));
+  const before=frozen(),permissions=permissionFingerprint(f);
+  const binding=await bindProject(f,created+HOUR);
+  assert.equal(binding.totals.excluded,0);
+  assert.equal(binding.totals.enrolled,4);
+  assert.ok(binding.policy.sourcePilotIds.includes(spare.id));
+  const adopted=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(spare.id);
+  assert.equal(adopted.task_group_policy_id,policyId);
+  assert.equal(adopted.status,spare.status);
+  assert.equal(adopted.slots_json,spare.slots_json);
+  assert.equal(adopted.current_strategy,spare.current_strategy);
+  assert.equal(f.sqlite.prepare("SELECT legacy_member FROM psychology_task_group_accounts WHERE connection_id='c'").get().legacy_member,0);
+  assert.deepEqual(await taskSlotAccounts(f.db,adopted,['c','legacy-spare'],at('2026-10-01','08:00')),[]);
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['c'],binding.effectiveAt-1)).size,0);
+  assert.deepEqual(frozen(),before);
+  assert.equal(permissionFingerprint(f),permissions);
+  assert.equal(f.requests.length,0);
+});
+
+test('project-created executors keep ended historical pauses while a later explicit resume wins',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  for(const id of ['a','b'])f.sqlite.prepare("UPDATE official_account_assignments SET group_id='new-group' WHERE account_key=?").run(id);
+  const stopped=f.pilot({group_id:'new-group',status:'ended',task_group_policy_id:'',task_group_managed:0,ends_at:created-2*HOUR,updated_at:created-HOUR});
+  const resumed=f.pilot({group_id:'new-group',status:'ended',task_group_policy_id:'',task_group_managed:0,ends_at:created-2*HOUR,updated_at:created-60000});
+  for(const id of ['a','b'])f.sqlite.prepare("INSERT INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at) VALUES(?,?,'paused','explicit old pause',?)").run(stopped.id,id,created-HOUR);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at) VALUES(?,'b','active','explicit later resume',?)").run(resumed.id,created-60000);
+  const bound=await bindProject(f);
+  f.setNow(bound.policy.startsAt);
+  await runAutopilots(f.env,bound.policy.startsAt);
+  const current=f.sqlite.prepare("SELECT * FROM psychology_autopilots WHERE group_id='new-group' AND status='active'").get();
+  assert.ok(current);
+  const states=f.sqlite.prepare('SELECT connection_id,status FROM psychology_autopilot_accounts WHERE autopilot_id=? ORDER BY connection_id').all(current.id);
+  assert.deepEqual(states.map(state=>[state.connection_id,state.status]),[['a','paused'],['b','active']]);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='a'").get().n,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='b'").get().n,3);
+  assert.equal(f.sqlite.prepare("SELECT status FROM psychology_autopilot_accounts WHERE autopilot_id=? AND connection_id='a'").get(stopped.id).status,'paused');
+  assert.equal(f.requests.length,0);
+});
+
+test('project grant restoration and one ended executor do not stop other enrollment or renew the bounded cycle',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  const bound=await bindProject(f),start=bound.policy.startsAt,end=bound.policy.endsAt;
+  f.setNow(start);await runAutopilots(f.env,start);
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other' WHERE account_key='a'").run();
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['a'],start+DAY+8*HOUR)).size,0);
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='g' WHERE account_key='a'").run();
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['a'],start+DAY+8*HOUR)).size,1);
+  const prior=f.sqlite.prepare("SELECT * FROM psychology_task_group_accounts WHERE connection_id='a'").get();
+  f.sqlite.prepare("UPDATE psychology_autopilots SET status='ended',ends_at=? WHERE group_id='g'").run(start+DAY);
+  f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('d','new-group')").run();
+  f.directory.push({id:'d',connectionId:'d',username:'d',scopes:['video.publish']});
+  const now=start+DAY+HOUR;f.setNow(now);
+  const reconciled=await reconcileTaskExecutors(f.env,actor,{accounts:f.directory},now);
+  assert.equal(reconciled.policy.enabled,true);
+  assert.equal(reconciled.policy.endsAt,end);
+  assert.equal(f.sqlite.prepare("SELECT enrolled FROM psychology_task_group_accounts WHERE connection_id='d'").get().enrolled,1);
+  assert.equal(f.sqlite.prepare("SELECT first_seen_at FROM psychology_task_group_accounts WHERE connection_id='a'").get().first_seen_at,prior.first_seen_at);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='new-group' AND status<>'ended'").get().n,1);
+
+  f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('e','new-group')").run();
+  f.directory.push({id:'e',connectionId:'e',username:'e',scopes:['video.publish']});
+  f.setNow(end+HOUR);await runAutopilots(f.env,end+HOUR);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_task_group_accounts WHERE connection_id='e'").get().n,0);
+  assert.equal(f.sqlite.prepare('SELECT ends_at FROM psychology_task_group_policies').get().ends_at,end);
+  const renewed=await bindProject(f,end+HOUR);
+  assert.ok(renewed.policy.startsAt>end);
+  assert.equal(renewed.policy.endsAt-renewed.policy.startsAt,7*DAY);
+  assert.equal(f.sqlite.prepare("SELECT enrolled FROM psychology_task_group_accounts WHERE connection_id='e'").get().enrolled,1);
+  assert.equal(f.requests.length,0);
+});
+
+test('other-owner and incompatible plans block only their physical groups in project mode',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  const foreign=f.pilot({owner:'other-owner',group_id:'spare',group_name:'Foreign',task_group_policy_id:'',task_group_managed:0});
+  const incompatible=f.pilot({group_id:'new-group',group_name:'Two posts',slots_json:JSON.stringify(slots.slice(0,2)),
+    current_strategy:'original',task_group_policy_id:'',task_group_managed:0});
+  f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('d','new-group')").run();
+  f.directory.push({id:'d',connectionId:'d',username:'d',scopes:['video.publish']});
+  const before=JSON.stringify([foreign,incompatible]),permissions=permissionFingerprint(f);
+  const bound=await bindProject(f);
+  assert.equal(bound.totals.enrolled,4);
+  assert.equal(bound.totals.blocked,2);
+  await reconcileTaskExecutors(f.env,actor,{accounts:f.directory},created+HOUR);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='g' AND status<>'ended'").get().n,1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='spare' AND status<>'ended'").get().n,1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='new-group' AND status<>'ended'").get().n,1);
+  assert.equal(JSON.stringify([f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(foreign.id),
+    f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(incompatible.id)]),before);
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['c','d'],bound.policy.startsAt+8*HOUR)).size,0);
+  assert.equal(permissionFingerprint(f),permissions);
+  assert.equal(f.requests.length,0);
+});
+
+test('a manually ended current-cycle group stays stopped while other project groups continue',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  const permissions=permissionFingerprint(f);
+  for(let n=0;n<6;n++)f.sqlite.prepare("INSERT INTO ops_task_facts(id,batch_id,account_key,media,schedule_at,published_at,source,variant,style,copy_hash,state,views,completion) VALUES(?,?,'tiktok:c','photo',?,?,?,'','classic','historical-copy','published',600,0.2)")
+    .run('history-c'+n,'history',created-4*DAY,created-4*DAY,'history-c-source-'+n);
+  const bound=await bindProject(f);
+  await reconcileTaskExecutors(f.env,actor,{accounts:f.directory},created+HOUR);
+  const executor=f.sqlite.prepare("SELECT * FROM psychology_autopilots WHERE group_id='g' AND status='active'").get();
+  assert.ok(executor);
+  f.sqlite.prepare("UPDATE psychology_autopilots SET status='ended',updated_at=? WHERE id=?").run(created+2*HOUR,executor.id);
+  const stopped=f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(executor.id),before=JSON.stringify(stopped);
+  const status=await reconcileTaskExecutors(f.env,actor,{accounts:f.directory},created+2*HOUR);
+  assert.equal(status.totals.enrolled,3);
+  assert.equal(status.totals.blocked,2);
+  f.setNow(bound.policy.startsAt);
+  await runAutopilots(f.env,bound.policy.startsAt);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='g' AND status<>'ended'").get().n,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='spare' AND status='active'").get().n,1);
+  const items=f.sqlite.prepare('SELECT connection_id FROM psychology_publish_items').all();
+  assert.equal(items.length,3);
+  assert.ok(items.every(item=>item.connection_id==='c'));
+  assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(stopped.id)),before);
+  assert.equal(permissionFingerprint(f),permissions);
+  assert.equal(f.requests.length,0);
+});
+
+test('expired legacy reservations follow a moved account and delay only its new executor through the reserved Beijing day',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  const historical=f.pilot({status:'ended',task_group_policy_id:'',task_group_managed:0,ends_at:created-DAY,updated_at:created-HOUR});
+  const reserved=at('2026-10-01','08:00');
+  const legacy={requestId:crypto.randomUUID(),name:'Frozen ended reservation',mediaType:'photo',template:'photo-text',sourceType:'library',
+    libraryStrategy:'original',count:1,connectionIds:['a'],scheduleAt:reserved/1000,intervalMinutes:60};
+  const response=await f.call('POST',legacy),batch=await response.json();
+  assert.equal(response.status,202);
+  assert.ok(batch.batchId);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,detail,updated_at) VALUES(?,?,'created',?,'frozen after end',?)")
+    .run(historical.id,reserved,batch.batchId,created);
+  const frozen=()=>JSON.stringify({
+    pilot:f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(historical.id),
+    slot:f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=?').all(historical.id),
+    batch:f.sqlite.prepare('SELECT * FROM psychology_publish_batches WHERE id=?').get(batch.batchId),
+    items:f.sqlite.prepare('SELECT * FROM psychology_publish_items WHERE batch_id=? ORDER BY id').all(batch.batchId),
+    jobs:f.sqlite.prepare('SELECT * FROM factory_jobs WHERE id IN(SELECT job_id FROM psychology_publish_items WHERE batch_id=?) ORDER BY id').all(batch.batchId),
+  });
+  const before=frozen();
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='new-group' WHERE account_key='a'").run();
+  for(let n=0;n<6;n++)f.sqlite.prepare("INSERT INTO ops_task_facts(id,batch_id,account_key,media,schedule_at,published_at,source,variant,style,copy_hash,state,views,completion) VALUES(?,?,'tiktok:c','photo',?,?,?,'','classic','historical-copy','published',600,0.2)")
+    .run('reserved-c'+n,'history',created-4*DAY,created-4*DAY,'reserved-c-source-'+n);
+  const permissions=permissionFingerprint(f),bound=await bindProject(f);
+  assert.equal(bound.policy.startsAt,at('2026-10-01'));
+  assert.equal(bound.totals.enrolled,3);
+  assert.equal(bound.totals.blocked,1);
+  assert.equal(frozen(),before);
+  const start=bound.policy.startsAt;
+  f.setNow(start);await runAutopilots(f.env,start);
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['a'],reserved)).size,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='a' AND batch_id<>? AND schedule_at<?").get(batch.batchId,(start+DAY)/1000).n,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_task_group_allocations WHERE connection_id='a' AND beijing_date='2026-10-01'").get().n,0);
+  for(const id of ['b','c'])assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_task_group_allocations WHERE connection_id=? AND beijing_date='2026-10-01'").get(id).n,3);
+  assert.equal(frozen(),before);
+
+  f.setNow(start+DAY);await runAutopilots(f.env,start+DAY);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_task_group_allocations WHERE connection_id='a' AND beijing_date='2026-10-02'").get().n,3);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_autopilots WHERE group_id='new-group' AND status='active'").get().n,1);
+  assert.equal(frozen(),before);
+  assert.equal(permissionFingerprint(f),permissions);
+  assert.equal(f.requests.length,0);
+});
+
+test('frozen reservations from another owner still protect a currently authorized moved connection',async t=>{
+  const f=await taskFixture(t);clearTaskPolicy(f,{pilots:true});
+  const prior=f.pilot({owner:'other-owner',status:'ended',task_group_policy_id:'',task_group_managed:0,ends_at:created-DAY});
+  const reserved=at('2026-10-01','20:00');
+  const response=await f.call('POST',{requestId:crypto.randomUUID(),name:'Foreign frozen reservation',mediaType:'photo',template:'photo-text',
+    sourceType:'library',libraryStrategy:'original',count:1,connectionIds:['a'],scheduleAt:reserved/1000,intervalMinutes:60});
+  const batch=await response.json();assert.equal(response.status,202);assert.ok(batch.batchId);
+  f.sqlite.prepare("UPDATE psychology_publish_batches SET created_by='other-owner' WHERE id=?").run(batch.batchId);
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,detail,updated_at) VALUES(?,?,'created',?,'foreign frozen',?)")
+    .run(prior.id,reserved,batch.batchId,created);
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='new-group' WHERE account_key='a'").run();
+  const before=JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_publish_items WHERE batch_id=?').all(batch.batchId));
+  const bound=await bindProject(f);
+  assert.equal(bound.totals.enrolled,3);
+  assert.equal(bound.totals.blocked,1);
+  f.setNow(bound.policy.startsAt);await runAutopilots(f.env,bound.policy.startsAt);
+  assert.equal((await taskAssignmentsFor(f.db,'admin',['a'],reserved)).size,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='a' AND batch_id<>? AND schedule_at<?").get(batch.batchId,(bound.policy.startsAt+DAY)/1000).n,0);
+  assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM psychology_publish_items WHERE batch_id=?').all(batch.batchId)),before);
+  assert.equal(f.sqlite.prepare('SELECT created_by FROM psychology_publish_batches WHERE id=?').get(batch.batchId).created_by,'other-owner');
+  assert.equal(f.sqlite.prepare('SELECT owner FROM psychology_autopilots WHERE id=?').get(prior.id).owner,'other-owner');
+  assert.equal(f.requests.length,0);
+});

@@ -7,18 +7,18 @@ const STATUS = { active:'运行中', paused:'已暂停', ended:'已结束' };
 const SLOT = { creating:'创建中', created:'已创建排期', failed:'创建失败', skipped:'已跳过' };
 const ITEM = { queued:'等待制作', producing:'制作中', publishing:'提交 / 处理中', scheduled:'等待官方发布', published:'已发布', production_failed:'制作失败', publish_failed:'发布失败', cancelled:'已停止', missing:'结果待核对' };
 const TASK_ROLES = {
- review:{label:'内容评审组',action:'成熟中强号固定版本验证，默认每天2轮复评、1轮优胜产出'},
- strong:{label:'强号产出组',action:'优胜内容保产出，少量优化与探索'},
- normal:{label:'中号提效组',action:'优胜基准与优化验证'},
- 'rescue-hook':{label:'首图救援组',action:'成熟基准下单独验证首图或标题'},
- 'rescue-content':{label:'内页救援组',action:'成熟基准下单独改善内页与页序'},
- diagnostic:{label:'近零诊断组',action:'最多六条成熟基准测试后复查'},
- observing:{label:'样本观察组',action:'等待成熟样本，无优胜基准时等待'},
- launch:{label:'新号起号组',action:'正式优胜内容建立基准，无基准时等待'},
+ review:{label:'内容评审',action:'成熟中强号固定版本验证，默认每天2轮复评、1轮优胜产出'},
+ strong:{label:'强号产出',action:'优胜内容保产出，少量优化与探索'},
+ normal:{label:'中号产出',action:'优胜基准与优化验证'},
+ 'rescue-hook':{label:'首图救援',action:'成熟基准下单独验证首图或标题'},
+ 'rescue-content':{label:'内页救援',action:'成熟基准下单独改善内页与页序'},
+ diagnostic:{label:'近零诊断',action:'最多六条成熟基准测试后复查'},
+ observing:{label:'待观察',action:'等待成熟样本，无优胜基准时等待'},
+ launch:{label:'新号起量',action:'正式优胜内容建立基准，无基准时等待'},
 };
 let taskGroupsData=null,taskGroupRequest=0,taskMemberRequest=0,taskGroupRole='',taskGroupPage=1,taskGroupPages=1;
 let taskConfigBusy=false,taskConfigReady=false,taskPreview=null;
-const selectedTaskPilots=new Set();
+
 let selectedPeriod = 'today';
 const PERIOD_LABELS={today:'今天',yesterday:'昨天','7d':'近7天'};
 let data = null, loading = false, pendingPause = null, creating = false, switchingPools = false;
@@ -83,7 +83,7 @@ async function load(quiet = false, refreshGroups = false) {
   loading = true; $('#reload').disabled = true; $('#refreshGroups').disabled = true;
   if (!quiet) notice(refreshGroups ? '正在更新账号分组与发布状态…' : '正在读取本地发布回执…');
   if (refreshGroups) { $('#groupDirectoryStatus').textContent='正在同步授权账号目录…'; $('#createButton').disabled=true; }
-  try { const query=(period==='today'?'':'period='+period)+(refreshGroups?(period==='today'?'':'&')+'refreshGroups=1':''); const pending=api(query?'?'+query:''); void loadTaskGroups(); const next = await pending; if(period!==selectedPeriod)return; data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '还没有自动运营，点击右侧新建。'); }
+  try { const query=(period==='today'?'':'period='+period)+(refreshGroups?(period==='today'?'':'&')+'refreshGroups=1':''); const pending=api(query?'?'+query:''); void loadTaskGroups(); const next = await pending; if(period!==selectedPeriod)return; data = next; for(const p of data.pilots) if(p.status==='ended')createdGroups.delete(p.groupId); render(); if (refreshGroups) $('#groupDirectoryStatus').textContent='账号分组已更新。'; if (!quiet) notice(data.pilots.length ? '状态已更新。' : '暂无原发布计划。可在项目设置中预览并启用项目自动运营。'); }
   catch (error) { if(period!==selectedPeriod)return; notice('更新失败，保留上次数据：'+error.message, true); if(refreshGroups) $('#groupDirectoryStatus').textContent='账号目录更新失败，保留上次结果：'+error.message; }
   finally { loading = false; $('#reload').disabled = false; $('#refreshGroups').disabled = false; updateCreateControls(); if(period!==selectedPeriod)load(); }
 }
@@ -284,22 +284,23 @@ $('#confirmPoolSwitch').onclick=async()=>{
 
 function taskRoleLabel(role){return TASK_ROLES[role]?.label||role||'—';}
 function taskRoleRows(result=taskGroupsData){
- return Object.entries(TASK_ROLES).map(([role,fallback])=>({...fallback,accounts:0,active:0,paused:0,...(result?.groups||[]).find(g=>(g.role||g.id)===role),role}));
+ return Object.entries(TASK_ROLES).map(([role,fallback])=>({...fallback,accounts:0,active:0,paused:0,...(result?.groups||[]).find(g=>(g.role||g.id)===role),role,label:fallback.label}));
 }
 function renderTaskGroupCards(){
  $('#taskGroupCards').innerHTML=taskRoleRows().map(g=>'<button type="button" class="ops-pool-card ops-pool-card-button" data-task-role="'+esc(g.role)+'" aria-controls="taskGroupAccounts" aria-pressed="'+(taskGroupRole===g.role)+'" aria-label="查看'+esc(g.label)+'的'+fmt(g.accounts)+'个账号"><span>'+esc(g.label)+'</span><strong>'+fmt(g.accounts)+'</strong><small>'+esc(g.action)+'</small><small>参与 '+fmt(g.active)+' · 暂停 '+fmt(g.paused)+'</small><small class="ops-pool-card-link">查看账号 →</small></button>').join('');
 }
 function renderTaskGroups(){
- const p=taskGroupsData?.policy,t=taskGroupsData?.totals||{};
+ const p=taskGroupsData?.policy,t=taskGroupsData?.totals||{},project=taskGroupsData?.project;
+ $('#taskGroupProjectSummary').textContent=project?'绑定项目：'+(project.name||'心理学')+' · '+(p?.enrollmentMode==='project'?'项目账号按数据自动纳入与分层。':p?'当前沿用原计划范围，保存项目设置后改为项目账号自动纳入。':'预览后启用，项目账号自动纳入与分层。'):'正在读取绑定项目…';
  $('#taskGroupSummary').innerHTML=[['纳入账号',t.enrolled],['排除账号',t.excluded],['合格账号',t.eligible],['待处理账号',t.blocked]].map(([label,value])=>'<div class="pilot-metric"><span>'+label+'</span><strong>'+fmt(value)+'</strong></div>').join('');
- $('#taskGroupStatus').textContent=p?(p.endsAt&&p.endsAt<=Date.now()?'本轮已结束':p.enabled?'已启用':'未启用')+' · '+time(p.startsAt)+' 至 '+time(p.endsAt)+'（北京时间） · 角色生效 '+time(taskGroupsData.effectiveAt||p.startsAt)+' · '+(p.cycleDays||7)+'天周期 / 每'+(p.reviewDays||3)+'天复评 · 最近复评 '+time(p.lastReviewAt)+' · 下次复评 '+time(p.nextReviewAt):'尚未配置独立任务组。请先预览纳入范围与生效日期。';
- if(p)$('#taskGroupStatus').textContent+='。展示已保存的下一次生效分组；具体账号以生效时间为准。';
+ $('#taskGroupStatus').textContent=p?(p.endsAt&&p.endsAt<=Date.now()?'本轮已结束':p.enabled?'已启用':'未启用')+' · '+time(p.startsAt)+' 至 '+time(p.endsAt)+'（北京时间） · 角色生效 '+time(taskGroupsData.effectiveAt||p.startsAt)+' · '+(p.cycleDays||7)+'天周期 / 每'+(p.reviewDays||3)+'天复评 · 最近复评 '+time(p.lastReviewAt)+' · 下次复评 '+time(p.nextReviewAt):'尚未配置项目自动运营。请先预览项目账号纳入范围与生效日期。';
+ if(p)$('#taskGroupStatus').textContent+='。展示已保存的下一次生效账号分层；具体账号以生效时间为准。';
  $('#taskGroupStatus').classList.toggle('pilot-error',false);renderTaskGroupCards();
 }
 async function loadTaskGroups(){
  const request=++taskGroupRequest;
  try{const result=await api('/task-groups');if(request!==taskGroupRequest)return;taskGroupsData=result;renderTaskGroups();return result;}
- catch(error){if(request!==taskGroupRequest)return;$('#taskGroupStatus').textContent='任务组读取失败，保留上次数据：'+error.message;$('#taskGroupStatus').classList.toggle('pilot-error',true);if(!taskGroupsData)renderTaskGroupCards();}
+ catch(error){if(request!==taskGroupRequest)return;$('#taskGroupStatus').textContent='项目运营读取失败，保留上次数据：'+error.message;$('#taskGroupStatus').classList.toggle('pilot-error',true);if(!taskGroupsData)renderTaskGroupCards();}
 }
 async function loadTaskMembers(role=taskGroupRole,page=1){
  if(!Object.hasOwn(TASK_ROLES,role)||!Number.isInteger(page)||page<1)return;
@@ -310,8 +311,8 @@ async function loadTaskMembers(role=taskGroupRole,page=1){
  try{
   const result=await api('/task-groups?group='+encodeURIComponent(role)+'&page='+page);if(request!==taskMemberRequest)return;
   const m=result.membership||{rows:[],page:1,total:0,totalPages:1};taskGroupPage=m.page||1;taskGroupPages=Math.max(1,m.totalPages||1);
-  $('#taskGroupMemberTable').innerHTML=m.rows?.length?table(['账号','发布执行分组','任务角色 / 账号池','参与状态','原因 / 生效时间'],m.rows.map(r=>['@'+esc(r.name||r.connectionId),esc(r.groupName||r.groupId),esc(taskRoleLabel(r.role))+'<small>'+esc(({strong:'强号',normal:'中号','rescue-hook':'首图救援','rescue-content':'内页救援',diagnostic:'近零诊断',observing:'待观察'}[r.accountPool])||r.accountPool||'—')+'</small>',r.blocked?'待处理'+(r.paused?' · 已暂停':''):r.paused?'已暂停':'可参与未来分配',esc(r.reason||'—')+'<small>'+esc(time(r.effectiveAt))+' 起生效</small>'])):'<p class="section-hint">当前任务组暂无账号。</p>';
-  $('#taskGroupMemberStatus').textContent='账号角色用于未来尚未创建的任务，原发布执行分组保持不变。';
+  $('#taskGroupMemberTable').innerHTML=m.rows?.length?table(['账号','发布执行分组','账号分层 / 成熟表现','参与状态','原因 / 生效时间'],m.rows.map(r=>['@'+esc(r.name||r.connectionId),esc(r.groupName||r.groupId),esc(taskRoleLabel(r.role))+'<small>'+esc(({strong:'强号',normal:'中号','rescue-hook':'首图救援','rescue-content':'内页救援',diagnostic:'近零诊断',observing:'待观察'}[r.accountPool])||r.accountPool||'—')+'</small>',r.blocked?'待处理'+(r.paused?' · 已暂停':''):r.paused?'已暂停':'可参与未来分配',esc(r.reason||'—')+'<small>'+esc(time(r.effectiveAt))+' 起生效</small>'])):'<p class="section-hint">当前分层暂无账号。</p>';
+  $('#taskGroupMemberStatus').textContent='账号分层用于未来尚未创建的任务，原授权分组保持不变。';
   $('#taskGroupMemberPage').textContent='第 '+fmt(taskGroupPage)+' / '+fmt(taskGroupPages)+' 页 · 共 '+fmt(m.total)+' 个账号 · 每页20条';
   $('#taskGroupPrev').disabled=taskGroupPage<=1;$('#taskGroupNext').disabled=taskGroupPage>=taskGroupPages;
  }catch(error){if(request!==taskMemberRequest)return;$('#taskGroupMemberStatus').textContent='账号读取失败：'+error.message;$('#taskGroupMembersRetry').hidden=false;}
@@ -320,22 +321,16 @@ $('#taskGroupCards').addEventListener('click',event=>{const card=event.target.cl
 $('#taskGroupPrev').onclick=()=>loadTaskMembers(taskGroupRole,taskGroupPage-1);
 $('#taskGroupNext').onclick=()=>loadTaskMembers(taskGroupRole,taskGroupPage+1);
 $('#taskGroupMembersRetry').onclick=()=>loadTaskMembers(taskGroupRole,taskGroupPage);
-function eligibleTaskPilots(){return (taskGroupsData?.candidates||[]).filter(p=>p.poolReady&&p.status!=='ended');}
-function renderTaskPilotChoices(){
- const eligible=new Set(eligibleTaskPilots().map(p=>p.id));
- $('#taskGroupPilotChoices').innerHTML=(taskGroupsData?.candidates||[]).map(p=>'<label class="pilot-group-choice"><input type="checkbox" data-task-pilot="'+esc(p.id)+'" '+(selectedTaskPilots.has(p.id)?'checked ':'')+(eligible.has(p.id)?'':'disabled')+'><span>'+esc(p.groupName||p.groupId)+'<small>'+esc(STATUS[p.status]||p.status||'—')+(eligible.has(p.id)?' · 账号池策略可纳入':' · 不符合账号池策略范围')+'</small></span></label>').join('')||'<p class="section-hint">暂无可纳入的账号池运营计划。</p>';
-}
 function taskConfigBody(){
- if(!taskConfigReady)throw Error('请先成功读取任务组配置。');
+ if(!taskConfigReady)throw Error('请先成功读取项目设置。');
  const reviewTarget=Number($('#taskGroupReviewTarget').value),enabled=$('#taskGroupEnabled').checked===true;
- if(!Number.isInteger(reviewTarget)||reviewTarget<5||reviewTarget>60)throw Error('内容评审组目标人数应为5–60的整数。');
- const allowed=new Set(eligibleTaskPilots().map(p=>p.id)),sourcePilotIds=[...selectedTaskPilots].filter(id=>allowed.has(id)).sort();
- if(enabled&&!sourcePilotIds.length)throw Error('请至少选择一个合格的发布执行计划。');
- return {revision:taskGroupsData?.policy?.revision??0,enabled,sourcePilotIds,reviewTarget,admitNewAccounts:$('#taskGroupAdmitNew').checked===true};
+ if(!Number.isInteger(reviewTarget)||reviewTarget<5||reviewTarget>60)throw Error('内容评审目标人数应为5–60的整数。');
+ const projectId=taskGroupsData?.project?.id;
+ if(typeof projectId!=='string'||!projectId.trim())throw Error('绑定项目不可用，请重新读取项目设置。');
+ return {revision:taskGroupsData?.policy?.revision??0,enabled,enrollmentMode:'project',projectId,reviewTarget,admitNewAccounts:$('#taskGroupAdmitNew').checked===true};
 }
 function updateTaskConfigControls(){
- for(const id of ['taskGroupEnabled','taskGroupReviewTarget','taskGroupAdmitNew','taskGroupSelectAll','retryTaskGroupConfig'])$('#'+id).disabled=taskConfigBusy;
- for(const input of document.querySelectorAll('[data-task-pilot]'))input.disabled=taskConfigBusy||!eligibleTaskPilots().some(p=>p.id===input.dataset.taskPilot);
+ for(const id of ['taskGroupEnabled','taskGroupReviewTarget','taskGroupAdmitNew','retryTaskGroupConfig'])$('#'+id).disabled=taskConfigBusy;
  $('#previewTaskGroups').disabled=taskConfigBusy||!taskConfigReady;
  $('#saveTaskGroups').disabled=taskConfigBusy||!taskPreview;
  document.querySelector('[data-close="taskGroupDialog"]').disabled=taskConfigBusy;
@@ -345,19 +340,21 @@ function invalidateTaskPreview(){
 }
 function taskPreviewHtml(result,label='配置预览'){
  const p=result.policy||{},t=result.totals||{};
- return '<h3>'+label+'</h3><p>生效：'+esc(time(result.effectiveAt||p.startsAt))+' · 周期：'+esc(time(p.startsAt))+' 至 '+esc(time(p.endsAt))+'（北京时间）</p><p>纳入 '+fmt(t.enrolled)+' 个账号 · 排除 '+fmt(t.excluded)+' 个账号 · 合格 '+fmt(t.eligible)+' 个账号 · 待处理 '+fmt(t.blocked)+' 个账号。</p>'+table(['任务角色','账号数','参与 / 暂停'],taskRoleRows(result).map(g=>[esc(g.label),fmt(g.accounts),fmt(g.active)+' / '+fmt(g.paused)]))+'<p class="section-hint">7天周期，每3天复评。只调整未来尚未创建的任务；保存时会重新核对权限和已保留排期，实际生效日期以保存结果为准。</p>';
+ return '<h3>'+label+'</h3><p>绑定项目：'+esc(result.project?.name||taskGroupsData?.project?.name||'心理学')+' · 账号按数据自动分层 · 每日目标3条</p><p>生效：'+esc(time(result.effectiveAt||p.startsAt))+' · 周期：'+esc(time(p.startsAt))+' 至 '+esc(time(p.endsAt))+'（北京时间）</p><p>纳入 '+fmt(t.enrolled)+' 个账号 · 排除 '+fmt(t.excluded)+' 个账号 · 合格 '+fmt(t.eligible)+' 个账号 · 待处理 '+fmt(t.blocked)+' 个账号。</p>'+table(['任务角色','账号数','参与 / 暂停'],taskRoleRows(result).map(g=>[esc(g.label),fmt(g.accounts),fmt(g.active)+' / '+fmt(g.paused)]))+'<p class="section-hint">7天周期，每3天复评。只调整未来尚未创建的任务；保存时会重新核对权限和已保留排期，实际生效日期以保存结果为准。</p>';
 }
 async function openTaskGroupConfig(){
  if(taskConfigBusy||creating||switchingPools)return;
- taskConfigBusy=true;taskConfigReady=false;taskPreview=null;$('#taskGroupConfigStatus').textContent='正在读取配置与合格计划…';$('#taskGroupPreview').innerHTML='';$('#taskGroupPilotChoices').innerHTML='';$('#retryTaskGroupConfig').hidden=true;
+ taskConfigBusy=true;taskConfigReady=false;taskPreview=null;$('#taskGroupConfigStatus').textContent='正在读取项目设置…';$('#taskGroupPreview').innerHTML='';$('#taskGroupProject').textContent='正在读取绑定项目…';$('#retryTaskGroupConfig').hidden=true;
  if(!$('#taskGroupDialog').open)$('#taskGroupDialog').showModal();updateTaskConfigControls();
  const request=++taskGroupRequest;
  try{
   const result=await api('/task-groups');if(request!==taskGroupRequest)return;
   taskGroupsData=result;renderTaskGroups();const p=result.policy;
-  selectedTaskPilots.clear();for(const candidate of eligibleTaskPilots())if(!p||p.sourcePilotIds?.includes(candidate.id))selectedTaskPilots.add(candidate.id);
   $('#taskGroupEnabled').checked=p?.enabled??true;$('#taskGroupReviewTarget').value=p?.reviewTarget??60;$('#taskGroupAdmitNew').checked=p?.admitNewAccounts??true;
-  taskConfigReady=true;renderTaskPilotChoices();$('#taskGroupConfigStatus').textContent='先预览生效日期及纳入人数，再保存。';
+  taskConfigReady=typeof result.project?.id==='string'&&Boolean(result.project.id.trim());
+  $('#taskGroupProject').textContent=result.project?'绑定项目：'+(result.project.name||'心理学')+'。项目账号按数据自动分层，无需选择原发布计划。':'绑定项目不可用，请重新读取。';
+  if(!taskConfigReady)throw Error('绑定项目不可用，请重新读取项目设置。');
+  $('#taskGroupConfigStatus').textContent='先预览生效日期及纳入人数，再保存。';
  }catch(error){$('#taskGroupConfigStatus').textContent='配置读取失败：'+error.message;$('#retryTaskGroupConfig').hidden=false;}
  finally{taskConfigBusy=false;updateTaskConfigControls();}
 }
@@ -365,8 +362,6 @@ $('#openTaskGroupConfig').onclick=openTaskGroupConfig;$('#retryTaskGroupConfig')
 $('#taskGroupDialog').addEventListener('cancel',event=>{if(taskConfigBusy)event.preventDefault();});
 for(const id of ['taskGroupEnabled','taskGroupReviewTarget','taskGroupAdmitNew'])$('#'+id).addEventListener('change',invalidateTaskPreview);
 $('#taskGroupReviewTarget').addEventListener('input',invalidateTaskPreview);
-$('#taskGroupPilotChoices').addEventListener('change',event=>{const input=event.target;if(taskConfigBusy||!input.matches('[data-task-pilot]'))return;const id=input.dataset.taskPilot;if(!eligibleTaskPilots().some(p=>p.id===id))return;if(input.checked)selectedTaskPilots.add(id);else selectedTaskPilots.delete(id);invalidateTaskPreview();});
-$('#taskGroupSelectAll').onclick=()=>{if(taskConfigBusy)return;for(const p of eligibleTaskPilots())selectedTaskPilots.add(p.id);renderTaskPilotChoices();invalidateTaskPreview();};
 $('#previewTaskGroups').onclick=async()=>{
  if(taskConfigBusy)return;let body;try{body=taskConfigBody();}catch(error){$('#taskGroupConfigStatus').textContent=error.message;return;}
  taskConfigBusy=true;taskPreview=null;$('#taskGroupPreview').innerHTML='';$('#taskGroupConfigStatus').textContent='正在预览生效日期与人数…';updateTaskConfigControls();
@@ -376,7 +371,7 @@ $('#previewTaskGroups').onclick=async()=>{
 };
 $('#saveTaskGroups').onclick=async()=>{
  if(taskConfigBusy||!taskPreview)return;let body;try{body=taskConfigBody();if(JSON.stringify(body)!==taskPreview.fingerprint)throw Error('配置或版本已变化，请重新预览。');}catch(error){taskPreview=null;$('#taskGroupConfigStatus').textContent=error.message;updateTaskConfigControls();return;}
- taskConfigBusy=true;$('#taskGroupConfigStatus').textContent='正在保存任务组配置…';updateTaskConfigControls();
+ taskConfigBusy=true;$('#taskGroupConfigStatus').textContent='正在保存项目设置…';updateTaskConfigControls();
  try{const result=await api('/task-groups','PATCH',body);++taskGroupRequest;taskGroupsData=result;taskPreview=null;renderTaskGroups();$('#taskGroupPreview').innerHTML=taskPreviewHtml(result,'已保存的实际配置');$('#taskGroupConfigStatus').textContent='已保存：'+time(result.effectiveAt||result.policy?.startsAt)+'（北京时间）起生效，运行至 '+time(result.policy?.endsAt)+'。已创建任务继续原配置。';if(taskGroupRole)void loadTaskMembers(taskGroupRole,1);}
  catch(error){taskPreview=null;$('#taskGroupConfigStatus').textContent='保存失败：'+error.message+'。请重新预览后重试；版本冲突时重新打开配置读取最新版本。';}
  finally{taskConfigBusy=false;updateTaskConfigControls();}

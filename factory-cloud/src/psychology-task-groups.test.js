@@ -134,3 +134,53 @@ test('disabled or expired policy never admits new accounts and round allocation 
  assert.throws(()=>f.sqlite.prepare('INSERT INTO psychology_task_group_allocations(policy_id,connection_id,beijing_date,round,item_id,created_at) VALUES (?,?,?,?,?,?)').run(saved.policy.id,'a','2026-10-02',3,'item-3',now),/CHECK constraint/);
  assert.throws(()=>f.sqlite.prepare('INSERT INTO psychology_task_group_allocations(policy_id,connection_id,beijing_date,round,item_id,created_at) VALUES (?,?,?,?,?,?)').run(saved.policy.id,'a','2026-10-02',0,'item-other',now),/UNIQUE constraint/);
 });
+test('project preview needs no source selection, stays read-only and rejects another module project',async t=>{
+ const f=await setup(t);
+ const project={revision:0,enabled:true,enrollmentMode:'project',projectId:'proj-psych',reviewTarget:5,admitNewAccounts:true};
+ const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ const preview=await f.call('POST',project,base+'/preview');assert.equal(preview.status,200,JSON.stringify(preview));
+ assert.deepEqual(preview.data.project,{id:'proj-psych',name:'Psych'});assert.equal(preview.data.policy.enrollmentMode,'project');
+ assert.equal(preview.data.policy.projectId,'proj-psych');assert.equal(preview.data.totals.enrolled,3);assert.equal(preview.data.totals.excluded,0);
+ assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);
+ const wrong=await f.call('PATCH',{...project,projectId:'proj-novel'});assert.equal(wrong.status,403);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_task_group_policies').get().n,0);
+});
+
+test('a later incompatible schedule stays local and cannot move the existing project cycle',async t=>{
+ const f=await setup(t),selected=await f.activate();
+ f.pilot('future-two','spare',{slots_json:JSON.stringify(slots.slice(0,2)),pending_slots_json:JSON.stringify(slots),slots_effective_at:starts+DAY});
+ const project={revision:1,enabled:true,enrollmentMode:'project',projectId:'proj-psych',reviewTarget:5,admitNewAccounts:true};
+ const result=await f.call('PATCH',project);assert.equal(result.status,200,JSON.stringify(result));
+ assert.equal(result.data.policy.startsAt,selected.policy.startsAt);assert.equal(result.data.policy.endsAt,selected.policy.endsAt);
+ assert.deepEqual(result.data.policy.sourcePilotIds,['source']);assert.equal(result.data.totals.blocked,1);assert.equal(result.data.totals.enrolled,3);
+ const state=f.sqlite.prepare("SELECT legacy_member,reason FROM psychology_task_group_accounts WHERE connection_id='c'").get();
+ assert.equal(state.legacy_member,0);assert.match(state.reason,/不兼容/);
+ f.sqlite.prepare("DELETE FROM official_account_assignments WHERE account_key='b'").run();
+ const scoped=await f.call();assert.equal(scoped.data.totals.enrolled,2);assert.equal(scoped.data.totals.eligible,2);
+ const later=await reconcileTaskGroups(f.env,user,f.directory,starts+DAY+1000);
+ assert.ok(later.policy.sourcePilotIds.includes('future-two'));assert.equal(later.policy.endsAt,selected.policy.endsAt);
+});
+
+test('explicitly ending a bound project executor blocks its own group without stopping new project groups',async t=>{
+ const f=await setup(t);
+ const project={revision:0,enabled:true,enrollmentMode:'project',projectId:'proj-psych',reviewTarget:5,admitNewAccounts:true};
+ const saved=await f.call('PATCH',project);assert.equal(saved.status,200);
+ f.sqlite.prepare("UPDATE psychology_autopilots SET status='ended',updated_at=? WHERE id='source'").run(now+1);
+ f.add('d');
+ const result=await reconcileTaskGroups(f.env,user,f.directory,now+1000);
+ assert.equal(result.totals.blocked,2);assert.match(f.sqlite.prepare("SELECT reason FROM psychology_task_group_accounts WHERE connection_id='a'").get().reason,/手动结束/);
+ assert.deepEqual(new Set(result.newExecutorGroups.map(g=>g.groupId)),new Set(['spare','new-group']));
+ assert.equal((await taskAssignmentsFor(f.db,'admin',['a'],saved.data.policy.startsAt)).size,0);
+ assert.equal(result.policy.endsAt,saved.data.policy.endsAt);
+});
+test('legacy reservations before the existing cycle preserve its planned reviewer cohort on project binding',async t=>{
+ const f=await setup(t),selected=await f.activate();
+ f.sqlite.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES (?,?,?,?)').run('legacy-batch','admin','{"mediaType":"photo"}',now);
+ f.sqlite.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at) VALUES (?,?,?,?,?,?)').run('legacy-item','legacy-batch','legacy-source','legacy-job','a',at('2026-10-01','08:00')/1000);
+ const frozen=f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='legacy-item'").get();
+ const result=await f.call('PATCH',{revision:1,enabled:true,enrollmentMode:'project',projectId:'proj-psych',reviewTarget:5,admitNewAccounts:true});
+ assert.equal(result.status,200,JSON.stringify(result));assert.equal(result.data.policy.startsAt,selected.policy.startsAt);
+ assert.equal(result.data.groups.find(g=>g.role==='review').accounts,1);assert.equal(result.data.totals.blocked,0);
+ assert.equal(f.sqlite.prepare("SELECT role FROM psychology_task_group_snapshots WHERE connection_id='a' ORDER BY effective_at DESC LIMIT 1").get().role,'review');
+ assert.deepEqual(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='legacy-item'").get(),frozen);
+});

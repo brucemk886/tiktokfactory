@@ -161,7 +161,7 @@ test('future pool switch is serial, revision guarded, preserves pause state and 
 
 const taskReply=(body,ok=true)=>({ok,json:async()=>body});
 const taskRoles=['review','strong','normal','rescue-hook','rescue-content','diagnostic','observing','launch'];
-const taskFixture=()=>({policy:null,effectiveAt:Date.parse('2026-10-02T00:00:00+08:00'),groups:taskRoles.map(role=>({id:role,role,label:role==='review'?'内容评审组':role,action:'保持资格校验',accounts:role==='review'?60:0,active:role==='review'?58:0,paused:role==='review'?2:0})),totals:{eligible:175,enrolled:175,excluded:5,blocked:2},candidates:[{id:'p1',groupId:'g1',groupName:'<第一组>',status:'active',poolReady:true},{id:'p2',groupId:'g2',groupName:'第二组',status:'paused',poolReady:true},{id:'p3',groupId:'g3',groupName:'非匹配组',status:'active',poolReady:false}]});
+const taskFixture=()=>({project:{id:'psychology-project',name:'心理学'},policy:null,effectiveAt:Date.parse('2026-10-02T00:00:00+08:00'),groups:taskRoles.map(role=>({id:role,role,label:role==='review'?'内容评审组':role,action:'保持资格校验',accounts:role==='review'?60:0,active:role==='review'?58:0,paused:role==='review'?2:0})),totals:{eligible:175,enrolled:175,excluded:5,blocked:2},candidates:[{id:'p1',groupId:'g1',groupName:'<第一组>',status:'active',poolReady:true},{id:'p2',groupId:'g2',groupName:'第二组',status:'paused',poolReady:true},{id:'p3',groupId:'g3',groupName:'非匹配组',status:'active',poolReady:false}]});
 function clickTaskRole(h,role){const card={dataset:{taskRole:role},container:h.node('#taskGroupCards')};return h.node('#taskGroupCards').listeners.click({target:{closest:()=>card}});}
 function taskPolicy(body,revision=body.revision){return {...body,revision,startsAt:Date.parse('2026-10-02T00:00:00+08:00'),endsAt:Date.parse('2026-10-09T00:00:00+08:00'),cycleDays:7,reviewDays:3};}
 
@@ -211,23 +211,24 @@ test('obsolete member and summary reads cannot replace newer task-group results;
  failMember=false;await h.node('#taskGroupMembersRetry').onclick();assert.equal(h.node('#taskGroupMembersRetry').hidden,true);assert.match(h.requests.at(-1).path,/group=normal&page=1/);
 });
 
-test('enabling task groups requires a preview with selected eligible plans and saves the exact revision-bound body',async()=>{
- const task=taskFixture();let saved;
- const h=harness({},null,null,async(_path,init)=>{
+test('project automatic enrollment requires preview and works without source plans before an exact revision-bound save',async()=>{
+ const task=taskFixture();task.candidates=[];let saved;
+ const h=harness({pilots:[],groups:[]},null,null,async(_path,init)=>{
   if(init.method==='GET')return taskReply(task);
   if(init.method==='POST')return taskReply({...task,policy:taskPolicy(init.body),preview:true});
   saved=init.body;return taskReply({...task,policy:taskPolicy(init.body,1),effectiveAt:Date.parse('2026-10-03T00:00:00+08:00')});
  });await tick();await h.node('#openTaskGroupConfig').onclick();
  assert.equal(h.node('#taskGroupEnabled').checked,true);assert.equal(h.node('#taskGroupAdmitNew').checked,true);assert.equal(h.node('#taskGroupReviewTarget').value,60);
- assert.match(h.node('#taskGroupPilotChoices').innerHTML,/&lt;第一组&gt;/);assert.match(h.node('#taskGroupPilotChoices').innerHTML,/data-task-pilot="p3" disabled/);
+ assert.match(h.node('#taskGroupProject').textContent,/绑定项目：心理学.*无需选择原发布计划/);
  await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,0);
  await h.node('#previewTaskGroups').onclick();const preview=h.requests.find(r=>r.path.endsWith('/task-groups/preview'));
- assert.deepEqual(preview.body,{revision:0,enabled:true,sourcePilotIds:['p1','p2'],reviewTarget:60,admitNewAccounts:true});
- assert.match(h.node('#taskGroupPreview').innerHTML,/纳入 175 个账号.*排除 5 个账号.*待处理 2 个账号/);assert.equal(h.node('#saveTaskGroups').disabled,false);
+ assert.deepEqual(preview.body,{revision:0,enabled:true,enrollmentMode:'project',projectId:'psychology-project',reviewTarget:60,admitNewAccounts:true});
+ assert.match(h.node('#taskGroupPreview').innerHTML,/绑定项目：心理学.*每日目标3条/);assert.match(h.node('#taskGroupPreview').innerHTML,/纳入 175 个账号.*排除 5 个账号.*待处理 2 个账号/);assert.equal(h.node('#saveTaskGroups').disabled,false);
  await h.node('#saveTaskGroups').onclick();assert.deepEqual(saved,preview.body);assert.match(h.node('#taskGroupConfigStatus').textContent,/已保存：10\/03/);assert.match(h.node('#taskGroupPreview').innerHTML,/已保存的实际配置/);assert.equal(h.node('#saveTaskGroups').disabled,true);
- assert.equal(h.requests.filter(r=>r.method==='POST').length,1,'the preview never creates a publishing plan');
+ assert.equal(h.requests.filter(r=>r.method==='POST').length,1,'the preview never creates an original publishing plan');
+ assert.match(h.node('#taskGroupProjectSummary').textContent,/项目账号按数据自动纳入与分层/);
+ const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.doesNotMatch(html,/taskGroupPilotChoices|taskGroupSelectAll|data-task-pilot/);assert.match(html,/原发布计划与历史/);
 });
-
 test('changing any task configuration invalidates preview and in-flight changes cannot become saveable',async()=>{
  const task=taskFixture();let releasePreview,slow=false;
  const h=harness({},null,null,async(_path,init)=>{
@@ -256,18 +257,15 @@ test('task-group configuration read, preview and save failures remain isolated a
  failSave=false;await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,1);await h.node('#previewTaskGroups').onclick();await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,2);
  assert.equal(h.node('#overview').innerHTML,overview);assert.equal(h.node('#taskGroupDialog').open,true);
 });
-test('existing task policy selections and revision are preserved; source edits and a newer revision require another preview',async()=>{
- let task=taskFixture();task.policy=taskPolicy({revision:6,enabled:true,sourcePilotIds:['p2'],reviewTarget:50,admitNewAccounts:false});
+test('legacy policy settings migrate to project scope and changed settings or a newer revision require another preview',async()=>{
+ let task=taskFixture();task.policy=taskPolicy({revision:6,enabled:true,enrollmentMode:'selected',sourcePilotIds:['p2'],reviewTarget:50,admitNewAccounts:false});
  const h=harness({},null,null,async(_path,init)=>taskReply(init.method==='GET'?task:{...task,policy:taskPolicy(init.body),preview:true}));await tick();await h.node('#openTaskGroupConfig').onclick();
- assert.equal(h.node('#taskGroupReviewTarget').value,50);assert.equal(h.node('#taskGroupAdmitNew').checked,false);assert.equal(h.run('[...selectedTaskPilots].join()'),'p2');
- await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.revision,6);
- h.node('#taskGroupPilotChoices').listeners.change({target:{dataset:{taskPilot:'p2'},checked:false,matches:()=>true}});assert.equal(h.node('#saveTaskGroups').disabled,true);
- const before=h.requests.length;await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.length,before);assert.match(h.node('#taskGroupConfigStatus').textContent,/至少选择/);
- h.node('#taskGroupSelectAll').onclick();await h.node('#previewTaskGroups').onclick();assert.deepEqual(h.requests.at(-1).body.sourcePilotIds,['p1','p2']);
+ assert.equal(h.node('#taskGroupReviewTarget').value,50);assert.equal(h.node('#taskGroupAdmitNew').checked,false);assert.match(h.node('#taskGroupProjectSummary').textContent,/当前沿用原计划范围/);
+ await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.revision,6);assert.equal(h.requests.at(-1).body.enrollmentMode,'project');assert.equal(h.requests.at(-1).body.projectId,'psychology-project');assert.equal('sourcePilotIds' in h.requests.at(-1).body,false);
+ h.node('#taskGroupReviewTarget').value=51;h.node('#taskGroupReviewTarget').listeners.input();assert.equal(h.node('#saveTaskGroups').disabled,true);await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.reviewTarget,51);
  h.node('#taskGroupEnabled').checked=false;h.node('#taskGroupEnabled').listeners.change();assert.equal(h.node('#saveTaskGroups').disabled,true);await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.enabled,false);
  task={...task,policy:{...task.policy,revision:7}};await h.run('loadTaskGroups()');await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,0);assert.match(h.node('#taskGroupConfigStatus').textContent,/版本已变化/);
 });
-
 test('task-group summaries refresh even if the parallel execution report read fails',async()=>{
  const task=taskFixture(),h=harness({},null,null,async()=>taskReply(task));await tick();const execution=h.node('#overview').innerHTML;
  task.totals={...task.totals,enrolled:160};h.fail();await h.node('#reload').onclick();await tick();
@@ -276,7 +274,7 @@ test('task-group summaries refresh even if the parallel execution report read fa
 test('expired task cycles show ended state and future membership scope without changing execution-plan status',async()=>{
  const task=taskFixture();task.policy={...taskPolicy({revision:3,enabled:true,sourcePilotIds:['p1'],reviewTarget:60,admitNewAccounts:true}),startsAt:1,endsAt:2};
  const h=harness({},null,null,async()=>taskReply(task));await tick();
- assert.match(h.node('#taskGroupStatus').textContent,/本轮已结束/);assert.doesNotMatch(h.node('#taskGroupStatus').textContent,/已启用/);assert.match(h.node('#taskGroupStatus').textContent,/展示已保存的下一次生效分组.*具体账号以生效时间为准/);
+ assert.match(h.node('#taskGroupStatus').textContent,/本轮已结束/);assert.doesNotMatch(h.node('#taskGroupStatus').textContent,/已启用/);assert.match(h.node('#taskGroupStatus').textContent,/展示已保存的下一次生效账号分层.*具体账号以生效时间为准/);
  assert.match(h.node('#compare').innerHTML,/运行中/);assert.equal(h.requests.filter(r=>r.method!=='GET').length,0);
 });
 
@@ -286,5 +284,11 @@ test('disabling task-group management previews and patches only task policy, wit
  h.node('#taskGroupEnabled').checked=false;h.node('#taskGroupEnabled').listeners.change();await h.node('#previewTaskGroups').onclick();await h.node('#saveTaskGroups').onclick();
  const mutations=h.requests.filter(r=>r.method!=='GET');assert.deepEqual(mutations.map(r=>r.path),['/api/psychology-autopilot/task-groups/preview','/api/psychology-autopilot/task-groups']);assert.ok(mutations.every(r=>r.body.enabled===false));
  assert.match(h.node('#taskGroupStatus').textContent,/未启用/);assert.match(h.node('#compare').innerHTML,/运行中/);
- const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/id="taskGroupEnabled"[^>]*aria-describedby="taskGroupEnableHelp"/);assert.match(html,/关闭任务组不会暂停原发布计划；停发请使用计划或账号的暂停操作/);
+ const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/id="taskGroupEnabled"[^>]*aria-describedby="taskGroupEnableHelp"/);assert.match(html,/关闭项目自动运营不会暂停原发布计划；停发请使用计划或账号的暂停操作/);
+});
+test('missing project authorization cannot be previewed or saved and can be retried without affecting original plans',async()=>{
+ const task=taskFixture();task.project=null;const h=harness({},null,null,async()=>taskReply(task));await tick();const plans=h.node('#compare').innerHTML;
+ await h.node('#openTaskGroupConfig').onclick();assert.match(h.node('#taskGroupConfigStatus').textContent,/绑定项目不可用/);assert.equal(h.node('#previewTaskGroups').disabled,true);assert.equal(h.node('#retryTaskGroupConfig').hidden,false);
+ await h.node('#previewTaskGroups').onclick();await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method!=='GET').length,0);
+ task.project={id:'psychology-project',name:'<心理学>'};await h.node('#retryTaskGroupConfig').onclick();await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.projectId,'psychology-project');assert.match(h.node('#taskGroupPreview').innerHTML,/&lt;心理学&gt;/);assert.doesNotMatch(h.node('#taskGroupPreview').innerHTML,/<心理学>/);assert.equal(h.node('#compare').innerHTML,plans);
 });

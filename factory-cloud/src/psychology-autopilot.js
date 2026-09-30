@@ -202,8 +202,8 @@ export async function runAutopilot(env, pilot, now = Date.now()) {
   const accounts = await groupAccounts(env, user, pilot.group_id);
   const ids = accounts.map(connectionOf);
   if (ids.length) await db.prepare(`INSERT OR IGNORE INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at)
-    SELECT ?,value,CASE WHEN ?<>'' AND EXISTS(SELECT 1 FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? AND a.connection_id=value AND a.status='paused') THEN 'paused' ELSE 'active' END,
-      CASE WHEN ?<>'' AND EXISTS(SELECT 1 FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? AND a.connection_id=value AND a.status='paused') THEN '保留既有暂停状态' ELSE '' END,? FROM json_each(?)`)
+    SELECT ?,value,CASE WHEN ?<>'' AND (SELECT a.status FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? AND a.connection_id=value ORDER BY a.updated_at DESC,p.updated_at DESC,a.autopilot_id LIMIT 1)='paused' THEN 'paused' ELSE 'active' END,
+      CASE WHEN ?<>'' AND (SELECT a.status FROM psychology_autopilot_accounts a JOIN psychology_autopilots p ON p.id=a.autopilot_id WHERE p.owner=? AND a.connection_id=value ORDER BY a.updated_at DESC,p.updated_at DESC,a.autopilot_id LIMIT 1)='paused' THEN '保留既有暂停状态' ELSE '' END,? FROM json_each(?)`)
       .bind(pilot.id,pilot.task_group_policy_id||'',pilot.owner,pilot.task_group_policy_id||'',pilot.owner,now,JSON.stringify(ids)).run();
   const states = new Map((await db.prepare('SELECT connection_id,status FROM psychology_autopilot_accounts WHERE autopilot_id=?').bind(pilot.id).all()).results.map(r => [r.connection_id, r.status]));
   const videosByAccount = await loadVideosForAccounts(env, db, accounts.map(a => a.schema), 100);
