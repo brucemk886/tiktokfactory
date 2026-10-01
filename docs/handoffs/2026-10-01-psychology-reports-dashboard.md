@@ -29,10 +29,14 @@ Implement the user-approved Operations Report and Data Overview previews using t
 - Tests use mocked publishing/network operations, never GeeLark publishing APIs.
 
 ## Deployment
-Pending release and authenticated live verification. The release checkout is an isolated ordinary Git clone on main; pre-existing untracked root files are preserved.
+Released on 2026-10-02 (Asia/Shanghai). Code 08fd0d933c2ee357f21c3d7d37013e3cceb6eb9d was committed and pushed to GitHub main before deployment. factory-cloud npm run deploy completed from an isolated clean main checkout with exact HEAD == origin/main. Worker version: 756c981a-4ba9-4c27-9dfa-71a78b69076d. The report change adds no database migration.
+
+Authenticated live inspection confirmed both pages load actual four-card summaries and clearly scoped dates, receipts and daily-report coverage. Operations account details returned ten rows and a pager after native tab selection; overview low/high tabs returned ten rows and preserved the tab URL. Desktop screenshots match the approved hierarchy; live 390px checks showed 2x2 metrics, stacked summaries and no page-level horizontal overflow. Health returned HTTP 200. Only read-only report navigation and tab selection were exercised; no production scheduling or publication control was used. The task-owned browser session was stopped.
+
+Pre-existing untracked root files were preserved. factory-cloud/tmp-fill-wait.mjs retains its original SHA256 D5E0EDB4A145BDAB4C1533BC3A220AABBA98668BF57DAFE63922873F188A2B97. Preview and live screenshot artifacts stay under ignored tmp.
 
 ## Unfinished work
-Commit and push to GitHub main, deploy with factory-cloud npm run deploy from a clean exact origin/main checkout, then verify both live pages.
+No pending implementation, deployment or release verification.
 
 ## Recommended next step
-Complete release verification, then use the two production reports for normal read-only review.
+Use /psychology-ops-report and /psychology-effects for normal review. Dates, missing metric states and receipt totals retain their separate existing meanings.
