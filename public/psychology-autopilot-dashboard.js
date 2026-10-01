@@ -32,7 +32,7 @@ function dashOverview(result){
  ['users','项目账号',dashNumber(s.projectAccounts),'当前有权限 · 项目账号去重'],
  ['send','今日发布',dashNumber(t.published),'美西 '+dashEscape(result.operatingDate||'')+' · 已排 '+dashNumber(t.planned)+' 条'],
  ['chart','可评估样本',dashNumber(m.n),'近30天 · 已发布满72小时'],
- ['trophy','优胜版本',dashNumber(s.winnerVersions),'补测中 '+dashNumber(s.testingVersions)+' · 当前可用 '+dashNumber(inventory)+' 个']
+ ['trophy','优胜版本',dashNumber(s.winnerVersions),'待补测 '+dashNumber(s.testingVersions)+' · 当前可用 '+dashNumber(inventory)+' 个']
  ].map(([icon,label,value,hint])=>'<div class="dash-metric"><div class="dash-metric-icon" aria-hidden="true">'+dashIcon(icon)+'</div><div><span class="dash-metric-label">'+label+'</span><strong class="dash-metric-number">'+value+'</strong><small class="dash-muted">'+hint+'</small></div></div>').join('')+'</div>'+
  '<section class="dash-panel"><div class="dash-heading"><h2>近7天运营表现</h2><div class="dash-legend"><span><i class="dash-legend-dot" style="background:#1767ff"></i>中位播放（左轴）</span><span><i class="dash-legend-dot" style="background:#10b981"></i>千播率（右轴）</span></div></div>'+dashChart(result.trend)+'</section>'+
  '<div class="dash-pools"><section class="dash-panel"><div class="dash-heading"><div class="dash-inline-head"><h2>账号池</h2><span class="dash-muted">近30天成熟样本分层</span></div><button class="dash-text-action" data-dash-view="accounts">查看全部账号 →</button></div>'+dashPools(a,'accounts',s.projectAccounts||0)+'<div class="dash-account-foot"><div><strong>流量池</strong><small>账号可观察流量表现</small></div><div><strong>运营任务角色</strong><small>评审、产出、恢复等任务</small></div></div>'+dashMovement(result)+'</section>'+

@@ -58,7 +58,7 @@ export const UI_ASSETS = {
   "/psychology-auto-publish.css": "6bda776765580a296297",
   "/psychology-auto-publish.js": "409662a719d2c0eac193",
   "/psychology-auto-replies.js": "2eb022a20e57b0d02359",
-  "/psychology-autopilot-dashboard.js": "d7e006f718e4c7c31581",
+  "/psychology-autopilot-dashboard.js": "626f9c4c1810fbb571b9",
   "/psychology-autopilot.css": "c95776ea53ff35082433",
   "/psychology-autopilot.js": "74ec108291771fe51fed",
   "/psychology-card-renderer.js": "0b5858f46b93f27a09e8",
