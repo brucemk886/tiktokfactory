@@ -27,6 +27,13 @@ export async function runProductionCheck(env,now=Date.now(),actions={}) {
     const refresh=actions.refreshCapacity||((e,t)=>import('./psychology-autopilot.js').then(m=>m.refreshProductionCapacitySnapshots(e,t)));
     result.capacitySnapshots=await refresh(env,now);
   }catch(error){result.errors=(result.errors||0)+1;result.error=String(error.message||error).slice(0,300);}
+  try{
+    const capture=actions.captureObservations||((e,t,w)=>import('./psychology-pool-observations.js').then(m=>m.capturePoolObservations(e,t,w)));
+    result.poolObservations=await capture(env,now,window);
+  }catch(error){
+    result.observationError=String(error.message||error).slice(0,300);
+    console.error('psychology-pool-observation-failed',result.observationError);
+  }
   if(result.errors)result.status='failed';
   await env.DB.prepare('UPDATE factory_kv SET value_json=?,updated_at=? WHERE key=? AND value_json=?').bind(JSON.stringify(result),now,KEY,JSON.stringify(started)).run();
   if(result.errors)console.error('psychology-operating-check-failed',JSON.stringify(result));

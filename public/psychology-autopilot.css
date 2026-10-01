@@ -13,3 +13,219 @@
 #groupSchedules{max-height:320px;overflow:auto;padding-right:6px}
 
 .pilot-pool-guide{background:#f4f7fc;border:1px solid var(--lf-line-strong);border-radius:10px;padding:16px;margin:16px 0}.pilot-pool-guide p{font-size:13px;line-height:1.7}#poolSwitchChoices{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:18px 0}#poolSwitchResults{line-height:1.8}
+
+
+/* Project-level account/content dashboard. Legacy execution controls stay below it. */
+.psychology-autopilot-page .page-head{margin-bottom:12px;padding-bottom:16px}
+.dash-page-actions{display:flex;justify-content:flex-end;gap:8px;margin-bottom:9px}
+.dash-page-status{font-size:12px;color:#62738b;line-height:1.5;margin:4px 0 12px}
+#poolDashboard{--dash-blue:#1767ff;--dash-line:#dce6f3;--dash-muted:#627898;min-width:0;color:#173253}
+#poolDashboard *,#dashDialog *{box-sizing:border-box}
+#poolDashboard [hidden]{display:none!important}
+#poolDashboard :is(h2,h3,p){margin:0}
+#poolDashboard h2{font-size:20px;line-height:1.45;color:#102849;font-weight:700}
+#poolDashboard button{max-width:100%}
+#poolDashboard .dash-tabs{display:flex;gap:20px;border-bottom:1px solid var(--dash-line);margin-bottom:15px}
+#poolDashboard .dash-tabs button{position:relative;border:0;border-radius:0;background:transparent;padding:11px 12px;min-height:43px;font-size:15px!important;color:#576d91;box-shadow:none}
+#poolDashboard .dash-tabs button[aria-selected=true]{color:var(--dash-blue);background:transparent}
+#poolDashboard .dash-tabs button[aria-selected=true]:after{position:absolute;content:"";height:3px;background:var(--dash-blue);bottom:-1px;left:0;right:0}
+#poolDashboard .dash-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:15px}
+#poolDashboard .dash-metric{display:flex;align-items:flex-start;gap:12px;background:#fff;border:1px solid var(--dash-line);border-radius:8px;min-width:0;min-height:111px;padding:14px}
+#poolDashboard .dash-metric>div:last-child{min-width:0;flex:1}
+#poolDashboard :is(.dash-icon,.dash-metric-icon){display:grid;place-items:center;flex:none;width:38px;height:38px;background:#edf5ff;color:var(--dash-blue);border-radius:9px}
+#poolDashboard :is(.dash-icon,.dash-metric-icon) :is(svg,img){width:26px;height:26px}
+#poolDashboard :is(.dash-icon,.dash-metric-icon).is-gold{background:#fff7e8;color:#e99200}
+#poolDashboard .dash-metric-label{color:#59708f;font-size:12px;line-height:1.45;font-weight:600}
+#poolDashboard .dash-number,#poolDashboard .dash-metric-number{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;color:#102a4b;font-size:30px;line-height:1.2;font-weight:750;letter-spacing:-.5px;font-variant-numeric:tabular-nums;margin:3px 0}
+#poolDashboard .dash-number strong{font-size:inherit}
+#poolDashboard .dash-fraction{font-size:15px;font-weight:600;letter-spacing:0;color:#41618b}
+#poolDashboard .dash-delta{font-size:13px;font-weight:650;color:#008b67;letter-spacing:0}
+#poolDashboard :is(.dash-hint,.dash-metric-hint,.dash-note,.dash-muted){font-size:12px;line-height:1.55;color:var(--dash-muted)}
+#poolDashboard .dash-hint{display:block}
+#poolDashboard .dash-progress{height:5px;background:#e6eef9;border-radius:5px;margin:5px 0;overflow:hidden}
+#poolDashboard .dash-progress>span{display:block;height:100%;background:#1767ff;border-radius:inherit}
+#poolDashboard .dash-panel{min-width:0;border:1px solid var(--dash-line);background:#fff;border-radius:8px;padding:16px 18px}
+#poolDashboard :is(.dash-heading,.dash-section-head){display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;min-width:0}
+#poolDashboard .dash-inline-head{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+#poolDashboard .dash-heading>div{min-width:0}
+#poolDashboard .dash-heading small{display:block;color:var(--dash-muted);font-size:12px;line-height:1.5}
+#poolDashboard .dash-link,#poolDashboard .dash-text-action{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:var(--dash-blue);border-radius:4px;min-height:30px;padding:3px 0;text-decoration:none;box-shadow:none}
+#poolDashboard .dash-link:hover,#poolDashboard .dash-text-action:hover{text-decoration:underline;background:transparent;box-shadow:none}
+#poolDashboard .dash-primary,#dashDialog .dash-primary{background:#1767ff!important;color:#fff!important;border:1px solid #1767ff;border-radius:5px;padding:9px 12px;min-height:35px}
+#poolDashboard .dash-amber{background:#fffaf0;color:#a65a0c;border:1px solid #f1cf96}
+#poolDashboard .dash-tag{display:inline-flex;align-items:center;padding:4px 8px;border-radius:4px;background:#edf5ff;border:1px solid #e0ecfa;color:#1767ff;font-size:12px;font-weight:500;line-height:1.4}
+#poolDashboard .dash-tag.is-amber{background:#fff8e7;color:#ac5e12;border-color:#ffe0a1}
+#poolDashboard .dash-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:#5b7395;font-size:11px}
+#poolDashboard .dash-legend span{display:inline-flex;align-items:center;gap:5px}
+#poolDashboard .dash-legend-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#1767ff}
+#poolDashboard .dash-legend-dot.is-green{background:#00aa84}
+#poolDashboard .dash-chart-wrap{position:relative;padding:20px 36px 22px}
+#poolDashboard .dash-chart{display:block;width:100%;height:190px;overflow:visible}
+#poolDashboard .dash-chart :is(text){font-size:11px;fill:#7083a0}
+#poolDashboard :is(.dash-axis-left,.dash-axis-right){position:absolute;top:20px;bottom:22px;display:flex;flex-direction:column;justify-content:space-between;font-size:11px;color:#677e9f}
+#poolDashboard .dash-axis-left{left:0;text-align:right;width:29px}
+#poolDashboard .dash-axis-right{right:0;text-align:left;width:29px}
+#poolDashboard .dash-axis-label{position:absolute;top:0;font-size:11px;color:#677e9f}
+#poolDashboard .dash-axis-label.is-right{right:0}
+#poolDashboard .dash-chart-days{display:flex;justify-content:space-between;padding:0 34px;color:#667e9e;font-size:11px;margin-top:-16px;margin-bottom:9px}
+#poolDashboard .dash-trend-empty{display:grid;place-items:center;min-height:180px;color:#6f829d;font-size:13px;text-align:center}
+#poolDashboard .dash-pools,#poolDashboard .dash-dual-pools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin:15px 0;align-items:stretch}
+#poolDashboard .dash-pool-row{display:grid;grid-template-columns:minmax(112px,1fr) 44px minmax(65px,1.5fr) 38px 12px;align-items:center;gap:8px;width:100%;padding:8px 3px;min-height:39px;text-align:left;border:0;border-bottom:1px solid #edf1f8;border-radius:3px;background:transparent;box-shadow:none}
+#poolDashboard button.dash-pool-row:hover{background:#f4f8ff;box-shadow:none}
+#poolDashboard .dash-pool-label{display:flex;align-items:center;gap:9px;min-width:0;white-space:nowrap;font-size:13px;font-weight:600;color:#284269}
+#poolDashboard .dash-pool-dot{display:inline-block;flex:none;width:11px;height:11px;border-radius:50%;background:#1767ff}
+#poolDashboard .dash-pool-row strong{font-size:15px;color:#1b3559;font-variant-numeric:tabular-nums}
+#poolDashboard .dash-track,#poolDashboard .dash-pool-row>.dash-progress{display:block;height:9px;border-radius:4px;background:#e8eff8;overflow:hidden;margin:0}
+#poolDashboard .dash-track>span{display:block;height:100%;background:#1767ff;border-radius:inherit}
+#poolDashboard :is(.dash-percent,.dash-share){font-size:11px;color:#687f9e;text-align:right}
+#poolDashboard .dash-chevron{font-size:16px;color:#7d90ac}
+#poolDashboard .dash-total-row{font-weight:650;border-bottom:0;margin-top:3px}
+#poolDashboard .dash-account-foot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;border-top:1px solid #e6edf7;padding-top:12px;margin-top:9px}
+#poolDashboard .dash-account-foot>div+div{border-left:1px solid #e6edf7;padding-left:13px}
+#poolDashboard .dash-account-foot strong{display:block;font-size:13px;color:#365074}
+#poolDashboard .dash-account-foot small{display:block;font-size:11px;line-height:1.5;color:#6f84a2;margin-top:3px}
+#poolDashboard .dash-evidence{padding:10px 11px;background:#fffaf0;border:1px solid #f7e2ba;border-radius:5px;margin-top:10px;color:#8f5115}
+#poolDashboard .dash-evidence-title{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px;font-weight:650;margin-bottom:7px}
+#poolDashboard .dash-evidence-copy{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;line-height:1.6}
+#poolDashboard .dash-evidence-copy strong{color:#354f74}
+#poolDashboard .dash-stage-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:10px}
+#poolDashboard .dash-stage-counts>div{min-width:0;border-top:1px solid #efdcba;padding-top:7px}
+#poolDashboard .dash-stage-counts strong{display:block;color:#2e4c74;font-size:16px}
+#poolDashboard .dash-stage-counts small{font-size:11px;line-height:1.4;color:#7a6d59;display:block}
+#poolDashboard .dash-pool-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:9px}
+
+#poolDashboard .dash-matching{margin:15px 0}
+#poolDashboard .dash-match-row{display:flex;align-items:center;gap:13px;background:#f0f6ff;border-radius:5px;padding:11px 13px;margin-top:7px;min-height:64px}
+#poolDashboard .dash-match-row.is-rescue{background:#fff9ec}
+#poolDashboard .dash-match-step{flex:1;min-width:0;display:flex;align-items:flex-start;gap:9px}
+#poolDashboard .dash-match-step>div{min-width:0}
+#poolDashboard .dash-match-step :is(svg,img){width:23px;height:23px;flex:none;color:#1767ff}
+#poolDashboard .dash-match-step strong{display:block;font-size:13px;color:#244267;line-height:1.4}
+#poolDashboard .dash-match-step small{display:block;font-size:11px;color:#6a809e;line-height:1.5;margin-top:3px}
+#poolDashboard .dash-match-arrow{color:#3f83dc;flex:none;font-size:16px}
+#poolDashboard .dash-match-row.is-rescue .dash-match-arrow{color:#d8992c}
+#poolDashboard .dash-match-row>button{flex:none}
+#poolDashboard .dash-freshness,#poolDashboard .dash-schedule{display:flex;align-items:center;flex-wrap:wrap;gap:12px;background:#fff;border:1px solid var(--dash-line);border-radius:7px;padding:12px 14px;color:#607696;font-size:12px;line-height:1.6;margin:14px 0}
+#poolDashboard .dash-freshness>div{flex:1;min-width:150px}
+#poolDashboard .dash-freshness strong{display:block;color:#345279;font-size:12px}
+#poolDashboard .dash-freshness small{display:block;font-size:11px}
+#poolDashboard .dash-status{font-size:12px;line-height:1.6;color:#6b7f9b;margin:8px 0;overflow-wrap:anywhere}
+#poolDashboard .dash-status.is-error{color:#b42318}
+#poolDashboard .dash-filters{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}
+#poolDashboard .dash-filters button{font-size:12px!important;border:1px solid #d9e4f3;border-radius:5px;background:#fff;color:#546c90;padding:8px 10px}
+#poolDashboard .dash-filters button.is-active{background:#edf5ff!important;color:#1767ff!important;border-color:#a3c7fc!important}
+#poolDashboard .dash-filters strong{margin-left:5px;font-size:12px}
+#poolDashboard .dash-list-toolbar{display:flex;justify-content:flex-start;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:12px 0}
+#poolDashboard .dash-list-toolbar label{display:grid;gap:6px;min-width:160px;color:#597294;font-size:12px}
+#poolDashboard .dash-list-toolbar :is(input,select){width:240px;max-width:100%;font-size:13px}
+#poolDashboard .dash-list-toolbar>span{margin-left:auto;padding-bottom:8px;font-size:12px;color:#687e9b}
+#poolDashboard .dash-table-wrap{width:100%;min-width:0;max-width:100%;overflow:auto;border:1px solid #e2eaf5;border-radius:5px}
+#poolDashboard .dash-table-wrap table{border-collapse:collapse;width:100%;min-width:780px;font-size:13px;text-align:left}
+#poolDashboard .dash-table-wrap :is(th,td){padding:11px 12px!important;line-height:1.6;border-bottom:1px solid #edf1f7!important;vertical-align:middle!important}
+#poolDashboard .dash-table-wrap th{color:#5e7697;background:#f4f7fc;font-size:12px}
+#poolDashboard .dash-table-wrap td{color:#3e587e}
+#poolDashboard .dash-table-wrap td small{display:block;font-size:11px;color:#7387a4}
+#poolDashboard .dash-table-wrap td.dash-reason{min-width:175px;max-width:280px;font-size:12px}
+#poolDashboard .dash-pool-pill{display:inline-flex;padding:3px 7px;border-radius:4px;background:#f1f5fc;color:#3b628b;font-size:12px;white-space:nowrap}
+#poolDashboard .dash-pagination{display:flex;justify-content:flex-end;align-items:center;gap:9px;flex-wrap:wrap;margin-top:15px;font-size:12px;color:#627a9c}
+#poolDashboard .dash-pagination>span:first-child{margin-right:auto}
+#poolDashboard .dash-pagination button{padding:7px 11px;min-height:34px;font-size:12px!important}
+#poolDashboard .dash-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:190px;padding:32px 15px;text-align:center;color:#6b809e;font-size:13px;line-height:1.75}
+#poolDashboard .dash-empty strong{font-size:16px;color:#526c8e}
+#poolDashboard .dash-empty>button{margin-top:5px}
+.dash-execution-details{margin:18px 0;border:1px solid #dce5f2;border-radius:8px;background:#fff}
+.dash-execution-details>summary{padding:15px 17px;cursor:pointer;color:#2d4d75;font-size:14px;font-weight:650;list-style-position:inside}
+.dash-execution-details>summary span{margin-left:10px;font-size:12px;color:#7689a4;font-weight:400}
+.dash-execution-body{padding:4px 16px 16px;min-width:0}
+.dash-execution-body>.panel{margin:16px 0}
+#dashDialog.dash-dialog{position:fixed;border:1px solid #dbe6f4;border-radius:10px;width:min(650px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 40px);overflow:auto;padding:24px;background:#fff;color:#132b4e;box-shadow:0 20px 65px #132b4e33}
+#dashDialog::backdrop{background:#17365b66}
+#dashDialog :is(.dash-dialog-header,.dash-dialog-heading){display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:15px}
+#dashDialog :is(h2,.dash-dialog-title){margin:0;font-size:21px;line-height:1.4}
+#dashDialog h3{font-size:16px;line-height:1.6;margin:10px 0}
+#dashDialog .dash-muted{font-size:12px;color:#6a819f;line-height:1.7}
+#dashDialog .dash-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;margin:14px 0}
+#dashDialog .dash-facts>div{padding:12px 0;border-bottom:1px solid #e8eef7;min-width:0}
+#dashDialog .dash-facts dt{font-size:12px;color:#7b8da7;margin-bottom:5px}
+#dashDialog .dash-facts dd{margin:0;font-size:14px;color:#2d4c72;line-height:1.65;overflow-wrap:anywhere}
+#dashDialog .dash-evidence-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:16px 0}
+#dashDialog .dash-evidence-counts>div{background:#f4f8fe;border:1px solid #e0e9f6;border-radius:6px;padding:12px 9px}
+#dashDialog .dash-evidence-counts strong{font-size:23px;color:#2d4e78;display:block;line-height:1.25}
+#dashDialog .dash-evidence-counts small{display:block;color:#7488a8;font-size:11px;line-height:1.4;margin-top:6px}
+#dashDialog .dash-dialog-note{background:#f5f9ff;color:#657d9f;border:1px solid #e1eaf7;border-radius:5px;padding:12px;margin:15px 0;font-size:12px;line-height:1.8}
+#dashDialog .dash-linked-list{display:grid;gap:7px;margin:13px 0}
+#dashDialog .dash-linked-list button{padding:10px 12px;text-align:left;border:1px solid #e0eaf5;border-radius:5px;color:#1767ff}
+#poolDashboard :is(.dash-heading,.dash-metric,.dash-match-row) :is(svg,img){max-width:100%}
+@media(max-width:1200px){
+ #poolDashboard .dash-metric{padding:13px 11px;gap:8px}
+ #poolDashboard :is(.dash-number,.dash-metric-number){font-size:26px}
+ #poolDashboard :is(.dash-icon,.dash-metric-icon){width:31px;height:31px}
+ #poolDashboard .dash-pool-row{grid-template-columns:minmax(103px,1fr) 33px minmax(50px,1fr) 32px 10px;gap:6px}
+ #poolDashboard .dash-pool-label{font-size:12px;gap:6px}
+ #poolDashboard .dash-match-row{gap:9px;padding:10px}
+}
+@media(max-width:850px){
+ #poolDashboard .dash-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #poolDashboard .dash-pools,#poolDashboard .dash-dual-pools{grid-template-columns:minmax(0,1fr)}
+ #poolDashboard .dash-heading{flex-wrap:wrap;align-items:flex-start;gap:8px}
+ #poolDashboard .dash-match-row{display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
+ #poolDashboard .dash-match-arrow{display:none}
+ #poolDashboard .dash-match-row>button{width:100%;margin-top:2px}
+}
+@media(max-width:520px){
+ .psychology-autopilot-page .page-head .ops-head-tools{width:100%;gap:10px;align-items:flex-start}
+ .dash-page-actions{justify-content:flex-start}
+ #poolDashboard .dash-tabs{gap:7px}
+ #poolDashboard .dash-tabs button{font-size:14px!important;padding:10px 9px}
+ #poolDashboard .dash-metrics{gap:8px}
+ #poolDashboard .dash-metric{padding:12px 9px;gap:7px;min-height:110px}
+ #poolDashboard :is(.dash-number,.dash-metric-number){font-size:24px;gap:5px}
+ #poolDashboard .dash-fraction{font-size:12px}
+ #poolDashboard .dash-delta{font-size:11px}
+ #poolDashboard :is(.dash-icon,.dash-metric-icon){width:25px;height:25px}
+ #poolDashboard :is(.dash-icon,.dash-metric-icon) :is(svg,img){width:21px;height:21px}
+ #poolDashboard .dash-metric-label{font-size:11px;white-space:normal}
+ #poolDashboard .dash-hint,#poolDashboard .dash-metric-hint{font-size:11px;line-height:1.5}
+ #poolDashboard .dash-panel{padding:14px 11px}
+ #poolDashboard h2{font-size:18px}
+ #poolDashboard .dash-pool-row{grid-template-columns:minmax(96px,1fr) 31px minmax(35px,1fr) 29px 9px;gap:5px}
+ #poolDashboard .dash-pool-label{font-size:11px;gap:5px}
+ #poolDashboard .dash-pool-dot{width:8px;height:8px}
+ #poolDashboard .dash-pool-row strong{font-size:13px}
+ #poolDashboard .dash-chart-wrap{padding-left:30px;padding-right:30px}
+ #poolDashboard .dash-chart{height:170px}
+ #poolDashboard .dash-chart-days{padding-left:28px;padding-right:28px;font-size:10px}
+ #poolDashboard .dash-legend{gap:7px;font-size:10px}
+ #poolDashboard .dash-evidence-title{flex-wrap:wrap}
+ #poolDashboard .dash-stage-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #poolDashboard .dash-list-toolbar{gap:10px}
+ #poolDashboard .dash-list-toolbar label{width:100%;min-width:0}
+ #poolDashboard .dash-list-toolbar :is(input,select){width:100%;font-size:16px}
+ #poolDashboard .dash-list-toolbar>span{margin-left:0;padding-bottom:0}
+ #poolDashboard .dash-pagination{gap:7px}
+ #poolDashboard .dash-pagination>span:first-child{width:100%;margin:0}
+ #poolDashboard .dash-pagination button{padding:7px 9px}
+ .dash-execution-details>summary span{display:block;margin:5px 0 0 17px}
+ .dash-execution-body{padding:4px 10px 12px}
+ #dashDialog.dash-dialog{padding:18px;width:calc(100vw - 24px);max-width:calc(100vw - 24px)}
+ #dashDialog .dash-facts{grid-template-columns:minmax(0,1fr)}
+ #dashDialog .dash-evidence-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(prefers-reduced-motion:reduce){#poolDashboard *,#dashDialog *{scroll-behavior:auto;transition:none;animation:none}}
+/* Rendered dashboard component anatomy. */
+#poolDashboard .dash-total-row{display:grid;grid-template-columns:minmax(112px,1fr) 44px minmax(65px,1.5fr) 38px 12px;align-items:center;gap:8px;padding:8px 3px;min-height:39px}
+#poolDashboard .dash-total-row strong{font-size:15px;color:#1b3559}
+#poolDashboard .dash-chart>svg{display:block;width:100%;height:100%;overflow:visible}
+#poolDashboard .dash-chart-days{padding-left:0;padding-right:0;margin-top:6px;margin-bottom:-12px}
+#poolDashboard .dash-match-step{display:block}
+#poolDashboard .dash-match-step strong{display:block}
+#poolDashboard .dash-evidence-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0}
+#poolDashboard .dash-evidence-counts>div{border-top:1px solid #efdcba;padding-top:7px;min-width:0}
+#poolDashboard .dash-evidence-counts strong{display:block;font-size:17px;line-height:1.3;color:#2e4c74}
+#poolDashboard .dash-evidence-counts small{font-size:11px;line-height:1.5;color:#7a6d59;display:block}
+#poolDashboard .dash-metric>div>.dash-muted{display:block;font-size:11px;line-height:1.55;margin-top:4px}
+#dashDialog .dash-linked{display:grid;gap:7px;margin:13px 0}
+#dashDialog .dash-linked button{padding:10px 12px;text-align:left;border:1px solid #e0eaf5;border-radius:5px;color:#1767ff}
+#dashDialog .dash-note{font-size:12px;line-height:1.7;color:#7286a4}
+@media(max-width:1200px){#poolDashboard .dash-total-row{grid-template-columns:minmax(103px,1fr) 33px minmax(50px,1fr) 32px 10px;gap:6px}}
+@media(max-width:520px){#poolDashboard .dash-total-row{grid-template-columns:minmax(96px,1fr) 31px minmax(35px,1fr) 29px 9px;gap:5px}#poolDashboard .dash-evidence-counts{grid-template-columns:repeat(2,minmax(0,1fr))}#poolDashboard .dash-total-row strong{font-size:13px}}#poolDashboard .dash-tabs>.dash-tag{margin-left:auto;align-self:center} @media(max-width:560px){#poolDashboard .dash-tabs{flex-wrap:wrap}#poolDashboard .dash-tabs>.dash-tag{width:100%;margin-left:0}}
