@@ -1,3 +1,4 @@
+import { transitionAssignmentsFor,transitionAllocationStatement } from './psychology-transition-day.js';
 import { makeProductionPlan,generationPlanStatement } from './psychology-adaptive-production.js';
 import { taskAssignmentsFor } from './psychology-task-groups.js';
 import { buildPoolCandidates,loadPoolReservations,planPoolMatches,poolMatchStatement,taskGroupAllocationStatement } from './psychology-pool-matching.js';
@@ -452,8 +453,11 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
       const [state,styleChoices,reservations,taskAssignments]=await Promise.all([
         readPoolMatchingState(env.DB,user,config.connectionIds),managedStyles(env.DB,user.username),
         loadPoolReservations(env.DB,user.username,config.poolContext.cycleStartAt),
-        internal.taskGroupPolicyId?taskAssignmentsFor(env.DB,user.username,config.connectionIds,internal.taskSlotAt||config.scheduleAt*1000):new Map()]);
+        internal.transitionDay?transitionAssignmentsFor(env.DB,user,config.connectionIds,internal.transitionDay):internal.taskGroupPolicyId?taskAssignmentsFor(env.DB,user.username,config.connectionIds,internal.taskSlotAt||config.scheduleAt*1000):new Map()]);
       if(internal.taskGroupPolicyId&&config.connectionIds.some(id=>taskAssignments.get(id)?.policyId!==internal.taskGroupPolicyId||taskAssignments.get(id)?.paused))fail('运营任务组分配已变化，请重新调度。',409);
+      if(internal.transitionDay){
+        state.accounts=new Map([...state.accounts].filter(([,account])=>['strong','normal'].includes(account.pool)));
+      }
       const candidates=await buildPoolCandidates(posts,state,styleChoices,reservations.occupied);
       const matches=planPoolMatches({candidates,accounts:state.accounts,slots,used,...reservations,
         context:config.poolContext,owner:user.username,pairSeed:config.pairSeed||'',taskAssignments});
@@ -511,7 +515,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
       username: String(account.username || '').trim().replace(/^@/, '') };
     const styleDefinition=config.mediaType==='photo'?(entry.source.poolStyle?selectManagedStyle([entry.source.poolStyle],'fixed',entry.source.poolStyle.id):selectManagedStyle(stylePool,config.styleMode,config.styleId)):null;
-    const item = { ...(entry.source.poolMatch?{poolMatch:entry.source.poolMatch}:{}),styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const item = { ...(internal.transitionDay?{transitionDay:internal.transitionDay}:{}), ...(entry.source.poolMatch?{poolMatch:entry.source.poolMatch}:{}),styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
       ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
@@ -529,7 +533,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
       statements.push(env.DB.prepare('INSERT INTO psychology_creative_snapshots(item_id,source_key,variant_id,style_id,rewrite_model,copy_hash,copy_json) VALUES(?,?,?,?,?,?,?)').bind(id,entry.source.sourceKey||(entry.source.videoUrl?photoCopyKey(entry.source.videoUrl):entry.source.id),entry.source.variantId||'',item.styleId,entry.source.copySource?.rewriteModel||'',entry.source.poolIdentity?.hash||'',JSON.stringify(entry.source.poolIdentity?.copy||{})));
       if(entry.source.poolMatch){
         statements.push(poolMatchStatement(env.DB,item,entry.source,user.username,stamp));
-        const taskClaim=taskGroupAllocationStatement(env.DB,item,entry.source,stamp);
+        const taskClaim=internal.transitionDay?transitionAllocationStatement(env.DB,item,entry.source,stamp,internal.transitionDay):taskGroupAllocationStatement(env.DB,item,entry.source,stamp);
         if(taskClaim)statements.push(taskClaim);
       }
     }
@@ -545,6 +549,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   catch (error) {
     const winner = await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();
     if (!winner) {
+      if(/psychology_transition_claims/.test(error.message))fail('过渡轮次已被占用或账号配置已变化，请重新检查。',409);
       if(/psychology_task_group_allocations/.test(error.message))fail('该账号今天的发布轮次已被占用，请重新检查任务组分配。',409);
       if(/psychology_copy_test_allocations/.test(error.message))fail('测试名额刚被其他分组更新，请重新检查后分配。',409);
       if(/psychology_peer_account_usage/.test(error.message))fail('题目刚被其他任务分配给同一账号，请重新提交。',409);

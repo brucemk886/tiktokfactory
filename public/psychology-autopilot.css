@@ -229,3 +229,27 @@
 #dashDialog .dash-note{font-size:12px;line-height:1.7;color:#7286a4}
 @media(max-width:1200px){#poolDashboard .dash-total-row{grid-template-columns:minmax(103px,1fr) 33px minmax(50px,1fr) 32px 10px;gap:6px}}
 @media(max-width:520px){#poolDashboard .dash-total-row{grid-template-columns:minmax(96px,1fr) 31px minmax(35px,1fr) 29px 9px;gap:5px}#poolDashboard .dash-evidence-counts{grid-template-columns:repeat(2,minmax(0,1fr))}#poolDashboard .dash-total-row strong{font-size:13px}}#poolDashboard .dash-tabs>.dash-tag{margin-left:auto;align-self:center} @media(max-width:560px){#poolDashboard .dash-tabs{flex-wrap:wrap}#poolDashboard .dash-tabs>.dash-tag{width:100%;margin-left:0}}
+
+/* One-day bridge status and user-authorized controls. */
+#transitionDay{background:#fffaf0;border:1px solid #efd9ad;border-radius:8px;padding:16px 18px;margin:0 0 18px;color:#2c4668;min-width:0}
+#transitionDay .transition-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+#transitionDay h2{font-size:18px;line-height:1.5;margin:0;color:#573b13}
+#transitionDay p{margin:7px 0;font-size:12px;line-height:1.7}
+#transitionDay .transition-badge{border:1px solid #ead3a6;border-radius:5px;background:#fff;padding:5px 9px;color:#93641c;font-size:12px;white-space:nowrap}
+#transitionDay .transition-note{font-size:12px;line-height:1.7;color:#6c7390}
+#transitionDay .transition-schedule{font-weight:600;color:#71501f}
+#transitionDay .transition-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px}
+#transitionDay .transition-actions button{min-height:35px;font-size:12px}
+#transitionDay .transition-counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:13px 0}
+#transitionDay .transition-counts>div{background:#fff;border:1px solid #ede0c7;border-radius:6px;padding:10px}
+#transitionDay .transition-counts strong{display:block;font-size:22px;color:#304c71}
+#transitionDay .transition-counts small{font-size:11px;color:#7d7e8d}
+#transitionDay .transition-table{width:100%;overflow:auto;margin:12px 0}
+#transitionDay table{width:100%;border-collapse:collapse;min-width:720px;font-size:12px;text-align:left}
+#transitionDay :is(th,td){padding:9px 10px;border-bottom:1px solid #eadcc2;line-height:1.65}
+#transitionDay th{background:#fff6e3;color:#77613e}
+#transitionDay td small{display:block;font-size:11px;color:#7b8294}
+#transitionDay .transition-error{color:#b42318;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+#transitionDay .transition-reasons{font-size:12px;line-height:1.7;margin:10px 0}
+#transitionDay .transition-reasons summary{cursor:pointer;color:#896127}
+@media(max-width:700px){#transitionDay{padding:13px 12px}#transitionDay .transition-counts{grid-template-columns:repeat(3,minmax(0,1fr))}#transitionDay .transition-head{flex-wrap:wrap}#transitionDay .transition-badge{padding:3px 7px}}

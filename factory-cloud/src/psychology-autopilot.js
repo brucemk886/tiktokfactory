@@ -1,4 +1,5 @@
 import { handleAutopilotDashboard } from './psychology-autopilot-dashboard.js';
+import { handleTransitionDay } from './psychology-transition-day.js';
 import { handleTaskGroups } from './psychology-task-groups.js';
 import { reconcileTaskExecutors,taskSlotAccounts,taskPublishContext,sameDeliveryDay } from './psychology-task-group-execution.js';
 // Autopilot: checks psychology groups at Pacific 05:00 / 08:30 / 17:00.
@@ -451,6 +452,7 @@ export async function runAutopilots(env, now = Date.now()) {
     }
     cursor=pilots.at(-1).id;
   }
+  Object.defineProperty(results,'productionContext',{value:production,enumerable:false});
   return results;
 }
 
@@ -469,6 +471,10 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
   const db = env.DB;
   if(url.pathname===BASE+'/dashboard')return handleAutopilotDashboard(request,env,url,user);
+  if(url.pathname===BASE+'/transition-day'||url.pathname===BASE+'/transition-day/run'){
+    if(apiOptions.external)fail('过渡排期请在自动运营页面管理。',403);
+    return handleTransitionDay(request,env,url,session);
+  }
   if(url.pathname===BASE+'/task-groups'||url.pathname.startsWith(BASE+'/task-groups/')){
     if(apiOptions.external)fail('此配置请在自动运营页面管理。',403);
     const directory=await autopilotDirectory(env,user,request.method!=='GET'||url.searchParams.get('refreshGroups')==='1');

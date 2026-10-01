@@ -15,9 +15,14 @@ export async function runProductionCheck(env,now=Date.now(),actions={}) {
   try{
     const run=actions.runPlans||((e,t)=>import('./psychology-autopilot.js').then(m=>m.runAutopilots(e,t)));
     const plans=await run(env,now);
+    try{
+      const bridge=actions.runTransitions||((e,t,c)=>import('./psychology-transition-day.js').then(m=>m.runTransitionDays(e,t,c)));
+      result.transition=await bridge(env,now,plans.productionContext||null);
+      if(result.transition.errors?.length)result.errors=(result.errors||0)+result.transition.errors.length;
+    }catch(error){result.transitionError=String(error.message||error).slice(0,300);result.errors=(result.errors||0)+1;}
     result.plans=Object.keys(plans).length;
     result.batches=Object.values(plans).reduce((n,p)=>n+(p.batches?.length||0),0);
-    result.errors=Object.values(plans).reduce((n,p)=>n+(p.error?1:0)+(p.errors?.length||0),0);
+    result.errors=(result.errors||0)+Object.values(plans).reduce((n,p)=>n+(p.error?1:0)+(p.errors?.length||0),0);
   }catch(error){result.errors=1;result.error=String(error.message||error).slice(0,300);}
   try{
     const recalculate=actions.recalculate||((e,t)=>import('./psychology-adaptive-production.js').then(m=>m.recalculateAdaptiveProduction(e,t)));

@@ -87,6 +87,7 @@ test('new pilots sharing accounts cannot both run; pause stops only not-yet-subm
  assert.equal(f.sqlite.prepare('SELECT state FROM photo_jobs WHERE id=?').get(jobs[0].id).state,'submitting');assert.equal(f.sqlite.prepare('SELECT state FROM photo_jobs WHERE id=?').get(jobs[1].id).state,'stopped');
 });
 test('report uses exact own post identities, real zero, actual publication time and SQL pagination',async t=>{
+ t.mock.method(Date,'now',()=>Date.parse('2026-10-01T12:00:00+08:00'));
  const f=await setup(t),id=await f.dir();await f.seed(id,4);const p=await f.start(id,await f.pilot(id));await planPhotoSlot(f.env,p,await getDirection(f.db,'admin',id),Date.now()+HOUR);
  const job=f.sqlite.prepare('SELECT * FROM photo_jobs LIMIT 1').get();f.sqlite.prepare("UPDATE photo_jobs SET video_id='v1',state='published' WHERE id=?").run(job.id);
  const now=Date.now();f.sqlite.prepare('INSERT INTO ops_video_facts(account_key,video_id,published_at,synced_at,views) VALUES(?,?,?,?,?)').run('tiktok:'+job.connection_id,'v1',now,now,0);
