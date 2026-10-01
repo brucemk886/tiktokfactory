@@ -46,6 +46,17 @@ async function transitionFixture(t){
  return {...f,call,frozen,directory,setNow:value=>{clock=value;},get directoryReads(){return directoryReads;}};
 }
 
+async function drainBridge(env,at,context=null,actions={}){
+ const total={created:0,batches:[],errors:[],processed:0,remaining:0,busy:false};
+ for(let step=0;step<8;step++){
+  const result=await runTransitionDays(env,at,context,actions);
+  if(result.skipped)return result;
+  assert.ok(Number.isInteger(result.processed)&&result.processed>=0&&result.processed<=1,'each request handles at most one group-slot');
+  total.created+=result.created||0;total.batches.push(...(result.batches||[]));total.errors.push(...(result.errors||[]));total.processed+=result.processed;total.remaining=result.remaining;total.busy=Boolean(result.busy);
+  if(result.busy||result.errors?.length||!result.processed||!result.remaining)return total;
+ }
+ assert.fail('bounded fixture should finish without an unbounded client loop');
+}
 test('transition preview uses current project ownership, previous-day binding and fresh mature account pools',async t=>{
  const f=await transitionFixture(t),before=f.frozen();
  const response=await f.call(); assert.equal(response.status,200);
@@ -82,7 +93,7 @@ test('transition activation is revision guarded and does not change formal polic
 test('two bridge rounds atomically claim distinct content with deferred production while leaving formal cycle frozen',async t=>{
  const f=await transitionFixture(t),before=f.frozen();
  assert.ok((await f.call('POST',{date:'2026-10-01',revision:3})).ok);
- const run=await runTransitionDays(f.env,now); assert.deepEqual(run.errors,[]);
+ const run=await drainBridge(f.env,now); assert.deepEqual(run.errors,[]);
  const claims=f.sqlite.prepare('SELECT * FROM psychology_transition_claims ORDER BY connection_id,round').all();
  assert.equal(claims.length,4);
  for(const id of ['a','b']){const own=claims.filter(row=>row.connection_id===id);assert.deepEqual(own.map(row=>row.round),[1,2]);assert.equal(new Set(own.map(row=>row.source_key)).size,2);assert.ok(own.every(row=>row.operating_date==='2026-10-01'));}
@@ -128,7 +139,7 @@ test('conflicting transition round rolls back its new batch, jobs, exact content
  assert.ok((await f.call('POST',{date:'2026-10-01',revision:3})).ok);
  const captured=[];
  const actions={publish:async(req,env,url,session,internal)=>{captured.push({input:await req.clone().json(),env,url,session,internal});return handlePsychologyAutoPublish(req,env,url,session,internal);}};
- const result=await runTransitionDays(f.env,now,null,actions);assert.deepEqual(result.errors,[]);assert.equal(captured.length,2);
+ const result=await drainBridge(f.env,now,null,actions);assert.deepEqual(result.errors,[]);assert.equal(captured.length,2);
  const tables=['psychology_publish_batches','psychology_publish_items','factory_jobs','psychology_generation_plans','psychology_pool_matches','psychology_transition_claims','psychology_creative_snapshots','psychology_peer_account_usage','psychology_copy_test_allocations'];
  const counts=()=>Object.fromEntries(tables.map(table=>[table,f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n]));
  const before=counts(),call=captured[0],body={...call.input,requestId:crypto.randomUUID()};
@@ -140,7 +151,7 @@ test('fresh account downgrade and project removal exclude frozen bridge members 
  const f=await transitionFixture(t);
  assert.ok((await f.call('POST',{date:'2026-10-01',revision:3})).ok);
  f.sqlite.prepare("UPDATE ops_task_facts SET views=100 WHERE account_key='tiktok:b'").run();
- let result=await runTransitionDays(f.env,now);assert.deepEqual(result.errors,[]);
+ let result=await drainBridge(f.env,now);assert.deepEqual(result.errors,[]);
  assert.deepEqual(f.sqlite.prepare('SELECT DISTINCT connection_id FROM psychology_transition_claims').all().map(row=>row.connection_id),['a']);
  const slots=f.sqlite.prepare('SELECT detail_json FROM psychology_transition_slots').all();
  assert.ok(slots.every(row=>JSON.parse(row.detail_json).skipped.some(skip=>skip.connectionId==='b'&&/中强/.test(skip.reason))));
@@ -164,7 +175,7 @@ test('moving an approved account out of psychology removes it from bridge tasks'
  const f=await transitionFixture(t);
  assert.ok((await f.call('POST',{date:'2026-10-01',revision:3})).ok);
  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other',updated_at=? WHERE account_key='b'").run(now);
- const result=await runTransitionDays(f.env,now);assert.deepEqual(result.errors,[]);
+ const result=await drainBridge(f.env,now);assert.deepEqual(result.errors,[]);
  assert.deepEqual(f.sqlite.prepare('SELECT DISTINCT connection_id FROM psychology_transition_claims').all().map(row=>row.connection_id),['a']);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_transition_claims').get().n,2);assert.equal(f.requests.length,0);
 });
@@ -181,4 +192,27 @@ test('policy revision and date guard prevent unintended extra days and disable a
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_transition_claims').get().n,0);
  assert.deepEqual(await runTransitionDays({DB:{prepare(){assert.fail('expired bridge must not query');}}},starts),{skipped:true});
  assert.equal(f.requests.length,0);
+});
+
+
+test('one request handles one slot, small resumable calls finish both rounds without duplicates',async t=>{
+ const f=await transitionFixture(t);
+ assert.ok((await f.call('POST',{date:'2026-10-01',revision:3})).ok);
+ const first=await runTransitionDays(f.env,now);assert.deepEqual(first.errors,[]);assert.equal(first.processed,1);assert.equal(first.remaining,1);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_transition_claims').get().n,2);
+ const second=await runTransitionDays(f.env,now);assert.deepEqual(second.errors,[]);assert.equal(second.processed,1);assert.equal(second.remaining,0);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_transition_claims').get().n,4);
+ const third=await runTransitionDays(f.env,now);assert.deepEqual(third.errors,[]);assert.equal(third.processed,0);assert.equal(third.remaining,0);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_items').get().n,4);assert.equal(f.requests.length,0);assert.equal(f.instances.size,0);
+});
+
+test('busy bridge returns processed zero and the bounded caller stops without spinning',async t=>{
+ const f=await transitionFixture(t);
+ assert.ok((await f.call('POST',{date:'2026-10-01',revision:3})).ok);
+ f.sqlite.prepare('UPDATE psychology_transition_days SET run_lease_until=?').run(now+10*60000);
+ let publishCalls=0;const result=await drainBridge(f.env,now,null,{publish:async()=>{publishCalls++;assert.fail('busy bridge cannot publish');}});
+ assert.equal(result.processed,0);assert.equal(result.busy,true);assert.equal(publishCalls,0);
+ const response=await f.call('POST',{date:'2026-10-01'},'/run');assert.equal(response.status,200);
+ const view=await response.json();assert.equal(view.runResult.busy,true);assert.equal(view.runResult.processed,0);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_transition_claims').get().n,0);assert.equal(f.requests.length,0);
 });

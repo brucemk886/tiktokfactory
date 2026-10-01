@@ -108,13 +108,13 @@ export async function readTransitionDay(env,user,now=Date.now(),context=null){
  context ||= await readTransitionContext(env,user,now);
  const transition=await env.DB.prepare('SELECT * FROM psychology_transition_days WHERE owner=? AND operating_date=?').bind(user.username,TRANSITION_DATE).first();
  const slots=transition?await rows(env.DB,'SELECT * FROM psychology_transition_slots WHERE transition_id=? ORDER BY round,slot_at',transition.id):[];
- const counts=transition?await rows(env.DB,`SELECT c.round,j.status,count(*) n,min(gp.generation_at) earliest,max(gp.generation_at) latest,sum(CASE WHEN f.state='published' THEN 1 ELSE 0 END) published
- FROM psychology_transition_claims c LEFT JOIN factory_jobs j ON j.id=c.item_id LEFT JOIN psychology_generation_plans gp ON gp.job_id=c.item_id LEFT JOIN ops_task_facts f ON f.id=c.item_id WHERE c.transition_id=? GROUP BY c.round,j.status`,transition.id):[];
+ const counts=transition?await rows(env.DB,`SELECT c.round,j.status,count(*) n,min(gp.generation_at) earliest,max(gp.generation_at) latest,min(i.schedule_at*1000) publishStart,max(i.schedule_at*1000) publishEnd,sum(CASE WHEN f.state='published' THEN 1 ELSE 0 END) published
+ FROM psychology_transition_claims c JOIN psychology_publish_items i ON i.id=c.item_id LEFT JOIN factory_jobs j ON j.id=c.item_id LEFT JOIN psychology_generation_plans gp ON gp.job_id=c.item_id LEFT JOIN ops_task_facts f ON f.id=c.item_id WHERE c.transition_id=? GROUP BY c.round,j.status`,transition.id):[];
  const rounds=[1,2].map(round=>{
   const matching=slots.filter(s=>s.round===round),resultCounts=counts.filter(c=>c.round===round),states=Object.fromEntries(resultCounts.map(c=>[c.status||'missing',c.n]));
   const details=matching.map(s=>parse(s.detail_json)),previewTimes=matching.length||!validTransitionPolicy(context.policy)?[]:[...context.executors.values()].flatMap(p=>{try{return [groupRoundAt(p,round)];}catch{return [];}});
   const slotAt=matching.length?Math.min(...matching.map(s=>s.slot_at)):previewTimes.length?Math.min(...previewTimes):roundAt(round);
-  return {round,label:round===1?'午间过渡轮':'晚间过渡轮',slotAt,lastSlotAt:matching.length?Math.max(...matching.map(s=>s.slot_at)):previewTimes.length?Math.max(...previewTimes):roundAt(round),
+  return {round,label:round===1?'午间过渡轮':'晚间过渡轮',slotAt,publicationStartAt:resultCounts.some(c=>c.publishStart)?Math.min(...resultCounts.map(c=>c.publishStart).filter(Boolean)):0,publicationEndAt:Math.max(0,...resultCounts.map(c=>c.publishEnd||0)),lastSlotAt:matching.length?Math.max(...matching.map(s=>s.slot_at)):previewTimes.length?Math.max(...previewTimes):roundAt(round),
    planned:transition?matching.reduce((n,s)=>n+s.planned,0):context.eligible.length,created:resultCounts.reduce((n,c)=>n+c.n,0),published:resultCounts.reduce((n,c)=>n+(c.published||0),0),
    skipped:details.reduce((n,d)=>n+(d.skipped?.length||0),0),states,batchIds:matching.flatMap(s=>parse(s.batch_ids_json,[])),
    generationStartAt:resultCounts.some(c=>c.earliest)?Math.min(...resultCounts.map(c=>c.earliest).filter(Boolean)):0,generationEndAt:Math.max(0,...resultCounts.map(c=>c.latest||0)),
@@ -122,8 +122,8 @@ export async function readTransitionDay(env,user,now=Date.now(),context=null){
  });
  const policy=context.policy;
  return {date:TRANSITION_DATE,timeZone:PACIFIC_TIME_ZONE,enabled:Boolean(transition?.enabled),canEnable:!transition&&context.eligible.length>0&&validTransitionPolicy(policy)&&zonedDate(now,PACIFIC_TIME_ZONE)===TRANSITION_DATE&&now<=roundAt(1)-2*HOUR,
- canRun:Boolean(transition?.enabled)&&transition.policy_revision===policy?.revision&&validTransitionPolicy(policy)&&now>=start&&now<end&&rounds.some(r=>r.status!=='created'&&r.slotAt-now>=2*HOUR),
- transition:transition?{id:transition.id,policyId:transition.policy_id,policyRevision:transition.policy_revision,createdAt:transition.created_at}:null,
+ canRun:Boolean(transition?.enabled)&&transition.policy_revision===policy?.revision&&validTransitionPolicy(policy)&&now>=start&&now<end&&slots.some(s=>s.status!=='created'&&s.slot_at-now>=2*HOUR),
+ transition:transition?{id:transition.id,policyId:transition.policy_id,policyRevision:transition.policy_revision,createdAt:transition.created_at,leaseUntil:transition.run_lease_until}:null,
  preview:{eligible:context.eligible.length,review:context.eligible.filter(a=>a.role==='review').length,normal:context.eligible.filter(a=>a.role!=='review').length,excluded:context.excluded},rounds,
  formal:policy?{startsAt:policy.starts_at,endsAt:policy.ends_at,nextReviewAt:policy.next_review_at,revision:policy.revision}:null,asOf:now};
 }
@@ -154,11 +154,13 @@ export async function runTransitionDays(env,now=Date.now(),productionContext=nul
  if(now<start||now>=end)return {skipped:true};
  const transitions=await rows(env.DB,"SELECT * FROM psychology_transition_days WHERE enabled=1 AND operating_date=? AND (?='' OR owner=?)",TRANSITION_DATE,env.transitionOwner||'',env.transitionOwner||'');
  if(!transitions.length)return {skipped:true};
- const result={created:0,batches:[],errors:[]};
+ const result={created:0,batches:[],errors:[],processed:0,remaining:0,busy:false};
+ let attempted=0,blocked=false;
  let load=productionContext?.load||null;
  for(const transition of transitions){
+  if(attempted>=1)break;
   const wholeClaim=await env.DB.prepare('UPDATE psychology_transition_days SET run_lease_until=? WHERE id=? AND enabled=1 AND run_lease_until<=?').bind(now+10*60000,transition.id,now).run();
-  if(!wholeClaim.meta?.changes)continue;
+  if(!wholeClaim.meta?.changes){blocked=true;continue;}
   try{
    const user=await loadAutoUser(env.DB,transition.owner);
    if(!user.sidebarModules.includes('psychology-autopilot'))continue;
@@ -172,13 +174,17 @@ export async function runTransitionDays(env,now=Date.now(),productionContext=nul
    load ||= await readProductionLoad(env.DB,now);
    const musicIds=await kvGet(env.DB,'psychology-auto-music-pool',[]);
    for(const slot of slots){
+    if(attempted>=1)break;
     // No catch-up or shifting a missed round; complete production must have
     // at least the existing two-hour minimum before the frozen base time.
     if(slot.slot_at-now<2*HOUR)continue;
     const claim=await env.DB.prepare("UPDATE psychology_transition_slots SET status='creating',lease_until=?,updated_at=? WHERE transition_id=? AND group_id=? AND round=? AND status<>'created' AND lease_until<=?").bind(now+10*60000,now,transition.id,slot.group_id,slot.round,now).run();
-    if(!claim.meta?.changes)continue;
+    if(!claim.meta?.changes){blocked=true;continue;}
+    attempted++;
     const accounts=eligible.filter(a=>a.groupId===slot.group_id),oldDetails=parse(slot.detail_json),errors=[],skipped=[...(oldDetails.skipped||[])],batches=new Set(parse(slot.batch_ids_json,[]));
-    const existing=new Set((await rows(env.DB,'SELECT connection_id FROM psychology_transition_claims WHERE transition_id=? AND round=?',transition.id,slot.round)).map(a=>a.connection_id));
+    const committed=await rows(env.DB,`SELECT c.connection_id,i.batch_id FROM psychology_transition_claims c JOIN psychology_publish_items i ON i.id=c.item_id JOIN psychology_transition_members m ON m.transition_id=c.transition_id AND m.connection_id=c.connection_id WHERE c.transition_id=? AND c.round=? AND m.group_id=?`,transition.id,slot.round,slot.group_id);
+    const existing=new Set(committed.map(a=>a.connection_id));
+    for(const item of committed)if(item.batch_id)batches.add(item.batch_id);
     const estimate=estimateProductionLead(load,{accountCount:eligible.length,slotAt:slot.slot_at,owner:user.username,now});
     for(let offset=0;offset<accounts.length;offset+=50){
      const indexed=accounts.slice(offset,offset+50).map((a,index)=>({...a,ordinal:offset+index}));
@@ -202,10 +208,14 @@ export async function runTransitionDays(env,now=Date.now(),productionContext=nul
     const detail={skipped:[...new Map(skipped.map(a=>[a.connectionId,a])).values()],errors};
     await env.DB.prepare('UPDATE psychology_transition_slots SET status=?,lease_until=0,batch_ids_json=?,detail_json=?,updated_at=? WHERE transition_id=? AND group_id=? AND round=? AND lease_until=?').bind(errors.length?'failed':'created',JSON.stringify([...batches]),JSON.stringify(detail),now,transition.id,slot.group_id,slot.round,now+10*60000).run();
     result.errors.push(...errors);
+    if(!errors.length)result.processed++;
    }
   }catch(error){result.errors.push(String(error.message||error).slice(0,300));}
   finally{await env.DB.prepare('UPDATE psychology_transition_days SET run_lease_until=0 WHERE id=? AND run_lease_until=?').bind(transition.id,now+10*60000).run();}
  }
+ result.remaining=Number((await env.DB.prepare(`SELECT count(*) n FROM psychology_transition_slots s JOIN psychology_transition_days t ON t.id=s.transition_id
+ WHERE t.enabled=1 AND t.operating_date=? AND (?='' OR t.owner=?) AND s.status<>'created' AND s.slot_at>=?`).bind(TRANSITION_DATE,env.transitionOwner||'',env.transitionOwner||'',now+2*HOUR).first())?.n||0);
+ result.busy=attempted===0&&blocked&&result.remaining>0;
  return result;
 }
 function contiguousUnclaimed(accounts,claims){
@@ -228,6 +238,6 @@ export async function handleTransitionDay(request,env,url,session,internal={}){
  if(!view.enabled||!view.canRun)fail('当前没有可运行的已批准过渡排期。',409);
  // Only this controller's approved bridge is eligible for the manual catch-up;
  // no existing normal/legacy plans are triggered here.
- await runTransitionDays({...env,transitionOwner:user.username},now,null);
- return json(await readTransitionDay(env,user,now));
+ const runResult=await runTransitionDays({...env,transitionOwner:user.username},now,null);
+ return json({...await readTransitionDay(env,user,now),runResult});
 }

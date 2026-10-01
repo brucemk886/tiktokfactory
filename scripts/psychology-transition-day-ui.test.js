@@ -19,4 +19,40 @@ test('native enable submits explicit date and fresh policy revision, never autom
 test('server eligibility gates prevent stale or fabricated buttons from mutating',async()=>{const h=harness(()=>fixture({canEnable:false,canRun:false}));await tick();h.click('enable');h.click('run');await tick();assert.ok(h.requests.every(r=>r.method==='GET'));assert.doesNotMatch(h.host.innerHTML,/id="enableTransitionDay"|id="runTransitionDay"/);});
 test('publishing remains distinct from generation completion, escaping data and showing cross-day zones',async()=>{const h=harness(()=>fixture({enabled:true,preview:{eligible:116,review:60,normal:56,excluded:[{reason:'<img src=x onerror=alert(1)>'}]},rounds:[{round:1,label:'午间 <script>',slotAt:Date.parse('2026-10-01T18:30:00Z'),generationStartAt:Date.parse('2026-10-01T16:30:00Z'),created:116,published:0,skipped:2,states:{done:100,queued:16},status:'created',detail:'等待 <unsafe>'}]}));await tick();assert.match(h.host.innerHTML,/>116<\/strong><small>已创建任务/);assert.match(h.host.innerHTML,/>0<\/strong><small>已发布/);assert.doesNotMatch(h.host.innerHTML,/已生成|生成中/);assert.match(h.host.innerHTML,/10\/01 11:30/);assert.match(h.host.innerHTML,/10\/02 02:30/);assert.match(h.host.innerHTML,/10\/02 00:30/);assert.match(h.host.innerHTML,/午间 &lt;script&gt;/);assert.match(h.host.innerHTML,/等待 &lt;unsafe&gt;/);assert.match(h.host.innerHTML,/&lt;img src=x/);assert.match(h.host.innerHTML,/（1个账号）/);assert.doesNotMatch(h.host.innerHTML,/<script>|<img src=x|<unsafe>/);});
 test('double mutation, refresh and polling during pending enable do not duplicate requests',async()=>{let release;const gate=new Promise(resolve=>release=resolve);const h=harness(async r=>{if(r.method==='POST'){await gate;return fixture({enabled:true,canRun:true});}return fixture();});await tick();h.click('enable');await tick();h.click('enable');h.click('run');h.click('refresh');h.intervals[0].fn();assert.equal(h.requests.length,2);assert.match(h.host.innerHTML,/id="enableTransitionDay"[^>]*disabled/);release();await tick();assert.equal(h.requests.filter(r=>r.method==='POST').length,1);assert.equal(h.host.attrs['aria-busy'],'false');});
-test('failed refresh retains last truthful data and escaping of server mutation error',async()=>{let fail=false;const h=harness(r=>{if(r.method==='POST')return {response:{ok:false,json:async()=>({error:'<unsafe> no permission'})}};if(fail)throw Error('offline');return fixture();});await tick();h.click('enable');await tick();assert.match(h.host.innerHTML,/操作尚未确认成功：&lt;unsafe&gt; no permission/);fail=true;h.click('refresh');await tick();assert.match(h.host.innerHTML,/保留上次状态；读取失败：offline/);assert.match(h.host.innerHTML,/符合过渡条件 116 个账号/);});
+test('failed refresh retains last truthful data and escaping of server mutation error',async()=>{let fail=false;const h=harness(r=>{if(r.method==='POST')return {response:{ok:false,json:async()=>({error:'<unsafe> no permission'})}};if(fail)throw Error('offline');return fixture();});await tick();h.click('enable');await tick();assert.match(h.host.innerHTML,/操作尚未确认全部成功：&lt;unsafe&gt; no permission/);fail=true;h.click('refresh');await tick();assert.match(h.host.innerHTML,/保留上次状态；读取失败：offline/);assert.match(h.host.innerHTML,/符合过渡条件 116 个账号/);});
+
+test('one explicit run completes eighteen bounded serial calls with visible progress and no extra mutation from polling',async()=>{
+ let posted=0,active=0,max=0,release;const gate=new Promise(resolve=>release=resolve);
+ const h=harness(async r=>{if(r.method==='POST'){active++;max=Math.max(max,active);posted++;if(posted===3)await gate;active--;return fixture({enabled:true,canRun:posted<18,rounds:fixture().rounds.map(round=>({...round,status:posted<18?'pending':'created'})),runResult:{processed:1,remaining:18-posted,errors:[],busy:false}});}return fixture({enabled:true,canRun:posted<18,rounds:fixture().rounds.map(round=>({...round,status:posted<18?'pending':'created'}))});});
+ await tick();h.click('run');await tick();assert.equal(posted,3);assert.match(h.host.innerHTML,/已检查 2 个排期，剩余 16 个/);assert.equal(h.host.attrs['aria-busy'],'true');
+ h.click('run');h.click('enable');h.click('refresh');h.intervals[0].fn();assert.equal(posted,3);
+ release();await tick();assert.equal(posted,18);assert.equal(max,1);assert.equal(h.host.attrs['aria-busy'],'false');assert.match(h.host.innerHTML,/两轮过渡排期检查完成/);assert.ok(h.requests.filter(r=>r.method==='POST').every(r=>r.path.endsWith('/transition-day/run')));
+});
+test('business failure stops continuation immediately and retains the partial server result',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return fixture({enabled:true,canRun:true,rounds:[{label:'午间',status:'failed',created:74,published:0,skipped:0}],runResult:{processed:0,remaining:14,errors:['<unsafe> 内容不足'],busy:false}});}return fixture({enabled:true,canRun:true});});
+ await tick();h.click('run');await tick();assert.equal(posted,1);assert.match(h.host.innerHTML,/排期暂停：&lt;unsafe&gt; 内容不足/);assert.match(h.host.innerHTML,/>74<\/strong><small>已创建任务/);assert.equal(h.host.attrs['aria-busy'],'false');
+});
+test('server processing lease stops requests with its actual busy reason',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return fixture({enabled:true,canRun:true,runResult:{processed:0,remaining:14,errors:[],busy:true}});}return fixture({enabled:true,canRun:true});});
+ await tick();h.click('run');await tick();assert.equal(posted,1);assert.match(h.host.innerHTML,/已有过渡排期正在处理，剩余 14 个排期/);
+});
+test('lost network response never automatically retries and retains previously confirmed progress',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;if(posted===2)throw Error('network offline');return fixture({enabled:true,canRun:true,runResult:{processed:1,remaining:13,errors:[],busy:false}});}return fixture({enabled:true,canRun:true});});
+ await tick();h.click('run');await tick();assert.equal(posted,2);assert.match(h.host.innerHTML,/network offline/);assert.equal(h.host.attrs['aria-busy'],'false');assert.equal(h.requests.filter(r=>r.method==='GET').length,1,'error does not trigger an automatic retry/read reset');
+});
+test('HTML platform errors are friendly and never expose JSON parser messages or trigger retries',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return {response:{ok:false,status:500,json:async()=>{throw SyntaxError('Unexpected token < in JSON at position 0');}}};}return fixture({enabled:true,canRun:true});});
+ await tick();h.click('run');await tick();assert.equal(posted,1);assert.match(h.host.innerHTML,/服务暂未返回有效状态（HTTP 500）/);assert.match(h.host.innerHTML,/已保存的任务保留/);assert.doesNotMatch(h.host.innerHTML,/Unexpected token|SyntaxError/);
+});
+test('bounded continuation stops at twenty-four requests even if remaining counts never settle',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return fixture({enabled:true,canRun:true,runResult:{processed:1,remaining:1,errors:[],busy:false}});}return fixture({enabled:true,canRun:true});});
+ await tick();h.click('run');await tick();assert.equal(posted,24);assert.match(h.host.innerHTML,/本次已检查 24 次，剩余 1 个排期/);assert.equal(h.host.attrs['aria-busy'],'false');
+});
+test('window or permission closure stops remaining calls and pending rounds display the scheduling state',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return fixture({enabled:true,canRun:false,runResult:{processed:1,remaining:2,errors:[],busy:false}});}return fixture({enabled:true,canRun:true});});
+ await tick();assert.match(h.host.innerHTML,/待排期/);assert.doesNotMatch(h.host.innerHTML,/待启用/);h.click('run');await tick();assert.equal(posted,1);assert.match(h.host.innerHTML,/当前不能继续创建，剩余 2 个排期/);assert.doesNotMatch(h.host.innerHTML,/id="runTransitionDay"/);
+});
+test('zero remaining does not claim success when a missed or uncreated round still exists',async()=>{
+ let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return fixture({enabled:true,canRun:false,runResult:{processed:1,remaining:0,errors:[],busy:false}});}return fixture({enabled:true,canRun:true});});
+ await tick();h.click('run');await tick();assert.equal(posted,1);assert.match(h.host.innerHTML,/两轮尚未全部完成/);assert.doesNotMatch(h.host.innerHTML,/两轮过渡排期检查完成/);
+});

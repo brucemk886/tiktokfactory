@@ -18,10 +18,10 @@ Connect the approved October 1 Pacific midday and evening rounds to the October 
 - Architecture, current state and this handoff.
 
 ## Tests performed
-Focused transition integration 10/10, UI 7/7 and related publishing/scheduler regression 104/104 passed. A pre-existing photo report fixture used now plus one hour and failed near Beijing midnight; its clock is now fixed at midday, and its 19/19 tests pass. Final factory-cloud regression passed 1,147/1,147 tests with zero failures.
+Focused transition integration 10/10, UI 7/7 and related publishing/scheduler regression 104/104 passed. A pre-existing photo report fixture used now plus one hour and failed near Beijing midnight; its clock is now fixed at midday, and its 19/19 tests pass. Initial factory-cloud regression passed 1,147/1,147 tests with zero failures. Bounded recovery integration passed 12/12 and client checks 15/15; the final recovery regression passed 1,157/1,157 with zero failures.
 
 ## Unfinished work
-Implementation and focused verification complete; production deployment and authenticated activation remain.
+Initial release 5101879 was committed and pushed to main, deployed as Worker 44cf1fd3-4362-4962-a2a7-90ec64df0ccc, and enabled through the authenticated UI with 115 eligible accounts (59 review, 56 normal). Its first explicit bridge run durably created 74 midday tasks before a Cloudflare HTTP 503 / error 1102 resource termination. Recovery now bounds each invocation to one group-round; the explicitly requested UI operation continues small requests only when confirmed progress is returned, stopping on errors or active leases. No lease or task is reset. Completion verification remains below.
 
 ## Recommended next step
-Complete testing and deployment, enable the approved bridge through the authenticated UI, then verify actual created items and unchanged formal cycle.
+Deploy the bounded recovery fix from clean main, wait for any existing lease to expire naturally, and resume the approved bridge through the authenticated UI. Verify both actual claims and deferred generation windows, then record final production results.

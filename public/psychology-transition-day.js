@@ -2,11 +2,12 @@
  const host=document.querySelector('#transitionDay');
  if(!host)return;
  const endpoint='/api/psychology-autopilot/transition-day',date='2026-10-01';
- const state={data:null,busy:false,error:'',sequence:0};
+ const state={data:null,busy:false,error:'',progress:'',sequence:0};
+ const runLimit=24;
  const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const number=value=>value==null?'—':Number(value).toLocaleString('zh-CN');
  const time=(value,zone)=>!value?'—':new Date(value).toLocaleString('zh-CN',{timeZone:zone,hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
- const statuses={pending:'待启用',enabled:'已启用',active:'已启用',created:'已创建',creating:'正在创建',running:'排期中',complete:'过渡任务已创建',completed:'过渡任务已创建',expired:'过渡窗口已结束',skipped:'已跳过',failed:'排期失败','not-enabled':'尚未创建'};
+ const statuses={pending:'待排期',enabled:'已启用',active:'已启用',created:'已创建',creating:'正在创建',running:'排期中',complete:'过渡任务已创建',completed:'过渡任务已创建',expired:'过渡窗口已结束',skipped:'已跳过',failed:'排期失败','not-enabled':'尚未创建'};
  function paint(){
   const data=state.data||{},enabled=data.enabled===true;
   const status=data.status?(statuses[data.status]||data.status):enabled?'已启用':'未启用';
@@ -25,12 +26,14 @@
    (reasons?'<details class="transition-reasons"><summary>匹配不足与跳过原因</summary><ul>'+reasons+'</ul></details>':'')+
    (data.lastRunError?'<p class="transition-error">最近检查：'+escape(data.lastRunError)+'</p>':'')+
    '<p class="transition-note">正式周期：美西10月2–9日，首次复评10月5日。'+(data.lastRunAt?' 最近检查：北京'+escape(time(data.lastRunAt,'Asia/Shanghai'))+'。':'')+(data.nextCheckAt?' 下次检查：北京'+escape(time(data.nextCheckAt,'Asia/Shanghai'))+'。':'')+'</p>'+
-   '<div class="transition-actions">'+(state.data&&!enabled&&data.canEnable===true?'<button type="button" class="primary-link" id="enableTransitionDay" data-transition-action="enable" '+(state.busy?'disabled':'')+'>启用今日两轮过渡</button>':'')+(enabled&&data.canRun===true?'<button type="button" id="runTransitionDay" data-transition-action="run" '+(state.busy?'disabled':'')+'>检查过渡排期</button>':'')+'<button type="button" data-transition-action="refresh" '+(state.busy?'disabled':'')+'>刷新过渡状态</button><span id="transitionDayStatus" class="'+(state.error?'transition-error':'transition-note')+'" role="status">'+escape(state.error||(enabled?'已启用过渡，仅在符合账号与内容资格时创建任务。':''))+'</span></div>';
+   '<div class="transition-actions">'+(state.data&&!enabled&&data.canEnable===true?'<button type="button" class="primary-link" id="enableTransitionDay" data-transition-action="enable" '+(state.busy?'disabled':'')+'>启用今日两轮过渡</button>':'')+(enabled&&data.canRun===true?'<button type="button" id="runTransitionDay" data-transition-action="run" '+(state.busy?'disabled':'')+'>检查过渡排期</button>':'')+'<button type="button" data-transition-action="refresh" '+(state.busy?'disabled':'')+'>刷新过渡状态</button><span id="transitionDayStatus" class="'+(state.error?'transition-error':'transition-note')+'" role="status">'+escape(state.error||state.progress||(enabled?'已启用过渡，仅在符合账号与内容资格时创建任务。':''))+'</span></div>';
  }
  async function request(method='GET',suffix=''){
   const response=await fetch(endpoint+suffix,{method,credentials:'same-origin',cache:'no-store',...(method==='POST'?{headers:{'Content-Type':'application/json'},body:JSON.stringify(suffix?{date}:{date,revision:state.data?.formal?.revision})}:{})});
-  const result=await response.json();
-  if(!response.ok)throw new Error(result.error||'过渡排期请求失败');
+  let result;
+  try{result=await response.json();}catch{throw new Error('服务暂未返回有效状态（HTTP '+(response.status||'未知')+'）。已保存的任务保留，请刷新状态核对后再检查。');}
+  if(!result||typeof result!=='object'||Array.isArray(result))throw new Error('服务返回的状态无法识别，请刷新状态核对。');
+  if(!response.ok)throw new Error(result.error||'过渡排期请求失败（HTTP '+(response.status||'未知')+'）');
   return result;
  }
  async function load(){
@@ -43,9 +46,32 @@
   if(state.busy||!state.data)return;
   if(action==='enable'&&!(state.data.canEnable===true&&state.data.enabled!==true))return;
   if(action==='run'&&!(state.data.canRun===true&&state.data.enabled===true))return;
-  state.busy=true;state.error='';state.sequence++;paint();
-  try{state.data=await request('POST',action==='run'?'/run':'');}
-  catch(error){state.error='操作尚未确认成功：'+error.message;}
+  state.busy=true;state.error='';state.progress=action==='run'?'正在接续过渡排期…':'';state.sequence++;paint();
+  try{
+   if(action==='enable')state.data=await request('POST');
+   else{
+    let processed=0;
+    for(let step=1;step<=runLimit;step++){
+     state.data=await request('POST','/run');
+     const result=state.data.runResult;
+     if(!result){state.progress='本次检查已返回，请刷新查看排期状态。';paint();break;}
+     processed+=Number(result.processed)||0;
+     const remaining=Number(result.remaining);
+     state.progress='已检查 '+number(processed)+' 个排期，剩余 '+(Number.isSafeInteger(remaining)&&remaining>=0?number(remaining):'待核对')+' 个；已创建的任务持续保留。';paint();
+     if(result.errors?.length)throw new Error('排期暂停：'+result.errors.map(value=>typeof value==='string'?value:value?.message||value?.reason||'创建失败').join('；'));
+     if(!Number.isSafeInteger(remaining)||remaining<0)throw new Error('剩余排期状态尚未确认，请刷新状态核对。');
+     if(remaining===0){
+      if(!state.data.rounds?.length||state.data.rounds.some(round=>round.status!=='created'))throw new Error('当前没有可继续创建的过渡排期，但两轮尚未全部完成。请查看轮次状态与原因。');
+      state.progress='两轮过渡排期检查完成，实际创建数量见上方。';break;
+     }
+     if(result.busy&&remaining>0)throw new Error(result.reason||'已有过渡排期正在处理，剩余 '+number(remaining)+' 个排期。请刷新状态查看结果。');
+     if(!state.data.canRun)throw new Error(result.reason||'当前不能继续创建，剩余 '+number(remaining)+' 个排期。请查看轮次状态与原因。');
+     if(!(Number(result.processed)>0))throw new Error(result.reason||'本次没有新增检查结果，剩余 '+number(remaining)+' 个排期。可能有正在处理的排期，请刷新状态核对后再检查。');
+     if(step===runLimit)throw new Error('本次已检查 '+runLimit+' 次，剩余 '+number(remaining)+' 个排期。请刷新状态核对后再检查。');
+    }
+   }
+  }
+  catch(error){state.error='操作尚未确认全部成功：'+error.message;}
   finally{state.busy=false;paint();if(!state.error)void load();}
  }
  host.addEventListener('click',event=>{const button=event.target.closest('[data-transition-action]');if(!button)return;const action=button.dataset.transitionAction;if(action==='refresh')void load();else void mutate(action);});
