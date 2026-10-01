@@ -9,7 +9,7 @@
 
   <link rel="stylesheet" href="/official-group-report.css?v=20260918-2">
   <link rel="stylesheet" href="/psychology-pages.css">
-  <script>if (location.pathname.replace(/\/$/, "") === "/psychology-effects") document.documentElement.classList.add("psychology-module");</script>
+  <script>if (location.pathname.replace(/\/$/, "") === "/psychology-effects") document.documentElement.classList.add("psychology-module", "psychology-effects-page");</script>
 <link rel="stylesheet" href="/psychology-management-api.css"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
@@ -23,6 +23,7 @@
         <h1 id="pageTitle">运营报表</h1>
         <p id="pageCopy">按今天、昨天、近7天和最近30天查看发布和播放。</p>
       </div>
+      <nav class="effects-only page-links" aria-label="心理学相关页面"><a href="/psychology-autopilot">自动运营</a><a href="/psychology-ops-report">运营报表</a><a href="/psychology-publish">自动发布</a></nav>
     </header>
     <section class="official-toolbar panel ops-report-toolbar">
       <div class="ops-report-toolbar-row">
@@ -36,6 +37,7 @@
           <button type="button" data-period="yesterday">昨天</button>
           <button type="button" data-period="7d">近7天</button>
           <button type="button" data-period="30d">最近30天</button>
+          <button type="button" data-period="range" class="effects-only" aria-controls="customRange">自定日期</button>
         </div>
         <div class="ops-report-filters">
           <label>分组
@@ -44,11 +46,17 @@
           <button id="queryBtn" class="primary-link" type="button">查询</button>
         </div>
       </div>
+      <div id="customRange" class="effects-date-range" hidden><label>开始日期<input id="effectsFromDate" type="date" aria-label="开始日期（北京时间）"></label><label>结束日期<input id="effectsToDate" type="date" aria-label="结束日期（北京时间）"></label><span>视频发布日按北京时间；主页访问按相同日期的 UTC 日报统计。</span></div>
+      <p class="effects-only effects-date-note">视频表现按北京时间发布日筛选，播放与点赞为已同步累计值；主页访问按所选 UTC 日期统计。</p>
       <p id="reportMeta" class="sync-state">正在读取报表…</p>
       <span id="publishStatus" role="status"></span>
     </section>
     <section class="data-section panel" id="groupPanel"></section>
-    <section class="overview-grid" id="summaryGrid"></section>
+    <section class="overview-grid" id="summaryGrid" aria-label="核心数据"></section>
+    <div class="effects-secondary-grid" id="overviewSecondary" hidden>
+      <section class="data-section panel effects-secondary-panel" id="performanceOverview" aria-label="视频表现概览"></section>
+      <section class="data-section panel effects-secondary-panel" id="publishOverview" aria-label="发布结果概览"></section>
+    </div>
     <section class="data-section panel report-results" aria-label="视频表现与异常账号">
       <div class="segmented report-tabs" id="resultTabs" role="tablist" aria-label="统计分类">
         <button type="button" id="highTab" role="tab" data-result-tab="high" aria-controls="highSection" aria-selected="true">高播视频</button>

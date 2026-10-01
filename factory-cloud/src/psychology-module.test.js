@@ -674,9 +674,9 @@ test("psychology overview renders project metrics and keeps filtered queries sco
   assert.match(nodes.get("#pageCopy").textContent, /心理学/);
   assert.doesNotMatch(nodes.get("#pageCopy").textContent, /小说/);
   const metrics = nodes.get("#summaryGrid").innerHTML;
-  assert.equal((metrics.match(/class="metric"/g) || []).length, 13);
-  assert.match(metrics, /发布总数<\/span><strong>5</);
-  assert.match(metrics, /均播<\/span><strong>300</);
+  assert.equal((metrics.match(/class="metric"/g) || []).length, 4);
+  assert.match(nodes.get("#publishOverview").innerHTML, /发布总数<\/dt><dd>5</);
+  assert.match(nodes.get("#performanceOverview").innerHTML, /均播<\/dt><dd>300</);
   nodes.get("#groupSelect").value = "psych-second-group";
   await vm.runInContext('readFilters(); applyPeriodRange("30d"); loadReport()', context);
   assert.equal(requests[1].get("module"), "psychology");

@@ -8,3 +8,94 @@
 .ops-pool-readiness{border:1px solid #d8b967;background:#fff9e8;color:#66501e;border-radius:10px;padding:16px;margin:16px 0}.ops-pool-readiness p{font-size:13px;line-height:1.7;margin:8px 0}.ops-pool-readiness small{font-size:12px;line-height:1.6}
 
 .ops-pool-card-button{width:100%;font:inherit;color:inherit;text-align:left;white-space:normal;cursor:pointer}.lf-console button.ops-pool-card-button{padding:16px;border-radius:10px}.ops-pool-card-button:hover{border-color:#4b76c0;background:#f3f7ff}.ops-pool-card-button:focus-visible{outline:2px solid #4b76c0;outline-offset:3px}.ops-pool-card .ops-pool-card-link{margin-top:10px;color:#2166d6;font-weight:600}
+
+/* Report presentation is scoped: automatic operations also imports this file. */
+.ops-report-page{--ops-blue:#1767ff;--ops-line:#dce6f3;--ops-muted:#627898}
+.ops-report-page .page-head{margin-bottom:12px;padding-bottom:16px}
+.ops-report-page .ops-head-tools{max-width:540px}
+.ops-report-page .ops-report-controls{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;margin:14px 0 16px}
+.ops-report-page .ops-media-tabs{margin:0;border-color:var(--ops-line);background:#fff;border-radius:7px;padding:4px}
+.ops-report-page .ops-media-tab{min-width:74px;padding:8px 13px;min-height:34px}
+.ops-report-page .ops-filters{flex:1;margin:0;padding:0!important;gap:10px 14px;border:0!important;background:transparent!important;border-radius:0!important;box-shadow:none}
+.ops-report-page .ops-filters label{gap:5px;color:#59708f;font-size:12px}
+.ops-report-page .ops-filters :is(input,select){min-width:135px;min-height:36px;font-size:13px}
+.ops-report-page .ops-filter-note{margin:0 0 9px auto;font-size:12px;color:var(--ops-muted)}
+.ops-report-page .ops-tabs{gap:18px!important;border-bottom:1px solid var(--ops-line);margin:0 0 15px;flex-wrap:nowrap;overflow-x:auto}
+.ops-report-page .ops-tabs button{position:relative;border:0!important;border-radius:0;background:transparent!important;padding:11px 12px;min-height:43px;font-size:15px!important;color:#576d91;box-shadow:none;white-space:nowrap}
+.ops-report-page.lf-console .ops-tabs button[aria-selected=true]{color:var(--ops-blue)!important;background:transparent!important;border-color:transparent!important}
+.ops-report-page .ops-tabs button[aria-selected=true]:after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--ops-blue)}
+.ops-report-page .ops-report-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 15px}
+.ops-report-page .ops-report-kpi{display:flex;align-items:flex-start;gap:12px;min-width:0;min-height:112px;border:1px solid var(--ops-line);border-radius:8px;background:#fff;padding:14px}
+.ops-report-page .ops-report-kpi>div:last-child{min-width:0;flex:1}
+.ops-report-page .ops-report-kpi span{font-size:12px;font-weight:600;color:#59708f}
+.ops-report-page .ops-report-kpi strong{display:block;margin:3px 0;font-size:30px;font-weight:750;line-height:1.2;letter-spacing:-.5px;color:#102a4b;font-variant-numeric:tabular-nums}
+.ops-report-page .ops-report-kpi small{display:block;font-size:11px;line-height:1.55;color:var(--ops-muted)}
+.ops-report-page .ops-report-icon{display:grid;place-items:center;flex:none;width:38px;height:38px;border-radius:9px;background:#edf5ff;color:var(--ops-blue)}
+.ops-report-page .ops-report-icon svg{width:26px;height:26px}
+.ops-report-page .ops-report-overview{padding:0;margin:0}
+.ops-report-page .ops-report-panel{border:1px solid var(--ops-line);border-radius:8px;background:#fff;padding:16px 18px;min-width:0;margin-bottom:15px}
+.ops-report-page .ops-report-panel h2{font-size:20px;line-height:1.45;color:#102849;margin:0}
+.ops-report-page .ops-report-panel .section-title{align-items:flex-start;gap:12px;margin-bottom:12px}
+.ops-report-page .ops-report-panel .section-title>div{min-width:0}
+.ops-report-page .ops-report-panel .section-hint{font-size:12px;line-height:1.55;color:var(--ops-muted);margin:4px 0 0;letter-spacing:normal;font-weight:400}
+.ops-report-page .ops-report-trend>.section-title>label{display:grid;gap:5px;flex:none;max-width:100%;font-size:12px;white-space:nowrap;color:#59708f}
+.ops-report-page .ops-report-trend .ops-chart svg{height:205px}
+.ops-report-page .ops-chart .line{stroke:var(--ops-blue);stroke-width:2.5}
+.ops-report-page .ops-chart circle{fill:var(--ops-blue);stroke:#fff;stroke-width:1.5}
+.ops-report-page .ops-chart .grid{stroke:#e9eef7}
+.ops-report-page .ops-chart text{fill:#7083a0;font-size:11px}
+.ops-report-page .ops-report-trend>.ops-daily{border-top:1px solid #edf1f8;margin-top:4px}
+.ops-report-page .ops-report-trend>.ops-daily>summary{font-size:12px;padding:10px 0 0;color:#557095}
+.ops-report-page .ops-report-pools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;align-items:stretch}
+.ops-report-page.lf-console .ops-report-link{border:0;background:transparent!important;color:var(--ops-blue)!important;padding:3px 0;min-height:30px;font-size:12px!important;box-shadow:none;white-space:nowrap}
+.ops-report-page .ops-report-link:hover{text-decoration:underline}
+.ops-report-page .ops-pool-cards{display:grid;grid-template-columns:1fr;gap:0;margin:0}
+.ops-report-page .ops-pool-card{display:grid;grid-template-columns:minmax(115px,1.2fr) 40px minmax(90px,1.4fr);gap:10px;align-items:center;min-height:43px;margin:0;padding:9px 3px;border:0;border-bottom:1px solid #edf1f8;border-radius:3px;background:transparent}
+.ops-report-page.lf-console button.ops-pool-card-button{padding:9px 3px;border-radius:3px;background:transparent;box-shadow:none}
+.ops-report-page.lf-console button.ops-pool-card-button:hover{background:#f4f8ff;border-color:#edf1f8;box-shadow:none}
+.ops-report-page .ops-pool-card>span{font-size:13px;font-weight:600;color:#284269;min-width:0}
+.ops-report-page .ops-pool-card>strong{font-size:15px;font-weight:700;color:#1b3559;line-height:1.5;margin:0;font-variant-numeric:tabular-nums}
+.ops-report-page .ops-pool-card>small{font-size:11px;line-height:1.5;color:#687f9e;margin:0;min-width:0}
+.ops-report-page .ops-pool-card>.ops-pool-card-link{display:none}
+.ops-report-page .ops-report-footnote{margin:12px 0 0;font-size:11px;line-height:1.7;color:#6f84a2}
+.ops-report-page .ops-pool-readiness{margin:12px 0 0;padding:10px 12px;border:1px solid #f7e2ba;border-radius:5px;background:#fffaf0;color:#8f5115}
+.ops-report-page .ops-pool-readiness strong{font-size:13px}
+.ops-report-page .ops-pool-readiness p{font-size:12px;margin:5px 0}
+.ops-report-page .ops-pool-readiness small{font-size:11px}
+.ops-report-page .ops-report-sample-panel{margin-bottom:15px}
+.ops-report-page .ops-report-sample-table .ops-table{min-width:650px}
+.ops-report-page.lf-console .ops-table :is(th,td){padding:10px 12px!important;border-bottom:1px solid #edf1f7!important}
+.ops-report-page.lf-console .ops-table th{font-size:12px;color:#5e7697!important;background:#f4f7fc!important}
+.ops-report-page .ops-report-recovery .overview-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:0}
+.ops-report-page .ops-report-recovery .metric{padding:10px 12px;background:#f7faff!important;border:1px solid #e5edf8;border-radius:6px}
+.ops-report-page .ops-report-recovery .metric span{color:#687f9e;font-size:12px}
+.ops-report-page .ops-report-recovery .metric strong{margin-top:4px;font-size:23px;color:#2c4b73}
+.ops-report-page .ops-report-recovery .section-hint.ops-pool-wide{margin:0;font-size:11px}
+.ops-report-page .ops-report-details{border:1px solid var(--ops-line);border-radius:8px;background:#fff;margin:15px 0}
+.ops-report-page .ops-report-details>summary{padding:14px 17px;color:#2d4d75;font-size:14px;font-weight:650;list-style-position:inside}
+.ops-report-page .ops-report-details>summary>span{font-size:12px;font-weight:400;color:#7689a4;margin-left:10px}
+.ops-report-page .ops-report-details-body{padding:4px 17px 17px;min-width:0}
+.ops-report-page .ops-report-details-body>.section-title{margin-top:15px}
+.ops-report-page .ops-report-details-body .metric{border:1px solid var(--ops-line);border-radius:7px;background:#f7faff!important;padding:12px}
+.ops-report-page .ops-report-details-body .metric strong{font-size:24px}
+.ops-report-page .ops-pager{font-size:12px;gap:9px;margin-top:15px;color:#627a9c}
+.ops-report-page .ops-pager>span:first-child{margin-right:auto}
+.ops-report-page :is(#accounts,#content,#strategy){border-color:var(--ops-line)!important;padding:16px 18px!important}
+.ops-report-page :is(#accounts,#content,#strategy) .section-title>div>p{color:var(--ops-muted);letter-spacing:.7px}
+.ops-report-page :is(#accounts,#content,#strategy) .section-title h2{color:#102849}
+.ops-report-page #poolRecovery{grid-template-columns:repeat(5,minmax(0,1fr));margin:15px 0}
+.ops-report-page #poolRecovery .metric{padding:12px;border-radius:6px;border:1px solid var(--ops-line);background:#f7faff!important}
+.ops-report-page #poolRecovery .metric strong{font-size:23px;margin-top:4px}
+.ops-report-page :is(#legacyAccountDetails,#legacyContentDetails){border-top:1px solid var(--ops-line);margin-top:20px}
+.ops-report-page :is(#legacyAccountDetails,#legacyContentDetails)>summary{color:#2d4d75;font-size:13px}
+@media(max-width:1200px){.ops-report-page .ops-report-kpi{padding:13px 11px;gap:8px}.ops-report-page .ops-report-kpi strong{font-size:26px}.ops-report-page .ops-report-icon{width:31px;height:31px}.ops-report-page .ops-filter-note{flex-basis:100%;margin:0}.ops-report-page .ops-report-controls{align-items:flex-start}}
+@media(max-width:950px){.ops-report-page .ops-report-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-report-page .ops-report-controls{display:grid;grid-template-columns:1fr}.ops-report-page .ops-media-tabs{width:fit-content}.ops-report-page .ops-report-pools{grid-template-columns:1fr}.ops-report-page .ops-report-panel .section-title{flex-wrap:wrap}.ops-report-page .ops-report-recovery .overview-grid,.ops-report-page #poolRecovery{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){.ops-report-page .ops-filters label{flex:1 1 130px;min-width:0}.ops-report-page .ops-filters label :is(input,select){width:100%;min-width:0}.ops-report-page .ops-tabs{gap:3px!important}.ops-report-page .ops-tabs button{font-size:13px!important;padding:10px 9px}.ops-report-page .ops-report-panel{padding:14px 12px}.ops-report-page .ops-report-kpi{gap:7px;padding:12px 10px;min-height:125px}.ops-report-page .ops-report-kpi strong{font-size:24px}.ops-report-page .ops-report-icon{width:27px;height:27px}.ops-report-page .ops-report-icon svg{width:20px;height:20px}.ops-report-page .ops-report-pools .section-title{gap:7px}.ops-report-page .ops-report-pools h2{font-size:18px}.ops-report-page .ops-pool-card{grid-template-columns:minmax(92px,1.1fr) 48px minmax(72px,1.2fr);gap:10px}.ops-report-page .ops-report-recovery .overview-grid,.ops-report-page #poolRecovery{grid-template-columns:repeat(2,minmax(0,1fr))}.ops-report-page .ops-report-details>summary>span{display:block;margin:4px 0 0 18px}.ops-report-page .ops-report-details-body{padding:4px 12px 12px}.ops-report-page .ops-chart svg{height:180px}.ops-report-page .ops-head-tools{width:100%;justify-items:start}.ops-report-page .ops-status{text-align:left}}
+/* HTML chart axes stay readable at narrow viewport widths. */
+.ops-report-page .ops-trend-plot{position:relative;padding-left:45px;margin:15px 0 0}
+.ops-report-page .ops-trend-plot svg{display:block;overflow:visible;width:100%;height:155px!important}
+.ops-report-page .ops-trend-axis{position:absolute;left:0;top:4px;bottom:11px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;width:35px;font-size:11px;color:#7083a0}
+.ops-report-page .ops-trend-days{display:flex;justify-content:space-between;margin:4px 0 8px 45px;color:#7083a0;font-size:11px}
+.ops-report-page.lf-console button.ops-pool-card-button{border:0!important;border-bottom:1px solid #edf1f8!important;box-shadow:none!important;background:transparent!important}
+.ops-report-page.lf-console button.ops-pool-card-button:hover{background:#f4f8ff!important}
+@media(max-width:520px){.ops-report-page .ops-trend-plot{padding-left:40px;margin-top:12px}.ops-report-page .ops-trend-plot svg{height:110px!important}.ops-report-page .ops-trend-days{margin-left:40px}.ops-report-page .ops-trend-axis{width:32px}}

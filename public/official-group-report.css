@@ -28,3 +28,87 @@
 #trafficDetails[hidden] { display:none; }
 #trafficDetails > summary { cursor:pointer; font-weight:600; padding:4px 0; }
 #trafficDetails[open] > summary { margin-bottom:20px; }
+
+/* Psychology data overview follows the project dashboard hierarchy. */
+.effects-only{display:none}
+.psychology-effects-page .effects-only{display:flex}
+.lf-console.psychology-effects-page{--effects-blue:#1767ff;--effects-line:#dce6f3;--effects-muted:#627898;color:#173253}
+.lf-console.psychology-effects-page .official-data-header{margin-bottom:14px;padding-bottom:16px;align-items:center;flex-wrap:wrap;gap:12px}
+.lf-console.psychology-effects-page .official-data-header p{font-size:13px;line-height:1.55;color:var(--effects-muted)}
+.lf-console.psychology-effects-page .official-data-header .page-links{margin-left:auto}
+.lf-console.psychology-effects-page .ops-report-toolbar{margin:0 0 12px;padding:13px 16px;gap:9px;border-color:var(--effects-line)!important;border-radius:8px!important}
+.lf-console.psychology-effects-page .ops-report-toolbar-row{gap:10px 14px;align-items:center}
+.lf-console.psychology-effects-page .ops-report-toolbar .ops-stat-switch{margin-left:auto;order:3;font-size:12px;min-height:36px;gap:8px}
+.lf-console.psychology-effects-page .ops-report-toolbar #periodTabs{gap:5px;flex-wrap:wrap}
+.lf-console.psychology-effects-page .ops-report-toolbar #periodTabs button{border-radius:5px;padding:8px 12px;min-height:36px}
+.lf-console.psychology-effects-page .ops-report-filters{margin-left:auto;gap:8px}
+.lf-console.psychology-effects-page .ops-report-filters label{display:flex;align-items:center;gap:8px;color:var(--effects-muted)}
+.lf-console.psychology-effects-page .ops-report-filters select{min-width:145px;max-width:240px;min-height:36px;padding:7px 10px}
+.lf-console.psychology-effects-page .ops-report-filters .primary-link{min-height:36px;padding:8px 14px}
+.lf-console.psychology-effects-page .effects-date-note{margin:0;color:var(--effects-muted);font-size:11px;line-height:1.6}
+.lf-console.psychology-effects-page :is(#reportMeta,#publishStatus){margin:0;font-size:12px;line-height:1.55;color:var(--effects-muted);overflow-wrap:anywhere}
+.lf-console.psychology-effects-page #publishStatus:empty{display:none}
+.lf-console.psychology-effects-page .effects-date-range{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding-top:3px}
+.lf-console.psychology-effects-page .effects-date-range[hidden]{display:none!important}
+.lf-console.psychology-effects-page .effects-date-range label{display:grid;gap:5px;font-size:12px;color:var(--effects-muted);min-width:0}
+.lf-console.psychology-effects-page .effects-date-range input{width:150px;min-width:0;min-height:36px;padding:7px 10px}
+.lf-console.psychology-effects-page .effects-date-range>span{font-size:11px;color:var(--effects-muted);line-height:1.6;max-width:360px;padding-bottom:8px}
+.lf-console.psychology-effects-page #groupPanel{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:0 1px;margin:0 0 13px;border:0!important;background:transparent!important}
+.lf-console.psychology-effects-page .effects-scope-heading{display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:13px;line-height:1.5;min-width:0}
+.lf-console.psychology-effects-page .effects-scope-heading strong{font-weight:650;color:#27466e}
+.lf-console.psychology-effects-page .effects-scope-tag{padding:3px 7px;background:#edf5ff;border:1px solid #e0ecfa;border-radius:4px;color:var(--effects-blue);font-size:11px}
+.lf-console.psychology-effects-page .effects-scope-note{color:var(--effects-muted);font-size:11px;line-height:1.6}
+.lf-console.psychology-effects-page .effects-groups{max-width:100%;color:var(--effects-muted);font-size:11px;line-height:1.6}
+.lf-console.psychology-effects-page .effects-groups summary{cursor:pointer;color:var(--effects-blue)}
+.lf-console.psychology-effects-page .effects-groups p{max-width:600px;margin:5px 0 0;overflow-wrap:anywhere}
+.lf-console.psychology-effects-page #summaryGrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 15px}
+.lf-console.psychology-effects-page #summaryGrid .metric{display:flex;align-items:flex-start;gap:12px;min-width:0;min-height:112px;padding:14px;border-color:var(--effects-line)!important;border-radius:8px;background:#fff!important}
+.lf-console.psychology-effects-page .effects-metric-icon{display:grid;place-items:center;width:36px;height:36px;flex:none;background:#edf5ff;border-radius:9px;color:var(--effects-blue)}
+.lf-console.psychology-effects-page .effects-metric-icon svg{width:23px;height:23px}
+.lf-console.psychology-effects-page .effects-metric-copy{min-width:0}
+.lf-console.psychology-effects-page #summaryGrid .effects-metric-copy>span{font-size:12px;color:#59708f;font-weight:600;line-height:1.45}
+.lf-console.psychology-effects-page #summaryGrid .effects-metric-copy>strong{font-size:30px;line-height:1.2;font-weight:750;letter-spacing:-.5px;color:#102a4b;font-variant-numeric:tabular-nums;margin:3px 0;overflow-wrap:anywhere}
+.lf-console.psychology-effects-page .effects-metric-copy small{display:block;color:var(--effects-muted);font-size:11px;line-height:1.55;margin-top:4px}
+.lf-console.psychology-effects-page .effects-secondary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin-bottom:15px;align-items:stretch}
+.lf-console.psychology-effects-page .effects-secondary-panel{min-width:0;padding:16px 18px;margin:0;border-color:var(--effects-line)!important;border-radius:8px!important}
+.lf-console.psychology-effects-page .effects-panel-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.lf-console.psychology-effects-page .effects-panel-heading h2{font-size:18px;line-height:1.4;color:#102849;margin:0;font-weight:700}
+.lf-console.psychology-effects-page .effects-panel-heading span{font-size:11px;color:var(--effects-muted);line-height:1.5}
+.lf-console.psychology-effects-page .effects-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;margin:0}
+.lf-console.psychology-effects-page .effects-stats>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;min-width:0;padding:11px 0;border-bottom:1px solid #edf1f8}
+.lf-console.psychology-effects-page .effects-stats dt{color:#59708f;font-size:12px;line-height:1.5}
+.lf-console.psychology-effects-page .effects-stats dd{margin:0;color:#19395f;font-weight:650;font-size:18px;font-variant-numeric:tabular-nums}
+.lf-console.psychology-effects-page .effects-stats .is-alert dd{color:#b76a14}
+.lf-console.psychology-effects-page .effects-panel-note{margin:11px 0 0;color:var(--effects-muted);font-size:11px;line-height:1.6}
+.lf-console.psychology-effects-page :is(.report-results,.data-section:has(#normalSection),#trafficDetails){min-width:0;padding:16px 18px;border-color:var(--effects-line)!important;border-radius:8px!important;margin-bottom:15px}
+.lf-console.psychology-effects-page #resultTabs{gap:20px!important;margin-bottom:14px;border-bottom:1px solid var(--effects-line)}
+.lf-console.psychology-effects-page #resultTabs button{position:relative;border:0;border-radius:0!important;background:transparent!important;padding:10px 3px;min-height:42px;color:#576d91!important;box-shadow:none;font-size:14px!important}
+.lf-console.psychology-effects-page #resultTabs button[aria-selected=true]{color:var(--effects-blue)!important;background:transparent!important;border-color:transparent!important}
+.lf-console.psychology-effects-page #resultTabs button[aria-selected=true]:after{position:absolute;content:"";height:3px;background:var(--effects-blue);bottom:-1px;left:0;right:0}
+.lf-console.psychology-effects-page .section-title{margin-bottom:12px;align-items:center}
+.lf-console.psychology-effects-page .section-title h2{font-size:18px;color:#102849}
+.lf-console.psychology-effects-page .section-title p{display:none}
+.lf-console.psychology-effects-page .section-hint{font-size:12px;line-height:1.65;color:var(--effects-muted);margin:0 0 12px}
+.lf-console.psychology-effects-page .report-video-table{min-width:840px}
+.lf-console.psychology-effects-page .report-video-table th:first-child{width:33%}
+.lf-console.psychology-effects-page .report-video-table th:last-child{width:20%}
+.lf-console.psychology-effects-page .report-video-title a{font-weight:550;-webkit-line-clamp:2;line-height:1.65}
+.lf-console.psychology-effects-page .report-video-actions{gap:6px}
+.lf-console.psychology-effects-page .table-action{padding:5px 8px;min-height:30px;border-radius:5px;font-size:12px}
+.lf-console.psychology-effects-page .ops-video-pager{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:6px;margin-top:13px;font-size:12px;color:var(--effects-muted)}
+.lf-console.psychology-effects-page .ops-video-pager>span:first-child{margin-right:auto;line-height:1.6}
+.lf-console.psychology-effects-page .ops-video-pager button{min-height:31px;padding:5px 9px;font-size:12px!important}
+.lf-console.psychology-effects-page .report-anomaly summary{padding:12px 14px;line-height:1.6}
+.lf-console.psychology-effects-page .report-anomaly summary span{display:block;margin:3px 0 0;font-size:12px}
+.lf-console.psychology-effects-page #trafficDetails>summary{font-size:13px;color:#355579;line-height:1.6}
+.lf-console.psychology-effects-page .traffic-pager{flex-wrap:wrap;font-size:12px;line-height:1.6;color:var(--effects-muted)}
+@media(max-width:1180px){.lf-console.psychology-effects-page .ops-report-filters{margin-left:0}.lf-console.psychology-effects-page .ops-report-toolbar .ops-stat-switch{margin-left:auto}}
+@media(max-width:850px){.lf-console.psychology-effects-page .effects-secondary-grid{grid-template-columns:1fr}.lf-console.psychology-effects-page .official-data-header .page-links{margin-left:0}.lf-console.psychology-effects-page #summaryGrid .metric{padding:13px 11px;gap:8px}.lf-console.psychology-effects-page #summaryGrid .effects-metric-copy>strong{font-size:26px}.lf-console.psychology-effects-page .effects-metric-icon{width:30px;height:30px}}
+@media(max-width:650px){.lf-console.psychology-effects-page #summaryGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.lf-console.psychology-effects-page .ops-report-toolbar .ops-stat-switch{margin-left:0}.lf-console.psychology-effects-page .ops-report-toolbar{padding:12px}.lf-console.psychology-effects-page .ops-report-filters{width:100%}.lf-console.psychology-effects-page .ops-report-filters label{flex:1;min-width:0}.lf-console.psychology-effects-page .ops-report-filters select{width:100%;max-width:none;min-width:0}.lf-console.psychology-effects-page #summaryGrid .metric{gap:7px;min-height:110px;padding:12px 9px}.lf-console.psychology-effects-page #summaryGrid .effects-metric-copy>strong{font-size:24px}.lf-console.psychology-effects-page .effects-metric-icon{width:25px;height:25px}.lf-console.psychology-effects-page .effects-metric-icon svg{width:20px;height:20px}.lf-console.psychology-effects-page :is(.effects-secondary-panel,.report-results,.data-section:has(#normalSection),#trafficDetails){padding:14px 11px}.lf-console.psychology-effects-page #resultTabs{gap:16px!important}.lf-console.psychology-effects-page #resultTabs button{font-size:13px!important}.lf-console.psychology-effects-page .effects-date-range label{flex:1}.lf-console.psychology-effects-page .effects-date-range input{width:100%;max-width:100%}.lf-console.psychology-effects-page .effects-stats{gap:0 12px}.lf-console.psychology-effects-page .traffic-metrics{gap:8px}.lf-console.psychology-effects-page .traffic-metrics .metric{padding:12px}.lf-console.psychology-effects-page .traffic-metrics .metric strong{font-size:22px}}
+
+.lf-console.psychology-effects-page .ops-stat-switch{position:relative}.lf-console.psychology-effects-page .ops-stat-switch input{min-width:1px!important;max-width:1px!important;width:1px!important;left:0;top:0}.lf-console.psychology-effects-page .ops-report-filters label{white-space:nowrap}
+
+.effects-mobile-table-hint{display:none}@media(max-width:650px){.psychology-effects-page .effects-mobile-table-hint{display:block;font-size:11px;color:#627898;margin:0 0 8px;line-height:1.5}}
+
+/* Header links and date controls belong to this route only, including shared admin styles. */
+.lf-console:not(.psychology-effects-page) .effects-only{display:none!important}

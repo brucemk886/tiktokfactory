@@ -1,3 +1,4 @@
+const REPORT_PATH = location.pathname.replace(/\/$/, "");
 const MODULE_FROM_PATH = {
   "/novel-ops-report": "novel-promotion",
   "/mid-video-ops-report": "mid-video",
@@ -12,7 +13,7 @@ const MODULE_LABEL = {
 };
 
 function reportNoun() {
-  if (location.pathname === "/psychology-effects") return "数据概览";
+  if (location.pathname.replace(/\/$/, "") === "/psychology-effects") return "数据概览";
   return state.module === "novel-promotion" ? "数据概览" : "运营报表";
 }
 
@@ -28,32 +29,37 @@ function reportCopy(project = {}) {
       ? `${project.name} 看项目账号的发布和播放，不区分是不是小说内容。`
       : "看小说推文项目账号的发布和播放，不区分是不是小说内容。";
   }
-  if (location.pathname === "/psychology-effects") return "查看心理学项目账号的发布、播放、互动与主页访问数据。";
+  if (REPORT_PATH === "/psychology-effects") return "查看心理学项目账号的发布、播放、互动与主页访问数据。";
   return project.name
     ? `${project.name} 按今天、昨天、近7天和最近30天看分组发布和播放。`
     : "这个模块还没有项目。";
 }
 
+const IS_PSYCHOLOGY_OVERVIEW = REPORT_PATH === "/psychology-effects";
 const PAGE_SIZE = 10;
 const PAGE_BUCKETS = { high: "highView", low: "lowView", normal: "midView" };
 const PRESET_PERIODS = ["today", "yesterday", "7d", "30d"];
 const params = new URLSearchParams(location.search);
 const todayKey = shanghaiDateKey();
 const state = {
-  module: MODULE_FROM_PATH[location.pathname] || params.get("module") || "",
+  module: MODULE_FROM_PATH[REPORT_PATH] || params.get("module") || "",
   period: normalizePeriodParam(params.get("period")),
   groupId: params.get("group") || "",
   fromKey: params.get("from") || params.get("date") || "",
   toKey: params.get("to") || params.get("date") || "",
   data: null,
+  loadedScope: null,
   traffic: null,
+  trafficStatus: "pending",
   trafficPage: 1,
   pages: { high: 1, low: 1, normal: 1 },
   activeTab: ["high", "low", "anomaly"].includes(params.get("tab")) ? params.get("tab") : "high",
 };
 
-if (PRESET_PERIODS.includes(state.period) || !state.fromKey || !state.toKey) {
-  applyPeriodRange(state.period);
+if (IS_PSYCHOLOGY_OVERVIEW && state.fromKey && state.toKey) {
+  syncPeriodFromDates();
+} else if (PRESET_PERIODS.includes(state.period) || !state.fromKey || !state.toKey) {
+  applyPeriodRange(PRESET_PERIODS.includes(state.period) ? state.period : "today");
 } else {
   syncPeriodFromDates();
 }
@@ -63,6 +69,7 @@ let reportController;
 
 bindToolbar();
 if (document.documentElement?.classList.contains("psychology-module")) document.body?.classList.add("psychology-module");
+if (IS_PSYCHOLOGY_OVERVIEW) document.body?.classList.add("psychology-effects-page");
 loadReport();
 
 function bindToolbar() {
@@ -84,6 +91,7 @@ function bindToolbar() {
     button.addEventListener("click", () => {
       applyPeriodRange(button.dataset.period);
       markActivePeriod();
+      if (state.period === "range") return;
       syncQuery();
       loadReport();
     });
@@ -92,7 +100,7 @@ function bindToolbar() {
     state.groupId = event.target.value;
   });
   document.querySelector("#queryBtn")?.addEventListener("click", () => {
-    readFilters();
+    if (readFilters() === false) return;
     syncQuery();
     loadReport();
   });
@@ -127,13 +135,14 @@ async function loadReport() {
   meta.textContent = "正在读取报表…";
   document.querySelector("#publishStatus").textContent = "";
   state.data = null;
+  state.loadedScope = null;
   renderEmpty("正在读取报表…");
   try {
     const query = new URLSearchParams({ module: state.module, period: state.period, view: "analytics" });
     if (state.groupId) query.set("group", state.groupId);
     if (state.fromKey) query.set("from", state.fromKey);
     if (state.toKey) query.set("to", state.toKey);
-    if (location.pathname === "/psychology-effects") void loadTraffic(query, requestId, controller.signal);
+    if (REPORT_PATH === "/psychology-effects") void loadTraffic(query, requestId, controller.signal);
     const publishQuery = new URLSearchParams(query);
     publishQuery.set("view", "publish");
     // Start both reads together; slow receipts never delay rendering analytics.
@@ -145,8 +154,17 @@ async function loadReport() {
     if (requestId !== reportRequest) return;
     if (!response.ok) throw new Error(data.error || "读取报表失败。");
     state.data = data;
+    state.loadedScope = {
+      groupId: String(data.report?.groupId ?? query.get("group") ?? ""),
+      fromKey: data.report?.fromKey || query.get("from") || "",
+      toKey: data.report?.toKey || query.get("to") || "",
+    };
     if (!state.groupId && data.report?.groupId) state.groupId = data.report.groupId;
-    if (PRESET_PERIODS.includes(data.report?.period)) {
+    if (IS_PSYCHOLOGY_OVERVIEW && data.report?.fromKey && data.report?.toKey) {
+      state.fromKey = data.report.fromKey;
+      state.toKey = data.report.toKey;
+      syncPeriodFromDates();
+    } else if (PRESET_PERIODS.includes(data.report?.period)) {
       applyPeriodRange(data.report.period);
     } else {
       if (data.report?.fromKey) state.fromKey = data.report.fromKey;
@@ -215,9 +233,13 @@ function render() {
   }
 }
 
+function loadedReportGroupId(report) {
+  return String(report.groupId ?? state.loadedScope?.groupId ?? state.groupId ?? "");
+}
+
 function reportScopeName(report, groups) {
-  if (location.pathname === "/psychology-effects") {
-    const groupId = state.groupId || report.groupId;
+  if (REPORT_PATH === "/psychology-effects") {
+    const groupId = loadedReportGroupId(report);
     if (!groupId) return "心理学全部分组";
     const groupName = report.groupName && report.groupName !== "全部项目"
       ? report.groupName : groups.find((item) => item.id === groupId)?.name;
@@ -233,6 +255,11 @@ function renderSummary() {
   document.querySelector("#publishStatus").textContent = status === "pending"
     ? "发布结果读取中…" : status === "unavailable" ? "发布结果暂时不可用，点击查询重试。" : "";
   const summary = report.summary || {};
+  if (IS_PSYCHOLOGY_OVERVIEW) {
+    if (!report.enabled || report.missing) return;
+    renderEffectsSummary(summary, value => status === "pending" || status === "unavailable" || value == null ? "—" : formatNumber(value));
+    return;
+  }
   document.querySelector("#summaryGrid").innerHTML = [
     ["发布总数", publishNumber(summary.publishTotal ?? ((Number(summary.publishSuccess) || 0) + (Number(summary.publishFailed) || 0)))],
     ["发布视频", formatNumber(summary.published)],
@@ -243,13 +270,57 @@ function renderSummary() {
     ["低播", formatNumber(summary.lowView)],
     ["高播", formatNumber(summary.highView)],
     ["总播放", formatNumber(summary.views)],
-    ...(location.pathname === "/psychology-effects" ? [
+    ...(REPORT_PATH === "/psychology-effects" ? [
       ["主页访问次数", state.traffic?.summary?.profileViews == null ? "—" : formatNumber(state.traffic.summary.profileViews), "按所选 UTC 日期统计，数据有延迟；覆盖情况见底部明细。"],
       ["主页访问比", state.traffic?.summary?.ratio == null ? "—" : `${(state.traffic.summary.ratio * 100).toFixed(2)}%`, "同账号、同日主页访问 ÷ 同期播放；与旁边总播放的统计口径不同，详见底部说明。"],
     ] : []),
     ["均播", formatNumber(summary.avgView ?? averageViews(summary))],
     ["异常账号", formatNumber(summary.anomalyAccountCount)],
   ].map(([label, value, hint]) => `<div class="metric"${hint ? ` title="${escapeHtml(hint)}"` : ""}><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+}
+
+function renderEffectsSummary(summary, publishNumber) {
+  const report = state.data?.report || {};
+  const traffic = state.traffic?.summary;
+  const count = value => value == null ? "—" : formatNumber(value);
+  const coverage = traffic ? `可配对账号 ${count(traffic.coveredAccounts)} / ${count(traffic.totalAccounts)}`
+    : state.trafficStatus === "unavailable" ? "日报暂时不可用，查询可重试" : "正在读取 UTC 日报…";
+  const metrics = [
+    ["video", "发布作品", count(summary.published), "所选北京时间发布 · 已归档作品"],
+    ["play", "总播放", count(summary.views), "所选发布作品的已同步累计播放"],
+    ["profile", "主页访问次数", count(traffic?.profileViews), `所选 UTC 日期 · ${coverage}`],
+    ["ratio", "主页访问比", traffic?.ratio == null ? "—" : `${(traffic.ratio * 100).toFixed(2)}%`, "同账号、同日报访问 ÷ 同期播放"],
+  ];
+  document.querySelector("#summaryGrid").innerHTML = metrics.map(([icon, label, value, hint]) =>
+    `<div class="metric"><div class="effects-metric-icon" aria-hidden="true">${effectsMetricIcon(icon)}</div><div class="effects-metric-copy"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(hint)}</small></div></div>`
+  ).join("");
+  document.querySelector("#overviewSecondary").hidden = false;
+  document.querySelector("#performanceOverview").innerHTML = `<div class="effects-panel-heading"><h2>作品表现</h2><span>所选发布作品 · 累计播放</span></div>${effectsStatList([
+    ["均播", count(summary.avgView ?? (summary.views != null && summary.published != null ? averageViews(summary) : null))],
+    ["高播", count(summary.highView)], ["正常播放", count(summary.midView)],
+    ["低播", count(summary.lowView)], ["0 播", count(summary.zeroView)],
+    ["异常账号", count(summary.anomalyAccountCount), "is-alert"],
+  ])}<p class="effects-panel-note">低播为 0 &lt; 播放 &lt; ${escapeHtml(report.thresholds?.lowView || 200)}；正常播放为 ${escapeHtml(report.thresholds?.lowView || 200)} 至 ${escapeHtml((report.thresholds?.highView || 1000) - 1)}，高播 ≥ ${escapeHtml(report.thresholds?.highView || 1000)}。异常账号指本期出现 0 播视频的账号。</p>`;
+  document.querySelector("#publishOverview").innerHTML = `<div class="effects-panel-heading"><h2>发布结果</h2><span>${state.data?.publishStatus === "pending" ? "独立读取中" : state.data?.publishStatus === "unavailable" ? "暂时不可用" : "官方中台回执"}</span></div>${effectsStatList([
+    ["发布总数", publishNumber(summary.publishTotal ?? (summary.publishSuccess != null && summary.publishFailed != null ? Number(summary.publishSuccess) + Number(summary.publishFailed) : null))],
+    ["发布成功", publishNumber(summary.publishSuccess)], ["发布失败", publishNumber(summary.publishFailed), "is-alert"],
+    ["风控账号", publishNumber(summary.riskAccountCount), "is-alert"],
+  ])}<p class="effects-panel-note">回执按所选日期查询，与上方已同步作品数量分别统计。读取中或暂时不可用时显示 —，不会当作 0。</p>`;
+  renderProjectBar(state.data?.project || {}, state.data?.groups || []);
+}
+
+function effectsStatList(rows) {
+  return `<dl class="effects-stats">${rows.map(([label, value, tone = ""]) => `<div class="${tone}"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`;
+}
+
+function effectsMetricIcon(name) {
+  const paths = {
+    video: '<rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 10 4-2v8l-4-2"/>',
+    play: '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4Z"/>',
+    profile: '<circle cx="12" cy="8" r="3"/><path d="M5 20v-2a7 7 0 0 1 14 0v2"/>',
+    ratio: '<path d="m6 18 12-12"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/>',
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[name] || paths.play}</svg>`;
 }
 
 function fillSelects(data) {
@@ -261,12 +332,17 @@ function fillSelects(data) {
   if (!groupSelect) return;
   const current = state.groupId || data.report?.groupId || "";
   groupSelect.innerHTML = scopes.map((item) => (
-    `<option value="${escapeHtml(item.id)}"${item.id === current ? " selected" : ""}>${escapeHtml(location.pathname === "/psychology-effects" && !item.id ? "心理学全部分组" : item.name)}</option>`
+    `<option value="${escapeHtml(item.id)}"${item.id === current ? " selected" : ""}>${escapeHtml(REPORT_PATH === "/psychology-effects" && !item.id ? "心理学全部分组" : item.name)}</option>`
   )).join("") || `<option value="">暂无分组</option>`;
   state.groupId = groupSelect.value;
 }
 
 function markActivePeriod() {
+  if (IS_PSYCHOLOGY_OVERVIEW) {
+    document.querySelector("#customRange").hidden = state.period !== "range";
+    document.querySelector("#effectsFromDate").value = state.fromKey;
+    document.querySelector("#effectsToDate").value = state.toKey;
+  }
   document.querySelectorAll("#periodTabs [data-period]").forEach((item) => {
     item.classList.toggle("is-active", item.dataset.period === state.period);
   });
@@ -285,6 +361,13 @@ function renderProjectBar(project, groups) {
   const node = document.querySelector("#groupPanel");
   if (!project.id) {
     node.innerHTML = `<div class="empty">这个模块还没有项目。</div>`;
+    return;
+  }
+  if (IS_PSYCHOLOGY_OVERVIEW) {
+    const report = state.data?.report || {};
+    const accountTotal = state.traffic?.summary?.totalAccounts;
+    const accountLabel = loadedReportGroupId(report) ? "分组日报范围账号" : "日报范围账号";
+    node.innerHTML = `<div><div class="effects-scope-heading"><strong>${escapeHtml(reportScopeName(report, groups))}</strong><span class="effects-scope-tag">${accountLabel} ${accountTotal == null ? "—" : formatNumber(accountTotal)}</span></div><div class="effects-scope-note">${escapeHtml(project.name || "心理学项目")} · 当前项目与账号权限范围内的已归档账号；所选日报未返回指标显示 —。</div></div><details class="effects-groups"><summary>${groups.length} 个授权分组 · 查看范围</summary><p>${escapeHtml(groups.map(item => item.name).join("、") || "这个项目下还没有授权分组。")}</p></details>`;
     return;
   }
   node.innerHTML = `<div class="section-title"><div><p>PROJECT</p><h2>${escapeHtml(project.name || "未命名项目")}</h2></div></div>
@@ -312,6 +395,12 @@ async function toggleProjectReport(projectId, enabled) {
 function renderEmpty(message) {
   updateResultTabs();
   document.querySelector("#summaryGrid").innerHTML = "";
+  if (IS_PSYCHOLOGY_OVERVIEW) {
+    document.querySelector("#overviewSecondary").hidden = true;
+    document.querySelector("#performanceOverview").innerHTML = "";
+    document.querySelector("#publishOverview").innerHTML = "";
+    document.querySelector("#groupPanel").innerHTML = "";
+  }
   ["anomalySection", "lowSection", "highSection", "normalSection"].forEach((id) => {
     document.querySelector(`#${id}`).innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
   });
@@ -406,10 +495,22 @@ function videoJumpCell(item) {
 
 function readFilters() {
   state.groupId = document.querySelector("#groupSelect")?.value || "";
+  if (!IS_PSYCHOLOGY_OVERVIEW || state.period !== "range") return;
+  const from = document.querySelector("#effectsFromDate").value;
+  const to = document.querySelector("#effectsToDate").value;
+  const days = (Date.parse(to) - Date.parse(from)) / 86_400_000 + 1;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || !Number.isFinite(days) || days < 1 || days > 90) {
+    document.querySelector("#reportMeta").textContent = "请选择有效日期，结束日期不能早于开始日期，范围最多 90 天。";
+    return false;
+  }
+  state.fromKey = from;
+  state.toKey = to;
+  syncPeriodFromDates();
 }
 
 function applyPeriodRange(period) {
   state.period = normalizePeriodParam(period);
+  if (state.period === "range") return;
   if (state.period === "yesterday") {
     state.fromKey = shiftDateKey(todayKey, -1);
     state.toKey = state.fromKey;
@@ -438,7 +539,7 @@ function syncPeriodFromDates() {
     const to = period === "yesterday" ? from : todayKey;
     return state.fromKey === from && state.toKey === to;
   });
-  state.period = matched || "today";
+  state.period = matched || (IS_PSYCHOLOGY_OVERVIEW ? "range" : "today");
   markActivePeriod();
 }
 
@@ -457,12 +558,14 @@ function syncQuery() {
 }
 
 function rangeLabel(report) {
-  const from = report.fromKey || report.dateKey || state.fromKey;
-  const to = report.toKey || report.dateKey || state.toKey;
+  const from = report.fromKey || report.dateKey || state.loadedScope?.fromKey || state.fromKey;
+  const to = report.toKey || report.dateKey || state.loadedScope?.toKey || state.toKey;
+  if (IS_PSYCHOLOGY_OVERVIEW && (report.period === "range" || (report.period === "today" && from !== todayKey))) return from === to ? `自定日期 · ${from}` : `${from} 至 ${to}`;
   if (report.period === "yesterday") return `昨天 · ${from}`;
   if (report.period === "7d") return `近7天 · ${from} 至 ${to}`;
   if (report.period === "30d") return `最近30天 · ${from} 至 ${to}`;
   if (report.period === "week") return `本周 · ${from} 至 ${to}`;
+  if (report.period === "range") return from === to ? `自定日期 · ${from}` : `${from} 至 ${to}`;
   if (from && to && from !== to) return `${from} 至 ${to}`;
   return `今天 · ${from || to || ""}`;
 }
@@ -483,7 +586,7 @@ function shiftDateKey(dateKey, days) {
 function normalizePeriodParam(value) {
   const period = String(value || "").trim();
   if (period === "week") return "7d";
-  return PRESET_PERIODS.includes(period) ? period : "today";
+  return PRESET_PERIODS.includes(period) || (IS_PSYCHOLOGY_OVERVIEW && period === "range") ? period : "today";
 }
 
 function formatNumber(value) {
@@ -542,7 +645,7 @@ function videoDetailHref(item, tab = state.activeTab) {
   return "/official-video-detail?" + query;
 }
 function videoTable(items, tab) {
-  return '<div class="table-wrap"><table class="report-video-table"><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>操作</th></tr></thead><tbody>' +
+  return (IS_PSYCHOLOGY_OVERVIEW ? '<p class="effects-mobile-table-hint">左右滑动查看播放与操作 →</p>' : '') + '<div class="table-wrap"><table class="report-video-table"><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>操作</th></tr></thead><tbody>' +
     items.map((item) => {
       const detail = videoDetailHref(item, tab);
       return '<tr><td class="report-video-title">' + videoTitleCell(item) + '</td><td>@' + escapeHtml(item.username || "-") +
@@ -558,6 +661,7 @@ async function loadTraffic(query, requestId, signal) {
   document.querySelector('#trafficDetails').hidden = false;
   panel.innerHTML = '<h2>主页访问</h2><p role="status">正在读取同期播放与主页访问…</p>';
   state.traffic = null;
+  state.trafficStatus = "pending";
   state.trafficPage = 1;
   try {
     const q = new URLSearchParams(query); q.set('view', 'traffic');
@@ -567,11 +671,14 @@ async function loadTraffic(query, requestId, signal) {
     if (!response.ok) throw new Error(data.error || '主页访问读取失败，请点击查询重试。');
     if (!data.report?.enabled) { document.querySelector('#trafficDetails').hidden = true; return; }
     state.traffic = data.traffic;
+    state.trafficStatus = "ready";
     renderTraffic();
     if (state.data?.report?.enabled) renderSummary();
   } catch (error) {
     if (requestId !== reportRequest || signal.aborted) return;
+    state.trafficStatus = "unavailable";
     panel.innerHTML = `<h2>主页访问</h2><p role="alert">${escapeHtml(error.message)}</p>`;
+    if (state.data?.report?.enabled) renderSummary();
   }
 }
 

@@ -31,6 +31,7 @@ const showMethod=open=>{methodPanel.hidden=!open;methodToggle.setAttribute("aria
 methodToggle.addEventListener("click",event=>{event.stopPropagation();showMethod(methodPanel.hidden);});
 document.addEventListener("click",event=>{if(!methodPanel.hidden&&!methodPanel.contains(event.target))showMethod(false);});
 document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!methodPanel.hidden){showMethod(false);methodToggle.focus();}});
+document.querySelectorAll("[data-report-view]").forEach(button=>button.addEventListener("click",()=>selectTab(button.dataset.reportView)));
 toggleDates();selectTab(state.tab,false);
 function toggleDates(){const custom=$("#period").value==="custom";$("#fromLabel").hidden=!custom;$("#toLabel").hidden=!custom;$("#from").required=custom;$("#to").required=custom;}
 function selectTab(tab,save=true){
@@ -117,7 +118,16 @@ function render(){
   $("#contentDetail").hidden=f.media==="video";
   const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="potentialRate";
   $("#coverage").textContent=state.data.coverage;$("#completionLine").textContent=f.overview.completionLine==null?"暂无完播数据":pct(f.overview.completionLine);
-  renderAutopilot();renderOverview(f);loadPools("summary");
+  renderReportMetrics(f);renderAutopilot();renderOverview(f);loadPools("summary");
+}
+function reportIcon(name){
+ const paths={posts:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',views:'<path d="M3 20V10M9 20V4M15 20v-7M21 20H2"/>',growth:'<path d="m3 17 6-6 4 4 8-10M15 5h6v6"/>',completion:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>'};
+ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[name]+'</svg>';
+}
+function renderReportMetrics(f){
+ const c=f.overview.current,p=f.overview.previous;
+ const cards=[['posts','已同步作品',c.n,p.n,fmt,'待同步 '+fmt(f.overview.observing)+' 条'],['views','中位播放',c.medianViews,p.medianViews,fmt,'当前累计 · 平均 '+fmt(c.avgViews)],['growth','破千率',c.potentialRate,p.potentialRate,pct,'播放 ≥ 1,000 的作品占比'],['completion','完播率',c.completion,p.completion,pct,'已同步正值的作品平均']];
+ $('#reportKpis').innerHTML=cards.map(([icon,label,value,previous,format,note])=>'<article class="ops-report-kpi"><div class="ops-report-icon" aria-hidden="true">'+reportIcon(icon)+'</div><div><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+' · '+esc(note)+'</small></div></article>').join('');
 }
 function renderAutopilot(){
   const a=state.data.autopilot||{summary:{},groups:[],strategies:[],basis:''},s=a.summary;
@@ -143,15 +153,16 @@ function renderOverview(f){
   $("#dailyTable").innerHTML=table(["日期",...summaryHeaders()],f.overview.daily.map(d=>[d.date,...summaryCells(d)]));
 }
 function renderTrend(){
-  if(!state.data)return;
-  const key=$("#trendMetric").value,rows=state.data.framework.overview.daily,format=["potentialRate","completion","retention3"].includes(key)?pct:key==="averageWatch"?sec:fmt;
-  const values=rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined),max=Math.max(...values,["potentialRate","completion","retention3"].includes(key)?0.01:1);
-  if(!values.length){$("#trendChart").innerHTML='<div class="empty">当前周期暂无已同步播放的作品。</div>';return;}
-  const x=i=>50+i*900/Math.max(1,rows.length-1),y=v=>235-v/max*190,has=v=>v!==null&&v!==undefined;
-  const segments=rows.slice(1).map((r,i)=>has(r[key])&&has(rows[i][key])?'<line class="line" x1="'+x(i)+'" y1="'+y(rows[i][key])+'" x2="'+x(i+1)+'" y2="'+y(r[key])+'"/>':"").join("");
-  const dots=rows.map((r,i)=>has(r[key])?'<circle cx="'+x(i)+'" cy="'+y(r[key])+'" r="4"><title>'+r.date+"："+format(r[key])+'</title></circle>':"").join("");
-  const ticks=rows.map((r,i)=>i===0||i===rows.length-1||i===Math.floor(rows.length/2)?'<text x="'+x(i)+'" y="265" text-anchor="middle">'+r.date.slice(5)+'</text>':"").join("");
-  $("#trendChart").innerHTML='<svg viewBox="0 0 1000 285" role="img" aria-label="'+esc($("#trendMetric").selectedOptions[0].text)+'趋势"><line class="grid" x1="50" y1="235" x2="950" y2="235"/><text x="50" y="25">'+format(max)+'</text>'+segments+dots+ticks+'</svg>';
+ if(!state.data)return;
+ const key=$('#trendMetric').value,rows=state.data.framework.overview.daily,format=['potentialRate','completion','retention3'].includes(key)?pct:key==='averageWatch'?sec:fmt;
+ const values=rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined),max=Math.max(...values,['potentialRate','completion','retention3'].includes(key)?0.01:1);
+ if(!values.length){$('#trendChart').innerHTML='<div class="empty">当前周期暂无已同步播放的作品。</div>';return;}
+ const x=i=>rows.length===1?500:10+i*980/Math.max(1,rows.length-1),y=v=>175-v/max*155,has=v=>v!==null&&v!==undefined;
+ const grid=[20,58.75,97.5,136.25,175].map(v=>'<line class="grid" x1="0" y1="'+v+'" x2="1000" y2="'+v+'" vector-effect="non-scaling-stroke"/>').join('');
+ const segments=rows.slice(1).map((r,i)=>has(r[key])&&has(rows[i][key])?'<line class="line" x1="'+x(i)+'" y1="'+y(rows[i][key])+'" x2="'+x(i+1)+'" y2="'+y(r[key])+'" vector-effect="non-scaling-stroke"/>':'').join('');
+ const dots=rows.map((r,i)=>has(r[key])?'<circle cx="'+x(i)+'" cy="'+y(r[key])+'" r="4"><title>'+esc(r.date)+'：'+format(r[key])+'</title></circle>':'').join('');
+ const labels=rows.filter((r,i)=>i===0||i===rows.length-1||i===Math.floor(rows.length/2)).map(r=>'<span>'+esc(r.date.slice(5))+'</span>').join('');
+ $('#trendChart').innerHTML='<div class="ops-trend-plot"><div class="ops-trend-axis"><span>'+format(max)+'</span><span>'+format(0)+'</span></div><svg viewBox="0 0 1000 190" preserveAspectRatio="none" role="img" aria-label="'+esc($('#trendMetric').selectedOptions[0].text)+'趋势">'+grid+segments+dots+'</svg></div><div class="ops-trend-days">'+labels+'</div>';
 }
 function renderAccounts(){
   if(!state.data)return;
@@ -234,6 +245,8 @@ function poolCards(rows=[],kind){return '<div class="ops-pool-cards">'+rows.map(
  return kind==='account'?'<button type="button" class="ops-pool-card ops-pool-card-button" data-account-pool="'+esc(r.id)+'" aria-controls="accounts" aria-label="'+esc('查看'+r.label+'的'+fmt(r.accounts)+'个账号')+'">'+content+'<small class="ops-pool-card-link">查看账号 →</small></button>':'<article class="ops-pool-card">'+content+'</article>';
 }).join('')+'</div>';}
 $('#poolSummary').addEventListener('click',event=>{
+ const view=event.target.closest('[data-pool-view]');
+ if(view&&$('#poolSummary').contains(view)&&['accounts','content'].includes(view.dataset.poolView)){selectTab(view.dataset.poolView);return;}
  const card=event.target.closest('[data-account-pool]');
  if(!card||!$('#poolSummary').contains(card)||!state.matching?.accountPools?.some(row=>row.id===card.dataset.accountPool))return;
  $('#poolAccountFilter').value=card.dataset.accountPool;
@@ -244,9 +257,10 @@ $('#poolSummary').addEventListener('click',event=>{
 
 function renderPoolSummary(m){
  const c=m.coverage||{},o=m.overview||{},cur=o.current||{},mat=o.mature||{};
- $('#poolSummary').innerHTML=(m.readiness?.status==='warming'?'<div class="ops-pool-readiness" role="status"><strong>优胜版本补测中</strong><p>'+esc(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+fmt(m.readiness.winnerVersions)+' · 满足对应内容池条件的版本 '+fmt(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'')+'<h3>账号池规模</h3>'+poolCards(m.accountPools,'account')+'<h3>内容池规模 · 已观察版本</h3>'+poolCards(m.contentPools,'content')+
- '<h3>累计表现与可评估样本</h3>'+table(['观察口径','已同步作品','累计播放','中位播放','千播率','完成率'],[['已同步累计（含新发布）',fmt(cur.n),fmt(cur.views),fmt(cur.medianViews),pct(cur.potentialRate),pct(cur.completion)],['已满72h可评估 · 最新累计',fmt(mat.n),fmt(mat.views),fmt(mat.medianViews),pct(mat.potentialRate),pct(mat.completion)]])+
- '<p class="section-hint">'+esc(m.basis||c.basis||'已满72h使用最新累计指标，不是第72小时的精确快照。')+' 已发布 '+fmt(c.published)+' · 待同步 '+fmt(c.missingMetrics)+' · 待观察账号 '+fmt(c.observingAccounts)+' · 版本身份不完整 '+fmt(c.unknownVersions)+' · 样式未知 '+fmt(c.unknownStyles)+'。</p>';
+ const readiness=m.readiness?.status==='warming'?'<div class="ops-pool-readiness" role="status"><strong>优胜版本补测中</strong><p>'+esc(m.readiness.nextStep)+'</p><small>当前严格优胜版本 '+fmt(m.readiness.winnerVersions)+' · 满足对应内容池条件的版本 '+fmt(m.readiness.readyVersions)+'。低号缺少合格基准会跳过并记录原因。</small></div>':'';
+ $('#poolSummary').innerHTML='<div class="ops-report-pools"><section class="ops-report-panel"><div class="section-title"><div><h2>账号池</h2><p class="section-hint">所选日期 · 满72h作品的最新累计分层</p></div><button type="button" class="ops-report-link" data-pool-view="accounts">查看全部 →</button></div>'+poolCards(m.accountPools,'account')+'<p class="ops-report-footnote">按当前所选日期复盘。自动运营实际匹配使用近30天成熟样本；分层不代表平台内部权重。</p></section><section class="ops-report-panel"><div class="section-title"><div><h2>内容池</h2><p class="section-hint">已观察具体版本 × 样式 × 文本快照</p></div><button type="button" class="ops-report-link" data-pool-view="content">查看全部 →</button></div>'+poolCards(m.contentPools,'content')+readiness+'<p class="ops-report-footnote">这里展示历史表现分层；版本身份与样式分别验证，不能代替当前可用库存资格。</p></section></div>'+
+ '<section class="ops-report-panel ops-report-sample-panel"><div class="section-title"><div><h2>累计表现与可评估样本</h2><p class="section-hint">新发布与成熟样本分开查看 · 空缺显示 —，真实零值保留</p></div></div><div class="table-wrap ops-report-sample-table">'+table(['观察口径','已同步作品','累计播放','中位播放','千播率','完成率'],[['已同步累计（含新发布）',fmt(cur.n),fmt(cur.views),fmt(cur.medianViews),pct(cur.potentialRate),pct(cur.completion)],['已满72h可评估 · 最新累计',fmt(mat.n),fmt(mat.views),fmt(mat.medianViews),pct(mat.potentialRate),pct(mat.completion)]])+'</div>'+
+ '<p class="ops-report-footnote">'+esc(m.basis||c.basis||'已满72h使用最新累计指标，不是第72小时的精确快照。')+' 已发布 '+fmt(c.published)+' · 待同步 '+fmt(c.missingMetrics)+' · 待观察账号 '+fmt(c.observingAccounts)+' · 版本身份不完整 '+fmt(c.unknownVersions)+' · 样式未知 '+fmt(c.unknownStyles)+'。</p></section>';
  $('#poolMatrix').innerHTML=(m.matrix?.rows||[]).length?table(['账号池','内容池','账号 / 版本',...poolStatsHeaders],m.matrix.rows.map(r=>[esc(poolLabel(r.accountPool)),esc(poolLabel(r.contentPool,'content')),fmt(r.accounts)+' / '+fmt(r.versions),...poolStatsCells(r.stats)])):'<p class="empty">当前范围暂无满72小时的匹配样本。新发布作品继续留在观察中。</p>';
  $('#poolMatrix').innerHTML+='<p class="section-hint">'+esc(m.matrix?.basis||'回顾分池存在选择偏差，不能作为因果结论。')+'</p>';
  renderPoolRecovery(m.recovery);renderPoolAllocation(m.allocation);

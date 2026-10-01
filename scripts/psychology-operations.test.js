@@ -269,3 +269,47 @@ test('successive pool-card clicks reject stale accounts and retain the tab selec
  assert.equal(h.node('#poolAccountTable').innerHTML,html);assert.doesNotMatch(h.node('#poolAccountTable').innerHTML,/obsolete/);assert.equal(h.node('#poolAccountTable').attributes['aria-busy'],'false');
  assert.equal(h.node('#poolAccountFilter').value,'rescue-hook');assert.equal(h.node('#content').hidden,false);assert.equal(h.node('#accounts').hidden,true);assert.equal(h.urls.at(-1).searchParams.get('tab'),'content');
 });
+
+// Dashboard presentation uses full server aggregates and scoped lazy reads.
+test('compact report KPIs keep global current totals, previous values and the zero/missing distinction',async()=>{
+ const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:poolMatching()})}));await poolTick();
+ h.run("renderReportMetrics({overview:{current:{n:301,medianViews:0,avgViews:0,potentialRate:0,completion:null},previous:{n:250,medianViews:null,potentialRate:null,completion:0},observing:2}})");
+ const html=h.node('#reportKpis').innerHTML;
+ assert.equal((html.match(/class="ops-report-kpi"/g)||[]).length,4);
+ assert.match(html,/已同步作品<\/span><strong>301<\/strong>/);assert.match(html,/上期 250 · 待同步 2 条/);
+ assert.match(html,/中位播放<\/span><strong>0<\/strong>/);assert.match(html,/上期 — · 当前累计 · 平均 0/);
+ assert.match(html,/破千率<\/span><strong>0\.0%<\/strong>/);assert.match(html,/完播率<\/span><strong>—<\/strong>/);assert.match(html,/上期 0\.0%/);
+ assert.equal(h.requests.length,1,'rendering aggregate cards must not fetch details or sum page rows');
+});
+
+test('paired pool overview shortcuts open only the selected lazy panel while retaining date, media and group scope',async()=>{
+ const m=poolMatching(),h=poolBrowser(async q=>({ok:true,json:async()=>({matching:{...m,...(q.get('mode')==='content'?{content:{page:1,pages:1,total:0,rows:[]}}:{})}})}),{search:'?period=custom&from=2026-09-24&to=2026-09-30&group=g1&media=video'});
+ await poolTick();await h.run("loadPools('summary')");const before=h.requests.length,html=h.node('#poolSummary').innerHTML;
+ assert.match(html,/class="ops-report-pools"/);assert.match(html,/data-pool-view="accounts"/);assert.match(html,/data-pool-view="content"/);assert.match(html,/历史表现分层/);assert.match(html,/不能代替当前可用库存资格/);
+ const view={dataset:{poolView:'content'},container:h.node('#poolSummary'),closest:s=>s==='[data-pool-view]'?view:null};
+ h.node('#poolSummary').listeners.click({target:view});await poolTick();
+ assert.equal(h.requests.length,before+1);const q=h.requests.at(-1).q;
+ assert.equal(q.get('mode'),'content');assert.equal(q.get('page'),'1');
+ for(const [key,value]of Object.entries({period:'custom',from:'2026-09-24',to:'2026-09-30',group:'g1',media:'video'}))assert.equal(q.get(key),value);
+ assert.equal(h.node('#content').hidden,false);assert.equal(h.node('#overview').hidden,true);assert.match(h.node('#poolContentTable').innerHTML,/没有已观察内容版本/);
+});
+
+test('responsive trend leaves a gap for missing values, renders real zero and escapes dates outside the SVG',async()=>{
+ const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:poolMatching()})}));await poolTick();h.node('#trendMetric').value='potentialRate';h.node('#trendMetric').selectedOptions=[{text:'破千率'}];
+ h.run("state.data.framework={overview:{daily:[{date:'2026-09-24',potentialRate:0},{date:'2026-09-25',potentialRate:null},{date:'2026-09-26',potentialRate:.25},{date:'2026-09-27<unsafe>',potentialRate:.5}]}};renderTrend()");
+ const html=h.node('#trendChart').innerHTML;
+ assert.equal((html.match(/class="line"/g)||[]).length,1);assert.equal((html.match(/<circle /g)||[]).length,3);
+ assert.match(html,/class="ops-trend-axis"/);assert.match(html,/0\.0%/);assert.match(html,/class="ops-trend-days"/);assert.doesNotMatch(html,/<text\b/);assert.match(html,/09-27&lt;unsafe&gt;/);assert.doesNotMatch(html,/<unsafe>/);
+ h.run("state.data.framework.overview.daily=[{date:'2026-09-24',potentialRate:null}];renderTrend()");assert.match(h.node('#trendChart').innerHTML,/暂无已同步播放/);assert.doesNotMatch(h.node('#trendChart').innerHTML,/<circle/);
+ h.run("state.data.framework.overview.daily=[{date:'2026-09-24',potentialRate:0}];renderTrend()");assert.match(h.node('#trendChart').innerHTML,/cx="500"/);assert.match(h.node('#trendChart').innerHTML,/0\.0%/);
+});
+
+test('report promotes the current cumulative trend and keeps the presentation isolated from automatic operations',()=>{
+ const fs=globalThis.process.getBuiltinModule('fs'),html=fs.readFileSync(new URL('../public/psychology-operations.html',import.meta.url),'utf8'),css=fs.readFileSync(new URL('../public/psychology-operations.css',import.meta.url),'utf8'),js=fs.readFileSync(new URL('../public/psychology-operations.js',import.meta.url),'utf8');
+ const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(ids).size,ids.length,'query and lazy-panel IDs remain unique');
+ assert.ok(html.indexOf('id="trendChart"')<html.indexOf('id="poolSummary"'));assert.ok(html.indexOf('id="trendChart"')<html.indexOf('id="legacyOverviewDetails"'));
+ assert.match(html,/按北京时间实际发布日分组，含新发布作品/);assert.match(html,/不是每日新增流量/);assert.match(html,/排期时冻结的账号池与内容池/);assert.match(html,/历史关联 · 非真实决策/);
+ assert.doesNotMatch(html+css+js,/演示数据|设计预览|ops-preview-|demoRates|previousRows|合成样本/);
+ const scoped=css.split('/* Report presentation is scoped: automatic operations also imports this file. */')[1];assert.ok(scoped);
+ for(const rule of scoped.matchAll(/([^{}]+)\{/g)){const selector=rule[1].replace(/\/\*[\s\S]*?\*\//g,'').trim();if(selector.startsWith('@media'))continue;assert.ok(selector.replace(/:is\([^)]*\)/g,'').split(',').every(s=>s.trim().startsWith('.ops-report-page')),selector);}
+});
