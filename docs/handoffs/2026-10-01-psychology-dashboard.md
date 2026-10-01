@@ -29,10 +29,16 @@ Ship the selected automatic-operations redesign: option 2 compact top overview, 
 - Tests use mocked publication/network operations, not GeeLark publishing.
 
 ## Deployment
-Pending final commit/push, clean exact main verification, npm run deploy, and authenticated live read checks. Release evidence will be recorded below.
+Released code 414d6b55816c5844e2d783274aeb4570498d09b9 and label correction ea74c6c, each committed and pushed to GitHub main before deployment. Both npm run deploy runs started from a clean checkout exactly matching origin/main. Migration 0074 succeeded. Final Worker version: 7e6fc4a5-10a8-4e85-8736-6022df727ca3.
+
+Authenticated live inspection confirmed three tabs, 188 project accounts, 1,500 mature samples and six mutually exclusive pools totaling 188 (14/103/6/36/21/8). The Pacific September 30 publication card displayed 347 actually published and 350 scheduled as independent quantities. Observed exact content versions numbered 2,320; all remained unqualified, with a visible five-distinct-account evidence reason rather than empty placeholders. Current evidence separated 28 pending reservations, 1,021 waiting publications and one mature unsynced result.
+
+Native browser checks opened account details with a future October 2 role, returned ten matched exact versions, opened a content version with three mature distinct accounts, and followed one of its three linked accounts. No manual scheduling, pause, retry, cancellation or publication was triggered. Application console had no runtime exceptions; an unrelated browser-extension resource failure was excluded. Health endpoint returned 200. Desktop viewport screenshot and width checks verified the live hierarchy; local fixture mobile layout had already passed. The "pending testing" KPI is labeled 待补测, distinguishing candidate evidence shortfalls from active simultaneous tests.
+
+Original untracked factory-cloud/tmp-fill-wait.mjs retains SHA256 D5E0EDB4A145BDAB4C1533BC3A220AABBA98668BF57DAFE63922873F188A2B97. Other pre-existing untracked handoffs are preserved. Dependencies were isolated ordinary directories, not shared junctions.
 
 ## Unfinished work
-No code work remains after deployment verification. Historical pool movement needs two recorded operating dates before comparison can appear; no historical movement is fabricated.
+Implementation, deployment and live read verification are complete. Historical pool movement needs two recorded operating dates before comparison can appear; no historical movement is fabricated.
 
 ## Recommended next step
 Use the production page for the October 2 Pacific cycle. Continue reading actual qualification shortages and capacity snapshots; user-authorized cycle scheduling remains independent of reporting refresh.
