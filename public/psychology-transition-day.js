@@ -6,7 +6,7 @@
  const runLimit=24;
  const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const number=value=>value==null?'—':Number(value).toLocaleString('zh-CN');
- const time=(value,zone)=>!value?'—':new Date(value).toLocaleString('zh-CN',{timeZone:zone,hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+ const time=(value,zone,precise=false)=>!value?'—':new Date(value).toLocaleString('zh-CN',{timeZone:zone,hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',...(precise?{second:'2-digit'}:{})});
  const statuses={pending:'待排期',enabled:'已启用',active:'已启用',created:'已创建',creating:'正在创建',running:'排期中',complete:'过渡任务已创建',completed:'过渡任务已创建',expired:'过渡窗口已结束',skipped:'已跳过',failed:'排期失败','not-enabled':'尚未创建'};
  function paint(){
   const data=state.data||{},enabled=data.enabled===true;
@@ -14,7 +14,7 @@
   const rounds=data.rounds||[];
   const totals=rounds.reduce((sum,r)=>{for(const key of ['created','published','skipped'])sum[key]+=(Number(r[key])||0);return sum;},{created:0,published:0,skipped:0});
   const counts=rounds.length?'<div class="transition-counts">'+[['created','已创建任务'],['published','已发布'],['skipped','跳过账号次']].map(([key,label])=>'<div><strong>'+number(totals[key])+'</strong><small>'+label+'</small></div>').join('')+'</div>':'';
-  const roundRows=rounds.map(round=>{return '<tr><td>'+escape(round.label||'过渡轮次')+'</td><td>'+escape(time(round.slotAt,'America/Los_Angeles'))+'<small>美西时间</small></td><td>'+escape(time(round.slotAt,'Asia/Shanghai'))+(round.lastSlotAt&&round.lastSlotAt!==round.slotAt?' – '+escape(time(round.lastSlotAt,'Asia/Shanghai')):'')+'<small>北京时间 · 账号错峰</small></td><td>'+escape(time(round.generationStartAt,'Asia/Shanghai'))+(round.generationEndAt?' – '+escape(time(round.generationEndAt,'Asia/Shanghai')):'')+'<small>实际生成时间以任务明细为准</small></td><td>'+escape(statuses[round.status]||round.status||'待排期')+'<small>已创建 '+number(round.created)+' · 已发布 '+number(round.published)+'</small>'+(round.detail?'<small>'+escape(round.detail)+'</small>':'')+'</td></tr>';}).join('');
+  const roundRows=rounds.map(round=>{const actual=round.status==='created'&&Number(round.publicationStartAt)>0&&Number(round.publicationEndAt)>=Number(round.publicationStartAt),startsAt=actual?round.publicationStartAt:round.slotAt,endsAt=actual?round.publicationEndAt:round.lastSlotAt;return '<tr><td>'+escape(round.label||'过渡轮次')+'</td><td>'+escape(time(startsAt,'America/Los_Angeles',actual))+'<small>美西时间</small></td><td>'+escape(time(startsAt,'Asia/Shanghai',actual))+(endsAt&&endsAt!==startsAt?' – '+escape(time(endsAt,'Asia/Shanghai',actual)):'')+'<small>北京时间 · 账号错峰</small></td><td>'+escape(time(round.generationStartAt,'Asia/Shanghai'))+(round.generationEndAt?' – '+escape(time(round.generationEndAt,'Asia/Shanghai')):'')+'<small>实际生成时间以任务明细为准</small></td><td>'+escape(statuses[round.status]||round.status||'待排期')+'<small>已创建 '+number(round.created)+' · 已发布 '+number(round.published)+'</small>'+(round.detail?'<small>'+escape(round.detail)+'</small>':'')+'</td></tr>';}).join('');
   const reasonCounts=new Map();for(const row of data.preview?.excluded||[]){const reason=typeof row==='string'?row:row.reason||'不符合过渡资格';reasonCounts.set(reason,(reasonCounts.get(reason)||0)+(Number(row.accounts)||1));}
   const reasons=[...reasonCounts].map(([reason,count])=>'<li>'+escape(reason)+'（'+number(count)+'个账号）</li>').join('');
   host.setAttribute('aria-busy',String(state.busy));

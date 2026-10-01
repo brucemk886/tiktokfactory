@@ -18,10 +18,19 @@ Connect the approved October 1 Pacific midday and evening rounds to the October 
 - Architecture, current state and this handoff.
 
 ## Tests performed
-Focused transition integration 10/10, UI 7/7 and related publishing/scheduler regression 104/104 passed. A pre-existing photo report fixture used now plus one hour and failed near Beijing midnight; its clock is now fixed at midday, and its 19/19 tests pass. Initial factory-cloud regression passed 1,147/1,147 tests with zero failures. Bounded recovery integration passed 12/12 and client checks 15/15; the final recovery regression passed 1,157/1,157 with zero failures.
+Focused transition integration 10/10, UI 7/7 and related publishing/scheduler regression 104/104 passed. A pre-existing photo report fixture used now plus one hour and failed near Beijing midnight; its clock is now fixed at midday, and its 19/19 tests pass. Initial factory-cloud regression passed 1,147/1,147 tests with zero failures. Bounded recovery integration passed 12/12 and client checks 15/15; the recovery regression passed 1,157/1,157 with zero failures. The final actual-publication-range display correction passed 17/17 focused client checks. After integrating the concurrently published reports-dashboard changes from origin/main, the combined final factory regression passed 1,171/1,171 with zero failures.
+
+## Production verification
+- Approved roster: 115 existing eligible accounts (59 review, 56 normal). Both rounds fully created: 115 + 115 = 230 tasks across 18 group-round slots; no skips or final slot errors.
+- Every claim has an item and deferred generation plan; duplicate account/day/round and repeated source per bridge account both count zero. All 230 generation plans fall within the required 2–3-hour lead; current load chose two hours.
+- Beijing October 2 midday generation 00:30:00–01:57:30, publication 02:30:00–03:57:30. Evening generation 09:00:00–10:27:30, publication 11:00:00–12:27:30. Pacific October 1 publication begins 11:30 and 20:00, with original group/account offsets.
+- Formal policy revision 4, Pacific October 2–9 and October 5 review are unchanged. The bridge lease returned to zero after completion.
+- Historical frozen item/content projection is unchanged: 2,629 rows before schedule cutoff 1790867909, SHA256 E6ADE3E720594816AB59DD4F5268F9BB45B139533A07D9367AEBA6FF7498F4A1 before/after.
+- Generation had not reached its start time during this verification. Created tasks are confirmed; successful image generation and publication remain future execution outcomes, not claimed completed work.
+- The original checkout now has another active reports-dashboard branch and unrelated edits; it was left untouched. Pre-existing tmp-fill-wait.mjs retains SHA256 D5E0EDB4A145BDAB4C1533BC3A220AABBA98668BF57DAFE63922873F188A2B97, and unrelated handoffs were preserved.
 
 ## Unfinished work
-Initial release 5101879 was committed and pushed to main, deployed as Worker 44cf1fd3-4362-4962-a2a7-90ec64df0ccc, and enabled through the authenticated UI with 115 eligible accounts (59 review, 56 normal). Its first explicit bridge run durably created 74 midday tasks before a Cloudflare HTTP 503 / error 1102 resource termination. Recovery now bounds each invocation to one group-round; the explicitly requested UI operation continues small requests only when confirmed progress is returned, stopping on errors or active leases. No lease or task is reset. Completion verification remains below.
+Implementation, production activation, bridge task creation and allocation verification are complete. The saved jobs will execute at their generation/publication times; their runtime outcomes are not yet available.
 
 ## Recommended next step
-Deploy the bounded recovery fix from clean main, wait for any existing lease to expire naturally, and resume the approved bridge through the authenticated UI. Verify both actual claims and deferred generation windows, then record final production results.
+Read the transition card on the automatic-operations page for actual created/published counts. Continue the already configured three daily checks and the unchanged October 2 Pacific formal cycle.

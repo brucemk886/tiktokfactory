@@ -56,3 +56,11 @@ test('zero remaining does not claim success when a missed or uncreated round sti
  let posted=0;const h=harness(r=>{if(r.method==='POST'){posted++;return fixture({enabled:true,canRun:false,runResult:{processed:1,remaining:0,errors:[],busy:false}});}return fixture({enabled:true,canRun:true});});
  await tick();h.click('run');await tick();assert.equal(posted,1);assert.match(h.host.innerHTML,/两轮尚未全部完成/);assert.doesNotMatch(h.host.innerHTML,/两轮过渡排期检查完成/);
 });
+test('completed round shows actual publish-item range including forty-five-second account staggering',async()=>{
+ const h=harness(()=>fixture({enabled:true,rounds:[{label:'午间',status:'created',slotAt:Date.parse('2026-10-01T18:30:00Z'),lastSlotAt:Date.parse('2026-10-01T19:50:00Z'),publicationStartAt:Date.parse('2026-10-01T18:30:00Z'),publicationEndAt:Date.parse('2026-10-01T19:57:30Z'),created:115,published:0,skipped:0}]}));
+ await tick();assert.match(h.host.innerHTML,/10\/01 11:30:00/);assert.match(h.host.innerHTML,/10\/02 02:30:00 – 10\/02 03:57:30/);assert.doesNotMatch(h.host.innerHTML,/03:50/);
+});
+test('incomplete round keeps planned base range instead of presenting partial items as complete bounds',async()=>{
+ const h=harness(()=>fixture({enabled:true,rounds:[{label:'午间',status:'pending',slotAt:Date.parse('2026-10-01T18:30:00Z'),lastSlotAt:Date.parse('2026-10-01T19:50:00Z'),publicationStartAt:Date.parse('2026-10-01T18:30:00Z'),publicationEndAt:Date.parse('2026-10-01T19:57:30Z'),created:74,published:0,skipped:0}]}));
+ await tick();assert.match(h.host.innerHTML,/10\/02 02:30 – 10\/02 03:50/);assert.doesNotMatch(h.host.innerHTML,/03:57:30/);
+});
