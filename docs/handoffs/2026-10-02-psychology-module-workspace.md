@@ -24,8 +24,17 @@ Implement and release the twelve remaining Psychology pages after the user appro
 - All original static HTML IDs remain in the twelve pages; no duplicates or missing script/style references. Only these twelve pages opt in to the new workspace; existing reports/overview/autopilot assets are untouched.
 - Tracked UI manifest regenerated after the final source changes. Synthetic QA and private references stay under ignored tmp/psychology-module-design-20261002/.
 
+## Release and production verification
+- Released on 2026-10-02 (Asia/Shanghai) from code commit `d26befbd0fe3cfb5bcc36a20f40adf38e42353c3`, pushed to GitHub main before deployment.
+- Used a clean isolated checkout at `tmp/psychology-module-release-20261002` with exact `HEAD == origin/main`. Ran only the authorized `npm run deploy` in its factory-cloud directory. Worker Version: `87a72b59-dc99-44f8-8249-4984e1e57d19`. No database migrations were pending.
+- The first deployment attempt encountered a Cloudflare network failure while updating one existing workflow trigger. Re-running the same standard deploy command from the same clean main checkout completed successfully for the Worker, all six workflows, queues, schedules and custom domain. Active jobs were not stopped or manually retried.
+- All twelve hosted routes passed desktop read-only DOM and screenshot checks: `/psychology-copy-library`, `/psychology-copy-usage`, `/psychology-topic-bank`, `/psychology-templates`, `/psychology`, `/psychology-collage`, `/psychology-target-2`, `/psychology-photo`, `/psychology-publish-designs`, `/psychology-publish`, `/psychology-comments`, `/psychology-publish-sources`. New scoped CSS loaded; visible images loaded; no document-level horizontal overflow.
+- Live mobile checks at 390px passed for copy library, automatic publishing and timed comments. The comments `#autoReplies` deep link selects the correct tab and keeps the page heading visible. Legacy `/psychology-peer-hits` and `/psychology-production` links reach copy library and manual publication history respectively; both passed mobile bounds checks.
+- All other mobile states were verified with local browser fixtures. Production verification was read-only and did not submit generation, publishing or comment operations. The owned browser session was closed after verification.
+- Local evidence (ignored, not deployed): `tmp/psychology-module-design-20261002/final-regression.log`; `content/implementation/qa-results.json`, `operations/formal-qa/qa.json`, `creation/formal/qa.json` under that same directory; `live/checks-desktop-0-6.json`, `live/checks-desktop-6-12.json`, `live/checks-mobile-9-11.json` and `live/checks-legacy-links.json` plus screenshots. Do not add private production captures or synthetic fixtures to Git.
+
 ## Unfinished work
-Commit/push the validated change to GitHub main, deploy from a clean exact-main checkout with factory-cloud npm run deploy, then record the deployment version and read-only production verification.
+None within the approved redesign and release scope.
 
 ## Recommended next step
-Complete the authorized release and verify the twelve hosted routes without starting or interrupting generation/publishing jobs.
+Observe ordinary production use and address any reported UI issue through the normal tested main-branch release process.
