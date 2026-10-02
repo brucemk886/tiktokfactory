@@ -23,8 +23,17 @@ Add playback as the core Operations Report metric, including overview, account a
 - Operations frontend checks: 30 passed, including primary total and prior comparison, zero-baseline handling, default playback trend, missing gaps/real zero, mature versus all-synchronized content totals and existing lazy-panel behavior.
 - Independent review passed. Browser verification passed at 1440, 1401, 1400, 1366, 1301, 1280, 1200, 1024, 960, 390 and 320px, including 1,234,567,890 views and 100.0%; no card/page overflow or runtime errors. Tables scroll within their containers. Fixture QA made zero external requests.
 
+## Release and production verification
+- Code commit `8eb5c543595d96623ced23f05953e6a2d24f9282` was pushed to GitHub main before deployment. The managed release checkout was on main, clean, and exactly matched origin/main.
+- Deployed only with `npm run deploy` from factory-cloud. Worker Version: `923dfc46-c122-45f2-b741-062f4557e534`. No database migrations were pending. The first main-branch attempt encountered an expired OAuth refresh/network failure; the ordinary command retry succeeded with existing authentication, without changing credentials or bypassing checks.
+- Authenticated live `/psychology-ops-report?period=7d&media=photo` shows 819,955 cumulative views across 2,284 synced works published 2026-09-26 through 2026-10-02. Prior publication cohort 2026-09-19 through 2026-09-25 has 252,169 views. The first card shows +567,786 (+225.2%); these are lifetime publication-cohort totals, not views newly acquired within those dates. Captured GET response values match the displayed totals exactly.
+- Default trend is `views`; all seven daily playback values render and sum to the current cohort total. Daily table includes cumulative playback.
+- Live account pool has mature-sample cumulative playback, with populated rows. Content pool separately has all-synchronized and mature-sample cumulative playback, with populated rows. Overview, pool summary, accounts and content GET requests returned HTTP 200. Only read-only report navigation and DOM inspection were used.
+- Live 1440px overview and 390px account/content panels have no document/card horizontal overflow. Table overflow remains within its scroll container. Broader 320–1440px and large-number coverage passed independent local browser QA as recorded above.
+- No generation, publishing, comments, scheduling, provider calls or active jobs were manually invoked or interrupted. The original checkout's pre-existing untracked files and helper SHA256 were preserved.
+
 ## Unfinished work
-Commit/push main, standard production deployment and authenticated read-only verification remain.
+None within the requested playback-metrics scope.
 
 ## Recommended next step
-Ship from a clean exact-origin/main checkout, verify the live totals and scoped account/content columns, then record release evidence here.
+Use playback as the first report metric alongside median playback and completion; preserve the publication-cohort and maturity labels when comparing account/content performance.
