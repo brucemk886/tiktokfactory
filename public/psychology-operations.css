@@ -103,3 +103,10 @@
 .ops-report-page .ops-report-kpi-primary strong{color:var(--ops-blue)}
 @media(max-width:1400px){.ops-report-page .ops-report-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(min-width:1401px) and (max-width:1600px){.ops-report-page .ops-report-kpi:not(.ops-report-kpi-primary) strong{font-size:26px}}
+
+.ops-report-page .ops-trend-hitarea{fill:transparent;stroke:none;pointer-events:all}
+.ops-report-page .ops-trend-tooltip{position:absolute;z-index:2;box-sizing:border-box;max-width:calc(100% - 8px);padding:9px 12px;border:1px solid #c9daf1;border-radius:7px;background:#fff;box-shadow:0 4px 14px rgba(25,57,105,.15);color:#183b69;pointer-events:none;overflow-wrap:anywhere;font-size:13px;line-height:1.5}
+.ops-report-page .ops-trend-tooltip span{display:block;color:#6b80a1;font-size:12px}
+.ops-report-page .ops-trend-tooltip strong{display:block;font-weight:600}
+.ops-report-page .ops-trend-plot circle{cursor:crosshair}
+.ops-report-page .ops-trend-plot circle.is-active,.ops-report-page .ops-trend-plot circle:focus{r:6;stroke:#fff;stroke-width:2;outline:none}

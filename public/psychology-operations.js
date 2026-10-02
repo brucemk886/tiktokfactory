@@ -165,9 +165,32 @@ function renderTrend(){
  const x=i=>rows.length===1?500:10+i*980/Math.max(1,rows.length-1),y=v=>175-v/max*155,has=v=>v!==null&&v!==undefined;
  const grid=[20,58.75,97.5,136.25,175].map(v=>'<line class="grid" x1="0" y1="'+v+'" x2="1000" y2="'+v+'" vector-effect="non-scaling-stroke"/>').join('');
  const segments=rows.slice(1).map((r,i)=>has(r[key])&&has(rows[i][key])?'<line class="line" x1="'+x(i)+'" y1="'+y(rows[i][key])+'" x2="'+x(i+1)+'" y2="'+y(r[key])+'" vector-effect="non-scaling-stroke"/>':'').join('');
- const dots=rows.map((r,i)=>has(r[key])?'<circle cx="'+x(i)+'" cy="'+y(r[key])+'" r="4"><title>'+esc(r.date)+'：'+format(r[key])+'</title></circle>':'').join('');
+ const label=$('#trendMetric').selectedOptions[0].text;
+ const dots=rows.map((r,i)=>has(r[key])?'<circle cx="'+x(i)+'" cy="'+y(r[key])+'" r="4" data-trend-index="'+i+'" tabindex="0" role="img" aria-label="'+esc(r.date+'：'+format(r[key])+' · '+label)+'" aria-describedby="trendTooltip"></circle>':'').join('');
  const labels=rows.filter((r,i)=>i===0||i===rows.length-1||i===Math.floor(rows.length/2)).map(r=>'<span>'+esc(r.date.slice(5))+'</span>').join('');
- $('#trendChart').innerHTML='<div class="ops-trend-plot"><div class="ops-trend-axis"><span>'+format(max)+'</span><span>'+format(0)+'</span></div><svg viewBox="0 0 1000 190" preserveAspectRatio="none" role="img" aria-label="'+esc($('#trendMetric').selectedOptions[0].text)+'趋势">'+grid+segments+dots+'</svg></div><div class="ops-trend-days">'+labels+'</div>';
+ const chart=$('#trendChart');
+ chart.innerHTML='<div class="ops-trend-plot"><div class="ops-trend-axis"><span>'+format(max)+'</span><span>'+format(0)+'</span></div><svg viewBox="0 0 1000 190" preserveAspectRatio="none" role="group" aria-label="'+esc(label)+'趋势"><rect class="ops-trend-hitarea" x="0" y="0" width="1000" height="190"/>'+grid+segments+dots+'</svg><div id="trendTooltip" class="ops-trend-tooltip" role="tooltip" hidden></div></div><div class="ops-trend-days">'+labels+'</div>';
+ const svg=chart.querySelector('svg'),plot=chart.querySelector('.ops-trend-plot'),tooltip=chart.querySelector('#trendTooltip');
+ const hide=()=>{tooltip.hidden=true;svg.querySelectorAll('[data-trend-index]').forEach(dot=>dot.classList.toggle('is-active',false));};
+ const show=index=>{
+  const row=rows[index];if(!row)return;
+  tooltip.innerHTML='<span>'+esc(row.date)+'</span><strong>'+esc(label)+'：'+format(row[key])+'</strong>';
+  tooltip.hidden=false;
+  svg.querySelectorAll('[data-trend-index]').forEach(dot=>dot.classList.toggle('is-active',Number(dot.dataset.trendIndex)===index));
+  const bounds=svg.getBoundingClientRect(),container=plot.getBoundingClientRect();
+  const pointX=bounds.left-container.left+x(index)/1000*bounds.width,pointY=bounds.top-container.top+y(has(row[key])?row[key]:0)/190*bounds.height;
+  const left=Math.max(4,Math.min(pointX-tooltip.offsetWidth/2,container.width-tooltip.offsetWidth-4));
+  const preferredTop=pointY-tooltip.offsetHeight-12;
+  const top=Math.max(4,Math.min(preferredTop>=4?preferredTop:pointY+12,container.height-tooltip.offsetHeight-4));
+  tooltip.style.left=left+'px';tooltip.style.top=top+'px';
+ };
+ const showNearest=event=>{const bounds=svg.getBoundingClientRect();if(!bounds.width)return;const position=(event.clientX-bounds.left)/bounds.width*1000;show(rows.length===1?0:Math.max(0,Math.min(rows.length-1,Math.round((position-10)/980*(rows.length-1)))));};
+ svg.onpointermove=showNearest;
+ svg.onpointerdown=showNearest;
+ svg.onpointerleave=event=>{if(event.pointerType!=='touch')hide();};
+ svg.addEventListener('focusin',event=>{const dot=event.target.closest('[data-trend-index]');if(dot)show(Number(dot.dataset.trendIndex));});
+ svg.addEventListener('focusout',hide);
+ svg.onkeydown=event=>{if(event.key==='Escape')hide();};
 }
 function renderAccounts(){
   if(!state.data)return;
