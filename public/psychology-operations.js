@@ -70,7 +70,7 @@ function remotePager(id,info,panel){
 function renderDetails(data){
  $('#contentCoverage').textContent=data.comparisons?'全周期统计，每页展示10组。点击查看组内作品。':'每页10条作品；统计不受当前页影响。';
  if(data.comparisons){
-  $('#contentTable').innerHTML=table(['对比组','作品数','均播 / 中位','破千 / 破万','操作'],data.comparisons.map((r,i)=>[esc(r.label||r.key||'未知'),fmt(r.n),fmt(r.avgViews)+' / '+fmt(r.medianViews),pct(r.potentialRate)+' / '+pct(r.hitRate),'<button class="table-action" data-drill="'+i+'">查看作品</button>']));
+  $('#contentTable').innerHTML=table(['对比组','作品数','累计播放量','均播 / 中位','破千 / 破万','操作'],data.comparisons.map((r,i)=>[esc(r.label||r.key||'未知'),fmt(r.n),fmt(r.views),fmt(r.avgViews)+' / '+fmt(r.medianViews),pct(r.potentialRate)+' / '+pct(r.hitRate),'<button class="table-action" data-drill="'+i+'">查看作品</button>']));
   $('#contentTable').querySelectorAll('[data-drill]').forEach(b=>b.onclick=()=>{state.detailKey=data.comparisons[Number(b.dataset.drill)].key;loadPanel('details');});
  }else{
   $('#contentTable').innerHTML=(state.detailKey!==undefined?'<button class="table-action" id="detailBack">返回对比组</button>':'')+table(['作品 / 视频ID','账号','发布时间（北京）','播放','赞 / 评 / 转','原版 / 改写','样式'],data.items.map(r=>[esc(r.title)+'<small>'+esc(r.video_id||'尚未返回')+'</small>','@'+esc(r.accountName),r.published_at?time(r.published_at):'—',fmt(r.views),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),esc(r.variant||'原版')+(r.rewrite_model?'<small>'+esc(r.rewrite_model)+'</small>':''),esc(r.style||'未知')]));
@@ -109,14 +109,14 @@ async function load(){
 load();
 function table(headers,rows){return '<table class="ops-table"><thead><tr>'+headers.map(h=>'<th scope="col">'+h+'</th>').join("")+'</tr></thead><tbody>'+rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join("")+'</tr>').join("")+'</tbody></table>';}
 const isVideo=()=>state.data?.framework?.media==="video";
-const summaryCells=s=>[fmt(s.n),fmt(s.medianViews)+"<small>平均 "+fmt(s.avgViews)+"</small>",pct(s.potentialRate),pct(s.hitRate),sec(s.averageWatch),pct(s.completion),...(isVideo()?[pct(s.retention3)]:[]),fmt(s.likes)+" / "+fmt(s.comments)+" / "+fmt(s.shares)];
-const summaryHeaders=()=>["作品数","中位播放","破千率","破万率","平均播放时长","完播率",...(isVideo()?["3秒留存"]:[]),"平均 赞 / 评 / 转"];
+const summaryCells=s=>[fmt(s.n),fmt(s.views),fmt(s.medianViews)+"<small>平均 "+fmt(s.avgViews)+"</small>",pct(s.potentialRate),pct(s.hitRate),sec(s.averageWatch),pct(s.completion),...(isVideo()?[pct(s.retention3)]:[]),fmt(s.likes)+" / "+fmt(s.comments)+" / "+fmt(s.shares)];
+const summaryHeaders=()=>["作品数","累计播放量","中位播放","破千率","破万率","平均播放时长","完播率",...(isVideo()?["3秒留存"]:[]),"平均 赞 / 评 / 转"];
 const summaryTable=(first,rows)=>table([first,...summaryHeaders()],rows.map(([label,s])=>[label,...summaryCells(s)]));
 
 function render(){
   const f=state.data.framework;
   $("#contentDetail").hidden=f.media==="video";
-  const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="potentialRate";
+  const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="views";
   $("#coverage").textContent=state.data.coverage;$("#completionLine").textContent=f.overview.completionLine==null?"暂无完播数据":pct(f.overview.completionLine);
   renderReportMetrics(f);renderAutopilot();renderOverview(f);loadPools("summary");
 }
@@ -124,10 +124,15 @@ function reportIcon(name){
  const paths={posts:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',views:'<path d="M3 20V10M9 20V4M15 20v-7M21 20H2"/>',growth:'<path d="m3 17 6-6 4 4 8-10M15 5h6v6"/>',completion:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>'};
  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[name]+'</svg>';
 }
+function playbackComparison(current,previous){
+ if(current==null||previous==null)return '上期 '+fmt(previous)+' · 变化 —';
+ const delta=current-previous,sign=delta>=0?'+':'';
+ return '上期 '+fmt(previous)+' · '+sign+fmt(delta)+(previous>0?'（'+sign+pct(delta/previous)+'）':'');
+}
 function renderReportMetrics(f){
  const c=f.overview.current,p=f.overview.previous;
- const cards=[['posts','已同步作品',c.n,p.n,fmt,'待同步 '+fmt(f.overview.observing)+' 条'],['views','中位播放',c.medianViews,p.medianViews,fmt,'当前累计 · 平均 '+fmt(c.avgViews)],['growth','破千率',c.potentialRate,p.potentialRate,pct,'播放 ≥ 1,000 的作品占比'],['completion','完播率',c.completion,p.completion,pct,'已同步正值的作品平均']];
- $('#reportKpis').innerHTML=cards.map(([icon,label,value,previous,format,note])=>'<article class="ops-report-kpi"><div class="ops-report-icon" aria-hidden="true">'+reportIcon(icon)+'</div><div><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+' · '+esc(note)+'</small></div></article>').join('');
+ const cards=[['views','累计播放量',c.views,p.views,fmt,'按实际发布日 · 已同步作品合计'],['posts','已同步作品',c.n,p.n,fmt,'待同步 '+fmt(f.overview.observing)+' 条'],['views','中位播放',c.medianViews,p.medianViews,fmt,'当前累计 · 平均 '+fmt(c.avgViews)],['growth','破千率',c.potentialRate,p.potentialRate,pct,'播放 ≥ 1,000 的作品占比'],['completion','完播率',c.completion,p.completion,pct,'已同步正值的作品平均']];
+ $('#reportKpis').innerHTML=cards.map(([icon,label,value,previous,format,note],index)=>'<article class="ops-report-kpi'+(index===0?' ops-report-kpi-primary':'')+'"><div class="ops-report-icon" aria-hidden="true">'+reportIcon(icon)+'</div><div><span>'+label+'</span><strong>'+format(value)+'</strong><small>'+ (index===0?playbackComparison(value,previous):'上期 '+format(previous))+' · '+esc(note)+'</small></div></article>').join('');
 }
 function renderAutopilot(){
   const a=state.data.autopilot||{summary:{},groups:[],strategies:[],basis:''},s=a.summary;
@@ -144,7 +149,7 @@ function renderOverview(f){
   const c=f.overview.current,p=f.overview.previous;
   $("#findings").innerHTML='<ul>'+f.strategy.findings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
   const delta=(a,b,format,points)=>a===null||b===null||a===undefined||b===undefined?"":" · "+(a>=b?"+":"")+(points?((a-b)*100).toFixed(1)+" 个百分点":format(a-b));
-  const cards=[["已同步作品",c.n,p.n,fmt,f.overview.observing+" 条暂无播放数据"],["破千率",c.potentialRate,p.potentialRate,pct,"潜力及以上",true],["破万率",c.hitRate,p.hitRate,pct,"待爆及以上",true],
+  const cards=[["累计播放量",c.views,p.views,fmt,"按实际发布日 · 已同步作品合计"],["已同步作品",c.n,p.n,fmt,f.overview.observing+" 条暂无播放数据"],["破千率",c.potentialRate,p.potentialRate,pct,"潜力及以上",true],["破万率",c.hitRate,p.hitRate,pct,"待爆及以上",true],
     ["中位播放",c.medianViews,p.medianViews,fmt,"平均 "+fmt(c.avgViews)],["完播率",c.completion,p.completion,pct,"平均值",true],["平均播放时长",c.averageWatch,p.averageWatch,sec,"秒"],...(isVideo()?[["3秒留存",c.retention3,p.retention3,pct,"第3秒还在看的比例",true]]:[])];
   $("#metrics").innerHTML=cards.map(([label,value,previous,format,note,points])=>'<div class="metric"><span>'+label+'</span><strong>'+format(value)+'</strong><small>上期 '+format(previous)+delta(value,previous,format,points)+'<br>'+esc(note)+'</small></div>').join("");
   $("#tierTable").innerHTML=table(["流量池","播放区间","本期作品","占比","上期占比"],f.tiers.map((t,i)=>{const next=f.tiers[i+1];return [esc(t.label),fmt(t.min)+(next?" – "+fmt(next.min):" 以上"),fmt(c.tiers[t.id]),c.n?pct(c.tiers[t.id]/c.n):"—",p.n?pct(p.tiers[t.id]/p.n):"—"];}));
@@ -171,8 +176,8 @@ function renderAccounts(){
   const moves=[...a.transitions].sort((x,y)=>y.n-x.n);
   $("#transitionTable").innerHTML=moves.length?table(["期初","期末","账号数"],moves.map(m=>[m.from==="new"?"本期新号":esc(names[m.from]),esc(names[m.to])+(m.from!==m.to&&m.from!=="new"?' <span class="ops-chip">'+(["launch","normal","potential","burst"].indexOf(m.to)>["launch","normal","potential","burst"].indexOf(m.from)?"升级":"下滑")+'</span>':""),fmt(m.n)])):'<div class="empty">没有账号作品数据。</div>';
   const rows=a.rows;remotePager("accountPager",state.pages.accounts,"accounts");
-  $("#accountTable").innerHTML=rows.length?table(["账号 / 分组","阶段（期初 → 期末）","累计作品","本期作品","中位播放","破千率","完播率","平均时长","主要象限","建议"],rows.map(r=>[
-    "@"+esc(r.name)+"<small>"+esc(r.group)+"</small>",(r.startStage?esc(names[r.startStage])+" → ":"新号 → ")+esc(names[r.endStage]),fmt(r.totalPosts),fmt(r.stats.n),fmt(r.stats.medianViews),pct(r.stats.potentialRate),pct(r.stats.completion),sec(r.stats.averageWatch),
+  $("#accountTable").innerHTML=rows.length?table(["账号 / 分组","阶段（期初 → 期末）","累计作品","本期作品","本期累计播放量","中位播放","破千率","完播率","平均时长","主要象限","建议"],rows.map(r=>[
+    "@"+esc(r.name)+"<small>"+esc(r.group)+"</small>",(r.startStage?esc(names[r.startStage])+" → ":"新号 → ")+esc(names[r.endStage]),fmt(r.totalPosts),fmt(r.stats.n),fmt(r.stats.views),fmt(r.stats.medianViews),pct(r.stats.potentialRate),pct(r.stats.completion),sec(r.stats.averageWatch),
     r.stats.n?esc(f.quadrants[r.quadrant].label):"—",esc(r.issue||"—")])):'<div class="empty">没有符合条件的账号。</div>';
 }
 function renderContent(f){
@@ -238,8 +243,8 @@ function renderPoolSelectors(){
   node.innerHTML='<option value="">全部'+(kind==='account'?'账号池':'内容池')+'</option>'+(rows||[]).map(r=>'<option value="'+esc(r.id)+'">'+esc(r.label)+'</option>').join('');node.value=current;
  }
 }
-function poolStatsCells(s={}){return [fmt(s.n),fmt(s.medianViews)+'<small>平均 '+fmt(s.avgViews)+'</small>',pct(s.potentialRate),pct(s.completion)];}
-const poolStatsHeaders=['已满72h作品','中位播放 / 均播','千播率','完成率'];
+function poolStatsCells(s={}){return [fmt(s.n),fmt(s.views),fmt(s.medianViews)+'<small>平均 '+fmt(s.avgViews)+'</small>',pct(s.potentialRate),pct(s.completion)];}
+const poolStatsHeaders=['已满72h作品','成熟样本累计播放量','中位播放 / 均播','千播率','完成率'];
 function poolCards(rows=[],kind){return '<div class="ops-pool-cards">'+rows.map(r=>{
  const content='<span>'+esc(r.label)+'</span><strong>'+fmt(kind==='account'?r.accounts:r.versions)+'</strong><small>'+esc(r.action)+'</small>';
  return kind==='account'?'<button type="button" class="ops-pool-card ops-pool-card-button" data-account-pool="'+esc(r.id)+'" aria-controls="accounts" aria-label="'+esc('查看'+r.label+'的'+fmt(r.accounts)+'个账号')+'">'+content+'<small class="ops-pool-card-link">查看账号 →</small></button>':'<article class="ops-pool-card">'+content+'</article>';
@@ -284,7 +289,7 @@ const poolLevel=id=>({diagnostic:0,'rescue-hook':1,'rescue-content':1,normal:2,s
 function versionTitle(r){return '<div class="title">'+esc(r.title||r.source||'未知来源')+'</div><small>'+esc((r.versionKnown??Boolean(r.copyHash))?(r.version||'原版'):'版本身份未知')+' · '+esc((r.styleKnown??Boolean(r.style))?r.style:'样式未知')+((r.styleKnown??Boolean(r.style))&&r.styleRevision!=null?' · 样式第 '+fmt(r.styleRevision)+' 版':'')+'</small>';}
 function renderPoolContent(m){
  const d=m.content||{},rows=d.rows||[];
- $('#poolContentTable').innerHTML=rows.length?table(['来源 / 具体版本 / 样式','内容池','验证账号数',...poolStatsHeaders,'已同步累计样本'],rows.map(r=>[versionTitle(r),esc(poolLabel(r.pool,'content')),fmt(r.accounts),...poolStatsCells(r.stats),fmt(r.cumulativeStats?.n)])):'<p class="empty">当前范围没有已观察内容版本。</p>';poolPager('poolContentPager',d.pagination||d,'content');
+ $('#poolContentTable').innerHTML=rows.length?table(['来源 / 具体版本 / 样式','内容池','验证账号数','已同步累计播放量',...poolStatsHeaders,'已同步累计样本'],rows.map(r=>[versionTitle(r),esc(poolLabel(r.pool,'content')),fmt(r.accounts),fmt(r.cumulativeStats?.views),...poolStatsCells(r.stats),fmt(r.cumulativeStats?.n)])):'<p class="empty">当前范围没有已观察内容版本。</p>';poolPager('poolContentPager',d.pagination||d,'content');
 }
 function renderPoolMatrixDetails(m){
  const d=m.matrixDetails||{},rows=d.rows||[];

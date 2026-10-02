@@ -17,16 +17,16 @@ test('SQL reports: every panel, long-term metrics, delta correction, pagination 
  const f=await fixture(t),now=seed(f);
  await f.db.batch([reportVideoFactWrite(f.db,'a',now,Array.from({length:12},(_,i)=>({id:'v'+i,createTime:now,views:i*1000,fullWatchRate:0.5,likes:0}))) ]);
  await refreshReportFacts(f.db);
- const first=await read(f);assert.equal(first.autopilot.summary.planned,12);assert.equal(first.autopilot.summary.synced,12);assert.equal(first.autopilot.summary.views,66000);assert.equal(first.autopilot.summary.medianViews,5500);assert.equal(first.framework.overview.current.n,12);
+ const first=await read(f);assert.equal(first.autopilot.summary.planned,12);assert.equal(first.autopilot.summary.synced,12);assert.equal(first.autopilot.summary.views,66000);assert.equal(first.autopilot.summary.medianViews,5500);assert.equal(first.framework.overview.current.n,12);assert.equal(first.framework.overview.current.views,66000);assert.equal(first.framework.overview.daily.reduce((sum,row)=>sum+(row.views??0),0),66000);assert.equal((await read(f,'panel=accounts')).accounts.rows[0].stats.views,66000);assert.equal((await read(f,'panel=content')).content.sources[0].stats.views,66000);assert.equal((await read(f,'panel=details')).comparisons[0].views,66000);
  for(const panel of ['accounts','content','strategy','details','batches','groups']){const data=await read(f,'panel='+panel);assert.equal(data.panel,panel);}
  f.sqlite.exec("UPDATE ops_task_facts SET title='Readable test title',copy_hash='internal-hash'");
  assert.equal((await read(f,'panel=details&mode=copy')).comparisons[0].label,'Readable test title');
  assert.equal((await read(f,'panel=details&mode=copy')).comparisons[0].key,'internal-hash');
  const details=await read(f,'panel=details&key=v1:tiktok:200');assert.equal(details.items.length,10);assert.equal(details.pagination.total,12);assert.equal((await read(f,'panel=details&key=v1:tiktok:200&page=2')).items.length,2);
  await f.db.batch([reportVideoFactWrite(f.db,'a',now+1,[{id:'v0',createTime:now,views:1234}])]);
- assert.equal((await read(f)).autopilot.summary.views,67234);
- await f.db.batch([reportVideoFactWrite(f.db,'a',now+1,[{id:'v0',createTime:now,views:1234}])]);assert.equal((await read(f)).autopilot.summary.views,67234);
- await f.db.batch([reportVideoFactWrite(f.db,'a',now-1,[{id:'v0',createTime:now,views:9000}])]);assert.equal((await read(f)).autopilot.summary.views,67234);
+ assert.equal((await read(f)).autopilot.summary.views,67234);assert.equal((await read(f)).framework.overview.current.views,67234);
+ await f.db.batch([reportVideoFactWrite(f.db,'a',now+1,[{id:'v0',createTime:now,views:1234}])]);assert.equal((await read(f)).autopilot.summary.views,67234);assert.equal((await read(f)).framework.overview.current.views,67234);
+ await f.db.batch([reportVideoFactWrite(f.db,'a',now-1,[{id:'v0',createTime:now,views:9000}])]);assert.equal((await read(f)).autopilot.summary.views,67234);assert.equal((await read(f)).framework.overview.current.views,67234);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ops_video_facts').get().n,12);
  f.sqlite.exec('DELETE FROM official_account_assignments');assert.equal((await read(f)).autopilot.summary.planned,0);
  assert.equal(f.requests.length,0);
@@ -43,19 +43,69 @@ test('duplicate video receipts count executions separately but metrics only once
  const f=await fixture(t),now=seed(f,2);
  f.sqlite.prepare("UPDATE factory_publish_records SET value_json=? WHERE id='psychology:i1'").run(JSON.stringify({autoTaskId:'i1',autoBatchId:'b',connectionId:'a',status:'published',videoId:'v0',publishedAt:now}));
  const original=f.db.batch.bind(f.db);let once=true;f.db.batch=async statements=>{if(once){once=false;await original([reportVideoFactWrite(f.db,'a',now,[{id:'v0',createTime:now,views:77}])]);}return original(statements);};
- await refreshReportFacts(f.db);let r=await read(f);assert.equal(r.autopilot.summary.planned,2);assert.equal(r.autopilot.summary.published,2);assert.equal(r.autopilot.summary.synced,1);assert.equal(r.autopilot.summary.views,77);
- await original([reportVideoFactWrite(f.db,'a',now+1,[{id:'v0',createTime:now,views:11}])]);r=await read(f);assert.equal(r.autopilot.summary.views,11);assert.equal(r.framework.overview.current.n,1);
+ await refreshReportFacts(f.db);let r=await read(f);assert.equal(r.autopilot.summary.planned,2);assert.equal(r.autopilot.summary.published,2);assert.equal(r.autopilot.summary.synced,1);assert.equal(r.autopilot.summary.views,77);assert.equal(r.framework.overview.current.views,77);
+ await original([reportVideoFactWrite(f.db,'a',now+1,[{id:'v0',createTime:now,views:11}])]);r=await read(f);assert.equal(r.autopilot.summary.views,11);assert.equal(r.framework.overview.current.n,1);assert.equal(r.framework.overview.current.views,11);
 });
 test('publication time and scheduled day are independent, and terminal facts survive source cleanup',async t=>{
  const f=await fixture(t),now=seed(f,1);await refreshReportFacts(f.db);
  const day=Date.parse(new Date(Date.now()+28800000).toISOString().slice(0,10)+'T00:00:00+08:00');
- await f.db.batch([reportVideoFactWrite(f.db,'a',now,[{id:'v0',createTime:day-60000,views:0,likes:0}])]);let r=await read(f);assert.equal(r.autopilot.summary.synced,1);assert.equal(r.autopilot.summary.views,0);assert.equal(r.framework.overview.current.n,0);assert.equal(r.framework.overview.previous.n,1);
+ await f.db.batch([reportVideoFactWrite(f.db,'a',now,[{id:'v0',createTime:day-60000,views:0,likes:0}])]);let r=await read(f);assert.equal(r.autopilot.summary.synced,1);assert.equal(r.autopilot.summary.views,0);assert.equal(r.framework.overview.current.n,0);assert.equal(r.framework.overview.previous.n,1);assert.equal(r.framework.overview.previous.views,0);assert.equal(r.framework.overview.current.views,null);
  f.sqlite.exec("DELETE FROM factory_publish_records;INSERT INTO ops_task_dirty(item_id) VALUES('i0')");await refreshReportFacts(f.db);r=await read(f);assert.equal(r.autopilot.summary.published,1);assert.equal(r.autopilot.summary.synced,1);
 });
 test('weighted median is exact for repeated values and odd/even populations; current permissions protect all panels',async t=>{
  const f=await fixture(t),now=seed(f,5);await f.db.batch([reportVideoFactWrite(f.db,'a',now,[1,1,1,9,99].map((views,i)=>({id:'v'+i,createTime:now,views}))) ]);await refreshReportFacts(f.db);
- assert.equal((await read(f)).framework.overview.current.medianViews,1);
- await f.db.batch([reportVideoFactWrite(f.db,'a',now+1,[{id:'v2',createTime:now,views:null}])]);assert.equal((await read(f)).framework.overview.current.medianViews,5);
- for(const panel of ['overview','accounts','content','strategy','details','batches','groups']){const r=await read(f,'panel='+panel,{...actor,role:'member',allowedAccountGroups:['other']});assert.ok(!JSON.stringify(r).includes('v1:tiktok:200'));if(r.autopilot)assert.equal(r.autopilot.summary.planned,0);if(r.pagination)assert.equal(r.pagination.total,0);}
+ assert.equal((await read(f)).framework.overview.current.medianViews,1);assert.equal((await read(f)).framework.overview.current.views,111);
+ await f.db.batch([reportVideoFactWrite(f.db,'a',now+1,[{id:'v2',createTime:now,views:null}])]);assert.equal((await read(f)).framework.overview.current.medianViews,5);assert.equal((await read(f)).framework.overview.current.views,110);
+ for(const panel of ['overview','accounts','content','strategy','details','batches','groups']){const r=await read(f,'panel='+panel,{...actor,role:'member',allowedAccountGroups:['other']});assert.ok(!JSON.stringify(r).includes('v1:tiktok:200'));if(r.autopilot)assert.equal(r.autopilot.summary.planned,0);if(r.pagination)assert.equal(r.pagination.total,0);if(r.framework)assert.equal(r.framework.overview.current.views,null);}
  assert.equal(f.requests.length,0);
+});
+
+
+test('cumulative views keep full authorized actual-publication cohorts across pages and media, preserving zero and missing',async t=>{
+ t.mock.method(Date,'now',()=>Date.parse('2026-10-02T12:00:00+08:00'));
+ const f=await fixture(t),time=Date.parse('2026-09-30T12:00:00+08:00'),scheduled=Date.parse('2026-10-02T11:30:00+08:00');
+ const current='period=custom&from=2026-09-30&to=2026-10-01';
+ const put=(id,fields={})=>{
+  const row={id,batch_id:'test-batch',account_key:'tiktok:a0',media:'photo',schedule_at:scheduled,published_at:time,source:id,copy_hash:id,style:'style',title:id,state:'published',views:0,...fields};
+  const keys=Object.keys(row);f.sqlite.prepare('INSERT INTO ops_task_facts('+keys.join(',')+') VALUES('+keys.map(()=>'?').join(',')+')').run(...keys.map(key=>row[key]));
+ };
+ for(let index=0;index<11;index++){
+  f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id) VALUES (?,?)').run('a'+index,'g');
+  f.sqlite.prepare('INSERT INTO ops_video_facts(account_key,video_id,published_at,synced_at,views) VALUES (?,?,?,?,?)').run('tiktok:a'+index,'v'+index,time,Date.now(),index);
+  put('s'+index,{account_key:'tiktok:a'+index,views:index});
+ }
+ f.sqlite.exec("INSERT INTO official_account_assignments(account_key,group_id) VALUES ('missing','g'),('outside','other')");
+ f.sqlite.prepare('INSERT INTO ops_video_facts(account_key,video_id,published_at,synced_at,views) VALUES (?,?,?,?,?)').run('tiktok:missing','old',time-86400000,Date.now(),1);
+ put('missing',{account_key:'tiktok:missing',views:null,published_at:time+86400000});
+ put('zero-day',{source:'s0',views:0,published_at:time+86400000});
+ put('previous',{source:'s0',views:17,published_at:time-86400000});
+ put('other-media',{media:'video',views:1000000});
+ put('other-project',{account_key:'tiktok:outside',views:9000000});
+ put('unpublished',{state:'pending',views:333});
+ const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ const report=await read(f,current);
+ assert.equal(report.framework.overview.current.views,55);
+ assert.equal(report.framework.overview.current.n,12);
+ assert.equal(report.framework.overview.previous.views,17);
+ assert.deepEqual(report.framework.overview.daily.map(row=>[row.date,row.views]),[['2026-09-30',55],['2026-10-01',0]]);
+ assert.equal(report.framework.overview.observing,1);
+ assert.equal(report.autopilot.summary.views,null); // planned-date execution is a separate population
+ const accountPage=await read(f,current+'&panel=accounts');
+ const accountNext=await read(f,current+'&panel=accounts&page=2');
+ assert.equal(accountPage.pagination.total,12);assert.equal(accountPage.accounts.rows.length,10);
+ assert.equal(accountNext.accounts.rows.length,2);
+ const allAccounts=[...accountPage.accounts.rows,...accountNext.accounts.rows];
+ assert.equal(allAccounts.reduce((sum,row)=>sum+(row.stats.views??0),0),55);
+ assert.equal(allAccounts.find(row=>row.account==='tiktok:a0').stats.views,0);
+ assert.equal(allAccounts.find(row=>row.account==='tiktok:missing').stats.views,null);
+ const sources=await read(f,current+'&panel=content'),sourceNext=await read(f,current+'&panel=content&page=2');
+ assert.equal(sources.pagination.total,11);assert.equal(sources.content.sources.length,10);assert.equal(sourceNext.content.sources.length,1);
+ assert.equal([...sources.content.sources,...sourceNext.content.sources].reduce((sum,row)=>sum+row.stats.views,0),55);
+ assert.equal(sourceNext.content.sources[0].stats.views,0);
+ const detail=await read(f,current+'&panel=details&mode=source&page=2');
+ assert.equal(detail.pagination.total,11);assert.equal(detail.comparisons[0].views,0);
+ assert.equal((await read(f,current+'&media=video')).framework.overview.current.views,1000000);
+ assert.equal((await read(f,'period=today')).framework.overview.current.views,null);
+ assert.equal((await read(f,current,{...actor,role:'member',allowedAccountGroups:['other']})).framework.overview.current.views,null);
+ assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);assert.equal(f.requests.length,0);
 });

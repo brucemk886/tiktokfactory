@@ -8,7 +8,7 @@ import {AUTOPILOT_STRATEGIES} from '../../scripts/psychology-autopilot-report.js
 import {EVOLUTION} from './psychology-copy-evolution.js';
 import {TOPIC_LABELS} from '../../scripts/psychology-peer-topics.js';
 const SIZE=10;
-const blank=()=>({n:0,avgViews:null,medianViews:null,potentialRate:null,hitRate:null,averageWatch:null,completion:null,retention3:null,likes:null,comments:null,shares:null,saves:null,tiers:Object.fromEntries(VIEW_TIERS.map(t=>[t.id,0])),quadrants:Object.fromEntries(Object.keys(QUADRANTS).map(k=>[k,0]))});
+const blank=()=>({n:0,views:null,avgViews:null,medianViews:null,potentialRate:null,hitRate:null,averageWatch:null,completion:null,retention3:null,likes:null,comments:null,shares:null,saves:null,tiers:Object.fromEntries(VIEW_TIERS.map(t=>[t.id,0])),quadrants:Object.fromEntries(Object.keys(QUADRANTS).map(k=>[k,0]))});
 const stat=r=>r?{...r,tiers:Object.fromEntries(VIEW_TIERS.map(t=>[t.id,r['tier_'+t.id]||0])),quadrants:Object.fromEntries(Object.keys(QUADRANTS).map(k=>[k,r['q_'+k]||0]))}:blank();
 const pageNumber=v=>Math.max(1,Math.min(1000000,Math.floor(Number(v)||1)));
 const dominant=s=>Object.entries(s.quadrants).filter(([k])=>k!=='unknown').sort((a,b)=>b[1]-a[1]).find(([,n])=>n>0)?.[0]||'unknown';
@@ -22,7 +22,7 @@ function summarySQL(input,group='bucket'){
  ${Object.keys(QUADRANTS).map(k=>`sum(quadrant='${k}') q_${k}`).join(',')}
  FROM ${input} WHERE views IS NOT NULL AND state='published' GROUP BY ${prefix}views),
  ranked AS (SELECT *,sum(freq) OVER (${part} ORDER BY views) cumulative,sum(freq) OVER (${part}) nn FROM counted)
- SELECT ${prefix}sum(freq) n,1.0*sum(views*freq)/sum(freq) avgViews,
+ SELECT ${prefix}sum(freq) n,sum(views*freq) views,1.0*sum(views*freq)/sum(freq) avgViews,
  (sum(CASE WHEN (nn+1)/2>cumulative-freq AND (nn+1)/2<=cumulative THEN views ELSE 0 END)+sum(CASE WHEN (nn+2)/2>cumulative-freq AND (nn+2)/2<=cumulative THEN views ELSE 0 END))/2.0 medianViews,
  1.0*sum(CASE WHEN views>=1000 THEN freq ELSE 0 END)/sum(freq) potentialRate,1.0*sum(CASE WHEN views>=10000 THEN freq ELSE 0 END)/sum(freq) hitRate,
  ${means.map(([col,name])=>`1.0*sum(${col}_sum)/nullif(sum(${col}_n),0) ${name}`).join(',')},
@@ -30,7 +30,7 @@ function summarySQL(input,group='bucket'){
  ${Object.keys(QUADRANTS).map(k=>`sum(q_${k}) q_${k}`).join(',')}
  FROM ranked ${group?'GROUP BY '+group:''}`;
 }
-const statColumns=['n','avgViews','medianViews','potentialRate','hitRate','averageWatch','completion','retention3','likes','comments','shares','saves',...VIEW_TIERS.map(t=>'tier_'+t.id),...Object.keys(QUADRANTS).map(k=>'q_'+k)];
+const statColumns=['n','views','avgViews','medianViews','potentialRate','hitRate','averageWatch','completion','retention3','likes','comments','shares','saves',...VIEW_TIERS.map(t=>'tier_'+t.id),...Object.keys(QUADRANTS).map(k=>'q_'+k)];
 const jsonRows=(query,cols)=>`(SELECT json_group_array(json_object(${cols.map(c=>`'${c}',${c}`).join(',')})) FROM (${query}))`;
 function summaryCTE(name,input,group){const s=summarySQL(input,group).replaceAll('counted',name+'_counted').replaceAll('ranked',name+'_ranked');const split=s.lastIndexOf('\n SELECT ');return s.slice(5,split)+','+name+' AS ('+s.slice(split)+')';}
 function append(cte,sql){return cte+','+sql.replace(/^WITH /,'');}

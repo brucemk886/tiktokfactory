@@ -273,9 +273,10 @@ test('successive pool-card clicks reject stale accounts and retain the tab selec
 // Dashboard presentation uses full server aggregates and scoped lazy reads.
 test('compact report KPIs keep global current totals, previous values and the zero/missing distinction',async()=>{
  const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:poolMatching()})}));await poolTick();
- h.run("renderReportMetrics({overview:{current:{n:301,medianViews:0,avgViews:0,potentialRate:0,completion:null},previous:{n:250,medianViews:null,potentialRate:null,completion:0},observing:2}})");
+ h.run("renderReportMetrics({overview:{current:{n:301,views:24000,medianViews:0,avgViews:0,potentialRate:0,completion:null},previous:{n:250,views:12000,medianViews:null,potentialRate:null,completion:0},observing:2}})");
  const html=h.node('#reportKpis').innerHTML;
- assert.equal((html.match(/class="ops-report-kpi"/g)||[]).length,4);
+ assert.equal((html.match(/class="ops-report-kpi(?: ops-report-kpi-primary)?"/g)||[]).length,5);
+ assert.match(html,/ops-report-kpi-primary[\s\S]*?累计播放量<\/span><strong>24,000<\/strong>/);assert.match(html,/上期 12,000 · \+12,000（\+100\.0%）/);assert.ok(html.indexOf("累计播放量")<html.indexOf("已同步作品"));
  assert.match(html,/已同步作品<\/span><strong>301<\/strong>/);assert.match(html,/上期 250 · 待同步 2 条/);
  assert.match(html,/中位播放<\/span><strong>0<\/strong>/);assert.match(html,/上期 — · 当前累计 · 平均 0/);
  assert.match(html,/破千率<\/span><strong>0\.0%<\/strong>/);assert.match(html,/完播率<\/span><strong>—<\/strong>/);assert.match(html,/上期 0\.0%/);
@@ -312,4 +313,30 @@ test('report promotes the current cumulative trend and keeps the presentation is
  assert.doesNotMatch(html+css+js,/演示数据|设计预览|ops-preview-|demoRates|previousRows|合成样本/);
  const scoped=css.split('/* Report presentation is scoped: automatic operations also imports this file. */')[1];assert.ok(scoped);
  for(const rule of scoped.matchAll(/([^{}]+)\{/g)){const selector=rule[1].replace(/\/\*[\s\S]*?\*\//g,'').trim();if(selector.startsWith('@media'))continue;assert.ok(selector.replace(/:is\([^)]*\)/g,'').split(',').every(s=>s.trim().startsWith('.ops-report-page')),selector);}
+});
+
+test('cumulative views keep zero distinct from unavailable totals and avoid growth percentages over a zero baseline',async()=>{
+ const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:poolMatching()})}));await poolTick();
+ const render=(current,previous)=>h.run(`renderReportMetrics({overview:{current:{n:0,views:${current}},previous:{n:0,views:${previous}},observing:3}})`);
+ render(0,'null');assert.match(h.node('#reportKpis').innerHTML,/累计播放量<\/span><strong>0<\/strong>/);assert.match(h.node('#reportKpis').innerHTML,/上期 — · 变化 —/);
+ render('null',0);assert.match(h.node('#reportKpis').innerHTML,/累计播放量<\/span><strong>—<\/strong>/);assert.match(h.node('#reportKpis').innerHTML,/上期 0 · 变化 —/);
+ render(15,0);assert.match(h.node('#reportKpis').innerHTML,/上期 0 · \+15 ·/);assert.doesNotMatch(h.node('#reportKpis').innerHTML,/Infinity|NaN/);
+});
+
+test('cumulative playback is the default publication-cohort trend and daily totals retain missing gaps and real zeros',async()=>{
+ const fs=globalThis.process.getBuiltinModule('fs'),html=fs.readFileSync(new URL('../public/psychology-operations.html',import.meta.url),'utf8');
+ assert.match(html,/<select id="trendMetric"><option value="views">累计播放量<\/option>/);assert.match(html,/不是所选日期内新增播放/);
+ const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:poolMatching()})}));await poolTick();
+ h.node('#trendMetric').value='views';h.node('#trendMetric').selectedOptions=[{text:'累计播放量'}];
+ h.run("state.data.framework={overview:{daily:[{date:'2026-09-24',views:1200},{date:'2026-09-25',views:null},{date:'2026-09-26',views:0},{date:'2026-09-27',views:300}]}};renderTrend()");
+ const chart=h.node('#trendChart').innerHTML;assert.match(chart,/累计播放量趋势/);assert.match(chart,/2026-09-24：1,200/);assert.match(chart,/2026-09-26：0/);assert.equal((chart.match(/<circle /g)||[]).length,3);assert.equal((chart.match(/class="line"/g)||[]).length,1);
+ const cells=JSON.parse(h.run('JSON.stringify(summaryCells({n:2,views:1234,medianViews:7,avgViews:999}))'));assert.equal(cells[1],'1,234');assert.match(h.run('summaryHeaders().join("|")'),/作品数\|累计播放量\|中位播放/);
+});
+
+test('account and content pool playback show exact mature sums separately from all synchronized content observations',async()=>{
+ const h=poolBrowser(async()=>({ok:true,json:async()=>({matching:poolMatching()})}));await poolTick();
+ h.run("renderPoolAccounts({accounts:{page:1,pages:1,total:1,rows:[{name:'account',pool:'strong',previousPool:'strong',stats:{n:2,views:1234,avgViews:9999,medianViews:7},previousStats:{medianViews:7}}]}})");
+ const accounts=h.node('#poolAccountTable').innerHTML;assert.match(accounts,/成熟样本累计播放量/);assert.match(accounts,/<td>1,234<\/td>/);assert.doesNotMatch(accounts,/>19,998</);
+ h.run("renderPoolContent({content:{page:1,pages:1,total:2,rows:[{title:'fresh',pool:'explore',accounts:0,stats:{n:0,views:null},cumulativeStats:{n:2,views:4321}},{title:'zero',pool:'explore',accounts:1,stats:{n:1,views:0},cumulativeStats:{n:1,views:0}}]}})");
+ const content=h.node('#poolContentTable').innerHTML;assert.match(content,/已同步累计播放量/);assert.match(content,/成熟样本累计播放量/);assert.match(content,/<td>4,321<\/td><td>0<\/td><td>—<\/td>/);assert.match(content,/<td>0<\/td><td>1<\/td><td>0<\/td>/);
 });

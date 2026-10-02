@@ -49,7 +49,7 @@ function summarize(rows, rules = RULES) {
   const tiers = Object.fromEntries(VIEW_TIERS.map(t => [t.id, 0])), quadrants = Object.fromEntries(Object.keys(QUADRANTS).map(k => [k, 0]));
   for (const r of rows) { tiers[viewTier(r.views)]++; if (r.quadrant) quadrants[r.quadrant]++; }
   const share = test => rows.length ? rows.filter(test).length / rows.length : null;
-  return { n: rows.length, avgViews: mean(rows.map(r => r.views)), medianViews: median(rows.map(r => r.views)), tiers, quadrants,
+  return { n: rows.length, views: rows.length ? rows.reduce((sum, row) => sum + Number(row.views), 0) : null, avgViews: mean(rows.map(r => r.views)), medianViews: median(rows.map(r => r.views)), tiers, quadrants,
     potentialRate: share(r => r.views >= rules.potentialViews), hitRate: share(r => r.views >= rules.hitViews),
     averageWatch: mean(positive(rows, 'averageWatch')), completion: mean(positive(rows, 'completion')), retention3: mean(positive(rows, 'retention3')),
     likes: mean(positive(rows, 'likes')), comments: mean(positive(rows, 'comments')), shares: mean(positive(rows, 'shares')), saves: mean(positive(rows, 'saves')) };

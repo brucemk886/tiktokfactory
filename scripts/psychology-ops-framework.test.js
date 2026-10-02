@@ -145,3 +145,24 @@ test('interactive report includes same-day samples while the scheduler retains i
  assert.equal(report.accounts.rows[0].totalPosts,1);assert.equal(report.content.sources.length,1);assert.equal(report.overview.daily[0].n,1);
  assert.equal(buildOpsFramework(input).overview.current.n,0);
 });
+
+
+test('framework cumulative views sum eligible samples exactly and preserve empty versus zero across current, previous and daily cohorts',()=>{
+ const account='tiktok:a',window={start:now-7*DAY,end:now,previousStart:now-14*DAY,days:7};
+ const rows=[
+  {id:'zero',account,time:at(4),views:0,mature:true,source:'s'},
+  {id:'first',account,time:at(3),views:1,mature:true,source:'s'},
+  {id:'second',account,time:at(3),views:1,mature:true,source:'s'},
+  {id:'large',account,time:at(3),views:999999,mature:true,source:'s'},
+  {id:'missing',account,time:at(2),views:null,mature:true,source:'s'},
+  {id:'fresh',account,time:now-1000,views:55,mature:false,source:'s'},
+  {id:'previous',account,time:at(9),views:17,mature:true,source:'s'},
+ ];
+ const report=buildOpsFramework({rows,window,now,videosByAccount:new Map([[account,[{id:'v',createTime:at(4)/1000,views:0}]]])});
+ assert.equal(report.overview.current.views,1000001);assert.equal(report.overview.previous.views,17);
+ assert.equal(report.accounts.rows[0].stats.views,1000001);assert.equal(report.content.sources[0].stats.views,1000001);
+ assert.equal(report.overview.daily.reduce((sum,row)=>sum+(row.views??0),0),1000001);
+ assert.ok(report.overview.daily.some(row=>row.n===1&&row.views===0));assert.ok(report.overview.daily.some(row=>row.n===0&&row.views===null));
+ assert.equal(buildOpsFramework({rows,window,now,matureOnly:false}).overview.current.views,1000056);
+ assert.equal(buildOpsFramework({window,now}).overview.current.views,null);
+});

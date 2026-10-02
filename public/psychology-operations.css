@@ -24,7 +24,7 @@
 .ops-report-page .ops-tabs button{position:relative;border:0!important;border-radius:0;background:transparent!important;padding:11px 12px;min-height:43px;font-size:15px!important;color:#576d91;box-shadow:none;white-space:nowrap}
 .ops-report-page.lf-console .ops-tabs button[aria-selected=true]{color:var(--ops-blue)!important;background:transparent!important;border-color:transparent!important}
 .ops-report-page .ops-tabs button[aria-selected=true]:after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--ops-blue)}
-.ops-report-page .ops-report-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 15px}
+.ops-report-page .ops-report-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:0 0 15px}
 .ops-report-page .ops-report-kpi{display:flex;align-items:flex-start;gap:12px;min-width:0;min-height:112px;border:1px solid var(--ops-line);border-radius:8px;background:#fff;padding:14px}
 .ops-report-page .ops-report-kpi>div:last-child{min-width:0;flex:1}
 .ops-report-page .ops-report-kpi span{font-size:12px;font-weight:600;color:#59708f}
@@ -99,3 +99,7 @@
 .ops-report-page.lf-console button.ops-pool-card-button{border:0!important;border-bottom:1px solid #edf1f8!important;box-shadow:none!important;background:transparent!important}
 .ops-report-page.lf-console button.ops-pool-card-button:hover{background:#f4f8ff!important}
 @media(max-width:520px){.ops-report-page .ops-trend-plot{padding-left:40px;margin-top:12px}.ops-report-page .ops-trend-plot svg{height:110px!important}.ops-report-page .ops-trend-days{margin-left:40px}.ops-report-page .ops-trend-axis{width:32px}}
+.ops-report-page .ops-report-kpi-primary{grid-column:span 2;background:#f3f8ff;border-color:#adc9ee}
+.ops-report-page .ops-report-kpi-primary strong{color:var(--ops-blue)}
+@media(max-width:1400px){.ops-report-page .ops-report-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:1401px) and (max-width:1600px){.ops-report-page .ops-report-kpi:not(.ops-report-kpi-primary) strong{font-size:26px}}
