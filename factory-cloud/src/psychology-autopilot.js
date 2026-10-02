@@ -464,6 +464,100 @@ export function autopilotViewWindow(period = 'today', now = Date.now()) {
   return {period,start,end,from:beijingDate(start),to:beijingDate(end-1),label:{today:'今天',yesterday:'昨天','7d':'近7天'}[period]};
 }
 
+
+export function recoveryOriginalSlot(pilot,deliveryAt,now=Date.now(),requestedOriginal=0) {
+  if(!Number.isSafeInteger(deliveryAt)||deliveryAt%60000!==0||beijingDate(deliveryAt)!==beijingDate(now)||deliveryAt<=now+AUTOPILOT.immediateLeadMs)fail('临时补排须为北京时间今天、距离当前超过 10 分钟的整分钟时间。');
+  const timeZone=pilotTimeZoneAt(pilot,deliveryAt),date=zonedDate(deliveryAt,timeZone);
+  const slots=pilotSlotsAt(pilot,deliveryAt).map(s=>zonedEpoch(date,s.hour,s.minute,timeZone))
+    .filter(slot=>slot>=pilot.created_at&&slot<pilot.ends_at&&Math.abs(slot-deliveryAt)<=2*HOUR)
+    .sort((a,b)=>Math.abs(a-deliveryAt)-Math.abs(b-deliveryAt)||a-b);
+  if(!Number.isSafeInteger(requestedOriginal))fail('临时补排须明确指定原发布轮次。');
+  const original=requestedOriginal;
+  if(!slots.includes(original)||deliveryAt>=pilot.ends_at)fail('临时补排须对应同一运营日、运行期内两小时以内的原发布轮次。');
+  return original;
+}
+
+async function recoveryBatchIds(db,pilot,originalSlot) {
+  const rows=(await db.prepare("SELECT id,config_json FROM psychology_publish_batches WHERE created_by=? AND json_extract(config_json,'$.pairSeed')=?")
+    .bind(pilot.owner,pilotPairSeed(pilot,originalSlot)).all()).results;
+  const ids=[];
+  for(const row of rows){
+    const config=parseObject(row.config_json),connections=config.connectionIds;
+    if(!Array.isArray(connections)||!connections.length)continue;
+    const normal=await uuidFrom(pilot.id+':'+originalSlot+':'+connections.join(','));
+    const recovery=await uuidFrom(pilot.id+':recovery:'+originalSlot+':'+config.scheduleAt+':'+connections.join(','));
+    if(config.requestId!==normal&&config.requestId!==recovery)continue;
+    if(row.id==='psy-auto-'+(await sha256Hex(pilot.owner+':'+config.requestId)).slice(0,32))ids.push(row.id);
+  }
+  return ids;
+}
+
+// Explicitly recover one original round. Existing jobs keep their frozen times;
+// actual delivery may move within the same operating day, without editing slots.
+export async function recoverAutopilotSlot(env,pilot,deliveryAt,now=Date.now(),requestedOriginal=0) {
+  const db=env.DB;
+  const current=await db.prepare('SELECT * FROM psychology_autopilots WHERE id=? AND owner=?').bind(pilot.id,pilot.owner).first();
+  if(current?.status!=='active')fail('请先恢复自动运营。',409);
+  const originalSlot=recoveryOriginalSlot(current,deliveryAt,now,requestedOriginal),summary={originalSlotAt:originalSlot,recoverySlotAt:deliveryAt,batches:[],errors:[],skipped:[]};
+  const user=await loadAutoUser(db,current.owner);
+  const directory=await autopilotDirectory(env,user,true);
+  if(!directory.groups.some(g=>g.id===current.group_id))fail('没有这个心理学分组的权限。',403);
+  const existing=await db.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').bind(current.id,originalSlot).first();
+  // Verify exact request identities before retrying a lost response or link.
+  const batches=[...new Set([...String(existing?.batch_id||'').split(',').filter(Boolean),...await recoveryBatchIds(db,current,originalSlot)])];
+  if(batches.length){
+    if(existing?.status==='created'||(existing?.status==='creating'&&existing.updated_at>now-5*60000))return {...summary,covered:true,existingBatchIds:batches};
+    if(existing){await db.prepare("UPDATE psychology_autopilot_slots SET status='created',batch_id=?,updated_at=? WHERE autopilot_id=? AND slot_at=? AND updated_at=?")
+      .bind(batches.join(','),now,current.id,originalSlot,existing.updated_at).run();}
+    else await db.prepare("INSERT OR IGNORE INTO psychology_autopilot_slots(autopilot_id,slot_at,status,batch_id,detail,updated_at) VALUES(?,?,'created',?,'已核对既有批次，保留原排期',?)").bind(current.id,originalSlot,batches.join(','),now).run();
+    return {...summary,covered:true,existingBatchIds:batches};
+  }
+  const claim=await db.prepare(`INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at)
+    SELECT ?,?,'creating',? FROM psychology_autopilots WHERE id=? AND owner=? AND status='active' AND updated_at=?
+    ON CONFLICT(autopilot_id,slot_at) DO UPDATE SET status='creating',detail='',updated_at=excluded.updated_at
+    WHERE COALESCE(batch_id,'')='' AND (status IN ('failed','skipped') OR (status='creating' AND updated_at<?))`)
+    .bind(current.id,originalSlot,now,current.id,current.owner,current.updated_at,now-5*60000).run();
+  if(!claim.meta?.changes)return {...summary,busy:true};
+  try{
+    const accounts=directory.accounts.filter(a=>a.groupId===current.group_id),ids=accounts.map(connectionOf);
+    const states=new Map((await db.prepare('SELECT connection_id,status FROM psychology_autopilot_accounts WHERE autopilot_id=?').bind(current.id).all()).results.map(a=>[a.connection_id,a.status]));
+    const failures=new Set(guardAccounts({connectionIds:ids,outcomesByConnection:await pilotOutcomes(db,current.id,now)}).map(a=>a.id));
+    const active=ids.filter(id=>states.get(id)!=='paused'&&!failures.has(id));
+    const eligible=await taskSlotAccounts(db,current,active,originalSlot),taskContext=await taskPublishContext(db,current,originalSlot);
+    const production=await readAutopilotProductionContext(env,user,directory,now),forecast=production.owners.get(user.username);
+    const productionPlan=estimateProductionLead(production.load,{accountCount:forecast?.accountCount||eligible.length,slotAt:deliveryAt,owner:user.username,now});
+    const musicIds=(await kvGet(db,'psychology-auto-music-pool',[])).filter(id=>/^\d{1,30}$/.test(String(id))).slice(0,100);
+    for(let offset=0;offset<eligible.length;offset+=AUTOPILOT.maxAccountsPerBatch){
+      const fresh=await db.prepare('SELECT status FROM psychology_autopilots WHERE id=?').bind(current.id).first();
+      if(fresh?.status!=='active')break;
+      const connections=eligible.slice(offset,offset+AUTOPILOT.maxAccountsPerBatch).filter((id,index)=>sameDeliveryDay(originalSlot,deliveryAt/1000+(offset+index)*AUTOPILOT.staggerSeconds,current.ends_at,pilotTimeZoneAt(current,originalSlot)));
+      if(!connections.length)continue;
+      const scheduleAt=deliveryAt/1000+offset*AUTOPILOT.staggerSeconds;
+      const body={requestId:await uuidFrom(current.id+':recovery:'+originalSlot+':'+scheduleAt+':'+connections.join(',')),
+        name:'临时补排 · '+(current.group_name||current.group_id)+' · '+pilotLabel(current,originalSlot),mediaType:'photo',template:'photo-text',sourceType:'library',
+        ...pilotLibraryConfig(current,originalSlot),pairSeed:pilotPairSeed(current,originalSlot),count:connections.length,connectionIds:connections,scheduleAt,intervalMinutes:60,
+        staggerSeconds:AUTOPILOT.staggerSeconds,styleMode:'random',styleId:'classic',musicIds};
+      const response=await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),env,new URL('https://autopilot.internal/api/psychology-auto-publish'),{user},{productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext});
+      const data=await response.json();if(!response.ok)throw new Error(data.error||'临时补排创建失败');
+      summary.skipped.push(...(data.skipped||[]));
+      if(data.batchId){
+        summary.batches.push(data.batchId);
+        await db.prepare("UPDATE psychology_autopilot_slots SET batch_id=? WHERE autopilot_id=? AND slot_at=? AND status='creating' AND updated_at=?").bind(summary.batches.join(','),current.id,originalSlot,now).run();
+        const stopped=await db.prepare('SELECT status,stop_pending FROM psychology_autopilots WHERE id=?').bind(current.id).first();
+        if(stopped?.status!=='active'&&stopped?.stop_pending)await stopPending(db,current.id);
+        const paused=await db.prepare("SELECT connection_id FROM psychology_autopilot_accounts WHERE autopilot_id=? AND status='paused' AND stop_pending=1").bind(current.id).all();
+        for(const account of paused.results)await stopPending(db,current.id,account.connection_id);
+      }
+    }
+  }catch(error){summary.errors.push(String(error.message||error).slice(0,300));summary.batches=[...new Set([...summary.batches,...await recoveryBatchIds(db,current,originalSlot)])];}
+  const status=summary.batches.length?'created':summary.errors.length?'failed':'skipped';
+  const detail=summary.errors.join('；')||(!summary.batches.length?'临时补排没有符合账号、内容或运营轮次条件的候选':'临时补排至北京时间 '+beijingDate(deliveryAt)+' '+new Date(deliveryAt+8*HOUR).toISOString().slice(11,16));
+  await db.prepare("UPDATE psychology_autopilot_slots SET status=?,batch_id=?,detail=?,updated_at=? WHERE autopilot_id=? AND slot_at=? AND status='creating' AND updated_at=?")
+    .bind(status,summary.batches.join(','),detail,Date.now(),current.id,originalSlot,now).run();
+  await log(db,current.id,summary.errors.length?'error':summary.batches.length?'batch':'matching',detail,{originalSlotAt:originalSlot,recoverySlotAt:deliveryAt,batchIds:summary.batches,skipped:summary.skipped},now);
+  return summary;
+}
+
 export async function handlePsychologyAutopilot(request, env, url, session, apiOptions = {}) {
   if (!url.pathname.startsWith(BASE)) return null;
   const user = session?.user;
@@ -651,6 +745,8 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
   }
   if (one[2] === 'run' && request.method === 'POST') {
     if (pilot.status !== 'active') fail('请先恢复自动运营。', 409);
+    const body=await readJson(request);
+    if(body.recoverySlotAt!==undefined)return json(await recoverAutopilotSlot(env,pilot,body.recoverySlotAt,now,body.recoveryOriginalSlotAt));
     return json(await runAutopilot(env, pilot, now));
   }
   if (one[4] && request.method === 'PATCH') {

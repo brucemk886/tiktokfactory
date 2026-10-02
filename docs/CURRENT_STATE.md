@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology supports explicit authenticated same-day single-round recovery with required original/delivery timestamps, preserved operating-day quotas and frozen jobs, immediate late preparation, and deterministic batch reconciliation. This is an incident backfill path; general scheduler continuation and notifications remain deferred. See docs/handoffs/2026-10-03-psychology-slot-recovery.md.
+
 - Psychology Operations Report now prioritizes exact cumulative playback: the first KPI compares the full selected actual-publication cohort with the previous period, the default daily trend is playback, and account/content tables expose total views. Mature pool samples and all synchronized content observations remain separate; missing playback stays unavailable. See docs/handoffs/2026-10-02-psychology-operations-playback-metrics.md.
 
 - The twelve remaining Psychology workspace pages are released with the approved blue presentation, with compact content lists, grouped creation forms/previews, publishing/comment task views and desktop/mobile layouts. Per-page opt-in styling leaves the report/overview/autopilot dashboards isolated. Existing permissions and queue contracts remain; the manual single-image submission and terminal-status UI defects are repaired. See docs/handoffs/2026-10-02-psychology-module-workspace.md.

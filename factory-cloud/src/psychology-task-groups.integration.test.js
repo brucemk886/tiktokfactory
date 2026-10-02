@@ -5,7 +5,7 @@ import { kvSet } from './kv.js';
 import { loadGroupStore } from './official.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
 import { handlePsychologyAutoPublish } from './psychology-auto-publish.js';
-import { runAutopilot, runAutopilots, handlePsychologyAutopilot } from './psychology-autopilot.js';
+import { runAutopilot, runAutopilots, handlePsychologyAutopilot, recoverAutopilotSlot } from './psychology-autopilot.js';
 import { taskAssignmentsFor, handleTaskGroups, reconcileTaskGroups } from './psychology-task-groups.js';
 import { taskSlotAccounts, taskPublishContext, sameDeliveryDay, reconcileTaskExecutors } from './psychology-task-group-execution.js';
 import { PACIFIC_TIME_ZONE, zonedEpoch, zonedDate } from '../../scripts/psychology-schedule-time.js';
@@ -726,5 +726,25 @@ test('new-member admission respects its own frozen task and Pacific calendar dat
  assert.equal(read('reserved-new'),zonedEpoch('2026-11-02',0,0,zone));
  assert.equal(read('reserved-new')-read('dst-new'),25*HOUR);
  assert.deepEqual(f.sqlite.prepare("SELECT * FROM psychology_publish_items WHERE id='own-frozen-item'").get(),before);
+ assert.equal(f.requests.length,0);
+});
+
+
+test('explicit Pacific recovery preserves the original second round and actual delivery-day atomic quota',async t=>{
+ const f=await taskFixture(t),{zone,pilot}=configurePacificAdmissionCycle(f);
+ const original=zonedEpoch('2026-10-02',11,30,zone),delivery=at('2026-10-03','03:30');
+ f.setNow(at('2026-10-03','01:45'));
+ const before=f.sqlite.prepare('SELECT slots_json,ends_at,updated_at FROM psychology_autopilots WHERE id=?').get(pilot.id);
+ const result=await recoverAutopilotSlot(f.env,pilot,delivery,Date.now(),original);
+ assert.equal(result.originalSlotAt,original);assert.equal(result.batches.length,1,JSON.stringify(result));
+ const items=f.sqlite.prepare('SELECT id,connection_id,schedule_at FROM psychology_publish_items ORDER BY schedule_at').all();
+ assert.deepEqual(items.map(i=>i.schedule_at),[delivery/1000,delivery/1000+45]);
+ const claims=f.sqlite.prepare('SELECT connection_id,beijing_date,round,item_id,time_zone FROM psychology_task_group_allocations ORDER BY connection_id').all();
+ assert.equal(claims.length,2);assert.ok(claims.every(c=>c.beijing_date==='2026-10-02'&&c.round===1&&c.time_zone===zone&&items.some(i=>i.id===c.item_id)));
+ const config=JSON.parse(f.sqlite.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=?').get(result.batches[0]).config_json);
+ assert.equal(config.poolContext.round,1);assert.equal(config.poolContext.dayIndex,0);assert.equal(config.poolContext.timeZone,zone);
+ assert.equal((await recoverAutopilotSlot(f.env,pilot,delivery,Date.now(),original)).covered,true);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_task_group_allocations').get().n,2);
+ assert.deepEqual(f.sqlite.prepare('SELECT slots_json,ends_at,updated_at FROM psychology_autopilots WHERE id=?').get(pilot.id),before);
  assert.equal(f.requests.length,0);
 });

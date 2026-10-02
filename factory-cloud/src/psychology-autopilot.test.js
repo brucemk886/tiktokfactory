@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots, recoverAutopilotSlot, recoveryOriginalSlot } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
@@ -774,4 +774,85 @@ test('three Pacific checks preserve local clocks through both DST changes and wi
  }
  assert.equal(nextAutopilotCheck(utc('2026-11-01T13:00:00')),utc('2026-11-01T16:30:00'));
  assert.equal(nextAutopilotCheck(utc('2026-11-01T16:30:00')),utc('2026-11-02T01:00:00'));
+});
+
+async function recoveryFixture(t) {
+  let clock=at('2026-10-03','01:45');
+  t.mock.method(Date,'now',()=>clock);
+  const f=await pilotFixture(t);
+  const pilot={id:'pilot-'+crypto.randomUUID(),owner:'admin',group_id:'g',group_name:'心理学账号',strategy:'original',
+    slots_json:JSON.stringify([{hour:2,minute:30},{hour:12,minute:0},{hour:23,minute:10}]),status:'active',
+    schedule_timezone:'Asia/Shanghai',created_at:clock-2*DAY,ends_at:clock+6*DAY,updated_at:clock-2*DAY};
+  const keys=Object.keys(pilot);
+  f.sqlite.prepare('INSERT INTO psychology_autopilots('+keys.join(',')+') VALUES('+keys.map(()=>'?').join(',')+')').run(...keys.map(k=>pilot[k]));
+  for(const id of ['a','b'])f.sqlite.prepare("INSERT INTO psychology_autopilot_accounts(autopilot_id,connection_id,status,reason,updated_at) VALUES(?,?,'active','',?)").run(pilot.id,id,clock);
+  return {...f,pilot,setNow(value){clock=value;},get now(){return clock;}};
+}
+
+test('explicit one-round recovery preserves canonical round and settings while starting short-lead generation now',async t=>{
+  const f=await recoveryFixture(t),target=at('2026-10-03','03:30'),original=at('2026-10-03','02:30');
+  assert.equal(dueSlots(f.pilot,f.now).includes(original),false);
+  const before=f.sqlite.prepare('SELECT slots_json,ends_at,updated_at FROM psychology_autopilots WHERE id=?').get(f.pilot.id);
+  const result=await (await f.api('POST','/'+f.pilot.id+'/run',{recoverySlotAt:target,recoveryOriginalSlotAt:original})).json();
+  assert.equal(result.originalSlotAt,original);assert.equal(result.batches.length,1,JSON.stringify(result));
+  const items=f.sqlite.prepare('SELECT schedule_at FROM psychology_publish_items ORDER BY schedule_at').all();
+  assert.deepEqual(items.map(i=>i.schedule_at),[target/1000,target/1000+45]);
+  const batch=JSON.parse(f.sqlite.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=?').get(result.batches[0]).config_json);
+  assert.equal(batch.pairSeed,pilotPairSeed(f.pilot,original));
+  const plans=f.sqlite.prepare('SELECT generation_at,lead_ms FROM psychology_generation_plans').all();
+  assert.equal(plans.length,2);assert.ok(plans.every(p=>p.generation_at===f.now&&p.lead_ms>=2*HOUR));
+  assert.deepEqual(f.sqlite.prepare('SELECT slots_json,ends_at,updated_at FROM psychology_autopilots WHERE id=?').get(f.pilot.id),before);
+  const again=await recoverAutopilotSlot(f.env,f.pilot,target,f.now,at('2026-10-03','02:30'));
+  assert.equal(again.covered,true);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_items').get().n,2);
+  assert.equal(f.requests.length,0);
+});
+
+test('recovery binds committed orphan normal batches and keeps their original schedules',async t=>{
+  const f=await recoveryFixture(t),original=at('2026-10-03','02:30'),target=at('2026-10-03','03:30');
+  f.setNow(at('2026-10-03','00:00'));await runAutopilot(f.env,f.pilot,f.now);
+  const slot=f.sqlite.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').get(f.pilot.id,original);
+  assert.ok(slot.batch_id);
+  const kept=f.sqlite.prepare('SELECT id,schedule_at,job_id FROM psychology_publish_items WHERE batch_id=? ORDER BY id').all(slot.batch_id);
+  f.sqlite.prepare("UPDATE psychology_autopilot_slots SET batch_id='',status='creating',updated_at=? WHERE autopilot_id=? AND slot_at=?").run(f.now-6*60000,f.pilot.id,original);
+  f.setNow(at('2026-10-03','01:45'));
+  const before=f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_items').get().n;
+  const result=await recoverAutopilotSlot(f.env,f.pilot,target,f.now,at('2026-10-03','02:30'));
+  assert.equal(result.covered,true);assert.ok(result.existingBatchIds.includes(slot.batch_id));
+  assert.deepEqual(f.sqlite.prepare('SELECT id,schedule_at,job_id FROM psychology_publish_items WHERE batch_id=? ORDER BY id').all(slot.batch_id),kept);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_items').get().n,before);
+});
+
+test('fresh creating claims block recovery; stale empty claims recover once even with concurrent calls',async t=>{
+  const f=await recoveryFixture(t),original=at('2026-10-03','02:30'),target=at('2026-10-03','03:30');
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)").run(f.pilot.id,original,f.now);
+  assert.equal((await recoverAutopilotSlot(f.env,f.pilot,target,f.now,at('2026-10-03','02:30'))).busy,true);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_items').get().n,0);
+  f.sqlite.prepare('UPDATE psychology_autopilot_slots SET updated_at=? WHERE autopilot_id=? AND slot_at=?').run(f.now-6*60000,f.pilot.id,original);
+  const results=await Promise.all([recoverAutopilotSlot(f.env,f.pilot,target,f.now,at('2026-10-03','02:30')),recoverAutopilotSlot(f.env,f.pilot,target,f.now,at('2026-10-03','02:30'))]);
+  assert.equal(results.filter(r=>r.batches.length).length,1);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_items').get().n,2);
+  assert.equal(new Set(f.sqlite.prepare('SELECT connection_id,schedule_at FROM psychology_publish_items').all().map(i=>i.connection_id+':'+i.schedule_at)).size,2);
+});
+
+test('recovery rejects expired, non-today and cross-operating-day targets and skips paused accounts',async t=>{
+  const f=await recoveryFixture(t),target=at('2026-10-03','03:30');
+  assert.throws(()=>recoveryOriginalSlot(f.pilot,f.now+10*60000,f.now),/超过 10 分钟/);
+  assert.throws(()=>recoveryOriginalSlot(f.pilot,at('2026-10-04','03:30'),f.now),/北京时间今天/);
+  assert.throws(()=>recoveryOriginalSlot(f.pilot,target,f.now,at('2026-10-03','12:00')),/原发布轮次/);
+  assert.throws(()=>recoveryOriginalSlot({...f.pilot,ends_at:target},target,f.now),/运行期/);
+  f.sqlite.prepare("UPDATE psychology_autopilot_accounts SET status='paused' WHERE autopilot_id=? AND connection_id='b'").run(f.pilot.id);
+  const result=await recoverAutopilotSlot(f.env,f.pilot,target,f.now,at('2026-10-03','02:30'));
+  assert.equal(result.batches.length,1);
+  assert.deepEqual(f.sqlite.prepare('SELECT connection_id FROM psychology_publish_items').all().map(i=>i.connection_id),['a']);
+  const pacific={...f.pilot,slots_json:JSON.stringify([{hour:23,minute:30}]),schedule_timezone:'America/Los_Angeles'};
+  assert.throws(()=>recoveryOriginalSlot(pacific,at('2026-10-03','16:00'),f.now,at('2026-10-03','14:30')),/原发布轮次/);
+});
+
+test('one-round recovery can retry an explicit later canonical round without running all pilot slots',async t=>{
+  const f=await recoveryFixture(t),target=at('2026-10-03','12:00');
+  f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)").run(f.pilot.id,target,f.now-6*60000);
+  const result=await recoverAutopilotSlot(f.env,f.pilot,target,f.now,target);
+  assert.equal(result.originalSlotAt,target);assert.equal(result.batches.length,1,JSON.stringify(result));
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_autopilot_slots WHERE autopilot_id=?').get(f.pilot.id).n,1);
+  assert.deepEqual(f.sqlite.prepare('SELECT schedule_at FROM psychology_publish_items ORDER BY schedule_at').all().map(i=>i.schedule_at),[target/1000,target/1000+45]);
 });
