@@ -20,8 +20,14 @@ Show exact date/metric values immediately when the user hovers over the Operatio
 - Real isolated Chrome exercises hover away from points, missing/zero, escaped dates, native Tab focus and Escape, formatted percentage/seconds, metric switching, touch, single-day/empty data and 1440/390/320px edge bounds. Zero external requests and runtime errors.
 - Full factory regression: 1,191 passed, zero failed/cancelled/skipped using the registered npm-test file list with test-concurrency=1. The default parallel attempt encountered unrelated local browser-test timeouts and was stopped only for its owned test processes; sequential execution passed all checks. No production jobs were affected.
 
+## Release and live verification
+- Code commit `bee0adf76b35b38c6633da8b3fe6f58c46c85613` was pushed to GitHub main before the clean, exact-origin/main release. Used only `npm run deploy` from factory-cloud; no migrations were pending. Worker Version: `d8ed30bd-ea99-4a05-97ef-289af540eabb`.
+- Authenticated production mouse hover shows `2026-09-28 / 累计播放量：140,207`; leaving the plot hides it. Changing the selected metric shows `2026-09-28 / 完播率：10.9%`, with no stale playback label/value. Both match the actual daily table.
+- At 390px, clicking the final point shows `2026-10-02 / 累计播放量：42,583`; tooltip bounds remain inside the plot and the document has no horizontal overflow. The default playback selection was restored after checking.
+- Live checks used read-only report navigation, metric selection, hover/click and DOM reads only. The temporary owned browser session was closed; original untracked files were preserved.
+
 ## Unfinished work
-Commit/push main, standard deployment and authenticated live hover verification remain.
+None within the requested trend-hover scope.
 
 ## Recommended next step
-Release from clean main exactly matching origin/main and verify tooltip values against the existing daily table.
+Use the trend hover for quick comparisons; retain the daily table for full-period detail and existing publication-cohort scope.
