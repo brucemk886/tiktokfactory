@@ -11,7 +11,7 @@
     const manual = view === "manual";
     $("#autoView").hidden = manual;
     $("#manualView").hidden = !manual;
-    document.querySelectorAll("[data-view]").forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.view === view)));
+    document.querySelectorAll("[data-view]").forEach((tab) => { tab.setAttribute("aria-selected", String(tab.dataset.view === view)); tab.tabIndex = tab.dataset.view === view ? 0 : -1; });
     const params = new URLSearchParams(location.search);
     if (manual) params.set("view", "manual"); else { params.delete("view"); params.delete("job"); }
     const search = params.toString();
@@ -39,7 +39,7 @@
         <td>${link(item.publishedUrl, "打开我方帖子")}</td>
         <td>${item.peerUrl ? link(item.peerUrl, "打开爆款原帖") : (item.sourceType === "topic-bank" ? "题库题目，无爆款链接" : "—")}<small>${esc(item.peerTitle || "")}</small></td>
         <td>${esc(item.title || item.topicTitle || "—")}</td>
-        <td>${esc(labels[item.status] || item.status || "—")}</td>
+        <td><span class="source-status" data-status="${esc(item.status)}">${esc(labels[item.status] || item.status || "—")}</span></td>
         <td>${item.detailJobId ? `<button type="button" class="detail-btn" data-detail="${esc(item.detailJobId)}">制作详情</button>` : `<span class="muted">${item.status === "cleaned" ? "任务已清理" : "—"}</span>`}</td>
       </tr>`).join("") : `<tr><td class="sources-empty" colspan="8">没有匹配的发布记录。</td></tr>`;
       $("#pageInfo").textContent = `第 ${Math.floor(offset / 20) + 1} 页`;
@@ -67,6 +67,12 @@
   $("#closeDetail").addEventListener("click", () => $("#detailDialog").close());
   $("#detailDialog").addEventListener("click", (event) => { if (event.target === $("#detailDialog")) $("#detailDialog").close(); });
   document.querySelectorAll("[data-view]").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
+  const viewTabs = [...document.querySelectorAll('.records-views [data-view]')];
+  viewTabs.forEach((tab,index)=>tab.addEventListener('keydown',event=>{
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+    event.preventDefault();const target=event.key==='Home'?0:event.key==='End'?viewTabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+viewTabs.length)%viewTabs.length;
+    showView(viewTabs[target].dataset.view);viewTabs[target].focus();
+  }));
   $("#searchBtn").addEventListener("click", () => { offset = 0; load(); });
   $("#query").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); offset = 0; load(); } });
   $("#mediaType").addEventListener("change", () => { offset = 0; load(); });
@@ -76,7 +82,7 @@
   const initial = new URLSearchParams(location.search).get("view") === "manual" ? "manual" : "auto";
   $("#autoView").hidden = initial === "manual";
   $("#manualView").hidden = initial !== "manual";
-  document.querySelectorAll("[data-view]").forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.view === initial)));
+  document.querySelectorAll("[data-view]").forEach((tab) => { tab.setAttribute("aria-selected", String(tab.dataset.view === initial)); tab.tabIndex = tab.dataset.view === initial ? 0 : -1; });
   if (initial === "manual") $("#refreshBoard")?.click();
   load();
 })();

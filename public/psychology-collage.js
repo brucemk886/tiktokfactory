@@ -114,8 +114,10 @@ function render(job) {
   const percent = clamp(Number(job.percent) || (job.status === "done" ? 100 : 0), 0, 100);
   $("#progressPercent").textContent = `${Math.round(percent)}%`;
   $("#progressBar").style.width = `${percent}%`;
-  $("#jobMessage").textContent = job.message || job.error || "执行中...";
-  status(job.status === "failed" ? "生成失败" : "心理学拼贴任务执行中", job.status === "failed");
+  const fallback = { done: "心理学拼贴任务已完成", canceled: "心理学拼贴任务已取消", failed: "生成失败" }[job.status] || "心理学拼贴任务执行中";
+  const message = job.message || job.error || fallback;
+  $("#jobMessage").textContent = message;
+  status(message, job.status === "failed");
   if (job.score) {
     $("#scorePanel").hidden = false;
     $("#scorePanel").innerHTML = `<strong>脚本评分 ${escape(job.score.score)}/100</strong><br>${escape(Object.entries(job.score.dimensions || {}).map(([key, value]) => `${label(key)} ${value}`).join(" · "))}`;

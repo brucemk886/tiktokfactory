@@ -199,13 +199,13 @@ test("psychology keeps interactive test distinct from paper collage", async () =
   const composition = fs.readFileSync(new URL("../remotion/psychology-landscape.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(html, /href="\/psychology-target-2"/);
   assert.doesNotMatch(html, /href="\/psychology-collage"/);
-  assert.match(page, /SVG 动作/);
+  assert.match(page, /字幕与真实语音时间同步/);
   assert.match(page, /<h1>单图互动测试模板<\/h1>/);
   assert.match(page, /id="sourceImageFile"/);
   assert.match(page, /id="choiceCopy0"/);
   assert.doesNotMatch(page, /data-quiz-type="hidden-number"/);
   assert.doesNotMatch(page, /data-quiz-type="position-choice"/);
-  assert.match(page, /默认英文 · 中文走 ElevenLabs/);
+  assert.match(page, /英文使用本机 Kokoro；中文使用 ElevenLabs/);
   assert.match(page, /id="elevenLabsApiKey"/);
   assert.match(page, /id="elevenLabsVoiceId"/);
   assert.match(page, /value="am_adam" selected/);
@@ -240,7 +240,8 @@ test("psychology keeps interactive test distinct from paper collage", async () =
   assert.match(composition, /hasMeasuredTiming/);
   assert.match(composition, /translateX/);
   assert.match(composition, /psychology-poses\/stick-/);
-  assert.match(page, /每句话仍按真实时间戳同步字幕和 SVG/);
+  assert.match(page, /1920 × 1080/);
+  assert.match(page, /id="targetDuration"[^>]*min="12"[^>]*max="20"/);
   for (let index = 1; index <= 8; index += 1) {
     const fileName = `stick-${String(index).padStart(2, "0")}.svg`;
     assert.equal(fs.existsSync(new URL(`../public/psychology-poses/${fileName}`, import.meta.url)), true, fileName);

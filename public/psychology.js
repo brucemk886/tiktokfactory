@@ -38,7 +38,9 @@ function initAiPreviewControls() {
       <video id="previewVideo" controls playsinline preload="metadata"></video>
       <div id="previewEmpty" class="preview-empty">生成完成后在这里播放</div>
     </div>`;
-  document.querySelectorAll(".psy-section")[1].insertAdjacentElement("afterend", previewSection);
+  const side = document.querySelector(".psy-side");
+  if (side) side.insertBefore(previewSection, side.querySelector(".psy-queue"));
+  else document.querySelectorAll(".psy-section")[1].insertAdjacentElement("afterend", previewSection);
 
   $("#generateNarrationBtn").addEventListener("click", () => generateAiField("narration"));
   $("#previewBtn").addEventListener("click", createPreview);
@@ -51,10 +53,35 @@ function bindChoicePreviews() {
       const file = $(`#choiceFile${index}`).files[0];
       const preview = $(`#choicePreview${index}`);
       if (!preview) return;
-      if (!file) { preview.removeAttribute("src"); preview.classList.remove("is-on"); return; }
-      preview.src = URL.createObjectURL(file);
-      preview.classList.add("is-on");
+      if (preview.src.startsWith("blob:")) URL.revokeObjectURL(preview.src);
+      if (!file) {
+        preview.removeAttribute("src");
+        preview.classList.remove("is-on");
+      } else {
+        preview.src = URL.createObjectURL(file);
+        preview.classList.add("is-on");
+      }
+      updateUploadSummary();
     });
+    $(`#choiceCopy${index}`)?.addEventListener("input", updateUploadSummary);
+  }
+  $("#question")?.addEventListener("input", updateUploadSummary);
+  updateUploadSummary();
+}
+
+function updateUploadSummary() {
+  const title = $("#fourSummaryTitle");
+  if (!title) return;
+  title.textContent = $("#question").value.trim() || "上传四张图片，填写测试题目";
+  for (let index = 0; index < 4; index += 1) {
+    const source = $(`#choicePreview${index}`);
+    const image = $(`#fourSummaryImage${index}`);
+    const ready = source.classList.contains("is-on") && Boolean(source.getAttribute("src"));
+    image.hidden = !ready;
+    $(`#fourSummaryEmpty${index}`).hidden = ready;
+    if (ready) image.src = source.src;
+    else image.removeAttribute("src");
+    $(`#fourSummaryCopy${index}`).textContent = $(`#choiceCopy${index}`).value.trim() || "对应文案";
   }
 }
 

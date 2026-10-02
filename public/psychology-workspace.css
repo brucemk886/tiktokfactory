@@ -1,0 +1,63 @@
+/* Approved psychology workspace theme. Opt in per page; analytics and other modules retain their own styles. */
+body.psychology-workspace-page {
+  --psy-accent: #2563eb;
+  --psy-bg: #f5f7fb;
+  --psy-surface: #fff;
+  --psy-line: #dfe7f2;
+  --psy-ink: #102a4b;
+  --psy-text: #314c70;
+  --psy-muted: #7083a0;
+  --lf-bg: var(--psy-bg);
+  --lf-surface: var(--psy-surface);
+  --lf-line: var(--psy-line);
+  --lf-line-strong: #d3deed;
+  --lf-text: var(--psy-text);
+  --lf-muted: var(--psy-muted);
+  --lf-accent: var(--psy-accent);
+  --lf-accent-fill: var(--psy-accent);
+  --lf-accent-ink: #fff;
+}
+.psychology-workspace-page *, .psychology-workspace-page *::before, .psychology-workspace-page *::after { box-sizing: border-box; }
+.psychology-workspace-page [hidden] { display: none !important; }
+.psychology-workspace-page.lf-console > main { padding: 26px 30px 60px !important; }
+.psychology-workspace-page.lf-console :is(.page-head, .module-header, .artboard-header, .hub-hero, .psy-header) {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--psy-line);
+}
+.psychology-workspace-page.lf-console h1 { color: var(--psy-ink); font-size: 28px !important; letter-spacing: -.6px; }
+.psychology-workspace-page :is(h2, h3) { color: var(--psy-ink); }
+.psychology-workspace-page :is(.page-lead, .hub-lead) { max-width: 720px; font-size: 13px !important; line-height: 1.7; }
+.psychology-workspace-page :is(.page-links, .header-actions, .hits-header-tools, .board-actions) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.psychology-workspace-page.lf-console :is(.page-links a, .copy-header-link, .board-actions a) { color: var(--psy-text); background: #fff; border-color: var(--psy-line); border-radius: 6px; min-height: 34px; font-size: 12px !important; }
+.psychology-workspace-page.lf-console :is(button, input, select, textarea) { font-family: inherit; }
+.psychology-workspace-page.lf-console :is(button, .page-links a, .copy-header-link) { box-shadow: none; }
+.psychology-workspace-page.lf-console :is(.primary-action, button.primary, .primary-link, .primary-table-action, #bulkImportButton) { background: var(--psy-accent) !important; border-color: var(--psy-accent) !important; color: #fff !important; }
+.psychology-workspace-page.lf-console :is(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid #9fc3ff !important; outline-offset: 2px; }
+.psychology-workspace-page.lf-console :is(.panel, .auto-section, .module-panel, .copy-panel, .hits-panel) { border: 1px solid var(--psy-line); border-radius: 8px !important; background: #fff !important; box-shadow: none; }
+.psychology-workspace-page.lf-console [role=tablist] { display: flex; flex-wrap: wrap; gap: 20px; padding: 0; border: 0; border-bottom: 1px solid var(--psy-line); border-radius: 0; background: transparent; }
+.psychology-workspace-page.lf-console [role=tab] { min-height: 40px; padding: 10px 2px; border: 0 !important; border-bottom: 2px solid transparent !important; border-radius: 0; background: transparent !important; color: var(--psy-muted); box-shadow: none; font-size: 13px !important; }
+.psychology-workspace-page.lf-console [role=tab][aria-selected=true] { color: var(--psy-accent) !important; border-bottom-color: var(--psy-accent) !important; background: transparent !important; }
+.psychology-workspace-page.lf-console :is(th, td) { padding: 11px 12px !important; border-bottom-color: #e9eff7 !important; }
+.psychology-workspace-page.lf-console th { background: #f5f8fc !important; font-size: 12px; color: #617b9c !important; }
+.psychology-workspace-page :is(.table-wrap, .hits-table-wrap, .copy-table-wrap, .queue-wrap) { max-width: 100%; min-width: 0; overscroll-behavior-x: contain; }
+.psychology-workspace-page.lf-console dialog { color: var(--psy-text); border: 1px solid var(--psy-line); border-radius: 10px; background: #fff; max-width: calc(100vw - 24px); max-height: calc(100dvh - 32px); overflow: auto; }
+.psychology-workspace-page dialog::backdrop { background: #142f4e66; }
+.psychology-workspace-page :is(.copy-dialog-head, .dialog-head) { gap: 12px; }
+.psychology-workspace-page :is(.copy-dialog-head, .dialog-head) > * { min-width: 0; }
+.psychology-workspace-page :is(.copy-pagination, .hits-pagination, .bank-pagination, .sources-pagination, .page-pager) { flex-wrap: wrap; font-size: 12px; gap: 9px; }
+@media (max-width: 1000px) {
+  .psychology-workspace-page.lf-console > main { padding: 22px 22px 50px !important; }
+}
+@media (max-width: 760px) {
+  .psychology-workspace-page.lf-console > main { padding: 20px 14px 40px !important; }
+  .psychology-workspace-page.lf-console h1 { font-size: 24px !important; }
+  .psychology-workspace-page.lf-console :is(.page-head, .module-header, .artboard-header, .hub-hero, .psy-header) { gap: 12px; margin-bottom: 16px; padding-bottom: 15px; }
+  .psychology-workspace-page :is(.header-actions, .hits-header-tools, .board-actions, .page-links) { justify-content: flex-start; max-width: 100%; }
+  .psychology-workspace-page :is(.header-actions, .hits-header-tools, .board-actions, .page-links) > * { min-width: 0; }
+  .psychology-workspace-page.lf-console [role=tablist] { gap: 14px; }
+  .psychology-workspace-page.lf-console [role=tab] { font-size: 12px !important; }
+}

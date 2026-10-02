@@ -2,29 +2,27 @@
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>定时评论 · 心理学</title>
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-auto-publish.css"><link rel="stylesheet" href="/psychology-comments.css"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
+<link rel="stylesheet" href="/psychology-workspace.css">
 <script src="/admin-ui.js" defer></script>
 </head>
-<body class="work-page official-data-page psychology-module lf-console"><nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
+<body class="work-page official-data-page psychology-module lf-console psychology-workspace-page psychology-comments-page"><nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell"><header class="page-head"><div><h1>定时评论</h1><p class="page-lead">视频发布成功后，按模板设置的时间，在评论区揭晓对应题目的答案。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-topic-bank">模板题库</a><a href="/psychology-publish">心理学自动发布</a></nav></header>
 
-<section class="panel auto-section"><h2>模板设置</h2><p class="field-hint">先在模板题库填写每道题的「揭晓评论」，再开启对应模板。设置仅作用于之后创建的自动发布批次。</p>
-<p><a id="manageTopics" href="/psychology-topic-bank">管理此模板的题目与揭晓评论 →</a></p>
-<form id="settingsForm"><div class="auto-grid"><label>模板<select id="template" required></select></label><label>发布成功后延迟（分钟）<input id="delay" type="number" min="1" max="10080" value="120" required></label></div>
-<label class="comment-check"><input id="enabled" type="checkbox">开启此模板的定时揭晓评论</label>
-<h3>此模板的自动回复</h3>
-<label class="comment-check"><input id="autoReplyEnabled" type="checkbox">随定时揭晓自动回复用户选项</label>
-<div class="auto-grid"><label>从揭晓时间起持续回复（小时）<input id="replyHours" type="number" min="1" max="168" value="48" required></label><label>每个视频最多回复<input id="replyMax" type="number" min="1" max="500" value="100" required></label></div>
-<p class="field-hint">一次设置适用于之后批量发布的所有账号。发布成功后自动获取视频 ID，无需逐个添加。在模板题库的每道题填写 A/B/C/D 回复，创建批次时固定对应答案；只回复明确的单个选项。历史视频不会自动加入。</p>
-<button class="primary-action" type="submit" id="save">保存模板设置</button><span id="settingsStatus" role="status"></span></form></section>
-<section class="panel auto-section" id="autoReplies"><h2>自动回复用户评论</h2>
-<p class="field-hint">开启模板自动回复后，批量发布的视频会自动关联账号、视频 ID 和对应题目的答案，按揭晓时间开始回复。每5分钟安排扫描，每账号每分钟最多回复1条；暂停时正在发送的回复仍可能完成。</p><p id="replyMessage" role="status"></p>
-<div class="section-title"><h3>视频回复任务</h3><button type="button" id="replyRefresh">刷新任务</button></div><div id="replyWatches"></div>
-<div class="comment-pagination"><button id="replyPrev" type="button">上一页</button><span id="replyPageInfo"></span><button id="replyNext" type="button">下一页</button></div>
-<h3 id="replyRecordsTitle">评论处理记录</h3><div class="queue-wrap"><table class="queue-table comments-table"><thead><tr><th>用户评论</th><th>选项 / 回复</th><th>状态 / 原因</th><th>操作</th></tr></thead><tbody id="replyRecords"><tr><td colspan="4">点击视频任务的“查看记录”。</td></tr></tbody></table></div>
-<div class="comment-pagination"><button id="recordPrev" type="button" disabled>上一页记录</button><span id="recordPageInfo"></span><button id="recordNext" type="button" disabled>下一页记录</button></div>
-</section>
+<div class="comment-views" role="tablist" aria-label="评论任务类型"><button id="commentRevealTab" type="button" role="tab" aria-selected="true" aria-controls="revealPanel">定时揭晓</button><button id="commentRepliesTab" type="button" role="tab" aria-selected="false" aria-controls="autoReplies" tabindex="-1">自动回复</button></div>
+<div id="revealPanel" role="tabpanel" aria-labelledby="commentRevealTab">
+<section class="panel auto-section comment-settings"><div class="section-title"><div><h2>模板设置</h2><p class="field-hint">仅作用于之后创建的自动发布批次。</p></div><a id="manageTopics" href="/psychology-topic-bank">管理题目与揭晓评论 →</a></div>
+<form id="settingsForm"><div class="comment-settings-grid"><label class="field"><span>模板</span><select id="template" required></select></label><label class="field"><span>发布成功后延迟（分钟）</span><input id="delay" type="number" min="1" max="10080" value="120" required></label><label class="field"><span>从揭晓时间起持续回复（小时）</span><input id="replyHours" type="number" min="1" max="168" value="48" required></label><label class="field"><span>每个视频最多回复</span><input id="replyMax" type="number" min="1" max="500" value="100" required></label></div>
+<div class="comment-settings-footer"><div><label class="comment-check"><input id="enabled" type="checkbox">开启此模板的定时揭晓评论</label><label class="comment-check"><input id="autoReplyEnabled" type="checkbox">随定时揭晓自动回复用户选项</label></div><button class="primary-action" type="submit" id="save">保存模板设置</button></div><p id="settingsStatus" role="status"></p>
+<p class="field-hint">先在模板题库填写揭晓评论与 A/B/C/D 回复。一次设置适用于之后批量发布的所有账号，创建批次时固定对应答案；发布成功后自动获取视频 ID，从计划揭晓时间开始回复，只回复明确的单个选项。历史视频不会自动加入。</p></form></section>
 <section class="panel auto-section"><div class="section-title"><h2>评论任务</h2><div class="comment-toolbar"><select id="filter" aria-label="评论状态"><option value="">全部状态</option><option value="waiting_publish">等待视频发布</option><option value="pending">等待揭晓</option><option value="sending">提交中</option><option value="published">已评论</option><option value="failed">失败</option><option value="needs_review">待核对</option><option value="cancelled">已取消</option></select><button id="refresh" type="button">刷新</button></div></div>
-<p class="field-hint">每分钟检查到期任务。以实际发布时间起算；尚未取得实际时间时，以发布成功确认时间起算。已经开始提交的评论不能取消。</p><p id="listStatus" role="status"></p>
+<p class="field-hint">每分钟检查到期任务。以实际发布时间起算；尚未取得实际时间时，以发布成功确认时间起算。已经开始提交的评论不能取消。</p><p id="listStatus" role="status"></p><p class="field-hint timezone-note">以下时间按当前设备时区显示</p><p class="mobile-table-hint">左右滑动查看状态与操作</p>
 <div class="queue-wrap"><table class="queue-table comments-table"><thead><tr><th>题目 / 账号</th><th>揭晓评论</th><th>发布时间</th><th>计划评论</th><th>状态 / 结果</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div>
-<div class="comment-pagination"><button id="prev" type="button">上一页</button><span id="pageInfo"></span><button id="next" type="button">下一页</button></div></section></main>
+<div class="comment-pagination"><button id="prev" type="button">上一页</button><span id="pageInfo"></span><button id="next" type="button">下一页</button></div></section></div>
+<section id="autoReplies" role="tabpanel" aria-labelledby="commentRepliesTab" hidden><div class="reply-policy-note"><h2>模板自动回复</h2><p class="field-hint">开启模板自动回复后，批量发布的视频会自动关联账号、视频 ID 和对应题目的答案，按计划揭晓时间开始回复。每5分钟安排扫描，每账号每分钟最多回复1条；暂停时正在发送的回复仍可能完成。</p><button type="button" id="replySettings">查看模板设置</button></div><p id="replyMessage" role="status"></p>
+<section class="panel auto-section"><div class="section-title"><h2>视频回复任务</h2><button type="button" id="replyRefresh">刷新任务</button></div><p class="field-hint timezone-note">以下时间按当前设备时区显示</p><p class="mobile-table-hint">左右滑动查看状态与操作</p>
+<div class="queue-wrap"><table class="queue-table reply-watches-table"><thead><tr><th>题目 / 视频</th><th>回复窗口</th><th>已回复 / 上限</th><th>排队</th><th>异常</th><th>最近扫描</th><th>状态</th><th>操作</th></tr></thead><tbody id="replyWatches"></tbody></table></div>
+<div class="comment-pagination"><button id="replyPrev" type="button">上一页</button><span id="replyPageInfo"></span><button id="replyNext" type="button">下一页</button></div></section>
+<section class="panel auto-section"><h2 id="replyRecordsTitle">评论处理记录</h2><p class="mobile-table-hint">左右滑动查看状态与操作</p><div class="queue-wrap"><table class="queue-table reply-records-table"><thead><tr><th>用户评论</th><th>选项 / 回复</th><th>状态 / 原因</th><th>操作</th></tr></thead><tbody id="replyRecords"><tr><td colspan="4">点击视频任务的“查看记录”。</td></tr></tbody></table></div>
+<div class="comment-pagination"><button id="recordPrev" type="button" disabled>上一页记录</button><span id="recordPageInfo"></span><button id="recordNext" type="button" disabled>下一页记录</button></div></section>
+</section></main>
 <script src="/access.js"></script><script src="/psychology-comments.js"></script><script src="/psychology-auto-replies.js"></script></body></html>

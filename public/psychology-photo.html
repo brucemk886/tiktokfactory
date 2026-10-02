@@ -1,20 +1,19 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="zh-CN"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>图文发布模板 · Local Factory</title>
-    <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/module-pages.css" />
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/module-pages.css">
 
-    <link rel="stylesheet" href="/psychology-pages.css" />
-    <link rel="stylesheet" href="/psychology-photo.css?v=20260920-2" />
+    <link rel="stylesheet" href="/psychology-pages.css">
+
   <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
-<script src="/admin-ui.js" defer></script>
-</head>
-  <body class="work-page module-page psychology-module psychology-photo-page lf-console">
-    <nav class="side-tabs"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
+<script src="/admin-ui.js" defer=""></script>
+<link rel="stylesheet" href="/psychology-workspace.css"><link rel="stylesheet" href="/psychology-photo.css?v=20260920-2"></head>
+  <body class="work-page module-page psychology-module psychology-photo-page lf-console psychology-workspace-page">
+    <nav class="side-tabs"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout="">退出登录</button></nav>
     <main class="module-main photo-main">
       <header class="page-head">
         <div>
@@ -42,42 +41,42 @@
             <label class="field photo-prompt-field"><span>画面描述</span><textarea id="imagePrompt" class="photo-compact-textarea" rows="3" maxlength="1000" placeholder="例如：竖版写实摄影，一名年轻女性独自坐在雨夜公交站，神情克制，冷色环境光，人物清晰、背景虚化。"></textarea></label>
             <label class="field photo-prompt-field"><span>这张叠字文案（选填）</span><textarea id="imageCopy" class="photo-compact-textarea" rows="4" maxlength="800" placeholder="只叠在这一张图上"></textarea></label>
             <div class="photo-toolbar">
-              <label class="field compact-field"><span>画面比例</span><select id="aspectRatio"><option value="9:16" selected>9:16 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option><option value="4:3">4:3 横图</option><option value="16:9">16:9 横图</option></select></label>
-              <label class="photo-switch"><input id="noImageText" type="checkbox" />图片内不生成文字</label>
+              <label class="field compact-field"><span>画面比例</span><select id="aspectRatio"><option value="9:16" selected="">9:16 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option><option value="4:3">4:3 横图</option><option value="16:9">16:9 横图</option></select></label>
+              <label class="photo-switch"><input id="noImageText" type="checkbox">图片内不生成文字</label>
               <button id="generateBtn" type="button">生成这张</button>
             </div>
           </div>
-          <div id="stockPane" data-photo-pane="stock" hidden>
-            <label class="field"><span>这张标题（选填）</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds" /></label>
-            <label class="field"><span>这张副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)" /></label>
+          <div id="stockPane" data-photo-pane="stock" hidden="">
+            <label class="field"><span>这张标题（选填）</span><input id="stockTitle" maxlength="120" placeholder="例如：how to know your attachment style in 30 seconds"></label>
+            <label class="field"><span>这张副标题（选填）</span><input id="stockSubtitle" maxlength="160" placeholder="例如：(this explains 90% of your relationships)"></label>
             <label class="field photo-prompt-field"><span>这张叠字文案</span><textarea id="stockBody" class="photo-compact-textarea" rows="4" maxlength="800" placeholder="只叠在这一张图上"></textarea></label>
             <div class="photo-toolbar">
-              <label class="field stock-search-field"><span>素材搜索</span><input id="stockQuery" maxlength="80" placeholder="fog forest / empty hallway / night road" /></label>
+              <label class="field stock-search-field"><span>素材搜索</span><input id="stockQuery" maxlength="80" placeholder="fog forest / empty hallway / night road"></label>
               <button id="searchStockBtn" class="secondary-photo-btn" type="button">搜索素材</button>
             </div>
             <p class="photo-note">从 Pexels 只取竖版、偏分镜的空镜，并过滤人物。每次只选 1 张素材，生成 1 张图。</p>
             <div id="stockResults" class="stock-results"></div>
             <label class="field photo-prompt-field"><span>或粘贴一张图片链接</span><textarea id="stockUrls" class="photo-compact-textarea" rows="2" maxlength="4000" placeholder="https://images.pexels.com/photos/..."></textarea></label>
             <div class="photo-toolbar">
-              <label class="field compact-field"><span>画面比例</span><select id="stockAspect"><option value="9:16" selected>9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
-              <label class="photo-switch"><input id="stockGray" type="checkbox" />黑白照片</label>
+              <label class="field compact-field"><span>画面比例</span><select id="stockAspect"><option value="9:16" selected="">9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
+              <label class="photo-switch"><input id="stockGray" type="checkbox">黑白照片</label>
               <button id="renderStockBtn" type="button">生成这张</button>
             </div>
           </div>
-          <div id="textPane" data-photo-pane="text" hidden>
+          <div id="textPane" data-photo-pane="text" hidden="">
             <div class="catalog-tabs photo-text-templates" role="tablist" aria-label="文案模板">
               <button class="catalog-tab" id="coverTemplateTab" type="button" role="tab" aria-selected="false" data-text-template="cover">封面模板</button>
               <button class="catalog-tab is-active" id="contentTemplateTab" type="button" role="tab" aria-selected="true" data-text-template="content">内容模板</button>
             </div>
-            <label class="field" id="cardTitleField"><span>这一句</span><input id="cardTitle" maxlength="120" placeholder="you cancel the gym the week you were finally seeing results" /></label>
-            <label class="field photo-prompt-field" id="cardBodyField"><span>补充句子（选填）</span><textarea id="cardBody" class="photo-compact-textarea" rows="4" maxlength="800" placeholder="不要重复上一句；两条 labeled 句子可写成 anxious: …" /></textarea></label>
+            <label class="field" id="cardTitleField"><span>这一句</span><input id="cardTitle" maxlength="120" placeholder="you cancel the gym the week you were finally seeing results"></label>
+            <label class="field photo-prompt-field" id="cardBodyField"><span>补充句子（选填）</span><textarea id="cardBody" class="photo-compact-textarea" rows="4" maxlength="800" placeholder="不要重复上一句；两条 labeled 句子可写成 anxious: …"></textarea></label>
             <div class="photo-toolbar">
-              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="9:16" selected>9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
+              <label class="field compact-field"><span>画面比例</span><select id="cardAspect"><option value="9:16" selected="">9:16 竖图</option><option value="4:5">4:5 竖图</option><option value="3:4">3:4 竖图</option><option value="1:1">1:1 方图</option></select></label>
               <button id="renderCardBtn" type="button">生成这张</button>
             </div>
           </div>
           <p id="generateMessage" class="photo-status" aria-live="polite"></p>
-          <div class="photo-album-row">
+          <div class="photo-album-row"><div class="photo-album-info"><h3>当前图集</h3><p>按图集顺序发布，第一张作为封面；最多选 6 张。</p></div>
             <button id="clearAlbumBtn" class="secondary-photo-btn" type="button">清空图集</button>
           </div>
           <div id="photoList" class="generated-photo-list"><div class="generated-photo-empty">还没有可用图片。生成完成后会按顺序自动加入图集，第一张作为封面。</div></div>
@@ -93,15 +92,15 @@
           </div>
           <div id="groupPanel" class="group-chips"></div>
           <div id="accountList" class="publish-check-list"></div>
-          <label class="field photo-title-field"><span>图片标题</span><input id="photoTitle" maxlength="90" placeholder="最多 90 个字符" /></label>
+          <label class="field photo-title-field"><span>图片标题</span><input id="photoTitle" maxlength="90" placeholder="最多 90 个字符"></label>
           <div class="photo-settings-grid">
-            <label class="field"><span>发布时间（北京时间）</span><input id="publishTime" type="datetime-local" /></label>
-            <label class="field"><span>音乐 ID（选填）</span><input id="musicSoundId" inputmode="numeric" maxlength="30" placeholder="商用音乐 ID" /></label>
-            <label class="field"><span>可见范围</span><select id="privacyLevel"><option value="PUBLIC_TO_EVERYONE" selected>所有人</option><option value="MUTUAL_FOLLOW_FRIENDS">互相关注的朋友</option><option value="FOLLOWER_OF_CREATOR">粉丝（私密账号）</option><option value="SELF_ONLY">仅自己</option></select></label>
+            <label class="field"><span>发布时间（北京时间）</span><input id="publishTime" type="datetime-local"></label>
+            <label class="field"><span>音乐 ID（选填）</span><input id="musicSoundId" inputmode="numeric" maxlength="30" placeholder="商用音乐 ID"></label>
+            <label class="field"><span>可见范围</span><select id="privacyLevel"><option value="PUBLIC_TO_EVERYONE" selected="">所有人</option><option value="MUTUAL_FOLLOW_FRIENDS">互相关注的朋友</option><option value="FOLLOWER_OF_CREATOR">粉丝（私密账号）</option><option value="SELF_ONLY">仅自己</option></select></label>
           </div>
           <div class="photo-options">
-            <label><input id="autoAddMusic" type="checkbox" checked /> 自动添加推荐音乐</label>
-            <label><input id="allowComments" type="checkbox" checked /> 允许评论</label>
+            <label><input id="autoAddMusic" type="checkbox" checked=""> 自动添加推荐音乐</label>
+            <label><input id="allowComments" type="checkbox" checked=""> 允许评论</label>
           </div>
           <label class="field"><span>统一文案</span><textarea id="publishCaption" class="photo-compact-textarea" rows="3" maxlength="4000" placeholder="图片帖子的文案，支持 #tag"></textarea></label>
           <div class="photo-submit-row">
@@ -111,12 +110,13 @@
         </aside>
       </div>
       <div id="pageStatus" class="page-status"></div>
-      <div id="photoLightbox" class="photo-lightbox" hidden>
+      <div id="photoLightbox" class="photo-lightbox" hidden="">
         <button id="photoLightboxClose" type="button" class="photo-lightbox-close" aria-label="关闭预览">关闭</button>
         <img id="photoLightboxImage" alt="放大预览">
       </div>
     </main>
     <script src="/access.js"></script>
     <script type="module" src="/psychology-photo.js?v=20260920-4"></script>
-  </body>
-</html>
+
+
+</body></html>

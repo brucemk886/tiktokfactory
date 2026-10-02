@@ -144,3 +144,47 @@ button.quiet,.icon-button { border:1px solid #39444c; background:var(--lf-surfac
 .choice-preview { width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; background:#ece8db; display:none; }
 .choice-preview.is-on { display:block; }
 @media(max-width:900px){.choice-upload-grid{grid-template-columns:1fr}}
+/* Approved workspace overrides are isolated from other templates. */
+.psychology-workspace-page.psychology-page{--lime:var(--psy-accent);--panel:#fff;--panel2:#f8faff;--line:var(--psy-line);--muted:var(--psy-muted);--text:var(--psy-text)}
+.psychology-workspace-page.psychology-page .psy-grid{max-width:none;margin:0;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:18px}
+.psychology-workspace-page.psychology-page .psy-form{gap:16px;min-width:0}
+.psychology-workspace-page.psychology-page .psy-section,.psychology-workspace-page.psychology-page .psy-queue{background:#fff;border-color:var(--psy-line);border-radius:8px;padding:20px;min-width:0}
+.psychology-workspace-page.psychology-page .psy-side{display:grid;gap:16px;position:sticky;top:76px;min-width:0}
+.psychology-workspace-page.psychology-page .psy-queue{position:static;min-height:0}
+.psychology-workspace-page.psychology-page .section-head>span{display:none}.psychology-workspace-page.psychology-page .section-head{margin-bottom:18px}
+.psychology-workspace-page.psychology-page .section-head p,.psychology-workspace-page.psychology-page .queue-head p{font-size:12px;color:var(--psy-muted);margin:4px 0 0;line-height:1.6}
+.psychology-workspace-page.psychology-page .choice-upload{background:#f8faff;border-color:var(--psy-line);padding:12px;border-radius:6px;min-width:0}
+.psychology-workspace-page.psychology-page .choice-upload-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.psychology-workspace-page.psychology-page .choice-upload label{display:grid;gap:5px;font-size:12px;min-width:0}
+.psychology-workspace-page.psychology-page .choice-preview{height:110px;max-height:110px;object-fit:contain;background:#edf3fc}
+.psychology-workspace-page.psychology-page .choice-upload input[type=file]{font-size:11px;padding:6px;min-width:0;width:100%}
+.psychology-workspace-page.psychology-page .four-column{grid-template-columns:repeat(4,minmax(0,1fr))}.psychology-workspace-page.psychology-page .two-column{grid-template-columns:repeat(2,minmax(0,1fr))}
+.psychology-workspace-page.psychology-page .music-settings{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+.psychology-workspace-page.psychology-page .input-suffix b{border-color:var(--psy-line);color:var(--psy-muted);background:#f5f8fd}
+.psychology-workspace-page.psychology-page .api-panel{border-color:var(--psy-line);background:#fff;border-radius:6px}.psychology-workspace-page.psychology-page .api-panel summary{color:var(--psy-text)}
+.psychology-workspace-page.psychology-page .official-publish-note{margin:0;background:#edf4ff;border:1px solid #dae6fb;color:var(--psy-muted);padding:12px 14px;border-radius:6px}
+.psychology-workspace-page.psychology-page .task-card{background:#f8faff;border-color:var(--psy-line);color:var(--psy-text);overflow-wrap:anywhere}.psychology-workspace-page.psychology-page .task-card p{color:var(--psy-muted)}
+.psychology-workspace-page.psychology-page .task-list{max-height:600px}.psychology-workspace-page.psychology-page .status-tag{color:var(--psy-accent);background:#edf4ff}
+.psychology-workspace-page.psychology-page .psy-upload-summary .queue-head{margin-bottom:14px;padding-bottom:12px}.psychology-workspace-page.psychology-page #fourSummaryTitle{font-size:14px;text-align:center;margin:0 0 12px;overflow-wrap:anywhere}
+.psychology-workspace-page.psychology-page .four-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.psychology-workspace-page.psychology-page .four-summary-grid figure{margin:0;min-width:0;border:1px solid #e2eaf6;border-radius:4px;overflow:hidden;background:#f4f8fd}
+.psychology-workspace-page.psychology-page .four-summary-grid img{width:100%;height:118px;object-fit:contain;display:block;background:#edf3fc}
+.psychology-workspace-page.psychology-page .summary-image-empty{display:grid;place-items:center;height:118px;font-size:12px;color:var(--psy-muted);background:#f4f7fc}
+.psychology-workspace-page.psychology-page .four-summary-grid figcaption{display:flex;gap:7px;align-items:flex-start;padding:6px 8px;font-size:11px;line-height:1.5;background:#fff;overflow-wrap:anywhere}.psychology-workspace-page.psychology-page .four-summary-grid figcaption b{color:var(--psy-accent);flex:none}
+.psychology-workspace-page.psychology-page .upload-summary-note{color:var(--psy-muted);font-size:11px;margin:10px 0 0;line-height:1.6}
+.psychology-workspace-page.psychology-page .preview-section{display:grid;grid-template-columns:1fr;gap:14px}.psychology-workspace-page.psychology-page .preview-copy h2{font-size:17px}.psychology-workspace-page.psychology-page .preview-copy p{color:var(--psy-muted);font-size:12px}.psychology-workspace-page.psychology-page .preview-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center}.psychology-workspace-page.psychology-page .preview-actions span{color:var(--psy-muted);font-size:11px}
+.psychology-workspace-page.psychology-page .preview-player-wrap:has(video:not(.is-ready)){aspect-ratio:auto;height:90px;max-height:none;background:#f5f8fc;border-color:var(--psy-line);color:var(--psy-muted)}.psychology-workspace-page.psychology-page .preview-empty{color:var(--psy-muted);font-size:12px}
+@media(max-width:1100px){.psychology-workspace-page.psychology-page .psy-grid{grid-template-columns:minmax(0,1fr) 310px}.psychology-workspace-page.psychology-page .four-column{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:960px){.psychology-workspace-page.psychology-page .psy-grid{grid-template-columns:minmax(0,1fr)}.psychology-workspace-page.psychology-page .psy-side{display:contents;position:static}.psychology-workspace-page.psychology-page .psy-upload-summary{order:-1}.psychology-workspace-page.psychology-page .psy-form{order:0}.psychology-workspace-page.psychology-page .preview-section{order:1}.psychology-workspace-page.psychology-page .psy-queue{order:2}.psychology-workspace-page.psychology-page .four-summary-grid img,.psychology-workspace-page.psychology-page .summary-image-empty{height:135px}}
+@media(max-width:760px){.psychology-workspace-page.psychology-page .psy-section,.psychology-workspace-page.psychology-page .psy-queue{padding:15px 14px}.psychology-workspace-page.psychology-page .choice-upload-grid{gap:8px}.psychology-workspace-page.psychology-page .choice-upload{padding:9px}.psychology-workspace-page.psychology-page .choice-preview{height:90px}.psychology-workspace-page.psychology-page .two-column{gap:10px}.psychology-workspace-page.psychology-page .music-settings{grid-template-columns:1fr}.psychology-workspace-page.psychology-page .four-summary-grid img,.psychology-workspace-page.psychology-page .summary-image-empty{height:94px}.psychology-workspace-page.psychology-page .settings-actions{flex-wrap:wrap;gap:9px}.psychology-workspace-page.psychology-page .directory-field input{min-width:0}.psychology-workspace-page.psychology-page .task-list{max-height:none}}
+/* Page-local creation layout; opt in only to the approved psychology workspace. */
+.psychology-workspace-page .creation-section-nav{display:flex;flex-wrap:wrap;gap:24px;border-bottom:1px solid var(--psy-line);margin:0 0 18px;padding:0}
+.psychology-workspace-page .creation-section-nav a{display:block;padding:10px 3px 11px;min-height:40px;border-bottom:3px solid transparent;color:var(--psy-muted);font-size:13px;text-decoration:none}
+.psychology-workspace-page .creation-section-nav a.is-active,.psychology-workspace-page .creation-section-nav a:hover{color:var(--psy-accent);border-bottom-color:var(--psy-accent)}
+.psychology-workspace-page .creation-back{display:inline-flex;align-items:center;padding:8px 12px;border:1px solid var(--psy-line);border-radius:6px;background:#fff;color:var(--psy-text);font-size:12px;min-height:36px;text-decoration:none}
+.psychology-workspace-page .header-actions{max-width:100%;align-items:center}
+.psychology-workspace-page .header-actions #statusText{color:var(--psy-muted);text-align:left;font-size:12px;max-width:250px;overflow-wrap:anywhere}
+@media(max-width:760px){.psychology-workspace-page .creation-section-nav{gap:18px;margin-bottom:14px}.psychology-workspace-page .creation-section-nav a{font-size:12px}.psychology-workspace-page .header-actions #statusText{flex-basis:100%;max-width:none}}
+
+.psychology-workspace-page.psychology-page .preview-player-wrap:has(video:not(.is-ready)){background:#f5f8fc!important}
+.psychology-workspace-page.psychology-page .preview-empty{background:#f5f8fc;color:var(--psy-muted)}
+.psychology-workspace-page.lf-console .creation-section-nav a{color:var(--psy-muted)} .psychology-workspace-page.lf-console .creation-section-nav a.is-active,.psychology-workspace-page.lf-console .creation-section-nav a:hover{color:var(--psy-accent)}

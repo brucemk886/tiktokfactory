@@ -5,17 +5,20 @@
   <title>文案库 · 心理学</title>
   <link rel="stylesheet" href="/app.css" /><link rel="stylesheet" href="/module-pages.css" />
   <link rel="stylesheet" href="/psychology-pages.css" /><link rel="stylesheet" href="/psychology-peer-hits.css" />
-  <link rel="stylesheet" href="/psychology-copy-library.css?v=20260925-page-recovery" />
+
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
+<link rel="stylesheet" href="/psychology-workspace.css?v=20261002">
+<link rel="stylesheet" href="/psychology-copy-library.css?v=20261002-workspace">
 <script src="/admin-ui.js" defer></script>
 </head>
-<body class="work-page module-page psychology-module psy-hits-page copy-library-page lf-console">
+<body class="work-page module-page psychology-module psy-hits-page copy-library-page lf-console psychology-workspace-page">
   <nav class="side-tabs" aria-label="主导航"><a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a></nav>
   <main class="module-main">
     <header class="page-head">
-      <div><h1>文案库</h1><p class="page-lead">统一管理爆款来源、播放数据、提取文案和改写版本。新内容导入后自动提取，供图文与视频生产复用。</p></div>
+      <div><h1>文案库</h1><p class="page-lead">统一管理爆款来源、提取文案与改写版本，供图文与视频生产复用。新内容导入后自动提取。</p></div>
       <div class="hits-header-tools"><a class="copy-header-link" href="/psychology-copy-usage">使用与效果</a><a class="copy-header-link" href="/psychology-publish">自动发布</a><button id="bulkImportButton" type="button" aria-haspopup="dialog" aria-controls="bulkImportDialog">批量导入</button>
+        <details id="sourceManagement" class="library-management" hidden><summary>更多管理</summary><div class="library-management-tools">
         <button id="watchAccountsButton" type="button" aria-haspopup="dialog" aria-controls="watchAccountsDialog" hidden>对标账号</button>
         <details class="hits-header-panel" id="apiPanel"><summary>读写接口</summary>
           <div class="hits-panel hits-header-popover">
@@ -47,6 +50,7 @@
             </form>
           </div>
         </details>
+        </div></details>
         <button id="refreshBtn" type="button">刷新列表</button>
       </div>
     </header>
@@ -54,9 +58,9 @@
       <button class="hits-tab is-active" id="videoHitsTab" type="button" role="tab" aria-selected="true" data-media-type="video">视频爆款</button>
       <button class="hits-tab" id="photoHitsTab" type="button" role="tab" aria-selected="false" data-media-type="photo">图文爆款</button>
     </div>
-    <section class="hits-panel">
+    <section class="hits-panel library-results">
       <div class="hits-toolbar"><label>原文状态<select id="libraryStatus"><option value="done">已提取文案</option><option value="all">全部导入记录</option><option value="queued">等待提取</option><option value="running">提取中</option><option value="failed">提取失败</option><option value="historical">历史待补全文案</option></select></label><label>改写状态<select id="rewriteStatus"><option value="all">全部改写状态</option><option value="attention">需处理：待审核 / 生成失败</option><option value="pending">未通过质检 · 待审核</option><option value="failed">改写生成失败</option><option value="none">暂无改写版本</option><option value="enabled">有已启用版本</option><option value="disabled">有已停用版本</option></select></label><label class="hits-search">搜索<input id="query" type="search" placeholder="标题、正文、账号或原帖链接" /></label><label>排序<select id="sort"><option value="plays">播放量从高到低</option><option value="published">最新发布</option><option value="recent">最近导入</option></select></label></div>
-      <p class="library-help">原文状态只筛选提取进度；改写状态筛选版本质检与最近一次批量生成结果。生成失败记录从本次更新起保存。</p><p id="listStatus" role="status">正在读取…</p>
+      <p class="library-help">原文状态只筛选提取进度；改写状态筛选版本质检与最近一次批量生成结果。生成失败记录从本次更新起保存。<span class="library-time-note">发布 / 导入时间：北京时间</span></p><p id="listStatus" role="status">正在读取…</p>
       <div class="hits-actions" id="sourceActions"><span id="selectionCount">已选 0 条</span><button id="selectPageBtn" type="button" disabled>全选本页</button><button id="deleteSelectedBtn" type="button" disabled>批量删除</button><span class="batch-rewrite"><label>模型<select id="batchModel"><option value="claude-sonnet-5" selected>Claude Sonnet 5（推荐）</option><option value="claude-opus-4-8">Claude Opus 4.8（Kie）</option><option value="claude-opus-4.7">Claude Opus 4.7（更贵）</option><option value="claude-haiku-4.5">Claude Haiku 4.5（更便宜）</option><option value="deepseek-flash">DeepSeek Flash</option></select></label><label>每篇<select id="batchCount"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option></select>个</label><button id="batchRewriteBtn" type="button" disabled>批量新增改写</button></span><button id="clearSelectionBtn" type="button">清空选择</button></div>
       <p id="productionStatus" role="status">使用已提取文案批量生成，请进入右上角的自动发布。</p>
       <div class="hits-table-wrap"><table><thead><tr><th><input id="selectPageCheckbox" type="checkbox" aria-label="全选本页文案" disabled /></th><th>标题 / 账号</th><th>播放 / 互动</th><th>发布 / 导入时间</th><th>文案状态</th><th>改写版本</th><th>音色</th><th id="mediaColumnLabel">原帖</th><th>操作</th></tr></thead><tbody id="hitRows"></tbody></table></div>

@@ -205,7 +205,7 @@ test("retired psychology topic UI and APIs are no longer used", async () => {
   for(const name of ["psychology.html","psychology-collage.html","psychology-narrative.html"]){
     const html=fs.readFileSync(new URL("../../public/"+name,import.meta.url),"utf8");
     assert.doesNotMatch(html,/value="(?:nano-banana|grok)"|href="\/psychology-topics"/);
-    assert.match(html,/value="z-image" checked disabled/);
+    assert.match(html,/value="z-image"\s+checked(?:="")?\s+disabled(?:="")?(?=\s|>)/);
   }
 });
 
@@ -329,8 +329,8 @@ test("psychology photo template is an online Z-Image to official photo publishin
   assert.match(html,/>AI生图</);
   assert.match(html,/>素材库图片</);
   assert.match(html,/>文案图片</);
-  assert.match(html,/id="cardAspect"><option value="9:16" selected>/);
-  assert.match(html,/id="stockAspect"><option value="9:16" selected>/);
+  assert.match(html,/id="cardAspect"><option value="9:16"\s+selected(?:="")?>/);
+  assert.match(html,/id="stockAspect"><option value="9:16"\s+selected(?:="")?>/);
   assert.match(html,/>内容模板</);
   assert.match(html,/>封面模板</);
   assert.doesNotMatch(html,/id="coverBackdropGrid"|全部保留|coverBackdropPicker/);

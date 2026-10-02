@@ -7,6 +7,7 @@ let elevenLabsConfigured = false;
 let elevenLabsVoiceConfigured = false;
 let pollTimer = null;
 let sourceImageDraft = { dataUrl: "", name: "" };
+let inputValidationIssue = null;
 
 initialize();
 
@@ -29,16 +30,39 @@ function bindEvents() {
     const preview = $("#sourceImagePreview");
     if (!file) {
       sourceImageDraft = { dataUrl: "", name: "" };
+      if (preview.src.startsWith("blob:")) URL.revokeObjectURL(preview.src);
       preview.removeAttribute("src");
       preview.classList.remove("is-on");
+      updateSourceSummary();
       return;
     }
     sourceImageDraft = { dataUrl: "", name: file.name };
+    if (preview.src.startsWith("blob:")) URL.revokeObjectURL(preview.src);
     preview.src = URL.createObjectURL(file);
     preview.classList.add("is-on");
+    updateSourceSummary();
   });
+  ["#topic", "#choiceCopy0", "#choiceCopy1", "#choiceCopy2", "#choiceCopy3"].forEach(selector => $(selector).addEventListener("input", updateSourceSummary));
+  updateSourceSummary();
   ["#topic", "#angle", "#script", "#targetDuration", "#totalVideos", "#credit", "#backgroundMusicDir", "#backgroundMusicVolume", "#choiceCopy0", "#choiceCopy1", "#choiceCopy2", "#choiceCopy3"].forEach((selector) => {
     $(selector).addEventListener("change", saveLocalSettings);
+  });
+}
+
+function updateSourceSummary() {
+  clearResolvedInputValidation();
+  const title = $("#singleSummaryTitle");
+  if (!title) return;
+  title.textContent = $("#topic").value.trim() || "上传一张测试图片";
+  const source = $("#sourceImagePreview");
+  const image = $("#singleSummaryImage");
+  const ready = source.classList.contains("is-on") && Boolean(source.getAttribute("src"));
+  image.hidden = !ready;
+  $("#singleSummaryEmpty").hidden = ready;
+  if (ready) image.src = source.src;
+  else image.removeAttribute("src");
+  collectChoiceCopies().forEach((choice, index) => {
+    $(`#singleSummaryCopy${index}`).textContent = choice.copy || "对应选项";
   });
 }
 
@@ -91,13 +115,21 @@ async function saveSettings(showMessage = false) {
 
 async function startJob() {
   const topic = $("#topic").value.trim();
-  if (topic.length < 4) return setStatus("请输入至少 4 个字的心理学选题。", true);
+  if (topic.length < 4) return setInputValidationError("请输入至少 4 个字的心理学选题。", "topic");
   const script = $("#script").value.trim();
   const language = hasChineseText(script) ? "zh-CN" : "en";
   const ttsLabel = language === "zh-CN" ? "ElevenLabs（会使用额度）" : "本机 Kokoro（不消耗 ElevenLabs）";
   const totalVideos = clamp(numberValue("#totalVideos", 1), 1, 3);
   const duration = Math.round(clamp(numberValue("#targetDuration", 16), 12, 20));
-  const confirmed = window.confirm(`心理学目标2 · ${language === "zh-CN" ? "中文" : "英文"} · ${quizTypeLabel(selectedQuizType)} · ${duration} 秒 · ${totalVideos} 条。预计调用 Kie 生图 ${totalVideos} 次；配音使用 ${ttsLabel}，整段只生成一次。确认开始吗？`);
+  const choices = collectChoiceCopies();
+  if (choices.some(choice => !choice.copy)) return setInputValidationError("请填写 A/B/C/D 四个选项文案。", "choices");
+  let sourceImage;
+  try { sourceImage = await collectSourceImage(); }
+  catch (error) {
+    if (["请上传一张测试图片。", "单张图片不超过 8 MB。"].includes(error.message)) return setInputValidationError(error.message, "source-image");
+    return setStatus(error.message, true);
+  }
+  const confirmed = window.confirm(`单图互动测试 · ${language === "zh-CN" ? "中文" : "英文"} · ${duration} 秒 · ${totalVideos} 条。使用上传测试图，不再调用生图；配音使用 ${ttsLabel}，整段只生成一次。确认开始吗？`);
   if (!confirmed) return;
 
   $("#startBtn").disabled = true;
@@ -114,7 +146,9 @@ async function startJob() {
       angle: $("#angle").value.trim(),
       script,
       language,
-      quizType: selectedQuizType,
+      quizType: "character-choice",
+      sourceImage,
+      choices,
       targetDuration: duration,
       totalVideos,
       imageModel: "z-image",
@@ -165,7 +199,8 @@ async function pollJob(jobId) {
 function renderJob(job) {
   const percent = clamp(Number(job.percent) || (job.status === "done" ? 100 : 0), 0, 100);
   setProgress(percent);
-  setStatus(job.status === "failed" ? (job.message || "任务失败。") : (job.message || "心理学目标2任务执行中"), job.status === "failed");
+  const fallback = { done: "单图互动任务已完成。", canceled: "单图互动任务已取消。", failed: "任务失败。" }[job.status] || "单图互动任务执行中";
+  setStatus(job.message || (job.status === "failed" && job.error) || fallback, job.status === "failed");
 
   if (job.score) {
     $("#scorePanel").hidden = false;
@@ -284,7 +319,7 @@ async function collectSourceImage() {
 
 function updateGenerateLabel() {
   const count = Math.round(clamp(numberValue("#totalVideos", 1), 1, 3));
-  $("#startBtn").textContent = count > 1 ? `生成 ${count} 条目标2样片` : "生成一条目标2样片";
+  $("#startBtn").textContent = count > 1 ? `生成 ${count} 条单图样片` : "生成一条单图样片";
 }
 
 function saveLocalSettings() {
@@ -351,9 +386,24 @@ function hasChineseText(value) {
 }
 
 function setStatus(message, error = false) {
+  inputValidationIssue = null;
   const node = $("#statusText");
   node.textContent = message;
   node.classList.toggle("error", error);
+}
+
+function setInputValidationError(message, issue) {
+  setStatus(message, true);
+  inputValidationIssue = issue;
+}
+
+function clearResolvedInputValidation() {
+  if (!inputValidationIssue) return;
+  const file = $("#sourceImageFile").files[0];
+  const resolved = inputValidationIssue === "topic" ? $("#topic").value.trim().length >= 4
+    : inputValidationIssue === "choices" ? collectChoiceCopies().every(choice => choice.copy)
+      : Boolean(file && file.size <= 8 * 1024 * 1024);
+  if (resolved) setStatus("准备生成");
 }
 
 function setProgress(percent) {

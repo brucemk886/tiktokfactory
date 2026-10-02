@@ -5,15 +5,16 @@
 <link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-auto-publish.css">
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
+<link rel="stylesheet" href="/psychology-workspace.css">
 <script src="/admin-ui.js" defer></script>
-</head><body class="work-page official-data-page psychology-module psychology-auto-page lf-console">
+</head><body class="work-page official-data-page psychology-module psychology-auto-page lf-console psychology-workspace-page ">
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
 <header class="page-head"><div><h1>自动发布</h1><p class="page-lead">批量生成与排期，集中查看任务进度和需要处理的内容。</p></div><div class="page-links"><a href="/psychology-publish-sources">发布记录</a><button type="button" id="newBatch" class="primary-action"><img class="lf-icon" src="/vendor/bootstrap-icons/plus-lg.svg" alt=""> 新建发布任务</button></div></header>
 <p id="queueMessage" role="status" aria-live="polite"></p>
 <div class="task-layout">
-<dialog id="createBatchDialog" class="create-batch-dialog" aria-labelledby="createBatchTitle"><div class="lf-dialog-head"><div><h2 id="createBatchTitle">新建发布任务</h2><p class="field-hint">配置内容、发布账号和排期</p></div><button type="button" id="closeCreateBatch" class="lf-icon-button" aria-label="关闭新建任务"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><form id="batchForm" class="task-create-panel">
-<section class="panel auto-section"><div class="section-title"><h2>内容与选题</h2></div>
+<dialog id="createBatchDialog" class="create-batch-dialog" aria-labelledby="createBatchTitle"><div class="lf-dialog-head"><div><h2 id="createBatchTitle">新建发布任务</h2><p class="field-hint">配置内容、发布账号和排期</p></div><button type="button" id="closeCreateBatch" class="lf-icon-button" aria-label="关闭新建任务"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><form id="batchForm" class="task-create-panel publish-create-grid">
+<section class="panel auto-section publish-content-section"><div class="section-title"><h2>01 · 内容与选题</h2></div>
 <div class="media-tabs" role="group" aria-label="内容类型"><button type="button" data-media="video" class="active" aria-pressed="true">视频<span>AI 画面与配音</span></button><button type="button" data-media="photo" aria-pressed="false">图文<span>卡片与素材底图</span></button></div>
 <details class="source-explanation"><summary>选题规则与可用内容</summary><p class="field-hint" id="sourceHint">正在读取文案库…</p></details>
 <div class="auto-grid">
@@ -37,7 +38,7 @@
 <label class="field" id="musicPoolField"><span>配乐 <em>可选</em></span><textarea id="musicIds" rows="2" placeholder="粘贴中台音乐库的商业音乐 ID，用逗号、空格或换行分隔；留空则由 TikTok 自动推荐配乐"></textarea><small>每条帖子从池子里随机抽一首，重试同一条会复用同一首。池子会保存，下次打开自动带出。</small></label>
 </div></details>
 </div></section>
-<section class="panel auto-section"><div class="section-title"><h2>发布账号</h2><button type="button" id="refreshAccounts">刷新账号</button></div>
+<section class="panel auto-section publish-accounts-section"><div class="section-title"><h2>02 · 发布账号</h2><button type="button" id="refreshAccounts">刷新账号</button></div>
 <p class="field-hint">先筛选分组，再勾选账号或全选筛选结果。切换分组会保留已选账号，可跨组选择；内容按已选账号轮流分配。</p>
 <div class="account-filters"><label class="field"><span>账号分组</span><select id="accountGroup" disabled><option value="">全部分组</option></select></label><label class="field"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="搜索 @用户名或昵称" maxlength="100" disabled></label></div>
 <div class="account-selection-actions"><button id="selectVisibleAccounts" type="button" disabled>全选筛选结果</button><button id="clearVisibleAccounts" type="button" disabled>取消当前筛选内选择</button><button id="clearAllAccounts" type="button" disabled>清空全部选择</button></div>
@@ -51,7 +52,7 @@
 <div class="account-selection-actions"><button id="oneRefreshProjects" type="button">刷新项目</button><button id="oneRecheck" type="button">重新检查账号</button></div>
 <p class="field-hint">适用于四图、单图等模板生成的视频。已加入所选项目的账号直接发布，未确认加入的账号会在创建任务时通过接口申请加入，并启用品牌合作披露。实际锚点展示与审核结果以 TikTok 为准。</p>
 <p id="oneStatus" class="field-hint" role="status"></p><div id="oneAccounts" aria-live="polite"></div></div></section>
-<section class="panel auto-section"><div class="section-title"><h2>发布计划</h2></div>
+<section class="panel auto-section publish-schedule-section"><div class="section-title"><h2>03 · 发布计划</h2></div>
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>
 <label class="field"><span>同账号发布间隔（分钟）</span><input id="intervalMinutes" type="number" min="1" max="10080" value="60" required></label></div>
 <div id="summary" class="batch-summary" aria-live="polite"></div>
@@ -59,16 +60,15 @@
 <div class="submit-row"><p id="message" role="status" aria-live="polite"></p><button type="submit" id="submitBatch" class="primary-action">创建并自动发布</button></div>
 </section></form></dialog>
 <aside class="task-list-panel" aria-label="任务队列">
-<div class="queue-header"><div><h2>发布任务</h2><p id="safetySummary">正在加载发布任务…</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div>
-<div class="queue-metrics"><div class="queue-total"><span id="pageTotalCount">—</span><small>本页任务</small></div>
+<div class="queue-metrics" aria-label="当前已加载批次统计"><div class="queue-total"><span id="pageTotalCount">—</span><small>本页任务</small></div>
 <div><span id="queuedCount">—</span><small>排队 / 待发布</small></div>
 <div><span id="runningCount">—</span><small>执行中</small></div>
 <div><span id="attentionCount">—</span><small>需关注</small></div>
 <div><span id="doneCount">—</span><small>全部成功 / 已取消</small></div>
-</div>
-<div class="queue-filters"><label class="queue-search">搜索本页<input id="batchSearch" type="search" placeholder="批次名称或账号"></label><label>内容类型<select id="batchMedia"><option value="all">全部类型</option><option value="photo">图文</option><option value="video">视频</option></select></label><label>创建日期（北京时间）<select id="batchDateRange"><option value="all">全部日期</option><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label><div id="batchCustomDates" class="batch-custom-dates" hidden><label>开始日期<input type="date" id="batchStartDate"></label><label>结束日期<input type="date" id="batchEndDate"></label><button type="button" id="applyBatchDates">查询</button></div><label>任务筛选<select id="batchFilter" aria-label="任务筛选"><option value="all">全部任务</option><option value="attention">待处理任务</option></select></label></div>
-<div id="batches" class="auto-task-list" aria-busy="true"><div class="empty-state" role="status"><strong>正在加载发布任务…</strong><span>正在读取任务和发布结果，请稍候。</span></div></div>
+</div><p class="queue-scope-note">以上统计仅包含当前已加载的批次。</p>
+<section class="publish-queue-panel panel"><div class="queue-header"><div><h2>发布任务</h2><p id="safetySummary">正在加载发布任务…</p></div><button type="button" id="refreshBatches" class="quiet-button">刷新</button></div><div class="queue-filters"><label class="queue-search">搜索本页<input id="batchSearch" type="search" placeholder="批次名称或账号"></label><label>内容类型<select id="batchMedia"><option value="all">全部类型</option><option value="photo">图文</option><option value="video">视频</option></select></label><label>创建日期（北京时间）<select id="batchDateRange"><option value="all">全部日期</option><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d">近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label><div id="batchCustomDates" class="batch-custom-dates" hidden><label>开始日期<input type="date" id="batchStartDate"></label><label>结束日期<input type="date" id="batchEndDate"></label><button type="button" id="applyBatchDates">查询</button></div><label>任务筛选<select id="batchFilter" aria-label="任务筛选"><option value="all">全部任务</option><option value="attention">待处理任务</option></select></label></div>
+<p class="publish-timezone-note field-hint">以下创建时间按当前设备时区显示；创建日期筛选按北京时间。</p><p class="mobile-table-hint">左右滑动查看状态与操作</p><div id="batches" class="auto-task-list" aria-busy="true"><div class="empty-state" role="status"><strong>正在加载发布任务…</strong><span>正在读取任务和发布结果，请稍候。</span></div></div>
 <div class="queue-pagination"><button type="button" id="batchPrev" disabled>上一页</button><span id="batchPage" aria-live="polite"></span><small id="batchPageHint"></small><button type="button" id="batchNext" disabled>下一页</button></div>
-</aside>
+</section></aside>
 </div>
 </main><dialog id="batchDetail" class="batch-detail-dialog" aria-labelledby="batchDetailTitle"><div class="lf-dialog-head"><h2 id="batchDetailTitle">批次详情</h2><button type="button" id="closeBatchDetail" class="lf-icon-button" aria-label="关闭批次详情"><img class="lf-icon" src="/vendor/bootstrap-icons/x-lg.svg" alt=""></button></div><div class="detail-tabs" role="tablist" aria-label="批次详情内容"><button type="button" id="detailOverviewTab" role="tab" aria-selected="true" aria-controls="batchDetailBody">概览</button><button type="button" id="detailItemsTab" role="tab" aria-selected="false" aria-controls="batchDetailItems" tabindex="-1">任务明细</button></div><div id="batchDetailBody" role="tabpanel" aria-labelledby="detailOverviewTab"></div><div id="batchDetailItems" role="tabpanel" aria-labelledby="detailItemsTab" hidden></div><div class="detail-footer"><a href="/psychology-publish-sources">查看发布记录</a><small>制作失败表示尚未完成素材准备；发布成功以 TikTok 回执为准。</small></div></dialog><script src="/access.js"></script><script type="module" src="/psychology-auto-publish.js?v=20260924-dates"></script></body></html>

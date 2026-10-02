@@ -2,6 +2,8 @@ import {setupTopicImages} from "/psychology-topic-images.js";
 import {collectTopics, deleteSelectedTopics} from "/psychology-topic-selection.js";
 import {parseTopicImport} from "/psychology-topic-import.js";
 const $=s=>document.querySelector(s),BASE="/api/psychology-template-topics";
+const bankPreviewPaths={psychology:"four-image.png","psychology-collage":"collage.png","psychology-target-2":"single-image.png"};
+const bankShortLabels={psychology:"四图测试","psychology-collage":"纸张拼贴","psychology-target-2":"单图互动"};
 const bankIds=["psychology","psychology-collage","psychology-target-2"];
 const selectedBank=()=>{const value=new URLSearchParams(location.search).get("template");return bankIds.includes(value)?value:null;};
 const state={template:selectedBank()||"psychology",detail:Boolean(selectedBank()),page:1,items:[],templates:[],editing:null,choiceDraft:[],imageDraft:{imageKey:"",imageUrl:"",previewUrl:""},requestId:crypto.randomUUID(),importId:crypto.randomUUID(),busy:false,loadId:0,selected:new Map(),bulkBusy:false,total:0,filters:null};
@@ -32,14 +34,14 @@ async function load(){
   if(state.page>Math.max(1,Math.ceil(data.total/20))){state.page=Math.max(1,Math.ceil(data.total/20));return load();}
   state.items=data.items;state.templates=data.templates;state.total=data.total;state.filters=Object.fromEntries(q);
   showBankView();
-  $("#bankCards").innerHTML=data.templates.map(t=>{const c=data.counts[t.id];return `<a class="bank-card" href="?template=${encodeURIComponent(t.id)}"><strong>${esc(t.label)}</strong><span>${esc(t.hint)}</span><b>${c.total} 道题目</b><small>已启用 ${c.enabled} · ${t.id==='psychology-target-2'?'可用图片 '+(c.availableImages||0)+' 张':'未使用且启用 '+c.unused}</small><em>进入题目列表 →</em></a>`;}).join("");
+  $("#bankCards").innerHTML=data.templates.map((t,index)=>{const c=data.counts[t.id];return `<a class="bank-card" href="?template=${encodeURIComponent(t.id)}"><span class="bank-card-index" aria-hidden="true">${String(index+1).padStart(2,"0")}</span>${bankPreviewPaths[t.id]?`<figure class="bank-template-preview"><img src="/psychology-template-previews/${bankPreviewPaths[t.id]}" alt="${esc(t.label)}模板示例"><figcaption>模板示例</figcaption></figure>`:""}<strong>${esc(t.label)}</strong><span class="bank-card-hint">${esc(t.hint)}</span><b>${c.total} 道题目</b><small>已启用 ${c.enabled} · ${t.id==='psychology-target-2'?'可用图片 '+(c.availableImages||0)+' 张':'未使用且启用 '+c.unused}</small><em>进入题目列表 →</em></a>`;}).join("");
   $("#bankTitle").textContent=bank().label+" · 题目列表";
   $("#bankComments").href="/psychology-comments?template="+encodeURIComponent(state.template);
-  $("#bankTabs").innerHTML=data.templates.map(t=>'<button type="button" data-bank="'+esc(t.id)+'" class="'+(t.id===state.template?"active":"")+'" aria-pressed="'+(t.id===state.template)+'">'+esc(t.label)+'</button>').join("");
+  $("#bankTabs").innerHTML=data.templates.map(t=>'<button type="button" data-bank="'+esc(t.id)+'" class="'+(t.id===state.template?"active":"")+'" aria-pressed="'+(t.id===state.template)+'" aria-label="'+esc(t.label)+'"><span class="bank-tab-full" aria-hidden="true">'+esc(t.label)+'</span><span class="bank-tab-short" aria-hidden="true">'+esc(bankShortLabels[t.id]||t.label)+'</span></button>').join("");
   $("#bankHint").textContent=bank().hint;
   const c=data.counts[state.template];
-  $("#bankCounts").innerHTML="<span>全部题目 <b>"+c.total+"</b></span><span>已启用 <b>"+c.enabled+"</b></span><span>未使用且启用 <b>"+c.unused+"</b></span>";
-  if(isSingle())$("#bankCounts").innerHTML="<span>全部题目 <b>"+c.total+"</b></span><span>有可用图片 <b>"+c.unused+"</b> 题</span><span>可用图片 <b>"+(c.availableImages||0)+"</b> 张</span>";
+  $("#bankCounts").innerHTML="<span><small>全部题目</small> <b>"+c.total+"</b></span><span><small>已启用</small> <b>"+c.enabled+"</b></span><span><small>未使用且启用</small> <b>"+c.unused+"</b></span>";
+  if(isSingle())$("#bankCounts").innerHTML="<span><small>全部题目</small> <b>"+c.total+"</b></span><span><small>有可用图片</small> <b>"+c.unused+"</b> 题</span><span><small>可用图片</small> <b>"+(c.availableImages||0)+"</b> 张</span>";
   $("#topicList").innerHTML=data.items.length?'<table class="queue-table"><thead><tr><th><input id="selectPageCheckbox" type="checkbox" aria-label="全选本页"></th><th>题目与内容</th><th>揭晓评论</th><th>分类</th><th>优先级</th><th>状态</th><th>已抽取</th><th>操作</th></tr></thead><tbody>'+data.items.map(t=>'<tr><td><input type="checkbox" data-select-topic="'+esc(t.id)+'" aria-label="选择题目：'+esc(t.title)+'"></td><td><div class="topic-title">'+esc(t.title)+'</div>'+topicPreview(t)+'</td><td>'+(t.revealComment?'<details class="topic-answer"><summary>查看揭晓评论</summary><p>'+esc(t.revealComment)+'</p></details>':'<span class="field-hint">未填写</span>')+'</td><td>'+esc(t.category||"—")+'</td><td>'+t.priority+'</td><td>'+(t.enabled?"已启用":"已停用")+'</td><td>'+t.usageCount+' 次<small>'+(t.lastUsedAt?esc(new Date(t.lastUsedAt).toLocaleString("zh-CN")):"尚未抽取")+'</small></td><td><div class="bank-actions">'+(t.template==="psychology-target-2"?'<button data-images="'+t.id+'">图片管理</button><button data-generate-image="'+t.id+'">AI 生图</button>':"")+'<button data-edit="'+t.id+'">编辑</button><button data-toggle="'+t.id+'">'+(t.enabled?"停用":"启用")+'</button><button data-delete="'+t.id+'">删除</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty-state">'+(c.total?"没有符合筛选条件的题目。":"此模板题库还是空的。新增题目或批量导入后，即可用于自动发布。")+"</div>";
   $("#pageInfo").textContent="共 "+data.total+" 条 · 第 "+state.page+" / "+Math.max(1,Math.ceil(data.total/20))+" 页";
   syncSelection();

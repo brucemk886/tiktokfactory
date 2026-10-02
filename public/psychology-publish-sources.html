@@ -5,30 +5,31 @@
 <link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-auto-publish.css"><link rel="stylesheet" href="/psychology-production.css"><link rel="stylesheet" href="/psychology-publish-sources.css">
 <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
+<link rel="stylesheet" href="/psychology-workspace.css">
 <script src="/admin-ui.js" defer></script>
 </head>
-<body class="work-page official-data-page psychology-module psychology-sources-page lf-console">
+<body class="work-page official-data-page psychology-module psychology-sources-page lf-console psychology-workspace-page ">
 <nav class="side-tabs"><a class="app-brand" href="/"><span>LF</span><b>Local Factory<small>心理学</small></b></a><button class="nav-logout" type="button" data-logout>退出登录</button></nav>
 <main class="official-data-shell auto-shell">
 <header class="page-head"><div><h1>心理学发布记录</h1><p class="page-lead">每条自动发布的帖子：发到哪个账号、用了哪篇文案、对标哪条爆款，以及它是怎么做出来的。</p></div><nav class="page-links" aria-label="相关页面"><a href="/psychology-publish">心理学自动发布</a><a href="/psychology-copy-library">文案库</a></nav></header>
 <div class="records-views" role="tablist" aria-label="记录类型">
-<button type="button" role="tab" data-view="auto" aria-selected="true">自动发布</button>
-<button type="button" role="tab" data-view="manual" aria-selected="false">手动复刻</button>
+<button type="button" role="tab" id="recordsAutoTab" data-view="auto" aria-controls="autoView" aria-selected="true">自动发布</button>
+<button type="button" role="tab" id="recordsManualTab" data-view="manual" aria-controls="manualView" aria-selected="false" tabindex="-1">手动复刻</button>
 </div>
-<section class="panel auto-section" id="autoView">
+<section class="panel auto-section" id="autoView" role="tabpanel" aria-labelledby="recordsAutoTab"><div class="section-title"><h2>自动发布记录</h2></div>
 <div class="sources-toolbar">
 <label class="field"><span>搜索</span><input id="query" maxlength="100" placeholder="批次、标题、爆款标题或链接"></label>
 <label class="field"><span>发布时间</span><select id="range"><option value="all">全部</option><option value="today">今天</option><option value="yesterday">昨天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option></select></label>
 <label class="field"><span>内容类型</span><select id="mediaType"><option value="">全部</option><option value="photo">图文</option><option value="video">视频</option></select></label>
-<button type="button" id="searchBtn">查询</button>
+<button type="button" id="searchBtn" class="primary-action">查询</button>
 </div>
 <p id="listStatus" class="field-hint" role="status">正在读取发布记录…</p>
-<div class="queue-wrap"><table class="queue-table sources-table"><thead><tr>
-<th>批次 / 发布时间</th><th>类型</th><th>发布账号</th><th>我方帖子</th><th>对标爆款</th><th>标题</th><th>状态</th><th>操作</th>
+<p class="field-hint timezone-note">以下时间按当前设备时区显示</p><p class="mobile-table-hint">左右滑动查看状态与操作</p><div class="queue-wrap"><table class="queue-table sources-table"><thead><tr>
+<th>批次 / 发布时间</th><th>类型 / 来源</th><th>发布账号</th><th>我方帖子</th><th>对标爆款</th><th>标题</th><th>状态</th><th>操作</th>
 </tr></thead><tbody id="rows"></tbody></table></div>
 <div class="sources-pagination"><button id="prevPage" type="button">上一页</button><span id="pageInfo"></span><button id="nextPage" type="button">下一页</button></div>
 </section>
-<section id="manualView" hidden>
+<section id="manualView" role="tabpanel" aria-labelledby="recordsManualTab" hidden>
 <div class="board-actions manual-actions"><p class="muted">历史的手动复刻任务（入口已下线），按原素材制作，不会自动发布。</p><button id="refreshBoard" type="button">刷新任务</button></div>
 <section class="board-counts" aria-label="任务统计" id="boardCounts"></section><p id="boardStatus" role="status">正在读取复刻任务…</p>
 <div class="board-layout"><aside class="board-queue"><h2>手动复刻任务</h2><p class="muted">任务在云端执行，关闭页面不会中断。</p><div id="boardQueue"></div><div class="board-pagination"><button id="boardPrev" type="button">上一页</button><span id="boardPage"></span><button id="boardNext" type="button">下一页</button></div></aside>

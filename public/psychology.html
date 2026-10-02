@@ -1,34 +1,33 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="zh-CN"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>四图测试模板 · Local Factory</title>
-    <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/psychology.css" />
+    <link rel="stylesheet" href="/app.css">
 
-    <link rel="stylesheet" href="/psychology-pages.css" />
+
+    <link rel="stylesheet" href="/psychology-pages.css">
   <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
-<script src="/admin-ui.js" defer></script>
-</head>
-  <body class="work-page psychology-page psychology-module lf-console">
+<script src="/admin-ui.js" defer=""></script>
+<link rel="stylesheet" href="/psychology-workspace.css"><link rel="stylesheet" href="/psychology.css"></head>
+  <body class="work-page psychology-page psychology-module lf-console psychology-workspace-page">
     <nav class="side-tabs" aria-label="主导航">
       <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a>
-      <button class="nav-logout" type="button" data-logout>退出登录</button>
+      <button class="nav-logout" type="button" data-logout="">退出登录</button>
     </nav>
 
     <main class="psy-main">
       <header class="page-head">
         <div><h1>四图测试模板</h1><p class="page-lead">上传 A/B/C/D 四张图片和对应文案，完成配音与合成；成片通过官方接口发布。</p></div>
-        <div class="header-actions"><span id="statusText">准备创建任务</span><button id="createBtn" type="button">加入生成队列</button></div>
-      </header>
+        <div class="header-actions"><a href="/psychology-templates" class="creation-back">返回工作台</a><span id="statusText">准备创建任务</span><button id="createBtn" type="button" class="primary">加入生成队列</button></div>
+      </header><nav class="creation-section-nav"><a href="#fourContent" class="is-active">测试内容</a><a href="#fourGeneration">生成设置</a><a href="#fourTasks">心理学任务</a></nav>
 
       <div class="psy-grid">
         <section class="psy-form">
-          <article class="psy-section">
+          <article class="psy-section" id="fourContent">
             <div class="section-head"><span>01</span><div><h2>测试内容</h2><p>填写题目，上传 A/B/C/D 四张图片和对应文案；解说可以交给 AI。</p></div></div>
-            <label class="field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：压力应对方式测试 A" /></label>
+            <label class="field"><span>任务名称</span><input id="taskName" type="text" placeholder="例如：压力应对方式测试 A"></label>
             <label class="field"><span>心理测试题目</span><textarea id="question" rows="3" placeholder="例如：你在压力大的时候，会下意识选择哪种方式缓解？"></textarea></label>
             <div id="choiceFields" class="choice-upload-grid">
               <article class="choice-upload"><strong>A</strong><img class="choice-preview" id="choicePreview0" alt="A 预览"><label>对应文案<input id="choiceCopy0" maxlength="80" placeholder="例如：独自离开"></label><label>图片<input id="choiceFile0" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
@@ -36,38 +35,38 @@
               <article class="choice-upload"><strong>C</strong><img class="choice-preview" id="choicePreview2" alt="C 预览"><label>对应文案<input id="choiceCopy2" maxlength="80" placeholder="例如：继续工作"></label><label>图片<input id="choiceFile2" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
               <article class="choice-upload"><strong>D</strong><img class="choice-preview" id="choicePreview3" alt="D 预览"><label>对应文案<input id="choiceCopy3" maxlength="80" placeholder="例如：睡觉逃避"></label><label>图片<input id="choiceFile3" type="file" accept="image/jpeg,image/png,image/webp"></label></article>
             </div>
-            <label class="field"><span>视频顶部钩子标题</span><input id="hookTitle" type="text" placeholder="一句简短钩子，默认使用测试题目" /></label>
+            <label class="field"><span>视频顶部钩子标题</span><input id="hookTitle" type="text" placeholder="一句简短钩子，默认使用测试题目"></label>
 <div class="aspect-prompt-row">
-              <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="9:16" selected>竖版 9:16</option><option value="16:9">横版 16:9（四图横排）</option></select></label>
+              <label class="field aspect-field"><span>图片与视频画幅</span><select id="aspectRatio"><option value="9:16" selected="">竖版 9:16</option><option value="16:9">横版 16:9（四图横排）</option></select></label>
             </div>
             <label class="field"><span>钩子配音文案 <em>留空自动生成钩子 + 互动引导</em></span><textarea id="narration" rows="3" placeholder="建议 16–30 个英文单词：先引导选择，再加入链接、主页或评论区 CTA"></textarea></label>
-            <input id="answerGuide" type="hidden" />
-            <input id="sourceImageUrl" type="hidden" />
-            <textarea id="imagePrompt" hidden></textarea>
+            <input id="answerGuide" type="hidden">
+            <input id="sourceImageUrl" type="hidden">
+            <textarea id="imagePrompt" hidden=""></textarea>
           </article>
 
-          <article class="psy-section">
+          <article class="psy-section" id="fourGeneration">
             <div class="section-head"><span>02</span><div><h2>生成设置</h2><p>使用上传的四张图片拼成测试画面；配音只生成一次并在同一任务内复用。</p></div></div>
-            <div class="model-row" hidden>
-              <label class="model-option"><input type="checkbox" name="imageModel" value="z-image" checked disabled /><span><strong>Z-Image</strong><small>按官方写实摄影出图，适合中视频和心理测试</small></span></label>
+            <div class="model-row" hidden="">
+              <label class="model-option"><input type="checkbox" name="imageModel" value="z-image" checked="" disabled=""><span><strong>Z-Image</strong><small>按官方写实摄影出图，适合中视频和心理测试</small></span></label>
             </div>
             <div class="four-column">
-              <label class="field"><span>生成视频总数</span><input id="totalVideos" type="number" min="1" max="300" value="1" /></label>
-              <label class="field"><span>标题位置</span><div class="input-suffix"><input id="titlePosition" type="number" min="8" max="55" value="14" /><b>%</b></div></label>
-              <label class="field"><span>标题字号</span><input id="titleFontSize" type="number" min="42" max="100" value="68" /></label>
+              <label class="field"><span>生成视频总数</span><input id="totalVideos" type="number" min="1" max="300" value="1"></label>
+              <label class="field"><span>标题位置</span><div class="input-suffix"><input id="titlePosition" type="number" min="8" max="55" value="14"><b>%</b></div></label>
+              <label class="field"><span>标题字号</span><input id="titleFontSize" type="number" min="42" max="100" value="68"></label>
               <label class="field"><span>画面运动</span><select id="motion"><option value="test-motion">测试图呼吸动效</option><option value="slow-zoom">轻微推进</option><option value="none">静态画面</option></select></label>
             </div>
             <div class="music-settings">
-              <label class="field"><span>背景音乐目录 <em>可选</em></span><div class="directory-field"><input id="backgroundMusicDir" type="text" placeholder="选择包含 MP3、WAV、M4A 的文件夹" /><button type="button" class="quiet" data-pick-directory="backgroundMusicDir">选择目录</button></div></label>
-              <label class="field"><span>背景音乐音量</span><div class="input-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10" /><b>0–0.5</b></div></label>
+              <label class="field"><span>背景音乐目录 <em>可选</em></span><div class="directory-field"><input id="backgroundMusicDir" type="text" placeholder="选择包含 MP3、WAV、M4A 的文件夹"><button type="button" class="quiet" data-pick-directory="backgroundMusicDir">选择目录</button></div></label>
+              <label class="field"><span>背景音乐音量</span><div class="input-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10"><b>0–0.5</b></div></label>
             </div>
             <div class="settings-actions generation-settings-actions"><span id="settingsStatus">生成配置会保存在本机，刷新页面后自动恢复。</span><button id="saveSettingsBtn" class="quiet" type="button">保存生成配置</button></div>
             <details class="api-panel">
               <summary>接口配置</summary>
 <div class="two-column">
-                <label class="field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时无需重复填写" /></label>
-                <label class="field"><span>ElevenLabs API Key</span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="复用本地配置时无需填写" /></label>
-                <label class="field"><span>ElevenLabs Voice ID</span><input id="voiceId" type="text" placeholder="首次使用必须填写" /></label>
+                <label class="field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时无需重复填写"></label>
+                <label class="field"><span>ElevenLabs API Key</span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="复用本地配置时无需填写"></label>
+                <label class="field"><span>ElevenLabs Voice ID</span><input id="voiceId" type="text" placeholder="首次使用必须填写"></label>
                 <label class="field"><span>配音模型</span><select id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2</option><option value="eleven_flash_v2_5">Flash v2.5</option></select></label>
               </div>
 
@@ -77,13 +76,14 @@
           <p class="official-publish-note">成片生成后，前往 <a href="/psychology-publish">心理学视频发布</a>，选择官方授权账号发布。</p>
         </section>
 
-        <aside class="psy-queue">
+        <aside class="psy-side"><section class="psy-section psy-upload-summary"><div class="queue-head"><div><h2>上传内容预览</h2><p>四图组合 · 上传图片与对应文案</p></div></div><h3 id="fourSummaryTitle">上传四张图片，填写测试题目</h3><div class="four-summary-grid"><figure><img id="fourSummaryImage0" alt="A 上传图片" hidden=""><span class="summary-image-empty" id="fourSummaryEmpty0">上传 A 图片</span><figcaption><b>A</b><span id="fourSummaryCopy0">对应文案</span></figcaption></figure><figure><img id="fourSummaryImage1" alt="B 上传图片" hidden=""><span class="summary-image-empty" id="fourSummaryEmpty1">上传 B 图片</span><figcaption><b>B</b><span id="fourSummaryCopy1">对应文案</span></figcaption></figure><figure><img id="fourSummaryImage2" alt="C 上传图片" hidden=""><span class="summary-image-empty" id="fourSummaryEmpty2">上传 C 图片</span><figcaption><b>C</b><span id="fourSummaryCopy2">对应文案</span></figcaption></figure><figure><img id="fourSummaryImage3" alt="D 上传图片" hidden=""><span class="summary-image-empty" id="fourSummaryEmpty3">上传 D 图片</span><figcaption><b>D</b><span id="fourSummaryCopy3">对应文案</span></figcaption></figure></div><p class="upload-summary-note">仅展示上传内容；成片画幅以左侧设置为准。</p></section><aside class="psy-queue" id="fourTasks">
           <div class="queue-head"><div><h2>心理学任务</h2></div><button id="refreshTasksBtn" class="icon-button" type="button" title="刷新">↻</button></div>
           <div id="taskList" class="task-list"><div class="empty">暂时没有心理学任务。</div></div>
-        </aside>
+        </aside></aside>
       </div>
     </main>
     <script src="/access.js"></script>
     <script src="/psychology.js?v=20260920-3"></script>
-  </body>
-</html>
+
+
+</body></html>

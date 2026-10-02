@@ -1,5 +1,7 @@
 # Current State
 
+- The twelve remaining Psychology workspace pages now use the approved blue presentation, with compact content lists, grouped creation forms/previews, publishing/comment task views and desktop/mobile layouts. Per-page opt-in styling leaves the report/overview/autopilot dashboards isolated. Existing permissions and queue contracts remain; the manual single-image submission and terminal-status UI defects are repaired. See docs/handoffs/2026-10-02-psychology-module-workspace.md.
+
 - Psychology Operations Report and Data Overview now follow the approved automatic-operations dashboard presentation: four compact metrics, blue underline tabs, paired summaries and folded details. Existing Beijing actual-publication performance, 72-hour mature pool evidence, independent receipts and UTC profile visits retain distinct scope and missing-value semantics; unsubmitted filters cannot relabel delayed results. Overview adds custom dates via the existing report API and labels its archived daily-report account coverage accurately. Styles remain isolated from other modules. See docs/handoffs/2026-10-01-psychology-reports-dashboard.md.
 
 - Psychology has an explicitly enabled one-day Pacific October 1 transition for the remaining midday/evening rounds. Stable existing middle/strong accounts reuse pool matching and deferred 2–3-hour generation under separate atomic bridge claims; formal October 2–9 dates and October 5 review remain unchanged. See docs/handoffs/2026-10-01-psychology-transition-day.md.

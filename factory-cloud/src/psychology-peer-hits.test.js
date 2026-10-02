@@ -323,7 +323,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.doesNotMatch(page,/produceBtn|原帖复刻/);
   assert.doesNotMatch(page,/rewriteCopy/);
   assert.doesNotMatch(page,/id="moveSelectedBtn"/);
-  assert.doesNotMatch(page,/北京时间/);
+  assert.match(page,/发布 \/ 导入时间：北京时间/);
   assert.doesNotMatch(page,/采集时间/);
   assert.doesNotMatch(page,/最新采集/);
   const script=fs.readFileSync(new URL("../../public/psychology-peer-hits.js",import.meta.url),"utf8");
@@ -333,6 +333,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(script,/hits-copy" title=/);
   assert.doesNotMatch(script,/collectedAt/);
   assert.match(script,/time\(item\.createdAt\)/);
+  assert.match(script,/timeZone:\s*"Asia\/Shanghai"/);
   assert.match(script,/hits-delete/);
   assert.doesNotMatch(script,/hits-move/);
   const productionScript=fs.readFileSync(new URL("../../public/psychology-peer-production.js",import.meta.url),"utf8");

@@ -1,42 +1,41 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="zh-CN"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>单图互动测试模板</title>
-    <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/module-pages.css" />
-    <link rel="stylesheet" href="/psychology-narrative.css?v=20260920-4" />
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/module-pages.css">
 
-    <link rel="stylesheet" href="/psychology-pages.css" />
+
+    <link rel="stylesheet" href="/psychology-pages.css">
   <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
-<script src="/admin-ui.js" defer></script>
-</head>
-  <body class="work-page module-page psychology-mid-page psychology-module lf-console">
+<script src="/admin-ui.js" defer=""></script>
+<link rel="stylesheet" href="/psychology-workspace.css"><link rel="stylesheet" href="/psychology-narrative.css?v=20260920-4"></head>
+  <body class="work-page module-page psychology-mid-page psychology-module lf-console psychology-workspace-page">
     <nav class="side-tabs" aria-label="主导航">
       <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a>
-      <button class="nav-logout" type="button" data-logout>退出登录</button>
+      <button class="nav-logout" type="button" data-logout="">退出登录</button>
     </nav>
 
     <main class="module-main">
       <header class="page-head">
         <div>
           <h1>单图互动测试模板</h1>
-          <p class="page-lead">12–20 秒单图互动测试：上传一张图片并填写 A/B/C/D 选项。默认英文 · 中文走 ElevenLabs。英文由本机 Kokoro 一次配完整段，中文文案自动改走 ElevenLabs。每句话仍按真实时间戳同步字幕和 SVG 动作。</p>
+          <p class="page-lead">上传一张图片与四个选项，制作 12–20 秒互动测试视频。英文使用本机 Kokoro；中文使用 ElevenLabs。</p>
         </div>
-        <span class="psy-render-note">1920 × 1080 · 12–20 秒 · 本地 Remotion</span>
-      </header>
+        <span class="psy-render-note">1920 × 1080 · 字幕与真实语音时间同步</span>
+      <nav class="page-links"><a href="/psychology-templates" class="creation-back">返回工作台</a></nav></header><nav class="creation-section-nav"><a href="#singleContent" class="is-active">测试内容</a><a href="#singleSpec">生成规格</a><a href="#singleApi">接口与配音</a></nav>
 
       <div class="module-shell psy-shell">
-        <section class="module-panel psy-config">
+        <div class="narrative-form-stack"><section class="module-panel psy-config" id="singleContent">
           <div class="module-panel-head">
             <div><h2>单图互动设置</h2><p>上传一张测试图，自行填写 A/B/C/D 选项；成片叠在这张图上，并同步字幕。</p></div>
             <button id="saveSettingsBtn" class="module-button" type="button">保存设置</button>
           </div>
 
           <div class="psy-fields">
-            <label class="module-field psy-wide"><span>测试题目 / 钩子</span><input id="topic" type="text" maxlength="160" value="The choice you make first reveals how you attach" /></label>
+            <label class="module-field psy-wide"><span>测试题目 / 钩子</span><input id="topic" type="text" maxlength="160" value="The choice you make first reveals how you attach"></label>
             <div class="psy-wide psy-source-image">
               <article class="psy-upload-card">
                 <strong>测试图片</strong>
@@ -44,32 +43,40 @@
                 <label>上传一张图片<input id="sourceImageFile" type="file" accept="image/jpeg,image/png,image/webp"></label>
               </article>
               <div class="psy-option-grid">
-                <label class="module-field"><span>A 选项</span><input id="choiceCopy0" maxlength="80" placeholder="例如：stay close" /></label>
-                <label class="module-field"><span>B 选项</span><input id="choiceCopy1" maxlength="80" placeholder="例如：need space" /></label>
-                <label class="module-field"><span>C 选项</span><input id="choiceCopy2" maxlength="80" placeholder="例如：overthink it" /></label>
-                <label class="module-field"><span>D 选项</span><input id="choiceCopy3" maxlength="80" placeholder="例如：walk away" /></label>
+                <label class="module-field"><span>A 选项</span><input id="choiceCopy0" maxlength="80" placeholder="例如：stay close"></label>
+                <label class="module-field"><span>B 选项</span><input id="choiceCopy1" maxlength="80" placeholder="例如：need space"></label>
+                <label class="module-field"><span>C 选项</span><input id="choiceCopy2" maxlength="80" placeholder="例如：overthink it"></label>
+                <label class="module-field"><span>D 选项</span><input id="choiceCopy3" maxlength="80" placeholder="例如：walk away"></label>
               </div>
             </div>
             <label class="module-field psy-wide"><span>结果提示 <em>可选</em></span><textarea id="angle" rows="3" maxlength="1000" placeholder="可用中文或英文描述观点；默认会输出自然英文。"></textarea></label>
             <label class="module-field psy-wide"><span>已有文案 <em>可选</em></span><textarea id="script" rows="4" maxlength="4000" placeholder="留空则原创英文；粘贴中文口播时会保留中文并自动使用 ElevenLabs。"></textarea></label>
-            <label class="module-field"><span>目标时长</span><div class="psy-suffix"><input id="targetDuration" type="number" min="12" max="20" value="16" /><b>秒</b></div></label>
-            <label class="module-field"><span>样片条数</span><div class="psy-suffix"><input id="totalVideos" type="number" min="1" max="3" value="1" /><b>条</b></div></label>
-            <label class="module-field"><span>片头署名</span><input id="credit" type="text" maxlength="24" value="PSYCHOLOGY LAB" /></label>
-            <label class="module-field"><span>背景音乐音量</span><div class="psy-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10" /><b>0–0.5</b></div></label>
-            <label class="module-field psy-wide"><span>背景音乐目录 <em>可选</em></span><div class="psy-directory"><input id="backgroundMusicDir" type="text" placeholder="不填则只保留解说" /><button id="pickMusicBtn" class="module-button" type="button">选择目录</button></div></label>
+
+
+
+
+
           </div>
 
-          <div class="psy-models" hidden>
-            <label><input type="radio" name="imageModel" value="z-image" checked disabled /><span><strong>Z-Image</strong><small>有上传图时不再调用生图</small></span></label>
+          <div class="psy-models" hidden="">
+            <label><input type="radio" name="imageModel" value="z-image" checked="" disabled=""><span><strong>Z-Image</strong><small>有上传图时不再调用生图</small></span></label>
           </div>
 
-          <details class="psy-api">
+
+
+
+
+
+        </section><section class="module-panel psy-spec-panel" id="singleSpec"><div class="module-panel-head"><div><h2>生成规格</h2><p>英文走本机 Kokoro；中文文案自动使用 ElevenLabs。</p></div></div><div class="psy-fields"><label class="module-field"><span>目标时长</span><div class="psy-suffix"><input id="targetDuration" type="number" min="12" max="20" value="16"><b>秒</b></div></label><label class="module-field"><span>样片条数</span><div class="psy-suffix"><input id="totalVideos" type="number" min="1" max="3" value="1"><b>条</b></div></label><label class="module-field"><span>片头署名</span><input id="credit" type="text" maxlength="24" value="PSYCHOLOGY LAB"></label><label class="module-field"><span>背景音乐音量</span><div class="psy-suffix"><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10"><b>0–0.5</b></div></label><label class="module-field psy-wide"><span>背景音乐目录 <em>可选</em></span><div class="psy-directory"><input id="backgroundMusicDir" type="text" placeholder="不填则只保留解说"><button id="pickMusicBtn" class="module-button" type="button">选择目录</button></div></label></div><div class="psy-actions">
+            <div id="statusText" class="module-status">准备生成单图互动测试样片。</div>
+            <button id="startBtn" class="module-button primary" type="button">生成一条样片</button>
+          </div><p class="psy-format-note">内容仅用于互动与自我观察，不把图片选择包装成抑郁、焦虑或其他疾病诊断。</p><div class="psy-progress" aria-hidden="true"><span id="progressBar"></span></div></section><details class="psy-api" id="singleApi">
             <summary>接口与配音</summary>
             <div class="psy-api-grid">
-              <label class="module-field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
+              <label class="module-field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时留空"></label>
               <label class="module-field"><span>英文 Kokoro 声音</span>
                 <select id="kokoroVoice">
-                  <option value="am_adam" selected>Adam（美式男声）</option>
+                  <option value="am_adam" selected="">Adam（美式男声）</option>
                   <option value="af_jessica">Jessica（美式女声）</option>
                   <option value="af_heart">Heart（美式女声）</option>
                   <option value="am_michael">Michael（美式男声）</option>
@@ -77,32 +84,20 @@
                   <option value="bm_george">George（英式男声）</option>
                 </select>
               </label>
-              <label class="module-field"><span>ElevenLabs API Key <em>中文时使用</em></span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
-              <label class="module-field"><span>ElevenLabs Voice ID</span><input id="elevenLabsVoiceId" type="text" autocomplete="off" placeholder="中文声线 ID" /></label>
-              <label class="module-field"><span>ElevenLabs Model</span><input id="elevenLabsModelId" type="text" value="eleven_multilingual_v2" /></label>
+              <label class="module-field"><span>ElevenLabs API Key <em>中文时使用</em></span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="已配置时留空"></label>
+              <label class="module-field"><span>ElevenLabs Voice ID</span><input id="elevenLabsVoiceId" type="text" autocomplete="off" placeholder="中文声线 ID"></label>
+              <label class="module-field"><span>ElevenLabs Model</span><input id="elevenLabsModelId" type="text" value="eleven_multilingual_v2"></label>
             </div>
             <p id="settingsStatus" class="module-status">英文口播走本机 Kokoro；中文文案自动走 ElevenLabs；测试图使用上传图片。</p>
-          </details>
-
-          <div class="psy-actions">
-            <div id="statusText" class="module-status">准备生成单图互动测试样片。</div>
-            <button id="startBtn" class="module-button primary" type="button">生成一条样片</button>
-          </div>
-          <p class="psy-format-note">内容仅用于互动与自我观察，不把图片选择包装成抑郁、焦虑或其他疾病诊断。</p>
-          <div class="psy-progress" aria-hidden="true"><span id="progressBar"></span></div>
-        </section>
+          </details></div>
 
         <section class="module-panel psy-preview-panel">
-          <div class="module-panel-head"><div><h2>目标2预览</h2><p id="previewMeta">生成后会在这里播放 1920×1080 成片。</p></div><a id="downloadLink" class="module-button psy-download is-hidden" download>下载视频</a></div>
+          <div class="module-panel-head"><div><h2>内容与成片预览</h2><p id="previewMeta">生成后会在这里播放 1920×1080 成片。</p></div><a id="downloadLink" class="module-button psy-download is-hidden" download="">下载视频</a></div>
           <div class="psy-player-frame">
-            <div id="previewEmpty" class="psy-preview-empty">
-              <b>单图互动测试模板</b>
-              <span>上传图 + A/B/C/D 选项 + 解说</span>
-               <small>白底 · 顶部问题 · 逐句同步字幕</small>
-            </div>
-            <video id="previewVideo" class="is-hidden" controls playsinline preload="metadata"></video>
+            <div id="previewEmpty" class="psy-preview-empty"><div class="single-upload-summary"><h3 id="singleSummaryTitle">上传一张测试图片</h3><div class="single-summary-layout"><figure><img id="singleSummaryImage" alt="上传测试图" hidden=""><span id="singleSummaryEmpty" class="summary-image-empty">上传图片后在此查看</span></figure><div class="single-summary-options"><p><b>A</b><span id="singleSummaryCopy0">对应选项</span></p><p><b>B</b><span id="singleSummaryCopy1">对应选项</span></p><p><b>C</b><span id="singleSummaryCopy2">对应选项</span></p><p><b>D</b><span id="singleSummaryCopy3">对应选项</span></p></div></div><small>仅展示上传内容，成片生成后在这里播放。</small></div></div>
+            <video id="previewVideo" class="is-hidden" controls="" playsinline="" preload="metadata"></video>
           </div>
-          <div id="scorePanel" class="psy-score" hidden></div>
+          <div id="scorePanel" class="psy-score" hidden=""></div>
         </section>
       </div>
 
@@ -113,5 +108,6 @@
     </main>
     <script src="/access.js"></script>
     <script src="/psychology-narrative.js?v=20260920-4"></script>
-  </body>
-</html>
+
+
+</body></html>

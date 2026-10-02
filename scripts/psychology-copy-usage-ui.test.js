@@ -13,3 +13,13 @@ function harness(){const nodes=new Map(),pending=[];class Node{constructor(tag='
 test('UI renders zero separately from missing and sends only content filters',async()=>{const h=harness();h.pending[0].resolve(data);await tick();assert.match(h.node('effectCards').textContent,/中位播放0/);assert.match(h.node('effectCards').textContent,/平均完播率—/);assert.match(h.node('pageInfo').textContent,/21 条/);assert.equal(h.node('next').disabled,false);assert.doesNotMatch(h.pending[0].url,/account|group|publish/);assert.match(h.pending[0].url,/sort=views/);});
 test('rapid period changes abort prior read and ignore late data; failure restores pagination',async()=>{const h=harness();h.pending[0].resolve(data);await tick();h.node('period').value='today';h.node('period').listeners.change();h.node('period').value='yesterday';h.node('period').listeners.change();assert.equal(h.pending[1].options.signal.aborted,true);h.pending[2].resolve({...data,window:{period:'yesterday',from:'2026-09-25',to:'2026-09-25'}});await tick();h.pending[1].resolve({...data,window:{period:'today',from:'2026-09-26',to:'2026-09-26'}});await tick();assert.match(h.node('periodLabel').textContent,/2026-09-25/);h.node('next').listeners.click();h.pending[3].reject(Error('offline'));await tick();assert.equal(h.run('state.page'),1);assert.equal(h.node('next').disabled,false);assert.equal(h.node('prev').disabled,true);assert.match(h.node('status').textContent,/offline.*保留上次结果/);});
 test('version body is lazy and closing detail prevents stale updates',async()=>{const h=harness();h.pending[0].resolve(data);await tick();h.run("openDetail({id:'copy-1',title:'<img onerror=alert(1)>'})");assert.equal(h.node('detailTitle').textContent,'<img onerror=alert(1)>');assert.equal(h.node('textPanel').hidden,true);assert.equal(h.pending.length,2);assert.match(h.pending[1].url,/copy=copy-1/);h.node('closeDetail').listeners.click();assert.equal(h.pending[1].options.signal.aborted,true);h.pending[1].resolve({items:[{title:'stale'}],total:1,pages:1,page:1});await tick();assert.doesNotMatch(h.node('versions').textContent,/stale/);});
+
+
+test('coverage decoration distinguishes missing, zero and full coverage and clamps fractions',async()=>{
+ for(const [coverage,known,style] of [[null,false,''],[0,true,'--usage-coverage:0%'],[1,true,'--usage-coverage:100%'],[1.2,true,'--usage-coverage:100%']]){
+  const h=harness();h.pending[0].resolve({...data,usage:{...data.usage,coverage}});await tick();
+  assert.equal(h.node('usageCards')['data-coverage-known'],String(known));
+  assert.equal(h.node('usageCards').style,style);
+  assert.match(h.node('usageCards').textContent,coverage==null?/抽取覆盖率—/:/抽取覆盖率/);
+ }
+});

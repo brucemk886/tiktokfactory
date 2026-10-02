@@ -10,12 +10,23 @@ test('every authenticated console uses the new theme on its initial document, be
   const head=html.slice(0,html.indexOf('</head>'));
   assert.match(html,/<body\b[^>]*class="[^"]*\blf-console\b/,name);
   const styles=[...head.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*>/g)].map(m=>m[0]);
-  assert.match(styles.at(-2)||'',/href="\/theme-ops\.css"/,name+' preserves legacy override order');
-  assert.match(styles.at(-1)||'',/href="\/admin-ui\.css"/,name+' must render-block on the final theme');
-  assert.doesNotMatch(styles.at(-1),/media=|onload=|disabled/,name+' must not defer CSS application');
+  const consoleIndex=styles.findIndex(style=>/href="\/admin-ui\.css"/.test(style));
+  const consoleStyle=styles[consoleIndex]||'';
+  assert.match(styles[consoleIndex-1]||'',/href="\/theme-ops\.css"/,name+' preserves legacy override order');
+  assert.match(consoleStyle,/href="\/admin-ui\.css"/,name+' must render-block on the console theme');
+  assert.doesNotMatch(consoleStyle,/media=|onload=|disabled/,name+' must not defer CSS application');
+  const overrides=styles.slice(consoleIndex+1);
+  if(/<body\b[^>]*class="[^"]*\bpsychology-workspace-page\b/.test(html)){
+   assert.ok(/^psychology(?:-[a-z-]+)?\.html$/.test(name),name+' workspace override is psychology-only');
+   assert.match(overrides[0]||'',/href="\/psychology-workspace\.css(?:[?\"])/,name+' shared workspace theme follows console');
+   for(const style of overrides){
+    assert.match(style,/href="\/psychology(?:-[a-z-]+)?\.css(?:[?\"])/,name+' only scoped psychology overrides follow console');
+    assert.doesNotMatch(style,/media=|onload=|disabled/,name+' workspace theme renders on first paint');
+   }
+  }else assert.equal(overrides.length,0,name+' unrelated consoles retain the final shared theme');
   assert.equal((html.match(/href="\/admin-ui\.css"/g)||[]).length,1,name);
-  assert.match(head,/<script src="\/admin-ui\.js" defer><\/script>/,name+' shell must load in parallel');
-  assert.match(styles.at(-1),/data-lf-console="true"/,name+' prevents duplicate dynamic injection');
+  assert.match(head,/<script src="\/admin-ui\.js" defer(?:="")?><\/script>/,name+' shell must load in parallel');
+  assert.match(consoleStyle,/data-lf-console="true"/,name+' prevents duplicate dynamic injection');
  }
 });
 test('public login and setup pages do not acquire an authenticated navigation shell',()=>{

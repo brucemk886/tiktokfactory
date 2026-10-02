@@ -1,66 +1,65 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+<html lang="zh-CN"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>纸张拼贴模板 · 心理学</title>
-    <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/module-pages.css" />
-    <link rel="stylesheet" href="/psychology-collage.css" />
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/module-pages.css">
 
-    <link rel="stylesheet" href="/psychology-pages.css" />
+
+    <link rel="stylesheet" href="/psychology-pages.css">
   <link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
-<script src="/admin-ui.js" defer></script>
-</head>
-  <body class="work-page module-page collage-page psychology-module lf-console">
+<script src="/admin-ui.js" defer=""></script>
+<link rel="stylesheet" href="/psychology-workspace.css"><link rel="stylesheet" href="/psychology-collage.css"></head>
+  <body class="work-page module-page collage-page psychology-module lf-console psychology-workspace-page">
     <nav class="side-tabs" aria-label="主导航">
       <a class="app-brand" href="/" aria-label="Local Factory"><span>LF</span><b>Local Factory<small>心理学</small></b></a>
-      <button class="nav-logout" type="button" data-logout>退出登录</button>
+      <button class="nav-logout" type="button" data-logout="">退出登录</button>
     </nav>
     <main class="module-main">
       <header class="page-head collage-header">
         <div><h1>纸张拼贴模板</h1><p class="page-lead">按参考片实现：约 90 秒、纸张拼贴隐喻、中文解说与中英双语字幕。</p></div>
-        <div class="header-actions"><span id="statusText">准备生成</span><button id="startBtn" class="module-button primary" type="button">生成心理学视频</button></div>
-      </header>
+        <div class="header-actions"><a href="/psychology-templates" class="creation-back">返回工作台</a><span id="statusText">准备生成</span><button id="startBtn" class="module-button primary" type="button">生成心理学视频</button></div>
+      </header><nav class="creation-section-nav"><a href="#collageIdea" class="is-active">选题与观点</a><a href="#collageSpec">成片规格</a><a href="#collageApi">接口配置</a></nav>
       <div class="collage-grid">
         <section class="collage-form">
-          <article class="module-panel collage-panel">
+          <article class="module-panel collage-panel" id="collageIdea">
             <div class="module-panel-head"><div><h2>选题与观点</h2><p>没有完整文案也可以，AI 会先生成三个开头钩子并评分。</p></div></div>
-            <label class="module-field"><span>选题</span><input id="topic" maxlength="160" value="为什么不断进步的人，反而更容易陷入情绪问题？" /></label>
+            <label class="module-field"><span>选题</span><input id="topic" maxlength="160" value="为什么不断进步的人，反而更容易陷入情绪问题？"></label>
             <label class="module-field"><span>核心观点 <em>可选</em></span><textarea id="angle" rows="3" maxlength="1000" placeholder="成长抬高内在标准，旧的自我保护方式开始失效。"></textarea></label>
             <label class="module-field"><span>已有文案 <em>可选</em></span><textarea id="script" rows="5" maxlength="8000" placeholder="AI 会保留观点并重组为 8–12 个双语分镜。"></textarea></label>
           </article>
-          <article class="module-panel collage-panel">
+          <article class="module-panel collage-panel" id="collageSpec">
             <div class="module-panel-head"><div><h2>成片规格</h2><p>每个场景单独生图，默认 10 景 × 1 条。</p></div></div>
             <div class="collage-fields">
-              <label class="module-field"><span>目标时长</span><div class="collage-suffix"><input id="targetDuration" type="number" min="60" max="120" value="90" /><b>秒</b></div></label>
-              <label class="module-field"><span>分镜数量</span><input id="sceneCount" type="number" min="8" max="12" value="10" /></label>
-              <label class="module-field"><span>生成条数</span><input id="totalVideos" type="number" min="1" max="3" value="1" /></label>
-              <label class="module-field"><span>片头署名</span><input id="credit" maxlength="32" value="@心理学" /></label>
+              <label class="module-field"><span>目标时长</span><div class="collage-suffix"><input id="targetDuration" type="number" min="60" max="120" value="90"><b>秒</b></div></label>
+              <label class="module-field"><span>分镜数量</span><input id="sceneCount" type="number" min="8" max="12" value="10"></label>
+              <label class="module-field"><span>生成条数</span><input id="totalVideos" type="number" min="1" max="3" value="1"></label>
+              <label class="module-field"><span>片头署名</span><input id="credit" maxlength="32" value="@心理学"></label>
             </div>
             <div class="collage-models">
-              <label><input type="radio" name="imageModel" value="z-image" checked disabled /><span><strong>Z-Image</strong><small>按官方写实摄影出图</small></span></label>
+              <label><input type="radio" name="imageModel" value="z-image" checked="" disabled=""><span><strong>Z-Image</strong><small>按官方写实摄影出图</small></span></label>
             </div>
             <div class="collage-cost"><strong id="imageEstimate">预计 10 张拼贴图</strong><span>点击生成前会再次确认额度调用。</span></div>
             <div class="collage-fields two">
-              <label class="module-field"><span>背景音乐目录 <em>可选</em></span><div class="collage-directory"><input id="backgroundMusicDir" /><button id="pickMusicBtn" class="module-button" type="button">选择</button></div></label>
-              <label class="module-field"><span>背景音乐音量</span><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10" /></label>
+              <label class="module-field"><span>背景音乐目录 <em>可选</em></span><div class="collage-directory"><input id="backgroundMusicDir"><button id="pickMusicBtn" class="module-button" type="button">选择</button></div></label>
+              <label class="module-field"><span>背景音乐音量</span><input id="backgroundMusicVolume" type="number" min="0" max="0.5" step="0.01" value="0.10"></label>
             </div>
           </article>
-          <article class="module-panel collage-panel">
+          <details class="collage-api" id="collageApi"><summary>接口配置<small>复用本机生成设置</small></summary><article class="module-panel collage-panel">
             <div class="module-panel-head"><div><h2>接口配置</h2><p>复用本机心理学配置，密钥不会进入任务记录。</p></div><button id="saveSettingsBtn" class="module-button" type="button">保存</button></div>
             <div class="collage-fields two">
-              <label class="module-field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
-              <label class="module-field"><span>ElevenLabs API Key</span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="已配置时留空" /></label>
-              <label class="module-field"><span>ElevenLabs Voice ID</span><input id="voiceId" /></label>
+              <label class="module-field"><span>Kie.ai API Key</span><input id="kieApiKey" type="password" autocomplete="off" placeholder="已配置时留空"></label>
+              <label class="module-field"><span>ElevenLabs API Key</span><input id="elevenLabsApiKey" type="password" autocomplete="off" placeholder="已配置时留空"></label>
+              <label class="module-field"><span>ElevenLabs Voice ID</span><input id="voiceId"></label>
               <label class="module-field"><span>配音模型</span><select id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2</option><option value="eleven_flash_v2_5">Flash v2.5</option></select></label>
             </div>
             <p id="settingsStatus" class="module-status">正在读取本机配置...</p>
-          </article>
+          </article></details>
         </section>
         <aside class="collage-side">
-          <article class="module-panel collage-reference">
+          <article class="module-panel collage-reference"><div class="module-panel-head"><div><h2>拼贴画面参考</h2><p>固定参考画面 · 成片在下方查看</p></div></div>
             <div class="collage-stage"><i>“情绪成长”</i><b>@心理学</b><em></em><div><strong>成长不是消灭情绪</strong><small>Growth is not the absence of emotion.</small></div></div>
             <p>1440×1080 · 30fps · 6–9 秒一景 · 中文黄字 · 英文白字 · 缓慢推拉</p>
           </article>
@@ -68,7 +67,7 @@
             <div class="module-panel-head"><div><h2>生成进度</h2><p id="progressPercent">0%</p></div></div>
             <div class="collage-progress"><i id="progressBar"></i></div>
             <p id="jobMessage">尚未创建任务。</p>
-            <div id="scorePanel" class="collage-score" hidden></div>
+            <div id="scorePanel" class="collage-score" hidden=""></div>
             <div id="resultList" class="collage-results"></div>
           </article>
         </aside>
@@ -76,5 +75,6 @@
     </main>
     <script src="/access.js"></script>
     <script src="/psychology-collage.js"></script>
-  </body>
-</html>
+
+
+</body></html>

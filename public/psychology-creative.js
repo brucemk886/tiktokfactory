@@ -12,11 +12,15 @@ async function load(){
   $('#styleCount').textContent=data.items.length+'套情感心理学样式 · 启用 '+data.active+' 套';
   for(const s of data.items){
    styles.set(s.id,s);const article=document.createElement('article');article.className='style-card';
-   const title=document.createElement('h3');title.textContent=s.label+(s.enabled?'':'（已停用）');
+   const title=document.createElement('h3');title.textContent=s.label;
+   const heading=document.createElement('div');heading.className='style-card-head';
+   const status=document.createElement('span');status.className='style-enabled'+(s.enabled?'':' is-disabled');status.textContent=s.enabled?'启用':'停用';heading.append(title,status);
    const pair=document.createElement('div');pair.className='style-pair';cards(pair,s);
    const id=document.createElement('small');id.textContent='ID: '+s.id;id.style.overflowWrap='anywhere';
    const button=document.createElement('button');button.type='button';button.dataset.preview=s.id;button.textContent='放大查看';
-   article.append(title,pair,id,button);gallery.append(article);
+   const labels=document.createElement('div');labels.className='style-card-labels';labels.innerHTML='<span>首图</span><span>内页</span>';
+   const footer=document.createElement('div');footer.className='style-card-footer';footer.append(id,button);
+   article.append(heading,pair,labels,footer);gallery.append(article);
   }
  }catch(error){gallery.textContent=error.message;const retry=document.createElement('button');retry.textContent='重试';retry.onclick=load;gallery.append(retry);}
 }
