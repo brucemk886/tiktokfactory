@@ -1,3 +1,4 @@
+import {handleWebsiteShortLink} from './psychology-website-links.js';
 import {handlePsychologyWebsite} from './psychology-website.js';
 import {handleFactoryApi} from './factory-api.js';
 import {FACTORY_API} from './factory-api-catalog.js';
@@ -44,6 +45,8 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
+      const shortLink=await handleWebsiteShortLink(request,env,url,ctx);
+      if(shortLink)return shortLink;
       if (url.pathname === "/api/health") {
         return json({ ok: true, service: "tiktok-factory", time: Date.now() });
       }

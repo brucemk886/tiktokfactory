@@ -122,3 +122,16 @@ test('unified API website.read preserves owner checks and read-only behavior',as
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_requests').get().n,0);
  f.sqlite.exec("UPDATE psychology_conversion_campaigns SET owner='revoked'");assert.equal((await handleFactoryApi(req(),f.env,url,null)).status,403);
 });
+
+test('short link creation requires the current campaign owner and same origin; report reads remain read-only',async t=>{
+ const f=await endpointFixture(t);
+ const url=new URL('https://factory.test/api/psychology-website/links');
+ const call=(session={user:f.user},origin='https://factory.test')=>handlePsychologyWebsite(new Request(url,{method:'POST',headers:{Origin:origin}}),f.env,url,session,{now});
+ assert.equal((await call(null)).status,401);
+ assert.equal((await call(undefined,'https://evil.test')).status,403);
+ assert.equal((await call()).status,200);
+ f.sqlite.exec("UPDATE psychology_conversion_campaigns SET owner='other'");
+ assert.equal((await call()).status,403);
+ f.sqlite.exec("UPDATE psychology_conversion_campaigns SET owner='admin'; UPDATE factory_users SET role='operator'");
+ assert.equal((await call()).status,403);assert.equal(f.requests.length,0);
+});

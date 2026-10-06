@@ -17,7 +17,7 @@ const fixture=()=>({
  accounts:[{connectionId:'a',username:'account_a',started:20,finished:15,paidSessions:2,orders:2}],
  sources:{page:1,pageSize:20,total:21,rows:[{source:'tiktok',campaign:'<img src=x onerror=alert(1)>',medium:'bio',content:'content & detail',started:20,finished:15,checkout:4,paidSessions:2,orders:2}]},
  orders:{page:1,pageSize:20,total:3,rows:[{id:'order-demo',paid_at:'2026-10-06 02:00:00',testTitle:'Attachment',kind:'report',amount_cents:499,currency:'usd',status:'refunded',provider:'stripe',source:'tiktok',campaign:'factory-a'}]},
- receivers:[{connectionId:'a',username:'account_a',configured:false,trackingUrl:'https://deeppersonaai.com/?utm_source=tiktok&utm_medium=bio&utm_campaign=factory-a'}],
+ receivers:[{connectionId:'a',username:'account_a',configured:false,trackingUrl:null}],
  campaign:{configuredReceivers:0,enabled:true},
  definitions:{pageviews:'全站PV，刷新重复计数。',acquisition:'测试按开始时间，订单按付款时间。',money:'未扣退款、税费或支付平台手续费，不代表实际到账。'}
 });
@@ -34,15 +34,21 @@ test('saved admin navigation includes the website entry and excludes operators',
  assert.equal(operator.sidebarModules.includes('psychology-website'),false);
 });
 test('website UI handles mobile, safe content, attribution links, paging and failed/stale reads',{skip:!chrome,timeout:90000},async t=>{
- let mode='ready',requests=[];
+ let mode='ready',requests=[],generated=false;
  const server=createServer((req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/api/auth/me'){
    res.setHeader('content-type','application/json');res.end(JSON.stringify({user:{id:'admin',username:'admin',role:'admin',sidebarModules:SIDEBAR_MODULES.map(m=>m.id)},home:'/',sidebarModules:SIDEBAR_MODULES}));return;
   }
+  if(url.pathname==='/api/psychology-website/links'){
+   assert.equal(req.method,'POST');generated=true;res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true}));return;
+  }
   if(url.pathname==='/api/psychology-website'){
    requests.push(Object.fromEntries(url.searchParams));
    const selectedMode=mode,value=fixture();
+   value.receivers[0].trackingUrl=generated?'https://deeppersonaai.com/go/123456abcd':null;
+   value.links={rows:generated?[{connectionId:'a',trackingUrl:value.receivers[0].trackingUrl,visits:12,filtered:2}]:[]};
+
    value.sources.page=Number(url.searchParams.get('sourcePage')||1);
    if(url.searchParams.get('period')==='today')value.window.from='2026-10-06';
    res.setHeader('content-type','application/json');
@@ -76,7 +82,11 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  }
  assert.equal(await page.$eval('#sources',e=>e.querySelectorAll('img').length),0);
  assert.match(await page.$eval('#sources',e=>e.textContent),/<img src=x/);
- await page.click('[data-tab="links"]');assert.match(await page.$eval('#trackingUrl',e=>e.value),/utm_campaign=factory-a/);
+ await page.click('[data-tab="links"]');assert.equal(await page.$eval('#trackingUrl',e=>e.value),'');
+ await page.click('#createLinks');await page.waitForFunction(()=>document.getElementById('trackingUrl').value.includes('/go/'));
+ assert.equal(await page.$eval('#trackingUrl',e=>e.value),'https://deeppersonaai.com/go/123456abcd');
+ assert.match(await page.$eval('#linkStats',e=>e.textContent),/12 次/);
+ assert.equal(await page.$eval('#createLinks',e=>e.disabled),true);
  assert.match(await page.$eval('#campaignNote',e=>e.textContent),/等待承接配置/);
  await page.click('[data-tab="sources"]');await page.click('#sourceNext');await page.waitForFunction(()=>document.getElementById('sourcePage').textContent.includes('第 2'));
  assert.equal(requests.at(-1).sourcePage,'2');
