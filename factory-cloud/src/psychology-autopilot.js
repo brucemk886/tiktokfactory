@@ -636,7 +636,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
         logs: logs.results.map(l => ({ kind: l.kind, message: l.message, at: l.created_at })) });
     }
     const productionCapacity=await kvGet(db,'psychology-production-capacity:'+user.username,null);
-    return json({ page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, productionCapacity, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, poolRules:POOL_POLICY, accountPools:ACCOUNT_POOLS, contentPools:CONTENT_POOLS, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
+    return json({ durableScheduling:!!env.SCHEDULE_QUEUE,page,pageSize,total:total.n,totalPages:Math.max(1,Math.ceil(total.n/pageSize)),hasMore:page*pageSize<total.n,window, productionCapacity, pilots: out, groups, strategies: STRATEGIES, strategyRules:strategyRules(), evolutionRules:EVOLUTION, testingRules:TEST_RULES, poolRules:POOL_POLICY, accountPools:ACCOUNT_POOLS, contentPools:CONTENT_POOLS, rules: AUTOPILOT, fetchedAt:Date.now(), groupsUpdatedAt:directory.updatedAt });
   }
   if (url.pathname === BASE && request.method === 'POST') {
     const body = await readJson(request), days = Number(body.days || 7), slots = normalizePilotSlots(body.slots ?? (body.strategy === 'pools' ? AUTOPILOT.slots.slice(0,2) : AUTOPILOT.slots));

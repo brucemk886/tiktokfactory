@@ -5,7 +5,7 @@ import { taskAssignmentsFor } from './psychology-task-groups.js';
 import { buildPoolCandidates,loadPoolReservations,planPoolMatches,poolMatchStatement,taskGroupAllocationStatement } from './psychology-pool-matching.js';
 import { readPoolMatchingState } from './psychology-pool-report.js';
 import { assertPsychologyOneUser, ensurePsychologyOneMembers } from './psychology-tiktok-one.js';
-import { loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
+import { readTestAllocationRevision, loadTestState, planFairLibraryDraw, testAllocationStatement } from './psychology-copy-testing.js';
 import { psychologyItemStatus } from './psychology-item-status.js';
 import { photoCopyKey } from './peer-photo-copy-cache.js';
 import {managedStyles,selectManagedStyle} from './psychology-managed-styles.js';
@@ -447,7 +447,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   } else if(config.sourceType==='library'){
     const usable=row=>{try{librarySource(row,config.mediaType);return true;}catch{return false;}};
     const posts=await loadLibraryPosts(env.DB,user.username,config.mediaType,config.query,usable);
-    if(config.libraryTestPolicy)testState=await loadTestState(env.DB,user.username);
+    if(config.libraryTestPolicy)testState=config.libraryStrategy==='pools'?{revision:await readTestAllocationRevision(env.DB,user.username),stats:new Map()}:await loadTestState(env.DB,user.username);
     const [stats,used]=await Promise.all([testState?testState.stats:loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
     const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
     if(config.libraryStrategy==='pools'){

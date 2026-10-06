@@ -20,12 +20,17 @@ export function occupiesTest(row, record = {}, group = {}) {
   return !['cancelled','production_failed','publish_failed'].includes(psychologyItemStatus(row, record, group).displayStatus);
 }
 
+export async function readTestAllocationRevision(db,owner){return Number((await db.prepare('SELECT COALESCE(MAX(revision),0)+1 n FROM psychology_copy_test_allocations WHERE owner=?').bind(owner).first()).n);}
+
 export async function loadTestState(db, owner, now = Date.now()) {
   // Read before the snapshot: a concurrent allocator invalidates our revision.
-  const revision = Number((await db.prepare('SELECT COALESCE(MAX(revision),0)+1 n FROM psychology_copy_test_allocations WHERE owner=?').bind(owner).first()).n);
+  const revision = await readTestAllocationRevision(db,owner);
   const stats = await loadCopyStats(db, owner);
-  const rows = (await db.prepare(`SELECT i.*,c.source_key,c.variant_id,j.status,j.type,j.result_json,
-      g.status group_status,g.request_json,r.status retry_status
+  const rows = (await db.prepare(`SELECT i.id,i.batch_id,i.deleted_at,i.execution_status,i.execution_type,
+      json_object('batchId',json_extract(i.receipt_json,'$.batchId')) receipt_json,
+      CASE WHEN i.ready_json='{}' THEN '{}' ELSE '{"ready":true}' END ready_json,
+      c.source_key,c.variant_id,j.status,j.type,json_object('publishFailed',json_extract(j.result_json,'$.publishFailed')) result_json,
+      g.status group_status,CASE WHEN g.request_json IS NULL THEN NULL WHEN g.request_json='{}' THEN '{}' ELSE '{"reserved":true}' END request_json,r.status retry_status
     FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
     JOIN psychology_creative_snapshots c ON c.item_id=i.id
     LEFT JOIN factory_jobs j ON j.id=i.job_id
@@ -34,9 +39,9 @@ export async function loadTestState(db, owner, now = Date.now()) {
     WHERE b.created_by=? AND b.created_at>=? AND json_extract(b.config_json,'$.mediaType')='photo'
     ORDER BY b.created_at DESC,i.id LIMIT 20001`).bind(owner, now - EVOLUTION.windowDays * 86400000).all()).results;
   if (rows.length > 20000) fail('测试记录超过本次核对上限，请先缩小测试范围。');
-  const records = rows.length ? (await db.prepare(`SELECT value_json FROM factory_publish_records WHERE
+  const records = rows.length ? (await db.prepare(`SELECT json_object('autoTaskId',json_extract(value_json,'$.autoTaskId'),'autoBatchId',json_extract(value_json,'$.autoBatchId'),'batchId',json_extract(value_json,'$.batchId'),'officialRemoteStatus',json_extract(value_json,'$.officialRemoteStatus'),'status',json_extract(value_json,'$.status')) value_json FROM factory_publish_records WHERE
     json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))
-    ORDER BY COALESCE(json_extract(value_json,'$.updatedAt'),0)`).bind(JSON.stringify(rows.map(r => r.id))).all()).results : [];
+    ORDER BY COALESCE(json_extract(factory_publish_records.value_json,'$.updatedAt'),0)`).bind(JSON.stringify(rows.map(r => r.id))).all()).results : [];
   const byItem = new Map(records.map(r => { const v = parseObject(r.value_json); return [v.autoTaskId, v]; }));
   const occupied = new Map();
   for (const row of rows) {

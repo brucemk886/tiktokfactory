@@ -27,3 +27,11 @@ Production rollout and authenticated live coverage verification follow this comm
 
 ## Recommended next step
 Deploy Hub and then Factory from clean main checkouts exactly matching origin/main. Create the dedicated schedule queue, apply migration 0078 via npm run deploy, then verify expected/created/skipped/pending/blocked counts and external notification readiness.
+
+## Live fault evidence and memory correction
+- Initial live queue recovery exposed exceededMemory in Cloudflare tail. Read-only D1 measurement found 3,452 matched items repeating 55.83 MiB of group request JSON, plus ready/results/receipts; both legacy test-state and pool-reservation reads materialized this data.
+- Both reservation readers now project only status/receipt/request-presence fields, preserving remote precedence and reservation semantics. Pool scheduling reads the shared allocation revision without performing the redundant legacy test-state scan. No queue or published record was reset.
+- Added a multi-megabyte stored-payload fixture asserting compact D1 responses and preserved occupancy, a gap-in-roster stagger test, and a Wrangler splitter regression. Final full factory regression: 1,271 passed, zero failed/skipped.
+- Hub release 8e5aa7d / version 35f70cc4-c9b0-48ce-8120-e48c39fb72ec is live. Heartbeats reach Hub, but Resend returns HTTP 401. No local alternative credential is configured. User was asked to update the existing signal-desk RESEND_API_KEY securely; mail is not marked delivered and UI exposes the failure.
+- Initial Factory migration failed because of trigger CASE/END splitting; rewritten SELECT RAISE ... WHERE NOT EXISTS applied successfully. Syntax failures are now never bypassed as transient D1 outages. Factory initial release 9fa03c6 / version 38e549b1-d119-4f17-933c-74f1de3fe3b5 is live; memory correction rollout follows.
+

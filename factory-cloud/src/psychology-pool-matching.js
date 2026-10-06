@@ -13,9 +13,11 @@ const median = values => { const sorted=[...values].sort((a,b)=>a-b), n=sorted.l
 // All ongoing and uncertain remote outcomes reserve their original exact sample.
 // The allocator revision is committed alongside these rows by auto-publish.
 export async function loadPoolReservations(db, owner, cycleStartAt, now = Date.now()) {
-  const rows=(await db.prepare(`SELECT i.id,i.batch_id,i.connection_id,i.deleted_at,i.receipt_json,i.ready_json,i.publish_group_id,
-    c.source_key,c.variant_id,c.style_id,c.copy_hash,j.status,j.type,j.result_json,
-    g.status group_status,g.request_json,r.status retry_status,
+  const rows=(await db.prepare(`SELECT i.id,i.batch_id,i.connection_id,i.deleted_at,
+    json_object('batchId',json_extract(i.receipt_json,'$.batchId')) receipt_json,
+    CASE WHEN i.ready_json='{}' THEN '{}' ELSE '{"ready":true}' END ready_json,i.publish_group_id,
+    c.source_key,c.variant_id,c.style_id,c.copy_hash,j.status,j.type,json_object('publishFailed',json_extract(j.result_json,'$.publishFailed')) result_json,
+    g.status group_status,CASE WHEN g.request_json IS NULL THEN NULL WHEN g.request_json='{}' THEN '{}' ELSE '{"reserved":true}' END request_json,r.status retry_status,
     m.account_pool,m.cycle_start_at,COALESCE(m.style_revision,CAST(json_extract(j.payload_json,'$.psychologyAutomation.styleDefinition.revision') AS INTEGER),0) style_revision,m.created_at match_created_at,
     f.state fact_state,f.published_at,f.views,f.completion
     FROM psychology_publish_items i JOIN psychology_publish_batches b ON b.id=i.batch_id
@@ -29,9 +31,9 @@ export async function loadPoolReservations(db, owner, cycleStartAt, now = Date.n
     AND json_extract(b.config_json,'$.mediaType')='photo' ORDER BY b.created_at,i.id LIMIT 20001`)
     .bind(owner,Math.min(now-30*DAY,cycleStartAt)).all()).results;
   if(rows.length>20000)throw Object.assign(new Error('匹配占位记录超过核对上限，请缩小运营范围后重试。'),{statusCode:409});
-  const records=rows.length ? (await db.prepare(`SELECT value_json FROM factory_publish_records WHERE
+  const records=rows.length ? (await db.prepare(`SELECT json_object('autoTaskId',json_extract(value_json,'$.autoTaskId'),'autoBatchId',json_extract(value_json,'$.autoBatchId'),'batchId',json_extract(value_json,'$.batchId'),'officialRemoteStatus',json_extract(value_json,'$.officialRemoteStatus'),'status',json_extract(value_json,'$.status')) value_json FROM factory_publish_records WHERE
     json_extract(value_json,'$.autoTaskId') IN (SELECT value FROM json_each(?))
-    ORDER BY COALESCE(json_extract(value_json,'$.updatedAt'),0)`).bind(JSON.stringify(rows.map(r=>r.id))).all()).results : [];
+    ORDER BY COALESCE(json_extract(factory_publish_records.value_json,'$.updatedAt'),0)`).bind(JSON.stringify(rows.map(r=>r.id))).all()).results : [];
   const byItem=new Map(records.map(r=>{const value=parseObject(r.value_json);return [value.autoTaskId,value];}));
   const occupied=new Map(),cycles=new Map();
   for(const row of rows){

@@ -163,11 +163,12 @@ async function slotStep(env,w,now){
  const authorized=new Set(directory.accounts.filter(a=>a.groupId===pilot.group_id).map(connection));
  const ids=selected.map(a=>a.connection_id),eligible=new Set(await taskSlotAccounts(db,pilot,ids.filter(id=>authorized.has(id)),w.slot_at));
  const paused=new Set((await rows(db,"SELECT connection_id FROM psychology_autopilot_accounts WHERE autopilot_id=? AND status='paused'",pilot.id)).map(a=>a.connection_id));
- const usable=selected.filter(a=>eligible.has(a.connection_id)&&!paused.has(a.connection_id));
+ const valid=selected.filter(a=>eligible.has(a.connection_id)&&!paused.has(a.connection_id)),usable=[];
+ for(const a of valid){if(usable.length&&a.ordinal!==usable.at(-1).ordinal+1)break;usable.push(a);}
  const roster=new Set(await taskSlotAccounts(db,pilot,ids.filter(id=>authorized.has(id)),w.slot_at,{includeClaimed:true}));
  const orphaned=selected.filter(a=>!eligible.has(a.connection_id)&&roster.has(a.connection_id)&&!paused.has(a.connection_id));
  await memberResult(db,w,orphaned.map(a=>a.connection_id),'blocked','本轮已有占用，但未找到对应任务，需要核对；未重复创建',now);
- await memberResult(db,w,selected.filter(a=>!usable.includes(a)&&!orphaned.includes(a)).map(a=>a.connection_id),'skipped','账号已暂停或权限、生效分配已变化',now);
+ await memberResult(db,w,selected.filter(a=>!valid.includes(a)&&!orphaned.includes(a)).map(a=>a.connection_id),'skipped','账号已暂停或权限、生效分配已变化',now);
  if(!usable.length){await saveProgress(db,w,{},now);return;}
  const context=await taskPublishContext(db,pilot,w.slot_at);
  const scheduleAt=Math.floor(w.slot_at/1000)+usable[0].ordinal*AUTOPILOT.staggerSeconds;

@@ -139,3 +139,36 @@ test('migration survives the deployed Wrangler SQL splitter before reaching D1',
  for(const statement of split(sql))db.exec(statement);
  assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name='psychology_schedule_commit_fence'").get());
 });
+
+test('a paused account in the middle preserves every remaining account stagger',async t=>{
+ const f=await setup(t);
+ for(const id of ['d','e','f']){
+  f.directory.push({id,connectionId:id,username:id,scopes:['video.publish']});
+  f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id) VALUES(?,?)').run(id,'g');f.registry(id);f.snapshot(id);
+  for(let j=0;j<6;j++)f.sqlite.prepare("INSERT INTO ops_task_facts(id,batch_id,account_key,media,schedule_at,published_at,source,variant,style,copy_hash,state,views,completion) VALUES(?,?,?,'photo',?,?,?,'','classic','old','published',600,0.2)").run('history-'+id+j,'history','tiktok:'+id,f.now-5*86400000,f.now-5*86400000,'old-'+j);
+ }
+ await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});
+ f.sqlite.prepare("UPDATE psychology_autopilot_accounts SET status='paused' WHERE connection_id='b'").run();
+ assert.equal((await drain(f)).status,'done');
+ const items=f.sqlite.prepare('SELECT connection_id,schedule_at FROM psychology_publish_items ORDER BY schedule_at').all();
+ assert.equal(items.length,4);
+ assert.equal(items.find(i=>i.connection_id==='d').schedule_at,f.w.slot_at/1000+2*45);
+ assert.equal(items.find(i=>i.connection_id==='f').schedule_at,f.w.slot_at/1000+4*45);
+});
+
+test('matching reads compact reservations even when archived submission payloads are large',async t=>{
+ const f=await setup(t);await drain(f);
+ const blob='x'.repeat(2*1024*1024),large=JSON.stringify({media:blob});
+ f.sqlite.prepare('UPDATE psychology_publish_groups SET request_json=?').run(large);
+ f.sqlite.prepare('UPDATE psychology_publish_items SET ready_json=?,photo_backups_json=?').run(large,large);
+ f.sqlite.prepare('UPDATE factory_jobs SET result_json=?').run(JSON.stringify({large:blob,publishFailed:false}));
+ for(const i of f.sqlite.prepare('SELECT id,batch_id FROM psychology_publish_items').all())f.sqlite.prepare('INSERT INTO factory_publish_records(id,value_json) VALUES(?,?)').run('record-'+i.id,JSON.stringify({autoTaskId:i.id,autoBatchId:i.batch_id,status:'published',batchId:'remote',updatedAt:f.now,media:blob}));
+ let maxBytes=0;const prepare=f.db.prepare.bind(f.db);
+ f.db.prepare=sql=>{const stmt=prepare(sql),all=stmt.all;stmt.all=async function(){const r=await all.call(this);maxBytes=Math.max(maxBytes,JSON.stringify(r.results).length);return r;};return stmt;};
+ const {loadPoolReservations}=await import('./psychology-pool-matching.js');
+ const {loadTestState}=await import('./psychology-copy-testing.js');
+ const reservations=await loadPoolReservations(f.db,'admin',starts,f.now),state=await loadTestState(f.db,'admin',f.now);
+ assert.equal([...reservations.occupied.values()].reduce((n,r)=>n+r.posts,0),2);
+ assert.equal([...state.stats.values()].reduce((n,r)=>n+r.posts,0),2);
+ assert.ok(maxBytes<20000,'large media/request/backup blobs must stay in D1; got '+maxBytes);
+});

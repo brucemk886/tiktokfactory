@@ -183,7 +183,7 @@ function render() {
   const alerts = [];
   for(const p of pilots) {
     if(p.lastRunError)alerts.push([esc(executionName(p)),'最近检查异常',esc(p.lastRunError),`<a href="#${p.id}">查看日志并处理</a>`]);
-    if(p.status==='active' && p.latest?.at && data.fetchedAt-p.latest.at>32*3600000)alerts.push([esc(executionName(p)),'分析数据未更新','最近分析超过 32 小时，请检查后台日志。',`<a href="#${p.id}">查看运营日志</a>`]);
+    if(!data.durableScheduling && p.status==='active' && p.latest?.at && data.fetchedAt-p.latest.at>32*3600000)alerts.push([esc(executionName(p)),'分析数据未更新','最近分析超过 32 小时，请检查后台日志。',`<a href="#${p.id}">查看运营日志</a>`]);
     for(const s of p.schedule.filter(s=>s.detail||s.status==='failed'))alerts.push([esc(executionName(p)), '排期异常', esc(s.detail||'创建失败'), `<a href="#${p.id}">查看发布记录并重新检查</a>`]);
     for(const a of p.accounts.filter(a=>a.status==='paused'&&p.status!=='ended'))alerts.push([esc(executionName(p)), '@'+esc(a.name)+' 已停发', esc(a.reason), `<a href="#${p.id}">查看账号</a>`]);
     for(const i of p.attention||[])alerts.push([esc(executionName(p))+'<small>@'+esc(i.account)+'</small>', esc(i.retrying?'自动恢复中':ITEM[i.state]||i.state), esc(i.retrying ? (i.retryAt?'计划重试 '+pilotTime(p,i.retryAt):'后台正在重试') : i.error||'暂无详细原因'), `<button data-detail="${p.id}" data-slot="${i.slotAt}">查看内容</button>`]);
