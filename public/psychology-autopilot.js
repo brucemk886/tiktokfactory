@@ -153,6 +153,10 @@ $('#groupChoices').addEventListener('change', event => {
 $('#selectAllGroups').onclick = () => { if(creating || loading)return; for(const g of availableGroups())selectedGroups.add(g.id); renderGroupChoices(); };
 $('#clearGroups').onclick = () => { if(creating || loading)return; selectedGroups.clear(); renderGroupChoices(); };
 $('#createDialog').addEventListener('cancel', event => { if(creating)event.preventDefault(); });
+function executionName(p){
+ const accounts=p.accounts||[],first=accounts.find(a=>a.name)?.name;
+ return first?'@'+String(first).replace(/^@/,'')+(accounts.length>1?' 等 '+accounts.length+' 个账号':''):'发布记录（'+accounts.length+' 个账号）';
+}
 function render() {
   const pilots = data.pilots;
   renderGroupChoices();
@@ -178,21 +182,22 @@ function render() {
   $('#freshness').textContent = `回执读取于 ${time(data.fetchedAt)} · 下次计划检查 ${time(next)}（北京时间，实际以后台调度为准）。${PERIOD_LABELS[data.window?.period||'today']}（${data.window?.from||''} 至 ${data.window?.to||''}）数量为已创建任务，未成功创建的排期见下方异常。页面每 30 秒读取本地记录，不主动查询 TikTok。`;
   const alerts = [];
   for(const p of pilots) {
-    if(p.lastRunError)alerts.push([esc(p.groupName),'最近检查异常',esc(p.lastRunError),`<a href="#${p.id}">查看日志并处理</a>`]);
-    if(p.status==='active' && p.latest?.at && data.fetchedAt-p.latest.at>32*3600000)alerts.push([esc(p.groupName),'分析数据未更新','最近分析超过 32 小时，请检查后台日志。',`<a href="#${p.id}">查看运营日志</a>`]);
-    for(const s of p.schedule.filter(s=>s.detail||s.status==='failed'))alerts.push([esc(p.groupName), '排期异常', esc(s.detail||'创建失败'), `<a href="#${p.id}">查看分组并重新检查</a>`]);
-    for(const a of p.accounts.filter(a=>a.status==='paused'&&p.status!=='ended'))alerts.push([esc(p.groupName), '@'+esc(a.name)+' 已停发', esc(a.reason), `<a href="#${p.id}">查看账号</a>`]);
-    for(const i of p.attention||[])alerts.push([esc(p.groupName)+'<small>@'+esc(i.account)+'</small>', esc(i.retrying?'自动恢复中':ITEM[i.state]||i.state), esc(i.retrying ? (i.retryAt?'计划重试 '+pilotTime(p,i.retryAt):'后台正在重试') : i.error||'暂无详细原因'), `<button data-detail="${p.id}" data-slot="${i.slotAt}">查看内容</button>`]);
-    if(p.status==='active' && p.lastRunAt && data.fetchedAt-p.lastRunAt>26*3600000)alerts.push([esc(p.groupName),'检查延迟','超过 26 小时没有自动检查，请核对后台运行情况。',`<a href="#${p.id}">立即检查</a>`]);
+    if(p.lastRunError)alerts.push([esc(executionName(p)),'最近检查异常',esc(p.lastRunError),`<a href="#${p.id}">查看日志并处理</a>`]);
+    if(p.status==='active' && p.latest?.at && data.fetchedAt-p.latest.at>32*3600000)alerts.push([esc(executionName(p)),'分析数据未更新','最近分析超过 32 小时，请检查后台日志。',`<a href="#${p.id}">查看运营日志</a>`]);
+    for(const s of p.schedule.filter(s=>s.detail||s.status==='failed'))alerts.push([esc(executionName(p)), '排期异常', esc(s.detail||'创建失败'), `<a href="#${p.id}">查看发布记录并重新检查</a>`]);
+    for(const a of p.accounts.filter(a=>a.status==='paused'&&p.status!=='ended'))alerts.push([esc(executionName(p)), '@'+esc(a.name)+' 已停发', esc(a.reason), `<a href="#${p.id}">查看账号</a>`]);
+    for(const i of p.attention||[])alerts.push([esc(executionName(p))+'<small>@'+esc(i.account)+'</small>', esc(i.retrying?'自动恢复中':ITEM[i.state]||i.state), esc(i.retrying ? (i.retryAt?'计划重试 '+pilotTime(p,i.retryAt):'后台正在重试') : i.error||'暂无详细原因'), `<button data-detail="${p.id}" data-slot="${i.slotAt}">查看内容</button>`]);
+    if(p.status==='active' && p.lastRunAt && data.fetchedAt-p.lastRunAt>26*3600000)alerts.push([esc(executionName(p)),'检查延迟','超过 26 小时没有自动检查，请核对后台运行情况。',`<a href="#${p.id}">立即检查</a>`]);
   }
-  $('#attention').innerHTML = alerts.length ? `<p>${alerts.length} 项待核对 / 恢复中</p>`+table(['分组 / 账号','情况','原因 / 下一步','操作'],alerts.slice(0,30))+(alerts.length>30?'<p>先显示前 30 项，展开各组排期查看全部明细。</p>':'') : '<p class="section-hint">最近排期没有待处理异常。</p>';
-  $('#compare').innerHTML = pilots.length ? table(['发布执行组 / 策略','状态',PERIOD_LABELS[data.window?.period||'today']+'执行',PERIOD_LABELS[data.window?.period||'today']+'已同步作品','中位播放 / 破千率','最近检查','详情'],pilots.map(p=>[esc(p.groupName)+'<small>'+esc(p.strategyLabel)+'</small>',STATUS[p.status],esc(totals(p.execution||p.today)),fmt(p.performance?.n??0),fmt(p.performance?.medianViews)+' / '+pct(p.performance?.potentialRate),pilotTime(p,p.lastRunAt),`<a href="#${p.id}">查看运营详情</a>`])) : '<p>创建运营计划后，会在这里显示各组执行和效果。</p>';
+  $('#attention').innerHTML = alerts.length ? `<p>${alerts.length} 项待核对 / 恢复中</p>`+table(['发布记录 / 账号','情况','原因 / 下一步','操作'],alerts.slice(0,30))+(alerts.length>30?'<p>先显示前 30 项，展开发布排期查看全部明细。</p>':'') : '<p class="section-hint">最近排期没有待处理异常。</p>';
+  $('#compare').innerHTML = pilots.length ? table(['发布记录 / 策略','状态',PERIOD_LABELS[data.window?.period||'today']+'执行',PERIOD_LABELS[data.window?.period||'today']+'已同步作品','中位播放 / 破千率','最近检查','详情'],pilots.map(p=>[esc(executionName(p))+'<small>'+esc(p.strategyLabel)+'</small>',STATUS[p.status],esc(totals(p.execution||p.today)),fmt(p.performance?.n??0),fmt(p.performance?.medianViews)+' / '+pct(p.performance?.potentialRate),pilotTime(p,p.lastRunAt),`<a href="#${p.id}">查看运营详情</a>`])) : '<p>创建运营计划后，会在这里显示发布执行和效果。</p>';
   const opened = new Set([...document.querySelectorAll('#pilots details[open]')].map(d=>d.id));
   const slotBodies = new Map([...document.querySelectorAll('[data-slot-body]')].map(e=>[e.id,e.innerHTML]));
   $('#pilots').innerHTML = pilots.map(p=>{
     const actions = p.status==='ended' ? '' : `<button data-schedule="${p.id}">发布设置</button><button data-pool-switch="${p.id}">账号池匹配…</button>` + (p.status==='active' ? `<button data-run="${p.id}">立即检查并排期</button><button data-pause="${p.id}">暂停…</button>` : `<button data-status="active" data-pilot="${p.id}">恢复运营</button><button data-pause="${p.id}">停止未提交任务…</button>`) + `<button data-status="ended" data-pilot="${p.id}">结束运营</button>`;
     const schedule = [...p.schedule].sort((a,b)=>b.slotAt-a.slotAt);
-    return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>发布执行组 · ${esc(p.groupName)} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc((p.slots||[]).map(hm).join(' / '))}（${ZONES[zoneFor(p.timeZone)]}）${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(p.pendingSlots.map(hm).join(' / '))+'（'+ZONES[zoneFor(p.pendingTimeZone||p.timeZone)]+'），'+zonedTime(p.scheduleEffectiveAt,p.pendingTimeZone||p.timeZone)+' 起生效':''}${p.pendingStrategy?'<br>未来策略：'+esc(data.strategies[p.pendingStrategy]||p.pendingStrategy)+' · '+pilotTime(p,p.strategyEffectiveAt)+' 起生效':''} · 运行至 ${pilotTime(p,p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
+    return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>发布记录 · ${esc(executionName(p))} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc((p.slots||[]).map(hm).join(' / '))}（${ZONES[zoneFor(p.timeZone)]}）${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(p.pendingSlots.map(hm).join(' / '))+'（'+ZONES[zoneFor(p.pendingTimeZone||p.timeZone)]+'），'+zonedTime(p.scheduleEffectiveAt,p.pendingTimeZone||p.timeZone)+' 起生效':''}${p.pendingStrategy?'<br>未来策略：'+esc(data.strategies[p.pendingStrategy]||p.pendingStrategy)+' · '+pilotTime(p,p.strategyEffectiveAt)+' 起生效':''} · 运行至 ${pilotTime(p,p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
+    <details id="origin-${p.id}" class="ops-daily"><summary>原授权归属</summary><p class="section-hint">${esc(p.groupName||p.groupId)} · 用于核对账号权限和原发布记录；运营策略按项目及账号数据分配。</p></details>
     <h3>${PERIOD_LABELS[data.window?.period||'today']}发布排期（统计日期按北京时间）</h3>${schedule.length?schedule.map(s=>`<details class="pilot-slot" id="slot-${p.id}-${s.slotAt}" data-slot-details data-pilot="${p.id}" data-slot="${s.slotAt}"><summary>${pilotTime(p,s.slotAt)} · ${SLOT[s.status]||esc(s.status)}<span>${esc(totals(s.counts))}</span></summary>${s.detail?'<p class="pilot-error">'+esc(s.detail)+'</p>':''}<div id="body-${p.id}-${s.slotAt}" data-slot-body><button data-detail="${p.id}" data-slot="${s.slotAt}">读取内容明细</button></div></details>`).join(''):'<p>所选时间没有排期。</p>'}
     <details id="accounts-${p.id}" class="ops-daily"><summary>账号状态（${p.accounts.length}）</summary>${table(['账号','状态','原因 / 暂停范围','操作'],p.accounts.map(a=>['@'+esc(a.name),a.status==='active'?(p.status==='active'?'参与排期':'随运营暂停'):'已停发',esc(a.reason||'—')+(a.status==='paused'?'<small>'+(a.stopPending?'本地未提交任务已停止':'仅停止新增排期')+'</small>':''),p.status==='ended'?'':a.status==='active'?`<button data-pause="${p.id}" data-account="${esc(a.connectionId)}">停发…</button>`:`<button data-pilot="${p.id}" data-account="${esc(a.connectionId)}" data-account-status="active">恢复</button>`]))}</details>
     <details id="logs-${p.id}" class="ops-daily"><summary>所选时间日志（最近60条）与最近分析</summary>${p.latest?.findings?.length?'<ul>'+p.latest.findings.map(f=>'<li>'+esc(f)+'</li>').join('')+'</ul>':''}<ul class="pilot-log">${p.logs.map(l=>`<li class="is-${esc(l.kind)}"><time>${pilotTime(p,l.at)}</time>${esc(l.message)}</li>`).join('')}</ul></details></section>`;
@@ -272,7 +277,7 @@ function openSchedule(id) {
   const p=data.pilots.find(p=>p.id===id);if(!p)return;
   editingPilot=id;editTimes=(p.pendingSlots||p.slots||data.rules.slots).map(hm);
   $('#editTimeZone').value=zoneFor(p.pendingSlots?p.pendingTimeZone||p.timeZone:p.timeZone);
-  renderScheduleZoneHint();$('#scheduleTitle').textContent=p.groupName+' · 发布设置';$('#editDailyCount').value=editTimes.length;
+  renderScheduleZoneHint();$('#scheduleTitle').textContent=executionName(p)+' · 发布设置';$('#editDailyCount').value=editTimes.length;
   $('#editTimes').innerHTML=timeFields(editTimes,'edit');$('#scheduleStatus').textContent='';$('#scheduleDialog').showModal();
 }
 $('#scheduleDialog').addEventListener('cancel',e=>{if(savingSchedule)e.preventDefault();});
@@ -343,8 +348,8 @@ async function loadTaskMembers(role=taskGroupRole,page=1){
  try{
   const result=await api('/task-groups?group='+encodeURIComponent(role)+'&page='+page);if(request!==taskMemberRequest)return;
   const m=result.membership||{rows:[],page:1,total:0,totalPages:1};taskGroupPage=m.page||1;taskGroupPages=Math.max(1,m.totalPages||1);
-  $('#taskGroupMemberTable').innerHTML=m.rows?.length?table(['账号','发布执行分组','账号分层 / 成熟表现','参与状态','原因 / 生效时间'],m.rows.map(r=>['@'+esc(r.name||r.connectionId),esc(r.groupName||r.groupId),esc(taskRoleLabel(r.role))+'<small>'+esc(({strong:'强号',normal:'中号','rescue-hook':'首图救援','rescue-content':'内页救援',diagnostic:'近零诊断',observing:'待观察'}[r.accountPool])||r.accountPool||'—')+'</small>',r.blocked?'待处理'+(r.paused?' · 已暂停':''):r.paused?'已暂停':'可参与未来分配',esc(r.reason||'—')+'<small>'+esc(zonedTime(r.effectiveAt,r.timeZone||result.policy?.timeZone||taskGroupsData?.policy?.timeZone))+' 起生效</small>'])):'<p class="section-hint">当前分层暂无账号。</p>';
-  $('#taskGroupMemberStatus').textContent='账号分层用于未来尚未创建的任务，原授权分组保持不变。';
+  $('#taskGroupMemberTable').innerHTML=m.rows?.length?table(['账号','账号分层 / 成熟表现','参与状态','原因 / 生效时间'],m.rows.map(r=>['@'+esc(r.name||r.connectionId),esc(taskRoleLabel(r.role))+'<small>'+esc(({strong:'强号',normal:'中号','rescue-hook':'首图救援','rescue-content':'内页救援',diagnostic:'近零诊断',observing:'待观察'}[r.accountPool])||r.accountPool||'—')+'</small>',r.blocked?'待处理'+(r.paused?' · 已暂停':''):r.paused?'已暂停':'可参与未来分配',esc(r.reason||'—')+'<small>'+esc(zonedTime(r.effectiveAt,r.timeZone||result.policy?.timeZone||taskGroupsData?.policy?.timeZone))+' 起生效</small>'])):'<p class="section-hint">当前分层暂无账号。</p>';
+  $('#taskGroupMemberStatus').textContent='账号统一绑定心理学项目，分层用于未来尚未创建的任务。';
   $('#taskGroupMemberPage').textContent='第 '+fmt(taskGroupPage)+' / '+fmt(taskGroupPages)+' 页 · 共 '+fmt(m.total)+' 个账号 · 每页20条';
   $('#taskGroupPrev').disabled=taskGroupPage<=1;$('#taskGroupNext').disabled=taskGroupPage>=taskGroupPages;
  }catch(error){if(request!==taskMemberRequest)return;$('#taskGroupMemberStatus').textContent='账号读取失败：'+error.message;$('#taskGroupMembersRetry').hidden=false;}

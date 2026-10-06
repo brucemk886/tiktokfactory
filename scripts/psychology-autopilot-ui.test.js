@@ -15,7 +15,7 @@ function harness(overrides={},post,patch,taskRoute){
 }
 const tick=()=>new Promise(r=>setImmediate(r));
 test('overview escapes account/group data and preserves visible data on failed refresh',async()=>{
- const h=harness();await tick();assert.match(h.node('#compare').innerHTML,/&lt;unsafe&gt;/);assert.doesNotMatch(h.node('#compare').innerHTML,/<unsafe>/);
+ const h=harness();await tick();assert.match(h.node('#pilots').innerHTML,/<summary>原授权归属<\/summary>[\s\S]*&lt;unsafe&gt;/);assert.doesNotMatch(h.node('#compare').innerHTML,/unsafe/);assert.doesNotMatch(h.node('#pilots').innerHTML,/<unsafe>/);
  const old=h.node('#overview').innerHTML;h.fail();await h.node('#reload').onclick();assert.equal(h.node('#overview').innerHTML,old);assert.match(h.node('#status').textContent,/保留上次数据.*offline/);
 });
 test('pause requires impact preview and explicit scope, with polling suspended in modal',async()=>{
@@ -172,7 +172,7 @@ test('task groups show eight native role cards, blocked totals and independent c
  assert.equal((cards.match(/data-task-role=/g)||[]).length,8);assert.equal((cards.match(/<button type="button"/g)||[]).length,8);
  assert.match(cards,/aria-controls="taskGroupAccounts"/);assert.match(cards,/data-task-role="launch"/);assert.match(cards,/&lt;unsafe&gt;/);assert.doesNotMatch(cards,/<unsafe>/);
  assert.match(h.node('#taskGroupSummary').innerHTML,/待处理账号<\/span><strong>2/);assert.match(h.node('#taskGroupStatus').textContent,/尚未配置/);
- assert.match(h.node('#compare').innerHTML,/发布执行组 \/ 策略/);
+ assert.match(h.node('#compare').innerHTML,/发布记录 \/ 策略/);
  h.node('#period').value='yesterday';h.node('#period').listeners.change();await tick();
  assert.ok(h.requests.filter(r=>r.path.includes('/task-groups')).every(r=>!r.path.includes('period=')));
  assert.equal(h.requests.filter(r=>r.method!=='GET').length,0);
@@ -186,7 +186,7 @@ test('role cards load twenty-account pages, preserve role and escape member cont
   return taskReply(q.has('group')?{...task,membership:{page:Number(q.get('page')),total:21,totalPages:2,rows:[{connectionId:'a',name:'<name>',groupName:'<group>',role:q.get('group'),accountPool:'normal',paused:false,blocked:true,reason:'<conflicting plan>',effectiveAt:task.effectiveAt}]}}:task);
  });await tick();clickTaskRole(h,'review');await tick();
  assert.equal(h.node('#taskGroupAccounts').hidden,false);assert.match(h.node('#taskGroupMemberPage').textContent,/第 1 \/ 2 页.*共 21 个账号.*每页20条/);
- assert.match(h.node('#taskGroupMemberTable').innerHTML,/&lt;name&gt;.*&lt;group&gt;.*待处理.*&lt;conflicting plan&gt;/);assert.doesNotMatch(h.node('#taskGroupMemberTable').innerHTML,/<name>|<group>|可参与未来分配/);
+ assert.match(h.node('#taskGroupMemberTable').innerHTML,/&lt;name&gt;.*待处理.*&lt;conflicting plan&gt;/);assert.doesNotMatch(h.node('#taskGroupMemberTable').innerHTML,/<name>|<group>|可参与未来分配/);
  assert.equal(h.node('#taskGroupPrev').disabled,true);assert.equal(h.node('#taskGroupNext').disabled,false);
  await h.node('#taskGroupNext').onclick();const last=h.requests.at(-1);assert.match(last.path,/group=review&page=2/);assert.equal(h.node('#taskGroupNext').disabled,true);
  await h.node('#taskGroupPrev').onclick();assert.match(h.requests.at(-1).path,/group=review&page=1/);
@@ -432,4 +432,32 @@ test('project preview explains next-local-day admission and respects turning new
 
 test('a missing saved capacity snapshot explains the three daily Pacific checks without a live estimate',async()=>{
  const h=harness({productionCapacity:null});await tick();assert.equal(h.node('#productionCapacity').hidden,false);assert.match(h.node('#productionCapacity').innerHTML,/尚未完成生成准备检查；每天美西05:00.*08:30.*17:00更新/);assert.doesNotMatch(h.node('#productionCapacity').innerHTML,/预计提前|每分钟|每5分钟/);assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));
+});
+
+
+test('project execution headings use accounts and old authorization names stay in folded history',async()=>{
+ const pilot={id:'p-project',groupId:'g-old',groupName:'ai自动化运营1组 <unsafe>',status:'active',accounts:[{name:'Alpha <name>',status:'active'},{name:'Beta',status:'paused'}],schedule:[],logs:[],attention:[],lastRunError:'error'};
+ const h=harness({pilots:[pilot]});await tick();
+ assert.match(h.node('#compare').innerHTML,/@Alpha &lt;name&gt; 等 2 个账号/);
+ assert.doesNotMatch(h.node('#compare').innerHTML,/ai自动化运营|发布执行组/);
+ assert.doesNotMatch(h.node('#attention').innerHTML,/ai自动化运营|分组 \/ 账号/);
+ assert.match(h.node('#pilots').innerHTML,/<h2>发布记录 · @Alpha &lt;name&gt; 等 2 个账号/);
+ assert.match(h.node('#pilots').innerHTML,/<details id="origin-p-project"[^>]*><summary>原授权归属<\/summary>/);
+ assert.match(h.node('#pilots').innerHTML,/ai自动化运营1组 &lt;unsafe&gt;/);
+ assert.equal(h.requests.filter(r=>r.method!=='GET').length,0);
+ const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');
+ assert.match(html,/<details id="legacyGroupTools"><summary>旧计划工具（历史兼容）<\/summary>/);
+ assert.match(html,/原授权归属（旧计划工具）/);
+});
+
+test('conversion receiver choices show accounts and followers without turning authorization names into operating groups',async()=>{
+ const conversion=fs.readFileSync(new URL('../public/psychology-conversion.js',import.meta.url),'utf8');
+ const requests=[],mount={innerHTML:'',querySelector:()=>({addEventListener(){}})};
+ const model={config:null,revision:0,accounts:[{connectionId:'a1',candidate:true,canPublish:true,username:'Alpha <name>',followers:1200,groupName:'ai自动化运营3组'}],summary:{eligibleReceivers:1},websiteUrl:'https://deeppersonaai.com/',templates:{ordinary:'Caption',receiver:'Own profile'}};
+ vm.runInNewContext(conversion,{document:{getElementById:()=>mount},fetch:async(path,init)=>{requests.push({path,...init});return {ok:true,json:async()=>model};}});
+ await tick();
+ assert.match(mount.innerHTML,/Alpha &lt;name&gt;/);assert.match(mount.innerHTML,/1,200 粉丝/);
+ assert.match(mount.innerHTML,/data-select="a1"/);assert.match(mount.innerHTML,/data-link="a1"/);
+ assert.doesNotMatch(mount.innerHTML,/ai自动化运营3组|<name>/);
+ assert.equal(requests.length,1);assert.equal(requests[0].method,'GET');
 });
