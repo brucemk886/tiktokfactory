@@ -22,11 +22,11 @@ CREATE TABLE psychology_schedule_commits (
  batch_id TEXT PRIMARY KEY, work_id TEXT NOT NULL, lease_token TEXT NOT NULL, checked_at INTEGER NOT NULL
 );
 CREATE TRIGGER psychology_schedule_commit_fence BEFORE INSERT ON psychology_schedule_commits BEGIN
- SELECT CASE WHEN NOT EXISTS (
+ SELECT RAISE(ABORT,'SCHEDULER_LEASE_LOST') WHERE NOT EXISTS (
   SELECT 1 FROM psychology_schedule_work w JOIN psychology_autopilots p ON p.id=w.pilot_id
   WHERE w.id=NEW.work_id AND w.status='running' AND w.lease_token=NEW.lease_token
   AND w.lease_until>NEW.checked_at AND p.status='active' AND p.ends_at>w.slot_at
- ) THEN RAISE(ABORT,'SCHEDULER_LEASE_LOST') END;
+ );
 END;
 CREATE TABLE psychology_schedule_alerts (
  id TEXT PRIMARY KEY, owner TEXT NOT NULL, work_id TEXT NOT NULL DEFAULT '',

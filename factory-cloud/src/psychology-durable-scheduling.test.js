@@ -127,3 +127,15 @@ test('revoked account is hidden from health details and cannot enter another own
  assert.ok(health.rounds.every(r=>r.details.every(d=>d.account!=='a')));
  assert.equal(health.rounds.find(r=>r.counts.created).counts.created,1);
 });
+
+test('migration survives the deployed Wrangler SQL splitter before reaching D1',async t=>{
+ const fs=await import('node:fs'),vm=await import('node:vm'),{DatabaseSync}=await import('node:sqlite');
+ const cli=fs.readFileSync(new URL('../node_modules/wrangler/wrangler-dist/cli.js',import.meta.url),'utf8');
+ const start=cli.indexOf('function splitSqlIntoStatements('),end=cli.indexOf('var init_splitter',start);
+ const split=vm.runInNewContext(cli.slice(start,end)+';splitSqlIntoStatements;');
+ const sql=fs.readFileSync(new URL('../migrations/0078_psychology_durable_scheduling.sql',import.meta.url),'utf8');
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());
+ db.exec('CREATE TABLE psychology_autopilots(id TEXT PRIMARY KEY,status TEXT,ends_at INTEGER)');
+ for(const statement of split(sql))db.exec(statement);
+ assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND name='psychology_schedule_commit_fence'").get());
+});

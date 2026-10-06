@@ -9,6 +9,7 @@ const APPLY_DELAYS_MS = [3_000, 6_000, 12_000, 20_000];
 
 export function isD1QueryInternalError(text) {
   const message = String(text || "");
+  if (/SQLITE_ERROR|incomplete input|syntax error|no such (table|column)|already exists|constraint failed/i.test(message)) return false;
   return /\[code:\s*7500\]/.test(message) || /internal error; reference =/i.test(message);
 }
 

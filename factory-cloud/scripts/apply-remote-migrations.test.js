@@ -60,3 +60,4 @@ test("apply retries 7500 then continues when there is no newer migration", () =>
   assert.equal(result.skipped, true);
   assert.equal(attempts, 5);
 });
+test("SQL syntax failure is never retried or bypassed as a D1 outage",()=>{assert.equal(isD1QueryInternalError("incomplete input: SQLITE_ERROR [code: 7500]"),false);assert.equal(shouldContinueDeployAfterMigrationFailure({errorText:"incomplete input: SQLITE_ERROR [code: 7500]",head:"bbb",lastMigrationCommit:"aaa",migrationDiff:""}),false);});
