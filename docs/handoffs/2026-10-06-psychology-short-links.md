@@ -22,3 +22,10 @@ Historical click counts cannot be reconstructed. Owners must place each generate
 
 ## Recommended next step
 Deploy Factory first, then the branded site adapter, create current eligible receiver links through the authenticated UI and verify no-count HEAD redirects plus reporting.
+
+## Production verification
+- Factory runtime b429b1a was pushed to main before migration/deployment from the clean exact-main release checkout. Migration 0077 applied successfully; Worker version 051f5975-acfc-4a84-9e50-297636e4b082.
+- DeepPersona runtime b48ece7 was committed and pushed to main before its prescribed npm deploy workflow; GitHub synchronization was reconfirmed afterward. Worker version 59a97ea1-1121-4c7a-a2a2-7a9ea944f6f9.
+- Authenticated UI created stable short links for all three currently eligible accounts. The creation button then disabled because every current receiver candidate had a link. No profile settings or receiver-ready flags changed.
+- Production branded HEAD and a clearly labeled verification-bot GET both returned no-store 302 responses to the correct fixed site destination and original account campaign. HEAD did not count; the GET appeared as one excluded request and zero displayed visits after refreshing the live dashboard.
+- Public site tables stayed unchanged. Both runtime checkouts were clean at completion.
