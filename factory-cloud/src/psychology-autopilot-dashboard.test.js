@@ -344,3 +344,23 @@ test('all content pools expose exact scoped work links, maturity and independent
  await read(f,query,actor,404);
  assert.equal(f.requests.length,0);
 });
+
+
+test('account profile links use synchronized canonical handles, not display labels or connection IDs',async t=>{
+ const f=await setup(t);assign(f,['a','b','c','d']);assign(f,['outside'],'other');
+ const insert=f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,label,profile_json,synced_at) VALUES(?,?,?,0)');
+ insert.run('tiktok:a','Friendly Label',JSON.stringify({username:'@Alpha_name.12'}));
+ insert.run('tiktok:b','LooksLikeAHandle','{}');
+ insert.run('tiktok:c','Invalid',JSON.stringify({username:'evil/path?x=1'}));
+ insert.run('tiktok:outside','Secret',JSON.stringify({username:'private_account'}));
+ const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ const r=await read(f,'view=accounts');
+ assert.equal(r.details.rows.find(r=>r.connectionId==='a').profileUrl,'https://www.tiktok.com/@Alpha_name.12');
+ assert.ok(r.details.rows.filter(r=>r.connectionId!=='a').every(r=>r.profileUrl===null));
+ assert.equal(JSON.stringify(r).includes('private_account'),false);
+ const detail=await read(f,'view=accounts&account=a');assert.equal(detail.details.rows[0].profileUrl,'https://www.tiktok.com/@Alpha_name.12');
+ f.sqlite.prepare("UPDATE official_accounts_latest SET profile_json=? WHERE account_key='tiktok:a'").run(JSON.stringify({username:'new_handle'}));
+ assert.equal((await read(f,'view=accounts&account=a')).details.rows[0].profileUrl,'https://www.tiktok.com/@new_handle');
+ assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before+1);
+ assert.equal(f.requests.length,0);
+});

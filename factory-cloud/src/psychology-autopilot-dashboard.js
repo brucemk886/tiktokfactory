@@ -22,6 +22,10 @@ const TRAFFIC_TIERS = Object.freeze({
 });
 const trafficFields = ['trafficTier','trafficPublished','trafficSynced','trafficViews','trafficMedian','followers','profileViews','profileDays'];
 const joinIdentity = (a, b) => identity.map(k => a + '.' + k + '=' + b + '.' + k).join(' AND ');
+const profileURL = username => {
+  const handle = String(username || '').trim().replace(/^@/, '');
+  return /^[A-Za-z0-9_.]+$/.test(handle) ? 'https://www.tiktok.com/@' + handle : null;
+};
 const stats = row => Object.fromEntries(fields.map(k => [k, row?.[k] ?? (['n', 'completionN'].includes(k) ? 0 : null)]));
 const jsonRows = (sql, columns) => '(SELECT json_group_array(json_object(' + columns.map(k => "'" + k + "'," + k).join(',') + ')) FROM (' + sql + '))';
 const paging = (rows, total, page) => ({ rows, total, page, pages: Math.max(1, Math.ceil(total / SIZE)), pageSize: SIZE });
@@ -138,6 +142,7 @@ function dashboardCTE() {
     sources AS (SELECT account_key,count(DISTINCT nullif(source,'')) sources FROM mature GROUP BY account_key),
     accounts AS MATERIALIZED (SELECT a.account_key,a.current_group,
       COALESCE(NULLIF(json_extract(d.profile_json,'$.username'),''),NULLIF(d.label,''),a.account_key) name,
+      json_extract(d.profile_json,'$.username') profileUsername,
       ${fields.map(k => 's.' + k).join(',')},COALESCE(x.sources,0) sources,${accountPoolSQL('s')} pool,
       CASE WHEN COALESCE(ts.n,0)<${POOL_POLICY.minAccountSamples} OR ts.medianViews IS NULL THEN 'observing'
         WHEN ts.medianViews>=${POOL_POLICY.strongViews} THEN 'strong' WHEN ts.medianViews>=${POOL_POLICY.normalViews} THEN 'normal' ELSE 'weak' END trafficTier,
@@ -169,8 +174,8 @@ function dashboardCTE() {
       FROM content_meta m LEFT JOIN content_stats s ON ${joinIdentity('m', 's')})`;
 }
 const contentColumns = [...identity, 'title', 'published', 'reserved', 'waiting', 'missingMetrics', 'distinctAccounts', 'linkedAccounts', 'testingAccounts', 'pool', ...fields];
-const accountColumns = ['account_key', 'current_group', 'name', 'pool', 'sources', 'currentRole', 'futureRole', 'futureEffectiveAt', 'enrolled', 'excluded', 'paused', 'reason', 'publishingEligible', ...fields, ...trafficFields];
-const accountRow = row => ({ account: row.account_key, connectionId: row.account_key.slice(7), name: row.name, groupId: row.current_group,
+const accountColumns = ['account_key', 'current_group', 'name', 'profileUsername', 'pool', 'sources', 'currentRole', 'futureRole', 'futureEffectiveAt', 'enrolled', 'excluded', 'paused', 'reason', 'publishingEligible', ...fields, ...trafficFields];
+const accountRow = row => ({ account: row.account_key, connectionId: row.account_key.slice(7), name: row.name, profileUrl: profileURL(row.profileUsername), groupId: row.current_group,
   pool: row.pool, sources: row.sources, stats: stats(row), currentRole: row.currentRole, currentRoleLabel: TASK_GROUP_ROLES[row.currentRole]?.label || '',
   futureRole: row.futureRole, futureRoleLabel: TASK_GROUP_ROLES[row.futureRole]?.label || '', futureEffectiveAt: row.futureEffectiveAt,
   enrolled: Boolean(row.enrolled && !row.excluded), paused: Boolean(row.paused), reason: row.reason, publishingEligible: Boolean(row.publishingEligible),

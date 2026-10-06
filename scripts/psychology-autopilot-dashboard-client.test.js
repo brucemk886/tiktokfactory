@@ -340,3 +340,25 @@ test('every content pool lists clickable work URLs and keeps exact identity whil
   assert.ok(h.requests.every(r=>r.init.method==='GET'));
  }
 });
+
+
+test('account names open TikTok profiles through native links while the detail button retains local analytics',async()=>{
+ for(const pool of ['strong','normal','weak','observing']){
+  const row={...accountRow(),profileUrl:'https://www.tiktok.com/@Alpha_name.12'};
+  const h=harness(r=>fixture(r.params.get('view')||'overview',{details:{rows:[row],total:1,page:1,pages:1}}));
+  await tick();h.click({dashView:'accounts',dashPool:pool});await tick();
+  const html=h.node('#dashBody').innerHTML;
+  assert.match(html,/<a class="dash-text-action" data-dash-profile href="https:\/\/www\.tiktok\.com\/@Alpha_name\.12" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html,/心理学 &lt;img src=x onerror=alert\(1\)&gt;<\/a>/);
+  assert.match(html,/<button class="dash-text-action" data-dash-row="0">查看详情<\/button>/);
+  const before=h.requests.length;
+  h.node('#poolDashboard').listeners.click({target:{closest:()=>null}});
+  assert.equal(h.requests.length,before,'native profile anchor must not request a local modal');assert.equal(h.node('#dashDialog').open,false);
+  h.click({dashRow:'0'});await tick();assert.equal(h.node('#dashDialog').open,true);assert.equal(h.requests.at(-1).params.get('account'),row.account);
+ }
+ const h=harness();await tick();
+ for(const profileUrl of [null,'javascript:alert(1)','https://www.tiktok.com.evil/@alpha','https://www.tiktok.com/@alpha?next=evil','https://evil.example/@alpha']){
+  const html=h.run('dashAccountName('+JSON.stringify({...accountRow(),profileUrl})+')');
+  assert.doesNotMatch(html,/<a /);assert.match(html,/账号主页链接待同步/);
+ }
+});
