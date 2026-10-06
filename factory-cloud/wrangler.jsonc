@@ -125,7 +125,7 @@
         "queue": "factory-psychology-schedule",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
-        "max_concurrency": 2,
+        "max_concurrency": 1,
         "max_retries": 20,
         "retry_delay": 60
       }

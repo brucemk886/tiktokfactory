@@ -569,6 +569,9 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     statements.unshift(env.DB.prepare('INSERT INTO psychology_schedule_commits(batch_id,work_id,lease_token,checked_at) VALUES(?,?,?,?)').bind(batchId,workId,token,Date.now()));
     for(const [index,entry] of selected.entries())statements.push(env.DB.prepare("UPDATE psychology_schedule_members SET status='created',item_id=?,reason='',updated_at=? WHERE work_id=? AND connection_id=? AND status='pending'").bind(batchId+'-'+String(index).padStart(3,'0'),stamp,workId,entry.connectionId));
     for(const skipped of matchingSkipped)statements.push(env.DB.prepare("UPDATE psychology_schedule_members SET status='skipped',reason=?,updated_at=? WHERE work_id=? AND connection_id=? AND status='pending'").bind(String(skipped.reason||'没有合格内容'),stamp,workId,skipped.connectionId));
+    // Establish ownership in the same commit as the new tasks. Pause/cancel and
+    // reporting must see a partial chunk before the whole round is complete.
+    statements.push(env.DB.prepare("UPDATE psychology_autopilot_slots SET batch_id=CASE WHEN batch_id='' THEN ? WHEN instr(','||batch_id||',',','||?||',')>0 THEN batch_id ELSE batch_id||','||? END,updated_at=? WHERE (autopilot_id,slot_at)=(SELECT pilot_id,slot_at FROM psychology_schedule_work WHERE id=?)").bind(batchId,batchId,batchId,stamp,workId));
   }
   try { await env.DB.batch(statements); }
   catch (error) {

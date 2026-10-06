@@ -35,3 +35,6 @@ Deploy Hub and then Factory from clean main checkouts exactly matching origin/ma
 - Hub release 8e5aa7d / version 35f70cc4-c9b0-48ce-8120-e48c39fb72ec is live. Heartbeats reach Hub, but Resend returns HTTP 401. No local alternative credential is configured. User was asked to update the existing signal-desk RESEND_API_KEY securely; mail is not marked delivered and UI exposes the failure.
 - Initial Factory migration failed because of trigger CASE/END splitting; rewritten SELECT RAISE ... WHERE NOT EXISTS applied successfully. Syntax failures are now never bypassed as transient D1 outages. Factory initial release 9fa03c6 / version 38e549b1-d119-4f17-933c-74f1de3fe3b5 is live; memory correction rollout follows.
 
+
+- Scheduler queue uses one short planning consumer: content-test allocation revision is shared per owner, so concurrent planning produced avoidable revision conflicts. Rendering/publishing concurrency is unchanged. Partial batch ownership now commits atomically with each chunk, so stop-pending and reporting work before an entire round finishes. Targeted publishing/queue regressions after this change: 123 passed.
+

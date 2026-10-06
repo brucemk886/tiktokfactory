@@ -172,3 +172,17 @@ test('matching reads compact reservations even when archived submission payloads
  assert.equal([...state.stats.values()].reduce((n,r)=>n+r.posts,0),2);
  assert.ok(maxBytes<20000,'large media/request/backup blobs must stay in D1; got '+maxBytes);
 });
+
+test('partial chunks are owned immediately so stop-pending can cancel them before round completion',async t=>{
+ const f=await setup(t);
+ await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});
+ await processScheduleMessage(f.env,msg(f.w.id),{now:f.now});
+ assert.equal(f.sqlite.prepare('SELECT status FROM psychology_schedule_work WHERE id=?').get(f.w.id).status,'queued');
+ const slot=f.sqlite.prepare('SELECT batch_id FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').get(f.w.pilot_id,f.w.slot_at);
+ assert.ok(slot.batch_id,'published batch ownership must be atomic with the chunk');
+ const {stopPending}=await import('./psychology-autopilot-execution.js');
+ assert.equal(await stopPending(f.db,f.w.pilot_id,'a',f.now),1);
+ await drain(f);
+ assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM psychology_publish_items WHERE connection_id='a'").get().n,1);
+ assert.ok(f.sqlite.prepare("SELECT deleted_at FROM psychology_publish_items WHERE connection_id='a'").get().deleted_at);
+});
