@@ -23,10 +23,10 @@ Factory migration 0078; new durable-scheduling and schedule-health modules and t
 - UI browser test verifies counters, escaped account evidence, explicit recovery and absence of stale success after a read failure.
 
 ## Unfinished work
-Factory memory/resumability correction is deployed (dd3687b, version d444e874-96e1-438a-af3d-eee1108bb4f3). Recovery is progressing; final per-round live counts will be appended. Email is disabled by user request; Feishu destination setup is deferred. Active rendering/publishing jobs must continue; do not reset their execution state.
+Factory memory/resumability correction is deployed (dd3687b, version d444e874-96e1-438a-af3d-eee1108bb4f3). Recovery is complete; final per-round live counts are recorded below. Email is disabled by user request; Feishu destination setup is deferred. Active rendering/publishing jobs must continue; do not reset their execution state.
 
 ## Recommended next step
-Complete live coverage verification and confirm notification status is email-disabled after the next heartbeat. Feishu will be implemented when the user provides its configuration; do not request Resend credentials.
+Live coverage and email-disabled notification status are verified. Continue normal scheduled generation/publication and the independent coverage watchdog. Feishu will be implemented when the user provides its configuration; do not request Resend credentials.
 
 ## Live fault evidence and memory correction
 - Initial live queue recovery exposed exceededMemory in Cloudflare tail. Read-only D1 measurement found 3,452 matched items repeating 55.83 MiB of group request JSON, plus ready/results/receipts; both legacy test-state and pool-reservation reads materialized this data.
@@ -38,3 +38,19 @@ Complete live coverage verification and confirm notification status is email-dis
 
 - Scheduler queue uses one short planning consumer: content-test allocation revision is shared per owner, so concurrent planning produced avoidable revision conflicts. Rendering/publishing concurrency is unchanged. Partial batch ownership now commits atomically with each chunk, so stop-pending and reporting work before an entire round finishes. Targeted publishing/queue regressions after this change: 123 passed.
 
+
+## Release and notification policy
+- Factory UI/policy release 4ad492e is deployed as d305ef27-a885-4bc0-aa52-1f62a933286c. Companion Hub 702fef4 is deployed as 8f01b4ae-748d-4d17-82af-edd06d24c334. Both deployments passed clean-main/exact-origin checks and used repository deployment scripts.
+- User explicitly deferred external email and wants Feishu later. Both Hub incident and heartbeat-silence paths default to email disabled; heartbeat/site alerts continue. Production heartbeat and live Factory UI now report email-disabled. No credential update is required while this policy is off. No Feishu destination has been configured.
+- Additional policy regression: four Hub monitor tests, TypeScript noEmit and deployment build pass; 14 durable Factory scheduler tests and the updated browser UI test pass. The browser confirms the credential-warning text is replaced by disabled status.
+- Latest 45-second production tail: 39 successful invocations (one scheduling message, 13 photo messages, 25 HTTP/cron), zero failed outcomes. Earlier post-memory-fix observation also recorded nine successful scheduling messages. These are bounded observations, not a guarantee of future uptime.
+- Read-only production allocation audit found zero duplicate project/account/day/round claims. No existing publish jobs, scheduled times or receipts were reset.
+
+## Final live recovery result — 2026-10-06 14:56 UTC / 22:56 Beijing
+- All 35 durable work records are done. No queued, running or failed work remains in this recovery cohort.
+- Pacific October 6 early round: 184 expected / 184 created / 0 pending / 0 blocked; all 184 have ready materials and platform batch receipts.
+- Midday round: 184 expected / 184 created / 0 pending / 0 blocked. Later generation remains deferred to its configured preparation window.
+- Evening round: 184 expected / 179 created / 5 skipped / 0 pending / 0 blocked. All five skips explicitly say the six diagnostic baseline slots are already occupied and await mature evidence; they are not counted as publication success.
+- Total: 547 tasks created and five explicit policy skips, covering all 552 eligible account-round positions. First round starts 15:00 UTC / 23:00 Beijing / 08:00 Pacific; platform acceptance is not a claim of actual publication.
+- Site incident banners refresh on the independent five-minute watch, so a previous incident can remain visible until the next check after completion.
+- Separate existing conversion configuration displayed zero receiver accounts at the 14:36 UTC observation and takes effect October 7 Pacific. This was not changed here; the conversion owner should finish receiver configuration before that future strategy needs it.
