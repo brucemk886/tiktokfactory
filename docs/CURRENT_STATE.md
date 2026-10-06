@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology automation now has a traffic-first account view and a future-effective conversion objective (0076). New conversion tasks bypass growth/rescue/baseline waiting, freeze receiver routes and append the CTA to caption and final card. The destination defaults to https://deeppersonaai.com/; confirmed ≥1000-follower receivers can be added incrementally. Missing receivers wait explicitly. Existing tasks, pauses, authorization, three-round claims and source nonreuse remain intact; website visits/test completions are not inferred from TikTok traffic. See docs/handoffs/2026-10-06-psychology-conversion.md.
+
 - Psychology supports explicit authenticated same-day single-round recovery with required original/delivery timestamps, preserved operating-day quotas and frozen jobs, immediate late preparation, and deterministic batch reconciliation. This is an incident backfill path; general scheduler continuation and notifications remain deferred. See docs/handoffs/2026-10-03-psychology-slot-recovery.md.
 
 - Psychology Operations Report now prioritizes exact cumulative playback: the first KPI compares the full selected actual-publication cohort with the previous period, the default daily trend is playback, and account/content tables expose total views. Mature pool samples and all synchronized content observations remain separate; missing playback stays unavailable. See docs/handoffs/2026-10-02-psychology-operations-playback-metrics.md.

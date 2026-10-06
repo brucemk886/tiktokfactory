@@ -4,7 +4,7 @@ import { reportAccountScopeSQL } from './official-report-account-scope.js';
 import { ensureModuleProjects, findProjectForModule, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
 import { ACCOUNT_POOLS, CONTENT_POOLS, POOL_POLICY } from '../../scripts/psychology-pool-policy.js';
 import { TASK_GROUP_ROLES } from '../../scripts/psychology-task-group-policy.js';
-import { PACIFIC_TIME_ZONE, zonedDate, startOfDay, nextDay } from '../../scripts/psychology-schedule-time.js';
+import { PACIFIC_TIME_ZONE, zonedDate, startOfDay, nextDay, addCalendarDays, zonedEpoch } from '../../scripts/psychology-schedule-time.js';
 import { managedStyles } from './psychology-managed-styles.js';
 import { librarySource, reviewedSource } from './psychology-copy-source.js';
 import { copyIdentity } from './psychology-creative.js';
@@ -16,6 +16,11 @@ const fail = (message, statusCode = 400) => { throw Object.assign(new Error(mess
 const parse = (value, fallback = {}) => { try { return JSON.parse(value || ''); } catch { return fallback; } };
 const fields = ['n', 'views', 'avgViews', 'medianViews', 'potentialRate', 'completion', 'completionN'];
 const identity = ['source', 'variant', 'style', 'copy_hash', 'style_revision'];
+const TRAFFIC_TIERS = Object.freeze({
+  strong: { id: 'strong', label: '强流量' }, normal: { id: 'normal', label: '中流量' },
+  weak: { id: 'weak', label: '低流量' }, observing: { id: 'observing', label: '待观察' },
+});
+const trafficFields = ['trafficTier','trafficPublished','trafficSynced','trafficViews','trafficMedian','followers','profileViews','profileDays'];
 const joinIdentity = (a, b) => identity.map(k => a + '.' + k + '=' + b + '.' + k).join(' AND ');
 const stats = row => Object.fromEntries(fields.map(k => [k, row?.[k] ?? (['n', 'completionN'].includes(k) ? 0 : null)]));
 const jsonRows = (sql, columns) => '(SELECT json_group_array(json_object(' + columns.map(k => "'" + k + "'," + k).join(',') + ')) FROM (' + sql + '))';
@@ -52,15 +57,19 @@ function contentPoolSQL() {
     WHEN s.medianViews<${p.potentialMinViews} AND s.completion>=${p.contentCompletion} THEN 'explore' ELSE 'revise' END`;
 }
 export function dashboardWindow(now = Date.now()) {
+  const operatingDate = zonedDate(now, PACIFIC_TIME_ZONE), trafficFrom = addCalendarDays(operatingDate, -6);
+  const profileTo = new Date(now).toISOString().slice(0,10), profileFrom = addCalendarDays(profileTo, -6);
   return { start: now - 30 * DAY, cutoff: now - POOL_POLICY.maturityHours * 3600000,
     todayStart: startOfDay(now, PACIFIC_TIME_ZONE), todayEnd: nextDay(now, PACIFIC_TIME_ZONE),
-    operatingDate: zonedDate(now, PACIFIC_TIME_ZONE), timeZone: PACIFIC_TIME_ZONE };
+    operatingDate, timeZone: PACIFIC_TIME_ZONE, trafficStart: zonedEpoch(trafficFrom,0,0,PACIFIC_TIME_ZONE),
+    trafficFrom, trafficTo: operatingDate, profileFrom, profileTo };
 }
 function requestQuery(url) {
   const p = url.searchParams, view = p.get('view') || 'overview';
   if (!['overview', 'accounts', 'content'].includes(view)) fail('数据视图无效。');
-  const accountPool = p.get('accountPool') || '', contentPool = p.get('contentPool') || '';
+  const accountPool = p.get('accountPool') || '', contentPool = p.get('contentPool') || '', trafficTier = p.get('trafficTier') || '';
   if (accountPool && !ACCOUNT_POOLS[accountPool] || contentPool && !CONTENT_POOLS[contentPool]) fail('池子筛选无效。');
+  if (trafficTier && !TRAFFIC_TIERS[trafficTier]) fail('流量筛选无效。');
   const page = Number(p.get('page') || 1);
   if (!Number.isInteger(page) || page < 1 || page > 1000000) fail('分页参数无效。');
   const account = p.get('account') ? 'tiktok:' + p.get('account').replace(/^tiktok:/, '') : '';
@@ -68,7 +77,7 @@ function requestQuery(url) {
   const selected = exact ? { source: p.get('source'), variant: p.get('variant') ?? p.get('version') ?? '', style: p.get('style') || '',
     copy_hash: p.get('copyHash') || '', style_revision: Number(p.get('styleRevision') || 0) } : null;
   if (selected && (!selected.source || !Number.isInteger(selected.style_revision) || selected.style_revision < 0)) fail('版本标识无效。');
-  return { view, accountPool, contentPool, page, account, selected, q: String(p.get('q') || '').trim().slice(0, 200) };
+  return { view, accountPool, contentPool, trafficTier, page, account, selected, q: String(p.get('q') || '').trim().slice(0, 200) };
 }
 async function scope(db, actor) {
   if (!actor?.username) fail('请先登录。', 401);
@@ -91,7 +100,7 @@ async function scope(db, actor) {
 }
 function dashboardCTE() {
   return `${reportAccountScopeSQL},
-    settings AS (SELECT ? since,? cutoff,? now,? day_start,? day_end,? policy_id,? active_policy),
+    settings AS (SELECT ? since,? cutoff,? now,? day_start,? day_end,? policy_id,? active_policy,? traffic_start,? profile_from,? profile_to),
     facts AS MATERIALIZED (SELECT f.*,COALESCE(m.style_revision,CAST(json_extract(j.payload_json,'$.psychologyAutomation.styleDefinition.revision') AS INTEGER),0) style_revision
       FROM allowed a CROSS JOIN ops_task_facts f ON f.account_key=a.account_key
       LEFT JOIN psychology_pool_matches m ON m.item_id=f.id LEFT JOIN factory_jobs j ON j.id=f.id
@@ -101,6 +110,21 @@ function dashboardCTE() {
       AND published_at<=(SELECT cutoff FROM settings) AND views IS NOT NULL),
     ${statsCTE('mature_stats', 'mature')},
     ${statsCTE('account_stats', 'mature', 'account_key')},
+    traffic_published AS MATERIALIZED (SELECT * FROM facts WHERE state='published'
+      AND published_at>=(SELECT traffic_start FROM settings) AND published_at<=(SELECT now FROM settings)),
+    traffic_measured AS MATERIALIZED (SELECT * FROM traffic_published WHERE views IS NOT NULL AND views>=0),
+    ${statsCTE('traffic_stats', 'traffic_measured', 'account_key')},
+    traffic_counts AS (SELECT account_key,count(*) published FROM traffic_published GROUP BY account_key),
+    profile_days AS MATERIALIZED (SELECT a.account_key,json_extract(day.value,'$.date') date,
+      CASE WHEN json_type(day.value,'$.profileViews')='integer' AND json_extract(day.value,'$.profileViews')>=0
+        THEN json_extract(day.value,'$.profileViews') END profileViews,
+      row_number() OVER(PARTITION BY a.account_key,json_extract(day.value,'$.date') ORDER BY CAST(day.key AS INTEGER) DESC) rn
+      FROM allowed a JOIN official_accounts_latest d ON d.account_key=a.account_key
+      CROSS JOIN json_each(CASE WHEN json_type(d.profile_json,'$.insights._daily_traffic.days')='array'
+        THEN json_extract(d.profile_json,'$.insights._daily_traffic.days') ELSE '[]' END) day
+      WHERE json_extract(day.value,'$.date') BETWEEN (SELECT profile_from FROM settings) AND (SELECT profile_to FROM settings)),
+    profile_traffic AS (SELECT account_key,sum(profileViews) profileViews,count(profileViews) profileDays
+      FROM profile_days WHERE rn=1 GROUP BY account_key),
     current_roles AS MATERIALIZED (SELECT * FROM (SELECT s.*,row_number() OVER(PARTITION BY connection_id ORDER BY effective_at DESC,revision DESC) rn
       FROM psychology_task_group_snapshots s WHERE policy_id=(SELECT policy_id FROM settings) AND effective_at<=(SELECT now FROM settings)) WHERE rn=1),
     future_roles AS MATERIALIZED (SELECT * FROM (SELECT s.*,row_number() OVER(PARTITION BY connection_id ORDER BY effective_at,revision DESC) rn
@@ -113,12 +137,20 @@ function dashboardCTE() {
     accounts AS MATERIALIZED (SELECT a.account_key,a.current_group,
       COALESCE(NULLIF(json_extract(d.profile_json,'$.username'),''),NULLIF(d.label,''),a.account_key) name,
       ${fields.map(k => 's.' + k).join(',')},COALESCE(x.sources,0) sources,${accountPoolSQL('s')} pool,
+      CASE WHEN COALESCE(ts.n,0)<${POOL_POLICY.minAccountSamples} OR ts.medianViews IS NULL THEN 'observing'
+        WHEN ts.medianViews>=${POOL_POLICY.strongViews} THEN 'strong' WHEN ts.medianViews>=${POOL_POLICY.normalViews} THEN 'normal' ELSE 'weak' END trafficTier,
+      COALESCE(tc.published,0) trafficPublished,COALESCE(ts.n,0) trafficSynced,ts.views trafficViews,ts.medianViews trafficMedian,
+      CASE WHEN json_type(d.profile_json,'$.followers') IN ('integer','real') AND json_extract(d.profile_json,'$.followers')>=0 THEN json_extract(d.profile_json,'$.followers')
+        WHEN json_type(d.profile_json,'$.followerCount') IN ('integer','real') AND json_extract(d.profile_json,'$.followerCount')>=0 THEN json_extract(d.profile_json,'$.followerCount') END followers,
+      pt.profileViews,COALESCE(pt.profileDays,0) profileDays,
       CASE WHEN (SELECT active_policy FROM settings) THEN c.role END currentRole,
       f.role futureRole,f.effective_at futureEffectiveAt,COALESCE(r.enrolled,0) enrolled,COALESCE(r.excluded,0) excluded,
       COALESCE(l.status='paused' OR l.pilot_status='paused',r.paused,0) paused,COALESCE(r.reason,'') reason,
       a.account_key IN (SELECT value FROM json_each(?)) publishingEligible
       FROM allowed a LEFT JOIN official_accounts_latest d ON d.account_key=a.account_key
       LEFT JOIN account_stats s ON s.account_key=a.account_key LEFT JOIN sources x ON x.account_key=a.account_key
+      LEFT JOIN traffic_stats ts ON ts.account_key=a.account_key LEFT JOIN traffic_counts tc ON tc.account_key=a.account_key
+      LEFT JOIN profile_traffic pt ON pt.account_key=a.account_key
       LEFT JOIN psychology_task_group_accounts r ON r.policy_id=(SELECT policy_id FROM settings) AND r.connection_id=substr(a.account_key,8)
       LEFT JOIN latest_states l ON l.connection_id=substr(a.account_key,8)
       LEFT JOIN current_roles c ON c.connection_id=substr(a.account_key,8) LEFT JOIN future_roles f ON f.connection_id=substr(a.account_key,8)),
@@ -135,12 +167,15 @@ function dashboardCTE() {
       FROM content_meta m LEFT JOIN content_stats s ON ${joinIdentity('m', 's')})`;
 }
 const contentColumns = [...identity, 'title', 'published', 'reserved', 'waiting', 'missingMetrics', 'distinctAccounts', 'linkedAccounts', 'testingAccounts', 'pool', ...fields];
-const accountColumns = ['account_key', 'current_group', 'name', 'pool', 'sources', 'currentRole', 'futureRole', 'futureEffectiveAt', 'enrolled', 'excluded', 'paused', 'reason', 'publishingEligible', ...fields];
+const accountColumns = ['account_key', 'current_group', 'name', 'pool', 'sources', 'currentRole', 'futureRole', 'futureEffectiveAt', 'enrolled', 'excluded', 'paused', 'reason', 'publishingEligible', ...fields, ...trafficFields];
 const accountRow = row => ({ account: row.account_key, connectionId: row.account_key.slice(7), name: row.name, groupId: row.current_group,
   pool: row.pool, sources: row.sources, stats: stats(row), currentRole: row.currentRole, currentRoleLabel: TASK_GROUP_ROLES[row.currentRole]?.label || '',
   futureRole: row.futureRole, futureRoleLabel: TASK_GROUP_ROLES[row.futureRole]?.label || '', futureEffectiveAt: row.futureEffectiveAt,
   enrolled: Boolean(row.enrolled && !row.excluded), paused: Boolean(row.paused), reason: row.reason, publishingEligible: Boolean(row.publishingEligible),
-  recommendation: ACCOUNT_POOLS[row.pool].action });
+  recommendation: ACCOUNT_POOLS[row.pool].action, trafficTier: row.trafficTier,
+  traffic: { published: row.trafficPublished, synced: row.trafficSynced, views: row.trafficViews, medianViews: row.trafficMedian },
+  followers: row.followers, conversionCandidate: row.followers == null ? null : row.followers>=1000,
+  profileTraffic: { views: row.profileViews, days: row.profileDays, expectedDays: 7, timeZone: 'UTC' } });
 const contentRow = row => ({ source: row.source, version: row.variant, style: row.style, copyHash: row.copy_hash, styleRevision: row.style_revision,
   title: row.title, pool: row.pool, stats: stats(row), distinctAccounts: row.distinctAccounts, accounts: row.distinctAccounts, linkedAccounts: row.linkedAccounts,
   published: row.published, reserved: row.reserved, waiting: row.waiting, missingMetrics: row.missingMetrics,
@@ -195,13 +230,13 @@ async function eligibilityFor(db, owner, contentRows) {
 export async function readAutopilotDashboard(db, actor, url, now = Date.now()) {
   const query = requestQuery(url), c = await scope(db, actor), w = dashboardWindow(now), p = c.policy;
   const args = [c.ids, w.start, w.cutoff, now, w.todayStart, w.todayEnd, p?.id || '',
-    Number(Boolean(p?.enabled && p.starts_at <= now && p.ends_at > now)), c.ids, p?.owner || c.user.username, c.ids, JSON.stringify(c.publishing)];
+    Number(Boolean(p?.enabled && p.starts_at <= now && p.ends_at > now)), w.trafficStart, w.profileFrom, w.profileTo, c.ids, p?.owner || c.user.username, c.ids, JSON.stringify(c.publishing)];
   const cte = dashboardCTE();
   let filters = '', detail = '', detailArgs = [];
   if (query.view === 'accounts') {
-    filters = `(?='' OR pool=?) AND (?='' OR instr(lower(name||' '||account_key),lower(?))>0) AND (?='' OR account_key=?)`;
-    detailArgs = [query.accountPool, query.accountPool, query.q, query.q, query.account, query.account];
-    detail = `,'details',${jsonRows('SELECT * FROM accounts WHERE ' + filters + ' ORDER BY medianViews DESC,account_key LIMIT ' + SIZE + ' OFFSET ' + (query.account ? 0 : (query.page - 1) * SIZE), accountColumns)},
+    filters = `(?='' OR pool=?) AND (?='' OR trafficTier=?) AND (?='' OR instr(lower(name||' '||account_key),lower(?))>0) AND (?='' OR account_key=?)`;
+    detailArgs = [query.accountPool, query.accountPool, query.trafficTier, query.trafficTier, query.q, query.q, query.account, query.account];
+    detail = `,'details',${jsonRows('SELECT * FROM accounts WHERE ' + filters + ' ORDER BY trafficViews DESC,trafficMedian DESC,account_key LIMIT ' + SIZE + ' OFFSET ' + (query.account ? 0 : (query.page - 1) * SIZE), accountColumns)},
       'detailTotal',(SELECT count(*) FROM accounts WHERE ${filters})`;
     detailArgs = [...detailArgs, ...detailArgs];
   } else if (query.view === 'content') {
@@ -226,6 +261,10 @@ export async function readAutopilotDashboard(db, actor, url, now = Date.now()) {
       'stopped',COALESCE(sum(state='stopped' AND schedule_at>=s.day_start AND schedule_at<s.day_end),0)) FROM facts CROSS JOIN settings s),
     'mature',${jsonRows('SELECT * FROM mature_stats', fields)},
     'accountPools',${jsonRows('SELECT pool,count(*) accounts FROM accounts GROUP BY pool', ['pool','accounts'])},
+    'trafficTiers',${jsonRows('SELECT trafficTier,count(*) accounts FROM accounts GROUP BY trafficTier', ['trafficTier','accounts'])},
+    'trafficSummary',(SELECT json_object('published',sum(trafficPublished),'synced',sum(trafficSynced),'views',sum(trafficViews),
+      'conversionCandidates',sum(followers>=1000),'followersKnown',count(followers),'profileViews',sum(profileViews),
+      'profileCoveredAccounts',sum(profileDays>0)) FROM accounts),
     'contentPools',${jsonRows('SELECT pool,count(*) versions FROM contents GROUP BY pool', ['pool','versions'])},
     'progress',(SELECT json_object('published',COALESCE(sum(published),0),'reserved',COALESCE(sum(reserved),0),'waiting',COALESCE(sum(waiting),0),
       'missingMetrics',COALESCE(sum(missingMetrics),0),'mature',COALESCE(sum(n),0),
@@ -246,14 +285,19 @@ export async function readAutopilotDashboard(db, actor, url, now = Date.now()) {
   const result = { asOf: now, project: c.project, timeZone: w.timeZone, operatingDate: w.operatingDate, window: w,
     policy: p ? { enabled: Boolean(p.enabled), revision: p.revision, startsAt: p.starts_at, endsAt: p.ends_at,
       nextReviewAt: p.next_review_at, cycleDays: 7, reviewDays: 3, timeZone: p.time_zone, admission: 'next-operating-day' } : null,
-    summary, accountPools: Object.values(ACCOUNT_POOLS).map(def => ({ ...def, accounts: raw.accountPools?.find(r => r.pool === def.id)?.accounts || 0 })),
+    summary, trafficSummary: raw.trafficSummary,
+    trafficTiers: Object.values(TRAFFIC_TIERS).map(def => ({ ...def, accounts: raw.trafficTiers?.find(r => r.trafficTier === def.id)?.accounts || 0 })),
+    trafficPolicy: { minimumSamples: POOL_POLICY.minAccountSamples, strongViews: POOL_POLICY.strongViews, normalViews: POOL_POLICY.normalViews,
+      from: w.trafficFrom, to: w.trafficTo, timeZone: w.timeZone, profileFrom: w.profileFrom, profileTo: w.profileTo, profileTimeZone: 'UTC' },
+    accountPools: Object.values(ACCOUNT_POOLS).map(def => ({ ...def, accounts: raw.accountPools?.find(r => r.pool === def.id)?.accounts || 0 })),
     contentPools: Object.values(CONTENT_POOLS).map(def => ({ ...def, versions: raw.contentPools?.find(r => r.pool === def.id)?.versions || 0 })),
     contentProgress: raw.progress, readiness: { status: summary.eligibleWinnerVersions ? 'ready' : 'warming',
       winnerVersions: summary.winnerVersions, eligibleWinnerVersions: summary.eligibleWinnerVersions,
       minimumAccounts: POOL_POLICY.minContentAccounts, minimumSamples: POOL_POLICY.minContentSamples,
       nextStep: summary.eligibleWinnerVersions ? '优胜版本可用于保产出与低号基准；继续固定版本补测。' : '固定文本和样式，在中强号补足至少5个不同账号的满72小时样本；旧版证据不继承给修改后的文本和样式。' },
     trend, observations, poolTrend: observations, basis: {
-      accounts: '只统计当前权限内心理学项目的唯一账号，包含未同步账号；分池用滚动30天的满72小时最新累计指标。',
+      accounts: '当前权限内项目唯一账号，包含未同步账号。主流量分层取近7个美西发布日的图文作品最新累计播放，无72小时门槛；不足5条有效指标保留待观察。',
+      profileTraffic: '主页访问来自近7个UTC自然日的账号日指标，与美西发布作品流量口径不同；缺失日期不补零。主页访问不是站内访问或转化。',
       content: '已观察和已排期的具体文本哈希×样式修订；成熟证据至少5条且来自5个不同账号。未观察库存不算已验证内容。',
       today: '今日按美西日历：已发布按实际发布日期，已排按计划发布日期；同批进度使用scheduledPublished。',
       metrics: '72小时是观察门槛，数据为最近同步累计值；缺失为null，真实零保留0。事实投影后台同步前可能短暂滞后。',

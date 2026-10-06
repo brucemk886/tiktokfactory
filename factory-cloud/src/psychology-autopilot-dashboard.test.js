@@ -239,3 +239,70 @@ test('another authorized admin sees actual project controller roles and inventor
   assert.ok(!JSON.stringify(content).includes('foreign-pilot-source'));
   assert.equal(f.requests.length,0);
 });
+
+
+test('seven-day account traffic uses actual Pacific publications, includes fresh metrics and preserves missing versus zero',async t=>{
+  const f=await setup(t),w=dashboardWindow(now);assign(f,['a','b','c']);
+  for(let i=0;i<5;i++)fact(f,'fresh-seven-'+i,{published_at:i===0?w.trafficStart:now-1000, schedule_at:w.trafficStart-DAY, views:500});
+  fact(f,'missing-seven',{published_at:now-2000,views:null});
+  fact(f,'outside-seven',{published_at:w.trafficStart-1,views:999999});
+  fact(f,'future-seven',{published_at:now+1,views:999999});
+  fact(f,'pending-seven',{published_at:0,schedule_at:now,state:'pending',views:999999});
+  for(let i=0;i<5;i++)fact(f,'zero-seven-'+i,{account_key:'tiktok:b',published_at:now-1000,views:0});
+  const r=await read(f,'view=accounts');
+  const a=r.details.rows.find(x=>x.connectionId==='a'),b=r.details.rows.find(x=>x.connectionId==='b'),c=r.details.rows.find(x=>x.connectionId==='c');
+  assert.deepEqual(a.traffic,{published:6,synced:5,views:2500,medianViews:500});
+  assert.equal(a.trafficTier,'strong');assert.equal(a.stats.n,2,'only the boundary and old excluded traffic sample enter mature policy evidence');
+  assert.deepEqual(b.traffic,{published:5,synced:5,views:0,medianViews:0});assert.equal(b.trafficTier,'weak');
+  assert.deepEqual(c.traffic,{published:0,synced:0,views:null,medianViews:null});assert.equal(c.trafficTier,'observing');
+  assert.equal(r.trafficSummary.published,11);assert.equal(r.trafficSummary.synced,10);assert.equal(r.trafficSummary.views,2500);
+  assert.equal(r.trafficPolicy.from,'2026-09-24');assert.equal(r.trafficPolicy.to,'2026-09-30');
+});
+
+test('traffic thresholds need five observed posts and rank paginated accounts by total views with stable ties',async t=>{
+  const f=await setup(t);assign(f,Array.from({length:25},(_,i)=>'a'+String(i).padStart(2,'0')));
+  for(let i=0;i<5;i++){
+    fact(f,'strong-'+i,{account_key:'tiktok:a01',views:500,published_at:now-1000});
+    fact(f,'normal-'+i,{account_key:'tiktok:a02',views:200,published_at:now-1000});
+    fact(f,'weak-'+i,{account_key:'tiktok:a03',views:199,published_at:now-1000});
+    fact(f,'partial-'+i,{account_key:'tiktok:a04',views:i===4?null:9999,published_at:now-1000});
+  }
+  const all=await read(f,'view=accounts');
+  assert.equal(all.details.rows[0].connectionId,'a04','higher total views first, insufficient samples stay observing');
+  assert.equal(all.details.rows[0].trafficTier,'observing');
+  assert.equal(all.details.rows[1].connectionId,'a01');assert.equal(all.details.rows[2].connectionId,'a02');
+  assert.equal(all.trafficTiers.find(x=>x.id==='weak').accounts,1);
+  const middle=await read(f,'view=accounts&trafficTier=normal');assert.equal(middle.details.total,1);assert.equal(middle.details.rows[0].connectionId,'a02');
+  const third=await read(f,'view=accounts&page=3');assert.equal(third.details.rows.length,5);assert.equal(third.details.total,25);
+  assert.equal(new Set([...all.details.rows,...third.details.rows].map(x=>x.account)).size,15);
+  await read(f,'view=accounts&trafficTier=rescue-content',actor,400);await read(f,'view=accounts&page=1.2',actor,400);
+});
+
+test('followers and UTC profile visits retain unknown values, explicit zero and partial coverage without inventing conversions',async t=>{
+  const f=await setup(t);assign(f,['a','b','c','d']);assign(f,['private'],'other');
+  const insert=f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,profile_json) VALUES(?,?)');
+  insert.run('tiktok:a',JSON.stringify({followers:1000,insights:{_daily_traffic:{days:[
+    {date:'2026-09-25',profileViews:99},{date:'2026-09-25',profileViews:0},{date:'2026-09-30',profileViews:8},
+    {date:'2026-10-01',profileViews:4},{date:'2026-09-24',profileViews:999},{date:'2026-10-02',profileViews:999},
+    {date:'2026-09-26',profileViews:null},{date:'2026-09-27',profileViews:'55'},{date:'2026-09-28',profileViews:-1}
+  ]}}}));
+  insert.run('tiktok:b',JSON.stringify({followerCount:0,insights:{_daily_traffic:{days:[{date:'2026-10-01',profileViews:0}]}}}));
+  insert.run('tiktok:d',JSON.stringify({followers:-1}));
+  insert.run('tiktok:private',JSON.stringify({followers:99999,insights:{_daily_traffic:{days:[{date:'2026-10-01',profileViews:99999}]}}}));
+  const r=await read(f,'view=accounts'),a=r.details.rows.find(x=>x.connectionId==='a'),b=r.details.rows.find(x=>x.connectionId==='b'),c=r.details.rows.find(x=>x.connectionId==='c');
+  assert.equal(a.followers,1000);assert.equal(a.conversionCandidate,true);assert.deepEqual(a.profileTraffic,{views:12,days:3,expectedDays:7,timeZone:'UTC'});
+  assert.equal(b.followers,0);assert.equal(b.conversionCandidate,false);assert.equal(b.profileTraffic.views,0);
+  assert.equal(c.followers,null);assert.equal(c.conversionCandidate,null);assert.equal(c.profileTraffic.views,null);assert.equal(c.profileTraffic.days,0);
+  assert.equal(r.details.rows.find(x=>x.connectionId==='d').followers,null);
+  assert.equal(r.trafficSummary.profileViews,12);assert.equal(r.trafficSummary.conversionCandidates,1);assert.equal(r.trafficSummary.followersKnown,2);
+  assert.equal(r.trafficPolicy.profileFrom,'2026-09-25');assert.equal(r.trafficPolicy.profileTo,'2026-10-01');
+  assert.match(r.basis.profileTraffic,/不是站内/);assert.ok(!JSON.stringify(r).includes('99999'));
+  f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other' WHERE account_key='a'").run();
+  const revoked=await read(f,'view=accounts');assert.equal(revoked.trafficSummary.profileViews,0);assert.equal(revoked.trafficSummary.conversionCandidates,0);
+});
+
+test('seven Pacific calendar days include DST transitions without sliding the start by one hour',()=>{
+  const spring=dashboardWindow(Date.parse('2026-03-08T20:00:00Z')),autumn=dashboardWindow(Date.parse('2026-11-01T20:00:00Z'));
+  assert.equal(spring.trafficFrom,'2026-03-02');assert.equal(spring.todayEnd-spring.trafficStart,167*3600000);
+  assert.equal(autumn.trafficFrom,'2026-10-26');assert.equal(autumn.todayEnd-autumn.trafficStart,169*3600000);
+});

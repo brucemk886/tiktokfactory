@@ -1,3 +1,4 @@
+import { handleConversionCampaign } from './psychology-conversion.js';
 import { handleAutopilotDashboard } from './psychology-autopilot-dashboard.js';
 import { handleTransitionDay } from './psychology-transition-day.js';
 import { handleTaskGroups } from './psychology-task-groups.js';
@@ -568,6 +569,11 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
   if(url.pathname===BASE+'/transition-day'||url.pathname===BASE+'/transition-day/run'){
     if(apiOptions.external)fail('过渡排期请在自动运营页面管理。',403);
     return handleTransitionDay(request,env,url,session);
+  }
+  if(url.pathname===BASE+'/conversion'){
+    if(apiOptions.external)fail('转化配置请在自动运营页面管理。',403);
+    const directory=await autopilotDirectory(env,user,request.method!=='GET');
+    return handleConversionCampaign(request,env,url,user,{directory});
   }
   if(url.pathname===BASE+'/task-groups'||url.pathname.startsWith(BASE+'/task-groups/')){
     if(apiOptions.external)fail('此配置请在自动运营页面管理。',403);

@@ -1,3 +1,4 @@
+import { loadConversionAssignments, applyConversionCopy, conversionSnapshotStatement, updateConversionCopyHash } from './psychology-conversion.js';
 import { transitionAssignmentsFor,transitionAllocationStatement } from './psychology-transition-day.js';
 import { makeProductionPlan,generationPlanStatement } from './psychology-adaptive-production.js';
 import { taskAssignmentsFor } from './psychology-task-groups.js';
@@ -435,7 +436,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
-  let sources, testState, matchingSkipped=[];
+  let sources, testState, matchingSkipped=[], conversionAssignments=new Map();
   if (config.sourceType === 'topic-bank') {
     sources = await selectTopicSources(env.DB, config);
     if(config.template==='psychology-target-2'&&sources.length<config.count)fail('符合条件的可用图片只有 '+sources.length+' 张，请补充图片或减少生成数量。已抽取图片不会再次使用。');
@@ -450,17 +451,19 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const [stats,used]=await Promise.all([testState?testState.stats:loadCopyStats(env.DB,user.username),config.allowPeerReuse?new Map():loadUsedPosts(env.DB,config.connectionIds,posts)]);
     const slots=assignments(config,Array.from({length:config.count},()=>null)).map(({connectionId,scheduleAt})=>({connectionId,scheduleAt}));
     if(config.libraryStrategy==='pools'){
-      const [state,styleChoices,reservations,taskAssignments]=await Promise.all([
+      const [state,styleChoices,reservations,taskAssignments,conversionRoutes]=await Promise.all([
         readPoolMatchingState(env.DB,user,config.connectionIds),managedStyles(env.DB,user.username),
         loadPoolReservations(env.DB,user.username,config.poolContext.cycleStartAt),
-        internal.transitionDay?transitionAssignmentsFor(env.DB,user,config.connectionIds,internal.transitionDay):internal.taskGroupPolicyId?taskAssignmentsFor(env.DB,user.username,config.connectionIds,internal.taskSlotAt||config.scheduleAt*1000):new Map()]);
+        internal.transitionDay?transitionAssignmentsFor(env.DB,user,config.connectionIds,internal.transitionDay):internal.taskGroupPolicyId?taskAssignmentsFor(env.DB,user.username,config.connectionIds,internal.taskSlotAt||config.scheduleAt*1000):new Map(),
+        config.mediaType==='photo'?loadConversionAssignments(env.DB,user.username,config.connectionIds,slots.map(slot=>({...slot,slotAt:slot.scheduleAt*1000})),{directory:scoped.accounts}):new Map()]);
+      conversionAssignments=conversionRoutes;
       if(internal.taskGroupPolicyId&&config.connectionIds.some(id=>taskAssignments.get(id)?.policyId!==internal.taskGroupPolicyId||taskAssignments.get(id)?.paused))fail('运营任务组分配已变化，请重新调度。',409);
       if(internal.transitionDay){
         state.accounts=new Map([...state.accounts].filter(([,account])=>['strong','normal'].includes(account.pool)));
       }
       const candidates=await buildPoolCandidates(posts,state,styleChoices,reservations.occupied);
       const matches=planPoolMatches({candidates,accounts:state.accounts,slots,used,...reservations,
-        context:config.poolContext,owner:user.username,pairSeed:config.pairSeed||'',taskAssignments});
+        context:config.poolContext,owner:user.username,pairSeed:config.pairSeed||'',taskAssignments,conversionAssignments});
       sources=matches.plan;matchingSkipped=matches.skipped;
       if(!sources.length)return json({accepted:true,batchId:'',count:0,skipped:matchingSkipped},202);
     }else{
@@ -491,6 +494,21 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
       chosen.add(source.id);return {...entry,source};});
   }
   selected=selected.map(entry=>entry.source.sourceRow?{...entry,source:entry.source.sourceKind==='original'?librarySource(entry.source.sourceRow,config.mediaType):reviewedSource(entry.source.sourceRow,config.mediaType)}:entry);
+  selected=await Promise.all(selected.map(async entry=>{
+    const route=entry.source.conversion;
+    if(!route)return entry;
+    const source=structuredClone(entry.source);
+    const base=source.poolIdentity||await copyIdentity(source.copyVariant||{});
+    source.conversion={...route,baseCopyHash:base.hash};
+    if(source.copyVariant){
+      source.copyVariant=applyConversionCopy(source.copyVariant,source.conversion);
+      const identity=await copyIdentity(source.copyVariant);
+      source.poolIdentity=identity;
+      source.conversion.finalCopyHash=identity.hash;
+      if(source.poolMatch)source.poolMatch={...source.poolMatch,copyHash:identity.hash,baseCopyHash:base.hash};
+    }
+    return {...entry,source};
+  }));
   const commentSetting = config.mediaType==='video' ? await commentTemplate(env.DB,config.template) : {enabled:0};
   if(commentSetting.enabled && commentSetting.auto_reply_enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list')))fail('自动回复需要目标账号授予评论读取权限，请重新授权。',403);
   if(commentSetting.enabled && scoped.accounts.some(a=>config.connectionIds.includes(String(a.connectionId||a.id))&&!a.scopes?.includes('comment.list.manage')))fail('定时评论需要目标账号授予评论管理权限，请重新授权。',403);
@@ -515,15 +533,16 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
       username: String(account.username || '').trim().replace(/^@/, '') };
     const styleDefinition=config.mediaType==='photo'?(entry.source.poolStyle?selectManagedStyle([entry.source.poolStyle],'fixed',entry.source.poolStyle.id):selectManagedStyle(stylePool,config.styleMode,config.styleId)):null;
-    const item = { ...(internal.transitionDay?{transitionDay:internal.transitionDay}:{}), ...(entry.source.poolMatch?{poolMatch:entry.source.poolMatch}:{}),styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
+    const item = { ...(entry.source.conversion?{conversion:entry.source.conversion}:{}), ...(internal.transitionDay?{transitionDay:internal.transitionDay}:{}), ...(entry.source.poolMatch?{poolMatch:entry.source.poolMatch}:{}),styleId:styleDefinition?.id||'',...(styleDefinition?{styleDefinition}:{}),account: accountSnapshot, submissionMode:'grouped', groupId, id, batchId, connectionId: entry.connectionId, scheduleAt: entry.scheduleAt, template: config.template, mediaType: config.mediaType, ...(musicSoundId ? { musicSoundId } : {}) };
     const type = config.mediaType === 'photo' ? 'psychology-photo-story' : config.template;
     const payload = config.mediaType === 'photo'
-      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
+      ? { ...peerProductionPayload(entry.source, 'psychology-photo-story', { rewriteCopy: entry.source.conversion&&entry.source.copyVariant?false:config.rewriteCopy }), ...(entry.source.copyVariant?{copyVariant:entry.source.copyVariant}:{}), psychologyAutomation: { ...item, cloudPhotoRender: env.PSYCHOLOGY_CLOUD_PHOTO === 'true' } }
       : autoVideoPayload(entry.source, config, item, scoped.accounts);
     const productionPlan=config.mediaType==='photo'?makeProductionPlan(internal.productionPlan,entry.scheduleAt*1000,stamp):null;
     const generateAt = productionPlan?.generationAt || (config.mediaType==='photo' && internal.productionLeadMs ? Math.max(stamp,entry.scheduleAt*1000-internal.productionLeadMs) : 0);
     if(productionPlan)payload.psychologyAutomation.productionPlan=productionPlan;
     if(generateAt)payload.psychologyAutomation.generateAt=generateAt;
+    if(entry.source.conversion)statements.push(conversionSnapshotStatement(env.DB,item,entry.source.conversion,stamp));
     if(entry.source.copySource)payload.copySource=entry.source.copySource;
     const comment=freezeComment(entry.source,config,commentSetting);
     if(comment){
@@ -549,6 +568,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   catch (error) {
     const winner = await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();
     if (!winner) {
+      if(/psychology_conversion_allocations/.test(error.message))fail('转化承接配置已变化，请重新调度。',409);
       if(/psychology_transition_claims/.test(error.message))fail('过渡轮次已被占用或账号配置已变化，请重新检查。',409);
       if(/psychology_task_group_allocations/.test(error.message))fail('该账号今天的发布轮次已被占用，请重新检查任务组分配。',409);
       if(/psychology_copy_test_allocations/.test(error.message))fail('测试名额刚被其他分组更新，请重新检查后分配。',409);
@@ -594,6 +614,7 @@ export async function enqueueAutoPhotoRender(env, sourceId) {
   if (!Array.isArray(result.results) || !result.results.length) fail('图文没有生成完整页面。');
   const identity=await copyIdentity(result.plan||{});
   await env.DB.prepare('UPDATE psychology_creative_snapshots SET copy_hash=?,copy_json=? WHERE item_id=?').bind(identity.hash,JSON.stringify(identity.copy),sourceId).run();
+  if(payload.psychologyAutomation.conversion)await updateConversionCopyHash(env.DB,sourceId,identity.hash);
   const id = sourceId + '-render';
   const renderPayload = {
     module: 'psychology', photoAutomation: true, cloudPhotoRender: payload.psychologyAutomation.cloudPhotoRender === true, sourceJobId: sourceId, peerSource: payload.peerSource,

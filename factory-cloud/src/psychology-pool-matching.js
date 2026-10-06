@@ -96,14 +96,20 @@ export async function buildPoolCandidates(posts, state, styles, reservations = n
   return candidates;
 }
 
-export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupied=new Map(),cycles=new Map(),context,owner='',pairSeed='',taskAssignments=new Map()}){
+export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupied=new Map(),cycles=new Map(),context,owner='',pairSeed='',taskAssignments=new Map(),conversionAssignments=new Map()}){
   const plan=[],skipped=[],extra=new Map(),cycleExtra=new Map();
   const cycle=context.cycleStartAt;
   for(const slot of slots){
     let observed=accounts.get(canonical(slot.connectionId));
     if(!observed){skipped.push({...slot,reason:'账号已不在当前授权心理学分组中'});continue;}
+    const conversionKey=`${slot.connectionId}:${slot.scheduleAt*1000}`;
+    const conversion=conversionAssignments.get(conversionKey);
+    const converting=conversionAssignments.has(conversionKey);
+    if(converting&&(conversion?.objective!=='conversion'||conversion.error||conversion.linkReady!==true||!conversion.receiverConnectionId||! /^[A-Za-z0-9._]{1,24}$/.test(conversion.username||'')||!conversion.cta)){
+      skipped.push({...slot,reason:conversion?.error||'转化承接账号待配置，请确认账号主页已设置测试链接'});continue;
+    }
     const prior=cycles.get(slot.connectionId),count=(prior?.posts||0)+(cycleExtra.get(slot.connectionId)||0);
-    if((prior?.initialPool==='diagnostic'||observed.pool==='diagnostic')&&count>=POOL_POLICY.diagnosticMaxTests){
+    if(!converting&&(prior?.initialPool==='diagnostic'||observed.pool==='diagnostic')&&count>=POOL_POLICY.diagnosticMaxTests){
       if(!prior||prior.mature<6||prior.sources<3||prior.stats.medianViews<POOL_POLICY.diagnosticViews){
         skipped.push({...slot,reason:'六条诊断基准已占位，等待满72小时、至少三个来源的成熟效果后复查'});continue;
       }
@@ -111,35 +117,37 @@ export function planPoolMatches({candidates,accounts,slots,used=new Map(),occupi
     }
     const accountPool=observed.pool;
     const assignment=taskAssignments.get(slot.connectionId);
-    const reviewing=assignment?.role==='review'&&['strong','normal'].includes(accountPool);
+    const reviewing=!converting&&assignment?.role==='review'&&['strong','normal'].includes(accountPool);
     // Reviewers devote two rounds to fixed-version validation and one to production.
-    const desired=reviewing&&context.round%3!==2?'explore':reviewing?'winner':desiredContentPool({accountPool,...context,seed:owner+':'+cycle+':'+slot.connectionId});
+    const desired=converting?'winner':reviewing&&context.round%3!==2?'explore':reviewing?'winner':desiredContentPool({accountPool,...context,seed:owner+':'+cycle+':'+slot.connectionId});
     const seen=used.get(slot.connectionId)||new Set();
     const eligible=candidates.filter(c=>{
       if(seen.has(c.post.sourceKey))return false;
-      if(c.pool==='explore'&&(Math.max(c.stats.n,occupied.get(c.key)?.posts||0)+(extra.get(c.key)||0)>=POOL_POLICY.minContentSamples
+      if(!converting&&c.pool==='explore'&&(Math.max(c.stats.n,occupied.get(c.key)?.posts||0)+(extra.get(c.key)||0)>=POOL_POLICY.minContentSamples
         ||occupied.get(c.key)?.accounts.has(slot.connectionId)))return false;
       return true;
     });
-    const ranked=rankPoolCandidates(eligible,accountPool,{desiredPool:desired,seed:pairSeed+':'+slot.connectionId});
+    // Historical traffic ranks the base copy only; the CTA gets a new identity.
+    const ranked=rankPoolCandidates(eligible,converting?'strong':accountPool,{desiredPool:desired,seed:pairSeed+':'+slot.connectionId});
     // On stable accounts, started baselines take priority during the initial shortage.
-    if((reviewing&&desired==='explore'||!ranked.some(c=>c.pool==='winner'))&&['strong','normal'].includes(accountPool)){
+    if(!converting&&(reviewing&&desired==='explore'||!ranked.some(c=>c.pool==='winner'))&&['strong','normal'].includes(accountPool)){
       ranked.sort((a,b)=>Number(b.pool==='explore')-Number(a.pool==='explore')
         ||(b.occupied+(extra.get(b.key)||0))-(a.occupied+(extra.get(a.key)||0))
         ||b.stats.n-a.stats.n||(b.stats.medianViews??-1)-(a.stats.medianViews??-1));
     }
     const chosen=ranked[0];
-    if(!chosen){skipped.push({...slot,reason:['strong','normal'].includes(accountPool)?'可用版本已满五个占位，等待成熟数据或补充可用文案':'合格优胜/优化内容不足；先由中强账号固定样式补足五账号基线'});continue;}
-    const warmup=chosen.pool==='explore'&&desired!=='explore';
-    const reason=warmup?'优胜内容不足：中强账号补足固定版本、固定样式的五账号基线':
+    if(!chosen){skipped.push({...slot,reason:converting?'没有该账号尚未使用的可发布文案，请补充文案':['strong','normal'].includes(accountPool)?'可用版本已满五个占位，等待成熟数据或补充可用文案':'合格优胜/优化内容不足；先由中强账号固定样式补足五账号基线'});continue;}
+    const warmup=!converting&&chosen.pool==='explore'&&desired!=='explore';
+    const reason=converting?'转化目标：直接使用可发布文案，追加已确认承接账号的测试引导':warmup?'优胜内容不足：中强账号补足固定版本、固定样式的五账号基线':
       reviewing&&chosen.pool==='explore'?'评审组：固定版本、固定样式补齐五账号验证':accountPool==='diagnostic'?'优胜内容诊断基准':desired===chosen.pool?'按本轮配额匹配':'优先池不足，使用允许的成熟候选';
     const poolMatch={policy:POOL_POLICY.version,accountPool,desiredPool:desired,contentPool:chosen.pool,reason,
       timeZone:normalizeTimeZone(assignment?.timeZone||context.timeZone),cycleStartAt:cycle,dayIndex:context.dayIndex,round:context.round,asOf:context.asOf||Date.now(),
       sampleCount:chosen.stats.n,accountMedianViews:observed.stats.medianViews,copyHash:chosen.identity.hash,
       styleRevision:chosen.styleDefinition.revision||0,warmup,
+      ...(converting?{objective:'conversion',basis:'base-content',baseCopyHash:chosen.identity.hash}:{}),
       ...(assignment?{taskGroup:{policyId:assignment.policyId,timeZone:normalizeTimeZone(assignment.timeZone),id:assignment.id,role:assignment.role,revision:assignment.revision,effectiveAt:assignment.effectiveAt}}:{})};
     plan.push({...slot,...chosen,source:{...chosen.source,usageKey:chosen.post.sourceKey,
-      poolMatch,poolStyle:chosen.styleDefinition,poolIdentity:chosen.identity}});
+      poolMatch,poolStyle:chosen.styleDefinition,poolIdentity:chosen.identity,...(converting?{conversion}: {})}});
     seen.add(chosen.post.sourceKey);used.set(slot.connectionId,seen);extra.set(chosen.key,(extra.get(chosen.key)||0)+1);
     cycleExtra.set(slot.connectionId,(cycleExtra.get(slot.connectionId)||0)+1);
   }

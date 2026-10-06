@@ -6,12 +6,15 @@ import vm from 'node:vm';
 const clientSource = fs.readFileSync(new URL('../public/psychology-autopilot-dashboard.js', import.meta.url), 'utf8');
 const anchor = Date.parse('2026-10-01T07:00:00Z');
 class DashboardDate extends Date { static now() { return anchor; } }
-const accountRow = () => ({account:'account/A & B',name:'心理学 <img src=x onerror=alert(1)>',pool:'rescue-content',currentRole:'normal',futureRole:'review',effectiveAt:anchor+86400000,eligibleAt:anchor,stats:{n:0,medianViews:null,potentialRate:null,completion:0}});
+const accountRow = () => ({account:'account/A & B',name:'心理学 <img src=x onerror=alert(1)>',pool:'rescue-content',trafficTier:'weak',traffic:{published:5,synced:5,views:0,medianViews:null},followers:1000,conversionCandidate:true,profileTraffic:{views:0,days:1},currentRole:'normal',futureRole:'review',effectiveAt:anchor+86400000,eligibleAt:anchor,stats:{n:0,medianViews:null,potentialRate:null,completion:0}});
 const contentRow = () => ({source:'source/A & B',variant:'version/?2',style:'style/<A>',copyHash:'copy + & /',styleRevision:3,title:'边界感 <script>bad()</script>',pool:'explore',published:5,distinctAccounts:3,reserved:null,waiting:0,missingMetrics:0,stats:{n:3,medianViews:null,completion:0},reason:'不足5个不同账号 <unsafe>'});
 function fixture(view='overview',overrides={}) {
  return {
   asOf:anchor,timeZone:'America/Los_Angeles',operatingDate:'2026-10-01',
   summary:{projectAccounts:188,today:{published:0,planned:350},mature:{n:1048},winnerVersions:0,eligibleWinnerVersions:0},
+  trafficSummary:{published:350,synced:200,views:0,conversionCandidates:15,followersKnown:30,profileViews:null,profileCoveredAccounts:0},
+  trafficPolicy:{from:'2026-09-25',to:'2026-10-01',strongViews:500,normalViews:200,minimumSamples:5,profileFrom:'2026-09-25',profileTo:'2026-10-01'},
+  trafficTiers:[{id:'strong',accounts:8},{id:'normal',accounts:108},{id:'weak',accounts:34},{id:'observing',accounts:38}],
   accountPools:[{id:'strong',accounts:8},{id:'normal',accounts:108},{id:'rescue-content',accounts:34},{id:'observing',accounts:38}],
   contentPools:[{id:'winner',versions:0},{id:'explore',versions:128},{id:'revise',versions:4}],
   contentProgress:{reserved:null,waiting:0,missingMetrics:0,mature:3},
@@ -82,11 +85,12 @@ test('dashboard boot and refresh use authenticated read-only local requests, pre
  assert.match(h.requests[0].path,/^\/api\/psychology-autopilot\/dashboard\?/);
  assert.equal(h.node('#poolDashboard').getAttribute('aria-busy'),'false');
  const body=h.node('#dashBody').innerHTML;
- assert.match(body,/今日发布<\/span><strong[^>]*>0<\/strong>/);
- assert.match(body,/优胜版本<\/span><strong[^>]*>0<\/strong>/);
- assert.match(body,/<strong>—<\/strong><small>尚未发布占位/);
- assert.match(body,/<strong>0<\/strong><small>已发布待成熟/);
- assert.match(h.node('#dashFreshness').textContent,/近30天成熟样本.*05:00 \/ 08:30 \/ 17:00/);
+ assert.match(body,/近7天总播放<\/span><strong[^>]*>0<\/strong>/);
+ assert.match(body,/千粉承接候选<\/span><strong[^>]*>15<\/strong>/);
+ assert.match(body,/主页访问 —/);
+ assert.match(body,/无72小时|不等满72小时/);
+ assert.doesNotMatch(body,/首图救援池|内页救援池|起号 \/ 救援/);
+ assert.match(h.node('#dashFreshness').textContent,/近7个美西发布日.*无72小时门槛/);
  h.node('#reload').listeners.click();await tick();
  assert.equal(h.requests.length,2);
  assert.ok(h.requests.every(r=>r.init.method==='GET'));
@@ -98,8 +102,9 @@ test('list rendering escapes server-controlled fields while null metrics remain 
  const body=h.node('#dashBody').innerHTML;
  assert.match(body,/心理学 &lt;img src=x onerror=alert\(1\)&gt;/);
  assert.doesNotMatch(body,/<img src=x/);
- assert.match(body,/<td>0<\/td><td>—<\/td><td>0\.0%<\/td>/);
- assert.match(body,/中号产出/);assert.match(body,/未来：内容评审/);
+ assert.match(body,/<td>0<\/td><td>—<\/td><td>5<small>有播放数据 5/);
+ assert.match(body,/可承接转化/);assert.match(body,/主页访问/);
+ assert.doesNotMatch(body,/中号产出|内容评审|首图救援|内页救援/);
  h.click({dashView:'content'});await tick();
  assert.match(h.node('#dashBody').innerHTML,/边界感 &lt;script&gt;bad\(\)&lt;\/script&gt;/);
  assert.match(h.node('#dashBody').innerHTML,/style\/&lt;A&gt;/);
@@ -111,23 +116,23 @@ test('list rendering escapes server-controlled fields while null metrics remain 
 test('delegated pool, page, search and tab actions issue complete filters and retain each pool view state',async()=>{
  const h=harness();await tick();
  h.api.state.q.accounts='old';h.api.state.page.accounts=4;
- h.click({dashView:'accounts',dashPool:'rescue-content'});await tick();
+ h.click({dashView:'accounts',dashPool:'weak'});await tick();
  let p=h.requests.at(-1).params;
- assert.equal(p.get('view'),'accounts');assert.equal(p.get('accountPool'),'rescue-content');
+ assert.equal(p.get('view'),'accounts');assert.equal(p.get('trafficTier'),'weak');
  assert.equal(p.get('page'),'1');assert.equal(p.has('q'),false);
  h.click({dashPage:'1'});await tick();assert.equal(h.requests.at(-1).params.get('page'),'2');
  h.node('#dashSearchInput').value='  A & B / 新号  ';
  let prevented=false;
  h.node('#dashSearch').listeners.submit({preventDefault(){prevented=true;}});await tick();
  assert.ok(prevented);p=h.requests.at(-1).params;
- assert.equal(p.get('q'),'A & B / 新号');assert.equal(p.get('page'),'1');assert.equal(p.get('accountPool'),'rescue-content');
+ assert.equal(p.get('q'),'A & B / 新号');assert.equal(p.get('page'),'1');assert.equal(p.get('trafficTier'),'weak');
  h.click({dashView:'content',dashPool:'explore'});await tick();
  assert.equal(h.requests.at(-1).params.get('contentPool'),'explore');
- assert.equal(h.requests.at(-1).params.has('accountPool'),false);
+ assert.equal(h.requests.at(-1).params.has('trafficTier'),false);
  h.click({dashView:'accounts'});await tick();
- p=h.requests.at(-1).params;assert.equal(p.get('q'),'A & B / 新号');assert.equal(p.get('accountPool'),'rescue-content');
+ p=h.requests.at(-1).params;assert.equal(p.get('q'),'A & B / 新号');assert.equal(p.get('trafficTier'),'weak');
  h.click({dashView:'accounts',dashPool:''});await tick();
- assert.equal(h.requests.at(-1).params.has('q'),false);assert.equal(h.requests.at(-1).params.has('accountPool'),false);
+ assert.equal(h.requests.at(-1).params.has('q'),false);assert.equal(h.requests.at(-1).params.has('trafficTier'),false);
  h.click({dashPage:'-1'});await tick();assert.equal(h.requests.at(-1).params.get('page'),'1');
 });
 
@@ -174,7 +179,7 @@ test('content evidence requests exact text/style revisions and linked buttons na
  p=h.requests.at(-1).params;
  assert.equal(p.get('view'),'accounts');assert.equal(p.get('account'),account.account);
  assert.equal(p.has('source'),false);
- assert.match(h.node('#dashDialog').innerHTML,/当前任务角色/);
+ assert.match(h.node('#dashDialog').innerHTML,/执行详情与历史角色/);
  assert.match(h.node('#dashDialog').innerHTML,/已匹配的具体版本/);
  h.click({dashLinked:'0'},'#dashDialog');await tick();
  assert.equal(h.requests.at(-1).params.get('copyHash'),row.copyHash);
@@ -290,7 +295,8 @@ test('backend version and futureEffectiveAt contract is retained in titles and e
  await tick();h.click({dashView:'content'});await tick();assert.match(h.node('#dashBody').innerHTML,/rewrite-backend-version/);
  h.click({dashRow:'0'});await tick();assert.equal(h.requests.at(-1).params.get('variant'),'rewrite-backend-version');
  h.click({},'#dashDialog',{'data-dash-close':''});h.click({dashView:'accounts'});await tick();
- assert.match(h.node('#dashBody').innerHTML,/未来：内容评审 · 10\/02/);
+ assert.doesNotMatch(h.node('#dashBody').innerHTML,/未来：内容评审/);
+ h.click({dashRow:'0'});await tick();assert.match(h.node('#dashDialog').innerHTML,/未来：内容评审 · 10\/02/);
 });
 test('publication provider zero highRate is visible and pool deltas require two real observation days',async()=>{
  const h=harness();await tick();
@@ -302,3 +308,13 @@ test('publication provider zero highRate is visible and pool deltas require two 
  assert.match(actual,/项目账号 \+2，强号 \+1，中号 \+1/);
 });
 
+
+
+test('account traffic keeps unknown followers and missing profile days distinct from measured zero',async()=>{
+ const h=harness(r=>fixture(r.params.get('view')||'overview',{details:{rows:[{...accountRow(),followers:null,conversionCandidate:null,traffic:{published:0,synced:0,views:null,medianViews:null},profileTraffic:{views:null,days:0},trafficTier:'observing'}],total:1,page:1,pages:1}}));
+ await tick();h.click({dashView:'accounts'});await tick();
+ const body=h.node('#dashBody').innerHTML;assert.match(body,/粉丝待同步/);assert.match(body,/待观察/);
+ assert.match(body,/<td>—<\/td><td>—<\/td>/);assert.match(body,/0 \/ 7天 · UTC/);assert.doesNotMatch(body,/可承接转化/);
+ h.click({dashRow:'0'});await tick();assert.match(h.node('#dashDialog').innerHTML,/主页访问不是站内转化/);
+ assert.match(h.node('#dashDialog').innerHTML,/<details class="dash-account-execution"><summary>执行详情与历史角色/);
+});

@@ -39,3 +39,11 @@ test('mobile dashboard contains tables rather than clipping the whole page, with
  assert.doesNotMatch(css, /(?:html|body)\s*\{[^}]*overflow-x\s*:\s*hidden/);
  assert.equal([...css].filter(c => c === '{').length, [...css].filter(c => c === '}').length, 'appended style chunks must retain balanced rules');
 });
+
+
+test('conversion settings mount before traffic dashboard without duplicating controls or replacing its view',()=>{
+ assert.ok(html.indexOf('id="conversionCampaign"')<html.indexOf('id="poolDashboard"'));
+ assert.match(html,/<section id="conversionCampaign" aria-label="转化目标与承接账号"><\/section>/);
+ assert.match(html,/<link rel="stylesheet" href="\/psychology-conversion\.css">/);
+ assert.match(html,/<script type="module" src="\/psychology-conversion\.js"><\/script>/);
+});

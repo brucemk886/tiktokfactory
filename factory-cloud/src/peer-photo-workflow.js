@@ -1,3 +1,4 @@
+import { applyConversionCopy } from './psychology-conversion.js';
 import { beginAdaptiveProduction } from './psychology-adaptive-production.js';
 import { buildPhotoStoryPrompt } from '../../scripts/psychology-peer-production.js';
 import { createDeepSeekClient, DEEPSEEK_PHOTO_MODEL } from './deepseek.js';
@@ -126,6 +127,10 @@ export async function runPeerPhotoWorkflow(env, event, step) {
       }
       if (!rewritten) throw new Error(validationError);
       plan = rewritten;
+    }
+    if(payload.psychologyAutomation?.conversion){
+      plan=applyConversionCopy(plan,payload.psychologyAutomation.conversion);
+      total=plan.scenes.length;
     }
     if (payload.psychologyAutomation?.styleId || payload.psychologyAutomation?.template === 'photo-text') {
       plan.scenes = plan.scenes.map((scene,index) => ({
