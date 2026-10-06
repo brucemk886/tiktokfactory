@@ -19,7 +19,13 @@ Browser checks: desktop 1366 and mobile 390/320, all four tabs, contained tables
 Full factory regression: 1,239 passed, zero failures or skips. Shared first-paint theme rules and mobile layouts pass. Read-only production SQL validation completed with zero rows written; deployment verification follows.
 
 ## Unfinished work
-Production release verification. Receiver links still require the owner to set them on actual profiles and confirm the receiver configuration; this integration does not fabricate that confirmation. Broader 360-account enrollment and content strategy changes remain separate from this data-connection request.
+Receiver links still require the owner to set them on actual profiles and confirm the receiver configuration; this integration does not fabricate that confirmation. Broader 360-account enrollment and content strategy changes remain separate from this data-connection request.
 
 ## Recommended next step
 Use the new page to compare live site totals and tagged receiver conversion, then confirm receiver profile links and plan conversion-focused content using real outcomes.
+
+## Production verification
+- Runtime commit 7a57201 was pushed to GitHub main before deployment. An independent clean main release checkout passed exact HEAD == origin/main and asset-manifest verification; npm run deploy applied no migrations and released Worker 89b714cd-25ee-4a75-ac94-56a718ff1e38.
+- Logged-in production /psychology-website loaded successfully on a 390x844 viewport and returned real site data. The 30-day range (September 7–October 6, Beijing time) matched the source SELECT probe: 104 pageviews, 51 started sessions, 19 finished, 18 email submissions, 5 checkout sessions and 0 qualifying paid orders. These are operational aggregates, not customer records.
+- The live promotion-links panel displays real eligible-account URLs and accurately reports zero confirmed receivers. No profile link or receiver-readiness setting was changed.
+- Existing original-checkout edits/untracked files were preserved. Implementation lives in the attached psychology-website-conversions worktree; the independent release clone is under the original checkout's ignored work/ directory.
