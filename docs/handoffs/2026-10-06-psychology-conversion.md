@@ -19,10 +19,16 @@ Simplify automatic operations around account traffic and route future content to
 - CURRENT_STATE and this handoff.
 
 ## Tests performed
-Initial full regression: 1,215 passed, zero failures. Conversion/planner/workflow joint regression: 38 passed. Synthetic browser checks passed at 1366, 390 and 320 pixels, including zero-receiver save, future-effective state, failed-save recovery and unchanged unsaved input. No real publishing or paid generation API was called in tests. Final clean-main release regression: 1,228 passed, zero failures; existing October scheduler recovery and report changes were retained. Production activation will be recorded below.
+Initial full regression: 1,215 passed, zero failures. Conversion/planner/workflow joint regression: 38 passed. Synthetic browser checks passed at 1366, 390 and 320 pixels, including zero-receiver save, future-effective state, failed-save recovery and unchanged unsaved input. No real publishing or paid generation API was called in tests. Final clean-main release regression: 1,228 passed, zero failures; existing October scheduler recovery and report changes were retained. Migration 0076 applied successfully. Runtime commit 471667512fc80b815d7087f12d1e473662090930 was pushed to GitHub main; clean worktree and exact HEAD == origin/main passed before npm run deploy. Worker version af294c3f-f1b5-41a5-8e2b-2b8fd25c7150 deployed to factory.tiktokaitool.com.
 
 ## Unfinished work
 Bind remaining receiver accounts and confirm their profile website links. Connect genuine site visits and test-completion analytics when that source is available. Existing scheduler execution gaps are a separate audit; this change preserves current scheduling behavior.
 
 ## Recommended next step
 Add confirmed receivers in automatic operations conversion settings, inspect first real post for @mention behavior, and compare site test completions against traffic without treating profile visits as website visits.
+
+## Production verification
+- Logged-in conversion GET and account-traffic dashboard GET returned 200. Verified 188 unique accounts and 10/104/17/57 strong/medium/low/observing counts; 10-row paging returned total 188. Production desktop and mobile views were inspected without horizontal page overflow.
+- Saved campaign revision 1: enabled conversion objective, https://deeppersonaai.com/, zero confirmed receivers. It takes effect 2026-10-07 00:00 America/Los_Angeles (2026-10-07 15:00 Taipei/Beijing). Existing reservations and jobs remain unchanged.
+- Three currently synced thousand-follower candidates are available. No profile-link readiness was fabricated; new conversion tasks wait until at least one receiver is selected with its profile test link confirmed. Remaining receiver accounts may be bound incrementally.
+- Genuine independent-site visit and test-completion attribution is still not connected. First real post must verify whether its @handle text is clickable. Existing scheduler audit findings remain separate from this strategy/UI change.
