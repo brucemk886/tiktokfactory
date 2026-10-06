@@ -23,10 +23,10 @@ Factory migration 0078; new durable-scheduling and schedule-health modules and t
 - UI browser test verifies counters, escaped account evidence, explicit recovery and absence of stale success after a read failure.
 
 ## Unfinished work
-Production rollout and authenticated live coverage verification follow this commit. Active rendering/publishing jobs must continue; do not reset their execution state.
+Factory memory/resumability correction is deployed (dd3687b, version d444e874-96e1-438a-af3d-eee1108bb4f3). Recovery is progressing; final per-round live counts will be appended. Email is disabled by user request; Feishu destination setup is deferred. Active rendering/publishing jobs must continue; do not reset their execution state.
 
 ## Recommended next step
-Deploy Hub and then Factory from clean main checkouts exactly matching origin/main. Create the dedicated schedule queue, apply migration 0078 via npm run deploy, then verify expected/created/skipped/pending/blocked counts and external notification readiness.
+Complete live coverage verification and confirm notification status is email-disabled after the next heartbeat. Feishu will be implemented when the user provides its configuration; do not request Resend credentials.
 
 ## Live fault evidence and memory correction
 - Initial live queue recovery exposed exceededMemory in Cloudflare tail. Read-only D1 measurement found 3,452 matched items repeating 55.83 MiB of group request JSON, plus ready/results/receipts; both legacy test-state and pool-reservation reads materialized this data.

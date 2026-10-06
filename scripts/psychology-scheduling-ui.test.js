@@ -24,6 +24,10 @@ test('scheduling assurance distinguishes stages, escapes evidence and restores t
  await page.click('#recoverScheduling');await page.waitForFunction(()=>document.querySelector('#scheduleActionStatus')?.textContent.includes('已提交'));
  assert.equal(posts,1);
  assert.match(await page.$eval('#scheduleAssurance',el=>el.textContent),/邮件告警未送达.*401/);
+ data.notification.reason='email-disabled';await page.click('#reload');
+ await page.waitForFunction(()=>document.querySelector('#scheduleAssurance')?.textContent.includes('邮件告警已关闭'));
+ assert.doesNotMatch(await page.$eval('#scheduleAssurance',el=>el.textContent),/认证失败（401）|更新中台邮件密钥/);
+ assert.match(await page.$eval('#scheduleAssurance',el=>el.textContent),/站内告警保留.*飞书待接入/);
  fail=true;await page.click('#reload');await page.waitForSelector('#retryScheduling');
  assert.match(await page.$eval('#scheduleAssurance',el=>el.textContent),/不能确认当前完整性/);
  assert.equal(await page.$('#scheduleAssurance table'),null);
