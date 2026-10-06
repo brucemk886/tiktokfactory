@@ -76,17 +76,29 @@ test('receiver loss, rename, missing publish scope and new source do not fall ba
  assert.match((await loadConversionAssignments(f.db,'admin',['new'],[at])).get('new:'+at).error,/待确认/);
 });
 const route={objective:'conversion',connectionId:'a',receiverConnectionId:'b',username:'target_b',linkReady:true,revision:1,effectiveAt:now};
-test('CTA freezes cloned caption and last card without losing a six-card story, and is idempotent',()=>{
- const plan={title:'Title',caption:'Original caption',scenes:Array.from({length:6},(_,i)=>({title:'Card '+i,subtitle:'Subtitle',body:'Body',sourceIndex:i+1}))};
- const copy=applyConversionCopy(plan,route);assert.equal(copy.scenes.length,6);assert.equal(plan.caption,'Original caption');assert.equal(plan.scenes[5].title,'Card 5');
- assert.match(copy.caption,/@target_b/);assert.match(copy.scenes[5].title,/Card 5\nSubtitle\nBody/);assert.match(copy.scenes[5].title,/@target_b/);
+test('CTA appends only to a cloned caption and preserves every scene in a six-card story, idempotently',()=>{
+ const plan={title:'Title',caption:'Original caption',scenes:Array.from({length:6},(_,i)=>({title:'Card '+i,subtitle:'Subtitle',body:'Body',text:'Card text '+i,originalText:'Original '+i,sourceIndex:i+1,template:'text'}))};
+ const original=structuredClone(plan),copy=applyConversionCopy(plan,route);
+ assert.deepEqual(plan,original);assert.deepEqual(copy.scenes,original.scenes);
+ assert.notEqual(copy.scenes,plan.scenes);assert.notEqual(copy.scenes[5],plan.scenes[5]);
+ assert.equal(copy.title,original.title);assert.equal(copy.scenes.length,6);
+ assert.equal(copy.caption,original.caption+'\n\n'+copy.conversion.cta);
+ assert.equal(copy.caption.split(copy.conversion.cta).length,2);assert.match(copy.caption,/@target_b/);
+ assert.equal(copy.conversion.placement,'caption-only');
+ assert.doesNotMatch(JSON.stringify(copy.scenes),/@target_b|For your full result/);
  assert.deepEqual(applyConversionCopy(copy,route),copy);
- const self=applyConversionCopy(plan,{...route,connectionId:'b'});assert.match(self.caption,/my bio/);assert.doesNotMatch(self.caption,/@target_b/);
+ const self=applyConversionCopy(plan,{...route,connectionId:'b'});
+ assert.match(self.caption,/my bio/);assert.doesNotMatch(self.caption,/@target_b/);
+ assert.deepEqual(self.scenes,original.scenes);
  assert.throws(()=>applyConversionCopy(copy,{...route,revision:2}),/其他/);
 });
-test('invalid routes, overlong captions and last-card overflow reject without shortening source',()=>{
- const plan={caption:'a'.repeat(2199),scenes:[{title:'Original'}]};assert.throws(()=>applyConversionCopy(plan,route),/2200/);assert.equal(plan.caption.length,2199);
- assert.throws(()=>applyConversionCopy({caption:'Ok',scenes:[{title:'a'.repeat(1490)}]},route),/1500/);
+test('invalid routes and caption overflow reject while a 1490-character final card stays unchanged',()=>{
+ const plan={caption:'a'.repeat(2199),scenes:[{title:'Original'}]};
+ assert.throws(()=>applyConversionCopy(plan,route),/2200/);assert.equal(plan.caption.length,2199);
+ const longCard={title:'Original title',caption:'Ok',scenes:[{title:'a'.repeat(1490),text:'a'.repeat(1490),originalText:'a'.repeat(1490)}]};
+ const copy=applyConversionCopy(longCard,route);
+ assert.deepEqual(copy.scenes,longCard.scenes);assert.equal(copy.scenes[0].title.length,1490);
+ assert.match(copy.caption,/@target_b/);assert.equal(copy.conversion.placement,'caption-only');
  assert.throws(()=>applyConversionCopy({scenes:[{title:'Ok'}]},{...route,username:'invalid handle'}),/待配置/);
  assert.throws(()=>applyConversionCopy({scenes:[]},route),/1–6/);
 });

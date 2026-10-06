@@ -192,6 +192,9 @@ test('real conversion POST freezes account-specific CTA and hash, immutable libr
   const {copyIdentity}=await import('./psychology-creative.js');
   const f=await conversionFixture(t);
   const saved=await f.campaign({revision:0,enabled:true,websiteUrl:'https://example.com/test',receivers:[{connectionId:'b',linkReady:true}]});
+  const {librarySource}=await import('./psychology-copy-source.js');
+  const sourcePlan=librarySource(f.sqlite.prepare('SELECT * FROM psychology_copy_library WHERE id=?').get(f.sourceRows[0].id),'photo').copyVariant;
+  const baseIdentity=await copyIdentity(sourcePlan);
   const scheduled=(saved.config.effectiveAt+8*3600000)/1000;
   const first=await f.publish(scheduled);
   assert.equal(first.result.count,2,'unsampled accounts directly receive conversion content');
@@ -207,7 +210,10 @@ test('real conversion POST freezes account-specific CTA and hash, immutable libr
     assert.equal(payload.psychologyAutomation.poolMatch.baseCopyHash,row.base_copy_hash);
     assert.notEqual(row.base_copy_hash,row.final_copy_hash);
     assert.equal(payload.copyVariant.caption.split(snapshot.cta).length,2,'caption CTA appended once');
-    assert.ok(identity.copy.pages.at(-1).endsWith(snapshot.cta),'last card contains frozen CTA');
+    assert.deepEqual(payload.copyVariant.scenes,sourcePlan.scenes,'every scene remains identical to library source');
+    assert.deepEqual(identity.copy.pages,baseIdentity.copy.pages);
+    assert.doesNotMatch(JSON.stringify(payload.copyVariant.scenes),/@receiver|For your full result/);
+    assert.equal(payload.copyVariant.conversion.placement,'caption-only');
     assert.deepEqual(JSON.parse(row.route_json),snapshot);
   }
   assert.equal(frozen[0].base_copy_hash,frozen[1].base_copy_hash,'base evidence is shared for the same library copy');
@@ -256,7 +262,7 @@ test('real conversion POST with no receiver creates no item, usage or allocation
 
 
 
-test('frozen conversion CTA survives the text-card workflow exactly once and render enqueue preserves final identity',async t=>{
+test('caption-only conversion CTA stays out of every rendered card and enqueue preserves final identity',async t=>{
   const [{runPeerPhotoWorkflow},{enqueueAutoPhotoRender},{copyIdentity}]=await Promise.all([
     import('./peer-photo-workflow.js'),import('./psychology-auto-publish.js'),import('./psychology-creative.js'),
   ]);
@@ -265,6 +271,9 @@ test('frozen conversion CTA survives the text-card workflow exactly once and ren
   const posted=await f.publish((saved.config.effectiveAt+8*3600000)/1000);
   assert.equal(posted.result.count,2);
   const before=f.items(posted.result.batchId);
+  const {librarySource}=await import('./psychology-copy-source.js');
+  const sourcePlan=librarySource(f.sqlite.prepare('SELECT * FROM psychology_copy_library WHERE id=?').get(f.sourceRows[0].id),'photo').copyVariant;
+  const baseIdentity=await copyIdentity(sourcePlan);
   delete f.env.DEEPSEEK_API_KEY;delete f.env.KIE_API_KEY;
   t.mock.method(globalThis,'fetch',async()=>{throw new Error('Unexpected external request during text-card conversion');});
   const step={async do(name,config,fn){return (typeof config==='function'?config:fn)();},
@@ -281,7 +290,11 @@ test('frozen conversion CTA survives the text-card workflow exactly once and ren
     assert.equal(result.sourceCopyCache,'imported');
     assert.equal(result.results.length,originalPayload.copyVariant.scenes.length);
     assert.equal(result.plan.caption.split(cta).length,2);
-    assert.equal(identity.copy.pages.at(-1).split(cta).length,2);
+    assert.deepEqual(originalPayload.copyVariant.scenes,sourcePlan.scenes);
+    assert.deepEqual(result.plan.scenes,sourcePlan.scenes);
+    assert.deepEqual(identity.copy.pages,baseIdentity.copy.pages);
+    assert.doesNotMatch(JSON.stringify(result.results),/@receiver|For your full result/);
+    assert.equal(result.plan.conversion.placement,'caption-only');
     assert.equal(result.results.at(-1).text,result.plan.scenes.at(-1).text);
     assert.equal(result.results.at(-1).title,identity.copy.pages.at(-1));
     assert.equal(identity.hash,frozen.final_copy_hash,'styling and repeated route application preserve final identity');

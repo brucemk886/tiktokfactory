@@ -69,7 +69,7 @@ export const UI_ASSETS = {
   "/psychology-comments.js": "77f14af54f1735fab8fc",
   "/psychology-content-performance.js": "55697dc42f7be812df74",
   "/psychology-conversion.css": "b0dbde08649ebd8dbcc1",
-  "/psychology-conversion.js": "de42de976c26df66ad3b",
+  "/psychology-conversion.js": "8e61d19a5157403b1889",
   "/psychology-copy-library.css": "ffef2421df2a9e4e38a6",
   "/psychology-copy-library.js": "2482e096002afe8dafca",
   "/psychology-copy-usage.css": "2a9f03fc2552d8f48276",

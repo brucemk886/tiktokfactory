@@ -10,7 +10,7 @@ Simplify automatic operations around account traffic and route future content to
 - Receivers require current project access, known ≥1000 followers, an exact handle, and an explicit confirmation that the profile test link is set. Zero receivers is a valid pending configuration and never falls back to growth-mode publication.
 - Receiver mapping retains existing valid assignments and balances only new/reassigned sources. Receiver posts point to their own profile link; ordinary posts point to the frozen receiver handle.
 - Conversion matching bypasses diagnostic waiting, growth-role work, cold baseline quotas and low-account content gates, while preserving permission checks, pauses, daily claims, enabled copy inventory and source nonreuse. Historical base-copy traffic is a selection hint; new CTA identities do not inherit validation evidence.
-- Each new job freezes route, campaign revision, base/final copy hashes, caption and final-card CTA. Shared source text/cache remains unchanged. No @mention clickability or website conversion count is asserted without real evidence.
+- Each new job freezes route, campaign revision, base/final copy hashes, caption-only CTA; all source cards stay unchanged. Shared source text/cache remains unchanged. No @mention clickability or website conversion count is asserted without real evidence.
 
 ## Files changed
 - New conversion module, migration 0076 and focused tests; independent public conversion settings JS/CSS.
@@ -32,3 +32,6 @@ Add confirmed receivers in automatic operations conversion settings, inspect fir
 - Saved campaign revision 1: enabled conversion objective, https://deeppersonaai.com/, zero confirmed receivers. It takes effect 2026-10-07 00:00 America/Los_Angeles (2026-10-07 15:00 Taipei/Beijing). Existing reservations and jobs remain unchanged.
 - Three currently synced thousand-follower candidates are available. No profile-link readiness was fabricated; new conversion tasks wait until at least one receiver is selected with its profile test link confirmed. Remaining receiver accounts may be bound incrementally.
 - Genuine independent-site visit and test-completion attribution is still not connected. First real post must verify whether its @handle text is clickable. Existing scheduler audit findings remain separate from this strategy/UI change.
+
+## Scope correction
+The user requested only publishing-copy ending guidance. Adding guidance to the final card was an unauthorized expansion and is removed. applyConversionCopy now preserves all source scenes byte-for-byte and appends the CTA only to the caption. No account-route, website, scheduling or campaign configuration is changed by this correction. Focused conversion/planner/workflow regression: 38/38 passed, proving scenes, all card text and rendered pages stay unchanged and the caption CTA appears once. Read-only production D1 check returned zero conversion allocations and zero conversion jobs, so no real task or published card requires content repair. Any additional image/card/content-structure changes require an explicit proposal and user confirmation.

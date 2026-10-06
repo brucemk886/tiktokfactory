@@ -67,12 +67,7 @@ export function applyConversionCopy(plan,snapshot){
  const result=structuredClone(plan),caption=String(result.caption||'').trim();
  result.caption=caption.endsWith(cta)?caption:[caption,cta].filter(Boolean).join('\n\n');
  if(result.caption.length>2200)fail('转化引导使文案超过2200字，请缩短原文后重试。');
- const last=result.scenes.at(-1),text=[last.title,last.subtitle,last.body].filter(Boolean).join('\n').trim()||String(last.text||'').trim();
- const final=text.endsWith(cta)?text:[text,cta].filter(Boolean).join('\n\n');
- if(final.length>1500)fail('转化引导使末页超过1500字，请缩短原文后重试。');
- // Preserve every card and its text, including multi-field scenes.
- last.title=final;last.subtitle='';last.body='';last.text=final;last.originalText=final;
- result.conversion={...structuredClone(snapshot),cta};return result;
+ result.conversion={...structuredClone(snapshot),cta,placement:"caption-only"};return result;
 }
 async function versionsFor(db,project,owner){return rows(db,'SELECT * FROM psychology_conversion_versions WHERE project_key=? AND owner=? ORDER BY revision',project,owner);}
 function publicVersion(row){return row?{revision:row.revision,enabled:Boolean(row.enabled),effectiveAt:row.effective_at,timeZone:row.time_zone,websiteUrl:row.website_url,
