@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import puppeteer from 'puppeteer-core';
+import { toPublicUser } from '../factory-cloud/src/auth.js';
 import { SIDEBAR_MODULES, canAccessPath } from '../factory-cloud/src/sidebar.js';
 const root=path.resolve(fileURLToPath(new URL('../public/',import.meta.url)));
 const chrome=[process.env.CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Google/Chrome/Application/chrome.exe','/usr/bin/chromium'].find(p=>p&&fs.existsSync(p));
@@ -24,6 +25,13 @@ test('website page permission aliases retain admin-only autopilot access',()=>{
  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-autopilot']},'/psychology-website'),false);
  assert.equal(canAccessPath({role:'admin',sidebarModules:[]},'/psychology-website.html'),false);
  assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-autopilot']},'/psychology-website'),true);
+});
+test('saved admin navigation includes the website entry and excludes operators',()=>{
+ const admin=toPublicUser({id:'admin',role:'admin',sidebar_modules_json:JSON.stringify(['psychology-effects','psychology-autopilot'])});
+ assert.equal(admin.sidebarModules.includes('psychology-website'),true);
+ assert.equal(admin.sidebarModules.indexOf('psychology-website'),admin.sidebarModules.indexOf('psychology-effects')+1);
+ const operator=toPublicUser({id:'operator',role:'operator',sidebar_modules_json:JSON.stringify(['psychology-effects','psychology-website'])});
+ assert.equal(operator.sidebarModules.includes('psychology-website'),false);
 });
 test('website UI handles mobile, safe content, attribution links, paging and failed/stale reads',{skip:!chrome,timeout:90000},async t=>{
  let mode='ready',requests=[];
@@ -52,6 +60,11 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  const base='http://127.0.0.1:'+server.address().port;
  await page.goto(base+'/psychology-website');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
+ await page.waitForSelector('.side-tabs a[href="/psychology-website"]');
+ assert.deepEqual(await page.$$eval('.side-tabs a',links=>{
+  const index=links.findIndex(a=>a.getAttribute('href')==='/psychology-website');
+  return [links[index-1].textContent.trim(),links[index].textContent.trim()];
+ }),['数据概览','独立站转化']);
  for(const width of [1366,390,320]){
   await page.setViewport({width,height:900});
   for(const tab of ['overview','sources','orders','links']){

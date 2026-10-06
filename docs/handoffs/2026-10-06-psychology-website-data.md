@@ -29,3 +29,9 @@ Use the new page to compare live site totals and tagged receiver conversion, the
 - Logged-in production /psychology-website loaded successfully on a 390x844 viewport and returned real site data. The 30-day range (September 7–October 6, Beijing time) matched the source SELECT probe: 104 pageviews, 51 started sessions, 19 finished, 18 email submissions, 5 checkout sessions and 0 qualifying paid orders. These are operational aggregates, not customer records.
 - The live promotion-links panel displays real eligible-account URLs and accurately reports zero confirmed receivers. No profile link or receiver-readiness setting was changed.
 - Existing original-checkout edits/untracked files were preserved. Implementation lives in the attached psychology-website-conversions worktree; the independent release clone is under the original checkout's ignored work/ directory.
+
+## Sidebar follow-up
+- User requested a direct psychology sidebar entry. Add 独立站转化 immediately below 数据概览, reusing the existing page and access rules.
+- Existing saved admin navigation gains the entry automatically; operators remain excluded. Changed cloud sidebar/auth and the existing website UI test.
+- Full factory regression: 1,240 passed with no failures or skips, including stored admin grants and browser-rendered sidebar ordering.
+- Ship through the clean main release checkout; final live verification is recorded in the task response.
