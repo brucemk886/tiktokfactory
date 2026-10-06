@@ -1,3 +1,4 @@
+import {handlePsychologyWebsite} from './psychology-website.js';
 import {handleFactoryApi} from './factory-api.js';
 import {FACTORY_API} from './factory-api-catalog.js';
 import {serveUiAsset,versionPageAssets} from './ui-assets.js';
@@ -71,7 +72,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;

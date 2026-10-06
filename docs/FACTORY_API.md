@@ -37,3 +37,11 @@ The response contains state, original action, timestamps and any saved result. A
 ## UI
 
 The sidebar's **统一 API** page provides key metadata, create/rotate/revoke controls, copyable AI instructions and a downloadable catalog. Copying instructions does not include the secret. The key remains in memory only until cleared or the page is left. The page loads metadata/catalog once; switching modules is local.
+
+## Independent-site conversion data
+Read the psychology conversion dashboard through the existing project credential:
+{"module":"psychology","action":"website.read","params":{"query":{"period":"7d"}}}
+
+Supported query keys: period (today, yesterday, 7d, 30d, range), from, to (Beijing dates, custom range at most 90 days), sourcePage, orderPage. Pages contain 20 rows; totals cover the full date window. The credential's active administrator must own the existing psychology conversion campaign and retain automatic-operations access.
+
+The summary separates whole-site pageviews, start-cohort quiz outcomes and payment-date orders. Currencies preserve original order gross amounts, with no claim about net payouts. Sources, accounts, orders, receivers, attribution, definitions and updatedAt support subsequent read-only operating analysis. A shared receiver bio link cannot identify its upstream video. Error responses never masquerade as zero traffic or sales.

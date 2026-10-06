@@ -83,6 +83,8 @@ export function homePathForUser(user) {
 export function moduleIdForPath(pathname) {
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
   const aliases = {
+    "/psychology-website": "psychology-autopilot",
+    "/psychology-website.html": "psychology-autopilot",
     "/psychology-publish-designs": "psychology-publish",
     "/psychology-creative.html": "psychology-publish",
     "/psychology-copy-library.html": "psychology-copy-library",
@@ -113,6 +115,7 @@ const ACCOUNT_DATA_DETAIL_PATHS = Object.freeze(["/official-account-detail", "/o
 
 export function canAccessPath(user, pathname) {
   if (!user) return false;
+  if (["/psychology-website","/psychology-website.html"].includes(pathname)) return user.role==="admin" && (user.sidebarModules||[]).includes("psychology-autopilot");
   if(["/factory-api","/factory-api.html"].includes(pathname))return user.role==="admin";
   if(pathname.startsWith("/photo-factory"))return user.role==="admin"&&(user.sidebarModules||[]).includes("photo-factory");
   const clean = String(pathname || "").replace(/\/$/, "") || "/";

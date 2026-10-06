@@ -8,6 +8,7 @@ const manage=(resource,method,suffix,description,example={},query=[])=>op(method
 const photo=(method,path,description,query=[],example={})=>op(method,'/api/photo-factory/'+path,'photo',['photo-factory'],description,path==='directions'?query:['directionId',...query],example);
 export const CATALOG={
  psychology:{
+  'website.read':op('GET','/api/psychology-website','website',['psychology-autopilot'],'读取独立站访问、测试漏斗、成交订单和账号来源',['period','from','to','sourcePage','orderPage'],{query:{period:'7d'}},'仅转化项目负责人；全站PV与测试开始队列分开；订单按付款时间，金额按币种且未扣退款/手续费；无参数来源不补推。'),
   'topics.list':op('GET','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'读取各模板题库与题目',['template','page','pageSize','q','enabled','onlyUnused'],{query:{template:'all',page:1}}),
   'topics.get':op('GET','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'读取题目及 revision',[],{id:'topic-ID'},'返回 coverAssetId/imageAssetIds 及关联素材元数据；素材 URL 需要登录工厂。'),
   'topics.import':op('POST','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'导入模板题目',[],{body:{template:'psychology-collage',items:[{title:'测试题目',content:'具体题目和完整内容',enabled:false}]}},'可选 coverAssetId 和 imageAssetIds（最多6个），须为当前账号所属的 ready 素材。单图模板 coverAssetId 自动绑定题图，仍需完整四个 choices。'),

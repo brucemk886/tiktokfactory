@@ -1,3 +1,4 @@
+import {handlePsychologyWebsite} from './psychology-website.js';
 import {json,errorJson,sha256Hex,randomToken} from './http.js';
 import {toPublicUser} from './auth.js';
 import {FACTORY_API,FACTORY_API_ADMIN,CATALOG,allowed,publicCatalog} from './factory-api-catalog.js';
@@ -67,7 +68,7 @@ async function dispatch(entry,request,env,url,user){
  if(entry.handler==='manage')return handlePsychologyManagement(request,env,url,null,{actor:{user,scopes:Object.keys(MANAGEMENT_MODULES).flatMap(m=>[m+':read',m+':write'])}});
  if(entry.handler==='topics')return handlePsychologyTopicBank(request,env,url,null,{user});
  if(entry.handler==='copy')return handleCopyIntegration(request,env,url,user.id,readManagementBody);
- const handlers={creative:handlePsychologyCreative,peers:handlePsychologyPeerHits,publish:handlePsychologyAutoPublish,one:handlePsychologyOne,official:handleOfficial,photo:handlePhotoFactory};
+ const handlers={website:handlePsychologyWebsite,creative:handlePsychologyCreative,peers:handlePsychologyPeerHits,publish:handlePsychologyAutoPublish,one:handlePsychologyOne,official:handleOfficial,photo:handlePhotoFactory};
  return handlers[entry.handler](request,env,url,{user});
 }
 const receipt=(row)=>new Response(row.response_json,{status:row.response_status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-factory-request-id':row.request_id,'x-idempotent-replay':'true'}});

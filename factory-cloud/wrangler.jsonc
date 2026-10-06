@@ -47,6 +47,11 @@
       "database_name": "factory-prod",
       "database_id": "3062c073-cae1-4b6e-8d68-b592187d7feb",
       "migrations_dir": "./migrations"
+    },
+    {
+      "binding": "DEEP_PERSONA_DB",
+      "database_name": "deeppersona-ai",
+      "database_id": "5bc9493a-92ab-4ca9-8bac-692c906c75bf"
     }
   ],
   "r2_buckets": [
