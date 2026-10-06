@@ -262,3 +262,4 @@
 #dashDialog .dash-work-list a{display:block;overflow-wrap:anywhere;color:#1767ff;font-size:13px;line-height:1.6;text-decoration:underline}
 #dashDialog .dash-evidence-pagination{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
 #dashDialog .dash-evidence-pagination span{margin-right:auto}
+.schedule-alert{padding:12px 16px;background:#fff4e5;border:1px solid #eaa526;border-radius:8px;color:#713e00}.schedule-account-list{max-height:280px;overflow:auto;min-width:260px}.schedule-account-list p{padding:6px 0;border-bottom:1px solid #e5ebf5}#scheduleAssurance td,#scheduleAssurance th{padding:10px;white-space:nowrap}#scheduleAssurance .schedule-account-list{white-space:normal}

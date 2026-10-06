@@ -33,7 +33,7 @@ export async function reconcileTaskExecutors(env,user,directory,now){
   return result;
 }
 
-export async function taskSlotAccounts(db,pilot,ids,slot){
+export async function taskSlotAccounts(db,pilot,ids,slot,{includeClaimed=false}={}){
   const policy=await db.prepare('SELECT * FROM psychology_task_group_policies WHERE owner=?').bind(pilot.owner).first();
   if(!policy)return pilot.task_group_managed?[]:ids;
   const enrolled=(await db.prepare('SELECT connection_id,first_seen_at,legacy_member,enrolled,excluded FROM psychology_task_group_accounts WHERE policy_id=? AND connection_id IN (SELECT value FROM json_each(?))').bind(policy.id,JSON.stringify(ids)).all()).results;
@@ -51,7 +51,7 @@ export async function taskSlotAccounts(db,pilot,ids,slot){
   const slots=JSON.parse(pilot.slots_effective_at&&slot>=pilot.slots_effective_at?pilot.pending_slots_json:pilot.slots_json);
   const time=zonedParts(slot,pilotTimeZoneAt(pilot,slot)),round=slots.findIndex(s=>s.hour===time.hour&&s.minute===time.minute);
   if(round<0||round>2)return [];
-  return ids.filter(id=>{const a=assignments.get(id),claims=rounds.filter(c=>c.connection_id===id);return a&&!a.paused&&a.groupId===pilot.group_id&&!claims.some(c=>c.round===round)&&claims.length<3;});
+  return ids.filter(id=>{const a=assignments.get(id),claims=rounds.filter(c=>c.connection_id===id);return a&&!a.paused&&a.groupId===pilot.group_id&&(includeClaimed||(!claims.some(c=>c.round===round)&&claims.length<3));});
 }
 
 export async function taskPublishContext(db,pilot,slot){

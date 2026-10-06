@@ -86,6 +86,8 @@ export async function slotExecution(db, slots, labels = new Map()) {
       account:labels.get(row.connection_id)||row.connection_id, title:row.title||parseObject(row.ready_json).title||parseObject(row.copy_json).title||row.source_id,
       version:row.variant_id ? '改写 · '+row.variant_id : row.variant_id === '' ? '原版' : '未记录',
       scheduleAt:row.schedule_at*1000,generationStartAt:Number(row.generation_start_at)||0,productionLeadMs:Number(row.production_lead_ms)||0,productionPolicy:String(row.production_policy||''),productionRisk:Boolean(row.production_risk), state:status.displayStatus, error:String(status.failureReason||'').slice(0,600),
+      materialReady:!row.deleted_at && (row.ready_json!=='{}'||Boolean(parseObject(row.receipt_json).batchId)||Boolean(record.batchId)||status.displayStatus==='published'),
+      submitted:!row.deleted_at && (Boolean(parseObject(row.receipt_json).batchId)||Boolean(record.batchId)||status.displayStatus==='published'),
       retrying:Boolean(retrying), retryAt:retrying ? (group.retry_at||row.available_at||0) : 0,
       videoId:String(record.videoId||record.tiktokVideoId||''),
       recordUrl:'/psychology-publish-sources',

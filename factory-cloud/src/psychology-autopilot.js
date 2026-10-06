@@ -106,7 +106,7 @@ export function pilotPoolContext(pilot, slot) {
   const dayIndex = Math.max(0, calendarDayIndex(slot,cycleStartAt,timeZone));
   return { cycleStartAt, postsPerDay: slots.length, round, dayIndex, timeZone };
 }
-function pilotLibraryConfig(pilot, slot) {
+export function pilotLibraryConfig(pilot, slot) {
   const strategy = pilotStrategyAt(pilot, slot);
   return { libraryStrategy: strategy, libraryTestPolicy: strategy === 'pools' ? POOL_POLICY.version : TEST_POLICY,
     ...(strategy === 'pools' ? { poolContext: pilotPoolContext(pilot, slot) } : {}) };
@@ -154,7 +154,7 @@ async function log(db, pilotId, kind, message, detail = {}, now = Date.now()) {
 // Group membership is operational data, independent of whether analytics has synced.
 // Polls reuse the local directory; explicit refresh/start/scheduled runs refresh from the hub.
 const DIRECTORY_KEY = 'psychology-autopilot-account-directory-v1';
-async function autopilotDirectory(env, user, fresh = false) {
+export async function autopilotDirectory(env, user, fresh = false) {
   let directory = await kvGet(env.DB, DIRECTORY_KEY, null);
   if (fresh || !Array.isArray(directory?.accounts)) {
     const live = await publishAccountDirectory(env, { fresh:true });
@@ -250,7 +250,7 @@ export async function refreshProductionCapacitySnapshots(env,now=Date.now()){
 }
 
 // Latest-first publish outcomes of this pilot's items that should have gone out by now.
-async function pilotOutcomes(db, pilotId, now) {
+export async function pilotOutcomes(db, pilotId, now) {
   const items = (await db.prepare(`SELECT i.id,i.connection_id,COALESCE(j.status,i.execution_status) status,json_extract(j.result_json,'$.publishFailed') AS publish_failed
     FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id
     WHERE i.deleted_at=0 AND i.schedule_at<? AND EXISTS (SELECT 1 FROM psychology_autopilot_slots s WHERE s.autopilot_id=? AND instr(','||s.batch_id||',', ','||i.batch_id||',')>0)
@@ -478,7 +478,7 @@ export function recoveryOriginalSlot(pilot,deliveryAt,now=Date.now(),requestedOr
   return original;
 }
 
-async function recoveryBatchIds(db,pilot,originalSlot) {
+export async function recoveryBatchIds(db,pilot,originalSlot) {
   const rows=(await db.prepare("SELECT id,config_json FROM psychology_publish_batches WHERE created_by=? AND json_extract(config_json,'$.pairSeed')=?")
     .bind(pilot.owner,pilotPairSeed(pilot,originalSlot)).all()).results;
   const ids=[];
@@ -565,6 +565,13 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
   if (user?.role !== 'admin' || !(user.sidebarModules || []).includes('psychology-autopilot')) fail('没有自动运营权限。', 403);
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
   const db = env.DB;
+  if(url.pathname===BASE+'/scheduling' && request.method==='GET')return json(await (await import('./psychology-schedule-health.js')).readScheduleHealth(env,user,url));
+  if(url.pathname===BASE+'/scheduling/recover' && request.method==='POST'){
+    const scheduler=await import('./psychology-durable-scheduling.js');
+    const result=await scheduler.ensureScheduleWindow(env,Date.now(),{owner:user.username});
+    await (await import('./psychology-schedule-health.js')).retryOwnedScheduling(env,user);
+    return json({...result,...await scheduler.dispatchScheduleWork(env,Date.now(),user.username)});
+  }
   if(url.pathname===BASE+'/dashboard')return handleAutopilotDashboard(request,env,url,user);
   if(url.pathname===BASE+'/transition-day'||url.pathname===BASE+'/transition-day/run'){
     if(apiOptions.external)fail('过渡排期请在自动运营页面管理。',403);
@@ -753,6 +760,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     if (pilot.status !== 'active') fail('请先恢复自动运营。', 409);
     const body=await readJson(request);
     if(body.recoverySlotAt!==undefined)return json(await recoverAutopilotSlot(env,pilot,body.recoverySlotAt,now,body.recoveryOriginalSlotAt));
+    if(env.SCHEDULE_QUEUE){const scheduler=await import('./psychology-durable-scheduling.js');await scheduler.ensureScheduleWindow(env,now,{owner:user.username,pilotId:pilot.id});return json(await scheduler.dispatchScheduleWork(env,now,user.username));}
     return json(await runAutopilot(env, pilot, now));
   }
   if (one[4] && request.method === 'PATCH') {

@@ -2,9 +2,21 @@
   "name": "tiktok-factory",
   "main": "src/entry.js",
   "workflows": [
-    {"binding":"TOPIC_IMAGE_WORKFLOW","name":"factory-topic-image","class_name":"TopicImageWorkflow"},
-    {"binding":"PHOTO_FACTORY_WORKFLOW","name":"factory-photo-content","class_name":"PhotoFactoryWorkflow"},
-    {"binding":"PSYCHOLOGY_COPY_WORKFLOW","name":"factory-psychology-copy","class_name":"PsychologyCopyWorkflow"},
+    {
+      "binding": "TOPIC_IMAGE_WORKFLOW",
+      "name": "factory-topic-image",
+      "class_name": "TopicImageWorkflow"
+    },
+    {
+      "binding": "PHOTO_FACTORY_WORKFLOW",
+      "name": "factory-photo-content",
+      "class_name": "PhotoFactoryWorkflow"
+    },
+    {
+      "binding": "PSYCHOLOGY_COPY_WORKFLOW",
+      "name": "factory-psychology-copy",
+      "class_name": "PsychologyCopyWorkflow"
+    },
     {
       "binding": "PEER_PHOTO_WORKFLOW",
       "name": "factory-peer-photo",
@@ -86,6 +98,10 @@
       {
         "binding": "REPLY_QUEUE",
         "queue": "factory-psychology-replies"
+      },
+      {
+        "binding": "SCHEDULE_QUEUE",
+        "queue": "factory-psychology-schedule"
       }
     ],
     "consumers": [
@@ -103,6 +119,14 @@
         "max_batch_timeout": 1,
         "max_concurrency": 5,
         "max_retries": 3,
+        "retry_delay": 60
+      },
+      {
+        "queue": "factory-psychology-schedule",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 2,
+        "max_retries": 20,
         "retry_delay": 60
       }
     ]

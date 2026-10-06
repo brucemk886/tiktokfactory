@@ -5,6 +5,12 @@ const KEY='psychology-production-check-v1',GRACE_MS=15*60000;
 // it does not query accounts, the queue, or create an operating plan.
 export async function runProductionCheck(env,now=Date.now(),actions={}) {
   const window=autopilotCheckWindow(now);
+  if(env.SCHEDULE_QUEUE && !actions.runPlans){
+    if(now-window.scheduledAt>=GRACE_MS)return {skipped:true};
+    const scheduler=await import('./psychology-durable-scheduling.js');
+    const seeded=await scheduler.ensureScheduleWindow(env,now);
+    return {...seeded,...await scheduler.dispatchScheduleWork(env,now)};
+  }
   if(now-window.scheduledAt>=GRACE_MS)return {skipped:true};
   const started={key:window.key,scheduledAt:window.scheduledAt,status:'running',at:now};
   const claim=await env.DB.prepare(`INSERT INTO factory_kv(key,value_json,updated_at) VALUES(?,?,?)

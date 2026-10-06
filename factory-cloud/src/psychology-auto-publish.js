@@ -564,6 +564,12 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING')
       .bind(id, batchId, entry.source.id, id, entry.connectionId, entry.scheduleAt, groupId));
   }
+  if(internal.scheduleWork){
+    const {id:workId,token}=internal.scheduleWork;
+    statements.unshift(env.DB.prepare('INSERT INTO psychology_schedule_commits(batch_id,work_id,lease_token,checked_at) VALUES(?,?,?,?)').bind(batchId,workId,token,Date.now()));
+    for(const [index,entry] of selected.entries())statements.push(env.DB.prepare("UPDATE psychology_schedule_members SET status='created',item_id=?,reason='',updated_at=? WHERE work_id=? AND connection_id=? AND status='pending'").bind(batchId+'-'+String(index).padStart(3,'0'),stamp,workId,entry.connectionId));
+    for(const skipped of matchingSkipped)statements.push(env.DB.prepare("UPDATE psychology_schedule_members SET status='skipped',reason=?,updated_at=? WHERE work_id=? AND connection_id=? AND status='pending'").bind(String(skipped.reason||'没有合格内容'),stamp,workId,skipped.connectionId));
+  }
   try { await env.DB.batch(statements); }
   catch (error) {
     const winner = await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();

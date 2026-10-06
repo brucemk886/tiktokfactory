@@ -118,13 +118,14 @@ export default {
   },
 
   async queue(batch,env) {
+    if(batch.queue==='factory-psychology-schedule')return (await import('./psychology-durable-scheduling.js')).consumeScheduleWork(batch,env);
     if(batch.queue==='factory-psychology-replies')return consumeAutoReplies(batch,env);
     return (await import('./psychology-cloud-queue.js')).consumeCloudPhotos(batch,env);
   },
 
   async scheduled(controller, env, ctx) {
     if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['psychology-operating-check',async()=> (await import('./psychology-production-checks.js')).runProductionCheck(env)],['adaptive-generation',async()=> (await import('./psychology-adaptive-production.js')).dispatchAdaptiveProduction(env)],['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);await runPendingAutopilotFill(env);return;}
-    if(controller.cron==='*/5 * * * *'){await reconcilePsychologyGroups(env);return;}
+    if(controller.cron==='*/5 * * * *'){await runScheduledSteps(controller.cron,[['psychology-schedule-watchdog',async()=> (await import('./psychology-schedule-health.js')).watchScheduling(env)],['psychology-publish-recovery',()=>reconcilePsychologyGroups(env)]]);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
       ["prune-ops-reports", () => pruneOfficialOpsReports(env.DB)],

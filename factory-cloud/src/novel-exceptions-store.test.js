@@ -279,7 +279,7 @@ test("exception page is mapped and APIs never wrap retry-publish or resume", () 
   const wrangler = fs.readFileSync(path.join(hereDir, "../wrangler.jsonc"), "utf8");
   assert.match(wrangler, /\*\/5 \* \* \* \*/);
   const index=fs.readFileSync(path.join(hereDir,'index.js'),'utf8');
-  assert.match(index,/controller.cron==='\*\/5 \* \* \* \*'.*reconcilePsychologyGroups\(env\);return;/);
+  assert.match(index,/controller.cron==='\*\/5 \* \* \* \*'.*reconcilePsychologyGroups\(env\)\]\]\);return;/);
   const rules = fs.readFileSync(path.join(hereDir, "../../scripts/novel-exception-rules.js"), "utf8");
   assert.match(rules, /DEFAULT_WORKER_ONLINE_WINDOW_MS = 10 \* 60 \* 1000/);
   assert.match(rules, /stuck_no_progress/);
