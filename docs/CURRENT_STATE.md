@@ -1,6 +1,6 @@
 # Current State
 
-- All five Psychology automatic-operations content pools now expose exact-version work evidence with directly clickable TikTok links, playback, maturity/sync state and independent ten-row pagination. Missing links stay explicit and access remains scoped to current psychology accounts. See docs/handoffs/2026-10-06-psychology-content-evidence-links.md.
+- All five Psychology automatic-operations content pools now expose exact-version work evidence with directly clickable TikTok links, playback, maturity/sync state and independent ten-row pagination. Missing links stay explicit and access remains scoped to current psychology accounts. See docs/handoffs/2026-10-06-psychology-content-evidence-links.md. Account-traffic names open the synchronized TikTok homepage in a new tab; local analytics remains under the detail action. See docs/handoffs/2026-10-06-psychology-account-profile-links.md.
 
 - Psychology receiver bio links now use stable branded /go/ short URLs. Owner-only creation is explicit; public redirects retain existing campaign attribution and count Beijing-day requests with known bot/prefetch exclusions. These are link visits, not TikTok clicks or unique visitors. See docs/handoffs/2026-10-06-psychology-short-links.md.
 
