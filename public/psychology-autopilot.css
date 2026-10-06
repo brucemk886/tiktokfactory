@@ -253,3 +253,12 @@
 #transitionDay .transition-reasons{font-size:12px;line-height:1.7;margin:10px 0}
 #transitionDay .transition-reasons summary{cursor:pointer;color:#896127}
 @media(max-width:700px){#transitionDay{padding:13px 12px}#transitionDay .transition-counts{grid-template-columns:repeat(3,minmax(0,1fr))}#transitionDay .transition-head{flex-wrap:wrap}#transitionDay .transition-badge{padding:3px 7px}}
+
+#dashDialog .dash-work-list{list-style:none;padding:0;display:grid;gap:10px}
+#dashDialog .dash-work-list li{border:1px solid #e0e9f6;border-radius:6px;padding:12px;min-width:0}
+#dashDialog .dash-work-list li>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:13px}
+#dashDialog .dash-work-list li span,#dashDialog .dash-work-list p,#dashDialog .dash-work-list small{font-size:12px;color:#657d9f;line-height:1.7}
+#dashDialog .dash-work-list p{margin:7px 0}
+#dashDialog .dash-work-list a{display:block;overflow-wrap:anywhere;color:#1767ff;font-size:13px;line-height:1.6;text-decoration:underline}
+#dashDialog .dash-evidence-pagination{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
+#dashDialog .dash-evidence-pagination span{margin-right:auto}

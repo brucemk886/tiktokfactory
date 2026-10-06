@@ -70,6 +70,8 @@ function requestQuery(url) {
   const accountPool = p.get('accountPool') || '', contentPool = p.get('contentPool') || '', trafficTier = p.get('trafficTier') || '';
   if (accountPool && !ACCOUNT_POOLS[accountPool] || contentPool && !CONTENT_POOLS[contentPool]) fail('池子筛选无效。');
   if (trafficTier && !TRAFFIC_TIERS[trafficTier]) fail('流量筛选无效。');
+  const evidencePage = Number(p.get('evidencePage') || 1);
+  if (!Number.isInteger(evidencePage) || evidencePage < 1 || evidencePage > 1000000) fail('证据分页参数无效。');
   const page = Number(p.get('page') || 1);
   if (!Number.isInteger(page) || page < 1 || page > 1000000) fail('分页参数无效。');
   const account = p.get('account') ? 'tiktok:' + p.get('account').replace(/^tiktok:/, '') : '';
@@ -77,7 +79,7 @@ function requestQuery(url) {
   const selected = exact ? { source: p.get('source'), variant: p.get('variant') ?? p.get('version') ?? '', style: p.get('style') || '',
     copy_hash: p.get('copyHash') || '', style_revision: Number(p.get('styleRevision') || 0) } : null;
   if (selected && (!selected.source || !Number.isInteger(selected.style_revision) || selected.style_revision < 0)) fail('版本标识无效。');
-  return { view, accountPool, contentPool, trafficTier, page, account, selected, q: String(p.get('q') || '').trim().slice(0, 200) };
+  return { view, accountPool, contentPool, trafficTier, page, evidencePage, account, selected, q: String(p.get('q') || '').trim().slice(0, 200) };
 }
 async function scope(db, actor) {
   if (!actor?.username) fail('请先登录。', 401);
@@ -322,8 +324,32 @@ export async function readAutopilotDashboard(db, actor, url, now = Date.now()) {
         'total',(SELECT count(*) FROM linked)) payload`;
     const linked = parse((await db.prepare(linkedSQL).bind(...args, ...identity.map(k => query.selected[k])).first())?.payload);
     result.linkedAccounts = paging((linked.rows || []).map(accountRow), linked.total || 0, query.page);
+    const evidenceSQL = cte + `,evidence AS (SELECT f.id,f.account_key,a.name,f.video_id,f.state,f.published_at,f.schedule_at,
+      f.views,f.completion,COALESCE(v.share,'') share,json_extract(d.profile_json,'$.username') handle
+      FROM facts f JOIN accounts a ON a.account_key=f.account_key
+      LEFT JOIN ops_video_facts v ON v.account_key=f.account_key AND v.video_id=f.video_id
+      LEFT JOIN official_accounts_latest d ON d.account_key=f.account_key
+      WHERE ${linkedFilter} AND (f.state='pending' OR (f.state='published' AND f.published_at>=(SELECT since FROM settings))))
+      SELECT json_object('rows',${jsonRows('SELECT * FROM evidence ORDER BY CASE WHEN state=\'published\' THEN 0 ELSE 1 END,published_at DESC,schedule_at DESC,id LIMIT 10 OFFSET ' + (query.evidencePage - 1) * SIZE,
+        ['id','account_key','name','video_id','state','published_at','schedule_at','views','completion','share','handle'])},
+        'total',(SELECT count(*) FROM evidence)) payload`;
+    const evidence = parse((await db.prepare(evidenceSQL).bind(...args, ...identity.map(k => query.selected[k])).first())?.payload);
+    result.evidence = paging((evidence.rows || []).map(row => ({ id: row.id, account: row.account_key, name: row.name,
+      videoId: row.video_id, url: row.state === 'published' ? evidenceURL(row) : null,
+      publishedAt: row.published_at, scheduledAt: row.schedule_at, views: row.views, completion: row.completion,
+      status: row.state !== 'published' ? 'reserved' : row.published_at > w.cutoff ? 'waiting' : row.views == null ? 'missingMetrics' : 'mature' })),
+      evidence.total || 0, query.evidencePage);
   }
   return result;
+}
+function evidenceURL(row) {
+  try {
+    const url = new URL(row.share);
+    if (url.protocol === 'https:' && !url.username && !url.password && (url.hostname === 'tiktok.com' || url.hostname.endsWith('.tiktok.com'))) return url.href;
+  } catch {}
+  const handle = String(row.handle || '').replace(/^@/, '');
+  return /^[A-Za-z0-9_.]+$/.test(handle) && /^\d+$/.test(row.video_id)
+    ? 'https://www.tiktok.com/@' + handle + '/photo/' + row.video_id : null;
 }
 export async function handleAutopilotDashboard(request, env, url, actor, { now = Date.now() } = {}) {
   if (url.pathname !== BASE) return null;

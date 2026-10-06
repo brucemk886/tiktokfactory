@@ -306,3 +306,41 @@ test('seven Pacific calendar days include DST transitions without sliding the st
   assert.equal(spring.trafficFrom,'2026-03-02');assert.equal(spring.todayEnd-spring.trafficStart,167*3600000);
   assert.equal(autumn.trafficFrom,'2026-10-26');assert.equal(autumn.todayEnd-autumn.trafficStart,169*3600000);
 });
+
+
+test('all content pools expose exact scoped work links, maturity and independent evidence paging without writes',async t=>{
+ const f=await setup(t);assign(f,['a','b']);assign(f,['outside'],'other');
+ f.sqlite.prepare("INSERT INTO official_accounts_latest(account_key,label,profile_json,synced_at) VALUES('tiktok:a','Alpha',?,0)").run(JSON.stringify({username:'alpha'}));
+ const addVideo=f.sqlite.prepare('INSERT INTO ops_video_facts(account_key,video_id,synced_at,share) VALUES(?,?,0,?)');
+ for(let i=0;i<12;i++){
+  const video=String(7000000000000000000n+BigInt(i));
+  fact(f,'e'+i,{video_id:video,published_at:now-DAY*4+i,views:i===0?0:i===1?null:200});
+  addVideo.run('tiktok:a',video,i===0?'https://www.tiktok.com/@alpha/photo/'+video:i===1?'javascript:alert(1)':'');
+ }
+ fact(f,'fresh-evidence',{published_at:now-1000,video_id:'123',views:5});
+ fact(f,'reservation',{state:'pending',published_at:0,video_id:'456',views:null});
+ fact(f,'private-evidence',{account_key:'tiktok:outside',video_id:'999'});
+ fact(f,'other-revision',{copy_hash:'edited',video_id:'888'});
+ fact(f,'failed-evidence',{state:'failed',video_id:'777'});
+ const query='view=content&source=source&style=classic&copyHash=hash&styleRevision=0';
+ const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ const first=await read(f,query),second=await read(f,query+'&evidencePage=2');
+ assert.equal(first.evidence.total,14);assert.equal(first.evidence.rows.length,10);assert.equal(second.evidence.rows.length,4);
+ assert.equal(second.details.total,1);assert.equal(second.details.rows.length,1,'work paging must not page away the selected version');
+ assert.equal(first.evidence.rows[0].status,'waiting');
+ const rows=[...first.evidence.rows,...second.evidence.rows];
+ assert.equal(new Set(rows.map(r=>r.id)).size,14);
+ assert.equal(rows.find(r=>r.id==='e0').views,0);assert.equal(rows.find(r=>r.id==='e0').status,'mature');
+ assert.equal(rows.find(r=>r.id==='e1').status,'missingMetrics');
+ assert.match(rows.find(r=>r.id==='e1').url,/^https:\/\/www\.tiktok\.com\/@alpha\/photo\//);
+ assert.equal(rows.find(r=>r.id==='reservation').url,null);assert.equal(rows.find(r=>r.id==='reservation').status,'reserved');
+ assert.ok(rows.every(r=>!['private-evidence','other-revision','failed-evidence'].includes(r.id)));
+ f.sqlite.prepare("UPDATE official_accounts_latest SET profile_json='{}' WHERE account_key='tiktok:a'").run();
+ const noHandle=await read(f,query+'&evidencePage=2');
+ assert.equal(noHandle.evidence.rows.find(r=>r.id==='e1').url,null);
+ const after=f.sqlite.prepare('SELECT total_changes() n').get().n;assert.equal(after,before+1);
+ await read(f,query+'&evidencePage=0',actor,400);
+ f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other' WHERE account_key='a'").run();
+ await read(f,query,actor,404);
+ assert.equal(f.requests.length,0);
+});

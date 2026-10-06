@@ -56,7 +56,7 @@ function harness(route) {
  const injectionAt=clientSource.lastIndexOf('\n void load();');
  assert.ok(injectionAt>=0,'client boot call exists for test-only closure capture');
  const instrumented=clientSource.slice(0,injectionAt)+'\n globalThis.dashboardTest={state,load,select,show,paint,paramsFor};'+clientSource.slice(injectionAt);
- context=vm.createContext({document,URLSearchParams,AbortController,Date:DashboardDate,setInterval(fn){intervals.push(fn);},fetch:async(path,init)=>{
+ context=vm.createContext({document,URL,URLSearchParams,AbortController,Date:DashboardDate,setInterval(fn){intervals.push(fn);},fetch:async(path,init)=>{
   const request={path,init,params:new URL(path,'https://factory.test').searchParams};
   requests.push(request);
   const body=route?await route(request,requests.length):fixture(request.params.get('view')||'overview');
@@ -317,4 +317,26 @@ test('account traffic keeps unknown followers and missing profile days distinct 
  assert.match(body,/<td>—<\/td><td>—<\/td>/);assert.match(body,/0 \/ 7天 · UTC/);assert.doesNotMatch(body,/可承接转化/);
  h.click({dashRow:'0'});await tick();assert.match(h.node('#dashDialog').innerHTML,/主页访问不是站内转化/);
  assert.match(h.node('#dashDialog').innerHTML,/<details class="dash-account-execution"><summary>执行详情与历史角色/);
+});
+
+
+test('every content pool lists clickable work URLs and keeps exact identity while paging evidence',async()=>{
+ for(const pool of ['winner','optimize','potential','explore','revise']){
+  const row={...contentRow(),pool};
+  const h=harness(r=>fixture(r.params.get('view')||'overview',{
+   details:{rows:[row],total:1,page:1,pages:1},evidence:r.params.has('source')?{rows:[{id:'post',name:'Alpha <unsafe>',url:'https://www.tiktok.com/@alpha/photo/123?x=1&y=2',views:0,completion:0,publishedAt:anchor-86400000,status:'mature'},{id:'missing',name:'Beta',url:'javascript:alert(1)',views:null,status:'missingMetrics'},{id:'pending',name:'Gamma',url:null,status:'reserved'}],total:11,page:Number(r.params.get('evidencePage')||1),pages:2}:undefined
+  }));
+  await tick();h.click({dashView:'content',dashPool:pool});await tick();h.click({dashRow:'0'});await tick();
+  let html=h.node('#dashDialog').innerHTML;
+  assert.match(html,/<h3>具体作品链接<\/h3>/);
+  assert.match(html,/<a href="https:\/\/www.tiktok.com\/@alpha\/photo\/123\?x=1&amp;y=2" target="_blank" rel="noopener noreferrer">/);
+  assert.match(html,/Alpha &lt;unsafe&gt;/);assert.match(html,/播放量 0/);assert.match(html,/完成率 0.0%/);
+  assert.match(html,/作品链接待同步/);assert.match(html,/尚未发布，暂无作品链接/);assert.doesNotMatch(html,/javascript:/);
+  h.click({dashEvidencePage:'1'},'#dashDialog');await tick();
+  const p=h.requests.at(-1).params;
+  assert.equal(p.get('evidencePage'),'2');assert.equal(p.get('copyHash'),row.copyHash);assert.equal(p.get('styleRevision'),'3');assert.equal(p.has('page'),false);
+  assert.match(h.node('#dashDialog').innerHTML,/第 2 \/ 2 页/);
+  h.click({dashEvidencePage:'-1'},'#dashDialog');await tick();assert.equal(h.requests.at(-1).params.get('evidencePage'),'1');
+  assert.ok(h.requests.every(r=>r.init.method==='GET'));
+ }
 });
