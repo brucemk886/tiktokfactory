@@ -9,7 +9,7 @@ let applied={period:'7d',sourcePage:1,orderPage:1},draftPeriod='7d',data=null,co
 function showTab(tab){document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===tab)));document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==tab);}
 function pager(prefix,value){$(prefix+'Page').textContent='第 '+value.page+' / '+Math.max(1,Math.ceil(value.total/value.pageSize))+' 页 · '+count(value.total)+' 条';$(prefix+'Prev').disabled=value.page<=1;$(prefix+'Next').disabled=value.page*value.pageSize>=value.total;}
 function render(value){
- data=value;$('report').hidden=false;$('rangeLabel').textContent=value.window.from+' 至 '+value.window.to;
+ data=value;$('report').hidden=false;renderJourney();$('rangeLabel').textContent=value.window.from+' 至 '+value.window.to;
  const s=value.summary;
  $('metrics').innerHTML=[['页面访问',s.pageviews,'全站 PV，刷新会重复计数'],['开始测试',s.started,'所选时间开始的测试'],['完成测试',s.finished,'完成答题，含未提交邮箱'],['成交订单',s.orders,'按实际付款时间，含后续退款']].map(([label,n,note])=>'<article class="web-metric"><span>'+label+'</span><strong>'+count(n)+'</strong><small>'+note+'</small></article>').join('');
  $('revenue').textContent=value.currencies.length?value.currencies.map(c=>money(c.grossCents,c.currency)).join(' / '):'暂无成交金额';
@@ -29,6 +29,30 @@ function render(value){
  updateLink();
  $('definitions').innerHTML=Object.values(value.definitions).map(text=>'<p>'+escape(text)+'</p>').join('');
  $('status').textContent='已连接 DeepPersona · 更新于 '+datetime(value.updatedAt);
+}
+function renderJourney(){
+ const f=data?.funnel,selected=$('journeyAccount').value;
+ const rows=f?.rows||[];
+ $('journeyAccount').innerHTML='<option value="">全部承接账号</option>'+rows.map(row=>'<option value="'+escape(row.connectionId)+'">'+escape('@'+(row.username||row.name))+'</option>').join('');
+ if(rows.some(row=>row.connectionId===selected))$('journeyAccount').value=selected;
+ const active=rows.find(row=>row.connectionId===$('journeyAccount').value),summary=active?.summary||f?.summary||{};
+ const metric=value=>value==null?'暂无':count(value);
+ $('journeyScope').textContent=f?f.window.from+' 至 '+f.window.to+' · UTC 自然日，与 TikTok 主页数据对齐 · '+(active?'当前承接账号':count(rows.length)+' 个承接账号'):'正在准备漏斗数据';
+ const cards=[['主页访问',summary.profileViews,'TikTok 汇总，非曝光人数'],['链接点击',summary.clicks,'到达短链接的请求'],['成功进站',summary.arrived,'网页确认或已开始测试'],['开始测试',summary.started,'同次访问最多计一次'],['完成测试',summary.finished,'同次访问最多计一次'],['付款',summary.paid,'基础报告付款访问']];
+ $('journeyStages').innerHTML=cards.map(([label,value,note])=>'<article><span>'+label+'</span><strong>'+metric(value)+'</strong><small>'+note+'</small></article>').join('');
+ $('profileClickHint').textContent='主页 → 链接参考点击率：'+percent(summary.profileClickRate)+'。'+(summary.profileClickRate==null?'数据或时间覆盖不足时不计算；主页访问与链接点击无法逐人匹配。':'这是同账号同期汇总比值，不是逐人流失率。')+' 主页数据覆盖 '+count(summary.profileAccounts)+' / '+count(summary.accounts)+' 个账号。';
+ const losses=summary.losses||{};
+ $('journeyLosses').innerHTML=[['点击 → 进站','未确认进站',losses.arrival],['进站 → 开始','未开始测试',losses.start],['开始 → 完成','尚未完成',losses.finish],['完成 → 付款','尚未付款',losses.payment]].map(([title,label,value])=>'<article><span>'+title+'</span><strong>'+metric(value?.lost)+' <small>次</small></strong><p>'+label+' · 流失率 '+percent(value?.rate)+'</p><small>进入下一步 '+percent(value?.conversion)+'</small></article>').join('');
+ const since=f?.startedAt?new Date(f.startedAt).toISOString().replace('T',' ').slice(0,19)+' UTC':'尚未启用';
+ $('journeyNote').textContent='进站追踪启用时间：'+since+'。漏斗只计算启用后经过短链接的访问；刷新去重，多次做题或购买也只计一次。未确认进站可能包含加载失败、用户退出或上报被拦截。';
+ const shown=active?[active]:rows;
+ const lossText=value=>value?.lost==null?'暂无':count(value.lost)+' / '+percent(value.rate);
+ $('journeyAccounts').innerHTML=table(['承接账号','主页访问','链接点击','成功进站','开始测试','完成测试','付款','点击→进站流失','进站→开始流失','开始→完成流失','完成→付款流失'],shown.map(row=>[
+ escape('@'+(row.username||row.name)),metric(row.profileViews)+'<small>'+count(row.profileDays)+'/'+count(row.expectedDays)+' 天</small>',
+ ...['clicks','arrived','started','finished','paid'].map(key=>metric(row[key])),
+ ...['arrival','start','finish','payment'].map(key=>lossText(row.summary?.losses?.[key]))
+ ]),'绑定承接账号并生成短链接后，这里会按账号显示转化链路。');
+ $('journeyDefinition').textContent=f?.definition||'尚未取得漏斗数据。';
 }
 function updateLink(){
  const a=data?.receivers.find(a=>a.connectionId===$('receiver').value),link=data?.links?.rows.find(link=>link.connectionId===a?.connectionId);
@@ -64,6 +88,7 @@ $('createLinks').addEventListener('click',async()=>{
   await load();
  }catch(error){$('linkNote').textContent=error.message;$('createLinks').disabled=false;}
 });
+$('journeyAccount').addEventListener('change',renderJourney);
 $('receiver').addEventListener('change',updateLink);
 $('copyLink').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('trackingUrl').value);$('linkNote').textContent='已复制，请粘贴到对应承接账号的主页链接。';}catch{$('trackingUrl').select();$('linkNote').textContent='浏览器未允许自动复制，链接已选中，请手动复制。';}});
 const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);$('from').value=today;$('to').value=today;$('from').max=today;$('to').max=today;

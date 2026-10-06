@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import puppeteer from 'puppeteer-core';
+import { summarizeFunnel } from '../factory-cloud/src/psychology-website-funnel.js';
 import { toPublicUser } from '../factory-cloud/src/auth.js';
 import { SIDEBAR_MODULES, canAccessPath } from '../factory-cloud/src/sidebar.js';
 const root=path.resolve(fileURLToPath(new URL('../public/',import.meta.url)));
@@ -46,6 +47,12 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
   if(url.pathname==='/api/psychology-website'){
    requests.push(Object.fromEntries(url.searchParams));
    const selectedMode=mode,value=fixture();
+   const funnelRows=[
+    {connectionId:'a',username:'account_a',profileViews:100,profileDays:7,expectedDays:7,profileComplete:true,coverageComplete:true,clicks:20,arrived:15,started:10,finished:6,paid:2},
+    {connectionId:'b',username:'account_b',profileViews:null,profileDays:0,expectedDays:7,profileComplete:false,coverageComplete:true,clicks:10,arrived:5,started:2,finished:1,paid:0}
+   ];
+   value.funnel={ready:true,window:{from:'2026-09-30',to:'2026-10-06'},startedAt:Date.parse('2026-09-30T00:00:00Z'),rows:funnelRows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(funnelRows),definition:'同次点击去重'};
+
    value.receivers[0].trackingUrl=generated?'https://deeppersonaai.com/go/123456abcd':null;
    value.links={rows:generated?[{connectionId:'a',trackingUrl:value.receivers[0].trackingUrl,visits:12,filtered:2}]:[]};
 
@@ -80,6 +87,15 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
   await page.click('[data-tab="overview"]');
   if(process.env.WEBSITE_QA_SCREENSHOTS){const dir=path.resolve(root,'../work/website-qa');fs.mkdirSync(dir,{recursive:true});await page.screenshot({path:path.join(dir,'website-'+width+'.png'),fullPage:true});}
  }
+ assert.match(await page.$eval('#journeyStages',e=>e.textContent),/成功进站/);
+ assert.match(await page.$eval('#journeyLosses',e=>e.textContent),/未确认进站/);
+ await page.select('#journeyAccount','a');
+ assert.match(await page.$eval('#profileClickHint',e=>e.textContent),/20.0%/);
+ assert.equal(await page.$$eval('#journeyAccounts tbody tr',rows=>rows.length),1);
+ await page.select('#journeyAccount','b');
+ assert.match(await page.$eval('#journeyStages',e=>e.textContent),/暂无/);
+ assert.match(await page.$eval('#profileClickHint',e=>e.textContent),/参考点击率：—/);
+ await page.select('#journeyAccount','');
  assert.equal(await page.$eval('#sources',e=>e.querySelectorAll('img').length),0);
  assert.match(await page.$eval('#sources',e=>e.textContent),/<img src=x/);
  await page.click('[data-tab="links"]');assert.equal(await page.$eval('#trackingUrl',e=>e.value),'');

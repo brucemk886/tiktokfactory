@@ -1,3 +1,4 @@
+import {readWebsiteFunnel} from './psychology-website-funnel.js';
 import {createWebsiteLinks,readWebsiteLinks} from './psychology-website-links.js';
 import { json, errorJson } from './http.js';
 import { handleConversionCampaign } from './psychology-conversion.js';
@@ -24,6 +25,7 @@ export async function handlePsychologyWebsite(request,env,url,session,{now=Date.
   if(!env.DEEP_PERSONA_DB)return errorJson('独立站数据尚未连接。',503);
   const source=env.DEEP_PERSONA_DB.withSession?env.DEEP_PERSONA_DB.withSession('first-primary'):env.DEEP_PERSONA_DB;
   const [data,links]=await Promise.all([readWebsiteAnalytics(source,window,context,paging,now),readWebsiteLinks(env.DB,context,window)]);
+  data.funnel=await readWebsiteFunnel(env.DB,source,context,links,window,now);
   const byId=new Map(links.map(link=>[link.connectionId,link]));
   data.receivers=data.receivers.map(account=>({...account,trackingUrl:byId.get(account.connectionId)?.trackingUrl||null}));
   const accounts=new Map(data.accounts.map(account=>[account.connectionId,account]));

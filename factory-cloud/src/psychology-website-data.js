@@ -22,7 +22,7 @@ export function websitePage(params,key){
  const raw=params.get(key)||'1';if(!/^[1-9]\d{0,5}$/.test(raw))fail('页码无效。');return Number(raw);
 }
 // Exclusions match DeepPersona admin traffic-stats.ts.
-const PRODUCTION_SESSION=`s.id NOT IN (SELECT session_id FROM admin_test_sessions)
+export const PRODUCTION_SESSION=`s.id NOT IN (SELECT session_id FROM admin_test_sessions)
  AND NOT EXISTS(SELECT 1 FROM quiz_reports xr JOIN payment_orders xo ON xo.report_id=xr.id
  WHERE xr.session_id=s.id AND (xo.livemode=0 OR substr(xo.id,1,8)='preview_'))`;
 const SOURCE=`COALESCE(a.source,CASE WHEN s.source IN ('deeppersonaai.com','www.deeppersonaai.com') THEN 'unknown' ELSE s.source END,'unknown')`;
