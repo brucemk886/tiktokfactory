@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology automatic-operations receiver and account-role views no longer display legacy automation-group names as strategy groups. Execution records identify accounts; original authorization names and group tools remain folded for historical tracing. Project enrollment, permissions, existing delivery executors and frozen tasks are unchanged. See docs/handoffs/2026-10-06-psychology-project-group-display.md.
+
 - All five Psychology automatic-operations content pools now expose exact-version work evidence with directly clickable TikTok links, playback, maturity/sync state and independent ten-row pagination. Missing links stay explicit and access remains scoped to current psychology accounts. See docs/handoffs/2026-10-06-psychology-content-evidence-links.md. Account-traffic names open the synchronized TikTok homepage in a new tab; local analytics remains under the detail action. See docs/handoffs/2026-10-06-psychology-account-profile-links.md.
 
 - Psychology independent-site reporting now starts with an account-filtered UTC funnel: TikTok profile visits, tracked short-link requests, confirmed arrivals, started/finished tests and paid visits. Website stages share one per-click token and deduplicate multiple sessions/orders; historical and unavailable data remain unknown. Profile-to-link is only a coverage-gated aggregate reference rate. See docs/handoffs/2026-10-06-psychology-conversion-funnel.md.
