@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology new planning is paused by explicit user request while content changes to independent-site tests. The project controller is disabled and all 11 plans use planning-only pause (stop_pending=0); existing October 6 tasks continue, and October 7/8 have no created tasks. Do not automatically resume the old strategy. See docs/handoffs/2026-10-06-psychology-future-planning-hold.md.
+
 - Hosted psychology planning now uses durable per-owner/per-slot work, five-account chunks, token-fenced commits and a separate five-minute coverage watchdog. Three strategy checks, next-day admission and two-to-three-hour generation remain. Automatic Operations exposes per-round coverage and scoped recovery; Hub monitors the factory heartbeat. Email delivery is disabled at the user's request; site alerts and automatic recovery remain, with Feishu integration deferred. See docs/handoffs/2026-10-06-psychology-durable-scheduling.md.
 
 - Psychology automatic-operations receiver and account-role views no longer display legacy automation-group names as strategy groups. Execution records identify accounts; original authorization names and group tools remain folded for historical tracing. Project enrollment, permissions, existing delivery executors and frozen tasks are unchanged. See docs/handoffs/2026-10-06-psychology-project-group-display.md.
