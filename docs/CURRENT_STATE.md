@@ -1,5 +1,7 @@
 # Current State
 
+- All five Psychology automatic-operations content pools now expose exact-version work evidence with directly clickable TikTok links, playback, maturity/sync state and independent ten-row pagination. Missing links stay explicit and access remains scoped to current psychology accounts. See docs/handoffs/2026-10-06-psychology-content-evidence-links.md.
+
 - Psychology receiver bio links now use stable branded /go/ short URLs. Owner-only creation is explicit; public redirects retain existing campaign attribution and count Beijing-day requests with known bot/prefetch exclusions. These are link visits, not TikTok clicks or unique visitors. See docs/handoffs/2026-10-06-psychology-short-links.md.
 
 - Psychology has an owner-only independent-site conversion dashboard at /psychology-website and unified API action psychology/website.read. It reads existing DeepPersona D1 records directly: anonymous site PV, start-cohort quiz funnel, payment-date live base/deep orders, per-currency gross amounts and source attribution. Stable factory account campaign links identify the receiving account, not upstream videos; missing historical attribution stays unknown. See docs/handoffs/2026-10-06-psychology-website-data.md.
