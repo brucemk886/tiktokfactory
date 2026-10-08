@@ -30,3 +30,13 @@ Release verification is recorded below. GPT/Dot must have actual image bytes ava
 
 ## Recommended next step
 Use the API guide with one real video, upload original/recreated frames and enable a complete version. First render/preview, then invoke the explicit publish API under user-authorized account/schedule settings.
+
+## Production release verification
+- Runtime commit: `21d00db`, pushed to GitHub `main` before deployment. An independent clean `main` release checkout was used because the user's primary checkout contained unrelated work.
+- Deployment used only `npm run deploy` from `factory-cloud`, with clean worktree and exact HEAD/origin/main verification. Migration0080 applied successfully.
+- The first deployment encountered a transient `fetch failed` updating an existing workflow. Retrying the same standard deployment from the same clean commit succeeded, including triggers. Final production version: `25475dca-2aed-474c-9a55-452953ce6094`.
+- Post-rebase focused checks passed 32/32, covering video-hits routes/UI, immutable assets and existing TikTok One membership/UI contracts.
+- Logged-in production read-only verification confirmed the Psychology 视频爆款 sidebar, empty source-list API, full copyable Dot instructions, all eleven videoHits actions in the unified API catalog, and a 390px mobile page with no document overflow. The task-created browser session was stopped. Local desktop/mobile screenshot QA passed; a production screenshot RPC timed out, so no production screenshot capture is claimed.
+- No real user source, narration request, render task or publication was submitted during verification.
+- The auxiliary renderer has not been activated: automatic approval review rejected starting the persistent background process because it may claim future tasks, call paid narration services and feed the official publishing lane. The user asked for clarification; a plain-language activation choice is pending. Do not bypass this rejection or resume old planning.
+- Prepared helper: `scripts/psychology-video-remix-agent.mjs` in the clean release checkout `D:/cursor/localfactory/tmp/psychology-video-hits-release-20261008`, using the existing configured factory root `D:/cursor/localfactory`. If explicitly approved, start it hidden and preserve that checkout while it runs. It only claims newly submitted psychology-video-remix tasks; standalone render does not publish.
