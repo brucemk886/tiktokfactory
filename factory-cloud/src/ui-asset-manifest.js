@@ -97,7 +97,7 @@ export const UI_ASSETS = {
   "/psychology-styled-card.js": "be3fb0bd7c5d7eb22c41",
   "/psychology-templates.css": "c0d0e89651b32dfdbe2d",
   "/psychology-text-card.js": "6aa632622e27c5495d68",
-  "/psychology-tiktok-one.js": "714fce18e3d73960a819",
+  "/psychology-tiktok-one.js": "4acdb317148e93aa66fb",
   "/psychology-topic-bank.css": "1bf648d3e57e532c1990",
   "/psychology-topic-bank.js": "867cf8ba08886127ab9f",
   "/psychology-topic-images.js": "bc20f5201cc3b8754812",

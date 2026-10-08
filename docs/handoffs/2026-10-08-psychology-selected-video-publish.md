@@ -5,7 +5,7 @@ Provide an interactive workflow on the psychology automatic-publishing page befo
 
 ## Decisions
 - New “选视频 · TikTok One 发布” entry. Local uploads and source-worker archive requests only populate a private video library. No automatic publication or old autopilot resume.
-- One project per batch, 1–20 selected videos. Each video has an explicit account, caption, AI-generation flag and time; optional round-robin assignment is visible and editable before confirmation. Project dropdown uses existing authorized brand/project data, not hardcoded IDs.
+- One project per batch, 1–20 selected videos. Each video has an explicit account, caption, AI-generation flag and time; optional round-robin assignment is visible and editable before confirmation. Project metadata uses existing authorized brand/project data. The user later requested that the dropdown show only project IDs 7693454687705595917 and 7584639271164739598; the UI now filters to those two anchored projects.
 - Live read confirmed requested projects 7693454687705595917 (deeppersonaai) and 7584639271164739598 (Deep Persona AI - Visual Personality Insights) are offered as anchored projects. Account-level eligibility still needs official prepare/join checks.
 - Thousand-follower data comes from current factory archive, with missing values and sync times shown explicitly. Creation validates current grants, the threshold, owned ready assets and project membership before any publishing batch exists.
 - Stable owner/request id and frozen inputs protect retries. Archived output paths are worker-local, validated, and pinned to their source worker. Uploads are 95MB max per MP4/MOV/WebM; private R2 preview supports ranges. Added capability prevents old workers taking unfamiliar tasks.
@@ -29,3 +29,10 @@ Use the new picker for a small reviewed batch on one project, verify actual rece
 - Investigated the empty generated-video list: all 3,861 existing completed psychology jobs are cloud-browser photo jobs with empty video results. This is expected, not a legacy result-shape bug. Future completed video jobs populate the picker; locally generated files can be uploaded now.
 - A hidden, scoped transfer helper is running for the current session (PID 100756), using the existing local worker identity/configuration. It claims only explicit video preview/selected-video tasks; existing workers were not restarted. Initial transient network errors were followed by no further errors during verification. Logs: the Windows temp directory, psychology-video-transfer-live.log and psychology-video-transfer-live-error.log.
 - The helper is not registered for Windows autostart. Keep this managed worktree available while it is running. After a future natural local-worker upgrade/restart, the integrated worker supports these tasks directly and the helper can be retired. Other source worker machines must also use updated code for their local video previews.
+
+## Follow-up: restrict anchor project choices
+- Goal: show only the two psychology projects specified by the user in the publishing-page anchor selector.
+- Decision: filter the authorized, paginated project results to the exact two IDs and retain the existing anchor check. Other projects remain available in the central TikTok One module; no existing task is modified.
+- Files: public/psychology-tiktok-one.js, its generated UI asset manifest, and the existing selected-video UI regression fixture.
+- Verification: the browser fixture includes an unrelated anchored project and checks that opening and refreshing the selector both expose only the requested two projects. The selected-video browser regression passed, including both selector checks and the existing preview/confirmation flow. UI asset tests passed; only synthetic services were used.
+- Unfinished work / next step: real reviewed publication remains for the user's interactive validation.

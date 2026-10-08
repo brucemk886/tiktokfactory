@@ -1,4 +1,8 @@
 // Optional project-linked publication. Cached membership is keyed by brand/project/account.
+const PSYCHOLOGY_ANCHOR_PROJECT_IDS = new Set([
+ '7693454687705595917',
+ '7584639271164739598',
+]);
 export function mountPsychologyOne({api,accounts,media,changed}){
  const $=id=>document.getElementById(id),base='/api/psychology-tiktok-one';
  const cache=new Map();let brands=[],loaded=false,loadVersion=0,checkVersion=0,timer;
@@ -31,9 +35,9 @@ export function mountPsychologyOne({api,accounts,media,changed}){
     rows.push(...(data.campaigns||[]));total=Number(data.page_info?.total_page||1);
     if(!Number.isInteger(total)||total>200)throw new Error('项目列表分页异常，请在中台检查。');page++;
    }while(page<=total);
-   const unique=[...new Map(rows.filter(c=>c.anchor_id).map(c=>[c.campaign_id,c])).values()];
+   const unique=[...new Map(rows.filter(c=>c.anchor_id&&PSYCHOLOGY_ANCHOR_PROJECT_IDS.has(String(c.campaign_id))).map(c=>[c.campaign_id,c])).values()];
    $('oneProject').replaceChildren(option('请选择挂锚点的项目',''),...unique.map(c=>option((c.campaign_name||c.campaign_id)+' · '+c.campaign_id,c.campaign_id)));
-   status(unique.length?'选择项目后自动检查所选账号。':'此品牌账号没有带锚点的项目。',!unique.length);
+   status(unique.length?'选择项目后自动检查所选账号。':'此品牌账号下暂未找到指定的心理学锚点项目。',!unique.length);
   }catch(e){if(version===loadVersion){$('oneProject').replaceChildren(option('读取失败，请刷新项目',''));status(e.message,true);}}
   finally{if(version===loadVersion)$('oneProject').disabled=false;}
  }
