@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { claimTypeFilter, handleJobs, hasOwnKeys, mergeWorkerCatalog, officialPublishFollowupPayload } from "./jobs.js";
 
-const CLOUD_SQL = " AND COALESCE(json_extract(payload_json, '$.cloudPhotoRender'),0)<>1";
+const CLOUD_SQL = " AND COALESCE(json_extract(payload_json, '$.cloudPhotoRender'),0)<>1 AND type NOT IN ('psychology-selected-video','psychology-video-archive')";
 
 test("claim filter lets a lane pick only its own job types", () => {
   assert.deepEqual(claimTypeFilter({ psychologyPublishRetry:true,psychologyBatchUpload:true,}), { sql: CLOUD_SQL + " AND type NOT IN (?, ?)", binds: ['psychology-photo-story', 'psychology-recreation'], types: [], excludeTypes: ['psychology-photo-story', 'psychology-recreation'] });
@@ -122,5 +122,5 @@ test("cloud and worker agree on the split render/publish protocol", async () => 
   assert.match(jobs, /WHERE status = 'queued' AND available_at <= \?\$\{filter\.sql\}/);
   assert.match(worker, /context\.cloudSplitPublish = Boolean\(data\?\.splitPublish\)/);
   assert.match(worker, /result: \{ \.\.\.local, publishPending: true \}/);
-  assert.match(worker, /body: \{ psychologyPublishRetry: true, psychologyBatchUpload: typeof context\.uploadOfficialAsset === "function", workerId: context\.workerId, lane: lane\.name, assignedOnly: context\.settings\.assignedOnly === true, \.\.\.lane\.claim \}/);
+  assert.match(worker, /body: \{ psychologyVideoTransfer:true, psychologyPublishRetry: true, psychologyBatchUpload: typeof context\.uploadOfficialAsset === "function", workerId: context\.workerId, lane: lane\.name, assignedOnly: context\.settings\.assignedOnly === true, \.\.\.lane\.claim \}/);
 });

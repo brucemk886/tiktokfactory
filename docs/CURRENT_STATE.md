@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology publishing now has an explicit review flow for local-uploaded and factory-generated videos: private cloud preview, ≥1000-follower selection, per-video account/caption/AI label and scheduled TikTok One project confirmation. Upload/import never publishes. Existing planning remains paused; no daily automation is enabled. See docs/handoffs/2026-10-08-psychology-selected-video-publish.md.
+
 - Psychology new planning is paused by explicit user request while content changes to independent-site tests. The project controller is disabled and all 11 plans use planning-only pause (stop_pending=0); existing October 6 tasks continue, and October 7/8 have no created tasks. Do not automatically resume the old strategy. See docs/handoffs/2026-10-06-psychology-future-planning-hold.md.
 
 - Hosted psychology planning now uses durable per-owner/per-slot work, five-account chunks, token-fenced commits and a separate five-minute coverage watchdog. Three strategy checks, next-day admission and two-to-three-hour generation remain. Automatic Operations exposes per-round coverage and scoped recovery; Hub monitors the factory heartbeat. Email delivery is disabled at the user's request; site alerts and automatic recovery remain, with Feishu integration deferred. See docs/handoffs/2026-10-06-psychology-durable-scheduling.md.

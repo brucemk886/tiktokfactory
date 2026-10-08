@@ -4,7 +4,7 @@ export const PSYCHOLOGY_RETRY_DELAYS=[30000,60000];
 const parse=value=>JSON.parse(value||'{}');
 export function isPsychologyPublishAttempt(job){
   const p=parse(job?.payload_json);
-  return Boolean(p.psychologySubmission || (p.psychologyAutomation&&(p.photoAutomation||job.type==='official-publish')));
+  return Boolean(p.psychologySubmission || (p.psychologyAutomation&&(p.photoAutomation||['official-publish','psychology-selected-video'].includes(job.type))));
 }
 export function publishDiagnostic(error,phase='publish'){
   const message=String(error?.message||error||'发布失败').replace(/Bearer\s+\S+/gi,'Bearer [redacted]').slice(0,4000);

@@ -1,3 +1,4 @@
+import { withPublishFollowers } from './psychology-publish-followers.js';
 import { loadProfileTraffic } from "./profile-traffic.js";
 import { loadReportContext } from "./psychology-report-data.js";
 import { pagePublishRecords } from './publish-records-store.js';
@@ -102,10 +103,8 @@ export async function handleOfficial(request, env, url, session) {
       const data = await signalDeskAllAccounts(env, db);
       const store = await loadGroupStore(db);
       const scoped = scopeOfficialAccess(data, store, session.user, url.searchParams.get("module") || "");
-      return json({
-        ...scoped,
-        accounts: (scoped.accounts || []).filter((account) => !Array.isArray(account.scopes) || account.scopes.includes("video.publish")),
-      });
+      const accounts=(scoped.accounts || []).filter((account) => !Array.isArray(account.scopes) || account.scopes.includes("video.publish"));
+      return json({ ...scoped, accounts: url.searchParams.get('module')==='psychology' ? await withPublishFollowers(db,accounts) : accounts });
     } catch (error) {
       return errorJson(error.message || "读取官方发布账号失败。", error.statusCode || 502);
     }

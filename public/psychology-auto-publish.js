@@ -1,7 +1,8 @@
+import { mountPsychologyVideoPicker } from './psychology-video-picker.js';
 import { mountPsychologyOne } from './psychology-tiktok-one.js';
 import { VISUAL_STYLES } from './psychology-visual-styles.js';
 const $ = s => document.querySelector(s);
-const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
+const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", minFollowers:0, accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
 async function api(path, body, method) {
@@ -11,6 +12,7 @@ async function api(path, body, method) {
   return data;
 }
 const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,changed:()=>{resetAccountInput();summary();}});
+const picker=mountPsychologyVideoPicker({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),project:()=>one.context(),changed:()=>resetAccountInput()});
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
@@ -26,6 +28,7 @@ function renderTemplates() {
 function sourceType(){return state.mediaType==='photo'?($('#photoSource').value||'library'):'topic-bank';}
 function renderSources(){
   one.sync();
+  if(picker.active){$('#oneEnabled').checked=true;$('#oneEnabled').disabled=true;}
   $('#sourceTypeField').hidden=state.mediaType!=='video';
   $('#photoSourceField').hidden=state.mediaType!=='photo';
   $('#sourceType').value='topic-bank';
@@ -74,9 +77,18 @@ $('#topicBank').addEventListener('change',()=>{
   resetAccountInput();renderSources();summary();
 });
 
+const meetsFollowers=a=>!state.minFollowers||(Number.isSafeInteger(a.followers)&&a.followers>=state.minFollowers);
+function pruneFollowerSelection(){
+ const eligible=new Set(state.accounts.filter(meetsFollowers).map(accountId));
+ state.selectedAccounts=new Set([...state.selectedAccounts].filter(id=>eligible.has(id)));
+}
+function followerLabel(a){
+ const n=Number.isSafeInteger(a.followers)&&a.followers>=0?a.followers:null;
+ return n===null?'粉丝待同步':n.toLocaleString('zh-CN')+' 粉丝'+(a.followersSyncedAt?' · 同步 '+new Date(a.followersSyncedAt).toLocaleString('zh-CN',{hour12:false}):' · 同步时间未知');
+}
 function visibleAccounts() {
   const query=state.accountQuery.trim().replace(/^@/,'').toLowerCase();
-  return state.accounts.filter(a=>(!state.accountGroup||(state.accountGroup==='__ungrouped__'?!a.groupId:a.groupId===state.accountGroup))&&(!query||[a.username,a.displayName,a.label].some(v=>String(v||'').toLowerCase().includes(query))));
+  return state.accounts.filter(a=>meetsFollowers(a)&&(!state.accountGroup||(state.accountGroup==='__ungrouped__'?!a.groupId:a.groupId===state.accountGroup))&&(!query||[a.username,a.displayName,a.label].some(v=>String(v||'').toLowerCase().includes(query))));
 }
 function resetAccountInput() { state.requestId=crypto.randomUUID();state.submittedInput=null; }
 function renderAccountGroups() {
@@ -91,7 +103,7 @@ function renderAccountGroups() {
 function renderAccountControls() {
   const rows=visibleAccounts(),ids=selected(),visibleSelected=rows.filter(a=>state.selectedAccounts.has(accountId(a))).length;
   const locked=state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType;
-  $('#accountGroup').disabled=locked;$('#accountSearch').disabled=locked;
+  $('#accountGroup').disabled=locked;$('#accountSearch').disabled=locked;$('#accountFollowers').disabled=locked||picker.active;
   $('#selectVisibleAccounts').disabled=locked||rows.length===visibleSelected;
   $('#clearVisibleAccounts').disabled=locked||!visibleSelected;
   $('#clearAllAccounts').disabled=locked||!ids.length;
@@ -101,8 +113,8 @@ function renderAccounts() {
   const rows=visibleAccounts();
   $('#accounts').innerHTML=state.accountsLoading&&!state.accountsLoaded?'<div class="empty-state">正在读取心理学发布账号…</div>':rows.length ? rows.map(a=>{
     const id=accountId(a),username=String(a.username||'').replace(/^@+/,'');
-    return `<label class="account-choice"><input type="checkbox" value="${esc(id)}" ${state.selectedAccounts.has(id)?'checked':''} ${state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType?'disabled':''}><span><strong>${esc(a.displayName||a.label||username||id)}</strong><small>${esc(username?'@'+username:'')} · ${esc(a.groupName||'未分组')}</small></span></label>`;
-  }).join('') : '<div class="empty-state">'+(state.accounts.length?'当前分组或搜索条件下没有可发布账号。':'心理学项目还没有可发布账号，请先在 TikTok 账号页分配分组。')+'</div>';
+    return `<label class="account-choice"><input type="checkbox" value="${esc(id)}" ${state.selectedAccounts.has(id)?'checked':''} ${state.busy||state.accountsLoading||state.accountsMedia!==state.mediaType?'disabled':''}><span><strong>${esc(a.displayName||a.label||username||id)}</strong><small>${esc(username?'@'+username:'')} · ${esc(a.groupName||'未分组')}</small><small>${esc(followerLabel(a))}</small></span></label>`;
+  }).join('') : '<div class="empty-state">'+(state.accounts.length?'当前分组、粉丝或搜索条件下没有可发布账号。':'心理学项目还没有可发布账号，请先在 TikTok 账号页分配分组。')+'</div>';
   renderAccountControls();summary();
 }
 async function loadAccounts() {
@@ -115,6 +127,7 @@ async function loadAccounts() {
     state.accounts=data.accounts||[];state.groups=data.groups||[];
     const valid=new Set(state.accounts.map(accountId));
     state.selectedAccounts=new Set([...state.selectedAccounts].filter(id=>valid.has(id)));
+    pruneFollowerSelection();
     if(before!==selected().join('|'))resetAccountInput();
     state.accountsLoaded=true;state.accountsMedia=media;one.selectionChanged();
     renderAccountGroups();renderBatches();
@@ -122,11 +135,12 @@ async function loadAccounts() {
     if(loadId===state.accountsLoadId){state.accountsLoading=false;renderAccounts();}
   }
 }
+$('#accountFollowers').addEventListener('change',()=>{if(state.busy||state.accountsLoading)return;state.minFollowers=Number($('#accountFollowers').value)||0;pruneFollowerSelection();resetAccountInput();renderAccounts();one.selectionChanged();});
 $('#accountGroup').addEventListener('change',()=>{state.accountGroup=$('#accountGroup').value;renderAccounts();});
 $('#accountSearch').addEventListener('input',()=>{state.accountQuery=$('#accountSearch').value;renderAccounts();});
 $('#accounts').addEventListener('input',event=>{
   const input=event.target;
-  if(state.busy||state.accountsLoading||input.type!=='checkbox'||!state.accounts.some(a=>accountId(a)===input.value))return;
+  if(state.busy||state.accountsLoading||input.type!=='checkbox'||!state.accounts.some(a=>accountId(a)===input.value&&meetsFollowers(a)))return;
   if(input.checked)state.selectedAccounts.add(input.value);else state.selectedAccounts.delete(input.value);
   resetAccountInput();renderAccountControls();summary();one.selectionChanged();
 });
@@ -144,6 +158,7 @@ function accountName(id) {
   return username?'@'+username:a?.displayName||a?.label||(state.accountsLoading?'账号加载中…':'账号信息不可用');
 }
 function summary() {
+  if(picker.active){picker.update();$('#summary').textContent='请核对上方每条视频的账号、文案、项目与发布时间。确认后才会发布。';return;}
   const ids=selected(), count=Number($('#count').value)||0;
   $('#summary').textContent=ids.length ? `本批共生成 ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
@@ -238,7 +253,7 @@ function renderBatches() {
   if($('#batchDetail').open)renderSelectedBatch();
 
 }
-$('#batchForm').addEventListener('input',event=>{ if(['accountGroup','accountSearch'].includes(event.target?.id))return; if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
+$('#batchForm').addEventListener('input',event=>{ if(['accountGroup','accountSearch','videoSource','videoFiles'].includes(event.target?.id)||event.target?.dataset?.videoCaption!==undefined||event.target?.dataset?.videoAi!==undefined)return; if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
 document.querySelectorAll('[data-media]').forEach(button=>button.addEventListener('click',async()=>{
   if(state.busy||state.mediaType===button.dataset.media)return;
   state.mediaType=button.dataset.media;state.requestId=crypto.randomUUID();state.submittedInput=null;
@@ -267,6 +282,7 @@ $('#batchDetailBody').addEventListener('click',handleBatchAction);
 $('#batchDetailItems').addEventListener('click',handleBatchAction);
 $('#batchForm').addEventListener('submit',async event=>{
   event.preventDefault();if(state.busy)return;
+  if(picker.active)return submitSelectedVideos();
   if(!state.optionsLoaded)return message('请等待题库选项加载完成，或重新打开新建任务重试。',true);
   if(state.accountsLoading||state.accountsMedia!==state.mediaType)return message('请等待当前内容类型的发布账号加载完成，或点击刷新账号重试。',true);
   if(state.mediaType==='video'&&!state.canUseTopics)return message('当前账号没有模板题库权限，请联系管理员开通后创建视频任务。',true);
@@ -275,7 +291,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
   let tiktokOne;try{tiktokOne=one.context();}catch(e){return message(e.message,true);}
-  const body=state.submittedInput||{...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  const body=state.submittedInput||{...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,allowPeerReuse:$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
   message(body.tiktokOne?'正在检查账号并申请加入项目，随后创建任务…':'正在抽取选题并创建自动发布任务…');
@@ -314,7 +330,7 @@ function renderBatchDetail(b){
       <div class="detail-summary"><div><strong>${accounts.length}</strong><span>发布账号</span></div><div><strong>${items.length}</strong><span>本批内容</span></div><div><strong>${submitted}</strong><span>已提交中台</span></div></div>
       <div class="batch-detail-columns"><section class="batch-stage-summary"><h3 class="detail-publication-heading">发布状态</h3>
       <p>${esc(publicationSummary(items))}</p>${message!==publicationSummary(items)?`<p>${esc(message)}</p>`:''}
-      <div class="task-counts">${b.config.tiktokOne?`<span>挂锚点 · 项目 ${esc(b.config.tiktokOne.campaignId)}</span>`:''}<span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      <div class="task-counts">${b.config.tiktokOne?`<span>挂锚点 · 项目 ${esc(b.config.tiktokOne.campaignId)}</span>`:''}${b.config.minFollowers?`<span>创建时要求 ≥${b.config.minFollowers} 粉丝</span>`:''}<span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='selected-videos'?'已确认成片':b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
       </section>${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${publicationSummary(members)}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       </div>${schedule?`<details class="task-schedule"><summary>具体排期</summary>${schedule}</details>`:''}
       ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}
@@ -329,7 +345,15 @@ function renderSelectedBatch(){
 function detailTab(items){$('#batchDetailBody').hidden=items;$('#batchDetailItems').hidden=!items;$('#detailOverviewTab').setAttribute('aria-selected',String(!items));$('#detailItemsTab').setAttribute('aria-selected',String(items));$('#detailOverviewTab').tabIndex=items?-1:0;$('#detailItemsTab').tabIndex=items?0:-1;}
 $('#detailOverviewTab').addEventListener('click',()=>detailTab(false));$('#detailItemsTab').addEventListener('click',()=>detailTab(true));
 for(const id of ['detailOverviewTab','detailItemsTab'])$('#'+id).addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const items=e.key==='End'||(e.key!=='Home'&&id==='detailOverviewTab');detailTab(items);$('#'+(items?'detailItemsTab':'detailOverviewTab')).focus();}});
-$('#newBatch').addEventListener('click',async()=>{$('#photoOptions').open=false;$('#createBatchDialog').showModal();if(!state.optionsLoaded)renderTemplates();$('#batchName').focus();try{await loadCreation();}catch(e){message(e.message,true);}});
+$('#newOneBatch').addEventListener('click',async()=>{
+ if(state.busy)return;
+ picker.open();state.mediaType='video';state.minFollowers=1000;$('#accountFollowers').value='1000';$('#oneEnabled').checked=true;
+ pruneFollowerSelection();resetAccountInput();
+ document.querySelectorAll('[data-media]').forEach(b=>{const on=b.dataset.media==='video';b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});
+ $('#createBatchDialog').showModal();renderTemplates();renderAccounts();
+ try{await loadAccounts();one.sync();}catch(e){message(e.message,true);}
+});
+$('#newBatch').addEventListener('click',async()=>{picker.close();$('#oneEnabled').disabled=false;$('#photoOptions').open=false;$('#createBatchDialog').showModal();if(!state.optionsLoaded)renderTemplates();$('#batchName').focus();try{await loadCreation();}catch(e){message(e.message,true);}});
 $('#closeCreateBatch').addEventListener('click',()=>{if(!state.busy)$('#createBatchDialog').close();});
 $('#createBatchDialog').addEventListener('cancel',e=>{if(state.busy)e.preventDefault();});
 $('#closeBatchDetail').addEventListener('click',()=>$('#batchDetail').close());
@@ -356,3 +380,15 @@ async function loadCreation(){
 }
 try{await loadBatches();}catch(e){message(e.message,true);}
 setInterval(()=>{if(!document.hidden)loadBatches().catch(e=>message(e.message,true));},15000);
+
+async function submitSelectedVideos(){
+ if(picker.busy)return message('请等待视频上传或列表读取完成。',true);
+ if(state.accountsLoading||state.accountsMedia!=='video')return message('请等待账号加载完成。',true);
+ let body;try{const tiktokOne=one.context();if(!tiktokOne)throw new Error('请选择 TikTok One 项目。');body=state.submittedInput||{requestId:state.requestId,name:'TikTok One · 选片发布',tiktokOne,items:picker.items()};}catch(e){return message(e.message,true);}
+ if(!confirm('确认发布 '+body.items.length+' 条视频？\n项目：'+body.tiktokOne.campaignId+'\n请已核对每条视频、账号、文案和发布时间。确认后将检查项目资格并进入发布队列。'))return;
+ state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
+ const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
+ try{message('正在检查账号与项目并创建发布任务…');const result=await api('/api/psychology-video-publish',body);$('#createBatchDialog').close();picker.clear();picker.close();resetAccountInput();message(result.duplicate?'已恢复同一发布批次。':'已确认入队，可在任务列表查看实际发布结果。');await loadBatches();}
+ catch(e){message(e.message+'；配置不变时再次提交会核对同一批次。',true);}
+ finally{state.busy=false;$('#closeCreateBatch').disabled=false;controls.forEach(n=>n.disabled=false);renderAccountControls();if(picker.active)$('#oneEnabled').disabled=true;}
+}

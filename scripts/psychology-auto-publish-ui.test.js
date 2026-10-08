@@ -15,7 +15,7 @@ function harness(accountsPromise, failed=false, options={}, batchesPromise=null,
   let accounts=accountsPromise;
   const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
+  const context=vm.createContext({mountPsychologyVideoPicker:()=>({active:false,open(){this.active=true;},close(){this.active=false;},update(){},clear(){}}),mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
   const listReady=vm.runInContext('(async()=>{'+source+'})()',context);
   const ready=autoOpen?Promise.all([listReady,node('#newBatch').listeners.click()]):listReady;
   return {node,ready,listReady,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
@@ -301,4 +301,32 @@ test('new video form exposes only template topics and ignores stale source value
  await h.node('#batchForm').listeners.submit({preventDefault(){}});
  const post=h.requests.find(r=>r.path==='/api/psychology-auto-publish'&&r.method==='POST');
  assert.equal(post.body.sourceType,'topic-bank');assert.equal(post.body.template,'psychology');
+});
+
+const followerAccounts=[{id:'a',username:'thousand',followers:1000,followersSyncedAt:1234567890000,groupId:'g1'},
+ {id:'b',username:'under',followers:999,groupId:'g2'},{id:'c',username:'unknown',followers:null,groupId:'g2'},
+ {id:'d',username:'large',followers:2000,groupId:'g2'}];
+function filterFollowers(h,value){h.node('#accountFollowers').value=String(value);h.node('#accountFollowers').listeners.change();}
+test('thousand filter prunes hidden noneligible selection and sends frozen threshold',async()=>{
+ const h=harness(Promise.resolve(followerAccounts),false,topicOptions);await h.ready;
+ h.node('#selectVisibleAccounts').listeners.click();filterGroup(h,'g1');filterFollowers(h,1000);
+ assert.match(h.node('#accountSelectionStatus').textContent,/已选 2 个/);
+ assert.match(h.node('#accounts').innerHTML,/1,000 粉丝/);assert.match(h.node('#accounts').innerHTML,/同步/);
+ await h.node('#batchForm').listeners.submit({preventDefault(){}});
+ const post=h.requests.find(r=>r.method==='POST');assert.equal(post.body.minFollowers,1000);assert.deepEqual(post.body.connectionIds,['a','d']);
+});
+test('refresh removes accounts that fall below threshold; zero is distinct from unknown',async()=>{
+ const h=harness(Promise.resolve(followerAccounts),false,topicOptions);await h.ready;
+ assert.match(h.node('#accounts').innerHTML,/粉丝待同步/);
+ filterFollowers(h,1000);h.node('#selectVisibleAccounts').listeners.click();
+ h.setAccounts(followerAccounts.map(a=>a.id==='a'?{...a,followers:0}:a));await h.refresh();
+ assert.match(h.node('#accountSelectionStatus').textContent,/已选 1 个/);assert.doesNotMatch(h.node('#accounts').innerHTML,/@thousand|@unknown/);
+ filterFollowers(h,0);assert.match(h.node('#accounts').innerHTML,/0 粉丝/);
+});
+test('One shortcut opens video with thousand filtering and never creates a task',async()=>{
+ const h=harness(Promise.resolve(followerAccounts),false,topicOptions);await h.ready;
+ await h.mediaButtons[1].click();await h.node('#newOneBatch').listeners.click();
+ assert.equal(h.node('#createBatchDialog').open,true);assert.equal(h.node('#accountFollowers').value,'1000');
+ assert.equal(h.node('#oneEnabled').checked,true);assert.equal(h.node('#topicBankField').hidden,false);
+ assert.doesNotMatch(h.node('#accounts').innerHTML,/@under|@unknown/);assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
 });

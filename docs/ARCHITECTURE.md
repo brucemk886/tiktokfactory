@@ -260,3 +260,10 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 
 - D1 psychology_schedule_work/members own planning progress; a dedicated schedule queue handles at most five accounts per step with lease-token fencing. Existing psychology_publish_items and factory_jobs retain generation/publication ownership. Slot and project/account/day/round identities remain idempotent.
 - Three Pacific strategy checks create stable work. A separate five-minute watchdog reconstructs expected future rounds and recovers abandoned work; the Hub independently checks its heartbeat. Reporting reads and page refreshes never create schedules.
+
+
+## Psychology interactive selected-video publication
+
+- `/psychology-publish` keeps the template automation entry and adds a separate review-first video picker. Private uploaded assets and selected completed psychology jobs are stored through migration 0079; owner-scoped preview endpoints support byte ranges. Import queues a source-worker-pinned archive job only. All source files are immutable after reaching ready; source filenames cannot escape the configured output directory.
+- The explicit confirmation endpoint freezes each asset/account/caption/AI label/schedule plus one canonical TikTok One project, rechecks current psychology account grants and archived ≥1000 followers, then ensures exact project membership before atomically creating a batch. Unknown followers fail closed. Stable owner/request IDs protect replay and reject changed inputs. Each video gets its own uploaded Hub asset and stable group item reference.
+- Capability-gated `psychology-video-archive` and `psychology-selected-video` jobs use the existing authenticated worker protocol. The latter streams private R2 to Hub and reuses grouped publishing, receipts and bounded retries. Old workers cannot claim these types. The optional transfer sidecar claims only these types and never sends hello/requeue or restarts existing workers. No rendering, automatic planning or publication occurs merely from opening or previewing the picker.
