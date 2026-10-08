@@ -1,3 +1,4 @@
+import {guard} from './psychology-video-hits.js';
 import {json,readJson,sha256Hex} from './http.js';
 import {loadAutoUser,assertAutoJobAccess,insertAutoJob} from './psychology-auto-publish.js';
 import {assertOfficialPublishAccess} from './official.js';
@@ -57,7 +58,7 @@ export async function handleVideoLibrary(request,env,url,session){
  if(url.pathname==='/api/psychology-video-publish'){if(request.method!=='POST')fail('不支持此请求。',405);return selectedPublish(request,env,user);}
  const file=url.pathname.match(/^\/api\/psychology-video-library\/([a-zA-Z0-9_-]+)\/file$/);
  if(file&&['GET','HEAD'].includes(request.method)){
-  const row=await owned(env.DB,file[1],user);if(row.status!=='ready')fail('视频尚未准备好。',409);
+  const row=await owned(env.DB,file[1],user);if(row.cleanup_state!=='active')fail('视频素材已清理。',410);if(row.status!=='ready')fail('视频尚未准备好。',409);
   const object=await env.ARCHIVE.get(row.r2_key,{range:request.headers});if(!object)fail('视频文件已失效。',404);
   const headers=new Headers({'Content-Type':row.content_type,'Cache-Control':'private, no-store','Accept-Ranges':'bytes','X-Content-Type-Options':'nosniff'});
   const range=object.range;if(range?.length){headers.set('Content-Range',`bytes ${range.offset}-${range.offset+range.length-1}/${object.size}`);headers.set('Content-Length',String(range.length));}else headers.set('Content-Length',String(object.size));
@@ -70,11 +71,11 @@ export async function handleVideoLibrary(request,env,url,session){
    const sql=`FROM factory_jobs j,json_each(COALESCE(json_extract(j.result_json,'$.results'),json_extract(j.result_json,'$.generatedVideos'),'[]')) v
     LEFT JOIN psychology_video_assets a ON a.source_job_id=j.id AND a.result_index=CAST(v.key AS INTEGER) AND a.owner=?
     LEFT JOIN factory_jobs prep ON prep.id='video-archive-'||a.id
-    WHERE j.type IN (${JOBS}) AND j.status='done' AND (j.type<>'psychology-video-remix' OR j.created_by=?) AND json_extract(v.value,'$.fileName') IS NOT NULL`;
+    WHERE j.type IN (${JOBS}) AND j.status='done' AND (j.type<>'psychology-video-remix' OR j.created_by=?) AND json_extract(v.value,'$.fileName') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_versions h WHERE h.render_job_id=j.id AND h.cleaned_at>0)`;
    const data=await env.DB.prepare(`SELECT j.id job_id,j.title,j.created_at,j.worker_id,v.key result_index,v.value video,a.id asset_id,a.status,a.file_size,prep.status preparation_status,prep.error preparation_error ${sql} ORDER BY j.created_at DESC,j.id DESC,v.key LIMIT 13 OFFSET ?`).bind(user.username,user.username,offset).all();
    return json({page,hasMore:data.results.length>12,videos:data.results.slice(0,12).map(r=>{const video=parse(r.video);return {id:r.asset_id||'',sourceJobId:r.job_id,resultIndex:Number(r.result_index),title:video.title||r.title,fileName:video.fileName,createdAt:r.created_at,fileSize:r.file_size||0,status:r.status||'local',preparationStatus:r.preparation_status,error:r.preparation_error||'',canPrepare:Boolean(r.worker_id),previewUrl:r.status==='ready'?BASE+'/'+r.asset_id+'/file':''};})});
   }
-  const data=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE owner=? AND source_job_id='' AND status='ready' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_videos v WHERE v.id=psychology_video_assets.id) ORDER BY created_at DESC,id DESC LIMIT 13 OFFSET ?").bind(user.username,offset).all();
+  const data=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE owner=? AND source_job_id='' AND status='ready' AND cleanup_state='active' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_videos v WHERE v.id=psychology_video_assets.id) ORDER BY created_at DESC,id DESC LIMIT 13 OFFSET ?").bind(user.username,offset).all();
   return json({page,hasMore:data.results.length>12,videos:data.results.slice(0,12).map(publicAsset)});
  }
  if(url.pathname===BASE+'/upload'&&request.method==='POST'){
@@ -88,12 +89,14 @@ export async function handleVideoLibrary(request,env,url,session){
   const body=await readJson(request),index=body.resultIndex;if(!Number.isInteger(index)||index<0||index>100)fail('视频索引无效。');
   const source=await env.DB.prepare(`SELECT * FROM factory_jobs WHERE id=? AND type IN (${JOBS}) AND status='done' AND (type<>'psychology-video-remix' OR created_by=?)`).bind(String(body.jobId||''),user.username).first();
   if(!source||!source.worker_id)fail('找不到可取回的工厂成片，请使用本地上传。',404);
+  if(source.type==='psychology-video-remix'){const origin=JSON.parse(source.payload_json).videoRemix,version=await env.DB.prepare('SELECT cleaned_at FROM psychology_video_hit_versions WHERE source_id=? AND version=?').bind(origin.sourceId,origin.version).first();if(version?.cleaned_at)fail('该二创已发布并清理，不能重新准备素材。',410);}
   const result=parse(source.result_json),video=(result.results||result.generatedVideos||[])[index],name=fileName(video?.fileName);
   const id=(await sha256Hex(user.username+':'+source.id+':'+index)).slice(0,32),stamp=Date.now();
   if(source.type==='psychology-video-remix'){const origin=JSON.parse(source.payload_json).videoRemix;await env.DB.prepare('INSERT INTO psychology_video_hit_render_assets(asset_id,source_id,version,owner_id) VALUES(?,?,?,?) ON CONFLICT(asset_id) DO NOTHING').bind(id,origin.sourceId,origin.version,user.id).run();}
   const row=await env.DB.prepare('SELECT * FROM psychology_video_assets WHERE id=? AND owner=?').bind(id,user.username).first();
   if(row?.status==='ready')return json({video:publicAsset(row)});
   await env.DB.batch([
+   ...(source.type==='psychology-video-remix'?[env.DB.prepare('UPDATE psychology_video_hit_versions SET revision=revision WHERE source_id=? AND version=? AND cleaned_at=0').bind(JSON.parse(source.payload_json).videoRemix.sourceId,JSON.parse(source.payload_json).videoRemix.version),guard(env.DB)]:[]),
    env.DB.prepare("INSERT INTO psychology_video_assets(id,owner,file_name,content_type,r2_key,source_job_id,result_index,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'pending',?,?) ON CONFLICT(id) DO NOTHING").bind(id,user.username,name,TYPES[name.split('.').pop().toLowerCase()],'psychology-videos/'+user.id+'/'+id,source.id,index,stamp,stamp),
    insertAutoJob(env.DB,{id:'video-archive-'+id,type:'psychology-video-archive',title:'准备视频预览 · '+name,createdBy:user.username,payload:{assetId:id,fileName:name,sourceJobId:source.id,targetWorkerId:source.worker_id,publishOnly:true}},stamp),
    env.DB.prepare("UPDATE factory_jobs SET status='queued',error='',updated_at=? WHERE id=? AND status='failed'").bind(stamp,'video-archive-'+id)
@@ -113,7 +116,7 @@ export async function handleVideoTransfer(request,env,url){
  const match=url.pathname.match(/^\/api\/worker\/psychology-video-transfer\/([a-zA-Z0-9_-]+)$/);if(!match)return null;
  const job=await env.DB.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(match[1]).first();
  if(!job||!['psychology-selected-video','psychology-video-archive'].includes(job.type)||job.status!=='running'||job.worker_id!==request.headers.get('x-factory-worker'))fail('此任务不属于当前工人。',403);
- const user=await loadAutoUser(env.DB,job.created_by),payload=parse(job.payload_json),asset=await owned(env.DB,payload.assetId,user);
+ const user=await loadAutoUser(env.DB,job.created_by),payload=parse(job.payload_json),asset=await owned(env.DB,payload.assetId,user);if(asset.cleanup_state!=='active')fail('该成片已清理，不能重新传输。',410);
  if(job.type==='psychology-video-archive'){
   if(request.method!=='PUT')fail('不支持此请求。',405);
   if(asset.status==='ready')return json({ready:true});

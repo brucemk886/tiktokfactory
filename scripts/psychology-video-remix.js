@@ -1,3 +1,4 @@
+import {removePublishedVideo} from './psychology-video-cleanup.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -48,7 +49,10 @@ export async function synthesizeRemix({snapshot,root,config,workDir,file,fetchIm
 }
 export async function renderVideoRemix({snapshot,jobId,root,config={},workDir,outputDir,settings,workerId,audioPath,fetchImpl=fetch,validateAddress=publicImageAddress,onProgress=()=>{},width=1080,height=1920}){
  if(!/^[a-zA-Z0-9_-]+$/.test(jobId)||!Array.isArray(snapshot.frames)||!snapshot.frames.length||snapshot.frames.length>300)throw new Error('视频分镜任务无效。');
- const dir=path.join(workDir,'psychology-video-hits',jobId);fs.mkdirSync(dir,{recursive:true});fs.mkdirSync(outputDir,{recursive:true});
+ const base=path.resolve(workDir,'psychology-video-hits');fs.mkdirSync(base,{recursive:true});
+ const dir=path.join(fs.realpathSync(base),jobId);fs.mkdirSync(dir,{recursive:true});
+ if(fs.lstatSync(dir).isSymbolicLink()||fs.realpathSync(dir)!==dir)throw Error('分镜临时目录无效。');
+ try{fs.mkdirSync(outputDir,{recursive:true});
  onProgress({percent:5,message:'正在准备二创配音…'});
  const audio=audioPath||await synthesizeRemix({snapshot,root,config,workDir,file:path.join(dir,'narration.mp3'),fetchImpl});
  const duration=Number(run('ffprobe',['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',audio]).trim());
@@ -67,4 +71,5 @@ export async function renderVideoRemix({snapshot,jobId,root,config={},workDir,ou
  const args=['-y','-v','error','-f','concat','-safe','1','-i','frames.txt','-i',audio,'-vf','fps=30,subtitles=captions.ass,format=yuv420p','-t',String(duration),'-c:v','libx264','-preset','fast','-crf','20','-c:a','aac','-b:a','192k','-movflags','+faststart',output];
  const r=spawnSync('ffmpeg',args,{cwd:dir,encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024});if(r.error||r.status!==0)throw new Error('视频合成失败：'+String(r.error?.message||r.stderr).slice(-1500));
  return {results:[{id:jobId,fileName,videoUrl:'/outputs/'+fileName,title:snapshot.title,narration:snapshot.script,duration,frameCount:frames.length,sourceId:snapshot.sourceId,version:snapshot.version,template:'psychology-video-remix'}]};
+ }catch(error){try{removePublishedVideo(outputDir,jobId,jobId+'.mp4');}catch{}throw error;}finally{if(path.dirname(dir)===fs.realpathSync(base)&&!fs.lstatSync(dir).isSymbolicLink()&&fs.realpathSync(dir)===dir)fs.rmSync(dir,{recursive:true,force:true});}
 }

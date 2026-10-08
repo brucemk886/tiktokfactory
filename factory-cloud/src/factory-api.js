@@ -1,3 +1,4 @@
+import {handleVideoHitCleanup} from './psychology-video-hit-cleanup.js';
 import {handleVideoHits} from './psychology-video-hits.js';
 import {handleVideoHitProduction} from './psychology-video-hit-production.js';
 import {handlePsychologyWebsite} from './psychology-website.js';
@@ -67,7 +68,7 @@ function prepare(input,entry,origin){
 }
 async function dispatch(entry,request,env,url,user){
  // Trusted actors are passed as server arguments only, never from client headers or body.
- if(entry.handler==='videoHits')return (await handleVideoHitProduction(request,env,url,{user}))||handleVideoHits(request,env,url,{user});
+ if(entry.handler==='videoHits')return (await handleVideoHitProduction(request,env,url,{user}))||(await handleVideoHitCleanup(request,env,url,{user}))||handleVideoHits(request,env,url,{user});
  if(entry.handler==='manage')return handlePsychologyManagement(request,env,url,null,{actor:{user,scopes:Object.keys(MANAGEMENT_MODULES).flatMap(m=>[m+':read',m+':write'])}});
  if(entry.handler==='topics')return handlePsychologyTopicBank(request,env,url,null,{user});
  if(entry.handler==='copy')return handleCopyIntegration(request,env,url,user.id,readManagementBody);

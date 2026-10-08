@@ -1,3 +1,4 @@
+import {cleanPublishedVideo} from './psychology-video-cleanup.js';
 import {transferPsychologyVideo} from './psychology-video-transfer.js';
 import { publishErrorMessage } from './publish-error-message.js';
 import { runGroupedVideoUpload } from "./psychology-batch-upload.js";
@@ -95,7 +96,7 @@ async function helloWorker(context) {
   }
 }
 
-export const PUBLISH_JOB_TYPES = ["official-publish", "psychology-publish-submit", "psychology-video-archive", "psychology-selected-video"];
+export const PUBLISH_JOB_TYPES = ["official-publish", "psychology-publish-submit", "psychology-video-archive", "psychology-selected-video", "psychology-video-cleanup"];
 export const DEFAULT_RENDER_CONCURRENCY = 2;
 export const DEFAULT_PUBLISH_CONCURRENCY = 1;
 
@@ -144,7 +145,7 @@ async function laneLoop(context, lane) {
     try {
       claimed = await request(context, "/api/worker/claim", {
         method: "POST",
-        body: { psychologyVideoRemix:true, psychologyVideoTransfer:true, psychologyPublishRetry: true, psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
+        body: { psychologyVideoCleanup:true, psychologyVideoRemix:true, psychologyVideoTransfer:true, psychologyPublishRetry: true, psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
       });
     } catch (error) {
       console.error(`拉单失败（${lane.name}）：`, error.message || error);
@@ -167,6 +168,11 @@ async function runJob(context, job) {
   const jobId = job.id || job.jobId;
   const type = resolveJobType(job);
   console.log(`接到工厂云任务 ${jobId} (${type})`);
+  if(type==='psychology-video-cleanup'){
+    try{const result=await cleanPublishedVideo({...context,job});await complete(context,jobId,{result,percent:100,message:'已发布二创成片已清理'});}
+    catch(error){await complete(context,jobId,{error:error.message,percent:0});}
+    return;
+  }
   if(['psychology-video-archive','psychology-selected-video'].includes(type)){
     try{const result=await transferPsychologyVideo({...context,job});await complete(context,jobId,{result,percent:100,message:type==='psychology-video-archive'?'云端预览已准备好':'视频已上传，正在核对发布回执'});}
     catch(error){await complete(context,jobId,{error:error.message,percent:0});}

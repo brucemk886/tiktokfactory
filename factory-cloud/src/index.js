@@ -1,3 +1,4 @@
+import {handleVideoHitCleanup,collectVideoHitAssets} from './psychology-video-hit-cleanup.js';
 import {handleVideoHitVideos} from './psychology-video-hit-videos.js';
 import {handleVideoHits} from './psychology-video-hits.js';
 import {handleVideoHitAssets} from './psychology-video-hit-assets.js';
@@ -82,7 +83,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handleVideoHitCleanup,handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
@@ -132,7 +133,7 @@ export default {
 
   async scheduled(controller, env, ctx) {
     if(controller.cron==='* * * * *'){await runScheduledSteps(controller.cron,[['psychology-operating-check',async()=> (await import('./psychology-production-checks.js')).runProductionCheck(env)],['adaptive-generation',async()=> (await import('./psychology-adaptive-production.js')).dispatchAdaptiveProduction(env)],['cloud-photos',async()=> (await import('./psychology-cloud-queue.js')).dispatchCloudPhotos(env)],['psychology-comments',()=>runScheduledComments(env)],['psychology-auto-replies',()=>dispatchAutoReplies(env)],['psychology-copy-library',()=>dispatchCopyExtractions(env)],['ops-report-facts',async()=> (await import('./psychology-report-facts.js')).backfillReportFacts(env)],['photo-factory',async()=> (await import('./photo-factory-execution.js')).tickPhotoFactory(env)]]);await runPendingAutopilotFill(env);return;}
-    if(controller.cron==='*/5 * * * *'){await runScheduledSteps(controller.cron,[['psychology-schedule-watchdog',async()=> (await import('./psychology-schedule-health.js')).watchScheduling(env)],['psychology-publish-recovery',()=>reconcilePsychologyGroups(env)]]);return;}
+    if(controller.cron==='*/5 * * * *'){await runScheduledSteps(controller.cron,[['psychology-schedule-watchdog',async()=> (await import('./psychology-schedule-health.js')).watchScheduling(env)],['psychology-publish-recovery',()=>reconcilePsychologyGroups(env)],['psychology-video-hit-cleanup',()=>collectVideoHitAssets(env)]]);return;}
     const results = await runScheduledSteps(controller.cron, [
       ["ops-report-persist", async () => persistOpsSnapshots(env, env.DB, await loadGroupStore(env.DB))],
       ["prune-ops-reports", () => pruneOfficialOpsReports(env.DB)],

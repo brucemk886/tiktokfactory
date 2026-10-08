@@ -1,3 +1,4 @@
+import {cleanPublishedVideo} from './psychology-video-cleanup.js';
 // Scoped renderer for an already-running factory; no hello, restart, or old planning.
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -15,10 +16,10 @@ async function call(endpoint,body){
 console.log('Video remix renderer ready; only explicit psychology-video-remix tasks are claimed.');
 while(true){
  try{
-  const data=await call('/api/worker/claim',{workerId,types:['psychology-video-remix'],psychologyVideoRemix:true,psychologyBatchUpload:true});const job=data.job;
+  const data=await call('/api/worker/claim',{workerId,types:['psychology-video-remix','psychology-video-cleanup'],psychologyVideoCleanup:true,psychologyVideoRemix:true,psychologyBatchUpload:true});const job=data.job;
   if(job){
    const id=job.id||job.jobId;let completion;
-   try{const result=await renderVideoRemix({snapshot:job.payload.videoRemix,jobId:id,root,config,...storage,settings,workerId});completion={result:{...result,...(job.payload.psychologyAutomation?{publishPending:true}:{})},percent:100,message:'二创视频合成完成'};}
+   try{const result=job.type==='psychology-video-cleanup'?await cleanPublishedVideo({root,config,...storage,settings,workerId,job}):await renderVideoRemix({snapshot:job.payload.videoRemix,jobId:id,root,config,...storage,settings,workerId});completion={result:{...result,...(job.payload.psychologyAutomation?{publishPending:true}:{})},percent:100,message:job.type==='psychology-video-cleanup'?'已发布成片已清理':'二创视频合成完成'};}
    catch(error){completion={error:String(error.message).slice(0,1000),percent:100};}
    // Retry only the same completion; never claim another task until this outcome is acknowledged.
    let acknowledged=false;while(!acknowledged){try{await call('/api/worker/jobs/'+encodeURIComponent(id)+'/complete',completion);acknowledged=true;break;}catch(e){console.error('Completion retry',id,e.message);await new Promise(r=>setTimeout(r,5000));}}

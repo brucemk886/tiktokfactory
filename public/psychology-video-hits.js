@@ -4,6 +4,7 @@ const route=location.pathname.replace(/\/$/,''),params=new URLSearchParams(locat
 const view=route===PAGE+'/recreations'?'recreations':route===PAGE+'/detail'?'detail':'sources';
 const sourceId=params.get('id'),detailUrl=(id,version)=>PAGE+'/detail?id='+encodeURIComponent(id)+'&version='+version,recreationsUrl=id=>PAGE+'/recreations?id='+encodeURIComponent(id);
 let page=1,list=[],detail=null,n=Number(params.get('version')),framePage=1,editingSource=false,editingVersion=false,frameVersion=0,loadToken=0,listToken=0;
+let versionScope="pending";
 const pending=new Map(),framePreviews=new Map();
 async function api(path='',method='GET',body){
  const response=await fetch(BASE+path,{method,cache:'no-store',...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
@@ -20,7 +21,7 @@ async function action(status,button,fn){
 }
 const lock=(id,value)=>{$(id).dataset.locked=String(value);$(id).disabled=value;};
 const renderCurrent=v=>v.renderRevision===v.revision&&v.renderSourceRevision===detail.source.revision;
-const versionState=v=>v.publishState==='published'?'已发布':v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
+const versionState=v=>v.publishState==='published'?(v.cleanedAt?'已发布 · 已清理':'已发布 · 待清理'):v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
 const current=()=>detail?.versions.find(v=>v.version===n),stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
 const metric=x=>x==null?'—':Number(x).toLocaleString('zh-CN');
 function pageError(error){$('pageStatus').hidden=false;$('pageStatus').textContent=error.message;}
@@ -37,7 +38,7 @@ function setupPage(){
 }
 async function load(){
  const token=++listToken;$('listStatus').textContent='正在读取…';
- try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value);if(token!==listToken)return;
+ try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value);if(token!==listToken)return;
  list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创版本">'+s.versionCount+' / 20</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="5">暂无视频。新增来源后，可通过 API 写入二创文案与逐帧图片。</td></tr>';
  $('listStatus').textContent='共 '+data.total+' 条视频';$('pageInfo').textContent='第 '+page+' 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
@@ -49,25 +50,34 @@ async function loadDetail(){
  $('sourceSummary').hidden=false;$('sourceTitle').textContent=d.source.title;$('sourceLink').href=d.source.videoUrl;
  $('sourceMeta').textContent=d.source.externalId+' · '+metric(d.source.videoData.playCount)+' 播放 · '+d.frameCount+' 帧原图';
  $('sourceData').textContent=JSON.stringify(d.source.videoData,null,2);
+ lock('editSource',Boolean(d.source.archivedAt));
+ lock('archiveSource',Boolean(d.source.archivedAt)||!d.versions.length||d.versions.some(v=>v.publishState!=='published'));
+ $('archiveSource').title=d.source.archivedAt?'此来源已结束':'全部已创建版本确认发布成功后，可结束来源并清理原图';
+ $('sourceLifecycle').textContent=d.source.originalsCleanedAt?'来源已结束，原文案和原图已清理。':d.source.archivedAt?'来源已结束，原文案和原图将在 '+stamp(d.source.archivedAt+86400000)+' 后清理。':'原图保留供后续二创使用。全部已创建版本发布成功后，可点击“结束来源”清理原图。';
  if(view==='recreations')renderRecreations();else await loadVersion();
  $('pageStatus').hidden=true;
 }
 function renderRecreations(){
- $('recreationList').hidden=false;$('newVersion').disabled=detail.versions.length>=20;
- $('recreationStatus').textContent='共 '+detail.versions.length+' 个二创版本 / 最多 20 个';
- $('recreations').innerHTML=detail.versions.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="输入方式 / 素材">'+(v.inputMode==='video'?'直接传入成片<small>'+(v.videoAssetId?'已上传':'待上传')+'</small>':'图片合成<small>'+v.frameCount+' / '+detail.frameCount+' 帧</small>')+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.updatedAt)+'</small><small>北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。</p></td></tr>';
+ $('recreationList').hidden=false;$('newVersion').disabled=Boolean(detail.source.archivedAt)||detail.versions.length>=20;
+ const published=detail.versions.filter(v=>v.publishState==='published'),rows=versionScope==='published'?published:versionScope==='pending'?detail.versions.filter(v=>v.publishState!=='published'):detail.versions;
+ document.querySelectorAll('#versionScope [data-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scope===versionScope)));
+ $('recreationStatus').textContent='显示 '+rows.length+' 个 · 待发布 '+(detail.versions.length-published.length)+' 个 · 已发布 '+published.length+' 个 / 最多 20 个';
+ $('recreations').innerHTML=rows.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.cleanedAt?'二创内容已清理；保留发布记录':v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="输入方式 / 素材">'+(v.cleanedAt?'素材已清理':v.inputMode==='video'?'直接传入成片<small>'+(v.videoAssetId?'已上传':'待上传')+'</small>':'图片合成<small>'+v.frameCount+' / '+detail.frameCount+' 帧</small>')+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.publishedAt||v.updatedAt)+'</small><small>'+(v.publishedAt?'发布确认时间':'更新时间')+' · 北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">'+(detail.versions.length?'当前筛选暂无版本。':'尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。')+'</p></td></tr>';
 }
 async function loadVersion(){
- const v=current();$('workspace').hidden=false;$('pageLead').textContent=v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
- $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.caption||'尚未填写发布文案';$('versionScript').textContent=v.script||(v.inputMode==='video'?'成片自带配音，无需填写合成文案':'尚未填写二创配音文案');
- $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.caption||'尚未填写发布文案';$('originalScript').textContent=detail.source.script||'尚未填写原文';
+ const v=current();$('workspace').hidden=false;$('pageLead').textContent=v.cleanedAt?'查看该版本的发布记录和自动清理结果。':v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
+ $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.cleanedAt?'已按发布后保留期清理':v.caption||'尚未填写发布文案';$('versionScript').textContent=v.cleanedAt?'已按发布后保留期清理':v.script||(v.inputMode==='video'?'成片自带配音，无需填写合成文案':'尚未填写二创配音文案');
+ $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.originalsCleanedAt?'来源已结束，原文案已清理':detail.source.caption||'尚未填写发布文案';$('originalScript').textContent=detail.source.originalsCleanedAt?'来源已结束，原文案已清理':detail.source.script||'尚未填写原文';
  $('versionStatus').textContent=versionState(v)+' · '+(v.inputMode==='video'?'直接传入成片':v.frameCount+' / '+detail.frameCount+' 帧');
  $('toggleVersion').textContent=v.enabled?'停用版本':'启用版本';lock('toggleVersion',Boolean(v.publishItemId));lock('editVersion',Boolean(v.publishItemId));
  $('renderVersion').hidden=v.inputMode==='video';$('publishVersion').textContent=v.inputMode==='video'||renderCurrent(v)&&v.renderState==='done'?'发布成片':'合成并发布';
  lock('renderVersion',!v.enabled||Boolean(v.publishItemId)||renderCurrent(v)&&['queued','running','done'].includes(v.renderState));lock('publishVersion',!v.enabled||Boolean(v.publishItemId)||v.inputMode!=='video'&&['queued','running'].includes(v.renderState));
- $('readyVideoPanel').hidden=v.inputMode!=='video';$('framePanel').hidden=v.inputMode==='video';
+ $('readyVideoPanel').hidden=v.inputMode!=='video'||Boolean(v.cleanedAt);$('framePanel').hidden=v.inputMode==='video'||Boolean(v.cleanedAt);
+ $('versionLifecycle').textContent=v.cleanedAt?'官方发布已确认，二创文案与素材引用已清理；无需再发布。':v.publishedAt?'官方发布已确认，二创文案和素材将在 '+stamp(v.publishedAt+86400000)+' 后自动清理。':'发布成功后自动清理二创内容；提交中、失败和未确认状态会保留。';
+ $('publishedLink').hidden=!/^https:\/\//.test(v.publishedUrl||'');$('publishedLink').href=v.publishedUrl||'#';
+ for(const id of ['addOriginal','addRemix','jsonFrames'])lock(id,Boolean(v.publishItemId)||Boolean(detail.source.archivedAt));
  $('readyVideoStatus').textContent=v.videoAssetId?'成片已上传，可直接发布。':'请编辑版本并传入成片。';if(v.videoPreviewUrl)$('readyVideoPreview').src=v.videoPreviewUrl;else $('readyVideoPreview').removeAttribute('src');
- await Promise.all([v.inputMode==='video'?Promise.resolve():loadFrames(),loadJobs()]);
+ await Promise.all([v.inputMode==='video'||v.cleanedAt?Promise.resolve():loadFrames(),loadJobs()]);
 }
 async function loadFrames(){
  const id=detail.source.id,version=n,p=framePage,token=loadToken;
@@ -78,15 +88,15 @@ async function loadFrames(){
  framePreviews.clear();
  const image=(f,label,index,imageVersion)=>{
   if(f)framePreviews.set(imageVersion+':'+index,{...f,label,index,version:imageVersion});
-  return '<div class="vh-image-column"><p class="vh-image-label">'+label+'</p>'+(f?'<button type="button" class="vh-image-preview" data-preview-frame="'+index+'" data-preview-version="'+imageVersion+'" aria-label="放大查看第 '+index+' 帧 '+label+'" title="放大查看"><img src="'+escape(f.previewUrl)+'" alt="第 '+index+' 帧 '+label+'" loading="lazy" referrerpolicy="no-referrer"><i class="vh-magnifier" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6M10 7v6M7 10h6"/></svg></i></button>':'<span class="vh-image-empty">待补充</span>')+'<p class="vh-frame-text">'+escape(f?.text||'尚未填写画面文字')+'</p><p class="vh-note">'+(f?'参考时长 '+f.durationSeconds+' 秒':'')+'</p><button data-frame="'+index+'" data-version="'+imageVersion+'">修改'+(imageVersion?'二创图':'原图')+'</button></div>';
+  return '<div class="vh-image-column"><p class="vh-image-label">'+label+'</p>'+(f?'<button type="button" class="vh-image-preview" data-preview-frame="'+index+'" data-preview-version="'+imageVersion+'" aria-label="放大查看第 '+index+' 帧 '+label+'" title="放大查看"><img src="'+escape(f.previewUrl)+'" alt="第 '+index+' 帧 '+label+'" loading="lazy" referrerpolicy="no-referrer"><i class="vh-magnifier" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6M10 7v6M7 10h6"/></svg></i></button>':'<span class="vh-image-empty">待补充</span>')+'<p class="vh-frame-text">'+escape(f?.text||'尚未填写画面文字')+'</p><p class="vh-note">'+(f?'参考时长 '+f.durationSeconds+' 秒':'')+'</p><button '+(current().publishItemId||detail.source.archivedAt?'disabled ':'')+'data-frame="'+index+'" data-version="'+imageVersion+'">修改'+(imageVersion?'二创图':'原图')+'</button></div>';
  };
  $('frames').innerHTML=indices.map(index=>'<article class="vh-frame" data-frame-row="'+index+'"><strong>第 '+index+' 帧</strong><div class="vh-images">'+image(originals.get(index),'原图',index,0)+image(recreations.get(index),'版本 '+version+' 二创图',index,version)+'</div></article>').join('')||'<p class="vh-note">尚无图片。先补充原图，再写入对应版本的二创图。</p>';
  $('frameStatus').textContent='原图 '+original.total+' 帧 · 二创图 '+remix.total+' 帧';$('framePageInfo').textContent='第 '+p+' 页 / 每页20帧';$('framePrevious').disabled=p===1;$('frameNext').disabled=!original.hasMore&&!remix.hasMore;
 }
 async function loadJobs(){
  const id=detail.source.id,version=n,token=loadToken,data=await api('/'+id+'/versions/'+version+'/jobs');if(token!==loadToken||version!==n)return;
- if(data.publication){const p=data.publication;$('versionStatus').textContent=({published:'已发布',failed:'发布失败，请重试原任务',submitted:'已提交官方发布',queued:'待发布',running:'发布处理中',cancelled:'发布已取消'}[p.status]||'已提交发布')+' · 每版本仅发布一次';}
- $('jobs').innerHTML=data.jobs.map(j=>'<article><b>'+escape((j.type==='psychology-video-remix'?{queued:'等待合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消'}:{queued:'等待发布',running:'发布处理中',done:'已转交发布流程',failed:'发布失败',cancelled:'已取消'})[j.status]||j.status)+'</b> · '+j.percent+'%<p>'+escape(j.error||j.message)+'</p><small>'+escape(j.id)+'</small>'+(j.type==='psychology-video-remix'&&j.status==='done'&&j.result.results?.[0]?'<button data-preview-job="'+escape(j.id)+'">准备云端预览</button>':'')+'</article>').join('')||'<p>本版本尚无合成任务。</p>';
+ if(data.publication){const p=data.publication;$('versionStatus').textContent=({published:'已发布',failed:'发布失败，请重试原任务',submitted:'已提交官方发布',queued:'待发布',running:'发布处理中',cancelled:'发布已取消'}[p.status]||'已提交发布')+' · 每版本仅发布一次'+(current().cleanedAt?' · 已清理':current().publishedAt?' · 24小时后自动清理':'');}
+ $('jobs').innerHTML=data.jobs.map(j=>'<article><b>'+escape((j.type==='psychology-video-remix'?{queued:'等待合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消'}:{queued:'等待发布',running:'发布处理中',done:'已转交发布流程',failed:'发布失败',cancelled:'已取消'})[j.status]||j.status)+'</b> · '+j.percent+'%<p>'+escape(j.error||j.message)+'</p><small>'+escape(j.id)+'</small>'+(!current().cleanedAt&&j.type==='psychology-video-remix'&&j.status==='done'&&j.result.results?.[0]?'<button data-preview-job="'+escape(j.id)+'">准备云端预览</button>':'')+'</article>').join('')||'<p>本版本尚无合成任务。</p>';
 }
 function sourceEditor(edit){
  editingSource=edit;$('sourceForm').reset();const s=edit?detail.source:{externalId:'video-'+Date.now(),videoData:{}};
@@ -111,6 +121,10 @@ $('sourceForm').onsubmit=e=>{e.preventDefault();action('sourceSaveStatus',e.subm
  const result=await write(editingSource?'/'+detail.source.id:'',editingSource?'PATCH':'POST',body);$('sourceDialog').close();
  if(editingSource)await loadDetail();else location.assign(recreationsUrl(result.id));
  });};
+$('versionScope').onclick=e=>{const b=e.target.closest('[data-scope]');if(b){versionScope=b.dataset.scope;renderRecreations();}};
+$('sourceScope').onchange=()=>{page=1;load();};
+$('archiveSource').onclick=()=>{$('archiveStatus').textContent='';$('archiveDialog').showModal();};
+$('confirmArchive').onclick=e=>action('archiveStatus',e.target,async()=>{await write('/'+detail.source.id+'/archive','POST',{revision:detail.source.revision});$('archiveDialog').close();await loadDetail();});
 $('newVersion').onclick=()=>versionEditor(false);$('editVersion').onclick=()=>versionEditor(true);
 $('versionForm').onsubmit=e=>{e.preventDefault();action('versionSaveStatus',e.submitter,async()=>{
  const version=Number($('versionNumber').value),body=Object.fromEntries(['name','title','caption','script'].map(k=>[k,e.target.elements[k].value]));body.revision=Number(e.target.dataset.revision);body.inputMode=$('versionInputMode').value;body.videoAssetId='';body.enabled=false;
@@ -202,8 +216,14 @@ const guide=()=>[
 'videoHits.publish 才执行完整发布流程（成片跳过合成）：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,connectionIds:["AUTHORIZED_ACCOUNT_ID"],scheduleAt:UNIX_SECONDS,intervalMinutes:60,isAiGenerated:true,voiceGender:"female"}}。',
 '发布前先用 publish.accounts 查询当前心理学项目授权账号。排期至少留30分钟合成，整批14天内。每版本全局仅发布一次，只能选择一个授权账号；失败重试原任务。成片或已合成视频至少提前5分钟，待合成图片至少提前30分钟。可选minFollowers:1000及tiktokOne:{connectionId,accountId,campaignId}沿用现有官方校验。',
 '仅在用户已授权发布的任务中调用videoHits.publish；图片/文案写入不会发布，也不会恢复旧自动规划。',
+'videoHits.cleanup 查看清理政策和当前状态。确认全部已创建版本均已发布后，可用 videoHits.archive params:{id:SOURCE_ID,body:{revision:SOURCE_REVISION}} 结束来源；24小时后清理原文和原图。已发布版本不会释放版本编号或防重标记，不能再次发布。外部imageUrl仅解除引用，Factory不能删除其他网站的文件。',
 '409 REQUEST_IN_PROGRESS或503 RESULT_UNKNOWN不得更换UUID重发，使用requests.get查询原请求状态。'
 ].join('\n\n');
+async function showCleanup(){
+ $('cleanupStatus').textContent='正在读取…';const data=await api('/cleanup'),sets=[['原图 / 二创图片',data.images],['传入成片',data.videos],['合成云端预览',data.previews]],sum=(rows,state,key)=>rows.filter(r=>r.state===state).reduce((n,r)=>n+Number(r[key]),0);
+ $('cleanupSummary').innerHTML='<p>已发布 '+data.versions.published+' 个版本 · 已清理 '+data.versions.cleaned+' 个 · 等待清理 '+data.versions.awaitingCleanup+' 个</p><div class="vh-table"><table><thead><tr><th>素材</th><th>保留文件</th><th>已清理文件</th><th>待重试</th></tr></thead><tbody>'+sets.map(([label,rows])=>'<tr><td>'+label+'</td><td data-label="保留">'+sum(rows,'active','count')+'</td><td data-label="已清理">'+sum(rows,'deleted','count')+'</td><td data-label="待重试">'+sum(rows,'deleting','count')+'</td></tr>').join('')+'</tbody></table></div><p>本机成片已清理 '+data.local.cleaned+' 个 · 等待原渲染工人清理 '+data.local.queued+' 个</p>'+(data.errors.length?'<p>以下文件删除失败，将自动重试：</p>'+data.errors.map(e=>'<p>'+escape(e.kind+' '+e.id+'：'+e.error)+'</p>').join(''):'');$('cleanupStatus').textContent='状态已更新；文件删除不会重置发布次数。';
+}
+$('cleanupButton').onclick=()=>{$('cleanupDialog').showModal();showCleanup().catch(e=>$('cleanupStatus').textContent=e.message);};$('refreshCleanup').onclick=e=>action('cleanupStatus',e.target,showCleanup);
 $('apiButton').onclick=()=>{$('apiInstructions').textContent=guide();$('apiDialog').showModal();};$('copyApi').onclick=async()=>{try{await navigator.clipboard.writeText(guide());$('copyApi').textContent='已复制';}catch{$('copyApi').textContent='请选中下方说明复制';}};
 setupPage();
 if(view==='sources')load();

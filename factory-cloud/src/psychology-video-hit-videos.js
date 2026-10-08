@@ -6,6 +6,7 @@ export const VIDEO_HIT_VIDEO_MAX=95*1024*1024;
 const TYPES={mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm'};
 export async function readyVideo(db,user,id){
  const row=await db.prepare("SELECT v.*,a.status FROM psychology_video_hit_videos v JOIN psychology_video_assets a ON a.id=v.id AND a.owner=? WHERE v.id=? AND v.owner_id=?").bind(user.username,id,user.id).first();
+ if(row&&row.cleanup_state!=='active')fail('成片已清理或正在清理。',410);
  if(!row||row.status!=='ready')fail('成片不存在、尚未上传完成或无权访问。',409);return row;
 }
 const publicVideo=row=>({videoAssetId:row.id,fileName:row.file_name,size:row.size,previewUrl:VIDEO_HITS_BASE+'/videos/'+row.id+'/file'});
@@ -29,9 +30,12 @@ export async function handleVideoHitVideos(request,env,url,session){
  if(!/^[a-f0-9]{64}$/.test(digest))fail('请提供小写SHA256文件摘要X-Content-SHA256。');
  const db=env.DB,id=match[2],same=row=>row.owner_id===user.id&&row.digest===digest&&row.size===size&&row.file_name===name&&row.content_type===type;
  const prior=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();
- if(prior){if(!same(prior))fail('该上传编号已用于其他成片。',409);return json({...publicVideo(prior),duplicate:true});}
- if(await db.prepare('SELECT id FROM psychology_video_assets WHERE id=?').bind(id).first())fail('该编号已用于其他视频资产。',409);
- const key='psychology-video-hit-videos/'+user.id+'/'+id+'/'+digest,reader=request.body.getReader();let actual=0,prefix=new Uint8Array(0),validated=false;
+ if(prior){if(!same(prior))fail('该上传编号已用于其他成片。',409);if(['deleting','deleted'].includes(prior.cleanup_state))fail('成片已清理或正在清理，请使用新上传编号。',410);if(prior.cleanup_state==='active')return json({...publicVideo(prior),duplicate:true});}
+ if(!prior&&await db.prepare('SELECT id FROM psychology_video_assets WHERE id=?').bind(id).first())fail('该编号已用于其他视频资产。',409);
+ const key='psychology-video-hit-videos/'+user.id+'/'+id+'/'+digest;
+ await db.prepare("INSERT INTO psychology_video_hit_videos(id,owner_id,digest,file_name,content_type,size,r2_key,created_at,last_touched_at,cleanup_state) VALUES(?,?,?,?,?,?,?,?,?,'uploading') ON CONFLICT(id) DO NOTHING").bind(id,user.id,digest,name,type,size,key,Date.now(),Date.now()).run();
+ const claim=await db.prepare("UPDATE psychology_video_hit_videos SET last_touched_at=? WHERE id=? AND owner_id=? AND digest=? AND file_name=? AND size=? AND cleanup_state IN ('uploading','active')").bind(Date.now(),id,user.id,digest,name,size).run();if(!claim.meta?.changes)fail('该上传编号已失效或用于其他成片。',409);
+ const reader=request.body.getReader();let actual=0,prefix=new Uint8Array(0),validated=false;
  const stream=new ReadableStream({async pull(controller){try{
   const part=await reader.read();if(part.done){if(actual!==size||!validated)fail('上传未完成或视频内容无效。');controller.close();return;}
   actual+=part.value.byteLength;if(actual>size)fail('上传超过声明大小。',413);
@@ -44,9 +48,9 @@ export async function handleVideoHitVideos(request,env,url,session){
  try{await Promise.all([env.ARCHIVE.put(key,fixed.readable,{sha256:digest,httpMetadata:{contentType:type}}),stream.pipeTo(fixed.writable)]);}catch(error){if(/checksum|sha256/i.test(error.message))fail('成片内容与SHA256摘要不符，请核对原文件。');throw error;}
  const stamp=Date.now(),row={id,owner_id:user.id,digest,file_name:name,content_type:type,size,r2_key:key};
  try{await db.batch([
-  db.prepare('INSERT INTO psychology_video_hit_videos(id,owner_id,digest,file_name,content_type,size,r2_key,created_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(id,user.id,digest,name,type,size,key,stamp),
+  db.prepare("UPDATE psychology_video_hit_videos SET cleanup_state='active',last_touched_at=? WHERE id=? AND owner_id=? AND digest=? AND cleanup_state IN ('uploading','active')").bind(stamp,id,user.id,digest),guard(db),
   db.prepare("INSERT INTO psychology_video_assets(id,owner,file_name,content_type,file_size,r2_key,status,created_at,updated_at) SELECT ?,?,?,?,?,?,'ready',?,? WHERE EXISTS(SELECT 1 FROM psychology_video_hit_videos WHERE id=? AND owner_id=? AND digest=? AND file_name=?) ON CONFLICT(id) DO UPDATE SET id=excluded.id WHERE psychology_video_assets.owner=excluded.owner AND psychology_video_assets.r2_key=excluded.r2_key AND psychology_video_assets.file_name=excluded.file_name AND psychology_video_assets.content_type=excluded.content_type AND psychology_video_assets.file_size=excluded.file_size").bind(id,user.username,name,type,size,key,stamp,stamp,id,user.id,digest,name),guard(db)
- ]);}catch(error){const winner=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();if(winner?.r2_key!==key)await env.ARCHIVE.delete(key);if(/CHECK constraint/i.test(error.message))fail('该上传编号已用于其他视频资产。',409);throw error;}
+ ]);}catch(error){const winner=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();if(winner?.r2_key!==key||['deleting','deleted'].includes(winner?.cleanup_state))await env.ARCHIVE.delete(key);if(/CHECK constraint/i.test(error.message))fail('该上传编号已用于其他视频资产。',409);throw error;}
  const saved=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();
  if(!same(saved)){if(saved.r2_key!==key)await env.ARCHIVE.delete(key);fail('该上传编号已用于其他成片。',409);}
  return json(publicVideo(row),201);

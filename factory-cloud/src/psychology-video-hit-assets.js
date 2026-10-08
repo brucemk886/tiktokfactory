@@ -29,21 +29,23 @@ export async function handleVideoHitAssets(request,env,url,session){
  if(!external&&!['GET','HEAD'].includes(request.method)&&((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site'))fail('不允许跨站上传。',403);
  if(match[2]&&['GET','HEAD'].includes(request.method)){
   const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[1],user.id).first();
-  if(!row)fail('图片不存在或无权访问。',404);
+  if(!row)fail('图片不存在或无权访问。',404);if(row.cleanup_state!=='active')fail('图片已清理或正在清理。',410);
   const object=await env.ARCHIVE.get(row.r2_key);if(!object)fail('图片文件不存在。',404);
   return new Response(request.method==='HEAD'?null:object.body,{headers:{'Content-Type':row.content_type,'Content-Length':String(row.size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
  }
  if(match[2]||request.method!=='PUT')fail('上传使用PUT二进制图片内容。',405);
  const b=await bytes(request),type=imageType(b,request.headers.get('content-type')?.split(';')[0]);if(type==='image/png')await decodeTopicPng(b);const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',b)),v=>v.toString(16).padStart(2,'0')).join('');
- const prior=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=?').bind(match[1]).first();
- if(prior){if(prior.owner_id!==user.id||prior.digest!==digest||prior.content_type!==type)fail('该上传编号已用于其他图片。',409);return json({assetId:prior.id,duplicate:true,previewUrl:VIDEO_HITS_BASE+'/assets/'+prior.id+'/file'});}
- const key='psychology-video-hits/'+user.id+'/'+match[1]+'/'+digest;
+ const db=env.DB,id=match[1],key='psychology-video-hits/'+user.id+'/'+id+'/'+digest,same=row=>row.owner_id===user.id&&row.digest===digest&&row.content_type===type;
+ await db.prepare("INSERT INTO psychology_video_hit_assets(id,owner_id,r2_key,content_type,size,digest,created_at,last_touched_at,cleanup_state) VALUES(?,?,?,?,?,?,?,?,'uploading') ON CONFLICT(id) DO NOTHING").bind(id,user.id,key,type,b.length,digest,Date.now(),Date.now()).run();
+ let saved=await db.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=?').bind(id).first();
+ if(!same(saved))fail('该上传编号已用于其他图片。',409);
+ if(['deleting','deleted'].includes(saved.cleanup_state))fail('该图片已清理或正在清理，请使用新的上传编号。',410);
+ if(saved.cleanup_state==='active')return json({assetId:id,duplicate:true,previewUrl:VIDEO_HITS_BASE+'/assets/'+id+'/file'});
+ await db.prepare("UPDATE psychology_video_hit_assets SET last_touched_at=? WHERE id=? AND cleanup_state='uploading'").bind(Date.now(),id).run();
  await env.ARCHIVE.put(key,b,{httpMetadata:{contentType:type}});
- try{await env.DB.prepare('INSERT INTO psychology_video_hit_assets(id,owner_id,r2_key,content_type,size,digest,created_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(match[1],user.id,key,type,b.length,digest,Date.now()).run();}
- catch(error){await env.ARCHIVE.delete(key);throw error;}
- const saved=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=?').bind(match[1]).first();
- if(saved.owner_id!==user.id||saved.digest!==digest||saved.content_type!==type){if(saved.r2_key!==key)await env.ARCHIVE.delete(key);fail('该上传编号已用于其他图片。',409);}
- return json({assetId:saved.id,size:b.length,previewUrl:VIDEO_HITS_BASE+'/assets/'+saved.id+'/file'},201);
+ const updated=await db.prepare("UPDATE psychology_video_hit_assets SET cleanup_state='active',last_touched_at=? WHERE id=? AND cleanup_state IN ('uploading','active')").bind(Date.now(),id).run();
+ if(!updated.meta?.changes){await env.ARCHIVE.delete(key);fail('上传已过期并清理，请使用新的上传编号。',410);}
+ return json({assetId:id,size:b.length,previewUrl:VIDEO_HITS_BASE+'/assets/'+id+'/file'},201);
 }
 // Called after the common worker bearer check. Access is limited to frozen assets of this running job.
 export async function handleVideoHitWorkerAsset(request,env,url){

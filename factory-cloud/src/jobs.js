@@ -264,6 +264,8 @@ async function handleWorkerApi(request, env, url, ctx) {
   const supplied = bearer(request);
   if (supplied !== expected) return errorJson("工人密钥不正确。", 401);
   if(url.pathname==='/api/worker/psychology-cloud-photo/probe')return (await import('./psychology-cloud-probe.js')).handleCloudPhotoProbe(request,env,url);
+  const cleanup=await (await import('./psychology-video-hit-cleanup.js')).handleVideoHitWorkerCleanup(request,env,url);
+  if(cleanup)return cleanup;
   const remixAsset=await (await import('./psychology-video-hit-assets.js')).handleVideoHitWorkerAsset(request,env,url);
   if(remixAsset)return remixAsset;
   const transfer=await (await import('./psychology-video-library.js')).handleVideoTransfer(request,env,url);
@@ -565,10 +567,11 @@ async function handleWorkerApi(request, env, url, ctx) {
     const jobId = safeId(decodeURIComponent(completeMatch[1]));
     const current = await getJob(env.DB, jobId);
     if (!current) return errorJson("任务不存在。", 404);
-    const psychologyAttempt=isPsychologyPublishAttempt(current);
+    const psychologyAttempt=isPsychologyPublishAttempt(current)||current.type==='psychology-video-cleanup';
     if(psychologyAttempt && current.status!=='running')return json({ok:true,duplicate:true});
     if(psychologyAttempt && current.worker_id!==request.headers.get('x-factory-worker'))return errorJson('只能由接单工人完成任务。',409);
     const body = await readJson(request);
+    if(current.type==='psychology-video-cleanup'&&!body.error&&!body.cancelled){const file=await env.DB.prepare('SELECT cleaned_at FROM psychology_video_hit_local_files WHERE cleanup_job_id=?').bind(jobId).first();if(!file?.cleaned_at)return errorJson('清理尚未确认，不能完成任务。',409);}
     const stamp = now();
     const rawResult = body.result && typeof body.result === "object" ? body.result : {};
     const cancelled = Boolean(body.cancelled) || isCancelledJob(current);
@@ -729,6 +732,7 @@ export function claimTypeFilter(payload = {}) {
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = " AND COALESCE(json_extract(payload_json, '$.cloudPhotoRender'),0)<>1";
   if(payload.psychologyBatchUpload!==true)sql += " AND COALESCE(json_extract(payload_json, '$.psychologyAutomation.submissionMode'), '')<>'grouped'";
+  if(payload.psychologyVideoCleanup!==true)sql += " AND type<>'psychology-video-cleanup'";
   if(payload.psychologyVideoRemix!==true)sql += " AND type<>'psychology-video-remix'";
   if(payload.psychologyVideoTransfer!==true)sql += " AND type NOT IN ('psychology-selected-video','psychology-video-archive')";
   if(payload.psychologyPublishRetry!==true)sql += " AND type<>'psychology-publish-submit'";
