@@ -55,8 +55,8 @@
 <div id="oneFields" hidden><div class="auto-grid">
 <label class="field">品牌账号<select id="oneBrand"><option value="">请选择品牌账号</option></select></label>
 <label class="field">项目<select id="oneProject"><option value="">请先选择品牌账号</option></select></label></div>
-<div class="account-selection-actions"><button id="oneRefreshProjects" type="button">刷新项目</button><button id="oneRecheck" type="button">重新检查账号</button><button id="oneJoinSelected" type="button" disabled>加入所选项目</button></div>
-<p class="field-hint">每批绑定一个项目，两个项目请分别建任务。适用于四图、单图等模板生成的视频。千粉是选号条件，账号能否加入项目仍需单独校验。选择账号和项目后，先检查加入状态，再点击“加入所选项目”；也可逐个加入或重试。加入项目不会发布视频。最后确认发布时再次检查，未确认加入的会申请加入，加入失败会阻止创建发布任务，并在发布时启用品牌合作披露。实际锚点展示与审核结果以 TikTok 为准。</p>
+<div class="account-selection-actions"><button id="oneRefreshProjects" type="button">刷新项目</button><button id="oneRecheck" type="button">重新检查账号</button><label class="one-select-all"><input id="oneSelectAll" type="checkbox" disabled>全选未确认账号</label><button id="oneJoinSelected" type="button" disabled>批量加入项目（0）</button></div>
+<p class="field-hint">每批绑定一个项目，两个项目请分别建任务。适用于四图、单图等模板生成的视频。千粉是选号条件，账号能否加入项目仍需单独校验。检查结束后默认勾选未确认账号，可取消部分勾选，再点击“批量加入项目”；单个失败会跳过并继续其他账号，已成功账号不会重复加入。此处勾选只控制加入项目，不改变上方发布账号选择。加入项目不会发布视频。最后确认发布时再次检查，未确认加入的会申请加入，加入失败会阻止创建发布任务，并在发布时启用品牌合作披露。实际锚点展示与审核结果以 TikTok 为准。</p>
 <p id="oneStatus" class="field-hint" role="status"></p><div id="oneAccounts" aria-live="polite"></div></div></section>
 <section class="panel auto-section publish-schedule-section"><div class="section-title"><h2>03 · 发布计划</h2></div>
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>

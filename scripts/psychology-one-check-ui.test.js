@@ -8,6 +8,7 @@ class Element {
  replaceChildren(...children){this.children=children;if(children[0]?.value!==undefined)this.value=children[0].value;}
  append(...children){this.children.push(...children);}
  querySelectorAll(){return [];}
+ setAttribute(name,value){this[name]=value;}
 }
 async function setup(t,read){
  const dom=new Proxy({}, {get:(target,id)=>target[id]??=new Element()});
@@ -44,7 +45,7 @@ test('one slow account times out while later accounts finish and recheck stays u
  const realTimeout=AbortSignal.timeout;t.mock.method(AbortSignal,'timeout',ms=>{assert.equal(ms,30000);return realTimeout(35);});
  const f=await setup(t,(params,signal)=>params.get('creatorConnectionId')==='a'?new Promise((_r,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true})):Promise.resolve({joinStatus:'unknown'}));
  await f.dom.oneRecheck.onclick();
- assert.match(f.rows()[0].children[0].textContent,/检查超时/);assert.equal(f.dom.oneRecheck.disabled,false);
+ assert.match(f.rows()[0].children[0].children[1].textContent,/检查超时/);assert.equal(f.dom.oneRecheck.disabled,false);
  assert.ok(f.rows().slice(1).every(row=>row.dataset.memberState==='unknown'));
 });
 

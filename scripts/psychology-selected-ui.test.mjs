@@ -22,7 +22,7 @@ const server=http.createServer(async(req,res)=>{
  else if(url.pathname==='/api/psychology-tiktok-one'){
   if(req.method==='POST'){
    const input=JSON.parse(raw),key=input.campaignId+':'+input.creatorConnectionId,count=(joinAttempts.get(key)||0)+1;joinAttempts.set(key,count);
-   if(input.creatorConnectionId==='b'&&count===1){res.statusCode=409;data={error:'Demo join failure'};}
+   if(input.campaignId===project&&input.creatorConnectionId==='a'&&count===1){res.statusCode=409;data={error:'Demo join failure'};}
    else{joined.add(key);data={joined:true,joinStatus:'success'};}
   }else data=url.searchParams.get('resource')==='connections'?{connections:[{id:'brand',accountIds:['1'],ownerEmail:'qa@example.test'}]}:url.searchParams.get('resource')==='projects'?{campaigns:[{campaign_id:project,campaign_name:'deeppersonaai',anchor_id:'2'},{campaign_id:'7584639271164739598',campaign_name:'Visual Personality',anchor_id:'3'},{campaign_id:'7619255069147086862',campaign_name:'Unrelated shop project',anchor_id:'4'}]}:{joinStatus:joined.has(url.searchParams.get('campaignId')+':'+url.searchParams.get('creatorConnectionId'))?'success':'unknown'};
  }
@@ -53,16 +53,27 @@ try{
  await page.waitForFunction(()=>!document.querySelector('#oneJoinSelected').disabled);
  const joinPosts=()=>calls.filter(c=>c.path==='/api/psychology-tiktok-one'&&c.method==='POST');
  assert.equal(joinPosts().length,0);
+ assert.equal(await page.$$eval('[data-one-pick]',nodes=>nodes.filter(n=>n.checked).length),2);
+ await page.click('[data-one-pick="b"]');assert.match(await page.$eval('#oneJoinSelected',n=>n.textContent),/（1）/);
+ assert.equal(await page.$eval('#oneSelectAll',n=>n.indeterminate),true);
+ await page.click('#oneSelectAll');await page.click('#oneSelectAll');assert.equal(await page.$eval('#oneJoinSelected',n=>n.disabled),true);
+ await page.click('#oneSelectAll');assert.match(await page.$eval('#oneJoinSelected',n=>n.textContent),/（2）/);
  await page.click('#oneJoinSelected');assert.equal(joinPosts().length,0);
  approve=true;await page.click('#oneJoinSelected');await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 1 / 2'));
  assert.equal(joinPosts().length,2);assert.equal(calls.filter(c=>c.path==='/api/psychology-video-publish').length,0);
- assert.equal(await page.$eval('[data-one-join="a"]',n=>n.disabled),true);
- assert.match(await page.$eval('[data-one-account="b"]',n=>n.textContent),/Demo join failure/);
- await page.click('[data-one-join="b"]');await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 2 / 2'));
- assert.equal(joinPosts().length,3);assert.equal(joinPosts().filter(c=>c.body.creatorConnectionId==='a').length,1);
+ assert.deepEqual(joinPosts().map(c=>c.body.creatorConnectionId),['a','b']);
+ assert.equal(await page.$eval('[data-one-join="b"]',n=>n.disabled),true);
+ assert.equal(await page.$eval('[data-one-pick="b"]',n=>n.disabled&&!n.checked),true);
+ assert.match(await page.$eval('[data-one-account="a"]',n=>n.textContent),/Demo join failure/);
+ await page.click('[data-one-join="a"]');await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 2 / 2'));
+ assert.equal(joinPosts().length,3);assert.equal(joinPosts().filter(c=>c.body.creatorConnectionId==='b').length,1);
  assert.equal(await page.$eval('#oneJoinSelected',n=>n.disabled),true);
  await page.select('#oneProject','7584639271164739598');await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 0 / 2'));
  assert.equal(joinPosts().length,3);
+ await page.click('[data-one-pick="b"]');await page.click('#oneJoinSelected');
+ await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 1 / 2'));
+ assert.equal(joinPosts().length,4);assert.equal(joinPosts().at(-1).body.creatorConnectionId,'a');assert.equal(joinPosts().at(-1).body.campaignId,'7584639271164739598');
+ assert.equal(await page.$eval('[data-one-pick="b"]',n=>n.checked),false);
  await page.select('#oneProject',project);await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 2 / 2'));
  approve=false;await page.waitForSelector('#assignSelectedVideos');await page.click('#assignSelectedVideos');
  const text=await page.$('[data-video-caption="generated"]');await text.click();await page.keyboard.down('Control');await page.keyboard.press('A');await page.keyboard.up('Control');await text.type('Reviewed first caption');
@@ -74,5 +85,5 @@ try{
  await page.setViewport({width:390,height:844});await page.$eval('#videoSelectionSection',n=>n.scrollIntoView({block:'start'}));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(capture)await page.screenshot({path:path.join(capture,'selected-mobile.png')});
  approve=true;await page.click('#submitBatch');await page.waitForFunction(()=>!document.querySelector('#createBatchDialog').open);
  const post=calls.find(c=>c.path==='/api/psychology-video-publish');assert.equal(post.body.items.length,2);assert.equal(post.body.items[0].connectionId,'a');assert.equal(post.body.items[1].connectionId,'b');assert.equal(post.body.items[0].caption,'Reviewed first caption');assert.equal(post.body.tiktokOne.campaignId,project);
- assert.deepEqual(errors,[]);console.log('PASS explicit join cancellation, per-account success/failure/retry, project isolation, no publish on join, plus video preview and confirmed publishing on desktop/mobile; no real publishing APIs.');
+ assert.deepEqual(errors,[]);console.log('PASS visible account checkboxes, select-all/clear and scoped bulk joins; first-account failure continues to next success; cancellation, retry and project isolation, no publish on join, plus video preview and confirmed publishing on desktop/mobile; no real publishing APIs.');
 }finally{await browser.close();await new Promise(r=>server.close(r));if(path.dirname(tmp)!==os.tmpdir()||!path.basename(tmp).startsWith('psy-selection-'))throw new Error('Unexpected temporary path');fs.rmSync(tmp,{recursive:true,force:true});}

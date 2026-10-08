@@ -166,3 +166,5 @@ body.psychology-workspace-page.psychology-auto-page .create-batch-dialog .publis
 
 .one-account-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line,#e4eaf2)}
 .one-account-row span{min-width:0;overflow-wrap:anywhere}.one-account-row button{flex-shrink:0}.one-account-row[data-member-state="joined"] span{color:#15734a}
+
+.one-account-choice{display:flex;align-items:center;gap:10px;min-width:0;flex:1;cursor:pointer}.one-account-choice input[type=checkbox],.one-select-all input[type=checkbox]{width:17px;height:17px;flex-shrink:0;accent-color:#2765e8}.one-select-all{display:inline-flex;align-items:center;gap:7px;margin:0 6px;font-size:13px;cursor:pointer}
