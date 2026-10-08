@@ -20,3 +20,6 @@ public/psychology-tiktok-one.js, public/psychology-auto-publish.html, public/psy
 
 ## Unfinished work / next step
 Commit and push main, then deploy using npm run deploy with a clean exact origin/main match. Refresh the factory page to show the new controls. No live account join or video publication is part of this implementation.
+
+## Release verification
+Integrated upstream video-hits commit 21d00db, preserving its current-state entry and generated assets. Merged full suite: 1,310 passed; isolated desktop/mobile checkbox and first-failure/next-success regression passed again. Runtime e546c70 pushed to main and deployed through npm run deploy under the clean exact-main gate. Cloudflare version: 21683d16-ec26-4a63-957b-1456a2bb21fc. Production JS/CSS responses match committed files; protected HTML correctly redirects an unauthenticated read to login. No real join or publication was sent.
