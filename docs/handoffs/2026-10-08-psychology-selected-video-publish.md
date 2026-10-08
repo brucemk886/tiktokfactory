@@ -22,3 +22,10 @@ User must run a real selected-video publication and confirm TikTok project/ancho
 
 ## Recommended next step
 Use the new picker for a small reviewed batch on one project, verify actual receipts and anchor presentation, then design future template-based daily automation from the validated flow.
+
+## Production release and verification
+- Runtime commit `1840a6d15da39521ed85d3ffbc3c4cdd2542b572` was pushed to GitHub main. The deploy gate confirmed a clean worktree and exact HEAD/origin/main equality. Deployed with `npm run deploy`; migration 0079 applied. Cloudflare version: `44e742b7-d177-4718-ae3c-1c2ca52f9d8d`.
+- Logged-in production UI verified both source tabs, the two requested projects, and 21 eligible thousand-follower accounts out of 201 currently scoped accounts. No actual video was uploaded/published in production, no project membership changed, and no old planning resumed. No app JavaScript errors observed (unrelated browser extension and favicon errors only).
+- Investigated the empty generated-video list: all 3,861 existing completed psychology jobs are cloud-browser photo jobs with empty video results. This is expected, not a legacy result-shape bug. Future completed video jobs populate the picker; locally generated files can be uploaded now.
+- A hidden, scoped transfer helper is running for the current session (PID 100756), using the existing local worker identity/configuration. It claims only explicit video preview/selected-video tasks; existing workers were not restarted. Initial transient network errors were followed by no further errors during verification. Logs: the Windows temp directory, psychology-video-transfer-live.log and psychology-video-transfer-live-error.log.
+- The helper is not registered for Windows autostart. Keep this managed worktree available while it is running. After a future natural local-worker upgrade/restart, the integrated worker supports these tasks directly and the helper can be retired. Other source worker machines must also use updated code for their local video previews.
