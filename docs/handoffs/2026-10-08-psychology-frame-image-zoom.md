@@ -20,7 +20,13 @@ Explain the manual frame editor and add a magnifying glass to enlarge original/r
 - Viewed desktop/mobile screenshots under ignored tmp/video-hits-qa, including image-preview-1440/390/320.png. Test log: D:/cursor/localfactory/tmp/video-hits-preview-tests.log.
 
 ## Unfinished work
-No feature work remains. Release verification will be appended after standard deployment.
+No feature work remains. Release verification is recorded below.
 
 ## Recommended next step
 Open 二创详情 and click an original/recreated image or its magnifier. Use 修改 only to replace a frame or adjust its stored text/timing, then review and re-enable the affected version.
+
+## Production release verification
+- Runtime commit `32d7bdc399955e04f0853d5c6cf1782f6d6aecbc` was pushed to GitHub main first. Standard `npm run deploy` ran from the independent clean main release checkout with exact HEAD == origin/main preflight; no migrations needed.
+- Worker/assets and all existing triggers deployed successfully. Production version `7e3c67ee-f513-4447-8b33-3c23f4305039`. Log: D:/cursor/localfactory/tmp/video-hits-preview-deploy.log.
+- Logged-in production read-only verification used an existing frame: original720x1280 and recreation1080x1920 both opened and decoded in the new modal. Original zoom changed56%→71%; original-size view used720px and scrolled inside a390px viewport. Modal stayed between12px and378px with390px document width. Recreation opened at fit scale29% on mobile.
+- Previews and controls were closed after QA. The task-created browser session and foreground control daemon were stopped. No live content writes, enable/render/publication or paid provider calls were made.
