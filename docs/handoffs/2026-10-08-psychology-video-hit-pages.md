@@ -23,7 +23,13 @@ Change 查看二创 from an inline workspace into a dedicated child list, ordere
 - QA screenshots are ignored under tmp/video-hits-qa; focused run log is D:/cursor/localfactory/tmp/video-hit-pages-tests.log.
 
 ## Unfinished work
-No feature work remains. Production release verification follows after deployment.
+No feature work remains. Production release is verified below.
 
 ## Recommended next step
 Open a saved source via 查看二创, review its numbered versions, and open 查看详情 to compare copy/images. Dot continues to use the existing API write guide.
+
+## Production release verification
+- Runtime commit `fc5c80a3d3c31373567b2c09191a273878b2954c` was committed and pushed to GitHub main before release. Deployment used the independent main checkout at D:/cursor/localfactory/tmp/psychology-video-hits-release-20261008, with clean worktree and exact HEAD == origin/main verified by the standard preflight.
+- `npm run deploy` from factory-cloud completed successfully, including Worker assets and all existing triggers; no migrations needed. Production version `d83db206-5ea6-4e57-8854-bb346e5ca362`. Deploy log: D:/cursor/localfactory/tmp/video-hit-pages-deploy.log.
+- Logged-in read-only production check used existing sources: 查看二创 navigated to the dedicated numbered version list; 查看详情 navigated to the dedicated original/recreated caption/narration and eight frame pairs. The first original720x1280 and recreation1080x1920 decoded successfully. Mobile390 detail had matching document/viewport width; return-to-list verified.
+- No production source/version/frame edits, enable/render actions or publishing calls were submitted during verification. The task-created browser session and foreground browser-control daemon were closed after QA. User primary checkout changes were preserved.
