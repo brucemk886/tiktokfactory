@@ -4,7 +4,7 @@ const route=location.pathname.replace(/\/$/,''),params=new URLSearchParams(locat
 const view=route===PAGE+'/recreations'?'recreations':route===PAGE+'/detail'?'detail':'sources';
 const sourceId=params.get('id'),detailUrl=(id,version)=>PAGE+'/detail?id='+encodeURIComponent(id)+'&version='+version,recreationsUrl=id=>PAGE+'/recreations?id='+encodeURIComponent(id);
 let page=1,list=[],detail=null,n=Number(params.get('version')),framePage=1,editingSource=false,editingVersion=false,frameVersion=0,loadToken=0,listToken=0;
-const pending=new Map();
+const pending=new Map(),framePreviews=new Map();
 async function api(path='',method='GET',body){
  const response=await fetch(BASE+path,{method,cache:'no-store',...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
  const data=await response.json();if(!response.ok)throw new Error(data.error||'请求失败');return data;
@@ -68,7 +68,11 @@ async function loadFrames(){
  const [original,remix]=await Promise.all([api('/'+id+'/frames/0?page='+p),api('/'+id+'/frames/'+version+'?page='+p)]);
  if(token!==loadToken||version!==n||p!==framePage)return;
  const originals=new Map(original.frames.map(f=>[f.index,f])),recreations=new Map(remix.frames.map(f=>[f.index,f])),indices=[...new Set([...originals.keys(),...recreations.keys()])].sort((a,b)=>a-b);
- const image=(f,label,index,imageVersion)=>'<div class="vh-image-column"><p class="vh-image-label">'+label+'</p>'+(f?'<a href="'+escape(f.previewUrl)+'" target="_blank" rel="noopener noreferrer"><img src="'+escape(f.previewUrl)+'" alt="第 '+index+' 帧 '+label+'" loading="lazy" referrerpolicy="no-referrer"></a>':'<span class="vh-image-empty">待补充</span>')+'<p class="vh-frame-text">'+escape(f?.text||'尚未填写画面文字')+'</p><p class="vh-note">'+(f?'参考时长 '+f.durationSeconds+' 秒':'')+'</p><button data-frame="'+index+'" data-version="'+imageVersion+'">编辑'+(imageVersion?'二创图':'原图')+'</button></div>';
+ framePreviews.clear();
+ const image=(f,label,index,imageVersion)=>{
+  if(f)framePreviews.set(imageVersion+':'+index,{...f,label,index,version:imageVersion});
+  return '<div class="vh-image-column"><p class="vh-image-label">'+label+'</p>'+(f?'<button type="button" class="vh-image-preview" data-preview-frame="'+index+'" data-preview-version="'+imageVersion+'" aria-label="放大查看第 '+index+' 帧 '+label+'" title="放大查看"><img src="'+escape(f.previewUrl)+'" alt="第 '+index+' 帧 '+label+'" loading="lazy" referrerpolicy="no-referrer"><i class="vh-magnifier" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6M10 7v6M7 10h6"/></svg></i></button>':'<span class="vh-image-empty">待补充</span>')+'<p class="vh-frame-text">'+escape(f?.text||'尚未填写画面文字')+'</p><p class="vh-note">'+(f?'参考时长 '+f.durationSeconds+' 秒':'')+'</p><button data-frame="'+index+'" data-version="'+imageVersion+'">修改'+(imageVersion?'二创图':'原图')+'</button></div>';
+ };
  $('frames').innerHTML=indices.map(index=>'<article class="vh-frame" data-frame-row="'+index+'"><strong>第 '+index+' 帧</strong><div class="vh-images">'+image(originals.get(index),'原图',index,0)+image(recreations.get(index),'版本 '+version+' 二创图',index,version)+'</div></article>').join('')||'<p class="vh-note">尚无图片。先补充原图，再写入对应版本的二创图。</p>';
  $('frameStatus').textContent='原图 '+original.total+' 帧 · 二创图 '+remix.total+' 帧';$('framePageInfo').textContent='第 '+p+' 页 / 每页20帧';$('framePrevious').disabled=p===1;$('frameNext').disabled=!original.hasMore&&!remix.hasMore;
 }
@@ -106,14 +110,19 @@ $('versionForm').onsubmit=e=>{e.preventDefault();action('versionSaveStatus',e.su
  });};
 $('toggleVersion').onclick=e=>action('versionStatus',e.target,async()=>{await write('/'+detail.source.id+'/versions/'+n,'PATCH',{revision:current().revision,enabled:!current().enabled});await loadDetail();});
 $('renderVersion').onclick=e=>action('versionStatus',e.target,async()=>{const r=await write('/'+detail.source.id+'/versions/'+n+'/render','POST',{revision:current().revision,voiceGender:'female'});$('versionStatus').textContent='已创建合成任务：'+r.jobIds.join(', ');$('jobsPanel').open=true;await loadJobs();});
-async function frameEditor(version,index=1){
- frameVersion=version;$('frameForm').reset();delete $('frameForm').dataset.uploadId;$('frameSaveStatus').textContent='';$('frameDialogTitle').textContent=version?'版本 '+version+' 二创图':'原图';
+async function frameEditor(version,index=1,edit=false){
+ frameVersion=version;$('frameForm').reset();delete $('frameForm').dataset.uploadId;$('frameSaveStatus').textContent='';$('frameDialogTitle').textContent='第 '+index+' 帧 · '+(edit?'修改':'补充')+(version?'版本 '+version+' 二创图':'原图');
+ $('frameForm').elements.index.readOnly=edit;
+ $('frameEditHelp').textContent='可替换此帧图片，或保留图片只修改画面文字、参考时长；不会自动生成图片。保存'+(version?'二创图会停用当前二创版本。':'原图会停用该视频的全部二创版本。')+'确认文案和逐帧图片完整后，可重新启用。';
  const data=await api('/'+detail.source.id+'/frames/'+version+'?page='+Math.ceil(index/20)),f=data.frames.find(f=>f.index===index);
  for(const k of ['index','imageUrl','text','durationSeconds'])$('frameForm').elements[k].value=f?.[k]??(k==='index'?index:k==='durationSeconds'?3:'');
  $('frameForm').dataset.revision=version?detail.versions.find(v=>v.version===version).revision:detail.source.revision;$('frameForm').dataset.assetId=f?.assetId||'';$('frameDialog').showModal();
 }
 $('addOriginal').onclick=()=>frameEditor(0,detail.frameCount+1).catch(e=>$('frameStatus').textContent=e.message);$('addRemix').onclick=()=>frameEditor(n).catch(e=>$('frameStatus').textContent=e.message);
-$('frames').onclick=e=>{const b=e.target.closest('[data-frame]');if(b)frameEditor(Number(b.dataset.version),Number(b.dataset.frame)).catch(e=>$('frameStatus').textContent=e.message);};
+$('frames').onclick=e=>{
+ const preview=e.target.closest('[data-preview-frame]');if(preview){const frame=framePreviews.get(preview.dataset.previewVersion+':'+preview.dataset.previewFrame);if(frame)openImagePreview(frame,preview);return;}
+ const b=e.target.closest('[data-frame]');if(b)frameEditor(Number(b.dataset.version),Number(b.dataset.frame),true).catch(e=>$('frameStatus').textContent=e.message);
+};
 $('frameForm').onsubmit=e=>{e.preventDefault();action('frameSaveStatus',e.submitter,async()=>{
  const f=e.target.elements,file=f.file.files[0];let assetId=e.target.dataset.assetId,imageUrl=f.imageUrl.value.trim();
  if(file&&imageUrl)throw new Error('图片文件和链接请只选一个。');
@@ -131,6 +140,36 @@ $('jsonForm').onsubmit=e=>{e.preventDefault();action('jsonStatus',e.submitter,as
  });};
 $('refreshJobs').onclick=e=>action('versionStatus',e.target,loadJobs);
 $('jobs').onclick=async e=>{const b=e.target.closest('[data-preview-job]');if(!b)return;await action('versionStatus',b,async()=>{const r=await fetch('/api/psychology-video-library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId:b.dataset.previewJob,resultIndex:0})}),data=await r.json();if(!r.ok)throw new Error(data.error);$('versionStatus').textContent='预览已安排准备，请到“成片与发布”查看。';});};
+let previewToken=0,imageScale=1,previewFit=true,previewTrigger=null;
+const previewControls=['imageZoomOut','imageZoomIn','imageFit','imageActual'];
+function setImageScale(scale,preserveCenter=true){
+ const img=$('imagePreview'),viewport=$('imageViewport');if(!img.naturalWidth)return;
+ const centerX=(viewport.scrollLeft+viewport.clientWidth/2)/Math.max(viewport.scrollWidth,1),centerY=(viewport.scrollTop+viewport.clientHeight/2)/Math.max(viewport.scrollHeight,1);
+ imageScale=Math.min(4,Math.max(0.01,scale));img.style.width=Math.max(1,Math.round(img.naturalWidth*imageScale))+'px';img.style.height=Math.max(1,Math.round(img.naturalHeight*imageScale))+'px';
+ $('imageZoomLabel').textContent=Math.round(imageScale*100)+'%';
+ $('imageZoomIn').disabled=imageScale>=4;$('imageZoomOut').disabled=imageScale<=0.01;
+ if(preserveCenter)requestAnimationFrame(()=>{viewport.scrollLeft=centerX*viewport.scrollWidth-viewport.clientWidth/2;viewport.scrollTop=centerY*viewport.scrollHeight-viewport.clientHeight/2;});
+ else{viewport.scrollLeft=0;viewport.scrollTop=0;}
+}
+function fitImagePreview(){
+ const img=$('imagePreview'),viewport=$('imageViewport');if(!img.naturalWidth)return;previewFit=true;
+ setImageScale(Math.min(1,Math.max(1,viewport.clientWidth-32)/img.naturalWidth,Math.max(1,viewport.clientHeight-32)/img.naturalHeight),false);
+}
+function openImagePreview(frame,trigger){
+ const token=++previewToken,img=$('imagePreview'),dialog=$('imageDialog');previewTrigger=trigger;previewFit=true;
+ $('imageDialogTitle').textContent='第 '+frame.index+' 帧 · '+frame.label;$('imagePreviewStatus').textContent='正在加载图片…';$('imageZoomLabel').textContent='—';
+ previewControls.forEach(id=>$(id).disabled=true);img.hidden=true;img.removeAttribute('src');img.style.width='';img.style.height='';img.alt='第 '+frame.index+' 帧 '+frame.label;
+ img.onload=()=>{if(token!==previewToken||!dialog.open)return;img.hidden=false;previewControls.forEach(id=>$(id).disabled=false);$('imagePreviewStatus').textContent=img.naturalWidth+' × '+img.naturalHeight+' · 放大后可滚动查看图片';fitImagePreview();};
+ img.onerror=()=>{if(token===previewToken&&dialog.open)$('imagePreviewStatus').textContent='图片加载失败，请关闭后重试。';};
+ dialog.showModal();img.src=frame.previewUrl;
+}
+function zoomImage(factor){previewFit=false;setImageScale(imageScale*factor);}
+$('imageZoomIn').onclick=()=>zoomImage(1.25);$('imageZoomOut').onclick=()=>zoomImage(0.8);$('imageFit').onclick=fitImagePreview;
+$('imageActual').onclick=()=>{previewFit=false;setImageScale(1);};
+$('imageDialog').addEventListener('close',()=>{previewToken++;$('imagePreview').removeAttribute('src');$('imagePreview').hidden=true;if(previewTrigger?.isConnected)previewTrigger.focus({preventScroll:true});});
+$('imageDialog').addEventListener('click',e=>{if(e.target!==$('imageDialog'))return;const box=e.target.getBoundingClientRect();if(e.clientX<box.left||e.clientX>box.right||e.clientY<box.top||e.clientY>box.bottom)e.target.close();});
+$('imageDialog').addEventListener('keydown',e=>{if($('imagePreview').hidden)return;if(['+','='].includes(e.key)){e.preventDefault();zoomImage(1.25);}else if(e.key==='-'){e.preventDefault();zoomImage(0.8);}else if(e.key==='0'){e.preventDefault();fitImagePreview();}});
+window.addEventListener('resize',()=>{if($('imageDialog').open&&previewFit&&!$('imagePreview').hidden)fitImagePreview();});
 const guide=()=>[
 '你负责解析视频并生成原创二创文案和分镜图片，将结果写入 Local Factory。',
 '统一入口：https://factory.tiktokaitool.com/api/v1/factory',

@@ -62,6 +62,26 @@ test('real browser navigates source → ordered recreation child → comparison 
  await p.waitForFunction(()=>document.querySelectorAll('.vh-images img').length===2&&[...document.querySelectorAll('.vh-images img')].every(i=>i.complete&&i.naturalWidth===320));
  assert.deepEqual(await p.$$eval('.vh-frame-text',nodes=>nodes.map(n=>n.textContent)),['总担心说错话','把注意力带回自己的感受']);
  const urls=await p.$$eval('.vh-images img',nodes=>nodes.map(n=>n.src));assert.notEqual(urls[0],urls[1]);
+ const beforePreview=f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_requests').get().n;
+ for(const width of [1440,390,320]){
+  await p.setViewport({width,height:1000});
+  for(const version of [0,1]){
+   const selector='[data-preview-version="'+version+'"]';await p.click(selector);await p.waitForSelector('#imageDialog[open]');await p.waitForFunction(()=>!document.getElementById('imagePreview').hidden);
+   assert.equal(await p.$eval('#imagePreview',img=>img.src),urls[version]);assert.match(await p.$eval('#imageDialogTitle',n=>n.textContent),version?/二创图/:/原图/);
+   const bounds=await p.$eval('#imageDialog',d=>({x:d.getBoundingClientRect().x,right:d.getBoundingClientRect().right,height:d.getBoundingClientRect().height}));assert.ok(bounds.x>=0&&bounds.right<=width&&bounds.height<=1000,'image dialog fits viewport');
+   const fitWidth=await p.$eval('#imagePreview',n=>n.getBoundingClientRect().width);await p.click('#imageZoomIn');assert.ok(await p.$eval('#imagePreview',n=>n.getBoundingClientRect().width)>fitWidth);
+   await p.click('#imageZoomOut');assert.equal(await p.$eval('#imagePreview',n=>n.getBoundingClientRect().width),fitWidth);
+   await p.click('#imageActual');assert.equal(await p.$eval('#imagePreview',n=>n.getBoundingClientRect().width),320);if(width===320)assert.ok(await p.$eval('#imageViewport',n=>n.scrollWidth>n.clientWidth),'original size scrolls inside the viewer');
+   await p.keyboard.press('+');assert.equal(await p.$eval('#imagePreview',n=>n.getBoundingClientRect().width),400);await p.keyboard.press('0');assert.equal(await p.$eval('#imagePreview',n=>n.getBoundingClientRect().width),fitWidth);
+   assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth),width,'viewer must not overflow the document');
+   if(version===1)await p.screenshot({path:path.join(out,'image-preview-'+width+'.png')});
+   if(version===0){await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.getElementById('imageDialog').open);assert.equal(await p.evaluate(()=>document.activeElement.dataset.previewVersion),'0');}
+   else{await p.mouse.click(1,1);await p.waitForFunction(()=>!document.getElementById('imageDialog').open);}
+  }
+ }
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_requests').get().n,beforePreview,'viewing/zooming must not write content');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0,'viewing must not generate jobs');
+ await p.setViewport({width:1440,height:1000});
+ for(const version of [0,1]){await p.click('#frames [data-frame="1"][data-version="'+version+'"]');await p.waitForSelector('#frameDialog[open]');assert.equal(await p.$eval('#frameForm [name=index]',n=>n.readOnly),true);assert.match(await p.$eval('#frameEditHelp',n=>n.textContent),/不会自动生成图片/);assert.match(await p.$eval('#frameEditHelp',n=>n.textContent),version?/当前二创版本/:/全部二创版本/);await p.click('#frameDialog [data-close]');}
  await p.click('#renderVersion');await p.waitForFunction(()=>document.querySelector('#jobs').textContent.includes('等待合成'));
  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE type='psychology-video-remix'").get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);assert.equal(f.requests.length,0);
  await screenshots('detail');
