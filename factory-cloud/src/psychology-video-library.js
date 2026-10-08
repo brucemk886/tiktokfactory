@@ -34,8 +34,8 @@ async function selectedPublish(request,env,user){
  const config=normalizeSelectedPublish(body,Date.now(),Boolean(existing));
  if(existing){if(existing.config_json!==JSON.stringify(config))fail('该提交编号已用于其他配置。',409);return json({accepted:true,duplicate:true,batchId});}
  const scoped=await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:config.connectionIds});
+ const assets=[];for(const item of config.items){const asset=await owned(env.DB,item.assetId,user);if(await env.DB.prepare('SELECT id FROM psychology_video_hit_videos WHERE id=? UNION ALL SELECT asset_id id FROM psychology_video_hit_render_assets WHERE asset_id=?').bind(asset.id,asset.id).first())fail('视频爆款成片请从其二创版本提交发布，以保留一次发布保护。',409);if(asset.status!=='ready'||!await env.ARCHIVE.head(asset.r2_key))fail('视频未准备好或文件已失效，请重新上传。',409);assets.push(asset);}
  await assertPublishFollowers(env.DB,config,scoped.accounts);
- const assets=[];for(const item of config.items){const asset=await owned(env.DB,item.assetId,user);if(asset.status!=='ready'||!await env.ARCHIVE.head(asset.r2_key))fail('视频未准备好或文件已失效，请重新上传。',409);assets.push(asset);}
  await ensurePsychologyOneMembers(env,user,config,scoped.accounts);
  const stamp=Date.now(),groupId=batchId+'-group-0',statements=[
   env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp),
@@ -74,7 +74,7 @@ export async function handleVideoLibrary(request,env,url,session){
    const data=await env.DB.prepare(`SELECT j.id job_id,j.title,j.created_at,j.worker_id,v.key result_index,v.value video,a.id asset_id,a.status,a.file_size,prep.status preparation_status,prep.error preparation_error ${sql} ORDER BY j.created_at DESC,j.id DESC,v.key LIMIT 13 OFFSET ?`).bind(user.username,user.username,offset).all();
    return json({page,hasMore:data.results.length>12,videos:data.results.slice(0,12).map(r=>{const video=parse(r.video);return {id:r.asset_id||'',sourceJobId:r.job_id,resultIndex:Number(r.result_index),title:video.title||r.title,fileName:video.fileName,createdAt:r.created_at,fileSize:r.file_size||0,status:r.status||'local',preparationStatus:r.preparation_status,error:r.preparation_error||'',canPrepare:Boolean(r.worker_id),previewUrl:r.status==='ready'?BASE+'/'+r.asset_id+'/file':''};})});
   }
-  const data=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE owner=? AND source_job_id='' AND status='ready' ORDER BY created_at DESC,id DESC LIMIT 13 OFFSET ?").bind(user.username,offset).all();
+  const data=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE owner=? AND source_job_id='' AND status='ready' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_videos v WHERE v.id=psychology_video_assets.id) ORDER BY created_at DESC,id DESC LIMIT 13 OFFSET ?").bind(user.username,offset).all();
   return json({page,hasMore:data.results.length>12,videos:data.results.slice(0,12).map(publicAsset)});
  }
  if(url.pathname===BASE+'/upload'&&request.method==='POST'){
@@ -90,6 +90,7 @@ export async function handleVideoLibrary(request,env,url,session){
   if(!source||!source.worker_id)fail('找不到可取回的工厂成片，请使用本地上传。',404);
   const result=parse(source.result_json),video=(result.results||result.generatedVideos||[])[index],name=fileName(video?.fileName);
   const id=(await sha256Hex(user.username+':'+source.id+':'+index)).slice(0,32),stamp=Date.now();
+  if(source.type==='psychology-video-remix'){const origin=JSON.parse(source.payload_json).videoRemix;await env.DB.prepare('INSERT INTO psychology_video_hit_render_assets(asset_id,source_id,version,owner_id) VALUES(?,?,?,?) ON CONFLICT(asset_id) DO NOTHING').bind(id,origin.sourceId,origin.version,user.id).run();}
   const row=await env.DB.prepare('SELECT * FROM psychology_video_assets WHERE id=? AND owner=?').bind(id,user.username).first();
   if(row?.status==='ready')return json({video:publicAsset(row)});
   await env.DB.batch([

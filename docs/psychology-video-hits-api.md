@@ -65,9 +65,9 @@ JSON接口不接收图片二进制/base64，也不把 sandbox: 文件路径当�
 
 ## 合成与发布
 
-1. `videoHits.render`：params.id、version、body:{revision,voiceGender:"female"}。只创建合成任务；male/female沿用现有ElevenLabs声音。逐帧图片加可选画面文字，按相对durationSeconds对齐实际完整配音，合成9:16 MP4。不会调用生图模型或改写模型重新生成内容。
-2. `videoHits.jobs`：读取最近20个该版本合成任务。页面可准备私有云端预览；“成片与发布”读取成片并按现有人工选片流程发布。
-3. `videoHits.publish`：创建真实“合成→上传→官方中台排期”任务。先用publish.accounts取得当前心理学授权账号。
+1. `videoHits.render`：params.id、version、body:{revision,voiceGender:"female"}。同一当前版本与来源revision/声音使用稳定任务ID，换requestId不会重复创建；male/female沿用现有ElevenLabs声音。逐帧图片加可选画面文字，按相对durationSeconds对齐实际完整配音，合成9:16 MP4。不会调用生图模型或改写模型重新生成内容。
+2. `videoHits.jobs`：读取最近20个该版本合成/发布任务及publication真实发布状态。页面可准备私有云端预览；“成片与发布”读取成片并按现有人工选片流程发布。
+3. `videoHits.publish`：图片模式创建真实“合成→上传→官方中台排期”任务；已合成视频复用原MP4，成片模式跳过合成。先用publish.accounts取得当前心理学授权账号。
 
 ```json
 {
@@ -89,7 +89,7 @@ JSON接口不接收图片二进制/base64，也不把 sandbox: 文件路径当�
 }
 ```
 
-排期为秒级Unix时间，至少30分钟后、整批14天内，每批1–20个不同账号。同一来源版本不会再次分配给同一账号。可选minFollowers:1000和tiktokOne:{connectionId,accountId,campaignId}，复用现有粉丝与项目加入校验。
+排期为秒级Unix时间，待合成图片至少30分钟后；直接传入或已完成合成的成片至少5分钟后，均在14天内。每个二创版本全局只允许一个发布账号和一个持久发布任务，失败重试原任务。可选minFollowers:1000和tiktokOne:{connectionId,accountId,campaignId}，复用现有粉丝与项目加入校验。
 
 所有任务冻结来源/版本revision、图片、标题、完整配音文案、发布文案、账号和时间。后续编辑不修改既有任务。当前权限在创建、领取、图片读取和发布时复核，最终状态由现有官方发布记录/Signal Desk负责。
 
@@ -100,3 +100,38 @@ JSON接口不接收图片二进制/base64，也不把 sandbox: 文件路径当�
 新工作类型为psychology-video-remix。旧工人因能力门槛不会领取。更新后的正常工人内置执行；已有运行中的工人可用scripts/psychology-video-remix-agent.mjs并指定原工厂目录作为辅助渲染进程，不报到、不重排、不重启既有工人，只领取显式二创任务。正常官方发布通道负责合成后的上传与合批。
 
 上传图片及预览视频目前保留，未设自动删除策略。API不会下载或解析原视频；解析和二创由调用端GPT/Dot完成，再把原文、原图和二创资产写入。
+
+## 两种输入方式（0081）
+
+图片版保留原来的默认行为：inputMode为frames（可省略），须有完整script、原图及对应二创图片，补齐后启用。页面点击合成显示“已提交合成”，成功结果显示“已合成”。上传成片本身不会创建发布任务。
+
+成片上传使用同一个项目Bearer密钥：
+
+```http
+PUT /api/integrations/psychology/video-hits/videos/UPLOAD_UUID
+Authorization: Bearer <PROJECT_API_KEY>
+Content-Type: video/mp4
+X-File-Name: recreation.mp4
+X-File-Size: <actual bytes>
+X-Content-SHA256: <lowercase 64-character SHA256 of actual file>
+
+<binary video file>
+```
+
+支持MP4、MOV、WebM，最多95MiB；文件名使用encodeURIComponent编码，Content-Type依次为video/mp4、video/quicktime、video/webm。返回videoAssetId。私有R2流式写入，验证长度、容器头和SHA256；同一上传UUID只能重试相同文件/名称/类型/大小。摘要由R2校验，依据[Cloudflare Workers R2 API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/#r2putoptions)。
+
+然后保存版本：
+
+```json
+{"module":"psychology","action":"videoHits.versions.write","requestId":"GENERATE_A_UUID","params":{"id":"SOURCE_ID","version":"1","body":{"revision":0,"inputMode":"video","videoAssetId":"UPLOAD_UUID","title":"二创成片标题","caption":"发布文案","enabled":true}}}
+```
+
+成片版不要求原图、二创图或script；无需调用render。调用同一个videoHits.publish完成上传中台、排期和官方发布。可选TikTok One参数与原流程相同。页面支持选择一个授权账号、排期和明确AI标识后提交。
+
+一旦提交发布，版本绑定publishItemId，后续新UUID、换账号或编辑版本都不能重新分配。成片文件的owner+SHA256也只允许分配一次，换上传UUID不能绕过。未确认或失败任务保留原发布身份。中台接收/排期不等于已发布；已发布状态和发布链接另存D1，即使一般任务/回执被修剪，仍保留版本防重记录。旧版本已有的发布分配通过迁移保留。
+
+## 存储与后续清理建议
+
+本次保存的图片和成片在Cloudflare私有R2，元数据、任务身份和防重记录在D1；只传外部imageUrl的图片仍由外部服务保存。自动清理尚未启用，本次不删除历史素材。
+
+建议下一阶段采用确认成功后的引用清理：官方真实发布成功24小时后，将该版本从待发布列表移出，删除不再被其他版本或未结束任务引用的二创图、配音、成片和本地临时文件；原图待该来源全部版本结束或明确归档后才释放。失败或结果未知时保留素材并查询原任务。未绑定的孤立上传可设24小时清理，未发布草稿采用明确到期规则。保留来源、版本、摘要、发布账号、时间、链接和防重标记；清除文件不重置可发布次数。禁止整个目录或R2前缀按固定年龄直接删除，Hub上传文件的保留期需另行按其接口能力管理。

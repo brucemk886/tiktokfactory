@@ -16,8 +16,11 @@ async function write(path,method,body){
 }
 async function action(status,button,fn){
  if(button?.disabled)return;const original=button?.disabled;if(button)button.disabled=true;
- $(status).textContent='正在处理…';try{await fn();}catch(e){$(status).textContent=e.message;}finally{if(button)button.disabled=original;}
+ $(status).textContent='正在处理…';try{await fn();}catch(e){$(status).textContent=e.message;}finally{if(button)button.disabled=button.dataset.locked==='true'||original;}
 }
+const lock=(id,value)=>{$(id).dataset.locked=String(value);$(id).disabled=value;};
+const renderCurrent=v=>v.renderRevision===v.revision&&v.renderSourceRevision===detail.source.revision;
+const versionState=v=>v.publishState==='published'?'已发布':v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
 const current=()=>detail?.versions.find(v=>v.version===n),stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
 const metric=x=>x==null?'—':Number(x).toLocaleString('zh-CN');
 function pageError(error){$('pageStatus').hidden=false;$('pageStatus').textContent=error.message;}
@@ -52,15 +55,19 @@ async function loadDetail(){
 function renderRecreations(){
  $('recreationList').hidden=false;$('newVersion').disabled=detail.versions.length>=20;
  $('recreationStatus').textContent='共 '+detail.versions.length+' 个二创版本 / 最多 20 个';
- $('recreations').innerHTML=detail.versions.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="图片进度">'+v.frameCount+' / '+detail.frameCount+' 帧</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+(v.enabled?'已启用':'待补全 / 停用')+'</span></td><td><small>'+stamp(v.updatedAt)+'</small><small>北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。</p></td></tr>';
+ $('recreations').innerHTML=detail.versions.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="输入方式 / 素材">'+(v.inputMode==='video'?'直接传入成片<small>'+(v.videoAssetId?'已上传':'待上传')+'</small>':'图片合成<small>'+v.frameCount+' / '+detail.frameCount+' 帧</small>')+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.updatedAt)+'</small><small>北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。</p></td></tr>';
 }
 async function loadVersion(){
- const v=current();$('workspace').hidden=false;
- $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.caption||'尚未填写发布文案';$('versionScript').textContent=v.script||'尚未填写二创配音文案';
+ const v=current();$('workspace').hidden=false;$('pageLead').textContent=v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
+ $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.caption||'尚未填写发布文案';$('versionScript').textContent=v.script||(v.inputMode==='video'?'成片自带配音，无需填写合成文案':'尚未填写二创配音文案');
  $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.caption||'尚未填写发布文案';$('originalScript').textContent=detail.source.script||'尚未填写原文';
- $('versionStatus').textContent=(v.enabled?'已启用':'未启用')+' · '+v.frameCount+' / '+detail.frameCount+' 帧';
- $('toggleVersion').textContent=v.enabled?'停用版本':'启用版本';$('toggleVersion').disabled=false;$('renderVersion').disabled=!v.enabled;
- await Promise.all([loadFrames(),loadJobs()]);
+ $('versionStatus').textContent=versionState(v)+' · '+(v.inputMode==='video'?'直接传入成片':v.frameCount+' / '+detail.frameCount+' 帧');
+ $('toggleVersion').textContent=v.enabled?'停用版本':'启用版本';lock('toggleVersion',Boolean(v.publishItemId));lock('editVersion',Boolean(v.publishItemId));
+ $('renderVersion').hidden=v.inputMode==='video';$('publishVersion').textContent=v.inputMode==='video'||renderCurrent(v)&&v.renderState==='done'?'发布成片':'合成并发布';
+ lock('renderVersion',!v.enabled||Boolean(v.publishItemId)||renderCurrent(v)&&['queued','running','done'].includes(v.renderState));lock('publishVersion',!v.enabled||Boolean(v.publishItemId)||v.inputMode!=='video'&&['queued','running'].includes(v.renderState));
+ $('readyVideoPanel').hidden=v.inputMode!=='video';$('framePanel').hidden=v.inputMode==='video';
+ $('readyVideoStatus').textContent=v.videoAssetId?'成片已上传，可直接发布。':'请编辑版本并传入成片。';if(v.videoPreviewUrl)$('readyVideoPreview').src=v.videoPreviewUrl;else $('readyVideoPreview').removeAttribute('src');
+ await Promise.all([v.inputMode==='video'?Promise.resolve():loadFrames(),loadJobs()]);
 }
 async function loadFrames(){
  const id=detail.source.id,version=n,p=framePage,token=loadToken;
@@ -78,7 +85,8 @@ async function loadFrames(){
 }
 async function loadJobs(){
  const id=detail.source.id,version=n,token=loadToken,data=await api('/'+id+'/versions/'+version+'/jobs');if(token!==loadToken||version!==n)return;
- $('jobs').innerHTML=data.jobs.map(j=>'<article><b>'+escape({queued:'等待合成',running:'合成中',done:'已合成',failed:'失败',cancelled:'已取消'}[j.status]||j.status)+'</b> · '+j.percent+'%<p>'+escape(j.error||j.message)+'</p><small>'+escape(j.id)+'</small>'+(j.status==='done'&&j.result.results?.[0]?'<button data-preview-job="'+escape(j.id)+'">准备云端预览</button>':'')+'</article>').join('')||'<p>本版本尚无合成任务。</p>';
+ if(data.publication){const p=data.publication;$('versionStatus').textContent=({published:'已发布',failed:'发布失败，请重试原任务',submitted:'已提交官方发布',queued:'待发布',running:'发布处理中',cancelled:'发布已取消'}[p.status]||'已提交发布')+' · 每版本仅发布一次';}
+ $('jobs').innerHTML=data.jobs.map(j=>'<article><b>'+escape((j.type==='psychology-video-remix'?{queued:'等待合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消'}:{queued:'等待发布',running:'发布处理中',done:'已转交发布流程',failed:'发布失败',cancelled:'已取消'})[j.status]||j.status)+'</b> · '+j.percent+'%<p>'+escape(j.error||j.message)+'</p><small>'+escape(j.id)+'</small>'+(j.type==='psychology-video-remix'&&j.status==='done'&&j.result.results?.[0]?'<button data-preview-job="'+escape(j.id)+'">准备云端预览</button>':'')+'</article>').join('')||'<p>本版本尚无合成任务。</p>';
 }
 function sourceEditor(edit){
  editingSource=edit;$('sourceForm').reset();const s=edit?detail.source:{externalId:'video-'+Date.now(),videoData:{}};
@@ -91,6 +99,7 @@ function versionEditor(edit){
  $('versionForm').reset();$('versionNumber').innerHTML=available.map(i=>'<option value="'+i+'">版本 '+i+'</option>').join('');$('versionNumber').disabled=edit;
  const values=v||{name:'二创版本 '+available[0],title:detail.source.title,caption:detail.source.caption};
  for(const key of ['name','title','caption','script'])$('versionForm').elements[key].value=values[key]||'';
+ $('versionInputMode').value=v?.inputMode||'frames';$('versionForm').dataset.videoAssetId=v?.videoAssetId||'';delete $('versionForm').dataset.videoUploadId;updateInputMode();
  $('versionForm').dataset.revision=v?.revision||0;$('versionDialogTitle').textContent=edit?'编辑二创版本 '+n:'新建二创版本';$('versionSaveStatus').textContent='';$('versionDialog').showModal();
 }
 $('filters').addEventListener('submit',e=>{e.preventDefault();page=1;load();});$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
@@ -104,12 +113,17 @@ $('sourceForm').onsubmit=e=>{e.preventDefault();action('sourceSaveStatus',e.subm
  });};
 $('newVersion').onclick=()=>versionEditor(false);$('editVersion').onclick=()=>versionEditor(true);
 $('versionForm').onsubmit=e=>{e.preventDefault();action('versionSaveStatus',e.submitter,async()=>{
- const version=Number($('versionNumber').value),body=Object.fromEntries(['name','title','caption','script'].map(k=>[k,e.target.elements[k].value]));body.revision=Number(e.target.dataset.revision);body.enabled=false;
+ const version=Number($('versionNumber').value),body=Object.fromEntries(['name','title','caption','script'].map(k=>[k,e.target.elements[k].value]));body.revision=Number(e.target.dataset.revision);body.inputMode=$('versionInputMode').value;body.videoAssetId='';body.enabled=false;
+ if(body.inputMode==='video'){body.videoAssetId=e.target.dataset.videoAssetId||'';const file=$('versionVideoFile').files[0];if(file){if(file.size>95*1024*1024)throw new Error('成片最多95MB。');$('versionSaveStatus').textContent='正在校验并上传成片…';const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),v=>v.toString(16).padStart(2,'0')).join('');const id=e.target.dataset.videoUploadId||crypto.randomUUID();e.target.dataset.videoUploadId=id;const type={mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm'}[file.name.split('.').pop().toLowerCase()];const response=await fetch(BASE+'/videos/'+id,{method:'PUT',headers:{'Content-Type':type||file.type,'X-File-Name':encodeURIComponent(file.name),'X-File-Size':String(file.size),'X-Content-SHA256':digest},body:file}),data=await response.json();if(!response.ok)throw new Error(data.error||'成片上传失败');body.videoAssetId=data.videoAssetId;e.target.dataset.videoAssetId=body.videoAssetId;}if(!body.videoAssetId)throw new Error('请先选择成片文件。');body.enabled=true;}
  await write('/'+detail.source.id+'/versions/'+version,'PUT',body);$('versionDialog').close();
  if(editingVersion)await loadDetail();else location.assign(detailUrl(detail.source.id,version));
  });};
 $('toggleVersion').onclick=e=>action('versionStatus',e.target,async()=>{await write('/'+detail.source.id+'/versions/'+n,'PATCH',{revision:current().revision,enabled:!current().enabled});await loadDetail();});
-$('renderVersion').onclick=e=>action('versionStatus',e.target,async()=>{const r=await write('/'+detail.source.id+'/versions/'+n+'/render','POST',{revision:current().revision,voiceGender:'female'});$('versionStatus').textContent='已创建合成任务：'+r.jobIds.join(', ');$('jobsPanel').open=true;await loadJobs();});
+function updateInputMode(){const direct=$('versionInputMode').value==='video';$('videoFileLabel').hidden=!direct;$('versionVideoFile').required=direct&&!$('versionForm').dataset.videoAssetId;$('versionForm').elements.script.required=!direct;$('scriptLabel').textContent=direct?'二创视频文案（选填）':'二创完整配音文案';$('existingVideoLabel').textContent=$('versionForm').dataset.videoAssetId?'已绑定成片；选择新文件可替换。':'';$('versionInputHelp').textContent=direct?'上传后保存为可发布成片，无需逐帧图片或配音合成。':'保存为待启用版本。对应的每帧二创图片补齐后，可启用并合成。';}
+$('versionInputMode').onchange=updateInputMode;$('versionVideoFile').onchange=()=>delete $('versionForm').dataset.videoUploadId;
+$('publishVersion').onclick=e=>action('versionStatus',e.target,async()=>{const response=await fetch('/api/official-tiktok/publish-accounts?module=psychology&media=video',{cache:'no-store'}),data=await response.json();if(!response.ok)throw new Error(data.error||'账号读取失败');$('publishAccount').innerHTML='<option value="">请选择一个账号</option>'+data.accounts.map(a=>'<option value="'+escape(a.connectionId||a.id)+'">'+escape(a.username||a.displayName||a.connectionId||a.id)+'</option>').join('');const date=new Date(Date.now()+2*3600000);date.setMinutes(date.getMinutes()-date.getTimezoneOffset());$('publishSchedule').value=date.toISOString().slice(0,16);$('publishAi').value='';$('publishSaveStatus').textContent='';$('publishDialogTitle').textContent=$('publishVersion').textContent;$('publishDialog').showModal();});
+$('publishForm').onsubmit=e=>{e.preventDefault();action('publishSaveStatus',e.submitter,async()=>{const result=await write('/'+detail.source.id+'/versions/'+n+'/publish','POST',{revision:current().revision,connectionIds:[$('publishAccount').value],scheduleAt:Math.floor(new Date($('publishSchedule').value).getTime()/1000),isAiGenerated:$('publishAi').value==='true',voiceGender:'female'});$('publishDialog').close();await loadDetail();$('jobsPanel').open=true;});};
+$('renderVersion').onclick=e=>action('versionStatus',e.target,async()=>{const r=await write('/'+detail.source.id+'/versions/'+n+'/render','POST',{revision:current().revision,voiceGender:'female'});$('versionStatus').textContent='已创建合成任务：'+r.jobIds.join(', ');$('jobsPanel').open=true;await loadDetail();});
 async function frameEditor(version,index=1,edit=false){
  frameVersion=version;$('frameForm').reset();delete $('frameForm').dataset.uploadId;$('frameSaveStatus').textContent='';$('frameDialogTitle').textContent='第 '+index+' 帧 · '+(edit?'修改':'补充')+(version?'版本 '+version+' 二创图':'原图');
  $('frameForm').elements.index.readOnly=edit;
@@ -138,7 +152,7 @@ $('jsonFrames').onclick=()=>{$('jsonVersion').innerHTML='<option value="0">原�
 $('jsonForm').onsubmit=e=>{e.preventDefault();action('jsonStatus',e.submitter,async()=>{const version=Number($('jsonVersion').value),fresh=await api('/'+detail.source.id),row=version?fresh.versions.find(v=>v.version===version):fresh.source;
  await write('/'+detail.source.id+'/frames/'+version,'PUT',{revision:row.revision,frames:JSON.parse($('jsonInput').value)});$('jsonDialog').close();await loadDetail();
  });};
-$('refreshJobs').onclick=e=>action('versionStatus',e.target,loadJobs);
+$('refreshJobs').onclick=e=>action('versionStatus',e.target,loadDetail);
 $('jobs').onclick=async e=>{const b=e.target.closest('[data-preview-job]');if(!b)return;await action('versionStatus',b,async()=>{const r=await fetch('/api/psychology-video-library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId:b.dataset.previewJob,resultIndex:0})}),data=await r.json();if(!r.ok)throw new Error(data.error);$('versionStatus').textContent='预览已安排准备，请到“成片与发布”查看。';});};
 let previewToken=0,imageScale=1,previewFit=true,previewTrigger=null;
 const previewControls=['imageZoomOut','imageZoomIn','imageFit','imageActual'];
@@ -180,11 +194,13 @@ const guide=()=>[
 '用 videoHits.frames.write 写原图：params:{id:"SOURCE_ID",version:"0",body:{revision:SOURCE_REVISION,frames:[{index:1,assetId:"UPLOAD_UUID",text:"原画面文字",durationSeconds:3}]}}。',
 '用 videoHits.versions.write 创建1–20版本：params:{id:"SOURCE_ID",version:"1",body:{revision:0,name:"二创1",title:"标题",caption:"发布文案",script:"完整配音文案",enabled:false}}。',
 '用 videoHits.frames.write 写二创图，version改为对应1–20编号，revision取该版本最新值。每次1–100帧，可分批写到300帧。帧号从1连续编号，必须覆盖全部原图帧号。',
+'直接传入成片：PUT https://factory.tiktokaitool.com/api/integrations/psychology/video-hits/videos/UPLOAD_UUID，沿用Bearer密钥，body为视频文件。头部Content-Type为video/mp4、video/quicktime或video/webm；X-File-Name为encodeURIComponent文件名，X-File-Size为字节数，X-Content-SHA256为文件小写SHA256摘要。最多95MB，返回videoAssetId。同一UUID重试须使用相同文件和头部。',
+'成片版本：videoHits.versions.write body:{revision:0,inputMode:"video",videoAssetId:"UPLOAD_UUID",title:"标题",caption:"发布文案",enabled:true}；无需原图、二创图或script。图片版本inputMode:"frames"（默认值）。',
 '最后 videoHits.versions.write 提交最新revision与enabled:true。未补齐图片不能启用；之后补图会自动停用。任务冻结图片与文案，后续编辑不改已排期任务。',
 'videoHits.render 只合成MP4：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,voiceGender:"female"}}。voiceGender可为male或female。',
 'videoHits.jobs 查看任务；成片可在心理学发布页准备云端预览。',
-'videoHits.publish 才执行合成和自动发布：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,connectionIds:["AUTHORIZED_ACCOUNT_ID"],scheduleAt:UNIX_SECONDS,intervalMinutes:60,isAiGenerated:true,voiceGender:"female"}}。',
-'发布前先用 publish.accounts 查询当前心理学项目授权账号。排期至少留30分钟合成，整批14天内。每版本同一账号仅分配一次。可选minFollowers:1000及tiktokOne:{connectionId,accountId,campaignId}沿用现有官方校验。',
+'videoHits.publish 才执行完整发布流程（成片跳过合成）：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,connectionIds:["AUTHORIZED_ACCOUNT_ID"],scheduleAt:UNIX_SECONDS,intervalMinutes:60,isAiGenerated:true,voiceGender:"female"}}。',
+'发布前先用 publish.accounts 查询当前心理学项目授权账号。排期至少留30分钟合成，整批14天内。每版本全局仅发布一次，只能选择一个授权账号；失败重试原任务。成片或已合成视频至少提前5分钟，待合成图片至少提前30分钟。可选minFollowers:1000及tiktokOne:{connectionId,accountId,campaignId}沿用现有官方校验。',
 '仅在用户已授权发布的任务中调用videoHits.publish；图片/文案写入不会发布，也不会恢复旧自动规划。',
 '409 REQUEST_IN_PROGRESS或503 RESULT_UNKNOWN不得更换UUID重发，使用requests.get查询原请求状态。'
 ].join('\n\n');

@@ -1,3 +1,6 @@
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {handleVideoHitVideos} from '../factory-cloud/src/psychology-video-hit-videos.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -27,7 +30,7 @@ test('real browser navigates source → ordered recreation child → comparison 
  const f=await fixture(t),store=new Map();
  f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-video-hits','psychology-publish','psychology-copy-library','factory-api']));
  const user=toPublicUser(f.sqlite.prepare("SELECT * FROM factory_users WHERE id='admin'").get());
- f.env.ARCHIVE={async put(k,b){store.set(k,new Uint8Array(b));},async get(k){return store.has(k)?{body:store.get(k)}:null;},async delete(k){store.delete(k);}};
+ f.env.ARCHIVE={async put(k,b,options={}){const bytes=b instanceof ReadableStream?new Uint8Array(await new Response(b).arrayBuffer()):new Uint8Array(b);if(options.sha256)assert.equal(createHash('sha256').update(bytes).digest('hex'),options.sha256);store.set(k,bytes);return {};},async get(k){return store.has(k)?{body:store.get(k),size:store.get(k).length}:null;},async head(k){return store.has(k)?{}:null;},async delete(k){store.delete(k);}};
  const root=path.resolve(new URL('../public/',import.meta.url).pathname.replace(/^\/([A-Z]:)/,'$1'));
  const out=path.resolve(root,'../tmp/video-hits-qa');fs.mkdirSync(out,{recursive:true});
  const files=[path.join(out,'original.png'),path.join(out,'remix.png')];files.forEach((file,i)=>fs.writeFileSync(file,framePng(Boolean(i))));
@@ -35,7 +38,8 @@ test('real browser navigates source → ordered recreation child → comparison 
  const server=http.createServer(async(req,res)=>{
   try{const address='http://127.0.0.1:'+server.address().port+req.url,url=new URL(address);let response;
    if(url.pathname==='/api/auth/me')response=Response.json({user,home:'/',sidebarModules:publicSidebarModules()});
-   else if(url.pathname.startsWith('/api/psychology-video-hits')){if(req.method==='GET')reads.push(url.pathname);const parts=[];for await(const part of req)parts.push(part);const r=new Request(address,{method:req.method,headers:req.headers,...(parts.length?{body:Buffer.concat(parts)}:{})});response=await handleVideoHitAssets(r,f.env,url,{user})||await handleVideoHitProduction(r,f.env,url,{user})||await handleVideoHits(r,f.env,url,{user});}
+   else if(url.pathname==='/api/official-tiktok/publish-accounts')response=Response.json({accounts:[{connectionId:'a',username:'alpha'}]});
+   else if(url.pathname.startsWith('/api/psychology-video-hits')){if(req.method==='GET')reads.push(url.pathname);const parts=[];for await(const part of req)parts.push(part);const r=new Request(address,{method:req.method,headers:req.headers,...(parts.length?{body:Buffer.concat(parts)}:{})});response=await handleVideoHitVideos(r,f.env,url,{user})||await handleVideoHitAssets(r,f.env,url,{user})||await handleVideoHitProduction(r,f.env,url,{user})||await handleVideoHits(r,f.env,url,{user});}
    else{const name=pageFileFor(url.pathname)||url.pathname.slice(1),target=path.resolve(root,name);if(!target.startsWith(root+path.sep)||!fs.existsSync(target)){res.writeHead(404).end();return;}response=new Response(fs.readFileSync(target),{headers:{'Content-Type':target.endsWith('.js')?'text/javascript':target.endsWith('.css')?'text/css':target.endsWith('.svg')?'image/svg+xml':'text/html'}});}
    res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
   }catch(e){res.writeHead(e.statusCode||500,{'Content-Type':'application/json'}).end(JSON.stringify({error:e.message}));}
@@ -84,6 +88,7 @@ test('real browser navigates source → ordered recreation child → comparison 
  for(const version of [0,1]){await p.click('#frames [data-frame="1"][data-version="'+version+'"]');await p.waitForSelector('#frameDialog[open]');assert.equal(await p.$eval('#frameForm [name=index]',n=>n.readOnly),true);assert.match(await p.$eval('#frameEditHelp',n=>n.textContent),/不会自动生成图片/);assert.match(await p.$eval('#frameEditHelp',n=>n.textContent),version?/当前二创版本/:/全部二创版本/);await p.click('#frameDialog [data-close]');}
  await p.click('#renderVersion');await p.waitForFunction(()=>document.querySelector('#jobs').textContent.includes('等待合成'));
  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE type='psychology-video-remix'").get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);assert.equal(f.requests.length,0);
+ assert.equal(await p.$eval('#renderVersion',n=>n.disabled),true);assert.match(await p.$eval('#versionStatus',n=>n.textContent),/已提交合成/);await p.reload({waitUntil:'networkidle0'});assert.equal(await p.$eval('#renderVersion',n=>n.disabled),true);assert.match(await p.$eval('#versionStatus',n=>n.textContent),/已提交合成/);
  await screenshots('detail');
  for(const width of [1440,390,320]){await p.setViewport({width,height:1000});await p.click('#editVersion');await p.waitForSelector('#versionDialog[open]');assert.equal(await p.$eval('#versionNumber',n=>n.disabled),true);const bounds=await p.$eval('#versionDialog',d=>({x:d.getBoundingClientRect().x,right:d.getBoundingClientRect().right}));assert.ok(bounds.x>=0&&bounds.right<=width);await p.click('#versionDialog [data-close]');}
  const write=async(path,body)=>{const r=new Request(origin+'/api/psychology-video-hits/'+id+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),...body})});const result=await handleVideoHits(r,f.env,new URL(r.url),{user});assert.equal(result.status,200,await result.clone().text());return result.json();};
@@ -102,5 +107,13 @@ test('real browser navigates source → ordered recreation child → comparison 
  for(const invalid of ['/psychology-video-hits/detail?id='+id+'&version=21','/psychology-video-hits/detail?id='+id+'&version=1.5','/psychology-video-hits/recreations','/psychology-video-hits/detail?id=vh-'+'f'.repeat(32)+'&version=1']){
   await goto(invalid);assert.equal(await p.$eval('#workspace',n=>n.hidden),true);assert.equal(await p.$eval('#sourceSummary',n=>n.hidden),true);assert.notEqual(await p.$eval('#pageStatus',n=>n.textContent),'正在读取…');
  }
+
+ await goto('/psychology-video-hits');await p.click('#newSource');await p.type('#sourceForm [name=videoUrl]','https://www.tiktok.com/@source/video/987654321');await p.type('#sourceForm [name=title]','直接传入成片的二创视频');await navigation('#sourceForm button');await p.click('#newVersion');await p.select('#versionInputMode','video');
+ assert.equal(await p.$eval('#versionForm [name=script]',n=>n.required),false);assert.equal(await p.$eval('#videoFileLabel',n=>n.hidden),false);
+ const movie=path.join(out,'ready-video.mp4');execFileSync('ffmpeg',['-y','-v','error','-f','lavfi','-i','color=c=0x3372bb:s=320x568:d=1','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',movie]);await (await p.$('#versionVideoFile')).uploadFile(movie);await navigation('#versionForm button');await p.waitForSelector('#readyVideoPanel:not([hidden])');await p.waitForFunction(()=>document.querySelector('#readyVideoPreview').readyState>=1);await p.$eval('#readyVideoPreview',v=>v.play());await p.waitForFunction(()=>document.querySelector('#readyVideoPreview').currentTime>0.1);await p.$eval('#readyVideoPreview',v=>v.pause());
+ assert.equal(await p.$eval('#framePanel',n=>n.hidden),true);assert.equal(await p.$eval('#renderVersion',n=>n.hidden),true);assert.equal(await p.$eval('#publishVersion',n=>n.disabled),false);assert.match(await p.$eval('#versionStatus',n=>n.textContent),/成片已上传/);
+ for(const width of [1440,390,320]){await p.setViewport({width,height:1000});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth),width);await p.screenshot({path:path.join(out,'ready-video-'+width+'.png'),fullPage:true});}
+ await p.setViewport({width:390,height:1000});await p.click('#publishVersion');await p.waitForSelector('#publishDialog[open]');await p.select('#publishAccount','a');await p.select('#publishAi','true');await p.screenshot({path:path.join(out,'ready-publish-390.png')});await p.click('#publishForm button');await p.waitForFunction(()=>!document.querySelector('#publishDialog').open);assert.equal(await p.$eval('#publishVersion',n=>n.disabled),true);assert.equal(await p.$eval('#editVersion',n=>n.disabled),true);assert.match(await p.$eval('#versionStatus',n=>n.textContent),/待发布/);assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM factory_jobs WHERE type='psychology-selected-video'").get().n,1);
+ await p.reload({waitUntil:'networkidle0'});assert.equal(await p.$eval('#publishVersion',n=>n.disabled),true);assert.equal(f.requests.length,0);
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assert.equal(f.requests.length,0);
 });

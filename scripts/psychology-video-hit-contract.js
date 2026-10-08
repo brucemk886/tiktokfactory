@@ -22,8 +22,11 @@ export function sourceInput(input){
  return result;
 }
 export function versionInput(input){
- only(input,['requestId','revision','name','title','caption','script','enabled']);
- const result={};for(const [key,max] of [['name',100],['title',200],['caption',2200],['script',20000]])if(input[key]!==undefined)result[key]=text(input[key],key,max,['name','title'].includes(key));
+ only(input,['requestId','revision','name','title','caption','script','enabled','inputMode','videoAssetId']);
+ const result={};
+ if(input.inputMode!==undefined){if(!['frames','video'].includes(input.inputMode))fail('inputMode须为frames或video。');result.inputMode=input.inputMode;}
+ if(input.videoAssetId!==undefined){if(input.videoAssetId!==''&&!UUID.test(input.videoAssetId))fail('成片素材编号须为UUID。');result.videoAssetId=input.videoAssetId;}
+ for(const [key,max] of [['name',100],['title',200],['caption',2200],['script',20000]])if(input[key]!==undefined)result[key]=text(input[key],key,max,['name','title'].includes(key));
  if(input.enabled!==undefined){if(typeof input.enabled!=='boolean')fail('enabled 须为布尔值。');result.enabled=input.enabled;}return result;
 }
 export function framesInput(input){
