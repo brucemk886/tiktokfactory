@@ -48,18 +48,47 @@ test('Beijing boundaries, invalid dates, maximum range and pagination',()=>{
 test('SQL distinguishes cohorts, payment dates, products and currencies; output is private and idempotent',async t=>{
  const f=site(t);
  f.session('a');f.order('base-a','a');f.order('deep-a','a',{table:'deep_orders',amount:899});
- f.session('old',{started:'2026-10-01 00:00:00',source:'direct',campaign:''});f.order('late-old','old');
+ f.session('old',{started:'2026-10-01 00:00:00',source:'tiktok',campaign:''});f.order('late-old','old');
  f.session('refunded');f.order('refund','refunded',{currency:'eur',status:'refunded'});
  f.sqlite.exec("INSERT INTO traffic_anonymous_pages VALUES('p1','2026-10-04 15:59:59','/'),('p2','2026-10-04 16:00:00','/'),('p3','2026-10-06 15:59:59','/'),('p4','2026-10-06 16:00:00','/')");
  const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
  const data=await readWebsiteAnalytics(f.db,window,context,{},now);
- assert.equal(data.summary.pageviews,2);assert.equal(data.summary.started,2);assert.equal(data.summary.paidSessions,2);assert.equal(data.summary.orders,4);assert.equal(data.summary.refundedOrders,1);
+ assert.equal(data.summary.pageviews,null);assert.equal(data.summary.started,2);assert.equal(data.summary.paidSessions,2);assert.equal(data.summary.orders,4);assert.equal(data.summary.refundedOrders,1);
  assert.deepEqual(data.currencies.map(r=>[r.currency,r.grossCents]),[['eur',499],['usd',1897]]);
  assert.equal(data.attribution.attributedOrders,3);assert.equal(data.attribution.unattributedOrders,1);assert.equal(data.accounts[0].orders,3);assert.equal(data.accounts[0].paidSessions,2);
  assert.equal(data.days[0].started,2);assert.equal(data.days[1].orders,4);assert.equal(data.attribution.accountPageviews,null);assert.equal(data.attribution.originalVideoAttribution,false);
  assert.doesNotMatch(JSON.stringify(data),/@example.com|PRIVATE REPORT|cs-private|snapshot_json|session_id|report_id/);
  assert.deepEqual(await readWebsiteAnalytics(f.db,window,context,{},now),data);assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);
 });
+test('TikTok-only aggregation excludes direct, other, unknown, conflicting and lookalike sources',async t=>{
+ const f=site(t),known=['tiktok',' TiKToK ','tiktok.com','WWW.TIKTOK.COM','vm.tiktok.com'];
+ for(const [i,source] of known.entries()){f.session('known-'+i,{source});f.order('known-order-'+i,'known-'+i);}
+ f.session('legacy');f.order('legacy-order','legacy');f.sqlite.exec("DELETE FROM quiz_attribution WHERE session_id='legacy'");
+ f.session('empty-attribution');f.order('empty-order','empty-attribution');f.sqlite.exec("UPDATE quiz_attribution SET source=' ' WHERE session_id='empty-attribution'");
+ f.session('no-account',{campaign:''});f.order('no-account-order','no-account');
+ for(const [i,source] of ['direct','google','unknown','',null,'not-tiktok.com','tiktok.com.evil','https://evil.test/.tiktok.com'].entries()){
+  f.session('excluded-'+i,{source});f.order('excluded-order-'+i,'excluded-'+i,{amount:99999,currency:'eur'});
+  f.order('excluded-deep-'+i,'excluded-'+i,{table:'deep_orders'});
+ }
+ for(const source of ['google','unknown']){
+  f.session('conflict-'+source,{source});f.order('conflict-order-'+source,'conflict-'+source);
+  f.sqlite.prepare("UPDATE quiz_sessions SET source='tiktok' WHERE id=?").run('conflict-'+source);
+ }
+ f.order('orphan-order','nonexistent');
+ f.sqlite.exec("INSERT INTO traffic_anonymous_pages VALUES('untagged-page','2026-10-05 01:00:00','/')");
+ const data=await readWebsiteAnalytics(f.db,window,context,{},now);
+ assert.equal(data.channel,'tiktok');assert.equal(data.version,2);assert.equal(data.summary.pageviews,null);
+ for(const key of ['started','finished','submitted','checkout','paidSessions','orders'])assert.equal(data.summary[key],8,key);
+ assert.deepEqual(data.currencies.map(row=>[row.currency,row.grossCents]),[['usd',3992]]);
+ assert.equal(data.orders.total,8);assert.equal(data.orders.rows.length,8);
+ assert.equal(data.sources.rows.every(row=>row.source==='tiktok'),true);assert.equal(data.sources.rows.reduce((sum,row)=>sum+row.started,0),8);
+ assert.equal(data.accounts[0].started,7);assert.equal(data.accounts[0].orders,7);
+ assert.equal(data.attribution.unattributedStarted,1);assert.equal(data.attribution.unattributedOrders,1);
+ assert.equal(data.days.reduce((sum,row)=>sum+row.started,0),8);assert.equal(data.days.reduce((sum,row)=>sum+row.orders,0),8);
+ assert.equal(data.days.every(row=>row.pageviews===null),true);
+ assert.doesNotMatch(f.queries.join('\n'),/traffic_anonymous_pages/);
+});
+
 test('test mode, marked sessions, previews, zero-price and pending orders never become real revenue',async t=>{
  const f=site(t);for(const id of ['test','marked','preview','zero','pending'])f.session(id);
  f.order('test-order','test',{live:0});f.order('marked-order','marked');f.sqlite.prepare('INSERT INTO admin_test_sessions VALUES(?)').run('marked');
@@ -77,6 +106,7 @@ test('email gate counts finished once; prepared Lemon checkouts are not visits t
 test('source and order pagination preserve totals; only current project accounts resolve tags',async t=>{
  const f=site(t);for(let i=0;i<23;i++){f.session('s'+i,{campaign:'campaign-'+i});f.order('o'+i,'s'+i);}
  f.session('outside',{campaign:'factory-outside'});f.order('o-outside','outside');
+ for(let i=0;i<25;i++){f.session('direct-'+i,{source:'direct',campaign:'unrelated-'+i});f.order('direct-order-'+i,'direct-'+i);}
  const data=await readWebsiteAnalytics(f.db,window,context,{sourcePage:2,orderPage:2},now);
  assert.equal(data.sources.total,24);assert.equal(data.sources.rows.length,4);assert.equal(data.orders.total,24);assert.equal(data.orders.rows.length,4);assert.equal(data.accounts.length,0);assert.equal(data.attribution.attributedStarted,0);
  assert.equal(accountForSource({source:'other',campaign:'factory-a'},context.accounts),null);assert.equal(accountForSource({source:'tiktok',campaign:'account_a'},context.accounts),null);
@@ -88,7 +118,7 @@ test('zero traffic has unknown ratios; source failure cannot fabricate zero metr
  await assert.rejects(()=>readWebsiteAnalytics({prepare:f.db.prepare,batch:async()=>[{success:false,results:[]}]},window,context),/未完成/);
 });
 async function endpointFixture(t){
- const f=await fixture(t),s=site(t);s.session('a');s.order('o1','a');f.env.DEEP_PERSONA_DB=s.db;
+ const f=await fixture(t),s=site(t);s.session('a');s.order('o1','a');s.session('other',{source:'google'});s.order('other-order','other');f.env.DEEP_PERSONA_DB=s.db;
  f.sqlite.exec("UPDATE factory_users SET sidebar_modules_json='[\"psychology-autopilot\"]' WHERE username='admin'; INSERT INTO psychology_conversion_campaigns(project_key,owner,revision,created_at,updated_at) VALUES('proj-psych','admin',0,0,0)");
  const user={id:'admin',username:'admin',role:'admin',sidebarModules:['psychology-autopilot']};
  async function call(query='period=7d',session={user},method='GET'){
@@ -100,6 +130,8 @@ async function endpointFixture(t){
 test('fresh role, module, owner and login checks; GET never modifies either database',async t=>{
  const f=await endpointFixture(t),before=f.sqlite.prepare('SELECT total_changes() n').get().n;
  const first=await f.call();assert.equal(first.status,200,JSON.stringify(first));assert.match(first.headers.get('cache-control'),/no-store/);
+ assert.equal(first.data.channel,'tiktok');assert.equal(first.data.summary.started,1);assert.equal(first.data.summary.orders,1);
+ assert.equal((await f.call('channel=all')).data.summary.started,1);
  assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);assert.equal(f.requests.length,0);
  assert.equal((await f.call('',null)).status,401);assert.equal((await f.call('',{user:f.user},'POST')).status,405);
  f.sqlite.exec("UPDATE psychology_conversion_campaigns SET owner='someone-else'");assert.equal((await f.call()).status,403);

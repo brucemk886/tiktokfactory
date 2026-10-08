@@ -25,8 +25,15 @@ export function websitePage(params,key){
 export const PRODUCTION_SESSION=`s.id NOT IN (SELECT session_id FROM admin_test_sessions)
  AND NOT EXISTS(SELECT 1 FROM quiz_reports xr JOIN payment_orders xo ON xo.report_id=xr.id
  WHERE xr.session_id=s.id AND (xo.livemode=0 OR substr(xo.id,1,8)='preview_'))`;
-const SOURCE=`COALESCE(a.source,CASE WHEN s.source IN ('deeppersonaai.com','www.deeppersonaai.com') THEN 'unknown' ELSE s.source END,'unknown')`;
-const ATTRIBUTION=`${SOURCE} AS source,COALESCE(a.campaign,s.campaign,'') AS campaign,COALESCE(a.medium,'') AS medium,COALESCE(a.content,'') AS content`;
+// Use recorded acquisition only; account campaign tags alone are not channel evidence.
+// Explicit attribution wins over legacy session metadata. Unknown history stays out.
+export function tikTokSourceSQL(value){
+ const source=`lower(trim(${value}))`;
+ return `(${source}='tiktok' OR (${source} NOT GLOB '*[^a-z0-9.-]*' AND (${source}='tiktok.com' OR ${source} LIKE '%.tiktok.com')))`;
+}
+const SOURCE=`COALESCE(NULLIF(trim(a.source),''),s.source,'unknown')`;
+const TIKTOK=tikTokSourceSQL(SOURCE);
+const ATTRIBUTION=`'tiktok' AS source,COALESCE(a.campaign,s.campaign,'') AS campaign,COALESCE(a.medium,'') AS medium,COALESCE(a.content,'') AS content`;
 const COHORT=`cohort AS (SELECT s.id,s.started_at,${ATTRIBUTION},
  CASE WHEN s.completed_at IS NOT NULL OR EXISTS(SELECT 1 FROM quiz_events e WHERE e.session_id=s.id AND e.event_name='email_gate_viewed') THEN 1 ELSE 0 END finished,
  CASE WHEN s.completed_at IS NOT NULL AND s.email IS NOT NULL THEN 1 ELSE 0 END submitted,
@@ -34,14 +41,14 @@ const COHORT=`cohort AS (SELECT s.id,s.started_at,${ATTRIBUTION},
  AND (o.stripe_session_id IS NOT NULL OR o.paid_at IS NOT NULL OR EXISTS(SELECT 1 FROM lemon_payments lp WHERE lp.order_id=o.id AND lp.prepared=0 AND lp.checkout_url IS NOT NULL))) THEN 1 ELSE 0 END checkout,
  CASE WHEN EXISTS(SELECT 1 FROM quiz_reports r JOIN payment_orders o ON o.report_id=r.id WHERE r.session_id=s.id AND o.livemode=1 AND o.amount_cents>0 AND o.paid_at IS NOT NULL AND o.status IN ('paid','refunded')) THEN 1 ELSE 0 END paid
  FROM quiz_sessions s LEFT JOIN quiz_attribution a ON a.session_id=s.id
- WHERE ${PRODUCTION_SESSION} AND datetime(s.started_at)>=datetime(?) AND datetime(s.started_at)<datetime(?))`;
+ WHERE ${TIKTOK} AND ${PRODUCTION_SESSION} AND datetime(s.started_at)>=datetime(?) AND datetime(s.started_at)<datetime(?))`;
 const PURCHASES=`purchases AS (SELECT o.id,o.kind,o.amount_cents,o.currency,o.status,o.paid_at,r.test_id,${ATTRIBUTION},
  CASE WHEN o.stripe_session_id IS NOT NULL THEN 'stripe' WHEN lp.remote_order_id IS NOT NULL THEN 'lemonsqueezy' ELSE 'unknown' END provider
  FROM (SELECT id,report_id,amount_cents,currency,status,paid_at,livemode,stripe_session_id,'report' kind FROM payment_orders
  UNION ALL SELECT id,report_id,amount_cents,currency,status,paid_at,livemode,stripe_session_id,'deep' kind FROM deep_orders) o
  LEFT JOIN quiz_reports r ON r.id=o.report_id LEFT JOIN quiz_sessions s ON s.id=r.session_id
  LEFT JOIN quiz_attribution a ON a.session_id=r.session_id LEFT JOIN lemon_payments lp ON lp.order_id=o.id
- WHERE o.livemode=1 AND o.amount_cents>0 AND o.status IN ('paid','refunded') AND o.paid_at IS NOT NULL AND substr(o.id,1,8)!='preview_'
+ WHERE ${TIKTOK} AND o.livemode=1 AND o.amount_cents>0 AND o.status IN ('paid','refunded') AND o.paid_at IS NOT NULL AND substr(o.id,1,8)!='preview_'
  AND NOT EXISTS(SELECT 1 FROM admin_test_sessions f WHERE f.session_id=r.session_id)
  AND datetime(o.paid_at)>=datetime(?) AND datetime(o.paid_at)<datetime(?))`;
 const SOURCES=`source_rows AS (
@@ -51,15 +58,15 @@ const SOURCES=`source_rows AS (
 export function websiteQueries(db,window,{sourcePage=1,orderPage=1,pageSize=20}={}){
  const pair=[window.start,window.end],select=(sql,args=pair)=>db.prepare(sql).bind(...args);
  return [
-  select(`SELECT COUNT(*) pageviews FROM traffic_anonymous_pages WHERE datetime(created_at)>=datetime(?) AND datetime(created_at)<datetime(?)`),
+  // Anonymous PV has no source: keep the API key unknown, never use all-site PV or arrivals.
+  select('SELECT NULL pageviews',[]),
   select(`WITH ${COHORT} SELECT COUNT(*) started,COALESCE(SUM(finished),0) finished,COALESCE(SUM(submitted),0) submitted,COALESCE(SUM(checkout),0) checkout,COALESCE(SUM(paid),0) paidSessions FROM cohort`),
   select(`WITH ${PURCHASES} SELECT COUNT(*) orders,COALESCE(SUM(status='refunded'),0) refundedOrders FROM purchases`),
   select(`WITH ${PURCHASES} SELECT currency,COUNT(*) orders,SUM(amount_cents) grossCents,SUM(CASE WHEN status='refunded' THEN 1 ELSE 0 END) refundedOrders FROM purchases GROUP BY currency ORDER BY currency`),
   select(`WITH ${COHORT},${PURCHASES},daily_rows AS (
-   SELECT date(started_at,'+8 hours') day,COUNT(*) started,SUM(finished) finished,0 pageviews,0 orders FROM cohort GROUP BY day
-   UNION ALL SELECT date(paid_at,'+8 hours'),0,0,0,COUNT(*) FROM purchases GROUP BY date(paid_at,'+8 hours')
-   UNION ALL SELECT date(created_at,'+8 hours'),0,0,COUNT(*),0 FROM traffic_anonymous_pages WHERE datetime(created_at)>=datetime(?) AND datetime(created_at)<datetime(?) GROUP BY date(created_at,'+8 hours'))
-   SELECT day,SUM(started) started,SUM(finished) finished,SUM(pageviews) pageviews,SUM(orders) orders FROM daily_rows GROUP BY day ORDER BY day`,[...pair,...pair,...pair]),
+   SELECT date(started_at,'+8 hours') day,COUNT(*) started,SUM(finished) finished,0 orders FROM cohort GROUP BY day
+   UNION ALL SELECT date(paid_at,'+8 hours'),0,0,COUNT(*) FROM purchases GROUP BY date(paid_at,'+8 hours'))
+   SELECT day,SUM(started) started,SUM(finished) finished,NULL pageviews,SUM(orders) orders FROM daily_rows GROUP BY day ORDER BY day`,[...pair,...pair]),
   select(`WITH ${COHORT},${PURCHASES},${SOURCES} SELECT COUNT(*) total FROM sources`,[...pair,...pair]),
   select(`WITH ${COHORT},${PURCHASES},${SOURCES} SELECT * FROM sources ORDER BY orders DESC,started DESC,source,campaign,medium,content LIMIT ? OFFSET ?`,[...pair,...pair,pageSize,(sourcePage-1)*pageSize]),
   select(`WITH ${PURCHASES} SELECT p.*,COALESCE(t.title,p.test_id,'未知测试') testTitle FROM purchases p LEFT JOIN quiz_tests t ON t.id=p.test_id ORDER BY p.paid_at DESC,p.kind,p.id LIMIT ? OFFSET ?`,[...pair,pageSize,(orderPage-1)*pageSize]),
@@ -83,7 +90,7 @@ export async function readWebsiteAnalytics(db,window,context,paging={},now=Date.
  const rows=results.map(result=>result.results),acquisition=rows[1][0],payments=rows[2][0],accounts=context.accounts||[];
  const identify=row=>{const a=accountForSource(row,accounts);return {...row,account:a?{connectionId:a.connectionId,username:a.username,name:a.name}:null};};
  const byDay=new Map(rows[4].map(row=>[row.day,row])),days=[];
- for(let at=Date.parse(window.start);at<Date.parse(window.end);at+=DAY){const day=dayKey(at);days.push(byDay.get(day)||{day,started:0,finished:0,pageviews:0,orders:0});}
+ for(let at=Date.parse(window.start);at<Date.parse(window.end);at+=DAY){const day=dayKey(at);days.push(byDay.get(day)||{day,started:0,finished:0,pageviews:null,orders:0});}
  const byAccount=new Map();let attributedStarted=0,attributedOrders=0;
  for(const row of rows[8]){
   const a=accountForSource(row,accounts);if(!a)continue;
@@ -92,7 +99,7 @@ export async function readWebsiteAnalytics(db,window,context,paging={},now=Date.
   byAccount.set(a.connectionId,value);attributedStarted+=Number(row.started)||0;attributedOrders+=Number(row.orders)||0;
  }
  return {
-  version:1,connected:true,updatedAt:new Date(now).toISOString(),site:'https://deeppersonaai.com/',window,
+  version:2,channel:'tiktok',connected:true,updatedAt:new Date(now).toISOString(),site:'https://deeppersonaai.com/',window,
   summary:{pageviews:rows[0][0].pageviews,...acquisition,...payments,completionRate:acquisition.started?acquisition.finished/acquisition.started:null,paymentRate:acquisition.started?acquisition.paidSessions/acquisition.started:null},
   currencies:rows[3],days,sources:{rows:rows[6].map(identify),total:rows[5][0].total,page:sourcePage,pageSize},
   orders:{rows:rows[7].map(identify),total:payments.orders,page:orderPage,pageSize},
@@ -101,11 +108,12 @@ export async function readWebsiteAnalytics(db,window,context,paging={},now=Date.
   receivers:accounts.filter(a=>a.candidate&&a.canPublish).map(a=>({connectionId:a.connectionId,username:a.username,name:a.name,trackingUrl:trackedWebsiteLink(a),configured:(context.config?.receivers||[]).some(r=>r.connectionId===a.connectionId&&r.linkReady)})),
   campaign:{configuredReceivers:context.summary?.selectedReceivers||0,effectiveAt:context.config?.effectiveAt||null,enabled:context.config?.enabled||false},
   definitions:{
-   pageviews:'全站匿名页面访问次数，刷新重复计数；不是独立访客，也没有账号级访问记录。',
-   acquisition:'按开始测试时间选取会话，展示这些会话截至当前的完成、邮箱提交、收银台和基础报告付款情况；与网站后台流量口径一致。',
-   orders:'按实际付款时间统计正式基础报告与深度报告订单；排除测试环境、预览和管理员标记的测试订单。后续退款仍保留原成交记录。',
+   channel:'仅统计网站已归因为 TikTok 的测试和订单。来源取自推广参数、TikTok 点击标记或网站记录的 TikTok 引荐来源；直接访问、其他渠道与来源不明均排除，不依据粉丝数或账号活动名猜测。',
+   pageviews:'历史匿名页面访问未保存渠道，无法分出 TikTok 页面访问量，因此不展示，API 返回 null；不以全站访问量或短链接进站数替代。',
+   acquisition:'仅选取所选时间开始、来源为 TikTok 的测试，展示这些测试截至当前的完成、邮箱提交、收银台和基础报告付款情况。',
+   orders:'仅统计来源为 TikTok 的正式基础报告与深度报告订单，按实际付款时间筛选；排除测试环境、预览和管理员标记的测试订单。后续退款仍保留原成交记录。',
    money:'成交金额为订单原价，按币种分列；未扣退款、税费或支付平台手续费，不代表实际到账。',
-   attribution:'推广参数识别承接账号；共用主页链接无法追溯上游视频或引流账号。历史无参数来源保留未归因。'
+   attribution:'TikTok 渠道内，通过推广参数识别当前项目承接账号；没有账号参数的 TikTok 测试和订单仍计入渠道总数。共用主页链接无法追溯上游视频或引流账号，推广链接转发到其他地方后仍会按链接标记归因。'
   }
  };
 }

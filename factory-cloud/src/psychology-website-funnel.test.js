@@ -54,6 +54,17 @@ test('mismatched campaign, old sessions, test payments and marked sessions do no
  const data=await readFunnelFacts(f.db,links,window);
  assert.deepEqual({...data.rows[0]},{code:'aaa',clicks:4,arrived:4,started:0,finished:0,paid:0});
 });
+
+test('click-linked conversions use the same normalized TikTok source rule',async t=>{
+ const f=site(t);f.sqlite.prepare("INSERT INTO traffic_link_state VALUES('v1',?)").run(window.start-1000);
+ for(const [i,source] of [' TIKTOK ','www.tiktok.com','direct','tiktok.com.evil'].entries()){
+  const id='channel-'+i;f.click(id);f.session(id,id,{finished:true,paid:true});
+  f.sqlite.prepare('UPDATE quiz_attribution SET source=? WHERE session_id=?').run(source,id);
+ }
+ const data=await readFunnelFacts(f.db,links,window);
+ assert.deepEqual({...data.rows[0]},{code:'aaa',clicks:4,arrived:2,started:2,finished:2,paid:2});
+});
+
 test('missing tracking tables return unavailable instead of fabricating historical zeros',async t=>{
  const f=site(t,false);assert.deepEqual(await readFunnelFacts(f.db,links,window),{ready:false,startedAt:null,rows:[]});
 });

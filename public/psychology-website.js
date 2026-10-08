@@ -11,13 +11,13 @@ function pager(prefix,value){$(prefix+'Page').textContent='第 '+value.page+' / 
 function render(value){
  data=value;$('report').hidden=false;renderJourney();$('rangeLabel').textContent=value.window.from+' 至 '+value.window.to;
  const s=value.summary;
- $('metrics').innerHTML=[['页面访问',s.pageviews,'全站 PV，刷新会重复计数'],['开始测试',s.started,'所选时间开始的测试'],['完成测试',s.finished,'完成答题，含未提交邮箱'],['成交订单',s.orders,'按实际付款时间，含后续退款']].map(([label,n,note])=>'<article class="web-metric"><span>'+label+'</span><strong>'+count(n)+'</strong><small>'+note+'</small></article>').join('');
+ $('metrics').innerHTML=[['开始测试',s.started,'所选时间开始的 TikTok 测试'],['完成测试',s.finished,'完成答题，含未提交邮箱'],['成交订单',s.orders,'按实际付款时间，含后续退款']].map(([label,n,note])=>'<article class="web-metric"><span>'+label+'</span><strong>'+count(n)+'</strong><small>'+note+'</small></article>').join('');
  $('revenue').textContent=value.currencies.length?value.currencies.map(c=>money(c.grossCents,c.currency)).join(' / '):'暂无成交金额';
  $('moneyNote').textContent='退款订单 '+count(s.refundedOrders)+' 笔。'+value.definitions.money;
  $('funnel').innerHTML=[['开始测试',s.started],['完成答题',s.finished],['提交邮箱',s.submitted],['到达收银台',s.checkout],['基础报告付款',s.paidSessions]].map(([label,n])=>'<div class="web-funnel-row"><span>'+label+'</span><div class="web-funnel-track"><i style="width:'+(s.started?Math.max(0,Math.min(100,n/s.started*100)):0)+'%"></i></div><strong>'+count(n)+'</strong></div>').join('');
  $('rates').textContent='答题完成率 '+percent(s.completionRate)+' · 测试付款率 '+percent(s.paymentRate)+'（付款测试会话 ÷ 开始测试会话）';
- $('attribution').innerHTML='<div class="web-attribution"><div><strong>'+count(value.attribution.attributedStarted)+'</strong><span>已归到承接账号的测试</span></div><div><strong>'+count(value.attribution.attributedOrders)+'</strong><span>已归到承接账号的订单</span></div></div><p class="web-muted">尚未归到当前项目账号：'+count(value.attribution.unattributedStarted)+' 次测试，'+count(value.attribution.unattributedOrders)+' 笔订单。</p>';
- $('days').innerHTML=table(['日期','页面访问','开始测试','完成答题','成交订单'],value.days.map(r=>[escape(r.day),count(r.pageviews),count(r.started),count(r.finished),count(r.orders)]));
+ $('attribution').innerHTML='<div class="web-attribution"><div><strong>'+count(value.attribution.attributedStarted)+'</strong><span>已归到承接账号的测试</span></div><div><strong>'+count(value.attribution.attributedOrders)+'</strong><span>已归到承接账号的订单</span></div></div><p class="web-muted">已识别为 TikTok、尚未归到当前项目账号：'+count(value.attribution.unattributedStarted)+' 次测试，'+count(value.attribution.unattributedOrders)+' 笔订单。</p>';
+ $('days').innerHTML=table(['日期','开始测试','完成答题','成交订单'],value.days.map(r=>[escape(r.day),count(r.started),count(r.finished),count(r.orders)]));
  $('accounts').innerHTML=table(['承接账号','链接访问','开始测试','完成答题','付款测试会话','期间成交订单'],value.accounts.map(r=>[escape(r.username?'@'+r.username:r.name),r.linkVisits==null?'—':count(r.linkVisits),count(r.started),count(r.finished),count(r.paidSessions),count(r.orders)]),'暂无可归因账号数据。请将专属推广链接设置到承接账号主页。');
  $('sources').innerHTML=table(['来源','承接账号 / 活动','媒介','内容参数','开始','完成','收银台','付款会话','成交订单'],value.sources.rows.map(r=>[escape(r.source),escape(r.account?'@'+(r.account.username||r.account.name):r.campaign||'未归因'),escape(r.medium||'—'),escape(r.content||'—'),count(r.started),count(r.finished),count(r.checkout),count(r.paidSessions),count(r.orders)]));pager('source',value.sources);
  $('orders').innerHTML=table(['付款时间','订单号','产品','金额','状态','支付平台','来源 / 承接账号'],value.orders.rows.map(r=>[escape(datetime(r.paid_at)),escape(r.id),escape(r.testTitle)+'<small>'+(r.kind==='deep'?'深度报告':'基础报告')+'</small>',escape(money(r.amount_cents,r.currency)),r.status==='refunded'?'已退款':'已付款',escape(r.provider==='unknown'?'未知':r.provider),escape(r.account?'@'+(r.account.username||r.account.name):r.source)+'<small>'+escape(r.campaign||'无账号参数')+'</small>']));pager('order',value.orders);
@@ -28,7 +28,7 @@ function render(value){
  $('createLinks').disabled=!value.receivers.some(a=>!a.trackingUrl);
  updateLink();
  $('definitions').innerHTML=Object.values(value.definitions).map(text=>'<p>'+escape(text)+'</p>').join('');
- $('status').textContent='已连接 DeepPersona · 更新于 '+datetime(value.updatedAt);
+ $('status').textContent='已连接 DeepPersona · 仅 TikTok 渠道 · 更新于 '+datetime(value.updatedAt);
 }
 function renderJourney(){
  const f=data?.funnel,selected=$('journeyAccount').value;
@@ -44,7 +44,7 @@ function renderJourney(){
  const losses=summary.losses||{};
  $('journeyLosses').innerHTML=[['点击 → 进站','未确认进站',losses.arrival],['进站 → 开始','未开始测试',losses.start],['开始 → 完成','尚未完成',losses.finish],['完成 → 付款','尚未付款',losses.payment]].map(([title,label,value])=>'<article><span>'+title+'</span><strong>'+metric(value?.lost)+' <small>次</small></strong><p>'+label+' · 流失率 '+percent(value?.rate)+'</p><small>进入下一步 '+percent(value?.conversion)+'</small></article>').join('');
  const since=f?.startedAt?new Date(f.startedAt).toISOString().replace('T',' ').slice(0,19)+' UTC':'尚未启用';
- $('journeyNote').textContent='进站追踪启用时间：'+since+'。漏斗只计算启用后经过短链接的访问；刷新去重，多次做题或购买也只计一次。未确认进站可能包含加载失败、用户退出或上报被拦截。';
+ $('journeyNote').textContent='进站追踪启用时间：'+since+'。漏斗只计算启用后经过 TikTok 推广短链接的访问；刷新去重，多次做题或购买也只计一次。未确认进站可能包含加载失败、用户退出或上报被拦截。';
  const shown=active?[active]:rows;
  const lossText=value=>value?.lost==null?'暂无':count(value.lost)+' / '+percent(value.rate);
  $('journeyAccounts').innerHTML=table(['承接账号','主页访问','链接点击','成功进站','开始测试','完成测试','付款','点击→进站流失','进站→开始流失','开始→完成流失','完成→付款流失'],shown.map(row=>[

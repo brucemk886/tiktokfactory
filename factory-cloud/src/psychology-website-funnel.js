@@ -1,4 +1,4 @@
-import { PRODUCTION_SESSION } from './psychology-website-data.js';
+import { PRODUCTION_SESSION, tikTokSourceSQL } from './psychology-website-data.js';
 
 const DAY=86400000;
 const stages=['clicks','arrived','started','finished','paid'];
@@ -46,7 +46,7 @@ export async function readFunnelFacts(db,links,window){
  MAX(CASE WHEN s.id IS NOT NULL AND (s.completed_at IS NOT NULL OR EXISTS(SELECT 1 FROM quiz_events e WHERE e.session_id=s.id AND e.event_name='email_gate_viewed')) THEN 1 ELSE 0 END) finished,
  MAX(CASE WHEN s.id IS NOT NULL AND EXISTS(SELECT 1 FROM quiz_reports r JOIN payment_orders o ON o.report_id=r.id WHERE r.session_id=s.id AND o.livemode=1 AND o.amount_cents>0 AND o.paid_at IS NOT NULL AND o.status IN ('paid','refunded') AND substr(o.id,1,8)!='preview_') THEN 1 ELSE 0 END) paid
  FROM traffic_link_clicks c JOIN json_each(?) link ON c.code=json_extract(link.value,'$.code') AND c.campaign=json_extract(link.value,'$.campaign')
- LEFT JOIN quiz_attribution a ON a.visit_id=c.id AND a.source='tiktok' AND a.campaign=c.campaign
+ LEFT JOIN quiz_attribution a ON a.visit_id=c.id AND ${tikTokSourceSQL('a.source')} AND a.campaign=c.campaign
  LEFT JOIN quiz_sessions s ON s.id=a.session_id AND ${PRODUCTION_SESSION}
  AND datetime(s.started_at)>=datetime(c.clicked_at/1000,'unixepoch')
  WHERE c.excluded=0 AND c.clicked_at>=? AND c.clicked_at<?
@@ -76,5 +76,5 @@ export async function readWebsiteFunnel(factory,site,context,links,selectedWindo
    ...values,trackedFrom,coverageComplete:covered&&trackedFrom<=window.start,tracking:covered?'ready':link?'not-covered':'no-link'};
  });
  return {window,ready:facts.ready,startedAt:facts.startedAt,rows:rows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(rows),
-  definition:'按所选 UTC 日期内的短链接访问分组，跟踪这些访问后续的进站、测试和基础报告付款。同一次访问每步最多计一次，付款后退款仍计入曾付款。主页为 TikTok 汇总访问次数，无法逐人关联；只在时间与数据覆盖完整时提供参考点击率。成功进站由可见网页上报或实际开始测试确认；未确认可能包含加载失败、上报被拦截或用户退出。'};
+  definition:'按所选 UTC 日期内的 TikTok 推广短链接访问分组，跟踪这些访问后续的进站、测试和基础报告付款。链接被转发到其他地方后仍按 TikTok 推广链接归因。同一次访问每步最多计一次，付款后退款仍计入曾付款。主页为 TikTok 汇总访问次数，无法逐人关联；只在时间与数据覆盖完整时提供参考点击率。成功进站由可见网页上报或实际开始测试确认；未确认可能包含加载失败、上报被拦截或用户退出。'};
 }

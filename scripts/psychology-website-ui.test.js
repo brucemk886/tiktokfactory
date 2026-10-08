@@ -11,16 +11,16 @@ import { SIDEBAR_MODULES, canAccessPath } from '../factory-cloud/src/sidebar.js'
 const root=path.resolve(fileURLToPath(new URL('../public/',import.meta.url)));
 const chrome=[process.env.CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','C:/Program Files (x86)/Google/Chrome/Application/chrome.exe','/usr/bin/chromium'].find(p=>p&&fs.existsSync(p));
 const fixture=()=>({
- connected:true,updatedAt:'2026-10-06T12:00:00Z',window:{from:'2026-09-30',to:'2026-10-06'},
- summary:{pageviews:104,started:60,finished:40,submitted:30,checkout:10,paidSessions:2,orders:3,refundedOrders:1,completionRate:2/3,paymentRate:2/60},
- currencies:[{currency:'usd',grossCents:1497}],days:[{day:'2026-10-06',pageviews:104,started:60,finished:40,orders:3}],
+ channel:'tiktok',connected:true,updatedAt:'2026-10-06T12:00:00Z',window:{from:'2026-09-30',to:'2026-10-06'},
+ summary:{pageviews:null,started:60,finished:40,submitted:30,checkout:10,paidSessions:2,orders:3,refundedOrders:1,completionRate:2/3,paymentRate:2/60},
+ currencies:[{currency:'usd',grossCents:1497}],days:[{day:'2026-10-06',pageviews:null,started:60,finished:40,orders:3}],
  attribution:{attributedStarted:20,attributedOrders:2,unattributedStarted:40,unattributedOrders:1},
  accounts:[{connectionId:'a',username:'account_a',started:20,finished:15,paidSessions:2,orders:2}],
  sources:{page:1,pageSize:20,total:21,rows:[{source:'tiktok',campaign:'<img src=x onerror=alert(1)>',medium:'bio',content:'content & detail',started:20,finished:15,checkout:4,paidSessions:2,orders:2}]},
  orders:{page:1,pageSize:20,total:3,rows:[{id:'order-demo',paid_at:'2026-10-06 02:00:00',testTitle:'Attachment',kind:'report',amount_cents:499,currency:'usd',status:'refunded',provider:'stripe',source:'tiktok',campaign:'factory-a'}]},
  receivers:[{connectionId:'a',username:'account_a',configured:false,trackingUrl:null}],
  campaign:{configuredReceivers:0,enabled:true},
- definitions:{pageviews:'全站PV，刷新重复计数。',acquisition:'测试按开始时间，订单按付款时间。',money:'未扣退款、税费或支付平台手续费，不代表实际到账。'}
+ definitions:{pageviews:'历史匿名页面访问未保存渠道，因此不展示。',acquisition:'测试按开始时间，订单按付款时间。',money:'未扣退款、税费或支付平台手续费，不代表实际到账。'}
 });
 test('website page permission aliases retain admin-only autopilot access',()=>{
  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-autopilot']},'/psychology-website'),false);
@@ -74,6 +74,12 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  const base='http://127.0.0.1:'+server.address().port;
  await page.goto(base+'/psychology-website');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
  await page.waitForSelector('.side-tabs a[href="/psychology-website"]');
+ assert.match(await page.$eval('.web-scope',e=>e.textContent),/TikTok 渠道概况/);
+ assert.match(await page.$eval('#channelScope',e=>e.textContent),/来源不明不计入/);
+ assert.equal(await page.$$eval('#metrics article',rows=>rows.length),3);
+ assert.doesNotMatch(await page.$eval('#metrics',e=>e.textContent),/页面访问|全站|104/);
+ assert.doesNotMatch(await page.$eval('#days',e=>e.textContent),/页面访问|104/);
+ assert.match(await page.$eval('#attribution',e=>e.textContent),/已识别为 TikTok/);
  assert.deepEqual(await page.$$eval('.side-tabs a',links=>{
   const index=links.findIndex(a=>a.getAttribute('href')==='/psychology-website');
   return [links[index-1].textContent.trim(),links[index].textContent.trim()];
@@ -107,7 +113,7 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  await page.click('[data-tab="sources"]');await page.click('#sourceNext');await page.waitForFunction(()=>document.getElementById('sourcePage').textContent.includes('第 2'));
  assert.equal(requests.at(-1).sourcePage,'2');
  mode='error';await page.click('#refresh');await page.waitForFunction(()=>!document.getElementById('failure').hidden);
- assert.match(await page.$eval('#metrics',e=>e.textContent),/104/);assert.match(await page.$eval('#status',e=>e.textContent),/上次成功/);
+ assert.match(await page.$eval('#metrics',e=>e.textContent),/60/);assert.match(await page.$eval('#status',e=>e.textContent),/上次成功/);
  mode='ready';await page.click('[data-period="today"]');await page.click('[data-period="7d"]');
  await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
  assert.match(await page.$eval('#rangeLabel',e=>e.textContent),/2026-09-30/);
