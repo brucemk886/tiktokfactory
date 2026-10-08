@@ -25,3 +25,8 @@ No live TikTok project membership or real video publication was changed in tests
 
 ## Recommended next step
 On the selected-video publishing page, choose thousand-follower accounts and one of the two psychology projects, join/check the accounts, resolve any returned errors, and then explicitly confirm a small video batch.
+
+## Release verification
+- Runtime commit d95a4ce was pushed to GitHub main, with clean worktree and exact origin/main match verified by the deploy gate. Deployed using npm run deploy. A transient workflow-binding fetch failure on the first deployment was resolved by a successful retry of the same deploy command; all workflow triggers completed.
+- Cloudflare version: 0784c767-e018-452d-9ced-d4e4408b71db.
+- Verified production serves the exact committed membership-control asset. Logged-in browser smoke test confirmed the new bulk button and a real account's read-only membership response, displayed as not yet confirmed with an individual join button. No live join or publication was submitted.
