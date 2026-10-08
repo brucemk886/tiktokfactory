@@ -5,7 +5,11 @@ const PSYCHOLOGY_ANCHOR_PROJECT_IDS = new Set([
 ]);
 export function mountPsychologyOne({api,accounts,media,changed,isBusy=()=>false,setBusy=()=>{}}){
  const $=id=>document.getElementById(id),base='/api/psychology-tiktok-one';
- const cache=new Map();let brands=[],loaded=false,loadVersion=0,checkVersion=0,timer,joining=false;
+ const cache=new Map();let brands=[],loaded=false,loadVersion=0,checkVersion=0,timer,joining=false,checking=false,checkAbort;
+ function cancelCheck(){
+  clearTimeout(timer);checkVersion++;checking=false;checkAbort?.abort();checkAbort=null;
+  $('oneRecheck').disabled=false;
+ }
  const option=(text,value)=>new Option(text,value);
  const status=(text,error=false)=>{$('oneStatus').textContent=text;$('oneStatus').classList.toggle('error',error);};
  function context(){
@@ -26,7 +30,7 @@ export function mountPsychologyOne({api,accounts,media,changed,isBusy=()=>false,
  async function loadProjects(refresh=false){
   if(joining||isBusy())return;
   $('oneJoinSelected').disabled=true;
-  const version=++loadVersion;checkVersion++;$('oneAccounts').replaceChildren();
+  const version=++loadVersion;cancelCheck();$('oneAccounts').replaceChildren();
   $('oneProject').replaceChildren(option('正在读取项目…',''));$('oneProject').disabled=true;changed();
   const brand=$('oneBrand').value===''?null:brands[Number($('oneBrand').value)];
   if(!brand){$('oneProject').replaceChildren(option('请先选择品牌账号',''));return;}
@@ -51,12 +55,13 @@ export function mountPsychologyOne({api,accounts,media,changed,isBusy=()=>false,
    const id=accountId(a),row=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');
    row.className='one-account-row';row.dataset.oneAccount=id;button.type='button';button.dataset.oneJoin=id;
    button.onclick=()=>join([id]).catch(e=>status(e.message,true));row.append(label,button);$('oneAccounts').append(row);
-   const update=(working=false)=>{
+   const update=(working=false,phase='',elapsed=0)=>{
     const data=cache.get(memberKey(project,id)),joined=data?.joinStatus==='success';
-    row.dataset.memberState=working?'joining':joined?'joined':data?.error?'error':data?'unknown':'checking';
-    label.textContent=(a.username||a.displayName||id)+'：'+(working?'正在申请加入…':joined?'已确认加入当前项目':data?.error?'加入未确认：'+data.error:data?'尚未确认加入当前项目':'检查中…');
-    label.classList.toggle('error',Boolean(data?.error));button.textContent=joined?'已加入':data?.error?'重试加入':'加入项目';
-    button.disabled=joining||isBusy()||joined||!data;
+    const pending=phase==='waiting'||phase==='checking';
+    row.dataset.memberState=working?'joining':pending?phase:joined?'joined':data?.error?'error':data?'unknown':'waiting';
+    label.textContent=(a.username||a.displayName||id)+'：'+(working?'正在申请加入…':phase==='waiting'?'等待检查':phase==='checking'?`检查中 · ${elapsed} 秒`:joined?'已确认加入当前项目':data?.error?'未确认：'+data.error:data?'尚未确认加入当前项目':'等待检查');
+    label.classList.toggle('error',Boolean(data?.error)&&!pending);button.textContent=joined?'已加入':data?.error?'重试加入':'加入项目';
+    button.disabled=joining||checking||isBusy()||joined||pending||!data;
    };
    update();return {id,update};
   });
@@ -64,34 +69,51 @@ export function mountPsychologyOne({api,accounts,media,changed,isBusy=()=>false,
  function membershipSummary(project,selected){
   const joined=selected.filter(a=>cache.get(memberKey(project,accountId(a)))?.joinStatus==='success').length;
   const errors=selected.filter(a=>cache.get(memberKey(project,accountId(a)))?.error).length;
-  $('oneJoinSelected').disabled=joining||isBusy()||!selected.length||joined===selected.length;
+  $('oneJoinSelected').disabled=joining||checking||isBusy()||!selected.length||joined===selected.length;
   status(selected.length?`已确认加入 ${joined} / ${selected.length} 个账号${errors?' · '+errors+' 个未确认，请查看原因后重试':''}。加入项目不会发布视频，最后确认发布时仍会校验。`:'请选择发布账号，再检查并加入项目。',errors>0);
  }
  async function check(force=false){
   if(joining||isBusy())return;
-  clearTimeout(timer);const version=++checkVersion;
+  clearTimeout(timer);cancelCheck();const version=checkVersion;
   let project;try{project=context();}catch{$('oneJoinSelected').disabled=true;return;}
   if(!project){$('oneAccounts').replaceChildren();$('oneJoinSelected').disabled=true;return;}
   const selected=accounts(),entries=renderMembers(project,selected);$('oneJoinSelected').disabled=true;
   if(!selected.length){membershipSummary(project,selected);return;}
-  for(const {id,update} of entries){
+  checking=true;checkAbort=new AbortController();const controller=checkAbort,started=Date.now();let cursor=0;
+  $('oneRecheck').disabled=true;
+  for(const entry of entries){entry.phase='waiting';entry.started=0;}
+  const progress=()=>{
    if(version!==checkVersion)return;
-   const key=memberKey(project,id);
-   try{
-    const data=!force&&cache.has(key)?cache.get(key):await api(base+'?'+new URLSearchParams({...project,resource:'prepare',creatorConnectionId:id,refresh:force?'1':'0'}));
-    if(version!==checkVersion)return;
-    cache.set(key,data);update();
-   }catch(e){if(version!==checkVersion)return;cache.set(key,{error:e.message});update();}
+   for(const entry of entries)entry.update(false,entry.phase,Math.floor((Date.now()-entry.started)/1000));
+   const done=entries.filter(e=>e.phase==='done').length,active=entries.filter(e=>e.phase==='checking').length;
+   status(`正在核验 ${done} / ${entries.length} 个账号 · 检查 ${active} 个 · 等待 ${entries.length-done-active} 个 · 已用 ${Math.floor((Date.now()-started)/1000)} 秒。单个账号最多等待 30 秒。`);
+  };
+  progress();const ticker=setInterval(progress,1000);
+  const worker=async()=>{
+   while(cursor<entries.length&&version===checkVersion){
+    const entry=entries[cursor++],{id}=entry,key=memberKey(project,id),cached=cache.get(key);
+    if(!force&&cached&&!cached.error){entry.phase='done';progress();continue;}
+    entry.phase='checking';entry.started=Date.now();progress();const deadline=AbortSignal.timeout(30000);
+    try{
+     const data=await api(base+'?'+new URLSearchParams({...project,resource:'prepare',creatorConnectionId:id,refresh:force?'1':'0'}),undefined,undefined,{signal:AbortSignal.any([controller.signal,deadline])});
+     if(version!==checkVersion)return;cache.set(key,data);
+    }catch(e){if(version!==checkVersion)return;cache.set(key,{error:deadline.aborted?'检查超时，请点击“重新检查账号”重试。':e.message,errorKind:'check'});}
+    entry.phase='done';progress();
+   }
+  };
+  try{await Promise.all(Array.from({length:Math.min(3,entries.length)},worker));}
+  finally{
+   clearInterval(ticker);
+   if(version===checkVersion){checking=false;checkAbort=null;$('oneRecheck').disabled=false;entries.forEach(e=>e.update());membershipSummary(project,selected);}
   }
-  if(version===checkVersion)membershipSummary(project,selected);
  }
  async function join(ids){
-  if(joining||isBusy())return;
+  if(joining||checking||isBusy())return;
   const project=context();if(!project)throw new Error('请先选择 TikTok One 项目。');
   const selected=accounts(),pending=selected.filter(a=>(!ids||ids.includes(accountId(a)))&&cache.get(memberKey(project,accountId(a)))?.joinStatus!=='success');
   if(!pending.length){membershipSummary(project,selected);return;}
   if(!confirm(`确认将 ${pending.length} 个账号加入项目 ${project.campaignId}？\n只申请加入项目，不会发布视频。`))return;
-  clearTimeout(timer);checkVersion++;joining=true;
+  clearTimeout(timer);cancelCheck();joining=true;
   const entries=renderMembers(project,selected),controls=[...$('batchForm').querySelectorAll('input,select,textarea,button')].map(node=>({node,disabled:node.disabled}));
   setBusy(true);controls.forEach(({node})=>node.disabled=true);
   try{
@@ -112,12 +134,12 @@ export function mountPsychologyOne({api,accounts,media,changed,isBusy=()=>false,
  }
  function selectionChanged(){
   if(joining)return;
-  clearTimeout(timer);checkVersion++;$('oneJoinSelected').disabled=true;$('oneAccounts').replaceChildren();
+  clearTimeout(timer);cancelCheck();$('oneJoinSelected').disabled=true;$('oneAccounts').replaceChildren();
   timer=setTimeout(()=>check().catch(e=>status(e.message,true)),300);
  }
  function sync(){
   $('oneSection').hidden=media()!=='video';$('oneFields').hidden=!$('oneEnabled').checked;
-  if(media()!=='video'){checkVersion++;clearTimeout(timer);return;}
+  if(media()!=='video'||!$('oneEnabled').checked){cancelCheck();return;}
   if($('oneEnabled').checked)loadBrands().then(()=>selectionChanged()).catch(e=>status(e.message,true));
  }
  $('oneEnabled').onchange=()=>{changed();sync();};

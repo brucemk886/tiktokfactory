@@ -85,3 +85,26 @@ test('explicit join rejects cross-origin, unknown actions, out-of-scope accounts
  f.sqlite.prepare("UPDATE factory_users SET active=0 WHERE username='admin'").run();
  await assert.rejects(joinRequest(f),e=>e.statusCode===403);assert.equal(f.checks.length,0);
 });
+
+
+test('account check forwards to lightweight membership only, preserving scope and refresh',async t=>{
+ const f=await setup(t),prior=globalThis.fetch;let reads=0;
+ t.mock.method(globalThis,'fetch',async(url,init)=>{
+  if(String(url).includes('/api/v1/tiktok-one')){
+   const query=new URL(url).searchParams;reads++;assert.equal(query.get('resource'),'membership');assert.equal(query.get('refresh'),'1');assert.equal(query.get('creatorConnectionId'),'a');assert.ok(init.signal);
+   return Response.json({joinStatus:'unknown'});
+  }
+  return prior(url,init);
+ });
+ const request=new Request('https://factory.test/api/psychology-tiktok-one?'+new URLSearchParams({...project,resource:'prepare',creatorConnectionId:'a',refresh:'1'}));
+ assert.deepEqual(await (await handlePsychologyOne(request,f.env,new URL(request.url),{user})).json(),{joinStatus:'unknown'});assert.equal(reads,1);assert.equal(f.checks.length,0);
+});
+
+
+test('membership timeout has actionable guidance and does not join or publish',async t=>{
+ const f=await setup(t),prior=globalThis.fetch;
+ t.mock.method(globalThis,'fetch',async(url,init)=>{if(String(url).includes('/api/v1/tiktok-one'))throw new DOMException('timed out','TimeoutError');return prior(url,init);});
+ const request=new Request('https://factory.test/api/psychology-tiktok-one?'+new URLSearchParams({...project,resource:'prepare',creatorConnectionId:'a'}));
+ await assert.rejects(()=>handlePsychologyOne(request,f.env,new URL(request.url),{user}),e=>e.statusCode===504&&e.message.includes('重新检查账号'));
+ assert.equal(f.checks.length,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
+});

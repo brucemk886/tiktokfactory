@@ -5,8 +5,8 @@ const $ = s => document.querySelector(s);
 const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", minFollowers:0, accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
-async function api(path, body, method) {
-  const response = await fetch(path,{...(method?{method}:{}),...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
+async function api(path, body, method, options = {}) {
+  const response = await fetch(path,{signal:options.signal,...(method?{method}:{}),...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
   const data = await response.json();
   if(!response.ok) throw new Error(data.error || '请求失败');
   return data;

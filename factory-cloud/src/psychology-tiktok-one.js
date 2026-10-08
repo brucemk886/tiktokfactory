@@ -45,7 +45,8 @@ export async function handlePsychologyOne(request,env,url,session){
  if(resource==='prepare'){
   const project=normalizeOneProject(input),creatorConnectionId=String(input.creatorConnectionId||'');
   await assertOfficialPublishAccess(env,session.user,{module:'psychology',connectionIds:[creatorConnectionId]});
-  return json(await signalDesk(env,env.DB,'/api/v1/tiktok-one?'+new URLSearchParams({...project,resource,creatorConnectionId,refresh:input.refresh==='1'?'1':'0'})));
+  try{return json(await signalDesk(env,env.DB,'/api/v1/tiktok-one?'+new URLSearchParams({...project,resource:'membership',creatorConnectionId,refresh:input.refresh==='1'?'1':'0'}),{signal:AbortSignal.timeout(25000)}));}
+  catch(error){if(['TimeoutError','AbortError'].includes(error.name))fail('账号检查超时，请点击“重新检查账号”重试。',504);throw error;}
  }
  fail('不支持此查询。');
 }
