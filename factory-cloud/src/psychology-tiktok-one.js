@@ -1,6 +1,7 @@
 import { signalDesk } from './signal-desk.js';
 import { assertOfficialPublishAccess } from './official.js';
-import { json } from './http.js';
+import { json, readJson } from './http.js';
+import { loadAutoUser } from './psychology-auto-publish.js';
 import { normalizeOneProject } from '../../scripts/psychology-auto-publish.js';
 const BASE='/api/psychology-tiktok-one';
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
@@ -22,7 +23,17 @@ export async function ensurePsychologyOneMembers(env,user,config,accounts=[]){
 export async function handlePsychologyOne(request,env,url,session){
  if(url.pathname!==BASE)return null;
  assertPsychologyOneUser(session?.user);
- if(request.method!=='GET')fail('此入口仅支持查询。',405);
+ if(request.method==='POST'){
+  if(request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)fail('请求来源无效。',403);
+  const user=await loadAutoUser(env.DB,session?.user?.username),input=await readJson(request);
+  if(!input||input.action!=='ensure')fail('不支持此操作。');
+  const project=normalizeOneProject(input),creatorConnectionId=String(input.creatorConnectionId||'').trim();
+  if(!creatorConnectionId||creatorConnectionId.length>100)fail('请选择发布账号。');
+  const scoped=await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:[creatorConnectionId]});
+  await ensurePsychologyOneMembers(env,user,{tiktokOne:project,connectionIds:[creatorConnectionId]},scoped.accounts);
+  return json({joined:true,joinStatus:'success',creatorConnectionId,campaignId:project.campaignId});
+ }
+ if(request.method!=='GET')fail('不支持此请求。',405);
  const input=Object.fromEntries(url.searchParams);
  const resource=input.resource;
  if(resource==='connections')return json(await signalDesk(env,env.DB,'/api/v1/tiktok-one?resource=connections'));

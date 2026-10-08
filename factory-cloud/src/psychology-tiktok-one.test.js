@@ -60,3 +60,28 @@ for(const template of ['psychology','psychology-target-2'])test(template+' topic
  await f.call('POST',input({template,sourceType:'topic-bank',selection:'priority',count:1,connectionIds:['a'],tiktokOne:project}),'/api/psychology-auto-publish',actor);
  const job=f.sqlite.prepare('SELECT * FROM factory_jobs').get();assert.equal(job.type,template);assert.equal(JSON.parse(job.payload_json).topicSource.template,template);assert.equal(f.checks[0].campaignId,project.campaignId);
 });
+
+function joinRequest(f,body={},headers={},actor=user){
+ const req=new Request('https://factory.test/api/psychology-tiktok-one',{method:'POST',headers,body:JSON.stringify({action:'ensure',...project,creatorConnectionId:'a',...body})});
+ return handlePsychologyOne(req,f.env,new URL(req.url),{user:actor});
+}
+test('explicit project join checks account access and joins without creating publication work',async t=>{
+ const f=await setup(t),response=await joinRequest(f,{inviteLink:'https://untrusted.example/ignored'}),data=await response.json();
+ assert.equal(data.joined,true);assert.equal(data.creatorConnectionId,'a');assert.equal(data.campaignId,project.campaignId);
+ assert.deepEqual(f.checks,[{...project,creatorConnectionId:'a',action:'ensure'}]);
+ assert.equal(f.requests.length,0);
+ for(const table of ['factory_jobs','psychology_publish_batches','psychology_publish_items'])assert.equal(f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n,0);
+});
+test('explicit join preserves provider failure and makes no publication jobs',async t=>{
+ const f=await setup(t,'TikTok permission denied');await assert.rejects(joinRequest(f),/alpha.*333.*permission denied/);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
+});
+test('explicit join rejects cross-origin, unknown actions, out-of-scope accounts and revoked admins before joining',async t=>{
+ const f=await setup(t);
+ await assert.rejects(joinRequest(f,{}, {Origin:'https://untrusted.example'}),e=>e.statusCode===403);
+ await assert.rejects(joinRequest(f,{action:'publish'}),/不支持/);
+ await assert.rejects(joinRequest(f,{creatorConnectionId:'outside'}),e=>e.statusCode===403);
+ await assert.rejects(joinRequest(f,{}, {}, {...user,role:'operator'}),e=>e.statusCode===403);
+ f.sqlite.prepare("UPDATE factory_users SET active=0 WHERE username='admin'").run();
+ await assert.rejects(joinRequest(f),e=>e.statusCode===403);assert.equal(f.checks.length,0);
+});

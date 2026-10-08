@@ -163,3 +163,6 @@ body.psychology-workspace-page.psychology-auto-page .detail-tabs [role=tab]{tran
 body.psychology-workspace-page.psychology-auto-page .create-batch-dialog .publish-create-grid.is-video-selection{display:flex;flex-direction:column;gap:16px}.is-video-selection>section{width:100%;box-sizing:border-box}.is-video-selection .publish-schedule-section{position:static}
 
 .is-video-selection>section{scroll-margin-top:110px}.is-video-selection #videoSelectionSection>.account-selection-actions{align-items:flex-end}
+
+.one-account-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line,#e4eaf2)}
+.one-account-row span{min-width:0;overflow-wrap:anywhere}.one-account-row button{flex-shrink:0}.one-account-row[data-member-state="joined"] span{color:#15734a}
