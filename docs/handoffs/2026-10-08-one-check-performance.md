@@ -24,3 +24,6 @@ Resolve account rows lingering in checking. A read-only production check took 7.
 
 ## Unfinished work / recommended next step
 Deploy Hub first, then commit/push main and deploy factory with npm run deploy under the exact clean-main gate. Recheck one account on the production page to compare response time. No account joining or video publishing is authorized or required by this investigation.
+
+## Release verification
+Runtime commit 7994ede deployed using npm run deploy after clean exact origin/main verification, after Hub bf93e15. An initial Cloudflare D1 migration-list network fetch failed safely before deploy; normal command retry succeeded. Factory Cloudflare version 29a40a89-f784-4512-b015-bfbe168ac00c. A new production browser capture verified the same account/project read at 4.444 seconds versus 7.755 seconds before, returning the expected unknown status and exiting checking. This is a single observed sample, not a latency guarantee. No live join/publication. Release capture stopped/exported outside Git and browser session closed.
