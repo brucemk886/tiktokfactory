@@ -38,6 +38,7 @@ const SCRIPT_BY_TYPE = {
   "folder-classify": "folder-classify-job.js",
   unsplash: "unsplash-image-job.js",
   "asset-reindex": "asset-index-job.js",
+  "psychology-video-remix": "psychology-video-remix-job.js",
   psychology: "psychology-video-job.js"
 };
 
@@ -143,7 +144,7 @@ async function laneLoop(context, lane) {
     try {
       claimed = await request(context, "/api/worker/claim", {
         method: "POST",
-        body: { psychologyVideoTransfer:true, psychologyPublishRetry: true, psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
+        body: { psychologyVideoRemix:true, psychologyVideoTransfer:true, psychologyPublishRetry: true, psychologyBatchUpload: typeof context.uploadOfficialAsset === "function", workerId: context.workerId, lane: lane.name, assignedOnly: context.settings.assignedOnly === true, ...lane.claim }
       });
     } catch (error) {
       console.error(`拉单失败（${lane.name}）：`, error.message || error);
@@ -205,6 +206,7 @@ async function runJob(context, job) {
   const payloadPath = path.join(context.jobsDir, `${jobId}.payload.json`);
   const jobPath = path.join(context.jobsDir, `${jobId}.json`);
   const payload = buildLocalPayload(job);
+  if(type==='psychology-video-remix')payload.workerId=context.workerId;
   fs.writeFileSync(payloadPath, JSON.stringify(payload, null, 2), "utf8");
   writeLocalJob(jobPath, { jobId, status: "running", percent: 2, message: "Local Factory 已开始混剪", createdAt: Date.now() });
   mirrorCloudTask(context, job, { status: "running", percent: 2, message: "Local Factory 已开始混剪" });

@@ -1,3 +1,5 @@
+import {handleVideoHits} from './psychology-video-hits.js';
+import {handleVideoHitProduction} from './psychology-video-hit-production.js';
 import {handlePsychologyWebsite} from './psychology-website.js';
 import {json,errorJson,sha256Hex,randomToken} from './http.js';
 import {toPublicUser} from './auth.js';
@@ -16,7 +18,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const object=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const only=(x,keys)=>{if(!object(x)||Object.keys(x).some(k=>!keys.includes(k)))fail('包含未知字段或对象格式无效。');};
 const canonical=x=>Array.isArray(x)?x.map(canonical):object(x)?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonical(x[k])])):x;
-async function authenticate(request,db){
+export async function authenticate(request,db){
  const token=request.headers.get('authorization')?.match(/^Bearer (fac_api_\S+)$/i)?.[1];
  if(!token||token.length>200)fail('请提供项目统一 Bearer API 密钥。',401);
  const row=await db.prepare("SELECT u.* FROM factory_ai_keys k JOIN factory_users u ON u.id=k.owner_id WHERE k.id='project' AND k.token_hash=? AND u.active=1 AND u.role='admin'").bind(await sha256Hex(token)).first();
@@ -58,13 +60,14 @@ function prepare(input,entry,origin){
  if(entry.handler==='one')url.searchParams.set('resource',{'tiktokOne.brands':'connections','tiktokOne.projects':'projects','tiktokOne.check':'prepare'}[input.action]);
  if(entry.method==='GET'&&p.body!==undefined)fail('查询操作不接受 params.body。');
  const body=structuredClone(p.body??{});if(!object(body))fail('params.body 须为 JSON 对象。');
- const inject=entry.method==='POST'&&(input.action==='publish.create'||input.action==='autopilot.create'||input.action==='styles.create'||input.action.endsWith('.views.create'));
+ const inject=(entry.handler==='videoHits'&&entry.method!=='GET')||entry.method==='POST'&&(input.action==='publish.create'||input.action==='autopilot.create'||input.action==='styles.create'||input.action.endsWith('.views.create'));
  if(inject){if(body.requestId!==undefined&&body.requestId!==input.requestId)fail('内外 requestId 不一致。');body.requestId=input.requestId;}
  const request=new Request(url,{method:entry.method,...(entry.method==='GET'?{}:{headers:{'content-type':'application/json'},body:JSON.stringify(body)})});
  return {url,request};
 }
 async function dispatch(entry,request,env,url,user){
  // Trusted actors are passed as server arguments only, never from client headers or body.
+ if(entry.handler==='videoHits')return (await handleVideoHitProduction(request,env,url,{user}))||handleVideoHits(request,env,url,{user});
  if(entry.handler==='manage')return handlePsychologyManagement(request,env,url,null,{actor:{user,scopes:Object.keys(MANAGEMENT_MODULES).flatMap(m=>[m+':read',m+':write'])}});
  if(entry.handler==='topics')return handlePsychologyTopicBank(request,env,url,null,{user});
  if(entry.handler==='copy')return handleCopyIntegration(request,env,url,user.id,readManagementBody);

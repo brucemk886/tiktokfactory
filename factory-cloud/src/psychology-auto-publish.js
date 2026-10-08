@@ -230,6 +230,10 @@ export async function loadAutoUser(db, username) {
 }
 export async function assertAutoJobAccess(env, job, options = {}) {
   const payload = JSON.parse(job.payload_json || '{}');
+  if(job.type==='psychology-video-remix'){
+    const actor=await env.DB.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(job.created_by).first();
+    await (await import('./psychology-video-hits.js')).videoHitUser(env.DB,actor);
+  }
   if (!payload.psychologyAutomation) return;
   const user = await loadAutoUser(env.DB, job.created_by);
   await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: [payload.psychologyAutomation.connectionId] }, options);

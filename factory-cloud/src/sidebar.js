@@ -24,6 +24,7 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("photo-factory-templates", "/photo-factory/templates", "模板工作台", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("photo-factory-autopilot", "/photo-factory/autopilot", "自动运营", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("photo-factory-reports", "/photo-factory/reports", "运营报表", ["admin"], {id:"photo-factory",label:"图文工厂"}),
+  moduleItem("psychology-video-hits", "/psychology-video-hits", "视频爆款", ["admin"], psychologyGroup()),
   moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ["admin"], psychologyGroup()),
   moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ["admin"], psychologyGroup(), "psychology-copy-library"),
   moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup(), "psychology-publish-sources"),
@@ -88,6 +89,7 @@ export function moduleIdForPath(pathname) {
     "/psychology-website.html": "psychology-autopilot",
     "/psychology-publish-designs": "psychology-publish",
     "/psychology-creative.html": "psychology-publish",
+    "/psychology-video-hits.html": "psychology-video-hits",
     "/psychology-copy-library.html": "psychology-copy-library",
     "/psychology-copy-usage": "psychology-copy-library",
     "/psychology-copy-usage.html": "psychology-copy-library",
@@ -120,6 +122,7 @@ export function canAccessPath(user, pathname) {
   if(["/factory-api","/factory-api.html"].includes(pathname))return user.role==="admin";
   if(pathname.startsWith("/photo-factory"))return user.role==="admin"&&(user.sidebarModules||[]).includes("photo-factory");
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
+  if(['/psychology-video-hits','/psychology-video-hits.html'].includes(clean))return user.role==='admin'&&(user.sidebarModules||[]).includes('psychology-video-hits');
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
   }

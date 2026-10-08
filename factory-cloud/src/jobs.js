@@ -201,7 +201,7 @@ async function listRecentVideos(db, user, moduleKey = "") {
 export function moduleForJobType(type) {
   const value = String(type || "").trim();
   if (["generate", "schulte", "quiz"].includes(value)) return "mid-video";
-  if (["psychology", "psychology-narrative", "psychology-collage", "psychology-target-2", "psychology-photo-story"].includes(value)) return "psychology";
+  if (["psychology-video-remix", "psychology", "psychology-narrative", "psychology-collage", "psychology-target-2", "psychology-photo-story"].includes(value)) return "psychology";
   return "";
 }
 
@@ -264,6 +264,8 @@ async function handleWorkerApi(request, env, url, ctx) {
   const supplied = bearer(request);
   if (supplied !== expected) return errorJson("工人密钥不正确。", 401);
   if(url.pathname==='/api/worker/psychology-cloud-photo/probe')return (await import('./psychology-cloud-probe.js')).handleCloudPhotoProbe(request,env,url);
+  const remixAsset=await (await import('./psychology-video-hit-assets.js')).handleVideoHitWorkerAsset(request,env,url);
+  if(remixAsset)return remixAsset;
   const transfer=await (await import('./psychology-video-library.js')).handleVideoTransfer(request,env,url);
   if(transfer)return transfer;
   const autoVideo=await handleAutoVideoStage(request,env,url);
@@ -727,6 +729,7 @@ export function claimTypeFilter(payload = {}) {
   const workerId = String(payload.workerId || "").trim().slice(0, 80);
   let sql = " AND COALESCE(json_extract(payload_json, '$.cloudPhotoRender'),0)<>1";
   if(payload.psychologyBatchUpload!==true)sql += " AND COALESCE(json_extract(payload_json, '$.psychologyAutomation.submissionMode'), '')<>'grouped'";
+  if(payload.psychologyVideoRemix!==true)sql += " AND type<>'psychology-video-remix'";
   if(payload.psychologyVideoTransfer!==true)sql += " AND type NOT IN ('psychology-selected-video','psychology-video-archive')";
   if(payload.psychologyPublishRetry!==true)sql += " AND type<>'psychology-publish-submit'";
   const binds = [];

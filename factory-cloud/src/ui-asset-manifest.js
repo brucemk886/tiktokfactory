@@ -104,6 +104,8 @@ export const UI_ASSETS = {
   "/psychology-topic-import.js": "cf1f06df5c277f430dcb",
   "/psychology-topic-selection.js": "39dd7f8713a97d49b274",
   "/psychology-transition-day.js": "045e53947026b8cf46d7",
+  "/psychology-video-hits.css": "2f82bb85f0a5dfbc7181",
+  "/psychology-video-hits.js": "a63e331dfbb1d5457210",
   "/psychology-video-picker.js": "624e24982fc036d6b351",
   "/psychology-visual-styles.js": "91942ff4b7350d884d93",
   "/psychology-website.css": "43a118046f5503734cb2",

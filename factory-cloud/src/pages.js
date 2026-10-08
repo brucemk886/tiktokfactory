@@ -1,4 +1,5 @@
 const PAGE_FILES = {
+  "/psychology-video-hits": "psychology-video-hits.html",
   "/psychology-website": "psychology-website.html",
   "/factory-api": "factory-api.html",
   "/photo-factory": "photo-factory.html",
