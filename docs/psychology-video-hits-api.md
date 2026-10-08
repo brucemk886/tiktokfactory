@@ -2,6 +2,8 @@
 
 页面：`https://factory.tiktokaitool.com/psychology-video-hits`。在页面点“API 写入”可复制 GPT / Dot 完整指令。使用“统一 API”现有项目密钥，不需要新增专用密钥。
 
+页面流程：视频列表点击“查看二创”进入独立二创列表，按版本编号列出该视频的全部二创；点击“查看详情”进入原文案 / 二创文案与逐帧原图 / 二创图对照。支持直接打开、刷新和返回。
+
 ## 调用入口
 
 - JSON：`POST https://factory.tiktokaitool.com/api/v1/factory`

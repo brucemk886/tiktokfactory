@@ -90,6 +90,8 @@ export function moduleIdForPath(pathname) {
     "/psychology-publish-designs": "psychology-publish",
     "/psychology-creative.html": "psychology-publish",
     "/psychology-video-hits.html": "psychology-video-hits",
+    "/psychology-video-hits/recreations": "psychology-video-hits",
+    "/psychology-video-hits/detail": "psychology-video-hits",
     "/psychology-copy-library.html": "psychology-copy-library",
     "/psychology-copy-usage": "psychology-copy-library",
     "/psychology-copy-usage.html": "psychology-copy-library",
@@ -122,7 +124,7 @@ export function canAccessPath(user, pathname) {
   if(["/factory-api","/factory-api.html"].includes(pathname))return user.role==="admin";
   if(pathname.startsWith("/photo-factory"))return user.role==="admin"&&(user.sidebarModules||[]).includes("photo-factory");
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
-  if(['/psychology-video-hits','/psychology-video-hits.html'].includes(clean))return user.role==='admin'&&(user.sidebarModules||[]).includes('psychology-video-hits');
+  if(['/psychology-video-hits','/psychology-video-hits.html','/psychology-video-hits/recreations','/psychology-video-hits/detail'].includes(clean))return user.role==='admin'&&(user.sidebarModules||[]).includes('psychology-video-hits');
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
   }

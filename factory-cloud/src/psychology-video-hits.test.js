@@ -9,7 +9,8 @@ import {handleVideoHitAssets} from './psychology-video-hit-assets.js';
 import {handleFactoryApi} from './factory-api.js';
 import {toPublicUser} from './auth.js';
 import {claimTypeFilter,officialPublishFollowupPayload} from './jobs.js';
-import {canAccessPath} from './sidebar.js';
+import {canAccessPath,moduleIdForPath} from './sidebar.js';
+import {pageFileFor,isPublicPath} from './pages.js';
 const root='https://factory.test';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64'));
 async function setup(t){
@@ -122,4 +123,13 @@ test('all twenty versions are independently writable and owner boundaries hold f
  const detail=await (await f.call('/'+id)).json();assert.equal(detail.versions.length,20);
  f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(id);
  await assert.rejects(f.call('/'+id),/无权/);await assert.rejects(f.call('/'+id+'/frames/0'),/无权/);await assert.rejects(f.call('/'+id+'/versions/1/jobs'),/无权/);
+});
+
+test('video-hit child pages retain the same administrator module grant',()=>{
+ for(const path of ['/psychology-video-hits','/psychology-video-hits/recreations','/psychology-video-hits/detail']){
+  assert.equal(pageFileFor(path),'psychology-video-hits.html');assert.equal(isPublicPath(path),false);assert.equal(moduleIdForPath(path),'psychology-video-hits');
+  assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-video-hits']},path),true);
+  assert.equal(canAccessPath({role:'admin',sidebarModules:[]},path),false);
+  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-video-hits']},path),false);
+ }
 });
