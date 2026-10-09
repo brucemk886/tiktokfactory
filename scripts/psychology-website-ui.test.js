@@ -47,7 +47,7 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
   }
   if(url.pathname==='/api/psychology-website/links'){
    if(req.method==='POST'){let body='';for await(const part of req)body+=part;body=JSON.parse(body);linkRequests.push(body);for(const id of body.connectionIds||['a','b'])generated.add(id);}
-   const accounts=['a','b'].map((id,index)=>({connectionId:id,username:'account_'+id,followers:1500+index,trackingUrl:generated.has(id)?'https://deeppersonaai.com/go/'+(id==='a'?'123456abcd':'123456abce'):null}));res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,accounts}));return;
+   const accounts=['a','b'].map((id,index)=>({connectionId:id,username:'account_'+id,followers:1500+index,trackingUrl:generated.has(id)?'https://deeppersonaai.com/'+(id==='a'?'7k3m9':'4ab8z'):null}));res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,accounts}));return;
   }
   if(url.pathname==='/api/psychology-website'){
    requests.push(Object.fromEntries(url.searchParams));
@@ -58,7 +58,7 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
    ];
    value.funnel={ready:true,window:{from:'2026-09-30',to:'2026-10-06'},startedAt:Date.parse('2026-09-30T00:00:00Z'),rows:funnelRows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(funnelRows),definition:'同次点击去重'};
 
-   value.receivers[0].trackingUrl=generated.has('a')?'https://deeppersonaai.com/go/123456abcd':null;
+   value.receivers[0].trackingUrl=generated.has('a')?'https://deeppersonaai.com/7k3m9':null;
    value.links={rows:generated.has('a')?[{connectionId:'a',trackingUrl:value.receivers[0].trackingUrl,visits:12,filtered:2}]:[]};
 
    value.sources.page=Number(url.searchParams.get('sourcePage')||1);
@@ -122,13 +122,13 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  await page.click('[data-tab="receiving"]');await page.click('#websiteLinks>summary');await page.waitForFunction(()=>!document.getElementById('webLinksContent').hidden);
  assert.equal(await page.$$eval('[data-link-account]',nodes=>nodes.length),2);assert.equal(await page.$$eval('[data-wr-receiver]:checked',nodes=>nodes.length),0,'links available without selecting receivers');
  await page.$eval('#wrMention',n=>{n.value='Unsaved draft {account}';});await page.click('[data-copy-account="a"]');await page.waitForFunction(()=>window.__copied.length===1);
- assert.deepEqual(linkRequests,[{connectionIds:['a']}]);assert.equal(await page.evaluate(()=>window.__copied[0]),'https://deeppersonaai.com/go/123456abcd');assert.equal(await page.$eval('[data-link-account="b"]',n=>n.value),'');
+ assert.deepEqual(linkRequests,[{connectionIds:['a']}]);assert.equal(await page.evaluate(()=>window.__copied[0]),'https://deeppersonaai.com/7k3m9');assert.equal(await page.$eval('[data-link-account="b"]',n=>n.value),'');
  await page.click('[data-copy-account="a"]');await page.waitForFunction(()=>window.__copied.length===2);assert.equal(linkRequests.length,1,'copy never regenerates links');
  await page.click('#createLinks');await page.waitForFunction(()=>document.querySelector('[data-link-account="b"]').value.length>0&&!document.getElementById('reloadLinks').disabled);
  assert.deepEqual(linkRequests,[{connectionIds:['a']},{}]);assert.equal(await page.$eval('#createLinks',n=>n.disabled),true);await page.click('#copyAllLinks');await page.waitForFunction(()=>window.__copied.length===3);
- assert.equal(await page.evaluate(()=>window.__copied[2]),'@account_a\thttps://deeppersonaai.com/go/123456abcd\n@account_b\thttps://deeppersonaai.com/go/123456abce');
+ assert.equal(await page.evaluate(()=>window.__copied[2]),'@account_a\thttps://deeppersonaai.com/7k3m9\n@account_b\thttps://deeppersonaai.com/4ab8z');
  await page.type('#linkSearch','account_b');assert.equal(await page.$$eval('[data-copy-account]',nodes=>nodes.length),1);await page.$eval('#linkSearch',n=>{n.value='';n.dispatchEvent(new Event('input',{bubbles:true}));});
- await page.evaluate(()=>window.__denyCopy=true);await page.click('[data-copy-account="a"]');await page.waitForFunction(()=>!document.getElementById('linkCopyFallback').hidden);assert.equal(await page.$eval('#linkCopyFallback',n=>n.value),'https://deeppersonaai.com/go/123456abcd');await page.evaluate(()=>window.__denyCopy=false);await page.click('[data-copy-account="a"]');await page.waitForFunction(()=>document.getElementById('linkCopyFallback').hidden);
+ await page.evaluate(()=>window.__denyCopy=true);await page.click('[data-copy-account="a"]');await page.waitForFunction(()=>!document.getElementById('linkCopyFallback').hidden);assert.equal(await page.$eval('#linkCopyFallback',n=>n.value),'https://deeppersonaai.com/7k3m9');await page.evaluate(()=>window.__denyCopy=false);await page.click('[data-copy-account="a"]');await page.waitForFunction(()=>document.getElementById('linkCopyFallback').hidden);
  assert.equal(await page.$eval('#wrMention',n=>n.value),'Unsaved draft {account}');assert.equal(await page.$$eval('[data-wr-receiver]:checked',nodes=>nodes.length),0);
  for(const width of [1366,390,320]){await page.setViewport({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);if(process.env.WEBSITE_QA_SCREENSHOTS){const dir=path.resolve(root,'../tmp/website-tabs-qa');fs.mkdirSync(dir,{recursive:true});await (await page.$('#websiteLinks')).screenshot({path:path.join(dir,'links-'+width+'.png')});}}
  await page.click('[data-tab="overview"]');await page.click('#sourceDetails>summary');await page.click('#sourceNext');await page.waitForFunction(()=>document.getElementById('sourcePage').textContent.includes('第 2'));
@@ -146,6 +146,6 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  await page.goto(base+'/psychology-website?tab=orders');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
  assert.deepEqual(await page.$$eval('[role=tabpanel]',nodes=>nodes.filter(n=>n.checkVisibility()).map(n=>n.dataset.panel)),['orders']);assert.equal(new URL(page.url()).searchParams.get('tab'),'orders');
  await page.goto(base+'/psychology-website?tab=sources');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));assert.equal(await page.$eval('#sourceDetails',n=>n.open),true);assert.equal(new URL(page.url()).searchParams.get('tab'),'overview');
- await page.goto(base+'/psychology-website?tab=links');await page.waitForFunction(()=>!document.getElementById('webLinksContent').hidden);assert.equal(await page.$eval('#websiteLinks',n=>n.open),true);assert.equal(new URL(page.url()).searchParams.get('tab'),'receiving');assert.equal(await page.$eval('[data-link-account="a"]',n=>n.value),'https://deeppersonaai.com/go/123456abcd');assert.equal(await page.$eval('#websiteAnalytics',n=>n.hidden),true);
+ await page.goto(base+'/psychology-website?tab=links');await page.waitForFunction(()=>!document.getElementById('webLinksContent').hidden);assert.equal(await page.$eval('#websiteLinks',n=>n.open),true);assert.equal(new URL(page.url()).searchParams.get('tab'),'receiving');assert.equal(await page.$eval('[data-link-account="a"]',n=>n.value),'https://deeppersonaai.com/7k3m9');assert.equal(await page.$eval('#websiteAnalytics',n=>n.hidden),true);
  assert.deepEqual(errors,[]);
 });

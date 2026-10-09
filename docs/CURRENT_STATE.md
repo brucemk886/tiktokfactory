@@ -1,5 +1,7 @@
 # Current State
 
+- Homepage short links now use stable random five-character root aliases. Migration 0088 upgrades existing links without changing their canonical identity; legacy /go/ links and unified account funnel attribution remain valid. See docs/handoffs/2026-10-09-compact-homepage-links.md.
+
 - All scoped thousand-follower accounts can independently generate stable homepage short links from 引流配置, regardless of receiving-role selection or video publishing scope. Dedicated GET/POST link management offers per-account generation/copy and bulk generation/copy without requiring site analytics availability. No receiving or publishing settings are changed. See docs/handoffs/2026-10-09-independent-homepage-links.md.
 - Video Hits homepage now defaults to a previewable ready-to-publish version gallery, with photo/video counts, source/search filters and an explicit Source Management tab. Read-only SQL excludes disabled/incomplete/cleaned/archived/reserved/published versions and consumed imported file digests before pagination. Photo preview shows ordered images/copy; video covers use bounded local reads. Creation links carry an exact source/version/revision to existing photo, normal-video or One forms; normal video supports explicit videoVersions instead of an unrelated draw. Fresh final validation/reservations remain. See docs/handoffs/2026-10-09-video-hit-ready-library.md.
 

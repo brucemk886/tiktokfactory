@@ -1,15 +1,15 @@
 import { trackedWebsiteLink } from './psychology-website-data.js';
 
 export const SHORT_LINK_PREFIX='/go/';
-export const shortWebsiteLink=code=>'https://deeppersonaai.com/go/'+code;
+export const shortWebsiteLink=(code,shortCode)=>'https://deeppersonaai.com'+(shortCode?'/'+shortCode:SHORT_LINK_PREFIX+code);
 const validCode=code=>/^[a-f0-9]{10}$/.test(code);
 export const eligibleWebsiteLinkAccounts=context=>context.accounts.filter(a=>a.candidate&&trackedWebsiteLink(a));
 export async function readWebsiteLinkAccounts(db,context){
  const accounts=eligibleWebsiteLinkAccounts(context),ids=JSON.stringify(accounts.map(a=>a.connectionId));
- const result=await db.prepare('SELECT connection_id connectionId,code,created_at createdAt FROM psychology_website_links WHERE project_key=? AND connection_id IN (SELECT value FROM json_each(?))').bind(context.projectId,ids).all();
+ const result=await db.prepare('SELECT l.connection_id connectionId,l.code,l.created_at createdAt,a.short_code shortCode FROM psychology_website_links l LEFT JOIN psychology_website_link_aliases a ON a.code=l.code WHERE l.project_key=? AND l.connection_id IN (SELECT value FROM json_each(?))').bind(context.projectId,ids).all();
  if(result.success===false||!Array.isArray(result.results))throw Error('Short link list unavailable');
  const links=new Map(result.results.map(row=>[row.connectionId,row]));
- return accounts.map(a=>({connectionId:a.connectionId,username:a.username,name:a.name,followers:a.followers,trackingUrl:links.has(a.connectionId)?shortWebsiteLink(links.get(a.connectionId).code):null}));
+ return accounts.map(a=>({connectionId:a.connectionId,username:a.username,name:a.name,followers:a.followers,trackingUrl:links.has(a.connectionId)?shortWebsiteLink(links.get(a.connectionId).code,links.get(a.connectionId).shortCode):null}));
 }
 export async function createWebsiteLinks(db,context,now=Date.now(),connectionIds){
  let accounts=eligibleWebsiteLinkAccounts(context);
@@ -34,15 +34,15 @@ export async function createWebsiteLinks(db,context,now=Date.now(),connectionIds
 }
 export async function readWebsiteLinks(db,context,window){
  const ids=JSON.stringify(context.accounts.map(a=>a.connectionId));
- const result=await db.prepare(`SELECT l.connection_id connectionId,l.code,l.created_at createdAt,
+ const result=await db.prepare(`SELECT l.connection_id connectionId,l.code,l.created_at createdAt,a.short_code shortCode,
  COALESCE(SUM(d.requests-d.filtered),0) visits,COALESCE(SUM(d.requests),0) requests,
  COALESCE(SUM(d.filtered),0) filtered
- FROM psychology_website_links l LEFT JOIN psychology_website_link_days d
+ FROM psychology_website_links l LEFT JOIN psychology_website_link_aliases a ON a.code=l.code LEFT JOIN psychology_website_link_days d
  ON d.code=l.code AND d.day>=? AND d.day<=?
  WHERE l.project_key=? AND l.connection_id IN (SELECT value FROM json_each(?))
  GROUP BY l.code,l.connection_id,l.created_at`).bind(window.from,window.to,context.projectId,ids).all();
  if(result.success===false||!Array.isArray(result.results))throw new Error('Short link statistics unavailable');
- return result.results.map(row=>({...row,trackingUrl:shortWebsiteLink(row.code)}));
+ return result.results.map(row=>({...row,trackingUrl:shortWebsiteLink(row.code,row.shortCode)}));
 }
 export function excludedLinkRequest(request){
  const agent=request.headers.get('user-agent')||'';
@@ -50,12 +50,16 @@ export function excludedLinkRequest(request){
  return !agent||/bot|crawler|spider|preview|facebookexternalhit|headless|curl|wget/i.test(agent)||/prefetch|prerender|preview/i.test(purpose);
 }
 export async function handleWebsiteShortLink(request,env,url,ctx,{now=Date.now()}={}){
- if(!url.pathname.startsWith(SHORT_LINK_PREFIX))return null;
+ const compact=/^\/[1-9][a-z0-9]{4}$/.test(url.pathname);
+ if(!compact&&!url.pathname.startsWith(SHORT_LINK_PREFIX))return null;
  const headers={'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer'};
  if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405,headers:{...headers,Allow:'GET, HEAD'}});
- const code=url.pathname.slice(SHORT_LINK_PREFIX.length);
- if(!validCode(code))return new Response('Link not found',{status:404,headers});
- const row=await env.DB.prepare('SELECT connection_id FROM psychology_website_links WHERE code=?').bind(code).first();
+ const value=url.pathname.slice(compact?1:SHORT_LINK_PREFIX.length);
+ if(!compact&&!validCode(value))return new Response('Link not found',{status:404,headers});
+ const row=compact
+  ?await env.DB.prepare('SELECT l.code,l.connection_id FROM psychology_website_link_aliases a JOIN psychology_website_links l ON l.code=a.code WHERE a.short_code=?').bind(value).first()
+  :await env.DB.prepare('SELECT code,connection_id FROM psychology_website_links WHERE code=?').bind(value).first();
+ const code=row?.code;
  const target=row&&trackedWebsiteLink({connectionId:row.connection_id});
  if(!target)return new Response('Link not found',{status:404,headers});
  if(request.method==='GET'){
@@ -65,5 +69,5 @@ export async function handleWebsiteShortLink(request,env,url,ctx,{now=Date.now()
    .bind(code,day,Number(excludedLinkRequest(request))).run().catch(()=>console.error(JSON.stringify({event:'website-link-count-failed'})));
   if(ctx?.waitUntil)ctx.waitUntil(record);else await record;
  }
- return new Response(null,{status:302,headers:{...headers,Location:target}});
+ return new Response(null,{status:302,headers:{...headers,Location:target,'X-Factory-Link-Code':code}});
 }
