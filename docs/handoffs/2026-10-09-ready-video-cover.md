@@ -15,7 +15,10 @@ The gallery-specific display:block!important rule overrode the shared [hidden] r
 - Focused gallery and UI asset checks: 8 passed, zero failures. Desktop (1440px) and mobile (390px) both confirm a hidden cover, click-accessible video, progressing frames and native controls after pause. Test fixtures only, no real publication.
 
 ## Unfinished work
-Push main, deploy and verify live CSS.
+None.
 
 ## Recommended next step
 Refresh Video Hits and click a video cover to play it.
+
+## Release evidence
+Runtime commit 447bf8b5df7e6aa6555b9e61b5c17245bdc2dd54 was pushed to main and deployed from a clean checkout with HEAD == origin/main using npm run deploy. An initial network fetch failure required one retry. Worker version aa20328e-280a-4661-9e00-c4930ccdb709 deployed successfully. Live psychology-video-hits.css returned HTTP 200, matched local SHA-256 and contains the corrected display rule. Concurrent independent-site updates were retained, and the integrated UI manifest check passed. No production publication or material mutation.
