@@ -14,8 +14,11 @@ factory-cloud/src/psychology-video-hit-photos.js and its tests; public/psycholog
 ## Tests performed
 122 related API/queue/photo/UI/asset tests passed. Explicit cases: 12-image inventory, 15-image grouped submission with caption/music/schedule, 16-image rejection and compatibility with previously frozen 35-image jobs. Chromium desktop/mobile fixture passed ordered 12-image previews, disabled 16-image albums, selection and confirmation, plus existing One/video checks. All publishing APIs mocked. No real publication. Manifest and diff validation completed before release.
 
+## Release evidence
+Runtime commit 8b222287ca08b3bd687699c8f3ca830f8427eee4 was pushed to GitHub main before deployment. Clean exact HEAD == origin/main release used npm run deploy from factory-cloud. Cloudflare version ea59a849-cf77-425b-afa0-18ab9c498fcf; modified HTML uploaded, no migrations. Live publishing JS/picker/CSS hashes match, private inventory returns 401 without a session and creation redirects to login. Transfer PID 100756 retained the 2026-10-08 17:13:34 start time.
+
 ## Unfinished work
-Release verification pending.
+Implementation, verification and deployment complete.
 
 ## Recommended next step
 Refresh normal publishing → 图文 → 视频爆款 · 二创图文 and select an enabled version with up to 15 images.
