@@ -24,7 +24,10 @@ Require original title, caption and images in the browser import workflow; store
 - Desktop 1440px and mobile 390px/320px screenshots captured; no horizontal overflow. Desktop/mobile layout visually checked. Generated manifest and git diff --check passed.
 
 ## Unfinished work
-Deployment and production read-only verification pending at commit time.
+None. Deployed and read-only production checks passed.
 
 ## Recommended next step
-Deploy from clean GitHub main with npm run deploy, verify served assets, then import a real image-text set through the logged-in browser.
+Import a real set through /psychology-video-hits/import in the logged-in browser, filling each original image card with its corresponding copy.
+
+## Release evidence
+Runtime commit b95219fd3ddfe6241ee942efe4e6527d5f42d0c4 was pushed to GitHub main before npm run deploy; worktree was clean and HEAD matched origin/main. No migrations were needed. Cloudflare version 3e3b0460-b632-433f-86c6-29980f0d5a17 deployed successfully. Four public JS/CSS/guide assets returned HTTP 200 and matched local SHA-256; both private import route aliases returned HTTP 302 to /login without a session. Verification created no production imports or publishing jobs.
