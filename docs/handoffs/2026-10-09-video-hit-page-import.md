@@ -27,7 +27,10 @@ Replace the source-only 新增视频 primary action with 新增二创导入, all
 - UI manifest regenerated; git diff --check passed. No live content import or publishing API called.
 
 ## Unfinished work
-Implementation and verification complete; release follows commit/push to main with the guarded factory-cloud npm run deploy command.
+None. Implementation, tests, deployment and read-only production checks are complete.
 
 ## Recommended next step
 Give the bot the /psychology-video-hits/import URL in its logged-in browser. Import one real album, wait for the read-back success state, and open the returned record before continuing.
+
+## Release evidence
+Runtime commit f813a4c271dbd1ad366c8ab4e01e517660eca622 was committed and pushed to GitHub main before npm run deploy, with a clean checkout and exact HEAD == origin/main. Cloudflare version 4298ba91-185b-46f4-a0ea-c971c354754e deployed successfully. All six checked public code/style/guide assets returned 200 and matched local SHA-256. Both the new route and its direct HTML alias redirected unauthenticated users to login (302). No real content or publishing jobs were created during verification.
