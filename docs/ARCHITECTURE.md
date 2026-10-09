@@ -276,6 +276,7 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 
 - psychology_video_hits/versions/frames own administrator-scoped original metadata/copy and twenty independently enabled recreation versions. Numbered frame pages align incomplete versions; private immutable images live in psychology_video_hit_assets/R2. Local transaction receipts and the unified API retain stable request IDs and CAS guards.
 - psychology-video-remix jobs freeze exact imported frames/script and version identity. The local renderer performs ElevenLabs narration plus FFmpeg image sequence/subtitle composition, then follows the existing psychology official publishing groups/items when explicitly requested. Capability-gated auxiliary rendering does not report hello/requeue or touch old planning.
+- Type display reuses input_mode: video is imported ready video, frames is image/copy input. Source list counts both modes and uses an owner-scoped EXISTS filter before pagination; mixed sources appear once. Child lists combine type/publication scopes, retain version order and carry type filters through detail links. Cleared tombstones keep their input type; no migration or publish/cleanup mutation is needed.
 - Same project-key binary uploads use a bounded dedicated endpoint; UI/worker image reads require current owner/module access, and worker reads are restricted to frozen assets of their running task. Original extraction/copy queues and paused autopilots remain independent.
 
 ## Psychology video-hit ready inputs

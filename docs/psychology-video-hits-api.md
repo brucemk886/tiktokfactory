@@ -4,6 +4,8 @@
 
 页面流程：视频列表点击“查看二创”进入独立二创列表，按版本编号列出该视频的全部二创；点击“查看详情”进入原文案 / 二创文案与逐帧原图 / 二创图对照。支持直接打开、刷新和返回。点击图片或右下角放大镜可放大、缩小或查看原始尺寸；“修改原图 / 修改二创图”用于手动替换图片或修改该帧文字、时长，不会自动生成图片。
 
+页面按版本的 inputMode 自动标记导入类型：video 显示“视频”，frames（含旧数据默认值）显示“图文”，表示传入图片和文案、后续可合成视频。来源列表显示各类型数量，二创子页面按类型与发布状态组合筛选；刷新和进入详情后返回保留类型筛选。已清理记录仍保留类型标签；已有 API 导入无需重新写入。
+
 ## 调用入口
 
 - JSON：`POST https://factory.tiktokaitool.com/api/v1/factory`
@@ -16,7 +18,7 @@
 
 `videoHits.create` 保存 `externalId`、TikTok `videoUrl`、`title`、`caption`（发布文案）、`script`（完整视频原文）和 `videoData`（JSON，最多16KB，推荐 playCount/likeCount/commentCount/shareCount/favoriteCount/durationSeconds/accountName/publishedAt）。externalId 在当前账号内唯一；修改使用返回的 id 和 revision。
 
-`videoHits.list` 支持 page/q/sort（recent 或 plays）；每页20条。`videoHits.get` 返回来源、最新revision和版本。`videoHits.update` 按revision修改来源。
+`videoHits.list` 支持 page/q/sort（recent 或 plays）、scope（active/archived/all）及 inputMode（all/video/frames，默认 all）；每页20条。inputMode 放在 params.query 中：video 筛选含视频二创的来源，frames 筛选含图文二创的来源，筛选在分页前执行。同一来源可同时包含两种二创，不会重复返回。每条来源附带 videoVersionCount、frameVersionCount 和总 versionCount。`videoHits.get` 返回来源、最新revision和版本。`videoHits.update` 按revision修改来源。
 
 每个来源有1–20号独立二创版本，用 `videoHits.versions.write` 创建/编辑。新版本 revision=0；后续读 `videoHits.versions.get` 取最新revision。字段为 name/title/caption/script/enabled。新版本默认停用，文案和图片补齐后提交 enabled=true。
 

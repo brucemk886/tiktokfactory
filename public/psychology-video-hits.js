@@ -2,7 +2,9 @@ const $=id=>document.getElementById(id),BASE='/api/psychology-video-hits',PAGE='
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const route=location.pathname.replace(/\/$/,''),params=new URLSearchParams(location.search);
 const view=route===PAGE+'/recreations'?'recreations':route===PAGE+'/detail'?'detail':'sources';
-const sourceId=params.get('id'),detailUrl=(id,version)=>PAGE+'/detail?id='+encodeURIComponent(id)+'&version='+version,recreationsUrl=id=>PAGE+'/recreations?id='+encodeURIComponent(id);
+let inputMode=['video','frames'].includes(params.get('inputMode'))?params.get('inputMode'):'all';
+const typeQuery=()=>inputMode==='all'?'':'&inputMode='+inputMode;
+const sourceId=params.get('id'),detailUrl=(id,version)=>PAGE+'/detail?id='+encodeURIComponent(id)+'&version='+version+typeQuery(),recreationsUrl=id=>PAGE+'/recreations?id='+encodeURIComponent(id)+typeQuery();
 let page=1,list=[],detail=null,n=Number(params.get('version')),framePage=1,editingSource=false,editingVersion=false,frameVersion=0,loadToken=0,listToken=0;
 let versionScope="pending";
 const pending=new Map(),framePreviews=new Map();
@@ -24,11 +26,21 @@ const renderCurrent=v=>v.renderRevision===v.revision&&v.renderSourceRevision===d
 const versionState=v=>v.publishState==='published'?(v.cleanedAt?'已发布 · 内容已清理':'已发布 · 待清理'):v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
 const current=()=>detail?.versions.find(v=>v.version===n),stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
 const metric=x=>x==null?'—':Number(x).toLocaleString('zh-CN');
+const typeName=mode=>mode==='video'?'视频':'图文';
+const typeBadge=(mode,count)=>'<span class="vh-badge vh-type-'+(mode==='video'?'video':'frames')+'">'+typeName(mode)+(count===undefined?'':' '+count)+'</span>';
+const sourceTypes=s=>'<div class="vh-type-badges">'+(s.videoVersionCount?typeBadge('video',s.videoVersionCount):'')+(s.frameVersionCount?typeBadge('frames',s.frameVersionCount):'')+'</div>'+(!s.versionCount?'<small>暂无二创</small>':'');
+function syncTypeFilter(){
+ $('sourceInputMode').value=inputMode;$('recreationInputMode').value=inputMode;
+ const url=new URL(location.href);if(inputMode==='all')url.searchParams.delete('inputMode');else url.searchParams.set('inputMode',inputMode);history.replaceState(null,'',url);
+ document.querySelector('#pageBreadcrumb a').href=PAGE+(inputMode==='all'?'':'?inputMode='+inputMode);
+}
+
 function pageError(error){$('pageStatus').hidden=false;$('pageStatus').textContent=error.message;}
 function setupPage(){
+ syncTypeFilter();
  const title=view==='sources'?'视频爆款':view==='recreations'?'爆款二创':'二创详情';
  $('pageTitle').textContent=title;document.title=title+' · 心理学';
- $('pageLead').textContent=view==='sources'?'保存爆款视频、原文与分镜原图，对照管理最多 20 套二创文案和图片。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
+ $('pageLead').textContent=view==='sources'?'管理爆款来源与视频、图文二创内容，每个来源最多 20 个版本。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
  $('pageBreadcrumb').hidden=view==='sources';$('breadcrumbCurrent').textContent=title;
  $('sourceList').hidden=view!=='sources';$('newSource').hidden=view!=='sources';
  if(view==='detail'){
@@ -38,9 +50,9 @@ function setupPage(){
 }
 async function load(){
  const token=++listToken;$('listStatus').textContent='正在读取…';
- try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value);if(token!==listToken)return;
- list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创版本">'+s.versionCount+' / 20</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="5">暂无视频。新增来源后，可通过 API 写入二创文案与逐帧图片。</td></tr>';
- $('listStatus').textContent='共 '+data.total+' 条视频';$('pageInfo').textContent='第 '+page+' 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
+ try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value+'&inputMode='+inputMode);if(token!==listToken)return;
+ list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+s.versionCount+' / 20'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="5">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
+ $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创');$('pageInfo').textContent='第 '+page+' 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
 }
 async function loadDetail(){
@@ -59,13 +71,13 @@ async function loadDetail(){
 }
 function renderRecreations(){
  $('recreationList').hidden=false;$('newVersion').disabled=Boolean(detail.source.archivedAt)||detail.versions.length>=20;
- const published=detail.versions.filter(v=>v.publishState==='published'),rows=versionScope==='published'?published:versionScope==='pending'?detail.versions.filter(v=>v.publishState!=='published'):detail.versions;
+ const versions=detail.versions.filter(v=>inputMode==='all'||v.inputMode===inputMode),published=versions.filter(v=>v.publishState==='published'),rows=versionScope==='published'?published:versionScope==='pending'?versions.filter(v=>v.publishState!=='published'):versions;
  document.querySelectorAll('#versionScope [data-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scope===versionScope)));
- $('recreationStatus').textContent='显示 '+rows.length+' 个 · 待发布 '+(detail.versions.length-published.length)+' 个 · 已发布 '+published.length+' 个 / 最多 20 个';
- $('recreations').innerHTML=rows.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.cleanedAt?'二创内容已清理；保留发布记录':v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="输入方式 / 素材">'+(v.cleanedAt?'素材引用已清理':v.inputMode==='video'?'直接传入成片<small>'+(v.videoAssetId?'已上传':'待上传')+'</small>':'图片合成<small>'+v.frameCount+' / '+detail.frameCount+' 帧</small>')+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.publishedAt||v.updatedAt)+'</small><small>'+(v.publishedAt?'发布确认时间':'更新时间')+' · 北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">'+(detail.versions.length?'当前筛选暂无版本。':'尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。')+'</p></td></tr>';
+ $('recreationStatus').textContent=(inputMode==='all'?'全部类型':typeName(inputMode))+' · 显示 '+rows.length+' 个 · 待发布 '+(versions.length-published.length)+' 个 · 已发布 '+published.length+' 个 / 共 '+detail.versions.length+' 个版本';
+ $('recreations').innerHTML=rows.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.cleanedAt?'二创内容已清理；保留发布记录':v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="二创类型 / 素材">'+typeBadge(v.inputMode)+'<small>'+(v.cleanedAt?'素材引用已清理':v.inputMode==='video'?'直接传入成片 · '+(v.videoAssetId?'已上传':'待上传'):'图片和文案 · '+v.frameCount+' / '+detail.frameCount+' 帧')+'</small>'+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.publishedAt||v.updatedAt)+'</small><small>'+(v.publishedAt?'发布确认时间':'更新时间')+' · 北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">'+(detail.versions.length?'当前筛选暂无版本。':'尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。')+'</p></td></tr>';
 }
 async function loadVersion(){
- const v=current();$('workspace').hidden=false;$('pageLead').textContent=v.cleanedAt?'查看该版本的发布记录和自动清理结果。':v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
+ const v=current();$('versionType').textContent=typeName(v.inputMode);$('versionType').className='vh-badge vh-type-'+v.inputMode;$('workspace').hidden=false;$('pageLead').textContent=v.cleanedAt?'查看该版本的发布记录和自动清理结果。':v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
  $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.cleanedAt?'已按发布后保留期清理':v.caption||'尚未填写发布文案';$('versionScript').textContent=v.cleanedAt?'已按发布后保留期清理':v.script||(v.inputMode==='video'?'成片自带配音，无需填写合成文案':'尚未填写二创配音文案');
  $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.originalsCleanedAt?'来源已结束，原文案已清理':detail.source.caption||'尚未填写发布文案';$('originalScript').textContent=detail.source.originalsCleanedAt?'来源已结束，原文案已清理':detail.source.script||'尚未填写原文';
  $('versionStatus').textContent=versionState(v)+' · '+(v.inputMode==='video'?'直接传入成片':v.frameCount+' / '+detail.frameCount+' 帧');
@@ -123,6 +135,8 @@ $('sourceForm').onsubmit=e=>{e.preventDefault();action('sourceSaveStatus',e.subm
  });};
 $('versionScope').onclick=e=>{const b=e.target.closest('[data-scope]');if(b){versionScope=b.dataset.scope;renderRecreations();}};
 $('sourceScope').onchange=()=>{page=1;load();};
+$('sourceInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();page=1;load();};
+$('recreationInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();renderRecreations();};
 $('archiveSource').onclick=()=>{$('archiveStatus').textContent='';$('archiveDialog').showModal();};
 $('confirmArchive').onclick=e=>action('archiveStatus',e.target,async()=>{await write('/'+detail.source.id+'/archive','POST',{revision:detail.source.revision});$('archiveDialog').close();await loadDetail();});
 $('newVersion').onclick=()=>versionEditor(false);$('editVersion').onclick=()=>versionEditor(true);
@@ -210,6 +224,7 @@ const guide=()=>[
 '用 videoHits.frames.write 写二创图，version改为对应1–20编号，revision取该版本最新值。每次1–100帧，可分批写到300帧。帧号从1连续编号，必须覆盖全部原图帧号。',
 '直接传入成片：PUT https://factory.tiktokaitool.com/api/integrations/psychology/video-hits/videos/UPLOAD_UUID，沿用Bearer密钥，body为视频文件。头部Content-Type为video/mp4、video/quicktime或video/webm；X-File-Name为encodeURIComponent文件名，X-File-Size为字节数，X-Content-SHA256为文件小写SHA256摘要。最多95MB，返回videoAssetId。同一UUID重试须使用相同文件和头部。',
 '成片版本：videoHits.versions.write body:{revision:0,inputMode:"video",videoAssetId:"UPLOAD_UUID",title:"标题",caption:"发布文案",enabled:true}；无需原图、二创图或script。图片版本inputMode:"frames"（默认值）。',
+'页面二创类型由inputMode决定：video显示视频，frames显示图文（图片和文案，后续可合成视频）。videoHits.list的params.query.inputMode可为all/video/frames；返回每个来源的videoVersionCount和frameVersionCount，混合来源显示两种数量。',
 '最后 videoHits.versions.write 提交最新revision与enabled:true。未补齐图片不能启用；之后补图会自动停用。任务冻结图片与文案，后续编辑不改已排期任务。',
 'videoHits.render 只合成MP4：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,voiceGender:"female"}}。voiceGender可为male或female。',
 'videoHits.jobs 查看任务；成片可在心理学发布页准备云端预览。',

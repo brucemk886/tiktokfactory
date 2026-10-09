@@ -216,3 +216,28 @@ test('legacy render identifiers are reused and generated preview import cannot b
  const publish=new Request(root+'/api/psychology-video-publish',{method:'POST',body:JSON.stringify({requestId:crypto.randomUUID(),items:[{assetId:imported.assetId,connectionId:'a',caption:'Bypass',scheduleAt:Math.floor(Date.now()/1000)+7200,isAiGenerated:true}],tiktokOne:{connectionId:'brand',accountId:'123',campaignId:'456'}})});
  await assert.rejects(handleVideoLibrary(publish,f.env,new URL(publish.url),{user:f.user()}),/视频爆款成片/);assert.equal(f.requests.length,0);
 });
+
+
+test('API imports expose video/frame counts and combine type filtering with ownership, scope and search',async t=>{
+ const f=await setup(t),mixed=await f.create(),frames=await f.create(),video=await f.create(),empty=await f.create(),foreign=await f.create();
+ for(const [id,version,inputMode] of [[mixed,1,'video'],[mixed,2,'frames'],[mixed,3,'frames'],[frames,1,'frames'],[video,1,'video'],[foreign,1,'video']]){
+  const result=await f.gateway('videoHits.versions.write',{id,version:String(version),body:{revision:0,title:'API recreation',inputMode}},crypto.randomUUID());assert.equal(result.status,200,await result.clone().text());
+ }
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(foreign);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET title='Unique mixed source' WHERE id=?").run(mixed);
+ const query=async inputMode=>(await (await f.gateway('videoHits.list',{query:{inputMode}})).json());
+ const all=await query('all');assert.equal(all.total,4);const m=all.items.find(s=>s.id===mixed);assert.deepEqual([m.versionCount,m.videoVersionCount,m.frameVersionCount],[3,1,2]);assert.equal(all.items.find(s=>s.id===empty).videoVersionCount,0);
+ assert.deepEqual((await query('video')).items.map(s=>s.id).sort(),[mixed,video].sort());assert.deepEqual((await query('frames')).items.map(s=>s.id).sort(),[mixed,frames].sort());
+ const search=await (await f.gateway('videoHits.list',{query:{inputMode:'video',q:'Unique mixed',sort:'plays'}})).json();assert.equal(search.total,1);assert.equal(search.items[0].id,mixed);
+ f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_state='published',cleaned_at=?,script='' WHERE source_id=? AND version=1").run(Date.now(),mixed);
+ assert.equal((await query('video')).items.find(s=>s.id===mixed).videoVersionCount,1,'cleaned records retain import type');
+ f.sqlite.prepare('UPDATE psychology_video_hits SET archived_at=? WHERE id=?').run(Date.now(),video);assert.equal((await query('video')).total,1);
+ const archived=await (await f.gateway('videoHits.list',{query:{inputMode:'video',scope:'archived'}})).json();assert.equal(archived.total,1);assert.equal(archived.items[0].id,video);
+ assert.equal((await f.gateway('videoHits.list',{query:{inputMode:'photo'}})).status,400);assert.equal(f.requests.length,0);
+});
+test('source type filters run before pagination; mixed sources are not duplicated and edits refresh counts',async t=>{
+ const f=await setup(t),ids=[];for(let i=0;i<21;i++){const id=await f.create();ids.push(id);await f.write('/'+id+'/versions/1',{revision:0,title:'Video',inputMode:'video'});}
+ const frame=await f.create();await f.write('/'+frame+'/versions/1',{revision:0,title:'Legacy frame default'});await f.write('/'+ids[0]+'/versions/2',{revision:0,title:'Mixed frame default'});
+ const first=await (await f.call('?inputMode=video')).json(),second=await (await f.call('?inputMode=video&page=2')).json();assert.equal(first.total,21);assert.equal(first.items.length,20);assert.equal(first.hasMore,true);assert.equal(second.items.length,1);assert.equal(second.hasMore,false);assert.equal(new Set([...first.items,...second.items].map(s=>s.id)).size,21);
+ await f.write('/'+ids[0]+'/versions/1',{revision:1,inputMode:'frames'});const videos=await (await f.call('?inputMode=video')).json();assert.equal(videos.total,20);assert.equal(videos.hasMore,false);const frames=await (await f.call('?inputMode=frames')).json();assert.equal(frames.total,2);assert.equal(frames.items.find(s=>s.id===ids[0]).frameVersionCount,2);
+});
