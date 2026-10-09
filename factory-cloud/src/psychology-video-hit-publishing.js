@@ -7,7 +7,7 @@ import {ensurePsychologyOneMembers} from './psychology-tiktok-one.js';
 import {json} from './http.js';
 const fail=(message,statusCode=409)=>{throw Object.assign(new Error(message),{statusCode});};
 export function normalizeHitRef(ref){
- if(!ref||!/^vh-[a-f0-9]{32}$/.test(ref.sourceId||'')||!Number.isInteger(ref.version)||ref.version<1||ref.version>20||!Number.isSafeInteger(ref.revision)||ref.revision<1)fail('二创版本标识无效，请刷新视频列表。',400);
+ if(!ref||!/^vh-[a-f0-9]{32}$/.test(ref.sourceId||'')||!Number.isInteger(ref.version)||ref.version<1||ref.version>2147483647||!Number.isSafeInteger(ref.revision)||ref.revision<1)fail('二创版本标识无效，请刷新视频列表。',400);
  return {sourceId:ref.sourceId,version:ref.version,revision:ref.revision};
 }
 // Inventory is private and excludes reserved, cleaned, disabled and stale renders.

@@ -329,7 +329,7 @@ test('video-hit OAuth writes require separate consent, schemas disallow publish 
  const a=await authorize(f,'video'),token=a.token.access_token;
  const list=(await json(await rpc(f,token,'tools/list'))).result.tools;
  assert.ok(list.find(x=>x.name==='psychology_videoHits_create')._meta.securitySchemes[0].scopes.includes('factory.video_hits.write'));
- assert.ok(!list.some(x=>/videoHits_(publish|render|archive)$/.test(x.name)));
+ assert.ok(!list.some(x=>/videoHits_(publish|render|archive|restore)$/.test(x.name)));
  const file=list.find(x=>x.name==='psychology_videoHits_assets_upload_file');assert.deepEqual(file._meta['openai/fileParams'],['image']);assert.deepEqual(file.inputSchema.properties.image.required,['download_url','file_id']);
  for(const key of ['mime_type','file_name'])assert.ok(file.inputSchema.properties.image.properties[key]);
  assert.equal((await f.video(token,'create',{...args,ownerId:'other'})).isError,true);
@@ -356,6 +356,7 @@ test('REST and MCP share exact UUID receipts, revisions, frame bindings and safe
  await write('versions_write',{id,version:'1',body:{revision:2,enabled:true}});
  r=await f.video(token,'get',{params:{id}});assert.equal(r.structuredContent.versions[0].enabled,true);assert.equal(r.structuredContent.versions[0].revision,3);
  r=await f.video(token,'frames_list',{params:{id,version:'1',query:{page:1}}});assert.ok(JSON.stringify(r.structuredContent).includes(uploadId));
+ await write('versions_write',{id,version:'21',body:{revision:0,title:'Continued',script:'New narration'}});await write('frames_write',{id,version:'21',body:{revision:1,frames:[{index:1,assetId:uploadId,text:'Continued frame'}]}});r=await f.video(token,'get',{params:{id}});assert.equal(r.structuredContent.nextVersion,22);assert.equal(r.structuredContent.activeVersionCount,2);
  r=await f.video(token,'requests_get',{requestId});assert.equal(r.structuredContent.state,'done');assert.equal(r.structuredContent.result.id,id);
  r=await f.video(token,'guide',{});assert.equal(r.structuredContent.writeAuthorized,true);assert.match(r.content[0].text,/psychology_videoHits_assets_upload_bytes/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);assert.equal(f.requests.length,0);

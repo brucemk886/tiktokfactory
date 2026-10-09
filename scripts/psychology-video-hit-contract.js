@@ -1,12 +1,13 @@
 // Shared import/render validation; no provider calls.
 export const VIDEO_HIT_MAX_FRAMES=300;
-export const VIDEO_HIT_MAX_VERSIONS=20;
+export const VIDEO_HIT_MAX_VERSIONS=20; // Uncleaned versions per source, not a lifetime limit.
+export const VIDEO_HIT_MAX_VERSION_NUMBER=2147483647;
 export const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 export function object(value){return value&&typeof value==='object'&&!Array.isArray(value);}
 export function only(input,keys){if(!object(input)||Object.keys(input).some(key=>!keys.includes(key)))fail('对象格式错误或包含未知字段。');}
 export function text(value,name,max,required=false){if(typeof value!=='string'||value.length>max||(required&&!value.trim()))fail(name+'无效，最多'+max+'字。');return value.trim();}
-export function versionNumber(value,original=false){if(!Number.isInteger(value)||value<(original?0:1)||value>20)fail('版本编号须为'+(original?'0（原图）或':'')+'1–20。');return value;}
+export function versionNumber(value,original=false){if(!Number.isInteger(value)||value<(original?0:1)||value>VIDEO_HIT_MAX_VERSION_NUMBER)fail('版本编号须为'+(original?'0（原图）或':'')+'1–2147483647；清理后使用新的编号，不覆盖已发布记录。');return value;}
 export function imageUrl(value){
  const valueText=text(value,'图片链接',2000,true);let url;try{url=new URL(valueText);}catch{fail('图片链接无效。');}
  if(url.protocol!=='https:'||url.username||url.password||url.port||!url.hostname.includes('.')||/^\[|^[\d.]+$/.test(url.hostname)||/(^|\.)(localhost|local|internal|test|invalid|example)$/.test(url.hostname))fail('图片须使用公开 HTTPS 域名链接。');

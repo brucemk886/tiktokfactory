@@ -45,7 +45,7 @@ function setupPage(){
  syncTypeFilter();
  const title=view==='sources'?'视频爆款':view==='recreations'?'爆款二创':'二创详情';
  $('pageTitle').textContent=title;document.title=title+' · 心理学';
- $('pageLead').textContent=view==='sources'?'管理爆款来源与视频、图文二创内容，每个来源最多 20 个版本。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
+ $('pageLead').textContent=view==='sources'?'原选题长期保留，每个来源最多同时保留 20 个未清理二创；发布清理后可持续新建。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
  $('pageBreadcrumb').hidden=view==='sources';$('breadcrumbCurrent').textContent=title;
  $('sourceList').hidden=view!=='sources';$('newSource').hidden=view!=='sources';
  if(view==='detail'){
@@ -57,7 +57,7 @@ async function load(){
  const token=++listToken;$('listStatus').textContent='正在读取…';
  try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value+'&inputMode='+inputMode+'&importSource='+encodeURIComponent(sourceImporter));if(token!==listToken)return;
  const totalPages=Math.ceil(data.total/data.pageSize);if(page>Math.max(1,totalPages)){page=Math.max(1,totalPages);return load();}
- list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="导入来源"><span class="vh-badge vh-import-badge">'+escape(s.importSource)+'</span></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+s.versionCount+' / 20'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="6">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
+ list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="导入来源"><span class="vh-badge vh-import-badge">'+escape(s.importSource)+'</span></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+(s.activeVersionCount??s.versionCount)+' / 20 在库<small>累计 '+s.versionCount+' 个版本</small>'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="6">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
  $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创')+(sourceImporter?' · '+sourceImporter:'');$('recordInfo').textContent='共 '+data.total+' 条记录';$('pageInfo').textContent=totalPages?'第 '+page+' / '+totalPages+' 页':'共 0 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
 }
@@ -70,23 +70,24 @@ async function loadDetail(){
  $('sourceMeta').textContent=d.source.externalId+' · 导入来源：'+d.source.importSource+' · '+metric(d.source.videoData.playCount)+' 播放 · '+d.frameCount+' 帧原图';
  $('sourceData').textContent=JSON.stringify(d.source.videoData,null,2);
  lock('editSource',Boolean(d.source.archivedAt));
- lock('archiveSource',Boolean(d.source.archivedAt)||!d.versions.length||d.versions.some(v=>v.publishState!=='published'));
- $('archiveSource').title=d.source.archivedAt?'此来源已结束':'全部已创建版本确认发布成功后，可结束来源并清理原图';
- $('sourceLifecycle').textContent=d.source.originalsCleanedAt?'来源已结束，原文案和原图引用已清理；共享文件继续保留。':d.source.archivedAt?'来源已结束，原文案和原图将在 '+stamp(d.source.archivedAt+86400000)+' 后清理。':'原图保留供后续二创使用。全部已创建版本发布成功后，可点击“结束来源”清理原图。';
+ lock('archiveSource',!d.source.archivedAt&&(!d.versions.length||d.versions.some(v=>v.publishState!=='published')));
+ $('archiveSource').textContent=d.source.archivedAt?'恢复二创':'归档来源';
+ $('archiveSource').title=d.source.archivedAt?'恢复到进行中，继续基于原选题二创':'全部版本确认发布成功后可归档；原选题、原文和原图长期保留';
+ $('sourceLifecycle').textContent=d.source.originalsCleanedAt?'历史原素材曾清理，恢复后可重新补充；今后原选题、原文和原图长期保留。':d.source.archivedAt?'来源已归档，原选题、原文和原图仍长期保留；点击“恢复二创”可继续创作。':'原选题、原文和原图长期保留；仅在发布成功满 24 小时后清理对应二创，清理后可继续新建版本。';
  if(view==='recreations')renderRecreations();else await loadVersion();
  $('pageStatus').hidden=true;
 }
 function renderRecreations(){
- $('recreationList').hidden=false;$('newVersion').disabled=Boolean(detail.source.archivedAt)||detail.versions.length>=20;
+ $('recreationList').hidden=false;$('newVersion').disabled=Boolean(detail.source.archivedAt)||detail.versions.filter(v=>!v.cleanedAt).length>=20;
  const versions=detail.versions.filter(v=>inputMode==='all'||v.inputMode===inputMode),published=versions.filter(v=>v.publishState==='published'),rows=versionScope==='published'?published:versionScope==='pending'?versions.filter(v=>v.publishState!=='published'):versions;
  document.querySelectorAll('#versionScope [data-scope]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scope===versionScope)));
- $('recreationStatus').textContent=(inputMode==='all'?'全部类型':typeName(inputMode))+' · 显示 '+rows.length+' 个 · 待发布 '+(versions.length-published.length)+' 个 · 已发布 '+published.length+' 个 / 共 '+detail.versions.length+' 个版本';
+ $('recreationStatus').textContent=(inputMode==='all'?'全部类型':typeName(inputMode))+' · 显示 '+rows.length+' 个 · 待发布 '+(versions.length-published.length)+' 个 · 已发布 '+published.length+' 个 / 共 '+detail.versions.length+' 个版本 · 在库 '+detail.versions.filter(v=>!v.cleanedAt).length+' / 20';
  $('recreations').innerHTML=rows.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.cleanedAt?'二创内容已清理；保留发布记录':v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="二创类型 / 素材">'+typeBadge(v.inputMode)+'<small>'+(v.cleanedAt?'素材引用已清理':v.inputMode==='video'?'直接传入成片 · '+(v.videoAssetId?'已上传':'待上传'):'图片和文案 · '+v.frameCount+' / '+detail.frameCount+' 帧')+'</small>'+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.publishedAt||v.updatedAt)+'</small><small>'+(v.publishedAt?'发布确认时间':'更新时间')+' · 北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">'+(detail.versions.length?'当前筛选暂无版本。':'尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。')+'</p></td></tr>';
 }
 async function loadVersion(){
  const v=current();$('versionType').textContent=typeName(v.inputMode);$('versionType').className='vh-badge vh-type-'+v.inputMode;$('workspace').hidden=false;$('pageLead').textContent=v.cleanedAt?'查看该版本的发布记录和自动清理结果。':v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
  $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.cleanedAt?'已按发布后保留期清理':v.caption||'尚未填写发布文案';$('versionScript').textContent=v.cleanedAt?'已按发布后保留期清理':v.script||(v.inputMode==='video'?'成片自带配音，无需填写合成文案':'尚未填写二创配音文案');
- $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.originalsCleanedAt?'来源已结束，原文案已清理':detail.source.caption||'尚未填写发布文案';$('originalScript').textContent=detail.source.originalsCleanedAt?'来源已结束，原文案已清理':detail.source.script||'尚未填写原文';
+ $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.caption||(detail.source.originalsCleanedAt?'历史原文案已清理，可重新补充':'尚未填写发布文案');$('originalScript').textContent=detail.source.script||(detail.source.originalsCleanedAt?'历史原文案已清理，可重新补充':'尚未填写原文');
  $('versionStatus').textContent=versionState(v)+' · '+(v.inputMode==='video'?'直接传入成片':v.frameCount+' / '+detail.frameCount+' 帧');
  $('toggleVersion').textContent=v.enabled?'停用版本':'启用版本';lock('toggleVersion',Boolean(v.publishItemId));lock('editVersion',Boolean(v.publishItemId));
  $('renderVersion').hidden=v.inputMode==='video';$('publishVersion').textContent=v.inputMode==='video'||renderCurrent(v)&&v.renderState==='done'?'发布成片':'合成并发布';
@@ -176,7 +177,7 @@ function sourceEditor(edit){
  $('sourceForm').dataset.revision=s.revision||0;$('sourceForm').elements.externalId.readOnly=edit;$('sourceForm').elements.videoData.value=JSON.stringify(s.videoData||{},null,2);$('sourceDialogTitle').textContent=edit?'编辑视频原文':'新增视频';$('sourceSaveStatus').textContent='';$('sourceDialog').showModal();
 }
 function versionEditor(edit){
- editingVersion=edit;const v=edit?current():null,available=edit?[n]:Array.from({length:20},(_,i)=>i+1).filter(i=>!detail.versions.some(v=>v.version===i));
+ editingVersion=edit;const v=edit?current():null,available=edit?[n]:Array.from({length:Math.max(0,20-detail.versions.filter(v=>!v.cleanedAt).length)},(_,i)=>(detail.nextVersion||Math.max(0,...detail.versions.map(v=>v.version))+1)+i).filter(i=>i<=2147483647);
  if(!available.length)return;
  $('versionForm').reset();$('versionNumber').innerHTML=available.map(i=>'<option value="'+i+'">版本 '+i+'</option>').join('');$('versionNumber').disabled=edit;
  const values=v||{name:'二创版本 '+available[0],title:detail.source.title,caption:detail.source.caption};
@@ -198,7 +199,7 @@ $('sourceImportSource').onchange=()=>{sourceImporter=$('sourceImportSource').val
 $('sourceScope').onchange=()=>{page=1;load();};
 $('sourceInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();page=1;load();};
 $('recreationInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();renderRecreations();};
-$('archiveSource').onclick=()=>{$('archiveStatus').textContent='';$('archiveDialog').showModal();};
+$('archiveSource').onclick=e=>{if(detail.source.archivedAt)return action('pageStatus',e.target,async()=>{await write('/'+detail.source.id+'/restore','POST',{revision:detail.source.revision});await loadDetail();});$('archiveStatus').textContent='';$('archiveDialog').showModal();};
 $('confirmArchive').onclick=e=>action('archiveStatus',e.target,async()=>{await write('/'+detail.source.id+'/archive','POST',{revision:detail.source.revision});$('archiveDialog').close();await loadDetail();});
 $('newVersion').onclick=()=>versionEditor(false);$('editVersion').onclick=()=>versionEditor(true);
 $('versionForm').onsubmit=e=>{e.preventDefault();action('versionSaveStatus',e.submitter,async()=>{
@@ -284,5 +285,5 @@ $('apiButton').onclick=async()=>{$('apiInstructions').textContent='正在加载�
 setupPage();
 if(view==='sources')load();
 else if(!/^vh-[a-f0-9]{32}$/.test(sourceId||''))pageError(new Error('缺少有效的视频来源，请返回视频爆款列表。'));
-else if(view==='detail'&&(!Number.isInteger(n)||n<1||n>20))pageError(new Error('二创版本编号须为 1 到 20，请返回二创列表。'));
+else if(view==='detail'&&(!Number.isInteger(n)||n<1||n>2147483647))pageError(new Error('二创版本编号无效，请返回二创列表。'));
 else{$('pageStatus').hidden=false;$('pageStatus').textContent='正在读取…';loadDetail().catch(pageError);}

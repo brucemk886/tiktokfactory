@@ -265,7 +265,7 @@ print(status, result)
 
 `videoHits.list` 支持 page/q/sort（recent 或 plays）、scope（active/archived/all）及 inputMode（all/video/frames，默认 all）；每页20条。inputMode 放在 params.query 中：video 筛选含视频二创的来源，frames 筛选含图文二创的来源，筛选在分页前执行。同一来源可同时包含两种二创，不会重复返回。每条来源附带 videoVersionCount、frameVersionCount 和总 versionCount。`videoHits.get` 返回来源、最新revision和版本。`videoHits.update` 按revision修改来源。
 
-每个来源有1–20号独立二创版本，用 `videoHits.versions.write` 创建/编辑。新版本 revision=0；后续读 `videoHits.versions.get` 取最新revision。字段为 name/title/caption/script/enabled。新版本默认停用，文案和图片补齐后提交 enabled=true。
+每个来源最多同时保留20个未清理二创版本，已清理历史不占名额。原选题、原文与原图长期保留。版本编号为1–2147483647且不复用：读取 `videoHits.get` 返回的 `nextVersion` 新建；`activeVersionCount` 是在库数，`maxActiveVersions=20`。用 `videoHits.versions.write` 创建/编辑。新版本 revision=0；后续读 `videoHits.versions.get` 取最新revision。字段为 name/title/caption/script/enabled。新版本默认停用，文案和图片补齐后提交 enabled=true。
 
 ### 导入来源 importSource
 
@@ -294,7 +294,7 @@ REST 统一 JSON 接口不接收图片二进制/base64，也不把 sandbox: 文�
 
 ## 逐帧写入
 
-`version:"0"` 表示原图；`"1"`–`"20"` 表示对应二创版本。每套最多300个分镜帧，index从1连续编号，每次写1–100帧，可分批补充。这是场景/分镜图片序列；成片由FFmpeg输出30fps，不要求上传每个编码视频帧。
+`version:"0"` 表示原图；正整数字符串（如 `"1"`、`"21"`）表示对应二创版本。每套最多300个分镜帧，index从1连续编号，每次写1–100帧，可分批补充。这是场景/分镜图片序列；成片由FFmpeg输出30fps，不要求上传每个编码视频帧。
 
 ```json
 {
@@ -394,7 +394,7 @@ X-Content-SHA256: <lowercase 64-character SHA256 of actual file>
 
 图片输入和直接成片输入采用相同规则。排期/中台接收/提交成功均不算发布成功；失败、取消和结果未知版本保留。未发布草稿不自动过期。没有绑定到来源/版本/任务的上传满 24 小时后回收，上传中断也会留下可回收清单。正在排队/运行中的任务和最近七天失败任务的冻结引用会保护素材；失败版本自身的素材继续由版本引用保护。
 
-原图保留供新版本二创使用。全部已创建版本均已确认发布后，可在页面点击“结束来源”或调用 videoHits.archive；结束后不能再新增/修改内容，满 24 小时并且全部版本已经清理后，删除原文、原图引用及不再被其他来源引用的原图。已结束来源默认从来源列表隐藏，可在“已结束”筛选查看记录。
+原选题、原文和原图长期保留，供后续持续二创。全部已创建版本确认发布后，可在页面点击“归档来源”或调用 videoHits.archive；归档会冻结新增/修改并从默认列表隐藏，但不会清除原素材。在“已归档”筛选进入来源后点击“恢复二创”，或调用 videoHits.restore，即可继续新增版本。已发布版本的身份与记录保留，不能覆盖或再次发布。
 
 ```json
 {"module":"psychology","action":"videoHits.archive","requestId":"GENERATE_A_UUID","params":{"id":"SOURCE_ID","body":{"revision":SOURCE_REVISION}}}
@@ -411,10 +411,10 @@ R2 文件清理先用事务检查所有引用并标记 deleting，阻止并发�
 
 心理学自动发布的两个新建入口均为独立页面：
 
-- `/psychology-publish?create=one`：默认选择“视频爆款 · 二创成片”，逐条预览、勾选后带入保存的 caption（为空时用 title）。已选清单可播放、编辑发布文案、移除、指定账号和 AI 标识；设置项目与时间后手动确认。每批 1–20 条。
+- `/psychology-publish?create=one`：默认选择“视频爆款 · 二创成片”，预览并批量勾选后带入保存的 caption（为空时用 title），再选择账号、项目与时间并点击发布。视频随机均衡分配给所选账号，同一账号按间隔排期，批次统一设置 AI 标识，无需逐条二次核验。每批 1–20 条。
 - `/psychology-publish?create=normal`：选题来源选择“视频爆款 · 二创成片”，设置数量、抽取方式、关键词、账号与排期，确认后直接抽取成片发布。保留原有模板题库与图文来源。
 
-可用范围：当前用户拥有、未结束来源、已启用、未提交、未清理的二创版本。直接传入成片须上传完成；图片版本须已有与当前来源/版本一致的合成结果。TikTok One 勾选需要云端可播放视频；本机合成成片可先“准备云端预览”。普通抽取会复用本机已合成的视频并固定原工人，不重新生成。
+可用范围：当前用户拥有、未归档来源、已启用、未提交、未清理的二创版本。直接传入成片须上传完成；图片版本须已有与当前来源/版本一致的合成结果。TikTok One 勾选需要云端可播放视频；本机合成成片可先“准备云端预览”。普通抽取会复用本机已合成的视频并固定原工人，不重新生成。
 
 普通任务的统一 API 也支持：
 
@@ -473,3 +473,9 @@ MCP 创建来源示例（调用 `psychology_videoHits_create` 的参数）：
 ```
 
 同一操作的 REST 参数只需加 `module:"psychology", action:"videoHits.create"`。两种入口共用所有权、revision、requestId 防重与回执，不能切换入口来绕过重复请求保护。
+
+### 持续二创与原选题保留
+
+发布成功满24小时后仅清理该二创的文案、图片和成片，保留轻量发布记录、防重身份；草稿、排队中、失败和未确认成功的版本不自动清理。原选题、原文和version=0原图长期保留。清理后可用nextVersion继续二创，不要覆盖已发布编号或重传同一个已发布成片。
+
+`videoHits.archive` 仅将来源移到已归档，保留原素材。`videoHits.restore`（params.id、body.revision及新的requestId）恢复到进行中；这两个操作仅在界面/REST可用，MCP素材写入不开放归档或恢复。历史已删除的原文件无法恢复，需要重新补充。

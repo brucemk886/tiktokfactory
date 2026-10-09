@@ -70,14 +70,18 @@ test('ready videos shared with drafts survive; mirrored manifests retry and dige
  // Simulate a lost mirror write during a previous attempt.
  f.sqlite.prepare("UPDATE psychology_video_assets SET cleanup_state='active'").run();f.failDelete.clear();await collectVideoHitAssets(f.env);assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_assets').get().cleanup_state,'deleted');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_video_usage').get().n,1);await assert.rejects(readyVideo(f.db,f.user,a.id),/已清理/);
 });
-test('archive requires every created version published, freezes writers and cleans only unshared originals after grace',async t=>{
- const f=await setup(t),source=await f.source(),other=await f.source(),a=f.image();await f.version(source,1,{published:true});await f.version(source,2);f.frame(source,0,a);f.frame(other,0,a);
+test('archive retains original copy and images permanently; restore is scoped, revision guarded and idempotent',async t=>{
+ const f=await setup(t),source=await f.source(),other=await f.source(),a=f.image(),unique=f.image(),remix=f.image();await f.version(source,1,{published:true});await f.version(source,2);f.frame(source,0,a);f.frame(other,0,a);f.frame(source,0,unique,2);f.frame(source,1,remix);
  await assert.rejects(f.write('/'+source+'/archive',{revision:1},'POST'),/全部/);f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_item_id='second',publish_state='published',published_at=? WHERE source_id=? AND version=2").run(Date.now()-25*HOUR,source);
- const uuid=crypto.randomUUID(),body={requestId:uuid,revision:1};const response=await (await f.call('/'+source+'/archive','POST',body)).json();assert.deepEqual(await (await f.call('/'+source+'/archive','POST',body)).json(),response);
+ const body={requestId:crypto.randomUUID(),revision:1};const response=await (await f.call('/'+source+'/archive','POST',body)).json();assert.deepEqual(await (await f.call('/'+source+'/archive','POST',body)).json(),response);
  await assert.rejects(f.write('/'+source+'/versions/3',{revision:0,title:'New'}),/来源已结束/);await assert.rejects(f.write('/'+source,{revision:2,title:'Change'},'PATCH'),/来源已结束/);await assert.rejects(f.write('/'+source+'/frames/0',{revision:2,frames:[{index:1,assetId:a.id}]}),/来源已结束/);
  assert.equal((await (await f.call('')).json()).items.some(s=>s.id===source),false);assert.equal((await (await f.call('?scope=archived')).json()).items[0].id,source);
- await collectVideoHitAssets(f.env,{now:response.archivedAt+VIDEO_HIT_GRACE_MS-1});assert.equal(f.sqlite.prepare('SELECT originals_cleaned_at FROM psychology_video_hits WHERE id=?').get(source).originals_cleaned_at,0);
- await collectVideoHitAssets(f.env,{now:response.archivedAt+VIDEO_HIT_GRACE_MS});assert.ok(f.sqlite.prepare('SELECT originals_cleaned_at FROM psychology_video_hits WHERE id=?').get(source).originals_cleaned_at);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_frames WHERE source_id=?').get(source).n,0);assert.equal(f.deleted.length,0);assert.equal(f.requests.length,0);
+ const stats=await collectVideoHitAssets(f.env,{now:response.archivedAt+365*24*HOUR});assert.equal(stats.sources,0);assert.equal(stats.versions,2);
+ const original=f.sqlite.prepare('SELECT * FROM psychology_video_hits WHERE id=?').get(source);assert.equal(original.originals_cleaned_at,0);assert.equal(original.script,'Original copy');assert.equal(original.title,'Source');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_frames WHERE source_id=? AND version=0').get(source).n,2);assert.deepEqual(f.deleted,[remix.key]);assert.ok(f.store.has(a.key)&&f.store.has(unique.key));
+ await assert.rejects(f.write('/'+source+'/restore',{revision:1},'POST'),/revision/);
+ const restore={requestId:crypto.randomUUID(),revision:2};const restored=await(await f.call('/'+source+'/restore','POST',restore)).json();assert.equal(restored.archivedAt,0);assert.equal(restored.revision,3);assert.deepEqual(await(await f.call('/'+source+'/restore','POST',restore)).json(),restored);
+ assert.ok((await(await f.call('')).json()).items.some(s=>s.id===source));await f.version(source,3);await assert.rejects(f.write('/'+source+'/versions/1',{revision:1,title:'Reuse'}),/不能修改/);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other',archived_at=1 WHERE id=?").run(source);await assert.rejects(f.write('/'+source+'/restore',{revision:3},'POST'),/无权/);assert.equal(f.requests.length,0);
 });
 test('local MP4 cleanup is queued once for its original worker, holds active transfers, verifies identity and retries failure',async t=>{
  const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});const renderId=await f.job({id:'vh-render-synthetic',status:'running',workerId:'w',payload:{module:'psychology',videoRemix:{sourceId:source,version:1}}});
@@ -191,4 +195,42 @@ test('legacy local path registration is original-worker scoped and immutable bef
  const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});const id=await f.job({id:'legacy-render',status:'running',workerId:'w',payload:{videoRemix:{sourceId:source,version:1}}});f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({results:[{fileName:id+'.mp4'}]}),id);await collectVideoHitAssets(f.env);const endpoint='psychology-video-hits/cleanup/vh-cleanup-'+id;await f.worker('claim','w',{workerId:'w',types:['psychology-video-cleanup'],psychologyVideoCleanup:true});
  const outputPath='D:/original/'+id+'.mp4';assert.equal((await f.worker(endpoint,'other',{outputPath})).status,403);assert.equal((await f.worker(endpoint,'w',{outputPath:'D:/original/../'+id+'.mp4'})).status,400);assert.equal((await f.worker(endpoint,'w',{outputPath:'D:/original/other.mp4'})).status,400);
  assert.equal((await (await f.worker(endpoint,'w',{outputPath})).json()).outputPath,outputPath);assert.equal((await f.worker(endpoint,'w',{outputPath:'D:/changed/'+id+'.mp4'})).status,409);assert.equal((await (await f.worker(endpoint,'w')).json()).outputPath,outputPath);
+});
+
+test('twenty uncleared slots are atomic; publication alone keeps the slot, cleanup releases it without recycling identity',async t=>{
+ const f=await setup(t),source=await f.source();for(let n=1;n<=20;n++)await f.version(source,n);
+ await assert.rejects(f.write('/'+source+'/versions/21',{revision:0,title:'Full'}),/20个未清理/);
+ await f.write('/'+source+'/versions/20',{revision:1,title:'Draft remains editable'});
+ f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_item_id='once',publish_state='published',published_at=? WHERE source_id=? AND version=1").run(Date.now(),source);
+ await assert.rejects(f.write('/'+source+'/versions/21',{revision:0,title:'Grace'}),/20个未清理/);
+ f.sqlite.prepare('UPDATE psychology_video_hit_versions SET published_at=? WHERE source_id=? AND version=1').run(Date.now()-25*HOUR,source);assert.equal((await collectVideoHitAssets(f.env)).versions,1);
+ let d=await(await f.call('/'+source)).json();assert.equal(d.nextVersion,21);assert.equal(d.activeVersionCount,19);assert.equal(d.versions.length,20);
+ await f.version(source,21);await assert.rejects(f.write('/'+source+'/versions/1',{revision:1,title:'Reuse'}),/不能修改/);
+ const a=f.image();await f.write('/'+source+'/frames/21',{revision:1,frames:[{index:1,assetId:a.id}]});assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_frames WHERE version=21').get().n,1);
+ assert.throws(()=>f.sqlite.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,created_at,updated_at) VALUES(?,22,'Race','Race',0,0)").run(source),/video_hit_active_limit/);
+ d=await(await f.call('')).json();assert.equal(d.items[0].versionCount,21);assert.equal(d.items[0].activeVersionCount,20);assert.equal(d.items[0].cleanedVersionCount,1);assert.equal(f.requests.length,0);
+});
+
+test('database slot trigger fences a concurrent writer after the API capacity read',async t=>{
+ const f=await setup(t),source=await f.source();for(let n=1;n<=19;n++)await f.version(source,n);
+ const batch=f.db.batch.bind(f.db);let injected=false;f.db.batch=async rows=>{if(!injected){injected=true;f.sqlite.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,created_at,updated_at) VALUES(?,20,'Concurrent','Concurrent',0,0)").run(source);}return batch(rows);};
+ await assert.rejects(f.write('/'+source+'/versions/21',{revision:0,title:'Racing'}),e=>e.statusCode===409&&/20个未清理/.test(e.message));assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions').get().n,20);assert.equal(f.sqlite.prepare('SELECT version FROM psychology_video_hit_versions WHERE version=21').get(),undefined);assert.equal(f.requests.length,0);
+});
+
+test('continuous-version migration preserves populated rows, indexes, receipt/render triggers and foreign keys',async()=>{
+ const {DatabaseSync}=await import('node:sqlite'),fs=await import('node:fs'),db=new DatabaseSync(':memory:');
+ try{
+ const dir=new URL('../migrations/',import.meta.url);db.exec('PRAGMA foreign_keys=ON');for(const name of fs.readdirSync(dir).filter(n=>n.endsWith('.sql')&&n<'0085').sort())db.exec(fs.readFileSync(new URL(name,dir),'utf8'));
+ db.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,caption,script,created_at,updated_at) VALUES('source','admin','source','https://example.test','Original','Original caption','Original script',1,2)").run();
+ db.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,caption,script,enabled,revision,created_at,updated_at,input_mode,video_asset_id,render_job_id,render_revision,render_source_revision,publish_item_id,render_state,publish_state,published_url,published_at,cleaned_at,cleaned_frame_count) VALUES('source',1,'Version','Title','Caption','Script',1,8,100,200,'video','asset','render',6,7,'receipt','running','published','https://example.test/published',10,20,3)").run();
+ db.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,publish_item_id,render_job_id,created_at,updated_at) VALUES('source',2,'Draft','Draft','next-receipt','next-render',3,4)").run();
+ for(const n of [0,2])db.prepare("INSERT INTO psychology_video_hit_frames(source_id,version,frame_index,asset_id,text,duration_seconds) VALUES('source',?,1,'image','Frame',3.5)").run(n);
+ const tables=['psychology_video_hits','psychology_video_hit_versions','psychology_video_hit_frames'],before=tables.map(n=>db.prepare('SELECT * FROM '+n).all());
+ db.exec('BEGIN');db.exec(fs.readFileSync(new URL('0085_psychology_video_hit_continuous.sql',dir),'utf8'));db.exec('COMMIT');assert.deepEqual(tables.map(n=>db.prepare('SELECT * FROM '+n).all()),before);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+ db.prepare('INSERT INTO factory_publish_records(id,created_at,value_json) VALUES(?,?,?)').run('first',1,JSON.stringify({autoTaskId:'next-receipt',officialRemoteStatus:'submitted'}));assert.equal(db.prepare("SELECT publish_state FROM psychology_video_hit_versions WHERE version=2").get().publish_state,'');
+ db.prepare('UPDATE factory_publish_records SET value_json=? WHERE id=?').run(JSON.stringify({autoTaskId:'next-receipt',officialRemoteStatus:'published',shareLink:'https://example.test/new'}),'first');const published=db.prepare('SELECT * FROM psychology_video_hit_versions WHERE version=2').get();assert.equal(published.publish_state,'published');assert.equal(published.published_url,'https://example.test/new');assert.ok(published.published_at>0);
+ db.prepare("INSERT INTO factory_jobs(id,type,status,title,created_by,created_at,updated_at) VALUES('next-render','psychology-video-remix','queued','Test','admin',0,0)").run();db.prepare("UPDATE factory_jobs SET status='done' WHERE id='next-render'").run();assert.equal(db.prepare('SELECT render_state FROM psychology_video_hit_versions WHERE version=2').get().render_state,'done');
+ db.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,created_at,updated_at) VALUES('source',21,'Continued','Continued',0,0)").run();db.prepare("INSERT INTO psychology_video_hit_frames(source_id,version,frame_index,text,duration_seconds) VALUES('source',21,1,'New frame',3)").run();assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+ const indexes=db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='psychology_video_hit_versions'").all().map(x=>x.name);for(const name of ['psychology_video_hit_versions_cleanup','psychology_video_hit_versions_publish_item','psychology_video_hit_versions_active'])assert.ok(indexes.includes(name));
+ }finally{db.close();}
 });

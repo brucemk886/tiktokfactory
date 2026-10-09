@@ -156,3 +156,7 @@ test('all three video inventories return twenty per page with no skipped or dupl
  }
  assert.equal(f.requests.length,0);assert.deepEqual(f.counts(),{joins:0,uploads:0});
 });
+
+test('continued video version 21 is selectable and reserves once with saved identity',async t=>{
+ const f=await setup(t),h=await hitFixture(f,{version:21}),body=config(h.asset.id);body.items[0].videoHit=h.ref;assert.equal((await f.submit(body)).status,202);const v=f.sqlite.prepare('SELECT * FROM psychology_video_hit_versions WHERE version=21').get();assert.ok(v.publish_item_id);assert.equal(v.publish_state,'reserved');assert.equal((await f.submit(body)).status,200);await assert.rejects(f.submit({...body,requestId:crypto.randomUUID()}),/提交|停用|修改/);assert.equal(f.requests.length,0);
+});

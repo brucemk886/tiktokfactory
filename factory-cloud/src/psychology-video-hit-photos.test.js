@@ -82,3 +82,8 @@ test('15-image album and another version share one group, frozen order and per-a
 test('already frozen 35-image jobs remain publishable after new admission is capped at 15',async t=>{
  const f=await setup(t),ref=await f.ready(15,{privateImages:true});await f.call('POST',photoInput([ref]));const job=f.claim(),payload=JSON.parse(job.payload_json);payload.pages=Array.from({length:35},(_,i)=>({...payload.pages[i%15],index:i+1}));f.sqlite.prepare('UPDATE factory_jobs SET payload_json=? WHERE id=?').run(JSON.stringify(payload),job.id);await runCloudPhoto(f.env,f.job());assert.equal(f.requests.length,1);assert.equal(f.requests[0].items[0].photoAssetKeys.length,35);
 });
+
+test('continued photo version 21 uses saved images and the same once-only queue reservation',async t=>{
+ const f=await setup(t),old=await f.ready(12,{privateImages:true});f.sqlite.prepare('UPDATE psychology_video_hit_versions SET version=21 WHERE source_id=?').run(old.sourceId);f.sqlite.prepare('UPDATE psychology_video_hit_frames SET version=21 WHERE source_id=? AND version=1').run(old.sourceId);
+ const ref={...old,version:21};assert.equal((await f.inventory()).items[0].ref.version,21);assert.equal((await f.call('POST',photoInput([ref]))).status,202);assert.equal(JSON.parse(f.job().payload_json).pages.length,12);await assert.rejects(f.call('POST',photoInput([ref])),/已修改|提交/);assert.equal(f.requests.length,0);
+});

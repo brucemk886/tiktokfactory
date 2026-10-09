@@ -45,7 +45,9 @@ test('owner-scoped source/import is idempotent; gateway supports all frame/versi
  const frames=await f.gateway('videoHits.frames.write',{id:a.id,version:'0',body:{revision:1,frames:[{index:1,imageUrl:'https://images.pexels.com/a.jpg'}]}},crypto.randomUUID());assert.equal(frames.status,200,await frames.clone().text());
  await f.gateway('videoHits.versions.write',{id:a.id,version:'20',body:{revision:0,title:'Version20',script:'New script'}},crypto.randomUUID());
  const d=await (await f.gateway('videoHits.get',{id:a.id})).json();assert.equal(d.versions[0].version,20);
- assert.equal((await f.gateway('videoHits.versions.write',{id:a.id,version:'21',body:{revision:0,title:'No'}},crypto.randomUUID())).status,400);
+ assert.equal((await f.gateway('videoHits.versions.write',{id:a.id,version:'21',body:{revision:0,title:'Next'}},crypto.randomUUID())).status,200);
+ const next=await(await f.gateway('videoHits.get',{id:a.id})).json();assert.equal(next.nextVersion,22);assert.equal(next.activeVersionCount,2);assert.equal(next.maxActiveVersions,20);
+ assert.equal((await f.gateway('videoHits.versions.write',{id:a.id,version:'2147483648',body:{revision:0,title:'Invalid'}},crypto.randomUUID())).status,400);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();assert.equal((await f.gateway('videoHits.get',{id:a.id})).status,403);
  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-video-hits']},'/psychology-video-hits.html'),true);
 });
@@ -318,4 +320,11 @@ test('agent filter is owner-scoped, exact, normalized and applied before paginat
  await f.write('/'+first+'/versions/1',{revision:0,title:'Frame',script:'Narration'});
  assert.equal((await read({importSource:'future.agent-1',inputMode:'frames'})).total,1);assert.equal((await read({importSource:'grokbot',inputMode:'frames'})).total,0);
  assert.equal((await f.gateway('videoHits.list',{query:{importSource:'bad/name'}})).status,400);
+});
+
+test('project-key gateway archives and restores original topics without resetting published identities',async t=>{
+ const f=await setup(t),id=await f.create();await f.write('/'+id+'/versions/1',{revision:0,title:'Published'});f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_state='published',publish_item_id='used' WHERE source_id=?").run(id);
+ assert.equal((await f.gateway('videoHits.archive',{id,body:{revision:1}},crypto.randomUUID())).status,200);
+ const uuid=crypto.randomUUID(),params={id,body:{revision:2}};assert.equal((await f.gateway('videoHits.restore',params,uuid)).status,200);assert.equal((await f.gateway('videoHits.restore',params,uuid)).status,200);
+ const d=await(await f.gateway('videoHits.get',{id})).json();assert.equal(d.source.archivedAt,0);assert.equal(d.source.script,'Source narration');assert.equal(d.versions[0].publishItemId,'used');assert.equal(d.source.revision,3);assert.equal(f.requests.length,0);
 });
