@@ -7,6 +7,7 @@ const datetime=value=>{if(!value)return '—';const parsed=new Date(/Z$|[+-]\d\d
 const table=(heads,rows,empty)=>'<table><thead><tr>'+heads.map(h=>'<th>'+escape(h)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join(''):'<tr><td class="web-empty" colspan="'+heads.length+'">'+escape(empty||'所选时间暂无数据')+'</td></tr>')+'</tbody></table>';
 let applied={period:'7d',sourcePage:1,orderPage:1},draftPeriod='7d',data=null,controller=null,sequence=0,receivingChanged=false;
 function showTab(tab,{focus=false}={}){
+ const openLinks=tab==='links',openSources=tab==='sources';if(openLinks)tab='receiving';if(openSources)tab='overview';
  const tabs=[...document.querySelectorAll('.web-tabs [data-tab]')];
  if(!tabs.some(button=>button.dataset.tab===tab))tab='overview';
  $('websiteAnalytics').hidden=tab==='receiving';
@@ -14,6 +15,7 @@ function showTab(tab,{focus=false}={}){
  document.querySelectorAll('[data-panel]').forEach(panel=>panel.hidden=panel.dataset.panel!==tab);
  const url=new URL(location.href);url.searchParams.set('tab',tab);history.replaceState(null,'',url);
  window.dispatchEvent(new CustomEvent('website-tab',{detail:tab}));
+ if(openLinks)$('websiteLinks').open=true;if(openSources)$('sourceDetails').open=true;
  if(tab!=='receiving'&&(!data||receivingChanged)&&!$('refresh').disabled){receivingChanged=false;void load();}
 }
 function pager(prefix,value){$(prefix+'Page').textContent='第 '+value.page+' / '+Math.max(1,Math.ceil(value.total/value.pageSize))+' 页 · '+count(value.total)+' 条';$(prefix+'Prev').disabled=value.page<=1;$(prefix+'Next').disabled=value.page*value.pageSize>=value.total;}
@@ -27,7 +29,6 @@ function render(value){
  $('rates').textContent='答题完成率 '+percent(s.completionRate)+' · 测试付款率 '+percent(s.paymentRate)+'（付款测试会话 ÷ 开始测试会话）';
  $('attribution').innerHTML='<div class="web-attribution"><div><strong>'+count(value.attribution.attributedStarted)+'</strong><span>已归到承接账号的测试</span></div><div><strong>'+count(value.attribution.attributedOrders)+'</strong><span>已归到承接账号的订单</span></div></div><p class="web-muted">已识别为 TikTok、尚未归到当前项目账号：'+count(value.attribution.unattributedStarted)+' 次测试，'+count(value.attribution.unattributedOrders)+' 笔订单。</p>';
  $('days').innerHTML=table(['日期','开始测试','完成答题','成交订单'],value.days.map(r=>[escape(r.day),count(r.started),count(r.finished),count(r.orders)]));
- $('accounts').innerHTML=table(['承接账号','链接访问','开始测试','完成答题','付款测试会话','期间成交订单'],value.accounts.map(r=>[escape(r.username?'@'+r.username:r.name),r.linkVisits==null?'—':count(r.linkVisits),count(r.started),count(r.finished),count(r.paidSessions),count(r.orders)]),'暂无可归因账号数据。请将专属推广链接设置到承接账号主页。');
  $('sources').innerHTML=table(['来源','承接账号 / 活动','媒介','内容参数','开始','完成','收银台','付款会话','成交订单'],value.sources.rows.map(r=>[escape(r.source),escape(r.account?'@'+(r.account.username||r.account.name):r.campaign||'未归因'),escape(r.medium||'—'),escape(r.content||'—'),count(r.started),count(r.finished),count(r.checkout),count(r.paidSessions),count(r.orders)]));pager('source',value.sources);
  $('orders').innerHTML=table(['付款时间','订单号','产品','金额','状态','支付平台','来源 / 承接账号'],value.orders.rows.map(r=>[escape(datetime(r.paid_at)),escape(r.id),escape(r.testTitle)+'<small>'+(r.kind==='deep'?'深度报告':'基础报告')+'</small>',escape(money(r.amount_cents,r.currency)),r.status==='refunded'?'已退款':'已付款',escape(r.provider==='unknown'?'未知':r.provider),escape(r.account?'@'+(r.account.username||r.account.name):r.source)+'<small>'+escape(r.campaign||'无账号参数')+'</small>']));pager('order',value.orders);
  const selected=$('receiver').value;
@@ -35,6 +36,7 @@ function render(value){
  if(value.receivers.some(a=>a.connectionId===selected))$('receiver').value=selected;
  $('campaignNote').textContent='当前已确认 '+count(value.campaign.configuredReceivers)+' 个承接账号。'+(value.campaign.configuredReceivers===0?'转化发布会等待承接配置；复制链接不会自动确认主页已设置。':'主页链接需手动设置，复制不代表已设置。');
  $('createLinks').disabled=!value.receivers.some(a=>!a.trackingUrl);
+ $('webLinksContent').hidden=false;$('linksStatus').textContent='专属链接与承接账号一一对应，复制后设置到账号主页。';
  updateLink();
  $('definitions').innerHTML=Object.values(value.definitions).map(text=>'<p>'+escape(text)+'</p>').join('');
  $('status').textContent='已连接 DeepPersona · 仅 TikTok 渠道 · 更新于 '+datetime(value.updatedAt);
@@ -64,20 +66,19 @@ function renderJourney(){
  $('journeyDefinition').textContent=f?.definition||'尚未取得漏斗数据。';
 }
 function updateLink(){
- const a=data?.receivers.find(a=>a.connectionId===$('receiver').value),link=data?.links?.rows.find(link=>link.connectionId===a?.connectionId);
+ const a=data?.receivers.find(a=>a.connectionId===$('receiver').value);
  $('trackingUrl').value=a?.trackingUrl||'';$('copyLink').disabled=!a?.trackingUrl;
  $('linkNote').textContent=a?.trackingUrl?'此短链接固定不变，测试和订单会自动归到对应承接账号。':a?'点击“生成短链接”，为当前可用承接账号创建链接。':'绑定并同步千粉账号后，可在这里生成短链接。';
- $('linkStats').textContent=link?'所选日期链接访问 '+count(link.visits)+' 次 · 已过滤 '+count(link.filtered)+' 次已识别机器人或预加载。重复访问计数，不等于成功进站。':'链接访问从短链接创建后开始统计。';
 }
 async function load(query={...applied}){
  const id=++sequence;controller?.abort();controller=new AbortController();
- $('status').textContent=data?'正在刷新，当前仍显示上次查询的数据…':'正在读取网站数据…';$('refresh').disabled=true;
+ $('status').textContent=data?'正在刷新，当前仍显示上次查询的数据…':'正在读取网站数据…';$('refresh').disabled=true;$('reloadLinks').disabled=true;$('linksStatus').textContent=data?'正在刷新主页链接…':'正在读取主页链接…';
  try{
   const response=await fetch('/api/psychology-website?'+new URLSearchParams(query),{signal:controller.signal,cache:'no-store'});
   const result=await response.json();if(!response.ok)throw new Error(result.error||'读取失败');
   if(id!==sequence)return;applied={...query};$('failure').hidden=true;render(result);
- }catch(error){if(error.name==='AbortError'||id!==sequence)return;$('failure').hidden=false;$('failure').textContent=error.message;$('status').textContent=data?'刷新失败，以下保留上次成功查询的数据（'+data.window.from+' 至 '+data.window.to+'）。':'尚未取得数据，暂无可显示的统计。';}
- finally{if(id===sequence)$('refresh').disabled=false;}
+ }catch(error){if(error.name==='AbortError'||id!==sequence)return;$('linksStatus').textContent='主页链接暂时无法读取：'+error.message+(data?'。当前保留上次读取的链接。':'。承接账号与引导文案仍可单独设置。');$('failure').hidden=false;$('failure').textContent=error.message;$('status').textContent=data?'刷新失败，以下保留上次成功查询的数据（'+data.window.from+' 至 '+data.window.to+'）。':'尚未取得数据，暂无可显示的统计。';}
+ finally{if(id===sequence){$('refresh').disabled=false;$('reloadLinks').disabled=false;}}
 }
 document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{
  draftPeriod=button.dataset.period;document.querySelectorAll('[data-period]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
@@ -92,7 +93,8 @@ document.querySelector('.web-tabs').addEventListener('keydown',event=>{
  const next=event.key==='ArrowRight'?(index+1)%tabs.length:event.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
  if(next<0)return;event.preventDefault();showTab(tabs[next].dataset.tab,{focus:true});
 });
-document.querySelector('[data-open-receiving]').addEventListener('click',()=>showTab('receiving'));
+$('websiteLinks').addEventListener('toggle',()=>{if($('websiteLinks').open&&(!data||receivingChanged)&&!$('refresh').disabled){receivingChanged=false;void load();}});
+$('reloadLinks').addEventListener('click',()=>{receivingChanged=false;void load();});
 document.querySelector('[data-open-links]').addEventListener('click',()=>showTab('links'));
 for(const [prefix,key] of [['source','sourcePage'],['order','orderPage']])for(const [suffix,delta] of [['Prev',-1],['Next',1]])$(prefix+suffix).addEventListener('click',()=>void load({...applied,[key]:Math.max(1,Number(applied[key]||1)+delta)}));
 $('createLinks').addEventListener('click',async()=>{

@@ -78,6 +78,8 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  const base='http://127.0.0.1:'+server.address().port;
  await page.goto(base+'/psychology-website');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
  await page.waitForSelector('.side-tabs a[href="/psychology-website"]');
+ assert.deepEqual(await page.$$eval('.web-tabs [role=tab]',nodes=>nodes.map(n=>n.textContent)),['转化概览','成交订单','引流配置']);
+ assert.equal(await page.$('#accounts'),null,'duplicate account table removed');assert.equal(await page.$eval('#sourceDetails',n=>n.open),false);
  assert.match(await page.$eval('.web-scope',e=>e.textContent),/TikTok 渠道概况/);
  assert.match(await page.$eval('#channelScope',e=>e.textContent),/来源不明不计入/);
  assert.equal(await page.$$eval('#metrics article',rows=>rows.length),3);
@@ -90,7 +92,7 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  }),['数据概览','独立站转化']);
  for(const width of [1366,390,320]){
   await page.setViewport({width,height:900});
-  for(const tab of ['overview','sources','orders','links','receiving']){
+  for(const tab of ['overview','orders','receiving']){
    await page.click('[data-tab="'+tab+'"]');
    if(tab==='receiving')await page.waitForSelector('#wrSaveCta');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'overflow '+width+' '+tab);
@@ -115,13 +117,13 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  await page.select('#journeyAccount','');
  assert.equal(await page.$eval('#sources',e=>e.querySelectorAll('img').length),0);
  assert.match(await page.$eval('#sources',e=>e.textContent),/<img src=x/);
- await page.click('[data-tab="links"]');assert.equal(await page.$eval('#trackingUrl',e=>e.value),'');
+ await page.click('[data-tab="receiving"]');await page.click('#websiteLinks>summary');assert.equal(await page.$eval('#trackingUrl',e=>e.value),'');
  await page.click('#createLinks');await page.waitForFunction(()=>document.getElementById('trackingUrl').value.includes('/go/'));
  assert.equal(await page.$eval('#trackingUrl',e=>e.value),'https://deeppersonaai.com/go/123456abcd');
- assert.match(await page.$eval('#linkStats',e=>e.textContent),/12 次/);
+ assert.equal(await page.$('#linkStats'),null,'link statistics live only in overview');
  assert.equal(await page.$eval('#createLinks',e=>e.disabled),true);
  assert.match(await page.$eval('#campaignNote',e=>e.textContent),/等待承接配置/);
- await page.click('[data-tab="sources"]');await page.click('#sourceNext');await page.waitForFunction(()=>document.getElementById('sourcePage').textContent.includes('第 2'));
+ await page.click('[data-tab="overview"]');await page.click('#sourceDetails>summary');await page.click('#sourceNext');await page.waitForFunction(()=>document.getElementById('sourcePage').textContent.includes('第 2'));
  assert.equal(requests.at(-1).sourcePage,'2');
  mode='error';await page.click('#refresh');await page.waitForFunction(()=>!document.getElementById('failure').hidden);
  assert.match(await page.$eval('#metrics',e=>e.textContent),/60/);assert.match(await page.$eval('#status',e=>e.textContent),/上次成功/);
@@ -132,8 +134,10 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  await page.$eval('#from',e=>{e.value='2026-10-01';e.dispatchEvent(new Event('input',{bubbles:true}));});
  assert.equal(requests.length,before);assert.match(await page.$eval('#rangeLabel',e=>e.textContent),/2026-09-30/);
  await page.setViewport({width:1366,height:900});await page.focus('[data-tab="overview"]');
- for(const [key,tab] of [['ArrowRight','sources'],['End','receiving'],['ArrowRight','overview'],['ArrowLeft','receiving'],['Home','overview']]){await page.keyboard.press(key);assert.equal(await page.$eval('.web-tabs [aria-selected=true]',n=>n.dataset.tab),tab);assert.equal(await page.evaluate(()=>document.activeElement.dataset.tab),tab);}
+ for(const [key,tab] of [['ArrowRight','orders'],['End','receiving'],['ArrowRight','overview'],['ArrowLeft','receiving'],['Home','overview']]){await page.keyboard.press(key);assert.equal(await page.$eval('.web-tabs [aria-selected=true]',n=>n.dataset.tab),tab);assert.equal(await page.evaluate(()=>document.activeElement.dataset.tab),tab);}
  await page.goto(base+'/psychology-website?tab=orders');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
  assert.deepEqual(await page.$$eval('[role=tabpanel]',nodes=>nodes.filter(n=>n.checkVisibility()).map(n=>n.dataset.panel)),['orders']);assert.equal(new URL(page.url()).searchParams.get('tab'),'orders');
+ await page.goto(base+'/psychology-website?tab=sources');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));assert.equal(await page.$eval('#sourceDetails',n=>n.open),true);assert.equal(new URL(page.url()).searchParams.get('tab'),'overview');
+ await page.goto(base+'/psychology-website?tab=links');await page.waitForFunction(()=>!document.getElementById('webLinksContent').hidden);assert.equal(await page.$eval('#websiteLinks',n=>n.open),true);assert.equal(new URL(page.url()).searchParams.get('tab'),'receiving');assert.equal(await page.$eval('#trackingUrl',n=>n.value),'https://deeppersonaai.com/go/123456abcd');assert.equal(await page.$eval('#websiteAnalytics',n=>n.hidden),true);
  assert.deepEqual(errors,[]);
 });
