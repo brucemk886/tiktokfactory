@@ -1,89 +1,255 @@
-# 心理学视频爆款 API
+# 心理学视频爆款：直接 API 写入文档
 
-版本：2026-10-09 · MCP 1.5.1。公开文档：https://factory.tiktokaitool.com/docs/psychology-video-hits-api.md
+版本：2026-10-09 · REST 直接导入版（含 importSource）。
 
-页面：https://factory.tiktokaitool.com/psychology-video-hits 。页面“API 写入”、MCP guide 与此文档内容相同。
+公开文档：https://factory.tiktokaitool.com/docs/psychology-video-hits-api.md
 
-## 交给 GPT / Dot / grokbot 的执行指令
+查看结果：https://factory.tiktokaitool.com/psychology-video-hits
 
-你负责解析用户提供的视频并制作原创二创文案和分镜图片，保存到 Local Factory **心理学 → 视频爆款**。先识别可用连接方式，再执行。题库、文案库和视频爆款库是不同模块，不能用题库图片导入工具代替视频爆款写入。
+## 交给 GPT Dot / grokbot / 其他智能体的执行任务
 
-1. 有 Local Factory MCP 工具：优先调用 `psychology_videoHits_guide`。MCP 地址 `https://factory.tiktokaitool.com/mcp`，使用工厂管理员 OAuth，不需要项目密钥。
-2. 只有 HTTP / 代码执行工具：使用下文 REST 统一入口和已配置的项目 Bearer 密钥；密钥通过执行环境的安全配置传入，勿写进文档、代码仓库或回显。已经在用 REST 的 grokbot 可以按原方式继续，无需换地址、密钥、参数、requestId 或重传素材。
-3. MCP 没有这些工具：在 ChatGPT 的连接/插件设置中打开 Local Factory 连接详情，执行 Refresh（刷新工具），确认工具中出现 `psychology_videoHits_create`，然后**新开一个会话并启用该连接**；刷新 Factory 网页或继续旧会话不能保证重新载入工具。仍没有时重新添加同一 MCP 地址，再新开会话。工具返回 `INSUFFICIENT_SCOPE`：在授权页面增加 `factory.video_hits.write`。旧只读授权不会自动升级。不要把“未发现工具”和“接口拒绝权限”混为一谈。
-4. 新导入必须明确填写自己的 `importSource`：grokbot 用 `grokbot`，GPT Dot 用 `gpt-dot`，其他智能体使用稳定名称。先列出现有来源，按 `externalId` 精确核对，避免同视频重复导入。创建来源 → 上传原图 → 写 version=0 分镜 → 创建停用二创版本 → 上传二创图 → 写对应分镜 → 读回逐帧核对。只有用户要求进入可用素材库时再启用，否则保持 `enabled:false`。
-5. 每个新 JSON 写操作生成独立 UUID `requestId`，保存请求体和编号。每张图片另用固定 UUID `uploadId`；重试始终沿用原编号和内容。不同代理不要同时修改同一个来源/版本；revision 冲突先读最新值并核对他人修改，不能覆盖新内容。
-6. 返回来源 ID、页面链接、版本编号、分镜数量、启用状态与逐条失败原因。只有写入回执成功且读回一致才声称完成；上传成功不等于已经绑定分镜。
-7. 此默认任务止于素材入库，不调用合成、发布、归档、自动运营。继续后续步骤需要对应任务授权。MCP 素材权限本身没有这些操作。
+**本次按 grokbot 的方式直接发送 HTTP API 请求。使用用户授权的项目 API Key，不需要 MCP 工具、刷新连接、OAuth 重新授权或浏览器登录。附录中的 MCP 仅供其他已有连接兼容参考，不作为本次前置条件。**
 
-刷新后新开会话是 [OpenAI 官方 MCP 连接更新流程](https://developers.openai.com/plugins/deploy/connect-chatgpt) 的要求。诊断时先报告实际可见的工具名：工具不存在表示尚未发出写入请求，不能据此认定 API Key 无效或账号无权限；工具存在后再根据真实返回的状态码排查。服务端无法替客户端强制更新已载入的会话工具。
+你要把用户提供的一条真实心理学图文及二创素材导入 Local Factory 的“心理学 → 视频爆款”。先完成一条，读回确认后停止。不要批量试错或创建占位垃圾数据。
 
-## MCP 工具与 REST 共用一套数据
+1. 使用当前环境的 HTTP 请求工具或代码执行工具，例如 Python、Node.js 或 curl。凭据使用用户为本任务授权的项目密钥；下文以环境变量 `FACTORY_API_KEY` 为例。不要回显密钥或把它写入素材/请求日志。这里沿用现有项目密钥，不要求重置或轮换。
+2. 若当前会话没有任何 HTTP/代码执行能力，明确报告“本会话缺少直接 HTTP 执行工具，尚未发送请求”。若没有可用密钥，说明缺少密钥配置。不要把未执行请求解释为服务端没有写入权限，也不要要求用户刷新 MCP。
+3. 先只读查询目录及现有来源，确认连接有效，再执行下面的一条图文流程。新来源使用 `importSource:"gpt-dot"`；grokbot 使用 `grokbot`，其他智能体使用自己的稳定名称。
+4. 使用实际 TikTok 链接、文案、图片字节和已知数据；未知播放量等字段省略，不伪造。来源 `externalId` 稳定且唯一，同一原视频先查询确认是否已存在。不要改写其他智能体导入的记录。
+5. 保存每步请求的 UUID、参数和返回 ID/revision；失败/断线后先查询状态，重试相同请求使用原 UUID 和原请求体。已有 Grokbot 请求保持原输入，不给正在重试的旧请求补字段或换编号。
+6. 本次仅保存素材，二创保持 `enabled:false`，不调用合成、发布、归档或自动运营。最后返回来源 ID、二创编号、原图/二创图数量、导入来源、页面链接和真实失败原因。
 
-工厂管理员须具有“心理学视频爆款”模块权限。读取用 `factory.read`，素材写入额外用 `factory.video_hits.write`；每次调用都检查当前账号权限与连接是否撤销。题库写入 `factory.topics.write` 无法替代视频爆款权限。
+## 认证和只读连通检查
 
-下表工具都接收与 REST 相同的 `params` 对象；写入时加同级 `requestId`。MCP 不传 `module/action`，工具名已选定操作。路径 id/version 均是字符串；版本 0 仅用于原图分镜。
+项目密钥在工厂的“统一 API”页面管理： https://factory.tiktokaitool.com/factory-api 。密钥所属用户需要“心理学视频爆款”模块权限。API 调用用请求头认证，不使用网页登录 Cookie。
 
-| REST action | MCP 工具 | 用途 |
-|---|---|---|
-| videoHits.list | psychology_videoHits_list | params.query 按页查询来源 |
-| videoHits.get | psychology_videoHits_get | params.id 查询来源和版本 |
-| videoHits.create | psychology_videoHits_create | params.body 创建来源 |
-| videoHits.update | psychology_videoHits_update | params.id/body 按 revision 编辑来源 |
-| videoHits.versions.get | psychology_videoHits_versions_get | params.id/version 查询版本 |
-| videoHits.versions.write | psychology_videoHits_versions_write | params.id/version/body 创建或编辑版本 |
-| videoHits.frames.list | psychology_videoHits_frames_list | params.id/version/query.page 查询分镜 |
-| videoHits.frames.write | psychology_videoHits_frames_write | params.id/version/body 写入分镜 |
-| videoHits.jobs | psychology_videoHits_jobs | params.id/version 查询已有任务 |
-| videoHits.cleanup | psychology_videoHits_cleanup | params:{} 查询清理状态 |
-| requests.get | psychology_videoHits_requests_get | MCP 用 {requestId:原UUID}；REST 用 params:{id:原UUID} |
-
-MCP 另外提供：
-
-- `psychology_videoHits_guide({})`：读取本文件，同时返回 writeAuthorized 和可用 action。
-- `psychology_videoHits_assets_upload_file({uploadId,image:{file_id,download_url,mime_type?,file_name?}})`：宿主提供的实际 PNG/JPEG/WebP 文件引用，最多 8 MB。不得编造文件 ID / URL。受控下载仅允许已支持的 ChatGPT 附件域名，跨域跳转也检查；临时链接过期时刷新同一附件再重试。
-- `psychology_videoHits_assets_upload_bytes({uploadId,contentType,imageBase64})`：代码客户端读取**实际图片文件**后编码为纯 base64，或由上传界面自动编码。最多 8 MB；不能要求模型凭空输出图片字节。不接收 data URL。
-- `psychology_videoHits_assets_get({uploadId})`：读取 active/uploading/deleting/deleted、assetId、摘要和大小。只有 active 可绑定。previewUrl 需要工厂登录，不能当持久公开 imageUrl。
-- `psychology_videoHits_prepare_image_upload({uploadId})`：宿主无法传附件或读取文件时，打开本地选图界面，选图后确认上传。返回 awaiting_image 尚未保存；上传后用 assets_get 核实 active。
-
-MCP 创建来源示例（调用 `psychology_videoHits_create` 的参数）：
-
-```json
-{"requestId":"GENERATE_A_UUID","params":{"body":{"externalId":"tiktok:REAL_VIDEO_ID","importSource":"gpt-dot","videoUrl":"https://www.tiktok.com/@REAL_ACCOUNT/video/REAL_VIDEO_ID","title":"来源标题","caption":"原发布文案","script":"原视频完整文案","videoData":{"playCount":12000}}}}
+```http
+Authorization: Bearer <PROJECT_API_KEY>
 ```
 
-同一操作的 REST 参数只需加 `module:"psychology", action:"videoHits.create"`。两种入口共用所有权、revision、requestId 防重与回执，不能切换入口来绕过重复请求保护。
+先发：
 
-### 一次图片二创入库的最小顺序
+```http
+GET https://factory.tiktokaitool.com/api/v1/factory?module=psychology&action=videoHits.create
+Authorization: Bearer <PROJECT_API_KEY>
+```
 
-以下编号是步骤，不是固定 revision；每步读取返回值或重新 GET。
+确认目录中有 `videoHits.create`。然后查询来源列表：所有 action 都通过下列统一 POST 入口调用，读取 action 无需 requestId。
 
-1. `videoHits.create` 返回 `{ok:true,id,revision:1}`；已有来源使用其真实 id/revision。
-2. 上传一张真实原图，确认 `assetId` 和状态 active。
-3. `videoHits.frames.write`：`params:{id,version:"0",body:{revision:最新来源revision,frames:[{index:1,assetId:原图UUID,text:"原图文字",durationSeconds:3}]}}`。
-4. `videoHits.versions.write`：`params:{id,version:"1",body:{revision:0,title:"二创标题",caption:"二创发布文案",script:"完整配音文案",enabled:false}}`。
-5. 上传真实二创图，确认 active；`videoHits.frames.write` 使用 `version:"1"`、**最新版本** revision 和二创 assetId。
-6. `videoHits.get`、`videoHits.versions.get`、`videoHits.frames.list`（version="0" 与 "1"）读回，核对原文、二创文案、帧号、图片与数量。多页必须读完。
-7. 用户要求启用时，`videoHits.versions.write` 使用最新版本 revision、`enabled:true`。原图与二创图必须从1连续且完全对应，二创 title/script 完整。后补图片会再次停用版本，需重新核对。
+```http
+POST https://factory.tiktokaitool.com/api/v1/factory
+Authorization: Bearer <PROJECT_API_KEY>
+Content-Type: application/json
+```
 
-### 超时与失败恢复
+```json
+{"module":"psychology","action":"videoHits.list","params":{"query":{"page":1,"q":"实际视频ID","scope":"all","sort":"recent"}}}
+```
 
-| 情况 | 应如何处理 |
+`q` 是模糊搜索，必须检查返回条目的 `externalId` 或 `videoUrl`，并按 `total/hasMore` 翻页；不能只查第一页就断言不存在。`importSource` 不参与查重身份；`externalId` 在密钥所属用户内唯一。
+
+### HTTP 执行示例（Python 标准库）
+
+这段代码只提供请求函数并执行只读目录检查。后续把下文 JSON 保存为文件，再传给 `send`；不要在日志中打印请求头。`HTTPError` 中会保留真实状态和响应体，异常消息勿额外拼接密钥。
+
+```python
+import json
+import os
+import urllib.request
+import urllib.error
+
+BASE = "https://factory.tiktokaitool.com"
+KEY = os.environ["FACTORY_API_KEY"]
+
+def send(path, method="GET", payload=None, binary=None, content_type=None):
+    if payload is not None and binary is not None:
+        raise ValueError("JSON 和二进制只能选一种")
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else binary
+    headers = {"Authorization": "Bearer " + KEY}
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+    elif content_type:
+        headers["Content-Type"] = content_type
+    request = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            status, raw = response.status, response.read()
+    except urllib.error.HTTPError as error:
+        status, raw = error.code, error.read()
+    text = raw.decode("utf-8")
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        result = {"responseText": text}
+    return status, result
+
+status, result = send("/api/v1/factory?module=psychology&action=videoHits.create")
+print(status, result)  # 目录/业务结果，不含请求头
+
+# 单步 JSON 调用：先将替换占位符后的请求保存到文件，包含固定 requestId。
+# with open("step-create.json", encoding="utf-8") as file:
+#     status, result = send("/api/v1/factory", "POST", payload=json.load(file))
+# print(status, result)
+# 仅当本步成功且读回核对后，才执行依赖它的下一步。
+```
+
+## 一条图文的完整写入流程
+
+下面 `GENERATE_UUID_*`、`SOURCE_ID`、图片 UUID、视频 ID 和文案都需要替换为实际值。UUID 可使用 Python `str(uuid.uuid4())` 或 Node.js `crypto.randomUUID()` 生成，**先保存再发送**。编号是步骤编号，不是 revision。
+
+### 1. 创建原视频来源
+
+```json
+{
+  "module":"psychology",
+  "action":"videoHits.create",
+  "requestId":"GENERATE_UUID_CREATE",
+  "params":{"body":{
+    "externalId":"tiktok-REAL_VIDEO_ID",
+    "importSource":"gpt-dot",
+    "videoUrl":"https://www.tiktok.com/@REAL_ACCOUNT/video/REAL_VIDEO_ID",
+    "title":"实际原视频标题",
+    "caption":"实际原发布文案",
+    "script":"实际原视频完整文字",
+    "videoData":{}
+  }}
+}
+```
+
+成功返回 `{ "ok":true, "id":"vh-...", "revision":1 }`。记住 `id`；不要把 TikTok 视频 ID 当作此来源 ID。已存在的来源先核对所有权/导入来源和已有版本，复用真实 ID，不再次 create，也不覆盖原数据。
+
+### 2. 上传实际原图
+
+每张图片生成并保存独立的上传 UUID；图片请求不经过统一 JSON action。
+
+```http
+PUT https://factory.tiktokaitool.com/api/integrations/psychology/video-hits/assets/ORIGINAL_UPLOAD_UUID
+Authorization: Bearer <PROJECT_API_KEY>
+Content-Type: image/png
+
+<实际图片的二进制字节>
+```
+
+Python 示例，复用上面的 `send`：
+
+```python
+from pathlib import Path
+# upload_id 必须事先生成并保存；重试沿用它。
+upload_id = "REPLACE_WITH_SAVED_UPLOAD_UUID"
+status, result = send(
+    "/api/integrations/psychology/video-hits/assets/" + upload_id,
+    "PUT", binary=Path("original.png").read_bytes(), content_type="image/png"
+)
+print(status, result)
+```
+
+第一次成功通常是 HTTP 201，原编号同字节重试是 HTTP 200；返回 `assetId`。上传后 GET 同一地址，必须确认 `status:"active"`。PNG/JPEG/WebP，每张最多 8MiB，Content-Type 必须与实际文件一致。上传正文不是 JSON、base64 或 multipart/form-data。
+
+### 3. 绑定原图（version 为字符串 "0"）
+
+```json
+{
+  "module":"psychology","action":"videoHits.frames.write",
+  "requestId":"GENERATE_UUID_ORIGINAL_FRAMES",
+  "params":{"id":"SOURCE_ID","version":"0","body":{
+    "revision":1,
+    "frames":[{"index":1,"assetId":"ORIGINAL_UPLOAD_UUID","text":"原图实际画面文字","durationSeconds":3}]
+  }}
+}
+```
+
+这里 revision=1 仅适用于刚创建且无人修改的来源。成功后来源 revision 递增，后续读取实际返回值。多张原图逐张上传，再按帧号写入同一 version=0（每次最多100帧）。
+
+### 4. 新建一套二创文案（version 为字符串 "1"）
+
+```json
+{
+  "module":"psychology","action":"videoHits.versions.write",
+  "requestId":"GENERATE_UUID_VERSION",
+  "params":{"id":"SOURCE_ID","version":"1","body":{
+    "revision":0,
+    "inputMode":"frames",
+    "name":"二创版本 1",
+    "title":"实际二创标题",
+    "caption":"实际二创发布文案",
+    "script":"实际二创完整文字或配音文案",
+    "enabled":false
+  }}
+}
+```
+
+仅未创建的新版本使用 revision=0；成功返回该版本 revision=1。来源 revision 与二创版本 revision 是两个独立值，不能混用。已有版本必须先读取再决定是否编辑，不盲目复用编号1覆盖。
+
+### 5. 上传并绑定二创图
+
+使用新的 `REMIX_UPLOAD_UUID` 按步骤2上传真实二创图片，GET 确认 active。随后：
+
+```json
+{
+  "module":"psychology","action":"videoHits.frames.write",
+  "requestId":"GENERATE_UUID_REMIX_FRAMES",
+  "params":{"id":"SOURCE_ID","version":"1","body":{
+    "revision":1,
+    "frames":[{"index":1,"assetId":"REMIX_UPLOAD_UUID","text":"二创图实际画面文字","durationSeconds":3}]
+  }}
+}
+```
+
+原图与二创图分别上传，不用同一上传 UUID 存不同图片。对每张真实图片重复，帧号从1连续、原图与二创图对应。本次保持停用，后续经用户确认再启用。若目标是普通图文发布，每套二创准备1–15张图片。
+
+### 6. 读回并交付
+
+依次 POST 下列独立 JSON（读取不传 requestId）：
+
+```json
+{"module":"psychology","action":"videoHits.get","params":{"id":"SOURCE_ID"}}
+```
+
+```json
+{"module":"psychology","action":"videoHits.versions.get","params":{"id":"SOURCE_ID","version":"1"}}
+```
+
+```json
+{"module":"psychology","action":"videoHits.frames.list","params":{"id":"SOURCE_ID","version":"0","query":{"page":1}}}
+```
+
+```json
+{"module":"psychology","action":"videoHits.frames.list","params":{"id":"SOURCE_ID","version":"1","query":{"page":1}}}
+```
+
+核对 `source.importSource === "gpt-dot"`、标题/文案、二创 `inputMode === "frames"`、`enabled === false`、原图/二创帧号与 assetId；有后续页必须继续读。图片可通过同一 Bearer 请求 `GET /api/integrations/psychology/video-hits/assets/UPLOAD_UUID/file` 读取实际文件核对；不要把响应中的需登录页面预览链接当公开图片地址。
+
+最终回复：
+
+- 实际来源 ID、externalId、导入来源、二创版本编号；
+- 原图与二创图数量、保存后的 revision、启用状态；
+- 页面链接 `https://factory.tiktokaitool.com/psychology-video-hits/detail?id=SOURCE_ID&version=1`；
+- 每步成功状态或失败的 HTTP 状态/error/code/requestId；不包含密钥。
+
+## 失败处理与防重复
+
+| 情况 | 处理 |
 |---|---|
-| MCP 返回 isError / httpStatus | 查看 structuredContent 的 error/code；HTTP 200 的 MCP 外壳不表示写入成功 |
-| 401 | 重新连接或检查 REST 密钥配置，不修改任务编号 |
-| 403 / INSUFFICIENT_SCOPE | 检查模块权限或新增 OAuth 写入授权，不切换成题库工具 |
-| 409 revision 冲突 | 重新读取；核对并决定更新后，用新 requestId 提交新参数 |
-| 409 REQUEST_IN_PROGRESS、503 RESULT_UNKNOWN、丢失响应 | 用原 requestId 查询 requests_get，并读回来源/版本；不要换 UUID 盲目重发。processing 可能表示结果尚未核实，不是可丢弃的任务 |
-| 图片上传超时 | 用原 uploadId 调 assets_get；active 则复用，uploading/404 用同编号同字节重传；不同文件必须新 uploadId |
-| 附件对象/字符串转换失败 | 使用实际字节工具；没有文件读取能力则打开 prepare_image_upload，不反复猜测文件参数 |
-| 单条来源/版本失败 | 记录失败编号与原因，继续其他独立来源；依赖失败的分镜或版本不能假报完成 |
+| 无 HTTP/代码执行工具 | 明确尚未发送请求；这是客户端执行能力缺失，不是服务端拒绝 |
+| 401 | 检查 Bearer 密钥是否正确、启用；不要改原任务编号 |
+| 403 / 目录没有 videoHits | 检查密钥所属用户的管理员身份与心理学视频爆款模块权限；REST 不需要 OAuth scope |
+| 400 | 阅读 error，修正字段/类型；修改后的请求用新 requestId |
+| 409 revision 冲突 | 先 GET 最新数据，核对他人修改；需要新更新时使用最新 revision 和新 requestId |
+| 409 同编号不同参数 | 找回原请求体；同 requestId 只能重试同一操作、同一参数 |
+| 409 REQUEST_IN_PROGRESS / 503 RESULT_UNKNOWN / 网络断线 | 用原 requestId 查询 requests.get，并读回业务记录；不换 UUID 重发，不假定失败 |
+| 图片上传中断 | GET 原 uploadId 查状态，active 复用；uploading 或404可用原编号同字节重传；不同文件用新 UUID |
+| 410 图片已清理 | 原编号不可再用；需要重新导入时使用新上传 UUID |
+| 单条失败 | 停止依赖该步的写入，报告实际错误；不把部分成功说成全部成功 |
 
-`enabled:true` 使版本进入可选素材库，不立即发布。MCP **没有** render/publish/archive 工具；下文相关 REST 操作保留给另行授权的任务。MCP 当前图片上传不承载 95 MB 成片，成片继续使用下文原有 REST 二进制上传或页面上传，之后可用 MCP 绑定已有 `videoAssetId`。
+请求回执查询：
 
-页面流程：视频列表点击“查看二创”进入独立二创列表，按版本编号列出该视频的全部二创；点击“查看详情”进入原文案 / 二创文案与逐帧原图 / 二创图对照。支持直接打开、刷新和返回。点击图片或右下角放大镜可放大、缩小或查看原始尺寸；“修改原图 / 修改二创图”用于手动替换图片或修改该帧文字、时长，不会自动生成图片。
+```json
+{"module":"psychology","action":"requests.get","params":{"id":"ORIGINAL_REQUEST_UUID"}}
+```
 
-页面按版本的 inputMode 自动标记导入类型：video 显示“视频”，frames（含旧数据默认值）显示“图文”，表示传入图片和文案、后续可合成视频。来源列表显示各类型数量，二创子页面按类型与发布状态组合筛选；刷新和进入详情后返回保留类型筛选。已清理记录仍保留类型标签；已有 API 导入无需重新写入。
+检查 `state`、`status`、`result`；`state:"done"` 表示回执已保存，仍须检查其中业务 HTTP 状态和结果。processing/未知不得当作可以丢弃的旧请求。若返回404，先核对来源/版本和原请求是否真正到达，再决定用**原编号原参数**重试。
+
+以下为全部 API 字段与后续功能参考；本次试写止于上面的素材保存及读回。
 
 ## 调用入口
 
@@ -124,7 +290,7 @@ Content-Type: image/png
 
 支持PNG/JPEG/WebP，每张最多8MB。返回assetId。同一上传UUID只能写相同字节和类型，冲突返回409。私有预览按当前所有者权限读取，不对匿名用户开放。
 
-REST 统一 JSON 接口不接收图片二进制/base64（MCP 的专用 upload_bytes 工具支持实际文件编码），也不把 sandbox: 文件路径当图片链接。调用端需要读取真实文件后上传；不能读取时，可使用持久公开HTTPS域名图片链接。图片链接不允许本机、私网IP、凭据或自定义端口；下载时验证解析和重定向地址。
+REST 统一 JSON 接口不接收图片二进制/base64，也不把 sandbox: 文件路径当图片链接。调用端需要读取真实文件后上传；不能读取时，可使用持久公开HTTPS域名图片链接。图片链接不允许本机、私网IP、凭据或自定义端口；下载时验证解析和重定向地址。
 
 ## 逐帧写入
 
@@ -267,6 +433,43 @@ R2 文件清理先用事务检查所有引用并标记 deleting，阻止并发�
 列表每页 12 条，支持全选本页和跨页保留，单批最多 100 条；内容按所选账号轮流分配。图文与视频共用同一个版本防重身份，一个版本只提交发布一次，失败时重试原任务。官方确认成功满 24 小时后按现有规则清理二创素材与任务副本；共享原图继续保留。此入口使用已登录页面与现有账号权限，API 导入本身不会发布。
 
 
-## 连接器实现依据
 
-OAuth 工具权限与重新授权遵循 [OpenAI Docs：Authentication](https://developers.openai.com/plugins/build/auth)；附件字段遵循 [OpenAI Docs：File inputs](https://developers.openai.com/plugins/reference)。宿主能否提供附件或文件读取工具以实际环境为准；API 文档不会自动赋予客户端网络或文件访问能力。
+## 附录：已有 MCP 连接的兼容参考（直接 API 试写跳过）
+
+本次用户指定直接 HTTP API，执行以上 REST 流程即可；没有 MCP 工具不影响 REST。下面仅保留已有 OAuth 客户端的字段映射。
+
+### 工具与 REST 共用一套数据
+
+工厂管理员须具有“心理学视频爆款”模块权限。读取用 `factory.read`，素材写入额外用 `factory.video_hits.write`；每次调用都检查当前账号权限与连接是否撤销。题库写入 `factory.topics.write` 无法替代视频爆款权限。
+
+下表工具都接收与 REST 相同的 `params` 对象；写入时加同级 `requestId`。MCP 不传 `module/action`，工具名已选定操作。路径 id/version 均是字符串；版本 0 仅用于原图分镜。
+
+| REST action | MCP 工具 | 用途 |
+|---|---|---|
+| videoHits.list | psychology_videoHits_list | params.query 按页查询来源 |
+| videoHits.get | psychology_videoHits_get | params.id 查询来源和版本 |
+| videoHits.create | psychology_videoHits_create | params.body 创建来源 |
+| videoHits.update | psychology_videoHits_update | params.id/body 按 revision 编辑来源 |
+| videoHits.versions.get | psychology_videoHits_versions_get | params.id/version 查询版本 |
+| videoHits.versions.write | psychology_videoHits_versions_write | params.id/version/body 创建或编辑版本 |
+| videoHits.frames.list | psychology_videoHits_frames_list | params.id/version/query.page 查询分镜 |
+| videoHits.frames.write | psychology_videoHits_frames_write | params.id/version/body 写入分镜 |
+| videoHits.jobs | psychology_videoHits_jobs | params.id/version 查询已有任务 |
+| videoHits.cleanup | psychology_videoHits_cleanup | params:{} 查询清理状态 |
+| requests.get | psychology_videoHits_requests_get | MCP 用 {requestId:原UUID}；REST 用 params:{id:原UUID} |
+
+MCP 另外提供：
+
+- `psychology_videoHits_guide({})`：读取本文件，同时返回 writeAuthorized 和可用 action。
+- `psychology_videoHits_assets_upload_file({uploadId,image:{file_id,download_url,mime_type?,file_name?}})`：宿主提供的实际 PNG/JPEG/WebP 文件引用，最多 8 MB。不得编造文件 ID / URL。受控下载仅允许已支持的 ChatGPT 附件域名，跨域跳转也检查；临时链接过期时刷新同一附件再重试。
+- `psychology_videoHits_assets_upload_bytes({uploadId,contentType,imageBase64})`：代码客户端读取**实际图片文件**后编码为纯 base64，或由上传界面自动编码。最多 8 MB；不能要求模型凭空输出图片字节。不接收 data URL。
+- `psychology_videoHits_assets_get({uploadId})`：读取 active/uploading/deleting/deleted、assetId、摘要和大小。只有 active 可绑定。previewUrl 需要工厂登录，不能当持久公开 imageUrl。
+- `psychology_videoHits_prepare_image_upload({uploadId})`：宿主无法传附件或读取文件时，打开本地选图界面，选图后确认上传。返回 awaiting_image 尚未保存；上传后用 assets_get 核实 active。
+
+MCP 创建来源示例（调用 `psychology_videoHits_create` 的参数）：
+
+```json
+{"requestId":"GENERATE_A_UUID","params":{"body":{"externalId":"tiktok:REAL_VIDEO_ID","importSource":"gpt-dot","videoUrl":"https://www.tiktok.com/@REAL_ACCOUNT/video/REAL_VIDEO_ID","title":"来源标题","caption":"原发布文案","script":"原视频完整文案","videoData":{"playCount":12000}}}}
+```
+
+同一操作的 REST 参数只需加 `module:"psychology", action:"videoHits.create"`。两种入口共用所有权、revision、requestId 防重与回执，不能切换入口来绕过重复请求保护。
