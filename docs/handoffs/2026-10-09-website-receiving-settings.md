@@ -21,7 +21,10 @@ Keep receiver accounts and CTA configuration in Independent Website under a new 
 - Full declared factory suite passed all 1,467 tests, including publishing/queues, permissions and existing website views. All provider calls mocked; no live publishing. UI manifest and git diff whitespace checks passed.
 
 ## Unfinished work
-Release verification pending. User still needs to configure their receiver/publisher accounts and enable the imported-photo mode.
+User still needs to configure their receiver/publisher accounts and enable the imported-photo mode. No unresolved implementation or release checks remain.
 
 ## Recommended next step
 Configure receivers and CTA at /psychology-website?tab=receiving, then choose publishers and enable imported-photo operations.
+
+## Release evidence
+Runtime commit 0edd906a4d6c2c4140015e76e818b81b59cfbfc2 was committed and pushed to GitHub main before npm run deploy from a clean main worktree with HEAD == origin/main. No new migrations. Worker 61d6c4f5-0c1b-414c-bf29-27ffa9c674b8 deployed. Live receiving JS/CSS, website JS, imported-mode JS and canonical public API guide returned HTTP 200 and matched local SHA-256. Receiving API returned 401 without login. Production checks were read-only; no account settings or publishing jobs were changed.
