@@ -325,3 +325,9 @@ The single public video-hit guide is generated from `docs/psychology-video-hits-
 - psychology-permissions.js supplies the active-role/module predicate to psychology APIs and background gates. Ownership and official account-group scoping remain in their existing services. Automatic operations that generate publication require both autopilot and publish grants.
 - Copy source management and legacy production aliases share their existing merged pages. Independent website/style pages use their own member grants; child template grants stay navigable without granting the workbench parent.
 - Shared credentials, project API keys and account administration remain administrator-only. Member template preferences use a per-user KV entry and never change shared provider keys. Existing REST/MCP admission and import compatibility are unchanged.
+
+## Imported-photo automatic operations
+
+- psychology_imported_photo_settings owns opt-in per-operator publishers, verified receiver handles, balanced routes, revision and fenced scheduling lease. Migration 0086 also stores durable global account/time allocations and short-lived invalid-version retry exclusions.
+- The minute cron dispatches kind=imported-photos messages on the existing isolated scheduling queue. Five accepted posts per delivery, within a 60-minute preparation window and at least ten minutes before the configured Beijing instant; missed slots never backfill. Source allocations, immutable captions, photo jobs, asset pins and account/time identities commit atomically in the existing selected-photo transaction.
+- This lane uses saved 1–15 images without generation/rendering. Imported videos and legacy pool/task-group controllers are independent. Configuration changes fence new allocation only; existing frozen jobs retain normal queue retries and original-topic-preserving cleanup.

@@ -28,7 +28,8 @@ async function action(status,button,fn){
 }
 const lock=(id,value)=>{$(id).dataset.locked=String(value);$(id).disabled=value;};
 const renderCurrent=v=>v.renderRevision===v.revision&&v.renderSourceRevision===detail.source.revision;
-const versionState=v=>v.publishState==='published'?(v.cleanedAt?'已发布 · 内容已清理':'已发布 · 待清理'):v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成视频',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
+const photoState=v=>v.photoReady===false?'图文待补全':!v.enabled?'图文待启用':'可发布图文';
+const versionState=v=>v.publishState==='published'?(v.cleanedAt?'已发布 · 内容已清理':'已发布 · 待清理'):v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):photoState(v)+(renderCurrent(v)&&v.renderState?' · '+({queued:'已提交合成',running:'合成中',done:'已合成视频',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||''):'');
 const current=()=>detail?.versions.find(v=>v.version===n),stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
 const metric=x=>x==null?'—':Number(x).toLocaleString('zh-CN');
 const typeName=mode=>mode==='video'?'视频':'图文';
@@ -85,11 +86,14 @@ function renderRecreations(){
  $('recreations').innerHTML=rows.map(v=>'<tr data-version-row="'+v.version+'"><td><span class="vh-version-number">'+v.version+'</span></td><td><strong>'+escape(v.name)+'</strong><small>'+escape(v.title)+'</small><p class="vh-script-excerpt">'+escape(v.cleanedAt?'二创内容已清理；保留发布记录':v.script?.replace(/\s+/g,' ').slice(0,90)||'尚未填写二创文案')+(v.script?.length>90?'…':'')+'</p></td><td data-label="二创类型 / 素材">'+typeBadge(v.inputMode)+'<small>'+(v.cleanedAt?'素材引用已清理':v.inputMode==='video'?'直接传入成片 · '+(v.videoAssetId?'已上传':'待上传'):'图片和文案 · '+v.frameCount+' / '+detail.frameCount+' 帧')+'</small>'+'</td><td><span class="vh-badge '+(v.enabled?'is-enabled':'')+'">'+versionState(v)+'</span></td><td><small>'+stamp(v.publishedAt||v.updatedAt)+'</small><small>'+(v.publishedAt?'发布确认时间':'更新时间')+' · 北京时间</small></td><td><a class="vh-link-button" data-detail="'+v.version+'" href="'+escape(detailUrl(detail.source.id,v.version))+'">查看详情</a></td></tr>').join('')||'<tr><td colspan="6"><p class="vh-note">'+(detail.versions.length?'当前筛选暂无版本。':'尚无二创版本。点击“新建二创版本”或通过 API 写入，创建后将按版本编号显示在这里。')+'</p></td></tr>';
 }
 async function loadVersion(){
- const v=current();$('versionType').textContent=typeName(v.inputMode);$('versionType').className='vh-badge vh-type-'+v.inputMode;$('workspace').hidden=false;$('pageLead').textContent=v.cleanedAt?'查看该版本的发布记录和自动清理结果。':v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'完整配音文案';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
+ const v=current();$('versionType').textContent=typeName(v.inputMode);$('versionType').className='vh-badge vh-type-'+v.inputMode;$('workspace').hidden=false;$('pageLead').textContent=v.cleanedAt?'查看该版本的发布记录和自动清理结果。':v.inputMode==='video'?'对照查看原文案与二创文案，预览成片并提交发布。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';$('versionScriptLabel').textContent=v.inputMode==='video'?'视频文案（选填）':'配音文案（仅合成视频需要）';$('editVersion').textContent=v.inputMode==='video'?'编辑版本与成片':'编辑二创文案';
  $('versionHeading').textContent='版本 '+n+' · '+v.name;$('versionTitle').textContent=v.title;$('versionCaption').textContent=v.cleanedAt?'已按发布后保留期清理':v.caption||'尚未填写发布文案';$('versionScript').textContent=v.cleanedAt?'已按发布后保留期清理':v.script||(v.inputMode==='video'?'成片自带配音，无需填写合成文案':'尚未填写二创配音文案');
  $('originalTitle').textContent=detail.source.title;$('originalCaption').textContent=detail.source.caption||(detail.source.originalsCleanedAt?'历史原文案已清理，可重新补充':'尚未填写发布文案');$('originalScript').textContent=detail.source.script||(detail.source.originalsCleanedAt?'历史原文案已清理，可重新补充':'尚未填写原文');
  $('versionStatus').textContent=versionState(v)+' · '+(v.inputMode==='video'?'直接传入成片':v.frameCount+' / '+detail.frameCount+' 帧');
  $('toggleVersion').textContent=v.enabled?'停用版本':'启用版本';lock('toggleVersion',Boolean(v.publishItemId));lock('editVersion',Boolean(v.publishItemId));
+ $('publishPhotoVersion').hidden=v.inputMode==='video';$('publishPhotoVersion').setAttribute('aria-disabled',String(!v.enabled||!v.photoReady||Boolean(v.publishItemId)||Boolean(detail.source.archivedAt)));
+ $('publishPhotoVersion').href='/psychology-publish?create=normal&source=video-hit-photos';
+ $('photoPublishHint').hidden=v.inputMode==='video';$('photoPublishHint').textContent=v.photoReady?'图文可直接发布，无需配音或合成视频。启用后也可由自动运营选取。':v.photoReason||'补全 1–15 张二创图片后，可直接发布图文。';
  $('renderVersion').hidden=v.inputMode==='video';$('publishVersion').textContent=v.inputMode==='video'||renderCurrent(v)&&v.renderState==='done'?'发布成片':'合成并发布';
  lock('renderVersion',!v.enabled||Boolean(v.publishItemId)||renderCurrent(v)&&['queued','running','done'].includes(v.renderState));lock('publishVersion',!v.enabled||Boolean(v.publishItemId)||v.inputMode!=='video'&&['queued','running'].includes(v.renderState));
  previewData=null;renderVideoPreview();$('framePanel').hidden=v.inputMode==='video'||Boolean(v.cleanedAt);

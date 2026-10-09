@@ -216,4 +216,4 @@ export async function processScheduleMessage(env,message,options={}){
   }else message.retry({delaySeconds});
  }else message.ack();
 }
-export async function consumeScheduleWork(batch,env){for(const message of batch.messages)await processScheduleMessage(env,message);}
+export async function consumeScheduleWork(batch,env){for(const message of batch.messages){if(message.body?.kind==='imported-photos')await (await import('./psychology-imported-photos.js')).consumeImportedPhotoMessage(env,message);else await processScheduleMessage(env,message);}}

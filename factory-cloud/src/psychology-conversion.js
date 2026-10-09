@@ -24,7 +24,7 @@ async function currentUser(db,user,publish=false,module='psychology-autopilot'){
  if(!(hasPsychologyModule(fresh,module)||(module==='psychology-website'&&fresh?.role==='admin'&&hasPsychologyModule(fresh,'psychology-autopilot')))||(publish&&!fresh.sidebarModules.includes('psychology-publish')))fail('没有转化运营权限。',403);
  return fresh;
 }
-async function accountScope(db,user,directory){
+export async function accountScope(db,user,directory){
  const raw=await db.prepare("SELECT value_json FROM factory_kv WHERE key='official-account-groups'").first();
  const store=ensureModuleProjects(parse(raw?.value_json)),project=findProjectForModule(store,'psychology');
  if(!project)fail('没有心理学项目。',403);

@@ -29,3 +29,5 @@
 .video-hits-page .vh-record-count{font-size:13px;color:#6c7d93;white-space:nowrap}.video-hits-page #pageInfo{white-space:nowrap}@media(max-width:650px){.video-hits-page .vh-record-count{flex-basis:100%;text-align:right}}
 
 .video-hits-page .vh-import-filter{width:150px;max-width:100%}.video-hits-page .vh-import-badge{white-space:normal;overflow-wrap:anywhere;max-width:170px}
+
+#publishPhotoVersion[aria-disabled="true"]{pointer-events:none;opacity:.5}

@@ -572,6 +572,10 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
   if(request.method==='POST'&&url.pathname===BASE&&!apiOptions.external&&!hasPsychologyModule(user,'psychology-publish'))fail('开始自动运营还需要心理学自动发布权限。',403);
   const db = env.DB;
+  if(url.pathname===BASE+'/imported-photos'){
+    if(apiOptions.external)fail('导入图文自动运营请在页面配置。',403);
+    return (await import('./psychology-imported-photos.js')).handleImportedPhotos(request,env,url,session);
+  }
   if(url.pathname===BASE+'/scheduling' && request.method==='GET')return json(await (await import('./psychology-schedule-health.js')).readScheduleHealth(env,user,url));
   if(url.pathname===BASE+'/scheduling/recover' && request.method==='POST'){
     const scheduler=await import('./psychology-durable-scheduling.js');

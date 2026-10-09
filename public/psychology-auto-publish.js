@@ -430,7 +430,7 @@ async function loadCreation(){
 }
 const creationMode=new URLSearchParams(globalThis.location.search).get('create');
 if(creationMode)setInterval(()=>{if(!document.hidden)updateScheduleHint();},30000);
-if(creationMode==='one')await openOnePage();else if(creationMode==='normal')await openNormalPage();else try{await loadBatches();}catch(e){message(e.message,true);}
+if(creationMode==='one')await openOnePage();else if(creationMode==='normal'){if(new URLSearchParams(location.search).get('source')==='video-hit-photos'){state.mediaType='photo';document.querySelectorAll('[data-media]').forEach(b=>{const active=b.dataset.media==='photo';b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});}await openNormalPage();if(new URLSearchParams(location.search).get('source')==='video-hit-photos'){$('#photoSource').value='video-hits';$('#photoSource').dispatchEvent(new Event('change'));}}else try{await loadBatches();}catch(e){message(e.message,true);}
 setInterval(()=>{if(!creationMode&&!document.hidden)loadBatches().catch(e=>message(e.message,true));},15000);
 
 async function submitSelectedVideos(){
