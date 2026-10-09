@@ -22,7 +22,10 @@ Hosted sidebar/auth, shared psychology permission predicate, psychology API/back
 - All network providers in tests are fixtures; no live publishing calls.
 
 ## Unfinished work
-Implementation, latest-main integration and regression verification are complete. Production deployment and published-asset verification are the remaining release steps.
+Implementation, latest-main integration, regression verification and production deployment are complete. No remaining implementation work.
 
 ## Recommended next step
 After release, refresh Account Management, edit a member, select psychology features and account groups, then save. Do not automatically grant features to existing members.
+
+## Release evidence
+Runtime commit 945a865 was pushed to GitHub main, then deployed with npm run deploy from factory-cloud after the guard verified a clean worktree and exact HEAD == origin/main. No schema migrations were pending. Cloudflare version 75bbf842-468b-4fe8-8fcd-2c95806a16ad deployed successfully with all existing cron/queue/workflow bindings. Live accounts.js, access.js and the retained psychology-auto-publish.js each returned HTTP 200 and matched the released files. Production account grants were not modified during verification.
