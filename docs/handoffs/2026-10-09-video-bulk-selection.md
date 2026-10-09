@@ -19,8 +19,11 @@ public/psychology-auto-publish.html, psychology-auto-publish.js, psychology-vide
 - Existing fixture also verifies manual publishing/account/project behavior and decoded lazy video covers before playback, bounded concurrency and reuse. No real publishing APIs called.
 - Desktop 1440px and mobile 390px screenshots visually inspected under primary tmp/video-bulk-select-captures, with no mobile horizontal overflow.
 
+## Release evidence
+Commit 240d22e8d081c0bc9361b84f2fa7df4450ea5235 was pushed to GitHub main before the clean release clone deployed through npm run deploy, with HEAD exactly matching origin/main. Cloudflare version 3782b72f-07df-4306-a4ed-16e4542d53a8. Production auto-publish JS, picker JS and CSS SHA256 matched the release. Anonymous inventory and private video reads returned 401. Existing video-transfer PID 100756 retained its original 2026-10-08 17:13:34 start time.
+
 ## Unfinished work
-Code and verification complete. Commit, push, guarded production deploy and read-only live verification pending.
+Implementation, testing, deployment and read-only production verification complete. No unfinished work.
 
 ## Recommended next step
-Ship through the clean main release clone with npm run deploy, then confirm live asset hashes and private video authorization. Preserve existing workers and paused daily planning.
+Refresh the manual TikTok One publishing page and use the new page-level selection controls. Existing workers and paused daily planning remain unchanged.
