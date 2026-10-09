@@ -21,7 +21,9 @@ Show account totals beside every group on the TikTok authorized-account manageme
 - Asset manifest regenerated; git diff --check passed.
 
 # Unfinished work
-- Commit/push and clean-main production deployment to follow; release receipt recorded in the task response.
+- None. Runtime b5799fd was pushed to GitHub main before deployment from a clean checkout with exact HEAD == origin/main.
+- npm run deploy released Worker 1ff262aa-9cae-458f-8558-d87509ccb40a. No migrations were pending. The first attempt hit a transient Cloudflare network error; retry succeeded.
+- Live tiktok-connections.js returned HTTP 200 and its SHA-256 matched the committed source: 1f79d9d2e0d27a290e048c4bc9e90626db3bdbef0263fa76df8cfa214a2a5e23.
 
 # Recommended next step
 Refresh /tiktok-connections and open the group filter or move-target selector to see each group's current account count.
