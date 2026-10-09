@@ -1,5 +1,9 @@
 # Current State
 
+- Factory UI is PC-only by explicit user preference (2026-10-09). New factory features are designed and accepted on desktop; no new mobile adaptation is required. Independent-site design is outside this preference.
+
+- Psychology photo publishing now offers eight audition-approved music presets with an unchecked-by-default pool toggle, optional per-track choices and on-demand previews. Manual batch selections are isolated; imported-photo automation saves an explicit owner-scoped choice. Every new photo task draws independently and freezes the music ID across retries. Existing jobs and legacy planning settings remain untouched. See docs/handoffs/2026-10-09-photo-music-pool.md.
+
 - Psychology manual photo creation now offers an unchecked @承接账号 option across selected Video Hits albums and generated-photo sources. Each item randomly chooses another saved eligible receiver, freezes the receiver/CTA before queueing, and appends CTA to the publishing caption only. Task details expose the assigned receiver and final caption. Existing automatic receiver routes remain separate. See docs/handoffs/2026-10-09-manual-photo-receivers.md.
 
 - Homepage short links now use stable random five-character root aliases. Migration 0088 upgrades existing links without changing their canonical identity; legacy /go/ links and unified account funnel attribution remain valid. See docs/handoffs/2026-10-09-compact-homepage-links.md.

@@ -124,3 +124,24 @@ test('website receiving endpoint uses its own grant and cannot enable/pause or e
  assert.equal((await call('PATCH',{revision:1,section:'receivers',receivers:f.config.receivers},'https://other.test')).status,403);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();assert.equal((await call()).status,403);
 });
+
+
+test('imported music defaults off, validates selections, preserves section isolation and freezes random choices',async t=>{
+ const f=await setup(t);assert.deepEqual((await f.call()).data.config.musicIds,[]);
+ for(const musicIds of [null,'123',[123],['bad'],Array(101).fill('123')])assert.equal((await f.call('PATCH',{...f.config,musicIds})).status,400);
+ assert.equal((await f.call('PATCH',{...f.config,musicIds:['123','456','123']})).status,200);
+ assert.deepEqual((await f.call()).data.config.musicIds,['123','456']);
+ assert.equal((await f.call('PATCH',{revision:1,section:'cta',cta:{mention:'Test via {account}.',self:'Test via my bio.'},musicIds:[]})).status,400);
+ assert.equal((await f.call('PATCH',{revision:1,section:'cta',cta:{mention:'Test via {account}.',self:'Test via my bio.'}})).status,200);
+ assert.deepEqual((await f.call()).data.config.musicIds,['123','456']);
+ for(let i=0;i<4;i++)await f.ready(1);
+ t.mock.method(Math,'random',()=>0.99);assert.equal((await f.run()).created,2);
+ const read=()=>f.sqlite.prepare('SELECT id,payload_json FROM factory_jobs ORDER BY id').all(),before=read();assert.ok(before.every(j=>JSON.parse(j.payload_json).psychologyAutomation.musicSoundId==='456'));
+ // A stale page omitting music does not clear an explicitly saved setting.
+ assert.equal((await f.call('PATCH',{revision:2,section:'publishing',enabled:true,connectionIds:['a','b'],isAiGenerated:true})).status,200);
+ assert.deepEqual((await f.call()).data.config.musicIds,['123','456']);
+ assert.equal((await f.call('PATCH',{revision:3,section:'publishing',enabled:true,connectionIds:['a','b'],isAiGenerated:true,musicIds:[]})).status,200);
+ assert.equal((await f.run()).created,0);assert.deepEqual(read(),before);
+ assert.equal((await f.run(now+3*3600000)).created,2);const prior=new Set(before.map(j=>j.id));assert.ok(read().filter(j=>!prior.has(j.id)).every(j=>JSON.parse(j.payload_json).psychologyAutomation.musicSoundId===''));
+ assert.equal(f.requests.length,0);
+});

@@ -1,3 +1,4 @@
+import {drawPhotoMusic} from '../../scripts/psychology-photo-music-policy.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
 import {photoReceiverPool,requirePhotoReceivers,drawPhotoReceiver,applyPhotoReceiverCaption,photoReceiverGuard,assertPhotoReceiverAccess} from './psychology-photo-receivers.js';
 import {createHitPhotoBatch} from './psychology-video-hit-photos.js';
@@ -31,9 +32,7 @@ import { publishOutcome } from '../../scripts/psychology-operations.js';
 import { mergeAndStorePublishRecords } from './publish-records-store.js';
 import { signalDesk } from './signal-desk.js';
 import { json, errorJson, readJson, sha256Hex } from './http.js';
-import { kvGet, kvSet } from './kv.js';
 
-const MUSIC_POOL_KEY = 'psychology-auto-music-pool';
 const SOURCE_PAGE = 20;
 
 import { assertTopicBankUser, topicCounts, selectTopicSources, topicUsageStatement } from './psychology-topic-bank.js';
@@ -307,7 +306,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   if(url.pathname===BASE+'/photo-receivers'&&request.method==='GET')return json(await photoReceiverPool(env,user));
   if (url.pathname === BASE + '/options' && request.method === 'GET') {
     const counts = await env.DB.prepare('SELECT media_type, COUNT(*) AS total FROM psychology_peer_hits GROUP BY media_type').all();
-    const musicPool = await kvGet(env.DB, MUSIC_POOL_KEY, []);
+    const musicPool = []; // Old pages must not preselect a prior batch's music.
     const libraryCounts=await env.DB.prepare("SELECT media_type,COUNT(*) total FROM psychology_copy_library WHERE status='done' GROUP BY media_type").all();
     const rewrites=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE owner=? AND enabled=1').bind(user.username).first();
     return json({ canUseVideoHits:(user.sidebarModules||[]).includes('psychology-video-hits'),libraryCounts:Object.fromEntries(libraryCounts.results.map(r=>[r.media_type,r.total])), libraryRewrites:Number(rewrites?.n||0), topicCounts: await topicCounts(env.DB), canUseTopics: (user.sidebarModules || []).includes('psychology-topic-bank'), templates: AUTO_TEMPLATES, counts: Object.fromEntries(counts.results.map(r => [r.media_type, r.total])), musicPool });
@@ -545,7 +544,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const id = batchId + '-' + String(index).padStart(3, '0');
     // Music is drawn once at creation and frozen inside the job payload, so
     // retries of the same item republish with the same song.
-    const musicSoundId = config.musicIds.length ? config.musicIds[Math.floor(Math.random() * config.musicIds.length)] : '';
+    const musicSoundId = drawPhotoMusic(config.musicIds);
     const groupId=batchId+'-group-'+Math.floor(index/PSYCHOLOGY_GROUP_SIZE);
     const account = scoped.accounts.find(a => String(a.connectionId || a.id) === entry.connectionId) || {};
     const accountSnapshot = { connectionId: entry.connectionId, name: account.displayName || account.username || '',
@@ -606,8 +605,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     }
     if (winner.config_json !== JSON.stringify(config)) fail('该提交编号已用于其他配置。',409);
   }
-  // Remember the submitted music pool so the page pre-fills it next time.
-  if (config.mediaType === 'photo') await kvSet(env.DB, MUSIC_POOL_KEY, config.musicIds);
+  // Each batch owns its music selection; do not save it as a global default.
   await dispatchPhotoBatch(env, batchId);
   return json({ accepted: true, batchId, count: selected.length,...(matchingSkipped.length?{skipped:matchingSkipped}:{}) }, 202);
 }

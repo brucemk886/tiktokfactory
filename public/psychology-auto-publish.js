@@ -1,3 +1,4 @@
+import {mountPhotoMusic} from './psychology-photo-music.js';
 import {mountPhotoReceivers} from './psychology-photo-receivers.js';
 import {publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError} from './psychology-publish-time.js';
 import {mountHitPhotoPicker} from './psychology-hit-photo-picker.js';
@@ -19,11 +20,12 @@ const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.se
 const picker=mountPsychologyVideoPicker({api,isBusy:()=>state.busy,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),changed:()=>{resetAccountInput();summary();}});
 const photoPicker=mountHitPhotoPicker({api,isBusy:()=>state.busy,changed:()=>{$('#count').value=photoPicker.refs().length;resetAccountInput();summary();}});
 const photoReceivers=mountPhotoReceivers({api,isBusy:()=>state.busy,changed:()=>{resetAccountInput();summary();}});
+const photoMusic=mountPhotoMusic($('#musicPoolField'),{isBusy:()=>state.busy,changed:()=>{resetAccountInput();summary();}});
 const fixedHitVideo=()=>Boolean(state.readyVideo)&&state.mediaType==='video'&&sourceType()==='video-hits';
 const hitPhotos=()=>state.mediaType==='photo'&&sourceType()==='video-hits';
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
-function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
+function musicPool() { return photoMusic.ids(); }
 function message(text,error=false,showToast=true) { $('#message').textContent=text; $('#message').classList.toggle('error',error);$('#queueMessage').textContent=text;$('#queueMessage').classList.toggle('error',error);if(error&&showToast)globalThis.LFUI?.toast(text,true); }
 function renderTemplates() {
   $('#template').innerHTML=(state.templates[state.mediaType]||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
@@ -35,6 +37,7 @@ function renderTemplates() {
 
 function sourceType(){return state.mediaType==='photo'?($('#photoSource').value||'library'):$('#sourceType').value==='video-hits'?'video-hits':'topic-bank';}
 function renderSources(){
+  $('#musicPoolField').hidden=state.mediaType!=='photo'||picker.active;
   one.sync();photoReceivers.sync(state.mediaType==='photo'&&!picker.active);
   if(picker.active){$('#oneEnabled').checked=true;$('#oneEnabled').disabled=true;}
   $('#sourceTypeField').hidden=state.mediaType!=='video';
@@ -49,7 +52,7 @@ function renderSources(){
   if(hitPhotos()){$('#count').readOnly=true;$('#count').value=photoPicker.refs().length;}else if(fixedHitVideo()){$('#count').readOnly=true;$('#count').value=1;}else if($('#count').readOnly){$('#count').readOnly=false;$('#count').value=3;}
   $('#selection').closest('label').hidden=hitPhotos()||fixedHitVideo();$('#query').closest('label').hidden=hitPhotos()||fixedHitVideo();
   $('#readyFixedVideo').hidden=!fixedHitVideo();$('#readyFixedVideo').innerHTML=fixedHitVideo()?'<h3>已选择待发布视频</h3><video controls playsinline preload="metadata" src="'+esc(state.readyVideo.previewUrl)+'" style="width:100%;max-height:300px"></video><strong>'+esc(state.readyVideo.title)+'</strong><p>'+esc(state.readyVideo.caption)+'</p><a href="/psychology-video-hits">返回选择其他素材 →</a>':'';
-  $('#photoOptions summary small').textContent=hitPhotos()?'配乐设置':'20套样式、配乐';$('#styleMode').closest('label').hidden=hitPhotos();$('#styleId').closest('label').hidden=hitPhotos();
+  $('#photoOptions summary small').textContent=hitPhotos()?'其他设置':'20套样式';$('#styleMode').closest('label').hidden=hitPhotos();$('#styleId').closest('label').hidden=hitPhotos();
   $('#template').disabled=hits||picker.active;
   $('#countLabel').textContent=hits?'发布总条数':'生成总条数';
   $('#submitBatch').textContent=picker.active?'发布所选视频':hitPhotos()?'确认发布所选图文':fixedHitVideo()?'确认发布此视频':hits?'确认抽取并发布':'创建并自动发布';
@@ -189,6 +192,7 @@ function summary() {
   const ids=selected(), count=Number($('#count').value)||0;
   $('#summary').textContent=ids.length ? `本批${hitPhotos()||fixedHitVideo()?'发布已选':sourceType()==='video-hits'?'抽取成片':'生成'} ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
+  if(state.mediaType==='photo')$('#summary').textContent+=musicPool().length?' 配乐：从所选 '+musicPool().length+' 首音乐随机抽取。':' 配乐：TikTok 推荐。';
   if(photoReceivers.enabled())$('#summary').textContent+=' 每条图文随机 @ 一个其他承接账号，追加已保存的引导文案。';
 }
 function itemState(item){
@@ -428,7 +432,7 @@ async function loadCreation(){
    state.accountsLoaded&&state.accountsMedia===state.mediaType?Promise.resolve():loadAccounts(),
    state.optionsLoaded?Promise.resolve():(async()=>{
     const data=await api('/api/psychology-auto-publish/options');Object.assign(state,{templates:data.templates,counts:data.counts,libraryCounts:data.libraryCounts,libraryRewrites:data.libraryRewrites,topicCounts:data.topicCounts,canUseVideoHits:data.canUseVideoHits,canUseTopics:data.canUseTopics});
-    if($('#musicIds')&&Array.isArray(data.musicPool))$('#musicIds').value=data.musicPool.join('\n');
+    // New manual batches never apply a previous batch's saved music selection.
     state.optionsLoaded=true;renderTemplates();renderBatches();
    })(),
   ]);

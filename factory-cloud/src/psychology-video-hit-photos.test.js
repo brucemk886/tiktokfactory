@@ -77,7 +77,7 @@ test('confirmed publication plus 24h cleans frozen photo copies and private file
 });
 test('15-image album and another version share one group, frozen order and per-account schedule',async t=>{
  const f=await setup(t),first=await f.ready(15,{privateImages:true}),second=await f.ready(1,{privateImages:true});const body=photoInput([first,second],{connectionIds:['a','b'],staggerSeconds:60,musicIds:['123','456']});await f.call('POST',body);const jobs=f.sqlite.prepare("SELECT * FROM factory_jobs ORDER BY id").all();for(const j of jobs)f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='cloud:test' WHERE id=?").run(j.id);
- const waiting=await runCloudPhoto(f.env,{...jobs[0],status:'running',worker_id:'cloud:test'});assert.equal(waiting.groupReady,true);assert.equal(f.requests.length,0);await runCloudPhoto(f.env,{...jobs[1],status:'running',worker_id:'cloud:test'});assert.equal(f.requests.length,1);const items=f.requests[0].items;assert.equal(items[0].photoAssetKeys.length,15);assert.equal(items[1].photoAssetKeys.length,1);assert.deepEqual(items.map(i=>i.connectionId),['a','b']);assert.equal(items[1].scheduleAt-items[0].scheduleAt,60000);assert.deepEqual(items.map(i=>i.postInfo.musicSoundId),['123','456']);assert.equal(f.instances.size,0);
+ const waiting=await runCloudPhoto(f.env,{...jobs[0],status:'running',worker_id:'cloud:test'});assert.equal(waiting.groupReady,true);assert.equal(f.requests.length,0);await runCloudPhoto(f.env,{...jobs[1],status:'running',worker_id:'cloud:test'});assert.equal(f.requests.length,1);const items=f.requests[0].items;assert.equal(items[0].photoAssetKeys.length,15);assert.equal(items[1].photoAssetKeys.length,1);assert.deepEqual(items.map(i=>i.connectionId),['a','b']);assert.equal(items[1].scheduleAt-items[0].scheduleAt,60000);assert.deepEqual(items.map(i=>i.postInfo.musicSoundId),jobs.map(j=>JSON.parse(j.payload_json).psychologyAutomation.musicSoundId));assert.ok(items.every(i=>['123','456'].includes(i.postInfo.musicSoundId)));assert.equal(f.instances.size,0);
 });
 test('already frozen 35-image jobs remain publishable after new admission is capped at 15',async t=>{
  const f=await setup(t),ref=await f.ready(15,{privateImages:true});await f.call('POST',photoInput([ref]));const job=f.claim(),payload=JSON.parse(job.payload_json);payload.pages=Array.from({length:35},(_,i)=>({...payload.pages[i%15],index:i+1}));f.sqlite.prepare('UPDATE factory_jobs SET payload_json=? WHERE id=?').run(JSON.stringify(payload),job.id);await runCloudPhoto(f.env,f.job());assert.equal(f.requests.length,1);assert.equal(f.requests[0].items[0].photoAssetKeys.length,35);
@@ -97,4 +97,15 @@ test('manual receiving CTA reaches the official photo request intact and grouped
  await f.call('POST',photoInput([ref],{mentionReceiver:true,isAiGenerated:false}));const job=f.claim(),frozen=JSON.parse(job.payload_json).plan.caption;
  await runCloudPhoto(f.env,job);assert.equal(f.requests.length,1);assert.equal(f.requests[0].items[0].postInfo.caption,frozen);assert.match(frozen,/Saved caption with #psychology\n\n.*\nVisit @beta/);assert.equal(f.requests[0].items[0].postInfo.isAiGenerated,false);
  await runCloudPhoto(f.env,job);assert.equal(f.requests.length,1);assert.equal(f.uploads.length,2);
+});
+
+
+test('photo jobs draw independently instead of cycling the pool; replay freezes each draw',async t=>{
+ const f=await setup(t),refs=[await f.ready(1),await f.ready(1)],body=photoInput(refs,{musicIds:['123','456']});
+ t.mock.method(Math,'random',()=>0.99);
+ assert.equal((await f.call('POST',body)).status,202);
+ const read=()=>f.sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all();const before=read();
+ assert.deepEqual(before.map(j=>JSON.parse(j.payload_json).psychologyAutomation.musicSoundId),['456','456']);
+ Math.random.mock.restore();t.mock.method(Math,'random',()=>{throw Error('replay must not draw');});
+ assert.equal((await(await f.call('POST',body)).json()).duplicate,true);assert.deepEqual(read(),before);assert.equal(f.requests.length,0);
 });

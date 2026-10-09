@@ -182,11 +182,12 @@ test('photo batches keep original copy unless rewrite is explicitly enabled',asy
   assert.equal(all.filter(value=>value===false).length,2);
   assert.equal(all.filter(value=>value===true).length,2);
 });
-test('music pool is saved as reusable config and posts without a pool keep auto music',async t=>{
-  const {call,sqlite}=await fixture(t);
+test('music is opt-in per batch and prior selections never become new defaults',async t=>{
+  const {call,sqlite,env}=await fixture(t);
+  await kvSet(env.DB,'psychology-auto-music-pool',['999']);
   const page=fs.readFileSync(new URL('../../public/psychology-auto-publish.html',import.meta.url),'utf8');
-  assert.match(page,/id="musicIds"/);
-  // Rewrite/music live in a collapsible panel that starts hidden and collapsed.
+  assert.match(page,/id="musicPoolField"/);
+  // Optional style settings stay collapsed; the separate music toggle starts empty.
   assert.match(page,/<details[^>]*id="photoOptions"[^>]*hidden>/);
   assert.doesNotMatch(page,/<details[^>]*id="photoOptions"[^>]*open/);
   await call('POST',input({mediaType:'photo',template:'photo-original',count:2}));
@@ -197,7 +198,8 @@ test('music pool is saved as reusable config and posts without a pool keep auto 
   const pooled=sqlite.prepare("SELECT payload_json FROM factory_jobs WHERE json_extract(payload_json,'$.psychologyAutomation.musicSoundId') IS NOT NULL").all();
   assert.equal(pooled.length,2);
   assert.ok(pooled.every(row=>['111','222','333'].includes(JSON.parse(row.payload_json).psychologyAutomation.musicSoundId)));
-  assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,['111','222','333']);
+  assert.deepEqual((await (await call('GET',undefined,'/api/psychology-auto-publish/options')).json()).musicPool,[]);
+  assert.equal(sqlite.prepare("SELECT value_json FROM factory_kv WHERE key='psychology-auto-music-pool'").get().value_json,'["999"]');
 });
 
 test('psychology module pages share one chinese page shell', () => {

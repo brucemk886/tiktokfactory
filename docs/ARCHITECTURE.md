@@ -349,3 +349,11 @@ The single public video-hit guide is generated from `docs/psychology-video-hits-
 
 - Independent Website → 承接设置 uses /api/psychology-website/receiving with its own fresh module/account grants. Receiver and CTA patches preserve publisher selection and enabled state; publication controls still require autopilot, publish and video-hits grants. Shared revision/CAS invalidates concurrent allocation leases without changing committed tasks. Website settings expose no content inventory or task history. Existing report/link ownership gates remain intact; receiver labels use the new saved settings when present.
 - New photo tasks compose the original saved version caption plus a blank line and a validated CTA, substituting exactly one {account} with the saved routed @handle, or using the self-bio template. Combined descriptions are bounded to 2,200 characters and frozen in the job; retries never append again. Settings updates are future-effective.
+
+
+## Opt-in photo music
+
+- public/psychology-photo-music-library.js contains the eight audition-approved public TikTok commercial-music presets (string IDs and preview metadata); the same confirmed tracks are saved in the user's Hub favorites. Presets are a reviewed release artifact, not a live sync of all Hub favorites.
+- The shared browser picker starts empty on new manual batches. A pool checkbox selects all eight; expanded checkboxes permit subsets. No audio is preloaded. Manual options no longer expose the previous global default, and creation no longer overwrites that legacy key.
+- Imported-photo automatic settings store explicit musicIds in the acting owner's existing revision-guarded config. Missing fields preserve saved choices, an explicit empty array clears them, and receiver/CTA-only changes cannot alter music. Deployment itself does not enable or change any automatic settings.
+- scripts/psychology-photo-music-policy.js draws once per created job, including direct saved albums and generated photos. Existing idempotent batch/slot reservations and grouped transports reuse the persisted musicSoundId. Empty selections retain TikTok's recommended music behavior. No schema migration or change to prior job payloads.

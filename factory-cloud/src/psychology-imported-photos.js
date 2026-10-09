@@ -1,3 +1,4 @@
+import {normalizePhotoMusicIds} from '../../scripts/psychology-photo-music-policy.js';
 import {json,errorJson,readJson,sha256Hex} from './http.js';
 import {toPublicUser} from './auth.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
@@ -12,7 +13,7 @@ import {IMPORTED_PHOTO_TIMES,IMPORTED_PHOTO_ZONE,IMPORTED_PHOTO_LEAD,IMPORTED_PH
 const BASE='/api/psychology-autopilot/imported-photos',LEASE=5*60000;
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 const parse=s=>JSON.parse(s||'{}');
-const defaults=()=>({connectionIds:[],receivers:[],routes:{},isAiGenerated:true,cta:{...DEFAULT_IMPORTED_PHOTO_CTA}});
+const defaults=()=>({connectionIds:[],receivers:[],routes:{},isAiGenerated:true,musicIds:[],cta:{...DEFAULT_IMPORTED_PHOTO_CTA}});
 async function actor(db,username,website=false){
  const row=await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(username||'').first(),user=row&&toPublicUser(row);
  if(!user||(website?!(hasPsychologyModule(user,'psychology-website')||user.role==='admin'&&hasPsychologyModule(user,'psychology-autopilot')):!['psychology-autopilot','psychology-publish','psychology-video-hits'].every(m=>hasPsychologyModule(user,m))))fail(website?'没有独立站承接设置权限。':'需要自动运营、自动发布和视频爆款权限。',403);
@@ -59,7 +60,7 @@ export async function handleImportedPhotos(request,env,url,session,{directory,no
   if(!body)return json(await responseData());
   const section=body.section||'all';
   if(!['all','publishing','receivers','cta'].includes(section))fail('未知的设置区域。');
-  const keys={publishing:['section','revision','enabled','connectionIds','isAiGenerated'],receivers:['section','revision','receivers'],cta:['section','revision','cta']};
+  const keys={publishing:['section','revision','enabled','connectionIds','isAiGenerated','musicIds'],receivers:['section','revision','receivers'],cta:['section','revision','cta']};
   if(keys[section]&&Object.keys(body).some(k=>!keys[section].includes(k)))fail('请只提交当前区域的设置。');
   const prior={...defaults(),...parse(head?.config_json)},publishing=['all','publishing'].includes(section),receiving=['all','receivers'].includes(section);
   const enabled=publishing?body.enabled:Boolean(head?.enabled);
@@ -78,7 +79,8 @@ export async function handleImportedPhotos(request,env,url,session,{directory,no
   const isAiGenerated=publishing?body.isAiGenerated:prior.isAiGenerated;if(typeof isAiGenerated!=='boolean')fail('请设置 AI 内容标记。');
   if(section==='cta'&&body.cta===undefined)fail('请填写引导文案。');
   const cta=normalizeImportedPhotoCTA(section==='cta'?body.cta:section==='all'&&body.cta!==undefined?body.cta:prior.cta);
-  const config={...prior,receiversConfigured:receiving||prior.receiversConfigured===true||prior.receivers.length>0,connectionIds:[...ids].sort(),receivers,routes:balanceConversionRoutes(ids,receivers,prior.routes),isAiGenerated,cta};
+  const musicIds=publishing&&body.musicIds!==undefined?normalizePhotoMusicIds(body.musicIds):prior.musicIds;
+  const config={...prior,musicIds,receiversConfigured:receiving||prior.receiversConfigured===true||prior.receivers.length>0,connectionIds:[...ids].sort(),receivers,routes:balanceConversionRoutes(ids,receivers,prior.routes),isAiGenerated,cta};
   // No old strategy is resumed, and changing settings cannot reset occupied account/time slots.
   const statements=[db.prepare('INSERT INTO psychology_imported_photo_settings(owner) VALUES(?) ON CONFLICT(owner) DO NOTHING').bind(user.username),
    db.prepare("UPDATE psychology_imported_photo_settings SET revision=revision+1,enabled=?,config_json=?,enabled_at=?,dispatched_at=0,scan_cursor='',lease_token='',lease_until=0,detail=?,updated_at=? WHERE owner=? AND revision=?")
@@ -131,7 +133,7 @@ export async function runImportedPhotos(env,owner,{now=Date.now(),directory}={})
    const freshRow=await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(owner).first();await actor(db,owner);
    const beforeStatements=[db.prepare('UPDATE factory_users SET updated_at=updated_at WHERE id=? AND active=1 AND role=? AND sidebar_modules_json=?').bind(user.id,user.role,freshRow.sidebar_modules_json),guard(db),db.prepare('UPDATE psychology_imported_photo_settings SET checked_at=? WHERE owner=? AND revision=? AND enabled=1 AND lease_token=? AND lease_until>? AND ?>?').bind(now,owner,setting.revision,token,Date.now(),slot,Date.now()+IMPORTED_PHOTO_LEAD),guard(db),
     db.prepare('INSERT INTO psychology_imported_photo_slots(connection_id,slot_at,owner,revision,source_id,version,item_id,receiver_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,slot,owner,setting.revision,picked.source_id,picked.version,itemId,receiver.connectionId,now)];
-   const batchConfig={name:'导入图文 · 独立站引流',mediaType:'photo',template:'selected-photo',sourceType:'video-hits',count:1,connectionIds:[id],scheduleAt:slot/1000,intervalMinutes:60,staggerSeconds:0,isAiGenerated:config.isAiGenerated,musicIds:[],photoVersions:[{sourceId:picked.source_id,version:picked.version,revision:picked.revision}],rewriteCopy:false};
+   const batchConfig={name:'导入图文 · 独立站引流',mediaType:'photo',template:'selected-photo',sourceType:'video-hits',count:1,connectionIds:[id],scheduleAt:slot/1000,intervalMinutes:60,staggerSeconds:0,isAiGenerated:config.isAiGenerated,musicIds:normalizePhotoMusicIds(config.musicIds||[]),photoVersions:[{sourceId:picked.source_id,version:picked.version,revision:picked.revision}],rewriteCopy:false};
    await createHitPhotoBatch(env,user,batchConfig,batchId,scope.accounts,{beforeStatements,caption:copy.caption,conversion:{...receiver,connectionId:id,receiverConnectionId:receiver.connectionId,cta:copy.cta,revision:setting.revision},deferDispatch:true});created++;
   }
   detail=created?'本轮已安排 '+created+' 条图文；不足的时段会在截止前继续检查。'+(detail?' '+detail:''):detail||'当前时段已安排，等待下一个北京时间发布时段。';

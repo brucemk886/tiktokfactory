@@ -11,6 +11,8 @@ Before working on this repository:
 
 ## Working Rules
 
+- Factory UI is PC-only by user preference. Design and verify new Factory features on desktop; do not add mobile-specific layouts or mobile acceptance requirements unless explicitly requested. This applies to the Factory, not the independent website or other products.
+
 - Treat repository files and Project Hub records as the source of truth. Chat history is supporting context only.
 - Keep API keys, passwords, cookies, tokens, and private customer data out of Git and handoff files.
 - Do not interrupt active rendering or publishing jobs unless the user explicitly asks.
