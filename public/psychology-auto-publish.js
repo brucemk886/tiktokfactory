@@ -13,7 +13,7 @@ async function api(path, body, method, options = {}) {
   return data;
 }
 const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,isBusy:()=>state.busy,setBusy:value=>{state.busy=value;$('#closeCreateBatch').disabled=value;renderAccountControls();},changed:()=>{resetAccountInput();summary();}});
-const picker=mountPsychologyVideoPicker({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),project:()=>one.context(),changed:()=>resetAccountInput()});
+const picker=mountPsychologyVideoPicker({api,isBusy:()=>state.busy,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),project:()=>one.context(),changed:()=>resetAccountInput()});
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
