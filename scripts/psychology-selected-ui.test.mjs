@@ -10,11 +10,19 @@ import {SIDEBAR_MODULES} from '../factory-cloud/src/sidebar.js';
 import {AUTO_TEMPLATES} from './psychology-auto-publish.js';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'psy-selection-')),clip=path.join(tmp,'sample.mp4');
 execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=180x320:d=1','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
+let coverActive=0,coverPeak=0,allowMissingCover=false;const coverStarts=[];
 const bytes=fs.readFileSync(clip),calls=[],errors=[],project='7693454687705595917';let imported=false,uploaded=false;const joined=new Set(),joinAttempts=new Map();
 const video=(id,title)=>({id,title,fileName:id+'.mp4',previewUrl:'/clip.mp4',createdAt:Date.now(),fileSize:bytes.length,status:'ready'});
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://local');const body=[];for await(const c of req)body.push(c);const raw=Buffer.concat(body);calls.push({path:url.pathname,method:req.method,body:req.headers['content-type']==='application/json'&&raw.length?JSON.parse(raw):null});let data;
- if(url.pathname==='/clip.mp4'){res.setHeader('Content-Type','video/mp4');res.end(bytes);return;}
+ if(url.pathname==='/cover-qa'){
+  res.setHeader('Content-Type','text/html');res.end('<style>#posterQa{display:grid;grid-template-columns:200px 200px;gap:20px}article{height:360px}video{width:180px;height:320px}</style><main id="posterQa">'+Array.from({length:12},(_,i)=>'<article><video controls preload="none" data-cover-src="/clip.mp4?poster='+i+'" src="/clip.mp4?poster='+i+'"></video><span class="video-cover-status">Loading</span></article>').join('')+'<article><video id="badCover" controls preload="none" data-cover-src="/missing-cover.mp4" src="/missing-cover.mp4"></video><span class="video-cover-status">Loading</span></article></main><script type="module">import {mountVideoPosters} from "/psychology-video-posters.js";window.posterQA=mountVideoPosters(document.querySelector("#posterQa"));window.posterQA.refresh();</script>');return;
+ }
+ if(url.pathname==='/missing-cover.mp4'){res.statusCode=allowMissingCover?200:404;res.setHeader('Content-Type','video/mp4');res.end(allowMissingCover?bytes:'');return;}
+ if(url.pathname==='/clip.mp4'){
+  if(url.searchParams.has('poster')){coverStarts.push(url.search);coverActive++;coverPeak=Math.max(coverPeak,coverActive);setTimeout(()=>{res.setHeader('Content-Type','video/mp4');res.end(bytes);coverActive--;},120);return;}
+  res.setHeader('Content-Type','video/mp4');res.end(bytes);return;
+ }
  if(url.pathname==='/api/auth/me')data={user:{username:'QA',role:'admin',sidebarModules:SIDEBAR_MODULES.map(m=>m.id)},sidebarModules:SIDEBAR_MODULES};
  else if(url.pathname==='/api/psychology-auto-publish')data={batches:[],pagination:{page:1,total:0}};
  else if(url.pathname==='/api/psychology-auto-publish/options')data={templates:AUTO_TEMPLATES,canUseTopics:true,canUseVideoHits:true,topicCounts:{},counts:{}};
@@ -41,7 +49,16 @@ try{
  await page.setRequestInterception(true);page.on('request',r=>new URL(r.url()).hostname==='127.0.0.1'?r.continue():r.abort());
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish',{waitUntil:'networkidle0'});await Promise.all([page.waitForNavigation({waitUntil:'networkidle0'}),page.click('#newOneBatch')]);
  assert.match(page.url(),/create=one/);assert.equal(await page.$eval('#createBatchDialog',n=>n.tagName),'SECTION');
- await page.waitForSelector('[data-pick]');await page.click('[data-pick]');
+ await page.waitForSelector('[data-pick]');
+ await page.waitForFunction(()=>document.querySelector('#videoCards video')?.poster.startsWith('blob:'));
+ const firstPoster=await page.$eval('#videoCards video',async v=>{const image=new Image();image.src=v.poster;await image.decode();const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0,1,1);return {poster:v.poster,pixel:[...ctx.getImageData(0,0,1,1).data],paused:v.paused,time:v.currentTime};});
+ assert.equal(firstPoster.paused,true);assert.equal(firstPoster.time,0);assert.ok(firstPoster.pixel[2]>200&&firstPoster.pixel[0]<20,'decoded blue cover is visible before any play');
+ assert.equal(await page.$eval('#videoCards .video-cover-button',b=>b.hidden),false);
+ const coverRequests=calls.filter(c=>c.path==='/clip.mp4').length;
+ await page.click('[data-pick]');
+ assert.equal(await page.$eval('[data-map="hit-selection"] video',v=>v.poster),firstPoster.poster);
+ assert.equal(await page.$eval('#videoCards video',v=>v.poster),firstPoster.poster);
+ assert.equal(calls.filter(c=>c.path==='/clip.mp4').length,coverRequests,'selecting reuses cached cover without refetching');
  assert.equal(await page.$eval('[data-video-caption="hit-selection"]',n=>n.value),'Saved recreation caption — automatically carried.');
  assert.equal(await page.$eval('[data-map="hit-selection"] video',n=>Boolean(n.src)),true);
  await page.select('#videoSource','generated');await page.waitForSelector('[data-prepare]');await page.waitForFunction(()=>document.querySelectorAll('#accounts input').length===2);
@@ -51,7 +68,7 @@ try{
  await page.click('#oneRefreshProjects');await page.waitForFunction(()=>!document.querySelector('#oneProject').disabled);
  assert.deepEqual(await listedProjects(),[project,'7584639271164739598']);
  assert.equal(await page.$eval('#automaticContent',n=>n.hidden),true);assert.equal(await page.$eval('#accountFollowers',n=>n.value),'1000');
- await page.click('[data-prepare]');await page.waitForSelector('[data-pick]');await page.$eval('video',async v=>{v.load();await v.play();v.pause();});
+ await page.click('[data-prepare]');await page.waitForSelector('[data-pick]');await page.waitForSelector('#videoCards .video-cover-button:not([hidden])');await page.click('#videoCards .video-cover-button');await page.waitForFunction(()=>!document.querySelector('#videoCards video').paused);await page.$eval('#videoCards video',v=>v.pause());
  await page.click('[data-pick]');await (await page.$('#videoFiles')).uploadFile(clip);await page.waitForFunction(()=>document.querySelector('#videoSource').value==='uploaded'&&document.querySelector('#videoPickerStatus').textContent.includes('上传完成'));
  await page.click('[data-pick]');await page.click('#selectVisibleAccounts');await page.select('#oneProject',project);
  await page.waitForFunction(()=>!document.querySelector('#oneJoinSelected').disabled);
@@ -97,5 +114,18 @@ try{
  await page.setViewport({width:320,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  approve=true;await page.click('#submitBatch');await page.waitForFunction(()=>!location.search.includes('create='));
  const normal=calls.find(c=>c.path==='/api/psychology-auto-publish'&&c.method==='POST');assert.equal(normal.body.sourceType,'video-hits');assert.equal(normal.body.template,'selected-video');assert.equal(normal.body.isAiGenerated,true);assert.equal(normal.body.tiktokOne,undefined);
- assert.deepEqual(errors,[]);console.log('PASS visible account checkboxes, select-all/clear and scoped bulk joins; first-account failure continues to next success; cancellation, retry and project isolation, no publish on join, plus video preview and confirmed publishing on desktop/mobile; no real publishing APIs.');
+ const writesBeforeCoverQA=calls.filter(c=>c.method==='POST').length;
+ await page.setViewport({width:600,height:600});await page.goto('http://127.0.0.1:'+server.address().port+'/cover-qa',{waitUntil:'networkidle0'});
+ await page.waitForFunction(()=>document.querySelector('#posterQa video').poster.startsWith('blob:'));
+ assert.ok(coverStarts.length>0&&coverStarts.length<12,'only videos near viewport request covers');assert.ok(coverPeak<=2,'no more than two concurrent preview reads');
+ await page.$eval('#badCover',v=>v.scrollIntoView());await page.waitForFunction(()=>document.querySelector('#badCover').dataset.coverState==='failed');
+ assert.match(await page.$eval('#badCover',v=>v.parentElement.textContent),/仍可点击播放/);
+ assert.equal(await page.$eval('#badCover',v=>v.controls),true);
+ allowMissingCover=true;await page.evaluate(()=>{window.posterQA.retryFailures();window.posterQA.refresh();});await page.waitForFunction(()=>document.querySelector('#badCover').poster.startsWith('blob:'));
+ assert.equal(await page.$$eval('#posterQa video',vs=>vs.every(v=>v.paused&&v.currentTime===0)),true,'cover generation does not autoplay');
+ const cachedPoster=await page.$eval('#badCover',v=>v.poster);await page.evaluate(()=>window.posterQA.refresh());assert.equal(await page.$eval('#badCover',v=>v.poster),cachedPoster);
+ await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));assert.equal(await page.$$eval('#posterQa video',vs=>vs.every(v=>!v.poster)),true);
+ await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));await page.waitForFunction(()=>document.querySelector('#badCover').poster.startsWith('blob:'));
+ assert.equal(calls.filter(c=>c.method==='POST').length,writesBeforeCoverQA,'cover loading never submits publication');
+ assert.deepEqual(errors,[]);console.log('PASS decoded cover before playback and cached selection reuse; visible account checkboxes, select-all/clear and scoped bulk joins; first-account failure continues to next success; cancellation, retry and project isolation, no publish on join, plus video preview and confirmed publishing on desktop/mobile; no real publishing APIs.');
 }catch(error){console.error('Page errors:',errors);const pages=await browser.pages();const p=pages.at(-1);console.error(await p.evaluate(()=>({status:document.querySelector('#videoPickerStatus')?.textContent,picks:[...document.querySelectorAll('[data-pick]')].map(n=>({checked:n.checked,disabled:n.disabled})),mapping:document.querySelector('#videoMapping')?.innerHTML})));throw error;}finally{await browser.close();await new Promise(r=>server.close(r));if(path.dirname(tmp)!==os.tmpdir()||!path.basename(tmp).startsWith('psy-selection-'))throw new Error('Unexpected temporary path');fs.rmSync(tmp,{recursive:true,force:true});}
