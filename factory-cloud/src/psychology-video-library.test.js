@@ -160,3 +160,18 @@ test('all three video inventories return twenty per page with no skipped or dupl
 test('continued video version 21 is selectable and reserves once with saved identity',async t=>{
  const f=await setup(t),h=await hitFixture(f,{version:21}),body=config(h.asset.id);body.items[0].videoHit=h.ref;assert.equal((await f.submit(body)).status,202);const v=f.sqlite.prepare('SELECT * FROM psychology_video_hit_versions WHERE version=21').get();assert.ok(v.publish_item_id);assert.equal(v.publish_state,'reserved');assert.equal((await f.submit(body)).status,200);await assert.rejects(f.submit({...body,requestId:crypto.randomUUID()}),/提交|停用|修改/);assert.equal(f.requests.length,0);
 });
+
+
+test('video checks overlap three remote heads, preserve item order and never upload during creation',async t=>{
+ const f=await setup(t),videos=[];for(let i=0;i<7;i++)videos.push(await f.upload());let active=0,peak=0;
+ const head=f.env.ARCHIVE.head;f.env.ARCHIVE.head=async key=>{active++;peak=Math.max(peak,active);await new Promise(r=>setImmediate(r));active--;return head(key);};
+ const body=config(videos[0].id);body.items=videos.map((v,i)=>({...body.items[0],assetId:v.id,caption:'Caption '+i}));
+ assert.equal((await f.submit(body)).status,202);assert.equal(peak,3);assert.equal(active,0);assert.equal(f.counts().uploads,0);
+ const before=f.sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all();assert.deepEqual(before.map(j=>JSON.parse(j.payload_json).publish.videoDesc),videos.map((_,i)=>'Caption '+i));
+ f.env.ARCHIVE.head=()=>{throw Error('retry must reuse committed batch');};assert.equal((await(await f.submit(body)).json()).duplicate,true);assert.deepEqual(f.sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all(),before);
+});
+test('missing video during parallel checks rejects the entire batch before project writes or reservations',async t=>{
+ const f=await setup(t),videos=[];for(let i=0;i<5;i++)videos.push(await f.upload());let active=0,heads=0;const head=f.env.ARCHIVE.head;
+ f.env.ARCHIVE.head=async key=>{active++;const index=heads++;if(index)await new Promise(r=>setImmediate(r));active--;return index===0?null:head(key);};
+ const body=config(videos[0].id);body.items=videos.map(v=>({...body.items[0],assetId:v.id}));await assert.rejects(f.submit(body),/文件已失效/);assert.equal(active,0);assert.equal(f.counts().joins,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
+});

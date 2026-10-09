@@ -115,3 +115,18 @@ test('a member with the publish grant can inspect One projects while assigned ac
  assert.equal((await handlePsychologyOne(new Request(url),f.env,url,{user:actor})).status,200);
  await assert.rejects(joinRequest(f,{creatorConnectionId:'outside'},{},actor),e=>e.statusCode===403);assert.equal(f.checks.length,0);assert.equal(f.requests.length,0);
 });
+
+
+import {ensurePsychologyOneMembers} from './psychology-tiktok-one.js';
+test('20 account preflight overlaps at most three checks and waits for all confirmations',async t=>{
+ const f=await setup(t);let active=0,peak=0,completed=0;const visited=[];
+ t.mock.method(globalThis,'fetch',async(url,init)=>{assert.match(String(url),/tiktok-one/);const body=JSON.parse(init.body);visited.push(body.creatorConnectionId);active++;peak=Math.max(peak,active);await new Promise(r=>setImmediate(r));active--;completed++;return Response.json({joined:true});});
+ const ids=Array.from({length:20},(_,i)=>'creator-'+i);
+ await ensurePsychologyOneMembers(f.env,user,{tiktokOne:project,connectionIds:ids});assert.equal(peak,3);assert.equal(active,0);assert.equal(completed,20);assert.deepEqual(visited,ids);assert.equal(f.requests.length,0);
+});
+test('failed account checks stop new work, drain in-flight calls and leave no jobs before retry',async t=>{
+ const f=await setup(t);let active=0,done=0;const visited=[];
+ t.mock.method(globalThis,'fetch',async(url,init)=>{const id=JSON.parse(init.body).creatorConnectionId;visited.push(id);active++;if(id!=='a')await new Promise(r=>setImmediate(r));active--;done++;return id==='a'?Response.json({error:'denied'},{status:409}):Response.json({joined:true});});
+ await assert.rejects(ensurePsychologyOneMembers(f.env,user,{tiktokOne:project,connectionIds:['a','b','c','d','e']},[{id:'a',username:'alpha'}]),/alpha.*denied/);
+ assert.equal(active,0);assert.equal(done,3);assert.deepEqual(visited,['a','b','c']);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
+});

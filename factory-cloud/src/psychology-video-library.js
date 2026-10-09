@@ -1,3 +1,4 @@
+import {checkPublishEntries} from './psychology-publish-checks.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
 import {hitLibraryScope} from './psychology-video-hit-access.js';
 import {publishScheduleError} from '../../public/psychology-publish-time.js';
@@ -42,14 +43,13 @@ async function selectedPublish(request,env,user){
  const config={...normalized,items:await Promise.all(normalized.items.map(async({caption,...item})=>({...item,captionDigest:await sha256Hex(caption)})))};
  if(existing){if(existing.config_json!==JSON.stringify(config)&&existing.config_json!==JSON.stringify(normalized))fail('该提交编号已用于其他配置。',409);return json({accepted:true,duplicate:true,batchId});}
  const scoped=await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:config.connectionIds});
- const entries=[];
- for(const item of normalized.items){
-  if(item.videoHit){entries.push({...item,hit:await resolveHitVideo(env,user,item.videoHit,item.assetId)});continue;}
+ const entries=await checkPublishEntries(normalized.items,async item=>{
+  if(item.videoHit)return {...item,hit:await resolveHitVideo(env,user,item.videoHit,item.assetId)};
   const asset=await owned(env.DB,item.assetId,user);
   if(await env.DB.prepare('SELECT id FROM psychology_video_hit_videos WHERE id=? UNION ALL SELECT asset_id id FROM psychology_video_hit_render_assets WHERE asset_id=?').bind(asset.id,asset.id).first())fail('视频爆款成片请从其二创版本提交发布，以保留一次发布保护。',409);
   if(asset.cleanup_state!=='active'||asset.status!=='ready'||!await env.ARCHIVE.head(asset.r2_key))fail('视频未准备好或文件已失效，请重新上传。',409);
-  entries.push({...item,asset});
- }
+  return {...item,asset};
+ });
  await assertPublishFollowers(env.DB,config,scoped.accounts);
  return commitVideoBatch(env,user,config,batchId,entries,scoped.accounts);
 }

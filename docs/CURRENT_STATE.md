@@ -1,5 +1,7 @@
 # Current State
 
+- TikTok One selected-video creation checks assets and account/project membership with at most three concurrent operations per phase, drains in-flight checks on failure, and keeps atomic reservation and duplicate-batch behavior. The creation page displays elapsed checking time. Existing video transfer workers remain unchanged. By the user's subsequent request, the Hub fixed ten-second One submission cooldown is removed; active-request coordination and scheduled publication times remain. See docs/handoffs/2026-10-10-one-preflight-performance.md.
+
 - Factory UI is PC-only by explicit user preference (2026-10-09). New factory features are designed and accepted on desktop; no new mobile adaptation is required. Independent-site design is outside this preference.
 
 - Psychology photo publishing now offers eight audition-approved music presets with an unchecked-by-default pool toggle, optional per-track choices and on-demand previews. Manual batch selections are isolated; imported-photo automation saves an explicit owner-scoped choice. Every new photo task draws independently and freezes the music ID across retries. Existing jobs and legacy planning settings remain untouched. See docs/handoffs/2026-10-09-photo-music-pool.md.

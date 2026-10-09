@@ -474,7 +474,10 @@ async function submitSelectedVideos(){
  }catch(e){updateScheduleHint();return message(e.message,true,!e.schedule);}
  state.submittedInput=body;state.submittedScheduleKey=scheduleKey();state.busy=true;$('#closeCreateBatch').disabled=true;
  const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')].map(n=>[n,n.disabled]);controls.forEach(([n])=>n.disabled=true);
- try{message('正在检查账号与项目并创建发布任务…');const result=await api('/api/psychology-video-publish',body);finishCreation();picker.clear();picker.close();resetAccountInput();message(result.duplicate?'已恢复同一发布批次。':'已确认入队，可在任务列表查看实际发布结果。');await loadBatches();}
- catch(e){updateScheduleHint();message(e.message+(e.status>=400&&e.status<500?'':'；请求结果未确认，配置不变可再次提交以恢复同一批次。'),true,!(e.status===400&&/发布时间/.test(e.message)));}
- finally{state.busy=false;$('#closeCreateBatch').disabled=false;controls.forEach(([n,disabled])=>n.disabled=disabled);renderAccountControls();if(picker.active)$('#oneEnabled').disabled=true;}
+ const started=Date.now(),accountCount=new Set(body.items.map(i=>i.connectionId)).size;
+ const waiting=()=>message('正在校验 '+body.items.length+' 条视频和 '+accountCount+' 个账号的项目权限 · 已等待 '+Math.floor((Date.now()-started)/1000)+' 秒。通过后自动进入任务列表，随后上传视频；请勿重复提交。',false,false);
+ waiting();const progressTimer=setInterval(waiting,1000);
+ try{const result=await api('/api/psychology-video-publish',body);clearInterval(progressTimer);finishCreation();picker.clear();picker.close();resetAccountInput();message(result.duplicate?'已恢复同一发布批次。':'已确认入队，可在任务列表查看实际发布结果。');await loadBatches();}
+ catch(e){clearInterval(progressTimer);updateScheduleHint();message(e.message+(e.status>=400&&e.status<500?'':'；请求结果未确认，配置不变可再次提交以恢复同一批次。'),true,!(e.status===400&&/发布时间/.test(e.message)));}
+ finally{clearInterval(progressTimer);state.busy=false;$('#closeCreateBatch').disabled=false;controls.forEach(([n,disabled])=>n.disabled=disabled);renderAccountControls();if(picker.active)$('#oneEnabled').disabled=true;}
 }

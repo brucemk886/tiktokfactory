@@ -1,3 +1,4 @@
+import {checkPublishEntries} from './psychology-publish-checks.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
 import { signalDesk } from './signal-desk.js';
 import { assertOfficialPublishAccess } from './official.js';
@@ -12,14 +13,14 @@ export function assertPsychologyOneUser(user){
 export async function ensurePsychologyOneMembers(env,user,config,accounts=[]){
  if(!config.tiktokOne)return;
  assertPsychologyOneUser(user);
- for(const creatorConnectionId of config.connectionIds){
+ await checkPublishEntries([...new Set(config.connectionIds)],async creatorConnectionId=>{
   const account=accounts.find(a=>String(a.id||a.connectionId)===creatorConnectionId);
   const name=account?.username||account?.displayName||creatorConnectionId;
   try{
    const data=await signalDesk(env,env.DB,'/api/v1/tiktok-one',{method:'POST',body:{...config.tiktokOne,creatorConnectionId,action:'ensure'},signal:AbortSignal.timeout(120000)});
    if(data.joined!==true)fail('未确认加入当前项目。',409);
   }catch(error){fail(`账号 ${name} 加入项目 ${config.tiktokOne.campaignId} 失败：${error.message}`,error.statusCode||502);}
- }
+ });
 }
 export async function handlePsychologyOne(request,env,url,session){
  if(url.pathname!==BASE)return null;
