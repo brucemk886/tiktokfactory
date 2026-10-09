@@ -13,10 +13,13 @@ User chose the existing Grokbot HTTP API path for Dot and requested a document t
 Canonical and generated public psychology-video-hits-api.md, CURRENT_STATE, this handoff.
 
 ## Tests performed
-Focused API/MCP/private asset/public-guide suite: 69/69 passed. All 10 JSON request examples in the new walkthrough parsed; both Python examples compiled without executing requests. Generated public document matches the canonical source. Deployment evidence will follow.
+Focused API/MCP/private asset/public-guide suite: 69/69 passed. All 10 JSON request examples in the new walkthrough parsed; both Python examples compiled without executing requests. Generated public document matches the canonical source. Deployed public guide returned HTTP 200 and matched the canonical generated file byte-for-byte.
 
 ## Unfinished work
 Dot's external runtime must have HTTP execution, real source/images and the user-authorized project key to run the one-item import; no success is claimed for that session.
 
 ## Recommended next step
 Give Dot the public guide, request the single-item REST walkthrough with importSource gpt-dot and readback, then review the resulting source/detail link.
+
+## Release evidence
+Commit 94b08a7 was pushed to main, then deployed from a clean exact HEAD == origin/main checkout with factory-cloud npm run deploy. Cloudflare version 5d8a36d1-33cc-49db-bf2f-f6a6cd88b230. No schema, key, endpoint or running-job changes. Live public document matches the released REST-first guide.
