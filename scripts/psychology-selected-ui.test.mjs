@@ -12,7 +12,7 @@ import {AUTO_TEMPLATES} from './psychology-auto-publish.js';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'psy-selection-')),clip=path.join(tmp,'sample.mp4');
 execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=180x320:d=1','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
 let bulkMode=false,bulkEmpty=false;let coverActive=0,coverPeak=0,allowMissingCover=false;const coverStarts=[];
-const bytes=fs.readFileSync(clip),calls=[],errors=[],project='7693454687705595917';let imported=false,uploaded=false,failPublishOnce=true;const joined=new Set(),joinAttempts=new Map();
+const bytes=fs.readFileSync(clip),calls=[],errors=[],project='7693454687705595917';let imported=false,uploaded=false,failPublishOnce=true,scheduleErrorOnce=false;const joined=new Set(),joinAttempts=new Map();
 const video=(id,title)=>({id,title,fileName:id+'.mp4',previewUrl:'/clip.mp4',createdAt:Date.now(),fileSize:bytes.length,status:'ready'});
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://local');const body=[];for await(const c of req)body.push(c);const raw=Buffer.concat(body);calls.push({path:url.pathname,method:req.method,body:req.headers['content-type']==='application/json'&&raw.length?JSON.parse(raw):null});let data;
@@ -46,7 +46,7 @@ const server=http.createServer(async(req,res)=>{
  else if(url.pathname==='/api/psychology-video-library')data={videos:url.searchParams.get('source')==='video-hits'?[{...video('hit-selection','Understanding emotional boundaries'),assetId:'hit-asset',videoHit:{sourceId:'vh-'+'a'.repeat(32),version:1,revision:3},versionName:'版本 1',caption:'Saved recreation caption — automatically carried.'}]:url.searchParams.get('source')==='uploaded'?(uploaded?[video('upload','Uploaded')]:[]):[imported?video('generated','Generated'):{id:'',sourceJobId:'render',resultIndex:0,title:'Generated',fileName:'generated.mp4',status:'local',canPrepare:true,createdAt:Date.now()}],page:1,hasMore:false};
  else if(url.pathname.endsWith('/psychology-video-library/import')){imported=true;data={pending:true};}
  else if(url.pathname.endsWith('/psychology-video-library/upload')){uploaded=true;data={video:video('upload','Uploaded')};}
- else if(url.pathname==='/api/psychology-video-publish'){if(failPublishOnce){failPublishOnce=false;res.statusCode=503;data={error:'Mock temporary network failure'};}else data={accepted:true,batchId:'selected-1'};}
+ else if(url.pathname==='/api/psychology-video-publish'){if(scheduleErrorOnce){scheduleErrorOnce=false;res.statusCode=400;data={error:'第 1 条发布时间距当前不足 5 分钟。请重新选择日期和时间。'};}else if(failPublishOnce){failPublishOnce=false;res.statusCode=503;data={error:'Mock temporary network failure'};}else data={accepted:true,batchId:'selected-1'};}
  else if(url.pathname.startsWith('/api/'))data={};
  else{const pathname=url.pathname==='/psychology-publish'?'/psychology-auto-publish.html':url.pathname;const file=path.join(path.dirname(fileURLToPath(import.meta.url)),'../public',pathname);if(!fs.existsSync(file)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(file));return;}
  res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));
@@ -54,7 +54,7 @@ const server=http.createServer(async(req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
 try{
- const page=await browser.newPage();const clickPhoto=async selector=>{await page.$eval(selector,n=>n.scrollIntoView({block:'center'}));await page.click(selector);};let approve=false,dialogCount=0;page.on('dialog',d=>{dialogCount++;return approve?d.accept():d.dismiss();});page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1050});
+ const page=await browser.newPage();await page.emulateTimezone('Asia/Taipei');const clickPhoto=async selector=>{await page.$eval(selector,n=>n.scrollIntoView({block:'center'}));await page.click(selector);};let approve=false,dialogCount=0;page.on('dialog',d=>{dialogCount++;return approve?d.accept():d.dismiss();});page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1050});
  await page.setRequestInterception(true);page.on('request',r=>new URL(r.url()).hostname==='127.0.0.1'?r.continue():r.abort());
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish',{waitUntil:'networkidle0'});await Promise.all([page.waitForNavigation({waitUntil:'networkidle0'}),page.click('#newOneBatch')]);
  assert.match(page.url(),/create=one/);assert.equal(await page.$eval('#createBatchDialog',n=>n.tagName),'SECTION');
@@ -127,6 +127,24 @@ try{
  const hit=post.body.items.find(i=>i.assetId==='hit-asset');assert.equal(hit.videoHit.revision,3);assert.equal(hit.caption,'Saved recreation caption — automatically carried.');
  assert.equal(post.body.items.find(i=>i.assetId==='generated').caption,'Generated');assert.equal(post.body.items.find(i=>i.assetId==='upload').caption,'Uploaded');assert.ok(post.body.items.every(i=>!i.isAiGenerated));assert.equal(post.body.tiktokOne.campaignId,project);
  assert.equal(dialogCount,beforePublishDialogs);
+ await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=one',{waitUntil:'networkidle0'});
+ await page.waitForSelector('[data-pick]');await page.click('[data-pick]');await page.click('#accounts input[value="a"]');await page.select('#oneProject',project);
+ await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 1 / 1'));
+ assert.match(await page.$eval('#scheduleTimeLabel',n=>n.textContent),/Asia\/Taipei/);
+ const beforeSchedulePosts=calls.filter(c=>c.path==='/api/psychology-video-publish').length;
+ await page.$eval('#scheduleAt',n=>{const d=new Date(Date.now()-60000);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());n.value=d.toISOString().slice(0,16);n.dispatchEvent(new Event('change',{bubbles:true}));});
+ await page.click('#submitBatch');await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('不足 5 分钟'));
+ assert.equal(calls.filter(c=>c.path==='/api/psychology-video-publish').length,beforeSchedulePosts,'past dates fail locally before publication');
+ assert.match(await page.$eval('#message',n=>n.textContent),/第 1 条.*当前.*请改到.*Asia\/Taipei/);
+ await page.click('#scheduleInTenMinutes');const quick=await page.$eval('#scheduleAt',n=>new Date(n.value).getTime());assert.ok(quick-Date.now()>590000&&quick-Date.now()<661000);
+ scheduleErrorOnce=true;await page.click('#submitBatch');await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('请重新选择日期和时间')&&!document.querySelector('#submitBatch').disabled);
+ assert.doesNotMatch(await page.$eval('#message',n=>n.textContent),/同一批次|请求结果未确认/);assert.equal(await page.$$eval('.lf-toast',ns=>ns.length),0,'time validation stays inline without covering the time field');
+ if(capture){await page.$eval('#scheduleSection',n=>n.scrollIntoView({block:'start'}));await page.screenshot({path:path.join(capture,'schedule-mobile.png')});}
+ const rejected=calls.filter(c=>c.path==='/api/psychology-video-publish').at(-1).body;
+ const edited=await page.evaluate(()=>{const n=document.querySelector('#scheduleAt'),d=new Date(new Date(n.value).getTime()+3600000);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());n.value=d.toISOString().slice(0,16);document.querySelector('#intervalMinutes').value='17';return Math.floor(new Date(n.value).getTime()/1000);});
+ await page.click('#submitBatch');await page.waitForFunction(()=>!location.search.includes('create='));
+ const corrected=calls.filter(c=>c.path==='/api/psychology-video-publish').at(-1).body;
+ assert.notEqual(corrected.requestId,rejected.requestId,'editing time invalidates frozen rejected payload even without an input event');assert.equal(corrected.items[0].scheduleAt,edited);
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=normal',{waitUntil:'networkidle0'});
  await page.waitForFunction(()=>document.querySelector('#accounts input'));
  assert.equal(await page.$eval('#sourceType',n=>n.value),'video-hits');assert.equal(await page.$eval('#oneEnabled',n=>n.checked),false);

@@ -1,3 +1,4 @@
+import {publishScheduleError} from '../../public/psychology-publish-time.js';
 import {normalizeHitRef,hitVideoInventory,resolveHitVideo,commitVideoBatch} from './psychology-video-hit-publishing.js';
 import {guard} from './psychology-video-hits.js';
 import {json,readJson,sha256Hex} from './http.js';
@@ -19,11 +20,12 @@ async function owned(db,id,user){const row=await db.prepare('SELECT * FROM psych
 export function normalizeSelectedPublish(input,now=Date.now(),replay=false){
  if(!/^[0-9a-f-]{36}$/i.test(String(input.requestId||'')))fail('提交编号无效。');
  if(!Array.isArray(input.items)||input.items.length<1||input.items.length>20)fail('每批请选择1–20条成片。');
+ if(!replay){const error=publishScheduleError(input.items.map(item=>item?.scheduleAt),now,'Asia/Taipei');if(error)fail(error);}
  const items=input.items.map(item=>{
   if(!/^[a-zA-Z0-9_-]{1,100}$/.test(String(item.assetId||''))||!String(item.connectionId||'').trim())fail('请为每条视频选择账号。');
   if(typeof item.caption!=='string'||item.caption.length>2200)fail('发布文案最多2200字。');
   if(typeof item.isAiGenerated!=='boolean')fail('请确认视频的 AI 内容标识。');
-  if(!Number.isSafeInteger(item.scheduleAt)||item.scheduleAt<=0||(!replay&&(item.scheduleAt<Math.floor(now/1000)+300||item.scheduleAt*1000>now+14*86400000)))fail('发布时间需要在5分钟后、14天内。');
+  if(!Number.isSafeInteger(item.scheduleAt)||item.scheduleAt<=0)fail('发布时间无效，请重新选择日期和时间。');
   return {...(item.videoHit?{videoHit:normalizeHitRef(item.videoHit)}:{}),assetId:item.assetId,connectionId:String(item.connectionId).trim(),caption:item.caption,scheduleAt:item.scheduleAt,isAiGenerated:item.isAiGenerated};
  });
  if(new Set(items.filter(i=>i.videoHit).map(i=>i.videoHit.sourceId+':'+i.videoHit.version)).size!==items.filter(i=>i.videoHit).length)fail('一个二创版本只能选择一次。');

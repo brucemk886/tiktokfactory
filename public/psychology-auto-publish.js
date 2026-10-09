@@ -1,16 +1,17 @@
+import {publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError} from './psychology-publish-time.js';
 import {mountHitPhotoPicker} from './psychology-hit-photo-picker.js';
 import { mountPsychologyVideoPicker } from './psychology-video-picker.js';
 import { mountPsychologyOne } from './psychology-tiktok-one.js';
 import { VISUAL_STYLES } from './psychology-visual-styles.js';
 const $ = s => document.querySelector(s);
-const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", minFollowers:0, accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
+const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", minFollowers:0, accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null,submittedScheduleKey:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const templateLabel=id=>id==='selected-photo'?'已选二创图文':id==='selected-video'?'已选成片':id==='psychology-video-remix'?'二创合成视频':id;
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
 async function api(path, body, method, options = {}) {
   const response = await fetch(path,{signal:options.signal,...(method?{method}:{}),...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
   const data = await response.json();
-  if(!response.ok) throw new Error(data.error || '请求失败');
+  if(!response.ok) throw Object.assign(new Error(data.error || '请求失败'),{status:response.status});
   return data;
 }
 const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,isBusy:()=>state.busy,setBusy:value=>{state.busy=value;$('#closeCreateBatch').disabled=value;renderAccountControls();},changed:()=>{resetAccountInput();summary();}});
@@ -20,7 +21,7 @@ const hitPhotos=()=>state.mediaType==='photo'&&sourceType()==='video-hits';
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
-function message(text,error=false) { $('#message').textContent=text; $('#message').classList.toggle('error',error);$('#queueMessage').textContent=text;$('#queueMessage').classList.toggle('error',error);if(error)globalThis.LFUI?.toast(text,true); }
+function message(text,error=false,showToast=true) { $('#message').textContent=text; $('#message').classList.toggle('error',error);$('#queueMessage').textContent=text;$('#queueMessage').classList.toggle('error',error);if(error&&showToast)globalThis.LFUI?.toast(text,true); }
 function renderTemplates() {
   $('#template').innerHTML=(state.templates[state.mediaType]||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');
   $('#sourceHint').textContent=`选题来源：同行${state.mediaType==='photo'?'图文':'视频'}爆款库，共 ${state.counts[state.mediaType]||0} 条。每条爆款生成一条新内容。`;
@@ -108,7 +109,7 @@ function visibleAccounts() {
   const query=state.accountQuery.trim().replace(/^@/,'').toLowerCase();
   return state.accounts.filter(a=>meetsFollowers(a)&&(!state.accountGroup||(state.accountGroup==='__ungrouped__'?!a.groupId:a.groupId===state.accountGroup))&&(!query||[a.username,a.displayName,a.label].some(v=>String(v||'').toLowerCase().includes(query))));
 }
-function resetAccountInput() { state.requestId=crypto.randomUUID();state.submittedInput=null; }
+function resetAccountInput() { state.requestId=crypto.randomUUID();state.submittedInput=null;state.submittedScheduleKey=null; }
 function renderAccountGroups() {
   const groups=new Map(state.groups.map(g=>[g.id,g.name]));
   for(const a of state.accounts)if(a.groupId&&!groups.has(a.groupId))groups.set(a.groupId,a.groupName||'未命名分组');
@@ -176,6 +177,7 @@ function accountName(id) {
   return username?'@'+username:a?.displayName||a?.label||(state.accountsLoading?'账号加载中…':'账号信息不可用');
 }
 function summary() {
+  updateScheduleHint();
   if(picker.active){
     picker.update();const count=picker.count,accountCount=selected().length,low=Math.floor(count/accountCount),high=Math.ceil(count/accountCount);
     $('#summary').textContent=!count?'请先勾选要发布的视频。':!accountCount?'已选 '+count+' 条视频，请勾选发布账号。':accountCount>count?'已选 '+count+' 条视频、'+accountCount+' 个账号，请减少账号或增加视频。':'已选 '+count+' 条视频、'+accountCount+' 个账号，随机均分，每个账号 '+(low===high?low:low+'–'+high)+' 条。同账号按 '+($('#intervalMinutes').value||'—')+' 分钟间隔发布，自动使用已保存文案。';return;
@@ -399,7 +401,16 @@ $('#closeBatchDetail').addEventListener('click',()=>$('#batchDetail').close());
 $('#batchDetail').addEventListener('close',()=>{document.querySelector('[data-batch-open="'+CSS.escape(selectedBatchId)+'"]')?.focus();});
 $('#batches').addEventListener('click',event=>{const button=event.target.closest('[data-batch-open]');if(!button)return;selectedBatchId=button.dataset.batchOpen;renderSelectedBatch();detailTab(false);$('#batchDetail').showModal();});
 $('#batchSearch').addEventListener('input',renderBatches);$('#batchMedia').addEventListener('change',renderBatches);
-const start=new Date(Date.now()+2*3600000);start.setMinutes(start.getMinutes()-start.getTimezoneOffset());$('#scheduleAt').value=start.toISOString().slice(0,16);
+const scheduleKey=()=>JSON.stringify([$('#scheduleAt').value,$('#intervalMinutes').value]);
+function updateScheduleHint(){
+ const now=Math.floor(Date.now()/1000),zone=publishTimeZone(),chosen=Math.floor(new Date($('#scheduleAt').value).getTime()/1000);
+ $('#scheduleTimeLabel').textContent='首次发布时间（'+zone+'）';
+ $('#scheduleTimeHint').textContent='当前 '+formatPublishTime(now,zone)+'；最早可选 '+formatPublishTime(Math.ceil((now+300)/60)*60,zone)+'。'+(Number.isFinite(chosen)?'已选 '+formatPublishTime(chosen,zone)+'。':'')+'按提交时刻计算，使用 24 小时制；全部排期须在未来 14 天内。';
+}
+$('#scheduleAt').value=localPublishInput(Date.now()+2*3600000);
+for(const id of ['scheduleAt','intervalMinutes'])$('#'+id).addEventListener('change',()=>{if(!state.busy){resetAccountInput();summary();}});
+$('#scheduleInTenMinutes').addEventListener('click',()=>{if(state.busy)return;$('#scheduleAt').value=localPublishInput(Math.ceil((Date.now()+600000)/60000)*60000);resetAccountInput();summary();});
+updateScheduleHint();
 // Load creation-only data when the dialog opens, never on list navigation.
 let creationPromise;
 async function loadCreation(){
@@ -418,16 +429,22 @@ async function loadCreation(){
  try{await creationPromise;}finally{creationPromise=null;}
 }
 const creationMode=new URLSearchParams(globalThis.location.search).get('create');
+if(creationMode)setInterval(()=>{if(!document.hidden)updateScheduleHint();},30000);
 if(creationMode==='one')await openOnePage();else if(creationMode==='normal')await openNormalPage();else try{await loadBatches();}catch(e){message(e.message,true);}
 setInterval(()=>{if(!creationMode&&!document.hidden)loadBatches().catch(e=>message(e.message,true));},15000);
 
 async function submitSelectedVideos(){
  if(picker.busy)return message('请等待视频上传或列表读取完成。',true);
  if(state.accountsLoading||state.accountsMedia!=='video')return message('请等待账号加载完成。',true);
- let body;try{const tiktokOne=one.context();if(!tiktokOne)throw new Error('请选择 TikTok One 项目。');body=state.submittedInput||{requestId:state.requestId,name:'TikTok One · 选片发布',tiktokOne,items:picker.items()};}catch(e){return message(e.message,true);}
- state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
+ let body;try{
+  if(state.submittedInput&&state.submittedScheduleKey!==scheduleKey())resetAccountInput();
+  const tiktokOne=one.context();if(!tiktokOne)throw new Error('请选择 TikTok One 项目。');
+  if(state.submittedInput)body=state.submittedInput;
+  else{const items=picker.items(),error=publishScheduleError(items.map(item=>item.scheduleAt));if(error)throw Object.assign(new Error(error),{schedule:true});body={requestId:state.requestId,name:'TikTok One · 选片发布',tiktokOne,items};}
+ }catch(e){updateScheduleHint();return message(e.message,true,!e.schedule);}
+ state.submittedInput=body;state.submittedScheduleKey=scheduleKey();state.busy=true;$('#closeCreateBatch').disabled=true;
  const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')].map(n=>[n,n.disabled]);controls.forEach(([n])=>n.disabled=true);
  try{message('正在检查账号与项目并创建发布任务…');const result=await api('/api/psychology-video-publish',body);finishCreation();picker.clear();picker.close();resetAccountInput();message(result.duplicate?'已恢复同一发布批次。':'已确认入队，可在任务列表查看实际发布结果。');await loadBatches();}
- catch(e){message(e.message+'；配置不变时再次提交会核对同一批次。',true);}
+ catch(e){updateScheduleHint();message(e.message+(e.status>=400&&e.status<500?'':'；请求结果未确认，配置不变可再次提交以恢复同一批次。'),true,!(e.status===400&&/发布时间/.test(e.message)));}
  finally{state.busy=false;$('#closeCreateBatch').disabled=false;controls.forEach(([n,disabled])=>n.disabled=disabled);renderAccountControls();if(picker.active)$('#oneEnabled').disabled=true;}
 }
