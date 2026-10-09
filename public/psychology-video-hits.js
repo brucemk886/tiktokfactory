@@ -55,8 +55,9 @@ function setupPage(){
 async function load(){
  const token=++listToken;$('listStatus').textContent='正在读取…';
  try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value+'&inputMode='+inputMode);if(token!==listToken)return;
+ const totalPages=Math.ceil(data.total/data.pageSize);if(page>Math.max(1,totalPages)){page=Math.max(1,totalPages);return load();}
  list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+s.versionCount+' / 20'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="5">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
- $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创');$('pageInfo').textContent='第 '+page+' 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
+ $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创');$('recordInfo').textContent='共 '+data.total+' 条记录';$('pageInfo').textContent=totalPages?'第 '+page+' / '+totalPages+' 页':'共 0 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
 }
 async function loadDetail(){
