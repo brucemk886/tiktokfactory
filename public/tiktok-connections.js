@@ -216,25 +216,26 @@ function visibleGroups() {
   });
 }
 
+function groupSelectOptions(groups = state.groups) {
+  return groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}（${formatNumber(groupAccountCount(group.id))} 个账号）</option>`).join("");
+}
+
 function fillGroupSelects() {
-  const counts = {};
-  for (const account of state.accounts) {
-    if (account.groupId) counts[account.groupId] = (counts[account.groupId] || 0) + 1;
-  }
-  const options = state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}（${counts[group.id] || group.accountCount || 0}）</option>`).join("");
+  const options = groupSelectOptions();
+  const ungroupedLabel = `未分组（${formatNumber(groupAccountCount(""))} 个账号）`;
   const currentFilter = elements.groupFilter?.value || "";
   const currentAssign = elements.assignGroupSelect?.value || "";
   if (elements.groupFilter) {
-    elements.groupFilter.innerHTML = `<option value="">全部分组</option><option value="ungrouped">未分组</option>${options}`;
+    elements.groupFilter.innerHTML = `<option value="">全部分组（${formatNumber(state.accounts.length)} 个账号）</option><option value="ungrouped">${ungroupedLabel}</option>${options}`;
     if ([...elements.groupFilter.options].some((item) => item.value === currentFilter)) elements.groupFilter.value = currentFilter;
   }
   if (elements.assignGroupSelect) {
-    elements.assignGroupSelect.innerHTML = `<option value="">未分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
+    elements.assignGroupSelect.innerHTML = `<option value="">${ungroupedLabel}</option>${options}`;
     if ([...elements.assignGroupSelect.options].some((item) => item.value === currentAssign)) elements.assignGroupSelect.value = currentAssign;
   }
   if (elements.moveGroupSelect) {
     const currentMove = elements.moveGroupSelect.value || (currentFilter && currentFilter !== "ungrouped" ? currentFilter : "");
-    elements.moveGroupSelect.innerHTML = `<option value="">请选择分组</option>${state.groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
+    elements.moveGroupSelect.innerHTML = `<option value="">请选择分组</option>${options}`;
     if ([...elements.moveGroupSelect.options].some((item) => item.value === currentMove)) elements.moveGroupSelect.value = currentMove;
   }
   fillDeleteGroupSelect();
@@ -245,7 +246,7 @@ function fillDeleteGroupSelect() {
   const projectId = elements.deleteProjectSelect?.value || "";
   const groups = state.groups.filter((group) => !projectId || group.projectId === projectId);
   const current = elements.deleteGroupSelect.value;
-  elements.deleteGroupSelect.innerHTML = `<option value="">请选择分组</option>${groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.projectName ? `${group.projectName} / ${group.name}` : group.name)}</option>`).join("")}`;
+  elements.deleteGroupSelect.innerHTML = `<option value="">请选择分组</option>${groupSelectOptions(groups)}`;
   if ([...elements.deleteGroupSelect.options].some((item) => item.value === current)) elements.deleteGroupSelect.value = current;
   syncRenameButtons();
 }
@@ -345,7 +346,7 @@ function pagedGroups() {
 }
 
 function groupAccountCount(groupId) {
-  return state.accounts.filter((account) => account.groupId === groupId).length;
+  return state.accounts.filter((account) => (account.groupId || "") === groupId).length;
 }
 
 function renderGroups() {
@@ -364,7 +365,7 @@ function renderGroups() {
     return;
   }
   elements.groupList.innerHTML = paged.groups.map((group) => {
-    const count = groupAccountCount(group.id) || Number(group.accountCount || 0);
+    const count = groupAccountCount(group.id);
     return `<article class="account-row group-row">
       <input class="group-check" type="checkbox" value="${escapeHtml(group.id)}" />
       <div><strong>${escapeHtml(group.name)}</strong><span>${escapeHtml(group.projectName ? "已分配项目" : "尚未分配项目")}</span></div>
@@ -692,11 +693,14 @@ async function deleteCurrentGroup() {
 function applyGroupState(result) {
   const groups = Array.isArray(result.groups) ? result.groups : state.groups;
   const projects = Array.isArray(result.projects) ? result.projects : state.projects;
-  const assignments = result.assignments || {};
+  const assignments = result.assignments;
   state.groups = groups;
   state.projects = projects;
   state.accounts = state.accounts.map((account) => {
-    const groupId = officialAccountKeys(account).map((key) => assignments[key]).find(Boolean) || account.groupId || "";
+    // A returned assignment map is authoritative, including accounts moved to ungrouped.
+    const groupId = assignments
+      ? officialAccountKeys(account).map((key) => assignments[key]).find(Boolean) || ""
+      : account.groupId || "";
     const group = groups.find((item) => item.id === groupId);
     return {
       ...account,

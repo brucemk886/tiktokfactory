@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { pageFileFor } from "../factory-cloud/src/pages.js";
 import { canAccessPath, moduleIdForPath } from "../factory-cloud/src/sidebar.js";
@@ -73,4 +74,72 @@ test('renaming projects and groups keeps module scopes, memberships and account 
   const scoped=scopeOfficialAccess({accounts:[{connectionId:'account1'}]},renamed,{role:'admin'},'psychology');
   assert.equal(scoped.accounts.length,1);assert.equal(scoped.accounts[0].groupName,'新的分组名称');assert.equal(scoped.accounts[0].projectName,'新的项目名称');
   assert.throws(()=>updateGroup(renamed,'group-a',{name:'  '}),/填写名称/);
+});
+
+
+function groupCountFixture() {
+  const select = (value = "") => ({
+    value, innerHTML: "", addEventListener() {},
+    get options() { return Array.from(this.innerHTML.matchAll(/<option value="([^"]*)">/g), match => ({ value: match[1] })); },
+  });
+  const nodes = Object.fromEntries(["groupFilter", "assignGroupSelect", "moveGroupSelect", "deleteGroupSelect", "deleteProjectSelect", "accountSearch"].map(id => [`#${id}`, select()]));
+  const context = vm.createContext({ document: { body: { dataset: {} }, querySelector: id => nodes[id] || null } });
+  const script = read("tiktok-connections.js").replace("await loadSettings();", "").replace("await loadAccounts();", "");
+  vm.runInContext(`${script}
+globalThis.ui = { state, fillGroupSelects, applyGroupState, pagedAccounts };`, context);
+  const { ui } = context;
+  ui.state.groups = [
+    { id: "g1", name: "一组", projectName: "心理学", projectId: "p1", accountCount: 999 },
+    { id: "g2", name: "空组", projectName: "心理学", projectId: "p1", accountCount: 8 },
+  ];
+  ui.state.accounts = [...Array.from({ length: 25 }, (_, index) => ({ connectionId: `a${index}`, groupId: "g1", profile: { username: `test${index}` } })), { connectionId: "u1" }, { connectionId: "u2", groupId: "" }];
+  return { ui, nodes };
+}
+
+test("all group selectors count the entire loaded directory, including empty and ungrouped accounts", () => {
+  const { ui, nodes } = groupCountFixture();
+  nodes["#groupFilter"].value = "g1";
+  nodes["#assignGroupSelect"].value = "g2";
+  ui.state.page = 2;
+  assert.equal(ui.pagedAccounts().accounts.length, 5);
+  nodes["#accountSearch"].value = "test24";
+  assert.equal(ui.pagedAccounts().total, 1);
+  ui.fillGroupSelects();
+  for (const id of ["groupFilter", "assignGroupSelect", "moveGroupSelect", "deleteGroupSelect"]) {
+    assert.match(nodes[`#${id}`].innerHTML, /心理学 \/ 一组（25 个账号）/);
+    assert.match(nodes[`#${id}`].innerHTML, /心理学 \/ 空组（0 个账号）/);
+  }
+  assert.match(nodes["#groupFilter"].innerHTML, /全部分组（27 个账号）/);
+  for (const id of ["groupFilter", "assignGroupSelect"]) assert.match(nodes[`#${id}`].innerHTML, /未分组（2 个账号）/);
+  assert.equal(nodes["#groupFilter"].value, "g1");
+  assert.equal(nodes["#assignGroupSelect"].value, "g2");
+  nodes["#deleteProjectSelect"].value = "another-project";
+  ui.fillGroupSelects();
+  assert.doesNotMatch(nodes["#deleteGroupSelect"].innerHTML, /一组/);
+});
+
+test("moving accounts updates both group counts and ungrouped count without a reload", () => {
+  const { ui, nodes } = groupCountFixture();
+  const assignments = Object.fromEntries(ui.state.accounts.filter(account => account.groupId).map(account => [account.connectionId, account.groupId]));
+  assignments.a0 = "g2";
+  ui.applyGroupState({ assignments });
+  for (const id of ["groupFilter", "assignGroupSelect"]) {
+    assert.match(nodes[`#${id}`].innerHTML, /一组（24 个账号）/);
+    assert.match(nodes[`#${id}`].innerHTML, /空组（1 个账号）/);
+  }
+  delete assignments.a0;
+  ui.applyGroupState({ assignments });
+  assert.equal(ui.state.accounts[0].groupId, "");
+  assert.match(nodes["#assignGroupSelect"].innerHTML, /未分组（3 个账号）/);
+  assert.match(nodes["#assignGroupSelect"].innerHTML, /空组（0 个账号）/);
+  ui.applyGroupState({ assignments: {} });
+  assert.match(nodes["#groupFilter"].innerHTML, /未分组（27 个账号）/);
+  assert.match(nodes["#groupFilter"].innerHTML, /一组（0 个账号）/);
+});
+
+test("group metadata refresh preserves assignments when the response omits the assignment map", () => {
+  const { ui, nodes } = groupCountFixture();
+  ui.applyGroupState({ groups: ui.state.groups.map(group => ({ ...group, name: `${group.name}改名` })) });
+  assert.equal(ui.state.accounts[0].groupId, "g1");
+  assert.match(nodes["#assignGroupSelect"].innerHTML, /一组改名（25 个账号）/);
 });
