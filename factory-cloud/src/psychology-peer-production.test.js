@@ -475,7 +475,7 @@ test('recreation batch rejects missing sources, invalid media types and unauthor
   assert.equal((await call('POST',{...input,mediaType:'audio'})).status,400);
   assert.equal((await call('POST',{...input,ids:['psy-'+'a'.repeat(32)]})).status,409);
   assert.equal((await call('POST',input,null)).status,401);
-  assert.equal((await call('POST',input,{...user,role:'operator'})).status,403);
+  assert.equal((await call('POST',input,{...user,role:'operator', sidebarModules: []})).status,403);
   assert.equal((await call('POST',input,{...user,sidebarModules:[]})).status,403);
   assert.equal((await call('POST',input,user,'https://other.test')).status,403);
   assert.equal((await call('POST',{...input,ids:[]})).status,400);

@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import {imagePoolCounts,imageBankCounts,selectImageSources,handleTopicImages} from './psychology-topic-images.js';
 import {resolveTopicAssets,hydrateTopicAssets} from './topic-assets.js';
 import { json,errorJson,readJson,sha256Hex,randomToken } from "./http.js";
@@ -11,7 +12,7 @@ const TOPIC_IMAGE_TYPES={
   "image/webp":"webp",
 };
 export function assertTopicBankUser(user){
-  if(!user || user.role!=="admin" || !(user.sidebarModules||[]).includes("psychology-topic-bank"))
+  if(!hasPsychologyModule(user,'psychology-topic-bank'))
     throw Object.assign(new Error("没有模板题库管理权限。"),{statusCode:403});
 }
 function publicChoices(content){
@@ -249,6 +250,7 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
       return errorJson("不支持此请求方法。",405);
     }
     if(url.pathname===BASE+"/api-key"){
+      if(user.role!=="admin")return errorJson("仅管理员可以管理 API 密钥。",403);
       if(request.method!=="GET" && request.headers.get("origin") && request.headers.get("origin")!==url.origin)return errorJson("不允许跨站修改。",403);
       if(request.method==="GET"){
         const key=await db.prepare("SELECT token_prefix, created_at FROM psychology_template_topic_keys WHERE owner_id = ?").bind(user.id).first();

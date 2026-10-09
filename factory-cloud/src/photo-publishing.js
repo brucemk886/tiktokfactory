@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { errorJson, json, readJson } from "./http.js";
 import { mergeAndStorePublishRecords } from "./publish-records-store.js";
 import { signalDesk, signalDeskBinary } from "./signal-desk.js";
@@ -10,7 +11,7 @@ const PHOTO_PRIVACY_LEVELS = new Set(["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIEN
 export async function handlePhotoPublishing(request, env, url, session, assertAccess) {
   if (!session) return null;
   if (request.method === "POST" && url.pathname === "/api/official-tiktok/photo-assets/import") {
-    if (session.user?.role !== "admin") return errorJson("仅管理员可以生成并导入图片。", 403);
+    if (session.user?.role !== "admin" && !hasPsychologyModule(session.user,"psychology-photo","psychology-publish")) return errorJson("需要图文模板或心理学自动发布权限才能生成并导入图片。", 403);
     try {
       return json(await importGeneratedPhoto(env, env.DB, session.user, await readJson(request)), 201);
     } catch (error) {
@@ -18,7 +19,7 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
     }
   }
   if (request.method === "POST" && url.pathname === "/api/official-tiktok/photo-assets/upload") {
-    if (session.user?.role !== "admin") return errorJson("仅管理员可以上传图片卡片。", 403);
+    if (session.user?.role !== "admin" && !hasPsychologyModule(session.user,"psychology-photo","psychology-publish")) return errorJson("需要图文模板或心理学自动发布权限才能上传图片卡片。", 403);
     try {
       return json(await importRenderedPhoto(env, env.DB, await readJson(request)), 201);
     } catch (error) {
@@ -26,7 +27,7 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
     }
   }
   if (request.method === "GET" && url.pathname === "/api/official-tiktok/stock-photos") {
-    if (session.user?.role !== "admin") return errorJson("仅管理员可以搜索素材图。", 403);
+    if (session.user?.role !== "admin" && !hasPsychologyModule(session.user,"psychology-photo","psychology-publish")) return errorJson("需要图文模板或心理学自动发布权限才能搜索素材图。", 403);
     try {
       return json(await searchStockPhotos(env, url.searchParams));
     } catch (error) {
@@ -34,7 +35,7 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
     }
   }
   if (request.method === "GET" && url.pathname === "/api/official-tiktok/generated-photos/file") {
-    if (session.user?.role !== "admin") return errorJson("仅管理员可以读取生成图片。", 403);
+    if (session.user?.role !== "admin" && !hasPsychologyModule(session.user,"psychology-photo","psychology-publish")) return errorJson("需要图文模板或心理学自动发布权限才能读取生成图片。", 403);
     try {
       return await proxyGeneratedPhoto(env, env.DB, session.user, url.searchParams);
     } catch (error) {
@@ -42,7 +43,7 @@ export async function handlePhotoPublishing(request, env, url, session, assertAc
     }
   }
   if (request.method === "GET" && url.pathname === "/api/official-tiktok/stock-photos/file") {
-    if (session.user?.role !== "admin") return errorJson("仅管理员可以读取素材图。", 403);
+    if (session.user?.role !== "admin" && !hasPsychologyModule(session.user,"psychology-photo","psychology-publish")) return errorJson("需要图文模板或心理学自动发布权限才能读取素材图。", 403);
     try {
       return proxyStockPhoto(env, url.searchParams.get("url"));
     } catch (error) {

@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { reportAccountScopeSQL } from './official-report-account-scope.js';
 import { toPublicUser } from './auth.js';
 import { ensureModuleProjects, findProjectForModule, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
@@ -65,7 +66,7 @@ export async function capturePoolObservations(env,now=Date.now(),check={}){
  const policy=await db.prepare('SELECT * FROM psychology_task_group_policies WHERE project_key=?').bind(project.id).first();
  if(!policy)return {checks:0};
  const owner=await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(policy.owner).first(),user=owner&&toPublicUser(owner);
- if(!user||user.role!=='admin'||!user.sidebarModules.includes('psychology-autopilot'))return {checks:0};
+ if(!hasPsychologyModule(user,'psychology-autopilot'))return {checks:0};
  const grant=userAllowedGroupIds(user),groups=store.groups.filter(g=>g.projectId===project.id&&(!grant||grant.has(g.id))).map(g=>g.id);
  const ids=JSON.stringify(groups),timeZone=normalizeTimeZone(policy.time_zone||PACIFIC_TIME_ZONE),date=zonedDate(now,timeZone),key=String(check.key||now),token=crypto.randomUUID();
  const cte=reportAccountScopeSQL+','+

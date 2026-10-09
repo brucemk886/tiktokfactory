@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { json, errorJson, readJson } from './http.js';
 import { toPublicUser } from './auth.js';
 import { reportAccountScopeSQL } from './official-report-account-scope.js';
@@ -16,11 +17,11 @@ export function conversionFollowers(profile){
  if(value===null||value===undefined||value===''||typeof value==='boolean')return null;
  const number=Number(value);return Number.isFinite(number)&&number>=0?Math.floor(number):null;
 }
-async function currentUser(db,user,publish=false){
+async function currentUser(db,user,publish=false,module='psychology-autopilot'){
  if(!user?.username)fail('请先登录。',401);
  const row=await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(user.username).first();
  const fresh=row?toPublicUser(row):null;
- if(!fresh||fresh.role!=='admin'||!fresh.sidebarModules.includes('psychology-autopilot')||(publish&&!fresh.sidebarModules.includes('psychology-publish')))fail('没有转化运营权限。',403);
+ if(!(hasPsychologyModule(fresh,module)||(module==='psychology-website'&&fresh?.role==='admin'&&hasPsychologyModule(fresh,'psychology-autopilot')))||(publish&&!fresh.sidebarModules.includes('psychology-publish')))fail('没有转化运营权限。',403);
  return fresh;
 }
 async function accountScope(db,user,directory){
@@ -87,10 +88,10 @@ async function responseData(db,scope,head,versions,now){
   summary:{accounts:scope.accounts.length,eligibleReceivers:scope.accounts.filter(a=>a.candidate&&a.canPublish).length,selectedReceivers:parse(latest?.receivers_json,[]).length},
   templates:{ordinary:'For your full result, visit @HANDLE and tap the link in their bio to take the test.',receiver:'For your full result, tap the link in my bio to take the test.'}};
 }
-export async function handleConversionCampaign(request,env,url,user,{directory,now=Date.now()}={}){
+export async function handleConversionCampaign(request,env,url,user,{directory,now=Date.now(),module='psychology-autopilot'}={}){
  if(url.pathname!==BASE)return null;
  try{
-  user=await currentUser(env.DB,user,request.method==='PATCH');
+  user=await currentUser(env.DB,user,request.method==='PATCH',request.method==='GET'?module:'psychology-autopilot');
   if(request.method==='PATCH'&&request.headers.get('Origin')&&request.headers.get('Origin')!==new URL(request.url).origin)fail('转化设置请求来源无效。',403);
   const db=env.DB,scope=await accountScope(db,user,directory),head=await db.prepare('SELECT * FROM psychology_conversion_campaigns WHERE project_key=?').bind(scope.project.id).first();
   if(head&&head.owner!==user.username)fail('此项目的转化运营由其他管理员管理。',403);

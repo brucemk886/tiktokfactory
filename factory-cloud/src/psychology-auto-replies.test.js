@@ -52,7 +52,7 @@ test('records and actions require owner and permission',async t=>{
  const req=(suffix,method='GET',actor=user)=>{const url=new URL('https://factory.test/api/psychology-auto-replies'+suffix);return handlePsychologyAutoReplies(new Request(url,{method}),f.env,url,{user:actor});};
  const rows=await (await req('/watch/records')).json();assert.equal(rows.total,1);
  await assert.rejects(req('/watch/records','GET',{...user,username:'other'}),e=>e.statusCode===404);
- await assert.rejects(req('','GET',{...user,role:'operator'}),e=>e.statusCode===403);
+ await assert.rejects(req('','GET',{...user,role:'operator', sidebarModules: []}),e=>e.statusCode===403);
  await req('/watch/pause','POST');assert.equal(f.watch().status,'paused');
 });
 test('topic reply options survive import and old-client edits',async t=>{

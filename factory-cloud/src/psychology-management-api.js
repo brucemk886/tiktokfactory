@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import {json,errorJson,sha256Hex,randomToken} from './http.js';
 import {toPublicUser} from './auth.js';
 import {handleOfficial,loadGroupStore} from './official.js';
@@ -23,7 +24,7 @@ export async function readManagementBody(request){
  if(!body||typeof body!=='object'||Array.isArray(body))fail('请提交 JSON 对象。');return body;
 }
 function only(body,fields){if(Object.keys(body).some(k=>!fields.includes(k)))fail('包含未知或不可修改字段。');}
-function assertModule(user,module){if(user?.role!=='admin'||!user.sidebarModules?.includes(MANAGEMENT_MODULES[module]))fail('没有此心理学模块的管理权限。',403);}
+function assertModule(user,module){if(!hasPsychologyModule(user,MANAGEMENT_MODULES[module]))fail('没有此心理学模块的管理权限。',403);}
 async function actor(request,db){
  const token=request.headers.get('authorization')?.match(/^Bearer (psy_manage_\S+)$/i)?.[1];
  if(!token||token.length>200)fail('请提供心理学管理 Bearer 密钥。',401);

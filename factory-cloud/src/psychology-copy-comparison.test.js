@@ -26,7 +26,7 @@ test('comparison uses exact source sentences, validates semantic refs and caches
 test('ownership, roles, origin and source association checked before cached content or model access',async t=>{
  const f=await setup(t),count=provider(f);await call(f,f.path,'POST');
  assert.equal((await call(f,f.path,'GET',null,{...actor,username:'other'})).status,404);
- assert.equal((await call(f,f.path,'POST',null,{...actor,role:'operator'})).status,403);
+ assert.equal((await call(f,f.path,'POST',null,{...actor,role:'operator', sidebarModules: []})).status,403);
  assert.equal((await call(f,f.path,'POST',null,actor,{origin:'https://evil.test'})).status,403);
  assert.equal((await call(f,'/'+f.id+'/comparison?sourceId=wrong','POST')).status,409);
  await call(f,'/'+f.id,'DELETE');assert.equal((await call(f,f.path)).status,404);assert.equal(count(),1);

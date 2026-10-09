@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { validateReplyAnswers } from './psychology-auto-replies.js';
 import { json, readJson, errorJson } from './http.js';
 import { TOPIC_TEMPLATES, validateTopicTemplate } from '../../scripts/psychology-topic-bank.js';
@@ -28,7 +29,7 @@ export function insertScheduledComment(db,item,source,snapshot,createdBy,stamp) 
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(item.id,item.batchId,createdBy,item.template,item.connectionId,
       item.account?.username||item.account?.name||item.connectionId,source.title,snapshot.text,snapshot.delayMinutes,'',stamp,stamp,JSON.stringify(snapshot.replyConfig||{}));
 }
-function assertUser(user) {if(!user||user.role!=='admin'||!user.sidebarModules?.includes('psychology-comments'))fail('没有定时评论管理权限。',403);}
+function assertUser(user) {if(!hasPsychologyModule(user,'psychology-comments'))fail('没有定时评论管理权限。',403);}
 export async function handlePsychologyComments(request,env,url,session) {
   if(!url.pathname.startsWith(BASE))return null;
   assertUser(session?.user);const db=env.DB,user=session.user;

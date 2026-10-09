@@ -148,7 +148,7 @@ test('source details isolate exact originals and owners, paginate versions and a
  const row=library.items.find(r=>r.id===source.id);assert.equal(row.variantCount,23);assert.equal(row.enabledVariantCount,22);
  assert.equal(library.items.find(r=>r.source_url.endsWith('/201')).variantCount,0);
  await assert.rejects(api(f,'/copies/'+disabled.id,'PATCH',{enabled:true},{...actor,username:'other'}),e=>e.statusCode===404);
- assert.equal((await api(f,path,'GET',undefined,{...actor,role:'operator'})).status,403);
+ assert.equal((await api(f,path,'GET',undefined,{...actor,role:'operator'})).status,200);
  assert.equal((await api(f,'/bindings','GET',undefined,actor)).status,403);
  assert.equal(f.requests.length,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);
 });
@@ -238,7 +238,7 @@ test('AI rewrite uses stored photo/video text and existing DeepSeek model withou
 test('AI rewrite checks permission, origin and completed source before calling provider; validates output and redacts failures',async t=>{
  const f=await fixture(t);let calls=0;f.env.DEEPSEEK_API_KEY='secret-test-key';f.env.fetch=async()=>{calls++;throw new Error('secret-test-key provider detail');};
  const row=f.sqlite.prepare("SELECT id FROM psychology_copy_library WHERE media_type='photo' LIMIT 1").get();const path='/copies/generate?sourceId='+row.id;
- assert.equal((await api(f,path,'POST',null,{...user,role:'operator'})).status,403);
+ assert.equal((await api(f,path,'POST',null,{...user,role:'operator',sidebarModules:[]})).status,403);
  assert.equal((await api(f,'/copies/generate','POST')).status,400);
  assert.equal((await api(f,path,'GET')).status,405);
  assert.equal((await api(f,path,'POST')).status,404);

@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { json, errorJson } from './http.js';
 import { toPublicUser } from './auth.js';
 import { reportAccountScopeSQL } from './official-report-account-scope.js';
@@ -93,7 +94,7 @@ async function scope(db, actor) {
     db.prepare("SELECT value_json FROM factory_kv WHERE key='psychology-autopilot-account-directory-v1'").first(),
   ]);
   const user = userRow ? toPublicUser(userRow) : null;
-  if (!user || user.role !== 'admin' || !user.sidebarModules.includes('psychology-autopilot')) fail('没有自动运营权限。', 403);
+  if (!hasPsychologyModule(user,'psychology-autopilot')) fail('没有自动运营权限。', 403);
   const store = ensureModuleProjects(parse(storeRow?.value_json)), project = findProjectForModule(store, 'psychology'), grants = userAllowedGroupIds(user);
   if (!project?.id) fail('心理学项目尚未配置。', 404);
   const groups = store.groups.filter(g => g.projectId === project?.id && (!grants || grants.has(g.id)));

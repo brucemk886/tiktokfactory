@@ -18,7 +18,7 @@ ensureConsoleAssets();
     }
     document.querySelectorAll("[data-template-module]").forEach(card => {
       card.hidden = !(user.sidebarModules || []).includes(card.dataset.templateModule);
-      if (card.dataset.topicBankHref && user.role === "admin" && (user.sidebarModules || []).includes("psychology-topic-bank")) {
+      if (card.dataset.topicBankHref && (user.sidebarModules || []).includes("psychology-topic-bank")) {
         card.href = card.dataset.topicBankHref;
         const action = card.querySelector("b");
         if (action) action.textContent = "进入题目列表 →";
@@ -57,7 +57,7 @@ function renderCanonicalSidebars(user, sidebarModules) {
     const insertionPoint = nav.querySelector("[data-logout]");
     const fragment = document.createDocumentFragment();
     const available = sidebarModules.filter((item) => {
-      if (item.navigationParent) return false;
+      if (item.navigationParent && (!visibleModules || visibleModules.has(item.navigationParent))) return false;
       if (!Array.isArray(item.roles) || !item.roles.includes(user.role)) return false;
       return !visibleModules || visibleModules.has(item.id);
     });

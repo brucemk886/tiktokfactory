@@ -135,7 +135,7 @@ test('rejected versions retain output and reasons; only owner approval makes the
  await assert.rejects(request('',{enabled:true},user,'PATCH'),e=>e.statusCode===404);
  assert.throws(()=>f.sqlite.prepare('UPDATE psychology_copy_variants SET enabled=1 WHERE id=?').run(row.id),/Pending rewrite/);
  await assert.rejects(request('/approve',{}, {...user,username:'other'}),e=>e.statusCode===404);
- assert.equal((await request('/approve',{}, {...user,role:'operator'})).status,403);
+ assert.equal((await request('/approve',{}, {...user,role:'operator', sidebarModules: []})).status,403);
  assert.equal((await request('/approve',{})).status,200);
  let approved=f.sqlite.prepare('SELECT * FROM psychology_copy_variants').get();assert.equal(approved.enabled,1);assert.equal(approved.review_status,'approved');assert.ok(approved.reviewed_at>0);assert.equal(approved.raw_response,row.raw_response);
  assert.equal((await (await request('/approve',{})).json()).alreadyApproved,true);
@@ -196,7 +196,7 @@ test('historical malformed multi-version output splits atomically, remains pendi
  const listed=await(await api(f,'/copies?sourceId='+f.row.id,'GET')).json();assert.equal(listed.items[0].recoverableVersions,3);
  const request=(suffix,actor=user)=>{const url=new URL('https://factory.test/api/psychology-creative/copies/'+parent.id+suffix);return handlePsychologyCreative(new Request(url,{method:'POST',body:'{}'}),f.env,url,{user:actor});};
  await assert.rejects(request('/recover',{...user,username:'other'}),e=>e.statusCode===404);
- assert.equal((await request('/recover',{...user,role:'operator'})).status,403);
+ assert.equal((await request('/recover',{...user,role:'operator', sidebarModules: []})).status,403);
  await assert.rejects(request('/approve'),e=>e.statusCode===409);
  const split=await(await request('/recover')).json();assert.equal(split.items.length,3);
  split.items.forEach((row,i)=>{assert.deepEqual(row.pages,versions[i].pages);assert.equal(row.enabled,0);assert.equal(row.review_status,'pending');assert.equal(row.recoverableVersions,0);});

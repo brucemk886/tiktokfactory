@@ -355,7 +355,7 @@ test("public integration dispatch works without a login cookie and stays separat
   assert.match(productionScript,/Promise\.allSettled/);
   assert.match(script,/voice-gender-select/);
   assert.equal(SIDEBAR_MODULES.find(m=>m.id==="psychology-peer-hits").group.id,"psychology");
-  assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),false);
+  assert.equal(sidebarModuleIdsForRole("operator").includes("psychology-peer-hits"),true);
 });
 
 test("grokbot stores topics and liked comments, and the key reads watch/enrichment lists without weekly refresh",async t=>{

@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { psychologyPublishPayload } from "../../scripts/psychology-publish-policy.js";
 import { psychologyImagePayload, PSYCHOLOGY_IMAGE_MODEL } from "../../scripts/psychology-image-policy.js";
 import { listElevenLabsVoices } from "../../scripts/elevenlabs-voices.js";
@@ -55,6 +56,23 @@ export async function handleCompat(request, env, url, session) {
   }
 
   if (pathname === "/api/psychology/settings") {
+    if(session.user.role==='operator'){
+      if(!hasPsychologyModule(session.user,'psychology','psychology-collage','psychology-narrative','psychology-photo'))return errorJson('没有心理学模板权限。',403);
+      // Members save personal presentation/voice preferences, never shared credentials.
+      const key='psychology-settings-user:'+session.user.username;
+      const shared=await kvGet(db,'psychology-settings',defaultPsychology());
+      const preferences=await kvGet(db,key,{});
+      if(method==='GET')return json(publicPsychologySettings({...shared,...preferences}));
+      if(method==='POST'){
+        const input=await readJson(request);
+        if(input.kieApiKey||input.elevenLabsApiKey)return errorJson('共享接口密钥由管理员配置。',403);
+        const fields=Object.keys(defaultPsychology()).filter(k=>!['kieApiKey','elevenLabsApiKey'].includes(k));
+        const next={...preferences,...Object.fromEntries(fields.filter(k=>Object.hasOwn(input,k)).map(k=>[k,input[k]])),aspectRatioPreferenceVersion:1};
+        await kvSet(db,key,next);
+        return json({ok:true,settings:publicPsychologySettings({...shared,...next})});
+      }
+      return errorJson('不支持此请求方法。',405);
+    }
     if (method === "GET") {
       return json(publicPsychologySettings(await kvGet(db, "psychology-settings", defaultPsychology())));
     }

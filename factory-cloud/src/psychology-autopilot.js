@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { handleConversionCampaign } from './psychology-conversion.js';
 import { handleAutopilotDashboard } from './psychology-autopilot-dashboard.js';
 import { handleTransitionDay } from './psychology-transition-day.js';
@@ -23,6 +24,11 @@ import { frameworkFor } from './psychology-operations.js';
 import { PRODUCTION_POLICY, readProductionLoad, estimateProductionLead } from './psychology-production-capacity.js';
 import { DEFAULT_TIME_ZONE, PACIFIC_TIME_ZONE, normalizeTimeZone, zonedParts, zonedDate, zonedEpoch, addCalendarDays, nextDay, addZonedDays, calendarDayIndex, pilotTimeZoneAt } from '../../scripts/psychology-schedule-time.js';
 
+async function loadAutopilotUser(db,username){
+  const user=await loadAutoUser(db,username);
+  if(!hasPsychologyModule(user,'psychology-autopilot'))fail('没有自动运营权限。',403);
+  return user;
+}
 const BASE = '/api/psychology-autopilot';
 const DAY = 86400000, HOUR = 3600000;
 export const AUTOPILOT = Object.freeze({
@@ -229,7 +235,7 @@ export async function readAutopilotProductionContext(env,user=null,directory=nul
   for(const owner of names){
     let actor=user,scope=directory;
     if(owner!==user?.username){
-      try{actor=await loadAutoUser(env.DB,owner);}catch{continue;}
+      try{actor=await loadAutopilotUser(env.DB,owner);}catch{continue;}
       scope=scopeOfficialAccess({accounts:directory.fullAccounts||[]},store,actor,'psychology');
     }
     const forecast=await readOwnerProductionForecast(env.DB,actor,scope,now);
@@ -278,7 +284,7 @@ export async function runAutopilot(env, pilot, now = Date.now(), productionConte
     return { ...summary, ended: true };
   }
   let user;
-  try { user = await loadAutoUser(db, pilot.owner); }
+  try { user = await loadAutopilotUser(db, pilot.owner); }
   catch {
     await db.prepare("UPDATE psychology_autopilots SET status='paused',updated_at=? WHERE id=?").bind(now, pilot.id).run();
     await log(db, pilot.id, 'status', '启动人账号已停用或没有自动发布权限，自动运营已暂停。', {}, now);
@@ -433,13 +439,13 @@ export async function runAutopilots(env, now = Date.now()) {
   // publishing accounts in permission groups with no delivery executor yet.
   const policies=(await env.DB.prepare('SELECT owner FROM psychology_task_group_policies WHERE enabled=1 AND ends_at>?').bind(now).all()).results;
   for(const policy of policies){
-    try {const user=await loadAutoUser(env.DB,policy.owner);await reconcileTaskExecutors(env,user,await autopilotDirectory(env,user,true),now);}
+    try {const user=await loadAutopilotUser(env.DB,policy.owner);await reconcileTaskExecutors(env,user,await autopilotDirectory(env,user,true),now);}
     catch(error){results['task-groups:'+policy.owner]={error:error.message};}
   }
   let production=null;
   const first=await env.DB.prepare("SELECT owner FROM psychology_autopilots WHERE status='active' AND ends_at>? ORDER BY id LIMIT 1").bind(now).first();
   if(first){
-    try{const user=await loadAutoUser(env.DB,first.owner),directory=await autopilotDirectory(env,user,true);production=await readAutopilotProductionContext(env,user,directory,now);}catch{}
+    try{const user=await loadAutopilotUser(env.DB,first.owner),directory=await autopilotDirectory(env,user,true);production=await readAutopilotProductionContext(env,user,directory,now);}catch{}
   }
   let cursor='';
   // Keyset pagination prevents new executors beyond the old first-20 limit
@@ -500,7 +506,7 @@ export async function recoverAutopilotSlot(env,pilot,deliveryAt,now=Date.now(),r
   const current=await db.prepare('SELECT * FROM psychology_autopilots WHERE id=? AND owner=?').bind(pilot.id,pilot.owner).first();
   if(current?.status!=='active')fail('请先恢复自动运营。',409);
   const originalSlot=recoveryOriginalSlot(current,deliveryAt,now,requestedOriginal),summary={originalSlotAt:originalSlot,recoverySlotAt:deliveryAt,batches:[],errors:[],skipped:[]};
-  const user=await loadAutoUser(db,current.owner);
+  const user=await loadAutopilotUser(db,current.owner);
   const directory=await autopilotDirectory(env,user,true);
   if(!directory.groups.some(g=>g.id===current.group_id))fail('没有这个心理学分组的权限。',403);
   const existing=await db.prepare('SELECT * FROM psychology_autopilot_slots WHERE autopilot_id=? AND slot_at=?').bind(current.id,originalSlot).first();
@@ -562,8 +568,9 @@ export async function recoverAutopilotSlot(env,pilot,deliveryAt,now=Date.now(),r
 export async function handlePsychologyAutopilot(request, env, url, session, apiOptions = {}) {
   if (!url.pathname.startsWith(BASE)) return null;
   const user = session?.user;
-  if (user?.role !== 'admin' || !(user.sidebarModules || []).includes('psychology-autopilot')) fail('没有自动运营权限。', 403);
+  if (!hasPsychologyModule(user,'psychology-autopilot')) fail('没有自动运营权限。', 403);
   if (request.method !== 'GET' && request.headers.get('origin') && request.headers.get('origin') !== url.origin) fail('不允许跨站修改。', 403);
+  if(request.method==='POST'&&url.pathname===BASE&&!apiOptions.external&&!hasPsychologyModule(user,'psychology-publish'))fail('开始自动运营还需要心理学自动发布权限。',403);
   const db = env.DB;
   if(url.pathname===BASE+'/scheduling' && request.method==='GET')return json(await (await import('./psychology-schedule-health.js')).readScheduleHealth(env,user,url));
   if(url.pathname===BASE+'/scheduling/recover' && request.method==='POST'){
@@ -745,7 +752,7 @@ export async function handlePsychologyAutopilot(request, env, url, session, apiO
     const endsAt=apiOptions.external?(body.endsAt??pilot.ends_at):pilot.ends_at;
     if(!Object.hasOwn(STRATEGIES,strategy))fail('运营策略无效。');
     if(apiOptions.external&&(body.endsAt!==undefined||status==='active')&&(!Number.isSafeInteger(endsAt)||endsAt<=now||endsAt>now+30*DAY))fail('endsAt 须为未来 30 天内的毫秒时间戳。');
-    if(status==='active'&&apiOptions.external&&!user.sidebarModules.includes('psychology-publish'))fail('没有自动发布权限。',403);
+    if(status==='active'&&!user.sidebarModules.includes('psychology-publish'))fail('没有自动发布权限。',403);
     const stamp=Math.max(now,pilot.updated_at+1);
     const changing=apiOptions.external&&body.strategy!==undefined&&strategy!==pilotStrategyAt(pilot,now);
     const result=await db.prepare('UPDATE psychology_autopilots SET status=?,stop_pending=?,strategy=?,current_strategy=?,strategy_started_at=?,pending_strategy=?,strategy_effective_at=?,ends_at=?,updated_at=? WHERE id=? AND owner=? AND updated_at=?')

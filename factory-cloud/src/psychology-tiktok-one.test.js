@@ -43,9 +43,9 @@ test('normal batch does not query One; anchored group freezes context and schedu
  await dispatchPublishGroup(f.env,row.publish_group_id);assert.equal(f.requests.length,1);
  const frozen=JSON.parse(f.sqlite.prepare('SELECT request_json FROM psychology_publish_groups WHERE id=?').get(row.publish_group_id).request_json);assert.deepEqual(frozen,sent);
 });
-test('One proxy rejects operators and rejects accounts outside psychology scope before bridge reads',async t=>{
+test('One proxy rejects ungranted members and rejects accounts outside psychology scope before bridge reads',async t=>{
  const f=await setup(t);const call=(query,actor=user)=>{const req=new Request('https://factory.test/api/psychology-tiktok-one?'+new URLSearchParams(query));return handlePsychologyOne(req,f.env,new URL(req.url),{user:actor});};
- await assert.rejects(call({resource:'connections'},{...user,role:'operator'}),e=>e.statusCode===403);
+ await assert.rejects(call({resource:'connections'},{...user,role:'operator',sidebarModules:[]}),e=>e.statusCode===403);
  await assert.rejects(call({...project,resource:'prepare',creatorConnectionId:'outside'}),e=>e.statusCode===403);
  assert.equal((await call({resource:'connections'})).status,200);
 });
@@ -81,7 +81,7 @@ test('explicit join rejects cross-origin, unknown actions, out-of-scope accounts
  await assert.rejects(joinRequest(f,{}, {Origin:'https://untrusted.example'}),e=>e.statusCode===403);
  await assert.rejects(joinRequest(f,{action:'publish'}),/不支持/);
  await assert.rejects(joinRequest(f,{creatorConnectionId:'outside'}),e=>e.statusCode===403);
- await assert.rejects(joinRequest(f,{}, {}, {...user,role:'operator'}),e=>e.statusCode===403);
+ await assert.rejects(joinRequest(f,{}, {}, {...user,role:'operator',sidebarModules:[]}),e=>e.statusCode===403);
  f.sqlite.prepare("UPDATE factory_users SET active=0 WHERE username='admin'").run();
  await assert.rejects(joinRequest(f),e=>e.statusCode===403);assert.equal(f.checks.length,0);
 });
@@ -107,4 +107,11 @@ test('membership timeout has actionable guidance and does not join or publish',a
  const request=new Request('https://factory.test/api/psychology-tiktok-one?'+new URLSearchParams({...project,resource:'prepare',creatorConnectionId:'a'}));
  await assert.rejects(()=>handlePsychologyOne(request,f.env,new URL(request.url),{user}),e=>e.statusCode===504&&e.message.includes('重新检查账号'));
  assert.equal(f.checks.length,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
+});
+
+test('a member with the publish grant can inspect One projects while assigned account restrictions remain',async t=>{
+ const f=await setup(t),actor={...user,role:'operator',allowedAccountGroups:['g']};
+ const url=new URL('https://factory.test/api/psychology-tiktok-one?resource=connections');
+ assert.equal((await handlePsychologyOne(new Request(url),f.env,url,{user:actor})).status,200);
+ await assert.rejects(joinRequest(f,{creatorConnectionId:'outside'},{},actor),e=>e.statusCode===403);assert.equal(f.checks.length,0);assert.equal(f.requests.length,0);
 });

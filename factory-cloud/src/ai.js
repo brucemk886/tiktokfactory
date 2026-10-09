@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { isKieImageModel } from "../../scripts/kie-image-models.js";
 import { errorJson, json, now, readJson } from "./http.js";
 import { createKieClient } from "./kie.js";
@@ -8,7 +9,7 @@ export async function handleAi(request, env, url, session) {
   if (!session) return null;
   const pathname = url.pathname;
   if (pathname !== "/api/kie-ai" && !pathname.startsWith("/api/kie-ai/")) return null;
-  if (session.user?.role !== "admin") return errorJson("仅管理员可以使用 AI 创作。", 403);
+  if (session.user?.role !== "admin" && !hasPsychologyModule(session.user,"psychology-photo")) return errorJson("没有 AI 创作或心理学图文模板权限。", 403);
 
   try {
     const db = env.DB;
@@ -32,13 +33,15 @@ export async function handleAi(request, env, url, session) {
       `).bind(session.user.username).all()).results) || [];
       return json({
         tasks: rows.map(publicTask),
-        credits: await safeCredits(kie),
+        credits: session.user.role === "admin" ? await safeCredits(kie) : null,
         configured: Boolean(String(env.KIE_API_KEY || "").trim()),
         cloud: true
       });
     }
     if (method === "POST" && pathname === "/api/kie-ai") {
-      return json({ task: await createGeneration(db, kie, session.user.username, await readJson(request)) }, 201);
+      const input=await readJson(request);
+      if(session.user.role!=="admin" && input.kind!=="image")return errorJson("心理学图文模板仅授权图片生成。",403);
+      return json({ task: await createGeneration(db, kie, session.user.username, input) }, 201);
     }
     return errorJson("不支持这个 AI 创作请求。", 405);
   } catch (error) {

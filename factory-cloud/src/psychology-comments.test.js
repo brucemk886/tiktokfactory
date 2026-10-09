@@ -65,7 +65,7 @@ test('expired lease resumes with stable idempotency; future due date still block
 test('template settings API enforces permissions, valid delay and preserves pending snapshots',async t=>{
  const f=await ready(t),url=new URL('https://factory.test/api/psychology-comments/templates');
  const req=body=>new Request(url,{method:'PUT',body:JSON.stringify(body)});
- await assert.rejects(handlePsychologyComments(req({}),f.env,url,{user:{...admin,role:'operator'}}),e=>e.statusCode===403);
+ await assert.rejects(handlePsychologyComments(req({}),f.env,url,{user:{...admin,role:'operator', sidebarModules: []}}),e=>e.statusCode===403);
  await assert.rejects(handlePsychologyComments(req({template:'psychology',enabled:true,delayMinutes:0}),f.env,url,{user:admin}),/延迟/);
  assert.equal((await handlePsychologyComments(req({template:'psychology',enabled:true,delayMinutes:60,caption:'Later {hours}'}),f.env,url,{user:admin})).status,200);
  assert.equal(f.read().delay_minutes,120);

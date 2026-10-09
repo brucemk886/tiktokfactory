@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { temporaryAccessError } from './psychology-account-access.js';
 import { failureItems, storePsychologyFailures, publishDiagnostic } from './psychology-publish-retries.js';
 import { serveTopicImage, topicImageObjectKey } from './psychology-topic-bank.js';
@@ -71,6 +72,8 @@ export async function handleJobs(request, env, url, session, ctx) {
   for (const route of FFMPEG_START_ROUTES) {
     if (method === route.method && route.pattern.test(pathname)) {
       const payload = psychologyPublishPayload(route.type, await readJson(request));
+      const templateGrant=route.type==='psychology-collage'?'psychology-collage':route.type==='psychology-target-2'?'psychology-narrative':payload.module==='psychology'&&route.type==='generate'?'psychology':null;
+      if(templateGrant&&session.user.role==='operator'&&!hasPsychologyModule(session.user,templateGrant))return errorJson('没有这个心理学模板的权限。',403);
       const publish = payload.publish && typeof payload.publish === "object" ? payload.publish : {};
       const automaticOfficialPublish = publish.provider === "official" && publish.autoPublish !== false;
       if (route.type === "official-publish" || automaticOfficialPublish) {

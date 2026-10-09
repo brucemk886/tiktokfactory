@@ -47,7 +47,7 @@ test('owner-scoped source/import is idempotent; gateway supports all frame/versi
  const d=await (await f.gateway('videoHits.get',{id:a.id})).json();assert.equal(d.versions[0].version,20);
  assert.equal((await f.gateway('videoHits.versions.write',{id:a.id,version:'21',body:{revision:0,title:'No'}},crypto.randomUUID())).status,400);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();assert.equal((await f.gateway('videoHits.get',{id:a.id})).status,403);
- assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-video-hits']},'/psychology-video-hits.html'),false);
+ assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-video-hits']},'/psychology-video-hits.html'),true);
 });
 test('revision conflicts roll back frame writes; incomplete versions cannot enable; original edits disable all versions',async t=>{
  const f=await setup(t),id=await f.create();
@@ -130,12 +130,12 @@ test('all twenty versions are independently writable and owner boundaries hold f
  await assert.rejects(f.call('/'+id),/无权/);await assert.rejects(f.call('/'+id+'/frames/0'),/无权/);await assert.rejects(f.call('/'+id+'/versions/1/jobs'),/无权/);
 });
 
-test('video-hit child pages retain the same administrator module grant',()=>{
+test('video-hit child pages retain the same explicit module grant',()=>{
  for(const path of ['/psychology-video-hits','/psychology-video-hits/recreations','/psychology-video-hits/detail']){
   assert.equal(pageFileFor(path),'psychology-video-hits.html');assert.equal(isPublicPath(path),false);assert.equal(moduleIdForPath(path),'psychology-video-hits');
   assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-video-hits']},path),true);
   assert.equal(canAccessPath({role:'admin',sidebarModules:[]},path),false);
-  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-video-hits']},path),false);
+  assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-video-hits']},path),true);
  }
 });
 

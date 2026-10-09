@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { json, errorJson, readJson } from './http.js';
 import { toPublicUser } from './auth.js';
 import { reportAccountScopeSQL } from './official-report-account-scope.js';
@@ -39,7 +40,7 @@ async function currentUser(db,user,{publish=false}={}){
  if(!user?.username)fail('请先登录。',401);
  const row=await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(user.username).first();
  const fresh=row?toPublicUser(row):null;
- if(!fresh||fresh.role!=='admin'||!fresh.sidebarModules.includes('psychology-autopilot')||(publish&&!fresh.sidebarModules.includes('psychology-publish')))
+ if(!hasPsychologyModule(fresh,'psychology-autopilot')||(publish&&!fresh.sidebarModules.includes('psychology-publish')))
   fail('没有任务组运营权限。',403);
  return fresh;
 }

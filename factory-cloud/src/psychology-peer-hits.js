@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import {handleCopyIntegration,PSYCHOLOGY_COPY_API} from './psychology-copy-integration.js';
 import { errorJson, json, randomToken, sha256Hex } from "./http.js";
 import { importPsychologyPeerHits, listPsychologyPeerHits, deletePsychologyPeerHit, updatePsychologyPeerHitVoiceGender, updatePsychologyPeerHitMediaType, listWatchAccounts, saveWatchAccount, deleteWatchAccount, peerWorklist } from "./psychology-peer-hits-store.js";
@@ -46,11 +47,12 @@ export async function handlePsychologyPeerHits(request, env, url, session) {
     }
     if (!session) return errorJson("请先登录。", 401);
     const user = session.user;
-    if (user?.role !== "admin" || !user.sidebarModules?.includes("psychology-peer-hits")) return errorJson("没有心理学同行爆款权限。", 403);
+    if (!hasPsychologyModule(user,...(url.pathname.startsWith(INTERNAL+'/production')?['psychology-peer-hits','psychology-production','psychology-publish-sources']:['psychology-peer-hits']))) return errorJson("没有心理学同行爆款权限。", 403);
     if (request.method !== "GET" && request.headers.get("origin") && request.headers.get("origin") !== url.origin) return errorJson("不允许跨站修改。", 403);
     const production = await handlePeerProduction(request, env, url, user);
     if (production) return production;
     if (url.pathname === INTERNAL + "/api-key") {
+      if(user.role!=="admin")return errorJson("仅管理员可以管理 API 密钥。",403);
       if (request.method === "GET") {
         const key = await db.prepare("SELECT token_prefix, created_at FROM psychology_peer_hit_keys WHERE owner_id = ?").bind(user.id).first();
         return json({ configured: Boolean(key), prefix: key?.token_prefix || "", createdAt: key?.created_at || null, endpoint: PSYCHOLOGY_PEER_API });

@@ -1,3 +1,5 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
+import {toPublicUser} from './auth.js';
 import {handleCopyUsage} from './psychology-copy-usage.js';
 import {rewriteModelLabel} from './psychology-rewrite-model.js';
 import {psychologyPeerHitFromRow} from './psychology-peer-hits-store.js';
@@ -30,7 +32,7 @@ export function importedCopy(source){
 export async function handlePsychologyCopyLibrary(request,env,url,session){
  if(!url.pathname.startsWith(BASE))return null;
  const user=session?.user;
- if(user?.role!=='admin'||!['psychology-copy-library','psychology-peer-hits'].some(id=>user.sidebarModules?.includes(id)))return errorJson('没有文案库权限。',403);
+ if(!hasPsychologyModule(user,'psychology-copy-library','psychology-peer-hits'))return errorJson('没有文案库权限。',403);
  if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)return errorJson('不允许跨站修改。',403);
  if(url.pathname===BASE+'/usage')return handleCopyUsage(request,env,url,user);
  if(url.pathname===BASE&&request.method==='DELETE'){
@@ -119,8 +121,8 @@ export async function dispatchCopyExtractions(env,now=Date.now()){
   }
   if(content?.skipped){await db.prepare("UPDATE psychology_copy_library SET status='failed',error=?,updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(content.skipped,now,row.id,row.attempt).run();continue;}
   if(content){await db.prepare("UPDATE psychology_copy_library SET status='done',content_json=?,provider=?,error='',completed_at=?,updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(JSON.stringify(content),provider,now,now,row.id,row.attempt).run();continue;}
-  const actor=await db.prepare("SELECT active,role FROM factory_users WHERE username=?").bind(row.owner).first();
-  if(!actor?.active||actor.role!=='admin'){await db.prepare("UPDATE psychology_copy_library SET status='failed',error='原导入账号已停用或无管理员权限。',updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(now,row.id,row.attempt).run();continue;}
+  const actor=await db.prepare("SELECT * FROM factory_users WHERE username=?").bind(row.owner).first();
+  if(!actor?.active||!hasPsychologyModule(toPublicUser(actor),'psychology-copy-library','psychology-peer-hits')){await db.prepare("UPDATE psychology_copy_library SET status='failed',error='原导入账号已停用或无文案库权限。',updated_at=? WHERE id=? AND status='queued' AND attempt=?").bind(now,row.id,row.attempt).run();continue;}
   const workflowId='copy-'+row.id+'-'+row.attempt;
   const payload=row.media_type==='photo'?peerProductionPayload(source,'psychology-photo-story',{rewriteCopy:false}):source;
   await db.prepare("UPDATE psychology_copy_library SET status='running',workflow_id=?,payload_json=?,started_at=?,dispatch_at=0,updated_at=? WHERE id=? AND status='queued' AND auto_extract=1 AND attempt=? AND (SELECT COUNT(*) FROM psychology_copy_library WHERE status='running' AND auto_extract=1)<?")

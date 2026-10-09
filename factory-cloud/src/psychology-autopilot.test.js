@@ -82,7 +82,7 @@ test('autopilot starts on a group, schedules library batches for the coming slot
   await assert.rejects(f.api('POST', '', { groupId: 'other', strategy: 'evolve' }), /没有这个心理学分组/);
   const url = new URL('https://factory.test/api/psychology-autopilot');
   await assert.rejects(handlePsychologyAutopilot(new Request(url), f.env, url, { user: { ...admin, sidebarModules: ['psychology-publish'] } }), /没有自动运营权限/);
-  await assert.rejects(handlePsychologyAutopilot(new Request(url), f.env, url, { user: { ...admin, role: 'operator' } }), /没有自动运营权限/);
+  await assert.rejects(handlePsychologyAutopilot(new Request(url), f.env, url, { user: { ...admin, role: 'operator', sidebarModules: [] } }), /没有自动运营权限/);
   const started = await (await f.api('POST', '', { groupId: 'g', strategy: 'original', days: 7 })).json();
   await assert.rejects(f.api('POST', '', { groupId: 'g', strategy: 'evolve' }), /已经在自动运营/);
   const pilot = f.sqlite.prepare('SELECT * FROM psychology_autopilots WHERE id=?').get(started.id);
@@ -487,7 +487,7 @@ test('pool strategy continuation validates revision, scope, origin, duration and
   const url=new URL('https://factory.test/api/psychology-autopilot'+path);
   const body={strategy:'pools',days:7,revision:pilot.updated_at};
   await assert.rejects(handlePsychologyAutopilot(new Request(url,{method:'PATCH',headers:{origin:'https://other.test'},body:JSON.stringify(body)}),f.env,url,{user:admin}),/跨站/);
-  await assert.rejects(handlePsychologyAutopilot(new Request(url,{method:'PATCH',body:JSON.stringify(body)}),f.env,url,{user:{...admin,role:'operator'}}),/权限/);
+  await assert.rejects(handlePsychologyAutopilot(new Request(url,{method:'PATCH',body:JSON.stringify(body)}),f.env,url,{user:{...admin,role:'operator', sidebarModules: []}}),/权限/);
   const response=await(await f.api('PATCH',path,body)).json();
   await assert.rejects(f.api('PATCH',path,body),/revision/);
   f.sqlite.prepare("INSERT INTO psychology_autopilot_slots(autopilot_id,slot_at,status,updated_at) VALUES(?,?,'creating',?)").run(id,response.effectiveAt+8*HOUR,now);

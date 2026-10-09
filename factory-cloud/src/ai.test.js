@@ -210,3 +210,11 @@ test("invalid video model or MiniMax settings return 400 without upstream billin
   }
   assert.equal(requests, 0);
 });
+
+test('photo-template members can generate images without receiving chat/video or shared credit access',async()=>{
+ const calls=[],env={DB:memoryAiDb(),KIE_API_KEY:'test-key',fetch:async(url)=>{calls.push(String(url));return json({code:200,data:{taskId:'member-image'}});}},session={user:{username:'member',role:'operator',sidebarModules:['psychology-photo']}},url=new URL('https://factory.test/api/kie-ai');
+ const get=await handleAi(jsonRequest('GET','/api/kie-ai'),env,url,session);assert.equal(get.status,200);assert.equal((await get.json()).credits,null);assert.equal(calls.length,0);
+ for(const kind of ['video','chat'])assert.equal((await handleAi(jsonRequest('POST','/api/kie-ai',{kind,prompt:'test prompt'}),env,url,session)).status,403);
+ assert.equal(calls.length,0);
+ assert.equal((await handleAi(jsonRequest('POST','/api/kie-ai',{kind:'image',prompt:'A quiet lake',imageModel:'z-image'}),env,url,session)).status,201);assert.equal(calls.length,1);
+});

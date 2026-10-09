@@ -377,7 +377,7 @@ function withOpsReportModules(value, role) {
     insertModuleAfter(modules, "mid-video-effects", "mid-video-ops-report");
     insertModuleAfter(modules, "mid-video-ops-report", "mid-video-publish");
   }
-  if (modules.some((moduleId) => psychologyIds.includes(moduleId))) {
+  if (role === "admin" && modules.some((moduleId) => psychologyIds.includes(moduleId))) {
     insertModuleAfter(modules, "psychology", "psychology-effects");
     insertModuleAfter(modules, "psychology-effects", "psychology-ops-report");
     insertModuleAfter(modules, "psychology-ops-report", "psychology-publish");

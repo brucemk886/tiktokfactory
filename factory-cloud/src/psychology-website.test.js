@@ -167,3 +167,9 @@ test('short link creation requires the current campaign owner and same origin; r
  f.sqlite.exec("UPDATE psychology_conversion_campaigns SET owner='admin'; UPDATE factory_users SET role='operator'");
  assert.equal((await call()).status,403);assert.equal(f.requests.length,0);
 });
+
+test('website-only member grant reads the owned campaign without enabling automatic operations',async t=>{
+ const f=await endpointFixture(t);f.sqlite.exec("UPDATE factory_users SET role='operator',sidebar_modules_json='[\"psychology-website\"]',allowed_account_groups_json='[\"g\"]'");
+ const response=await f.call();assert.equal(response.status,200);assert.equal(f.requests.length,0);
+ f.sqlite.exec("UPDATE factory_users SET sidebar_modules_json='[]'");assert.equal((await f.call()).status,403);
+});

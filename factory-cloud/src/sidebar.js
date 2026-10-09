@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 const ALL = ["admin", "operator"];
 
 export const SIDEBAR_MODULES = Object.freeze([
@@ -24,23 +25,23 @@ export const SIDEBAR_MODULES = Object.freeze([
   moduleItem("photo-factory-templates", "/photo-factory/templates", "模板工作台", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("photo-factory-autopilot", "/photo-factory/autopilot", "自动运营", ["admin"], {id:"photo-factory",label:"图文工厂"}),
   moduleItem("photo-factory-reports", "/photo-factory/reports", "运营报表", ["admin"], {id:"photo-factory",label:"图文工厂"}),
-  moduleItem("psychology-video-hits", "/psychology-video-hits", "视频爆款", ["admin"], psychologyGroup()),
-  moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ["admin"], psychologyGroup()),
-  moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ["admin"], psychologyGroup(), "psychology-copy-library"),
-  moduleItem("psychology-production", "/psychology-production", "爆款复刻", ["admin"], psychologyGroup(), "psychology-publish-sources"),
+  moduleItem("psychology-video-hits", "/psychology-video-hits", "视频爆款", ALL, psychologyGroup()),
+  moduleItem("psychology-copy-library", "/psychology-copy-library", "文案库", ALL, psychologyGroup()),
+  moduleItem("psychology-peer-hits", "/psychology-peer-hits", "文案库来源管理", ALL, psychologyGroup(), "psychology-copy-library"),
+  moduleItem("psychology-production", "/psychology-production", "爆款复刻", ALL, psychologyGroup(), "psychology-publish-sources"),
   moduleItem("psychology", "/psychology-templates", "模板工作台", ALL, psychologyGroup()),
-  moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ["admin"], psychologyGroup(), "psychology"),
-  moduleItem("psychology-narrative", "/psychology-target-2", "单图互动测试模板", ["admin"], psychologyGroup(), "psychology"),
-  moduleItem("psychology-photo", "/psychology-photo", "图文发布模板", ["admin"], psychologyGroup(), "psychology"),
-  moduleItem("psychology-topic-bank", "/psychology-topic-bank", "模板题库", ["admin"], psychologyGroup()),
+  moduleItem("psychology-collage", "/psychology-collage", "纸张拼贴模板", ALL, psychologyGroup(), "psychology"),
+  moduleItem("psychology-narrative", "/psychology-target-2", "单图互动测试模板", ALL, psychologyGroup(), "psychology"),
+  moduleItem("psychology-photo", "/psychology-photo", "图文发布模板", ALL, psychologyGroup(), "psychology"),
+  moduleItem("psychology-topic-bank", "/psychology-topic-bank", "模板题库", ALL, psychologyGroup()),
   moduleItem("psychology-effects", "/psychology-effects", "数据概览", ALL, psychologyGroup()),
-  moduleItem("psychology-website", "/psychology-website", "独立站转化", ["admin"], psychologyGroup()),
+  moduleItem("psychology-website", "/psychology-website", "独立站转化", ALL, psychologyGroup()),
   moduleItem("psychology-ops-report", "/psychology-ops-report", "运营报表", ALL, psychologyGroup()),
-  moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ["admin"], psychologyGroup()),
-  moduleItem("psychology-autopilot", "/psychology-autopilot", "自动运营", ["admin"], psychologyGroup()),
-  moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ["admin"], psychologyGroup()),
-  moduleItem("psychology-comments", "/psychology-comments", "定时评论", ["admin"], psychologyGroup()),
-  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "心理学发布记录", ["admin"], psychologyGroup()),
+  moduleItem("psychology-publish", "/psychology-publish", "心理学自动发布", ALL, psychologyGroup()),
+  moduleItem("psychology-autopilot", "/psychology-autopilot", "自动运营", ALL, psychologyGroup()),
+  moduleItem("psychology-publish-designs", "/psychology-publish-designs", "图文样式", ALL, psychologyGroup()),
+  moduleItem("psychology-comments", "/psychology-comments", "定时评论", ALL, psychologyGroup()),
+  moduleItem("psychology-publish-sources", "/psychology-publish-sources", "心理学发布记录", ALL, psychologyGroup()),
   moduleItem("tiktok-connections", "/tiktok-connections", "TikTok 账号", ALL, officialChannelGroup()),
   moduleItem("official-analytics", "/official-analytics", "授权账号数据", ALL, officialChannelGroup()),
   moduleItem("official-publish-records", "/official-publish-records", "官方发布记录", ALL, officialChannelGroup()),
@@ -83,12 +84,12 @@ export function homePathForUser(user) {
 }
 
 export function moduleIdForPath(pathname) {
-  const clean = String(pathname || "").replace(/\/$/, "") || "/";
+  const clean = String(pathname || "").replace(/\/$/, "").replace(/^(\/psychology[^.]*)\.html$/, "$1") || "/";
   const aliases = {
-    "/psychology-website": "psychology-autopilot",
-    "/psychology-website.html": "psychology-autopilot",
-    "/psychology-publish-designs": "psychology-publish",
-    "/psychology-creative.html": "psychology-publish",
+    "/psychology-website": "psychology-website",
+    "/psychology-website.html": "psychology-website",
+    "/psychology-publish-designs": "psychology-publish-designs",
+    "/psychology-creative": "psychology-publish-designs",
     "/psychology-video-hits.html": "psychology-video-hits",
     "/psychology-video-hits/recreations": "psychology-video-hits",
     "/psychology-video-hits/detail": "psychology-video-hits",
@@ -120,19 +121,26 @@ const ACCOUNT_DATA_DETAIL_PATHS = Object.freeze(["/official-account-detail", "/o
 
 export function canAccessPath(user, pathname) {
   if (!user) return false;
-  if (["/psychology-website","/psychology-website.html"].includes(pathname)) return user.role==="admin" && (user.sidebarModules||[]).includes("psychology-autopilot");
   if(["/factory-api","/factory-api.html"].includes(pathname))return user.role==="admin";
   if(pathname.startsWith("/photo-factory"))return user.role==="admin"&&(user.sidebarModules||[]).includes("photo-factory");
   const clean = String(pathname || "").replace(/\/$/, "") || "/";
-  if(['/psychology-video-hits','/psychology-video-hits.html','/psychology-video-hits/recreations','/psychology-video-hits/detail'].includes(clean))return user.role==='admin'&&(user.sidebarModules||[]).includes('psychology-video-hits');
+  if(['/psychology-video-hits','/psychology-video-hits.html','/psychology-video-hits/recreations','/psychology-video-hits/detail'].includes(clean))return hasPsychologyModule(user,'psychology-video-hits');
   if (ACCOUNT_DATA_DETAIL_PATHS.includes(clean)) {
     return (user.sidebarModules || []).some((moduleId) => ACCOUNT_DATA_MODULES.includes(moduleId));
   }
-  if(['/psychology-copy-usage','/psychology-copy-usage.html','/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return user.role==='admin'&&['psychology-peer-hits','psychology-copy-library'].some(id=>(user.sidebarModules||[]).includes(id));
+  if(['/psychology-copy-usage','/psychology-copy-usage.html','/psychology-peer-hits','/psychology-peer-hits.html','/psychology-copy-library','/psychology-copy-library.html'].includes(clean))return hasPsychologyModule(user,'psychology-peer-hits','psychology-copy-library');
   // 爆款复刻 merged into the publish records page; either saved grant still opens it.
-  if(['/psychology-production','/psychology-production.html','/psychology-publish-sources','/psychology-publish-sources.html'].includes(clean))return user.role==='admin'&&['psychology-production','psychology-publish-sources'].some(id=>(user.sidebarModules||[]).includes(id));
+  if(['/psychology-production','/psychology-production.html','/psychology-publish-sources','/psychology-publish-sources.html'].includes(clean))return hasPsychologyModule(user,'psychology-production','psychology-publish-sources');
   const moduleId = moduleIdForPath(pathname);
   if (!moduleId) return true;
+  if(moduleId.startsWith('psychology')) {
+    // Preserve administrator bookmarks; members need the explicit new page grant.
+    if(user.role==='admin' && moduleId==='psychology-website')return hasPsychologyModule(user,'psychology-website','psychology-autopilot');
+    if(user.role==='admin' && moduleId==='psychology-publish-designs')return hasPsychologyModule(user,'psychology-publish-designs','psychology-publish');
+    if(moduleId==='psychology-copy-library'||moduleId==='psychology-peer-hits')return hasPsychologyModule(user,'psychology-copy-library','psychology-peer-hits');
+    if(moduleId==='psychology-production'||moduleId==='psychology-publish-sources')return hasPsychologyModule(user,'psychology-production','psychology-publish-sources');
+    return hasPsychologyModule(user,moduleId);
+  }
   if (moduleId === "accounts" || moduleId === "geelark-profiles") return user.role === "admin";
   return (user.sidebarModules || []).includes(moduleId);
 }

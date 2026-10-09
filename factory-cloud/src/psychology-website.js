@@ -12,9 +12,9 @@ export async function handlePsychologyWebsite(request,env,url,session,{now=Date.
  if(request.method!==(creating?'POST':'GET'))return errorJson('不支持此操作。',405);
  if(creating&&request.headers.get('Origin')&&request.headers.get('Origin')!==url.origin)return errorJson('请求来源无效。',403);
  try{
-  // Reuse fresh admin/module/project/owner checks, including revoked account grants.
+  // Reuse fresh module/project/owner checks, including revoked account grants.
   const contextUrl=new URL('/api/psychology-autopilot/conversion',url);
-  const response=await handleConversionCampaign(new Request(contextUrl),env,contextUrl,session.user,{now});
+  const response=await handleConversionCampaign(new Request(contextUrl),env,contextUrl,session.user,{now,module:'psychology-website'});
   if(!response.ok)return response;
   const context=await response.json();
   const campaign=await env.DB.prepare('SELECT owner FROM psychology_conversion_campaigns WHERE project_key=?').bind(context.projectId).first();

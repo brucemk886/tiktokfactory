@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import {json,readJson,errorJson} from './http.js';
 import {signalDesk} from './signal-desk.js';
 import {loadAutoUser} from './psychology-auto-publish.js';
@@ -5,7 +6,7 @@ import {assertOfficialPublishAccess} from './official.js';
 const BASE='/api/psychology-auto-replies';
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 const parse=s=>{try{return JSON.parse(s||'{}');}catch{return {};}};
-const assertUser=u=>{if(!u||u.role!=='admin'||!u.sidebarModules?.includes('psychology-comments'))fail('没有自动回复管理权限。',403);};
+const assertUser=u=>{if(!hasPsychologyModule(u,'psychology-comments'))fail('没有自动回复管理权限。',403);};
 const hub=(env,path,options)=>signalDesk(env,env.DB,path,{...options,signal:AbortSignal.timeout(25000)});
 const scanPath=(row,extra={})=>'/api/v1/publish/comments/scan?'+new URLSearchParams({connectionId:row.connection_id,videoId:row.video_id,cursor:row.cursor||'0',...extra});
 const externalId=row=>'psychology-reply:'+row.id;

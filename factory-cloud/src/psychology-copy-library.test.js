@@ -34,7 +34,7 @@ test('library only returns completed originals with type/search pagination and p
  assert.equal((await (await api(f,'?page=2')).json()).items.length,5);
  const photos=await (await api(f,'?mediaType=photo')).json();assert.equal(photos.total,12);assert.ok(photos.items.every(r=>r.media_type==='photo'));
  assert.equal((await (await api(f,'?q=missing')).json()).total,0);
- assert.equal((await api(f,'','GET',{...actor,role:'operator'})).status,403);
+ assert.equal((await api(f,'','GET',{...actor,role:'operator'})).status,200);
  assert.equal((await api(f,'','GET',{...actor,sidebarModules:[]})).status,403);
 });
 
@@ -157,16 +157,16 @@ test('unified records join exact source metrics, sort/filter/search, and retain 
  assert.equal(f.requests.length,0);
 });
 
-test('unified copy access preserves source-management permissions and admin-only boundaries',async t=>{
+test('unified copy access preserves source-management grants and admin-only credential boundaries',async t=>{
  const f=await setup(t);const peerUser={...actor,id:'admin',sidebarModules:['psychology-peer-hits']};
  assert.equal((await (await api(f,'?status=all','GET',peerUser)).json()).canManageSources,true);
- assert.equal((await api(f,'?status=all','GET',{...peerUser,role:'operator'})).status,403);
+ assert.equal((await api(f,'?status=all','GET',{...peerUser,role:'operator'})).status,200);
  const {handlePsychologyPeerHits}=await import('./psychology-peer-hits.js');const url=new URL('https://factory.test/api/psychology-peer-hits/api-key');
  assert.equal((await handlePsychologyPeerHits(new Request(url),f.env,url,{user:actor})).status,403);
  const {SIDEBAR_MODULES,canAccessPath}=await import('./sidebar.js');
  assert.equal(SIDEBAR_MODULES.find(r=>r.id==='psychology-peer-hits').navigationParent,'psychology-copy-library');
  assert.equal(SIDEBAR_MODULES.filter(r=>r.group?.id==='psychology'&&!r.navigationParent&&r.label==='文案库').length,1);
- assert.equal(canAccessPath(peerUser,'/psychology-copy-library'),true);assert.equal(canAccessPath({...peerUser,role:'operator'},'/psychology-copy-library'),false);
+ assert.equal(canAccessPath(peerUser,'/psychology-copy-library'),true);assert.equal(canAccessPath({...peerUser,role:'operator'},'/psychology-copy-library'),true);
  const {handlePsychologyCreative}=await import('./psychology-creative.js');const copies=new URL('https://factory.test/api/psychology-creative/copies');
  assert.equal((await handlePsychologyCreative(new Request(copies),f.env,copies,{user:peerUser})).status,200);
 });
@@ -192,7 +192,7 @@ test('the old recreation board redirects into the manual view of publish records
  }
  // A grant for only the old board still opens the merged page; operators stay out.
  assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-production']},'/psychology-publish-sources'),true);
- assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-production','psychology-publish-sources']},'/psychology-publish-sources'),false);
+ assert.equal(canAccessPath({role:'operator',sidebarModules:['psychology-production','psychology-publish-sources']},'/psychology-publish-sources'),true);
 });
 
 

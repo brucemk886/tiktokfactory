@@ -91,7 +91,7 @@ test('batch draws correct media, unique sources, creates exact jobs and stable a
 });
 test('unauthorized users and accounts cannot create paid jobs; insufficient matching sources writes nothing',async t=>{
   const {call,sqlite}=await fixture(t);
-  await assert.rejects(call('POST',input(),'/api/psychology-auto-publish',{...user,role:'operator'}),e=>e.statusCode===403);
+  await assert.rejects(call('POST',input(),'/api/psychology-auto-publish',{...user,role:'operator', sidebarModules: []}),e=>e.statusCode===403);
   await assert.rejects(call('POST',input({connectionIds:['outside']})),e=>e.statusCode===403);
   await assert.rejects(call('POST',input({connectionIds:['read-only']})),e=>e.statusCode===403);
   await assert.rejects(call('POST',input({query:'no matching result'})),/只有 0/);
@@ -472,7 +472,7 @@ test('deleting a legacy failed item hides it, blocks retry, and preserves succes
   f.sqlite.prepare('UPDATE psychology_publish_items SET receipt_json=? WHERE id=?').run('{"batchId":"already-published"}',items[1].id);
   const path='/api/psychology-auto-publish/'+item.id;
   await assert.rejects(f.call('DELETE',undefined,path,{...user,username:'another'}),e=>e.statusCode===404);
-  await assert.rejects(f.call('DELETE',undefined,path,{...user,role:'operator'}),e=>e.statusCode===403);
+  await assert.rejects(f.call('DELETE',undefined,path,{...user,role:'operator', sidebarModules: []}),e=>e.statusCode===403);
   assert.equal((await f.call('DELETE',undefined,path)).status,200);
   assert.equal((await f.call('DELETE',undefined,path)).status,200);
   const batch=(await(await f.call()).json()).batches[0];
@@ -667,7 +667,7 @@ test('source trace lists account posts against peer urls and published links', a
   assert.equal(linked.items[0].publishedUrl,'https://www.tiktok.com/@alpha/video/999');
   const photos=await (await call('GET',undefined,'/api/psychology-auto-publish/sources?mediaType=photo')).json();
   assert.equal(photos.items.length,0);
-  await assert.rejects(call('GET',undefined,'/api/psychology-auto-publish/sources',{...user,role:'operator'}),e=>e.statusCode===403);
+  await assert.rejects(call('GET',undefined,'/api/psychology-auto-publish/sources',{...user,role:'operator', sidebarModules: []}),e=>e.statusCode===403);
 });
 
 test('source trace fills historical handles from publish records and account archive', async t => {

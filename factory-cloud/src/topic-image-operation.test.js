@@ -34,7 +34,7 @@ test('single-image quiz binds real image key with A/B/C/D and preserves metadata
 test('input, missing config, and permission failures cannot trigger provider calls',async t=>{
  const f=await setup(t);delete f.env.OPENAI_API_KEY;await assert.rejects(startTopicImage(f.env,user,input()),e=>e.code==='OPENAI_NOT_CONFIGURED');f.env.OPENAI_API_KEY='test';
  for(const extra of [{template:'psychology'},{template:'psychology-target-2'},{imageSize:'9999x9999'},{ownerId:'other'},{title:''}])await assert.rejects(startTopicImage(f.env,user,input(extra)));
- await assert.rejects(startTopicImage(f.env,{...user,role:'operator'},input()),e=>e.statusCode===403);assert.equal(f.calls.length,0);assert.equal(f.workflows.size,0);
+ await assert.rejects(startTopicImage(f.env,{...user,role:'operator', sidebarModules: []},input()),e=>e.statusCode===403);assert.equal(f.calls.length,0);assert.equal(f.workflows.size,0);
 });
 test('same UUID with different content conflicts, status is owner-scoped, concurrent starts share operation',async t=>{
  const f=await setup(t),i=input();await Promise.all([startTopicImage(f.env,user,i),startTopicImage(f.env,user,i)]);assert.equal(f.workflows.size,1);

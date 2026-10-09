@@ -118,7 +118,7 @@ test('atomic allocation CAS rejects superseded revision and receiver permission 
 
 test('revoked operating permissions cannot turn an enabled conversion slot back into growth',async t=>{
  const f=await setup(t),saved=await f.call('PATCH',f.config),at=saved.data.config.effectiveAt;
- f.sqlite.prepare("UPDATE factory_users SET role='operator' WHERE username='admin'").run();
+ f.sqlite.prepare("UPDATE factory_users SET role='operator',sidebar_modules_json='[]' WHERE username='admin'").run();
  assert.equal((await loadConversionAssignments(f.db,'admin',['a'],[at-1])).size,0);
  await assert.rejects(loadConversionAssignments(f.db,'admin',['a'],[at]),error=>error.statusCode===403);
 });

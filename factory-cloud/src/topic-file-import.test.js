@@ -74,7 +74,7 @@ test('concurrent retries claim a single download and return one stored topic',as
  const out=await importTopicFile(f.env,user,i);assert.equal(out.status,'completed');assert.equal(f.calls.length,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,1);
 });
 test('revoked permission before start or during download prevents writes',async t=>{
- const f=await setup(t),i=input();await assert.rejects(importTopicFile(f.env,{...user,role:'operator'},i),e=>e.statusCode===403);
+ const f=await setup(t),i=input();await assert.rejects(importTopicFile(f.env,{...user,role:'operator', sidebarModules: []},i),e=>e.statusCode===403);
  f.env.fetch=async()=>{f.sqlite.exec('UPDATE factory_users SET active=0');return new Response(png);};
  await assert.rejects(importTopicFile(f.env,user,i),e=>e.statusCode===403);assert.equal(f.objects.size,0);
  await assert.rejects(importTopicFile(f.env,user,i),e=>e.statusCode===403);
@@ -116,7 +116,7 @@ test('actual PNG bytes import without any remote fetch and recover identically',
  assert.equal((await importTopicBytes(f.env,user,args)).topic.id,result.topic.id);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_template_topics').get().n,1);
  assert.doesNotMatch(JSON.stringify(f.sqlite.prepare('SELECT * FROM factory_ai_operations').get()),/imageBase64|download_url/);assert.equal(f.calls.length,0);
  await assert.rejects(importTopicBytes(f.env,user,{...args,title:'changed'}),e=>e.code==='REQUEST_ID_CONFLICT');
- await assert.rejects(importTopicBytes(f.env,{...user,role:'operator'},args),e=>e.statusCode===403);
+ await assert.rejects(importTopicBytes(f.env,{...user,role:'operator', sidebarModules: []},args),e=>e.statusCode===403);
 });
 
 test('byte upload refuses malformed or oversized inputs before writing anything',async t=>{

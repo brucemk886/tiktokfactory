@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import {createHitPhotoBatch} from './psychology-video-hit-photos.js';
 import {drawHitVideoBatch} from './psychology-video-hit-publishing.js';
 import { assertPublishFollowers } from './psychology-publish-followers.js';
@@ -222,7 +223,7 @@ export async function listAutoPublishSources(db, user, input = {}, env = null) {
   };
 }
 export function assertAutoUser(user) {
-  if (!user || user.role !== 'admin' || !(user.sidebarModules || []).includes('psychology-publish')) fail('没有心理学自动发布权限。', 403);
+  if (!hasPsychologyModule(user,'psychology-publish')) fail('没有心理学自动发布权限。', 403);
 }
 export async function loadAutoUser(db, username) {
   const row = await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(username).first();
@@ -290,7 +291,9 @@ export function autoVideoPayload(source, config, item, accounts) {
 
 export async function handlePsychologyAutoPublish(request, env, url, session, internal = {}) {
   if (!url.pathname.startsWith(BASE)) return null;
-  assertAutoUser(session?.user);
+  const sourceRead=url.pathname===BASE+'/sources'&&request.method==='GET';
+  if(sourceRead){if(!hasPsychologyModule(session?.user,'psychology-publish','psychology-publish-sources','psychology-production'))fail('没有心理学发布记录权限。',403);}
+  else assertAutoUser(session?.user);
   const user = session.user;
   if (url.pathname === BASE + '/sources' && request.method === 'GET') {
     return json(await listAutoPublishSources(env.DB, user, {

@@ -221,7 +221,7 @@ function renderSidebarOptions(selected) {
       </div>
     `;
   }).join("");
-  $("#userSidebarHint").textContent = "打开大模块后，可去掉不想展示的子页面。关掉「GeeLark 备用」后侧栏不再显示这一组。";
+  $("#userSidebarHint").textContent = "心理学全部功能可逐项授权给成员，保存后生效；未勾选的功能不会自动开通。自动运营发布还需勾选「心理学自动发布」。可操作账号仍由下方账号分组控制。关掉「GeeLark 备用」可隐藏该组。";
   bindModuleCards();
 }
 

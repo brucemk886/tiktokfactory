@@ -59,7 +59,7 @@ test('API enforces permissions, revision, pagination, template and image ownersh
  const f=await setup(t),base='https://factory.test/api/psychology-template-topics/'+f.topic.id+'/images';
  const call=async(method,body,actor=user,suffix='')=>{const url=new URL(base+suffix);return handlePsychologyTopicBank(new Request(url,{method,...(body?{body:JSON.stringify(body)}:{})}),f.env,url,actor?{user:actor}:null);};
  assert.equal((await call('GET',null,null)).status,401);
- assert.equal((await call('POST',{revision:1,images:[]},{...user,role:'operator'})).status,403);
+ assert.equal((await call('POST',{revision:1,images:[]},{...user,role:'operator', sidebarModules: []})).status,403);
  assert.equal((await call('POST',{revision:99,images:[{imageUrl:'https://example.com/a'}]})).status,409);
  assert.equal((await call('POST',{revision:1,images:[{assetId:'asset-'+crypto.randomUUID()}]})).status,403);
  const added=await call('POST',{revision:1,images:Array.from({length:25},(_,i)=>({imageUrl:'https://images.example/'+i+'.png'}))});assert.equal(added.status,201);

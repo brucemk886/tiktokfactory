@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import {assetPin} from './psychology-video-hit-cleanup.js';
 import {readyVideo} from './psychology-video-hit-videos.js';
 import {json,sha256Hex} from './http.js';
@@ -10,7 +11,7 @@ const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Obje
 export async function videoHitUser(db,actor){
  const row=actor?.id&&await db.prepare('SELECT * FROM factory_users WHERE id=? AND active=1').bind(actor.id).first();
  const user=row&&toPublicUser(row);
- if(user?.role!=='admin'||!user.sidebarModules?.includes('psychology-video-hits'))fail('没有心理学视频爆款权限。',403);
+ if(!hasPsychologyModule(user,'psychology-video-hits'))fail('没有心理学视频爆款权限。',403);
  return user;
 }
 export async function sourceRow(db,id,user){

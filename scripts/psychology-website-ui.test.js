@@ -27,12 +27,12 @@ test('website page permission aliases retain admin-only autopilot access',()=>{
  assert.equal(canAccessPath({role:'admin',sidebarModules:[]},'/psychology-website.html'),false);
  assert.equal(canAccessPath({role:'admin',sidebarModules:['psychology-autopilot']},'/psychology-website'),true);
 });
-test('saved admin navigation includes the website entry and excludes operators',()=>{
+test('saved navigation includes the website entry for explicitly granted members',()=>{
  const admin=toPublicUser({id:'admin',role:'admin',sidebar_modules_json:JSON.stringify(['psychology-effects','psychology-autopilot'])});
  assert.equal(admin.sidebarModules.includes('psychology-website'),true);
  assert.equal(admin.sidebarModules.indexOf('psychology-website'),admin.sidebarModules.indexOf('psychology-effects')+1);
  const operator=toPublicUser({id:'operator',role:'operator',sidebar_modules_json:JSON.stringify(['psychology-effects','psychology-website'])});
- assert.equal(operator.sidebarModules.includes('psychology-website'),false);
+ assert.equal(operator.sidebarModules.includes('psychology-website'),true);
 });
 test('website UI handles mobile, safe content, attribution links, paging and failed/stale reads',{skip:!chrome,timeout:90000},async t=>{
  let mode='ready',requests=[],generated=false;

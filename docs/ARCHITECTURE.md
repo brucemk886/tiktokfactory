@@ -43,7 +43,7 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 
 - D1 psychology_template_topics owns user-managed topics scoped by template; psychology_topic_imports owns idempotent import receipts; psychology_topic_usage owns allocation history.
 - A single D1 batch commits the publishing batch, immutable topic snapshots in factory_jobs, publish items, and usage counters. Triggers guard stale revisions and concurrent only-unused selection; no external publishing call occurs in this transaction.
-- The admin-only /psychology-topic-bank page and /api/psychology-template-topics manage banks independently of the peer-hit library. Automatic publishing retains peer sources for video/photo and uses topicSource for template-bank jobs.
+- The explicitly granted /psychology-topic-bank page and /api/psychology-template-topics manage banks independently of the peer-hit library. Automatic publishing retains peer sources for video/photo and uses topicSource for template-bank jobs.
 
 ## Psychology grouped publication
 
@@ -313,3 +313,10 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 `factory-video-hits-mcp.js` adds a fixed material-only action allowlist over the shared `executeFactoryInput` from `factory-api.js`; REST retains its catalog, authentication, canonical input hash and owner/request ledger. MCP receipt lookup is limited to the same allowlist. Separate `factory.video_hits.write` consent never inherits from read/topic grants. Current user/module checks and OAuth revocation remain per-request. Binary/file ingestion delegates to the same `handleVideoHitAssets` using a server-provided actor and immutable upload UUID. The bounded ChatGPT file downloader is shared with topic import, without reusing its topic-writing path. No publishing, rendering, cleanup mutation, new tables or scheduler work is introduced.
 
 The single public video-hit guide is generated from `docs/psychology-video-hits-api.md`, checked at deployment, and served at one exact allowlisted path. MCP and page copy retrieve that artifact. Other project documents stay private.
+
+## Psychology member grants
+
+- The hosted sidebar catalog defines module eligibility; factory_users.sidebar_modules_json stores member grants. Only administrators edit users. Member session normalization preserves the exact psychology selection, with no implicit grants to publishing or sibling modules.
+- psychology-permissions.js supplies the active-role/module predicate to psychology APIs and background gates. Ownership and official account-group scoping remain in their existing services. Automatic operations that generate publication require both autopilot and publish grants.
+- Copy source management and legacy production aliases share their existing merged pages. Independent website/style pages use their own member grants; child template grants stay navigable without granting the workbench parent.
+- Shared credentials, project API keys and account administration remain administrator-only. Member template preferences use a per-user KV entry and never change shared provider keys. Existing REST/MCP admission and import compatibility are unchanged.

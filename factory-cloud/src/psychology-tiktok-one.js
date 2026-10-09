@@ -1,3 +1,4 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
 import { signalDesk } from './signal-desk.js';
 import { assertOfficialPublishAccess } from './official.js';
 import { json, readJson } from './http.js';
@@ -6,7 +7,7 @@ import { normalizeOneProject } from '../../scripts/psychology-auto-publish.js';
 const BASE='/api/psychology-tiktok-one';
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 export function assertPsychologyOneUser(user){
- if(!user||user.role!=='admin'||user.active===false||!user.sidebarModules?.includes('psychology-publish'))fail('仅心理学发布管理员可以使用 TikTok One 挂锚点发布。',403);
+ if(!hasPsychologyModule(user,'psychology-publish'))fail('需要心理学自动发布权限才能使用 TikTok One 挂锚点发布。',403);
 }
 export async function ensurePsychologyOneMembers(env,user,config,accounts=[]){
  if(!config.tiktokOne)return;
