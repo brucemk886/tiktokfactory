@@ -6,6 +6,7 @@ import {insertAutoJob} from './psychology-auto-publish.js';
 import {dispatchCloudPhotos} from './psychology-cloud-queue.js';
 import {imageType,VIDEO_HIT_IMAGE_MAX} from './psychology-video-hit-assets.js';
 import {imageUrl} from '../../scripts/psychology-video-hit-contract.js';
+import {drawPhotoReceiver,applyPhotoReceiverCaption,photoReceiverGuard} from './psychology-photo-receivers.js';
 import {json} from './http.js';
 const fail=(message,statusCode=409)=>{throw Object.assign(new Error(message),{statusCode});};
 // Admission policy; frozen jobs created before this limit keep their transport compatibility.
@@ -22,15 +23,17 @@ export async function hitPhotoInventory(env,actor,url){
 }
 export async function createHitPhotoBatch(env,actor,config,batchId,accounts,internal={}){
  const user=await videoHitUser(env.DB,actor);if(!env.ARCHIVE||!env.PHOTO_QUEUE||!env.PHOTO_BROWSER)fail('图文发布服务尚未配置。',503);
- const entries=[];for(const ref of config.photoVersions){const origin=normalizeHitRef(ref),source=await sourceRow(env.DB,origin.sourceId,user),v=await versionRow(env.DB,source.id,origin.version,user);
+ const entries=[];for(const [index,ref] of config.photoVersions.entries()){const origin=normalizeHitRef(ref),source=await sourceRow(env.DB,origin.sourceId,user),v=await versionRow(env.DB,source.id,origin.version,user);
   if(source.archived_at||v.input_mode!=='frames'||!v.enabled||v.cleaned_at||v.publish_item_id||v.publish_state==='published'||v.published_at||v.revision!==origin.revision)fail('二创版本已修改、停用或提交发布，请刷新后重新选择。');
   const frames=await allFrames(env.DB,source.id,v.version);validateFrames(frames);await assertAssets(env.DB,user,frames);
-  entries.push({user,origin,source,v,frames});
+  const photoReceiver=internal.receiverPool?drawPhotoReceiver(internal.receiverPool,config.connectionIds[index%config.connectionIds.length]):null;
+  const caption=applyPhotoReceiverCaption({title:v.title,caption:internal.caption??(v.caption||v.title)},photoReceiver).caption;
+  entries.push({user,origin,source,v,frames,photoReceiver,caption});
  }
- const db=env.DB,stamp=Date.now(),statements=[...(internal.beforeStatements||[]),db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp)];
+ const db=env.DB,stamp=Date.now(),statements=[...(internal.beforeStatements||[]),...(internal.receiverPool?[photoReceiverGuard(db,user,internal.receiverPool)]:[]),db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp)];
  for(let i=0;i<entries.length;i+=20)statements.push(db.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES(?,?,?,?)').bind(batchId+'-group-'+Math.floor(i/20),batchId,Math.floor(i/20),Math.min(20,entries.length-i)));
  entries.forEach((hit,i)=>{const id=batchId+'-'+String(i).padStart(3,'0'),connectionId=config.connectionIds[i%config.connectionIds.length],scheduleAt=config.scheduleAt+Math.floor(i/config.connectionIds.length)*config.intervalMinutes*60+(i%config.connectionIds.length)*(config.staggerSeconds||0),groupId=batchId+'-group-'+Math.floor(i/20),account=accounts.find(a=>String(a.connectionId||a.id)===connectionId)||{};
-  const payload={module:'psychology',cloudPhotoRender:true,photoAutomation:true,hitPhoto:true,videoHitOrigin:hit.origin,plan:{title:hit.v.title.slice(0,90),caption:internal.caption??(hit.v.caption||hit.v.title)},...(internal.conversion?{importedPhotoConversion:internal.conversion}:{}),pages:hit.frames.map(({index,assetId,imageUrl})=>({index,assetId,imageUrl})),psychologyAutomation:{id,batchId,groupId,submissionMode:'grouped',connectionId,scheduleAt,mediaType:'photo',template:'selected-photo',isAiGenerated:config.isAiGenerated,musicSoundId:config.musicIds[i%config.musicIds.length]||'',account:{connectionId,username:account.username||'',name:account.displayName||account.username||''}}};
+  const payload={module:'psychology',cloudPhotoRender:true,photoAutomation:true,hitPhoto:true,videoHitOrigin:hit.origin,plan:{title:hit.v.title.slice(0,90),caption:hit.caption},...(internal.conversion?{importedPhotoConversion:internal.conversion}:{}),pages:hit.frames.map(({index,assetId,imageUrl})=>({index,assetId,imageUrl})),psychologyAutomation:{...(hit.photoReceiver?{photoReceiver:hit.photoReceiver}:{}),id,batchId,groupId,submissionMode:'grouped',connectionId,scheduleAt,mediaType:'photo',template:'selected-photo',isAiGenerated:config.isAiGenerated,musicSoundId:config.musicIds[i%config.musicIds.length]||'',account:{connectionId,username:account.username||'',name:account.displayName||account.username||''}}};
   statements.push(...hitPublishStatements(db,hit,id,stamp));for(const assetId of new Set(hit.frames.map(f=>f.assetId).filter(Boolean)))statements.push(...assetPin(db,user,assetId,'image',stamp));
   statements.push(insertAutoJob(db,{id,type:'psychology',title:hit.v.title,payload,createdBy:user.username},stamp),db.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES(?,?,?,?,?,?,?)').bind(id,batchId,hit.source.id+':v'+hit.v.version,id,connectionId,scheduleAt,groupId),db.prepare('INSERT INTO psychology_peer_account_usage(source_id,connection_id,item_id) VALUES(?,?,?)').bind(hit.source.id+':v'+hit.v.version,connectionId,id));
  });

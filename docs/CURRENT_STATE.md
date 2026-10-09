@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology manual photo creation now offers an unchecked @承接账号 option across selected Video Hits albums and generated-photo sources. Each item randomly chooses another saved eligible receiver, freezes the receiver/CTA before queueing, and appends CTA to the publishing caption only. Task details expose the assigned receiver and final caption. Existing automatic receiver routes remain separate. See docs/handoffs/2026-10-09-manual-photo-receivers.md.
+
 - Homepage short links now use stable random five-character root aliases. Migration 0088 upgrades existing links without changing their canonical identity; legacy /go/ links and unified account funnel attribution remain valid. See docs/handoffs/2026-10-09-compact-homepage-links.md.
 
 - All scoped thousand-follower accounts can independently generate stable homepage short links from 引流配置, regardless of receiving-role selection or video publishing scope. Dedicated GET/POST link management offers per-account generation/copy and bulk generation/copy without requiring site analytics availability. No receiving or publishing settings are changed. See docs/handoffs/2026-10-09-independent-homepage-links.md.

@@ -87,3 +87,14 @@ test('continued photo version 21 uses saved images and the same once-only queue 
  const f=await setup(t),old=await f.ready(12,{privateImages:true});f.sqlite.prepare('UPDATE psychology_video_hit_versions SET version=21 WHERE source_id=?').run(old.sourceId);f.sqlite.prepare('UPDATE psychology_video_hit_frames SET version=21 WHERE source_id=? AND version=1').run(old.sourceId);
  const ref={...old,version:21};assert.equal((await f.inventory()).items[0].ref.version,21);assert.equal((await f.call('POST',photoInput([ref]))).status,202);assert.equal(JSON.parse(f.job().payload_json).pages.length,12);await assert.rejects(f.call('POST',photoInput([ref])),/已修改|提交/);assert.equal(f.requests.length,0);
 });
+
+
+test('manual receiving CTA reaches the official photo request intact and grouped retries do not redraw',async t=>{
+ const f=await setup(t),ref=await f.ready(2,{privateImages:true});
+ f.sqlite.prepare("INSERT INTO official_account_assignments(account_key,group_id) VALUES('tiktok:a','g'),('tiktok:b','g')").run();
+ f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,profile_json) VALUES(?,?)').run('tiktok:b',JSON.stringify({username:'beta',followers:1500}));
+ f.sqlite.prepare('INSERT INTO psychology_imported_photo_settings(owner,revision,config_json) VALUES(?,?,?)').run('admin',1,JSON.stringify({receivers:[{connectionId:'b',username:'beta',linkReady:true}]}));
+ await f.call('POST',photoInput([ref],{mentionReceiver:true,isAiGenerated:false}));const job=f.claim(),frozen=JSON.parse(job.payload_json).plan.caption;
+ await runCloudPhoto(f.env,job);assert.equal(f.requests.length,1);assert.equal(f.requests[0].items[0].postInfo.caption,frozen);assert.match(frozen,/Saved caption with #psychology\n\n.*\nVisit @beta/);assert.equal(f.requests[0].items[0].postInfo.isAiGenerated,false);
+ await runCloudPhoto(f.env,job);assert.equal(f.requests.length,1);assert.equal(f.uploads.length,2);
+});

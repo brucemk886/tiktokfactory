@@ -45,6 +45,12 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - A single D1 batch commits the publishing batch, immutable topic snapshots in factory_jobs, publish items, and usage counters. Triggers guard stale revisions and concurrent only-unused selection; no external publishing call occurs in this transaction.
 - The explicitly granted /psychology-topic-bank page and /api/psychology-template-topics manage banks independently of the peer-hit library. Automatic publishing retains peer sources for video/photo and uses topicSource for template-bank jobs.
 
+## Psychology manual photo receivers
+
+- Optional mentionReceiver=true on manual photo batches reads the acting owner’s saved psychology_imported_photo_settings receiver pool and CTA. Current psychology account/group scope, synchronized thousand-follower status, publish access, username, and confirmed link readiness gate eligibility. Photo-only opt-in is omitted from legacy/default configurations.
+- Each item independently draws a non-self receiver and freezes psychologyAutomation.photoReceiver (ID, username, settings revision, substituted CTA); a settings-revision guard joins the atomic batch transaction. Duplicate request replay reuses persisted jobs. Selected albums append before reservation; generated-photo jobs append once at the final render handoff. Images, card copy, and stored source captions remain unchanged. Dispatch rechecks recipient access without rerouting.
+- GET /api/psychology-auto-publish/photo-receivers is authenticated/read-only. Batch item responses return the frozen recipient and available final caption for task details. The automatic imported-photo scheduler retains its existing stable publisher routes.
+
 ## Psychology grouped publication
 
 - psychology_publish_groups owns immutable groups of up to 20 posts, submission leases, frozen requests and remote receipts. psychology_publish_items.ready_json contains upload-ready media metadata and publish_group_id assigns fixed membership.

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 
+const receiverSource=fs.readFileSync(new URL('../public/psychology-photo-receivers.js',import.meta.url),'utf8').replace('export function','function');
 const source=fs.readFileSync(new URL('../public/psychology-auto-publish.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 function harness(accountsPromise, failed=false, options={}, batchesPromise=null, optionsPromise=null,autoOpen=true) {
   const nodes=new Map();
@@ -16,8 +17,8 @@ function harness(accountsPromise, failed=false, options={}, batchesPromise=null,
   let accounts=accountsPromise;
   const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError,URLSearchParams,location:{search:'',assign(){}},mountHitPhotoPicker:()=>({sync(){},refs:()=>[],clear(){},busy:false}),mountPsychologyVideoPicker:()=>({active:false,count:0,open(){this.active=true;},close(){this.active=false;},update(){},clear(){}}),mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{body:{classList:{add(){}}},querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
-  const listReady=vm.runInContext('(async()=>{'+source.replace("const creationMode=new URLSearchParams","globalThis.openNormalPage=openNormalPage;globalThis.openOnePage=openOnePage;const creationMode=new URLSearchParams")+'})()',context);
+  const context=vm.createContext({publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError,URLSearchParams,location:{search:'',assign(){}},mountHitPhotoPicker:()=>({sync(){},refs:()=>[],clear(){},busy:false}),mountPsychologyVideoPicker:()=>({active:false,count:0,open(){this.active=true;},close(){this.active=false;},update(){},clear(){}}),mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{getElementById:id=>node('#'+id),body:{classList:{add(){}}},querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.endsWith('/photo-receivers')?{revision:1,receivers:options.receivers||[{connectionId:'receiver-1',username:'target_one'}],mention:'Take the test at {account}.'}:path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
+  const listReady=vm.runInContext('(async()=>{'+receiverSource+'\n'+source.replace("const creationMode=new URLSearchParams","globalThis.openNormalPage=openNormalPage;globalThis.openOnePage=openOnePage;const creationMode=new URLSearchParams")+'})()',context);
   node('#newBatch').listeners.click=()=>context.openNormalPage();node('#newOneBatch').listeners.click=()=>context.openOnePage();
   const ready=autoOpen?Promise.all([listReady,node('#newBatch').listeners.click()]):listReady;
   return {node,ready,listReady,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
@@ -340,4 +341,17 @@ test('normal publication draws saved hit videos without a template and requires 
  h.setConfirmed(false);await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
  h.setConfirmed(true);await h.node('#batchForm').listeners.submit({preventDefault(){}});const post=h.requests.find(r=>r.path==='/api/psychology-auto-publish'&&r.method==='POST');
  assert.equal(post.body.sourceType,'video-hits');assert.equal(post.body.template,'selected-video');assert.equal(post.body.isAiGenerated,true);assert.equal(post.body.tiktokOne,undefined);assert.equal(post.body.allowPeerReuse,false);
+});
+
+
+test('manual photo receiver option loads saved CTA, applies to generated-photo sources and stays out of video requests',async()=>{
+ const h=harness(Promise.resolve(grouped));await h.ready;assert.equal(h.node('#photoReceiverSettings').hidden,true);await h.mediaButtons[1].click();assert.equal(h.node('#photoReceiverSettings').hidden,false);
+ h.node('#photoSource').value='copy-library';h.node('#photoSource').onchange();h.node('#mentionReceiver').checked=true;h.node('#mentionReceiver').listeners.change();await tick();assert.match(h.node('#photoReceiverStatus').textContent,/@target_one/);assert.match(h.node('#photoReceiverCta').textContent,/@随机承接账号/);
+ h.node('#selectVisibleAccounts').listeners.click();h.node('#count').value='4';await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,true);
+ await h.mediaButtons[0].click();assert.equal(h.node('#photoReceiverSettings').hidden,true);await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').at(-1).body.mentionReceiver,undefined);
+});
+test('task item detail displays the frozen receiver and escapes final caption content',async()=>{
+ const batches={batches:[{id:'receiver-batch',createdAt:Date.now(),config:{name:'Receiver task',mediaType:'photo',count:1},items:[{id:'i',connectionId:'a',status:'queued',photoReceiver:{username:'target_one',cta:'Visit @target_one.'},finalCaption:'Original <script>unsafe</script>\nVisit @target_one.'}]}]};
+ const h=harness(Promise.resolve(grouped),false,{},Promise.resolve(batches));await h.ready;await h.node('#batches').listeners.click({target:{closest:()=>({dataset:{batchOpen:'receiver-batch'}})}});
+ const html=h.node('#batchDetailItems').innerHTML;assert.match(html,/@target_one/);assert.match(html,/最终发布文案/);assert.match(html,/Original &lt;script&gt;unsafe&lt;\/script&gt;/);assert.doesNotMatch(html,/<script>/);
 });

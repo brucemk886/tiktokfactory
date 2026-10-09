@@ -40,6 +40,7 @@
 <label class="field" id="peerReuseField"><span>同账号选题</span><select id="allowPeerReuse"><option value="no">避开已使用题目</option><option value="yes">允许重复使用</option></select></label>
 <label class="field"><span>选题抽取方式</span><select id="selection"><option value="random">随机抽取</option><option value="popular">播放量优先</option><option value="recent">最近入库优先</option></select></label>
 <label class="field wide"><span>选题关键词 <em>可选</em></span><input id="query" maxlength="100" placeholder="筛选爆款标题或同行账号，不填则从全部对应类型抽取"></label>
+<div class="field wide" id="photoReceiverSettings" hidden><label class="auto-check"><input type="checkbox" id="mentionReceiver"> @承接账号</label><small>每条图文随机选择一个已保存的可用承接账号（排除发布账号自身），在原文案后追加引导。任务创建后固定，重试不重抽。</small><div id="photoReceiverDetails" hidden><p id="photoReceiverStatus" class="field-hint" role="status"></p><p class="field-hint">追加文案示例；实际 @ 账号在创建任务时随机确定，可在任务详情查看。</p><p id="photoReceiverCta" style="white-space:pre-wrap;overflow-wrap:anywhere"></p><div class="account-selection-actions"><button type="button" id="photoReceiverRefresh">刷新承接账号</button><a href="/psychology-website?tab=receiving" target="_blank" rel="noopener">配置承接账号与引导文案 ↗</a></div></div></div>
 <details class="photo-extras wide" id="photoOptions" hidden><summary><span>图文可选设置</span><small>20套样式、配乐</small></summary>
 <div class="photo-extras-body">
 

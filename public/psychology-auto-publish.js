@@ -1,3 +1,4 @@
+import {mountPhotoReceivers} from './psychology-photo-receivers.js';
 import {publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError} from './psychology-publish-time.js';
 import {mountHitPhotoPicker} from './psychology-hit-photo-picker.js';
 import { mountPsychologyVideoPicker } from './psychology-video-picker.js';
@@ -17,6 +18,7 @@ async function api(path, body, method, options = {}) {
 const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,isBusy:()=>state.busy,setBusy:value=>{state.busy=value;$('#closeCreateBatch').disabled=value;renderAccountControls();},changed:()=>{resetAccountInput();summary();}});
 const picker=mountPsychologyVideoPicker({api,isBusy:()=>state.busy,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),changed:()=>{resetAccountInput();summary();}});
 const photoPicker=mountHitPhotoPicker({api,isBusy:()=>state.busy,changed:()=>{$('#count').value=photoPicker.refs().length;resetAccountInput();summary();}});
+const photoReceivers=mountPhotoReceivers({api,isBusy:()=>state.busy,changed:()=>{resetAccountInput();summary();}});
 const fixedHitVideo=()=>Boolean(state.readyVideo)&&state.mediaType==='video'&&sourceType()==='video-hits';
 const hitPhotos=()=>state.mediaType==='photo'&&sourceType()==='video-hits';
 const accountId=a=>String(a.connectionId||a.id);
@@ -33,7 +35,7 @@ function renderTemplates() {
 
 function sourceType(){return state.mediaType==='photo'?($('#photoSource').value||'library'):$('#sourceType').value==='video-hits'?'video-hits':'topic-bank';}
 function renderSources(){
-  one.sync();
+  one.sync();photoReceivers.sync(state.mediaType==='photo'&&!picker.active);
   if(picker.active){$('#oneEnabled').checked=true;$('#oneEnabled').disabled=true;}
   $('#sourceTypeField').hidden=state.mediaType!=='video';
   $('#photoSourceField').hidden=state.mediaType!=='photo';
@@ -187,6 +189,7 @@ function summary() {
   const ids=selected(), count=Number($('#count').value)||0;
   $('#summary').textContent=ids.length ? `本批${hitPhotos()||fixedHitVideo()?'发布已选':sourceType()==='video-hits'?'抽取成片':'生成'} ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
+  if(photoReceivers.enabled())$('#summary').textContent+=' 每条图文随机 @ 一个其他承接账号，追加已保存的引导文案。';
 }
 function itemState(item){
  if(item.displayStatus)return item.displayStatus;
@@ -316,11 +319,12 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(hitPhotos()&&(photoPicker.busy||!photoPicker.refs().length))return message('请等待列表读取完成并勾选二创图文。',true);
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
+  const receiverError=photoReceivers.validate(ids);if(receiverError)return message(receiverError,true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
   let tiktokOne;try{tiktokOne=one.context();}catch(e){return message(e.message,true);}
-  const body=state.submittedInput||{...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:fixedHitVideo()?{videoVersions:[state.readyVideo.ref]}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
-  if(hitPhotos()&&!confirm('确认发布所选 '+body.count+' 条二创图文？将按图片顺序直接发布，使用已保存文案，并按已选账号轮流分配。每个二创版本只提交一次。'))return;
+  const body=state.submittedInput||{...(photoReceivers.enabled()?{mentionReceiver:true}:{}),...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:fixedHitVideo()?{videoVersions:[state.readyVideo.ref]}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  if(hitPhotos()&&!confirm('确认发布所选 '+body.count+' 条二创图文？将按图片顺序直接发布，使用已保存文案，并按已选账号轮流分配。'+(body.mentionReceiver?'每条随机 @ 一个其他承接账号并追加引导文案。':'')+'每个二创版本只提交一次。'))return;
   if(body.sourceType==='video-hits'&&body.mediaType==='video'&&!confirm((body.videoVersions?'确认发布已选的 '+body.count+' 条二创成片？':'确认从视频爆款抽取 '+body.count+' 条二创成片并发布？')+'\n将使用已保存的二创文案，按已选账号分配。每个二创只提交一次。'))return;
   state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
@@ -370,7 +374,7 @@ let selectedBatchId='';
 function renderSelectedBatch(){
  const b=state.batches.find(b=>b.id===selectedBatchId);if(!b){$('#batchDetailBody').innerHTML='<div class="empty-state">该任务已不在当前页，请关闭详情并刷新列表。</div>';$('#batchDetailItems').innerHTML='';return;}
  $('#batchDetailBody').innerHTML=renderBatchDetail(b);
- $('#batchDetailItems').innerHTML=(b.items||[]).map(i=>`<article class="detail-item"><strong>${esc(i.title||i.sourceId||'未命名内容')}</strong><p>${esc(accountName(i.connectionId))} · ${esc(time(i.scheduleAt))}</p><p>${esc(itemLabel(itemState(i)))}</p>${i.failureReason||i.error?'<div class="detail-failure"><strong>原因</strong><p>'+esc(i.failureReason||i.error)+'</p></div>':''}</article>`).join('')||'<div class="empty-state">该任务内容已全部删除。</div>';
+ $('#batchDetailItems').innerHTML=(b.items||[]).map(i=>`<article class="detail-item"><strong>${esc(i.title||i.sourceId||'未命名内容')}</strong><p>${esc(accountName(i.connectionId))} · ${esc(time(i.scheduleAt))}</p><p>${esc(itemLabel(itemState(i)))}</p>${i.photoReceiver?'<p>承接账号：<strong>@'+esc(i.photoReceiver.username)+'</strong> · 创建任务时随机分配</p><details><summary>查看'+(i.finalCaption?'最终发布文案':'已固定的引导文案')+'</summary><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(i.finalCaption||i.photoReceiver.cta)+'</p></details>':''}${i.failureReason||i.error?'<div class="detail-failure"><strong>原因</strong><p>'+esc(i.failureReason||i.error)+'</p></div>':''}</article>`).join('')||'<div class="empty-state">该任务内容已全部删除。</div>';
 }
 function detailTab(items){$('#batchDetailBody').hidden=items;$('#batchDetailItems').hidden=!items;$('#detailOverviewTab').setAttribute('aria-selected',String(!items));$('#detailItemsTab').setAttribute('aria-selected',String(items));$('#detailOverviewTab').tabIndex=items?-1:0;$('#detailItemsTab').tabIndex=items?0:-1;}
 $('#detailOverviewTab').addEventListener('click',()=>detailTab(false));$('#detailItemsTab').addEventListener('click',()=>detailTab(true));

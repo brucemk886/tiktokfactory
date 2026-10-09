@@ -24,6 +24,8 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(![0,1000].includes(minFollowers))fail('粉丝筛选仅支持不限或至少1000粉丝。');
   const mediaType = String(input.mediaType || 'video');
   if (!Object.hasOwn(AUTO_TEMPLATES, mediaType)) fail('请选择图文或视频。');
+  if(input.mentionReceiver!==undefined&&typeof input.mentionReceiver!=='boolean')fail('请选择是否 @ 承接账号。');
+  if(input.mentionReceiver===true&&(mediaType!=='photo'||input.libraryStrategy==='pools'||input.poolContext))fail('@承接账号仅用于手动创建的图文任务。');
   const template = String(input.template || '');
   const hitVideos=input.sourceType==='video-hits'&&mediaType==='video'&&template==='selected-video',hitPhotos=input.sourceType==='video-hits'&&mediaType==='photo'&&template==='selected-photo';
   if (!hitVideos&&!hitPhotos&&!AUTO_TEMPLATES[mediaType].some(item => item.id === template)) fail('模板与内容类型不匹配。');
@@ -83,7 +85,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
   const tiktokOne=input.tiktokOne==null?null:normalizeOneProject(input.tiktokOne);
   if(tiktokOne&&mediaType!=='video')fail('TikTok One 挂锚点发布仅支持视频模板。');
-  return { ...(videoVersions?{videoVersions}:{}),...(hitVideos||hitPhotos?{isAiGenerated:input.isAiGenerated}:{}),...(hitPhotos?{photoVersions}:{}),...(minFollowers?{minFollowers}:{}),...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  return { ...(input.mentionReceiver===true?{mentionReceiver:true}:{}),...(videoVersions?{videoVersions}:{}),...(hitVideos||hitPhotos?{isAiGenerated:input.isAiGenerated}:{}),...(hitPhotos?{photoVersions}:{}),...(minFollowers?{minFollowers}:{}),...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {
