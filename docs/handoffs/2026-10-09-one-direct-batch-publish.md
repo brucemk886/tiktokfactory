@@ -15,8 +15,11 @@ public/psychology-video-picker.js, psychology-auto-publish.js/html, psychology-p
 ## Tests performed
 53 focused assignment, publishing UI, library and asset tests passed. Assignment tests cover all 1–20 video/account combinations, exact 20/10 distribution, per-account intervals, caption preservation and invalid inputs. Real Chromium desktop/mobile fixture passed: no review form or second publish dialog, saved captions/AI flag, randomized balanced payload, simulated failed submission and identical successful retry, cross-page 20 selection, existing One joins/normal/photo flows, lazy cover behavior. All publication calls used a localhost mock. Desktop/mobile captures are in primary tmp/one-direct-ui and were visually checked. Manifest and diff checks passed.
 
+## Release evidence
+Runtime commit 2ea1fb3a9e4139e7be35aafe39c50315d26682f6 was committed and pushed to GitHub main, then deployed with npm run deploy from a clean release checkout at exact HEAD == origin/main. Cloudflare version 2853d225-833d-4f80-909e-7f778ac3b6b2. Live publisher JS, picker JS and creation CSS returned 200 with matching SHA-256 hashes. Private inventory requires login (401); creation redirects to login (302). Transfer worker PID 100756 retains its original 2026-10-08 17:13:34 start time.
+
 ## Unfinished work
-Validation complete; commit, push and deployment pending.
+Implementation, validation and deployment complete.
 
 ## Recommended next step
-Deploy the committed main revision, verify live assets, then refresh the One creation page.
+Refresh the One creation page and use video → account → project → time → publish.
