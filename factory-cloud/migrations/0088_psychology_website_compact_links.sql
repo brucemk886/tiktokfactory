@@ -16,8 +16,7 @@ AFTER INSERT ON psychology_website_link_aliases WHEN NEW.short_code IS NULL BEGI
  WHERE code=NEW.code AND short_code IS NULL;
  UPDATE OR IGNORE psychology_website_link_aliases SET short_code=CAST(1+abs(random()%9) AS TEXT) || substr('0123456789abcdefghijklmnopqrstuvwxyz',1+abs(random()%36),1) || substr('0123456789abcdefghijklmnopqrstuvwxyz',1+abs(random()%36),1) || substr('0123456789abcdefghijklmnopqrstuvwxyz',1+abs(random()%36),1) || substr('0123456789abcdefghijklmnopqrstuvwxyz',1+abs(random()%36),1)
  WHERE code=NEW.code AND short_code IS NULL;
- SELECT CASE WHEN EXISTS(SELECT 1 FROM psychology_website_link_aliases WHERE code=NEW.code AND short_code IS NULL)
- THEN RAISE(ABORT,'Short link allocation failed') END;
+ SELECT RAISE(ABORT,'Short link allocation failed') WHERE EXISTS(SELECT 1 FROM psychology_website_link_aliases WHERE code=NEW.code AND short_code IS NULL);
 END;
 INSERT INTO psychology_website_link_aliases(code)
  SELECT code FROM psychology_website_links ORDER BY created_at,code;

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
+import { unstable_splitSqlQuery } from 'wrangler';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { createWebsiteLinks,readWebsiteLinks,readWebsiteLinkAccounts,handleWebsiteShortLink } from './psychology-website-links.js';
@@ -100,7 +101,7 @@ test('compact-link migration backfills existing links without rewriting legacy a
  try{
   db.exec(fs.readFileSync(new URL('../migrations/0077_psychology_website_links.sql',import.meta.url),'utf8'));
   db.exec("INSERT INTO psychology_website_links VALUES('19d828d363','p','a',1),('123456abcd','p','b',2); INSERT INTO psychology_website_link_days VALUES('19d828d363','2026-10-09',9,1)");
-  db.exec(fs.readFileSync(new URL('../migrations/0088_psychology_website_compact_links.sql',import.meta.url),'utf8'));
+  for(const sql of unstable_splitSqlQuery(fs.readFileSync(new URL('../migrations/0088_psychology_website_compact_links.sql',import.meta.url),'utf8')))db.exec(sql);
   const aliases=db.prepare('SELECT code,short_code FROM psychology_website_link_aliases ORDER BY code').all();
   assert.deepEqual(aliases.map(a=>a.code),['123456abcd','19d828d363']);for(const a of aliases)assert.match(a.short_code,/^[1-9][a-z0-9]{4}$/);assert.notEqual(aliases[0].short_code,aliases[1].short_code);
   assert.deepEqual({...db.prepare('SELECT * FROM psychology_website_link_days').get()},{code:'19d828d363',day:'2026-10-09',requests:9,filtered:1});

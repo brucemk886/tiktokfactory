@@ -21,6 +21,8 @@ Shorten homepage links again and use random codes rather than sequential identif
 - Factory declared suite: 1,477 of 1,478 passed initially; the unrelated Video Hits browser test hit a navigation timeout and passed unchanged when rerun alone. All focused link, migration, permission, funnel and clipboard checks passed. No real publishing APIs called.
 - DeepPersona production build, TypeScript check and all 112 tests passed; compatible site deployed and legacy HEAD verified. Factory deployment verification pending.
 
+- Initial Factory deployment stopped at D1 incomplete input and rolled back (read-only checks confirmed no alias table/trigger or migration receipt). Replaced the terminal CASE guard with the existing repository SELECT RAISE ... WHERE pattern; migration tests also execute Wrangler-split statements.
+
 ## Unfinished work
 Release verification pending.
 
