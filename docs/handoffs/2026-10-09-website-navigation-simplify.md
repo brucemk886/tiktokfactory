@@ -17,10 +17,13 @@ Remove unnecessary tab switching and repeated account statistics from Independen
 ## Tests performed
 - Full-style Chromium checks at 1366/390/320 px cover the three exclusive panels, no duplicate account table, fold defaults, source pagination, link generation, legacy deep links and keyboard navigation.
 - Receiving settings tests cover independent saves/drafts and verify failed link retrieval leaves CTA editing available.
-- Desktop/mobile screenshots inspected under ignored tmp/website-tabs-qa. Final focused checks and deployment evidence pending.
+- Desktop/mobile screenshots inspected under ignored tmp/website-tabs-qa. All 11 focused browser/asset checks passed.
 
 ## Unfinished work
-Deployment verification pending.
+None.
 
 ## Recommended next step
 Refresh Independent Website. Use overview for performance and traffic configuration for links/accounts/CTA.
+
+## Release evidence
+Runtime commit 2132a5c7cf5535419a002eca7600ae77e16ef7e0 was pushed to GitHub main before npm run deploy from a clean worktree with HEAD == origin/main. Worker 285038e2-945c-46f7-b783-bfd78811de70 deployed. Live website JS/CSS, receiving JS and public API guide returned HTTP 200 and matched local SHA-256. No production account settings or publishing jobs were changed.
