@@ -20,10 +20,13 @@ Add an optional @承接账号 checkbox to Psychology automatic publishing → ph
 - Sixteen selected-photo tests pass, including a mocked official Hub request proving exact final CTA and once-only group replay. No real publication API was called.
 - Browser flow passes at 1440, 390 and 320px: default unchecked, receiver/CTA read, checked request flag, self-only block, uncheck recovery, and unchanged video/One paths. Screenshots inspected. Test now waits for enabled account-selection controls before clicking, fixing an existing load race.
 - Updated the existing VM UI harness to load the real receiver component; all 29 UI unit tests pass, including generated-photo opt-in, video isolation and escaped task-detail captions.
-- Full declared regression suite: 1,491 passed, zero failed (four concurrent test files). UI manifest and git diff whitespace checks pass. Production verification pending below.
+- Full declared regression suite: 1,491 passed, zero failed (four concurrent test files). UI manifest and git diff whitespace checks pass. Production verification completed below.
 
 ## Unfinished work
-Production release and verification.
+None. A real test post remains an explicit user action through the normal publishing form.
 
 ## Recommended next step
 After release, refresh Psychology automatic publishing, choose photo, select content/accounts and tick @承接账号. Use saved receiving configuration; task details show the chosen recipient and caption.
+
+## Release evidence
+Runtime commit 63eb740c90cceb0b8ae5e963924b896fdc16a405 was committed and pushed to GitHub main before deployment. Clean checkout and exact HEAD == origin/main passed; npm run deploy completed (Worker ede28b9e-cd0a-435c-92f9-fcc07b2a8119). Production receiver module and publishing script returned HTTP 200 with exact normalized SHA-256 matches to committed files. Anonymous receiver API returned 401. No real post, receiver setting, existing task modification or job interruption was used for verification.
