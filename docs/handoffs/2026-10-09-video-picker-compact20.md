@@ -14,8 +14,11 @@ Video library and hit inventory services; video picker JS and publishing CSS; ge
 ## Tests performed
 71 focused library/hit/asset/publishing UI tests passed. New SQLite case exercises 21 records in each of three sources: 20+1+0 pages, lookahead, unique records and no publication calls. Chromium desktop/mobile flow passed: twenty cards, five desktop columns, smaller preview height, cross-page edits/selections, full-page twenty selection, existing One/video and photo flows. All network publication calls mocked. Screenshots in primary tmp/video-picker20-ui were visually checked. Manifest/diff validation passed before commit.
 
+## Release evidence
+Runtime commit 8cb2ddcae59348c8ad3b4c0f5db4ea5826b18c2d was pushed to GitHub main before deploying from a clean exact HEAD == origin/main release with npm run deploy in factory-cloud. Cloudflare version 5191466e-7491-42fc-a198-f6e21b78bf03. Live video picker JS and publishing CSS hashes matched. Video inventory requires login (401), creation redirects to login (302). Existing transfer PID 100756 retained its original 2026-10-08 17:13:34 start time.
+
 ## Unfinished work
-Release verification pending.
+Implementation, validation and deployment complete.
 
 ## Recommended next step
 Refresh the video selection page and inspect the compact twenty-item list.
