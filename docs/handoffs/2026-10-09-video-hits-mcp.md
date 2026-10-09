@@ -16,11 +16,15 @@ factory API shared executor; MCP OAuth and tool registration; new factory-video-
 - Focused API/MCP/topic/video-hit suite: 75 passed.
 - Browser + MCP suite: 23 passed, including actual >128KB PNG upload through OAuth and existing video-hit page navigation/preview flow. No live external publication.
 - Initial full suite: 1366/1367 passed; existing video-detail reload timed out under default concurrency. After upstream integration the complete declared suite passed 1380/1380 with four test workers.
+- Final upstream fifteen-image photo-limit integration passed 60/60 focused API/MCP/photo/asset checks.
 - New picker also passed a 390px overflow check; screenshot: tmp/video-hits-mcp-qa/image-upload-mobile.png.
 - Read-only production baseline: recent REST requests all done and recent image uploads active; no production content was created or modified for QA.
 
 ## Unfinished work
-Commit/push and deployment verification pending. The user's grokbot remains active; compatibility deployment is explicitly authorized. Never delete the permanent REST interface after its batch completes.
+Implementation and deployment complete. User/client must refresh the MCP tool schema and consent to the new write scope; actual Dot host file adaptation has not been exercised in that user session. The existing grokbot REST workflow remains supported. Never delete the permanent REST interface after its batch completes.
 
 ## Recommended next step
 After release, refresh the Local Factory tool schema and grant factory.video_hits.write once. Give Dot the public guide URL. Host-level file capability and OAuth consent remain user/client actions; no credentials belong in the guide.
+
+## Release evidence
+Runtime commit fd69e97f63d7260dd8785a7a0ecaaea75061e15a was pushed to GitHub main and deployed from a clean exact HEAD == origin/main checkout using npm run deploy in factory-cloud. Cloudflare version dda6f0cd-d09c-46ff-ba2f-ae8fac233af8. No migration or key change. Live guide returned 200 text/markdown and matched source SHA256 3e98d4f1bd5061579db3c7d3d491676e4cd7efe13eaf6c7cd612bec7af7958d7; live UI asset matched. OAuth metadata advertises factory.video_hits.write. Existing REST/MCP and binary-image access require authentication; other docs still redirect to login. Health passed. Production aggregate reads showed continuing material ingestion and completed recent request receipts; no production content/permission/publishing mutation was made for QA.
