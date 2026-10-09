@@ -32,7 +32,13 @@ Add four newly approved songs to the four previously retained tracks; leave musi
 - Full declared run: 1,495 tests, 1,494 passed and one stylesheet-order assertion failed. Fixed the autopilot stylesheet insertion order; all 60 affected theme, publishing and operations tests then passed. No remaining test failure. Production verification follows below.
 
 ## Unfinished work
-Release verification pending. No real posts were created and no automatic settings were enabled or changed.
+None. No real posts were created and no automatic settings were enabled or changed.
 
 ## Recommended next step
 After release, refresh the photo creation or imported-photo operations page. Tick the music pool when wanted; save automatic settings explicitly for future scheduled tasks.
+
+## Release verification
+- Runtime commit 2390e3e1abd5d887e99a2d69a6d9979802151331 was pushed to GitHub main before deployment. Clean worktree and exact HEAD == origin/main checks passed.
+- The first standard deploy stopped on Cloudflare D1 7403. A normal retry succeeded without changing credentials or bypassing checks; no migrations were pending. Worker version: 2f38dc00-1814-4c13-b25d-9042b53d4334.
+- Production picker, library, CSS and both integrated scripts returned HTTP 200 with exact normalized SHA-256 matches to the committed files. Anonymous options API returned 401.
+- Logged-in production desktop verification: eight tracks, initial checkbox unchecked; clicking selects all eight, clicking again clears all. All preview audio stays paused with preload=none, and the PC viewport has no horizontal overflow. No publishing or settings-save buttons were clicked. The agent browser session was stopped.
