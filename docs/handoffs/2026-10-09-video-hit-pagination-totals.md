@@ -12,8 +12,11 @@ public/psychology-video-hits.html/.js/.css, generated UI asset manifest, this ha
 ## Tests performed
 A read-only local Chromium fixture verified 45 records / 3 pages, last-page navigation, updated counts, filtering, empty results and 1440/390/320px layouts. Desktop/mobile screenshots inspected in primary tmp/video-hit-pagination-captures. Asset checks passed 7/7; manifest and diff checks passed. No backend, publishing or generation changes.
 
+## Release evidence
+Commit f483bfcc0be42c9cdaaa155ae72c0d8a2abf82ec was pushed to main before deploying from a clean exact HEAD == origin/main release with npm run deploy in factory-cloud. Cloudflare version 75365467-ebdd-42ac-b668-e69f58ad2af6. Live JS/CSS hashes matched after edge propagation; private route/API authorization checks passed. Existing transfer PID 100756 retained its original start time.
+
 ## Unfinished work
-Commit/push, guarded deployment and live asset verification pending.
+Implementation, verification and deployment complete.
 
 ## Recommended next step
-Ship through the clean main release clone and verify deployed assets.
+Refresh the Video Hits source list and inspect the bottom-right record/page counts.
