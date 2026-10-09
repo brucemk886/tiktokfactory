@@ -22,8 +22,11 @@ Publish imported video-hit recreated frame sets through the existing manual batc
 - Chromium mocked-server test covers ordered previews, page select/clear, cross-page preservation, disabled 36-photo albums, exact submission refs, cancel-before-confirm, desktop/mobile layouts and real PNG-to-JPEG conversion. Existing One/video selection/cover tests also pass. Screenshots in primary tmp/hit-photo-ui-qa; no real Hub/GeeLark publication.
 - Full declared regression suite: 1374/1374 passed with four test workers. Initial high-concurrency run had one unrelated existing video-detail navigation timeout; isolated rerun and full controlled rerun passed. Final focused UI/API/asset checks: 47/47. Manifest/diff checks passed.
 
+## Release evidence
+Runtime commit 3ed7011ab049c2e33eb28e275f20e48fac4493fc was committed and pushed to GitHub main, then deployed from a clean exact HEAD == origin/main release worktree using npm run deploy in factory-cloud. Cloudflare version d4c4ef2c-b161-40aa-ba32-ef94dad40cf6. No migrations were needed. Live main JS, new photo picker JS and CSS hashes matched; photo-library returned 401 anonymously and the creation page redirected to login. Transfer PID 100756 retained its original 2026-10-08 17:13:34 start time.
+
 ## Unfinished work
-Release verification pending.
+Implementation, testing and deployment complete. No actual account publication was performed for QA.
 
 ## Recommended next step
 Refresh the normal creation page and select enabled unpublished recreated photo albums.
