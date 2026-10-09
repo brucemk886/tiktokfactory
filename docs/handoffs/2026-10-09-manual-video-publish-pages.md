@@ -21,8 +21,14 @@ Add video-hit recreated clips to the manual TikTok One picker and normal publish
 - Added real SQLite transaction coverage for shortages, same-file collisions, stale revision/asset substitution, ownership/permission, concurrent edits/render replacement, replay, local completed render reuse and success-grace cleanup. All external media/publication calls used isolated fixtures.
 - Existing video-transfer node PID 100756 still has its original 2026-10-08 17:13:34 start; no worker interrupted.
 
+## Release evidence
+- Implementation f72dfe4020d657c6b230ca9d8dbe1753b6fb4b19 and final selection-help refinement 5082cf358465a49414b319553fcd4f6f60825407 were committed and pushed to GitHub main before deployment.
+- Final runtime 5082cf3 deployed from a clean release with exact HEAD == origin/main using npm run deploy. Cloudflare temporary fetch failures required retries, including one partial trigger sync; the final full command succeeded (exit 0), version 90261c44-88a6-4a63-a4bf-8a0c57600fad.
+- Production JS for auto-publish/picker and the new CSS matched local SHA256. Both creation URLs redirect unauthenticated visitors to login; video-hit inventory, private asset read and creation options return 401 without authentication. No real publication submitted.
+- The final copy-only refinement passed the dedicated browser test and 7/7 asset tests. Existing helper PID 100756 was unchanged after deployment.
+
 ## Unfinished work
-Implementation and tests complete. Commit/push, guarded deployment and production read-only verification follow this handoff; release evidence will be recorded after completion.
+Implementation, testing, deployment and production read-only verification are complete. No unfinished work.
 
 ## Recommended next step
 Use the new page links from Psychology automatic publishing; import and enable recreated clips in Video Hits, then select them for One or draw them in a normal task. Failed submissions reuse the original publishing identity; publication confirmation controls cleanup.
