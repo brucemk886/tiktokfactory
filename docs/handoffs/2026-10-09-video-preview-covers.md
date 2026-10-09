@@ -18,8 +18,11 @@ public/psychology-video-posters.js (new), psychology-video-picker.js, psychology
 - A 12-video browser fixture checks only nearby cards are loaded, max two concurrent reads, error retains controls, retry recovers, cache reuse, pagehide release/pageshow restore, and zero publication requests from thumbnail work.
 - Desktop and mobile cover screenshots inspected under primary tmp/video-posters-ui-captures. All media/accounts/publishing use isolated fixtures.
 
+## Release evidence
+Commit b2246c09023bf89ea6bedfead1fe0f2293f4d26f was pushed to main before deploying from a clean exact HEAD == origin/main release with npm run deploy. A temporary GitHub TLS preflight failure was retried through the same guarded command; deployment succeeded, Cloudflare version c75ae28f-0516-4b52-90df-6287c0ff6436. Live poster module, picker and CSS SHA256 matched the release; video-hit inventory and private video reads returned 401 without login. Existing video-transfer PID 100756 retained its original start time; no real publishing was performed.
+
 ## Unfinished work
-Code and verification complete; push/deploy and read-only production verification follow. Release evidence will be added after success.
+Implementation, verification, deployment and read-only production checks complete. No unfinished work.
 
 ## Recommended next step
 Reload the standalone video picker. Initial visible covers fill progressively without autoplay. Slow video metadata/range delivery can delay an individual cover; the form remains available. Existing private media and confirmed-publication cleanup remain the source of truth.
