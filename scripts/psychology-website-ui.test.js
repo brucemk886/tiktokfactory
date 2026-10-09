@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import puppeteer from 'puppeteer-core';
+import {DEFAULT_IMPORTED_PHOTO_CTA} from './psychology-imported-photo-policy.js';
 import { summarizeFunnel } from '../factory-cloud/src/psychology-website-funnel.js';
 import { toPublicUser } from '../factory-cloud/src/auth.js';
 import { SIDEBAR_MODULES, canAccessPath } from '../factory-cloud/src/sidebar.js';
@@ -40,6 +41,9 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/api/auth/me'){
    res.setHeader('content-type','application/json');res.end(JSON.stringify({user:{id:'admin',username:'admin',role:'admin',sidebarModules:SIDEBAR_MODULES.map(m=>m.id)},home:'/',sidebarModules:SIDEBAR_MODULES}));return;
+  }
+  if(url.pathname==='/api/psychology-website/receiving'){
+   assert.equal(req.method,'GET');res.setHeader('content-type','application/json');res.end(JSON.stringify({revision:0,accounts:[{connectionId:'a',username:'account_a',followers:1500,candidate:true,canPublish:true}],config:{receivers:[],cta:DEFAULT_IMPORTED_PHOTO_CTA},ctaDefaults:DEFAULT_IMPORTED_PHOTO_CTA,publisherIds:[],routes:{}}));return;
   }
   if(url.pathname==='/api/psychology-website/links'){
    assert.equal(req.method,'POST');generated=true;res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true}));return;
@@ -86,12 +90,19 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  }),['数据概览','独立站转化']);
  for(const width of [1366,390,320]){
   await page.setViewport({width,height:900});
-  for(const tab of ['overview','sources','orders','links']){
+  for(const tab of ['overview','sources','orders','links','receiving']){
    await page.click('[data-tab="'+tab+'"]');
+   if(tab==='receiving')await page.waitForSelector('#wrSaveCta');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'overflow '+width+' '+tab);
+   assert.deepEqual(await page.$$eval('[role=tabpanel]',nodes=>nodes.filter(n=>n.checkVisibility()).map(n=>n.dataset.panel)),[tab],'only active panel visible '+tab);
+   assert.equal(await page.$eval('#journeyStages',n=>n.checkVisibility()),tab==='overview','overview funnel hidden outside overview');
+   await page.waitForFunction(()=>getComputedStyle(document.querySelector('.web-tabs [aria-selected=true]')).backgroundColor==='rgb(37, 99, 235)');
+   const layout=await page.evaluate(()=>{const selected=document.querySelector('.web-tabs [aria-selected=true]'),tabs=document.querySelector('.web-tabs'),panel=document.getElementById(selected.getAttribute('aria-controls')),title=panel.querySelector('h2'),style=getComputedStyle(selected);return {gap:title.getBoundingClientRect().top-tabs.getBoundingClientRect().bottom,padding:parseFloat(style.paddingInlineStart),radius:parseFloat(style.borderRadius),background:style.backgroundColor,color:style.color,tabStops:[...tabs.querySelectorAll('button')].filter(n=>n.tabIndex===0).length};});
+   assert.ok(layout.gap>=0&&layout.gap<240,'tab content starts directly below toolbar '+tab+': '+layout.gap);assert.ok(layout.padding>=12);assert.ok(layout.radius>=8);assert.equal(layout.background,'rgb(37, 99, 235)');assert.equal(layout.color,'rgb(255, 255, 255)');assert.equal(layout.tabStops,1);
+   if(process.env.WEBSITE_QA_SCREENSHOTS){const dir=path.resolve(root,'../tmp/website-tabs-qa');fs.mkdirSync(dir,{recursive:true});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(dir,tab+'-'+width+'.png')});}
   }
   await page.click('[data-tab="overview"]');
-  if(process.env.WEBSITE_QA_SCREENSHOTS){const dir=path.resolve(root,'../work/website-qa');fs.mkdirSync(dir,{recursive:true});await page.screenshot({path:path.join(dir,'website-'+width+'.png'),fullPage:true});}
+
  }
  assert.match(await page.$eval('#journeyStages',e=>e.textContent),/成功进站/);
  assert.match(await page.$eval('#journeyLosses',e=>e.textContent),/未确认进站/);
@@ -120,5 +131,9 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  const before=requests.length;await page.click('[data-period="range"]');
  await page.$eval('#from',e=>{e.value='2026-10-01';e.dispatchEvent(new Event('input',{bubbles:true}));});
  assert.equal(requests.length,before);assert.match(await page.$eval('#rangeLabel',e=>e.textContent),/2026-09-30/);
+ await page.setViewport({width:1366,height:900});await page.focus('[data-tab="overview"]');
+ for(const [key,tab] of [['ArrowRight','sources'],['End','receiving'],['ArrowRight','overview'],['ArrowLeft','receiving'],['Home','overview']]){await page.keyboard.press(key);assert.equal(await page.$eval('.web-tabs [aria-selected=true]',n=>n.dataset.tab),tab);assert.equal(await page.evaluate(()=>document.activeElement.dataset.tab),tab);}
+ await page.goto(base+'/psychology-website?tab=orders');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
+ assert.deepEqual(await page.$$eval('[role=tabpanel]',nodes=>nodes.filter(n=>n.checkVisibility()).map(n=>n.dataset.panel)),['orders']);assert.equal(new URL(page.url()).searchParams.get('tab'),'orders');
  assert.deepEqual(errors,[]);
 });

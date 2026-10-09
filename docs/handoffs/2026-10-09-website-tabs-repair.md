@@ -1,0 +1,26 @@
+# Independent website tab display repair
+
+## Goal
+Repair the misleading tab switching and cramped white navigation blocks on Independent Website.
+
+## Decisions
+- Root cause: moving navigation above the analytics page left the funnel, metrics and revenue outside the overview panel. Other report tabs changed only below these large common sections. Global button styling also overrode the transparent tab background.
+- Move all overview-only sections and metric definitions into the overview panel. Sources, orders, links and receiving now each show only their own panel; report date controls remain shared across report tabs, including link statistics.
+- Use a compact white rounded segmented navigation with padded tabs and a solid blue selected state; scoped styles win over shared button rules. Mobile navigation scrolls within the tab row and does not widen the page.
+- Add connected tab/tab-panel ARIA semantics, a single tab stop, arrow/Home/End navigation, and preserve query-string deep links. Preserve analytics loading, refresh/error handling, all settings drafts and save behavior.
+
+## Files changed
+- public/psychology-website.html/js/css; remove the old wrap override from psychology-website-receiving.css.
+- scripts/psychology-website-ui.test.js; generated UI manifest; CURRENT_STATE and this handoff.
+
+## Tests performed
+- Real Chromium with the full admin styling/scripts, at 1366/390/320 px: all five tabs, only the active panel visible, overview funnel absent from other tabs, first content immediately below controls, active style/padding, page overflow, keyboard navigation and direct orders URL.
+- Existing safe-text rendering, report filters/pagination, links and delayed/failed responses remain covered.
+- Receiving-tab browser tests retain separate-save/draft preservation and analytics-outage behavior.
+- Desktop and mobile screenshots inspected at tmp/website-tabs-qa (ignored).
+
+## Unfinished work
+Deployment verification pending. No backend or publishing changes.
+
+## Recommended next step
+Refresh Independent Website and switch between all five tabs.

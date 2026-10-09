@@ -6,7 +6,16 @@ const money=(value,currency)=>{try{return new Intl.NumberFormat('en-US',{style:'
 const datetime=value=>{if(!value)return '—';const parsed=new Date(/Z$|[+-]\d\d:\d\d$/.test(value)?value:value.replace(' ','T')+'Z');return Number.isNaN(+parsed)?'—':parsed.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});};
 const table=(heads,rows,empty)=>'<table><thead><tr>'+heads.map(h=>'<th>'+escape(h)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join(''):'<tr><td class="web-empty" colspan="'+heads.length+'">'+escape(empty||'所选时间暂无数据')+'</td></tr>')+'</tbody></table>';
 let applied={period:'7d',sourcePage:1,orderPage:1},draftPeriod='7d',data=null,controller=null,sequence=0,receivingChanged=false;
-function showTab(tab){if(!['overview','sources','orders','links','receiving'].includes(tab))tab='overview';$('websiteAnalytics').hidden=tab==='receiving';const url=new URL(location.href);url.searchParams.set('tab',tab);history.replaceState(null,'',url);window.dispatchEvent(new CustomEvent('website-tab',{detail:tab}));if(tab!=='receiving'&&(!data||receivingChanged)&&!$('refresh').disabled){receivingChanged=false;void load();}document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tab===tab)));document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==tab);}
+function showTab(tab,{focus=false}={}){
+ const tabs=[...document.querySelectorAll('.web-tabs [data-tab]')];
+ if(!tabs.some(button=>button.dataset.tab===tab))tab='overview';
+ $('websiteAnalytics').hidden=tab==='receiving';
+ tabs.forEach(button=>{const selected=button.dataset.tab===tab;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;if(selected&&focus)button.focus();});
+ document.querySelectorAll('[data-panel]').forEach(panel=>panel.hidden=panel.dataset.panel!==tab);
+ const url=new URL(location.href);url.searchParams.set('tab',tab);history.replaceState(null,'',url);
+ window.dispatchEvent(new CustomEvent('website-tab',{detail:tab}));
+ if(tab!=='receiving'&&(!data||receivingChanged)&&!$('refresh').disabled){receivingChanged=false;void load();}
+}
 function pager(prefix,value){$(prefix+'Page').textContent='第 '+value.page+' / '+Math.max(1,Math.ceil(value.total/value.pageSize))+' 页 · '+count(value.total)+' 条';$(prefix+'Prev').disabled=value.page<=1;$(prefix+'Next').disabled=value.page*value.pageSize>=value.total;}
 function render(value){
  data=value;$('report').hidden=false;renderJourney();$('rangeLabel').textContent=value.window.from+' 至 '+value.window.to;
@@ -78,6 +87,11 @@ document.querySelectorAll('[data-period]').forEach(button=>button.addEventListen
 $('filters').addEventListener('submit',event=>{event.preventDefault();if(draftPeriod==='range')void load({period:'range',from:$('from').value,to:$('to').value,sourcePage:1,orderPage:1});});
 $('refresh').addEventListener('click',()=>void load());
 document.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>showTab(button.dataset.tab)));
+document.querySelector('.web-tabs').addEventListener('keydown',event=>{
+ const tabs=[...document.querySelectorAll('.web-tabs [data-tab]')],index=tabs.indexOf(event.target);if(index<0)return;
+ const next=event.key==='ArrowRight'?(index+1)%tabs.length:event.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
+ if(next<0)return;event.preventDefault();showTab(tabs[next].dataset.tab,{focus:true});
+});
 document.querySelector('[data-open-receiving]').addEventListener('click',()=>showTab('receiving'));
 document.querySelector('[data-open-links]').addEventListener('click',()=>showTab('links'));
 for(const [prefix,key] of [['source','sourcePage'],['order','orderPage']])for(const [suffix,delta] of [['Prev',-1],['Next',1]])$(prefix+suffix).addEventListener('click',()=>void load({...applied,[key]:Math.max(1,Number(applied[key]||1)+delta)}));
