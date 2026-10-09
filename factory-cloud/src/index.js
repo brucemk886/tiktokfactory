@@ -1,5 +1,6 @@
 import {handleVideoHitCleanup,collectVideoHitAssets} from './psychology-video-hit-cleanup.js';
 import {handleVideoHitVideos} from './psychology-video-hit-videos.js';
+import {handleVideoHitReady} from './psychology-video-hit-ready.js';
 import {handleVideoHits} from './psychology-video-hits.js';
 import {handleVideoHitAssets} from './psychology-video-hit-assets.js';
 import {handleVideoHitProduction} from './psychology-video-hit-production.js';
@@ -89,7 +90,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleVideoHitCleanup,handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handleVideoHitReady,handleVideoHitCleanup,handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;

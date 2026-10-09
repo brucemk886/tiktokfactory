@@ -6,6 +6,7 @@ import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {normalizePhotoImport,createPhotoImportSession} from '../public/psychology-video-hit-import-model.js';
 import {fixture} from '../factory-cloud/src/psychology-cloud-test-fixture.js';
+import {handleVideoHitReady} from '../factory-cloud/src/psychology-video-hit-ready.js';
 import {handleVideoHits} from '../factory-cloud/src/psychology-video-hits.js';
 import {handleVideoHitAssets} from '../factory-cloud/src/psychology-video-hit-assets.js';
 import {toPublicUser} from '../factory-cloud/src/auth.js';
@@ -20,7 +21,7 @@ async function setup(t){
  f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-video-hits']));
  const actor=()=>toPublicUser(f.sqlite.prepare("SELECT * FROM factory_users WHERE id='admin'").get());
  f.env.ARCHIVE={async put(k,b){files.set(k,b instanceof ReadableStream?new Uint8Array(await new Response(b).arrayBuffer()):new Uint8Array(b));return {};},async get(k){return files.has(k)?{body:files.get(k),size:files.get(k).length}:null;},async head(k){return files.has(k)?{}:null;},async delete(k){files.delete(k);}};
- const handle=async r=>{const url=new URL(r.url);return await handleVideoHitAssets(r,f.env,url,{user:actor()})||await handleVideoHits(r,f.env,url,{user:actor()});};
+ const handle=async r=>{const url=new URL(r.url);return await handleVideoHitReady(r,f.env,url,{user:actor()})||await handleVideoHitAssets(r,f.env,url,{user:actor()})||await handleVideoHits(r,f.env,url,{user:actor()});};
  const request=async(p,method='GET',body)=>{if(method!=='GET')writes.push({path:p,method,body});const r=new Request('https://factory.test/api/psychology-video-hits'+p,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const response=await handle(r),data=await response.json();if(!response.ok)throw Error(data.error);return data;};
  const upload=async(id,file,type)=>{uploads.push(id);const response=await handle(new Request('https://factory.test/api/psychology-video-hits/assets/'+id,{method:'PUT',headers:{'Content-Type':type},body:await file.arrayBuffer()}));return response.json();};
  const counts=()=>Object.fromEntries(['psychology_video_hits','psychology_video_hit_versions','psychology_video_hit_frames','factory_jobs','psychology_publish_batches'].map(table=>[table,f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n]));

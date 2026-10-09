@@ -19,7 +19,7 @@ test('admin can grant every psychology checkbox to a member and save exactly one
   else {const file=path.resolve(root,pageFileFor(url.pathname)||url.pathname.slice(1));if(!file.startsWith(root)||!fs.existsSync(file)){res.writeHead(404).end();return;}response=new Response(fs.readFileSync(file),{headers:{'content-type':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html'}});}
   res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
  }catch(e){res.writeHead(500).end(e.message);}});
- await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r);}));
  const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});t.after(()=>browser.close());const page=await browser.newPage(),origin='http://127.0.0.1:'+server.address().port,errors=[];
  page.on('pageerror',e=>errors.push(e.message));await page.setRequestInterception(true);page.on('request',r=>r.url().startsWith(origin)||r.url().startsWith('data:')?r.continue():r.abort());
  await page.setViewport({width:1440,height:1000});await page.goto(origin+'/accounts',{waitUntil:'networkidle0'});await page.click('[data-edit-user="member"]');
