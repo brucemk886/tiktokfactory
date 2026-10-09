@@ -28,6 +28,11 @@ export async function handleVideoHitAssets(request,env,url,session){
  const actor=external?await authenticate(request,env.DB):session?.user,user=await videoHitUser(env.DB,actor);
  if(!env.ARCHIVE)fail('图片存储尚未配置。',503);
  if(!external&&!['GET','HEAD'].includes(request.method)&&((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site'))fail('不允许跨站上传。',403);
+ if(!match[2]&&request.method==='GET'){
+  const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[1],user.id).first();
+  if(!row)fail('图片不存在或无权访问。',404);
+  return json({assetId:row.id,status:row.cleanup_state,size:row.size,contentType:row.content_type,sha256:row.digest,previewUrl:row.cleanup_state==='active'?VIDEO_HITS_BASE+'/assets/'+row.id+'/file':''});
+ }
  if(match[2]&&['GET','HEAD'].includes(request.method)){
   const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[1],user.id).first();
   if(!row)fail('图片不存在或无权访问。',404);if(row.cleanup_state!=='active')fail('图片已清理或正在清理。',410);

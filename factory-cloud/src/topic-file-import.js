@@ -34,7 +34,7 @@ export function chatFileUrl(value){
   throw Object.assign(new Error('图片下载地址不受支持，请使用文件上传或有效的图片下载地址。'),{statusCode:400,code:'FILE_HOST_NOT_ALLOWED',host});
  return url.href;
 }
-async function downloadPng(env,url){
+export async function downloadChatImage(env,url){
  const signal=AbortSignal.timeout(30000);
  for(let n=0;n<4;n++){
   let response;try{response=await (env.fetch||fetch)(chatFileUrl(url),{method:'GET',redirect:'manual',credentials:'omit',signal});}catch(e){if(e.code)throw e;fail('图片下载暂时失败，请保留 requestId 并重新传入附件。',502,'FILE_DOWNLOAD_FAILED');}
@@ -49,10 +49,11 @@ async function downloadPng(env,url){
   try{for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>MAX_BYTES)fail('图片不能超过 8 MB。',413,'IMAGE_TOO_LARGE');chunks.push(value);}}
   finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
   const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
-  return decodeTopicPng(bytes);
+  return {bytes,contentType:(response.headers.get('content-type')||'').split(';')[0].toLowerCase()};
  }
  fail('图片下载重定向过多。',502,'FILE_REDIRECT_FAILED');
 }
+async function downloadPng(env,url){return decodeTopicPng((await downloadChatImage(env,url)).bytes);}
 async function registerFile(env,row,stored){
  const m=stored.customMetadata||{};
  if(m.operation!==row.workflow_id||m.inputHash!==row.input_hash||!m.sha256)fail('图片存储记录不匹配。',409,'ASSET_CONFLICT');

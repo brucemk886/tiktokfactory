@@ -270,34 +270,15 @@ $('imageDialog').addEventListener('close',()=>{previewToken++;$('imagePreview').
 $('imageDialog').addEventListener('click',e=>{if(e.target!==$('imageDialog'))return;const box=e.target.getBoundingClientRect();if(e.clientX<box.left||e.clientX>box.right||e.clientY<box.top||e.clientY>box.bottom)e.target.close();});
 $('imageDialog').addEventListener('keydown',e=>{if($('imagePreview').hidden)return;if(['+','='].includes(e.key)){e.preventDefault();zoomImage(1.25);}else if(e.key==='-'){e.preventDefault();zoomImage(0.8);}else if(e.key==='0'){e.preventDefault();fitImagePreview();}});
 window.addEventListener('resize',()=>{if($('imageDialog').open&&previewFit&&!$('imagePreview').hidden)fitImagePreview();});
-const guide=()=>[
-'你负责解析视频并生成原创二创文案和分镜图片，将结果写入 Local Factory。',
-'统一入口：https://factory.tiktokaitool.com/api/v1/factory',
-'请求头：Authorization: Bearer <PROJECT_API_KEY>，Content-Type: application/json',
-'先 GET 统一入口读取 videoHits.* 目录；所有写操作的外层 requestId 使用 UUID，重试沿用原编号。',
-'先 videoHits.create 保存来源：externalId、videoUrl、title、caption、script、videoData（播放、点赞、评论、分享等任意对象）。',
-'图片直接 PUT https://factory.tiktokaitool.com/api/integrations/psychology/video-hits/assets/UPLOAD_UUID，使用同一Bearer密钥及 Content-Type: image/png、image/jpeg 或 image/webp，body为实际图片字节，返回assetId。每张最多8MB。请确保调用端能读取实际图片文件；无法读取时用持久公开HTTPS图片链接。',
-'用 videoHits.frames.write 写原图：params:{id:"SOURCE_ID",version:"0",body:{revision:SOURCE_REVISION,frames:[{index:1,assetId:"UPLOAD_UUID",text:"原画面文字",durationSeconds:3}]}}。',
-'用 videoHits.versions.write 创建1–20版本：params:{id:"SOURCE_ID",version:"1",body:{revision:0,name:"二创1",title:"标题",caption:"发布文案",script:"完整配音文案",enabled:false}}。',
-'用 videoHits.frames.write 写二创图，version改为对应1–20编号，revision取该版本最新值。每次1–100帧，可分批写到300帧。帧号从1连续编号，必须覆盖全部原图帧号。',
-'直接传入成片：PUT https://factory.tiktokaitool.com/api/integrations/psychology/video-hits/videos/UPLOAD_UUID，沿用Bearer密钥，body为视频文件。头部Content-Type为video/mp4、video/quicktime或video/webm；X-File-Name为encodeURIComponent文件名，X-File-Size为字节数，X-Content-SHA256为文件小写SHA256摘要。最多95MB，返回videoAssetId。同一UUID重试须使用相同文件和头部。',
-'成片版本：videoHits.versions.write body:{revision:0,inputMode:"video",videoAssetId:"UPLOAD_UUID",title:"标题",caption:"发布文案",enabled:true}；无需原图、二创图或script。图片版本inputMode:"frames"（默认值）。',
-'页面二创类型由inputMode决定：video显示视频，frames显示图文（图片和文案，后续可合成视频）。videoHits.list的params.query.inputMode可为all/video/frames；返回每个来源的videoVersionCount和frameVersionCount，混合来源显示两种数量。',
-'最后 videoHits.versions.write 提交最新revision与enabled:true。未补齐图片不能启用；之后补图会自动停用。任务冻结图片与文案，后续编辑不改已排期任务。',
-'videoHits.render 只合成MP4：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,voiceGender:"female"}}。voiceGender可为male或female。',
-'videoHits.jobs 查看任务；成片可在心理学发布页准备云端预览。',
-'videoHits.publish 才执行完整发布流程（成片跳过合成）：params:{id:"SOURCE_ID",version:"1",body:{revision:CURRENT_REVISION,connectionIds:["AUTHORIZED_ACCOUNT_ID"],scheduleAt:UNIX_SECONDS,intervalMinutes:60,isAiGenerated:true,voiceGender:"female"}}。',
-'发布前先用 publish.accounts 查询当前心理学项目授权账号。排期至少留30分钟合成，整批14天内。每版本全局仅发布一次，只能选择一个授权账号；失败重试原任务。成片或已合成视频至少提前5分钟，待合成图片至少提前30分钟。可选minFollowers:1000及tiktokOne:{connectionId,accountId,campaignId}沿用现有官方校验。',
-'仅在用户已授权发布的任务中调用videoHits.publish；图片/文案写入不会发布，也不会恢复旧自动规划。',
-'videoHits.cleanup 查看清理政策和当前状态。确认全部已创建版本均已发布后，可用 videoHits.archive params:{id:SOURCE_ID,body:{revision:SOURCE_REVISION}} 结束来源；24小时后清理原文和原图。已发布版本不会释放版本编号或防重标记，不能再次发布。外部imageUrl仅解除引用，Factory不能删除其他网站的文件。',
-'409 REQUEST_IN_PROGRESS或503 RESULT_UNKNOWN不得更换UUID重发，使用requests.get查询原请求状态。'
-].join('\n\n');
+let guideText='';
+async function guide(){if(guideText)return guideText;const r=await fetch('/docs/psychology-video-hits-api.md',{cache:'no-cache'});if(!r.ok)throw new Error('接入文档加载失败，请稍后重试。');guideText=await r.text();return guideText;}
+
 async function showCleanup(){
  $('cleanupStatus').textContent='正在读取…';const data=await api('/cleanup'),sets=[['原图 / 二创图片',data.images],['传入成片',data.videos],['合成云端预览',data.previews]],sum=(rows,state,key)=>rows.filter(r=>r.state===state).reduce((n,r)=>n+Number(r[key]),0);
  $('cleanupSummary').innerHTML='<p>已发布 '+data.versions.published+' 个版本 · 内容已清理 '+data.versions.cleaned+' 个 · 等待清理 '+data.versions.awaitingCleanup+' 个</p><div class="vh-table"><table><thead><tr><th>素材</th><th>保留文件</th><th>已清理文件</th><th>待重试</th></tr></thead><tbody>'+sets.map(([label,rows])=>'<tr><td>'+label+'</td><td data-label="保留">'+sum(rows,'active','count')+'</td><td data-label="已清理">'+sum(rows,'deleted','count')+'</td><td data-label="待重试">'+sum(rows,'deleting','count')+'</td></tr>').join('')+'</tbody></table></div><p>本机成片已清理 '+data.local.cleaned+' 个 · 等待原渲染工人清理 '+data.local.queued+' 个</p>'+(data.errors.length?'<p>以下文件删除失败，将自动重试：</p>'+data.errors.map(e=>'<p>'+escape(e.kind+' '+e.id+'：'+e.error)+'</p>').join(''):'');$('cleanupStatus').textContent='状态已更新；内容清理与文件删除分别统计，共享文件继续保留，发布次数不会重置。';
 }
 $('cleanupButton').onclick=()=>{$('cleanupDialog').showModal();showCleanup().catch(e=>$('cleanupStatus').textContent=e.message);};$('refreshCleanup').onclick=e=>action('cleanupStatus',e.target,showCleanup);
-$('apiButton').onclick=()=>{$('apiInstructions').textContent=guide();$('apiDialog').showModal();};$('copyApi').onclick=async()=>{try{await navigator.clipboard.writeText(guide());$('copyApi').textContent='已复制';}catch{$('copyApi').textContent='请选中下方说明复制';}};
+$('apiButton').onclick=async()=>{$('apiInstructions').textContent='正在加载完整接入文档…';$('copyApi').disabled=true;$('apiDialog').showModal();try{$('apiInstructions').textContent=await guide();$('copyApi').disabled=false;}catch(e){$('apiInstructions').textContent=e.message;}};$('copyApi').onclick=async()=>{try{await navigator.clipboard.writeText(await guide());$('copyApi').textContent='已复制';}catch{$('copyApi').textContent='请选中下方说明复制';}};
 setupPage();
 if(view==='sources')load();
 else if(!/^vh-[a-f0-9]{32}$/.test(sourceId||''))pageError(new Error('缺少有效的视频来源，请返回视频爆款列表。'));

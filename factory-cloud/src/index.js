@@ -57,6 +57,12 @@ export default {
         return json({ ok: true, service: "tiktok-factory", time: Date.now() });
       }
 
+      // The single public API guide contains no credentials or customer data.
+      if(url.pathname==='/docs/psychology-video-hits-api.md'){
+        if(!['GET','HEAD'].includes(request.method))return errorJson('Method not allowed',405);
+        const asset=await env.ASSETS.fetch(new Request(url,{method:request.method}));
+        return new Response(asset.body,{status:asset.status,headers:{'content-type':'text/markdown; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff'}});
+      }
       const staticResponse = await serveUiAsset(request, env, url);
       if (staticResponse) return staticResponse;
 

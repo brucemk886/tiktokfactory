@@ -31,12 +31,12 @@ async function json(response,status=200){assert.equal(response.status,status,awa
 async function authorize(f,write=false){
  const c=await json(await f.fetch('/oauth/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({client_name:'Test ChatGPT',redirect_uris:['https://chatgpt.com/connector/oauth/test'],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']})}),201);
  const verifier='a'.repeat(64),challenge=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))).toString('base64url');
- const query=new URLSearchParams({response_type:'code',client_id:c.client_id,redirect_uri:c.redirect_uris[0],scope:'factory.read offline_access'+(write?' factory.topics.write':''),state:'test-state',code_challenge:challenge,code_challenge_method:'S256',resource:MCP_ORIGIN+'/mcp'});
- const start=await f.browser('/oauth/authorize?'+query);const html=await start.text();assert.match(html,write?/允许读取与图片入库/:/允许只读访问/);
+ const query=new URLSearchParams({response_type:'code',client_id:c.client_id,redirect_uri:c.redirect_uris[0],scope:'factory.read offline_access'+(write==='video'?' factory.video_hits.write':write?' factory.topics.write':''),state:'test-state',code_challenge:challenge,code_challenge_method:'S256',resource:MCP_ORIGIN+'/mcp'});
+ const start=await f.browser('/oauth/authorize?'+query);const html=await start.text();assert.match(html,write==='video'?/允许读取与视频爆款写入/:write?/允许读取与图片入库/:/允许只读访问/);
  const handle=html.match(/name="handle" value="([^"]+)"/)[1],csrf=html.match(/name="csrf" value="([^"]+)"/)[1],cookie=start.headers.get('set-cookie').split(';')[0];
  const body=new URLSearchParams({handle,csrf,decision:'approve'}).toString();
  const approved=await f.browser('/oauth/authorize',{method:'POST',headers:{origin:MCP_ORIGIN,cookie:'lf_session='+f.session+'; '+cookie,'content-type':'application/x-www-form-urlencoded'},body});
- assert.equal(approved.status,200);const approvedHtml=await approved.text();assert.match(approvedHtml,write?/图片入库授权成功/:/只读授权成功/);const location=new URL(approvedHtml.match(/id="returnToClient" href="([^"]+)"/)[1].replaceAll('&#38;','&')); assert.equal(location.searchParams.get('state'),'test-state');assert.equal(location.searchParams.get('iss'),MCP_ORIGIN);
+ assert.equal(approved.status,200);const approvedHtml=await approved.text();assert.match(approvedHtml,write==='video'?/视频爆款写入授权成功/:write?/图片入库授权成功/:/只读授权成功/);const location=new URL(approvedHtml.match(/id="returnToClient" href="([^"]+)"/)[1].replaceAll('&#38;','&')); assert.equal(location.searchParams.get('state'),'test-state');assert.equal(location.searchParams.get('iss'),MCP_ORIGIN);
  const tokenBody=new URLSearchParams({grant_type:'authorization_code',code:location.searchParams.get('code'),client_id:c.client_id,redirect_uri:c.redirect_uris[0],code_verifier:verifier,resource:MCP_ORIGIN+'/mcp'});
  const token=await json(await f.fetch('/oauth/token',{method:'POST',body:tokenBody}));return {token,c,tokenBody,query,body,cookie};
 }
@@ -50,7 +50,7 @@ test('discovery and no cookie/project key bypass; existing routes pass through',
 test('PKCE exchange, MCP initialize/list/call, schemas and live permission checks',async t=>{
  const f=await setup(t),a=await authorize(f),token=a.token.access_token;
  const init=await json(await rpc(f,token,'initialize',{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'test',version:'1'}}));assert.equal(init.result.serverInfo.name,'local-factory');
- const list=await json(await rpc(f,token,'tools/list'));assert.equal(list.result.tools.length,24);assert.equal(list.result.tools.filter(x=>x.annotations.readOnlyHint).length,21);assert.deepEqual(list.result.tools.filter(x=>!x.annotations.readOnlyHint).map(x=>x.name),['psychology_save_selected_topic_image','psychology_upload_topic_png','psychology_import_topic_image']);
+ const list=await json(await rpc(f,token,'tools/list'));assert.equal(list.result.tools.length,40);assert.equal(list.result.tools.filter(x=>x.annotations.readOnlyHint).length,31);assert.deepEqual(list.result.tools.filter(x=>!x.annotations.readOnlyHint&&!x.name.startsWith('psychology_videoHits_')).map(x=>x.name),['psychology_save_selected_topic_image','psychology_upload_topic_png','psychology_import_topic_image']);
  const call=await json(await rpc(f,token,'tools/call',{name:'psychology_topics_list',arguments:{page:1,pageSize:2}}));assert.equal(call.result.isError,false);
  for(const params of [{name:'psychology_topics_list',arguments:{pageSize:10000}},{name:'psychology_publish_create',arguments:{}}]){const x=await json(await rpc(f,token,'tools/call',params));assert.ok(x.result?.isError||x.error);}
  f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-topic-bank']));assert.ok((await json(await rpc(f,token,'tools/list'))).result.tools.every(t=>!t.name.startsWith('photo_factory_')));
@@ -118,7 +118,7 @@ test('ChatGPT cross-origin discovery, PKCE and MCP calls work while consent stay
  f.fetch=(path,init={})=>fetch(path,{...init,headers:{origin:'https://chatgpt.com',...Object.fromEntries(new Headers(init.headers))}});
  const meta=await f.fetch('/.well-known/oauth-protected-resource/mcp');assert.equal(meta.status,200);assert.equal(meta.headers.get('access-control-allow-origin'),'https://chatgpt.com');
  const unauth=await f.fetch('/mcp');assert.equal(unauth.status,401);assert.match(unauth.headers.get('access-control-expose-headers'),/WWW-Authenticate/);assert.equal(unauth.headers.get('access-control-allow-credentials'),null);
- const a=await authorize(f,true);const list=await json(await rpc(f,a.token.access_token,'tools/list'));assert.equal(list.result.tools.length,24);
+ const a=await authorize(f,true);const list=await json(await rpc(f,a.token.access_token,'tools/list'));assert.equal(list.result.tools.length,40);
  assert.equal((await f.browser('/factory-mcp',{method:'POST',headers:{origin:'https://chatgpt.com'},body:a.body})).status,403);
  assert.equal((await f.browser('/oauth/authorize',{method:'POST',headers:{origin:'https://chatgpt.com'},body:a.body})).status,403);
  assert.equal(f.requests.length,0);
@@ -305,4 +305,112 @@ test('byte upload is app-only and requires current OAuth write consent',async t=
  assert.deepEqual(tool._meta.ui.visibility,['app']);assert.equal(tool._meta['openai/fileParams'],undefined);
  const denied=(await json(await rpc(f,a.token.access_token,'tools/call',{name:tool.name,arguments:args}))).result;
  assert.equal(denied.isError,true);assert.match(JSON.stringify(denied._meta),/insufficient_scope/);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_ai_operations').get().n,0);
+});
+
+const hitPng=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64');
+async function videoSetup(t){
+ const f=await setup(t),files=new Map();f.env.ARCHIVE={async put(k,b){files.set(k,new Uint8Array(b));},async get(k){return files.has(k)?{body:files.get(k)}:null;}};
+ const {readFileSync}=await import('node:fs');
+ f.env.ASSETS={async fetch(r){assert.equal(new URL(r.url).pathname,'/docs/psychology-video-hits-api.md');return new Response(readFileSync(new URL('../../public/docs/psychology-video-hits-api.md',import.meta.url),'utf8'));}};
+ f.video=async(token,name,args)=>(await json(await rpc(f,token,'tools/call',{name:'psychology_videoHits_'+name,arguments:args}))).result;
+ f.source={body:{externalId:'mcp-fixture',videoUrl:'https://www.tiktok.com/@fixture/video/123456789',title:'Original',script:'Original narration'}};
+ const {handleFactoryApi}=await import('./factory-api.js');
+ const user=toPublicUser(f.sqlite.prepare("SELECT * FROM factory_users WHERE id='admin'").get());
+ const keyReq=new Request(MCP_ORIGIN+'/api/factory-api/key',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+ f.restKey=(await (await handleFactoryApi(keyReq,f.env,new URL(keyReq.url),{user})).json()).apiKey;
+ f.rest=async(action,params,requestId)=>{const r=new Request(MCP_ORIGIN+'/api/v1/factory',{method:'POST',headers:{authorization:'Bearer '+f.restKey,'content-type':'application/json'},body:JSON.stringify({module:'psychology',action,params,...(requestId?{requestId}:{})})});return handleFactoryApi(r,f.env,new URL(r.url));};
+ f.files=files;return f;
+}
+test('video-hit OAuth writes require separate consent, schemas disallow publish and permissions stay live',async t=>{
+ const f=await videoSetup(t),read=await authorize(f),topic=await authorize(f,true),args={params:f.source,requestId:crypto.randomUUID()};
+ const meta=await json(await f.fetch('/.well-known/oauth-protected-resource/mcp'));assert.ok(meta.scopes_supported.includes('factory.video_hits.write'));
+ for(const a of [read,topic]){const r=await f.video(a.token.access_token,'create',args);assert.equal(r.isError,true);assert.equal(r.structuredContent.code,'INSUFFICIENT_SCOPE');assert.match(JSON.stringify(r._meta),/factory.video_hits.write/);}
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,0);
+ const a=await authorize(f,'video'),token=a.token.access_token;
+ const list=(await json(await rpc(f,token,'tools/list'))).result.tools;
+ assert.ok(list.find(x=>x.name==='psychology_videoHits_create')._meta.securitySchemes[0].scopes.includes('factory.video_hits.write'));
+ assert.ok(!list.some(x=>/videoHits_(publish|render|archive)$/.test(x.name)));
+ const file=list.find(x=>x.name==='psychology_videoHits_assets_upload_file');assert.deepEqual(file._meta['openai/fileParams'],['image']);assert.deepEqual(file.inputSchema.properties.image.required,['download_url','file_id']);
+ for(const key of ['mime_type','file_name'])assert.ok(file.inputSchema.properties.image.properties[key]);
+ assert.equal((await f.video(token,'create',{...args,ownerId:'other'})).isError,true);
+ assert.equal((await f.video(token,'create',args)).isError,false);
+ assert.match(await (await f.browser('/factory-mcp')).text(),/视频爆款素材写入/);
+ f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-topic-bank']));
+ const removed=(await json(await rpc(f,token,'tools/list'))).result.tools;assert.ok(!removed.some(x=>x.name.startsWith('psychology_videoHits_')));
+ assert.equal((await f.video(token,'create',args)).isError,true);
+ const page=await f.browser('/oauth/authorize?'+a.query);assert.equal(page.status,403);
+ assert.equal(f.requests.length,0);
+});
+test('REST and MCP share exact UUID receipts, revisions, frame bindings and safe readback',async t=>{
+ const f=await videoSetup(t),a=await authorize(f,'video'),token=a.token.access_token,requestId=crypto.randomUUID();
+ const rest=await json(await f.rest('videoHits.create',f.source,requestId)),id=rest.id;
+ const replay=await f.video(token,'create',{params:f.source,requestId});assert.equal(replay.isError,false);assert.equal(replay.structuredContent.id,id);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,1);
+ assert.equal((await f.video(token,'create',{params:{body:{...f.source.body,title:'Changed'}},requestId})).structuredContent.httpStatus,409);
+ const write=async(name,params)=>{const uuid=crypto.randomUUID(),r=await f.video(token,name,{params,requestId:uuid});assert.equal(r.isError,false,JSON.stringify(r));const action='videoHits.'+name.replaceAll('_','.');const repeated=await json(await f.rest(action,params,uuid));assert.equal(repeated.revision,r.structuredContent.revision);return r.structuredContent;};
+ const uploadId=crypto.randomUUID();let r=await f.video(token,'assets_upload_bytes',{uploadId,contentType:'image/png',imageBase64:hitPng.toString('base64')});assert.equal(r.structuredContent.httpStatus,201);assert.equal(f.files.size,1);
+ r=await f.video(token,'assets_get',{uploadId});assert.equal(r.structuredContent.status,'active');
+ await write('frames_write',{id,version:'0',body:{revision:1,frames:[{index:1,assetId:uploadId,text:'Original frame'}]}});
+ await write('versions_write',{id,version:'1',body:{revision:0,title:'Recreation',script:'Complete narration',enabled:false}});
+ await write('frames_write',{id,version:'1',body:{revision:1,frames:[{index:1,assetId:uploadId,text:'New frame'}]}});
+ await write('versions_write',{id,version:'1',body:{revision:2,enabled:true}});
+ r=await f.video(token,'get',{params:{id}});assert.equal(r.structuredContent.versions[0].enabled,true);assert.equal(r.structuredContent.versions[0].revision,3);
+ r=await f.video(token,'frames_list',{params:{id,version:'1',query:{page:1}}});assert.ok(JSON.stringify(r.structuredContent).includes(uploadId));
+ r=await f.video(token,'requests_get',{requestId});assert.equal(r.structuredContent.state,'done');assert.equal(r.structuredContent.result.id,id);
+ r=await f.video(token,'guide',{});assert.equal(r.structuredContent.writeAuthorized,true);assert.match(r.content[0].text,/psychology_videoHits_assets_upload_bytes/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);assert.equal(f.requests.length,0);
+});
+test('video-hit upload retries keep immutable identity and block unsafe files, redirects and cross-owner reads',async t=>{
+ const f=await videoSetup(t),a=await authorize(f,'video'),token=a.token.access_token,uploadId=crypto.randomUUID(),image={file_id:'file-fixture',download_url:'https://files.oaiusercontent.com/test.png?sig=fixture'};
+ let downloads=0;f.env.fetch=async(u,init)=>{downloads++;assert.equal(init.redirect,'manual');assert.equal(init.headers,undefined);return new Response(hitPng,{headers:{'content-type':'image/png'}});};
+ const first=await f.video(token,'assets_upload_file',{uploadId,image});assert.equal(first.isError,false,JSON.stringify(first));assert.equal(downloads,1);
+ let r=await f.video(token,'assets_upload_bytes',{uploadId,contentType:'image/png',imageBase64:hitPng.toString('base64')});assert.equal(r.structuredContent.duplicate,true);assert.equal(f.files.size,1);
+ r=await f.video(token,'assets_upload_file',{uploadId:crypto.randomUUID(),image:{...image,download_url:'http://127.0.0.1/file'}});assert.equal(r.isError,true);assert.equal(downloads,1);
+ f.env.fetch=async()=>new Response(null,{status:302,headers:{location:'https://evil.example/secret'}});
+ r=await f.video(token,'assets_upload_file',{uploadId:crypto.randomUUID(),image});assert.equal(r.isError,true);assert.equal(f.files.size,1);
+ r=await f.video(token,'assets_upload_bytes',{uploadId:crypto.randomUUID(),contentType:'image/png',imageBase64:Buffer.from('not png').toString('base64')});assert.equal(r.isError,true);assert.equal(f.files.size,1);
+ f.sqlite.prepare("UPDATE psychology_video_hit_assets SET owner_id='other'").run();r=await f.video(token,'assets_get',{uploadId});assert.equal(r.structuredContent.httpStatus,404);
+ r=await f.video(token,'assets_upload_bytes',{uploadId,contentType:'image/png',imageBase64:hitPng.toString('base64')});assert.equal(r.structuredContent.httpStatus,409);
+ assert.ok(!JSON.stringify(f.sqlite.prepare('SELECT * FROM factory_ai_requests').all()).includes('sig=fixture'));
+ const count=f.sqlite.prepare('SELECT COUNT(*) n FROM factory_mcp_connections').get().n;assert.ok(count>0);f.sqlite.prepare('UPDATE factory_mcp_connections SET revoked_at=1').run();assert.equal((await rpc(f,token,'tools/list')).status,401);
+});
+test('MCP request receipts do not expose other operations and failed source revisions stay unchanged',async t=>{
+ const f=await videoSetup(t),a=await authorize(f,'video'),token=a.token.access_token,requestId=crypto.randomUUID();
+ const created=await json(await f.rest('videoHits.create',f.source,crypto.randomUUID()));
+ const args={params:{id:created.id,body:{revision:99,title:'Stale'}},requestId};
+ let r=await f.video(token,'update',args);assert.equal(r.structuredContent.httpStatus,409);
+ r=await f.video(token,'requests_get',{requestId});assert.equal(r.structuredContent.state,'done');assert.equal(r.structuredContent.status,409);
+ r=await f.video(token,'get',{params:{id:created.id}});assert.equal(r.structuredContent.source.title,'Original');
+ f.sqlite.prepare("UPDATE factory_ai_requests SET action='videoHits.publish' WHERE request_id=?").run(requestId);
+ r=await f.video(token,'requests_get',{requestId});assert.equal(r.structuredContent.httpStatus,403);assert.equal(r.structuredContent.result,undefined);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='someone-else'").run();r=await f.video(token,'get',{params:{id:created.id}});assert.equal(r.structuredContent.httpStatus,404);
+ assert.equal(f.requests.length,0);
+});
+test('public guide is anonymous, exact and read-only; MCP transport bounds streamed payloads',async t=>{
+ const f=await videoSetup(t),{default:worker}=await import('./index.js'),{readFileSync}=await import('node:fs');
+ const r=await worker.fetch(new Request(MCP_ORIGIN+'/docs/psychology-video-hits-api.md'),f.env,{});assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/text\/markdown/);
+ assert.equal(await r.text(),readFileSync(new URL('../../docs/psychology-video-hits-api.md',import.meta.url),'utf8').replace(/\r\n/g,'\n'));
+ assert.equal((await worker.fetch(new Request(MCP_ORIGIN+'/docs/psychology-video-hits-api.md',{method:'POST'}),f.env,{})).status,405);
+ const a=await authorize(f,'video');const bytes=new Uint8Array(13*1024*1024),body=new ReadableStream({start(c){c.enqueue(bytes);c.close();}});
+ const large=await f.worker.fetch(new Request(MCP_ORIGIN+'/mcp',{method:'POST',duplex:'half',headers:{authorization:'Bearer '+a.token.access_token,'content-type':'application/json'},body}),f.env,{waitUntil(){}});assert.equal(large.status,413);
+});
+
+test('video-hit picker uploads a real >128KB file through OAuth MCP and confirms its asset',async t=>{
+ const f=await videoSetup(t),a=await authorize(f,'video'),token=a.token.access_token,uploadId=crypto.randomUUID();
+ const {default:fs}=await import('node:fs'),{default:os}=await import('node:os'),{default:path}=await import('node:path'),{pngCrc}=await import('./topic-png.js');
+ const executablePath=[process.env.CHROME_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/google-chrome','/usr/bin/chromium'].filter(Boolean).find(x=>fs.existsSync(x));
+ if(!executablePath){t.diagnostic('Chrome unavailable; protocol upload covered separately.');return;}
+ const data=Buffer.alloc(140000,65),chunk=Buffer.alloc(data.length+12);chunk.writeUInt32BE(data.length);chunk.write('tEXt',4);data.copy(chunk,8);chunk.writeUInt32BE(pngCrc(chunk.subarray(4,-4)),chunk.length-4);
+ const png=Buffer.concat([hitPng.subarray(0,-12),chunk,hitPng.subarray(-12)]),dir=fs.mkdtempSync(path.join(os.tmpdir(),'factory-mcp-video-')),file=path.join(dir,'real.png');fs.writeFileSync(file,png);t.after(()=>{fs.unlinkSync(file);fs.rmdirSync(dir);});
+ const prepared=await f.video(token,'prepare_image_upload',{uploadId});assert.equal(prepared.structuredContent.status,'awaiting_image');assert.equal(f.files.size,0);
+ const {VIDEO_HIT_IMPORT_UI}=await import('./video-hit-import-widget.js'),resource=await json(await rpc(f,token,'resources/read',{uri:VIDEO_HIT_IMPORT_UI}));
+ const {default:puppeteer}=await import('puppeteer-core'),browser=await puppeteer.launch({executablePath,headless:true});t.after(()=>browser.close());const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.exposeFunction('fixtureCall',async(name,args)=>{assert.ok(name.startsWith('psychology_videoHits_'));return (await json(await rpc(f,token,'tools/call',{name,arguments:args}))).result;});
+ await page.evaluateOnNewDocument(({uploadId})=>{window.openai={toolOutput:{uploadId},callTool:(name,args)=>window.fixtureCall(name,args)};},{uploadId});
+ await page.setRequestInterception(true);page.on('request',r=>r.respond({status:200,contentType:'text/html',body:resource.result.contents[0].text}));
+ await page.goto(MCP_ORIGIN+'/widget-fixture');await (await page.$('#file')).uploadFile(file);await page.click('#save');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('图片已保存'));
+ await page.setViewport({width:390,height:780});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth),390);const captures=new URL('../../tmp/video-hits-mcp-qa/',import.meta.url);fs.mkdirSync(captures,{recursive:true});await page.screenshot({path:path.join(path.resolve(captures.pathname.replace(/^\/([A-Z]:)/,'$1')),'image-upload-mobile.png')});
+ assert.equal(f.files.size,1);assert.deepEqual(Buffer.from([...f.files.values()][0]),png);assert.deepEqual(errors,[]);
+ const saved=await f.video(token,'assets_get',{uploadId});assert.equal(saved.structuredContent.status,'active');assert.equal(saved.structuredContent.size,png.length);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,0);assert.equal(f.requests.length,0);
 });

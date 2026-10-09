@@ -76,11 +76,12 @@ async function dispatch(entry,request,env,url,user){
  return handlers[entry.handler](request,env,url,{user});
 }
 const receipt=(row)=>new Response(row.response_json,{status:row.response_status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-factory-request-id':row.request_id,'x-idempotent-replay':'true'}});
-async function requestStatus(db,user,input){
+async function requestStatus(db,user,input,actions){
  only(input.params,['id']);if(!UUID.test(input.params.id||''))fail('id 须为原始 UUID requestId。');
  const row=await db.prepare('SELECT * FROM factory_ai_requests WHERE owner_id=? AND request_id=?').bind(user.id,input.params.id).first();
  if(!row||row.module!==input.module)fail('请求记录不存在。',404);
  entryFor(user,row.module,row.action);
+ if(actions&&!actions.includes(row.action))fail('此连接不支持查询该操作。',403);
  return json({requestId:row.request_id,module:row.module,action:row.action,state:row.state,createdAt:row.created_at,updatedAt:row.updated_at,status:row.response_status||null,result:row.state==='done'?JSON.parse(row.response_json):null});
 }
 export async function handleFactoryApi(request,env,url,session){
@@ -97,9 +98,28 @@ export async function handleFactoryApi(request,env,url,session){
   const user=await authenticate(request,env.DB);
   if(request.method==='GET')return json(catalogDocument(user,url.origin,url.searchParams.get('module'),url.searchParams.get('action')));
   if(request.method!=='POST')fail('只支持 GET 目录和 POST 调用。',405);
-  const input=await readManagementBody(request);only(input,['module','action','params','requestId']);
-  if(input.action==='requests.get')return await requestStatus(env.DB,user,input);
-  const entry=entryFor(user,input.module,input.action),{url:target,request:forward}=prepare(input,entry,url.origin);
+  return await executeFactoryInput(env,user,await readManagementBody(request),url.origin);
+ }catch(error){return errorJson(error.statusCode?error.message:'统一 API 暂时不可用。',error.statusCode||500);}
+}
+
+// Internal-only adapter: OAuth callers cannot supply routes, headers or write actions.
+export async function callFactoryRead(env,user,input,origin){
+ only(input,['module','action','params']);
+ const entry=entryFor(user,input.module,input.action);
+ if(entry.method!=='GET')fail('MCP 仅开放读取操作。',403);
+ const {url,request}=prepare(input,entry,origin);
+ // The legacy topic reader calls its search parameter query.
+ if(input.module==='psychology'&&input.action==='topics.list'&&url.searchParams.has('q'))url.searchParams.set('query',url.searchParams.get('q'));
+ return dispatch(entry,request,env,url,user);
+}
+
+// Shared execution after transport authentication. The actor is never supplied by client JSON.
+// MCP supplies an explicit operation allowlist; REST retains the existing catalog and receipts.
+export async function executeFactoryInput(env,user,input,origin,actions){
+  only(input,['module','action','params','requestId']);
+  if(actions&&(input.module!=='psychology'||!actions.includes(input.action)&&input.action!=='requests.get'))fail('此连接不支持该操作。',403);
+  if(input.action==='requests.get')return await requestStatus(env.DB,user,input,actions);
+  const entry=entryFor(user,input.module,input.action),{url:target,request:forward}=prepare(input,entry,origin);
   if(entry.method==='GET')return await dispatch(entry,forward,env,target,user);
   if(typeof input.requestId!=='string'||!UUID.test(input.requestId))fail('写入操作须提供 UUID requestId。');
   const hash=await sha256Hex(JSON.stringify(canonical({module:input.module,action:input.action,params:input.params||{}}))),now=Date.now();
@@ -123,16 +143,4 @@ export async function handleFactoryApi(request,env,url,session){
     .bind(result,response.status,Date.now(),user.id,input.requestId).run();
    return json(body,response.status,{'x-factory-request-id':input.requestId});
   }catch{return json({error:'结果保存失败，请检查业务记录；不要重复执行。',code:'RESULT_UNKNOWN',requestId:input.requestId},503);}
- }catch(error){return errorJson(error.statusCode?error.message:'统一 API 暂时不可用。',error.statusCode||500);}
-}
-
-// Internal-only adapter: OAuth callers cannot supply routes, headers or write actions.
-export async function callFactoryRead(env,user,input,origin){
- only(input,['module','action','params']);
- const entry=entryFor(user,input.module,input.action);
- if(entry.method!=='GET')fail('MCP 仅开放读取操作。',403);
- const {url,request}=prepare(input,entry,origin);
- // The legacy topic reader calls its search parameter query.
- if(input.module==='psychology'&&input.action==='topics.list'&&url.searchParams.has('q'))url.searchParams.set('query',url.searchParams.get('q'));
- return dispatch(entry,request,env,url,user);
 }

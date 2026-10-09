@@ -107,7 +107,7 @@ export const UI_ASSETS = {
   "/psychology-topic-selection.js": "39dd7f8713a97d49b274",
   "/psychology-transition-day.js": "045e53947026b8cf46d7",
   "/psychology-video-hits.css": "69c9ca405d77853c7811",
-  "/psychology-video-hits.js": "7fca3ff98735541dc00d",
+  "/psychology-video-hits.js": "bb765dfe8f1d002ffb20",
   "/psychology-video-picker.js": "d816d41cc4b718d09ad0",
   "/psychology-video-posters.js": "49468bed17601348e958",
   "/psychology-visual-styles.js": "91942ff4b7350d884d93",
