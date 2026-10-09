@@ -7,15 +7,16 @@ import {imageType,VIDEO_HIT_IMAGE_MAX} from './psychology-video-hit-assets.js';
 import {imageUrl} from '../../scripts/psychology-video-hit-contract.js';
 import {json} from './http.js';
 const fail=(message,statusCode=409)=>{throw Object.assign(new Error(message),{statusCode});};
-export const MAX_HIT_PHOTOS=35;
-function validateFrames(frames){if(frames.length<1||frames.length>MAX_HIT_PHOTOS)fail('每条图文需要 1–35 张二创图片，请调整版本后再发布。');if(frames.some((f,i)=>f.index!==i+1||(!f.assetId&&!f.imageUrl)))fail('二创图片帧号须从 1 连续排列，请补齐图片。');}
+// Admission policy; frozen jobs created before this limit keep their transport compatibility.
+export const MAX_HIT_PHOTOS=15;
+function validateFrames(frames){if(frames.length<1||frames.length>MAX_HIT_PHOTOS)fail('每条图文需要 1–15 张二创图片，请调整版本后再发布。');if(frames.some((f,i)=>f.index!==i+1||(!f.assetId&&!f.imageUrl)))fail('二创图片帧号须从 1 连续排列，请补齐图片。');}
 export async function hitPhotoInventory(env,actor,url){
  const user=await videoHitUser(env.DB,actor),page=Number(url.searchParams.get('page')||1),query=String(url.searchParams.get('q')||'').slice(0,100),size=12;
  if(!Number.isInteger(page)||page<1||page>10000)fail('页码无效。',400);
  const where="s.owner_id=? AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND (s.title LIKE ? OR v.title LIKE ? OR v.caption LIKE ?)",args=[user.id,'%'+query+'%','%'+query+'%','%'+query+'%'];
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where).bind(...args).first();
  const rows=await env.DB.prepare('SELECT v.*,s.title source_title FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where+' ORDER BY v.created_at DESC,v.source_id,v.version LIMIT ? OFFSET ?').bind(...args,size,(page-1)*size).all();
- const items=[];for(const v of rows.results){const frames=await allFrames(env.DB,v.source_id,v.version);let reason='';try{validateFrames(frames);await assertAssets(env.DB,user,frames);}catch(e){reason=e.message;}items.push({ref:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title.slice(0,90),caption:v.caption||v.title,sourceTitle:v.source_title,name:v.name,frameCount:frames.length,frames:frames.slice(0,35).map(f=>({index:f.index,previewUrl:f.previewUrl})),eligible:!reason,reason});}
+ const items=[];for(const v of rows.results){const frames=await allFrames(env.DB,v.source_id,v.version);let reason='';try{validateFrames(frames);await assertAssets(env.DB,user,frames);}catch(e){reason=e.message;}items.push({ref:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title.slice(0,90),caption:v.caption||v.title,sourceTitle:v.source_title,name:v.name,frameCount:frames.length,frames:frames.slice(0,MAX_HIT_PHOTOS).map(f=>({index:f.index,previewUrl:f.previewUrl})),eligible:!reason,reason});}
  return json({page,pageSize:size,total:count.n,hasMore:page*size<count.n,items});
 }
 export async function createHitPhotoBatch(env,actor,config,batchId,accounts){
