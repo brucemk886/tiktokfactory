@@ -272,6 +272,8 @@ Migration walks existing sources by keyset cursors and bounded archive batches i
 - Psychology One picker GET `prepare` proxies Hub resource `membership` (no publishing-settings fetch); existing POST ensure/final publication remain separate. Three browser read workers show waiting/active/completed rows, abort stale selections, and bound each read to 30 seconds. The Hub bridge read has a 25-second deadline with actionable timeout text.
 ## Psychology video hit recreation assets
 
+- /psychology-video-hits/import uses the same session-authenticated, owner-scoped source/version/frame/image handlers as the existing editor. Browser import state freezes each upload UUID and mutation requestId for the lifetime of the page, reuses completed stages on retry, and checks persisted frame order/content before reporting success. It creates disabled frames versions only, without render or publication authority. No new storage/schema or credential route.
+
 - `/psychology-video-hits` owns the source list, `/psychology-video-hits/recreations?id=SOURCE_ID` lists all created versions in numeric order, and `/psychology-video-hits/detail?id=SOURCE_ID&version=N` loads one version with source/recreated copy and aligned frame-image/text comparisons. All three routes reuse the same private shell, administrator/module permission and existing owner-scoped API. List pages do not preload frame/job details.
 
 - psychology_video_hits/versions/frames own administrator-scoped original metadata/copy and twenty independently enabled recreation versions. Numbered frame pages align incomplete versions; private immutable images live in psychology_video_hit_assets/R2. Local transaction receipts and the unified API retain stable request IDs and CAS guards.

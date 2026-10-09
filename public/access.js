@@ -178,7 +178,7 @@ function createSidebarGroup(group, items) {
 
 function sidebarPath(pathname) {
   const normalized = pathname.replace(/\/$/, "") || "/";
-  if (["/psychology-video-hits/recreations", "/psychology-video-hits/detail"].includes(normalized)) return "/psychology-video-hits";
+  if (["/psychology-video-hits/recreations", "/psychology-video-hits/detail", "/psychology-video-hits/import", "/psychology-video-hit-import.html"].includes(normalized)) return "/psychology-video-hits";
   if (["/psychology-copy-usage", "/psychology-copy-usage.html"].includes(normalized)) return "/psychology-copy-library";
   if (normalized === "/tiktok-connections-organize") return "/tiktok-connections";
   if (["/official-account-detail", "/official-account-videos", "/official-video-detail"].includes(normalized)) {

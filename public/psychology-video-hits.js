@@ -186,7 +186,7 @@ function versionEditor(edit){
  $('versionForm').dataset.revision=v?.revision||0;$('versionDialogTitle').textContent=edit?'编辑二创版本 '+n:'新建二创版本';$('versionSaveStatus').textContent='';$('versionDialog').showModal();
 }
 $('filters').addEventListener('submit',e=>{e.preventDefault();sourceImporter=$('sourceImportSource').value.trim().toLowerCase();syncTypeFilter();page=1;load();});$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
-$('newSource').onclick=()=>sourceEditor(false);$('editSource').onclick=()=>sourceEditor(true);
+$('newSource').onclick=()=>location.assign(PAGE+'/import');$('editSource').onclick=()=>sourceEditor(true);
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 $('sourceForm').onsubmit=e=>{e.preventDefault();action('sourceSaveStatus',e.submitter,async()=>{
  const f=e.target.elements,body=Object.fromEntries(['externalId','importSource','videoUrl','title','caption','script'].map(k=>[k,f[k].value]));body.videoData=JSON.parse(f.videoData.value||'{}');
@@ -201,7 +201,7 @@ $('sourceInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();page
 $('recreationInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();renderRecreations();};
 $('archiveSource').onclick=e=>{if(detail.source.archivedAt)return action('pageStatus',e.target,async()=>{await write('/'+detail.source.id+'/restore','POST',{revision:detail.source.revision});await loadDetail();});$('archiveStatus').textContent='';$('archiveDialog').showModal();};
 $('confirmArchive').onclick=e=>action('archiveStatus',e.target,async()=>{await write('/'+detail.source.id+'/archive','POST',{revision:detail.source.revision});$('archiveDialog').close();await loadDetail();});
-$('newVersion').onclick=()=>versionEditor(false);$('editVersion').onclick=()=>versionEditor(true);
+$('newVersion').onclick=()=>versionEditor(false);const importLink=document.createElement('a');importLink.textContent='导入二创图文';importLink.href=PAGE+'/import?source='+encodeURIComponent(sourceId||'');$('newVersion').after(importLink);$('editVersion').onclick=()=>versionEditor(true);
 $('versionForm').onsubmit=e=>{e.preventDefault();action('versionSaveStatus',e.submitter,async()=>{
  const version=Number($('versionNumber').value),body=Object.fromEntries(['name','title','caption','script'].map(k=>[k,e.target.elements[k].value]));body.revision=Number(e.target.dataset.revision);body.inputMode=$('versionInputMode').value;body.videoAssetId='';body.enabled=false;
  if(body.inputMode==='video'){body.videoAssetId=e.target.dataset.videoAssetId||'';const file=$('versionVideoFile').files[0];if(file){if(file.size>95*1024*1024)throw new Error('成片最多95MB。');$('versionSaveStatus').textContent='正在校验并上传成片…';const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),v=>v.toString(16).padStart(2,'0')).join('');const id=e.target.dataset.videoUploadId||crypto.randomUUID();e.target.dataset.videoUploadId=id;const type={mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm'}[file.name.split('.').pop().toLowerCase()];const response=await fetch(BASE+'/videos/'+id,{method:'PUT',headers:{'Content-Type':type||file.type,'X-File-Name':encodeURIComponent(file.name),'X-File-Size':String(file.size),'X-Content-SHA256':digest},body:file}),data=await response.json();if(!response.ok)throw new Error(data.error||'成片上传失败');body.videoAssetId=data.videoAssetId;e.target.dataset.videoAssetId=body.videoAssetId;}if(!body.videoAssetId)throw new Error('请先选择成片文件。');body.enabled=true;}
@@ -283,7 +283,7 @@ async function showCleanup(){
 $('cleanupButton').onclick=()=>{$('cleanupDialog').showModal();showCleanup().catch(e=>$('cleanupStatus').textContent=e.message);};$('refreshCleanup').onclick=e=>action('cleanupStatus',e.target,showCleanup);
 $('apiButton').onclick=async()=>{$('apiInstructions').textContent='正在加载完整接入文档…';$('copyApi').disabled=true;$('apiDialog').showModal();try{$('apiInstructions').textContent=await guide();$('copyApi').disabled=false;}catch(e){$('apiInstructions').textContent=e.message;}};$('copyApi').onclick=async()=>{try{await navigator.clipboard.writeText(await guide());$('copyApi').textContent='已复制';}catch{$('copyApi').textContent='请选中下方说明复制';}};
 setupPage();
-if(view==='sources')load();
+if(view==='sources'){load();if(params.get('newSource')==='1')sourceEditor(false);}
 else if(!/^vh-[a-f0-9]{32}$/.test(sourceId||''))pageError(new Error('缺少有效的视频来源，请返回视频爆款列表。'));
 else if(view==='detail'&&(!Number.isInteger(n)||n<1||n>2147483647))pageError(new Error('二创版本编号无效，请返回二创列表。'));
 else{$('pageStatus').hidden=false;$('pageStatus').textContent='正在读取…';loadDetail().catch(pageError);}
