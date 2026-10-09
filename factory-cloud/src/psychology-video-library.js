@@ -1,3 +1,4 @@
+import {normalizeHitRef,hitVideoInventory,resolveHitVideo,commitVideoBatch} from './psychology-video-hit-publishing.js';
 import {guard} from './psychology-video-hits.js';
 import {json,readJson,sha256Hex} from './http.js';
 import {loadAutoUser,assertAutoJobAccess,insertAutoJob} from './psychology-auto-publish.js';
@@ -23,8 +24,9 @@ export function normalizeSelectedPublish(input,now=Date.now(),replay=false){
   if(typeof item.caption!=='string'||item.caption.length>2200)fail('发布文案最多2200字。');
   if(typeof item.isAiGenerated!=='boolean')fail('请确认视频的 AI 内容标识。');
   if(!Number.isSafeInteger(item.scheduleAt)||item.scheduleAt<=0||(!replay&&(item.scheduleAt<Math.floor(now/1000)+300||item.scheduleAt*1000>now+14*86400000)))fail('发布时间需要在5分钟后、14天内。');
-  return {assetId:item.assetId,connectionId:String(item.connectionId).trim(),caption:item.caption,scheduleAt:item.scheduleAt,isAiGenerated:item.isAiGenerated};
+  return {...(item.videoHit?{videoHit:normalizeHitRef(item.videoHit)}:{}),assetId:item.assetId,connectionId:String(item.connectionId).trim(),caption:item.caption,scheduleAt:item.scheduleAt,isAiGenerated:item.isAiGenerated};
  });
+ if(new Set(items.filter(i=>i.videoHit).map(i=>i.videoHit.sourceId+':'+i.videoHit.version)).size!==items.filter(i=>i.videoHit).length)fail('一个二创版本只能选择一次。');
  if(new Set(items.map(i=>i.assetId+':'+i.connectionId)).size!==items.length)fail('同一视频不能在同一批重复分配给同一账号。');
  return {requestId:input.requestId,name:String(input.name||'TikTok One · 选片发布').trim().slice(0,100),mediaType:'video',template:'selected-video',sourceType:'selected-videos',count:items.length,minFollowers:1000,connectionIds:[...new Set(items.map(i=>i.connectionId))],tiktokOne:normalizeOneProject(input.tiktokOne),items};
 }
@@ -32,23 +34,20 @@ async function selectedPublish(request,env,user){
  const body=await readJson(request);
  const batchId='psy-select-'+(await sha256Hex(user.username+':'+String(body.requestId||''))).slice(0,32);
  const existing=await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=? AND created_by=?').bind(batchId,user.username).first();
- const config=normalizeSelectedPublish(body,Date.now(),Boolean(existing));
- if(existing){if(existing.config_json!==JSON.stringify(config))fail('该提交编号已用于其他配置。',409);return json({accepted:true,duplicate:true,batchId});}
+ const normalized=normalizeSelectedPublish(body,Date.now(),Boolean(existing));
+ const config={...normalized,items:await Promise.all(normalized.items.map(async({caption,...item})=>({...item,captionDigest:await sha256Hex(caption)})))};
+ if(existing){if(existing.config_json!==JSON.stringify(config)&&existing.config_json!==JSON.stringify(normalized))fail('该提交编号已用于其他配置。',409);return json({accepted:true,duplicate:true,batchId});}
  const scoped=await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:config.connectionIds});
- const assets=[];for(const item of config.items){const asset=await owned(env.DB,item.assetId,user);if(await env.DB.prepare('SELECT id FROM psychology_video_hit_videos WHERE id=? UNION ALL SELECT asset_id id FROM psychology_video_hit_render_assets WHERE asset_id=?').bind(asset.id,asset.id).first())fail('视频爆款成片请从其二创版本提交发布，以保留一次发布保护。',409);if(asset.status!=='ready'||!await env.ARCHIVE.head(asset.r2_key))fail('视频未准备好或文件已失效，请重新上传。',409);assets.push(asset);}
+ const entries=[];
+ for(const item of normalized.items){
+  if(item.videoHit){entries.push({...item,hit:await resolveHitVideo(env,user,item.videoHit,item.assetId)});continue;}
+  const asset=await owned(env.DB,item.assetId,user);
+  if(await env.DB.prepare('SELECT id FROM psychology_video_hit_videos WHERE id=? UNION ALL SELECT asset_id id FROM psychology_video_hit_render_assets WHERE asset_id=?').bind(asset.id,asset.id).first())fail('视频爆款成片请从其二创版本提交发布，以保留一次发布保护。',409);
+  if(asset.cleanup_state!=='active'||asset.status!=='ready'||!await env.ARCHIVE.head(asset.r2_key))fail('视频未准备好或文件已失效，请重新上传。',409);
+  entries.push({...item,asset});
+ }
  await assertPublishFollowers(env.DB,config,scoped.accounts);
- await ensurePsychologyOneMembers(env,user,config,scoped.accounts);
- const stamp=Date.now(),groupId=batchId+'-group-0',statements=[
-  env.DB.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp),
-  env.DB.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES(?,?,0,?)').bind(groupId,batchId,config.count)];
- config.items.forEach((entry,index)=>{
-  const id=batchId+'-'+String(index).padStart(3,'0'),asset=assets[index];
-  const automation={id,batchId,groupId,submissionMode:'grouped',connectionId:entry.connectionId,scheduleAt:entry.scheduleAt,mediaType:'video',template:'selected-video'};
-  statements.push(insertAutoJob(env.DB,{id,type:'psychology-selected-video',title:asset.file_name,createdBy:user.username,payload:{module:'psychology',assetId:asset.id,publishOnly:true,psychologyAutomation:automation,publish:{videoDesc:entry.caption,isAiGenerated:entry.isAiGenerated}}},stamp));
-  statements.push(env.DB.prepare('INSERT INTO psychology_publish_items(id,batch_id,source_id,job_id,connection_id,schedule_at,publish_group_id) VALUES(?,?,?,?,?,?,?)').bind(id,batchId,'video:'+asset.id,id,entry.connectionId,entry.scheduleAt,groupId));
- });
- try{await env.DB.batch(statements);}catch(error){const winner=await env.DB.prepare('SELECT config_json FROM psychology_publish_batches WHERE id=?').bind(batchId).first();if(winner?.config_json!==JSON.stringify(config))throw error;}
- return json({accepted:true,batchId},202);
+ return commitVideoBatch(env,user,config,batchId,entries,scoped.accounts);
 }
 export async function handleVideoLibrary(request,env,url,session){
  if(!url.pathname.startsWith(BASE)&&url.pathname!=='/api/psychology-video-publish')return null;
@@ -66,6 +65,7 @@ export async function handleVideoLibrary(request,env,url,session){
  }
  if(url.pathname===BASE&&request.method==='GET'){
   const page=Number(url.searchParams.get('page')||1);if(!Number.isInteger(page)||page<1||page>10000)fail('页码无效。');
+  if(url.searchParams.get('source')==='video-hits')return json(await hitVideoInventory(env,user,{page}));
   const offset=(page-1)*12;
   if(url.searchParams.get('source')==='generated'){
    const sql=`FROM factory_jobs j,json_each(COALESCE(json_extract(j.result_json,'$.results'),json_extract(j.result_json,'$.generatedVideos'),'[]')) v

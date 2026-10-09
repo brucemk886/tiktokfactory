@@ -43,7 +43,7 @@ export const CATALOG={
   'publish.options':op('GET','/api/psychology-auto-publish/options','publish',publish,'读取模板及可用题库数量'),
   'publish.accounts':op('GET','/api/official-tiktok/publish-accounts','official',publish,'读取心理学可发布账号及分组',['media'],{query:{media:'video'}}),
   'publish.list':op('GET','/api/psychology-auto-publish','publish',publish,'读取本账号发布批次及状态',['page','attention','range','startDate','endDate'],{query:{range:'today',page:1}}),
-  'publish.create':op('POST','/api/psychology-auto-publish','publish',publish,'生成素材并排期发布；可附加 tiktokOne 项目挂锚点',[],{body:{name:'AI 模板测试',mediaType:'video',sourceType:'topic-bank',template:'psychology',count:1,connectionIds:['ACCOUNT_ID'],scheduleAt:1900000000,intervalMinutes:60,selection:'random',onlyUnused:true}},'scheduleAt 为秒级 Unix 时间戳，必须留出生成时间；会创建真实任务。可选 tiktokOne:{connectionId,accountId,campaignId}。'),
+  'publish.create':op('POST','/api/psychology-auto-publish','publish',publish,'生成素材并排期发布；可附加 tiktokOne 项目挂锚点',[],{body:{name:'AI 模板测试',mediaType:'video',sourceType:'topic-bank',template:'psychology',count:1,connectionIds:['ACCOUNT_ID'],scheduleAt:1900000000,intervalMinutes:60,selection:'random',onlyUnused:true}},'scheduleAt 为秒级 Unix 时间戳；会创建真实任务。已有二创成片可传 sourceType:video-hits、template:selected-video、isAiGenerated:boolean，按 count/selection/query 抽取未提交版本并直接发布；要求视频爆款权限，数量不足不建任务。可选 tiktokOne:{connectionId,accountId,campaignId}。'),
   'publish.retry':op('POST','/api/psychology-auto-publish/:id/retry','publish',publish,'重试一个现有失败任务',[],{id:'ITEM_ID',body:{}}),
   'publish.groupRetry':op('POST','/api/psychology-auto-publish/groups/:id/retry','publish',publish,'重试一个发布合批',[],{id:'GROUP_ID',body:{}}),
   'tiktokOne.brands':op('GET','/api/psychology-tiktok-one','one',publish,'读取可用品牌账号'),

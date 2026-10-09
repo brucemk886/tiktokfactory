@@ -1,3 +1,4 @@
+import {drawHitVideoBatch} from './psychology-video-hit-publishing.js';
 import { assertPublishFollowers } from './psychology-publish-followers.js';
 import { loadConversionAssignments, applyConversionCopy, conversionSnapshotStatement, updateConversionCopyHash } from './psychology-conversion.js';
 import { transitionAssignmentsFor,transitionAllocationStatement } from './psychology-transition-day.js';
@@ -301,7 +302,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
     const musicPool = await kvGet(env.DB, MUSIC_POOL_KEY, []);
     const libraryCounts=await env.DB.prepare("SELECT media_type,COUNT(*) total FROM psychology_copy_library WHERE status='done' GROUP BY media_type").all();
     const rewrites=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_copy_variants WHERE owner=? AND enabled=1').bind(user.username).first();
-    return json({ libraryCounts:Object.fromEntries(libraryCounts.results.map(r=>[r.media_type,r.total])), libraryRewrites:Number(rewrites?.n||0), topicCounts: await topicCounts(env.DB), canUseTopics: (user.sidebarModules || []).includes('psychology-topic-bank'), templates: AUTO_TEMPLATES, counts: Object.fromEntries(counts.results.map(r => [r.media_type, r.total])), musicPool });
+    return json({ canUseVideoHits:(user.sidebarModules||[]).includes('psychology-video-hits'),libraryCounts:Object.fromEntries(libraryCounts.results.map(r=>[r.media_type,r.total])), libraryRewrites:Number(rewrites?.n||0), topicCounts: await topicCounts(env.DB), canUseTopics: (user.sidebarModules || []).includes('psychology-topic-bank'), templates: AUTO_TEMPLATES, counts: Object.fromEntries(counts.results.map(r => [r.media_type, r.total])), musicPool });
   }
   if (url.pathname === BASE && request.method === 'GET') {
     const page=Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),pageSize=10;
@@ -440,6 +441,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   if (config.sourceType === 'topic-bank') assertTopicBankUser(user);
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   await assertPublishFollowers(env.DB,config,scoped.accounts);
+  if(config.sourceType==='video-hits')return drawHitVideoBatch(env,user,config,batchId,scoped.accounts);
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
   let sources, testState, matchingSkipped=[], conversionAssignments=new Map();

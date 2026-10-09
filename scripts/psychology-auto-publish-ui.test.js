@@ -15,8 +15,9 @@ function harness(accountsPromise, failed=false, options={}, batchesPromise=null,
   let accounts=accountsPromise;
   const batch={id:'batch-1',createdAt:Date.now(),config:{name:'Existing photo batch',mediaType:'photo',template:'photo',count:3},items:['internal-a','internal-b','internal-c'].map(connectionId=>({id:connectionId,connectionId,status:failed&&connectionId==='internal-c'?'failed':'submitted',scheduleAt:1}))};
   const requests=[];let confirmed=true;
-  const context=vm.createContext({mountPsychologyVideoPicker:()=>({active:false,open(){this.active=true;},close(){this.active=false;},update(){},clear(){}}),mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
-  const listReady=vm.runInContext('(async()=>{'+source+'})()',context);
+  const context=vm.createContext({URLSearchParams,location:{search:'',assign(){}},mountPsychologyVideoPicker:()=>({active:false,open(){this.active=true;},close(){this.active=false;},update(){},clear(){}}),mountPsychologyOne:()=>({sync(){},context(){return null;},selectionChanged(){},markJoined(){}}),VISUAL_STYLES,confirm:()=>confirmed,document:{body:{classList:{add(){}}},querySelector:node,querySelectorAll:selector=>selector==='[data-media]'?mediaButtons:[]},crypto:{randomUUID:()=> 'request-id'},setInterval(){},fetch:async(path,init)=>{requests.push({path,method:init?.method,body:init?.body?JSON.parse(init.body):undefined});if(init?.method==='DELETE')batch.items=batch.items.filter(i=>!path.endsWith('/'+i.id));return {ok:true,json:async()=>path.includes('/options')?{templates:{photo:[],video:[]},counts:{},canUseTopics:true,...(optionsPromise?await optionsPromise:options)}:path.includes('publish-accounts')?{accounts:await accounts}:batchesPromise?await batchesPromise:{batches:[batch]}};}});
+  const listReady=vm.runInContext('(async()=>{'+source.replace("const creationMode=new URLSearchParams","globalThis.openNormalPage=openNormalPage;globalThis.openOnePage=openOnePage;const creationMode=new URLSearchParams")+'})()',context);
+  node('#newBatch').listeners.click=()=>context.openNormalPage();node('#newOneBatch').listeners.click=()=>context.openOnePage();
   const ready=autoOpen?Promise.all([listReady,node('#newBatch').listeners.click()]):listReady;
   return {node,ready,listReady,requests,mediaButtons,setConfirmed(value){confirmed=value;},setAccounts(value){accounts=Promise.resolve(value);},refresh:()=>node('#refreshAccounts').listeners.click()};
 }
@@ -293,7 +294,7 @@ test('custom batch dates wait for a valid applied range',async()=>{
 test('new video form exposes only template topics and ignores stale source values',async()=>{
  const html=fs.readFileSync(new URL('../public/psychology-auto-publish.html',import.meta.url),'utf8');
  const options=html.match(/<select id="sourceType">([\s\S]*?)<\/select>/)[1];
- assert.equal((options.match(/<option /g)||[]).length,1);assert.match(options,/value="topic-bank"/);
+ assert.equal((options.match(/<option /g)||[]).length,2);assert.match(options,/value="topic-bank"/);
  const h=harness(Promise.resolve(grouped),false,topicOptions);await h.ready;
  assert.equal(h.node('#topicBankField').hidden,false);assert.equal(h.node('#libraryMediaField').hidden,true);
  filterGroup(h,'g2');h.node('#selectVisibleAccounts').listeners.click();
@@ -326,7 +327,16 @@ test('refresh removes accounts that fall below threshold; zero is distinct from 
 test('One shortcut opens video with thousand filtering and never creates a task',async()=>{
  const h=harness(Promise.resolve(followerAccounts),false,topicOptions);await h.ready;
  await h.mediaButtons[1].click();await h.node('#newOneBatch').listeners.click();
- assert.equal(h.node('#createBatchDialog').open,true);assert.equal(h.node('#accountFollowers').value,'1000');
+ assert.equal(h.node('#createBatchDialog').hidden,false);assert.equal(h.node('#accountFollowers').value,'1000');
  assert.equal(h.node('#oneEnabled').checked,true);assert.equal(h.node('#topicBankField').hidden,false);
  assert.doesNotMatch(h.node('#accounts').innerHTML,/@under|@unknown/);assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
+});
+
+test('normal publication draws saved hit videos without a template and requires explicit confirmation',async()=>{
+ const h=harness(Promise.resolve(grouped),false,{...topicOptions,canUseVideoHits:true});await h.ready;
+ chooseSource(h,'video-hits');h.node('#hitVideoAi').checked=true;filterGroup(h,'g2');h.node('#selectVisibleAccounts').listeners.click();
+ assert.equal(h.node('#templateField').hidden,true);assert.equal(h.node('#hitSourceNote').hidden,false);
+ h.setConfirmed(false);await h.node('#batchForm').listeners.submit({preventDefault(){}});assert.equal(h.requests.filter(r=>r.method==='POST').length,0);
+ h.setConfirmed(true);await h.node('#batchForm').listeners.submit({preventDefault(){}});const post=h.requests.find(r=>r.path==='/api/psychology-auto-publish'&&r.method==='POST');
+ assert.equal(post.body.sourceType,'video-hits');assert.equal(post.body.template,'selected-video');assert.equal(post.body.isAiGenerated,true);assert.equal(post.body.tiktokOne,undefined);assert.equal(post.body.allowPeerReuse,false);
 });

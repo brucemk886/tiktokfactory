@@ -153,3 +153,21 @@ R2 文件清理先用事务检查所有引用并标记 deleting，阻止并发�
 合成结束或失败后立即清除该任务专属的分镜下载、配音、字幕和临时图片；外部输入音频不删除。发布确认并完成版本清理后，本机 MP4 进入 psychology-video-cleanup 队列，固定给原渲染工人。工人先通过共同 bearer 校验及运行中任务/身份/清理清单检查，再删除成片目录中精确的 renderJobId.mp4；拒绝链接、目录及越界路径，原输出目录可访问且已有可信路径记录时，文件已经不存在也可安全确认；目录不可用不会标记成功。新合成结果保存实际输出路径；旧成片须先在原工人目录找到文件并登记路径，定位不到则报错保留任务，不会因改了配置误报已删除。活动上传任务结束前不删除，失败使用同一个清理任务重试，清理任务连续 15 分钟无更新可重新排队；已确认删除但完成回执丢失时自动补齐完成状态。恢复只作用于清理任务；离线则等待原工人上线。正常新工人和二创辅助工人支持此类型；旧运行工人不会因部署重启，也不会领取不支持的清理类型。
 
 历史已发布版本从迁移时间重新计算 24 小时保留期。旧规划与现有运行任务不因清理功能恢复、重排或中断。部署本功能启用云端五分钟维护，不启动任何新的常驻本机进程。
+## 手动发布入口（2026-10-09）
+
+心理学自动发布的两个新建入口均为独立页面：
+
+- `/psychology-publish?create=one`：默认选择“视频爆款 · 二创成片”，逐条预览、勾选后带入保存的 caption（为空时用 title）。已选清单可播放、编辑发布文案、移除、指定账号和 AI 标识；设置项目与时间后手动确认。每批 1–20 条。
+- `/psychology-publish?create=normal`：选题来源选择“视频爆款 · 二创成片”，设置数量、抽取方式、关键词、账号与排期，确认后直接抽取成片发布。保留原有模板题库与图文来源。
+
+可用范围：当前用户拥有、未结束来源、已启用、未提交、未清理的二创版本。直接传入成片须上传完成；图片版本须已有与当前来源/版本一致的合成结果。TikTok One 勾选需要云端可播放视频；本机合成成片可先“准备云端预览”。普通抽取会复用本机已合成的视频并固定原工人，不重新生成。
+
+普通任务的统一 API 也支持：
+
+```json
+{"module":"psychology","action":"publish.create","requestId":"GENERATE_A_UUID","params":{"body":{"name":"二创成片普通发布","mediaType":"video","sourceType":"video-hits","template":"selected-video","count":2,"connectionIds":["ACCOUNT_ID"],"scheduleAt":1900000000,"intervalMinutes":60,"selection":"recent","query":"","isAiGenerated":true}}}
+```
+
+其中 selection 为 random / popular / recent，query 搜索二创标题、原视频标题或发布文案。scheduleAt 是未来 5 分钟至 14 天内的秒级时间戳；全部排期也须在 14 天内。需要心理学发布与视频爆款权限。数量不足整批拒绝，同文件不同上传身份也不会多抽；不支持 allowPeerReuse:true。普通发布无需 tiktokOne；有项目时沿用项目资格校验。
+
+选片接口 `/api/psychology-video-publish` 的 items 在 assetId、connectionId、caption、scheduleAt、isAiGenerated 外支持 `videoHit:{sourceId,version,revision}`。界面自动携带此身份；服务端核对当前版本对应资产，原子占用版本与文件摘要。这个入口、新建普通任务与原 videoHits.publish 共用防重记录、回执和确认发布后 24 小时清理。失败只重试原任务。选片批次配置保存文案摘要用于幂等，正文仅存可清理的任务载荷，不额外永久复制二创文案。

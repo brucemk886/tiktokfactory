@@ -25,7 +25,8 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   const mediaType = String(input.mediaType || 'video');
   if (!Object.hasOwn(AUTO_TEMPLATES, mediaType)) fail('请选择图文或视频。');
   const template = String(input.template || '');
-  if (!AUTO_TEMPLATES[mediaType].some(item => item.id === template)) fail('模板与内容类型不匹配。');
+  const hitVideos=input.sourceType==='video-hits'&&mediaType==='video'&&template==='selected-video';
+  if (!hitVideos&&!AUTO_TEMPLATES[mediaType].some(item => item.id === template)) fail('模板与内容类型不匹配。');
   const count = Number(input.count);
   if (!Number.isInteger(count) || count < 1 || count > 100) fail('每次生成总数应为 1–100 条，每20条合并提交。');
   const connectionIds = [...new Set((Array.isArray(input.connectionIds) ? input.connectionIds : []).map(id => String(id).trim()).filter(Boolean))];
@@ -39,8 +40,9 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if (validateSchedule && last * 1000 > now + 14 * 86400000) fail('整批排期需在未来 14 天内。');
   if (!/^[0-9a-f-]{36}$/i.test(String(input.requestId || ''))) fail('提交编号无效，请刷新页面。');
   const sourceType = input.sourceType || 'peer';
-  if (!['peer','topic-bank','copy-bank','copy-library','library'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
+  if (!['peer','topic-bank','copy-bank','copy-library','library','video-hits'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
   if (sourceType === 'library' && mediaType !== 'photo') fail('文案库进化抽取目前只用于图文。');
+  if(sourceType==='video-hits'&&(!hitVideos||typeof input.isAiGenerated!=='boolean'||input.allowPeerReuse===true))fail('二创成片仅支持视频直接发布，请确认AI标识，且不能允许重复使用。');
   const onlyUnused = sourceType === 'topic-bank' && input.onlyUnused !== false;
   // The library source has one fixed, data-driven order; nothing to choose.
   const selection = sourceType === 'library' ? 'evolve' : input.selection || 'random';
@@ -73,7 +75,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
   const tiktokOne=input.tiktokOne==null?null:normalizeOneProject(input.tiktokOne);
   if(tiktokOne&&mediaType!=='video')fail('TikTok One 挂锚点发布仅支持视频模板。');
-  return { ...(minFollowers?{minFollowers}:{}),...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  return { ...(hitVideos?{isAiGenerated:input.isAiGenerated}:{}),...(minFollowers?{minFollowers}:{}),...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {
