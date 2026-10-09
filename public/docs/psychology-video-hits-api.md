@@ -4,7 +4,7 @@
 
 具有视频爆款模块权限的管理员可以查看和管理所有成员导入的原选题、二创及关联图片/成片；普通用户只可管理自己创建的选题。列表和详情返回 `ownerId`、`ownerUsername`（创建用户），与调用方填写的 `importSource`（导入来源）分别展示。管理员编辑不会转移原选题或素材的归属。
 
-管理员发布成员素材时，任务与发布账号权限归实际操作的管理员；仍需心理学发布权限、账号分组、粉丝门槛、项目加入及现有防重检查。创建用户无发布权限也可供管理员审核后使用。新建仍归实际创建用户，externalId 仍在该用户内唯一；管理员查重时也须核对 ownerId，明确是为已有选题追加版本还是新建自己的来源。
+管理员发布成员素材时，任务与发布账号权限归实际操作的管理员；仍需心理学发布权限、账号分组、粉丝门槛、项目加入及现有防重检查。创建用户无发布权限也可供管理员审核后使用。新建仍归实际创建用户，按 `ownerId + importSource + externalId` 去重。相同原视频可以由 grokbot、gpt-dot 等分别导入，各自保留原图、文案、二创版本和统计；即使共用同一项目密钥也支持。管理员查重时须核对创建用户和导入来源，明确是为已有选题追加版本还是新建另一来源。
 
 ## 通过页面导入二创图文（无需 API Key）
 
@@ -35,7 +35,7 @@ HTTP 或 MCP 不可用的智能体，可在已登录的工厂浏览器打开 htt
 1. 使用当前环境的 HTTP 请求工具或代码执行工具，例如 Python、Node.js 或 curl。凭据使用用户为本任务授权的项目密钥；下文以环境变量 `FACTORY_API_KEY` 为例。不要回显密钥或把它写入素材/请求日志。这里沿用现有项目密钥，不要求重置或轮换。
 2. 若当前会话没有任何 HTTP/代码执行能力，明确报告“本会话缺少直接 HTTP 执行工具，尚未发送请求”。若没有可用密钥，说明缺少密钥配置。不要把未执行请求解释为服务端没有写入权限，也不要要求用户刷新 MCP。
 3. 先只读查询目录及现有来源，确认连接有效，再执行下面的一条图文流程。新来源使用 `importSource:"gpt-dot"`；grokbot 使用 `grokbot`，其他智能体使用自己的稳定名称。
-4. 使用实际 TikTok 链接、文案、图片字节和已知数据；未知播放量等字段省略，不伪造。来源 `externalId` 稳定且唯一，同一原视频先查询确认是否已存在。不要改写其他智能体导入的记录。
+4. 使用实际 TikTok 链接、文案、图片字节和已知数据；未知播放量等字段省略，不伪造。来源 `externalId` 在同一创建用户、同一 `importSource` 内保持稳定且唯一；同一原视频先按自己的导入来源查询确认是否已存在。不要改写其他智能体导入的记录。
 5. 保存每步请求的 UUID、参数和返回 ID/revision；失败/断线后先查询状态，重试相同请求使用原 UUID 和原请求体。已有 Grokbot 请求保持原输入，不给正在重试的旧请求补字段或换编号。
 6. 本次仅保存素材，二创保持 `enabled:false`，不调用合成、发布、归档或自动运营。最后返回来源 ID、二创编号、原图/二创图数量、导入来源、页面链接和真实失败原因。
 
@@ -63,10 +63,10 @@ Content-Type: application/json
 ```
 
 ```json
-{"module":"psychology","action":"videoHits.list","params":{"query":{"page":1,"q":"实际视频ID","scope":"all","sort":"recent"}}}
+{"module":"psychology","action":"videoHits.list","params":{"query":{"page":1,"q":"实际视频ID","importSource":"gpt-dot","scope":"all","sort":"recent"}}}
 ```
 
-`q` 是模糊搜索，必须检查返回条目的 `externalId` 或 `videoUrl`，并按 `total/hasMore` 翻页；不能只查第一页就断言不存在。`importSource` 不参与查重身份；`externalId` 在密钥所属用户内唯一。
+`q` 是模糊搜索，必须检查返回条目的 `externalId` 或 `videoUrl`，并按 `total/hasMore` 翻页；不能只查第一页就断言不存在。查重须同时核对 `ownerId`、`importSource`、`externalId`；不同导入来源允许使用相同编号。管理员列表包含其他创建用户，不能仅凭视频链接或标题复用他人的记录。
 
 ### HTTP 执行示例（Python 标准库）
 
@@ -281,11 +281,20 @@ print(status, result)
 
 ## 来源与版本
 
-`videoHits.create` 保存 `importSource`、`externalId`、TikTok `videoUrl`、`title`、`caption`（发布文案）、`script`（完整视频原文）和 `videoData`（JSON，最多16KB，推荐 playCount/likeCount/commentCount/shareCount/favoriteCount/durationSeconds/accountName/publishedAt）。externalId 在当前账号内唯一；修改使用返回的 id 和 revision。
+`videoHits.create` 保存 `importSource`、`externalId`、TikTok `videoUrl`、`title`、`caption`（发布文案）、`script`（完整视频原文）和 `videoData`（JSON，最多16KB，推荐 playCount/likeCount/commentCount/shareCount/favoriteCount/durationSeconds/accountName/publishedAt）。externalId 在当前创建用户的同一 importSource 内唯一；修改使用返回的 id 和 revision，不能自行计算 id。
 
 `videoHits.list` 支持 page/q/sort（recent 或 plays）、scope（active/archived/all）及 inputMode（all/video/frames，默认 all）；每页20条。inputMode 放在 params.query 中：video 筛选含视频二创的来源，frames 筛选含图文二创的来源，筛选在分页前执行。同一来源可同时包含两种二创，不会重复返回。每条来源附带 videoVersionCount、frameVersionCount 和总 versionCount。`videoHits.get` 返回来源、最新revision和版本。`videoHits.update` 按revision修改来源。
 
 每个来源最多同时保留20个未清理二创版本，已清理历史不占名额。原选题、原文与原图长期保留。版本编号为1–2147483647且不复用：读取 `videoHits.get` 返回的 `nextVersion` 新建；`activeVersionCount` 是在库数，`maxActiveVersions=20`。用 `videoHits.versions.write` 创建/编辑。新版本 revision=0；后续读 `videoHits.versions.get` 取最新revision。字段为 name/title/caption/script/enabled。新版本默认停用，文案和图片补齐后提交 enabled=true。
+
+### 同一视频由不同来源导入
+
+- 例如同一用户（或同一 API Key）提交 `externalId: "tiktok-123"`：`importSource: "grokbot"` 和 `importSource: "gpt-dot"` 会创建两条独立来源，各自拥有原图、文案和二创版本。不同用户仍各自归属。
+- 同一用户、同一导入来源、同一 externalId 再次新建返回 HTTP 409；使用已返回的 id 追加版本。原 requestId 与原输入重试仍返回原结果，不会重复创建。
+- 修正 importSource 不改变记录 id、归属或子内容；如果目标来源已有同编号记录则返回 409，保留原值，不覆盖、不合并。
+- 现有来源 ID、历史回执、素材与发布任务保持关联。省略 importSource 的旧请求仍归 grokbot。
+- 此规则按 externalId 判重，不自动解析视频链接归并。页面留空编号仍自动生成新编号；为已有记录追加二创请使用“使用已有选题”，选择时同时核对智能体和创建用户。
+- 这只区分素材导入来源，不放宽现有二创版本/成片文件的发布防重规则；同一文件不会因改来源标签而获得重复发布机会。
 
 ### 导入来源 importSource
 
