@@ -17,7 +17,7 @@ Migration 0084; shared source contract; source handler and factory catalog; MCP 
 ## Tests performed
 - Focused source/API/MCP/browser suite: 46 passed, including old migration/receipt compatibility, validation/CAS, owner/type/pagination filtering, actual OAuth writes and custom agent names.
 - Browser QA: source creation/edit/filter and preserved navigation, screenshots checked at 1440px and 390px; overflow checks also cover 320px. Fixture-only tests; no live publishing.
-- Complete declared factory suite passed 1385/1385 with four workers (55.5 seconds). No live publishing APIs called. Production deployment verification will be appended after release.
+- Complete declared factory suite passed 1385/1385 with four workers (55.5 seconds). No live publishing APIs called. Production verification is recorded below.
 - Production baseline aggregate reads: 58 sources, revision sum 116, 364 domain receipts. One active admin, with Video Hits module enabled. No customer content or credentials recorded.
 
 ## Unfinished work
@@ -25,3 +25,11 @@ User/client must refresh the connection and open a new conversation; actual Dot 
 
 ## Recommended next step
 Give Dot the public guide and have it confirm psychology_videoHits_guide and psychology_videoHits_create are actually available. Import one real image-text item with importSource gpt-dot, then read it back. Keep the REST Grokbot integration supported.
+
+
+## Release evidence
+Runtime commit 17f27dc95057fd079ed9ae593fb9f85e10470d2f was pushed to GitHub main and deployed using factory-cloud npm run deploy from a clean exact HEAD == origin/main checkout. Migration 0084 applied successfully. Cloudflare version e287b546-e8a7-4e2c-ad6c-a1b5c855f797.
+
+Live guide and JS returned 200 and matched local SHA256. Guide: d3b6222de6000b115a35595166517ec84fc983c6ff674c85823565b686ed7ff6; JS: f48e41da0834cbdaa2251b98bcd9a280a560022fbc3a430477581e173bffed7c. Health returned 200; OAuth metadata still advertises factory.video_hits.write; unauthenticated MCP and private image access returned 401.
+
+Post-release aggregate read found 59 source records, all import_source grokbot, revision sum 118 and 368 domain receipts (baseline 58/116/364). Existing ingestion continued during this task. No production test content or publishing job was created, no key changed and no running importer was interrupted. Actual tools/list and write testing used the local OAuth protocol fixture, not the user's live Dot OAuth session; that client still requires refresh/new-conversation verification.
