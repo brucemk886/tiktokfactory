@@ -10,6 +10,17 @@ import {officialPublishFollowupPayload} from './jobs.js';
 import {publishOutcome} from '../../scripts/psychology-operations.js';
 import {normalizeOneProject} from '../../scripts/psychology-auto-publish.js';
 import {fail,only,completeVersion,versionNumber} from '../../scripts/psychology-video-hit-contract.js';
+async function renderedPreview(db,user,source,v){
+ if(v.input_mode==='video'||!v.render_job_id)return null;
+ if(v.cleaned_at)return {state:'cleaned'};
+ if(v.render_revision!==v.revision||v.render_source_revision!==source.revision)return {state:'stale'};
+ const job=await db.prepare("SELECT id,status,percent,error,worker_id,result_json FROM factory_jobs WHERE id=? AND created_by=? AND type='psychology-video-remix'").bind(v.render_job_id,user.username).first();
+ const state=job?.status||v.render_state;
+ if(state!=='done')return {state,percent:job?.percent||0,error:job?.error||''};
+ const asset=await db.prepare("SELECT a.*,j.status preparation_status,j.error preparation_error FROM psychology_video_assets a LEFT JOIN factory_jobs j ON j.id='video-archive-'||a.id WHERE a.source_job_id=? AND a.result_index=0 AND a.owner=?").bind(v.render_job_id,user.username).first();
+ const active=!asset||asset.cleanup_state==='active',ready=active&&asset?.status==='ready';
+ return {state:'done',jobId:v.render_job_id,assetId:asset?.id||'',previewUrl:ready?'/api/psychology-video-library/'+asset.id+'/file':'',fileName:asset?.file_name||'',canPrepare:Boolean(active&&job?.worker_id&&JSON.parse(job.result_json||'{}').results?.[0]?.fileName),preparationStatus:asset?.preparation_status||'',error:active?(asset?.preparation_error||''):'成片素材已进入清理流程，无法再次准备。'};
+}
 export async function handleVideoHitProduction(request,env,url,session){
  const match=url.pathname.match(/^\/api\/psychology-video-hits\/(vh-[a-f0-9]{32})\/versions\/(\d+)\/(render|publish|jobs)$/);
  if(!match)return null;
@@ -24,7 +35,7 @@ export async function handleVideoHitProduction(request,env,url,session){
    const facts=record?JSON.parse(record.value_json):{},outcome=publishOutcome(facts);
    publication={itemId:v.publish_item_id,batchId:item?.batch_id||'',connectionId:item?.connection_id||'',scheduleAt:item?.schedule_at||0,status:v.publish_state==='published'||outcome==='published'?'published':outcome==='failed'||item?.status==='failed'?'failed':item?.deleted_at?'cancelled':item?.receipt_json&&item.receipt_json!=='{}'?'submitted':item?.status||'reserved',postUrl:v.published_url||facts.shareLink||facts.videoUrl||'',error:item?.error||''};
   }
-  return json({jobs:rows.results.map(r=>({...r,result_json:undefined,result:JSON.parse(r.result_json)})),publication});
+  return json({jobs:rows.results.map(r=>({...r,result_json:undefined,result:JSON.parse(r.result_json)})),publication,version:publicVersion(v),sourceRevision:source.revision,renderedVideo:await renderedPreview(db,user,source,v)});
  }
  if(request.method!=='POST'||match[3]==='jobs')fail('请求方法无效。',405);
  if((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site')fail('不允许跨站修改。',403);

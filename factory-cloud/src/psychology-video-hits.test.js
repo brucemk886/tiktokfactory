@@ -241,3 +241,38 @@ test('source type filters run before pagination; mixed sources are not duplicate
  const first=await (await f.call('?inputMode=video')).json(),second=await (await f.call('?inputMode=video&page=2')).json();assert.equal(first.total,21);assert.equal(first.items.length,20);assert.equal(first.hasMore,true);assert.equal(second.items.length,1);assert.equal(second.hasMore,false);assert.equal(new Set([...first.items,...second.items].map(s=>s.id)).size,21);
  await f.write('/'+ids[0]+'/versions/1',{revision:1,inputMode:'frames'});const videos=await (await f.call('?inputMode=video')).json();assert.equal(videos.total,20);assert.equal(videos.hasMore,false);const frames=await (await f.call('?inputMode=frames')).json();assert.equal(frames.total,2);assert.equal(frames.items.find(s=>s.id===ids[0]).frameVersionCount,2);
 });
+
+
+test('detail render preview follows the current owned render, readiness and cleanup without writing on GET',async t=>{
+ const f=await setup(t),source=await f.ready();
+ const created=await (await f.write('/'+source+'/versions/1/render',{revision:3},'POST')).json(),jobId=created.jobIds[0];
+ const read=async()=> (await f.call('/'+source+'/versions/1/jobs')).json();
+ let data=await read();assert.equal(data.renderedVideo.state,'queued');assert.equal(data.renderedVideo.previewUrl,undefined);
+ f.sqlite.prepare("UPDATE factory_jobs SET status='done',worker_id='render-worker',result_json=? WHERE id=?").run(JSON.stringify({results:[{fileName:'detail.mp4'}]}),jobId);
+ data=await read();assert.equal(data.renderedVideo.state,'done');assert.equal(data.renderedVideo.canPrepare,true);assert.equal(data.renderedVideo.previewUrl,'');assert.equal(data.version.renderState,'done');
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_assets').get().n,0,'read does not prepare/upload');
+ const request=new Request(root+'/api/psychology-video-library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId,resultIndex:0})});
+ const imported=await (await handleVideoLibrary(request,f.env,new URL(request.url),{user:f.user()})).json();
+ data=await read();assert.equal(data.renderedVideo.preparationStatus,'queued');assert.equal(data.renderedVideo.assetId,imported.assetId);assert.equal(data.renderedVideo.previewUrl,'');
+ f.sqlite.prepare("UPDATE factory_jobs SET status='failed',error='fixture transfer failure' WHERE id=?").run('video-archive-'+imported.assetId);
+ data=await read();assert.equal(data.renderedVideo.preparationStatus,'failed');assert.match(data.renderedVideo.error,/fixture transfer/);
+ f.sqlite.prepare("UPDATE psychology_video_assets SET status='ready' WHERE id=?").run(imported.assetId);
+ data=await read();assert.equal(data.renderedVideo.previewUrl,'/api/psychology-video-library/'+imported.assetId+'/file');
+ f.sqlite.prepare("UPDATE psychology_video_assets SET owner='other' WHERE id=?").run(imported.assetId);
+ assert.equal((await read()).renderedVideo.previewUrl,'');f.sqlite.prepare("UPDATE psychology_video_assets SET owner=? WHERE id=?").run(f.user().username,imported.assetId);
+ f.sqlite.prepare("UPDATE psychology_video_assets SET cleanup_state='deleting' WHERE id=?").run(imported.assetId);
+ data=await read();assert.equal(data.renderedVideo.previewUrl,'');assert.equal(data.renderedVideo.canPrepare,false);
+ f.sqlite.prepare("UPDATE psychology_video_assets SET cleanup_state='active' WHERE id=?").run(imported.assetId);
+ f.sqlite.prepare('UPDATE psychology_video_hit_versions SET revision=revision+1 WHERE source_id=?').run(source);
+ assert.deepEqual((await read()).renderedVideo,{state:'stale'});
+ f.sqlite.prepare('UPDATE psychology_video_hit_versions SET revision=revision-1 WHERE source_id=?').run(source);
+ f.sqlite.prepare('UPDATE psychology_video_hits SET revision=revision+1 WHERE id=?').run(source);
+ assert.deepEqual((await read()).renderedVideo,{state:'stale'});
+ f.sqlite.prepare('UPDATE psychology_video_hits SET revision=revision-1 WHERE id=?').run(source);
+ f.sqlite.prepare('DELETE FROM factory_jobs WHERE id=?').run(jobId);
+ data=await read();assert.match(data.renderedVideo.previewUrl,/\/file$/);assert.equal(data.renderedVideo.canPrepare,false,'archived task still permits an existing cloud preview');
+ f.sqlite.prepare('UPDATE psychology_video_hit_versions SET cleaned_at=1 WHERE source_id=?').run(source);
+ assert.deepEqual((await read()).renderedVideo,{state:'cleaned'});
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(source);await assert.rejects(read(),/无权/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);assert.equal(f.requests.length,0);
+});

@@ -1,3 +1,4 @@
+import {mountVideoPosters} from './psychology-video-posters.js';
 const $=id=>document.getElementById(id),BASE='/api/psychology-video-hits',PAGE='/psychology-video-hits';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const route=location.pathname.replace(/\/$/,''),params=new URLSearchParams(location.search);
@@ -8,6 +9,9 @@ const sourceId=params.get('id'),detailUrl=(id,version)=>PAGE+'/detail?id='+encod
 let page=1,list=[],detail=null,n=Number(params.get('version')),framePage=1,editingSource=false,editingVersion=false,frameVersion=0,loadToken=0,listToken=0;
 let versionScope="pending";
 const pending=new Map(),framePreviews=new Map();
+const videoPosters=mountVideoPosters($('readyVideoPanel')),previewAttempts=new Set(),previewErrors=new Map();
+let previewData=null,previewPreparing='',jobsTimer=0,jobsRequest=0;
+const previewKey=()=>current()?.renderJobId+':'+current()?.revision+':'+detail?.source.revision;
 async function api(path='',method='GET',body){
  const response=await fetch(BASE+path,{method,cache:'no-store',...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
  const data=await response.json();if(!response.ok)throw new Error(data.error||'请求失败');return data;
@@ -23,7 +27,7 @@ async function action(status,button,fn){
 }
 const lock=(id,value)=>{$(id).dataset.locked=String(value);$(id).disabled=value;};
 const renderCurrent=v=>v.renderRevision===v.revision&&v.renderSourceRevision===detail.source.revision;
-const versionState=v=>v.publishState==='published'?(v.cleanedAt?'已发布 · 内容已清理':'已发布 · 待清理'):v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
+const versionState=v=>v.publishState==='published'?(v.cleanedAt?'已发布 · 内容已清理':'已发布 · 待清理'):v.publishItemId?'已提交发布':v.inputMode==='video'?(v.videoAssetId?'成片已上传':'待传入成片'):renderCurrent(v)?({queued:'已提交合成',running:'合成中',done:'已合成视频',failed:'合成失败',cancelled:'已取消合成'}[v.renderState]||'待合成'):(v.enabled?'待合成':'待补全 / 停用');
 const current=()=>detail?.versions.find(v=>v.version===n),stamp=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
 const metric=x=>x==null?'—':Number(x).toLocaleString('zh-CN');
 const typeName=mode=>mode==='video'?'视频':'图文';
@@ -56,6 +60,7 @@ async function load(){
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
 }
 async function loadDetail(){
+ clearTimeout(jobsTimer);jobsRequest++;
  const token=++loadToken,d=await api('/'+sourceId);if(token!==loadToken)return;
  d.versions.sort((a,b)=>a.version-b.version);detail=d;
  if(view==='detail'&&!current())throw new Error('此二创版本尚未创建，请返回二创列表。');
@@ -84,11 +89,10 @@ async function loadVersion(){
  $('toggleVersion').textContent=v.enabled?'停用版本':'启用版本';lock('toggleVersion',Boolean(v.publishItemId));lock('editVersion',Boolean(v.publishItemId));
  $('renderVersion').hidden=v.inputMode==='video';$('publishVersion').textContent=v.inputMode==='video'||renderCurrent(v)&&v.renderState==='done'?'发布成片':'合成并发布';
  lock('renderVersion',!v.enabled||Boolean(v.publishItemId)||renderCurrent(v)&&['queued','running','done'].includes(v.renderState));lock('publishVersion',!v.enabled||Boolean(v.publishItemId)||v.inputMode!=='video'&&['queued','running'].includes(v.renderState));
- $('readyVideoPanel').hidden=v.inputMode!=='video'||Boolean(v.cleanedAt);$('framePanel').hidden=v.inputMode==='video'||Boolean(v.cleanedAt);
+ previewData=null;renderVideoPreview();$('framePanel').hidden=v.inputMode==='video'||Boolean(v.cleanedAt);
  $('versionLifecycle').textContent=v.cleanedAt?'官方发布已确认，二创文案与素材引用已清理；图片和成片的删除进度见“清理状态”。':v.publishedAt?'官方发布已确认，二创文案和素材将在 '+stamp(v.publishedAt+86400000)+' 后自动清理。':'发布成功后自动清理二创内容；提交中、失败和未确认状态会保留。';
  $('publishedLink').hidden=!/^https:\/\//.test(v.publishedUrl||'');$('publishedLink').href=v.publishedUrl||'#';
  for(const id of ['addOriginal','addRemix','jsonFrames'])lock(id,Boolean(v.publishItemId)||Boolean(detail.source.archivedAt));
- $('readyVideoStatus').textContent=v.videoAssetId?'成片已上传，可直接发布。':'请编辑版本并传入成片。';if(v.videoPreviewUrl)$('readyVideoPreview').src=v.videoPreviewUrl;else $('readyVideoPreview').removeAttribute('src');
  await Promise.all([v.inputMode==='video'||v.cleanedAt?Promise.resolve():loadFrames(),loadJobs()]);
 }
 async function loadFrames(){
@@ -105,11 +109,65 @@ async function loadFrames(){
  $('frames').innerHTML=indices.map(index=>'<article class="vh-frame" data-frame-row="'+index+'"><strong>第 '+index+' 帧</strong><div class="vh-images">'+image(originals.get(index),'原图',index,0)+image(recreations.get(index),'版本 '+version+' 二创图',index,version)+'</div></article>').join('')||'<p class="vh-note">尚无图片。先补充原图，再写入对应版本的二创图。</p>';
  $('frameStatus').textContent='原图 '+original.total+' 帧 · 二创图 '+remix.total+' 帧';$('framePageInfo').textContent='第 '+p+' 页 / 每页20帧';$('framePrevious').disabled=p===1;$('frameNext').disabled=!original.hasMore&&!remix.hasMore;
 }
-async function loadJobs(){
- const id=detail.source.id,version=n,token=loadToken,data=await api('/'+id+'/versions/'+version+'/jobs');if(token!==loadToken||version!==n)return;
- if(data.publication){const p=data.publication;$('versionStatus').textContent=({published:'已发布',failed:'发布失败，请重试原任务',submitted:'已提交官方发布',queued:'待发布',running:'发布处理中',cancelled:'发布已取消'}[p.status]||'已提交发布')+' · 每版本仅发布一次'+(current().cleanedAt?' · 内容已清理':current().publishedAt?' · 24小时后自动清理':'');}
- $('jobs').innerHTML=data.jobs.map(j=>'<article><b>'+escape((j.type==='psychology-video-remix'?{queued:'等待合成',running:'合成中',done:'已合成',failed:'合成失败',cancelled:'已取消'}:{queued:'等待发布',running:'发布处理中',done:'已转交发布流程',failed:'发布失败',cancelled:'已取消'})[j.status]||j.status)+'</b> · '+j.percent+'%<p>'+escape(j.error||j.message)+'</p><small>'+escape(j.id)+'</small>'+(!current().cleanedAt&&j.type==='psychology-video-remix'&&j.status==='done'&&j.result.results?.[0]?'<button data-preview-job="'+escape(j.id)+'">准备云端预览</button>':'')+'</article>').join('')||'<p>本版本尚无合成任务。</p>';
+function renderVideoPreview(){
+ const v=current();if(!v)return;
+ const direct=v.inputMode==='video',info=previewData,stale=!direct&&v.renderJobId&&!renderCurrent(v),state=direct?'done':info?.state||v.renderState;
+ const visible=!v.cleanedAt&&(direct||Boolean(v.renderJobId));$('readyVideoPanel').hidden=!visible;
+ const url=visible?(direct?v.videoPreviewUrl:!stale?info?.previewUrl:'')||'':'';
+ const player=$('readyVideoPreview');
+ if((player.getAttribute('src')||'')!==url){
+  player.pause();player.removeAttribute('poster');delete player.dataset.coverSrc;
+  const cover=$('readyVideoPlayer').querySelector('.video-cover-button');cover.hidden=true;cover.querySelector('img').removeAttribute('src');
+  if(url){player.src=url;player.dataset.coverSrc=url;}else player.removeAttribute('src');player.load();
+ }
+ $('readyVideoPlayer').hidden=!url;videoPosters.refresh();
+ $('prepareRenderedVideo').hidden=true;$('readyVideoError').hidden=true;
+ if(!visible)return;
+ $('readyVideoHeading').textContent=direct?'二创成片':'图文合成视频';
+ const badge=$('readyVideoBadge');badge.classList.toggle('is-enabled',!stale&&state==='done');
+ const busy=previewPreparing===previewKey()||['queued','running'].includes(info?.preparationStatus);
+ const error=previewErrors.get(previewKey())||info?.error||'';
+ if(direct){badge.textContent=v.videoAssetId?'成片已上传':'待传入成片';$('readyVideoStatus').textContent=url?'可在这里播放、全屏查看视频。':'请编辑版本并传入成片。';}
+ else if(stale||state==='stale'){badge.textContent='需重新合成';$('readyVideoStatus').textContent='文案或图片已更新，请重新合成当前版本的视频。';}
+ else if(state==='done'){
+  badge.textContent='已合成视频';
+  $('readyVideoStatus').textContent=url?'可在这里播放、全屏查看视频；下方保留逐帧图片对照。':busy?'视频已合成，正在准备云端预览，完成后会自动显示。':info?.canPrepare?'视频已合成，正在准备详情页预览。':info?'视频已合成，暂时无法取回预览文件。':'视频已合成，正在读取预览状态…';
+  $('prepareRenderedVideo').hidden=Boolean(url)||busy||!info?.canPrepare;
+  $('prepareRenderedVideo').textContent=error||info?.preparationStatus==='failed'?'重试视频预览':'准备视频预览';
+  if(error&&!url){$('readyVideoError').hidden=false;$('readyVideoError').textContent=error;$('readyVideoStatus').textContent='视频已合成，云端预览暂不可用。';}
+ }else{badge.textContent=({queued:'已提交合成',running:'合成中',failed:'合成失败',cancelled:'已取消合成'})[state]||'待合成';$('readyVideoStatus').textContent=state==='running'?'正在合成 '+(info?.percent||0)+'%，完成后会在这里显示视频。':state==='queued'?'正在等待合成，完成后会在这里显示视频。':info?.error||'完成合成后，可在这里查看视频。';}
 }
+async function prepareVideoPreview(){
+ const v=current(),info=previewData,key=previewKey();
+ if(v?.inputMode==='video'||v?.cleanedAt||!renderCurrent(v)||info?.state!=='done'||!info.canPrepare||info.previewUrl||previewPreparing||['queued','running'].includes(info.preparationStatus))return;
+ previewAttempts.add(key);previewErrors.delete(key);previewPreparing=key;renderVideoPreview();
+ try{
+  const response=await fetch('/api/psychology-video-library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId:info.jobId,resultIndex:0})});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'视频预览准备失败');
+ }catch(error){previewErrors.set(key,error.message);}
+ finally{previewPreparing='';if(view==='detail'&&current()){renderVideoPreview();refreshPreview();}}
+}
+function refreshPreview(){return loadJobs().catch(error=>{if(view==='detail'){$('readyVideoError').hidden=false;$('readyVideoError').textContent='状态读取失败：'+error.message+'，请点击刷新状态。';}});}
+async function loadJobs(){
+ clearTimeout(jobsTimer);
+ const id=detail.source.id,version=n,token=loadToken,request=++jobsRequest,data=await api('/'+id+'/versions/'+version+'/jobs');if(token!==loadToken||version!==n||request!==jobsRequest)return;
+ if(data.sourceRevision!==detail.source.revision||data.version&&(data.version.revision!==current().revision||data.version.cleanedAt!==current().cleanedAt||data.version.publishedAt!==current().publishedAt)){await loadDetail();return;}
+ if(data.version)Object.assign(current(),data.version);
+ const v=current();previewData=data.renderedVideo;renderVideoPreview();
+ $('versionStatus').textContent=versionState(v)+' · '+(v.inputMode==='video'?'直接传入成片':v.frameCount+' / '+detail.frameCount+' 帧');
+ $('publishVersion').textContent=v.inputMode==='video'||renderCurrent(v)&&v.renderState==='done'?'发布成片':'合成并发布';
+ lock('renderVersion',!v.enabled||Boolean(v.publishItemId)||renderCurrent(v)&&['queued','running','done'].includes(v.renderState));lock('publishVersion',!v.enabled||Boolean(v.publishItemId)||v.inputMode!=='video'&&['queued','running'].includes(v.renderState));
+ if(data.publication){const p=data.publication;$('versionStatus').textContent=({published:'已发布',failed:'发布失败，请重试原任务',submitted:'已提交官方发布',queued:'待发布',running:'发布处理中',cancelled:'发布已取消'}[p.status]||'已提交发布')+' · 每版本仅发布一次'+(v.cleanedAt?' · 内容已清理':v.publishedAt?' · 24小时后自动清理':'');}
+ $('jobs').innerHTML=data.jobs.map(j=>'<article><b>'+escape((j.type==='psychology-video-remix'?{queued:'等待合成',running:'合成中',done:'已合成视频',failed:'合成失败',cancelled:'已取消'}:{queued:'等待发布',running:'发布处理中',done:'已转交发布流程',failed:'发布失败',cancelled:'已取消'})[j.status]||j.status)+'</b> · '+j.percent+'%<p>'+escape(j.error||j.message)+'</p><small>'+escape(j.id)+'</small></article>').join('')||'<p>本版本尚无合成任务。</p>';
+ if(document.hidden||v.cleanedAt||v.inputMode==='video')return;
+ if(renderCurrent(v)&&previewData?.state==='done'&&previewData.canPrepare&&!previewData.previewUrl&&!previewData.assetId&&!previewData.preparationStatus&&!previewAttempts.has(previewKey())){prepareVideoPreview();return;}
+ if(renderCurrent(v)&&(['queued','running'].includes(previewData?.state)||['queued','running'].includes(previewData?.preparationStatus)))jobsTimer=setTimeout(refreshPreview,3000);
+}
+$('prepareRenderedVideo').onclick=prepareVideoPreview;$('refreshVideoPreview').onclick=()=>{videoPosters.retryFailures();refreshPreview();};
+window.addEventListener('pagehide',()=>{clearTimeout(jobsTimer);jobsRequest++;});
+document.addEventListener('visibilitychange',()=>{clearTimeout(jobsTimer);if(!document.hidden&&view==='detail'&&current())refreshPreview();});
+window.addEventListener('pageshow',e=>{if(e.persisted&&view==='detail'&&current())refreshPreview();});
+
 function sourceEditor(edit){
  editingSource=edit;$('sourceForm').reset();const s=edit?detail.source:{externalId:'video-'+Date.now(),videoData:{}};
  for(const name of ['externalId','videoUrl','title','caption','script'])$('sourceForm').elements[name].value=s[name]||'';
@@ -181,7 +239,6 @@ $('jsonForm').onsubmit=e=>{e.preventDefault();action('jsonStatus',e.submitter,as
  await write('/'+detail.source.id+'/frames/'+version,'PUT',{revision:row.revision,frames:JSON.parse($('jsonInput').value)});$('jsonDialog').close();await loadDetail();
  });};
 $('refreshJobs').onclick=e=>action('versionStatus',e.target,loadDetail);
-$('jobs').onclick=async e=>{const b=e.target.closest('[data-preview-job]');if(!b)return;await action('versionStatus',b,async()=>{const r=await fetch('/api/psychology-video-library/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jobId:b.dataset.previewJob,resultIndex:0})}),data=await r.json();if(!r.ok)throw new Error(data.error);$('versionStatus').textContent='预览已安排准备，请到“成片与发布”查看。';});};
 let previewToken=0,imageScale=1,previewFit=true,previewTrigger=null;
 const previewControls=['imageZoomOut','imageZoomIn','imageFit','imageActual'];
 function setImageScale(scale,preserveCenter=true){
