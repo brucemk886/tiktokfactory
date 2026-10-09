@@ -10,7 +10,7 @@ export function mountPsychologyVideoPicker({api,accounts,project,changed}){
  }
  async function load(){
   const current=++version;busy=true;render();say('正在读取视频…');
-  try{const data=await api(BASE+'?source='+source+'&page='+page);if(current!==version)return;rows=data.videos||[];hasMore=Boolean(data.hasMore);say('已选 '+chosen.size+' 条。准备预览和上传均不会发布。');}
+  try{const data=await api(BASE+'?source='+source+'&page='+page);if(current!==version)return;rows=data.videos||[];hasMore=Boolean(data.hasMore);say('预览后勾选视频，已选内容会保留在下方清单中。');}
   catch(e){if(current===version)say(e.message,true);}
   finally{if(current===version){busy=false;render();clearTimeout(poll);if(active&&rows.some(v=>['running','queued'].includes(v.preparationStatus)))poll=setTimeout(()=>load(),5000);}}
  }
