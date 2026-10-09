@@ -14,10 +14,10 @@ async function renderedPreview(db,user,source,v){
  if(v.input_mode==='video'||!v.render_job_id)return null;
  if(v.cleaned_at)return {state:'cleaned'};
  if(v.render_revision!==v.revision||v.render_source_revision!==source.revision)return {state:'stale'};
- const job=await db.prepare("SELECT id,status,percent,error,worker_id,result_json FROM factory_jobs WHERE id=? AND created_by=? AND type='psychology-video-remix'").bind(v.render_job_id,user.username).first();
+ const job=await db.prepare("SELECT id,status,percent,error,worker_id,result_json FROM factory_jobs WHERE id=? AND type='psychology-video-remix'").bind(v.render_job_id).first();
  const state=job?.status||v.render_state;
  if(state!=='done')return {state,percent:job?.percent||0,error:job?.error||''};
- const asset=await db.prepare("SELECT a.*,j.status preparation_status,j.error preparation_error FROM psychology_video_assets a LEFT JOIN factory_jobs j ON j.id='video-archive-'||a.id WHERE a.source_job_id=? AND a.result_index=0 AND a.owner=?").bind(v.render_job_id,user.username).first();
+ const asset=await db.prepare("SELECT a.*,j.status preparation_status,j.error preparation_error FROM psychology_video_assets a LEFT JOIN factory_jobs j ON j.id='video-archive-'||a.id WHERE a.source_job_id=? AND a.result_index=0 ORDER BY (a.status='ready') DESC,(a.owner=?) DESC,a.created_at DESC,a.id LIMIT 1").bind(v.render_job_id,user.username).first();
  const active=!asset||asset.cleanup_state==='active',ready=active&&asset?.status==='ready';
  return {state:'done',jobId:v.render_job_id,assetId:asset?.id||'',previewUrl:ready?'/api/psychology-video-library/'+asset.id+'/file':'',fileName:asset?.file_name||'',canPrepare:Boolean(active&&job?.worker_id&&JSON.parse(job.result_json||'{}').results?.[0]?.fileName),preparationStatus:asset?.preparation_status||'',error:active?(asset?.preparation_error||''):'成片素材已进入清理流程，无法再次准备。'};
 }
@@ -28,7 +28,7 @@ export async function handleVideoHitProduction(request,env,url,session){
  const user=await videoHitUser(env.DB,session?.user),n=versionNumber(Number(match[2])),source=await sourceRow(env.DB,match[1],user),db=env.DB;
  if(request.method==='GET'&&match[3]==='jobs'){
   const v=await versionRow(db,source.id,n,user);
-  const rows=await db.prepare("SELECT id,type,status,percent,message,error,result_json,created_at FROM factory_jobs WHERE created_by=? AND ((json_extract(payload_json,'$.videoRemix.sourceId')=? AND json_extract(payload_json,'$.videoRemix.version')=?) OR (json_extract(payload_json,'$.videoHitOrigin.sourceId')=? AND json_extract(payload_json,'$.videoHitOrigin.version')=?)) ORDER BY created_at DESC,id LIMIT 20").bind(user.username,source.id,n,source.id,n).all();
+  const rows=await db.prepare("SELECT id,type,status,percent,message,error,result_json,created_at FROM factory_jobs WHERE ((json_extract(payload_json,'$.videoRemix.sourceId')=? AND json_extract(payload_json,'$.videoRemix.version')=?) OR (json_extract(payload_json,'$.videoHitOrigin.sourceId')=? AND json_extract(payload_json,'$.videoHitOrigin.version')=?)) ORDER BY created_at DESC,id LIMIT 20").bind(source.id,n,source.id,n).all();
   let publication=null;
   if(v.publish_item_id){
    const item=await db.prepare('SELECT i.*,j.status,j.error,j.type FROM psychology_publish_items i LEFT JOIN factory_jobs j ON j.id=i.job_id WHERE i.id=?').bind(v.publish_item_id).first();
@@ -49,11 +49,11 @@ export async function handleVideoHitProduction(request,env,url,session){
   if(direct&&!publishing)fail('此版本已传入成片，可直接发布，无需合成。',409);
   const voiceGender=body.voiceGender??'female';if(!['male','female'].includes(voiceGender))fail('voiceGender须为male或female。');
   const asset=direct?await readyVideo(db,user,v.video_asset_id):null;
-  if(asset&&await db.prepare('SELECT item_id FROM psychology_video_hit_video_usage WHERE owner_id=? AND digest=?').bind(user.id,asset.digest).first())fail('此成片已提交发布，不能重复使用同一视频文件。',409);
+  if(asset&&await db.prepare('SELECT item_id FROM psychology_video_hit_video_usage WHERE owner_id=? AND digest=?').bind(asset.owner_id,asset.digest).first())fail('此成片已提交发布，不能重复使用同一视频文件。',409);
   if(asset&&!await env.ARCHIVE.head(asset.r2_key))fail('成片文件已失效，请重新上传。',409);
   const frames=direct?[]:completeVersion(await allFrames(db,source.id,0),await allFrames(db,source.id,n),publicVersion(v));if(!direct)await assertAssets(db,user,frames);
   const snapshot={sourceId:source.id,sourceRevision:source.revision,videoUrl:source.video_url,version:n,revision:v.revision,title:v.title,caption:v.caption,script:v.script,voiceGender,frames:frames.map(({previewUrl,...f})=>f)};
-  const prior=v.render_job_id?await db.prepare('SELECT * FROM factory_jobs WHERE id=? AND created_by=?').bind(v.render_job_id,user.username).first():null;
+  const prior=v.render_job_id?await db.prepare('SELECT * FROM factory_jobs WHERE id=?').bind(v.render_job_id).first():null;
   const sameRender=prior&&v.render_revision===v.revision&&v.render_source_revision===source.revision&&JSON.parse(prior.payload_json).videoRemix?.voiceGender===voiceGender;
   if(publishing&&!direct&&prior&&['queued','running'].includes(prior.status))fail('已有合成任务正在等待或执行，请完成后再提交发布。',409);
   if(!publishing&&prior&&['queued','running'].includes(prior.status)&&!sameRender)fail('该版本已有合成任务，请先等待完成。',409);
@@ -78,7 +78,7 @@ export async function handleVideoHitProduction(request,env,url,session){
   const batchId='psy-vh-'+(await sha256Hex(user.id+':'+body.requestId)).slice(0,32),id=batchId+'-000',groupId=batchId+'-group-0';
   statements.push(db.prepare("UPDATE psychology_video_hit_versions SET publish_state='reserved',publish_item_id=? WHERE source_id=? AND version=? AND revision=? AND enabled=1 AND publish_item_id=''").bind(id,source.id,n,v.revision),guard(db),db.prepare('UPDATE psychology_video_hits SET revision=revision WHERE id=? AND revision=?').bind(source.id,source.revision),guard(db));
   statements.push(db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp),db.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES(?,?,0,1)').bind(groupId,batchId));
-  if(asset)statements.push(db.prepare('INSERT INTO psychology_video_hit_video_usage(owner_id,digest,asset_id,item_id) VALUES(?,?,?,?)').bind(user.id,asset.digest,asset.id,id));
+  if(asset)statements.push(db.prepare('INSERT INTO psychology_video_hit_video_usage(owner_id,digest,asset_id,item_id) VALUES(?,?,?,?)').bind(asset.owner_id,asset.digest,asset.id,id));
   const automation={id,batchId,groupId,submissionMode:'grouped',connectionId,scheduleAt,mediaType:'video',template:config.template};
   const publish={provider:'official',autoPublish:true,connectionIds:[connectionId],officialAccounts:accounts,scheduleAt,intervalMinutes:60,videoDesc:v.caption||v.title,isAiGenerated:body.isAiGenerated,envIds:[],accounts:[]};
   const origin={sourceId:source.id,version:n,revision:v.revision},payload={module:'psychology',videoHitOrigin:origin,psychologyAutomation:automation,publish};

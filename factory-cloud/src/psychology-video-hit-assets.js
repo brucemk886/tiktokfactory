@@ -1,8 +1,9 @@
+import {hitAssetScope} from './psychology-video-hit-access.js';
 import {discardExpiredVideoHitUpload} from './psychology-video-hit-cleanup.js';
 import {decodeTopicPng} from './topic-png.js';
 import {json} from './http.js';
 import {authenticate} from './factory-api.js';
-import {videoHitUser,VIDEO_HITS_BASE} from './psychology-video-hits.js';
+import {videoHitUser,sourceRow,VIDEO_HITS_BASE} from './psychology-video-hits.js';
 import {UUID,fail} from '../../scripts/psychology-video-hit-contract.js';
 const EXTERNAL='/api/integrations/psychology/video-hits/assets/';
 export const VIDEO_HIT_IMAGE_MAX=8*1024*1024;
@@ -29,12 +30,12 @@ export async function handleVideoHitAssets(request,env,url,session){
  if(!env.ARCHIVE)fail('图片存储尚未配置。',503);
  if(!external&&!['GET','HEAD'].includes(request.method)&&((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site'))fail('不允许跨站上传。',403);
  if(!match[2]&&request.method==='GET'){
-  const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[1],user.id).first();
+  const access=hitAssetScope(user,'image'),row=await env.DB.prepare('SELECT a.* FROM psychology_video_hit_assets a WHERE a.id=? AND '+access.sql).bind(match[1],...access.args).first();
   if(!row)fail('图片不存在或无权访问。',404);
   return json({assetId:row.id,status:row.cleanup_state,size:row.size,contentType:row.content_type,sha256:row.digest,previewUrl:row.cleanup_state==='active'?VIDEO_HITS_BASE+'/assets/'+row.id+'/file':''});
  }
  if(match[2]&&['GET','HEAD'].includes(request.method)){
-  const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[1],user.id).first();
+  const access=hitAssetScope(user,'image'),row=await env.DB.prepare('SELECT a.* FROM psychology_video_hit_assets a WHERE a.id=? AND '+access.sql).bind(match[1],...access.args).first();
   if(!row)fail('图片不存在或无权访问。',404);if(row.cleanup_state!=='active')fail('图片已清理或正在清理。',410);
   const object=await env.ARCHIVE.get(row.r2_key);if(!object)fail('图片文件不存在。',404);
   return new Response(request.method==='HEAD'?null:object.body,{headers:{'Content-Type':row.content_type,'Content-Length':String(row.size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
@@ -61,9 +62,9 @@ export async function handleVideoHitWorkerAsset(request,env,url){
  const job=await env.DB.prepare("SELECT * FROM factory_jobs WHERE id=? AND type='psychology-video-remix' AND status='running' AND worker_id=?").bind(match[1],request.headers.get('x-factory-worker')||'').first();
  if(!job)fail('任务不属于当前工人。',403);
  const owner=await env.DB.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(job.created_by).first(),user=await videoHitUser(env.DB,owner);
- const payload=JSON.parse(job.payload_json);
+ const payload=JSON.parse(job.payload_json);await sourceRow(env.DB,payload.videoRemix.sourceId,user);
  if(!payload.videoRemix.frames.some(f=>f.assetId===match[2]))fail('图片不属于当前任务。',403);
- const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[2],user.id).first(),object=row?.cleanup_state==='active'&&await env.ARCHIVE.get(row.r2_key);
+ const access=hitAssetScope(user,'image'),row=await env.DB.prepare('SELECT a.* FROM psychology_video_hit_assets a WHERE a.id=? AND '+access.sql).bind(match[2],...access.args).first(),object=row?.cleanup_state==='active'&&await env.ARCHIVE.get(row.r2_key);
  if(!object)fail('任务图片不可用。',404);
  return new Response(object.body,{headers:{'Content-Type':row.content_type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
 }

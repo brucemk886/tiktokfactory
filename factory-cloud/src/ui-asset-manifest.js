@@ -111,7 +111,7 @@ export const UI_ASSETS = {
   "/psychology-video-hit-import.css": "b13d7105152e87f3027e",
   "/psychology-video-hit-import.js": "59b2033e2127315fdb3e",
   "/psychology-video-hits.css": "24635f180b39506d4127",
-  "/psychology-video-hits.js": "d41e07f9a94711f30bc9",
+  "/psychology-video-hits.js": "dd23692e18d3b4284303",
   "/psychology-video-picker.js": "0b56ce849bc5d2d74285",
   "/psychology-video-posters.js": "49468bed17601348e958",
   "/psychology-visual-styles.js": "91942ff4b7350d884d93",

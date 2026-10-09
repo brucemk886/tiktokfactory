@@ -77,7 +77,7 @@ test('binary image upload reuses the project key, owns bytes, rejects mismatched
  const data=new TextEncoder().encode('note\0other'),chunk=new Uint8Array(12+data.length),view=new DataView(chunk.buffer);view.setUint32(0,data.length);chunk.set(new TextEncoder().encode('tEXt'),4);chunk.set(data,8);view.setUint32(8+data.length,pngCrc(chunk.slice(4,8+data.length)));const other=new Uint8Array(png.length+chunk.length);other.set(png.slice(0,-12));other.set(chunk,png.length-12);other.set(png.slice(-12),png.length-12+chunk.length);assert.equal((await upload(other)).status,409);
  const source=await f.create();await f.write('/'+source+'/frames/0',{revision:1,frames:[{index:1,assetId:id}]});
  const fake=crypto.randomUUID();await assert.rejects(f.write('/'+source+'/frames/0',{revision:2,frames:[{index:2,assetId:fake}]}),/素材不存在/);
- f.sqlite.prepare("UPDATE psychology_video_hit_assets SET owner_id='someone'").run();await assert.rejects(f.call('/assets/'+id+'/file'),/无权/);
+ f.sqlite.prepare("UPDATE psychology_video_hit_assets SET owner_id='someone'").run();assert.equal((await f.call('/assets/'+id+'/file')).status,200);f.sqlite.prepare("UPDATE factory_users SET role='operator' WHERE id='admin'").run();assert.equal((await f.call('/assets/'+id+'/file')).status,200,'source owners can read images bound by an administrator');f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='someone' WHERE id=?").run(source);await assert.rejects(f.call('/assets/'+id+'/file'),/无权/);
 });
 test('render-only never publishes; snapshots survive edits; legacy workers cannot claim',async t=>{
  const f=await setup(t),id=await f.ready(),uuid=crypto.randomUUID(),body={requestId:uuid,revision:3,voiceGender:'female'};
@@ -124,11 +124,12 @@ test('worker claim, private frozen image and render completion feed the existing
  assert.equal(f.sqlite.prepare('SELECT job_id FROM psychology_publish_items WHERE id=?').get(created.jobIds[0]).job_id,publishJob.id);assert.equal(f.requests.length,0);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();assert.equal((await call(imagePath,undefined,'GET')).status,403);
 });
-test('all twenty versions are independently writable and owner boundaries hold for source, frames and jobs',async t=>{
+test('all twenty versions are independently writable and member owner boundaries hold for source, frames and jobs',async t=>{
  const f=await setup(t),id=await f.create();
  for(let version=1;version<=20;version++)await f.write('/'+id+'/versions/'+version,{revision:0,title:'Version '+version,script:'Script '+version});
  const detail=await (await f.call('/'+id)).json();assert.equal(detail.versions.length,20);
  f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(id);
+ f.sqlite.prepare("UPDATE factory_users SET role='operator' WHERE id='admin'").run();
  await assert.rejects(f.call('/'+id),/无权/);await assert.rejects(f.call('/'+id+'/frames/0'),/无权/);await assert.rejects(f.call('/'+id+'/versions/1/jobs'),/无权/);
 });
 
@@ -228,12 +229,12 @@ test('API imports expose video/frame counts and combine type filtering with owne
  f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(foreign);
  f.sqlite.prepare("UPDATE psychology_video_hits SET title='Unique mixed source' WHERE id=?").run(mixed);
  const query=async inputMode=>(await (await f.gateway('videoHits.list',{query:{inputMode}})).json());
- const all=await query('all');assert.equal(all.total,4);const m=all.items.find(s=>s.id===mixed);assert.deepEqual([m.versionCount,m.videoVersionCount,m.frameVersionCount],[3,1,2]);assert.equal(all.items.find(s=>s.id===empty).videoVersionCount,0);
- assert.deepEqual((await query('video')).items.map(s=>s.id).sort(),[mixed,video].sort());assert.deepEqual((await query('frames')).items.map(s=>s.id).sort(),[mixed,frames].sort());
+ const all=await query('all');assert.equal(all.total,5);const m=all.items.find(s=>s.id===mixed);assert.deepEqual([m.versionCount,m.videoVersionCount,m.frameVersionCount],[3,1,2]);assert.equal(all.items.find(s=>s.id===empty).videoVersionCount,0);
+ assert.deepEqual((await query('video')).items.map(s=>s.id).sort(),[mixed,video,foreign].sort());assert.deepEqual((await query('frames')).items.map(s=>s.id).sort(),[mixed,frames].sort());
  const search=await (await f.gateway('videoHits.list',{query:{inputMode:'video',q:'Unique mixed',sort:'plays'}})).json();assert.equal(search.total,1);assert.equal(search.items[0].id,mixed);
  f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_state='published',cleaned_at=?,script='' WHERE source_id=? AND version=1").run(Date.now(),mixed);
  assert.equal((await query('video')).items.find(s=>s.id===mixed).videoVersionCount,1,'cleaned records retain import type');
- f.sqlite.prepare('UPDATE psychology_video_hits SET archived_at=? WHERE id=?').run(Date.now(),video);assert.equal((await query('video')).total,1);
+ f.sqlite.prepare('UPDATE psychology_video_hits SET archived_at=? WHERE id=?').run(Date.now(),video);assert.equal((await query('video')).total,2);
  const archived=await (await f.gateway('videoHits.list',{query:{inputMode:'video',scope:'archived'}})).json();assert.equal(archived.total,1);assert.equal(archived.items[0].id,video);
  assert.equal((await f.gateway('videoHits.list',{query:{inputMode:'photo'}})).status,400);assert.equal(f.requests.length,0);
 });
@@ -261,7 +262,7 @@ test('detail render preview follows the current owned render, readiness and clea
  f.sqlite.prepare("UPDATE psychology_video_assets SET status='ready' WHERE id=?").run(imported.assetId);
  data=await read();assert.equal(data.renderedVideo.previewUrl,'/api/psychology-video-library/'+imported.assetId+'/file');
  f.sqlite.prepare("UPDATE psychology_video_assets SET owner='other' WHERE id=?").run(imported.assetId);
- assert.equal((await read()).renderedVideo.previewUrl,'');f.sqlite.prepare("UPDATE psychology_video_assets SET owner=? WHERE id=?").run(f.user().username,imported.assetId);
+ assert.match((await read()).renderedVideo.previewUrl,/\/file$/);f.sqlite.prepare("UPDATE psychology_video_assets SET owner=? WHERE id=?").run(f.user().username,imported.assetId);
  f.sqlite.prepare("UPDATE psychology_video_assets SET cleanup_state='deleting' WHERE id=?").run(imported.assetId);
  data=await read();assert.equal(data.renderedVideo.previewUrl,'');assert.equal(data.renderedVideo.canPrepare,false);
  f.sqlite.prepare("UPDATE psychology_video_assets SET cleanup_state='active' WHERE id=?").run(imported.assetId);
@@ -275,7 +276,7 @@ test('detail render preview follows the current owned render, readiness and clea
  data=await read();assert.match(data.renderedVideo.previewUrl,/\/file$/);assert.equal(data.renderedVideo.canPrepare,false,'archived task still permits an existing cloud preview');
  f.sqlite.prepare('UPDATE psychology_video_hit_versions SET cleaned_at=1 WHERE source_id=?').run(source);
  assert.deepEqual((await read()).renderedVideo,{state:'cleaned'});
- f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(source);await assert.rejects(read(),/无权/);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(source);f.sqlite.prepare("UPDATE factory_users SET role='operator' WHERE id='admin'").run();await assert.rejects(read(),/无权/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);assert.equal(f.requests.length,0);
 });
 
@@ -306,7 +307,7 @@ test('importSource validates agent identifiers and preserves old retries and omi
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,1);assert.equal(f.requests.length,0);
 });
 
-test('agent filter is owner-scoped, exact, normalized and applied before pagination with types',async t=>{
+test('admin agent filter spans creators, is exact, normalized and applied before pagination with types',async t=>{
  const f=await setup(t);let first;
  for(let i=0;i<23;i++){
   const body={externalId:'agent-'+i,videoUrl:'https://www.tiktok.com/@source/video/123',title:'Agent material',importSource:i<21?'future.agent-1':'grokbot',videoData:{playCount:i}};
@@ -314,9 +315,9 @@ test('agent filter is owner-scoped, exact, normalized and applied before paginat
  }
  const legacy=await f.create();f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='someone-else',import_source='future.agent-1' WHERE id=?").run(legacy);
  const read=async query=>{const r=await f.gateway('videoHits.list',{query});assert.equal(r.status,200);return r.json();};
- const a=await read({importSource:' FUTURE.Agent-1 ',sort:'plays'});assert.equal(a.total,21);assert.equal(a.items.length,20);assert.equal(a.hasMore,true);assert.ok(a.items.every(x=>x.importSource==='future.agent-1'));assert.equal(a.items[0].videoData.playCount,20);
- const b=await read({importSource:'future.agent-1',page:2,sort:'plays'});assert.equal(b.items.length,1);assert.equal(b.hasMore,false);assert.equal(b.items[0].id,first);
- assert.equal((await read({importSource:'future'})).total,0);assert.equal((await read({importSource:''})).total,23);
+ const a=await read({importSource:' FUTURE.Agent-1 ',sort:'plays'});assert.equal(a.total,22);assert.equal(a.items.length,20);assert.equal(a.hasMore,true);assert.ok(a.items.every(x=>x.importSource==='future.agent-1'));assert.equal(a.items[0].id,legacy);
+ const b=await read({importSource:'future.agent-1',page:2,sort:'plays'});assert.equal(b.items.length,2);assert.equal(b.hasMore,false);assert.equal(b.items.at(-1).id,first);
+ assert.equal((await read({importSource:'future'})).total,0);assert.equal((await read({importSource:''})).total,24);
  await f.write('/'+first+'/versions/1',{revision:0,title:'Frame',script:'Narration'});
  assert.equal((await read({importSource:'future.agent-1',inputMode:'frames'})).total,1);assert.equal((await read({importSource:'grokbot',inputMode:'frames'})).total,0);
  assert.equal((await f.gateway('videoHits.list',{query:{importSource:'bad/name'}})).status,400);

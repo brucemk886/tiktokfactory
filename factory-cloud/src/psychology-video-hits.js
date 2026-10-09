@@ -1,3 +1,4 @@
+import {hitAdmin,hitAssetScope} from './psychology-video-hit-access.js';
 import {hasPsychologyModule} from './psychology-permissions.js';
 import {assetPin} from './psychology-video-hit-cleanup.js';
 import {readyVideo} from './psychology-video-hit-videos.js';
@@ -15,7 +16,7 @@ export async function videoHitUser(db,actor){
  return user;
 }
 export async function sourceRow(db,id,user){
- const row=await db.prepare('SELECT * FROM psychology_video_hits WHERE id=? AND owner_id=?').bind(id,user.id).first();
+ const row=await db.prepare('SELECT h.*,(SELECT username FROM factory_users WHERE id=h.owner_id) owner_username FROM psychology_video_hits h WHERE h.id=? AND (h.owner_id=? OR ?=1)').bind(id,user.id,hitAdmin(user)).first();
  if(!row)fail('视频爆款不存在或无权访问。',404);return row;
 }
 export async function versionRow(db,id,version,user){
@@ -23,13 +24,14 @@ export async function versionRow(db,id,version,user){
  const row=await db.prepare('SELECT * FROM psychology_video_hit_versions WHERE source_id=? AND version=?').bind(id,version).first();
  if(!row)fail('二创版本不存在。',404);return row;
 }
-export function publicSource(row){return {id:row.id,externalId:row.external_id,importSource:row.import_source,videoUrl:row.video_url,title:row.title,caption:row.caption,script:row.script,videoData:parse(row.video_data_json),revision:row.revision,archivedAt:row.archived_at||0,originalsCleanedAt:row.originals_cleaned_at||0,createdAt:row.created_at,updatedAt:row.updated_at};}
+export function publicSource(row){return {id:row.id,ownerId:row.owner_id,ownerUsername:row.owner_username||'',externalId:row.external_id,importSource:row.import_source,videoUrl:row.video_url,title:row.title,caption:row.caption,script:row.script,videoData:parse(row.video_data_json),revision:row.revision,archivedAt:row.archived_at||0,originalsCleanedAt:row.originals_cleaned_at||0,createdAt:row.created_at,updatedAt:row.updated_at};}
 export function publicVersion(row){return {version:row.version,name:row.name,title:row.title,caption:row.caption,script:row.script,enabled:Boolean(row.enabled),inputMode:row.input_mode||'frames',videoAssetId:row.video_asset_id||'',videoPreviewUrl:row.video_asset_id&&!row.cleaned_at?VIDEO_HITS_BASE+'/videos/'+row.video_asset_id+'/file':'',renderState:row.render_state||'',publishState:row.publish_state||'',publishedAt:row.published_at||0,cleanedAt:row.cleaned_at||0,cleanedFrameCount:row.cleaned_frame_count||0,publishedUrl:row.published_url||'',renderJobId:row.render_job_id||'',renderRevision:row.render_revision||0,renderSourceRevision:row.render_source_revision||0,publishItemId:row.publish_item_id||'',revision:row.revision,createdAt:row.created_at,updatedAt:row.updated_at};}
 export function publicFrame(row){return {index:row.frame_index,assetId:row.asset_id,imageUrl:row.image_url,text:row.text,durationSeconds:row.duration_seconds,previewUrl:row.asset_id?VIDEO_HITS_BASE+'/assets/'+row.asset_id+'/file':row.image_url};}
 export async function allFrames(db,id,version){return (await db.prepare('SELECT * FROM psychology_video_hit_frames WHERE source_id=? AND version=? ORDER BY frame_index').bind(id,version).all()).results.map(publicFrame);}
 export async function assertAssets(db,user,frames){
  const ids=[...new Set(frames.map(f=>f.assetId).filter(Boolean))];if(!ids.length)return;
- const rows=await db.prepare('SELECT id,cleanup_state FROM psychology_video_hit_assets WHERE owner_id=? AND id IN (SELECT value FROM json_each(?))').bind(user.id,JSON.stringify(ids)).all();
+ const access=hitAssetScope(user,'image');
+ const rows=await db.prepare('SELECT a.id,a.cleanup_state FROM psychology_video_hit_assets a WHERE '+access.sql+' AND a.id IN (SELECT value FROM json_each(?))').bind(...access.args,JSON.stringify(ids)).all();
  if(rows.results.length!==ids.length)fail('图片素材不存在或不属于当前账号。',403);if(rows.results.some(r=>r.cleanup_state!=='active'))fail('图片已清理或正在清理，请传入新素材。',410);
 }
 export function guard(db){return db.prepare('UPDATE psychology_video_hit_guards SET ok=CASE WHEN changes()=1 THEN 1 ELSE 0 END WHERE id=1');}
@@ -54,10 +56,10 @@ export async function handleVideoHits(request,env,url,session){
   const page=Number(url.searchParams.get('page')||1),q=(url.searchParams.get('q')||'').slice(0,100),sort=url.searchParams.get('sort')||'recent',scope=url.searchParams.get('scope')||'active',inputMode=url.searchParams.get('inputMode')||'all';
   if(!Number.isInteger(page)||page<1||page>10000||!['recent','plays'].includes(sort)||!['active','archived','all'].includes(scope)||!['all','video','frames'].includes(inputMode))fail('页码、排序或二创类型无效。');
   const importer=url.searchParams.get('importSource')?importSource(url.searchParams.get('importSource')):'';
-  const where=(scope==='active'?'WHERE h.archived_at=0 AND ':scope==='archived'?'WHERE h.archived_at>0 AND ':'WHERE ')+'h.owner_id=? AND (?=\'\' OR h.import_source=?) AND (?=\'\' OR h.title LIKE ? OR h.external_id LIKE ? OR h.video_url LIKE ?) AND (?=\'all\' OR EXISTS(SELECT 1 FROM psychology_video_hit_versions kind WHERE kind.source_id=h.id AND kind.input_mode=?))',args=[user.id,importer,importer,q,'%'+q+'%','%'+q+'%', '%'+q+'%',inputMode,inputMode];
+  const where=(scope==='active'?'WHERE h.archived_at=0 AND ':scope==='archived'?'WHERE h.archived_at>0 AND ':'WHERE ')+'(h.owner_id=? OR ?=1) AND (?=\'\' OR h.import_source=?) AND (?=\'\' OR h.title LIKE ? OR h.external_id LIKE ? OR h.video_url LIKE ?) AND (?=\'all\' OR EXISTS(SELECT 1 FROM psychology_video_hit_versions kind WHERE kind.source_id=h.id AND kind.input_mode=?))',args=[user.id,hitAdmin(user),importer,importer,q,'%'+q+'%','%'+q+'%', '%'+q+'%',inputMode,inputMode];
   const [count,rows]=await Promise.all([
    db.prepare('SELECT COUNT(*) n FROM psychology_video_hits h '+where).bind(...args).first(),
-   db.prepare('SELECT h.*, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id) version_count, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id AND v.cleaned_at=0) active_version_count, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id AND v.input_mode=\'video\') video_version_count, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id AND v.input_mode=\'frames\') frame_version_count, (SELECT COUNT(*) FROM psychology_video_hit_frames f WHERE f.source_id=h.id AND f.version=0) frame_count FROM psychology_video_hits h '+where+' ORDER BY '+(sort==='plays'?"CAST(COALESCE(json_extract(h.video_data_json,'$.playCount'),0) AS REAL) DESC, ":'')+'h.updated_at DESC,h.id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()
+   db.prepare('SELECT h.*, (SELECT username FROM factory_users WHERE id=h.owner_id) owner_username, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id) version_count, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id AND v.cleaned_at=0) active_version_count, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id AND v.input_mode=\'video\') video_version_count, (SELECT COUNT(*) FROM psychology_video_hit_versions v WHERE v.source_id=h.id AND v.input_mode=\'frames\') frame_version_count, (SELECT COUNT(*) FROM psychology_video_hit_frames f WHERE f.source_id=h.id AND f.version=0) frame_count FROM psychology_video_hits h '+where+' ORDER BY '+(sort==='plays'?"CAST(COALESCE(json_extract(h.video_data_json,'$.playCount'),0) AS REAL) DESC, ":'')+'h.updated_at DESC,h.id LIMIT 20 OFFSET ?').bind(...args,(page-1)*20).all()
   ]);
   return json({page,pageSize:20,total:count.n,hasMore:page*20<count.n,items:rows.results.map(r=>({...publicSource(r),script:undefined,videoData:{...parse(r.video_data_json)},versionCount:r.version_count,activeVersionCount:r.active_version_count,cleanedVersionCount:r.version_count-r.active_version_count,videoVersionCount:r.video_version_count,frameVersionCount:r.frame_version_count,frameCount:r.frame_count}))});
  }
@@ -79,7 +81,7 @@ export async function handleVideoHits(request,env,url,session){
   return mutation(db,user,body,'source.update:'+detail[1],async()=>{
    const row=await sourceRow(db,detail[1],user);revision(body,row);if(row.archived_at)fail('来源已结束，不能修改。',409);const x={...publicSource(row),...sourceInput(body)};
    if(x.externalId!==row.external_id)fail('externalId不可修改。');
-   return {statements:[db.prepare('UPDATE psychology_video_hits SET video_url=?,title=?,caption=?,script=?,video_data_json=?,import_source=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=? AND revision=? AND archived_at=0').bind(x.videoUrl,x.title,x.caption,x.script,JSON.stringify(x.videoData),x.importSource,Date.now(),row.id,user.id,row.revision),guard(db)],result:{ok:true,id:row.id,revision:row.revision+1}};
+   return {statements:[db.prepare('UPDATE psychology_video_hits SET video_url=?,title=?,caption=?,script=?,video_data_json=?,import_source=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=? AND revision=? AND archived_at=0').bind(x.videoUrl,x.title,x.caption,x.script,JSON.stringify(x.videoData),x.importSource,Date.now(),row.id,row.owner_id,row.revision),guard(db)],result:{ok:true,id:row.id,revision:row.revision+1}};
   });
  }
  const vm=path.match(/^\/(vh-[a-f0-9]{32})\/versions\/(\d+)$/);
@@ -115,7 +117,7 @@ export async function handleVideoHits(request,env,url,session){
     const parent=await sourceRow(db,fm[1],user);if(parent.archived_at)fail('来源已结束，不能修改图片。',409);const row=n?await versionRow(db,fm[1],n,user):parent;revision(body,row);
     if(n&&(row.input_mode==='video'||row.publish_item_id))fail('成片方式或已提交发布的版本不能修改分镜。',409);
     const frames=framesInput(body);await assertAssets(db,user,frames);
-    const statement=n?db.prepare("UPDATE psychology_video_hit_versions SET enabled=0,revision=revision+1,updated_at=? WHERE source_id=? AND version=? AND revision=? AND publish_item_id=''").bind(Date.now(),fm[1],n,row.revision):db.prepare('UPDATE psychology_video_hits SET revision=revision+1,updated_at=? WHERE id=? AND owner_id=? AND revision=? AND archived_at=0').bind(Date.now(),fm[1],user.id,row.revision);
+    const statement=n?db.prepare("UPDATE psychology_video_hit_versions SET enabled=0,revision=revision+1,updated_at=? WHERE source_id=? AND version=? AND revision=? AND publish_item_id=''").bind(Date.now(),fm[1],n,row.revision):db.prepare('UPDATE psychology_video_hits SET revision=revision+1,updated_at=? WHERE id=? AND owner_id=? AND revision=? AND archived_at=0').bind(Date.now(),fm[1],parent.owner_id,row.revision);
     const statements=[statement,guard(db),...([...new Set(frames.map(f=>f.assetId).filter(Boolean))].flatMap(id=>assetPin(db,user,id,'image')))];
     if(!n)statements.push(db.prepare("UPDATE psychology_video_hit_versions SET enabled=0,revision=revision+1 WHERE source_id=? AND input_mode='frames' AND publish_item_id=''").bind(fm[1]));
     for(const f of frames)statements.push(db.prepare('INSERT INTO psychology_video_hit_frames(source_id,version,frame_index,asset_id,image_url,text,duration_seconds) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_id,version,frame_index) DO UPDATE SET asset_id=excluded.asset_id,image_url=excluded.image_url,text=excluded.text,duration_seconds=excluded.duration_seconds').bind(fm[1],n,f.index,f.assetId,f.imageUrl,f.text,f.durationSeconds));

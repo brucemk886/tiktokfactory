@@ -1,3 +1,4 @@
+import {hitAdmin,hitAssetScope} from './psychology-video-hit-access.js';
 import {videoHitUser,sourceRow,versionRow,allFrames,assertAssets} from './psychology-video-hits.js';
 import {normalizeHitRef,hitPublishStatements} from './psychology-video-hit-publishing.js';
 import {assetPin} from './psychology-video-hit-cleanup.js';
@@ -13,7 +14,7 @@ function validateFrames(frames){if(frames.length<1||frames.length>MAX_HIT_PHOTOS
 export async function hitPhotoInventory(env,actor,url){
  const user=await videoHitUser(env.DB,actor),page=Number(url.searchParams.get('page')||1),query=String(url.searchParams.get('q')||'').slice(0,100),size=12;
  if(!Number.isInteger(page)||page<1||page>10000)fail('页码无效。',400);
- const where="s.owner_id=? AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND (s.title LIKE ? OR v.title LIKE ? OR v.caption LIKE ?)",args=[user.id,'%'+query+'%','%'+query+'%','%'+query+'%'];
+ const where="(s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND (s.title LIKE ? OR v.title LIKE ? OR v.caption LIKE ?)",args=[user.id,hitAdmin(user),'%'+query+'%','%'+query+'%','%'+query+'%'];
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where).bind(...args).first();
  const rows=await env.DB.prepare('SELECT v.*,s.title source_title FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where+' ORDER BY v.created_at DESC,v.source_id,v.version LIMIT ? OFFSET ?').bind(...args,size,(page-1)*size).all();
  const items=[];for(const v of rows.results){const frames=await allFrames(env.DB,v.source_id,v.version);let reason='';try{validateFrames(frames);await assertAssets(env.DB,user,frames);}catch(e){reason=e.message;}items.push({ref:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title.slice(0,90),caption:v.caption||v.title,sourceTitle:v.source_title,name:v.name,frameCount:frames.length,frames:frames.slice(0,MAX_HIT_PHOTOS).map(f=>({index:f.index,previewUrl:f.previewUrl})),eligible:!reason,reason});}
@@ -40,7 +41,7 @@ export async function createHitPhotoBatch(env,actor,config,batchId,accounts){
 export async function loadHitPhotoImage(env,job,index){
  const p=JSON.parse(job.payload_json),frame=p.pages[index];if(!frame)fail('图片序号无效。',404);
  let response;
- if(frame.assetId){const asset=await env.DB.prepare("SELECT a.* FROM psychology_video_hit_assets a JOIN factory_users u ON u.id=a.owner_id WHERE a.id=? AND u.username=? AND a.cleanup_state='active'").bind(frame.assetId,job.created_by).first();if(!asset)fail('图片不存在、已清理或无权访问。',404);const object=await env.ARCHIVE.get(asset.r2_key);if(!object)fail('图片文件已失效。',410);response=new Response(object.body,{headers:{'Content-Type':asset.content_type}});}
+ if(frame.assetId){const actor=await env.DB.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(job.created_by).first();if(!actor)fail('图片不存在、已清理或无权访问。',404);const user=await videoHitUser(env.DB,actor);await sourceRow(env.DB,p.videoHitOrigin.sourceId,user);const access=hitAssetScope(user,'image');const asset=await env.DB.prepare("SELECT a.* FROM psychology_video_hit_assets a WHERE a.id=? AND "+access.sql+" AND a.cleanup_state='active'").bind(frame.assetId,...access.args).first();if(!asset)fail('图片不存在、已清理或无权访问。',404);const object=await env.ARCHIVE.get(asset.r2_key);if(!object)fail('图片文件已失效。',410);response=new Response(object.body,{headers:{'Content-Type':asset.content_type}});}
  else{let address=imageUrl(frame.imageUrl);for(let hop=0;hop<4;hop++){response=await (env.fetch||fetch)(address,{redirect:'manual',signal:AbortSignal.timeout(30000)});if(![301,302,303,307,308].includes(response.status))break;const location=response.headers.get('location');await response.body?.cancel();if(!location)fail('图片重定向无效。');address=imageUrl(new URL(location,address).href);}}
  if(!response?.ok)fail('图片读取失败，请检查二创图片链接。',502);
  const type=(response.headers.get('content-type')||'').split(';')[0].toLowerCase(),reader=response.body.getReader(),chunks=[];let size=0;

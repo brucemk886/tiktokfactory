@@ -1,3 +1,4 @@
+import {hitAssetScope} from './psychology-video-hit-access.js';
 import {discardExpiredVideoHitUpload} from './psychology-video-hit-cleanup.js';
 import {json} from './http.js';
 import {authenticate} from './factory-api.js';
@@ -6,7 +7,8 @@ import {UUID,fail} from '../../scripts/psychology-video-hit-contract.js';
 export const VIDEO_HIT_VIDEO_MAX=95*1024*1024;
 const TYPES={mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm'};
 export async function readyVideo(db,user,id){
- const row=await db.prepare("SELECT v.*,a.status FROM psychology_video_hit_videos v JOIN psychology_video_assets a ON a.id=v.id AND a.owner=? WHERE v.id=? AND v.owner_id=?").bind(user.username,id,user.id).first();
+ const access=hitAssetScope(user,'video','v');
+ const row=await db.prepare("SELECT v.*,a.status FROM psychology_video_hit_videos v JOIN factory_users uploader ON uploader.id=v.owner_id JOIN psychology_video_assets a ON a.id=v.id AND a.owner=uploader.username WHERE v.id=? AND "+access.sql).bind(id,...access.args).first();
  if(row&&row.cleanup_state!=='active')fail('成片已清理或正在清理。',410);
  if(!row||row.status!=='ready')fail('成片不存在、尚未上传完成或无权访问。',409);return row;
 }

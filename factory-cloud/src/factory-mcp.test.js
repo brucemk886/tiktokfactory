@@ -361,7 +361,7 @@ test('REST and MCP share exact UUID receipts, revisions, frame bindings and safe
  r=await f.video(token,'guide',{});assert.equal(r.structuredContent.writeAuthorized,true);assert.match(r.content[0].text,/psychology_videoHits_assets_upload_bytes/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM factory_jobs').get().n,0);assert.equal(f.requests.length,0);
 });
-test('video-hit upload retries keep immutable identity and block unsafe files, redirects and cross-owner reads',async t=>{
+test('video-hit upload retries keep immutable identity and unsafe-file guards while admin reads span creators',async t=>{
  const f=await videoSetup(t),a=await authorize(f,'video'),token=a.token.access_token,uploadId=crypto.randomUUID(),image={file_id:'file-fixture',download_url:'https://files.oaiusercontent.com/test.png?sig=fixture'};
  let downloads=0;f.env.fetch=async(u,init)=>{downloads++;assert.equal(init.redirect,'manual');assert.equal(init.headers,undefined);return new Response(hitPng,{headers:{'content-type':'image/png'}});};
  const first=await f.video(token,'assets_upload_file',{uploadId,image});assert.equal(first.isError,false,JSON.stringify(first));assert.equal(downloads,1);
@@ -370,7 +370,7 @@ test('video-hit upload retries keep immutable identity and block unsafe files, r
  f.env.fetch=async()=>new Response(null,{status:302,headers:{location:'https://evil.example/secret'}});
  r=await f.video(token,'assets_upload_file',{uploadId:crypto.randomUUID(),image});assert.equal(r.isError,true);assert.equal(f.files.size,1);
  r=await f.video(token,'assets_upload_bytes',{uploadId:crypto.randomUUID(),contentType:'image/png',imageBase64:Buffer.from('not png').toString('base64')});assert.equal(r.isError,true);assert.equal(f.files.size,1);
- f.sqlite.prepare("UPDATE psychology_video_hit_assets SET owner_id='other'").run();r=await f.video(token,'assets_get',{uploadId});assert.equal(r.structuredContent.httpStatus,404);
+ f.sqlite.prepare("UPDATE psychology_video_hit_assets SET owner_id='other'").run();r=await f.video(token,'assets_get',{uploadId});assert.equal(r.structuredContent.httpStatus,200);
  r=await f.video(token,'assets_upload_bytes',{uploadId,contentType:'image/png',imageBase64:hitPng.toString('base64')});assert.equal(r.structuredContent.httpStatus,409);
  assert.ok(!JSON.stringify(f.sqlite.prepare('SELECT * FROM factory_ai_requests').all()).includes('sig=fixture'));
  const count=f.sqlite.prepare('SELECT COUNT(*) n FROM factory_mcp_connections').get().n;assert.ok(count>0);f.sqlite.prepare('UPDATE factory_mcp_connections SET revoked_at=1').run();assert.equal((await rpc(f,token,'tools/list')).status,401);
@@ -384,7 +384,7 @@ test('MCP request receipts do not expose other operations and failed source revi
  r=await f.video(token,'get',{params:{id:created.id}});assert.equal(r.structuredContent.source.title,'Original');
  f.sqlite.prepare("UPDATE factory_ai_requests SET action='videoHits.publish' WHERE request_id=?").run(requestId);
  r=await f.video(token,'requests_get',{requestId});assert.equal(r.structuredContent.httpStatus,403);assert.equal(r.structuredContent.result,undefined);
- f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='someone-else'").run();r=await f.video(token,'get',{params:{id:created.id}});assert.equal(r.structuredContent.httpStatus,404);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='someone-else'").run();r=await f.video(token,'get',{params:{id:created.id}});assert.equal(r.structuredContent.httpStatus,200);
  assert.equal(f.requests.length,0);
 });
 test('public guide is anonymous, exact and read-only; MCP transport bounds streamed payloads',async t=>{

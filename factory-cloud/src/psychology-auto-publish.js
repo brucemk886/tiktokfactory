@@ -235,7 +235,8 @@ export async function assertAutoJobAccess(env, job, options = {}) {
   const payload = JSON.parse(job.payload_json || '{}');
   if(job.type==='psychology-video-remix'||payload.videoHitOrigin){
     const actor=await env.DB.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(job.created_by).first();
-    await (await import('./psychology-video-hits.js')).videoHitUser(env.DB,actor);
+    const {videoHitUser,sourceRow}=await import('./psychology-video-hits.js'),user=await videoHitUser(env.DB,actor),origin=payload.videoHitOrigin||payload.videoRemix;
+    if(origin?.sourceId)await sourceRow(env.DB,origin.sourceId,user);
   }
   if (!payload.psychologyAutomation) return;
   const user = await loadAutoUser(env.DB, job.created_by);

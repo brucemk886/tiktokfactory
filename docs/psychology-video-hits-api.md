@@ -1,5 +1,11 @@
 # 心理学视频爆款：直接 API 写入文档
 
+## 创建用户与管理员权限
+
+具有视频爆款模块权限的管理员可以查看和管理所有成员导入的原选题、二创及关联图片/成片；普通用户只可管理自己创建的选题。列表和详情返回 `ownerId`、`ownerUsername`（创建用户），与调用方填写的 `importSource`（导入来源）分别展示。管理员编辑不会转移原选题或素材的归属。
+
+管理员发布成员素材时，任务与发布账号权限归实际操作的管理员；仍需心理学发布权限、账号分组、粉丝门槛、项目加入及现有防重检查。创建用户无发布权限也可供管理员审核后使用。新建仍归实际创建用户，externalId 仍在该用户内唯一；管理员查重时也须核对 ownerId，明确是为已有选题追加版本还是新建自己的来源。
+
 ## 通过页面导入二创图文（无需 API Key）
 
 HTTP 或 MCP 不可用的智能体，可在已登录的工厂浏览器打开 https://factory.tiktokaitool.com/psychology-video-hits/import 。视频爆款列表的“新增二创导入”也会进入此页。
@@ -287,7 +293,7 @@ print(status, result)
 - 创建/修改放在 `params.body.importSource`；筛选放在 `params.query.importSource`，精确匹配，空值/不填表示全部，先筛选再分页，可与类型/状态一起使用。
 - 去除首尾空格、转小写，1–64 位，格式 `^[a-z0-9][a-z0-9._-]{0,63}$`。推荐 `grokbot` / `gpt-dot`；未来智能体可直接用新名称，无需改接口。页面手工新增默认 `manual`。
 - 用户已确认旧记录全部来自 grokbot，迁移统一补为 `grokbot`，不修改旧 revision、时间或回执。为兼容仍在运行的旧导入，创建时不传也默认 `grokbot`；更新时不传保留原值。新调用方请显式传入真实名称，不能把默认值当身份识别。
-- 此字段是调用方填写的来源标记，不是已验证身份或权限凭据；来源本身按当前账号隔离，OAuth/API 权限规则不变。
+- 此字段是调用方填写的来源标记，不是已验证身份或权限凭据；普通用户按创建用户隔离；有模块权限的管理员可管理所有成员来源，OAuth/API 仍需原有认证与授权。
 - 例：列出 Dot 导入：`{"module":"psychology","action":"videoHits.list","params":{"query":{"importSource":"gpt-dot","page":1}}}`；修正标签用 `videoHits.update`，传真实 `id`、最新 `revision`、`importSource` 和新 `requestId`。
 
 ## 图片上传

@@ -1,3 +1,4 @@
+import {hitAdmin} from './psychology-video-hit-access.js';
 import {videoHitUser,sourceRow,versionRow,guard} from './psychology-video-hits.js';
 import {assetPin} from './psychology-video-hit-cleanup.js';
 import {readyVideo} from './psychology-video-hit-videos.js';
@@ -15,41 +16,41 @@ export async function hitVideoInventory(env,actor,{page=1,limit=20,selection='re
  const user=await videoHitUser(env.DB,actor),order={random:'RANDOM()',popular:"CAST(COALESCE(json_extract(s.video_data_json,'$.playCount'),0) AS INTEGER) DESC,v.created_at DESC",recent:'v.created_at DESC,s.id,v.version'}[selection]||'v.created_at DESC,s.id,v.version';
  const data=await env.DB.prepare(`SELECT v.*,s.revision source_revision,s.title source_title,j.worker_id,j.result_json,a.id asset_id,a.file_name,a.file_size,a.status asset_status,prep.status preparation_status,prep.error preparation_error
  FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id
- LEFT JOIN factory_jobs j ON j.id=v.render_job_id AND j.status='done' AND j.created_by=?
- LEFT JOIN psychology_video_assets a ON a.owner=? AND a.cleanup_state='active' AND ((v.input_mode='video' AND a.id=v.video_asset_id) OR (v.input_mode='frames' AND a.source_job_id=v.render_job_id AND a.result_index=0))
- LEFT JOIN psychology_video_hit_videos d ON d.id=v.video_asset_id AND d.owner_id=s.owner_id AND d.cleanup_state='active'
+ LEFT JOIN factory_jobs j ON j.id=v.render_job_id AND j.status='done'
+ LEFT JOIN psychology_video_assets a ON a.id=(SELECT candidate.id FROM psychology_video_assets candidate WHERE candidate.cleanup_state='active' AND ((v.input_mode='video' AND candidate.id=v.video_asset_id) OR (v.input_mode='frames' AND candidate.source_job_id=v.render_job_id AND candidate.result_index=0)) ORDER BY (candidate.status='ready') DESC,(candidate.owner=?) DESC,candidate.created_at DESC,candidate.id LIMIT 1)
+ LEFT JOIN psychology_video_hit_videos d ON d.id=v.video_asset_id  AND d.cleanup_state='active'
  LEFT JOIN factory_jobs prep ON prep.id='video-archive-'||a.id
- WHERE s.owner_id=? AND s.archived_at=0 AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id=''
+ WHERE (s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id=''
  AND (v.title LIKE ? OR s.title LIKE ? OR v.caption LIKE ?)
- AND ((v.input_mode='video' AND d.id IS NOT NULL AND a.status='ready' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_video_usage u WHERE u.owner_id=s.owner_id AND u.digest=d.digest))
+ AND ((v.input_mode='video' AND d.id IS NOT NULL AND a.status='ready' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_video_usage u WHERE u.owner_id=d.owner_id AND u.digest=d.digest))
  OR (v.input_mode='frames' AND v.render_revision=v.revision AND v.render_source_revision=s.revision AND j.id IS NOT NULL AND j.worker_id<>'' AND json_extract(j.result_json,'$.results[0].fileName') IS NOT NULL))
- ORDER BY `+order+' LIMIT ? OFFSET ?').bind(user.username,user.username,user.id,'%'+query+'%','%'+query+'%','%'+query+'%',limit+1,(page-1)*limit).all();
+ ORDER BY `+order+' LIMIT ? OFFSET ?').bind(user.username,user.id,hitAdmin(user),'%'+query+'%','%'+query+'%','%'+query+'%',limit+1,(page-1)*limit).all();
  return {page,pageSize:limit,hasMore:data.results.length>limit,videos:data.results.slice(0,limit).map(v=>({id:v.source_id+'-v'+v.version,assetId:v.asset_id||'',videoHit:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title,caption:v.caption||v.title,sourceTitle:v.source_title,versionName:v.name,inputMode:v.input_mode,fileName:v.file_name||JSON.parse(v.result_json||'{}').results?.[0]?.fileName||'',fileSize:v.file_size||0,createdAt:v.created_at,status:v.asset_status||'local',sourceJobId:v.render_job_id,resultIndex:0,canPrepare:Boolean(v.worker_id),preparationStatus:v.preparation_status,error:v.preparation_error||'',previewUrl:v.asset_status==='ready'?'/api/psychology-video-library/'+v.asset_id+'/file':''}))};
 }
 export async function resolveHitVideo(env,actor,ref,assetId){
  const user=await videoHitUser(env.DB,actor),origin=normalizeHitRef(ref),source=await sourceRow(env.DB,origin.sourceId,user),v=await versionRow(env.DB,origin.sourceId,origin.version,user);
  if(source.archived_at||!v.enabled||v.cleaned_at||v.publish_item_id||v.revision!==origin.revision)fail('二创已被提交、停用或修改，请刷新后重新选择。');
- let asset=null,render=null,digest='';
+ let asset=null,render=null,digest='',digestOwnerId='';
  if(v.input_mode==='video'){
-  const video=await readyVideo(env.DB,user,v.video_asset_id);digest=video.digest;
-  if(await env.DB.prepare('SELECT item_id FROM psychology_video_hit_video_usage WHERE owner_id=? AND digest=?').bind(user.id,digest).first())fail('此成片已提交发布，不能重复使用同一视频文件。');
-  asset=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE id=? AND owner=? AND cleanup_state='active' AND status='ready'").bind(video.id,user.username).first();
+  const video=await readyVideo(env.DB,user,v.video_asset_id);digest=video.digest;digestOwnerId=video.owner_id;
+  if(await env.DB.prepare('SELECT item_id FROM psychology_video_hit_video_usage WHERE owner_id=? AND digest=?').bind(video.owner_id,digest).first())fail('此成片已提交发布，不能重复使用同一视频文件。');
+  asset=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE id=? AND cleanup_state='active' AND status='ready'").bind(video.id).first();
  }else{
   if(v.render_revision!==v.revision||v.render_source_revision!==source.revision)fail('二创文案或图片已变化，请先重新合成成片。');
-  render=await env.DB.prepare("SELECT * FROM factory_jobs WHERE id=? AND created_by=? AND status='done'").bind(v.render_job_id,user.username).first();
+  render=await env.DB.prepare("SELECT * FROM factory_jobs WHERE id=? AND status='done'").bind(v.render_job_id).first();
   if(!render?.worker_id||!JSON.parse(render.result_json).results?.[0]?.fileName)fail('二创尚未合成完成。');
-  asset=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE source_job_id=? AND result_index=0 AND owner=? AND cleanup_state='active' AND status='ready'").bind(render.id,user.username).first();
+  asset=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE source_job_id=? AND result_index=0 AND cleanup_state='active' AND status='ready' ORDER BY (owner=?) DESC,created_at DESC,id LIMIT 1").bind(render.id,user.username).first();
  }
  if(assetId!==undefined&&(!asset||asset.id!==assetId))fail('所选成片已变化，请刷新列表。');
  if(asset&&!await env.ARCHIVE.head(asset.r2_key))fail('成片文件已失效，请重新准备视频。');
  if(!asset&&!render)fail('成片素材不可用。');
- return {user,origin,source,v,asset,render,digest,title:v.title,caption:v.caption||v.title};
+ return {user,origin,source,v,asset,render,digest,digestOwnerId,title:v.title,caption:v.caption||v.title};
 }
 export function hitPublishStatements(db,hit,id,stamp){
- const {user,source,v,asset,digest}=hit;
- const statements=[db.prepare("UPDATE psychology_video_hit_versions SET publish_state='reserved',publish_item_id=? WHERE source_id=? AND version=? AND revision=? AND enabled=1 AND cleaned_at=0 AND publish_item_id='' AND input_mode=? AND video_asset_id=? AND render_job_id=? AND render_revision=? AND render_source_revision=?").bind(id,source.id,v.version,v.revision,v.input_mode,v.video_asset_id,v.render_job_id,v.render_revision,v.render_source_revision),guard(db),db.prepare('UPDATE psychology_video_hits SET revision=revision WHERE id=? AND owner_id=? AND revision=? AND archived_at=0').bind(source.id,user.id,source.revision),guard(db)];
- if(asset)statements.push(db.prepare("UPDATE psychology_video_assets SET updated_at=? WHERE id=? AND owner=? AND status='ready' AND cleanup_state='active'").bind(stamp,asset.id,user.username),guard(db));
- if(digest)statements.push(...assetPin(db,user,asset.id,'video',stamp),db.prepare('INSERT INTO psychology_video_hit_video_usage(owner_id,digest,asset_id,item_id) VALUES(?,?,?,?)').bind(user.id,digest,asset.id,id));
+ const {user,source,v,asset,digest,digestOwnerId}=hit;
+ const statements=[db.prepare("UPDATE psychology_video_hit_versions SET publish_state='reserved',publish_item_id=? WHERE source_id=? AND version=? AND revision=? AND enabled=1 AND cleaned_at=0 AND publish_item_id='' AND input_mode=? AND video_asset_id=? AND render_job_id=? AND render_revision=? AND render_source_revision=?").bind(id,source.id,v.version,v.revision,v.input_mode,v.video_asset_id,v.render_job_id,v.render_revision,v.render_source_revision),guard(db),db.prepare('UPDATE psychology_video_hits SET revision=revision WHERE id=? AND owner_id=? AND revision=? AND archived_at=0').bind(source.id,source.owner_id,source.revision),guard(db)];
+ if(asset)statements.push(db.prepare("UPDATE psychology_video_assets SET updated_at=? WHERE id=? AND owner=? AND status='ready' AND cleanup_state='active'").bind(stamp,asset.id,asset.owner),guard(db));
+ if(digest)statements.push(...assetPin(db,user,asset.id,'video',stamp),db.prepare('INSERT INTO psychology_video_hit_video_usage(owner_id,digest,asset_id,item_id) VALUES(?,?,?,?)').bind(digestOwnerId,digest,asset.id,id));
  return statements;
 }
 export async function commitVideoBatch(env,user,config,batchId,entries,accounts){

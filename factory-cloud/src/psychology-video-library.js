@@ -1,6 +1,8 @@
+import {hasPsychologyModule} from './psychology-permissions.js';
+import {hitLibraryScope} from './psychology-video-hit-access.js';
 import {publishScheduleError} from '../../public/psychology-publish-time.js';
 import {normalizeHitRef,hitVideoInventory,resolveHitVideo,commitVideoBatch} from './psychology-video-hit-publishing.js';
-import {guard} from './psychology-video-hits.js';
+import {guard,videoHitUser,sourceRow} from './psychology-video-hits.js';
 import {json,readJson,sha256Hex} from './http.js';
 import {loadAutoUser,assertAutoJobAccess,insertAutoJob} from './psychology-auto-publish.js';
 import {assertOfficialPublishAccess} from './official.js';
@@ -16,7 +18,7 @@ const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{st
 const parse=value=>{try{return JSON.parse(value||'{}');}catch{return {};}};
 const fileName=value=>{const name=String(value||'');if(!name||name.length>180||/[\\/\x00-\x1f]/.test(name)||!TYPES[name.split('.').pop().toLowerCase()])fail('只支持文件名有效的 MP4、MOV、WebM 视频。');return name;};
 const publicAsset=row=>({id:row.id,fileName:row.file_name,title:row.file_name,sourceJobId:row.source_job_id,resultIndex:row.result_index,fileSize:row.file_size,status:row.status,createdAt:row.created_at,previewUrl:row.status==='ready'?BASE+'/'+row.id+'/file':''});
-async function owned(db,id,user){const row=await db.prepare('SELECT * FROM psychology_video_assets WHERE id=? AND owner=?').bind(id,user.username).first();if(!row)fail('视频不存在或无权访问。',404);return row;}
+async function owned(db,id,user){let row=await db.prepare('SELECT * FROM psychology_video_assets WHERE id=? AND owner=?').bind(id,user.username).first();if(row)return row;if(!hasPsychologyModule(user,'psychology-video-hits'))fail('视频不存在或无权访问。',404);const actor=await videoHitUser(db,user),scope=hitLibraryScope(actor);row=await db.prepare('SELECT a.* FROM psychology_video_assets a WHERE a.id=? AND '+scope.sql).bind(id,...scope.args).first();if(!row)fail('视频不存在或无权访问。',404);return row;}
 export function normalizeSelectedPublish(input,now=Date.now(),replay=false){
  if(!/^[0-9a-f-]{36}$/i.test(String(input.requestId||'')))fail('提交编号无效。');
  if(!Array.isArray(input.items)||input.items.length<1||input.items.length>20)fail('每批请选择1–20条成片。');
@@ -89,9 +91,9 @@ export async function handleVideoLibrary(request,env,url,session){
  }
  if(url.pathname===BASE+'/import'&&request.method==='POST'){
   const body=await readJson(request),index=body.resultIndex;if(!Number.isInteger(index)||index<0||index>100)fail('视频索引无效。');
-  const source=await env.DB.prepare(`SELECT * FROM factory_jobs WHERE id=? AND type IN (${JOBS}) AND status='done' AND (type<>'psychology-video-remix' OR created_by=?)`).bind(String(body.jobId||''),user.username).first();
+  const source=await env.DB.prepare(`SELECT * FROM factory_jobs WHERE id=? AND type IN (${JOBS}) AND status='done'`).bind(String(body.jobId||'')).first();
   if(!source||!source.worker_id)fail('找不到可取回的工厂成片，请使用本地上传。',404);
-  if(source.type==='psychology-video-remix'){const origin=JSON.parse(source.payload_json).videoRemix,version=await env.DB.prepare('SELECT cleaned_at FROM psychology_video_hit_versions WHERE source_id=? AND version=?').bind(origin.sourceId,origin.version).first();if(version?.cleaned_at)fail('该二创已发布并清理，不能重新准备素材。',410);}
+  if(source.type==='psychology-video-remix'){const origin=JSON.parse(source.payload_json).videoRemix;await sourceRow(env.DB,origin.sourceId,await videoHitUser(env.DB,user));const version=await env.DB.prepare('SELECT cleaned_at FROM psychology_video_hit_versions WHERE source_id=? AND version=?').bind(origin.sourceId,origin.version).first();if(version?.cleaned_at)fail('该二创已发布并清理，不能重新准备素材。',410);}
   const result=parse(source.result_json),video=(result.results||result.generatedVideos||[])[index],name=fileName(video?.fileName);
   const id=(await sha256Hex(user.username+':'+source.id+':'+index)).slice(0,32),stamp=Date.now();
   if(source.type==='psychology-video-remix'){const origin=JSON.parse(source.payload_json).videoRemix;await env.DB.prepare('INSERT INTO psychology_video_hit_render_assets(asset_id,source_id,version,owner_id) VALUES(?,?,?,?) ON CONFLICT(asset_id) DO NOTHING').bind(id,origin.sourceId,origin.version,user.id).run();}

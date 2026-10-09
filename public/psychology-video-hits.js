@@ -57,7 +57,7 @@ async function load(){
  const token=++listToken;$('listStatus').textContent='正在读取…';
  try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value+'&inputMode='+inputMode+'&importSource='+encodeURIComponent(sourceImporter));if(token!==listToken)return;
  const totalPages=Math.ceil(data.total/data.pageSize);if(page>Math.max(1,totalPages)){page=Math.max(1,totalPages);return load();}
- list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="导入来源"><span class="vh-badge vh-import-badge">'+escape(s.importSource)+'</span></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+(s.activeVersionCount??s.versionCount)+' / 20 在库<small>累计 '+s.versionCount+' 个版本</small>'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="6">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
+ list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>创建用户：'+escape(s.ownerUsername||'未知')+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="导入来源"><span class="vh-badge vh-import-badge">'+escape(s.importSource)+'</span></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+(s.activeVersionCount??s.versionCount)+' / 20 在库<small>累计 '+s.versionCount+' 个版本</small>'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="6">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
  $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创')+(sourceImporter?' · '+sourceImporter:'');$('recordInfo').textContent='共 '+data.total+' 条记录';$('pageInfo').textContent=totalPages?'第 '+page+' / '+totalPages+' 页':'共 0 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
 }
@@ -67,7 +67,7 @@ async function loadDetail(){
  d.versions.sort((a,b)=>a.version-b.version);detail=d;
  if(view==='detail'&&!current())throw new Error('此二创版本尚未创建，请返回二创列表。');
  $('sourceSummary').hidden=false;$('sourceTitle').textContent=d.source.title;$('sourceLink').href=d.source.videoUrl;
- $('sourceMeta').textContent=d.source.externalId+' · 导入来源：'+d.source.importSource+' · '+metric(d.source.videoData.playCount)+' 播放 · '+d.frameCount+' 帧原图';
+ $('sourceMeta').textContent=d.source.externalId+' · 创建用户：'+(d.source.ownerUsername||'未知')+' · 导入来源：'+d.source.importSource+' · '+metric(d.source.videoData.playCount)+' 播放 · '+d.frameCount+' 帧原图';
  $('sourceData').textContent=JSON.stringify(d.source.videoData,null,2);
  lock('editSource',Boolean(d.source.archivedAt));
  lock('archiveSource',!d.source.archivedAt&&(!d.versions.length||d.versions.some(v=>v.publishState!=='published')));

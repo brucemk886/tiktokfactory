@@ -81,7 +81,7 @@ test('archive retains original copy and images permanently; restore is scoped, r
  await assert.rejects(f.write('/'+source+'/restore',{revision:1},'POST'),/revision/);
  const restore={requestId:crypto.randomUUID(),revision:2};const restored=await(await f.call('/'+source+'/restore','POST',restore)).json();assert.equal(restored.archivedAt,0);assert.equal(restored.revision,3);assert.deepEqual(await(await f.call('/'+source+'/restore','POST',restore)).json(),restored);
  assert.ok((await(await f.call('')).json()).items.some(s=>s.id===source));await f.version(source,3);await assert.rejects(f.write('/'+source+'/versions/1',{revision:1,title:'Reuse'}),/不能修改/);
- f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other',archived_at=1 WHERE id=?").run(source);await assert.rejects(f.write('/'+source+'/restore',{revision:3},'POST'),/无权/);assert.equal(f.requests.length,0);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other',archived_at=1 WHERE id=?").run(source);f.sqlite.prepare("UPDATE factory_users SET role='operator' WHERE id='admin'").run();await assert.rejects(f.write('/'+source+'/restore',{revision:3},'POST'),/无权/);assert.equal(f.requests.length,0);
 });
 test('local MP4 cleanup is queued once for its original worker, holds active transfers, verifies identity and retries failure',async t=>{
  const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});const renderId=await f.job({id:'vh-render-synthetic',status:'running',workerId:'w',payload:{module:'psychology',videoRemix:{sourceId:source,version:1}}});

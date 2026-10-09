@@ -58,7 +58,7 @@ test('full, archived, unowned and revoked imports do not create versions',async 
  const session=()=>createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id,originals:[]})),{request:f.request,upload:f.upload});
  await assert.rejects(session().run(),/20/);assert.equal(f.uploads.length,4);
  f.sqlite.prepare('UPDATE psychology_video_hits SET archived_at=1 WHERE id=?').run(first.id);await assert.rejects(session().run(),/归档/);
- f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(first.id);await assert.rejects(session().run(),/无权/);
+ f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(first.id);f.sqlite.prepare("UPDATE factory_users SET role='operator' WHERE id='admin'").run();await assert.rejects(session().run(),/无权/);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();await assert.rejects(createPhotoImportSession(normalizePhotoImport(input()),{request:f.request,upload:f.upload}).run(),/权限/);assert.equal(f.counts().psychology_video_hit_versions,20);assert.equal(f.counts().factory_jobs,0);
 });
 test('import page and direct HTML require the explicit Video Hits module',()=>{
