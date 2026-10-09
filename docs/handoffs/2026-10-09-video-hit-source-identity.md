@@ -26,7 +26,10 @@ Allow different importing agents to keep independent material for the same origi
 - No production publication, rendering or image import executed by tests. Only read-only production schema/count checks before deploy; no active jobs interrupted.
 
 ## Unfinished work
-Production deployment and read-only verification pending at commit time.
+None. Production deployment and read-only verification completed.
 
 ## Recommended next step
 After rollout, use a stable externalId and explicit importSource for each agent, and select the corresponding source when appending versions.
+
+## Release evidence
+Runtime commit 2e4eb84158b6abe3b715ccaeed0e76dbd4bf4bfc was committed and pushed to main, after integrating the independent account-group count release. Clean HEAD == origin/main was checked before npm run deploy. Migration 0086 applied successfully (9 statements, 20.22 ms reported); deployed Worker version cfdcac8e-59f1-4544-9ae4-c30a4389cf7d. Read-only production checks found the new three-column unique constraint; source count/revision sum, version count and frame count matched the pre-deploy aggregates (79/164, 155, 1043), with zero orphan version/frame source references. Live import JavaScript and API guide returned HTTP 200 and matched local SHA-256; the private import route still redirects anonymous access to login. No live test source or publication was created.
