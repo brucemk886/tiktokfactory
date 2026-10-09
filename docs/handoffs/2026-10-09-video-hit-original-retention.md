@@ -17,7 +17,10 @@ Migration0085; Video Hits source, cleanup, publishing validators, API/MCP catalo
 Focused cleanup/import/REST/MCP/photo/video suite:123 passed. Covers permanent unique/shared originals, archive/restore revision/idempotency/ownership, twenty active capacity, concurrent insertion, cleanup release, version21 frame writes and photo/video queue reservation, preserved seeded migration rows/triggers/indexes/foreign keys. Full suite passed1400/1400 including real Chrome desktop/mobile, archive restoration, retained original text and full-capacity cleanup/new-version21 flow. After integrating the latest member-permission changes, the combined full suite passed1423/1423. Manifest and diff checks passed; the continuation screenshot was visually inspected. Production read-only precheck found64 sources,125 versions,915 total frames,474 original frames and zero previously cleaned original sources. Tests use local mocks; no real publishing calls.
 
 ## Unfinished work
-Complete full verification, push main and guarded production deployment.
+Implementation, full verification and production deployment are complete.
 
 ## Recommended next step
 Use the existing original source and a new nextVersion for every fresh recreation. Do not overwrite or resend a published identity.
+
+## Release evidence
+Runtime commit05a893f076901412bdd9c0b5b1dfd6c05f821d42 was pushed to GitHub main and deployed via npm run deploy from a clean exact HEAD == origin/main checkout. Migration0085 applied successfully (23 commands,49.33ms). Cloudflare version9f37209c-df11-4024-a6ee-11dda4b2023b deployed with all existing cron/queue/workflow bindings. Post-migration read-only counts exactly matched the precheck:64 original sources,125 versions,915 frames,474 original frames,zero previously cleaned originals. The active-capacity trigger exists. Live psychology-video-hits.js and the API guide returned200 and matched release SHA256; private cleanup remained401 without login. Existing transfer PID100756 retained start time2026-10-08 17:13:34.
