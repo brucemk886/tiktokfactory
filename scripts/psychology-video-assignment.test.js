@@ -30,3 +30,12 @@ test('different random draws change matching, preserve captions and never duplic
 test('invalid choices and schedules fail before any submission',()=>{
  for(const [vs,as,c] of [[[],accounts(1),config],[videos(21),accounts(1),config],[videos(1),[],config],[videos(1),accounts(2),config],[videos(1),accounts(1),{...config,scheduleAt:NaN}],[videos(1),accounts(1),{...config,intervalMinutes:0}],[videos(1),accounts(1),{...config,intervalMinutes:1.5}]])assert.throws(()=>assignSelectedVideoItems(vs,as,c));
 });
+
+
+test('new video selections default AI disclosure off and retain explicit choices',()=>{
+ const {isAiGenerated:omitted,...schedule}=config;
+ for(const selection of [schedule,{...schedule,isAiGenerated:false},{...schedule,isAiGenerated:true}]){
+  const items=assignSelectedVideoItems(videos(3),accounts(2),selection);
+  assert.ok(items.every(item=>item.isAiGenerated===(selection.isAiGenerated??false)));
+ }
+});

@@ -109,7 +109,7 @@ try{
  assert.equal(await page.$$eval('#selectedVideoList li',ns=>ns.length),3);
  assert.match(await page.$eval('#summary',n=>n.textContent),/随机均分.*1–2 条/);
  assert.equal(await page.$$eval('#batchForm>.auto-section',ns=>ns.filter(n=>!n.hidden).map(n=>n.id).join(',')),'videoSelectionSection,accountsSection,oneSection,scheduleSection');
- await page.click('#selectedVideosAi');
+ assert.equal(await page.$eval('#selectedVideosAi',n=>n.checked),false,'new One video tasks default AI disclosure off');
  assert.equal(calls.filter(c=>c.path==='/api/psychology-video-publish').length,0);
  await page.$eval('#videoSelectionSection',n=>n.scrollIntoView({block:'start'}));
  const capture=process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR;if(capture){fs.mkdirSync(capture,{recursive:true});await page.screenshot({path:path.join(capture,'selected-desktop.png')});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(capture,'create-header.png')});await page.$eval('#accountsSection',n=>n.scrollIntoView({block:'start'}));await page.screenshot({path:path.join(capture,'selected-review.png')});}
@@ -130,6 +130,7 @@ try{
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=one',{waitUntil:'networkidle0'});
  await page.waitForSelector('[data-pick]');await page.click('[data-pick]');await page.click('#accounts input[value="a"]');await page.select('#oneProject',project);
  await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 1 / 1'));
+ assert.equal(await page.$eval('#selectedVideosAi',n=>n.checked),false,'new task resets the default');await page.click('#selectedVideosAi');assert.equal(await page.$eval('#selectedVideosAi',n=>n.checked),true);
  assert.match(await page.$eval('#scheduleTimeLabel',n=>n.textContent),/Asia\/Taipei/);
  const beforeSchedulePosts=calls.filter(c=>c.path==='/api/psychology-video-publish').length;
  await page.$eval('#scheduleAt',n=>{const d=new Date(Date.now()-60000);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());n.value=d.toISOString().slice(0,16);n.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -143,16 +144,17 @@ try{
  const rejected=calls.filter(c=>c.path==='/api/psychology-video-publish').at(-1).body;
  const edited=await page.evaluate(()=>{const n=document.querySelector('#scheduleAt'),d=new Date(new Date(n.value).getTime()+3600000);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());n.value=d.toISOString().slice(0,16);document.querySelector('#intervalMinutes').value='17';return Math.floor(new Date(n.value).getTime()/1000);});
  await page.click('#submitBatch');await page.waitForFunction(()=>!location.search.includes('create='));
- const corrected=calls.filter(c=>c.path==='/api/psychology-video-publish').at(-1).body;
+ const corrected=calls.filter(c=>c.path==='/api/psychology-video-publish').at(-1).body;assert.ok(corrected.items.every(i=>i.isAiGenerated===true),'manual AI selection survives a corrected submission');
  assert.notEqual(corrected.requestId,rejected.requestId,'editing time invalidates frozen rejected payload even without an input event');assert.equal(corrected.items[0].scheduleAt,edited);
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=normal',{waitUntil:'networkidle0'});
  await page.waitForFunction(()=>document.querySelector('#accounts input'));
+ assert.equal(await page.$eval('#hitVideoAi',n=>n.checked),false,'normal video tasks default AI disclosure off');
  assert.equal(await page.$eval('#sourceType',n=>n.value),'video-hits');assert.equal(await page.$eval('#oneEnabled',n=>n.checked),false);
  assert.equal(await page.$eval('#hitSourceNote',n=>n.hidden),false);await page.click('#selectVisibleAccounts');await page.$eval('#count',n=>{n.value='4';n.dispatchEvent(new Event('input',{bubbles:true}));});
  approve=false;await page.click('#submitBatch');assert.equal(calls.filter(c=>c.path==='/api/psychology-auto-publish'&&c.method==='POST').length,0);
  await page.setViewport({width:320,height:800});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  approve=true;await page.click('#submitBatch');await page.waitForFunction(()=>!location.search.includes('create='));
- const normal=calls.find(c=>c.path==='/api/psychology-auto-publish'&&c.method==='POST');assert.equal(normal.body.sourceType,'video-hits');assert.equal(normal.body.template,'selected-video');assert.equal(normal.body.isAiGenerated,true);assert.equal(normal.body.tiktokOne,undefined);
+ const normal=calls.find(c=>c.path==='/api/psychology-auto-publish'&&c.method==='POST');assert.equal(normal.body.sourceType,'video-hits');assert.equal(normal.body.template,'selected-video');assert.equal(normal.body.isAiGenerated,false);assert.equal(normal.body.tiktokOne,undefined);
  await page.setViewport({width:1440,height:1050});await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=normal',{waitUntil:'networkidle0'});
  await page.click('[data-media="photo"]');await page.select('#photoSource','video-hits');await page.waitForSelector('[data-photo-pick]');
  assert.equal(await page.$eval('#hitPhotoSelection',n=>n.hidden),false);assert.equal(await page.$eval('#styleMode',n=>n.closest('label').hidden),true);assert.equal(await page.$eval('#rewriteCopyField',n=>n.hidden),true);
@@ -175,7 +177,7 @@ try{
  assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);assert.equal(await page.$eval('#clearPageVideos',n=>n.disabled),false);
  await page.click('#selectedVideosAi');
  await page.click('[data-pick="1"]');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'18');await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.waitForFunction(()=>!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');
- assert.match(await page.$eval('#selectedVideoList',n=>n.textContent),/Bulk video 0/);assert.equal(await page.$eval('#selectedVideosAi',n=>n.checked),false);
+ assert.match(await page.$eval('#selectedVideoList',n=>n.textContent),/Bulk video 0/);assert.equal(await page.$eval('#selectedVideosAi',n=>n.checked),true,'bulk selection preserves a manually enabled AI flag');
  await page.click('#videoNext');assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);
  await page.waitForFunction(()=>document.querySelector('#videoPage').textContent.includes('2')&&!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');
  assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'20');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),1);assert.match(await page.$eval('#videoPickerStatus',n=>n.textContent),/还有 19 条未选择/);

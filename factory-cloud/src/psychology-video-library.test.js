@@ -39,13 +39,13 @@ test('generated inventory paginates psychology results; import only queues pinne
  await assert.rejects(f.transfer(job.id,'PUT','fake-mp4','other'),/当前工人/);await f.transfer(job.id,'PUT','fake-mp4');
  assert.equal((await (await f.call('/'+imported.assetId+'/file')).text()),'fake-mp4');assert.deepEqual(f.counts(),{joins:0,uploads:0});
 });
-test('explicit selection freezes mapping, project, caption and schedule and replays once',async t=>{
- const f=await setup(t),v=await f.upload(),body=config(v.id);const result=await (await f.submit(body)).json();await f.submit(body);
+for(const aiFlag of [false,true])test('explicit selection freezes mapping, project, caption and schedule and replays once (AI=' + aiFlag + ')',async t=>{
+ const f=await setup(t),v=await f.upload(),body=config(v.id);body.items[0].isAiGenerated=aiFlag;const result=await (await f.submit(body)).json();await f.submit(body);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_publish_batches').get().n,1);assert.equal(f.counts().joins,1);
- const job=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE type='psychology-selected-video'").get(),p=JSON.parse(job.payload_json);assert.equal(p.publish.videoDesc,'Reviewed caption');assert.equal(p.psychologyAutomation.scheduleAt,body.items[0].scheduleAt);
+ const job=f.sqlite.prepare("SELECT * FROM factory_jobs WHERE type='psychology-selected-video'").get(),p=JSON.parse(job.payload_json);assert.equal(p.publish.videoDesc,'Reviewed caption');assert.equal(p.publish.isAiGenerated,aiFlag);assert.equal(p.psychologyAutomation.scheduleAt,body.items[0].scheduleAt);
  await assert.rejects(f.submit({...body,items:[{...body.items[0],caption:'changed'}]}),/其他配置/);
  f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='w' WHERE id=?").run(job.id);await f.transfer(job.id,'POST');await f.transfer(job.id,'POST');
- assert.equal(f.counts().uploads,1);assert.equal(f.requests.length,1);assert.equal(f.requests[0].items[0].postInfo.isAiGenerated,true);assert.equal(f.requests[0].tiktokOne.campaignId,project.campaignId);assert.equal(result.accepted,true);
+ assert.equal(f.counts().uploads,1);assert.equal(f.requests.length,1);assert.equal(f.requests[0].items[0].postInfo.isAiGenerated,aiFlag);assert.equal(f.requests[0].tiktokOne.campaignId,project.campaignId);assert.equal(result.accepted,true);
 });
 test('missing followers, wrong account, foreign asset and revoked permission fail closed',async t=>{
  const f=await setup(t),v=await f.upload(),body=config(v.id);f.sqlite.prepare("UPDATE official_accounts_latest SET profile_json='{}' WHERE account_key='tiktok:a'").run();await assert.rejects(f.submit(body),/粉丝待同步/);

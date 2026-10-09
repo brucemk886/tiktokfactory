@@ -1,6 +1,6 @@
 import {mountVideoPosters} from './psychology-video-posters.js';
 // Shuffle once at submission; the caller freezes this payload for idempotent retries.
-export function assignSelectedVideoItems(videos,accounts,{scheduleAt,intervalMinutes,isAiGenerated=true},random=Math.random){
+export function assignSelectedVideoItems(videos,accounts,{scheduleAt,intervalMinutes,isAiGenerated=false},random=Math.random){
  if(!videos.length)throw new Error('请先选择视频。');
  if(videos.length>20)throw new Error('每批最多20条视频。');
  const ids=[...new Set(accounts.map(a=>String(a.connectionId||a.id||'')).filter(Boolean))];
