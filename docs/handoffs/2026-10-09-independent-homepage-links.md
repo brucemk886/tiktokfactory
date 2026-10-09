@@ -21,7 +21,10 @@ Allow every scoped thousand-follower account to generate/copy its own homepage l
 - All 30 focused checks passed. The initial pre-integration full run had one Video Hits browser archive-state assertion failure. After preserving the concurrent ready-library release from main and regenerating assets, the final integrated declared suite passed all 1,475 tests with no failures. No real publishing calls.
 
 ## Unfinished work
-Deployment verification pending. No real profile edits or publication invoked.
+None. No real profile edits or publication invoked.
 
 ## Recommended next step
 Open 引流配置 → 千粉账号主页短链接, generate all, then copy each account's link into its profile. Select receiving targets separately only when desired.
+
+## Release evidence
+Deployment commit 3a451e86bae38f39c10e0cd4954c35509dae978b was pushed to GitHub main before npm run deploy from a clean worktree with HEAD == origin/main. Concurrent ready-library changes were preserved. Worker 9be73820-b2b1-4f4c-bbc1-36f717a134a1 deployed. Live independent links JS, website JS/CSS, receiving JS and public API guide returned HTTP 200 with matching SHA-256. The links API returned 401 without login. No production links, profile edits, account settings or publications were created for verification.
