@@ -1,3 +1,4 @@
+import {discardExpiredVideoHitUpload} from './psychology-video-hit-cleanup.js';
 import {decodeTopicPng} from './topic-png.js';
 import {json} from './http.js';
 import {authenticate} from './factory-api.js';
@@ -41,10 +42,11 @@ export async function handleVideoHitAssets(request,env,url,session){
  if(!same(saved))fail('该上传编号已用于其他图片。',409);
  if(['deleting','deleted'].includes(saved.cleanup_state))fail('该图片已清理或正在清理，请使用新的上传编号。',410);
  if(saved.cleanup_state==='active')return json({assetId:id,duplicate:true,previewUrl:VIDEO_HITS_BASE+'/assets/'+id+'/file'});
- await db.prepare("UPDATE psychology_video_hit_assets SET last_touched_at=? WHERE id=? AND cleanup_state='uploading'").bind(Date.now(),id).run();
+ const claim=await db.prepare("UPDATE psychology_video_hit_assets SET last_touched_at=? WHERE id=? AND cleanup_state IN ('uploading','active')").bind(Date.now(),id).run();
+ if(!claim.meta?.changes)fail('上传已过期并清理，请使用新的上传编号。',410);
  await env.ARCHIVE.put(key,b,{httpMetadata:{contentType:type}});
  const updated=await db.prepare("UPDATE psychology_video_hit_assets SET cleanup_state='active',last_touched_at=? WHERE id=? AND cleanup_state IN ('uploading','active')").bind(Date.now(),id).run();
- if(!updated.meta?.changes){await env.ARCHIVE.delete(key);fail('上传已过期并清理，请使用新的上传编号。',410);}
+ if(!updated.meta?.changes){await discardExpiredVideoHitUpload(env,{kind:'image',id,key,ownerId:user.id});fail('上传已过期并清理，请使用新的上传编号。',410);}
  return json({assetId:id,size:b.length,previewUrl:VIDEO_HITS_BASE+'/assets/'+id+'/file'},201);
 }
 // Called after the common worker bearer check. Access is limited to frozen assets of this running job.
@@ -56,7 +58,7 @@ export async function handleVideoHitWorkerAsset(request,env,url){
  const owner=await env.DB.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(job.created_by).first(),user=await videoHitUser(env.DB,owner);
  const payload=JSON.parse(job.payload_json);
  if(!payload.videoRemix.frames.some(f=>f.assetId===match[2]))fail('图片不属于当前任务。',403);
- const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[2],user.id).first(),object=row&&await env.ARCHIVE.get(row.r2_key);
+ const row=await env.DB.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=? AND owner_id=?').bind(match[2],user.id).first(),object=row?.cleanup_state==='active'&&await env.ARCHIVE.get(row.r2_key);
  if(!object)fail('任务图片不可用。',404);
  return new Response(object.body,{headers:{'Content-Type':row.content_type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
 }

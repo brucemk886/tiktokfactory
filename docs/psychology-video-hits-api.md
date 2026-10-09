@@ -130,7 +130,7 @@ X-Content-SHA256: <lowercase 64-character SHA256 of actual file>
 
 一旦提交发布，版本绑定publishItemId，后续新UUID、换账号或编辑版本都不能重新分配。成片文件的owner+SHA256也只允许分配一次，换上传UUID不能绕过。未确认或失败任务保留原发布身份。中台接收/排期不等于已发布；已发布状态和发布链接另存D1，即使一般任务/回执被修剪，仍保留版本防重记录。旧版本已有的发布分配通过迁移保留。
 
-## 自动清理（0082）
+## 自动清理（0082 / 0083）
 
 图片及传入成片保存在 Cloudflare 私有 R2；来源、版本、发布身份和防重摘要保存在 D1。只传外部 imageUrl 的图片仍由外部服务保存，Factory 只能清除引用，不能删除其他网站文件。上传到 Signal Desk / TikTok 的文件遵循各服务自己的保留期，本功能仅清理 Factory 管理的素材。
 
@@ -144,10 +144,10 @@ X-Content-SHA256: <lowercase 64-character SHA256 of actual file>
 {"module":"psychology","action":"videoHits.archive","requestId":"GENERATE_A_UUID","params":{"id":"SOURCE_ID","body":{"revision":SOURCE_REVISION}}}
 ```
 
-videoHits.cleanup / GET /api/psychology-video-hits/cleanup 返回 policy、versions、images、videos、previews、local 和至多十条待重试错误。页面“清理状态”显示同一信息；来源列表 query.scope 为 active（默认）、archived 或 all。
+videoHits.cleanup / GET /api/psychology-video-hits/cleanup 返回 policy（含 localStaleMinutes:15）、versions、images、videos、previews、local 和至多十条待重试错误（含本机清理失败）。versions.cleaned 表示文案及素材引用已清理，实际 R2 与本机文件删除分别查看 images/videos/previews/local；共享文件继续保留。页面“清理状态”显示同一信息；来源列表 query.scope 为 active（默认）、archived 或 all。
 
-R2 文件清理先用事务检查所有引用并标记 deleting，阻止并发新绑定，再删除精确对象。失败会保留清单，下一次维护自动重试；完成后标记 deleted，保留不可复用的上传身份及原存储键，私有预览返回 410。不按整目录或整个 R2 前缀删除。
+R2 文件清理先用事务检查所有引用并标记 deleting，阻止并发新绑定，再删除精确对象。失败会保留清单，按最近尝试时间轮转重试，避免少数坏文件挡住整批清理；晚到上传通过清理代次保护和持久补偿清单再次回收，旧删除回执不能覆盖新一轮重试；完成后标记 deleted，保留不可复用的上传身份及原存储键，私有预览返回 410。不按整目录或整个 R2 前缀删除。
 
-合成结束或失败后立即清除该任务专属的分镜下载、配音、字幕和临时图片；外部输入音频不删除。发布确认并完成版本清理后，本机 MP4 进入 psychology-video-cleanup 队列，固定给原渲染工人。工人先通过共同 bearer 校验及运行中任务/身份/清理清单检查，再删除成片目录中精确的 renderJobId.mp4；拒绝链接、目录及越界路径，文件已经不存在时也可安全确认。活动上传任务结束前不删除，失败使用同一个清理任务重试，离线则等待原工人上线。正常新工人和二创辅助工人支持此类型；旧运行工人不会因部署重启，也不会领取不支持的清理类型。
+合成结束或失败后立即清除该任务专属的分镜下载、配音、字幕和临时图片；外部输入音频不删除。发布确认并完成版本清理后，本机 MP4 进入 psychology-video-cleanup 队列，固定给原渲染工人。工人先通过共同 bearer 校验及运行中任务/身份/清理清单检查，再删除成片目录中精确的 renderJobId.mp4；拒绝链接、目录及越界路径，原输出目录可访问且已有可信路径记录时，文件已经不存在也可安全确认；目录不可用不会标记成功。新合成结果保存实际输出路径；旧成片须先在原工人目录找到文件并登记路径，定位不到则报错保留任务，不会因改了配置误报已删除。活动上传任务结束前不删除，失败使用同一个清理任务重试，清理任务连续 15 分钟无更新可重新排队；已确认删除但完成回执丢失时自动补齐完成状态。恢复只作用于清理任务；离线则等待原工人上线。正常新工人和二创辅助工人支持此类型；旧运行工人不会因部署重启，也不会领取不支持的清理类型。
 
 历史已发布版本从迁移时间重新计算 24 小时保留期。旧规划与现有运行任务不因清理功能恢复、重排或中断。部署本功能启用云端五分钟维护，不启动任何新的常驻本机进程。

@@ -70,6 +70,6 @@ export async function renderVideoRemix({snapshot,jobId,root,config={},workDir,ou
  // Relative subtitle path avoids Windows drive-letter escaping; all args are passed without a shell.
  const args=['-y','-v','error','-f','concat','-safe','1','-i','frames.txt','-i',audio,'-vf','fps=30,subtitles=captions.ass,format=yuv420p','-t',String(duration),'-c:v','libx264','-preset','fast','-crf','20','-c:a','aac','-b:a','192k','-movflags','+faststart',output];
  const r=spawnSync('ffmpeg',args,{cwd:dir,encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024});if(r.error||r.status!==0)throw new Error('视频合成失败：'+String(r.error?.message||r.stderr).slice(-1500));
- return {results:[{id:jobId,fileName,videoUrl:'/outputs/'+fileName,title:snapshot.title,narration:snapshot.script,duration,frameCount:frames.length,sourceId:snapshot.sourceId,version:snapshot.version,template:'psychology-video-remix'}]};
+ return {results:[{id:jobId,fileName,outputPath:fs.realpathSync(output),videoUrl:'/outputs/'+fileName,title:snapshot.title,narration:snapshot.script,duration,frameCount:frames.length,sourceId:snapshot.sourceId,version:snapshot.version,template:'psychology-video-remix'}]};
  }catch(error){try{removePublishedVideo(outputDir,jobId,jobId+'.mp4');}catch{}throw error;}finally{if(path.dirname(dir)===fs.realpathSync(base)&&!fs.lstatSync(dir).isSymbolicLink()&&fs.realpathSync(dir)===dir)fs.rmSync(dir,{recursive:true,force:true});}
 }

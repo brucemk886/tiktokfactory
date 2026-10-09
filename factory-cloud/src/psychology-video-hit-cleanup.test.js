@@ -120,3 +120,75 @@ test('completed heavy render/publish snapshots are compacted while lightweight f
  const render=await f.job({status:'done',payload});const publish=await f.job({type:'official-publish',status:'done',payload:{generation:payload,videoHitOrigin:{sourceId:source,version:1},videos:[{fileName:render+'.mp4',narration:'heavy'}],generatedVideos:[{fileName:render+'.mp4',narration:'heavy'}],publish:{videoDesc:'caption'}}});await collectVideoHitAssets(f.env);
  for(const id of [render,publish]){const data=JSON.parse(f.sqlite.prepare('SELECT payload_json FROM factory_jobs WHERE id=?').get(id).payload_json);assert.equal(data.videoRemix?.frames,undefined);assert.equal(data.generation?.videoRemix?.script,undefined);assert.equal(data.generation?.publish?.videoDesc,undefined);assert.equal(data.videos?.[0]?.narration,undefined);assert.equal(data.generatedVideos?.[0]?.narration,undefined);if(id===publish)assert.equal(data.videos[0].fileName,render+'.mp4');}assert.deepEqual(f.deleted,[a.key]);
 });
+
+
+test('persistent R2 failures cannot starve later eligible images or videos in bounded batches',async t=>{
+ const f=await setup(t);
+ for(const create of [f.image,f.video]){
+  const stuck=[create(30*HOUR),create(30*HOUR)],later=create();for(const a of stuck)f.failDelete.add(a.key);
+  await collectVideoHitAssets(f.env,{limit:2});await collectVideoHitAssets(f.env,{limit:2,now:Date.now()+1000});assert.ok(!f.store.has(later.key));
+ }
+});
+test('stale local cleanup resumes only cleanup work; acknowledged work can finish after lost completion',async t=>{
+ const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});
+ const render=await f.job({id:'stale-render',status:'running',workerId:'w',payload:{videoRemix:{sourceId:source,version:1}}});
+ f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({results:[{fileName:render+'.mp4'}]}),render);
+ await collectVideoHitAssets(f.env);const clean='vh-cleanup-'+render;const unrelated=await f.job({status:'running',workerId:'w',at:Date.now()-HOUR});
+ await f.worker('claim','w',{workerId:'w',types:['psychology-video-cleanup'],psychologyVideoCleanup:true});
+ await collectVideoHitAssets(f.env);assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(clean).status,'running');
+ f.sqlite.prepare('UPDATE factory_jobs SET updated_at=? WHERE id=?').run(Date.now()-HOUR,clean);
+ await collectVideoHitAssets(f.env);assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(clean).status,'queued');assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(unrelated).status,'running');
+ await f.worker('claim','w',{workerId:'w',types:['psychology-video-cleanup'],psychologyVideoCleanup:true});await f.worker('psychology-video-hits/cleanup/'+clean+'/done');
+ f.sqlite.prepare('UPDATE factory_jobs SET updated_at=? WHERE id=?').run(Date.now()-HOUR,clean);
+ await collectVideoHitAssets(f.env);assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(clean).status,'done');
+});
+test('generated inventory hides all cleaned revisions and direct compose-publish renders by immutable source identity',async t=>{
+ const {handleVideoLibrary}=await import('./psychology-video-library.js'),f=await setup(t),source=await f.source();await f.version(source,1,{published:true});await f.version(source,2);
+ for(const [id,version] of [['old-render',1],['direct-publish-render',1],['draft-render',2]]){await f.job({id,status:'done',workerId:'w',payload:{videoRemix:{sourceId:source,version}}});f.sqlite.prepare('UPDATE factory_jobs SET result_json=? WHERE id=?').run(JSON.stringify({results:[{fileName:id+'.mp4'}]}),id);}
+ await collectVideoHitAssets(f.env);const r=new Request('https://factory.test/api/psychology-video-library?source=generated');const data=await (await handleVideoLibrary(r,f.env,new URL(r.url),{user:f.user})).json();assert.deepEqual(data.videos.map(v=>v.sourceJobId),['draft-render']);
+});
+test('image upload refuses storage write if GC wins the pre-upload claim',async t=>{
+ const f=await setup(t),id=crypto.randomUUID(),before=f.db.prepare.bind(f.db);let writes=0;
+ f.db.prepare=sql=>{const statement=before(sql);if(sql.startsWith('UPDATE psychology_video_hit_assets SET last_touched_at'))return {...statement,async run(){f.sqlite.prepare("UPDATE psychology_video_hit_assets SET cleanup_state='deleted' WHERE id=?").run(id);return statement.run.call(this);}};return statement;};
+ f.env.ARCHIVE.put=async()=>{writes++;};
+ const r=new Request('https://factory.test/api/psychology-video-hits/assets/'+id,{method:'PUT',headers:{'Content-Type':'image/png'},body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64')});
+ await assert.rejects(handleVideoHitAssets(r,f.env,new URL(r.url),{user:f.user}));assert.equal(writes,0);
+});
+test('a late uploaded object remains retryable when compensation delete fails after a prior deleted receipt',async t=>{
+ const f=await setup(t),id=crypto.randomUUID();let key;
+ f.env.ARCHIVE.put=async(k,bytes)=>{key=k;f.store.set(k,bytes);f.sqlite.prepare("UPDATE psychology_video_hit_assets SET cleanup_state='deleted',cleaned_at=? WHERE id=?").run(Date.now(),id);f.failDelete.add(k);};
+ const r=new Request('https://factory.test/api/psychology-video-hits/assets/'+id,{method:'PUT',headers:{'Content-Type':'image/png'},body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64')});
+ await assert.rejects(handleVideoHitAssets(r,f.env,new URL(r.url),{user:f.user}));assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_hit_assets WHERE id=?').get(id).cleanup_state,'deleting');
+ f.failDelete.clear();await collectVideoHitAssets(f.env);assert.ok(!f.store.has(key));
+});
+test('local output location survives completed render job pruning',async t=>{
+ const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});const id=await f.job({id:'located-render',status:'running',workerId:'w',payload:{videoRemix:{sourceId:source,version:1}}});
+ const outputPath='D:/previous-outputs/'+id+'.mp4';f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({results:[{fileName:id+'.mp4',outputPath}]}),id);f.sqlite.prepare('DELETE FROM factory_jobs WHERE id=?').run(id);
+ await collectVideoHitAssets(f.env);await f.worker('claim','w',{workerId:'w',types:['psychology-video-cleanup'],psychologyVideoCleanup:true});const manifest=await (await f.worker('psychology-video-hits/cleanup/vh-cleanup-'+id)).json();assert.equal(manifest.outputPath,outputPath);
+});
+
+
+test('stale GC acknowledgment cannot close a newer compensation retry',async t=>{
+ const {discardExpiredVideoHitUpload}=await import('./psychology-video-hit-cleanup.js'),f=await setup(t),a=f.image();let first=true;
+ f.env.ARCHIVE.delete=async key=>{if(!first)throw Error('compensation unavailable');first=false;f.store.delete(key);f.store.set(key,new Uint8Array([9]));await discardExpiredVideoHitUpload(f.env,{kind:'image',id:a.id,key,ownerId:'admin'});};
+ await collectVideoHitAssets(f.env);const row=f.sqlite.prepare('SELECT * FROM psychology_video_hit_assets WHERE id=?').get(a.id);assert.equal(row.cleanup_state,'deleting');assert.equal(row.cleaned_at,0);assert.ok(f.store.has(a.key));
+ f.env.ARCHIVE.delete=async key=>f.store.delete(key);await collectVideoHitAssets(f.env);assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_hit_assets WHERE id=?').get(a.id).cleanup_state,'deleted');assert.ok(!f.store.has(a.key));
+});
+test('ready video late compensation is durable, preserves mirror ownership and retries storage failure',async t=>{
+ const {handleVideoHitVideos}=await import('./psychology-video-hit-videos.js'),f=await setup(t),id=crypto.randomUUID(),bytes=Buffer.alloc(16);bytes.write('ftyp',4);const digest=Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex');let key;
+ f.env.ARCHIVE.put=async(k,stream)=>{await new Response(stream).arrayBuffer();key=k;f.store.set(k,bytes);f.sqlite.prepare("UPDATE psychology_video_hit_videos SET cleanup_state='deleted',cleaned_at=? WHERE id=?").run(Date.now(),id);f.failDelete.add(k);};
+ const r=new Request('https://factory.test/api/psychology-video-hits/videos/'+id,{method:'PUT',headers:{'Content-Type':'video/mp4','X-File-Name':'ready.mp4','X-File-Size':String(bytes.length),'X-Content-SHA256':digest},body:bytes});await assert.rejects(handleVideoHitVideos(r,f.env,new URL(r.url),{user:f.user}));assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_hit_videos WHERE id=?').get(id).cleanup_state,'deleting');f.failDelete.clear();await collectVideoHitAssets(f.env);assert.ok(!f.store.has(key));
+});
+test('heartbeat renewed between stale scan and requeue wins; local failure is visible to its owner',async t=>{
+ const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});const id=await f.job({id:'renewed-render',status:'running',workerId:'w',payload:{videoRemix:{sourceId:source,version:1}}});f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({results:[{fileName:id+'.mp4'}]}),id);await collectVideoHitAssets(f.env);const cleanup='vh-cleanup-'+id;
+ await f.worker('claim','w',{workerId:'w',types:['psychology-video-cleanup'],psychologyVideoCleanup:true});f.sqlite.prepare('UPDATE factory_jobs SET updated_at=? WHERE id=?').run(Date.now()-HOUR,cleanup);
+ const before=f.db.batch.bind(f.db);f.db.batch=async statements=>{f.sqlite.prepare('UPDATE factory_jobs SET updated_at=? WHERE id=?').run(Date.now(),cleanup);return before(statements);};await collectVideoHitAssets(f.env);assert.equal(f.sqlite.prepare('SELECT status FROM factory_jobs WHERE id=?').get(cleanup).status,'running');
+ await f.worker('jobs/'+cleanup+'/complete','w',{error:'Original output disk unavailable'});const status=await (await f.call('/cleanup')).json();assert.ok(status.errors.some(e=>e.kind==='local'&&e.id===id&&e.error.includes('disk')));assert.equal(status.policy.localStaleMinutes,15);
+});
+
+
+test('legacy local path registration is original-worker scoped and immutable before deletion',async t=>{
+ const f=await setup(t),source=await f.source();await f.version(source,1,{published:true});const id=await f.job({id:'legacy-render',status:'running',workerId:'w',payload:{videoRemix:{sourceId:source,version:1}}});f.sqlite.prepare("UPDATE factory_jobs SET status='done',result_json=? WHERE id=?").run(JSON.stringify({results:[{fileName:id+'.mp4'}]}),id);await collectVideoHitAssets(f.env);const endpoint='psychology-video-hits/cleanup/vh-cleanup-'+id;await f.worker('claim','w',{workerId:'w',types:['psychology-video-cleanup'],psychologyVideoCleanup:true});
+ const outputPath='D:/original/'+id+'.mp4';assert.equal((await f.worker(endpoint,'other',{outputPath})).status,403);assert.equal((await f.worker(endpoint,'w',{outputPath:'D:/original/../'+id+'.mp4'})).status,400);assert.equal((await f.worker(endpoint,'w',{outputPath:'D:/original/other.mp4'})).status,400);
+ assert.equal((await (await f.worker(endpoint,'w',{outputPath})).json()).outputPath,outputPath);assert.equal((await f.worker(endpoint,'w',{outputPath:'D:/changed/'+id+'.mp4'})).status,409);assert.equal((await (await f.worker(endpoint,'w')).json()).outputPath,outputPath);
+});

@@ -1,3 +1,4 @@
+import {discardExpiredVideoHitUpload} from './psychology-video-hit-cleanup.js';
 import {json} from './http.js';
 import {authenticate} from './factory-api.js';
 import {videoHitUser,VIDEO_HITS_BASE,guard} from './psychology-video-hits.js';
@@ -50,7 +51,7 @@ export async function handleVideoHitVideos(request,env,url,session){
  try{await db.batch([
   db.prepare("UPDATE psychology_video_hit_videos SET cleanup_state='active',last_touched_at=? WHERE id=? AND owner_id=? AND digest=? AND cleanup_state IN ('uploading','active')").bind(stamp,id,user.id,digest),guard(db),
   db.prepare("INSERT INTO psychology_video_assets(id,owner,file_name,content_type,file_size,r2_key,status,created_at,updated_at) SELECT ?,?,?,?,?,?,'ready',?,? WHERE EXISTS(SELECT 1 FROM psychology_video_hit_videos WHERE id=? AND owner_id=? AND digest=? AND file_name=?) ON CONFLICT(id) DO UPDATE SET id=excluded.id WHERE psychology_video_assets.owner=excluded.owner AND psychology_video_assets.r2_key=excluded.r2_key AND psychology_video_assets.file_name=excluded.file_name AND psychology_video_assets.content_type=excluded.content_type AND psychology_video_assets.file_size=excluded.file_size").bind(id,user.username,name,type,size,key,stamp,stamp,id,user.id,digest,name),guard(db)
- ]);}catch(error){const winner=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();if(winner?.r2_key!==key||['deleting','deleted'].includes(winner?.cleanup_state))await env.ARCHIVE.delete(key);if(/CHECK constraint/i.test(error.message))fail('该上传编号已用于其他视频资产。',409);throw error;}
+ ]);}catch(error){const winner=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();if(winner?.r2_key!==key)await env.ARCHIVE.delete(key);else if(['deleting','deleted'].includes(winner?.cleanup_state))await discardExpiredVideoHitUpload(env,{kind:'video',id,key,ownerId:user.id});if(/CHECK constraint/i.test(error.message))fail('该上传编号已用于其他视频资产。',409);throw error;}
  const saved=await db.prepare('SELECT * FROM psychology_video_hit_videos WHERE id=?').bind(id).first();
  if(!same(saved)){if(saved.r2_key!==key)await env.ARCHIVE.delete(key);fail('该上传编号已用于其他成片。',409);}
  return json(publicVideo(row),201);
