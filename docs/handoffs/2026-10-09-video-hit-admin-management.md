@@ -29,7 +29,10 @@ Live read-only counts confirmed a member source, six originals, two recreations 
 - Chromium UI/import regression included in the full run. git diff --check and asset-manifest check passed.
 
 ## Unfinished work
-Deployment and production verification pending at commit time.
+None. Deployed and read-only production verification completed.
 
 ## Recommended next step
-Deploy from clean GitHub main, verify public assets and administrator/source scope, then refresh the administrator Video Hits list and filter importSource=gpt-dot.
+Refresh the administrator Video Hits page and select gpt-dot in the import-source filter, or open the known source’s recreation page.
+
+## Release evidence
+Runtime commit f01f096a94bc119f95fb1d3e3a54aca8d75d4334 was pushed to GitHub main before npm run deploy with a clean worktree and HEAD == origin/main. Cloudflare version 01dae0f1-7b50-4d4f-8634-800e0269950a deployed successfully. Live UI JavaScript and API guide returned HTTP 200 and matched local SHA-256; the private list still redirected anonymous requests to login. A read-only production scope query confirmed administrator-wide visibility includes the member gpt-dot source, while the member scope remains one owned source. Verification did not create or change any production content, users, grants or publishing jobs.
