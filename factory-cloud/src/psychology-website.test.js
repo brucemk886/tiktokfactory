@@ -185,3 +185,20 @@ test('website reports the separately saved imported-photo receivers without muta
  f.sqlite.prepare('UPDATE psychology_imported_photo_settings SET config_json=?').run(JSON.stringify({receiversConfigured:true,receivers:[]}));result=await f.call();assert.equal(result.status,200);assert.equal(result.data.campaign.configuredReceivers,0);assert.equal(result.data.receivers.find(a=>a.connectionId==='a')?.configured,false);
  assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_conversion_campaigns').all(),legacy);assert.equal(f.requests.length,0);
 });
+
+
+test('homepage link API lists all thousand-follower accounts and generates without analytics or receiver configuration',async t=>{
+ const f=await endpointFixture(t);delete f.env.DEEP_PERSONA_DB;
+ for(const [id,followers] of [['a',1000],['b',2300],['small',999]]){f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id) VALUES(?,?)').run(id,'g');f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,profile_json,synced_at) VALUES(?,?,?)').run('tiktok:'+id,JSON.stringify({username:id,followers}),now);}
+ await kvSet(f.db,'psychology-autopilot-account-directory-v1',{accounts:[{id:'a',username:'a',scopes:['user.info.basic']},{id:'b',username:'b',scopes:['video.publish']},{id:'small',username:'small',scopes:['video.publish']}]});
+ f.sqlite.prepare('INSERT INTO psychology_imported_photo_settings(owner,config_json,enabled) VALUES(?,?,?)').run('admin',JSON.stringify({receivers:[],connectionIds:[],cta:{mention:'Visit {account}',self:'My bio'}}),0);
+ const config=f.sqlite.prepare('SELECT * FROM psychology_imported_photo_settings').all(),campaign=f.sqlite.prepare('SELECT * FROM psychology_conversion_campaigns').all();
+ const call=async(method='GET',body)=>{const url=new URL('https://factory.test/api/psychology-website/links'),response=await handlePsychologyWebsite(new Request(url,{method,...(body?{body:JSON.stringify(body)}:{})}),f.env,url,{user:f.user},{now});return {status:response.status,data:await response.json()};};
+ let r=await call();assert.equal(r.status,200);assert.deepEqual(r.data.accounts.map(a=>a.connectionId),['a','b']);assert.equal(r.data.receivers,undefined);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_website_links').get().n,0);
+ r=await call('POST',{connectionIds:['a']});assert.equal(r.status,200);assert.ok(r.data.accounts[0].trackingUrl);assert.equal(r.data.accounts[1].trackingUrl,null);
+ const saved=r.data.accounts[0].trackingUrl;r=await call('POST',{});assert.equal(r.status,200);assert.ok(r.data.accounts.every(a=>a.trackingUrl));assert.equal(r.data.accounts[0].trackingUrl,saved);
+ assert.equal((await call('POST',{connectionIds:['small']})).status,403);assert.equal((await call('POST',{connectionIds:['outside']})).status,403);assert.equal((await call('POST',{enabled:true})).status,400);
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_imported_photo_settings').all(),config);assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_conversion_campaigns').all(),campaign);assert.equal(f.requests.length,0);
+ f.sqlite.prepare("UPDATE official_account_assignments SET group_id='other' WHERE account_key='b'").run();assert.deepEqual((await call()).data.accounts.map(a=>a.connectionId),['a']);assert.equal((await call('POST',{connectionIds:['b']})).status,403);
+ f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();assert.equal((await call()).status,403);
+});

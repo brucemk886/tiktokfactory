@@ -13,6 +13,7 @@ test('website receiving tab survives analytics failure, saves fields separately,
   if(req.method==='PATCH'){let body='';for await(const c of req)body+=c;body=JSON.parse(body);calls.push(body);data.revision++;if(body.section==='receivers')data.config.receivers=body.receivers.map(r=>({...r,username:'receiver'}));if(body.section==='cta')data.config.cta=body.cta;}
   res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify(data));return;
  }
+ if(url.pathname==='/api/psychology-website/links'){res.writeHead(503,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Links temporarily unavailable'}));return;}
  if(url.pathname==='/api/psychology-website'){res.writeHead(503,{'Content-Type':'application/json'}).end(JSON.stringify({error:'Analytics temporarily unavailable'}));return;}
  if(url.pathname==='/psychology-website'){res.writeHead(200,{'Content-Type':'text/html'}).end(html);return;}
  const target=path.resolve(root,url.pathname.slice(1));if(!target.startsWith(root+path.sep)||!fs.existsSync(target)){res.writeHead(404).end();return;}
@@ -29,6 +30,6 @@ test('website receiving tab survives analytics failure, saves fields separately,
  await page.click('[data-wr-link]');await page.click('#wrSaveCta');await page.waitForFunction(()=>document.getElementById('wrCtaStatus').textContent.includes('已保存'));assert.equal(calls[1].section,'cta');assert.equal(calls[1].receivers,undefined);assert.equal(calls[1].cta.mention,'Take the test at {account}.');assert.equal(await page.$eval('[data-wr-link]',n=>n.checked),false,'other unsaved receiver confirmation survives');
  await page.click('#wrRestoreCta');assert.equal(calls.length,2);assert.equal(await page.$eval('#wrMention',n=>n.value),DEFAULT_IMPORTED_PHOTO_CTA.mention);
  for(const width of [1440,390,320]){await page.setViewport({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'overflow '+width);await (await page.$('#websiteReceiving')).screenshot({path:path.join(out,'settings-'+width+'.png')});}
- await page.setViewport({width:1440,height:1000});await page.click('#websiteLinks>summary');await page.waitForFunction(()=>document.getElementById('linksStatus').textContent.includes('Analytics temporarily unavailable'));assert.equal(await page.$eval('#wrSaveCta',n=>n.disabled),false);assert.equal(await page.$eval('#wrMention',n=>n.checkVisibility()),true);assert.equal(await page.$eval('#webLinksContent',n=>n.hidden),true);
+ await page.setViewport({width:1440,height:1000});await page.click('#websiteLinks>summary');await page.waitForFunction(()=>document.getElementById('linksStatus').textContent.includes('Links temporarily unavailable'));assert.equal(await page.$eval('#wrSaveCta',n=>n.disabled),false);assert.equal(await page.$eval('#wrMention',n=>n.checkVisibility()),true);assert.equal(await page.$eval('#webLinksContent',n=>n.hidden),true);
  await page.click('[data-tab="overview"]');await page.waitForFunction(()=>!document.getElementById('failure').hidden);await page.click('[data-tab="receiving"]');assert.equal(await page.$eval('#websiteReceiving',n=>n.hidden),false);assert.deepEqual(errors,[]);
 });

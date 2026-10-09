@@ -31,24 +31,17 @@ function render(value){
  $('days').innerHTML=table(['日期','开始测试','完成答题','成交订单'],value.days.map(r=>[escape(r.day),count(r.started),count(r.finished),count(r.orders)]));
  $('sources').innerHTML=table(['来源','承接账号 / 活动','媒介','内容参数','开始','完成','收银台','付款会话','成交订单'],value.sources.rows.map(r=>[escape(r.source),escape(r.account?'@'+(r.account.username||r.account.name):r.campaign||'未归因'),escape(r.medium||'—'),escape(r.content||'—'),count(r.started),count(r.finished),count(r.checkout),count(r.paidSessions),count(r.orders)]));pager('source',value.sources);
  $('orders').innerHTML=table(['付款时间','订单号','产品','金额','状态','支付平台','来源 / 承接账号'],value.orders.rows.map(r=>[escape(datetime(r.paid_at)),escape(r.id),escape(r.testTitle)+'<small>'+(r.kind==='deep'?'深度报告':'基础报告')+'</small>',escape(money(r.amount_cents,r.currency)),r.status==='refunded'?'已退款':'已付款',escape(r.provider==='unknown'?'未知':r.provider),escape(r.account?'@'+(r.account.username||r.account.name):r.source)+'<small>'+escape(r.campaign||'无账号参数')+'</small>']));pager('order',value.orders);
- const selected=$('receiver').value;
- $('receiver').innerHTML=value.receivers.length?value.receivers.map(a=>'<option value="'+escape(a.connectionId)+'">'+escape('@'+a.username+(a.configured?' · 已设承接':' · 待设承接'))+'</option>').join(''):'<option value="">暂无已同步的千粉账号</option>';
- if(value.receivers.some(a=>a.connectionId===selected))$('receiver').value=selected;
- $('campaignNote').textContent='当前已确认 '+count(value.campaign.configuredReceivers)+' 个承接账号。'+(value.campaign.configuredReceivers===0?'转化发布会等待承接配置；复制链接不会自动确认主页已设置。':'主页链接需手动设置，复制不代表已设置。');
- $('createLinks').disabled=!value.receivers.some(a=>!a.trackingUrl);
- $('webLinksContent').hidden=false;$('linksStatus').textContent='专属链接与承接账号一一对应，复制后设置到账号主页。';
- updateLink();
  $('definitions').innerHTML=Object.values(value.definitions).map(text=>'<p>'+escape(text)+'</p>').join('');
  $('status').textContent='已连接 DeepPersona · 仅 TikTok 渠道 · 更新于 '+datetime(value.updatedAt);
 }
 function renderJourney(){
  const f=data?.funnel,selected=$('journeyAccount').value;
  const rows=f?.rows||[];
- $('journeyAccount').innerHTML='<option value="">全部承接账号</option>'+rows.map(row=>'<option value="'+escape(row.connectionId)+'">'+escape('@'+(row.username||row.name))+'</option>').join('');
+ $('journeyAccount').innerHTML='<option value="">全部主页账号</option>'+rows.map(row=>'<option value="'+escape(row.connectionId)+'">'+escape('@'+(row.username||row.name))+'</option>').join('');
  if(rows.some(row=>row.connectionId===selected))$('journeyAccount').value=selected;
  const active=rows.find(row=>row.connectionId===$('journeyAccount').value),summary=active?.summary||f?.summary||{};
  const metric=value=>value==null?'暂无':count(value);
- $('journeyScope').textContent=f?f.window.from+' 至 '+f.window.to+' · UTC 自然日，与 TikTok 主页数据对齐 · '+(active?'当前承接账号':count(rows.length)+' 个承接账号'):'正在准备漏斗数据';
+ $('journeyScope').textContent=f?f.window.from+' 至 '+f.window.to+' · UTC 自然日，与 TikTok 主页数据对齐 · '+(active?'当前承接账号':count(rows.length)+' 个主页账号'):'正在准备漏斗数据';
  const cards=[['主页访问',summary.profileViews,'TikTok 汇总，非曝光人数'],['链接点击',summary.clicks,'到达短链接的请求'],['成功进站',summary.arrived,'网页确认或已开始测试'],['开始测试',summary.started,'同次访问最多计一次'],['完成测试',summary.finished,'同次访问最多计一次'],['付款',summary.paid,'基础报告付款访问']];
  $('journeyStages').innerHTML=cards.map(([label,value,note])=>'<article><span>'+label+'</span><strong>'+metric(value)+'</strong><small>'+note+'</small></article>').join('');
  $('profileClickHint').textContent='主页 → 链接参考点击率：'+percent(summary.profileClickRate)+'。'+(summary.profileClickRate==null?'数据或时间覆盖不足时不计算；主页访问与链接点击无法逐人匹配。':'这是同账号同期汇总比值，不是逐人流失率。')+' 主页数据覆盖 '+count(summary.profileAccounts)+' / '+count(summary.accounts)+' 个账号。';
@@ -58,27 +51,22 @@ function renderJourney(){
  $('journeyNote').textContent='进站追踪启用时间：'+since+'。漏斗只计算启用后经过 TikTok 推广短链接的访问；刷新去重，多次做题或购买也只计一次。未确认进站可能包含加载失败、用户退出或上报被拦截。';
  const shown=active?[active]:rows;
  const lossText=value=>value?.lost==null?'暂无':count(value.lost)+' / '+percent(value.rate);
- $('journeyAccounts').innerHTML=table(['承接账号','主页访问','链接点击','成功进站','开始测试','完成测试','付款','点击→进站流失','进站→开始流失','开始→完成流失','完成→付款流失'],shown.map(row=>[
+ $('journeyAccounts').innerHTML=table(['主页账号','主页访问','链接点击','成功进站','开始测试','完成测试','付款','点击→进站流失','进站→开始流失','开始→完成流失','完成→付款流失'],shown.map(row=>[
  escape('@'+(row.username||row.name)),metric(row.profileViews)+'<small>'+count(row.profileDays)+'/'+count(row.expectedDays)+' 天</small>',
  ...['clicks','arrived','started','finished','paid'].map(key=>metric(row[key])),
  ...['arrival','start','finish','payment'].map(key=>lossText(row.summary?.losses?.[key]))
- ]),'绑定承接账号并生成短链接后，这里会按账号显示转化链路。');
+ ]),'生成账号主页短链接后，这里会按账号显示转化链路。');
  $('journeyDefinition').textContent=f?.definition||'尚未取得漏斗数据。';
-}
-function updateLink(){
- const a=data?.receivers.find(a=>a.connectionId===$('receiver').value);
- $('trackingUrl').value=a?.trackingUrl||'';$('copyLink').disabled=!a?.trackingUrl;
- $('linkNote').textContent=a?.trackingUrl?'此短链接固定不变，测试和订单会自动归到对应承接账号。':a?'点击“生成短链接”，为当前可用承接账号创建链接。':'绑定并同步千粉账号后，可在这里生成短链接。';
 }
 async function load(query={...applied}){
  const id=++sequence;controller?.abort();controller=new AbortController();
- $('status').textContent=data?'正在刷新，当前仍显示上次查询的数据…':'正在读取网站数据…';$('refresh').disabled=true;$('reloadLinks').disabled=true;$('linksStatus').textContent=data?'正在刷新主页链接…':'正在读取主页链接…';
+ $('status').textContent=data?'正在刷新，当前仍显示上次查询的数据…':'正在读取网站数据…';$('refresh').disabled=true;
  try{
   const response=await fetch('/api/psychology-website?'+new URLSearchParams(query),{signal:controller.signal,cache:'no-store'});
   const result=await response.json();if(!response.ok)throw new Error(result.error||'读取失败');
   if(id!==sequence)return;applied={...query};$('failure').hidden=true;render(result);
- }catch(error){if(error.name==='AbortError'||id!==sequence)return;$('linksStatus').textContent='主页链接暂时无法读取：'+error.message+(data?'。当前保留上次读取的链接。':'。承接账号与引导文案仍可单独设置。');$('failure').hidden=false;$('failure').textContent=error.message;$('status').textContent=data?'刷新失败，以下保留上次成功查询的数据（'+data.window.from+' 至 '+data.window.to+'）。':'尚未取得数据，暂无可显示的统计。';}
- finally{if(id===sequence){$('refresh').disabled=false;$('reloadLinks').disabled=false;}}
+ }catch(error){if(error.name==='AbortError'||id!==sequence)return;$('failure').hidden=false;$('failure').textContent=error.message;$('status').textContent=data?'刷新失败，以下保留上次成功查询的数据（'+data.window.from+' 至 '+data.window.to+'）。':'尚未取得数据，暂无可显示的统计。';}
+ finally{if(id===sequence){$('refresh').disabled=false;}}
 }
 document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{
  draftPeriod=button.dataset.period;document.querySelectorAll('[data-period]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
@@ -93,21 +81,9 @@ document.querySelector('.web-tabs').addEventListener('keydown',event=>{
  const next=event.key==='ArrowRight'?(index+1)%tabs.length:event.key==='ArrowLeft'?(index+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
  if(next<0)return;event.preventDefault();showTab(tabs[next].dataset.tab,{focus:true});
 });
-$('websiteLinks').addEventListener('toggle',()=>{if($('websiteLinks').open&&(!data||receivingChanged)&&!$('refresh').disabled){receivingChanged=false;void load();}});
-$('reloadLinks').addEventListener('click',()=>{receivingChanged=false;void load();});
 document.querySelector('[data-open-links]').addEventListener('click',()=>showTab('links'));
 for(const [prefix,key] of [['source','sourcePage'],['order','orderPage']])for(const [suffix,delta] of [['Prev',-1],['Next',1]])$(prefix+suffix).addEventListener('click',()=>void load({...applied,[key]:Math.max(1,Number(applied[key]||1)+delta)}));
-$('createLinks').addEventListener('click',async()=>{
- $('createLinks').disabled=true;
- try{
-  const response=await fetch('/api/psychology-website/links',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-  const result=await response.json();if(!response.ok)throw new Error(result.error||'生成失败');
-  await load();
- }catch(error){$('linkNote').textContent=error.message;$('createLinks').disabled=false;}
-});
 $('journeyAccount').addEventListener('change',renderJourney);
-$('receiver').addEventListener('change',updateLink);
-$('copyLink').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('trackingUrl').value);$('linkNote').textContent='已复制，请粘贴到对应承接账号的主页链接。';}catch{$('trackingUrl').select();$('linkNote').textContent='浏览器未允许自动复制，链接已选中，请手动复制。';}});
 const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);$('from').value=today;$('to').value=today;$('from').max=today;$('to').max=today;
 setInterval(()=>{if(!document.hidden&&!$('websiteAnalytics').hidden&&!$('refresh').disabled)void load();},60000);
 window.addEventListener('website-receiving-saved',()=>{receivingChanged=true;});

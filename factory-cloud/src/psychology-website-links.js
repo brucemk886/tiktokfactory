@@ -3,20 +3,34 @@ import { trackedWebsiteLink } from './psychology-website-data.js';
 export const SHORT_LINK_PREFIX='/go/';
 export const shortWebsiteLink=code=>'https://deeppersonaai.com/go/'+code;
 const validCode=code=>/^[a-f0-9]{10}$/.test(code);
-export async function createWebsiteLinks(db,context,now=Date.now()){
- const accounts=context.accounts.filter(a=>a.candidate&&a.canPublish&&trackedWebsiteLink(a));
+export const eligibleWebsiteLinkAccounts=context=>context.accounts.filter(a=>a.candidate&&trackedWebsiteLink(a));
+export async function readWebsiteLinkAccounts(db,context){
+ const accounts=eligibleWebsiteLinkAccounts(context),ids=JSON.stringify(accounts.map(a=>a.connectionId));
+ const result=await db.prepare('SELECT connection_id connectionId,code,created_at createdAt FROM psychology_website_links WHERE project_key=? AND connection_id IN (SELECT value FROM json_each(?))').bind(context.projectId,ids).all();
+ if(result.success===false||!Array.isArray(result.results))throw Error('Short link list unavailable');
+ const links=new Map(result.results.map(row=>[row.connectionId,row]));
+ return accounts.map(a=>({connectionId:a.connectionId,username:a.username,name:a.name,followers:a.followers,trackingUrl:links.has(a.connectionId)?shortWebsiteLink(links.get(a.connectionId).code):null}));
+}
+export async function createWebsiteLinks(db,context,now=Date.now(),connectionIds){
+ let accounts=eligibleWebsiteLinkAccounts(context);
+ if(connectionIds!==undefined){
+  if(!Array.isArray(connectionIds)||!connectionIds.length||connectionIds.length>200||connectionIds.some(id=>typeof id!=='string')||new Set(connectionIds).size!==connectionIds.length)throw Object.assign(Error('请选择 1–200 个不同的账号。'),{statusCode:400});
+  const eligible=new Set(accounts.map(a=>a.connectionId));if(connectionIds.some(id=>!eligible.has(id)))throw Object.assign(Error('所选账号不在当前权限范围内，或未达到千粉条件。'),{statusCode:403});
+  accounts=accounts.filter(a=>connectionIds.includes(a.connectionId));
+ }
+ let created=0;
  for(const account of accounts){
   for(let attempt=0;attempt<5;attempt++){
    const existing=await db.prepare('SELECT code FROM psychology_website_links WHERE project_key=? AND connection_id=?').bind(context.projectId,account.connectionId).first();
    if(existing)break;
    const code=crypto.randomUUID().replaceAll('-','').slice(0,10);
-   await db.prepare('INSERT OR IGNORE INTO psychology_website_links(code,project_key,connection_id,created_at) VALUES(?,?,?,?)').bind(code,context.projectId,account.connectionId,now).run();
+   const inserted=await db.prepare('INSERT OR IGNORE INTO psychology_website_links(code,project_key,connection_id,created_at) VALUES(?,?,?,?)').bind(code,context.projectId,account.connectionId,now).run();
    const saved=await db.prepare('SELECT code FROM psychology_website_links WHERE project_key=? AND connection_id=?').bind(context.projectId,account.connectionId).first();
-   if(saved)break;
+   if(saved){created+=Number(inserted.meta?.changes||0);break;}
    if(attempt===4)throw new Error('Short link creation failed');
   }
  }
- return {ok:true,eligibleAccounts:accounts.length};
+ return {ok:true,eligibleAccounts:accounts.length,created};
 }
 export async function readWebsiteLinks(db,context,window){
  const ids=JSON.stringify(context.accounts.map(a=>a.connectionId));

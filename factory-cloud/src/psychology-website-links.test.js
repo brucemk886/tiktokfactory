@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
-import { createWebsiteLinks,readWebsiteLinks,handleWebsiteShortLink } from './psychology-website-links.js';
+import { createWebsiteLinks,readWebsiteLinks,readWebsiteLinkAccounts,handleWebsiteShortLink } from './psychology-website-links.js';
 const now=Date.parse('2026-10-06T12:00:00Z');
-const context={projectId:'proj-psych',accounts:[{connectionId:'a',username:'alpha',candidate:true,canPublish:true},{connectionId:'b',candidate:false,canPublish:true},{connectionId:'outside',candidate:true,canPublish:false}]};
+const context={projectId:'proj-psych',accounts:[{connectionId:'a',username:'alpha',candidate:true,canPublish:true},{connectionId:'b',candidate:false,canPublish:true},{connectionId:'outside',candidate:false,canPublish:false}]};
 const window={from:'2026-10-06',to:'2026-10-06'};
 test('stable short links are idempotent under concurrent creation and account scoped',async t=>{
  const f=await fixture(t);
@@ -50,4 +50,17 @@ test('counter failures cannot block the destination, and read failures are not z
  const db={prepare(sql){if(sql.startsWith('INSERT INTO psychology_website_link_days'))return{bind(){return{run:async()=>{throw new Error('offline');}};}};return f.db.prepare(sql);}};
  assert.equal((await handleWebsiteShortLink(new Request(url),{DB:db},url,null,{now})).status,302);
  await assert.rejects(()=>readWebsiteLinks({prepare(){return{bind(){return{all:async()=>({success:false})};}};}},context,window),/unavailable/);
+});
+
+
+test('every scoped thousand-follower account can have a link independently of receiver selection or publish scope',async t=>{
+ const f=await fixture(t),ctx={projectId:'proj-psych',accounts:[{connectionId:'a',username:'alpha',followers:1000,candidate:true,canPublish:false},{connectionId:'b',username:'beta',followers:1500,candidate:true,canPublish:true},{connectionId:'small',username:'small',followers:999,candidate:false,canPublish:true}],config:{receivers:[]}};
+ assert.deepEqual((await readWebsiteLinkAccounts(f.db,ctx)).map(a=>[a.connectionId,a.trackingUrl]),[['a',null],['b',null]]);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM psychology_website_links').get().n,0);
+ assert.equal((await createWebsiteLinks(f.db,ctx,now,['a'])).created,1);const first=(await readWebsiteLinkAccounts(f.db,ctx))[0].trackingUrl;
+ assert.equal((await readWebsiteLinkAccounts(f.db,ctx))[1].trackingUrl,null);
+ assert.equal((await createWebsiteLinks(f.db,ctx,now)).created,1);assert.equal((await createWebsiteLinks(f.db,ctx,now+1)).created,0);assert.equal((await readWebsiteLinkAccounts(f.db,ctx))[0].trackingUrl,first);
+ for(const ids of [[],['a','a'],null,Array(201).fill('a')])await assert.rejects(()=>createWebsiteLinks(f.db,ctx,now,ids),e=>e.statusCode===400);
+ for(const ids of [['outside'],['small']])await assert.rejects(()=>createWebsiteLinks(f.db,ctx,now,ids),e=>e.statusCode===403);
+ assert.deepEqual(ctx.config.receivers,[]);assert.equal(f.requests.length,0);
 });
