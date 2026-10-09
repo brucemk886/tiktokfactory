@@ -14,7 +14,7 @@ import {pageFileFor,isPublicPath} from '../factory-cloud/src/pages.js';
 const root=path.resolve(fileURLToPath(new URL('../public/',import.meta.url)));
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64');
 const image=name=>({file:new File([png],name+'.png',{type:'image/png'}),text:name});
-const input=(extra={})=>({sourceMode:'new',importSource:'gpt-dot',videoUrl:'https://www.tiktok.com/@source/video/123456789',originalTitle:'Source title',title:'Recreated title',caption:'Saved caption',images:[image('one'),image('two')],originals:[],...extra});
+const input=(extra={})=>({sourceMode:'new',importSource:'gpt-dot',videoUrl:'https://www.tiktok.com/@source/video/123456789',originalTitle:'Source title',originalCaption:'Original caption',title:'Recreated title',caption:'Saved caption',images:[image('one'),image('two')],originals:[image('original-one'),image('original-two')],...extra});
 async function setup(t){
  const f=await fixture(t),files=new Map(),writes=[],uploads=[];
  f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-video-hits']));
@@ -28,7 +28,7 @@ async function setup(t){
 }
 test('import validates before writes, defaults to disabled frames and accepts custom provenance',()=>{
  const normalized=normalizePhotoImport(input({importSource:' Bot.New ',originals:[image('original')]}));assert.equal(normalized.source.importSource,'bot.new');assert.equal(normalized.version.enabled,false);assert.equal(normalized.version.inputMode,'frames');assert.equal(normalized.version.script,'');
- for(const extra of [{images:[]},{images:Array.from({length:16},()=>image('x'))},{images:[{file:new File(['bad'],'x.gif',{type:'image/gif'})}]},{images:[{imageUrl:'http://invalid.local/a.png'}]},{videoUrl:'https://example.com/video'},{importSource:'bad label'},{sourceMode:'existing',sourceId:'foreign'}])assert.throws(()=>normalizePhotoImport(input(extra)));
+ for(const extra of [{originalTitle:' '},{originalCaption:' '},{caption:' '},{originals:[]},{originals:[{...image('original'),text:' '}]},{images:[]},{images:Array.from({length:16},()=>image('x'))},{images:[{file:new File(['bad'],'x.gif',{type:'image/gif'})}]},{images:[{imageUrl:'http://invalid.local/a.png'}]},{videoUrl:'https://example.com/video'},{importSource:'bad label'},{sourceMode:'existing',sourceId:'foreign'}])assert.throws(()=>normalizePhotoImport(input(extra)));
 });
 test('new source image import survives a lost commit response without duplicates or publication',async t=>{
  const f=await setup(t);let lose=true;
@@ -44,19 +44,19 @@ test('failed upload retries the same UUID and reuses completed uploads',async t=
  const f=await setup(t);let fail=true;const calls=[];
  const upload=async(id,file,type)=>{calls.push(id);const result=await f.upload(id,file,type);if(calls.length===2&&fail){fail=false;throw Error('upload timeout');}return result;};
  const session=createPhotoImportSession(normalizePhotoImport(input()),{request:f.request,upload});await assert.rejects(session.run(),/upload timeout/);assert.equal(f.counts().psychology_video_hits,0);
- await session.run();assert.equal(calls.length,3);assert.equal(calls[1],calls[2]);assert.equal(f.files.size,2);assert.equal(f.counts().psychology_video_hits,1);
+ await session.run();assert.equal(calls.length,5);assert.equal(calls[1],calls[2]);assert.equal(f.files.size,4);assert.equal(f.counts().psychology_video_hits,1);
 });
 test('existing source adds its next version without rewriting original content or provenance',async t=>{
  const f=await setup(t),first=await createPhotoImportSession(normalizePhotoImport(input({importSource:'grokbot'})),{request:f.request,upload:f.upload}).run();
  const before=(await f.request('/'+first.id)).source;
- const session=createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id,images:[{imageUrl:'https://cdn.example.org/recreated.png',text:'Link frame'}]})),{request:f.request,upload:f.upload});
+ const session=createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id,originals:[],images:[{imageUrl:'https://cdn.example.org/recreated.png',text:'Link frame'}]})),{request:f.request,upload:f.upload});
  const [a,b]=await Promise.all([session.run(),session.run()]);assert.equal(a.version,2);assert.deepEqual(a,b);assert.deepEqual((await f.request('/'+first.id)).source,before);assert.equal(f.counts().psychology_video_hits,1);assert.equal(f.counts().psychology_video_hit_versions,2);
 });
 test('full, archived, unowned and revoked imports do not create versions',async t=>{
  const f=await setup(t),first=await createPhotoImportSession(normalizePhotoImport(input()),{request:f.request,upload:f.upload}).run();
  for(let n=2;n<=20;n++)await f.request('/'+first.id+'/versions/'+n,'PUT',{requestId:crypto.randomUUID(),revision:0,title:'Other '+n});
- const session=()=>createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id})),{request:f.request,upload:f.upload});
- await assert.rejects(session().run(),/20/);assert.equal(f.uploads.length,2);
+ const session=()=>createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id,originals:[]})),{request:f.request,upload:f.upload});
+ await assert.rejects(session().run(),/20/);assert.equal(f.uploads.length,4);
  f.sqlite.prepare('UPDATE psychology_video_hits SET archived_at=1 WHERE id=?').run(first.id);await assert.rejects(session().run(),/归档/);
  f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(first.id);await assert.rejects(session().run(),/无权/);
  f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();await assert.rejects(createPhotoImportSession(normalizePhotoImport(input()),{request:f.request,upload:f.upload}).run(),/权限/);assert.equal(f.counts().psychology_video_hit_versions,20);assert.equal(f.counts().factory_jobs,0);
@@ -89,15 +89,59 @@ test('browser imports ordered image-text through logged-in page controls and ret
  const p=await browser.newPage(),origin='http://127.0.0.1:'+server.address().port;p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());await p.setRequestInterception(true);p.on('request',r=>{if(r.url().startsWith(origin)||r.url().startsWith('blob:')||r.url().startsWith('data:'))r.continue();else{external.push(r.url());r.abort();}});
  await p.goto(origin+'/psychology-video-hits',{waitUntil:'networkidle0'});assert.equal(await p.$eval('#newSource',n=>n.textContent),'新增二创导入');await Promise.all([p.waitForNavigation({waitUntil:'networkidle0'}),p.click('#newSource')]);assert.match(p.url(),/\/import$/);
  assert.equal(await p.$eval('#importSource',n=>n.value),'gpt-dot');await p.type('#originalTitle','Psychology source');await p.type('#originalUrl','https://www.tiktok.com/@reference/video/123456789');await p.type('#remixTitle','Recreated image story');await p.type('#remixCaption','Saved English caption #psychology');
+ assert.equal(await p.$eval('#originalCaption',n=>n.checkValidity()),false);assert.equal(await p.$eval('#originalFiles',n=>n.checkValidity()),false);await p.click('#saveImport');assert.equal(f.counts().psychology_video_hits,0);assert.equal(await p.$eval('#importFields',n=>n.disabled),false);
+ await p.type('#originalCaption','The original post caption');await (await p.$('#originalFiles')).uploadFile(...files);await p.waitForFunction(()=>document.querySelectorAll('#originalImages article').length===3);
+ assert.equal(await p.$eval('#originalImages [data-image-text="0"]',n=>n.checkValidity()),false);
+ await p.type('#originalImages [data-image-text="0"]','Original first image copy');await p.type('#originalImages [data-image-text="1"]','Original second image copy');await p.click('#originalImages [data-move="1"][data-direction="-1"]');await p.click('#originalImages [data-remove="2"]');
+ assert.equal(await p.$eval('#originalImages [data-image-text="0"]',n=>n.value),'Original second image copy');assert.match(await p.$eval('#originalImages article small',n=>n.textContent),/second.png/);
  await (await p.$('#remixFiles')).uploadFile(...files);await p.waitForFunction(()=>document.querySelectorAll('#remixImages article').length===3);await p.click('#remixImages [data-move="1"][data-direction="-1"]');await p.click('#remixImages [data-remove="2"]');await p.type('#remixImages [data-image-text="0"]','First visible text');
  for(const width of [1440,390,320]){await p.setViewport({width,height:1000});assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth),width,'import viewport overflow');await p.$eval('#remixImages',n=>n.scrollIntoView({block:'center'}));await p.evaluate(()=>{document.documentElement.style.scrollBehavior='auto';scrollTo(0,0);});await p.screenshot({path:path.join(out,'import-'+width+'.png'),fullPage:true});}
  assert.equal(f.counts().psychology_video_hits,0);await p.click('#saveImport');await p.waitForFunction(()=>document.querySelector('#importStatus').textContent.includes('Fixture response lost'));assert.equal(await p.$eval('#importFields',n=>n.disabled),true);assert.equal(await p.$eval('#partialRecord',n=>n.hidden),false);
- await p.click('#saveImport');await p.waitForSelector('#importResult:not([hidden])');assert.match(await p.$eval('#resultSummary',n=>n.textContent),/2 张图片.*停用/);assert.deepEqual(framesRequests[0],framesRequests[1]);
- assert.equal(f.counts().psychology_video_hits,1);assert.equal(f.counts().psychology_video_hit_versions,1);assert.equal(f.counts().psychology_video_hit_frames,2);assert.equal(f.counts().factory_jobs,0);assert.equal(f.counts().psychology_publish_batches,0);
- const recordLink=await p.$eval('#openImported',n=>n.getAttribute('href'));assert.match(recordLink,/version=1/);assert.equal(f.sqlite.prepare('SELECT text FROM psychology_video_hit_frames ORDER BY frame_index').get().text,'First visible text');
+ await p.click('#saveImport');await p.waitForSelector('#importResult:not([hidden])');assert.match(await p.$eval('#resultSummary',n=>n.textContent),/2 张二创图片；2 组原图与对应文案.*停用/);assert.deepEqual(framesRequests[0],framesRequests[1]);
+ assert.equal(f.counts().psychology_video_hits,1);assert.equal(f.counts().psychology_video_hit_versions,1);assert.equal(f.counts().psychology_video_hit_frames,4);assert.equal(f.counts().factory_jobs,0);assert.equal(f.counts().psychology_publish_batches,0);
+ const recordLink=await p.$eval('#openImported',n=>n.getAttribute('href'));assert.match(recordLink,/version=1/);assert.equal(f.sqlite.prepare('SELECT text FROM psychology_video_hit_frames WHERE version=1 ORDER BY frame_index').get().text,'First visible text');
+ assert.deepEqual(f.sqlite.prepare('SELECT text FROM psychology_video_hit_frames WHERE version=0 ORDER BY frame_index').all().map(f=>f.text),['Original second image copy','Original first image copy']);
+ assert.equal(f.sqlite.prepare('SELECT caption FROM psychology_video_hits').get().caption,'The original post caption');
  f.sqlite.prepare("UPDATE psychology_video_hits SET import_source='grokbot'").run();
  await Promise.all([p.waitForNavigation({waitUntil:'networkidle0'}),p.click('#importAnother')]);await p.waitForFunction(()=>document.querySelector('#existingSource').value.startsWith('vh-'));assert.equal(await p.$eval('#originalTitle',n=>n.disabled),true);assert.equal(await p.$eval('#importSource',n=>n.disabled),true);
  await p.waitForFunction(()=>document.querySelector('#importSource').value==='grokbot');await p.select('#sourceMode','new');assert.equal(await p.$eval('#importSource',n=>n.value),'gpt-dot','switching back to a new source restores the agent tag');await p.select('#sourceMode','existing');await p.waitForFunction(()=>document.querySelector('#importSource').value==='grokbot');
- await p.type('#remixTitle','Second recreation');await (await p.$('#remixFiles')).uploadFile(files[0]);await p.waitForFunction(()=>document.querySelectorAll('#remixImages article').length===1);await p.click('#saveImport');await p.waitForSelector('#importResult:not([hidden])');assert.match(await p.$eval('#resultSummary',n=>n.textContent),/版本 2/);assert.equal(f.counts().psychology_video_hits,1);assert.equal(f.counts().psychology_video_hit_versions,2);
+ await p.waitForSelector('#existingOriginalPreview:not([hidden])');assert.equal(await p.$$eval('#existingOriginalImages article',rows=>rows.length),2);assert.match(await p.$eval('#existingOriginalImages article p',n=>n.textContent),/Original second image copy/);
+ await p.type('#remixTitle','Second recreation');await p.type('#remixCaption','Second recreation caption');await (await p.$('#remixFiles')).uploadFile(files[0]);await p.waitForFunction(()=>document.querySelectorAll('#remixImages article').length===1);await p.click('#saveImport');await p.waitForSelector('#importResult:not([hidden])');assert.match(await p.$eval('#resultSummary',n=>n.textContent),/版本 2/);assert.equal(f.counts().psychology_video_hits,1);assert.equal(f.counts().psychology_video_hit_versions,2);
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
+});
+
+test('existing originals require title, caption, images and per-image copy before any uploads',async t=>{
+ const f=await setup(t),first=await createPhotoImportSession(normalizePhotoImport(input()),{request:f.request,upload:f.upload}).run();
+ const next=()=>createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id,originals:[]})),{request:f.request,upload:f.upload});
+ for(const field of ['title','caption']){
+  const previous=f.sqlite.prepare('SELECT '+field+' AS value FROM psychology_video_hits WHERE id=?').get(first.id).value;
+  f.sqlite.prepare('UPDATE psychology_video_hits SET '+field+'=? WHERE id=?').run(' ',first.id);
+  await assert.rejects(next().run(),/原标题、原发布文案都必填/);
+  f.sqlite.prepare('UPDATE psychology_video_hits SET '+field+'=? WHERE id=?').run(previous,first.id);
+ }
+ f.sqlite.prepare('UPDATE psychology_video_hit_frames SET frame_index=3 WHERE source_id=? AND version=0 AND frame_index=2').run(first.id);
+ await assert.rejects(next().run(),/第 2 张缺失/);
+ f.sqlite.prepare('UPDATE psychology_video_hit_frames SET frame_index=2 WHERE source_id=? AND version=0 AND frame_index=3').run(first.id);
+ f.sqlite.prepare("UPDATE psychology_video_hit_frames SET text=' ' WHERE source_id=? AND version=0 AND frame_index=2").run(first.id);
+ const session=next();await assert.rejects(session.run(),/第 2 张缺少对应文案/);assert.equal(f.uploads.length,4);assert.equal(f.counts().psychology_video_hit_versions,1);
+ f.sqlite.prepare("UPDATE psychology_video_hit_frames SET text='Restored second copy' WHERE source_id=? AND version=0 AND frame_index=2").run(first.id);
+ const result=await session.run();assert.equal(result.version,2);assert.equal(result.originalFrameCount,2);assert.equal(f.counts().factory_jobs,0);
+ f.sqlite.prepare('DELETE FROM psychology_video_hit_frames WHERE source_id=? AND version=0').run(first.id);
+ await assert.rejects(next().run(),/尚未上传原图/);assert.equal(f.uploads.length,6);
+});
+
+test('original image and copy read-back mismatches fail visibly and retry without duplicate writes',async t=>{
+ const f=await setup(t);let corrupt=true;
+ const request=async(p,method,body)=>{const data=await f.request(p,method,body);if(corrupt&&method==='GET'&&p.endsWith('/frames/0?page=1'))data.frames[0].text='Mismatched copy';return data;};
+ const session=createPhotoImportSession(normalizePhotoImport(input()),{request,upload:f.upload});
+ await assert.rejects(session.run(),/原图与对应文案回读不一致/);corrupt=false;
+ const writes=f.writes.length,result=await session.run();assert.equal(result.originalFrameCount,2);assert.equal(f.writes.length,writes);assert.equal(f.counts().psychology_video_hits,1);assert.equal(f.counts().psychology_video_hit_versions,1);
+});
+
+test('existing original copy is validated across all frame pages',async t=>{
+ const f=await setup(t),first=await createPhotoImportSession(normalizePhotoImport(input()),{request:f.request,upload:f.upload}).run();
+ const original=(await f.request('/'+first.id+'/frames/0')).frames[0],source=(await f.request('/'+first.id)).source;
+ await f.request('/'+first.id+'/frames/0','PUT',{requestId:crypto.randomUUID(),revision:source.revision,frames:Array.from({length:21},(_,i)=>({index:i+1,assetId:original.assetId,text:i===20?'':'Copy '+(i+1),durationSeconds:3}))});
+ const session=createPhotoImportSession(normalizePhotoImport(input({sourceMode:'existing',sourceId:first.id,originals:[]})),{request:f.request,upload:f.upload});
+ await assert.rejects(session.run(),/第 21 张缺少对应文案/);assert.equal(f.uploads.length,4);assert.equal(f.counts().psychology_video_hit_versions,1);
 });

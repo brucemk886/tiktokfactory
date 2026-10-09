@@ -1,4 +1,4 @@
-import {normalizeImportImage,normalizePhotoImport,createPhotoImportSession} from './psychology-video-hit-import-model.js';
+import {normalizeImportImage,normalizePhotoImport,createPhotoImportSession,readOriginalMaterial} from './psychology-video-hit-import-model.js';
 const $=id=>document.getElementById(id),BASE='/api/psychology-video-hits',PAGE='/psychology-video-hits';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const images={remix:[],original:[]};let session=null,busy=false,done=false,lookupToken=0,detailToken=0,searchPage=0,searchQuery='',pendingImages=0,currentSourceMode='new',newImporter='gpt-dot';
@@ -11,11 +11,13 @@ async function upload(id,file,type){
  if(!response.ok)throw new Error(data.error||'图片上传失败，请重试。');return data;
 }
 function status(text,error=false){$('importStatus').textContent=text;$('importStatus').dataset.error=String(error);}
-function imageStatus(text,error=false){$('imageStatus').textContent=text;$('imageStatus').dataset.error=String(error);}
+function imageStatus(text,error=false,kind='remix'){const target=$(kind==='original'?'originalImageStatus':'imageStatus');target.textContent=text;target.dataset.error=String(error);}
+function originalValidity(){$('originalFiles').setCustomValidity($('sourceMode').value==='new'&&!images.original.length?'请上传至少 1 张原图，并逐张填写对应文案。':'');}
 function renderImages(kind){
- const rows=images[kind];$(kind+'Images').innerHTML=rows.map((image,i)=>'<article class="hi-image"><img src="'+esc(image.preview)+'" alt="'+(kind==='remix'?'二创':'原图')+'第 '+(i+1)+' 张" referrerpolicy="no-referrer"><div class="hi-image-fields"><strong>第 '+(i+1)+' 张'+(i===0?' · 封面':'')+'</strong><small>'+esc(image.file?.name||image.imageUrl)+'</small><label>图片文字<textarea rows="3" maxlength="1500" data-image-text="'+i+'" aria-label="'+(kind==='remix'?'二创':'原图')+'第 '+(i+1)+' 张文字">'+esc(image.text)+'</textarea></label><div class="vh-actions"><button type="button" data-move="'+i+'" data-direction="-1" '+(i===0?'disabled':'')+' aria-label="第 '+(i+1)+' 张上移">上移</button><button type="button" data-move="'+i+'" data-direction="1" '+(i===rows.length-1?'disabled':'')+' aria-label="第 '+(i+1)+' 张下移">下移</button><button type="button" data-remove="'+i+'" aria-label="删除第 '+(i+1)+' 张">移除</button></div><small class="hi-image-error" hidden>图片预览失败，请检查文件或链接。</small></div></article>').join('');
+ const rows=images[kind];$(kind+'Images').innerHTML=rows.map((image,i)=>'<article class="hi-image"><img src="'+esc(image.preview)+'" alt="'+(kind==='remix'?'二创':'原图')+'第 '+(i+1)+' 张" referrerpolicy="no-referrer"><div class="hi-image-fields"><strong>第 '+(i+1)+' 张'+(i===0?' · 封面':'')+'</strong><small>'+esc(image.file?.name||image.imageUrl)+'</small><label>'+(kind==='original'?'该原图对应文案（必填）':'该二创图对应文字')+'<textarea rows="4" maxlength="1500" '+(kind==='original'?'required placeholder="填写这张原图对应的文案，不要混入其他图片的文字" '+(currentSourceMode==='existing'?'disabled ':''):'')+'data-image-text="'+i+'" aria-label="'+(kind==='remix'?'二创':'原图')+'第 '+(i+1)+' 张文字">'+esc(image.text)+'</textarea></label><div class="vh-actions"><button type="button" data-move="'+i+'" data-direction="-1" '+(i===0?'disabled':'')+' aria-label="第 '+(i+1)+' 张上移">上移</button><button type="button" data-move="'+i+'" data-direction="1" '+(i===rows.length-1?'disabled':'')+' aria-label="第 '+(i+1)+' 张下移">下移</button><button type="button" data-remove="'+i+'" aria-label="删除第 '+(i+1)+' 张">移除</button></div><small class="hi-image-error" hidden>图片预览失败，请检查文件或链接。</small></div></article>').join('');
  $(kind+'Images').querySelectorAll('img').forEach(img=>img.onerror=()=>img.closest('article').querySelector('.hi-image-error').hidden=false);
  $('imageCount').textContent=images.remix.length+' / 15 张';$('imagesEmpty').hidden=images.remix.length>0;
+ $('originalImageCount').textContent=images.original.length+' / 15 张';$('originalImagesEmpty').hidden=images.original.length>0;originalValidity();
 }
 async function addFiles(kind,files){
  if(session||busy)return;
@@ -28,8 +30,8 @@ async function addFiles(kind,files){
   }
   // A save or another upload may have started while the images decoded.
   if(session||busy||images[kind].length+additions.length>15)throw new Error('页面状态已变化，请重新选择图片。');
-  images[kind].push(...additions);renderImages(kind);imageStatus('已添加 '+additions.length+' 张'+(kind==='remix'?'二创图片':'原图')+'，可用上移 / 下移调整顺序。');
- }catch(e){additions.forEach(image=>URL.revokeObjectURL(image.preview));imageStatus(e.message,true);}finally{pendingImages--; $('saveImport').disabled=busy||done||pendingImages>0;}
+  images[kind].push(...additions);renderImages(kind);imageStatus('已添加 '+additions.length+' 张'+(kind==='remix'?'二创图片':'原图')+'，请逐张填写对应文案；调整顺序时文案会一起移动。',false,kind);
+ }catch(e){additions.forEach(image=>URL.revokeObjectURL(image.preview));imageStatus(e.message,true,kind);}finally{pendingImages--; $('saveImport').disabled=busy||done||pendingImages>0;}
 }
 for(const kind of ['remix','original']){
  $(kind+'Files').onchange=async e=>{await addFiles(kind,[...e.target.files]);e.target.value='';};
@@ -38,7 +40,7 @@ for(const kind of ['remix','original']){
   if(session||busy)return;const button=e.target.closest('button');if(!button)return;
   if(button.dataset.remove!==undefined){const [image]=images[kind].splice(Number(button.dataset.remove),1);if(image.file)URL.revokeObjectURL(image.preview);}
   if(button.dataset.move!==undefined){const index=Number(button.dataset.move),next=index+Number(button.dataset.direction);if(next>=0&&next<images[kind].length)[images[kind][index],images[kind][next]]=[images[kind][next],images[kind][index]];}
-  renderImages(kind);imageStatus('当前共有 '+images[kind].length+' 张'+(kind==='remix'?'二创图片':'原图')+'。');
+  renderImages(kind);imageStatus('当前共有 '+images[kind].length+' 张'+(kind==='remix'?'二创图片':'原图')+'。',false,kind);
  };
 }
 $('pasteImages').onpaste=e=>{if(session||busy)return;const files=[...(e.clipboardData?.files||[])].filter(f=>f.type.startsWith('image/'));if(files.length){e.preventDefault();addFiles('remix',files);}};
@@ -54,6 +56,7 @@ function sourceMode(){
  $('newSourceFields').hidden=existing;$('existingSourceFields').hidden=!existing;
  $('newSourceFields').querySelectorAll('input,textarea').forEach(n=>n.disabled=existing);$('existingSource').disabled=!existing;$('existingSource').required=existing;
  $('importSource').disabled=existing;$('importSourceHint').textContent=existing?'沿用原选题的来源标签，不覆盖原选题信息。':'标记素材来自哪个智能体，也可以填写自己的名称。';
+ originalValidity();
  if(existing){if(!$('existingSource').value&&searchPage===0)searchSources(false);else showSelectedSource();}
 }
 async function searchSources(more){
@@ -61,14 +64,22 @@ async function searchSources(more){
  $('searchSources').disabled=true;$('moreSources').disabled=true;$('sourceLookupStatus').textContent='正在查找选题…';
  try{
   const data=await request('?scope=active&page='+page+'&q='+encodeURIComponent(query));if(token!==lookupToken||session)return;
-  if(!more){$('existingSource').replaceChildren(new Option('请选择原选题',''));detailToken++;}
+  if(!more){$('editOriginalSource').hidden=true;$('existingOriginalPreview').hidden=true;$('existingSource').replaceChildren(new Option('请选择原选题',''));detailToken++;}
   for(const source of data.items){if(![...$('existingSource').options].some(o=>o.value===source.id))$('existingSource').add(new Option(source.title+' · '+source.externalId,source.id));}
   searchPage=page;searchQuery=query;$('moreSources').hidden=!data.hasMore;$('sourceLookupStatus').textContent=data.total?'找到 '+data.total+' 个选题，请选择。':'未找到选题，可改为新建。';
  }catch(e){if(token===lookupToken)$('sourceLookupStatus').textContent=e.message;}finally{if(token===lookupToken){$('searchSources').disabled=false;$('moreSources').disabled=false;}}
 }
 async function showSelectedSource(){
- const token=++detailToken,id=$('existingSource').value;if(!id)return;
- try{const data=await request('/'+id);if(token!==detailToken||session||$('sourceMode').value!=='existing')return;$('importSource').value=data.source.importSource;$('sourceLookupStatus').textContent='已选择：'+data.source.title+' · 原图 '+data.frameCount+' 张 · 下一个版本 '+data.nextVersion+(data.activeVersionCount>=20?'（在库版本已满）':'');}catch(e){if(token===detailToken)$('sourceLookupStatus').textContent=e.message;}
+ const token=++detailToken,id=$('existingSource').value;$('existingOriginalPreview').hidden=true;$('editOriginalSource').hidden=!id;if(!id)return;
+ $('editOriginalSource').href=PAGE+'/recreations?id='+encodeURIComponent(id);$('sourceLookupStatus').textContent='正在核对原标题、文案和逐图对应关系…';
+ try{
+  const data=await request('/'+id);if(token!==detailToken||session||$('sourceMode').value!=='existing')return;
+  $('importSource').value=data.source.importSource;
+  const material=await readOriginalMaterial(id,request,data);if(token!==detailToken||session||$('sourceMode').value!=='existing')return;
+  $('sourceLookupStatus').textContent='已选择：'+data.source.title+' · 原图及对应文案 '+material.frames.length+' 组已核对 · 下一个版本 '+data.nextVersion+(data.activeVersionCount>=20?'（在库版本已满）':'');$('sourceLookupStatus').dataset.error='false';
+  $('existingOriginalCaption').textContent='原发布文案：'+data.source.caption;
+  $('existingOriginalImages').innerHTML=material.frames.map(f=>'<article class="hi-image"><img src="'+esc(f.previewUrl||f.imageUrl)+'" alt="原图第 '+f.index+' 张" loading="lazy" referrerpolicy="no-referrer"><div class="hi-image-fields"><strong>原图 '+f.index+' · 对应文案</strong><p class="hi-copy">'+esc(f.text)+'</p></div></article>').join('');$('existingOriginalPreview').hidden=false;
+ }catch(e){if(token===detailToken){$('sourceLookupStatus').textContent=e.message;$('sourceLookupStatus').dataset.error='true';}}
 }
 $('sourceMode').onchange=sourceMode;$('searchSources').onclick=()=>searchSources(false);$('moreSources').onclick=()=>searchSources(true);$('existingSource').onchange=showSelectedSource;
 $('sourceSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();searchSources(false);}};
@@ -78,7 +89,7 @@ $('importForm').onsubmit=async e=>{
  try{if(!session)session=createPhotoImportSession(collect(),{request,upload,progress:text=>status(text)});}catch(error){status(error.message,true);return;}
  busy=true;$('importFields').disabled=true;$('saveImport').disabled=true;$('saveImport').textContent='正在保存…';
  try{
-  const result=await session.run();done=true;$('importForm').hidden=true;$('importResult').hidden=false;$('resultSummary').textContent='已保存「'+result.title+'」· 版本 '+result.version+' · '+result.frameCount+' 张图片。已回读核对，版本保持停用。';
+  const result=await session.run();done=true;$('importForm').hidden=true;$('importResult').hidden=false;$('resultSummary').textContent='已保存「'+result.title+'」· 版本 '+result.version+' · '+result.frameCount+' 张二创图片；'+result.originalFrameCount+' 组原图与对应文案已回读核对。版本保持停用。';
   $('openImported').href=PAGE+'/detail?id='+encodeURIComponent(result.id)+'&version='+result.version;$('importAnother').href=PAGE+'/import?source='+encodeURIComponent(result.id);$('importResult').scrollIntoView({block:'center'});
  }catch(error){status(error.message+'\n本次内容已固定；请保留当前页面，重试会继续保存并核对，不会重复新建。',true);$('saveImport').textContent='重试保存并核对';if(session.sourceId){$('partialRecord').hidden=false;$('partialRecord').href=PAGE+'/recreations?id='+encodeURIComponent(session.sourceId);$('partialRecord').target='_blank';$('partialRecord').rel='noopener';}}
  finally{busy=false;$('saveImport').disabled=done;}
@@ -89,5 +100,6 @@ async function start(){
   $('sourceMode').value='existing';searchPage=1;sourceMode();
   try{const data=await request('/'+encodeURIComponent(id));$('existingSource').add(new Option(data.source.title+' · '+data.source.externalId,id));$('existingSource').value=id;await showSelectedSource();}catch(e){$('sourceLookupStatus').textContent=e.message;}
  }else sourceMode();
+ originalValidity();
 }
 start();
