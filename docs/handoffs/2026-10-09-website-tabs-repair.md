@@ -20,7 +20,10 @@ Repair the misleading tab switching and cramped white navigation blocks on Indep
 - Desktop and mobile screenshots inspected at tmp/website-tabs-qa (ignored).
 
 ## Unfinished work
-Deployment verification pending. No backend or publishing changes.
+None. No backend or publishing changes.
 
 ## Recommended next step
 Refresh Independent Website and switch between all five tabs.
+
+## Release evidence
+All 11 focused browser/asset checks passed. Runtime commit 1f2bf781c9a3865d09cb4b8bb2875a367a1d3265 was committed and pushed to GitHub main before npm run deploy from a clean worktree with HEAD == origin/main. Worker 3ee1605c-b51f-4e9b-bdc2-d40d8e0628b1 deployed. Live website JS/CSS and receiving CSS returned HTTP 200 with SHA-256 matching the tested files. No production settings or publishing tasks were modified.
