@@ -1,12 +1,24 @@
 import {mountVideoPosters} from './psychology-video-posters.js';
-export function mountPsychologyVideoPicker({api,accounts,project,changed,isBusy=()=>false}){
+// Shuffle once at submission; the caller freezes this payload for idempotent retries.
+export function assignSelectedVideoItems(videos,accounts,{scheduleAt,intervalMinutes,isAiGenerated=true},random=Math.random){
+ if(!videos.length)throw new Error('请先选择视频。');
+ if(videos.length>20)throw new Error('每批最多20条视频。');
+ const ids=[...new Set(accounts.map(a=>String(a.connectionId||a.id||'')).filter(Boolean))];
+ if(!ids.length)throw new Error('请先勾选发布账号。');
+ if(ids.length>videos.length)throw new Error('账号数不能超过视频数，请减少账号或增加视频，让每个账号至少分配一条。');
+ if(!Number.isFinite(scheduleAt)||!Number.isInteger(intervalMinutes)||intervalMinutes<1||intervalMinutes>10080)throw new Error('请设置有效的发布时间和间隔。');
+ const shuffle=list=>{const result=[...list];for(let i=result.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[result[i],result[j]]=[result[j],result[i]];}return result;};
+ const targets=shuffle(ids);
+ return shuffle(videos).map((v,i)=>({...(v.videoHit?{videoHit:v.videoHit}:{}),assetId:v.assetId||v.id,connectionId:targets[i%targets.length],caption:v.caption??v.title??'',isAiGenerated,scheduleAt:scheduleAt+Math.floor(i/targets.length)*intervalMinutes*60}));
+}
+export function mountPsychologyVideoPicker({api,accounts,changed,isBusy=()=>false}){
  const $=id=>document.getElementById(id),BASE='/api/psychology-video-library';
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const posters=mountVideoPosters($('batchForm'));
  const chosen=new Map();let active=false,source='video-hits',page=1,pageSize=20,hasMore=false,rows=[],busy=false,version=0,poll;
  const say=(text,error=false)=>{$('videoPickerStatus').textContent=text;$('videoPickerStatus').classList.toggle('error',error);};
  const selectable=()=>rows.filter(v=>v.id&&v.previewUrl);
- const addVideo=v=>{if(!chosen.has(v.id))chosen.set(v.id,{...v,caption:v.caption??v.title??'',connectionId:'',isAiGenerated:true});};
+ const addVideo=v=>{if(!chosen.has(v.id))chosen.set(v.id,{...v,caption:v.caption??v.title??''});};
  function bulkControls(){
   const ready=selectable(),selectedHere=rows.filter(v=>v.id&&chosen.has(v.id)).length;
   $('selectPageVideos').disabled=busy||isBusy()||chosen.size>=20||!ready.some(v=>!chosen.has(v.id));
@@ -25,19 +37,14 @@ export function mountPsychologyVideoPicker({api,accounts,project,changed,isBusy=
   finally{if(current===version){busy=false;render();clearTimeout(poll);if(active&&rows.some(v=>['running','queued'].includes(v.preparationStatus)))poll=setTimeout(()=>load(),5000);}}
  }
  function update(){
-  $('videoMapping').hidden=!active;$('videoReviewSection').hidden=!active;if(!active)return;
+  if(!active)return;
   bulkControls();
   $('selectedVideoCount').textContent=String(chosen.size);$('pickerJumpCount').textContent=String(chosen.size);
-  const current=accounts(),allowed=new Set(current.map(a=>String(a.connectionId||a.id)));
-  for(const value of chosen.values())if(!allowed.has(value.connectionId))value.connectionId='';
-  let campaign='请选择项目';try{campaign=project()?.campaignId||campaign;}catch{}
-  const start=Math.floor(new Date($('scheduleAt').value).getTime()/1000),gap=Number($('intervalMinutes').value)||60,counts=new Map();
-  $('videoMapping').innerHTML=chosen.size?`<p class="field-hint">已选 ${chosen.size} 条 · 项目 ${esc(campaign)} · 每条只发给指定账号。可以逐条修改分配。</p><button type="button" id="assignSelectedVideos" ${!current.length?'disabled':''}>按已选账号轮流分配</button><div class="selected-video-mappings">`+[...chosen.values()].map(v=>{const n=counts.get(v.connectionId)||0;counts.set(v.connectionId,n+1);const date=Number.isFinite(start)?new Date((start+n*gap*60)*1000).toLocaleString('zh-CN'):'请设置发布时间';return `<article data-map="${esc(v.id)}"><div class="chosen-video-preview"><div class="chosen-video-media"><video controls playsinline preload="none" src="${esc(v.previewUrl)}" data-cover-src="${esc(v.previewUrl)}" aria-label="已选视频 ${esc(v.title||v.fileName)}"></video><span class="video-cover-status" role="status">读取封面…</span><button type="button" class="video-cover-button" aria-label="播放视频预览" hidden><img alt=""><span aria-hidden="true">▶</span></button></div><div><span class="video-origin-tag">${v.videoHit?'二创 · '+esc(v.versionName||'版本 '+v.videoHit.version):'已选成片'}</span><strong>${esc(v.title||v.fileName)}</strong><small>${esc(v.fileName)}</small></div></div><label>发布账号<select data-video-account="${esc(v.id)}"><option value="">请选择账号</option>${current.map(a=>{const id=String(a.connectionId||a.id);return `<option value="${esc(id)}" ${id===v.connectionId?'selected':''}>@${esc(a.username||a.displayName||id)} · ${Number(a.followers).toLocaleString()} 粉丝</option>`;}).join('')}</select></label><label>发布文案<textarea data-video-caption="${esc(v.id)}" maxlength="2200" rows="3">${esc(v.caption)}</textarea></label><label><input type="checkbox" data-video-ai="${esc(v.id)}" ${v.isAiGenerated?'checked':''}> 此视频包含 AI 生成内容</label><small>计划发布：${esc(date)}</small><button type="button" data-remove="${esc(v.id)}">移除选择</button></article>`;}).join('')+'</div>':'<div class="selected-empty">还没有选择视频。在上方勾选后，可在这里播放预览、修改文案和分配账号。</div>';
+  $('selectedVideoList').innerHTML=chosen.size?[...chosen.values()].map(v=>`<li><span title="${esc(v.title||v.fileName)}">${esc(v.title||v.fileName)}</span><button type="button" data-remove="${esc(v.id)}" aria-label="移除 ${esc(v.title||v.fileName)}" ${isBusy()?'disabled':''}>移除</button></li>`).join(''):'<li class="field-hint">还没有选择视频。</li>';
   posters.refresh();
-  const assign=$('assignSelectedVideos');if(assign)assign.onclick=()=>{[...chosen.values()].forEach((v,i)=>v.connectionId=String(current[i%current.length].connectionId||current[i%current.length].id));changed();update();};
  }
- $('videoMapping').addEventListener('input',e=>{const d=e.target.dataset,v=chosen.get(d.videoAccount||d.videoCaption||d.videoAi);if(!v)return;if(d.videoAccount){v.connectionId=e.target.value;update();}if(d.videoCaption)v.caption=e.target.value;if(d.videoAi)v.isAiGenerated=e.target.checked;changed();});
- $('videoMapping').addEventListener('click',e=>{const id=e.target.dataset.remove;if(id){chosen.delete(id);render();changed();}});
+ $('showSelectedVideos').onclick=()=>{$('selectedVideos').open=true;$('selectedVideos').scrollIntoView({block:'center',behavior:'smooth'});};
+ $('selectedVideoList').addEventListener('click',e=>{if(isBusy())return;const id=e.target.dataset.remove;if(id){chosen.delete(id);render();changed();}});
  $('selectPageVideos').onclick=()=>{
   if(busy||isBusy())return;
   const remaining=selectable().filter(v=>!chosen.has(v.id)),added=remaining.slice(0,20-chosen.size);
@@ -60,9 +67,7 @@ export function mountPsychologyVideoPicker({api,accounts,project,changed,isBusy=
   }source='uploaded';page=1;await load();say('上传完成。请播放预览并勾选视频。');}catch(e){say(e.message,true);}finally{busy=false;$('videoFiles').disabled=false;$('videoFiles').value='';render();}
  };
  function items(){
-  if(!chosen.size)throw new Error('请先预览并选择视频。');
-  const ids=new Set(accounts().map(a=>String(a.connectionId||a.id))),start=Math.floor(new Date($('scheduleAt').value).getTime()/1000),gap=Number($('intervalMinutes').value)||60,counts=new Map();
-  return [...chosen.values()].map(v=>{if(!ids.has(v.connectionId))throw new Error('请为每条视频指定一个已勾选的千粉账号。');const n=counts.get(v.connectionId)||0;counts.set(v.connectionId,n+1);return {...(v.videoHit?{videoHit:v.videoHit}:{}),assetId:v.assetId||v.id,connectionId:v.connectionId,caption:v.caption,isAiGenerated:v.isAiGenerated,scheduleAt:start+n*gap*60};});
+  return assignSelectedVideoItems([...chosen.values()],accounts(),{scheduleAt:Math.floor(new Date($('scheduleAt').value).getTime()/1000),intervalMinutes:Number($('intervalMinutes').value),isAiGenerated:$('selectedVideosAi').checked});
  }
- return {get busy(){return busy;},get active(){return active;},open(){active=true;$('batchForm').classList.add('is-video-selection');$('createBatchTitle').textContent='TikTok One 发布';$('automaticContent').querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=true);$('videoSelectionSection').hidden=false;$('automaticContent').hidden=true;$('submitBatch').textContent='核对并确认发布';load();},close(){active=false;posters.pause();$('batchForm').classList.remove('is-video-selection');$('createBatchTitle').textContent='新建发布任务';$('automaticContent').querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=false);$('videoMapping').hidden=true;$('videoReviewSection').hidden=true;clearTimeout(poll);$('videoSelectionSection').hidden=true;$('automaticContent').hidden=false;$('submitBatch').textContent='创建并自动发布';},update,items,clear(){chosen.clear();render();}};
+ return {get count(){return chosen.size;},get busy(){return busy;},get active(){return active;},open(){active=true;$('batchForm').classList.add('is-video-selection');$('createBatchTitle').textContent='TikTok One 发布';$('automaticContent').querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=true);$('videoSelectionSection').hidden=false;$('automaticContent').hidden=true;$('submitBatch').textContent='发布所选视频';load();},close(){active=false;posters.pause();$('batchForm').classList.remove('is-video-selection');$('createBatchTitle').textContent='新建发布任务';$('automaticContent').querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=false);clearTimeout(poll);$('videoSelectionSection').hidden=true;$('automaticContent').hidden=false;$('submitBatch').textContent='创建并自动发布';},update,items,clear(){chosen.clear();render();}};
 }

@@ -1,5 +1,5 @@
 /* Independent publishing workspace. Loaded after the shared console theme. */
-.publish-composer[hidden],#videoReviewSection[hidden],#hitSourceNote[hidden]{display:none!important}
+.publish-composer[hidden],#hitSourceNote[hidden]{display:none!important}
 body.is-publish-create .auto-shell{max-width:1440px}
 body.is-publish-create .auto-shell>.page-head,body.is-publish-create .task-list-panel,body.is-publish-create #queueMessage{display:none!important}
 body.is-publish-create .task-layout{display:block!important}
@@ -103,3 +103,18 @@ body.is-publish-create #videoSelectionSection .video-bulk-actions{margin:12px 0 
 body.is-publish-create #videoPickerStatus{margin:10px 0 8px;min-height:18px;font-size:12px}
 @media(min-width:761px) and (max-width:1000px){body.is-publish-create .selected-video-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){body.is-publish-create .selected-video-grid{grid-template-columns:1fr}body.is-publish-create #videoSelectionSection .video-source-label{width:100%}}
+
+/* Optional compact selection list, within step one; publication needs no second review. */
+.composer-steps a[hidden]{display:none!important}
+.selected-videos-compact{margin-top:16px;border-top:1px solid #e2eaf5;padding-top:12px;scroll-margin-top:90px}
+.selected-videos-compact summary{cursor:pointer;font-size:13px;color:#345b90}
+.selected-videos-compact summary small{font-weight:400;color:#8190a6;margin-left:12px}
+#selectedVideoList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 20px;list-style:none;padding:0;margin:12px 0;max-height:250px;overflow:auto}
+#selectedVideoList li{display:flex;align-items:center;gap:12px;min-width:0;padding:5px 0;border-bottom:1px solid #eef2f8;font-size:12px}
+#selectedVideoList li>span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.is-publish-create #selectedVideoList button{padding:3px 7px!important;min-height:28px;border:0;background:transparent;color:#6f829e}
+.selected-videos-ai{margin-top:14px;font-size:12px}
+@media(max-width:600px){#selectedVideoList{grid-template-columns:1fr}.selected-videos-compact summary small{margin-left:5px}}
+
+/* Keep failure notifications clear of the sticky publish/retry button. */
+body.is-publish-create .lf-toasts{top:72px;bottom:auto;max-height:calc(100vh - 160px);overflow:auto}

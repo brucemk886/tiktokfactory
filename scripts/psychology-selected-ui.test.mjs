@@ -12,7 +12,7 @@ import {AUTO_TEMPLATES} from './psychology-auto-publish.js';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'psy-selection-')),clip=path.join(tmp,'sample.mp4');
 execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=180x320:d=1','-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',clip]);
 let bulkMode=false,bulkEmpty=false;let coverActive=0,coverPeak=0,allowMissingCover=false;const coverStarts=[];
-const bytes=fs.readFileSync(clip),calls=[],errors=[],project='7693454687705595917';let imported=false,uploaded=false;const joined=new Set(),joinAttempts=new Map();
+const bytes=fs.readFileSync(clip),calls=[],errors=[],project='7693454687705595917';let imported=false,uploaded=false,failPublishOnce=true;const joined=new Set(),joinAttempts=new Map();
 const video=(id,title)=>({id,title,fileName:id+'.mp4',previewUrl:'/clip.mp4',createdAt:Date.now(),fileSize:bytes.length,status:'ready'});
 const server=http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://local');const body=[];for await(const c of req)body.push(c);const raw=Buffer.concat(body);calls.push({path:url.pathname,method:req.method,body:req.headers['content-type']==='application/json'&&raw.length?JSON.parse(raw):null});let data;
@@ -46,7 +46,7 @@ const server=http.createServer(async(req,res)=>{
  else if(url.pathname==='/api/psychology-video-library')data={videos:url.searchParams.get('source')==='video-hits'?[{...video('hit-selection','Understanding emotional boundaries'),assetId:'hit-asset',videoHit:{sourceId:'vh-'+'a'.repeat(32),version:1,revision:3},versionName:'版本 1',caption:'Saved recreation caption — automatically carried.'}]:url.searchParams.get('source')==='uploaded'?(uploaded?[video('upload','Uploaded')]:[]):[imported?video('generated','Generated'):{id:'',sourceJobId:'render',resultIndex:0,title:'Generated',fileName:'generated.mp4',status:'local',canPrepare:true,createdAt:Date.now()}],page:1,hasMore:false};
  else if(url.pathname.endsWith('/psychology-video-library/import')){imported=true;data={pending:true};}
  else if(url.pathname.endsWith('/psychology-video-library/upload')){uploaded=true;data={video:video('upload','Uploaded')};}
- else if(url.pathname==='/api/psychology-video-publish')data={accepted:true,batchId:'selected-1'};
+ else if(url.pathname==='/api/psychology-video-publish'){if(failPublishOnce){failPublishOnce=false;res.statusCode=503;data={error:'Mock temporary network failure'};}else data={accepted:true,batchId:'selected-1'};}
  else if(url.pathname.startsWith('/api/'))data={};
  else{const pathname=url.pathname==='/psychology-publish'?'/psychology-auto-publish.html':url.pathname;const file=path.join(path.dirname(fileURLToPath(import.meta.url)),'../public',pathname);if(!fs.existsSync(file)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(fs.readFileSync(file));return;}
  res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));
@@ -54,7 +54,7 @@ const server=http.createServer(async(req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
 try{
- const page=await browser.newPage();const clickPhoto=async selector=>{await page.$eval(selector,n=>n.scrollIntoView({block:'center'}));await page.click(selector);};let approve=false;page.on('dialog',d=>approve?d.accept():d.dismiss());page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1050});
+ const page=await browser.newPage();const clickPhoto=async selector=>{await page.$eval(selector,n=>n.scrollIntoView({block:'center'}));await page.click(selector);};let approve=false,dialogCount=0;page.on('dialog',d=>{dialogCount++;return approve?d.accept():d.dismiss();});page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1050});
  await page.setRequestInterception(true);page.on('request',r=>new URL(r.url()).hostname==='127.0.0.1'?r.continue():r.abort());
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish',{waitUntil:'networkidle0'});await Promise.all([page.waitForNavigation({waitUntil:'networkidle0'}),page.click('#newOneBatch')]);
  assert.match(page.url(),/create=one/);assert.equal(await page.$eval('#createBatchDialog',n=>n.tagName),'SECTION');
@@ -65,11 +65,8 @@ try{
  assert.equal(await page.$eval('#videoCards .video-cover-button',b=>b.hidden),false);
  const coverRequests=calls.filter(c=>c.path==='/clip.mp4').length;
  await page.click('[data-pick]');
- assert.equal(await page.$eval('[data-map="hit-selection"] video',v=>v.poster),firstPoster.poster);
  assert.equal(await page.$eval('#videoCards video',v=>v.poster),firstPoster.poster);
  assert.equal(calls.filter(c=>c.path==='/clip.mp4').length,coverRequests,'selecting reuses cached cover without refetching');
- assert.equal(await page.$eval('[data-video-caption="hit-selection"]',n=>n.value),'Saved recreation caption — automatically carried.');
- assert.equal(await page.$eval('[data-map="hit-selection"] video',n=>Boolean(n.src)),true);
  await page.select('#videoSource','generated');await page.waitForSelector('[data-prepare]');await page.waitForFunction(()=>document.querySelectorAll('#accounts input').length===2);
  await page.waitForFunction(()=>!document.querySelector('#oneProject').disabled&&document.querySelector('#oneProject').options.length>1);
  const listedProjects=()=>page.$$eval('#oneProject option',options=>options.map(o=>o.value).filter(Boolean));
@@ -105,16 +102,31 @@ try{
  assert.equal(joinPosts().length,4);assert.equal(joinPosts().at(-1).body.creatorConnectionId,'a');assert.equal(joinPosts().at(-1).body.campaignId,'7584639271164739598');
  assert.equal(await page.$eval('[data-one-pick="b"]',n=>n.checked),false);
  await page.select('#oneProject',project);await page.waitForFunction(()=>document.querySelector('#oneStatus').textContent.includes('已确认加入 2 / 2'));
- approve=false;await page.waitForSelector('#assignSelectedVideos');await page.click('#assignSelectedVideos');
- const text=await page.$('[data-video-caption="generated"]');await text.click();await page.keyboard.down('Control');await page.keyboard.press('A');await page.keyboard.up('Control');await text.type('Reviewed first caption');
- assert.equal(await page.$eval('[data-video-caption="generated"]',n=>n.value),'Reviewed first caption');
+ approve=false;
+ assert.equal(await page.$('#videoReviewSection'),null);assert.equal(await page.$('[data-video-account]'),null);assert.equal(await page.$('[data-video-caption]'),null);
+ assert.equal(await page.$eval('#selectedVideos',n=>n.open),false);
+ await page.click('#showSelectedVideos');assert.equal(await page.$eval('#selectedVideos',n=>n.open),true);
+ assert.equal(await page.$$eval('#selectedVideoList li',ns=>ns.length),3);
+ assert.match(await page.$eval('#summary',n=>n.textContent),/随机均分.*1–2 条/);
+ assert.equal(await page.$$eval('#batchForm>.auto-section',ns=>ns.filter(n=>!n.hidden).map(n=>n.id).join(',')),'videoSelectionSection,accountsSection,oneSection,scheduleSection');
+ await page.click('#selectedVideosAi');
  assert.equal(calls.filter(c=>c.path==='/api/psychology-video-publish').length,0);
- await page.click('#submitBatch');assert.equal(calls.filter(c=>c.path==='/api/psychology-video-publish').length,0);
  await page.$eval('#videoSelectionSection',n=>n.scrollIntoView({block:'start'}));
- const capture=process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR;if(capture){fs.mkdirSync(capture,{recursive:true});await page.screenshot({path:path.join(capture,'selected-desktop.png')});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(capture,'create-header.png')});await page.$eval('#videoReviewSection',n=>n.scrollIntoView({block:'start'}));await page.screenshot({path:path.join(capture,'selected-review.png')});}
+ const capture=process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR;if(capture){fs.mkdirSync(capture,{recursive:true});await page.screenshot({path:path.join(capture,'selected-desktop.png')});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(capture,'create-header.png')});await page.$eval('#accountsSection',n=>n.scrollIntoView({block:'start'}));await page.screenshot({path:path.join(capture,'selected-review.png')});}
  await page.setViewport({width:390,height:844});await page.$eval('#videoSelectionSection',n=>n.scrollIntoView({block:'start'}));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(capture)await page.screenshot({path:path.join(capture,'selected-mobile.png')});
- approve=true;await page.click('#submitBatch');await page.waitForFunction(()=>!location.search.includes('create='));
- const post=calls.find(c=>c.path==='/api/psychology-video-publish');assert.equal(post.body.items.length,3);assert.equal(post.body.items[0].connectionId,'a');assert.equal(post.body.items[1].connectionId,'b');assert.equal(post.body.items[1].caption,'Reviewed first caption');assert.equal(post.body.items[0].assetId,'hit-asset');assert.equal(post.body.items[0].videoHit.revision,3);assert.equal(post.body.items[0].caption,'Saved recreation caption — automatically carried.');assert.equal(post.body.tiktokOne.campaignId,project);
+ const beforePublishDialogs=dialogCount,hiddenControlsBefore=await page.$$eval('#automaticContent input,#automaticContent select,#automaticContent textarea,#automaticContent button',ns=>ns.map(n=>[n.id,n.disabled]));
+ await page.click('#submitBatch');await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('Mock temporary network failure')&&!document.querySelector('#submitBatch').disabled);
+ assert.equal(dialogCount,beforePublishDialogs,'publish has no secondary confirmation');
+ assert.deepEqual(await page.$$eval('#automaticContent input,#automaticContent select,#automaticContent textarea,#automaticContent button',ns=>ns.map(n=>[n.id,n.disabled])),hiddenControlsBefore,'retry restores hidden controls exactly');assert.equal(await page.$eval('#template',n=>n.disabled),true);
+ const firstAttempt=calls.find(c=>c.path==='/api/psychology-video-publish').body;
+ await page.click('#submitBatch');await page.waitForFunction(()=>!location.search.includes('create='));
+ const submitted=calls.filter(c=>c.path==='/api/psychology-video-publish');assert.equal(submitted.length,2);assert.deepEqual(submitted[1].body,firstAttempt,'retry freezes randomized accounts, captions, times and request ID');
+ const post=submitted[1];assert.equal(post.body.items.length,3);
+ assert.deepEqual([...new Set(post.body.items.map(i=>i.connectionId))].sort(),['a','b']);
+ for(const id of ['a','b']){const items=post.body.items.filter(i=>i.connectionId===id);assert.ok(items.length>=1&&items.length<=2);if(items.length===2)assert.equal(items[1].scheduleAt-items[0].scheduleAt,3600);}
+ const hit=post.body.items.find(i=>i.assetId==='hit-asset');assert.equal(hit.videoHit.revision,3);assert.equal(hit.caption,'Saved recreation caption — automatically carried.');
+ assert.equal(post.body.items.find(i=>i.assetId==='generated').caption,'Generated');assert.equal(post.body.items.find(i=>i.assetId==='upload').caption,'Uploaded');assert.ok(post.body.items.every(i=>!i.isAiGenerated));assert.equal(post.body.tiktokOne.campaignId,project);
+ assert.equal(dialogCount,beforePublishDialogs);
  await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=normal',{waitUntil:'networkidle0'});
  await page.waitForFunction(()=>document.querySelector('#accounts input'));
  assert.equal(await page.$eval('#sourceType',n=>n.value),'video-hits');assert.equal(await page.$eval('#oneEnabled',n=>n.checked),false);
@@ -143,14 +155,14 @@ try{
  await page.click('#selectPageVideos');
  assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),19);
  assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);assert.equal(await page.$eval('#clearPageVideos',n=>n.disabled),false);
- await page.$eval('[data-video-caption="bulk-0"]',n=>{n.value='Keep edited bulk caption';n.dispatchEvent(new Event('input',{bubbles:true}));});await page.click('[data-video-ai="bulk-0"]');
+ await page.click('#selectedVideosAi');
  await page.click('[data-pick="1"]');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'18');await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.waitForFunction(()=>!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');
- assert.equal(await page.$eval('[data-video-caption="bulk-0"]',n=>n.value),'Keep edited bulk caption');assert.equal(await page.$eval('[data-video-ai="bulk-0"]',n=>n.checked),false);
+ assert.match(await page.$eval('#selectedVideoList',n=>n.textContent),/Bulk video 0/);assert.equal(await page.$eval('#selectedVideosAi',n=>n.checked),false);
  await page.click('#videoNext');assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);
  await page.waitForFunction(()=>document.querySelector('#videoPage').textContent.includes('2')&&!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');
  assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'20');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),1);assert.match(await page.$eval('#videoPickerStatus',n=>n.textContent),/还有 19 条未选择/);
  assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);await page.click('#clearPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');
- assert.equal(await page.$eval('[data-video-caption="bulk-0"]',n=>n.value),'Keep edited bulk caption');
+ assert.match(await page.$eval('#selectedVideoList',n=>n.textContent),/Bulk video 0/);
  await page.click('#videoPrev');await page.waitForFunction(()=>document.querySelector('#videoPage').textContent.includes('1')&&!document.querySelector('#clearPageVideos').disabled);
  assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),19);
  const bulkCapture=process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR;if(bulkCapture){await page.$eval('#videoSelectionSection',n=>n.scrollIntoView({block:'start'}));await page.screenshot({path:path.join(bulkCapture,'bulk-desktop.png')});}
@@ -172,5 +184,5 @@ try{
  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));assert.equal(await page.$$eval('#posterQa video',vs=>vs.every(v=>!v.poster)),true);
  await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));await page.waitForFunction(()=>document.querySelector('#badCover').poster.startsWith('blob:'));
  assert.equal(calls.filter(c=>c.method==='POST').length,writesBeforeCoverQA,'cover loading never submits publication');
- assert.deepEqual(errors,[]);console.log('PASS saved photo albums: ordered preview, page-select/clear, cross-page preservation, over-limit disabled, desktop/mobile, confirmation payload and real PNG conversion; decoded cover before playback and cached selection reuse; visible account checkboxes, select-all/clear and scoped bulk joins; first-account failure continues to next success; cancellation, retry and project isolation, no publish on join, plus video preview and confirmed publishing on desktop/mobile; no real publishing APIs.');
-}catch(error){console.error('Page errors:',errors);const pages=await browser.pages();const p=pages.at(-1);console.error(await p.evaluate(()=>({status:document.querySelector('#hitPhotoStatus')?.textContent,photos:document.querySelector('#hitPhotoCards')?.innerHTML,photoPage:document.querySelector('#hitPhotoPage')?.textContent,button:document.querySelector('#hitPhotoSelectAll')?.outerHTML,picks:[...document.querySelectorAll('[data-pick]')].map(n=>({checked:n.checked,disabled:n.disabled})),mapping:document.querySelector('#videoMapping')?.innerHTML})));throw error;}finally{await browser.close();await new Promise(r=>server.close(r));if(path.dirname(tmp)!==os.tmpdir()||!path.basename(tmp).startsWith('psy-selection-'))throw new Error('Unexpected temporary path');fs.rmSync(tmp,{recursive:true,force:true});}
+ assert.deepEqual(errors,[]);console.log('PASS saved photo albums: ordered preview, page-select/clear, cross-page preservation, over-limit disabled, desktop/mobile, confirmation payload and real PNG conversion; decoded cover before playback and cached selection reuse; visible account checkboxes, select-all/clear and scoped bulk joins; first-account failure continues to next success; cancellation, retry and project isolation, no publish on join, plus video preview, direct randomized balanced publishing and frozen retries on desktop/mobile; no real publishing APIs.');
+}catch(error){console.error('Page errors:',errors);const pages=await browser.pages();const p=pages.at(-1);if(process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR)await p.screenshot({path:path.join(process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR,'failure.png')});console.error(await p.evaluate(()=>({message:document.querySelector('#message')?.textContent,invalid:[...document.querySelectorAll(':invalid')].map(n=>({id:n.id,disabled:n.disabled,value:n.value,reason:n.validationMessage})),submit:document.querySelector('#submitBatch')?.outerHTML,status:document.querySelector('#hitPhotoStatus')?.textContent,photos:document.querySelector('#hitPhotoCards')?.innerHTML,photoPage:document.querySelector('#hitPhotoPage')?.textContent,button:document.querySelector('#hitPhotoSelectAll')?.outerHTML,picks:[...document.querySelectorAll('[data-pick]')].map(n=>({checked:n.checked,disabled:n.disabled})),mapping:document.querySelector('#videoMapping')?.innerHTML})));throw error;}finally{await browser.close();await new Promise(r=>server.close(r));if(path.dirname(tmp)!==os.tmpdir()||!path.basename(tmp).startsWith('psy-selection-'))throw new Error('Unexpected temporary path');fs.rmSync(tmp,{recursive:true,force:true});}

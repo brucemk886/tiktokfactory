@@ -14,15 +14,16 @@
 <header class="page-head"><div><h1>自动发布</h1><p class="page-lead">批量生成与排期，集中查看任务进度和需要处理的内容。</p></div><div class="page-links"><a href="/psychology-publish-sources">发布记录</a><a id="newOneBatch" href="/psychology-publish?create=one">选视频 · TikTok One 发布</a><a id="newBatch" href="/psychology-publish?create=normal" class="primary-action"><img class="lf-icon" src="/vendor/bootstrap-icons/plus-lg.svg" alt=""> 新建发布任务</a></div></header>
 <p id="queueMessage" role="status" aria-live="polite"></p>
 <div class="task-layout">
-<section id="createBatchDialog" class="publish-composer" hidden aria-labelledby="createBatchTitle"><div class="composer-heading"><div><a class="composer-back" href="/psychology-publish" id="closeCreateBatch">← 返回发布任务</a><p class="composer-eyebrow">心理学 / 发布工作台</p><h1 id="createBatchTitle">新建发布任务</h1><p id="createBatchLead">选择内容、分配账号并设置发布时间。</p></div><span class="composer-mode" id="composerMode">普通发布</span></div><nav class="composer-steps" aria-label="发布步骤"><a href="#videoSelectionSection" id="contentStepLink"><b>01</b> 选择内容</a><a href="#accountsSection"><b>02</b> 分配账号</a><a href="#scheduleSection"><b>03</b> 核对并发布</a></nav><form id="batchForm" class="task-create-panel publish-create-grid">
+<section id="createBatchDialog" class="publish-composer" hidden aria-labelledby="createBatchTitle"><div class="composer-heading"><div><a class="composer-back" href="/psychology-publish" id="closeCreateBatch">← 返回发布任务</a><p class="composer-eyebrow">心理学 / 发布工作台</p><h1 id="createBatchTitle">新建发布任务</h1><p id="createBatchLead">选择内容、分配账号并设置发布时间。</p></div><span class="composer-mode" id="composerMode">普通发布</span></div><nav class="composer-steps" aria-label="发布步骤"><a href="#videoSelectionSection" id="contentStepLink"><b>01</b> 选择内容</a><a href="#accountsSection"><b>02</b> 勾选账号</a><a href="#oneSection" id="projectStepLink" hidden><b>03</b> 选择项目</a><a href="#scheduleSection" id="scheduleStepLink"><b>03</b> 设置时间并发布</a></nav><form id="batchForm" class="task-create-panel publish-create-grid">
 <section class="panel auto-section wide video-library-panel" id="videoSelectionSection" hidden>
 <div class="section-title"><div><span class="section-kicker">01 / 视频库</span><h2>选择要发布的视频</h2></div><a href="/psychology-video-hits" target="_blank" rel="noopener">管理二创视频 ↗</a></div>
-<p class="field-hint">播放预览后勾选，二创文案会一起带入。每批最多选择 20 条视频。</p>
-<div class="video-library-toolbar"><label class="field video-source-label">视频来源<select id="videoSource"><option value="video-hits">视频爆款 · 二创成片</option><option value="generated">工厂已生成成品</option><option value="uploaded">本地已上传视频</option></select></label><div class="video-toolbar-actions"><a class="video-selection-link" href="#videoReviewSection">已选 <b id="pickerJumpCount">0</b> 条 · 查看清单 ↓</a><label class="video-upload-button" for="videoFiles">＋ 上传本地视频<input id="videoFiles" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" multiple></label><button type="button" id="videoRefresh">刷新列表</button></div></div>
+<p class="field-hint">勾选视频，已保存的二创文案会一起带入。每批最多选择 20 条视频。</p>
+<div class="video-library-toolbar"><label class="field video-source-label">视频来源<select id="videoSource"><option value="video-hits">视频爆款 · 二创成片</option><option value="generated">工厂已生成成品</option><option value="uploaded">本地已上传视频</option></select></label><div class="video-toolbar-actions"><button type="button" class="video-selection-link" id="showSelectedVideos">已选 <b id="pickerJumpCount">0</b> 条 · 查看选择</button><label class="video-upload-button" for="videoFiles">＋ 上传本地视频<input id="videoFiles" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" multiple></label><button type="button" id="videoRefresh">刷新列表</button></div></div>
 <p class="field-hint upload-hint">MP4 / MOV / WebM · 单个文件不超过 95 MB</p>
 <div class="video-bulk-actions"><button type="button" id="selectPageVideos" disabled>全选本页视频</button><button type="button" id="clearPageVideos" disabled>取消本页选择</button><span id="videoPageSelectionStatus" role="status" aria-live="polite">每批最多选择 20 条视频</span></div><p id="videoPickerStatus" role="status" aria-live="polite"></p><div id="videoCards" class="selected-video-grid"></div><div class="video-pagination"><button type="button" id="videoPrev">上一页</button><span id="videoPage"></span><button type="button" id="videoNext">下一页</button></div>
+<details id="selectedVideos" class="selected-videos-compact"><summary>已选视频 <span id="selectedVideoCount">0</span><small>查看或移除选择</small></summary><ul id="selectedVideoList"></ul></details>
+<label class="auto-check selected-videos-ai"><input id="selectedVideosAi" type="checkbox" checked> 这些视频包含 AI 生成内容</label>
 </section>
-<section id="videoReviewSection" class="panel auto-section video-review-panel" hidden><div class="section-title"><div><span class="section-kicker">已选清单</span><h2>核对视频与文案 <span id="selectedVideoCount">0</span></h2></div><a href="#videoSelectionSection">继续选片 ↑</a></div><div id="videoMapping"></div></section>
 <section id="automaticContent" class="panel auto-section publish-content-section"><div class="section-title"><h2>01 · 内容与选题</h2></div>
 <div class="media-tabs" role="group" aria-label="内容类型"><button type="button" data-media="video" class="active" aria-pressed="true">视频<span>AI 画面与配音</span></button><button type="button" data-media="photo" aria-pressed="false">图文<span>卡片与素材底图</span></button></div>
 <details class="source-explanation"><summary>选题规则与可用内容</summary><p class="field-hint" id="sourceHint">正在读取文案库…</p></details>
@@ -49,21 +50,21 @@
 </div></details>
 </div></section>
 <section class="panel auto-section publish-accounts-section" id="accountsSection"><div class="section-title"><h2>02 · 发布账号</h2><button type="button" id="refreshAccounts">刷新账号</button></div>
-<p class="field-hint">先筛选分组，再勾选账号或全选筛选结果。切换分组会保留已选账号，可跨组选择；内容按已选账号轮流分配。</p>
+<p class="field-hint">先筛选分组，再勾选账号或全选筛选结果。切换分组会保留已选账号，可跨组选择。<span id="accountDistributionHint">内容按已选账号轮流分配。</span></p>
 <div class="account-filters"><label class="field"><span>账号分组</span><select id="accountGroup" disabled><option value="">全部分组</option></select></label><label class="field"><span>粉丝条件</span><select id="accountFollowers" disabled><option value="0">不限粉丝</option><option value="1000">仅选千粉账号（≥1000）</option></select></label><label class="field"><span>搜索账号</span><input id="accountSearch" type="search" placeholder="搜索 @用户名或昵称" maxlength="100" disabled></label></div>
 <div class="account-selection-actions"><button id="selectVisibleAccounts" type="button" disabled>全选筛选结果</button><button id="clearVisibleAccounts" type="button" disabled>取消当前筛选内选择</button><button id="clearAllAccounts" type="button" disabled>清空全部选择</button></div>
 <p id="accountSelectionStatus" class="field-hint" role="status" aria-live="polite"></p>
 <p class="field-hint">粉丝数来自已同步数据，非实时查询。千粉模式会移除不达标或待同步的选择；创建时再次核对。刷新账号只重读已有数据，缺失时请先在中台同步。</p>
 <div id="accounts" class="account-grid" aria-live="polite">正在读取心理学项目账号…</div></section>
-<section class="panel auto-section" id="oneSection"><div class="section-title"><h2>TikTok One 项目</h2></div>
+<section class="panel auto-section" id="oneSection"><div class="section-title"><h2 id="projectSectionTitle">TikTok One 项目</h2></div>
 <label class="auto-check"><input type="checkbox" id="oneEnabled"> 挂锚点发布</label>
 <div id="oneFields" hidden><div class="auto-grid">
 <label class="field">品牌账号<select id="oneBrand"><option value="">请选择品牌账号</option></select></label>
 <label class="field">项目<select id="oneProject"><option value="">请先选择品牌账号</option></select></label></div>
 <div class="account-selection-actions"><button id="oneRefreshProjects" type="button">刷新项目</button><button id="oneRecheck" type="button">重新检查账号</button><label class="one-select-all"><input id="oneSelectAll" type="checkbox" disabled>全选未确认账号</label><button id="oneJoinSelected" type="button" disabled>批量加入项目（0）</button></div>
-<p class="field-hint">每批绑定一个项目，两个项目请分别建任务。适用于四图、单图等模板生成的视频。千粉是选号条件，账号能否加入项目仍需单独校验。检查结束后默认勾选未确认账号，可取消部分勾选，再点击“批量加入项目”；单个失败会跳过并继续其他账号，已成功账号不会重复加入。此处勾选只控制加入项目，不改变上方发布账号选择。加入项目不会发布视频。最后确认发布时再次检查，未确认加入的会申请加入，加入失败会阻止创建发布任务，并在发布时启用品牌合作披露。实际锚点展示与审核结果以 TikTok 为准。</p>
+<p class="field-hint">每批绑定一个项目，两个项目请分别建任务。适用于四图、单图等模板生成的视频。千粉是选号条件，账号能否加入项目仍需单独校验。检查结束后默认勾选未确认账号，可取消部分勾选，再点击“批量加入项目”；单个失败会跳过并继续其他账号，已成功账号不会重复加入。此处勾选只控制加入项目，不改变上方发布账号选择。加入项目不会发布视频。点击发布时自动检查，未确认加入的会申请加入，加入失败会阻止创建发布任务，并在发布时启用品牌合作披露。实际锚点展示与审核结果以 TikTok 为准。</p>
 <p id="oneStatus" class="field-hint" role="status"></p><div id="oneAccounts" aria-live="polite"></div></div></section>
-<section class="panel auto-section publish-schedule-section" id="scheduleSection"><div class="section-title"><h2>03 · 发布计划</h2></div>
+<section class="panel auto-section publish-schedule-section" id="scheduleSection"><div class="section-title"><h2 id="scheduleSectionTitle">03 · 发布计划</h2></div>
 <div class="auto-grid"><label class="field"><span>首次发布时间（当前设备时区）</span><input id="scheduleAt" type="datetime-local" required><small>建议预留生成时间，至少提前 5 分钟。</small></label>
 <label class="field"><span>同账号发布间隔（分钟）</span><input id="intervalMinutes" type="number" min="1" max="10080" value="60" required></label></div>
 <div id="summary" class="batch-summary" aria-live="polite"></div>

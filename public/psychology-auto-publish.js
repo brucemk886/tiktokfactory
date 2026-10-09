@@ -14,7 +14,7 @@ async function api(path, body, method, options = {}) {
   return data;
 }
 const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,isBusy:()=>state.busy,setBusy:value=>{state.busy=value;$('#closeCreateBatch').disabled=value;renderAccountControls();},changed:()=>{resetAccountInput();summary();}});
-const picker=mountPsychologyVideoPicker({api,isBusy:()=>state.busy,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),project:()=>one.context(),changed:()=>resetAccountInput()});
+const picker=mountPsychologyVideoPicker({api,isBusy:()=>state.busy,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),changed:()=>{resetAccountInput();summary();}});
 const photoPicker=mountHitPhotoPicker({api,isBusy:()=>state.busy,changed:()=>{$('#count').value=photoPicker.refs().length;resetAccountInput();summary();}});
 const hitPhotos=()=>state.mediaType==='photo'&&sourceType()==='video-hits';
 const accountId=a=>String(a.connectionId||a.id);
@@ -47,7 +47,7 @@ function renderSources(){
   $('#photoOptions summary small').textContent=hitPhotos()?'配乐设置':'20套样式、配乐';$('#styleMode').closest('label').hidden=hitPhotos();$('#styleId').closest('label').hidden=hitPhotos();
   $('#template').disabled=hits||picker.active;
   $('#countLabel').textContent=hits?'发布总条数':'生成总条数';
-  $('#submitBatch').textContent=picker.active?'确认发布所选视频':hitPhotos()?'确认发布所选图文':hits?'确认抽取并发布':'创建并自动发布';
+  $('#submitBatch').textContent=picker.active?'发布所选视频':hitPhotos()?'确认发布所选图文':hits?'确认抽取并发布':'创建并自动发布';
   $('#sourceType option[value="topic-bank"]').disabled=!state.canUseTopics;
   const bank=sourceType()==='topic-bank',evolving=sourceType()==='library',fromLibrary=['copy-bank','copy-library','library'].includes(sourceType()),previous=$('#selection').value;
   $('#libraryMediaField').hidden=sourceType()!=='copy-library';
@@ -176,7 +176,10 @@ function accountName(id) {
   return username?'@'+username:a?.displayName||a?.label||(state.accountsLoading?'账号加载中…':'账号信息不可用');
 }
 function summary() {
-  if(picker.active){picker.update();$('#summary').textContent='请核对上方每条视频的账号、文案、项目与发布时间。确认后才会发布。';return;}
+  if(picker.active){
+    picker.update();const count=picker.count,accountCount=selected().length,low=Math.floor(count/accountCount),high=Math.ceil(count/accountCount);
+    $('#summary').textContent=!count?'请先勾选要发布的视频。':!accountCount?'已选 '+count+' 条视频，请勾选发布账号。':accountCount>count?'已选 '+count+' 条视频、'+accountCount+' 个账号，请减少账号或增加视频。':'已选 '+count+' 条视频、'+accountCount+' 个账号，随机均分，每个账号 '+(low===high?low:low+'–'+high)+' 条。同账号按 '+($('#intervalMinutes').value||'—')+' 分钟间隔发布，自动使用已保存文案。';return;
+  }
   const ids=selected(), count=Number($('#count').value)||0;
   $('#summary').textContent=ids.length ? `本批${hitPhotos()?'发布已选':sourceType()==='video-hits'?'抽取成片':'生成'} ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
@@ -271,7 +274,7 @@ function renderBatches() {
   if($('#batchDetail').open)renderSelectedBatch();
 
 }
-$('#batchForm').addEventListener('input',event=>{ if(['accountGroup','accountSearch','videoSource','videoFiles'].includes(event.target?.id)||event.target?.dataset?.videoCaption!==undefined||event.target?.dataset?.videoAi!==undefined)return; if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
+$('#batchForm').addEventListener('input',event=>{ if(['accountGroup','accountSearch','videoSource','videoFiles'].includes(event.target?.id))return; if(!state.busy){state.requestId=crypto.randomUUID();state.submittedInput=null;} summary(); });
 document.querySelectorAll('[data-media]').forEach(button=>button.addEventListener('click',async()=>{
   if(state.busy||state.mediaType===button.dataset.media)return;
   state.mediaType=button.dataset.media;state.requestId=crypto.randomUUID();state.submittedInput=null;
@@ -371,7 +374,12 @@ function showCreation(oneMode){
  document.body.classList.add('is-publish-create');$('#createBatchDialog').hidden=false;
  $('#contentStepLink').href=oneMode?'#videoSelectionSection':'#automaticContent';
  $('#composerMode').textContent=oneMode?'TikTok One':'普通发布';
- $('#createBatchLead').textContent=oneMode?'选择成片，核对文案与账号，为 TikTok One 项目安排发布。':'从二创成片或模板题库选择内容，设置账号与排期。';
+ $('#projectStepLink').hidden=!oneMode;
+ $('#scheduleStepLink').innerHTML='<b>'+(oneMode?'04':'03')+'</b> 设置时间并发布';
+ $('#projectSectionTitle').textContent=oneMode?'03 · TikTok One 项目':'TikTok One 项目';
+ $('#scheduleSectionTitle').textContent=(oneMode?'04':'03')+' · 发布计划';
+ $('#accountDistributionHint').textContent=oneMode?'视频随机均分给已选账号，条数相差不超过 1；同账号按设置的间隔发布。':'内容按已选账号轮流分配。';
+ $('#createBatchLead').textContent=oneMode?'勾选视频和账号，选择项目、设置时间后直接发布。文案自动带入，视频随机均分。':'从二创成片或模板题库选择内容，设置账号与排期。';
  document.title=(oneMode?'TikTok One 发布':'新建发布任务')+' · 心理学';
 }
 function finishCreation(){ globalThis.location.assign('/psychology-publish'); }
@@ -417,10 +425,9 @@ async function submitSelectedVideos(){
  if(picker.busy)return message('请等待视频上传或列表读取完成。',true);
  if(state.accountsLoading||state.accountsMedia!=='video')return message('请等待账号加载完成。',true);
  let body;try{const tiktokOne=one.context();if(!tiktokOne)throw new Error('请选择 TikTok One 项目。');body=state.submittedInput||{requestId:state.requestId,name:'TikTok One · 选片发布',tiktokOne,items:picker.items()};}catch(e){return message(e.message,true);}
- if(!confirm('确认发布 '+body.items.length+' 条视频？\n项目：'+body.tiktokOne.campaignId+'\n请已核对每条视频、账号、文案和发布时间。确认后将检查项目资格并进入发布队列。'))return;
  state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
- const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
+ const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')].map(n=>[n,n.disabled]);controls.forEach(([n])=>n.disabled=true);
  try{message('正在检查账号与项目并创建发布任务…');const result=await api('/api/psychology-video-publish',body);finishCreation();picker.clear();picker.close();resetAccountInput();message(result.duplicate?'已恢复同一发布批次。':'已确认入队，可在任务列表查看实际发布结果。');await loadBatches();}
  catch(e){message(e.message+'；配置不变时再次提交会核对同一批次。',true);}
- finally{state.busy=false;$('#closeCreateBatch').disabled=false;controls.forEach(n=>n.disabled=false);renderAccountControls();if(picker.active)$('#oneEnabled').disabled=true;}
+ finally{state.busy=false;$('#closeCreateBatch').disabled=false;controls.forEach(([n,disabled])=>n.disabled=disabled);renderAccountControls();if(picker.active)$('#oneEnabled').disabled=true;}
 }
