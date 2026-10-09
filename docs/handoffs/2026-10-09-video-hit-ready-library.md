@@ -25,7 +25,10 @@ Show prepared photo/video recreations immediately on the Video Hits homepage, ex
 - Before main integration, the full declared suite passed 1,454 tests. Integrated source/gallery/member browser regressions passed all three tests. Final full declared suite, including concurrent imported-photo and website changes: 1,473 passed, zero failures (test concurrency 4). No real publishing API called; all publication tests use fixtures.
 
 ## Unfinished work
-Push main, deploy and verify live assets/readiness.
+None for this delivery. No production publication was initiated for verification.
 
 ## Recommended next step
 Refresh Video Hits. Preview an enabled ready version, then choose its photo/video task action. Keep using Source Management for disabled drafts or incomplete content.
+
+## Release evidence
+Runtime commit 911e7d85551d8e705cfbfce46d2393cea7d3191d was pushed to GitHub main before npm run deploy from a clean worktree with HEAD == origin/main. Worker version 86381206-607c-4513-b0e2-06f26f4ca231 deployed successfully. Live gallery/source/publisher JavaScript, gallery CSS and API guide returned HTTP 200 and matched local SHA-256. Private pages redirect to login and the ready API returns 401 without a session. The exact readiness SQL ran read-only against production (zero rows written), returning 154 eligible versions: 65 photos and 89 videos at verification time. No migration, live material edit or publication was performed.
