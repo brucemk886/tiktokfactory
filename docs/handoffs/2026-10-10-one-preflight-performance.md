@@ -27,7 +27,7 @@ Investigate the stalled-looking One creation page and reduce time spent creating
 - Another 100 source/photo/group/publication integration tests passed (170 focused checks total). The real Chromium selected-video/photo flow passed, including the PC elapsed-second hint, error timer cleanup, disabled controls, and byte-identical retries. No real publication API called.
 
 ## Unfinished work
-Release and live asset verification pending.
+Released Factory runtime commit 8c6f074 after pushing main, from a clean exact HEAD == origin/main checkout via npm run deploy. Initial deployment uploaded code but one Workflow trigger update returned a transient fetch failure; repeating the same guarded deployment succeeded with all triggers, version 4a04e85c-6afb-4180-b118-a7364fd74b85. Live psychology-auto-publish.js returned 200 and its normalized SHA-256 matched the committed file. Companion Hub runtime f14f3421421550b6d1d24ac5f3761998e4c36616 deployed via npm run cloudflare:deploy, version 35c42ca2-09c1-47f7-9c13-d5edd3fbeb70; 45 focused tests and TypeScript passed there. No outstanding implementation work.
 
 ## Recommended next step
 After release, use the PC creation page for the next batch; keep the existing batch running. Compare actual creation latency on a future user submission.
