@@ -14,7 +14,7 @@ export function validateFrames(frames){if(frames.length<1||frames.length>MAX_HIT
 export async function hitPhotoInventory(env,actor,url){
  const user=await videoHitUser(env.DB,actor),page=Number(url.searchParams.get('page')||1),query=String(url.searchParams.get('q')||'').slice(0,100),size=12;
  if(!Number.isInteger(page)||page<1||page>10000)fail('页码无效。',400);
- const where="(s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND (s.title LIKE ? OR v.title LIKE ? OR v.caption LIKE ?)",args=[user.id,hitAdmin(user),'%'+query+'%','%'+query+'%','%'+query+'%'];
+ const where="(s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND v.publish_state<>'published' AND v.published_at=0 AND (s.title LIKE ? OR v.title LIKE ? OR v.caption LIKE ?)",args=[user.id,hitAdmin(user),'%'+query+'%','%'+query+'%','%'+query+'%'];
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where).bind(...args).first();
  const rows=await env.DB.prepare('SELECT v.*,s.title source_title FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where+' ORDER BY v.created_at DESC,v.source_id,v.version LIMIT ? OFFSET ?').bind(...args,size,(page-1)*size).all();
  const items=[];for(const v of rows.results){const frames=await allFrames(env.DB,v.source_id,v.version);let reason='';try{validateFrames(frames);await assertAssets(env.DB,user,frames);}catch(e){reason=e.message;}items.push({ref:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title.slice(0,90),caption:v.caption||v.title,sourceTitle:v.source_title,name:v.name,frameCount:frames.length,frames:frames.slice(0,MAX_HIT_PHOTOS).map(f=>({index:f.index,previewUrl:f.previewUrl})),eligible:!reason,reason});}
@@ -23,7 +23,7 @@ export async function hitPhotoInventory(env,actor,url){
 export async function createHitPhotoBatch(env,actor,config,batchId,accounts,internal={}){
  const user=await videoHitUser(env.DB,actor);if(!env.ARCHIVE||!env.PHOTO_QUEUE||!env.PHOTO_BROWSER)fail('图文发布服务尚未配置。',503);
  const entries=[];for(const ref of config.photoVersions){const origin=normalizeHitRef(ref),source=await sourceRow(env.DB,origin.sourceId,user),v=await versionRow(env.DB,source.id,origin.version,user);
-  if(source.archived_at||v.input_mode!=='frames'||!v.enabled||v.cleaned_at||v.publish_item_id||v.revision!==origin.revision)fail('二创版本已修改、停用或提交发布，请刷新后重新选择。');
+  if(source.archived_at||v.input_mode!=='frames'||!v.enabled||v.cleaned_at||v.publish_item_id||v.publish_state==='published'||v.published_at||v.revision!==origin.revision)fail('二创版本已修改、停用或提交发布，请刷新后重新选择。');
   const frames=await allFrames(env.DB,source.id,v.version);validateFrames(frames);await assertAssets(env.DB,user,frames);
   entries.push({user,origin,source,v,frames});
  }

@@ -14,5 +14,5 @@ export function mountHitPhotoPicker({api,changed,isBusy}){
  $('hitPhotoSelected').onclick=e=>{const id=e.target.dataset.removePhoto;if(id&&!isBusy()){chosen.delete(id);render();changed();}};
  $('hitPhotoPrev').onclick=()=>{page--;load();};$('hitPhotoNext').onclick=()=>{page++;load();};$('hitPhotoRefresh').onclick=load;
  const search=()=>{page=1;load();};$('hitPhotoSearchButton').onclick=search;$('hitPhotoQuery').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();search();}};
- return {sync(value){active=value;$('hitPhotoSelection').hidden=!value;if(value&&!loaded&&!busy)load();else if(value)controls();},refs:()=>[...chosen.values()].map(r=>r.ref),clear(){chosen.clear();loaded=false;render();},get busy(){return busy;}};
+ return {sync(value){active=value;$('hitPhotoSelection').hidden=!value;if(value&&!loaded&&!busy)load();else if(value)controls();},preselect(r){select({...r,eligible:true,frameCount:r.frames.length});render();changed();},refs:()=>[...chosen.values()].map(r=>r.ref),clear(){chosen.clear();loaded=false;render();},get busy(){return busy;}};
 }

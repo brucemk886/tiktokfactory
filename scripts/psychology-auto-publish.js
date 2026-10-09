@@ -43,6 +43,12 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if (!['peer','topic-bank','copy-bank','copy-library','library','video-hits'].includes(sourceType) || (sourceType === 'topic-bank' && mediaType !== 'video')) fail('题库仅支持 1、2、3 号视频模板。');
   if (sourceType === 'library' && mediaType !== 'photo') fail('文案库进化抽取目前只用于图文。');
   if(sourceType==='video-hits'&&((!hitVideos&&!hitPhotos)||typeof input.isAiGenerated!=='boolean'||input.allowPeerReuse===true))fail('二创素材请选择对应的图文或视频直接发布，确认 AI 标识，且不能允许重复使用。');
+  let videoVersions;
+  if(input.videoVersions!==undefined){
+   if(!hitVideos||!Array.isArray(input.videoVersions)||input.videoVersions.length!==count)fail('请选择与发布条数一致的二创成片。');
+   videoVersions=input.videoVersions.map(r=>{if(!r||!/^vh-[a-f0-9]{32}$/.test(r.sourceId||'')||!Number.isInteger(r.version)||r.version<1||r.version>2147483647||!Number.isSafeInteger(r.revision)||r.revision<1)fail('二创版本标识无效。');return {sourceId:r.sourceId,version:r.version,revision:r.revision};});
+   if(new Set(videoVersions.map(r=>r.sourceId+':'+r.version)).size!==count)fail('同一二创版本不能重复选择。');
+  }
   let photoVersions;
   if(hitPhotos){if(!Array.isArray(input.photoVersions)||input.photoVersions.length!==count)fail('请勾选与发布条数一致的二创图文。');photoVersions=input.photoVersions.map(r=>{if(!r||!/^vh-[a-f0-9]{32}$/.test(r.sourceId||'')||!Number.isInteger(r.version)||r.version<1||r.version>2147483647||!Number.isSafeInteger(r.revision)||r.revision<1)fail('二创版本标识无效。');return {sourceId:r.sourceId,version:r.version,revision:r.revision};});if(new Set(photoVersions.map(r=>r.sourceId+':'+r.version)).size!==count)fail('同一二创版本不能重复选择。');if(input.rewriteCopy===true)fail('二创图文直接使用已有图片与文案，不支持重新生成。');}
   const onlyUnused = sourceType === 'topic-bank' && input.onlyUnused !== false;
@@ -77,7 +83,7 @@ export function normalizeAutoPublish(input, now = Date.now(), { validateSchedule
   if(sourceType==='copy-library'&&!['all','video','photo'].includes(libraryMediaType))fail('请选择有效的原素材类型。');
   const tiktokOne=input.tiktokOne==null?null:normalizeOneProject(input.tiktokOne);
   if(tiktokOne&&mediaType!=='video')fail('TikTok One 挂锚点发布仅支持视频模板。');
-  return { ...(hitVideos||hitPhotos?{isAiGenerated:input.isAiGenerated}:{}),...(hitPhotos?{photoVersions}:{}),...(minFollowers?{minFollowers}:{}),...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
+  return { ...(videoVersions?{videoVersions}:{}),...(hitVideos||hitPhotos?{isAiGenerated:input.isAiGenerated}:{}),...(hitPhotos?{photoVersions}:{}),...(minFollowers?{minFollowers}:{}),...(poolContext?{poolContext}:{}),...(tiktokOne?{tiktokOne}:{}),...(libraryTestPolicy?{libraryTestPolicy}:{}),...(sourceType==='copy-library'?{libraryMediaType}:{}),...(sourceType==='library'&&libraryStrategy!=='evolve'?{libraryStrategy}:{}),...(staggerSeconds?{staggerSeconds}:{}),...(pairSeed?{pairSeed}:{}),styleMode,styleId,allowPeerReuse: input.allowPeerReuse === true, requestId: input.requestId, name: String(input.name || '心理学自动发布').trim().slice(0, 100), mediaType, template, sourceType, onlyUnused, count, connectionIds, scheduleAt, intervalMinutes, selection, query: String(input.query || '').trim().slice(0, 100), rewriteCopy: input.rewriteCopy === true, musicIds };
 }
 
 export function assignments(config, sources) {

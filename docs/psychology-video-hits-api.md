@@ -6,6 +6,16 @@
 
 管理员发布成员素材时，任务与发布账号权限归实际操作的管理员；仍需心理学发布权限、账号分组、粉丝门槛、项目加入及现有防重检查。创建用户无发布权限也可供管理员审核后使用。新建仍归实际创建用户，按 `ownerId + importSource + externalId` 去重。相同原视频可以由 grokbot、gpt-dot 等分别导入，各自保留原图、文案、二创版本和统计；即使共用同一项目密钥也支持。管理员查重时须核对创建用户和导入来源，明确是为已有选题追加版本还是新建另一来源。
 
+## 页面待发布素材
+
+打开 https://factory.tiktokaitool.com/psychology-video-hits 默认显示待发布二创，支持全部 / 图文 / 视频、导入来源和关键词筛选。仅展示已启用、图片完整或成片已准备好，且未提交发布的版本。已占用的任务即使还没有 TikTok 视频 ID 也会排除；已发布、已清理、已归档和未启用的版本不进入此视图。
+
+图文可按顺序逐张预览，视频可播放；卡片显示二创标题、发布文案、导入来源和创建用户。每个版本只列一张卡，同一版本同时具备图文和视频时，可以任选一种发布，共享原有一次发布名额。点击“创建图文任务 / 创建视频任务”或“TikTok One 发布”将准确带入所看的版本，仍需选择账号、时间并主动提交。仅浏览不会启用、生成或发布任何内容。
+
+来源管理保留于 https://factory.tiktokaitool.com/psychology-video-hits?view=sources ，用于检查原选题、草稿、已发布和未准备好的内容。页面导入仍默认停用。
+
+现有普通视频发布接口支持可选的 `videoVersions:[{sourceId,version,revision}]`，仅用于 `mediaType:video`、`sourceType:video-hits`、`template:selected-video`，条数必须与 count 一致且不得重复。传入时发布指定版本，不再随机抽取；不传时兼容原抽取流程。图文继续使用 photoVersions。素材变化或已占用会拒绝新建，不会自动换成另一条素材。
+
 ## 通过页面导入二创图文（无需 API Key）
 
 HTTP 或 MCP 不可用的智能体，可在已登录的工厂浏览器打开 https://factory.tiktokaitool.com/psychology-video-hits/import 。视频爆款列表的“新增二创导入”也会进入此页。

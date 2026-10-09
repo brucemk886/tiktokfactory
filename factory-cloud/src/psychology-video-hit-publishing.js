@@ -20,7 +20,7 @@ export async function hitVideoInventory(env,actor,{page=1,limit=20,selection='re
  LEFT JOIN psychology_video_assets a ON a.id=(SELECT candidate.id FROM psychology_video_assets candidate WHERE candidate.cleanup_state='active' AND ((v.input_mode='video' AND candidate.id=v.video_asset_id) OR (v.input_mode='frames' AND candidate.source_job_id=v.render_job_id AND candidate.result_index=0)) ORDER BY (candidate.status='ready') DESC,(candidate.owner=?) DESC,candidate.created_at DESC,candidate.id LIMIT 1)
  LEFT JOIN psychology_video_hit_videos d ON d.id=v.video_asset_id  AND d.cleanup_state='active'
  LEFT JOIN factory_jobs prep ON prep.id='video-archive-'||a.id
- WHERE (s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id=''
+ WHERE (s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND v.publish_state<>'published' AND v.published_at=0
  AND (v.title LIKE ? OR s.title LIKE ? OR v.caption LIKE ?)
  AND ((v.input_mode='video' AND d.id IS NOT NULL AND a.status='ready' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_video_usage u WHERE u.owner_id=d.owner_id AND u.digest=d.digest))
  OR (v.input_mode='frames' AND v.render_revision=v.revision AND v.render_source_revision=s.revision AND j.id IS NOT NULL AND j.worker_id<>'' AND json_extract(j.result_json,'$.results[0].fileName') IS NOT NULL))
@@ -29,7 +29,7 @@ export async function hitVideoInventory(env,actor,{page=1,limit=20,selection='re
 }
 export async function resolveHitVideo(env,actor,ref,assetId){
  const user=await videoHitUser(env.DB,actor),origin=normalizeHitRef(ref),source=await sourceRow(env.DB,origin.sourceId,user),v=await versionRow(env.DB,origin.sourceId,origin.version,user);
- if(source.archived_at||!v.enabled||v.cleaned_at||v.publish_item_id||v.revision!==origin.revision)fail('二创已被提交、停用或修改，请刷新后重新选择。');
+ if(source.archived_at||!v.enabled||v.cleaned_at||v.publish_item_id||v.publish_state==='published'||v.published_at||v.revision!==origin.revision)fail('二创已被提交、停用或修改，请刷新后重新选择。');
  let asset=null,render=null,digest='',digestOwnerId='';
  if(v.input_mode==='video'){
   const video=await readyVideo(env.DB,user,v.video_asset_id);digest=video.digest;digestOwnerId=video.owner_id;
@@ -73,7 +73,7 @@ export async function commitVideoBatch(env,user,config,batchId,entries,accounts)
 }
 export async function drawHitVideoBatch(env,user,config,batchId,accounts){
  if(!env.ARCHIVE)fail('成片存储尚未配置。',503);
- const inventory=await hitVideoInventory(env,user,{limit:1000,selection:config.selection,query:config.query}),entries=[],digests=new Set();
+ const inventory=config.videoVersions?{videos:config.videoVersions.map(videoHit=>({videoHit}))}:await hitVideoInventory(env,user,{limit:1000,selection:config.selection,query:config.query}),entries=[],digests=new Set();
  for(const v of inventory.videos){
   const hit=await resolveHitVideo(env,user,v.videoHit);
   if(hit.digest&&digests.has(hit.digest))continue;

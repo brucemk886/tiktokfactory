@@ -1,8 +1,9 @@
+import {mountReadyHits} from './psychology-video-hit-ready.js';
 import {mountVideoPosters} from './psychology-video-posters.js';
 const $=id=>document.getElementById(id),BASE='/api/psychology-video-hits',PAGE='/psychology-video-hits';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const route=location.pathname.replace(/\/$/,''),params=new URLSearchParams(location.search);
-const view=route===PAGE+'/recreations'?'recreations':route===PAGE+'/detail'?'detail':'sources';
+const view=route===PAGE+'/recreations'?'recreations':route===PAGE+'/detail'?'detail':params.get('view')==='sources'||params.get('newSource')==='1'||(params.has('inputMode')||params.has('importSource'))?'sources':'ready';
 let inputMode=['video','frames'].includes(params.get('inputMode'))?params.get('inputMode'):'all';
 let sourceImporter=params.get('importSource')||'';
 const typeQuery=()=>(inputMode==='all'?'':'&inputMode='+inputMode)+(sourceImporter?'&importSource='+encodeURIComponent(sourceImporter):'');
@@ -44,11 +45,12 @@ function syncTypeFilter(){
 function pageError(error){$('pageStatus').hidden=false;$('pageStatus').textContent=error.message;}
 function setupPage(){
  syncTypeFilter();
- const title=view==='sources'?'视频爆款':view==='recreations'?'爆款二创':'二创详情';
+ const title=['sources','ready'].includes(view)?'视频爆款':view==='recreations'?'爆款二创':'二创详情';
  $('pageTitle').textContent=title;document.title=title+' · 心理学';
- $('pageLead').textContent=view==='sources'?'原选题长期保留，每个来源最多同时保留 20 个未清理二创；发布清理后可持续新建。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
- $('pageBreadcrumb').hidden=view==='sources';$('breadcrumbCurrent').textContent=title;
- $('sourceList').hidden=view!=='sources';$('newSource').hidden=view!=='sources';
+ $('pageLead').textContent=view==='ready'?'查看已准备好的图文与视频，预览后创建发布任务。':view==='sources'?'原选题长期保留，每个来源最多同时保留 20 个未清理二创；发布清理后可持续新建。':view==='recreations'?'查看该爆款视频的全部二创版本，按版本顺序排列。':'对照查看原文案、二创文案，以及每一帧的原图和二创图。';
+ $('hitHomeTabs').hidden=!['sources','ready'].includes(view);$('readyHomeTab').setAttribute('aria-current',view==='ready'?'page':'false');$('sourceHomeTab').setAttribute('aria-current',view==='sources'?'page':'false');
+ $('pageBreadcrumb').hidden=['sources','ready'].includes(view);$('breadcrumbCurrent').textContent=title;
+ $('sourceList').hidden=view!=='sources';$('newSource').hidden=!['sources','ready'].includes(view);
  if(view==='detail'){
   $('recreationBreadcrumb').hidden=false;$('recreationBreadcrumb').href=recreationsUrl(sourceId||'');$('detailSeparator').hidden=false;
   $('backToVersions').hidden=false;$('backToVersions').href=recreationsUrl(sourceId||'');
@@ -287,7 +289,8 @@ async function showCleanup(){
 $('cleanupButton').onclick=()=>{$('cleanupDialog').showModal();showCleanup().catch(e=>$('cleanupStatus').textContent=e.message);};$('refreshCleanup').onclick=e=>action('cleanupStatus',e.target,showCleanup);
 $('apiButton').onclick=async()=>{$('apiInstructions').textContent='正在加载完整接入文档…';$('copyApi').disabled=true;$('apiDialog').showModal();try{$('apiInstructions').textContent=await guide();$('copyApi').disabled=false;}catch(e){$('apiInstructions').textContent=e.message;}};$('copyApi').onclick=async()=>{try{await navigator.clipboard.writeText(await guide());$('copyApi').textContent='已复制';}catch{$('copyApi').textContent='请选中下方说明复制';}};
 setupPage();
-if(view==='sources'){load();if(params.get('newSource')==='1')sourceEditor(false);}
+if(view==='ready')mountReadyHits();
+else if(view==='sources'){load();if(params.get('newSource')==='1')sourceEditor(false);}
 else if(!/^vh-[a-f0-9]{32}$/.test(sourceId||''))pageError(new Error('缺少有效的视频来源，请返回视频爆款列表。'));
 else if(view==='detail'&&(!Number.isInteger(n)||n<1||n>2147483647))pageError(new Error('二创版本编号无效，请返回二创列表。'));
 else{$('pageStatus').hidden=false;$('pageStatus').textContent='正在读取…';loadDetail().catch(pageError);}
