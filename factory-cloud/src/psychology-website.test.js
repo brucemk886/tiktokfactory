@@ -5,6 +5,7 @@ import { fixture } from './psychology-cloud-test-fixture.js';
 import { websiteWindow, websitePage, readWebsiteAnalytics, trackedWebsiteLink, accountForSource } from './psychology-website-data.js';
 import { handlePsychologyWebsite } from './psychology-website.js';
 import { handleFactoryApi } from './factory-api.js';
+import {kvSet} from './kv.js';
 import { sha256Hex } from './http.js';
 const now=Date.parse('2026-10-06T12:00:00Z');
 const window=websiteWindow(new URLSearchParams({period:'range',from:'2026-10-05',to:'2026-10-06'}),now);
@@ -172,4 +173,15 @@ test('website-only member grant reads the owned campaign without enabling automa
  const f=await endpointFixture(t);f.sqlite.exec("UPDATE factory_users SET role='operator',sidebar_modules_json='[\"psychology-website\"]',allowed_account_groups_json='[\"g\"]'");
  const response=await f.call();assert.equal(response.status,200);assert.equal(f.requests.length,0);
  f.sqlite.exec("UPDATE factory_users SET sidebar_modules_json='[]'");assert.equal((await f.call()).status,403);
+});
+
+
+test('website reports the separately saved imported-photo receivers without mutating legacy configuration',async t=>{
+ const f=await endpointFixture(t);f.sqlite.prepare('INSERT INTO official_account_assignments(account_key,group_id) VALUES(?,?)').run('a','g');f.sqlite.prepare('INSERT INTO official_accounts_latest(account_key,profile_json,synced_at) VALUES(?,?,?)').run('tiktok:a',JSON.stringify({username:'alpha',followers:1500}),now);
+ await kvSet(f.db,'psychology-autopilot-account-directory-v1',{accounts:[{id:'a',username:'alpha',scopes:['video.publish']}]});
+ const legacy=f.sqlite.prepare('SELECT * FROM psychology_conversion_campaigns').all();
+ f.sqlite.prepare('INSERT INTO psychology_imported_photo_settings(owner,config_json,enabled) VALUES(?,?,?)').run('admin',JSON.stringify({receiversConfigured:true,receivers:[{connectionId:'a',username:'alpha',linkReady:true}]}),0);
+ let result=await f.call();assert.equal(result.status,200);assert.equal(result.data.campaign.configuredReceivers,1);assert.equal(result.data.receivers.find(a=>a.connectionId==='a')?.configured,true);
+ f.sqlite.prepare('UPDATE psychology_imported_photo_settings SET config_json=?').run(JSON.stringify({receiversConfigured:true,receivers:[]}));result=await f.call();assert.equal(result.status,200);assert.equal(result.data.campaign.configuredReceivers,0);assert.equal(result.data.receivers.find(a=>a.connectionId==='a')?.configured,false);
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_conversion_campaigns').all(),legacy);assert.equal(f.requests.length,0);
 });

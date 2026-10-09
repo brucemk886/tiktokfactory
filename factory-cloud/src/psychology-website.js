@@ -6,6 +6,7 @@ import { websiteWindow, websitePage, readWebsiteAnalytics } from './psychology-w
 
 export const WEBSITE_ANALYTICS_PATH='/api/psychology-website';
 export async function handlePsychologyWebsite(request,env,url,session,{now=Date.now()}={}){
+ if(url.pathname===WEBSITE_ANALYTICS_PATH+'/receiving')return (await import('./psychology-imported-photos.js')).handleImportedPhotos(request,env,url,session,{now,website:true});
  const creating=url.pathname===WEBSITE_ANALYTICS_PATH+'/links';
  if(url.pathname!==WEBSITE_ANALYTICS_PATH&&!creating)return null;
  if(!session?.user)return errorJson('请先登录。',401);
@@ -19,6 +20,8 @@ export async function handlePsychologyWebsite(request,env,url,session,{now=Date.
   const context=await response.json();
   const campaign=await env.DB.prepare('SELECT owner FROM psychology_conversion_campaigns WHERE project_key=?').bind(context.projectId).first();
   if(!campaign||campaign.owner!==session.user.username)return errorJson('仅心理学转化项目负责人可查看全站订单与流量。',403);
+  const receiving=await env.DB.prepare('SELECT config_json,enabled FROM psychology_imported_photo_settings WHERE owner=?').bind(session.user.username).first();
+  if(receiving){const cfg=JSON.parse(receiving.config_json),receivers=cfg.receivers||[];if(cfg.receiversConfigured||receivers.length){context.config={...context.config,receivers,enabled:Boolean(receiving.enabled)};context.summary={...context.summary,selectedReceivers:receivers.length};}}
   if(creating)return json(await createWebsiteLinks(env.DB,context,now));
   const window=websiteWindow(url.searchParams,now);
   const paging={sourcePage:websitePage(url.searchParams,'sourcePage'),orderPage:websitePage(url.searchParams,'orderPage')};

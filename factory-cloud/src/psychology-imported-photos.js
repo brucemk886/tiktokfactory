@@ -8,14 +8,14 @@ import {allFrames,assertAssets,guard} from './psychology-video-hits.js';
 import {hitAdmin} from './psychology-video-hit-access.js';
 import {createHitPhotoBatch,validateFrames} from './psychology-video-hit-photos.js';
 import {dispatchCloudPhotos} from './psychology-cloud-queue.js';
-import {IMPORTED_PHOTO_TIMES,IMPORTED_PHOTO_ZONE,IMPORTED_PHOTO_LEAD,IMPORTED_PHOTO_PREPARE,importedPhotoSlots,importedPhotoCaption} from '../../scripts/psychology-imported-photo-policy.js';
+import {IMPORTED_PHOTO_TIMES,IMPORTED_PHOTO_ZONE,IMPORTED_PHOTO_LEAD,IMPORTED_PHOTO_PREPARE,importedPhotoSlots,importedPhotoCaption,DEFAULT_IMPORTED_PHOTO_CTA,normalizeImportedPhotoCTA} from '../../scripts/psychology-imported-photo-policy.js';
 const BASE='/api/psychology-autopilot/imported-photos',LEASE=5*60000;
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
 const parse=s=>JSON.parse(s||'{}');
-const defaults=()=>({connectionIds:[],receivers:[],routes:{},isAiGenerated:true});
-async function actor(db,username){
+const defaults=()=>({connectionIds:[],receivers:[],routes:{},isAiGenerated:true,cta:{...DEFAULT_IMPORTED_PHOTO_CTA}});
+async function actor(db,username,website=false){
  const row=await db.prepare('SELECT * FROM factory_users WHERE username=? AND active=1').bind(username||'').first(),user=row&&toPublicUser(row);
- if(!user||!['psychology-autopilot','psychology-publish','psychology-video-hits'].every(m=>hasPsychologyModule(user,m)))fail('需要自动运营、自动发布和视频爆款权限。',403);
+ if(!user||(website?!(hasPsychologyModule(user,'psychology-website')||user.role==='admin'&&hasPsychologyModule(user,'psychology-autopilot')):!['psychology-autopilot','psychology-publish','psychology-video-hits'].every(m=>hasPsychologyModule(user,m))))fail(website?'没有独立站承接设置权限。':'需要自动运营、自动发布和视频爆款权限。',403);
  return user;
 }
 const inventoryWhere=`(s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id=''
@@ -29,19 +29,20 @@ async function readData(env,user,scope,now){
  v.title,COALESCE(v.publish_state,'') publishState,COALESCE(j.status,'') jobStatus,COALESCE(j.error,'') error
  FROM psychology_imported_photo_slots s LEFT JOIN psychology_video_hit_versions v ON v.source_id=s.source_id AND v.version=s.version
  LEFT JOIN factory_jobs j ON j.id=s.item_id WHERE s.owner=? ORDER BY s.slot_at DESC,s.connection_id LIMIT 30`).bind(user.username).all()).results;
- return {revision:row?.revision||0,enabled:Boolean(row?.enabled),config:row?parse(row.config_json):defaults(),accounts:scope.accounts,
+ return {revision:row?.revision||0,enabled:Boolean(row?.enabled),config:{...defaults(),...parse(row?.config_json),cta:normalizeImportedPhotoCTA(parse(row?.config_json).cta)},ctaDefaults:DEFAULT_IMPORTED_PHOTO_CTA,accounts:scope.accounts,
   times:IMPORTED_PHOTO_TIMES,timeZone:IMPORTED_PHOTO_ZONE,nextSlots:importedPhotoSlots(now,now+26*3600000,row?.enabled_at||0).slice(0,3),
   inventory:count.n,checkedAt:row?.checked_at||0,detail:row?.detail||'配置发布账号和承接账号后，可保存并启用。',recent};
 }
-export async function handleImportedPhotos(request,env,url,session,{directory,now=Date.now()}={}){
- if(url.pathname!==BASE)return null;
+export async function handleImportedPhotos(request,env,url,session,{directory,now=Date.now(),website=false}={}){
+ if(url.pathname!==(website?'/api/psychology-website/receiving':BASE))return null;
  try{
-  const user=await actor(env.DB,session?.user?.username),db=env.DB;
+  const user=await actor(env.DB,session?.user?.username,website),db=env.DB;
   if(request.method!=='GET'&&request.headers.get('origin')&&request.headers.get('origin')!==url.origin)fail('不允许跨站修改。',403);
   const head=await db.prepare('SELECT * FROM psychology_imported_photo_settings WHERE owner=?').bind(user.username).first();
   if(!['GET','PATCH'].includes(request.method))fail('不支持此操作。',405);
   const body=request.method==='PATCH'?await readJson(request):null;
-  if(body&&(typeof body.enabled!=='boolean'||body.revision!==(head?.revision||0)))fail('配置已变化，请刷新后重试。',409);
+  if(website&&body&&(!['receivers','cta'].includes(body.section)||body.pauseOnly!==undefined))fail('承接设置只能修改承接账号或引导文案。',403);
+  if(body&&body.revision!==(head?.revision||0))fail('配置已变化，请刷新后重试。',409);
   // Pausing remains possible during a directory outage. Committed jobs keep their frozen settings.
   if(body?.pauseOnly===true){
    if(body.enabled!==false||!head)fail('暂停参数无效。');
@@ -49,22 +50,41 @@ export async function handleImportedPhotos(request,env,url,session,{directory,no
    if(!result.meta?.changes)fail('配置已变化，请刷新。',409);return json({ok:true,revision:body.revision+1,enabled:false});
   }
   const scope=await accountScope(db,user,directory||await publishAccountDirectory(env));
-  if(!body)return json(await readData(env,user,scope,now));
-  const ids=body.connectionIds;
+  const responseData=async()=>{
+   if(!website)return readData(env,user,scope,now);
+   const saved=await db.prepare('SELECT revision,config_json FROM psychology_imported_photo_settings WHERE owner=?').bind(user.username).first();
+   const config={...defaults(),...parse(saved?.config_json)},allowed=new Set(scope.accounts.map(a=>a.connectionId));
+   return {revision:saved?.revision||0,config:{receivers:config.receivers,cta:normalizeImportedPhotoCTA(config.cta)},accounts:scope.accounts,ctaDefaults:DEFAULT_IMPORTED_PHOTO_CTA,publisherIds:config.connectionIds.filter(id=>allowed.has(id)),routes:config.routes};
+  };
+  if(!body)return json(await responseData());
+  const section=body.section||'all';
+  if(!['all','publishing','receivers','cta'].includes(section))fail('未知的设置区域。');
+  const keys={publishing:['section','revision','enabled','connectionIds','isAiGenerated'],receivers:['section','revision','receivers'],cta:['section','revision','cta']};
+  if(keys[section]&&Object.keys(body).some(k=>!keys[section].includes(k)))fail('请只提交当前区域的设置。');
+  const prior={...defaults(),...parse(head?.config_json)},publishing=['all','publishing'].includes(section),receiving=['all','receivers'].includes(section);
+  const enabled=publishing?body.enabled:Boolean(head?.enabled);
+  if(typeof enabled!=='boolean')fail('请设置是否启用自动发布。');
+  const ids=publishing?body.connectionIds:prior.connectionIds,selectedReceivers=receiving?body.receivers:prior.receivers;
   if(!Array.isArray(ids)||ids.length>200||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'))fail('请选择最多 200 个发布账号。');
-  if(!Array.isArray(body.receivers)||body.receivers.length>60||new Set(body.receivers.map(a=>a?.connectionId)).size!==body.receivers.length)fail('承接账号重复或数量无效。');
+  if(!Array.isArray(selectedReceivers)||selectedReceivers.length>60||new Set(selectedReceivers.map(a=>a?.connectionId)).size!==selectedReceivers.length)fail('承接账号重复或数量无效。');
   const accounts=new Map(scope.accounts.map(a=>[a.connectionId,a]));
-  if(ids.some(id=>!accounts.get(id)?.canPublish))fail('所选发布账号已失效或不在当前权限范围内。',403);
-  const receivers=body.receivers.map(r=>{const a=accounts.get(r?.connectionId);if(!a?.canPublish||!a.candidate||r.linkReady!==true)fail('承接账号需要至少 1000 粉丝、有效用户名，并确认已挂主页测试链接。');return {connectionId:a.connectionId,username:a.username,linkReady:true};});
-  if(body.enabled&&(!ids.length||!receivers.length))fail('启用前请选择发布账号和至少一个已挂链接的承接账号。');
-  if(typeof body.isAiGenerated!=='boolean')fail('请设置 AI 内容标记。');
-  const config={connectionIds:ids.sort(),receivers,routes:balanceConversionRoutes(ids,receivers,parse(head?.config_json).routes),isAiGenerated:body.isAiGenerated};
+  if(publishing&&ids.some(id=>!accounts.get(id)?.canPublish))fail('所选发布账号已失效或不在当前权限范围内。',403);
+  const receivers=receiving||publishing&&enabled?selectedReceivers.map(r=>{
+   const a=accounts.get(r?.connectionId);if(!a?.canPublish||!a.candidate||r.linkReady!==true)fail('承接账号需要至少 1000 粉丝、有效用户名，并确认已挂主页测试链接。');
+   if(!receiving&&a.username!==r.username)fail('承接账号用户名已改变，请先单独保存承接账号以重新确认。');
+   return {connectionId:a.connectionId,username:a.username,linkReady:true};
+  }):prior.receivers;
+  if(enabled&&(!ids.length||!receivers.length))fail('启用前请先分别保存发布账号和至少一个已挂链接的承接账号。');
+  const isAiGenerated=publishing?body.isAiGenerated:prior.isAiGenerated;if(typeof isAiGenerated!=='boolean')fail('请设置 AI 内容标记。');
+  if(section==='cta'&&body.cta===undefined)fail('请填写引导文案。');
+  const cta=normalizeImportedPhotoCTA(section==='cta'?body.cta:section==='all'&&body.cta!==undefined?body.cta:prior.cta);
+  const config={...prior,receiversConfigured:receiving||prior.receiversConfigured===true||prior.receivers.length>0,connectionIds:[...ids].sort(),receivers,routes:balanceConversionRoutes(ids,receivers,prior.routes),isAiGenerated,cta};
   // No old strategy is resumed, and changing settings cannot reset occupied account/time slots.
   const statements=[db.prepare('INSERT INTO psychology_imported_photo_settings(owner) VALUES(?) ON CONFLICT(owner) DO NOTHING').bind(user.username),
    db.prepare("UPDATE psychology_imported_photo_settings SET revision=revision+1,enabled=?,config_json=?,enabled_at=?,dispatched_at=0,scan_cursor='',lease_token='',lease_until=0,detail=?,updated_at=? WHERE owner=? AND revision=?")
-    .bind(Number(body.enabled),JSON.stringify(config),head?.enabled?head.enabled_at:now,body.enabled?'已启用；提前 60 分钟准备未来时段，已错过的时段不补发。':'已保存，尚未启用；已创建任务继续。',now,user.username,body.revision),guard(db)];
+    .bind(Number(enabled),JSON.stringify(config),head?.enabled?head.enabled_at:now,enabled?'已启用；提前 60 分钟准备未来时段，已错过的时段不补发。':'已保存，尚未启用；已创建任务继续。',now,user.username,body.revision),guard(db)];
   try{await db.batch(statements);}catch(e){if(/CHECK|UNIQUE/.test(e.message))fail('配置已变化，请刷新后重试。',409);throw e;}
-  return json(await readData(env,user,scope,now));
+  return json(await responseData());
  }catch(e){return errorJson(e.message,e.statusCode||500);}
 }
 export async function dispatchImportedPhotos(env,now=Date.now()){
@@ -103,7 +123,7 @@ export async function runImportedPhotos(env,owner,{now=Date.now(),directory}={})
    const candidates=(await db.prepare('SELECT v.* FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+inventoryWhere+
     ' AND NOT EXISTS(SELECT 1 FROM psychology_imported_photo_slots old WHERE old.connection_id=? AND old.source_id=v.source_id AND old.slot_at>=?) AND NOT EXISTS(SELECT 1 FROM psychology_imported_photo_skips skip WHERE skip.owner=? AND skip.source_id=v.source_id AND skip.version=v.version AND skip.revision=v.revision AND skip.retry_at>?) AND NOT EXISTS(SELECT 1 FROM psychology_publish_items old WHERE old.connection_id=? AND old.source_id LIKE v.source_id||\':v%\' AND old.schedule_at>=? AND old.deleted_at=0) ORDER BY v.created_at,v.source_id,v.version LIMIT 20').bind(user.id,hitAdmin(user),id,slot-14*86400000,owner,now,id,slot/1000-14*86400).all()).results;
    let picked=null,copy=null;
-   for(const v of candidates){try{const frames=await allFrames(db,v.source_id,v.version);validateFrames(frames);await assertAssets(db,user,frames);copy=importedPhotoCaption(v.caption,id,receiver);picked=v;break;}catch(e){if(e.statusCode>=500)throw e;detail=e.message;await db.prepare('INSERT INTO psychology_imported_photo_skips(owner,source_id,version,revision,retry_at,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(owner,source_id,version) DO UPDATE SET revision=excluded.revision,retry_at=excluded.retry_at,reason=excluded.reason').bind(owner,v.source_id,v.version,v.revision,now+3600000,e.message.slice(0,300)).run();}}
+   for(const v of candidates){try{const frames=await allFrames(db,v.source_id,v.version);validateFrames(frames);await assertAssets(db,user,frames);copy=importedPhotoCaption(v.caption,id,receiver,config.cta);picked=v;break;}catch(e){if(e.statusCode>=500)throw e;detail=e.message;await db.prepare('INSERT INTO psychology_imported_photo_skips(owner,source_id,version,revision,retry_at,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(owner,source_id,version) DO UPDATE SET revision=excluded.revision,retry_at=excluded.retry_at,reason=excluded.reason').bind(owner,v.source_id,v.version,v.revision,now+3600000,e.message.slice(0,300)).run();}}
    if(!picked){detail='可发布图文不足；请启用完整的 1–15 张图文版本。同账号 14 天内不重复原选题。';continue;}
    await assertOfficialPublishAccess(env,user,{module:'psychology',connectionIds:[id]},{fresh:false});
    const batchId='psy-imported-'+(await sha256Hex(id+':'+slot)).slice(0,32),itemId=batchId+'-000';

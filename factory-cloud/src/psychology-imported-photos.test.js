@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture} from './psychology-cloud-test-fixture.js';
+import {handlePsychologyWebsite} from './psychology-website.js';
 import {handleVideoHits} from './psychology-video-hits.js';
 import {handleImportedPhotos,runImportedPhotos,dispatchImportedPhotos} from './psychology-imported-photos.js';
-import {importedPhotoSlots,importedPhotoCaption} from '../../scripts/psychology-imported-photo-policy.js';
+import {importedPhotoSlots,importedPhotoCaption,normalizeImportedPhotoCTA,DEFAULT_IMPORTED_PHOTO_CTA} from '../../scripts/psychology-imported-photo-policy.js';
 const BASE='https://factory.test/api/psychology-autopilot/imported-photos',now=Date.parse('2026-10-09T14:00:00Z');
 const user={id:'admin',username:'admin',role:'admin',sidebarModules:['psychology-publish','psychology-video-hits','psychology-autopilot']};
 async function setup(t){
@@ -90,4 +91,36 @@ test('cross-site writes fail and a transaction-time grant removal leaves no part
 test('photo queue and schedule queue failures recover without making new publication identities',async t=>{
  const f=await setup(t);await f.ready();await f.call('PATCH',{...f.config,connectionIds:['a']});f.env.SCHEDULE_QUEUE.send=async()=>{throw Error('queue unavailable');};await assert.rejects(dispatchImportedPhotos(f.env,now),/unavailable/);assert.equal(f.sqlite.prepare('SELECT dispatched_at FROM psychology_imported_photo_settings').get().dispatched_at,0);
  f.env.PHOTO_QUEUE.send=async()=>{throw Error('photo queue unavailable');};assert.equal((await f.run()).created,1);assert.equal((await f.run()).created,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,1);assert.equal(f.requests.length,0);
+});
+
+test('independent receiver/CTA settings preserve publishing state, reject cross-section edits and keep frozen copy',async t=>{
+ const f=await setup(t);await f.ready();await f.ready();
+ const website=async body=>{const url=new URL('https://factory.test/api/psychology-website/receiving');const response=await handlePsychologyWebsite(new Request(url,{method:'PATCH',body:JSON.stringify(body)}),f.env,url,{user},{now});return {status:response.status,data:await response.json()};};
+ const copy={mention:'Discover your attachment style. Visit {account} and tap the bio link.',self:'Discover your attachment style with the link in my bio.'};
+ let reply=await website({revision:0,section:'cta',cta:copy});assert.equal(reply.status,200);assert.equal(f.sqlite.prepare('SELECT enabled FROM psychology_imported_photo_settings').get().enabled,0);assert.deepEqual(reply.data.publisherIds,[]);
+ reply=await website({revision:1,section:'receivers',receivers:f.config.receivers});assert.equal(reply.status,200);assert.deepEqual(reply.data.config.cta,copy);assert.equal(f.sqlite.prepare('SELECT enabled FROM psychology_imported_photo_settings').get().enabled,0);
+ reply=await f.call('PATCH',{revision:2,section:'publishing',enabled:true,connectionIds:['a','b'],isAiGenerated:true});assert.equal(reply.status,200);assert.deepEqual(reply.data.config.cta,copy);assert.equal(reply.data.config.receivers[0].connectionId,'b');
+ assert.equal((await f.run()).created,2);const before=f.sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all();
+ for(const j of before){const payload=JSON.parse(j.payload_json),id=payload.psychologyAutomation.connectionId;assert.equal(payload.plan.caption,'Saved caption\n\n'+(id==='b'?copy.self:copy.mention.replace('{account}','@target_b')));}
+ const newer={mention:'Take the test via {account}.',self:'Take the test via my bio.'};reply=await f.call('PATCH',{revision:3,section:'cta',cta:newer});assert.equal(reply.status,200);assert.equal(reply.data.enabled,true);assert.deepEqual(reply.data.config.connectionIds,['a','b']);assert.deepEqual(reply.data.config.cta,newer);
+ assert.deepEqual(f.sqlite.prepare('SELECT payload_json FROM factory_jobs ORDER BY id').all(),before);assert.equal((await f.run()).created,0);assert.equal(f.sqlite.prepare('SELECT caption FROM psychology_video_hit_versions LIMIT 1').get().caption,'Saved caption');
+ assert.equal((await f.call('PATCH',{revision:4,section:'receivers',receivers:f.config.receivers,enabled:false})).status,400);
+ assert.equal((await f.call('PATCH',{revision:4,section:'cta'})).status,400);assert.equal((await f.call('PATCH',{revision:3,section:'cta',cta:newer})).status,409);
+});
+test('custom templates enforce exactly one dynamic account and total caption length',()=>{
+ const receiver={connectionId:'b',username:'target_b',linkReady:true};
+ for(const mention of ['', 'No account', '{account} and {account}', '@fixed {account}', '{account} {unknown}'])assert.throws(()=>normalizeImportedPhotoCTA({...DEFAULT_IMPORTED_PHOTO_CTA,mention}));
+ assert.throws(()=>normalizeImportedPhotoCTA({...DEFAULT_IMPORTED_PHOTO_CTA,self:'Hello {account}'}));
+ const cta={mention:'Read more at {account}.',self:'Read more via my bio.'},copy=importedPhotoCaption('Original','a',receiver,cta);assert.equal(copy.caption,'Original\n\nRead more at @target_b.');assert.deepEqual(importedPhotoCaption(copy.caption,'a',receiver,cta),copy);assert.throws(()=>importedPhotoCaption('a'.repeat(2190),'a',receiver,cta),/2200/);
+});
+test('website receiving endpoint uses its own grant and cannot enable/pause or expose photo inventory',async t=>{
+ const f=await setup(t);f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[\"psychology-website\"]',role='operator'").run();
+ const path='https://factory.test/api/psychology-website/receiving';
+ const call=async(method='GET',body,origin)=>{const r=new Request(path,{method,headers:origin?{origin}:{},...(body?{body:JSON.stringify(body)}:{})});const response=await handleImportedPhotos(r,f.env,new URL(path),{user},{website:true,directory:f.directory,now});return {status:response.status,data:await response.json()};};
+ let result=await call();assert.equal(result.status,200);assert.equal(result.data.inventory,undefined);assert.equal(result.data.recent,undefined);
+ result=await call('PATCH',{revision:0,section:'cta',cta:{mention:'Visit {account} for the test.',self:'My bio has the test.'}});assert.equal(result.status,200);assert.equal(f.sqlite.prepare('SELECT enabled FROM psychology_imported_photo_settings').get().enabled,0);
+ assert.equal((await call('PATCH',{revision:1,section:'publishing',enabled:true,connectionIds:['a'],isAiGenerated:true})).status,403);
+ assert.equal((await call('PATCH',{revision:1,enabled:false,pauseOnly:true})).status,403);
+ assert.equal((await call('PATCH',{revision:1,section:'receivers',receivers:f.config.receivers},'https://other.test')).status,403);
+ f.sqlite.prepare("UPDATE factory_users SET sidebar_modules_json='[]'").run();assert.equal((await call()).status,403);
 });
