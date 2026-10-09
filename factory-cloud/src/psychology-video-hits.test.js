@@ -329,3 +329,69 @@ test('project-key gateway archives and restores original topics without resettin
  const uuid=crypto.randomUUID(),params={id,body:{revision:2}};assert.equal((await f.gateway('videoHits.restore',params,uuid)).status,200);assert.equal((await f.gateway('videoHits.restore',params,uuid)).status,200);
  const d=await(await f.gateway('videoHits.get',{id})).json();assert.equal(d.source.archivedAt,0);assert.equal(d.source.script,'Source narration');assert.equal(d.versions[0].publishItemId,'used');assert.equal(d.source.revision,3);assert.equal(f.requests.length,0);
 });
+
+
+test('same project key supports independent agents for one external video ID, with duplicate and relabel protection',async t=>{
+ const f=await setup(t),body={externalId:'tiktok-123',videoUrl:'https://www.tiktok.com/@source/video/123',title:'Shared original'},requestId=crypto.randomUUID();
+ const create=(importSource,uuid=crypto.randomUUID())=>f.gateway('videoHits.create',{body:{...body,...(importSource?{importSource}:{})}},uuid);
+ const legacy=await create(undefined,requestId);assert.equal(legacy.status,200);const grok=await legacy.json();
+ const dotResponse=await create(' GPT-Dot ');assert.equal(dotResponse.status,200,await dotResponse.clone().text());const dot=await dotResponse.json();assert.notEqual(grok.id,dot.id);
+ for(const [id,text] of [[grok.id,'Grok copy'],[dot.id,'Dot copy']]){
+  await f.write('/'+id+'/frames/0',{revision:1,frames:[{index:1,imageUrl:'https://images.pexels.com/'+id+'.jpg',text}]});
+  await f.write('/'+id+'/versions/1',{revision:0,title:text,caption:text});
+ }
+ const duplicate=await create('grokbot');assert.equal(duplicate.status,409);assert.match(await duplicate.text(),/相同来源编号/);
+ assert.equal((await create('gpt-dot')).status,409);
+ assert.deepEqual(await(await create(undefined,requestId)).json(),grok,'legacy omitted-importSource retry returns its exact saved result');
+ const before=f.sqlite.prepare('SELECT * FROM psychology_video_hits WHERE id=?').get(dot.id);
+ const conflict=await f.gateway('videoHits.update',{id:dot.id,body:{revision:2,importSource:'grokbot',title:'Must not overwrite'}},crypto.randomUUID());assert.equal(conflict.status,409);assert.match(await conflict.text(),/相同来源编号/);
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM psychology_video_hits WHERE id=?').get(dot.id),before);
+ for(const [id,text] of [[grok.id,'Grok copy'],[dot.id,'Dot copy']]){
+  const detail=await(await f.call('/'+id)).json();assert.equal(detail.versions[0].title,text);assert.equal(detail.activeVersionCount,1);
+  assert.equal((await(await f.call('/'+id+'/frames/0')).json()).frames[0].text,text);
+ }
+ const filtered=await(await f.gateway('videoHits.list',{query:{importSource:'gpt-dot',q:body.externalId}})).json();assert.equal(filtered.total,1);assert.equal(filtered.items[0].id,dot.id);
+ await f.write('/'+dot.id,{revision:2,importSource:'future-agent'},'PATCH');
+ const newDot=await(await create('gpt-dot')).json();assert.ok(newDot.id);assert.notEqual(newDot.id,dot.id,'freed namespace may be used without colliding with an immutable old ID');
+ assert.equal((await(await f.call('/'+dot.id)).json()).source.importSource,'future-agent');
+ assert.equal((await(await f.call()).json()).total,3);assert.equal(f.requests.length,0);
+});
+
+test('source identity migration preserves old IDs, foreign keys, content, revisions and request receipts',async t=>{
+ const {DatabaseSync}=await import('node:sqlite'),{readFileSync,readdirSync}=await import('node:fs');
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());const dir=new URL('../migrations/',import.meta.url);
+ db.exec('PRAGMA foreign_keys=ON');
+ for(const file of readdirSync(dir).filter(x=>x.endsWith('.sql')&&x<'0086').sort())db.exec(readFileSync(new URL(file,dir),'utf8'));
+ const id='vh-'+createHash('sha256').update('owner:old-video').digest('hex').slice(0,32);
+ db.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,caption,script,revision,created_at,updated_at,archived_at) VALUES(?,'owner','old-video','https://www.tiktok.com/@x/video/123','Original','Caption','Script',7,100,200,300)").run(id);
+ db.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,enabled,revision,created_at,updated_at,render_job_id,publish_item_id,publish_state) VALUES(?,1,'One','Remix',1,9,100,200,'active-render','active-publish','pending')").run(id);
+ for(const version of [0,1])db.prepare("INSERT INTO psychology_video_hit_frames(source_id,version,frame_index,image_url,text,duration_seconds) VALUES(?,?,1,'https://images.pexels.com/keep.jpg','Paired copy',3)").run(id,version);
+ db.prepare("INSERT INTO psychology_video_hit_requests VALUES('owner','old-request','unchanged-digest',?,123)").run(JSON.stringify({ok:true,id,revision:1}));
+ const tables=['psychology_video_hits','psychology_video_hit_versions','psychology_video_hit_frames','psychology_video_hit_requests'];
+ const snapshot=()=>tables.map(name=>db.prepare('SELECT * FROM '+name+' ORDER BY rowid').all());const before=snapshot();
+ db.exec('BEGIN');try{db.exec(readFileSync(new URL('0086_psychology_video_hit_source_identity.sql',dir),'utf8'));assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+ assert.deepEqual(snapshot(),before);assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
+ assert.throws(()=>db.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,created_at,updated_at) VALUES('duplicate','owner','old-video','https://example.com','Duplicate',0,0)").run(),/UNIQUE/);
+ db.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,created_at,updated_at,import_source) VALUES('independent','owner','old-video','https://example.com','Dot',0,0,'gpt-dot')").run();
+ db.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,created_at,updated_at) VALUES('legacy-next','owner','next-video','https://example.com','Legacy next',0,0)").run();
+ assert.equal(db.prepare("SELECT import_source FROM psychology_video_hits WHERE id='legacy-next'").get().import_source,'grokbot');
+ assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('same source and external ID still belong independently to each creator',async t=>{
+ const f=await setup(t);for(const name of ['member-one','member-two'])f.sqlite.prepare("INSERT INTO factory_users(id,username,role,password_hash,password_salt,sidebar_modules_json,created_at,updated_at) VALUES(?,?,'operator','','','[\"psychology-video-hits\"]',0,0)").run(name,name);
+ const body={externalId:'tiktok-same',importSource:'gpt-dot',title:'Same original',videoUrl:'https://www.tiktok.com/@source/video/123'};const created=[];
+ for(const name of ['member-one','member-two']){
+  const user=toPublicUser(f.sqlite.prepare('SELECT * FROM factory_users WHERE id=?').get(name));
+  created.push({user,...await(await f.call('','POST',{requestId:crypto.randomUUID(),...body},user)).json()});
+ }
+ assert.notEqual(created[0].id,created[1].id);assert.equal((await(await f.call()).json()).total,2);
+ for(const own of created){const other=created.find(x=>x!==own);assert.equal((await(await f.call('','GET',undefined,own.user)).json()).total,1);await assert.rejects(f.call('/'+other.id,'GET',undefined,own.user),/无权/);}
+});
+
+test('concurrent duplicate insert loses atomically without a second source or write receipt',async t=>{
+ const f=await setup(t),before=f.db.batch;let injected=false;
+ f.db.batch=async rows=>{if(!injected){injected=true;f.sqlite.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,created_at,updated_at,import_source) VALUES('vh-11111111111111111111111111111111','admin','raced','https://www.tiktok.com/@x/video/123','Winner',0,0,'gpt-dot')").run();}return before(rows);};
+ await assert.rejects(f.write('',{externalId:'raced',importSource:'gpt-dot',videoUrl:'https://www.tiktok.com/@x/video/123',title:'Loser'},'POST'),/相同来源编号/);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_requests').get().n,0);
+});

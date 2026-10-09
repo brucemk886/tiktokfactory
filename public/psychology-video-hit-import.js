@@ -1,6 +1,7 @@
 import {normalizeImportImage,normalizePhotoImport,createPhotoImportSession,readOriginalMaterial} from './psychology-video-hit-import-model.js';
 const $=id=>document.getElementById(id),BASE='/api/psychology-video-hits',PAGE='/psychology-video-hits';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sourceLabel=source=>source.title+' · '+source.importSource+' · '+(source.ownerUsername||'未知用户')+' · '+source.externalId;
 const images={remix:[],original:[]};let session=null,busy=false,done=false,lookupToken=0,detailToken=0,searchPage=0,searchQuery='',pendingImages=0,currentSourceMode='new',newImporter='gpt-dot';
 async function request(path,method='GET',body){
  const response=await fetch(BASE+path,{method,cache:'no-store',signal:AbortSignal.timeout(45000),...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
@@ -55,7 +56,7 @@ function sourceMode(){
  currentSourceMode=existing?'existing':'new';
  $('newSourceFields').hidden=existing;$('existingSourceFields').hidden=!existing;
  $('newSourceFields').querySelectorAll('input,textarea').forEach(n=>n.disabled=existing);$('existingSource').disabled=!existing;$('existingSource').required=existing;
- $('importSource').disabled=existing;$('importSourceHint').textContent=existing?'沿用原选题的来源标签，不覆盖原选题信息。':'标记素材来自哪个智能体，也可以填写自己的名称。';
+ $('importSource').disabled=existing;$('importSourceHint').textContent=existing?'沿用原选题的来源标签，不覆盖原选题信息。':'不同智能体可分别导入同一个原视频，各自保存原图、文案和二创。';
  originalValidity();
  if(existing){if(!$('existingSource').value&&searchPage===0)searchSources(false);else showSelectedSource();}
 }
@@ -65,7 +66,7 @@ async function searchSources(more){
  try{
   const data=await request('?scope=active&page='+page+'&q='+encodeURIComponent(query));if(token!==lookupToken||session)return;
   if(!more){$('editOriginalSource').hidden=true;$('existingOriginalPreview').hidden=true;$('existingSource').replaceChildren(new Option('请选择原选题',''));detailToken++;}
-  for(const source of data.items){if(![...$('existingSource').options].some(o=>o.value===source.id))$('existingSource').add(new Option(source.title+' · '+source.externalId,source.id));}
+  for(const source of data.items){if(![...$('existingSource').options].some(o=>o.value===source.id))$('existingSource').add(new Option(sourceLabel(source),source.id));}
   searchPage=page;searchQuery=query;$('moreSources').hidden=!data.hasMore;$('sourceLookupStatus').textContent=data.total?'找到 '+data.total+' 个选题，请选择。':'未找到选题，可改为新建。';
  }catch(e){if(token===lookupToken)$('sourceLookupStatus').textContent=e.message;}finally{if(token===lookupToken){$('searchSources').disabled=false;$('moreSources').disabled=false;}}
 }
@@ -98,7 +99,7 @@ window.addEventListener('beforeunload',e=>{if((session&&!done)||busy){e.preventD
 async function start(){
  const id=new URLSearchParams(location.search).get('source');if(id){
   $('sourceMode').value='existing';searchPage=1;sourceMode();
-  try{const data=await request('/'+encodeURIComponent(id));$('existingSource').add(new Option(data.source.title+' · '+data.source.externalId,id));$('existingSource').value=id;await showSelectedSource();}catch(e){$('sourceLookupStatus').textContent=e.message;}
+  try{const data=await request('/'+encodeURIComponent(id));$('existingSource').add(new Option(sourceLabel(data.source),id));$('existingSource').value=id;await showSelectedSource();}catch(e){$('sourceLookupStatus').textContent=e.message;}
  }else sourceMode();
  originalValidity();
 }

@@ -12,14 +12,14 @@ Use ready imported Video Hits photo recreations for automatic independent-site t
 - Detail/list statuses say 图文待启用 / 图文待补全 / 可发布图文; optional render progress remains a secondary status. Enabled complete photo albums do not require voice scripts. Optional video synthesis retains its stricter voice/original-frame validation. Direct photo link opens the photo picker.
 
 ## Files changed
-- Migration 0086, imported-photo worker/policy and tests; shared photo transaction hook, account scope helper, scheduling dispatcher/consumer and autopilot route.
+- Migration 0087, imported-photo worker/policy and tests; shared photo transaction hook, account scope helper, scheduling dispatcher/consumer and autopilot route.
 - Automatic Operations panel/script/styles; Video Hits status/readiness/API enable validation and photo picker link; canonical API guide/generated asset manifest.
 - CURRENT_STATE, ARCHITECTURE and this handoff.
 
 ## Tests performed
 - Focused fixture tests: Beijing midnight/cutoff, CTA idempotency/self handling/overflow, disabled defaults, receiver/scope permissions, CAS/revocation/lease guards, global once-only allocation, queue recovery, pause/resume, inventory shortage and original-topic cooldown. All provider calls mocked; no live publishing.
 - Real Chromium: account selection, explicit link confirmation, save without enable, enable/pause, China times, desktop/390px/320px screenshots; direct photo route and existing Video Hits render/preview regression.
-- Full declared suite executed 1,454 tests: 1,453 passed; the sole failure was the expected stale UI asset manifest before regeneration. Final focused suite passed all 50, including regenerated manifest, imported-mode, photo queue, durable scheduling and real Chromium configuration tests. Additional Video Hits browser integration plus imported-mode run passed all 14, and the standalone selected-video/photo Chromium suite passed (including the new direct photo route). No unresolved test failures.
+- After integrating the concurrent import-source identity release and renumbering this migration to 0087, the final full declared suite passed all 1,462 tests. The standalone selected-video/photo Chromium suite also passed, including the direct photo route. No unresolved failures.
 
 ## Unfinished work
 User must select publishers and receivers and explicitly enable the new mode. No production publishing has been triggered for verification.
