@@ -18,7 +18,7 @@ Allow every scoped thousand-follower account to generate/copy its own homepage l
 ## Tests performed
 - Fixtures: independent link eligibility, no video.publish scope, exact thousand threshold, no receiver config, individual/bulk creation, stable retries, scope removal, permission/CSRF/invalid input rejection, analytics outage independence, no receiver/campaign mutation or provider publishing.
 - Chromium: actual row/bulk request bodies, exact clipboard content, copy without regeneration, search, clipboard failure/recovery, unchanged receiver selection/CTA drafts, desktop/mobile and old tab links.
-- Final declared suite and release checks pending.
+- All 30 focused checks passed. The initial pre-integration full run had one Video Hits browser archive-state assertion failure. After preserving the concurrent ready-library release from main and regenerating assets, the final integrated declared suite passed all 1,475 tests with no failures. No real publishing calls.
 
 ## Unfinished work
 Deployment verification pending. No real profile edits or publication invoked.
