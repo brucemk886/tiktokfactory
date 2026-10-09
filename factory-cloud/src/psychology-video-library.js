@@ -8,7 +8,7 @@ import {ensurePsychologyOneMembers} from './psychology-tiktok-one.js';
 import {normalizeOneProject} from '../../scripts/psychology-auto-publish.js';
 import {signalDeskBinary} from './signal-desk.js';
 import {stagePublishItem} from './psychology-publish-groups.js';
-const BASE='/api/psychology-video-library',MAX=95*1024*1024;
+const BASE='/api/psychology-video-library',MAX=95*1024*1024,PAGE_SIZE=20;
 const TYPES={mp4:'video/mp4',mov:'video/quicktime',webm:'video/webm'};
 const JOBS="'psychology-video-remix','psychology','psychology-collage','psychology-target-2','psychology-narrative'";
 const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{statusCode});};
@@ -66,17 +66,17 @@ export async function handleVideoLibrary(request,env,url,session){
  if(url.pathname===BASE&&request.method==='GET'){
   const page=Number(url.searchParams.get('page')||1);if(!Number.isInteger(page)||page<1||page>10000)fail('页码无效。');
   if(url.searchParams.get('source')==='video-hits')return json(await hitVideoInventory(env,user,{page}));
-  const offset=(page-1)*12;
+  const offset=(page-1)*PAGE_SIZE;
   if(url.searchParams.get('source')==='generated'){
    const sql=`FROM factory_jobs j,json_each(COALESCE(json_extract(j.result_json,'$.results'),json_extract(j.result_json,'$.generatedVideos'),'[]')) v
     LEFT JOIN psychology_video_assets a ON a.source_job_id=j.id AND a.result_index=CAST(v.key AS INTEGER) AND a.owner=?
     LEFT JOIN factory_jobs prep ON prep.id='video-archive-'||a.id
     WHERE j.type IN (${JOBS}) AND j.status='done' AND (j.type<>'psychology-video-remix' OR j.created_by=?) AND json_extract(v.value,'$.fileName') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_versions h WHERE h.cleaned_at>0 AND (h.render_job_id=j.id OR (h.source_id=json_extract(j.payload_json,'$.videoRemix.sourceId') AND h.version=json_extract(j.payload_json,'$.videoRemix.version'))))`;
-   const data=await env.DB.prepare(`SELECT j.id job_id,j.title,j.created_at,j.worker_id,v.key result_index,v.value video,a.id asset_id,a.status,a.file_size,prep.status preparation_status,prep.error preparation_error ${sql} ORDER BY j.created_at DESC,j.id DESC,v.key LIMIT 13 OFFSET ?`).bind(user.username,user.username,offset).all();
-   return json({page,hasMore:data.results.length>12,videos:data.results.slice(0,12).map(r=>{const video=parse(r.video);return {id:r.asset_id||'',sourceJobId:r.job_id,resultIndex:Number(r.result_index),title:video.title||r.title,fileName:video.fileName,createdAt:r.created_at,fileSize:r.file_size||0,status:r.status||'local',preparationStatus:r.preparation_status,error:r.preparation_error||'',canPrepare:Boolean(r.worker_id),previewUrl:r.status==='ready'?BASE+'/'+r.asset_id+'/file':''};})});
+   const data=await env.DB.prepare(`SELECT j.id job_id,j.title,j.created_at,j.worker_id,v.key result_index,v.value video,a.id asset_id,a.status,a.file_size,prep.status preparation_status,prep.error preparation_error ${sql} ORDER BY j.created_at DESC,j.id DESC,v.key LIMIT ? OFFSET ?`).bind(user.username,user.username,PAGE_SIZE+1,offset).all();
+   return json({page,pageSize:PAGE_SIZE,hasMore:data.results.length>PAGE_SIZE,videos:data.results.slice(0,PAGE_SIZE).map(r=>{const video=parse(r.video);return {id:r.asset_id||'',sourceJobId:r.job_id,resultIndex:Number(r.result_index),title:video.title||r.title,fileName:video.fileName,createdAt:r.created_at,fileSize:r.file_size||0,status:r.status||'local',preparationStatus:r.preparation_status,error:r.preparation_error||'',canPrepare:Boolean(r.worker_id),previewUrl:r.status==='ready'?BASE+'/'+r.asset_id+'/file':''};})});
   }
-  const data=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE owner=? AND source_job_id='' AND status='ready' AND cleanup_state='active' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_videos v WHERE v.id=psychology_video_assets.id) ORDER BY created_at DESC,id DESC LIMIT 13 OFFSET ?").bind(user.username,offset).all();
-  return json({page,hasMore:data.results.length>12,videos:data.results.slice(0,12).map(publicAsset)});
+  const data=await env.DB.prepare("SELECT * FROM psychology_video_assets WHERE owner=? AND source_job_id='' AND status='ready' AND cleanup_state='active' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_videos v WHERE v.id=psychology_video_assets.id) ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?").bind(user.username,PAGE_SIZE+1,offset).all();
+  return json({page,pageSize:PAGE_SIZE,hasMore:data.results.length>PAGE_SIZE,videos:data.results.slice(0,PAGE_SIZE).map(publicAsset)});
  }
  if(url.pathname===BASE+'/upload'&&request.method==='POST'){
   const name=fileName(decodeURIComponent(request.headers.get('X-File-Name')||'')),size=Number(request.headers.get('X-File-Size')||0),type=TYPES[name.split('.').pop().toLowerCase()];

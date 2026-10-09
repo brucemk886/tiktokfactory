@@ -143,3 +143,16 @@ test('render identity changed before commit rejects instead of freezing an older
  f.db.batch=async statements=>{if(!changed&&String(statements[0]?.args?.[0]).startsWith('psy-select-')){changed=true;f.sqlite.prepare("UPDATE psychology_video_hit_versions SET render_job_id='new-render'").run();}return before(statements);};
  await assert.rejects(f.submit(oneHit(h)),/其他任务占用/);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM factory_jobs').get().n,0);
 });
+test('all three video inventories return twenty per page with no skipped or duplicate records',async t=>{
+ const f=await setup(t);
+ for(let i=0;i<21;i++){
+  await f.upload();await hitFixture(f);
+  f.sqlite.prepare("INSERT INTO factory_jobs(id,type,status,title,created_by,worker_id,payload_json,result_json,created_at,updated_at) VALUES(?,'psychology','done','Generated','admin','w','{}',?,?,?)").run('page-generated-'+i,JSON.stringify({results:[{fileName:'generated-'+i+'.mp4'}]}),Date.now()+i,Date.now());
+ }
+ for(const source of ['uploaded','generated','video-hits']){
+  const first=await(await f.call('?source='+source+'&page=1')).json(),second=await(await f.call('?source='+source+'&page=2')).json(),third=await(await f.call('?source='+source+'&page=3')).json();
+  assert.equal(first.pageSize,20);assert.equal(first.videos.length,20);assert.equal(first.hasMore,true);assert.equal(second.videos.length,1);assert.equal(second.hasMore,false);assert.equal(third.videos.length,0);assert.equal(third.hasMore,false);
+  assert.equal(new Set([...first.videos,...second.videos].map(v=>v.id||v.sourceJobId+':'+v.resultIndex)).size,21);
+ }
+ assert.equal(f.requests.length,0);assert.deepEqual(f.counts(),{joins:0,uploads:0});
+});

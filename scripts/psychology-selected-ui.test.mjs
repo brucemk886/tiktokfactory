@@ -41,7 +41,7 @@ const server=http.createServer(async(req,res)=>{
  }
  else if(url.pathname==='/api/psychology-video-library'&&bulkMode){
   const p=Number(url.searchParams.get('page')||1);await new Promise(resolve=>setTimeout(resolve,150));
-  data={page:p,hasMore:!bulkEmpty&&p===1,videos:bulkEmpty?[]:[...Array.from({length:p===1?11:12},(_,i)=>({...video('bulk-'+(i+(p-1)*11),'Bulk video '+(i+(p-1)*11)),caption:'Saved bulk caption '+i})),...(p===1?[{id:'pending-bulk',title:'Still preparing',fileName:'pending.mp4',createdAt:Date.now(),canPrepare:false,status:'pending'}]:[])]};
+  data={page:p,pageSize:20,hasMore:!bulkEmpty&&p===1,videos:bulkEmpty?[]:[...Array.from({length:p===1?19:20},(_,i)=>({...video('bulk-'+(i+(p-1)*19),'Bulk video '+(i+(p-1)*19)),caption:'Saved bulk caption '+i})),...(p===1?[{id:'pending-bulk',title:'Still preparing',fileName:'pending.mp4',createdAt:Date.now(),canPrepare:false,status:'pending'}]:[])]};
  }
  else if(url.pathname==='/api/psychology-video-library')data={videos:url.searchParams.get('source')==='video-hits'?[{...video('hit-selection','Understanding emotional boundaries'),assetId:'hit-asset',videoHit:{sourceId:'vh-'+'a'.repeat(32),version:1,revision:3},versionName:'版本 1',caption:'Saved recreation caption — automatically carried.'}]:url.searchParams.get('source')==='uploaded'?(uploaded?[video('upload','Uploaded')]:[]):[imported?video('generated','Generated'):{id:'',sourceJobId:'render',resultIndex:0,title:'Generated',fileName:'generated.mp4',status:'local',canPrepare:true,createdAt:Date.now()}],page:1,hasMore:false};
  else if(url.pathname.endsWith('/psychology-video-library/import')){imported=true;data={pending:true};}
@@ -137,22 +137,26 @@ try{
  const sourcePng=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=32;c.height=64;const ctx=c.getContext('2d');ctx.fillStyle='#0080ff';ctx.fillRect(0,0,32,64);return c.toDataURL('image/png');});const converted=await converter.convert(sourcePng);assert.match(converted,/^data:image\/jpeg/);const convertedSize=await page.evaluate(async url=>{const i=new Image();i.src=url;await i.decode();return [i.naturalWidth,i.naturalHeight];},converted);assert.deepEqual(convertedSize,[32,64]);await converter.close();
  const writesBeforeBulk=calls.filter(c=>c.method==='POST').length;bulkMode=true;
  await page.setViewport({width:1440,height:1050});await page.goto('http://127.0.0.1:'+server.address().port+'/psychology-publish?create=one',{waitUntil:'networkidle0'});
- await page.waitForFunction(()=>!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');
- assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'11');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),11);
+ await page.waitForFunction(()=>!document.querySelector('#selectPageVideos').disabled);
+ assert.equal(await page.$$eval('#videoCards .selected-video-card',ns=>ns.length),20);assert.match(await page.$eval('#videoPage',n=>n.textContent),/每页 20 条/);
+ assert.equal(await page.$eval('#videoCards',n=>getComputedStyle(n).gridTemplateColumns.split(' ').length),5);assert.ok(await page.$eval('#videoCards video',n=>n.getBoundingClientRect().height<=168));
+ await page.click('#selectPageVideos');
+ assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),19);
  assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);assert.equal(await page.$eval('#clearPageVideos',n=>n.disabled),false);
  await page.$eval('[data-video-caption="bulk-0"]',n=>{n.value='Keep edited bulk caption';n.dispatchEvent(new Event('input',{bubbles:true}));});await page.click('[data-video-ai="bulk-0"]');
- await page.click('[data-pick="1"]');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'10');await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.waitForFunction(()=>!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'11');
+ await page.click('[data-pick="1"]');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'18');await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.waitForFunction(()=>!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');
  assert.equal(await page.$eval('[data-video-caption="bulk-0"]',n=>n.value),'Keep edited bulk caption');assert.equal(await page.$eval('[data-video-ai="bulk-0"]',n=>n.checked),false);
  await page.click('#videoNext');assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);
  await page.waitForFunction(()=>document.querySelector('#videoPage').textContent.includes('2')&&!document.querySelector('#selectPageVideos').disabled);await page.click('#selectPageVideos');
- assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'20');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),9);assert.match(await page.$eval('#videoPickerStatus',n=>n.textContent),/还有 3 条未选择/);
- assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);await page.click('#clearPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'11');
+ assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'20');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),1);assert.match(await page.$eval('#videoPickerStatus',n=>n.textContent),/还有 19 条未选择/);
+ assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);await page.click('#clearPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'19');
  assert.equal(await page.$eval('[data-video-caption="bulk-0"]',n=>n.value),'Keep edited bulk caption');
  await page.click('#videoPrev');await page.waitForFunction(()=>document.querySelector('#videoPage').textContent.includes('1')&&!document.querySelector('#clearPageVideos').disabled);
- assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),11);
- const bulkCapture=process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR;if(bulkCapture){await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.screenshot({path:path.join(bulkCapture,'bulk-desktop.png')});}
+ assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),19);
+ const bulkCapture=process.env.PSYCHOLOGY_SELECTED_CAPTURE_DIR;if(bulkCapture){await page.$eval('#videoSelectionSection',n=>n.scrollIntoView({block:'start'}));await page.screenshot({path:path.join(bulkCapture,'bulk-desktop.png')});}
  await page.setViewport({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.click('#clearPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'0');
  if(bulkCapture){await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.screenshot({path:path.join(bulkCapture,'bulk-mobile.png')});}
+ await page.setViewport({width:1440,height:1050});await page.click('#videoNext');await page.waitForFunction(()=>document.querySelector('#videoPage').textContent.includes('第 2 页')&&!document.querySelector('#selectPageVideos').disabled);await page.$eval('#selectPageVideos',n=>n.scrollIntoView({block:'center'}));await page.click('#selectPageVideos');assert.equal(await page.$eval('#selectedVideoCount',n=>n.textContent),'20');assert.equal(await page.$$eval('[data-pick]',ns=>ns.filter(n=>n.checked).length),20);
  bulkEmpty=true;await page.click('#videoRefresh');await page.waitForFunction(()=>document.querySelector('.video-empty-state'));assert.equal(await page.$eval('#selectPageVideos',n=>n.disabled),true);assert.equal(await page.$eval('#clearPageVideos',n=>n.disabled),true);
  assert.equal(calls.filter(c=>c.method==='POST').length,writesBeforeBulk,'bulk selection never publishes or prepares a video');
  const writesBeforeCoverQA=calls.filter(c=>c.method==='POST').length;

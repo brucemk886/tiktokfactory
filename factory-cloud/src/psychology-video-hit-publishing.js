@@ -11,7 +11,7 @@ export function normalizeHitRef(ref){
  return {sourceId:ref.sourceId,version:ref.version,revision:ref.revision};
 }
 // Inventory is private and excludes reserved, cleaned, disabled and stale renders.
-export async function hitVideoInventory(env,actor,{page=1,limit=12,selection='recent',query=''}={}){
+export async function hitVideoInventory(env,actor,{page=1,limit=20,selection='recent',query=''}={}){
  const user=await videoHitUser(env.DB,actor),order={random:'RANDOM()',popular:"CAST(COALESCE(json_extract(s.video_data_json,'$.playCount'),0) AS INTEGER) DESC,v.created_at DESC",recent:'v.created_at DESC,s.id,v.version'}[selection]||'v.created_at DESC,s.id,v.version';
  const data=await env.DB.prepare(`SELECT v.*,s.revision source_revision,s.title source_title,j.worker_id,j.result_json,a.id asset_id,a.file_name,a.file_size,a.status asset_status,prep.status preparation_status,prep.error preparation_error
  FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id
@@ -24,7 +24,7 @@ export async function hitVideoInventory(env,actor,{page=1,limit=12,selection='re
  AND ((v.input_mode='video' AND d.id IS NOT NULL AND a.status='ready' AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_video_usage u WHERE u.owner_id=s.owner_id AND u.digest=d.digest))
  OR (v.input_mode='frames' AND v.render_revision=v.revision AND v.render_source_revision=s.revision AND j.id IS NOT NULL AND j.worker_id<>'' AND json_extract(j.result_json,'$.results[0].fileName') IS NOT NULL))
  ORDER BY `+order+' LIMIT ? OFFSET ?').bind(user.username,user.username,user.id,'%'+query+'%','%'+query+'%','%'+query+'%',limit+1,(page-1)*limit).all();
- return {page,hasMore:data.results.length>limit,videos:data.results.slice(0,limit).map(v=>({id:v.source_id+'-v'+v.version,assetId:v.asset_id||'',videoHit:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title,caption:v.caption||v.title,sourceTitle:v.source_title,versionName:v.name,inputMode:v.input_mode,fileName:v.file_name||JSON.parse(v.result_json||'{}').results?.[0]?.fileName||'',fileSize:v.file_size||0,createdAt:v.created_at,status:v.asset_status||'local',sourceJobId:v.render_job_id,resultIndex:0,canPrepare:Boolean(v.worker_id),preparationStatus:v.preparation_status,error:v.preparation_error||'',previewUrl:v.asset_status==='ready'?'/api/psychology-video-library/'+v.asset_id+'/file':''}))};
+ return {page,pageSize:limit,hasMore:data.results.length>limit,videos:data.results.slice(0,limit).map(v=>({id:v.source_id+'-v'+v.version,assetId:v.asset_id||'',videoHit:{sourceId:v.source_id,version:v.version,revision:v.revision},title:v.title,caption:v.caption||v.title,sourceTitle:v.source_title,versionName:v.name,inputMode:v.input_mode,fileName:v.file_name||JSON.parse(v.result_json||'{}').results?.[0]?.fileName||'',fileSize:v.file_size||0,createdAt:v.created_at,status:v.asset_status||'local',sourceJobId:v.render_job_id,resultIndex:0,canPrepare:Boolean(v.worker_id),preparationStatus:v.preparation_status,error:v.preparation_error||'',previewUrl:v.asset_status==='ready'?'/api/psychology-video-library/'+v.asset_id+'/file':''}))};
 }
 export async function resolveHitVideo(env,actor,ref,assetId){
  const user=await videoHitUser(env.DB,actor),origin=normalizeHitRef(ref),source=await sourceRow(env.DB,origin.sourceId,user),v=await versionRow(env.DB,origin.sourceId,origin.version,user);
