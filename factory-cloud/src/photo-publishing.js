@@ -299,7 +299,7 @@ export async function proxyStockPhoto(env, rawUrl) {
   });
 }
 
-export function normalizePhotoPublishPayload(input = {}, now = Date.now()) {
+export function normalizePhotoPublishPayload(input = {}, now = Date.now(), {maxPhotos=6} = {}) {
   const module = String(input.module || "psychology").trim();
   if (module !== "psychology") throw statusError("图文模板只能发布心理学项目内容。", 400);
   const connectionId = String(input.connectionId || "").trim();
@@ -310,7 +310,7 @@ export function normalizePhotoPublishPayload(input = {}, now = Date.now()) {
     contentType: String(asset?.contentType || "").split(";")[0].toLowerCase(),
     fileSize: Math.max(0, Number(asset?.fileSize || 0) || 0)
   })) : [];
-  if (!assets.length || assets.length > 6 || assets.some((asset) => !PHOTO_ASSET_KEY.test(asset.assetKey) || !PHOTO_CONTENT_TYPES.has(asset.contentType) || !asset.fileSize || asset.fileSize > PHOTO_MAX_BYTES)) throw statusError("每条图片帖子需要 1–6 张已导入的 JPG 或 WebP 图片。", 400);
+  if (!assets.length || assets.length > maxPhotos || assets.some((asset) => !PHOTO_ASSET_KEY.test(asset.assetKey) || !PHOTO_CONTENT_TYPES.has(asset.contentType) || !asset.fileSize || asset.fileSize > PHOTO_MAX_BYTES)) throw statusError("每条图片帖子需要 1–"+maxPhotos+" 张已导入的 JPG 或 WebP 图片。", 400);
   if (new Set(assets.map((asset) => asset.assetKey)).size !== assets.length) throw statusError("图集中不能重复使用同一张图片。", 400);
   const title = String(input.title || "");
   const caption = String(input.caption || "");
@@ -325,7 +325,7 @@ export function normalizePhotoPublishPayload(input = {}, now = Date.now()) {
   if (!Number.isSafeInteger(scheduleAt) || scheduleAt > now + 14 * 86400000) throw statusError("发布时间不能超过未来 14 天。", 400);
   const requestId = String(input.requestId || crypto.randomUUID()).trim().slice(0, 100);
   if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw statusError("提交编号无效，请刷新后重试。", 400);
-  return { module, connectionId, assets, title, caption, privacyLevel, photoCoverIndex, musicSoundId, autoAddMusic: !musicSoundId && input.autoAddMusic === true, disableComment: input.disableComment === true, scheduleAt, requestId };
+  return { ...(input.isAiGenerated!==undefined?{isAiGenerated:input.isAiGenerated===true}:{}),module, connectionId, assets, title, caption, privacyLevel, photoCoverIndex, musicSoundId, autoAddMusic: !musicSoundId && input.autoAddMusic === true, disableComment: input.disableComment === true, scheduleAt, requestId };
 }
 
 export function buildPhotoBatchRequest(payload) {
@@ -344,6 +344,7 @@ export function buildPhotoBatchRequest(payload) {
         title: payload.title, caption: payload.caption, privacyLevel: payload.privacyLevel,
         photoCoverIndex: payload.photoCoverIndex, disableComment: payload.disableComment,
         autoAddMusic: payload.autoAddMusic,
+        ...(payload.isAiGenerated!==undefined?{isAiGenerated:payload.isAiGenerated}:{}),
         ...(payload.musicSoundId ? { musicSoundId: payload.musicSoundId } : {})
       }
     }]

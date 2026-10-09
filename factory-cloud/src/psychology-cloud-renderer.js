@@ -64,3 +64,13 @@ async function launchBrowser(env, driver, sleep) {
   }
   throw lastError;
 }
+
+// Convert an existing PNG for publication; no card templates, text or image generation.
+export async function openPhotoImageConverter(env,driver){
+ driver||=(await import('@cloudflare/puppeteer')).default;
+ const started=Date.now(),browser=await launchBrowser(env,driver,ms=>new Promise(r=>setTimeout(r,ms)));
+ try{const page=await browser.newPage();page.setDefaultTimeout(60000);return {
+  convert(dataUrl){return page.evaluate(async data=>{const image=new Image();image.src=data;await image.decode();const scale=Math.min(1,4096/Math.max(image.naturalWidth,image.naturalHeight));if(!image.naturalWidth||!image.naturalHeight)throw Error('图片无法解码');const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/jpeg',0.95);},dataUrl);},
+  async close(){await browser.close();return Date.now()-started;}
+ };}catch(e){await browser.close().catch(()=>{});throw e;}
+}

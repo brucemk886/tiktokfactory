@@ -1,3 +1,4 @@
+import {runHitPhoto} from './psychology-hit-photo-runner.js';
 import { Buffer } from 'node:buffer';
 import { handleAutoPhotoWorker } from './psychology-auto-photo.js';
 import { assertAutoJobAccess } from './psychology-auto-publish.js';
@@ -51,6 +52,7 @@ async function photoCall(env, job, action, body) {
 
 export async function runCloudPhoto(env, job, deps={}) {
   const payload=parse(job.payload_json),started=Date.now();
+  if(payload.hitPhoto)return runHitPhoto(env,job,deps.call||((action,body)=>photoCall(env,job,action,body)),deps);
   if(!Array.isArray(payload.pages)||payload.pages.length<1||payload.pages.length>6)throw new Error('图文必须包含 1–6 张图片。');
   const call=deps.call || ((action,body)=>photoCall(env,job,action,body));
   const state=await call('state');

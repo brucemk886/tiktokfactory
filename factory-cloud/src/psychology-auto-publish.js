@@ -1,3 +1,4 @@
+import {createHitPhotoBatch} from './psychology-video-hit-photos.js';
 import {drawHitVideoBatch} from './psychology-video-hit-publishing.js';
 import { assertPublishFollowers } from './psychology-publish-followers.js';
 import { loadConversionAssignments, applyConversionCopy, conversionSnapshotStatement, updateConversionCopyHash } from './psychology-conversion.js';
@@ -441,7 +442,7 @@ export async function handlePsychologyAutoPublish(request, env, url, session, in
   if (config.sourceType === 'topic-bank') assertTopicBankUser(user);
   const scoped = await assertOfficialPublishAccess(env, user, { module: 'psychology', connectionIds: config.connectionIds });
   await assertPublishFollowers(env.DB,config,scoped.accounts);
-  if(config.sourceType==='video-hits')return drawHitVideoBatch(env,user,config,batchId,scoped.accounts);
+  if(config.sourceType==='video-hits')return config.mediaType==='photo'?createHitPhotoBatch(env,user,config,batchId,scoped.accounts):drawHitVideoBatch(env,user,config,batchId,scoped.accounts);
   if (config.mediaType === 'photo' && (!env.PEER_PHOTO_WORKFLOW || (config.sourceType==='peer'&&!env.KIE_API_KEY) || !env.ARCHIVE)) fail('图文生成服务尚未配置。', 503);
   if(config.mediaType==='photo'&&env.PSYCHOLOGY_CLOUD_PHOTO==='true'&&(!env.PHOTO_BROWSER||!env.PHOTO_QUEUE))fail('云端图片生成服务尚未配置。',503);
   let sources, testState, matchingSkipped=[], conversionAssignments=new Map();

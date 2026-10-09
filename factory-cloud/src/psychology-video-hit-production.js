@@ -22,6 +22,7 @@ async function renderedPreview(db,user,source,v){
  return {state:'done',jobId:v.render_job_id,assetId:asset?.id||'',previewUrl:ready?'/api/psychology-video-library/'+asset.id+'/file':'',fileName:asset?.file_name||'',canPrepare:Boolean(active&&job?.worker_id&&JSON.parse(job.result_json||'{}').results?.[0]?.fileName),preparationStatus:asset?.preparation_status||'',error:active?(asset?.preparation_error||''):'成片素材已进入清理流程，无法再次准备。'};
 }
 export async function handleVideoHitProduction(request,env,url,session){
+ if(url.pathname==='/api/psychology-video-hits/photo-library'&&request.method==='GET')return (await import('./psychology-video-hit-photos.js')).hitPhotoInventory(env,session?.user,url);
  const match=url.pathname.match(/^\/api\/psychology-video-hits\/(vh-[a-f0-9]{32})\/versions\/(\d+)\/(render|publish|jobs)$/);
  if(!match)return null;
  const user=await videoHitUser(env.DB,session?.user),n=versionNumber(Number(match[2])),source=await sourceRow(env.DB,match[1],user),db=env.DB;

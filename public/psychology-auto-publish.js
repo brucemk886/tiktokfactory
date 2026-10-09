@@ -1,10 +1,11 @@
+import {mountHitPhotoPicker} from './psychology-hit-photo-picker.js';
 import { mountPsychologyVideoPicker } from './psychology-video-picker.js';
 import { mountPsychologyOne } from './psychology-tiktok-one.js';
 import { VISUAL_STYLES } from './psychology-visual-styles.js';
 const $ = s => document.querySelector(s);
 const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", minFollowers:0, accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const templateLabel=id=>id==='selected-video'?'已选成片':id==='psychology-video-remix'?'二创合成视频':id;
+const templateLabel=id=>id==='selected-photo'?'已选二创图文':id==='selected-video'?'已选成片':id==='psychology-video-remix'?'二创合成视频':id;
 const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
 async function api(path, body, method, options = {}) {
   const response = await fetch(path,{signal:options.signal,...(method?{method}:{}),...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
@@ -14,6 +15,8 @@ async function api(path, body, method, options = {}) {
 }
 const one=mountPsychologyOne({api,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))),media:()=>state.mediaType,isBusy:()=>state.busy,setBusy:value=>{state.busy=value;$('#closeCreateBatch').disabled=value;renderAccountControls();},changed:()=>{resetAccountInput();summary();}});
 const picker=mountPsychologyVideoPicker({api,isBusy:()=>state.busy,accounts:()=>state.accounts.filter(a=>state.selectedAccounts.has(accountId(a))&&meetsFollowers(a)),project:()=>one.context(),changed:()=>resetAccountInput()});
+const photoPicker=mountHitPhotoPicker({api,isBusy:()=>state.busy,changed:()=>{$('#count').value=photoPicker.refs().length;resetAccountInput();summary();}});
+const hitPhotos=()=>state.mediaType==='photo'&&sourceType()==='video-hits';
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return [...new Set(($('#musicIds')?.value||'').split(/[\s,，;；]+/).map(v=>v.trim()).filter(Boolean))]; }
@@ -36,16 +39,21 @@ function renderSources(){
   if(state.optionsLoaded&&!state.canUseVideoHits&&state.canUseTopics)$('#sourceType').value='topic-bank';
   const hits=sourceType()==='video-hits';
   $('#sourceType option[value="video-hits"]').disabled=!state.canUseVideoHits;
-  $('#hitSourceNote').hidden=!hits;
+  $('#hitSourceNote').hidden=!hits||hitPhotos();
+  $('#photoSource option[value="video-hits"]').disabled=!state.canUseVideoHits;
+  photoPicker.sync(hitPhotos());
+  if(hitPhotos()){$('#count').readOnly=true;$('#count').value=photoPicker.refs().length;}else if($('#count').readOnly){$('#count').readOnly=false;$('#count').value=3;}
+  $('#selection').closest('label').hidden=hitPhotos();$('#query').closest('label').hidden=hitPhotos();
+  $('#photoOptions summary small').textContent=hitPhotos()?'配乐设置':'20套样式、配乐';$('#styleMode').closest('label').hidden=hitPhotos();$('#styleId').closest('label').hidden=hitPhotos();
   $('#template').disabled=hits||picker.active;
   $('#countLabel').textContent=hits?'发布总条数':'生成总条数';
-  $('#submitBatch').textContent=picker.active?'确认发布所选视频':hits?'确认抽取并发布':'创建并自动发布';
+  $('#submitBatch').textContent=picker.active?'确认发布所选视频':hitPhotos()?'确认发布所选图文':hits?'确认抽取并发布':'创建并自动发布';
   $('#sourceType option[value="topic-bank"]').disabled=!state.canUseTopics;
   const bank=sourceType()==='topic-bank',evolving=sourceType()==='library',fromLibrary=['copy-bank','copy-library','library'].includes(sourceType()),previous=$('#selection').value;
   $('#libraryMediaField').hidden=sourceType()!=='copy-library';
   if(fromLibrary)$('#rewriteCopy').checked=false;
-  $('#rewriteCopy').disabled=fromLibrary;
-  $('#rewriteCopyField').hidden=fromLibrary;
+  $('#rewriteCopy').disabled=fromLibrary||hitPhotos();if(hitPhotos())$('#rewriteCopy').checked=false;
+  $('#rewriteCopyField').hidden=fromLibrary||hitPhotos();
   const originalPhoto=$('#template option[value="photo-original"]');
   if(originalPhoto)originalPhoto.disabled=fromLibrary;
   if(state.mediaType==='photo'&&fromLibrary)$('#template').value='photo-text';
@@ -71,6 +79,7 @@ function renderSources(){
   $('#sourceHint').textContent=evolving?'从文案库图文爆款抽取：已提取原文 '+(state.libraryCounts?.photo||0)+' 篇，启用的改写版本 '+(state.libraryRewrites||0)+' 个。每篇先用原版，原版攒够 3 条满 24 小时的数据后开始试改写版本；表现最好的版本拿约 70%，其余继续试新版本；平均播放低于原版一半的改写不再抽。同一账号不会重复发同一篇爆款（原版或任一改写）。数据每天 0 点、8 点更新。':sourceType()==='copy-library'?'复用已提取文字（图文 '+(state.libraryCounts?.photo||0)+' 篇 / 视频 '+(state.libraryCounts?.video||0)+' 篇），不重复获取原素材。图文优先按原分页或视频口播生成，最多6页；视频以正文编排模板，最多5000字符。题目揭晓评论仍需选择模板题库。':sourceType()==='copy-bank'?'从已启用的改写版本抽取。图文直接使用已保存分页；视频以版本正文为依据生成。':bank?label+'题库：已启用 '+(c.enabled||0)+' 条，未使用 '+(c.unused||0)+' 条。只从所选题库抽取；不足时不会创建任务。':'选题来源：同行'+(state.mediaType==='photo'?'图文':'视频')+'爆款库，共 '+(state.counts[state.mediaType]||0)+' 条。';
   if(bank&&$('#template').value==='psychology-target-2')$('#sourceHint').textContent=label+'：可用图片 '+(c.availableImages||0)+' 张。同一题目可抽取多张不同图片；每张只抽一次，用完后需补图。';
   if(hits){$('#sourceHint').textContent='从视频爆款抽取已启用、未发布的二创成片，保留二创文案。每个版本只提交一次，成功后沿用24小时清理。';$('#query').placeholder='筛选二创标题、原视频标题或发布文案';}
+  if(hitPhotos())$('#sourceHint').textContent='选择已启用、未提交发布的图文版本，直接使用全部二创图片和发布文案，按所选账号轮流分配。';
   if(bank&&!state.optionsLoaded)$('#sourceHint').textContent='正在读取模板题库…';
   else if(bank&&!state.canUseTopics)$('#sourceHint').textContent='当前账号没有模板题库权限，请联系管理员开通后创建视频任务。';
 }
@@ -169,7 +178,7 @@ function accountName(id) {
 function summary() {
   if(picker.active){picker.update();$('#summary').textContent='请核对上方每条视频的账号、文案、项目与发布时间。确认后才会发布。';return;}
   const ids=selected(), count=Number($('#count').value)||0;
-  $('#summary').textContent=ids.length ? `本批${sourceType()==='video-hits'?'抽取成片':'生成'} ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
+  $('#summary').textContent=ids.length ? `本批${hitPhotos()?'发布已选':sourceType()==='video-hits'?'抽取成片':'生成'} ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
 }
 function itemState(item){
@@ -296,20 +305,22 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(state.accountsLoading||state.accountsMedia!==state.mediaType)return message('请等待当前内容类型的发布账号加载完成，或点击刷新账号重试。',true);
   if(sourceType()==='topic-bank'&&!state.canUseTopics)return message('当前账号没有模板题库权限，请联系管理员开通后创建视频任务。',true);
   if(sourceType()==='video-hits'&&!state.canUseVideoHits)return message('当前账号没有视频爆款权限。',true);
+  if(hitPhotos()&&(photoPicker.busy||!photoPicker.refs().length))return message('请等待列表读取完成并勾选二创图文。',true);
   const ids=selected();
   if(!ids.length)return message('请先选择发布账号。',true);
   if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
   let tiktokOne;try{tiktokOne=one.context();}catch(e){return message(e.message,true);}
-  const body=state.submittedInput||{...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:$('#hitVideoAi').checked}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?'selected-video':$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
-  if(body.sourceType==='video-hits'&&!confirm('确认从视频爆款抽取 '+body.count+' 条二创成片并发布？\n将使用已保存的二创文案，按已选账号分配。每个二创只提交一次。'))return;
+  const body=state.submittedInput||{...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  if(hitPhotos()&&!confirm('确认发布所选 '+body.count+' 条二创图文？将按图片顺序直接发布，使用已保存文案，并按已选账号轮流分配。每个二创版本只提交一次。'))return;
+  if(body.sourceType==='video-hits'&&body.mediaType==='video'&&!confirm('确认从视频爆款抽取 '+body.count+' 条二创成片并发布？\n将使用已保存的二创文案，按已选账号分配。每个二创只提交一次。'))return;
   state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
   const controls=[...$('#batchForm').querySelectorAll('input,select,textarea,button')];controls.forEach(n=>n.disabled=true);
-  message(body.tiktokOne?'正在检查账号并申请加入项目，随后创建任务…':'正在抽取选题并创建自动发布任务…');
+  message(body.tiktokOne?'正在检查账号并申请加入项目，随后创建任务…':hitPhotos()?'正在核对二创图片并创建图文发布任务…':'正在抽取选题并创建自动发布任务…');
   try {
     const data=await api('/api/psychology-auto-publish',body);
     one.markJoined(body.tiktokOne,body.connectionIds);
-    finishCreation();globalThis.LFUI?.toast('发布任务已创建，可以在列表中查看进度。');
+    if(body.template==='selected-photo')photoPicker.clear();finishCreation();globalThis.LFUI?.toast('发布任务已创建，可以在列表中查看进度。');
     state.requestId=crypto.randomUUID();state.submittedInput=null;
     message(data.duplicate?'该批次已创建，已恢复任务状态。':'任务已加入队列，每20条素材就绪后整批提交。');
     try {
@@ -341,7 +352,7 @@ function renderBatchDetail(b){
       <div class="detail-summary"><div><strong>${accounts.length}</strong><span>发布账号</span></div><div><strong>${items.length}</strong><span>本批内容</span></div><div><strong>${submitted}</strong><span>已提交中台</span></div></div>
       <div class="batch-detail-columns"><section class="batch-stage-summary"><h3 class="detail-publication-heading">发布状态</h3>
       <p>${esc(publicationSummary(items))}</p>${message!==publicationSummary(items)?`<p>${esc(message)}</p>`:''}
-      <div class="task-counts">${b.config.tiktokOne?`<span>挂锚点 · 项目 ${esc(b.config.tiktokOne.campaignId)}</span>`:''}${b.config.minFollowers?`<span>创建时要求 ≥${b.config.minFollowers} 粉丝</span>`:''}<span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='video-hits'?'视频爆款 · 二创成片':b.config.sourceType==='selected-videos'?'已确认成片':b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
+      <div class="task-counts">${b.config.tiktokOne?`<span>挂锚点 · 项目 ${esc(b.config.tiktokOne.campaignId)}</span>`:''}${b.config.minFollowers?`<span>创建时要求 ≥${b.config.minFollowers} 粉丝</span>`:''}<span>预计 ${b.config.count} 条${b.deletedCount?' · 已删除 '+b.deletedCount+' 条':''}</span><span>执行中 ${running}</span><span>待合批 ${ready}</span><span>已提交中台 ${submitted}</span><span>失败 ${failed.length}</span>${missing?`<span>记录缺失 ${missing}</span>`:''}${items.some(i=>i.retryAt)?`<span>自动重试 ${Math.max(...items.map(i=>i.retryCount||0))}/2 · 等待排队</span>`:''}${b.config.mediaType==='photo'?`<span>${b.config.rewriteCopy?'改写文案':'保留原文'}</span><span>${b.config.musicIds?.length?'音乐池 '+b.config.musicIds.length+' 首':'自动配乐'}</span>`:''}<span>${b.config.sourceType==='video-hits'?(b.config.mediaType==='photo'?'视频爆款 · 二创图文':'视频爆款 · 二创成片'):b.config.sourceType==='selected-videos'?'已确认成片':b.config.sourceType==='library'?'文案库 · 按表现进化':b.config.sourceType==='copy-library'?'文案库原文':b.config.sourceType==='copy-bank'?'文案库改写':b.config.sourceType==='topic-bank'?'模板题库':'同行爆款'}</span></div>
       </section>${(b.groups||[]).length?`<div class="publish-groups"><strong>中台发布分组 · 每组最多20条</strong>${b.groups.map(g=>{const members=items.filter(i=>i.groupId===g.id);const n=members.filter(i=>['ready','submitted'].includes(i.status)).length;return `<div class="publish-group"><span>第 ${g.number} 批 · ${g.count} 条 · ${publicationSummary(members)}${g.remoteBatchId?`<small>中台编号：${esc(g.remoteBatchId)}</small>`:''}${g.error?`<small class="error">${esc(g.error)}</small>`:''}</span>${g.canRetry?`<button type="button" data-group-retry="${esc(g.id)}">${g.status==='waiting'?'提交剩余内容':'重试整批提交'}</button>`:''}</div>`;}).join('')}</div>`:''}
       </div>${schedule?`<details class="task-schedule"><summary>具体排期</summary>${schedule}</details>`:''}
       ${retryItems.length?`<div class="manual-items"><strong>待人工处理</strong>${retryItems.map(i=>`<div class="manual-item"><span>${esc(i.title||i.sourceId)}<small>${esc(i.error||i.message||labels[i.status])}</small></span><div class="manual-actions"><button type="button" data-retry="${esc(i.id)}">重试</button>${i.status==='failed'?`<button type="button" data-delete="${esc(i.id)}">删除</button>`:''}</div></div>`).join('')}</div>`:''}

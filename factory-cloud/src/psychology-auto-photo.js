@@ -24,7 +24,9 @@ export async function handleAutoPhotoWorker(request, env, url) {
   const receipt = JSON.parse(item.receipt_json || '{}');
   if (match[2] === 'state' && request.method === 'GET') return json({ assets:receipt.batchId?assets:await restorePhotoCheckpoints(env,item,assets), receipt });
   if (match[2].startsWith('image/') && request.method === 'GET') {
-    const page = payload.pages?.[Number(match[2].split('/')[1])];
+    const index=Number(match[2].split('/')[1]);
+    if(payload.hitPhoto)return (await import('./psychology-video-hit-photos.js')).loadHitPhotoImage(env,job,index);
+    const page = payload.pages?.[index];
     if (!page || page.template !== 'stock') fail('没有该素材图片。', 404);
     return proxyStockPhoto(env, page.imageUrl);
   }
@@ -32,7 +34,7 @@ export async function handleAutoPhotoWorker(request, env, url) {
   if (match[2] === 'upload') {
     const input = await readJson(request);
     const index = Number(input.index);
-    if (!Number.isInteger(index) || index < 0 || index >= payload.pages.length || index > 5) fail('图片序号无效。');
+    if (!Number.isInteger(index) || index < 0 || index >= payload.pages.length || index > (payload.hitPhoto?34:5)) fail('图片序号无效。');
     if (assets[index]) return json(assets[index]);
     if (receipt.batchId) fail('图文已提交，不能替换图片。', 409);
     await backupPhoto(env,item,index,{dataUrl:input.dataUrl});
@@ -56,7 +58,8 @@ export async function handleAutoPhotoWorker(request, env, url) {
     // An explicit pool song disables TikTok's auto recommendation for this post.
     scheduleAt: item.schedule_at * 1000, photoCoverIndex: 0, autoAddMusic: true,
     musicSoundId: String(payload.psychologyAutomation.musicSoundId || ''),
-  });
+    ...(payload.hitPhoto?{isAiGenerated:payload.psychologyAutomation.isAiGenerated}:{}),
+  },Date.now(),{maxPhotos:payload.hitPhoto?35:6});
   if(item.publish_group_id){
     const remoteItem=buildPhotoBatchRequest(publish).items[0];
     return json(await stagePublishItem(env,item,{mediaType:'photo',title:publish.title,item:remoteItem}),202);
