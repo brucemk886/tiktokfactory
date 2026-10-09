@@ -16,8 +16,11 @@ public/psychology-publish-time.js; psychology-auto-publish.js/html; factory-clou
 ## Tests performed
 57 focused tests passed: exact five-minute second boundary, every-item fourteen-day limit, invalid timestamps, existing-batch replay, device datetime conversion, assignments, UI, library and assets. Real Chromium local mock covers early-time blocking before POST, +10-minute action, server time rejection, corrected retry even without an input event, unchanged network retry, desktop/mobile and existing normal/photo/One flows. No real publishing API calls. Final browser run passed; mobile schedule screenshot visually checked at primary tmp/one-time-ui/schedule-mobile.png. Manifest and diff checks passed.
 
+## Release evidence
+Runtime commit 12727b89cc0f46cb95fbe31b055f20c689f42dd3 was pushed to GitHub main and deployed via npm run deploy from a clean exact HEAD == origin/main checkout. Initial trigger update hit a transient cron fetch failure; repeating the same guarded deploy succeeded and listed all four cron schedules plus queue/workflow bindings. Final Cloudflare version fc3fde04-da03-4391-9ca4-eaa62e5a3d49. Live publisher and time-helper JS hashes matched; private video inventory remained 401 without login. Existing transfer PID 100756 retained its 2026-10-08 17:13:34 start time.
+
 ## Unfinished work
-Validation complete; commit, push and deployment pending.
+Implementation, testing and deployment complete.
 
 ## Recommended next step
-Deploy after validation. Existing queued batches continue independently; no resubmission is needed for a successfully queued batch.
+Refresh the creation page for the improved hints. Existing queued batches continue independently; no resubmission is needed for a successfully queued batch.
