@@ -26,7 +26,12 @@ Remove the default AI-generated checkbox from new Psychology video publishing ta
 - git diff --check passed.
 
 ## Unfinished work
-Implementation and verification complete. Release follows commit/push to main using the guarded factory-cloud npm run deploy command.
+None. Implementation, validation, deployment and live asset verification complete.
+
+## Release verification
+- Runtime commit 62621d8 was pushed to GitHub main before the guarded npm run deploy; worktree was clean and HEAD equaled origin/main.
+- Cloudflare version c1fc4d28-4179-4a57-a3d7-ba0756d950ed; both updated HTML and picker assets uploaded successfully.
+- Live psychology-video-picker.js returned HTTP 200, matched the local SHA-256 and contained the false default.
 
 ## Recommended next step
 Refresh the new publishing form; choose the AI flag explicitly when appropriate for the selected videos.
