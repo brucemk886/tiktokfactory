@@ -276,3 +276,46 @@ test('detail render preview follows the current owned render, readiness and clea
  f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='other' WHERE id=?").run(source);await assert.rejects(read(),/无权/);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_publish_batches').get().n,0);assert.equal(f.requests.length,0);
 });
+
+
+test('import-source migration backfills legacy rows without changing revisions, times or receipts; old inserts remain valid',async t=>{
+ const {DatabaseSync}=await import('node:sqlite'),{readFileSync,readdirSync}=await import('node:fs');
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());const dir=new URL('../migrations/',import.meta.url);
+ for(const file of readdirSync(dir).filter(x=>x.endsWith('.sql')&&x<'0084').sort())db.exec(readFileSync(new URL(file,dir),'utf8'));
+ const insert=db.prepare("INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,revision,created_at,updated_at) VALUES(?,'owner',?,'https://www.tiktok.com/@x/video/1','Legacy',7,100,200)");insert.run('one','one');
+ db.exec("INSERT INTO psychology_video_hit_requests VALUES('owner','old-request','unchanged-digest','{}',123)");
+ const row={...db.prepare('SELECT * FROM psychology_video_hits').get()},receipt={...db.prepare('SELECT * FROM psychology_video_hit_requests').get()};
+ db.exec(readFileSync(new URL('0084_psychology_video_hit_import_source.sql',dir),'utf8'));
+ const after={...db.prepare('SELECT * FROM psychology_video_hits').get()};assert.equal(after.import_source,'grokbot');delete after.import_source;assert.deepEqual(after,row);assert.deepEqual({...db.prepare('SELECT * FROM psychology_video_hit_requests').get()},receipt);
+ insert.run('two','two');assert.equal(db.prepare("SELECT import_source FROM psychology_video_hits WHERE id='two'").get().import_source,'grokbot');
+});
+
+test('importSource validates agent identifiers and preserves old retries and omitted updates',async t=>{
+ const f=await setup(t),requestId=crypto.randomUUID(),body={externalId:'legacy-importer',videoUrl:'https://www.tiktok.com/@source/video/123',title:'Legacy'};
+ const created=await (await f.gateway('videoHits.create',{body},requestId)).json(),id=created.id;
+ assert.equal((await (await f.call('/'+id)).json()).source.importSource,'grokbot');
+ await f.write('/'+id,{revision:1,importSource:' GPT-Dot '},'PATCH');
+ await f.write('/'+id,{revision:2,title:'New title'},'PATCH');
+ const source=(await (await f.call('/'+id)).json()).source;assert.equal(source.importSource,'gpt-dot');assert.equal(source.revision,3);
+ assert.deepEqual(await (await f.gateway('videoHits.create',{body},requestId)).json(),created);
+ assert.equal((await f.gateway('videoHits.create',{body:{...body,importSource:'grokbot'}},requestId)).status,409);
+ assert.equal((await f.gateway('videoHits.update',{id,body:{revision:1,importSource:'other-agent'}},crypto.randomUUID())).status,409);
+ for(const value of ['',null,12,'contains spaces','bad/name','汉字','a'.repeat(65)])assert.equal((await f.gateway('videoHits.create',{body:{...body,externalId:crypto.randomUUID(),importSource:value}},crypto.randomUUID())).status,400);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,1);assert.equal(f.requests.length,0);
+});
+
+test('agent filter is owner-scoped, exact, normalized and applied before pagination with types',async t=>{
+ const f=await setup(t);let first;
+ for(let i=0;i<23;i++){
+  const body={externalId:'agent-'+i,videoUrl:'https://www.tiktok.com/@source/video/123',title:'Agent material',importSource:i<21?'future.agent-1':'grokbot',videoData:{playCount:i}};
+  const r=await f.gateway('videoHits.create',{body},crypto.randomUUID());assert.equal(r.status,200);const {id}=await r.json();if(!i)first=id;
+ }
+ const legacy=await f.create();f.sqlite.prepare("UPDATE psychology_video_hits SET owner_id='someone-else',import_source='future.agent-1' WHERE id=?").run(legacy);
+ const read=async query=>{const r=await f.gateway('videoHits.list',{query});assert.equal(r.status,200);return r.json();};
+ const a=await read({importSource:' FUTURE.Agent-1 ',sort:'plays'});assert.equal(a.total,21);assert.equal(a.items.length,20);assert.equal(a.hasMore,true);assert.ok(a.items.every(x=>x.importSource==='future.agent-1'));assert.equal(a.items[0].videoData.playCount,20);
+ const b=await read({importSource:'future.agent-1',page:2,sort:'plays'});assert.equal(b.items.length,1);assert.equal(b.hasMore,false);assert.equal(b.items[0].id,first);
+ assert.equal((await read({importSource:'future'})).total,0);assert.equal((await read({importSource:''})).total,23);
+ await f.write('/'+first+'/versions/1',{revision:0,title:'Frame',script:'Narration'});
+ assert.equal((await read({importSource:'future.agent-1',inputMode:'frames'})).total,1);assert.equal((await read({importSource:'grokbot',inputMode:'frames'})).total,0);
+ assert.equal((await f.gateway('videoHits.list',{query:{importSource:'bad/name'}})).status,400);
+});

@@ -11,11 +11,11 @@ export const VIDEO_HITS_GUIDE='/docs/psychology-video-hits-api.md';
 const uuid=z.string().uuid(),id=z.string().regex(/^vh-[a-f0-9]{32}$/),revision=z.number().int().nonnegative();
 const version=z.string().regex(/^(?:[1-9]|1[0-9]|20)$/),frameVersion=z.string().regex(/^(?:0|[1-9]|1[0-9]|20)$/);
 const textFields={title:z.string().min(1).max(200),caption:z.string().max(2200).optional(),script:z.string().max(20000).optional()};
-const sourceBody=z.object({...textFields,externalId:z.string().min(1).max(100),videoUrl:z.string().url(),videoData:z.record(z.string(),z.unknown()).optional()}).strict();
+const sourceBody=z.object({...textFields,importSource:z.string().min(1).max(64).describe('导入智能体标识：grokbot、gpt-dot或自定义小写字母/数字/点/下划线/连字符；新智能体务必声明，省略兼容为grokbot').optional(),externalId:z.string().min(1).max(100),videoUrl:z.string().url(),videoData:z.record(z.string(),z.unknown()).optional()}).strict();
 const frame=z.object({index:z.number().int().min(1).max(300),assetId:uuid.optional(),imageUrl:z.string().url().max(2000).optional(),text:z.string().max(1500).optional(),durationSeconds:z.number().min(0.04).max(60).optional()}).strict();
 const params=fields=>z.object(fields).strict();
 const definitions={
- 'videoHits.list':params({query:params({page:z.number().int().min(1).max(10000).optional(),q:z.string().max(100).optional(),sort:z.enum(['recent','plays']).optional(),scope:z.enum(['active','archived','all']).optional(),inputMode:z.enum(['all','video','frames']).optional()}).optional()}),
+ 'videoHits.list':params({query:params({page:z.number().int().min(1).max(10000).optional(),q:z.string().max(100).optional(),importSource:z.string().max(64).optional(),sort:z.enum(['recent','plays']).optional(),scope:z.enum(['active','archived','all']).optional(),inputMode:z.enum(['all','video','frames']).optional()}).optional()}),
  'videoHits.get':params({id}),
  'videoHits.versions.get':params({id,version}),
  'videoHits.frames.list':params({id,version:frameVersion,query:params({page:z.number().int().min(1).max(10000).optional()}).optional()}),

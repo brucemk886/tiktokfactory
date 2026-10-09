@@ -12,9 +12,16 @@ export function imageUrl(value){
  if(url.protocol!=='https:'||url.username||url.password||url.port||!url.hostname.includes('.')||/^\[|^[\d.]+$/.test(url.hostname)||/(^|\.)(localhost|local|internal|test|invalid|example)$/.test(url.hostname))fail('图片须使用公开 HTTPS 域名链接。');
  return url.href;
 }
+export function importSource(value){
+ if(typeof value!=='string')fail('importSource 须为智能体标识。');
+ const name=value.trim().toLowerCase();
+ if(!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(name))fail('importSource 须为1–64位字母、数字、点、下划线或连字符，以字母或数字开头。');
+ return name;
+}
 export function sourceInput(input){
- only(input,['requestId','revision','externalId','videoUrl','title','caption','script','videoData']);
+ only(input,['requestId','revision','externalId','videoUrl','title','caption','script','videoData','importSource']);
  const result={};
+ if(input.importSource!==undefined)result.importSource=importSource(input.importSource);
  if(input.externalId!==undefined)result.externalId=text(input.externalId,'来源编号',100,true);
  if(input.videoUrl!==undefined){let url;try{url=new URL(input.videoUrl);}catch{fail('视频链接无效。');}if(url.protocol!=='https:'||url.username||url.password||!/(^|\.)tiktok\.com$/i.test(url.hostname))fail('请输入 TikTok HTTPS 视频链接。');result.videoUrl=url.href;}
  for(const [key,max] of [['title',200],['caption',2200],['script',20000]])if(input[key]!==undefined)result[key]=text(input[key],key,max,key==='title');

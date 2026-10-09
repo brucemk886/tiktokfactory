@@ -1,6 +1,6 @@
 # 心理学视频爆款 API
 
-版本：2026-10-09 · MCP 1.5。公开文档：https://factory.tiktokaitool.com/docs/psychology-video-hits-api.md
+版本：2026-10-09 · MCP 1.5.1。公开文档：https://factory.tiktokaitool.com/docs/psychology-video-hits-api.md
 
 页面：https://factory.tiktokaitool.com/psychology-video-hits 。页面“API 写入”、MCP guide 与此文档内容相同。
 
@@ -10,11 +10,13 @@
 
 1. 有 Local Factory MCP 工具：优先调用 `psychology_videoHits_guide`。MCP 地址 `https://factory.tiktokaitool.com/mcp`，使用工厂管理员 OAuth，不需要项目密钥。
 2. 只有 HTTP / 代码执行工具：使用下文 REST 统一入口和已配置的项目 Bearer 密钥；密钥通过执行环境的安全配置传入，勿写进文档、代码仓库或回显。已经在用 REST 的 grokbot 可以按原方式继续，无需换地址、密钥、参数、requestId 或重传素材。
-3. MCP 没有这些工具：刷新该连接的工具列表；仍没有时重新添加同一 MCP 地址。工具返回 `INSUFFICIENT_SCOPE`：在授权页面增加 `factory.video_hits.write`。旧只读授权不会自动升级。不要把“未发现工具”和“接口拒绝权限”混为一谈。
-4. 先列出现有来源，按 `externalId` 精确核对，避免同视频重复导入。创建来源 → 上传原图 → 写 version=0 分镜 → 创建停用二创版本 → 上传二创图 → 写对应分镜 → 读回逐帧核对。只有用户要求进入可用素材库时再启用，否则保持 `enabled:false`。
+3. MCP 没有这些工具：在 ChatGPT 的连接/插件设置中打开 Local Factory 连接详情，执行 Refresh（刷新工具），确认工具中出现 `psychology_videoHits_create`，然后**新开一个会话并启用该连接**；刷新 Factory 网页或继续旧会话不能保证重新载入工具。仍没有时重新添加同一 MCP 地址，再新开会话。工具返回 `INSUFFICIENT_SCOPE`：在授权页面增加 `factory.video_hits.write`。旧只读授权不会自动升级。不要把“未发现工具”和“接口拒绝权限”混为一谈。
+4. 新导入必须明确填写自己的 `importSource`：grokbot 用 `grokbot`，GPT Dot 用 `gpt-dot`，其他智能体使用稳定名称。先列出现有来源，按 `externalId` 精确核对，避免同视频重复导入。创建来源 → 上传原图 → 写 version=0 分镜 → 创建停用二创版本 → 上传二创图 → 写对应分镜 → 读回逐帧核对。只有用户要求进入可用素材库时再启用，否则保持 `enabled:false`。
 5. 每个新 JSON 写操作生成独立 UUID `requestId`，保存请求体和编号。每张图片另用固定 UUID `uploadId`；重试始终沿用原编号和内容。不同代理不要同时修改同一个来源/版本；revision 冲突先读最新值并核对他人修改，不能覆盖新内容。
 6. 返回来源 ID、页面链接、版本编号、分镜数量、启用状态与逐条失败原因。只有写入回执成功且读回一致才声称完成；上传成功不等于已经绑定分镜。
 7. 此默认任务止于素材入库，不调用合成、发布、归档、自动运营。继续后续步骤需要对应任务授权。MCP 素材权限本身没有这些操作。
+
+刷新后新开会话是 [OpenAI 官方 MCP 连接更新流程](https://developers.openai.com/plugins/deploy/connect-chatgpt) 的要求。诊断时先报告实际可见的工具名：工具不存在表示尚未发出写入请求，不能据此认定 API Key 无效或账号无权限；工具存在后再根据真实返回的状态码排查。服务端无法替客户端强制更新已载入的会话工具。
 
 ## MCP 工具与 REST 共用一套数据
 
@@ -47,7 +49,7 @@ MCP 另外提供：
 MCP 创建来源示例（调用 `psychology_videoHits_create` 的参数）：
 
 ```json
-{"requestId":"GENERATE_A_UUID","params":{"body":{"externalId":"tiktok:REAL_VIDEO_ID","videoUrl":"https://www.tiktok.com/@REAL_ACCOUNT/video/REAL_VIDEO_ID","title":"来源标题","caption":"原发布文案","script":"原视频完整文案","videoData":{"playCount":12000}}}}
+{"requestId":"GENERATE_A_UUID","params":{"body":{"externalId":"tiktok:REAL_VIDEO_ID","importSource":"gpt-dot","videoUrl":"https://www.tiktok.com/@REAL_ACCOUNT/video/REAL_VIDEO_ID","title":"来源标题","caption":"原发布文案","script":"原视频完整文案","videoData":{"playCount":12000}}}}
 ```
 
 同一操作的 REST 参数只需加 `module:"psychology", action:"videoHits.create"`。两种入口共用所有权、revision、requestId 防重与回执，不能切换入口来绕过重复请求保护。
@@ -93,11 +95,20 @@ MCP 创建来源示例（调用 `psychology_videoHits_create` 的参数）：
 
 ## 来源与版本
 
-`videoHits.create` 保存 `externalId`、TikTok `videoUrl`、`title`、`caption`（发布文案）、`script`（完整视频原文）和 `videoData`（JSON，最多16KB，推荐 playCount/likeCount/commentCount/shareCount/favoriteCount/durationSeconds/accountName/publishedAt）。externalId 在当前账号内唯一；修改使用返回的 id 和 revision。
+`videoHits.create` 保存 `importSource`、`externalId`、TikTok `videoUrl`、`title`、`caption`（发布文案）、`script`（完整视频原文）和 `videoData`（JSON，最多16KB，推荐 playCount/likeCount/commentCount/shareCount/favoriteCount/durationSeconds/accountName/publishedAt）。externalId 在当前账号内唯一；修改使用返回的 id 和 revision。
 
 `videoHits.list` 支持 page/q/sort（recent 或 plays）、scope（active/archived/all）及 inputMode（all/video/frames，默认 all）；每页20条。inputMode 放在 params.query 中：video 筛选含视频二创的来源，frames 筛选含图文二创的来源，筛选在分页前执行。同一来源可同时包含两种二创，不会重复返回。每条来源附带 videoVersionCount、frameVersionCount 和总 versionCount。`videoHits.get` 返回来源、最新revision和版本。`videoHits.update` 按revision修改来源。
 
 每个来源有1–20号独立二创版本，用 `videoHits.versions.write` 创建/编辑。新版本 revision=0；后续读 `videoHits.versions.get` 取最新revision。字段为 name/title/caption/script/enabled。新版本默认停用，文案和图片补齐后提交 enabled=true。
+
+### 导入来源 importSource
+
+- 来源列表和详情返回 `importSource`，页面单独显示“导入来源”并支持筛选。它表示由哪个智能体导入，与原视频作者、视频/图文类型和来源状态分开。
+- 创建/修改放在 `params.body.importSource`；筛选放在 `params.query.importSource`，精确匹配，空值/不填表示全部，先筛选再分页，可与类型/状态一起使用。
+- 去除首尾空格、转小写，1–64 位，格式 `^[a-z0-9][a-z0-9._-]{0,63}$`。推荐 `grokbot` / `gpt-dot`；未来智能体可直接用新名称，无需改接口。页面手工新增默认 `manual`。
+- 用户已确认旧记录全部来自 grokbot，迁移统一补为 `grokbot`，不修改旧 revision、时间或回执。为兼容仍在运行的旧导入，创建时不传也默认 `grokbot`；更新时不传保留原值。新调用方请显式传入真实名称，不能把默认值当身份识别。
+- 此字段是调用方填写的来源标记，不是已验证身份或权限凭据；来源本身按当前账号隔离，OAuth/API 权限规则不变。
+- 例：列出 Dot 导入：`{"module":"psychology","action":"videoHits.list","params":{"query":{"importSource":"gpt-dot","page":1}}}`；修正标签用 `videoHits.update`，传真实 `id`、最新 `revision`、`importSource` 和新 `requestId`。
 
 ## 图片上传
 

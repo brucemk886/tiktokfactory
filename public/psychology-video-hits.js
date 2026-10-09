@@ -4,7 +4,8 @@ const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&
 const route=location.pathname.replace(/\/$/,''),params=new URLSearchParams(location.search);
 const view=route===PAGE+'/recreations'?'recreations':route===PAGE+'/detail'?'detail':'sources';
 let inputMode=['video','frames'].includes(params.get('inputMode'))?params.get('inputMode'):'all';
-const typeQuery=()=>inputMode==='all'?'':'&inputMode='+inputMode;
+let sourceImporter=params.get('importSource')||'';
+const typeQuery=()=>(inputMode==='all'?'':'&inputMode='+inputMode)+(sourceImporter?'&importSource='+encodeURIComponent(sourceImporter):'');
 const sourceId=params.get('id'),detailUrl=(id,version)=>PAGE+'/detail?id='+encodeURIComponent(id)+'&version='+version+typeQuery(),recreationsUrl=id=>PAGE+'/recreations?id='+encodeURIComponent(id)+typeQuery();
 let page=1,list=[],detail=null,n=Number(params.get('version')),framePage=1,editingSource=false,editingVersion=false,frameVersion=0,loadToken=0,listToken=0;
 let versionScope="pending";
@@ -34,9 +35,9 @@ const typeName=mode=>mode==='video'?'视频':'图文';
 const typeBadge=(mode,count)=>'<span class="vh-badge vh-type-'+(mode==='video'?'video':'frames')+'">'+typeName(mode)+(count===undefined?'':' '+count)+'</span>';
 const sourceTypes=s=>'<div class="vh-type-badges">'+(s.videoVersionCount?typeBadge('video',s.videoVersionCount):'')+(s.frameVersionCount?typeBadge('frames',s.frameVersionCount):'')+'</div>'+(!s.versionCount?'<small>暂无二创</small>':'');
 function syncTypeFilter(){
- $('sourceInputMode').value=inputMode;$('recreationInputMode').value=inputMode;
- const url=new URL(location.href);if(inputMode==='all')url.searchParams.delete('inputMode');else url.searchParams.set('inputMode',inputMode);history.replaceState(null,'',url);
- document.querySelector('#pageBreadcrumb a').href=PAGE+(inputMode==='all'?'':'?inputMode='+inputMode);
+ $('sourceInputMode').value=inputMode;$('recreationInputMode').value=inputMode;$('sourceImportSource').value=sourceImporter;
+ const url=new URL(location.href);if(inputMode==='all')url.searchParams.delete('inputMode');else url.searchParams.set('inputMode',inputMode);if(sourceImporter)url.searchParams.set('importSource',sourceImporter);else url.searchParams.delete('importSource');history.replaceState(null,'',url);
+ document.querySelector('#pageBreadcrumb a').href=PAGE+(typeQuery()?'?'+typeQuery().slice(1):'');
 }
 
 function pageError(error){$('pageStatus').hidden=false;$('pageStatus').textContent=error.message;}
@@ -54,10 +55,10 @@ function setupPage(){
 }
 async function load(){
  const token=++listToken;$('listStatus').textContent='正在读取…';
- try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value+'&inputMode='+inputMode);if(token!==listToken)return;
+ try{const data=await api('?page='+page+'&q='+encodeURIComponent($('query').value)+'&sort='+$('sort').value+'&scope='+$('sourceScope').value+'&inputMode='+inputMode+'&importSource='+encodeURIComponent(sourceImporter));if(token!==listToken)return;
  const totalPages=Math.ceil(data.total/data.pageSize);if(page>Math.max(1,totalPages)){page=Math.max(1,totalPages);return load();}
- list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+s.versionCount+' / 20'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="5">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
- $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创');$('recordInfo').textContent='共 '+data.total+' 条记录';$('pageInfo').textContent=totalPages?'第 '+page+' / '+totalPages+' 页':'共 0 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
+ list=data.items;$('sources').innerHTML=list.map(s=>'<tr><td><strong>'+escape(s.title)+'</strong><small>'+escape(s.externalId)+'</small><small>更新：'+stamp(s.updatedAt)+'（北京时间）</small></td><td data-label="导入来源"><span class="vh-badge vh-import-badge">'+escape(s.importSource)+'</span></td><td data-label="播放 / 互动">'+metric(s.videoData.playCount)+' 播放<small>'+metric(s.videoData.likeCount)+' 赞 · '+metric(s.videoData.commentCount)+' 评论</small><small>'+metric(s.videoData.shareCount)+' 分享</small></td><td data-label="原图">'+s.frameCount+' 帧</td><td data-label="二创类型 / 版本">'+s.versionCount+' / 20'+sourceTypes(s)+'</td><td><a class="vh-link-button" data-recreations="'+escape(s.id)+'" href="'+escape(recreationsUrl(s.id))+'">查看二创</a></td></tr>').join('')||'<tr><td colspan="6">当前条件下暂无来源，可调整二创类型或搜索条件。</td></tr>';
+ $('listStatus').textContent='共 '+data.total+' 条来源'+(inputMode==='all'?'':' · 含'+typeName(inputMode)+'二创')+(sourceImporter?' · '+sourceImporter:'');$('recordInfo').textContent='共 '+data.total+' 条记录';$('pageInfo').textContent=totalPages?'第 '+page+' / '+totalPages+' 页':'共 0 页';$('previous').disabled=page===1;$('next').disabled=!data.hasMore;
  }catch(e){if(token===listToken)$('listStatus').textContent=e.message;}
 }
 async function loadDetail(){
@@ -66,7 +67,7 @@ async function loadDetail(){
  d.versions.sort((a,b)=>a.version-b.version);detail=d;
  if(view==='detail'&&!current())throw new Error('此二创版本尚未创建，请返回二创列表。');
  $('sourceSummary').hidden=false;$('sourceTitle').textContent=d.source.title;$('sourceLink').href=d.source.videoUrl;
- $('sourceMeta').textContent=d.source.externalId+' · '+metric(d.source.videoData.playCount)+' 播放 · '+d.frameCount+' 帧原图';
+ $('sourceMeta').textContent=d.source.externalId+' · 导入来源：'+d.source.importSource+' · '+metric(d.source.videoData.playCount)+' 播放 · '+d.frameCount+' 帧原图';
  $('sourceData').textContent=JSON.stringify(d.source.videoData,null,2);
  lock('editSource',Boolean(d.source.archivedAt));
  lock('archiveSource',Boolean(d.source.archivedAt)||!d.versions.length||d.versions.some(v=>v.publishState!=='published'));
@@ -170,8 +171,8 @@ document.addEventListener('visibilitychange',()=>{clearTimeout(jobsTimer);if(!do
 window.addEventListener('pageshow',e=>{if(e.persisted&&view==='detail'&&current())refreshPreview();});
 
 function sourceEditor(edit){
- editingSource=edit;$('sourceForm').reset();const s=edit?detail.source:{externalId:'video-'+Date.now(),videoData:{}};
- for(const name of ['externalId','videoUrl','title','caption','script'])$('sourceForm').elements[name].value=s[name]||'';
+ editingSource=edit;$('sourceForm').reset();const s=edit?detail.source:{externalId:'video-'+Date.now(),importSource:'manual',videoData:{}};
+ for(const name of ['externalId','importSource','videoUrl','title','caption','script'])$('sourceForm').elements[name].value=s[name]||'';
  $('sourceForm').dataset.revision=s.revision||0;$('sourceForm').elements.externalId.readOnly=edit;$('sourceForm').elements.videoData.value=JSON.stringify(s.videoData||{},null,2);$('sourceDialogTitle').textContent=edit?'编辑视频原文':'新增视频';$('sourceSaveStatus').textContent='';$('sourceDialog').showModal();
 }
 function versionEditor(edit){
@@ -183,16 +184,17 @@ function versionEditor(edit){
  $('versionInputMode').value=v?.inputMode||'frames';$('versionForm').dataset.videoAssetId=v?.videoAssetId||'';delete $('versionForm').dataset.videoUploadId;updateInputMode();
  $('versionForm').dataset.revision=v?.revision||0;$('versionDialogTitle').textContent=edit?'编辑二创版本 '+n:'新建二创版本';$('versionSaveStatus').textContent='';$('versionDialog').showModal();
 }
-$('filters').addEventListener('submit',e=>{e.preventDefault();page=1;load();});$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
+$('filters').addEventListener('submit',e=>{e.preventDefault();sourceImporter=$('sourceImportSource').value.trim().toLowerCase();syncTypeFilter();page=1;load();});$('previous').onclick=()=>{page--;load();};$('next').onclick=()=>{page++;load();};
 $('newSource').onclick=()=>sourceEditor(false);$('editSource').onclick=()=>sourceEditor(true);
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 $('sourceForm').onsubmit=e=>{e.preventDefault();action('sourceSaveStatus',e.submitter,async()=>{
- const f=e.target.elements,body=Object.fromEntries(['externalId','videoUrl','title','caption','script'].map(k=>[k,f[k].value]));body.videoData=JSON.parse(f.videoData.value||'{}');
+ const f=e.target.elements,body=Object.fromEntries(['externalId','importSource','videoUrl','title','caption','script'].map(k=>[k,f[k].value]));body.videoData=JSON.parse(f.videoData.value||'{}');
  if(editingSource)body.revision=Number(e.target.dataset.revision);
  const result=await write(editingSource?'/'+detail.source.id:'',editingSource?'PATCH':'POST',body);$('sourceDialog').close();
  if(editingSource)await loadDetail();else location.assign(recreationsUrl(result.id));
  });};
 $('versionScope').onclick=e=>{const b=e.target.closest('[data-scope]');if(b){versionScope=b.dataset.scope;renderRecreations();}};
+$('sourceImportSource').onchange=()=>{sourceImporter=$('sourceImportSource').value.trim().toLowerCase();syncTypeFilter();page=1;load();};
 $('sourceScope').onchange=()=>{page=1;load();};
 $('sourceInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();page=1;load();};
 $('recreationInputMode').onchange=e=>{inputMode=e.target.value;syncTypeFilter();renderRecreations();};

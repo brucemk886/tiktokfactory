@@ -414,3 +414,18 @@ test('video-hit picker uploads a real >128KB file through OAuth MCP and confirms
  const saved=await f.video(token,'assets_get',{uploadId});assert.equal(saved.structuredContent.status,'active');assert.equal(saved.structuredContent.size,png.length);
  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits').get().n,0);assert.equal(f.requests.length,0);
 });
+
+
+test('MCP advertises and executes importSource writes and list filters across REST receipts',async t=>{
+ const f=await videoSetup(t),a=await authorize(f,'video'),token=a.token.access_token;
+ const list=(await json(await rpc(f,token,'tools/list'))).result.tools;
+ assert.ok(list.find(x=>x.name==='psychology_videoHits_create').inputSchema.properties.params.properties.body.properties.importSource);
+ assert.ok(list.find(x=>x.name==='psychology_videoHits_list').inputSchema.properties.params.properties.query.properties.importSource);
+ const params={body:{...f.source.body,importSource:'GPT-Dot'}},requestId=crypto.randomUUID();
+ const made=await f.video(token,'create',{params,requestId});assert.equal(made.isError,false);const id=made.structuredContent.id;
+ assert.equal((await json(await f.rest('videoHits.create',params,requestId))).id,id);
+ const r=await f.video(token,'list',{params:{query:{importSource:'gpt-dot'}}});assert.equal(r.isError,false);assert.equal(r.structuredContent.total,1);assert.equal(r.structuredContent.items[0].importSource,'gpt-dot');
+ assert.equal((await f.video(token,'list',{params:{query:{importSource:'grokbot'}}})).structuredContent.total,0);assert.equal((await f.video(token,'list',{params:{query:{importSource:''}}})).structuredContent.total,1);
+ const update=await f.video(token,'update',{params:{id,body:{revision:1,importSource:'future.agent'}},requestId:crypto.randomUUID()});assert.equal(update.isError,false);
+ assert.equal((await f.video(token,'get',{params:{id}})).structuredContent.source.importSource,'future.agent');assert.equal(f.requests.length,0);
+});

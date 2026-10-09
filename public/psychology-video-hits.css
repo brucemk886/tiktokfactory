@@ -27,3 +27,5 @@
 .video-hits-page #readyVideoPanel{scroll-margin-top:80px}.video-hits-page #readyVideoPlayer .video-cover-button{display:block;margin:0!important;padding:0!important;border:0!important;border-radius:inherit!important;background:#101b2c!important;min-height:0}.video-hits-page #readyVideoPlayer .video-cover-button img{display:block}
 
 .video-hits-page .vh-record-count{font-size:13px;color:#6c7d93;white-space:nowrap}.video-hits-page #pageInfo{white-space:nowrap}@media(max-width:650px){.video-hits-page .vh-record-count{flex-basis:100%;text-align:right}}
+
+.video-hits-page .vh-import-filter{width:150px;max-width:100%}.video-hits-page .vh-import-badge{white-space:normal;overflow-wrap:anywhere;max-width:170px}
