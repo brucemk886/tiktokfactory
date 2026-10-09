@@ -26,3 +26,6 @@ User must select publishers and receivers and explicitly enable the new mode. No
 
 ## Recommended next step
 Refresh Automatic Operations, configure both account roles and bio-link confirmations, then save and enable when ready.
+
+## Release evidence
+Runtime commit 7cbbb208b5435d15aa60f1248018f2e664a9b29f was pushed to GitHub main before npm run deploy from a clean main worktree with HEAD == origin/main. Migration 0087 applied successfully; Worker version 606538cb-c454-4c3b-88dc-2b027e743538 deployed. Live imported-mode, Video Hits and publisher JavaScript plus the public API guide returned HTTP 200 and matched local SHA-256. The private new-mode API returns 401 without login. Read-only production checks found zero configured/enabled new-mode settings and zero allocated posts; no production publication was initiated.
