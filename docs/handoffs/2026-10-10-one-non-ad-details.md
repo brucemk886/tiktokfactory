@@ -23,7 +23,9 @@ Read and display the available non-advertising One data in both Factory psycholo
 - Desktop detail and audience screenshots inspected at 1600 x 1050.
 
 ## Unfinished work
-Remaining regression checks, guarded production deployment and authenticated live verification.
+Completed. Runtime commit 0b863305b247a23ab9c7362e9d347c40438a9717 was committed and pushed to main before guarded deployment from a clean exact origin/main checkout. Worker version: eb01337e-8c99-4dfa-8edc-b7ef0da0df8d.
+
+Live verification confirmed the 20-row detail links and scoped coverage counts. A historical video displayed audience bars, 61 retention points, 30 daily rows and unique anchor counts. A recent video detail returned 24 overall/natural metric fields and 20 retention points with audience/daily marked unavailable. Both report surfaces worked; recursive response inspection found no advertising or paid-flow keys. All reads used existing authorization; no publication was triggered.
 
 ## Recommended next step
 Open Data Overview or Operations Report → TikTok One → a video's Data Detail. Keep missing metrics visibly unavailable and review individual video audiences rather than averaging proportions.
