@@ -6,7 +6,7 @@ import {handlePsychologyOneReport} from './psychology-one-report.js';
 import {refreshReportFacts,reportVideoFactWrite} from './psychology-report-facts.js';
 const actor={role:'admin',sidebarModules:['psychology-effects','psychology-ops-report']};
 async function read(f,q='',user=actor,method='GET'){
- const url=new URL('https://factory.test/api/psychology-one-report?'+(q.includes('period=')?'':'period=7d&')+q),r=await handlePsychologyOneReport(new Request(url,{method}),f.env,url,{user});return {status:r.status,data:await r.json()};
+ const url=new URL('https://factory.test/api/psychology-one-report?'+(q.includes('period=')?'':q.includes('source=tasks')?'period=7d&':'period=all&')+q),r=await handlePsychologyOneReport(new Request(url,{method}),f.env,url,{user});return {status:r.status,data:await r.json()};
 }
 async function seed(t){const f=await fixture(t);const now=Date.now()-60000;
  await kvSet(f.db,'official-account-groups',{projects:[{id:'p',moduleKey:'psychology',name:'心理学'},{id:'n',moduleKey:'novel-promotion',name:'小说'}],groups:[{id:'g',projectId:'p',name:'授权分组'},{id:'outside',projectId:'n',name:'其他'}],aliases:{alpha:'a',beta:'b'}});
@@ -57,4 +57,11 @@ test('empty scope does not call provider; invalid project is denied; partial and
  const partial=await read(f);assert.equal(partial.data.partial,true);assert.equal(calls,20);
  t.mock.method(globalThis,'fetch',async()=>Response.json({error:'official unavailable'},{status:502}));
  const fail=await read(f,'refresh=1');assert.equal(fail.status,502);assert.match(fail.data.error,/unavailable/);
+});
+
+test('official published-date filter is applied to returned date text, while all keeps older records',async t=>{
+ const f=await seed(t);f.add('v');const today=new Date(Date.now()+28800000).toISOString().slice(0,10);
+ t.mock.method(globalThis,'fetch',async()=>Response.json({videos:[{videoId:'new',creator:'alpha',publishedAt:today+' 05:00:00',views:10},{videoId:'old',creator:'alpha',publishedAt:'2025-01-01 00:00:00',views:50},{videoId:'no-date',creator:'alpha',views:80}],page_info:{total_page:1,total_number:3},fetchedAt:f.now}));
+ const all=await read(f);assert.equal(all.data.summary.total,3);assert.equal(all.data.summary.views,140);
+ const recent=await read(f,'period=today');assert.equal(recent.data.summary.total,1);assert.equal(recent.data.summary.views,10);assert.equal(recent.data.rows[0].publishedAt,today+' 05:00:00');
 });

@@ -20,7 +20,7 @@ function mountOneReport(){
  for(const id of ['status','methodToggle','methodPanel']){const el=document.getElementById(id);if(el)el.hidden=true;}
  const root=document.createElement('section');root.className='one-report';root.setAttribute('aria-label','TikTok One 专属数据');standard.after(root);
  root.innerHTML=`<form class="one-report-filters">
- <label>统计周期<select name="period"><option value="today">今天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="custom">自定义</option></select></label>
+ <label>统计周期<select name="period"><option value="all">全部发布日期（One）</option><option value="today">今天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="custom">自定义</option></select></label>
  <label>数据来源<select name="source"><option value="official">官方项目数据</option><option value="tasks">工厂发布进度</option></select></label>
  <label data-task-basis>日期口径<select name="basis"><option value="schedule">计划发布时间</option><option value="published">实际发布时间</option></select></label>
  <label>账号分组<select name="group"><option value="">全部授权分组</option></select></label>
@@ -34,10 +34,10 @@ function mountOneReport(){
  for(const key of ['period','source','basis','group','campaign','from','to']){
   const val=params.get('one'+key[0].toUpperCase()+key.slice(1));if(val){if(['group','campaign'].includes(key))field(key).add(new Option(val,val));field(key).value=val;}
  }
- if(!field('period').value||!params.has('onePeriod'))field('period').value='7d';
+ if(!field('period').value||!params.has('onePeriod'))field('period').value=field('source').value==='tasks'?'7d':'all';
  if(!field('basis').value)field('basis').value='schedule';
  if(!field('source').value)field('source').value='official';
- const sourceChanged=()=>{root.querySelector('[data-task-basis]').hidden=field('source').value==='official';};sourceChanged();field('source').addEventListener('change',sourceChanged);
+ const sourceChanged=()=>{const official=field('source').value==='official';root.querySelector('[data-task-basis]').hidden=official;field('period').querySelector('[value=all]').disabled=!official;if(!official&&field('period').value==='all')field('period').value='7d';};sourceChanged();field('source').addEventListener('change',sourceChanged);
  const dates=()=>{const custom=field('period').value==='custom';root.querySelector('.one-report-dates').hidden=!custom;field('from').required=field('to').required=custom;};
  dates();field('period').addEventListener('change',dates);
  field('group').addEventListener('change',()=>{field('campaign').innerHTML='<option value="">全部 One 项目</option>';});
@@ -67,7 +67,7 @@ function mountOneReport(){
   const cards=[['官方收录视频',fmt(s.total),'当前项目 · 当前授权心理学账号'],['累计播放',fmt(s.views),'已有播放值 '+s.synced+' 条 · 缺失 '+s.missingMetrics+' 条'],['锚点点击',fmt(s.anchorClicks),'有点击数据 '+s.anchorClicksSamples+' 条'],['锚点点击率',pct(s.anchorCtr),'仅按同时有曝光、点击的数据计算']];
   content.innerHTML='<div class="one-report-kpis">'+cards.map(([label,value,note])=>'<article><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></article>').join('')+'</div>'+
    '<div class="one-report-progress"><span>自然播放 '+fmt(s.organicViews)+' · 付费播放 '+fmt(s.paidViews)+'</span><span>点赞 '+fmt(s.likes)+' · 评论 '+fmt(s.comments)+' · 分享 '+fmt(s.shares)+'</span></div>'+
-   '<div class="one-report-body"><div class="one-report-heading"><div><h2>TikTok One 官方'+(d.view==='accounts'?'账号表现':d.view==='projects'?'项目表现':'视频明细')+'</h2><p>官方累计指标；无审核状态字段。可切换「工厂发布进度」查看上传与发布回执。</p></div><label>查看维度 <select id="oneReportView"><option value="videos">视频明细</option><option value="accounts">账号表现</option><option value="projects">项目表现</option></select></label></div><div class="one-report-results"></div><footer class="one-report-pager"></footer></div>'+
+   '<div class="one-report-body"><div class="one-report-heading"><div><h2>TikTok One 官方'+(d.view==='accounts'?'账号表现':d.view==='projects'?'项目表现':'视频明细')+'</h2><p>按官方原始发布日期筛选，展示当前累计指标；无审核状态字段。可切换「工厂发布进度」查看上传与发布回执。</p></div><label>查看维度 <select id="oneReportView"><option value="videos">视频明细</option><option value="accounts">账号表现</option><option value="projects">项目表现</option></select></label></div><div class="one-report-results"></div><footer class="one-report-pager"></footer></div>'+
    '<p class="one-report-note">'+esc(d.coverage)+(d.partial?' 本次只读取了部分结果，不能据此判断缺少哪些视频。':'')+'</p>';
   const target=content.querySelector('.one-report-results');
   if(!d.rows.length)target.innerHTML='<div class="one-report-empty"><strong>暂无当前授权账号的官方 One 视频数据</strong><p>可选择其他已绑定项目，或稍后刷新。暂无返回不代表发布失败。</p></div>';

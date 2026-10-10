@@ -8,7 +8,7 @@ Show TikTok One separately in Psychology Data Overview and Operations Report, an
 - Add a shared PC tab; default to official One data with a separate Factory task source. Keep original reports available and lazy-load One only when selected.
 - Source official: a whitelisted Hub bridge forwards only validated project/read parameters. Factory requires the exact report module and canonical current account/group scope, only accepts project contexts from authorized historical One tasks, and filters official rows before returning aggregates. Exact video ownership wins over handles; conflicting identities are excluded. No raw brand credentials exposed.
 - Fetch every official page up to 20 (at most three concurrently), deduplicate IDs, and flag partial results. Two-minute per-runtime upstream cache never caches authorization. Explicit refresh bypasses it. No report GET writes, production jobs, migrations or worker restarts.
-- Preserve zero vs missing values; CTR uses only rows with both numerator and denominator. Official returned cumulative metrics are distinct from date parameters for daily report data and from local planned/actual Beijing publishing dates. Provider timestamps are shown verbatim rather than guessing a timezone.
+- Preserve zero vs missing values; CTR uses only rows with both numerator and denominator. Official returned cumulative metrics are distinct from date parameters for daily report data and from local planned/actual Beijing publishing dates. Provider timestamps are shown verbatim rather than guessing a timezone. Live verification showed that the official report still returns older videos for recent date parameters, so the default is all publication dates and optional date filtering explicitly compares the provider date text after scope filtering.
 - Factory source uses frozen One task config and durable facts, retaining only once-owned video metrics after media/job cleanup. No ordinary videos from the same account are counted. Neither official inclusion nor Factory submission is labeled approval.
 
 ## Files changed
@@ -20,7 +20,7 @@ Show TikTok One separately in Psychology Data Overview and Operations Report, an
 ## Tests performed
 - Factory: 65 focused tests passed, covering task isolation, deduplication, zero/null, pagination, date basis, no writes, current scope/alias revocation, official pagination/cache/scoping, denied contexts, partial reports and upstream errors.
 - Hub: 57 One report/publishing/bridge tests passed, including report parameter whitelist and rejection of customer/non-admin callers. TypeScript noEmit passed.
-- Additional 28 Factory module/asset integration tests passed (93 Factory tests total).
+- Additional 28 Factory module/asset integration tests passed (94 Factory tests total after the added official-date regression).
 - Real Chromium local PC test passed for both pages, separate official/task content, pagination, account views, error/retry, original-report return and non-psychology isolation. Title/selected-tab contrast verified. Only mocked API calls during tests.
 
 ## Unfinished work

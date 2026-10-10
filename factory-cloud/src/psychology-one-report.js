@@ -19,7 +19,8 @@ export async function handlePsychologyOneReport(request,env,url,session){
  if(!module)return errorJson('报表页面无效。',400);
  if(!session?.user?.sidebarModules?.includes(module))return errorJson('没有此报表页面权限。',403);
  try{
-  const db=env.DB,window=operationsWindow(url.searchParams),basis=url.searchParams.get('basis')||'schedule',group=url.searchParams.get('group')||'',campaign=url.searchParams.get('campaign')||'',view=url.searchParams.get('view')||'videos';
+  const allDates=url.searchParams.get('period')==='all',dateQuery=new URLSearchParams(url.searchParams);if(allDates)dateQuery.set('period','7d');
+  const db=env.DB,window={...operationsWindow(dateQuery),...(allDates?{period:'all'}:{})},basis=url.searchParams.get('basis')||'schedule',group=url.searchParams.get('group')||'',campaign=url.searchParams.get('campaign')||'',view=url.searchParams.get('view')||'videos';
   if(!['schedule','published'].includes(basis)||!['videos','accounts','projects'].includes(view)||campaign&&!/^\d{1,30}$/.test(campaign))return errorJson('筛选条件无效。',400);
   const raw=await db.prepare("SELECT json_object('projects',json_extract(value_json,'$.projects'),'groups',json_extract(value_json,'$.groups')) value_json FROM factory_kv WHERE key='official-account-groups'").first();
   const store=ensureModuleProjects(JSON.parse(raw?.value_json||'{}')),project=findProjectForModule(store,'psychology'),allow=userAllowedGroupIds(session.user);
@@ -28,6 +29,7 @@ export async function handlePsychologyOneReport(request,env,url,session){
   const ids=JSON.stringify(groups.filter(g=>!group||g.id===group).map(g=>g.id));
   const source=url.searchParams.get('source')||'official';
   if(!['official','tasks'].includes(source))return errorJson('数据来源无效。',400);
+  if(source==='tasks'&&allDates)return errorJson('工厂任务请选择具体日期范围。',400);
   if(source==='official')return json(await readOfficialOneReport(env,{ids,groups,window,campaign,view,page:Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),country:'US',refresh:url.searchParams.get('refresh')==='1'}));
   // Frozen per-task One metadata identifies these posts, never the account alone.
   // Task facts carry once-only video ownership and survive media/job cleanup.

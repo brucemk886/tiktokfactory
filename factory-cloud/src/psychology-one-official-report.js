@@ -14,7 +14,7 @@ function aggregate(rows){
  return result;
 }
 async function fetchProject(env,context,{window,country,refresh}){
- const query={...context,resource:'report',country,startDate:window.from,endDate:window.to},key=JSON.stringify(query);
+ const query={...context,resource:'report',country,...(window.period==='all'?{}:{startDate:window.from,endDate:window.to})},key=JSON.stringify(query);
  let saved=cache.get(env.DB);if(!saved){saved=new Map();cache.set(env.DB,saved);}
  const hit=saved.get(key);if(!refresh&&hit&&Date.now()-hit.at<TTL)return {...hit.data,cached:true};
  const page=async n=>{
@@ -38,7 +38,7 @@ export async function readOfficialOneReport(env,{ids,groups,window,campaign,view
  GROUP BY connectionId,accountId,campaignId ORDER BY lastAt DESC,campaignId`).bind(ids).all()).results.filter(p=>p.connectionId&&p.accountId&&p.campaignId);
  const context=campaign?projects.find(p=>p.campaignId===campaign):projects[0];
  if(campaign&&!context)throw Object.assign(new Error('没有这个 TikTok One 项目的报表权限。'),{statusCode:403});
- const meta={source:'official',window,view,country,groups:groups.map(g=>({id:g.id,name:g.name})),projects:[...new Map(projects.map(p=>[p.campaignId,{campaignId:p.campaignId}])).values()],campaign:context?.campaignId||'',updatedAt:Date.now(),coverage:'数据来自 TikTok One 官方项目报表，仅显示当前授权心理学账号的作品；不包含普通发布。指标保留官方累计口径，空值不计作 0。日期参数用于官方报表查询，不作为本地作品发布日期筛选。此接口未提供审核状态。'};
+ const meta={source:'official',window,view,country,groups:groups.map(g=>({id:g.id,name:g.name})),projects:[...new Map(projects.map(p=>[p.campaignId,{campaignId:p.campaignId}])).values()],campaign:context?.campaignId||'',updatedAt:Date.now(),coverage:'数据来自 TikTok One 官方项目报表，仅显示当前授权心理学账号的作品；不包含普通发布。指标保留官方累计口径，空值不计作 0。日期筛选按官方返回的作品发布日期，不做时区换算；播放与互动不是期间新增值。此接口未提供审核状态。'};
  if(!context)return {...meta,summary:aggregate([]),rows:[],pagination:{page:1,pages:1,total:0,pageSize:SIZE},fetchedAt:0,partial:false};
  const source=await fetchProject(env,{connectionId:context.connectionId,accountId:context.accountId,campaignId:context.campaignId},{window,country,refresh});
  const scoped=(await db.prepare(reportAccountScopeSQL+` SELECT a.account_key,a.current_group,COALESCE(NULLIF(json_extract(d.profile_json,'$.username'),''),NULLIF(d.label,''),a.account_key) name,
@@ -51,6 +51,7 @@ export async function readOfficialOneReport(env,{ids,groups,window,campaign,view
  const owners=new Map();for(const r of known){const set=owners.get(r.video_id)||new Set();set.add(r.account_key);owners.set(r.video_id,set);}
  const videos=[];
  for(const v of source.videos){const keys=owners.get(String(v.videoId));let a;if(keys){if(keys.size===1)a=accounts.get([...keys][0]);}else a=byHandle.get(handle(v.creator));if(!a)continue;
+  if(window.period!=='all'){const date=String(v.publishedAt||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<window.from||date>window.to)continue;}
   const row={videoId:String(v.videoId),account:a.account_key,accountName:a.name,groupId:a.current_group,campaignId:context.campaignId,publishedAt:String(v.publishedAt||''),...Object.fromEntries(fields.map(k=>[k,number(v[k])]))};
   row.anchorCtr=row.anchorViews>0&&row.anchorClicks!==null?row.anchorClicks/row.anchorViews:null;videos.push(row);
  }
