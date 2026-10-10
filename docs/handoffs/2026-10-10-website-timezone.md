@@ -25,7 +25,10 @@ Explain missing Today conversion counts, unify site date filters, and make the d
 - Production diagnosis used SELECT-only D1 queries and aggregate output. No real short-link requests or publishing calls were made.
 
 ## Unfinished work
-Release verification pending.
+None.
 
 ## Recommended next step
 Refresh Independent website conversion and verify Today counts against Beijing dates. Profile visits remain unavailable until new UTC daily samples are synchronized.
+
+## Release evidence
+Runtime 6c03ad62121d55feb0d498cd693d5a696b129e48 was committed and pushed to GitHub main before deployment from a clean exact HEAD == origin/main checkout via npm run deploy. Worker version cdf5aed9-312c-417c-ba31-8cee8f3872e2. Public production website JS and CSS returned HTTP 200 and matched their committed normalized SHA-256. The backend read was separately verified against production D1 as described above; no production records or publishing configuration were changed.
