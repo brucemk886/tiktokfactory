@@ -1,5 +1,7 @@
 # Current State
 
+- TikTok account management lists each authorized account's synced follower count between the name and project. Missing counts stay blank instead of zero. See docs/handoffs/2026-10-10-tiktok-account-followers.md.
+
 - Video Hits pages can delete an unpublished import. Source management removes the whole source, including original copy and images; ready cards, recreation rows and version details remove one unpublished version. Submitted, published and in-progress versions stay, along with their once-only publication identities. The same owner and import source can import that external ID again as a new source. See docs/handoffs/2026-10-10-video-hit-delete.md.
 
 - The project API key can GET the topic-card and video-hit frame image URLs it returns. Those reads stay private to the key's administrator and module grants; anonymous requests remain 401. See docs/handoffs/2026-10-10-factory-api-image-read.md.

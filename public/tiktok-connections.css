@@ -46,8 +46,8 @@ button:disabled { opacity: .55; cursor: wait; }
 .account-toolbar .path-picker input { flex: 1; }
 .selected-count { color: var(--muted); font-size: 12px; align-self: center; }
 .account-list { display: grid; gap: 9px; margin-top: 12px; }
-.account-row { display: grid; grid-template-columns: 28px minmax(220px, 1.4fr) minmax(100px, 0.5fr) repeat(3, minmax(110px, .55fr)); gap: 16px; align-items: center; padding: 17px 18px; background: var(--lf-surface); border: 1px solid var(--line); }
-.account-row.is-readonly { grid-template-columns: minmax(220px, 1.4fr) minmax(160px, 0.8fr) repeat(3, minmax(110px, .55fr)); }
+.account-row { display: grid; grid-template-columns: 28px minmax(180px, 1.1fr) minmax(88px, .4fr) minmax(140px, .7fr) repeat(3, minmax(100px, .5fr)); gap: 16px; align-items: center; padding: 17px 18px; background: var(--lf-surface); border: 1px solid var(--line); }
+.account-row.is-readonly { grid-template-columns: minmax(180px, 1.1fr) minmax(88px, .4fr) minmax(140px, .7fr) repeat(3, minmax(100px, .5fr)); }
 .account-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: 12px; }
 .account-pager button { min-height: 34px; padding: 0 12px; color: var(--lf-text); background: transparent; border: 1px solid #3c4a52; border-radius: 4px; }
 .account-pager button.is-active { color: #0b0f12; background: var(--accent); border-color: var(--accent); }

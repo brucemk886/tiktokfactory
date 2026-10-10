@@ -37,6 +37,7 @@ test("authorized account list is a view page with 20-account pagination", () => 
   assert.doesNotMatch(html, /id="createGroupBtn"/);
   assert.doesNotMatch(html, /id="newProjectName"/);
   assert.match(script, /const PAGE_SIZE = 20/);
+  assert.match(script, /<small>粉丝<\/small>/);
   assert.match(script, /canSelectAccounts/);
   assert.match(script, /account-check/);
   assert.match(script, /function renderGroups/);
@@ -142,4 +143,28 @@ test("group metadata refresh preserves assignments when the response omits the a
   ui.applyGroupState({ groups: ui.state.groups.map(group => ({ ...group, name: `${group.name}改名` })) });
   assert.equal(ui.state.accounts[0].groupId, "g1");
   assert.match(nodes["#assignGroupSelect"].innerHTML, /一组改名（25 个账号）/);
+});
+
+test("account rows show synced follower counts and leave unknown values unmarked", () => {
+  const accountList = { innerHTML: "", querySelectorAll: () => [] };
+  const nodes = {
+    "#accountList": accountList,
+    "#accountPager": { hidden: true, innerHTML: "" },
+    "#assignGroupSelect": { value: "", addEventListener() {} },
+    "#groupFilter": { value: "", addEventListener() {} },
+    "#accountSearch": { value: "", addEventListener() {} }
+  };
+  const context = vm.createContext({ document: { body: { dataset: {} }, querySelector: id => nodes[id] || null } });
+  const script = read("tiktok-connections.js").replace("await loadSettings();", "").replace("await loadAccounts();", "");
+  vm.runInContext(`${script}\nglobalThis.ui = { state, renderAccounts };`, context);
+  context.ui.state.accounts = [
+    { connectionId: "a", profile: { username: "alpha" }, followers: 25082 },
+    { connectionId: "b", profile: { username: "beta", followerCount: 0 } },
+    { connectionId: "c", profile: { username: "gamma" } }
+  ];
+  context.ui.renderAccounts();
+  assert.match(accountList.innerHTML, /<small>粉丝<\/small>/);
+  assert.match(accountList.innerHTML, /25,082/);
+  assert.match(accountList.innerHTML, /<b>0<\/b>/);
+  assert.match(accountList.innerHTML, /<b>—<\/b>/);
 });

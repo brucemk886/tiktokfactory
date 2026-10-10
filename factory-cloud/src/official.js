@@ -419,7 +419,7 @@ export async function listAllAccounts(env, db, refresh = false) {
     console.warn("official-directory-fallback", JSON.stringify({status:Number(error.statusCode)||502,received:liveAccounts.length,archived:archivedAccounts.length}));
   }
   if (liveError && !archivedAccounts.length) throw liveError;
-  const accounts = mergeOfficialAccountDirectory(archivedAccounts, liveAccounts);
+  const accounts = await withPublishFollowers(db, mergeOfficialAccountDirectory(archivedAccounts, liveAccounts));
   return attachAccounts({
     connected: true,
     source: liveError ? (liveAccounts.length ? "archive+partial-live" : "archive-fallback") : (refresh ? "archive-refresh+live" : "archive+live"),

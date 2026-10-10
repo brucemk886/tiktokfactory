@@ -319,6 +319,7 @@ function renderAccounts() {
     return `<article class="account-row${canSelectAccounts ? "" : " is-readonly"}${risk?.flagged ? " is-risk" : ""}">
       ${checkbox}
       <div><strong>${escapeHtml(username)}${risk?.flagged ? `<span class="risk-pill" title="${escapeHtml(riskTitle)}">风控</span>` : ""}</strong><span>${escapeHtml(displayName)}</span></div>
+      <div><small>粉丝</small><b>${escapeHtml(followerText(account))}</b></div>
       <div><small>项目 / 分组</small><b class="group-chip${account.groupName ? "" : " is-empty"}">${escapeHtml([account.projectName, account.groupName || "未分组"].filter(Boolean).join(" / "))}</b></div>
       <div><small>视频</small><b>${formatNumber(videoCount)}</b></div>
       <div><small>最近同步</small><b>${escapeHtml(syncedAt)}</b></div>
@@ -814,6 +815,12 @@ async function requestJson(url, options = {}) {
 }
 
 function formatNumber(value) { return Number(value || 0).toLocaleString("zh-CN"); }
+function followerText(account) {
+  const profile = account?.profile || {};
+  const raw = account?.followers ?? profile.followers ?? profile.followerCount;
+  const count = Number(raw);
+  return raw === null || raw === undefined || raw === "" || !Number.isSafeInteger(count) || count < 0 ? "—" : count.toLocaleString("zh-CN");
+}
 function formatTime(value) {
   const timestamp = Number(value || 0);
   return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";

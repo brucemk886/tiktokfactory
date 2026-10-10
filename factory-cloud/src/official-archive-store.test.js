@@ -97,10 +97,10 @@ test("account directory keeps live authorized accounts after a normal page reloa
 async function directoryFixture(t) {
   const {DatabaseSync}=await import('node:sqlite');
   const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());
-  sqlite.exec('CREATE TABLE factory_kv(key TEXT PRIMARY KEY,value_json TEXT); CREATE TABLE official_account_assignments(account_key TEXT,group_id TEXT); CREATE TABLE official_accounts_latest(account_key TEXT,label TEXT,synced_at INTEGER,video_count INTEGER,views INTEGER);');
+  sqlite.exec('CREATE TABLE factory_kv(key TEXT PRIMARY KEY,value_json TEXT); CREATE TABLE official_account_assignments(account_key TEXT,group_id TEXT); CREATE TABLE official_accounts_latest(account_key TEXT,label TEXT,synced_at INTEGER,video_count INTEGER,views INTEGER,profile_json TEXT NOT NULL DEFAULT \'{}\');');
   const store={projects:[{id:'proj',name:'Psychology',moduleKey:'psychology'}],groups:[{id:'group',name:'Test',projectId:'proj'}]};
   sqlite.prepare('INSERT INTO factory_kv VALUES(?,?)').run('official-account-groups',JSON.stringify(store));
-  for(let i=0;i<65;i++){sqlite.prepare('INSERT INTO official_accounts_latest VALUES(?,?,0,0,0)').run('tiktok:acc-'+i,'@account'+i);sqlite.prepare('INSERT INTO official_account_assignments VALUES(?,?)').run('acc-'+i,'group');}
+  for(let i=0;i<65;i++){sqlite.prepare('INSERT INTO official_accounts_latest(account_key,label,synced_at,video_count,views,profile_json) VALUES(?,?,0,0,0,?)').run('tiktok:acc-'+i,'@account'+i,i===0?JSON.stringify({followers:25082}):'{}');sqlite.prepare('INSERT INTO official_account_assignments VALUES(?,?)').run('acc-'+i,'group');}
   const db={prepare(sql){let args=[];return{bind(...values){args=values;return this;},async first(){return sqlite.prepare(sql).get(...args);},async all(){return{results:sqlite.prepare(sql).all(...args)};}};}};
   const env={DB:db,SIGNAL_DESK_BASE_URL:'https://hub.test',SIGNAL_DESK_BRIDGE_KEY:'synthetic-key'};
   const live=Array.from({length:115},(_,i)=>({schema:'tiktok:acc-'+i,profile:{username:'account'+i}}));
@@ -111,6 +111,7 @@ test('directory reads every page to return 115 accounts over the 65 archived acc
   const {listAllAccounts}=await import('./official.js'),f=await directoryFixture(t);let requests=0;
   t.mock.method(globalThis,'fetch',async url=>{const u=new URL(url);requests++;assert.equal(u.searchParams.get('limit'),'100');return Response.json(u.searchParams.get('cursor')?{accounts:f.live.slice(100),hasMore:false}:{accounts:f.live.slice(0,100),hasMore:true,nextCursor:'page-2'});});
   const result=await listAllAccounts(f.env,f.db);assert.equal(result.accounts.length,115);assert.equal(result.directoryComplete,true);assert.equal(result.directoryWarning,'');assert.equal(requests,2);
+  assert.equal(result.accounts.find(account=>account.schema==='tiktok:acc-0').followers,25082);
 });
 
 test('bridge failure clearly labels the 65-row archive fallback and logs no upstream body',async t=>{
