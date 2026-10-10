@@ -118,6 +118,7 @@ function render(){
   $("#contentDetail").hidden=f.media==="video";
   const trend=$("#trendMetric");trend.querySelectorAll("[data-video]").forEach(o=>o.hidden=f.media!=="video");if(trend.selectedOptions[0]?.hidden)trend.value="views";
   $("#coverage").textContent=state.data.coverage;$("#completionLine").textContent=f.overview.completionLine==null?"暂无完播数据":pct(f.overview.completionLine);
+  renderMediaComparison(state.data.mediaBreakdown,f.media,'operations');
   renderReportMetrics(f);renderAutopilot();renderOverview(f);loadPools("summary");
 }
 function reportIcon(name){
@@ -327,4 +328,13 @@ function renderPoolAllocation(a={}){
  const rows=a.rows||[];
  $('#poolAllocation').innerHTML=rows.length?table(['排期时账号池','排期时内容池','计划 / 已发布','待处理 / 失败 / 停止','已同步作品','最新累计播放 / 中位','基线补测'],rows.map(r=>[esc(poolLabel(r.accountPool)),esc(poolLabel(r.contentPool,'content')),fmt(r.planned)+' / '+fmt(r.published),fmt(r.pending)+' / '+fmt(r.failed)+' / '+fmt(r.stopped),fmt(r.synced),fmt(r.views)+' / '+fmt(r.medianViews),fmt(r.warmup)])):'<p class="empty">当前范围尚无账号池匹配的新排期。未来策略生效后，实际分配会显示在这里。</p>';
  $('#poolAllocation').innerHTML+='<p class="section-hint">'+esc(a.basis||'以排期时冻结的账号池与内容池统计实际分配，保留新策略执行记录。')+'</p>';
+}
+
+function renderMediaComparison(rows,selected,kind){
+ const node=document.querySelector('#mediaComparison');if(!node)return;
+ node.hidden=!Array.isArray(rows);if(node.hidden)return;
+ const num=v=>v==null?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:1});
+ const labels={photo:'图文',video:'视频',unknown:'类型未知'};
+ const rowsHTML=rows.filter(r=>r.media!=='unknown'||r.published>0).map(r=>'<tr'+(r.media===selected?' class="is-selected"':'')+'><th scope="row">'+labels[r.media]+'</th><td>'+num(r.published)+'</td><td>'+num(r.synced)+' / '+num(r.missing)+'</td><td>'+num(r.views)+'</td><td>'+num(r.avgViews)+'</td><td>'+num(r.highView)+'</td><td>'+(r.highRate==null?'—':(r.highRate*100).toFixed(1)+'%')+'</td><td>'+num(r.likes)+' / '+num(r.comments)+' / '+num(r.shares)+'</td></tr>').join('');
+ node.innerHTML='<div class="media-comparison-head"><h2>图文与视频对比</h2><span>同日期 · 同分组 · 两类并排比较</span></div><div class="table-wrap"><table><thead><tr><th>内容类型</th><th>'+ (kind==='operations'?'已发布记录':'归档作品') +'</th><th>播放已同步 / 待同步</th><th>累计播放</th><th>平均播放</th><th>高播 ≥ 1,000</th><th>高播占比</th><th>累计赞 / 评 / 转</th></tr></thead><tbody>'+rowsHTML+'</tbody></table></div><p>按北京时间实际发布日统计，播放与互动为最新累计值；均播与高播占比只用已同步播放的作品。'+(kind==='operations'?'本表只含工厂发布记录，非平台账号的全部历史作品。':'按发布记录或明确的作品类型识别；无法确认的单列“类型未知”。主页访问和中台发布回执为账号全部类型，不能按内容类型拆分。')+'</p>';
 }

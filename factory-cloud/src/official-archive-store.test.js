@@ -342,3 +342,19 @@ test('operator permissions still reject account reassignment and whole-group pro
  assert.equal((await f.call('PATCH','/api/official-tiktok/account-groups/g',{projectId:'proj-novel'},'operator')).status,403);
  assert.deepEqual(f.sqlite.prepare('SELECT * FROM official_account_assignments ORDER BY account_key').all(),before);assert.equal(f.networkCalls(),0);
 });
+
+test('overview classifies historical cached posts from exact scoped publication identity without writes or network',async t=>{
+ const f=await reportProjectionFixture(t),{applyPublishedMedia,computeLiveReport}=await import('./ops-report-store.js');
+ const now=Date.now();
+ const put=(id,account,video,media)=>f.sqlite.prepare("INSERT INTO ops_task_facts(id,batch_id,account_key,video_id,media,state,schedule_at) VALUES(?,?,?,?,?,'published',0)").run(id,'batch',account,video,media);
+ put('photo','tiktok:a','same','photo');put('video','tiktok:b','same','video');put('other','tiktok:outside','private','video');
+ put('conflict1','tiktok:a','conflict','photo');put('conflict2','tiktok:a','conflict','video');
+ const original={accountRows:[],videosByAccount:new Map([['tiktok:a',[{id:'same',duration:8,views:123,createdAt:now},{id:'conflict',shareLink:'https://www.tiktok.com/@a/video/conflict'},{id:'unknown',duration:10}]],['tiktok:b',[{id:'same',views:500,createdAt:now}]]])};
+ const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
+ const result=await applyPublishedMedia(f.db,original);
+ assert.equal(result.videosByAccount.get('tiktok:a')[0].mediaType,'photo');assert.equal(result.videosByAccount.get('tiktok:b')[0].mediaType,'video');
+ assert.equal(result.videosByAccount.get('tiktok:a')[1].mediaType,'unknown');assert.equal(result.videosByAccount.get('tiktok:a')[2].mediaType,undefined);
+ assert.equal(original.videosByAccount.get('tiktok:a')[0].mediaType,undefined);
+ assert.equal(JSON.stringify([...result.videosByAccount]).includes('private'),false);
+ assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n,before);assert.equal(f.reads.length,0);
+});

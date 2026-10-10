@@ -1,3 +1,4 @@
+import {reportMedia,reportMetric,mediaComparison} from './report-media.js';
 import { accountMatchesGroup, accountMatchesProject, officialAccountKeys } from "./official-account-group-store.js";
 
 export const LOW_VIEW = 200;
@@ -150,13 +151,16 @@ export function computeGroupReport({
   toKey = "",
   lowView = LOW_VIEW,
   highView = HIGH_VIEW,
+  media = "all",
 } = {}) {
   const window = resolveReportWindow({ period, now, fromKey, toKey });
-  const inWindow = videos.filter((video) => {
+  const allInWindow = videos.filter((video) => {
     const createdAt = toMillis(video.createdAt || video.createTime);
     return createdAt >= window.startAt && createdAt < window.endAt;
   }).map((video) => normalizeVideo(video));
 
+  const inWindow=media==='all'?allInWindow:allInWindow.filter(v=>v.media===media);
+  const mediaBreakdown=mediaComparison(allInWindow,highView);
   const zeroView = inWindow.filter((video) => video.views === 0);
   const lowViewVideos = inWindow.filter((video) => video.views > 0 && video.views < lowView);
   const highViewVideos = inWindow.filter((video) => video.views >= highView);
@@ -199,7 +203,7 @@ export function computeGroupReport({
     row.published += 1;
     row.views += video.views;
     if (video.views === 0) row.zero += 1;
-    else if (video.views < lowView) row.low += 1;
+    else if (video.views !== null && video.views < lowView) row.low += 1;
     if (video.views >= highView) row.high += 1;
   }
 
@@ -207,9 +211,11 @@ export function computeGroupReport({
     .filter((item) => item.published > 0 && item.zero > 0)
     .sort((a, b) => b.zero - a.zero || b.published - a.published);
 
-  const views = inWindow.reduce((sum, item) => sum + item.views, 0);
+  const synced=inWindow.filter(v=>v.views!==null);
+  const views = synced.length? synced.reduce((sum, item) => sum + item.views, 0):inWindow.length?null:0;
   return {
     enabled: true,
+    media,mediaBreakdown,
     group,
     project,
     period: window.period,
@@ -225,7 +231,8 @@ export function computeGroupReport({
       midView: midViewVideos.length,
       highView: highViewVideos.length,
       views,
-      avgView: inWindow.length ? Math.round(views / inWindow.length) : 0,
+      avgView: synced.length ? Math.round(views / synced.length) : null,
+      synced:synced.length,missing:inWindow.length-synced.length,
       accountCount: [...accountStats.values()].filter((item) => item.published > 0).length,
       anomalyAccountCount: anomalyAccounts.length,
       publishTotal: 0,
@@ -347,10 +354,10 @@ export function paginateItems(items = [], page = 1, pageSize = OPS_VIDEO_PAGE_SI
 
 export function tiktokWatchUrl(video = {}) {
   const existing = String(video.shareLink || video.videoUrl || video.url || "").trim();
-  if (/tiktok\.com\/@[\w.]+\/video\/\d{10,}/i.test(existing)) return existing;
+  if (/tiktok\.com\/@[\w.]+\/(?:video|photo)\/\d{10,}/i.test(existing)) return existing;
   const id = String(video.id || video.videoId || "").trim();
   const username = String(video.username || "").replace(/^@/, "").trim();
-  if (/^\d{10,}$/.test(id) && username) return `https://www.tiktok.com/@${encodeURIComponent(username)}/video/${id}`;
+  if (/^\d{10,}$/.test(id) && username) return `https://www.tiktok.com/@${encodeURIComponent(username)}/${video.media==='photo'?'photo':'video'}/${id}`;
   return "";
 }
 
@@ -360,9 +367,11 @@ function normalizeVideo(video) {
     account: String(video.account || video.accountKey || ""),
     username: String(video.username || "").replace(/^@/, ""),
     title: String(video.title || video.caption || "未命名视频"),
-    views: Number(video.views || 0),
-    likes: Number(video.likes || 0),
-    comments: Number(video.comments || 0),
+    media:reportMedia(video),
+    views:reportMetric(video,'views','viewCount','view_count','playCount'),
+    likes:reportMetric(video,'likes','like_count','diggCount'),
+    comments:reportMetric(video,'comments','comment_count','commentCount'),
+    shares:reportMetric(video,'shares','share_count','shareCount'),
     createdAt: toMillis(video.createdAt || video.createTime),
     shareLink: String(video.shareLink || video.videoUrl || video.url || "").trim(),
   };

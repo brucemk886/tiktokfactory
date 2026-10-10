@@ -84,6 +84,9 @@ test('cumulative views keep full authorized actual-publication cohorts across pa
  put('unpublished',{state:'pending',views:333});
  const before=f.sqlite.prepare('SELECT total_changes() n').get().n;
  const report=await read(f,current);
+ assert.deepEqual(report.mediaBreakdown.map(r=>[r.media,r.published,r.synced,r.views]),[['photo',13,12,55],['video',1,1,1000000],['unknown',0,0,null]]);
+ assert.deepEqual((await read(f,current+'&media=video')).mediaBreakdown,report.mediaBreakdown);
+ assert.equal((await read(f,current,{...actor,role:'member',allowedAccountGroups:[]})).mediaBreakdown.every(r=>r.published===0&&r.views===null),true);
  assert.equal(report.framework.overview.current.views,55);
  assert.equal(report.framework.overview.current.n,12);
  assert.equal(report.framework.overview.previous.views,17);

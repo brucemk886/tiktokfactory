@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="/psychology-management-api.css"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
-<link rel="stylesheet" href="/psychology-one-report.css">
+<link rel="stylesheet" href="/psychology-one-report.css"><link rel="stylesheet" href="/report-media-comparison.css">
 </head>
 <body class="work-page official-data-page lf-console">
   <nav class="side-tabs" aria-label="主导航"></nav>
@@ -41,7 +41,7 @@
           <button type="button" data-period="30d">最近30天</button>
           <button type="button" data-period="range" class="effects-only" aria-controls="customRange">自定日期</button>
         </div>
-        <div class="ops-report-filters">
+        <div class="ops-report-filters"><label class="effects-only">内容类型<select id="effectsMedia"><option value="all">全部类型</option><option value="photo">图文</option><option value="video">视频</option><option value="unknown">类型未知</option></select></label>
           <label>分组
             <select id="groupSelect"></select>
           </label>
@@ -54,6 +54,7 @@
       <span id="publishStatus" role="status"></span>
     </section>
     <section class="data-section panel" id="groupPanel"></section>
+    <section id="mediaComparison" class="media-comparison" hidden aria-label="图文与视频对比"></section>
     <section class="overview-grid" id="summaryGrid" aria-label="核心数据"></section>
     <div class="effects-secondary-grid" id="overviewSecondary" hidden>
       <section class="data-section panel effects-secondary-panel" id="performanceOverview" aria-label="视频表现概览"></section>

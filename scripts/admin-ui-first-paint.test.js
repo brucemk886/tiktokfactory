@@ -23,6 +23,11 @@ test('every authenticated console uses the new theme on its initial document, be
     assert.match(style,/href="\/psychology(?:-[a-z-]+)?\.css(?:[?\"])/,name+' only scoped psychology overrides follow console');
     assert.doesNotMatch(style,/media=|onload=|disabled/,name+' workspace theme renders on first paint');
    }
+  }else if(['official-group-report.html','psychology-operations.html'].includes(name)){
+   assert.equal(overrides.length,2,name+' only the scoped report styles follow the console theme');
+   assert.match(overrides[0],/href="\/psychology-one-report\.css"/);
+   assert.match(overrides[1],/href="\/report-media-comparison\.css"/);
+   for(const style of overrides)assert.doesNotMatch(style,/media=|onload=|disabled/,name+' reports render on first paint');
   }else assert.equal(overrides.length,0,name+' unrelated consoles retain the final shared theme');
   assert.equal((html.match(/href="\/admin-ui\.css"/g)||[]).length,1,name);
   assert.match(head,/<script src="\/admin-ui\.js" defer(?:="")?><\/script>/,name+' shell must load in parallel');

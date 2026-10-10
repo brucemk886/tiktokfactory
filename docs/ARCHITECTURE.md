@@ -364,3 +364,9 @@ The single public video-hit guide is generated from `docs/psychology-video-hits-
 - The shared browser picker starts empty on new manual batches. A pool checkbox selects all eight; expanded checkboxes permit subsets. No audio is preloaded. Manual options no longer expose the previous global default, and creation no longer overwrites that legacy key.
 - Imported-photo automatic settings store explicit musicIds in the acting owner's existing revision-guarded config. Missing fields preserve saved choices, an explicit empty array clears them, and receiver/CTA-only changes cannot alter music. Deployment itself does not enable or change any automatic settings.
 - scripts/psychology-photo-music-policy.js draws once per created job, including direct saved albums and generated photos. Existing idempotent batch/slot reservations and grouped transports reuse the persisted musicSoundId. Empty selections retain TikTok's recommended music behavior. No schema migration or change to prior job payloads.
+
+
+## Psychology media comparisons
+
+- scripts/report-media.js normalizes explicit content-type evidence and nullable performance counters. Overview enriches only its authorized archive bundle through an exact account_key + video_id join against ops_task_facts before grouping; ambiguous evidence remains unknown. No archive mutation or provider request is introduced.
+- Standard Overview filters its detail/summary by media while preserving the same date/group comparison. Standard Operations aggregates both types through its existing allowed-account and historical-task scope, independent of its selected-media drilldown. Null plays are excluded from averages and high-view rates. Account-level profile metrics and Hub receipt counts keep their original all-types scope.

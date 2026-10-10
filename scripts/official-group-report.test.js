@@ -169,3 +169,21 @@ test("normal-view bucket includes both boundary values without overlapping low/h
   assert.equal(new Set(ids).size, 6);
   assert.ok(report.buckets.midView.every(video => video.account === "a"));
 });
+
+test('media comparison reconciles all types, excludes unknown from photo/video filters and preserves missing metrics',()=>{
+ const createdAt=Date.parse('2026-10-10T01:00:00+08:00'),videos=[
+  {id:'p',mediaType:'photo',views:1000,likes:0,comments:2,shares:1,createdAt},
+  {id:'p2',mediaType:'photo',views:null,likes:null,createdAt},
+  {id:'v',media_type:'VIDEO',views:0,likes:0,createdAt},
+  {id:'unknown',duration:15,views:500,createdAt},
+  {id:'out',mediaType:'video',views:9000,createdAt:createdAt-86400000}
+ ];
+ const base={videos,now:createdAt,period:'today'},all=computeGroupReport(base),photo=computeGroupReport({...base,media:'photo'}),video=computeGroupReport({...base,media:'video'});
+ assert.equal(all.summary.published,4);assert.equal(all.summary.views,1500);
+ assert.deepEqual(all.mediaBreakdown.map(r=>[r.media,r.published,r.synced,r.views,r.avgViews]),[['photo',2,1,1000,1000],['video',1,1,0,0],['unknown',1,1,500,500]]);
+ assert.equal(photo.summary.published,2);assert.equal(photo.summary.missing,1);assert.equal(photo.summary.zeroView,0);assert.equal(photo.summary.avgView,1000);assert.equal(photo.mediaBreakdown[0].likes,0);
+ assert.equal(video.summary.zeroView,1);assert.equal(video.mediaBreakdown[1].highRate,0);
+ assert.equal(all.mediaBreakdown.reduce((n,r)=>n+r.published,0),all.summary.published);
+ assert.equal(computeGroupReport({...base,media:'unknown'}).summary.published,1);
+ assert.equal(tiktokWatchUrl({id:'7550123456789012345',username:'alice',media:'photo'}),'https://www.tiktok.com/@alice/photo/7550123456789012345');
+});

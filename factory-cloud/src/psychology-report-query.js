@@ -83,6 +83,8 @@ export async function handleScalableOperations(request,env,url,session){
    data.groupPagination=paging([],groupCount.results[0].n,page);
    if(panel==='overview'){
     const [stats,daily,meta]=other;
+    const compare=await run(scope+`,comparison AS (SELECT f.* FROM allowed a CROSS JOIN ops_task_facts f INDEXED BY ops_task_account_published ON ${authorized} WHERE f.published_at>=? AND f.published_at<? AND f.state='published') SELECT media,count(*) published,count(views) synced,count(*)-count(views) missing,sum(views) views,avg(views) avgViews,sum(views>=1000) highView,1.0*sum(views>=1000)/nullif(count(views),0) highRate,sum(likes) likes,sum(comments) comments,sum(shares) shares FROM comparison GROUP BY media`,[ids,ids,window.start,window.end]).all();
+    data.mediaBreakdown=['photo','video','unknown'].map(media=>({media,published:0,synced:0,missing:0,views:null,avgViews:null,highView:0,highRate:null,likes:null,comments:null,shares:null,...compare.results.find(r=>r.media===media)}));
     data.framework={media,tiers:VIEW_TIERS,quadrants:QUADRANTS,stageNames:STAGES,kinds:KINDS,rules:RULES,overview:{current:stat(stats.results.find(r=>r.bucket==='current')),previous:stat(stats.results.find(r=>r.bucket==='previous')),daily:Array.from({length:window.days},(_,i)=>{const date=new Date(window.start+i*86400000+28800000).toISOString().slice(0,10);return {date,...stat(daily.results.find(r=>r.day===date))};}),completionLine:meta.results[0]?.completionLine??null,observing:meta.results[0]?.observing||0},strategy:{findings:['统计覆盖当前授权范围内已归档的自动发布任务；明细按需分页读取。']}};
    }
   }

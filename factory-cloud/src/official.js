@@ -43,6 +43,7 @@ import {
 } from "./official-archive-store.js";
 import {
   computeLiveReport,
+  applyPublishedMedia,
   listOpsDates,
   loadArchiveBundle,
   readOpsSnapshot,
@@ -510,6 +511,8 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
     throw error;
   }
   const moduleKey = String(searchParams.get("module") || "").trim();
+  const media=moduleKey==='psychology'?(searchParams.get("media")||"all"):"all";
+  if(!["all","photo","video","unknown"].includes(media))throw Object.assign(Error("内容类型无效。"),{statusCode:400});
   let groupId = String(searchParams.get("group") || "").trim();
   const dateKey = String(searchParams.get("date") || "").trim();
   const fromKey = parseShanghaiDate(searchParams.get("from")) || parseShanghaiDate(dateKey);
@@ -584,11 +587,12 @@ export async function buildModuleReport(env, db, store, searchParams, user, timi
   let report, source, persistedAt;
   if (isLive) {
     const start = performance.now();
-    const bundle = await loadArchiveBundle(env, db, keys, accountRows, selected, timing);
+    let bundle = await loadArchiveBundle(env, db, keys, accountRows, selected, timing);
+    if(moduleKey==='psychology')bundle=await applyPublishedMedia(db,bundle);
     timing.push(`archive;dur=${(performance.now() - start).toFixed(1)}`);
     const computeStart = performance.now();
     report = computeLiveReport({ store, project: liveProject, ...scope, period, now,
-      fromKey: queryFrom, toKey: queryTo, bundle });
+      fromKey: queryFrom, toKey: queryTo, bundle, media });
     timing.push(`compute;dur=${(performance.now() - computeStart).toFixed(1)}`);
     source = "live";
   } else {

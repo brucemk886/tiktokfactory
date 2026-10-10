@@ -47,6 +47,7 @@ const state = {
   groupId: params.get("group") || "",
   fromKey: params.get("from") || params.get("date") || "",
   toKey: params.get("to") || params.get("date") || "",
+  media: IS_PSYCHOLOGY_OVERVIEW&&["photo","video","unknown"].includes(params.get("media"))?params.get("media"):"all",
   data: null,
   loadedScope: null,
   traffic: null,
@@ -73,6 +74,8 @@ if (IS_PSYCHOLOGY_OVERVIEW) document.body?.classList.add("psychology-effects-pag
 if(!IS_PSYCHOLOGY_OVERVIEW||params.get('channel')!=='tiktok-one')loadReport();
 
 function bindToolbar() {
+  if(IS_PSYCHOLOGY_OVERVIEW){const select=document.querySelector('#effectsMedia');select.value=state.media;select.addEventListener('change',()=>{state.media=select.value;syncQuery();loadReport();});}
+
   document.querySelectorAll("[data-result-tab]").forEach((button, index, buttons) => {
     button.addEventListener("click", () => selectResultTab(button.dataset.resultTab));
     button.addEventListener("keydown", (event) => {
@@ -139,6 +142,7 @@ async function loadReport() {
   renderEmpty("正在读取报表…");
   try {
     const query = new URLSearchParams({ module: state.module, period: state.period, view: "analytics" });
+    if(IS_PSYCHOLOGY_OVERVIEW)query.set("media",state.media);
     if (state.groupId) query.set("group", state.groupId);
     if (state.fromKey) query.set("from", state.fromKey);
     if (state.toKey) query.set("to", state.toKey);
@@ -221,6 +225,7 @@ function render() {
   const summary = report.summary || {};
   const sourceLabel = data.source === "snapshot" ? "历史快照" : "实时查询";
   document.querySelector("#reportMeta").textContent = `${rangeLabel(report)} · ${scopeName} · ${sourceLabel} · 低播 < ${report.thresholds?.lowView || 200} · 高播 ≥ ${report.thresholds?.highView || 1000}`;
+  if(IS_PSYCHOLOGY_OVERVIEW)renderMediaComparison(report.mediaBreakdown,report.media,'overview');
   renderSummary();
   renderAnomalies(report.anomalyAccounts || [], report.buckets?.zeroView || []);
   updateResultTabs();
@@ -281,27 +286,28 @@ function renderSummary() {
 
 function renderEffectsSummary(summary, publishNumber) {
   const report = state.data?.report || {};
+  const mediaLabel={all:'全部类型',photo:'图文',video:'视频',unknown:'类型未知'}[report.media||'all'];
   const traffic = state.traffic?.summary;
   const count = value => value == null ? "—" : formatNumber(value);
   const coverage = traffic ? `可配对账号 ${count(traffic.coveredAccounts)} / ${count(traffic.totalAccounts)}`
     : state.trafficStatus === "unavailable" ? "日报暂时不可用，查询可重试" : "正在读取 UTC 日报…";
   const metrics = [
-    ["video", "发布作品", count(summary.published), "所选北京时间发布 · 已归档作品"],
-    ["play", "总播放", count(summary.views), "所选发布作品的已同步累计播放"],
-    ["profile", "主页访问次数", count(traffic?.profileViews), `所选 UTC 日期 · ${coverage}`],
-    ["ratio", "主页访问比", traffic?.ratio == null ? "—" : `${(traffic.ratio * 100).toFixed(2)}%`, "同账号、同日报访问 ÷ 同期播放"],
+    ["video", "发布作品", count(summary.published), mediaLabel+" · 所选北京时间发布 · 已归档作品"],
+    ["play", "总播放", count(summary.views), mediaLabel+" · 已同步累计播放"],
+    ["profile", "主页访问次数", count(traffic?.profileViews), `账号全部类型 · UTC 日报 · ${coverage}`],
+    ["ratio", "主页访问比", traffic?.ratio == null ? "—" : `${(traffic.ratio * 100).toFixed(2)}%`, "账号全部类型 · 同日报访问 ÷ 同期播放"],
   ];
   document.querySelector("#summaryGrid").innerHTML = metrics.map(([icon, label, value, hint]) =>
     `<div class="metric"><div class="effects-metric-icon" aria-hidden="true">${effectsMetricIcon(icon)}</div><div class="effects-metric-copy"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(hint)}</small></div></div>`
   ).join("");
   document.querySelector("#overviewSecondary").hidden = false;
-  document.querySelector("#performanceOverview").innerHTML = `<div class="effects-panel-heading"><h2>作品表现</h2><span>所选发布作品 · 累计播放</span></div>${effectsStatList([
+  document.querySelector("#performanceOverview").innerHTML = `<div class="effects-panel-heading"><h2>作品表现</h2><span>${mediaLabel} · 累计播放</span></div>${effectsStatList([
     ["均播", count(summary.avgView ?? (summary.views != null && summary.published != null ? averageViews(summary) : null))],
     ["高播", count(summary.highView)], ["正常播放", count(summary.midView)],
     ["低播", count(summary.lowView)], ["0 播", count(summary.zeroView)],
     ["异常账号", count(summary.anomalyAccountCount), "is-alert"],
   ])}<p class="effects-panel-note">低播为 0 &lt; 播放 &lt; ${escapeHtml(report.thresholds?.lowView || 200)}；正常播放为 ${escapeHtml(report.thresholds?.lowView || 200)} 至 ${escapeHtml((report.thresholds?.highView || 1000) - 1)}，高播 ≥ ${escapeHtml(report.thresholds?.highView || 1000)}。异常账号指本期出现 0 播视频的账号。</p>`;
-  document.querySelector("#publishOverview").innerHTML = `<div class="effects-panel-heading"><h2>发布结果</h2><span>${state.data?.publishStatus === "pending" ? "独立读取中" : state.data?.publishStatus === "unavailable" ? "暂时不可用" : "官方中台回执"}</span></div>${effectsStatList([
+  document.querySelector("#publishOverview").innerHTML = `<div class="effects-panel-heading"><h2>发布结果 · 全部类型</h2><span>${state.data?.publishStatus === "pending" ? "独立读取中" : state.data?.publishStatus === "unavailable" ? "暂时不可用" : "官方中台回执"}</span></div>${effectsStatList([
     ["发布总数", publishNumber(summary.publishTotal ?? (summary.publishSuccess != null && summary.publishFailed != null ? Number(summary.publishSuccess) + Number(summary.publishFailed) : null))],
     ["发布成功", publishNumber(summary.publishSuccess)], ["发布失败", publishNumber(summary.publishFailed), "is-alert"],
     ["风控账号", publishNumber(summary.riskAccountCount), "is-alert"],
@@ -393,6 +399,7 @@ async function toggleProjectReport(projectId, enabled) {
 }
 
 function renderEmpty(message) {
+  const comparison=document.querySelector('#mediaComparison');if(comparison)comparison.hidden=true;
   updateResultTabs();
   document.querySelector("#summaryGrid").innerHTML = "";
   if (IS_PSYCHOLOGY_OVERVIEW) {
@@ -545,6 +552,7 @@ function syncPeriodFromDates() {
 
 function syncQuery() {
   const next = new URL(location.href);
+  if(IS_PSYCHOLOGY_OVERVIEW)next.searchParams.set("media",state.media);
   next.searchParams.set("period", state.period);
   next.searchParams.set("tab", state.activeTab);
   if (state.groupId) next.searchParams.set("group", state.groupId);
@@ -645,11 +653,11 @@ function videoDetailHref(item, tab = state.activeTab) {
   return "/official-video-detail?" + query;
 }
 function videoTable(items, tab) {
-  return (IS_PSYCHOLOGY_OVERVIEW ? '<p class="effects-mobile-table-hint">左右滑动查看播放与操作 →</p>' : '') + '<div class="table-wrap"><table class="report-video-table"><thead><tr><th>视频</th><th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>操作</th></tr></thead><tbody>' +
+  return (IS_PSYCHOLOGY_OVERVIEW ? '<p class="effects-mobile-table-hint">左右滑动查看播放与操作 →</p>' : '') + '<div class="table-wrap"><table class="report-video-table"><thead><tr><th>作品</th>' + (IS_PSYCHOLOGY_OVERVIEW?'<th>类型</th>':'') + '<th>账号</th><th>播放</th><th>点赞</th><th>发布时间</th><th>操作</th></tr></thead><tbody>' +
     items.map((item) => {
       const detail = videoDetailHref(item, tab);
-      return '<tr><td class="report-video-title">' + videoTitleCell(item) + '</td><td>@' + escapeHtml(item.username || "-") +
-        '</td><td>' + formatNumber(item.views) + '</td><td>' + formatNumber(item.likes) + '</td><td>' + formatTime(item.createdAt) +
+      return '<tr><td class="report-video-title">' + videoTitleCell(item) + '</td>'+(IS_PSYCHOLOGY_OVERVIEW?'<td>'+({photo:'图文',video:'视频',unknown:'类型未知'}[item.media]||'类型未知')+'</td>':'')+'<td>@' + escapeHtml(item.username || "-") +
+        '</td><td>' + (item.views==null?'—':formatNumber(item.views)) + '</td><td>' + (item.likes==null?'—':formatNumber(item.likes)) + '</td><td>' + formatTime(item.createdAt) +
         '</td><td><div class="report-video-actions">' + (detail ? '<a class="table-action primary-table-action" href="' + escapeHtml(detail) + '">视频详情</a>' : '<span>暂无详情</span>') +
         videoJumpCell(item) + '</div></td></tr>';
     }).join("") + '</tbody></table></div>';
@@ -708,4 +716,13 @@ function renderTraffic() {
   panel.querySelectorAll('[data-traffic-page]').forEach(button => button.addEventListener('click', () => {
     state.trafficPage += Number(button.dataset.trafficPage); renderTraffic();
   }));
+}
+
+function renderMediaComparison(rows,selected,kind){
+ const node=document.querySelector('#mediaComparison');if(!node)return;
+ node.hidden=!Array.isArray(rows);if(node.hidden)return;
+ const num=v=>v==null?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:1});
+ const labels={photo:'图文',video:'视频',unknown:'类型未知'};
+ const rowsHTML=rows.filter(r=>r.media!=='unknown'||r.published>0).map(r=>'<tr'+(r.media===selected?' class="is-selected"':'')+'><th scope="row">'+labels[r.media]+'</th><td>'+num(r.published)+'</td><td>'+num(r.synced)+' / '+num(r.missing)+'</td><td>'+num(r.views)+'</td><td>'+num(r.avgViews)+'</td><td>'+num(r.highView)+'</td><td>'+(r.highRate==null?'—':(r.highRate*100).toFixed(1)+'%')+'</td><td>'+num(r.likes)+' / '+num(r.comments)+' / '+num(r.shares)+'</td></tr>').join('');
+ node.innerHTML='<div class="media-comparison-head"><h2>图文与视频对比</h2><span>同日期 · 同分组 · 两类并排比较</span></div><div class="table-wrap"><table><thead><tr><th>内容类型</th><th>'+ (kind==='operations'?'已发布记录':'归档作品') +'</th><th>播放已同步 / 待同步</th><th>累计播放</th><th>平均播放</th><th>高播 ≥ 1,000</th><th>高播占比</th><th>累计赞 / 评 / 转</th></tr></thead><tbody>'+rowsHTML+'</tbody></table></div><p>按北京时间实际发布日统计，播放与互动为最新累计值；均播与高播占比只用已同步播放的作品。'+(kind==='operations'?'本表只含工厂发布记录，非平台账号的全部历史作品。':'按发布记录或明确的作品类型识别；无法确认的单列“类型未知”。主页访问和中台发布回执为账号全部类型，不能按内容类型拆分。')+'</p>';
 }

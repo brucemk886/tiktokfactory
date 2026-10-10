@@ -575,3 +575,18 @@ test('psychology-only toolbar content has an explicit gate against shared admin 
   assert.doesNotMatch(read('official-group-report.html'), /演示数据|设计预览|effects-preview-badge/);
   assert.doesNotMatch(read('official-group-report.js'), /demo-account|demo_psych/);
 });
+test('psychology media selection sends its filter, keeps account-level panels labeled and comparison independent',async()=>{
+ const queries=[];
+ const b=browser('https://factory.test/psychology-effects?media=photo&period=today',async url=>{
+  const q=new URL(url,'https://factory.test').searchParams;queries.push(q);
+  return reply({project:{reportEnabled:true},report:{enabled:true,media:q.get('media'),summary:{published:2,views:1000},buckets:{},mediaBreakdown:[{media:'photo',published:2,synced:1,missing:1,views:1000,avgViews:1000,highView:1,highRate:1,likes:0,comments:null,shares:null},{media:'video',published:1,synced:1,missing:0,views:0,avgViews:0,highView:0,highRate:0,likes:0,comments:0,shares:0}]}});
+ });
+ vm.runInContext(read('official-group-report.js'),b.context);await flush();
+ assert.equal(queries.find(q=>q.get('view')==='analytics').get('media'),'photo');
+ assert.equal(b.node('#effectsMedia').value,'photo');assert.match(b.node('#mediaComparison').innerHTML,/图文.*视频.*1,000/);
+ assert.match(b.node('#summaryGrid').innerHTML,/账号全部类型/);assert.match(b.node('#publishOverview').innerHTML,/发布结果 · 全部类型/);
+ b.node('#effectsMedia').value='video';b.node('#effectsMedia').events.change();await flush();
+ assert.equal(queries.filter(q=>q.get('view')==='analytics').at(-1).get('media'),'video');assert.equal(b.location.searchParams.get('media'),'video');
+ assert.match(b.node('#mediaComparison').innerHTML,/class="is-selected"><th scope="row">视频/);
+ vm.runInContext("renderEmpty('failure')",b.context);assert.equal(b.node('#mediaComparison').hidden,true);
+});

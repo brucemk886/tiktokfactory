@@ -71,7 +71,7 @@ export async function persistProjectOpsSnapshots(env, db, store, project, now = 
   return rows;
 }
 
-export function computeLiveReport({ store, project, groupId = "", period = "today", now = Date.now(), fromKey = "", toKey = "", bundle, groupIds = null }) {
+export function computeLiveReport({ store, project, groupId = "", period = "today", now = Date.now(), fromKey = "", toKey = "", bundle, groupIds = null, media="all" }) {
   const scopeId = String(groupId || "");
   const scoped = scopeId
     ? videosForGroup({ store, groupId: scopeId, ...bundle })
@@ -88,6 +88,7 @@ export function computeLiveReport({ store, project, groupId = "", period = "toda
     group: scopeId ? group : project,
     project,
     accounts: scoped.accounts,
+    media,
     videos: scoped.videos,
     period,
     now,
@@ -247,4 +248,13 @@ function parseJson(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+// Join by exact account + published ID. Titles, usernames and durations are not identity.
+export async function applyPublishedMedia(db,bundle){
+ const keys=[...bundle.videosByAccount.keys()],canonical=value=>'tiktok:'+String(value).replace(/^tiktok:/,'');
+ if(!keys.length)return bundle;
+ const result=await db.prepare("SELECT account_key,video_id,CASE WHEN count(DISTINCT media)=1 THEN min(media) ELSE 'unknown' END media FROM ops_task_facts WHERE account_key IN (SELECT value FROM json_each(?)) AND video_id<>'' AND media IN ('photo','video') GROUP BY account_key,video_id").bind(JSON.stringify(keys.map(canonical))).all();
+ const types=new Map(result.results.map(row=>[row.account_key+'|'+row.video_id,row.media]));
+ return {...bundle,videosByAccount:new Map([...bundle.videosByAccount].map(([key,videos])=>[key,videos.map(v=>{const media=types.get(canonical(key)+'|'+String(v.id||v.videoId||''));return media?{...v,mediaType:media}:v;})]))};
 }
