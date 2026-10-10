@@ -23,6 +23,7 @@ const photoReceivers=mountPhotoReceivers({api,isBusy:()=>state.busy,changed:()=>
 const photoMusic=mountPhotoMusic($('#musicPoolField'),{isBusy:()=>state.busy,changed:()=>{resetAccountInput();summary();}});
 const fixedHitVideo=()=>Boolean(state.readyVideo)&&state.mediaType==='video'&&sourceType()==='video-hits';
 const hitPhotos=()=>state.mediaType==='photo'&&sourceType()==='video-hits';
+const batchCount=()=>hitPhotos()?photoPicker.refs().length:Number($('#count').value)||0;
 const accountId=a=>String(a.connectionId||a.id);
 function selected() { return state.accounts.map(accountId).filter(id=>state.selectedAccounts.has(id)); }
 function musicPool() { return photoMusic.ids(); }
@@ -32,7 +33,7 @@ function renderTemplates() {
   $('#sourceHint').textContent=`选题来源：同行${state.mediaType==='photo'?'图文':'视频'}爆款库，共 ${state.counts[state.mediaType]||0} 条。每条爆款生成一条新内容。`;
   renderSources();
   const extras=$('#photoOptions');
-  if(extras){extras.hidden=state.mediaType!=='photo';extras.open=false;}
+  if(extras)extras.open=false;
 }
 
 function sourceType(){return state.mediaType==='photo'?($('#photoSource').value||'library'):$('#sourceType').value==='video-hits'?'video-hits':'topic-bank';}
@@ -49,10 +50,12 @@ function renderSources(){
   $('#hitSourceNote').hidden=!hits||hitPhotos();
   $('#photoSource option[value="video-hits"]').disabled=!state.canUseVideoHits;
   photoPicker.sync(hitPhotos());
+  $('#countField').hidden=hitPhotos();$('#count').disabled=hitPhotos();
+  $('#photoOptions').hidden=state.mediaType!=='photo'||hitPhotos();
   if(hitPhotos()){$('#count').readOnly=true;$('#count').value=photoPicker.refs().length;}else if(fixedHitVideo()){$('#count').readOnly=true;$('#count').value=1;}else if($('#count').readOnly){$('#count').readOnly=false;$('#count').value=3;}
   $('#selection').closest('label').hidden=hitPhotos()||fixedHitVideo();$('#query').closest('label').hidden=hitPhotos()||fixedHitVideo();
   $('#readyFixedVideo').hidden=!fixedHitVideo();$('#readyFixedVideo').innerHTML=fixedHitVideo()?'<h3>已选择待发布视频</h3><video controls playsinline preload="metadata" src="'+esc(state.readyVideo.previewUrl)+'" style="width:100%;max-height:300px"></video><strong>'+esc(state.readyVideo.title)+'</strong><p>'+esc(state.readyVideo.caption)+'</p><a href="/psychology-video-hits">返回选择其他素材 →</a>':'';
-  $('#photoOptions summary small').textContent=hitPhotos()?'其他设置':'20套样式';$('#styleMode').closest('label').hidden=hitPhotos();$('#styleId').closest('label').hidden=hitPhotos();
+  $('#photoOptions summary small').textContent='20套样式';$('#styleMode').closest('label').hidden=hitPhotos();$('#styleId').closest('label').hidden=hitPhotos();
   $('#template').disabled=hits||picker.active;
   $('#countLabel').textContent=hits?'发布总条数':'生成总条数';
   $('#submitBatch').textContent=picker.active?'发布所选视频':hitPhotos()?'确认发布所选图文':fixedHitVideo()?'确认发布此视频':hits?'确认抽取并发布':'创建并自动发布';
@@ -189,7 +192,7 @@ function summary() {
     picker.update();const count=picker.count,accountCount=selected().length,low=Math.floor(count/accountCount),high=Math.ceil(count/accountCount);
     $('#summary').textContent=!count?'请先勾选要发布的视频。':!accountCount?'已选 '+count+' 条视频，请勾选发布账号。':accountCount>count?'已选 '+count+' 条视频、'+accountCount+' 个账号，请减少账号或增加视频。':'已选 '+count+' 条视频、'+accountCount+' 个账号，随机均分，每个账号 '+(low===high?low:low+'–'+high)+' 条。同账号按 '+($('#intervalMinutes').value||'—')+' 分钟间隔发布，自动使用已保存文案。';return;
   }
-  const ids=selected(), count=Number($('#count').value)||0;
+  const ids=selected(), count=batchCount();
   $('#summary').textContent=ids.length ? `本批${hitPhotos()||fixedHitVideo()?'发布已选':sourceType()==='video-hits'?'抽取成片':'生成'} ${count} 条${state.mediaType==='photo'?'图文':'视频'}，分配到 ${ids.length} 个账号，合并为 ${Math.ceil(count/20)} 个中台批次（每批最多20条）。 `+
     ids.map((id,i)=>accountName(id)+'：'+Math.max(0,Math.floor((count+ids.length-1-i)/ids.length))+' 条').join('；') : '选择账号后显示本批内容分配。';
   if(state.mediaType==='photo')$('#summary').textContent+=musicPool().length?' 配乐：从所选 '+musicPool().length+' 首音乐随机抽取。':' 配乐：TikTok 推荐。';
@@ -321,13 +324,13 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(sourceType()==='topic-bank'&&!state.canUseTopics)return message('当前账号没有模板题库权限，请联系管理员开通后创建视频任务。',true);
   if(sourceType()==='video-hits'&&!state.canUseVideoHits)return message('当前账号没有视频爆款权限。',true);
   if(hitPhotos()&&(photoPicker.busy||!photoPicker.refs().length))return message('请等待列表读取完成并勾选二创图文。',true);
-  const ids=selected();
+  const ids=selected(),count=batchCount();
   if(!ids.length)return message('请先选择发布账号。',true);
   const receiverError=photoReceivers.validate(ids);if(receiverError)return message(receiverError,true);
-  if(Number($('#count').value)<ids.length)return message('生成总数不能少于所选账号数。',true);
+  if(count<ids.length)return message(hitPhotos()?'已选图文数量少于发布账号数，请减少账号或增加图文。':'生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
   let tiktokOne;try{tiktokOne=one.context();}catch(e){return message(e.message,true);}
-  const body=state.submittedInput||{...(photoReceivers.enabled()?{mentionReceiver:true}:{}),...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:fixedHitVideo()?{videoVersions:[state.readyVideo.ref]}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count:Number($('#count').value),connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  const body=state.submittedInput||{...(photoReceivers.enabled()?{mentionReceiver:true}:{}),...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:fixedHitVideo()?{videoVersions:[state.readyVideo.ref]}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count,connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   if(hitPhotos()&&!confirm('确认发布所选 '+body.count+' 条二创图文？将按图片顺序直接发布，使用已保存文案，并按已选账号轮流分配。'+(body.mentionReceiver?'每条随机 @ 一个其他承接账号并追加引导文案。':'')+'每个二创版本只提交一次。'))return;
   if(body.sourceType==='video-hits'&&body.mediaType==='video'&&!confirm((body.videoVersions?'确认发布已选的 '+body.count+' 条二创成片？':'确认从视频爆款抽取 '+body.count+' 条二创成片并发布？')+'\n将使用已保存的二创文案，按已选账号分配。每个二创只提交一次。'))return;
   state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
