@@ -20,7 +20,10 @@ Default the AI declaration to unchecked, derive publication quantity from select
 - No real publication or settings writes used for verification.
 
 ## Unfinished work
-Deployment and production verification.
+None.
 
 ## Recommended next step
 Refresh the photo creation page, select the desired albums, and create the task. The selected-card count is the publication count.
+
+## Release evidence
+Runtime d0af88927a3a11989289b035dc429468a6f5845f was committed and pushed to GitHub main before deployment from a clean exact HEAD == origin/main checkout using npm run deploy. Worker version d14e4131-cdd4-4526-bee1-4513953e01e3. Production publishing JS returned HTTP 200, matched the committed normalized SHA-256, and contained the selected-ref count logic. No existing jobs or settings were modified.
