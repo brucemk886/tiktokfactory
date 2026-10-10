@@ -210,15 +210,22 @@ async function updateTopic(db,id,input,{external=false,remove=false,serialize=pu
  catch(error){if(String(error.message).includes('UNIQUE'))return errorJson('当前题库已存在相同题目和内容。',409);throw error;}
  return json({ok:true,...(remove?{}:{item:(await hydrateTopicAssets(db,[serialize(await db.prepare('SELECT * FROM psychology_template_topics WHERE id=?').bind(id).first())]))[0]})});
 }
+async function serveTopicImageForProjectKey(request,env,url){
+ const {authenticate}=await import('./factory-api.js');
+ const user=await authenticate(request,env.DB);
+ assertTopicBankUser(user);
+ return serveTopicImage(env,url.searchParams.get('key'));
+}
 export async function handlePsychologyTopicBank(request,env,url,session,trusted={}){
   const external=url.pathname===PSYCHOLOGY_TOPIC_API||url.pathname.startsWith(PSYCHOLOGY_TOPIC_API+'/');
   if(!external && !url.pathname.startsWith(BASE))return null;
   try{
     const db=env.DB;
     if(external){
+      const path=url.pathname.slice(PSYCHOLOGY_TOPIC_API.length);
+      if(path==='/assets'&&request.method==='GET'&&/^Bearer fac_api_\S+$/i.test(request.headers.get('authorization')||''))return await serveTopicImageForProjectKey(request,env,url);
       if(trusted.user)assertTopicBankUser(trusted.user);
       const actor=trusted.user?.id || await externalActor(request,db);
-      const path=url.pathname.slice(PSYCHOLOGY_TOPIC_API.length);
       const images=path.match(/^\/(topic-[a-z0-9-]+)\/images(?:\/(image-[a-z0-9-]+))?$/);
       if(images)return await handleTopicImages(request,env,url,actor,images[1],images[2]);
       if(!path&&request.method==='POST')return json(await writeIntegrationTopics(db,await readImport(request),actor));
@@ -233,7 +240,10 @@ export async function handlePsychologyTopicBank(request,env,url,session,trusted=
       if(id&&request.method==='PATCH')return await updateTopic(db,id,await readImport(request),{external:true,serialize,actor});
       return errorJson('支持 GET 列表/单题、POST 新增和 PATCH 单题修改；不支持此路径或方法。',405);
     }
-    if(!session)return errorJson("请先登录。",401);
+    if(!session){
+      if(url.pathname===BASE+"/assets"&&request.method==="GET")return await serveTopicImageForProjectKey(request,env,url);
+      return errorJson("请先登录。",401);
+    }
     assertTopicBankUser(session.user);
     const user=session.user;
     if(request.method!=="GET" && request.headers.get("origin") && request.headers.get("origin")!==url.origin)return errorJson("不允许跨站修改。",403);

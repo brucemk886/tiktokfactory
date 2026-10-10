@@ -64,6 +64,19 @@ test('concurrent identical writes acquire one durable claim',async t=>{
  const replies=await Promise.all([f.write('photo-factory','directions.create',params,id),f.write('photo-factory','directions.create',params,id)]);
  assert.ok(replies.every(r=>[201,409].includes(r.status)));assert.ok(replies.some(r=>r.status===201));assert.equal(f.sqlite.prepare('SELECT count(*) n FROM photo_directions').get().n,1);
 });
+test('project API key reads topic card images and anonymous reads stay rejected',async t=>{
+ const f=await setup(t),key='psychology-topics/11111111-1111-4111-8111-111111111111.png',bytes=Uint8Array.from([137,80,78,71]);
+ f.env.ARCHIVE={async get(objectKey){assert.equal(objectKey,key);return {body:bytes};}};
+ const path='/api/psychology-template-topics/assets?key='+encodeURIComponent(key);
+ assert.equal((await worker.fetch(new Request(base+path),f.env,{})).status,401);
+ const read=await worker.fetch(new Request(base+path,{headers:{authorization:'Bearer '+f.token}}),f.env,{});
+ assert.equal(read.status,200);assert.equal(read.headers.get('content-type'),'image/png');
+ const integration='/api/integrations/psychology/template-topics/assets?key='+encodeURIComponent(key);
+ assert.equal((await worker.fetch(new Request(base+integration,{headers:{authorization:'Bearer '+f.token}}),f.env,{})).status,200);
+ assert.equal((await worker.fetch(new Request(base+integration),f.env,{})).status,401);
+ f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run('[]');
+ assert.equal((await worker.fetch(new Request(base+path,{headers:{authorization:'Bearer '+f.token}}),f.env,{})).status,403);
+});
 test('template import/read/update use one key and existing revision guards',async t=>{
  const f=await setup(t);await value(await f.write('psychology','topics.import',{body:{template:'psychology-collage',items:[{title:'A question',content:'A complete text',enabled:false}]}}));
  const list=await value(await f.call('psychology','topics.list',{query:{template:'psychology-collage'}}));const item=list.items[0];assert.ok(item.id);

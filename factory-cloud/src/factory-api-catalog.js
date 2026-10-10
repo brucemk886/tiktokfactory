@@ -25,7 +25,7 @@ export const CATALOG={
 
   'website.read':op('GET','/api/psychology-website','website',['psychology-autopilot'],'读取 TikTok 渠道的独立站测试漏斗、成交订单和账号来源',['period','from','to','sourcePage','orderPage'],{query:{period:'7d'}},'仅转化项目负责人；仅 TikTok 归因，其他及未知来源排除；无渠道页面PV返回null；订单按付款时间，金额按币种且未扣退款/手续费。'),
   'topics.list':op('GET','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'读取各模板题库与题目',['template','page','pageSize','q','enabled','onlyUnused'],{query:{template:'all',page:1}}),
-  'topics.get':op('GET','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'读取题目及 revision',[],{id:'topic-ID'},'返回 coverAssetId/imageAssetIds 及关联素材元数据；素材 URL 需要登录工厂。'),
+  'topics.get':op('GET','/api/integrations/psychology/template-topics/:id','topics',['psychology-topic-bank'],'读取题目及 revision',[],{id:'topic-ID'},'返回 coverAssetId/imageAssetIds 及关联素材元数据。素材 URL 用同一项目 Bearer 密钥 GET 即可读取；不带密钥仍然需要登录。'),
   'topics.import':op('POST','/api/integrations/psychology/template-topics','topics',['psychology-topic-bank'],'导入模板题目',[],{body:{template:'psychology-collage',items:[{title:'测试题目',content:'具体题目和完整内容',enabled:false}]}},'可选 coverAssetId 和 imageAssetIds（最多6个），须为当前账号所属的 ready 素材。单图模板 coverAssetId 自动绑定题图，仍需完整四个 choices。'),
   'topics.images.list':op('GET','/api/integrations/psychology/template-topics/:id/images','topics',['psychology-topic-bank'],'读取单图题目的图片池（每页20张）',['page'],{id:'topic-ID',query:{page:1}}),
   'topics.images.add':op('POST','/api/integrations/psychology/template-topics/:id/images','topics',['psychology-topic-bank'],'向已有单图题目补充图片',[],{id:'topic-ID',body:{revision:1,images:[{imageUrl:'https://example.com/new-image.png'}]}},'每次1–50张；可填imageKey、imageUrl或当前账号的assetId。共享题目和四个选项，确保图片含义一致。图片全局抽取一次，不能通过重新导入重置使用状态。'),

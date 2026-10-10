@@ -10,6 +10,7 @@ The factory project has one active `fac_api_` key. Administrators create, rotate
 - `POST`: `{ "module": "psychology", "action": "topics.list", "params": { "query": { "template": "all", "page": 1 } } }`
 - Modules: `psychology`, `photo-factory`.
 - `params` holds named path IDs (for example `id`, `variantId`), `query`, and `body`. No arbitrary URLs, methods or headers can be forwarded. JSON requests are bounded to 128 KiB.
+- Topic card and video-hit frame image URLs returned by this API can be read with the same `Authorization: Bearer fac_api_...` header. Missing, revoked, or non-admin keys still receive 401. The key only reads images its administrator can already open, and it does not make those files public.
 - Every mutation requires an envelope `requestId` UUID. The gateway injects this into existing business actions that also require it. Conflicting inner/outer IDs fail.
 - Results retain the business API JSON and HTTP status. Imported item arrays can contain failures within HTTP 200; check every `results[].ok/error`.
 - Use listing operations to discover actual IDs, current revisions, styles, directions and strategy values. Examples with placeholder IDs are not executable unchanged.

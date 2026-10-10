@@ -26,7 +26,8 @@ export async function handleVideoHitAssets(request,env,url,session){
  const external=url.pathname.startsWith(EXTERNAL);
  const match=url.pathname.match(/^\/api\/(?:integrations\/psychology\/video-hits|psychology-video-hits)\/assets\/([a-f0-9-]+)(\/file)?$/i);
  if(!match)return null;if(!UUID.test(match[1]))fail('图片上传编号须为UUID。');
- const actor=external?await authenticate(request,env.DB):session?.user,user=await videoHitUser(env.DB,actor);
+ const fileRead=Boolean(match[2])&&['GET','HEAD'].includes(request.method);
+ const actor=external?await authenticate(request,env.DB):session?.user||(fileRead?await authenticate(request,env.DB):null),user=await videoHitUser(env.DB,actor);
  if(!env.ARCHIVE)fail('图片存储尚未配置。',503);
  if(!external&&!['GET','HEAD'].includes(request.method)&&((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site'))fail('不允许跨站上传。',403);
  if(!match[2]&&request.method==='GET'){

@@ -9,7 +9,7 @@ import {handleVideoHitProduction} from './psychology-video-hit-production.js';
 import {handleVideoLibrary} from './psychology-video-library.js';
 import {handleWebsiteShortLink} from './psychology-website-links.js';
 import {handlePsychologyWebsite} from './psychology-website.js';
-import {handleFactoryApi} from './factory-api.js';
+import {handleFactoryApi,projectImageRead} from './factory-api.js';
 import {FACTORY_API} from './factory-api-catalog.js';
 import {serveUiAsset,versionPageAssets} from './ui-assets.js';
 import {handlePsychologyManagement,MANAGEMENT_API} from './psychology-management-api.js';
@@ -89,7 +89,7 @@ export default {
 
       if (url.pathname.startsWith("/api/")) {
         const session = await getSession(request, env.DB);
-        if (!session && !url.pathname.startsWith("/api/worker/")) {
+        if (!session && !url.pathname.startsWith("/api/worker/") && !projectImageRead(request, url)) {
           return errorJson("请先登录。", 401);
         }
         const handlers = [handlePsychologyReceivingReport,handlePsychologyOneReport,handleVideoHitReady,handleVideoHitCleanup,handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];

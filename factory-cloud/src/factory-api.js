@@ -19,6 +19,12 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const object=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const only=(x,keys)=>{if(!object(x)||Object.keys(x).some(k=>!keys.includes(k)))fail('包含未知字段或对象格式无效。');};
 const canonical=x=>Array.isArray(x)?x.map(canonical):object(x)?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonical(x[k])])):x;
+const PROJECT_KEY=/^Bearer fac_api_\S+$/i;
+export function projectImageRead(request,url){
+ if(!PROJECT_KEY.test(request.headers.get('authorization')||''))return false;
+ if(request.method==='GET'&&url.pathname==='/api/psychology-template-topics/assets')return true;
+ return ['GET','HEAD'].includes(request.method)&&/^\/api\/psychology-video-hits\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/file$/i.test(url.pathname);
+}
 export async function authenticate(request,db){
  const token=request.headers.get('authorization')?.match(/^Bearer (fac_api_\S+)$/i)?.[1];
  if(!token||token.length>200)fail('请提供项目统一 Bearer API 密钥。',401);

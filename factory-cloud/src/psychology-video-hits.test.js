@@ -37,6 +37,19 @@ async function setup(t){
  f.gateway=(action,params={},requestId)=>worker.fetch(new Request(root+'/api/v1/factory',{method:'POST',headers:{authorization:'Bearer '+f.token,'Content-Type':'application/json'},body:JSON.stringify({module:'psychology',action,params,...(requestId?{requestId}:{})})}),f.env,{});
  return {...f,files};
 }
+test('project API key reads returned frame images and anonymous reads stay rejected',async t=>{
+ const f=await setup(t),id=crypto.randomUUID();
+ const put=await worker.fetch(new Request(root+'/api/integrations/psychology/video-hits/assets/'+id,{method:'PUT',headers:{authorization:'Bearer '+f.token,'content-type':'image/png'},body:png}),f.env,{});
+ assert.equal(put.status,201,await put.clone().text());
+ const preview=new URL((await put.json()).previewUrl,root);
+ assert.equal((await worker.fetch(new Request(preview),f.env,{})).status,401);
+ const read=await worker.fetch(new Request(preview,{headers:{authorization:'Bearer '+f.token}}),f.env,{});
+ assert.equal(read.status,200);assert.equal(read.headers.get('content-type'),'image/png');
+ assert.equal((await worker.fetch(new Request(preview,{headers:{authorization:'Bearer fac_api_invalid'}}),f.env,{})).status,401);
+ assert.equal((await worker.fetch(new Request(root+'/api/psychology-video-hits/assets/'+id,{method:'PUT',headers:{authorization:'Bearer '+f.token,'content-type':'image/png'},body:png}),f.env,{})).status,401);
+ f.sqlite.prepare('UPDATE factory_users SET sidebar_modules_json=?').run(JSON.stringify(['psychology-topic-bank']));
+ assert.equal((await worker.fetch(new Request(preview,{headers:{authorization:'Bearer '+f.token}}),f.env,{})).status,403);
+});
 test('owner-scoped source/import is idempotent; gateway supports all frame/version operations',async t=>{
  const f=await setup(t),uuid=crypto.randomUUID(),params={body:{externalId:'source',videoUrl:'https://www.tiktok.com/@source/video/123456789',title:'Source',script:'Narration',videoData:{playCount:100}}};
  const first=await f.gateway('videoHits.create',params,uuid);assert.equal(first.status,200);const a=await first.json();
