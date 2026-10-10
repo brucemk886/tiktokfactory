@@ -24,7 +24,12 @@ Show TikTok One separately in Psychology Data Overview and Operations Report, an
 - Real Chromium local PC test passed for both pages, separate official/task content, pagination, account views, error/retry, original-report return and non-psychology isolation. Title/selected-tab contrast verified. Only mocked API calls during tests.
 
 ## Unfinished work
-Production deployment and live verification pending.
+Completed. Factory runtime a349f2b and date-filter follow-up 37b7eb5 were pushed to main before guarded deployment. Current worker version: 6fb72a29-9b3a-4545-88fe-65a59ad55615. Companion Hub runtime 553dda8 deployed as d84e4a01-b02f-42f5-886e-49b8e7be604b.
+
+## Live verification
+- On 2026-10-10 at 09:51 Beijing time, the authorized official project returned 33 scoped videos, 4,696 known cumulative views, 176 likes and 9 anchor clicks. Eight videos had no playback value. These are current project totals, not a latest-batch or approval count.
+- Both live PC report pages returned official data. Operations Report also exposes the separate Factory task source.
+- Desktop Data Overview verified 20-row pagination and white selected-tab text. Selecting the last seven publication dates correctly reduced the result to 27 videos, excluding older official rows; metrics remain cumulative per video.
 
 ## Recommended next step
 Open either page's TikTok One tab. Official project data shows One performance; Factory task source shows upload/publication progress. Review in TikTok One for approval because the report does not return that state.
