@@ -370,3 +370,12 @@ The single public video-hit guide is generated from `docs/psychology-video-hits-
 
 - scripts/report-media.js normalizes explicit content-type evidence and nullable performance counters. Overview enriches only its authorized archive bundle through an exact account_key + video_id join against ops_task_facts before grouping; ambiguous evidence remains unknown. No archive mutation or provider request is introduced.
 - Standard Overview filters its detail/summary by media while preserving the same date/group comparison. Standard Operations aggregates both types through its existing allowed-account and historical-task scope, independent of its selected-media drilldown. Null plays are excluded from averages and high-view rates. Account-level profile metrics and Hub receipt counts keep their original all-types scope.
+
+
+## Daily receiving traffic report
+
+- /api/psychology-receiving-report is a read-only operations projection, authorized by a fresh psychology-ops-report grant plus canonical current project-account scope on both publisher and receiver. It exposes account aggregates only, no customer/order identities. It does not inherit website-owner-only order access.
+- Migration 0089 captures the first manual photoReceiver, importedPhotoConversion or legacy conversion receiver identity from job payloads, and backfills surviving jobs/legacy allocations. ops_photo_receivers has no cascading deletion and stores only routing identity/CTA, not media or original copy. No existing job payload is rewritten; future job writes capture the reporting record transactionally.
+- Published photo facts join that immutable identity and deduplicate account/video receipts using ops_video_owners. Daily views are latest cumulative views grouped by Beijing publication date; no daily view delta is inferred. Historical receiver roles remain observable after settings change, within current grants.
+- psychology-website-funnel shares its click-cohort SQL with a daily range reader (one site range query, no per-day queries). Receiver visits use unmodified UTC samples while short-link clicks/arrivals use Beijing click dates. Missing samples and tracking coverage remain explicit; only linked website stages get conversion rates. Independent-site read failures preserve known photo/profile metrics.
+- Only Operations gains channel=receiving. The existing standard and One tabs remain isolated, and inactive channels do not issue report requests.

@@ -1,18 +1,21 @@
+import {mountReceivingReport} from './psychology-receiving-report.js';
 import {renderOneAnalysis} from './psychology-one-analysis.js';
 const path=location.pathname.replace(/\/$/,'');
 if(['/psychology-effects','/psychology-ops-report'].includes(path))mountOneReport();
 function mountOneReport(){
- const surface=path==='/psychology-effects'?'effects':'operations',params=new URLSearchParams(location.search),active=params.get('channel')==='tiktok-one';
+ const surface=path==='/psychology-effects'?'effects':'operations',params=new URLSearchParams(location.search),active=params.get('channel')==='tiktok-one',receiving=surface==='operations'&&params.get('channel')==='receiving';
  const standard=document.querySelector('#standardReport'),header=document.querySelector('main > header');
  if(!standard||!header)return;
  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:1});
  const pct=v=>v===null||v===undefined?'—':(v*100).toFixed(1)+'%';
  const time=v=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
- const link=one=>{const u=new URL(location.href);if(one)u.searchParams.set('channel','tiktok-one');else {u.searchParams.delete('channel');u.searchParams.delete('oneVideo');}return u.pathname+u.search;};
+ const link=one=>{const u=new URL(location.href);if(one)u.searchParams.set('channel',one===true?'tiktok-one':one);else {u.searchParams.delete('channel');u.searchParams.delete('oneVideo');}return u.pathname+u.search;};
  const tabs=document.createElement('nav');tabs.className='one-report-tabs';tabs.setAttribute('aria-label','发布渠道');
- tabs.innerHTML=`<a href="${esc(link(false))}" ${!active?'aria-current="page"':''}>全部数据</a><a href="${esc(link(true))}" ${active?'aria-current="page"':''}>TikTok One</a>`;
- header.after(tabs);standard.hidden=active;
+ tabs.innerHTML=`<a href="${esc(link(false))}" ${!active&&!receiving?'aria-current="page"':''}>全部数据</a><a href="${esc(link(true))}" ${active?'aria-current="page"':''}>TikTok One</a>`;
+ if(surface==='operations')tabs.insertAdjacentHTML('beforeend',`<a href="${esc(link('receiving'))}" ${receiving?'aria-current="page"':''}>承接引流</a>`);
+ header.after(tabs);standard.hidden=active||receiving;
+ if(receiving){mountReceivingReport(standard,header);return;}
  if(!active)return;
  const title=surface==='effects'?'数据概览':'运营报表';document.title='心理学 · '+title;
  const heading=header.querySelector('h1');if(heading)heading.textContent=title;

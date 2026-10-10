@@ -24,9 +24,10 @@ test('every authenticated console uses the new theme on its initial document, be
     assert.doesNotMatch(style,/media=|onload=|disabled/,name+' workspace theme renders on first paint');
    }
   }else if(['official-group-report.html','psychology-operations.html'].includes(name)){
-   assert.equal(overrides.length,2,name+' only the scoped report styles follow the console theme');
+   assert.equal(overrides.length,name==='psychology-operations.html'?3:2,name+' only the scoped report styles follow the console theme');
    assert.match(overrides[0],/href="\/psychology-one-report\.css"/);
-   assert.match(overrides[1],/href="\/report-media-comparison\.css"/);
+   if(name==='psychology-operations.html')assert.match(overrides[1],/href="\/psychology-receiving-report\.css"/);
+   assert.match(overrides.at(-1),/href="\/report-media-comparison\.css"/);
    for(const style of overrides)assert.doesNotMatch(style,/media=|onload=|disabled/,name+' reports render on first paint');
   }else assert.equal(overrides.length,0,name+' unrelated consoles retain the final shared theme');
   assert.equal((html.match(/href="\/admin-ui\.css"/g)||[]).length,1,name);

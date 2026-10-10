@@ -31,3 +31,12 @@ Migration 0063 adds key, report-preset and style tables and autopilot request fi
 Query presets currently have an API listing rather than a separate page editor. Style layouts are selected from the existing 20 supported layouts; external HTML/CSS/code is not accepted. Definition changes affect only future work. A custom style is visible to its owner on 图文样式; fixed-selection dropdowns on older open publication forms still list built-ins, while random generation uses the current enabled registry.
 
 Migration 0072 adds explicit `timeZone` (America/Los_Angeles or Asia/Shanghai) to plan creation and schedule changes. Creation defaults to legacy Shanghai; schedule omission preserves the current/pending zone. Local calendar boundaries follow DST. Project-managed schedules must retain the project zone and three rounds and cannot take effect before the project cycle starts.
+
+
+## 承接引流日报（登录会话读取）
+
+运营报表的「承接引流」tab 使用 GET /api/psychology-receiving-report。需要当前有效的 psychology-ops-report 模块权限；发布账号和承接账号均须在当前心理学项目授权范围内。此会话接口不改变现有外部 operations action 的契约。
+
+参数：period=today（默认）/yesterday/7d/30d/range；自定义搭配 from、to（YYYY-MM-DD，最多90天）；receiver 为可选的承接 connectionId；page 为图文明细页，每页20条。返回 summary、daily、receivers（含发布账号汇总）、details、pagination、独立站覆盖及 UTC 主页日报完整性。
+
+图文按北京时间实际发布日统计最新累计播放，不是当天新增曝光；主页访问使用同名日期 UTC 日报。短链接点击是有效访问数，不等于 TikTok 官方链接点击或独立访客；进站和测试按点击关联去重，跨日结果仍归点击日。不会将承接账号整体访问直接归因于 @ 图文。已发布素材清理不删除已保存的轻量承接关系。

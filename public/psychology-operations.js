@@ -106,7 +106,7 @@ async function load(){
   }catch(error){if(request===state.request)$("#status").textContent=error.message||"读取失败，请重试。";}
   finally{if(request===state.request)$("#query").disabled=false;}
 }
-if(params.get('channel')!=='tiktok-one')load();
+if(!['tiktok-one','receiving'].includes(params.get('channel')))load();
 function table(headers,rows){return '<table class="ops-table"><thead><tr>'+headers.map(h=>'<th scope="col">'+h+'</th>').join("")+'</tr></thead><tbody>'+rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join("")+'</tr>').join("")+'</tbody></table>';}
 const isVideo=()=>state.data?.framework?.media==="video";
 const summaryCells=s=>[fmt(s.n),fmt(s.views),fmt(s.medianViews)+"<small>平均 "+fmt(s.avgViews)+"</small>",pct(s.potentialRate),pct(s.hitRate),sec(s.averageWatch),pct(s.completion),...(isVideo()?[pct(s.retention3)]:[]),fmt(s.likes)+" / "+fmt(s.comments)+" / "+fmt(s.shares)];
