@@ -18,7 +18,10 @@ Remove the user-highlighted 已选图文与发布文案 block from Psychology ma
 - Full mocked selected-video/photo Chromium flow passed: card toggle, count, page select/clear, cross-page preservation, ordered previews and exact submission refs remain correct. Inspected the 1440px desktop screenshot at tmp/photo-selection-display-qa/hit-photo-selection-end.png: pagination now leads directly to the AI declaration and task fields. No real publishing endpoints called.
 
 ## Unfinished work
-Deployment and production verification pending.
+None.
 
 ## Recommended next step
 Refresh Psychology automatic publishing → photo creation. Review/select through the top cards; the duplicated list below pagination is removed.
+
+## Release evidence
+Runtime 981d883f8e4c64948de236c024d37f17c9e1474b was pushed to GitHub main before deployment from a clean exact HEAD == origin/main checkout through npm run deploy. Worker version 856ae260-cb5c-403d-b34b-99fc22f8385c. Production picker script and stylesheet returned HTTP 200, matched normalized committed SHA-256 hashes, and contained no obsolete selected-list references. Existing publishing jobs were not modified or interrupted.
