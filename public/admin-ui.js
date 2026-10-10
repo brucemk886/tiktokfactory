@@ -10,7 +10,7 @@
     const bar=document.createElement('header');bar.className='lf-console-bar';
     const toggle=document.createElement('button');toggle.type='button';toggle.className='lf-nav-toggle';toggle.append(icon('list'));toggle.setAttribute('aria-label','展开或收起导航');nav.id=nav.id||'lf-sidebar';toggle.setAttribute('aria-controls',nav.id);
     const crumb=document.createElement('nav');crumb.className='lf-breadcrumb';crumb.setAttribute('aria-label','当前位置');const parent=document.createElement('span');parent.textContent=group;const sep=document.createElement('span');sep.textContent='/';sep.setAttribute('aria-hidden','true');const current=document.createElement('strong');current.textContent=title;crumb.append(parent,sep,current);
-    const date=document.createElement('time');date.className='lf-console-date';date.textContent=new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'});
+    const date=document.createElement('time');date.className='lf-console-date';date.textContent=new Date().toLocaleDateString('zh-CN',{...(globalThis.location?.pathname?.startsWith('/psychology')?{timeZone:'Asia/Shanghai'}:{}),year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'});
     const avatar=document.createElement('span');avatar.className='lf-top-user';const username=document.querySelector('.sidebar-user b')?.textContent||'';avatar.textContent=username.slice(0,1).toUpperCase();avatar.title=username;
     bar.append(toggle,crumb,date,avatar);document.body.prepend(bar);
     const backdrop=document.createElement('button');backdrop.type='button';backdrop.className='lf-mobile-backdrop';backdrop.setAttribute('aria-label','关闭导航');document.body.append(backdrop);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publishScheduleError,formatPublishTime,localPublishInput} from '../public/psychology-publish-time.js';
+import {publishScheduleError,formatPublishTime,localPublishInput,parsePublishInput,publishTimeZone} from '../public/psychology-publish-time.js';
 import {normalizeSelectedPublish} from '../factory-cloud/src/psychology-video-library.js';
 const zone='Asia/Taipei',at=value=>Date.parse('2026-10-09T'+value+'+08:00');
 const selected=Math.floor(at('14:06:00')/1000);
@@ -23,7 +23,17 @@ test('server validates new schedules with explicit UTC+8 times and preserves old
  assert.equal(normalizeSelectedPublish(body,at('20:00:00'),true).items[0].scheduleAt,selected);
  assert.throws(()=>normalizeSelectedPublish(input([NaN]),at('20:00:00'),true),/发布时间无效/);
 });
-test('time formatting is explicitly 24-hour and datetime-local roundtrips the device time zone',()=>{
+test('time formatting is explicitly 24-hour and datetime-local roundtrips Beijing independently of device time zone',()=>{
  assert.equal(formatPublishTime(selected,zone),'2026-10-09 14:06:00');
- const stamp=at('14:06:00');assert.equal(new Date(localPublishInput(stamp)).getTime(),stamp);
+ const stamp=at('14:06:00');assert.equal(parsePublishInput(localPublishInput(stamp)),stamp);
+});
+
+test('Beijing input is stable on UTC and US devices across summer/winter and rejects invalid dates',()=>{
+ const previous=process.env.TZ;
+ try{for(const tz of ['UTC','America/Los_Angeles','Asia/Shanghai']){process.env.TZ=tz;
+  for(const date of ['2026-07-15T23:00','2026-01-16T00:00','2026-11-01T16:30','2026-11-01T17:30']){
+   const stamp=Date.parse(date+':00+08:00');assert.equal(parsePublishInput(date),stamp);assert.equal(localPublishInput(stamp),date);assert.equal(publishTimeZone(),'Asia/Shanghai');
+  }
+ }}finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+ for(const bad of ['','2026-02-30T12:00','2026-10-10T25:00','2026-10-10T12:00Z'])assert.ok(Number.isNaN(parsePublishInput(bad)));
 });

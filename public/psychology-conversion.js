@@ -2,7 +2,7 @@ const mount=typeof document==='undefined'?null:document.getElementById('conversi
 const endpoint='/api/psychology-autopilot/conversion';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let model=null,busy=false;
-const time=(value,zone)=>value?new Intl.DateTimeFormat('zh-CN',{timeZone:zone||'America/Los_Angeles',dateStyle:'medium',timeStyle:'short'}).format(value):'待保存';
+const time=(value,zone)=>value?new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateStyle:'medium',timeStyle:'short'}).format(value):'待保存';
 async function api(method='GET',body){
  const response=await fetch(endpoint,{method,cache:'no-store',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  const data=await response.json();if(!response.ok)throw new Error(data.error||'无法读取转化设置。');return data;
@@ -14,7 +14,7 @@ function draw(){
  mount.innerHTML=`<div class="conversion-card"><div class="conversion-heading"><div><h2>${esc(headline)}</h2><p>普通账号 → 千粉承接账号 → 主页链接 → 独立站测试</p></div><span class="conversion-badge">${selected.size} 个承接账号</span></div>
  <p class="conversion-site">测试独立站：<a href="${esc(model.websiteUrl)}" target="_blank" rel="noopener noreferrer">${esc(model.websiteUrl)}</a></p>
  <p class="conversion-state">${model.active?.enabled?'当前目标：独立站测试转化。':'当前排期继续原配置。'} ${config?.enabled&&!ready?'目标已设为转化，待绑定并确认主页测试链接的承接账号。生效后的新转化内容会等待配置完成。':config?.enabled?'生效后的新任务只在发布文案末尾加入测试引导，图片与卡片文字保持原样。':'保存转化目标后，按账号流量查看结果，后续内容以进站测试为目标。'}
- ${config?'配置从 '+esc(time(config.effectiveAt,config.timeZone))+'（美西时间）生效，已创建排期继续原配置。':''}</p>
+ ${config?'配置从 '+esc(time(config.effectiveAt,config.timeZone))+'（北京时间）生效，已创建排期继续原配置。':''}</p>
  <details class="conversion-settings"><summary>配置承接账号与查看引导文案</summary>
  <form id="conversionForm"><label class="conversion-toggle"><input name="enabled" type="checkbox" ${config?.enabled!==false?'checked':''}>以独立站测试转化为目标</label>
  <label class="conversion-url">独立站地址<input name="websiteUrl" type="url" required value="${esc(model.websiteUrl)}"></label>
@@ -31,7 +31,7 @@ async function save(event){
  const form=event.currentTarget,status=mount.querySelector('#conversionStatus'),button=form.querySelector('button[type=submit]'),receivers=[];
  for(const input of form.querySelectorAll('[data-select]')){if(!input.checked||input.disabled)continue;const id=input.dataset.select,link=[...form.querySelectorAll('[data-link]')].find(a=>a.dataset.link===id);if(!link?.checked){status.textContent='请确认每个承接账号已设置主页测试链接。';return;}receivers.push({connectionId:id,linkReady:true});}
  busy=true;button.disabled=true;status.textContent='正在保存…';
- try{model=await api('PATCH',{revision:model.revision,enabled:form.elements.enabled.checked,websiteUrl:form.elements.websiteUrl.value,receivers});draw();mount.querySelector('details').open=true;mount.querySelector('#conversionStatus').textContent='已保存。生效时间：'+time(model.config.effectiveAt,model.config.timeZone)+'（美西时间）。';}
+ try{model=await api('PATCH',{revision:model.revision,enabled:form.elements.enabled.checked,websiteUrl:form.elements.websiteUrl.value,receivers});draw();mount.querySelector('details').open=true;mount.querySelector('#conversionStatus').textContent='已保存。生效时间：'+time(model.config.effectiveAt,model.config.timeZone)+'（北京时间）。';}
  catch(error){status.textContent=error.message;const retry=document.createElement('button');retry.type='button';retry.className='conversion-reload';retry.textContent='重新读取配置';retry.addEventListener('click',()=>{if(!busy)load();});status.append(' ',retry);}finally{busy=false;button.disabled=false;}
 }
 async function load(){try{model=await api();draw();}catch(error){mount.innerHTML='<div class="conversion-card"><h2>独立站测试转化</h2><p role="status">'+esc(error.message)+'</p><button type="button" id="conversionReload">重新读取</button></div>';mount.querySelector('button').addEventListener('click',load);}}

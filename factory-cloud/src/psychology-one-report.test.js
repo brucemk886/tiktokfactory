@@ -59,11 +59,21 @@ test('empty scope does not call provider; invalid project is denied; partial and
  const fail=await read(f,'refresh=1');assert.equal(fail.status,502);assert.match(fail.data.error,/unavailable/);
 });
 
-test('official published-date filter is applied to returned date text, while all keeps older records',async t=>{
- const f=await seed(t);f.add('v');const today=new Date(Date.now()+28800000).toISOString().slice(0,10);
- t.mock.method(globalThis,'fetch',async()=>Response.json({videos:[{videoId:'new',creator:'alpha',publishedAt:today+' 05:00:00',views:10},{videoId:'old',creator:'alpha',publishedAt:'2025-01-01 00:00:00',views:50},{videoId:'no-date',creator:'alpha',views:80}],page_info:{total_page:1,total_number:3},fetchedAt:f.now}));
- const all=await read(f);assert.equal(all.data.summary.total,3);assert.equal(all.data.summary.views,140);
- const recent=await read(f,'period=today');assert.equal(recent.data.summary.total,1);assert.equal(recent.data.summary.views,10);assert.equal(recent.data.rows[0].publishedAt,today+' 05:00:00');
+test('official dates reconcile exact video IDs across Beijing midnight and never guess a timezone',async t=>{
+ const f=await seed(t),today=new Date(Date.now()+28800000).toISOString().slice(0,10),mid=Date.parse(today+'T00:00:00+08:00');
+ f.add('new',{published:true,publishedAt:mid-1000});f.add('receipt',{published:true,publishedAt:mid+1000});
+ await f.db.batch([reportVideoFactWrite(f.db,'a',f.now,[{id:'new',createTime:mid+1000,views:10},{id:'old',createTime:mid-1000,views:50}])]);await refreshReportFacts(f.db);
+ t.mock.method(globalThis,'fetch',async url=>{const q=new URL(url).searchParams;assert.equal(q.has('startDate'),false,'publication day must not constrain provider metric dates');return Response.json({videos:[
+  {videoId:'new',creator:'alpha',publishedAt:'2020-01-01 00:00:00',views:10},
+  {videoId:'old',creator:'alpha',publishedAt:today+' 05:00:00',views:50},
+  {videoId:'receipt',creator:'alpha',views:1},{videoId:'no-date',creator:'alpha',publishedAt:today+' 05:00:00',views:80},
+  {videoId:'explicit',creator:'alpha',publishedAt:new Date(mid+2000).toISOString(),views:2},
+  {videoId:'end',creator:'alpha',publishedAt:new Date(mid+86400000).toISOString(),views:100}
+ ],page_info:{total_page:1,total_number:6},fetchedAt:f.now});});
+ const all=await read(f);assert.equal(all.data.summary.total,6);assert.equal(all.data.unknownDates,1);
+ const recent=await read(f,'period=today');assert.equal(recent.data.summary.total,3);assert.equal(recent.data.summary.views,13);
+ assert.equal(recent.data.rows.find(r=>r.videoId==='new').publishedAt,mid+1000);assert.equal(recent.data.rows.find(r=>r.videoId==='new').timeSource,'video');assert.equal(recent.data.rows.find(r=>r.videoId==='receipt').timeSource,'receipt');
+ assert.equal(recent.data.displayTimeZone,'Asia/Shanghai');assert.equal(recent.data.unknownDates,1);
 });
 
 test('official detail returns all non-ad fields, preserves missing points and excludes unauthorized details',async t=>{

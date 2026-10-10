@@ -1,4 +1,5 @@
 import {mountReceivingReport} from './psychology-receiving-report.js';
+import {beijingTime} from './report-time.js';
 import {renderOneAnalysis} from './psychology-one-analysis.js';
 const path=location.pathname.replace(/\/$/,'');
 if(['/psychology-effects','/psychology-ops-report'].includes(path))mountOneReport();
@@ -24,7 +25,7 @@ function mountOneReport(){
  for(const id of ['status','methodToggle','methodPanel']){const el=document.getElementById(id);if(el)el.hidden=true;}
  const root=document.createElement('section');root.className='one-report';root.setAttribute('aria-label','TikTok One 专属数据');standard.after(root);
  root.innerHTML=`<form class="one-report-filters">
- <label>统计周期<select name="period"><option value="all">全部发布日期（One）</option><option value="today">今天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="custom">自定义</option></select></label>
+ <label>统计周期（北京时间）<select name="period"><option value="all">全部发布日期（One）</option><option value="today">今天</option><option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="custom">自定义</option></select></label>
  <label>数据来源<select name="source"><option value="official">官方项目数据</option><option value="tasks">工厂发布进度</option></select></label>
  <label data-task-basis>日期口径<select name="basis"><option value="schedule">计划发布时间</option><option value="published">实际发布时间</option></select></label>
  <label>账号分组<select name="group"><option value="">全部授权分组</option></select></label>
@@ -67,7 +68,7 @@ function mountOneReport(){
    field('from').value=data.window.from;field('to').value=data.window.to;
    const u=new URL(location.href);for(const key of ['period','source','basis','group','campaign','from','to','view','page'])u.searchParams.set('one'+key[0].toUpperCase()+key.slice(1),String(applied[key]??''));history.replaceState({},'',u);
    status.textContent=data.window.from+' 至 '+data.window.to+' · 按'+(data.basis==='schedule'?'计划':'实际')+'发布时间筛选（北京时间） · 更新于 '+time(data.updatedAt)+(data.summary.updating?' · '+data.summary.updating+' 条状态正在后台同步':'');
-   if(data.source==='official')status.textContent='官方项目数据 · 创作者地区 US · 报表查询 '+(data.dateRange?.start_date||data.window.from)+' 至 '+(data.dateRange?.end_date||data.window.to)+' · '+(data.fetchedAt?'拉取于 '+time(data.fetchedAt):'尚无已绑定的 One 项目')+(data.cached?' · 缓存，点击查询 / 刷新可重新拉取':'')+(data.partial?' · 官方数据尚未读取完整，下方仅为已读取部分':'');
+   if(data.source==='official')status.textContent='官方项目数据 · 北京时间 · 所选发布日期 '+(applied.period==='all'?'全部':data.window.from+' 至 '+data.window.to)+' · 指标查询 '+(data.dateRange?.start_date||data.window.from)+' 至 '+(data.dateRange?.end_date||data.window.to)+' · '+(data.fetchedAt?'拉取于 '+time(data.fetchedAt):'尚无已绑定的 One 项目')+(data.cached?' · 缓存，点击查询 / 刷新可重新拉取':'')+(data.partial?' · 官方数据尚未读取完整，下方仅为已读取部分':'');
    render(data);content.hidden=false;fallback.hidden=true;
   }catch(e){if(id===request&&e.name!=='AbortError'){status.textContent='读取失败：'+e.message+'。请点击查询 / 刷新重试。';content.hidden=true;}}
   finally{if(id===request)root.setAttribute('aria-busy','false');}
@@ -78,14 +79,14 @@ function mountOneReport(){
   const cards=[['官方收录视频',fmt(s.total),'当前项目 · 当前授权心理学账号'],['累计播放',fmt(s.views),'已有播放值 '+s.synced+' 条 · 缺失 '+s.missingMetrics+' 条'],['锚点点击',fmt(s.anchorClicks),'有点击数据 '+s.anchorClicksSamples+' 条'],['锚点点击率',pct(s.anchorCtr),'仅按同时有曝光、点击的数据计算']];
   content.innerHTML='<div class="one-report-kpis">'+cards.map(([label,value,note])=>'<article><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></article>').join('')+'</div>'+
    '<div class="one-report-progress"><span>自然播放 '+fmt(s.organicViews)+'</span><span>点赞 '+fmt(s.likes)+' · 评论 '+fmt(s.comments)+' · 分享 '+fmt(s.shares)+'</span></div>'+
-   '<div class="one-report-body"><div class="one-report-heading"><div><h2>TikTok One 官方'+(d.view==='accounts'?'账号表现':d.view==='projects'?'项目表现':'视频明细')+'</h2><p>按官方原始发布日期筛选，展示当前累计指标；无审核状态字段。可切换「工厂发布进度」查看上传与发布回执。</p></div><label>查看维度 <select id="oneReportView"><option value="videos">视频明细</option><option value="accounts">账号表现</option><option value="projects">项目表现</option></select></label></div><div class="one-report-results"></div><footer class="one-report-pager"></footer></div>'+
-   '<p class="one-report-note">'+(s.availability?'受众画像 '+s.availability.audience+' 条 · 留存 '+s.availability.retention+' 条 · 每日趋势 '+s.availability.daily+' 条。点击视频的数据详情查看。 ':'')+esc(d.coverage)+(d.partial?' 本次只读取了部分结果，不能据此判断缺少哪些视频。':'')+'</p>';
+   '<div class="one-report-body"><div class="one-report-heading"><div><h2>TikTok One 官方'+(d.view==='accounts'?'账号表现':d.view==='projects'?'项目表现':'视频明细')+'</h2><p>按北京时间发布日期筛选，展示当前累计指标；无审核状态字段。可切换「工厂发布进度」查看上传与发布回执。</p></div><label>查看维度 <select id="oneReportView"><option value="videos">视频明细</option><option value="accounts">账号表现</option><option value="projects">项目表现</option></select></label></div><div class="one-report-results"></div><footer class="one-report-pager"></footer></div>'+
+   '<p class="one-report-note">'+(s.availability?'受众画像 '+s.availability.audience+' 条 · 留存 '+s.availability.retention+' 条 · 每日趋势 '+s.availability.daily+' 条。点击视频的数据详情查看。 ':'')+esc(d.coverage)+(d.unknownDates?' '+d.unknownDates+' 条作品时间待同步，仅在全部日期中显示。':'')+(d.partial?' 本次只读取了部分结果，不能据此判断缺少哪些视频。':'')+'</p>';
   const target=content.querySelector('.one-report-results');
   if(!d.rows.length)target.innerHTML='<div class="one-report-empty"><strong>暂无当前授权账号的官方 One 视频数据</strong><p>可选择其他已绑定项目，或稍后刷新。暂无返回不代表发布失败。</p></div>';
-  else if(d.view==='videos')target.innerHTML=table(['视频 ID / 发布账号','发布时间（接口原始值）','累计播放','自然播放','赞 / 评 / 转','锚点曝光 / 点击','锚点点击率','详细数据'],d.rows.map(r=>{
+  else if(d.view==='videos')target.innerHTML=table(['视频 ID / 发布账号','发布时间（北京时间）','累计播放','自然播放','赞 / 评 / 转','锚点曝光 / 点击','锚点点击率','详细数据'],d.rows.map(r=>{
    const details=new URL(location.href);details.searchParams.set('oneVideo',r.videoId);
    const href=/^[\w.]+$/.test(r.accountName)&&/^\d{10,}$/.test(r.videoId)?'https://www.tiktok.com/@'+encodeURIComponent(r.accountName)+'/video/'+r.videoId:'';
-   return [(href?'<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(r.videoId)+'</a>':esc(r.videoId))+'<small>'+esc(r.accountName)+' · '+esc(groupName(r.groupId))+'</small>',esc(r.publishedAt||'—'),fmt(r.views),fmt(r.organicViews),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),fmt(r.anchorViews)+' / '+fmt(r.anchorClicks),pct(r.anchorCtr),'<a class="one-detail-link" href="'+esc(details.pathname+details.search)+'">数据详情 →</a><div class="one-available">'+(r.available?.audience?'<span>受众</span>':'')+(r.available?.retention?'<span>留存</span>':'')+(r.available?.daily?'<span>趋势</span>':'')+'</div>'];
+   return [(href?'<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(r.videoId)+'</a>':esc(r.videoId))+'<small>'+esc(r.accountName)+' · '+esc(groupName(r.groupId))+'</small>',esc(beijingTime(r.publishedAt))+(r.timeSource==='receipt'?'<small>发布回执时间 · 作品时间待同步</small>':!r.publishedAt?'<small>时间待同步</small>':''),fmt(r.views),fmt(r.organicViews),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),fmt(r.anchorViews)+' / '+fmt(r.anchorClicks),pct(r.anchorCtr),'<a class="one-detail-link" href="'+esc(details.pathname+details.search)+'">数据详情 →</a><div class="one-available">'+(r.available?.audience?'<span>受众</span>':'')+(r.available?.retention?'<span>留存</span>':'')+(r.available?.daily?'<span>趋势</span>':'')+'</div>'];
   }));
   else target.innerHTML=table([d.view==='accounts'?'账号 / 分组':'One 项目','官方视频','累计播放','单条平均播放','破千率','赞 / 评 / 转','锚点曝光 / 点击','锚点点击率'],d.rows.map(r=>[d.view==='accounts'?esc(r.accountName)+'<small>'+esc(groupName(r.groupId))+'</small>':esc(r.campaignId),fmt(r.total),fmt(r.views),fmt(r.averageViews),pct(r.thousandRate),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),fmt(r.anchorViews)+' / '+fmt(r.anchorClicks),pct(r.anchorCtr)]));
   bindResults(d);

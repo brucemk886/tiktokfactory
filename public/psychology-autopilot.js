@@ -6,15 +6,23 @@ const ZONES={ 'Asia/Shanghai':'北京时间', 'America/Los_Angeles':'美国太�
 const zoneFor=value=>Object.hasOwn(ZONES,value)?value:'Asia/Shanghai';
 function selectedZone(id){const value=$('#'+id).value;if(!Object.hasOwn(ZONES,value))throw Error('请选择北京时间或美国太平洋时间。');return value;}
 const time=(value,zone='Asia/Shanghai')=>value?new Date(value).toLocaleString('zh-CN',{timeZone:zoneFor(zone),hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-function zonedTime(value,zone='Asia/Shanghai'){
- if(!value||!Number.isFinite(new Date(value).getTime()))return '—';zone=zoneFor(zone);
- if(zone==='Asia/Shanghai')return time(value)+' 北京时间';
- const abbreviation=new Intl.DateTimeFormat('en-US',{timeZone:zone,timeZoneName:'short'}).formatToParts(new Date(value)).find(part=>part.type==='timeZoneName')?.value||zone;
- return time(value,zone)+' 美国太平洋时间（'+abbreviation+'） · '+time(value)+' 北京时间';
-}
+function zonedTime(value){return !value||!Number.isFinite(new Date(value).getTime())?'—':time(value)+' 北京时间';}
+
 const pilotZoneAt=(pilot,value)=>zoneFor(pilot.pendingTimeZone&&pilot.scheduleEffectiveAt&&value>=pilot.scheduleEffectiveAt?pilot.pendingTimeZone:pilot.timeZone);
 const pilotTime=(pilot,value)=>zonedTime(value,pilotZoneAt(pilot,value));
 const projectSlots=zone=>zoneFor(zone)==='America/Los_Angeles'?'08:00 / 11:30 / 20:00':'08:00 / 14:00 / 20:00';
+
+function beijingSlots(slots,zone,reference=Date.now()){
+ zone=zoneFor(zone);if(zone==='Asia/Shanghai')return slots.map(hm).join(' / ')+'（北京时间）';
+ const parts=ms=>Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(ms)).map(p=>[p.type,p.value]));
+ const day=parts(reference),date=day.year+'-'+day.month+'-'+day.day;
+ return slots.map(slot=>{const wall=Date.parse(date+'T'+String(slot.hour).padStart(2,'0')+':'+String(slot.minute).padStart(2,'0')+':00Z');let instant=wall;
+  for(let i=0;i<3;i++){const p=parts(instant),asUTC=Date.parse(p.year+'-'+p.month+'-'+p.day+'T'+p.hour+':'+p.minute+':00Z');instant+=wall-asUTC;}
+  return time(instant);
+ }).join(' / ')+'（北京时间，按对应日期自动换算）';
+}
+const projectDisplaySlots=(zone,reference)=>beijingSlots(projectSlots(zone).split(' / ').map(t=>({hour:Number(t.slice(0,2)),minute:Number(t.slice(3))})),zone,reference);
+
 const STATUS = { active:'运行中', paused:'已暂停', ended:'已结束' };
 const SLOT = { creating:'创建中', created:'已创建排期', failed:'创建失败', skipped:'已跳过' };
 const ITEM = { queued:'等待制作', producing:'制作中', publishing:'提交 / 处理中', scheduled:'等待官方发布', published:'已发布', production_failed:'制作失败', publish_failed:'发布失败', cancelled:'已停止', missing:'结果待核对' };
@@ -102,14 +110,14 @@ async function load(quiet = false, refreshGroups = false, refreshTaskGroups = tr
 }
 function renderProductionCapacity(){
  const target=$('#productionCapacity'),capacity=data.productionCapacity;
- if(capacity==null){target.hidden=!Object.hasOwn(data,'productionCapacity');target.innerHTML=target.hidden?'':'尚未完成生成准备检查；每天美西05:00/08:30/17:00更新。';return;}
+ if(capacity==null){target.hidden=!Object.hasOwn(data,'productionCapacity');target.innerHTML=target.hidden?'':'尚未完成生成准备检查；每天3次更新；具体北京时间见检查记录。';return;}
  if(!Number.isFinite(capacity.leadMs)){target.hidden=true;target.innerHTML='';return;}
  const hours=value=>fmt(Number.isFinite(value)?value/3600000:null),risk=capacity.capacityRisk||capacity.shortLead;
  const samples=Number.isFinite(capacity.sampleCount)?capacity.sampleCount:null;
  const basis=samples==null?'完成样本数未记录。':samples<20?'完成样本不足20条，采用保守估算（单条按至少5分钟参考）。':'最近7天P95单条耗时 '+fmt(Number.isFinite(capacity.serviceMs)?capacity.serviceMs/60000:null)+' 分钟参考。';
  const warnings=[capacity.capacityRisk?'积压风险：容量估算超过当前准备窗口。':'',capacity.shortLead?'临近排期准备时间偏短。':''].filter(Boolean).join(' ');
  target.hidden=false;
- target.innerHTML='<strong>生成准备 · 最近检查预计提前 '+hours(capacity.leadMs)+' 小时</strong><br>参与账号 '+fmt(capacity.accountCount)+' 个 · 同窗口预估任务 '+fmt(capacity.forecastJobs)+' 条 · 共享积压 '+fmt(capacity.backlogJobs)+' 条<br><span class="section-hint">'+esc(basis)+(samples==null?'':' 完成样本 '+fmt(samples)+' 条。')+' 最近检查于 '+esc(zonedTime(capacity.asOf))+'。</span>'+(risk?'<br><span class="pilot-error">'+esc(warnings)+' 估算所需 '+hours(capacity.requiredLeadMs)+' 小时，准备提前量上限3小时；当前提前量可能不足，不能保证准时。</span>':'')+(capacity.reason?'<br><span class="section-hint">'+esc(capacity.reason)+'</span>':'')+'<br><span class="section-hint">最近检查估算与所选统计日期无关。每天检查3次：美西05:00/08:30/17:00（每轮前3小时），复算只提前、不推迟；任务按保存的生成时间执行，计划开始时间见内容明细。</span>';
+ target.innerHTML='<strong>生成准备 · 最近检查预计提前 '+hours(capacity.leadMs)+' 小时</strong><br>参与账号 '+fmt(capacity.accountCount)+' 个 · 同窗口预估任务 '+fmt(capacity.forecastJobs)+' 条 · 共享积压 '+fmt(capacity.backlogJobs)+' 条<br><span class="section-hint">'+esc(basis)+(samples==null?'':' 完成样本 '+fmt(samples)+' 条。')+' 最近检查于 '+esc(zonedTime(capacity.asOf))+'。</span>'+(risk?'<br><span class="pilot-error">'+esc(warnings)+' 估算所需 '+hours(capacity.requiredLeadMs)+' 小时，准备提前量上限3小时；当前提前量可能不足，不能保证准时。</span>':'')+(capacity.reason?'<br><span class="section-hint">'+esc(capacity.reason)+'</span>':'')+'<br><span class="section-hint">最近检查估算与所选统计日期无关。每天检查3次（每轮前3小时，具体北京时间见检查记录），复算只提前、不推迟；任务按保存的生成时间执行，计划开始时间见内容明细。</span>';
 }
 function generationCell(item,pilot){
  if(!Number.isFinite(item.generationStartAt)||item.generationStartAt<=0)return '—';
@@ -165,7 +173,7 @@ function render() {
   renderProductionCapacity();
   const r = data.rules;
   $('#rules').innerHTML = [
-    '发布数量与当地时间按计划所选时区设置，每个时间点每号发 1 条；组内账号依次错开 '+r.staggerSeconds+' 秒；生成准备按参与账号、预计任务与共享积压动态提前2–3小时估算，保留26小时预排窗口。每天检查3次：美西05:00/08:30/17:00（每轮前3小时），复算只提前、不推迟；任务按保存的生成时间执行，估算不保证准时。',
+    '发布数量与当地时间按计划所选时区设置，每个时间点每号发 1 条；组内账号依次错开 '+r.staggerSeconds+' 秒；生成准备按参与账号、预计任务与共享积压动态提前2–3小时估算，保留26小时预排窗口。每天检查3次（每轮前3小时，具体北京时间见检查记录），复算只提前、不推迟；任务按保存的生成时间执行，估算不保证准时。',
     '后台定期检查并排期，从图文文案库抽取，同一个账号不重复发同一篇爆款。',
     '配对选题：同一运营人、同一计划时区的当地日期、当天同一轮次的分组（允许错开时间）使用共同候选排序，再按所选策略挑版本；各账号用过的选题和可用版本不同，最终内容不保证完全相同。',
     '测试名额按所选策略限制；排队中、生成中、已发布但未成熟的任务都占位，确认失败才释放。结果不明确时继续保留名额。',
@@ -196,7 +204,7 @@ function render() {
   $('#pilots').innerHTML = pilots.map(p=>{
     const actions = p.status==='ended' ? '' : `<button data-schedule="${p.id}">发布设置</button><button data-pool-switch="${p.id}">账号池匹配…</button>` + (p.status==='active' ? `<button data-run="${p.id}">立即检查并排期</button><button data-pause="${p.id}">暂停…</button>` : `<button data-status="active" data-pilot="${p.id}">恢复运营</button><button data-pause="${p.id}">停止未提交任务…</button>`) + `<button data-status="ended" data-pilot="${p.id}">结束运营</button>`;
     const schedule = [...p.schedule].sort((a,b)=>b.slotAt-a.slotAt);
-    return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>发布记录 · ${esc(executionName(p))} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc((p.slots||[]).map(hm).join(' / '))}（${ZONES[zoneFor(p.timeZone)]}）${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(p.pendingSlots.map(hm).join(' / '))+'（'+ZONES[zoneFor(p.pendingTimeZone||p.timeZone)]+'），'+zonedTime(p.scheduleEffectiveAt,p.pendingTimeZone||p.timeZone)+' 起生效':''}${p.pendingStrategy?'<br>未来策略：'+esc(data.strategies[p.pendingStrategy]||p.pendingStrategy)+' · '+pilotTime(p,p.strategyEffectiveAt)+' 起生效':''} · 运行至 ${pilotTime(p,p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
+    return `<section class="panel data-section pilot" id="${p.id}"><div class="section-title"><div><h2>发布记录 · ${esc(executionName(p))} <span class="ops-chip">${STATUS[p.status]}</span></h2><p class="section-hint">${esc(p.strategyLabel)} · 每号每天 ${(p.slots||[]).length} 条 · ${esc(beijingSlots(p.slots||[],p.timeZone))}${p.pendingSlots?'<br>新设置：每天 '+p.pendingSlots.length+' 条 · '+esc(beijingSlots(p.pendingSlots,p.pendingTimeZone||p.timeZone,p.scheduleEffectiveAt))+'，'+zonedTime(p.scheduleEffectiveAt,p.pendingTimeZone||p.timeZone)+' 起生效':''}${p.pendingStrategy?'<br>未来策略：'+esc(data.strategies[p.pendingStrategy]||p.pendingStrategy)+' · '+pilotTime(p,p.strategyEffectiveAt)+' 起生效':''} · 运行至 ${pilotTime(p,p.endsAt)}${p.status==='paused'?' · '+(p.stopPending?'已停止本地未提交任务':'仅暂停新增排期，已排任务继续'):''}</p></div><div class="pilot-actions">${actions}</div></div>
     <details id="origin-${p.id}" class="ops-daily"><summary>原授权归属</summary><p class="section-hint">${esc(p.groupName||p.groupId)} · 用于核对账号权限和原发布记录；运营策略按项目及账号数据分配。</p></details>
     <h3>${PERIOD_LABELS[data.window?.period||'today']}发布排期（统计日期按北京时间）</h3>${schedule.length?schedule.map(s=>`<details class="pilot-slot" id="slot-${p.id}-${s.slotAt}" data-slot-details data-pilot="${p.id}" data-slot="${s.slotAt}"><summary>${pilotTime(p,s.slotAt)} · ${SLOT[s.status]||esc(s.status)}<span>${esc(totals(s.counts))}</span></summary>${s.detail?'<p class="pilot-error">'+esc(s.detail)+'</p>':''}<div id="body-${p.id}-${s.slotAt}" data-slot-body><button data-detail="${p.id}" data-slot="${s.slotAt}">读取内容明细</button></div></details>`).join(''):'<p>所选时间没有排期。</p>'}
     <details id="accounts-${p.id}" class="ops-daily"><summary>账号状态（${p.accounts.length}）</summary>${table(['账号','状态','原因 / 暂停范围','操作'],p.accounts.map(a=>['@'+esc(a.name),a.status==='active'?(p.status==='active'?'参与排期':'随运营暂停'):'已停发',esc(a.reason||'—')+(a.status==='paused'?'<small>'+(a.stopPending?'本地未提交任务已停止':'仅停止新增排期')+'</small>':''),p.status==='ended'?'':a.status==='active'?`<button data-pause="${p.id}" data-account="${esc(a.connectionId)}">停发…</button>`:`<button data-pilot="${p.id}" data-account="${esc(a.connectionId)}" data-account-status="active">恢复</button>`]))}</details>
@@ -377,7 +385,7 @@ function invalidateTaskPreview(){
 }
 function taskPreviewHtml(result,label='配置预览'){
  const p=result.policy||{},t=result.totals||{},zone=zoneFor(p.timeZone);
- return '<h3>'+label+'</h3><p>绑定项目：'+esc(result.project?.name||taskGroupsData?.project?.name||'心理学')+' · 账号按数据自动分层 · 每日目标3条 · 基准时段 '+projectSlots(zone)+'（'+ZONES[zone]+'）</p><p>生效：'+esc(zonedTime(result.effectiveAt||p.startsAt,zone))+' · 周期：'+esc(zonedTime(p.startsAt,zone))+' 至 '+esc(zonedTime(p.endsAt,zone))+'</p><p>'+(p.admitNewAccounts===false?'暂不自动纳入新授权账号。':'新授权账号默认从'+ZONES[zone]+'次日的新一期排期开始参与，不插入当天任务。')+'</p><p>纳入 '+fmt(t.enrolled)+' 个账号 · 排除 '+fmt(t.excluded)+' 个账号 · 合格 '+fmt(t.eligible)+' 个账号 · 待处理 '+fmt(t.blocked)+' 个账号。</p>'+table(['任务角色','账号数','参与 / 暂停'],taskRoleRows(result).map(g=>[esc(g.label),fmt(g.accounts),fmt(g.active)+' / '+fmt(g.paused)]))+'<p class="section-hint">7天周期，每3天复评，按项目时区计算。只调整未来尚未创建的任务；保存时重新核对权限和已保留排期，实际生效日期以保存结果为准。</p>';
+ return '<h3>'+label+'</h3><p>绑定项目：'+esc(result.project?.name||taskGroupsData?.project?.name||'心理学')+' · 账号按数据自动分层 · 每日目标3条 · 基准时段 '+projectDisplaySlots(zone,result.effectiveAt||p.startsAt)+'</p><p>生效：'+esc(zonedTime(result.effectiveAt||p.startsAt,zone))+' · 周期：'+esc(zonedTime(p.startsAt,zone))+' 至 '+esc(zonedTime(p.endsAt,zone))+'</p><p>'+(p.admitNewAccounts===false?'暂不自动纳入新授权账号。':'新授权账号默认从'+ZONES[zone]+'次日的新一期排期开始参与，不插入当天任务。')+'</p><p>纳入 '+fmt(t.enrolled)+' 个账号 · 排除 '+fmt(t.excluded)+' 个账号 · 合格 '+fmt(t.eligible)+' 个账号 · 待处理 '+fmt(t.blocked)+' 个账号。</p>'+table(['任务角色','账号数','参与 / 暂停'],taskRoleRows(result).map(g=>[esc(g.label),fmt(g.accounts),fmt(g.active)+' / '+fmt(g.paused)]))+'<p class="section-hint">7天周期，每3天复评，按项目时区计算。只调整未来尚未创建的任务；保存时重新核对权限和已保留排期，实际生效日期以保存结果为准。</p>';
 }
 async function openTaskGroupConfig(){
  if(taskConfigBusy||creating||switchingPools)return;

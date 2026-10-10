@@ -118,3 +118,13 @@ test('observations retain fourteen days and only prune the current project durin
  assert.equal(f.sqlite.prepare("SELECT count(*) n FROM psychology_account_observations WHERE check_key='old'").get().n,0);
  assert.equal(f.sqlite.prepare("SELECT count(*) n FROM psychology_pool_observation_checks WHERE project_key='other-project'").get().n,1);
 });
+test('Pacific snapshots remain available when reporting by Beijing days, rebucketed by capture instant without writes',async t=>{
+ const f=await fixture(t);policy(f);assign(f,['a']);
+ const beforeMidnight=stamp('2026-10-09T15:59:59Z'),afterMidnight=stamp('2026-10-09T16:00:01Z');
+ await capturePoolObservations(f.env,beforeMidnight,{key:'before'});
+ await capturePoolObservations(f.env,afterMidnight,{key:'after'});
+ const before=changes(f),result=await readPoolObservationTrend(f.db,{projectId:'proj-psych',groupIds:['g'],now:afterMidnight,timeZone:'Asia/Shanghai'});
+ assert.equal(result.rows.at(-1).date,'2026-10-10');assert.equal(result.rows.at(-1).observedAt,afterMidnight);
+ assert.equal(result.rows.at(-2).date,'2026-10-09');assert.equal(result.rows.at(-2).observedAt,beforeMidnight);
+ assert.equal(changes(f),before);assert.equal(f.requests.length,0);
+});

@@ -4,7 +4,7 @@
   const labels = { queued: "排队中", running: "执行中", ready: "待合批", handoff: "等待渲染", submitted: "已提交中台", published: "已发布", publish_failed: "发布失败", done: "已完成", failed: "失败", cancelled: "已取消", cleaned: "任务已清理" };
   const sources = { "copy-library": "文案库原文", "copy-bank": "文案库改写", "topic-bank": "模板题库", peer: "同行爆款" };
   let offset = 0, hasMore = false;
-  const stamp = (v) => v ? new Date(Number(v)).toLocaleString("zh-CN", { hour12: false }) : "—";
+  const stamp = (v) => v ? new Date(Number(v)).toLocaleString("zh-CN", {timeZone:'Asia/Shanghai', hour12: false }) : "—";
   const link = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label || url)}</a>` : "—";
 
   function showView(view) {

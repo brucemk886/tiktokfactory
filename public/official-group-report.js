@@ -1,3 +1,9 @@
+function sourceDayWindow(from,to=from){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(from||'')||!/^\d{4}-\d{2}-\d{2}$/.test(to||''))return '暂无时间范围';
+ const end=new Date(Date.parse(to+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+ return from+' 08:00 至 '+end+' 08:00（北京时间）';
+}
+
 const REPORT_PATH = location.pathname.replace(/\/$/, "");
 const MODULE_FROM_PATH = {
   "/novel-ops-report": "novel-promotion",
@@ -276,7 +282,7 @@ function renderSummary() {
     ["高播", formatNumber(summary.highView)],
     ["总播放", formatNumber(summary.views)],
     ...(REPORT_PATH === "/psychology-effects" ? [
-      ["主页访问次数", state.traffic?.summary?.profileViews == null ? "—" : formatNumber(state.traffic.summary.profileViews), "按所选 UTC 日期统计，数据有延迟；覆盖情况见底部明细。"],
+      ["主页访问次数", state.traffic?.summary?.profileViews == null ? "—" : formatNumber(state.traffic.summary.profileViews), "按北京08:00至次日08:00的官方日报统计，数据有延迟；覆盖情况见底部明细。"],
       ["主页访问比", state.traffic?.summary?.ratio == null ? "—" : `${(state.traffic.summary.ratio * 100).toFixed(2)}%`, "同账号、同日主页访问 ÷ 同期播放；与旁边总播放的统计口径不同，详见底部说明。"],
     ] : []),
     ["均播", formatNumber(summary.avgView ?? averageViews(summary))],
@@ -290,11 +296,11 @@ function renderEffectsSummary(summary, publishNumber) {
   const traffic = state.traffic?.summary;
   const count = value => value == null ? "—" : formatNumber(value);
   const coverage = traffic ? `可配对账号 ${count(traffic.coveredAccounts)} / ${count(traffic.totalAccounts)}`
-    : state.trafficStatus === "unavailable" ? "日报暂时不可用，查询可重试" : "正在读取 UTC 日报…";
+    : state.trafficStatus === "unavailable" ? "日报暂时不可用，查询可重试" : "正在读取 官方日报（北京08:00切日）…";
   const metrics = [
     ["video", "发布作品", count(summary.published), mediaLabel+" · 所选北京时间发布 · 已归档作品"],
     ["play", "总播放", count(summary.views), mediaLabel+" · 已同步累计播放"],
-    ["profile", "主页访问次数", count(traffic?.profileViews), `账号全部类型 · UTC 日报 · ${coverage}`],
+    ["profile", "主页访问次数", count(traffic?.profileViews), `账号全部类型 · 官方日报（北京08:00切日） · ${coverage}`],
     ["ratio", "主页访问比", traffic?.ratio == null ? "—" : `${(traffic.ratio * 100).toFixed(2)}%`, "账号全部类型 · 同日报访问 ÷ 同期播放"],
   ];
   document.querySelector("#summaryGrid").innerHTML = metrics.map(([icon, label, value, hint]) =>
@@ -700,14 +706,14 @@ function renderTraffic() {
   const totalPages = Math.max(1, Math.ceil(data.accounts.length / PAGE_SIZE));
   state.trafficPage = Math.min(totalPages, Math.max(1, state.trafficPage));
   const rows = data.accounts.slice((state.trafficPage - 1) * PAGE_SIZE, state.trafficPage * PAGE_SIZE);
-  panel.innerHTML = `<div class="section-title"><h2>主页访问</h2><span>${escapeHtml(data.fromKey)} 至 ${escapeHtml(data.toKey)} · UTC</span></div>
+  panel.innerHTML = `<div class="section-title"><h2>主页访问</h2><span>${escapeHtml(sourceDayWindow(data.fromKey,data.toKey))}</span></div>
     <p class="section-hint">每天后台更新。TikTok 日报存在延迟，今天可能尚无数据；未返回显示为 —。这里统计日期内发生的播放，上方的视频表现统计所选日期发布视频的累计播放。</p>
     <div class="traffic-metrics">${[
       ['同期视频播放', count(s.videoViews)], ['主页访问次数', count(s.profileViews)],
       ['主页访问比', ratio(s.ratio)], ['可配对账号', `${s.coveredAccounts} / ${s.totalAccounts}`],
     ].map(([label,value])=>`<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join('')}</div>
     <p class="section-hint">访问比 = 同账号、同日的主页访问 ÷ 视频播放。参与计算：${formatNumber(s.pairedProfileViews)} 次访问 / ${formatNumber(s.pairedVideoViews)} 次播放，共 ${s.pairedDays} 个账号日。仅供趋势参考，主页访问可能来自搜索等其他入口，不代表视频观众转化率。</p>
-    <p class="section-hint">所选范围最新数据日：${escapeHtml(s.latestDate || '尚无')} · 最近同步：${s.updatedAt ? escapeHtml(formatTime(s.updatedAt)) : '等待首次同步'}</p>
+    <p class="section-hint">所选范围最新数据日：${escapeHtml(s.latestDate ? sourceDayWindow(s.latestDate) : '尚无')} · 最近同步：${s.updatedAt ? escapeHtml(formatTime(s.updatedAt)) : '等待首次同步'}</p>
     <div class="traffic-table-wrap"><table class="traffic-table"><thead><tr><th>账号</th><th>同期播放</th><th>主页访问</th><th>访问比</th><th>配对天数</th><th>最近同步</th><th>数据状态</th></tr></thead><tbody>${rows.length ? rows.map(row => {
       const status = row.syncStatus === 'error' ? '本次同步失败' : row.pairedDays === row.expectedDays ? '完整' : row.pairedDays ? '部分日期可用' : row.syncStatus === 'pending' ? '等待首次同步' : '所选日期未返回完整指标';
       return `<tr><td>${escapeHtml(row.label)}</td><td>${count(row.videoViews)}</td><td>${count(row.profileViews)}</td><td title="仅按配对日期计算">${ratio(row.ratio)}</td><td>${row.pairedDays} / ${row.expectedDays}</td><td>${row.updatedAt ? escapeHtml(formatTime(row.updatedAt)) : '—'}</td><td>${status}</td></tr>`;

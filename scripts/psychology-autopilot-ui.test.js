@@ -293,13 +293,13 @@ test('missing project authorization cannot be previewed or saved and can be retr
  task.project={id:'psychology-project',name:'<心理学>'};await h.node('#retryTaskGroupConfig').onclick();await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.projectId,'psychology-project');assert.match(h.node('#taskGroupPreview').innerHTML,/&lt;心理学&gt;/);assert.doesNotMatch(h.node('#taskGroupPreview').innerHTML,/<心理学>/);assert.equal(h.node('#compare').innerHTML,plans);
 });
 
-test('Pacific dates use DST-aware PDT and PST with Beijing comparison, including repeated fall-back hours',async()=>{
+test('Pacific execution instants display only Beijing time, including distinct repeated fall-back hours',async()=>{
  const h=harness();await tick();
  const summer=h.run("zonedTime(Date.parse('2026-07-15T15:00:00Z'),'America/Los_Angeles')");
  const winter=h.run("zonedTime(Date.parse('2026-01-15T16:00:00Z'),'America/Los_Angeles')");
- assert.match(summer,/07\/15 08:00.*PDT.*07\/15 23:00 北京时间/);assert.match(winter,/01\/15 08:00.*PST.*01\/16 00:00 北京时间/);
+ assert.match(summer,/07\/15 23:00 北京时间/);assert.match(winter,/01\/16 00:00 北京时间/);
  const first=h.run("zonedTime(Date.parse('2026-11-01T08:30:00Z'),'America/Los_Angeles')"),second=h.run("zonedTime(Date.parse('2026-11-01T09:30:00Z'),'America/Los_Angeles')");
- assert.match(first,/11\/01 01:30.*PDT.*16:30 北京时间/);assert.match(second,/11\/01 01:30.*PST.*17:30 北京时间/);
+ assert.match(first,/16:30 北京时间/);assert.match(second,/17:30 北京时间/);
  assert.equal(h.run("zonedTime(null,'America/Los_Angeles')"),'—');
 });
 
@@ -309,23 +309,23 @@ test('stored Beijing policy remains Beijing until Pacific selection invalidates 
  assert.equal(h.node('#taskGroupTimeZone').value,'Asia/Shanghai');await h.node('#previewTaskGroups').onclick();assert.equal(h.requests.at(-1).body.timeZone,'Asia/Shanghai');
  h.node('#taskGroupTimeZone').value='America/Los_Angeles';h.node('#taskGroupTimeZone').listeners.change();assert.equal(h.node('#saveTaskGroups').disabled,true);await h.node('#saveTaskGroups').onclick();assert.equal(h.requests.filter(r=>r.method==='PATCH').length,0);
  assert.match(h.node('#taskGroupTimeZoneHint').textContent,/08:00 \/ 11:30 \/ 20:00.*PDT\/PST/);assert.doesNotMatch(h.node('#taskGroupTimeZoneHint').textContent,/13:00/);
- await h.node('#previewTaskGroups').onclick();const preview=h.requests.at(-1);assert.equal(preview.body.timeZone,'America/Los_Angeles');assert.match(h.node('#taskGroupPreview').innerHTML,/08:00 \/ 11:30 \/ 20:00/);assert.match(h.node('#taskGroupPreview').innerHTML,/10\/02 00:00.*PDT.*10\/02 15:00 北京时间/);
- await h.node('#saveTaskGroups').onclick();assert.deepEqual(h.requests.filter(r=>r.method==='PATCH')[0].body,preview.body);assert.match(h.node('#taskGroupStatus').textContent,/10\/05 00:00.*10\/05 15:00 北京时间/);assert.match(h.node('#taskGroupConfigStatus').textContent,/10\/02 00:00.*PDT.*15:00 北京时间/);
+ await h.node('#previewTaskGroups').onclick();const preview=h.requests.at(-1);assert.equal(preview.body.timeZone,'America/Los_Angeles');assert.match(h.node('#taskGroupPreview').innerHTML,/10\/02 23:00.*10\/03 02:30.*10\/03 11:00/);assert.match(h.node('#taskGroupPreview').innerHTML,/10\/02 15:00 北京时间/);
+ await h.node('#saveTaskGroups').onclick();assert.deepEqual(h.requests.filter(r=>r.method==='PATCH')[0].body,preview.body);assert.match(h.node('#taskGroupStatus').textContent,/10\/05 15:00 北京时间/);assert.match(h.node('#taskGroupConfigStatus').textContent,/15:00 北京时间/);
 });
 
-test('Pacific role membership shows its individual effective date in Pacific and Beijing',async()=>{
+test('Pacific role membership shows its individual effective instant in Beijing',async()=>{
  const task=taskFixture();task.policy={...taskPolicy({revision:4,enabled:true}),timeZone:'America/Los_Angeles'};
  const h=harness({},null,null,async path=>taskReply(path.includes('?')?{...task,membership:{page:1,total:1,totalPages:1,rows:[{name:'member',role:'launch',accountPool:'observing',effectiveAt:Date.parse('2026-10-03T07:00:00Z'),paused:true,reason:'preserved pause'}]}}:task));await tick();clickTaskRole(h,'launch');await tick();
- assert.match(h.node('#taskGroupMemberTable').innerHTML,/10\/03 00:00.*PDT.*10\/03 15:00 北京时间/);assert.match(h.node('#taskGroupMemberTable').innerHTML,/已暂停.*preserved pause/);
+ assert.match(h.node('#taskGroupMemberTable').innerHTML,/10\/03 15:00 北京时间/);assert.match(h.node('#taskGroupMemberTable').innerHTML,/已暂停.*preserved pause/);
 });
 
 test('manual schedule editor uses pending timezone and submits local clocks plus timezone while reports retain Beijing dates',async()=>{
  const slots=[{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}],effectiveAt=Date.parse('2026-10-02T07:00:00Z');
  const pilot={id:'p',groupId:'g',groupName:'Group',status:'active',accounts:[],schedule:[{slotAt:Date.parse('2026-10-03T15:00:00Z'),status:'created',counts:{}}],attention:[],logs:[],slots:[{hour:8,minute:0},{hour:14,minute:0},{hour:20,minute:0}],pendingSlots:slots,timeZone:'Asia/Shanghai',pendingTimeZone:'America/Los_Angeles',scheduleEffectiveAt:effectiveAt,endsAt:Date.parse('2026-10-09T07:00:00Z')};
  const h=harness({pilots:[pilot]},null,async body=>({slots:body.slots,timeZone:body.timeZone,effectiveAt}));await tick();
- assert.match(h.node('#pilots').innerHTML,/08:00 \/ 14:00 \/ 20:00（北京时间）/);assert.match(h.node('#pilots').innerHTML,/08:00 \/ 11:30 \/ 20:00（美国太平洋时间）/);assert.match(h.node('#pilots').innerHTML,/10\/03 08:00.*PDT.*10\/03 23:00 北京时间/);assert.match(h.node('#pilots').innerHTML,/统计日期按北京时间/);
+ assert.match(h.node('#pilots').innerHTML,/08:00 \/ 14:00 \/ 20:00（北京时间）/);assert.match(h.node('#pilots').innerHTML,/10\/02 23:00.*10\/03 02:30.*10\/03 11:00/);assert.match(h.node('#pilots').innerHTML,/10\/03 23:00 北京时间/);assert.match(h.node('#pilots').innerHTML,/统计日期按北京时间/);
  h.run("openSchedule('p')");assert.equal(h.node('#editTimeZone').value,'America/Los_Angeles');await h.node('#scheduleForm').listeners.submit({preventDefault(){}});
- assert.deepEqual(h.requests.find(r=>r.method==='PATCH').body,{slots,timeZone:'America/Los_Angeles'});assert.match(h.node('#scheduleStatus').textContent,/10\/02 00:00.*PDT.*15:00 北京时间/);assert.match(h.node('#scheduleZoneHint').textContent,/项目自动运营期间须保持项目时区及每天3条/);
+ assert.deepEqual(h.requests.find(r=>r.method==='PATCH').body,{slots,timeZone:'America/Los_Angeles'});assert.match(h.node('#scheduleStatus').textContent,/15:00 北京时间/);assert.match(h.node('#scheduleZoneHint').textContent,/项目自动运营期间须保持项目时区及每天3条/);
  const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/统计时间（北京时间）/);
 });
 
@@ -368,7 +368,7 @@ test('saving project Pacific settings immediately refreshes original-plan pendin
  await h.node('#openTaskGroupConfig').onclick();h.node('#taskGroupTimeZone').value='America/Los_Angeles';h.node('#taskGroupTimeZone').listeners.change();await h.node('#previewTaskGroups').onclick();
  const before=h.requests.length;await h.node('#saveTaskGroups').onclick();
  assert.deepEqual(h.requests.slice(before).map(request=>[request.method,request.path]),[['PATCH','/api/psychology-autopilot/task-groups'],['GET','/api/psychology-autopilot?period=7d']]);
- assert.equal(h.run('data.pilots[0].pendingTimeZone'),'America/Los_Angeles');assert.ok(h.node('#pilots').innerHTML.includes('新设置：每天 3 条 · 08:00 / 11:30 / 20:00（美国太平洋时间）'));assert.ok(h.node('#pilots').innerHTML.includes('08:00 / 14:00 / 20:00（北京时间）'));
+ assert.equal(h.run('data.pilots[0].pendingTimeZone'),'America/Los_Angeles');assert.match(h.node('#pilots').innerHTML,/新设置：每天 3 条.*23:00.*02:30.*11:00.*北京时间/);assert.ok(h.node('#pilots').innerHTML.includes('08:00 / 14:00 / 20:00（北京时间）'));
  assert.match(h.node('#taskGroupConfigStatus').textContent,/^已保存：/);assert.match(h.node('#taskGroupPreview').innerHTML,/已保存的实际配置/);assert.equal(h.run('taskGroupsData.policy.revision'),3);
  const html=fs.readFileSync(new URL('../public/psychology-autopilot.html',import.meta.url),'utf8');assert.match(html,/统计日期按北京时间；排期同时标注运营时区/);assert.doesNotMatch(html,/日期均为北京时间/);
 });
@@ -393,7 +393,7 @@ test('missing generation-capacity fields preserve the legacy UI without inventin
 test('adaptive generation shows the current account and shared-backlog estimate with a conservative prior',async()=>{
  const h=harness({productionCapacity:capacityFixture(),window:{period:'yesterday',from:'2026-09-29',to:'2026-09-29'}});await tick();
  const html=h.node('#productionCapacity').innerHTML;assert.equal(h.node('#productionCapacity').hidden,false);assert.match(html,/最近检查预计提前 2 小时/);assert.match(html,/参与账号 287 个.*同窗口预估任务 861 条.*共享积压 45 条/);
- assert.match(html,/完成样本不足20条，采用保守估算.*至少5分钟/);assert.match(html,/完成样本 0 条/);assert.doesNotMatch(html,/P95|不能保证准时/);assert.match(html,/最近检查估算与所选统计日期无关/);assert.match(html,/每天检查3次.*美西05:00.*08:30.*17:00.*只提前、不推迟.*任务按保存的生成时间执行/);
+ assert.match(html,/完成样本不足20条，采用保守估算.*至少5分钟/);assert.match(html,/完成样本 0 条/);assert.doesNotMatch(html,/P95|不能保证准时/);assert.match(html,/最近检查估算与所选统计日期无关/);assert.match(html,/每天检查3次.*具体北京时间.*只提前、不推迟.*任务按保存的生成时间执行/);
  assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));
 });
 
@@ -416,8 +416,8 @@ test('slot detail shows each saved generation start across DST independently of 
  const h=harness({pilots,items,productionCapacity:capacityFixture()});await tick();await h.run("detail('p',"+slot+")");
  const html=h.node('#body-p-'+slot).innerHTML;assert.match(html,/<th scope="col">计划开始生成<\/th>/);assert.match(html,/等待中可安全提前，发布时间保持原计划/);
  const rows=html.split('<tbody>')[1].split('</tbody>')[0].match(/<tr>.*?<\/tr>/g),cells=rows.map(row=>[...row.matchAll(/<td>(.*?)<\/td>/g)].map(match=>match[1]));
- assert.match(cells[0][2],/11\/01 03:00.*PST.*11\/01 19:00 北京时间/);assert.match(cells[0][3],/11\/01 01:30.*PDT.*11\/01 16:30 北京时间/);assert.match(cells[0][3],/计划提前 2\.5 小时.*动态估算.*准备时间可能不足/);
- assert.match(cells[1][3],/11\/01 01:30.*PST.*11\/01 17:30 北京时间/);assert.doesNotMatch(cells[1][3],/准备时间可能不足/);assert.equal(cells[2][3],'—');assert.match(h.node('#productionCapacity').innerHTML,/最近检查预计提前 2 小时/);
+ assert.match(cells[0][2],/11\/01 19:00 北京时间/);assert.match(cells[0][3],/11\/01 16:30 北京时间/);assert.match(cells[0][3],/计划提前 2\.5 小时.*动态估算.*准备时间可能不足/);
+ assert.match(cells[1][3],/11\/01 17:30 北京时间/);assert.doesNotMatch(cells[1][3],/准备时间可能不足/);assert.equal(cells[2][3],'—');assert.match(h.node('#productionCapacity').innerHTML,/最近检查预计提前 2 小时/);
  assert.equal(h.requests.length,3);assert.equal(h.requests.at(-1).path,'/api/psychology-autopilot/p/slots/'+slot);assert.ok(h.requests.every(request=>request.method==='GET'));
 });
 
@@ -431,7 +431,7 @@ test('project preview explains next-local-day admission and respects turning new
 
 
 test('a missing saved capacity snapshot explains the three daily Pacific checks without a live estimate',async()=>{
- const h=harness({productionCapacity:null});await tick();assert.equal(h.node('#productionCapacity').hidden,false);assert.match(h.node('#productionCapacity').innerHTML,/尚未完成生成准备检查；每天美西05:00.*08:30.*17:00更新/);assert.doesNotMatch(h.node('#productionCapacity').innerHTML,/预计提前|每分钟|每5分钟/);assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));
+ const h=harness({productionCapacity:null});await tick();assert.equal(h.node('#productionCapacity').hidden,false);assert.match(h.node('#productionCapacity').innerHTML,/尚未完成生成准备检查；每天3次更新/);assert.doesNotMatch(h.node('#productionCapacity').innerHTML,/预计提前|每分钟|每5分钟/);assert.equal(h.requests.length,2);assert.ok(h.requests.every(request=>request.method==='GET'));
 });
 
 
@@ -460,4 +460,10 @@ test('conversion receiver choices show accounts and followers without turning au
  assert.match(mount.innerHTML,/data-select="a1"/);assert.match(mount.innerHTML,/data-link="a1"/);
  assert.doesNotMatch(mount.innerHTML,/ai自动化运营3组|<name>/);
  assert.equal(requests.length,1);assert.equal(requests[0].method,'GET');
+});
+
+test('read-only recurring summaries convert the chosen execution date without changing Pacific slots',()=>{
+ const h=harness();
+ assert.match(h.run("beijingSlots([{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}],'America/Los_Angeles',Date.parse('2026-07-15T15:00:00Z'))"),/07\/15 23:00.*07\/16 02:30.*07\/16 11:00/);
+ assert.match(h.run("beijingSlots([{hour:8,minute:0},{hour:11,minute:30},{hour:20,minute:0}],'America/Los_Angeles',Date.parse('2026-01-15T16:00:00Z'))"),/01\/16 00:00.*01\/16 03:30.*01\/16 12:00/);
 });

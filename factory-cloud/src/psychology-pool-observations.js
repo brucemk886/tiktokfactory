@@ -96,18 +96,18 @@ export async function readPoolObservationTrend(db,{projectId,groupIds,now=Date.n
  const ids=JSON.stringify(groups);
  const sql=reportAccountScopeSQL+','+
  "days AS MATERIALIZED (SELECT json_extract(value,'$.date') date,json_extract(value,'$.start') start,json_extract(value,'$.end') end FROM json_each(?)),"+
- 'candidates AS MATERIALIZED (SELECT c.*,row_number() OVER (PARTITION BY c.operating_date ORDER BY c.observed_at DESC,c.check_key DESC) rank '+
- 'FROM psychology_pool_observation_checks c WHERE c.project_key=? AND c.time_zone=? AND c.observed_at>=? AND c.observed_at<=? '+
+ 'candidates AS MATERIALIZED (SELECT c.*,d.date report_date,row_number() OVER (PARTITION BY d.date ORDER BY c.observed_at DESC,c.check_key DESC) rank '+
+ 'FROM psychology_pool_observation_checks c JOIN days d ON c.observed_at>=d.start AND c.observed_at<d.end WHERE c.project_key=? AND c.observed_at>=? AND c.observed_at<=? '+
  'AND NOT EXISTS(SELECT 1 FROM json_each(?) requested WHERE requested.value NOT IN (SELECT value FROM json_each(c.group_ids_json)))),'+
  'checks AS MATERIALIZED (SELECT * FROM candidates WHERE rank=1),'+
- 'counts AS (SELECT c.operating_date,c.observed_at,count(a.account_key) accounts,'+
+ 'counts AS (SELECT c.report_date,c.observed_at,count(a.account_key) accounts,'+
  "COALESCE(sum(a.pool='strong'),0) strong,COALESCE(sum(a.pool='normal'),0) normal,COALESCE(sum(a.pool='rescue-hook'),0) hook,"+
  "COALESCE(sum(a.pool='rescue-content'),0) content,COALESCE(sum(a.pool='diagnostic'),0) diagnostic,COALESCE(sum(a.pool='observing'),0) observing "+
  'FROM checks c LEFT JOIN psychology_account_observations a ON a.project_key=c.project_key AND a.check_key=c.check_key '+
- 'AND a.group_id IN (SELECT value FROM json_each(?)) AND a.account_key IN (SELECT account_key FROM allowed) GROUP BY c.operating_date,c.observed_at) '+
- 'SELECT d.*,c.observed_at observedAt,c.accounts,c.strong,c.normal,c.hook,c.content,c.diagnostic,c.observing FROM days d LEFT JOIN counts c ON c.operating_date=d.date ORDER BY d.start';
- const result=await db.prepare(sql).bind(ids,JSON.stringify(dates),projectId,normalizeTimeZone(timeZone),dates[0].start,now,ids,ids).all();
+ 'AND a.group_id IN (SELECT value FROM json_each(?)) AND a.account_key IN (SELECT account_key FROM allowed) GROUP BY c.report_date,c.observed_at) '+
+ 'SELECT d.*,c.observed_at observedAt,c.accounts,c.strong,c.normal,c.hook,c.content,c.diagnostic,c.observing FROM days d LEFT JOIN counts c ON c.report_date=d.date ORDER BY d.start';
+ const result=await db.prepare(sql).bind(ids,JSON.stringify(dates),projectId,dates[0].start,now,ids,ids).all();
  return {kind:'pool-observation',timeZone:normalizeTimeZone(timeZone),rows:result.results.map(({strong,normal,hook,content,diagnostic,observing,...row})=>({
   ...row,pools:row.observedAt===null?null:{strong,normal,'rescue-hook':hook,'rescue-content':content,diagnostic,observing},
- })),basis:'每天三次运营检查记录当时近30天成熟样本的账号分池，按运营日取最后一次检查。仅展示当前项目与权限交集；未记录日期保持缺失，不回填历史分池。'};
+ })),basis:'每天三次运营检查记录当时近30天成熟样本的账号分池，按所选展示时区的日期取最后一次检查。仅展示当前项目与权限交集；未记录日期保持缺失，不回填历史分池。'};
 }

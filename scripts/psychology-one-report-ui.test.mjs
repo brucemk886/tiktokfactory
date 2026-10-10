@@ -2,7 +2,7 @@ import {oneAnalysis} from '../public/psychology-one-analysis-schema.js';
 import {SIDEBAR_MODULES} from '../factory-cloud/src/sidebar.js';
 import fs from 'node:fs';import http from 'node:http';import path from 'node:path';import assert from 'node:assert/strict';import puppeteer from 'puppeteer-core';
 const calls=[],errors=[];let fail=false,delay=0;
-const row=(n)=>({videoId:String(7600000000000000000n+BigInt(n)),account:'tiktok:a',accountName:'creator_alpha',groupId:'g',campaignId:'111',available:{audience:true,retention:true,daily:true},publishedAt:'2026-10-09 17:40:34',views:n===1?null:n*10,organicViews:n*10,paidViews:null,likes:0,comments:0,shares:null,anchorViews:100,anchorClicks:2,anchorCtr:.02});
+const row=(n)=>({videoId:String(7600000000000000000n+BigInt(n)),account:'tiktok:a',accountName:'creator_alpha',groupId:'g',campaignId:'111',available:{audience:true,retention:true,daily:true},publishedAt:Date.parse('2026-10-09T17:40:34Z'),timeSource:'video',views:n===1?null:n*10,organicViews:n*10,paidViews:null,likes:0,comments:0,shares:null,anchorViews:100,anchorClicks:2,anchorCtr:.02});
 const summary={availability:{audience:3,retention:20,daily:2},total:23,synced:22,missingMetrics:1,views:2520,averageViews:114.5,thousandRate:0,organicViews:2520,paidViews:null,likes:0,comments:0,shares:null,anchorViews:2300,anchorClicks:46,anchorClicksSamples:23,anchorCtr:.02,published:23,submitted:0,pending:0,failed:0,stopped:0,updating:0};
 const server=http.createServer(async(req,res)=>{
  const u=new URL(req.url,'http://local');calls.push(u.pathname+u.search);if(u.pathname.startsWith('/api/')){
@@ -23,12 +23,12 @@ const server=http.createServer(async(req,res)=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
 try{
- const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1600,height:1050});const base='http://127.0.0.1:'+server.address().port;
+ const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1600,height:1050});await page.emulateTimezone('America/Los_Angeles');const base='http://127.0.0.1:'+server.address().port;
  for(const route of ['/psychology-effects','/psychology-ops-report']){
   calls.length=0;await page.goto(base+route+'?channel=tiktok-one');await page.waitForSelector('.one-report-table tbody tr');
   assert.equal(await page.$eval('#standardReport',n=>getComputedStyle(n).display),'none');assert.equal(await page.$eval('.one-report-tabs [aria-current]',n=>n.textContent),'TikTok One');assert.equal(await page.$eval('.one-report-tabs [aria-current]',n=>getComputedStyle(n).color),'rgb(255, 255, 255)');assert.equal(await page.$eval('main h1',n=>n.textContent),route==='/psychology-effects'?'数据概览':'运营报表');assert.equal(await page.$$eval('.one-report-table tbody tr',n=>n.length),20);
   assert.equal(calls.some(u=>u.startsWith('/api/psychology-operations?')||u.startsWith('/api/official/group-report?')),false,'One tab lazily reads only One data');
-  assert.match(await page.$eval('.one-report-kpis',n=>n.textContent),/官方收录视频/);assert.match(await page.$eval('.one-report-table',n=>n.textContent),/—/);
+  assert.match(await page.$eval('.one-report-kpis',n=>n.textContent),/官方收录视频/);assert.match(await page.$eval('.one-report-table',n=>n.textContent),/—/);assert.match(await page.$eval('.one-report-table',n=>n.textContent),/2026.*10.*10.*01:40:34/);
   await page.click('.one-report-pager button:last-child');await page.waitForFunction(()=>document.querySelector('.one-report-pager').textContent.includes('第 2 /'));assert.equal(await page.$$eval('.one-report-table tbody tr',n=>n.length),3);
   await Promise.all([page.waitForNavigation(),page.click('.one-detail-link')]);await page.waitForSelector('#one-audience');
   assert.equal(await page.$eval('.one-report-filters',n=>n.hidden),true);

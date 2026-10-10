@@ -90,7 +90,7 @@ test('dashboard boot and refresh use authenticated read-only local requests, pre
  assert.match(body,/主页访问 —/);
  assert.match(body,/无72小时|不等满72小时/);
  assert.doesNotMatch(body,/首图救援池|内页救援池|起号 \/ 救援/);
- assert.match(h.node('#dashFreshness').textContent,/近7个美西发布日.*无72小时门槛/);
+ assert.match(h.node('#dashFreshness').textContent,/近7个北京时间发布日.*无72小时门槛/);
  h.node('#reload').listeners.click();await tick();
  assert.equal(h.requests.length,2);
  assert.ok(h.requests.every(r=>r.init.method==='GET'));
@@ -314,7 +314,7 @@ test('account traffic keeps unknown followers and missing profile days distinct 
  const h=harness(r=>fixture(r.params.get('view')||'overview',{details:{rows:[{...accountRow(),followers:null,conversionCandidate:null,traffic:{published:0,synced:0,views:null,medianViews:null},profileTraffic:{views:null,days:0},trafficTier:'observing'}],total:1,page:1,pages:1}}));
  await tick();h.click({dashView:'accounts'});await tick();
  const body=h.node('#dashBody').innerHTML;assert.match(body,/粉丝待同步/);assert.match(body,/待观察/);
- assert.match(body,/<td>—<\/td><td>—<\/td>/);assert.match(body,/0 \/ 7天 · UTC/);assert.doesNotMatch(body,/可承接转化/);
+ assert.match(body,/<td>—<\/td><td>—<\/td>/);assert.match(body,/0 \/ 7天 · 08:00切日/);assert.doesNotMatch(body,/可承接转化/);
  h.click({dashRow:'0'});await tick();assert.match(h.node('#dashDialog').innerHTML,/主页访问不是站内转化/);
  assert.match(h.node('#dashDialog').innerHTML,/<details class="dash-account-execution"><summary>执行详情与历史角色/);
 });

@@ -5,7 +5,7 @@ import { reportAccountScopeSQL } from './official-report-account-scope.js';
 import { ensureModuleProjects, findProjectForModule, userAllowedGroupIds } from '../../scripts/official-account-group-store.js';
 import { ACCOUNT_POOLS, CONTENT_POOLS, POOL_POLICY } from '../../scripts/psychology-pool-policy.js';
 import { TASK_GROUP_ROLES } from '../../scripts/psychology-task-group-policy.js';
-import { PACIFIC_TIME_ZONE, zonedDate, startOfDay, nextDay, addCalendarDays, zonedEpoch } from '../../scripts/psychology-schedule-time.js';
+import { DEFAULT_TIME_ZONE, zonedDate, startOfDay, nextDay, addCalendarDays, zonedEpoch } from '../../scripts/psychology-schedule-time.js';
 import { managedStyles } from './psychology-managed-styles.js';
 import { librarySource, reviewedSource } from './psychology-copy-source.js';
 import { copyIdentity } from './psychology-creative.js';
@@ -62,11 +62,11 @@ function contentPoolSQL() {
     WHEN s.medianViews<${p.potentialMinViews} AND s.completion>=${p.contentCompletion} THEN 'explore' ELSE 'revise' END`;
 }
 export function dashboardWindow(now = Date.now()) {
-  const operatingDate = zonedDate(now, PACIFIC_TIME_ZONE), trafficFrom = addCalendarDays(operatingDate, -6);
-  const profileTo = new Date(now).toISOString().slice(0,10), profileFrom = addCalendarDays(profileTo, -6);
+  const operatingDate = zonedDate(now, DEFAULT_TIME_ZONE), trafficFrom = addCalendarDays(operatingDate, -6);
+  const profileTo = operatingDate, profileFrom = addCalendarDays(profileTo, -6);
   return { start: now - 30 * DAY, cutoff: now - POOL_POLICY.maturityHours * 3600000,
-    todayStart: startOfDay(now, PACIFIC_TIME_ZONE), todayEnd: nextDay(now, PACIFIC_TIME_ZONE),
-    operatingDate, timeZone: PACIFIC_TIME_ZONE, trafficStart: zonedEpoch(trafficFrom,0,0,PACIFIC_TIME_ZONE),
+    todayStart: startOfDay(now, DEFAULT_TIME_ZONE), todayEnd: nextDay(now, DEFAULT_TIME_ZONE),
+    operatingDate, timeZone: DEFAULT_TIME_ZONE, trafficStart: zonedEpoch(trafficFrom,0,0,DEFAULT_TIME_ZONE),
     trafficFrom, trafficTo: operatingDate, profileFrom, profileTo };
 }
 function requestQuery(url) {
@@ -304,10 +304,10 @@ export async function readAutopilotDashboard(db, actor, url, now = Date.now()) {
       minimumAccounts: POOL_POLICY.minContentAccounts, minimumSamples: POOL_POLICY.minContentSamples,
       nextStep: summary.eligibleWinnerVersions ? '优胜版本可用于保产出与低号基准；继续固定版本补测。' : '固定文本和样式，在中强号补足至少5个不同账号的满72小时样本；旧版证据不继承给修改后的文本和样式。' },
     trend, observations, poolTrend: observations, basis: {
-      accounts: '当前权限内项目唯一账号，包含未同步账号。主流量分层取近7个美西发布日的图文作品最新累计播放，无72小时门槛；不足5条有效指标保留待观察。',
-      profileTraffic: '主页访问来自近7个UTC自然日的账号日指标，与美西发布作品流量口径不同；缺失日期不补零。主页访问不是站内访问或转化。',
+      accounts: '当前权限内项目唯一账号，包含未同步账号。主流量分层取近7个北京发布日的图文作品最新累计播放，无72小时门槛；不足5条有效指标保留待观察。',
+      profileTraffic: '主页访问为官方整日日报，换算为北京时间每天08:00至次日08:00，与作品的零点切日口径不同；缺失日期不补零。主页访问不是站内访问或转化。',
       content: '已观察和已排期的具体文本哈希×样式修订；成熟证据至少5条且来自5个不同账号。未观察库存不算已验证内容。',
-      today: '今日按美西日历：已发布按实际发布日期，已排按计划发布日期；同批进度使用scheduledPublished。',
+      today: '今日按北京日历：已发布按实际发布日期，已排按计划发布日期；同批进度使用scheduledPublished。',
       metrics: '72小时是观察门槛，数据为最近同步累计值；缺失为null，真实零保留0。事实投影后台同步前可能短暂滞后。',
       roles: 'currentRole只取已生效且处于启用周期的任务；futureRole是下一次生效角色，界面须标明待生效。'
     } };

@@ -186,7 +186,7 @@ function statusLabel(value) {
 }
 function formatMilliseconds(value) { const timestamp = Number(value); return Number.isFinite(timestamp) && timestamp > 0 ? formatDate(new Date(timestamp)) : "-"; }
 function formatSeconds(value) { const timestamp = Number(value); return Number.isFinite(timestamp) && timestamp > 0 ? formatDate(new Date(timestamp * 1000)) : "-"; }
-function formatDate(date) { const pad = (part) => String(part).padStart(2, "0"); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; }
+function formatDate(date) { if(location.pathname.startsWith('/psychology'))return date.toLocaleString('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}); const pad = (part) => String(part).padStart(2, "0"); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`; }
 function unique(values) { return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))); }
 function setText(selector, value) { const element = document.querySelector(selector); if (element) element.textContent = String(value); }
 function debounce(fn, wait) { let timer = 0; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }

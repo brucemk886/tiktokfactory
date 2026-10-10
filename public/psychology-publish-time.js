@@ -1,10 +1,15 @@
 // Shared UI/server time-window explanation; this never changes a submitted schedule.
-export const publishTimeZone=()=>Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
+export const publishTimeZone=()=>'Asia/Shanghai';
 export function formatPublishTime(seconds,timeZone=publishTimeZone()){
  return new Intl.DateTimeFormat('sv-SE',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(seconds*1000));
 }
 export function localPublishInput(milliseconds){
- const date=new Date(milliseconds);date.setMinutes(date.getMinutes()-date.getTimezoneOffset());return date.toISOString().slice(0,16);
+ return formatPublishTime(milliseconds/1000).replace(' ','T').slice(0,16);
+}
+export function parsePublishInput(value){
+ if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value||''))return NaN;
+ const ms=Date.parse(value+':00+08:00');
+ return Number.isFinite(ms)&&localPublishInput(ms)===value?ms:NaN;
 }
 export function publishScheduleError(times,now=Date.now(),timeZone=publishTimeZone()){
  const earliest=Math.floor(now/1000)+300,latest=Math.floor((now+14*86400000)/1000);

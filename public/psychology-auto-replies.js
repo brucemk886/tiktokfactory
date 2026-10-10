@@ -1,7 +1,7 @@
 (()=>{
 const $=s=>document.querySelector(s),BASE='/api/psychology-auto-replies',esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={active:'自动运行',paused:'已暂停',completed:'已结束',pending:'待回复',sending:'发送 / 核对中',published:'已回复',failed:'失败',needs_review:'待人工核对',skipped:'已跳过',cancelled:'已取消'};
-const fmt=n=>n?new Date(n).toLocaleString('zh-CN',{hour12:false}):'尚未扫描';
+const fmt=n=>n?new Date(n).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'尚未扫描';
 let page=1,recordPage=1,watch='';
 async function api(path,method='GET',body){const r=await fetch(path,{method,cache:'no-store',...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw new Error(d.error||'请求失败');return d;}
 const error=e=>$('#replyMessage').textContent=e.message||String(e);

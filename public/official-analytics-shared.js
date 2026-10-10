@@ -171,8 +171,8 @@
     }
     return timestampFromTikTokId(item?.id || item?.videoId || item?.item_id);
   }
-  function dateTime(value, fallbackId = "") { const timestamp = validDateTimestamp(value) || timestampFromTikTokId(fallbackId); return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { hour12: false }) : "-"; }
-  function videoDateTime(item) { const timestamp = videoTimestamp(item); return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { hour12: false }) : "-"; }
+  function dateTime(value, fallbackId = "") { const timestamp = validDateTimestamp(value) || timestampFromTikTokId(fallbackId); return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { ...(currentModule() === "psychology" ? { timeZone: "Asia/Shanghai" } : {}), hour12: false }) : "-"; }
+  function videoDateTime(item) { const timestamp = videoTimestamp(item); return timestamp ? new Date(timestamp).toLocaleString("zh-CN", { ...(currentModule() === "psychology" ? { timeZone: "Asia/Shanghai" } : {}), hour12: false }) : "-"; }
   function debounce(fn, wait) { let timer; return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }; }
   function escapeHtml(value) { return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;"); }
   async function fetchPublishRiskAccounts() {

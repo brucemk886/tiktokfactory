@@ -1,6 +1,6 @@
 import {mountPhotoMusic} from './psychology-photo-music.js';
 import {mountPhotoReceivers} from './psychology-photo-receivers.js';
-import {publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError} from './psychology-publish-time.js';
+import {publishTimeZone,formatPublishTime,localPublishInput,publishScheduleError,parsePublishInput} from './psychology-publish-time.js';
 import {mountHitPhotoPicker} from './psychology-hit-photo-picker.js';
 import { mountPsychologyVideoPicker } from './psychology-video-picker.js';
 import { mountPsychologyOne } from './psychology-tiktok-one.js';
@@ -9,7 +9,7 @@ const $ = s => document.querySelector(s);
 const state = { mediaType:'video', templates:{}, counts:{}, accounts:[], groups:[], selectedAccounts:new Set(), accountGroup:"", accountQuery:"", minFollowers:0, accountsLoadId:0, accountsLoading:false, accountsMedia:"", accountsLoaded:false, batches:[], batchesLoaded:false, batchesError:false, requestId:crypto.randomUUID(), busy:false, submittedInput:null,submittedScheduleKey:null };
 const esc = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const templateLabel=id=>id==='selected-photo'?'已选二创图文':id==='selected-video'?'已选成片':id==='psychology-video-remix'?'二创合成视频':id;
-const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{hour12:false});
+const time = seconds => new Date(seconds*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
 async function api(path, body, method, options = {}) {
   const response = await fetch(path,{signal:options.signal,...(method?{method}:{}),...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
   const data = await response.json();
@@ -113,7 +113,7 @@ function pruneFollowerSelection(){
 }
 function followerLabel(a){
  const n=Number.isSafeInteger(a.followers)&&a.followers>=0?a.followers:null;
- return n===null?'粉丝待同步':n.toLocaleString('zh-CN')+' 粉丝'+(a.followersSyncedAt?' · 同步 '+new Date(a.followersSyncedAt).toLocaleString('zh-CN',{hour12:false}):' · 同步时间未知');
+ return n===null?'粉丝待同步':n.toLocaleString('zh-CN')+' 粉丝'+(a.followersSyncedAt?' · 同步 '+new Date(a.followersSyncedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):' · 同步时间未知');
 }
 function visibleAccounts() {
   const query=state.accountQuery.trim().replace(/^@/,'').toLowerCase();
@@ -330,7 +330,7 @@ $('#batchForm').addEventListener('submit',async event=>{
   if(count<ids.length)return message(hitPhotos()?'已选图文数量少于发布账号数，请减少账号或增加图文。':'生成总数不能少于所选账号数。',true);
   if(sourceType()==='topic-bank'&&(!$('#topicBank').value||$('#topicBank').value!==$('#template').value))return message('请选择与生成模板对应的具体题库。',true);
   let tiktokOne;try{tiktokOne=one.context();}catch(e){return message(e.message,true);}
-  const body=state.submittedInput||{...(photoReceivers.enabled()?{mentionReceiver:true}:{}),...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:fixedHitVideo()?{videoVersions:[state.readyVideo.ref]}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count,connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(new Date($('#scheduleAt').value).getTime()/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
+  const body=state.submittedInput||{...(photoReceivers.enabled()?{mentionReceiver:true}:{}),...(state.minFollowers?{minFollowers:state.minFollowers}:{}),...(tiktokOne?{tiktokOne}:{}),styleMode:$('#styleMode').value,styleId:$('#styleId').value,...(sourceType()==='video-hits'?{isAiGenerated:hitPhotos()?$('#hitPhotoAi').checked:$('#hitVideoAi').checked,...(hitPhotos()?{photoVersions:photoPicker.refs()}:fixedHitVideo()?{videoVersions:[state.readyVideo.ref]}:{} )}:{}),allowPeerReuse:sourceType()!=='video-hits'&&$('#allowPeerReuse').value==='yes',requestId:state.requestId,name:$('#batchName').value,mediaType:state.mediaType,template:sourceType()==='video-hits'?(hitPhotos()?'selected-photo':'selected-video'):$('#template').value,sourceType:sourceType(),...(sourceType()==='copy-library'?{libraryMediaType:$('#libraryMediaType').value}:{}),onlyUnused:sourceType()==='topic-bank'&&$('#onlyUnused').checked,count,connectionIds:ids,selection:$('#selection').value,query:$('#query').value,scheduleAt:Math.floor(parsePublishInput($('#scheduleAt').value)/1000),intervalMinutes:Number($('#intervalMinutes').value),rewriteCopy:state.mediaType==='photo'&&$('#rewriteCopy')?.checked===true,musicIds:state.mediaType==='photo'?musicPool():[]};
   if(hitPhotos()&&!confirm('确认发布所选 '+body.count+' 条二创图文？将按图片顺序直接发布，使用已保存文案，并按已选账号轮流分配。'+(body.mentionReceiver?'每条随机 @ 一个其他承接账号并追加引导文案。':'')+'每个二创版本只提交一次。'))return;
   if(body.sourceType==='video-hits'&&body.mediaType==='video'&&!confirm((body.videoVersions?'确认发布已选的 '+body.count+' 条二创成片？':'确认从视频爆款抽取 '+body.count+' 条二创成片并发布？')+'\n将使用已保存的二创文案，按已选账号分配。每个二创只提交一次。'))return;
   state.submittedInput=body;state.busy=true;$('#closeCreateBatch').disabled=true;
@@ -418,8 +418,8 @@ $('#batches').addEventListener('click',event=>{const button=event.target.closest
 $('#batchSearch').addEventListener('input',renderBatches);$('#batchMedia').addEventListener('change',renderBatches);
 const scheduleKey=()=>JSON.stringify([$('#scheduleAt').value,$('#intervalMinutes').value]);
 function updateScheduleHint(){
- const now=Math.floor(Date.now()/1000),zone=publishTimeZone(),chosen=Math.floor(new Date($('#scheduleAt').value).getTime()/1000);
- $('#scheduleTimeLabel').textContent='首次发布时间（'+zone+'）';
+ const now=Math.floor(Date.now()/1000),zone=publishTimeZone(),chosen=Math.floor(parsePublishInput($('#scheduleAt').value)/1000);
+ $('#scheduleTimeLabel').textContent='首次发布时间（北京时间）';
  $('#scheduleTimeHint').textContent='当前 '+formatPublishTime(now,zone)+'；最早可选 '+formatPublishTime(Math.ceil((now+300)/60)*60,zone)+'。'+(Number.isFinite(chosen)?'已选 '+formatPublishTime(chosen,zone)+'。':'')+'按提交时刻计算，使用 24 小时制；全部排期须在未来 14 天内。';
 }
 $('#scheduleAt').value=localPublishInput(Date.now()+2*3600000);

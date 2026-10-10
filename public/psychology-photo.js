@@ -1,3 +1,4 @@
+import {parsePublishInput,localPublishInput} from './psychology-publish-time.js';
 import { renderTextCard, renderOverlayCard } from "./psychology-card-renderer.js?v=20260920-4";
 import { buildPerImageCopySlides, buildStockOverlaySlides, buildTextCardSlides, mergeTextCardSets } from "./psychology-text-card.js?v=20260920-4";
 const FINAL_STATES = new Set(["success", "fail"]);
@@ -652,7 +653,7 @@ async function publishPhotoPost() {
   if (!connectionId) return setPublishResult("请先选择发布账号。");
   const musicSoundId = $("#musicSoundId").value.trim();
   if (musicSoundId && !/^\d{1,30}$/.test(musicSoundId)) return setPublishResult("音乐 ID 只能包含数字。");
-  const scheduleAt = $("#publishTime").value ? new Date($("#publishTime").value).getTime() : 0;
+  const scheduleAt = $("#publishTime").value ? parsePublishInput($("#publishTime").value) : 0;
   state.busy = true;
   $("#publishBtn").disabled = true;
   try {

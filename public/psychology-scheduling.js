@@ -1,6 +1,6 @@
 const root=document.querySelector('#scheduleAssurance');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const time=(v,zone='America/Los_Angeles')=>v?new Intl.DateTimeFormat('zh-CN',{timeZone:zone,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)):'—';
+const time=(v,zone='Asia/Shanghai')=>v?new Intl.DateTimeFormat('zh-CN',{timeZone:zone,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(v)):'—';
 const state={created:'已建',skipped:'已跳过',pending:'待建',blocked:'待恢复',queued:'待制作',producing:'制作中',publishing:'提交 / 处理中',scheduled:'待平台发布',published:'已发布',production_failed:'制作失败',publish_failed:'发布失败',cancelled:'已停止'};
 const api='/api/psychology-autopilot/scheduling';
 let busy=false;
@@ -10,7 +10,7 @@ function render(data){
  const channel=notification.reason==='email-disabled'?'邮件告警已关闭 · 站内告警保留 · 飞书待接入':notification.reachable===false?'告警通道连接失败，尚未确认送达':notification.reason==='email-not-configured'?'管理员告警邮箱尚未配置':notification.reason==='no-recipients'?'管理员告警收件人尚未配置':notification.reason==='resend-http-401'?'邮件告警未送达：邮件服务认证失败（401），请更新中台邮件密钥':notification.reason?.startsWith('resend-')||notification.reason==='email-send-failed'?'邮件告警未送达：'+notification.reason:notification.checkedAt?'告警通道最近核对 '+time(notification.checkedAt,'Asia/Shanghai')+' 北京时间':'告警通道等待首次核对';
  const banner=alerts.length?'<p class="schedule-alert" role="alert">'+alerts.length+' 项待处理：'+alerts.slice(0,4).map(a=>esc(a.message)).join('；')+'</p>':'<p class="section-hint">已读取的排期暂未触发告警。'+(rounds.length?'':'等待排期清单建立。')+'</p>';
  const rows=rounds.map(r=>{const c=r.counts,issues=r.details.filter(d=>d.status!=='created'||d.failed);
-  return '<tr><td><strong>'+esc(r.date)+' '+esc(['早高峰','午高峰','晚高峰'][r.round]||'待核对轮次')+'</strong><br>'+esc(time(r.slotAt))+'–'+esc(time(r.endAt).split(' ').at(-1))+' 美西<br><small>'+esc(time(r.slotAt,'Asia/Shanghai'))+' 北京时间起</small></td>'+
+  return '<tr><td><strong>'+esc(['美西早高峰','美西午高峰','美西晚高峰'][r.round]||'待核对轮次')+'</strong><br>'+esc(time(r.slotAt))+'–'+esc(time(r.endAt).split(' ').at(-1))+' 北京时间</td>'+
   ['expected','created','skipped','pending','blocked','ready','submitted','published'].map(k=>'<td>'+esc(c[k]??'待核对')+'</td>').join('')+
   '<td>'+esc(r.status==='failed'?'需恢复':r.status==='done'?'清单已处理':'处理中')+
   '<details><summary>账号明细'+(issues.length?' · '+issues.length+' 项说明':'')+'</summary><div class="schedule-account-list">'+r.details.map(d=>'<p><strong>'+esc(d.account)+'</strong> · '+esc(state[d.status]||d.status)+' · '+esc(state[d.state]||'')+(d.reason?'<br>'+esc(d.reason):'')+'</p>').join('')+'</div></details></td></tr>';

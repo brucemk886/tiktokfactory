@@ -4,7 +4,7 @@
   const labels={queued:'等待执行',running:'执行中',done:'已完成',failed:'失败',canceled:'已取消',cancelled:'已取消'};
   const stages={queued:'队列等待',download:'下载原视频',analyze:'视频分析',script:'文案与分镜',audio:'解说音频',images:'生成图片',review:'素材检查',render:'合成视频',verify:'成片检查',done:'成品'};
   let offset=0, selected=new URLSearchParams(location.search).get('job')||'', timer, refreshing=false, jobs=[], notice='';
-  const stamp=v=>v?new Date(Number(v)).toLocaleString('zh-CN',{hour12:false}):'—';
+  const stamp=v=>v?new Date(Number(v)).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
   const seconds=v=>Number(v)>0?Number(v).toFixed(1)+' 秒':'待生成';
   const mediaUrl=v=>/^https:\/\//i.test(String(v||''))||String(v||'').startsWith('/api/')?esc(v):'';
   const imageUrl=mediaUrl;

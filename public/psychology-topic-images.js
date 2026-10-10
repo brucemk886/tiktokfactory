@@ -7,13 +7,13 @@ export function setupTopicImages({api,fileDataUrl,onChanged}){
  function lock(v){busy=v;$('#poolControls').inert=v;$('#poolGrid').inert=v;$('#poolClose').disabled=v;}
  async function load(){
   const seq=++loadSequence,id=topic.id;const data=await api(base()+'/images?page='+page);if(seq!==loadSequence||topic.id!==id)return;topic.revision=data.revision;
-  $('#poolGrid').innerHTML=data.items.map(i=>'<article class="pool-image"><a href="'+esc(i.previewUrl)+'" target="_blank" rel="noopener"><img src="'+esc(i.previewUrl)+'" alt="题目配图" loading="lazy"></a><strong>'+({used:'已抽取 · 不再使用',available:'可用',disabled:'未启用'})[i.status]+'</strong>'+(i.drawnAt?'<small>'+esc(new Date(i.drawnAt).toLocaleString('zh-CN'))+'</small>':'')+(i.status!=='used'?'<button type="button" data-pool-toggle="'+esc(i.id)+'" data-enabled="'+(!i.enabled)+'">'+(i.enabled?'停用':'启用图片')+'</button>':'')+'</article>').join('')||'<p>暂无图片，请补充。</p>';
+  $('#poolGrid').innerHTML=data.items.map(i=>'<article class="pool-image"><a href="'+esc(i.previewUrl)+'" target="_blank" rel="noopener"><img src="'+esc(i.previewUrl)+'" alt="题目配图" loading="lazy"></a><strong>'+({used:'已抽取 · 不再使用',available:'可用',disabled:'未启用'})[i.status]+'</strong>'+(i.drawnAt?'<small>'+esc(new Date(i.drawnAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}))+'</small>':'')+(i.status!=='used'?'<button type="button" data-pool-toggle="'+esc(i.id)+'" data-enabled="'+(!i.enabled)+'">'+(i.enabled?'停用':'启用图片')+'</button>':'')+'</article>').join('')||'<p>暂无图片，请补充。</p>';
   $('#poolPage').textContent='共 '+data.total+' 张 · 第 '+page+' 页';$('#poolPrev').disabled=page<=1;$('#poolNext').disabled=!data.hasMore;
  }
  async function generations(){
   const id=topic.id;const data=await api(base()+'/image-generation');if(topic.id!==id)return;
   const labels={pending:'等待生成',generating:'正在生成',unknown:'结果待确认',completed:'已入库，请预览图片',failed:'生成失败'};
-  $('#poolGenerations').innerHTML=data.items.map(i=>'<p>'+esc(labels[i.status]||i.status)+' · '+esc(new Date(i.createdAt).toLocaleString('zh-CN'))+(i.errorCode?' · '+esc(i.errorCode):'')+(['pending','generating','unknown'].includes(i.status)?' <button type="button" data-resume-image="'+esc(i.requestId)+'">检查／恢复此任务</button>':'')+'</p>').join('');
+  $('#poolGenerations').innerHTML=data.items.map(i=>'<p>'+esc(labels[i.status]||i.status)+' · '+esc(new Date(i.createdAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}))+(i.errorCode?' · '+esc(i.errorCode):'')+(['pending','generating','unknown'].includes(i.status)?' <button type="button" data-resume-image="'+esc(i.requestId)+'">检查／恢复此任务</button>':'')+'</p>').join('');
  }
  $('#poolGenerations').onclick=async e=>{
   const button=e.target.closest('[data-resume-image]');if(!button||busy)return;lock(true);

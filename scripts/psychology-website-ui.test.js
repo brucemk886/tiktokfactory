@@ -86,7 +86,7 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  assert.equal(await page.$eval('[data-period=today]',n=>getComputedStyle(n).color),'rgb(255, 255, 255)');
  assert.match(await page.$eval('#timeZoneNote',n=>n.textContent),/北京时间（UTC\+8）/);
  assert.match(await page.$eval('#journeyScope',n=>n.textContent),/网站转化按北京时间/);
- assert.match(await page.$eval('#profileScope',n=>n.textContent),/UTC 日报.*2026-10-08.*不代表访问为零/);
+ assert.match(await page.$eval('#profileScope',n=>n.textContent),/北京时间.*2026-10-08.*不代表访问为零/);
  assert.match(await page.$eval('#journeyNote',n=>n.textContent),/2026\/9\/30 08:00:00 北京时间/);
 
  assert.deepEqual(await page.$$eval('.web-tabs [role=tab]',nodes=>nodes.map(n=>n.textContent)),['转化概览','成交订单','引流配置']);

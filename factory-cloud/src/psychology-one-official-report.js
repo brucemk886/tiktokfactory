@@ -1,3 +1,4 @@
+import {zonedDate} from '../../scripts/psychology-schedule-time.js';
 import {oneAnalysis,oneAvailability,oneMediaUrl} from '../../public/psychology-one-analysis-schema.js';
 import {signalDesk} from './signal-desk.js';
 import {reportAccountScopeSQL} from './official-report-account-scope.js';
@@ -15,7 +16,7 @@ function aggregate(rows){
  return result;
 }
 async function fetchProject(env,context,{window,country,refresh}){
- const query={...context,resource:'report',country,...(window.period==='all'?{}:{startDate:window.from,endDate:window.to})},key=JSON.stringify(query);
+ const query={...context,resource:'report',country},key=JSON.stringify(query);
  let saved=cache.get(env.DB);if(!saved){saved=new Map();cache.set(env.DB,saved);}
  const hit=saved.get(key);if(!refresh&&hit&&Date.now()-hit.at<TTL)return {...hit.data,cached:true};
  const page=async n=>{
@@ -39,7 +40,7 @@ export async function readOfficialOneReport(env,{ids,groups,window,campaign,view
  GROUP BY connectionId,accountId,campaignId ORDER BY lastAt DESC,campaignId`).bind(ids).all()).results.filter(p=>p.connectionId&&p.accountId&&p.campaignId);
  const context=campaign?projects.find(p=>p.campaignId===campaign):projects[0];
  if(campaign&&!context)throw Object.assign(new Error('没有这个 TikTok One 项目的报表权限。'),{statusCode:403});
- const meta={source:'official',window,view,country,groups:groups.map(g=>({id:g.id,name:g.name})),projects:[...new Map(projects.map(p=>[p.campaignId,{campaignId:p.campaignId}])).values()],campaign:context?.campaignId||'',updatedAt:Date.now(),coverage:'数据来自 TikTok One 官方项目报表，仅显示当前授权心理学账号的作品；不包含普通发布。指标保留官方累计口径，空值不计作 0。日期筛选按官方返回的作品发布日期，不做时区换算；播放与互动不是期间新增值。此接口未提供审核状态。'};
+ const meta={source:'official',window,displayTimeZone:'Asia/Shanghai',view,country,groups:groups.map(g=>({id:g.id,name:g.name})),projects:[...new Map(projects.map(p=>[p.campaignId,{campaignId:p.campaignId}])).values()],campaign:context?.campaignId||'',updatedAt:Date.now(),coverage:'数据来自 TikTok One 官方项目报表，仅显示当前授权心理学账号的作品；不包含普通发布。指标保留官方累计口径，空值不计作 0。日期筛选与时间展示统一为北京时间，优先匹配同一视频的已同步发布时间；未同步时使用发布回执时间并标明，无法确认日期的作品只在全部日期显示；播放与互动不是期间新增值。此接口未提供审核状态。'};
  if(!context&&videoId)throw Object.assign(new Error('当前范围内没有这条视频，或已无访问权限。'),{statusCode:404});
  if(!context)return {...meta,summary:aggregate([]),rows:[],pagination:{page:1,pages:1,total:0,pageSize:SIZE},fetchedAt:0,partial:false};
  const source=await fetchProject(env,{connectionId:context.connectionId,accountId:context.accountId,campaignId:context.campaignId},{window,country,refresh});
@@ -48,14 +49,24 @@ export async function readOfficialOneReport(env,{ids,groups,window,campaign,view
  const byHandle=new Map(),accounts=new Map(),handle=v=>String(v||'').replace(/^@/,'').toLowerCase();
  for(const a of scoped){accounts.set(a.account_key,a);for(const name of [a.name,a.alias_key]){const k=handle(name);if(!k||k.startsWith('tiktok:'))continue;const prior=byHandle.get(k);byHandle.set(k,prior===undefined||prior?.account_key===a.account_key?a:null);}}
  // Exact task/video evidence takes precedence over mutable usernames.
- const known=(await db.prepare(`SELECT DISTINCT f.video_id,f.account_key FROM ops_task_facts f JOIN psychology_publish_batches b ON b.id=f.batch_id
+ const known=(await db.prepare(`SELECT DISTINCT f.video_id,f.account_key,f.published_at FROM ops_task_facts f JOIN psychology_publish_batches b ON b.id=f.batch_id
  WHERE f.video_id<>'' AND CAST(json_extract(b.config_json,'$.tiktokOne.campaignId') AS TEXT)=?`).bind(context.campaignId).all()).results;
  const owners=new Map();for(const r of known){const set=owners.get(r.video_id)||new Set();set.add(r.account_key);owners.set(r.video_id,set);}
- const videos=[];let detail;
+ const archive=(await db.prepare(reportAccountScopeSQL+` SELECT v.video_id,v.account_key,v.published_at FROM allowed a
+ JOIN ops_video_facts v ON v.account_key=a.account_key
+ WHERE v.video_id IN (SELECT value FROM json_each(?)) AND v.published_at>0`).bind(ids,JSON.stringify(source.videos.map(v=>String(v.videoId)))).all()).results;
+ const publication=new Map(archive.map(r=>[r.account_key+'|'+r.video_id,r.published_at]));
+ const receipts=new Map(known.filter(r=>r.published_at>0).map(r=>[r.account_key+'|'+r.video_id,r.published_at]));
+ const videos=[];let detail,unknownDates=0;
  const availability={audience:0,retention:0,daily:0,sources:0,watch:0};
  for(const v of source.videos){const keys=owners.get(String(v.videoId));let a;if(keys){if(keys.size===1)a=accounts.get([...keys][0]);}else a=byHandle.get(handle(v.creator));if(!a)continue;
-  if(window.period!=='all'){const date=String(v.publishedAt||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<window.from||date>window.to)continue;}
-  const row={videoId:String(v.videoId),account:a.account_key,accountName:a.name,groupId:a.current_group,campaignId:context.campaignId,publishedAt:String(v.publishedAt||''),...Object.fromEntries(fields.map(k=>[k,number(v[k])]))};
+  const key=a.account_key+'|'+v.videoId,raw=String(v.publishedAt||'');
+  const explicit=/[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(raw)?Date.parse(raw):0;
+  const publishedAt=publication.get(key)||receipts.get(key)||(Number.isFinite(explicit)?explicit:0)||null;
+  const timeSource=publication.has(key)?'video':receipts.has(key)?'receipt':publishedAt?'official':'unknown';
+  if(!publishedAt)unknownDates++;
+  if(window.period!=='all'){const date=publishedAt?zonedDate(publishedAt):'';if(!date||date<window.from||date>window.to)continue;}
+  const row={videoId:String(v.videoId),account:a.account_key,accountName:a.name,groupId:a.current_group,campaignId:context.campaignId,publishedAt,timeSource,...Object.fromEntries(fields.map(k=>[k,number(v[k])]))};
   row.anchorCtr=row.anchorViews>0&&row.anchorClicks!==null?row.anchorClicks/row.anchorViews:null;
   const analysis=oneAnalysis(v.analysis||{});row.available=oneAvailability(analysis);
   for(const key of Object.keys(availability))if(row.available[key])availability[key]++;
@@ -67,5 +78,5 @@ export async function readOfficialOneReport(env,{ids,groups,window,campaign,view
  if(view!=='videos'){const map=new Map();for(const v of videos){const key=view==='accounts'?v.account:v.campaignId;if(!map.has(key))map.set(key,[]);map.get(key).push(v);}rows=[...map.values()].map(v=>({...aggregate(v),account:v[0].account,accountName:v[0].accountName,groupId:v[0].groupId,campaignId:v[0].campaignId}));}
  rows.sort((a,b)=>(b.views??-1)-(a.views??-1)||String(a.videoId||a.account||a.campaignId).localeCompare(String(b.videoId||b.account||b.campaignId)));
  const total=rows.length,pages=Math.max(1,Math.ceil(total/SIZE)),actualPage=Math.min(Math.max(1,Number(page)||1),pages);
- return {...meta,summary,...(detail?{detail}:{}),rows:videoId?[]:rows.slice((actualPage-1)*SIZE,actualPage*SIZE),pagination:{page:actualPage,pages,total,pageSize:SIZE},dateRange:source.dateRange,fetchedAt:source.fetchedAt,cached:source.cached,partial:source.partial,requestIds:source.requestIds};
+ return {...meta,summary,unknownDates,...(detail?{detail}:{}),rows:videoId?[]:rows.slice((actualPage-1)*SIZE,actualPage*SIZE),pagination:{page:actualPage,pages,total,pageSize:SIZE},dateRange:source.dateRange,fetchedAt:source.fetchedAt,cached:source.cached,partial:source.partial,requestIds:source.requestIds};
 }

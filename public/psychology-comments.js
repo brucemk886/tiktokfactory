@@ -1,7 +1,7 @@
 (() => {
 const $=s=>document.querySelector(s),BASE='/api/psychology-comments',state={templates:[],page:1,total:0,busy:false,load:0};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const date=n=>n?new Date(n).toLocaleString('zh-CN',{hour12:false}):'等待发布成功';
+const date=n=>n?new Date(n).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'等待发布成功';
 const labels={waiting_publish:'等待视频发布',pending:'等待揭晓',sending:'提交中',checking:'核对中',published:'已评论',failed:'失败',needs_review:'待核对',cancelled:'已取消'};
 async function api(path,method='GET',body){const r=await fetch(BASE+path,{method,cache:'no-store',...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw new Error(data.error||'请求失败');return data;}
 function showSetting(){const value=state.templates.find(t=>t.template===$('#template').value);if(!value)return;$('#manageTopics').href='/psychology-topic-bank?template='+encodeURIComponent(value.template);$('#enabled').checked=Boolean(value.enabled);$('#delay').value=value.delay_minutes;$('#autoReplyEnabled').checked=Boolean(value.auto_reply_enabled);$('#replyHours').value=value.reply_hours||48;$('#replyMax').value=value.reply_max||100;$('#settingsStatus').textContent='';}

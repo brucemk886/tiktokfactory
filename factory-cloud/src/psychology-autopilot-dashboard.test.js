@@ -46,10 +46,10 @@ test('dashboard counts complete canonical psychology population and pages indepe
   assert.ok(!JSON.stringify(b).includes('private'));
   assert.equal(f.requests.length,0);
 });
-test('dashboard separates Pacific actual publication and planned cohorts and preserves zero versus missing mature metrics',async t=>{
+test('dashboard separates Beijing actual publication and planned cohorts and preserves zero versus missing mature metrics',async t=>{
   const f=await setup(t), w=dashboardWindow(now);
   assign(f,['a','b']);
-  assert.equal(w.operatingDate,'2026-09-30');
+  assert.equal(w.operatingDate,'2026-10-01');
   fact(f,'late',{schedule_at:w.todayStart-DAY,published_at:w.todayStart+1000,views:0});
   fact(f,'plan',{account_key:'tiktok:b',schedule_at:w.todayStart+1000,published_at:0,state:'pending',views:null});
   fact(f,'zero',{published_at:now-72*3600000,views:0,completion:0});
@@ -176,11 +176,11 @@ test('current inventory eligibility verifies exact text hash, approval, owner an
   r=await read(f,'view=content');
   assert.equal(r.summary.eligibleWinnerVersions,0);assert.match(r.details.rows[0].eligibilityReason,/修订/);
 });
-test('Pacific daily windows follow DST calendar boundaries',()=>{
+test('Beijing reporting days stay 24 hours across US DST changes',()=>{
   const spring=dashboardWindow(Date.parse('2026-03-08T20:00:00Z'));
   const autumn=dashboardWindow(Date.parse('2026-11-01T20:00:00Z'));
-  assert.equal(spring.todayEnd-spring.todayStart,23*3600000);
-  assert.equal(autumn.todayEnd-autumn.todayStart,25*3600000);
+  assert.equal(spring.todayEnd-spring.todayStart,24*3600000);
+  assert.equal(autumn.todayEnd-autumn.todayStart,24*3600000);
 });
 
 test('original pool inventory follows photo-only current source selection and exact copy hash',async t=>{
@@ -241,7 +241,7 @@ test('another authorized admin sees actual project controller roles and inventor
 });
 
 
-test('seven-day account traffic uses actual Pacific publications, includes fresh metrics and preserves missing versus zero',async t=>{
+test('seven-day account traffic uses actual Beijing publications, includes fresh metrics and preserves missing versus zero',async t=>{
   const f=await setup(t),w=dashboardWindow(now);assign(f,['a','b','c']);
   for(let i=0;i<5;i++)fact(f,'fresh-seven-'+i,{published_at:i===0?w.trafficStart:now-1000, schedule_at:w.trafficStart-DAY, views:500});
   fact(f,'missing-seven',{published_at:now-2000,views:null});
@@ -256,7 +256,7 @@ test('seven-day account traffic uses actual Pacific publications, includes fresh
   assert.deepEqual(b.traffic,{published:5,synced:5,views:0,medianViews:0});assert.equal(b.trafficTier,'weak');
   assert.deepEqual(c.traffic,{published:0,synced:0,views:null,medianViews:null});assert.equal(c.trafficTier,'observing');
   assert.equal(r.trafficSummary.published,11);assert.equal(r.trafficSummary.synced,10);assert.equal(r.trafficSummary.views,2500);
-  assert.equal(r.trafficPolicy.from,'2026-09-24');assert.equal(r.trafficPolicy.to,'2026-09-30');
+  assert.equal(r.trafficPolicy.from,'2026-09-25');assert.equal(r.trafficPolicy.to,'2026-10-01');
 });
 
 test('traffic thresholds need five observed posts and rank paginated accounts by total views with stable ties',async t=>{
@@ -301,10 +301,10 @@ test('followers and UTC profile visits retain unknown values, explicit zero and 
   const revoked=await read(f,'view=accounts');assert.equal(revoked.trafficSummary.profileViews,0);assert.equal(revoked.trafficSummary.conversionCandidates,0);
 });
 
-test('seven Pacific calendar days include DST transitions without sliding the start by one hour',()=>{
+test('seven Beijing calendar days are fixed at 168 hours across US DST changes',()=>{
   const spring=dashboardWindow(Date.parse('2026-03-08T20:00:00Z')),autumn=dashboardWindow(Date.parse('2026-11-01T20:00:00Z'));
-  assert.equal(spring.trafficFrom,'2026-03-02');assert.equal(spring.todayEnd-spring.trafficStart,167*3600000);
-  assert.equal(autumn.trafficFrom,'2026-10-26');assert.equal(autumn.todayEnd-autumn.trafficStart,169*3600000);
+  assert.equal(spring.trafficFrom,'2026-03-03');assert.equal(spring.todayEnd-spring.trafficStart,168*3600000);
+  assert.equal(autumn.trafficFrom,'2026-10-27');assert.equal(autumn.todayEnd-autumn.trafficStart,168*3600000);
 });
 
 

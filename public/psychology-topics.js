@@ -71,7 +71,7 @@ function renderTopics() {
 
 function renderSummary(data) {
   $("#topicTotal").textContent = data.total || 0;
-  $("#syncedAt").textContent = data.syncedAt ? new Date(data.syncedAt).toLocaleString("zh-CN", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "--";
+  $("#syncedAt").textContent = data.syncedAt ? new Date(data.syncedAt).toLocaleString("zh-CN", {timeZone:'Asia/Shanghai', month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "--";
   $("#sourceState").textContent = data.apiUrl ? "已配置" : "未配置";
   $("#sourceUrl").textContent = data.apiUrl || "请配置 API";
 }
