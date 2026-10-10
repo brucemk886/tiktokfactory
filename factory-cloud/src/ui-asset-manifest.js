@@ -46,7 +46,7 @@ export const UI_ASSETS = {
   "/official-analytics-shared.js": "29629d5705a99042fddb",
   "/official-analytics.css": "64bbe03029f3ef6cdab4",
   "/official-analytics.js": "28876a786b9c95825948",
-  "/official-group-report.css": "7187141d4efef6a88113",
+  "/official-group-report.css": "9ab5897fafa6f96c72d0",
   "/official-group-report.js": "8ceb6ec09f8bf085e61a",
   "/official-publish-records.css": "d7a0fe04f11834d68309",
   "/official-publish-records.js": "5467f708ce8f230a02d4",

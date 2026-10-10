@@ -28,7 +28,7 @@ test('desktop overview and operations compare media, preserve filters and exclud
     const response=await handleScalableOperations(new Request(u),f.env,u,{user});res.statusCode=response.status;res.end(await response.text());return;
    }
    if(u.pathname==='/api/official-tiktok/ops-report'){
-    const q=u.searchParams,project={id:'proj-psych',name:'心理学',reportEnabled:true},report=computeGroupReport({project,group:{id:'g',name:'组1'},videos:videos.map(v=>({...v,username:'alice',account:'tiktok:a'})),media:q.get('media')||'all',period:q.get('period')||'today',fromKey:q.get('from')||'',toKey:q.get('to')||'',now});
+    const q=u.searchParams,project={id:'proj-psych',name:'心理学',reportEnabled:true},report=computeGroupReport({project,group:{id:'g',name:'组1'},videos:videos.map(v=>({...v,username:v.username||'alice',account:'tiktok:a'})),media:q.get('media')||'all',period:q.get('period')||'today',fromKey:q.get('from')||'',toKey:q.get('to')||'',now});
     const common={project,groups:[{id:'g',name:'组1'}],report:{...report,groupId:q.get('group')||''},source:'live'};
     if(q.get('view')==='publish')common.report.summary={publishTotal:5,publishSuccess:5,publishFailed:0,riskAccountCount:0};
     if(q.get('view')==='traffic')common.traffic={summary:{profileViews:null,ratio:null,totalAccounts:1,coveredAccounts:0,pairedDays:0,pairedProfileViews:0,pairedVideoViews:0},accounts:[],rows:[]};
@@ -57,6 +57,29 @@ test('desktop overview and operations compare media, preserve filters and exclud
  await page.select('#effectsMedia','all');await page.waitForFunction(()=>!document.querySelector('#mediaComparison').hidden);
  const qaRoot=path.join(repoRoot,'tmp/media-report-qa');fs.mkdirSync(qaRoot,{recursive:true});await page.screenshot({path:path.join(qaRoot,'overview.png')});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ // Exercise actual detail rows: long handles, full timestamps and both action links.
+ videos.push(...[1500,50,828,0].map((views,i)=>({id:'760000000000000000'+i,username:'psychology_long_account_12345678',title:'Sometimes silence says more than words. The signs you should stay silent, no matter what: '+('Long caption content. '.repeat(12)),mediaType:'video',views,likes:50,createdAt:now})));
+ await page.click('#queryBtn');await page.waitForFunction(()=>document.querySelector('#normalSection .report-video-table'));
+ const checkDetailCells=async selector=>{
+  const failures=await page.$$eval(selector,rows=>rows.flatMap(row=>Array.from(row.cells).flatMap((cell,i)=>{
+   const box=cell.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(cell);
+   const rects=[...range.getClientRects()];
+   return rects.filter(r=>r.width>0&&(r.left<box.left-1||r.right>box.right+1)).map(()=>({column:i,text:cell.textContent.slice(0,40),width:box.width}));
+  })));
+  assert.deepEqual(failures,[],selector+' contents stay inside their column');
+ };
+ for(const width of [1280,1440,1920]){
+  await page.setViewport({width,height:1000});
+  for(const tab of ['high','low','anomaly']){
+   await page.click('[data-result-tab='+tab+']');
+   if(tab==='anomaly')await page.$eval('.report-anomaly',el=>{el.open=true;});
+   await checkDetailCells('#'+tab+'Section .report-video-table tr');
+  }
+  await checkDetailCells('#normalSection .report-video-table tr');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+ }
+ await page.setViewport({width:1440,height:1000});
+ await (await page.$('#normalSection .table-wrap')).screenshot({path:path.join(qaRoot,'detail-columns.png')});
  await page.goto(base+'/psychology-ops-report?period=today');await page.waitForFunction(()=>!document.querySelector('#report').hidden);
  assert.equal(await page.$$eval('#mediaComparison tbody tr',r=>r.length),2);assert.match(await page.$eval('#mediaComparison',n=>n.textContent),/图文2.*1,200.*视频1/);
  const before=await page.$eval('#mediaComparison table',n=>n.textContent);await page.click('[data-media=video]');await page.waitForFunction(()=>!document.querySelector('#report').hidden&&document.querySelector('#mediaComparison .is-selected th')?.textContent==='视频');

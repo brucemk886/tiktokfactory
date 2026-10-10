@@ -34,3 +34,12 @@ Refresh Data Overview or Operations Report. Choose a date/group and compare phot
 - Runtime commit e1f4b283ba7cc5e4318cc09a60454a6a71ae7a9d was pushed to main with a clean checkout and exact origin/main match before deployment.
 - Deployed through factory-cloud npm run deploy; Worker version 064ede42-03eb-4136-ae61-8d68d5aa55f5.
 - Public official-group-report.js, psychology-operations.js and report-media-comparison.css returned HTTP 200 and matched local SHA-256 content.
+
+## Follow-up: detail-column overlap
+- Goal: fix the user's screenshot showing timestamps covered by action buttons and account handles overflowing into view counts.
+- Cause: the overview gained a seventh media column but retained positional six-column widths; the timestamp column collapsed to about 19px at a desktop viewport.
+- Decision: psychology-only fixed widths for type/account/counts/timestamp/actions, flexible title space, 1040px table minimum inside the existing scroll container, and wrapping long account text. Other modules keep their six-column widths. No metric, API or publication changes.
+- Files: public/official-group-report.css, scripts/psychology-media-report-ui.test.js and generated UI manifest.
+- Tests: the new real-Chromium geometry assertion first reproduced the overlap, then passed for high/low/normal/anomaly detail tables at 1280, 1440 and 1920 desktop widths. Long handles, full timestamps and two action buttons remain inside their cells; the document does not overflow. The detail screenshot was inspected. All 28 targeted report/first-paint/browser tests passed.
+- Unfinished: guarded deployment and public CSS hash verification.
+- Next step: refresh the data overview and inspect normal/low/high works.

@@ -89,9 +89,16 @@
 .lf-console.psychology-effects-page .section-title h2{font-size:18px;color:#102849}
 .lf-console.psychology-effects-page .section-title p{display:none}
 .lf-console.psychology-effects-page .section-hint{font-size:12px;line-height:1.65;color:var(--effects-muted);margin:0 0 12px}
-.lf-console.psychology-effects-page .report-video-table{min-width:840px}
-.lf-console.psychology-effects-page .report-video-table th:first-child{width:33%}
-.lf-console.psychology-effects-page .report-video-table th:last-child{width:20%}
+/* Seven columns here; other modules retain the six-column report layout. */
+.lf-console.psychology-effects-page .report-video-table{min-width:1040px}
+.lf-console.psychology-effects-page .report-video-table th:first-child{width:auto}
+.lf-console.psychology-effects-page .report-video-table th:nth-child(2){width:80px}
+.lf-console.psychology-effects-page .report-video-table th:nth-child(3){width:210px}
+.lf-console.psychology-effects-page .report-video-table th:nth-child(4),.lf-console.psychology-effects-page .report-video-table th:nth-child(5){width:90px}
+.lf-console.psychology-effects-page .report-video-table th:nth-child(6){width:160px}
+.lf-console.psychology-effects-page .report-video-table th:last-child{width:160px}
+.lf-console.psychology-effects-page .report-video-table td{white-space:normal;overflow-wrap:anywhere}
+.lf-console.psychology-effects-page .report-video-table td:nth-child(6){font-variant-numeric:tabular-nums}
 .lf-console.psychology-effects-page .report-video-title a{font-weight:550;-webkit-line-clamp:2;line-height:1.65}
 .lf-console.psychology-effects-page .report-video-actions{gap:6px}
 .lf-console.psychology-effects-page .table-action{padding:5px 8px;min-height:30px;border-radius:5px;font-size:12px}
