@@ -31,6 +31,12 @@ Project Hub is the cross-chat project registry and handoff-memory layer.
 - Cloud peer-photo workflows generate page plans. New automatic photo source snapshots mark cloudPhotoRender and enqueue a dedicated Cloudflare Queue (one message/job, at most twenty concurrent consumers); old source snapshots keep existing local workers. Video generation keeps the existing render/publish lanes. Signal Desk owns final publication.
 - public/psychology-card-renderer.js is shared by the manual photo page and the background photo renderer; automatic publication revalidates account access before execution.
 
+## TikTok One reporting
+
+- public/psychology-one-report.js mounts a shared PC-only tab on Data Overview and Operations Report; the original reports stay independently accessible. /api/psychology-one-report checks the exact originating report module and current canonical psychology account/group permissions.
+- Official data reads existing frozen One project contexts through Hub /api/v1/tiktok-one?resource=report. Upstream pagination is bounded (20 pages, explicit partial flag), video IDs are deduplicated, missing values stay null, and CTR aggregates only matched exposure/click samples. A two-minute process cache holds upstream data only; current scope and identity filtering rerun on every response. Exact task/video ownership wins over mutable account handles. No raw tokens, media downloads or account-wide profile/conversion metrics enter this report.
+- The Factory task source reads local immutable One configuration, publication items, durable reporting facts and once-only video ownership; it distinguishes planned and actual Beijing publication dates. Official cumulative report metrics and Factory submission states are separate; neither implies official One approval. No GET writes, publishing side effects, new sync jobs or schema migration.
+
 ## Psychology operations review
 
 - /psychology-effects reads analytics, publication receipts and profile traffic for the selected psychology scope. Its UI and API have no account/content pool adapter. Pool review remains owned by the separate operations reporting service.

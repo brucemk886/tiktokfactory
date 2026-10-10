@@ -1,5 +1,7 @@
 # Current State
 
+- Data Overview and Operations Report now each have a TikTok One tab. Its default official project view reads the One report through the admin Hub bridge, filters every response by current psychology account grants, preserves missing metrics and shows anchor clicks/CTR; a separate Factory task source shows pending/submitted/published outcomes. Both support group/project and video/account/project breakdowns with 20-row pagination. The official interface provides no audit state; Factory acceptance is never labeled official approval. See docs/handoffs/2026-10-10-one-report-tabs.md.
+
 - TikTok One selected-video creation checks assets and account/project membership with at most three concurrent operations per phase, drains in-flight checks on failure, and keeps atomic reservation and duplicate-batch behavior. The creation page displays elapsed checking time. Existing video transfer workers remain unchanged. By the user's subsequent request, the Hub fixed ten-second One submission cooldown is removed; active-request coordination and scheduled publication times remain. See docs/handoffs/2026-10-10-one-preflight-performance.md.
 
 - Factory UI is PC-only by explicit user preference (2026-10-09). New factory features are designed and accepted on desktop; no new mobile adaptation is required. Independent-site design is outside this preference.

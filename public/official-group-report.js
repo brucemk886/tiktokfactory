@@ -70,7 +70,7 @@ let reportController;
 bindToolbar();
 if (document.documentElement?.classList.contains("psychology-module")) document.body?.classList.add("psychology-module");
 if (IS_PSYCHOLOGY_OVERVIEW) document.body?.classList.add("psychology-effects-page");
-loadReport();
+if(!IS_PSYCHOLOGY_OVERVIEW||params.get('channel')!=='tiktok-one')loadReport();
 
 function bindToolbar() {
   document.querySelectorAll("[data-result-tab]").forEach((button, index, buttons) => {

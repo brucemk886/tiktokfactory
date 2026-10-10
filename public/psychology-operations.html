@@ -3,6 +3,7 @@
 <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/official-analytics.css"><link rel="stylesheet" href="/psychology-pages.css"><link rel="stylesheet" href="/psychology-creative.css"><link rel="stylesheet" href="/psychology-operations.css?v=20260923-4"><link rel="stylesheet" href="/psychology-management-api.css"><link rel="stylesheet" href="/theme-ops.css" data-lf-theme="light">
 <link rel="stylesheet" href="/admin-ui.css" data-lf-console="true">
 <script src="/admin-ui.js" defer></script>
+<link rel="stylesheet" href="/psychology-one-report.css">
 </head>
 <body class="work-page official-data-page psychology-module lf-console ops-report-page"><nav class="side-tabs" aria-label="主导航"></nav><main class="official-data-shell">
 <header class="page-head"><div><h1>运营报表</h1><p class="page-lead">从本期表现到账号与内容分层，复盘匹配效果与低流量恢复。</p></div><div class="ops-head-tools"><nav class="page-links"><button type="button" id="methodToggle" class="ops-method-button" aria-expanded="false" aria-controls="methodPanel">统计口径</button><a href="/psychology-autopilot">自动运营</a><a href="/psychology-publish-designs">图文样式</a><a href="/psychology-effects">数据概览</a></nav><p id="status" role="status" class="ops-status">正在读取运营报表…</p>
@@ -14,6 +15,7 @@
 <p><strong>账号池与内容池</strong>：按发布已满72小时的作品最新累计值分析，未同步显示 —。这不是发布后第72小时的精确快照；分池是可观测流量层级，不能判断平台内部权重。低号恢复须跨三个来源重复验证。</p>
 <p><strong>账号阶段</strong>按账号累计已同步作品（全部类型，已同步播放）：起号期 不足10条；爆发期 最近10条出过10万+；潜力账号 满10条且平均播放破千；其余普通账号。</p>
 <p>平均播放时长、完播率、点赞、评论、分享取已同步且大于0的作品平均；视频另看<strong>3秒留存</strong>（逐秒留存曲线第3秒还在看的比例，曲线不足3秒不计）；收藏官方接口未同步。每组样本满5条才下结论。</p><p id="coverage"></p></div></div></header>
+<div id="standardReport">
 <div class="ops-report-controls"><div class="ops-media-tabs" role="tablist" aria-label="内容类型"><button type="button" role="tab" class="ops-media-tab" data-media="photo" aria-selected="true">图文</button><button type="button" role="tab" class="ops-media-tab" data-media="video" aria-selected="false">视频</button></div>
 <form id="filters" class="panel ops-filters">
 <label>统计周期（北京时间）<select id="period"><option value="today">今天（北京时间）</option><option value="7d" selected>近7天</option><option value="30d">近30天</option><option value="custom">自定义</option></select></label>
@@ -90,4 +92,4 @@
 <h3>当前生效的抽取规则</h3><div id="evolutionRules" class="ops-rules"></div>
 <h3>各阶段打法 vs 实际数据</h3><p class="section-hint">打法是先定的假设；右边是本期该阶段账号发各类内容的实际中位播放，满5条才比较。</p><div id="stageTable" class="table-wrap"></div>
 </section></div>
-</main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260925-scale-v2"></script><script type="module" src="/psychology-management-api.js"></script></body></html>
+</div></main><script src="/access.js"></script><script type="module" src="/psychology-operations.js?v=20260925-scale-v2"></script><script type="module" src="/psychology-management-api.js"></script><script type="module" src="/psychology-one-report.js"></script></body></html>

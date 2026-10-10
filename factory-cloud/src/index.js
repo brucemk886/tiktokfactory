@@ -1,3 +1,4 @@
+import {handlePsychologyOneReport} from './psychology-one-report.js';
 import {handleVideoHitCleanup,collectVideoHitAssets} from './psychology-video-hit-cleanup.js';
 import {handleVideoHitVideos} from './psychology-video-hit-videos.js';
 import {handleVideoHitReady} from './psychology-video-hit-ready.js';
@@ -90,7 +91,7 @@ export default {
         if (!session && !url.pathname.startsWith("/api/worker/")) {
           return errorJson("请先登录。", 401);
         }
-        const handlers = [handleVideoHitReady,handleVideoHitCleanup,handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
+        const handlers = [handlePsychologyOneReport,handleVideoHitReady,handleVideoHitCleanup,handleVideoHitVideos,handleVideoHitAssets,handleVideoHitProduction,handleVideoHits,handlePsychologyWebsite,handleFactoryApi,handlePsychologyManagement,handlePsychologyOne,handleVideoLibrary,handlePhotoFactory,handlePsychologyCopyLibrary,handlePsychologyCreative,handlePsychologyAutoReplies,handlePsychologyComments, handlePsychologyTopicBank, handlePsychologyOperations, handlePsychologyAutopilot, handlePsychologyAutoPublish, handlePsychologyPeerHits, handleGeminiVideoAnalysis, handleAi, handleJobs, handleAccounts, handleOfficial, handleNovels, handlePeerHits, handleJournal, handleGeeLark, handleNovelExceptions, handleCompat];
         for (const handler of handlers) {
           const response = await handler(request, env, url, session, ctx);
           if (response) return response;
