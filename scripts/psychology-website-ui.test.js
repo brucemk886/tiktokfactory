@@ -53,10 +53,10 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
    requests.push(Object.fromEntries(url.searchParams));
    const selectedMode=mode,value=fixture();
    const funnelRows=[
-    {connectionId:'a',username:'account_a',profileViews:100,profileDays:7,expectedDays:7,profileComplete:true,coverageComplete:true,clicks:20,arrived:15,started:10,finished:6,paid:2},
-    {connectionId:'b',username:'account_b',profileViews:null,profileDays:0,expectedDays:7,profileComplete:false,coverageComplete:true,clicks:10,arrived:5,started:2,finished:1,paid:0}
+    {connectionId:'a',username:'account_a',profileViews:100,profileDays:7,expectedDays:7,profileComplete:true,profileWindowAligned:false,profileLatestDay:'2026-10-08',coverageComplete:true,clicks:20,arrived:15,started:10,finished:6,paid:2},
+    {connectionId:'b',username:'account_b',profileViews:null,profileDays:0,expectedDays:7,profileComplete:false,profileWindowAligned:false,profileLatestDay:null,coverageComplete:true,clicks:10,arrived:5,started:2,finished:1,paid:0}
    ];
-   value.funnel={ready:true,window:{from:'2026-09-30',to:'2026-10-06'},startedAt:Date.parse('2026-09-30T00:00:00Z'),rows:funnelRows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(funnelRows),definition:'同次点击去重'};
+   value.funnel={ready:true,profileLatestDay:'2026-10-08',profileWindow:{from:'2026-09-30',to:'2026-10-06',timeZone:'UTC'},window:{from:'2026-09-30',to:'2026-10-06'},startedAt:Date.parse('2026-09-30T00:00:00Z'),rows:funnelRows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(funnelRows),definition:'同次点击去重'};
 
    value.receivers[0].trackingUrl=generated.has('a')?'https://deeppersonaai.com/7k3m9':null;
    value.links={rows:generated.has('a')?[{connectionId:'a',trackingUrl:value.receivers[0].trackingUrl,visits:12,filtered:2}]:[]};
@@ -73,13 +73,22 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
   if(!file.startsWith(root+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.statusCode=404;res.end();return;}
   res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':'image/svg+xml');res.end(fs.readFileSync(file));
  });
- await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);}));
  const browser=await puppeteer.launch({executablePath:chrome,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});t.after(()=>browser.close());
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.evaluateOnNewDocument(()=>{window.__copied=[];window.__denyCopy=false;Object.defineProperty(navigator,'clipboard',{value:{async writeText(text){if(window.__denyCopy)throw Error('denied');window.__copied.push(text);}},configurable:true});});
  const base='http://127.0.0.1:'+server.address().port;
  await page.goto(base+'/psychology-website');await page.waitForFunction(()=>document.getElementById('status').textContent.includes('已连接'));
  await page.waitForSelector('.side-tabs a[href="/psychology-website"]');
+ assert.equal(requests[0].period,'today','initial request must match the selected today button');
+ assert.deepEqual(await page.$$eval('[data-period][aria-pressed=true]',nodes=>nodes.map(n=>n.dataset.period)),['today']);
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('[data-period=today]')).backgroundColor==='rgb(37, 99, 235)');
+ assert.equal(await page.$eval('[data-period=today]',n=>getComputedStyle(n).color),'rgb(255, 255, 255)');
+ assert.match(await page.$eval('#timeZoneNote',n=>n.textContent),/北京时间（UTC\+8）/);
+ assert.match(await page.$eval('#journeyScope',n=>n.textContent),/网站转化按北京时间/);
+ assert.match(await page.$eval('#profileScope',n=>n.textContent),/UTC 日报.*2026-10-08.*不代表访问为零/);
+ assert.match(await page.$eval('#journeyNote',n=>n.textContent),/2026\/9\/30 08:00:00 北京时间/);
+
  assert.deepEqual(await page.$$eval('.web-tabs [role=tab]',nodes=>nodes.map(n=>n.textContent)),['转化概览','成交订单','引流配置']);
  assert.equal(await page.$('#accounts'),null,'duplicate account table removed');assert.equal(await page.$eval('#sourceDetails',n=>n.open),false);
  assert.match(await page.$eval('.web-scope',e=>e.textContent),/TikTok 渠道概况/);
@@ -101,8 +110,8 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
    assert.deepEqual(await page.$$eval('[role=tabpanel]',nodes=>nodes.filter(n=>n.checkVisibility()).map(n=>n.dataset.panel)),[tab],'only active panel visible '+tab);
    assert.equal(await page.$eval('#journeyStages',n=>n.checkVisibility()),tab==='overview','overview funnel hidden outside overview');
    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.web-tabs [aria-selected=true]')).backgroundColor==='rgb(37, 99, 235)');
-   const layout=await page.evaluate(()=>{const selected=document.querySelector('.web-tabs [aria-selected=true]'),tabs=document.querySelector('.web-tabs'),panel=document.getElementById(selected.getAttribute('aria-controls')),title=panel.querySelector('h2'),style=getComputedStyle(selected);return {gap:title.getBoundingClientRect().top-tabs.getBoundingClientRect().bottom,padding:parseFloat(style.paddingInlineStart),radius:parseFloat(style.borderRadius),background:style.backgroundColor,color:style.color,tabStops:[...tabs.querySelectorAll('button')].filter(n=>n.tabIndex===0).length};});
-   assert.ok(layout.gap>=0&&layout.gap<240,'tab content starts directly below toolbar '+tab+': '+layout.gap);assert.ok(layout.padding>=12);assert.ok(layout.radius>=8);assert.equal(layout.background,'rgb(37, 99, 235)');assert.equal(layout.color,'rgb(255, 255, 255)');assert.equal(layout.tabStops,1);
+   const layout=await page.evaluate(()=>{const selected=document.querySelector('.web-tabs [aria-selected=true]'),tabs=document.querySelector('.web-tabs'),panel=document.getElementById(selected.getAttribute('aria-controls')),title=panel.querySelector('h2'),style=getComputedStyle(selected);return {timeZoneNoteHeight:document.getElementById('timeZoneNote').getBoundingClientRect().height,gap:title.getBoundingClientRect().top-tabs.getBoundingClientRect().bottom,padding:parseFloat(style.paddingInlineStart),radius:parseFloat(style.borderRadius),background:style.backgroundColor,color:style.color,tabStops:[...tabs.querySelectorAll('button')].filter(n=>n.tabIndex===0).length};});
+   assert.ok(layout.gap>=0&&layout.gap<240+layout.timeZoneNoteHeight+24,'tab content starts directly below toolbar '+tab+': '+layout.gap);assert.ok(layout.padding>=12);assert.ok(layout.radius>=8);assert.equal(layout.background,'rgb(37, 99, 235)');assert.equal(layout.color,'rgb(255, 255, 255)');assert.equal(layout.tabStops,1);
    if(process.env.WEBSITE_QA_SCREENSHOTS){const dir=path.resolve(root,'../tmp/website-tabs-qa');fs.mkdirSync(dir,{recursive:true});await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(dir,tab+'-'+width+'.png')});}
   }
   await page.click('[data-tab="overview"]');
@@ -111,9 +120,10 @@ test('website UI handles mobile, safe content, attribution links, paging and fai
  assert.match(await page.$eval('#journeyStages',e=>e.textContent),/成功进站/);
  assert.match(await page.$eval('#journeyLosses',e=>e.textContent),/未确认进站/);
  await page.select('#journeyAccount','a');
- assert.match(await page.$eval('#profileClickHint',e=>e.textContent),/20.0%/);
+ assert.match(await page.$eval('#profileClickHint',e=>e.textContent),/时间范围不同，不计算比率/);
  assert.equal(await page.$$eval('#journeyAccounts tbody tr',rows=>rows.length),1);
  await page.select('#journeyAccount','b');
+ assert.match(await page.$eval('#profileScope',n=>n.textContent),/暂无已同步的主页访问日报/);
  assert.match(await page.$eval('#journeyStages',e=>e.textContent),/暂无/);
  assert.match(await page.$eval('#profileClickHint',e=>e.textContent),/参考点击率：—/);
  await page.select('#journeyAccount','');

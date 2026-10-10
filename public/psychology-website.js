@@ -5,7 +5,7 @@ const percent=value=>value===null||value===undefined?'—':(value*100).toFixed(1
 const money=(value,currency)=>{try{return new Intl.NumberFormat('en-US',{style:'currency',currency:String(currency).toUpperCase()}).format(value/100);}catch{return String(currency).toUpperCase()+' '+(value/100).toFixed(2);}};
 const datetime=value=>{if(!value)return '—';const parsed=new Date(/Z$|[+-]\d\d:\d\d$/.test(value)?value:value.replace(' ','T')+'Z');return Number.isNaN(+parsed)?'—':parsed.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});};
 const table=(heads,rows,empty)=>'<table><thead><tr>'+heads.map(h=>'<th>'+escape(h)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.map(cells=>'<tr>'+cells.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join(''):'<tr><td class="web-empty" colspan="'+heads.length+'">'+escape(empty||'所选时间暂无数据')+'</td></tr>')+'</tbody></table>';
-let applied={period:'7d',sourcePage:1,orderPage:1},draftPeriod='7d',data=null,controller=null,sequence=0,receivingChanged=false;
+let applied={period:'today',sourcePage:1,orderPage:1},draftPeriod='today',data=null,controller=null,sequence=0,receivingChanged=false;
 function showTab(tab,{focus=false}={}){
  const openLinks=tab==='links',openSources=tab==='sources';if(openLinks)tab='receiving';if(openSources)tab='overview';
  const tabs=[...document.querySelectorAll('.web-tabs [data-tab]')];
@@ -41,18 +41,20 @@ function renderJourney(){
  if(rows.some(row=>row.connectionId===selected))$('journeyAccount').value=selected;
  const active=rows.find(row=>row.connectionId===$('journeyAccount').value),summary=active?.summary||f?.summary||{};
  const metric=value=>value==null?'暂无':count(value);
- $('journeyScope').textContent=f?f.window.from+' 至 '+f.window.to+' · UTC 自然日，与 TikTok 主页数据对齐 · '+(active?'当前承接账号':count(rows.length)+' 个主页账号'):'正在准备漏斗数据';
- const cards=[['主页访问',summary.profileViews,'TikTok 汇总，非曝光人数'],['链接点击',summary.clicks,'到达短链接的请求'],['成功进站',summary.arrived,'网页确认或已开始测试'],['开始测试',summary.started,'同次访问最多计一次'],['完成测试',summary.finished,'同次访问最多计一次'],['付款',summary.paid,'基础报告付款访问']];
+ $('journeyScope').textContent=f?f.window.from+' 至 '+f.window.to+' · 网站转化按北京时间（UTC+8） · '+(active?'当前承接账号':count(rows.length)+' 个主页账号'):'正在准备漏斗数据';
+ const official=f?.profileWindow||f?.window,latest=active?active.profileLatestDay:f?.profileLatestDay;
+ $('profileScope').textContent=official?'主页访问：'+official.from+' 至 '+official.to+'（UTC 日报，北京时间每日 08:00 切日）。'+(latest?'已同步日报最新日期：'+latest+'（UTC）。':'暂无已同步的主页访问日报。')+'所选日期缺少数据时显示“暂无”，不代表访问为零。':'';
+ const cards=[['主页访问',summary.profileViews,'TikTok UTC 日报，非实时'],['链接点击',summary.clicks,'到达短链接的请求'],['成功进站',summary.arrived,'网页确认或已开始测试'],['开始测试',summary.started,'同次访问最多计一次'],['完成测试',summary.finished,'同次访问最多计一次'],['付款',summary.paid,'基础报告付款访问']];
  $('journeyStages').innerHTML=cards.map(([label,value,note])=>'<article><span>'+label+'</span><strong>'+metric(value)+'</strong><small>'+note+'</small></article>').join('');
- $('profileClickHint').textContent='主页 → 链接参考点击率：'+percent(summary.profileClickRate)+'。'+(summary.profileClickRate==null?'数据或时间覆盖不足时不计算；主页访问与链接点击无法逐人匹配。':'这是同账号同期汇总比值，不是逐人流失率。')+' 主页数据覆盖 '+count(summary.profileAccounts)+' / '+count(summary.accounts)+' 个账号。';
+ $('profileClickHint').textContent='主页 → 链接参考点击率：'+percent(summary.profileClickRate)+'。'+(summary.profileWindowAligned===false?'主页访问为 UTC 日报，链接点击为北京时间，时间范围不同，不计算比率。':summary.profileClickRate==null?'数据或时间覆盖不足时不计算；主页访问与链接点击无法逐人匹配。':'这是同账号同期汇总比值，不是逐人流失率。')+' 主页数据覆盖 '+count(summary.profileAccounts)+' / '+count(summary.accounts)+' 个账号。';
  const losses=summary.losses||{};
  $('journeyLosses').innerHTML=[['点击 → 进站','未确认进站',losses.arrival],['进站 → 开始','未开始测试',losses.start],['开始 → 完成','尚未完成',losses.finish],['完成 → 付款','尚未付款',losses.payment]].map(([title,label,value])=>'<article><span>'+title+'</span><strong>'+metric(value?.lost)+' <small>次</small></strong><p>'+label+' · 流失率 '+percent(value?.rate)+'</p><small>进入下一步 '+percent(value?.conversion)+'</small></article>').join('');
- const since=f?.startedAt?new Date(f.startedAt).toISOString().replace('T',' ').slice(0,19)+' UTC':'尚未启用';
+ const since=f?.startedAt?datetime(new Date(f.startedAt).toISOString())+' 北京时间':'尚未启用';
  $('journeyNote').textContent='进站追踪启用时间：'+since+'。漏斗只计算启用后经过 TikTok 推广短链接的访问；刷新去重，多次做题或购买也只计一次。未确认进站可能包含加载失败、用户退出或上报被拦截。';
  const shown=active?[active]:rows;
  const lossText=value=>value?.lost==null?'暂无':count(value.lost)+' / '+percent(value.rate);
- $('journeyAccounts').innerHTML=table(['主页账号','主页访问','链接点击','成功进站','开始测试','完成测试','付款','点击→进站流失','进站→开始流失','开始→完成流失','完成→付款流失'],shown.map(row=>[
- escape('@'+(row.username||row.name)),metric(row.profileViews)+'<small>'+count(row.profileDays)+'/'+count(row.expectedDays)+' 天</small>',
+ $('journeyAccounts').innerHTML=table(['主页账号','主页访问（UTC）','链接点击','成功进站','开始测试','完成测试','付款','点击→进站流失','进站→开始流失','开始→完成流失','完成→付款流失'],shown.map(row=>[
+ escape('@'+(row.username||row.name)),metric(row.profileViews)+'<small>'+count(row.profileDays)+'/'+count(row.expectedDays)+' 天'+(row.profileLatestDay?' · 最新 '+escape(row.profileLatestDay):'')+'</small>',
  ...['clicks','arrived','started','finished','paid'].map(key=>metric(row[key])),
  ...['arrival','start','finish','payment'].map(key=>lossText(row.summary?.losses?.[key]))
  ]),'生成账号主页短链接后，这里会按账号显示转化链路。');

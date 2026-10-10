@@ -1,16 +1,14 @@
-import { PRODUCTION_SESSION, tikTokSourceSQL } from './psychology-website-data.js';
+import { PRODUCTION_SESSION, tikTokSourceSQL, websiteWindow } from './psychology-website-data.js';
 
 const DAY=86400000;
 const stages=['clicks','arrived','started','finished','paid'];
 export function funnelWindow(window,now=Date.now()){
- let {from,to}=window;
- if(['today','yesterday','7d','30d'].includes(window.period)){
-  const date=value=>new Date(value).toISOString().slice(0,10);
-  to=date(now-(window.period==='yesterday'?DAY:0));
-  from=window.period==='7d'?date(now-6*DAY):window.period==='30d'?date(now-29*DAY):to;
- }
- const start=Date.parse(from+'T00:00:00Z'),end=Date.parse(to+'T00:00:00Z')+DAY;
- return {from,to,start,end,timeZone:'UTC'};
+ const selected=websiteWindow(new URLSearchParams({period:window.period||'range',from:window.from||'',to:window.to||''}),now);
+ return {from:selected.from,to:selected.to,start:Date.parse(selected.start),end:Date.parse(selected.end),timeZone:selected.timeZone};
+}
+// TikTok only supplies whole UTC daily samples; do not relabel or prorate them as Beijing days.
+function profileWindow(window){
+ return {from:window.from,to:window.to,start:Date.parse(window.from+'T00:00:00Z'),end:Date.parse(window.to+'T00:00:00Z')+DAY,timeZone:'UTC'};
 }
 export function stageLoss(before,after){
  if(before==null||after==null)return {lost:null,rate:null,conversion:null};
@@ -22,7 +20,8 @@ export function summarizeFunnel(rows){
  result.accounts=rows.length;result.profileAccounts=rows.filter(row=>row.profileViews!==null).length;
  result.profileComplete=rows.length>0&&rows.every(row=>row.profileComplete);
  result.coverageComplete=rows.length>0&&rows.every(row=>row.coverageComplete);
- result.profileClickRate=result.profileComplete&&result.coverageComplete&&result.profileViews>0&&result.clicks<=result.profileViews?result.clicks/result.profileViews:null;
+ result.profileWindowAligned=rows.length>0&&rows.every(row=>row.profileWindowAligned!==false);
+ result.profileClickRate=result.profileWindowAligned&&result.profileComplete&&result.coverageComplete&&result.profileViews>0&&result.clicks<=result.profileViews?result.clicks/result.profileViews:null;
  result.losses={arrival:stageLoss(result.clicks,result.arrived),start:stageLoss(result.arrived,result.started),finish:stageLoss(result.started,result.finished),payment:stageLoss(result.finished,result.paid)};
  return result;
 }
@@ -33,8 +32,10 @@ async function profileData(db,accounts,window){
  const expected=Math.round((window.end-window.start)/DAY);
  return new Map(accounts.map(account=>{
   let input=[];try{input=JSON.parse(samples.get('tiktok:'+account.connectionId)?.days||'[]');}catch{}
-  const days=new Map((Array.isArray(input)?input:[]).filter(day=>day?.date>=window.from&&day.date<=window.to&&Number.isSafeInteger(day.profileViews)&&day.profileViews>=0).map(day=>[day.date,day]));
-  return [account.connectionId,{profileViews:days.size?[...days.values()].reduce((sum,day)=>sum+day.profileViews,0):null,profileDays:days.size,expectedDays:expected,profileUpdatedAt:Math.max(0,...[...days.values()].map(day=>Number(day.updatedAt)||0))}];
+  const valid=(Array.isArray(input)?input:[]).filter(day=>/^\d{4}-\d{2}-\d{2}$/.test(day?.date||'')&&Number.isSafeInteger(day.profileViews)&&day.profileViews>=0);
+  const days=new Map(valid.filter(day=>day.date>=window.from&&day.date<=window.to).map(day=>[day.date,day]));
+  const profileLatestDay=valid.map(day=>day.date).sort().at(-1)||null;
+  return [account.connectionId,{profileViews:days.size?[...days.values()].reduce((sum,day)=>sum+day.profileViews,0):null,profileDays:days.size,expectedDays:expected,profileLatestDay,profileUpdatedAt:Math.max(0,...[...days.values()].map(day=>Number(day.updatedAt)||0))}];
  }));
 }
 export async function readFunnelFacts(db,links,window){
@@ -61,10 +62,10 @@ export async function readFunnelFacts(db,links,window){
  return {ready:Boolean(state.results[0]),startedAt:state.results[0]?.started_at??null,rows:facts.results};
 }
 export async function readWebsiteFunnel(factory,site,context,links,selectedWindow,now=Date.now()){
- const window=funnelWindow(selectedWindow,now);
+ const window=funnelWindow(selectedWindow,now),officialWindow=profileWindow(window);
  const byId=new Map(links.map(link=>[link.connectionId,link]));
  const accounts=context.accounts.filter(account=>byId.has(account.connectionId)||account.candidate&&account.canPublish);
- const [profiles,facts]=await Promise.all([profileData(factory,accounts,window),readFunnelFacts(site,links,window)]);
+ const [profiles,facts]=await Promise.all([profileData(factory,accounts,officialWindow),readFunnelFacts(site,links,window)]);
  const byCode=new Map(facts.rows.map(row=>[row.code,row]));
  const rows=accounts.map(account=>{
   const link=byId.get(account.connectionId),profile=profiles.get(account.connectionId);
@@ -72,9 +73,11 @@ export async function readWebsiteFunnel(factory,site,context,links,selectedWindo
   const covered=trackedFrom!==null&&trackedFrom<Math.min(window.end,now);
   const values=Object.fromEntries(stages.map(key=>[key,covered?Number(byCode.get(link.code)?.[key]||0):null]));
   return {connectionId:account.connectionId,username:account.username,name:account.name,...profile,
-   profileComplete:profile.profileDays===profile.expectedDays&&window.end<=now,
+   profileComplete:profile.profileDays===profile.expectedDays&&officialWindow.end<=now,
+   profileWindowAligned:window.start===officialWindow.start&&window.end===officialWindow.end,
    ...values,trackedFrom,coverageComplete:covered&&trackedFrom<=window.start,tracking:covered?'ready':link?'not-covered':'no-link'};
  });
- return {window,ready:facts.ready,startedAt:facts.startedAt,rows:rows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(rows),
-  definition:'按所选 UTC 日期内的 TikTok 推广短链接访问分组，跟踪这些访问后续的进站、测试和基础报告付款。链接被转发到其他地方后仍按 TikTok 推广链接归因。同一次访问每步最多计一次，付款后退款仍计入曾付款。主页为 TikTok 汇总访问次数，无法逐人关联；只在时间与数据覆盖完整时提供参考点击率。成功进站由可见网页上报或实际开始测试确认；未确认可能包含加载失败、上报被拦截或用户退出。'};
+ const profileLatestDay=rows.map(row=>row.profileLatestDay).filter(Boolean).sort().at(-1)||null;
+ return {window,profileWindow:officialWindow,profileLatestDay,ready:facts.ready,startedAt:facts.startedAt,rows:rows.map(row=>({...row,summary:summarizeFunnel([row])})),summary:summarizeFunnel(rows),
+  definition:'按所选北京时间（UTC+8）日期内的 TikTok 推广短链接访问分组，跟踪这些访问后续的进站、测试和基础报告付款。链接被转发到其他地方后仍按 TikTok 推广链接归因。同一次访问每步最多计一次，付款后退款仍计入曾付款。主页访问单独使用所选日期的 TikTok UTC 日报，不能精确换算为北京时间，也无法逐人关联，因此不与北京时间链接点击计算比率。缺少日报显示暂无，不代表访问为零。成功进站由可见网页上报或实际开始测试确认；未确认可能包含加载失败、上报被拦截或用户退出。'};
 }
