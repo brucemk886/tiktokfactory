@@ -357,6 +357,21 @@ test('task item detail displays the frozen receiver and escapes final caption co
 });
 
 
+test('hit photo picker lists twenty albums on one page',async()=>{
+ const source=fs.readFileSync(new URL('../public/psychology-hit-photo-picker.js',import.meta.url),'utf8').replace('export function','function');
+ const ids=['hitPhotoStatus','hitPhotoSelectAll','hitPhotoClearPage','hitPhotoPrev','hitPhotoNext','hitPhotoRefresh','hitPhotoSearchButton','hitPhotoPage','hitPhotoCount','hitPhotoCards','hitPhotoQuery','hitPhotoSelection'];
+ const nodes=new Map(ids.map(id=>[id,{textContent:'',innerHTML:'',value:'',hidden:id==='hitPhotoSelection',disabled:false}]));
+ const items=Array.from({length:20},(_,i)=>({ref:{sourceId:'vh-'+i.toString(16).padStart(32,'0'),version:1,revision:1},name:'Album '+i,frameCount:2,frames:[{index:1,previewUrl:'https://images.example.com/'+i+'.jpg'}],title:'Title '+i,caption:'Caption '+i,eligible:true,reason:''}));
+ const context=vm.createContext({document:{getElementById:id=>nodes.get(id)}});
+ vm.runInContext(source+'\nglobalThis.mountHitPhotoPicker=mountHitPhotoPicker;',context);
+ const picker=context.mountHitPhotoPicker({api:async path=>{assert.match(path,/page=1/);return {items,total:21,page:1,pageSize:20,hasMore:true};},changed(){},isBusy:()=>false});
+ picker.sync(true);await tick();
+ assert.equal(nodes.get('hitPhotoSelection').hidden,false);
+ assert.equal((nodes.get('hitPhotoCards').innerHTML.match(/class="hit-photo-card/g)||[]).length,20);
+ assert.equal(nodes.get('hitPhotoPage').textContent,'共 21 条 · 每页 20 条 · 第 1 / 2 页');
+ assert.equal(nodes.get('hitPhotoNext').disabled,false);
+});
+
 test('manual photo music sends only explicit choices instead of the saved default',async()=>{
  for(const music of [[],['6873874427382073346']]){
   const h=harness(Promise.resolve(grouped),false,{musicPool:['old-pool'],selectedMusic:music});await h.ready;

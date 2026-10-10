@@ -14,7 +14,7 @@ const fail=(message,statusCode=409)=>{throw Object.assign(new Error(message),{st
 export const MAX_HIT_PHOTOS=15;
 export function validateFrames(frames){if(frames.length<1||frames.length>MAX_HIT_PHOTOS)fail('每条图文需要 1–15 张二创图片，请补齐或调整版本后再发布。');if(frames.some((f,i)=>f.index!==i+1||(!f.assetId&&!f.imageUrl)))fail('二创图片帧号须从 1 连续排列，请补齐图片。');}
 export async function hitPhotoInventory(env,actor,url){
- const user=await videoHitUser(env.DB,actor),page=Number(url.searchParams.get('page')||1),query=String(url.searchParams.get('q')||'').slice(0,100),size=12;
+ const user=await videoHitUser(env.DB,actor),page=Number(url.searchParams.get('page')||1),query=String(url.searchParams.get('q')||'').slice(0,100),size=20;
  if(!Number.isInteger(page)||page<1||page>10000)fail('页码无效。',400);
  const where="(s.owner_id=? OR ?=1) AND s.archived_at=0 AND v.input_mode='frames' AND v.enabled=1 AND v.cleaned_at=0 AND v.publish_item_id='' AND v.publish_state<>'published' AND v.published_at=0 AND (s.title LIKE ? OR v.title LIKE ? OR v.caption LIKE ?)",args=[user.id,hitAdmin(user),'%'+query+'%','%'+query+'%','%'+query+'%'];
  const count=await env.DB.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions v JOIN psychology_video_hits s ON s.id=v.source_id WHERE '+where).bind(...args).first();

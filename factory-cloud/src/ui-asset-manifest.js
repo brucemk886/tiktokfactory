@@ -76,7 +76,7 @@ export const UI_ASSETS = {
   "/psychology-copy-usage.js": "7a0dc7b769cd2adb2a32",
   "/psychology-creative.css": "0973a3d98424ccffd22a",
   "/psychology-creative.js": "0384c0ac96124e6b08e1",
-  "/psychology-hit-photo-picker.js": "b2be975c5a6ea41a5713",
+  "/psychology-hit-photo-picker.js": "91acd2e8ed417719ece8",
   "/psychology-imported-photos.css": "b438229dd8668aedbb5b",
   "/psychology-imported-photos.js": "3b762b64178b479a1bff",
   "/psychology-management-api.css": "ab5abd8a4247066053da",

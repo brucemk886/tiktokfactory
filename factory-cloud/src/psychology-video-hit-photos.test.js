@@ -31,6 +31,15 @@ async function setup(t){
  f.claim=()=>{const job=f.job();f.sqlite.prepare("UPDATE factory_jobs SET status='running',worker_id='cloud:test' WHERE id=?").run(job.id);return f.job();};
  return f;
 }
+test('photo library returns twenty albums per page',async t=>{
+ const f=await setup(t),stamp=Date.now();
+ for(let i=0;i<21;i++){const id='vh-'+i.toString(16).padStart(32,'0');
+  f.sqlite.prepare('INSERT INTO psychology_video_hits(id,owner_id,external_id,video_url,title,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(id,'admin','page-'+i,'https://www.tiktok.com/@qa/video/1','Source '+i,stamp-i,stamp-i);
+  f.sqlite.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,enabled,created_at,updated_at) VALUES(?,1,'Album','Title',1,?,?)").run(id,stamp-i,stamp-i);}
+ const first=await f.inventory();assert.equal(first.pageSize,20);assert.equal(first.total,21);assert.equal(first.items.length,20);assert.equal(first.hasMore,true);
+ const second=await (await hitPhotoInventory(f.env,actor,new URL('https://factory.test/api/psychology-video-hits/photo-library?page=2'))).json();
+ assert.equal(second.page,2);assert.equal(second.items.length,1);assert.equal(second.hasMore,false);
+});
 test('photo library exposes ordered saved frames and disables over-limit versions; filtering and permissions apply',async t=>{
  const f=await setup(t),a=await f.ready(12),b=await f.ready(16);let library=await f.inventory();assert.equal(library.total,2);const valid=library.items.find(v=>v.ref.sourceId===a.sourceId);assert.equal(valid.frameCount,12);assert.equal(valid.eligible,true);assert.deepEqual(valid.frames.map(f=>f.index),[1,2,3,4,5,6,7,8,9,10,11,12]);assert.match(library.items.find(v=>v.ref.sourceId===b.sourceId).reason,/1–15/);
  f.sqlite.prepare('UPDATE psychology_video_hit_versions SET enabled=0 WHERE source_id=?').run(b.sourceId);assert.equal((await f.inventory()).total,1);
