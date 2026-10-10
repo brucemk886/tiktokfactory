@@ -22,10 +22,15 @@ Separate photo and video performance in Data Overview and Operations Report and 
 - 97 focused analytics/archive/authorization/detail regression tests passed.
 - Desktop Chromium at 1440 x 1000: both pages, all/type filters, preserved comparison, stale requests, errors/retry, null/zero, non-psychology isolation, selected styling and no horizontal overflow. Screenshots inspected. No external publishing calls.
 - Production read-only execution: today 31 video works / 8,132 views; near 7 days 825 photos / 149,395 views and 51 videos / 11,600 views. Combined counts 876 / 160,995 match the prior aggregate, with no unknown type in that observed window.
-- Full Factory suite passed: 1,513 tests, zero failures/skips. Release verification pending below.
+- Full Factory suite passed: 1,513 tests, zero failures/skips. After rebasing current One retention changes, 12 targeted tests and the complete One desktop flow also passed. The pre-existing One browser script requires running from the repository root.
 
 ## Unfinished work
-Complete guarded main deployment, then verify public assets.
+None for this request. Historical or external posts without reliable type evidence intentionally remain unknown.
 
 ## Recommended next step
 Refresh Data Overview or Operations Report. Choose a date/group and compare photo/video rows; use the type selector/tabs for detailed investigation. Treat missing analytics as unavailable rather than zero.
+
+## Release verification
+- Runtime commit e1f4b283ba7cc5e4318cc09a60454a6a71ae7a9d was pushed to main with a clean checkout and exact origin/main match before deployment.
+- Deployed through factory-cloud npm run deploy; Worker version 064ede42-03eb-4136-ae61-8d68d5aa55f5.
+- Public official-group-report.js, psychology-operations.js and report-media-comparison.css returned HTTP 200 and matched local SHA-256 content.
