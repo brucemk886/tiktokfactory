@@ -1,5 +1,7 @@
 # Current State
 
+- Video Hits pages can delete an unpublished import. Source management removes the whole source, including original copy and images; ready cards, recreation rows and version details remove one unpublished version. Submitted, published and in-progress versions stay, along with their once-only publication identities. The same owner and import source can import that external ID again as a new source. See docs/handoffs/2026-10-10-video-hit-delete.md.
+
 - The project API key can GET the topic-card and video-hit frame image URLs it returns. Those reads stay private to the key's administrator and module grants; anonymous requests remain 401. See docs/handoffs/2026-10-10-factory-api-image-read.md.
 
 - Psychology report calendars, actual timestamp displays and manual datetime inputs use Asia/Shanghai. One publication-date filtering resolves exact account/video timestamps (receipt fallback labeled) instead of treating unzoned provider strings as local dates; unknown dates stay in All. Autopilot read projections and observation trends use Beijing days while existing Pacific publishing rules and instants are preserved. Whole UTC profile samples show their true Beijing 08:00-to-next-08:00 intervals; unzoned One daily aggregates remain explicitly unconfirmed. See docs/handoffs/2026-10-10-psychology-beijing-time.md.

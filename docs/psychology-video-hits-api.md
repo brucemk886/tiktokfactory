@@ -435,6 +435,8 @@ X-Content-SHA256: <lowercase 64-character SHA256 of actual file>
 
 原选题、原文和原图长期保留，供后续持续二创。全部已创建版本确认发布后，可在页面点击“归档来源”或调用 videoHits.archive；归档会冻结新增/修改并从默认列表隐藏，但不会清除原素材。在“已归档”筛选进入来源后点击“恢复二创”，或调用 videoHits.restore，即可继续新增版本。已发布版本的身份与记录保留，不能覆盖或再次发布。
 
+尚未进入发布、也没有正在合成的导入，可以在页面点击“删除”，或调用 videoHits.delete 整条删除（原文、原图和未发布二创一起移除）。videoHits.versions.delete 只删除一个二创版本，原选题和其他版本保留。已提交发布、已发布或正在合成的内容会返回 409，发布身份和文件摘要防重记录不会被清除。删除成功后，同一创建用户可以重新导入相同的 importSource 与 externalId，新记录使用新的来源编号。这两个删除操作仅在界面和 REST 可用，MCP 素材写入不开放删除。
+
 ```json
 {"module":"psychology","action":"videoHits.archive","requestId":"GENERATE_A_UUID","params":{"id":"SOURCE_ID","body":{"revision":SOURCE_REVISION}}}
 ```

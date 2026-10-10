@@ -211,6 +211,54 @@ test('twenty uncleared slots are atomic; publication alone keeps the slot, clean
  d=await(await f.call('')).json();assert.equal(d.items[0].versionCount,21);assert.equal(d.items[0].activeVersionCount,20);assert.equal(d.items[0].cleanedVersionCount,1);assert.equal(f.requests.length,0);
 });
 
+test('manual delete removes unpublished imports and exclusive files without releasing published or shared material',async t=>{
+ const f=await setup(t),source=await f.source(),other=await f.source();
+ await f.version(source,1);await f.version(source,2);await f.version(other,1);
+ const shared=f.image(),own=f.image(),original=f.image(),kept=f.image();
+ f.frame(source,0,original);f.frame(source,1,shared);f.frame(source,1,own,2);f.frame(other,1,shared);f.frame(other,0,kept);
+ const video=f.video();await f.version(source,3,{video:video.id});
+ f.sqlite.prepare('INSERT INTO psychology_imported_photo_skips(owner,source_id,version,revision,retry_at,reason) VALUES(?,?,?,?,?,?)').run('admin',source,1,1,Date.now(),'test');
+ const preview=crypto.randomUUID(),previewKey='psychology-videos/admin/'+preview+'/preview';
+ f.sqlite.prepare("INSERT INTO psychology_video_assets(id,owner,file_name,content_type,file_size,r2_key,status,created_at,updated_at) VALUES(?,'admin','preview.mp4','video/mp4',3,?,'ready',?,?)").run(preview,previewKey,Date.now(),Date.now());
+ f.sqlite.prepare('INSERT INTO psychology_video_hit_render_assets(asset_id,source_id,version,owner_id) VALUES(?,?,1,?)').run(preview,source,'admin');f.store.set(previewKey,new Uint8Array([1]));
+ const versionBody={requestId:crypto.randomUUID(),revision:1},removed=await(await f.call('/'+source+'/versions/1/delete','POST',versionBody)).json();
+ assert.equal(removed.deleted,true);assert.equal(removed.version,1);assert.deepEqual(await(await f.call('/'+source+'/versions/1/delete','POST',versionBody)).json(),removed);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions WHERE source_id=? AND version=1').get(source).n,0);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_frames WHERE source_id=? AND version=0').get(source).n,1);
+ assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_hit_assets WHERE id=?').get(own.id).cleanup_state,'deleting');
+ assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_hit_assets WHERE id=?').get(shared.id).cleanup_state,'active');
+ assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_assets WHERE id=?').get(preview).cleanup_state,'deleting');
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hit_render_assets WHERE asset_id=?').get(preview).n,1);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_imported_photo_skips WHERE source_id=?').get(source).n,0);
+ f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_item_id='kept',publish_state='published',published_at=? WHERE source_id=? AND version=2").run(Date.now(),source);
+ await assert.rejects(f.write('/'+source+'/delete',{revision:1},'POST'),/不能整条删除/);
+ assert.equal(f.sqlite.prepare('SELECT id FROM psychology_video_hits WHERE id=?').get(source).id,source);
+ const busy=await f.source();await f.version(busy,1);f.sqlite.prepare("UPDATE psychology_video_hit_versions SET render_state='running' WHERE source_id=?").run(busy);
+ await assert.rejects(f.write('/'+busy+'/versions/1/delete',{revision:1},'POST'),/不能删除/);
+ const used=await f.source(),clip=f.video();await f.version(used,1,{video:clip.id});
+ f.sqlite.prepare('INSERT INTO psychology_video_hit_video_usage VALUES(?,?,?,?)').run('admin','digest-'+clip.id,clip.id,'item');
+ await assert.rejects(f.write('/'+used+'/delete',{revision:1},'POST'),/不能整条删除/);
+ const fresh=await(await f.write('',{externalId:'import-again',importSource:'gpt-dot',videoUrl:'https://www.tiktok.com/@source/video/123',title:'Imported'},'POST')).json();
+ const clip2=f.video();await f.version(fresh.id,1,{video:clip2.id});
+ const body={requestId:crypto.randomUUID(),revision:1};assert.equal((await(await f.call('/'+fresh.id+'/delete','POST',body)).json()).deleted,true);
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits WHERE id=?').get(fresh.id).n,0);
+ assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_hit_videos WHERE id=?').get(clip2.id).cleanup_state,'deleting');
+ assert.equal(f.sqlite.prepare('SELECT cleanup_state FROM psychology_video_assets WHERE id=?').get(clip2.id).cleanup_state,'deleting');
+ const again=await(await f.write('',{externalId:'import-again',importSource:'gpt-dot',videoUrl:'https://www.tiktok.com/@source/video/123',title:'Imported again'},'POST')).json();
+ assert.notEqual(again.id,fresh.id);
+ await collectVideoHitAssets(f.env);
+ assert.ok(f.deleted.includes(own.key)&&f.deleted.includes(previewKey)&&f.deleted.includes(clip2.key));
+ assert.ok(f.store.has(shared.key)&&f.store.has(original.key)&&f.store.has(kept.key)&&f.store.has(video.key));
+ f.sqlite.prepare("INSERT INTO factory_users(id,username,role,password_hash,password_salt,sidebar_modules_json,created_at,updated_at) VALUES('member','member','operator','','','[\"psychology-video-hits\"]',0,0)").run();
+ const member=toPublicUser(f.sqlite.prepare("SELECT * FROM factory_users WHERE id='member'").get()),adminSource=await f.source(),memberSource=await f.source();
+ f.sqlite.prepare('UPDATE psychology_video_hits SET owner_id=? WHERE id=?').run('member',memberSource);
+ const previous=f.user;f.user=member;await assert.rejects(f.call('/'+adminSource+'/delete','POST',{requestId:crypto.randomUUID(),revision:1}),/无权/);
+ assert.equal((await(await f.call('/'+memberSource+'/delete','POST',{requestId:crypto.randomUUID(),revision:1})).json()).deleted,true);f.user=previous;
+ const another=await f.source();f.sqlite.prepare('UPDATE psychology_video_hits SET owner_id=? WHERE id=?').run('member',another);
+ assert.equal((await(await f.call('/'+another+'/delete','POST',{requestId:crypto.randomUUID(),revision:1})).json()).deleted,true);
+ assert.equal(f.requests.length,0);
+});
+
 test('database slot trigger fences a concurrent writer after the API capacity read',async t=>{
  const f=await setup(t),source=await f.source();for(let n=1;n<=19;n++)await f.version(source,n);
  const batch=f.db.batch.bind(f.db);let injected=false;f.db.batch=async rows=>{if(!injected){injected=true;f.sqlite.prepare("INSERT INTO psychology_video_hit_versions(source_id,version,name,title,created_at,updated_at) VALUES(?,20,'Concurrent','Concurrent',0,0)").run(source);}return batch(rows);};

@@ -1,8 +1,8 @@
 import {hitAssetScope,hitAdmin} from './psychology-video-hit-access.js';
 import {json} from './http.js';
-import {videoHitUser,sourceRow,mutation,guard,VIDEO_HITS_BASE} from './psychology-video-hits.js';
+import {videoHitUser,sourceRow,versionRow,mutation,guard,VIDEO_HITS_BASE} from './psychology-video-hits.js';
 import {readManagementBody} from './psychology-management-api.js';
-import {only,fail} from '../../scripts/psychology-video-hit-contract.js';
+import {only,fail,versionNumber} from '../../scripts/psychology-video-hit-contract.js';
 import {insertAutoJob} from './psychology-auto-publish.js';
 export const VIDEO_HIT_GRACE_MS=86400000;
 const RETRY_MS=7*86400000;
@@ -46,7 +46,8 @@ export async function collectVideoHitAssets(env,{now=Date.now(),limit=50}={}){
  const stats={versions:0,sources:0,files:0,retryPending:0,localQueued:0};
  const versions=(await db.prepare(`SELECT v.* FROM psychology_video_hit_versions v WHERE publish_state='published' AND published_at>0 AND published_at<=? AND cleaned_at=0 AND NOT ${versionJobHold} ORDER BY published_at LIMIT 10`).bind(cutoff).all()).results;
  for(const v of versions){try{await purgeVersion(db,v,now);stats.versions++;}catch(error){if(!/CHECK constraint/i.test(error.message))throw error;}}
- // Original source copy and version-0 images are retained, including archived sources.
+ // Automatic cleanup retains original copy and version-0 images, including archived sources.
+// Explicit deletion is separate and refuses anything already publishing or published.
  // Recover only this idempotent cleanup type, never rendering or publishing jobs.
  await db.prepare("UPDATE factory_jobs SET status='done',percent=100,error='',message='已确认本机成片清理',completed_at=?,updated_at=? WHERE id IN (SELECT j.id FROM factory_jobs j JOIN psychology_video_hit_local_files l ON l.cleanup_job_id=j.id WHERE j.type='psychology-video-cleanup' AND j.status IN ('queued','running','failed') AND j.updated_at<=? AND l.cleaned_at>0 LIMIT 10)").bind(now,now,now-LOCAL_STALE_MS).run();
  const local=(await db.prepare(`SELECT l.*,u.username,j.status cleanup_status FROM psychology_video_hit_local_files l JOIN psychology_video_hit_versions v ON v.source_id=l.source_id AND v.version=l.version JOIN factory_users u ON u.id=l.owner_id LEFT JOIN factory_jobs j ON j.id=l.cleanup_job_id WHERE v.cleaned_at>0 AND v.publish_state='published' AND l.cleaned_at=0 AND (l.cleanup_job_id='' OR j.id IS NULL OR (j.status='failed' AND j.updated_at<=?) OR (j.type='psychology-video-cleanup' AND j.status='running' AND j.updated_at<=?)) AND NOT ${localJobHold} ORDER BY COALESCE(j.updated_at,l.created_at),l.job_id LIMIT 10`).bind(now-300000,now-LOCAL_STALE_MS,retryCutoff).all()).results;
@@ -68,8 +69,43 @@ export async function collectVideoHitAssets(env,{now=Date.now(),limit=50}={}){
   if(await deleteFile(env,{table:'psychology_video_assets',id:a.id,key:a.r2_key,generation:a.cleanup_generation,prefix:'psychology-videos/'+a.owner_id+'/'},now))stats.files++;else stats.retryPending++;}
  return stats;
 }
+const versionBlocked=`(v.publish_item_id<>'' OR v.publish_state IN ('published','reserved') OR v.published_at>0 OR v.render_state IN ('queued','running') OR EXISTS(SELECT 1 FROM psychology_imported_photo_slots slot WHERE slot.source_id=v.source_id AND slot.version=v.version) OR EXISTS(SELECT 1 FROM psychology_peer_account_usage used WHERE used.source_id=v.source_id||':v'||v.version) OR EXISTS(SELECT 1 FROM psychology_video_hit_videos asset JOIN psychology_video_hit_video_usage usage ON usage.owner_id=asset.owner_id AND usage.digest=asset.digest WHERE asset.id=v.video_asset_id) OR ${versionJobHold})`;
+function releaseMedia(db,sourceId,version,now=Date.now()){
+ const scoped=version!==undefined,retry=now-RETRY_MS,frameArgs=scoped?[sourceId,version]:[sourceId],versionArgs=frameArgs;
+ const frameFilter=scoped?'source_id=? AND version=? AND asset_id<>\'\'':'source_id=? AND asset_id<>\'\'';
+ const otherFrames=scoped?'NOT EXISTS(SELECT 1 FROM psychology_video_hit_frames f WHERE f.asset_id=a.id AND NOT (f.source_id=? AND f.version=?))':'NOT EXISTS(SELECT 1 FROM psychology_video_hit_frames f WHERE f.asset_id=a.id AND f.source_id<>?)';
+ const versionFilter=scoped?'source_id=? AND version=? AND video_asset_id<>\'\'':'source_id=? AND video_asset_id<>\'\'';
+ const otherVideos=scoped?'NOT EXISTS(SELECT 1 FROM psychology_video_hit_versions other WHERE other.video_asset_id=a.id AND NOT (other.source_id=? AND other.version=?))':'NOT EXISTS(SELECT 1 FROM psychology_video_hit_versions other WHERE other.video_asset_id=a.id AND other.source_id<>?)';
+ const renderFilter=scoped?'r.source_id=? AND r.version=?':'r.source_id=?';
+ const rowFilter=scoped?'source_id=? AND version=?':'source_id=?';
+ return [
+  db.prepare(`UPDATE psychology_video_hit_assets AS a SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE cleanup_state IN ('active','uploading') AND a.id IN (SELECT asset_id FROM psychology_video_hit_frames WHERE ${frameFilter}) AND ${otherFrames} AND NOT ${jobHold('image','a.id')}`).bind(...frameArgs,...frameArgs,retry),
+  db.prepare(`UPDATE psychology_video_hit_videos AS a SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE cleanup_state IN ('active','uploading') AND a.id IN (SELECT video_asset_id FROM psychology_video_hit_versions WHERE ${versionFilter}) AND ${otherVideos} AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_video_usage u WHERE u.owner_id=a.owner_id AND u.digest=a.digest) AND NOT ${jobHold('video','a.id')}`).bind(...versionArgs,...versionArgs,retry),
+  db.prepare(`UPDATE psychology_video_assets AS mirror SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE mirror.cleanup_state<>'deleted' AND mirror.id IN (SELECT a.id FROM psychology_video_hit_videos a WHERE a.cleanup_state='deleting' AND a.id IN (SELECT video_asset_id FROM psychology_video_hit_versions WHERE ${versionFilter}) AND ${otherVideos}) AND mirror.r2_key=(SELECT r2_key FROM psychology_video_hit_videos WHERE id=mirror.id)`).bind(...versionArgs,...versionArgs),
+  db.prepare(`UPDATE psychology_video_assets AS a SET cleanup_state='deleting',cleanup_generation=cleanup_generation+1,cleaned_at=0,cleanup_error='' WHERE a.cleanup_state='active' AND EXISTS(SELECT 1 FROM psychology_video_hit_render_assets r WHERE r.asset_id=a.id AND ${renderFilter}) AND NOT ${jobHold('video','a.id')}`).bind(...frameArgs,retry),
+  db.prepare('DELETE FROM psychology_video_hit_frames WHERE '+rowFilter).bind(...frameArgs),
+  db.prepare('DELETE FROM psychology_video_hit_local_files WHERE '+rowFilter).bind(...frameArgs),
+  db.prepare('DELETE FROM psychology_imported_photo_skips WHERE '+rowFilter).bind(...frameArgs)
+ ];
+}
 export async function handleVideoHitCleanup(request,env,url,session){
+ const remove=url.pathname.match(/^\/api\/psychology-video-hits\/(vh-[a-f0-9]{32})(?:\/versions\/(\d+))?\/delete$/);
  const archive=url.pathname.match(/^\/api\/psychology-video-hits\/(vh-[a-f0-9]{32})\/(archive|restore)$/),status=url.pathname===VIDEO_HITS_BASE+'/cleanup';
+ if(remove){
+  if(request.method!=='POST')fail('请求方法无效。',405);
+  if((request.headers.get('origin')&&request.headers.get('origin')!==url.origin)||request.headers.get('sec-fetch-site')==='cross-site')fail('不允许跨站修改。',403);
+  const user=await videoHitUser(env.DB,session?.user),db=env.DB,body=await readManagementBody(request);only(body,['requestId','revision']);
+  const version=remove[2]?versionNumber(Number(remove[2])):undefined;
+  return mutation(db,user,body,'delete:'+remove[1]+(version?':'+version:''),async()=>{
+   const source=await sourceRow(db,remove[1],user);if(body.revision!==(version? (await versionRow(db,source.id,version,user)).revision : source.revision))fail('revision已变化，请重新读取。',409);
+   const blocked=await db.prepare('SELECT COUNT(*) n FROM psychology_video_hit_versions v WHERE v.source_id=? AND '+(version?'v.version=? AND ':'')+versionBlocked).bind(...(version?[source.id,version]:[source.id])).first();
+   if(blocked.n)fail(version?'这个二创版本已提交发布、已发布或正在合成，不能删除。':'这条导入已有版本已提交发布、已发布或正在合成，不能整条删除。',409);
+   const now=Date.now();
+   const touch='CASE WHEN updated_at=? THEN updated_at+1 ELSE ? END';
+   if(version)return {statements:[db.prepare(`UPDATE psychology_video_hit_versions AS v SET updated_at=${touch} WHERE source_id=? AND version=? AND revision=? AND NOT ${versionBlocked}`).bind(now,now,source.id,version,body.revision),guard(db),...releaseMedia(db,source.id,version,now),db.prepare(`DELETE FROM psychology_video_hit_versions AS v WHERE source_id=? AND version=? AND revision=? AND NOT ${versionBlocked}`).bind(source.id,version,body.revision),guard(db)],result:{ok:true,id:source.id,version,deleted:true}};
+   return {statements:[db.prepare(`UPDATE psychology_video_hits SET updated_at=${touch} WHERE id=? AND owner_id=? AND revision=? AND NOT EXISTS(SELECT 1 FROM psychology_video_hit_versions v WHERE v.source_id=psychology_video_hits.id AND ${versionBlocked})`).bind(now,now,source.id,source.owner_id,source.revision),guard(db),...releaseMedia(db,source.id,undefined,now),db.prepare('DELETE FROM psychology_video_hit_versions WHERE source_id=?').bind(source.id),db.prepare('DELETE FROM psychology_video_hits WHERE id=? AND owner_id=? AND revision=?').bind(source.id,source.owner_id,source.revision),guard(db)],result:{ok:true,id:source.id,deleted:true}};
+  });
+ }
  if(!archive&&!status)return null;const user=await videoHitUser(env.DB,session?.user),db=env.DB;
  if(status&&request.method==='GET'){
   const images=await db.prepare("SELECT cleanup_state state,COUNT(*) count,COALESCE(SUM(size),0) bytes FROM psychology_video_hit_assets WHERE (owner_id=? OR ?=1) GROUP BY cleanup_state").bind(user.id,hitAdmin(user)).all(),videos=await db.prepare("SELECT cleanup_state state,COUNT(*) count,COALESCE(SUM(size),0) bytes FROM psychology_video_hit_videos WHERE (owner_id=? OR ?=1) GROUP BY cleanup_state").bind(user.id,hitAdmin(user)).all();

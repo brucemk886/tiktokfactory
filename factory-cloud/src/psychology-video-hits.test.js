@@ -336,6 +336,15 @@ test('admin agent filter spans creators, is exact, normalized and applied before
  assert.equal((await f.gateway('videoHits.list',{query:{importSource:'bad/name'}})).status,400);
 });
 
+test('project-key gateway deletes an unpublished import and keeps a published source',async t=>{
+ const f=await setup(t),id=await f.create();await f.write('/'+id+'/versions/1',{revision:0,title:'Draft'});
+ const version=await f.gateway('videoHits.versions.delete',{id,version:'1',body:{revision:1}},crypto.randomUUID());assert.equal(version.status,200,await version.clone().text());assert.equal((await version.json()).version,1);
+ const published=await f.create();await f.write('/'+published+'/versions/1',{revision:0,title:'Published'});f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_state='published',publish_item_id='used' WHERE source_id=?").run(published);
+ assert.equal((await f.gateway('videoHits.delete',{id:published,body:{revision:1}},crypto.randomUUID())).status,409);
+ const removed=await f.gateway('videoHits.delete',{id,body:{revision:1}},crypto.randomUUID());assert.equal(removed.status,200,await removed.clone().text());
+ assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM psychology_video_hits WHERE id=?').get(id).n,0);assert.equal(f.sqlite.prepare('SELECT id FROM psychology_video_hits WHERE id=?').get(published).id,published);
+});
+
 test('project-key gateway archives and restores original topics without resetting published identities',async t=>{
  const f=await setup(t),id=await f.create();await f.write('/'+id+'/versions/1',{revision:0,title:'Published'});f.sqlite.prepare("UPDATE psychology_video_hit_versions SET publish_state='published',publish_item_id='used' WHERE source_id=?").run(id);
  assert.equal((await f.gateway('videoHits.archive',{id,body:{revision:1}},crypto.randomUUID())).status,200);
