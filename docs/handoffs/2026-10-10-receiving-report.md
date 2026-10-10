@@ -25,7 +25,14 @@ Add a daily Operations Report tab for photo-caption receiving-account traffic, e
 - git diff whitespace checks and tracked UI asset manifest verification passed. No live publishing API was called.
 
 ## Unfinished work
-Production deployment and authenticated read-only verification pending.
+None for this request. Old photos without preserved receiver identity are explicitly counted as unmapped and are never assigned from current settings.
 
 ## Recommended next step
 After release, open Operations → 承接引流 and choose Today or Yesterday. Treat missing profile samples as delayed/unavailable; only linked website stages provide attributable conversion rates.
+
+
+## Release verification
+- Runtime commit 2afbbd82238c17a50af564e711f4414ad827e412 was pushed to GitHub main with a clean checkout and exact origin/main match before npm run deploy. Upstream detail-table fixes were retained through rebase; 20 affected checks passed after integration.
+- Migration 0089 applied successfully. Worker version 57129f5c-57e8-4505-b274-3c8dee6b34c5 deployed through the required factory-cloud command.
+- Authenticated Today and 7-day report GETs returned 200 with genuine scoped aggregates, available site tracking, preserved receiver attribution and explicit delayed UTC profile coverage. The 1600px Agent Window displayed the selected tab and seven daily rows after date selection, without document overflow or standard-report bleed. Owned browser session closed.
+- Three public report assets returned 200 and matched normalized SHA-256 of committed files; anonymous report API returned 401. No real publish request, scheduling change, content cleanup or tracking write was performed during verification.
