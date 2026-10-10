@@ -72,7 +72,7 @@ export async function handlePsychologyReceivingReport(request,env,url,session,{n
    siteReady:funnel.ready,siteError,profileWindow:funnel.profileWindow,profileLatestDay:funnel.profileLatestDay,updatedAt:now,photoSyncedAt:Math.max(0,...photos.results.map(p=>p.syncedAt||0)),
    definitions:{exposure:'图文曝光以 TikTok 累计播放为参考：按北京时间实际发布日分组，展示这些作品最新累计播放，不是当日新增曝光或独立人数。仅计保存了引流承接关系的已发布图文。',
     attribution:'@关系取发布时冻结的承接账号；主页访问及短链接流量是承接账号整体数据，包含其他来源，无法证明每次访问都来自这些图文，也不能追踪 @ 点击次数。',
-    profile:'主页访问使用同名日期的 TikTok UTC 日报，缺日报显示 —；与北京时间图文及链接数据的窗口不同，不计算曝光→主页或主页→链接转化率。',
+    profile:'主页访问来自平台整天日报，折合北京时间当日 08:00 至次日 08:00；缺日报显示 —。图文及链接数据按北京时间 00:00 切日，两者窗口不同，不计算曝光→主页或主页→链接转化率。',
     site:'主页链接点击为已生成短链接的有效访问，不是 TikTok 官方点击数或独立访客。进站及后续测试按该次点击关联、每步去重，转发链接的访问也会计入。跨日到站仍归入点击日；部分日期未覆盖时单独提示。'}},200,{'cache-control':'private, no-store'});
  }catch(error){
   if([400,403].includes(error.statusCode))return errorJson(error.message,error.statusCode);

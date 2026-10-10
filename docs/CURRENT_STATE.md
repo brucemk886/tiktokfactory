@@ -1,5 +1,7 @@
 # Current State
 
+- Psychology report calendars, actual timestamp displays and manual datetime inputs use Asia/Shanghai. One publication-date filtering resolves exact account/video timestamps (receipt fallback labeled) instead of treating unzoned provider strings as local dates; unknown dates stay in All. Autopilot read projections and observation trends use Beijing days while existing Pacific publishing rules and instants are preserved. Whole UTC profile samples show their true Beijing 08:00-to-next-08:00 intervals; unzoned One daily aggregates remain explicitly unconfirmed. See docs/handoffs/2026-10-10-psychology-beijing-time.md.
+
 - Operations Report has a daily 承接引流 tab with frozen photo-to-receiver attribution, publication-cohort cumulative views, distinct receiver UTC profile visits, Beijing short-link click cohorts, arrivals and tests. Migration 0089 retains lightweight receiver identities through media/job cleanup. Current publisher and receiver grants are intersected; untracked/missing values remain explicit and no exposure-to-profile conversion is inferred. See docs/handoffs/2026-10-10-receiving-report.md.
 
 - Psychology Data Overview and Operations Report show authorized photo/video comparisons. Overview supports media filtering; exact account + published ID resolves missing media metadata from Factory task facts. Unknown types and missing metrics remain separate; account-level traffic and Hub receipts are explicitly all types. See docs/handoffs/2026-10-10-media-report-comparison.md.

@@ -107,7 +107,7 @@ export const UI_ASSETS = {
   "/psychology-publish-sources.js": "766823010ee3bcda321f",
   "/psychology-publish-time.js": "eaabd5c449874b248123",
   "/psychology-receiving-report.css": "0e55c0d47fe9b92673e7",
-  "/psychology-receiving-report.js": "519f01aa775e8f46f4f4",
+  "/psychology-receiving-report.js": "08c881263ebd76a6d127",
   "/psychology-scheduling.js": "0a8d119e8b20ebeeba72",
   "/psychology-styled-card.js": "be3fb0bd7c5d7eb22c41",
   "/psychology-templates.css": "c0d0e89651b32dfdbe2d",

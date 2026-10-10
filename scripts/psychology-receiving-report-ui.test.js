@@ -34,7 +34,7 @@ test('desktop receiving tab shows accurate funnel, filters, pagination and isola
  await page.goto(base+'/psychology-ops-report?channel=receiving');await page.waitForFunction(()=>document.querySelector('.receiving-content')?.hidden===false);
  assert.equal(await page.$eval('#standardReport',e=>e.hidden),true);assert.equal(await page.$$eval('.one-report-tabs a',es=>es.length),3);assert.equal(await page.$eval('.one-report-tabs [aria-current=page]',e=>e.textContent),'承接引流');
  assert.equal(calls.some(u=>['/api/psychology-operations','/api/psychology-one-report'].includes(u.pathname)),false);
- const text=await page.$eval('.receiving-content',e=>e.textContent);assert.match(text,/23 条引流图文/);assert.match(text,/50\.0%/);assert.match(text,/UTC 日报未齐/);
+ const text=await page.$eval('.receiving-content',e=>e.textContent);assert.match(text,/23 条引流图文/);assert.match(text,/50\.0%/);assert.match(text,/日报未齐/);assert.match(text,/08:00（北京时间）/);assert.match(text,/北京 08:00 切日/);assert.doesNotMatch(text,/UTC 日报/);
  assert.equal(await page.$$eval('.receiving-funnel article',es=>es.length),5);
  assert.equal(await page.$eval('[data-period=today]',e=>getComputedStyle(e).color),'rgb(255, 255, 255)');
  const screenshotDir=path.join(root,'tmp/receiving-report-qa');fs.mkdirSync(screenshotDir,{recursive:true});await page.screenshot({path:path.join(screenshotDir,'overview.png'),fullPage:true});
