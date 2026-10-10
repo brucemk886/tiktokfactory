@@ -29,3 +29,11 @@ Live verification confirmed the 20-row detail links and scoped coverage counts. 
 
 ## Recommended next step
 Open Data Overview or Operations Report → TikTok One → a video's Data Detail. Keep missing metrics visibly unavailable and review individual video audiences rather than averaging proportions.
+
+## Retention interaction follow-up — 2026-10-10
+- Goal: show exact retention on hover and second labels along the x-axis.
+- The whole plot resolves the nearest sample using the SVG screen transform, with a vertical guide and point highlight. Tooltip shows seconds and two-decimal retention; missing values stay unavailable and zero stays 0.00%. Pointer leave/Escape hide it; arrow/Home/End keys support inspection.
+- Twenty-point videos label every second; longer series use readable integer intervals and retain the final second. Every sample remains available to hover and the numeric table. Chart uses the available desktop width.
+- Changed public/psychology-one-analysis.js, psychology-one-report.css, the browser regression and asset manifest. No API/data/publishing changes.
+- Real Chromium regression passed on both report pages, including scaled pointer coordinates, right-edge sample, null/zero, keyboard, 20/61-point axes and tooltip dismissal. Inspected the desktop hover screenshot.
+- Release: pending guarded deployment and live check.
