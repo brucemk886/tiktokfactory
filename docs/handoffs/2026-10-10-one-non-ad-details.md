@@ -36,4 +36,4 @@ Open Data Overview or Operations Report → TikTok One → a video's Data Detail
 - Twenty-point videos label every second; longer series use readable integer intervals and retain the final second. Every sample remains available to hover and the numeric table. Chart uses the available desktop width.
 - Changed public/psychology-one-analysis.js, psychology-one-report.css, the browser regression and asset manifest. No API/data/publishing changes.
 - Real Chromium regression passed on both report pages, including scaled pointer coordinates, right-edge sample, null/zero, keyboard, 20/61-point axes and tooltip dismissal. Inspected the desktop hover screenshot.
-- Release: pending guarded deployment and live check.
+- Seven UI asset integration tests also passed. Released after clean main push at runtime e47d311b90eb213fd2dac6ff0601564a90c1ea59; worker a2ec81e6-9dbc-4347-b0ac-a3a69e73a132. Authenticated live read verified 0–19 second labels and an actual mouse hover displaying second 9 / 20.00% with visible guide. No unfinished work.
