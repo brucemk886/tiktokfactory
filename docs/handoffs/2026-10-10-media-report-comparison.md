@@ -41,5 +41,5 @@ Refresh Data Overview or Operations Report. Choose a date/group and compare phot
 - Decision: psychology-only fixed widths for type/account/counts/timestamp/actions, flexible title space, 1040px table minimum inside the existing scroll container, and wrapping long account text. Other modules keep their six-column widths. No metric, API or publication changes.
 - Files: public/official-group-report.css, scripts/psychology-media-report-ui.test.js and generated UI manifest.
 - Tests: the new real-Chromium geometry assertion first reproduced the overlap, then passed for high/low/normal/anomaly detail tables at 1280, 1440 and 1920 desktop widths. Long handles, full timestamps and two action buttons remain inside their cells; the document does not overflow. The detail screenshot was inspected. All 28 targeted report/first-paint/browser tests passed.
-- Unfinished: guarded deployment and public CSS hash verification.
+- Unfinished: none. Deployed committed main 7d4638630d380dd0a697a407231548316a719fb3 through npm run deploy; Worker 22439131-2887-4c70-b85a-f2b280400076. Live CSS returned HTTP 200 with the exact committed SHA-256 content.
 - Next step: refresh the data overview and inspect normal/low/high works.
