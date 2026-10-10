@@ -27,10 +27,11 @@ export async function handlePsychologyOneReport(request,env,url,session){
   const groups=publicState(store).groups.filter(g=>g.projectId===project?.id&&(!allow||allow.has(g.id)));
   if(group&&!groups.some(g=>g.id===group))return errorJson('没有这个分组的权限。',403);
   const ids=JSON.stringify(groups.filter(g=>!group||g.id===group).map(g=>g.id));
-  const source=url.searchParams.get('source')||'official';
+  const source=url.searchParams.get('source')||'official',videoId=url.searchParams.get('videoId')||'';
+  if(videoId&&(!/^\d{1,30}$/.test(videoId)||source!=='official'))return errorJson('视频详情参数无效。',400);
   if(!['official','tasks'].includes(source))return errorJson('数据来源无效。',400);
   if(source==='tasks'&&allDates)return errorJson('工厂任务请选择具体日期范围。',400);
-  if(source==='official')return json(await readOfficialOneReport(env,{ids,groups,window,campaign,view,page:Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),country:'US',refresh:url.searchParams.get('refresh')==='1'}));
+  if(source==='official')return json(await readOfficialOneReport(env,{ids,groups,window,campaign,view,page:Math.max(1,Math.floor(Number(url.searchParams.get('page'))||1)),country:'US',videoId,refresh:url.searchParams.get('refresh')==='1'}));
   // Frozen per-task One metadata identifies these posts, never the account alone.
   // Task facts carry once-only video ownership and survive media/job cleanup.
   const base=reportAccountScopeSQL+`,one_tasks AS MATERIALIZED (SELECT i.id,i.batch_id batchId,a.account_key account,a.current_group groupId,

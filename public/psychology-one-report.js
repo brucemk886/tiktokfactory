@@ -1,3 +1,4 @@
+import {renderOneAnalysis} from './psychology-one-analysis.js';
 const path=location.pathname.replace(/\/$/,'');
 if(['/psychology-effects','/psychology-ops-report'].includes(path))mountOneReport();
 function mountOneReport(){
@@ -8,7 +9,7 @@ function mountOneReport(){
  const fmt=v=>v===null||v===undefined?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:1});
  const pct=v=>v===null||v===undefined?'—':(v*100).toFixed(1)+'%';
  const time=v=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
- const link=one=>{const u=new URL(location.href);if(one)u.searchParams.set('channel','tiktok-one');else u.searchParams.delete('channel');return u.pathname+u.search;};
+ const link=one=>{const u=new URL(location.href);if(one)u.searchParams.set('channel','tiktok-one');else {u.searchParams.delete('channel');u.searchParams.delete('oneVideo');}return u.pathname+u.search;};
  const tabs=document.createElement('nav');tabs.className='one-report-tabs';tabs.setAttribute('aria-label','发布渠道');
  tabs.innerHTML=`<a href="${esc(link(false))}" ${!active?'aria-current="page"':''}>全部数据</a><a href="${esc(link(true))}" ${active?'aria-current="page"':''}>TikTok One</a>`;
  header.after(tabs);standard.hidden=active;
@@ -30,7 +31,12 @@ function mountOneReport(){
  </form><p class="one-report-status" role="status" aria-live="polite"></p>
  <div class="one-report-data" hidden></div>`;
  const form=root.querySelector('form'),field=k=>form.elements.namedItem(k),status=root.querySelector('[role="status"]'),content=root.querySelector('.one-report-data');
+ const detailVideo=params.get('oneVideo')||'',back=new URL(location.href);back.searchParams.delete('oneVideo');
+ const backUrl=back.pathname+back.search;
+ const fallback=document.createElement('div');fallback.className='one-analysis-head';fallback.hidden=!detailVideo;fallback.innerHTML='<a class="one-back-link" href="'+esc(backUrl)+'">← 返回视频列表</a><button type="button">重新读取详情</button>';form.after(fallback);form.hidden=!!detailVideo;
+ if(detailVideo){heading.textContent='TikTok One · 视频数据详情';document.title='心理学 · TikTok One 视频详情';}
  let applied=null,controller=null,request=0;
+ fallback.querySelector('button').onclick=()=>load({...fromForm(),source:'official',view:'videos',page:params.get('onePage')||1,refresh:'1'});
  for(const key of ['period','source','basis','group','campaign','from','to']){
   const val=params.get('one'+key[0].toUpperCase()+key.slice(1));if(val){if(['group','campaign'].includes(key))field(key).add(new Option(val,val));field(key).value=val;}
  }
@@ -45,6 +51,8 @@ function mountOneReport(){
  form.addEventListener('submit',e=>{e.preventDefault();load({...fromForm(),view:applied?.view||'videos',page:1,refresh:'1'});});
  function options(key,rows,label,value){const selected=field(key).value;field(key).innerHTML='<option value="">'+(key==='group'?'全部授权分组':'全部 One 项目')+'</option>'+rows.map(r=>`<option value="${esc(r[value])}">${esc(r[label]||r[value])}</option>`).join('');if(selected&&!rows.some(r=>String(r[value])===selected))field(key).add(new Option(selected+'（本期无记录）',selected));field(key).value=selected;}
  async function load(query){
+  if(detailVideo)query={...query,source:'official',videoId:detailVideo};
+  fallback.hidden=!detailVideo;
   controller?.abort();controller=new AbortController();const abort=controller,id=++request;
   status.textContent='正在读取 TikTok One 数据…';content.hidden=true;root.setAttribute('aria-busy','true');
   try{
@@ -57,7 +65,7 @@ function mountOneReport(){
    const u=new URL(location.href);for(const key of ['period','source','basis','group','campaign','from','to','view','page'])u.searchParams.set('one'+key[0].toUpperCase()+key.slice(1),String(applied[key]??''));history.replaceState({},'',u);
    status.textContent=data.window.from+' 至 '+data.window.to+' · 按'+(data.basis==='schedule'?'计划':'实际')+'发布时间筛选（北京时间） · 更新于 '+time(data.updatedAt)+(data.summary.updating?' · '+data.summary.updating+' 条状态正在后台同步':'');
    if(data.source==='official')status.textContent='官方项目数据 · 创作者地区 US · 报表查询 '+(data.dateRange?.start_date||data.window.from)+' 至 '+(data.dateRange?.end_date||data.window.to)+' · '+(data.fetchedAt?'拉取于 '+time(data.fetchedAt):'尚无已绑定的 One 项目')+(data.cached?' · 缓存，点击查询 / 刷新可重新拉取':'')+(data.partial?' · 官方数据尚未读取完整，下方仅为已读取部分':'');
-   render(data);content.hidden=false;
+   render(data);content.hidden=false;fallback.hidden=true;
   }catch(e){if(id===request&&e.name!=='AbortError'){status.textContent='读取失败：'+e.message+'。请点击查询 / 刷新重试。';content.hidden=true;}}
   finally{if(id===request)root.setAttribute('aria-busy','false');}
  }
@@ -66,14 +74,15 @@ function mountOneReport(){
   const s=d.summary,groupName=id=>d.groups.find(g=>g.id===id)?.name||'—';
   const cards=[['官方收录视频',fmt(s.total),'当前项目 · 当前授权心理学账号'],['累计播放',fmt(s.views),'已有播放值 '+s.synced+' 条 · 缺失 '+s.missingMetrics+' 条'],['锚点点击',fmt(s.anchorClicks),'有点击数据 '+s.anchorClicksSamples+' 条'],['锚点点击率',pct(s.anchorCtr),'仅按同时有曝光、点击的数据计算']];
   content.innerHTML='<div class="one-report-kpis">'+cards.map(([label,value,note])=>'<article><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></article>').join('')+'</div>'+
-   '<div class="one-report-progress"><span>自然播放 '+fmt(s.organicViews)+' · 付费播放 '+fmt(s.paidViews)+'</span><span>点赞 '+fmt(s.likes)+' · 评论 '+fmt(s.comments)+' · 分享 '+fmt(s.shares)+'</span></div>'+
+   '<div class="one-report-progress"><span>自然播放 '+fmt(s.organicViews)+'</span><span>点赞 '+fmt(s.likes)+' · 评论 '+fmt(s.comments)+' · 分享 '+fmt(s.shares)+'</span></div>'+
    '<div class="one-report-body"><div class="one-report-heading"><div><h2>TikTok One 官方'+(d.view==='accounts'?'账号表现':d.view==='projects'?'项目表现':'视频明细')+'</h2><p>按官方原始发布日期筛选，展示当前累计指标；无审核状态字段。可切换「工厂发布进度」查看上传与发布回执。</p></div><label>查看维度 <select id="oneReportView"><option value="videos">视频明细</option><option value="accounts">账号表现</option><option value="projects">项目表现</option></select></label></div><div class="one-report-results"></div><footer class="one-report-pager"></footer></div>'+
-   '<p class="one-report-note">'+esc(d.coverage)+(d.partial?' 本次只读取了部分结果，不能据此判断缺少哪些视频。':'')+'</p>';
+   '<p class="one-report-note">'+(s.availability?'受众画像 '+s.availability.audience+' 条 · 留存 '+s.availability.retention+' 条 · 每日趋势 '+s.availability.daily+' 条。点击视频的数据详情查看。 ':'')+esc(d.coverage)+(d.partial?' 本次只读取了部分结果，不能据此判断缺少哪些视频。':'')+'</p>';
   const target=content.querySelector('.one-report-results');
   if(!d.rows.length)target.innerHTML='<div class="one-report-empty"><strong>暂无当前授权账号的官方 One 视频数据</strong><p>可选择其他已绑定项目，或稍后刷新。暂无返回不代表发布失败。</p></div>';
-  else if(d.view==='videos')target.innerHTML=table(['视频 ID / 发布账号','发布时间（接口原始值）','累计播放','自然 / 付费播放','赞 / 评 / 转','锚点曝光 / 点击','锚点点击率'],d.rows.map(r=>{
+  else if(d.view==='videos')target.innerHTML=table(['视频 ID / 发布账号','发布时间（接口原始值）','累计播放','自然播放','赞 / 评 / 转','锚点曝光 / 点击','锚点点击率','详细数据'],d.rows.map(r=>{
+   const details=new URL(location.href);details.searchParams.set('oneVideo',r.videoId);
    const href=/^[\w.]+$/.test(r.accountName)&&/^\d{10,}$/.test(r.videoId)?'https://www.tiktok.com/@'+encodeURIComponent(r.accountName)+'/video/'+r.videoId:'';
-   return [(href?'<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(r.videoId)+'</a>':esc(r.videoId))+'<small>'+esc(r.accountName)+' · '+esc(groupName(r.groupId))+'</small>',esc(r.publishedAt||'—'),fmt(r.views),fmt(r.organicViews)+' / '+fmt(r.paidViews),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),fmt(r.anchorViews)+' / '+fmt(r.anchorClicks),pct(r.anchorCtr)];
+   return [(href?'<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(r.videoId)+'</a>':esc(r.videoId))+'<small>'+esc(r.accountName)+' · '+esc(groupName(r.groupId))+'</small>',esc(r.publishedAt||'—'),fmt(r.views),fmt(r.organicViews),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),fmt(r.anchorViews)+' / '+fmt(r.anchorClicks),pct(r.anchorCtr),'<a class="one-detail-link" href="'+esc(details.pathname+details.search)+'">数据详情 →</a><div class="one-available">'+(r.available?.audience?'<span>受众</span>':'')+(r.available?.retention?'<span>留存</span>':'')+(r.available?.daily?'<span>趋势</span>':'')+'</div>'];
   }));
   else target.innerHTML=table([d.view==='accounts'?'账号 / 分组':'One 项目','官方视频','累计播放','单条平均播放','破千率','赞 / 评 / 转','锚点曝光 / 点击','锚点点击率'],d.rows.map(r=>[d.view==='accounts'?esc(r.accountName)+'<small>'+esc(groupName(r.groupId))+'</small>':esc(r.campaignId),fmt(r.total),fmt(r.views),fmt(r.averageViews),pct(r.thousandRate),fmt(r.likes)+' / '+fmt(r.comments)+' / '+fmt(r.shares),fmt(r.anchorViews)+' / '+fmt(r.anchorClicks),pct(r.anchorCtr)]));
   bindResults(d);
@@ -84,6 +93,7 @@ function mountOneReport(){
   pager.querySelectorAll('button').forEach(b=>b.onclick=()=>load({...applied,page:Number(b.dataset.page)}));
  }
  function render(d){
+  if(d.detail)return renderOneAnalysis(content,d,{backUrl,onRefresh:()=>load({...applied,refresh:'1'})});
   if(d.source==='official')return renderOfficial(d);
   const s=d.summary,names={published:'已发布',submitted:'已提交中台',pending:'待处理',failed:'异常',stopped:'已取消'},groupName=id=>d.groups.find(g=>g.id===id)?.name||'—';
   const cards=[['已发布',fmt(s.published),'本期共 '+fmt(s.total)+' 条任务'],['累计播放',fmt(s.views),'已同步 '+fmt(s.synced)+' 条 · 缺指标 '+fmt(s.missingMetrics)+' 条'],['单条平均播放',fmt(s.averageViews),'仅计算已有播放数据的作品'],['破千率',pct(s.thousandRate),'播放 ≥ 1,000 的已同步作品占比']];
