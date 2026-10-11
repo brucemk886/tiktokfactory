@@ -1,5 +1,7 @@
 # Current State
 
+- An autopilot plan can draw unused Video Hits ready videos instead of the copy library, and can append a saved @receiver CTA to each caption. Existing plans stay on the copy library with mentions off. See docs/handoffs/2026-10-11-autopilot-video-hit-mentions.md.
+
 - Video Hits ready cards show each version's creation time in Asia/Shanghai under the source line. Missing timestamps stay as —. See docs/handoffs/2026-10-10-video-hit-ready-created-at.md.
 
 - TikTok account management lists each authorized account's synced follower count between the name and project. Missing counts stay blank instead of zero. See docs/handoffs/2026-10-10-tiktok-account-followers.md.

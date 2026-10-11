@@ -5,6 +5,7 @@ import {readyVideo} from './psychology-video-hit-videos.js';
 import {insertAutoJob} from './psychology-auto-publish.js';
 import {officialPublishFollowupPayload} from './jobs.js';
 import {ensurePsychologyOneMembers} from './psychology-tiktok-one.js';
+import {photoReceiverPool,requirePhotoReceivers,drawPhotoReceiver,applyPhotoReceiverCaption,photoReceiverGuard} from './psychology-photo-receivers.js';
 import {json} from './http.js';
 const fail=(message,statusCode=409)=>{throw Object.assign(new Error(message),{statusCode});};
 export function normalizeHitRef(ref){
@@ -55,11 +56,11 @@ export function hitPublishStatements(db,hit,id,stamp){
 }
 export async function commitVideoBatch(env,user,config,batchId,entries,accounts){
  await ensurePsychologyOneMembers(env,user,config,accounts);
- const db=env.DB,stamp=Date.now(),statements=[db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp)];
+ const db=env.DB,stamp=Date.now(),statements=[...(entries.some(entry=>entry.photoReceiver)?[photoReceiverGuard(db,user,{revision:entries.find(entry=>entry.photoReceiver).photoReceiver.settingsRevision})]:[]),db.prepare('INSERT INTO psychology_publish_batches(id,created_by,config_json,created_at) VALUES(?,?,?,?)').bind(batchId,user.username,JSON.stringify(config),stamp)];
  for(let i=0;i<entries.length;i+=20)statements.push(db.prepare('INSERT INTO psychology_publish_groups(id,batch_id,ordinal,expected_count) VALUES(?,?,?,?)').bind(batchId+'-group-'+Math.floor(i/20),batchId,Math.floor(i/20),Math.min(20,entries.length-i)));
  entries.forEach((entry,index)=>{
   const id=batchId+'-'+String(index).padStart(3,'0'),groupId=batchId+'-group-'+Math.floor(index/20),hit=entry.hit,asset=hit?hit.asset:entry.asset,account=accounts.find(a=>String(a.connectionId||a.id)===entry.connectionId)||{};
-  const automation={id,batchId,groupId,submissionMode:'grouped',connectionId:entry.connectionId,scheduleAt:entry.scheduleAt,mediaType:'video',template:'selected-video',account:{connectionId:entry.connectionId,username:account.username||'',name:account.displayName||account.username||''}};
+  const automation={id,batchId,groupId,submissionMode:'grouped',connectionId:entry.connectionId,scheduleAt:entry.scheduleAt,mediaType:'video',template:'selected-video',...(entry.photoReceiver?{photoReceiver:entry.photoReceiver}:{}),account:{connectionId:entry.connectionId,username:account.username||'',name:account.displayName||account.username||''}};
   const publish={provider:'official',autoPublish:true,connectionIds:[entry.connectionId],officialAccounts:accounts,scheduleAt:entry.scheduleAt,intervalMinutes:config.intervalMinutes||60,videoDesc:entry.caption,isAiGenerated:entry.isAiGenerated,envIds:[],accounts:[]};
   let type='psychology-selected-video',payload={module:'psychology',...(hit?{videoHitOrigin:hit.origin}:{}),psychologyAutomation:automation,publish};
   if(asset)payload={...payload,assetId:asset.id,publishOnly:true};
@@ -80,6 +81,10 @@ export async function drawHitVideoBatch(env,user,config,batchId,accounts){
   digests.add(hit.digest);
   const i=entries.length;entries.push({hit,connectionId:config.connectionIds[i%config.connectionIds.length],scheduleAt:config.scheduleAt+Math.floor(i/config.connectionIds.length)*config.intervalMinutes*60+(i%config.connectionIds.length)*(config.staggerSeconds||0),caption:hit.caption,isAiGenerated:config.isAiGenerated});
   if(entries.length===config.count)break;
+ }
+ if(config.mentionReceiver){
+  const pool=await photoReceiverPool(env,user,accounts);requirePhotoReceivers(pool,config.connectionIds);
+  for(const entry of entries){const photoReceiver=drawPhotoReceiver(pool,entry.connectionId);entry.photoReceiver=photoReceiver;entry.caption=applyPhotoReceiverCaption({title:entry.hit.title,caption:entry.caption},photoReceiver).caption;}
  }
  if(entries.length<config.count)fail('符合条件且未发布的二创成片只有 '+entries.length+' 条，请减少数量或补充成片。',400);
  if(entries.some(e=>e.caption.length>2200))fail('二创发布文案超过2200字，请先在二创详情修改。',400);

@@ -117,6 +117,11 @@ export function pilotLibraryConfig(pilot, slot) {
   return { libraryStrategy: strategy, libraryTestPolicy: strategy === 'pools' ? POOL_POLICY.version : TEST_POLICY,
     ...(strategy === 'pools' ? { poolContext: pilotPoolContext(pilot, slot) } : {}) };
 }
+export function autopilotBatchBody({ pilot, slot, connectionIds, requestId, name, scheduleAt, musicIds }) {
+  const shared = { requestId, name, count: connectionIds.length, connectionIds, scheduleAt, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleId: 'classic', musicIds };
+  if (pilot.content_source === 'video-hits') return { ...shared, mediaType: 'video', template: 'selected-video', sourceType: 'video-hits', isAiGenerated: false, selection: 'recent', styleMode: 'legacy', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
+  return { ...shared, mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(pilot, slot), pairSeed: pilotPairSeed(pilot, slot), styleMode: 'random', ...(pilot.mention_receivers ? { mentionReceiver: true } : {}) };
+}
 
 // Slot times (ms) inside (now+lead, now+horizon], within the pilot's lifetime.
 export function dueSlots(pilot, now, slots = JSON.parse(pilot.slots_json)) {
@@ -352,10 +357,7 @@ export async function runAutopilot(env, pilot, now = Date.now(), productionConte
     for (let offset = 0; offset < slotAccounts.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = slotAccounts.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch).filter((id,index)=>sameDeliveryDay(slot,Math.floor(slot/1000)+(offset+index)*AUTOPILOT.staggerSeconds,current.ends_at,pilotTimeZoneAt(current,slot)));
       if(!connectionIds.length)continue;
-      const body = { requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${pilotLabel(current,slot)}`,
-        // Staggered groups pair by their target-zone date and daily round.
-        mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(current,slot), pairSeed: pilotPairSeed(current,slot), count: connectionIds.length, connectionIds,
-        scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
+      const body = autopilotBatchBody({ pilot: current, slot, connectionIds, requestId: await uuidFrom(pilot.id + ':' + slot + ':' + connectionIds.join(',')), name: `自动运营 · ${pilot.group_name || pilot.group_id} · ${pilotLabel(current,slot)}`, scheduleAt: Math.floor(slot / 1000) + offset * AUTOPILOT.staggerSeconds, musicIds });
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
           env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext });
@@ -409,9 +411,7 @@ async function fillMissingSlotAccounts(env, db, pilot, user, active, musicIds, n
     for (let offset = 0; offset < missing.length; offset += AUTOPILOT.maxAccountsPerBatch) {
       const connectionIds = missing.slice(offset, offset + AUTOPILOT.maxAccountsPerBatch).filter((id,index)=>sameDeliveryDay(slot.slot_at,base+(offset+index)*AUTOPILOT.staggerSeconds,current.ends_at,pilotTimeZoneAt(current,slot.slot_at)));
       if(!connectionIds.length)continue;
-      const body = { requestId: await uuidFrom(pilot.id + ':restore:' + slot.slot_at + ':' + connectionIds.join(',')), name: `自动运营 · ${current.group_name || current.group_id} · ${pilotLabel(current,slot.slot_at)} · 补排`,
-        mediaType: 'photo', template: 'photo-text', sourceType: 'library', ...pilotLibraryConfig(current,slot.slot_at), pairSeed: pilotPairSeed(current, slot.slot_at), count: connectionIds.length, connectionIds,
-        scheduleAt: base + offset * AUTOPILOT.staggerSeconds, intervalMinutes: 60, staggerSeconds: AUTOPILOT.staggerSeconds, styleMode: 'random', styleId: 'classic', musicIds };
+      const body = autopilotBatchBody({ pilot: current, slot: slot.slot_at, connectionIds, requestId: await uuidFrom(pilot.id + ':restore:' + slot.slot_at + ':' + connectionIds.join(',')), name: `自动运营 · ${current.group_name || current.group_id} · ${pilotLabel(current,slot.slot_at)} · 补排`, scheduleAt: base + offset * AUTOPILOT.staggerSeconds, musicIds });
       try {
         const response = await handlePsychologyAutoPublish(new Request('https://autopilot.internal/api/psychology-auto-publish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
           env, new URL('https://autopilot.internal/api/psychology-auto-publish'), { user }, { productionLeadMs:productionPlan.leadMs,productionPlan,...taskContext });

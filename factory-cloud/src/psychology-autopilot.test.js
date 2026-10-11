@@ -2,13 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture } from './psychology-cloud-test-fixture.js';
 import { importPsychologyPeerHits } from './psychology-peer-hits-store.js';
-import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots, recoverAutopilotSlot, recoveryOriginalSlot } from './psychology-autopilot.js';
+import { handlePsychologyAutopilot, runAutopilot, dueSlots, guardAccounts, AUTOPILOT, normalizePilotSlots, pilotSlotsAt, pilotPairSeed, autopilotViewWindow, pilotStrategyAt, pilotPoolContext, readOwnerProductionForecast, readAutopilotProductionContext, refreshProductionCapacitySnapshots, recoverAutopilotSlot, recoveryOriginalSlot, autopilotBatchBody } from './psychology-autopilot.js';
 import { planLibraryDraw, EVOLUTION } from './psychology-copy-evolution.js';
 import { normalizeAutoPublish, assignments } from '../../scripts/psychology-auto-publish.js';
 
 const HOUR = 3600000, DAY = 24 * HOUR;
 const admin = { id: 'admin', username: 'admin', role: 'admin', sidebarModules: ['psychology-publish', 'psychology-autopilot'] };
 const at = (date, hm) => Date.parse(`${date}T${hm}:00+08:00`);
+
+test('video-hit autopilot draws ready videos and mentions a receiver; library plans stay on the copy library', () => {
+  const slots = [{ hour: 22, minute: 30 }, { hour: 23, minute: 30 }];
+  const pilot = { content_source: 'video-hits', mention_receivers: 1, slots_json: JSON.stringify(slots), schedule_timezone: 'Asia/Shanghai', strategy: 'evolve', current_strategy: 'evolve', owner: 'bruce', created_at: 1 };
+  const body = autopilotBatchBody({ pilot, slot: at('2026-10-11', '22:30'), connectionIds: ['a', 'b'], requestId: '11111111-1111-4111-8111-111111111111', name: '自动运营', scheduleAt: 1, musicIds: [] });
+  assert.equal(normalizeAutoPublish({ ...body, scheduleAt: Math.floor(Date.now() / 1000) + 7200 }, Date.now(), { validateSchedule: false }).mentionReceiver, true);
+  assert.equal(body.sourceType, 'video-hits');
+  assert.equal(body.mediaType, 'video');
+  const library = autopilotBatchBody({ pilot: { ...pilot, content_source: 'library', mention_receivers: 0 }, slot: at('2026-10-11', '22:30'), connectionIds: ['a'], requestId: '22222222-2222-4222-8222-222222222222', name: '文案库', scheduleAt: 1, musicIds: [] });
+  assert.equal(library.sourceType, 'library');
+  assert.equal(library.mentionReceiver, undefined);
+  assert.throws(() => normalizeAutoPublish({ ...library, mentionReceiver: true, libraryStrategy: 'pools', poolContext: { cycleStartAt: 1, postsPerDay: 2, dayIndex: 0, round: 0 }, scheduleAt: Math.floor(Date.now() / 1000) + 7200 }, Date.now(), { validateSchedule: false }), /承接账号/);
+});
 
 test('due slots are the Beijing 08:00 / 12:00 / 21:00 times 2–26 hours ahead, inside the run period', () => {
   const pilot = { slots_json: JSON.stringify(AUTOPILOT.slots), created_at: at('2026-09-23', '00:00'), ends_at: at('2026-09-30', '00:00') };
